@@ -4,13 +4,13 @@ import { type UIMessage } from 'ai';
 import { and, eq, inArray } from 'drizzle-orm';
 import { redirect } from 'next/navigation';
 
-import type * as objects from '@timeline/shared/objects';
 import type { Metadata } from 'next';
 
 import { ChatPane } from '@/components/chat/chat-pane';
 import { SessionSidebar } from '@/components/chat/session-sidebar';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
+import { hydrateChatSessionMessages } from '@/lib/chat-session';
 import { db } from '@/lib/db';
 
 export const metadata: Metadata = {
@@ -19,78 +19,6 @@ export const metadata: Metadata = {
 };
 
 export const dynamic = 'force-dynamic';
-
-interface PersistedUser {
-  ui_message?: UIMessage;
-}
-
-interface PersistedToolCall {
-  toolCallId?: string;
-  toolName?: string;
-  input?: unknown;
-  output?: unknown;
-  // AI SDK uses different field names across minor versions; accept either.
-  args?: unknown;
-  result?: unknown;
-}
-
-interface PersistedAssistant {
-  text?: string | null;
-  tool_calls?: PersistedToolCall[];
-}
-
-/**
- * Reconstruct UIMessages from persisted rows. User turns store the original
- * UIMessage under `ui_message` — we replay it verbatim. Assistant turns
- * store text + the `e.toolCalls` array from streamChat's onFinish event;
- * we rebuild the matching `tool-<name>` parts so the ToolStep component
- * shows the same "what did the agent do" panels on reload that it showed
- * during the live stream. Without this, citations land in the transcript
- * but the tool invocations that produced them silently disappear.
- */
-function hydrate(rows: Awaited<ReturnType<typeof objects.getChatSession>>): UIMessage[] {
-  if (!rows) return [];
-  return rows.messages
-    .map<UIMessage | null>((m) => {
-      if (m.role === 'user') {
-        const content = m.content as PersistedUser;
-        if (content.ui_message) return content.ui_message;
-        return null;
-      }
-      if (m.role === 'assistant') {
-        const content = m.content as PersistedAssistant;
-        const parts: UIMessage['parts'] = [];
-        if (Array.isArray(content.tool_calls)) {
-          for (const tc of content.tool_calls) {
-            const toolName = typeof tc.toolName === 'string' ? tc.toolName : 'unknown';
-            const input = tc.input ?? tc.args;
-            const output = tc.output ?? tc.result;
-            // Cast: UIMessage['parts'] is a discriminated union the SDK
-            // builds at runtime from registered tool names. We're injecting
-            // synthetic parts the SDK never typed against, so the cast is
-            // unavoidable. ToolStep reads `type`/`state`/`input`/`output`
-            // structurally, so the runtime contract holds.
-            parts.push({
-              type: `tool-${toolName}`,
-              toolCallId:
-                typeof tc.toolCallId === 'string'
-                  ? tc.toolCallId
-                  : `${m.id}-${String(parts.length)}`,
-              state: output === undefined ? 'input-available' : 'output-available',
-              input,
-              output,
-            } as unknown as UIMessage['parts'][number]);
-          }
-        }
-        const text = content.text ?? '';
-        if (text.length > 0) parts.push({ type: 'text', text });
-        if (parts.length === 0) return null;
-        return { id: m.id, role: 'assistant', parts };
-      }
-      return null;
-    })
-    .filter((m): m is UIMessage => m !== null);
-}
 
 async function loadPinnedEntity(
   database: Db,
@@ -140,7 +68,7 @@ export default async function ChatPage({
     const loaded = await scope.objects.getChatSession(requestedSessionId);
     if (loaded) {
       activeSessionId = requestedSessionId;
-      initialMessages = hydrate(loaded);
+      initialMessages = hydrateChatSessionMessages(loaded);
       pinnedEntityId = loaded.session.pinnedEntityId;
       // Deep-linked or older sessions can fall outside the top-50 sidebar
       // window, so their pinnedEntityId isn't in `pinnedNames`. Fetch the

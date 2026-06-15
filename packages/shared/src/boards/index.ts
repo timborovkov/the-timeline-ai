@@ -676,6 +676,13 @@ export function createBoardScope({
       };
     },
 
+    async getBoardItem(itemId: string): Promise<BoardItemRow | null> {
+      await scope.requireMembership();
+      if (!UUID_RE.test(itemId)) return null;
+      const item = await itemWithObject(itemId);
+      return item && !item.archivedAt ? item : null;
+    },
+
     async createBoard(input: CreateBoardInput): Promise<BoardDetail> {
       await scope.requireMembership();
       const name = normalizeName(input.name, 'Board name');

@@ -1,16 +1,23 @@
+// @vitest-environment happy-dom
+
+import { render } from '@testing-library/react';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const fakes = vi.hoisted(() => ({
   useChat: vi.fn(),
+  transports: [] as { options: { body?: () => unknown } }[],
 }));
 
 vi.mock('@ai-sdk/react', () => ({ useChat: fakes.useChat }));
 vi.mock('ai', () => ({
   DefaultChatTransport: class DefaultChatTransport {
-    constructor(public options: unknown) {}
+    constructor(public options: { body?: () => unknown }) {
+      fakes.transports.push({ options });
+    }
   },
+  lastAssistantMessageIsCompleteWithApprovalResponses: vi.fn(() => true),
 }));
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ refresh: vi.fn() }),
@@ -25,6 +32,7 @@ const { ChatPane } = await import('./chat-pane.js');
 
 beforeEach(() => {
   vi.clearAllMocks();
+  fakes.transports.length = 0;
 });
 
 describe('ChatPane', () => {
@@ -116,7 +124,7 @@ describe('ChatPane', () => {
     expect(html).toContain('list-disc');
     expect(html).toContain('<li');
     expect(html).toContain('[ev:aaaaaaaa]');
-    expect(html).toContain(`/app/timeline?event=${eventId}#ev-${eventId}`);
+    expect(html).toContain(`Open reference [ev:aaaaaaaa]`);
     expect(html).not.toContain('**Sales');
     expect(html).not.toContain('- Follow-up');
   });
@@ -264,5 +272,54 @@ describe('ChatPane', () => {
     expect(html).toContain('<table');
     expect(html).toContain('Register domains');
     expect(html).not.toContain('--- | ---');
+  });
+
+  it('resets chat transport state when initialSessionId becomes null', () => {
+    const transportRequests: { sessionId: string | null; startNewSession: boolean }[] = [];
+    fakes.useChat.mockReturnValue({
+      messages: [],
+      sendMessage: vi.fn(),
+      status: 'ready',
+      error: null,
+    });
+
+    const { rerender } = render(
+      createElement(ChatPane, {
+        teamName: 'Acme',
+        sessionId: 'stale-session',
+        initialMessages: [],
+        pinnedEntityId: null,
+        pinnedEntityName: null,
+      }),
+    );
+    const firstTransportOptions = fakes.transports.at(-1)?.options;
+    transportRequests.push(
+      firstTransportOptions?.body?.() as { sessionId: string | null; startNewSession: boolean },
+    );
+
+    rerender(
+      createElement(ChatPane, {
+        teamName: 'Acme',
+        sessionId: null,
+        initialMessages: [],
+        pinnedEntityId: null,
+        pinnedEntityName: null,
+      }),
+    );
+
+    const secondTransportOptions = fakes.transports.at(-1)?.options;
+    transportRequests.push(
+      secondTransportOptions?.body?.() as { sessionId: string | null; startNewSession: boolean },
+    );
+
+    expect(transportRequests).toHaveLength(2);
+    expect(transportRequests[0]).toMatchObject({
+      sessionId: 'stale-session',
+      startNewSession: false,
+    });
+    expect(transportRequests[1]).toMatchObject({
+      sessionId: undefined,
+      startNewSession: true,
+    });
   });
 });

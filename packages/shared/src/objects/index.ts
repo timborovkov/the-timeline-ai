@@ -499,6 +499,15 @@ export interface ObjectDetail extends ObjectRow {
   lastVisitedAt: Date | null;
 }
 
+export interface ObjectNotePreview {
+  id: string;
+  body: string;
+  authorUserId: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+  object: ObjectRow;
+}
+
 const MERGE_COMPATIBLE_TYPES: readonly ObjectType[] = [
   'person',
   'company',
@@ -1031,6 +1040,39 @@ export async function getObject(
     openTasks: tasks,
     newSinceLastVisit,
     lastVisitedAt,
+  };
+}
+
+export async function getObjectNotePreview(
+  db: Db,
+  scope: TeamScopeCore,
+  noteId: string,
+): Promise<ObjectNotePreview | null> {
+  await scope.requireMembership();
+  if (!UUID_RE.test(noteId)) return null;
+  const rows = await db
+    .select({ note: objectNotes, object: entities })
+    .from(objectNotes)
+    .innerJoin(entities, eq(objectNotes.entityId, entities.id))
+    .where(
+      and(
+        eq(objectNotes.id, noteId),
+        eq(objectNotes.teamId, scope.teamId),
+        eq(entities.teamId, scope.teamId),
+        isNull(objectNotes.deletedAt),
+        isNull(entities.mergedIntoId),
+      ),
+    )
+    .limit(1);
+  const row = rows[0];
+  if (!row) return null;
+  return {
+    id: row.note.id,
+    body: row.note.body,
+    authorUserId: row.note.authorUserId,
+    createdAt: row.note.createdAt,
+    updatedAt: row.note.updatedAt,
+    object: toObjectRow(row.object),
   };
 }
 
@@ -3488,7 +3530,7 @@ export interface ProposeObjectChangeInput {
  * `updateObject` will eventually write (e.g., null instead of empty
  * string for nullable fields, ISO datetime instead of Date object).
  */
-function normalizeProposedValue(
+export function normalizeObjectPatchValue(
   field: ProposeObjectChangeInput['field'],
   newValue: unknown,
 ): unknown {
@@ -3548,7 +3590,7 @@ export async function proposeObjectChange(
   // Validate value shape against the target field BEFORE writing. See
   // `normalizeProposedValue` doc for why this matters — without it, the
   // failure surfaces at human-accept time as a confusing 500.
-  const normalized = normalizeProposedValue(input.field, input.newValue);
+  const normalized = normalizeObjectPatchValue(input.field, input.newValue);
 
   // If the proposed value is a user reference, verify team membership so
   // the agent can't seed a foreign user that later gets pushed through
@@ -3766,6 +3808,7 @@ export function createObjectScope(db: Db, scope: TeamScopeCore) {
     listObjects: (filter?: ObjectListFilter) => listObjects(db, scope, filter),
     searchObjects: (filter: ObjectSearchFilter) => searchObjects(db, scope, filter),
     getObject: (idOrName: string) => getObject(db, scope, idOrName),
+    getObjectNotePreview: (noteId: string) => getObjectNotePreview(db, scope, noteId),
     getMergedObjectTarget: (entityId: string) => getMergedObjectTarget(db, scope, entityId),
     getObjectMergePreview: (entityIds: string[], survivorId?: string) =>
       getObjectMergePreview(db, scope, entityIds, survivorId),

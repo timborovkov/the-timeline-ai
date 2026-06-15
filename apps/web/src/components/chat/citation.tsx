@@ -4,23 +4,19 @@
 // doesn't pull the queue/qdrant/llm modules that the package index
 // re-exports — those drag in bullmq → ioredis → node:dns and fail the
 // Next.js client compile.
-import { parseCitations } from '@timeline/shared/citation';
+import { citationPartToArtifactRef, parseCitations } from '@timeline/shared/citation';
 import { Fragment, type ReactNode } from 'react';
 
-import { CitationChip } from '@/components/citation-chip';
-import { EvidenceChip } from '@/components/evidence-link';
+import { ArtifactReferenceChip } from '@/components/artifact-reference-chip';
 
 interface Props {
   text: string;
 }
 
 /**
- * Splits the assistant's text into runs and citation chips. Each chip is
- * a citation chip:
- *  - `[ev:<id>]` → opens an evidence preview first, with a timeline link inside
- *  - `[ent:<id>]` → `/app/objects/<id>`
- *  - `[doc:<id>#v<n>:chunk:<id>]` →
- *    `/app/documents/<id>?version=<n>#chunk-<id>`
+ * Splits the assistant's text into runs and typed artifact chips. Every
+ * citation opens the shared preview dialog first, with the full page link
+ * available inside the dialog.
  *
  * The visual matches the system-wide citation primitive — mono lime
  * brackets on a signal-soft background — so chips inside chat read the
@@ -263,34 +259,9 @@ function InlineText({ text, keyPrefix }: { text: string; keyPrefix: string }) {
         else cursor += p.value.length;
         const key = `${keyPrefix}:${p.type}:${String(start)}:${String(cursor)}`;
         if (p.type === 'text') return <StrongText key={key} keyPrefix={key} text={p.value} />;
-        if (p.type === 'ev') {
-          return (
-            <span key={key} className="mx-0.5">
-              <EvidenceChip eventId={p.value} />
-            </span>
-          );
-        }
-        if (p.type === 'ent') {
-          return (
-            <span key={key} className="mx-0.5">
-              <CitationChip
-                id={`ent:${p.value.slice(0, 8)}`}
-                source="Entity"
-                href={`/app/objects/${p.value}`}
-              />
-            </span>
-          );
-        }
-        // p.type === 'doc' — Phase 9: chunk-precise citation. Link
-        // carries the version + chunk hash so the document detail
-        // page can scroll to the exact cited slice.
         return (
           <span key={key} className="mx-0.5">
-            <CitationChip
-              id={`doc:${p.documentId.slice(0, 8)}#v${p.version}`}
-              source="Document"
-              href={`/app/documents/${p.documentId}?version=${p.version}#chunk-${p.chunkId}`}
-            />
+            <ArtifactReferenceChip refValue={citationPartToArtifactRef(p)} />
           </span>
         );
       })}

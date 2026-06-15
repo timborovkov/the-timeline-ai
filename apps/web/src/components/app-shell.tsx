@@ -6,6 +6,7 @@ import type { RecipientInvite } from '@/components/team-switcher';
 import type { TeamMembership } from '@/lib/active-team';
 import type { ReactNode } from 'react';
 
+import { FloatingAgentChat } from '@/components/chat/floating-agent-chat';
 import { DesktopSidebar } from '@/components/desktop-sidebar';
 import { GlobalSearchPalette } from '@/components/global-search-palette';
 import { InboxBell, type InboxBellNotification } from '@/components/inbox/inbox-bell';
@@ -106,6 +107,7 @@ export function AppShell({
 
         {/* ── Inspector pane (desktop, collapsible) ───────────────── */}
         <InspectorPane />
+        <FloatingAgentChat teamId={active.teamId} teamName={active.teamName} />
       </div>
     </InspectorProvider>
   );

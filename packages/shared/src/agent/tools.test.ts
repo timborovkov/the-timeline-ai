@@ -22,6 +22,7 @@ import { type TeamScope } from '#src/team-scope.js';
  */
 
 interface FakeScope {
+  userId: string;
   timeline: {
     searchEvents: ReturnType<typeof vi.fn>;
     getEntity: ReturnType<typeof vi.fn>;
@@ -29,6 +30,7 @@ interface FakeScope {
     getEventWithFacts: ReturnType<typeof vi.fn>;
   };
   documents: {
+    listDocuments: ReturnType<typeof vi.fn>;
     searchDocumentChunks: ReturnType<typeof vi.fn>;
     getDocument: ReturnType<typeof vi.fn>;
     listDocumentVersions: ReturnType<typeof vi.fn>;
@@ -38,16 +40,38 @@ interface FakeScope {
   };
   calendar: {
     listCalendarEvents: ReturnType<typeof vi.fn>;
+    getCalendarEvent: ReturnType<typeof vi.fn>;
+    createCalendarEvent: ReturnType<typeof vi.fn>;
+    updateCalendarEvent: ReturnType<typeof vi.fn>;
+    deleteCalendarEvent: ReturnType<typeof vi.fn>;
     getCalendarSettings: ReturnType<typeof vi.fn>;
   };
   suggestions: {
     createOrMergeSuggestionBundle: ReturnType<typeof vi.fn>;
     listSuggestions: ReturnType<typeof vi.fn>;
+    reconcileCanonicalChange: ReturnType<typeof vi.fn>;
+    reconcileObjectMerge: ReturnType<typeof vi.fn>;
+  };
+  objects: {
+    searchObjects: ReturnType<typeof vi.fn>;
+    listObjects: ReturnType<typeof vi.fn>;
+    getObject: ReturnType<typeof vi.fn>;
+    createObject: ReturnType<typeof vi.fn>;
+    updateObject: ReturnType<typeof vi.fn>;
+    archiveObject: ReturnType<typeof vi.fn>;
+    getObjectMergePreview: ReturnType<typeof vi.fn>;
+    mergeObjects: ReturnType<typeof vi.fn>;
+  };
+  boards: {
+    listBoards: ReturnType<typeof vi.fn>;
+    getBoard: ReturnType<typeof vi.fn>;
+    listObjectBoardContext: ReturnType<typeof vi.fn>;
   };
 }
 
 function makeFakeScope(): FakeScope {
   return {
+    userId: '77777777-7777-4777-8777-777777777777',
     timeline: {
       searchEvents: vi.fn(),
       getEntity: vi.fn(),
@@ -55,6 +79,7 @@ function makeFakeScope(): FakeScope {
       getEventWithFacts: vi.fn(),
     },
     documents: {
+      listDocuments: vi.fn(),
       searchDocumentChunks: vi.fn(),
       getDocument: vi.fn(),
       listDocumentVersions: vi.fn(),
@@ -64,17 +89,92 @@ function makeFakeScope(): FakeScope {
     },
     calendar: {
       listCalendarEvents: vi.fn(),
+      getCalendarEvent: vi.fn(),
+      createCalendarEvent: vi.fn(),
+      updateCalendarEvent: vi.fn(),
+      deleteCalendarEvent: vi.fn(),
       getCalendarSettings: vi.fn().mockResolvedValue({ defaultTimezone: 'UTC' }),
     },
     suggestions: {
       createOrMergeSuggestionBundle: vi.fn(),
       listSuggestions: vi.fn(),
+      reconcileCanonicalChange: vi.fn().mockResolvedValue(0),
+      reconcileObjectMerge: vi.fn().mockResolvedValue(0),
+    },
+    objects: {
+      searchObjects: vi.fn(),
+      listObjects: vi.fn(),
+      getObject: vi.fn(),
+      createObject: vi.fn(),
+      updateObject: vi.fn(),
+      archiveObject: vi.fn(),
+      getObjectMergePreview: vi.fn(),
+      mergeObjects: vi.fn(),
+    },
+    boards: {
+      listBoards: vi.fn(),
+      getBoard: vi.fn(),
+      listObjectBoardContext: vi.fn(),
     },
   };
 }
 
 const TEAM_B_EVENT_ID = '11111111-2222-3333-4444-555555555555';
 const TEAM_B_ENTITY_ID = '99999999-8888-7777-6666-555555555555';
+const OBJECT_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+const BOARD_ID = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+const BOARD_ITEM_ID = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+const LANE_ID = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+const DOCUMENT_ID = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
+const CALENDAR_EVENT_ID = '12121212-1212-4212-8212-121212121212';
+
+function calendarEventFixture(overrides: Record<string, unknown> = {}) {
+  return {
+    id: CALENDAR_EVENT_ID,
+    teamId: '22222222-2222-4222-8222-222222222222',
+    createdByUserId: '77777777-7777-4777-8777-777777777777',
+    title: 'Daily standup',
+    description: 'Discuss blockers',
+    startAt: new Date('2026-06-14T09:00:00.000Z'),
+    endAt: new Date('2026-06-14T09:30:00.000Z'),
+    timezone: 'UTC',
+    allDay: false,
+    location: 'Zoom',
+    showAs: 'busy',
+    visibility: 'team',
+    visibilityUserIds: null,
+    recurringParentId: null,
+    originalStartAt: null,
+    isException: false,
+    rrule: null,
+    reminderMinutes: null,
+    source: 'internal',
+    externalCalendarId: null,
+    externalEventId: null,
+    agentSuggested: false,
+    metadata: {},
+    scheduledRawEventId: null,
+    startAtRawEventId: null,
+    createdAt: new Date('2026-06-01T12:00:00.000Z'),
+    updatedAt: new Date('2026-06-01T12:00:00.000Z'),
+    deletedAt: null,
+    redacted: false,
+    ...overrides,
+  };
+}
+
+interface GuideToolResult {
+  count: number;
+  results: unknown[];
+}
+
+interface SearchToolResult {
+  count: number;
+  results: {
+    board?: { citation?: string };
+    matching_items?: { citation?: string; object_citation?: string }[];
+  }[];
+}
 
 describe('buildAgentTools — team isolation', () => {
   it('tool input schemas do not accept teamId or userId', () => {
@@ -89,11 +189,774 @@ describe('buildAgentTools — team isolation', () => {
     const ent = tools.get_entity?.inputSchema as unknown as { shape: Record<string, unknown> };
     const list = tools.list_events?.inputSchema as unknown as { shape: Record<string, unknown> };
     const evt = tools.get_event?.inputSchema as unknown as { shape: Record<string, unknown> };
+    const guide = tools.search_app_guide?.inputSchema as unknown as {
+      shape: Record<string, unknown>;
+    };
+    const route = tools.get_app_route?.inputSchema as unknown as { shape: Record<string, unknown> };
     expect(Object.keys(search.shape)).not.toContain('teamId');
     expect(Object.keys(search.shape)).not.toContain('userId');
     expect(Object.keys(ent.shape)).not.toContain('teamId');
     expect(Object.keys(list.shape)).not.toContain('teamId');
     expect(Object.keys(evt.shape)).not.toContain('teamId');
+    expect(Object.keys(guide.shape)).not.toContain('teamId');
+    expect(Object.keys(route.shape)).not.toContain('teamId');
+  });
+
+  it('search_app_guide returns route citations for navigation questions without scope calls', async () => {
+    const scope = makeFakeScope();
+    const tools = buildAgentTools(scope as unknown as TeamScope);
+    const exec = tools.search_app_guide?.execute as (
+      input: unknown,
+      opts: unknown,
+    ) => Promise<unknown>;
+
+    const result = await exec({ query: 'Where can I invite teammates?', limit: 2 }, {});
+    const guideResult = result as GuideToolResult;
+
+    expect(typeof guideResult.count).toBe('number');
+    expect(guideResult.results[0]).toMatchObject({
+      route_id: 'team/invites',
+      citation: '[route:team/invites]',
+      href: '/app/team',
+      minimum_role: 'admin',
+    });
+    expect(scope.timeline.searchEvents).not.toHaveBeenCalled();
+    expect(scope.documents.searchDocumentChunks).not.toHaveBeenCalled();
+  });
+
+  it('get_app_route returns exact route guide metadata', async () => {
+    const scope = makeFakeScope();
+    const tools = buildAgentTools(scope as unknown as TeamScope);
+    const exec = tools.get_app_route?.execute as (
+      input: unknown,
+      opts: unknown,
+    ) => Promise<unknown>;
+
+    await expect(exec({ routeId: 'help/boards' }, {})).resolves.toMatchObject({
+      found: true,
+      route_id: 'help/boards',
+      citation: '[route:help/boards]',
+      href: '/help/boards',
+      group: 'help',
+    });
+    await expect(exec({ routeId: 'unknown/route' }, {})).resolves.toEqual({ found: false });
+  });
+
+  it('execute_object_create requires approval and creates a canonical object directly', async () => {
+    const scope = makeFakeScope();
+    const createdAt = new Date('2026-06-14T12:00:00.000Z');
+    const updatedAt = new Date('2026-06-14T12:00:00.000Z');
+    scope.objects.createObject.mockResolvedValue({
+      id: OBJECT_ID,
+      type: 'project',
+      canonicalName: 'AuditAI pilot',
+      status: 'open',
+      stage: 'planning',
+      priority: 2,
+      ownerUserId: null,
+      assigneeUserId: null,
+      dueAt: null,
+      agentSuggested: false,
+      archivedAt: null,
+      aliases: ['Pilot'],
+      metadata: {},
+      createdAt,
+      updatedAt,
+    });
+    const tools = buildAgentTools(scope as unknown as TeamScope);
+    expect(tools.execute_object_create?.needsApproval).toBe(true);
+    const exec = tools.execute_object_create?.execute as (
+      input: unknown,
+      opts: unknown,
+    ) => Promise<unknown>;
+
+    const result = await exec(
+      {
+        type: 'project',
+        canonicalName: 'AuditAI pilot',
+        status: 'open',
+        stage: 'planning',
+        priority: 2,
+        aliases: ['Pilot'],
+        reason: 'User asked to track the pilot.',
+      },
+      {},
+    );
+
+    expect(scope.objects.createObject).toHaveBeenCalledWith({
+      type: 'project',
+      canonicalName: 'AuditAI pilot',
+      status: 'open',
+      stage: 'planning',
+      priority: 2,
+      ownerUserId: null,
+      assigneeUserId: null,
+      dueAt: null,
+      aliases: ['Pilot'],
+      parentObjectId: null,
+      actor: { kind: 'agent', userId: scope.userId },
+    });
+    expect(result).toMatchObject({
+      ok: true,
+      object_id: OBJECT_ID,
+      object_citation: `[ent:${OBJECT_ID}]`,
+      object: {
+        id: OBJECT_ID,
+        citation: `[ent:${OBJECT_ID}]`,
+        name: 'AuditAI pilot',
+        type: 'project',
+      },
+    });
+  });
+
+  it('execute_object_update requires approval and applies a direct object update', async () => {
+    const scope = makeFakeScope();
+    scope.objects.getObject.mockResolvedValue({
+      id: OBJECT_ID,
+      canonicalName: 'Otto Silventola',
+      status: 'active',
+      stage: null,
+      priority: null,
+      ownerUserId: null,
+      assigneeUserId: null,
+      dueAt: null,
+    });
+    scope.objects.updateObject.mockResolvedValue({
+      object: {
+        id: OBJECT_ID,
+        canonicalName: 'Otto Silventola',
+        status: 'done',
+        stage: null,
+        priority: null,
+        ownerUserId: null,
+        assigneeUserId: null,
+        dueAt: null,
+      },
+      changedFields: ['status'],
+    });
+    const tools = buildAgentTools(scope as unknown as TeamScope);
+    expect(tools.execute_object_update?.needsApproval).toBe(true);
+    const exec = tools.execute_object_update?.execute as (
+      input: unknown,
+      opts: unknown,
+    ) => Promise<unknown>;
+
+    const result = await exec(
+      {
+        entityId: OBJECT_ID,
+        field: 'status',
+        expectedCurrentValue: 'active',
+        newValue: 'done',
+        reason: 'User asked to mark it done in chat.',
+      },
+      {},
+    );
+
+    expect(scope.objects.updateObject).toHaveBeenCalledWith(
+      OBJECT_ID,
+      { status: 'done' },
+      { kind: 'agent', userId: scope.userId },
+    );
+    expect(result).toMatchObject({
+      ok: true,
+      object_id: OBJECT_ID,
+      object_citation: `[ent:${OBJECT_ID}]`,
+      field: 'status',
+      previous_value: 'active',
+      new_value: 'done',
+      changed_fields: ['status'],
+    });
+  });
+
+  it('execute_object_update rejects stale state before mutating', async () => {
+    const scope = makeFakeScope();
+    scope.objects.getObject.mockResolvedValue({
+      id: OBJECT_ID,
+      canonicalName: 'Otto Silventola',
+      status: 'blocked',
+      stage: null,
+      priority: null,
+      ownerUserId: null,
+      assigneeUserId: null,
+      dueAt: null,
+    });
+    const tools = buildAgentTools(scope as unknown as TeamScope);
+    const exec = tools.execute_object_update?.execute as (
+      input: unknown,
+      opts: unknown,
+    ) => Promise<unknown>;
+
+    const result = await exec(
+      {
+        entityId: OBJECT_ID,
+        field: 'status',
+        expectedCurrentValue: 'active',
+        newValue: 'done',
+        reason: 'User asked to mark it done in chat.',
+      },
+      {},
+    );
+
+    expect(scope.objects.updateObject).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      ok: false,
+      error: 'stale_state',
+      object_citation: `[ent:${OBJECT_ID}]`,
+      field: 'status',
+      expected_value: 'active',
+      current_value: 'blocked',
+    });
+  });
+
+  it('execute_object_archive requires approval and reconciles pending archive suggestions', async () => {
+    const scope = makeFakeScope();
+    scope.objects.getObject.mockResolvedValue({
+      id: OBJECT_ID,
+      type: 'company',
+      canonicalName: 'Old vendor',
+      archivedAt: null,
+    });
+    scope.objects.archiveObject.mockResolvedValue({
+      id: OBJECT_ID,
+      type: 'company',
+      canonicalName: 'Old vendor',
+      status: 'open',
+      stage: null,
+      priority: null,
+      ownerUserId: null,
+      assigneeUserId: null,
+      dueAt: null,
+      agentSuggested: false,
+      archivedAt: new Date('2026-06-14T12:00:00.000Z'),
+      aliases: [],
+      metadata: {},
+      createdAt: new Date('2026-06-01T12:00:00.000Z'),
+      updatedAt: new Date('2026-06-14T12:00:00.000Z'),
+      changedFields: ['archivedAt'],
+    });
+    scope.suggestions.reconcileCanonicalChange.mockResolvedValue(2);
+    const tools = buildAgentTools(scope as unknown as TeamScope);
+    expect(tools.execute_object_archive?.needsApproval).toBe(true);
+    const exec = tools.execute_object_archive?.execute as (
+      input: unknown,
+      opts: unknown,
+    ) => Promise<unknown>;
+
+    const result = await exec(
+      {
+        entityId: OBJECT_ID,
+        reason: 'User confirmed this object is obsolete.',
+      },
+      {},
+    );
+
+    expect(scope.objects.getObject).toHaveBeenCalledWith(OBJECT_ID);
+    expect(scope.objects.archiveObject).toHaveBeenCalledWith(OBJECT_ID, {
+      kind: 'agent',
+      userId: scope.userId,
+    });
+    expect(scope.suggestions.reconcileCanonicalChange).toHaveBeenCalledWith({
+      targetKind: 'object',
+      targetId: OBJECT_ID,
+      operation: 'archive_or_cancel',
+      reason: 'The chat agent archived this object after explicit in-chat approval.',
+    });
+    expect(result).toMatchObject({
+      ok: true,
+      object_id: OBJECT_ID,
+      object_citation: `[ent:${OBJECT_ID}]`,
+      archived: true,
+      changed_fields: ['archivedAt'],
+      reconciled_approvals: 2,
+    });
+  });
+
+  it('execute_object_merge requires approval and applies a direct merge', async () => {
+    const scope = makeFakeScope();
+    const otherId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+    scope.objects.getObjectMergePreview.mockResolvedValue({
+      survivorId: OBJECT_ID,
+      objects: [
+        {
+          id: OBJECT_ID,
+          type: 'person',
+          canonicalName: 'Otto Silventola',
+          status: 'active',
+          stage: null,
+          aliases: ['Otto'],
+        },
+        {
+          id: otherId,
+          type: 'person',
+          canonicalName: 'Otto S.',
+          status: 'active',
+          stage: null,
+          aliases: [],
+        },
+      ],
+      aliasesToAdd: ['Otto S.'],
+      counts: { facts: 2, notes: 1, relationships: 0, openTasks: 0 },
+      countsBySurvivorId: {},
+      factSamplesByObjectId: {},
+    });
+    scope.objects.mergeObjects.mockResolvedValue({
+      survivor: {
+        id: OBJECT_ID,
+        canonicalName: 'Otto Silventola',
+        aliases: ['Otto', 'Otto S.'],
+      },
+      mergedIds: [otherId],
+    });
+    scope.suggestions.reconcileObjectMerge.mockResolvedValue(1);
+    const tools = buildAgentTools(scope as unknown as TeamScope);
+    expect(tools.execute_object_merge?.needsApproval).toBe(true);
+    const exec = tools.execute_object_merge?.execute as (
+      input: unknown,
+      opts: unknown,
+    ) => Promise<unknown>;
+
+    const result = await exec(
+      {
+        objectIds: [OBJECT_ID, otherId],
+        survivorId: OBJECT_ID,
+        reason: 'User confirmed Otto S. is a duplicate.',
+      },
+      {},
+    );
+
+    expect(scope.objects.getObjectMergePreview).toHaveBeenCalledWith(
+      [OBJECT_ID, otherId],
+      OBJECT_ID,
+    );
+    expect(scope.objects.mergeObjects).toHaveBeenCalledWith({
+      survivorId: OBJECT_ID,
+      mergedIds: [otherId],
+      actor: { kind: 'agent', userId: scope.userId },
+    });
+    expect(scope.suggestions.reconcileObjectMerge).toHaveBeenCalledWith({
+      survivorId: OBJECT_ID,
+      mergedIds: [otherId],
+      reason: 'The chat agent merged these objects after explicit in-chat approval.',
+    });
+    expect(result).toMatchObject({
+      ok: true,
+      survivor_id: OBJECT_ID,
+      survivor_citation: `[ent:${OBJECT_ID}]`,
+      merged_ids: [otherId],
+      merged_citations: [`[ent:${otherId}]`],
+      reconciled_approvals: 1,
+    });
+  });
+
+  it('execute_object_merge rejects stale merge targets before mutating', async () => {
+    const scope = makeFakeScope();
+    const otherId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+    const resolvedId = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+    scope.objects.getObjectMergePreview.mockResolvedValue({
+      survivorId: OBJECT_ID,
+      objects: [
+        {
+          id: OBJECT_ID,
+          type: 'person',
+          canonicalName: 'Otto Silventola',
+          status: 'active',
+          stage: null,
+          aliases: [],
+        },
+        {
+          id: resolvedId,
+          type: 'person',
+          canonicalName: 'Otto Resolved',
+          status: 'active',
+          stage: null,
+          aliases: [],
+        },
+      ],
+      aliasesToAdd: [],
+      counts: { facts: 0, notes: 0, relationships: 0, openTasks: 0 },
+      countsBySurvivorId: {},
+      factSamplesByObjectId: {},
+    });
+    const tools = buildAgentTools(scope as unknown as TeamScope);
+    const exec = tools.execute_object_merge?.execute as (
+      input: unknown,
+      opts: unknown,
+    ) => Promise<unknown>;
+
+    const result = await exec(
+      {
+        objectIds: [OBJECT_ID, otherId],
+        survivorId: OBJECT_ID,
+        reason: 'User confirmed duplicate.',
+      },
+      {},
+    );
+
+    expect(scope.objects.mergeObjects).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      ok: false,
+      error: 'stale_state',
+      expected_object_ids: [OBJECT_ID, otherId].sort(),
+      current_object_ids: [OBJECT_ID, resolvedId].sort(),
+    });
+  });
+
+  it('execute_calendar_create requires approval and creates a canonical event directly', async () => {
+    const scope = makeFakeScope();
+    const event = calendarEventFixture({ title: 'Pilot planning' });
+    scope.calendar.createCalendarEvent.mockResolvedValue(event);
+    const tools = buildAgentTools(scope as unknown as TeamScope);
+    expect(tools.execute_calendar_create?.needsApproval).toBe(true);
+    const exec = tools.execute_calendar_create?.execute as (
+      input: unknown,
+      opts: unknown,
+    ) => Promise<unknown>;
+
+    const result = await exec(
+      {
+        title: 'Pilot planning',
+        startAt: '2026-06-14T10:00:00.000Z',
+        endAt: '2026-06-14T10:30:00.000Z',
+        timezone: 'UTC',
+        location: 'Zoom',
+        reason: 'User asked to schedule it now.',
+      },
+      {},
+    );
+
+    expect(scope.calendar.createCalendarEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: 'Pilot planning',
+        startAt: new Date('2026-06-14T10:00:00.000Z'),
+        endAt: new Date('2026-06-14T10:30:00.000Z'),
+        timezone: 'UTC',
+        allDay: false,
+        location: 'Zoom',
+        showAs: 'busy',
+        visibility: 'team',
+      }),
+    );
+    expect(result).toMatchObject({
+      ok: true,
+      calendar_event_id: CALENDAR_EVENT_ID,
+      calendar_citation: `[cal:${CALENDAR_EVENT_ID}]`,
+      event: {
+        id: CALENDAR_EVENT_ID,
+        citation: `[cal:${CALENDAR_EVENT_ID}]`,
+        title: 'Pilot planning',
+      },
+    });
+  });
+
+  it('execute_calendar_update rejects stale event state before mutating', async () => {
+    const scope = makeFakeScope();
+    scope.calendar.getCalendarEvent.mockResolvedValue(
+      calendarEventFixture({ title: 'Daily standup' }),
+    );
+    const tools = buildAgentTools(scope as unknown as TeamScope);
+    const exec = tools.execute_calendar_update?.execute as (
+      input: unknown,
+      opts: unknown,
+    ) => Promise<unknown>;
+
+    const result = await exec(
+      {
+        id: CALENDAR_EVENT_ID,
+        expectedCurrent: { title: 'Weekly standup' },
+        patch: { title: 'Daily sync' },
+        reason: 'User asked to rename it.',
+      },
+      {},
+    );
+
+    expect(scope.calendar.updateCalendarEvent).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      ok: false,
+      error: 'stale_state',
+      calendar_citation: `[cal:${CALENDAR_EVENT_ID}]`,
+      stale_fields: {
+        title: {
+          expected: 'Weekly standup',
+          current: 'Daily standup',
+        },
+      },
+    });
+  });
+
+  it('execute_calendar_update applies direct updates and reconciles pending suggestions', async () => {
+    const scope = makeFakeScope();
+    scope.calendar.getCalendarEvent.mockResolvedValue(calendarEventFixture());
+    scope.calendar.updateCalendarEvent.mockResolvedValue(
+      calendarEventFixture({ title: 'Daily sync', changedFields: ['title'] }),
+    );
+    scope.suggestions.reconcileCanonicalChange.mockResolvedValue(1);
+    const tools = buildAgentTools(scope as unknown as TeamScope);
+    expect(tools.execute_calendar_update?.needsApproval).toBe(true);
+    const exec = tools.execute_calendar_update?.execute as (
+      input: unknown,
+      opts: unknown,
+    ) => Promise<unknown>;
+
+    const result = await exec(
+      {
+        id: CALENDAR_EVENT_ID,
+        expectedCurrent: { title: 'Daily standup' },
+        patch: { title: 'Daily sync' },
+        reason: 'User asked to rename it.',
+      },
+      {},
+    );
+
+    expect(scope.calendar.updateCalendarEvent).toHaveBeenCalledWith(CALENDAR_EVENT_ID, {
+      title: 'Daily sync',
+    });
+    expect(scope.suggestions.reconcileCanonicalChange).toHaveBeenCalledWith({
+      targetKind: 'calendar_event',
+      targetId: CALENDAR_EVENT_ID,
+      operation: 'update',
+      patch: { title: true },
+      reason: 'The chat agent updated this calendar event after explicit in-chat approval.',
+    });
+    expect(result).toMatchObject({
+      ok: true,
+      calendar_event_id: CALENDAR_EVENT_ID,
+      calendar_citation: `[cal:${CALENDAR_EVENT_ID}]`,
+      changed_fields: ['title'],
+      reconciled_approvals: 1,
+    });
+  });
+
+  it('execute_calendar_cancel requires approval and reconciles pending cancellations', async () => {
+    const scope = makeFakeScope();
+    scope.calendar.getCalendarEvent.mockResolvedValue(calendarEventFixture());
+    scope.calendar.deleteCalendarEvent.mockResolvedValue(true);
+    scope.suggestions.reconcileCanonicalChange.mockResolvedValue(3);
+    const tools = buildAgentTools(scope as unknown as TeamScope);
+    expect(tools.execute_calendar_cancel?.needsApproval).toBe(true);
+    const exec = tools.execute_calendar_cancel?.execute as (
+      input: unknown,
+      opts: unknown,
+    ) => Promise<unknown>;
+
+    const result = await exec(
+      {
+        id: CALENDAR_EVENT_ID,
+        expectedCurrent: {
+          title: 'Daily standup',
+          startAt: '2026-06-14T09:00:00.000Z',
+          endAt: '2026-06-14T09:30:00.000Z',
+        },
+        recurrenceEditMode: 'single',
+        reason: 'User asked to cancel it.',
+      },
+      {},
+    );
+
+    expect(scope.calendar.deleteCalendarEvent).toHaveBeenCalledWith(CALENDAR_EVENT_ID, {
+      recurrenceEditMode: 'single',
+    });
+    expect(scope.suggestions.reconcileCanonicalChange).toHaveBeenCalledWith({
+      targetKind: 'calendar_event',
+      targetId: CALENDAR_EVENT_ID,
+      operation: 'archive_or_cancel',
+      reason: 'The chat agent cancelled this calendar event after explicit in-chat approval.',
+    });
+    expect(result).toMatchObject({
+      ok: true,
+      calendar_event_id: CALENDAR_EVENT_ID,
+      calendar_citation: `[cal:${CALENDAR_EVENT_ID}]`,
+      cancelled: true,
+      reconciled_approvals: 3,
+    });
+  });
+
+  it('search_objects forwards structured filters and returns typed citations', async () => {
+    const scope = makeFakeScope();
+    scope.objects.searchObjects.mockResolvedValue([
+      {
+        id: OBJECT_ID,
+        type: 'person',
+        canonicalName: 'Otto Silventola',
+        status: 'active',
+        stage: null,
+        priority: null,
+        ownerUserId: null,
+        assigneeUserId: null,
+        dueAt: null,
+        agentSuggested: false,
+        archivedAt: null,
+        aliases: ['Otto'],
+        metadata: {},
+        updatedAt: new Date('2026-06-14T09:00:00.000Z'),
+        createdAt: new Date('2026-06-01T09:00:00.000Z'),
+      },
+    ]);
+    const tools = buildAgentTools(scope as unknown as TeamScope);
+    const exec = tools.search_objects?.execute as (
+      input: unknown,
+      opts: unknown,
+    ) => Promise<unknown>;
+
+    const result = await exec({ query: 'otto', type: 'person', archived: false }, {});
+
+    expect(scope.objects.searchObjects).toHaveBeenCalledWith(
+      expect.objectContaining({ query: 'otto', type: 'person', archived: false, limit: 20 }),
+    );
+    expect(result).toMatchObject({
+      count: 1,
+      mode: 'structured',
+      objects: [
+        expect.objectContaining({
+          id: OBJECT_ID,
+          citation: `[ent:${OBJECT_ID}]`,
+          name: 'Otto Silventola',
+        }),
+      ],
+    });
+  });
+
+  it('search_boards filters item-level matches and returns board-item citations', async () => {
+    const scope = makeFakeScope();
+    scope.boards.listBoards.mockResolvedValue([
+      {
+        id: BOARD_ID,
+        name: 'Pilot Pipeline',
+        purpose: 'Track pilot partners',
+        templateKind: 'pipeline',
+        recommendedObjectTypes: ['deal'],
+        strictObjectTypes: false,
+        candidateFilter: {},
+        isShared: true,
+        archivedAt: null,
+        createdBy: null,
+        createdAt: new Date('2026-06-01T09:00:00.000Z'),
+        updatedAt: new Date('2026-06-14T09:00:00.000Z'),
+        itemCount: 1,
+        laneCounts: [],
+        dueSoonCount: 0,
+        overdueCount: 0,
+        pinned: true,
+      },
+    ]);
+    scope.boards.getBoard.mockResolvedValue({
+      id: BOARD_ID,
+      name: 'Pilot Pipeline',
+      purpose: 'Track pilot partners',
+      templateKind: 'pipeline',
+      recommendedObjectTypes: ['deal'],
+      strictObjectTypes: false,
+      candidateFilter: {},
+      isShared: true,
+      archivedAt: null,
+      createdBy: null,
+      createdAt: new Date('2026-06-01T09:00:00.000Z'),
+      updatedAt: new Date('2026-06-14T09:00:00.000Z'),
+      itemCount: 1,
+      laneCounts: [],
+      dueSoonCount: 0,
+      overdueCount: 0,
+      pinned: true,
+      lanes: [],
+      items: [
+        {
+          id: BOARD_ITEM_ID,
+          boardId: BOARD_ID,
+          entityId: OBJECT_ID,
+          laneId: LANE_ID,
+          position: 0,
+          responsibleUserId: null,
+          dueAt: new Date('2026-06-20T09:00:00.000Z'),
+          priority: 2,
+          nextStep: 'Send pilot proposal',
+          notes: null,
+          customFields: {},
+          archivedAt: null,
+          createdAt: new Date('2026-06-01T09:00:00.000Z'),
+          updatedAt: new Date('2026-06-14T09:00:00.000Z'),
+          object: {
+            id: OBJECT_ID,
+            type: 'deal',
+            canonicalName: 'AuditAI pilot',
+            status: 'open',
+            stage: null,
+            priority: null,
+            ownerUserId: null,
+            assigneeUserId: null,
+            dueAt: null,
+            agentSuggested: false,
+            archivedAt: null,
+            aliases: [],
+            metadata: {},
+            updatedAt: new Date('2026-06-14T09:00:00.000Z'),
+            createdAt: new Date('2026-06-01T09:00:00.000Z'),
+          },
+        },
+      ],
+    });
+    const tools = buildAgentTools(scope as unknown as TeamScope);
+    const exec = tools.search_boards?.execute as (
+      input: unknown,
+      opts: unknown,
+    ) => Promise<unknown>;
+
+    const result = await exec({ itemText: 'proposal', pinned: true }, {});
+
+    expect(scope.boards.listBoards).toHaveBeenCalled();
+    expect(scope.boards.getBoard).toHaveBeenCalledWith(BOARD_ID, { itemLimit: 50 });
+    const searchResult = result as SearchToolResult;
+    expect(searchResult.count).toBe(1);
+    expect(searchResult.results[0]?.board?.citation).toBe(`[board:${BOARD_ID}]`);
+    expect(searchResult.results[0]?.matching_items?.[0]?.citation).toBe(
+      `[board-item:${BOARD_ITEM_ID}]`,
+    );
+    expect(searchResult.results[0]?.matching_items?.[0]?.object_citation).toBe(
+      `[ent:${OBJECT_ID}]`,
+    );
+  });
+
+  it('search_documents_structured lists document metadata without semantic search', async () => {
+    const scope = makeFakeScope();
+    scope.documents.listDocuments.mockResolvedValue([
+      {
+        id: DOCUMENT_ID,
+        teamId: 'team',
+        folderId: null,
+        name: 'Pilot agreement.pdf',
+        fileKind: 'document',
+        mimeType: 'application/pdf',
+        byteSize: 123,
+        checksumSha256: null,
+        currentVersionId: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+        visibility: 'team',
+        visibilityUserIds: [],
+        ownerUserId: null,
+        metadata: {},
+        deletedAt: null,
+        createdAt: new Date('2026-06-01T09:00:00.000Z'),
+        updatedAt: new Date('2026-06-14T09:00:00.000Z'),
+      },
+    ]);
+    const tools = buildAgentTools(scope as unknown as TeamScope);
+    const exec = tools.search_documents_structured?.execute as (
+      input: unknown,
+      opts: unknown,
+    ) => Promise<unknown>;
+
+    const result = await exec({ name: 'agreement', limit: 10 }, {});
+
+    expect(scope.documents.listDocuments).toHaveBeenCalledWith(
+      expect.objectContaining({ fileKind: 'document', includeDeleted: false, limit: 100 }),
+    );
+    expect(scope.documents.searchDocumentChunks).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      count: 1,
+      documents: [
+        expect.objectContaining({
+          document_id: DOCUMENT_ID,
+          href: `/app/documents/${DOCUMENT_ID}`,
+        }),
+      ],
+    });
   });
 
   it('get_event with a cross-team event_id returns { found: false } (scope returns null)', async () => {

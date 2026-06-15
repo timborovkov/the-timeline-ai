@@ -366,12 +366,142 @@ describe('POST /api/chat', () => {
         messages: [{ role: 'user', content: 'What happened?' }],
         tools: {
           search_timeline: { type: 'native' },
-          external_tool: { type: 'mcp' },
         },
         model: 'agent-model',
         maxSteps: 5,
       }),
     );
+    expect(fakes.fakeBuildMcpTools).not.toHaveBeenCalled();
+  });
+
+  it('adds dashboard route context to the model system prompt without trusting it as data', async () => {
+    const response = await POST(
+      request(
+        validBody({
+          dashboardContext: {
+            pathname: '/app/objects/44444444-4444-4444-8444-444444444444',
+            routeKind: 'objects',
+            objectId: '44444444-4444-4444-8444-444444444444',
+            search: { tab: 'notes' },
+          },
+        }),
+      ),
+    );
+
+    expect(response.status).toBe(200);
+    expect(fakes.fakeStreamChat).toHaveBeenCalled();
+    const streamCall = fakes.fakeStreamChat.mock.calls.at(-1) as unknown as
+      | [{ system?: string }]
+      | undefined;
+    expect(streamCall?.[0].system).toEqual(expect.stringContaining('DASHBOARD CONTEXT:'));
+    expect(streamCall?.[0].system).toEqual(expect.stringContaining('/app/objects/'));
+    expect(streamCall?.[0].system).toEqual(expect.stringContaining('object_id'));
+    expect(streamCall?.[0].system).toEqual(
+      expect.stringContaining('use tools before making claims'),
+    );
+  });
+
+  it('adds object tools when dashboard context points at an object', async () => {
+    fakes.fakeBuildAgentTools.mockReturnValue({
+      retrieve_workspace_context: { type: 'native' },
+      search_timeline: { type: 'native' },
+      search_app_guide: { type: 'native' },
+      get_app_route: { type: 'native' },
+      get_object: { type: 'native' },
+      search_objects: { type: 'native' },
+    });
+
+    const response = await POST(
+      request(
+        validBody({
+          dashboardContext: {
+            pathname: '/app/objects/44444444-4444-4444-8444-444444444444',
+            routeKind: 'objects',
+            objectId: '44444444-4444-4444-8444-444444444444',
+          },
+        }),
+      ),
+    );
+
+    expect(response.status).toBe(200);
+    const streamCall = fakes.fakeStreamChat.mock.calls.at(-1) as unknown as
+      | [{ tools?: Record<string, unknown> }]
+      | undefined;
+    expect(streamCall?.[0].tools).toMatchObject({
+      retrieve_workspace_context: { type: 'native' },
+      search_timeline: { type: 'native' },
+      search_app_guide: { type: 'native' },
+      get_app_route: { type: 'native' },
+      get_object: { type: 'native' },
+      search_objects: { type: 'native' },
+    });
+  });
+
+  it('adds action tools for completion-style commands on object context', async () => {
+    const completionMessage = {
+      id: 'm-complete',
+      role: 'user',
+      parts: [{ type: 'text', text: 'Mark this done' }],
+    };
+    fakes.fakeSafeValidateUIMessages.mockResolvedValue({
+      success: true,
+      data: [completionMessage],
+    });
+    fakes.fakeBuildAgentTools.mockReturnValue({
+      retrieve_workspace_context: { type: 'native' },
+      execute_object_update: { type: 'native' },
+      execute_object_archive: { type: 'native' },
+      search_app_guide: { type: 'native' },
+      get_app_route: { type: 'native' },
+      get_object: { type: 'native' },
+      search_objects: { type: 'native' },
+      search_timeline: { type: 'native' },
+    });
+
+    const response = await POST(
+      request(
+        validBody({
+          messages: [completionMessage],
+          dashboardContext: {
+            pathname: '/app/objects/44444444-4444-4444-8444-444444444444',
+            routeKind: 'objects',
+            objectId: '44444444-4444-4444-8444-444444444444',
+          },
+        }),
+      ),
+    );
+
+    expect(response.status).toBe(200);
+    const streamCall = fakes.fakeStreamChat.mock.calls.at(-1) as unknown as
+      | [{ tools?: Record<string, unknown> }]
+      | undefined;
+    expect(streamCall?.[0].tools).toMatchObject({
+      execute_object_update: { type: 'native' },
+    });
+  });
+
+  it('discovers MCP tools only for connected-source turns', async () => {
+    const sourceMessage = {
+      id: 'm-source',
+      role: 'user',
+      parts: [{ type: 'text', text: 'Search our connected Slack source for launch notes' }],
+    };
+    fakes.fakeSafeValidateUIMessages.mockResolvedValue({
+      success: true,
+      data: [sourceMessage],
+    });
+
+    const response = await POST(request(validBody({ messages: [sourceMessage] })));
+
+    expect(response.status).toBe(200);
+    expect(fakes.fakeBuildMcpTools).toHaveBeenCalled();
+    const streamCall = fakes.fakeStreamChat.mock.calls.at(-1) as unknown as
+      | [{ tools?: Record<string, unknown> }]
+      | undefined;
+    expect(streamCall?.[0].tools).toMatchObject({
+      search_timeline: { type: 'native' },
+      external_tool: { type: 'mcp' },
+    });
   });
 
   it('streams deterministic durable workspace state without bypassing route gates', async () => {
@@ -649,9 +779,20 @@ describe('POST /api/chat', () => {
   it('tolerates new-session creation and MCP discovery failures by streaming without persistence', async () => {
     fakes.fakeCreateChatSession.mockRejectedValue(new Error('bad pinned object'));
     fakes.fakeBuildMcpTools.mockRejectedValue(new Error('mcp down'));
+    const sourceMessage = {
+      id: 'm-source',
+      role: 'user',
+      parts: [{ type: 'text', text: 'Use the connected Slack source' }],
+    };
+    fakes.fakeSafeValidateUIMessages.mockResolvedValue({
+      success: true,
+      data: [sourceMessage],
+    });
 
     const response = await POST(
-      request(validBody({ startNewSession: true, pinnedEntityId: PINNED_ID })),
+      request(
+        validBody({ messages: [sourceMessage], startNewSession: true, pinnedEntityId: PINNED_ID }),
+      ),
     );
 
     expect(response.status).toBe(200);

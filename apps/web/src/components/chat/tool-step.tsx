@@ -2,9 +2,10 @@
 
 import { Check, X } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { useState, useTransition } from 'react';
+import { type ReactNode, useState, useTransition } from 'react';
 
 import { acceptSuggestionItemAction, rejectSuggestionItemAction } from '@/app/actions/suggestions';
+import { ArtifactReferenceChip } from '@/components/artifact-reference-chip';
 import { EvidenceLink } from '@/components/evidence-link';
 
 interface Props {
@@ -12,6 +13,8 @@ interface Props {
   state: string;
   input?: unknown;
   output?: unknown;
+  approval?: { id: string; approved?: boolean; reason?: string };
+  onApprovalResponse?: (input: { id: string; approved: boolean; reason?: string }) => void;
 }
 
 function isMcpTool(name: string): { serverIdCompact: string; tool: string } | null {
@@ -23,7 +26,7 @@ function isMcpTool(name: string): { serverIdCompact: string; tool: string } | nu
   return { serverIdCompact: rest.slice(0, sep), tool: rest.slice(sep + 2) };
 }
 
-function summarize(name: string, input: unknown, output: unknown): string {
+function summarize(name: string, input: unknown, output: unknown, state: string): string {
   const inp = (input ?? {}) as Record<string, unknown>;
   if (name === 'search_timeline') {
     const q = typeof inp.query === 'string' ? inp.query : '';
@@ -39,6 +42,97 @@ function summarize(name: string, input: unknown, output: unknown): string {
     if (out?.found === false) return `Looked up entity "${idOrName}" — not found`;
     return `Looked up entity "${idOrName}"`;
   }
+  if (name === 'search_objects') {
+    const q = typeof inp.query === 'string' ? inp.query : '';
+    const out = output as { count?: number } | undefined;
+    const count = out?.count;
+    return count === undefined
+      ? `Searched objects for "${q}"`
+      : `Searched objects for "${q}" — ${String(count)} result${count === 1 ? '' : 's'}`;
+  }
+  if (name === 'retrieve_workspace_context') {
+    const q = typeof inp.query === 'string' ? inp.query : '';
+    const out = output as { recipe?: string; refs?: unknown[] } | undefined;
+    const count = Array.isArray(out?.refs) ? out.refs.length : undefined;
+    const recipe = out?.recipe ? ` (${out.recipe.replaceAll('_', ' ')})` : '';
+    return count === undefined
+      ? `Retrieved workspace context${recipe} for "${q}"`
+      : `Retrieved workspace context${recipe} for "${q}" — ${String(count)} ref${
+          count === 1 ? '' : 's'
+        }`;
+  }
+  if (name === 'execute_object_update') {
+    const field = typeof inp.field === 'string' ? inp.field : 'field';
+    const out = output as { ok?: boolean; message?: string } | undefined;
+    if (out?.message) return out.message;
+    if (state === 'approval-requested') return `Approval needed to update object ${field}`;
+    if (state === 'output-denied') return `Denied object ${field} update`;
+    return `Update object ${field}`;
+  }
+  if (name === 'execute_object_create') {
+    const out = output as { ok?: boolean; message?: string } | undefined;
+    if (out?.message) return out.message;
+    const type = typeof inp.type === 'string' ? inp.type : 'object';
+    const nameValue = typeof inp.canonicalName === 'string' ? inp.canonicalName : '';
+    if (state === 'approval-requested') return `Approval needed to create ${type} ${nameValue}`;
+    if (state === 'output-denied') return `Denied ${type} create`;
+    return `Create ${type} ${nameValue}`;
+  }
+  if (name === 'execute_object_archive') {
+    const out = output as { ok?: boolean; message?: string } | undefined;
+    if (out?.message) return out.message;
+    if (state === 'approval-requested') return 'Approval needed to archive object';
+    if (state === 'output-denied') return 'Denied object archive';
+    return 'Archive object';
+  }
+  if (name === 'execute_object_merge') {
+    const out = output as { ok?: boolean; message?: string } | undefined;
+    if (out?.message) return out.message;
+    const ids = Array.isArray(inp.objectIds) ? inp.objectIds.length : 0;
+    if (state === 'approval-requested') return `Approval needed to merge ${String(ids)} objects`;
+    if (state === 'output-denied') return 'Denied object merge';
+    return `Merge ${String(ids)} objects`;
+  }
+  if (name === 'execute_calendar_create') {
+    const out = output as { ok?: boolean; message?: string } | undefined;
+    if (out?.message) return out.message;
+    const title = typeof inp.title === 'string' ? inp.title : 'calendar event';
+    if (state === 'approval-requested') return `Approval needed to create ${title}`;
+    if (state === 'output-denied') return `Denied calendar event create`;
+    return `Create ${title}`;
+  }
+  if (name === 'execute_calendar_update') {
+    const out = output as { ok?: boolean; message?: string } | undefined;
+    if (out?.message) return out.message;
+    if (state === 'approval-requested') return 'Approval needed to update calendar event';
+    if (state === 'output-denied') return 'Denied calendar event update';
+    return 'Update calendar event';
+  }
+  if (name === 'execute_calendar_cancel') {
+    const out = output as { ok?: boolean; message?: string } | undefined;
+    if (out?.message) return out.message;
+    if (state === 'approval-requested') return 'Approval needed to cancel calendar event';
+    if (state === 'output-denied') return 'Denied calendar event cancellation';
+    return 'Cancel calendar event';
+  }
+  if (name === 'search_boards') {
+    const q = typeof inp.query === 'string' ? inp.query : '';
+    const out = output as { count?: number } | undefined;
+    const count = out?.count;
+    const target = q ? ` for "${q}"` : '';
+    return count === undefined
+      ? `Searched boards${target}`
+      : `Searched boards${target} — ${String(count)} result${count === 1 ? '' : 's'}`;
+  }
+  if (name === 'search_documents_structured') {
+    const q = typeof inp.name === 'string' ? inp.name : '';
+    const out = output as { count?: number } | undefined;
+    const count = out?.count;
+    const target = q ? ` for "${q}"` : '';
+    return count === undefined
+      ? `Searched documents${target}`
+      : `Searched documents${target} — ${String(count)} result${count === 1 ? '' : 's'}`;
+  }
   if (name === 'list_events') {
     const out = output as { count?: number } | undefined;
     const count = out?.count;
@@ -50,6 +144,20 @@ function summarize(name: string, input: unknown, output: unknown): string {
     return count === undefined
       ? 'Listed workspace state'
       : `Listed workspace state — ${String(count)} result${count === 1 ? '' : 's'}`;
+  }
+  if (name === 'search_app_guide') {
+    const q = typeof inp.query === 'string' ? inp.query : '';
+    const out = output as { count?: number } | undefined;
+    const count = out?.count;
+    return count === undefined
+      ? `Searched app guide for "${q}"`
+      : `Searched app guide for "${q}" — ${String(count)} result${count === 1 ? '' : 's'}`;
+  }
+  if (name === 'get_app_route') {
+    const id = typeof inp.routeId === 'string' ? inp.routeId : '';
+    const out = output as { title?: string; found?: boolean } | undefined;
+    if (out?.found === false) return `Looked up route "${id}" — not found`;
+    return out?.title ? `Looked up route ${out.title}` : `Looked up route "${id}"`;
   }
   if (name === 'get_event') {
     const id = typeof inp.id === 'string' ? inp.id.slice(0, 8) : '';
@@ -293,10 +401,195 @@ function ReconnectButton({ serverId, serverName }: { serverId: string; serverNam
   );
 }
 
-export function ToolStep({ name, state, input, output }: Props) {
+function formatApprovalValue(value: unknown): string {
+  if (value === null || value === undefined) return 'empty';
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+    return String(value);
+  }
+  return JSON.stringify(value);
+}
+
+function ApprovalRow({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="grid grid-cols-[6rem_1fr] gap-2">
+      <dt className="font-mono uppercase tracking-[0.1em] text-fg-dim">{label}</dt>
+      <dd className="break-words text-fg">{children}</dd>
+    </div>
+  );
+}
+
+function ToolApprovalCard({
+  name,
+  approval,
+  input,
+  onApprovalResponse,
+}: {
+  name: string;
+  approval: { id: string };
+  input: unknown;
+  onApprovalResponse: NonNullable<Props['onApprovalResponse']>;
+}) {
+  const record = input && typeof input === 'object' ? (input as Record<string, unknown>) : {};
+  const objectIds = Array.isArray(record.objectIds)
+    ? record.objectIds.filter((id): id is string => typeof id === 'string')
+    : [];
+  const survivorId = typeof record.survivorId === 'string' ? record.survivorId : null;
+  const entityId = typeof record.entityId === 'string' ? record.entityId : null;
+  const calendarEventId = typeof record.id === 'string' ? record.id : null;
+  const patch = record.patch && typeof record.patch === 'object' ? record.patch : null;
+  const field = typeof record.field === 'string' ? record.field : 'field';
+  const reason = typeof record.reason === 'string' ? record.reason : null;
+  const mergedIds = survivorId ? objectIds.filter((id) => id !== survivorId) : [];
+  return (
+    <div className="mt-2 rounded-sm border border-signal/40 bg-signal/5 p-3">
+      <p className="font-mono text-[10px] uppercase tracking-[0.12em] text-signal">
+        approval required
+      </p>
+      {name === 'execute_object_create' ? (
+        <dl className="mt-2 grid gap-2 text-[11px] text-fg-muted">
+          <ApprovalRow label="Type">{formatApprovalValue(record.type ?? 'other')}</ApprovalRow>
+          <ApprovalRow label="Name">{formatApprovalValue(record.canonicalName)}</ApprovalRow>
+          {record.status !== undefined ? (
+            <ApprovalRow label="Status">{formatApprovalValue(record.status)}</ApprovalRow>
+          ) : null}
+          {record.stage !== undefined ? (
+            <ApprovalRow label="Stage">{formatApprovalValue(record.stage)}</ApprovalRow>
+          ) : null}
+          {record.priority !== undefined ? (
+            <ApprovalRow label="Priority">{formatApprovalValue(record.priority)}</ApprovalRow>
+          ) : null}
+          {record.dueAt !== undefined ? (
+            <ApprovalRow label="Due">{formatApprovalValue(record.dueAt)}</ApprovalRow>
+          ) : null}
+          {Array.isArray(record.aliases) && record.aliases.length > 0 ? (
+            <ApprovalRow label="Aliases">{record.aliases.join(', ')}</ApprovalRow>
+          ) : null}
+          {typeof record.parentObjectId === 'string' ? (
+            <ApprovalRow label="Parent">
+              <ArtifactReferenceChip refValue={{ kind: 'object', id: record.parentObjectId }} />
+            </ApprovalRow>
+          ) : null}
+          {reason ? <ApprovalRow label="Reason">{reason}</ApprovalRow> : null}
+        </dl>
+      ) : name === 'execute_calendar_create' ? (
+        <dl className="mt-2 grid gap-2 text-[11px] text-fg-muted">
+          <ApprovalRow label="Title">{formatApprovalValue(record.title)}</ApprovalRow>
+          <ApprovalRow label="Start">{formatApprovalValue(record.startAt)}</ApprovalRow>
+          <ApprovalRow label="End">{formatApprovalValue(record.endAt)}</ApprovalRow>
+          {record.timezone !== undefined ? (
+            <ApprovalRow label="Timezone">{formatApprovalValue(record.timezone)}</ApprovalRow>
+          ) : null}
+          {record.allDay !== undefined ? (
+            <ApprovalRow label="All day">{formatApprovalValue(record.allDay)}</ApprovalRow>
+          ) : null}
+          {record.location !== undefined ? (
+            <ApprovalRow label="Location">{formatApprovalValue(record.location)}</ApprovalRow>
+          ) : null}
+          {record.rrule !== undefined ? (
+            <ApprovalRow label="Repeat">{formatApprovalValue(record.rrule)}</ApprovalRow>
+          ) : null}
+          {reason ? <ApprovalRow label="Reason">{reason}</ApprovalRow> : null}
+        </dl>
+      ) : name === 'execute_calendar_update' ? (
+        <dl className="mt-2 grid gap-2 text-[11px] text-fg-muted">
+          {calendarEventId ? (
+            <ApprovalRow label="Event">
+              <ArtifactReferenceChip refValue={{ kind: 'calendar_event', id: calendarEventId }} />
+            </ApprovalRow>
+          ) : null}
+          {patch ? (
+            <ApprovalRow label="Change">
+              {Object.entries(patch)
+                .map(([key, value]) => `${key}: ${formatApprovalValue(value)}`)
+                .join(', ')}
+            </ApprovalRow>
+          ) : null}
+          {reason ? <ApprovalRow label="Reason">{reason}</ApprovalRow> : null}
+        </dl>
+      ) : name === 'execute_calendar_cancel' ? (
+        <dl className="mt-2 grid gap-2 text-[11px] text-fg-muted">
+          {calendarEventId ? (
+            <ApprovalRow label="Event">
+              <ArtifactReferenceChip refValue={{ kind: 'calendar_event', id: calendarEventId }} />
+            </ApprovalRow>
+          ) : null}
+          {record.recurrenceEditMode !== undefined ? (
+            <ApprovalRow label="Scope">
+              {formatApprovalValue(record.recurrenceEditMode)}
+            </ApprovalRow>
+          ) : null}
+          {reason ? <ApprovalRow label="Reason">{reason}</ApprovalRow> : null}
+        </dl>
+      ) : name === 'execute_object_archive' ? (
+        <dl className="mt-2 grid gap-2 text-[11px] text-fg-muted">
+          {entityId ? (
+            <ApprovalRow label="Object">
+              <ArtifactReferenceChip refValue={{ kind: 'object', id: entityId }} />
+            </ApprovalRow>
+          ) : null}
+          {reason ? <ApprovalRow label="Reason">{reason}</ApprovalRow> : null}
+        </dl>
+      ) : name === 'execute_object_merge' ? (
+        <dl className="mt-2 grid gap-2 text-[11px] text-fg-muted">
+          {survivorId ? (
+            <ApprovalRow label="Keep">
+              <ArtifactReferenceChip refValue={{ kind: 'object', id: survivorId }} />
+            </ApprovalRow>
+          ) : null}
+          {mergedIds.length > 0 ? (
+            <ApprovalRow label="Merge">
+              <span className="flex flex-wrap gap-1">
+                {mergedIds.map((id) => (
+                  <ArtifactReferenceChip key={id} refValue={{ kind: 'object', id }} />
+                ))}
+              </span>
+            </ApprovalRow>
+          ) : null}
+          {reason ? <ApprovalRow label="Reason">{reason}</ApprovalRow> : null}
+        </dl>
+      ) : (
+        <dl className="mt-2 grid gap-1 text-[11px] text-fg-muted">
+          <ApprovalRow label="Field">{field}</ApprovalRow>
+          <ApprovalRow label="Current">
+            {formatApprovalValue(record.expectedCurrentValue)}
+          </ApprovalRow>
+          <ApprovalRow label="Proposed">{formatApprovalValue(record.newValue)}</ApprovalRow>
+          {reason ? <ApprovalRow label="Reason">{reason}</ApprovalRow> : null}
+        </dl>
+      )}
+      <div className="mt-3 flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={() => {
+            onApprovalResponse({ id: approval.id, approved: true });
+          }}
+          className="rounded-sm bg-signal px-3 py-1.5 text-xs font-medium text-signal-fg hover:opacity-90"
+        >
+          Approve
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            onApprovalResponse({
+              id: approval.id,
+              approved: false,
+              reason: 'User denied in chat',
+            });
+          }}
+          className="rounded-sm border border-border px-3 py-1.5 text-xs font-medium text-fg hover:bg-surface-2"
+        >
+          Deny
+        </button>
+      </div>
+    </div>
+  );
+}
+
+export function ToolStep({ name, state, input, output, approval, onApprovalResponse }: Props) {
   const [open, setOpen] = useState(false);
   const isRunning =
     state === 'input-streaming' || state === 'input-available' || state === 'partial-call';
+  const isApprovalPending = state === 'approval-requested';
   const out =
     output &&
     typeof output === 'object' &&
@@ -309,11 +602,14 @@ export function ToolStep({ name, state, input, output }: Props) {
     (typeof output === 'object' &&
       output !== null &&
       'error' in (output as Record<string, unknown>));
-  const summary = summarize(name, input, output);
+  const summary = summarize(name, input, output, state);
   const reauthServerId = out && typeof out.mcp_server_id === 'string' ? out.mcp_server_id : null;
   const reauthServerName =
     out && typeof out.mcp_server_name === 'string' ? out.mcp_server_name : 'MCP server';
   const suggestion = name === 'suggest_object_memory' ? suggestionFromOutput(output) : null;
+  const needsApproval =
+    state === 'approval-requested' && approval && onApprovalResponse ? approval : null;
+  const approvalResponse = needsApproval && onApprovalResponse ? onApprovalResponse : null;
   return (
     <div className="rounded-md border border-dashed bg-muted/40 px-3 py-2 text-xs">
       <button
@@ -324,13 +620,21 @@ export function ToolStep({ name, state, input, output }: Props) {
         }}
       >
         <span className="truncate">
-          {isRunning ? '⏳ ' : isError ? '⚠ ' : '✓ '}
+          {isApprovalPending ? '⏸ ' : isRunning ? '⏳ ' : isError ? '⚠ ' : '✓ '}
           {summary}
         </span>
         <span className="text-muted-foreground">{open ? '−' : '+'}</span>
       </button>
       {reauthServerId ? (
         <ReconnectButton serverId={reauthServerId} serverName={reauthServerName} />
+      ) : null}
+      {needsApproval && approvalResponse ? (
+        <ToolApprovalCard
+          name={name}
+          approval={needsApproval}
+          input={input}
+          onApprovalResponse={approvalResponse}
+        />
       ) : null}
       {suggestion ? <InlineApprovalCard suggestion={suggestion} /> : null}
       {open && (

@@ -2,6 +2,11 @@ import { getDb } from '@timeline/db';
 import { tool, type ToolSet } from 'ai';
 import { z } from 'zod';
 
+import type * as boards from '#src/boards/index.js';
+
+import { retrieveWorkspaceContext } from '#src/agent/retrieval.js';
+import { getAppGuideRoute, searchAppGuide } from '#src/app-guide.js';
+import { artifactRefCitation } from '#src/citation.js';
 import { childLogger } from '#src/logger.js';
 import { getMcpManager } from '#src/mcp/client.js';
 import * as objects from '#src/objects/index.js';
@@ -185,6 +190,186 @@ const getDocumentChunkInput = z.object({
   id: z.string().regex(UUID_RE),
 });
 
+const getAppRouteInput = z.object({
+  routeId: z.string().trim().min(1).max(100),
+});
+
+const searchObjectsStructuredInput = z.object({
+  query: z.string().trim().min(1).max(300),
+  type: z.union([objectTypeSchema, z.array(objectTypeSchema).max(10)]).optional(),
+  status: z
+    .union([z.string().trim().max(40), z.array(z.string().trim().max(40)).max(20)])
+    .optional(),
+  stage: z
+    .union([z.string().trim().max(40), z.array(z.string().trim().max(40)).max(20)])
+    .optional(),
+  ownerUserId: z.string().regex(UUID_RE).nullable().optional(),
+  assigneeUserId: z.string().regex(UUID_RE).nullable().optional(),
+  dueAfter: z.iso.datetime().optional(),
+  dueBefore: z.iso.datetime().optional(),
+  archived: z.boolean().optional(),
+  limit: z.number().int().min(1).max(50).optional(),
+});
+
+const searchBoardsInput = z.object({
+  query: z.string().trim().max(300).optional(),
+  boardId: z.string().regex(UUID_RE).optional(),
+  templateKind: z.enum(['pipeline', 'task_board', 'catalog', 'custom']).optional(),
+  pinned: z.boolean().optional(),
+  objectId: z.string().regex(UUID_RE).optional(),
+  laneId: z.string().regex(UUID_RE).optional(),
+  responsibleUserId: z.string().regex(UUID_RE).nullable().optional(),
+  dueAfter: z.iso.datetime().optional(),
+  dueBefore: z.iso.datetime().optional(),
+  priority: z.number().int().min(0).max(100).optional(),
+  itemText: z.string().trim().min(1).max(300).optional(),
+  limit: z.number().int().min(1).max(20).optional(),
+});
+
+const searchDocumentsStructuredInput = z.object({
+  name: z.string().trim().min(1).max(300).optional(),
+  folderId: z.string().regex(UUID_RE).nullable().optional(),
+  fileKind: z.enum(['document', 'captured']).optional(),
+  includeDeleted: z.boolean().optional(),
+  limit: z.number().int().min(1).max(50).optional(),
+});
+
+const retrieveWorkspaceContextInput = z.object({
+  query: z.string().trim().min(1).max(500),
+  recipe: z
+    .enum([
+      'auto',
+      'object_profile',
+      'timeline_evidence',
+      'task_status',
+      'calendar',
+      'board_state',
+      'document_knowledge',
+      'product_guide',
+    ])
+    .optional(),
+  objectId: z.string().regex(UUID_RE).optional(),
+  limit: z.number().int().min(1).max(10).optional(),
+  includeDocuments: z.boolean().optional(),
+  includeCalendar: z.boolean().optional(),
+});
+
+const objectUpdateFieldSchema = z.enum([
+  'status',
+  'stage',
+  'priority',
+  'ownerUserId',
+  'assigneeUserId',
+  'dueAt',
+]);
+
+const executeObjectUpdateInput = z.object({
+  entityId: z.string().regex(UUID_RE),
+  field: objectUpdateFieldSchema,
+  expectedCurrentValue: z.unknown(),
+  newValue: z.unknown(),
+  reason: z.string().trim().min(1).max(500),
+});
+
+const executeObjectMergeInput = z.object({
+  objectIds: z.array(z.string().regex(UUID_RE)).min(2).max(10),
+  survivorId: z.string().regex(UUID_RE),
+  reason: z.string().trim().min(1).max(1000),
+});
+
+const executeObjectCreateInput = z.object({
+  type: objectTypeSchema.default('other'),
+  canonicalName: z.string().trim().min(1).max(200),
+  status: z.string().trim().min(1).max(40).optional(),
+  stage: z.string().trim().max(40).nullable().optional(),
+  priority: z.number().int().min(1).max(4).nullable().optional(),
+  ownerUserId: z.string().regex(UUID_RE).nullable().optional(),
+  assigneeUserId: z.string().regex(UUID_RE).nullable().optional(),
+  dueAt: z.iso.datetime().nullable().optional(),
+  aliases: z.array(z.string().trim().min(1).max(120)).max(50).optional(),
+  parentObjectId: z.string().regex(UUID_RE).nullable().optional(),
+  reason: z.string().trim().min(1).max(1000),
+});
+
+const executeObjectArchiveInput = z.object({
+  entityId: z.string().regex(UUID_RE),
+  reason: z.string().trim().min(1).max(1000),
+});
+
+const calendarVisibilitySchema = z.enum(['team', 'private', 'specific_users']);
+const calendarShowAsSchema = z.enum(['busy', 'free', 'tentative']);
+const recurrenceEditModeSchema = z.enum(['single', 'series', 'this_and_future']);
+
+const executeCalendarCreateInput = z.object({
+  title: z.string().trim().min(1).max(200),
+  description: z.string().trim().max(2000).nullable().optional(),
+  startAt: z.iso.datetime(),
+  endAt: z.iso.datetime(),
+  startDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional(),
+  endDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional(),
+  timezone: z.string().max(100).optional(),
+  allDay: z.boolean().optional(),
+  location: z.string().trim().max(500).nullable().optional(),
+  showAs: calendarShowAsSchema.optional(),
+  rrule: z.string().trim().max(2000).nullable().optional(),
+  visibility: calendarVisibilitySchema.optional(),
+  visibilityUserIds: z.array(z.string().regex(UUID_RE)).max(50).nullable().optional(),
+  reminderMinutes: z.number().int().min(0).max(1440).nullable().optional(),
+  linkedEntityIds: z.array(z.string().regex(UUID_RE)).max(20).optional(),
+  reason: z.string().trim().min(1).max(1000),
+});
+
+const calendarComparableValueSchema = z.union([
+  z.string(),
+  z.number(),
+  z.boolean(),
+  z.null(),
+  z.array(z.string()),
+]);
+
+const executeCalendarUpdateInput = z.object({
+  id: z.string().regex(UUID_RE),
+  expectedCurrent: z.record(z.string(), calendarComparableValueSchema),
+  patch: z.object({
+    title: z.string().trim().min(1).max(200).optional(),
+    description: z.string().trim().max(2000).nullable().optional(),
+    startAt: z.iso.datetime().optional(),
+    endAt: z.iso.datetime().optional(),
+    timezone: z.string().max(100).optional(),
+    allDay: z.boolean().optional(),
+    location: z.string().trim().max(500).nullable().optional(),
+    showAs: calendarShowAsSchema.optional(),
+    rrule: z.string().trim().max(2000).nullable().optional(),
+    recurrenceEditMode: recurrenceEditModeSchema.optional(),
+    visibility: calendarVisibilitySchema.optional(),
+    visibilityUserIds: z.array(z.string().regex(UUID_RE)).max(50).nullable().optional(),
+    reminderMinutes: z.number().int().min(0).max(1440).nullable().optional(),
+  }),
+  reason: z.string().trim().min(1).max(1000),
+});
+
+const executeCalendarCancelInput = z.object({
+  id: z.string().regex(UUID_RE),
+  expectedCurrent: z.object({
+    title: z.string(),
+    startAt: z.iso.datetime(),
+    endAt: z.iso.datetime(),
+  }),
+  recurrenceEditMode: recurrenceEditModeSchema.optional(),
+  reason: z.string().trim().min(1).max(1000),
+});
+
+const searchAppGuideInput = z.object({
+  query: z.string().trim().min(1).max(300),
+  limit: z.number().int().min(1).max(10).optional(),
+});
+
 const listDocumentChangesInput = z.object({
   since: z.iso.datetime().optional(),
   limit: z.number().int().min(1).max(50).optional(),
@@ -224,6 +409,98 @@ function fenceExternalContent(
   const source = fenceAttr(attrs.source);
   const eventId = fenceAttr(attrs.eventId);
   return `<external_content source="${source}" event_id="${eventId}">${sanitized}</external_content>`;
+}
+
+function textMatches(value: string | null | undefined, query: string | undefined): boolean {
+  if (!query) return true;
+  return (value ?? '').toLowerCase().includes(query.toLowerCase());
+}
+
+function dateInRange(value: Date | null | undefined, from?: string, to?: string): boolean {
+  if (!value) return !from && !to;
+  if (from && value < new Date(from)) return false;
+  if (to && value >= new Date(to)) return false;
+  return true;
+}
+
+function serializeObjectRow(row: objects.ObjectRow): Record<string, unknown> {
+  return {
+    id: row.id,
+    citation: artifactRefCitation({
+      kind: row.type === 'task' || row.type === 'follow_up' ? 'task' : 'object',
+      id: row.id,
+    }),
+    name: row.canonicalName,
+    type: row.type,
+    status: row.status,
+    stage: row.stage,
+    priority: row.priority,
+    owner_user_id: row.ownerUserId,
+    assignee_user_id: row.assigneeUserId,
+    due_at: row.dueAt?.toISOString() ?? null,
+    updated_at: row.updatedAt.toISOString(),
+    archived: row.archivedAt !== null,
+    aliases: row.aliases.slice(0, 20),
+  };
+}
+
+function serializeBoardRow(row: boards.BoardRow): Record<string, unknown> {
+  return {
+    id: row.id,
+    citation: artifactRefCitation({ kind: 'board', id: row.id }),
+    name: row.name,
+    purpose: row.purpose,
+    template_kind: row.templateKind,
+    recommended_object_types: row.recommendedObjectTypes,
+    item_count: row.itemCount,
+    due_soon_count: row.dueSoonCount,
+    overdue_count: row.overdueCount,
+    pinned: row.pinned,
+    updated_at: row.updatedAt.toISOString(),
+  };
+}
+
+function serializeBoardItemRow(row: boards.BoardItemRow): Record<string, unknown> {
+  return {
+    id: row.id,
+    citation: artifactRefCitation({ kind: 'board_item', id: row.id }),
+    board_id: row.boardId,
+    object_id: row.entityId,
+    object_citation: artifactRefCitation({
+      kind: row.object.type === 'task' || row.object.type === 'follow_up' ? 'task' : 'object',
+      id: row.object.id,
+    }),
+    object_name: row.object.canonicalName,
+    object_type: row.object.type,
+    lane_id: row.laneId,
+    responsible_user_id: row.responsibleUserId,
+    due_at: row.dueAt?.toISOString() ?? null,
+    priority: row.priority,
+    next_step: row.nextStep,
+    notes: row.notes,
+    updated_at: row.updatedAt.toISOString(),
+  };
+}
+
+function serializeCalendarEventRow(event: CalendarEventForComparison): Record<string, unknown> {
+  return {
+    id: event.id,
+    citation: artifactRefCitation({ kind: 'calendar_event', id: event.id }),
+    title: event.title,
+    description: event.redacted ? null : event.description,
+    start_at: event.startAt.toISOString(),
+    end_at: event.endAt.toISOString(),
+    timezone: event.timezone,
+    all_day: event.allDay,
+    location: event.redacted ? null : event.location,
+    show_as: event.showAs,
+    rrule: event.rrule,
+    recurring_parent_id: event.recurringParentId,
+    original_start_at: event.originalStartAt?.toISOString() ?? null,
+    is_exception: event.isException,
+    visibility: event.visibility,
+    redacted: event.redacted,
+  };
 }
 
 async function safe<T>(
@@ -325,10 +602,407 @@ export async function buildMcpTools(
   return out;
 }
 
+interface ObjectUpdateReadable {
+  status?: unknown;
+  stage?: unknown;
+  priority?: unknown;
+  ownerUserId?: unknown;
+  assigneeUserId?: unknown;
+  dueAt?: unknown;
+}
+
+function currentObjectValue(
+  object: ObjectUpdateReadable,
+  field: z.infer<typeof objectUpdateFieldSchema>,
+) {
+  const raw = object[field];
+  return raw instanceof Date ? raw.toISOString() : (raw ?? null);
+}
+
+function normalizedValueForPatch(field: z.infer<typeof objectUpdateFieldSchema>, value: unknown) {
+  const normalized = objects.normalizeObjectPatchValue(field, value);
+  if (field === 'dueAt') {
+    return normalized === null ? null : new Date(normalized as string);
+  }
+  return normalized;
+}
+
+function valuesMatchForApproval(left: unknown, right: unknown): boolean {
+  return JSON.stringify(left ?? null) === JSON.stringify(right ?? null);
+}
+
+function previewValue(value: unknown): string {
+  if (value === null || value === undefined) return 'empty';
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+    return String(value);
+  }
+  return JSON.stringify(value);
+}
+
+function sortedUnique(values: string[]): string[] {
+  return [...new Set(values)].sort((a, b) => a.localeCompare(b));
+}
+
+function sameIdSet(left: string[], right: string[]): boolean {
+  return JSON.stringify(sortedUnique(left)) === JSON.stringify(sortedUnique(right));
+}
+
+function compactMergePreview(
+  preview: Awaited<ReturnType<TeamScope['objects']['getObjectMergePreview']>>,
+) {
+  return {
+    survivor_id: preview.survivorId,
+    survivor_citation: artifactRefCitation({ kind: 'object', id: preview.survivorId }),
+    objects: preview.objects.map((object) => ({
+      id: object.id,
+      citation: artifactRefCitation({ kind: 'object', id: object.id }),
+      name: object.canonicalName,
+      type: object.type,
+      status: object.status,
+      stage: object.stage,
+      aliases: object.aliases,
+    })),
+    aliases_to_add: preview.aliasesToAdd,
+    counts: preview.counts,
+  };
+}
+
+function objectKindForCitation(row: Pick<objects.ObjectRow, 'type'>): 'object' | 'task' {
+  return row.type === 'task' || row.type === 'follow_up' ? 'task' : 'object';
+}
+
+type CalendarEventForComparison = NonNullable<
+  Awaited<ReturnType<TeamScope['calendar']['getCalendarEvent']>>
+>;
+
+function currentCalendarValue(event: CalendarEventForComparison, field: string): unknown {
+  switch (field) {
+    case 'title':
+      return event.title;
+    case 'description':
+      return event.redacted ? null : event.description;
+    case 'startAt':
+      return event.startAt.toISOString();
+    case 'endAt':
+      return event.endAt.toISOString();
+    case 'timezone':
+      return event.timezone;
+    case 'allDay':
+      return event.allDay;
+    case 'location':
+      return event.redacted ? null : event.location;
+    case 'showAs':
+      return event.showAs;
+    case 'rrule':
+      return event.rrule;
+    case 'visibility':
+      return event.visibility;
+    case 'visibilityUserIds':
+      return event.visibilityUserIds ?? [];
+    case 'reminderMinutes':
+      return event.reminderMinutes;
+    default:
+      return undefined;
+  }
+}
+
+function normalizeCalendarPatchValue(field: string, value: unknown): unknown {
+  if (field === 'startAt' || field === 'endAt') {
+    return typeof value === 'string' ? new Date(value).toISOString() : value;
+  }
+  if (field === 'visibilityUserIds') {
+    return Array.isArray(value)
+      ? value.filter((item): item is string => typeof item === 'string').sort()
+      : [];
+  }
+  return value ?? null;
+}
+
+function calendarValuesMatch(left: unknown, right: unknown): boolean {
+  return JSON.stringify(left ?? null) === JSON.stringify(right ?? null);
+}
+
+function buildCalendarPatch(
+  patch: z.infer<typeof executeCalendarUpdateInput>['patch'],
+): Parameters<TeamScope['calendar']['updateCalendarEvent']>[1] {
+  const out: Parameters<TeamScope['calendar']['updateCalendarEvent']>[1] = {};
+  if (patch.title !== undefined) out.title = patch.title;
+  if (patch.description !== undefined) out.description = patch.description;
+  if (patch.startAt !== undefined) out.startAt = new Date(patch.startAt);
+  if (patch.endAt !== undefined) out.endAt = new Date(patch.endAt);
+  if (patch.timezone !== undefined) out.timezone = patch.timezone;
+  if (patch.allDay !== undefined) out.allDay = patch.allDay;
+  if (patch.location !== undefined) out.location = patch.location;
+  if (patch.showAs !== undefined) out.showAs = patch.showAs;
+  if (patch.rrule !== undefined) out.rrule = patch.rrule;
+  if (patch.recurrenceEditMode !== undefined) out.recurrenceEditMode = patch.recurrenceEditMode;
+  if (patch.visibility !== undefined) out.visibility = patch.visibility;
+  if (patch.visibilityUserIds !== undefined) out.visibilityUserIds = patch.visibilityUserIds;
+  if (patch.reminderMinutes !== undefined) out.reminderMinutes = patch.reminderMinutes;
+  return out;
+}
+
+async function normalizeCalendarCreateInput(
+  scope: TeamScope,
+  input: z.infer<typeof executeCalendarCreateInput>,
+): Promise<Parameters<TeamScope['calendar']['createCalendarEvent']>[0]> {
+  const settings = await scope.calendar.getCalendarSettings();
+  const timezone = input.timezone ?? settings.defaultTimezone;
+  const allDay = input.allDay ?? false;
+  let startAt = input.startAt;
+  let endAt = input.endAt;
+  if (allDay) {
+    const startDate = input.startDate ?? localDateFromInstant(input.startAt, timezone);
+    let endDate = input.endDate ?? localDateFromInstant(input.endAt, timezone);
+    if (endDate <= startDate) {
+      const d = new Date(`${startDate}T00:00:00.000Z`);
+      d.setUTCDate(d.getUTCDate() + 1);
+      endDate = d.toISOString().slice(0, 10);
+    }
+    const range = localDateSpanToUtcRange(startDate, endDate, timezone);
+    startAt = range.from.toISOString();
+    endAt = range.to.toISOString();
+  }
+  const start = new Date(startAt);
+  const end = new Date(endAt);
+  if (end <= start) throw new Error('End time must be after start time');
+  return {
+    title: input.title,
+    description: input.description ?? null,
+    startAt: start,
+    endAt: end,
+    timezone,
+    allDay,
+    location: input.location ?? null,
+    showAs: input.showAs ?? 'busy',
+    rrule: input.rrule ?? null,
+    visibility: input.visibility ?? 'team',
+    visibilityUserIds: input.visibilityUserIds ?? null,
+    reminderMinutes: input.reminderMinutes ?? null,
+    ...(input.linkedEntityIds !== undefined ? { linkedEntityIds: input.linkedEntityIds } : {}),
+  };
+}
+
 export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}): ToolSet {
   const runSafe = <T>(label: string, fn: () => Promise<T>): Promise<T | { error: string }> =>
     safe(label, fn, options.onToolError);
   return {
+    execute_object_create: tool({
+      description:
+        'Approval-required dashboard action. Directly create a canonical object/task after the user approves in chat. Use only for explicit commands like "create a project called X" or "add a task to follow up with Y". This writes canonical state through createObject and does NOT create a background approval queue item.',
+      inputSchema: executeObjectCreateInput,
+      needsApproval: true,
+      execute: async (raw) =>
+        runSafe('execute_object_create', async () => {
+          const input = executeObjectCreateInput.parse(raw);
+          const createInput: objects.CreateObjectInput = {
+            type: input.type,
+            canonicalName: input.canonicalName,
+            ...(input.status !== undefined ? { status: input.status } : {}),
+            stage: input.stage ?? null,
+            priority: input.priority ?? null,
+            ownerUserId: input.ownerUserId ?? null,
+            assigneeUserId: input.assigneeUserId ?? null,
+            dueAt: input.dueAt ? new Date(input.dueAt) : null,
+            ...(input.aliases !== undefined ? { aliases: input.aliases } : {}),
+            parentObjectId: input.parentObjectId ?? null,
+            actor: { kind: 'agent', userId: scope.userId },
+          };
+          const object = await scope.objects.createObject(createInput);
+          return {
+            ok: true,
+            object_id: object.id,
+            object_citation: artifactRefCitation({
+              kind: objectKindForCitation(object),
+              id: object.id,
+            }),
+            object: serializeObjectRow(object),
+            message: `Created ${object.type}: ${object.canonicalName}.`,
+          };
+        }),
+    }),
+
+    execute_object_update: tool({
+      description:
+        'Approval-required dashboard action. Directly update one field on an existing object after the user approves in chat. Use only for explicit user commands like "set this deal status to won" or "move this task due date to tomorrow". First call get_object or retrieve_workspace_context, then pass the observed current value as expectedCurrentValue so stale state is rejected. This does NOT create a background approval queue item.',
+      inputSchema: executeObjectUpdateInput,
+      needsApproval: true,
+      execute: async (raw) =>
+        runSafe('execute_object_update', async () => {
+          const input = executeObjectUpdateInput.parse(raw);
+          const current = await scope.objects.getObject(input.entityId);
+          if (!current) return { ok: false, error: 'not_found' };
+          const currentValue = currentObjectValue(current, input.field);
+          const normalizedExpected = objects.normalizeObjectPatchValue(
+            input.field,
+            input.expectedCurrentValue,
+          );
+          if (!valuesMatchForApproval(currentValue, normalizedExpected)) {
+            return {
+              ok: false,
+              error: 'stale_state',
+              message:
+                'The object changed since this action was prepared. Re-read the object before retrying.',
+              object_citation: artifactRefCitation({ kind: 'object', id: input.entityId }),
+              field: input.field,
+              expected_value: normalizedExpected,
+              current_value: currentValue,
+            };
+          }
+          const normalizedNewValue = normalizedValueForPatch(input.field, input.newValue);
+          const patch: objects.ObjectPatch = { [input.field]: normalizedNewValue };
+          const result = await scope.objects.updateObject(input.entityId, patch, {
+            kind: 'agent',
+            userId: scope.userId,
+          });
+          const newValue = currentObjectValue(result.object, input.field);
+          return {
+            ok: true,
+            object_id: result.object.id,
+            object_citation: artifactRefCitation({ kind: 'object', id: result.object.id }),
+            field: input.field,
+            previous_value: currentValue,
+            new_value: newValue,
+            changed_fields: result.changedFields,
+            message:
+              result.changedFields.length === 0
+                ? `No change needed: ${current.canonicalName} already had ${input.field} set to ${previewValue(
+                    currentValue,
+                  )}.`
+                : `Updated ${current.canonicalName}: ${input.field} changed from ${previewValue(
+                    currentValue,
+                  )} to ${previewValue(newValue)}.`,
+          };
+        }),
+    }),
+
+    execute_object_archive: tool({
+      description:
+        'Approval-required dashboard action. Directly archive one existing object/task after the user approves in chat. Use only for explicit archive/cancel commands. First resolve the object with search_objects/get_object/retrieve_workspace_context and show the user the object citation. This runs canonical archiveObject, reconciles duplicate archive suggestions, and does NOT create a background approval queue item.',
+      inputSchema: executeObjectArchiveInput,
+      needsApproval: true,
+      execute: async (raw) =>
+        runSafe('execute_object_archive', async () => {
+          const input = executeObjectArchiveInput.parse(raw);
+          const current = await scope.objects.getObject(input.entityId);
+          if (!current) return { ok: false, error: 'not_found' };
+          const archived = await scope.objects.archiveObject(input.entityId, {
+            kind: 'agent',
+            userId: scope.userId,
+          });
+          const reconciledApprovals = archived.changedFields.includes('archivedAt')
+            ? await scope.suggestions
+                .reconcileCanonicalChange({
+                  targetKind: archived.type === 'task' ? 'task' : 'object',
+                  targetId: archived.id,
+                  operation: 'archive_or_cancel',
+                  reason: 'The chat agent archived this object after explicit in-chat approval.',
+                })
+                .catch((err: unknown) => {
+                  log.warn({ err, objectId: archived.id }, 'object archive reconcile failed');
+                  options.onToolError?.(err, { tool: 'execute_object_archive:reconcile' });
+                  return 0;
+                })
+            : 0;
+          return {
+            ok: true,
+            object_id: archived.id,
+            object_citation: artifactRefCitation({
+              kind: objectKindForCitation(archived),
+              id: archived.id,
+            }),
+            archived: archived.archivedAt !== null,
+            changed_fields: archived.changedFields,
+            reconciled_approvals: reconciledApprovals,
+            message:
+              archived.changedFields.length === 0
+                ? `${current.canonicalName} was already archived.`
+                : `Archived ${current.canonicalName}.`,
+          };
+        }),
+    }),
+
+    execute_object_merge: tool({
+      description:
+        'Approval-required dashboard action. Directly merge duplicate objects after the user approves in chat. Use only for explicit merge commands. First resolve and preview all target objects with search_objects/get_object/retrieve_workspace_context; then pass all objectIds and the survivorId. This re-previews before executing, rejects stale/resolved ids, runs the canonical merge path, and does NOT create a background approval queue item.',
+      inputSchema: executeObjectMergeInput,
+      needsApproval: true,
+      execute: async (raw) =>
+        runSafe('execute_object_merge', async () => {
+          const input = executeObjectMergeInput.parse(raw);
+          const expectedIds = sortedUnique(input.objectIds);
+          const preview = await scope.objects.getObjectMergePreview(
+            input.objectIds,
+            input.survivorId,
+          );
+          const previewIds = preview.objects.map((object) => object.id);
+          if (preview.survivorId !== input.survivorId || !sameIdSet(previewIds, expectedIds)) {
+            return {
+              ok: false,
+              error: 'stale_state',
+              message:
+                'The merge targets changed since this action was prepared. Re-preview the objects before retrying.',
+              expected_object_ids: expectedIds,
+              current_object_ids: sortedUnique(previewIds),
+              preview: compactMergePreview(preview),
+            };
+          }
+          const mergedIds = input.objectIds.filter((id) => id !== input.survivorId);
+          const result = await scope.objects.mergeObjects({
+            survivorId: input.survivorId,
+            mergedIds,
+            actor: { kind: 'agent', userId: scope.userId },
+          });
+          const reconciledApprovals = await scope.suggestions
+            .reconcileObjectMerge({
+              survivorId: result.survivor.id,
+              mergedIds: result.mergedIds,
+              reason: 'The chat agent merged these objects after explicit in-chat approval.',
+            })
+            .catch((err: unknown) => {
+              log.warn({ err, survivorId: result.survivor.id }, 'object merge reconcile failed');
+              options.onToolError?.(err, { tool: 'execute_object_merge:reconcile' });
+              return 0;
+            });
+          return {
+            ok: true,
+            survivor_id: result.survivor.id,
+            survivor_citation: artifactRefCitation({ kind: 'object', id: result.survivor.id }),
+            merged_ids: result.mergedIds,
+            merged_citations: result.mergedIds.map((id) =>
+              artifactRefCitation({ kind: 'object', id }),
+            ),
+            aliases: result.survivor.aliases,
+            reconciled_approvals: reconciledApprovals,
+            message: `Merged ${String(result.mergedIds.length)} object${
+              result.mergedIds.length === 1 ? '' : 's'
+            } into ${result.survivor.canonicalName}.`,
+          };
+        }),
+    }),
+
+    retrieve_workspace_context: tool({
+      description:
+        'Read-only retrieval planner/fusion tool. Use first for broad questions like "what do we know about X?", object/person/company profiles, task/board/calendar/document context, or when current route context implies a target object. Returns a compact context packet with typed citations across objects, notes, timeline events, tasks, boards, calendar, documents, and route guides.',
+      inputSchema: retrieveWorkspaceContextInput,
+      execute: async (raw) =>
+        runSafe('retrieve_workspace_context', async () => {
+          const input = retrieveWorkspaceContextInput.parse(raw);
+          return retrieveWorkspaceContext(scope, {
+            query: input.query,
+            ...(input.recipe === undefined ? {} : { recipe: input.recipe }),
+            ...(input.objectId === undefined ? {} : { objectId: input.objectId }),
+            ...(input.limit === undefined ? {} : { limit: input.limit }),
+            ...(input.includeDocuments === undefined
+              ? {}
+              : { includeDocuments: input.includeDocuments }),
+            ...(input.includeCalendar === undefined
+              ? {}
+              : { includeCalendar: input.includeCalendar }),
+          });
+        }),
+    }),
+
     search_timeline: tool({
       description:
         "Semantic search across the current team's timeline. Returns ranked events with event_id (use for [ev:<id>] citations), fact statements, and entity_ids. Use this for 'what was discussed about X' or 'find anything mentioning Y'.",
@@ -351,6 +1025,7 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
           // prompt-injection past the Rule 8 framing.
           const fenced = results.map((r) => ({
             ...r,
+            citation: artifactRefCitation({ kind: 'timeline_event', id: r.eventId }),
             snippet:
               fenceExternalContent(r.snippet, { source: r.source, eventId: r.eventId }) ?? '',
           }));
@@ -373,7 +1048,9 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
           const results = await scope.timeline.searchObjectNotes(args);
           const fenced = results.map((result) => ({
             note_id: result.noteId,
+            note_citation: artifactRefCitation({ kind: 'object_note', id: result.noteId }),
             object_id: result.objectId,
+            object_citation: artifactRefCitation({ kind: 'object', id: result.objectId }),
             object_name: result.objectName,
             object_type: result.objectType,
             body:
@@ -418,8 +1095,10 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
           return {
             found: true,
             ...profile,
+            citation: artifactRefCitation({ kind: 'object', id: profile.entity.id }),
             events: profile.events.map((e) => ({
               event_id: e.id,
+              citation: artifactRefCitation({ kind: 'timeline_event', id: e.id }),
               occurred_at: e.occurredAt.toISOString(),
               source: e.source,
               author_user_id: e.authorUserId,
@@ -460,6 +1139,7 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
               const senderInfo = senderMap.get(e.id);
               return {
                 event_id: e.id,
+                citation: artifactRefCitation({ kind: 'timeline_event', id: e.id }),
                 occurred_at: e.occurredAt.toISOString(),
                 source: e.source,
                 author_user_id: e.authorUserId,
@@ -488,6 +1168,10 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
           return {
             found: true,
             id: result.id,
+            citation: artifactRefCitation({
+              kind: result.type === 'task' || result.type === 'follow_up' ? 'task' : 'object',
+              id: result.id,
+            }),
             type: result.type,
             name: result.canonicalName,
             status: result.status,
@@ -498,7 +1182,11 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
             due_at: result.dueAt?.toISOString() ?? null,
             agent_suggested: result.agentSuggested,
             archived: result.archivedAt !== null,
-            notes: result.notes.slice(0, 10).map((n) => ({ id: n.id, body: n.body })),
+            notes: result.notes.slice(0, 10).map((n) => ({
+              id: n.id,
+              citation: artifactRefCitation({ kind: 'object_note', id: n.id }),
+              body: n.body,
+            })),
             recent_changes: result.recentChanges.slice(0, 20).map((c) => ({
               id: c.id,
               field: c.field,
@@ -508,9 +1196,38 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
             })),
             open_tasks: result.openTasks.slice(0, 20).map((t) => ({
               id: t.id,
+              citation: artifactRefCitation({ kind: 'task', id: t.id }),
               name: t.canonicalName,
               status: t.status,
             })),
+          };
+        }),
+    }),
+
+    search_objects: tool({
+      description:
+        'Deterministic structured search over workspace objects by name/alias/text plus type, status, stage, owner, assignee, due range, archived, and limit. Prefer this over semantic search when the user gives object names, fields, statuses, dates, or route context. Returns object/task citations.',
+      inputSchema: searchObjectsStructuredInput,
+      execute: async (raw) =>
+        runSafe('search_objects', async () => {
+          const input = searchObjectsStructuredInput.parse(raw);
+          const filter: objects.ObjectSearchFilter = {
+            query: input.query,
+            limit: input.limit ?? 20,
+          };
+          if (input.type) filter.type = input.type;
+          if (input.status) filter.status = input.status;
+          if (input.stage) filter.stage = input.stage;
+          if (input.ownerUserId !== undefined) filter.ownerUserId = input.ownerUserId;
+          if (input.assigneeUserId !== undefined) filter.assigneeUserId = input.assigneeUserId;
+          if (input.dueAfter) filter.dueAfter = new Date(input.dueAfter);
+          if (input.dueBefore) filter.dueBefore = new Date(input.dueBefore);
+          if (input.archived !== undefined) filter.archived = input.archived;
+          const rows = await scope.objects.searchObjects(filter);
+          return {
+            count: rows.length,
+            mode: 'structured',
+            objects: rows.map(serializeObjectRow),
           };
         }),
     }),
@@ -547,16 +1264,7 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
           const rows = await scope.objects.listObjects(filter);
           return {
             count: rows.length,
-            objects: rows.map((r) => ({
-              id: r.id,
-              name: r.canonicalName,
-              type: r.type,
-              status: r.status,
-              stage: r.stage,
-              owner_user_id: r.ownerUserId,
-              due_at: r.dueAt?.toISOString() ?? null,
-              agent_suggested: r.agentSuggested,
-            })),
+            objects: rows.map(serializeObjectRow),
           };
         }),
     }),
@@ -600,6 +1308,108 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
               status: r.status,
               owner_user_id: r.ownerUserId,
               due_at: r.dueAt?.toISOString() ?? null,
+            })),
+          };
+        }),
+    }),
+
+    search_boards: tool({
+      description:
+        'Deterministic structured search over boards and board items. Filter by board id, board name/purpose/template, pinned state, object membership, lane, responsible user, due range, priority, and item text. Returns board and board-item citations.',
+      inputSchema: searchBoardsInput,
+      execute: async (raw) =>
+        runSafe('search_boards', async () => {
+          const input = searchBoardsInput.parse(raw);
+          const limit = input.limit ?? 10;
+          let boardRows: boards.BoardRow[];
+          if (input.boardId) {
+            const board = await scope.boards.getBoard(input.boardId, { itemLimit: 50 });
+            boardRows = board ? [board] : [];
+          } else if (input.objectId) {
+            const contexts = await scope.boards.listObjectBoardContext(input.objectId);
+            const boardIds = Array.from(new Set(contexts.map((context) => context.boardId)));
+            const details = await Promise.all(
+              boardIds.map((boardId) => scope.boards.getBoard(boardId, { itemLimit: 50 })),
+            );
+            boardRows = details.filter((board): board is boards.BoardDetail => board !== null);
+          } else {
+            boardRows = await scope.boards.listBoards();
+          }
+
+          const needsItems =
+            Boolean(input.objectId) ||
+            Boolean(input.laneId) ||
+            input.responsibleUserId !== undefined ||
+            Boolean(input.dueAfter) ||
+            Boolean(input.dueBefore) ||
+            input.priority !== undefined ||
+            Boolean(input.itemText);
+
+          const hydrated = await Promise.all(
+            boardRows.map(async (board) => {
+              if ('items' in board) return board;
+              if (!needsItems) return board;
+              return scope.boards.getBoard(board.id, { itemLimit: 50 });
+            }),
+          );
+
+          const results = hydrated
+            .filter((board): board is boards.BoardRow | boards.BoardDetail => board !== null)
+            .filter((board) => {
+              if (input.templateKind && board.templateKind !== input.templateKind) return false;
+              if (input.pinned !== undefined && board.pinned !== input.pinned) return false;
+              if (
+                input.query &&
+                !(
+                  textMatches(board.name, input.query) ||
+                  textMatches(board.purpose, input.query) ||
+                  textMatches(board.templateKind, input.query)
+                )
+              ) {
+                return false;
+              }
+              return true;
+            })
+            .map((board) => {
+              const items =
+                'items' in board
+                  ? board.items.filter((item) => {
+                      if (input.objectId && item.entityId !== input.objectId) return false;
+                      if (input.laneId && item.laneId !== input.laneId) return false;
+                      if (
+                        input.responsibleUserId !== undefined &&
+                        item.responsibleUserId !== input.responsibleUserId
+                      ) {
+                        return false;
+                      }
+                      if (!dateInRange(item.dueAt, input.dueAfter, input.dueBefore)) return false;
+                      if (input.priority !== undefined && item.priority !== input.priority) {
+                        return false;
+                      }
+                      if (
+                        input.itemText &&
+                        !(
+                          textMatches(item.nextStep, input.itemText) ||
+                          textMatches(item.notes, input.itemText) ||
+                          textMatches(item.object.canonicalName, input.itemText)
+                        )
+                      ) {
+                        return false;
+                      }
+                      return true;
+                    })
+                  : [];
+              return { board, items };
+            })
+            .filter((result) => !needsItems || result.items.length > 0)
+            .slice(0, limit);
+
+          return {
+            count: results.length,
+            mode: 'structured',
+            results: results.map(({ board, items }) => ({
+              board: serializeBoardRow(board),
+              matching_items: items.slice(0, 10).map(serializeBoardItemRow),
             })),
           };
         }),
@@ -941,6 +1751,58 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
         }),
     }),
 
+    get_app_route: tool({
+      description:
+        'Read-only lookup for a known dashboard/help route id. Use when you already have a route id and need title, href, required role, guide text, and [route:<id>] citation. Does not read workspace data.',
+      inputSchema: getAppRouteInput,
+      execute: (raw) =>
+        runSafe('get_app_route', () => {
+          const { routeId } = getAppRouteInput.parse(raw);
+          const route = getAppGuideRoute(routeId);
+          if (!route) return Promise.resolve({ found: false });
+          return Promise.resolve({
+            found: true,
+            route_id: route.id,
+            citation: artifactRefCitation({ kind: 'route', id: route.id }),
+            title: route.title,
+            description: route.description,
+            href: route.href,
+            group: route.group,
+            minimum_role: route.minRole,
+            intents: route.intents,
+            guide: route.guide,
+            related_route_ids: route.relatedRouteIds ?? [],
+          });
+        }),
+    }),
+
+    search_app_guide: tool({
+      description:
+        'Read-only search over Timeline dashboard routes and product guide snippets. Use for navigation/help questions like "where do I invite teammates?", "how do boards work?", or "where are integrations?". Returns route ids, hrefs, required role, guide snippets, and [route:<id>] citations. Does not search timeline data.',
+      inputSchema: searchAppGuideInput,
+      execute: (raw) =>
+        runSafe('search_app_guide', () => {
+          const input = searchAppGuideInput.parse(raw);
+          const results = searchAppGuide(input.query, input.limit ?? 5);
+          return Promise.resolve({
+            count: results.length,
+            results: results.map((route) => ({
+              route_id: route.id,
+              citation: route.citation,
+              title: route.title,
+              description: route.description,
+              href: route.href,
+              group: route.group,
+              minimum_role: route.minRole,
+              intents: route.intents,
+              guide: route.guide,
+              related_route_ids: route.relatedRouteIds ?? [],
+              score: route.score,
+            })),
+          });
+        }),
+    }),
+
     get_event: tool({
       description:
         "Fetch one raw event by id, including its linked facts and entities. Use this to verify a citation or drill into a specific event_id you've already received from another tool. Returns null if the id isn't in this team or isn't visible to you.",
@@ -953,6 +1815,7 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
           return {
             found: true,
             event_id: result.event.id,
+            citation: artifactRefCitation({ kind: 'timeline_event', id: result.event.id }),
             occurred_at: result.event.occurredAt.toISOString(),
             source: result.event.source,
             author_user_id: result.event.authorUserId,
@@ -973,6 +1836,44 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
               entity_id: e.id,
               name: e.canonicalName,
               type: e.type,
+            })),
+          };
+        }),
+    }),
+
+    search_documents_structured: tool({
+      description:
+        'Deterministic structured search/list over document records by name substring, folder id, file kind, deleted state, and limit. Use this when the user asks to find a file/document by name or browse document metadata. Use search_documents for semantic chunk/text search.',
+      inputSchema: searchDocumentsStructuredInput,
+      execute: async (raw) =>
+        runSafe('search_documents_structured', async () => {
+          const input = searchDocumentsStructuredInput.parse(raw);
+          const args = {
+            fileKind: input.fileKind ?? 'document',
+            includeDeleted: input.includeDeleted ?? false,
+            limit: Math.max(input.limit ?? 20, input.name ? 100 : (input.limit ?? 20)),
+          };
+          const docs = await scope.documents.listDocuments(
+            input.folderId === undefined ? args : { ...args, folderId: input.folderId },
+          );
+          const filtered = docs
+            .filter((document) => textMatches(document.name, input.name))
+            .slice(0, input.limit ?? 20);
+          return {
+            count: filtered.length,
+            mode: 'structured',
+            documents: filtered.map((document) => ({
+              document_id: document.id,
+              href: `/app/documents/${document.id}`,
+              name: document.name,
+              file_kind: document.fileKind,
+              folder_id: document.folderId,
+              current_version_id: document.currentVersionId,
+              visibility: document.visibility,
+              owner_user_id: document.ownerUserId,
+              created_at: document.createdAt.toISOString(),
+              updated_at: document.updatedAt.toISOString(),
+              deleted: document.deletedAt !== null,
             })),
           };
         }),
@@ -1000,6 +1901,13 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
             document_id: h.documentId,
             document_version_id: h.documentVersionId,
             document_chunk_id: h.documentChunkId,
+            citation: artifactRefCitation({
+              kind: 'document_chunk',
+              id: h.documentChunkId,
+              documentId: h.documentId,
+              version: h.version,
+              chunkId: h.documentChunkId,
+            }),
             file_kind: h.fileKind,
             representation_kind: h.representationKind,
             version: h.version,
@@ -1302,6 +2210,7 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
             count: events.length,
             events: events.map((e) => ({
               id: e.id,
+              citation: artifactRefCitation({ kind: 'calendar_event', id: e.id }),
               title: e.title,
               start_at: e.startAt.toISOString(),
               end_at: e.endAt.toISOString(),
@@ -1375,6 +2284,7 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
           return {
             found: true,
             id: event.id,
+            citation: artifactRefCitation({ kind: 'calendar_event', id: event.id }),
             title: event.title,
             description: event.redacted
               ? null
@@ -1397,6 +2307,159 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
             redacted: event.redacted,
             agent_suggested: event.agentSuggested,
             created_by_user_id: event.createdByUserId,
+          };
+        }),
+    }),
+
+    execute_calendar_create: tool({
+      description:
+        'Approval-required dashboard action. Directly create a canonical calendar event after the user approves in chat. Use only for explicit scheduling commands. Resolves all-day local dates with the workspace timezone and does NOT create a background approval queue item.',
+      inputSchema: executeCalendarCreateInput,
+      needsApproval: true,
+      execute: async (raw) =>
+        runSafe('execute_calendar_create', async () => {
+          const input = executeCalendarCreateInput.parse(raw);
+          const event = await scope.calendar.createCalendarEvent(
+            await normalizeCalendarCreateInput(scope, input),
+          );
+          return {
+            ok: true,
+            calendar_event_id: event.id,
+            calendar_citation: artifactRefCitation({ kind: 'calendar_event', id: event.id }),
+            event: serializeCalendarEventRow(event),
+            message: `Created calendar event: ${event.title}.`,
+          };
+        }),
+    }),
+
+    execute_calendar_update: tool({
+      description:
+        'Approval-required dashboard action. Directly update an existing calendar event after the user approves in chat. Use only for explicit update/move/reschedule commands. First call get_calendar_event, then pass expectedCurrent values for every field in patch so stale state is rejected. This does NOT create a background approval queue item.',
+      inputSchema: executeCalendarUpdateInput,
+      needsApproval: true,
+      execute: async (raw) =>
+        runSafe('execute_calendar_update', async () => {
+          const input = executeCalendarUpdateInput.parse(raw);
+          const event = await scope.calendar.getCalendarEvent(input.id);
+          if (!event) return { ok: false, error: 'not_found' };
+          const staleFields: Record<string, { expected: unknown; current: unknown }> = {};
+          for (const field of Object.keys(input.patch)) {
+            if (field === 'recurrenceEditMode') continue;
+            if (!(field in input.expectedCurrent)) {
+              staleFields[field] = {
+                expected: 'missing_expected_current',
+                current: currentCalendarValue(event, field),
+              };
+              continue;
+            }
+            const expected = normalizeCalendarPatchValue(field, input.expectedCurrent[field]);
+            const current = normalizeCalendarPatchValue(field, currentCalendarValue(event, field));
+            if (!calendarValuesMatch(current, expected)) {
+              staleFields[field] = { expected, current };
+            }
+          }
+          if (Object.keys(staleFields).length > 0) {
+            return {
+              ok: false,
+              error: 'stale_state',
+              message:
+                'The calendar event changed since this action was prepared. Re-read the event before retrying.',
+              calendar_citation: artifactRefCitation({ kind: 'calendar_event', id: input.id }),
+              stale_fields: staleFields,
+            };
+          }
+          const updated = await scope.calendar.updateCalendarEvent(
+            input.id,
+            buildCalendarPatch(input.patch),
+          );
+          if (!updated) return { ok: false, error: 'not_found' };
+          const reconciledApprovals =
+            updated.changedFields.length > 0
+              ? await scope.suggestions
+                  .reconcileCanonicalChange({
+                    targetKind: 'calendar_event',
+                    targetId: input.id,
+                    operation: 'update',
+                    patch: Object.fromEntries(updated.changedFields.map((field) => [field, true])),
+                    reason:
+                      'The chat agent updated this calendar event after explicit in-chat approval.',
+                  })
+                  .catch((err: unknown) => {
+                    log.warn(
+                      { err, calendarEventId: input.id },
+                      'calendar update reconcile failed',
+                    );
+                    options.onToolError?.(err, { tool: 'execute_calendar_update:reconcile' });
+                    return 0;
+                  })
+              : 0;
+          return {
+            ok: true,
+            calendar_event_id: updated.id,
+            calendar_citation: artifactRefCitation({ kind: 'calendar_event', id: updated.id }),
+            event: serializeCalendarEventRow(updated),
+            changed_fields: updated.changedFields,
+            reconciled_approvals: reconciledApprovals,
+            message:
+              updated.changedFields.length === 0
+                ? `No change needed for calendar event: ${event.title}.`
+                : `Updated calendar event: ${updated.title}.`,
+          };
+        }),
+    }),
+
+    execute_calendar_cancel: tool({
+      description:
+        'Approval-required dashboard action. Directly cancel/delete an existing calendar event after the user approves in chat. Use only for explicit cancellation commands. First call get_calendar_event, then pass expected title/start/end so stale state is rejected. This does NOT create a background approval queue item.',
+      inputSchema: executeCalendarCancelInput,
+      needsApproval: true,
+      execute: async (raw) =>
+        runSafe('execute_calendar_cancel', async () => {
+          const input = executeCalendarCancelInput.parse(raw);
+          const event = await scope.calendar.getCalendarEvent(input.id);
+          if (!event) return { ok: false, error: 'not_found' };
+          const staleFields: Record<string, { expected: unknown; current: unknown }> = {};
+          for (const [field, expectedRaw] of Object.entries(input.expectedCurrent)) {
+            const expected = normalizeCalendarPatchValue(field, expectedRaw);
+            const current = normalizeCalendarPatchValue(field, currentCalendarValue(event, field));
+            if (!calendarValuesMatch(current, expected)) {
+              staleFields[field] = { expected, current };
+            }
+          }
+          if (Object.keys(staleFields).length > 0) {
+            return {
+              ok: false,
+              error: 'stale_state',
+              message:
+                'The calendar event changed since this cancellation was prepared. Re-read the event before retrying.',
+              calendar_citation: artifactRefCitation({ kind: 'calendar_event', id: input.id }),
+              stale_fields: staleFields,
+            };
+          }
+          const deleted = await scope.calendar.deleteCalendarEvent(input.id, {
+            ...(input.recurrenceEditMode ? { recurrenceEditMode: input.recurrenceEditMode } : {}),
+          });
+          if (!deleted) return { ok: false, error: 'not_found' };
+          const reconciledApprovals = await scope.suggestions
+            .reconcileCanonicalChange({
+              targetKind: 'calendar_event',
+              targetId: input.id,
+              operation: 'archive_or_cancel',
+              reason:
+                'The chat agent cancelled this calendar event after explicit in-chat approval.',
+            })
+            .catch((err: unknown) => {
+              log.warn({ err, calendarEventId: input.id }, 'calendar cancel reconcile failed');
+              options.onToolError?.(err, { tool: 'execute_calendar_cancel:reconcile' });
+              return 0;
+            });
+          return {
+            ok: true,
+            calendar_event_id: input.id,
+            calendar_citation: artifactRefCitation({ kind: 'calendar_event', id: input.id }),
+            cancelled: true,
+            reconciled_approvals: reconciledApprovals,
+            message: `Cancelled calendar event: ${event.title}.`,
           };
         }),
     }),

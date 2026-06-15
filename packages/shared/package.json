@@ -35,6 +35,12 @@
       "import": "./dist/analytics/posthog-node.js",
       "default": "./dist/analytics/posthog-node.js"
     },
+    "./app-guide": {
+      "types": "./src/app-guide.ts",
+      "development": "./src/app-guide.ts",
+      "import": "./dist/app-guide.js",
+      "default": "./dist/app-guide.js"
+    },
     "./calendar": {
       "types": "./src/calendar/index.ts",
       "development": "./src/calendar/index.ts",
@@ -235,8 +241,10 @@
       "default": "./dist/s3/client.js"
     },
     "./citation": {
+      "types": "./src/citation.ts",
+      "development": "./src/citation.ts",
       "import": "./dist/citation.js",
-      "types": "./dist/citation.d.ts"
+      "default": "./dist/citation.js"
     },
     "./time": {
       "import": "./dist/time/index.js",
