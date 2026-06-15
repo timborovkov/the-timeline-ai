@@ -1,5 +1,5 @@
 import { withTeam } from '@timeline/shared/team-scope';
-import { redirect } from 'next/navigation';
+import { redirect, unstable_rethrow } from 'next/navigation';
 
 import type { ReactNode } from 'react';
 
@@ -80,19 +80,30 @@ export async function MergeObjectsRouteContent({ presentation, searchParams }: P
 
   const scope = withTeam(db, active.teamId, session.user.id);
   let preview;
+  let reconciledStaleSuggestion = false;
   try {
     preview = await scope.objects.getObjectMergePreview(ids, ids[0]);
   } catch (err) {
-    return renderShell(
-      presentation,
-      <EmptyAction
-        title="These objects cannot be merged"
-        body={err instanceof Error ? err.message : 'The selected objects are no longer mergeable.'}
-        href="/app/objects"
-        action="Back to objects"
-      />,
-    );
+    unstable_rethrow(err);
+    if (suggestionItemId) {
+      reconciledStaleSuggestion =
+        await scope.suggestions.reconcileStaleSuggestionItem(suggestionItemId);
+    }
+    if (!reconciledStaleSuggestion) {
+      return renderShell(
+        presentation,
+        <EmptyAction
+          title="These objects cannot be merged"
+          body={
+            err instanceof Error ? err.message : 'The selected objects are no longer mergeable.'
+          }
+          href="/app/objects"
+          action="Back to objects"
+        />,
+      );
+    }
   }
+  if (reconciledStaleSuggestion || !preview) redirect('/app/approvals');
   if (preview.objects.length === 0) redirect('/app/objects');
 
   const form =

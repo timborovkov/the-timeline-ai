@@ -50,6 +50,51 @@ type TargetKind =
   | 'board_membership'
   | 'board_item_update';
 
+const EXPECTED_SUGGESTION_APPLY_FAILURE_CODE = 'TIMELINE_EXPECTED_SUGGESTION_APPLY_FAILURE';
+const ENTITY_CANONICAL_NAME_UNIQUE_CONSTRAINT = 'entities_team_type_canonical_name_unq';
+
+class ExpectedSuggestionApplyFailure extends Error {
+  readonly code = EXPECTED_SUGGESTION_APPLY_FAILURE_CODE;
+
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options);
+    this.name = 'ExpectedSuggestionApplyFailure';
+  }
+}
+
+function errorCode(err: unknown): unknown {
+  return err && typeof err === 'object' ? (err as { code?: unknown }).code : undefined;
+}
+
+function errorConstraint(err: unknown): unknown {
+  return err && typeof err === 'object' ? (err as { constraint?: unknown }).constraint : undefined;
+}
+
+function errorCause(err: unknown): unknown {
+  return err && typeof err === 'object' ? (err as { cause?: unknown }).cause : undefined;
+}
+
+function errorMessageIncludes(err: unknown, value: string): boolean {
+  return err instanceof Error && err.message.includes(value);
+}
+
+function isEntityCanonicalNameDuplicate(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false;
+  if (
+    errorCode(err) === '23505' &&
+    (errorConstraint(err) === ENTITY_CANONICAL_NAME_UNIQUE_CONSTRAINT ||
+      errorMessageIncludes(err, ENTITY_CANONICAL_NAME_UNIQUE_CONSTRAINT))
+  ) {
+    return true;
+  }
+  const cause = errorCause(err);
+  return cause ? isEntityCanonicalNameDuplicate(cause) : false;
+}
+
+function isExpectedApplyFailure(err: unknown): boolean {
+  return err instanceof z.ZodError || isEntityCanonicalNameDuplicate(err);
+}
+
 export interface SuggestionScopeDeps {
   db: Db;
   teamId: string;
@@ -324,10 +369,12 @@ function normalizeCalendarPayload(
   if (!Object.hasOwn(normalized, 'startAt')) {
     if (typeof payload.startTime === 'string') normalized.startAt = payload.startTime;
     else if (typeof payload.start_at === 'string') normalized.startAt = payload.start_at;
+    else if (typeof payload.start === 'string') normalized.startAt = payload.start;
   }
   if (!Object.hasOwn(normalized, 'endAt')) {
     if (typeof payload.endTime === 'string') normalized.endAt = payload.endTime;
     else if (typeof payload.end_at === 'string') normalized.endAt = payload.end_at;
+    else if (typeof payload.end === 'string') normalized.endAt = payload.end;
   }
   if (!Object.hasOwn(normalized, 'allDay') && typeof payload.all_day === 'boolean') {
     normalized.allDay = payload.all_day;
@@ -516,6 +563,7 @@ function normalizeLifecycleStatus(value: unknown, type: LifecycleStatusType): un
   if (typeof value !== 'string') return value;
   const normalized = value.trim().toLowerCase().replace(/\s+/g, ' ');
   if (type === 'project') {
+    if (normalized === 'proposed') return 'planning';
     if (
       normalized === 'in progress' ||
       normalized === 'in_progress' ||
@@ -530,6 +578,9 @@ function normalizeLifecycleStatus(value: unknown, type: LifecycleStatusType): un
     if (normalized === 'done') return 'shipped';
     if (normalized === 'canceled') return 'cancelled';
     return normalized;
+  }
+  if (normalized === 'proposed' || normalized === 'suggested' || normalized === 'pending') {
+    return 'todo';
   }
   if (
     normalized === 'in progress' ||
@@ -573,6 +624,32 @@ function normalizeLifecyclePayload(
     payload.toEntityId = toEntityId;
   }
   return payload;
+}
+
+function recordFromUnknown(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function stringArrayFromUnknown(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === 'string')
+    : [];
+}
+
+function mergeAliases(existing: string[], proposed: string[]): string[] {
+  const aliases: string[] = [];
+  const seen = new Set<string>();
+  for (const alias of [...existing, ...proposed]) {
+    const trimmed = alias.trim();
+    if (!trimmed) continue;
+    const key = trimmed.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    aliases.push(trimmed);
+  }
+  return aliases;
 }
 
 function normalizedApprovalText(value: unknown): string {
@@ -1263,6 +1340,27 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     return superseded;
   }
 
+  async function reconcileStaleSuggestionItem(itemId: string): Promise<boolean> {
+    await ensureMember();
+    const rows = await db
+      .select({ item: agentSuggestionItems, suggestion: agentSuggestions })
+      .from(agentSuggestionItems)
+      .innerJoin(agentSuggestions, eq(agentSuggestions.id, agentSuggestionItems.suggestionId))
+      .where(
+        and(
+          eq(agentSuggestionItems.id, itemId),
+          suggestionVisibilityPredicate(teamId, userId),
+          inArray(agentSuggestionItems.status, ACTIONABLE_ITEM_STATUSES),
+        ),
+      )
+      .limit(1);
+    const row = rows[0];
+    if (!row) return false;
+    const reason = await staleActionableItemReason(row.item);
+    if (!reason) return false;
+    return supersedeItem(row.item.id, null, reason);
+  }
+
   async function reconcileStaleActionableItemsBestEffort(context: {
     suggestionItemId?: string;
     suggestionId: string;
@@ -1579,7 +1677,37 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
           ),
         )
         .limit(1);
-      return rows[0]?.id ?? null;
+      const markerMatch = rows[0]?.id;
+      if (markerMatch) return markerMatch;
+
+      const parsed = objectCreatePayload.safeParse(normalizeLifecyclePayload(item));
+      if (!parsed.success) return null;
+      const canonicalName =
+        parsed.data.canonicalName !== undefined && parsed.data.canonicalName.length > 0
+          ? parsed.data.canonicalName
+          : item.title;
+      const type =
+        item.targetKind === 'task' ? 'task' : (objectTypeFromValue(parsed.data.type) ?? 'other');
+      if (
+        item.status === 'failed' ||
+        (await hasObjectNoteCreateDependent(item, canonicalName, type))
+      ) {
+        return null;
+      }
+      const canonicalRows = await db
+        .select({ id: entities.id })
+        .from(entities)
+        .where(
+          and(
+            eq(entities.teamId, teamId),
+            eq(entities.type, type),
+            isNull(entities.mergedIntoId),
+            isNull(entities.archivedAt),
+            sql`lower(${entities.canonicalName}) = ${canonicalName.toLowerCase()}`,
+          ),
+        )
+        .limit(1);
+      return canonicalRows[0]?.id ?? null;
     }
     if (item.targetKind === 'identity_facet') {
       const rows = await db
@@ -1735,6 +1863,117 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     return resolved.resultId;
   }
 
+  async function hasObjectNoteCreateDependent(
+    item: typeof agentSuggestionItems.$inferSelect,
+    canonicalName: string,
+    type: ObjectType,
+  ): Promise<boolean> {
+    const rows = await db
+      .select({ proposedPayload: agentSuggestionItems.proposedPayload })
+      .from(agentSuggestionItems)
+      .where(
+        and(
+          eq(agentSuggestionItems.teamId, teamId),
+          eq(agentSuggestionItems.suggestionId, item.suggestionId),
+          eq(agentSuggestionItems.operation, 'create'),
+          eq(agentSuggestionItems.targetKind, 'object_note'),
+          inArray(agentSuggestionItems.status, ACTIONABLE_ITEM_STATUSES),
+        ),
+      );
+    return rows.some((row) => {
+      const payload =
+        row.proposedPayload && typeof row.proposedPayload === 'object' ? row.proposedPayload : {};
+      const parsed = objectNotePayload.safeParse(payload);
+      if (!parsed.success) return false;
+      if (parsed.data.entityName?.toLowerCase() !== canonicalName.toLowerCase()) return false;
+      return !parsed.data.entityType || parsed.data.entityType === type;
+    });
+  }
+
+  async function applyObjectCreateItem(
+    item: typeof agentSuggestionItems.$inferSelect,
+    payload: Record<string, unknown>,
+  ): Promise<string> {
+    const parsed = objectCreatePayload.parse(payload);
+    const canonicalName =
+      parsed.canonicalName !== undefined && parsed.canonicalName.length > 0
+        ? parsed.canonicalName
+        : item.title;
+    const type =
+      item.targetKind === 'task' ? 'task' : (objectTypeFromValue(parsed.type) ?? 'other');
+    const input: CreateObjectInput = {
+      type,
+      canonicalName,
+      actor: { kind: 'agent', userId: null },
+    };
+    if (parsed.aliases !== undefined) input.aliases = parsed.aliases;
+    if (parsed.status !== undefined) input.status = parsed.status;
+    if (parsed.stage !== undefined) input.stage = parsed.stage;
+    if (parsed.priority !== undefined) input.priority = parsed.priority;
+    if (parsed.ownerUserId !== undefined) input.ownerUserId = parsed.ownerUserId;
+    if (parsed.assigneeUserId !== undefined) input.assigneeUserId = parsed.assigneeUserId;
+    if (parsed.dueAt !== undefined) input.dueAt = parsed.dueAt ? new Date(parsed.dueAt) : null;
+    if (parsed.parentObjectId !== undefined) input.parentObjectId = parsed.parentObjectId;
+    if (parsed.sourceEventId !== undefined) {
+      if (parsed.sourceEventId) await validateEvidenceVisible([parsed.sourceEventId]);
+      input.sourceEventId = parsed.sourceEventId;
+    }
+    input.metadata = {
+      ...(parsed.metadata ?? {}),
+      agent_suggestion_item_id: item.id,
+    };
+
+    const canRecoverByCanonicalName =
+      item.status !== 'failed' && !(await hasObjectNoteCreateDependent(item, canonicalName, type));
+    const suggestionMarkerPredicate = sql`${entities.metadata} ->> 'agent_suggestion_item_id' = ${item.id}`;
+    const existingIdentityPredicate = canRecoverByCanonicalName
+      ? (or(
+          suggestionMarkerPredicate,
+          sql`lower(${entities.canonicalName}) = ${canonicalName.toLowerCase()}`,
+        ) ?? suggestionMarkerPredicate)
+      : suggestionMarkerPredicate;
+    const existingRows = await db
+      .select()
+      .from(entities)
+      .where(
+        and(
+          eq(entities.teamId, teamId),
+          eq(entities.type, type),
+          isNull(entities.mergedIntoId),
+          isNull(entities.archivedAt),
+          existingIdentityPredicate,
+        ),
+      )
+      .orderBy(desc(sql`(${entities.metadata} ->> 'agent_suggestion_item_id') = ${item.id}`))
+      .limit(1);
+    const existing = existingRows[0];
+    if (!existing) {
+      const created = await objects.createObject(input);
+      return created.id;
+    }
+
+    const patch: ObjectPatch = {};
+    if (parsed.canonicalName !== undefined && parsed.canonicalName !== existing.canonicalName) {
+      patch.canonicalName = canonicalName;
+    }
+    if (parsed.status !== undefined) patch.status = parsed.status;
+    if (parsed.stage !== undefined) patch.stage = parsed.stage;
+    if (parsed.priority !== undefined) patch.priority = parsed.priority;
+    if (parsed.ownerUserId !== undefined) patch.ownerUserId = parsed.ownerUserId;
+    if (parsed.assigneeUserId !== undefined) patch.assigneeUserId = parsed.assigneeUserId;
+    if (parsed.dueAt !== undefined) patch.dueAt = parsed.dueAt ? new Date(parsed.dueAt) : null;
+    if (parsed.aliases !== undefined) {
+      patch.aliases = mergeAliases(stringArrayFromUnknown(existing.aliases), parsed.aliases);
+    }
+    patch.metadata = {
+      ...recordFromUnknown(existing.metadata),
+      ...(parsed.metadata ?? {}),
+      agent_suggestion_item_id: item.id,
+    };
+    await objects.updateObject(existing.id, patch, { kind: 'agent', userId: null });
+    return existing.id;
+  }
+
   function acceptancePriority(item: SuggestionItem): number {
     if (
       item.operation === 'create' &&
@@ -1860,6 +2099,12 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     if (item.targetKind === 'object_merge') {
       throw new Error('Merge suggestions must be reviewed from the merge preview');
     }
+    if (
+      item.operation === 'create' &&
+      (item.targetKind === 'task' || item.targetKind === 'object')
+    ) {
+      return applyObjectCreateItem(item, normalizeLifecyclePayload(item));
+    }
     const existingResultId = await existingResultForItem(item);
     if (existingResultId) return existingResultId;
     const targetId = item.targetId;
@@ -1872,36 +2117,6 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     });
 
     if (item.targetKind === 'task' || item.targetKind === 'object') {
-      if (item.operation === 'create') {
-        const parsed = objectCreatePayload.parse(payload);
-        const canonicalName =
-          parsed.canonicalName !== undefined && parsed.canonicalName.length > 0
-            ? parsed.canonicalName
-            : item.title;
-        const input: CreateObjectInput = {
-          type: (item.targetKind === 'task' ? 'task' : (parsed.type ?? 'other')) as ObjectType,
-          canonicalName,
-          actor: { kind: 'agent', userId: null },
-        };
-        if (parsed.aliases !== undefined) input.aliases = parsed.aliases;
-        if (parsed.status !== undefined) input.status = parsed.status;
-        if (parsed.stage !== undefined) input.stage = parsed.stage;
-        if (parsed.priority !== undefined) input.priority = parsed.priority;
-        if (parsed.ownerUserId !== undefined) input.ownerUserId = parsed.ownerUserId;
-        if (parsed.assigneeUserId !== undefined) input.assigneeUserId = parsed.assigneeUserId;
-        if (parsed.dueAt !== undefined) input.dueAt = parsed.dueAt ? new Date(parsed.dueAt) : null;
-        if (parsed.parentObjectId !== undefined) input.parentObjectId = parsed.parentObjectId;
-        if (parsed.sourceEventId !== undefined) {
-          if (parsed.sourceEventId) await validateEvidenceVisible([parsed.sourceEventId]);
-          input.sourceEventId = parsed.sourceEventId;
-        }
-        input.metadata = {
-          ...(parsed.metadata ?? {}),
-          agent_suggestion_item_id: item.id,
-        };
-        const created = await objects.createObject(input);
-        return created.id;
-      }
       if (!targetId) throw new Error('Target id is required');
       if (item.operation === 'update') {
         const parsed = objectUpdatePayload.parse(payload);
@@ -2202,11 +2417,12 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     try {
       resultId = await applyItem(row.item);
     } catch (err) {
+      const failureReason = err instanceof Error ? err.message : 'Failed to apply suggestion';
       await db
         .update(agentSuggestionItems)
         .set({
           status: 'failed',
-          failureReason: err instanceof Error ? err.message : 'Failed to apply suggestion',
+          failureReason,
           resolvedAt: null,
           resolvedByUserId: null,
           updatedAt: new Date(),
@@ -2227,6 +2443,9 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         suggestionId: row.suggestion.id,
         op: 'accept_failure',
       });
+      if (isExpectedApplyFailure(err)) {
+        throw new ExpectedSuggestionApplyFailure(failureReason, { cause: err });
+      }
       throw err;
     }
     await db
@@ -2648,6 +2867,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
 
     reconcileCanonicalChange,
     reconcileObjectMerge,
+    reconcileStaleSuggestionItem,
 
     reconcileDuplicatePendingApprovals,
 

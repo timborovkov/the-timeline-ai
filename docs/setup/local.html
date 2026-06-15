@@ -136,8 +136,8 @@ pnpm db:migrate
       <pre><code>pnpm dev                              # next + worker, watch mode
 pnpm validate                         # format, typecheck, lint, knip
 pnpm test                             # unit + integration tests (package suites run sequentially)
-pnpm test:ci                          # focused CI test lane
 pnpm test:eval                        # fast deterministic agent and retrieval evals
+pnpm test:dist-imports                # build db/shared and import compiled runtime modules with Node
 pnpm check:web-bundle                 # scan built Next server chunks after a web build
 pnpm e2e                              # Playwright core journeys; requires compose infra + migrations
 pnpm e2e:prod-smoke                   # build + standalone-server smoke; requires compose infra + migrations
@@ -152,9 +152,10 @@ docker compose down -v                # nuke local data
       <p>
         GitHub PR CI intentionally skips <code>pnpm build</code> and
         <code>pnpm check:web-bundle</code>. The required CI proof is formatting, TypeScript
-        compilation, linting, Knip, and the focused <code>pnpm test:ci</code> lane. Run broader
-        relevant test commands separately, and run the production build and bundle hygiene checks
-        manually when changing deploy output, bundling, or server/client import boundaries.
+        compilation, linting, Knip, and the compiled-package import smoke check. Run broader
+        relevant test commands separately, including <code>pnpm test:eval</code> for agent or
+        retrieval changes, and run the production build and bundle hygiene checks manually when
+        changing deploy output, bundling, or server/client import boundaries.
       </p>
 
       <h2 id="resetting-local-data">Resetting local data</h2>

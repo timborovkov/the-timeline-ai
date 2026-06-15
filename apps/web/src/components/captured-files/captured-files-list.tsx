@@ -2,7 +2,7 @@
 
 import { FileText, Image as ImageIcon, Link2, Upload } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { useEffect, useMemo, useState, useTransition } from 'react';
+import { useMemo, useReducer, useTransition } from 'react';
 import { toast } from 'sonner';
 
 import type { ReactNode } from 'react';
@@ -60,47 +60,128 @@ interface Props {
 type Visibility = 'team' | 'private' | 'specific_users';
 
 const ALL = 'all';
+const capturedFileDateFormatter = new Intl.DateTimeFormat(undefined, {
+  month: 'short',
+  day: 'numeric',
+});
 
 interface CapturedFilesPageResponse {
   items: CapturedFileItem[];
   nextCursor: string | null;
 }
 
+interface CapturedFilesUiState {
+  sourceFilter: string;
+  typeFilter: string;
+  statusFilter: string;
+  dateFilter: string;
+  promoting: CapturedFileItem | null;
+}
+
+type CapturedFilesUiAction =
+  | { type: 'source'; value: string }
+  | { type: 'fileType'; value: string }
+  | { type: 'status'; value: string }
+  | { type: 'date'; value: string }
+  | { type: 'promote'; file: CapturedFileItem | null };
+
+const capturedFilesUiInitialState: CapturedFilesUiState = {
+  sourceFilter: ALL,
+  typeFilter: ALL,
+  statusFilter: ALL,
+  dateFilter: ALL,
+  promoting: null,
+};
+
+function capturedFilesUiReducer(
+  state: CapturedFilesUiState,
+  action: CapturedFilesUiAction,
+): CapturedFilesUiState {
+  switch (action.type) {
+    case 'source':
+      return { ...state, sourceFilter: action.value };
+    case 'fileType':
+      return { ...state, typeFilter: action.value };
+    case 'status':
+      return { ...state, statusFilter: action.value };
+    case 'date':
+      return { ...state, dateFilter: action.value };
+    case 'promote':
+      return { ...state, promoting: action.file };
+  }
+}
+
+interface PaginationState {
+  inputFiles: CapturedFileItem[];
+  inputCursor: string | null;
+  loadedFiles: CapturedFileItem[];
+  cursor: string | null;
+}
+
+interface PaginationAction {
+  type: 'append';
+  files: CapturedFileItem[];
+  nextCursor: string | null;
+}
+
+function paginationStateForProps(
+  files: CapturedFileItem[],
+  nextCursor: string | null,
+  current?: PaginationState,
+): PaginationState {
+  if (current?.inputFiles === files && current.inputCursor === nextCursor) return current;
+  return {
+    inputFiles: files,
+    inputCursor: nextCursor,
+    loadedFiles: files,
+    cursor: nextCursor,
+  };
+}
+
+function paginationReducer(state: PaginationState, action: PaginationAction): PaginationState {
+  const seen = new Set(state.loadedFiles.map((file) => file.id));
+  return {
+    ...state,
+    loadedFiles: [...state.loadedFiles, ...action.files.filter((file) => !seen.has(file.id))],
+    cursor: action.nextCursor,
+  };
+}
+
 export function CapturedFilesList({ files, nextCursor = null, folders, members }: Props) {
-  const [loadedFiles, setLoadedFiles] = useState(files);
-  const [cursor, setCursor] = useState(nextCursor);
+  const [paginationState, dispatchPagination] = useReducer(paginationReducer, undefined, () =>
+    paginationStateForProps(files, nextCursor),
+  );
+  const pagination = paginationStateForProps(files, nextCursor, paginationState);
+  const { loadedFiles, cursor } = pagination;
   const [loadingMore, startLoadMore] = useTransition();
-  const [sourceFilter, setSourceFilter] = useState(ALL);
-  const [typeFilter, setTypeFilter] = useState(ALL);
-  const [statusFilter, setStatusFilter] = useState(ALL);
-  const [dateFilter, setDateFilter] = useState(ALL);
-  const [promoting, setPromoting] = useState<CapturedFileItem | null>(null);
-  useEffect(() => {
-    setLoadedFiles(files);
-    setCursor(nextCursor);
-  }, [files, nextCursor]);
+  const [uiState, dispatchUi] = useReducer(capturedFilesUiReducer, capturedFilesUiInitialState);
   const sources = useMemo(
-    () => [...new Set(loadedFiles.map((file) => file.provenance.source))].sort(),
+    () => Array.from(new Set(loadedFiles.map((file) => file.provenance.source))).sort(),
     [loadedFiles],
   );
   const statuses = useMemo(
     () =>
-      [
-        ...new Set(
-          loadedFiles
-            .map((file) => file.currentVersion?.processingStatus ?? 'pending')
-            .filter(Boolean),
+      Array.from(
+        new Set(
+          loadedFiles.flatMap((file) => {
+            const status = file.currentVersion?.processingStatus ?? 'pending';
+            return status ? [status] : [];
+          }),
         ),
-      ].sort(),
+      ).sort(),
     [loadedFiles],
   );
   const visibleFiles = loadedFiles.filter((file) => {
     const kind = fileKind(file.currentVersion?.contentType ?? null);
     const status = file.currentVersion?.processingStatus ?? 'pending';
-    if (sourceFilter !== ALL && file.provenance.source !== sourceFilter) return false;
-    if (typeFilter !== ALL && kind !== typeFilter) return false;
-    if (statusFilter !== ALL && status !== statusFilter) return false;
-    if (dateFilter !== ALL && !matchesDateFilter(file.updatedAt, dateFilter)) return false;
+    if (uiState.sourceFilter !== ALL && file.provenance.source !== uiState.sourceFilter) {
+      return false;
+    }
+    if (uiState.typeFilter !== ALL && kind !== uiState.typeFilter) return false;
+    if (uiState.statusFilter !== ALL && status !== uiState.statusFilter) return false;
+    if (uiState.dateFilter !== ALL && !matchesDateFilter(file.updatedAt, uiState.dateFilter)) {
+      return false;
+    }
     return true;
   });
 
@@ -114,11 +195,7 @@ export function CapturedFilesList({ files, nextCursor = null, folders, members }
         return;
       }
       const page = (await response.json()) as CapturedFilesPageResponse;
-      setLoadedFiles((current) => {
-        const seen = new Set(current.map((file) => file.id));
-        return [...current, ...page.items.filter((file) => !seen.has(file.id))];
-      });
-      setCursor(page.nextCursor);
+      dispatchPagination({ type: 'append', files: page.items, nextCursor: page.nextCursor });
     });
   }
 
@@ -138,7 +215,13 @@ export function CapturedFilesList({ files, nextCursor = null, folders, members }
   return (
     <section className="space-y-3">
       <div className="grid gap-2 rounded-sm border border-border bg-card p-3 md:grid-cols-4">
-        <FilterSelect label="Source" value={sourceFilter} onChange={setSourceFilter}>
+        <FilterSelect
+          label="Source"
+          value={uiState.sourceFilter}
+          onChange={(value) => {
+            dispatchUi({ type: 'source', value });
+          }}
+        >
           <option value={ALL}>All sources</option>
           {sources.map((source) => (
             <option key={source} value={source}>
@@ -146,14 +229,26 @@ export function CapturedFilesList({ files, nextCursor = null, folders, members }
             </option>
           ))}
         </FilterSelect>
-        <FilterSelect label="Type" value={typeFilter} onChange={setTypeFilter}>
+        <FilterSelect
+          label="Type"
+          value={uiState.typeFilter}
+          onChange={(value) => {
+            dispatchUi({ type: 'fileType', value });
+          }}
+        >
           <option value={ALL}>All types</option>
           <option value="image">Images</option>
           <option value="pdf">PDFs</option>
           <option value="audio">Audio</option>
           <option value="file">Other files</option>
         </FilterSelect>
-        <FilterSelect label="Status" value={statusFilter} onChange={setStatusFilter}>
+        <FilterSelect
+          label="Status"
+          value={uiState.statusFilter}
+          onChange={(value) => {
+            dispatchUi({ type: 'status', value });
+          }}
+        >
           <option value={ALL}>All statuses</option>
           {statuses.map((status) => (
             <option key={status} value={status}>
@@ -161,7 +256,13 @@ export function CapturedFilesList({ files, nextCursor = null, folders, members }
             </option>
           ))}
         </FilterSelect>
-        <FilterSelect label="Date" value={dateFilter} onChange={setDateFilter}>
+        <FilterSelect
+          label="Date"
+          value={uiState.dateFilter}
+          onChange={(value) => {
+            dispatchUi({ type: 'date', value });
+          }}
+        >
           <option value={ALL}>Any time</option>
           <option value="7d">Last 7 days</option>
           <option value="30d">Last 30 days</option>
@@ -174,7 +275,7 @@ export function CapturedFilesList({ files, nextCursor = null, folders, members }
             key={file.id}
             file={file}
             onPromote={() => {
-              setPromoting(file);
+              dispatchUi({ type: 'promote', file });
             }}
           />
         ))}
@@ -188,16 +289,16 @@ export function CapturedFilesList({ files, nextCursor = null, folders, members }
       ) : null}
       {cursor ? (
         <Button type="button" variant="outline" size="sm" onClick={loadMore} disabled={loadingMore}>
-          {loadingMore ? 'Loading...' : 'Load older captured files'}
+          {loadingMore ? 'Loading…' : 'Load older captured files'}
         </Button>
       ) : null}
-      {promoting ? (
+      {uiState.promoting ? (
         <PromoteDialog
-          file={promoting}
+          file={uiState.promoting}
           folders={folders}
           members={members}
           onClose={() => {
-            setPromoting(null);
+            dispatchUi({ type: 'promote', file: null });
           }}
         />
       ) : null}
@@ -314,6 +415,49 @@ function CapturedFileRow({ file, onPromote }: { file: CapturedFileItem; onPromot
   );
 }
 
+interface PromoteDialogState {
+  name: string;
+  folderId: string;
+  visibility: Visibility;
+  visibilityUserIds: string[];
+}
+
+type PromoteDialogAction =
+  | { type: 'name'; value: string }
+  | { type: 'folder'; value: string }
+  | { type: 'visibility'; value: Visibility }
+  | { type: 'member'; memberId: string; checked: boolean };
+
+function promoteDialogInitialState(file: CapturedFileItem): PromoteDialogState {
+  return {
+    name: file.presentation.displayTitle,
+    folderId: '',
+    visibility: file.visibility,
+    visibilityUserIds: file.visibilityUserIds ?? [],
+  };
+}
+
+function promoteDialogReducer(
+  state: PromoteDialogState,
+  action: PromoteDialogAction,
+): PromoteDialogState {
+  switch (action.type) {
+    case 'name':
+      return { ...state, name: action.value };
+    case 'folder':
+      return { ...state, folderId: action.value };
+    case 'visibility':
+      return { ...state, visibility: action.value };
+    case 'member':
+      return {
+        ...state,
+        visibilityUserIds: action.checked
+          ? Array.from(new Set([...state.visibilityUserIds, action.memberId]))
+          : state.visibilityUserIds.filter((id) => id !== action.memberId),
+      };
+  }
+}
+
 function PromoteDialog({
   file,
   folders,
@@ -327,21 +471,16 @@ function PromoteDialog({
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
-  const [name, setName] = useState(file.presentation.displayTitle);
-  const [folderId, setFolderId] = useState('');
-  const [visibility, setVisibility] = useState<Visibility>(file.visibility);
-  const [visibilityUserIds, setVisibilityUserIds] = useState<string[]>(
-    file.visibilityUserIds ?? [],
-  );
+  const [form, dispatchForm] = useReducer(promoteDialogReducer, file, promoteDialogInitialState);
 
   function submit(): void {
     startTransition(async () => {
       const result = await promoteCapturedFileAction({
         id: file.id,
-        name,
-        folderId: folderId || null,
-        visibility,
-        visibilityUserIds: visibility === 'specific_users' ? visibilityUserIds : [],
+        name: form.name,
+        folderId: form.folderId || null,
+        visibility: form.visibility,
+        visibilityUserIds: form.visibility === 'specific_users' ? form.visibilityUserIds : [],
       });
       if (!result.ok || !result.documentId) {
         toast.error(result.error ?? 'Promotion failed');
@@ -367,9 +506,9 @@ function PromoteDialog({
               Title
             </span>
             <input
-              value={name}
+              value={form.name}
               onChange={(event) => {
-                setName(event.target.value);
+                dispatchForm({ type: 'name', value: event.target.value });
               }}
               className="h-9 w-full rounded-sm border border-border bg-bg px-2 text-sm"
             />
@@ -379,9 +518,9 @@ function PromoteDialog({
               Folder
             </span>
             <select
-              value={folderId}
+              value={form.folderId}
               onChange={(event) => {
-                setFolderId(event.target.value);
+                dispatchForm({ type: 'folder', value: event.target.value });
               }}
               className="h-9 w-full rounded-sm border border-border bg-bg px-2 text-sm"
             >
@@ -398,9 +537,9 @@ function PromoteDialog({
               Visibility
             </span>
             <select
-              value={visibility}
+              value={form.visibility}
               onChange={(event) => {
-                setVisibility(event.target.value as Visibility);
+                dispatchForm({ type: 'visibility', value: event.target.value as Visibility });
               }}
               className="h-9 w-full rounded-sm border border-border bg-bg px-2 text-sm"
             >
@@ -409,19 +548,19 @@ function PromoteDialog({
               <option value="specific_users">Specific users</option>
             </select>
           </label>
-          {visibility === 'specific_users' ? (
+          {form.visibility === 'specific_users' ? (
             <div className="max-h-36 space-y-1 overflow-auto rounded-sm border border-border p-2">
               {members.map((member) => (
                 <label key={member.id} className="flex items-center gap-2 text-sm">
                   <input
                     type="checkbox"
-                    checked={visibilityUserIds.includes(member.id)}
+                    checked={form.visibilityUserIds.includes(member.id)}
                     onChange={(event) => {
-                      setVisibilityUserIds((current) =>
-                        event.target.checked
-                          ? [...current, member.id]
-                          : current.filter((id) => id !== member.id),
-                      );
+                      dispatchForm({
+                        type: 'member',
+                        memberId: member.id,
+                        checked: event.target.checked,
+                      });
                     }}
                   />
                   {member.label}
@@ -434,8 +573,8 @@ function PromoteDialog({
           <Button type="button" variant="outline" onClick={onClose} disabled={pending}>
             Cancel
           </Button>
-          <Button type="button" onClick={submit} disabled={pending || !name.trim()}>
-            {pending ? 'Promoting...' : 'Promote'}
+          <Button type="button" onClick={submit} disabled={pending || !form.name.trim()}>
+            {pending ? 'Promoting…' : 'Promote'}
           </Button>
         </div>
       </div>
@@ -458,7 +597,5 @@ function matchesDateFilter(value: string, filter: string): boolean {
 }
 
 function formatDate(value: string): string {
-  return new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' }).format(
-    new Date(value),
-  );
+  return capturedFileDateFormatter.format(new Date(value));
 }

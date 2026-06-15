@@ -106,7 +106,6 @@ For the full walkthrough, see
 pnpm dev                  # Next.js app + worker in watch mode
 pnpm validate             # format check, typecheck, lint, knip
 pnpm test                 # unit and integration tests (package suites run sequentially)
-pnpm test:ci              # focused evals plus compiled-package import smoke checks
 pnpm test:eval            # fast deterministic agent and retrieval evals
 pnpm test:dist-imports    # build db/shared and import compiled runtime modules with Node
 pnpm e2e                  # Playwright core journey tests
@@ -117,14 +116,15 @@ pnpm check:web-bundle     # inspect built Next server chunks
 ```
 
 `pnpm validate` is the main static pre-merge gate. Run tests separately with the
-smallest command that proves the behavior you changed: `pnpm test:ci`,
-`pnpm test`, a package-filtered Vitest command, `pnpm test:eval`, or an e2e
-command.
+smallest command that proves the behavior you changed: `pnpm test`, a
+package-filtered Vitest command, `pnpm test:eval`, `pnpm test:dist-imports`, or
+an e2e command.
 GitHub PR CI intentionally does not run `pnpm build` or `pnpm check:web-bundle`;
-TypeScript compilation, linting, formatting, Knip, and the focused
-`pnpm test:ci` lane are the required CI proof. Run broader tests, build, and
+TypeScript compilation, linting, formatting, Knip, and the compiled-package
+import smoke check are the required CI proof. Run broader tests, build, and
 bundle hygiene checks manually when a change touches behavior, production
-bundling, deployment output, or server/client import boundaries.
+bundling, deployment output, agent/retrieval quality, or server/client import
+boundaries.
 
 ## Documentation
 

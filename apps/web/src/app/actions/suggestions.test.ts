@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { z } from 'zod';
 
 import {
   acceptAllSuggestionAction,
@@ -16,6 +17,7 @@ import {
 const fakes = vi.hoisted(() => ({
   fakeResolveScope: vi.fn(),
   fakeRevalidatePath: vi.fn(),
+  fakeReportCaughtError: vi.fn(),
   fakeSuggestions: {
     acceptSuggestionItem: vi.fn(),
     rejectSuggestionItem: vi.fn(),
@@ -32,6 +34,7 @@ vi.mock('@/lib/action-scope', async () => {
   };
 });
 vi.mock('next/cache', () => ({ revalidatePath: fakes.fakeRevalidatePath }));
+vi.mock('@/lib/sentry-report', () => ({ reportCaughtError: fakes.fakeReportCaughtError }));
 
 const ITEM_ID = '11111111-1111-4111-8111-111111111111';
 const SUGGESTION_ID = '22222222-2222-4222-8222-222222222222';
@@ -130,6 +133,62 @@ describe('suggestion item actions', () => {
 
     await expect(acceptSuggestionItemAction({ itemId: ITEM_ID })).resolves.toEqual({
       error: 'apply failed',
+    });
+    expect(fakes.fakeReportCaughtError).toHaveBeenCalledWith(expect.any(Error), {
+      surface: 'server_action',
+      operation: 'accept_suggestion_item',
+    });
+    expectSuggestionSurfacesRevalidated();
+  });
+
+  it('does not report expected persisted apply failures to Sentry', async () => {
+    const err = Object.assign(new Error('Invalid proposal payload'), {
+      name: 'ExpectedSuggestionApplyFailure',
+      code: 'TIMELINE_EXPECTED_SUGGESTION_APPLY_FAILURE',
+    });
+    fakes.fakeSuggestions.acceptSuggestionItem.mockRejectedValue(err);
+
+    await expect(acceptSuggestionItemAction({ itemId: ITEM_ID })).resolves.toEqual({
+      error: err.message,
+    });
+    expect(fakes.fakeReportCaughtError).not.toHaveBeenCalled();
+    expectSuggestionSurfacesRevalidated();
+  });
+
+  it('reports raw invalid proposal payload failures that were not marked expected', async () => {
+    const err = new z.ZodError([
+      {
+        code: 'invalid_type',
+        expected: 'string',
+        input: undefined,
+        path: ['startAt'],
+        message: 'Invalid input: expected string, received undefined',
+      },
+    ]);
+    fakes.fakeSuggestions.acceptSuggestionItem.mockRejectedValue(err);
+
+    await expect(acceptSuggestionItemAction({ itemId: ITEM_ID })).resolves.toEqual({
+      error: err.message,
+    });
+    expect(fakes.fakeReportCaughtError).toHaveBeenCalledWith(err, {
+      surface: 'server_action',
+      operation: 'accept_suggestion_item',
+    });
+    expectSuggestionSurfacesRevalidated();
+  });
+
+  it('reports duplicate-key failures that were not marked expected', async () => {
+    const err = Object.assign(new Error('duplicate key value violates unique constraint'), {
+      code: '23505',
+    });
+    fakes.fakeSuggestions.acceptSuggestionItem.mockRejectedValue(err);
+
+    await expect(acceptSuggestionItemAction({ itemId: ITEM_ID })).resolves.toEqual({
+      error: err.message,
+    });
+    expect(fakes.fakeReportCaughtError).toHaveBeenCalledWith(err, {
+      surface: 'server_action',
+      operation: 'accept_suggestion_item',
     });
     expectSuggestionSurfacesRevalidated();
   });

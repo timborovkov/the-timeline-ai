@@ -46,12 +46,19 @@ export default async function DocumentDetailPage({ params, searchParams }: Props
     }),
   ]);
   const listEntry = provenancePage.items[0] ?? null;
-  const currentVersion =
-    versions.find((version) => version.id === document.currentVersionId) ?? versions[0] ?? null;
-  const currentVersionChunks = currentVersion
-    ? await scope.documents.listDocumentVersionChunks(currentVersion.id)
-    : [];
   const requestedVersion = sp.version ? Number.parseInt(sp.version, 10) : null;
+  const selectedVersion =
+    requestedVersion && Number.isFinite(requestedVersion)
+      ? (versions.find((version) => version.version === requestedVersion) ?? null)
+      : null;
+  const activeVersion =
+    selectedVersion ??
+    versions.find((version) => version.id === document.currentVersionId) ??
+    versions[0] ??
+    null;
+  const activeVersionChunks = activeVersion
+    ? await scope.documents.listDocumentVersionChunks(activeVersion.id)
+    : [];
 
   return (
     <div className="mx-auto max-w-4xl space-y-6">
@@ -88,7 +95,8 @@ export default async function DocumentDetailPage({ params, searchParams }: Props
           uploadedByUserId: v.uploadedByUserId,
         }))}
         requestedVersion={requestedVersion}
-        currentVersionChunks={currentVersionChunks.map((chunk) => ({
+        activeVersionId={activeVersion?.id ?? null}
+        activeVersionChunks={activeVersionChunks.map((chunk) => ({
           id: chunk.id,
           representationKind: chunk.representationKind,
           text: chunk.text,

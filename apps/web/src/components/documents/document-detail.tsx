@@ -58,7 +58,8 @@ interface Props {
   document: DocumentSummary;
   versions: VersionItem[];
   requestedVersion: number | null;
-  currentVersionChunks: {
+  activeVersionId: string | null;
+  activeVersionChunks: {
     id: string;
     representationKind: string;
     text: string;
@@ -95,7 +96,8 @@ export function DocumentDetail({
   document,
   versions,
   requestedVersion,
-  currentVersionChunks,
+  activeVersionId,
+  activeVersionChunks,
 }: Props) {
   const router = useRouter();
   const dialog = useAppDialog();
@@ -108,11 +110,13 @@ export function DocumentDetail({
   const [downloading, setDownloading] = useState<readonly string[]>([]);
   const currentDocument =
     optimisticRename?.id === document.id ? { ...document, ...optimisticRename } : document;
-  const currentVersion =
-    versions.find((version) => version.id === currentDocument.currentVersionId) ?? versions[0];
+  const activeVersion =
+    versions.find((version) => version.id === activeVersionId) ??
+    versions.find((version) => version.id === currentDocument.currentVersionId) ??
+    versions[0];
   const presentation = documentPresentation({
     name: currentDocument.name,
-    contentType: currentVersion?.contentType ?? null,
+    contentType: activeVersion?.contentType ?? null,
     metadata: currentDocument.metadata,
     fileKind: currentDocument.fileKind,
   });
@@ -233,13 +237,14 @@ export function DocumentDetail({
         </CardHeader>
       </Card>
 
-      {currentVersion ? (
+      {activeVersion ? (
         <CurrentVersionPanel
           document={currentDocument}
-          version={currentVersion}
-          chunks={currentVersionChunks}
+          version={activeVersion}
+          chunks={activeVersionChunks}
+          isCurrentVersion={activeVersion.id === currentDocument.currentVersionId}
           onDownload={onDownload}
-          downloading={downloading.includes(currentVersion.id)}
+          downloading={downloading.includes(activeVersion.id)}
         />
       ) : null}
 
@@ -316,12 +321,14 @@ function CurrentVersionPanel({
   document,
   version,
   chunks,
+  isCurrentVersion,
   onDownload,
   downloading,
 }: {
   document: DocumentSummary;
   version: VersionItem;
-  chunks: Props['currentVersionChunks'];
+  chunks: Props['activeVersionChunks'];
+  isCurrentVersion: boolean;
   onDownload: (versionId: string) => Promise<void>;
   downloading: boolean;
 }) {
@@ -336,7 +343,9 @@ function CurrentVersionPanel({
     <Card>
       <CardHeader className="flex flex-row items-start justify-between gap-4 max-sm:flex-col">
         <div>
-          <CardTitle className="text-base">Current version</CardTitle>
+          <CardTitle className="text-base">
+            {isCurrentVersion ? 'Current version' : 'Selected version'}
+          </CardTitle>
           <p className="mt-1 text-xs text-muted-foreground">
             v{String(version.version)} · {formatBytes(version.byteSize)} ·{' '}
             {version.contentType ?? 'unknown'} · {new Date(version.createdAt).toLocaleString()}
@@ -351,7 +360,7 @@ function CurrentVersionPanel({
           disabled={downloading}
         >
           <Download className="mr-1 size-3.5" />
-          {downloading ? 'Opening...' : 'Download'}
+          {downloading ? 'Opening…' : 'Download'}
         </Button>
       </CardHeader>
       <CardContent>
@@ -430,7 +439,7 @@ function InfoBlock({ title, children }: { title: string; children: ReactNode }) 
   );
 }
 
-function UnsupportedPreview({ chunks }: { chunks: Props['currentVersionChunks'] }) {
+function UnsupportedPreview({ chunks }: { chunks: Props['activeVersionChunks'] }) {
   const text = bestChunkText(chunks);
   return (
     <div className="min-h-72 rounded-sm border border-border bg-bg p-4">
@@ -453,7 +462,7 @@ function UnsupportedPreview({ chunks }: { chunks: Props['currentVersionChunks'] 
   );
 }
 
-function bestChunkDescription(chunks: Props['currentVersionChunks']): string | null {
+function bestChunkDescription(chunks: Props['activeVersionChunks']): string | null {
   const visual = chunks.find((chunk) => chunk.representationKind === 'visual_description');
   const firstSummary = visual?.summary ?? chunks.find((chunk) => chunk.summary)?.summary;
   if (firstSummary?.trim()) return firstSummary.trim();
@@ -462,7 +471,7 @@ function bestChunkDescription(chunks: Props['currentVersionChunks']): string | n
   return firstText.trim().replace(/\s+/g, ' ').slice(0, 420);
 }
 
-function bestChunkText(chunks: Props['currentVersionChunks']): string | null {
+function bestChunkText(chunks: Props['activeVersionChunks']): string | null {
   const sourceText = chunks.find((chunk) => chunk.representationKind === 'source_text');
   const firstText = sourceText?.text ?? chunks[0]?.text;
   if (!firstText?.trim()) return null;
