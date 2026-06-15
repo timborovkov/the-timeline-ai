@@ -74,7 +74,10 @@ export function ArtifactReferenceChip({
         });
       })
       .catch((error: unknown) => {
-        if (controller.signal.aborted) return;
+        if (controller.signal.aborted) {
+          setState({ loading: false, error: null, preview: null, cacheKey: null });
+          return;
+        }
         setState({
           loading: false,
           error: error instanceof Error ? error.message : 'Could not load this reference.',

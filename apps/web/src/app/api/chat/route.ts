@@ -177,6 +177,7 @@ const nativeToolGroups = {
     'search_object_notes',
     'get_entity',
     'get_event',
+    'list_events',
     'resolve_time_context',
   ],
   guide: ['search_app_guide', 'get_app_route'],

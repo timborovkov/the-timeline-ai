@@ -205,6 +205,13 @@ function classifyRecipe(query: string): Exclude<RetrievalRecipe, 'auto'> {
   if (/\b(where|how do i|how can i|invite|settings|guide|use timeline)\b/.test(q)) {
     return 'product_guide';
   }
+  if (
+    /\b(what happened|who said|what did|where did|timeline|events?|activity|mentioned|mentioned by|log|history|recent)\b/.test(
+      q,
+    )
+  ) {
+    return 'timeline_evidence';
+  }
   if (/\b(calendar|schedule|meeting|tomorrow|today|week)\b/.test(q)) return 'calendar';
   if (/\b(board|kanban|lane|pipeline)\b/.test(q)) return 'board_state';
   if (/\b(task|follow[- ]?up|todo|blocked|due)\b/.test(q)) return 'task_status';

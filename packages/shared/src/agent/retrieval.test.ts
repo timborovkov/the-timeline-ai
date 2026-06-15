@@ -145,6 +145,23 @@ describe('retrieveWorkspaceContext', () => {
     });
   });
 
+  it('classifies timeline-evidence questions using event-centric phrasing', async () => {
+    const scope = makeScope();
+
+    const result = await retrieveWorkspaceContext(scope as unknown as TeamScope, {
+      query: 'What happened in the timeline last week?',
+      limit: 5,
+    });
+
+    expect(result.recipe).toBe('timeline_evidence');
+    expect(scope.timeline.searchEvents).toHaveBeenCalledWith(
+      expect.objectContaining({ query: 'What happened in the timeline last week?', limit: 5 }),
+    );
+    expect(result.events[0]).toMatchObject({
+      citation: '[ev:bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb]',
+    });
+  });
+
   it('fetches calendar context around today for calendar-related questions', async () => {
     const now = new Date('2026-06-15T12:00:00.000Z');
     vi.useFakeTimers();
