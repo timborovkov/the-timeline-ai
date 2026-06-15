@@ -101,4 +101,35 @@ describe('FloatingAgentChat', () => {
       expect(fakes.loadChatSessionAction).toHaveBeenCalledWith({ sessionId: staleSessionId });
     });
   });
+
+  it('reloads the floating session when team changes', async () => {
+    const user = userEvent.setup();
+    const team1Session = 'aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa';
+    const team2Session = 'bbbbbbbb-bbbb-4bbb-bbbb-bbbbbbbbbbbb';
+    const team1StorageKey = 'timeline:floating-agent-chat:team-1:session';
+    const team2StorageKey = 'timeline:floating-agent-chat:team-2:session';
+
+    window.localStorage.setItem(team1StorageKey, team1Session);
+    window.localStorage.setItem(team2StorageKey, team2Session);
+
+    const { rerender } = render(<FloatingAgentChat teamId="team-1" teamName="AuditAI" />);
+    await user.click(screen.getByRole('button', { name: 'Open floating agent chat' }));
+    await waitFor(() => {
+      expect(fakes.loadChatSessionAction).toHaveBeenCalledWith({ sessionId: team1Session });
+      expect(
+        (fakes.transports.at(-1)?.options.body?.() as { sessionId?: string | null }).sessionId,
+      ).toBe(team1Session);
+    });
+
+    fakes.loadChatSessionAction.mockClear();
+    rerender(<FloatingAgentChat teamId="team-2" teamName="AuditAI" />);
+    await user.click(screen.getByRole('button', { name: 'Open floating agent chat' }));
+
+    await waitFor(() => {
+      expect(fakes.loadChatSessionAction).toHaveBeenCalledWith({ sessionId: team2Session });
+      expect(
+        (fakes.transports.at(-1)?.options.body?.() as { sessionId?: string | null }).sessionId,
+      ).toBe(team2Session);
+    });
+  });
 });

@@ -437,6 +437,49 @@ describe('POST /api/chat', () => {
     });
   });
 
+  it('adds action tools for completion-style commands on object context', async () => {
+    const completionMessage = {
+      id: 'm-complete',
+      role: 'user',
+      parts: [{ type: 'text', text: 'Mark this done' }],
+    };
+    fakes.fakeSafeValidateUIMessages.mockResolvedValue({
+      success: true,
+      data: [completionMessage],
+    });
+    fakes.fakeBuildAgentTools.mockReturnValue({
+      retrieve_workspace_context: { type: 'native' },
+      execute_object_update: { type: 'native' },
+      execute_object_archive: { type: 'native' },
+      search_app_guide: { type: 'native' },
+      get_app_route: { type: 'native' },
+      get_object: { type: 'native' },
+      search_objects: { type: 'native' },
+      search_timeline: { type: 'native' },
+    });
+
+    const response = await POST(
+      request(
+        validBody({
+          messages: [completionMessage],
+          dashboardContext: {
+            pathname: '/app/objects/44444444-4444-4444-8444-444444444444',
+            routeKind: 'objects',
+            objectId: '44444444-4444-4444-8444-444444444444',
+          },
+        }),
+      ),
+    );
+
+    expect(response.status).toBe(200);
+    const streamCall = fakes.fakeStreamChat.mock.calls.at(-1) as unknown as
+      | [{ tools?: Record<string, unknown> }]
+      | undefined;
+    expect(streamCall?.[0].tools).toMatchObject({
+      execute_object_update: { type: 'native' },
+    });
+  });
+
   it('discovers MCP tools only for connected-source turns', async () => {
     const sourceMessage = {
       id: 'm-source',

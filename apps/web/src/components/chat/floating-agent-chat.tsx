@@ -32,7 +32,7 @@ interface FloatingSessionState {
 export function FloatingAgentChat({ teamId, teamName }: FloatingAgentChatProps) {
   return (
     <Suspense fallback={null}>
-      <FloatingAgentChatContent teamId={teamId} teamName={teamName} />
+      <FloatingAgentChatContent key={teamId} teamId={teamId} teamName={teamName} />
     </Suspense>
   );
 }

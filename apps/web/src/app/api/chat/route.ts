@@ -227,6 +227,11 @@ function selectAgentToolGroups(input: {
     input.dashboardContext?.pathname ?? ''
   }`.toLowerCase();
   const groups = new Set<NativeToolGroup>(['core', 'guide']);
+  const hasObjectContext = Boolean(
+    input.dashboardContext?.objectId ??
+    input.dashboardContext?.taskId ??
+    input.dashboardContext?.boardItemId,
+  );
 
   if (
     input.dashboardContext?.objectId ||
@@ -269,9 +274,14 @@ function selectAgentToolGroups(input: {
 
   if (
     matchesAny(text, [
-      /\b(create|add|update|change|edit|set|move|cancel|delete|remove|archive|merge|remember|schedule|reschedule|approve|do it)\b/,
+      /\b(create|add|update|change|edit|set|move|cancel|delete|remove|archive|merge|remember|schedule|reschedule|approve|do it|mark|done|complete|finish|close)\b/,
     ])
   ) {
+    groups.add('actions');
+    groups.add('objects');
+  }
+
+  if (hasObjectContext && matchesAny(text, [/\b(mark|done|complete|close|finish)\b/])) {
     groups.add('actions');
     groups.add('objects');
   }

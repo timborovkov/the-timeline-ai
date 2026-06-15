@@ -62,9 +62,10 @@ export function ChatSurface(
     updateUrlOnSessionCreate?: boolean;
   },
 ) {
+  const initialSessionSeedRef = useRef(props.sessionId);
   return (
     <Suspense fallback={null}>
-      <ChatSurfaceContent {...props} />
+      <ChatSurfaceContent key={initialSessionSeedRef.current ?? 'new-chat-session'} {...props} />
     </Suspense>
   );
 }
@@ -186,9 +187,14 @@ function useChatSessionTransport({
     onSessionIdChangeRef.current = onSessionIdChange;
   }, [onSessionIdChange]);
 
+  // Keep transport state aligned when the host page swaps `session=` in response
+  // to navigation (for example opening a historical thread). -- event logic is
+  // a prop-driven sync that must run outside interaction handlers.
+  // react-doctor-disable-next-line react-doctor/no-event-handler
   useEffect(() => {
     sessionIdRef.current = initialSessionId;
     setSessionId(initialSessionId);
+    // react-doctor-disable-next-line react-doctor/no-event-handler
     if (initialSessionId === null) {
       sessionCreateAttempted.current = false;
     }
