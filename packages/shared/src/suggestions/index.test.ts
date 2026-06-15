@@ -1579,7 +1579,7 @@ describe('suggestion scope', () => {
     expect(result.rows[0]?.status).toBe('todo');
   });
 
-  it('treats an exact existing create task as already represented', async () => {
+  it('does not treat an unrelated exact existing create task as already represented', async () => {
     const scope = withTeam(db as never, TEAM_ID, USER_ID);
     const existing = await scope.objects.createObject({
       type: 'task',
@@ -1607,67 +1607,36 @@ describe('suggestion scope', () => {
     const itemId = bundle.items[0]?.id;
     expect(itemId).toBeDefined();
 
-    await expect(scope.suggestions.acceptSuggestionItem(itemId ?? '')).resolves.toBe(true);
-
-    const rows = await pg.query<{ id: string; count: string }>(
-      `SELECT max(id::text) AS id, count(*)::text FROM entities WHERE team_id = '${TEAM_ID}' AND type = 'task' AND canonical_name = 'Schedule follow-up meeting with Digital Audit Company'`,
-    );
-    expect(rows.rows[0]).toEqual({ id: existing.id, count: '1' });
-  });
-
-  it('treats an exact existing create object as already represented', async () => {
-    const scope = withTeam(db as never, TEAM_ID, USER_ID);
-    const existing = await scope.objects.createObject({
-      type: 'project',
-      canonicalName: 'Website refresh',
-      status: 'open',
-      actor: { kind: 'user', userId: USER_ID },
+    await expect(scope.suggestions.acceptSuggestionItem(itemId ?? '')).rejects.toMatchObject({
+      name: 'ExpectedSuggestionApplyFailure',
+      code: 'TIMELINE_EXPECTED_SUGGESTION_APPLY_FAILURE',
     });
-    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
-      source: 'background',
-      title: 'Create duplicate project',
-      dedupeKey: 'create-duplicate-project',
-      items: [
-        {
-          operation: 'create',
-          targetKind: 'object',
-          title: 'Website refresh',
-          dedupeKey: 'create-duplicate-project:item',
-          proposedPayload: {
-            type: 'project',
-            canonicalName: 'Website refresh',
-            stage: 'planning',
-          },
-        },
-      ],
-    });
-    const itemId = bundle.items[0]?.id;
-    expect(itemId).toBeDefined();
-
-    await expect(scope.suggestions.acceptSuggestionItem(itemId ?? '')).resolves.toBe(true);
 
     const rows = await pg.query<{
       id: string;
       count: string;
-      stage: string | null;
-      metadata: Record<string, unknown>;
+      result_id: string | null;
+      status: string;
     }>(
-      `SELECT max(id::text) AS id,
-              count(*)::text,
-              max(stage) AS stage,
-              max(metadata::text)::jsonb AS metadata
-       FROM entities
-       WHERE team_id = '${TEAM_ID}'
-         AND type = 'project'
-         AND canonical_name = 'Website refresh'`,
+      `SELECT max(e.id::text) AS id,
+              count(e.id)::text,
+              max(asi.result_id::text) AS result_id,
+              max(asi.status::text) AS status
+       FROM entities e
+       LEFT JOIN agent_suggestion_items asi ON asi.id = '${itemId}'
+       WHERE e.team_id = '${TEAM_ID}'
+         AND e.type = 'task'
+         AND e.canonical_name = 'Schedule follow-up meeting with Digital Audit Company'`,
     );
-    expect(rows.rows[0]?.id).toBe(existing.id);
-    expect(rows.rows[0]?.count).toBe('1');
-    expect(rows.rows[0]?.stage).toBe('planning');
-    expect(rows.rows[0]?.metadata).toMatchObject({ agent_suggestion_item_id: itemId });
+    expect(rows.rows[0]).toEqual({
+      id: existing.id,
+      count: '1',
+      result_id: null,
+      status: 'failed',
+    });
   });
 
-  it('applies create task proposal fields when accepting a duplicate existing task', async () => {
+  it('does not apply create task proposal fields to an unrelated duplicate existing task', async () => {
     const scope = withTeam(db as never, TEAM_ID, USER_ID);
     const existing = await scope.objects.createObject({
       type: 'task',
@@ -1699,34 +1668,31 @@ describe('suggestion scope', () => {
     const itemId = bundle.items[0]?.id;
     expect(itemId).toBeDefined();
 
-    await expect(scope.suggestions.acceptSuggestionItem(itemId ?? '')).resolves.toBe(true);
+    await expect(scope.suggestions.acceptSuggestionItem(itemId ?? '')).rejects.toMatchObject({
+      name: 'ExpectedSuggestionApplyFailure',
+      code: 'TIMELINE_EXPECTED_SUGGESTION_APPLY_FAILURE',
+    });
 
     const rows = await pg.query<{
       id: string;
-      count: string;
       aliases: string[];
       due_at: Date | null;
       metadata: Record<string, unknown>;
     }>(
-      `SELECT max(id::text) AS id,
-              count(*)::text,
-              max(aliases::text)::jsonb AS aliases,
-              max(due_at) AS due_at,
-              max(metadata::text)::jsonb AS metadata
+      `SELECT id::text,
+              aliases::text::jsonb AS aliases,
+              due_at,
+              metadata::text::jsonb AS metadata
        FROM entities
        WHERE team_id = '${TEAM_ID}'
          AND type = 'task'
          AND canonical_name = 'Schedule follow-up meeting with Digital Audit Company'`,
     );
     expect(rows.rows[0]?.id).toBe(existing.id);
-    expect(rows.rows[0]?.count).toBe('1');
-    expect(rows.rows[0]?.aliases).toEqual(['Digital Audit follow-up', 'DAC follow-up']);
-    expect(new Date(rows.rows[0]?.due_at ?? '').toISOString()).toBe('2026-08-01T10:00:00.000Z');
-    expect(rows.rows[0]?.metadata).toMatchObject({
-      existing: true,
-      source: 'proposal',
-      agent_suggestion_item_id: itemId,
-    });
+    expect(rows.rows).toHaveLength(1);
+    expect(rows.rows[0]?.aliases).toEqual(['Digital Audit follow-up']);
+    expect(rows.rows[0]?.due_at).toBeNull();
+    expect(rows.rows[0]?.metadata).toEqual({ existing: true });
   });
 
   it('applies identity facet suggestions only after approval', async () => {

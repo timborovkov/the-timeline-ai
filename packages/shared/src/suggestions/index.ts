@@ -1677,38 +1677,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
           ),
         )
         .limit(1);
-      const markerMatch = rows[0]?.id;
-      if (markerMatch) return markerMatch;
-      if (item.status === 'failed') return null;
-
-      const parsed = objectCreatePayload.safeParse(normalizeLifecyclePayload(item));
-      if (!parsed.success) return null;
-      const canonicalName =
-        parsed.data.canonicalName !== undefined && parsed.data.canonicalName.length > 0
-          ? parsed.data.canonicalName
-          : item.title;
-      const type =
-        item.targetKind === 'task' ? 'task' : (objectTypeFromValue(parsed.data.type) ?? 'other');
-      if (
-        item.targetKind === 'object' &&
-        (await hasDependentObjectNoteSibling(item, canonicalName, type))
-      ) {
-        return null;
-      }
-      const canonicalRows = await db
-        .select({ id: entities.id })
-        .from(entities)
-        .where(
-          and(
-            eq(entities.teamId, teamId),
-            eq(entities.type, type),
-            isNull(entities.mergedIntoId),
-            isNull(entities.archivedAt),
-            sql`lower(${entities.canonicalName}) = ${canonicalName.toLowerCase()}`,
-          ),
-        )
-        .limit(1);
-      return canonicalRows[0]?.id ?? null;
+      return rows[0]?.id ?? null;
     }
     if (item.targetKind === 'identity_facet') {
       const rows = await db
@@ -1921,20 +1890,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       agent_suggestion_item_id: item.id,
     };
 
-    const suggestionMarkerPredicate = sql`${entities.metadata} ->> 'agent_suggestion_item_id' = ${item.id}`;
-    const allowCanonicalExistingMatch =
-      item.status !== 'failed' &&
-      (item.targetKind === 'task' ||
-        !(
-          item.targetKind === 'object' &&
-          (await hasDependentObjectNoteSibling(item, canonicalName, type))
-        ));
-    const existingIdentityPredicate = !allowCanonicalExistingMatch
-      ? suggestionMarkerPredicate
-      : or(
-          suggestionMarkerPredicate,
-          sql`lower(${entities.canonicalName}) = ${canonicalName.toLowerCase()}`,
-        );
+    const existingIdentity = sql`${entities.metadata} ->> 'agent_suggestion_item_id' = ${item.id}`;
     const existingRows = await db
       .select()
       .from(entities)
@@ -1944,10 +1900,9 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
           eq(entities.type, type),
           isNull(entities.mergedIntoId),
           isNull(entities.archivedAt),
-          existingIdentityPredicate,
+          existingIdentity,
         ),
       )
-      .orderBy(desc(sql`(${entities.metadata} ->> 'agent_suggestion_item_id') = ${item.id}`))
       .limit(1);
     const existing = existingRows[0];
     if (!existing) {
