@@ -5,6 +5,7 @@ import {
   boardLanes,
   boards,
   calendarEvents,
+  entities,
   notifications,
   rawEvents,
   type Db,
@@ -137,7 +138,7 @@ describe('board scope', () => {
       templateKind: 'task_board',
       lanes: [
         { name: 'Todo', kind: 'active' },
-        { name: 'Doing', kind: 'active' },
+        { name: 'Blocked', kind: 'blocked' },
       ],
     });
     const task = await scope.objects.createObject({
@@ -169,6 +170,9 @@ describe('board scope', () => {
       .from(boardItemChanges)
       .where(eq(boardItemChanges.boardItemId, item.id));
     expect(changes.map((change) => change.field).sort()).toEqual(['__add__', 'laneId', 'priority']);
+    await expect(scope.boards.getBoard(board.id, { itemLimit: 'all' })).resolves.toMatchObject({
+      items: [expect.objectContaining({ id: item.id, laneId: board.lanes[1]?.id })],
+    });
   });
 
   it('notifies the responsible user and mirrors board item due dates to the team calendar', async () => {
@@ -866,5 +870,237 @@ describe('board scope', () => {
         overdueCount: 1,
       }),
     ]);
+  });
+
+  it('lists work queue board items for responsible and unassigned due work', async () => {
+    const owner = withTeam(db, TEAM_A, USER_OWNER);
+    const member = withTeam(db, TEAM_A, USER_MEMBER);
+    const board = await owner.boards.createBoard({
+      name: 'Pilot pipeline',
+      templateKind: 'pipeline',
+      lanes: [
+        { name: 'Scoping', kind: 'active' },
+        { name: 'Blocked', kind: 'blocked' },
+      ],
+    });
+    const [responsibleObject, teamDueObject, hiddenObject, teammateDueObject, doneObject] =
+      await Promise.all([
+        owner.objects.createObject({
+          type: 'deal',
+          canonicalName: 'Responsible deal',
+          actor: { kind: 'user', userId: USER_OWNER },
+        }),
+        owner.objects.createObject({
+          type: 'project',
+          canonicalName: 'Team due project',
+          actor: { kind: 'user', userId: USER_OWNER },
+        }),
+        owner.objects.createObject({
+          type: 'task',
+          canonicalName: 'Unrelated task',
+          actor: { kind: 'user', userId: USER_OWNER },
+        }),
+        owner.objects.createObject({
+          type: 'task',
+          canonicalName: 'Teammate due task',
+          actor: { kind: 'user', userId: USER_OWNER },
+        }),
+        owner.objects.createObject({
+          type: 'task',
+          canonicalName: 'Completed work',
+          status: 'done',
+          actor: { kind: 'user', userId: USER_OWNER },
+        }),
+      ]);
+
+    const responsibleItem = await owner.boards.addBoardItem(board.id, {
+      entityId: responsibleObject.id,
+      responsibleUserId: USER_OWNER,
+      laneId: board.lanes[0]?.id ?? null,
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    const teamDueItem = await owner.boards.addBoardItem(board.id, {
+      entityId: teamDueObject.id,
+      dueAt: new Date('2026-06-20T00:00:00.000Z'),
+      laneId: board.lanes[1]?.id ?? null,
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    await owner.boards.addBoardItem(board.id, {
+      entityId: hiddenObject.id,
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    const teammateDueItem = await owner.boards.addBoardItem(board.id, {
+      entityId: teammateDueObject.id,
+      responsibleUserId: USER_MEMBER,
+      dueAt: new Date('2026-06-18T00:00:00.000Z'),
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    const doneItem = await owner.boards.addBoardItem(board.id, {
+      entityId: doneObject.id,
+      responsibleUserId: USER_OWNER,
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+
+    const ownerRows = await owner.boards.listWorkQueueItems({
+      dueBefore: new Date('2026-06-30T00:00:00.000Z'),
+    });
+    expect(ownerRows.map((row) => row.id).sort()).toEqual(
+      [responsibleItem.id, teamDueItem.id].sort(),
+    );
+    expect(ownerRows.map((row) => row.id)).not.toContain(teammateDueItem.id);
+    expect(ownerRows.map((row) => row.id)).not.toContain(doneItem.id);
+    const teamDueRow = ownerRows.find((row) => row.id === teamDueItem.id);
+    expect(teamDueRow?.boardName).toBe('Pilot pipeline');
+    expect(teamDueRow?.laneName).toBe('Blocked');
+    expect(teamDueRow?.laneKind).toBe('blocked');
+    expect(teamDueRow?.responsibleUserId).toBeNull();
+    expect(teamDueRow?.object.canonicalName).toBe('Team due project');
+
+    const memberRows = await member.boards.listWorkQueueItems({
+      dueBefore: new Date('2026-06-30T00:00:00.000Z'),
+    });
+    expect(memberRows.map((row) => row.id).sort()).toEqual(
+      [teamDueItem.id, teammateDueItem.id].sort(),
+    );
+  });
+
+  it('excludes archived and cross-team rows from work queue board items', async () => {
+    const owner = withTeam(db, TEAM_A, USER_OWNER);
+    const other = withTeam(db, TEAM_B, USER_OTHER_TEAM);
+    const [activeBoard, archivedBoard, otherBoard] = await Promise.all([
+      owner.boards.createBoard({
+        name: 'Active board',
+        templateKind: 'task_board',
+        lanes: [{ name: 'Todo', kind: 'active' }],
+      }),
+      owner.boards.createBoard({
+        name: 'Archived board',
+        templateKind: 'task_board',
+        lanes: [{ name: 'Todo', kind: 'active' }],
+      }),
+      other.boards.createBoard({
+        name: 'Other board',
+        templateKind: 'task_board',
+        lanes: [{ name: 'Todo', kind: 'active' }],
+      }),
+    ]);
+    const [activeObject, archivedObject, archivedItemObject, archivedBoardObject, otherObject] =
+      await Promise.all([
+        owner.objects.createObject({
+          type: 'task',
+          canonicalName: 'Visible work',
+          actor: { kind: 'user', userId: USER_OWNER },
+        }),
+        owner.objects.createObject({
+          type: 'task',
+          canonicalName: 'Archived object',
+          actor: { kind: 'user', userId: USER_OWNER },
+        }),
+        owner.objects.createObject({
+          type: 'task',
+          canonicalName: 'Archived item',
+          actor: { kind: 'user', userId: USER_OWNER },
+        }),
+        owner.objects.createObject({
+          type: 'task',
+          canonicalName: 'Archived board item',
+          actor: { kind: 'user', userId: USER_OWNER },
+        }),
+        other.objects.createObject({
+          type: 'task',
+          canonicalName: 'Other work',
+          actor: { kind: 'user', userId: USER_OTHER_TEAM },
+        }),
+      ]);
+    const activeItem = await owner.boards.addBoardItem(activeBoard.id, {
+      entityId: activeObject.id,
+      responsibleUserId: USER_OWNER,
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    const archivedObjectItem = await owner.boards.addBoardItem(activeBoard.id, {
+      entityId: archivedObject.id,
+      responsibleUserId: USER_OWNER,
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    const archivedItem = await owner.boards.addBoardItem(activeBoard.id, {
+      entityId: archivedItemObject.id,
+      responsibleUserId: USER_OWNER,
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    const archivedBoardItem = await owner.boards.addBoardItem(archivedBoard.id, {
+      entityId: archivedBoardObject.id,
+      responsibleUserId: USER_OWNER,
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    await other.boards.addBoardItem(otherBoard.id, {
+      entityId: otherObject.id,
+      responsibleUserId: USER_OTHER_TEAM,
+      actor: { kind: 'user', userId: USER_OTHER_TEAM },
+    });
+    const now = new Date('2026-06-14T00:00:00.000Z');
+    await Promise.all([
+      db.update(entities).set({ archivedAt: now }).where(eq(entities.id, archivedObject.id)),
+      db.update(boardItems).set({ archivedAt: now }).where(eq(boardItems.id, archivedItem.id)),
+      db.update(boards).set({ archivedAt: now }).where(eq(boards.id, archivedBoard.id)),
+    ]);
+
+    const rows = await owner.boards.listWorkQueueItems({
+      dueBefore: new Date('2026-06-30T00:00:00.000Z'),
+    });
+    expect(rows.map((row) => row.id)).toEqual([activeItem.id]);
+    expect(rows.map((row) => row.id)).not.toContain(archivedObjectItem.id);
+    expect(rows.map((row) => row.id)).not.toContain(archivedItem.id);
+    expect(rows.map((row) => row.id)).not.toContain(archivedBoardItem.id);
+  });
+
+  it('keeps responsible null-due board items when due rows exceed limit', async () => {
+    const owner = withTeam(db, TEAM_A, USER_OWNER);
+    const board = await owner.boards.createBoard({
+      name: 'Capacity board',
+      templateKind: 'pipeline',
+      lanes: [{ name: 'Backlog', kind: 'active' }],
+    });
+
+    const teamDueTasks = await Promise.all(
+      Array.from({ length: 20 }, (_, index) =>
+        owner.objects.createObject({
+          type: 'task',
+          canonicalName: `Due teammate task ${String(index + 1).padStart(2, '0')}`,
+          actor: { kind: 'user', userId: USER_OWNER },
+        }),
+      ),
+    );
+    const responsibleTask = await owner.objects.createObject({
+      type: 'task',
+      canonicalName: 'Owner-only to-do',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+
+    for (const task of teamDueTasks) {
+      await owner.boards.addBoardItem(board.id, {
+        entityId: task.id,
+        responsibleUserId: USER_MEMBER,
+        dueAt: new Date('2026-06-18T00:00:00.000Z'),
+        actor: { kind: 'user', userId: USER_OWNER },
+      });
+    }
+
+    const responsibleItem = await owner.boards.addBoardItem(board.id, {
+      entityId: responsibleTask.id,
+      responsibleUserId: USER_OWNER,
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+
+    const rows = await owner.boards.listWorkQueueItems({
+      dueBefore: new Date('2026-06-30T00:00:00.000Z'),
+      limit: 20,
+    });
+
+    expect(rows).toHaveLength(20);
+    expect(rows.map((row) => row.id)).toContain(responsibleItem.id);
+    const responsibleItemRow = rows.find((row) => row.id === responsibleItem.id);
+    expect(responsibleItemRow).toBeDefined();
+    expect(responsibleItemRow?.dueAt).toBeNull();
+    expect(responsibleItemRow?.responsibleUserId).toBe(USER_OWNER);
   });
 });

@@ -3,18 +3,7 @@ import { latestDailyDigest, type DailyDigestPayload } from '@timeline/shared/mes
 import { getAudioBucket, getS3PresignClient, getSignedGetObjectUrl } from '@timeline/shared/s3';
 import { withTeam } from '@timeline/shared/team-scope';
 import { inArray } from 'drizzle-orm';
-import {
-  ArrowRight,
-  CircleCheckBig,
-  Clock,
-  FileText,
-  LibraryBig,
-  Mail,
-  Plug,
-  Send,
-  Settings,
-  Video,
-} from 'lucide-react';
+import { ArrowRight, CircleCheckBig, Clock, FileText, Mail, Plug, Send, Video } from 'lucide-react';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
@@ -189,14 +178,9 @@ export default async function HomeDashboardPage() {
               active={pendingApprovals > 0}
             />
             <AttentionLink
-              href="/app/objects"
-              icon={<LibraryBig className="size-4" aria-hidden="true" />}
-              label="Objects"
-            />
-            <AttentionLink
-              href="/app/tasks"
+              href="/app/work"
               icon={<FileText className="size-4" aria-hidden="true" />}
-              label="Tasks"
+              label="Work"
             />
             <AttentionLink
               href="/app/calendar"
@@ -204,19 +188,9 @@ export default async function HomeDashboardPage() {
               label="Calendar"
             />
             <AttentionLink
-              href="/app/boards"
-              icon={<Settings className="size-4" aria-hidden="true" />}
-              label="Boards"
-            />
-            <AttentionLink
               href="#email-ingest"
               icon={<Mail className="size-4" aria-hidden="true" />}
               label={team?.inboundEmail ? 'Email ingest ready' : 'Configure email ingest'}
-            />
-            <AttentionLink
-              href="/app/meetings"
-              icon={<Video className="size-4" aria-hidden="true" />}
-              label="Invite notetaker"
             />
           </div>
         </section>

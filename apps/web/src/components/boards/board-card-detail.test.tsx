@@ -17,18 +17,23 @@ function boardItem(input: {
   id: string;
   entityId: string;
   canonicalName: string;
+  laneId?: string | null;
+  responsibleUserId?: string | null;
+  dueAt?: Date | null;
+  priority?: number | null;
+  nextStep?: string | null;
   notes?: string | null;
 }): boards.BoardItemRow {
   return {
     id: input.id,
     boardId: 'board-1',
     entityId: input.entityId,
-    laneId: 'lane-1',
+    laneId: input.laneId ?? 'lane-1',
     position: 0,
-    responsibleUserId: null,
-    dueAt: null,
-    priority: null,
-    nextStep: null,
+    responsibleUserId: input.responsibleUserId ?? null,
+    dueAt: input.dueAt ?? null,
+    priority: input.priority ?? null,
+    nextStep: input.nextStep ?? null,
     notes: input.notes ?? null,
     customFields: {},
     archivedAt: null,
@@ -54,6 +59,25 @@ function boardItem(input: {
   };
 }
 
+const lanes: boards.BoardLaneRow[] = [
+  {
+    id: 'lane-1',
+    boardId: 'board-1',
+    name: 'Doing',
+    position: 0,
+    kind: 'active',
+    archivedAt: null,
+  },
+  {
+    id: 'lane-blocked',
+    boardId: 'board-1',
+    name: 'Blocked',
+    position: 1,
+    kind: 'blocked',
+    archivedAt: null,
+  },
+];
+
 describe('BoardCardDetail', () => {
   beforeEach(() => {
     cleanup();
@@ -72,6 +96,7 @@ describe('BoardCardDetail', () => {
         view: 'kanban',
         item,
         history: [],
+        lanes,
       }),
     );
 
@@ -112,10 +137,81 @@ describe('BoardCardDetail', () => {
         view: 'kanban',
         item,
         history,
+        lanes,
       }),
     );
 
     expect(html).toContain(`/app/timeline?event=${sourceEventId}#ev-${sourceEventId}`);
+    expect(html).toContain('Lane');
+    expect(html).toContain('Doing');
+  });
+
+  it('edits command-center fields through board item patches', async () => {
+    const user = userEvent.setup();
+    const onUpdateItem = vi.fn(() => Promise.resolve({ ok: true }));
+    render(
+      <BoardCardDetail
+        boardId="board-1"
+        view="kanban"
+        item={boardItem({
+          id: 'item-1',
+          entityId: 'object-1',
+          canonicalName: 'Alpha',
+        })}
+        history={[]}
+        lanes={lanes}
+        members={[{ id: 'user-1', label: 'Mikael' }]}
+        onUpdateItem={onUpdateItem}
+      />,
+    );
+
+    await user.selectOptions(screen.getByLabelText('Lane'), 'lane-blocked');
+    await waitFor(() => {
+      expect(onUpdateItem).toHaveBeenCalledWith('item-1', { laneId: 'lane-blocked' });
+    });
+    await user.selectOptions(screen.getByLabelText('Responsible'), 'user-1');
+    await waitFor(() => {
+      expect(onUpdateItem).toHaveBeenCalledWith('item-1', { responsibleUserId: 'user-1' });
+    });
+    await user.type(screen.getByLabelText('Due'), '2026-07-05');
+    await waitFor(() => {
+      expect(onUpdateItem).toHaveBeenCalledWith('item-1', {
+        dueAt: new Date('2026-07-05T00:00:00.000Z'),
+      });
+    });
+    await user.selectOptions(screen.getByLabelText('Priority'), '2');
+    await waitFor(() => {
+      expect(onUpdateItem).toHaveBeenCalledWith('item-1', { priority: 2 });
+    });
+    await waitFor(() => {
+      expect(screen.getByLabelText('Next step').hasAttribute('disabled')).toBe(false);
+    });
+    await user.type(screen.getByLabelText('Next step'), 'Call the buyer');
+    await user.tab();
+
+    await waitFor(() => {
+      expect(onUpdateItem).toHaveBeenCalledWith('item-1', { nextStep: 'Call the buyer' });
+    });
+  });
+
+  it('surfaces blocked lane state in the panel', () => {
+    const html = renderToStaticMarkup(
+      createElement(BoardCardDetail, {
+        boardId: 'board-1',
+        view: 'kanban',
+        item: boardItem({
+          id: 'item-1',
+          entityId: 'object-1',
+          canonicalName: 'Blocked deal',
+          laneId: 'lane-blocked',
+        }),
+        history: [],
+        lanes,
+      }),
+    );
+
+    expect(html).toContain('Blocked · Blocked');
+    expect(html).toContain('Board lane');
   });
 
   it('clears unsaved note draft when the selected board item changes', async () => {
@@ -132,6 +228,7 @@ describe('BoardCardDetail', () => {
           canonicalName: 'Alpha',
         })}
         history={[]}
+        lanes={lanes}
         onUpdateItem={onUpdateItem}
       />,
     );
@@ -150,6 +247,7 @@ describe('BoardCardDetail', () => {
           canonicalName: 'Beta',
         })}
         history={[]}
+        lanes={lanes}
         onUpdateItem={onUpdateItem}
       />,
     );
@@ -159,6 +257,49 @@ describe('BoardCardDetail', () => {
       expect(screen.getByRole('button', { name: 'Add' })).toBeTruthy();
       expect(screen.queryByLabelText('Board notes')).toBeNull();
     });
+    expect(onUpdateItem).not.toHaveBeenCalled();
+  });
+
+  it('syncs a clean next-step draft when the selected item refreshes', async () => {
+    const user = userEvent.setup();
+    const onUpdateItem = vi.fn(() => Promise.resolve({ ok: true }));
+    const { rerender } = render(
+      <BoardCardDetail
+        boardId="board-1"
+        view="kanban"
+        item={boardItem({
+          id: 'item-1',
+          entityId: 'object-1',
+          canonicalName: 'Alpha',
+          nextStep: 'Old server step',
+        })}
+        history={[]}
+        lanes={lanes}
+        onUpdateItem={onUpdateItem}
+      />,
+    );
+
+    expect(screen.getByDisplayValue('Old server step')).toBeTruthy();
+
+    rerender(
+      <BoardCardDetail
+        boardId="board-1"
+        view="kanban"
+        item={boardItem({
+          id: 'item-1',
+          entityId: 'object-1',
+          canonicalName: 'Alpha',
+          nextStep: 'Fresh server step',
+        })}
+        history={[]}
+        lanes={lanes}
+        onUpdateItem={onUpdateItem}
+      />,
+    );
+
+    await user.click(screen.getByDisplayValue('Fresh server step'));
+    await user.tab();
+
     expect(onUpdateItem).not.toHaveBeenCalled();
   });
 
@@ -176,6 +317,7 @@ describe('BoardCardDetail', () => {
           notes: 'Original notes',
         })}
         history={[]}
+        lanes={lanes}
         onUpdateItem={onUpdateItem}
       />,
     );
