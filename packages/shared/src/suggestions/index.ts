@@ -1735,30 +1735,6 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     return rows[0]?.id ?? null;
   }
 
-  async function hasDependentObjectNoteSibling(
-    item: typeof agentSuggestionItems.$inferSelect,
-    canonicalName: string,
-    type: ObjectType,
-  ): Promise<boolean> {
-    if (item.targetKind !== 'object') return false;
-    const rows = await db
-      .select({ id: agentSuggestionItems.id })
-      .from(agentSuggestionItems)
-      .where(
-        and(
-          eq(agentSuggestionItems.teamId, teamId),
-          eq(agentSuggestionItems.suggestionId, item.suggestionId),
-          eq(agentSuggestionItems.operation, 'create'),
-          eq(agentSuggestionItems.targetKind, 'object_note'),
-          inArray(agentSuggestionItems.status, ACTIONABLE_ITEM_STATUSES),
-          sql`lower(${agentSuggestionItems.proposedPayload} ->> 'entityName') = ${canonicalName.toLowerCase()}`,
-          sql`coalesce(${agentSuggestionItems.proposedPayload} ->> 'entityType', ${type}) = ${type}`,
-        ),
-      )
-      .limit(1);
-    return Boolean(rows[0]);
-  }
-
   async function objectTypeForTarget(targetId: string | null): Promise<ObjectType | null> {
     if (!targetId) return null;
     const [row] = await db
