@@ -17,6 +17,12 @@ interface PersistedUser {
 interface PersistedToolCall {
   toolCallId?: string;
   toolName?: string;
+  state?: string;
+  approval?: {
+    id: string;
+    approved?: boolean;
+    reason?: string;
+  };
   input?: unknown;
   output?: unknown;
   args?: unknown;
@@ -47,15 +53,17 @@ function hydrateChatSessionMessages(
             const toolName = typeof tc.toolName === 'string' ? tc.toolName : 'unknown';
             const input = tc.input ?? tc.args;
             const output = tc.output ?? tc.result;
+            const state = typeof tc.state === 'string' ? tc.state : undefined;
             parts.push({
               type: `tool-${toolName}`,
               toolCallId:
                 typeof tc.toolCallId === 'string'
                   ? tc.toolCallId
                   : `${message.id}-${String(parts.length)}`,
-              state: output === undefined ? 'input-available' : 'output-available',
+              state: state ?? (output === undefined ? 'input-available' : 'output-available'),
               input,
               output,
+              approval: tc.approval,
             } as unknown as UIMessage['parts'][number]);
           }
         }

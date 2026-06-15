@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { createElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -9,6 +9,7 @@ const fakes = vi.hoisted(() => ({
   pathname: vi.fn(),
   searchParams: vi.fn(),
   useChat: vi.fn(),
+  loadChatSessionAction: vi.fn(),
   transports: [] as { options: { body?: () => unknown } }[],
 }));
 const boardItemId = '55555555-5555-4555-8555-555555555555';
@@ -25,8 +26,12 @@ vi.mock('ai', () => ({
       fakes.transports.push({ options });
     }
   },
+  lastAssistantMessageIsCompleteWithApprovalResponses: vi.fn(),
 }));
-vi.mock('@/app/actions/chat', () => ({ unpinChatSessionAction: vi.fn() }));
+vi.mock('@/app/actions/chat', () => ({
+  loadChatSessionAction: fakes.loadChatSessionAction,
+  unpinChatSessionAction: vi.fn(),
+}));
 vi.mock('@/components/chat/tool-step', () => ({
   ToolStep: ({ name }: { name: string }) => createElement('span', null, name),
 }));
@@ -44,6 +49,7 @@ beforeEach(() => {
     status: 'ready',
     error: null,
   });
+  fakes.loadChatSessionAction.mockResolvedValue({ ok: true, messages: [] });
   window.localStorage.clear();
 });
 
@@ -79,6 +85,20 @@ describe('FloatingAgentChat', () => {
       objectId: '44444444-4444-4444-8444-444444444444',
       search: { tab: 'notes', item: boardItemId },
       boardItemId,
+    });
+  });
+
+  it('clears stale floating session id when hydration fails', async () => {
+    const staleSessionId = 'aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa';
+    const storageKey = 'timeline:floating-agent-chat:team-1:session';
+    window.localStorage.setItem(storageKey, staleSessionId);
+    fakes.loadChatSessionAction.mockResolvedValueOnce({ ok: false, error: 'Session not found' });
+
+    render(<FloatingAgentChat teamId="team-1" teamName="AuditAI" />);
+
+    await waitFor(() => {
+      expect(window.localStorage.getItem(storageKey)).toBeNull();
+      expect(fakes.loadChatSessionAction).toHaveBeenCalledWith({ sessionId: staleSessionId });
     });
   });
 });

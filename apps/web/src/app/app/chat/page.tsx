@@ -27,6 +27,12 @@ interface PersistedUser {
 interface PersistedToolCall {
   toolCallId?: string;
   toolName?: string;
+  state?: string;
+  approval?: {
+    id: string;
+    approved?: boolean;
+    reason?: string;
+  };
   input?: unknown;
   output?: unknown;
   // AI SDK uses different field names across minor versions; accept either.
@@ -65,6 +71,7 @@ function hydrate(rows: Awaited<ReturnType<typeof objects.getChatSession>>): UIMe
             const toolName = typeof tc.toolName === 'string' ? tc.toolName : 'unknown';
             const input = tc.input ?? tc.args;
             const output = tc.output ?? tc.result;
+            const state = typeof tc.state === 'string' ? tc.state : undefined;
             // Cast: UIMessage['parts'] is a discriminated union the SDK
             // builds at runtime from registered tool names. We're injecting
             // synthetic parts the SDK never typed against, so the cast is
@@ -76,9 +83,10 @@ function hydrate(rows: Awaited<ReturnType<typeof objects.getChatSession>>): UIMe
                 typeof tc.toolCallId === 'string'
                   ? tc.toolCallId
                   : `${m.id}-${String(parts.length)}`,
-              state: output === undefined ? 'input-available' : 'output-available',
+              state: state ?? (output === undefined ? 'input-available' : 'output-available'),
               input,
               output,
+              approval: tc.approval,
             } as unknown as UIMessage['parts'][number]);
           }
         }

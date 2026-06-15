@@ -24,6 +24,10 @@ interface FloatingAgentChatProps {
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+interface FloatingSessionState {
+  sessionId: string | null;
+  initialMessages: UIMessage[];
+}
 
 export function FloatingAgentChat({ teamId, teamName }: FloatingAgentChatProps) {
   return (
@@ -38,8 +42,10 @@ function FloatingAgentChatContent({ teamId, teamName }: FloatingAgentChatProps) 
   const searchParams = useSearchParams();
   const [open, setOpen] = useState(false);
   const storageKey = `timeline:floating-agent-chat:${teamId}:session`;
-  const [sessionId, setSessionId] = useState<string | null>(() => readStoredSessionId(storageKey));
-  const [initialMessages, setInitialMessages] = useState<UIMessage[]>([]);
+  const [{ sessionId, initialMessages }, setSessionState] = useState<FloatingSessionState>(() => ({
+    sessionId: readStoredSessionId(storageKey),
+    initialMessages: [],
+  }));
   const hydratedSessionIdRef = useRef<string | null>(null);
   const context = useMemo(
     () => buildDashboardChatContext(pathname, searchParams),
@@ -55,21 +61,31 @@ function FloatingAgentChatContent({ teamId, teamName }: FloatingAgentChatProps) 
     if (hydratedSessionIdRef.current === sessionId) return;
     const activeSessionId = sessionId;
     hydratedSessionIdRef.current = activeSessionId;
+    const clearStaleSession = () => {
+      if (hydratedSessionIdRef.current !== activeSessionId) return;
+      window.localStorage.removeItem(storageKey);
+      hydratedSessionIdRef.current = null;
+      setSessionState({ sessionId: null, initialMessages: [] });
+    };
 
     void loadChatSessionAction({ sessionId: activeSessionId })
       .then((loaded) => {
         if (hydratedSessionIdRef.current !== activeSessionId) return;
         if (loaded.ok) {
-          setInitialMessages(loaded.messages ?? []);
+          setSessionState((state) =>
+            state.sessionId === activeSessionId
+              ? { ...state, initialMessages: loaded.messages ?? [] }
+              : state,
+          );
         } else {
-          setInitialMessages([]);
+          clearStaleSession();
         }
       })
       .catch(() => {
         if (hydratedSessionIdRef.current !== activeSessionId) return;
-        setInitialMessages([]);
+        clearStaleSession();
       });
-  }, [sessionId]);
+  }, [sessionId, storageKey]);
 
   if (!pathname || pathname.startsWith('/app/chat')) return null;
 
@@ -136,7 +152,7 @@ function FloatingAgentChatContent({ teamId, teamName }: FloatingAgentChatProps) 
               dashboardContext={context}
               onSessionIdChange={(id) => {
                 window.localStorage.setItem(storageKey, id);
-                setSessionId(id);
+                setSessionState((state) => ({ ...state, sessionId: id }));
               }}
             />
           </div>
