@@ -186,6 +186,14 @@ function useChatSessionTransport({
     onSessionIdChangeRef.current = onSessionIdChange;
   }, [onSessionIdChange]);
 
+  useEffect(() => {
+    sessionIdRef.current = initialSessionId;
+    setSessionId(initialSessionId);
+    if (initialSessionId === null) {
+      sessionCreateAttempted.current = false;
+    }
+  }, [initialSessionId]);
+
   const transport = useMemo(
     () =>
       new DefaultChatTransport({
