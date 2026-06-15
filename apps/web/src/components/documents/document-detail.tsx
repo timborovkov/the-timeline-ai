@@ -294,8 +294,14 @@ export function DocumentDetail({
                     )}
                   </div>
                   <div className="flex shrink-0 flex-wrap items-center gap-2">
-                    <Button size="sm" variant={activeVersion?.id === v.id ? 'default' : 'outline'} asChild>
-                      <Link href={`/app/documents/${document.id}?version=${String(v.version)}`}>Preview</Link>
+                    <Button
+                      size="sm"
+                      variant={activeVersion?.id === v.id ? 'default' : 'outline'}
+                      asChild
+                    >
+                      <Link href={`/app/documents/${document.id}?version=${String(v.version)}`}>
+                        Preview
+                      </Link>
                     </Button>
                     <Button
                       size="sm"

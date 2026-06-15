@@ -2,7 +2,7 @@
 
 import { FileText, Image as ImageIcon, Link2, Upload } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { useMemo, useReducer, useTransition } from 'react';
+import { useEffect, useMemo, useReducer, useTransition } from 'react';
 import { toast } from 'sonner';
 
 import type { ReactNode } from 'react';
@@ -118,11 +118,17 @@ interface PaginationState {
   cursor: string | null;
 }
 
-interface PaginationAction {
-  type: 'append';
-  files: CapturedFileItem[];
-  nextCursor: string | null;
-}
+type PaginationAction =
+  | {
+      type: 'reset';
+      files: CapturedFileItem[];
+      nextCursor: string | null;
+    }
+  | {
+      type: 'append';
+      files: CapturedFileItem[];
+      nextCursor: string | null;
+    };
 
 function paginationStateForProps(
   files: CapturedFileItem[],
@@ -139,6 +145,17 @@ function paginationStateForProps(
 }
 
 function paginationReducer(state: PaginationState, action: PaginationAction): PaginationState {
+  if (action.type === 'reset') {
+    if (state.inputFiles === action.files && state.inputCursor === action.nextCursor) {
+      return state;
+    }
+    return {
+      inputFiles: action.files,
+      inputCursor: action.nextCursor,
+      loadedFiles: action.files,
+      cursor: action.nextCursor,
+    };
+  }
   const seen = new Set(state.loadedFiles.map((file) => file.id));
   return {
     ...state,
@@ -151,10 +168,14 @@ export function CapturedFilesList({ files, nextCursor = null, folders, members }
   const [paginationState, dispatchPagination] = useReducer(paginationReducer, undefined, () =>
     paginationStateForProps(files, nextCursor),
   );
-  const pagination = paginationStateForProps(files, nextCursor, paginationState);
-  const { loadedFiles, cursor } = pagination;
+  const { loadedFiles, cursor } = paginationState;
   const [loadingMore, startLoadMore] = useTransition();
   const [uiState, dispatchUi] = useReducer(capturedFilesUiReducer, capturedFilesUiInitialState);
+
+  useEffect(() => {
+    dispatchPagination({ type: 'reset', files, nextCursor });
+  }, [files, nextCursor]);
+
   const sources = useMemo(
     () => Array.from(new Set(loadedFiles.map((file) => file.provenance.source))).sort(),
     [loadedFiles],
