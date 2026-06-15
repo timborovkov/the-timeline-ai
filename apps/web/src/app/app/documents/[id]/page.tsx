@@ -7,6 +7,7 @@ import { DocumentDetail } from '@/components/documents/document-detail';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { documentDetailProvenance } from '@/lib/document-detail-provenance';
 
 export const metadata: Metadata = {
   title: 'Document',
@@ -46,6 +47,7 @@ export default async function DocumentDetailPage({ params, searchParams }: Props
     }),
   ]);
   const listEntry = provenancePage.items[0] ?? null;
+  const provenance = documentDetailProvenance(document, listEntry);
   const requestedVersion = sp.version ? Number.parseInt(sp.version, 10) : null;
   const selectedVersion =
     requestedVersion && Number.isFinite(requestedVersion)
@@ -76,13 +78,7 @@ export default async function DocumentDetailPage({ params, searchParams }: Props
           sourceRawEventId: document.sourceRawEventId,
           createdAt: document.createdAt.toISOString(),
           updatedAt: document.updatedAt.toISOString(),
-          provenance: {
-            source: listEntry?.provenance.source ?? 'manual',
-            sourceEventId: listEntry?.provenance.sourceEventId ?? null,
-            parentEventId: listEntry?.provenance.parentEventId ?? null,
-            occurredAt: listEntry?.provenance.occurredAt?.toISOString() ?? null,
-            summary: listEntry?.provenance.summary ?? null,
-          },
+          provenance,
         }}
         versions={versions.map((v) => ({
           id: v.id,
