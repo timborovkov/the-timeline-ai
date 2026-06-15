@@ -1615,6 +1615,58 @@ describe('suggestion scope', () => {
     expect(rows.rows[0]).toEqual({ id: existing.id, count: '1' });
   });
 
+  it('treats an exact existing create object as already represented', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const existing = await scope.objects.createObject({
+      type: 'project',
+      canonicalName: 'Website refresh',
+      status: 'open',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Create duplicate project',
+      dedupeKey: 'create-duplicate-project',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'object',
+          title: 'Website refresh',
+          dedupeKey: 'create-duplicate-project:item',
+          proposedPayload: {
+            type: 'project',
+            canonicalName: 'Website refresh',
+            stage: 'planning',
+          },
+        },
+      ],
+    });
+    const itemId = bundle.items[0]?.id;
+    expect(itemId).toBeDefined();
+
+    await expect(scope.suggestions.acceptSuggestionItem(itemId ?? '')).resolves.toBe(true);
+
+    const rows = await pg.query<{
+      id: string;
+      count: string;
+      stage: string | null;
+      metadata: Record<string, unknown>;
+    }>(
+      `SELECT max(id::text) AS id,
+              count(*)::text,
+              max(stage) AS stage,
+              max(metadata::text)::jsonb AS metadata
+       FROM entities
+       WHERE team_id = '${TEAM_ID}'
+         AND type = 'project'
+         AND canonical_name = 'Website refresh'`,
+    );
+    expect(rows.rows[0]?.id).toBe(existing.id);
+    expect(rows.rows[0]?.count).toBe('1');
+    expect(rows.rows[0]?.stage).toBe('planning');
+    expect(rows.rows[0]?.metadata).toMatchObject({ agent_suggestion_item_id: itemId });
+  });
+
   it('applies create task proposal fields when accepting a duplicate existing task', async () => {
     const scope = withTeam(db as never, TEAM_ID, USER_ID);
     const existing = await scope.objects.createObject({

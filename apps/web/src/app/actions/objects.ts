@@ -99,6 +99,7 @@ function revalidateObjectMutationSurfaces(ids: string | string[]): void {
     bestEffortRevalidatePath(`/app/objects/${id}`, 'revalidate_object_mutation_surfaces');
   }
   bestEffortRevalidatePath('/app/objects', 'revalidate_object_mutation_surfaces');
+  bestEffortRevalidatePath('/app/work', 'revalidate_object_mutation_surfaces');
   // Board pages receive object rows through layout data; refresh the layout so
   // optimistic updates do not snap back to stale cards.
   bestEffortRevalidatePath('/app/boards', 'revalidate_object_mutation_surfaces', 'layout');
@@ -188,6 +189,7 @@ export async function createObjectAction(input: unknown): Promise<ActionState> {
         actor: { kind: 'user', userId: r.userId },
       });
       bestEffortRevalidatePath('/app/objects', 'revalidate_object_create');
+      bestEffortRevalidatePath('/app/work', 'revalidate_object_create');
       if (parsed.data.parentObjectId) {
         bestEffortRevalidatePath(
           `/app/objects/${parsed.data.parentObjectId}`,
@@ -349,6 +351,7 @@ export async function mergeObjectsAction(input: unknown): Promise<ActionState> {
         });
       }
       bestEffortRevalidatePath('/app/objects', 'revalidate_object_merge');
+      bestEffortRevalidatePath('/app/work', 'revalidate_object_merge');
       bestEffortRevalidatePath('/app/approvals', 'revalidate_object_merge');
       bestEffortRevalidatePath('/app/inbox', 'revalidate_object_merge');
       bestEffortRevalidatePath(`/app/objects/${survivorId}`, 'revalidate_object_merge');
@@ -588,6 +591,7 @@ export async function acceptObjectChangeAction(input: unknown): Promise<ActionSt
       // Accepting may change status / stage / priority — same revalidation
       // set as updateObjectAction so kanban / task columns reflect the move.
       bestEffortRevalidatePath('/app/objects', 'revalidate_object_change_accept');
+      bestEffortRevalidatePath('/app/work', 'revalidate_object_change_accept');
       bestEffortRevalidatePath('/app/boards', 'revalidate_object_change_accept', 'layout');
       bestEffortRevalidatePath('/app/tasks', 'revalidate_object_change_accept');
       return { ok: true };

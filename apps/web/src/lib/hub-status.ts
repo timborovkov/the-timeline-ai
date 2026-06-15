@@ -18,7 +18,7 @@ type IntegrationRow = typeof integrations.$inferSelect;
 type McpServerRow = typeof mcpServers.$inferSelect;
 type MeetingStatus = (typeof meetingStatus.enumValues)[number];
 
-export interface WorkStatusSummary {
+interface WorkStatusSummary {
   attention: number;
   objectsTotal: number;
   tasksOpen: number;
@@ -198,7 +198,7 @@ async function getWorkInventoryCounts(teamId: string, userId: string, now: Date,
   };
 }
 
-export async function getWorkStatusSummary(scope: TeamScope): Promise<WorkStatusSummary> {
+async function getWorkStatusSummary(scope: TeamScope): Promise<WorkStatusSummary> {
   const now = new Date();
   const inTwoWeeks = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000);
   await scope.requireMembership();

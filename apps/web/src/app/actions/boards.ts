@@ -64,7 +64,7 @@ const quickCreateSchema = z.object({
 });
 
 function revalidateBoardSurfaces(boardId?: string, entityId?: string): void {
-  const paths = ['/app', '/app/boards'];
+  const paths = ['/app', '/app/boards', '/app/work'];
   if (boardId) paths.push(`/app/boards/${boardId}`);
   if (entityId) paths.push(`/app/objects/${entityId}`);
 

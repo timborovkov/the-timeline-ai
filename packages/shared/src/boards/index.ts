@@ -7,7 +7,7 @@ import {
   boards,
   entities,
 } from '@timeline/db';
-import { and, asc, desc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
 
 import type { ActorKind, CreateObjectInput, ObjectRow, ObjectType } from '#src/objects/index.js';
 import type { TeamScopeCore } from '#src/team-scope.js';
@@ -130,6 +130,22 @@ export interface ObjectBoardContextRow {
   priority: number | null;
 }
 
+export interface BoardWorkQueueItemRow {
+  id: string;
+  boardId: string;
+  boardName: string;
+  laneId: string | null;
+  laneName: string | null;
+  laneKind: BoardLaneKind | null;
+  entityId: string;
+  responsibleUserId: string | null;
+  dueAt: Date | null;
+  priority: number | null;
+  nextStep: string | null;
+  updatedAt: Date;
+  object: ObjectRow;
+}
+
 export interface CreateBoardInput {
   name: string;
   purpose?: string;
@@ -179,6 +195,11 @@ export interface BoardItemPatch {
 
 export interface BoardReadOptions {
   itemLimit?: number | 'all';
+}
+
+export interface BoardWorkQueueOptions {
+  dueBefore: Date;
+  limit?: number;
 }
 
 type BoardSelect = typeof boards.$inferSelect;
@@ -1101,6 +1122,59 @@ export function createBoardScope({
         responsibleUserId: row.item.responsibleUserId,
         dueAt: row.item.dueAt,
         priority: row.item.priority,
+      }));
+    },
+
+    async listWorkQueueItems(options: BoardWorkQueueOptions): Promise<BoardWorkQueueItemRow[]> {
+      await scope.requireMembership();
+      const limit = Math.min(Math.max(options.limit ?? 100, 1), 500);
+      const rows = await db
+        .select({ board: boards, item: boardItems, lane: boardLanes, object: entities })
+        .from(boardItems)
+        .innerJoin(boards, eq(boardItems.boardId, boards.id))
+        .innerJoin(entities, eq(boardItems.entityId, entities.id))
+        .leftJoin(boardLanes, eq(boardItems.laneId, boardLanes.id))
+        .where(
+          and(
+            eq(boardItems.teamId, scope.teamId),
+            eq(boards.teamId, scope.teamId),
+            eq(entities.teamId, scope.teamId),
+            isNull(boardItems.archivedAt),
+            isNull(boards.archivedAt),
+            isNull(entities.archivedAt),
+            isNull(entities.mergedIntoId),
+            sql`lower(${entities.status}) not in ('done', 'cancelled', 'canceled', 'shipped')`,
+            or(
+              eq(boardItems.responsibleUserId, scope.userId),
+              and(
+                isNull(boardItems.responsibleUserId),
+                sql`${boardItems.dueAt} IS NOT NULL`,
+                sql`${boardItems.dueAt} <= ${options.dueBefore.toISOString()}::timestamptz`,
+              ),
+            ),
+          ),
+        )
+        .orderBy(
+          sql`case when ${boardItems.responsibleUserId} = ${scope.userId} then 0 else 1 end asc`,
+          sql`(${boardItems.dueAt} is not null) desc`,
+          asc(boardItems.dueAt),
+          desc(boardItems.updatedAt),
+        )
+        .limit(limit);
+      return rows.map((row) => ({
+        id: row.item.id,
+        boardId: row.board.id,
+        boardName: row.board.name,
+        laneId: row.item.laneId,
+        laneName: row.lane?.name ?? null,
+        laneKind: row.lane?.kind ?? null,
+        entityId: row.item.entityId,
+        responsibleUserId: row.item.responsibleUserId,
+        dueAt: row.item.dueAt,
+        priority: row.item.priority,
+        nextStep: row.item.nextStep,
+        updatedAt: row.item.updatedAt,
+        object: toObjectRow(row.object),
       }));
     },
 

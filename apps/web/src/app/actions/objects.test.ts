@@ -86,6 +86,10 @@ function expectApprovalsRevalidated(): void {
   expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/approvals');
 }
 
+function expectWorkRevalidated(): void {
+  expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/work');
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   fakes.fakeTransaction.mockImplementation(async (callback: (tx: unknown) => Promise<unknown>) =>
@@ -182,6 +186,7 @@ describe('object CRUD actions', () => {
       }),
     );
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/objects');
+    expectWorkRevalidated();
   });
 
   it('maps duplicate-key errors to a friendly create error', async () => {
@@ -232,6 +237,7 @@ describe('object CRUD actions', () => {
     });
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/objects');
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith(`/app/objects/${OBJECT_ID}`);
+    expectWorkRevalidated();
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/boards', 'layout');
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/tasks');
     expectApprovalsRevalidated();
@@ -268,6 +274,7 @@ describe('object CRUD actions', () => {
       reason: 'A teammate archived this object directly.',
     });
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/boards', 'layout');
+    expectWorkRevalidated();
     expectApprovalsRevalidated();
   });
 
@@ -299,6 +306,7 @@ describe('object CRUD actions', () => {
 
     expect(fakes.fakeSuggestions.reconcileCanonicalChange).not.toHaveBeenCalled();
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/boards', 'layout');
+    expectWorkRevalidated();
     expectApprovalsRevalidated();
   });
 
@@ -332,6 +340,7 @@ describe('object CRUD actions', () => {
       reason: 'A teammate archived this object directly.',
     });
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/objects');
+    expectWorkRevalidated();
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/tasks');
     expectApprovalsRevalidated();
   });
@@ -405,6 +414,7 @@ describe('object CRUD actions', () => {
     });
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith(`/app/objects/${OBJECT_ID}`);
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith(`/app/objects/${OTHER_OBJECT_ID}`);
+    expectWorkRevalidated();
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/boards', 'layout');
   });
 
@@ -422,6 +432,7 @@ describe('object CRUD actions', () => {
       mergedIds: [OTHER_OBJECT_ID],
     });
     expect(fakes.fakeSuggestions.reconcileObjectMerge).not.toHaveBeenCalled();
+    expectWorkRevalidated();
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/approvals');
   });
 
@@ -629,6 +640,7 @@ describe('object relationship, note, notification, and suggestion actions', () =
     });
     expect(fakes.fakeObjects.rejectObjectChange).toHaveBeenCalledWith(CHANGE_ID);
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/inbox');
+    expectWorkRevalidated();
   });
 
   it('keeps optimistic suggestion accept/reject successful when revalidation fails after persistence', async () => {

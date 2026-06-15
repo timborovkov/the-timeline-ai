@@ -13,6 +13,27 @@ The core product question is:
 
 This plan defines the direction for turning Work into that place.
 
+## Current Implementation Status
+
+The current branch completes the first two slices of this plan:
+
+- **Phase 0: Work hub IA and Work Queue.** `/app/work` is now centered on a
+  single Work Queue, with team boards, compact recent changes, attention counts,
+  and secondary navigation into Objects, Tasks, Boards, Calendar, and Approvals.
+  `/app` remains the broader home/capture dashboard, with Quick actions reduced
+  so Work absorbs the operational object/task/board entry points.
+- **Phase 1: Board Item Command Center.** The board item side panel now supports
+  responsible person, lane and blocked-state changes, due date, priority, next
+  step, notes, and readable recent activity using the existing board item schema.
+  The board scan layer shows responsible/unassigned state, due state, priority,
+  next step, and blocked state.
+- **Adjacent object-page cleanup.** Object detail pages now expose editable name
+  and aliases, hide internal pagination terminators, and render recent changes
+  as readable summaries instead of raw JSON.
+
+The next product gap is no longer "where do I see my work?" It is "how does a
+team discuss, follow, and get notified about work where the work already lives?"
+
 ## Thesis
 
 We are not building a Trello or Asana clone. Those products still teach useful
@@ -36,8 +57,9 @@ capture work -> assign it -> discuss it -> move it -> remember why -> know what 
 
 ## Problem
 
-The current Work area exposes too much system truth and too little user
-workflow.
+Historically, the Work area exposed too much system truth and too little user
+workflow. Phase 0 and Phase 1 reduce that, but the remaining gaps are still
+important.
 
 Examples:
 
@@ -126,8 +148,7 @@ A view is how the team sees the same work:
 - table
 - list
 - calendar
-- "my work"
-- "stale"
+- work queue
 - "due soon"
 - "unassigned"
 - saved filtered views
@@ -165,7 +186,6 @@ Cards and rows should show the core scan layer:
 - priority or "No priority"
 - comment count
 - checklist progress
-- stale or recently updated indicator
 - blocked/attention state
 
 Missing values should be visible when they are operationally important. A board
@@ -199,9 +219,15 @@ The agent should make those views smarter:
 - explain why an item is in a stage
 - summarize recent evidence
 - suggest next steps
-- identify stale or blocked work
+- identify blocked or abandoned-looking work from timeline evidence
 - create tasks from meetings
 - connect related decisions, docs, and people
+
+Background suggestion workers should produce the same kinds of approval-backed
+updates the UI can apply manually. For board items, worker context must include
+the current lane, responsible person, due date, priority, next step, and recent
+board item history so proposals can safely target `laneId`, `responsibleUserId`,
+`dueAt`, `priority`, `nextStep`, notes, or board membership without guessing.
 
 ### One Work Graph, Many Operational Views
 
@@ -213,15 +239,19 @@ objects.
 
 ### Phase 0: Information Architecture Cleanup
 
+Status: implemented in the current branch.
+
 Goal: make Work feel like a real home base.
 
 Work hub should become the daily landing page for operational work.
 
 Add sections:
 
-- My work: assigned to me, due soon, waiting on me
+- Work queue: one scannable list of work that matters now, including items
+  responsible to me and team-level items with due dates but no owner
 - Team boards: recently active and pinned boards
-- Attention: overdue, unassigned, stale, blocked
+- Attention signals: overdue, due soon, unassigned, blocked, pending approval,
+  or otherwise needing review
 - Recent changes: comments, stage changes, mentions, AI-found updates
 - Pinned: boards, projects, deals, vendors, decisions, or tasks I care about
 
@@ -241,31 +271,28 @@ Success criteria:
 
 ### Phase 1: Board Item Command Center
 
+Status: implemented in the current branch for the core fields only. Comments,
+checklists, collaborators/watchers, custom fields, and new schema are still
+future phases.
+
 Goal: make the board item side panel the primary place where work happens.
 
 Add or improve:
 
-- editable owner
-- collaborators/watchers
+- editable responsible person
+- lane and blocked-state editing
 - due date
 - priority
-- description/next step
-- comments
-- checklist/subtasks
-- custom fields
-- linked docs/events/objects
-- recent activity
-- object preview modal
+- next step
+- notes
+- readable recent activity
 - link to full object page
 
 Card scan layer:
 
-- owner or unassigned state
+- responsible or unassigned state
 - due date or missing due state
 - priority or missing priority state
-- comment count
-- checklist progress
-- stale/recently updated marker
 - blocked/attention marker
 
 UX cleanup:
@@ -304,7 +331,7 @@ Notification triggers:
 - due date changed
 - stage changed on watched item
 - comment added on watched item
-- stale item assigned to me
+- abandoned-looking item suggested for review by an agent
 
 Success criteria:
 
@@ -404,9 +431,23 @@ Agent capabilities:
 - "Summarize all activity for this deal"
 - "Suggest next step"
 - "Create follow-up from this meeting"
-- "Detect stale work"
+- "Find work that appears abandoned based on recent timeline evidence"
 - "Find items with no owner or due date"
 - "Show blockers across this board"
+
+Suggestion worker improvements:
+
+- Include `responsibleUserId` and a readable responsible-person label in the
+  existing board item context sent to the suggestion worker.
+- Include enough lane metadata for the worker to propose board item stage moves
+  without relying on lane names alone.
+- Include recent board item changes alongside recent timeline evidence when
+  asking whether an item needs a due date, responsible person, next step, lane
+  change, or priority update.
+- Keep abandoned-looking work as a proposal pattern backed by concrete timeline
+  evidence, not as a special Work hub heuristic.
+- Require citations/source event IDs for due-date, stage, owner/responsible,
+  and abandoned-work proposals.
 
 AI UI patterns:
 
@@ -558,16 +599,25 @@ Mobile:
 
 ## Recommended Build Order
 
+Done in the current branch:
+
 1. Work hub IA and daily workflow layout.
-2. Board item command center with comments, checklist, owner, collaborators, due
-   date, priority, and activity.
-3. Card and row scan layer improvements.
-4. Comments, mentions, watchers, and notifications.
-5. Owner/collaborator model plus My Work views.
-6. Custom fields and saved views.
-7. Timeline evidence and AI summary inside item detail.
-8. Calendar/reminder integration.
-9. Templates and imports.
+2. Work Queue model, board-scope queue helper, and due/responsible queue
+   normalization.
+3. Board item command center with responsible person, lane/blocked state, due
+   date, priority, next step, notes, and activity.
+4. Card and row scan layer improvements.
+
+Next:
+
+1. Comments, mentions, watchers, and notifications.
+2. Owner/collaborator model plus Work Queue views.
+3. Custom fields and saved views.
+4. Timeline evidence and AI summary inside item detail.
+5. Suggestion worker context improvements for responsible person, due date,
+   lane, priority, next step, and abandoned-looking work proposals.
+6. Calendar/reminder integration.
+7. Templates and imports.
 
 ## First Milestone Definition
 
@@ -584,7 +634,14 @@ Recommended wedge: a team pipeline or task board where users can:
 - add a checklist
 - see recent activity and evidence
 - scan missing fields on cards
-- view "my work" from the Work hub
+- view the Work queue from the Work hub
+- receive approval-backed suggestions for board item stage, responsible person,
+  due date, priority, next step, and abandoned-looking work updates
 - ask the agent what changed and why
+
+The current branch covers the Work Queue, board scan layer, and core board item
+editing parts of this milestone. The main missing pieces are comments/mentions,
+checklists, collaborators/watchers, stronger Timeline evidence inside item
+detail, and suggestion-worker improvements.
 
 If this loop feels excellent, the broader platform can expand from it.

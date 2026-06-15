@@ -1679,7 +1679,6 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         .limit(1);
       const markerMatch = rows[0]?.id;
       if (markerMatch) return markerMatch;
-      if (item.targetKind === 'object') return null;
       if (item.status === 'failed') return null;
 
       const parsed = objectCreatePayload.safeParse(normalizeLifecyclePayload(item));
@@ -1688,7 +1687,14 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         parsed.data.canonicalName !== undefined && parsed.data.canonicalName.length > 0
           ? parsed.data.canonicalName
           : item.title;
-      const type = 'task';
+      const type =
+        item.targetKind === 'task' ? 'task' : (objectTypeFromValue(parsed.data.type) ?? 'other');
+      if (
+        item.targetKind === 'object' &&
+        (await hasDependentObjectNoteSibling(item, canonicalName, type))
+      ) {
+        return null;
+      }
       const canonicalRows = await db
         .select({ id: entities.id })
         .from(entities)
@@ -1758,6 +1764,30 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       )
       .limit(1);
     return rows[0]?.id ?? null;
+  }
+
+  async function hasDependentObjectNoteSibling(
+    item: typeof agentSuggestionItems.$inferSelect,
+    canonicalName: string,
+    type: ObjectType,
+  ): Promise<boolean> {
+    if (item.targetKind !== 'object') return false;
+    const rows = await db
+      .select({ id: agentSuggestionItems.id })
+      .from(agentSuggestionItems)
+      .where(
+        and(
+          eq(agentSuggestionItems.teamId, teamId),
+          eq(agentSuggestionItems.suggestionId, item.suggestionId),
+          eq(agentSuggestionItems.operation, 'create'),
+          eq(agentSuggestionItems.targetKind, 'object_note'),
+          inArray(agentSuggestionItems.status, ACTIONABLE_ITEM_STATUSES),
+          sql`lower(${agentSuggestionItems.proposedPayload} ->> 'entityName') = ${canonicalName.toLowerCase()}`,
+          sql`coalesce(${agentSuggestionItems.proposedPayload} ->> 'entityType', ${type}) = ${type}`,
+        ),
+      )
+      .limit(1);
+    return Boolean(rows[0]);
   }
 
   async function objectTypeForTarget(targetId: string | null): Promise<ObjectType | null> {
@@ -1891,14 +1921,20 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       agent_suggestion_item_id: item.id,
     };
 
-    const canRecoverByCanonicalName = item.targetKind === 'task' && item.status === 'pending';
     const suggestionMarkerPredicate = sql`${entities.metadata} ->> 'agent_suggestion_item_id' = ${item.id}`;
-    const existingIdentityPredicate = canRecoverByCanonicalName
-      ? (or(
+    const allowCanonicalExistingMatch =
+      item.status !== 'failed' &&
+      (item.targetKind === 'task' ||
+        !(
+          item.targetKind === 'object' &&
+          (await hasDependentObjectNoteSibling(item, canonicalName, type))
+        ));
+    const existingIdentityPredicate = !allowCanonicalExistingMatch
+      ? suggestionMarkerPredicate
+      : or(
           suggestionMarkerPredicate,
           sql`lower(${entities.canonicalName}) = ${canonicalName.toLowerCase()}`,
-        ) ?? suggestionMarkerPredicate)
-      : suggestionMarkerPredicate;
+        );
     const existingRows = await db
       .select()
       .from(entities)

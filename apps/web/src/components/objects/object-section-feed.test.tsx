@@ -96,6 +96,29 @@ function emptyEventData(): ObjectSectionQueryData {
   };
 }
 
+function changeData(): ObjectSectionQueryData {
+  return {
+    pages: [
+      {
+        items: [
+          {
+            id: 'change-1',
+            field: '__merge__',
+            previousValue: null,
+            newValue: {
+              aliases: ['ProCounter'],
+              survivor_id: 'object-1',
+              merged_entity_ids: ['object-2'],
+            },
+            actorKind: 'user',
+            status: 'applied',
+          },
+        ],
+      },
+    ],
+  };
+}
+
 function emptyEventResponse() {
   return new Response(
     JSON.stringify({
@@ -123,6 +146,8 @@ const { ObjectSectionFeed } = await import('./object-section-feed.js');
 beforeEach(() => {
   vi.clearAllMocks();
   fakes.query.data = factData();
+  fakes.query.hasNextPage = false;
+  fakes.query.isFetchingNextPage = false;
 });
 
 afterEach(() => {
@@ -147,6 +172,52 @@ describe('ObjectSectionFeed', () => {
     expect(html).toContain('Northwind');
     expect(html).toContain('/app/objects/object-3');
     expect(html).toContain('Mia Chen');
+  });
+
+  it('does not render a fake end control when a section has no next page', () => {
+    render(
+      createElement(ObjectSectionFeed, {
+        objectId: 'object-1',
+        section: 'facts',
+        title: 'Facts',
+      }),
+    );
+
+    expect(screen.queryByRole('button', { name: 'End' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Load more' })).toBeNull();
+  });
+
+  it('renders object changes as readable summaries instead of raw JSON', () => {
+    fakes.query.data = changeData();
+
+    const html = renderToStaticMarkup(
+      createElement(ObjectSectionFeed, {
+        objectId: 'object-1',
+        section: 'changes',
+        title: 'Changes',
+      }),
+    );
+
+    expect(html).toContain('Merge');
+    expect(html).toContain('empty');
+    expect(html).toContain('aliases: ProCounter');
+    expect(html).toContain('1 merged object');
+    expect(html).not.toContain('merged_entity_ids');
+    expect(html).not.toContain('{&quot;');
+  });
+
+  it('renders a load-more control only when a next page exists', () => {
+    fakes.query.hasNextPage = true;
+
+    render(
+      createElement(ObjectSectionFeed, {
+        objectId: 'object-1',
+        section: 'facts',
+        title: 'Facts',
+      }),
+    );
+
+    expect(screen.getByRole('button', { name: 'Load more' })).toBeTruthy();
   });
 
   it('keeps empty-event placeholder out of the evidence quick-view body', async () => {

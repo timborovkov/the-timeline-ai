@@ -41,6 +41,7 @@ vi.mock('@/components/objects/object-section-feed', () => ({
 
 const { ObjectDetailClient } = await import('./object-detail-client.js');
 const { visibleObjectSearchResultsForQuery } = await import('./object-search-results.js');
+const objectActions = await import('@/app/actions/objects');
 
 const detail = {
   id: 'object-1',
@@ -74,6 +75,7 @@ const detail = {
 beforeEach(() => {
   cleanup();
   vi.clearAllMocks();
+  vi.mocked(objectActions.updateObjectAction).mockResolvedValue({ ok: true, id: detail.id });
 });
 
 function renderObjectDetail(props: Parameters<typeof ObjectDetailClient>[0]): string {
@@ -158,6 +160,34 @@ describe('ObjectDetailClient', () => {
     expect(html).toContain('2 waiting');
     expect(html).toContain('Update proposal stage');
     expect(html).toContain('Move to proposal');
+  });
+
+  it('edits the object name and aliases from the fields panel', async () => {
+    const user = userEvent.setup();
+    render(objectDetailElement({ detail, userId: 'user-1', suggestions: [] }));
+
+    const nameInput = screen.getByLabelText('Name');
+    await user.clear(nameInput);
+    await user.type(nameInput, 'Send renewed proposal');
+    await user.tab();
+
+    await waitFor(() => {
+      expect(objectActions.updateObjectAction).toHaveBeenCalledWith({
+        id: detail.id,
+        canonicalName: 'Send renewed proposal',
+      });
+    });
+
+    const aliasesInput = screen.getByLabelText('Aliases');
+    await user.type(aliasesInput, 'Proposal task, Send renewed proposal, Proposal task');
+    await user.tab();
+
+    await waitFor(() => {
+      expect(objectActions.updateObjectAction).toHaveBeenCalledWith({
+        id: detail.id,
+        aliases: ['Proposal task'],
+      });
+    });
   });
 
   it('applies refreshed server detail props without requiring updatedAt to change', async () => {

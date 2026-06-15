@@ -50,9 +50,9 @@ const RELATIONSHIP_KINDS = [
 
 type ObjectDetail = objects.ObjectDetail;
 type LocalSuggestion = ComponentProps<typeof ApprovalsClient>['suggestions'][number];
-type EditableField = 'status' | 'stage' | 'priority' | 'dueAt';
-type EditableValue = string | number | Date | null;
-type DraftField = 'stage' | 'dueAt';
+type EditableField = 'canonicalName' | 'aliases' | 'status' | 'stage' | 'priority' | 'dueAt';
+type EditableValue = string | number | Date | readonly string[] | null;
+type DraftField = 'canonicalName' | 'aliases' | 'stage' | 'dueAt';
 
 interface Props {
   detail: ObjectDetail;
@@ -62,6 +62,8 @@ interface Props {
 
 interface ObjectDetailUiState {
   overrides: Partial<Record<EditableField, EditableValue>>;
+  nameDraft: string;
+  aliasesDraft: string;
   stageDraft: string;
   dueDraft: string;
   saveState: SaveState;
@@ -110,14 +112,22 @@ function statusOptions(type: string): string[] {
 }
 
 function isDraftField(field: EditableField): field is DraftField {
-  return field === 'stage' || field === 'dueAt';
+  return field === 'canonicalName' || field === 'aliases' || field === 'stage' || field === 'dueAt';
 }
 
 function isEditableFieldName(field: string): field is EditableField {
-  return field === 'status' || field === 'stage' || field === 'priority' || field === 'dueAt';
+  return (
+    field === 'canonicalName' ||
+    field === 'aliases' ||
+    field === 'status' ||
+    field === 'stage' ||
+    field === 'priority' ||
+    field === 'dueAt'
+  );
 }
 
 function editableValueFromChange(field: EditableField, value: unknown): EditableValue {
+  if (field === 'aliases') return normalizeAliases(value);
   if (field === 'dueAt') return toDateOrNull(value);
   if (field === 'priority') {
     if (value === null) return null;
@@ -143,6 +153,8 @@ function isOptimisticRelationship(relationship: ObjectDetail['relationships'][nu
 function initObjectDetailUiState(detail: ObjectDetail): ObjectDetailUiState {
   return {
     overrides: {},
+    nameDraft: detail.canonicalName,
+    aliasesDraft: detail.aliases.join(', '),
     stageDraft: detail.stage ?? '',
     dueDraft: toLocalInputValue(detail.dueAt),
     saveState: 'idle',
@@ -236,6 +248,8 @@ function useObjectDetailController({ detail, userId, suggestions }: Props) {
   const [
     {
       overrides,
+      nameDraft,
+      aliasesDraft,
       stageDraft,
       dueDraft,
       saveState,
@@ -267,6 +281,8 @@ function useObjectDetailController({ detail, userId, suggestions }: Props) {
   const localDetailRef = useRef(detail);
   const serverDetailRef = useRef(detail);
   const queuedFieldValuesRef = useRef<Record<EditableField, EditableValue | undefined>>({
+    canonicalName: undefined,
+    aliases: undefined,
     status: undefined,
     stage: undefined,
     priority: undefined,
@@ -274,9 +290,21 @@ function useObjectDetailController({ detail, userId, suggestions }: Props) {
   });
   const savingCountRef = useRef(0);
   const batchHadFailureRef = useRef(false);
-  const focusedDraftsRef = useRef<Record<DraftField, boolean>>({ stage: false, dueAt: false });
-  const savingDraftsRef = useRef<Record<DraftField, number>>({ stage: 0, dueAt: 0 });
+  const focusedDraftsRef = useRef<Record<DraftField, boolean>>({
+    canonicalName: false,
+    aliases: false,
+    stage: false,
+    dueAt: false,
+  });
+  const savingDraftsRef = useRef<Record<DraftField, number>>({
+    canonicalName: 0,
+    aliases: 0,
+    stage: 0,
+    dueAt: 0,
+  });
   const savingFieldsRef = useRef<Record<EditableField, number>>({
+    canonicalName: 0,
+    aliases: 0,
     status: 0,
     stage: 0,
     priority: 0,
@@ -292,6 +320,8 @@ function useObjectDetailController({ detail, userId, suggestions }: Props) {
       ...current,
       overrides: {
         ...current.overrides,
+        canonicalName: next.canonicalName,
+        aliases: next.aliases,
         status: next.status,
         stage: next.stage,
         priority: next.priority,
@@ -380,6 +410,12 @@ function useObjectDetailController({ detail, userId, suggestions }: Props) {
         ...current,
         [field]: field === 'dueAt' ? toDateOrNull(rollbackValue) : rollbackValue,
       }));
+      if (field === 'canonicalName') {
+        dispatchObjectUi({ nameDraft: String(rollbackValue ?? '') });
+      }
+      if (field === 'aliases') {
+        dispatchObjectUi({ aliasesDraft: normalizeAliases(rollbackValue).join(', ') });
+      }
       if (field === 'stage') {
         dispatchObjectUi({ stageDraft: rollbackValue === null ? '' : String(rollbackValue) });
       }
@@ -595,6 +631,12 @@ function useObjectDetailController({ detail, userId, suggestions }: Props) {
       if (change.field === 'stage') {
         dispatchObjectUi({ stageDraft: localValue === null ? '' : String(localValue) });
       }
+      if (change.field === 'canonicalName') {
+        dispatchObjectUi({ nameDraft: localValue === null ? '' : String(localValue) });
+      }
+      if (change.field === 'aliases') {
+        dispatchObjectUi({ aliasesDraft: normalizeAliases(localValue).join(', ') });
+      }
       if (change.field === 'dueAt') {
         dispatchObjectUi({ dueDraft: toLocalInputValue(localValue) });
       }
@@ -605,6 +647,8 @@ function useObjectDetailController({ detail, userId, suggestions }: Props) {
         dispatchLocalDetail({ recentChangeStatuses: previousRecentChangeStatuses });
         updateLocalDetail(() => previousDetail);
         dispatchObjectUi({
+          nameDraft: previousDetail.canonicalName,
+          aliasesDraft: previousDetail.aliases.join(', '),
           stageDraft: previousDetail.stage ?? '',
           dueDraft: toLocalInputValue(previousDetail.dueAt),
         });
@@ -655,9 +699,11 @@ function useObjectDetailController({ detail, userId, suggestions }: Props) {
     editingNoteId,
     error,
     focusedDraftsRef,
+    aliasesDraft,
     linkKind,
     linkQuery,
     localDetail,
+    nameDraft,
     noteBody,
     patch,
     pending,
@@ -745,6 +791,8 @@ function ObjectDetailView(props: Props) {
           <ObjectPanel title="Fields" eyebrow="editable">
             <ObjectEditableFields
               detail={view.localDetail}
+              nameDraft={view.nameDraft}
+              aliasesDraft={view.aliasesDraft}
               stageDraft={view.stageDraft}
               dueDraft={view.dueDraft}
               focusedDraftsRef={view.focusedDraftsRef}
@@ -900,6 +948,8 @@ function ObjectDetailHeader({
 
 function ObjectEditableFields({
   detail,
+  nameDraft,
+  aliasesDraft,
   stageDraft,
   dueDraft,
   focusedDraftsRef,
@@ -908,6 +958,8 @@ function ObjectEditableFields({
   className = 'grid-cols-1 gap-6 sm:grid-cols-2',
 }: {
   detail: ObjectDetail;
+  nameDraft: string;
+  aliasesDraft: string;
   stageDraft: string;
   dueDraft: string;
   focusedDraftsRef: RefObject<Record<DraftField, boolean>>;
@@ -918,6 +970,49 @@ function ObjectEditableFields({
   const options = statusOptions(detail.type);
   return (
     <section className={cn('grid', className)}>
+      <Field label="Name">
+        <input
+          aria-label="Name"
+          value={nameDraft}
+          onFocus={() => {
+            focusedDraftsRef.current.canonicalName = true;
+          }}
+          onChange={(e) => {
+            dispatchObjectUi({ nameDraft: e.target.value });
+          }}
+          onBlur={(e) => {
+            focusedDraftsRef.current.canonicalName = false;
+            const v = e.target.value.trim();
+            if (v === '') {
+              dispatchObjectUi({ nameDraft: detail.canonicalName });
+              return;
+            }
+            dispatchObjectUi({ nameDraft: v });
+            patch('canonicalName', v);
+          }}
+          className="w-full rounded-md border bg-surface px-3 py-2 text-sm"
+        />
+      </Field>
+      <Field label="Aliases">
+        <input
+          aria-label="Aliases"
+          value={aliasesDraft}
+          onFocus={() => {
+            focusedDraftsRef.current.aliases = true;
+          }}
+          onChange={(e) => {
+            dispatchObjectUi({ aliasesDraft: e.target.value });
+          }}
+          onBlur={(e) => {
+            focusedDraftsRef.current.aliases = false;
+            const aliases = parseAliases(e.target.value, nameDraft);
+            dispatchObjectUi({ aliasesDraft: aliases.join(', ') });
+            patch('aliases', aliases);
+          }}
+          placeholder="Acme, Acme Corp"
+          className="w-full rounded-md border bg-surface px-3 py-2 text-sm"
+        />
+      </Field>
       <Field label="Status">
         <select
           value={detail.status}
@@ -1364,15 +1459,15 @@ function ObjectRecentChangeItem({
   const isRejected = change.status === 'rejected';
   return (
     <li
-      className={`rounded-sm border border-border bg-surface px-4 py-2 ${isSuggested ? 'border-signal/40 bg-signal-soft' : ''} ${isRejected ? 'opacity-60' : ''}`}
+      className={`min-w-0 rounded-sm border border-border bg-surface px-4 py-2 ${isSuggested ? 'border-signal/40 bg-signal-soft' : ''} ${isRejected ? 'opacity-60' : ''}`}
     >
-      <div className="flex items-center justify-between">
-        <span className="font-medium">{change.field}</span>
-        <span className="text-[11px] uppercase tracking-wide text-muted-foreground">
+      <div className="flex min-w-0 items-start justify-between gap-3">
+        <span className="min-w-0 break-words font-medium">{changeFieldLabel(change.field)}</span>
+        <span className="shrink-0 text-[11px] uppercase tracking-wide text-muted-foreground">
           {change.actorKind} · {change.status}
         </span>
       </div>
-      <div className="mt-1 text-xs text-muted-foreground">
+      <div className="mt-1 break-words text-xs text-muted-foreground">
         {formatValue(change.previousValue)} → {formatValue(change.newValue)}
       </div>
       <div className="mt-1 flex items-center justify-between text-[11px] text-muted-foreground">
@@ -1431,6 +1526,11 @@ function ObjectArchiveFooter({
 
 function sameEditableValue(field: EditableField, a: unknown, b: unknown): boolean {
   if (a === null || a === undefined || b === null || b === undefined) return Object.is(a, b);
+  if (field === 'aliases') {
+    const left = normalizeAliases(a);
+    const right = normalizeAliases(b);
+    return left.length === right.length && left.every((alias, index) => alias === right[index]);
+  }
   if (field !== 'dueAt') return Object.is(a, b);
   const aDate = toDateOrNull(a);
   const bDate = toDateOrNull(b);
@@ -1464,6 +1564,57 @@ function toLocalInput(d: Date): string {
 function formatValue(v: unknown): string {
   if (v === null || v === undefined) return '∅';
   if (typeof v === 'string') return displayText(v);
+  if (Array.isArray(v)) return v.map((item) => formatValue(item)).join(', ');
   if (v instanceof Date) return formatDisplayDateTime(v);
-  return displayText(JSON.stringify(v));
+  if (typeof v === 'object') return summarizeObjectValue(v as Record<string, unknown>);
+  if (typeof v === 'number' || typeof v === 'boolean' || typeof v === 'bigint') return String(v);
+  return 'updated';
+}
+
+function changeFieldLabel(field: string): string {
+  const labels: Record<string, string> = {
+    __merge__: 'Merge',
+    __merged_from__: 'Merged from',
+    canonicalName: 'Name',
+    aliases: 'Aliases',
+    dueAt: 'Due date',
+    ownerUserId: 'Owner',
+    assigneeUserId: 'Assignee',
+  };
+  return labels[field] ?? field.replace(/([a-z])([A-Z])/g, '$1 $2');
+}
+
+function parseAliases(value: string, canonicalName: string): string[] {
+  const seen = new Set<string>();
+  const canonical = canonicalName.trim().toLocaleLowerCase();
+  return value
+    .split(/[,\n]/)
+    .map((alias) => alias.trim())
+    .filter((alias) => {
+      if (!alias || alias.toLocaleLowerCase() === canonical) return false;
+      const key = alias.toLocaleLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+}
+
+function normalizeAliases(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.flatMap((item) => (typeof item === 'string' && item.trim() ? [item.trim()] : []));
+  }
+  if (typeof value === 'string') return parseAliases(value, '');
+  return [];
+}
+
+function summarizeObjectValue(value: Record<string, unknown>): string {
+  const name = typeof value.canonicalName === 'string' ? value.canonicalName : null;
+  const type = typeof value.type === 'string' ? value.type : null;
+  if (name && type) return `${displayText(name)} (${displayText(type)})`;
+  if (name) return displayText(name);
+  const aliases = normalizeAliases(value.aliases);
+  if (aliases.length > 0) return `aliases: ${aliases.map(displayText).join(', ')}`;
+  const mergedIds = Array.isArray(value.merged_entity_ids) ? value.merged_entity_ids.length : 0;
+  if (mergedIds > 0) return `${mergedIds} merged object${mergedIds === 1 ? '' : 's'}`;
+  return 'updated details';
 }
