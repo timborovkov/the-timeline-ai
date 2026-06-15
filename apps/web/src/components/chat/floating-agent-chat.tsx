@@ -49,7 +49,6 @@ function FloatingAgentChatContent({ teamId, teamName }: FloatingAgentChatProps) 
   useEffect(() => {
     if (!sessionId) {
       hydratedSessionIdRef.current = null;
-      setInitialMessages([]);
       return;
     }
 
@@ -57,15 +56,19 @@ function FloatingAgentChatContent({ teamId, teamName }: FloatingAgentChatProps) 
     const activeSessionId = sessionId;
     hydratedSessionIdRef.current = activeSessionId;
 
-    void (async () => {
-      const loaded = await loadChatSessionAction({ sessionId: activeSessionId });
-      if (sessionId !== activeSessionId) return;
-      if (loaded.ok) {
-        setInitialMessages(loaded.messages ?? []);
-      } else {
+    void loadChatSessionAction({ sessionId: activeSessionId })
+      .then((loaded) => {
+        if (hydratedSessionIdRef.current !== activeSessionId) return;
+        if (loaded.ok) {
+          setInitialMessages(loaded.messages ?? []);
+        } else {
+          setInitialMessages([]);
+        }
+      })
+      .catch(() => {
+        if (hydratedSessionIdRef.current !== activeSessionId) return;
         setInitialMessages([]);
-      }
-    })();
+      });
   }, [sessionId]);
 
   if (!pathname || pathname.startsWith('/app/chat')) return null;
