@@ -53,7 +53,7 @@ const NAV_ITEMS: readonly NavItem[] = [
     href: '/app/documents',
     label: 'Documents',
     icon: Files,
-    activeHrefs: ['/app/documents'],
+    activeHrefs: ['/app/documents', '/app/documents/'],
   },
   {
     href: '/app/sources',

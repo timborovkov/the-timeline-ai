@@ -144,7 +144,6 @@ export function DocumentPreview({
               <iframe
                 src={activePreview.url}
                 title={activePreview.filename}
-                sandbox=""
                 referrerPolicy="no-referrer"
                 className="h-[72vh] w-full"
               />

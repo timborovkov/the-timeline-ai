@@ -2,6 +2,7 @@
 
 import { documentPresentation } from '@timeline/shared/documents/presentation';
 import { Download, EyeOff, FileText, Link2, Trash2 } from 'lucide-react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
 import { toast } from 'sonner';
@@ -262,7 +263,9 @@ export function DocumentDetail({
                   key={v.id}
                   className={
                     'flex items-center justify-between gap-3 py-3 max-sm:flex-col max-sm:items-stretch ' +
-                    (highlight ? 'rounded bg-surface-2 px-2 -mx-2' : '')
+                    (highlight || activeVersion?.id === v.id
+                      ? 'rounded bg-surface-2 px-2 -mx-2'
+                      : '')
                   }
                 >
                   <div className="min-w-0 flex flex-col gap-1">
@@ -291,6 +294,9 @@ export function DocumentDetail({
                     )}
                   </div>
                   <div className="flex shrink-0 flex-wrap items-center gap-2">
+                    <Button size="sm" variant={activeVersion?.id === v.id ? 'default' : 'outline'} asChild>
+                      <Link href={`/app/documents/${document.id}?version=${String(v.version)}`}>Preview</Link>
+                    </Button>
                     <Button
                       size="sm"
                       variant="outline"
