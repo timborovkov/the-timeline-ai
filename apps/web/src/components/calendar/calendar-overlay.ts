@@ -82,7 +82,7 @@ export function calendarOverlayReducer(
     );
     return {
       upserts,
-      removedIds: state.removedIds.filter((id) => !currentIds.has(id) && !deletedIds.has(id)),
+      removedIds: state.removedIds.filter((id) => !deletedIds.has(id)),
     };
   }
   const { [action.id]: _discarded, ...rest } = state.upserts;

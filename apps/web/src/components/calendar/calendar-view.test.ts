@@ -116,6 +116,22 @@ describe('calendarOverlayReducer', () => {
     ).toEqual([event('event-1', 'Server list title')]);
   });
 
+  it('keeps an optimistic delete hidden when a stale refresh still includes the id', () => {
+    const state = {
+      upserts: {},
+      removedIds: ['event-1'],
+    };
+    const refreshedState = calendarOverlayReducer(state, {
+      type: 'reconcile-server-events',
+      currentIds: ['event-1'],
+      deletedIds: [],
+    });
+
+    expect(
+      applyCalendarPageOverlay([event('event-1', 'Server stale title')], refreshedState),
+    ).toEqual([]);
+  });
+
   it('keeps optimistic state when a paginated list snapshot is not authoritative for deletion', () => {
     const state = {
       upserts: { 'event-2': event('event-2', 'Optimistic off-page title') },
@@ -143,7 +159,7 @@ describe('calendarOverlayReducer', () => {
         currentIds: ['event-2', 'event-3'],
         deletedIds: [],
       }),
-    ).toEqual({ upserts: {}, removedIds: [] });
+    ).toEqual({ upserts: {}, removedIds: ['event-3'] });
   });
 });
 

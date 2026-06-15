@@ -10,6 +10,7 @@
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test --concurrency=1",
+    "test:ci": "pnpm test:eval && pnpm test:dist-imports",
     "test:eval": "pnpm --filter @timeline/shared test -- src/agent/evals.test.ts src/agent/ask.test.ts src/agent/mcp-evals.test.ts src/team-scope.search.test.ts",
     "test:dist-imports": "pnpm --filter @timeline/db build && pnpm --filter @timeline/shared build && node scripts/check-dist-imports.mjs",
     "check:web-bundle": "tsx scripts/check-web-bundle-hygiene.ts",
