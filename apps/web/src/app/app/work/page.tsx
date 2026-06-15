@@ -264,10 +264,14 @@ async function listWorkQueueObjects(
       ...baseFilter,
       ownerUserId: null,
       assigneeUserId: null,
-      dueBefore,
+      dueBefore: exclusiveDueBefore(dueBefore),
     }),
   ]);
   return [...owned, ...assigned, ...teamDue];
+}
+
+function exclusiveDueBefore(dueBefore: Date): Date {
+  return new Date(dueBefore.getTime() + 1);
 }
 
 function WorkQueueRow({ item }: { item: WorkQueueItem }) {

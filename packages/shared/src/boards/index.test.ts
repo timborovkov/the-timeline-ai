@@ -883,28 +883,35 @@ describe('board scope', () => {
         { name: 'Blocked', kind: 'blocked' },
       ],
     });
-    const [responsibleObject, teamDueObject, hiddenObject, teammateDueObject] = await Promise.all([
-      owner.objects.createObject({
-        type: 'deal',
-        canonicalName: 'Responsible deal',
-        actor: { kind: 'user', userId: USER_OWNER },
-      }),
-      owner.objects.createObject({
-        type: 'project',
-        canonicalName: 'Team due project',
-        actor: { kind: 'user', userId: USER_OWNER },
-      }),
-      owner.objects.createObject({
-        type: 'task',
-        canonicalName: 'Unrelated task',
-        actor: { kind: 'user', userId: USER_OWNER },
-      }),
-      owner.objects.createObject({
-        type: 'task',
-        canonicalName: 'Teammate due task',
-        actor: { kind: 'user', userId: USER_OWNER },
-      }),
-    ]);
+    const [responsibleObject, teamDueObject, hiddenObject, teammateDueObject, doneObject] =
+      await Promise.all([
+        owner.objects.createObject({
+          type: 'deal',
+          canonicalName: 'Responsible deal',
+          actor: { kind: 'user', userId: USER_OWNER },
+        }),
+        owner.objects.createObject({
+          type: 'project',
+          canonicalName: 'Team due project',
+          actor: { kind: 'user', userId: USER_OWNER },
+        }),
+        owner.objects.createObject({
+          type: 'task',
+          canonicalName: 'Unrelated task',
+          actor: { kind: 'user', userId: USER_OWNER },
+        }),
+        owner.objects.createObject({
+          type: 'task',
+          canonicalName: 'Teammate due task',
+          actor: { kind: 'user', userId: USER_OWNER },
+        }),
+        owner.objects.createObject({
+          type: 'task',
+          canonicalName: 'Completed work',
+          status: 'done',
+          actor: { kind: 'user', userId: USER_OWNER },
+        }),
+      ]);
 
     const responsibleItem = await owner.boards.addBoardItem(board.id, {
       entityId: responsibleObject.id,
@@ -928,6 +935,11 @@ describe('board scope', () => {
       dueAt: new Date('2026-06-18T00:00:00.000Z'),
       actor: { kind: 'user', userId: USER_OWNER },
     });
+    const doneItem = await owner.boards.addBoardItem(board.id, {
+      entityId: doneObject.id,
+      responsibleUserId: USER_OWNER,
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
 
     const ownerRows = await owner.boards.listWorkQueueItems({
       dueBefore: new Date('2026-06-30T00:00:00.000Z'),
@@ -936,6 +948,7 @@ describe('board scope', () => {
       [responsibleItem.id, teamDueItem.id].sort(),
     );
     expect(ownerRows.map((row) => row.id)).not.toContain(teammateDueItem.id);
+    expect(ownerRows.map((row) => row.id)).not.toContain(doneItem.id);
     const teamDueRow = ownerRows.find((row) => row.id === teamDueItem.id);
     expect(teamDueRow?.boardName).toBe('Pilot pipeline');
     expect(teamDueRow?.laneName).toBe('Blocked');

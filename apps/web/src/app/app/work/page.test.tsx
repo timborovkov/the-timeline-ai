@@ -1,5 +1,5 @@
 import { renderToStaticMarkup } from 'react-dom/server';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const USER_ID = 'user-1';
 const TEAM_ID = 'team-1';
@@ -91,6 +91,10 @@ beforeEach(() => {
   fakes.listEventsPage.mockResolvedValue({ items: [], nextCursor: null });
 });
 
+afterEach(() => {
+  vi.useRealTimers();
+});
+
 describe('WorkPage', () => {
   it('renders pending approvals as one queue item', async () => {
     fakes.countPendingSuggestions.mockResolvedValue(3);
@@ -172,6 +176,30 @@ describe('WorkPage', () => {
     expect(html).toContain('Unassigned due deal');
     expect(html).toContain('Team due');
     expect(html).not.toContain('Completed task');
+  });
+
+  it('includes unassigned objects due exactly at the due-soon boundary', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-06-15T00:00:00.000Z'));
+    const dueSoonBoundary = new Date('2026-06-29T00:00:00.000Z');
+
+    fakes.listObjects.mockImplementation((filter: Record<string, unknown>) => {
+      if (filter.ownerUserId !== null || filter.assigneeUserId !== null) return [];
+      expect(filter.dueBefore).toEqual(new Date(dueSoonBoundary.getTime() + 1));
+      return [
+        objectRow({
+          id: 'boundary-due-deal',
+          type: 'deal',
+          canonicalName: 'Boundary due deal',
+          dueAt: dueSoonBoundary,
+        }),
+      ];
+    });
+
+    const html = renderToStaticMarkup(await WorkPage());
+
+    expect(html).toContain('Boundary due deal');
+    expect(html).toContain('Team due');
   });
 
   it('pages eligible object subsets instead of only reading the newest objects', async () => {

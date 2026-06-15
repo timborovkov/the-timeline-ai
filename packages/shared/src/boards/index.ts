@@ -1143,6 +1143,7 @@ export function createBoardScope({
             isNull(boards.archivedAt),
             isNull(entities.archivedAt),
             isNull(entities.mergedIntoId),
+            sql`lower(${entities.status}) not in ('done', 'cancelled', 'canceled', 'shipped')`,
             or(
               eq(boardItems.responsibleUserId, scope.userId),
               and(
