@@ -432,7 +432,9 @@ function CurrentVersionPanel({
                 </span>
               </div>
               {version.processingError ? (
-                <p className="mt-2 text-xs text-danger">{version.processingError}</p>
+                <p className="mt-2 max-h-24 overflow-y-auto break-words pr-1 text-xs text-danger">
+                  {version.processingError}
+                </p>
               ) : null}
             </InfoBlock>
           </aside>
@@ -468,7 +470,7 @@ function UnsupportedPreview({ chunks }: { chunks: Props['activeVersionChunks'] }
           <p className="mb-3 font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">
             Extracted text
           </p>
-          <pre className="max-h-[58vh] whitespace-pre-wrap break-words text-sm leading-6 text-fg-muted">
+          <pre className="max-h-[58vh] overflow-y-auto whitespace-pre-wrap break-words pr-1 text-sm leading-6 text-fg-muted">
             {text}
           </pre>
         </div>
