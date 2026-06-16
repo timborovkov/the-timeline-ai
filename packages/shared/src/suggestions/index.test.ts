@@ -1579,6 +1579,90 @@ describe('suggestion scope', () => {
     expect(result.rows[0]?.status).toBe('todo');
   });
 
+  it('accepts task create and update suggestions with assignee, due date, and priority', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const createBundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Create enriched task',
+      dedupeKey: 'create-enriched-task-fields',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Send Acme deck',
+          dedupeKey: 'create-enriched-task-fields:item',
+          proposedPayload: {
+            canonicalName: 'Send Acme deck',
+            assigneeUserId: REVIEWER_ID,
+            dueAt: '2026-08-01T10:00:00.000Z',
+            priority: 2,
+          },
+        },
+      ],
+    });
+
+    await expect(
+      scope.suggestions.acceptSuggestionItem(createBundle.items[0]?.id ?? ''),
+    ).resolves.toBe(true);
+
+    const created = await pg.query<{
+      id: string;
+      assignee_user_id: string | null;
+      due_at: Date | null;
+      priority: number | null;
+    }>(
+      `SELECT id::text, assignee_user_id::text, due_at, priority
+       FROM entities
+       WHERE team_id = '${TEAM_ID}' AND canonical_name = 'Send Acme deck'`,
+    );
+    expect(created.rows[0]).toMatchObject({
+      assignee_user_id: REVIEWER_ID,
+      priority: 2,
+    });
+    expect(created.rows[0]?.due_at?.toISOString()).toBe('2026-08-01T10:00:00.000Z');
+
+    const taskId = created.rows[0]?.id;
+    expect(taskId).toBeDefined();
+    const updateBundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Update enriched task',
+      dedupeKey: 'update-enriched-task-fields',
+      items: [
+        {
+          operation: 'update',
+          targetKind: 'task',
+          targetId: taskId ?? '',
+          title: 'Update task assignment fields',
+          dedupeKey: 'update-enriched-task-fields:item',
+          proposedPayload: {
+            assigneeUserId: null,
+            dueAt: '2026-08-02T12:00:00.000Z',
+            priority: 1,
+          },
+        },
+      ],
+    });
+
+    await expect(
+      scope.suggestions.acceptSuggestionItem(updateBundle.items[0]?.id ?? ''),
+    ).resolves.toBe(true);
+
+    const updated = await pg.query<{
+      assignee_user_id: string | null;
+      due_at: Date | null;
+      priority: number | null;
+    }>(
+      `SELECT assignee_user_id::text, due_at, priority
+       FROM entities
+       WHERE id = '${taskId ?? ''}'`,
+    );
+    expect(updated.rows[0]).toMatchObject({
+      assignee_user_id: null,
+      priority: 1,
+    });
+    expect(updated.rows[0]?.due_at?.toISOString()).toBe('2026-08-02T12:00:00.000Z');
+  });
+
   it('does not treat an unrelated exact existing create task as already represented', async () => {
     const scope = withTeam(db as never, TEAM_ID, USER_ID);
     const existing = await scope.objects.createObject({

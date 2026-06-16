@@ -586,8 +586,8 @@ Mobile:
 
 ## Open Product Questions
 
-- Should tasks remain a separate top-level page, or become a saved Work view
-  over task objects?
+- How far should the separate object-backed Tasks page later converge with
+  saved Work views?
 - Should board item comments also appear on the canonical object activity feed?
 - When does board-local state become object-level state?
 - Should owner be board-local, object-level, or both?
@@ -607,6 +607,8 @@ Done in the current branch:
 3. Board item command center with responsible person, lane/blocked state, due
    date, priority, next step, notes, and activity.
 4. Card and row scan layer improvements.
+5. Object-backed Tasks page convergence with board-style cards, side-panel
+   first task detail, and editable assignee/due/priority fields.
 
 Next:
 

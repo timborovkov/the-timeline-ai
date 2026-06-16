@@ -1,12 +1,14 @@
+import { users } from '@timeline/db';
 import { withTeam } from '@timeline/shared/team-scope';
+import { inArray } from 'drizzle-orm';
 import { redirect } from 'next/navigation';
 
 import type { Metadata } from 'next';
 
 import { ApprovalsClient } from '@/components/approvals/approvals-client';
-import { KanbanBoard } from '@/components/boards/kanban-board';
 import { EmptyAction } from '@/components/empty-action';
 import { IndexStrip } from '@/components/index-strip';
+import { TaskBoard } from '@/components/tasks/task-board';
 import { WORK_BACK_LINK } from '@/components/work-back-link';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
@@ -21,21 +23,55 @@ export const metadata: Metadata = {
 
 const TASK_COLUMNS = ['todo', 'doing', 'done', 'blocked', 'cancelled'];
 
-export default async function TasksPage() {
-  const session = await auth();
+type PageSearchParams = Record<string, string | string[] | undefined>;
+
+const EMPTY_SEARCH_PARAMS: PageSearchParams = {};
+
+function taskParam(value: string | string[] | undefined): string | null {
+  const v = Array.isArray(value) ? value[0] : value;
+  return typeof v === 'string' && v.length > 0 ? v : null;
+}
+
+export default async function TasksPage({
+  searchParams,
+}: {
+  searchParams?: Promise<PageSearchParams>;
+} = {}) {
+  const [session, query] = await Promise.all([
+    auth(),
+    searchParams ?? Promise.resolve(EMPTY_SEARCH_PARAMS),
+  ]);
   if (!session?.user) redirect('/sign-in');
   const { active } = await resolveActiveTeam(session.user.id);
   if (!active) redirect('/sign-in');
 
   const scope = withTeam(db, active.teamId, session.user.id);
-  const [rows, pendingSuggestions] = await Promise.all([
+  const [rows, pendingSuggestions, members] = await Promise.all([
     scope.objects.listObjects({
       type: 'task',
       archived: false,
       limit: 500,
     }),
     scope.suggestions.listPendingSuggestions(),
+    scope.timeline.listMembers(),
   ]);
+  const memberIds = members.map((member) => member.userId);
+  const memberRows =
+    memberIds.length > 0
+      ? await db
+          .select({ id: users.id, name: users.name, email: users.email })
+          .from(users)
+          .where(inArray(users.id, memberIds))
+      : [];
+  const memberMap = new Map(memberRows.map((member) => [member.id, member] as const));
+  const memberOptions = members.map((member) => {
+    const user = memberMap.get(member.userId);
+    return {
+      id: member.userId,
+      label: user?.name ?? user?.email ?? member.userId,
+    };
+  });
+  const selectedTaskId = taskParam(query.task);
   const taskSuggestions = pendingSuggestions.flatMap((bundle) => {
     const items = bundle.items.filter(
       (item) => item.targetKind === 'task' && isActionableSuggestionStatus(item.status),
@@ -91,7 +127,12 @@ export default async function TasksPage() {
         />
       ) : (
         <div className="h-[calc(100dvh-16rem)] min-h-[24rem]">
-          <KanbanBoard rows={rows} groupBy="status" columns={TASK_COLUMNS} />
+          <TaskBoard
+            rows={rows}
+            columns={TASK_COLUMNS}
+            selectedTaskId={selectedTaskId}
+            members={memberOptions}
+          />
         </div>
       )}
 

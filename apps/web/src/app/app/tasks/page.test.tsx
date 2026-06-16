@@ -6,6 +6,7 @@ const fakes = vi.hoisted(() => ({
   resolveActiveTeam: vi.fn(),
   listObjects: vi.fn(),
   listPendingSuggestions: vi.fn(),
+  listMembers: vi.fn(),
   redirect: vi.fn((path: string) => {
     throw new Error(`redirect:${path}`);
   }),
@@ -16,6 +17,7 @@ vi.mock('@timeline/shared/team-scope', () => ({
   withTeam: () => ({
     objects: { listObjects: fakes.listObjects },
     suggestions: { listPendingSuggestions: fakes.listPendingSuggestions },
+    timeline: { listMembers: fakes.listMembers },
   }),
 }));
 vi.mock('@/lib/auth', () => ({ auth: fakes.auth }));
@@ -35,9 +37,20 @@ vi.mock('@/components/approvals/approvals-client', () => ({
     </div>
   ),
 }));
-vi.mock('@/components/boards/kanban-board', () => ({
-  KanbanBoard: ({ rows }: { rows: { canonicalName: string }[] }) => (
-    <div data-testid="kanban">{rows.map((row) => row.canonicalName).join(', ')}</div>
+vi.mock('@/components/tasks/task-board', () => ({
+  TaskBoard: ({
+    rows,
+    selectedTaskId,
+    members,
+  }: {
+    rows: { canonicalName: string }[];
+    selectedTaskId: string | null;
+    members: { label: string }[];
+  }) => (
+    <div data-testid="task-board">
+      {rows.map((row) => row.canonicalName).join(', ')} · selected {selectedTaskId ?? 'none'} ·{' '}
+      members {members.map((member) => member.label).join(', ')}
+    </div>
   ),
 }));
 
@@ -49,6 +62,7 @@ beforeEach(() => {
   fakes.resolveActiveTeam.mockResolvedValue({ active: { teamId: 'team-1' } });
   fakes.listObjects.mockResolvedValue([]);
   fakes.listPendingSuggestions.mockResolvedValue([]);
+  fakes.listMembers.mockResolvedValue([]);
 });
 
 describe('TasksPage', () => {
@@ -153,5 +167,34 @@ describe('TasksPage', () => {
 
     expect(html).toContain('No active tasks');
     expect(html).not.toContain('Pending task proposals');
+  });
+
+  it('passes the selected task query into the task board', async () => {
+    fakes.listObjects.mockResolvedValue([
+      {
+        id: 'task-1',
+        type: 'task',
+        canonicalName: 'Send proposal',
+        status: 'todo',
+        stage: null,
+        priority: 2,
+        ownerUserId: null,
+        assigneeUserId: null,
+        dueAt: null,
+        agentSuggested: false,
+        archivedAt: null,
+        aliases: [],
+        metadata: {},
+        updatedAt: new Date('2026-06-01T10:00:00.000Z'),
+        createdAt: new Date('2026-06-01T10:00:00.000Z'),
+      },
+    ]);
+
+    const html = renderToStaticMarkup(
+      await TasksPage({ searchParams: Promise.resolve({ task: 'task-1' }) }),
+    );
+
+    expect(html).toContain('Send proposal');
+    expect(html).toContain('selected task-1');
   });
 });

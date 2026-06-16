@@ -109,6 +109,8 @@ const objectMemoryItemSchema = z.discriminatedUnion('kind', [
     canonicalName: z.string().trim().min(1).max(200),
     aliases: z.array(z.string().trim().min(1).max(120)).max(50).optional(),
     status: z.string().trim().min(1).max(40).optional(),
+    stage: z.string().trim().max(40).nullable().optional(),
+    priority: z.number().int().min(1).max(4).nullable().optional(),
     ownerUserId: z.string().regex(UUID_RE).nullable().optional(),
     assigneeUserId: z.string().regex(UUID_RE).nullable().optional(),
     dueAt: z.iso.datetime().nullable().optional(),
@@ -120,6 +122,8 @@ const objectMemoryItemSchema = z.discriminatedUnion('kind', [
     canonicalName: z.string().trim().min(1).max(200).optional(),
     aliases: z.array(z.string().trim().min(1).max(120)).max(50).optional(),
     status: z.string().trim().min(1).max(40).optional(),
+    stage: z.string().trim().max(40).nullable().optional(),
+    priority: z.number().int().min(1).max(4).nullable().optional(),
     ownerUserId: z.string().regex(UUID_RE).nullable().optional(),
     assigneeUserId: z.string().regex(UUID_RE).nullable().optional(),
     dueAt: z.iso.datetime().nullable().optional(),
@@ -1510,6 +1514,8 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
         title: z.string().trim().min(1).max(200),
         dueAt: z.iso.datetime().optional(),
         ownerUserId: z.string().regex(UUID_RE).optional(),
+        assigneeUserId: z.string().regex(UUID_RE).optional(),
+        priority: z.number().int().min(1).max(4).optional(),
         note: z.string().trim().max(1000).optional(),
         parentObjectId: z.string().regex(UUID_RE).optional(),
         sourceEventId: z.string().regex(UUID_RE).optional(),
@@ -1520,6 +1526,8 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
             title: string;
             dueAt?: string;
             ownerUserId?: string;
+            assigneeUserId?: string;
+            priority?: number;
             note?: string;
             parentObjectId?: string;
             sourceEventId?: string;
@@ -1529,6 +1537,8 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
             title: input.title,
             dueAt: input.dueAt ?? null,
             ownerUserId: input.ownerUserId ?? null,
+            assigneeUserId: input.assigneeUserId ?? null,
+            priority: input.priority ?? null,
             parentObjectId: input.parentObjectId ?? null,
             sourceEventId: input.sourceEventId ?? null,
           });
@@ -1550,6 +1560,8 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
                   canonicalName: input.title,
                   dueAt: input.dueAt ?? null,
                   ownerUserId: input.ownerUserId ?? null,
+                  assigneeUserId: input.assigneeUserId ?? null,
+                  priority: input.priority ?? null,
                   parentObjectId: input.parentObjectId ?? null,
                   sourceEventId: input.sourceEventId ?? null,
                   metadata: input.note ? { agent_note: input.note } : {},
@@ -1638,6 +1650,8 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
                   canonicalName: item.canonicalName,
                   aliases: item.aliases,
                   status: item.status,
+                  stage: item.stage,
+                  priority: item.priority,
                   ownerUserId: item.ownerUserId,
                   assigneeUserId: item.assigneeUserId,
                   dueAt: item.dueAt,
@@ -1657,6 +1671,8 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
                   canonicalName: item.canonicalName,
                   aliases: item.aliases,
                   status: item.status,
+                  stage: item.stage,
+                  priority: item.priority,
                   ownerUserId: item.ownerUserId,
                   assigneeUserId: item.assigneeUserId,
                   dueAt: item.dueAt,

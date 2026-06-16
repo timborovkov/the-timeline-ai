@@ -1307,6 +1307,102 @@ describe('buildAgentTools — team isolation', () => {
     });
   });
 
+  it('suggest_object_memory preserves task priority and stage fields', async () => {
+    const scope = makeFakeScope();
+    scope.suggestions.createOrMergeSuggestionBundle.mockResolvedValue({ id: 'suggestion-1' });
+    const tools = buildAgentTools(scope as unknown as TeamScope);
+    const exec = tools.suggest_object_memory?.execute as (
+      input: unknown,
+      opts: unknown,
+    ) => Promise<unknown>;
+
+    await exec(
+      {
+        title: 'Remember task fields',
+        items: [
+          {
+            kind: 'create_object',
+            type: 'task',
+            canonicalName: 'Send Acme deck',
+            status: 'todo',
+            stage: 'handoff',
+            priority: 2,
+            assigneeUserId: '11111111-1111-4111-8111-111111111111',
+            dueAt: '2026-07-04T00:00:00.000Z',
+          },
+          {
+            kind: 'update_object',
+            entityId: TEAM_B_ENTITY_ID,
+            stage: 'review',
+            priority: 1,
+          },
+        ],
+      },
+      {},
+    );
+
+    const input = scope.suggestions.createOrMergeSuggestionBundle.mock.calls[0]?.[0] as {
+      items: {
+        targetKind: string;
+        proposedPayload: Record<string, unknown>;
+      }[];
+    };
+    expect(input.items[0]).toMatchObject({
+      targetKind: 'task',
+      proposedPayload: {
+        type: 'task',
+        canonicalName: 'Send Acme deck',
+        status: 'todo',
+        stage: 'handoff',
+        priority: 2,
+        assigneeUserId: '11111111-1111-4111-8111-111111111111',
+        dueAt: '2026-07-04T00:00:00.000Z',
+      },
+    });
+    expect(input.items[1]).toMatchObject({
+      targetKind: 'object',
+      proposedPayload: {
+        stage: 'review',
+        priority: 1,
+      },
+    });
+  });
+
+  it('suggest_task can propose assignee and priority', async () => {
+    const scope = makeFakeScope();
+    scope.suggestions.createOrMergeSuggestionBundle.mockResolvedValue({ id: 'suggestion-1' });
+    const tools = buildAgentTools(scope as unknown as TeamScope);
+    const exec = tools.suggest_task?.execute as (input: unknown, opts: unknown) => Promise<unknown>;
+
+    await exec(
+      {
+        title: 'Send Acme deck',
+        dueAt: '2026-07-04T00:00:00.000Z',
+        ownerUserId: '11111111-1111-4111-8111-111111111111',
+        assigneeUserId: '22222222-2222-4222-8222-222222222222',
+        priority: 1,
+      },
+      {},
+    );
+
+    const input = scope.suggestions.createOrMergeSuggestionBundle.mock.calls[0]?.[0] as {
+      items: {
+        targetKind: string;
+        proposedPayload: Record<string, unknown>;
+      }[];
+    };
+    expect(input.items[0]).toMatchObject({
+      targetKind: 'task',
+      proposedPayload: {
+        canonicalName: 'Send Acme deck',
+        dueAt: '2026-07-04T00:00:00.000Z',
+        ownerUserId: '11111111-1111-4111-8111-111111111111',
+        assigneeUserId: '22222222-2222-4222-8222-222222222222',
+        priority: 1,
+      },
+    });
+  });
+
   it('suggest_object_memory targets relationship proposals at the source object', async () => {
     const scope = makeFakeScope();
     scope.suggestions.createOrMergeSuggestionBundle.mockResolvedValue({ id: 'suggestion-1' });

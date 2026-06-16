@@ -10,6 +10,7 @@ import { ObjectDetailClient } from '@/components/objects/object-detail-client';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { safeSameOriginPath } from '@/lib/safe-redirect';
 import { isActionableSuggestionStatus } from '@/lib/suggestion-status';
 import { serializeSuggestionBundle } from '@/lib/suggestions';
 
@@ -20,12 +21,24 @@ export const metadata: Metadata = {
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+type PageSearchParams = Record<string, string | string[] | undefined>;
+
+const EMPTY_SEARCH_PARAMS: PageSearchParams = {};
+
 interface PageProps {
   params: Promise<{ id: string }>;
+  searchParams?: Promise<PageSearchParams>;
 }
 
-export default async function ObjectDetailPage({ params }: PageProps) {
-  const session = await auth();
+function firstParam(value: string | string[] | undefined): string | undefined {
+  return Array.isArray(value) ? value[0] : value;
+}
+
+export default async function ObjectDetailPage({ params, searchParams }: PageProps) {
+  const [session, query] = await Promise.all([
+    auth(),
+    searchParams ?? Promise.resolve(EMPTY_SEARCH_PARAMS),
+  ]);
   if (!session?.user) redirect('/sign-in');
   const { active } = await resolveActiveTeam(session.user.id);
   if (!active) redirect('/sign-in');
@@ -67,7 +80,10 @@ export default async function ObjectDetailPage({ params }: PageProps) {
 
   return (
     <div className="space-y-4">
-      <HistoryBackLink fallbackHref="/app/objects" label="Back" />
+      <HistoryBackLink
+        fallbackHref={safeSameOriginPath(firstParam(query.returnTo), '/app/objects')}
+        label="Back"
+      />
       <ObjectBoardContext rows={boardContext} />
       <ObjectDetailClient detail={detail} userId={session.user.id} suggestions={suggestions} />
     </div>

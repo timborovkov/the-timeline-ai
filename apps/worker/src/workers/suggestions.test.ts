@@ -1411,6 +1411,67 @@ describe('processSuggestionJobForTests', () => {
     expect(bundle?.items[0]?.proposedPayload).not.toHaveProperty('metadata');
   });
 
+  it('preserves task assignee, due date, and priority in background proposals', async () => {
+    const rawEventId = '10000000-0000-0000-0000-000000000030';
+    await seedRawEvent(db as never, {
+      id: rawEventId,
+      text: 'Member should send the Acme deck by July 4. Make it urgent.',
+      sourceMetadata: {
+        extracted_at: new Date('2026-05-27T10:01:00.000Z').toISOString(),
+        extraction_model_version: 'test-extract@1',
+      },
+    });
+    const chat = vi.fn().mockResolvedValue({
+      model: MODEL_ID,
+      object: {
+        bundles: [
+          {
+            title: 'Create Acme deck task',
+            summary: 'Member owns the Acme deck follow-up.',
+            reason: 'The source gives a concrete owner, due date, and priority.',
+            confidence: 'high',
+            quote: 'Member should send the Acme deck by July 4. Make it urgent.',
+            items: [
+              {
+                operation: 'create',
+                targetKind: 'task',
+                title: 'Send Acme deck',
+                proposedPayload: {
+                  canonicalName: 'Send Acme deck',
+                  assigneeUserId: MEMBER_ID,
+                  dueAt: '2026-07-04T00:00:00.000Z',
+                  priority: 1,
+                },
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { rawEventId, teamId: TEAM_ID },
+      { getEnv: env, chatStructured: chat, modelId: MODEL_ID },
+    );
+
+    const [bundle] = await withTeam(
+      db as never,
+      TEAM_ID,
+      OWNER_ID,
+    ).suggestions.listPendingSuggestions();
+    expect(bundle?.items[0]).toMatchObject({
+      operation: 'create',
+      targetKind: 'task',
+      proposedPayload: {
+        canonicalName: 'Send Acme deck',
+        assigneeUserId: MEMBER_ID,
+        dueAt: '2026-07-04T00:00:00.000Z',
+        priority: 1,
+      },
+    });
+  });
+
   it('rewrites duplicate creates using objects outside the prompt context window', async () => {
     const rawEventId = '10000000-0000-0000-0000-000000000031';
     const [oldObject] = await db
