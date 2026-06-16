@@ -22,6 +22,8 @@ describe('dedupe-calendar-events script', () => {
     expect(source).toContain("else if (arg.startsWith('--from='))");
     expect(source).toContain("else if (arg.startsWith('--to='))");
     expect(source).not.toContain('if (tokens.length === 0) continue');
+    expect(source).toContain('redacted: boolean');
+    expect(source).toContain('if (event.redacted) continue');
     expect(source).toContain(
       "titleTokens(event.title).join('+') || event.title.toLowerCase().trim()",
     );

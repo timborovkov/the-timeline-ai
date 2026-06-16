@@ -980,6 +980,17 @@ function calendarEventSummary(event: CalendarEventWithRedaction): CalendarResolu
   };
 }
 
+function compareCalendarReuseCandidates(
+  left: CalendarEventWithRedaction,
+  right: CalendarEventWithRedaction,
+): number {
+  if (left.agentSuggested !== right.agentSuggested) return left.agentSuggested ? 1 : -1;
+  if (left.source !== right.source) return left.source === 'internal' ? -1 : 1;
+  const createdAtDelta = left.createdAt.getTime() - right.createdAt.getTime();
+  if (createdAtDelta !== 0) return createdAtDelta;
+  return left.id.localeCompare(right.id);
+}
+
 function calendarCreateResolutionDetails(
   proposed: CreateCalendarEventInput,
   candidates: CalendarEventWithRedaction[],
@@ -992,6 +1003,7 @@ function calendarCreateResolutionDetails(
     typeof proposalMetadata.proposalStatus === 'string' ||
     typeof proposalMetadata.proposalRole === 'string';
   const semanticMatches: CalendarEventWithRedaction[] = [];
+  const exactMatches: CalendarEventWithRedaction[] = [];
   for (const candidate of candidates) {
     if (candidate.redacted || candidate.deletedAt) continue;
     if (!sameCalendarVisibilityAudience(candidate, proposed)) continue;
@@ -1001,16 +1013,21 @@ function calendarCreateResolutionDetails(
       normalizeCalendarSubject(candidate.title) === normalizeCalendarSubject(proposed.title);
     if (
       !isProposalSlot &&
-      (sameNormalizedTitle || sharedTokens.length > 0) &&
+      sameNormalizedTitle &&
       sameInstant(candidate.startAt, proposed.startAt) &&
       sameInstant(candidate.endAt, proposed.endAt) &&
       candidate.allDay === (proposed.allDay ?? false)
     ) {
-      return { kind: 'exact_duplicate_reuse', event: calendarEventSummary(candidate) };
+      exactMatches.push(candidate);
+      continue;
     }
     if (sharedTokens.length === 0) continue;
     if (isProposalSlot) continue;
     semanticMatches.push(candidate);
+  }
+  const exactMatch = [...exactMatches].sort(compareCalendarReuseCandidates)[0];
+  if (exactMatch) {
+    return { kind: 'exact_duplicate_reuse', event: calendarEventSummary(exactMatch) };
   }
   const semanticMatch = semanticMatches[0];
   if (semanticMatches.length === 1 && semanticMatch) {

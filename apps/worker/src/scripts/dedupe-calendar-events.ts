@@ -50,6 +50,7 @@ interface EventRow {
   createdAt: Date;
   source: string;
   agentSuggested: boolean;
+  redacted: boolean;
 }
 
 interface DuplicateGroup {
@@ -144,6 +145,7 @@ function isRecurringMaster(event: EventRow): boolean {
 function duplicateGroups(events: EventRow[]): DuplicateGroup[] {
   const byKey = new Map<string, EventRow[]>();
   for (const event of events) {
+    if (event.redacted) continue;
     const key = duplicateKey(event);
     byKey.set(key, [...(byKey.get(key) ?? []), event]);
   }

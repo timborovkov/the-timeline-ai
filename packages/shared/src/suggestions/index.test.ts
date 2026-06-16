@@ -2892,7 +2892,7 @@ describe('suggestion scope', () => {
     expect(result.rows[0]?.all_day).toBe(false);
   });
 
-  it('reuses a matching calendar event instead of accepting a duplicate create', async () => {
+  it('does not exact-reuse a calendar event solely from token overlap at the same time', async () => {
     const scope = withTeam(db as never, TEAM_ID, USER_ID);
     const existing = await scope.calendar.createCalendarEvent({
       title: 'Tapaaminen Nexia Oy:n kanssa',
@@ -2935,14 +2935,19 @@ describe('suggestion scope', () => {
        WHERE team_id = '${TEAM_ID}'
          AND start_at = '2026-06-17T11:00:00.000Z'
          AND end_at = '2026-06-17T12:00:00.000Z'
-         AND deleted_at IS NULL`,
+         AND deleted_at IS NULL
+       ORDER BY title`,
     );
-    expect(result.rows).toEqual([{ id: existing.id, title: 'Tapaaminen Nexia Oy:n kanssa' }]);
+    expect(result.rows.map((row) => row.title)).toEqual([
+      'Meeting: Uusi toimintamalli tilintarkastukseen',
+      'Tapaaminen Nexia Oy:n kanssa',
+    ]);
 
     const item = await pg.query<{ result_id: string }>(
       `SELECT result_id FROM agent_suggestion_items WHERE id = '${itemId}'`,
     );
-    expect(item.rows[0]?.result_id).toBe(existing.id);
+    expect(item.rows[0]?.result_id).not.toBe(existing.id);
+    expect(result.rows.map((row) => row.id)).toContain(item.rows[0]?.result_id);
   });
 
   it('preflights exact duplicate calendar creates as reuse hints', async () => {
@@ -2983,6 +2988,55 @@ describe('suggestion scope', () => {
     expect(bundle?.items[0]?.calendarResolutionHint).toMatchObject({
       kind: 'exact_duplicate_reuse',
       event: { id: existing.id, title: 'Nexia planning' },
+    });
+  });
+
+  it('preflights exact duplicate calendar creates using survivor preference', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    await scope.calendar.createCalendarEvent({
+      title: 'Board review',
+      startAt: new Date('2026-06-18T11:00:00.000Z'),
+      endAt: new Date('2026-06-18T12:00:00.000Z'),
+      timezone: 'UTC',
+      visibility: 'team',
+      agentSuggested: true,
+    });
+    const preferred = await scope.calendar.createCalendarEvent({
+      title: 'Board review',
+      startAt: new Date('2026-06-18T11:00:00.000Z'),
+      endAt: new Date('2026-06-18T12:00:00.000Z'),
+      timezone: 'UTC',
+      visibility: 'team',
+      agentSuggested: false,
+    });
+    await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Create duplicate board review',
+      dedupeKey: 'calendar-preflight-duplicate-survivor',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'calendar_event',
+          title: 'Board review',
+          dedupeKey: 'calendar-preflight-duplicate-survivor:item',
+          proposedPayload: {
+            title: 'Board review',
+            startAt: '2026-06-18T11:00:00.000Z',
+            endAt: '2026-06-18T12:00:00.000Z',
+            timezone: 'UTC',
+            visibility: 'team',
+          },
+        },
+      ],
+    });
+
+    const [bundle] = await scope.suggestions.withCalendarResolutionHints(
+      await scope.suggestions.listPendingSuggestions(),
+    );
+
+    expect(bundle?.items[0]?.calendarResolutionHint).toMatchObject({
+      kind: 'exact_duplicate_reuse',
+      event: { id: preferred.id, title: 'Board review' },
     });
   });
 
