@@ -100,13 +100,13 @@ export default async function CalendarPage({ searchParams }: PageProps) {
   const scope = withTeam(db, active.teamId, session.user.id);
   await scope.requireMembership();
 
-  const [params, settings, pendingSuggestionRows] = await Promise.all([
+  const [params, settings, pendingSuggestions] = await Promise.all([
     searchParams,
     scope.calendar.getCalendarSettings(),
-    scope.suggestions.listPendingSuggestions(),
+    scope.suggestions
+      .listPendingSuggestions()
+      .then((rows) => scope.suggestions.withCalendarResolutionHints(rows)),
   ]);
-  const pendingSuggestions =
-    await scope.suggestions.withCalendarResolutionHints(pendingSuggestionRows);
   const now = new Date();
   const anchor = params.date && /^\d{4}-\d{2}-\d{2}$/.test(params.date) ? params.date : null;
   const anchorDate = anchor ? new Date(`${anchor}T00:00:00.000Z`) : now;
