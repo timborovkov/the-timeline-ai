@@ -1000,6 +1000,7 @@ function calendarCreateResolutionDetails(
     const sameNormalizedTitle =
       normalizeCalendarSubject(candidate.title) === normalizeCalendarSubject(proposed.title);
     if (
+      !isProposalSlot &&
       (sameNormalizedTitle || sharedTokens.length > 0) &&
       sameInstant(candidate.startAt, proposed.startAt) &&
       sameInstant(candidate.endAt, proposed.endAt) &&

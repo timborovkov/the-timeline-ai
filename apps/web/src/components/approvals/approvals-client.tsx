@@ -703,6 +703,12 @@ function CalendarApprovalPayload({ item }: { item: SuggestionItem }) {
   const showAs = payloadString(item.proposedPayload, 'showAs');
   const recurrenceEditMode = payloadString(item.proposedPayload, 'recurrenceEditMode');
   const proposalGroupId = payloadString(item.proposedPayload, 'proposalGroupId');
+  const proposalStatus = payloadString(item.proposedPayload, 'proposalStatus');
+  const proposalRole = payloadString(item.proposedPayload, 'proposalRole');
+  const cancelsSiblingSlots =
+    item.operation === 'update' &&
+    proposalGroupId !== null &&
+    (proposalStatus === 'confirmed' || proposalRole === 'selected_slot');
   const toneClass =
     action.tone === 'danger'
       ? 'border-danger/40 bg-danger/5 text-danger'
@@ -722,7 +728,7 @@ function CalendarApprovalPayload({ item }: { item: SuggestionItem }) {
         <CalendarResolutionLine item={item} proposedRange={proposedRange} />
         {showAs ? <p>Availability: {displayText(showAs)}</p> : null}
         {recurrenceEditMode ? <p>Recurrence: {displayText(recurrenceEditMode)}</p> : null}
-        {proposalGroupId ? (
+        {cancelsSiblingSlots ? (
           <p>Accepting one slot can cancel sibling tentative slots in this group.</p>
         ) : null}
       </div>

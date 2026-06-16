@@ -2986,6 +2986,60 @@ describe('suggestion scope', () => {
     });
   });
 
+  it('materializes tentative proposal slots instead of exact-reusing existing events', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const existing = await scope.calendar.createCalendarEvent({
+      title: 'Proposed Acme meeting',
+      startAt: new Date('2026-06-19T11:00:00.000Z'),
+      endAt: new Date('2026-06-19T11:30:00.000Z'),
+      timezone: 'UTC',
+      visibility: 'team',
+    });
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Create Acme slot hold',
+      dedupeKey: 'calendar-proposal-slot-exact-duplicate',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'calendar_event',
+          title: 'Proposed Acme meeting',
+          dedupeKey: 'calendar-proposal-slot-exact-duplicate:item',
+          proposedPayload: {
+            title: 'Proposed Acme meeting',
+            startAt: '2026-06-19T11:00:00.000Z',
+            endAt: '2026-06-19T11:30:00.000Z',
+            timezone: 'UTC',
+            visibility: 'team',
+            showAs: 'tentative',
+            proposalGroupId: 'acme-proposal-slots',
+            proposalStatus: 'tentative',
+            proposalRole: 'slot',
+          },
+        },
+      ],
+    });
+    const hinted = await scope.suggestions.withCalendarResolutionHints([bundle]);
+    expect(hinted[0]?.items[0]?.calendarResolutionHint).toMatchObject({ kind: 'new_event' });
+
+    await expect(scope.suggestions.acceptSuggestionItem(bundle.items[0]?.id ?? '')).resolves.toBe(
+      true,
+    );
+
+    const matchingRows = await pg.query<{ id: string }>(
+      `SELECT id
+       FROM calendar_events
+       WHERE team_id = '${TEAM_ID}'
+         AND title = 'Proposed Acme meeting'
+         AND start_at = '2026-06-19T11:00:00.000Z'
+         AND end_at = '2026-06-19T11:30:00.000Z'
+         AND deleted_at IS NULL
+       ORDER BY created_at, id`,
+    );
+    expect(matchingRows.rows).toHaveLength(2);
+    expect(matchingRows.rows.map((row) => row.id)).toContain(existing.id);
+  });
+
   it('reuses stopword-only exact duplicates beyond the first candidate page', async () => {
     const scope = withTeam(db as never, TEAM_ID, USER_ID);
     const fillerRows = Array.from({ length: 205 }, (_, index) => {

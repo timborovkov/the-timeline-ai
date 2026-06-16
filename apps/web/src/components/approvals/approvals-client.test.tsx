@@ -321,6 +321,53 @@ describe('ApprovalsClient', () => {
     expect(html).toContain('Proposed:');
   });
 
+  it('does not show sibling cancellation copy for calendar proposal creates', () => {
+    const html = renderToStaticMarkup(
+      createElement(ApprovalsClient, {
+        suggestions: [
+          {
+            id: 'bundle-calendar',
+            source: 'background',
+            status: 'pending',
+            title: 'Create Acme slot holds',
+            summary: null,
+            reason: null,
+            confidence: 'medium',
+            createdAt: '2026-06-01T10:00:00.000Z',
+            evidence: [],
+            items: [
+              {
+                id: 'item-slot',
+                status: 'pending',
+                operation: 'create',
+                targetKind: 'calendar_event',
+                targetId: null,
+                title: 'Proposed Acme meeting',
+                description: null,
+                proposedPayload: {
+                  title: 'Proposed Acme meeting',
+                  startAt: '2026-06-19T11:00:00.000Z',
+                  endAt: '2026-06-19T11:30:00.000Z',
+                  timezone: 'UTC',
+                  visibility: 'team',
+                  showAs: 'tentative',
+                  proposalGroupId: 'acme-slots',
+                  proposalStatus: 'tentative',
+                  proposalRole: 'slot',
+                },
+                calendarResolutionHint: { kind: 'new_event' },
+                failureReason: null,
+              },
+            ],
+          },
+        ],
+      }),
+    );
+
+    expect(html).toContain('Create');
+    expect(html).not.toContain('Accepting one slot can cancel sibling tentative slots');
+  });
+
   it('does not render page-level accept all for merge-only visible bundles', () => {
     const html = renderToStaticMarkup(
       createElement(ApprovalsClient, {
