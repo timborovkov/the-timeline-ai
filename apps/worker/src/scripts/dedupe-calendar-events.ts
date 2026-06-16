@@ -42,6 +42,7 @@ interface EventRow {
   timezone: string;
   allDay: boolean;
   visibility: 'private' | 'team' | 'specific_users';
+  recurringParentId: string | null;
   createdAt: Date;
   source: string;
   agentSuggested: boolean;
@@ -159,7 +160,7 @@ async function queueCancellationApprovals(input: {
             proposedPayload: {
               duplicateOfCalendarEventId: group.survivor.id,
               cleanupKey: group.key,
-              recurrenceEditMode: 'series',
+              recurrenceEditMode: duplicate.recurringParentId ? 'single' : 'series',
             },
           },
         ],

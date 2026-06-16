@@ -2986,6 +2986,97 @@ describe('suggestion scope', () => {
     });
   });
 
+  it('reuses stopword-only exact duplicates beyond the first candidate page', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const fillerRows = Array.from({ length: 205 }, (_, index) => {
+      const day = String((index % 20) + 1).padStart(2, '0');
+      const hour = String(Math.floor(index / 20)).padStart(2, '0');
+      return `(
+        '${TEAM_ID}',
+        '${USER_ID}',
+        'Earlier filler ${index}',
+        '2026-06-${day}T${hour}:00:00.000Z',
+        '2026-06-${day}T${hour}:30:00.000Z',
+        'UTC',
+        'team',
+        '{}'::jsonb
+      )`;
+    }).join(',');
+    await pg.exec(`
+      INSERT INTO calendar_events (
+        team_id,
+        created_by_user_id,
+        title,
+        start_at,
+        end_at,
+        timezone,
+        visibility,
+        metadata
+      )
+      VALUES
+        ${fillerRows},
+        (
+          '${TEAM_ID}',
+          '${USER_ID}',
+          'Team meeting',
+          '2026-06-25T15:00:00.000Z',
+          '2026-06-25T15:30:00.000Z',
+          'UTC',
+          'team',
+          '{}'::jsonb
+        );
+    `);
+    const existing = await pg.query<{ id: string }>(
+      `SELECT id
+       FROM calendar_events
+       WHERE team_id = '${TEAM_ID}'
+         AND title = 'Team meeting'
+         AND deleted_at IS NULL`,
+    );
+    const existingId = existing.rows[0]?.id;
+    expect(existingId).toBeDefined();
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Create duplicate team meeting',
+      dedupeKey: 'calendar-create-stopword-duplicate',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'calendar_event',
+          title: 'Team meeting',
+          dedupeKey: 'calendar-create-stopword-duplicate:item',
+          proposedPayload: {
+            title: 'Team meeting',
+            startAt: '2026-06-25T15:00:00.000Z',
+            endAt: '2026-06-25T15:30:00.000Z',
+            timezone: 'UTC',
+            visibility: 'team',
+          },
+        },
+      ],
+    });
+    const hinted = await scope.suggestions.withCalendarResolutionHints([bundle]);
+    expect(hinted[0]?.items[0]?.calendarResolutionHint).toMatchObject({
+      kind: 'exact_duplicate_reuse',
+      event: { id: existingId, title: 'Team meeting' },
+    });
+
+    await expect(scope.suggestions.acceptSuggestionItem(bundle.items[0]?.id ?? '')).resolves.toBe(
+      true,
+    );
+
+    const matchingRows = await pg.query<{ id: string }>(
+      `SELECT id
+       FROM calendar_events
+       WHERE team_id = '${TEAM_ID}'
+         AND title = 'Team meeting'
+         AND start_at = '2026-06-25T15:00:00.000Z'
+         AND end_at = '2026-06-25T15:30:00.000Z'
+         AND deleted_at IS NULL`,
+    );
+    expect(matchingRows.rows).toEqual([{ id: existingId }]);
+  });
+
   it('keeps simultaneous calendar suggestions separate when subjects differ', async () => {
     const scope = withTeam(db as never, TEAM_ID, USER_ID);
     await scope.calendar.createCalendarEvent({

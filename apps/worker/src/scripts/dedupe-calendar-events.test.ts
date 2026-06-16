@@ -22,4 +22,13 @@ describe('dedupe-calendar-events script', () => {
       "titleTokens(event.title).join('+') || event.title.toLowerCase().trim()",
     );
   });
+
+  it('cancels duplicate recurring occurrences without deleting the whole series', () => {
+    const source = readFileSync(new URL('./dedupe-calendar-events.ts', import.meta.url), 'utf8');
+
+    expect(source).toContain('recurringParentId: string | null');
+    expect(source).toContain(
+      "recurrenceEditMode: duplicate.recurringParentId ? 'single' : 'series'",
+    );
+  });
 });

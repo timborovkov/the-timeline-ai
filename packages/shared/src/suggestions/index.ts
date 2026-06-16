@@ -251,6 +251,7 @@ const CALENDAR_SUBJECT_STOPWORDS = new Set([
   'with',
 ]);
 const CALENDAR_SEMANTIC_MATCH_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
+const CALENDAR_MATCH_PAGE_SIZE = 200;
 
 const objectPayloadFields = {
   aliases: z.array(z.string().trim().min(1).max(120)).max(50).optional(),
@@ -932,6 +933,15 @@ function calendarSubjectTokens(...values: (string | null | undefined)[]): Set<st
   );
 }
 
+function normalizeCalendarSubject(value: string): string {
+  return value
+    .toLowerCase()
+    .normalize('NFKD')
+    .replace(/[^\p{Letter}\p{Number}\s]/gu, ' ')
+    .trim()
+    .replace(/\s+/g, ' ');
+}
+
 function sameInstant(left: Date, right: Date): boolean {
   return left.getTime() === right.getTime();
 }
@@ -987,14 +997,17 @@ function calendarCreateResolutionDetails(
     if (!sameCalendarVisibilityAudience(candidate, proposed)) continue;
     const candidateTokens = calendarSubjectTokens(candidate.title, candidate.description);
     const sharedTokens = [...proposedTokens].filter((token) => candidateTokens.has(token));
-    if (sharedTokens.length === 0) continue;
+    const sameNormalizedTitle =
+      normalizeCalendarSubject(candidate.title) === normalizeCalendarSubject(proposed.title);
     if (
+      (sameNormalizedTitle || sharedTokens.length > 0) &&
       sameInstant(candidate.startAt, proposed.startAt) &&
       sameInstant(candidate.endAt, proposed.endAt) &&
       candidate.allDay === (proposed.allDay ?? false)
     ) {
       return { kind: 'exact_duplicate_reuse', event: calendarEventSummary(candidate) };
     }
+    if (sharedTokens.length === 0) continue;
     if (isProposalSlot) continue;
     semanticMatches.push(candidate);
   }
@@ -2220,6 +2233,29 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     }
   }
 
+  async function listCalendarCreateResolutionCandidates(
+    input: CreateCalendarEventInput,
+  ): Promise<CalendarEventWithRedaction[]> {
+    const from = new Date(input.startAt.getTime() - CALENDAR_SEMANTIC_MATCH_WINDOW_MS);
+    const to = new Date(input.endAt.getTime() + CALENDAR_SEMANTIC_MATCH_WINDOW_MS);
+    const events: CalendarEventWithRedaction[] = [];
+    let offset = 0;
+    let hasMore = true;
+    while (hasMore) {
+      const page = await calendar.listCalendarEventPage({
+        from,
+        to,
+        limit: CALENDAR_MATCH_PAGE_SIZE,
+        offset,
+        order: 'asc',
+      });
+      events.push(...page.events);
+      offset += page.events.length;
+      hasMore = page.events.length === CALENDAR_MATCH_PAGE_SIZE && offset < page.total;
+    }
+    return events;
+  }
+
   async function applyItem(item: typeof agentSuggestionItems.$inferSelect): Promise<string | null> {
     if (item.resultId) return item.resultId;
     if (item.status !== 'pending' && item.status !== 'failed') return item.resultId;
@@ -2386,11 +2422,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       const input = normalizeCalendarCreateSuggestionItem(item, settings.defaultTimezone);
       const resolution = calendarCreateResolution(
         input,
-        await calendar.listCalendarEvents({
-          from: new Date(input.startAt.getTime() - CALENDAR_SEMANTIC_MATCH_WINDOW_MS),
-          to: new Date(input.endAt.getTime() + CALENDAR_SEMANTIC_MATCH_WINDOW_MS),
-          limit: 100,
-        }),
+        await listCalendarCreateResolutionCandidates(input),
       );
       if (resolution) {
         return resolution.event.id;
@@ -2755,11 +2787,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         );
         return calendarCreateResolutionDetails(
           input,
-          await calendar.listCalendarEvents({
-            from: new Date(input.startAt.getTime() - CALENDAR_SEMANTIC_MATCH_WINDOW_MS),
-            to: new Date(input.endAt.getTime() + CALENDAR_SEMANTIC_MATCH_WINDOW_MS),
-            limit: 100,
-          }),
+          await listCalendarCreateResolutionCandidates(input),
         );
       } catch {
         return null;
