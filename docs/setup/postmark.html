@@ -62,7 +62,9 @@ SUPPORT_EMAIL=contact@thetimeline.cc
         Maintain HTML email templates as static files in
         <code>packages/shared/src/messaging/email-templates</code>. The shared package build copies
         them into <code>dist/messaging/email-templates</code>, so server actions and workers render
-        the same branded templates in development and production.
+        the same branded templates in development and production. The web standalone build also
+        copies that dist template directory into the standalone runtime tree; invite, verification,
+        support, welcome, and digest server actions require those files at runtime.
       </p>
       <p>
         Daily digests are personalized per active team member, generated against the last noon UTC
