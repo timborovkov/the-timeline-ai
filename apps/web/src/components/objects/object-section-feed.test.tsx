@@ -238,6 +238,6 @@ describe('ObjectSectionFeed', () => {
     expect(screen.getByText('[empty event]')).toBeTruthy();
     await userEvent.click(screen.getByRole('button', { name: 'View' }));
 
-    expect(await screen.findByText('This event has no text preview.')).toBeTruthy();
+    expect(await screen.findByText('This reference has no text preview.')).toBeTruthy();
   });
 });

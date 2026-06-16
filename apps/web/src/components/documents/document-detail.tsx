@@ -390,9 +390,9 @@ function CurrentVersionPanel({
             )}
           </div>
           <aside className="space-y-3">
-            <InfoBlock title="Model understanding">
+            <InfoBlock title="Model understanding" contentClassName="max-h-72 overflow-y-auto pr-1">
               {description ? (
-                <p className="text-sm leading-6 text-fg-muted">{description}</p>
+                <p className="break-words text-sm leading-6 text-fg-muted">{description}</p>
               ) : (
                 <p className="text-sm text-muted-foreground">
                   No extracted description is available yet.
@@ -432,7 +432,9 @@ function CurrentVersionPanel({
                 </span>
               </div>
               {version.processingError ? (
-                <p className="mt-2 text-xs text-danger">{version.processingError}</p>
+                <p className="mt-2 max-h-24 overflow-y-auto break-words pr-1 text-xs text-danger">
+                  {version.processingError}
+                </p>
               ) : null}
             </InfoBlock>
           </aside>
@@ -442,11 +444,19 @@ function CurrentVersionPanel({
   );
 }
 
-function InfoBlock({ title, children }: { title: string; children: ReactNode }) {
+function InfoBlock({
+  title,
+  children,
+  contentClassName = '',
+}: {
+  title: string;
+  children: ReactNode;
+  contentClassName?: string;
+}) {
   return (
     <div className="rounded-sm border border-border bg-bg px-3 py-2">
       <p className="font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">{title}</p>
-      <div className="mt-1">{children}</div>
+      <div className={`mt-1 ${contentClassName}`}>{children}</div>
     </div>
   );
 }
@@ -460,7 +470,7 @@ function UnsupportedPreview({ chunks }: { chunks: Props['activeVersionChunks'] }
           <p className="mb-3 font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">
             Extracted text
           </p>
-          <pre className="max-h-[58vh] whitespace-pre-wrap break-words text-sm leading-6 text-fg-muted">
+          <pre className="max-h-[58vh] overflow-y-auto whitespace-pre-wrap break-words pr-1 text-sm leading-6 text-fg-muted">
             {text}
           </pre>
         </div>
