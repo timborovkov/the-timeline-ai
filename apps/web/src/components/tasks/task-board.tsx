@@ -14,6 +14,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
   useEffect,
+  useCallback,
   useId,
   useMemo,
   useOptimistic,
@@ -75,6 +76,14 @@ const INITIAL_MOVE_UI: MoveUiState = {
   savingCardIds: new Set(),
 };
 
+function taskHref(taskId: string): string {
+  return `/app/tasks?task=${encodeURIComponent(taskId)}`;
+}
+
+function closeHref(): string {
+  return '/app/tasks';
+}
+
 function moveUiReducer(state: MoveUiState, action: MoveUiAction): MoveUiState {
   switch (action.type) {
     case 'move-start': {
@@ -134,23 +143,20 @@ export function TaskBoard({ rows, columns, selectedTaskId, members }: Props) {
   }
   const moveErrors = Object.values(moveUi.cardErrors);
 
-  useEffect(() => {
-    return () => {
-      if (savedTimer.current) clearTimeout(savedTimer.current);
-    };
+  const clearSavedTimer = useCallback(() => {
+    if (savedTimer.current) {
+      clearTimeout(savedTimer.current);
+      savedTimer.current = null;
+    }
   }, []);
+
+  useEffect(() => {
+    return clearSavedTimer;
+  }, [clearSavedTimer]);
 
   function activeSavingCardIds(): Set<string> {
     savingCardIdsRef.current ??= new Set();
     return savingCardIdsRef.current;
-  }
-
-  function taskHref(taskId: string): string {
-    return `/app/tasks?task=${encodeURIComponent(taskId)}`;
-  }
-
-  function closeHref(): string {
-    return '/app/tasks';
   }
 
   function onDragEnd(event: DragEndEvent): void {
@@ -161,7 +167,7 @@ export function TaskBoard({ rows, columns, selectedTaskId, members }: Props) {
     if (!row || row.status === status) return;
     startTransition(async () => {
       applyMove({ id, status });
-      if (savedTimer.current) clearTimeout(savedTimer.current);
+      clearSavedTimer();
       if (savingCountRef.current === 0) batchHadFailureRef.current = false;
       savingCountRef.current += 1;
       activeSavingCardIds().add(id);
@@ -596,7 +602,7 @@ function dateInputValue(value: Date): string {
 }
 
 function dateLabel(value: Date): string {
-  return new Date(value).toLocaleDateString('en-CA');
+  return new Date(value).toISOString().slice(0, 10);
 }
 
 function dueState(value: Date | null): { label: string; tone: 'danger' | 'neutral' } {
