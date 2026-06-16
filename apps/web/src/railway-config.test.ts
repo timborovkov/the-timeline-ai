@@ -34,7 +34,15 @@ describe('Railway web config', () => {
     );
 
     expect(packageJson.scripts?.build).toContain('node scripts/prepare-standalone.mjs');
-    expect(prepareStandalone).toContain('packages/shared/dist/messaging/email-templates');
+    expect(prepareStandalone).toContain(
+      "const standaloneRoot = resolve(appRoot, '.next/standalone')",
+    );
+    expect(prepareStandalone).toContain(
+      "resolve(standaloneRoot, 'packages/shared/dist/messaging/email-templates')",
+    );
+    expect(prepareStandalone).toContain(
+      "resolve(standaloneAppRoot, 'packages/shared/dist/messaging/email-templates')",
+    );
   });
 
   it('passes Sentry runtime and build variables through Docker app profile', () => {

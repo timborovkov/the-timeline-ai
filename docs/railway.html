@@ -345,9 +345,9 @@ rclone sync s3:timeline-attachments backblaze-b2:timeline-backup-attachments
           there. The <code>@timeline/web</code> build also runs
           <code>apps/web/scripts/prepare-standalone.mjs</code>, which copies
           <code>.next/static</code>, <code>public</code>, and the shared
-          <code>dist/messaging/email-templates</code> runtime assets into the standalone server tree
-          so Railway serves the hashed CSS, JavaScript chunks, connector icons, self-hosted fonts,
-          and outbound email templates.
+          <code>dist/messaging/email-templates</code> runtime assets into both the standalone root
+          and app subtree so Railway serves the hashed CSS, JavaScript chunks, connector icons,
+          self-hosted fonts, and outbound email templates.
         </li>
         <li>
           Migrations: run as a release-phase pre-deploy command on the <code>web</code> service and

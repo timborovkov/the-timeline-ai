@@ -63,17 +63,18 @@ SUPPORT_EMAIL=contact@thetimeline.cc
         <code>packages/shared/src/messaging/email-templates</code>. The shared package build copies
         them into <code>dist/messaging/email-templates</code>, so server actions and workers render
         the same branded templates in development and production. The web standalone build also
-        copies that dist template directory into the standalone runtime tree; invite, verification,
-        support, welcome, and digest server actions require those files at runtime.
+        copies that dist template directory into the standalone root and app subtree; invite,
+        verification, support, and welcome server actions require those files at runtime. The worker
+        uses the shared package's dist templates for daily digest email rendering.
       </p>
       <p>
         Daily digests are personalized per active team member, generated against the last noon UTC
         window, stored in <code>daily_digests</code>, and sent once per generated digest unless the
         recipient has disabled the digest in Team settings → Messaging. The worker registers the
         noon UTC scheduler on boot and also queues one idempotent catch-up tick for the latest noon
-        window, so a deploy or missed scheduler state still creates the expected digest rows. In-app
-        notifications remain inbox-only; digest email may summarize pending approvals and inbox
-        state, but individual notification rows are not fanned out as standalone emails.
+        window only, so a deploy or missed scheduler state still creates the current expected digest
+        rows. In-app notifications remain inbox-only; digest email may summarize pending approvals
+        and inbox state, but individual notification rows are not fanned out as standalone emails.
       </p>
       <p>
         New signups receive a non-blocking verification email through the same messaging module.
