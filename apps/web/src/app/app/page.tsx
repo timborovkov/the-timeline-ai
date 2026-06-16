@@ -188,6 +188,11 @@ export default async function HomeDashboardPage() {
               label="Calendar"
             />
             <AttentionLink
+              href="/app/meetings"
+              icon={<Video className="size-4" aria-hidden="true" />}
+              label="Invite notetaker"
+            />
+            <AttentionLink
               href="#email-ingest"
               icon={<Mail className="size-4" aria-hidden="true" />}
               label={team?.inboundEmail ? 'Email ingest ready' : 'Configure email ingest'}
@@ -205,14 +210,6 @@ export default async function HomeDashboardPage() {
           slackConnectionCount={slackConnectionCount}
           integrationConnectionCount={integrationConnectionCount}
         />
-        <div className="flex justify-end">
-          <Button asChild variant="outline">
-            <Link href="/app/meetings">
-              <Video aria-hidden="true" />
-              Invite notetaker
-            </Link>
-          </Button>
-        </div>
       </section>
 
       <section className="space-y-3">

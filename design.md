@@ -172,7 +172,8 @@ Departs from the v1 centered `max-w-3xl` prose column. New shell:
   Team. Nav labels and the current team are visible by default. Folded mode
   uses the icon-only rail with tooltips. Active route shows a 2px signal-color
   bar at its left edge plus `bg-surface-2 text-signal`. Work groups Objects,
-  Tasks, Boards, Calendar, and Approvals; Documents owns the document drive,
+  Tasks, Boards, Calendar, and Approvals, with a Meetings shortcut for notetaker
+  capture; Documents owns the document drive,
   captured-file triage, version review, and previews. Documents is a
   knowledge-first surface: curated uploads are the default team library, while
   event-backed files live in a secondary Captured inbox until promoted. Inbox lives as a
