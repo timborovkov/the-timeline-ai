@@ -99,9 +99,7 @@ describe('ApprovalsClient', () => {
     expect(html).toContain('Send proposal');
     expect(html).toContain('Calendar conflict');
     expect(html).toContain('I will send the proposal');
-    expect(html).toContain(
-      '/app/timeline?event=11111111-1111-4111-8111-111111111111#ev-11111111-1111-4111-8111-111111111111',
-    );
+    expect(html).toContain('Timeline evidence · slack · 11111111');
     expect(html).toContain('create task');
   });
 
@@ -213,6 +211,82 @@ describe('ApprovalsClient', () => {
     expect(html).toContain('Accept all visible');
     expect(html).toContain('Follow up with Acme');
     expect(html).toContain('Book review');
+  });
+
+  it('renders calendar-specific approval summaries and resolution hints', () => {
+    const html = renderToStaticMarkup(
+      createElement(ApprovalsClient, {
+        suggestions: [
+          {
+            id: 'bundle-calendar',
+            source: 'background',
+            status: 'pending',
+            title: 'Calendar cleanup',
+            summary: null,
+            reason: null,
+            confidence: 'medium',
+            createdAt: '2026-06-01T10:00:00.000Z',
+            evidence: [],
+            items: [
+              {
+                id: 'item-duplicate',
+                status: 'pending',
+                operation: 'create',
+                targetKind: 'calendar_event',
+                targetId: null,
+                title: 'Nexia planning',
+                description: null,
+                proposedPayload: {
+                  title: 'Nexia planning',
+                  startAt: '2026-06-17T11:00:00.000Z',
+                  endAt: '2026-06-17T12:00:00.000Z',
+                  allDay: false,
+                },
+                calendarResolutionHint: {
+                  kind: 'exact_duplicate_reuse',
+                  event: {
+                    id: '11111111-1111-4111-8111-111111111111',
+                    title: 'Nexia planning',
+                    description: null,
+                    startAt: '2026-06-17T11:00:00.000Z',
+                    endAt: '2026-06-17T12:00:00.000Z',
+                    timezone: 'Europe/Helsinki',
+                    allDay: false,
+                    location: null,
+                    showAs: 'busy',
+                    visibility: 'team',
+                    rrule: null,
+                  },
+                },
+                failureReason: null,
+              },
+              {
+                id: 'item-confirm',
+                status: 'pending',
+                operation: 'update',
+                targetKind: 'calendar_event',
+                targetId: '22222222-2222-4222-8222-222222222222',
+                title: 'Confirm Acme slot',
+                description: null,
+                proposedPayload: {
+                  proposalGroupId: 'acme-slots',
+                  proposalRole: 'selected_slot',
+                  proposalStatus: 'confirmed',
+                  showAs: 'busy',
+                },
+                calendarResolutionHint: { kind: 'missing_target' },
+                failureReason: null,
+              },
+            ],
+          },
+        ],
+      }),
+    );
+
+    expect(html).toContain('Reuse existing');
+    expect(html).toContain('Accept will reuse it instead of creating a duplicate');
+    expect(html).toContain('Confirm slot');
+    expect(html).toContain('Accepting one slot can cancel sibling tentative slots');
   });
 
   it('does not render page-level accept all for merge-only visible bundles', () => {

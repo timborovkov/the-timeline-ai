@@ -734,6 +734,66 @@ describe('processSuggestionJobForTests', () => {
     });
   });
 
+  it('includes rich existing and pending calendar context in extraction prompts', async () => {
+    const rawEventId = '10000000-0000-0000-0000-0000000000c9';
+    await seedRawEvent(db as never, {
+      id: rawEventId,
+      text: 'Move the Acme kickoff to Friday at 5pm.',
+      occurredAt: new Date('2026-06-16T10:00:00.000Z'),
+    });
+    const scope = withTeam(db as never, TEAM_ID, OWNER_ID);
+    const existing = await scope.calendar.createCalendarEvent({
+      title: 'Acme kickoff',
+      description: 'Initial project kickoff with Acme.',
+      startAt: new Date('2026-06-17T11:00:00.000Z'),
+      endAt: new Date('2026-06-17T12:00:00.000Z'),
+      timezone: 'Europe/Helsinki',
+      location: 'Teams',
+      visibility: 'team',
+      showAs: 'busy',
+      metadata: { source: 'seed' },
+    });
+    await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Create tentative Acme slot',
+      dedupeKey: 'pending-calendar-context',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'calendar_event',
+          title: 'Acme kickoff option',
+          dedupeKey: 'pending-calendar-context:item',
+          proposedPayload: {
+            title: 'Acme kickoff option',
+            startAt: '2026-06-19T14:00:00.000Z',
+            endAt: '2026-06-19T15:00:00.000Z',
+            timezone: 'Europe/Helsinki',
+            showAs: 'tentative',
+            proposalGroupId: 'acme-slots',
+          },
+        },
+      ],
+    });
+    const chat = emptyModel();
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { rawEventId, teamId: TEAM_ID },
+      { getEnv: env, chatStructured: chat, modelId: MODEL_ID },
+    );
+
+    const prompt = (chat.mock.calls[0]?.[0] as { prompt: string }).prompt;
+    expect(prompt).toContain('# Existing calendar events');
+    expect(prompt).toContain(`${existing.id}: "Acme kickoff"`);
+    expect(prompt).toContain('2026-06-17T11:00:00.000Z -> 2026-06-17T12:00:00.000Z');
+    expect(prompt).toContain('tz=Europe/Helsinki');
+    expect(prompt).toContain('location=Teams');
+    expect(prompt).toContain('description=Initial project kickoff with Acme.');
+    expect(prompt).toContain('# Pending calendar approvals');
+    expect(prompt).toContain('Acme kickoff option');
+    expect(prompt).toContain('proposalGroupId');
+  });
+
   it('stores grouped tentative slot suggestions from model output', async () => {
     const rawEventId = '10000000-0000-0000-0000-0000000000f2';
     await seedRawEvent(db as never, {

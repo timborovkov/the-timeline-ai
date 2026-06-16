@@ -171,7 +171,30 @@ export interface SuggestionItem {
   failureReason: string | null;
   supersededByItemId: string | null;
   supersededReason: string | null;
+  calendarResolutionHint?: CalendarResolutionHint | null;
 }
+
+export interface CalendarResolutionEventSummary {
+  id: string;
+  title: string;
+  description: string | null;
+  startAt: Date;
+  endAt: Date;
+  timezone: string;
+  allDay: boolean;
+  location: string | null;
+  showAs: string;
+  visibility: Visibility;
+  rrule: string | null;
+}
+
+export type CalendarResolutionHint =
+  | { kind: 'new_event' }
+  | { kind: 'exact_duplicate_reuse'; event: CalendarResolutionEventSummary }
+  | { kind: 'semantic_update_candidate'; event: CalendarResolutionEventSummary }
+  | { kind: 'ambiguous_match'; events: CalendarResolutionEventSummary[] }
+  | { kind: 'target_event'; event: CalendarResolutionEventSummary }
+  | { kind: 'missing_target' };
 
 export interface SuggestionEvidence {
   id: string;
@@ -376,7 +399,7 @@ const calendarUpdatePayload = z.object({
 });
 
 function normalizeCalendarPayload(
-  item: typeof agentSuggestionItems.$inferSelect,
+  item: { title: string; proposedPayload: unknown },
   opts: {
     fallbackTitle: boolean;
     defaultTimezone?: string;
@@ -913,10 +936,26 @@ function sameInstant(left: Date, right: Date): boolean {
   return left.getTime() === right.getTime();
 }
 
-function calendarCreateResolution(
+function calendarEventSummary(event: CalendarEventWithRedaction): CalendarResolutionEventSummary {
+  return {
+    id: event.id,
+    title: event.title,
+    description: event.redacted ? null : event.description,
+    startAt: event.startAt,
+    endAt: event.endAt,
+    timezone: event.timezone,
+    allDay: event.allDay,
+    location: event.redacted ? null : event.location,
+    showAs: event.showAs,
+    visibility: event.visibility,
+    rrule: event.rrule,
+  };
+}
+
+function calendarCreateResolutionDetails(
   proposed: CreateCalendarEventInput,
   candidates: CalendarEventWithRedaction[],
-): { event: CalendarEventWithRedaction; action: 'reuse' | 'update' } | null {
+): CalendarResolutionHint {
   const proposedTokens = calendarSubjectTokens(proposed.title, proposed.description);
   const proposalMetadata = proposed.metadata ?? {};
   const isProposalSlot =
@@ -936,14 +975,29 @@ function calendarCreateResolution(
       sameInstant(candidate.endAt, proposed.endAt) &&
       candidate.allDay === (proposed.allDay ?? false)
     ) {
-      return { event: candidate, action: 'reuse' };
+      return { kind: 'exact_duplicate_reuse', event: calendarEventSummary(candidate) };
     }
     if (isProposalSlot) continue;
     semanticMatches.push(candidate);
   }
   const semanticMatch = semanticMatches[0];
-  if (semanticMatches.length === 1 && semanticMatch)
-    return { event: semanticMatch, action: 'update' };
+  if (semanticMatches.length === 1 && semanticMatch) {
+    return { kind: 'semantic_update_candidate', event: calendarEventSummary(semanticMatch) };
+  }
+  if (semanticMatches.length > 1) {
+    return { kind: 'ambiguous_match', events: semanticMatches.map(calendarEventSummary) };
+  }
+  return { kind: 'new_event' };
+}
+
+function calendarCreateResolution(
+  proposed: CreateCalendarEventInput,
+  candidates: CalendarEventWithRedaction[],
+): { event: CalendarResolutionEventSummary; action: 'reuse' | 'update' } | null {
+  const details = calendarCreateResolutionDetails(proposed, candidates);
+  if (details.kind === 'exact_duplicate_reuse') return { event: details.event, action: 'reuse' };
+  if (details.kind === 'semantic_update_candidate')
+    return { event: details.event, action: 'update' };
   return null;
 }
 
@@ -971,6 +1025,53 @@ function calendarCreateInputToUpdatePatch(
   }
   if (input.metadata !== undefined) patch.metadata = input.metadata;
   return patch;
+}
+
+function normalizeCalendarCreateSuggestionItem(
+  item: { proposedPayload: unknown; title: string; id: string },
+  defaultTimezone: string,
+): { input: CreateCalendarEventInput; providedKeys: Set<string> } {
+  const normalizedCreatePayload = normalizeCalendarPayload(item, {
+    fallbackTitle: true,
+    defaultTimezone,
+    inferAllDayFromDateOnly: true,
+    materializeDefaultTimezone: true,
+  });
+  const providedKeys = new Set(Object.keys(normalizedCreatePayload));
+  const parsed = calendarCreatePayload.parse(normalizedCreatePayload);
+  const normalizedRange = parsed.allDay
+    ? normalizeAllDayRange({
+        startAt: parsed.startAt,
+        endAt: parsed.endAt,
+        timezone: parsed.timezone,
+        ...(parsed.startDate ? { startDate: parsed.startDate } : {}),
+        ...(parsed.endDate ? { endDate: parsed.endDate } : {}),
+      })
+    : { startAt: new Date(parsed.startAt), endAt: new Date(parsed.endAt) };
+  const input: CreateCalendarEventInput = {
+    title: parsed.title,
+    description: parsed.description ?? null,
+    startAt: normalizedRange.startAt,
+    endAt: normalizedRange.endAt,
+    timezone: parsed.timezone,
+    allDay: parsed.allDay,
+    location: parsed.location ?? null,
+    showAs: parsed.showAs ?? 'busy',
+    rrule: parsed.rrule ?? null,
+    visibility: parsed.visibility,
+    visibilityUserIds: parsed.visibilityUserIds ?? null,
+    reminderMinutes: parsed.reminderMinutes ?? null,
+    agentSuggested: false,
+    metadata: {
+      ...(parsed.metadata ?? {}),
+      ...(parsed.proposalGroupId ? { proposalGroupId: parsed.proposalGroupId } : {}),
+      ...(parsed.proposalStatus ? { proposalStatus: parsed.proposalStatus } : {}),
+      ...(parsed.proposalRole ? { proposalRole: parsed.proposalRole } : {}),
+      agent_suggestion_item_id: item.id,
+    },
+  };
+  if (parsed.linkedEntityIds !== undefined) input.linkedEntityIds = parsed.linkedEntityIds;
+  return { input, providedKeys };
 }
 
 function toBundle(
@@ -2293,46 +2394,10 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
 
     if (item.operation === 'create') {
       const settings = await calendar.getCalendarSettings();
-      const normalizedCreatePayload = normalizeCalendarPayload(item, {
-        fallbackTitle: true,
-        defaultTimezone: settings.defaultTimezone,
-        inferAllDayFromDateOnly: true,
-        materializeDefaultTimezone: true,
-      });
-      const providedCreateKeys = new Set(Object.keys(normalizedCreatePayload));
-      const parsed = calendarCreatePayload.parse(normalizedCreatePayload);
-      const normalizedRange = parsed.allDay
-        ? normalizeAllDayRange({
-            startAt: parsed.startAt,
-            endAt: parsed.endAt,
-            timezone: parsed.timezone,
-            ...(parsed.startDate ? { startDate: parsed.startDate } : {}),
-            ...(parsed.endDate ? { endDate: parsed.endDate } : {}),
-          })
-        : { startAt: new Date(parsed.startAt), endAt: new Date(parsed.endAt) };
-      const input: CreateCalendarEventInput = {
-        title: parsed.title,
-        description: parsed.description ?? null,
-        startAt: normalizedRange.startAt,
-        endAt: normalizedRange.endAt,
-        timezone: parsed.timezone,
-        allDay: parsed.allDay,
-        location: parsed.location ?? null,
-        showAs: parsed.showAs ?? 'busy',
-        rrule: parsed.rrule ?? null,
-        visibility: parsed.visibility,
-        visibilityUserIds: parsed.visibilityUserIds ?? null,
-        reminderMinutes: parsed.reminderMinutes ?? null,
-        agentSuggested: false,
-        metadata: {
-          ...(parsed.metadata ?? {}),
-          ...(parsed.proposalGroupId ? { proposalGroupId: parsed.proposalGroupId } : {}),
-          ...(parsed.proposalStatus ? { proposalStatus: parsed.proposalStatus } : {}),
-          ...(parsed.proposalRole ? { proposalRole: parsed.proposalRole } : {}),
-          agent_suggestion_item_id: item.id,
-        },
-      };
-      if (parsed.linkedEntityIds !== undefined) input.linkedEntityIds = parsed.linkedEntityIds;
+      const { input, providedKeys } = normalizeCalendarCreateSuggestionItem(
+        item,
+        settings.defaultTimezone,
+      );
       const resolution = calendarCreateResolution(
         input,
         await calendar.listCalendarEvents({
@@ -2345,7 +2410,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         if (resolution.action === 'update') {
           await calendar.updateCalendarEvent(
             resolution.event.id,
-            calendarCreateInputToUpdatePatch(input, providedCreateKeys),
+            calendarCreateInputToUpdatePatch(input, providedKeys),
           );
         }
         return resolution.event.id;
@@ -2697,6 +2762,51 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     return hydrateBundles(rows);
   }
 
+  async function calendarResolutionHintForItem(
+    item: SuggestionItem,
+  ): Promise<CalendarResolutionHint | null> {
+    if (item.targetKind !== 'calendar_event') return null;
+    if (item.operation === 'create') {
+      const settings = await calendar.getCalendarSettings();
+      try {
+        const { input } = normalizeCalendarCreateSuggestionItem(
+          { id: item.id, title: item.title, proposedPayload: item.proposedPayload },
+          settings.defaultTimezone,
+        );
+        return calendarCreateResolutionDetails(
+          input,
+          await calendar.listCalendarEvents({
+            from: new Date(input.startAt.getTime() - CALENDAR_SEMANTIC_MATCH_WINDOW_MS),
+            to: new Date(input.endAt.getTime() + CALENDAR_SEMANTIC_MATCH_WINDOW_MS),
+            limit: 100,
+          }),
+        );
+      } catch {
+        return null;
+      }
+    }
+    if (!item.targetId) return { kind: 'missing_target' };
+    const event = await calendar.getCalendarEvent(item.targetId);
+    return event
+      ? { kind: 'target_event', event: calendarEventSummary(event) }
+      : { kind: 'missing_target' };
+  }
+
+  async function withCalendarResolutionHints(
+    bundles: SuggestionBundle[],
+  ): Promise<SuggestionBundle[]> {
+    const nextBundles: SuggestionBundle[] = [];
+    for (const bundle of bundles) {
+      const nextItems: SuggestionItem[] = [];
+      for (const item of bundle.items) {
+        const calendarResolutionHint = await calendarResolutionHintForItem(item);
+        nextItems.push(calendarResolutionHint ? { ...item, calendarResolutionHint } : item);
+      }
+      nextBundles.push({ ...bundle, items: nextItems });
+    }
+    return nextBundles;
+  }
+
   return {
     async createOrMergeSuggestionBundle(input: CreateSuggestionInput): Promise<SuggestionBundle> {
       await ensureMember();
@@ -2897,6 +3007,8 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     async listPendingSuggestions(): Promise<SuggestionBundle[]> {
       return listSuggestions({ status: 'pending' });
     },
+
+    withCalendarResolutionHints,
 
     getSuggestion: loadBundle,
 

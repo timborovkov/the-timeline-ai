@@ -1186,6 +1186,27 @@ async function runSuggestionExtraction(
     ...calendarContextRange(row.occurredAt),
     limit: 40,
   });
+  const pendingCalendarRows = await deps.db
+    .select({
+      id: agentSuggestionItems.id,
+      operation: agentSuggestionItems.operation,
+      targetId: agentSuggestionItems.targetId,
+      title: agentSuggestionItems.title,
+      payload: agentSuggestionItems.proposedPayload,
+      suggestionTitle: agentSuggestions.title,
+    })
+    .from(agentSuggestionItems)
+    .innerJoin(agentSuggestions, eq(agentSuggestions.id, agentSuggestionItems.suggestionId))
+    .where(
+      and(
+        eq(agentSuggestionItems.teamId, teamId),
+        eq(agentSuggestionItems.targetKind, 'calendar_event'),
+        inArray(agentSuggestionItems.status, ['pending', 'failed']),
+        inArray(agentSuggestions.status, ['pending', 'partially_resolved']),
+      ),
+    )
+    .orderBy(desc(agentSuggestionItems.createdAt))
+    .limit(20);
   const boardDetails = (
     await Promise.all(
       (await scope.boards.listBoards())
@@ -1230,9 +1251,12 @@ async function runSuggestionExtraction(
         .map((ev) => ({
           id: ev.id,
           title: ev.title,
+          description: ev.description,
           startAt: ev.startAt.toISOString(),
           endAt: ev.endAt.toISOString(),
+          timezone: ev.timezone,
           allDay: ev.allDay,
+          location: ev.location,
           showAs: ev.showAs,
           rrule: ev.rrule,
           recurringParentId: ev.recurringParentId,
@@ -1240,6 +1264,17 @@ async function runSuggestionExtraction(
           isException: ev.isException,
           metadata: ev.metadata,
         })),
+      pendingCalendar: pendingCalendarRows.map((item) => ({
+        id: item.id,
+        operation: item.operation,
+        targetId: item.targetId,
+        title: item.title,
+        suggestionTitle: item.suggestionTitle,
+        payload:
+          item.payload && typeof item.payload === 'object' && !Array.isArray(item.payload)
+            ? (item.payload as Record<string, unknown>)
+            : {},
+      })),
       boards: boardDetails.map((board) => ({
         id: board.id,
         name: board.name,
@@ -1700,7 +1735,30 @@ function buildPrompt(args: {
     entityName: string;
     body: string;
   }[];
-  calendar: { id: string; title: string; startAt: string; allDay: boolean }[];
+  calendar: {
+    id: string;
+    title: string;
+    description: string | null;
+    startAt: string;
+    endAt: string;
+    timezone: string;
+    allDay: boolean;
+    location: string | null;
+    showAs: string;
+    rrule: string | null;
+    recurringParentId: string | null;
+    originalStartAt: string | null;
+    isException: boolean;
+    metadata: Record<string, unknown>;
+  }[];
+  pendingCalendar: {
+    id: string;
+    operation: string;
+    targetId: string | null;
+    title: string;
+    suggestionTitle: string;
+    payload: Record<string, unknown>;
+  }[];
   boards: {
     id: string;
     name: string;
@@ -1749,7 +1807,28 @@ function buildPrompt(args: {
     ),
     '',
     '# Existing calendar events',
-    ...args.calendar.map((ev) => `- ${ev.id}: "${ev.title}" ${ev.startAt} all_day=${ev.allDay}`),
+    ...args.calendar.map(
+      (ev) =>
+        `- ${ev.id}: "${ev.title}" ${ev.startAt} -> ${ev.endAt} tz=${ev.timezone} all_day=${
+          ev.allDay
+        } show_as=${ev.showAs} location=${ev.location ?? 'none'} rrule=${
+          ev.rrule ?? 'none'
+        } recurring_parent=${ev.recurringParentId ?? 'none'} original_start=${
+          ev.originalStartAt ?? 'none'
+        } exception=${ev.isException} metadata=${JSON.stringify(ev.metadata)} description=${truncate(
+          ev.description ?? '',
+          220,
+        )}`,
+    ),
+    '',
+    '# Pending calendar approvals',
+    'Treat these as already proposed but not canonical. Do not create another equivalent calendar proposal; update or target one only when the evidence clearly confirms/refines/cancels it.',
+    ...args.pendingCalendar.map(
+      (item) =>
+        `- ${item.id}: ${item.operation} target=${item.targetId ?? 'none'} "${item.title}" bundle="${
+          item.suggestionTitle
+        }" payload=${JSON.stringify(item.payload)}`,
+    ),
     '',
     '# Existing boards',
     'Use board_membership only when evidence clearly says an existing object belongs on a listed board. operation=create, targetKind=board_membership, proposedPayload={ boardId, entityId, laneId?, sourceEventId?, note? }.',

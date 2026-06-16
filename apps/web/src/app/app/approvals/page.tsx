@@ -34,7 +34,9 @@ export default async function ApprovalsPage({ searchParams }: PageProps) {
   const status = STATUS_FILTERS.includes(params.status as (typeof STATUS_FILTERS)[number])
     ? (params.status as (typeof STATUS_FILTERS)[number])
     : 'pending';
-  const suggestions = await scope.suggestions.listSuggestions({ status });
+  const suggestions = await scope.suggestions.withCalendarResolutionHints(
+    await scope.suggestions.listSuggestions({ status }),
+  );
   const visibleSuggestions = suggestions.flatMap((bundle) => {
     const items = bundle.items.filter((item) => {
       if (status === 'pending') return isActionableSuggestionStatus(item.status);
