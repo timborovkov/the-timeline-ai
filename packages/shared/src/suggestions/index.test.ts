@@ -4346,6 +4346,79 @@ describe('suggestion scope', () => {
     });
   });
 
+  it('treats blank optional object create fields as absent values', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Schedule follow-up meeting with Digital Audit Company',
+      dedupeKey: 'task-create-blank-optional-fields',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Schedule follow-up meeting with Digital Audit Company',
+          dedupeKey: 'task-create-blank-optional-fields:item',
+          proposedPayload: {
+            canonicalName: 'Schedule follow-up meeting with Digital Audit Company',
+            status: 'todo',
+            stage: '',
+            priority: null,
+            ownerUserId: '',
+            assigneeUserId: '',
+            dueAt: '',
+            sourceEventId: '',
+            metadata: {
+              agent_suggestion_item_id: 'ignored-source-payload-value',
+            },
+          },
+        },
+      ],
+    });
+    const itemId = bundle.items[0]?.id;
+    expect(itemId).toBeDefined();
+
+    await expect(scope.suggestions.acceptSuggestionItem(itemId ?? '')).resolves.toBe(true);
+
+    const result = await pg.query<{
+      canonical_name: string;
+      type: string;
+      status: string;
+      stage: string | null;
+      priority: number | null;
+      owner_user_id: string | null;
+      assignee_user_id: string | null;
+      due_at: Date | null;
+      source_event_id: string | null;
+      metadata_item_id: string | null;
+    }>(
+      `SELECT canonical_name,
+              type,
+              status,
+              stage,
+              priority,
+              owner_user_id,
+              assignee_user_id,
+              due_at,
+              source_event_id,
+              metadata ->> 'agent_suggestion_item_id' AS metadata_item_id
+       FROM entities
+       WHERE team_id = '${TEAM_ID}'
+         AND canonical_name = 'Schedule follow-up meeting with Digital Audit Company'`,
+    );
+    expect(result.rows[0]).toEqual({
+      canonical_name: 'Schedule follow-up meeting with Digital Audit Company',
+      type: 'task',
+      status: 'todo',
+      stage: '',
+      priority: null,
+      owner_user_id: null,
+      assignee_user_id: null,
+      due_at: null,
+      source_event_id: null,
+      metadata_item_id: itemId,
+    });
+  });
+
   it('accepts calendar cancellation suggestions by soft-deleting the event', async () => {
     const scope = withTeam(db as never, TEAM_ID, USER_ID);
     const event = await scope.calendar.createCalendarEvent({
