@@ -3,9 +3,9 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import type {
+  ConnectionAttentionMessageInput,
   DailyDigestMessageInput,
   EmailVerificationMessageInput,
-  ConnectionAttentionMessageInput,
   MessageInput,
   MessageIntent,
   RenderedMessage,
@@ -13,6 +13,14 @@ import type {
   TeamInviteMessageInput,
   WelcomeMessageInput,
 } from '#src/messaging/types.js';
+
+import {
+  digestContentSections,
+  digestSummaryParagraphs,
+  formatDigestCalendarEvent,
+  formatDigestDate,
+  formatDigestTask,
+} from '#src/messaging/digest-format.js';
 
 type TemplateName =
   | 'base'
@@ -88,6 +96,26 @@ function htmlList(items: string[]): string {
         .map((item) => `<li>${escapeHtml(item)}</li>`)
         .join('')}</ul>`
     : '<p style="font-size: 14px; color: #747b7b;">None</p>';
+}
+
+function htmlParagraphs(items: string[]): string {
+  return items
+    .map(
+      (item) =>
+        `<p style="font-size: 15px; line-height: 1.55; margin: 0 0 14px">${escapeHtml(item)}</p>`,
+    )
+    .join('\n');
+}
+
+function htmlDigestSections(sections: ReturnType<typeof digestContentSections>): string {
+  return sections
+    .map((section) =>
+      [
+        `<h2 style="font-size: 14px; margin: 20px 0 8px">${escapeHtml(section.title)}</h2>`,
+        htmlList(section.items),
+      ].join('\n'),
+    )
+    .join('\n');
 }
 
 function htmlListItems(items: string[]): string {
@@ -254,6 +282,10 @@ function renderEmailVerification(input: EmailVerificationMessageInput): Rendered
 function renderDailyDigest(input: DailyDigestMessageInput): RenderedMessage {
   const p = input.payload;
   const subject = `Daily digest for ${p.teamName}`;
+  const timezone = p.timezone;
+  const windowEnd = formatDigestDate(p.windowEnd, timezone);
+  const summaryParagraphs = digestSummaryParagraphs(p.summary);
+  const sections = digestContentSections(p);
   const sourceLines = Object.entries(p.sourceDistribution).map(
     ([source, count]) => `${source}: ${count}`,
   );
@@ -261,9 +293,14 @@ function renderDailyDigest(input: DailyDigestMessageInput): RenderedMessage {
     ([type, count]) => `${type}: ${count}`,
   );
   const textBody = [
-    `Daily digest for ${p.teamName}`,
+    `Daily digest for ${p.teamName} · ${windowEnd}`,
     '',
-    p.summary,
+    ...summaryParagraphs.flatMap((paragraph) => [paragraph, '']),
+    ...sections.flatMap((section) => [
+      section.title,
+      ...section.items.map((item) => `- ${item}`),
+      '',
+    ]),
     '',
     `${p.pendingApprovals} pending approvals`,
     `${p.eventCount} new timeline events`,
@@ -271,11 +308,11 @@ function renderDailyDigest(input: DailyDigestMessageInput): RenderedMessage {
     objectLines.length ? `Objects changed: ${objectLines.join(', ')}` : 'Objects changed: none',
     '',
     'Current tasks:',
-    ...(p.tasks.length ? p.tasks.map((task) => `- ${task.title} (${task.status})`) : ['- None']),
+    ...(p.tasks.length ? p.tasks.map((task) => `- ${formatDigestTask(task)}`) : ['- None']),
     '',
     'Upcoming calendar:',
     ...(p.upcomingCalendar.length
-      ? p.upcomingCalendar.map((event) => `- ${event.title} (${event.startAt})`)
+      ? p.upcomingCalendar.map((event) => `- ${formatDigestCalendarEvent(event, timezone)}`)
       : ['- None']),
     '',
     `Open digest: ${input.digestUrl}`,
@@ -285,17 +322,20 @@ function renderDailyDigest(input: DailyDigestMessageInput): RenderedMessage {
     title: `Daily digest for ${p.teamName}`,
     body: renderBody(
       'daily-digest',
-      { summary: p.summary },
+      {},
       {
+        summaryBlock: htmlParagraphs(summaryParagraphs),
+        summarySections: htmlDigestSections(sections),
         snapshotList: htmlList([
+          `Digest date: ${windowEnd}`,
           `${p.pendingApprovals} pending approvals`,
           `${p.eventCount} new timeline events`,
           sourceLines.length ? `Sources: ${sourceLines.join(', ')}` : 'No new sources',
           objectLines.length ? `Objects changed: ${objectLines.join(', ')}` : 'No object changes',
         ]),
-        tasksList: htmlList(p.tasks.map((task) => `${task.title} (${task.status})`)),
+        tasksList: htmlList(p.tasks.map(formatDigestTask)),
         calendarList: htmlList(
-          p.upcomingCalendar.map((event) => `${event.title} (${event.startAt})`),
+          p.upcomingCalendar.map((event) => formatDigestCalendarEvent(event, timezone)),
         ),
       },
     ),
