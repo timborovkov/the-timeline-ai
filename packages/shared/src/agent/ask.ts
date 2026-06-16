@@ -14,6 +14,7 @@ const log = childLogger('agent:ask');
 
 /** Telegram's hard cap on a single message body. */
 const TELEGRAM_MAX = 4096;
+export const TEAM_BOT_ACTOR_USER_ID = '00000000-0000-0000-0000-000000000000';
 
 export interface AskAgentInput {
   db: Db;
@@ -23,6 +24,8 @@ export interface AskAgentInput {
   question: string;
   /** Display name for the system prompt. Falls back to "a teammate". */
   userName?: string;
+  /** Trusted team-scoped bot actor. Keeps private/specific-user events invisible. */
+  trustedTeamActor?: boolean | undefined;
   /** Cap on agent tool-call rounds. Default 5 (matches /api/chat). */
   maxSteps?: number;
 }
@@ -88,7 +91,12 @@ export async function askAgent(
     return { ok: false, error: 'unconfigured' };
   }
 
-  const scope = withTeam(input.db, input.teamId, input.userId);
+  const scope = withTeam(
+    input.db,
+    input.teamId,
+    input.userId,
+    input.trustedTeamActor ? { skipMembershipCheck: true } : {},
+  );
   try {
     await scope.requireMembership();
   } catch {
@@ -108,7 +116,10 @@ export async function askAgent(
     currentDate,
     workspaceTime: workspaceTimeContext(calendarSettings.defaultTimezone, currentDate),
   });
-  const tools = buildAgentTools(scope, { onToolError: deps.onToolError });
+  const tools = buildAgentTools(scope, {
+    onToolError: deps.onToolError,
+    readOnly: input.trustedTeamActor,
+  });
 
   const messages: ModelMessage[] = [{ role: 'user', content: input.question }];
 

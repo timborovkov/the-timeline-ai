@@ -34,6 +34,7 @@ const askAgentMock = vi.hoisted(() => vi.fn());
 
 vi.mock('#src/agent/ask.js', () => ({
   askAgent: askAgentMock,
+  TEAM_BOT_ACTOR_USER_ID: '00000000-0000-0000-0000-000000000000',
 }));
 
 const TEAM_A = '11111111-1111-1111-1111-111111111111';
@@ -562,6 +563,41 @@ describe('Slack dispatcher routing', () => {
     expect(queues.suggestions.enqueueSuggestion).not.toHaveBeenCalled();
   });
 
+  it('answers bound channel app mentions from unlinked Slack users as the team bot actor', async () => {
+    await seedWorkspace(db, TEAM_A);
+    await db.insert(slackConversationBindings).values({
+      workspaceId: WORKSPACE_ID,
+      teamId: TEAM_A,
+      slackConversationId: 'C_MENTIONS',
+      conversationType: 'channel',
+      title: 'mentions',
+      boundByUserId: USER_A,
+      enabled: true,
+    });
+
+    await handleSlackEnvelope(
+      { db: db as never },
+      slackEnvelope('EvMentionUnlinkedQuestion', {
+        type: 'app_mention',
+        channel: 'C_MENTIONS',
+        channel_type: 'channel',
+        user: 'U_UNLINKED',
+        text: '<@U_BOT> what changed?',
+        ts: '1700000000.000801',
+      }),
+    );
+
+    expect(askAgentMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        teamId: TEAM_A,
+        userId: '00000000-0000-0000-0000-000000000000',
+        trustedTeamActor: true,
+        question: 'what changed?',
+      }),
+      expect.any(Object),
+    );
+  });
+
   it('captures Slack file_share messages and enqueues document extraction', async () => {
     await seedWorkspace(db, TEAM_A);
     await db.insert(slackConversationBindings).values({
@@ -943,6 +979,44 @@ describe('Slack dispatcher routing', () => {
     expect(typeof body === 'string' ? body : '').toContain(
       'Timeline could not answer that right now.',
     );
+  });
+
+  it('answers /ask in a bound Slack channel from an unlinked Slack user', async () => {
+    const fetchMock = installFetchMock();
+    await seedWorkspace(db, TEAM_A);
+    await db.insert(slackConversationBindings).values({
+      workspaceId: WORKSPACE_ID,
+      teamId: TEAM_A,
+      slackConversationId: 'C_ASK',
+      conversationType: 'channel',
+      title: 'ask',
+      boundByUserId: USER_A,
+      enabled: true,
+    });
+
+    await handleSlackSlashCommand(
+      { db: db as never },
+      {
+        command: '/ask',
+        text: 'what changed?',
+        user_id: 'U_UNLINKED',
+        team_id: 'T_SLACK',
+        channel_id: 'C_ASK',
+        response_url: 'https://hooks.slack.test/response',
+        trigger_id: 'trigger-unlinked-bound',
+      },
+    );
+
+    expect(askAgentMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        teamId: TEAM_A,
+        userId: '00000000-0000-0000-0000-000000000000',
+        trustedTeamActor: true,
+        question: 'what changed?',
+      }),
+      expect.any(Object),
+    );
+    expect(fetchBodyContaining(fetchMock, 'answer')).not.toBeNull();
   });
 
   it('joins a Saved Meeting alias immediately from /timeline join', async () => {

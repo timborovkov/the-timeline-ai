@@ -25,6 +25,7 @@ export type AgentToolErrorReporter = (err: unknown, context: { tool: string }) =
 
 interface AgentToolOptions {
   onToolError?: AgentToolErrorReporter | undefined;
+  readOnly?: boolean | undefined;
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -790,7 +791,7 @@ async function normalizeCalendarCreateInput(
 export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}): ToolSet {
   const runSafe = <T>(label: string, fn: () => Promise<T>): Promise<T | { error: string }> =>
     safe(label, fn, options.onToolError);
-  return {
+  const tools: ToolSet = {
     execute_object_create: tool({
       description:
         'Approval-required dashboard action. Directly create a canonical object/task after the user approves in chat. Use only for explicit commands like "create a project called X" or "add a task to follow up with Y". This writes canonical state through createObject and does NOT create a background approval queue item.',
@@ -2690,4 +2691,22 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
         }),
     }),
   };
+  if (options.readOnly) {
+    const writeToolNames = new Set([
+      'execute_object_create',
+      'execute_object_update',
+      'execute_object_archive',
+      'execute_object_merge',
+      'suggest_task',
+      'propose_object_change',
+      'suggest_object_memory',
+      'execute_calendar_create',
+      'execute_calendar_update',
+      'execute_calendar_cancel',
+      'suggest_calendar_event',
+      'propose_calendar_update',
+    ]);
+    return Object.fromEntries(Object.entries(tools).filter(([name]) => !writeToolNames.has(name)));
+  }
+  return tools;
 }

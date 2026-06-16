@@ -159,7 +159,7 @@ export default async function SlackSettingsPage() {
         </CardHeader>
         <CardContent className="flex items-center justify-between gap-3">
           <p className="text-sm text-muted-foreground">
-            Linking lets Slack DMs route to this team and lets /ask run as you.
+            Linking lets Slack DMs route to this team and lets /ask run with your personal identity.
           </p>
           <Button asChild variant="outline" size="sm">
             <Link href="/api/slack/user-link/start">Connect identity</Link>

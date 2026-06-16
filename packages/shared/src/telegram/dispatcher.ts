@@ -13,7 +13,7 @@ import {
 } from '@timeline/db';
 import { and, asc, desc, eq, isNull, ne, sql } from 'drizzle-orm';
 
-import { askAgent } from '#src/agent/ask.js';
+import { askAgent, TEAM_BOT_ACTOR_USER_ID } from '#src/agent/ask.js';
 import { type AgentToolErrorReporter } from '#src/agent/tools.js';
 import {
   classifyConversationalAttachment,
@@ -708,10 +708,10 @@ function telegramSenderName(u: TgUser): string | null {
 
 /**
  * Shared `/ask` runner used by both DM and group dispatchers. Validates that
- * the chat has a team to answer against and that the sender is a known user
- * (TeamScope requires a real userId — unverified senders can't pose as a
- * teammate). Per-user rate-limited tighter than ingest because each call hits
- * OpenRouter.
+ * the chat has a team to answer against. Linked senders run as themselves;
+ * bound groups may also ask through a trusted team-scoped actor so unlinked
+ * participants can query team-visible history without seeing private events.
+ * Per-user rate-limited tighter than ingest because each call hits OpenRouter.
  */
 interface RunAskInput {
   tg: TelegramApi;
@@ -724,6 +724,7 @@ interface RunAskInput {
   teamId: string | null;
   userId: string | null;
   userName: string;
+  trustedTeamActor?: boolean | undefined;
   question: string;
   onAgentToolError?: AgentToolErrorReporter | undefined;
   onAgentError?: ((err: unknown) => void) | undefined;
@@ -814,7 +815,7 @@ async function runAskInner(input: RunAskInput): Promise<void> {
     });
     return;
   }
-  if (!input.userId) {
+  if (!input.userId && !input.trustedTeamActor) {
     await sendWithRetry(input.tg, {
       chat_id: input.chatId,
       text:
@@ -845,8 +846,9 @@ async function runAskInner(input: RunAskInput): Promise<void> {
     {
       db: input.db,
       teamId: input.teamId,
-      userId: input.userId,
+      userId: input.userId ?? TEAM_BOT_ACTOR_USER_ID,
       userName: input.userName,
+      trustedTeamActor: input.trustedTeamActor,
       question,
     },
     { onToolError: input.onAgentToolError, onAgentError: input.onAgentError },
@@ -1246,10 +1248,10 @@ async function dispatchGroupCommand(
       });
       return;
     case '/ask':
-      if (!ctx.tgUser || !ctx.tgUserRow) {
+      if (!ctx.tgUser) {
         await ctx.tg.sendMessage({
           chat_id: ctx.message.chat.id,
-          text: 'Cannot identify the sender. /ask needs a verified Telegram user.',
+          text: 'Cannot identify the sender. /ask needs a Telegram user.',
         });
         return;
       }
@@ -1260,8 +1262,9 @@ async function dispatchGroupCommand(
         tgUserId: ctx.tgUser.id,
         updateId: ctx.updateId,
         teamId: ctx.binding?.teamId ?? null,
-        userId: ctx.tgUserRow.userId,
+        userId: ctx.tgUserRow?.userId ?? null,
         userName: tgDisplayName(ctx.tgUser),
+        trustedTeamActor: !ctx.tgUserRow?.userId && !!ctx.binding,
         question: command.arg,
         onAgentToolError: ctx.onAgentToolError,
         onAgentError: ctx.onAgentError,

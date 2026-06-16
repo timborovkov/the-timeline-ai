@@ -1242,6 +1242,37 @@ describe('handleUpdate telegram edit visibility', () => {
     });
   });
 
+  it('lets unlinked Telegram senders use /ask in a bound group as the team bot actor', async () => {
+    const messages: string[] = [];
+    await pg.exec(`
+      INSERT INTO telegram_chat_bindings (tg_chat_id, team_id, bound_by_user_id, title)
+      VALUES (-201, '${TEAM_ID}', '${USER_A}', 'AuditAI');
+    `);
+
+    await handleUpdate(
+      { db: db as never, tg: recordingTg(messages) },
+      {
+        update_id: 215,
+        message: {
+          message_id: 26,
+          date: 1700000005,
+          chat: { id: -201, type: 'supergroup', title: 'AuditAI' },
+          from: {
+            id: 7503673734,
+            first_name: 'Otto',
+            last_name: 'Silventola',
+            username: 'otto',
+          },
+          text: '/ask when did DFK get back to us?',
+        },
+      },
+    );
+
+    expect(messages).toEqual([
+      'Chat is not configured on this server (missing OPENROUTER_API_KEY or QDRANT_URL).',
+    ]);
+  });
+
   it('does not tombstone another team with matching Telegram chat and message ids', async () => {
     await pg.query(
       `INSERT INTO raw_events (team_id, source, content_text, occurred_at, source_metadata)

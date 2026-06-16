@@ -150,7 +150,7 @@ export default async function TelegramSettingsPage() {
             <p className="text-sm text-muted-foreground">
               Add the bot to the group with the deep-link, or have an admin run{' '}
               <code className="font-mono">/link &lt;token&gt;</code> inside the group. Group binding
-              requires a team admin to issue the token and a group admin to consume it.
+              lets everyone in the group capture messages and use /ask against team-visible history.
             </p>
             <GenerateGroupTokenForm botUsername={botUsername} />
           </CardContent>

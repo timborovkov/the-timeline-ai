@@ -123,12 +123,14 @@
           team group chats both supported. Plain messages land as timeline notes (DM captures are
           acknowledged with a <code>👀</code> reaction so capture is visible without adding group
           noise); <code>/ask &lt;question&gt;</code>
-          runs the same agent as the web chat and replies in-thread.
+          runs the same agent as the web chat and replies in-thread, including for unlinked senders
+          in bound group chats.
         </li>
         <li>
           <strong>Slack bot</strong>: OAuth install, OAuth user linking, DMs, bound channels/private
           channels, <code>/ask</code> private answers, and <code>@Timeline</code> threaded answers.
-          Sender context is preserved even when the sender is not linked to a Timeline user.
+          Bound-channel asks can answer for unlinked senders using team-visible history, and sender
+          context is preserved even when the sender is not linked to a Timeline user.
         </li>
         <li>
           <strong>Email ingest</strong>: forward, CC, or BCC to a per-team address. Postmark handles
@@ -377,7 +379,8 @@
         <li>
           <strong>Group chats</strong> are permanently bound to one team via
           <code>/link &lt;token&gt;</code>. The team's group chat <em>is</em> that team's. Bot must
-          have privacy mode disabled to read non-command messages.
+          have privacy mode disabled to read non-command messages. Unlinked group members can ask
+          against team-visible history without completing a personal link first.
         </li>
         <li>
           <strong>DMs</strong> have a per-user active-team pointer. Users link multiple teams and
