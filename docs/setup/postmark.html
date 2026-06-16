@@ -69,9 +69,11 @@ SUPPORT_EMAIL=contact@thetimeline.cc
       <p>
         Daily digests are personalized per active team member, generated against the last noon UTC
         window, stored in <code>daily_digests</code>, and sent once per generated digest unless the
-        recipient has disabled the digest in Team settings → Messaging. In-app notifications remain
-        inbox-only; digest email may summarize pending approvals and inbox state, but individual
-        notification rows are not fanned out as standalone emails.
+        recipient has disabled the digest in Team settings → Messaging. The worker registers the
+        noon UTC scheduler on boot and also queues one idempotent catch-up tick for the latest noon
+        window, so a deploy or missed scheduler state still creates the expected digest rows. In-app
+        notifications remain inbox-only; digest email may summarize pending approvals and inbox
+        state, but individual notification rows are not fanned out as standalone emails.
       </p>
       <p>
         New signups receive a non-blocking verification email through the same messaging module.
