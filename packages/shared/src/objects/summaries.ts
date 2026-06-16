@@ -607,20 +607,36 @@ export async function enqueueObjectSummaryRefresh(
   return { ...result, canGenerate: true, reason: null };
 }
 
-export function fireAndForgetObjectSummaryRefresh(
-  _db: Db,
+export async function fireAndForgetObjectSummaryRefresh(
+  db: Db,
   scope: TeamScopeCore,
   entityId: string,
   context: Record<string, unknown>,
-): void {
-  void queue
-    .enqueueObjectSummaryJob(
-      { teamId: scope.teamId, objectId: entityId, trigger: 'auto' },
-      { delayMs: OBJECT_SUMMARY_AUTO_DELAY_MS },
-    )
-    .catch((err: unknown) => {
-      console.error('failed to enqueue object summary refresh', { err, ...context });
-    });
+): Promise<void> {
+  const now = new Date();
+  await Promise.all([
+    db
+      .update(objectSummaries)
+      .set({ status: 'stale', staleAt: now, updatedAt: now })
+      .where(
+        and(
+          eq(objectSummaries.teamId, scope.teamId),
+          eq(objectSummaries.entityId, entityId),
+          ne(objectSummaries.status, 'pending'),
+        ),
+      )
+      .catch((err: unknown) => {
+        console.error('failed to mark object summary stale', { err, ...context });
+      }),
+    queue
+      .enqueueObjectSummaryJob(
+        { teamId: scope.teamId, objectId: entityId, trigger: 'auto' },
+        { delayMs: OBJECT_SUMMARY_AUTO_DELAY_MS },
+      )
+      .catch((err: unknown) => {
+        console.error('failed to enqueue object summary refresh', { err, ...context });
+      }),
+  ]);
 }
 
 async function objectIdsTouchedByRawEvent(
@@ -659,13 +675,15 @@ export async function invalidateObjectSummariesForRawEvent(
       and(eq(objectSummaries.teamId, scope.teamId), inArray(objectSummaries.entityId, entityIds)),
     );
 
-  for (const entityId of entityIds) {
-    fireAndForgetObjectSummaryRefresh(db, scope, entityId, {
-      ...context,
-      rawEventId,
-      entityId,
-    });
-  }
+  await Promise.all(
+    entityIds.map((entityId) =>
+      fireAndForgetObjectSummaryRefresh(db, scope, entityId, {
+        ...context,
+        rawEventId,
+        entityId,
+      }),
+    ),
+  );
   return entityIds;
 }
 

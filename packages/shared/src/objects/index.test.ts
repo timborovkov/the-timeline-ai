@@ -1532,6 +1532,57 @@ describe('object scope — merge cleanup', () => {
     );
   });
 
+  it('marks an existing summary stale when an automatic refresh is requested', async () => {
+    const scope = withTeam(db, TEAM_A, USER_OWNER).objects;
+    const object = await scope.createObject({
+      type: 'company',
+      canonicalName: 'DFK',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    vi.mocked(queue.enqueueObjectSummaryJob).mockClear();
+    await db.insert(objectSummaries).values({
+      teamId: TEAM_A,
+      entityId: object.id,
+      status: 'ready',
+      summary: {
+        overview: 'DFK is in discovery.',
+        overviewSourceRefs: [{ kind: 'field', id: 'status' }],
+        currentState: [],
+        openQuestions: [],
+        conflicts: [],
+      },
+      plainText: 'DFK is in discovery.',
+      sourceRefs: [{ kind: 'field', id: 'status' }],
+      sourceCounts: {
+        fields: 1,
+        facts: 0,
+        events: 0,
+        notes: 0,
+        relationships: 0,
+        tasks: 0,
+        changes: 0,
+      },
+      inputFingerprint: 'old-fingerprint',
+      generatedAt: new Date('2026-06-02T10:05:00.000Z'),
+    });
+
+    await scope.updateObject(object.id, { status: 'active' }, { kind: 'user', userId: USER_OWNER });
+
+    await vi.waitFor(async () => {
+      const rows = await db
+        .select()
+        .from(objectSummaries)
+        .where(eq(objectSummaries.entityId, object.id));
+      expect(rows[0]?.status).toBe('stale');
+      expect(rows[0]?.staleAt).toBeInstanceOf(Date);
+      expect(rows[0]?.plainText).toBe('DFK is in discovery.');
+    });
+    expect(queue.enqueueObjectSummaryJob).toHaveBeenCalledWith(
+      { teamId: TEAM_A, objectId: object.id, trigger: 'auto' },
+      { delayMs: 120_000 },
+    );
+  });
+
   it('stores generated summaries with validated source refs', async () => {
     const scope = withTeam(db, TEAM_A, USER_OWNER);
     const object = await scope.objects.createObject({

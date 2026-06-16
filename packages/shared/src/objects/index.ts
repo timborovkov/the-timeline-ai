@@ -134,13 +134,15 @@ async function refreshObjectAndLinkedParentSummaries(
   context: Record<string, unknown>,
 ): Promise<void> {
   const objectIds = await objectSummaryRefreshTargetsForObject(db, scope, object);
-  for (const objectId of objectIds) {
-    fireAndForgetObjectSummaryRefresh(db, scope, objectId, {
-      ...context,
-      objectId,
-      changedObjectId: object.id,
-    });
-  }
+  await Promise.all(
+    objectIds.map((objectId) =>
+      fireAndForgetObjectSummaryRefresh(db, scope, objectId, {
+        ...context,
+        objectId,
+        changedObjectId: object.id,
+      }),
+    ),
+  );
 }
 
 function uniqueIds(ids: string[]): string[] {
@@ -2281,7 +2283,7 @@ export async function mergeObjects(
     entityId: result.survivor.id,
     op: 'mergeObjects',
   });
-  fireAndForgetObjectSummaryRefresh(db, scope, result.survivor.id, {
+  await fireAndForgetObjectSummaryRefresh(db, scope, result.survivor.id, {
     teamId: scope.teamId,
     objectId: result.survivor.id,
     op: 'mergeObjects',
@@ -2424,14 +2426,16 @@ export async function addRelationship(
     return row;
   });
   if (result) {
-    for (const objectId of [endpoints.fromEntityId, endpoints.toEntityId]) {
-      fireAndForgetObjectSummaryRefresh(db, scope, objectId, {
-        teamId: scope.teamId,
-        objectId,
-        relationshipId: result.id,
-        op: 'addRelationship',
-      });
-    }
+    await Promise.all(
+      [endpoints.fromEntityId, endpoints.toEntityId].map((objectId) =>
+        fireAndForgetObjectSummaryRefresh(db, scope, objectId, {
+          teamId: scope.teamId,
+          objectId,
+          relationshipId: result.id,
+          op: 'addRelationship',
+        }),
+      ),
+    );
   }
   return result;
 }
@@ -2511,14 +2515,16 @@ export async function removeRelationship(
     return { fromEntityId: rel.fromEntityId, toEntityId: rel.toEntityId };
   });
   if (!result) return false;
-  for (const objectId of [result.fromEntityId, result.toEntityId]) {
-    fireAndForgetObjectSummaryRefresh(db, scope, objectId, {
-      teamId: scope.teamId,
-      objectId,
-      relationshipId,
-      op: 'removeRelationship',
-    });
-  }
+  await Promise.all(
+    [result.fromEntityId, result.toEntityId].map((objectId) =>
+      fireAndForgetObjectSummaryRefresh(db, scope, objectId, {
+        teamId: scope.teamId,
+        objectId,
+        relationshipId,
+        op: 'removeRelationship',
+      }),
+    ),
+  );
   return true;
 }
 
@@ -2603,7 +2609,7 @@ export async function createNote(
     noteId: result.id,
     op: 'createNote',
   });
-  fireAndForgetObjectSummaryRefresh(db, scope, input.entityId, {
+  await fireAndForgetObjectSummaryRefresh(db, scope, input.entityId, {
     teamId: scope.teamId,
     objectId: input.entityId,
     noteId: result.id,
@@ -2879,7 +2885,7 @@ export async function createIdentityFacet(
     entityId: input.entityId,
     op: 'createIdentityFacet',
   });
-  fireAndForgetObjectSummaryRefresh(db, scope, input.entityId, {
+  await fireAndForgetObjectSummaryRefresh(db, scope, input.entityId, {
     teamId: scope.teamId,
     objectId: input.entityId,
     identityFacetId: result.id,
@@ -2972,7 +2978,7 @@ export async function updateNote(
       noteId: input.noteId,
       op: 'updateNote',
     });
-    fireAndForgetObjectSummaryRefresh(db, scope, updated.entityId, {
+    await fireAndForgetObjectSummaryRefresh(db, scope, updated.entityId, {
       teamId: scope.teamId,
       objectId: updated.entityId,
       noteId: input.noteId,
@@ -3043,7 +3049,7 @@ export async function deleteNote(
     return { entityId: note.entityId };
   });
   if (!result) return false;
-  fireAndForgetObjectSummaryRefresh(db, scope, result.entityId, {
+  await fireAndForgetObjectSummaryRefresh(db, scope, result.entityId, {
     teamId: scope.teamId,
     objectId: result.entityId,
     noteId: input.noteId,
