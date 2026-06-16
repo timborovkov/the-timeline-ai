@@ -79,7 +79,7 @@ function calendarToolSummary(name: string, input: unknown): string | null {
     const before = calendarToolRange(expected);
     const after = calendarToolRange({ ...expected, ...patch });
     const hasMove = stringValue(patch, 'startAt') ?? stringValue(patch, 'endAt');
-    if (before && after && before !== after) return `Move ${title} (${before} -> ${after})`;
+    if (before && after && before !== after) return `Move ${title} (from ${before}; to ${after})`;
     return `${hasMove ? 'Move' : 'Update'} ${title}`;
   }
   if (name === 'execute_calendar_cancel') {

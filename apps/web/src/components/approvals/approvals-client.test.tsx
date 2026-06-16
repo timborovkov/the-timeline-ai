@@ -277,6 +277,37 @@ describe('ApprovalsClient', () => {
                 calendarResolutionHint: { kind: 'missing_target' },
                 failureReason: null,
               },
+              {
+                id: 'item-target-move',
+                status: 'pending',
+                operation: 'update',
+                targetKind: 'calendar_event',
+                targetId: '33333333-3333-4333-8333-333333333333',
+                title: 'Move Acme slot',
+                description: null,
+                proposedPayload: {
+                  startAt: '2026-06-18T11:00:00.000Z',
+                  endAt: '2026-06-18T12:00:00.000Z',
+                  allDay: false,
+                },
+                calendarResolutionHint: {
+                  kind: 'target_event',
+                  event: {
+                    id: '33333333-3333-4333-8333-333333333333',
+                    title: 'Acme planning',
+                    description: null,
+                    startAt: '2026-06-17T11:00:00.000Z',
+                    endAt: '2026-06-17T12:00:00.000Z',
+                    timezone: 'Europe/Helsinki',
+                    allDay: false,
+                    location: null,
+                    showAs: 'busy',
+                    visibility: 'team',
+                    rrule: null,
+                  },
+                },
+                failureReason: null,
+              },
             ],
           },
         ],
@@ -287,6 +318,7 @@ describe('ApprovalsClient', () => {
     expect(html).toContain('Accept will reuse it instead of creating a duplicate');
     expect(html).toContain('Confirm slot');
     expect(html).toContain('Accepting one slot can cancel sibling tentative slots');
+    expect(html).toContain('Proposed:');
   });
 
   it('does not render page-level accept all for merge-only visible bundles', () => {

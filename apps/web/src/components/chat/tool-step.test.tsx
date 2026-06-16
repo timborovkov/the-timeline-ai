@@ -155,6 +155,8 @@ describe('ToolStep', () => {
     );
 
     expect(html).toContain('approval required');
+    expect(html).toContain('from');
+    expect(html).toContain('; to');
     expect(html).toContain('[cal:12121212]');
     expect(html).toContain('Current');
     expect(html).toContain('Proposed');

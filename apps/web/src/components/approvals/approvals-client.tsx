@@ -768,8 +768,8 @@ function CalendarResolutionLine({
   if (hint?.kind === 'target_event') {
     return (
       <p>
-        Target: "{displayText(hint.event.title)}" at {calendarEventRange(hint.event)}
-        {proposedRange ? ` -> ${proposedRange}` : ''}.
+        Target: "{displayText(hint.event.title)}" at {calendarEventRange(hint.event)}.
+        {proposedRange ? ` Proposed: ${proposedRange}.` : ''}
       </p>
     );
   }
