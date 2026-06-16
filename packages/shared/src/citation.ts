@@ -44,6 +44,9 @@ export type ArtifactKind =
   | 'board'
   | 'board_item'
   | 'task'
+  | 'fact'
+  | 'relationship'
+  | 'object_change'
   | 'route';
 
 export type ArtifactRef =
@@ -55,6 +58,9 @@ export type ArtifactRef =
   | { kind: 'board'; id: string }
   | { kind: 'board_item'; id: string }
   | { kind: 'task'; id: string }
+  | { kind: 'fact'; id: string }
+  | { kind: 'relationship'; id: string }
+  | { kind: 'object_change'; id: string }
   | { kind: 'route'; id: string };
 
 export interface ArtifactPreviewSection {
@@ -135,6 +141,12 @@ export function artifactRefLabel(ref: ArtifactRef): string {
       return `[board-item:${ref.id.slice(0, 8)}]`;
     case 'task':
       return `[task:${ref.id.slice(0, 8)}]`;
+    case 'fact':
+      return `[fact:${ref.id.slice(0, 8)}]`;
+    case 'relationship':
+      return `[rel:${ref.id.slice(0, 8)}]`;
+    case 'object_change':
+      return `[chg:${ref.id.slice(0, 8)}]`;
     case 'route':
       return `[route:${ref.id}]`;
   }
@@ -158,6 +170,12 @@ export function artifactRefCitation(ref: ArtifactRef): string {
       return `[board-item:${ref.id}]`;
     case 'task':
       return `[task:${ref.id}]`;
+    case 'fact':
+      return `[fact:${ref.id}]`;
+    case 'relationship':
+      return `[rel:${ref.id}]`;
+    case 'object_change':
+      return `[chg:${ref.id}]`;
     case 'route':
       return `[route:${ref.id}]`;
   }

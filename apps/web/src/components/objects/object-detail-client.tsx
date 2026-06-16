@@ -14,6 +14,7 @@ import {
 } from 'react';
 
 import type { SaveState } from '@/lib/utils';
+import type { ArtifactRef } from '@timeline/shared/citation';
 import type * as objects from '@timeline/shared/objects';
 
 import {
@@ -29,6 +30,7 @@ import {
   updateObjectAction,
 } from '@/app/actions/objects';
 import { ApprovalsClient } from '@/components/approvals/approvals-client';
+import { ArtifactReferenceChip } from '@/components/artifact-reference-chip';
 import {
   type ObjectSearchResponse,
   type ObjectSearchResult,
@@ -966,16 +968,37 @@ function SourceChips({ refs }: { refs: objects.ObjectSummarySourceRef[] }) {
   if (refs.length === 0) return null;
   return (
     <span className="ml-2 inline-flex flex-wrap gap-1 align-middle">
-      {refs.slice(0, 3).map((ref) => (
-        <span
-          key={`${ref.kind}:${ref.id}`}
-          className="border border-border px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim"
-        >
-          {sourceLabel(ref)}
-        </span>
-      ))}
+      {refs.slice(0, 3).map((ref) => {
+        const artifactRef = summaryRefToArtifactRef(ref);
+        const className =
+          'border border-border bg-bg px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim hover:border-signal hover:text-signal';
+        return artifactRef ? (
+          <ArtifactReferenceChip
+            key={`${ref.kind}:${ref.id}`}
+            refValue={artifactRef}
+            className={className}
+            title={`Open ${sourceLabel(ref)} source`}
+          >
+            {sourceLabel(ref)}
+          </ArtifactReferenceChip>
+        ) : (
+          <span key={`${ref.kind}:${ref.id}`} className={className}>
+            {sourceLabel(ref)}
+          </span>
+        );
+      })}
     </span>
   );
+}
+
+function summaryRefToArtifactRef(ref: objects.ObjectSummarySourceRef): ArtifactRef | null {
+  if (ref.kind === 'timeline_event') return { kind: 'timeline_event', id: ref.id };
+  if (ref.kind === 'object_note') return { kind: 'object_note', id: ref.id };
+  if (ref.kind === 'task') return { kind: 'task', id: ref.id };
+  if (ref.kind === 'fact') return { kind: 'fact', id: ref.id };
+  if (ref.kind === 'relationship') return { kind: 'relationship', id: ref.id };
+  if (ref.kind === 'object_change') return { kind: 'object_change', id: ref.id };
+  return null;
 }
 
 function sourceLabel(ref: objects.ObjectSummarySourceRef): string {

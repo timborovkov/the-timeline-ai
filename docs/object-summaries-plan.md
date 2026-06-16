@@ -199,8 +199,9 @@ hard to centralize.
 8. Attach automatic enqueueing to high-confidence canonical write paths first:
    fact extraction/linking, object field updates, notes, relationships,
    merge/archive, and accepted object-memory suggestions.
-9. Track harder invalidation paths explicitly until fully wired: remaining
-   indirect task relationship updates and deeper source-chip navigation.
+9. Track harder invalidation paths explicitly until fully wired: source event
+   visibility/tombstone changes, indirect task relationship updates, and deeper
+   source-chip navigation.
 
 ## Quality Gates
 

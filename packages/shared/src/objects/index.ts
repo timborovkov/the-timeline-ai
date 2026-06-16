@@ -92,6 +92,57 @@ function fireAndForgetEmbed(fn: () => Promise<void>, context: Record<string, unk
   });
 }
 
+async function objectSummaryRefreshTargetsForObject(
+  db: Db,
+  scope: TeamScopeCore,
+  object: Pick<ObjectRow, 'id' | 'type'>,
+): Promise<string[]> {
+  const ids = new Set([object.id]);
+  if (object.type !== 'task' && object.type !== 'follow_up') return [...ids];
+  const relationships = await db
+    .select({
+      fromEntityId: entityRelationships.fromEntityId,
+      toEntityId: entityRelationships.toEntityId,
+      kind: entityRelationships.kind,
+    })
+    .from(entityRelationships)
+    .where(
+      and(
+        eq(entityRelationships.teamId, scope.teamId),
+        or(
+          and(
+            eq(entityRelationships.fromEntityId, object.id),
+            eq(entityRelationships.kind, 'child'),
+          ),
+          and(
+            eq(entityRelationships.toEntityId, object.id),
+            eq(entityRelationships.kind, 'parent'),
+          ),
+        ),
+      ),
+    );
+  for (const relationship of relationships) {
+    ids.add(relationship.kind === 'child' ? relationship.toEntityId : relationship.fromEntityId);
+  }
+  return [...ids];
+}
+
+async function refreshObjectAndLinkedParentSummaries(
+  db: Db,
+  scope: TeamScopeCore,
+  object: Pick<ObjectRow, 'id' | 'type'>,
+  context: Record<string, unknown>,
+): Promise<void> {
+  const objectIds = await objectSummaryRefreshTargetsForObject(db, scope, object);
+  for (const objectId of objectIds) {
+    fireAndForgetObjectSummaryRefresh(db, scope, objectId, {
+      ...context,
+      objectId,
+      changedObjectId: object.id,
+    });
+  }
+}
+
 function uniqueIds(ids: string[]): string[] {
   return Array.from(new Set(ids));
 }
@@ -1516,9 +1567,8 @@ export async function createObject(
     entityId: txResult.object.id,
     op: 'createObject',
   });
-  fireAndForgetObjectSummaryRefresh(db, scope, txResult.object.id, {
+  await refreshObjectAndLinkedParentSummaries(db, scope, txResult.object, {
     teamId: scope.teamId,
-    objectId: txResult.object.id,
     op: 'createObject',
   });
   fireAndForgetEmbed(() => afterDueDateCalendarSync(scope.teamId, txResult.dueDateCalendarSync), {
@@ -1767,9 +1817,8 @@ export async function updateObject(
         op: 'updateObject',
       });
     }
-    fireAndForgetObjectSummaryRefresh(db, scope, entityId, {
+    await refreshObjectAndLinkedParentSummaries(db, scope, txResult.object, {
       teamId: scope.teamId,
-      objectId: entityId,
       op: 'updateObject',
     });
   }

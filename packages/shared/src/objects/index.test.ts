@@ -1505,6 +1505,33 @@ describe('object scope — merge cleanup', () => {
     );
   });
 
+  it('refreshes parent object summaries when a linked task changes', async () => {
+    const scope = withTeam(db, TEAM_A, USER_OWNER).objects;
+    const parent = await scope.createObject({
+      type: 'company',
+      canonicalName: 'DFK',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    const task = await scope.createObject({
+      type: 'task',
+      canonicalName: 'Send DFK proposal',
+      parentObjectId: parent.id,
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    vi.mocked(queue.enqueueObjectSummaryJob).mockClear();
+
+    await scope.updateObject(task.id, { status: 'doing' }, { kind: 'user', userId: USER_OWNER });
+
+    expect(queue.enqueueObjectSummaryJob).toHaveBeenCalledWith(
+      { teamId: TEAM_A, objectId: task.id, trigger: 'auto' },
+      { delayMs: 120_000 },
+    );
+    expect(queue.enqueueObjectSummaryJob).toHaveBeenCalledWith(
+      { teamId: TEAM_A, objectId: parent.id, trigger: 'auto' },
+      { delayMs: 120_000 },
+    );
+  });
+
   it('stores generated summaries with validated source refs', async () => {
     const scope = withTeam(db, TEAM_A, USER_OWNER);
     const object = await scope.objects.createObject({
