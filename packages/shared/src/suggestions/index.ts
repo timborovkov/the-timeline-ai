@@ -96,6 +96,19 @@ function isExpectedApplyFailure(err: unknown): boolean {
   return err instanceof z.ZodError || isEntityCanonicalNameDuplicate(err);
 }
 
+function suggestionApplyFailureReason(err: unknown): string {
+  if (err instanceof z.ZodError) {
+    const issueText = err.issues
+      .map((issue) => {
+        const path = issue.path.length > 0 ? issue.path.join('.') : 'payload';
+        return `${path}: ${issue.message}`;
+      })
+      .join('; ');
+    return `Invalid suggestion payload: ${issueText}`;
+  }
+  return err instanceof Error ? err.message : 'Failed to apply suggestion';
+}
+
 export interface SuggestionScopeDeps {
   db: Db;
   teamId: string;
@@ -221,6 +234,16 @@ export interface DuplicatePendingApprovalReconcileResult {
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const LOCAL_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const uuid = z.string().regex(UUID_RE);
+const blankStringAsNull = <T extends z.ZodType>(schema: T) =>
+  z.preprocess((value) => {
+    if (typeof value === 'string' && value.trim() === '') return null;
+    return value;
+  }, schema);
+const blankStringAsUndefined = <T extends z.ZodType>(schema: T) =>
+  z.preprocess((value) => {
+    if (typeof value === 'string' && value.trim() === '') return undefined;
+    return value;
+  }, schema.optional());
 const localRef = z
   .string()
   .trim()
@@ -258,9 +281,9 @@ const objectPayloadFields = {
   status: z.string().trim().min(1).max(40).optional(),
   stage: z.string().trim().max(40).nullable().optional(),
   priority: z.number().int().min(1).max(4).nullable().optional(),
-  ownerUserId: uuid.nullable().optional(),
-  assigneeUserId: uuid.nullable().optional(),
-  dueAt: z.iso.datetime().nullable().optional(),
+  ownerUserId: blankStringAsNull(uuid.nullable()).optional(),
+  assigneeUserId: blankStringAsNull(uuid.nullable()).optional(),
+  dueAt: blankStringAsNull(z.iso.datetime().nullable()).optional(),
   metadata: z.record(z.string(), z.unknown()).optional(),
 };
 
@@ -268,12 +291,15 @@ const objectCreatePayload = z.object({
   ...objectPayloadFields,
   type: z.string().optional(),
   canonicalName: z.string().trim().max(200).optional(),
-  parentObjectId: uuid.nullable().optional(),
-  sourceEventId: uuid.nullable().optional(),
+  parentObjectId: blankStringAsNull(uuid.nullable()).optional(),
+  sourceEventId: blankStringAsNull(uuid.nullable()).optional(),
 });
 
 const objectUpdatePayload = z.object({
   ...objectPayloadFields,
+  ownerUserId: blankStringAsUndefined(uuid.nullable()),
+  assigneeUserId: blankStringAsUndefined(uuid.nullable()),
+  dueAt: blankStringAsUndefined(z.iso.datetime().nullable()),
   canonicalName: z.string().trim().min(1).max(200).optional(),
 });
 
@@ -2566,7 +2592,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     try {
       resultId = await applyItem(row.item);
     } catch (err) {
-      const failureReason = err instanceof Error ? err.message : 'Failed to apply suggestion';
+      const failureReason = suggestionApplyFailureReason(err);
       await db
         .update(agentSuggestionItems)
         .set({
