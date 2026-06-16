@@ -556,6 +556,296 @@ describe('processSuggestionJobForTests', () => {
     });
   });
 
+  it('queues focused relationship repair from fact-backed connected objects without reoffering rejected edges', async () => {
+    const [company, person] = await db
+      .insert(entities)
+      .values([
+        { teamId: TEAM_ID, type: 'company', canonicalName: 'DFK' },
+        { teamId: TEAM_ID, type: 'person', canonicalName: 'Jonne Granqvist' },
+      ])
+      .returning({ id: entities.id });
+    if (!company || !person) throw new Error('expected object fixtures');
+    const [raw] = await db
+      .insert(rawEvents)
+      .values({
+        teamId: TEAM_ID,
+        authorUserId: OWNER_ID,
+        source: 'web',
+        contentText: 'Jonne from DFK discussed the pilot scope.',
+        occurredAt: REFERENCE_DATE,
+        visibility: 'team',
+      })
+      .returning({ id: rawEvents.id });
+    if (!raw) throw new Error('expected raw event');
+    const [fact] = await db
+      .insert(facts)
+      .values({
+        teamId: TEAM_ID,
+        rawEventId: raw.id,
+        statement: 'Jonne from DFK discussed the pilot scope.',
+        confidence: 0.9,
+        modelVersion: 'test',
+      })
+      .returning({ id: facts.id });
+    if (!fact) throw new Error('expected fact');
+    await db.insert(factEntities).values([
+      { factId: fact.id, entityId: company.id, role: 'subject' },
+      { factId: fact.id, entityId: person.id, role: 'object' },
+    ]);
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      {
+        scope: 'object_cleanup',
+        teamId: TEAM_ID,
+        objectId: company.id,
+        triggeredBy: 'memory_repair',
+      },
+    );
+
+    const scope = withTeam(db as never, TEAM_ID, OWNER_ID);
+    let bundles = await scope.suggestions.listPendingSuggestions();
+    expect(bundles).toHaveLength(1);
+    expect(bundles[0]).toMatchObject({
+      title: 'Relate DFK and Jonne Granqvist',
+      evidence: [expect.objectContaining({ rawEventId: raw.id })],
+    });
+    const relationshipItem = bundles[0]?.items[0];
+    expect(relationshipItem).toMatchObject({
+      operation: 'create',
+      targetKind: 'object_relationship',
+      proposedPayload: {
+        kind: 'related',
+      },
+    });
+    expect(Array.from(new Set(Object.values(relationshipItem?.proposedPayload ?? {})))).toEqual(
+      expect.arrayContaining([company.id, person.id]),
+    );
+
+    await expect(scope.suggestions.rejectSuggestionItem(relationshipItem?.id ?? '')).resolves.toBe(
+      true,
+    );
+    await processSuggestionJobForTests(
+      { db: db as never },
+      {
+        scope: 'object_cleanup',
+        teamId: TEAM_ID,
+        objectId: company.id,
+        triggeredBy: 'memory_repair',
+      },
+    );
+
+    bundles = await scope.suggestions.listPendingSuggestions();
+    expect(bundles).toEqual([]);
+    const relationshipItems = await db
+      .select({ status: agentSuggestionItems.status })
+      .from(agentSuggestionItems)
+      .where(eq(agentSuggestionItems.targetKind, 'object_relationship'));
+    expect(relationshipItems).toEqual([{ status: 'rejected' }]);
+  });
+
+  it('does not turn weak fact co-attachment into relationship repair', async () => {
+    const [company, person] = await db
+      .insert(entities)
+      .values([
+        { teamId: TEAM_ID, type: 'company', canonicalName: 'DFK' },
+        { teamId: TEAM_ID, type: 'person', canonicalName: 'Jonne Granqvist' },
+      ])
+      .returning({ id: entities.id });
+    if (!company || !person) throw new Error('expected object fixtures');
+    const [raw] = await db
+      .insert(rawEvents)
+      .values({
+        teamId: TEAM_ID,
+        authorUserId: OWNER_ID,
+        source: 'web',
+        contentText: 'Jonne and DFK were both mentioned in the notes.',
+        occurredAt: REFERENCE_DATE,
+        visibility: 'team',
+      })
+      .returning({ id: rawEvents.id });
+    if (!raw) throw new Error('expected raw event');
+    const [fact] = await db
+      .insert(facts)
+      .values({
+        teamId: TEAM_ID,
+        rawEventId: raw.id,
+        statement: 'Jonne and DFK were both mentioned in the notes.',
+        confidence: 0.9,
+        modelVersion: 'test',
+      })
+      .returning({ id: facts.id });
+    if (!fact) throw new Error('expected fact');
+    await db.insert(factEntities).values([
+      { factId: fact.id, entityId: company.id, role: 'subject' },
+      { factId: fact.id, entityId: person.id, role: 'object' },
+    ]);
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      {
+        scope: 'object_cleanup',
+        teamId: TEAM_ID,
+        objectId: company.id,
+        triggeredBy: 'memory_repair',
+      },
+    );
+
+    await expect(
+      withTeam(db as never, TEAM_ID, OWNER_ID).suggestions.listPendingSuggestions(),
+    ).resolves.toEqual([]);
+  });
+
+  it('queues missing person-object relationship repair as one approval bundle without reoffering rejected edges', async () => {
+    const [company] = await db
+      .insert(entities)
+      .values({ teamId: TEAM_ID, type: 'company', canonicalName: 'DFK' })
+      .returning({ id: entities.id });
+    if (!company) throw new Error('expected company fixture');
+    const [raw] = await db
+      .insert(rawEvents)
+      .values({
+        teamId: TEAM_ID,
+        authorUserId: OWNER_ID,
+        source: 'web',
+        contentText: 'Jonne Granqvist from DFK discussed the pilot scope.',
+        occurredAt: REFERENCE_DATE,
+        visibility: 'team',
+      })
+      .returning({ id: rawEvents.id });
+    if (!raw) throw new Error('expected raw event');
+    const [fact] = await db
+      .insert(facts)
+      .values({
+        teamId: TEAM_ID,
+        rawEventId: raw.id,
+        statement: 'Jonne Granqvist from DFK discussed the pilot scope.',
+        confidence: 0.9,
+        modelVersion: 'test',
+      })
+      .returning({ id: facts.id });
+    if (!fact) throw new Error('expected fact');
+    await db.insert(factEntities).values({
+      factId: fact.id,
+      entityId: company.id,
+      role: 'subject',
+    });
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      {
+        scope: 'object_cleanup',
+        teamId: TEAM_ID,
+        objectId: company.id,
+        triggeredBy: 'memory_repair',
+      },
+    );
+
+    const scope = withTeam(db as never, TEAM_ID, OWNER_ID);
+    let bundles = await scope.suggestions.listPendingSuggestions();
+    expect(bundles).toHaveLength(1);
+    expect(bundles[0]).toMatchObject({
+      title: 'Remember Jonne Granqvist and DFK',
+      evidence: [expect.objectContaining({ rawEventId: raw.id })],
+    });
+    const personItem = bundles[0]?.items.find((item) => item.targetKind === 'object');
+    const relationshipItem = bundles[0]?.items.find(
+      (item) => item.targetKind === 'object_relationship',
+    );
+    expect(personItem).toMatchObject({
+      operation: 'create',
+      title: 'Jonne Granqvist',
+      proposedPayload: {
+        type: 'person',
+        canonicalName: 'Jonne Granqvist',
+        localRef: 'jonne-granqvist',
+      },
+    });
+    expect(relationshipItem).toMatchObject({
+      operation: 'create',
+      proposedPayload: {
+        fromRef: 'jonne-granqvist',
+        toEntityId: company.id,
+        kind: 'related',
+      },
+    });
+
+    await expect(scope.suggestions.rejectSuggestionItem(relationshipItem?.id ?? '')).resolves.toBe(
+      true,
+    );
+    await processSuggestionJobForTests(
+      { db: db as never },
+      {
+        scope: 'object_cleanup',
+        teamId: TEAM_ID,
+        objectId: company.id,
+        triggeredBy: 'memory_repair',
+      },
+    );
+
+    bundles = await scope.suggestions.listPendingSuggestions();
+    expect(bundles).toHaveLength(1);
+    expect(bundles[0]?.items.find((item) => item.targetKind === 'object')).toMatchObject({
+      targetKind: 'object',
+      title: 'Jonne Granqvist',
+    });
+    const relationshipItems = await db
+      .select({ status: agentSuggestionItems.status })
+      .from(agentSuggestionItems)
+      .where(eq(agentSuggestionItems.targetKind, 'object_relationship'));
+    expect(relationshipItems).toEqual([{ status: 'rejected' }]);
+  });
+
+  it('does not create missing person objects from bare first names', async () => {
+    const [company] = await db
+      .insert(entities)
+      .values({ teamId: TEAM_ID, type: 'company', canonicalName: 'DFK' })
+      .returning({ id: entities.id });
+    if (!company) throw new Error('expected company fixture');
+    const [raw] = await db
+      .insert(rawEvents)
+      .values({
+        teamId: TEAM_ID,
+        authorUserId: OWNER_ID,
+        source: 'web',
+        contentText: 'Jonne from DFK discussed the pilot scope.',
+        occurredAt: REFERENCE_DATE,
+        visibility: 'team',
+      })
+      .returning({ id: rawEvents.id });
+    if (!raw) throw new Error('expected raw event');
+    const [fact] = await db
+      .insert(facts)
+      .values({
+        teamId: TEAM_ID,
+        rawEventId: raw.id,
+        statement: 'Jonne from DFK discussed the pilot scope.',
+        confidence: 0.9,
+        modelVersion: 'test',
+      })
+      .returning({ id: facts.id });
+    if (!fact) throw new Error('expected fact');
+    await db.insert(factEntities).values({
+      factId: fact.id,
+      entityId: company.id,
+      role: 'subject',
+    });
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      {
+        scope: 'object_cleanup',
+        teamId: TEAM_ID,
+        objectId: company.id,
+        triggeredBy: 'memory_repair',
+      },
+    );
+
+    await expect(
+      withTeam(db as never, TEAM_ID, OWNER_ID).suggestions.listPendingSuggestions(),
+    ).resolves.toEqual([]);
+  });
+
   it('suggests approval-backed person merges for full-name and short-name variants', async () => {
     const inserted = await db
       .insert(entities)

@@ -76,8 +76,12 @@ implementation detail.
 - [x] Add object-centered Memory Repair entry point on object detail pages that
       queues duplicate and low-signal archive cleanup focused on the selected
       object while preserving rejected-pair suppression.
-- [ ] Extend object-centered Memory Repair beyond duplicate cleanup so it can
-      queue focused relationship and person-object proposals.
+- [x] Extend object-centered Memory Repair beyond duplicate cleanup so it can
+      queue focused fact-backed relationship proposals without reoffering
+      rejected edges.
+- [x] Extend object-centered Memory Repair to create missing full-name
+      person-object relationship bundles when connected evidence names a
+      durable person not yet in object memory.
 - [ ] Strengthen relationship/person proposal generation from Connected Work so
       operationally useful task/company, decision/company, and person/company
       connections graduate into approval-backed object memory.

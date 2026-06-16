@@ -24,7 +24,8 @@ import {
   withTeam,
 } from '@timeline/shared';
 import { UnrecoverableError, Worker, type Job } from 'bullmq';
-import { and, count, desc, eq, inArray, isNull, lt, or, sql } from 'drizzle-orm';
+import { and, count, desc, eq, inArray, isNull, lt, ne, or, sql } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/pg-core';
 import { z } from 'zod';
 
 import { captureWorkerJobFailure } from '#src/monitoring.js';
@@ -451,6 +452,23 @@ type CleanupObjectRow = Pick<
 
 type CleanupMatch = 'exact' | 'near' | 'short';
 
+interface RepairRelationshipCandidate {
+  id: string;
+  canonicalName: string;
+  type: EntityType;
+  factCount: number;
+  rawEventId: string;
+  statement: string;
+}
+
+interface RepairPersonCandidate {
+  canonicalName: string;
+  factCount: number;
+  rawEventId: string;
+  statement: string;
+  localRef: string;
+}
+
 const CLEANUP_MERGE_TYPES = new Set<EntityType>([
   'person',
   'company',
@@ -463,6 +481,17 @@ const CLEANUP_MERGE_TYPES = new Set<EntityType>([
   'decision',
   'hiring_loop',
   'other',
+]);
+
+const REPAIR_RELATIONSHIP_TYPES = new Set<EntityType>([
+  'person',
+  'company',
+  'project',
+  'deal',
+  'vendor',
+  'incident',
+  'decision',
+  'hiring_loop',
 ]);
 
 const ENTITY_TYPES = new Set<EntityType>(objects.OBJECT_TYPES);
@@ -612,6 +641,218 @@ async function cleanupEvidenceObjectIds(
     ...noteRows.map((row) => row.entityId),
     ...relationshipRows.map((row) => row.id),
   ]);
+}
+
+async function repairRelationshipCandidates(
+  db: Db,
+  teamId: string,
+  objectId: string,
+): Promise<RepairRelationshipCandidate[]> {
+  const anchorFactEntities = alias(factEntities, 'anchor_fact_entities');
+  const otherFactEntities = alias(factEntities, 'other_fact_entities');
+  const rows = await db
+    .select({
+      id: entities.id,
+      canonicalName: entities.canonicalName,
+      type: entities.type,
+      factCount: sql<number>`count(distinct ${otherFactEntities.factId})::int`,
+      rawEventId: sql<string>`min(${factsTable.rawEventId}::text)`,
+      statement: sql<string>`min(${factsTable.statement})`,
+    })
+    .from(anchorFactEntities)
+    .innerJoin(factsTable, eq(factsTable.id, anchorFactEntities.factId))
+    .innerJoin(
+      otherFactEntities,
+      and(eq(otherFactEntities.factId, factsTable.id), ne(otherFactEntities.entityId, objectId)),
+    )
+    .innerJoin(entities, eq(entities.id, otherFactEntities.entityId))
+    .innerJoin(rawEvents, eq(rawEvents.id, factsTable.rawEventId))
+    .where(
+      and(
+        eq(factsTable.teamId, teamId),
+        eq(rawEvents.teamId, teamId),
+        eq(rawEvents.visibility, 'team'),
+        eq(anchorFactEntities.entityId, objectId),
+        eq(entities.teamId, teamId),
+        inArray(entities.type, Array.from(REPAIR_RELATIONSHIP_TYPES)),
+        isNull(entities.archivedAt),
+        isNull(entities.mergedIntoId),
+      ),
+    )
+    .groupBy(entities.id, entities.canonicalName, entities.type)
+    .orderBy(desc(sql<number>`count(distinct ${otherFactEntities.factId})`), entities.canonicalName)
+    .limit(5);
+  return rows.filter((row) => row.rawEventId && row.statement);
+}
+
+async function repairFactRowsForObject(
+  db: Db,
+  teamId: string,
+  objectId: string,
+): Promise<{ rawEventId: string; statement: string }[]> {
+  return db
+    .select({
+      rawEventId: factsTable.rawEventId,
+      statement: factsTable.statement,
+    })
+    .from(factEntities)
+    .innerJoin(factsTable, eq(factsTable.id, factEntities.factId))
+    .innerJoin(rawEvents, eq(rawEvents.id, factsTable.rawEventId))
+    .where(
+      and(
+        eq(factEntities.entityId, objectId),
+        eq(factsTable.teamId, teamId),
+        eq(rawEvents.teamId, teamId),
+        eq(rawEvents.visibility, 'team'),
+      ),
+    )
+    .orderBy(desc(factsTable.extractedAt))
+    .limit(25);
+}
+
+async function pendingObjectCreateKeysForTeam(db: Db, teamId: string): Promise<Set<string>> {
+  const rows = await db
+    .select({ payload: agentSuggestionItems.proposedPayload })
+    .from(agentSuggestionItems)
+    .innerJoin(agentSuggestions, eq(agentSuggestions.id, agentSuggestionItems.suggestionId))
+    .where(
+      and(
+        eq(agentSuggestionItems.teamId, teamId),
+        eq(agentSuggestionItems.operation, 'create'),
+        eq(agentSuggestionItems.targetKind, 'object'),
+        inArray(agentSuggestionItems.status, ['pending', 'failed', 'rejected']),
+        inArray(agentSuggestions.status, ['pending', 'partially_resolved', 'rejected']),
+      ),
+    );
+  const keys = new Set<string>();
+  for (const row of rows) {
+    const payload =
+      row.payload && typeof row.payload === 'object' && !Array.isArray(row.payload)
+        ? (row.payload as Record<string, unknown>)
+        : {};
+    const type = keyText(payload.type);
+    const name = keyText(payload.canonicalName);
+    if (type && name) keys.add(`${type}:${normalizeCleanupName(name)}`);
+  }
+  return keys;
+}
+
+function relatedRelationshipKey(leftId: string, rightId: string): string {
+  const [fromEntityId, toEntityId] = [leftId, rightId].sort();
+  return `entity:${fromEntityId}:entity:${toEntityId}:related`;
+}
+
+function createdPersonRelationshipKey(personName: string, objectId: string): string | null {
+  const name = keyText(personName);
+  if (!name) return null;
+  const [first, second] = [`create:person:${name}`, `entity:${objectId}`].sort();
+  return `${first}:${second}:related`;
+}
+
+function relationshipPayload(
+  leftId: string,
+  rightId: string,
+): {
+  fromEntityId: string;
+  toEntityId: string;
+  kind: 'related';
+} {
+  return leftId <= rightId
+    ? { fromEntityId: leftId, toEntityId: rightId, kind: 'related' }
+    : { fromEntityId: rightId, toEntityId: leftId, kind: 'related' };
+}
+
+function factLooksRelationshipShaped(statement: string): boolean {
+  return /\b(from|at|with|for|client|customer|vendor|partner|subcontractor|employer|employee|represents?|representing|member of|part of|owner|responsible for|blocks?|blocked by)\b/i.test(
+    statement,
+  );
+}
+
+const PERSON_NAME_PATTERN = /\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,2}\b/g;
+const NON_PERSON_NAME_WORDS = new Set([
+  'Company',
+  'Corporation',
+  'Corp',
+  'Digital',
+  'GmbH',
+  'Inc',
+  'LLC',
+  'Ltd',
+  'Meeting',
+  'Oy',
+  'Pilot',
+  'Plc',
+  'Proposal',
+  'Team',
+  'The',
+]);
+
+function looksLikePersonName(value: string): boolean {
+  const parts = value.split(/\s+/);
+  return (
+    parts.length >= 2 &&
+    parts.length <= 3 &&
+    parts.every((part) => /^[A-Z][a-z]+$/.test(part)) &&
+    parts.every((part) => !NON_PERSON_NAME_WORDS.has(part))
+  );
+}
+
+function extractPersonNamesFromFact(statement: string, anchorNames: readonly string[]): string[] {
+  const names = new Set<string>();
+  for (const match of statement.matchAll(PERSON_NAME_PATTERN)) {
+    const name = match[0].trim();
+    if (!looksLikePersonName(name)) continue;
+    const normalized = normalizeCleanupName(name);
+    if (!normalized) continue;
+    const matchesAnchor = anchorNames.some((anchorName) => {
+      const anchor = normalizeCleanupName(anchorName);
+      return anchor.includes(normalized) || normalized.includes(anchor);
+    });
+    if (!matchesAnchor) names.add(name);
+  }
+  return Array.from(names);
+}
+
+async function repairPersonCandidates(
+  db: Db,
+  teamId: string,
+  repairObject: CleanupObjectRow,
+  rows: CleanupObjectRow[],
+): Promise<RepairPersonCandidate[]> {
+  const existingPersonKeys = new Set(
+    rows
+      .filter((row) => row.type === 'person')
+      .flatMap((row) => [row.canonicalName, ...aliasesForRow(row)])
+      .map((name) => normalizeCleanupName(name))
+      .filter(Boolean)
+      .map((name) => `person:${name}`),
+  );
+  const pendingObjectKeys = await pendingObjectCreateKeysForTeam(db, teamId);
+  const anchorNames = [repairObject.canonicalName, ...aliasesForRow(repairObject)];
+  const candidates = new Map<string, RepairPersonCandidate>();
+  for (const row of await repairFactRowsForObject(db, teamId, repairObject.id)) {
+    if (!factLooksRelationshipShaped(row.statement)) continue;
+    for (const name of extractPersonNamesFromFact(row.statement, anchorNames)) {
+      const normalized = normalizeCleanupName(name);
+      const personKey = `person:${normalized}`;
+      if (existingPersonKeys.has(personKey) || pendingObjectKeys.has(personKey)) continue;
+      const current = candidates.get(personKey);
+      if (current) {
+        current.factCount += 1;
+        continue;
+      }
+      const localRef = localRefSlug(name);
+      if (!localRef) continue;
+      candidates.set(personKey, {
+        canonicalName: name,
+        factCount: 1,
+        rawEventId: row.rawEventId,
+        statement: row.statement,
+        localRef,
+      });
+    }
+  }
+  return Array.from(candidates.values()).slice(0, 3);
 }
 
 function aliasesForRow(row: Pick<CleanupObjectRow, 'aliases'>): string[] {
@@ -1162,6 +1403,133 @@ async function createObjectCleanupSuggestionsForTeam(
         },
       ],
     });
+  }
+
+  if (repairObjectId) {
+    const repairObject = rows.find((row) => row.id === repairObjectId);
+    if (repairObject) {
+      const existingRelationshipKeys = await existingRelationshipKeysForTeam(db, teamId);
+      const candidates = await repairRelationshipCandidates(db, teamId, repairObjectId);
+      for (const candidate of candidates) {
+        if (!factLooksRelationshipShaped(candidate.statement)) continue;
+        const relationshipKey = relatedRelationshipKey(repairObjectId, candidate.id);
+        if (existingRelationshipKeys.has(relationshipKey)) continue;
+        const objectIds = [repairObjectId, candidate.id].sort();
+        const dedupeKey = suggestions.suggestionDedupeKey({
+          kind: 'object_memory_repair_relationship',
+          teamId,
+          objectIds,
+        });
+        const reason =
+          candidate.factCount > 1
+            ? 'Multiple extracted facts connect these objects.'
+            : 'An extracted fact connects these objects.';
+        await scope.suggestions.createOrMergeSuggestionBundle({
+          source: 'background',
+          title: `Relate ${repairObject.canonicalName} and ${candidate.canonicalName}`,
+          summary: 'These objects appear connected in source-backed evidence.',
+          reason,
+          confidence: candidate.factCount > 1 ? 'high' : 'medium',
+          dedupeKey,
+          evidence: [
+            {
+              rawEventId: candidate.rawEventId,
+              quote: candidate.statement,
+              metadata: { kind: 'memory_repair_relationship' },
+            },
+          ],
+          metadata: {
+            kind: 'object_memory_repair',
+            repair_kind: 'relationship',
+            triggered_by: opts.triggeredBy,
+            repair_object_id: repairObjectId,
+            object_ids: objectIds,
+            fact_count: candidate.factCount,
+          },
+          items: [
+            {
+              operation: 'create',
+              targetKind: 'object_relationship',
+              targetId: null,
+              title: `Relate ${repairObject.canonicalName} and ${candidate.canonicalName}`,
+              description: reason,
+              dedupeKey: `${dedupeKey}:relationship`,
+              proposedPayload: relationshipPayload(repairObjectId, candidate.id),
+            },
+          ],
+        });
+        existingRelationshipKeys.add(relationshipKey);
+      }
+      for (const candidate of await repairPersonCandidates(db, teamId, repairObject, rows)) {
+        const relationshipKey = createdPersonRelationshipKey(
+          candidate.canonicalName,
+          repairObjectId,
+        );
+        if (!relationshipKey || existingRelationshipKeys.has(relationshipKey)) continue;
+        const dedupeKey = suggestions.suggestionDedupeKey({
+          kind: 'object_memory_repair_person_relationship',
+          teamId,
+          objectIds: [repairObjectId],
+          names: [candidate.canonicalName],
+        });
+        const reason =
+          candidate.factCount > 1
+            ? 'Multiple extracted facts connect this person to the object.'
+            : 'An extracted fact connects this person to the object.';
+        await scope.suggestions.createOrMergeSuggestionBundle({
+          source: 'background',
+          title: `Remember ${candidate.canonicalName} and ${repairObject.canonicalName}`,
+          summary: 'This person appears connected to the object in source-backed evidence.',
+          reason,
+          confidence: candidate.factCount > 1 ? 'high' : 'medium',
+          dedupeKey,
+          evidence: [
+            {
+              rawEventId: candidate.rawEventId,
+              quote: candidate.statement,
+              metadata: { kind: 'memory_repair_person_relationship' },
+            },
+          ],
+          metadata: {
+            kind: 'object_memory_repair',
+            repair_kind: 'person_relationship',
+            triggered_by: opts.triggeredBy,
+            repair_object_id: repairObjectId,
+            person_name: candidate.canonicalName,
+            fact_count: candidate.factCount,
+          },
+          items: [
+            {
+              operation: 'create',
+              targetKind: 'object',
+              targetId: null,
+              title: candidate.canonicalName,
+              description: reason,
+              dedupeKey: `${dedupeKey}:person`,
+              proposedPayload: {
+                type: 'person',
+                canonicalName: candidate.canonicalName,
+                localRef: candidate.localRef,
+              },
+            },
+            {
+              operation: 'create',
+              targetKind: 'object_relationship',
+              targetId: null,
+              title: `Relate ${candidate.canonicalName} and ${repairObject.canonicalName}`,
+              description: reason,
+              dedupeKey: `${dedupeKey}:relationship`,
+              proposedPayload: {
+                fromRef: candidate.localRef,
+                toEntityId: repairObjectId,
+                kind: 'related',
+              },
+            },
+          ],
+        });
+        existingRelationshipKeys.add(relationshipKey);
+      }
+    }
   }
 }
 

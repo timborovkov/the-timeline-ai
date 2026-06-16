@@ -597,8 +597,9 @@ key/value pairs.
   uses compact grouped lists for open tasks, calendar, people/objects, boards,
   pending approvals, recent history, timeline moments, and documents.
 - Repair Memory is a quiet header action. It queues focused object cleanup
-  proposals and should not imply that rejected duplicate pairs will be
-  resuggested.
+  fact-backed relationship proposals, and conservative missing-person bundles,
+  and should not imply that rejected duplicate pairs or rejected relationship
+  edges will be resuggested.
 
 ### Motion
 

@@ -237,8 +237,11 @@ workspace reconciliation; it does not bypass approval for durable memory.
 Object-centered memory repair can search team-wide evidence and artifacts, but
 the returned proposals should stay focused on the object or connected work area
 the teammate asked Timeline to repair. The first object-centered repair path
-queues focused duplicate and low-signal archive proposals; missing relationship
-and person-object proposals remain follow-up work.
+queues focused duplicate, low-signal archive, and relationship-shaped
+fact-backed relationship proposals among existing active objects. It can also
+bundle a missing full-name person object with its relationship to the repaired
+object when relationship-shaped evidence names a durable person; bare first
+names remain evidence only.
 _Avoid_: Manual linking when the agent is proposing the repair
 
 **Person Object Candidate**:

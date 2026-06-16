@@ -31,9 +31,10 @@ objects that should become shared memory.
 - Memory Repair is user-triggered proposal generation around an object or
   connected work area. It may search team-wide evidence, but returned proposals
   should stay focused on the object the teammate asked Timeline to repair. The
-  first implementation queues object-scoped duplicate and low-signal archive
-  cleanup; relationship and person-object repair can build on the same entry
-  point.
+  first implementation queues object-scoped duplicate cleanup, low-signal
+  archive cleanup, fact-backed `related` relationship proposals, and bundled
+  full-name person-object creation when relationship-shaped evidence names a
+  durable person.
 
 ## V1 Scope
 
@@ -49,16 +50,16 @@ objects that should become shared memory.
    Finland Oy` when facts, notes, or accepted relationships support identity.
 3. Suppress rejected duplicate object candidate pairs by pair identity, not only
    by one suggestion's exact evidence hash.
-4. Add an object-centered Memory Repair action that queues focused duplicate
-   and low-signal archive proposal generation for the selected object, then
-   extend the same entry point to relationship/person proposal generation.
+4. Add an object-centered Memory Repair action that queues focused duplicate,
+   low-signal archive, fact-backed relationship proposal generation, and
+   conservative full-name person-object relationship bundles for the selected
+   object.
 5. Extend the suggestion worker schema and prompt so background suggestions can
    emit `object_relationship` items.
 6. Use extracted facts as candidate input and bounded raw/conversation context
    as verification input.
 7. Keep proposal precision high: require relationship-shaped evidence, visible
-   citations, no accepted/pending equivalent edge, and no recent rejected
-   equivalent without materially new evidence.
+   citations, and no accepted, pending, or rejected equivalent edge.
 8. Support proposal bundles that create missing endpoint objects and the
    relationship together when each endpoint independently qualifies as durable
    information.
@@ -106,12 +107,14 @@ in the same approval bundle.
 - Short-name and acronym duplicate candidates require supporting object
   evidence; bare name similarity is not enough for aggressive three-letter
   matches.
-- Rejected relationship proposals suppress identical future proposals unless new
-  evidence materially changes the proposal.
-- Materially new evidence includes a clearer later raw event, repeated evidence
-  across events, better endpoint resolution, or an explicit user correction.
-- Reprocessing the same event, model wording drift, or small confidence changes
-  are not materially new evidence.
+- Rejected relationship proposals suppress identical future proposals by sorted
+  endpoint pair. Reprocessing, model wording drift, repeated evidence, or small
+  confidence changes must not automatically reoffer the same edge.
+- Later evidence may support a different endpoint resolution, but the exact
+  rejected pair stays suppressed unless a teammate manually creates it.
+- Missing person-object repair only creates full-name person candidates from
+  relationship-shaped facts. Bare first names remain evidence until a stronger
+  person identity exists.
 
 ## Out Of Scope
 
