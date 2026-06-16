@@ -67,8 +67,11 @@ export function formatDigestTaskStatus(status: string): string {
   return status.replaceAll('_', ' ');
 }
 
-export function formatDigestTask(task: DailyDigestPayload['tasks'][number]): string {
-  const due = task.dueAt ? `, due ${formatDigestDate(task.dueAt)}` : '';
+export function formatDigestTask(
+  task: DailyDigestPayload['tasks'][number],
+  timezone?: string,
+): string {
+  const due = task.dueAt ? `, due ${formatDigestDate(task.dueAt, timezone)}` : '';
   return `${task.title} (${formatDigestTaskStatus(task.status)}${due})`;
 }
 

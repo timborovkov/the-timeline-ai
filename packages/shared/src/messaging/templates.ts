@@ -308,7 +308,9 @@ function renderDailyDigest(input: DailyDigestMessageInput): RenderedMessage {
     objectLines.length ? `Objects changed: ${objectLines.join(', ')}` : 'Objects changed: none',
     '',
     'Current tasks:',
-    ...(p.tasks.length ? p.tasks.map((task) => `- ${formatDigestTask(task)}`) : ['- None']),
+    ...(p.tasks.length
+      ? p.tasks.map((task) => `- ${formatDigestTask(task, timezone)}`)
+      : ['- None']),
     '',
     'Upcoming calendar:',
     ...(p.upcomingCalendar.length
@@ -333,7 +335,7 @@ function renderDailyDigest(input: DailyDigestMessageInput): RenderedMessage {
           sourceLines.length ? `Sources: ${sourceLines.join(', ')}` : 'No new sources',
           objectLines.length ? `Objects changed: ${objectLines.join(', ')}` : 'No object changes',
         ]),
-        tasksList: htmlList(p.tasks.map(formatDigestTask)),
+        tasksList: htmlList(p.tasks.map((task) => formatDigestTask(task, timezone))),
         calendarList: htmlList(
           p.upcomingCalendar.map((event) => formatDigestCalendarEvent(event, timezone)),
         ),

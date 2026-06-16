@@ -308,8 +308,12 @@ function DailyDigestBlock({ digest }: { digest: DailyDigestPayload | undefined }
           ))}
         </div>
         <div className="mt-4 grid gap-4 lg:grid-cols-2">
-          {sections.map((section) => (
-            <DigestList key={section.title} label={section.title} items={section.items} />
+          {sections.map((section, index) => (
+            <DigestList
+              key={`${section.title}-${index}`}
+              label={section.title}
+              items={section.items}
+            />
           ))}
         </div>
         <div className="mt-4 grid gap-3 md:grid-cols-3">
@@ -322,7 +326,7 @@ function DailyDigestBlock({ digest }: { digest: DailyDigestPayload | undefined }
             label="Current tasks"
             items={
               digest.tasks.length
-                ? digest.tasks.map(formatDigestTask)
+                ? digest.tasks.map((task) => formatDigestTask(task, timezone))
                 : ['No current tasks in this digest']
             }
           />
