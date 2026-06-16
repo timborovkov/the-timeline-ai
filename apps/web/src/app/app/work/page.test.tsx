@@ -275,6 +275,8 @@ describe('WorkPage', () => {
     expect(html).toContain('Work queue clear');
     expect(html).toContain('Open boards');
     expect(html).toContain('Work surfaces');
+    expect(html).toContain('/app/meetings');
+    expect(html).toContain('Invite notetakers');
   });
 
   it('renders compact boards and recent changes modules', async () => {

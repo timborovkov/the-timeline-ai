@@ -1,5 +1,5 @@
 import { withTeam } from '@timeline/shared/team-scope';
-import { Box, CalendarDays, CheckSquare, CircleCheckBig, KanbanSquare } from 'lucide-react';
+import { Box, CalendarDays, CheckSquare, CircleCheckBig, KanbanSquare, Video } from 'lucide-react';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
@@ -59,6 +59,12 @@ const NAV_LINKS = [
     label: 'Calendar',
     detail: 'Scheduled work',
     icon: <CalendarDays className="size-4" aria-hidden="true" />,
+  },
+  {
+    href: '/app/meetings',
+    label: 'Meetings',
+    detail: 'Invite notetakers',
+    icon: <Video className="size-4" aria-hidden="true" />,
   },
   {
     href: '/app/approvals',
@@ -125,7 +131,7 @@ export default async function WorkPage() {
 
       <section aria-labelledby="work-surfaces-title" className="space-y-3">
         <SectionHeader id="work-surfaces-title" label="Work surfaces" />
-        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
           {NAV_LINKS.map((item) => (
             <SurfaceLink key={item.href} item={item} />
           ))}
