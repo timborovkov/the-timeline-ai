@@ -23,6 +23,7 @@ export interface ExtractProcessorIO {
   modelId?: string;
   enqueueSuggestionJob?: typeof queue.enqueueSuggestionJob;
   enqueueEmbedJob?: typeof queue.enqueueEmbedJob;
+  enqueueObjectSummaryJob?: typeof queue.enqueueObjectSummaryJob;
 }
 
 interface RawEventRow {
@@ -205,6 +206,7 @@ export async function processExtractJobForTests(
 
   let factsInserted = 0;
   const insertedFactIds: string[] = [];
+  const summaryEntityIds = new Set<string>();
   await deps.db.transaction(async (tx) => {
     await tx.execute(sql`SELECT pg_advisory_xact_lock(${lockKey})`);
     const recheck = (await tx
@@ -251,6 +253,7 @@ export async function processExtractJobForTests(
           .insert(factEntities)
           .values({ factId: factRow.id, entityId, role: m.role })
           .onConflictDoNothing();
+        summaryEntityIds.add(entityId);
       }
     }
 
@@ -275,6 +278,24 @@ export async function processExtractJobForTests(
       queueName: queue.QUEUE_NAMES.suggestions,
       operation: 'enqueue_suggestion_after_extract',
     });
+  }
+
+  const enqueueObjectSummaryJob = io.enqueueObjectSummaryJob ?? queue.enqueueObjectSummaryJob;
+  for (const objectId of summaryEntityIds) {
+    try {
+      await enqueueObjectSummaryJob(
+        { teamId, objectId, trigger: 'auto' },
+        { delayMs: 2 * 60 * 1000 },
+      );
+    } catch (err) {
+      log.error({ err, rawEventId, objectId }, 'object summary enqueue failed after extract');
+      captureWorkerException(err, {
+        component: 'worker_handoff',
+        queueName: queue.QUEUE_NAMES.objectSummary,
+        operation: 'enqueue_object_summary_after_extract',
+        objectId,
+      });
+    }
   }
 
   const enqueueEmbedJob = io.enqueueEmbedJob ?? queue.enqueueEmbedJob;

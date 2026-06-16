@@ -25,6 +25,7 @@ vi.mock('@/app/actions/objects', () => ({
   archiveObjectAction: vi.fn(),
   createNoteAction: vi.fn(),
   deleteNoteAction: vi.fn(),
+  generateObjectSummaryAction: vi.fn(),
   rejectObjectChangeAction: vi.fn(),
   removeRelationshipAction: vi.fn(),
   updateNoteAction: vi.fn(),
@@ -68,6 +69,7 @@ const detail = {
   recentChanges: [],
   facts: [],
   timelineEvents: [],
+  summary: null,
   newSinceLastVisit: 0,
   lastVisitedAt: null,
 } as Parameters<typeof ObjectDetailClient>[0]['detail'];
@@ -160,6 +162,100 @@ describe('ObjectDetailClient', () => {
     expect(html).toContain('2 waiting');
     expect(html).toContain('Update proposal stage');
     expect(html).toContain('Move to proposal');
+  });
+
+  it('renders object summaries above evidence', () => {
+    const html = renderObjectDetail({
+      detail: {
+        ...detail,
+        summary: {
+          status: 'ready',
+          summary: {
+            overview: 'DFK has a confirmed June 30 pilot discussion.',
+            overviewSourceRefs: [{ kind: 'fact', id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' }],
+            currentState: [
+              {
+                label: 'Timing',
+                text: 'The latest confirmed meeting date is June 30.',
+                sourceRefs: [{ kind: 'fact', id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' }],
+              },
+            ],
+            openQuestions: [],
+            conflicts: [],
+          },
+          plainText: 'DFK has a confirmed June 30 pilot discussion.',
+          sourceRefs: [{ kind: 'fact', id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' }],
+          sourceCounts: {
+            fields: 2,
+            facts: 1,
+            events: 1,
+            notes: 0,
+            relationships: 0,
+            tasks: 0,
+            changes: 0,
+          },
+          generatedAt: new Date('2026-06-16T10:00:00.000Z'),
+          staleAt: null,
+          lastAttemptedAt: new Date('2026-06-16T10:00:00.000Z'),
+          lastErrorCode: null,
+          canGenerate: true,
+          cannotGenerateReason: null,
+        },
+      },
+      userId: 'user-1',
+      suggestions: [],
+    });
+
+    expect(html.indexOf('Summary')).toBeLessThan(html.indexOf('Evidence'));
+    expect(html).toContain('DFK has a confirmed June 30 pilot discussion.');
+    expect(html).toContain('Timing');
+  });
+
+  it('queues manual summary generation from the object page', async () => {
+    const user = userEvent.setup();
+    vi.mocked(objectActions.generateObjectSummaryAction).mockResolvedValue({
+      ok: true,
+      id: 'summary-job',
+    });
+    render(
+      objectDetailElement({
+        detail: {
+          ...detail,
+          summary: {
+            status: 'failed',
+            summary: null,
+            plainText: '',
+            sourceRefs: [],
+            sourceCounts: {
+              fields: 2,
+              facts: 2,
+              events: 1,
+              notes: 0,
+              relationships: 0,
+              tasks: 0,
+              changes: 0,
+            },
+            generatedAt: null,
+            staleAt: null,
+            lastAttemptedAt: new Date('2026-06-16T10:00:00.000Z'),
+            lastErrorCode: 'provider_failed',
+            canGenerate: true,
+            cannotGenerateReason: null,
+          },
+        },
+        userId: 'user-1',
+        suggestions: [],
+      }),
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Retry' }));
+
+    await waitFor(() => {
+      expect(objectActions.generateObjectSummaryAction).toHaveBeenCalledWith({
+        entityId: detail.id,
+      });
+    });
+    expect(fakes.refresh).toHaveBeenCalled();
   });
 
   it('edits the object name and aliases from the fields panel', async () => {

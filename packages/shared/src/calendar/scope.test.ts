@@ -19,6 +19,7 @@ const fakes = vi.hoisted(() => ({
 
 vi.mock('#src/queue/queues.js', () => ({
   enqueueCalendarEventEmbedJob: fakes.enqueueCalendarEventEmbedJob,
+  enqueueObjectSummaryJob: vi.fn().mockResolvedValue({ enqueued: true, jobId: 'summary-job' }),
 }));
 vi.mock('#src/qdrant/client.js', () => ({
   getQdrantClient: vi.fn(() => ({

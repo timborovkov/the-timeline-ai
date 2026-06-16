@@ -16,6 +16,7 @@ const fakes = vi.hoisted(() => ({
   fakeSearchDocumentChunksPage: vi.fn(),
   fakeSearchObjectNotes: vi.fn(),
   fakeSearchObjects: vi.fn(),
+  fakeListReadyObjectSummaries: vi.fn(),
   fakeListObjects: vi.fn(),
   fakeListBoards: vi.fn(),
   fakeListCalendarEvents: vi.fn(),
@@ -35,7 +36,11 @@ vi.mock('@timeline/shared/team-scope', () => ({
       searchObjectNotes: fakes.fakeSearchObjectNotes,
     },
     documents: { searchDocumentChunksPage: fakes.fakeSearchDocumentChunksPage },
-    objects: { listObjects: fakes.fakeListObjects, searchObjects: fakes.fakeSearchObjects },
+    objects: {
+      listObjects: fakes.fakeListObjects,
+      searchObjects: fakes.fakeSearchObjects,
+      listReadyObjectSummaries: fakes.fakeListReadyObjectSummaries,
+    },
     boards: { listBoards: fakes.fakeListBoards },
     calendar: { listCalendarEvents: fakes.fakeListCalendarEvents },
   }),
@@ -115,6 +120,7 @@ beforeEach(() => {
     nextOffset: null,
   });
   fakes.fakeSearchObjectNotes.mockResolvedValue([]);
+  fakes.fakeListReadyObjectSummaries.mockResolvedValue([]);
   fakes.fakeSearchObjects.mockResolvedValue([
     {
       id: 'object-1',
@@ -280,6 +286,29 @@ describe('POST /api/search/global', () => {
       limit: 300,
     });
     expect(fakes.fakeListObjects).not.toHaveBeenCalled();
+  });
+
+  it('uses ready object summaries for object search snippets and lexical matching', async () => {
+    fakes.fakeListReadyObjectSummaries.mockResolvedValue([
+      {
+        entityId: 'object-1',
+        plainText: 'DFK has a confirmed pilot discussion on June 30.',
+        generatedAt: new Date('2026-06-15T00:00:00.000Z'),
+      },
+    ]);
+
+    const response = await POST(request({ query: 'June 30', mode: 'full', kinds: ['object'] }));
+    const data = (await response.json()) as {
+      ok: true;
+      results: { kind: string; title: string; snippet: string; metadata?: { summary?: boolean } }[];
+    };
+
+    expect(response.status).toBe(200);
+    expect(fakes.fakeListReadyObjectSummaries).toHaveBeenCalledWith(['object-1']);
+    const result = data.results.find((item) => item.kind === 'object');
+    expect(result?.title).toBe('Otto Silventola');
+    expect(result?.snippet).toBe('DFK has a confirmed pilot discussion on June 30.');
+    expect(result?.metadata?.summary).toBe(true);
   });
 
   it('forwards timeline source and date filters to semantic timeline, document, and calendar search', async () => {

@@ -74,6 +74,7 @@ function io(overrides: Partial<Parameters<typeof processExtractJobForTests>[2]> 
     chatStructured: modelWithFacts([]),
     enqueueSuggestionJob: vi.fn().mockResolvedValue(undefined),
     enqueueEmbedJob: vi.fn().mockResolvedValue(undefined),
+    enqueueObjectSummaryJob: vi.fn().mockResolvedValue({ enqueued: true, jobId: 'summary-job' }),
     ...overrides,
   };
 }
@@ -138,6 +139,7 @@ describe('processExtractJobForTests', () => {
     await expect(
       db.select().from(factEntities).where(eq(factEntities.factId, factId)),
     ).resolves.toHaveLength(2);
+    const linkedEntities = await db.select().from(entities);
     expect(testIO.enqueueSuggestionJob).toHaveBeenCalledWith({ rawEventId, teamId: TEAM_ID });
     expect(testIO.enqueueEmbedJob).toHaveBeenCalledWith({ rawEventId, teamId: TEAM_ID });
     expect(testIO.enqueueEmbedJob).toHaveBeenCalledWith({
@@ -145,6 +147,12 @@ describe('processExtractJobForTests', () => {
       teamId: TEAM_ID,
       factId,
     });
+    for (const entity of linkedEntities) {
+      expect(testIO.enqueueObjectSummaryJob).toHaveBeenCalledWith(
+        { teamId: TEAM_ID, objectId: entity.id, trigger: 'auto' },
+        { delayMs: 120_000 },
+      );
+    }
   });
 
   it('does not create workspace objects for unmatched extracted mentions', async () => {

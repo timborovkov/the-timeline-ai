@@ -24,6 +24,7 @@ import {
   objectChanges,
   objectIdentityFacets,
   objectNotes,
+  objectSummaries,
   objectViews,
   rawEvents,
   relationshipKind,
@@ -58,11 +59,20 @@ import {
 } from '#src/calendar/due-dates.js';
 import { TIMELINE_MODELS } from '#src/llm/models.js';
 import { childLogger } from '#src/logger.js';
+import {
+  enqueueObjectSummaryRefresh,
+  fireAndForgetObjectSummaryRefresh,
+  getObjectSummary,
+  type ObjectSummaryView,
+} from '#src/objects/summaries.js';
 import { decodeCursor, pageWindow } from '#src/pagination.js';
 import { getQdrantClient } from '#src/qdrant/client.js';
 import { buildPointId } from '#src/qdrant/point-id.js';
 import * as embedQueue from '#src/queue/queues.js';
 import { rawEventVisibleToUser } from '#src/visibility.js';
+
+export { generateAndStoreObjectSummary, sourceRefCitation } from '#src/objects/summaries.js';
+export type { ObjectSummarySourceRef } from '#src/objects/summaries.js';
 
 const embedLog = childLogger('objects:embed');
 type DbTx = Parameters<Parameters<Db['transaction']>[0]>[0];
@@ -494,6 +504,7 @@ export interface ObjectDetail extends ObjectRow {
     changedAt: Date;
   }[];
   openTasks: ObjectRow[];
+  summary: ObjectSummaryView | null;
   /** Count of object_changes and notes since the caller's last visit. */
   newSinceLastVisit: number;
   lastVisitedAt: Date | null;
@@ -506,6 +517,12 @@ export interface ObjectNotePreview {
   createdAt: Date;
   updatedAt: Date;
   object: ObjectRow;
+}
+
+export interface ObjectSummarySearchRow {
+  entityId: string;
+  plainText: string;
+  updatedAt: Date;
 }
 
 const MERGE_COMPATIBLE_TYPES: readonly ObjectType[] = [
@@ -1029,6 +1046,7 @@ export async function getObject(
   }
 
   const base = toObjectRow(entityRow);
+  const summary = await getObjectSummary(db, scope, entityRow.id);
   return {
     ...base,
     notes: noteRows,
@@ -1038,6 +1056,7 @@ export async function getObject(
     ],
     recentChanges: changeRows,
     openTasks: tasks,
+    summary,
     newSinceLastVisit,
     lastVisitedAt,
   };
@@ -1074,6 +1093,30 @@ export async function getObjectNotePreview(
     updatedAt: row.note.updatedAt,
     object: toObjectRow(row.object),
   };
+}
+
+export async function listReadyObjectSummaries(
+  db: Db,
+  scope: TeamScopeCore,
+  entityIds: string[],
+): Promise<ObjectSummarySearchRow[]> {
+  await scope.requireMembership();
+  const ids = uniqueIds(entityIds.filter((id) => UUID_RE.test(id)));
+  if (ids.length === 0) return [];
+  return db
+    .select({
+      entityId: objectSummaries.entityId,
+      plainText: objectSummaries.plainText,
+      updatedAt: objectSummaries.updatedAt,
+    })
+    .from(objectSummaries)
+    .where(
+      and(
+        eq(objectSummaries.teamId, scope.teamId),
+        eq(objectSummaries.status, 'ready'),
+        inArray(objectSummaries.entityId, ids),
+      ),
+    );
 }
 
 export async function getMergedObjectTarget(
@@ -1473,6 +1516,11 @@ export async function createObject(
     entityId: txResult.object.id,
     op: 'createObject',
   });
+  fireAndForgetObjectSummaryRefresh(db, scope, txResult.object.id, {
+    teamId: scope.teamId,
+    objectId: txResult.object.id,
+    op: 'createObject',
+  });
   fireAndForgetEmbed(() => afterDueDateCalendarSync(scope.teamId, txResult.dueDateCalendarSync), {
     teamId: scope.teamId,
     op: 'createObjectDueDateCalendar',
@@ -1719,6 +1767,11 @@ export async function updateObject(
         op: 'updateObject',
       });
     }
+    fireAndForgetObjectSummaryRefresh(db, scope, entityId, {
+      teamId: scope.teamId,
+      objectId: entityId,
+      op: 'updateObject',
+    });
   }
   fireAndForgetEmbed(() => afterDueDateCalendarSync(scope.teamId, txResult.dueDateCalendarSync), {
     teamId: scope.teamId,
@@ -2179,6 +2232,11 @@ export async function mergeObjects(
     entityId: result.survivor.id,
     op: 'mergeObjects',
   });
+  fireAndForgetObjectSummaryRefresh(db, scope, result.survivor.id, {
+    teamId: scope.teamId,
+    objectId: result.survivor.id,
+    op: 'mergeObjects',
+  });
   for (const mergedId of result.mergedIds) {
     fireAndForgetEmbed(() => deleteMergedObjectEmbeddingPoints(scope.teamId, mergedId), {
       teamId: scope.teamId,
@@ -2218,7 +2276,7 @@ export async function addRelationship(
     input.kind,
   );
 
-  return db.transaction(async (tx) => {
+  const result = await db.transaction(async (tx) => {
     // Both endpoints must belong to this team. Re-select to validate.
     const ends = await tx
       .select({ id: entities.id, canonicalName: entities.canonicalName, type: entities.type })
@@ -2316,6 +2374,17 @@ export async function addRelationship(
 
     return row;
   });
+  if (result) {
+    for (const objectId of [endpoints.fromEntityId, endpoints.toEntityId]) {
+      fireAndForgetObjectSummaryRefresh(db, scope, objectId, {
+        teamId: scope.teamId,
+        objectId,
+        relationshipId: result.id,
+        op: 'addRelationship',
+      });
+    }
+  }
+  return result;
 }
 
 export async function removeRelationship(
@@ -2327,7 +2396,7 @@ export async function removeRelationship(
   await scope.requireMembership();
   if (!UUID_RE.test(relationshipId)) return false;
 
-  return db.transaction(async (tx) => {
+  const result = await db.transaction(async (tx) => {
     // Capture endpoints + kind before delete so the audit row has full
     // context. SELECT FOR UPDATE pins the row against a concurrent delete
     // (which would otherwise turn this into a no-op silently).
@@ -2343,7 +2412,7 @@ export async function removeRelationship(
       .for('update')
       .limit(1);
     const rel = existing[0];
-    if (!rel) return false;
+    if (!rel) return null;
 
     await tx.delete(entityRelationships).where(eq(entityRelationships.id, relationshipId));
 
@@ -2390,8 +2459,18 @@ export async function removeRelationship(
         sourceEventId: ev[0]?.id ?? null,
       },
     ]);
-    return true;
+    return { fromEntityId: rel.fromEntityId, toEntityId: rel.toEntityId };
   });
+  if (!result) return false;
+  for (const objectId of [result.fromEntityId, result.toEntityId]) {
+    fireAndForgetObjectSummaryRefresh(db, scope, objectId, {
+      teamId: scope.teamId,
+      objectId,
+      relationshipId,
+      op: 'removeRelationship',
+    });
+  }
+  return true;
 }
 
 /** Notes are mutable; every CRUD writes raw_events + object_changes for audit. */
@@ -2472,6 +2551,12 @@ export async function createNote(
 
   fireAndForgetEmbed(() => embedQueue.enqueueObjectNoteEmbedJob(scope.teamId, result.id), {
     teamId: scope.teamId,
+    noteId: result.id,
+    op: 'createNote',
+  });
+  fireAndForgetObjectSummaryRefresh(db, scope, input.entityId, {
+    teamId: scope.teamId,
+    objectId: input.entityId,
     noteId: result.id,
     op: 'createNote',
   });
@@ -2745,6 +2830,12 @@ export async function createIdentityFacet(
     entityId: input.entityId,
     op: 'createIdentityFacet',
   });
+  fireAndForgetObjectSummaryRefresh(db, scope, input.entityId, {
+    teamId: scope.teamId,
+    objectId: input.entityId,
+    identityFacetId: result.id,
+    op: 'createIdentityFacet',
+  });
   return result;
 }
 
@@ -2777,7 +2868,7 @@ export async function updateNote(
       isNull(objectNotes.deletedAt),
     ];
     if (actor.kind === 'user') {
-      if (!input.actorUserId) return false;
+      if (!input.actorUserId) return null;
       conditions.push(eq(objectNotes.authorUserId, input.actorUserId));
     }
 
@@ -2787,8 +2878,8 @@ export async function updateNote(
       .where(and(...conditions))
       .limit(1);
     const note = existing[0];
-    if (!note) return false;
-    if (note.body === body) return true;
+    if (!note) return null;
+    if (note.body === body) return { changed: false, entityId: note.entityId };
 
     await tx
       .update(objectNotes)
@@ -2823,17 +2914,23 @@ export async function updateNote(
       newValue: { note_id: note.id, body },
       sourceEventId: ev[0]?.id ?? null,
     });
-    return true;
+    return { changed: true, entityId: note.entityId };
   });
 
-  if (updated) {
+  if (updated?.changed) {
     fireAndForgetEmbed(() => embedQueue.enqueueObjectNoteEmbedJob(scope.teamId, input.noteId), {
       teamId: scope.teamId,
       noteId: input.noteId,
       op: 'updateNote',
     });
+    fireAndForgetObjectSummaryRefresh(db, scope, updated.entityId, {
+      teamId: scope.teamId,
+      objectId: updated.entityId,
+      noteId: input.noteId,
+      op: 'updateNote',
+    });
   }
-  return updated;
+  return Boolean(updated);
 }
 
 export async function deleteNote(
@@ -2844,7 +2941,7 @@ export async function deleteNote(
   await scope.requireMembership();
   if (!UUID_RE.test(input.noteId)) return false;
 
-  return db.transaction(async (tx) => {
+  const result = await db.transaction(async (tx) => {
     // Authors-only delete. Same threat model as updateNote — UI hides the
     // button for non-authors, but the action is reachable by direct POST.
     const existing = await tx
@@ -2860,7 +2957,7 @@ export async function deleteNote(
       )
       .limit(1);
     const note = existing[0];
-    if (!note) return false;
+    if (!note) return null;
 
     await tx
       .update(objectNotes)
@@ -2894,8 +2991,16 @@ export async function deleteNote(
       newValue: null,
       sourceEventId: ev[0]?.id ?? null,
     });
-    return true;
+    return { entityId: note.entityId };
   });
+  if (!result) return false;
+  fireAndForgetObjectSummaryRefresh(db, scope, result.entityId, {
+    teamId: scope.teamId,
+    objectId: result.entityId,
+    noteId: input.noteId,
+    op: 'deleteNote',
+  });
+  return true;
 }
 
 export async function markVisited(db: Db, scope: TeamScopeCore, entityId: string): Promise<void> {
@@ -3808,6 +3913,13 @@ export function createObjectScope(db: Db, scope: TeamScopeCore) {
     listObjects: (filter?: ObjectListFilter) => listObjects(db, scope, filter),
     searchObjects: (filter: ObjectSearchFilter) => searchObjects(db, scope, filter),
     getObject: (idOrName: string) => getObject(db, scope, idOrName),
+    getObjectSummary: (entityId: string) => getObjectSummary(db, scope, entityId),
+    listReadyObjectSummaries: (entityIds: string[]) =>
+      listReadyObjectSummaries(db, scope, entityIds),
+    enqueueObjectSummaryRefresh: (
+      entityId: string,
+      opts?: Parameters<typeof enqueueObjectSummaryRefresh>[3],
+    ) => enqueueObjectSummaryRefresh(db, scope, entityId, opts),
     getObjectNotePreview: (noteId: string) => getObjectNotePreview(db, scope, noteId),
     getMergedObjectTarget: (entityId: string) => getMergedObjectTarget(db, scope, entityId),
     getObjectMergePreview: (entityIds: string[], survivorId?: string) =>

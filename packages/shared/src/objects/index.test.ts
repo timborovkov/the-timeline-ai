@@ -13,6 +13,7 @@ import {
   facts,
   objectChanges,
   objectNotes,
+  objectSummaries,
   notifications,
   rawEvents,
 } from '@timeline/db';
@@ -20,6 +21,11 @@ import { eq, inArray } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { ChatStructuredInput, ChatStructuredResult } from '#src/llm/chat.js';
+import type { z } from 'zod';
+
+import { generateAndStoreObjectSummary } from '#src/objects/summaries.js';
+import * as queue from '#src/queue/queues.js';
 import { withTeam } from '#src/team-scope.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
 
@@ -42,6 +48,7 @@ vi.mock('#src/queue/queues.js', () => ({
   enqueueObjectNoteEmbedJob: vi.fn().mockResolvedValue(undefined),
   enqueueObjectChangeEmbedJob: vi.fn().mockResolvedValue(undefined),
   enqueueCalendarEventEmbedJob: vi.fn().mockResolvedValue(undefined),
+  enqueueObjectSummaryJob: vi.fn().mockResolvedValue({ enqueued: true, jobId: 'summary-job' }),
 }));
 vi.mock('#src/qdrant/client.js', () => ({
   getQdrantClient: qdrantFakes.getQdrantClient,
@@ -1406,5 +1413,176 @@ describe('object scope — merge cleanup', () => {
         actor: { kind: 'user', userId: USER_OWNER },
       }),
     ).rejects.toThrow('One or more objects no longer exists');
+  });
+
+  it('queues summaries only from sufficient team-visible object memory', async () => {
+    const scope = withTeam(db, TEAM_A, USER_OWNER).objects;
+    const object = await scope.createObject({
+      type: 'company',
+      canonicalName: 'DFK',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+
+    const [privateEvent] = await db
+      .insert(rawEvents)
+      .values({
+        teamId: TEAM_A,
+        authorUserId: USER_OWNER,
+        source: 'web',
+        contentText: 'DFK private note',
+        occurredAt: new Date('2026-06-01T10:00:00.000Z'),
+        visibility: 'private',
+        visibilityOwnerUserId: USER_OWNER,
+      })
+      .returning({ id: rawEvents.id });
+    if (!privateEvent) throw new Error('failed to insert private event');
+    const [privateFact] = await db
+      .insert(facts)
+      .values({
+        teamId: TEAM_A,
+        rawEventId: privateEvent.id,
+        statement: 'DFK has private evidence.',
+        confidence: 1,
+        modelVersion: 'test',
+      })
+      .returning({ id: facts.id });
+    if (!privateFact) throw new Error('failed to insert private fact');
+    await db.insert(factEntities).values({
+      factId: privateFact.id,
+      entityId: object.id,
+      role: 'subject',
+    });
+
+    await expect(
+      scope.enqueueObjectSummaryRefresh(object.id, { trigger: 'manual' }),
+    ).resolves.toMatchObject({ canGenerate: false, reason: 'not_enough_object_memory' });
+
+    const [teamEvent] = await db
+      .insert(rawEvents)
+      .values({
+        teamId: TEAM_A,
+        authorUserId: USER_OWNER,
+        source: 'web',
+        contentText: 'DFK team-visible planning',
+        occurredAt: new Date('2026-06-02T10:00:00.000Z'),
+        visibility: 'team',
+      })
+      .returning({ id: rawEvents.id });
+    if (!teamEvent) throw new Error('failed to insert team event');
+    const teamFacts = await db
+      .insert(facts)
+      .values([
+        {
+          teamId: TEAM_A,
+          rawEventId: teamEvent.id,
+          statement: 'DFK is discussing a pilot.',
+          confidence: 1,
+          modelVersion: 'test',
+        },
+        {
+          teamId: TEAM_A,
+          rawEventId: teamEvent.id,
+          statement: 'DFK meeting is confirmed for June 30.',
+          confidence: 1,
+          modelVersion: 'test',
+        },
+      ])
+      .returning({ id: facts.id });
+    await db.insert(factEntities).values(
+      teamFacts.map((fact) => ({
+        factId: fact.id,
+        entityId: object.id,
+        role: 'subject' as const,
+      })),
+    );
+
+    await expect(
+      scope.enqueueObjectSummaryRefresh(object.id, { trigger: 'manual' }),
+    ).resolves.toMatchObject({ canGenerate: true, enqueued: true });
+    expect(queue.enqueueObjectSummaryJob).toHaveBeenCalledWith(
+      { teamId: TEAM_A, objectId: object.id, trigger: 'manual' },
+      {},
+    );
+  });
+
+  it('stores generated summaries with validated source refs', async () => {
+    const scope = withTeam(db, TEAM_A, USER_OWNER);
+    const object = await scope.objects.createObject({
+      type: 'company',
+      canonicalName: 'DFK',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    const [event] = await db
+      .insert(rawEvents)
+      .values({
+        teamId: TEAM_A,
+        authorUserId: USER_OWNER,
+        source: 'web',
+        contentText: 'DFK team-visible planning',
+        occurredAt: new Date('2026-06-02T10:00:00.000Z'),
+        visibility: 'team',
+      })
+      .returning({ id: rawEvents.id });
+    if (!event) throw new Error('failed to insert event');
+    const [fact] = await db
+      .insert(facts)
+      .values({
+        teamId: TEAM_A,
+        rawEventId: event.id,
+        statement: 'DFK meeting is confirmed for June 30.',
+        confidence: 1,
+        modelVersion: 'test',
+      })
+      .returning({ id: facts.id });
+    if (!fact) throw new Error('failed to insert fact');
+    await db.insert(factEntities).values({
+      factId: fact.id,
+      entityId: object.id,
+      role: 'subject',
+    });
+    await scope.objects.createNote({
+      entityId: object.id,
+      authorUserId: USER_OWNER,
+      body: 'DFK summary note with enough human-authored context for generation.',
+    });
+
+    await expect(
+      generateAndStoreObjectSummary(
+        db,
+        scope,
+        object.id,
+        { trigger: 'manual' },
+        {
+          chatStructured: <TSchema extends z.ZodType>(
+            input: ChatStructuredInput<TSchema>,
+          ): Promise<ChatStructuredResult<TSchema>> =>
+            Promise.resolve({
+              model: 'test-summary-model',
+              object: input.schema.parse({
+                overview: 'DFK has a confirmed June 30 meeting.',
+                overviewSourceRefs: [{ kind: 'fact', id: fact.id }],
+                currentState: [
+                  {
+                    label: 'Timing',
+                    text: 'The meeting is confirmed for June 30.',
+                    sourceRefs: [{ kind: 'fact', id: fact.id }],
+                  },
+                ],
+                openQuestions: [],
+                conflicts: [],
+              }),
+            }),
+          enqueueObjectEmbedJob: vi.fn().mockResolvedValue(undefined),
+        },
+      ),
+    ).resolves.toEqual({ status: 'ready' });
+
+    const rows = await db
+      .select()
+      .from(objectSummaries)
+      .where(eq(objectSummaries.entityId, object.id));
+    expect(rows[0]?.status).toBe('ready');
+    expect(rows[0]?.model).toBe('test-summary-model');
+    expect(rows[0]?.plainText).toContain('confirmed June 30');
   });
 });

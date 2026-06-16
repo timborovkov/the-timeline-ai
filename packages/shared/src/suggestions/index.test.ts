@@ -19,6 +19,7 @@ vi.mock('#src/queue/queues.js', async (importOriginal) => {
     enqueueEmbedJob: enqueue,
     enqueueObjectEmbedJob: enqueue,
     enqueueObjectNoteEmbedJob: enqueue,
+    enqueueObjectSummaryJob: vi.fn(() => Promise.resolve({ enqueued: true, jobId: 'summary-job' })),
   };
 });
 

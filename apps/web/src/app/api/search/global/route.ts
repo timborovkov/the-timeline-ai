@@ -45,6 +45,7 @@ const schema = z.object({
 });
 
 type Scope = ReturnType<typeof withTeam>;
+type ReadyObjectSummary = Awaited<ReturnType<Scope['objects']['listReadyObjectSummaries']>>[number];
 type Parsed = z.infer<typeof schema>;
 
 function wants(kinds: Set<GlobalSearchKind> | null, kind: GlobalSearchKind): boolean {
@@ -63,6 +64,7 @@ function searchObjectsAndTasks(
   input: Parsed,
   rows: Awaited<ReturnType<Scope['objects']['listObjects']>>,
   kinds: Set<GlobalSearchKind> | null,
+  summaries: Map<string, ReadyObjectSummary>,
 ): GlobalSearchResult[] {
   const results: GlobalSearchResult[] = [];
   for (const row of rows) {
@@ -73,10 +75,18 @@ function searchObjectsAndTasks(
       textFromMetadata(row.metadata.integration_provider),
       textFromMetadata(row.metadata.integration_external_id),
     ];
+    const summary = summaries.get(row.id);
     const lexical = scoreLexical({
       query: input.query,
       title: row.canonicalName,
-      fields: [row.type, row.status, row.stage, ...row.aliases, ...metadataFields],
+      fields: [
+        row.type,
+        row.status,
+        row.stage,
+        summary?.plainText,
+        ...row.aliases,
+        ...metadataFields,
+      ],
       keywords: [row.type, kind, row.status],
     });
     const intent = scoreIntent(input.query, kind, [row.type, kind, row.status]);
@@ -86,8 +96,9 @@ function searchObjectsAndTasks(
         id: `${kind}:${row.id}`,
         kind,
         title: row.canonicalName,
-        snippet:
-          kind === 'task'
+        snippet: summary?.plainText
+          ? summary.plainText.slice(0, 240)
+          : kind === 'task'
             ? [
                 row.status,
                 row.stage,
@@ -108,6 +119,7 @@ function searchObjectsAndTasks(
           status: row.status,
           stage: row.stage,
           dueAt: row.dueAt?.toISOString() ?? null,
+          summary: Boolean(summary),
         },
       }),
     );
@@ -446,7 +458,20 @@ export async function POST(req: Request): Promise<Response> {
       : Promise.resolve([]),
   ]);
 
-  const lexicalObjectRows = searchObjectsAndTasks({ ...input, query }, objectRows, kinds);
+  const objectSummaries: Map<string, ReadyObjectSummary> =
+    objectRows.length > 0
+      ? new Map<string, ReadyObjectSummary>(
+          (await scope.objects.listReadyObjectSummaries(objectRows.map((row) => row.id))).map(
+            (summary) => [summary.entityId, summary],
+          ),
+        )
+      : new Map<string, ReadyObjectSummary>();
+  const lexicalObjectRows = searchObjectsAndTasks(
+    { ...input, query },
+    objectRows,
+    kinds,
+    objectSummaries,
+  );
   const objectResults =
     runSemantic && wantsObjectsOrTasks
       ? await searchObjectNotes({ ...input, query }, scope, lexicalObjectRows, kinds, warnings)

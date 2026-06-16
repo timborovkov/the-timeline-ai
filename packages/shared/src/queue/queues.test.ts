@@ -344,6 +344,31 @@ describe('queue wrappers', () => {
     expect(jobId.jobId).not.toContain(':');
   });
 
+  it('dedupes object summary jobs by team and object id', async () => {
+    const queues = await importQueues();
+    const data = {
+      teamId: '22222222-2222-4222-8222-222222222222',
+      objectId: '77777777-7777-4777-8777-777777777777',
+      trigger: 'auto' as const,
+    };
+
+    const first = await queues.enqueueObjectSummaryJob(data, { delayMs: 120_000 });
+    const duplicate = await queues.enqueueObjectSummaryJob(data, { delayMs: 120_000 });
+
+    expect(fakes.queues[0]?.name).toBe('object-summary');
+    expect(fakes.queues[0]?.addCalls[0]).toMatchObject({
+      name: 'object-summary',
+      data,
+      opts: {
+        delay: 120_000,
+        jobId:
+          'object-summary|22222222-2222-4222-8222-222222222222|77777777-7777-4777-8777-777777777777',
+      },
+    });
+    expect(first).toMatchObject({ enqueued: true });
+    expect(duplicate).toMatchObject({ enqueued: false, jobId: first.jobId });
+  });
+
   it('registers repeatable jobs with stable job ids and closes singleton queues', async () => {
     const queues = await importQueues();
 

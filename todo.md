@@ -66,6 +66,18 @@ implementation detail.
       with filters, density controls, and cited edge explanations. Do not ship
       the full graph in the first relationship implementation slice.
 
+## Object Summaries
+
+- [x] Ship the first scoped implementation from
+      [docs/object-summaries-plan.md](docs/object-summaries-plan.md): persisted
+      structured generated summaries, team-visible source packets, background
+      refresh from canonical object/fact updates, object-page generation/retry,
+      search and embedding updates, and chat retrieval consumption with
+      underlying-source citations.
+- [ ] Finish harder summary invalidation paths after dogfooding: source event
+      visibility/tombstone changes, remaining indirect linked-task changes, and
+      deeper source-chip navigation beyond timeline-event labels.
+
 ## Calendar
 
 ### Recurrence
