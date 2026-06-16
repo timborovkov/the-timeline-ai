@@ -1585,4 +1585,154 @@ describe('object scope — merge cleanup', () => {
     expect(rows[0]?.model).toBe('test-summary-model');
     expect(rows[0]?.plainText).toContain('confirmed June 30');
   });
+
+  it('removes stored summaries when a cited source event becomes private', async () => {
+    const scope = withTeam(db, TEAM_A, USER_OWNER);
+    const object = await scope.objects.createObject({
+      type: 'company',
+      canonicalName: 'DFK',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    const event = await scope.timeline.createEvent({
+      authorUserId: USER_OWNER,
+      visibilityOwnerUserId: USER_OWNER,
+      source: 'web',
+      contentText: 'DFK team-visible planning',
+      occurredAt: new Date('2026-06-02T10:00:00.000Z'),
+      visibility: 'team',
+    });
+    const [fact] = await db
+      .insert(facts)
+      .values({
+        teamId: TEAM_A,
+        rawEventId: event.id,
+        statement: 'DFK meeting is confirmed for June 30.',
+        confidence: 1,
+        modelVersion: 'test',
+      })
+      .returning({ id: facts.id });
+    if (!fact) throw new Error('failed to insert fact');
+    await db.insert(factEntities).values({
+      factId: fact.id,
+      entityId: object.id,
+      role: 'subject',
+    });
+    await db.insert(objectSummaries).values({
+      teamId: TEAM_A,
+      entityId: object.id,
+      status: 'ready',
+      summary: {
+        overview: 'DFK has a confirmed June 30 meeting.',
+        overviewSourceRefs: [{ kind: 'fact', id: fact.id }],
+        currentState: [],
+        openQuestions: [],
+        conflicts: [],
+      },
+      plainText: 'DFK has a confirmed June 30 meeting.',
+      sourceRefs: [{ kind: 'fact', id: fact.id }],
+      sourceCounts: {
+        fields: 2,
+        facts: 1,
+        events: 1,
+        notes: 0,
+        relationships: 0,
+        tasks: 0,
+        changes: 0,
+      },
+      inputFingerprint: 'test-fingerprint',
+      model: 'test-summary-model',
+      promptVersion: 'object-summary-v1',
+      generatedAt: new Date('2026-06-02T10:05:00.000Z'),
+    });
+
+    await scope.timeline.setEventVisibility(event.id, { visibility: 'private' });
+
+    const rows = await db
+      .select()
+      .from(objectSummaries)
+      .where(eq(objectSummaries.entityId, object.id));
+    expect(rows).toHaveLength(0);
+    expect(queue.enqueueObjectSummaryJob).toHaveBeenCalledWith(
+      { teamId: TEAM_A, objectId: object.id, trigger: 'auto' },
+      { delayMs: 120_000 },
+    );
+  });
+
+  it('removes stored summaries when a cited source event is tombstoned', async () => {
+    const scope = withTeam(db, TEAM_A, USER_OWNER);
+    const object = await scope.objects.createObject({
+      type: 'company',
+      canonicalName: 'DFK',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    const event = await scope.timeline.createEvent({
+      authorUserId: USER_OWNER,
+      visibilityOwnerUserId: USER_OWNER,
+      source: 'telegram',
+      contentText: 'DFK team-visible planning',
+      occurredAt: new Date('2026-06-02T10:00:00.000Z'),
+      visibility: 'team',
+      sourceMetadata: {
+        tg_chat_id: 42,
+        tg_chat_type: 'private',
+        tg_message_id: 10,
+        tg_update_id: 123,
+      },
+    });
+    const [fact] = await db
+      .insert(facts)
+      .values({
+        teamId: TEAM_A,
+        rawEventId: event.id,
+        statement: 'DFK meeting is confirmed for June 30.',
+        confidence: 1,
+        modelVersion: 'test',
+      })
+      .returning({ id: facts.id });
+    if (!fact) throw new Error('failed to insert fact');
+    await db.insert(factEntities).values({
+      factId: fact.id,
+      entityId: object.id,
+      role: 'subject',
+    });
+    await db.insert(objectSummaries).values({
+      teamId: TEAM_A,
+      entityId: object.id,
+      status: 'ready',
+      summary: {
+        overview: 'DFK has a confirmed June 30 meeting.',
+        overviewSourceRefs: [{ kind: 'fact', id: fact.id }],
+        currentState: [],
+        openQuestions: [],
+        conflicts: [],
+      },
+      plainText: 'DFK has a confirmed June 30 meeting.',
+      sourceRefs: [{ kind: 'fact', id: fact.id }],
+      sourceCounts: {
+        fields: 2,
+        facts: 1,
+        events: 1,
+        notes: 0,
+        relationships: 0,
+        tasks: 0,
+        changes: 0,
+      },
+      inputFingerprint: 'test-fingerprint',
+      model: 'test-summary-model',
+      promptVersion: 'object-summary-v1',
+      generatedAt: new Date('2026-06-02T10:05:00.000Z'),
+    });
+
+    await expect(scope.timeline.removeTelegramMessage(event.id)).resolves.toBe(true);
+
+    const rows = await db
+      .select()
+      .from(objectSummaries)
+      .where(eq(objectSummaries.entityId, object.id));
+    expect(rows).toHaveLength(0);
+    expect(queue.enqueueObjectSummaryJob).toHaveBeenCalledWith(
+      { teamId: TEAM_A, objectId: object.id, trigger: 'auto' },
+      { delayMs: 120_000 },
+    );
+  });
 });

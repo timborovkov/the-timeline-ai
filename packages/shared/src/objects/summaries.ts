@@ -12,7 +12,7 @@ import {
   objectSummaryRuns,
   rawEvents,
 } from '@timeline/db';
-import { and, desc, eq, isNull, ne, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, ne, or, sql } from 'drizzle-orm';
 import { z } from 'zod';
 
 import type { TeamScopeCore } from '#src/team-scope.js';
@@ -384,7 +384,21 @@ async function buildObjectSummaryPacket(
           changedAt: objectChanges.changedAt,
         })
         .from(objectChanges)
-        .where(and(eq(objectChanges.teamId, scope.teamId), eq(objectChanges.entityId, entityId)))
+        .leftJoin(rawEvents, eq(rawEvents.id, objectChanges.sourceEventId))
+        .where(
+          and(
+            eq(objectChanges.teamId, scope.teamId),
+            eq(objectChanges.entityId, entityId),
+            or(
+              isNull(objectChanges.sourceEventId),
+              and(
+                eq(rawEvents.teamId, scope.teamId),
+                eq(rawEvents.visibility, 'team'),
+                sql`COALESCE(${rawEvents.sourceMetadata} ->> 'deleted', 'false') <> 'true'`,
+              ),
+            ),
+          ),
+        )
         .orderBy(desc(objectChanges.changedAt), desc(objectChanges.id))
         .limit(8),
     ]);
@@ -607,6 +621,52 @@ export function fireAndForgetObjectSummaryRefresh(
     .catch((err: unknown) => {
       console.error('failed to enqueue object summary refresh', { err, ...context });
     });
+}
+
+async function objectIdsTouchedByRawEvent(
+  db: Db,
+  teamId: string,
+  rawEventId: string,
+): Promise<string[]> {
+  const [factRows, changeRows] = await Promise.all([
+    db
+      .select({ entityId: factEntities.entityId })
+      .from(factEntities)
+      .innerJoin(facts, eq(facts.id, factEntities.factId))
+      .where(and(eq(facts.teamId, teamId), eq(facts.rawEventId, rawEventId))),
+    db
+      .select({ entityId: objectChanges.entityId })
+      .from(objectChanges)
+      .where(and(eq(objectChanges.teamId, teamId), eq(objectChanges.sourceEventId, rawEventId))),
+  ]);
+  return [...new Set([...factRows, ...changeRows].map((row) => row.entityId))];
+}
+
+export async function invalidateObjectSummariesForRawEvent(
+  db: Db,
+  scope: TeamScopeCore,
+  rawEventId: string,
+  context: Record<string, unknown> = {},
+): Promise<string[]> {
+  await scope.requireMembership();
+  if (!UUID_RE.test(rawEventId)) return [];
+  const entityIds = await objectIdsTouchedByRawEvent(db, scope.teamId, rawEventId);
+  if (entityIds.length === 0) return [];
+
+  await db
+    .delete(objectSummaries)
+    .where(
+      and(eq(objectSummaries.teamId, scope.teamId), inArray(objectSummaries.entityId, entityIds)),
+    );
+
+  for (const entityId of entityIds) {
+    fireAndForgetObjectSummaryRefresh(db, scope, entityId, {
+      ...context,
+      rawEventId,
+      entityId,
+    });
+  }
+  return entityIds;
 }
 
 export async function generateAndStoreObjectSummary(

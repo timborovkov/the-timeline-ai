@@ -74,9 +74,9 @@ implementation detail.
       refresh from canonical object/fact updates, object-page generation/retry,
       search and embedding updates, and chat retrieval consumption with
       underlying-source citations.
-- [ ] Finish harder summary invalidation paths after dogfooding: source event
-      visibility/tombstone changes, remaining indirect linked-task changes, and
-      deeper source-chip navigation beyond timeline-event labels.
+- [ ] Finish remaining summary polish after dogfooding: indirect linked-task
+      invalidation and deeper source-chip navigation beyond timeline-event
+      labels.
 
 ## Calendar
 
