@@ -25,6 +25,7 @@ const TITLE_STOPWORDS = new Set([
   'the',
   'with',
 ]);
+const PAGE_SIZE = 500;
 
 interface Args {
   teamId: string;
@@ -112,8 +113,6 @@ function chooseSurvivor(events: EventRow[]): EventRow {
 function duplicateGroups(events: EventRow[]): DuplicateGroup[] {
   const byKey = new Map<string, EventRow[]>();
   for (const event of events) {
-    const tokens = titleTokens(event.title);
-    if (tokens.length === 0) continue;
     const key = duplicateKey(event);
     byKey.set(key, [...(byKey.get(key) ?? []), event]);
   }
@@ -171,6 +170,27 @@ async function queueCancellationApprovals(input: {
   return queued;
 }
 
+async function listEventsForScan(input: {
+  scope: ReturnType<typeof withTeam>;
+  limit: number;
+}): Promise<EventRow[]> {
+  const events: EventRow[] = [];
+  let offset = 0;
+  while (events.length < input.limit) {
+    const pageLimit = Math.min(PAGE_SIZE, input.limit - events.length);
+    const page = await input.scope.calendar.listCalendarEventPage({
+      includeDeleted: false,
+      limit: pageLimit,
+      offset,
+      order: 'asc',
+    });
+    events.push(...(page.events as EventRow[]));
+    offset += page.events.length;
+    if (page.events.length < pageLimit || offset >= page.total) break;
+  }
+  return events;
+}
+
 async function main(): Promise<void> {
   const { teamId, limit, dryRun } = parseArgs();
   console.log(
@@ -179,10 +199,7 @@ async function main(): Promise<void> {
 
   const db = getDb();
   const scope = withTeam(db, teamId, PSEUDO_USER, { skipMembershipCheck: true });
-  const events = (await scope.calendar.listCalendarEvents({
-    includeDeleted: false,
-    limit,
-  })) as EventRow[];
+  const events = await listEventsForScan({ scope, limit });
   const groups = duplicateGroups(events);
   const duplicateCount = groups.reduce((sum, group) => sum + group.duplicates.length, 0);
 

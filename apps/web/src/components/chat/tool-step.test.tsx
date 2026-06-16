@@ -58,6 +58,27 @@ describe('ToolStep', () => {
     expect(html).toContain('Updated Otto Silventola: status changed from active to done.');
   });
 
+  it('shows calendar tool server messages when output is available', () => {
+    const html = renderToStaticMarkup(
+      createElement(ToolStep, {
+        name: 'execute_calendar_create',
+        state: 'output-available',
+        input: {
+          title: 'Pilot planning',
+          startAt: '2026-06-14T10:00:00.000Z',
+          endAt: '2026-06-14T10:30:00.000Z',
+        },
+        output: {
+          ok: true,
+          message: 'Reused existing calendar suggestion for Pilot planning.',
+        },
+      }),
+    );
+
+    expect(html).toContain('Reused existing calendar suggestion for Pilot planning.');
+    expect(html).not.toContain('Create Pilot planning');
+  });
+
   it('renders create-object approval details', () => {
     const html = renderToStaticMarkup(
       createElement(ToolStep, {

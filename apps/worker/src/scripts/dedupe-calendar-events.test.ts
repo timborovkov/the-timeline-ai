@@ -11,4 +11,15 @@ describe('dedupe-calendar-events script', () => {
     expect(source).toContain('createOrMergeSuggestionBundle');
     expect(source).not.toContain('deleteCalendarEvent(');
   });
+
+  it('scans paginated calendar pages and keeps stopword-only title fallbacks', () => {
+    const source = readFileSync(new URL('./dedupe-calendar-events.ts', import.meta.url), 'utf8');
+
+    expect(source).toContain('listCalendarEventPage');
+    expect(source).toContain('offset');
+    expect(source).not.toContain('if (tokens.length === 0) continue');
+    expect(source).toContain(
+      "titleTokens(event.title).join('+') || event.title.toLowerCase().trim()",
+    );
+  });
 });

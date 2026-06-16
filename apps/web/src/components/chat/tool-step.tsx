@@ -163,7 +163,7 @@ function summarize(name: string, input: unknown, output: unknown, state: string)
     const summary = calendarToolSummary(name, input);
     if (summary && state === 'approval-requested')
       return `Approval needed to ${summary.toLowerCase()}`;
-    if (out?.message) return summary ?? out.message;
+    if (out?.message) return out.message;
     const title = typeof inp.title === 'string' ? inp.title : 'calendar event';
     if (state === 'output-denied') return `Denied calendar event create`;
     return summary ?? `Create ${title}`;
@@ -173,7 +173,7 @@ function summarize(name: string, input: unknown, output: unknown, state: string)
     const summary = calendarToolSummary(name, input);
     if (summary && state === 'approval-requested')
       return `Approval needed to ${summary.toLowerCase()}`;
-    if (out?.message) return summary ?? out.message;
+    if (out?.message) return out.message;
     if (state === 'output-denied') return 'Denied calendar event update';
     return summary ?? 'Update calendar event';
   }
@@ -182,7 +182,7 @@ function summarize(name: string, input: unknown, output: unknown, state: string)
     const summary = calendarToolSummary(name, input);
     if (summary && state === 'approval-requested')
       return `Approval needed to ${summary.toLowerCase()}`;
-    if (out?.message) return summary ?? out.message;
+    if (out?.message) return out.message;
     if (state === 'output-denied') return 'Denied calendar event cancellation';
     return summary ?? 'Cancel calendar event';
   }
