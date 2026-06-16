@@ -34,15 +34,14 @@ export function digestSummaryParagraphs(summary: string): string[] {
 export function digestContentSections(
   digest: Pick<DailyDigestPayload, 'summary' | 'sections'>,
 ): NonNullable<DailyDigestPayload['sections']> {
-  return (
-    digest.sections
-      ?.map((section) => ({
-        title: section.title,
-        items: section.items.map((item) => item.replace(/\s+/g, ' ').trim()).filter(Boolean),
-      }))
-      .filter((section) => section.items.length > 0)
-      .sort((a, b) => (SECTION_ORDER.get(a.title) ?? 99) - (SECTION_ORDER.get(b.title) ?? 99)) ?? []
-  );
+  const sections =
+    digest.sections?.map((section) => ({
+      title: section.title,
+      items: section.items.map((item) => item.replace(/\s+/g, ' ').trim()).filter(Boolean),
+    })) ?? [];
+  return sections
+    .filter((section) => section.items.length > 0)
+    .sort((a, b) => (SECTION_ORDER.get(a.title) ?? 99) - (SECTION_ORDER.get(b.title) ?? 99));
 }
 
 export function formatDigestDate(value: string, timezone?: string): string {

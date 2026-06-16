@@ -111,6 +111,33 @@ describe('messaging templates', () => {
     expect(message.htmlBody).toContain('Open digest');
   });
 
+  it('renders older daily digest payloads without structured sections', () => {
+    const message = renderMessage('daily_digest', {
+      to: 'tim@example.test',
+      digestUrl: 'https://timeline.test/app',
+      payload: {
+        teamName: 'AuditAI',
+        userName: 'Tim',
+        timezone: 'Europe/Helsinki',
+        windowStart: '2026-06-13T08:00:00.000Z',
+        windowEnd: '2026-06-14T08:00:00.000Z',
+        summary: 'Older digest payload without structured sections.',
+        pendingApprovals: 0,
+        eventCount: 1,
+        sourceDistribution: {},
+        objectChangesByType: {},
+        newTeamMembers: [],
+        tasks: [],
+        upcomingCalendar: [],
+        links: [{ label: 'Dashboard', href: '/app' }],
+      },
+    });
+
+    expect(message.textBody).toContain('Older digest payload without structured sections.');
+    expect(message.htmlBody).toContain('Older digest payload without structured sections.');
+    expect(message.htmlBody).toContain('Open digest');
+  });
+
   it('renders email verification with the verification CTA in text and HTML', () => {
     const message = renderMessage('email_verification', {
       to: 'tim@example.test',
