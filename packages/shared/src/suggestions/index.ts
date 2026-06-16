@@ -936,6 +936,24 @@ function sameInstant(left: Date, right: Date): boolean {
   return left.getTime() === right.getTime();
 }
 
+function sameNullableStringArray(
+  left: string[] | null | undefined,
+  right: string[] | null | undefined,
+): boolean {
+  const normalize = (value: string[] | null | undefined) => [...(value ?? [])].sort();
+  return stableStringify(normalize(left)) === stableStringify(normalize(right));
+}
+
+function sameCalendarVisibilityAudience(
+  candidate: CalendarEventWithRedaction,
+  proposed: CreateCalendarEventInput,
+): boolean {
+  const proposedVisibility = proposed.visibility ?? 'team';
+  if (candidate.visibility !== proposedVisibility) return false;
+  if (proposedVisibility !== 'specific_users') return true;
+  return sameNullableStringArray(candidate.visibilityUserIds, proposed.visibilityUserIds);
+}
+
 function calendarEventSummary(event: CalendarEventWithRedaction): CalendarResolutionEventSummary {
   return {
     id: event.id,
@@ -966,7 +984,7 @@ function calendarCreateResolutionDetails(
   const semanticMatches: CalendarEventWithRedaction[] = [];
   for (const candidate of candidates) {
     if (candidate.redacted || candidate.deletedAt) continue;
-    if (candidate.visibility !== (proposed.visibility ?? 'team')) continue;
+    if (!sameCalendarVisibilityAudience(candidate, proposed)) continue;
     const candidateTokens = calendarSubjectTokens(candidate.title, candidate.description);
     const sharedTokens = [...proposedTokens].filter((token) => candidateTokens.has(token));
     if (sharedTokens.length === 0) continue;
@@ -993,51 +1011,22 @@ function calendarCreateResolutionDetails(
 function calendarCreateResolution(
   proposed: CreateCalendarEventInput,
   candidates: CalendarEventWithRedaction[],
-): { event: CalendarResolutionEventSummary; action: 'reuse' | 'update' } | null {
+): { event: CalendarResolutionEventSummary; action: 'reuse' } | null {
   const details = calendarCreateResolutionDetails(proposed, candidates);
   if (details.kind === 'exact_duplicate_reuse') return { event: details.event, action: 'reuse' };
-  if (details.kind === 'semantic_update_candidate')
-    return { event: details.event, action: 'update' };
   return null;
-}
-
-function calendarCreateInputToUpdatePatch(
-  input: CreateCalendarEventInput,
-  providedKeys: Set<string>,
-): UpdateCalendarEventInput {
-  const patch: UpdateCalendarEventInput = {
-    title: input.title,
-    startAt: input.startAt,
-    endAt: input.endAt,
-  };
-  if (providedKeys.has('description')) patch.description = input.description ?? null;
-  if (providedKeys.has('timezone') && input.timezone !== undefined) patch.timezone = input.timezone;
-  if (providedKeys.has('allDay') && input.allDay !== undefined) patch.allDay = input.allDay;
-  if (providedKeys.has('location')) patch.location = input.location ?? null;
-  if (providedKeys.has('showAs') && input.showAs !== undefined) patch.showAs = input.showAs;
-  if (providedKeys.has('rrule') && input.rrule !== undefined) patch.rrule = input.rrule;
-  if (providedKeys.has('visibility') && input.visibility !== undefined)
-    patch.visibility = input.visibility;
-  if (providedKeys.has('visibilityUserIds'))
-    patch.visibilityUserIds = input.visibilityUserIds ?? null;
-  if (providedKeys.has('reminderMinutes') && input.reminderMinutes !== undefined) {
-    patch.reminderMinutes = input.reminderMinutes;
-  }
-  if (input.metadata !== undefined) patch.metadata = input.metadata;
-  return patch;
 }
 
 function normalizeCalendarCreateSuggestionItem(
   item: { proposedPayload: unknown; title: string; id: string },
   defaultTimezone: string,
-): { input: CreateCalendarEventInput; providedKeys: Set<string> } {
+): CreateCalendarEventInput {
   const normalizedCreatePayload = normalizeCalendarPayload(item, {
     fallbackTitle: true,
     defaultTimezone,
     inferAllDayFromDateOnly: true,
     materializeDefaultTimezone: true,
   });
-  const providedKeys = new Set(Object.keys(normalizedCreatePayload));
   const parsed = calendarCreatePayload.parse(normalizedCreatePayload);
   const normalizedRange = parsed.allDay
     ? normalizeAllDayRange({
@@ -1071,7 +1060,7 @@ function normalizeCalendarCreateSuggestionItem(
     },
   };
   if (parsed.linkedEntityIds !== undefined) input.linkedEntityIds = parsed.linkedEntityIds;
-  return { input, providedKeys };
+  return input;
 }
 
 function toBundle(
@@ -2394,10 +2383,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
 
     if (item.operation === 'create') {
       const settings = await calendar.getCalendarSettings();
-      const { input, providedKeys } = normalizeCalendarCreateSuggestionItem(
-        item,
-        settings.defaultTimezone,
-      );
+      const input = normalizeCalendarCreateSuggestionItem(item, settings.defaultTimezone);
       const resolution = calendarCreateResolution(
         input,
         await calendar.listCalendarEvents({
@@ -2407,12 +2393,6 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         }),
       );
       if (resolution) {
-        if (resolution.action === 'update') {
-          await calendar.updateCalendarEvent(
-            resolution.event.id,
-            calendarCreateInputToUpdatePatch(input, providedKeys),
-          );
-        }
         return resolution.event.id;
       }
       const created = await calendar.createCalendarEvent(input);
@@ -2769,7 +2749,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     if (item.operation === 'create') {
       const settings = await calendar.getCalendarSettings();
       try {
-        const { input } = normalizeCalendarCreateSuggestionItem(
+        const input = normalizeCalendarCreateSuggestionItem(
           { id: item.id, title: item.title, proposedPayload: item.proposedPayload },
           settings.defaultTimezone,
         );

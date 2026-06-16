@@ -774,6 +774,27 @@ describe('processSuggestionJobForTests', () => {
         },
       ],
     });
+    await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      visibility: 'private',
+      title: 'Create private Acme slot',
+      dedupeKey: 'private-pending-calendar-context',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'calendar_event',
+          title: 'Private Acme medical hold',
+          dedupeKey: 'private-pending-calendar-context:item',
+          proposedPayload: {
+            title: 'Private Acme medical hold',
+            startAt: '2026-06-20T14:00:00.000Z',
+            endAt: '2026-06-20T15:00:00.000Z',
+            timezone: 'Europe/Helsinki',
+            visibility: 'private',
+          },
+        },
+      ],
+    });
     const chat = emptyModel();
 
     await processSuggestionJobForTests(
@@ -792,6 +813,7 @@ describe('processSuggestionJobForTests', () => {
     expect(prompt).toContain('# Pending calendar approvals');
     expect(prompt).toContain('Acme kickoff option');
     expect(prompt).toContain('proposalGroupId');
+    expect(prompt).not.toContain('Private Acme medical hold');
   });
 
   it('stores grouped tentative slot suggestions from model output', async () => {

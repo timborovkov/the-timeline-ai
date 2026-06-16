@@ -249,7 +249,7 @@ function calendarActionSummary(item: SuggestionItem): {
     return { label: 'Reuse existing', icon: CalendarClock, tone: 'warning' };
   }
   if (item.calendarResolutionHint?.kind === 'semantic_update_candidate') {
-    return { label: 'Move existing', icon: MoveRight, tone: 'warning' };
+    return { label: 'Possible match', icon: AlertTriangle, tone: 'warning' };
   }
   if (item.calendarResolutionHint?.kind === 'ambiguous_match') {
     return { label: 'Needs review', icon: AlertTriangle, tone: 'warning' };
@@ -752,8 +752,8 @@ function CalendarResolutionLine({
   if (hint?.kind === 'semantic_update_candidate') {
     return (
       <p>
-        Looks like a change to "{displayText(hint.event.title)}": {calendarEventRange(hint.event)}
-        {proposedRange ? ` -> ${proposedRange}` : ''}.
+        Looks related to "{displayText(hint.event.title)}" at {calendarEventRange(hint.event)}.
+        Accept will create a new event unless this proposal is revised to target that event.
       </p>
     );
   }

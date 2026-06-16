@@ -3037,7 +3037,7 @@ describe('suggestion scope', () => {
     ]);
   });
 
-  it('amends one clear semantic calendar match when a create suggestion is really a move', async () => {
+  it('keeps one clear semantic calendar match separate unless the suggestion explicitly targets it', async () => {
     const scope = withTeam(db as never, TEAM_ID, USER_ID);
     const existing = await scope.calendar.createCalendarEvent({
       title: 'Acme kickoff',
@@ -3084,17 +3084,20 @@ describe('suggestion scope', () => {
        FROM calendar_events
        WHERE team_id = '${TEAM_ID}' AND deleted_at IS NULL`,
     );
-    expect(result.rows).toHaveLength(1);
-    expect(result.rows[0]?.id).toBe(existing.id);
-    expect(result.rows[0]?.title).toBe('Acme kickoff');
-    expect(result.rows[0]?.description).toBe('Initial project kickoff with Acme.');
-    expect(result.rows[0]?.location).toBe('Zoom');
-    expect(new Date(result.rows[0]?.start_at ?? '').toISOString()).toBe('2026-06-17T15:00:00.000Z');
+    expect(result.rows).toHaveLength(2);
+    const original = result.rows.find((row) => row.id === existing.id);
+    const created = result.rows.find((row) => row.id !== existing.id);
+    expect(original?.title).toBe('Acme kickoff');
+    expect(original?.description).toBe('Initial project kickoff with Acme.');
+    expect(original?.location).toBe('Zoom');
+    expect(new Date(original?.start_at ?? '').toISOString()).toBe('2026-06-15T15:00:00.000Z');
+    expect(created?.title).toBe('Acme kickoff');
+    expect(new Date(created?.start_at ?? '').toISOString()).toBe('2026-06-17T15:00:00.000Z');
 
     const item = await pg.query<{ result_id: string }>(
       `SELECT result_id FROM agent_suggestion_items WHERE id = '${itemId}'`,
     );
-    expect(item.rows[0]?.result_id).toBe(existing.id);
+    expect(item.rows[0]?.result_id).toBe(created?.id);
   });
 
   it('preflights one semantic calendar match as an update candidate', async () => {
@@ -3137,6 +3140,61 @@ describe('suggestion scope', () => {
       event: { id: existing.id, title: 'Acme kickoff' },
     });
   });
+
+  it('does not preflight an exact duplicate calendar event for a different specific-users audience', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    await pg.exec(`
+        INSERT INTO calendar_events (
+          team_id,
+          created_by_user_id,
+          title,
+          start_at,
+          end_at,
+          timezone,
+          visibility,
+          visibility_user_ids,
+          metadata
+        )
+        VALUES (
+          '${TEAM_ID}',
+          '${USER_ID}',
+          'Private Acme planning',
+          '2026-06-17T11:00:00.000Z',
+          '2026-06-17T12:00:00.000Z',
+          'Europe/Helsinki',
+          'specific_users',
+          ARRAY['${USER_ID}']::uuid[],
+          '{}'::jsonb
+        );
+      `);
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Create audience-specific Acme duplicate',
+      dedupeKey: 'calendar-create-specific-users-audience',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'calendar_event',
+          title: 'Private Acme planning',
+          dedupeKey: 'calendar-create-specific-users-audience:item',
+          proposedPayload: {
+            title: 'Private Acme planning',
+            startAt: '2026-06-17T11:00:00.000Z',
+            endAt: '2026-06-17T12:00:00.000Z',
+            timezone: 'Europe/Helsinki',
+            visibility: 'specific_users',
+            visibilityUserIds: [USER_ID, REVIEWER_ID],
+          },
+        },
+      ],
+    });
+    const [preflight] = await scope.suggestions.withCalendarResolutionHints(
+      await scope.suggestions.listPendingSuggestions(),
+    );
+
+    expect(bundle.items[0]?.id).toBeDefined();
+    expect(preflight?.items[0]?.calendarResolutionHint).toMatchObject({ kind: 'new_event' });
+  }, 10_000);
 
   it('does not amend semantic calendar matches when multiple candidates fit', async () => {
     const scope = withTeam(db as never, TEAM_ID, USER_ID);

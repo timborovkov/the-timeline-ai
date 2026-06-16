@@ -1201,6 +1201,7 @@ async function runSuggestionExtraction(
       and(
         eq(agentSuggestionItems.teamId, teamId),
         eq(agentSuggestionItems.targetKind, 'calendar_event'),
+        eq(agentSuggestions.visibility, 'team'),
         inArray(agentSuggestionItems.status, ['pending', 'failed']),
         inArray(agentSuggestions.status, ['pending', 'partially_resolved']),
       ),
