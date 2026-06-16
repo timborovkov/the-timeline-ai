@@ -253,6 +253,26 @@ export async function generateDailyDigest(
 
   const scope = withTeam(input.db, input.teamId, input.userId);
   await scope.requireMembership();
+  const existingRows = await input.db
+    .select({ id: dailyDigests.id, payload: dailyDigests.payload, status: dailyDigests.status })
+    .from(dailyDigests)
+    .where(
+      and(
+        eq(dailyDigests.teamId, input.teamId),
+        eq(dailyDigests.userId, input.userId),
+        eq(dailyDigests.windowStart, input.windowStart),
+        eq(dailyDigests.windowEnd, input.windowEnd),
+      ),
+    )
+    .limit(1);
+  const existingDigest = existingRows[0];
+  if (existingDigest && existingDigest.status !== 'skipped' && existingDigest.status !== 'failed') {
+    return {
+      digestId: existingDigest.id,
+      payload: existingDigest.payload as DailyDigestPayload,
+      skipped: false,
+    };
+  }
   const now = input.now ?? new Date();
   const upcomingTo = addDays(now, 7);
   const [team, userRows, events, pendingApprovals, currentTasks, upcomingCalendar, newMembers] =
@@ -433,19 +453,21 @@ export async function generateDailyDigest(
 
   if (inserted?.id) return { digestId: inserted.id, payload, skipped: false };
 
-  const existing = await input.db
-    .select({ id: dailyDigests.id, payload: dailyDigests.payload, status: dailyDigests.status })
-    .from(dailyDigests)
-    .where(
-      and(
-        eq(dailyDigests.teamId, input.teamId),
-        eq(dailyDigests.userId, input.userId),
-        eq(dailyDigests.windowStart, input.windowStart),
-        eq(dailyDigests.windowEnd, input.windowEnd),
-      ),
-    )
-    .limit(1);
-  if (existing[0]?.status === 'skipped') {
+  const existing = existingDigest
+    ? [existingDigest]
+    : await input.db
+        .select({ id: dailyDigests.id, payload: dailyDigests.payload, status: dailyDigests.status })
+        .from(dailyDigests)
+        .where(
+          and(
+            eq(dailyDigests.teamId, input.teamId),
+            eq(dailyDigests.userId, input.userId),
+            eq(dailyDigests.windowStart, input.windowStart),
+            eq(dailyDigests.windowEnd, input.windowEnd),
+          ),
+        )
+        .limit(1);
+  if (existing[0]?.status === 'skipped' || existing[0]?.status === 'failed') {
     await input.db
       .update(dailyDigests)
       .set({

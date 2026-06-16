@@ -56,6 +56,7 @@ class FakeQueue {
     this.schedulerCalls.push({ id, repeatOpts, template });
     return Promise.resolve();
   });
+  removeRepeatable = vi.fn(() => Promise.resolve(true));
   getJob = vi.fn((jobId: string) =>
     Promise.resolve(this.jobs.has(jobId) ? new FakeJob(this, jobId) : null),
   );
@@ -380,6 +381,11 @@ describe('queue wrappers', () => {
       name: 'mcp-health-tick',
       opts: { repeat: { pattern: '*/5 * * * *' }, jobId: 'mcp-health-tick-5min' },
     });
+    expect(fakes.queues[4]?.removeRepeatable).toHaveBeenCalledWith(
+      'tick',
+      { pattern: '0 12 * * *' },
+      'daily-digest-1200-utc',
+    );
     expect(fakes.queues[4]?.schedulerCalls[0]).toMatchObject({
       id: 'daily-digest-1200-utc',
       repeatOpts: { pattern: '0 12 * * *' },

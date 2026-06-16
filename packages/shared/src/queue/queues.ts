@@ -3,6 +3,9 @@ import { Queue, type JobsOptions } from 'bullmq';
 import { getRedisConnection } from '#src/queue/connection.js';
 
 type TimelineQueue<TData> = Queue<TData, unknown, string, TData, unknown, string>;
+interface LegacyRepeatableQueue {
+  removeRepeatable(name: string, repeatOpts: { pattern: string }, jobId?: string): Promise<boolean>;
+}
 
 export const QUEUE_NAMES = {
   transcribe: 'transcribe',
@@ -885,7 +888,15 @@ export function getDailyDigestQueue(): TimelineQueue<DailyDigestJobData> {
 }
 
 export async function scheduleDailyDigest(): Promise<void> {
-  await getDailyDigestQueue().upsertJobScheduler(
+  const queue = getDailyDigestQueue();
+  // BullMQ v5 keeps legacy repeatables separate from Job Schedulers. The legacy
+  // cleanup API is deprecated for new code, but it is still the migration path.
+  await (queue as LegacyRepeatableQueue).removeRepeatable(
+    'tick',
+    { pattern: '0 12 * * *' },
+    'daily-digest-1200-utc',
+  );
+  await queue.upsertJobScheduler(
     'daily-digest-1200-utc',
     { pattern: '0 12 * * *' },
     { name: 'tick', data: { kind: 'tick', reason: 'scheduled' } },
