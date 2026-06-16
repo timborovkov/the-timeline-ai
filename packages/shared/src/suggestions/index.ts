@@ -239,6 +239,11 @@ const blankStringAsNull = <T extends z.ZodType>(schema: T) =>
     if (typeof value === 'string' && value.trim() === '') return null;
     return value;
   }, schema);
+const blankStringAsUndefined = <T extends z.ZodType>(schema: T) =>
+  z.preprocess((value) => {
+    if (typeof value === 'string' && value.trim() === '') return undefined;
+    return value;
+  }, schema.optional());
 const localRef = z
   .string()
   .trim()
@@ -292,6 +297,9 @@ const objectCreatePayload = z.object({
 
 const objectUpdatePayload = z.object({
   ...objectPayloadFields,
+  ownerUserId: blankStringAsUndefined(uuid.nullable()),
+  assigneeUserId: blankStringAsUndefined(uuid.nullable()),
+  dueAt: blankStringAsUndefined(z.iso.datetime().nullable()),
   canonicalName: z.string().trim().min(1).max(200).optional(),
 });
 

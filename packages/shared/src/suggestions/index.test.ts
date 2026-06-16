@@ -1663,6 +1663,58 @@ describe('suggestion scope', () => {
     expect(updated.rows[0]?.due_at?.toISOString()).toBe('2026-08-02T12:00:00.000Z');
   });
 
+  it('treats blank optional object update fields as absent values', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const task = await scope.objects.createObject({
+      type: 'task',
+      canonicalName: 'Keep existing assignment',
+      status: 'todo',
+      assigneeUserId: REVIEWER_ID,
+      dueAt: new Date('2026-08-03T09:00:00.000Z'),
+      priority: 2,
+      actor: { kind: 'agent', userId: null },
+    });
+
+    const updateBundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Update task without clearing optional fields',
+      dedupeKey: 'update-blank-optional-fields',
+      items: [
+        {
+          operation: 'update',
+          targetKind: 'task',
+          targetId: task.id,
+          title: 'Keep task assignment fields',
+          dedupeKey: 'update-blank-optional-fields:item',
+          proposedPayload: {
+            assigneeUserId: '',
+            dueAt: '',
+            priority: 1,
+          },
+        },
+      ],
+    });
+
+    await expect(
+      scope.suggestions.acceptSuggestionItem(updateBundle.items[0]?.id ?? ''),
+    ).resolves.toBe(true);
+
+    const updated = await pg.query<{
+      assignee_user_id: string | null;
+      due_at: Date | null;
+      priority: number | null;
+    }>(
+      `SELECT assignee_user_id::text, due_at, priority
+       FROM entities
+       WHERE id = '${task.id}'`,
+    );
+    expect(updated.rows[0]).toMatchObject({
+      assignee_user_id: REVIEWER_ID,
+      priority: 1,
+    });
+    expect(updated.rows[0]?.due_at?.toISOString()).toBe('2026-08-03T09:00:00.000Z');
+  });
+
   it('does not treat an unrelated exact existing create task as already represented', async () => {
     const scope = withTeam(db as never, TEAM_ID, USER_ID);
     const existing = await scope.objects.createObject({
