@@ -506,8 +506,9 @@
           kanban / table / list variants; <code>@dnd-kit/core</code>-driven drag-to-move on kanban.
         </li>
         <li>
-          <strong>Tasks shortcut</strong> — <code>/app/tasks</code> reuses
-          <code>&lt;KanbanBoard&gt;</code> with a hardcoded <code>{type:'task'}</code> filter.
+          <strong>Tasks shortcut</strong> — <code>/app/tasks</code> renders object-backed task rows
+          through a task-specific board with assignee, due date, priority, and a side-panel detail
+          route before opening the full object page.
         </li>
         <li>
           <strong>Chat session sidebar</strong> — <code>/app/chat</code> two-column layout, session

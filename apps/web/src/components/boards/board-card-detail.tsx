@@ -24,6 +24,7 @@ import {
 } from '@/components/ui/dialog';
 import { boardViewHref } from '@/lib/board-links';
 import { displayText, formatDisplayDateTime } from '@/lib/display-dates';
+import { objectDetailHref } from '@/lib/object-links';
 import { cn } from '@/lib/utils';
 
 interface Props {
@@ -426,7 +427,7 @@ function BoardActions({
   const timelineHref = `/app/timeline?q=${encodeURIComponent(item.object.canonicalName)}`;
   return (
     <div className="flex flex-wrap gap-2 border-b border-border p-4">
-      <ObjectPreviewDialog item={item} />
+      <ObjectPreviewDialog item={item} view={view} />
       <Link
         href={`/app/chat?object=${item.entityId}`}
         className="rounded-sm border border-border px-2 py-1 text-xs font-medium hover:bg-surface"
@@ -529,7 +530,7 @@ function BoardActivity({
   );
 }
 
-function ObjectPreviewDialog({ item }: { item: boards.BoardItemRow }) {
+function ObjectPreviewDialog({ item, view }: { item: boards.BoardItemRow; view: BoardLayout }) {
   return (
     <Dialog>
       <DialogTrigger asChild>
@@ -568,7 +569,7 @@ function ObjectPreviewDialog({ item }: { item: boards.BoardItemRow }) {
         ) : null}
         <div className="flex justify-end">
           <Link
-            href={`/app/objects/${item.entityId}`}
+            href={objectDetailHref(item.entityId, boardViewHref(item.boardId, view, item.id))}
             className="inline-flex items-center gap-2 rounded-sm border border-border px-3 py-1.5 text-sm font-medium hover:bg-surface"
           >
             <ExternalLink className="size-3.5" aria-hidden="true" />
