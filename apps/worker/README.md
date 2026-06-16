@@ -17,6 +17,7 @@ pnpm --filter @timeline/worker reextract -- --team=<teamId>
 pnpm --filter @timeline/worker reembed   -- --team=<teamId> --target-collection=events_v2
 pnpm --filter @timeline/worker resuggest -- --team=<teamId> [--since=2026-06-01] [--until=2026-06-04] [--source=all|telegram|slack] [--limit=N] [--all] [--dry-run]
 pnpm --filter @timeline/worker dedupe-approvals -- --team=<teamId> [--limit=N] [--apply]
+pnpm --filter @timeline/worker dedupe-calendar-events -- --team=<teamId> [--limit=N] [--from=2026-06-01] [--to=2026-07-01] [--apply]
 pnpm --filter @timeline/worker redocument-extract -- --team=<teamId> [--status=failed,pending] [--force]
 pnpm --filter @timeline/worker redocument-embed   -- --team=<teamId> [--target-collection=docs_v2]
 ```
@@ -29,6 +30,10 @@ cross-artifact lifecycle updates only when evidence resolves to one artifact, an
 pending lifecycle approvals while preserving unrelated approval items in the same bundle.
 `dedupe-approvals` defaults to dry-run and supersedes stale duplicate pending approval items only
 when the same conservative workspace reconciliation predicate can identify a survivor.
+`dedupe-calendar-events` defaults to dry-run, scans recent and future rows by default, accepts
+`--from`/`--to` for explicit date windows, and queues cancellation approvals rather than deleting
+calendar rows directly. It skips recurring series masters as deletion candidates because those need
+manual review.
 
 Production starts the combined worker entry point (see [docs/railway.html](../../docs/railway.html)):
 

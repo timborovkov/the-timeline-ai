@@ -17,17 +17,27 @@ describe('dedupe-calendar-events script', () => {
 
     expect(source).toContain('listCalendarEventPage');
     expect(source).toContain('offset');
+    expect(source).toContain('DEFAULT_LOOKBACK_MS');
+    expect(source).toContain('from: input.from');
+    expect(source).toContain("else if (arg.startsWith('--from='))");
+    expect(source).toContain("else if (arg.startsWith('--to='))");
     expect(source).not.toContain('if (tokens.length === 0) continue');
     expect(source).toContain(
       "titleTokens(event.title).join('+') || event.title.toLowerCase().trim()",
     );
   });
 
-  it('cancels duplicate recurring occurrences without deleting the whole series', () => {
+  it('avoids broad recurring-series cleanup for duplicate recurring rows', () => {
     const source = readFileSync(new URL('./dedupe-calendar-events.ts', import.meta.url), 'utf8');
 
     expect(source).toContain('recurringParentId: string | null');
+    expect(source).toContain('rrule: string | null');
+    expect(source).toContain('function isRecurringMaster');
     expect(source).toContain(
+      'duplicates: duplicateCandidates.filter((event) => !isRecurringMaster(event))',
+    );
+    expect(source).toContain("recurrenceEditMode: 'single'");
+    expect(source).not.toContain(
       "recurrenceEditMode: duplicate.recurringParentId ? 'single' : 'series'",
     );
   });

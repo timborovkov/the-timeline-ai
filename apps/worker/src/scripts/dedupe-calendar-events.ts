@@ -4,7 +4,7 @@
  * duplicate events so a human can review the cleanup.
  *
  * Usage:
- *   pnpm --filter @timeline/worker dedupe-calendar-events -- --team=<teamId> [--limit=N] [--apply]
+ *   pnpm --filter @timeline/worker dedupe-calendar-events -- --team=<teamId> [--limit=N] [--from=YYYY-MM-DD] [--to=YYYY-MM-DD] [--apply]
  */
 import { closeDb, getDb } from '@timeline/db';
 import { suggestions, withTeam } from '@timeline/shared';
@@ -26,11 +26,14 @@ const TITLE_STOPWORDS = new Set([
   'with',
 ]);
 const PAGE_SIZE = 500;
+const DEFAULT_LOOKBACK_MS = 90 * 24 * 60 * 60 * 1000;
 
 interface Args {
   teamId: string;
   limit: number;
   dryRun: boolean;
+  from: Date;
+  to?: Date;
 }
 
 interface EventRow {
@@ -43,6 +46,7 @@ interface EventRow {
   allDay: boolean;
   visibility: 'private' | 'team' | 'specific_users';
   recurringParentId: string | null;
+  rrule: string | null;
   createdAt: Date;
   source: string;
   agentSuggested: boolean;
@@ -52,6 +56,7 @@ interface DuplicateGroup {
   key: string;
   survivor: EventRow;
   duplicates: EventRow[];
+  skippedRecurringMasters: EventRow[];
 }
 
 function parseArgs(): Args {
@@ -59,6 +64,8 @@ function parseArgs(): Args {
   let teamId: string | undefined;
   let limit = 1000;
   let dryRun = true;
+  let from: Date | undefined;
+  let to: Date | undefined;
 
   for (const arg of args) {
     if (arg.startsWith('--team=')) teamId = arg.slice('--team='.length);
@@ -71,14 +78,33 @@ function parseArgs(): Args {
       limit = parsed;
     } else if (arg === '--apply') dryRun = false;
     else if (arg === '--dry-run') dryRun = true;
+    else if (arg.startsWith('--from=')) from = parseDateArg(arg.slice('--from='.length), '--from');
+    else if (arg.startsWith('--to=')) to = parseDateArg(arg.slice('--to='.length), '--to');
   }
 
   if (!teamId || !UUID_RE.test(teamId)) {
-    console.error('Usage: dedupe-calendar-events --team=<uuid> [--limit=N] [--apply]');
+    console.error(
+      'Usage: dedupe-calendar-events --team=<uuid> [--limit=N] [--from=YYYY-MM-DD] [--to=YYYY-MM-DD] [--apply]',
+    );
     process.exit(2);
   }
 
-  return { teamId, limit, dryRun };
+  return {
+    teamId,
+    limit,
+    dryRun,
+    from: from ?? new Date(Date.now() - DEFAULT_LOOKBACK_MS),
+    ...(to ? { to } : {}),
+  };
+}
+
+function parseDateArg(value: string, flag: string): Date {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    console.error(`Invalid ${flag}. Use an ISO date or timestamp.`);
+    process.exit(2);
+  }
+  return parsed;
 }
 
 function titleTokens(title: string): string[] {
@@ -111,6 +137,10 @@ function chooseSurvivor(events: EventRow[]): EventRow {
   return survivor;
 }
 
+function isRecurringMaster(event: EventRow): boolean {
+  return event.recurringParentId === null && event.rrule !== null && event.rrule.length > 0;
+}
+
 function duplicateGroups(events: EventRow[]): DuplicateGroup[] {
   const byKey = new Map<string, EventRow[]>();
   for (const event of events) {
@@ -121,10 +151,12 @@ function duplicateGroups(events: EventRow[]): DuplicateGroup[] {
     .filter(([, group]) => group.length > 1)
     .map(([key, group]) => {
       const survivor = chooseSurvivor(group);
+      const duplicateCandidates = group.filter((event) => event.id !== survivor.id);
       return {
         key,
         survivor,
-        duplicates: group.filter((event) => event.id !== survivor.id),
+        duplicates: duplicateCandidates.filter((event) => !isRecurringMaster(event)),
+        skippedRecurringMasters: duplicateCandidates.filter(isRecurringMaster),
       };
     });
 }
@@ -160,7 +192,7 @@ async function queueCancellationApprovals(input: {
             proposedPayload: {
               duplicateOfCalendarEventId: group.survivor.id,
               cleanupKey: group.key,
-              recurrenceEditMode: duplicate.recurringParentId ? 'single' : 'series',
+              recurrenceEditMode: 'single',
             },
           },
         ],
@@ -174,12 +206,16 @@ async function queueCancellationApprovals(input: {
 async function listEventsForScan(input: {
   scope: ReturnType<typeof withTeam>;
   limit: number;
+  from: Date;
+  to?: Date;
 }): Promise<EventRow[]> {
   const events: EventRow[] = [];
   let offset = 0;
   while (events.length < input.limit) {
     const pageLimit = Math.min(PAGE_SIZE, input.limit - events.length);
     const page = await input.scope.calendar.listCalendarEventPage({
+      from: input.from,
+      ...(input.to ? { to: input.to } : {}),
       includeDeleted: false,
       limit: pageLimit,
       offset,
@@ -193,19 +229,25 @@ async function listEventsForScan(input: {
 }
 
 async function main(): Promise<void> {
-  const { teamId, limit, dryRun } = parseArgs();
+  const { teamId, limit, dryRun, from, to } = parseArgs();
   console.log(
-    `[dedupe-calendar-events] team=${teamId} limit=${limit} mode=${dryRun ? 'dry-run' : 'apply'}`,
+    `[dedupe-calendar-events] team=${teamId} limit=${limit} from=${from.toISOString()}${
+      to ? ` to=${to.toISOString()}` : ''
+    } mode=${dryRun ? 'dry-run' : 'apply'}`,
   );
 
   const db = getDb();
   const scope = withTeam(db, teamId, PSEUDO_USER, { skipMembershipCheck: true });
-  const events = await listEventsForScan({ scope, limit });
+  const events = await listEventsForScan({ scope, limit, from, ...(to ? { to } : {}) });
   const groups = duplicateGroups(events);
   const duplicateCount = groups.reduce((sum, group) => sum + group.duplicates.length, 0);
+  const skippedRecurringMasterCount = groups.reduce(
+    (sum, group) => sum + group.skippedRecurringMasters.length,
+    0,
+  );
 
   console.log(
-    `[dedupe-calendar-events] scanned=${events.length} groups=${groups.length} duplicates=${duplicateCount}${
+    `[dedupe-calendar-events] scanned=${events.length} groups=${groups.length} duplicates=${duplicateCount} skippedRecurringMasters=${skippedRecurringMasterCount}${
       dryRun ? ' (dry-run, no approvals queued)' : ''
     }`,
   );
@@ -215,6 +257,13 @@ async function main(): Promise<void> {
         .map((event) => event.id)
         .join(',')}`,
     );
+    if (group.skippedRecurringMasters.length > 0) {
+      console.log(
+        `[dedupe-calendar-events] recurring masters skipped=${group.skippedRecurringMasters
+          .map((event) => event.id)
+          .join(',')} (manual review required)`,
+      );
+    }
   }
   if (groups.length > 50) {
     console.log(`[dedupe-calendar-events] ... ${groups.length - 50} more groups`);
