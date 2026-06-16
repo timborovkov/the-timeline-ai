@@ -62,10 +62,10 @@ describe('generateDailyDigest conflict handling', () => {
         .mockReturnValueOnce(
           chainResult([{ dailyDigestEnabled: true, dailyDigestHour: 12, timezone: 'UTC' }]),
         )
+        .mockReturnValueOnce(chainResult([{ id: 'digest-1', status: 'skipped', payload: {} }]))
         .mockReturnValueOnce(chainResult([{ name: 'Tim', email: 'tim@example.test' }]))
         .mockReturnValueOnce(chainResult([]))
-        .mockReturnValueOnce(chainResult([]))
-        .mockReturnValueOnce(chainResult([{ id: 'digest-1', status: 'skipped', payload: {} }])),
+        .mockReturnValueOnce(chainResult([])),
       insert: vi.fn(() => insertConflict()),
       update: vi.fn(() => ({
         set: vi.fn((values: unknown) => {
@@ -105,5 +105,52 @@ describe('generateDailyDigest conflict handling', () => {
     expect(generatedUpdate).toBeDefined();
     expect(generatedUpdate?.summary).toBe('Pilot invite flow moved toward launch.');
     expect(generatedUpdate?.payload).toMatchObject({ teamName: 'AuditAI', eventCount: 1 });
+  });
+
+  it('returns an existing generated digest without rebuilding the summary', async () => {
+    const summarize = vi.fn().mockResolvedValue('Should not be used.');
+    const db = {
+      select: vi
+        .fn()
+        .mockReturnValueOnce(
+          chainResult([{ dailyDigestEnabled: true, dailyDigestHour: 12, timezone: 'UTC' }]),
+        )
+        .mockReturnValueOnce(
+          chainResult([
+            {
+              id: 'digest-1',
+              status: 'generated',
+              payload: {
+                teamName: 'AuditAI',
+                summary: 'Existing digest.',
+                windowStart: '2026-06-13T12:00:00.000Z',
+                windowEnd: '2026-06-14T12:00:00.000Z',
+              },
+            },
+          ]),
+        ),
+      insert: vi.fn(() => insertConflict()),
+      update: vi.fn(),
+    };
+
+    await expect(
+      generateDailyDigest({
+        db: db as never,
+        teamId: 'team-1',
+        userId: 'user-1',
+        windowStart: new Date('2026-06-13T12:00:00Z'),
+        windowEnd: new Date('2026-06-14T12:00:00Z'),
+        now: new Date('2026-06-14T12:05:00Z'),
+        summarize,
+      }),
+    ).resolves.toMatchObject({
+      digestId: 'digest-1',
+      skipped: false,
+      payload: { summary: 'Existing digest.' },
+    });
+
+    expect(summarize).not.toHaveBeenCalled();
+    expect(db.insert).not.toHaveBeenCalled();
+    expect(db.update).not.toHaveBeenCalled();
   });
 });

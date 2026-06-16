@@ -3,6 +3,9 @@ import { Queue, type JobsOptions } from 'bullmq';
 import { getRedisConnection } from '#src/queue/connection.js';
 
 type TimelineQueue<TData> = Queue<TData, unknown, string, TData, unknown, string>;
+interface LegacyRepeatableQueue {
+  removeRepeatable(name: string, repeatOpts: { pattern: string }, jobId?: string): Promise<boolean>;
+}
 
 export const QUEUE_NAMES = {
   transcribe: 'transcribe',
@@ -860,7 +863,7 @@ export async function closeTeamExportQueue(): Promise<void> {
 }
 
 export type DailyDigestJobData =
-  | { kind: 'tick' }
+  | { kind: 'tick'; windowStart?: string; windowEnd?: string; reason?: 'scheduled' | 'catchup' }
   | {
       kind: 'recipient';
       teamId: string;
@@ -885,13 +888,41 @@ export function getDailyDigestQueue(): TimelineQueue<DailyDigestJobData> {
 }
 
 export async function scheduleDailyDigest(): Promise<void> {
+  const queue = getDailyDigestQueue();
+  // BullMQ v5 keeps legacy repeatables separate from Job Schedulers. The legacy
+  // cleanup API is deprecated for new code, but it is still the migration path.
+  await (queue as LegacyRepeatableQueue).removeRepeatable(
+    'tick',
+    { pattern: '0 12 * * *' },
+    'daily-digest-1200-utc',
+  );
+  await queue.upsertJobScheduler(
+    'daily-digest-1200-utc',
+    { pattern: '0 12 * * *' },
+    { name: 'tick', data: { kind: 'tick', reason: 'scheduled' } },
+  );
+  await enqueueDailyDigestCatchupJob();
+}
+
+function latestDailyDigestWindow(now: Date = new Date()): { start: Date; end: Date } {
+  const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 12));
+  if (now < end) end.setUTCDate(end.getUTCDate() - 1);
+  const start = new Date(end);
+  start.setUTCDate(start.getUTCDate() - 1);
+  return { start, end };
+}
+
+export async function enqueueDailyDigestCatchupJob(now: Date = new Date()): Promise<void> {
+  const window = latestDailyDigestWindow(now);
   await getDailyDigestQueue().add(
     'tick',
-    { kind: 'tick' },
     {
-      repeat: { pattern: '0 12 * * *' },
-      jobId: 'daily-digest-1200-utc',
+      kind: 'tick',
+      reason: 'catchup',
+      windowStart: window.start.toISOString(),
+      windowEnd: window.end.toISOString(),
     },
+    { jobId: bullmqCustomJobId(['daily-digest-catchup', window.end.toISOString()]) },
   );
 }
 
@@ -899,14 +930,16 @@ export async function enqueueDailyDigestRecipientJob(
   data: Extract<DailyDigestJobData, { kind: 'recipient' }>,
 ): Promise<void> {
   await getDailyDigestQueue().add('recipient', data, {
-    jobId: `daily-digest:${data.teamId}:${data.userId}:${data.windowEnd}`,
+    jobId: bullmqCustomJobId(['daily-digest', data.teamId, data.userId, data.windowEnd]),
   });
 }
 
 export async function enqueueDailyDigestSendJob(
   data: Extract<DailyDigestJobData, { kind: 'send' }>,
 ): Promise<void> {
-  await getDailyDigestQueue().add('send', data, { jobId: `daily-digest-send:${data.digestId}` });
+  await getDailyDigestQueue().add('send', data, {
+    jobId: bullmqCustomJobId(['daily-digest-send', data.digestId]),
+  });
 }
 
 export async function closeDailyDigestQueue(): Promise<void> {

@@ -98,14 +98,15 @@ export default async function CalendarPage({ searchParams }: PageProps) {
   if (!active) redirect('/sign-in');
 
   const scope = withTeam(db, active.teamId, session.user.id);
-  await scope.requireMembership();
 
+  const membership = scope.requireMembership();
   const [params, settings, pendingSuggestions] = await Promise.all([
     searchParams,
-    scope.calendar.getCalendarSettings(),
-    scope.suggestions
-      .listPendingSuggestions()
-      .then((rows) => scope.suggestions.withCalendarResolutionHints(rows)),
+    membership.then(() => scope.calendar.getCalendarSettings()),
+    membership.then(async () => {
+      const pendingSuggestionRows = await scope.suggestions.listPendingSuggestions();
+      return await scope.suggestions.withCalendarResolutionHints(pendingSuggestionRows);
+    }),
   ]);
   const now = new Date();
   const anchor = params.date && /^\d{4}-\d{2}-\d{2}$/.test(params.date) ? params.date : null;

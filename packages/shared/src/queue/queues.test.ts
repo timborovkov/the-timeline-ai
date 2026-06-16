@@ -17,6 +17,12 @@ interface AddCall {
   opts?: unknown;
 }
 
+interface SchedulerCall {
+  id: string;
+  repeatOpts: unknown;
+  template?: unknown;
+}
+
 class FakeJob {
   constructor(
     private queue: FakeQueue,
@@ -46,10 +52,16 @@ class FakeQueue {
       return Promise.resolve();
     },
   );
+  upsertJobScheduler = vi.fn((id: string, repeatOpts: unknown, template?: unknown) => {
+    this.schedulerCalls.push({ id, repeatOpts, template });
+    return Promise.resolve();
+  });
+  removeRepeatable = vi.fn(() => Promise.resolve(true));
   getJob = vi.fn((jobId: string) =>
     Promise.resolve(this.jobs.has(jobId) ? new FakeJob(this, jobId) : null),
   );
   addCalls: AddCall[] = [];
+  schedulerCalls: SchedulerCall[] = [];
   close = vi.fn(() => Promise.resolve());
 
   constructor(name: string, options: Record<string, unknown>) {
@@ -351,6 +363,7 @@ describe('queue wrappers', () => {
     await queues.scheduleCalendarRecurrenceMaterialization();
     await queues.scheduleJanitorSweep();
     await queues.scheduleMcpHealthPing();
+    await queues.scheduleDailyDigest();
 
     expect(fakes.queues[0]?.addCalls[0]).toMatchObject({
       name: 'scan',
@@ -368,15 +381,67 @@ describe('queue wrappers', () => {
       name: 'mcp-health-tick',
       opts: { repeat: { pattern: '*/5 * * * *' }, jobId: 'mcp-health-tick-5min' },
     });
+    expect(fakes.queues[4]?.removeRepeatable).toHaveBeenCalledWith(
+      'tick',
+      { pattern: '0 12 * * *' },
+      'daily-digest-1200-utc',
+    );
+    expect(fakes.queues[4]?.schedulerCalls[0]).toMatchObject({
+      id: 'daily-digest-1200-utc',
+      repeatOpts: { pattern: '0 12 * * *' },
+      template: { name: 'tick', data: { kind: 'tick', reason: 'scheduled' } },
+    });
+    expect(fakes.queues[4]?.addCalls[0]).toMatchObject({
+      name: 'tick',
+      data: { kind: 'tick', reason: 'catchup' },
+    });
+    const catchupJobId = fakes.queues[4]?.addCalls[0]?.opts as { jobId?: string };
+    expect(catchupJobId.jobId).toMatch(/^daily-digest-catchup\|/);
+    expect(catchupJobId.jobId).not.toContain(':');
 
     await queues.closeOverdueScanQueue();
     await queues.closeCalendarRecurrenceQueue();
     await queues.closeJanitorQueue();
     await queues.closeMcpHealthQueue();
+    await queues.closeDailyDigestQueue();
     expect(fakes.queues.every((queue) => queue.close.mock.calls.length === 1)).toBe(true);
 
     await queues.scheduleOverdueScan();
     expect(fakes.queues.filter((queue) => queue.name === 'overdue-scan')).toHaveLength(2);
+  });
+
+  it('uses BullMQ-safe ids for daily digest recipient and send jobs', async () => {
+    const queues = await importQueues();
+
+    await queues.enqueueDailyDigestRecipientJob({
+      kind: 'recipient',
+      teamId: '22222222-2222-4222-8222-222222222222',
+      userId: '55555555-5555-4555-8555-555555555555',
+      email: 'tim@example.test',
+      windowStart: '2026-06-15T12:00:00.000Z',
+      windowEnd: '2026-06-16T12:00:00.000Z',
+    });
+    await queues.enqueueDailyDigestSendJob({
+      kind: 'send',
+      digestId: '33333333-3333-4333-8333-333333333333',
+      email: 'tim@example.test',
+    });
+
+    expect(fakes.queues[0]?.addCalls[0]).toMatchObject({
+      name: 'recipient',
+      opts: {
+        jobId:
+          'daily-digest|22222222-2222-4222-8222-222222222222|55555555-5555-4555-8555-555555555555|2026-06-16T12%3A00%3A00.000Z',
+      },
+    });
+    expect(fakes.queues[0]?.addCalls[1]).toMatchObject({
+      name: 'send',
+      opts: { jobId: 'daily-digest-send|33333333-3333-4333-8333-333333333333' },
+    });
+    for (const call of fakes.queues[0]?.addCalls ?? []) {
+      const opts = call.opts as { jobId?: string } | undefined;
+      expect(opts?.jobId).not.toContain(':');
+    }
   });
 
   it('requires Redis configuration before constructing queues', async () => {

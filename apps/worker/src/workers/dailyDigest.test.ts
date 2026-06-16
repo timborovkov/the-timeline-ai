@@ -63,6 +63,32 @@ describe('daily digest worker', () => {
     );
   });
 
+  it('uses the explicit catch-up window when one is queued', async () => {
+    fakes.listDailyDigestRecipients.mockResolvedValue([
+      { teamId: 'team-1', userId: 'user-1', email: 'a@example.test' },
+    ]);
+
+    await expect(
+      processDailyDigestJob(
+        { db: {} as never },
+        {
+          kind: 'tick',
+          reason: 'catchup',
+          windowStart: '2026-06-15T12:00:00.000Z',
+          windowEnd: '2026-06-16T12:00:00.000Z',
+        },
+      ),
+    ).resolves.toEqual({ recipients: 1 });
+
+    expect(fakes.defaultDigestWindow).not.toHaveBeenCalled();
+    expect(fakes.enqueueDailyDigestRecipientJob).toHaveBeenCalledWith(
+      expect.objectContaining({
+        windowStart: '2026-06-15T12:00:00.000Z',
+        windowEnd: '2026-06-16T12:00:00.000Z',
+      }),
+    );
+  });
+
   it('enqueues a send job after generating a digest', async () => {
     fakes.generateDailyDigest.mockResolvedValue({ digestId: 'digest-1', skipped: false });
 
