@@ -97,7 +97,26 @@ function isExpectedApplyFailure(err: unknown): boolean {
 }
 
 function suggestionApplyFailureReason(err: unknown): string {
+  if (isEntityCanonicalNameDuplicate(err)) {
+    return 'A workspace object with this name already exists. Reject this proposal or update the existing object instead.';
+  }
   if (err instanceof z.ZodError) {
+    const missingPaths = new Set(
+      err.issues
+        .filter(
+          (issue) =>
+            issue.code === 'invalid_type' &&
+            issue.expected === 'string' &&
+            issue.message.includes('received undefined'),
+        )
+        .map((issue) => issue.path.join('.')),
+    );
+    if (missingPaths.has('startAt') || missingPaths.has('endAt')) {
+      return 'Calendar proposal is missing a start or end time. Reject it or revise the source details before accepting.';
+    }
+    if (missingPaths.has('canonicalName')) {
+      return 'Workspace memory proposal is missing a name. Reject it or revise the source details before accepting.';
+    }
     const issueText = err.issues
       .map((issue) => {
         const path = issue.path.length > 0 ? issue.path.join('.') : 'payload';
@@ -676,8 +695,12 @@ function normalizeLifecycleStatus(value: unknown, type: LifecycleStatusType): un
 }
 
 function normalizeLifecyclePayload(
-  item: Pick<typeof agentSuggestionItems.$inferSelect, 'targetKind' | 'proposedPayload'> & {
+  item: Pick<
+    typeof agentSuggestionItems.$inferSelect,
+    'operation' | 'targetKind' | 'proposedPayload'
+  > & {
     objectType?: ObjectType | null;
+    title?: string;
   },
 ): Record<string, unknown> {
   const payload =
@@ -686,6 +709,16 @@ function normalizeLifecyclePayload(
     !Array.isArray(item.proposedPayload)
       ? { ...(item.proposedPayload as Record<string, unknown>) }
       : {};
+  if (
+    item.operation === 'create' &&
+    (item.targetKind === 'object' || item.targetKind === 'task') &&
+    typeof item.title === 'string' &&
+    item.title.trim().length > 0 &&
+    typeof payload.canonicalName !== 'string' &&
+    typeof payload.title !== 'string'
+  ) {
+    payload.canonicalName = item.title;
+  }
   const lifecycleType = lifecycleStatusTypeForPayload(item, payload, item.objectType);
   if (lifecycleType && Object.hasOwn(payload, 'status')) {
     payload.status = normalizeLifecycleStatus(payload.status, lifecycleType);
@@ -3011,7 +3044,9 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
           .values(
             input.items.map((item) => {
               const proposedPayload = normalizeLifecyclePayload({
+                operation: item.operation,
                 targetKind: item.targetKind,
+                title: item.title,
                 proposedPayload: item.proposedPayload,
                 objectType:
                   item.targetKind === 'object' && item.operation !== 'create'
