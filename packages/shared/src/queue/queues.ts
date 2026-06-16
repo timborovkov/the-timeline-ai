@@ -946,10 +946,11 @@ export async function enqueueObjectSummaryJob(
   const existing = (await q.getJob(jobId)) as ExistingJobLike | null;
   if (existing) {
     const state = await existing.getState?.().catch(() => null);
-    if (!state || SUGGESTION_JOB_DEDUPE_STATES.has(state)) {
+    if (data.trigger === 'manual' && state === 'delayed' && existing.remove) {
+      await existing.remove().catch(() => undefined);
+    } else if (!state || SUGGESTION_JOB_DEDUPE_STATES.has(state)) {
       return { enqueued: false, jobId };
-    }
-    if (SUGGESTION_JOB_REPLACEABLE_STATES.has(state) && existing.remove) {
+    } else if (SUGGESTION_JOB_REPLACEABLE_STATES.has(state) && existing.remove) {
       await existing.remove().catch(() => undefined);
     } else {
       return { enqueued: false, jobId };

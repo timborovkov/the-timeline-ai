@@ -55,7 +55,7 @@ export type ObjectSummarySourceRef = z.infer<typeof sourceRefSchema>;
 type GeneratedObjectSummary = z.infer<typeof generatedObjectSummarySchema>;
 
 export interface ObjectSummaryView {
-  status: 'pending' | 'ready' | 'stale' | 'failed';
+  status: 'missing' | 'pending' | 'ready' | 'stale' | 'failed';
   summary: GeneratedObjectSummary | null;
   plainText: string;
   sourceRefs: ObjectSummarySourceRef[];
@@ -564,7 +564,7 @@ export async function getObjectSummary(
   if (!packet) return null;
   const row = rows[0];
   return {
-    status: row?.status ?? 'pending',
+    status: row?.status ?? 'missing',
     summary: row ? objectSummaryFromJson(row.summary) : null,
     plainText: row?.plainText ?? '',
     sourceRefs: row ? refsFromJson(row.sourceRefs) : [],

@@ -36,16 +36,16 @@ class FakeQueue {
   options: Record<string, unknown>;
   jobs = new Set<string>();
   jobStates = new Map<string, string>();
-  add = vi.fn<(name: string, data: unknown, opts?: { jobId?: string }) => Promise<void>>(
-    (name, data, opts) => {
-      this.addCalls.push({ name, data, opts });
-      if (opts?.jobId) {
-        this.jobs.add(opts.jobId);
-        this.jobStates.set(opts.jobId, 'waiting');
-      }
-      return Promise.resolve();
-    },
-  );
+  add = vi.fn<
+    (name: string, data: unknown, opts?: { delay?: number; jobId?: string }) => Promise<void>
+  >((name, data, opts) => {
+    this.addCalls.push({ name, data, opts });
+    if (opts?.jobId) {
+      this.jobs.add(opts.jobId);
+      this.jobStates.set(opts.jobId, opts.delay ? 'delayed' : 'waiting');
+    }
+    return Promise.resolve();
+  });
   getJob = vi.fn((jobId: string) =>
     Promise.resolve(this.jobs.has(jobId) ? new FakeJob(this, jobId) : null),
   );
@@ -367,6 +367,29 @@ describe('queue wrappers', () => {
     });
     expect(first).toMatchObject({ enqueued: true });
     expect(duplicate).toMatchObject({ enqueued: false, jobId: first.jobId });
+  });
+
+  it('lets manual object summary jobs replace delayed automatic refreshes', async () => {
+    const queues = await importQueues();
+    const autoData = {
+      teamId: '22222222-2222-4222-8222-222222222222',
+      objectId: '77777777-7777-4777-8777-777777777777',
+      trigger: 'auto' as const,
+    };
+    const manualData = { ...autoData, trigger: 'manual' as const };
+
+    const delayed = await queues.enqueueObjectSummaryJob(autoData, { delayMs: 120_000 });
+    const manual = await queues.enqueueObjectSummaryJob(manualData);
+
+    expect(delayed).toMatchObject({ enqueued: true });
+    expect(manual).toMatchObject({ enqueued: true, jobId: delayed.jobId });
+    expect(fakes.queues[0]?.addCalls).toHaveLength(2);
+    expect(fakes.queues[0]?.addCalls[1]).toMatchObject({
+      name: 'object-summary',
+      data: manualData,
+      opts: { jobId: delayed.jobId },
+    });
+    expect(fakes.queues[0]?.addCalls[1]?.opts).not.toMatchObject({ delay: 120_000 });
   });
 
   it('registers repeatable jobs with stable job ids and closes singleton queues', async () => {

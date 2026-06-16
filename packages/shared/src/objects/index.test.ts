@@ -1583,6 +1583,48 @@ describe('object scope — merge cleanup', () => {
     );
   });
 
+  it('keeps stale summaries available for object search snippets', async () => {
+    const scope = withTeam(db, TEAM_A, USER_OWNER).objects;
+    const object = await scope.createObject({
+      type: 'company',
+      canonicalName: 'DFK',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    await db.insert(objectSummaries).values({
+      teamId: TEAM_A,
+      entityId: object.id,
+      status: 'stale',
+      summary: {
+        overview: 'DFK has a confirmed June 30 pilot discussion.',
+        overviewSourceRefs: [{ kind: 'field', id: 'status' }],
+        currentState: [],
+        openQuestions: [],
+        conflicts: [],
+      },
+      plainText: 'DFK has a confirmed June 30 pilot discussion.',
+      sourceRefs: [{ kind: 'field', id: 'status' }],
+      sourceCounts: {
+        fields: 1,
+        facts: 0,
+        events: 0,
+        notes: 0,
+        relationships: 0,
+        tasks: 0,
+        changes: 0,
+      },
+      inputFingerprint: 'old-fingerprint',
+      generatedAt: new Date('2026-06-02T10:05:00.000Z'),
+      staleAt: new Date('2026-06-02T10:10:00.000Z'),
+    });
+
+    await expect(scope.listReadyObjectSummaries([object.id])).resolves.toMatchObject([
+      {
+        entityId: object.id,
+        plainText: 'DFK has a confirmed June 30 pilot discussion.',
+      },
+    ]);
+  });
+
   it('stores generated summaries with validated source refs', async () => {
     const scope = withTeam(db, TEAM_A, USER_OWNER);
     const object = await scope.objects.createObject({

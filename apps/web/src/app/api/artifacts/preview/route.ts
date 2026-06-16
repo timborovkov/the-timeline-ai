@@ -244,7 +244,7 @@ async function factPreview(teamId: string, ref: ArtifactRef): Promise<ArtifactPr
     .from(facts)
     .innerJoin(rawEvents, eq(rawEvents.id, facts.rawEventId))
     .leftJoin(factEntities, eq(factEntities.factId, facts.id))
-    .leftJoin(entities, eq(entities.id, factEntities.entityId))
+    .leftJoin(entities, and(eq(entities.id, factEntities.entityId), eq(entities.teamId, teamId)))
     .where(
       and(
         eq(facts.id, ref.id),
@@ -253,6 +253,11 @@ async function factPreview(teamId: string, ref: ArtifactRef): Promise<ArtifactPr
         eq(rawEvents.visibility, 'team'),
         sql`COALESCE(${rawEvents.sourceMetadata} ->> 'deleted', 'false') <> 'true'`,
       ),
+    )
+    .orderBy(
+      sql`CASE ${factEntities.role} WHEN 'subject' THEN 0 WHEN 'object' THEN 1 ELSE 2 END`,
+      entities.canonicalName,
+      entities.id,
     )
     .limit(1);
   const row = rows[0];

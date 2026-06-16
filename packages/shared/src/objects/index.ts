@@ -1166,7 +1166,7 @@ export async function listReadyObjectSummaries(
     .where(
       and(
         eq(objectSummaries.teamId, scope.teamId),
-        eq(objectSummaries.status, 'ready'),
+        inArray(objectSummaries.status, ['ready', 'stale']),
         inArray(objectSummaries.entityId, ids),
       ),
     );

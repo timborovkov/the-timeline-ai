@@ -15,7 +15,7 @@ import {
   rawEvents,
 } from '@timeline/db';
 import { UnrecoverableError } from 'bullmq';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 
 import { renderRawEventForAi } from '#src/embedding/raw-event-renderer.js';
 import { TIMELINE_MODELS } from '#src/llm/models.js';
@@ -335,7 +335,7 @@ async function buildObjectPlan(db: Db, data: EmbedJobData): Promise<EmbeddingPla
       and(
         eq(objectSummariesTable.teamId, data.teamId),
         eq(objectSummariesTable.entityId, entitiesTable.id),
-        eq(objectSummariesTable.status, 'ready'),
+        inArray(objectSummariesTable.status, ['ready', 'stale']),
       ),
     )
     .where(eq(entitiesTable.id, data.objectId))

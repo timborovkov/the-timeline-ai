@@ -880,7 +880,9 @@ function ObjectSummaryPanel({ detail }: { detail: ObjectDetail }) {
     (_state: string | null, value: string | null) => value,
     null,
   );
-  const canRequest = Boolean(summary?.canGenerate) && summary?.status !== 'pending';
+  const canRequest =
+    Boolean(summary?.canGenerate) &&
+    (summary?.status === 'missing' || summary?.status === 'failed' || summary?.status === 'stale');
   const actionLabel = summary?.status === 'failed' ? 'Retry' : 'Generate summary';
   const eyebrow =
     summary?.status === 'ready'
@@ -889,7 +891,9 @@ function ObjectSummaryPanel({ detail }: { detail: ObjectDetail }) {
         ? 'updating'
         : summary?.status === 'failed'
           ? 'failed'
-          : 'pending';
+          : summary?.status === 'pending'
+            ? 'pending'
+            : 'available';
 
   function requestSummary(): void {
     setError(null);
@@ -944,9 +948,11 @@ function ObjectSummaryPanel({ detail }: { detail: ObjectDetail }) {
               } sources`
             : summary?.status === 'pending'
               ? 'Generating'
-              : summary?.lastErrorCode
-                ? 'Update failed'
-                : 'No summary yet'}
+              : summary?.status === 'missing' && summary.canGenerate
+                ? 'Ready to generate'
+                : summary?.lastErrorCode
+                  ? 'Update failed'
+                  : 'No summary yet'}
         </p>
         {canRequest ? (
           <button

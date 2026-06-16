@@ -209,6 +209,44 @@ describe('ObjectDetailClient', () => {
     expect(html.indexOf('Summary')).toBeLessThan(html.indexOf('Evidence'));
     expect(html).toContain('DFK has a confirmed June 30 pilot discussion.');
     expect(html).toContain('Timing');
+    expect(html).not.toContain('Generate summary');
+  });
+
+  it('shows manual generation for missing summaries with enough source material', () => {
+    render(
+      objectDetailElement({
+        detail: {
+          ...detail,
+          summary: {
+            status: 'missing',
+            summary: null,
+            plainText: '',
+            sourceRefs: [],
+            sourceCounts: {
+              fields: 2,
+              facts: 2,
+              events: 1,
+              notes: 0,
+              relationships: 0,
+              tasks: 0,
+              changes: 0,
+            },
+            generatedAt: null,
+            staleAt: null,
+            lastAttemptedAt: null,
+            lastErrorCode: null,
+            canGenerate: true,
+            cannotGenerateReason: null,
+          },
+        },
+        userId: 'user-1',
+        suggestions: [],
+      }),
+    );
+
+    expect(screen.getByText('Summary is ready to generate.')).toBeTruthy();
+    expect(screen.getByText('Ready to generate')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Generate summary' })).toBeTruthy();
   });
 
   it('queues manual summary generation from the object page', async () => {
