@@ -112,8 +112,8 @@ function fallbackSummary(input: {
   return `Since the last digest: ${parts.join(', ')}.`;
 }
 
-function fallbackSections(summary: string): NonNullable<DailyDigestPayload['sections']> {
-  return [{ title: 'Highlights', items: [summary] }];
+function fallbackSections(): NonNullable<DailyDigestPayload['sections']> {
+  return [];
 }
 
 function metadataObject(value: unknown): Record<string, unknown> {
@@ -165,7 +165,7 @@ async function summarizeDigest(
 ): Promise<DigestText> {
   if (summarize) {
     const summary = await summarize(prompt);
-    return { summary, sections: fallbackSections(summary) };
+    return { summary, sections: fallbackSections() };
   }
   try {
     const result = await chatStructured({
@@ -185,7 +185,7 @@ async function summarizeDigest(
     });
     return result.object;
   } catch {
-    return { summary: fallback, sections: fallbackSections(fallback) };
+    return { summary: fallback, sections: fallbackSections() };
   }
 }
 

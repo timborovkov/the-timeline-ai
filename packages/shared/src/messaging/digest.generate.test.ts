@@ -91,7 +91,7 @@ describe('generateDailyDigest conflict handling', () => {
       payload: {
         teamName: 'AuditAI',
         summary: 'Pilot invite flow moved toward launch.',
-        sections: [{ title: 'Highlights', items: ['Pilot invite flow moved toward launch.'] }],
+        sections: [],
         eventCount: 1,
       },
     });
@@ -108,7 +108,7 @@ describe('generateDailyDigest conflict handling', () => {
     expect(generatedUpdate?.payload).toMatchObject({
       teamName: 'AuditAI',
       eventCount: 1,
-      sections: [{ title: 'Highlights', items: ['Pilot invite flow moved toward launch.'] }],
+      sections: [],
     });
   });
 

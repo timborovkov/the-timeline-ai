@@ -281,6 +281,8 @@ function DailyDigestBlock({ digest }: { digest: DailyDigestPayload | undefined }
   const timezone = digest.timezone;
   const summaryParagraphs = digestSummaryParagraphs(digest.summary);
   const sections = digestContentSections(digest);
+  const summaryRows = keyedTextRows(summaryParagraphs, 'summary');
+  const sectionRows = keyedSectionRows(sections);
   const sourceEntries = Object.entries(digest.sourceDistribution);
   const objectEntries = Object.entries(digest.objectChangesByType);
   return (
@@ -303,17 +305,13 @@ function DailyDigestBlock({ digest }: { digest: DailyDigestPayload | undefined }
       </summary>
       <div className="border-t border-border p-4">
         <div className="max-w-3xl space-y-3 text-sm leading-6 text-fg-muted">
-          {summaryParagraphs.map((paragraph) => (
-            <p key={paragraph}>{paragraph}</p>
+          {summaryRows.map((row) => (
+            <p key={row.key}>{row.text}</p>
           ))}
         </div>
         <div className="mt-4 grid gap-4 lg:grid-cols-2">
-          {sections.map((section, index) => (
-            <DigestList
-              key={`${section.title}-${index}`}
-              label={section.title}
-              items={section.items}
-            />
+          {sectionRows.map((row) => (
+            <DigestList key={row.key} label={row.section.title} items={row.section.items} />
           ))}
         </div>
         <div className="mt-4 grid gap-3 md:grid-cols-3">
@@ -365,6 +363,24 @@ function DailyDigestBlock({ digest }: { digest: DailyDigestPayload | undefined }
       </div>
     </details>
   );
+}
+
+function keyedTextRows(items: string[], prefix: string): { key: string; text: string }[] {
+  const seen = new Map<string, number>();
+  return items.map((text) => {
+    const occurrence = seen.get(text) ?? 0;
+    seen.set(text, occurrence + 1);
+    return { key: `${prefix}:${text}:${occurrence}`, text };
+  });
+}
+
+function keyedSectionRows(sections: NonNullable<DailyDigestPayload['sections']>) {
+  const seen = new Map<string, number>();
+  return sections.map((section) => {
+    const occurrence = seen.get(section.title) ?? 0;
+    seen.set(section.title, occurrence + 1);
+    return { key: `section:${section.title}:${occurrence}`, section };
+  });
 }
 
 function DigestStat({ label, value }: { label: string; value: string }) {
