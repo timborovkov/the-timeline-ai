@@ -2892,6 +2892,228 @@ describe('suggestion scope', () => {
     expect(result.rows[0]?.all_day).toBe(false);
   });
 
+  it('reuses a matching calendar event instead of accepting a duplicate create', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const existing = await scope.calendar.createCalendarEvent({
+      title: 'Tapaaminen Nexia Oy:n kanssa',
+      description: 'Audit operating model discussion with Nexia Oy.',
+      startAt: new Date('2026-06-17T11:00:00.000Z'),
+      endAt: new Date('2026-06-17T12:00:00.000Z'),
+      timezone: 'Europe/Helsinki',
+      visibility: 'team',
+    });
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Create duplicate Nexia event',
+      dedupeKey: 'calendar-create-duplicate-slot',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'calendar_event',
+          title: 'Meeting: Uusi toimintamalli tilintarkastukseen',
+          dedupeKey: 'calendar-create-duplicate-slot:item',
+          proposedPayload: {
+            title: 'Meeting: Uusi toimintamalli tilintarkastukseen',
+            description:
+              'Teams meeting with Pekka Hietala and Asla Lindgren regarding Nexia Oy and the new operating model for auditing.',
+            startAt: '2026-06-17T11:00:00.000Z',
+            endAt: '2026-06-17T12:00:00.000Z',
+            timezone: 'Europe/Helsinki',
+            visibility: 'team',
+          },
+        },
+      ],
+    });
+    const itemId = bundle.items[0]?.id;
+    expect(itemId).toBeDefined();
+
+    await expect(scope.suggestions.acceptSuggestionItem(itemId ?? '')).resolves.toBe(true);
+
+    const result = await pg.query<{ id: string; title: string }>(
+      `SELECT id, title
+       FROM calendar_events
+       WHERE team_id = '${TEAM_ID}'
+         AND start_at = '2026-06-17T11:00:00.000Z'
+         AND end_at = '2026-06-17T12:00:00.000Z'
+         AND deleted_at IS NULL`,
+    );
+    expect(result.rows).toEqual([{ id: existing.id, title: 'Tapaaminen Nexia Oy:n kanssa' }]);
+
+    const item = await pg.query<{ result_id: string }>(
+      `SELECT result_id FROM agent_suggestion_items WHERE id = '${itemId}'`,
+    );
+    expect(item.rows[0]?.result_id).toBe(existing.id);
+  });
+
+  it('keeps simultaneous calendar suggestions separate when subjects differ', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    await scope.calendar.createCalendarEvent({
+      title: 'Tapaaminen Nexia Oy:n kanssa',
+      description: 'Audit operating model discussion with Nexia Oy.',
+      startAt: new Date('2026-06-17T11:00:00.000Z'),
+      endAt: new Date('2026-06-17T12:00:00.000Z'),
+      timezone: 'Europe/Helsinki',
+      visibility: 'team',
+    });
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Create overlapping sales event',
+      dedupeKey: 'calendar-create-overlapping-sales-slot',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'calendar_event',
+          title: 'Sales forecast review',
+          dedupeKey: 'calendar-create-overlapping-sales-slot:item',
+          proposedPayload: {
+            title: 'Sales forecast review',
+            description: 'Pipeline review with the revenue team.',
+            startAt: '2026-06-17T11:00:00.000Z',
+            endAt: '2026-06-17T12:00:00.000Z',
+            timezone: 'Europe/Helsinki',
+            visibility: 'team',
+          },
+        },
+      ],
+    });
+    const itemId = bundle.items[0]?.id;
+    expect(itemId).toBeDefined();
+
+    await expect(scope.suggestions.acceptSuggestionItem(itemId ?? '')).resolves.toBe(true);
+
+    const result = await pg.query<{ title: string }>(
+      `SELECT title
+       FROM calendar_events
+       WHERE team_id = '${TEAM_ID}'
+         AND start_at = '2026-06-17T11:00:00.000Z'
+         AND end_at = '2026-06-17T12:00:00.000Z'
+         AND deleted_at IS NULL
+       ORDER BY title`,
+    );
+    expect(result.rows.map((row) => row.title)).toEqual([
+      'Sales forecast review',
+      'Tapaaminen Nexia Oy:n kanssa',
+    ]);
+  });
+
+  it('amends one clear semantic calendar match when a create suggestion is really a move', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const existing = await scope.calendar.createCalendarEvent({
+      title: 'Acme kickoff',
+      description: 'Initial project kickoff with Acme.',
+      startAt: new Date('2026-06-15T15:00:00.000Z'),
+      endAt: new Date('2026-06-15T16:00:00.000Z'),
+      timezone: 'UTC',
+      location: 'Zoom',
+      visibility: 'team',
+    });
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Move Acme kickoff',
+      dedupeKey: 'calendar-create-semantic-acme-move',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'calendar_event',
+          title: 'Acme kickoff',
+          dedupeKey: 'calendar-create-semantic-acme-move:item',
+          proposedPayload: {
+            title: 'Acme kickoff',
+            startAt: '2026-06-17T15:00:00.000Z',
+            endAt: '2026-06-17T16:00:00.000Z',
+            timezone: 'UTC',
+            visibility: 'team',
+          },
+        },
+      ],
+    });
+    const itemId = bundle.items[0]?.id;
+    expect(itemId).toBeDefined();
+
+    await expect(scope.suggestions.acceptSuggestionItem(itemId ?? '')).resolves.toBe(true);
+
+    const result = await pg.query<{
+      id: string;
+      start_at: Date;
+      title: string;
+      description: string | null;
+      location: string | null;
+    }>(
+      `SELECT id, start_at, title, description, location
+       FROM calendar_events
+       WHERE team_id = '${TEAM_ID}' AND deleted_at IS NULL`,
+    );
+    expect(result.rows).toHaveLength(1);
+    expect(result.rows[0]?.id).toBe(existing.id);
+    expect(result.rows[0]?.title).toBe('Acme kickoff');
+    expect(result.rows[0]?.description).toBe('Initial project kickoff with Acme.');
+    expect(result.rows[0]?.location).toBe('Zoom');
+    expect(new Date(result.rows[0]?.start_at ?? '').toISOString()).toBe('2026-06-17T15:00:00.000Z');
+
+    const item = await pg.query<{ result_id: string }>(
+      `SELECT result_id FROM agent_suggestion_items WHERE id = '${itemId}'`,
+    );
+    expect(item.rows[0]?.result_id).toBe(existing.id);
+  });
+
+  it('does not amend semantic calendar matches when multiple candidates fit', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const first = await scope.calendar.createCalendarEvent({
+      title: 'Acme kickoff',
+      description: 'Initial project kickoff with Acme.',
+      startAt: new Date('2026-06-15T15:00:00.000Z'),
+      endAt: new Date('2026-06-15T16:00:00.000Z'),
+      timezone: 'UTC',
+      visibility: 'team',
+    });
+    const second = await scope.calendar.createCalendarEvent({
+      title: 'Acme procurement review',
+      description: 'Separate procurement review with Acme.',
+      startAt: new Date('2026-06-16T15:00:00.000Z'),
+      endAt: new Date('2026-06-16T16:00:00.000Z'),
+      timezone: 'UTC',
+      visibility: 'team',
+    });
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Create ambiguous Acme meeting',
+      dedupeKey: 'calendar-create-semantic-acme-ambiguous',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'calendar_event',
+          title: 'Acme meeting',
+          dedupeKey: 'calendar-create-semantic-acme-ambiguous:item',
+          proposedPayload: {
+            title: 'Acme meeting',
+            description: 'Follow-up with Acme.',
+            startAt: '2026-06-17T15:00:00.000Z',
+            endAt: '2026-06-17T16:00:00.000Z',
+            timezone: 'UTC',
+            visibility: 'team',
+          },
+        },
+      ],
+    });
+    const itemId = bundle.items[0]?.id;
+    expect(itemId).toBeDefined();
+
+    await expect(scope.suggestions.acceptSuggestionItem(itemId ?? '')).resolves.toBe(true);
+
+    const result = await pg.query<{ id: string; start_at: Date; title: string }>(
+      `SELECT id, start_at, title
+       FROM calendar_events
+       WHERE team_id = '${TEAM_ID}' AND deleted_at IS NULL
+       ORDER BY start_at`,
+    );
+    expect(result.rows.map((row) => row.id)).toEqual([first.id, second.id, expect.any(String)]);
+    expect(result.rows.map((row) => row.title)).toEqual([
+      'Acme kickoff',
+      'Acme procurement review',
+      'Acme meeting',
+    ]);
+  });
+
   it('accepts date-only all-day calendar suggestions from legacy model payloads', async () => {
     const scope = withTeam(db as never, TEAM_ID, USER_ID);
     await scope.calendar.upsertCalendarSettings({ defaultTimezone: 'Europe/Helsinki' });

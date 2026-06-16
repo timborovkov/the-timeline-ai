@@ -18,6 +18,7 @@ import { z } from 'zod';
 
 import type { BoardScope } from '#src/boards/index.js';
 import type {
+  CalendarEventWithRedaction,
   CalendarScope,
   CreateCalendarEventInput,
   UpdateCalendarEventInput,
@@ -201,6 +202,32 @@ const localRef = z
   .string()
   .trim()
   .regex(/^[a-z0-9][a-z0-9_-]{0,79}$/);
+const CALENDAR_SUBJECT_STOPWORDS = new Set([
+  'and',
+  'audit',
+  'auditing',
+  'calendar',
+  'call',
+  'discussion',
+  'discuss',
+  'event',
+  'for',
+  'kanssa',
+  'meeting',
+  'model',
+  'operating',
+  'palaveri',
+  'pipeline',
+  'regarding',
+  'review',
+  'scheduled',
+  'tapaaminen',
+  'team',
+  'teams',
+  'the',
+  'with',
+]);
+const CALENDAR_SEMANTIC_MATCH_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
 
 const objectPayloadFields = {
   aliases: z.array(z.string().trim().min(1).max(120)).max(50).optional(),
@@ -868,6 +895,82 @@ function normalizeAllDayRange(payload: {
   if (endDate <= startDate) endDate = oneDayAfter(startDate);
   const range = localDateSpanToUtcRange(startDate, endDate, payload.timezone);
   return { startAt: range.from, endAt: range.to };
+}
+
+function calendarSubjectTokens(...values: (string | null | undefined)[]): Set<string> {
+  return new Set(
+    values
+      .join(' ')
+      .toLowerCase()
+      .normalize('NFKD')
+      .replace(/[^\p{Letter}\p{Number}\s]/gu, ' ')
+      .split(/\s+/)
+      .filter((token) => token.length >= 4 && !CALENDAR_SUBJECT_STOPWORDS.has(token)),
+  );
+}
+
+function sameInstant(left: Date, right: Date): boolean {
+  return left.getTime() === right.getTime();
+}
+
+function calendarCreateResolution(
+  proposed: CreateCalendarEventInput,
+  candidates: CalendarEventWithRedaction[],
+): { event: CalendarEventWithRedaction; action: 'reuse' | 'update' } | null {
+  const proposedTokens = calendarSubjectTokens(proposed.title, proposed.description);
+  const proposalMetadata = proposed.metadata ?? {};
+  const isProposalSlot =
+    proposed.showAs === 'tentative' ||
+    typeof proposalMetadata.proposalGroupId === 'string' ||
+    typeof proposalMetadata.proposalStatus === 'string' ||
+    typeof proposalMetadata.proposalRole === 'string';
+  const semanticMatches: CalendarEventWithRedaction[] = [];
+  for (const candidate of candidates) {
+    if (candidate.redacted || candidate.deletedAt) continue;
+    if (candidate.visibility !== (proposed.visibility ?? 'team')) continue;
+    const candidateTokens = calendarSubjectTokens(candidate.title, candidate.description);
+    const sharedTokens = [...proposedTokens].filter((token) => candidateTokens.has(token));
+    if (sharedTokens.length === 0) continue;
+    if (
+      sameInstant(candidate.startAt, proposed.startAt) &&
+      sameInstant(candidate.endAt, proposed.endAt) &&
+      candidate.allDay === (proposed.allDay ?? false)
+    ) {
+      return { event: candidate, action: 'reuse' };
+    }
+    if (isProposalSlot) continue;
+    semanticMatches.push(candidate);
+  }
+  const semanticMatch = semanticMatches[0];
+  if (semanticMatches.length === 1 && semanticMatch)
+    return { event: semanticMatch, action: 'update' };
+  return null;
+}
+
+function calendarCreateInputToUpdatePatch(
+  input: CreateCalendarEventInput,
+  providedKeys: Set<string>,
+): UpdateCalendarEventInput {
+  const patch: UpdateCalendarEventInput = {
+    title: input.title,
+    startAt: input.startAt,
+    endAt: input.endAt,
+  };
+  if (providedKeys.has('description')) patch.description = input.description ?? null;
+  if (providedKeys.has('timezone') && input.timezone !== undefined) patch.timezone = input.timezone;
+  if (providedKeys.has('allDay') && input.allDay !== undefined) patch.allDay = input.allDay;
+  if (providedKeys.has('location')) patch.location = input.location ?? null;
+  if (providedKeys.has('showAs') && input.showAs !== undefined) patch.showAs = input.showAs;
+  if (providedKeys.has('rrule') && input.rrule !== undefined) patch.rrule = input.rrule;
+  if (providedKeys.has('visibility') && input.visibility !== undefined)
+    patch.visibility = input.visibility;
+  if (providedKeys.has('visibilityUserIds'))
+    patch.visibilityUserIds = input.visibilityUserIds ?? null;
+  if (providedKeys.has('reminderMinutes') && input.reminderMinutes !== undefined) {
+    patch.reminderMinutes = input.reminderMinutes;
+  }
+  if (input.metadata !== undefined) patch.metadata = input.metadata;
+  return patch;
 }
 
 function toBundle(
@@ -2190,14 +2293,14 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
 
     if (item.operation === 'create') {
       const settings = await calendar.getCalendarSettings();
-      const parsed = calendarCreatePayload.parse(
-        normalizeCalendarPayload(item, {
-          fallbackTitle: true,
-          defaultTimezone: settings.defaultTimezone,
-          inferAllDayFromDateOnly: true,
-          materializeDefaultTimezone: true,
-        }),
-      );
+      const normalizedCreatePayload = normalizeCalendarPayload(item, {
+        fallbackTitle: true,
+        defaultTimezone: settings.defaultTimezone,
+        inferAllDayFromDateOnly: true,
+        materializeDefaultTimezone: true,
+      });
+      const providedCreateKeys = new Set(Object.keys(normalizedCreatePayload));
+      const parsed = calendarCreatePayload.parse(normalizedCreatePayload);
       const normalizedRange = parsed.allDay
         ? normalizeAllDayRange({
             startAt: parsed.startAt,
@@ -2230,6 +2333,23 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         },
       };
       if (parsed.linkedEntityIds !== undefined) input.linkedEntityIds = parsed.linkedEntityIds;
+      const resolution = calendarCreateResolution(
+        input,
+        await calendar.listCalendarEvents({
+          from: new Date(input.startAt.getTime() - CALENDAR_SEMANTIC_MATCH_WINDOW_MS),
+          to: new Date(input.endAt.getTime() + CALENDAR_SEMANTIC_MATCH_WINDOW_MS),
+          limit: 100,
+        }),
+      );
+      if (resolution) {
+        if (resolution.action === 'update') {
+          await calendar.updateCalendarEvent(
+            resolution.event.id,
+            calendarCreateInputToUpdatePatch(input, providedCreateKeys),
+          );
+        }
+        return resolution.event.id;
+      }
       const created = await calendar.createCalendarEvent(input);
       return created.id;
     }
