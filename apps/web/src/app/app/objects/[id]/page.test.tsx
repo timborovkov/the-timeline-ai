@@ -74,7 +74,18 @@ beforeEach(() => {
     sourceEvents: [],
     facts: [],
     openTasks: [],
-    newSinceLastVisit: [],
+    connectedWork: {
+      openTasks: [],
+      recentTasks: [],
+      calendarEvents: [],
+      timelineEvents: [],
+      objects: [],
+      boards: [],
+      pendingApprovals: [],
+      documents: [],
+    },
+    newSinceLastVisit: 0,
+    lastVisitedAt: null,
   });
   fakes.getMergedObjectTarget.mockResolvedValue(null);
   fakes.listObjectBoardContext.mockResolvedValue([]);

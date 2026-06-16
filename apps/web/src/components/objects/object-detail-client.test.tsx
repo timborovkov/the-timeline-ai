@@ -27,6 +27,7 @@ vi.mock('@/app/actions/objects', () => ({
   deleteNoteAction: vi.fn(),
   rejectObjectChangeAction: vi.fn(),
   removeRelationshipAction: vi.fn(),
+  repairObjectMemoryAction: vi.fn(),
   updateNoteAction: vi.fn(),
   updateObjectAction: vi.fn(),
 }));
@@ -65,6 +66,16 @@ const detail = {
   relationships: [],
   relatedObjects: [],
   openTasks: [],
+  connectedWork: {
+    openTasks: [],
+    recentTasks: [],
+    calendarEvents: [],
+    timelineEvents: [],
+    objects: [],
+    boards: [],
+    pendingApprovals: [],
+    documents: [],
+  },
   recentChanges: [],
   facts: [],
   timelineEvents: [],
@@ -76,6 +87,10 @@ beforeEach(() => {
   cleanup();
   vi.clearAllMocks();
   vi.mocked(objectActions.updateObjectAction).mockResolvedValue({ ok: true, id: detail.id });
+  vi.mocked(objectActions.repairObjectMemoryAction).mockResolvedValue({
+    ok: true,
+    message: 'Memory repair queued',
+  });
 });
 
 function renderObjectDetail(props: Parameters<typeof ObjectDetailClient>[0]): string {
@@ -104,6 +119,7 @@ describe('ObjectDetailClient', () => {
 
     expect(html).toContain('Send proposal');
     expect(html).toContain('Notes');
+    expect(html).toContain('Connected work');
     expect(html).toContain('Open tasks');
     expect(html).toContain('Related');
     expect(html).toContain('Search objects');
@@ -162,6 +178,99 @@ describe('ObjectDetailClient', () => {
     expect(html).toContain('Move to proposal');
   });
 
+  it('renders connected work grouped by active and historical context', () => {
+    const html = renderObjectDetail({
+      detail: {
+        ...detail,
+        connectedWork: {
+          openTasks: [
+            {
+              ...detail,
+              id: 'task-1',
+              type: 'task',
+              canonicalName: 'Send message to DFK with proposed meeting times',
+              status: 'todo',
+            },
+          ],
+          recentTasks: [
+            {
+              ...detail,
+              id: 'task-2',
+              type: 'task',
+              canonicalName: 'Send pilot times to DFK',
+              status: 'done',
+            },
+          ],
+          calendarEvents: [
+            {
+              id: 'calendar-1',
+              title: 'Meeting with DFK Finland Oy',
+              startAt: new Date('2026-06-17T12:00:00.000Z'),
+              endAt: new Date('2026-06-17T13:00:00.000Z'),
+              showAs: 'busy',
+            },
+          ],
+          timelineEvents: [
+            {
+              id: 'event-1',
+              source: 'web',
+              contentText: 'Jonne from DFK discussed the pilot scope.',
+              occurredAt: new Date('2026-06-16T10:00:00.000Z'),
+            },
+          ],
+          objects: [
+            {
+              id: 'person-1',
+              canonicalName: 'Jonne Granqvist',
+              type: 'person',
+              factCount: 2,
+            },
+          ],
+          boards: [
+            {
+              boardId: 'board-1',
+              boardName: 'Pilot pipeline',
+              itemId: 'item-1',
+              laneName: 'Proposal',
+              dueAt: null,
+              priority: null,
+              nextStep: 'Agree pilot scope',
+            },
+          ],
+          pendingApprovals: [
+            {
+              suggestionId: 'suggestion-1',
+              itemId: 'approval-item-1',
+              title: 'Merge DFK Finland Oy into DFK',
+              operation: 'merge',
+              targetKind: 'object_merge',
+              createdAt: new Date('2026-06-16T10:00:00.000Z'),
+            },
+          ],
+          documents: [
+            {
+              id: 'document-1',
+              name: 'DFK pilot deck.pdf',
+              fileKind: 'document',
+              updatedAt: new Date('2026-06-16T11:00:00.000Z'),
+            },
+          ],
+        },
+      },
+      userId: 'user-1',
+      suggestions: [],
+    });
+
+    expect(html).toContain('Send message to DFK with proposed meeting times');
+    expect(html).toContain('Meeting with DFK Finland Oy');
+    expect(html).toContain('Jonne from DFK discussed the pilot scope.');
+    expect(html).toContain('Jonne Granqvist');
+    expect(html).toContain('Pilot pipeline');
+    expect(html).toContain('Merge DFK Finland Oy into DFK');
+    expect(html).toContain('Send pilot times to DFK');
+    expect(html).toContain('DFK pilot deck.pdf');
+  });
+
   it('edits the object name and aliases from the fields panel', async () => {
     const user = userEvent.setup();
     render(objectDetailElement({ detail, userId: 'user-1', suggestions: [] }));
@@ -188,6 +297,18 @@ describe('ObjectDetailClient', () => {
         aliases: ['Proposal task'],
       });
     });
+  });
+
+  it('queues object-scoped memory repair from the header', async () => {
+    const user = userEvent.setup();
+    render(objectDetailElement({ detail, userId: 'user-1', suggestions: [] }));
+
+    await user.click(screen.getByRole('button', { name: 'Repair memory' }));
+
+    await waitFor(() => {
+      expect(objectActions.repairObjectMemoryAction).toHaveBeenCalledWith({ id: detail.id });
+    });
+    expect(fakes.refresh).toHaveBeenCalled();
   });
 
   it('applies refreshed server detail props without requiring updatedAt to change', async () => {

@@ -44,8 +44,15 @@ implementation detail.
 
 ## Object Relationships
 
-- [x] Implement the scoped plan in
+- [ ] Finish the scoped plan in
       [docs/object-relationships-plan.md](docs/object-relationships-plan.md).
+- [x] Add the first live Connected Work surface to object detail pages so
+      source-backed open work, recent completed work, calendar events, and
+      repeated people/object context appear before durable relationships are
+      accepted.
+- [x] Use supporting object evidence to suggest short-name/acronym duplicate
+      object candidates such as `DFK` / `DFK Finland Oy`, while keeping bare
+      three-letter name similarity below the proposal threshold.
 - [x] Have the suggestion worker propose approval-backed `related` object
       relationships from relationship-shaped evidence, using extracted facts as
       candidate input and bounded raw/conversation context for verification.
@@ -62,6 +69,18 @@ implementation detail.
       existing rows, remove `linked` from UI/tool inputs, and dedupe symmetric
       `related` relationships/proposals by sorted object pair while preserving
       direction for directional relationship kinds.
+- [x] Expand Connected Work beyond the first slice with boards, pending
+      approvals, and documents ordered by object-page usefulness.
+- [x] Add timeline moments to Connected Work so source-backed event context
+      appears after active work and before document context.
+- [x] Add object-centered Memory Repair entry point on object detail pages that
+      queues duplicate and low-signal archive cleanup focused on the selected
+      object while preserving rejected-pair suppression.
+- [ ] Extend object-centered Memory Repair beyond duplicate cleanup so it can
+      queue focused relationship and person-object proposals.
+- [ ] Strengthen relationship/person proposal generation from Connected Work so
+      operationally useful task/company, decision/company, and person/company
+      connections graduate into approval-backed object memory.
 - [ ] After object relationships have real usage, design a graph/mind-map view
       with filters, density controls, and cited edge explanations. Do not ship
       the full graph in the first relationship implementation slice.

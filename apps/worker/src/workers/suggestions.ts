@@ -4,6 +4,7 @@ import {
   conversationReviews,
   entities,
   entityRelationships,
+  factEntities,
   facts as factsTable,
   objectNotes,
   rawEvents,
@@ -448,6 +449,8 @@ type CleanupObjectRow = Pick<
   'id' | 'teamId' | 'type' | 'canonicalName' | 'aliases' | 'status' | 'updatedAt'
 >;
 
+type CleanupMatch = 'exact' | 'near' | 'short';
+
 const CLEANUP_MERGE_TYPES = new Set<EntityType>([
   'person',
   'company',
@@ -515,7 +518,39 @@ function hasConflictingNumberSuffix(a: string, b: string): boolean {
   return Boolean(left && right && left[1] === right[1] && left[2] !== right[2]);
 }
 
-function cleanupMatch(a: CleanupObjectRow, b: CleanupObjectRow): 'exact' | 'near' | null {
+function acronymForName(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/\b(inc|llc|ltd|oy|corp|corporation|company|co|gmbh|plc)\b/g, '')
+    .split(/[^a-z0-9]+/g)
+    .map((part) => part[0] ?? '')
+    .join('');
+}
+
+function escapeRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function shortCompanyMatch(left: string, right: string, a: CleanupObjectRow, b: CleanupObjectRow) {
+  if (
+    !(
+      (a.type === 'company' || a.type === 'vendor') &&
+      (b.type === 'company' || b.type === 'vendor')
+    )
+  ) {
+    return false;
+  }
+  const [short, long] = left.length <= right.length ? [left, right] : [right, left];
+  if (short.length < 2 || short.length > 4 || long.length <= short.length) return false;
+  const rawLong = left.length <= right.length ? b.canonicalName : a.canonicalName;
+  const rawShort = left.length <= right.length ? a.canonicalName : b.canonicalName;
+  const tokenMatch = new RegExp(`(^|[^a-z0-9])${escapeRegex(rawShort)}([^a-z0-9]|$)`, 'i').test(
+    rawLong,
+  );
+  return tokenMatch || acronymForName(rawLong) === short;
+}
+
+function cleanupMatch(a: CleanupObjectRow, b: CleanupObjectRow): CleanupMatch | null {
   if (!cleanupCompatible(a, b)) return null;
   const aNames = cleanupNames(a);
   const bNames = cleanupNames(b);
@@ -530,11 +565,53 @@ function cleanupMatch(a: CleanupObjectRow, b: CleanupObjectRow): 'exact' | 'near
       if (hasConflictingNumberSuffix(left, right)) continue;
       const min = Math.min(left.length, right.length);
       const max = Math.max(left.length, right.length);
+      if (shortCompanyMatch(left, right, a, b)) return 'short';
       if (min >= 5 && (left.includes(right) || right.includes(left))) return 'near';
       if (min >= 3 && max <= 8 && levenshtein(left, right) <= 1) return 'near';
     }
   }
   return null;
+}
+
+async function cleanupEvidenceObjectIds(
+  db: Db,
+  teamId: string,
+  objectIds: readonly string[],
+): Promise<Set<string>> {
+  if (objectIds.length === 0) return new Set();
+  const [factRows, noteRows, relationshipRows] = await Promise.all([
+    db
+      .select({ entityId: factEntities.entityId })
+      .from(factEntities)
+      .innerJoin(factsTable, eq(factsTable.id, factEntities.factId))
+      .where(and(eq(factsTable.teamId, teamId), inArray(factEntities.entityId, objectIds))),
+    db
+      .select({ entityId: objectNotes.entityId })
+      .from(objectNotes)
+      .where(
+        and(
+          eq(objectNotes.teamId, teamId),
+          inArray(objectNotes.entityId, objectIds),
+          isNull(objectNotes.deletedAt),
+        ),
+      ),
+    db
+      .select({ id: entities.id })
+      .from(entities)
+      .innerJoin(
+        entityRelationships,
+        or(
+          eq(entityRelationships.fromEntityId, entities.id),
+          eq(entityRelationships.toEntityId, entities.id),
+        ),
+      )
+      .where(and(eq(entities.teamId, teamId), inArray(entities.id, objectIds))),
+  ]);
+  return new Set([
+    ...factRows.map((row) => row.entityId),
+    ...noteRows.map((row) => row.entityId),
+    ...relationshipRows.map((row) => row.id),
+  ]);
 }
 
 function aliasesForRow(row: Pick<CleanupObjectRow, 'aliases'>): string[] {
@@ -891,15 +968,32 @@ async function processObjectCleanupJob(
         ).map((row) => row.teamId)
       : [data.teamId];
   for (const teamId of teamIds) {
-    await createObjectCleanupSuggestionsForTeam(deps.db, teamId, data.triggeredBy ?? 'daily');
+    await createObjectCleanupSuggestionsForTeam(deps.db, teamId, {
+      triggeredBy: data.triggeredBy ?? 'daily',
+      ...(data.objectId ? { objectId: data.objectId } : {}),
+    });
   }
 }
 
 async function createObjectCleanupSuggestionsForTeam(
   db: Db,
   teamId: string,
-  triggeredBy: string,
+  opts: { triggeredBy: string; objectId?: string },
 ): Promise<void> {
+  const cleanupTypes: EntityType[] = Array.from(
+    new Set<EntityType>([...Array.from(CLEANUP_MERGE_TYPES), 'topic', 'other']),
+  );
+  const activeObjectFilter = and(
+    eq(entities.teamId, teamId),
+    isNull(entities.archivedAt),
+    isNull(entities.mergedIntoId),
+  );
+  const scopedObjectFilter = opts.objectId
+    ? and(
+        activeObjectFilter,
+        or(eq(entities.id, opts.objectId), inArray(entities.type, cleanupTypes)),
+      )
+    : activeObjectFilter;
   const rows = await db
     .select({
       id: entities.id,
@@ -911,19 +1005,37 @@ async function createObjectCleanupSuggestionsForTeam(
       updatedAt: entities.updatedAt,
     })
     .from(entities)
-    .where(
-      and(eq(entities.teamId, teamId), isNull(entities.archivedAt), isNull(entities.mergedIntoId)),
+    .where(scopedObjectFilter)
+    .orderBy(
+      ...(opts.objectId
+        ? [sql`case when ${entities.id} = ${opts.objectId} then 0 else 1 end`]
+        : []),
+      desc(entities.updatedAt),
     )
-    .orderBy(desc(entities.updatedAt))
     .limit(500);
+  const repairObjectId =
+    opts.objectId && rows.some((row) => row.id === opts.objectId) ? opts.objectId : null;
+  if (opts.objectId && !repairObjectId) return;
   const scope = withTeam(db, teamId, PSEUDO_USER, { skipMembershipCheck: true });
   const mergeCandidates = rows.filter((row) => CLEANUP_MERGE_TYPES.has(row.type));
   const proposedMergeKeys = new Set<string>();
+  const evidenceObjectIds = await cleanupEvidenceObjectIds(
+    db,
+    teamId,
+    mergeCandidates.map((row) => row.id),
+  );
 
   for (const [i, left] of mergeCandidates.entries()) {
     for (const right of mergeCandidates.slice(i + 1)) {
+      if (repairObjectId && left.id !== repairObjectId && right.id !== repairObjectId) continue;
       const match = cleanupMatch(left, right);
       if (!match) continue;
+      if (
+        match === 'short' &&
+        (!evidenceObjectIds.has(left.id) || !evidenceObjectIds.has(right.id))
+      ) {
+        continue;
+      }
       const objectIds = [left.id, right.id].sort();
       const groupKey = objectIds.join('|');
       if (proposedMergeKeys.has(groupKey)) continue;
@@ -932,7 +1044,9 @@ async function createObjectCleanupSuggestionsForTeam(
       const reason =
         match === 'exact'
           ? 'Names or aliases match closely enough to review as a duplicate.'
-          : 'Names are similar enough to review as a possible duplicate.';
+          : match === 'short'
+            ? 'Short-name or acronym match has supporting object evidence on both sides.'
+            : 'Names are similar enough to review as a possible duplicate.';
       const dedupeKey = suggestions.suggestionDedupeKey({
         kind: 'object_cleanup_merge',
         teamId,
@@ -949,8 +1063,9 @@ async function createObjectCleanupSuggestionsForTeam(
         metadata: {
           kind: 'object_cleanup',
           cleanup_kind: 'merge',
-          triggered_by: triggeredBy,
+          triggered_by: opts.triggeredBy,
           object_ids: objectIds,
+          ...(repairObjectId ? { repair_object_id: repairObjectId } : {}),
         },
         items: [
           {
@@ -1008,6 +1123,7 @@ async function createObjectCleanupSuggestionsForTeam(
   }
 
   for (const row of rows) {
+    if (repairObjectId && row.id !== repairObjectId) continue;
     const normalized = normalizeCleanupName(row.canonicalName);
     if (!extract.isLowSignalObjectName({ name: row.canonicalName, type: row.type })) continue;
     if (row.type === 'task' || row.type === 'follow_up') continue;
@@ -1030,8 +1146,9 @@ async function createObjectCleanupSuggestionsForTeam(
       metadata: {
         kind: 'object_cleanup',
         cleanup_kind: 'archive',
-        triggered_by: triggeredBy,
+        triggered_by: opts.triggeredBy,
         object_id: row.id,
+        ...(repairObjectId ? { repair_object_id: repairObjectId } : {}),
       },
       items: [
         {

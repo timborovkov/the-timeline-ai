@@ -591,6 +591,15 @@ key/value pairs.
 - The dedicated Approvals page remains expanded and optimized for scanning,
   filtering, bulk action, and row-level review.
 
+### Object detail
+
+- Connected Work sits above Evidence as live context, not accepted memory. It
+  uses compact grouped lists for open tasks, calendar, people/objects, boards,
+  pending approvals, recent history, timeline moments, and documents.
+- Repair Memory is a quiet header action. It queues focused object cleanup
+  proposals and should not imply that rejected duplicate pairs will be
+  resuggested.
+
 ### Motion
 
 - All transitions and animations gate on

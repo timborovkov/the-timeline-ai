@@ -171,6 +171,7 @@ export interface SuggestionObjectCleanupJobData {
   scope: 'object_cleanup';
   teamId: string;
   triggeredBy?: string;
+  objectId?: string;
 }
 
 let _suggestionQueue: TimelineQueue<SuggestionJobData> | undefined;
@@ -191,6 +192,7 @@ function suggestionJobId(data: SuggestionJobData, jobIdSuffix?: string): string 
     return bullmqCustomJobId([
       'object-cleanup',
       data.teamId,
+      data.objectId ?? 'team',
       data.triggeredBy ?? 'manual',
       ...(jobIdSuffix ? [jobIdSuffix] : []),
     ]);

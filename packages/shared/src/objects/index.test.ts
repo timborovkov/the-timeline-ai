@@ -1,10 +1,13 @@
 import { PGlite } from '@electric-sql/pglite';
 import {
   type Db,
+  agentSuggestionItems,
+  agentSuggestions,
   boardItemChanges,
   boardItems,
   calendarEventEntities,
   calendarEvents,
+  documents,
   chatMessages,
   chatSessions,
   entities,
@@ -619,6 +622,128 @@ describe('object scope — notes and suggestions', () => {
     await expect(scope.getObject(object.id)).resolves.toMatchObject({
       canonicalName: 'Follow up with finance',
     });
+  });
+
+  it('surfaces connected work from active work, artifacts, approvals, and evidence', async () => {
+    const workspace = withTeam(db, TEAM_A, USER_OWNER);
+    const scope = workspace.objects;
+    const company = await scope.createObject({
+      type: 'company',
+      canonicalName: 'DFK',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    const person = await scope.createObject({
+      type: 'person',
+      canonicalName: 'Jonne Granqvist',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    const openTask = await scope.createObject({
+      type: 'task',
+      canonicalName: 'Send message to DFK with proposed meeting times',
+      status: 'todo',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    const doneTask = await scope.createObject({
+      type: 'task',
+      canonicalName: 'Send pilot times to DFK',
+      status: 'done',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    await db.insert(calendarEvents).values({
+      teamId: TEAM_A,
+      createdByUserId: USER_OWNER,
+      title: 'Meeting with DFK Finland Oy',
+      startAt: new Date('2026-06-17T12:00:00.000Z'),
+      endAt: new Date('2026-06-17T13:00:00.000Z'),
+      timezone: 'Europe/Helsinki',
+      visibility: 'team',
+    });
+    const [raw] = await db
+      .insert(rawEvents)
+      .values({
+        teamId: TEAM_A,
+        authorUserId: USER_OWNER,
+        source: 'web',
+        contentText: 'Jonne from DFK discussed the pilot.',
+        occurredAt: new Date('2026-06-16T10:00:00.000Z'),
+        visibility: 'team',
+      })
+      .returning({ id: rawEvents.id });
+    const [fact] = await db
+      .insert(facts)
+      .values({
+        teamId: TEAM_A,
+        rawEventId: raw?.id ?? '',
+        statement: 'Jonne from DFK discussed the pilot.',
+        confidence: 0.9,
+        modelVersion: 'test',
+      })
+      .returning({ id: facts.id });
+    await db.insert(factEntities).values([
+      { factId: fact?.id ?? '', entityId: company.id, role: 'subject' },
+      { factId: fact?.id ?? '', entityId: person.id, role: 'object' },
+    ]);
+    const board = await workspace.boards.createBoard({
+      name: 'Pilot pipeline',
+      templateKind: 'pipeline',
+      lanes: [{ name: 'Proposal', kind: 'active' }],
+    });
+    await workspace.boards.addBoardItem(board.id, {
+      entityId: company.id,
+      nextStep: 'Agree pilot scope',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    await db.insert(documents).values({
+      teamId: TEAM_A,
+      ownerUserId: USER_OWNER,
+      name: 'DFK pilot deck.pdf',
+      visibility: 'team',
+    });
+    const [suggestion] = await db
+      .insert(agentSuggestions)
+      .values({
+        teamId: TEAM_A,
+        source: 'background',
+        title: 'Merge duplicate DFK object',
+        dedupeKey: 'merge-dfk-object',
+        visibility: 'team',
+      })
+      .returning({ id: agentSuggestions.id });
+    await db.insert(agentSuggestionItems).values({
+      suggestionId: suggestion?.id ?? '',
+      teamId: TEAM_A,
+      operation: 'merge',
+      targetKind: 'object_merge',
+      title: 'Merge DFK Finland Oy into DFK',
+      dedupeKey: 'merge-dfk-object:item',
+      proposedPayload: { objectIds: [company.id, '77777777-7777-4777-8777-777777777777'] },
+    });
+
+    const detail = await scope.getObject(company.id);
+
+    expect(detail?.connectedWork.openTasks).toEqual([expect.objectContaining({ id: openTask.id })]);
+    expect(detail?.openTasks).toEqual([expect.objectContaining({ id: openTask.id })]);
+    expect(detail?.connectedWork.recentTasks).toEqual([
+      expect.objectContaining({ id: doneTask.id }),
+    ]);
+    expect(detail?.connectedWork.calendarEvents).toEqual([
+      expect.objectContaining({ title: 'Meeting with DFK Finland Oy' }),
+    ]);
+    expect(detail?.connectedWork.timelineEvents).toEqual([
+      expect.objectContaining({ id: raw?.id, contentText: 'Jonne from DFK discussed the pilot.' }),
+    ]);
+    expect(detail?.connectedWork.objects).toEqual([
+      expect.objectContaining({ id: person.id, canonicalName: 'Jonne Granqvist', factCount: 1 }),
+    ]);
+    expect(detail?.connectedWork.boards).toEqual([
+      expect.objectContaining({ boardName: 'Pilot pipeline', nextStep: 'Agree pilot scope' }),
+    ]);
+    expect(detail?.connectedWork.pendingApprovals).toEqual([
+      expect.objectContaining({ title: 'Merge DFK Finland Oy into DFK' }),
+    ]);
+    expect(detail?.connectedWork.documents).toEqual([
+      expect.objectContaining({ name: 'DFK pilot deck.pdf' }),
+    ]);
   });
 });
 

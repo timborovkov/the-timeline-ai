@@ -50,6 +50,18 @@ hydrate it from existing metadata, suggestion evidence, object/task changes,
 document versions, and calendar rows without inventing missing graph links.
 _Avoid_: Related items when discussing what changed because of source evidence
 
+**Connected Work**:
+The source-backed work context shown around one workspace object, such as
+tasks, calendar events, documents, boards, timeline moments, fact-backed
+people/object context, or pending approvals that mention, target, or materially
+involve that object.
+Connected Work can be useful before it becomes object memory; it should not be
+presented as an accepted object relationship unless a teammate accepts that
+relationship. Connected Work is computed from current evidence for immediate
+orientation, while only durable memory candidates graduate into approval-backed
+object memory proposals or accepted object memory.
+_Avoid_: Related when discussing broad mixed context around an object
+
 **Workspace Reconciliation**:
 The process of keeping derived workspace artifacts aligned when newer raw-event
 evidence confirms, revises, supersedes, or invalidates earlier derived state.
@@ -165,6 +177,20 @@ Across object types, updating or merging a plausible existing object is
 preferred over creating a new one.
 _Avoid_: Entity when discussing the user-facing team memory item
 
+**Duplicate Object Candidate**:
+A reviewable proposal that two workspace objects may represent the same
+real-world thing. Short-name, acronym, or suffix-variant matches should become
+duplicate object candidates only when shared evidence supports the identity;
+when a teammate rejects a candidate pair, Timeline should not suggest the same
+pair again. Duplicate object candidates may draw on object evidence, with
+direct identity facets and aliases carrying the most weight, facts, notes, and
+accepted relationships acting as supporting evidence, and bare one-off
+co-mentions treated as weak evidence. When a duplicate object candidate is
+accepted, the survivor becomes the single object page for both sets of connected
+work, while former names remain visible as aliases or evidence labels where
+they explain the source wording.
+_Avoid_: Duplicate when referring to an unaccepted guess
+
 **Object Memory**:
 The team's durable understanding of a workspace object: its canonical name,
 aliases, structured fields, relationships, facts, notes, and approved changes
@@ -182,7 +208,14 @@ agent-discovered object relationships are proposed memory until a teammate
 accepts them, and team-visible proposals should be supported by team-visible
 evidence. The relationship edge says which objects are connected; supporting
 facts, notes, or cited evidence explain why the connection matters. Raw co-occurrence
-in evidence is not itself a relationship.
+in evidence is not itself a relationship. A relationship candidate should be
+proposed when evidence describes a stable or operationally useful connection,
+such as a target, owner, employer, client, vendor, blocker, parent project, or
+explicit artifact subject. Incidental mentions belong in Connected Work rather
+than object memory proposals. Artifact titles can be strong signals for a
+relationship candidate when they name an existing workspace object, but a title
+should be backed by source evidence before the agent proposes durable object
+memory.
 _Avoid_: Co-occurrence, mention, related item
 
 **Object Memory Proposal**:
@@ -195,6 +228,26 @@ relationship proposal should be reviewed as one bundle.
 Creation proposals should be the last resort after checking existing objects
 and pending proposals.
 _Avoid_: Memory write when it hides the approval step
+
+**Memory Repair**:
+A user-triggered request for Timeline to re-evaluate an object, artifact, or
+connected work area and propose missing object memory, duplicate object
+candidates, or relationship candidates. Memory repair complements background
+workspace reconciliation; it does not bypass approval for durable memory.
+Object-centered memory repair can search team-wide evidence and artifacts, but
+the returned proposals should stay focused on the object or connected work area
+the teammate asked Timeline to repair. The first object-centered repair path
+queues focused duplicate and low-signal archive proposals; missing relationship
+and person-object proposals remain follow-up work.
+_Avoid_: Manual linking when the agent is proposing the repair
+
+**Person Object Candidate**:
+A reviewable proposal for a person workspace object. A named person tied to
+durable company, project, or work context can become a person object candidate
+and should be bundled with the supporting relationship candidate; a bare first
+name with no durable context should remain evidence unless it matches an
+existing person.
+_Avoid_: Contact when the person has not been accepted into object memory
 
 **Q&A Note**:
 An object note that preserves a reusable question-and-answer exchange from a

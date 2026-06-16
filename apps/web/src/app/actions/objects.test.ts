@@ -13,6 +13,7 @@ import {
   mergeObjectsAction,
   rejectObjectChangeAction,
   removeRelationshipAction,
+  repairObjectMemoryAction,
   updateNoteAction,
   updateObjectAction,
 } from '@/app/actions/objects';
@@ -469,6 +470,25 @@ describe('object CRUD actions', () => {
     });
 
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/objects');
+    expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/approvals');
+  });
+
+  it('queues object-scoped memory repair for the active team', async () => {
+    await expect(repairObjectMemoryAction({ id: OBJECT_ID })).resolves.toEqual({
+      ok: true,
+      message: 'Memory repair queued',
+    });
+
+    expect(fakes.fakeEnqueueSuggestionJob).toHaveBeenCalledWith(
+      {
+        scope: 'object_cleanup',
+        teamId: '11111111-1111-4111-8111-111111111111',
+        objectId: OBJECT_ID,
+        triggeredBy: 'memory_repair',
+      },
+      { jobIdSuffix: `memory-repair:${OBJECT_ID}` },
+    );
+    expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith(`/app/objects/${OBJECT_ID}`);
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/approvals');
   });
 });

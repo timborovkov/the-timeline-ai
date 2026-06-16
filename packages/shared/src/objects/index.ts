@@ -9,12 +9,18 @@
  */
 import {
   type Db,
+  agentSuggestionItems,
+  agentSuggestions,
+  boardLanes,
   boardItemChanges,
   boardItems,
   boards,
   calendarEventEntities,
+  calendarEvents,
   chatMessages,
   chatSessions,
+  documentChunks,
+  documents,
   entities,
   entityRelationships,
   entityType,
@@ -494,6 +500,52 @@ export interface ObjectDetail extends ObjectRow {
     changedAt: Date;
   }[];
   openTasks: ObjectRow[];
+  connectedWork: {
+    openTasks: ObjectRow[];
+    recentTasks: ObjectRow[];
+    calendarEvents: {
+      id: string;
+      title: string;
+      startAt: Date;
+      endAt: Date;
+      showAs: string;
+    }[];
+    timelineEvents: {
+      id: string;
+      source: string;
+      contentText: string | null;
+      occurredAt: Date;
+    }[];
+    objects: {
+      id: string;
+      canonicalName: string;
+      type: ObjectType;
+      factCount: number;
+    }[];
+    boards: {
+      boardId: string;
+      boardName: string;
+      itemId: string;
+      laneName: string | null;
+      dueAt: Date | null;
+      priority: number | null;
+      nextStep: string | null;
+    }[];
+    pendingApprovals: {
+      suggestionId: string;
+      itemId: string;
+      title: string;
+      operation: string;
+      targetKind: string;
+      createdAt: Date;
+    }[];
+    documents: {
+      id: string;
+      name: string;
+      fileKind: string;
+      updatedAt: Date;
+    }[];
+  };
   /** Count of object_changes and notes since the caller's last visit. */
   newSinceLastVisit: number;
   lastVisitedAt: Date | null;
@@ -581,6 +633,58 @@ export interface ObjectSectionPage {
 
 function rawEventVisibility(scope: TeamScopeCore) {
   return rawEventVisibleToUser(scope.userId);
+}
+
+function objectNamesForMatching(object: Pick<ObjectRow, 'canonicalName' | 'aliases'>): string[] {
+  return Array.from(new Set([object.canonicalName, ...object.aliases].map((name) => name.trim())))
+    .filter((name) => name.length >= 2)
+    .slice(0, 8);
+}
+
+function objectNameMentionCondition(
+  column: unknown,
+  names: readonly string[],
+): ReturnType<typeof or> | undefined {
+  const conditions = names.map(
+    (name) => sql`lower(${column as never}) LIKE ${likePattern(name.toLowerCase())} ESCAPE '\\'`,
+  );
+  return conditions.length > 0 ? or(...conditions) : undefined;
+}
+
+function calendarVisibleToScope(scope: TeamScopeCore): SQL {
+  return sql`(
+    ${calendarEvents.visibility} = 'team'
+    OR ${calendarEvents.createdByUserId} = ${scope.userId}
+    OR (
+      ${calendarEvents.visibility} = 'specific_users'
+      AND ${scope.userId} = ANY(${calendarEvents.visibilityUserIds})
+    )
+  )`;
+}
+
+function documentVisibleToScope(scope: TeamScopeCore): SQL {
+  return sql`(
+    ${documents.visibility} = 'team'
+    OR (${documents.visibility} = 'private' AND ${documents.ownerUserId} = ${scope.userId})
+    OR (
+      ${documents.visibility} = 'specific_users'
+      AND ${scope.userId} = ANY(${documents.visibilityUserIds})
+    )
+  )`;
+}
+
+function suggestionVisibleToScope(scope: TeamScopeCore): SQL {
+  return sql`(
+    ${agentSuggestions.visibility} = 'team'
+    OR (
+      ${agentSuggestions.visibility} = 'private'
+      AND ${agentSuggestions.visibilityOwnerUserId} = ${scope.userId}
+    )
+    OR (
+      ${agentSuggestions.visibility} = 'specific_users'
+      AND ${scope.userId} = ANY(${agentSuggestions.visibilityUserIds})
+    )
+  )`;
 }
 
 function cursorCondition(
@@ -824,6 +928,303 @@ export async function getObjectSectionPage(
   return pageWindow(rows, limit, (row) => ({ at: row.occurredAt.toISOString(), id: row.id }));
 }
 
+async function getConnectedWork(
+  db: Db,
+  scope: TeamScopeCore,
+  object: ObjectRow,
+): Promise<ObjectDetail['connectedWork']> {
+  const names = objectNamesForMatching(object);
+  const nameMatch = objectNameMentionCondition(entities.canonicalName, names);
+
+  const factIdRows = await db
+    .select({ factId: factEntities.factId, rawEventId: factsTable.rawEventId })
+    .from(factEntities)
+    .innerJoin(factsTable, eq(factsTable.id, factEntities.factId))
+    .where(eq(factEntities.entityId, object.id))
+    .limit(300);
+  const factIds = Array.from(new Set(factIdRows.map((row) => row.factId)));
+  const factRawEventIds = Array.from(new Set(factIdRows.map((row) => row.rawEventId)));
+
+  const [
+    relationshipTaskRows,
+    sharedObjectRows,
+    titleTaskRows,
+    linkedCalendarRows,
+    boardRows,
+    pendingApprovalRows,
+    documentRows,
+  ] = await Promise.all([
+    db
+      .select({ taskId: entityRelationships.fromEntityId })
+      .from(entityRelationships)
+      .where(
+        and(
+          eq(entityRelationships.teamId, scope.teamId),
+          eq(entityRelationships.toEntityId, object.id),
+          eq(entityRelationships.kind, 'child'),
+        ),
+      )
+      .limit(200),
+    factIds.length > 0
+      ? db
+          .select({
+            id: entities.id,
+            canonicalName: entities.canonicalName,
+            type: entities.type,
+            factCount: sql<number>`count(distinct ${factEntities.factId})::int`,
+          })
+          .from(factEntities)
+          .innerJoin(entities, eq(entities.id, factEntities.entityId))
+          .where(
+            and(
+              inArray(factEntities.factId, factIds),
+              ne(factEntities.entityId, object.id),
+              eq(entities.teamId, scope.teamId),
+              isNull(entities.archivedAt),
+              isNull(entities.mergedIntoId),
+            ),
+          )
+          .groupBy(entities.id, entities.canonicalName, entities.type)
+          .orderBy(
+            desc(sql<number>`count(distinct ${factEntities.factId})`),
+            entities.canonicalName,
+          )
+          .limit(20)
+      : Promise.resolve([]),
+    nameMatch
+      ? db
+          .select({ id: entities.id })
+          .from(entities)
+          .where(
+            and(
+              eq(entities.teamId, scope.teamId),
+              inArray(entities.type, ['task', 'follow_up']),
+              isNull(entities.archivedAt),
+              isNull(entities.mergedIntoId),
+              ne(entities.id, object.id),
+              nameMatch,
+            ),
+          )
+          .orderBy(desc(entities.updatedAt), desc(entities.id))
+          .limit(50)
+      : Promise.resolve([]),
+    db
+      .select({ calendarEventId: calendarEventEntities.calendarEventId })
+      .from(calendarEventEntities)
+      .where(
+        and(
+          eq(calendarEventEntities.teamId, scope.teamId),
+          eq(calendarEventEntities.entityId, object.id),
+        ),
+      )
+      .limit(100),
+    db
+      .select({
+        boardId: boards.id,
+        boardName: boards.name,
+        itemId: boardItems.id,
+        laneName: boardLanes.name,
+        dueAt: boardItems.dueAt,
+        priority: boardItems.priority,
+        nextStep: boardItems.nextStep,
+      })
+      .from(boardItems)
+      .innerJoin(boards, eq(boardItems.boardId, boards.id))
+      .leftJoin(boardLanes, eq(boardItems.laneId, boardLanes.id))
+      .where(
+        and(
+          eq(boardItems.teamId, scope.teamId),
+          eq(boardItems.entityId, object.id),
+          eq(boards.teamId, scope.teamId),
+          isNull(boardItems.archivedAt),
+          isNull(boards.archivedAt),
+        ),
+      )
+      .orderBy(desc(boardItems.updatedAt), desc(boardItems.id))
+      .limit(8),
+    db
+      .select({
+        suggestionId: agentSuggestions.id,
+        itemId: agentSuggestionItems.id,
+        title: agentSuggestionItems.title,
+        operation: agentSuggestionItems.operation,
+        targetKind: agentSuggestionItems.targetKind,
+        createdAt: agentSuggestions.createdAt,
+      })
+      .from(agentSuggestionItems)
+      .innerJoin(agentSuggestions, eq(agentSuggestionItems.suggestionId, agentSuggestions.id))
+      .where(
+        and(
+          eq(agentSuggestions.teamId, scope.teamId),
+          eq(agentSuggestionItems.teamId, scope.teamId),
+          eq(agentSuggestions.status, 'pending'),
+          eq(agentSuggestionItems.status, 'pending'),
+          suggestionVisibleToScope(scope),
+          or(
+            eq(agentSuggestionItems.targetId, object.id),
+            eq(agentSuggestionItems.resultId, object.id),
+            sql`${agentSuggestionItems.proposedPayload}::text LIKE ${likePattern(object.id)}`,
+            ...(names.length > 0
+              ? [
+                  objectNameMentionCondition(agentSuggestions.title, names),
+                  objectNameMentionCondition(agentSuggestions.summary, names),
+                  objectNameMentionCondition(agentSuggestions.reason, names),
+                  objectNameMentionCondition(agentSuggestionItems.title, names),
+                  objectNameMentionCondition(agentSuggestionItems.description, names),
+                  objectNameMentionCondition(
+                    sql`${agentSuggestionItems.proposedPayload}::text`,
+                    names,
+                  ),
+                ].filter((condition): condition is SQL => Boolean(condition))
+              : []),
+          ),
+        ),
+      )
+      .orderBy(desc(agentSuggestions.createdAt), desc(agentSuggestionItems.id))
+      .limit(8),
+    names.length > 0
+      ? db
+          .select({
+            id: documents.id,
+            name: documents.name,
+            fileKind: documents.fileKind,
+            updatedAt: documents.updatedAt,
+          })
+          .from(documents)
+          .leftJoin(
+            documentChunks,
+            and(
+              eq(documentChunks.teamId, scope.teamId),
+              eq(documentChunks.documentId, documents.id),
+            ),
+          )
+          .where(
+            and(
+              eq(documents.teamId, scope.teamId),
+              isNull(documents.deletedAt),
+              documentVisibleToScope(scope),
+              or(
+                objectNameMentionCondition(documents.name, names),
+                objectNameMentionCondition(sql`${documents.metadata}::text`, names),
+                objectNameMentionCondition(documentChunks.text, names),
+              ),
+            ),
+          )
+          .orderBy(desc(documents.updatedAt), desc(documents.id))
+          .limit(20)
+      : Promise.resolve([]),
+  ]);
+
+  const taskIds = new Set<string>();
+  for (const row of relationshipTaskRows) taskIds.add(row.taskId);
+  for (const row of sharedObjectRows) {
+    if (row.type === 'task' || row.type === 'follow_up') taskIds.add(row.id);
+  }
+  for (const row of titleTaskRows) taskIds.add(row.id);
+
+  const taskRows =
+    taskIds.size > 0
+      ? (
+          await db
+            .select()
+            .from(entities)
+            .where(
+              and(
+                eq(entities.teamId, scope.teamId),
+                inArray(entities.id, Array.from(taskIds)),
+                inArray(entities.type, ['task', 'follow_up']),
+                isNull(entities.archivedAt),
+                isNull(entities.mergedIntoId),
+              ),
+            )
+            .orderBy(desc(entities.updatedAt), desc(entities.id))
+            .limit(40)
+        ).map(toObjectRow)
+      : [];
+  const openTasks = taskRows
+    .filter((task) => task.status !== 'done' && task.status !== 'cancelled')
+    .slice(0, 12);
+  const recentTasks = taskRows
+    .filter((task) => task.status === 'done' || task.status === 'cancelled')
+    .slice(0, 8);
+
+  const timelineConditions: SQL[] = [
+    sql`${rawEvents.sourceMetadata} ->> 'entity_id' = ${object.id}`,
+  ];
+  if (factRawEventIds.length > 0) {
+    timelineConditions.push(inArray(rawEvents.id, factRawEventIds));
+  }
+  const eventContentMatch = objectNameMentionCondition(rawEvents.contentText, names);
+  if (eventContentMatch) timelineConditions.push(eventContentMatch);
+  const timelineRows =
+    timelineConditions.length > 0
+      ? await db
+          .select({
+            id: rawEvents.id,
+            source: rawEvents.source,
+            contentText: rawEvents.contentText,
+            occurredAt: rawEvents.occurredAt,
+          })
+          .from(rawEvents)
+          .where(
+            and(
+              eq(rawEvents.teamId, scope.teamId),
+              ne(rawEvents.source, 'system'),
+              rawEventVisibility(scope),
+              sql`COALESCE(${rawEvents.sourceMetadata} ->> 'deleted', 'false') <> 'true'`,
+              or(...timelineConditions),
+            ),
+          )
+          .orderBy(desc(rawEvents.occurredAt), desc(rawEvents.id))
+          .limit(12)
+      : [];
+
+  const calendarConditions = [];
+  const linkedCalendarIds = linkedCalendarRows.map((row) => row.calendarEventId);
+  if (linkedCalendarIds.length > 0) {
+    calendarConditions.push(inArray(calendarEvents.id, linkedCalendarIds));
+  }
+  const calendarTitleMatch = objectNameMentionCondition(calendarEvents.title, names);
+  if (calendarTitleMatch) calendarConditions.push(calendarTitleMatch);
+  const calendarDescriptionMatch = objectNameMentionCondition(calendarEvents.description, names);
+  if (calendarDescriptionMatch) calendarConditions.push(calendarDescriptionMatch);
+  const calendarRows =
+    calendarConditions.length > 0
+      ? await db
+          .select({
+            id: calendarEvents.id,
+            title: calendarEvents.title,
+            startAt: calendarEvents.startAt,
+            endAt: calendarEvents.endAt,
+            showAs: calendarEvents.showAs,
+          })
+          .from(calendarEvents)
+          .where(
+            and(
+              eq(calendarEvents.teamId, scope.teamId),
+              isNull(calendarEvents.deletedAt),
+              calendarVisibleToScope(scope),
+              or(...calendarConditions),
+            ),
+          )
+          .orderBy(desc(calendarEvents.startAt), desc(calendarEvents.id))
+          .limit(10)
+      : [];
+
+  return {
+    openTasks,
+    recentTasks,
+    calendarEvents: calendarRows,
+    timelineEvents: timelineRows,
+    objects: sharedObjectRows
+      .filter((row) => row.type !== 'task' && row.type !== 'follow_up')
+      .slice(0, 12),
+    boards: boardRows,
+    pendingApprovals: pendingApprovalRows,
+    documents: Array.from(new Map(documentRows.map((row) => [row.id, row])).values()).slice(0, 8),
+  };
+}
+
 export async function getObject(
   db: Db,
   scope: TeamScopeCore,
@@ -864,7 +1265,7 @@ export async function getObject(
   }
   if (!entityRow) return null;
 
-  const [noteRows, outRows, inRows, changeRows, taskRows, viewRows] = await Promise.all([
+  const [noteRows, outRows, inRows, changeRows, viewRows] = await Promise.all([
     db
       .select({
         id: objectNotes.id,
@@ -944,21 +1345,6 @@ export async function getObject(
       .where(and(eq(objectChanges.teamId, scope.teamId), eq(objectChanges.entityId, entityRow.id)))
       .orderBy(desc(objectChanges.changedAt), desc(objectChanges.id))
       .limit(20),
-    // "Open tasks linked via parent relationship". We model task→parent as a
-    // `child` edge from the task to the parent, OR a `parent` edge from the
-    // parent to the task. For simplicity, surface tasks where the parent is
-    // this object via the `child` edge (task → parent).
-    db
-      .select({ taskId: entityRelationships.fromEntityId })
-      .from(entityRelationships)
-      .where(
-        and(
-          eq(entityRelationships.teamId, scope.teamId),
-          eq(entityRelationships.toEntityId, entityRow.id),
-          eq(entityRelationships.kind, 'child'),
-        ),
-      )
-      .limit(200),
     db
       .select({ lastVisitedAt: objectViews.lastVisitedAt })
       .from(objectViews)
@@ -971,29 +1357,6 @@ export async function getObject(
       )
       .limit(1),
   ]);
-
-  const taskIds = taskRows.map((r) => r.taskId);
-  const tasks: ObjectRow[] =
-    taskIds.length > 0
-      ? (
-          await db
-            .select()
-            .from(entities)
-            .where(
-              and(
-                eq(entities.teamId, scope.teamId),
-                inArray(entities.id, taskIds),
-                eq(entities.type, 'task'),
-                isNull(entities.archivedAt),
-                isNull(entities.mergedIntoId),
-                ne(entities.status, 'done'),
-                ne(entities.status, 'cancelled'),
-              ),
-            )
-            .orderBy(desc(entities.updatedAt), desc(entities.id))
-            .limit(20)
-        ).map(toObjectRow)
-      : [];
 
   const lastVisitedAt = viewRows[0]?.lastVisitedAt ?? null;
   // `changeRows` is capped at 50 for the recent-changes pane, so filtering it
@@ -1029,6 +1392,7 @@ export async function getObject(
   }
 
   const base = toObjectRow(entityRow);
+  const connectedWork = await getConnectedWork(db, scope, base);
   return {
     ...base,
     notes: noteRows,
@@ -1037,7 +1401,8 @@ export async function getObject(
       ...inRows.map((r) => ({ ...r, direction: 'in' as const })),
     ],
     recentChanges: changeRows,
-    openTasks: tasks,
+    openTasks: connectedWork.openTasks,
+    connectedWork,
     newSinceLastVisit,
     lastVisitedAt,
   };

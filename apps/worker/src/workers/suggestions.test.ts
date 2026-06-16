@@ -407,6 +407,155 @@ describe('processSuggestionJobForTests', () => {
     );
   });
 
+  it('requires supporting evidence for short company duplicate candidates and suppresses rejected pairs', async () => {
+    const [shortName, fullName, bareShort, bareFull] = await db
+      .insert(entities)
+      .values([
+        { teamId: TEAM_ID, type: 'company', canonicalName: 'DFK' },
+        { teamId: TEAM_ID, type: 'company', canonicalName: 'DFK Finland Oy' },
+        { teamId: TEAM_ID, type: 'company', canonicalName: 'ABC' },
+        { teamId: TEAM_ID, type: 'company', canonicalName: 'ABC Services Oy' },
+      ])
+      .returning({ id: entities.id });
+    if (!shortName || !fullName || !bareShort || !bareFull) {
+      throw new Error('expected company fixtures');
+    }
+    const [raw] = await db
+      .insert(rawEvents)
+      .values({
+        teamId: TEAM_ID,
+        authorUserId: OWNER_ID,
+        source: 'web',
+        contentText: 'DFK and DFK Finland Oy are both involved in the pilot.',
+        occurredAt: REFERENCE_DATE,
+        visibility: 'team',
+      })
+      .returning({ id: rawEvents.id });
+    if (!raw) throw new Error('expected raw event');
+    const insertedFacts = await db
+      .insert(facts)
+      .values([
+        {
+          teamId: TEAM_ID,
+          rawEventId: raw.id,
+          statement: 'DFK is involved in the pilot.',
+          confidence: 0.9,
+          modelVersion: 'test',
+        },
+        {
+          teamId: TEAM_ID,
+          rawEventId: raw.id,
+          statement: 'DFK Finland Oy is involved in the pilot.',
+          confidence: 0.9,
+          modelVersion: 'test',
+        },
+      ])
+      .returning({ id: facts.id });
+    await db.insert(factEntities).values([
+      { factId: insertedFacts[0]?.id ?? '', entityId: shortName.id, role: 'subject' },
+      { factId: insertedFacts[1]?.id ?? '', entityId: fullName.id, role: 'subject' },
+    ]);
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { scope: 'object_cleanup', teamId: TEAM_ID, triggeredBy: 'manual' },
+    );
+
+    const scope = withTeam(db as never, TEAM_ID, OWNER_ID);
+    let bundles = await scope.suggestions.listPendingSuggestions();
+    expect(bundles).toHaveLength(1);
+    const objectIds = bundles[0]?.items[0]?.proposedPayload.objectIds;
+    if (!Array.isArray(objectIds)) throw new Error('expected merge object ids');
+    expect(new Set(objectIds)).toEqual(new Set([shortName.id, fullName.id]));
+
+    await expect(
+      scope.suggestions.rejectSuggestionItem(bundles[0]?.items[0]?.id ?? ''),
+    ).resolves.toBe(true);
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { scope: 'object_cleanup', teamId: TEAM_ID, triggeredBy: 'daily' },
+    );
+    bundles = await scope.suggestions.listPendingSuggestions();
+    expect(bundles).toEqual([]);
+  });
+
+  it('scopes object memory repair cleanup to duplicates involving the selected object', async () => {
+    const [shortName, fullName] = await db
+      .insert(entities)
+      .values([
+        { teamId: TEAM_ID, type: 'company', canonicalName: 'DFK' },
+        { teamId: TEAM_ID, type: 'company', canonicalName: 'DFK Finland Oy' },
+        { teamId: TEAM_ID, type: 'company', canonicalName: 'KPMG' },
+        { teamId: TEAM_ID, type: 'vendor', canonicalName: 'K P M G' },
+      ])
+      .returning({ id: entities.id });
+    if (!shortName || !fullName) throw new Error('expected company fixtures');
+    const [raw] = await db
+      .insert(rawEvents)
+      .values({
+        teamId: TEAM_ID,
+        authorUserId: OWNER_ID,
+        source: 'web',
+        contentText: 'DFK and DFK Finland Oy are both involved in the pilot.',
+        occurredAt: REFERENCE_DATE,
+        visibility: 'team',
+      })
+      .returning({ id: rawEvents.id });
+    if (!raw) throw new Error('expected raw event');
+    const insertedFacts = await db
+      .insert(facts)
+      .values([
+        {
+          teamId: TEAM_ID,
+          rawEventId: raw.id,
+          statement: 'DFK is involved in the pilot.',
+          confidence: 0.9,
+          modelVersion: 'test',
+        },
+        {
+          teamId: TEAM_ID,
+          rawEventId: raw.id,
+          statement: 'DFK Finland Oy is involved in the pilot.',
+          confidence: 0.9,
+          modelVersion: 'test',
+        },
+      ])
+      .returning({ id: facts.id });
+    await db.insert(factEntities).values([
+      { factId: insertedFacts[0]?.id ?? '', entityId: shortName.id, role: 'subject' },
+      { factId: insertedFacts[1]?.id ?? '', entityId: fullName.id, role: 'subject' },
+    ]);
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      {
+        scope: 'object_cleanup',
+        teamId: TEAM_ID,
+        objectId: shortName.id,
+        triggeredBy: 'memory_repair',
+      },
+    );
+
+    const bundles = await withTeam(
+      db as never,
+      TEAM_ID,
+      OWNER_ID,
+    ).suggestions.listPendingSuggestions();
+    expect(bundles).toHaveLength(1);
+    const objectIds = bundles[0]?.items[0]?.proposedPayload.objectIds;
+    if (!Array.isArray(objectIds)) throw new Error('expected merge object ids');
+    expect(new Set(objectIds)).toEqual(new Set([shortName.id, fullName.id]));
+
+    const [suggestion] = await db
+      .select({ metadata: agentSuggestions.metadata })
+      .from(agentSuggestions)
+      .where(eq(agentSuggestions.teamId, TEAM_ID));
+    expect(suggestion?.metadata).toMatchObject({
+      triggered_by: 'memory_repair',
+      repair_object_id: shortName.id,
+    });
+  });
+
   it('suggests approval-backed person merges for full-name and short-name variants', async () => {
     const inserted = await db
       .insert(entities)
