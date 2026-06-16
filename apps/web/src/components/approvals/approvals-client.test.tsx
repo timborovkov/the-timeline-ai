@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 
-import { cleanup, fireEvent, render, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -24,6 +24,8 @@ vi.mock('@/app/actions/suggestions', () => ({
 
 const { ApprovalsClient } = await import('./approvals-client.js');
 
+const EVENT_ID = '11111111-1111-4111-8111-111111111111';
+
 beforeEach(() => {
   vi.clearAllMocks();
   fakes.acceptAllSuggestionAction.mockResolvedValue({ ok: true });
@@ -34,6 +36,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  vi.unstubAllGlobals();
 });
 
 describe('ApprovalsClient', () => {
@@ -59,7 +62,7 @@ describe('ApprovalsClient', () => {
             createdAt: '2026-06-01T10:00:00.000Z',
             evidence: [
               {
-                rawEventId: '11111111-1111-4111-8111-111111111111',
+                rawEventId: EVENT_ID,
                 quote: 'I will send the proposal',
                 occurredAt: '2026-06-01T10:00:00.000Z',
                 source: 'slack',
@@ -99,10 +102,81 @@ describe('ApprovalsClient', () => {
     expect(html).toContain('Send proposal');
     expect(html).toContain('Calendar conflict');
     expect(html).toContain('I will send the proposal');
-    expect(html).toContain(
-      '/app/timeline?event=11111111-1111-4111-8111-111111111111#ev-11111111-1111-4111-8111-111111111111',
-    );
+    expect(html).toContain('Timeline evidence · slack · 11111111');
     expect(html).toContain('create task');
+  });
+
+  it('opens evidence references with the full timeline event id', async () => {
+    const fetchMock = vi.fn((_input: RequestInfo | URL, _init?: RequestInit) =>
+      Promise.resolve(
+        Response.json({
+          preview: {
+            ref: { kind: 'timeline_event', id: EVENT_ID },
+            title: 'Timeline Event',
+            subtitle: 'slack · Jun 1, 2026',
+            body: 'I will send the proposal',
+            href: `/app/timeline?event=${EVENT_ID}#ev-${EVENT_ID}`,
+          },
+        }),
+      ),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(
+      createElement(ApprovalsClient, {
+        suggestions: [
+          {
+            id: 'bundle-1',
+            source: 'background',
+            status: 'pending',
+            title: 'Follow up with Acme',
+            summary: 'A commitment was found.',
+            reason: 'Timeline source evidence',
+            confidence: 'high',
+            createdAt: '2026-06-01T10:00:00.000Z',
+            evidence: [
+              {
+                rawEventId: EVENT_ID,
+                quote: 'I will send the proposal',
+                occurredAt: '2026-06-01T10:00:00.000Z',
+                source: 'slack',
+              },
+            ],
+            items: [
+              {
+                id: 'item-1',
+                status: 'pending',
+                operation: 'create',
+                targetKind: 'task',
+                targetId: null,
+                title: 'Send proposal',
+                description: 'Send Acme the proposal.',
+                proposedPayload: { canonicalName: 'Send proposal' },
+                failureReason: null,
+              },
+            ],
+          },
+        ],
+      }),
+    );
+
+    await userEvent.click(screen.getByText('Evidence · 1'));
+    await userEvent.click(screen.getByRole('button', { name: /Timeline evidence · slack/ }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalled();
+    });
+    const call = fetchMock.mock.calls[0];
+    if (!call) throw new Error('expected evidence preview request');
+    const [url, init] = call;
+    if (!init) throw new Error('expected evidence preview request options');
+    if (typeof init.body !== 'string') throw new Error('expected string request body');
+    expect(url).toBe('/api/artifacts/preview');
+    expect(JSON.parse(init.body)).toEqual({
+      ref: { kind: 'timeline_event', id: EVENT_ID },
+    });
+    const fullPage = await screen.findByRole('link', { name: /Open full page/ });
+    expect(fullPage.getAttribute('href')).toBe(`/app/timeline?event=${EVENT_ID}#ev-${EVENT_ID}`);
   });
 
   it('can hide bundle-level accept all for filtered approval surfaces', () => {

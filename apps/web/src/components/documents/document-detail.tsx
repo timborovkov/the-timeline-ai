@@ -390,9 +390,9 @@ function CurrentVersionPanel({
             )}
           </div>
           <aside className="space-y-3">
-            <InfoBlock title="Model understanding">
+            <InfoBlock title="Model understanding" contentClassName="max-h-72 overflow-y-auto pr-1">
               {description ? (
-                <p className="text-sm leading-6 text-fg-muted">{description}</p>
+                <p className="break-words text-sm leading-6 text-fg-muted">{description}</p>
               ) : (
                 <p className="text-sm text-muted-foreground">
                   No extracted description is available yet.
@@ -442,11 +442,19 @@ function CurrentVersionPanel({
   );
 }
 
-function InfoBlock({ title, children }: { title: string; children: ReactNode }) {
+function InfoBlock({
+  title,
+  children,
+  contentClassName = '',
+}: {
+  title: string;
+  children: ReactNode;
+  contentClassName?: string;
+}) {
   return (
     <div className="rounded-sm border border-border bg-bg px-3 py-2">
       <p className="font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">{title}</p>
-      <div className="mt-1">{children}</div>
+      <div className={`mt-1 ${contentClassName}`}>{children}</div>
     </div>
   );
 }
