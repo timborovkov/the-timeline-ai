@@ -58,6 +58,27 @@ describe('ToolStep', () => {
     expect(html).toContain('Updated Otto Silventola: status changed from active to done.');
   });
 
+  it('shows calendar tool server messages when output is available', () => {
+    const html = renderToStaticMarkup(
+      createElement(ToolStep, {
+        name: 'execute_calendar_create',
+        state: 'output-available',
+        input: {
+          title: 'Pilot planning',
+          startAt: '2026-06-14T10:00:00.000Z',
+          endAt: '2026-06-14T10:30:00.000Z',
+        },
+        output: {
+          ok: true,
+          message: 'Reused existing calendar suggestion for Pilot planning.',
+        },
+      }),
+    );
+
+    expect(html).toContain('Reused existing calendar suggestion for Pilot planning.');
+    expect(html).not.toContain('Create Pilot planning');
+  });
+
   it('renders create-object approval details', () => {
     const html = renderToStaticMarkup(
       createElement(ToolStep, {
@@ -126,7 +147,7 @@ describe('ToolStep', () => {
 
     expect(html).toContain('approval required');
     expect(html).toContain('Pilot planning');
-    expect(html).toContain('2026-06-14T10:00:00.000Z');
+    expect(html).toContain('Jun');
     expect(html).toContain('Zoom');
   });
 
@@ -137,8 +158,16 @@ describe('ToolStep', () => {
         state: 'approval-requested',
         input: {
           id: '12121212-1212-4212-8212-121212121212',
-          expectedCurrent: { title: 'Daily standup' },
-          patch: { title: 'Daily sync' },
+          expectedCurrent: {
+            title: 'Daily standup',
+            startAt: '2026-06-14T09:00:00.000Z',
+            endAt: '2026-06-14T09:30:00.000Z',
+          },
+          patch: {
+            title: 'Daily sync',
+            startAt: '2026-06-14T10:00:00.000Z',
+            endAt: '2026-06-14T10:30:00.000Z',
+          },
           reason: 'User asked to rename it.',
         },
         approval: { id: 'approval-calendar-update' },
@@ -147,7 +176,11 @@ describe('ToolStep', () => {
     );
 
     expect(html).toContain('approval required');
+    expect(html).toContain('from');
+    expect(html).toContain('; to');
     expect(html).toContain('[cal:12121212]');
+    expect(html).toContain('Current');
+    expect(html).toContain('Proposed');
     expect(html).toContain('title: Daily sync');
   });
 

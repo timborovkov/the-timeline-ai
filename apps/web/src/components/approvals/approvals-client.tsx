@@ -1,6 +1,17 @@
 'use client';
 
-import { Check, CheckCheck, ExternalLink, GitMerge, X } from 'lucide-react';
+import {
+  AlertTriangle,
+  CalendarClock,
+  CalendarPlus,
+  CalendarX,
+  Check,
+  CheckCheck,
+  ExternalLink,
+  GitMerge,
+  MoveRight,
+  X,
+} from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useMemo, useRef, useState, useTransition } from 'react';
@@ -29,7 +40,30 @@ interface SuggestionItem {
   failureReason: string | null;
   supersededByItemId?: string | null;
   supersededReason?: string | null;
+  calendarResolutionHint?: CalendarResolutionHint | null;
 }
+
+interface CalendarResolutionEvent {
+  id: string;
+  title: string;
+  description: string | null;
+  startAt: string;
+  endAt: string;
+  timezone: string;
+  allDay: boolean;
+  location: string | null;
+  showAs: string;
+  visibility: string;
+  rrule: string | null;
+}
+
+type CalendarResolutionHint =
+  | { kind: 'new_event' }
+  | { kind: 'exact_duplicate_reuse'; event: CalendarResolutionEvent }
+  | { kind: 'semantic_update_candidate'; event: CalendarResolutionEvent }
+  | { kind: 'ambiguous_match'; events: CalendarResolutionEvent[] }
+  | { kind: 'target_event'; event: CalendarResolutionEvent }
+  | { kind: 'missing_target' };
 
 interface SuggestionBundle {
   id: string;
@@ -97,6 +131,7 @@ function suggestionItemSignature(item: SuggestionItem): string {
     failureReason: item.failureReason,
     supersededByItemId: item.supersededByItemId ?? null,
     supersededReason: item.supersededReason ?? null,
+    calendarResolutionHint: item.calendarResolutionHint ?? null,
   });
 }
 
@@ -144,6 +179,82 @@ function formatPayloadValue(value: unknown): string {
   if (typeof value === 'number' || typeof value === 'boolean') return String(value);
   if (value instanceof Date) return value.toISOString();
   return displayText(JSON.stringify(value));
+}
+
+function payloadString(payload: Record<string, unknown>, key: string): string | null {
+  const value = payload[key];
+  return typeof value === 'string' && value.trim() ? value : null;
+}
+
+function payloadBoolean(payload: Record<string, unknown>, key: string): boolean | null {
+  const value = payload[key];
+  return typeof value === 'boolean' ? value : null;
+}
+
+function calendarRangeLabel(input: {
+  startAt: string | null;
+  endAt: string | null;
+  allDay?: boolean | null;
+}): string | null {
+  if (!input.startAt || !input.endAt) return null;
+  if (input.allDay) {
+    return `${formatDisplayDateTime(input.startAt).replace(/, 12:00 AM$/, '')} - ${formatDisplayDateTime(
+      input.endAt,
+    ).replace(/, 12:00 AM$/, '')}`;
+  }
+  return `${formatDisplayDateTime(input.startAt)} -> ${formatDisplayDateTime(input.endAt)}`;
+}
+
+function proposedCalendarRange(item: SuggestionItem): string | null {
+  return calendarRangeLabel({
+    startAt: payloadString(item.proposedPayload, 'startAt'),
+    endAt: payloadString(item.proposedPayload, 'endAt'),
+    allDay: payloadBoolean(item.proposedPayload, 'allDay'),
+  });
+}
+
+function calendarEventRange(event: CalendarResolutionEvent): string {
+  return (
+    calendarRangeLabel({
+      startAt: event.startAt,
+      endAt: event.endAt,
+      allDay: event.allDay,
+    }) ?? event.startAt
+  );
+}
+
+function calendarActionSummary(item: SuggestionItem): {
+  label: string;
+  icon: typeof CalendarClock;
+  tone: 'default' | 'warning' | 'danger';
+} {
+  const role = payloadString(item.proposedPayload, 'proposalRole');
+  if (item.operation === 'archive_or_cancel') {
+    return { label: 'Cancel', icon: CalendarX, tone: 'danger' };
+  }
+  if (item.operation === 'update' && role === 'selected_slot') {
+    return { label: 'Confirm slot', icon: CalendarClock, tone: 'default' };
+  }
+  if (item.operation === 'update') {
+    const moves =
+      payloadString(item.proposedPayload, 'startAt') ??
+      payloadString(item.proposedPayload, 'endAt');
+    return {
+      label: moves ? 'Move' : 'Update',
+      icon: moves ? MoveRight : CalendarClock,
+      tone: 'default',
+    };
+  }
+  if (item.calendarResolutionHint?.kind === 'exact_duplicate_reuse') {
+    return { label: 'Reuse existing', icon: CalendarClock, tone: 'warning' };
+  }
+  if (item.calendarResolutionHint?.kind === 'semantic_update_candidate') {
+    return { label: 'Possible match', icon: AlertTriangle, tone: 'warning' };
+  }
+  if (item.calendarResolutionHint?.kind === 'ambiguous_match') {
+    return { label: 'Needs review', icon: AlertTriangle, tone: 'warning' };
+  }
+  return { label: 'Create', icon: CalendarPlus, tone: 'default' };
 }
 
 function objectMergeHref(item: SuggestionItem): string {
@@ -566,6 +677,9 @@ function ApprovalItemMain({ item }: { item: SuggestionItem }) {
 }
 
 function ApprovalItemPayload({ bundle, item }: { bundle: SuggestionBundle; item: SuggestionItem }) {
+  if (item.targetKind === 'calendar_event') {
+    return <CalendarApprovalPayload item={item} />;
+  }
   const summary = relationshipPayloadSummary(item, bundle) ?? formatPayload(item.proposedPayload);
   return (
     <div className="min-w-0 self-center">
@@ -579,6 +693,97 @@ function ApprovalItemPayload({ bundle, item }: { bundle: SuggestionBundle; item:
         <p className="mt-1 text-xs text-danger">{displayText(item.failureReason)}</p>
       ) : null}
     </div>
+  );
+}
+
+function CalendarApprovalPayload({ item }: { item: SuggestionItem }) {
+  const action = calendarActionSummary(item);
+  const Icon = action.icon;
+  const proposedRange = proposedCalendarRange(item);
+  const showAs = payloadString(item.proposedPayload, 'showAs');
+  const recurrenceEditMode = payloadString(item.proposedPayload, 'recurrenceEditMode');
+  const proposalGroupId = payloadString(item.proposedPayload, 'proposalGroupId');
+  const proposalStatus = payloadString(item.proposedPayload, 'proposalStatus');
+  const proposalRole = payloadString(item.proposedPayload, 'proposalRole');
+  const cancelsSiblingSlots =
+    item.operation === 'update' &&
+    proposalGroupId !== null &&
+    (proposalStatus === 'confirmed' || proposalRole === 'selected_slot');
+  const toneClass =
+    action.tone === 'danger'
+      ? 'border-danger/40 bg-danger/5 text-danger'
+      : action.tone === 'warning'
+        ? 'border-warning/50 bg-warning/10 text-fg'
+        : 'border-border bg-muted/30 text-fg';
+
+  return (
+    <div className="min-w-0 self-center space-y-2">
+      <div
+        className={`inline-flex items-center gap-1.5 rounded-sm border px-2 py-1 font-mono text-[10px] uppercase tracking-[0.12em] ${toneClass}`}
+      >
+        <Icon className="size-3" />
+        {action.label}
+      </div>
+      <div className="space-y-1 text-xs text-fg-muted">
+        <CalendarResolutionLine item={item} proposedRange={proposedRange} />
+        {showAs ? <p>Availability: {displayText(showAs)}</p> : null}
+        {recurrenceEditMode ? <p>Recurrence: {displayText(recurrenceEditMode)}</p> : null}
+        {cancelsSiblingSlots ? (
+          <p>Accepting one slot can cancel sibling tentative slots in this group.</p>
+        ) : null}
+      </div>
+      {item.failureReason ? (
+        <p className="mt-1 text-xs text-danger">{displayText(item.failureReason)}</p>
+      ) : null}
+    </div>
+  );
+}
+
+function CalendarResolutionLine({
+  item,
+  proposedRange,
+}: {
+  item: SuggestionItem;
+  proposedRange: string | null;
+}) {
+  const hint = item.calendarResolutionHint;
+  if (hint?.kind === 'exact_duplicate_reuse') {
+    return (
+      <p>
+        Matches existing event "{displayText(hint.event.title)}" at {calendarEventRange(hint.event)}
+        . Accept will reuse it instead of creating a duplicate.
+      </p>
+    );
+  }
+  if (hint?.kind === 'semantic_update_candidate') {
+    return (
+      <p>
+        Looks related to "{displayText(hint.event.title)}" at {calendarEventRange(hint.event)}.
+        Accept will create a new event unless this proposal is revised to target that event.
+      </p>
+    );
+  }
+  if (hint?.kind === 'ambiguous_match') {
+    return (
+      <p>
+        Could match {hint.events.length} existing events; Accept will create a new event unless the
+        proposal is revised.
+      </p>
+    );
+  }
+  if (hint?.kind === 'target_event') {
+    return (
+      <p>
+        Target: "{displayText(hint.event.title)}" at {calendarEventRange(hint.event)}.
+        {proposedRange ? ` Proposed: ${proposedRange}.` : ''}
+      </p>
+    );
+  }
+  if (hint?.kind === 'missing_target') {
+    return <p>The target event is no longer available.</p>;
+  }
+  return (
+    <p>{proposedRange ? `Scheduled for ${proposedRange}.` : formatPayload(item.proposedPayload)}</p>
   );
 }
 

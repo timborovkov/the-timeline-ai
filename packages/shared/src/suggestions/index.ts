@@ -18,6 +18,7 @@ import { z } from 'zod';
 
 import type { BoardScope } from '#src/boards/index.js';
 import type {
+  CalendarEventWithRedaction,
   CalendarScope,
   CreateCalendarEventInput,
   UpdateCalendarEventInput,
@@ -170,7 +171,30 @@ export interface SuggestionItem {
   failureReason: string | null;
   supersededByItemId: string | null;
   supersededReason: string | null;
+  calendarResolutionHint?: CalendarResolutionHint | null;
 }
+
+export interface CalendarResolutionEventSummary {
+  id: string;
+  title: string;
+  description: string | null;
+  startAt: Date;
+  endAt: Date;
+  timezone: string;
+  allDay: boolean;
+  location: string | null;
+  showAs: string;
+  visibility: Visibility;
+  rrule: string | null;
+}
+
+export type CalendarResolutionHint =
+  | { kind: 'new_event' }
+  | { kind: 'exact_duplicate_reuse'; event: CalendarResolutionEventSummary }
+  | { kind: 'semantic_update_candidate'; event: CalendarResolutionEventSummary }
+  | { kind: 'ambiguous_match'; events: CalendarResolutionEventSummary[] }
+  | { kind: 'target_event'; event: CalendarResolutionEventSummary }
+  | { kind: 'missing_target' };
 
 export interface SuggestionEvidence {
   id: string;
@@ -201,6 +225,33 @@ const localRef = z
   .string()
   .trim()
   .regex(/^[a-z0-9][a-z0-9_-]{0,79}$/);
+const CALENDAR_SUBJECT_STOPWORDS = new Set([
+  'and',
+  'audit',
+  'auditing',
+  'calendar',
+  'call',
+  'discussion',
+  'discuss',
+  'event',
+  'for',
+  'kanssa',
+  'meeting',
+  'model',
+  'operating',
+  'palaveri',
+  'pipeline',
+  'regarding',
+  'review',
+  'scheduled',
+  'tapaaminen',
+  'team',
+  'teams',
+  'the',
+  'with',
+]);
+const CALENDAR_SEMANTIC_MATCH_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
+const CALENDAR_MATCH_PAGE_SIZE = 200;
 
 const objectPayloadFields = {
   aliases: z.array(z.string().trim().min(1).max(120)).max(50).optional(),
@@ -349,7 +400,7 @@ const calendarUpdatePayload = z.object({
 });
 
 function normalizeCalendarPayload(
-  item: typeof agentSuggestionItems.$inferSelect,
+  item: { title: string; proposedPayload: unknown },
   opts: {
     fallbackTitle: boolean;
     defaultTimezone?: string;
@@ -868,6 +919,179 @@ function normalizeAllDayRange(payload: {
   if (endDate <= startDate) endDate = oneDayAfter(startDate);
   const range = localDateSpanToUtcRange(startDate, endDate, payload.timezone);
   return { startAt: range.from, endAt: range.to };
+}
+
+function calendarSubjectTokens(...values: (string | null | undefined)[]): Set<string> {
+  return new Set(
+    values
+      .join(' ')
+      .toLowerCase()
+      .normalize('NFKD')
+      .replace(/[^\p{Letter}\p{Number}\s]/gu, ' ')
+      .split(/\s+/)
+      .filter((token) => token.length >= 4 && !CALENDAR_SUBJECT_STOPWORDS.has(token)),
+  );
+}
+
+function normalizeCalendarSubject(value: string): string {
+  return value
+    .toLowerCase()
+    .normalize('NFKD')
+    .replace(/[^\p{Letter}\p{Number}\s]/gu, ' ')
+    .trim()
+    .replace(/\s+/g, ' ');
+}
+
+function sameInstant(left: Date, right: Date): boolean {
+  return left.getTime() === right.getTime();
+}
+
+function sameNullableStringArray(
+  left: string[] | null | undefined,
+  right: string[] | null | undefined,
+): boolean {
+  const normalize = (value: string[] | null | undefined) => [...(value ?? [])].sort();
+  return stableStringify(normalize(left)) === stableStringify(normalize(right));
+}
+
+function sameCalendarVisibilityAudience(
+  candidate: CalendarEventWithRedaction,
+  proposed: CreateCalendarEventInput,
+): boolean {
+  const proposedVisibility = proposed.visibility ?? 'team';
+  if (candidate.visibility !== proposedVisibility) return false;
+  if (proposedVisibility !== 'specific_users') return true;
+  return sameNullableStringArray(candidate.visibilityUserIds, proposed.visibilityUserIds);
+}
+
+function calendarEventSummary(event: CalendarEventWithRedaction): CalendarResolutionEventSummary {
+  return {
+    id: event.id,
+    title: event.title,
+    description: event.redacted ? null : event.description,
+    startAt: event.startAt,
+    endAt: event.endAt,
+    timezone: event.timezone,
+    allDay: event.allDay,
+    location: event.redacted ? null : event.location,
+    showAs: event.showAs,
+    visibility: event.visibility,
+    rrule: event.rrule,
+  };
+}
+
+function compareCalendarReuseCandidates(
+  left: CalendarEventWithRedaction,
+  right: CalendarEventWithRedaction,
+): number {
+  if (left.agentSuggested !== right.agentSuggested) return left.agentSuggested ? 1 : -1;
+  if (left.source !== right.source) return left.source === 'internal' ? -1 : 1;
+  const createdAtDelta = left.createdAt.getTime() - right.createdAt.getTime();
+  if (createdAtDelta !== 0) return createdAtDelta;
+  return left.id.localeCompare(right.id);
+}
+
+function calendarCreateResolutionDetails(
+  proposed: CreateCalendarEventInput,
+  candidates: CalendarEventWithRedaction[],
+): CalendarResolutionHint {
+  const proposedTokens = calendarSubjectTokens(proposed.title, proposed.description);
+  const proposalMetadata = proposed.metadata ?? {};
+  const isProposalSlot =
+    proposed.showAs === 'tentative' ||
+    typeof proposalMetadata.proposalGroupId === 'string' ||
+    typeof proposalMetadata.proposalStatus === 'string' ||
+    typeof proposalMetadata.proposalRole === 'string';
+  const semanticMatches: CalendarEventWithRedaction[] = [];
+  const exactMatches: CalendarEventWithRedaction[] = [];
+  for (const candidate of candidates) {
+    if (candidate.redacted || candidate.deletedAt) continue;
+    if (!sameCalendarVisibilityAudience(candidate, proposed)) continue;
+    const candidateTokens = calendarSubjectTokens(candidate.title, candidate.description);
+    const sharedTokens = [...proposedTokens].filter((token) => candidateTokens.has(token));
+    const sameNormalizedTitle =
+      normalizeCalendarSubject(candidate.title) === normalizeCalendarSubject(proposed.title);
+    if (
+      !isProposalSlot &&
+      sameNormalizedTitle &&
+      sameInstant(candidate.startAt, proposed.startAt) &&
+      sameInstant(candidate.endAt, proposed.endAt) &&
+      candidate.allDay === (proposed.allDay ?? false)
+    ) {
+      exactMatches.push(candidate);
+      continue;
+    }
+    if (sharedTokens.length === 0) continue;
+    if (isProposalSlot) continue;
+    semanticMatches.push(candidate);
+  }
+  const exactMatch = [...exactMatches].sort(compareCalendarReuseCandidates)[0];
+  if (exactMatch) {
+    return { kind: 'exact_duplicate_reuse', event: calendarEventSummary(exactMatch) };
+  }
+  const semanticMatch = semanticMatches[0];
+  if (semanticMatches.length === 1 && semanticMatch) {
+    return { kind: 'semantic_update_candidate', event: calendarEventSummary(semanticMatch) };
+  }
+  if (semanticMatches.length > 1) {
+    return { kind: 'ambiguous_match', events: semanticMatches.map(calendarEventSummary) };
+  }
+  return { kind: 'new_event' };
+}
+
+function calendarCreateResolution(
+  proposed: CreateCalendarEventInput,
+  candidates: CalendarEventWithRedaction[],
+): { event: CalendarResolutionEventSummary; action: 'reuse' } | null {
+  const details = calendarCreateResolutionDetails(proposed, candidates);
+  if (details.kind === 'exact_duplicate_reuse') return { event: details.event, action: 'reuse' };
+  return null;
+}
+
+function normalizeCalendarCreateSuggestionItem(
+  item: { proposedPayload: unknown; title: string; id: string },
+  defaultTimezone: string,
+): CreateCalendarEventInput {
+  const normalizedCreatePayload = normalizeCalendarPayload(item, {
+    fallbackTitle: true,
+    defaultTimezone,
+    inferAllDayFromDateOnly: true,
+    materializeDefaultTimezone: true,
+  });
+  const parsed = calendarCreatePayload.parse(normalizedCreatePayload);
+  const normalizedRange = parsed.allDay
+    ? normalizeAllDayRange({
+        startAt: parsed.startAt,
+        endAt: parsed.endAt,
+        timezone: parsed.timezone,
+        ...(parsed.startDate ? { startDate: parsed.startDate } : {}),
+        ...(parsed.endDate ? { endDate: parsed.endDate } : {}),
+      })
+    : { startAt: new Date(parsed.startAt), endAt: new Date(parsed.endAt) };
+  const input: CreateCalendarEventInput = {
+    title: parsed.title,
+    description: parsed.description ?? null,
+    startAt: normalizedRange.startAt,
+    endAt: normalizedRange.endAt,
+    timezone: parsed.timezone,
+    allDay: parsed.allDay,
+    location: parsed.location ?? null,
+    showAs: parsed.showAs ?? 'busy',
+    rrule: parsed.rrule ?? null,
+    visibility: parsed.visibility,
+    visibilityUserIds: parsed.visibilityUserIds ?? null,
+    reminderMinutes: parsed.reminderMinutes ?? null,
+    agentSuggested: false,
+    metadata: {
+      ...(parsed.metadata ?? {}),
+      ...(parsed.proposalGroupId ? { proposalGroupId: parsed.proposalGroupId } : {}),
+      ...(parsed.proposalStatus ? { proposalStatus: parsed.proposalStatus } : {}),
+      ...(parsed.proposalRole ? { proposalRole: parsed.proposalRole } : {}),
+      agent_suggestion_item_id: item.id,
+    },
+  };
+  if (parsed.linkedEntityIds !== undefined) input.linkedEntityIds = parsed.linkedEntityIds;
+  return input;
 }
 
 function toBundle(
@@ -2027,6 +2251,29 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     }
   }
 
+  async function listCalendarCreateResolutionCandidates(
+    input: CreateCalendarEventInput,
+  ): Promise<CalendarEventWithRedaction[]> {
+    const from = new Date(input.startAt.getTime() - CALENDAR_SEMANTIC_MATCH_WINDOW_MS);
+    const to = new Date(input.endAt.getTime() + CALENDAR_SEMANTIC_MATCH_WINDOW_MS);
+    const events: CalendarEventWithRedaction[] = [];
+    let offset = 0;
+    let hasMore = true;
+    while (hasMore) {
+      const page = await calendar.listCalendarEventPage({
+        from,
+        to,
+        limit: CALENDAR_MATCH_PAGE_SIZE,
+        offset,
+        order: 'asc',
+      });
+      events.push(...page.events);
+      offset += page.events.length;
+      hasMore = page.events.length === CALENDAR_MATCH_PAGE_SIZE && offset < page.total;
+    }
+    return events;
+  }
+
   async function applyItem(item: typeof agentSuggestionItems.$inferSelect): Promise<string | null> {
     if (item.resultId) return item.resultId;
     if (item.status !== 'pending' && item.status !== 'failed') return item.resultId;
@@ -2190,46 +2437,14 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
 
     if (item.operation === 'create') {
       const settings = await calendar.getCalendarSettings();
-      const parsed = calendarCreatePayload.parse(
-        normalizeCalendarPayload(item, {
-          fallbackTitle: true,
-          defaultTimezone: settings.defaultTimezone,
-          inferAllDayFromDateOnly: true,
-          materializeDefaultTimezone: true,
-        }),
+      const input = normalizeCalendarCreateSuggestionItem(item, settings.defaultTimezone);
+      const resolution = calendarCreateResolution(
+        input,
+        await listCalendarCreateResolutionCandidates(input),
       );
-      const normalizedRange = parsed.allDay
-        ? normalizeAllDayRange({
-            startAt: parsed.startAt,
-            endAt: parsed.endAt,
-            timezone: parsed.timezone,
-            ...(parsed.startDate ? { startDate: parsed.startDate } : {}),
-            ...(parsed.endDate ? { endDate: parsed.endDate } : {}),
-          })
-        : { startAt: new Date(parsed.startAt), endAt: new Date(parsed.endAt) };
-      const input: CreateCalendarEventInput = {
-        title: parsed.title,
-        description: parsed.description ?? null,
-        startAt: normalizedRange.startAt,
-        endAt: normalizedRange.endAt,
-        timezone: parsed.timezone,
-        allDay: parsed.allDay,
-        location: parsed.location ?? null,
-        showAs: parsed.showAs ?? 'busy',
-        rrule: parsed.rrule ?? null,
-        visibility: parsed.visibility,
-        visibilityUserIds: parsed.visibilityUserIds ?? null,
-        reminderMinutes: parsed.reminderMinutes ?? null,
-        agentSuggested: false,
-        metadata: {
-          ...(parsed.metadata ?? {}),
-          ...(parsed.proposalGroupId ? { proposalGroupId: parsed.proposalGroupId } : {}),
-          ...(parsed.proposalStatus ? { proposalStatus: parsed.proposalStatus } : {}),
-          ...(parsed.proposalRole ? { proposalRole: parsed.proposalRole } : {}),
-          agent_suggestion_item_id: item.id,
-        },
-      };
-      if (parsed.linkedEntityIds !== undefined) input.linkedEntityIds = parsed.linkedEntityIds;
+      if (resolution) {
+        return resolution.event.id;
+      }
       const created = await calendar.createCalendarEvent(input);
       return created.id;
     }
@@ -2577,6 +2792,47 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     return hydrateBundles(rows);
   }
 
+  async function calendarResolutionHintForItem(
+    item: SuggestionItem,
+  ): Promise<CalendarResolutionHint | null> {
+    if (item.targetKind !== 'calendar_event') return null;
+    if (item.operation === 'create') {
+      const settings = await calendar.getCalendarSettings();
+      try {
+        const input = normalizeCalendarCreateSuggestionItem(
+          { id: item.id, title: item.title, proposedPayload: item.proposedPayload },
+          settings.defaultTimezone,
+        );
+        return calendarCreateResolutionDetails(
+          input,
+          await listCalendarCreateResolutionCandidates(input),
+        );
+      } catch {
+        return null;
+      }
+    }
+    if (!item.targetId) return { kind: 'missing_target' };
+    const event = await calendar.getCalendarEvent(item.targetId);
+    return event
+      ? { kind: 'target_event', event: calendarEventSummary(event) }
+      : { kind: 'missing_target' };
+  }
+
+  async function withCalendarResolutionHints(
+    bundles: SuggestionBundle[],
+  ): Promise<SuggestionBundle[]> {
+    const nextBundles: SuggestionBundle[] = [];
+    for (const bundle of bundles) {
+      const nextItems: SuggestionItem[] = [];
+      for (const item of bundle.items) {
+        const calendarResolutionHint = await calendarResolutionHintForItem(item);
+        nextItems.push(calendarResolutionHint ? { ...item, calendarResolutionHint } : item);
+      }
+      nextBundles.push({ ...bundle, items: nextItems });
+    }
+    return nextBundles;
+  }
+
   return {
     async createOrMergeSuggestionBundle(input: CreateSuggestionInput): Promise<SuggestionBundle> {
       await ensureMember();
@@ -2777,6 +3033,8 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     async listPendingSuggestions(): Promise<SuggestionBundle[]> {
       return listSuggestions({ status: 'pending' });
     },
+
+    withCalendarResolutionHints,
 
     getSuggestion: loadBundle,
 

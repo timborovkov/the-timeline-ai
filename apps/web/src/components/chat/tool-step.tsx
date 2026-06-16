@@ -26,6 +26,71 @@ function isMcpTool(name: string): { serverIdCompact: string; tool: string } | nu
   return { serverIdCompact: rest.slice(0, sep), tool: rest.slice(sep + 2) };
 }
 
+function inputRecord(input: unknown): Record<string, unknown> {
+  return input && typeof input === 'object' ? (input as Record<string, unknown>) : {};
+}
+
+function recordValue(record: Record<string, unknown>, key: string): unknown {
+  return record[key];
+}
+
+function stringValue(record: Record<string, unknown>, key: string): string | null {
+  const value = recordValue(record, key);
+  return typeof value === 'string' && value.trim() ? value : null;
+}
+
+function nestedRecord(record: Record<string, unknown>, key: string): Record<string, unknown> {
+  const value = recordValue(record, key);
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function shortDateTime(value: string | null): string | null {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
+
+function calendarToolRange(record: Record<string, unknown>): string | null {
+  const start = shortDateTime(stringValue(record, 'startAt'));
+  const end = shortDateTime(stringValue(record, 'endAt'));
+  if (!start || !end) return null;
+  return `${start} -> ${end}`;
+}
+
+function calendarToolSummary(name: string, input: unknown): string | null {
+  const record = inputRecord(input);
+  if (name === 'execute_calendar_create') {
+    const title = stringValue(record, 'title') ?? 'calendar event';
+    const range = calendarToolRange(record);
+    return range ? `Create ${title} (${range})` : `Create ${title}`;
+  }
+  if (name === 'execute_calendar_update') {
+    const patch = nestedRecord(record, 'patch');
+    const expected = nestedRecord(record, 'expectedCurrent');
+    const title = stringValue(patch, 'title') ?? stringValue(expected, 'title') ?? 'calendar event';
+    const before = calendarToolRange(expected);
+    const after = calendarToolRange({ ...expected, ...patch });
+    const hasMove = stringValue(patch, 'startAt') ?? stringValue(patch, 'endAt');
+    if (before && after && before !== after) return `Move ${title} (from ${before}; to ${after})`;
+    return `${hasMove ? 'Move' : 'Update'} ${title}`;
+  }
+  if (name === 'execute_calendar_cancel') {
+    const expected = nestedRecord(record, 'expectedCurrent');
+    const title = stringValue(expected, 'title') ?? 'calendar event';
+    const range = calendarToolRange(expected);
+    return range ? `Cancel ${title} (${range})` : `Cancel ${title}`;
+  }
+  return null;
+}
+
 function summarize(name: string, input: unknown, output: unknown, state: string): string {
   const inp = (input ?? {}) as Record<string, unknown>;
   if (name === 'search_timeline') {
@@ -95,25 +160,31 @@ function summarize(name: string, input: unknown, output: unknown, state: string)
   }
   if (name === 'execute_calendar_create') {
     const out = output as { ok?: boolean; message?: string } | undefined;
+    const summary = calendarToolSummary(name, input);
+    if (summary && state === 'approval-requested')
+      return `Approval needed to ${summary.toLowerCase()}`;
     if (out?.message) return out.message;
     const title = typeof inp.title === 'string' ? inp.title : 'calendar event';
-    if (state === 'approval-requested') return `Approval needed to create ${title}`;
     if (state === 'output-denied') return `Denied calendar event create`;
-    return `Create ${title}`;
+    return summary ?? `Create ${title}`;
   }
   if (name === 'execute_calendar_update') {
     const out = output as { ok?: boolean; message?: string } | undefined;
+    const summary = calendarToolSummary(name, input);
+    if (summary && state === 'approval-requested')
+      return `Approval needed to ${summary.toLowerCase()}`;
     if (out?.message) return out.message;
-    if (state === 'approval-requested') return 'Approval needed to update calendar event';
     if (state === 'output-denied') return 'Denied calendar event update';
-    return 'Update calendar event';
+    return summary ?? 'Update calendar event';
   }
   if (name === 'execute_calendar_cancel') {
     const out = output as { ok?: boolean; message?: string } | undefined;
+    const summary = calendarToolSummary(name, input);
+    if (summary && state === 'approval-requested')
+      return `Approval needed to ${summary.toLowerCase()}`;
     if (out?.message) return out.message;
-    if (state === 'approval-requested') return 'Approval needed to cancel calendar event';
     if (state === 'output-denied') return 'Denied calendar event cancellation';
-    return 'Cancel calendar event';
+    return summary ?? 'Cancel calendar event';
   }
   if (name === 'search_boards') {
     const q = typeof inp.query === 'string' ? inp.query : '';
@@ -474,8 +545,14 @@ function ToolApprovalCard({
       ) : name === 'execute_calendar_create' ? (
         <dl className="mt-2 grid gap-2 text-[11px] text-fg-muted">
           <ApprovalRow label="Title">{formatApprovalValue(record.title)}</ApprovalRow>
-          <ApprovalRow label="Start">{formatApprovalValue(record.startAt)}</ApprovalRow>
-          <ApprovalRow label="End">{formatApprovalValue(record.endAt)}</ApprovalRow>
+          {calendarToolRange(record) ? (
+            <ApprovalRow label="When">{calendarToolRange(record)}</ApprovalRow>
+          ) : (
+            <>
+              <ApprovalRow label="Start">{formatApprovalValue(record.startAt)}</ApprovalRow>
+              <ApprovalRow label="End">{formatApprovalValue(record.endAt)}</ApprovalRow>
+            </>
+          )}
           {record.timezone !== undefined ? (
             <ApprovalRow label="Timezone">{formatApprovalValue(record.timezone)}</ApprovalRow>
           ) : null}
@@ -498,11 +575,29 @@ function ToolApprovalCard({
             </ApprovalRow>
           ) : null}
           {patch ? (
-            <ApprovalRow label="Change">
-              {Object.entries(patch)
-                .map(([key, value]) => `${key}: ${formatApprovalValue(value)}`)
-                .join(', ')}
-            </ApprovalRow>
+            <>
+              {calendarToolRange(nestedRecord(record, 'expectedCurrent')) ? (
+                <ApprovalRow label="Current">
+                  {calendarToolRange(nestedRecord(record, 'expectedCurrent'))}
+                </ApprovalRow>
+              ) : null}
+              {calendarToolRange({
+                ...nestedRecord(record, 'expectedCurrent'),
+                ...(patch as Record<string, unknown>),
+              }) ? (
+                <ApprovalRow label="Proposed">
+                  {calendarToolRange({
+                    ...nestedRecord(record, 'expectedCurrent'),
+                    ...(patch as Record<string, unknown>),
+                  })}
+                </ApprovalRow>
+              ) : null}
+              <ApprovalRow label="Change">
+                {Object.entries(patch)
+                  .map(([key, value]) => `${key}: ${formatApprovalValue(value)}`)
+                  .join(', ')}
+              </ApprovalRow>
+            </>
           ) : null}
           {reason ? <ApprovalRow label="Reason">{reason}</ApprovalRow> : null}
         </dl>
@@ -511,6 +606,11 @@ function ToolApprovalCard({
           {calendarEventId ? (
             <ApprovalRow label="Event">
               <ArtifactReferenceChip refValue={{ kind: 'calendar_event', id: calendarEventId }} />
+            </ApprovalRow>
+          ) : null}
+          {calendarToolRange(nestedRecord(record, 'expectedCurrent')) ? (
+            <ApprovalRow label="When">
+              {calendarToolRange(nestedRecord(record, 'expectedCurrent'))}
             </ApprovalRow>
           ) : null}
           {record.recurrenceEditMode !== undefined ? (
