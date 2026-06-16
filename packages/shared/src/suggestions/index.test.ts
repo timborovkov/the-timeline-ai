@@ -1618,6 +1618,46 @@ describe('suggestion scope', () => {
     });
   });
 
+  it('keeps accepting long object-create titles when the payload omits canonicalName', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const longTitle = `Long title ${'with enough detail '.repeat(12)}`.trim();
+    expect(longTitle.length).toBeGreaterThan(200);
+
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Long decision title',
+      dedupeKey: 'create-object-long-title-fallback',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'object',
+          title: longTitle,
+          dedupeKey: 'create-object-long-title-fallback:item',
+          proposedPayload: {
+            type: 'decision',
+            status: 'accepted',
+          },
+        },
+      ],
+    });
+    const itemId = bundle.items[0]?.id;
+    expect(itemId).toBeDefined();
+
+    await expect(scope.suggestions.acceptSuggestionItem(itemId ?? '')).resolves.toBe(true);
+
+    const result = await pg.query<{ canonical_name: string; type: string; status: string }>(
+      `SELECT canonical_name, type, status
+       FROM entities
+       WHERE team_id = '${TEAM_ID}'
+         AND canonical_name = '${longTitle}'`,
+    );
+    expect(result.rows[0]).toEqual({
+      canonical_name: longTitle,
+      type: 'decision',
+      status: 'accepted',
+    });
+  });
+
   it('accepts task create and update suggestions with assignee, due date, and priority', async () => {
     const scope = withTeam(db as never, TEAM_ID, USER_ID);
     const createBundle = await scope.suggestions.createOrMergeSuggestionBundle({

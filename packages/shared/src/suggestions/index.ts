@@ -714,10 +714,11 @@ function normalizeLifecyclePayload(
     (item.targetKind === 'object' || item.targetKind === 'task') &&
     typeof item.title === 'string' &&
     item.title.trim().length > 0 &&
+    item.title.trim().length <= 200 &&
     typeof payload.canonicalName !== 'string' &&
     typeof payload.title !== 'string'
   ) {
-    payload.canonicalName = item.title;
+    payload.canonicalName = item.title.trim();
   }
   const lifecycleType = lifecycleStatusTypeForPayload(item, payload, item.objectType);
   if (lifecycleType && Object.hasOwn(payload, 'status')) {
