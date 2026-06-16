@@ -12,7 +12,7 @@ import {
 } from '@timeline/db';
 import { and, asc, desc, eq, isNull, ne, sql } from 'drizzle-orm';
 
-import { askAgent } from '#src/agent/ask.js';
+import { askAgent, TEAM_BOT_ACTOR_USER_ID } from '#src/agent/ask.js';
 import { type AgentToolErrorReporter } from '#src/agent/tools.js';
 import {
   classifyConversationalAttachment,
@@ -142,6 +142,10 @@ export async function handleSlackSlashCommand(
   const workspace = await findWorkspaceBySlackTeamId(deps.db, input.team_id);
   if (!workspace) return;
   const api = new SlackApi(decryptWorkspaceToken(workspace).accessToken);
+  if (input.command === '/ask') {
+    await handleSlackAskCommand(deps, api, workspace.id, input);
+    return;
+  }
   const linked = await findActiveSlackLink(deps.db, workspace.id, input.user_id);
   if (!linked) {
     await api.postMessage({
@@ -151,8 +155,47 @@ export async function handleSlackSlashCommand(
     });
     return;
   }
-  if (input.command === '/timeline') {
-    await handleSlackTimelineCommand(deps.db, api, input, linked);
+  await handleSlackTimelineCommand(deps.db, api, input, linked);
+}
+
+async function handleSlackAskCommand(
+  deps: {
+    db: Db;
+    onAgentToolError?: AgentToolErrorReporter | undefined;
+    onAgentError?: ((err: unknown) => void) | undefined;
+  },
+  api: SlackApi,
+  workspaceId: string,
+  input: SlackSlashCommandInput,
+): Promise<void> {
+  const binding = await findSlackConversationBinding(deps.db, workspaceId, input.channel_id);
+  const linkedForChannel = binding
+    ? await findSlackLinkForTeam(deps.db, workspaceId, input.user_id, binding.teamId)
+    : null;
+  const activeLink = binding
+    ? null
+    : await findActiveSlackLink(deps.db, workspaceId, input.user_id);
+  const route = binding
+    ? {
+        teamId: binding.teamId,
+        userId: linkedForChannel?.userId ?? TEAM_BOT_ACTOR_USER_ID,
+        userName: linkedForChannel?.displayName ?? 'a teammate',
+        trustedTeamActor: !linkedForChannel,
+      }
+    : activeLink
+      ? {
+          teamId: activeLink.teamId,
+          userId: activeLink.userId,
+          userName: activeLink.displayName ?? 'a teammate',
+          trustedTeamActor: false,
+        }
+      : null;
+  if (!route) {
+    await api.postMessage({
+      channel: input.channel_id,
+      response_url: input.response_url,
+      text: `Link your Slack identity to Timeline before using ${input.command}.`,
+    });
     return;
   }
   const question = input.text.trim();
@@ -172,9 +215,10 @@ export async function handleSlackSlashCommand(
     const result = await askAgent(
       {
         db: deps.db,
-        teamId: linked.teamId,
-        userId: linked.userId,
-        userName: linked.displayName ?? 'a teammate',
+        teamId: route.teamId,
+        userId: route.userId,
+        userName: route.userName,
+        trustedTeamActor: route.trustedTeamActor,
         question,
       },
       { onToolError: deps.onAgentToolError, onAgentError: deps.onAgentError },
@@ -538,14 +582,6 @@ async function handleAppMention(
     event.channel_type,
   );
   if (!route) return;
-  if (!route.linkedUserId) {
-    await api.postMessage({
-      channel: event.channel,
-      thread_ts: event.thread_ts ?? event.ts,
-      text: 'Link your Slack identity to this Timeline team before asking in Slack.',
-    });
-    return;
-  }
   const claimed = await claimSlackAsk(slackEventId);
   if (!claimed) return;
   const question = (event.text ?? '').replace(/<@[^>]+>/g, '').trim();
@@ -562,8 +598,9 @@ async function handleAppMention(
       {
         db: deps.db,
         teamId: route.teamId,
-        userId: route.linkedUserId,
+        userId: route.linkedUserId ?? TEAM_BOT_ACTOR_USER_ID,
         userName: route.linkedUserName ?? 'a teammate',
+        trustedTeamActor: !route.linkedUserId && !route.isDm,
         question,
       },
       { onToolError: deps.onAgentToolError, onAgentError: deps.onAgentError },
@@ -1264,6 +1301,25 @@ async function findActiveSlackLink(
         eq(slackUsers.workspaceId, workspaceId),
         eq(slackUsers.slackUserId, slackUserId),
         eq(slackUserTeams.isActive, true),
+      ),
+    )
+    .limit(1);
+  return rows[0] ?? null;
+}
+
+async function findSlackConversationBinding(
+  db: Db,
+  workspaceId: string,
+  channelId: string,
+): Promise<{ teamId: string } | null> {
+  const rows = await db
+    .select({ teamId: slackConversationBindings.teamId })
+    .from(slackConversationBindings)
+    .where(
+      and(
+        eq(slackConversationBindings.workspaceId, workspaceId),
+        eq(slackConversationBindings.slackConversationId, channelId),
+        eq(slackConversationBindings.enabled, true),
       ),
     )
     .limit(1);

@@ -10,7 +10,7 @@
     <a class="skip" href="#main">Skip to content</a>
     <main id="main">
       <h1>Telegram bot setup</h1>
-      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-05-27</span></div>
+      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-06-16</span></div>
       <blockquote>
         <p>
           Telegram is a first-party conversational Capture Surface. Text, voice/audio, and supported
@@ -157,7 +157,9 @@ curl -F "url=https://&lt;ngrok-id&gt;.ngrok-free.app/api/telegram/webhook" \
       <p>
         For groups: have a team admin generate a <strong>group</strong> token, add the bot to a
         Telegram group, then have a group admin run <code>/link &lt;token&gt;</code> inside the
-        group. Every subsequent text message in that group flows to the team timeline.
+        group. Every subsequent text message in that group flows to the team timeline, and any
+        Telegram sender in the bound group can use <code>/ask</code> against team-visible history
+        even before linking a personal Timeline identity.
       </p>
       <p>
         Messages from Telegram users who have not linked yet are recorded with

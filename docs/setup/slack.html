@@ -10,7 +10,7 @@
     <a class="skip" href="#main">Skip to content</a>
     <main id="main">
       <h1>Slack conversational capture setup</h1>
-      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-06-14</span></div>
+      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-06-16</span></div>
       <p class="tldr">
         Slack is a first-party Capture Surface like Telegram: install the app with OAuth, link Slack
         users with OAuth, bind channels from Timeline, and let DMs route through the user's active
@@ -113,7 +113,12 @@ app_mention
       <ol>
         <li>Open <strong>Team → Slack</strong> in Timeline.</li>
         <li>Team owner/admin installs or reconnects the Slack app.</li>
-        <li>Each member clicks <strong>Connect identity</strong> to link their Slack user.</li>
+        <li>
+          Members can click <strong>Connect identity</strong> to link their Slack user. Linking is
+          required for DMs and user-scoped actions; bound channels can still answer
+          <code>/ask</code> and <code>@Timeline</code> for unlinked senders using team-visible
+          history.
+        </li>
         <li>Owner/admin chooses channels/private channels from the picker and binds them.</li>
       </ol>
       <p>
@@ -135,6 +140,11 @@ app_mention
         <li>
           Linked Slack senders are authors for their own messages when they are members of the
           receiving Timeline team.
+        </li>
+        <li>
+          In bound channels, <code>/ask</code> and <code>@Timeline</code> can answer for unlinked
+          Slack senders through a team-scoped bot actor. That actor sees team-visible history but
+          not private or specific-user events.
         </li>
         <li>
           Text-bearing Slack captures enqueue extraction, embeddings, and approval-suggestion work
