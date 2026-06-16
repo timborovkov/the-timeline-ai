@@ -938,6 +938,84 @@ describe('object scope — relationships', () => {
 });
 
 describe('object scope — section feeds', () => {
+  it('orders fact rows by source event time so older backfills do not look newer', async () => {
+    const scope = withTeam(db, TEAM_A, USER_OWNER).objects;
+    const project = await scope.createObject({
+      type: 'project',
+      canonicalName: 'Atlas rollout',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    const eventRows = await db
+      .insert(rawEvents)
+      .values([
+        {
+          teamId: TEAM_A,
+          authorUserId: USER_OWNER,
+          source: 'system',
+          contentText: 'Older evidence extracted later',
+          visibility: 'team',
+          occurredAt: new Date('2026-06-14T09:00:00.000Z'),
+        },
+        {
+          teamId: TEAM_A,
+          authorUserId: USER_OWNER,
+          source: 'telegram',
+          contentText: 'Newer evidence extracted earlier',
+          visibility: 'team',
+          occurredAt: new Date('2026-06-15T09:00:00.000Z'),
+        },
+      ])
+      .returning({ id: rawEvents.id });
+    const olderEventId = eventRows[0]?.id;
+    const newerEventId = eventRows[1]?.id;
+    if (!olderEventId || !newerEventId) throw new Error('Failed to insert test raw events');
+    const factRows = await db
+      .insert(facts)
+      .values([
+        {
+          teamId: TEAM_A,
+          rawEventId: olderEventId,
+          statement: 'Older source claim.',
+          confidence: 0.9,
+          modelVersion: 'test',
+          extractedAt: new Date('2026-06-16T09:00:00.000Z'),
+        },
+        {
+          teamId: TEAM_A,
+          rawEventId: newerEventId,
+          statement: 'Newer source claim.',
+          confidence: 0.9,
+          modelVersion: 'test',
+          extractedAt: new Date('2026-06-15T10:00:00.000Z'),
+        },
+      ])
+      .returning({ id: facts.id });
+    const olderFactId = factRows[0]?.id;
+    const newerFactId = factRows[1]?.id;
+    if (!olderFactId || !newerFactId) throw new Error('Failed to insert test facts');
+    await db.insert(factEntities).values([
+      { factId: olderFactId, entityId: project.id, role: 'subject' },
+      { factId: newerFactId, entityId: project.id, role: 'subject' },
+    ]);
+
+    const page = await scope.getObjectSectionPage(project.id, 'facts');
+
+    expect(page?.items).toEqual([
+      expect.objectContaining({
+        id: newerFactId,
+        statement: 'Newer source claim.',
+        occurredAt: new Date('2026-06-15T09:00:00.000Z'),
+        source: 'telegram',
+      }),
+      expect.objectContaining({
+        id: olderFactId,
+        statement: 'Older source claim.',
+        occurredAt: new Date('2026-06-14T09:00:00.000Z'),
+        source: 'system',
+      }),
+    ]);
+  });
+
   it('includes other active objects attached to the same fact', async () => {
     const scope = withTeam(db, TEAM_A, USER_OWNER).objects;
     const project = await scope.createObject({
