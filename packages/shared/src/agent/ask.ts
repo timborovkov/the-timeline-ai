@@ -116,7 +116,10 @@ export async function askAgent(
     currentDate,
     workspaceTime: workspaceTimeContext(calendarSettings.defaultTimezone, currentDate),
   });
-  const tools = buildAgentTools(scope, { onToolError: deps.onToolError });
+  const tools = buildAgentTools(scope, {
+    onToolError: deps.onToolError,
+    readOnly: input.trustedTeamActor,
+  });
 
   const messages: ModelMessage[] = [{ role: 'user', content: input.question }];
 
