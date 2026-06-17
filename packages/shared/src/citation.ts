@@ -14,6 +14,9 @@
  *   - [board:<uuid>]                             — board
  *   - [board-item:<uuid>]                        — board item
  *   - [task:<uuid>]                              — task/follow-up object
+ *   - [fact:<uuid>]                              — extracted fact
+ *   - [rel:<uuid>]                               — object relationship
+ *   - [chg:<uuid>]                               — object change
  *   - [route:<route-id>]                         — static app/help route
  *
  * UUID shape is validated client-side as defense-in-depth: the system
@@ -23,15 +26,13 @@
 
 const UUID_SOURCE = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
 const ROUTE_ID_SOURCE = '[a-z][a-z0-9_/-]{0,80}';
+const UUID_CITATION_KINDS_SOURCE = 'ev|ent|note|cal|board|board-item|task|fact|rel|chg';
 
-const UUID_REF_RE = new RegExp(
-  `\\[(ev|ent|note|cal|board|board-item|task):(${UUID_SOURCE})\\]`,
-  'gi',
-);
+const UUID_REF_RE = new RegExp(`\\[(${UUID_CITATION_KINDS_SOURCE}):(${UUID_SOURCE})\\]`, 'gi');
 const DOC_RE = new RegExp(`\\[doc:(${UUID_SOURCE})#v(\\d+):chunk:(${UUID_SOURCE})\\]`, 'gi');
 const ROUTE_RE = new RegExp(`\\[route:(${ROUTE_ID_SOURCE})\\]`, 'gi');
 const CITATION_RE = new RegExp(
-  `(?:\\[(?:ev|ent|note|cal|board|board-item|task):${UUID_SOURCE}\\])|(?:\\[doc:${UUID_SOURCE}#v\\d+:chunk:${UUID_SOURCE}\\])|(?:\\[route:${ROUTE_ID_SOURCE}\\])`,
+  `(?:\\[(?:${UUID_CITATION_KINDS_SOURCE}):${UUID_SOURCE}\\])|(?:\\[doc:${UUID_SOURCE}#v\\d+:chunk:${UUID_SOURCE}\\])|(?:\\[route:${ROUTE_ID_SOURCE}\\])`,
   'gi',
 );
 
@@ -44,6 +45,9 @@ export type ArtifactKind =
   | 'board'
   | 'board_item'
   | 'task'
+  | 'fact'
+  | 'relationship'
+  | 'object_change'
   | 'route';
 
 export type ArtifactRef =
@@ -55,6 +59,9 @@ export type ArtifactRef =
   | { kind: 'board'; id: string }
   | { kind: 'board_item'; id: string }
   | { kind: 'task'; id: string }
+  | { kind: 'fact'; id: string }
+  | { kind: 'relationship'; id: string }
+  | { kind: 'object_change'; id: string }
   | { kind: 'route'; id: string };
 
 export interface ArtifactPreviewSection {
@@ -84,6 +91,9 @@ export type CitationPart =
   | { type: 'board'; value: string }
   | { type: 'board-item'; value: string }
   | { type: 'task'; value: string }
+  | { type: 'fact'; value: string }
+  | { type: 'rel'; value: string }
+  | { type: 'chg'; value: string }
   | { type: 'route'; value: string };
 
 export function citationPartToArtifactRef(
@@ -112,6 +122,12 @@ export function citationPartToArtifactRef(
       return { kind: 'board_item', id: part.value };
     case 'task':
       return { kind: 'task', id: part.value };
+    case 'fact':
+      return { kind: 'fact', id: part.value };
+    case 'rel':
+      return { kind: 'relationship', id: part.value };
+    case 'chg':
+      return { kind: 'object_change', id: part.value };
     case 'route':
       return { kind: 'route', id: part.value };
   }
@@ -135,6 +151,12 @@ export function artifactRefLabel(ref: ArtifactRef): string {
       return `[board-item:${ref.id.slice(0, 8)}]`;
     case 'task':
       return `[task:${ref.id.slice(0, 8)}]`;
+    case 'fact':
+      return `[fact:${ref.id.slice(0, 8)}]`;
+    case 'relationship':
+      return `[rel:${ref.id.slice(0, 8)}]`;
+    case 'object_change':
+      return `[chg:${ref.id.slice(0, 8)}]`;
     case 'route':
       return `[route:${ref.id}]`;
   }
@@ -158,6 +180,12 @@ export function artifactRefCitation(ref: ArtifactRef): string {
       return `[board-item:${ref.id}]`;
     case 'task':
       return `[task:${ref.id}]`;
+    case 'fact':
+      return `[fact:${ref.id}]`;
+    case 'relationship':
+      return `[rel:${ref.id}]`;
+    case 'object_change':
+      return `[chg:${ref.id}]`;
     case 'route':
       return `[route:${ref.id}]`;
   }

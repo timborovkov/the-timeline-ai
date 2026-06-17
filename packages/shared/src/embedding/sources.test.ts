@@ -4,8 +4,10 @@ import {
   documentChunks,
   documents,
   documentVersions,
+  entities,
   meetings,
   meetingTranscriptChunks,
+  objectSummaries,
   rawEvents,
 } from '@timeline/db';
 import { eq } from 'drizzle-orm';
@@ -149,6 +151,51 @@ describe('embedding source plans', () => {
     );
     expect(plan?.text).toContain('attachments contract.pdf');
     expect(plan?.text).toContain('Message:\nCan someone review the contract?');
+  });
+
+  it('includes stale object summary text in object embedding narratives', async () => {
+    const objectId = '50000000-0000-0000-0000-000000000001';
+    await db.insert(entities).values({
+      id: objectId,
+      teamId: TEAM_ID,
+      type: 'company',
+      canonicalName: 'DFK',
+      status: 'open',
+    });
+    await db.insert(objectSummaries).values({
+      teamId: TEAM_ID,
+      entityId: objectId,
+      status: 'stale',
+      summary: {
+        overview: 'DFK has a confirmed June 30 pilot discussion.',
+        overviewSourceRefs: [{ kind: 'field', id: 'status' }],
+        currentState: [],
+        openQuestions: [],
+        conflicts: [],
+      },
+      plainText: 'DFK has a confirmed June 30 pilot discussion.',
+      sourceRefs: [{ kind: 'field', id: 'status' }],
+      sourceCounts: {
+        fields: 1,
+        facts: 0,
+        events: 0,
+        notes: 0,
+        relationships: 0,
+        tasks: 0,
+        changes: 0,
+      },
+      inputFingerprint: 'old-fingerprint',
+      generatedAt: new Date('2026-06-02T10:05:00.000Z'),
+      staleAt: new Date('2026-06-02T10:10:00.000Z'),
+    });
+
+    const plan = await buildEmbeddingPlan(
+      db as never,
+      { scope: 'object', teamId: TEAM_ID, objectId },
+      'object',
+    );
+
+    expect(plan?.text).toContain('summary=DFK has a confirmed June 30 pilot discussion.');
   });
 
   it('caps long metadata snippets at the requested maximum length', () => {

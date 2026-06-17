@@ -4,12 +4,15 @@ import {
   currentExtractionModelVersions,
   makeExtractionModelVersion,
 } from '@timeline/shared/extraction-model-version';
+import { fireAndForgetObjectSummaryRefresh } from '@timeline/shared/objects';
+import { withTeam } from '@timeline/shared/team-scope';
 import { UnrecoverableError, Worker, type Job } from 'bullmq';
 import { and, desc, eq, lt, sql } from 'drizzle-orm';
 
 import { captureWorkerException, captureWorkerJobFailure } from '#src/monitoring.js';
 
 const log = childLogger('worker:extract');
+const ZERO_UUID = '00000000-0000-0000-0000-000000000000';
 
 interface ExtractWorkerDeps {
   db: Db;
@@ -23,6 +26,7 @@ export interface ExtractProcessorIO {
   modelId?: string;
   enqueueSuggestionJob?: typeof queue.enqueueSuggestionJob;
   enqueueEmbedJob?: typeof queue.enqueueEmbedJob;
+  enqueueObjectSummaryRefresh?: ((objectId: string) => Promise<void>) | undefined;
 }
 
 interface RawEventRow {
@@ -205,6 +209,7 @@ export async function processExtractJobForTests(
 
   let factsInserted = 0;
   const insertedFactIds: string[] = [];
+  const summaryEntityIds = new Set<string>();
   await deps.db.transaction(async (tx) => {
     await tx.execute(sql`SELECT pg_advisory_xact_lock(${lockKey})`);
     const recheck = (await tx
@@ -251,6 +256,7 @@ export async function processExtractJobForTests(
           .insert(factEntities)
           .values({ factId: factRow.id, entityId, role: m.role })
           .onConflictDoNothing();
+        summaryEntityIds.add(entityId);
       }
     }
 
@@ -275,6 +281,29 @@ export async function processExtractJobForTests(
       queueName: queue.QUEUE_NAMES.suggestions,
       operation: 'enqueue_suggestion_after_extract',
     });
+  }
+
+  const objectSummaryScope = withTeam(deps.db, teamId, ZERO_UUID, { skipMembershipCheck: true });
+  const enqueueObjectSummaryRefresh =
+    io.enqueueObjectSummaryRefresh ??
+    ((objectId: string) =>
+      fireAndForgetObjectSummaryRefresh(deps.db, objectSummaryScope, objectId, {
+        rawEventId,
+        objectId,
+        trigger: 'extract_fact_link',
+      }));
+  for (const objectId of summaryEntityIds) {
+    try {
+      await enqueueObjectSummaryRefresh(objectId);
+    } catch (err) {
+      log.error({ err, rawEventId, objectId }, 'object summary enqueue failed after extract');
+      captureWorkerException(err, {
+        component: 'worker_handoff',
+        queueName: queue.QUEUE_NAMES.objectSummary,
+        operation: 'enqueue_object_summary_after_extract',
+        objectId,
+      });
+    }
   }
 
   const enqueueEmbedJob = io.enqueueEmbedJob ?? queue.enqueueEmbedJob;

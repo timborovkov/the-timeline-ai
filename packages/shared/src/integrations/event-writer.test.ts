@@ -10,6 +10,7 @@ import { applyDbMigrations } from '#src/test/pglite.js';
 vi.mock('#src/queue/queues.js', () => ({
   enqueueEmbedJob: vi.fn().mockResolvedValue(undefined),
   enqueueObjectEmbedJob: vi.fn().mockResolvedValue(undefined),
+  enqueueObjectSummaryJob: vi.fn().mockResolvedValue({ enqueued: true, jobId: 'summary-job' }),
 }));
 
 const TEAM_ID = '11111111-1111-1111-1111-111111111111';

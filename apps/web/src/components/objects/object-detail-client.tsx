@@ -14,6 +14,7 @@ import {
 } from 'react';
 
 import type { SaveState } from '@/lib/utils';
+import type { ArtifactRef } from '@timeline/shared/citation';
 import type * as objects from '@timeline/shared/objects';
 
 import {
@@ -22,12 +23,14 @@ import {
   archiveObjectAction,
   createNoteAction,
   deleteNoteAction,
+  generateObjectSummaryAction,
   rejectObjectChangeAction,
   removeRelationshipAction,
   updateNoteAction,
   updateObjectAction,
 } from '@/app/actions/objects';
 import { ApprovalsClient } from '@/components/approvals/approvals-client';
+import { ArtifactReferenceChip } from '@/components/artifact-reference-chip';
 import {
   type ObjectSearchResponse,
   type ObjectSearchResult,
@@ -755,6 +758,8 @@ function ObjectDetailView(props: Props) {
             />
           ) : null}
 
+          <ObjectSummaryPanel detail={view.viewDetail} />
+
           <ObjectPanel title="Evidence" eyebrow="events">
             <ObjectSectionFeed
               objectId={view.detail.id}
@@ -864,6 +869,149 @@ function ObjectPanel({
       <div className="p-4">{children}</div>
     </section>
   );
+}
+
+function ObjectSummaryPanel({ detail }: { detail: ObjectDetail }) {
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
+  const summary = detail.summary ?? null;
+  const generated = summary?.summary ?? null;
+  const [error, setError] = useReducer(
+    (_state: string | null, value: string | null) => value,
+    null,
+  );
+  const canRequest =
+    Boolean(summary?.canGenerate) &&
+    (summary?.status === 'missing' || summary?.status === 'failed' || summary?.status === 'stale');
+  const actionLabel = summary?.status === 'failed' ? 'Retry' : 'Generate summary';
+  const eyebrow =
+    summary?.status === 'ready'
+      ? 'generated'
+      : summary?.status === 'stale'
+        ? 'updating'
+        : summary?.status === 'failed'
+          ? 'failed'
+          : summary?.status === 'pending'
+            ? 'pending'
+            : 'available';
+
+  function requestSummary(): void {
+    setError(null);
+    startTransition(() => {
+      void generateObjectSummaryAction({ entityId: detail.id }).then((result) => {
+        if ('error' in result && result.error) {
+          setError(result.error);
+          return;
+        }
+        router.refresh();
+      });
+    });
+  }
+
+  return (
+    <ObjectPanel title="Summary" eyebrow={eyebrow}>
+      {generated ? (
+        <div className="space-y-4">
+          <p className="max-w-4xl text-sm leading-6 text-fg">{generated.overview}</p>
+          {generated.currentState.length > 0 ? (
+            <ul className="space-y-2">
+              {generated.currentState.map((item) => (
+                <li key={`${item.label}:${item.text}`} className="text-sm leading-6 text-fg-muted">
+                  <span className="font-medium text-fg">{item.label}:</span> {item.text}
+                  <SourceChips refs={item.sourceRefs} />
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          {generated.conflicts.length > 0 || generated.openQuestions.length > 0 ? (
+            <div className="space-y-2 border-t border-border pt-3">
+              {[...generated.conflicts, ...generated.openQuestions].map((item) => (
+                <p key={`${item.label}:${item.text}`} className="text-sm leading-6 text-fg-muted">
+                  <span className="font-medium text-fg">{item.label}:</span> {item.text}
+                  <SourceChips refs={item.sourceRefs} />
+                </p>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      ) : (
+        <p className="text-sm text-fg-muted">
+          {summary?.canGenerate ? 'Summary is ready to generate.' : 'Not enough object memory yet.'}
+        </p>
+      )}
+
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-border pt-3">
+        <p className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
+          {summary?.generatedAt
+            ? `Updated ${formatDisplayDateTime(summary.generatedAt)} · ${
+                summary.sourceRefs.length
+              } sources`
+            : summary?.status === 'pending'
+              ? 'Generating'
+              : summary?.status === 'missing' && summary.canGenerate
+                ? 'Ready to generate'
+                : summary?.lastErrorCode
+                  ? 'Update failed'
+                  : 'No summary yet'}
+        </p>
+        {canRequest ? (
+          <button
+            type="button"
+            className="border border-border bg-bg px-3 py-2 font-mono text-[11px] uppercase tracking-[0.12em] text-fg transition hover:border-fg disabled:cursor-not-allowed disabled:opacity-60"
+            disabled={pending}
+            onClick={requestSummary}
+          >
+            {pending ? 'Generating...' : actionLabel}
+          </button>
+        ) : null}
+      </div>
+      {error ? <p className="mt-2 text-sm text-danger">{error}</p> : null}
+    </ObjectPanel>
+  );
+}
+
+function SourceChips({ refs }: { refs: objects.ObjectSummarySourceRef[] }) {
+  if (refs.length === 0) return null;
+  return (
+    <span className="ml-2 inline-flex flex-wrap gap-1 align-middle">
+      {refs.slice(0, 3).map((ref) => {
+        const artifactRef = summaryRefToArtifactRef(ref);
+        const className =
+          'border border-border bg-bg px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim hover:border-signal hover:text-signal';
+        return artifactRef ? (
+          <ArtifactReferenceChip
+            key={`${ref.kind}:${ref.id}`}
+            refValue={artifactRef}
+            className={className}
+            title={`Open ${sourceLabel(ref)} source`}
+          >
+            {sourceLabel(ref)}
+          </ArtifactReferenceChip>
+        ) : (
+          <span key={`${ref.kind}:${ref.id}`} className={className}>
+            {sourceLabel(ref)}
+          </span>
+        );
+      })}
+    </span>
+  );
+}
+
+function summaryRefToArtifactRef(ref: objects.ObjectSummarySourceRef): ArtifactRef | null {
+  if (ref.kind === 'timeline_event') return { kind: 'timeline_event', id: ref.id };
+  if (ref.kind === 'object_note') return { kind: 'object_note', id: ref.id };
+  if (ref.kind === 'task') return { kind: 'task', id: ref.id };
+  if (ref.kind === 'fact') return { kind: 'fact', id: ref.id };
+  if (ref.kind === 'relationship') return { kind: 'relationship', id: ref.id };
+  if (ref.kind === 'object_change') return { kind: 'object_change', id: ref.id };
+  return null;
+}
+
+function sourceLabel(ref: objects.ObjectSummarySourceRef): string {
+  if (ref.kind === 'timeline_event') return 'event';
+  if (ref.kind === 'object_note') return 'note';
+  if (ref.kind === 'object_change') return 'change';
+  return ref.kind;
 }
 
 function Field({ label, children }: { label: string; children: ReactNode }) {

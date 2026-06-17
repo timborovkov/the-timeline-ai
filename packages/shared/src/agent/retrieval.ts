@@ -2,6 +2,7 @@ import type { TeamScope } from '#src/team-scope.js';
 
 import { searchAppGuide } from '#src/app-guide.js';
 import { artifactRefCitation } from '#src/citation.js';
+import { sourceRefCitation } from '#src/objects/summaries.js';
 
 export type RetrievalRecipe =
   | 'auto'
@@ -109,6 +110,18 @@ export async function retrieveWorkspaceContext(
             status: objectDetail.status,
             stage: objectDetail.stage,
             due_at: objectDetail.dueAt?.toISOString() ?? null,
+            summary: objectDetail.summary?.summary
+              ? {
+                  overview: objectDetail.summary.summary.overview,
+                  current_state: objectDetail.summary.summary.currentState.map((item) => ({
+                    label: item.label,
+                    text: item.text,
+                    citations: item.sourceRefs.map(sourceRefCitation),
+                  })),
+                  source_citations: objectDetail.summary.sourceRefs.map(sourceRefCitation),
+                  updated_at: objectDetail.summary.generatedAt?.toISOString() ?? null,
+                }
+              : null,
           },
         ]
       : []),

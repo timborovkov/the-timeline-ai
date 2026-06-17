@@ -55,6 +55,9 @@ export const QUEUE_NAMES = {
   // Daily personalized team digest. Tick fans out per active recipient;
   // recipient jobs generate one durable digest and send it through messaging.
   dailyDigest: 'daily-digest',
+  // Generated object briefs. Produced by canonical object-memory writes and
+  // manual object-page requests; consumed by the object-summary worker.
+  objectSummary: 'object-summary',
 } as const;
 
 export type QueueName = (typeof QUEUE_NAMES)[keyof typeof QUEUE_NAMES];
@@ -945,5 +948,80 @@ export async function enqueueDailyDigestSendJob(
 export async function closeDailyDigestQueue(): Promise<void> {
   await closeQueue(_dailyDigestQueue, () => {
     _dailyDigestQueue = undefined;
+  });
+}
+
+export interface ObjectSummaryJobData {
+  teamId: string;
+  objectId: string;
+  trigger?: 'manual' | 'auto' | 'retry';
+}
+
+let _objectSummaryQueue: TimelineQueue<ObjectSummaryJobData> | undefined;
+
+export function getObjectSummaryQueue(): TimelineQueue<ObjectSummaryJobData> {
+  if (_objectSummaryQueue) return _objectSummaryQueue;
+  _objectSummaryQueue = createTimelineQueue<ObjectSummaryJobData>(QUEUE_NAMES.objectSummary, {
+    attempts: 3,
+    backoff: { type: 'exponential', delay: 5000 },
+    removeOnComplete: { age: 3600, count: 1000 },
+    removeOnFail: { age: 24 * 3600 },
+  });
+  return _objectSummaryQueue;
+}
+
+export async function enqueueObjectSummaryJob(
+  data: ObjectSummaryJobData,
+  opts: { delayMs?: number } = {},
+): Promise<{ enqueued: boolean; jobId: string }> {
+  const jobId = bullmqCustomJobId(['object-summary', data.teamId, data.objectId]);
+  const q = getObjectSummaryQueue();
+  const existing = (await q.getJob(jobId)) as ExistingJobLike | null;
+  if (existing) {
+    const state = await existing.getState?.().catch(() => null);
+    if (data.trigger === 'manual' && state === 'delayed' && existing.remove) {
+      await existing.remove().catch(() => undefined);
+    } else if ((data.trigger === 'auto' || data.trigger === 'manual') && state === 'active') {
+      const followupJobId = bullmqCustomJobId([
+        'object-summary',
+        data.teamId,
+        data.objectId,
+        'followup',
+      ]);
+      const followup = (await q.getJob(followupJobId)) as ExistingJobLike | null;
+      if (followup) {
+        const followupState = await followup.getState?.().catch(() => null);
+        if (!followupState || SUGGESTION_JOB_DEDUPE_STATES.has(followupState)) {
+          return { enqueued: false, jobId: followupJobId };
+        }
+        if (SUGGESTION_JOB_REPLACEABLE_STATES.has(followupState) && followup.remove) {
+          await followup.remove().catch(() => undefined);
+        } else {
+          return { enqueued: false, jobId: followupJobId };
+        }
+      }
+      await q.add('object-summary', data, {
+        jobId: followupJobId,
+        ...(opts.delayMs ? { delay: opts.delayMs } : {}),
+      });
+      return { enqueued: true, jobId: followupJobId };
+    } else if (!state || SUGGESTION_JOB_DEDUPE_STATES.has(state)) {
+      return { enqueued: false, jobId };
+    } else if (SUGGESTION_JOB_REPLACEABLE_STATES.has(state) && existing.remove) {
+      await existing.remove().catch(() => undefined);
+    } else {
+      return { enqueued: false, jobId };
+    }
+  }
+  await q.add('object-summary', data, {
+    jobId,
+    ...(opts.delayMs ? { delay: opts.delayMs } : {}),
+  });
+  return { enqueued: true, jobId };
+}
+
+export async function closeObjectSummaryQueue(): Promise<void> {
+  await closeQueue(_objectSummaryQueue, () => {
+    _objectSummaryQueue = undefined;
   });
 }

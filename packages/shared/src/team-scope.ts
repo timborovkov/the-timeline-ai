@@ -38,6 +38,7 @@ import { TIMELINE_MODELS } from '#src/llm/models.js';
 import { createMcpScope } from '#src/mcp/scope.js';
 import { createMeetingScope } from '#src/meetings/scope.js';
 import { createObjectScope, normalizeIdentityFacet } from '#src/objects/index.js';
+import { invalidateObjectSummariesForRawEvent } from '#src/objects/summaries.js';
 import { createOnboardingScope } from '#src/onboarding/index.js';
 import { decodeCursor, pageWindow } from '#src/pagination.js';
 import {
@@ -1556,6 +1557,9 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
 
         if (existing.visibility === 'team' && updated.visibility !== 'team') {
           await deleteRawEventEmbeddingPoints(id);
+          await invalidateObjectSummariesForRawEvent(db, core, id, {
+            trigger: 'raw_event_visibility_hidden',
+          });
         } else if (existing.visibility !== 'team' && updated.visibility === 'team') {
           await (deps.enqueueRawEventEmbed ?? enqueueRawEventEmbed)({
             teamId,
@@ -1564,6 +1568,17 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
             // The row is already visible in Postgres; janitor/retry paths can
             // reconcile the embedding if Redis is temporarily unavailable.
           });
+          await invalidateObjectSummariesForRawEvent(
+            db,
+            core,
+            id,
+            {
+              trigger: 'raw_event_visibility_team',
+            },
+            {
+              preserveExisting: true,
+            },
+          );
         }
         return updated;
       },
@@ -1709,7 +1724,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
 
       async removeConversationalMessage(id: string): Promise<boolean> {
         const role = await ensureMember();
-        return db.transaction(async (tx) => {
+        const removedIds = await db.transaction(async (tx) => {
           const rows = await tx
             .select({
               id: rawEvents.id,
@@ -1728,7 +1743,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
             )
             .limit(1);
           const row = rows[0];
-          if (!row) return false;
+          if (!row) return [];
           if (row.source !== 'telegram' && row.source !== 'slack') {
             throw new Error('Only Telegram and Slack events can be removed this way');
           }
@@ -1790,8 +1805,14 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
             })
             .where(and(...baseConditions, ...sourceConditions))
             .returning({ id: rawEvents.id });
-          return removed.length > 0;
+          return removed.map((event) => event.id);
         });
+        for (const rawEventId of removedIds) {
+          await invalidateObjectSummariesForRawEvent(db, core, rawEventId, {
+            trigger: 'raw_event_tombstone',
+          });
+        }
+        return removedIds.length > 0;
       },
 
       async removeTelegramMessage(id: string): Promise<boolean> {
