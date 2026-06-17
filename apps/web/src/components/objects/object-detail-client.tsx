@@ -1322,21 +1322,13 @@ function ObjectConnectedWorkSection({
   );
 }
 
-function ConnectedWorkSection({
-  title,
-  empty,
-  children,
-}: {
-  title: string;
-  empty: string;
-  children: ReactNode;
-}) {
+function ConnectedWorkSection({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section className="min-w-0">
       <h3 className="mb-2 font-mono text-[11px] uppercase tracking-[0.12em] text-fg-muted">
         {title}
       </h3>
-      {children ?? <p className="text-sm text-muted-foreground">{empty}</p>}
+      {children}
     </section>
   );
 }
@@ -1353,7 +1345,7 @@ function ConnectedTaskList({
   showDueDate?: boolean;
 }) {
   return (
-    <ConnectedWorkSection title={title} empty={empty}>
+    <ConnectedWorkSection title={title}>
       {tasks.length === 0 ? (
         <p className="text-sm text-muted-foreground">{empty}</p>
       ) : (
@@ -1386,7 +1378,7 @@ function ConnectedCalendarList({
   events: ObjectDetail['connectedWork']['calendarEvents'];
 }) {
   return (
-    <ConnectedWorkSection title="Calendar" empty="No calendar events found.">
+    <ConnectedWorkSection title="Calendar">
       {events.length === 0 ? (
         <p className="text-sm text-muted-foreground">No calendar events found.</p>
       ) : (
@@ -1410,7 +1402,7 @@ function ConnectedCalendarList({
 
 function ConnectedObjectList({ objects }: { objects: ObjectDetail['connectedWork']['objects'] }) {
   return (
-    <ConnectedWorkSection title="People and objects" empty="No repeated object context found.">
+    <ConnectedWorkSection title="People and objects">
       {objects.length === 0 ? (
         <p className="text-sm text-muted-foreground">No repeated object context found.</p>
       ) : (
@@ -1436,7 +1428,7 @@ function ConnectedObjectList({ objects }: { objects: ObjectDetail['connectedWork
 
 function ConnectedBoardList({ boards }: { boards: ObjectDetail['connectedWork']['boards'] }) {
   return (
-    <ConnectedWorkSection title="Boards" empty="No board context found.">
+    <ConnectedWorkSection title="Boards">
       {boards.length === 0 ? (
         <p className="text-sm text-muted-foreground">No board context found.</p>
       ) : (
@@ -1474,7 +1466,7 @@ function ConnectedApprovalList({
   approvals: ObjectDetail['connectedWork']['pendingApprovals'];
 }) {
   return (
-    <ConnectedWorkSection title="Pending approvals" empty="No related approvals found.">
+    <ConnectedWorkSection title="Pending approvals">
       {approvals.length === 0 ? (
         <p className="text-sm text-muted-foreground">No related approvals found.</p>
       ) : (
@@ -1512,7 +1504,7 @@ function ConnectedTimelineEventList({
   events: ObjectDetail['connectedWork']['timelineEvents'];
 }) {
   return (
-    <ConnectedWorkSection title="Timeline moments" empty="No timeline moments found.">
+    <ConnectedWorkSection title="Timeline moments">
       {events.length === 0 ? (
         <p className="text-sm text-muted-foreground">No timeline moments found.</p>
       ) : (
@@ -1545,7 +1537,7 @@ function ConnectedDocumentList({
   documents: ObjectDetail['connectedWork']['documents'];
 }) {
   return (
-    <ConnectedWorkSection title="Documents" empty="No related documents found.">
+    <ConnectedWorkSection title="Documents">
       {documents.length === 0 ? (
         <p className="text-sm text-muted-foreground">No related documents found.</p>
       ) : (

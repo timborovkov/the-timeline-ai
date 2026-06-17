@@ -234,6 +234,12 @@
       "import": "./dist/slug.js",
       "types": "./dist/slug.d.ts"
     },
+    "./sql-like": {
+      "types": "./src/sql-like.ts",
+      "development": "./src/sql-like.ts",
+      "import": "./dist/sql-like.js",
+      "default": "./dist/sql-like.js"
+    },
     "./s3/client": {
       "types": "./src/s3/client.ts",
       "development": "./src/s3/client.ts",

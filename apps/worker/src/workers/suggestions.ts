@@ -23,6 +23,7 @@ import {
   time,
   withTeam,
 } from '@timeline/shared';
+import { likeMentionCondition } from '@timeline/shared/sql-like';
 import { UnrecoverableError, Worker, type Job } from 'bullmq';
 import { and, count, desc, eq, inArray, isNull, lt, ne, or, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
@@ -567,24 +568,10 @@ function escapeRegex(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-function likePattern(value: string): string {
-  return `%${value.replace(/[\\%_]/g, (match) => `\\${match}`)}%`;
-}
-
 function objectNamesForRepair(row: Pick<CleanupObjectRow, 'canonicalName' | 'aliases'>): string[] {
   return Array.from(new Set([row.canonicalName, ...aliasesForRow(row)].map((name) => name.trim())))
     .filter((name) => name.length >= 2)
     .slice(0, 8);
-}
-
-function objectNameMentionCondition(
-  column: unknown,
-  names: readonly string[],
-): ReturnType<typeof or> | undefined {
-  const conditions = names.map(
-    (name) => sql`lower(${column as never}) LIKE ${likePattern(name.toLowerCase())} ESCAPE '\\'`,
-  );
-  return conditions.length > 0 ? or(...conditions) : undefined;
 }
 
 function mentionsObjectName(text: string, names: readonly string[]): boolean {
@@ -766,7 +753,7 @@ async function repairConnectedWorkRelationshipCandidates(
   repairObject: CleanupObjectRow,
 ): Promise<RepairRelationshipCandidate[]> {
   const names = objectNamesForRepair(repairObject);
-  const nameMatch = objectNameMentionCondition(entities.canonicalName, names);
+  const nameMatch = likeMentionCondition(entities.canonicalName, names);
   if (!nameMatch) return [];
   const rows = await db
     .select({

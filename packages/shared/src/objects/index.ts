@@ -68,6 +68,7 @@ import { decodeCursor, pageWindow } from '#src/pagination.js';
 import { getQdrantClient } from '#src/qdrant/client.js';
 import { buildPointId } from '#src/qdrant/point-id.js';
 import * as embedQueue from '#src/queue/queues.js';
+import { likeMentionCondition, likePattern } from '#src/sql-like.js';
 import { rawEventVisibleToUser } from '#src/visibility.js';
 
 const embedLog = childLogger('objects:embed');
@@ -359,10 +360,6 @@ function objectSearchTokens(query: string): string[] {
     .slice(0, 8);
 }
 
-function likePattern(token: string): string {
-  return `%${token.replace(/[\\%_]/g, (match) => `\\${match}`)}%`;
-}
-
 function objectTextSearchCondition(token: string): SQL {
   const pattern = likePattern(token);
   return sql`(
@@ -639,16 +636,6 @@ function objectNamesForMatching(object: Pick<ObjectRow, 'canonicalName' | 'alias
   return Array.from(new Set([object.canonicalName, ...object.aliases].map((name) => name.trim())))
     .filter((name) => name.length >= 2)
     .slice(0, 8);
-}
-
-function objectNameMentionCondition(
-  column: unknown,
-  names: readonly string[],
-): ReturnType<typeof or> | undefined {
-  const conditions = names.map(
-    (name) => sql`lower(${column as never}) LIKE ${likePattern(name.toLowerCase())} ESCAPE '\\'`,
-  );
-  return conditions.length > 0 ? or(...conditions) : undefined;
 }
 
 function calendarVisibleToScope(scope: TeamScopeCore): SQL {
@@ -934,7 +921,7 @@ async function getConnectedWork(
   object: ObjectRow,
 ): Promise<ObjectDetail['connectedWork']> {
   const names = objectNamesForMatching(object);
-  const nameMatch = objectNameMentionCondition(entities.canonicalName, names);
+  const nameMatch = likeMentionCondition(entities.canonicalName, names);
 
   const factIdRows = await db
     .select({ factId: factEntities.factId, rawEventId: factsTable.rawEventId })
@@ -1077,15 +1064,12 @@ async function getConnectedWork(
             sql`${agentSuggestionItems.proposedPayload}::text LIKE ${likePattern(object.id)}`,
             ...(names.length > 0
               ? [
-                  objectNameMentionCondition(agentSuggestions.title, names),
-                  objectNameMentionCondition(agentSuggestions.summary, names),
-                  objectNameMentionCondition(agentSuggestions.reason, names),
-                  objectNameMentionCondition(agentSuggestionItems.title, names),
-                  objectNameMentionCondition(agentSuggestionItems.description, names),
-                  objectNameMentionCondition(
-                    sql`${agentSuggestionItems.proposedPayload}::text`,
-                    names,
-                  ),
+                  likeMentionCondition(agentSuggestions.title, names),
+                  likeMentionCondition(agentSuggestions.summary, names),
+                  likeMentionCondition(agentSuggestions.reason, names),
+                  likeMentionCondition(agentSuggestionItems.title, names),
+                  likeMentionCondition(agentSuggestionItems.description, names),
+                  likeMentionCondition(sql`${agentSuggestionItems.proposedPayload}::text`, names),
                 ].filter((condition): condition is SQL => Boolean(condition))
               : []),
           ),
@@ -1115,9 +1099,9 @@ async function getConnectedWork(
               isNull(documents.deletedAt),
               documentVisibleToScope(scope),
               or(
-                objectNameMentionCondition(documents.name, names),
-                objectNameMentionCondition(sql`${documents.metadata}::text`, names),
-                objectNameMentionCondition(documentChunks.text, names),
+                likeMentionCondition(documents.name, names),
+                likeMentionCondition(sql`${documents.metadata}::text`, names),
+                likeMentionCondition(documentChunks.text, names),
               ),
             ),
           )
@@ -1165,7 +1149,7 @@ async function getConnectedWork(
   if (factRawEventIds.length > 0) {
     timelineConditions.push(inArray(rawEvents.id, factRawEventIds));
   }
-  const eventContentMatch = objectNameMentionCondition(rawEvents.contentText, names);
+  const eventContentMatch = likeMentionCondition(rawEvents.contentText, names);
   if (eventContentMatch) timelineConditions.push(eventContentMatch);
   const timelineRows =
     timelineConditions.length > 0
@@ -1195,9 +1179,9 @@ async function getConnectedWork(
   if (linkedCalendarIds.length > 0) {
     calendarConditions.push(inArray(calendarEvents.id, linkedCalendarIds));
   }
-  const calendarTitleMatch = objectNameMentionCondition(calendarEvents.title, names);
+  const calendarTitleMatch = likeMentionCondition(calendarEvents.title, names);
   if (calendarTitleMatch) calendarConditions.push(calendarTitleMatch);
-  const calendarDescriptionMatch = objectNameMentionCondition(calendarEvents.description, names);
+  const calendarDescriptionMatch = likeMentionCondition(calendarEvents.description, names);
   if (calendarDescriptionMatch) calendarConditions.push(calendarDescriptionMatch);
   const calendarRows =
     calendarConditions.length > 0

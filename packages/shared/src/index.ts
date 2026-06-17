@@ -2,6 +2,7 @@ export * from '#src/env.js';
 export * from '#src/logger.js';
 export * from '#src/passwords.js';
 export * from '#src/slug.js';
+export * from '#src/sql-like.js';
 export * from '#src/team-scope.js';
 export * from '#src/team-roles.js';
 export * as telegram from '#src/telegram/index.js';
