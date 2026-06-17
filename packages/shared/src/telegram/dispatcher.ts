@@ -311,7 +311,7 @@ async function handleDm(ctx: DmContext, isEdit: boolean): Promise<void> {
     const inserted = await insertEvent(ctx.db, {
       fallbackTeamId: ctx.activeTeamId,
       authorUserId: ctx.tgUserRow.userId,
-      text: text || null,
+      text: text || attachmentPlaceholder(fileAttachment),
       message: ctx.message,
       updateId: ctx.updateId,
       sourceUnverified: ctx.tgUserRow.userId === null,
@@ -1167,7 +1167,7 @@ async function handleGroup(ctx: GroupContext, isEdit: boolean): Promise<void> {
       fallbackTeamId: ctx.binding.teamId,
       authorUserId: ctx.tgUserRow?.userId ?? null,
       visibilityOwnerUserId: ctx.binding.boundByUserId ?? ctx.tgUserRow?.userId ?? null,
-      text: text || null,
+      text: text || attachmentPlaceholder(fileAttachment),
       message: ctx.message,
       updateId: ctx.updateId,
       sourceUnverified: !ctx.tgUserRow?.userId,
@@ -1985,7 +1985,11 @@ const MIME_TO_EXT: Record<string, string> = {
   'audio/mp3': 'mp3',
   'audio/mp4': 'm4a',
   'audio/m4a': 'm4a',
+  'audio/x-m4a': 'm4a',
+  'audio/aac': 'aac',
+  'audio/flac': 'flac',
   'audio/wav': 'wav',
+  'audio/x-wav': 'wav',
   'audio/webm': 'webm',
 };
 
@@ -2337,7 +2341,26 @@ async function ingestTelegramDocumentAudioAttachment(
     });
   } catch (err) {
     log.error({ err }, 'telegram document audio transcribe enqueue failed');
+    const failurePatch = JSON.stringify({
+      transcription_failed_at: new Date().toISOString(),
+      transcription_error: `enqueue failed: ${err instanceof Error ? err.message.slice(0, 480) : 'unknown'}`,
+    });
+    await ctx.db
+      .update(rawEvents)
+      .set({
+        sourceMetadata: sql`COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) || ${failurePatch}::jsonb`,
+      })
+      .where(eq(rawEvents.id, row.id))
+      .catch((markErr: unknown) => {
+        log.error({ err: markErr }, 'failed to mark telegram document audio failure');
+      });
   }
+}
+
+function attachmentPlaceholder(attachment: TelegramDocumentAttachment): string {
+  return attachment.kind === 'photo'
+    ? `Attached image ${attachment.filename}`
+    : `Attached file ${attachment.filename}`;
 }
 
 function telegramAttachmentMetadata(

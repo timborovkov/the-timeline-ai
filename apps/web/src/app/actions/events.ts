@@ -226,7 +226,13 @@ function audioExtensionForMime(mimeType: string): string {
     case 'audio/mpeg':
       return 'mp3';
     case 'audio/mp4':
+    case 'audio/m4a':
+    case 'audio/x-m4a':
       return 'm4a';
+    case 'audio/aac':
+      return 'aac';
+    case 'audio/flac':
+      return 'flac';
     case 'audio/wav':
     case 'audio/x-wav':
       return 'wav';

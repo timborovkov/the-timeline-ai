@@ -1204,6 +1204,54 @@ describe('handleUpdate telegram edit visibility', () => {
     });
   });
 
+  it('keeps Telegram m4a document-picker audio visible and marks transcribe enqueue failures', async () => {
+    const upload = vi.fn().mockResolvedValue(undefined);
+    const enqueueTranscribe = vi.fn().mockRejectedValue(new Error('redis down'));
+
+    await handleUpdate(
+      {
+        db: db as never,
+        tg: {
+          ...fakeTg,
+          getFile: () =>
+            Promise.resolve({ file_id: 'meeting-recording', file_path: 'recording.m4a' }),
+          downloadFile: () => Promise.resolve(Buffer.from('audio-bytes')),
+        },
+        audio: {
+          upload,
+          enqueueTranscribe,
+          buildAudioKey: ({ teamId, chatId, messageId, fileId, extension }) =>
+            `teams/${teamId}/telegram/${chatId}/${messageId}-${fileId}.${extension}`,
+        },
+      },
+      {
+        update_id: 216,
+        message: {
+          message_id: 36,
+          date: 1700000005,
+          chat: { id: 42, type: 'private' },
+          from: { id: TG_USER_ID, username: 'alice' },
+          document: {
+            file_id: 'meeting-recording',
+            file_name: 'Nexia palaveri nauhoitus.m4a',
+            mime_type: 'audio/x-m4a',
+            file_size: 128,
+          },
+        },
+      },
+    );
+
+    expect(upload).toHaveBeenCalledWith(expect.objectContaining({ contentType: 'audio/x-m4a' }));
+    const rows = await allTelegramRows(pg);
+    expect(rows).toHaveLength(2);
+    expect(rows[0]?.content_text).toBe('Attached file Nexia palaveri nauhoitus.m4a');
+    const child = rows.find((row) => row.source_metadata.tg_attachment_kind === 'audio');
+    expect(child?.source_metadata).toMatchObject({
+      audio_mime_type: 'audio/x-m4a',
+      transcription_error: 'enqueue failed: redis down',
+    });
+  });
+
   it('stores Telegram sender display names as source truth metadata', async () => {
     await pg.exec(`
       INSERT INTO telegram_chat_bindings (tg_chat_id, team_id, bound_by_user_id, title)

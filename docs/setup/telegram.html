@@ -173,7 +173,9 @@ curl -F "url=https://&lt;ngrok-id&gt;.ngrok-free.app/api/telegram/webhook" \
         text/image/PDF/DOCX/CSV/JSON/XML/YAML/Markdown/HTML/log files captured as source evidence
         and routed to typed extraction representations. Archives, executables, video, oversize
         files, and unknown binary files are skipped. Ambiguous <code>.mp4</code>/<code>.webm</code>
-        files require an <code>audio/*</code> content type to enter transcription.
+        files enter transcription when Telegram provides an <code>audio/*</code> content type or a
+        recognized audio extension such as <code>.m4a</code>, <code>.mp3</code>, or
+        <code>.ogg</code>.
       </p>
 
       <h2 id="schema">Schema reference</h2>

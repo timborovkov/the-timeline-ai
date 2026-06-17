@@ -79,6 +79,9 @@ evidence; documents are curated workspace knowledge.
   inherit the parent raw event's visibility and source provenance.
 - Manual uploads remain curated document-drive items and keep the existing
   folder/version behavior.
+- Home capture attachments route audio files through the timeline audio
+  transcription path, while images and document-like files use the curated
+  document upload path.
 - Extracted representations are typed as source text, transcript text, visual
   description, or metadata preview.
 - Oversized unpromoted captured files can be marked deferred with a lightweight
