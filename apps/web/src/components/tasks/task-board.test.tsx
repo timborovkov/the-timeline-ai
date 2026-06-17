@@ -72,6 +72,53 @@ describe('TaskBoard', () => {
     expect(screen.getByText('P2')).toBeTruthy();
   });
 
+  it('prefers GitHub task display titles over provider identity canonical names', () => {
+    render(
+      <TaskBoard
+        rows={[
+          task({
+            canonicalName: 'timborovkov/the-timeline-ai#202: Add cursor pagination',
+            metadata: {
+              integration_provider: 'github',
+              integration_external_id: 'timborovkov/the-timeline-ai#202',
+              display_title: 'the-timeline-ai: Add cursor pagination',
+            },
+          }),
+        ]}
+        columns={['todo', 'doing', 'done', 'blocked', 'cancelled']}
+        selectedTaskId="task-1"
+        members={[{ id: 'user-1', label: 'Ada Lovelace' }]}
+      />,
+    );
+
+    expect(screen.getAllByText('the-timeline-ai: Add cursor pagination')).toHaveLength(2);
+    expect(screen.queryByText(/timborovkov\/the-timeline-ai#202/)).toBeNull();
+  });
+
+  it('cleans up legacy GitHub task canonical names when display metadata is absent', () => {
+    render(
+      <TaskBoard
+        rows={[
+          task({
+            canonicalName: 'timborovkov/the-timeline-ai#202: Add cursor pagination',
+            metadata: {
+              integration_provider: 'github',
+              integration_external_id: 'timborovkov/the-timeline-ai#202',
+            },
+          }),
+        ]}
+        columns={['todo', 'doing', 'done', 'blocked', 'cancelled']}
+        selectedTaskId={null}
+        members={[{ id: 'user-1', label: 'Ada Lovelace' }]}
+      />,
+    );
+
+    expect(
+      screen.getByRole('link', { name: 'the-timeline-ai: Add cursor pagination' }),
+    ).toBeTruthy();
+    expect(screen.queryByText(/timborovkov\/the-timeline-ai#202/)).toBeNull();
+  });
+
   it('renders the selected task panel with an object link that can return to the panel', () => {
     renderBoard('task-1');
 

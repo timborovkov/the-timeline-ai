@@ -36,6 +36,8 @@ export interface ObjectMapping {
   canonicalName: string;
   /** Provider-scoped stable id used as the dedup key for the entity row. */
   externalId: string;
+  /** Human-facing title for UI surfaces when canonicalName carries provider identity. */
+  displayTitle?: string;
   status?: 'open' | 'todo' | 'in_progress' | 'done' | 'cancelled' | 'suggested' | 'follow_up';
   priority?: 'low' | 'medium' | 'high' | 'urgent' | null;
   url?: string;

@@ -1,5 +1,5 @@
 import { PGlite } from '@electric-sql/pglite';
-import { integrations, rawEvents } from '@timeline/db';
+import { entities, integrations, rawEvents } from '@timeline/db';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -178,5 +178,54 @@ describe('writeIntegrationEvents visibility', () => {
     expect(row?.visibility).toBe('team');
     expect(row?.authorUserId).toBeNull();
     expect(row?.visibilityOwnerUserId).toBeNull();
+  });
+
+  it('stores integration object display titles separately from canonical names', async () => {
+    const [integration] = await db
+      .insert(integrations)
+      .values({
+        teamId: TEAM_ID,
+        connectedByUserId: USER_ID,
+        provider: 'github',
+        displayName: 'GitHub',
+        externalAccountId: 'acct-display-title',
+        visibilityDefault: 'team',
+      })
+      .returning();
+    if (!integration) throw new Error('integration insert failed');
+
+    await writeIntegrationEvents({
+      db: db as never,
+      integration,
+      events: [
+        {
+          dedupKey: 'github:pr:202',
+          provider: 'github',
+          externalObjectId: 'timborovkov/the-timeline-ai#202',
+          eventType: 'pr.updated',
+          occurredAt: new Date('2026-06-17T09:00:00Z'),
+          contentText: 'GitHub PR timborovkov/the-timeline-ai#202 — Add cursor pagination',
+          objectMap: {
+            type: 'task',
+            canonicalName: 'timborovkov/the-timeline-ai#202: Add cursor pagination',
+            displayTitle: 'the-timeline-ai: Add cursor pagination',
+            externalId: 'timborovkov/the-timeline-ai#202',
+            status: 'open',
+            url: 'https://github.com/timborovkov/the-timeline-ai/pull/202',
+          },
+        },
+      ],
+    });
+
+    const [row] = await db
+      .select()
+      .from(entities)
+      .where(eq(entities.canonicalName, 'timborovkov/the-timeline-ai#202: Add cursor pagination'));
+    expect(row?.metadata).toMatchObject({
+      integration_provider: 'github',
+      integration_external_id: 'timborovkov/the-timeline-ai#202',
+      display_title: 'the-timeline-ai: Add cursor pagination',
+      url: 'https://github.com/timborovkov/the-timeline-ai/pull/202',
+    });
   });
 });

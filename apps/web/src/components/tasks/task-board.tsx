@@ -364,6 +364,7 @@ function TaskCard({
     ? { transform: `translate3d(${String(transform.x)}px,${String(transform.y)}px,0)` }
     : undefined;
   const due = dueState(row.dueAt);
+  const title = taskTitle(row);
   return (
     <li
       ref={setNodeRef}
@@ -379,7 +380,7 @@ function TaskCard({
       )}
     >
       <Link href={href} className="block min-w-0 truncate font-medium hover:underline">
-        {displayText(row.canonicalName)}
+        {displayText(title)}
       </Link>
       <div className="mt-1.5 flex flex-wrap items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.1em] text-fg-dim">
         <span>Task</span>
@@ -419,6 +420,7 @@ function TaskDetailPanel({
 }) {
   const [saving, setSaving] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const title = taskTitle(task);
 
   function save(field: string, patch: TaskPatch): void {
     setSaving(field);
@@ -443,9 +445,7 @@ function TaskDetailPanel({
       <div className="border-b border-border p-4">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <h2 className="truncate text-lg font-semibold text-fg">
-              {displayText(task.canonicalName)}
-            </h2>
+            <h2 className="truncate text-lg font-semibold text-fg">{displayText(title)}</h2>
             <p className="mt-1 font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
               Task · side panel
             </p>
@@ -568,6 +568,29 @@ function Detail({ label, value }: { label: string; value: string }) {
       <div className="mt-2 text-sm text-fg">{displayText(value)}</div>
     </div>
   );
+}
+
+function metadataString(metadata: Record<string, unknown>, key: string): string | null {
+  const value = metadata[key];
+  if (typeof value !== 'string' && typeof value !== 'number') return null;
+  const text = String(value).replace(/\s+/g, ' ').trim();
+  return text || null;
+}
+
+function taskTitle(row: objects.ObjectRow): string {
+  const explicit = metadataString(row.metadata, 'display_title');
+  if (explicit) return explicit;
+  if (metadataString(row.metadata, 'integration_provider') !== 'github') return row.canonicalName;
+
+  const match = /^(.+?)#(?:issue:)?\d+:\s*(.+)$/.exec(row.canonicalName);
+  if (!match) return row.canonicalName;
+  const [, canonicalRepo, title] = match;
+  if (!canonicalRepo || !title) return row.canonicalName;
+
+  const externalId = metadataString(row.metadata, 'integration_external_id');
+  const repo = externalId?.split('#')[0] ?? canonicalRepo;
+  const repoName = repo.split('/').pop() ?? repo;
+  return repoName ? `${repoName}: ${title}` : title;
 }
 
 function CardMeta({

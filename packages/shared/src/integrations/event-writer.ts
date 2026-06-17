@@ -216,6 +216,7 @@ async function upsertWorkspaceObjects(
       integration_id: integration.id,
       integration_provider: integration.provider,
       integration_external_id: map.externalId,
+      ...(map.displayTitle ? { display_title: map.displayTitle } : {}),
       ...(map.url ? { url: map.url } : {}),
       last_event_at: evt.occurredAt.toISOString(),
       last_event_type: evt.eventType,
