@@ -19,7 +19,7 @@ shape:
 
 - DB Vitest: 1 file / 8 tests, package-level PGlite schema contract suite now
   runs under root `pnpm test`.
-- Shared Vitest: 76 files / 752+ tests plus 1 skipped, including PGlite
+- Shared Vitest: 76 files / 753+ tests plus 1 skipped, including PGlite
   calendar, timeline, MCP, integration/provider-connection, meeting, document,
   object, assistant, Slack, recovery, connection-attention, and onboarding
   coverage.
@@ -27,7 +27,7 @@ shape:
   for core recovery, onboarding, object sections, board add-item interactions,
   provider-connection routes/UI, app dialog flows, and other high-value UI
   states.
-- Worker Vitest: 15 files / 178 tests, including extract, transcribe,
+- Worker Vitest: 17 files / 208 tests, including extract, transcribe,
   document-extract, meeting-finalize, meeting-scheduler, integration-sync
   attention behavior, overdue-scan, embedding, cleanup, and janitor behavior.
 - Playwright: 13 local core E2E journeys plus 1 production-ish smoke journey.

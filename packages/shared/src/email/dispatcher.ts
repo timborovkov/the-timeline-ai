@@ -327,10 +327,9 @@ interface DecodeResult {
  * the threshold, remaining items are dropped with a reason and surface on
  * `source_metadata.attachments_dropped`.
  *
- * Tuned to 25 MB matching the Phase 3 transcribe worker's `MAX_AUDIO_BYTES`
- * — they're the same trust budget (process this much in memory at once)
- * even though the worker reads from S3 and the dispatcher reads from the
- * webhook body.
+ * Tuned to 25 MB for webhook memory pressure. The transcribe worker can accept
+ * larger already-stored audio from S3 and split it before provider upload, but
+ * inbound email still decodes attachments in the request path.
  */
 const MAX_INBOUND_DECODED_BYTES = 25 * 1024 * 1024;
 

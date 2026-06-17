@@ -19,7 +19,31 @@ const fakes = vi.hoisted(() => ({
 vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: fakes.refresh }) }));
 vi.mock('@tanstack/react-query', () => ({ useQueryClient: fakes.useQueryClient }));
 vi.mock('@/components/audio-recorder', () => ({
-  AudioRecorder: () => createElement('div', null, 'Voice recorder'),
+  AudioRecorder: ({
+    onClipChange,
+  }: {
+    onClipChange?: (clip: {
+      blob: Blob;
+      url: string;
+      mimeType: string;
+      durationSec: number;
+    }) => void;
+  }) =>
+    createElement(
+      'button',
+      {
+        type: 'button',
+        onClick: () => {
+          onClipChange?.({
+            blob: new Blob(['recorded-audio'], { type: 'audio/webm' }),
+            url: 'blob:recorded-audio',
+            mimeType: 'audio/webm;codecs=opus',
+            durationSec: 12,
+          });
+        },
+      },
+      'Use recorded clip',
+    ),
 }));
 vi.mock('@/app/actions/events', () => ({
   createAudioEventAction: fakes.createAudioEventAction,
@@ -72,7 +96,7 @@ describe('CaptureForm', () => {
     expect(html).toContain('CAPTURE');
     expect(html).toContain('What happened?');
     expect(html).toContain('Visible to team');
-    expect(html).toContain('Voice recorder');
+    expect(html).toContain('Use recorded clip');
     expect(html).toContain('Attach');
     expect(html).toContain('Audio, images, PDFs, docs, and notes');
     expect(html).toContain('Post');
@@ -125,6 +149,34 @@ describe('CaptureForm', () => {
     );
     expect(fakes.finalizeDocumentVersionAction).toHaveBeenCalledWith({ versionId: 'version-1' });
     expect(fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps typed text and a recorded clip together as one audio event', async () => {
+    const user = userEvent.setup();
+    render(
+      createElement(CaptureForm, {
+        currentUser: { id: 'user-1', name: 'Ada', email: 'ada@example.test' },
+      }),
+    );
+
+    await user.type(screen.getByPlaceholderText('What happened?'), "Today's Nexia voice note");
+    await user.click(screen.getByRole('button', { name: 'Use recorded clip' }));
+    await user.click(screen.getByRole('button', { name: 'Post' }));
+
+    await waitFor(() => {
+      expect(fakes.createAudioEventAction).toHaveBeenCalledOnce();
+    });
+    expect(fakes.createTextEventAction).not.toHaveBeenCalled();
+    expect(fakes.requestAudioUploadAction).toHaveBeenCalledWith('audio/webm');
+    expect(fakes.createAudioEventAction).toHaveBeenCalledWith(
+      expect.objectContaining({
+        key: 'teams/team-1/web/user-1/audio.m4a',
+        mimeType: 'audio/webm',
+        noteText: "Today's Nexia voice note",
+        durationSec: 12,
+        visibility: 'team',
+      }),
+    );
   });
 
   it('keeps only failed attachments selected after a partial upload failure', async () => {

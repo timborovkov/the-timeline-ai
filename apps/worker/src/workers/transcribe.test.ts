@@ -40,7 +40,14 @@ async function seed(pg: PGlite): Promise<void> {
   `);
 }
 
-async function seedAudioEvent(db: Db, id = RAW_EVENT_ID): Promise<void> {
+async function seedAudioEvent(
+  db: Db,
+  id = RAW_EVENT_ID,
+  sourceMetadata: Record<string, unknown> = {
+    transcription_failed_at: '2026-05-27T10:01:00.000Z',
+    transcription_error: 'old failure',
+  },
+): Promise<void> {
   await db.insert(rawEvents).values({
     id,
     teamId: TEAM_ID,
@@ -50,10 +57,7 @@ async function seedAudioEvent(db: Db, id = RAW_EVENT_ID): Promise<void> {
     contentAudioUrl: AUDIO_KEY,
     visibility: 'team',
     occurredAt: new Date('2026-05-27T10:00:00.000Z'),
-    sourceMetadata: {
-      transcription_failed_at: '2026-05-27T10:01:00.000Z',
-      transcription_error: 'old failure',
-    },
+    sourceMetadata,
   });
 }
 
@@ -65,6 +69,7 @@ function makeIO(overrides: Partial<TranscribeWorkerIO> = {}): TranscribeWorkerIO
       text: "I'll schedule the lead meeting next Monday",
       model: 'test-whisper',
     }),
+    splitAudio: vi.fn().mockResolvedValue([Buffer.from('audio-bytes')]),
     enqueueExtract: vi.fn().mockResolvedValue(undefined),
     enqueueEmbed: vi.fn().mockResolvedValue(undefined),
     enqueueSuggestion: vi.fn().mockResolvedValue(undefined),
@@ -115,7 +120,7 @@ describe('processTranscribeJobForTests', () => {
     expect(result).toEqual({ rawEventId: RAW_EVENT_ID, model: 'test-whisper' });
     expect(getObjectBuffer).toHaveBeenCalledWith({
       audioKey: AUDIO_KEY,
-      maxBytes: 25 * 1024 * 1024,
+      maxBytes: 200 * 1024 * 1024,
     });
     const row = (await db.select().from(rawEvents).where(eq(rawEvents.id, RAW_EVENT_ID)))[0];
     expect(row?.contentText).toBe("I'll schedule the lead meeting next Monday");
@@ -137,6 +142,27 @@ describe('processTranscribeJobForTests', () => {
     });
   });
 
+  it('preserves typed audio-note context when transcription backfills the row', async () => {
+    await seedAudioEvent(db as never, RAW_EVENT_ID, {
+      audio_note_text: "Today's Nexia meetings voice recording",
+    });
+
+    await processTranscribeJobForTests(
+      { db: db as never },
+      { rawEventId: RAW_EVENT_ID, teamId: TEAM_ID, audioKey: AUDIO_KEY },
+      makeIO(),
+    );
+
+    const row = (await db.select().from(rawEvents).where(eq(rawEvents.id, RAW_EVENT_ID)))[0];
+    expect(row?.contentText).toBe(
+      "Today's Nexia meetings voice recording\n\nI'll schedule the lead meeting next Monday",
+    );
+    expect(row?.sourceMetadata).toMatchObject({
+      audio_note_text: "Today's Nexia meetings voice recording",
+      transcription_model: 'test-whisper',
+    });
+  });
+
   it('completes a missing row without enqueueing downstream work', async () => {
     const enqueueExtract = vi.fn().mockResolvedValue(undefined);
     const enqueueEmbed = vi.fn().mockResolvedValue(undefined);
@@ -155,7 +181,45 @@ describe('processTranscribeJobForTests', () => {
     expect(enqueueSuggestion).not.toHaveBeenCalled();
   });
 
-  it('treats missing content length and oversize audio as unrecoverable', async () => {
+  it('splits large source audio before transcribing provider-sized chunks', async () => {
+    await seedAudioEvent(db as never);
+    const splitAudio = vi
+      .fn<TranscribeWorkerIO['splitAudio']>()
+      .mockResolvedValue([Buffer.from('chunk-one'), Buffer.from('chunk-two')]);
+    const transcribeAudio = vi
+      .fn()
+      .mockResolvedValueOnce({ text: 'First part.', model: 'test-whisper' })
+      .mockResolvedValueOnce({ text: 'Second part.', model: 'test-whisper' });
+    const io = makeIO({
+      headObject: vi.fn().mockResolvedValue({ contentLength: 30_462_530 }),
+      getObjectBuffer: vi.fn().mockResolvedValue({ body: Buffer.alloc(30_462_530) }),
+      splitAudio,
+      transcribeAudio,
+    });
+
+    const result = await processTranscribeJobForTests(
+      { db: db as never },
+      { rawEventId: RAW_EVENT_ID, teamId: TEAM_ID, audioKey: AUDIO_KEY },
+      io,
+    );
+
+    expect(result).toEqual({ rawEventId: RAW_EVENT_ID, model: 'test-whisper' });
+    const splitInput = splitAudio.mock.calls[0]?.[0];
+    expect(splitInput?.audioKey).toBe(AUDIO_KEY);
+    expect(splitInput?.audio).toBeInstanceOf(Buffer);
+    expect(transcribeAudio).toHaveBeenNthCalledWith(1, {
+      audio: Buffer.from('chunk-one'),
+      format: 'mp3',
+    });
+    expect(transcribeAudio).toHaveBeenNthCalledWith(2, {
+      audio: Buffer.from('chunk-two'),
+      format: 'mp3',
+    });
+    const row = (await db.select().from(rawEvents).where(eq(rawEvents.id, RAW_EVENT_ID)))[0];
+    expect(row?.contentText).toBe('First part.\n\nSecond part.');
+  });
+
+  it('treats missing content length and truly oversize source audio as unrecoverable', async () => {
     await seedAudioEvent(db as never);
     await expect(
       processTranscribeJobForTests(
@@ -170,7 +234,7 @@ describe('processTranscribeJobForTests', () => {
         { db: db as never },
         { rawEventId: RAW_EVENT_ID, teamId: TEAM_ID, audioKey: AUDIO_KEY },
         makeIO({
-          headObject: vi.fn().mockResolvedValue({ contentLength: 25 * 1024 * 1024 + 1 }),
+          headObject: vi.fn().mockResolvedValue({ contentLength: 200 * 1024 * 1024 + 1 }),
         }),
       ),
     ).rejects.toBeInstanceOf(UnrecoverableError);

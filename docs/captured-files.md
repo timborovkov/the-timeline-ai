@@ -50,9 +50,10 @@ evidence; documents are curated workspace knowledge.
 - Budget deferral is normal product state, not processing failure. Deferred
   files keep lightweight metadata or preview context so they remain findable.
 - Voice memos are timeline evidence. Native voice-message surfaces from
-  Telegram and Slack are transcribed by default. Manual document uploads do not
-  currently transcribe audio through document extraction; ambiguous shared audio
-  can defer deeper processing.
+  Telegram and Slack are transcribed by default, and large stored audio is split
+  into provider-sized chunks before transcription. Manual document uploads do
+  not currently transcribe audio through document extraction; ambiguous shared
+  audio can defer deeper processing.
 - Timeline-oriented agent questions include source-evidence representations by
   default. Curated documents are reference knowledge and are searched when the
   question calls for document context.

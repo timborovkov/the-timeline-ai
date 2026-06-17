@@ -279,7 +279,6 @@
     "test": "NODE_OPTIONS=--conditions=development vitest run"
   },
   "dependencies": {
-    "@ai-sdk/openai": "^3.0.67",
     "@ai-sdk/openai-compatible": "2.0.48",
     "@aws-sdk/client-s3": "^3.1057.0",
     "@aws-sdk/s3-request-presigner": "^3.1057.0",

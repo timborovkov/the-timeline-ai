@@ -1,4 +1,3 @@
-import { createOpenAI } from '@ai-sdk/openai';
 import { type TranscriptionModel } from 'ai';
 
 import { getEnv } from '#src/env.js';
@@ -7,11 +6,9 @@ import { TIMELINE_MODELS } from '#src/llm/models.js';
 import { experimental_transcribe as tracedTranscribe } from '#src/llm/tracing.js';
 
 export interface TranscribeInput {
-  /** Raw audio bytes. The SDK builds the multipart upload internally and
-   *  Whisper auto-detects the format, so filename/mimeType hints from the
-   *  caller are no longer needed (they were used by the previous raw-fetch
-   *  implementation). */
+  /** Raw audio bytes. OpenRouter STT accepts JSON with base64 audio data and a format hint. */
   audio: Buffer;
+  format?: AudioFormat;
   /** ISO-639-1 language hint (e.g. 'fi', 'en', 'de'). Improves accuracy
    *  for non-English audio. Omit for auto-detection. */
   language?: string;
@@ -28,29 +25,65 @@ export interface TranscribeDeps {
    * chat.ts/embed.ts so the three LLM ops have a consistent test pattern.
    */
   model?: TranscriptionModel;
+  fetch?: typeof globalThis.fetch;
 }
 
+export type AudioFormat = 'wav' | 'mp3' | 'flac' | 'm4a' | 'ogg' | 'webm' | 'aac';
+
 function resolveModelId(): string {
-  // OpenRouter route-style ids are accepted by `createOpenAI({ baseURL:
-  // openrouter })` because OpenRouter forwards the multipart body untouched
-  // and uses its own model routing.
   return TIMELINE_MODELS.transcription.id;
 }
 
-function buildDefaultModel(modelId: string): TranscriptionModel {
+function inferAudioFormat(audio: Buffer): AudioFormat {
+  if (audio.subarray(0, 4).toString('ascii') === 'RIFF') return 'wav';
+  if (audio.subarray(0, 3).toString('ascii') === 'ID3' || audio[0] === 0xff) return 'mp3';
+  if (audio.subarray(0, 4).toString('ascii') === 'fLaC') return 'flac';
+  if (audio.subarray(0, 4).toString('ascii') === 'OggS') return 'ogg';
+  if (audio[0] === 0x1a && audio[1] === 0x45 && audio[2] === 0xdf && audio[3] === 0xa3) {
+    return 'webm';
+  }
+  if (audio.subarray(4, 8).toString('ascii') === 'ftyp') return 'm4a';
+  if (audio[0] === 0xff && ((audio[1] ?? 0) & 0xf0) === 0xf0) return 'aac';
+  return 'm4a';
+}
+
+async function transcribeWithOpenRouterJson(
+  input: TranscribeInput,
+  opts: { modelId: string; fetch: typeof globalThis.fetch },
+): Promise<TranscribeResult> {
   const env = getEnv();
   if (!env.OPENROUTER_API_KEY) {
     throw new Error('OPENROUTER_API_KEY is required for transcription');
   }
-  // The `@ai-sdk/openai` provider speaks the OpenAI wire format, which
-  // OpenRouter is compatible with at `/audio/transcriptions`. Pointing
-  // baseURL at OpenRouter routes the multipart upload through OpenRouter's
-  // model gateway while keeping us on the same SDK surface as chat + embed.
-  const provider = createOpenAI({
-    apiKey: env.OPENROUTER_API_KEY,
-    baseURL: env.OPENROUTER_BASE_URL ?? 'https://openrouter.ai/api/v1',
+  const baseURL = (env.OPENROUTER_BASE_URL ?? 'https://openrouter.ai/api/v1').replace(/\/+$/u, '');
+  const response = await opts.fetch(`${baseURL}/audio/transcriptions`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${env.OPENROUTER_API_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: opts.modelId,
+      input_audio: {
+        data: input.audio.toString('base64'),
+        format: input.format ?? inferAudioFormat(input.audio),
+      },
+      ...(input.language ? { language: input.language } : {}),
+    }),
   });
-  return provider.transcription(modelId);
+  if (!response.ok) {
+    const details = (await response.text().catch(() => '')).trim().slice(0, 500);
+    throw new Error(
+      `OpenRouter transcription failed with ${response.status}${details ? `: ${details}` : ''}`,
+    );
+  }
+  const json: unknown = await response.json();
+  const text =
+    json && typeof json === 'object' && 'text' in json && typeof json.text === 'string'
+      ? json.text
+      : null;
+  if (text === null) throw new Error('OpenRouter transcription response did not include text');
+  return { text, model: opts.modelId };
 }
 
 /**
@@ -59,11 +92,9 @@ function buildDefaultModel(modelId: string): TranscriptionModel {
  * the result includes the model name so callers can persist it for future
  * re-transcription audits.
  *
- * Uses the Vercel AI SDK's `experimental_transcribe` against an OpenAI
- * provider pointed at OpenRouter. The `@ai-sdk/openai-compatible` provider
- * doesn't expose transcription, only chat + embed, so the OpenAI-branded
- * provider is the simplest way to keep the three LLM ops on one SDK
- * surface. Tests inject `deps.model`; the default builder reads env.
+ * OpenRouter's STT endpoint expects JSON with base64 audio rather than the
+ * OpenAI multipart transcription shape. Tests can still inject `deps.model`
+ * for deterministic SDK-level wrapper coverage.
  */
 export async function transcribeAudio(
   input: TranscribeInput,
@@ -71,7 +102,13 @@ export async function transcribeAudio(
 ): Promise<TranscribeResult> {
   const modelId = resolveModelId();
   return wrapAiFailure({ operation: 'llm.transcribeAudio', model: modelId }, async () => {
-    const model = deps.model ?? buildDefaultModel(modelId);
+    if (!deps.model) {
+      return transcribeWithOpenRouterJson(input, {
+        modelId,
+        fetch: deps.fetch ?? globalThis.fetch.bind(globalThis),
+      });
+    }
+    const model = deps.model;
     const result = await tracedTranscribe(
       {
         model,

@@ -112,13 +112,15 @@ pnpm db:migrate
           Open <code>/app</code>, click <strong>Record</strong>, speak for a few seconds, click
           <strong>Stop</strong>, then press the form's <strong>Post</strong> button (the single
           submit handles both text and voice; add a note alongside the clip if you want). A new
-          event lands with an audio player and a "Transcribing…" placeholder.
+          event lands with an audio player, your typed note when present, and a "Transcribing…"
+          placeholder for the pending transcript.
         </li>
         <li>
-          With <code>OPENROUTER_API_KEY</code> set in <code>.env</code>, the transcript replaces the
-          placeholder within ~10s (page refresh required for now — no realtime pushdown yet).
-          Without the key, the audio is still recorded and playable; the worker retries the
-          transcribe job with exponential backoff until the key is provided and the worker restarts.
+          With <code>OPENROUTER_API_KEY</code> set in <code>.env</code>, the transcript joins the
+          note and replaces the placeholder within ~10s (page refresh required for now — no realtime
+          pushdown yet). Without the key, the audio is still recorded and playable; the worker
+          retries the transcribe job with exponential backoff until the key is provided and the
+          worker restarts.
         </li>
         <li>
           Telegram voice memos: send a voice note to the bot in a <code>/link</code>-ed DM (or bound
