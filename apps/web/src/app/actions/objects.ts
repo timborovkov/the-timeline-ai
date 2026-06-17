@@ -541,6 +541,7 @@ export async function generateObjectSummaryAction(input: unknown): Promise<Actio
         trigger: 'manual',
       });
       if (!result.canGenerate) return { error: 'Not enough object memory yet' };
+      if (!result.enqueued) return { error: 'Summary generation is already queued' };
       bestEffortRevalidateObjectDetail(parsed.data.entityId, 'revalidate_object_summary');
       return { ok: true, id: result.jobId ?? parsed.data.entityId };
     } catch (err) {

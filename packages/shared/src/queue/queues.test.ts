@@ -404,7 +404,7 @@ describe('queue wrappers', () => {
     expect(fakes.queues[0]?.addCalls[1]?.opts).not.toMatchObject({ delay: 120_000 });
   });
 
-  it('queues one follow-up object summary refresh when an auto job is active', async () => {
+  it('queues one follow-up object summary refresh when an object summary job is active', async () => {
     const queues = await importQueues();
     const data = {
       teamId: '22222222-2222-4222-8222-222222222222',
@@ -430,6 +430,33 @@ describe('queue wrappers', () => {
       name: 'object-summary',
       data,
       opts: { delay: 120_000, jobId: followup.jobId },
+    });
+  });
+
+  it('queues a manual follow-up object summary refresh when a generation is active', async () => {
+    const queues = await importQueues();
+    const activeData = {
+      teamId: '22222222-2222-4222-8222-222222222222',
+      objectId: '77777777-7777-4777-8777-777777777777',
+      trigger: 'auto' as const,
+    };
+    const manualData = { ...activeData, trigger: 'manual' as const };
+
+    const active = await queues.enqueueObjectSummaryJob(activeData);
+    if (!active.jobId) throw new Error('expected stable object summary job id');
+    fakes.queues[0]?.jobStates.set(active.jobId, 'active');
+    const followup = await queues.enqueueObjectSummaryJob(manualData);
+
+    expect(followup).toMatchObject({
+      enqueued: true,
+      jobId:
+        'object-summary|22222222-2222-4222-8222-222222222222|77777777-7777-4777-8777-777777777777|followup',
+    });
+    expect(fakes.queues[0]?.addCalls).toHaveLength(2);
+    expect(fakes.queues[0]?.addCalls[1]).toMatchObject({
+      name: 'object-summary',
+      data: manualData,
+      opts: { jobId: followup.jobId },
     });
   });
 

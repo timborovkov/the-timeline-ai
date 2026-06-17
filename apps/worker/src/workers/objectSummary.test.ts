@@ -55,7 +55,7 @@ describe('object summary worker', () => {
     );
   });
 
-  it('throws failed generations so BullMQ can retry them', async () => {
+  it('returns persisted failed generations without retrying deterministic failures', async () => {
     fakes.generateAndStoreObjectSummary.mockResolvedValue({
       status: 'failed',
       reason: 'invalid_source_ref',
@@ -66,6 +66,6 @@ describe('object summary worker', () => {
         { db: {} as never },
         { teamId: 'team-1', objectId: 'object-1' },
       ),
-    ).rejects.toThrow('invalid_source_ref');
+    ).resolves.toEqual({ status: 'failed', reason: 'invalid_source_ref' });
   });
 });

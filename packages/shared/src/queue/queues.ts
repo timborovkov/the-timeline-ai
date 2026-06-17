@@ -981,7 +981,7 @@ export async function enqueueObjectSummaryJob(
     const state = await existing.getState?.().catch(() => null);
     if (data.trigger === 'manual' && state === 'delayed' && existing.remove) {
       await existing.remove().catch(() => undefined);
-    } else if (data.trigger === 'auto' && state === 'active') {
+    } else if ((data.trigger === 'auto' || data.trigger === 'manual') && state === 'active') {
       const followupJobId = bullmqCustomJobId([
         'object-summary',
         data.teamId,
