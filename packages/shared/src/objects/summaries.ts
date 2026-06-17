@@ -526,6 +526,53 @@ function validateSummaryRefs(summary: GeneratedObjectSummary, packet: ObjectSumm
   }
 }
 
+function objectSummaryFailureMessages(err: unknown): string[] {
+  const messages = [err instanceof Error ? err.message : String(err)];
+  if (
+    err &&
+    typeof err === 'object' &&
+    'causeMessage' in err &&
+    typeof err.causeMessage === 'string'
+  ) {
+    messages.push(err.causeMessage);
+  }
+  if (err instanceof AggregateError) {
+    for (const nested of err.errors) {
+      messages.push(...objectSummaryFailureMessages(nested));
+    }
+  }
+  return messages.map((message) => message.toLowerCase());
+}
+
+function retryableObjectSummaryMessage(message: string): boolean {
+  return (
+    message.includes('429') ||
+    message.includes('5xx') ||
+    /\b5\d\d\b/.test(message) ||
+    message.includes('rate limit') ||
+    message.includes('timeout') ||
+    message.includes('temporar') ||
+    message.includes('unavailable') ||
+    message.includes('network') ||
+    message.includes('econn')
+  );
+}
+
+function isRetryableObjectSummaryError(err: unknown): boolean {
+  const causeName =
+    err && typeof err === 'object' && 'causeName' in err && typeof err.causeName === 'string'
+      ? err.causeName
+      : err instanceof Error
+        ? err.name
+        : '';
+  return (
+    causeName === 'AI_APICallError' ||
+    causeName === 'AbortError' ||
+    causeName === 'TimeoutError' ||
+    objectSummaryFailureMessages(err).some((message) => retryableObjectSummaryMessage(message))
+  );
+}
+
 async function upsertPendingSummary(db: Db, scope: TeamScopeCore, entityId: string): Promise<void> {
   const now = new Date();
   await db
@@ -727,7 +774,7 @@ export async function generateAndStoreObjectSummary(
   entityId: string,
   opts: { trigger?: 'manual' | 'auto' | 'retry' } = {},
   deps: GenerateDeps = {},
-): Promise<{ status: 'ready' | 'skipped' | 'failed'; reason?: string }> {
+): Promise<{ status: 'ready' | 'skipped' | 'failed'; reason?: string; retryable?: boolean }> {
   const packet = await buildObjectSummaryPacket(db, scope, entityId);
   if (!packet) return { status: 'skipped', reason: 'not_found' };
   const now = new Date();
@@ -849,6 +896,7 @@ export async function generateAndStoreObjectSummary(
     return { status: 'ready' };
   } catch (err) {
     const errorCode = err instanceof Error ? err.message.slice(0, 120) : 'generation_failed';
+    const retryable = isRetryableObjectSummaryError(err);
     await db
       .insert(objectSummaries)
       .values({
@@ -885,7 +933,7 @@ export async function generateAndStoreObjectSummary(
         })
         .where(eq(objectSummaryRuns.id, runId));
     }
-    return { status: 'failed', reason: errorCode };
+    return { status: 'failed', reason: errorCode, retryable };
   }
 }
 

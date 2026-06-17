@@ -426,49 +426,67 @@ export async function POST(req: Request): Promise<Response> {
     limit: input.mode === 'preview' ? 8 : 20,
   });
 
-  const [objectRows, boardRows, calendarRows, timelineRows, documentRows] = await Promise.all([
-    wantsObjectsOrTasks
-      ? guardedSearch(warnings, 'object', 'Object search is temporarily unavailable.', [], () =>
-          scope.objects.searchObjects({
-            query,
-            archived: false,
-            limit: sourceLimit(input, 30) * 10,
-          }),
-        )
-      : Promise.resolve([]),
-    wants(kinds, 'board')
-      ? guardedSearch(warnings, 'board', 'Board search is temporarily unavailable.', [], () =>
-          scope.boards.listBoards(),
-        )
-      : Promise.resolve([]),
-    wants(kinds, 'calendar_event')
-      ? guardedSearch(
-          warnings,
-          'calendar_event',
-          'Calendar search is temporarily unavailable.',
-          [],
-          () => searchCalendar({ ...input, query }, scope),
-        )
-      : Promise.resolve([]),
-    runSemantic && wants(kinds, 'timeline_event')
-      ? searchTimeline({ ...input, query }, scope, warnings)
-      : Promise.resolve([]),
-    runSemantic && wants(kinds, 'document_chunk')
-      ? searchDocuments({ ...input, query }, scope, warnings)
-      : Promise.resolve([]),
-  ]);
+  const [objectRows, summaryObjectRows, boardRows, calendarRows, timelineRows, documentRows] =
+    await Promise.all([
+      wantsObjectsOrTasks
+        ? guardedSearch(warnings, 'object', 'Object search is temporarily unavailable.', [], () =>
+            scope.objects.searchObjects({
+              query,
+              archived: false,
+              limit: sourceLimit(input, 30) * 10,
+            }),
+          )
+        : Promise.resolve([]),
+      wantsObjectsOrTasks && query.length >= 3
+        ? guardedSearch(
+            warnings,
+            'object',
+            'Object summary search is temporarily unavailable.',
+            [],
+            () =>
+              scope.objects.searchObjectsBySummary({
+                query,
+                archived: false,
+                limit: sourceLimit(input, 30) * 10,
+              }),
+          )
+        : Promise.resolve([]),
+      wants(kinds, 'board')
+        ? guardedSearch(warnings, 'board', 'Board search is temporarily unavailable.', [], () =>
+            scope.boards.listBoards(),
+          )
+        : Promise.resolve([]),
+      wants(kinds, 'calendar_event')
+        ? guardedSearch(
+            warnings,
+            'calendar_event',
+            'Calendar search is temporarily unavailable.',
+            [],
+            () => searchCalendar({ ...input, query }, scope),
+          )
+        : Promise.resolve([]),
+      runSemantic && wants(kinds, 'timeline_event')
+        ? searchTimeline({ ...input, query }, scope, warnings)
+        : Promise.resolve([]),
+      runSemantic && wants(kinds, 'document_chunk')
+        ? searchDocuments({ ...input, query }, scope, warnings)
+        : Promise.resolve([]),
+    ]);
+  const mergedObjectRows = Array.from(
+    new Map([...objectRows, ...summaryObjectRows].map((row) => [row.id, row])).values(),
+  );
 
   const objectSummaries: Map<string, ReadyObjectSummary> =
-    objectRows.length > 0
+    mergedObjectRows.length > 0
       ? new Map<string, ReadyObjectSummary>(
-          (await scope.objects.listReadyObjectSummaries(objectRows.map((row) => row.id))).map(
+          (await scope.objects.listReadyObjectSummaries(mergedObjectRows.map((row) => row.id))).map(
             (summary) => [summary.entityId, summary],
           ),
         )
       : new Map<string, ReadyObjectSummary>();
   const lexicalObjectRows = searchObjectsAndTasks(
     { ...input, query },
-    objectRows,
+    mergedObjectRows,
     kinds,
     objectSummaries,
   );

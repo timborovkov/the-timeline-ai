@@ -59,6 +59,7 @@ describe('object summary worker', () => {
     fakes.generateAndStoreObjectSummary.mockResolvedValue({
       status: 'failed',
       reason: 'invalid_source_ref',
+      retryable: false,
     });
 
     await expect(
@@ -66,6 +67,21 @@ describe('object summary worker', () => {
         { db: {} as never },
         { teamId: 'team-1', objectId: 'object-1' },
       ),
-    ).resolves.toEqual({ status: 'failed', reason: 'invalid_source_ref' });
+    ).resolves.toEqual({ status: 'failed', reason: 'invalid_source_ref', retryable: false });
+  });
+
+  it('throws retryable failed generations so BullMQ can retry transient failures', async () => {
+    fakes.generateAndStoreObjectSummary.mockResolvedValue({
+      status: 'failed',
+      reason: 'provider unavailable',
+      retryable: true,
+    });
+
+    await expect(
+      processObjectSummaryJobForTests(
+        { db: {} as never },
+        { teamId: 'team-1', objectId: 'object-1' },
+      ),
+    ).rejects.toThrow('provider unavailable');
   });
 });

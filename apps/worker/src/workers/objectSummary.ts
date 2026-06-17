@@ -29,6 +29,9 @@ export async function processObjectSummaryJobForTests(
   const result = await generateAndStoreObjectSummary(deps.db, scope, data.objectId, {
     trigger: data.trigger ?? 'auto',
   });
+  if (result.status === 'failed' && result.retryable) {
+    throw new Error(result.reason ?? 'object_summary_failed');
+  }
   return result;
 }
 

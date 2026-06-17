@@ -1178,6 +1178,36 @@ export async function listReadyObjectSummaries(
     );
 }
 
+export async function searchObjectsBySummary(
+  db: Db,
+  scope: TeamScopeCore,
+  input: { query: string; archived?: boolean; limit?: number },
+): Promise<ObjectRow[]> {
+  await scope.requireMembership();
+  const tokens = objectSearchTokens(input.query);
+  if (tokens.length === 0) return [];
+  const conds = [
+    eq(objectSummaries.teamId, scope.teamId),
+    inArray(objectSummaries.status, ['ready', 'stale']),
+    eq(entities.teamId, scope.teamId),
+    isNull(entities.mergedIntoId),
+  ];
+  if (input.archived === true) conds.push(isNotNull(entities.archivedAt));
+  else if (input.archived !== undefined) conds.push(isNull(entities.archivedAt));
+  for (const token of tokens) {
+    const pattern = likePattern(token);
+    conds.push(sql`lower(${objectSummaries.plainText}) LIKE ${pattern} ESCAPE '\\'`);
+  }
+  const rows = await db
+    .select({ object: entities })
+    .from(objectSummaries)
+    .innerJoin(entities, eq(entities.id, objectSummaries.entityId))
+    .where(and(...conds))
+    .orderBy(desc(objectSummaries.updatedAt))
+    .limit(Math.min(Math.max(input.limit ?? 100, 1), 500));
+  return rows.map((row) => toObjectRow(row.object));
+}
+
 export async function getMergedObjectTarget(
   db: Db,
   scope: TeamScopeCore,
@@ -3973,6 +4003,8 @@ export function createObjectScope(db: Db, scope: TeamScopeCore) {
   return {
     listObjects: (filter?: ObjectListFilter) => listObjects(db, scope, filter),
     searchObjects: (filter: ObjectSearchFilter) => searchObjects(db, scope, filter),
+    searchObjectsBySummary: (input: { query: string; archived?: boolean; limit?: number }) =>
+      searchObjectsBySummary(db, scope, input),
     getObject: (idOrName: string) => getObject(db, scope, idOrName),
     getObjectSummary: (entityId: string) => getObjectSummary(db, scope, entityId),
     listReadyObjectSummaries: (entityIds: string[]) =>

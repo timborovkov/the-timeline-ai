@@ -16,6 +16,7 @@ const fakes = vi.hoisted(() => ({
   fakeSearchDocumentChunksPage: vi.fn(),
   fakeSearchObjectNotes: vi.fn(),
   fakeSearchObjects: vi.fn(),
+  fakeSearchObjectsBySummary: vi.fn(),
   fakeListReadyObjectSummaries: vi.fn(),
   fakeListObjects: vi.fn(),
   fakeListBoards: vi.fn(),
@@ -39,6 +40,7 @@ vi.mock('@timeline/shared/team-scope', () => ({
     objects: {
       listObjects: fakes.fakeListObjects,
       searchObjects: fakes.fakeSearchObjects,
+      searchObjectsBySummary: fakes.fakeSearchObjectsBySummary,
       listReadyObjectSummaries: fakes.fakeListReadyObjectSummaries,
     },
     boards: { listBoards: fakes.fakeListBoards },
@@ -140,6 +142,7 @@ beforeEach(() => {
       createdAt: new Date('2026-06-01T00:00:00.000Z'),
     },
   ]);
+  fakes.fakeSearchObjectsBySummary.mockResolvedValue([]);
   fakes.fakeListBoards.mockResolvedValue([
     {
       id: 'board-1',
@@ -308,6 +311,55 @@ describe('POST /api/search/global', () => {
     const result = data.results.find((item) => item.kind === 'object');
     expect(result?.title).toBe('Otto Silventola');
     expect(result?.snippet).toBe('DFK has a confirmed pilot discussion on June 30.');
+    expect(result?.metadata?.summary).toBe(true);
+  });
+
+  it('surfaces objects that only match stored summary text', async () => {
+    fakes.fakeSearchObjects.mockResolvedValue([]);
+    fakes.fakeSearchObjectsBySummary.mockResolvedValue([
+      {
+        id: 'object-summary-only',
+        type: 'company',
+        canonicalName: 'DFK',
+        status: 'open',
+        stage: null,
+        priority: null,
+        ownerUserId: null,
+        assigneeUserId: null,
+        dueAt: null,
+        agentSuggested: false,
+        archivedAt: null,
+        aliases: [],
+        metadata: {},
+        updatedAt: new Date('2026-06-10T00:00:00.000Z'),
+        createdAt: new Date('2026-06-01T00:00:00.000Z'),
+      },
+    ]);
+    fakes.fakeListReadyObjectSummaries.mockResolvedValue([
+      {
+        entityId: 'object-summary-only',
+        plainText: 'The pilot discussion is confirmed for June 30.',
+        generatedAt: new Date('2026-06-15T00:00:00.000Z'),
+      },
+    ]);
+
+    const response = await POST(
+      request({ query: 'pilot discussion June 30', mode: 'full', kinds: ['object'] }),
+    );
+    const data = (await response.json()) as {
+      ok: true;
+      results: { kind: string; title: string; snippet: string; metadata?: { summary?: boolean } }[];
+    };
+
+    expect(response.status).toBe(200);
+    expect(fakes.fakeSearchObjectsBySummary).toHaveBeenCalledWith({
+      query: 'pilot discussion June 30',
+      archived: false,
+      limit: 300,
+    });
+    const result = data.results.find((item) => item.kind === 'object');
+    expect(result?.title).toBe('DFK');
+    expect(result?.snippet).toBe('The pilot discussion is confirmed for June 30.');
     expect(result?.metadata?.summary).toBe(true);
   });
 
