@@ -88,4 +88,31 @@ describe('AppMainScrollRestoration', () => {
 
     expect(scrollTo).not.toHaveBeenCalled();
   });
+
+  it('keeps its URL snapshot current after hash changes', async () => {
+    const { main, scrollTo } = addMain();
+    const target = document.createElement('section');
+    const scrollIntoView = vi.fn();
+    target.id = 'capture';
+    target.scrollIntoView = scrollIntoView;
+    main.append(target);
+
+    render(<AppMainScrollRestoration />);
+    scrollTo.mockClear();
+    scrollIntoView.mockClear();
+
+    window.location.hash = 'capture';
+    window.dispatchEvent(new Event('hashchange'));
+
+    await waitFor(() => {
+      expect(scrollIntoView).toHaveBeenCalledWith({ block: 'start' });
+    });
+
+    scrollTo.mockClear();
+    scrollIntoView.mockClear();
+    window.history.replaceState({ sidebar: 'collapsed' }, '', window.location.href);
+
+    expect(scrollTo).not.toHaveBeenCalled();
+    expect(scrollIntoView).not.toHaveBeenCalled();
+  });
 });

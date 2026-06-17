@@ -44,6 +44,11 @@ export function AppMainScrollRestoration() {
       scheduleScroll();
     };
 
+    const syncUrlAndScheduleScroll = () => {
+      currentUrl = window.location.href;
+      scheduleScroll();
+    };
+
     window.history.pushState = (...args) => {
       originalPushState(...args);
       scheduleScrollIfUrlChanged();
@@ -54,14 +59,14 @@ export function AppMainScrollRestoration() {
       scheduleScrollIfUrlChanged();
     };
 
-    window.addEventListener('popstate', scheduleScroll);
-    window.addEventListener('hashchange', scheduleScroll);
+    window.addEventListener('popstate', syncUrlAndScheduleScroll);
+    window.addEventListener('hashchange', syncUrlAndScheduleScroll);
 
     return () => {
       window.history.pushState = originalPushState;
       window.history.replaceState = originalReplaceState;
-      window.removeEventListener('popstate', scheduleScroll);
-      window.removeEventListener('hashchange', scheduleScroll);
+      window.removeEventListener('popstate', syncUrlAndScheduleScroll);
+      window.removeEventListener('hashchange', syncUrlAndScheduleScroll);
       if (frame !== null) {
         window.cancelAnimationFrame(frame);
       }
