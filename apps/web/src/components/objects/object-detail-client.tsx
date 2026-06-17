@@ -1081,7 +1081,7 @@ function ObjectDetailHeader({
             <span>id {detail.id.slice(0, 8)}</span>
           </div>
           <h1 className="mt-2 text-3xl font-semibold tracking-tight text-fg">
-            {displayText(detail.canonicalName)}
+            {displayText(displayObjectTitle(detail))}
           </h1>
           {detail.aliases.length > 0 && (
             <p className="mt-2 font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">

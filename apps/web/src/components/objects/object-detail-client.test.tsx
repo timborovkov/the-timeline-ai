@@ -115,6 +115,29 @@ describe('ObjectDetailClient', () => {
     expect(html).toContain('Archive object');
   });
 
+  it('uses source-tracked display titles for the object detail heading', () => {
+    render(
+      objectDetailElement({
+        detail: {
+          ...detail,
+          canonicalName: 'timborovkov/the-timeline-ai#202: Add cursor pagination',
+          metadata: {
+            integration_provider: 'github',
+            integration_external_id: 'timborovkov/the-timeline-ai#202',
+            display_title: 'the-timeline-ai: Add cursor pagination',
+            display_title_canonical_name: 'timborovkov/the-timeline-ai#202: Add cursor pagination',
+          },
+        },
+        userId: 'user-1',
+        suggestions: [],
+      }),
+    );
+
+    expect(
+      screen.getByRole('heading', { level: 1, name: 'the-timeline-ai: Add cursor pagination' }),
+    ).toBeTruthy();
+  });
+
   it('uses source-tracked display titles for linked integration open tasks', () => {
     const html = renderObjectDetail({
       detail: {
