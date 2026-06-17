@@ -106,6 +106,71 @@ describe('ApprovalsClient', () => {
     expect(html).toContain('create task');
   });
 
+  it('renders missing-person relationship bundles with readable endpoints', () => {
+    const html = renderToStaticMarkup(
+      createElement(ApprovalsClient, {
+        suggestions: [
+          {
+            id: 'bundle-1',
+            source: 'background',
+            status: 'pending',
+            title: 'Remember Jonne Granqvist and DFK',
+            summary: 'This person appears connected to the object in source-backed evidence.',
+            reason: 'An extracted fact connects this person to the object.',
+            confidence: 'medium',
+            createdAt: '2026-06-01T10:00:00.000Z',
+            evidence: [
+              {
+                rawEventId: EVENT_ID,
+                quote: 'Jonne Granqvist from DFK discussed the pilot scope.',
+                occurredAt: '2026-06-01T10:00:00.000Z',
+                source: 'web',
+              },
+            ],
+            items: [
+              {
+                id: 'item-person',
+                status: 'pending',
+                operation: 'create',
+                targetKind: 'object',
+                targetId: null,
+                title: 'Jonne Granqvist',
+                description: 'An extracted fact connects this person to the object.',
+                proposedPayload: {
+                  type: 'person',
+                  canonicalName: 'Jonne Granqvist',
+                  localRef: 'jonne-granqvist',
+                },
+                failureReason: null,
+              },
+              {
+                id: 'item-relationship',
+                status: 'pending',
+                operation: 'create',
+                targetKind: 'object_relationship',
+                targetId: null,
+                title: 'Relate Jonne Granqvist and DFK',
+                description: 'An extracted fact connects this person to the object.',
+                proposedPayload: {
+                  fromRef: 'jonne-granqvist',
+                  toEntityId: '44444444-4444-4444-8444-444444444444',
+                  fromName: 'Jonne Granqvist',
+                  toName: 'DFK',
+                  kind: 'related',
+                },
+                failureReason: null,
+              },
+            ],
+          },
+        ],
+      }),
+    );
+
+    expect(html).toContain('create person');
+    expect(html).toContain('Jonne Granqvist ↔ DFK · related');
+    expect(html).toContain('Jonne Granqvist from DFK discussed the pilot scope.');
+  });
+
   it('opens evidence references with the full timeline event id', async () => {
     const fetchMock = vi.fn((_input: RequestInfo | URL, _init?: RequestInit) =>
       Promise.resolve(
@@ -558,7 +623,7 @@ describe('ApprovalsClient', () => {
     expect(html).not.toContain('localRef');
   });
 
-  it('uses the item title for existing-object relationship summaries', () => {
+  it('uses payload endpoint names for existing-object relationship summaries', () => {
     const html = renderToStaticMarkup(
       createElement(ApprovalsClient, {
         suggestions: [
@@ -579,7 +644,49 @@ describe('ApprovalsClient', () => {
                 operation: 'create',
                 targetKind: 'object_relationship',
                 targetId: null,
-                title: 'Relate John Doe and Acme Corporation',
+                title: 'Relate Research and Development and Sales and Ops',
+                description: null,
+                proposedPayload: {
+                  fromEntityId: '11111111-1111-4111-8111-111111111111',
+                  toEntityId: '22222222-2222-4222-8222-222222222222',
+                  fromName: 'Research and Development',
+                  toName: 'Sales and Ops',
+                  kind: 'related',
+                },
+                failureReason: null,
+              },
+            ],
+          },
+        ],
+      }),
+    );
+
+    expect(html).toContain('Research and Development ↔ Sales and Ops · related');
+    expect(html).not.toContain('existing object ↔ existing object');
+  });
+
+  it('does not split unlabeled existing-object relationship summaries on title text', () => {
+    const html = renderToStaticMarkup(
+      createElement(ApprovalsClient, {
+        suggestions: [
+          {
+            id: 'bundle-existing-relationship',
+            source: 'background',
+            status: 'pending',
+            title: 'Remember Research and Development and Sales and Ops',
+            summary: null,
+            reason: null,
+            confidence: 'high',
+            createdAt: '2026-06-01T10:00:00.000Z',
+            evidence: [],
+            items: [
+              {
+                id: 'item-existing-relationship',
+                status: 'pending',
+                operation: 'create',
+                targetKind: 'object_relationship',
+                targetId: null,
+                title: 'Relate Research and Development and Sales and Ops',
                 description: null,
                 proposedPayload: {
                   fromEntityId: '11111111-1111-4111-8111-111111111111',
@@ -594,8 +701,8 @@ describe('ApprovalsClient', () => {
       }),
     );
 
-    expect(html).toContain('Relate John Doe and Acme Corporation · related');
-    expect(html).not.toContain('existing object ↔ existing object');
+    expect(html).toContain('Relate Research and Development and Sales and Ops · related');
+    expect(html).not.toContain('Research ↔ Development and Sales and Ops');
   });
 
   it('updates folded pending count after optimistic row removal', async () => {

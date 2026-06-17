@@ -4,6 +4,7 @@ import {
   conversationReviews,
   entities,
   entityRelationships,
+  factEntities,
   facts as factsTable,
   objectNotes,
   rawEvents,
@@ -22,8 +23,10 @@ import {
   time,
   withTeam,
 } from '@timeline/shared';
+import { likeMentionCondition, textMentionsAnyValue } from '@timeline/shared/sql-like';
 import { UnrecoverableError, Worker, type Job } from 'bullmq';
-import { and, count, desc, eq, inArray, isNull, lt, or, sql } from 'drizzle-orm';
+import { and, count, desc, eq, inArray, isNull, lt, ne, or, sql } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/pg-core';
 import { z } from 'zod';
 
 import { captureWorkerJobFailure } from '#src/monitoring.js';
@@ -448,6 +451,26 @@ type CleanupObjectRow = Pick<
   'id' | 'teamId' | 'type' | 'canonicalName' | 'aliases' | 'status' | 'updatedAt'
 >;
 
+type CleanupMatch = 'exact' | 'near' | 'short';
+
+interface RepairRelationshipCandidate {
+  id: string;
+  canonicalName: string;
+  type: EntityType;
+  factCount: number;
+  rawEventId: string;
+  statement: string;
+  source: 'fact' | 'connected_work';
+}
+
+interface RepairPersonCandidate {
+  canonicalName: string;
+  factCount: number;
+  rawEventId: string;
+  statement: string;
+  localRef: string;
+}
+
 const CLEANUP_MERGE_TYPES = new Set<EntityType>([
   'person',
   'company',
@@ -461,6 +484,19 @@ const CLEANUP_MERGE_TYPES = new Set<EntityType>([
   'hiring_loop',
   'other',
 ]);
+
+const REPAIR_RELATIONSHIP_TYPES = new Set<EntityType>([
+  'person',
+  'company',
+  'project',
+  'deal',
+  'vendor',
+  'incident',
+  'decision',
+  'hiring_loop',
+]);
+
+const CONNECTED_WORK_RELATIONSHIP_TYPES = new Set<EntityType>(['task', 'follow_up', 'decision']);
 
 const ENTITY_TYPES = new Set<EntityType>(objects.OBJECT_TYPES);
 
@@ -484,11 +520,15 @@ function normalizePersonHandle(value: string): string {
   return normalizeCleanupName(value).replace(/0/g, 'o');
 }
 
-function cleanupNames(row: CleanupObjectRow): string[] {
+function rawCleanupNames(row: Pick<CleanupObjectRow, 'canonicalName' | 'aliases'>): string[] {
   const aliases = Array.isArray(row.aliases)
     ? row.aliases.filter((v): v is string => typeof v === 'string')
     : [];
-  const rawNames = [row.canonicalName, ...aliases];
+  return [row.canonicalName, ...aliases];
+}
+
+function cleanupNames(row: CleanupObjectRow): string[] {
+  const rawNames = rawCleanupNames(row);
   const names = rawNames.map(normalizeCleanupName);
   if (row.type === 'person') names.push(...rawNames.map(normalizePersonHandle));
   return Array.from(new Set(names.filter((name) => name.length >= 2)));
@@ -515,7 +555,80 @@ function hasConflictingNumberSuffix(a: string, b: string): boolean {
   return Boolean(left && right && left[1] === right[1] && left[2] !== right[2]);
 }
 
-function cleanupMatch(a: CleanupObjectRow, b: CleanupObjectRow): 'exact' | 'near' | null {
+function acronymForName(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/\b(inc|llc|ltd|oy|corp|corporation|company|co|gmbh|plc)\b/g, '')
+    .split(/[^a-z0-9]+/g)
+    .map((part) => part[0] ?? '')
+    .join('');
+}
+
+function escapeRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function objectNamesForRepair(row: Pick<CleanupObjectRow, 'canonicalName' | 'aliases'>): string[] {
+  return Array.from(new Set([row.canonicalName, ...aliasesForRow(row)].map((name) => name.trim())))
+    .filter((name) => name.length >= 2)
+    .slice(0, 8);
+}
+
+function duplicatePartnerSearchNames(row: CleanupObjectRow): string[] {
+  const names = new Set(objectNamesForRepair(row));
+  for (const rawName of rawCleanupNames(row)) {
+    const firstToken = rawName.trim().split(/[^A-Za-z0-9]+/)[0];
+    if (firstToken && firstToken.length >= 2 && firstToken.length <= 4) names.add(firstToken);
+    const acronym = acronymForName(rawName);
+    if (acronym.length >= 2 && acronym.length <= 4) names.add(acronym);
+  }
+  return Array.from(names).slice(0, 16);
+}
+
+function activeConnectedWorkCondition() {
+  return or(
+    eq(entities.type, 'decision'),
+    and(
+      inArray(entities.type, ['task', 'follow_up']),
+      sql`COALESCE(${entities.status}, '') NOT IN ('done', 'cancelled')`,
+    ),
+  );
+}
+
+function teamVisibleRawEventCondition(teamId: string) {
+  return and(
+    eq(rawEvents.teamId, teamId),
+    eq(rawEvents.visibility, 'team'),
+    sql`COALESCE(${rawEvents.sourceMetadata} ->> 'deleted', 'false') <> 'true'`,
+  );
+}
+
+function shortCompanyMatch(left: string, right: string, a: CleanupObjectRow, b: CleanupObjectRow) {
+  if (
+    !(
+      (a.type === 'company' || a.type === 'vendor') &&
+      (b.type === 'company' || b.type === 'vendor')
+    )
+  ) {
+    return false;
+  }
+  const leftIsShort = left.length <= right.length;
+  const [short, long] = leftIsShort ? [left, right] : [right, left];
+  const [shortRow, longRow] = leftIsShort ? [a, b] : [b, a];
+  if (short.length < 2 || short.length > 4 || long.length <= short.length) return false;
+  const rawShorts = rawCleanupNames(shortRow).filter(
+    (name) => normalizeCleanupName(name) === short,
+  );
+  const rawLongs = rawCleanupNames(longRow);
+  const tokenMatch = rawShorts.some((rawShort) =>
+    rawLongs.some((rawLong) =>
+      new RegExp(`(^|[^a-z0-9])${escapeRegex(rawShort)}([^a-z0-9]|$)`, 'i').test(rawLong),
+    ),
+  );
+  return tokenMatch || rawLongs.some((rawLong) => acronymForName(rawLong) === short);
+}
+
+function cleanupMatch(a: CleanupObjectRow, b: CleanupObjectRow): CleanupMatch | null {
   if (!cleanupCompatible(a, b)) return null;
   const aNames = cleanupNames(a);
   const bNames = cleanupNames(b);
@@ -530,11 +643,434 @@ function cleanupMatch(a: CleanupObjectRow, b: CleanupObjectRow): 'exact' | 'near
       if (hasConflictingNumberSuffix(left, right)) continue;
       const min = Math.min(left.length, right.length);
       const max = Math.max(left.length, right.length);
+      if (shortCompanyMatch(left, right, a, b)) return 'short';
       if (min >= 5 && (left.includes(right) || right.includes(left))) return 'near';
       if (min >= 3 && max <= 8 && levenshtein(left, right) <= 1) return 'near';
     }
   }
   return null;
+}
+
+function objectPairKey(leftId: string, rightId: string): string {
+  return [leftId, rightId].sort().join('|');
+}
+
+async function cleanupSharedEvidencePairKeys(
+  db: Db,
+  teamId: string,
+  objectIds: readonly string[],
+): Promise<Set<string>> {
+  if (objectIds.length === 0) return new Set();
+  const leftFactEntities = alias(factEntities, 'cleanup_left_fact_entities');
+  const rightFactEntities = alias(factEntities, 'cleanup_right_fact_entities');
+  const [factRows, relationshipRows] = await Promise.all([
+    db
+      .select({
+        leftId: leftFactEntities.entityId,
+        rightId: rightFactEntities.entityId,
+      })
+      .from(leftFactEntities)
+      .innerJoin(
+        rightFactEntities,
+        and(
+          eq(rightFactEntities.factId, leftFactEntities.factId),
+          ne(rightFactEntities.entityId, leftFactEntities.entityId),
+        ),
+      )
+      .innerJoin(factsTable, eq(factsTable.id, leftFactEntities.factId))
+      .innerJoin(rawEvents, eq(rawEvents.id, factsTable.rawEventId))
+      .where(
+        and(
+          eq(factsTable.teamId, teamId),
+          teamVisibleRawEventCondition(teamId),
+          inArray(leftFactEntities.entityId, objectIds),
+          inArray(rightFactEntities.entityId, objectIds),
+        ),
+      ),
+    db
+      .select({
+        leftId: entityRelationships.fromEntityId,
+        rightId: entityRelationships.toEntityId,
+      })
+      .from(entityRelationships)
+      .where(
+        and(
+          eq(entityRelationships.teamId, teamId),
+          inArray(entityRelationships.fromEntityId, objectIds),
+          inArray(entityRelationships.toEntityId, objectIds),
+        ),
+      ),
+  ]);
+  return new Set([
+    ...factRows.map((row) => objectPairKey(row.leftId, row.rightId)),
+    ...relationshipRows.map((row) => objectPairKey(row.leftId, row.rightId)),
+  ]);
+}
+
+async function repairRelationshipCandidates(
+  db: Db,
+  teamId: string,
+  objectId: string,
+): Promise<RepairRelationshipCandidate[]> {
+  const anchorFactEntities = alias(factEntities, 'anchor_fact_entities');
+  const otherFactEntities = alias(factEntities, 'other_fact_entities');
+  const rows = await db
+    .select({
+      id: entities.id,
+      canonicalName: entities.canonicalName,
+      type: entities.type,
+      factId: factsTable.id,
+      rawEventId: factsTable.rawEventId,
+      statement: factsTable.statement,
+      extractedAt: factsTable.extractedAt,
+    })
+    .from(anchorFactEntities)
+    .innerJoin(factsTable, eq(factsTable.id, anchorFactEntities.factId))
+    .innerJoin(
+      otherFactEntities,
+      and(eq(otherFactEntities.factId, factsTable.id), ne(otherFactEntities.entityId, objectId)),
+    )
+    .innerJoin(entities, eq(entities.id, otherFactEntities.entityId))
+    .innerJoin(rawEvents, eq(rawEvents.id, factsTable.rawEventId))
+    .where(
+      and(
+        eq(factsTable.teamId, teamId),
+        teamVisibleRawEventCondition(teamId),
+        eq(anchorFactEntities.entityId, objectId),
+        eq(entities.teamId, teamId),
+        inArray(entities.type, Array.from(REPAIR_RELATIONSHIP_TYPES)),
+        isNull(entities.archivedAt),
+        isNull(entities.mergedIntoId),
+      ),
+    )
+    .orderBy(desc(factsTable.extractedAt), desc(factsTable.id))
+    .limit(100);
+  const candidates = new Map<
+    string,
+    Omit<RepairRelationshipCandidate, 'factCount' | 'source'> & { factIds: Set<string> }
+  >();
+  for (const row of rows) {
+    const existing = candidates.get(row.id);
+    if (existing) {
+      existing.factIds.add(row.factId);
+      continue;
+    }
+    candidates.set(row.id, {
+      id: row.id,
+      canonicalName: row.canonicalName,
+      type: row.type,
+      rawEventId: row.rawEventId,
+      statement: row.statement,
+      factIds: new Set([row.factId]),
+    });
+  }
+  return Array.from(candidates.values())
+    .map((candidate) => ({
+      id: candidate.id,
+      canonicalName: candidate.canonicalName,
+      type: candidate.type,
+      rawEventId: candidate.rawEventId,
+      statement: candidate.statement,
+      factCount: candidate.factIds.size,
+      source: 'fact' as const,
+    }))
+    .sort(
+      (left, right) =>
+        right.factCount - left.factCount || left.canonicalName.localeCompare(right.canonicalName),
+    )
+    .slice(0, 5);
+}
+
+async function repairFactRowsForObject(
+  db: Db,
+  teamId: string,
+  objectId: string,
+): Promise<{ rawEventId: string; statement: string }[]> {
+  return db
+    .select({
+      rawEventId: factsTable.rawEventId,
+      statement: factsTable.statement,
+    })
+    .from(factEntities)
+    .innerJoin(factsTable, eq(factsTable.id, factEntities.factId))
+    .innerJoin(rawEvents, eq(rawEvents.id, factsTable.rawEventId))
+    .where(
+      and(
+        eq(factEntities.entityId, objectId),
+        eq(factsTable.teamId, teamId),
+        teamVisibleRawEventCondition(teamId),
+      ),
+    )
+    .orderBy(desc(factsTable.extractedAt))
+    .limit(25);
+}
+
+async function repairConnectedWorkRelationshipCandidates(
+  db: Db,
+  teamId: string,
+  repairObject: CleanupObjectRow,
+): Promise<RepairRelationshipCandidate[]> {
+  const names = objectNamesForRepair(repairObject);
+  const nameMatch = likeMentionCondition(entities.canonicalName, names);
+  if (!nameMatch) return [];
+  const rows = await db
+    .select({
+      id: entities.id,
+      canonicalName: entities.canonicalName,
+      type: entities.type,
+      rawEventId: rawEvents.id,
+      statement: rawEvents.contentText,
+    })
+    .from(entities)
+    .innerJoin(
+      rawEvents,
+      and(
+        eq(rawEvents.teamId, teamId),
+        eq(rawEvents.visibility, 'team'),
+        eq(rawEvents.source, 'system'),
+        sql`${rawEvents.sourceMetadata} ->> 'entity_id' = ${entities.id}::text`,
+        sql`${rawEvents.sourceMetadata} ->> 'kind' in ('object_create', 'object_update')`,
+      ),
+    )
+    .where(
+      and(
+        eq(entities.teamId, teamId),
+        inArray(entities.type, Array.from(CONNECTED_WORK_RELATIONSHIP_TYPES)),
+        isNull(entities.archivedAt),
+        isNull(entities.mergedIntoId),
+        ne(entities.id, repairObject.id),
+        activeConnectedWorkCondition(),
+        nameMatch,
+      ),
+    )
+    .orderBy(desc(entities.updatedAt), desc(rawEvents.occurredAt))
+    .limit(12);
+
+  const candidates = new Map<string, RepairRelationshipCandidate>();
+  for (const row of rows) {
+    if (!row.statement || !textMentionsAnyValue(row.canonicalName, names)) continue;
+    if (candidates.has(row.id)) continue;
+    candidates.set(row.id, {
+      id: row.id,
+      canonicalName: row.canonicalName,
+      type: row.type,
+      factCount: 1,
+      rawEventId: row.rawEventId,
+      statement: row.statement,
+      source: 'connected_work',
+    });
+  }
+  return Array.from(candidates.values()).slice(0, 5);
+}
+
+async function pendingObjectCreateKeysForTeam(db: Db, teamId: string): Promise<Set<string>> {
+  const rows = await db
+    .select({ payload: agentSuggestionItems.proposedPayload })
+    .from(agentSuggestionItems)
+    .innerJoin(agentSuggestions, eq(agentSuggestions.id, agentSuggestionItems.suggestionId))
+    .where(
+      and(
+        eq(agentSuggestionItems.teamId, teamId),
+        eq(agentSuggestionItems.operation, 'create'),
+        eq(agentSuggestionItems.targetKind, 'object'),
+        inArray(agentSuggestionItems.status, ['pending', 'failed', 'rejected']),
+        inArray(agentSuggestions.status, ['pending', 'partially_resolved', 'rejected']),
+      ),
+    );
+  const keys = new Set<string>();
+  for (const row of rows) {
+    const payload =
+      row.payload && typeof row.payload === 'object' && !Array.isArray(row.payload)
+        ? (row.payload as Record<string, unknown>)
+        : {};
+    const type = keyText(payload.type);
+    const name = keyText(payload.canonicalName);
+    if (type && name) keys.add(`${type}:${normalizeCleanupName(name)}`);
+  }
+  return keys;
+}
+
+function relatedRelationshipKey(leftId: string, rightId: string): string {
+  const [fromEntityId, toEntityId] = [leftId, rightId].sort();
+  return `entity:${fromEntityId}:entity:${toEntityId}:related`;
+}
+
+function createdPersonRelationshipKey(personName: string, objectId: string): string | null {
+  const name = keyText(personName);
+  if (!name) return null;
+  const [first, second] = [`create:person:${name}`, `entity:${objectId}`].sort();
+  return `${first}:${second}:related`;
+}
+
+function relationshipPayload(
+  leftId: string,
+  rightId: string,
+): {
+  fromEntityId: string;
+  toEntityId: string;
+  kind: 'related';
+} {
+  return leftId <= rightId
+    ? { fromEntityId: leftId, toEntityId: rightId, kind: 'related' }
+    : { fromEntityId: rightId, toEntityId: leftId, kind: 'related' };
+}
+
+function factLooksRelationshipShaped(statement: string): boolean {
+  return /\b(from|at|with|for|client|customer|vendor|partner|subcontractor|employer|employee|represents?|representing|member of|part of|owner|responsible for|blocks?|blocked by)\b/i.test(
+    statement,
+  );
+}
+
+function repairRelationshipReason(candidate: RepairRelationshipCandidate): string {
+  if (candidate.source === 'connected_work') {
+    return candidate.type === 'decision'
+      ? 'A decision object names this object and is connected work.'
+      : 'A work item names this object and is connected work.';
+  }
+  return candidate.factCount > 1
+    ? 'Multiple extracted facts connect these objects.'
+    : 'An extracted fact connects these objects.';
+}
+
+function repairRelationshipConfidence(candidate: RepairRelationshipCandidate): 'medium' | 'high' {
+  return candidate.source === 'fact' && candidate.factCount > 1 ? 'high' : 'medium';
+}
+
+const PERSON_NAME_PATTERN = /\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,2}\b/g;
+const NON_PERSON_NAME_WORDS = new Set([
+  'Company',
+  'Corporation',
+  'Corp',
+  'Digital',
+  'GmbH',
+  'Inc',
+  'LLC',
+  'Ltd',
+  'Meeting',
+  'Oy',
+  'Pilot',
+  'Plc',
+  'Proposal',
+  'Team',
+  'The',
+]);
+
+function looksLikePersonName(value: string): boolean {
+  const parts = value.split(/\s+/);
+  return (
+    parts.length >= 2 &&
+    parts.length <= 3 &&
+    parts.every((part) => /^[A-Z][a-z]+$/.test(part)) &&
+    parts.every((part) => !NON_PERSON_NAME_WORDS.has(part))
+  );
+}
+
+function extractPersonNamesFromFact(statement: string, anchorNames: readonly string[]): string[] {
+  const names = new Set<string>();
+  for (const match of statement.matchAll(PERSON_NAME_PATTERN)) {
+    const name = match[0].trim();
+    if (!looksLikePersonName(name)) continue;
+    const normalized = normalizeCleanupName(name);
+    if (!normalized) continue;
+    const matchesAnchor = anchorNames.some((anchorName) => {
+      const anchor = normalizeCleanupName(anchorName);
+      return anchor.includes(normalized) || normalized.includes(anchor);
+    });
+    if (!matchesAnchor) names.add(name);
+  }
+  return Array.from(names);
+}
+
+async function repairPersonCandidates(
+  db: Db,
+  teamId: string,
+  repairObject: CleanupObjectRow,
+  rows: CleanupObjectRow[],
+): Promise<RepairPersonCandidate[]> {
+  const existingPersonKeys = new Set(
+    rows
+      .filter((row) => row.type === 'person')
+      .flatMap((row) => [row.canonicalName, ...aliasesForRow(row)])
+      .map((name) => normalizeCleanupName(name))
+      .filter(Boolean)
+      .map((name) => `person:${name}`),
+  );
+  const pendingObjectKeys = await pendingObjectCreateKeysForTeam(db, teamId);
+  const anchorNames = [repairObject.canonicalName, ...aliasesForRow(repairObject)];
+  const candidates = new Map<string, RepairPersonCandidate>();
+  for (const row of await repairFactRowsForObject(db, teamId, repairObject.id)) {
+    if (!factLooksRelationshipShaped(row.statement)) continue;
+    for (const name of extractPersonNamesFromFact(row.statement, anchorNames)) {
+      const normalized = normalizeCleanupName(name);
+      const personKey = `person:${normalized}`;
+      if (existingPersonKeys.has(personKey) || pendingObjectKeys.has(personKey)) continue;
+      const current = candidates.get(personKey);
+      if (current) {
+        current.factCount += 1;
+        continue;
+      }
+      const localRef = localRefSlug(name);
+      if (!localRef) continue;
+      candidates.set(personKey, {
+        canonicalName: name,
+        factCount: 1,
+        rawEventId: row.rawEventId,
+        statement: row.statement,
+        localRef,
+      });
+    }
+  }
+  return Array.from(candidates.values()).slice(0, 3);
+}
+
+async function objectScopedMergeCandidates(
+  db: Db,
+  teamId: string,
+  rows: CleanupObjectRow[],
+  repairObjectId: string | null,
+): Promise<CleanupObjectRow[]> {
+  const mergeCandidatesById = new Map(
+    rows.filter((row) => CLEANUP_MERGE_TYPES.has(row.type)).map((row) => [row.id, row]),
+  );
+  if (!repairObjectId) return Array.from(mergeCandidatesById.values());
+  const repairObject = rows.find((row) => row.id === repairObjectId);
+  if (!repairObject || !CLEANUP_MERGE_TYPES.has(repairObject.type)) {
+    return Array.from(mergeCandidatesById.values());
+  }
+  const names = duplicatePartnerSearchNames(repairObject);
+  const nameMatchConditions = [
+    likeMentionCondition(entities.canonicalName, names),
+    likeMentionCondition(sql`${entities.aliases}::text`, names),
+  ].filter((condition): condition is NonNullable<typeof condition> => Boolean(condition));
+  const nameMatch = nameMatchConditions.length > 0 ? or(...nameMatchConditions) : undefined;
+  if (!nameMatch) return Array.from(mergeCandidatesById.values());
+  const partnerRows = await db
+    .select({
+      id: entities.id,
+      teamId: entities.teamId,
+      type: entities.type,
+      canonicalName: entities.canonicalName,
+      aliases: entities.aliases,
+      status: entities.status,
+      updatedAt: entities.updatedAt,
+    })
+    .from(entities)
+    .where(
+      and(
+        eq(entities.teamId, teamId),
+        inArray(entities.type, Array.from(CLEANUP_MERGE_TYPES)),
+        isNull(entities.archivedAt),
+        isNull(entities.mergedIntoId),
+        ne(entities.id, repairObjectId),
+        nameMatch,
+      ),
+    )
+    .orderBy(desc(entities.updatedAt), desc(entities.id))
+    .limit(200);
+  for (const row of partnerRows) {
+    mergeCandidatesById.set(row.id, row);
+  }
+  return Array.from(mergeCandidatesById.values());
 }
 
 function aliasesForRow(row: Pick<CleanupObjectRow, 'aliases'>): string[] {
@@ -891,15 +1427,48 @@ async function processObjectCleanupJob(
         ).map((row) => row.teamId)
       : [data.teamId];
   for (const teamId of teamIds) {
-    await createObjectCleanupSuggestionsForTeam(deps.db, teamId, data.triggeredBy ?? 'daily');
+    await createObjectCleanupSuggestionsForTeam(deps.db, teamId, {
+      triggeredBy: data.triggeredBy ?? 'daily',
+      ...(data.objectId ? { objectId: data.objectId } : {}),
+    });
   }
 }
 
 async function createObjectCleanupSuggestionsForTeam(
   db: Db,
   teamId: string,
-  triggeredBy: string,
+  opts: { triggeredBy: string; objectId?: string },
 ): Promise<void> {
+  if (opts.objectId) {
+    const [repairTarget] = await db
+      .select({
+        id: entities.id,
+        archivedAt: entities.archivedAt,
+        mergedIntoId: entities.mergedIntoId,
+      })
+      .from(entities)
+      .where(and(eq(entities.teamId, teamId), eq(entities.id, opts.objectId)))
+      .limit(1);
+    if (!repairTarget) return;
+    if (repairTarget.archivedAt) {
+      throw new UnrecoverableError('Object memory repair requires an active object');
+    }
+    if (repairTarget.mergedIntoId) {
+      throw new UnrecoverableError('Object memory repair requires an unmerged object');
+    }
+  }
+  const cleanupTypes: EntityType[] = Array.from(CLEANUP_MERGE_TYPES);
+  const activeObjectFilter = and(
+    eq(entities.teamId, teamId),
+    isNull(entities.archivedAt),
+    isNull(entities.mergedIntoId),
+  );
+  const scopedObjectFilter = opts.objectId
+    ? and(
+        activeObjectFilter,
+        or(eq(entities.id, opts.objectId), inArray(entities.type, cleanupTypes)),
+      )
+    : activeObjectFilter;
   const rows = await db
     .select({
       id: entities.id,
@@ -911,28 +1480,47 @@ async function createObjectCleanupSuggestionsForTeam(
       updatedAt: entities.updatedAt,
     })
     .from(entities)
-    .where(
-      and(eq(entities.teamId, teamId), isNull(entities.archivedAt), isNull(entities.mergedIntoId)),
+    .where(scopedObjectFilter)
+    .orderBy(
+      ...(opts.objectId
+        ? [sql`case when ${entities.id} = ${opts.objectId} then 0 else 1 end`]
+        : []),
+      desc(entities.updatedAt),
     )
-    .orderBy(desc(entities.updatedAt))
     .limit(500);
+  const repairObjectId =
+    opts.objectId && rows.some((row) => row.id === opts.objectId) ? opts.objectId : null;
+  if (opts.objectId && !repairObjectId) {
+    throw new UnrecoverableError('Object memory repair target was not available for cleanup');
+  }
   const scope = withTeam(db, teamId, PSEUDO_USER, { skipMembershipCheck: true });
-  const mergeCandidates = rows.filter((row) => CLEANUP_MERGE_TYPES.has(row.type));
+  const mergeCandidates = await objectScopedMergeCandidates(db, teamId, rows, repairObjectId);
   const proposedMergeKeys = new Set<string>();
+  const sharedEvidencePairKeys = await cleanupSharedEvidencePairKeys(
+    db,
+    teamId,
+    mergeCandidates.map((row) => row.id),
+  );
 
   for (const [i, left] of mergeCandidates.entries()) {
     for (const right of mergeCandidates.slice(i + 1)) {
+      if (repairObjectId && left.id !== repairObjectId && right.id !== repairObjectId) continue;
       const match = cleanupMatch(left, right);
       if (!match) continue;
+      const groupKey = objectPairKey(left.id, right.id);
+      if (match === 'short' && !sharedEvidencePairKeys.has(groupKey)) {
+        continue;
+      }
       const objectIds = [left.id, right.id].sort();
-      const groupKey = objectIds.join('|');
       if (proposedMergeKeys.has(groupKey)) continue;
       proposedMergeKeys.add(groupKey);
       const survivor = pickCleanupSurvivor([left, right]);
       const reason =
         match === 'exact'
           ? 'Names or aliases match closely enough to review as a duplicate.'
-          : 'Names are similar enough to review as a possible duplicate.';
+          : match === 'short'
+            ? 'Short-name or acronym match has shared supporting object evidence.'
+            : 'Names are similar enough to review as a possible duplicate.';
       const dedupeKey = suggestions.suggestionDedupeKey({
         kind: 'object_cleanup_merge',
         teamId,
@@ -949,8 +1537,9 @@ async function createObjectCleanupSuggestionsForTeam(
         metadata: {
           kind: 'object_cleanup',
           cleanup_kind: 'merge',
-          triggered_by: triggeredBy,
+          triggered_by: opts.triggeredBy,
           object_ids: objectIds,
+          ...(repairObjectId ? { repair_object_id: repairObjectId } : {}),
         },
         items: [
           {
@@ -1008,6 +1597,7 @@ async function createObjectCleanupSuggestionsForTeam(
   }
 
   for (const row of rows) {
+    if (repairObjectId && row.id !== repairObjectId) continue;
     const normalized = normalizeCleanupName(row.canonicalName);
     if (!extract.isLowSignalObjectName({ name: row.canonicalName, type: row.type })) continue;
     if (row.type === 'task' || row.type === 'follow_up') continue;
@@ -1030,8 +1620,9 @@ async function createObjectCleanupSuggestionsForTeam(
       metadata: {
         kind: 'object_cleanup',
         cleanup_kind: 'archive',
-        triggered_by: triggeredBy,
+        triggered_by: opts.triggeredBy,
         object_id: row.id,
+        ...(repairObjectId ? { repair_object_id: repairObjectId } : {}),
       },
       items: [
         {
@@ -1045,6 +1636,158 @@ async function createObjectCleanupSuggestionsForTeam(
         },
       ],
     });
+  }
+
+  if (repairObjectId) {
+    const repairObject = rows.find((row) => row.id === repairObjectId);
+    if (repairObject) {
+      const existingRelationshipKeys = await existingRelationshipKeysForTeam(db, teamId);
+      const candidates = [
+        ...(await repairRelationshipCandidates(db, teamId, repairObjectId)),
+        ...(await repairConnectedWorkRelationshipCandidates(db, teamId, repairObject)),
+      ];
+      for (const candidate of candidates) {
+        if (candidate.source === 'fact' && !factLooksRelationshipShaped(candidate.statement)) {
+          continue;
+        }
+        const relationshipKey = relatedRelationshipKey(repairObjectId, candidate.id);
+        if (existingRelationshipKeys.has(relationshipKey)) continue;
+        const objectIds = [repairObjectId, candidate.id].sort();
+        const dedupeKey = suggestions.suggestionDedupeKey({
+          kind: 'object_memory_repair_relationship',
+          teamId,
+          objectIds,
+        });
+        const reason = repairRelationshipReason(candidate);
+        const payload = relationshipPayload(repairObjectId, candidate.id);
+        const proposedPayload = {
+          ...payload,
+          fromName:
+            payload.fromEntityId === repairObjectId
+              ? repairObject.canonicalName
+              : candidate.canonicalName,
+          toName:
+            payload.toEntityId === repairObjectId
+              ? repairObject.canonicalName
+              : candidate.canonicalName,
+        };
+        await scope.suggestions.createOrMergeSuggestionBundle({
+          source: 'background',
+          title: `Relate ${repairObject.canonicalName} and ${candidate.canonicalName}`,
+          summary: 'These objects appear connected in source-backed evidence.',
+          reason,
+          confidence: repairRelationshipConfidence(candidate),
+          dedupeKey,
+          evidence: [
+            {
+              rawEventId: candidate.rawEventId,
+              quote: candidate.statement,
+              metadata: {
+                kind:
+                  candidate.source === 'connected_work'
+                    ? 'memory_repair_connected_work_relationship'
+                    : 'memory_repair_relationship',
+              },
+            },
+          ],
+          metadata: {
+            kind: 'object_memory_repair',
+            repair_kind:
+              candidate.source === 'connected_work'
+                ? 'connected_work_relationship'
+                : 'relationship',
+            triggered_by: opts.triggeredBy,
+            repair_object_id: repairObjectId,
+            object_ids: objectIds,
+            fact_count: candidate.factCount,
+            source: candidate.source,
+          },
+          items: [
+            {
+              operation: 'create',
+              targetKind: 'object_relationship',
+              targetId: null,
+              title: `Relate ${repairObject.canonicalName} and ${candidate.canonicalName}`,
+              description: reason,
+              dedupeKey: `${dedupeKey}:relationship`,
+              proposedPayload,
+            },
+          ],
+        });
+        existingRelationshipKeys.add(relationshipKey);
+      }
+      for (const candidate of await repairPersonCandidates(db, teamId, repairObject, rows)) {
+        const relationshipKey = createdPersonRelationshipKey(
+          candidate.canonicalName,
+          repairObjectId,
+        );
+        if (!relationshipKey || existingRelationshipKeys.has(relationshipKey)) continue;
+        const dedupeKey = suggestions.suggestionDedupeKey({
+          kind: 'object_memory_repair_person_relationship',
+          teamId,
+          objectIds: [repairObjectId],
+          names: [candidate.canonicalName],
+        });
+        const reason =
+          candidate.factCount > 1
+            ? 'Multiple extracted facts connect this person to the object.'
+            : 'An extracted fact connects this person to the object.';
+        await scope.suggestions.createOrMergeSuggestionBundle({
+          source: 'background',
+          title: `Remember ${candidate.canonicalName} and ${repairObject.canonicalName}`,
+          summary: 'This person appears connected to the object in source-backed evidence.',
+          reason,
+          confidence: candidate.factCount > 1 ? 'high' : 'medium',
+          dedupeKey,
+          evidence: [
+            {
+              rawEventId: candidate.rawEventId,
+              quote: candidate.statement,
+              metadata: { kind: 'memory_repair_person_relationship' },
+            },
+          ],
+          metadata: {
+            kind: 'object_memory_repair',
+            repair_kind: 'person_relationship',
+            triggered_by: opts.triggeredBy,
+            repair_object_id: repairObjectId,
+            person_name: candidate.canonicalName,
+            fact_count: candidate.factCount,
+          },
+          items: [
+            {
+              operation: 'create',
+              targetKind: 'object',
+              targetId: null,
+              title: candidate.canonicalName,
+              description: reason,
+              dedupeKey: `${dedupeKey}:person`,
+              proposedPayload: {
+                type: 'person',
+                canonicalName: candidate.canonicalName,
+                localRef: candidate.localRef,
+              },
+            },
+            {
+              operation: 'create',
+              targetKind: 'object_relationship',
+              targetId: null,
+              title: `Relate ${candidate.canonicalName} and ${repairObject.canonicalName}`,
+              description: reason,
+              dedupeKey: `${dedupeKey}:relationship`,
+              proposedPayload: {
+                fromRef: candidate.localRef,
+                toEntityId: repairObjectId,
+                fromName: candidate.canonicalName,
+                toName: repairObject.canonicalName,
+                kind: 'related',
+              },
+            },
+          ],
+        });
+        existingRelationshipKeys.add(relationshipKey);
+      }
+    }
   }
 }
 

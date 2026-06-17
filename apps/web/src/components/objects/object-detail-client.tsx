@@ -1,5 +1,6 @@
 'use client';
 import { useQuery } from '@tanstack/react-query';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
   type ComponentProps,
@@ -10,6 +11,7 @@ import {
   useMemo,
   useReducer,
   useRef,
+  useState,
   useTransition,
 } from 'react';
 
@@ -26,6 +28,7 @@ import {
   generateObjectSummaryAction,
   rejectObjectChangeAction,
   removeRelationshipAction,
+  repairObjectMemoryAction,
   updateNoteAction,
   updateObjectAction,
 } from '@/app/actions/objects';
@@ -248,6 +251,7 @@ export function ObjectDetailClient({ detail, userId, suggestions }: Props) {
 function useObjectDetailController({ detail, userId, suggestions }: Props) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
+  const [repairPending, setRepairPending] = useState(false);
   const [
     {
       overrides,
@@ -689,6 +693,21 @@ function useObjectDetailController({ detail, userId, suggestions }: Props) {
     });
   }
 
+  function repairMemory(): void {
+    dispatchObjectUi({ error: null });
+    setRepairPending(true);
+    startTransition(async () => {
+      try {
+        const result = await repairObjectMemoryAction({ id: detail.id });
+        if ('error' in result && result.error) {
+          dispatchObjectUi({ error: result.error });
+        } else router.refresh();
+      } finally {
+        setRepairPending(false);
+      }
+    });
+  }
+
   return {
     acceptChange,
     addNote,
@@ -710,7 +729,9 @@ function useObjectDetailController({ detail, userId, suggestions }: Props) {
     noteBody,
     patch,
     pending,
+    repairPending,
     rejectChange,
+    repairMemory,
     removeRelationship,
     saveNote,
     savingCount,
@@ -732,8 +753,11 @@ function ObjectDetailView(props: Props) {
       <ObjectDetailHeader
         detail={view.viewDetail}
         error={view.error}
+        pending={view.pending}
+        repairPending={view.repairPending}
         saveState={view.saveState}
         savingCount={view.savingCount}
+        onRepairMemory={view.repairMemory}
       />
 
       <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_23rem]">
@@ -759,6 +783,7 @@ function ObjectDetailView(props: Props) {
           ) : null}
 
           <ObjectSummaryPanel detail={view.viewDetail} />
+          <ObjectConnectedWorkSection connectedWork={view.detail.connectedWork} />
 
           <ObjectPanel title="Evidence" eyebrow="events">
             <ObjectSectionFeed
@@ -824,8 +849,6 @@ function ObjectDetailView(props: Props) {
             onAddRelationship={view.addRelationship}
             onRemoveRelationship={view.removeRelationship}
           />
-
-          <ObjectOpenTasksSection tasks={view.detail.openTasks} />
 
           <ObjectRecentChangesSection
             changes={view.viewDetail.recentChanges}
@@ -1028,13 +1051,19 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
 function ObjectDetailHeader({
   detail,
   error,
+  pending,
+  repairPending,
   saveState,
   savingCount,
+  onRepairMemory,
 }: {
   detail: ObjectDetail;
   error: string | null;
+  pending: boolean;
+  repairPending: boolean;
   saveState: SaveState;
   savingCount: number;
+  onRepairMemory: () => void;
 }) {
   const pendingCount = detail.recentChanges.filter((c) => c.status === 'suggested').length;
   const alerts = (
@@ -1088,7 +1117,26 @@ function ObjectDetailHeader({
             </p>
           )}
         </div>
-        <div className="flex flex-col items-start gap-2 lg:max-w-sm lg:items-end">{alerts}</div>
+        <div className="flex flex-col items-start gap-2 lg:max-w-sm lg:items-end">
+          {alerts}
+          <button
+            type="button"
+            onClick={onRepairMemory}
+            disabled={pending || repairPending || detail.archivedAt !== null}
+            title={
+              detail.archivedAt
+                ? 'Unarchive this object before repairing memory'
+                : 'Queue object-scoped duplicate cleanup'
+            }
+            className="rounded-sm border border-border bg-surface px-3 py-2 font-mono text-[11px] uppercase tracking-[0.12em] text-fg-muted transition hover:border-signal/50 hover:text-signal disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {detail.archivedAt
+              ? 'Repair unavailable'
+              : repairPending
+                ? 'Repairing...'
+                : 'Repair memory'}
+          </button>
+        </div>
       </div>
     </header>
   );
@@ -1393,30 +1441,285 @@ function ObjectNoteItem({
   );
 }
 
-function ObjectOpenTasksSection({ tasks }: { tasks: ObjectDetail['openTasks'] }) {
+function ObjectConnectedWorkSection({
+  connectedWork,
+}: {
+  connectedWork: ObjectDetail['connectedWork'];
+}) {
+  const hasWork =
+    connectedWork.openTasks.length > 0 ||
+    connectedWork.recentTasks.length > 0 ||
+    connectedWork.calendarEvents.length > 0 ||
+    connectedWork.timelineEvents.length > 0 ||
+    connectedWork.objects.length > 0 ||
+    connectedWork.boards.length > 0 ||
+    connectedWork.pendingApprovals.length > 0 ||
+    connectedWork.documents.length > 0;
   return (
-    <ObjectPanel title="Open tasks" eyebrow={String(tasks.length)}>
+    <ObjectPanel title="Connected work" eyebrow="live context">
+      {!hasWork ? (
+        <p className="text-sm text-muted-foreground">No connected work found yet.</p>
+      ) : (
+        <div className="grid gap-5 lg:grid-cols-2">
+          <ConnectedTaskList
+            title="Open tasks"
+            empty="No open tasks found."
+            tasks={connectedWork.openTasks}
+            showDueDate
+          />
+          <ConnectedCalendarList events={connectedWork.calendarEvents} />
+          <ConnectedObjectList objects={connectedWork.objects} />
+          <ConnectedBoardList boards={connectedWork.boards} />
+          <ConnectedApprovalList approvals={connectedWork.pendingApprovals} />
+          <ConnectedTaskList
+            title="Recent history"
+            empty="No completed tasks found."
+            tasks={connectedWork.recentTasks}
+          />
+          <ConnectedTimelineEventList events={connectedWork.timelineEvents} />
+          <ConnectedDocumentList documents={connectedWork.documents} />
+        </div>
+      )}
+    </ObjectPanel>
+  );
+}
+
+function ConnectedWorkSection({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section className="min-w-0">
+      <h3 className="mb-2 font-mono text-[11px] uppercase tracking-[0.12em] text-fg-muted">
+        {title}
+      </h3>
+      {children}
+    </section>
+  );
+}
+
+function ConnectedTaskList({
+  title,
+  empty,
+  tasks,
+  showDueDate = false,
+}: {
+  title: string;
+  empty: string;
+  tasks: ObjectDetail['connectedWork']['openTasks'];
+  showDueDate?: boolean;
+}) {
+  return (
+    <ConnectedWorkSection title={title}>
       {tasks.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No open tasks linked to this object.</p>
+        <p className="text-sm text-muted-foreground">{empty}</p>
       ) : (
         <ul className="space-y-2">
           {tasks.map((task) => (
             <li
               key={task.id}
-              className="flex items-center justify-between rounded-sm border border-border bg-surface px-4 py-2 text-sm"
+              className="grid gap-1 rounded-sm border border-border bg-surface px-3 py-2 text-sm"
             >
               <a href={`/app/objects/${task.id}`} className="font-medium hover:underline">
                 {displayText(task.canonicalName)}
               </a>
-              <span className="text-xs text-muted-foreground">
+              <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">
                 {task.status}
-                {task.dueAt ? ` · due ${new Date(task.dueAt).toLocaleDateString()}` : ''}
+                {showDueDate && task.dueAt
+                  ? ` · due ${new Date(task.dueAt).toLocaleDateString()}`
+                  : ''}
               </span>
             </li>
           ))}
         </ul>
       )}
-    </ObjectPanel>
+    </ConnectedWorkSection>
+  );
+}
+
+function ConnectedCalendarList({
+  events,
+}: {
+  events: ObjectDetail['connectedWork']['calendarEvents'];
+}) {
+  return (
+    <ConnectedWorkSection title="Calendar">
+      {events.length === 0 ? (
+        <p className="text-sm text-muted-foreground">No calendar events found.</p>
+      ) : (
+        <ul className="space-y-2">
+          {events.map((event) => (
+            <li
+              key={event.id}
+              className="grid gap-1 rounded-sm border border-border bg-surface px-3 py-2 text-sm"
+            >
+              <span className="font-medium">{displayText(event.title)}</span>
+              <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">
+                {formatDisplayDateTime(event.startAt)} · {event.showAs}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </ConnectedWorkSection>
+  );
+}
+
+function ConnectedObjectList({ objects }: { objects: ObjectDetail['connectedWork']['objects'] }) {
+  return (
+    <ConnectedWorkSection title="People and objects">
+      {objects.length === 0 ? (
+        <p className="text-sm text-muted-foreground">No repeated object context found.</p>
+      ) : (
+        <ul className="space-y-2">
+          {objects.map((object) => (
+            <li
+              key={object.id}
+              className="grid gap-1 rounded-sm border border-border bg-surface px-3 py-2 text-sm"
+            >
+              <a href={`/app/objects/${object.id}`} className="font-medium hover:underline">
+                {displayText(object.canonicalName)}
+              </a>
+              <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">
+                {object.type} · {object.factCount} fact{object.factCount === 1 ? '' : 's'}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </ConnectedWorkSection>
+  );
+}
+
+function ConnectedBoardList({ boards }: { boards: ObjectDetail['connectedWork']['boards'] }) {
+  return (
+    <ConnectedWorkSection title="Boards">
+      {boards.length === 0 ? (
+        <p className="text-sm text-muted-foreground">No board context found.</p>
+      ) : (
+        <ul className="space-y-2">
+          {boards.map((board) => (
+            <li
+              key={board.itemId}
+              className="grid gap-1 rounded-sm border border-border bg-surface px-3 py-2 text-sm"
+            >
+              <a
+                href={`/app/boards/${board.boardId}?item=${board.itemId}`}
+                className="font-medium hover:underline"
+              >
+                {displayText(board.boardName)}
+              </a>
+              <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">
+                {board.laneName ?? 'no lane'}
+                {board.dueAt ? ` · due ${new Date(board.dueAt).toLocaleDateString()}` : ''}
+                {board.priority !== null ? ` · P${board.priority}` : ''}
+              </span>
+              {board.nextStep ? (
+                <span className="text-xs text-muted-foreground">{displayText(board.nextStep)}</span>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      )}
+    </ConnectedWorkSection>
+  );
+}
+
+function ConnectedApprovalList({
+  approvals,
+}: {
+  approvals: ObjectDetail['connectedWork']['pendingApprovals'];
+}) {
+  return (
+    <ConnectedWorkSection title="Pending approvals">
+      {approvals.length === 0 ? (
+        <p className="text-sm text-muted-foreground">No related approvals found.</p>
+      ) : (
+        <ul className="space-y-2">
+          {approvals.map((approval) => (
+            <li
+              key={approval.itemId}
+              className="grid gap-1 rounded-sm border border-signal/40 bg-signal-soft/20 px-3 py-2 text-sm"
+            >
+              <Link href="/app/approvals" className="font-medium hover:underline">
+                {displayText(approval.title)}
+              </Link>
+              <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">
+                {approval.operation} · {approval.targetKind}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </ConnectedWorkSection>
+  );
+}
+
+function timelinePreview(contentText: string | null): string {
+  const cleaned = displayText(contentText ?? 'Timeline event')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (cleaned.length <= 160) return cleaned;
+  return `${cleaned.slice(0, 157)}...`;
+}
+
+function ConnectedTimelineEventList({
+  events,
+}: {
+  events: ObjectDetail['connectedWork']['timelineEvents'];
+}) {
+  return (
+    <ConnectedWorkSection title="Timeline moments">
+      {events.length === 0 ? (
+        <p className="text-sm text-muted-foreground">No timeline moments found.</p>
+      ) : (
+        <ul className="space-y-2">
+          {events.map((event) => (
+            <li
+              key={event.id}
+              className="grid gap-1 rounded-sm border border-border bg-surface px-3 py-2 text-sm"
+            >
+              <Link
+                href={`/app/timeline?event=${event.id}#ev-${event.id}`}
+                className="font-medium hover:underline"
+              >
+                {timelinePreview(event.contentText)}
+              </Link>
+              <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">
+                {event.source} · {formatDisplayDateTime(event.occurredAt)}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </ConnectedWorkSection>
+  );
+}
+
+function ConnectedDocumentList({
+  documents,
+}: {
+  documents: ObjectDetail['connectedWork']['documents'];
+}) {
+  return (
+    <ConnectedWorkSection title="Documents">
+      {documents.length === 0 ? (
+        <p className="text-sm text-muted-foreground">No related documents found.</p>
+      ) : (
+        <ul className="space-y-2">
+          {documents.map((document) => (
+            <li
+              key={document.id}
+              className="grid gap-1 rounded-sm border border-border bg-surface px-3 py-2 text-sm"
+            >
+              <a href={`/app/documents/${document.id}`} className="font-medium hover:underline">
+                {displayText(document.name)}
+              </a>
+              <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">
+                {document.fileKind} · updated {formatDisplayDateTime(document.updatedAt)}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </ConnectedWorkSection>
   );
 }
 

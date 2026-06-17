@@ -348,6 +348,8 @@ const objectRelationshipPayload = z
     toEntityId: uuid.optional(),
     fromRef: localRef.optional(),
     toRef: localRef.optional(),
+    fromName: z.string().trim().min(1).max(200).optional(),
+    toName: z.string().trim().min(1).max(200).optional(),
     kind: z.enum(['parent', 'child', 'related', 'blocks', 'blocked_by', 'duplicate_of']),
   })
   .superRefine((payload, ctx) => {

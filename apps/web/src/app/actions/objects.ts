@@ -393,6 +393,38 @@ export async function findObjectCleanupSuggestionsAction(): Promise<ActionState>
   });
 }
 
+export async function repairObjectMemoryAction(input: unknown): Promise<ActionState> {
+  return runSentryServerAction('repair_object_memory', async () => {
+    const parsed = z.object({ id: uuidSchema }).safeParse(input);
+    if (!parsed.success) return { error: 'Invalid id' };
+    const r = await resolveScope();
+    if (!r.ok) return { error: r.error };
+    try {
+      const object = await r.scope.objects.getObject(parsed.data.id);
+      if (!object) return { error: 'Object not found' };
+      if (object.archivedAt) return { error: 'Repair memory is unavailable for archived objects' };
+      const result = await enqueueSuggestionJob(
+        {
+          scope: 'object_cleanup',
+          teamId: r.teamId,
+          objectId: parsed.data.id,
+          triggeredBy: 'memory_repair',
+        },
+        { jobIdSuffix: `memory-repair:${parsed.data.id}` },
+      );
+      bestEffortRevalidatePath(`/app/objects/${parsed.data.id}`, 'revalidate_object_memory_repair');
+      bestEffortRevalidatePath('/app/approvals', 'revalidate_object_memory_repair');
+      bestEffortRevalidatePath('/app/inbox', 'revalidate_object_memory_repair');
+      return {
+        ok: true,
+        message: result.enqueued ? 'Memory repair queued' : 'Memory repair already queued',
+      };
+    } catch (err) {
+      return { error: friendlyError(err, 'Failed to repair memory') };
+    }
+  });
+}
+
 const relationshipSchema = z.object({
   fromEntityId: uuidSchema,
   toEntityId: uuidSchema,

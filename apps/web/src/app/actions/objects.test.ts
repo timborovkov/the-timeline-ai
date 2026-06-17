@@ -14,6 +14,7 @@ import {
   mergeObjectsAction,
   rejectObjectChangeAction,
   removeRelationshipAction,
+  repairObjectMemoryAction,
   updateNoteAction,
   updateObjectAction,
 } from '@/app/actions/objects';
@@ -34,6 +35,7 @@ const fakes = vi.hoisted(() => ({
   fakeWithTeam: vi.fn(),
   fakeObjects: {
     createObject: vi.fn(),
+    getObject: vi.fn(),
     updateObject: vi.fn(),
     archiveObject: vi.fn(),
     mergeObjects: vi.fn(),
@@ -107,6 +109,7 @@ beforeEach(() => {
     teamId: '11111111-1111-4111-8111-111111111111',
   });
   fakes.fakeObjects.createObject.mockResolvedValue({ id: OBJECT_ID });
+  fakes.fakeObjects.getObject.mockResolvedValue({ id: OBJECT_ID, archivedAt: null });
   fakes.fakeObjects.updateObject.mockResolvedValue({
     object: { id: OBJECT_ID, type: 'task' },
     changedFields: ['status', 'dueAt'],
@@ -512,6 +515,39 @@ describe('object CRUD actions', () => {
 
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/objects');
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/approvals');
+  });
+
+  it('queues object-scoped memory repair for the active team', async () => {
+    await expect(repairObjectMemoryAction({ id: OBJECT_ID })).resolves.toEqual({
+      ok: true,
+      message: 'Memory repair queued',
+    });
+
+    expect(fakes.fakeEnqueueSuggestionJob).toHaveBeenCalledWith(
+      {
+        scope: 'object_cleanup',
+        teamId: '11111111-1111-4111-8111-111111111111',
+        objectId: OBJECT_ID,
+        triggeredBy: 'memory_repair',
+      },
+      { jobIdSuffix: `memory-repair:${OBJECT_ID}` },
+    );
+    expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith(`/app/objects/${OBJECT_ID}`);
+    expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/approvals');
+  });
+
+  it('does not queue object-scoped memory repair for archived objects', async () => {
+    fakes.fakeObjects.getObject.mockResolvedValueOnce({
+      id: OBJECT_ID,
+      archivedAt: new Date('2026-06-02T10:00:00.000Z'),
+    });
+
+    await expect(repairObjectMemoryAction({ id: OBJECT_ID })).resolves.toEqual({
+      error: 'Repair memory is unavailable for archived objects',
+    });
+
+    expect(fakes.fakeEnqueueSuggestionJob).not.toHaveBeenCalled();
+    expect(fakes.fakeRevalidatePath).not.toHaveBeenCalledWith(`/app/objects/${OBJECT_ID}`);
   });
 });
 

@@ -1,8 +1,9 @@
 # Object Relationships Implementation Plan
 
-Object relationships are the next object-memory slice. The goal is to make
-relationships visible, proposal-backed, and useful on object detail pages
-without shipping the full graph or mind-map view yet.
+Object relationships and connected work are the next object-memory slice. The
+goal is to make object detail pages useful before every durable edge has been
+accepted, then improve proposal quality for the relationships and duplicate
+objects that should become shared memory.
 
 ## Decisions
 
@@ -19,24 +20,63 @@ without shipping the full graph or mind-map view yet.
 - Relationship nuance belongs in cited facts, notes, or source evidence. The
   edge says which objects are connected; evidence explains why.
 - Team-visible relationship proposals must be backed by team-visible evidence.
+- Connected Work is separate from Object Relationships: it is computed from
+  current source-backed evidence so object pages can show tasks, calendar
+  events, boards, fact-backed people/object context, documents, timeline
+  moments, and pending approvals around the object before durable memory is
+  accepted.
+- Duplicate Object Candidates can use object evidence, especially for
+  short-name, acronym, and company-suffix variants. A rejected object pair
+  should stay suppressed.
+- Memory Repair is user-triggered proposal generation around an object or
+  connected work area. It may search team-wide evidence, but returned proposals
+  should stay focused on the object the teammate asked Timeline to repair. The
+  first implementation queues object-scoped duplicate cleanup, low-signal
+  archive cleanup, fact-backed `related` relationship proposals, Connected
+  Work-backed task/follow-up/decision relationship proposals, and bundled
+  full-name person-object creation when relationship-shaped evidence names a
+  durable person.
 
 ## V1 Scope
 
-1. Extend the suggestion worker schema and prompt so background suggestions can
+1. Add a live Connected Work surface to object detail pages. It should show
+   source-backed tasks, calendar events, fact-backed people/object context,
+   boards, pending approvals, recent task history, timeline moments, and
+   documents that materially involve the object without presenting those items
+   as accepted object relationships. Open tasks and follow-ups should be
+   prominent; completed or cancelled work should remain available as recent
+   history without competing with active work.
+2. Use supporting object evidence to drive higher-quality duplicate object
+   candidates, including acronym/short-name cases such as `DFK` and `DFK
+   Finland Oy` when facts, notes, or accepted relationships support identity.
+3. Suppress rejected duplicate object candidate pairs by pair identity, not only
+   by one suggestion's exact evidence hash.
+4. Add an object-centered Memory Repair action that queues focused duplicate,
+   low-signal archive, fact-backed relationship proposal generation, and
+   conservative full-name person-object relationship bundles for the selected
+   object.
+5. Promote conservative Connected Work signals into approval-backed object
+   memory proposals: task/follow-up/decision titles that name the repaired
+   object can become `related` relationship candidates, while fact-backed
+   person/company context remains the path for person/company proposals.
+6. Extend the suggestion worker schema and prompt so background suggestions can
    emit `object_relationship` items.
-2. Use extracted facts as candidate input and bounded raw/conversation context
+7. Use extracted facts as candidate input and bounded raw/conversation context
    as verification input.
-3. Keep proposal precision high: require relationship-shaped evidence, visible
-   citations, no accepted/pending equivalent edge, and no recent rejected
-   equivalent without materially new evidence.
-4. Support proposal bundles that create missing endpoint objects and the
+8. Keep proposal precision high: require relationship-shaped evidence, visible
+   citations, and no accepted, pending, or rejected equivalent edge.
+9. Support proposal bundles that create missing endpoint objects and the
    relationship together when each endpoint independently qualifies as durable
    information.
-5. Surface accepted and pending relationships on both existing endpoint object
+10. Surface accepted and pending relationships on both existing endpoint object
    pages, with relationship activity and nearby object evidence available while
-   cited per-edge explanations wait for the later graph/mind-map view.
-6. Replace manual UUID linking on object detail pages with object search/select.
-7. Keep the full graph/mind-map view out of this slice; revisit after real
+   cited per-edge explanations wait for the later graph/mind-map view. Pending
+   object-page approvals should include only items that target the object plus
+   sibling create items needed by those relationship proposals, so accepting from
+   the object page can materialize the required dependency without surfacing
+   unrelated bundle work.
+11. Replace manual UUID linking on object detail pages with object search/select.
+12. Keep the full graph/mind-map view out of this slice; revisit after real
    relationship data exists.
 
 ## Bundle-Local References
@@ -71,12 +111,23 @@ in the same approval bundle.
 - `related` relationships are deduped by sorted endpoint pair.
 - Proposal dedupe should use the same sorted pair once refs can be resolved or a
   stable bundle-local pair when refs are still pending.
-- Rejected relationship proposals suppress identical future proposals unless new
-  evidence materially changes the proposal.
-- Materially new evidence includes a clearer later raw event, repeated evidence
-  across events, better endpoint resolution, or an explicit user correction.
-- Reprocessing the same event, model wording drift, or small confidence changes
-  are not materially new evidence.
+- Duplicate object candidates are deduped and rejection-suppressed by sorted
+  object pair after resolving merged-object targets.
+- Short-name and acronym duplicate candidates require supporting object
+  evidence; bare name similarity is not enough for aggressive three-letter
+  matches.
+- Rejected relationship proposals suppress identical future proposals by sorted
+  endpoint pair. Reprocessing, model wording drift, repeated evidence, or small
+  confidence changes must not automatically reoffer the same edge.
+- Later evidence may support a different endpoint resolution, but the exact
+  rejected pair stays suppressed unless a teammate manually creates it.
+- Missing person-object repair only creates full-name person candidates from
+  relationship-shaped facts. Bare first names remain evidence until a stronger
+  person identity exists.
+- Connected Work-backed repair only proposes relationships for active
+  task/follow-up/decision objects whose own title names the repaired object and
+  whose team-visible object audit event can be cited. Rejected exact pairs stay
+  suppressed like fact-backed relationship proposals.
 
 ## Out Of Scope
 

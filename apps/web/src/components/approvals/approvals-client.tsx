@@ -145,6 +145,8 @@ function formatPayload(payload: Record<string, unknown>): string {
         key !== 'localRef' &&
         key !== 'fromRef' &&
         key !== 'toRef' &&
+        key !== 'fromName' &&
+        key !== 'toName' &&
         !key.toLowerCase().endsWith('id') &&
         !key.toLowerCase().endsWith('ids'),
     )
@@ -155,6 +157,11 @@ function formatPayload(payload: Record<string, unknown>): string {
 
 function itemActionLabel(item: SuggestionItem): string {
   const operation = item.operation.replace(/_/g, ' ');
+  if (item.targetKind === 'object') {
+    const type = payloadString(item.proposedPayload, 'type');
+    if (type === 'person') return `${operation} person`;
+    if (type) return `${operation} ${type.replace(/_/g, ' ')}`;
+  }
   const kind = itemKindLabel(item.targetKind);
   return `${operation} ${kind}`;
 }
@@ -289,16 +296,18 @@ function relationshipPayloadSummary(item: SuggestionItem, bundle: SuggestionBund
   const from =
     typeof item.proposedPayload.fromRef === 'string'
       ? localRefLabel(bundle, item.proposedPayload.fromRef)
-      : 'existing object';
+      : typeof item.proposedPayload.fromName === 'string'
+        ? displayText(item.proposedPayload.fromName)
+        : null;
   const to =
     typeof item.proposedPayload.toRef === 'string'
       ? localRefLabel(bundle, item.proposedPayload.toRef)
-      : 'existing object';
+      : typeof item.proposedPayload.toName === 'string'
+        ? displayText(item.proposedPayload.toName)
+        : null;
   const kind =
     typeof item.proposedPayload.kind === 'string' ? item.proposedPayload.kind : 'related';
-  if (from === 'existing object' && to === 'existing object') {
-    return displayText(`${item.title} · ${kind}`);
-  }
+  if (!from || !to) return displayText(`${item.title} · ${kind}`);
   return displayText(`${from} ↔ ${to} · ${kind}`);
 }
 
