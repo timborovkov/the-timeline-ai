@@ -367,12 +367,15 @@ describe('writeIntegrationEvents visibility', () => {
     const [row] = await db.select().from(entities).where(eq(entities.id, existing.id));
     expect(row?.canonicalName).toBe('Use cursor pagination in the task board');
     expect(row?.metadata).toMatchObject({
-      display_title: 'the-timeline-ai: Add cursor pagination',
-      display_title_canonical_name: 'timborovkov/the-timeline-ai#202: Add cursor pagination',
+      integration_provider: 'github',
+      integration_external_id: 'timborovkov/the-timeline-ai#202',
+      last_event_type: 'pr.updated',
     });
+    expect(row?.metadata).not.toHaveProperty('display_title');
+    expect(row?.metadata).not.toHaveProperty('display_title_canonical_name');
   });
 
-  it('updates legacy provider-shaped canonical names that predate display title markers', async () => {
+  it('preserves legacy provider-shaped canonical names that predate display title markers', async () => {
     const [integration] = await db
       .insert(integrations)
       .values({
@@ -424,7 +427,75 @@ describe('writeIntegrationEvents visibility', () => {
     });
 
     const [row] = await db.select().from(entities).where(eq(entities.id, existing.id));
-    expect(row?.canonicalName).toBe('timborovkov/the-timeline-ai#202: New provider title');
+    expect(row?.canonicalName).toBe('timborovkov/the-timeline-ai#202: Old provider title');
+    expect(row?.metadata).toMatchObject({
+      integration_provider: 'github',
+      integration_external_id: 'timborovkov/the-timeline-ai#202',
+      last_event_type: 'pr.updated',
+    });
+    expect(row?.metadata).not.toHaveProperty('display_title');
+    expect(row?.metadata).not.toHaveProperty('display_title_canonical_name');
+  });
+
+  it('updates marker-backed GitHub issue canonical names despite issue external ids', async () => {
+    const [integration] = await db
+      .insert(integrations)
+      .values({
+        teamId: TEAM_ID,
+        connectedByUserId: USER_ID,
+        provider: 'github',
+        displayName: 'GitHub',
+        externalAccountId: 'acct-marker-backed-github-issue',
+        visibilityDefault: 'team',
+      })
+      .returning();
+    if (!integration) throw new Error('integration insert failed');
+
+    const [existing] = await db
+      .insert(entities)
+      .values({
+        teamId: TEAM_ID,
+        type: 'task',
+        canonicalName: 'timborovkov/the-timeline-ai#202: Old issue title',
+        status: 'open',
+        metadata: {
+          integration_provider: 'github',
+          integration_external_id: 'timborovkov/the-timeline-ai#issue:202',
+          display_title: 'the-timeline-ai: Old issue title',
+          display_title_canonical_name: 'timborovkov/the-timeline-ai#202: Old issue title',
+        },
+      })
+      .returning();
+    if (!existing) throw new Error('object insert failed');
+
+    await writeIntegrationEvents({
+      db: db as never,
+      integration,
+      events: [
+        {
+          dedupKey: 'github:issue:202:marker-backed',
+          provider: 'github',
+          externalObjectId: 'timborovkov/the-timeline-ai#issue:202',
+          eventType: 'issue.updated',
+          occurredAt: new Date('2026-06-17T10:00:00Z'),
+          contentText: 'GitHub Issue timborovkov/the-timeline-ai#202 — New issue title',
+          objectMap: {
+            type: 'task',
+            canonicalName: 'timborovkov/the-timeline-ai#202: New issue title',
+            displayTitle: 'the-timeline-ai: New issue title',
+            externalId: 'timborovkov/the-timeline-ai#issue:202',
+            status: 'open',
+          },
+        },
+      ],
+    });
+
+    const [row] = await db.select().from(entities).where(eq(entities.id, existing.id));
+    expect(row?.canonicalName).toBe('timborovkov/the-timeline-ai#202: New issue title');
+    expect(row?.metadata).toMatchObject({
+      display_title: 'the-timeline-ai: New issue title',
+      display_title_canonical_name: 'timborovkov/the-timeline-ai#202: New issue title',
+    });
   });
 
   it('skips integration canonical name updates that would collide with another object', async () => {

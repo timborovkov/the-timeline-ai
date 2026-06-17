@@ -215,22 +215,29 @@ async function upsertWorkspaceObjects(
 
   for (const evt of evts) {
     const map = evt.objectMap;
+    const existing = existingByExternal.get(map.externalId);
+    const preserveCanonicalName = existing
+      ? shouldPreserveExistingCanonicalName(existing, map)
+      : false;
+    const hasDisplayTitleSource = existing
+      ? metadataString(existing.metadata, 'display_title_canonical_name') !== null
+      : false;
+    const shouldWriteDisplayTitle = Boolean(
+      map.displayTitle && (!preserveCanonicalName || hasDisplayTitleSource),
+    );
     const metadata: Record<string, unknown> = {
       integration_id: integration.id,
       integration_provider: integration.provider,
       integration_external_id: map.externalId,
-      ...(map.displayTitle
+      ...(shouldWriteDisplayTitle
         ? { display_title: map.displayTitle, display_title_canonical_name: map.canonicalName }
         : {}),
       ...(map.url ? { url: map.url } : {}),
       last_event_at: evt.occurredAt.toISOString(),
       last_event_type: evt.eventType,
     };
-    const existing = existingByExternal.get(map.externalId);
     if (existing) {
-      const canonicalName = shouldPreserveExistingCanonicalName(existing, map)
-        ? existing.canonicalName
-        : map.canonicalName;
+      const canonicalName = preserveCanonicalName ? existing.canonicalName : map.canonicalName;
       toUpdate.push({
         id: existing.id,
         type: map.type,
@@ -376,14 +383,7 @@ function shouldPreserveExistingCanonicalName(
 ): boolean {
   const previousProviderName = metadataString(existing.metadata, 'display_title_canonical_name');
   if (previousProviderName) return existing.canonicalName !== previousProviderName;
-  if (existing.canonicalName === map.canonicalName) return false;
-
-  const providerPrefixes = [map.externalId, ...(map.aliases ?? [])].filter(Boolean);
-  return !providerPrefixes.some(
-    (prefix) =>
-      existing.canonicalName.startsWith(`${prefix}: `) &&
-      map.canonicalName.startsWith(`${prefix}: `),
-  );
+  return existing.canonicalName !== map.canonicalName;
 }
 
 /**
