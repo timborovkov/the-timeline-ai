@@ -19,7 +19,7 @@ type GenerateObjectProviderOptions = NonNullable<
   Parameters<typeof generateObject>[0]['providerOptions']
 >;
 
-export const DEFAULT_AGENT_MAX_STEPS = 12;
+export const DEFAULT_AGENT_MAX_STEPS = 20;
 
 export interface ChatStructuredInput<TSchema extends z.ZodType> {
   schema: TSchema;
