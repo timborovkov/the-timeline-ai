@@ -102,6 +102,16 @@ afterEach(async () => {
   await pg.close();
 });
 
+async function upsertObjectSummary(values: typeof objectSummaries.$inferInsert): Promise<void> {
+  await db
+    .insert(objectSummaries)
+    .values(values)
+    .onConflictDoUpdate({
+      target: [objectSummaries.teamId, objectSummaries.entityId],
+      set: values,
+    });
+}
+
 describe('object scope — team ownership and audit behavior', () => {
   it('rejects owner and assignee values that are not members of the scoped team', async () => {
     const scope = withTeam(db, TEAM_A, USER_OWNER).objects;
@@ -1618,7 +1628,7 @@ describe('object scope — merge cleanup', () => {
       actor: { kind: 'user', userId: USER_OWNER },
     });
     vi.mocked(queue.enqueueObjectSummaryJob).mockClear();
-    await db.insert(objectSummaries).values({
+    await upsertObjectSummary({
       teamId: TEAM_A,
       entityId: object.id,
       status: 'ready',
@@ -1661,6 +1671,32 @@ describe('object scope — merge cleanup', () => {
     );
   });
 
+  it('creates a pending summary row when an automatic refresh starts without an existing summary', async () => {
+    const scope = withTeam(db, TEAM_A, USER_OWNER).objects;
+    const object = await scope.createObject({
+      type: 'company',
+      canonicalName: 'DFK',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    vi.mocked(queue.enqueueObjectSummaryJob).mockClear();
+
+    await scope.updateObject(object.id, { status: 'active' }, { kind: 'user', userId: USER_OWNER });
+
+    await vi.waitFor(async () => {
+      const rows = await db
+        .select()
+        .from(objectSummaries)
+        .where(eq(objectSummaries.entityId, object.id));
+      expect(rows).toHaveLength(1);
+      expect(rows[0]?.status).toBe('pending');
+      expect(rows[0]?.plainText).toBe('');
+    });
+    expect(queue.enqueueObjectSummaryJob).toHaveBeenCalledWith(
+      { teamId: TEAM_A, objectId: object.id, trigger: 'auto' },
+      { delayMs: 120_000 },
+    );
+  });
+
   it('marks a pending summary with existing prose stale when memory changes mid-generation', async () => {
     const scope = withTeam(db, TEAM_A, USER_OWNER).objects;
     const object = await scope.createObject({
@@ -1669,7 +1705,7 @@ describe('object scope — merge cleanup', () => {
       actor: { kind: 'user', userId: USER_OWNER },
     });
     vi.mocked(queue.enqueueObjectSummaryJob).mockClear();
-    await db.insert(objectSummaries).values({
+    await upsertObjectSummary({
       teamId: TEAM_A,
       entityId: object.id,
       status: 'pending',
@@ -1720,7 +1756,7 @@ describe('object scope — merge cleanup', () => {
       canonicalName: 'DFK',
       actor: { kind: 'user', userId: USER_OWNER },
     });
-    await db.insert(objectSummaries).values({
+    await upsertObjectSummary({
       teamId: TEAM_A,
       entityId: object.id,
       status: 'stale',
@@ -1876,7 +1912,7 @@ describe('object scope — merge cleanup', () => {
       authorUserId: USER_OWNER,
       body: 'DFK summary note with enough human-authored context for generation.',
     });
-    await db.insert(objectSummaries).values({
+    await upsertObjectSummary({
       teamId: TEAM_A,
       entityId: object.id,
       status: 'pending',
@@ -1982,7 +2018,7 @@ describe('object scope — merge cleanup', () => {
       entityId: object.id,
       role: 'subject',
     });
-    await db.insert(objectSummaries).values({
+    await upsertObjectSummary({
       teamId: TEAM_A,
       entityId: object.id,
       status: 'ready',
@@ -2055,7 +2091,7 @@ describe('object scope — merge cleanup', () => {
       entityId: object.id,
       role: 'subject',
     });
-    await db.insert(objectSummaries).values({
+    await upsertObjectSummary({
       teamId: TEAM_A,
       entityId: object.id,
       status: 'ready',
@@ -2133,7 +2169,7 @@ describe('object scope — merge cleanup', () => {
       entityId: object.id,
       role: 'subject',
     });
-    await db.insert(objectSummaries).values({
+    await upsertObjectSummary({
       teamId: TEAM_A,
       entityId: object.id,
       status: 'ready',

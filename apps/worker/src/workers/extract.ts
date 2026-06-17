@@ -4,12 +4,15 @@ import {
   currentExtractionModelVersions,
   makeExtractionModelVersion,
 } from '@timeline/shared/extraction-model-version';
+import { fireAndForgetObjectSummaryRefresh } from '@timeline/shared/objects';
+import { withTeam } from '@timeline/shared/team-scope';
 import { UnrecoverableError, Worker, type Job } from 'bullmq';
 import { and, desc, eq, lt, sql } from 'drizzle-orm';
 
 import { captureWorkerException, captureWorkerJobFailure } from '#src/monitoring.js';
 
 const log = childLogger('worker:extract');
+const ZERO_UUID = '00000000-0000-0000-0000-000000000000';
 
 interface ExtractWorkerDeps {
   db: Db;
@@ -23,7 +26,7 @@ export interface ExtractProcessorIO {
   modelId?: string;
   enqueueSuggestionJob?: typeof queue.enqueueSuggestionJob;
   enqueueEmbedJob?: typeof queue.enqueueEmbedJob;
-  enqueueObjectSummaryJob?: typeof queue.enqueueObjectSummaryJob;
+  enqueueObjectSummaryRefresh?: ((objectId: string) => Promise<void>) | undefined;
 }
 
 interface RawEventRow {
@@ -280,13 +283,18 @@ export async function processExtractJobForTests(
     });
   }
 
-  const enqueueObjectSummaryJob = io.enqueueObjectSummaryJob ?? queue.enqueueObjectSummaryJob;
+  const objectSummaryScope = withTeam(deps.db, teamId, ZERO_UUID, { skipMembershipCheck: true });
+  const enqueueObjectSummaryRefresh =
+    io.enqueueObjectSummaryRefresh ??
+    ((objectId: string) =>
+      fireAndForgetObjectSummaryRefresh(deps.db, objectSummaryScope, objectId, {
+        rawEventId,
+        objectId,
+        trigger: 'extract_fact_link',
+      }));
   for (const objectId of summaryEntityIds) {
     try {
-      await enqueueObjectSummaryJob(
-        { teamId, objectId, trigger: 'auto' },
-        { delayMs: 2 * 60 * 1000 },
-      );
+      await enqueueObjectSummaryRefresh(objectId);
     } catch (err) {
       log.error({ err, rawEventId, objectId }, 'object summary enqueue failed after extract');
       captureWorkerException(err, {

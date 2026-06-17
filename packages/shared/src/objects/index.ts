@@ -71,7 +71,11 @@ import { buildPointId } from '#src/qdrant/point-id.js';
 import * as embedQueue from '#src/queue/queues.js';
 import { rawEventVisibleToUser } from '#src/visibility.js';
 
-export { generateAndStoreObjectSummary, sourceRefCitation } from '#src/objects/summaries.js';
+export {
+  fireAndForgetObjectSummaryRefresh,
+  generateAndStoreObjectSummary,
+  sourceRefCitation,
+} from '#src/objects/summaries.js';
 export type { ObjectSummarySourceRef } from '#src/objects/summaries.js';
 
 const embedLog = childLogger('objects:embed');

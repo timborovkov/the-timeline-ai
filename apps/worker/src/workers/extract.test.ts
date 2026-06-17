@@ -1,5 +1,5 @@
 import { PGlite } from '@electric-sql/pglite';
-import { entities, facts, factEntities, rawEvents, type Db } from '@timeline/db';
+import { entities, facts, factEntities, objectSummaries, rawEvents, type Db } from '@timeline/db';
 import { type queue } from '@timeline/shared';
 import {
   currentExtractionModelVersions,
@@ -74,7 +74,7 @@ function io(overrides: Partial<Parameters<typeof processExtractJobForTests>[2]> 
     chatStructured: modelWithFacts([]),
     enqueueSuggestionJob: vi.fn().mockResolvedValue(undefined),
     enqueueEmbedJob: vi.fn().mockResolvedValue(undefined),
-    enqueueObjectSummaryJob: vi.fn().mockResolvedValue({ enqueued: true, jobId: 'summary-job' }),
+    enqueueObjectSummaryRefresh: vi.fn().mockResolvedValue(undefined),
     ...overrides,
   };
 }
@@ -148,11 +148,43 @@ describe('processExtractJobForTests', () => {
       factId,
     });
     for (const entity of linkedEntities) {
-      expect(testIO.enqueueObjectSummaryJob).toHaveBeenCalledWith(
-        { teamId: TEAM_ID, objectId: entity.id, trigger: 'auto' },
-        { delayMs: 120_000 },
-      );
+      expect(testIO.enqueueObjectSummaryRefresh).toHaveBeenCalledWith(entity.id);
     }
+  });
+
+  it('creates pending object summary rows for automatic refreshes after extraction', async () => {
+    const rawEventId = '33333333-3333-4333-8333-333333333335';
+    await seedEvent(db, { id: rawEventId, text: 'Acme is evaluating Timeline for Q4.' });
+    const [seededEntity] = await db
+      .insert(entities)
+      .values({ teamId: TEAM_ID, type: 'company', canonicalName: 'Acme' })
+      .returning({ id: entities.id });
+    if (!seededEntity) throw new Error('failed to seed Acme object');
+    const testIO = io({
+      chatStructured: modelWithFacts([
+        {
+          statement: 'Acme is evaluating Timeline for Q4.',
+          confidence: 0.92,
+          mentions: [{ name: 'Acme', type: 'company', role: 'subject' }],
+        },
+      ]),
+      enqueueObjectSummaryRefresh: undefined,
+    });
+
+    await expect(
+      processExtractJobForTests({ db }, { rawEventId, teamId: TEAM_ID }, testIO),
+    ).resolves.toMatchObject({ rawEventId, factsInserted: 1, modelVersion: MODEL_VERSION });
+
+    const rows = await db
+      .select()
+      .from(objectSummaries)
+      .where(eq(objectSummaries.entityId, seededEntity.id));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      teamId: TEAM_ID,
+      entityId: seededEntity.id,
+      status: 'pending',
+    });
   });
 
   it('does not create workspace objects for unmatched extracted mentions', async () => {

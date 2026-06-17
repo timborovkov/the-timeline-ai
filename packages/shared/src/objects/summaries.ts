@@ -618,13 +618,28 @@ export async function fireAndForgetObjectSummaryRefresh(
     db
       .update(objectSummaries)
       .set({
-        status: sql`CASE WHEN COALESCE(${objectSummaries.plainText}, '') <> '' THEN 'stale'::object_summary_status ELSE ${objectSummaries.status} END`,
+        status: sql`CASE WHEN COALESCE(${objectSummaries.plainText}, '') <> '' THEN 'stale'::object_summary_status ELSE 'pending'::object_summary_status END`,
         staleAt: now,
         updatedAt: now,
       })
       .where(and(eq(objectSummaries.teamId, scope.teamId), eq(objectSummaries.entityId, entityId)))
       .catch((err: unknown) => {
         console.error('failed to mark object summary stale', { err, ...context });
+      }),
+    db
+      .insert(objectSummaries)
+      .values({
+        teamId: scope.teamId,
+        entityId,
+        status: 'pending',
+        lastAttemptedAt: now,
+        updatedAt: now,
+      })
+      .onConflictDoNothing({
+        target: [objectSummaries.teamId, objectSummaries.entityId],
+      })
+      .catch((err: unknown) => {
+        console.error('failed to create pending object summary', { err, ...context });
       }),
     queue
       .enqueueObjectSummaryJob(
@@ -674,6 +689,24 @@ export async function invalidateObjectSummariesForRawEvent(
       .where(
         and(eq(objectSummaries.teamId, scope.teamId), inArray(objectSummaries.entityId, entityIds)),
       );
+    await Promise.all(
+      entityIds.map((entityId) =>
+        queue
+          .enqueueObjectSummaryJob(
+            { teamId: scope.teamId, objectId: entityId, trigger: 'auto' },
+            { delayMs: OBJECT_SUMMARY_AUTO_DELAY_MS },
+          )
+          .catch((err: unknown) => {
+            console.error('failed to enqueue object summary refresh', {
+              err,
+              ...context,
+              rawEventId,
+              entityId,
+            });
+          }),
+      ),
+    );
+    return entityIds;
   }
 
   await Promise.all(
