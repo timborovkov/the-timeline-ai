@@ -855,7 +855,7 @@ export async function POST(req: Request): Promise<Response> {
     messages: memory.messages,
     tools,
     model: modelId,
-    maxSteps: 5,
+    maxSteps: llm.DEFAULT_AGENT_MAX_STEPS,
     // Propagate client disconnects to OpenRouter so we stop paying for
     // tokens nobody will see. Without this, a user navigating away mid-
     // stream still runs the model to completion.

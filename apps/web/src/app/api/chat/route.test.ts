@@ -89,6 +89,7 @@ vi.mock('@timeline/shared/objects', () => ({
   appendChatMessages: fakes.fakeAppendChatMessages,
 }));
 vi.mock('@timeline/shared/llm', () => ({
+  DEFAULT_AGENT_MAX_STEPS: 20,
   DEFAULT_CHAT_MEMORY: { maxRequestMessages: 50 },
   TIMELINE_MODELS: {
     agent: { contextWindowTokens: 128_000 },
@@ -368,7 +369,7 @@ describe('POST /api/chat', () => {
           search_timeline: { type: 'native' },
         },
         model: 'agent-model',
-        maxSteps: 5,
+        maxSteps: 20,
       }),
     );
     expect(fakes.fakeBuildMcpTools).not.toHaveBeenCalled();

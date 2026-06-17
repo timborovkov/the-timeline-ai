@@ -15,7 +15,7 @@ After **any** code, configuration, or documentation change:
    - This is the canonical static gate and must pass.
    - It runs Prettier formatting checks, TypeScript compilation/typecheck,
      ESLint, and Knip.
-2. Run `pnpm doctor`.
+2. Run `pnpm run doctor`.
    - React Doctor must report a 100 score before handoff.
    - If the command exits without showing a score, do not claim "React Doctor is
      100" unless you can verify that from the tool output, artifacts, or
