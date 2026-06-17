@@ -702,10 +702,10 @@ async function repairRelationshipCandidates(
       id: entities.id,
       canonicalName: entities.canonicalName,
       type: entities.type,
-      factCount: sql<number>`count(distinct ${otherFactEntities.factId})::int`,
-      rawEventId: sql<string>`min(${factsTable.rawEventId}::text)`,
-      statement: sql<string>`min(${factsTable.statement})`,
-      source: sql<'fact'>`'fact'`,
+      factId: factsTable.id,
+      rawEventId: factsTable.rawEventId,
+      statement: factsTable.statement,
+      extractedAt: factsTable.extractedAt,
     })
     .from(anchorFactEntities)
     .innerJoin(factsTable, eq(factsTable.id, anchorFactEntities.factId))
@@ -727,10 +727,42 @@ async function repairRelationshipCandidates(
         isNull(entities.mergedIntoId),
       ),
     )
-    .groupBy(entities.id, entities.canonicalName, entities.type)
-    .orderBy(desc(sql<number>`count(distinct ${otherFactEntities.factId})`), entities.canonicalName)
-    .limit(5);
-  return rows.filter((row) => row.rawEventId && row.statement);
+    .orderBy(desc(factsTable.extractedAt), desc(factsTable.id))
+    .limit(100);
+  const candidates = new Map<
+    string,
+    Omit<RepairRelationshipCandidate, 'factCount' | 'source'> & { factIds: Set<string> }
+  >();
+  for (const row of rows) {
+    const existing = candidates.get(row.id);
+    if (existing) {
+      existing.factIds.add(row.factId);
+      continue;
+    }
+    candidates.set(row.id, {
+      id: row.id,
+      canonicalName: row.canonicalName,
+      type: row.type,
+      rawEventId: row.rawEventId,
+      statement: row.statement,
+      factIds: new Set([row.factId]),
+    });
+  }
+  return Array.from(candidates.values())
+    .map((candidate) => ({
+      id: candidate.id,
+      canonicalName: candidate.canonicalName,
+      type: candidate.type,
+      rawEventId: candidate.rawEventId,
+      statement: candidate.statement,
+      factCount: candidate.factIds.size,
+      source: 'fact' as const,
+    }))
+    .sort(
+      (left, right) =>
+        right.factCount - left.factCount || left.canonicalName.localeCompare(right.canonicalName),
+    )
+    .slice(0, 5);
 }
 
 async function repairFactRowsForObject(

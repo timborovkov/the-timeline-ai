@@ -672,32 +672,59 @@ describe('processSuggestionJobForTests', () => {
       ])
       .returning({ id: entities.id });
     if (!company || !person) throw new Error('expected object fixtures');
-    const [raw] = await db
+    const olderRawId = '00000000-0000-4000-8000-000000000010';
+    const newerRawId = '00000000-0000-4000-8000-000000000020';
+    const [olderRaw, newerRaw] = await db
       .insert(rawEvents)
-      .values({
-        teamId: TEAM_ID,
-        authorUserId: OWNER_ID,
-        source: 'web',
-        contentText: 'Jonne from DFK discussed the pilot scope.',
-        occurredAt: REFERENCE_DATE,
-        visibility: 'team',
-      })
+      .values([
+        {
+          id: olderRawId,
+          teamId: TEAM_ID,
+          authorUserId: OWNER_ID,
+          source: 'web',
+          contentText: 'Older note: Jonne from DFK discussed the pilot scope.',
+          occurredAt: REFERENCE_DATE,
+          visibility: 'team',
+        },
+        {
+          id: newerRawId,
+          teamId: TEAM_ID,
+          authorUserId: OWNER_ID,
+          source: 'web',
+          contentText: 'Newer note: Jonne from DFK owns the pilot follow-up.',
+          occurredAt: new Date('2026-06-18T10:00:00.000Z'),
+          visibility: 'team',
+        },
+      ])
       .returning({ id: rawEvents.id });
-    if (!raw) throw new Error('expected raw event');
-    const [fact] = await db
+    if (!olderRaw || !newerRaw) throw new Error('expected raw events');
+    const insertedFacts = await db
       .insert(facts)
-      .values({
-        teamId: TEAM_ID,
-        rawEventId: raw.id,
-        statement: 'Jonne from DFK discussed the pilot scope.',
-        confidence: 0.9,
-        modelVersion: 'test',
-      })
+      .values([
+        {
+          teamId: TEAM_ID,
+          rawEventId: olderRaw.id,
+          statement: 'Older fact: Jonne from DFK discussed the pilot scope.',
+          confidence: 0.9,
+          modelVersion: 'test',
+          extractedAt: new Date('2026-06-17T10:00:00.000Z'),
+        },
+        {
+          teamId: TEAM_ID,
+          rawEventId: newerRaw.id,
+          statement: 'Newer fact: Jonne from DFK owns the pilot follow-up.',
+          confidence: 0.9,
+          modelVersion: 'test',
+          extractedAt: new Date('2026-06-18T10:00:00.000Z'),
+        },
+      ])
       .returning({ id: facts.id });
-    if (!fact) throw new Error('expected fact');
+    if (insertedFacts.length !== 2) throw new Error('expected facts');
     await db.insert(factEntities).values([
-      { factId: fact.id, entityId: company.id, role: 'subject' },
-      { factId: fact.id, entityId: person.id, role: 'object' },
+      { factId: insertedFacts[0]?.id ?? '', entityId: company.id, role: 'subject' },
+      { factId: insertedFacts[0]?.id ?? '', entityId: person.id, role: 'object' },
+      { factId: insertedFacts[1]?.id ?? '', entityId: company.id, role: 'subject' },
+      { factId: insertedFacts[1]?.id ?? '', entityId: person.id, role: 'object' },
     ]);
 
     await processSuggestionJobForTests(
@@ -715,7 +742,13 @@ describe('processSuggestionJobForTests', () => {
     expect(bundles).toHaveLength(1);
     expect(bundles[0]).toMatchObject({
       title: 'Relate DFK and Jonne Granqvist',
-      evidence: [expect.objectContaining({ rawEventId: raw.id })],
+      evidence: [
+        expect.objectContaining({
+          rawEventId: newerRaw.id,
+          quote: 'Newer fact: Jonne from DFK owns the pilot follow-up.',
+        }),
+      ],
+      confidence: 'high',
     });
     const relationshipItem = bundles[0]?.items[0];
     expect(relationshipItem).toMatchObject({
