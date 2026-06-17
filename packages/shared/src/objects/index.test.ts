@@ -655,25 +655,46 @@ describe('object scope — notes and suggestions', () => {
       status: 'todo',
       actor: { kind: 'user', userId: USER_OWNER },
     });
-    await db.insert(calendarEvents).values({
-      teamId: TEAM_A,
-      createdByUserId: USER_OWNER,
-      title: 'Meeting with DFK Finland Oy',
-      startAt: new Date('2026-06-17T12:00:00.000Z'),
-      endAt: new Date('2026-06-17T13:00:00.000Z'),
-      timezone: 'Europe/Helsinki',
-      visibility: 'team',
-    });
-    const [raw] = await db
-      .insert(rawEvents)
-      .values({
+    await db.insert(calendarEvents).values([
+      {
         teamId: TEAM_A,
-        authorUserId: USER_OWNER,
-        source: 'web',
-        contentText: 'Jonne from DFK discussed the pilot.',
-        occurredAt: new Date('2026-06-16T10:00:00.000Z'),
+        createdByUserId: USER_OWNER,
+        title: 'Meeting with DFK Finland Oy',
+        startAt: new Date('2026-06-17T12:00:00.000Z'),
+        endAt: new Date('2026-06-17T13:00:00.000Z'),
+        timezone: 'Europe/Helsinki',
         visibility: 'team',
-      })
+      },
+      {
+        teamId: TEAM_A,
+        createdByUserId: USER_OWNER,
+        title: 'ADFK parser planning',
+        startAt: new Date('2026-06-18T12:00:00.000Z'),
+        endAt: new Date('2026-06-18T13:00:00.000Z'),
+        timezone: 'Europe/Helsinki',
+        visibility: 'team',
+      },
+    ]);
+    const [raw, substringRaw] = await db
+      .insert(rawEvents)
+      .values([
+        {
+          teamId: TEAM_A,
+          authorUserId: USER_OWNER,
+          source: 'web',
+          contentText: 'Jonne from DFK discussed the pilot.',
+          occurredAt: new Date('2026-06-16T10:00:00.000Z'),
+          visibility: 'team',
+        },
+        {
+          teamId: TEAM_A,
+          authorUserId: USER_OWNER,
+          source: 'web',
+          contentText: 'ADFK parser emitted a warning.',
+          occurredAt: new Date('2026-06-18T10:00:00.000Z'),
+          visibility: 'team',
+        },
+      ])
       .returning({ id: rawEvents.id });
     const [fact] = await db
       .insert(facts)
@@ -738,9 +759,15 @@ describe('object scope — notes and suggestions', () => {
     expect(detail?.connectedWork.calendarEvents).toEqual([
       expect.objectContaining({ title: 'Meeting with DFK Finland Oy' }),
     ]);
+    expect(detail?.connectedWork.calendarEvents).not.toContainEqual(
+      expect.objectContaining({ title: 'ADFK parser planning' }),
+    );
     expect(detail?.connectedWork.timelineEvents).toEqual([
       expect.objectContaining({ id: raw?.id, contentText: 'Jonne from DFK discussed the pilot.' }),
     ]);
+    expect(detail?.connectedWork.timelineEvents).not.toContainEqual(
+      expect.objectContaining({ id: substringRaw?.id }),
+    );
     expect(detail?.connectedWork.objects).toEqual([
       expect.objectContaining({ id: person.id, canonicalName: 'Jonne Granqvist', factCount: 1 }),
     ]);

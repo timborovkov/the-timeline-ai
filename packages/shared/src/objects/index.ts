@@ -1161,6 +1161,7 @@ async function getConnectedWork(
             source: rawEvents.source,
             contentText: rawEvents.contentText,
             occurredAt: rawEvents.occurredAt,
+            sourceEntityId: sql<string | null>`${rawEvents.sourceMetadata} ->> 'entity_id'`,
           })
           .from(rawEvents)
           .where(
@@ -1173,8 +1174,15 @@ async function getConnectedWork(
             ),
           )
           .orderBy(desc(rawEvents.occurredAt), desc(rawEvents.id))
-          .limit(12)
+          .limit(24)
       : [];
+  const factRawEventIdSet = new Set(factRawEventIds);
+  const filteredTimelineRows = timelineRows
+    .filter((row) => {
+      if (row.sourceEntityId === object.id || factRawEventIdSet.has(row.id)) return true;
+      return textMentionsAnyValue(row.contentText ?? '', names);
+    })
+    .slice(0, 12);
 
   const calendarConditions = [];
   const linkedCalendarIds = linkedCalendarRows.map((row) => row.calendarEventId);
@@ -1191,6 +1199,7 @@ async function getConnectedWork(
           .select({
             id: calendarEvents.id,
             title: calendarEvents.title,
+            description: calendarEvents.description,
             startAt: calendarEvents.startAt,
             endAt: calendarEvents.endAt,
             showAs: calendarEvents.showAs,
@@ -1205,14 +1214,21 @@ async function getConnectedWork(
             ),
           )
           .orderBy(desc(calendarEvents.startAt), desc(calendarEvents.id))
-          .limit(10)
+          .limit(20)
       : [];
+  const linkedCalendarIdSet = new Set(linkedCalendarIds);
+  const filteredCalendarRows = calendarRows
+    .filter((row) => {
+      if (linkedCalendarIdSet.has(row.id)) return true;
+      return textMentionsAnyValue(`${row.title} ${row.description ?? ''}`, names);
+    })
+    .slice(0, 10);
 
   return {
     openTasks,
     recentTasks,
-    calendarEvents: calendarRows,
-    timelineEvents: timelineRows,
+    calendarEvents: filteredCalendarRows,
+    timelineEvents: filteredTimelineRows,
     objects: sharedObjectRows
       .filter((row) => row.type !== 'task' && row.type !== 'follow_up')
       .slice(0, 12),
