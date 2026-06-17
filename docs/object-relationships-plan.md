@@ -32,7 +32,8 @@ objects that should become shared memory.
   connected work area. It may search team-wide evidence, but returned proposals
   should stay focused on the object the teammate asked Timeline to repair. The
   first implementation queues object-scoped duplicate cleanup, low-signal
-  archive cleanup, fact-backed `related` relationship proposals, and bundled
+  archive cleanup, fact-backed `related` relationship proposals, Connected
+  Work-backed task/follow-up/decision relationship proposals, and bundled
   full-name person-object creation when relationship-shaped evidence names a
   durable person.
 
@@ -54,24 +55,28 @@ objects that should become shared memory.
    low-signal archive, fact-backed relationship proposal generation, and
    conservative full-name person-object relationship bundles for the selected
    object.
-5. Extend the suggestion worker schema and prompt so background suggestions can
+5. Promote conservative Connected Work signals into approval-backed object
+   memory proposals: task/follow-up/decision titles that name the repaired
+   object can become `related` relationship candidates, while fact-backed
+   person/company context remains the path for person/company proposals.
+6. Extend the suggestion worker schema and prompt so background suggestions can
    emit `object_relationship` items.
-6. Use extracted facts as candidate input and bounded raw/conversation context
+7. Use extracted facts as candidate input and bounded raw/conversation context
    as verification input.
-7. Keep proposal precision high: require relationship-shaped evidence, visible
+8. Keep proposal precision high: require relationship-shaped evidence, visible
    citations, and no accepted, pending, or rejected equivalent edge.
-8. Support proposal bundles that create missing endpoint objects and the
+9. Support proposal bundles that create missing endpoint objects and the
    relationship together when each endpoint independently qualifies as durable
    information.
-9. Surface accepted and pending relationships on both existing endpoint object
+10. Surface accepted and pending relationships on both existing endpoint object
    pages, with relationship activity and nearby object evidence available while
    cited per-edge explanations wait for the later graph/mind-map view. Pending
    object-page approvals should include only items that target the object plus
    sibling create items needed by those relationship proposals, so accepting from
    the object page can materialize the required dependency without surfacing
    unrelated bundle work.
-10. Replace manual UUID linking on object detail pages with object search/select.
-11. Keep the full graph/mind-map view out of this slice; revisit after real
+11. Replace manual UUID linking on object detail pages with object search/select.
+12. Keep the full graph/mind-map view out of this slice; revisit after real
    relationship data exists.
 
 ## Bundle-Local References
@@ -119,6 +124,10 @@ in the same approval bundle.
 - Missing person-object repair only creates full-name person candidates from
   relationship-shaped facts. Bare first names remain evidence until a stronger
   person identity exists.
+- Connected Work-backed repair only proposes relationships for active
+  task/follow-up/decision objects whose own title names the repaired object and
+  whose team-visible object audit event can be cited. Rejected exact pairs stay
+  suppressed like fact-backed relationship proposals.
 
 ## Out Of Scope
 

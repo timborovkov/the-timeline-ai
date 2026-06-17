@@ -85,7 +85,7 @@ implementation detail.
 - [x] Keep object-page pending approval dependencies available for relationship
       proposals without surfacing unrelated bundle items, and render
       relationship/person rows with readable endpoint names instead of raw refs.
-- [ ] Strengthen relationship/person proposal generation from Connected Work so
+- [x] Strengthen relationship/person proposal generation from Connected Work so
       operationally useful task/company, decision/company, and person/company
       connections graduate into approval-backed object memory.
 - [ ] After object relationships have real usage, design a graph/mind-map view

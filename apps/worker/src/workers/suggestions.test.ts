@@ -696,6 +696,96 @@ describe('processSuggestionJobForTests', () => {
     ).resolves.toEqual([]);
   });
 
+  it('queues connected-work relationship repair from task titles without reoffering rejected edges', async () => {
+    const [company, task] = await db
+      .insert(entities)
+      .values([
+        { teamId: TEAM_ID, type: 'company', canonicalName: 'DFK Finland Oy' },
+        {
+          teamId: TEAM_ID,
+          type: 'task',
+          canonicalName: 'Follow up on DFK Finland Oy pilot proposal',
+          status: 'todo',
+        },
+      ])
+      .returning({ id: entities.id });
+    if (!company || !task) throw new Error('expected object fixtures');
+    const [raw] = await db
+      .insert(rawEvents)
+      .values({
+        teamId: TEAM_ID,
+        authorUserId: OWNER_ID,
+        source: 'system',
+        contentText: 'Created task: Follow up on DFK Finland Oy pilot proposal',
+        occurredAt: REFERENCE_DATE,
+        visibility: 'team',
+        sourceMetadata: {
+          kind: 'object_create',
+          entity_id: task.id,
+          actor_kind: 'user',
+        },
+      })
+      .returning({ id: rawEvents.id });
+    if (!raw) throw new Error('expected raw event');
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      {
+        scope: 'object_cleanup',
+        teamId: TEAM_ID,
+        objectId: company.id,
+        triggeredBy: 'memory_repair',
+      },
+    );
+
+    const scope = withTeam(db as never, TEAM_ID, OWNER_ID);
+    let bundles = await scope.suggestions.listPendingSuggestions();
+    expect(bundles).toHaveLength(1);
+    const bundle = bundles[0];
+    if (!bundle) throw new Error('expected connected-work bundle');
+    expect(bundle).toMatchObject({
+      title: 'Relate DFK Finland Oy and Follow up on DFK Finland Oy pilot proposal',
+      reason: 'A work item names this object and is connected work.',
+      evidence: [expect.objectContaining({ rawEventId: raw.id })],
+    });
+    expect(bundle.metadata).toMatchObject({
+      repair_kind: 'connected_work_relationship',
+      source: 'connected_work',
+    });
+    const relationshipItem = bundle.items[0];
+    expect(relationshipItem).toMatchObject({
+      operation: 'create',
+      targetKind: 'object_relationship',
+      proposedPayload: {
+        kind: 'related',
+      },
+    });
+    expect(Array.from(new Set(Object.values(relationshipItem?.proposedPayload ?? {})))).toEqual(
+      expect.arrayContaining([company.id, task.id]),
+    );
+
+    await expect(scope.suggestions.rejectSuggestionItem(relationshipItem?.id ?? '')).resolves.toBe(
+      true,
+    );
+    await processSuggestionJobForTests(
+      { db: db as never },
+      {
+        scope: 'object_cleanup',
+        teamId: TEAM_ID,
+        objectId: company.id,
+        triggeredBy: 'memory_repair',
+      },
+    );
+
+    bundles = await scope.suggestions.listPendingSuggestions();
+    expect(bundles).toEqual([]);
+    const relationshipItems = await db
+      .select({ status: agentSuggestionItems.status })
+      .from(agentSuggestionItems)
+      .where(eq(agentSuggestionItems.targetKind, 'object_relationship'));
+    expect(relationshipItems).toEqual([{ status: 'rejected' }]);
+  });
+
   it('queues missing person-object relationship repair as one approval bundle without reoffering rejected edges', async () => {
     const [company] = await db
       .insert(entities)
