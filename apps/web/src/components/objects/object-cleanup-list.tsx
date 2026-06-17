@@ -17,6 +17,12 @@ import { MAX_OBJECT_MERGE_SELECTION, objectMergeHref } from '@/lib/object-merge'
 interface Props {
   rows: objects.ObjectRow[];
   typeLabels: Record<string, string>;
+  pageInfo?: {
+    page: number;
+    pageSize: number;
+    previousHref: string | null;
+    nextHref: string | null;
+  };
 }
 
 interface CleanupListState {
@@ -65,7 +71,7 @@ function cleanupListReducer(state: CleanupListState, action: CleanupListAction):
   }
 }
 
-export function ObjectCleanupList({ rows, typeLabels }: Props) {
+export function ObjectCleanupList({ rows, typeLabels, pageInfo }: Props) {
   const router = useRouter();
   const dialog = useAppDialog();
   const [{ selecting, selected, archivedIds, error, filterQuery }, dispatchCleanupList] =
@@ -208,6 +214,15 @@ export function ObjectCleanupList({ rows, typeLabels }: Props) {
           )}
         </div>
       </div>
+      {pageInfo ? (
+        <ObjectListPager
+          page={pageInfo.page}
+          pageSize={pageInfo.pageSize}
+          shownCount={rows.length}
+          previousHref={pageInfo.previousHref}
+          nextHref={pageInfo.nextHref}
+        />
+      ) : null}
       {error ? (
         <p className="border border-danger/30 bg-danger/10 px-3 py-2 text-sm text-danger">
           {error}
@@ -288,5 +303,57 @@ export function ObjectCleanupList({ rows, typeLabels }: Props) {
         </div>
       )}
     </div>
+  );
+}
+
+function ObjectListPager({
+  page,
+  pageSize,
+  shownCount,
+  previousHref,
+  nextHref,
+}: {
+  page: number;
+  pageSize: number;
+  shownCount: number;
+  previousHref: string | null;
+  nextHref: string | null;
+}) {
+  const start = (page - 1) * pageSize + 1;
+  const end = start + Math.max(shownCount - 1, 0);
+
+  return (
+    <nav
+      aria-label="Objects pages"
+      className="flex flex-wrap items-center justify-between gap-2 border-b border-border pb-2"
+    >
+      <p className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
+        Showing {start}-{end}
+      </p>
+      <div className="flex items-center gap-1.5">
+        <PaginationLink href={previousHref} label="Previous" />
+        <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
+          Page {page}
+        </span>
+        <PaginationLink href={nextHref} label="Next" />
+      </div>
+    </nav>
+  );
+}
+
+function PaginationLink({ href, label }: { href: string | null; label: string }) {
+  const className =
+    'inline-flex h-8 items-center rounded-sm border px-2.5 font-mono text-[11px] uppercase tracking-[0.1em] transition-colors';
+  if (!href) {
+    return (
+      <span className={`${className} border-border text-fg-dim opacity-50`} aria-disabled="true">
+        {label}
+      </span>
+    );
+  }
+  return (
+    <Link href={href} className={`${className} border-border text-fg hover:bg-surface-2`}>
+      {label}
+    </Link>
   );
 }

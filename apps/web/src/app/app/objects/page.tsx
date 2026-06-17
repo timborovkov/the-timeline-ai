@@ -36,6 +36,10 @@ const TYPE_LABEL: Record<string, string> = {
   follow_up: 'Follow-ups',
   other: 'Other',
 };
+
+const OBJECTS_PAGE_SIZE = 48;
+const MAX_OBJECTS_PAGE = 250;
+
 function objectIdsForMergeSuggestion(item: { proposedPayload: unknown }): string[] {
   if (!item.proposedPayload || typeof item.proposedPayload !== 'object') return [];
   const payload = item.proposedPayload as Record<string, unknown>;
@@ -50,7 +54,7 @@ function objectIdsForMergeSuggestion(item: { proposedPayload: unknown }): string
 export default async function ObjectsIndexPage({
   searchParams,
 }: {
-  searchParams: Promise<{ type?: string; status?: string }>;
+  searchParams: Promise<{ type?: string; status?: string; page?: string }>;
 }) {
   const session = await auth();
   if (!session?.user) redirect('/sign-in');
@@ -63,20 +67,30 @@ export default async function ObjectsIndexPage({
   const type =
     params.type && TYPE_LABEL[params.type] ? (params.type as objects.ObjectType) : undefined;
   const status = params.status?.trim() ?? undefined;
+  const page = parsePageParam(params.page);
+  const offset = (page - 1) * OBJECTS_PAGE_SIZE;
 
   // Default to hiding archived objects — `listObjects` only applies the
   // archived predicate when `filter.archived` is explicitly set, so an
   // unset value would surface archived rows in the main index and defeat
   // the archive button on the detail page. A dedicated "Archived" filter
   // chip (with `?archived=1`) is a future addition.
-  const filter: objects.ObjectListFilter = { limit: 500, archived: false };
+  const filter: objects.ObjectListFilter = {
+    limit: OBJECTS_PAGE_SIZE + 1,
+    offset,
+    archived: false,
+  };
   if (type) filter.type = type;
   if (status) filter.status = status;
 
-  const [rows, suggestionBundles] = await Promise.all([
+  const [pageRows, suggestionBundles] = await Promise.all([
     scope.objects.listObjects(filter),
     scope.suggestions.listPendingSuggestions(),
   ]);
+  const hasNextPage = pageRows.length > OBJECTS_PAGE_SIZE;
+  const rows = pageRows.slice(0, OBJECTS_PAGE_SIZE);
+  const previousHref = page > 1 ? objectsPageHref(params, page - 1) : null;
+  const nextHref = hasNextPage ? objectsPageHref(params, page + 1) : null;
   const cleanupSuggestions: ReturnType<typeof serializeSuggestionBundle>[] = [];
   const mergeSuggestionItems: {
     id: string;
@@ -117,10 +131,11 @@ export default async function ObjectsIndexPage({
   return (
     <div className="mx-auto max-w-5xl space-y-6">
       <IndexStrip
-        srLabel={`Objects · ${rows.length} total${type ? ` · filtered to ${TYPE_LABEL[type] ?? type}` : ''}`}
+        srLabel={`Objects · page ${page} · ${rows.length} shown${type ? ` · filtered to ${TYPE_LABEL[type] ?? type}` : ''}`}
         segments={[
           { value: 'OBJECTS' },
-          { label: 'total', value: rows.length },
+          { label: 'page', value: page },
+          { label: 'shown', value: rows.length },
           ...(type
             ? ([{ label: 'type', value: TYPE_LABEL[type] ?? type, signal: true }] as const)
             : ([] as const)),
@@ -165,14 +180,48 @@ export default async function ObjectsIndexPage({
 
       {rows.length === 0 ? (
         <EmptyAction
-          title={type ? 'No objects match this filter' : 'No objects yet'}
-          body="Objects are extracted from captured work. You can also create one manually when you already know what should be tracked."
-          href={type ? '/app/objects' : '/app#capture'}
-          action={type ? 'Clear filter' : 'Capture first note'}
+          title={
+            page > 1
+              ? 'No objects on this page'
+              : type
+                ? 'No objects match this filter'
+                : 'No objects yet'
+          }
+          body={
+            page > 1
+              ? 'This page is empty. Earlier pages may still have objects.'
+              : 'Objects are extracted from captured work. You can also create one manually when you already know what should be tracked.'
+          }
+          href={page > 1 ? objectsPageHref(params, 1) : type ? '/app/objects' : '/app#capture'}
+          action={page > 1 ? 'Open first page' : type ? 'Clear filter' : 'Capture first note'}
         />
       ) : (
-        <ObjectCleanupList rows={rows} typeLabels={TYPE_LABEL} />
+        <ObjectCleanupList
+          rows={rows}
+          typeLabels={TYPE_LABEL}
+          pageInfo={{
+            page,
+            pageSize: OBJECTS_PAGE_SIZE,
+            previousHref,
+            nextHref,
+          }}
+        />
       )}
     </div>
   );
+}
+
+function parsePageParam(value: string | undefined): number {
+  const page = Number(value);
+  if (!Number.isSafeInteger(page) || page < 1) return 1;
+  return Math.min(page, MAX_OBJECTS_PAGE);
+}
+
+function objectsPageHref(params: { type?: string; status?: string }, page: number): string {
+  const query = new URLSearchParams();
+  if (params.type) query.set('type', params.type);
+  if (params.status) query.set('status', params.status);
+  if (page > 1) query.set('page', String(page));
+  const qs = query.toString();
+  return qs ? `/app/objects?${qs}` : '/app/objects';
 }

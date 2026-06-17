@@ -26,7 +26,21 @@ vi.mock('@/lib/auth', () => ({ auth: fakes.auth }));
 vi.mock('@/lib/active-team', () => ({ resolveActiveTeam: fakes.resolveActiveTeam }));
 vi.mock('@/lib/db', () => ({ db: {} }));
 vi.mock('@/components/objects/object-cleanup-list', () => ({
-  ObjectCleanupList: () => <div data-testid="object-cleanup-list" />,
+  ObjectCleanupList: ({
+    pageInfo,
+  }: {
+    pageInfo?: {
+      page: number;
+      previousHref: string | null;
+      nextHref: string | null;
+    };
+  }) => (
+    <div data-testid="object-cleanup-list">
+      {pageInfo
+        ? `${pageInfo.page}|${pageInfo.previousHref ?? 'none'}|${pageInfo.nextHref ?? 'none'}`
+        : ''}
+    </div>
+  ),
 }));
 vi.mock('@/components/objects/object-cleanup-suggestions', () => ({
   ObjectCleanupSuggestions: ({
@@ -72,6 +86,63 @@ function mergeSuggestion(index: number) {
 }
 
 describe('ObjectsIndexPage', () => {
+  it('fetches one paginated object window and preserves filters in page links', async () => {
+    fakes.listObjects.mockResolvedValue(
+      Array.from({ length: 49 }, (_, index) => ({
+        id: `object-${index}`,
+        type: 'task',
+        canonicalName: `Object ${index}`,
+        status: 'open',
+        stage: null,
+        priority: null,
+        ownerUserId: null,
+        assigneeUserId: null,
+        dueAt: null,
+        agentSuggested: false,
+        archivedAt: null,
+        aliases: [],
+        metadata: {},
+        createdAt: new Date('2026-06-01T10:00:00.000Z'),
+        updatedAt: new Date('2026-06-01T10:00:00.000Z'),
+      })),
+    );
+
+    const html = renderToStaticMarkup(
+      await ObjectsIndexPage({
+        searchParams: Promise.resolve({ type: 'task', status: 'open', page: '2' }),
+      }),
+    );
+
+    expect(fakes.listObjects).toHaveBeenCalledWith({
+      limit: 49,
+      offset: 48,
+      archived: false,
+      type: 'task',
+      status: 'open',
+    });
+    expect(html).toContain('2|/app/objects?type=task&amp;status=open|');
+    expect(html).toContain('/app/objects?type=task&amp;status=open&amp;page=3');
+  });
+
+  it('bounds oversized page params and uses a page-specific empty state', async () => {
+    const html = renderToStaticMarkup(
+      await ObjectsIndexPage({
+        searchParams: Promise.resolve({ type: 'task', status: 'open', page: '999999' }),
+      }),
+    );
+
+    expect(fakes.listObjects).toHaveBeenCalledWith({
+      limit: 49,
+      offset: 11952,
+      archived: false,
+      type: 'task',
+      status: 'open',
+    });
+    expect(html).toContain('No objects on this page');
+    expect(html).toContain('/app/objects?type=task&amp;status=open');
+    expect(html).toContain('Open first page');
+  });
+
   it('preloads merge previews only for the cleanup panel window', async () => {
     fakes.listPendingSuggestions.mockResolvedValue([
       {

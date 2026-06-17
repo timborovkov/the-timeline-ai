@@ -408,7 +408,7 @@ export async function listObjects(
     .select()
     .from(entities)
     .where(and(...conds))
-    .orderBy(desc(entities.updatedAt))
+    .orderBy(desc(entities.updatedAt), desc(entities.id))
     .limit(limit)
     .offset(offset);
   return rows.map(toObjectRow);
