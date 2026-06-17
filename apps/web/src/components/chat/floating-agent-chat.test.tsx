@@ -169,6 +169,36 @@ describe('FloatingAgentChat', () => {
     ).toMatchObject({ sessionId: undefined, startNewSession: true });
   });
 
+  it('starts a fresh floating session while the modal stays open', async () => {
+    const user = userEvent.setup();
+    const storedSession = 'aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa';
+    const storageKey = 'timeline:floating-agent-chat:team-1:session';
+    window.localStorage.setItem(storageKey, storedSession);
+
+    render(<FloatingAgentChat teamId="team-1" teamName="AuditAI" />);
+    await user.click(screen.getByRole('button', { name: 'Open floating agent chat' }));
+
+    await waitFor(() => {
+      expect(
+        (fakes.transports.at(-1)?.options.body?.() as { sessionId?: string | null }).sessionId,
+      ).toBe(storedSession);
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Start new conversation' }));
+
+    expect(window.localStorage.getItem(storageKey)).toBeNull();
+    expect(screen.getByRole('heading', { name: 'Ask AuditAI' })).toBeTruthy();
+    await waitFor(() => {
+      expect(fakes.transports.length).toBeGreaterThanOrEqual(2);
+    });
+    expect(
+      fakes.transports.at(-1)?.options.body?.() as {
+        sessionId?: string | null;
+        startNewSession?: boolean;
+      },
+    ).toMatchObject({ sessionId: undefined, startNewSession: true });
+  });
+
   it('ignores late session ids from requests that finish after close', async () => {
     const user = userEvent.setup();
     const storageKey = 'timeline:floating-agent-chat:team-1:session';
