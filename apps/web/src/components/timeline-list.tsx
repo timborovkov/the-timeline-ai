@@ -536,13 +536,16 @@ function InspectorActions({
 function ImpactStrip({ items }: { items: ImpactItem[] }) {
   if (items.length === 0) return null;
   return (
-    <div className="flex min-w-0 flex-wrap justify-end gap-1.5" aria-label="Impact context">
+    <div
+      className="flex min-w-0 flex-wrap justify-start gap-x-2 gap-y-1 md:justify-end"
+      aria-label="Impact context"
+    >
       {items.slice(0, 2).map((item, index) => {
         const count = item.count && item.count > 1 ? ` ×${item.count}` : '';
         const status = item.status ? ` · ${item.status}` : '';
         const label = displayText(`${IMPACT_LABEL[item.kind]} · ${item.label}${count}${status}`);
         const className =
-          'inline-flex min-h-6 max-w-full min-w-0 items-center rounded-sm border border-border bg-surface px-2 py-1 font-mono text-[10px] uppercase tracking-[0.12em] text-fg-muted first:border-signal/40 first:bg-signal-soft first:text-signal';
+          'inline-flex min-h-6 max-w-full min-w-0 items-center font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim transition-colors hover:text-fg';
         return item.href ? (
           <Link key={`${item.kind}:${item.label}:${index}`} href={item.href} className={className}>
             <span className="min-w-0 truncate">{label}</span>
@@ -587,7 +590,7 @@ function TimelineMomentRow({
   return (
     <li
       className={cn(
-        'relative grid scroll-mt-24 grid-cols-1 border-b border-border transition-colors hover:bg-surface md:grid-cols-[6.75rem_minmax(0,1fr)_auto]',
+        'relative -mx-3 grid scroll-mt-24 grid-cols-1 border-b border-border px-3 transition-colors hover:bg-surface md:grid-cols-[6.75rem_minmax(0,1fr)_minmax(10rem,34rem)]',
         selected && 'bg-surface shadow-[inset_2px_0_0_var(--signal)]',
       )}
     >
@@ -639,7 +642,7 @@ function TimelineMomentRow({
             <span>{moment.actorLabel}</span>
             <span>{moment.contextLabel}</span>
           </div>
-          <p className="mt-1 truncate text-sm font-semibold leading-5 text-fg">{moment.summary}</p>
+          <p className="mt-1 truncate text-sm font-medium leading-5 text-fg">{moment.summary}</p>
           <p
             className={cn(
               'mt-0.5 truncate text-sm leading-5 text-fg-muted',
@@ -659,7 +662,7 @@ function TimelineMomentRow({
           </Link>
         ) : null}
       </div>
-      <div className="flex min-w-0 items-start justify-start gap-1.5 pb-3 md:min-w-48 md:justify-end md:py-3">
+      <div className="flex min-w-0 items-start justify-start gap-2 pb-3 md:justify-end md:py-3">
         <ImpactStrip items={moment.impactItems} />
         {transcriptionStatus ? (
           <span className="inline-flex min-h-6 max-w-full min-w-0 items-center rounded-sm border border-border bg-surface px-2 py-1 font-mono text-[10px] uppercase tracking-[0.12em] text-fg-muted">
@@ -735,7 +738,7 @@ export function TimelineList({
         <section key={date} aria-labelledby={`timeline-date-${date}`}>
           <h2
             id={`timeline-date-${date}`}
-            className="sticky top-14 z-10 border-y border-border bg-bg py-2 font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim"
+            className="sticky top-0 z-10 -mx-3 border-y border-border bg-bg px-3 py-2 font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim"
           >
             {date}
           </h2>
