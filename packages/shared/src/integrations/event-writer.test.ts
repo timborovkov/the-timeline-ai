@@ -225,6 +225,7 @@ describe('writeIntegrationEvents visibility', () => {
       integration_provider: 'github',
       integration_external_id: 'timborovkov/the-timeline-ai#202',
       display_title: 'the-timeline-ai: Add cursor pagination',
+      display_title_canonical_name: 'timborovkov/the-timeline-ai#202: Add cursor pagination',
       url: 'https://github.com/timborovkov/the-timeline-ai/pull/202',
     });
   });

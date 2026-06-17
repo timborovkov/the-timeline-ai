@@ -283,6 +283,7 @@ function issueToEvent(node: LinearIssueNode): IntegrationEvent {
     objectMap: {
       type: 'task',
       canonicalName: `${node.identifier}: ${node.title}`,
+      displayTitle: node.title,
       externalId: node.id,
       status: linearStatus(stateType),
       priority,

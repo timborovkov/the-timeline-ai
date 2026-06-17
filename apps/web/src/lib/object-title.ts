@@ -10,14 +10,18 @@ function metadataString(metadata: Record<string, unknown>, key: string): string 
 export function displayObjectTitle(
   row: Pick<objects.ObjectRow, 'canonicalName' | 'metadata'>,
 ): string {
-  if (metadataString(row.metadata, 'integration_provider') !== 'github') return row.canonicalName;
+  const explicit = metadataString(row.metadata, 'display_title');
+  const explicitSource = metadataString(row.metadata, 'display_title_canonical_name');
+  if (explicit && explicitSource && row.canonicalName === explicitSource) return explicit;
+
+  const provider = metadataString(row.metadata, 'integration_provider');
+  if (provider !== 'github') return row.canonicalName;
 
   const match = /^(.+?)#(?:issue:)?\d+:\s*(.+)$/.exec(row.canonicalName);
   if (!match) return row.canonicalName;
   const [, canonicalRepo, title] = match;
   if (!canonicalRepo || !title) return row.canonicalName;
 
-  const explicit = metadataString(row.metadata, 'display_title');
   if (explicit) return explicit;
 
   const externalId = metadataString(row.metadata, 'integration_external_id');

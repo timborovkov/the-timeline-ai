@@ -662,6 +662,7 @@ describe('processSuggestionJobForTests', () => {
     const prompt = call?.prompt;
     expect(prompt).toContain('# Existing workspace objects');
     expect(call?.system).toContain('proposedPayload.type="decision"');
+    expect(call?.system).toContain('Keep canonicalName human-facing');
     const bundle = (
       await withTeam(db as never, TEAM_ID, OWNER_ID).suggestions.listPendingSuggestions()
     )[0];
