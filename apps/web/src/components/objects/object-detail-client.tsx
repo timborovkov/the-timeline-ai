@@ -41,6 +41,7 @@ import {
 } from '@/components/objects/object-search-results';
 import { ObjectSectionFeed } from '@/components/objects/object-section-feed';
 import { displayText, formatDisplayDateTime } from '@/lib/display-dates';
+import { displayObjectTitle } from '@/lib/object-title';
 import { readJson } from '@/lib/paginated-api';
 import { queryKeys } from '@/lib/query-keys';
 import { cn, errorMessage } from '@/lib/utils';
@@ -159,7 +160,7 @@ function isOptimisticRelationship(relationship: ObjectDetail['relationships'][nu
 function initObjectDetailUiState(detail: ObjectDetail): ObjectDetailUiState {
   return {
     overrides: {},
-    nameDraft: detail.canonicalName,
+    nameDraft: editableObjectName(detail),
     aliasesDraft: detail.aliases.join(', '),
     stageDraft: detail.stage ?? '',
     dueDraft: toLocalInputValue(detail.dueAt),
@@ -171,6 +172,10 @@ function initObjectDetailUiState(detail: ObjectDetail): ObjectDetailUiState {
     editingBody: '',
     linkKind: 'related',
   };
+}
+
+function editableObjectName(detail: Pick<ObjectDetail, 'canonicalName' | 'metadata'>): string {
+  return displayObjectTitle(detail);
 }
 
 function objectDetailUiReducer(
@@ -418,7 +423,7 @@ function useObjectDetailController({ detail, userId, suggestions }: Props) {
         [field]: field === 'dueAt' ? toDateOrNull(rollbackValue) : rollbackValue,
       }));
       if (field === 'canonicalName') {
-        dispatchObjectUi({ nameDraft: String(rollbackValue ?? '') });
+        dispatchObjectUi({ nameDraft: editableObjectName(serverDetailRef.current) });
       }
       if (field === 'aliases') {
         dispatchObjectUi({ aliasesDraft: normalizeAliases(rollbackValue).join(', ') });
@@ -654,7 +659,7 @@ function useObjectDetailController({ detail, userId, suggestions }: Props) {
         dispatchLocalDetail({ recentChangeStatuses: previousRecentChangeStatuses });
         updateLocalDetail(() => previousDetail);
         dispatchObjectUi({
-          nameDraft: previousDetail.canonicalName,
+          nameDraft: editableObjectName(previousDetail),
           aliasesDraft: previousDetail.aliases.join(', '),
           stageDraft: previousDetail.stage ?? '',
           dueDraft: toLocalInputValue(previousDetail.dueAt),
@@ -1109,7 +1114,7 @@ function ObjectDetailHeader({
             <span>id {detail.id.slice(0, 8)}</span>
           </div>
           <h1 className="mt-2 text-3xl font-semibold tracking-tight text-fg">
-            {displayText(detail.canonicalName)}
+            {displayText(displayObjectTitle(detail))}
           </h1>
           {detail.aliases.length > 0 && (
             <p className="mt-2 font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
@@ -1180,10 +1185,11 @@ function ObjectEditableFields({
             focusedDraftsRef.current.canonicalName = false;
             const v = e.target.value.trim();
             if (v === '') {
-              dispatchObjectUi({ nameDraft: detail.canonicalName });
+              dispatchObjectUi({ nameDraft: editableObjectName(detail) });
               return;
             }
             dispatchObjectUi({ nameDraft: v });
+            if (v === editableObjectName(detail)) return;
             patch('canonicalName', v);
           }}
           className="w-full rounded-md border bg-surface px-3 py-2 text-sm"
@@ -1518,7 +1524,7 @@ function ConnectedTaskList({
               className="grid gap-1 rounded-sm border border-border bg-surface px-3 py-2 text-sm"
             >
               <a href={`/app/objects/${task.id}`} className="font-medium hover:underline">
-                {displayText(task.canonicalName)}
+                {displayText(displayObjectTitle(task))}
               </a>
               <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">
                 {task.status}

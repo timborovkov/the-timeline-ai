@@ -123,6 +123,33 @@ describe('CuratedBoardTable', () => {
     });
   });
 
+  it('uses source-tracked integration display titles in table rows', () => {
+    render(
+      <CuratedBoardTable
+        boardId="board-1"
+        view="table"
+        lanes={[]}
+        items={[
+          boardItem({
+            canonicalName: 'timborovkov/the-timeline-ai#202: Add cursor pagination',
+            metadata: {
+              display_title: 'the-timeline-ai: Add cursor pagination',
+              display_title_canonical_name:
+                'timborovkov/the-timeline-ai#202: Add cursor pagination',
+            },
+          }),
+        ]}
+        members={[]}
+        onUpdateItem={fakes.updateItem}
+      />,
+    );
+
+    expect(
+      screen.getByRole('link', { name: 'the-timeline-ai: Add cursor pagination' }),
+    ).toBeTruthy();
+    expect(screen.queryByText(/timborovkov\/the-timeline-ai#202/)).toBeNull();
+  });
+
   it('syncs the next step editor when refreshed item props change', () => {
     const item = { ...boardItem(), nextStep: 'Call customer' };
     const { rerender } = render(

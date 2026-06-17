@@ -72,6 +72,57 @@ describe('TaskBoard', () => {
     expect(screen.getByText('P2')).toBeTruthy();
   });
 
+  it('prefers source-tracked integration display titles over provider identity canonical names', () => {
+    render(
+      <TaskBoard
+        rows={[
+          task({
+            canonicalName: 'timborovkov/the-timeline-ai#202: Add cursor pagination',
+            metadata: {
+              integration_provider: 'github',
+              integration_external_id: 'timborovkov/the-timeline-ai#202',
+              display_title: 'the-timeline-ai: Add cursor pagination',
+              display_title_canonical_name:
+                'timborovkov/the-timeline-ai#202: Add cursor pagination',
+            },
+          }),
+        ]}
+        columns={['todo', 'doing', 'done', 'blocked', 'cancelled']}
+        selectedTaskId="task-1"
+        members={[{ id: 'user-1', label: 'Ada Lovelace' }]}
+      />,
+    );
+
+    expect(screen.getAllByText('the-timeline-ai: Add cursor pagination')).toHaveLength(2);
+    expect(screen.queryByText(/timborovkov\/the-timeline-ai#202/)).toBeNull();
+  });
+
+  it('uses provider identity canonical names when display metadata is absent', () => {
+    render(
+      <TaskBoard
+        rows={[
+          task({
+            canonicalName: 'timborovkov/the-timeline-ai#202: Add cursor pagination',
+            metadata: {
+              integration_provider: 'github',
+              integration_external_id: 'timborovkov/the-timeline-ai#202',
+            },
+          }),
+        ]}
+        columns={['todo', 'doing', 'done', 'blocked', 'cancelled']}
+        selectedTaskId={null}
+        members={[{ id: 'user-1', label: 'Ada Lovelace' }]}
+      />,
+    );
+
+    expect(
+      screen.getByRole('link', {
+        name: 'timborovkov/the-timeline-ai#202: Add cursor pagination',
+      }),
+    ).toBeTruthy();
+    expect(screen.queryByText('the-timeline-ai: Add cursor pagination')).toBeNull();
+  });
+
   it('wraps long task titles on cards and in the selected panel', () => {
     const longTitle =
       'timborovkov/the-timeline-ai#202: Add cursor pagination to the visible tasks board so the title can be read';

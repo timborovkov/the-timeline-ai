@@ -248,6 +248,10 @@ function buildAuthorizeUrl(input: OAuthStartInput): string {
   return url.toString();
 }
 
+function repoDisplayName(repo: string): string {
+  return repo.split('/').pop() ?? repo;
+}
+
 function prToEvent(repo: string, pr: GhPullRequest): IntegrationEvent {
   const eventType = pr.merged_at ? 'pr.merged' : pr.state === 'closed' ? 'pr.closed' : 'pr.updated';
   const status: 'open' | 'done' | 'cancelled' = pr.merged_at
@@ -280,6 +284,7 @@ function prToEvent(repo: string, pr: GhPullRequest): IntegrationEvent {
     objectMap: {
       type: 'task',
       canonicalName: `${repo}#${String(pr.number)}: ${pr.title}`,
+      displayTitle: `${repoDisplayName(repo)}: ${pr.title}`,
       externalId,
       status,
       url: pr.html_url,
@@ -312,6 +317,7 @@ function issueToEvent(repo: string, issue: GhIssue): IntegrationEvent | null {
     objectMap: {
       type: 'task',
       canonicalName: `${repo}#${String(issue.number)}: ${issue.title}`,
+      displayTitle: `${repoDisplayName(repo)}: ${issue.title}`,
       externalId,
       status: issue.state === 'closed' ? 'done' : 'open',
       url: issue.html_url,

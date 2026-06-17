@@ -21,7 +21,10 @@ function lane(): boards.BoardLaneRow {
   };
 }
 
-function boardItem(canonicalName: string): boards.BoardItemRow {
+function boardItem(
+  canonicalName: string,
+  metadata: Record<string, unknown> = {},
+): boards.BoardItemRow {
   return {
     id: 'item-1',
     boardId: 'board-1',
@@ -48,7 +51,7 @@ function boardItem(canonicalName: string): boards.BoardItemRow {
       ownerUserId: null,
       assigneeUserId: null,
       dueAt: null,
-      metadata: {},
+      metadata,
       agentSuggested: false,
       archivedAt: null,
       createdAt: new Date('2026-01-01T00:00:00.000Z'),
@@ -79,5 +82,27 @@ describe('CuratedKanbanBoard', () => {
     const title = screen.getByRole('link', { name: longTitle });
     expect(title.className).toContain('break-words');
     expect(title.className).not.toContain('truncate');
+  });
+
+  it('uses source-tracked integration display titles on cards', () => {
+    render(
+      <CuratedKanbanBoard
+        boardId="board-1"
+        lanes={[lane()]}
+        items={[
+          boardItem('timborovkov/the-timeline-ai#202: Add cursor pagination', {
+            display_title: 'the-timeline-ai: Add cursor pagination',
+            display_title_canonical_name: 'timborovkov/the-timeline-ai#202: Add cursor pagination',
+          }),
+        ]}
+        selectedItemId={null}
+        members={[]}
+      />,
+    );
+
+    expect(
+      screen.getByRole('link', { name: 'the-timeline-ai: Add cursor pagination' }),
+    ).toBeTruthy();
+    expect(screen.queryByText(/timborovkov\/the-timeline-ai#202/)).toBeNull();
   });
 });

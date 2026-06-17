@@ -187,7 +187,9 @@ async function upsertWorkspaceObjects(
   const existingRows = await db
     .select({
       id: entities.id,
+      canonicalName: entities.canonicalName,
       externalId: sql<string>`${entities.metadata} ->> 'integration_external_id'`,
+      metadata: sql<Record<string, unknown>>`${entities.metadata}`,
     })
     .from(entities)
     .where(
@@ -197,12 +199,13 @@ async function upsertWorkspaceObjects(
         inArray(sql`(${entities.metadata} ->> 'integration_external_id')`, [...externalIds]),
       ),
     );
-  const idByExternal = new Map<string, string>();
-  for (const r of existingRows) idByExternal.set(r.externalId, r.id);
+  const existingByExternal = new Map<string, (typeof existingRows)[number]>();
+  for (const r of existingRows) existingByExternal.set(r.externalId, r);
 
   const toInsert: (typeof entities.$inferInsert)[] = [];
   const toUpdate: {
     id: string;
+    type: ObjectMapping['type'];
     canonicalName: string;
     status: NonNullable<ObjectMapping['status']>;
     priority: number | null;
@@ -212,19 +215,33 @@ async function upsertWorkspaceObjects(
 
   for (const evt of evts) {
     const map = evt.objectMap;
+    const existing = existingByExternal.get(map.externalId);
+    const preserveCanonicalName = existing
+      ? shouldPreserveExistingCanonicalName(existing, map)
+      : false;
+    const hasDisplayTitleSource = existing
+      ? metadataString(existing.metadata, 'display_title_canonical_name') !== null
+      : false;
+    const shouldWriteDisplayTitle = Boolean(
+      map.displayTitle && (!preserveCanonicalName || hasDisplayTitleSource),
+    );
     const metadata: Record<string, unknown> = {
       integration_id: integration.id,
       integration_provider: integration.provider,
       integration_external_id: map.externalId,
+      ...(shouldWriteDisplayTitle
+        ? { display_title: map.displayTitle, display_title_canonical_name: map.canonicalName }
+        : {}),
       ...(map.url ? { url: map.url } : {}),
       last_event_at: evt.occurredAt.toISOString(),
       last_event_type: evt.eventType,
     };
-    const existingId = idByExternal.get(map.externalId);
-    if (existingId) {
+    if (existing) {
+      const canonicalName = preserveCanonicalName ? existing.canonicalName : map.canonicalName;
       toUpdate.push({
-        id: existingId,
-        canonicalName: map.canonicalName,
+        id: existing.id,
+        type: map.type,
+        canonicalName,
         status: map.status ?? 'open',
         priority: mapPriorityLabel(map.priority) ?? null,
         aliases: map.aliases ?? [],
@@ -283,7 +300,7 @@ async function upsertWorkspaceObjects(
   if (toUpdate.length > 0) {
     const rows = toUpdate.map(
       (u) =>
-        sql`(${u.id}::uuid, ${u.canonicalName}::text, ${u.status}::text, ${u.priority}::smallint, ${JSON.stringify(u.aliases)}::jsonb, ${JSON.stringify(u.metadata)}::jsonb)`,
+        sql`(${u.id}::uuid, ${u.type}::entity_type, ${u.canonicalName}::text, ${u.status}::text, ${u.priority}::smallint, ${JSON.stringify(u.aliases)}::jsonb, ${JSON.stringify(u.metadata)}::jsonb)`,
     );
     // Defense-in-depth: the WHERE clause also pins team_id. The ids in
     // toUpdate came from a team-scoped SELECT, but stamping the team
@@ -293,26 +310,80 @@ async function upsertWorkspaceObjects(
     // Linear-mapped entity (e.g. "EngOnDeck" added by hand) survives
     // the next sync alongside the provider's own ones (e.g. "ENG-42").
     await db.execute(sql`
+      WITH incoming(id, type, canonical_name, status, priority, aliases, metadata) AS (
+        VALUES ${sql.join(rows, sql.raw(', '))}
+      ),
+      resolved AS (
+        SELECT
+          e.id,
+          incoming.type,
+          incoming.canonical_name,
+          incoming.status,
+          incoming.priority,
+          incoming.aliases,
+          incoming.metadata,
+          EXISTS (
+            SELECT 1
+            FROM ${entities} AS other
+            WHERE other.team_id = e.team_id
+              AND other.type = incoming.type
+              AND lower(other.canonical_name) = lower(incoming.canonical_name)
+              AND other.merged_into_id IS NULL
+              AND other.id <> e.id
+          ) AS canonical_collision
+        FROM ${entities} AS e
+        JOIN incoming ON incoming.id = e.id
+        WHERE e.team_id = ${integration.teamId}
+      )
       UPDATE ${entities} AS e
       SET
-        canonical_name = v.canonical_name,
-        status = v.status,
-        priority = COALESCE(v.priority, e.priority),
+        canonical_name = CASE
+          WHEN resolved.canonical_collision THEN e.canonical_name
+          ELSE resolved.canonical_name
+        END,
+        status = resolved.status,
+        priority = COALESCE(resolved.priority, e.priority),
         aliases = (
           SELECT COALESCE(jsonb_agg(DISTINCT a), '[]'::jsonb)
-          FROM jsonb_array_elements(COALESCE(e.aliases, '[]'::jsonb) || v.aliases) AS t(a)
+          FROM jsonb_array_elements(COALESCE(e.aliases, '[]'::jsonb) || resolved.aliases) AS t(a)
         ),
-        metadata = e.metadata || v.metadata,
+        metadata = (e.metadata - 'display_title_canonical_name_collision') || CASE
+          WHEN resolved.canonical_collision
+            AND resolved.metadata ? 'display_title_canonical_name'
+          THEN (resolved.metadata - 'display_title_canonical_name')
+            || jsonb_build_object(
+              'display_title_canonical_name',
+              e.canonical_name,
+              'display_title_canonical_name_collision',
+              resolved.canonical_name
+            )
+          ELSE resolved.metadata - 'display_title_canonical_name_collision'
+        END,
         updated_at = NOW()
-      FROM (VALUES ${sql.join(rows, sql.raw(', '))})
-        AS v(id, canonical_name, status, priority, aliases, metadata)
-      WHERE e.id = v.id
+      FROM resolved
+      WHERE e.id = resolved.id
         AND e.team_id = ${integration.teamId}
     `);
     for (const u of toUpdate) affectedIds.push(u.id);
   }
 
   await Promise.all(affectedIds.map((id) => enqueueObjectEmbedJob(integration.teamId, id)));
+}
+
+function metadataString(metadata: Record<string, unknown>, key: string): string | null {
+  const value = metadata[key];
+  if (typeof value !== 'string' && typeof value !== 'number') return null;
+  const text = String(value).trim();
+  return text || null;
+}
+
+function shouldPreserveExistingCanonicalName(
+  existing: { canonicalName: string; metadata: Record<string, unknown> },
+  map: ObjectMapping,
+): boolean {
+  const previousProviderName = metadataString(existing.metadata, 'display_title_canonical_name');
+  if (previousProviderName) return existing.canonicalName !== previousProviderName;
+  return existing.canonicalName !== map.canonicalName;
 }
 
 /**

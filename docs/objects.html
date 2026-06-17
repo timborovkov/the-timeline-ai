@@ -11,7 +11,7 @@
     <main id="main">
       <h1>Workspace objects</h1>
       <div class="meta">
-        <span class="kind">Architecture</span><span>Last updated 2026-06-12</span>
+        <span class="kind">Architecture</span><span>Last updated 2026-06-17</span>
       </div>
       <p class="tldr">
         Phase 8 turned <code>entities</code> from an extraction artifact into the workspace's
@@ -149,11 +149,17 @@
         </tbody>
       </table>
       <p>
-        See migration
+        See the base entity migration
+        <a href="../packages/db/drizzle/0005_phase4_entities_facts.sql"
+          ><code>0005_phase4_entities_facts.sql</code></a
+        >, the object-field migration
         <a href="../packages/db/drizzle/0007_phase8_objects.sql"
           ><code>0007_phase8_objects.sql</code></a
+        >, and the uniqueness no-op explanation in
+        <a href="../packages/db/drizzle/0009_phase8_entity_unq.sql"
+          ><code>0009_phase8_entity_unq.sql</code></a
         >
-        for the exact DDL.
+        for the exact DDL history.
       </p>
 
       <h2 id="object-types">Object types</h2>
@@ -190,8 +196,9 @@
               <code>hiring_loop</code>
             </td>
             <td>
-              Excluded from the uniqueness predicate. Teams legitimately reuse names ("follow up
-              with Acme").
+              Unmerged rows still use case-insensitive uniqueness per
+              <code>(team, type, name)</code>; duplicate-name attempts surface as friendly create
+              errors.
             </td>
           </tr>
         </tbody>

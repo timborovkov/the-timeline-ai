@@ -38,6 +38,12 @@ describe('linearProvider.handleWebhook', () => {
     expect(evt.dedupKey).toBe('linear:issue:LIN-1:2026-05-25T10:00:00Z');
     expect(evt.eventType).toBe('issue.updated');
     expect(evt.actor?.name).toBe('Alice');
+    expect(evt.objectMap).toMatchObject({
+      canonicalName: 'ENG-42: Wire Phase 11',
+      displayTitle: 'Wire Phase 11',
+      externalId: 'LIN-1',
+      aliases: ['ENG-42'],
+    });
   });
 
   it('ignores non-Issue payloads', async () => {

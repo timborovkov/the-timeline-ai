@@ -507,6 +507,46 @@ describe('githubProvider.incrementalSync', () => {
     );
   });
 
+  it('maps GitHub PRs and issues to task display titles without numbers', async () => {
+    const fetchMock = vi.fn<typeof fetch>((input) => {
+      const requestUrl =
+        typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+      const url = new URL(requestUrl);
+      if (url.pathname.endsWith('/pulls')) {
+        return Promise.resolve(
+          jsonResponse(url.searchParams.get('state') === 'open' ? [pullRequest()] : []),
+        );
+      }
+      if (url.pathname.endsWith('/pulls/7/reviews')) return Promise.resolve(jsonResponse([]));
+      if (url.pathname.endsWith('/issues')) return Promise.resolve(jsonResponse([issueRow(42)]));
+      if (url.pathname.endsWith('/commits')) return Promise.resolve(jsonResponse([]));
+      const base = emptyGithubFetch(input);
+      return Promise.resolve(base ?? jsonResponse({ message: 'unexpected' }, 404));
+    });
+    globalThis.fetch = fetchMock;
+    const writeEvents = vi.fn<SyncContext['writeEvents']>().mockResolvedValue([]);
+
+    await githubProvider.incrementalSync({
+      integration: {} as never,
+      tokens: { access_token: 'gho_token' },
+      selections: [{ kind: 'github.repo', externalId: 'acme/app' }],
+      ctx: {
+        writeEvents,
+        recordAudit: vi.fn(),
+        saveCursor: vi.fn(),
+        loadCursor: vi.fn().mockResolvedValue({ since: '2026-06-10T10:00:00Z' }),
+        persistTokens: vi.fn(),
+      },
+    });
+
+    const events = writeEvents.mock.calls.flatMap(([batch]) => batch);
+    const mappedObjects = events.flatMap((event) => (event.objectMap ? [event.objectMap] : []));
+    const prMap = mappedObjects.find((map) => map.canonicalName === 'acme/app#7: Add polling');
+    const issueMap = mappedObjects.find((map) => map.canonicalName === 'acme/app#42: Issue row');
+    expect(prMap?.displayTitle).toBe('app: Add polling');
+    expect(issueMap?.displayTitle).toBe('app: Issue row');
+  });
+
   it('treats PR review fetch failures as partial sync failures', async () => {
     const fetchMock = vi.fn<typeof fetch>((input) => {
       const requestUrl =

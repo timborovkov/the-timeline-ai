@@ -33,6 +33,7 @@ import { ObjectTextFilter } from '@/components/boards/object-text-filter';
 import { displayText } from '@/lib/display-dates';
 import { filterObjectsByText } from '@/lib/object-filter';
 import { objectDetailHref } from '@/lib/object-links';
+import { displayObjectTitle } from '@/lib/object-title';
 import { cn, errorMessage } from '@/lib/utils';
 
 interface TaskMemberOption {
@@ -364,6 +365,7 @@ function TaskCard({
     ? { transform: `translate3d(${String(transform.x)}px,${String(transform.y)}px,0)` }
     : undefined;
   const due = dueState(row.dueAt);
+  const title = displayObjectTitle(row);
   return (
     <li
       ref={setNodeRef}
@@ -382,7 +384,7 @@ function TaskCard({
         href={href}
         className="block min-w-0 whitespace-normal break-words font-medium leading-snug hover:underline"
       >
-        {displayText(row.canonicalName)}
+        {displayText(title)}
       </Link>
       <div className="mt-1.5 flex flex-wrap items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.1em] text-fg-dim">
         <span>Task</span>
@@ -422,6 +424,7 @@ function TaskDetailPanel({
 }) {
   const [saving, setSaving] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const title = displayObjectTitle(task);
 
   function save(field: string, patch: TaskPatch): void {
     setSaving(field);
@@ -447,7 +450,7 @@ function TaskDetailPanel({
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0 flex-1">
             <h2 className="whitespace-normal break-words text-lg font-semibold leading-snug text-fg">
-              {displayText(task.canonicalName)}
+              {displayText(title)}
             </h2>
             <p className="mt-1 font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
               Task · side panel

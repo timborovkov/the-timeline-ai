@@ -23,6 +23,7 @@ function boardItem(input: {
   priority?: number | null;
   nextStep?: string | null;
   notes?: string | null;
+  metadata?: Record<string, unknown>;
 }): boards.BoardItemRow {
   return {
     id: input.id,
@@ -50,7 +51,7 @@ function boardItem(input: {
       ownerUserId: null,
       assigneeUserId: null,
       dueAt: null,
-      metadata: {},
+      metadata: input.metadata ?? {},
       agentSuggested: false,
       archivedAt: null,
       createdAt: new Date('2026-01-01T00:00:00.000Z'),
@@ -121,6 +122,27 @@ describe('BoardCardDetail', () => {
     const heading = screen.getByRole('heading', { name: longTitle });
     expect(heading.className).toContain('break-words');
     expect(heading.className).not.toContain('truncate');
+  });
+
+  it('uses source-tracked integration display titles in the detail panel', () => {
+    const item = boardItem({
+      id: 'item-1',
+      entityId: 'object-1',
+      canonicalName: 'timborovkov/the-timeline-ai#202: Add cursor pagination',
+      metadata: {
+        display_title: 'the-timeline-ai: Add cursor pagination',
+        display_title_canonical_name: 'timborovkov/the-timeline-ai#202: Add cursor pagination',
+      },
+    });
+
+    render(
+      <BoardCardDetail boardId="board-1" view="kanban" item={item} history={[]} lanes={lanes} />,
+    );
+
+    expect(
+      screen.getByRole('heading', { name: 'the-timeline-ai: Add cursor pagination' }),
+    ).toBeTruthy();
+    expect(screen.queryByText(/timborovkov\/the-timeline-ai#202/)).toBeNull();
   });
 
   it('links source evidence to the focused timeline event', () => {

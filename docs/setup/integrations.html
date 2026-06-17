@@ -10,7 +10,7 @@
     <a class="skip" href="#main">Skip to content</a>
     <main id="main">
       <h1>Native integrations &amp; custom MCPs</h1>
-      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-06-14</span></div>
+      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-06-17</span></div>
       <p class="tldr">
         Connect native GitHub, Linear, and Google Drive provider accounts from
         <code>/app/me/connections</code>, activate shared team sources from
@@ -110,7 +110,9 @@ LINEAR_WEBHOOK_SECRET=...</code></pre>
         GitHub is a native Timeline integration. It is optional for non-engineering teams, but when
         connected it receives the same first-party treatment as Linear and Google Drive:
         person-owned OAuth, team source selection, audit rows, encrypted tokens, worker sync, and
-        cited timeline events.
+        cited timeline events. Synced external work items can also map to task objects; visible task
+        titles stay human-facing while provider IDs, issue keys, numbers, and URLs stay in
+        integration metadata, aliases, or evidence.
       </p>
       <ol>
         <li>
