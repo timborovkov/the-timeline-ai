@@ -77,13 +77,20 @@ function ObjectSectionItem({ section, item }: { section: Props['section']; item:
   }
   if (section === 'facts') {
     const sharedObjects = factSharedObjects(row.sharedObjects);
+    const occurredAt = text(row.occurredAt);
+    const source = text(row.source);
+    const observedAt = occurredAt ? formatDisplayDateTime(occurredAt) : 'unknown time';
+    const sourceLabel = source ? ` · ${source}` : '';
     return (
       <div className="space-y-2">
         <div className="flex flex-wrap items-start gap-2">
           <p className="min-w-0 flex-1">{text(row.statement)}</p>
           {sharedObjects.length > 0 ? <SharedFactObjects objects={sharedObjects} /> : null}
         </div>
-        <p className="text-[11px] text-muted-foreground">confidence {text(row.confidence)}</p>
+        <p className="text-[11px] text-muted-foreground">
+          Observed {observedAt}
+          {sourceLabel} · confidence {text(row.confidence)}
+        </p>
       </div>
     );
   }

@@ -560,6 +560,33 @@ export async function deleteNoteAction(input: unknown): Promise<ActionState> {
   });
 }
 
+// ---------- Summaries ----------
+
+export async function generateObjectSummaryAction(input: unknown): Promise<ActionState> {
+  return runSentryServerAction('generate_object_summary', async () => {
+    const parsed = z.object({ entityId: uuidSchema }).safeParse(input);
+    if (!parsed.success) return { error: 'Invalid id' };
+    const r = await resolveScope();
+    if (!r.ok) return { error: r.error };
+    try {
+      const result = await r.scope.objects.enqueueObjectSummaryRefresh(parsed.data.entityId, {
+        trigger: 'manual',
+      });
+      if (!result.canGenerate) {
+        return {
+          error:
+            result.reason === 'not_found' ? 'Object not found' : 'Not enough object memory yet',
+        };
+      }
+      if (!result.enqueued) return { error: 'Summary generation is already queued' };
+      bestEffortRevalidateObjectDetail(parsed.data.entityId, 'revalidate_object_summary');
+      return { ok: true, id: result.jobId ?? parsed.data.entityId };
+    } catch (err) {
+      return { error: friendlyError(err, 'Failed to queue summary') };
+    }
+  });
+}
+
 // ---------- Notifications ----------
 
 export async function markNotificationReadAction(id: string): Promise<ActionState> {

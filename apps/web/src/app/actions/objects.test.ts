@@ -8,6 +8,7 @@ import {
   createNoteAction,
   createObjectAction,
   deleteNoteAction,
+  generateObjectSummaryAction,
   markAllNotificationsReadAction,
   markNotificationReadAction,
   mergeObjectsAction,
@@ -43,6 +44,7 @@ const fakes = vi.hoisted(() => ({
     createNote: vi.fn(),
     updateNote: vi.fn(),
     deleteNote: vi.fn(),
+    enqueueObjectSummaryRefresh: vi.fn(),
     markNotificationRead: vi.fn(),
     markAllNotificationsRead: vi.fn(),
     acceptObjectChange: vi.fn(),
@@ -128,6 +130,12 @@ beforeEach(() => {
   fakes.fakeObjects.createNote.mockResolvedValue({ id: NOTE_ID });
   fakes.fakeObjects.updateNote.mockResolvedValue(true);
   fakes.fakeObjects.deleteNote.mockResolvedValue(true);
+  fakes.fakeObjects.enqueueObjectSummaryRefresh.mockResolvedValue({
+    enqueued: true,
+    jobId: 'summary-job',
+    canGenerate: true,
+    reason: null,
+  });
   fakes.fakeObjects.markNotificationRead.mockResolvedValue(true);
   fakes.fakeObjects.markAllNotificationsRead.mockResolvedValue(undefined);
   fakes.fakeObjects.acceptObjectChange.mockResolvedValue(true);
@@ -244,6 +252,40 @@ describe('object CRUD actions', () => {
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/boards', 'layout');
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/tasks');
     expectApprovalsRevalidated();
+  });
+
+  it('reports manual summary requests that are already queued', async () => {
+    fakes.fakeObjects.enqueueObjectSummaryRefresh.mockResolvedValueOnce({
+      enqueued: false,
+      jobId: 'summary-job',
+      canGenerate: true,
+      reason: null,
+    });
+
+    await expect(generateObjectSummaryAction({ entityId: OBJECT_ID })).resolves.toEqual({
+      error: 'Summary generation is already queued',
+    });
+    expect(fakes.fakeObjects.enqueueObjectSummaryRefresh).toHaveBeenCalledWith(OBJECT_ID, {
+      trigger: 'manual',
+    });
+    expect(fakes.fakeRevalidatePath).not.toHaveBeenCalledWith(`/app/objects/${OBJECT_ID}`);
+  });
+
+  it('reports missing objects distinctly when manual summary generation cannot load the object', async () => {
+    fakes.fakeObjects.enqueueObjectSummaryRefresh.mockResolvedValueOnce({
+      enqueued: false,
+      jobId: null,
+      canGenerate: false,
+      reason: 'not_found',
+    });
+
+    await expect(generateObjectSummaryAction({ entityId: OBJECT_ID })).resolves.toEqual({
+      error: 'Object not found',
+    });
+    expect(fakes.fakeObjects.enqueueObjectSummaryRefresh).toHaveBeenCalledWith(OBJECT_ID, {
+      trigger: 'manual',
+    });
+    expect(fakes.fakeRevalidatePath).not.toHaveBeenCalledWith(`/app/objects/${OBJECT_ID}`);
   });
 
   it('returns success when post-update reconciliation fails after the object was saved', async () => {

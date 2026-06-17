@@ -1,6 +1,15 @@
+import {
+  entities,
+  entityRelationships,
+  factEntities,
+  facts,
+  objectChanges,
+  rawEvents,
+} from '@timeline/db';
 import { getAudioBucket, getS3PresignClient, getSignedGetObjectUrl } from '@timeline/shared/s3';
 import { withTeam } from '@timeline/shared/team-scope';
 import { localDateFromInstant } from '@timeline/shared/time';
+import { and, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 import { z } from 'zod';
 
 import type {
@@ -36,6 +45,9 @@ const artifactRefSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('board'), id: uuid }),
   z.object({ kind: z.literal('board_item'), id: uuid }),
   z.object({ kind: z.literal('task'), id: uuid }),
+  z.object({ kind: z.literal('fact'), id: uuid }),
+  z.object({ kind: z.literal('relationship'), id: uuid }),
+  z.object({ kind: z.literal('object_change'), id: uuid }),
   z.object({ kind: z.literal('route'), id: routeId }),
 ]);
 
@@ -216,6 +228,183 @@ async function notePreview(scope: TeamScope, ref: ArtifactRef): Promise<Artifact
   };
 }
 
+async function factPreview(teamId: string, ref: ArtifactRef): Promise<ArtifactPreview | null> {
+  if (ref.kind !== 'fact') return null;
+  const rows = await db
+    .select({
+      fact: facts,
+      rawEventId: rawEvents.id,
+      source: rawEvents.source,
+      occurredAt: rawEvents.occurredAt,
+      contentText: rawEvents.contentText,
+      entityId: entities.id,
+      entityName: entities.canonicalName,
+      entityType: entities.type,
+    })
+    .from(facts)
+    .innerJoin(rawEvents, eq(rawEvents.id, facts.rawEventId))
+    .leftJoin(factEntities, eq(factEntities.factId, facts.id))
+    .leftJoin(entities, and(eq(entities.id, factEntities.entityId), eq(entities.teamId, teamId)))
+    .where(
+      and(
+        eq(facts.id, ref.id),
+        eq(facts.teamId, teamId),
+        eq(rawEvents.teamId, teamId),
+        eq(rawEvents.visibility, 'team'),
+        sql`COALESCE(${rawEvents.sourceMetadata} ->> 'deleted', 'false') <> 'true'`,
+      ),
+    )
+    .orderBy(
+      sql`CASE ${factEntities.role} WHEN 'subject' THEN 0 WHEN 'object' THEN 1 ELSE 2 END`,
+      entities.canonicalName,
+      entities.id,
+    )
+    .limit(1);
+  const row = rows[0];
+  if (!row) return null;
+  return {
+    ref,
+    title: 'Fact',
+    subtitle: [row.entityName, row.source, dateLabel(row.occurredAt)].filter(Boolean).join(' · '),
+    body: row.fact.statement,
+    badges: badges(['fact', row.entityType, `confidence ${row.fact.confidence.toFixed(2)}`]),
+    href: `/app/timeline?event=${row.rawEventId}#ev-${row.rawEventId}`,
+    sections: [
+      {
+        title: 'Source',
+        items: items([
+          ['Object', row.entityName],
+          ['Source', row.source],
+          ['Occurred', row.occurredAt],
+          ['Extracted', row.fact.extractedAt],
+        ]),
+      },
+      ...(row.contentText
+        ? [
+            {
+              title: 'Event Text',
+              body: compact(row.contentText, 700),
+            },
+          ]
+        : []),
+    ],
+  };
+}
+
+async function relationshipPreview(
+  teamId: string,
+  ref: ArtifactRef,
+): Promise<ArtifactPreview | null> {
+  if (ref.kind !== 'relationship') return null;
+  const rows = await db
+    .select()
+    .from(entityRelationships)
+    .where(and(eq(entityRelationships.id, ref.id), eq(entityRelationships.teamId, teamId)))
+    .limit(1);
+  const relationship = rows[0];
+  if (!relationship) return null;
+  const objectRows = await db
+    .select({
+      id: entities.id,
+      canonicalName: entities.canonicalName,
+      type: entities.type,
+      status: entities.status,
+    })
+    .from(entities)
+    .where(
+      and(
+        eq(entities.teamId, teamId),
+        inArray(entities.id, [relationship.fromEntityId, relationship.toEntityId]),
+        isNull(entities.mergedIntoId),
+      ),
+    );
+  const from = objectRows.find((object) => object.id === relationship.fromEntityId);
+  const to = objectRows.find((object) => object.id === relationship.toEntityId);
+  if (!from || !to) return null;
+  return {
+    ref,
+    title: 'Relationship',
+    subtitle: `${from.canonicalName} -> ${to.canonicalName}`,
+    body: `${from.canonicalName} is linked to ${to.canonicalName} as ${relationship.kind}.`,
+    badges: ['relationship', relationship.kind],
+    href: `/app/objects/${from.id}`,
+    sections: [
+      {
+        title: 'Endpoints',
+        items: [
+          { label: 'From', value: `${from.canonicalName} (${from.type} · ${from.status})` },
+          { label: 'To', value: `${to.canonicalName} (${to.type} · ${to.status})` },
+          {
+            label: 'Created',
+            value: dateLabel(relationship.createdAt) ?? relationship.createdAt.toISOString(),
+          },
+        ],
+      },
+    ],
+  };
+}
+
+async function objectChangePreview(
+  teamId: string,
+  ref: ArtifactRef,
+): Promise<ArtifactPreview | null> {
+  if (ref.kind !== 'object_change') return null;
+  const rows = await db
+    .select({
+      change: objectChanges,
+      objectName: entities.canonicalName,
+      objectType: entities.type,
+      rawEventId: rawEvents.id,
+    })
+    .from(objectChanges)
+    .innerJoin(entities, eq(entities.id, objectChanges.entityId))
+    .leftJoin(rawEvents, eq(rawEvents.id, objectChanges.sourceEventId))
+    .where(
+      and(
+        eq(objectChanges.id, ref.id),
+        eq(objectChanges.teamId, teamId),
+        eq(entities.teamId, teamId),
+        or(
+          isNull(objectChanges.sourceEventId),
+          and(
+            eq(rawEvents.teamId, teamId),
+            eq(rawEvents.visibility, 'team'),
+            sql`COALESCE(${rawEvents.sourceMetadata} ->> 'deleted', 'false') <> 'true'`,
+          ),
+        ),
+      ),
+    )
+    .limit(1);
+  const row = rows[0];
+  if (!row) return null;
+  const body =
+    row.change.note ??
+    `${row.change.field}: ${stringValue(row.change.previousValue) ?? 'empty'} -> ${
+      stringValue(row.change.newValue) ?? 'empty'
+    }`;
+  return {
+    ref,
+    title: 'Object Change',
+    subtitle: `${row.objectName} · ${dateLabel(row.change.changedAt) ?? 'change'}`,
+    body,
+    badges: badges(['change', row.objectType, row.change.status]),
+    href: row.rawEventId
+      ? `/app/timeline?event=${row.rawEventId}#ev-${row.rawEventId}`
+      : `/app/objects/${row.change.entityId}`,
+    sections: [
+      {
+        title: 'Change',
+        items: items([
+          ['Object', row.objectName],
+          ['Field', row.change.field],
+          ['Status', row.change.status],
+          ['Changed', row.change.changedAt],
+        ]),
+      },
+    ],
+  };
+}
+
 async function documentChunkPreview(
   scope: TeamScope,
   ref: ArtifactRef,
@@ -383,7 +572,11 @@ function routePreview(ref: ArtifactRef): ArtifactPreview | null {
   };
 }
 
-async function hydratePreview(scope: TeamScope, ref: ArtifactRef): Promise<ArtifactPreview | null> {
+async function hydratePreview(
+  scope: TeamScope,
+  teamId: string,
+  ref: ArtifactRef,
+): Promise<ArtifactPreview | null> {
   switch (ref.kind) {
     case 'timeline_event':
       return timelineEventPreview(scope, ref);
@@ -392,6 +585,12 @@ async function hydratePreview(scope: TeamScope, ref: ArtifactRef): Promise<Artif
       return objectPreview(scope, ref);
     case 'object_note':
       return notePreview(scope, ref);
+    case 'fact':
+      return factPreview(teamId, ref);
+    case 'relationship':
+      return relationshipPreview(teamId, ref);
+    case 'object_change':
+      return objectChangePreview(teamId, ref);
     case 'document_chunk':
       return documentChunkPreview(scope, ref);
     case 'calendar_event':
@@ -417,7 +616,7 @@ export async function POST(req: Request): Promise<Response> {
   const scope = withTeam(db, active.teamId, session.user.id);
   let preview: ArtifactPreview | null = null;
   try {
-    preview = await hydratePreview(scope, parsed.data.ref);
+    preview = await hydratePreview(scope, active.teamId, parsed.data.ref);
   } catch {
     preview = null;
   }

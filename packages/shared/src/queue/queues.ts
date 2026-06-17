@@ -3,6 +3,9 @@ import { Queue, type JobsOptions } from 'bullmq';
 import { getRedisConnection } from '#src/queue/connection.js';
 
 type TimelineQueue<TData> = Queue<TData, unknown, string, TData, unknown, string>;
+interface LegacyRepeatableQueue {
+  removeRepeatable(name: string, repeatOpts: { pattern: string }, jobId?: string): Promise<boolean>;
+}
 
 export const QUEUE_NAMES = {
   transcribe: 'transcribe',
@@ -52,6 +55,9 @@ export const QUEUE_NAMES = {
   // Daily personalized team digest. Tick fans out per active recipient;
   // recipient jobs generate one durable digest and send it through messaging.
   dailyDigest: 'daily-digest',
+  // Generated object briefs. Produced by canonical object-memory writes and
+  // manual object-page requests; consumed by the object-summary worker.
+  objectSummary: 'object-summary',
 } as const;
 
 export type QueueName = (typeof QUEUE_NAMES)[keyof typeof QUEUE_NAMES];
@@ -862,7 +868,7 @@ export async function closeTeamExportQueue(): Promise<void> {
 }
 
 export type DailyDigestJobData =
-  | { kind: 'tick' }
+  | { kind: 'tick'; windowStart?: string; windowEnd?: string; reason?: 'scheduled' | 'catchup' }
   | {
       kind: 'recipient';
       teamId: string;
@@ -887,13 +893,41 @@ export function getDailyDigestQueue(): TimelineQueue<DailyDigestJobData> {
 }
 
 export async function scheduleDailyDigest(): Promise<void> {
+  const queue = getDailyDigestQueue();
+  // BullMQ v5 keeps legacy repeatables separate from Job Schedulers. The legacy
+  // cleanup API is deprecated for new code, but it is still the migration path.
+  await (queue as LegacyRepeatableQueue).removeRepeatable(
+    'tick',
+    { pattern: '0 12 * * *' },
+    'daily-digest-1200-utc',
+  );
+  await queue.upsertJobScheduler(
+    'daily-digest-1200-utc',
+    { pattern: '0 12 * * *' },
+    { name: 'tick', data: { kind: 'tick', reason: 'scheduled' } },
+  );
+  await enqueueDailyDigestCatchupJob();
+}
+
+function latestDailyDigestWindow(now: Date = new Date()): { start: Date; end: Date } {
+  const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 12));
+  if (now < end) end.setUTCDate(end.getUTCDate() - 1);
+  const start = new Date(end);
+  start.setUTCDate(start.getUTCDate() - 1);
+  return { start, end };
+}
+
+export async function enqueueDailyDigestCatchupJob(now: Date = new Date()): Promise<void> {
+  const window = latestDailyDigestWindow(now);
   await getDailyDigestQueue().add(
     'tick',
-    { kind: 'tick' },
     {
-      repeat: { pattern: '0 12 * * *' },
-      jobId: 'daily-digest-1200-utc',
+      kind: 'tick',
+      reason: 'catchup',
+      windowStart: window.start.toISOString(),
+      windowEnd: window.end.toISOString(),
     },
+    { jobId: bullmqCustomJobId(['daily-digest-catchup', window.end.toISOString()]) },
   );
 }
 
@@ -901,18 +935,95 @@ export async function enqueueDailyDigestRecipientJob(
   data: Extract<DailyDigestJobData, { kind: 'recipient' }>,
 ): Promise<void> {
   await getDailyDigestQueue().add('recipient', data, {
-    jobId: `daily-digest:${data.teamId}:${data.userId}:${data.windowEnd}`,
+    jobId: bullmqCustomJobId(['daily-digest', data.teamId, data.userId, data.windowEnd]),
   });
 }
 
 export async function enqueueDailyDigestSendJob(
   data: Extract<DailyDigestJobData, { kind: 'send' }>,
 ): Promise<void> {
-  await getDailyDigestQueue().add('send', data, { jobId: `daily-digest-send:${data.digestId}` });
+  await getDailyDigestQueue().add('send', data, {
+    jobId: bullmqCustomJobId(['daily-digest-send', data.digestId]),
+  });
 }
 
 export async function closeDailyDigestQueue(): Promise<void> {
   await closeQueue(_dailyDigestQueue, () => {
     _dailyDigestQueue = undefined;
+  });
+}
+
+export interface ObjectSummaryJobData {
+  teamId: string;
+  objectId: string;
+  trigger?: 'manual' | 'auto' | 'retry';
+}
+
+let _objectSummaryQueue: TimelineQueue<ObjectSummaryJobData> | undefined;
+
+export function getObjectSummaryQueue(): TimelineQueue<ObjectSummaryJobData> {
+  if (_objectSummaryQueue) return _objectSummaryQueue;
+  _objectSummaryQueue = createTimelineQueue<ObjectSummaryJobData>(QUEUE_NAMES.objectSummary, {
+    attempts: 3,
+    backoff: { type: 'exponential', delay: 5000 },
+    removeOnComplete: { age: 3600, count: 1000 },
+    removeOnFail: { age: 24 * 3600 },
+  });
+  return _objectSummaryQueue;
+}
+
+export async function enqueueObjectSummaryJob(
+  data: ObjectSummaryJobData,
+  opts: { delayMs?: number } = {},
+): Promise<{ enqueued: boolean; jobId: string }> {
+  const jobId = bullmqCustomJobId(['object-summary', data.teamId, data.objectId]);
+  const q = getObjectSummaryQueue();
+  const existing = (await q.getJob(jobId)) as ExistingJobLike | null;
+  if (existing) {
+    const state = await existing.getState?.().catch(() => null);
+    if (data.trigger === 'manual' && state === 'delayed' && existing.remove) {
+      await existing.remove().catch(() => undefined);
+    } else if ((data.trigger === 'auto' || data.trigger === 'manual') && state === 'active') {
+      const followupJobId = bullmqCustomJobId([
+        'object-summary',
+        data.teamId,
+        data.objectId,
+        'followup',
+      ]);
+      const followup = (await q.getJob(followupJobId)) as ExistingJobLike | null;
+      if (followup) {
+        const followupState = await followup.getState?.().catch(() => null);
+        if (!followupState || SUGGESTION_JOB_DEDUPE_STATES.has(followupState)) {
+          return { enqueued: false, jobId: followupJobId };
+        }
+        if (SUGGESTION_JOB_REPLACEABLE_STATES.has(followupState) && followup.remove) {
+          await followup.remove().catch(() => undefined);
+        } else {
+          return { enqueued: false, jobId: followupJobId };
+        }
+      }
+      await q.add('object-summary', data, {
+        jobId: followupJobId,
+        ...(opts.delayMs ? { delay: opts.delayMs } : {}),
+      });
+      return { enqueued: true, jobId: followupJobId };
+    } else if (!state || SUGGESTION_JOB_DEDUPE_STATES.has(state)) {
+      return { enqueued: false, jobId };
+    } else if (SUGGESTION_JOB_REPLACEABLE_STATES.has(state) && existing.remove) {
+      await existing.remove().catch(() => undefined);
+    } else {
+      return { enqueued: false, jobId };
+    }
+  }
+  await q.add('object-summary', data, {
+    jobId,
+    ...(opts.delayMs ? { delay: opts.delayMs } : {}),
+  });
+  return { enqueued: true, jobId };
+}
+
+export async function closeObjectSummaryQueue(): Promise<void> {
+  await closeQueue(_objectSummaryQueue, () => {
+    _objectSummaryQueue = undefined;
   });
 }

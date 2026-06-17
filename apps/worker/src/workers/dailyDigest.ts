@@ -21,7 +21,10 @@ export async function processDailyDigestJob(
   job: queue.DailyDigestJobData,
 ): Promise<{ recipients?: number; digestId?: string; sent?: boolean; skipped?: boolean }> {
   if (job.kind === 'tick') {
-    const window = messaging.defaultDigestWindow();
+    const window =
+      job.windowStart && job.windowEnd
+        ? { start: new Date(job.windowStart), end: new Date(job.windowEnd) }
+        : messaging.defaultDigestWindow();
     const recipients = await messaging.listDailyDigestRecipients(deps.db);
     await Promise.all(
       recipients.map((recipient) =>

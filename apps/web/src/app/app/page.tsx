@@ -1,5 +1,13 @@
 import { users } from '@timeline/db';
-import { latestDailyDigest, type DailyDigestPayload } from '@timeline/shared/messaging';
+import {
+  digestContentSections,
+  digestSummaryParagraphs,
+  formatDigestCalendarEvent,
+  formatDigestDate,
+  formatDigestTask,
+  latestDailyDigest,
+  type DailyDigestPayload,
+} from '@timeline/shared/messaging';
 import { getAudioBucket, getS3PresignClient, getSignedGetObjectUrl } from '@timeline/shared/s3';
 import { withTeam } from '@timeline/shared/team-scope';
 import { inArray } from 'drizzle-orm';
@@ -270,21 +278,22 @@ function countFirstRunGuideCompleted(steps: { step: string; completed: boolean }
 
 function DailyDigestBlock({ digest }: { digest: DailyDigestPayload | undefined }) {
   if (!digest?.summary) return null;
+  const timezone = digest.timezone;
+  const summaryParagraphs = digestSummaryParagraphs(digest.summary);
+  const sections = digestContentSections(digest);
+  const summaryRows = keyedTextRows(summaryParagraphs, 'summary');
+  const sectionRows = keyedSectionRows(sections);
   const sourceEntries = Object.entries(digest.sourceDistribution);
   const objectEntries = Object.entries(digest.objectChangesByType);
   return (
-    <details className="group rounded-sm border border-border bg-surface" open>
+    <details className="group rounded-sm border border-border bg-surface">
       <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3">
         <span>
           <span className="font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">
             Daily digest
           </span>
           <span className="mt-1 block text-sm font-medium text-fg">
-            {new Date(digest.windowEnd).toLocaleDateString('en', {
-              month: 'short',
-              day: 'numeric',
-              year: 'numeric',
-            })}
+            {formatDigestDate(digest.windowEnd, timezone)}
           </span>
         </span>
         <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-muted group-open:hidden">
@@ -295,13 +304,38 @@ function DailyDigestBlock({ digest }: { digest: DailyDigestPayload | undefined }
         </span>
       </summary>
       <div className="border-t border-border p-4">
-        <p className="max-w-3xl text-sm leading-6 text-fg-muted">{digest.summary}</p>
+        <div className="max-w-3xl space-y-3 text-sm leading-6 text-fg-muted">
+          {summaryRows.map((row) => (
+            <p key={row.key}>{row.text}</p>
+          ))}
+        </div>
+        <div className="mt-4 grid gap-4 lg:grid-cols-2">
+          {sectionRows.map((row) => (
+            <DigestList key={row.key} label={row.section.title} items={row.section.items} />
+          ))}
+        </div>
         <div className="mt-4 grid gap-3 md:grid-cols-3">
           <DigestStat label="Events" value={String(digest.eventCount)} />
           <DigestStat label="Approvals" value={String(digest.pendingApprovals)} />
           <DigestStat label="Tasks" value={String(digest.tasks.length)} />
         </div>
         <div className="mt-4 grid gap-4 lg:grid-cols-2">
+          <DigestList
+            label="Current tasks"
+            items={
+              digest.tasks.length
+                ? digest.tasks.map((task) => formatDigestTask(task, timezone))
+                : ['No current tasks in this digest']
+            }
+          />
+          <DigestList
+            label="Upcoming calendar"
+            items={
+              digest.upcomingCalendar.length
+                ? digest.upcomingCalendar.map((event) => formatDigestCalendarEvent(event, timezone))
+                : ['No upcoming calendar items']
+            }
+          />
           <DigestList
             label="Sources"
             items={
@@ -329,6 +363,24 @@ function DailyDigestBlock({ digest }: { digest: DailyDigestPayload | undefined }
       </div>
     </details>
   );
+}
+
+function keyedTextRows(items: string[], prefix: string): { key: string; text: string }[] {
+  const seen = new Map<string, number>();
+  return items.map((text) => {
+    const occurrence = seen.get(text) ?? 0;
+    seen.set(text, occurrence + 1);
+    return { key: `${prefix}:${text}:${occurrence}`, text };
+  });
+}
+
+function keyedSectionRows(sections: NonNullable<DailyDigestPayload['sections']>) {
+  const seen = new Map<string, number>();
+  return sections.map((section) => {
+    const occurrence = seen.get(section.title) ?? 0;
+    seen.set(section.title, occurrence + 1);
+    return { key: `section:${section.title}:${occurrence}`, section };
+  });
 }
 
 function DigestStat({ label, value }: { label: string; value: string }) {

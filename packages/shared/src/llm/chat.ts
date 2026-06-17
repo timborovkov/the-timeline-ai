@@ -19,6 +19,8 @@ type GenerateObjectProviderOptions = NonNullable<
   Parameters<typeof generateObject>[0]['providerOptions']
 >;
 
+export const DEFAULT_AGENT_MAX_STEPS = 20;
+
 export interface ChatStructuredInput<TSchema extends z.ZodType> {
   schema: TSchema;
   prompt: string;
@@ -298,8 +300,7 @@ export interface StreamChatInput<TTools extends ToolSet> {
   tools: TTools;
   /** Override the configured agent model for this call. */
   model?: string;
-  /** Hard cap on tool-call rounds. Default 5; matches the brief's
-   *  "agents can loop — cap turn count and bail gracefully" guidance. */
+  /** Hard cap on tool-call rounds. Defaults to `DEFAULT_AGENT_MAX_STEPS`. */
   maxSteps?: number;
   /** Forwarded to streamText.onFinish for usage/audit logging. */
   onFinish?: Parameters<typeof streamText>[0]['onFinish'];
@@ -342,13 +343,13 @@ export function streamChat<TTools extends ToolSet>(
     system: input.system,
     messages: input.messages,
     tools: input.tools,
-    stopWhen: stepCountIs(input.maxSteps ?? 5),
+    stopWhen: stepCountIs(input.maxSteps ?? DEFAULT_AGENT_MAX_STEPS),
     providerOptions: withLangSmithProviderOptions(undefined, {
       name: 'llm.streamChat',
       model: modelId,
       metadata: {
         operation: 'stream_chat',
-        max_steps: input.maxSteps ?? 5,
+        max_steps: input.maxSteps ?? DEFAULT_AGENT_MAX_STEPS,
       },
     }),
   };

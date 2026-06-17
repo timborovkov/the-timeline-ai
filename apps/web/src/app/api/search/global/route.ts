@@ -45,6 +45,7 @@ const schema = z.object({
 });
 
 type Scope = ReturnType<typeof withTeam>;
+type ReadyObjectSummary = Awaited<ReturnType<Scope['objects']['listReadyObjectSummaries']>>[number];
 type Parsed = z.infer<typeof schema>;
 
 function wants(kinds: Set<GlobalSearchKind> | null, kind: GlobalSearchKind): boolean {
@@ -63,6 +64,7 @@ function searchObjectsAndTasks(
   input: Parsed,
   rows: Awaited<ReturnType<Scope['objects']['listObjects']>>,
   kinds: Set<GlobalSearchKind> | null,
+  summaries: Map<string, ReadyObjectSummary>,
 ): GlobalSearchResult[] {
   const results: GlobalSearchResult[] = [];
   for (const row of rows) {
@@ -73,10 +75,18 @@ function searchObjectsAndTasks(
       textFromMetadata(row.metadata.integration_provider),
       textFromMetadata(row.metadata.integration_external_id),
     ];
+    const summary = summaries.get(row.id);
     const lexical = scoreLexical({
       query: input.query,
       title: row.canonicalName,
-      fields: [row.type, row.status, row.stage, ...row.aliases, ...metadataFields],
+      fields: [
+        row.type,
+        row.status,
+        row.stage,
+        summary?.plainText,
+        ...row.aliases,
+        ...metadataFields,
+      ],
       keywords: [row.type, kind, row.status],
     });
     const intent = scoreIntent(input.query, kind, [row.type, kind, row.status]);
@@ -86,8 +96,9 @@ function searchObjectsAndTasks(
         id: `${kind}:${row.id}`,
         kind,
         title: row.canonicalName,
-        snippet:
-          kind === 'task'
+        snippet: summary?.plainText
+          ? summary.plainText.slice(0, 240)
+          : kind === 'task'
             ? [
                 row.status,
                 row.stage,
@@ -108,6 +119,7 @@ function searchObjectsAndTasks(
           status: row.status,
           stage: row.stage,
           dueAt: row.dueAt?.toISOString() ?? null,
+          summary: Boolean(summary),
         },
       }),
     );
@@ -414,39 +426,70 @@ export async function POST(req: Request): Promise<Response> {
     limit: input.mode === 'preview' ? 8 : 20,
   });
 
-  const [objectRows, boardRows, calendarRows, timelineRows, documentRows] = await Promise.all([
-    wantsObjectsOrTasks
-      ? guardedSearch(warnings, 'object', 'Object search is temporarily unavailable.', [], () =>
-          scope.objects.searchObjects({
-            query,
-            archived: false,
-            limit: sourceLimit(input, 30) * 10,
-          }),
-        )
-      : Promise.resolve([]),
-    wants(kinds, 'board')
-      ? guardedSearch(warnings, 'board', 'Board search is temporarily unavailable.', [], () =>
-          scope.boards.listBoards(),
-        )
-      : Promise.resolve([]),
-    wants(kinds, 'calendar_event')
-      ? guardedSearch(
-          warnings,
-          'calendar_event',
-          'Calendar search is temporarily unavailable.',
-          [],
-          () => searchCalendar({ ...input, query }, scope),
-        )
-      : Promise.resolve([]),
-    runSemantic && wants(kinds, 'timeline_event')
-      ? searchTimeline({ ...input, query }, scope, warnings)
-      : Promise.resolve([]),
-    runSemantic && wants(kinds, 'document_chunk')
-      ? searchDocuments({ ...input, query }, scope, warnings)
-      : Promise.resolve([]),
-  ]);
+  const [objectRows, summaryObjectRows, boardRows, calendarRows, timelineRows, documentRows] =
+    await Promise.all([
+      wantsObjectsOrTasks
+        ? guardedSearch(warnings, 'object', 'Object search is temporarily unavailable.', [], () =>
+            scope.objects.searchObjects({
+              query,
+              archived: false,
+              limit: sourceLimit(input, 30) * 10,
+            }),
+          )
+        : Promise.resolve([]),
+      wantsObjectsOrTasks
+        ? guardedSearch(
+            warnings,
+            'object',
+            'Object summary search is temporarily unavailable.',
+            [],
+            () =>
+              scope.objects.searchObjectsBySummary({
+                query,
+                archived: false,
+                limit: sourceLimit(input, 30) * 10,
+              }),
+          )
+        : Promise.resolve([]),
+      wants(kinds, 'board')
+        ? guardedSearch(warnings, 'board', 'Board search is temporarily unavailable.', [], () =>
+            scope.boards.listBoards(),
+          )
+        : Promise.resolve([]),
+      wants(kinds, 'calendar_event')
+        ? guardedSearch(
+            warnings,
+            'calendar_event',
+            'Calendar search is temporarily unavailable.',
+            [],
+            () => searchCalendar({ ...input, query }, scope),
+          )
+        : Promise.resolve([]),
+      runSemantic && wants(kinds, 'timeline_event')
+        ? searchTimeline({ ...input, query }, scope, warnings)
+        : Promise.resolve([]),
+      runSemantic && wants(kinds, 'document_chunk')
+        ? searchDocuments({ ...input, query }, scope, warnings)
+        : Promise.resolve([]),
+    ]);
+  const mergedObjectRows = Array.from(
+    new Map([...objectRows, ...summaryObjectRows].map((row) => [row.id, row])).values(),
+  );
 
-  const lexicalObjectRows = searchObjectsAndTasks({ ...input, query }, objectRows, kinds);
+  const objectSummaries: Map<string, ReadyObjectSummary> =
+    mergedObjectRows.length > 0
+      ? new Map<string, ReadyObjectSummary>(
+          (await scope.objects.listReadyObjectSummaries(mergedObjectRows.map((row) => row.id))).map(
+            (summary) => [summary.entityId, summary],
+          ),
+        )
+      : new Map<string, ReadyObjectSummary>();
+  const lexicalObjectRows = searchObjectsAndTasks(
+    { ...input, query },
+    mergedObjectRows,
+    kinds,
+    objectSummaries,
+  );
   const objectResults =
     runSemantic && wantsObjectsOrTasks
       ? await searchObjectNotes({ ...input, query }, scope, lexicalObjectRows, kinds, warnings)

@@ -14,6 +14,7 @@ import { startJanitorWorker } from '#src/workers/janitor.js';
 import { startMcpHealthWorker } from '#src/workers/mcpHealth.js';
 import { startMeetingFinalizeWorker } from '#src/workers/meetingFinalize.js';
 import { startMeetingSchedulerWorker } from '#src/workers/meetingScheduler.js';
+import { startObjectSummaryWorker } from '#src/workers/objectSummary.js';
 import { startOverdueWorker } from '#src/workers/overdue.js';
 import { startSuggestionWorker } from '#src/workers/suggestions.js';
 import { startTeamExportWorker } from '#src/workers/teamExport.js';
@@ -41,6 +42,7 @@ async function main(): Promise<void> {
   const documentExtractWorker = startDocumentExtractWorker({ db });
   const meetingFinalizeWorker = startMeetingFinalizeWorker({ db });
   const meetingSchedulerWorker = startMeetingSchedulerWorker({ db });
+  const objectSummaryWorker = startObjectSummaryWorker({ db });
   const janitorWorker = startJanitorWorker({ db });
   const integrationSyncWorker = startIntegrationSyncWorker({ db });
   const mcpHealthWorker = startMcpHealthWorker({ db });
@@ -60,7 +62,7 @@ async function main(): Promise<void> {
   await queue.scheduleMeetingSchedulerTick();
   await queue.scheduleDailyDigest();
   log.info(
-    'transcribe + extract + suggestions + embed + overdue + calendar-recurrence + document-extract + meeting-finalize + meeting-scheduler + janitor + integration-sync + mcp-health + team-export + daily-digest workers started',
+    'transcribe + extract + suggestions + embed + overdue + calendar-recurrence + document-extract + meeting-finalize + meeting-scheduler + object-summary + janitor + integration-sync + mcp-health + team-export + daily-digest workers started',
   );
 
   const shutdown = async (signal: string): Promise<void> => {
@@ -76,6 +78,7 @@ async function main(): Promise<void> {
         documentExtractWorker.close(),
         meetingFinalizeWorker.close(),
         meetingSchedulerWorker.close(),
+        objectSummaryWorker.close(),
         janitorWorker.close(),
         integrationSyncWorker.close(),
         mcpHealthWorker.close(),
@@ -91,6 +94,7 @@ async function main(): Promise<void> {
       await queue.closeDocumentExtractQueue();
       await queue.closeMeetingFinalizeQueue();
       await queue.closeMeetingSchedulerQueue();
+      await queue.closeObjectSummaryQueue();
       await queue.closeJanitorQueue();
       await queue.closeIntegrationSyncQueue();
       await queue.closeMcpHealthQueue();

@@ -134,6 +134,9 @@ boundaries.
   document semantics, processing rules, and follow-up implementation bar.
 - [`docs/work-system-plan.md`](./docs/work-system-plan.md) — priority plan for
   turning Work into the daily operating surface.
+- [`docs/object-summaries-plan.md`](./docs/object-summaries-plan.md) —
+  implementation plan for grounded generated object briefs across object pages,
+  search, embeddings, and chat.
 - [`docs/calendar.html`](./docs/calendar.html) — approval-backed calendar
   suggestions, recurrence, occurrence exceptions, and tentative slots.
 - [`docs/setup/local.html`](./docs/setup/local.html) — complete local setup.

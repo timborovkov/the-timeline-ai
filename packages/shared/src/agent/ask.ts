@@ -5,7 +5,7 @@ import { AGENT_PROMPT_VERSION, buildSystemPrompt } from '#src/agent/system-promp
 import { buildAgentTools, type AgentToolErrorReporter } from '#src/agent/tools.js';
 import { parseCitations } from '#src/citation.js';
 import { getEnv } from '#src/env.js';
-import { streamChat, type ChatDeps } from '#src/llm/chat.js';
+import { DEFAULT_AGENT_MAX_STEPS, streamChat, type ChatDeps } from '#src/llm/chat.js';
 import { childLogger } from '#src/logger.js';
 import { withTeam } from '#src/team-scope.js';
 import { workspaceTimeContext } from '#src/time/index.js';
@@ -26,7 +26,7 @@ export interface AskAgentInput {
   userName?: string;
   /** Trusted team-scoped bot actor. Keeps private/specific-user events invisible. */
   trustedTeamActor?: boolean | undefined;
-  /** Cap on agent tool-call rounds. Default 5 (matches /api/chat). */
+  /** Cap on agent tool-call rounds. Defaults to `DEFAULT_AGENT_MAX_STEPS`. */
   maxSteps?: number;
 }
 
@@ -129,7 +129,7 @@ export async function askAgent(
         system,
         messages,
         tools,
-        maxSteps: input.maxSteps ?? 5,
+        maxSteps: input.maxSteps ?? DEFAULT_AGENT_MAX_STEPS,
       },
       deps,
     );

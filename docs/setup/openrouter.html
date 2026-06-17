@@ -332,7 +332,7 @@ curl -s -X PUT "$QDRANT_URL/collections/events/index" \
         </li>
       </ul>
       <p>
-        The agent is capped at 5 tool turns per turn. Tool errors are caught inside
+        The agent is capped at 20 tool turns per turn. Tool errors are caught inside
         <code>execute</code> and returned as <code>{ error: 'tool_failed' }</code> so the stream
         stays alive — the agent recovers or reports failure with a citation-aware message rather
         than crashing the response.

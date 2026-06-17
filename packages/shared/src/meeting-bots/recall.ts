@@ -148,7 +148,7 @@ export function createRecallProvider(opts: RecallProviderOptions = {}): MeetingB
             input.platform === 'meet'
               ? MEET_NO_SHOW_TIMEOUT_SECONDS
               : DEFAULT_NO_SHOW_TIMEOUT_SECONDS,
-          everyone_left_timeout: { timeout: 2, activate_after: 0 },
+          everyone_left_timeout: { timeout: 2, activate_after: 1 },
           recording_permission_denied_timeout: 30,
         },
         metadata: {

@@ -63,12 +63,26 @@ export interface DailyDigestLink {
   href: string;
 }
 
+export interface DailyDigestSection {
+  title:
+    | 'Highlights'
+    | 'Product status'
+    | 'Completed'
+    | 'In progress'
+    | 'Decisions'
+    | 'Risks'
+    | 'Follow-ups';
+  items: string[];
+}
+
 export interface DailyDigestPayload {
   teamName: string;
   userName: string | null;
+  timezone?: string;
   windowStart: string;
   windowEnd: string;
   summary: string;
+  sections?: DailyDigestSection[];
   pendingApprovals: number;
   eventCount: number;
   sourceDistribution: Record<string, number>;

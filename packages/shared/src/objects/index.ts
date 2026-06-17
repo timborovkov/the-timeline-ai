@@ -30,6 +30,7 @@ import {
   objectChanges,
   objectIdentityFacets,
   objectNotes,
+  objectSummaries,
   objectViews,
   rawEvents,
   relationshipKind,
@@ -64,6 +65,14 @@ import {
 } from '#src/calendar/due-dates.js';
 import { TIMELINE_MODELS } from '#src/llm/models.js';
 import { childLogger } from '#src/logger.js';
+import {
+  enqueueObjectSummaryRefresh,
+  fireAndForgetObjectSummaryRefresh,
+  getObjectSummary,
+  getObjectSummaryFromSnapshot,
+  objectSummarySourceSnapshot,
+  type ObjectSummaryView,
+} from '#src/objects/summaries.js';
 import { decodeCursor, pageWindow } from '#src/pagination.js';
 import { getQdrantClient } from '#src/qdrant/client.js';
 import { buildPointId } from '#src/qdrant/point-id.js';
@@ -71,7 +80,15 @@ import * as embedQueue from '#src/queue/queues.js';
 import { likeMentionCondition, likePattern, textMentionsAnyValue } from '#src/sql-like.js';
 import { rawEventVisibleToUser } from '#src/visibility.js';
 
+export {
+  fireAndForgetObjectSummaryRefresh,
+  generateAndStoreObjectSummary,
+  sourceRefCitation,
+} from '#src/objects/summaries.js';
+export type { ObjectSummarySourceRef } from '#src/objects/summaries.js';
+
 const embedLog = childLogger('objects:embed');
+const summaryRefreshLog = childLogger('objects:summary-refresh');
 type DbTx = Parameters<Parameters<Db['transaction']>[0]>[0];
 type DbOrTx = Db | DbTx;
 
@@ -86,6 +103,66 @@ type DbOrTx = Db | DbTx;
 function fireAndForgetEmbed(fn: () => Promise<void>, context: Record<string, unknown>): void {
   void fn().catch((err: unknown) => {
     embedLog.error({ err, ...context }, 'failed to enqueue embed job');
+  });
+}
+
+async function objectSummaryRefreshTargetsForObject(
+  db: Db,
+  scope: TeamScopeCore,
+  object: Pick<ObjectRow, 'id' | 'type'>,
+): Promise<string[]> {
+  const ids = new Set([object.id]);
+  if (object.type !== 'task' && object.type !== 'follow_up') return [...ids];
+  const relationships = await db
+    .select({
+      fromEntityId: entityRelationships.fromEntityId,
+      toEntityId: entityRelationships.toEntityId,
+      kind: entityRelationships.kind,
+    })
+    .from(entityRelationships)
+    .where(
+      and(
+        eq(entityRelationships.teamId, scope.teamId),
+        or(
+          and(
+            eq(entityRelationships.fromEntityId, object.id),
+            eq(entityRelationships.kind, 'child'),
+          ),
+          and(
+            eq(entityRelationships.toEntityId, object.id),
+            eq(entityRelationships.kind, 'parent'),
+          ),
+        ),
+      ),
+    );
+  for (const relationship of relationships) {
+    ids.add(relationship.kind === 'child' ? relationship.toEntityId : relationship.fromEntityId);
+  }
+  return [...ids];
+}
+
+function refreshObjectAndLinkedParentSummaries(
+  db: Db,
+  scope: TeamScopeCore,
+  object: Pick<ObjectRow, 'id' | 'type'>,
+  context: Record<string, unknown>,
+): void {
+  void (async () => {
+    const objectIds = await objectSummaryRefreshTargetsForObject(db, scope, object);
+    await Promise.all(
+      objectIds.map((objectId) =>
+        fireAndForgetObjectSummaryRefresh(db, scope, objectId, {
+          ...context,
+          objectId,
+          changedObjectId: object.id,
+        }),
+      ),
+    );
+  })().catch((err: unknown) => {
+    summaryRefreshLog.error(
+      { err, ...context, objectId: object.id },
+      'failed to refresh summaries',
+    );
   });
 }
 
@@ -276,9 +353,10 @@ export interface ObjectListFilter {
   archived?: boolean;
   limit?: number;
   offset?: number;
+  cursor?: string | null;
 }
 
-export interface ObjectSearchFilter extends Omit<ObjectListFilter, 'offset'> {
+export interface ObjectSearchFilter extends Omit<ObjectListFilter, 'cursor' | 'offset'> {
   query: string;
 }
 
@@ -404,6 +482,9 @@ export async function listObjects(
   if (filter.archived === true) conds.push(isNotNull(entities.archivedAt));
   else if (filter.archived !== undefined) conds.push(isNull(entities.archivedAt));
 
+  const cursorSql = cursorCondition(filter.cursor, entities.updatedAt, entities.id);
+  if (cursorSql) conds.push(cursorSql);
+
   const limit = Math.min(Math.max(filter.limit ?? 100, 1), 500);
   const offset = Math.max(filter.offset ?? 0, 0);
 
@@ -411,7 +492,7 @@ export async function listObjects(
     .select()
     .from(entities)
     .where(and(...conds))
-    .orderBy(desc(entities.updatedAt))
+    .orderBy(desc(entities.updatedAt), desc(entities.id))
     .limit(limit)
     .offset(offset);
   return rows.map(toObjectRow);
@@ -543,6 +624,7 @@ export interface ObjectDetail extends ObjectRow {
       updatedAt: Date;
     }[];
   };
+  summary: ObjectSummaryView | null;
   /** Count of object_changes and notes since the caller's last visit. */
   newSinceLastVisit: number;
   lastVisitedAt: Date | null;
@@ -555,6 +637,12 @@ export interface ObjectNotePreview {
   createdAt: Date;
   updatedAt: Date;
   object: ObjectRow;
+}
+
+export interface ObjectSummarySearchRow {
+  entityId: string;
+  plainText: string;
+  updatedAt: Date;
 }
 
 const MERGE_COMPATIBLE_TYPES: readonly ObjectType[] = [
@@ -846,7 +934,7 @@ export async function getObjectSectionPage(
     return pageWindow(rows, limit, (row) => ({ at: row.createdAt.toISOString(), id: row.id }));
   }
   if (section === 'facts') {
-    const cursorSql = cursorCondition(args.cursor, factsTable.extractedAt, factsTable.id);
+    const cursorSql = cursorCondition(args.cursor, rawEvents.occurredAt, factsTable.id);
     const rows = await db
       .select({
         id: factsTable.id,
@@ -854,6 +942,8 @@ export async function getObjectSectionPage(
         confidence: factsTable.confidence,
         rawEventId: factsTable.rawEventId,
         extractedAt: factsTable.extractedAt,
+        occurredAt: rawEvents.occurredAt,
+        source: rawEvents.source,
         sharedObjects: sql<
           { id: string; canonicalName: string; type: ObjectType; role: string }[]
         >`coalesce(
@@ -903,9 +993,9 @@ export async function getObjectSectionPage(
           ...(cursorSql ? [cursorSql] : []),
         ),
       )
-      .orderBy(desc(factsTable.extractedAt), desc(factsTable.id))
+      .orderBy(desc(rawEvents.occurredAt), desc(factsTable.id))
       .limit(limit + 1);
-    return pageWindow(rows, limit, (row) => ({ at: row.extractedAt.toISOString(), id: row.id }));
+    return pageWindow(rows, limit, (row) => ({ at: row.occurredAt.toISOString(), id: row.id }));
   }
 
   const cursorSql = cursorCondition(args.cursor, rawEvents.occurredAt, rawEvents.id);
@@ -1337,7 +1427,19 @@ export async function getObject(
   }
   if (!entityRow) return null;
 
-  const [noteRows, outRows, inRows, changeRows, viewRows] = await Promise.all([
+  const [
+    noteRows,
+    outRows,
+    inRows,
+    changeRows,
+    viewRows,
+    factCountRows,
+    summaryNoteCountRows,
+    summaryRelationshipOutCountRows,
+    summaryRelationshipInCountRows,
+    summaryTaskCountRows,
+    summaryChangeCountRows,
+  ] = await Promise.all([
     db
       .select({
         id: objectNotes.id,
@@ -1428,6 +1530,150 @@ export async function getObject(
         ),
       )
       .limit(1),
+    db
+      .select({
+        facts: sql<number>`count(*)::int`,
+        events: sql<number>`count(distinct summary_fact_sources.raw_event_id)::int`,
+      })
+      .from(
+        db
+          .select({
+            id: factsTable.id,
+            rawEventId: sql<string>`${factsTable.rawEventId}`.as('raw_event_id'),
+          })
+          .from(factsTable)
+          .innerJoin(factEntities, eq(factEntities.factId, factsTable.id))
+          .innerJoin(rawEvents, eq(rawEvents.id, factsTable.rawEventId))
+          .where(
+            and(
+              eq(factsTable.teamId, scope.teamId),
+              eq(factEntities.entityId, entityRow.id),
+              eq(rawEvents.teamId, scope.teamId),
+              eq(rawEvents.visibility, 'team'),
+              sql`COALESCE(${rawEvents.sourceMetadata} ->> 'deleted', 'false') <> 'true'`,
+            ),
+          )
+          .orderBy(desc(rawEvents.occurredAt), desc(factsTable.extractedAt))
+          .limit(24)
+          .as('summary_fact_sources'),
+      ),
+    db
+      .select({
+        notes: sql<number>`count(*) FILTER (WHERE length(trim(summary_note_sources.body)) >= 40)::int`,
+      })
+      .from(
+        db
+          .select({
+            id: objectNotes.id,
+            body: sql<string>`${objectNotes.body}`.as('body'),
+          })
+          .from(objectNotes)
+          .where(
+            and(
+              eq(objectNotes.teamId, scope.teamId),
+              eq(objectNotes.entityId, entityRow.id),
+              isNull(objectNotes.deletedAt),
+            ),
+          )
+          .orderBy(desc(objectNotes.updatedAt), desc(objectNotes.id))
+          .limit(8)
+          .as('summary_note_sources'),
+      ),
+    db
+      .select({
+        relationships: sql<number>`count(*)::int`,
+      })
+      .from(
+        db
+          .select({ id: entityRelationships.id })
+          .from(entityRelationships)
+          .innerJoin(entities, eq(entities.id, entityRelationships.toEntityId))
+          .where(
+            and(
+              eq(entityRelationships.teamId, scope.teamId),
+              eq(entityRelationships.fromEntityId, entityRow.id),
+              eq(entities.teamId, scope.teamId),
+              isNull(entities.mergedIntoId),
+            ),
+          )
+          .orderBy(desc(entityRelationships.createdAt))
+          .limit(8)
+          .as('summary_relationship_out_sources'),
+      ),
+    db
+      .select({
+        relationships: sql<number>`count(*)::int`,
+      })
+      .from(
+        db
+          .select({ id: entityRelationships.id })
+          .from(entityRelationships)
+          .innerJoin(entities, eq(entities.id, entityRelationships.fromEntityId))
+          .where(
+            and(
+              eq(entityRelationships.teamId, scope.teamId),
+              eq(entityRelationships.toEntityId, entityRow.id),
+              eq(entities.teamId, scope.teamId),
+              isNull(entities.mergedIntoId),
+            ),
+          )
+          .orderBy(desc(entityRelationships.createdAt))
+          .limit(8)
+          .as('summary_relationship_in_sources'),
+      ),
+    db
+      .select({
+        tasks: sql<number>`count(*)::int`,
+      })
+      .from(
+        db
+          .select({ id: entities.id })
+          .from(entityRelationships)
+          .innerJoin(entities, eq(entities.id, entityRelationships.fromEntityId))
+          .where(
+            and(
+              eq(entityRelationships.teamId, scope.teamId),
+              eq(entityRelationships.toEntityId, entityRow.id),
+              eq(entityRelationships.kind, 'child'),
+              eq(entities.teamId, scope.teamId),
+              eq(entities.type, 'task'),
+              isNull(entities.archivedAt),
+              isNull(entities.mergedIntoId),
+              ne(entities.status, 'done'),
+              ne(entities.status, 'cancelled'),
+            ),
+          )
+          .orderBy(desc(entities.updatedAt), desc(entities.id))
+          .limit(8)
+          .as('summary_task_sources'),
+      ),
+    db
+      .select({
+        changes: sql<number>`count(*)::int`,
+      })
+      .from(
+        db
+          .select({ id: objectChanges.id })
+          .from(objectChanges)
+          .leftJoin(rawEvents, eq(rawEvents.id, objectChanges.sourceEventId))
+          .where(
+            and(
+              eq(objectChanges.teamId, scope.teamId),
+              eq(objectChanges.entityId, entityRow.id),
+              or(
+                isNull(objectChanges.sourceEventId),
+                and(
+                  eq(rawEvents.teamId, scope.teamId),
+                  eq(rawEvents.visibility, 'team'),
+                  sql`COALESCE(${rawEvents.sourceMetadata} ->> 'deleted', 'false') <> 'true'`,
+                ),
+              ),
+            ),
+          )
+          .orderBy(desc(objectChanges.changedAt), desc(objectChanges.id))
+          .limit(8)
+          .as('summary_change_sources'),
+      ),
   ]);
 
   const lastVisitedAt = viewRows[0]?.lastVisitedAt ?? null;
@@ -1465,16 +1711,33 @@ export async function getObject(
 
   const base = toObjectRow(entityRow);
   const connectedWork = await getConnectedWork(db, scope, base);
+  const relationships = [
+    ...outRows.map((r) => ({ ...r, direction: 'out' as const })),
+    ...inRows.map((r) => ({ ...r, direction: 'in' as const })),
+  ];
+  const summary = await getObjectSummaryFromSnapshot(
+    db,
+    scope,
+    entityRow.id,
+    objectSummarySourceSnapshot(entityRow, {
+      facts: factCountRows[0]?.facts ?? 0,
+      events: factCountRows[0]?.events ?? 0,
+      notes: summaryNoteCountRows[0]?.notes ?? 0,
+      relationships:
+        (summaryRelationshipOutCountRows[0]?.relationships ?? 0) +
+        (summaryRelationshipInCountRows[0]?.relationships ?? 0),
+      tasks: summaryTaskCountRows[0]?.tasks ?? 0,
+      changes: summaryChangeCountRows[0]?.changes ?? 0,
+    }),
+  );
   return {
     ...base,
     notes: noteRows,
-    relationships: [
-      ...outRows.map((r) => ({ ...r, direction: 'out' as const })),
-      ...inRows.map((r) => ({ ...r, direction: 'in' as const })),
-    ],
+    relationships,
     recentChanges: changeRows,
     openTasks: connectedWork.openTasks,
     connectedWork,
+    summary,
     newSinceLastVisit,
     lastVisitedAt,
   };
@@ -1511,6 +1774,60 @@ export async function getObjectNotePreview(
     updatedAt: row.note.updatedAt,
     object: toObjectRow(row.object),
   };
+}
+
+export async function listReadyObjectSummaries(
+  db: Db,
+  scope: TeamScopeCore,
+  entityIds: string[],
+): Promise<ObjectSummarySearchRow[]> {
+  await scope.requireMembership();
+  const ids = uniqueIds(entityIds.filter((id) => UUID_RE.test(id)));
+  if (ids.length === 0) return [];
+  return db
+    .select({
+      entityId: objectSummaries.entityId,
+      plainText: objectSummaries.plainText,
+      updatedAt: objectSummaries.updatedAt,
+    })
+    .from(objectSummaries)
+    .where(
+      and(
+        eq(objectSummaries.teamId, scope.teamId),
+        inArray(objectSummaries.status, ['ready', 'stale']),
+        inArray(objectSummaries.entityId, ids),
+      ),
+    );
+}
+
+export async function searchObjectsBySummary(
+  db: Db,
+  scope: TeamScopeCore,
+  input: { query: string; archived?: boolean; limit?: number },
+): Promise<ObjectRow[]> {
+  await scope.requireMembership();
+  const tokens = objectSearchTokens(input.query);
+  if (tokens.length === 0) return [];
+  const conds = [
+    eq(objectSummaries.teamId, scope.teamId),
+    inArray(objectSummaries.status, ['ready', 'stale']),
+    eq(entities.teamId, scope.teamId),
+    isNull(entities.mergedIntoId),
+  ];
+  if (input.archived === true) conds.push(isNotNull(entities.archivedAt));
+  else if (input.archived !== undefined) conds.push(isNull(entities.archivedAt));
+  for (const token of tokens) {
+    const pattern = likePattern(token);
+    conds.push(sql`lower(${objectSummaries.plainText}) LIKE ${pattern} ESCAPE '\\'`);
+  }
+  const rows = await db
+    .select({ object: entities })
+    .from(objectSummaries)
+    .innerJoin(entities, eq(entities.id, objectSummaries.entityId))
+    .where(and(...conds))
+    .orderBy(desc(objectSummaries.updatedAt))
+    .limit(Math.min(Math.max(input.limit ?? 100, 1), 500));
+  return rows.map((row) => toObjectRow(row.object));
 }
 
 export async function getMergedObjectTarget(
@@ -1910,6 +2227,10 @@ export async function createObject(
     entityId: txResult.object.id,
     op: 'createObject',
   });
+  refreshObjectAndLinkedParentSummaries(db, scope, txResult.object, {
+    teamId: scope.teamId,
+    op: 'createObject',
+  });
   fireAndForgetEmbed(() => afterDueDateCalendarSync(scope.teamId, txResult.dueDateCalendarSync), {
     teamId: scope.teamId,
     op: 'createObjectDueDateCalendar',
@@ -2156,6 +2477,10 @@ export async function updateObject(
         op: 'updateObject',
       });
     }
+    refreshObjectAndLinkedParentSummaries(db, scope, txResult.object, {
+      teamId: scope.teamId,
+      op: 'updateObject',
+    });
   }
   fireAndForgetEmbed(() => afterDueDateCalendarSync(scope.teamId, txResult.dueDateCalendarSync), {
     teamId: scope.teamId,
@@ -2616,6 +2941,11 @@ export async function mergeObjects(
     entityId: result.survivor.id,
     op: 'mergeObjects',
   });
+  void fireAndForgetObjectSummaryRefresh(db, scope, result.survivor.id, {
+    teamId: scope.teamId,
+    objectId: result.survivor.id,
+    op: 'mergeObjects',
+  });
   for (const mergedId of result.mergedIds) {
     fireAndForgetEmbed(() => deleteMergedObjectEmbeddingPoints(scope.teamId, mergedId), {
       teamId: scope.teamId,
@@ -2655,7 +2985,7 @@ export async function addRelationship(
     input.kind,
   );
 
-  return db.transaction(async (tx) => {
+  const result = await db.transaction(async (tx) => {
     // Both endpoints must belong to this team. Re-select to validate.
     const ends = await tx
       .select({ id: entities.id, canonicalName: entities.canonicalName, type: entities.type })
@@ -2753,6 +3083,17 @@ export async function addRelationship(
 
     return row;
   });
+  if (result) {
+    for (const objectId of [endpoints.fromEntityId, endpoints.toEntityId]) {
+      void fireAndForgetObjectSummaryRefresh(db, scope, objectId, {
+        teamId: scope.teamId,
+        objectId,
+        relationshipId: result.id,
+        op: 'addRelationship',
+      });
+    }
+  }
+  return result;
 }
 
 export async function removeRelationship(
@@ -2764,7 +3105,7 @@ export async function removeRelationship(
   await scope.requireMembership();
   if (!UUID_RE.test(relationshipId)) return false;
 
-  return db.transaction(async (tx) => {
+  const result = await db.transaction(async (tx) => {
     // Capture endpoints + kind before delete so the audit row has full
     // context. SELECT FOR UPDATE pins the row against a concurrent delete
     // (which would otherwise turn this into a no-op silently).
@@ -2780,7 +3121,7 @@ export async function removeRelationship(
       .for('update')
       .limit(1);
     const rel = existing[0];
-    if (!rel) return false;
+    if (!rel) return null;
 
     await tx.delete(entityRelationships).where(eq(entityRelationships.id, relationshipId));
 
@@ -2827,8 +3168,18 @@ export async function removeRelationship(
         sourceEventId: ev[0]?.id ?? null,
       },
     ]);
-    return true;
+    return { fromEntityId: rel.fromEntityId, toEntityId: rel.toEntityId };
   });
+  if (!result) return false;
+  for (const objectId of [result.fromEntityId, result.toEntityId]) {
+    void fireAndForgetObjectSummaryRefresh(db, scope, objectId, {
+      teamId: scope.teamId,
+      objectId,
+      relationshipId,
+      op: 'removeRelationship',
+    });
+  }
+  return true;
 }
 
 /** Notes are mutable; every CRUD writes raw_events + object_changes for audit. */
@@ -2909,6 +3260,12 @@ export async function createNote(
 
   fireAndForgetEmbed(() => embedQueue.enqueueObjectNoteEmbedJob(scope.teamId, result.id), {
     teamId: scope.teamId,
+    noteId: result.id,
+    op: 'createNote',
+  });
+  void fireAndForgetObjectSummaryRefresh(db, scope, input.entityId, {
+    teamId: scope.teamId,
+    objectId: input.entityId,
     noteId: result.id,
     op: 'createNote',
   });
@@ -3182,6 +3539,12 @@ export async function createIdentityFacet(
     entityId: input.entityId,
     op: 'createIdentityFacet',
   });
+  void fireAndForgetObjectSummaryRefresh(db, scope, input.entityId, {
+    teamId: scope.teamId,
+    objectId: input.entityId,
+    identityFacetId: result.id,
+    op: 'createIdentityFacet',
+  });
   return result;
 }
 
@@ -3214,7 +3577,7 @@ export async function updateNote(
       isNull(objectNotes.deletedAt),
     ];
     if (actor.kind === 'user') {
-      if (!input.actorUserId) return false;
+      if (!input.actorUserId) return null;
       conditions.push(eq(objectNotes.authorUserId, input.actorUserId));
     }
 
@@ -3224,8 +3587,8 @@ export async function updateNote(
       .where(and(...conditions))
       .limit(1);
     const note = existing[0];
-    if (!note) return false;
-    if (note.body === body) return true;
+    if (!note) return null;
+    if (note.body === body) return { changed: false, entityId: note.entityId };
 
     await tx
       .update(objectNotes)
@@ -3260,17 +3623,23 @@ export async function updateNote(
       newValue: { note_id: note.id, body },
       sourceEventId: ev[0]?.id ?? null,
     });
-    return true;
+    return { changed: true, entityId: note.entityId };
   });
 
-  if (updated) {
+  if (updated?.changed) {
     fireAndForgetEmbed(() => embedQueue.enqueueObjectNoteEmbedJob(scope.teamId, input.noteId), {
       teamId: scope.teamId,
       noteId: input.noteId,
       op: 'updateNote',
     });
+    void fireAndForgetObjectSummaryRefresh(db, scope, updated.entityId, {
+      teamId: scope.teamId,
+      objectId: updated.entityId,
+      noteId: input.noteId,
+      op: 'updateNote',
+    });
   }
-  return updated;
+  return Boolean(updated);
 }
 
 export async function deleteNote(
@@ -3281,7 +3650,7 @@ export async function deleteNote(
   await scope.requireMembership();
   if (!UUID_RE.test(input.noteId)) return false;
 
-  return db.transaction(async (tx) => {
+  const result = await db.transaction(async (tx) => {
     // Authors-only delete. Same threat model as updateNote — UI hides the
     // button for non-authors, but the action is reachable by direct POST.
     const existing = await tx
@@ -3297,7 +3666,7 @@ export async function deleteNote(
       )
       .limit(1);
     const note = existing[0];
-    if (!note) return false;
+    if (!note) return null;
 
     await tx
       .update(objectNotes)
@@ -3331,8 +3700,16 @@ export async function deleteNote(
       newValue: null,
       sourceEventId: ev[0]?.id ?? null,
     });
-    return true;
+    return { entityId: note.entityId };
   });
+  if (!result) return false;
+  void fireAndForgetObjectSummaryRefresh(db, scope, result.entityId, {
+    teamId: scope.teamId,
+    objectId: result.entityId,
+    noteId: input.noteId,
+    op: 'deleteNote',
+  });
+  return true;
 }
 
 export async function markVisited(db: Db, scope: TeamScopeCore, entityId: string): Promise<void> {
@@ -4244,7 +4621,16 @@ export function createObjectScope(db: Db, scope: TeamScopeCore) {
   return {
     listObjects: (filter?: ObjectListFilter) => listObjects(db, scope, filter),
     searchObjects: (filter: ObjectSearchFilter) => searchObjects(db, scope, filter),
+    searchObjectsBySummary: (input: { query: string; archived?: boolean; limit?: number }) =>
+      searchObjectsBySummary(db, scope, input),
     getObject: (idOrName: string) => getObject(db, scope, idOrName),
+    getObjectSummary: (entityId: string) => getObjectSummary(db, scope, entityId),
+    listReadyObjectSummaries: (entityIds: string[]) =>
+      listReadyObjectSummaries(db, scope, entityIds),
+    enqueueObjectSummaryRefresh: (
+      entityId: string,
+      opts?: Parameters<typeof enqueueObjectSummaryRefresh>[3],
+    ) => enqueueObjectSummaryRefresh(db, scope, entityId, opts),
     getObjectNotePreview: (noteId: string) => getObjectNotePreview(db, scope, noteId),
     getMergedObjectTarget: (entityId: string) => getMergedObjectTarget(db, scope, entityId),
     getObjectMergePreview: (entityIds: string[], survivorId?: string) =>

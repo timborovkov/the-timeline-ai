@@ -56,7 +56,7 @@ describe('createRecallProvider', () => {
     expect(body.automatic_leave).toMatchObject({
       waiting_room_timeout: 550,
       noone_joined_timeout: 550,
-      everyone_left_timeout: { timeout: 2, activate_after: 0 },
+      everyone_left_timeout: { timeout: 2, activate_after: 1 },
       recording_permission_denied_timeout: 30,
     });
     const meta = body.metadata as Record<string, string>;

@@ -30,6 +30,7 @@ vi.mock('#src/queue/queues.js', () => ({
   enqueueObjectNoteEmbedJob: vi.fn().mockResolvedValue(undefined),
   enqueueObjectChangeEmbedJob: vi.fn().mockResolvedValue(undefined),
   enqueueCalendarEventEmbedJob: vi.fn().mockResolvedValue(undefined),
+  enqueueObjectSummaryJob: vi.fn().mockResolvedValue({ enqueued: true, jobId: 'summary-job' }),
 }));
 vi.mock('#src/qdrant/client.js', () => ({
   getQdrantClient: qdrantFakes.getQdrantClient,

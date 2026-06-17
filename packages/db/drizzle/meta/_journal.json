@@ -302,6 +302,20 @@
       "when": 1795652880000,
       "tag": "0042_due_date_notifications",
       "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1795652940000,
+      "tag": "0043_object_list_cursor_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1795653000000,
+      "tag": "0044_object_summaries",
+      "breakpoints": true
     }
   ]
 }

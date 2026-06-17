@@ -20,7 +20,7 @@ import { resolveActiveTeam } from '@/lib/active-team';
 import { trackProductEventBestEffort } from '@/lib/analytics';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
-import { reportCaughtError } from '@/lib/sentry-report';
+import { reportCaughtError, reportHandledEvent } from '@/lib/sentry-report';
 
 /**
  * Phase 6 — agent chat endpoint. Phase 8 wires session persistence on top.
@@ -855,16 +855,21 @@ export async function POST(req: Request): Promise<Response> {
     messages: memory.messages,
     tools,
     model: modelId,
-    maxSteps: 5,
+    maxSteps: llm.DEFAULT_AGENT_MAX_STEPS,
     // Propagate client disconnects to OpenRouter so we stop paying for
     // tokens nobody will see. Without this, a user navigating away mid-
     // stream still runs the model to completion.
     abortSignal: req.signal,
     onError: (e) => {
-      reportCaughtError(e.error, {
+      if (isAiStreamAbort(e.error)) return;
+      reportHandledEvent({
+        message: 'chat_stream_ai_provider_error',
         surface: 'api',
         operation: 'chat_stream',
-        tags: { model: modelId },
+        tags: {
+          model: modelId,
+          ...aiStreamErrorTags(e.error),
+        },
       });
     },
     onFinish: (e) => {
@@ -942,4 +947,33 @@ export async function POST(req: Request): Promise<Response> {
   // doesn't conflict with the AI-SDK stream body.
   if (sessionId) response.headers.set('x-tl-session-id', sessionId);
   return response;
+}
+
+function aiStreamErrorTags(error: unknown): Record<string, string> {
+  if (!error || typeof error !== 'object') return { reason: 'unknown' };
+  const row = error as {
+    timelineAi?: unknown;
+    operation?: unknown;
+    model?: unknown;
+    causeName?: unknown;
+  };
+  if (row.timelineAi !== true) {
+    const reason = error instanceof Error ? error.name : typeof error;
+    return { reason };
+  }
+  const causeName = typeof row.causeName === 'string' ? row.causeName : undefined;
+  return Object.fromEntries(
+    Object.entries({
+      reason: causeName ?? 'TimelineAiError',
+      aiOperation: typeof row.operation === 'string' ? row.operation : undefined,
+      aiModel: typeof row.model === 'string' ? row.model : undefined,
+      aiCauseName: causeName,
+    }).filter((entry): entry is [string, string] => typeof entry[1] === 'string'),
+  );
+}
+
+function isAiStreamAbort(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  const row = error as { causeName?: unknown; name?: unknown };
+  return row.causeName === 'AbortError' || row.name === 'AbortError';
 }

@@ -11,10 +11,11 @@ import {
   meetingTranscriptChunks,
   objectChanges as objectChangesTable,
   objectNotes as objectNotesTable,
+  objectSummaries as objectSummariesTable,
   rawEvents,
 } from '@timeline/db';
 import { UnrecoverableError } from 'bullmq';
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 
 import { renderRawEventForAi } from '#src/embedding/raw-event-renderer.js';
 import { TIMELINE_MODELS } from '#src/llm/models.js';
@@ -291,6 +292,7 @@ function renderObjectNarrative(row: {
   priority: number | null;
   aliases: unknown;
   dueAt: Date | null;
+  summaryText?: string | null;
 }): string {
   const aliases = Array.isArray(row.aliases)
     ? (row.aliases as unknown[]).filter((v): v is string => typeof v === 'string')
@@ -302,6 +304,7 @@ function renderObjectNarrative(row: {
     row.stage ? `stage=${row.stage}` : '',
     row.priority !== null ? `priority=${String(row.priority)}` : '',
     row.dueAt ? `due ${row.dueAt.toISOString()}` : '',
+    row.summaryText ? `summary=${row.summaryText}` : '',
   ];
   return parts.filter((p) => p.length > 0).join(' | ');
 }
@@ -311,8 +314,30 @@ async function buildObjectPlan(db: Db, data: EmbedJobData): Promise<EmbeddingPla
     throw new UnrecoverableError('embed: object scope job missing objectId');
   }
   const rows = await db
-    .select()
+    .select({
+      id: entitiesTable.id,
+      teamId: entitiesTable.teamId,
+      type: entitiesTable.type,
+      canonicalName: entitiesTable.canonicalName,
+      status: entitiesTable.status,
+      stage: entitiesTable.stage,
+      priority: entitiesTable.priority,
+      aliases: entitiesTable.aliases,
+      dueAt: entitiesTable.dueAt,
+      updatedAt: entitiesTable.updatedAt,
+      ownerUserId: entitiesTable.ownerUserId,
+      mergedIntoId: entitiesTable.mergedIntoId,
+      summaryText: objectSummariesTable.plainText,
+    })
     .from(entitiesTable)
+    .leftJoin(
+      objectSummariesTable,
+      and(
+        eq(objectSummariesTable.teamId, data.teamId),
+        eq(objectSummariesTable.entityId, entitiesTable.id),
+        inArray(objectSummariesTable.status, ['ready', 'stale']),
+      ),
+    )
     .where(eq(entitiesTable.id, data.objectId))
     .limit(1);
   const row = rows[0];

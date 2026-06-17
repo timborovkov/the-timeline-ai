@@ -202,6 +202,12 @@
       "import": "./dist/passwords.js",
       "types": "./dist/passwords.d.ts"
     },
+    "./pagination": {
+      "types": "./src/pagination.ts",
+      "development": "./src/pagination.ts",
+      "import": "./dist/pagination.js",
+      "default": "./dist/pagination.js"
+    },
     "./slack": {
       "types": "./src/slack/index.ts",
       "development": "./src/slack/index.ts",
