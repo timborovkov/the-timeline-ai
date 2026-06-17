@@ -370,12 +370,20 @@ export function CaptureForm({
         textCommitted = true;
         if (textareaRef.current) textareaRef.current.value = '';
       }
-      const hadClip = clip !== null;
       if (clip) {
         const audioWarning = await submitAudio();
         if (audioWarning) warnings.push(audioWarning);
+        setCaptureUi((current) =>
+          current.clip === clip
+            ? {
+                ...current,
+                clip: null,
+                recorderKey: current.recorderKey + 1,
+              }
+            : current,
+        );
       }
-      const attachmentWarnings = await Promise.all(
+      const attachmentResults = await Promise.allSettled(
         files.map(async (file) => {
           const audioType = mimeTypeForAudioFile(file);
           if (audioType) {
@@ -389,23 +397,27 @@ export function CaptureForm({
           return null;
         }),
       );
+      const failedFiles: File[] = [];
+      const failureMessages: string[] = [];
+      const attachmentWarnings = attachmentResults.flatMap((result, index) => {
+        if (result.status === 'fulfilled') {
+          return result.value ? [result.value] : [];
+        }
+        const failedFile = files[index];
+        if (failedFile) failedFiles.push(failedFile);
+        failureMessages.push(
+          result.reason instanceof Error
+            ? result.reason.message
+            : `Upload failed for ${failedFile?.name ?? 'file'}`,
+        );
+        return [];
+      });
       warnings.push(...attachmentWarnings.filter((warning): warning is string => Boolean(warning)));
-      formRef.current?.reset();
-      // Only clear clip / remount the recorder when an audio clip was
-      // actually posted. A text-only Post must not touch recorder state —
-      // the user may have started (or finished) a recording during the
-      // async text submit. The Stop button stays enabled while pending, so
-      // `onstop` can fire mid-submit and push a fresh clip up via
-      // onClipChange; unconditionally nulling here would overwrite that
-      // clip in the parent while the child still shows it in review,
-      // wedging the user (next Post sees no clip).
-      if (hadClip) {
-        setCaptureUi((current) => ({
-          ...current,
-          clip: null,
-          recorderKey: current.recorderKey + 1,
-        }));
+      if (failedFiles.length > 0) {
+        setCaptureUi({ files: failedFiles });
+        throw new Error(failureMessages[0] ?? 'Upload failed');
       }
+      formRef.current?.reset();
       if (fileInputRef.current) fileInputRef.current.value = '';
       setCaptureUi({ files: [] });
       // Keep visibility pill sticky — it's a preference, not per-post.
