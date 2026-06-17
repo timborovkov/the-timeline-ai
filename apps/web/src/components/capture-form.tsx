@@ -43,7 +43,6 @@ function mimeTypeForAudioFile(file: File): string | null {
   if (ext === 'mp3') return 'audio/mpeg';
   if (ext === 'ogg' || ext === 'oga') return 'audio/ogg';
   if (ext === 'wav') return 'audio/wav';
-  if (ext === 'webm') return 'audio/webm';
   if (ext === 'aac') return 'audio/aac';
   if (ext === 'flac') return 'audio/flac';
   return null;
@@ -348,6 +347,7 @@ export function CaptureForm({
     setCaptureUi({ pending: true, error: null, notice: null });
     let optimisticTextId: string | null = null;
     let textCommitted = false;
+    let serverStateChanged = false;
     const warnings: string[] = [];
     try {
       // Text + voice in the same Post become two separate events on the
@@ -368,11 +368,13 @@ export function CaptureForm({
         }
         if (result.warning) warnings.push(result.warning);
         textCommitted = true;
+        serverStateChanged = true;
         if (textareaRef.current) textareaRef.current.value = '';
       }
       if (clip) {
         const audioWarning = await submitAudio();
         if (audioWarning) warnings.push(audioWarning);
+        serverStateChanged = true;
         setCaptureUi((current) =>
           current.clip === clip
             ? {
@@ -401,6 +403,7 @@ export function CaptureForm({
       const failureMessages: string[] = [];
       const attachmentWarnings = attachmentResults.flatMap((result, index) => {
         if (result.status === 'fulfilled') {
+          serverStateChanged = true;
           return result.value ? [result.value] : [];
         }
         const failedFile = files[index];
@@ -435,7 +438,7 @@ export function CaptureForm({
     } catch (err) {
       if (!textCommitted && optimisticTextId) {
         removeOptimisticTextEvent(optimisticTextId);
-      } else if (textCommitted) {
+      } else if (serverStateChanged) {
         router.refresh();
       }
       setCaptureUi({ error: err instanceof Error ? err.message : 'Post failed', notice: null });

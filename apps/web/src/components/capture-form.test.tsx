@@ -147,6 +147,7 @@ describe('CaptureForm', () => {
     expect(await screen.findByText('Finalize failed for notes.pdf')).toBeTruthy();
     expect(screen.queryByText('meeting.m4a')).toBeNull();
     expect(screen.getByText('notes.pdf')).toBeTruthy();
+    expect(fakes.refresh).toHaveBeenCalledOnce();
 
     await user.click(screen.getByRole('button', { name: 'Post' }));
 
@@ -157,5 +158,33 @@ describe('CaptureForm', () => {
     expect(fakes.createAudioEventAction).toHaveBeenCalledOnce();
     expect(fakes.requestDocumentUploadAction).toHaveBeenCalledTimes(2);
     expect(fetch).toHaveBeenCalledTimes(3);
+    expect(fakes.refresh).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not force extension-only webm files through audio transcription', async () => {
+    const user = userEvent.setup();
+    render(
+      createElement(CaptureForm, {
+        currentUser: { id: 'user-1', name: 'Ada', email: 'ada@example.test' },
+      }),
+    );
+
+    const webm = new File(['webm-bytes'], 'clip.webm');
+
+    await user.upload(screen.getByLabelText('Attach files'), webm);
+    await user.click(screen.getByRole('button', { name: 'Post' }));
+
+    await waitFor(() => {
+      expect(fakes.finalizeDocumentVersionAction).toHaveBeenCalledOnce();
+    });
+    expect(fakes.requestAudioUploadAction).not.toHaveBeenCalled();
+    expect(fakes.createAudioEventAction).not.toHaveBeenCalled();
+    expect(fakes.requestDocumentUploadAction).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'clip.webm',
+        filename: 'clip.webm',
+        contentType: 'application/octet-stream',
+      }),
+    );
   });
 });
