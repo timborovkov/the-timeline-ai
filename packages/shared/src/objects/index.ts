@@ -269,9 +269,10 @@ export interface ObjectListFilter {
   archived?: boolean;
   limit?: number;
   offset?: number;
+  cursor?: string | null;
 }
 
-export interface ObjectSearchFilter extends Omit<ObjectListFilter, 'offset'> {
+export interface ObjectSearchFilter extends Omit<ObjectListFilter, 'cursor' | 'offset'> {
   query: string;
 }
 
@@ -400,6 +401,9 @@ export async function listObjects(
 
   if (filter.archived === true) conds.push(isNotNull(entities.archivedAt));
   else if (filter.archived !== undefined) conds.push(isNull(entities.archivedAt));
+
+  const cursorSql = cursorCondition(filter.cursor, entities.updatedAt, entities.id);
+  if (cursorSql) conds.push(cursorSql);
 
   const limit = Math.min(Math.max(filter.limit ?? 100, 1), 500);
   const offset = Math.max(filter.offset ?? 0, 0);

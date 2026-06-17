@@ -28,17 +28,18 @@ vi.mock('@/lib/db', () => ({ db: {} }));
 vi.mock('@/components/objects/object-cleanup-list', () => ({
   ObjectCleanupList: ({
     pageInfo,
+    sectionMoreHrefs,
   }: {
     pageInfo?: {
-      page: number;
-      previousHref: string | null;
+      shownCount: number;
       nextHref: string | null;
     };
+    sectionMoreHrefs?: Record<string, string>;
   }) => (
     <div data-testid="object-cleanup-list">
       {pageInfo
-        ? `${pageInfo.page}|${pageInfo.previousHref ?? 'none'}|${pageInfo.nextHref ?? 'none'}`
-        : ''}
+        ? `${pageInfo.shownCount}|${pageInfo.nextHref ?? 'none'}`
+        : `sections:${JSON.stringify(sectionMoreHrefs ?? {})}`}
     </div>
   ),
 }));
@@ -85,62 +86,116 @@ function mergeSuggestion(index: number) {
   };
 }
 
+function objectRow(index: number, type = 'task') {
+  const suffix = String(index + 1).padStart(12, '0');
+  return {
+    id: `00000000-0000-4000-8000-${suffix}`,
+    type,
+    canonicalName: `Object ${index}`,
+    status: 'open',
+    stage: null,
+    priority: null,
+    ownerUserId: null,
+    assigneeUserId: null,
+    dueAt: null,
+    agentSuggested: false,
+    archivedAt: null,
+    aliases: [],
+    metadata: {},
+    createdAt: new Date('2026-06-01T10:00:00.000Z'),
+    updatedAt: new Date('2026-06-01T10:00:00.000Z'),
+  };
+}
+
 describe('ObjectsIndexPage', () => {
-  it('fetches one paginated object window and preserves filters in page links', async () => {
-    fakes.listObjects.mockResolvedValue(
-      Array.from({ length: 49 }, (_, index) => ({
-        id: `object-${index}`,
-        type: 'task',
-        canonicalName: `Object ${index}`,
-        status: 'open',
-        stage: null,
-        priority: null,
-        ownerUserId: null,
-        assigneeUserId: null,
-        dueAt: null,
-        agentSuggested: false,
-        archivedAt: null,
-        aliases: [],
-        metadata: {},
-        createdAt: new Date('2026-06-01T10:00:00.000Z'),
-        updatedAt: new Date('2026-06-01T10:00:00.000Z'),
-      })),
-    );
+  it('fetches one cursor-paginated object window and preserves filters in page links', async () => {
+    fakes.listObjects.mockResolvedValue(Array.from({ length: 49 }, (_, index) => objectRow(index)));
+    const cursor = Buffer.from(
+      JSON.stringify({ at: '2026-05-31T10:00:00.000Z', id: objectRow(50).id }),
+      'utf8',
+    ).toString('base64url');
 
     const html = renderToStaticMarkup(
       await ObjectsIndexPage({
-        searchParams: Promise.resolve({ type: 'task', status: 'open', page: '2' }),
+        searchParams: Promise.resolve({ type: 'task', status: 'open', cursor }),
       }),
     );
 
     expect(fakes.listObjects).toHaveBeenCalledWith({
       limit: 49,
-      offset: 48,
+      archived: false,
+      type: 'task',
+      status: 'open',
+      cursor,
+    });
+    expect(html).toContain('48|/app/objects?type=task&amp;status=open&amp;cursor=');
+  });
+
+  it('shows section previews on the unfiltered index and links large sections to typed pagination', async () => {
+    fakes.listObjects.mockImplementation(({ type }: { type?: string }) => {
+      if (type === 'task') {
+        return Promise.resolve(Array.from({ length: 9 }, (_, index) => objectRow(index, type)));
+      }
+      if (type === 'person') {
+        return Promise.resolve(Array.from({ length: 2 }, (_, index) => objectRow(index, type)));
+      }
+      return Promise.resolve([]);
+    });
+
+    const html = renderToStaticMarkup(
+      await ObjectsIndexPage({ searchParams: Promise.resolve({ status: 'open' }) }),
+    );
+
+    expect(fakes.listObjects).toHaveBeenCalledWith({
+      limit: 9,
       archived: false,
       type: 'task',
       status: 'open',
     });
-    expect(html).toContain('2|/app/objects?type=task&amp;status=open|');
-    expect(html).toContain('/app/objects?type=task&amp;status=open&amp;page=3');
+    expect(fakes.listObjects).toHaveBeenCalledWith({
+      limit: 9,
+      archived: false,
+      type: 'person',
+      status: 'open',
+    });
+    expect(html).toContain(
+      'sections:{&quot;task&quot;:&quot;/app/objects?type=task&amp;status=open&quot;}',
+    );
+    expect(html).not.toContain('page=2');
   });
 
-  it('bounds oversized page params and uses a page-specific empty state', async () => {
+  it('ignores invalid cursors and uses a cursor-specific empty state', async () => {
+    const cursor = Buffer.from(
+      JSON.stringify({ at: '2026-05-31T10:00:00.000Z', id: objectRow(50).id }),
+      'utf8',
+    ).toString('base64url');
     const html = renderToStaticMarkup(
       await ObjectsIndexPage({
-        searchParams: Promise.resolve({ type: 'task', status: 'open', page: '999999' }),
+        searchParams: Promise.resolve({ type: 'task', status: 'open', cursor }),
       }),
     );
 
     expect(fakes.listObjects).toHaveBeenCalledWith({
       limit: 49,
-      offset: 11952,
       archived: false,
       type: 'task',
       status: 'open',
+      cursor,
     });
     expect(html).toContain('No objects on this page');
     expect(html).toContain('/app/objects?type=task&amp;status=open');
     expect(html).toContain('Open first page');
+
+    await ObjectsIndexPage({
+      searchParams: Promise.resolve({ type: 'task', status: 'open', cursor: 'not-a-cursor' }),
+    });
+    expect(fakes.listObjects).toHaveBeenLastCalledWith({
+      limit: 49,
+      archived: false,
+      type: 'task',
+      status: 'open',
+      cursor: undefined,
+    });
   });
 
   it('preloads merge previews only for the cleanup panel window', async () => {

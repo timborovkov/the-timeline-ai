@@ -86,6 +86,12 @@ export const entities = pgTable(
     index('entities_team_active_idx')
       .on(table.teamId)
       .where(sql`${table.archivedAt} IS NULL`),
+    index('entities_team_type_status_active_updated_id_idx')
+      .on(table.teamId, table.type, table.status, table.updatedAt, table.id)
+      .where(sql`${table.archivedAt} IS NULL AND ${table.mergedIntoId} IS NULL`),
+    index('entities_team_type_active_updated_id_idx')
+      .on(table.teamId, table.type, table.updatedAt, table.id)
+      .where(sql`${table.archivedAt} IS NULL AND ${table.mergedIntoId} IS NULL`),
     // Case-insensitive uniqueness on (team, type, canonical name). Scoped to
     // active (non-merged) rows so merges don't create permanent collisions.
     // Includes `type` so cross-type same-name entities coexist legitimately

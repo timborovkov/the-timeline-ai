@@ -8,21 +8,18 @@ import { useMemo, useReducer, useTransition } from 'react';
 import type * as objects from '@timeline/shared/objects';
 
 import { bulkArchiveObjectsAction } from '@/app/actions/objects';
-import { ObjectTextFilter } from '@/components/boards/object-text-filter';
 import { useAppDialog } from '@/components/ui/app-dialog';
 import { displayText } from '@/lib/display-dates';
-import { filterObjectsByText } from '@/lib/object-filter';
 import { MAX_OBJECT_MERGE_SELECTION, objectMergeHref } from '@/lib/object-merge';
 
 interface Props {
   rows: objects.ObjectRow[];
   typeLabels: Record<string, string>;
   pageInfo?: {
-    page: number;
-    pageSize: number;
-    previousHref: string | null;
+    shownCount: number;
     nextHref: string | null;
   };
+  sectionMoreHrefs?: Record<string, string>;
 }
 
 interface CleanupListState {
@@ -30,14 +27,12 @@ interface CleanupListState {
   selected: Set<string>;
   archivedIds: Set<string>;
   error: string | null;
-  filterQuery: string;
 }
 
 type CleanupListAction =
   | { type: 'begin-selecting' }
   | { type: 'toggle'; id: string }
   | { type: 'clear-selection' }
-  | { type: 'set-filter'; query: string }
   | { type: 'archive-optimistic'; ids: string[] }
   | { type: 'archive-rollback'; ids: string[]; error: string };
 
@@ -53,8 +48,6 @@ function cleanupListReducer(state: CleanupListState, action: CleanupListAction):
     }
     case 'clear-selection':
       return { ...state, selecting: false, selected: new Set(), error: null };
-    case 'set-filter':
-      return { ...state, filterQuery: action.query, selected: new Set() };
     case 'archive-optimistic':
       return {
         ...state,
@@ -71,26 +64,24 @@ function cleanupListReducer(state: CleanupListState, action: CleanupListAction):
   }
 }
 
-export function ObjectCleanupList({ rows, typeLabels, pageInfo }: Props) {
+export function ObjectCleanupList({ rows, typeLabels, pageInfo, sectionMoreHrefs }: Props) {
   const router = useRouter();
   const dialog = useAppDialog();
-  const [{ selecting, selected, archivedIds, error, filterQuery }, dispatchCleanupList] =
-    useReducer(cleanupListReducer, {
+  const [{ selecting, selected, archivedIds, error }, dispatchCleanupList] = useReducer(
+    cleanupListReducer,
+    {
       selecting: false,
       selected: new Set<string>(),
       archivedIds: new Set<string>(),
       error: null,
-      filterQuery: '',
-    });
+    },
+  );
   const [isPending, startTransition] = useTransition();
   const activeRows = useMemo(
     () => rows.filter((row) => !archivedIds.has(row.id)),
     [archivedIds, rows],
   );
-  const visibleRows = useMemo(
-    () => filterObjectsByText(activeRows, filterQuery, { typeLabels }),
-    [activeRows, filterQuery, typeLabels],
-  );
+  const visibleRows = activeRows;
   const visibleIds = useMemo(() => new Set(visibleRows.map((row) => row.id)), [visibleRows]);
 
   const selectedIds = useMemo(
@@ -154,14 +145,7 @@ export function ObjectCleanupList({ rows, typeLabels, pageInfo }: Props) {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border pb-2">
-        <ObjectTextFilter
-          query={filterQuery}
-          onQueryChange={(query) => {
-            dispatchCleanupList({ type: 'set-filter', query });
-          }}
-          resultCount={visibleRows.length}
-          totalCount={activeRows.length}
-        />
+        <div />
         <div className="flex items-center gap-1.5">
           {selecting ? (
             <div className="mr-1 font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
@@ -215,13 +199,7 @@ export function ObjectCleanupList({ rows, typeLabels, pageInfo }: Props) {
         </div>
       </div>
       {pageInfo ? (
-        <ObjectListPager
-          page={pageInfo.page}
-          pageSize={pageInfo.pageSize}
-          shownCount={rows.length}
-          previousHref={pageInfo.previousHref}
-          nextHref={pageInfo.nextHref}
-        />
+        <ObjectListPager shownCount={pageInfo.shownCount} nextHref={pageInfo.nextHref} />
       ) : null}
       {error ? (
         <p className="border border-danger/30 bg-danger/10 px-3 py-2 text-sm text-danger">
@@ -236,7 +214,7 @@ export function ObjectCleanupList({ rows, typeLabels, pageInfo }: Props) {
       ) : null}
       {visibleRows.length === 0 ? (
         <p className="py-10 text-center font-mono text-xs uppercase tracking-[0.12em] text-fg-dim">
-          NOTHING MATCHES THIS FILTER
+          NO OBJECTS VISIBLE
         </p>
       ) : (
         <div className="space-y-8">
@@ -248,9 +226,17 @@ export function ObjectCleanupList({ rows, typeLabels, pageInfo }: Props) {
                   <h2 className="font-mono text-[11px] uppercase tracking-[0.14em] text-fg">
                     {typeLabels[typeKey] ?? typeKey}
                   </h2>
-                  <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
-                    {list.length}
-                  </span>
+                  <div className="flex items-center gap-3 font-mono text-[11px] uppercase tracking-[0.12em]">
+                    <span className="text-fg-dim">{list.length}</span>
+                    {sectionMoreHrefs?.[typeKey] ? (
+                      <Link
+                        href={sectionMoreHrefs[typeKey]}
+                        className="text-signal hover:underline"
+                      >
+                        View all
+                      </Link>
+                    ) : null}
+                  </div>
                 </div>
                 <ul className="grid grid-cols-1 gap-px overflow-hidden border border-border sm:grid-cols-2">
                   {list.map((object) => {
@@ -307,34 +293,21 @@ export function ObjectCleanupList({ rows, typeLabels, pageInfo }: Props) {
 }
 
 function ObjectListPager({
-  page,
-  pageSize,
   shownCount,
-  previousHref,
   nextHref,
 }: {
-  page: number;
-  pageSize: number;
   shownCount: number;
-  previousHref: string | null;
   nextHref: string | null;
 }) {
-  const start = (page - 1) * pageSize + 1;
-  const end = start + Math.max(shownCount - 1, 0);
-
   return (
     <nav
       aria-label="Objects pages"
       className="flex flex-wrap items-center justify-between gap-2 border-b border-border pb-2"
     >
       <p className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
-        Showing {start}-{end}
+        {shownCount} shown
       </p>
       <div className="flex items-center gap-1.5">
-        <PaginationLink href={previousHref} label="Previous" />
-        <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
-          Page {page}
-        </span>
         <PaginationLink href={nextHref} label="Next" />
       </div>
     </nav>
