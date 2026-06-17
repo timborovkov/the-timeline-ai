@@ -380,7 +380,10 @@ function TaskCard({
         error && 'border-danger/50',
       )}
     >
-      <Link href={href} className="block min-w-0 truncate font-medium hover:underline">
+      <Link
+        href={href}
+        className="block min-w-0 whitespace-normal break-words font-medium leading-snug hover:underline"
+      >
         {displayText(title)}
       </Link>
       <div className="mt-1.5 flex flex-wrap items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.1em] text-fg-dim">
@@ -445,15 +448,17 @@ function TaskDetailPanel({
     >
       <div className="border-b border-border p-4">
         <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <h2 className="truncate text-lg font-semibold text-fg">{displayText(title)}</h2>
+          <div className="min-w-0 flex-1">
+            <h2 className="whitespace-normal break-words text-lg font-semibold leading-snug text-fg">
+              {displayText(title)}
+            </h2>
             <p className="mt-1 font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
               Task · side panel
             </p>
           </div>
           <Link
             href={closeHref}
-            className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-muted hover:text-fg hover:underline"
+            className="shrink-0 font-mono text-[11px] uppercase tracking-[0.12em] text-fg-muted hover:text-fg hover:underline"
           >
             Close
           </Link>
