@@ -6,25 +6,20 @@
  * Usage:
  *   pnpm --filter @timeline/worker dedupe-calendar-events -- --team=<teamId> [--limit=N] [--from=YYYY-MM-DD] [--to=YYYY-MM-DD] [--apply]
  */
+import { pathToFileURL } from 'node:url';
+
 import { closeDb, getDb } from '@timeline/db';
-import { suggestions, withTeam } from '@timeline/shared';
+import { llm, suggestions, withTeam } from '@timeline/shared';
+import { z } from 'zod';
+
+import {
+  duplicateGroups,
+  type DuplicateGroup,
+  type EventRow,
+} from '#src/scripts/dedupe-calendar-events-core.js';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const PSEUDO_USER = '00000000-0000-0000-0000-000000000000';
-const TITLE_STOPWORDS = new Set([
-  'and',
-  'calendar',
-  'call',
-  'event',
-  'meeting',
-  'palaveri',
-  'scheduled',
-  'tapaaminen',
-  'team',
-  'teams',
-  'the',
-  'with',
-]);
 const PAGE_SIZE = 500;
 const DEFAULT_LOOKBACK_MS = 90 * 24 * 60 * 60 * 1000;
 
@@ -32,39 +27,27 @@ interface Args {
   teamId: string;
   limit: number;
   dryRun: boolean;
+  useAi: boolean;
   from: Date;
   to?: Date;
 }
 
-interface EventRow {
-  id: string;
-  title: string;
-  description: string | null;
-  startAt: Date;
-  endAt: Date;
-  timezone: string;
-  allDay: boolean;
-  visibility: 'private' | 'team' | 'specific_users';
-  recurringParentId: string | null;
-  rrule: string | null;
-  createdAt: Date;
-  source: string;
-  agentSuggested: boolean;
-  redacted: boolean;
-}
-
-interface DuplicateGroup {
-  key: string;
-  survivor: EventRow;
-  duplicates: EventRow[];
-  skippedRecurringMasters: EventRow[];
-}
+const aiDuplicateGroupSchema = z.object({
+  duplicate_groups: z.array(
+    z.object({
+      event_ids: z.array(z.string()).min(2),
+      confidence: z.enum(['low', 'medium', 'high']),
+      reason: z.string(),
+    }),
+  ),
+});
 
 function parseArgs(): Args {
   const args = process.argv.slice(2);
   let teamId: string | undefined;
   let limit = 1000;
   let dryRun = true;
+  let useAi = true;
   let from: Date | undefined;
   let to: Date | undefined;
 
@@ -79,6 +62,8 @@ function parseArgs(): Args {
       limit = parsed;
     } else if (arg === '--apply') dryRun = false;
     else if (arg === '--dry-run') dryRun = true;
+    else if (arg === '--ai') useAi = true;
+    else if (arg === '--no-ai') useAi = false;
     else if (arg.startsWith('--from=')) from = parseDateArg(arg.slice('--from='.length), '--from');
     else if (arg.startsWith('--to=')) to = parseDateArg(arg.slice('--to='.length), '--to');
   }
@@ -94,6 +79,7 @@ function parseArgs(): Args {
     teamId,
     limit,
     dryRun,
+    useAi,
     from: from ?? new Date(Date.now() - DEFAULT_LOOKBACK_MS),
     ...(to ? { to } : {}),
   };
@@ -108,59 +94,54 @@ function parseDateArg(value: string, flag: string): Date {
   return parsed;
 }
 
-function titleTokens(title: string): string[] {
-  return title
-    .toLowerCase()
-    .normalize('NFKD')
-    .replace(/[^\p{Letter}\p{Number}\s]/gu, ' ')
-    .split(/\s+/)
-    .filter((token) => token.length >= 4 && !TITLE_STOPWORDS.has(token))
-    .sort();
+function compact(value: string | null | undefined): string | null {
+  const text = value?.replace(/\s+/g, ' ').trim();
+  if (!text) return null;
+  return text.length > 500 ? `${text.slice(0, 497)}...` : text;
 }
 
-function duplicateKey(event: EventRow): string {
-  return [
-    titleTokens(event.title).join('+') || event.title.toLowerCase().trim(),
-    event.startAt.toISOString(),
-    event.endAt.toISOString(),
-    String(event.allDay),
-    event.visibility,
-  ].join('|');
+function formatEventForAi(event: EventRow): Record<string, unknown> {
+  return {
+    id: event.id,
+    title: compact(event.title),
+    description: compact(event.description),
+    location: compact(event.location),
+    startAt: event.startAt.toISOString(),
+    endAt: event.endAt.toISOString(),
+    timezone: event.timezone,
+    allDay: event.allDay,
+    visibility: event.visibility,
+    source: event.source,
+    agentSuggested: event.agentSuggested,
+    recurring: event.recurringParentId !== null || Boolean(event.rrule),
+  };
 }
 
-function chooseSurvivor(events: EventRow[]): EventRow {
-  const [survivor] = [...events].sort((a, b) => {
-    if (a.agentSuggested !== b.agentSuggested) return a.agentSuggested ? 1 : -1;
-    if (a.source !== b.source) return a.source === 'internal' ? -1 : 1;
-    return a.createdAt.getTime() - b.createdAt.getTime();
+async function aiDuplicateClusters(input: {
+  events: EventRow[];
+  chatStructured?: typeof llm.chatStructured;
+}): Promise<string[][]> {
+  const chatStructured = input.chatStructured ?? llm.chatStructured;
+  const candidateEvents = input.events.filter((event) => !event.redacted);
+  if (candidateEvents.length < 2) return [];
+
+  const result = await chatStructured({
+    schema: aiDuplicateGroupSchema,
+    model: llm.TIMELINE_MODELS.summarization.id,
+    system:
+      'You identify duplicate calendar events. Group events only when they refer to the same real-world meeting. Titles, times, dates, duration, timezone, and all-day state may differ because calendars can import, translate, normalize, or reschedule the same meeting differently. Use titles, descriptions, locations, meeting links, attendee/client names, language translations, agenda wording, and time proximity as evidence. Do not group different meetings just because they overlap or mention the same company/person. If uncertain, omit the group. Return JSON only.',
+    prompt: JSON.stringify({
+      events: candidateEvents.map(formatEventForAi),
+    }),
   });
-  if (!survivor) throw new Error('Cannot choose a survivor from an empty duplicate group');
-  return survivor;
-}
 
-function isRecurringMaster(event: EventRow): boolean {
-  return event.recurringParentId === null && event.rrule !== null && event.rrule.length > 0;
-}
-
-function duplicateGroups(events: EventRow[]): DuplicateGroup[] {
-  const byKey = new Map<string, EventRow[]>();
-  for (const event of events) {
-    if (event.redacted) continue;
-    const key = duplicateKey(event);
-    byKey.set(key, [...(byKey.get(key) ?? []), event]);
+  const clusters: string[][] = [];
+  for (const group of result.object.duplicate_groups) {
+    if (group.confidence === 'low') continue;
+    clusters.push(group.event_ids);
   }
-  return [...byKey.entries()]
-    .filter(([, group]) => group.length > 1)
-    .map(([key, group]) => {
-      const survivor = chooseSurvivor(group);
-      const duplicateCandidates = group.filter((event) => event.id !== survivor.id);
-      return {
-        key,
-        survivor,
-        duplicates: duplicateCandidates.filter((event) => !isRecurringMaster(event)),
-        skippedRecurringMasters: duplicateCandidates.filter(isRecurringMaster),
-      };
-    });
+
+  return clusters;
 }
 
 async function queueCancellationApprovals(input: {
@@ -178,9 +159,9 @@ async function queueCancellationApprovals(input: {
       await input.scope.suggestions.createOrMergeSuggestionBundle({
         source: 'background',
         title: `Cancel duplicate calendar event: ${duplicate.title}`,
-        summary: `Likely duplicate of "${group.survivor.title}" at ${group.survivor.startAt.toISOString()}.`,
+        summary: `Likely duplicate of newer-evidence event "${group.survivor.title}" at ${group.survivor.startAt.toISOString()}.`,
         reason:
-          'Calendar duplicate cleanup found matching title tokens, time range, all-day flag, and visibility.',
+          'Calendar duplicate cleanup found duplicate meeting evidence across calendar event details.',
         confidence: 'medium',
         dedupeKey,
         visibility: duplicate.visibility,
@@ -231,17 +212,28 @@ async function listEventsForScan(input: {
 }
 
 async function main(): Promise<void> {
-  const { teamId, limit, dryRun, from, to } = parseArgs();
+  const { teamId, limit, dryRun, useAi, from, to } = parseArgs();
   console.log(
     `[dedupe-calendar-events] team=${teamId} limit=${limit} from=${from.toISOString()}${
       to ? ` to=${to.toISOString()}` : ''
-    } mode=${dryRun ? 'dry-run' : 'apply'}`,
+    } mode=${dryRun ? 'dry-run' : 'apply'} ai=${useAi ? 'on' : 'off'}`,
   );
 
   const db = getDb();
   const scope = withTeam(db, teamId, PSEUDO_USER, { skipMembershipCheck: true });
   const events = await listEventsForScan({ scope, limit, from, ...(to ? { to } : {}) });
-  const groups = duplicateGroups(events);
+  let aiClusters: string[][] = [];
+  if (useAi) {
+    try {
+      aiClusters = await aiDuplicateClusters({ events });
+    } catch (err) {
+      console.warn(
+        '[dedupe-calendar-events] ai duplicate adjudication failed; using deterministic groups only',
+        err,
+      );
+    }
+  }
+  const groups = duplicateGroups(events, { additionalDuplicateClusters: aiClusters });
   const duplicateCount = groups.reduce((sum, group) => sum + group.duplicates.length, 0);
   const skippedRecurringMasterCount = groups.reduce(
     (sum, group) => sum + group.skippedRecurringMasters.length,
@@ -249,7 +241,7 @@ async function main(): Promise<void> {
   );
 
   console.log(
-    `[dedupe-calendar-events] scanned=${events.length} groups=${groups.length} duplicates=${duplicateCount} skippedRecurringMasters=${skippedRecurringMasterCount}${
+    `[dedupe-calendar-events] scanned=${events.length} aiClusters=${aiClusters.length} groups=${groups.length} duplicates=${duplicateCount} skippedRecurringMasters=${skippedRecurringMasterCount}${
       dryRun ? ' (dry-run, no approvals queued)' : ''
     }`,
   );
@@ -279,7 +271,9 @@ async function main(): Promise<void> {
   await closeDb();
 }
 
-main().catch((err: unknown) => {
-  console.error('[dedupe-calendar-events] failed', err);
-  process.exit(1);
-});
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch((err: unknown) => {
+    console.error('[dedupe-calendar-events] failed', err);
+    process.exit(1);
+  });
+}
