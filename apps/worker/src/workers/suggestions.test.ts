@@ -556,6 +556,35 @@ describe('processSuggestionJobForTests', () => {
     });
   });
 
+  it('fails object memory repair explicitly for archived objects', async () => {
+    const [archived] = await db
+      .insert(entities)
+      .values({
+        teamId: TEAM_ID,
+        type: 'company',
+        canonicalName: 'Archived DFK',
+        archivedAt: REFERENCE_DATE,
+      })
+      .returning({ id: entities.id });
+    if (!archived) throw new Error('expected archived object fixture');
+
+    await expect(
+      processSuggestionJobForTests(
+        { db: db as never },
+        {
+          scope: 'object_cleanup',
+          teamId: TEAM_ID,
+          objectId: archived.id,
+          triggeredBy: 'memory_repair',
+        },
+      ),
+    ).rejects.toThrow('Object memory repair requires an active object');
+
+    await expect(
+      withTeam(db as never, TEAM_ID, OWNER_ID).suggestions.listPendingSuggestions(),
+    ).resolves.toEqual([]);
+  });
+
   it('queues focused relationship repair from fact-backed connected objects without reoffering rejected edges', async () => {
     const [company, person] = await db
       .insert(entities)

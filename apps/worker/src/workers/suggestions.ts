@@ -1334,6 +1334,24 @@ async function createObjectCleanupSuggestionsForTeam(
   teamId: string,
   opts: { triggeredBy: string; objectId?: string },
 ): Promise<void> {
+  if (opts.objectId) {
+    const [repairTarget] = await db
+      .select({
+        id: entities.id,
+        archivedAt: entities.archivedAt,
+        mergedIntoId: entities.mergedIntoId,
+      })
+      .from(entities)
+      .where(and(eq(entities.teamId, teamId), eq(entities.id, opts.objectId)))
+      .limit(1);
+    if (!repairTarget) return;
+    if (repairTarget.archivedAt) {
+      throw new UnrecoverableError('Object memory repair requires an active object');
+    }
+    if (repairTarget.mergedIntoId) {
+      throw new UnrecoverableError('Object memory repair requires an unmerged object');
+    }
+  }
   const cleanupTypes: EntityType[] = Array.from(
     new Set<EntityType>([...Array.from(CLEANUP_MERGE_TYPES), 'topic', 'other']),
   );
@@ -1369,7 +1387,9 @@ async function createObjectCleanupSuggestionsForTeam(
     .limit(500);
   const repairObjectId =
     opts.objectId && rows.some((row) => row.id === opts.objectId) ? opts.objectId : null;
-  if (opts.objectId && !repairObjectId) return;
+  if (opts.objectId && !repairObjectId) {
+    throw new UnrecoverableError('Object memory repair target was not available for cleanup');
+  }
   const scope = withTeam(db, teamId, PSEUDO_USER, { skipMembershipCheck: true });
   const mergeCandidates = rows.filter((row) => CLEANUP_MERGE_TYPES.has(row.type));
   const proposedMergeKeys = new Set<string>();

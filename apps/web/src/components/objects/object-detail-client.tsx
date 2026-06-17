@@ -964,11 +964,15 @@ function ObjectDetailHeader({
           <button
             type="button"
             onClick={onRepairMemory}
-            disabled={pending}
-            title="Queue object-scoped duplicate cleanup"
+            disabled={pending || detail.archivedAt !== null}
+            title={
+              detail.archivedAt
+                ? 'Unarchive this object before repairing memory'
+                : 'Queue object-scoped duplicate cleanup'
+            }
             className="rounded-sm border border-border bg-surface px-3 py-2 font-mono text-[11px] uppercase tracking-[0.12em] text-fg-muted transition hover:border-signal/50 hover:text-signal disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {pending ? 'Repairing...' : 'Repair memory'}
+            {detail.archivedAt ? 'Repair unavailable' : pending ? 'Repairing...' : 'Repair memory'}
           </button>
         </div>
       </div>

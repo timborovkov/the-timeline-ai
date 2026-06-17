@@ -400,6 +400,9 @@ export async function repairObjectMemoryAction(input: unknown): Promise<ActionSt
     const r = await resolveScope();
     if (!r.ok) return { error: r.error };
     try {
+      const object = await r.scope.objects.getObject(parsed.data.id);
+      if (!object) return { error: 'Object not found' };
+      if (object.archivedAt) return { error: 'Repair memory is unavailable for archived objects' };
       const result = await enqueueSuggestionJob(
         {
           scope: 'object_cleanup',

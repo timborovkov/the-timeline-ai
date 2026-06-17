@@ -344,6 +344,26 @@ describe('ObjectDetailClient', () => {
     expect(fakes.refresh).toHaveBeenCalled();
   });
 
+  it('disables memory repair for archived objects', async () => {
+    const user = userEvent.setup();
+    render(
+      objectDetailElement({
+        detail: {
+          ...detail,
+          archivedAt: new Date('2026-06-02T10:00:00.000Z'),
+        },
+        userId: 'user-1',
+        suggestions: [],
+      }),
+    );
+
+    const repairButton = screen.getByRole('button', { name: 'Repair unavailable' });
+    expect(repairButton).toHaveProperty('disabled', true);
+    await user.click(repairButton);
+
+    expect(objectActions.repairObjectMemoryAction).not.toHaveBeenCalled();
+  });
+
   it('applies refreshed server detail props without requiring updatedAt to change', async () => {
     const refreshedDetail = {
       ...detail,
