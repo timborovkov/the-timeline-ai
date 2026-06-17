@@ -132,4 +132,35 @@ describe('FloatingAgentChat', () => {
       ).toBe(team2Session);
     });
   });
+
+  it('starts a fresh floating session after the modal closes', async () => {
+    const user = userEvent.setup();
+    const storedSession = 'aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa';
+    const storageKey = 'timeline:floating-agent-chat:team-1:session';
+    window.localStorage.setItem(storageKey, storedSession);
+
+    render(<FloatingAgentChat teamId="team-1" teamName="AuditAI" />);
+    await user.click(screen.getByRole('button', { name: 'Open floating agent chat' }));
+
+    await waitFor(() => {
+      expect(
+        (fakes.transports.at(-1)?.options.body?.() as { sessionId?: string | null }).sessionId,
+      ).toBe(storedSession);
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Close floating agent chat' }));
+    expect(window.localStorage.getItem(storageKey)).toBeNull();
+
+    await user.click(screen.getByRole('button', { name: 'Open floating agent chat' }));
+
+    await waitFor(() => {
+      expect(fakes.transports.length).toBeGreaterThanOrEqual(2);
+    });
+    expect(
+      fakes.transports.at(-1)?.options.body?.() as {
+        sessionId?: string | null;
+        startNewSession?: boolean;
+      },
+    ).toMatchObject({ sessionId: undefined, startNewSession: true });
+  });
 });

@@ -113,10 +113,11 @@ receive and return typed refs instead of opaque page links.
 
 Status: initial shell implemented. The app shell now has a global floating chat
 launcher hidden on `/app/chat`, reuses the main chat rendering surface, persists
-one private floating-session id per team in local storage, carries the session
-into "Open full chat", and sends route/path/query plus known UUID context to
-`/api/chat`. Richer page loaders for names, selected lanes, visible filters, and
-object summaries still belong in the later context-provider/tooling work.
+the active floating-session id only while the modal is open, clears that
+transient session when the modal closes, carries the session into "Open full
+chat", and sends route/path/query plus known UUID context to `/api/chat`. Richer
+page loaders for names, selected lanes, visible filters, and object summaries
+still belong in the later context-provider/tooling work.
 
 ### Goal
 
@@ -127,7 +128,7 @@ Make the agent available across the dashboard while keeping the dedicated
 
 - Add a global floating assistant launcher inside the app shell.
 - Hide the floating assistant on `/app/chat`.
-- Use one private persisted conversation for the floating assistant by default.
+- Start a fresh floating conversation after the modal closes.
 - Include an "Open full chat" link that carries the current session id.
 - Support compact and expanded modal states.
 - Reuse the existing chat rendering primitives where possible, including tool
@@ -715,9 +716,8 @@ records directly into the same internal tables the agents normally read from.
 
 ## Open Decisions
 
-- Whether floating chat uses a single global private session forever, one
-  session per page/context, or a default global session with optional "start
-  contextual chat" sessions.
+- Whether floating chat should offer an explicit "continue previous chat" affordance
+  after the default close-and-reset behavior.
 - Whether route/help guides live as static TypeScript metadata, markdown docs,
   database-backed content, or a small generated search index.
 - Which first mutation should prove in-chat HITL: object field update, calendar

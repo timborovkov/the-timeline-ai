@@ -51,6 +51,11 @@ function FloatingAgentChatContent({ teamId, teamName }: FloatingAgentChatProps) 
     () => buildDashboardChatContext(pathname, searchParams),
     [pathname, searchParams],
   );
+  const resetFloatingSession = () => {
+    window.localStorage.removeItem(storageKey);
+    hydratedSessionIdRef.current = null;
+    setSessionState({ sessionId: null, initialMessages: [] });
+  };
 
   useEffect(() => {
     if (!sessionId) {
@@ -108,7 +113,13 @@ function FloatingAgentChatContent({ teamId, teamName }: FloatingAgentChatProps) 
         <span className="hidden sm:inline">Ask</span>
       </Button>
 
-      <Dialog open={open} onOpenChange={setOpen}>
+      <Dialog
+        open={open}
+        onOpenChange={(nextOpen) => {
+          setOpen(nextOpen);
+          if (!nextOpen) resetFloatingSession();
+        }}
+      >
         <DialogContent
           className="flex h-[min(720px,calc(100vh-2rem))] max-h-[calc(100vh-2rem)] flex-col border-border bg-bg p-0 sm:max-w-2xl"
           showCloseButton={false}
@@ -135,6 +146,7 @@ function FloatingAgentChatContent({ teamId, teamName }: FloatingAgentChatProps) 
                 aria-label="Close floating agent chat"
                 onClick={() => {
                   setOpen(false);
+                  resetFloatingSession();
                 }}
               >
                 <X className="size-4" />
