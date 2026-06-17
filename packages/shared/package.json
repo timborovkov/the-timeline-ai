@@ -179,6 +179,12 @@
       "import": "./dist/objects/index.js",
       "default": "./dist/objects/index.js"
     },
+    "./objects/types": {
+      "types": "./src/objects/types.ts",
+      "development": "./src/objects/types.ts",
+      "import": "./dist/objects/types.js",
+      "default": "./dist/objects/types.js"
+    },
     "./boards": {
       "types": "./src/boards/index.ts",
       "development": "./src/boards/index.ts",

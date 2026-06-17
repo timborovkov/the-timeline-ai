@@ -1,4 +1,4 @@
-import type * as objects from '@timeline/shared/objects';
+import type * as objects from '@timeline/shared/objects/types';
 
 type GroupKey = 'status' | 'stage' | 'priority' | 'type';
 

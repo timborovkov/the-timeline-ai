@@ -25,7 +25,7 @@ import {
 } from 'react';
 
 import type { SaveState } from '@/lib/utils';
-import type * as objects from '@timeline/shared/objects';
+import type * as objects from '@timeline/shared/objects/types';
 import type { ReactNode } from 'react';
 
 import { updateObjectAction } from '@/app/actions/objects';

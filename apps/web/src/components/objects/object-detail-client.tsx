@@ -17,7 +17,7 @@ import {
 
 import type { SaveState } from '@/lib/utils';
 import type { ArtifactRef } from '@timeline/shared/citation';
-import type * as objects from '@timeline/shared/objects';
+import type * as objects from '@timeline/shared/objects/types';
 
 import {
   acceptObjectChangeAction,

@@ -1,5 +1,5 @@
 import type * as boards from '@timeline/shared/boards';
-import type * as objects from '@timeline/shared/objects';
+import type * as objects from '@timeline/shared/objects/types';
 
 import { displayObjectTitle } from '@/lib/object-title';
 

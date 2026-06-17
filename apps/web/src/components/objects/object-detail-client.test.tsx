@@ -184,20 +184,23 @@ describe('ObjectDetailClient', () => {
     const html = renderObjectDetail({
       detail: {
         ...detail,
-        openTasks: [
-          {
-            ...detail,
-            id: 'task-2',
-            canonicalName: 'timborovkov/the-timeline-ai#202: Add cursor pagination',
-            metadata: {
-              integration_provider: 'github',
-              integration_external_id: 'timborovkov/the-timeline-ai#202',
-              display_title: 'the-timeline-ai: Add cursor pagination',
-              display_title_canonical_name:
-                'timborovkov/the-timeline-ai#202: Add cursor pagination',
+        connectedWork: {
+          ...detail.connectedWork,
+          openTasks: [
+            {
+              ...detail,
+              id: 'task-2',
+              canonicalName: 'timborovkov/the-timeline-ai#202: Add cursor pagination',
+              metadata: {
+                integration_provider: 'github',
+                integration_external_id: 'timborovkov/the-timeline-ai#202',
+                display_title: 'the-timeline-ai: Add cursor pagination',
+                display_title_canonical_name:
+                  'timborovkov/the-timeline-ai#202: Add cursor pagination',
+              },
             },
-          },
-        ],
+          ],
+        },
       },
       userId: 'user-1',
       suggestions: [],

@@ -4,7 +4,7 @@ import { Check, ChevronDown, Plus, Search, X } from 'lucide-react';
 import { useId, useMemo, useReducer, useState, useTransition } from 'react';
 
 import type * as boards from '@timeline/shared/boards';
-import type * as objects from '@timeline/shared/objects';
+import type * as objects from '@timeline/shared/objects/types';
 import type { Dispatch } from 'react';
 
 import { addBoardItemAction, quickCreateBoardItemAction } from '@/app/actions/boards';
