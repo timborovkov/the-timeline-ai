@@ -1593,6 +1593,90 @@ describe('object scope — merge cleanup', () => {
     );
   });
 
+  it('does not mark summaries pending when manual enqueue fails', async () => {
+    const scope = withTeam(db, TEAM_A, USER_OWNER).objects;
+    const object = await scope.createObject({
+      type: 'company',
+      canonicalName: 'DFK',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    const [event] = await db
+      .insert(rawEvents)
+      .values({
+        teamId: TEAM_A,
+        authorUserId: USER_OWNER,
+        source: 'web',
+        contentText: 'DFK team-visible planning',
+        occurredAt: new Date('2026-06-02T10:00:00.000Z'),
+        visibility: 'team',
+      })
+      .returning({ id: rawEvents.id });
+    if (!event) throw new Error('failed to insert event');
+    const teamFacts = await db
+      .insert(facts)
+      .values([
+        {
+          teamId: TEAM_A,
+          rawEventId: event.id,
+          statement: 'DFK is discussing a pilot.',
+          confidence: 1,
+          modelVersion: 'test',
+        },
+        {
+          teamId: TEAM_A,
+          rawEventId: event.id,
+          statement: 'DFK meeting is confirmed for June 30.',
+          confidence: 1,
+          modelVersion: 'test',
+        },
+      ])
+      .returning({ id: facts.id });
+    await db.insert(factEntities).values(
+      teamFacts.map((fact) => ({
+        factId: fact.id,
+        entityId: object.id,
+        role: 'subject' as const,
+      })),
+    );
+    await upsertObjectSummary({
+      teamId: TEAM_A,
+      entityId: object.id,
+      status: 'ready',
+      summary: {
+        overview: 'DFK is in discovery.',
+        overviewSourceRefs: [{ kind: 'field', id: 'status' }],
+        currentState: [],
+        openQuestions: [],
+        conflicts: [],
+      },
+      plainText: 'DFK is in discovery.',
+      sourceRefs: [{ kind: 'field', id: 'status' }],
+      sourceCounts: {
+        fields: 1,
+        facts: 0,
+        events: 0,
+        notes: 0,
+        relationships: 0,
+        tasks: 0,
+        changes: 0,
+      },
+      inputFingerprint: 'old-fingerprint',
+      generatedAt: new Date('2026-06-02T10:05:00.000Z'),
+    });
+    vi.mocked(queue.enqueueObjectSummaryJob).mockRejectedValueOnce(new Error('redis down'));
+
+    await expect(
+      scope.enqueueObjectSummaryRefresh(object.id, { trigger: 'manual' }),
+    ).rejects.toThrow('redis down');
+
+    const rows = await db
+      .select()
+      .from(objectSummaries)
+      .where(eq(objectSummaries.entityId, object.id));
+    expect(rows[0]?.status).toBe('ready');
+    expect(rows[0]?.plainText).toBe('DFK is in discovery.');
+  });
+
   it('refreshes parent object summaries when a linked task changes', async () => {
     const scope = withTeam(db, TEAM_A, USER_OWNER).objects;
     const parent = await scope.createObject({

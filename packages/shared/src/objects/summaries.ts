@@ -697,11 +697,11 @@ export async function enqueueObjectSummaryRefresh(
       reason: packet.cannotGenerateReason,
     };
   }
-  await upsertPendingSummary(db, scope, entityId);
   const result = await queue.enqueueObjectSummaryJob(
     { teamId: scope.teamId, objectId: entityId, trigger: opts.trigger ?? 'auto' },
     opts.delayMs === undefined ? {} : { delayMs: opts.delayMs },
   );
+  await upsertPendingSummary(db, scope, entityId);
   return { ...result, canGenerate: true, reason: null };
 }
 
