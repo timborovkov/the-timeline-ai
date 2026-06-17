@@ -981,6 +981,30 @@ export async function enqueueObjectSummaryJob(
     const state = await existing.getState?.().catch(() => null);
     if (data.trigger === 'manual' && state === 'delayed' && existing.remove) {
       await existing.remove().catch(() => undefined);
+    } else if (data.trigger === 'auto' && state === 'active') {
+      const followupJobId = bullmqCustomJobId([
+        'object-summary',
+        data.teamId,
+        data.objectId,
+        'followup',
+      ]);
+      const followup = (await q.getJob(followupJobId)) as ExistingJobLike | null;
+      if (followup) {
+        const followupState = await followup.getState?.().catch(() => null);
+        if (!followupState || SUGGESTION_JOB_DEDUPE_STATES.has(followupState)) {
+          return { enqueued: false, jobId: followupJobId };
+        }
+        if (SUGGESTION_JOB_REPLACEABLE_STATES.has(followupState) && followup.remove) {
+          await followup.remove().catch(() => undefined);
+        } else {
+          return { enqueued: false, jobId: followupJobId };
+        }
+      }
+      await q.add('object-summary', data, {
+        jobId: followupJobId,
+        ...(opts.delayMs ? { delay: opts.delayMs } : {}),
+      });
+      return { enqueued: true, jobId: followupJobId };
     } else if (!state || SUGGESTION_JOB_DEDUPE_STATES.has(state)) {
       return { enqueued: false, jobId };
     } else if (SUGGESTION_JOB_REPLACEABLE_STATES.has(state) && existing.remove) {

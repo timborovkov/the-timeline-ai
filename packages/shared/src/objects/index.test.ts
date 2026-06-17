@@ -1661,6 +1661,58 @@ describe('object scope — merge cleanup', () => {
     );
   });
 
+  it('marks a pending summary with existing prose stale when memory changes mid-generation', async () => {
+    const scope = withTeam(db, TEAM_A, USER_OWNER).objects;
+    const object = await scope.createObject({
+      type: 'company',
+      canonicalName: 'DFK',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    vi.mocked(queue.enqueueObjectSummaryJob).mockClear();
+    await db.insert(objectSummaries).values({
+      teamId: TEAM_A,
+      entityId: object.id,
+      status: 'pending',
+      summary: {
+        overview: 'DFK is in discovery.',
+        overviewSourceRefs: [{ kind: 'field', id: 'status' }],
+        currentState: [],
+        openQuestions: [],
+        conflicts: [],
+      },
+      plainText: 'DFK is in discovery.',
+      sourceRefs: [{ kind: 'field', id: 'status' }],
+      sourceCounts: {
+        fields: 1,
+        facts: 0,
+        events: 0,
+        notes: 0,
+        relationships: 0,
+        tasks: 0,
+        changes: 0,
+      },
+      inputFingerprint: 'old-fingerprint',
+      generatedAt: new Date('2026-06-02T10:05:00.000Z'),
+      lastAttemptedAt: new Date('2026-06-02T10:06:00.000Z'),
+    });
+
+    await scope.updateObject(object.id, { status: 'active' }, { kind: 'user', userId: USER_OWNER });
+
+    await vi.waitFor(async () => {
+      const rows = await db
+        .select()
+        .from(objectSummaries)
+        .where(eq(objectSummaries.entityId, object.id));
+      expect(rows[0]?.status).toBe('stale');
+      expect(rows[0]?.staleAt).toBeInstanceOf(Date);
+      expect(rows[0]?.plainText).toBe('DFK is in discovery.');
+    });
+    expect(queue.enqueueObjectSummaryJob).toHaveBeenCalledWith(
+      { teamId: TEAM_A, objectId: object.id, trigger: 'auto' },
+      { delayMs: 120_000 },
+    );
+  });
+
   it('keeps stale summaries available for object search snippets', async () => {
     const scope = withTeam(db, TEAM_A, USER_OWNER).objects;
     const object = await scope.createObject({
@@ -1782,6 +1834,194 @@ describe('object scope — merge cleanup', () => {
     expect(rows[0]?.status).toBe('ready');
     expect(rows[0]?.model).toBe('test-summary-model');
     expect(rows[0]?.plainText).toContain('confirmed June 30');
+  });
+
+  it('does not store a generated summary when the object changed during generation', async () => {
+    const scope = withTeam(db, TEAM_A, USER_OWNER);
+    const object = await scope.objects.createObject({
+      type: 'company',
+      canonicalName: 'DFK',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    const [event] = await db
+      .insert(rawEvents)
+      .values({
+        teamId: TEAM_A,
+        authorUserId: USER_OWNER,
+        source: 'web',
+        contentText: 'DFK team-visible planning',
+        occurredAt: new Date('2026-06-02T10:00:00.000Z'),
+        visibility: 'team',
+      })
+      .returning({ id: rawEvents.id });
+    if (!event) throw new Error('failed to insert event');
+    const [fact] = await db
+      .insert(facts)
+      .values({
+        teamId: TEAM_A,
+        rawEventId: event.id,
+        statement: 'DFK meeting is confirmed for June 30.',
+        confidence: 1,
+        modelVersion: 'test',
+      })
+      .returning({ id: facts.id });
+    if (!fact) throw new Error('failed to insert fact');
+    await db.insert(factEntities).values({
+      factId: fact.id,
+      entityId: object.id,
+      role: 'subject',
+    });
+    await scope.objects.createNote({
+      entityId: object.id,
+      authorUserId: USER_OWNER,
+      body: 'DFK summary note with enough human-authored context for generation.',
+    });
+    await db.insert(objectSummaries).values({
+      teamId: TEAM_A,
+      entityId: object.id,
+      status: 'pending',
+      summary: {
+        overview: 'DFK is in discovery.',
+        overviewSourceRefs: [{ kind: 'field', id: 'status' }],
+        currentState: [],
+        openQuestions: [],
+        conflicts: [],
+      },
+      plainText: 'DFK is in discovery.',
+      sourceRefs: [{ kind: 'field', id: 'status' }],
+      sourceCounts: {
+        fields: 1,
+        facts: 0,
+        events: 0,
+        notes: 0,
+        relationships: 0,
+        tasks: 0,
+        changes: 0,
+      },
+      inputFingerprint: 'old-fingerprint',
+      generatedAt: new Date('2026-06-02T10:05:00.000Z'),
+      lastAttemptedAt: new Date('2026-06-02T10:06:00.000Z'),
+    });
+    vi.mocked(queue.enqueueObjectSummaryJob).mockClear();
+
+    await expect(
+      generateAndStoreObjectSummary(
+        db,
+        scope,
+        object.id,
+        { trigger: 'auto' },
+        {
+          chatStructured: async <TSchema extends z.ZodType>(
+            input: ChatStructuredInput<TSchema>,
+          ): Promise<ChatStructuredResult<TSchema>> => {
+            await db
+              .update(objectSummaries)
+              .set({
+                status: 'stale',
+                staleAt: new Date(Date.now() + 60_000),
+                updatedAt: new Date(),
+              })
+              .where(eq(objectSummaries.entityId, object.id));
+            return {
+              model: 'test-summary-model',
+              object: input.schema.parse({
+                overview: 'Outdated DFK summary.',
+                overviewSourceRefs: [{ kind: 'fact', id: fact.id }],
+                currentState: [],
+                openQuestions: [],
+                conflicts: [],
+              }),
+            };
+          },
+          enqueueObjectEmbedJob: vi.fn().mockResolvedValue(undefined),
+        },
+      ),
+    ).resolves.toEqual({ status: 'skipped', reason: 'stale_during_generation' });
+
+    const rows = await db
+      .select()
+      .from(objectSummaries)
+      .where(eq(objectSummaries.entityId, object.id));
+    expect(rows[0]?.status).toBe('stale');
+    expect(rows[0]?.plainText).toBe('DFK is in discovery.');
+    expect(rows[0]?.plainText).not.toContain('Outdated');
+    expect(queue.enqueueObjectSummaryJob).toHaveBeenCalledWith(
+      { teamId: TEAM_A, objectId: object.id, trigger: 'auto' },
+      { delayMs: 120_000 },
+    );
+  });
+
+  it('keeps an existing summary visible when a source event becomes team-visible', async () => {
+    const scope = withTeam(db, TEAM_A, USER_OWNER);
+    const object = await scope.objects.createObject({
+      type: 'company',
+      canonicalName: 'DFK',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    const event = await scope.timeline.createEvent({
+      authorUserId: USER_OWNER,
+      visibilityOwnerUserId: USER_OWNER,
+      source: 'web',
+      contentText: 'DFK private planning becomes team-visible',
+      occurredAt: new Date('2026-06-02T10:00:00.000Z'),
+      visibility: 'private',
+    });
+    const [fact] = await db
+      .insert(facts)
+      .values({
+        teamId: TEAM_A,
+        rawEventId: event.id,
+        statement: 'DFK meeting is confirmed for June 30.',
+        confidence: 1,
+        modelVersion: 'test',
+      })
+      .returning({ id: facts.id });
+    if (!fact) throw new Error('failed to insert fact');
+    await db.insert(factEntities).values({
+      factId: fact.id,
+      entityId: object.id,
+      role: 'subject',
+    });
+    await db.insert(objectSummaries).values({
+      teamId: TEAM_A,
+      entityId: object.id,
+      status: 'ready',
+      summary: {
+        overview: 'DFK is in discovery.',
+        overviewSourceRefs: [{ kind: 'field', id: 'status' }],
+        currentState: [],
+        openQuestions: [],
+        conflicts: [],
+      },
+      plainText: 'DFK is in discovery.',
+      sourceRefs: [{ kind: 'field', id: 'status' }],
+      sourceCounts: {
+        fields: 1,
+        facts: 0,
+        events: 0,
+        notes: 0,
+        relationships: 0,
+        tasks: 0,
+        changes: 0,
+      },
+      inputFingerprint: 'old-fingerprint',
+      generatedAt: new Date('2026-06-02T10:05:00.000Z'),
+    });
+    vi.mocked(queue.enqueueObjectSummaryJob).mockClear();
+
+    await scope.timeline.setEventVisibility(event.id, { visibility: 'team' });
+
+    const rows = await db
+      .select()
+      .from(objectSummaries)
+      .where(eq(objectSummaries.entityId, object.id));
+    expect(rows[0]?.status).toBe('stale');
+    expect(rows[0]?.staleAt).toBeInstanceOf(Date);
+    expect(rows[0]?.plainText).toBe('DFK is in discovery.');
+    expect(queue.enqueueObjectSummaryJob).toHaveBeenCalledWith(
+      { teamId: TEAM_A, objectId: object.id, trigger: 'auto' },
+      { delayMs: 120_000 },
+    );
   });
 
   it('removes stored summaries when a cited source event becomes private', async () => {

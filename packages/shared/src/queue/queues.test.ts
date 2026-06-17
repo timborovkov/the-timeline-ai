@@ -404,6 +404,35 @@ describe('queue wrappers', () => {
     expect(fakes.queues[0]?.addCalls[1]?.opts).not.toMatchObject({ delay: 120_000 });
   });
 
+  it('queues one follow-up object summary refresh when an auto job is active', async () => {
+    const queues = await importQueues();
+    const data = {
+      teamId: '22222222-2222-4222-8222-222222222222',
+      objectId: '77777777-7777-4777-8777-777777777777',
+      trigger: 'auto' as const,
+    };
+
+    const first = await queues.enqueueObjectSummaryJob(data);
+    if (!first.jobId) throw new Error('expected stable object summary job id');
+    fakes.queues[0]?.jobStates.set(first.jobId, 'active');
+    const followup = await queues.enqueueObjectSummaryJob(data, { delayMs: 120_000 });
+    const duplicateFollowup = await queues.enqueueObjectSummaryJob(data, { delayMs: 120_000 });
+
+    expect(first).toMatchObject({ enqueued: true });
+    expect(followup).toMatchObject({
+      enqueued: true,
+      jobId:
+        'object-summary|22222222-2222-4222-8222-222222222222|77777777-7777-4777-8777-777777777777|followup',
+    });
+    expect(duplicateFollowup).toMatchObject({ enqueued: false, jobId: followup.jobId });
+    expect(fakes.queues[0]?.addCalls).toHaveLength(2);
+    expect(fakes.queues[0]?.addCalls[1]).toMatchObject({
+      name: 'object-summary',
+      data,
+      opts: { delay: 120_000, jobId: followup.jobId },
+    });
+  });
+
   it('registers repeatable jobs with stable job ids and closes singleton queues', async () => {
     const queues = await importQueues();
 

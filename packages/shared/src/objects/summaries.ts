@@ -617,14 +617,12 @@ export async function fireAndForgetObjectSummaryRefresh(
   await Promise.all([
     db
       .update(objectSummaries)
-      .set({ status: 'stale', staleAt: now, updatedAt: now })
-      .where(
-        and(
-          eq(objectSummaries.teamId, scope.teamId),
-          eq(objectSummaries.entityId, entityId),
-          ne(objectSummaries.status, 'pending'),
-        ),
-      )
+      .set({
+        status: sql`CASE WHEN COALESCE(${objectSummaries.plainText}, '') <> '' THEN 'stale'::object_summary_status ELSE ${objectSummaries.status} END`,
+        staleAt: now,
+        updatedAt: now,
+      })
+      .where(and(eq(objectSummaries.teamId, scope.teamId), eq(objectSummaries.entityId, entityId)))
       .catch((err: unknown) => {
         console.error('failed to mark object summary stale', { err, ...context });
       }),
@@ -663,17 +661,20 @@ export async function invalidateObjectSummariesForRawEvent(
   scope: TeamScopeCore,
   rawEventId: string,
   context: Record<string, unknown> = {},
+  opts: { preserveExisting?: boolean } = {},
 ): Promise<string[]> {
   await scope.requireMembership();
   if (!UUID_RE.test(rawEventId)) return [];
   const entityIds = await objectIdsTouchedByRawEvent(db, scope.teamId, rawEventId);
   if (entityIds.length === 0) return [];
 
-  await db
-    .delete(objectSummaries)
-    .where(
-      and(eq(objectSummaries.teamId, scope.teamId), inArray(objectSummaries.entityId, entityIds)),
-    );
+  if (!opts.preserveExisting) {
+    await db
+      .delete(objectSummaries)
+      .where(
+        and(eq(objectSummaries.teamId, scope.teamId), inArray(objectSummaries.entityId, entityIds)),
+      );
+  }
 
   await Promise.all(
     entityIds.map((entityId) =>
@@ -737,6 +738,32 @@ export async function generateAndStoreObjectSummary(
       prompt: promptForPacket(packet),
     });
     validateSummaryRefs(result.object, packet);
+    const [currentSummary] = await db
+      .select({ status: objectSummaries.status, staleAt: objectSummaries.staleAt })
+      .from(objectSummaries)
+      .where(and(eq(objectSummaries.teamId, scope.teamId), eq(objectSummaries.entityId, entityId)))
+      .limit(1);
+    if (
+      currentSummary?.staleAt &&
+      currentSummary.staleAt.getTime() > now.getTime() &&
+      currentSummary.status !== 'ready'
+    ) {
+      await queue.enqueueObjectSummaryJob(
+        { teamId: scope.teamId, objectId: entityId, trigger: 'auto' },
+        { delayMs: OBJECT_SUMMARY_AUTO_DELAY_MS },
+      );
+      if (runId) {
+        await db
+          .update(objectSummaryRuns)
+          .set({
+            status: 'skipped',
+            errorCode: 'stale_during_generation',
+            finishedAt: new Date(),
+          })
+          .where(eq(objectSummaryRuns.id, runId));
+      }
+      return { status: 'skipped', reason: 'stale_during_generation' };
+    }
     const plainText = summaryPlainText(result.object);
     const refs = allSummaryRefs(result.object);
     await db

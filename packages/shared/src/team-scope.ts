@@ -1568,9 +1568,17 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
             // The row is already visible in Postgres; janitor/retry paths can
             // reconcile the embedding if Redis is temporarily unavailable.
           });
-          await invalidateObjectSummariesForRawEvent(db, core, id, {
-            trigger: 'raw_event_visibility_team',
-          });
+          await invalidateObjectSummariesForRawEvent(
+            db,
+            core,
+            id,
+            {
+              trigger: 'raw_event_visibility_team',
+            },
+            {
+              preserveExisting: true,
+            },
+          );
         }
         return updated;
       },
