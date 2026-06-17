@@ -268,6 +268,23 @@ describe('object CRUD actions', () => {
     expect(fakes.fakeRevalidatePath).not.toHaveBeenCalledWith(`/app/objects/${OBJECT_ID}`);
   });
 
+  it('reports missing objects distinctly when manual summary generation cannot load the object', async () => {
+    fakes.fakeObjects.enqueueObjectSummaryRefresh.mockResolvedValueOnce({
+      enqueued: false,
+      jobId: null,
+      canGenerate: false,
+      reason: 'not_found',
+    });
+
+    await expect(generateObjectSummaryAction({ entityId: OBJECT_ID })).resolves.toEqual({
+      error: 'Object not found',
+    });
+    expect(fakes.fakeObjects.enqueueObjectSummaryRefresh).toHaveBeenCalledWith(OBJECT_ID, {
+      trigger: 'manual',
+    });
+    expect(fakes.fakeRevalidatePath).not.toHaveBeenCalledWith(`/app/objects/${OBJECT_ID}`);
+  });
+
   it('returns success when post-update reconciliation fails after the object was saved', async () => {
     const err = new Error('reconcile down');
     fakes.fakeSuggestions.reconcileCanonicalChange.mockRejectedValueOnce(err);

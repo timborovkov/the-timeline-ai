@@ -1723,6 +1723,40 @@ describe('object scope — merge cleanup', () => {
     );
   });
 
+  it('uses generator source windows for object detail summary eligibility', async () => {
+    const scope = withTeam(db, TEAM_A, USER_OWNER).objects;
+    const object = await scope.createObject({
+      type: 'company',
+      canonicalName: 'DFK',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    const base = Date.parse('2026-06-02T10:00:00.000Z');
+    await db.insert(objectNotes).values([
+      {
+        teamId: TEAM_A,
+        entityId: object.id,
+        authorUserId: USER_OWNER,
+        body: 'This older note is long enough to generate a summary, but it is outside the top eight note source window.',
+        createdAt: new Date(base),
+        updatedAt: new Date(base),
+      },
+      ...Array.from({ length: 8 }, (_, index) => ({
+        teamId: TEAM_A,
+        entityId: object.id,
+        authorUserId: USER_OWNER,
+        body: `short ${index}`,
+        createdAt: new Date(base + (index + 1) * 1000),
+        updatedAt: new Date(base + (index + 1) * 1000),
+      })),
+    ]);
+
+    const detail = await scope.getObject(object.id);
+
+    expect(detail?.notes).toHaveLength(9);
+    expect(detail?.summary?.canGenerate).toBe(false);
+    expect(detail?.summary?.cannotGenerateReason).toBe('not_enough_object_memory');
+  });
+
   it('creates a pending summary row when an automatic refresh starts without an existing summary', async () => {
     const scope = withTeam(db, TEAM_A, USER_OWNER).objects;
     const object = await scope.createObject({

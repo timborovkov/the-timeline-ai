@@ -83,6 +83,25 @@ export interface ObjectSummarySourceSnapshot {
   meaningfulFields: number;
 }
 
+export function objectSummarySourceSnapshot(
+  object: {
+    stage: string | null;
+    priority: number | null;
+    dueAt: Date | null;
+  },
+  sourceCounts: Omit<ObjectSummarySourceCounts, 'fields'>,
+): ObjectSummarySourceSnapshot {
+  return {
+    sourceCounts: {
+      fields:
+        2 + (object.stage ? 1 : 0) + (object.priority !== null ? 1 : 0) + (object.dueAt ? 1 : 0),
+      ...sourceCounts,
+    },
+    meaningfulFields:
+      (object.stage ? 1 : 0) + (object.priority !== null ? 1 : 0) + (object.dueAt ? 1 : 0),
+  };
+}
+
 interface SummaryPacketSource {
   ref: ObjectSummarySourceRef;
   label: string;
@@ -459,18 +478,15 @@ async function buildObjectSummaryPacket(
     occurredAt: change.changedAt.toISOString(),
   }));
 
-  const counts: ObjectSummarySourceCounts = {
-    fields: fieldSources.length,
+  const snapshot = objectSummarySourceSnapshot(object, {
     facts: factSources.length,
     events: eventSources.length,
     notes: noteSources.length,
     relationships: relationshipSources.length,
     tasks: taskSources.length,
     changes: changeSources.length,
-  };
-  const meaningfulFields =
-    (object.stage ? 1 : 0) + (object.priority !== null ? 1 : 0) + (object.dueAt ? 1 : 0);
-  const enough = sufficiency(counts, meaningfulFields);
+  });
+  const enough = sufficiency(snapshot.sourceCounts, snapshot.meaningfulFields);
   const packet = {
     object: {
       id: object.id,
@@ -492,7 +508,7 @@ async function buildObjectSummaryPacket(
       ...noteSources,
       ...changeSources,
     ],
-    sourceCounts: counts,
+    sourceCounts: snapshot.sourceCounts,
     canGenerate: enough.canGenerate,
     cannotGenerateReason: enough.reason,
   };

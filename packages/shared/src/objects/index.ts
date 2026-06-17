@@ -64,8 +64,7 @@ import {
   fireAndForgetObjectSummaryRefresh,
   getObjectSummary,
   getObjectSummaryFromSnapshot,
-  type ObjectSummarySourceCounts,
-  type ObjectSummarySourceSnapshot,
+  objectSummarySourceSnapshot,
   type ObjectSummaryView,
 } from '#src/objects/summaries.js';
 import { decodeCursor, pageWindow } from '#src/pagination.js';
@@ -578,33 +577,6 @@ export interface ObjectDetail extends ObjectRow {
   lastVisitedAt: Date | null;
 }
 
-function objectSummarySnapshotFromDetail(
-  object: EntityRow,
-  detail: {
-    notes: Pick<ObjectDetail['notes'][number], 'body'>[];
-    relationships: Pick<ObjectDetail['relationships'][number], 'id'>[];
-    recentChanges: Pick<ObjectDetail['recentChanges'][number], 'id'>[];
-    openTasks: Pick<ObjectRow, 'id'>[];
-    factCounts: Pick<ObjectSummarySourceCounts, 'facts' | 'events'>;
-  },
-): ObjectSummarySourceSnapshot {
-  const sourceCounts: ObjectSummarySourceCounts = {
-    fields:
-      2 + (object.stage ? 1 : 0) + (object.priority !== null ? 1 : 0) + (object.dueAt ? 1 : 0),
-    facts: detail.factCounts.facts,
-    events: detail.factCounts.events,
-    notes: detail.notes.filter((note) => note.body.trim().length >= 40).length,
-    relationships: detail.relationships.length,
-    tasks: detail.openTasks.length,
-    changes: detail.recentChanges.length,
-  };
-  return {
-    sourceCounts,
-    meaningfulFields:
-      (object.stage ? 1 : 0) + (object.priority !== null ? 1 : 0) + (object.dueAt ? 1 : 0),
-  };
-}
-
 export interface ObjectNotePreview {
   id: string;
   body: string;
@@ -978,133 +950,270 @@ export async function getObject(
   }
   if (!entityRow) return null;
 
-  const [noteRows, outRows, inRows, changeRows, taskRows, viewRows, factCountRows] =
-    await Promise.all([
-      db
-        .select({
-          id: objectNotes.id,
-          body: objectNotes.body,
-          authorUserId: objectNotes.authorUserId,
-          createdAt: objectNotes.createdAt,
-          updatedAt: objectNotes.updatedAt,
-        })
-        .from(objectNotes)
-        .where(
-          and(
-            eq(objectNotes.teamId, scope.teamId),
-            eq(objectNotes.entityId, entityRow.id),
-            isNull(objectNotes.deletedAt),
-          ),
-        )
-        .orderBy(desc(objectNotes.createdAt), desc(objectNotes.id))
-        .limit(20),
-      db
-        .select({
-          id: entityRelationships.id,
-          kind: entityRelationships.kind,
-          otherId: entities.id,
-          otherName: entities.canonicalName,
-          otherType: entities.type,
-        })
-        .from(entityRelationships)
-        .innerJoin(entities, eq(entityRelationships.toEntityId, entities.id))
-        .where(
-          and(
-            eq(entityRelationships.teamId, scope.teamId),
-            eq(entityRelationships.fromEntityId, entityRow.id),
-            // Defense-in-depth: the relationship row's team_id is already
-            // pinned by the filter above and addRelationship validates both
-            // endpoints, but pinning the joined entity's team_id too means a
-            // stray cross-team edge (e.g. from a future code path that skips
-            // the endpoint check) can never leak through this view.
-            eq(entities.teamId, scope.teamId),
-            isNull(entities.mergedIntoId),
-          ),
-        )
-        .orderBy(desc(entityRelationships.createdAt), desc(entityRelationships.id))
-        .limit(20),
-      db
-        .select({
-          id: entityRelationships.id,
-          kind: entityRelationships.kind,
-          otherId: entities.id,
-          otherName: entities.canonicalName,
-          otherType: entities.type,
-        })
-        .from(entityRelationships)
-        .innerJoin(entities, eq(entityRelationships.fromEntityId, entities.id))
-        .where(
-          and(
-            eq(entityRelationships.teamId, scope.teamId),
-            eq(entityRelationships.toEntityId, entityRow.id),
-            eq(entities.teamId, scope.teamId),
-            isNull(entities.mergedIntoId),
-          ),
-        )
-        .orderBy(desc(entityRelationships.createdAt), desc(entityRelationships.id))
-        .limit(20),
-      db
-        .select({
-          id: objectChanges.id,
-          field: objectChanges.field,
-          actorKind: objectChanges.actorKind,
-          actorUserId: objectChanges.actorUserId,
-          previousValue: objectChanges.previousValue,
-          newValue: objectChanges.newValue,
-          status: objectChanges.status,
-          note: objectChanges.note,
-          changedAt: objectChanges.changedAt,
-        })
-        .from(objectChanges)
-        .where(
-          and(eq(objectChanges.teamId, scope.teamId), eq(objectChanges.entityId, entityRow.id)),
-        )
-        .orderBy(desc(objectChanges.changedAt), desc(objectChanges.id))
-        .limit(20),
-      // "Open tasks linked via parent relationship". We model task→parent as a
-      // `child` edge from the task to the parent, OR a `parent` edge from the
-      // parent to the task. For simplicity, surface tasks where the parent is
-      // this object via the `child` edge (task → parent).
-      db
-        .select({ taskId: entityRelationships.fromEntityId })
-        .from(entityRelationships)
-        .where(
-          and(
-            eq(entityRelationships.teamId, scope.teamId),
-            eq(entityRelationships.toEntityId, entityRow.id),
-            eq(entityRelationships.kind, 'child'),
-          ),
-        )
-        .limit(200),
-      db
-        .select({ lastVisitedAt: objectViews.lastVisitedAt })
-        .from(objectViews)
-        .where(
-          and(
-            eq(objectViews.teamId, scope.teamId),
-            eq(objectViews.userId, scope.userId),
-            eq(objectViews.entityId, entityRow.id),
-          ),
-        )
-        .limit(1),
-      db
-        .select({
-          facts: sql<number>`count(distinct ${factsTable.id})::int`,
-          events: sql<number>`count(distinct ${factsTable.rawEventId})::int`,
-        })
-        .from(factEntities)
-        .innerJoin(factsTable, eq(factsTable.id, factEntities.factId))
-        .innerJoin(rawEvents, eq(rawEvents.id, factsTable.rawEventId))
-        .where(
-          and(
-            eq(factEntities.entityId, entityRow.id),
-            eq(factsTable.teamId, scope.teamId),
-            eq(rawEvents.teamId, scope.teamId),
-            eq(rawEvents.visibility, 'team'),
-            sql`COALESCE(${rawEvents.sourceMetadata} ->> 'deleted', 'false') <> 'true'`,
-          ),
+  const [
+    noteRows,
+    outRows,
+    inRows,
+    changeRows,
+    taskRows,
+    viewRows,
+    factCountRows,
+    summaryNoteCountRows,
+    summaryRelationshipOutCountRows,
+    summaryRelationshipInCountRows,
+    summaryTaskCountRows,
+    summaryChangeCountRows,
+  ] = await Promise.all([
+    db
+      .select({
+        id: objectNotes.id,
+        body: objectNotes.body,
+        authorUserId: objectNotes.authorUserId,
+        createdAt: objectNotes.createdAt,
+        updatedAt: objectNotes.updatedAt,
+      })
+      .from(objectNotes)
+      .where(
+        and(
+          eq(objectNotes.teamId, scope.teamId),
+          eq(objectNotes.entityId, entityRow.id),
+          isNull(objectNotes.deletedAt),
         ),
-    ]);
+      )
+      .orderBy(desc(objectNotes.createdAt), desc(objectNotes.id))
+      .limit(20),
+    db
+      .select({
+        id: entityRelationships.id,
+        kind: entityRelationships.kind,
+        otherId: entities.id,
+        otherName: entities.canonicalName,
+        otherType: entities.type,
+      })
+      .from(entityRelationships)
+      .innerJoin(entities, eq(entityRelationships.toEntityId, entities.id))
+      .where(
+        and(
+          eq(entityRelationships.teamId, scope.teamId),
+          eq(entityRelationships.fromEntityId, entityRow.id),
+          // Defense-in-depth: the relationship row's team_id is already
+          // pinned by the filter above and addRelationship validates both
+          // endpoints, but pinning the joined entity's team_id too means a
+          // stray cross-team edge (e.g. from a future code path that skips
+          // the endpoint check) can never leak through this view.
+          eq(entities.teamId, scope.teamId),
+          isNull(entities.mergedIntoId),
+        ),
+      )
+      .orderBy(desc(entityRelationships.createdAt), desc(entityRelationships.id))
+      .limit(20),
+    db
+      .select({
+        id: entityRelationships.id,
+        kind: entityRelationships.kind,
+        otherId: entities.id,
+        otherName: entities.canonicalName,
+        otherType: entities.type,
+      })
+      .from(entityRelationships)
+      .innerJoin(entities, eq(entityRelationships.fromEntityId, entities.id))
+      .where(
+        and(
+          eq(entityRelationships.teamId, scope.teamId),
+          eq(entityRelationships.toEntityId, entityRow.id),
+          eq(entities.teamId, scope.teamId),
+          isNull(entities.mergedIntoId),
+        ),
+      )
+      .orderBy(desc(entityRelationships.createdAt), desc(entityRelationships.id))
+      .limit(20),
+    db
+      .select({
+        id: objectChanges.id,
+        field: objectChanges.field,
+        actorKind: objectChanges.actorKind,
+        actorUserId: objectChanges.actorUserId,
+        previousValue: objectChanges.previousValue,
+        newValue: objectChanges.newValue,
+        status: objectChanges.status,
+        note: objectChanges.note,
+        changedAt: objectChanges.changedAt,
+      })
+      .from(objectChanges)
+      .where(and(eq(objectChanges.teamId, scope.teamId), eq(objectChanges.entityId, entityRow.id)))
+      .orderBy(desc(objectChanges.changedAt), desc(objectChanges.id))
+      .limit(20),
+    // "Open tasks linked via parent relationship". We model task→parent as a
+    // `child` edge from the task to the parent, OR a `parent` edge from the
+    // parent to the task. For simplicity, surface tasks where the parent is
+    // this object via the `child` edge (task → parent).
+    db
+      .select({ taskId: entityRelationships.fromEntityId })
+      .from(entityRelationships)
+      .where(
+        and(
+          eq(entityRelationships.teamId, scope.teamId),
+          eq(entityRelationships.toEntityId, entityRow.id),
+          eq(entityRelationships.kind, 'child'),
+        ),
+      )
+      .limit(200),
+    db
+      .select({ lastVisitedAt: objectViews.lastVisitedAt })
+      .from(objectViews)
+      .where(
+        and(
+          eq(objectViews.teamId, scope.teamId),
+          eq(objectViews.userId, scope.userId),
+          eq(objectViews.entityId, entityRow.id),
+        ),
+      )
+      .limit(1),
+    db
+      .select({
+        facts: sql<number>`count(*)::int`,
+        events: sql<number>`count(distinct summary_fact_sources.raw_event_id)::int`,
+      })
+      .from(
+        db
+          .select({
+            id: factsTable.id,
+            rawEventId: sql<string>`${factsTable.rawEventId}`.as('raw_event_id'),
+          })
+          .from(factsTable)
+          .innerJoin(factEntities, eq(factEntities.factId, factsTable.id))
+          .innerJoin(rawEvents, eq(rawEvents.id, factsTable.rawEventId))
+          .where(
+            and(
+              eq(factsTable.teamId, scope.teamId),
+              eq(factEntities.entityId, entityRow.id),
+              eq(rawEvents.teamId, scope.teamId),
+              eq(rawEvents.visibility, 'team'),
+              sql`COALESCE(${rawEvents.sourceMetadata} ->> 'deleted', 'false') <> 'true'`,
+            ),
+          )
+          .orderBy(desc(rawEvents.occurredAt), desc(factsTable.extractedAt))
+          .limit(24)
+          .as('summary_fact_sources'),
+      ),
+    db
+      .select({
+        notes: sql<number>`count(*) FILTER (WHERE length(trim(summary_note_sources.body)) >= 40)::int`,
+      })
+      .from(
+        db
+          .select({
+            id: objectNotes.id,
+            body: sql<string>`${objectNotes.body}`.as('body'),
+          })
+          .from(objectNotes)
+          .where(
+            and(
+              eq(objectNotes.teamId, scope.teamId),
+              eq(objectNotes.entityId, entityRow.id),
+              isNull(objectNotes.deletedAt),
+            ),
+          )
+          .orderBy(desc(objectNotes.updatedAt), desc(objectNotes.id))
+          .limit(8)
+          .as('summary_note_sources'),
+      ),
+    db
+      .select({
+        relationships: sql<number>`count(*)::int`,
+      })
+      .from(
+        db
+          .select({ id: entityRelationships.id })
+          .from(entityRelationships)
+          .innerJoin(entities, eq(entities.id, entityRelationships.toEntityId))
+          .where(
+            and(
+              eq(entityRelationships.teamId, scope.teamId),
+              eq(entityRelationships.fromEntityId, entityRow.id),
+              eq(entities.teamId, scope.teamId),
+              isNull(entities.mergedIntoId),
+            ),
+          )
+          .orderBy(desc(entityRelationships.createdAt))
+          .limit(8)
+          .as('summary_relationship_out_sources'),
+      ),
+    db
+      .select({
+        relationships: sql<number>`count(*)::int`,
+      })
+      .from(
+        db
+          .select({ id: entityRelationships.id })
+          .from(entityRelationships)
+          .innerJoin(entities, eq(entities.id, entityRelationships.fromEntityId))
+          .where(
+            and(
+              eq(entityRelationships.teamId, scope.teamId),
+              eq(entityRelationships.toEntityId, entityRow.id),
+              eq(entities.teamId, scope.teamId),
+              isNull(entities.mergedIntoId),
+            ),
+          )
+          .orderBy(desc(entityRelationships.createdAt))
+          .limit(8)
+          .as('summary_relationship_in_sources'),
+      ),
+    db
+      .select({
+        tasks: sql<number>`count(*)::int`,
+      })
+      .from(
+        db
+          .select({ id: entities.id })
+          .from(entityRelationships)
+          .innerJoin(entities, eq(entities.id, entityRelationships.fromEntityId))
+          .where(
+            and(
+              eq(entityRelationships.teamId, scope.teamId),
+              eq(entityRelationships.toEntityId, entityRow.id),
+              eq(entityRelationships.kind, 'child'),
+              eq(entities.teamId, scope.teamId),
+              eq(entities.type, 'task'),
+              isNull(entities.archivedAt),
+              isNull(entities.mergedIntoId),
+              ne(entities.status, 'done'),
+              ne(entities.status, 'cancelled'),
+            ),
+          )
+          .orderBy(desc(entities.updatedAt), desc(entities.id))
+          .limit(8)
+          .as('summary_task_sources'),
+      ),
+    db
+      .select({
+        changes: sql<number>`count(*)::int`,
+      })
+      .from(
+        db
+          .select({ id: objectChanges.id })
+          .from(objectChanges)
+          .leftJoin(rawEvents, eq(rawEvents.id, objectChanges.sourceEventId))
+          .where(
+            and(
+              eq(objectChanges.teamId, scope.teamId),
+              eq(objectChanges.entityId, entityRow.id),
+              or(
+                isNull(objectChanges.sourceEventId),
+                and(
+                  eq(rawEvents.teamId, scope.teamId),
+                  eq(rawEvents.visibility, 'team'),
+                  sql`COALESCE(${rawEvents.sourceMetadata} ->> 'deleted', 'false') <> 'true'`,
+                ),
+              ),
+            ),
+          )
+          .orderBy(desc(objectChanges.changedAt), desc(objectChanges.id))
+          .limit(8)
+          .as('summary_change_sources'),
+      ),
+  ]);
 
   const taskIds = taskRows.map((r) => r.taskId);
   const tasks: ObjectRow[] =
@@ -1171,15 +1280,15 @@ export async function getObject(
     db,
     scope,
     entityRow.id,
-    objectSummarySnapshotFromDetail(entityRow, {
-      notes: noteRows,
-      relationships,
-      recentChanges: changeRows,
-      openTasks: tasks,
-      factCounts: {
-        facts: factCountRows[0]?.facts ?? 0,
-        events: factCountRows[0]?.events ?? 0,
-      },
+    objectSummarySourceSnapshot(entityRow, {
+      facts: factCountRows[0]?.facts ?? 0,
+      events: factCountRows[0]?.events ?? 0,
+      notes: summaryNoteCountRows[0]?.notes ?? 0,
+      relationships:
+        (summaryRelationshipOutCountRows[0]?.relationships ?? 0) +
+        (summaryRelationshipInCountRows[0]?.relationships ?? 0),
+      tasks: summaryTaskCountRows[0]?.tasks ?? 0,
+      changes: summaryChangeCountRows[0]?.changes ?? 0,
     }),
   );
   return {
