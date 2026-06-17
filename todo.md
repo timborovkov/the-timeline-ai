@@ -82,6 +82,9 @@ implementation detail.
 - [x] Extend object-centered Memory Repair to create missing full-name
       person-object relationship bundles when connected evidence names a
       durable person not yet in object memory.
+- [x] Keep object-page pending approval bundles intact for relationship
+      proposals and render relationship/person rows with readable endpoint
+      names instead of raw refs.
 - [ ] Strengthen relationship/person proposal generation from Connected Work so
       operationally useful task/company, decision/company, and person/company
       connections graduate into approval-backed object memory.

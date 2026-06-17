@@ -745,6 +745,50 @@ describe('object scope — notes and suggestions', () => {
       expect.objectContaining({ name: 'DFK pilot deck.pdf' }),
     ]);
   });
+
+  it('does not surface fact-backed connected work from raw events hidden from the viewer', async () => {
+    const workspace = withTeam(db, TEAM_A, USER_OWNER);
+    const company = await workspace.objects.createObject({
+      type: 'company',
+      canonicalName: 'DFK',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    const hiddenPerson = await workspace.objects.createObject({
+      type: 'person',
+      canonicalName: 'Private Contact',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    const [raw] = await db
+      .insert(rawEvents)
+      .values({
+        teamId: TEAM_A,
+        authorUserId: USER_MEMBER,
+        source: 'web',
+        contentText: 'Private Contact from DFK discussed confidential terms.',
+        occurredAt: new Date('2026-06-16T10:00:00.000Z'),
+        visibility: 'private',
+      })
+      .returning({ id: rawEvents.id });
+    const [fact] = await db
+      .insert(facts)
+      .values({
+        teamId: TEAM_A,
+        rawEventId: raw?.id ?? '',
+        statement: 'Private Contact from DFK discussed confidential terms.',
+        confidence: 0.9,
+        modelVersion: 'test',
+      })
+      .returning({ id: facts.id });
+    await db.insert(factEntities).values([
+      { factId: fact?.id ?? '', entityId: company.id, role: 'subject' },
+      { factId: fact?.id ?? '', entityId: hiddenPerson.id, role: 'object' },
+    ]);
+
+    const detail = await workspace.objects.getObject(company.id);
+
+    expect(detail?.connectedWork.objects).toEqual([]);
+    expect(detail?.connectedWork.timelineEvents).toEqual([]);
+  });
 });
 
 describe('object scope — chat session isolation', () => {

@@ -1,6 +1,7 @@
 import { withTeam } from '@timeline/shared/team-scope';
 import { notFound, redirect } from 'next/navigation';
 
+import type { SuggestionBundle } from '@timeline/shared/suggestions';
 import type { Metadata } from 'next';
 
 import { suggestionTargetsObject } from '@/app/app/objects/[id]/suggestion-targets';
@@ -32,6 +33,41 @@ interface PageProps {
 
 function firstParam(value: string | string[] | undefined): string | undefined {
   return Array.isArray(value) ? value[0] : value;
+}
+
+function objectPageSuggestionItems(
+  bundle: SuggestionBundle,
+  objectId: string,
+  boardItemIds: ReadonlySet<string>,
+): SuggestionBundle['items'] {
+  const includedIds = new Set<string>();
+  const localRefs = new Set<string>();
+  for (const item of bundle.items) {
+    if (
+      isActionableSuggestionStatus(item.status) &&
+      suggestionTargetsObject(item, objectId, { boardItemIds, siblingItems: bundle.items })
+    ) {
+      includedIds.add(item.id);
+      if (item.targetKind === 'object_relationship') {
+        if (typeof item.proposedPayload.fromRef === 'string') {
+          localRefs.add(item.proposedPayload.fromRef.toLowerCase());
+        }
+        if (typeof item.proposedPayload.toRef === 'string') {
+          localRefs.add(item.proposedPayload.toRef.toLowerCase());
+        }
+      }
+    }
+  }
+  if (localRefs.size > 0) {
+    for (const item of bundle.items) {
+      const ref =
+        typeof item.proposedPayload.localRef === 'string'
+          ? item.proposedPayload.localRef.toLowerCase()
+          : null;
+      if (ref && localRefs.has(ref)) includedIds.add(item.id);
+    }
+  }
+  return bundle.items.filter((item) => includedIds.has(item.id));
 }
 
 export default async function ObjectDetailPage({ params, searchParams }: PageProps) {
@@ -70,11 +106,7 @@ export default async function ObjectDetailPage({ params, searchParams }: PagePro
   ]);
   const boardItemIds = new Set(boardContext.map((row) => row.itemId));
   const suggestions = pendingBundles.flatMap((bundle) => {
-    const items = bundle.items.filter(
-      (item) =>
-        isActionableSuggestionStatus(item.status) &&
-        suggestionTargetsObject(item, detail.id, { boardItemIds, siblingItems: bundle.items }),
-    );
+    const items = objectPageSuggestionItems(bundle, detail.id, boardItemIds);
     return items.length > 0 ? [serializeSuggestionBundle({ ...bundle, items })] : [];
   });
 

@@ -155,6 +155,11 @@ function formatPayload(payload: Record<string, unknown>): string {
 
 function itemActionLabel(item: SuggestionItem): string {
   const operation = item.operation.replace(/_/g, ' ');
+  if (item.targetKind === 'object') {
+    const type = payloadString(item.proposedPayload, 'type');
+    if (type === 'person') return `${operation} person`;
+    if (type) return `${operation} ${type.replace(/_/g, ' ')}`;
+  }
   const kind = itemKindLabel(item.targetKind);
   return `${operation} ${kind}`;
 }
@@ -286,20 +291,27 @@ function localRefLabel(bundle: SuggestionBundle, ref: string): string {
 
 function relationshipPayloadSummary(item: SuggestionItem, bundle: SuggestionBundle): string | null {
   if (item.targetKind !== 'object_relationship') return null;
+  const titleEndpoints = relationshipTitleEndpoints(item.title);
   const from =
     typeof item.proposedPayload.fromRef === 'string'
       ? localRefLabel(bundle, item.proposedPayload.fromRef)
-      : 'existing object';
+      : (titleEndpoints?.[0] ?? 'existing object');
   const to =
     typeof item.proposedPayload.toRef === 'string'
       ? localRefLabel(bundle, item.proposedPayload.toRef)
-      : 'existing object';
+      : (titleEndpoints?.[1] ?? 'existing object');
   const kind =
     typeof item.proposedPayload.kind === 'string' ? item.proposedPayload.kind : 'related';
   if (from === 'existing object' && to === 'existing object') {
     return displayText(`${item.title} · ${kind}`);
   }
   return displayText(`${from} ↔ ${to} · ${kind}`);
+}
+
+function relationshipTitleEndpoints(title: string): [string, string] | null {
+  const match = /^Relate\s+(.+?)\s+and\s+(.+)$/i.exec(title.trim());
+  if (!match?.[1] || !match[2]) return null;
+  return [displayText(match[1]), displayText(match[2])];
 }
 
 function foldedSummaryText(

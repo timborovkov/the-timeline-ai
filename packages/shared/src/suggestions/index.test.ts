@@ -2865,6 +2865,58 @@ describe('suggestion scope', () => {
     ]);
   });
 
+  it('accepts missing-person relationship bundles that point at an existing object endpoint', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const company = await scope.objects.createObject({
+      type: 'company',
+      canonicalName: 'DFK',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Remember Jonne Granqvist and DFK',
+      dedupeKey: 'mixed-local-ref-existing-relationship',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'object',
+          title: 'Jonne Granqvist',
+          dedupeKey: 'mixed-local-ref-existing-relationship:person',
+          proposedPayload: {
+            type: 'person',
+            canonicalName: 'Jonne Granqvist',
+            localRef: 'jonne-granqvist',
+          },
+        },
+        {
+          operation: 'create',
+          targetKind: 'object_relationship',
+          title: 'Relate Jonne Granqvist and DFK',
+          dedupeKey: 'mixed-local-ref-existing-relationship:relationship',
+          proposedPayload: {
+            fromRef: 'jonne-granqvist',
+            toEntityId: company.id,
+            kind: 'related',
+          },
+        },
+      ],
+    });
+
+    await expect(scope.suggestions.acceptAll(bundle.id)).resolves.toEqual({
+      accepted: 2,
+      failed: 0,
+    });
+
+    const detail = await scope.objects.getObject(company.id);
+    expect(detail?.relationships).toEqual([
+      expect.objectContaining({
+        kind: 'related',
+        otherName: 'Jonne Granqvist',
+        otherType: 'person',
+      }),
+    ]);
+  });
+
   it('supersedes relationship proposals when a sibling local-ref dependency is rejected', async () => {
     const scope = withTeam(db as never, TEAM_ID, USER_ID);
     const bundle = await scope.suggestions.createOrMergeSuggestionBundle({

@@ -106,6 +106,69 @@ describe('ApprovalsClient', () => {
     expect(html).toContain('create task');
   });
 
+  it('renders missing-person relationship bundles with readable endpoints', () => {
+    const html = renderToStaticMarkup(
+      createElement(ApprovalsClient, {
+        suggestions: [
+          {
+            id: 'bundle-1',
+            source: 'background',
+            status: 'pending',
+            title: 'Remember Jonne Granqvist and DFK',
+            summary: 'This person appears connected to the object in source-backed evidence.',
+            reason: 'An extracted fact connects this person to the object.',
+            confidence: 'medium',
+            createdAt: '2026-06-01T10:00:00.000Z',
+            evidence: [
+              {
+                rawEventId: EVENT_ID,
+                quote: 'Jonne Granqvist from DFK discussed the pilot scope.',
+                occurredAt: '2026-06-01T10:00:00.000Z',
+                source: 'web',
+              },
+            ],
+            items: [
+              {
+                id: 'item-person',
+                status: 'pending',
+                operation: 'create',
+                targetKind: 'object',
+                targetId: null,
+                title: 'Jonne Granqvist',
+                description: 'An extracted fact connects this person to the object.',
+                proposedPayload: {
+                  type: 'person',
+                  canonicalName: 'Jonne Granqvist',
+                  localRef: 'jonne-granqvist',
+                },
+                failureReason: null,
+              },
+              {
+                id: 'item-relationship',
+                status: 'pending',
+                operation: 'create',
+                targetKind: 'object_relationship',
+                targetId: null,
+                title: 'Relate Jonne Granqvist and DFK',
+                description: 'An extracted fact connects this person to the object.',
+                proposedPayload: {
+                  fromRef: 'jonne-granqvist',
+                  toEntityId: '44444444-4444-4444-8444-444444444444',
+                  kind: 'related',
+                },
+                failureReason: null,
+              },
+            ],
+          },
+        ],
+      }),
+    );
+
+    expect(html).toContain('create person');
+    expect(html).toContain('Jonne Granqvist ↔ DFK · related');
+    expect(html).toContain('Jonne Granqvist from DFK discussed the pilot scope.');
+  });
+
   it('opens evidence references with the full timeline event id', async () => {
     const fetchMock = vi.fn((_input: RequestInfo | URL, _init?: RequestInit) =>
       Promise.resolve(
@@ -558,7 +621,7 @@ describe('ApprovalsClient', () => {
     expect(html).not.toContain('localRef');
   });
 
-  it('uses the item title for existing-object relationship summaries', () => {
+  it('uses endpoint names from the item title for existing-object relationship summaries', () => {
     const html = renderToStaticMarkup(
       createElement(ApprovalsClient, {
         suggestions: [
@@ -594,7 +657,7 @@ describe('ApprovalsClient', () => {
       }),
     );
 
-    expect(html).toContain('Relate John Doe and Acme Corporation · related');
+    expect(html).toContain('John Doe ↔ Acme Corporation · related');
     expect(html).not.toContain('existing object ↔ existing object');
   });
 

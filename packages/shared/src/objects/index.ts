@@ -940,7 +940,15 @@ async function getConnectedWork(
     .select({ factId: factEntities.factId, rawEventId: factsTable.rawEventId })
     .from(factEntities)
     .innerJoin(factsTable, eq(factsTable.id, factEntities.factId))
-    .where(eq(factEntities.entityId, object.id))
+    .innerJoin(rawEvents, eq(rawEvents.id, factsTable.rawEventId))
+    .where(
+      and(
+        eq(factEntities.entityId, object.id),
+        eq(factsTable.teamId, scope.teamId),
+        eq(rawEvents.teamId, scope.teamId),
+        rawEventVisibility(scope),
+      ),
+    )
     .limit(300);
   const factIds = Array.from(new Set(factIdRows.map((row) => row.factId)));
   const factRawEventIds = Array.from(new Set(factIdRows.map((row) => row.rawEventId)));
@@ -1030,7 +1038,10 @@ async function getConnectedWork(
       })
       .from(boardItems)
       .innerJoin(boards, eq(boardItems.boardId, boards.id))
-      .leftJoin(boardLanes, eq(boardItems.laneId, boardLanes.id))
+      .leftJoin(
+        boardLanes,
+        and(eq(boardItems.laneId, boardLanes.id), eq(boardLanes.teamId, scope.teamId)),
+      )
       .where(
         and(
           eq(boardItems.teamId, scope.teamId),
