@@ -438,14 +438,21 @@ describe('processSuggestionJobForTests', () => {
         {
           teamId: TEAM_ID,
           rawEventId: raw.id,
-          statement: 'DFK is involved in the pilot.',
+          statement: 'DFK and DFK Finland Oy are both involved in the pilot.',
           confidence: 0.9,
           modelVersion: 'test',
         },
         {
           teamId: TEAM_ID,
           rawEventId: raw.id,
-          statement: 'DFK Finland Oy is involved in the pilot.',
+          statement: 'ABC is in the services database.',
+          confidence: 0.9,
+          modelVersion: 'test',
+        },
+        {
+          teamId: TEAM_ID,
+          rawEventId: raw.id,
+          statement: 'ABC Services Oy sent a separate intro.',
           confidence: 0.9,
           modelVersion: 'test',
         },
@@ -453,7 +460,9 @@ describe('processSuggestionJobForTests', () => {
       .returning({ id: facts.id });
     await db.insert(factEntities).values([
       { factId: insertedFacts[0]?.id ?? '', entityId: shortName.id, role: 'subject' },
-      { factId: insertedFacts[1]?.id ?? '', entityId: fullName.id, role: 'subject' },
+      { factId: insertedFacts[0]?.id ?? '', entityId: fullName.id, role: 'object' },
+      { factId: insertedFacts[1]?.id ?? '', entityId: bareShort.id, role: 'subject' },
+      { factId: insertedFacts[2]?.id ?? '', entityId: bareFull.id, role: 'subject' },
     ]);
 
     await processSuggestionJobForTests(
@@ -507,26 +516,17 @@ describe('processSuggestionJobForTests', () => {
     if (!raw) throw new Error('expected raw event');
     const insertedFacts = await db
       .insert(facts)
-      .values([
-        {
-          teamId: TEAM_ID,
-          rawEventId: raw.id,
-          statement: 'DFK is involved in the pilot.',
-          confidence: 0.9,
-          modelVersion: 'test',
-        },
-        {
-          teamId: TEAM_ID,
-          rawEventId: raw.id,
-          statement: 'DFK Finland Oy is involved in the pilot.',
-          confidence: 0.9,
-          modelVersion: 'test',
-        },
-      ])
+      .values({
+        teamId: TEAM_ID,
+        rawEventId: raw.id,
+        statement: 'DFK and DFK Finland Oy are both involved in the pilot.',
+        confidence: 0.9,
+        modelVersion: 'test',
+      })
       .returning({ id: facts.id });
     await db.insert(factEntities).values([
       { factId: insertedFacts[0]?.id ?? '', entityId: aliasedShort.id, role: 'subject' },
-      { factId: insertedFacts[1]?.id ?? '', entityId: fullName.id, role: 'subject' },
+      { factId: insertedFacts[0]?.id ?? '', entityId: fullName.id, role: 'object' },
     ]);
 
     await processSuggestionJobForTests(
@@ -570,26 +570,17 @@ describe('processSuggestionJobForTests', () => {
     if (!raw) throw new Error('expected raw event');
     const insertedFacts = await db
       .insert(facts)
-      .values([
-        {
-          teamId: TEAM_ID,
-          rawEventId: raw.id,
-          statement: 'DFK is involved in the pilot.',
-          confidence: 0.9,
-          modelVersion: 'test',
-        },
-        {
-          teamId: TEAM_ID,
-          rawEventId: raw.id,
-          statement: 'DFK Finland Oy is involved in the pilot.',
-          confidence: 0.9,
-          modelVersion: 'test',
-        },
-      ])
+      .values({
+        teamId: TEAM_ID,
+        rawEventId: raw.id,
+        statement: 'DFK and DFK Finland Oy are both involved in the pilot.',
+        confidence: 0.9,
+        modelVersion: 'test',
+      })
       .returning({ id: facts.id });
     await db.insert(factEntities).values([
       { factId: insertedFacts[0]?.id ?? '', entityId: shortName.id, role: 'subject' },
-      { factId: insertedFacts[1]?.id ?? '', entityId: fullName.id, role: 'subject' },
+      { factId: insertedFacts[0]?.id ?? '', entityId: fullName.id, role: 'object' },
     ]);
 
     await processSuggestionJobForTests(

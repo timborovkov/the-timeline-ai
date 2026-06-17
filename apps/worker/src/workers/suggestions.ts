@@ -638,44 +638,57 @@ function cleanupMatch(a: CleanupObjectRow, b: CleanupObjectRow): CleanupMatch | 
   return null;
 }
 
-async function cleanupEvidenceObjectIds(
+function objectPairKey(leftId: string, rightId: string): string {
+  return [leftId, rightId].sort().join('|');
+}
+
+async function cleanupSharedEvidencePairKeys(
   db: Db,
   teamId: string,
   objectIds: readonly string[],
 ): Promise<Set<string>> {
   if (objectIds.length === 0) return new Set();
-  const [factRows, noteRows, relationshipRows] = await Promise.all([
+  const leftFactEntities = alias(factEntities, 'cleanup_left_fact_entities');
+  const rightFactEntities = alias(factEntities, 'cleanup_right_fact_entities');
+  const [factRows, relationshipRows] = await Promise.all([
     db
-      .select({ entityId: factEntities.entityId })
-      .from(factEntities)
-      .innerJoin(factsTable, eq(factsTable.id, factEntities.factId))
-      .where(and(eq(factsTable.teamId, teamId), inArray(factEntities.entityId, objectIds))),
-    db
-      .select({ entityId: objectNotes.entityId })
-      .from(objectNotes)
+      .select({
+        leftId: leftFactEntities.entityId,
+        rightId: rightFactEntities.entityId,
+      })
+      .from(leftFactEntities)
+      .innerJoin(
+        rightFactEntities,
+        and(
+          eq(rightFactEntities.factId, leftFactEntities.factId),
+          ne(rightFactEntities.entityId, leftFactEntities.entityId),
+        ),
+      )
+      .innerJoin(factsTable, eq(factsTable.id, leftFactEntities.factId))
       .where(
         and(
-          eq(objectNotes.teamId, teamId),
-          inArray(objectNotes.entityId, objectIds),
-          isNull(objectNotes.deletedAt),
+          eq(factsTable.teamId, teamId),
+          inArray(leftFactEntities.entityId, objectIds),
+          inArray(rightFactEntities.entityId, objectIds),
         ),
       ),
     db
-      .select({ id: entities.id })
-      .from(entities)
-      .innerJoin(
-        entityRelationships,
-        or(
-          eq(entityRelationships.fromEntityId, entities.id),
-          eq(entityRelationships.toEntityId, entities.id),
+      .select({
+        leftId: entityRelationships.fromEntityId,
+        rightId: entityRelationships.toEntityId,
+      })
+      .from(entityRelationships)
+      .where(
+        and(
+          eq(entityRelationships.teamId, teamId),
+          inArray(entityRelationships.fromEntityId, objectIds),
+          inArray(entityRelationships.toEntityId, objectIds),
         ),
-      )
-      .where(and(eq(entities.teamId, teamId), inArray(entities.id, objectIds))),
+      ),
   ]);
   return new Set([
-    ...factRows.map((row) => row.entityId),
-    ...noteRows.map((row) => row.entityId),
-    ...relationshipRows.map((row) => row.id),
+    ...factRows.map((row) => objectPairKey(row.leftId, row.rightId)),
+    ...relationshipRows.map((row) => objectPairKey(row.leftId, row.rightId)),
   ]);
 }
 
@@ -1388,7 +1401,7 @@ async function createObjectCleanupSuggestionsForTeam(
   const scope = withTeam(db, teamId, PSEUDO_USER, { skipMembershipCheck: true });
   const mergeCandidates = rows.filter((row) => CLEANUP_MERGE_TYPES.has(row.type));
   const proposedMergeKeys = new Set<string>();
-  const evidenceObjectIds = await cleanupEvidenceObjectIds(
+  const sharedEvidencePairKeys = await cleanupSharedEvidencePairKeys(
     db,
     teamId,
     mergeCandidates.map((row) => row.id),
@@ -1399,14 +1412,11 @@ async function createObjectCleanupSuggestionsForTeam(
       if (repairObjectId && left.id !== repairObjectId && right.id !== repairObjectId) continue;
       const match = cleanupMatch(left, right);
       if (!match) continue;
-      if (
-        match === 'short' &&
-        (!evidenceObjectIds.has(left.id) || !evidenceObjectIds.has(right.id))
-      ) {
+      const groupKey = objectPairKey(left.id, right.id);
+      if (match === 'short' && !sharedEvidencePairKeys.has(groupKey)) {
         continue;
       }
       const objectIds = [left.id, right.id].sort();
-      const groupKey = objectIds.join('|');
       if (proposedMergeKeys.has(groupKey)) continue;
       proposedMergeKeys.add(groupKey);
       const survivor = pickCleanupSurvivor([left, right]);
@@ -1414,7 +1424,7 @@ async function createObjectCleanupSuggestionsForTeam(
         match === 'exact'
           ? 'Names or aliases match closely enough to review as a duplicate.'
           : match === 'short'
-            ? 'Short-name or acronym match has supporting object evidence on both sides.'
+            ? 'Short-name or acronym match has shared supporting object evidence.'
             : 'Names are similar enough to review as a possible duplicate.';
       const dedupeKey = suggestions.suggestionDedupeKey({
         kind: 'object_cleanup_merge',
