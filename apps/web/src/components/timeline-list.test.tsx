@@ -1,9 +1,12 @@
+// @vitest-environment happy-dom
+
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { TimelineEvent } from '@/lib/use-paginated-queries';
-import type { ComponentProps } from 'react';
+import type { ComponentProps, ReactNode } from 'react';
 
 const fakes = vi.hoisted(() => ({
   showInspector: vi.fn(),
@@ -25,6 +28,21 @@ vi.mock('@/components/inspector-context', () => ({
 }));
 
 const { TimelineList } = await import('./timeline-list.js');
+
+interface InspectorContentForTest {
+  render: () => ReactNode;
+}
+
+afterEach(() => {
+  cleanup();
+  fakes.showInspector.mockClear();
+});
+
+function renderLastInspector(): string {
+  const lastCall = fakes.showInspector.mock.lastCall as [InspectorContentForTest] | undefined;
+  if (!lastCall) throw new Error('Expected inspector content to be shown.');
+  return renderToStaticMarkup(lastCall[0].render());
+}
 
 function timelineEvent(input: {
   id: string;
@@ -72,7 +90,7 @@ describe('TimelineList event anchors', () => {
       timelineEvent({ id: eventId, occurredAt: '2026-06-03T13:04:00.000Z' }),
     ]);
 
-    expect(html).toContain(`<li id="ev-${eventId}"`);
+    expect(html).toContain(`id="ev-${eventId}"`);
     expect(html.match(new RegExp(`id="ev-${eventId}"`, 'g'))).toHaveLength(1);
   });
 
@@ -84,8 +102,8 @@ describe('TimelineList event anchors', () => {
       timelineEvent({ id: secondEventId, occurredAt: '2026-06-03T13:05:00.000Z' }),
     ]);
 
-    expect(html).toContain(`<li id="ev-${firstEventId}"`);
-    expect(html).toContain(`<li id="ev-${secondEventId}"`);
+    expect(html).toContain(`id="ev-${firstEventId}"`);
+    expect(html).toContain(`id="ev-${secondEventId}"`);
     expect(html.match(new RegExp(`id="ev-${firstEventId}"`, 'g'))).toHaveLength(1);
     expect(html.match(new RegExp(`id="ev-${secondEventId}"`, 'g'))).toHaveLength(1);
   });
@@ -108,45 +126,90 @@ describe('TimelineList event anchors', () => {
       },
     );
 
-    expect(html).toContain(`<li id="ev-${focusedEventId}"`);
-    expect(html).toContain(`<li id="ev-${taskEventId}"`);
+    expect(html).toContain(`id="ev-${focusedEventId}"`);
+    expect(html).toContain(`id="ev-${taskEventId}"`);
     expect(html.match(new RegExp(`id="ev-${focusedEventId}"`, 'g'))).toHaveLength(1);
   });
 });
 
 describe('TimelineList document attachments', () => {
-  it('shows previews for upload events but not other document lifecycle events', () => {
+  it('moves document previews into the inspector and keeps lifecycle rules', () => {
     const uploadId = '66666666-6666-4666-8666-666666666666';
     const renameId = '77777777-7777-4777-8777-777777777777';
-    const html = renderTimeline([
-      timelineEvent({
-        id: uploadId,
-        occurredAt: '2026-06-03T13:04:00.000Z',
-        source: 'document',
-        contentText: 'Uploaded photo.jpg',
-        sourceMetadata: {
-          action: 'upload',
-          document_id: '88888888-8888-4888-8888-888888888888',
-          document_name: 'photo.jpg',
-          document_version_id: '99999999-9999-4999-8999-999999999999',
-        },
+    render(
+      createElement(TimelineList, {
+        events: [
+          timelineEvent({
+            id: uploadId,
+            occurredAt: '2026-06-03T13:04:00.000Z',
+            source: 'document',
+            contentText: 'Uploaded photo.jpg',
+            sourceMetadata: {
+              action: 'upload',
+              document_id: '88888888-8888-4888-8888-888888888888',
+              document_name: 'photo.jpg',
+              document_version_id: '99999999-9999-4999-8999-999999999999',
+            },
+          }),
+          timelineEvent({
+            id: renameId,
+            occurredAt: '2026-06-03T13:05:00.000Z',
+            source: 'document',
+            contentText: 'Renamed notes.txt',
+            sourceMetadata: {
+              action: 'rename',
+              document_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+              document_name: 'notes.txt',
+            },
+          }),
+        ],
+        authorMap: new Map(),
+        currentUserId: 'user-1',
+        isAdmin: false,
       }),
-      timelineEvent({
-        id: renameId,
-        occurredAt: '2026-06-03T13:05:00.000Z',
-        source: 'document',
-        contentText: 'Renamed notes.txt',
-        sourceMetadata: {
-          action: 'rename',
-          document_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
-          document_name: 'notes.txt',
-        },
-      }),
-    ]);
+    );
 
-    expect(html).toContain('Attachment · photo.jpg');
-    expect(html).toContain('Attachment · notes.txt');
-    expect(html.match(/Preview/g)).toHaveLength(1);
+    fireEvent.click(screen.getByRole('button', { name: /Uploaded photo\.jpg/i }));
+    const uploadInspector = renderLastInspector();
+    expect(uploadInspector).toContain('Attachment · photo.jpg');
+    expect(uploadInspector).toContain('Preview');
+
+    fireEvent.click(screen.getByRole('button', { name: /Renamed notes\.txt/i }));
+    const renameInspector = renderLastInspector();
+    expect(renameInspector).toContain('Attachment · notes.txt');
+    expect(renameInspector).not.toContain('Preview');
+  });
+});
+
+describe('TimelineList inspector source caps', () => {
+  it('shows the latest source evidence while keeping controls for hidden older sources', () => {
+    const events = Array.from({ length: 9 }, (_, index) =>
+      timelineEvent({
+        id: `99999999-9999-4999-8999-99999999999${index}`,
+        occurredAt: `2026-06-03T13:0${index}:00.000Z`,
+        contentText: `Meeting note ${index}`,
+        contentAudioUrl: index === 0 ? 'teams/team-1/meeting/older-audio.m4a' : null,
+      }),
+    );
+    const olderAudioEvent = events[0];
+    if (!olderAudioEvent) throw new Error('Expected generated timeline event.');
+
+    render(
+      createElement(TimelineList, {
+        events,
+        authorMap: new Map(),
+        audioUrlMap: new Map([[olderAudioEvent.id, '/audio/older-audio.m4a']]),
+        currentUserId: 'user-1',
+        isAdmin: false,
+      }),
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /Meeting note 8/i }));
+    const inspector = renderLastInspector();
+    expect(inspector).toContain('Meeting note 8');
+    expect(inspector).not.toContain('Meeting note 0');
+    expect(inspector).toContain('+ 1 older source');
+    expect(inspector).toContain('/audio/older-audio.m4a');
   });
 });
 

@@ -344,9 +344,7 @@ function TimelineFilterPanel({
 }) {
   return (
     <div className="flex items-center justify-between gap-3">
-      <h2 className="font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">
-        Moment browser
-      </h2>
+      <h2 className="font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">Timeline</h2>
       <details className="text-sm" open={hasFilters}>
         <summary className="cursor-pointer list-none rounded-sm px-2 py-1 font-mono text-[11px] uppercase tracking-[0.12em] text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg">
           Filters{hasFilters ? ' · ON' : ''}

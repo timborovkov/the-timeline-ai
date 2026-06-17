@@ -299,7 +299,8 @@ visible change.
   markers and hairline separators. Avoid floating cards; use hierarchy, icons,
   spacing, and rail structure to create the visual timeline shape.
 - **Scan fields.** Every moment exposes when, source, actor/speaker, place or
-  source context, substance, and impact context without opening the inspector.
+  source context, substance, transcription state, source count, and the first
+  impact signals without opening the inspector.
 - **Impact strip.** Show workspace consequences in a dedicated strip when
   present: tasks, boards, objects, calendar events, documents, decisions,
   follow-ups, and approvals. Hydrate from existing source evidence, suggestion
@@ -308,22 +309,21 @@ visible change.
 - **Calendar state.** Recurring calendar rows show a compact recurrence marker,
   modified occurrences use the same marker plus their edited time, and proposed
   slots render as visible tentative holds until one slot is confirmed.
-- **Preset filters + density.** Timeline presets cover All, Meetings, Slack,
-  Email, Documents, Calendar, Approvals, Tasks, and Decisions. Density is a
-  URL-backed control with Comfortable as default and Dense as a tighter
-  operator view.
+- **Preset filters.** Timeline presets cover All, Meetings, Slack, Email,
+  Documents, Calendar, Approvals, Tasks, and Decisions.
 - **Attribution split.** Scan-level copy preserves source truth ("who said or
   did it in the source system"). Timeline control details such as captured by,
-  source owner, visibility owner, raw IDs, and source JSON live in the
-  inspector.
-- **Inline expansion + inspector.** Inline expansion handles quick
-  comprehension of raw events and impact. The right inspector handles forensic
-  evidence summaries, exact timestamps, citations, visibility, audit trail, and
-  source metadata without turning high-volume groups into raw log dumps.
+  source owner, visibility owner, event controls, and curated source metadata
+  live in the inspector.
+- **Compact row + inspector.** The row handles quick comprehension: title,
+  source truth, impact chips, transcription state, and source count. The right
+  inspector handles raw source evidence, full impact context, exact timestamps, citations,
+  visibility controls, audit trail, and source metadata without turning
+  high-volume groups into raw log dumps.
 - **Hover/selection** uses `bg-surface`, no border change, and visually connects
   the selected moment to the inspector.
-- Skeletons match: `<Skeleton className="h-4 w-[18ch]" />` for ts,
-  `<Skeleton className="h-4 w-3/4" />` for body, `<Skeleton className="h-3 w-[9ch]" />` for source.
+- Skeletons match the compact row shape: mono timestamp, source/title/body
+  block, and an optional impact/status block.
 
 ### Kanban / board
 
@@ -403,7 +403,8 @@ Primitives in
 
 - `<Skeleton />` — base block. `animate-pulse rounded-sm bg-surface-2`.
 - `<PageHeaderSkeleton />` — index strip mono one-liner skeleton.
-- `<TimelineRowSkeleton />` — three-column flat row (ts, body, source).
+- `<TimelineRowSkeleton />` — compact flat row (ts, source/title/body,
+  impact/status).
 - `<TimelineFeedSkeleton count={n} />` — N stacked row skeletons.
 - `<BoardSkeleton />` — kanban column + card skeletons.
 - `<InlineSpinner label="…" />` — small pulsing dot + label for streaming

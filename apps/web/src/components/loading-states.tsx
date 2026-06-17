@@ -22,21 +22,24 @@ export function PageHeaderSkeleton() {
 
 /**
  * Flat-row skeleton matching the new `<TimelineList>` shape:
- *   [mono ts] [body] [source]
+ *   [mono ts] [source/title/body] [impact/status]
  *
  * Internal — consumed by {@link TimelineFeedSkeleton}. Exported routes
  * that need a single row should use the feed skeleton with `count={1}`.
  */
 function TimelineRowSkeleton() {
   return (
-    <li className="grid grid-cols-[18ch_1fr] gap-x-4 gap-y-2 border-b border-border py-3 md:grid-cols-[18ch_1fr_10ch]">
-      <Skeleton className="h-3 w-[16ch]" />
-      <div className="space-y-2">
-        <Skeleton className="h-4 w-32" />
-        <Skeleton className="h-3 w-11/12" />
-        <Skeleton className="h-3 w-3/4" />
+    <li className="grid grid-cols-1 gap-x-4 gap-y-2 border-b border-border py-3 md:grid-cols-[6.75rem_minmax(0,1fr)_12rem]">
+      <Skeleton className="h-3 w-14" />
+      <div className="min-w-0 space-y-2">
+        <Skeleton className="h-3 w-48" />
+        <Skeleton className="h-4 w-10/12" />
+        <Skeleton className="h-3 w-8/12" />
       </div>
-      <Skeleton className="hidden h-3 w-12 justify-self-end md:block" />
+      <div className="hidden justify-end gap-1.5 md:flex">
+        <Skeleton className="h-6 w-20" />
+        <Skeleton className="h-3 w-14" />
+      </div>
     </li>
   );
 }
