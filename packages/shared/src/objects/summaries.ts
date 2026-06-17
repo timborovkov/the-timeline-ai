@@ -68,7 +68,7 @@ export interface ObjectSummaryView {
   cannotGenerateReason: string | null;
 }
 
-interface ObjectSummarySourceCounts {
+export interface ObjectSummarySourceCounts {
   fields: number;
   facts: number;
   events: number;
@@ -76,6 +76,11 @@ interface ObjectSummarySourceCounts {
   relationships: number;
   tasks: number;
   changes: number;
+}
+
+export interface ObjectSummarySourceSnapshot {
+  sourceCounts: ObjectSummarySourceCounts;
+  meaningfulFields: number;
 }
 
 interface SummaryPacketSource {
@@ -622,6 +627,36 @@ export async function getObjectSummary(
     lastErrorCode: row?.lastErrorCode ?? null,
     canGenerate: packet.canGenerate,
     cannotGenerateReason: packet.cannotGenerateReason,
+  };
+}
+
+export async function getObjectSummaryFromSnapshot(
+  db: Db,
+  scope: TeamScopeCore,
+  entityId: string,
+  snapshot: ObjectSummarySourceSnapshot,
+): Promise<ObjectSummaryView | null> {
+  await scope.requireMembership();
+  if (!UUID_RE.test(entityId)) return null;
+  const rows = await db
+    .select()
+    .from(objectSummaries)
+    .where(and(eq(objectSummaries.teamId, scope.teamId), eq(objectSummaries.entityId, entityId)))
+    .limit(1);
+  const row = rows[0];
+  const enough = sufficiency(snapshot.sourceCounts, snapshot.meaningfulFields);
+  return {
+    status: row?.status ?? 'missing',
+    summary: row ? objectSummaryFromJson(row.summary) : null,
+    plainText: row?.plainText ?? '',
+    sourceRefs: row ? refsFromJson(row.sourceRefs) : [],
+    sourceCounts: row ? countsFromJson(row.sourceCounts) : snapshot.sourceCounts,
+    generatedAt: row?.generatedAt ?? null,
+    staleAt: row?.staleAt ?? null,
+    lastAttemptedAt: row?.lastAttemptedAt ?? null,
+    lastErrorCode: row?.lastErrorCode ?? null,
+    canGenerate: enough.canGenerate,
+    cannotGenerateReason: enough.reason,
   };
 }
 

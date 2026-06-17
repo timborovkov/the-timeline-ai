@@ -1610,14 +1610,66 @@ describe('object scope — merge cleanup', () => {
 
     await scope.updateObject(task.id, { status: 'doing' }, { kind: 'user', userId: USER_OWNER });
 
-    expect(queue.enqueueObjectSummaryJob).toHaveBeenCalledWith(
-      { teamId: TEAM_A, objectId: task.id, trigger: 'auto' },
-      { delayMs: 120_000 },
+    await vi.waitFor(() => {
+      expect(queue.enqueueObjectSummaryJob).toHaveBeenCalledWith(
+        { teamId: TEAM_A, objectId: task.id, trigger: 'auto' },
+        { delayMs: 120_000 },
+      );
+      expect(queue.enqueueObjectSummaryJob).toHaveBeenCalledWith(
+        { teamId: TEAM_A, objectId: parent.id, trigger: 'auto' },
+        { delayMs: 120_000 },
+      );
+    });
+  });
+
+  it('does not block object updates on automatic summary refresh enqueue', async () => {
+    const scope = withTeam(db, TEAM_A, USER_OWNER).objects;
+    const object = await scope.createObject({
+      type: 'company',
+      canonicalName: 'DFK',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    await vi.waitFor(() => {
+      expect(queue.enqueueObjectSummaryJob).toHaveBeenCalled();
+    });
+    vi.mocked(queue.enqueueObjectSummaryJob).mockClear();
+    let resolveSummaryJob: ((value: { enqueued: boolean; jobId: string }) => void) | undefined;
+    vi.mocked(queue.enqueueObjectSummaryJob).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveSummaryJob = resolve;
+        }),
     );
-    expect(queue.enqueueObjectSummaryJob).toHaveBeenCalledWith(
-      { teamId: TEAM_A, objectId: parent.id, trigger: 'auto' },
-      { delayMs: 120_000 },
+    const updatePromise = scope.updateObject(
+      object.id,
+      { status: 'active' },
+      { kind: 'user', userId: USER_OWNER },
     );
+
+    try {
+      await vi.waitFor(() => {
+        expect(queue.enqueueObjectSummaryJob).toHaveBeenCalled();
+      });
+      await expect(
+        Promise.race([
+          updatePromise,
+          new Promise((_, reject) => {
+            setTimeout(() => {
+              reject(new Error('update waited for summary refresh'));
+            }, 100);
+          }),
+        ]),
+      ).resolves.toMatchObject({ object: { id: object.id }, changedFields: ['status'] });
+    } finally {
+      vi.mocked(queue.enqueueObjectSummaryJob).mockResolvedValue({
+        enqueued: true,
+        jobId: 'summary-job',
+      });
+      if (resolveSummaryJob) {
+        resolveSummaryJob({ enqueued: true, jobId: 'summary-job' });
+      }
+      await updatePromise.catch(() => undefined);
+    }
   });
 
   it('marks an existing summary stale when an automatic refresh is requested', async () => {

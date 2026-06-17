@@ -63,6 +63,9 @@ import {
   enqueueObjectSummaryRefresh,
   fireAndForgetObjectSummaryRefresh,
   getObjectSummary,
+  getObjectSummaryFromSnapshot,
+  type ObjectSummarySourceCounts,
+  type ObjectSummarySourceSnapshot,
   type ObjectSummaryView,
 } from '#src/objects/summaries.js';
 import { decodeCursor, pageWindow } from '#src/pagination.js';
@@ -79,6 +82,7 @@ export {
 export type { ObjectSummarySourceRef } from '#src/objects/summaries.js';
 
 const embedLog = childLogger('objects:embed');
+const summaryRefreshLog = childLogger('objects:summary-refresh');
 type DbTx = Parameters<Parameters<Db['transaction']>[0]>[0];
 type DbOrTx = Db | DbTx;
 
@@ -131,22 +135,29 @@ async function objectSummaryRefreshTargetsForObject(
   return [...ids];
 }
 
-async function refreshObjectAndLinkedParentSummaries(
+function refreshObjectAndLinkedParentSummaries(
   db: Db,
   scope: TeamScopeCore,
   object: Pick<ObjectRow, 'id' | 'type'>,
   context: Record<string, unknown>,
-): Promise<void> {
-  const objectIds = await objectSummaryRefreshTargetsForObject(db, scope, object);
-  await Promise.all(
-    objectIds.map((objectId) =>
-      fireAndForgetObjectSummaryRefresh(db, scope, objectId, {
-        ...context,
-        objectId,
-        changedObjectId: object.id,
-      }),
-    ),
-  );
+): void {
+  void (async () => {
+    const objectIds = await objectSummaryRefreshTargetsForObject(db, scope, object);
+    await Promise.all(
+      objectIds.map((objectId) =>
+        fireAndForgetObjectSummaryRefresh(db, scope, objectId, {
+          ...context,
+          objectId,
+          changedObjectId: object.id,
+        }),
+      ),
+    );
+  })().catch((err: unknown) => {
+    summaryRefreshLog.error(
+      { err, ...context, objectId: object.id },
+      'failed to refresh summaries',
+    );
+  });
 }
 
 function uniqueIds(ids: string[]): string[] {
@@ -567,6 +578,33 @@ export interface ObjectDetail extends ObjectRow {
   lastVisitedAt: Date | null;
 }
 
+function objectSummarySnapshotFromDetail(
+  object: EntityRow,
+  detail: {
+    notes: Pick<ObjectDetail['notes'][number], 'body'>[];
+    relationships: Pick<ObjectDetail['relationships'][number], 'id'>[];
+    recentChanges: Pick<ObjectDetail['recentChanges'][number], 'id'>[];
+    openTasks: Pick<ObjectRow, 'id'>[];
+    factCounts: Pick<ObjectSummarySourceCounts, 'facts' | 'events'>;
+  },
+): ObjectSummarySourceSnapshot {
+  const sourceCounts: ObjectSummarySourceCounts = {
+    fields:
+      2 + (object.stage ? 1 : 0) + (object.priority !== null ? 1 : 0) + (object.dueAt ? 1 : 0),
+    facts: detail.factCounts.facts,
+    events: detail.factCounts.events,
+    notes: detail.notes.filter((note) => note.body.trim().length >= 40).length,
+    relationships: detail.relationships.length,
+    tasks: detail.openTasks.length,
+    changes: detail.recentChanges.length,
+  };
+  return {
+    sourceCounts,
+    meaningfulFields:
+      (object.stage ? 1 : 0) + (object.priority !== null ? 1 : 0) + (object.dueAt ? 1 : 0),
+  };
+}
+
 export interface ObjectNotePreview {
   id: string;
   body: string;
@@ -940,113 +978,133 @@ export async function getObject(
   }
   if (!entityRow) return null;
 
-  const [noteRows, outRows, inRows, changeRows, taskRows, viewRows] = await Promise.all([
-    db
-      .select({
-        id: objectNotes.id,
-        body: objectNotes.body,
-        authorUserId: objectNotes.authorUserId,
-        createdAt: objectNotes.createdAt,
-        updatedAt: objectNotes.updatedAt,
-      })
-      .from(objectNotes)
-      .where(
-        and(
-          eq(objectNotes.teamId, scope.teamId),
-          eq(objectNotes.entityId, entityRow.id),
-          isNull(objectNotes.deletedAt),
+  const [noteRows, outRows, inRows, changeRows, taskRows, viewRows, factCountRows] =
+    await Promise.all([
+      db
+        .select({
+          id: objectNotes.id,
+          body: objectNotes.body,
+          authorUserId: objectNotes.authorUserId,
+          createdAt: objectNotes.createdAt,
+          updatedAt: objectNotes.updatedAt,
+        })
+        .from(objectNotes)
+        .where(
+          and(
+            eq(objectNotes.teamId, scope.teamId),
+            eq(objectNotes.entityId, entityRow.id),
+            isNull(objectNotes.deletedAt),
+          ),
+        )
+        .orderBy(desc(objectNotes.createdAt), desc(objectNotes.id))
+        .limit(20),
+      db
+        .select({
+          id: entityRelationships.id,
+          kind: entityRelationships.kind,
+          otherId: entities.id,
+          otherName: entities.canonicalName,
+          otherType: entities.type,
+        })
+        .from(entityRelationships)
+        .innerJoin(entities, eq(entityRelationships.toEntityId, entities.id))
+        .where(
+          and(
+            eq(entityRelationships.teamId, scope.teamId),
+            eq(entityRelationships.fromEntityId, entityRow.id),
+            // Defense-in-depth: the relationship row's team_id is already
+            // pinned by the filter above and addRelationship validates both
+            // endpoints, but pinning the joined entity's team_id too means a
+            // stray cross-team edge (e.g. from a future code path that skips
+            // the endpoint check) can never leak through this view.
+            eq(entities.teamId, scope.teamId),
+            isNull(entities.mergedIntoId),
+          ),
+        )
+        .orderBy(desc(entityRelationships.createdAt), desc(entityRelationships.id))
+        .limit(20),
+      db
+        .select({
+          id: entityRelationships.id,
+          kind: entityRelationships.kind,
+          otherId: entities.id,
+          otherName: entities.canonicalName,
+          otherType: entities.type,
+        })
+        .from(entityRelationships)
+        .innerJoin(entities, eq(entityRelationships.fromEntityId, entities.id))
+        .where(
+          and(
+            eq(entityRelationships.teamId, scope.teamId),
+            eq(entityRelationships.toEntityId, entityRow.id),
+            eq(entities.teamId, scope.teamId),
+            isNull(entities.mergedIntoId),
+          ),
+        )
+        .orderBy(desc(entityRelationships.createdAt), desc(entityRelationships.id))
+        .limit(20),
+      db
+        .select({
+          id: objectChanges.id,
+          field: objectChanges.field,
+          actorKind: objectChanges.actorKind,
+          actorUserId: objectChanges.actorUserId,
+          previousValue: objectChanges.previousValue,
+          newValue: objectChanges.newValue,
+          status: objectChanges.status,
+          note: objectChanges.note,
+          changedAt: objectChanges.changedAt,
+        })
+        .from(objectChanges)
+        .where(
+          and(eq(objectChanges.teamId, scope.teamId), eq(objectChanges.entityId, entityRow.id)),
+        )
+        .orderBy(desc(objectChanges.changedAt), desc(objectChanges.id))
+        .limit(20),
+      // "Open tasks linked via parent relationship". We model task→parent as a
+      // `child` edge from the task to the parent, OR a `parent` edge from the
+      // parent to the task. For simplicity, surface tasks where the parent is
+      // this object via the `child` edge (task → parent).
+      db
+        .select({ taskId: entityRelationships.fromEntityId })
+        .from(entityRelationships)
+        .where(
+          and(
+            eq(entityRelationships.teamId, scope.teamId),
+            eq(entityRelationships.toEntityId, entityRow.id),
+            eq(entityRelationships.kind, 'child'),
+          ),
+        )
+        .limit(200),
+      db
+        .select({ lastVisitedAt: objectViews.lastVisitedAt })
+        .from(objectViews)
+        .where(
+          and(
+            eq(objectViews.teamId, scope.teamId),
+            eq(objectViews.userId, scope.userId),
+            eq(objectViews.entityId, entityRow.id),
+          ),
+        )
+        .limit(1),
+      db
+        .select({
+          facts: sql<number>`count(distinct ${factsTable.id})::int`,
+          events: sql<number>`count(distinct ${factsTable.rawEventId})::int`,
+        })
+        .from(factEntities)
+        .innerJoin(factsTable, eq(factsTable.id, factEntities.factId))
+        .innerJoin(rawEvents, eq(rawEvents.id, factsTable.rawEventId))
+        .where(
+          and(
+            eq(factEntities.entityId, entityRow.id),
+            eq(factsTable.teamId, scope.teamId),
+            eq(rawEvents.teamId, scope.teamId),
+            eq(rawEvents.visibility, 'team'),
+            sql`COALESCE(${rawEvents.sourceMetadata} ->> 'deleted', 'false') <> 'true'`,
+          ),
         ),
-      )
-      .orderBy(desc(objectNotes.createdAt), desc(objectNotes.id))
-      .limit(20),
-    db
-      .select({
-        id: entityRelationships.id,
-        kind: entityRelationships.kind,
-        otherId: entities.id,
-        otherName: entities.canonicalName,
-        otherType: entities.type,
-      })
-      .from(entityRelationships)
-      .innerJoin(entities, eq(entityRelationships.toEntityId, entities.id))
-      .where(
-        and(
-          eq(entityRelationships.teamId, scope.teamId),
-          eq(entityRelationships.fromEntityId, entityRow.id),
-          // Defense-in-depth: the relationship row's team_id is already
-          // pinned by the filter above and addRelationship validates both
-          // endpoints, but pinning the joined entity's team_id too means a
-          // stray cross-team edge (e.g. from a future code path that skips
-          // the endpoint check) can never leak through this view.
-          eq(entities.teamId, scope.teamId),
-          isNull(entities.mergedIntoId),
-        ),
-      )
-      .orderBy(desc(entityRelationships.createdAt), desc(entityRelationships.id))
-      .limit(20),
-    db
-      .select({
-        id: entityRelationships.id,
-        kind: entityRelationships.kind,
-        otherId: entities.id,
-        otherName: entities.canonicalName,
-        otherType: entities.type,
-      })
-      .from(entityRelationships)
-      .innerJoin(entities, eq(entityRelationships.fromEntityId, entities.id))
-      .where(
-        and(
-          eq(entityRelationships.teamId, scope.teamId),
-          eq(entityRelationships.toEntityId, entityRow.id),
-          eq(entities.teamId, scope.teamId),
-          isNull(entities.mergedIntoId),
-        ),
-      )
-      .orderBy(desc(entityRelationships.createdAt), desc(entityRelationships.id))
-      .limit(20),
-    db
-      .select({
-        id: objectChanges.id,
-        field: objectChanges.field,
-        actorKind: objectChanges.actorKind,
-        actorUserId: objectChanges.actorUserId,
-        previousValue: objectChanges.previousValue,
-        newValue: objectChanges.newValue,
-        status: objectChanges.status,
-        note: objectChanges.note,
-        changedAt: objectChanges.changedAt,
-      })
-      .from(objectChanges)
-      .where(and(eq(objectChanges.teamId, scope.teamId), eq(objectChanges.entityId, entityRow.id)))
-      .orderBy(desc(objectChanges.changedAt), desc(objectChanges.id))
-      .limit(20),
-    // "Open tasks linked via parent relationship". We model task→parent as a
-    // `child` edge from the task to the parent, OR a `parent` edge from the
-    // parent to the task. For simplicity, surface tasks where the parent is
-    // this object via the `child` edge (task → parent).
-    db
-      .select({ taskId: entityRelationships.fromEntityId })
-      .from(entityRelationships)
-      .where(
-        and(
-          eq(entityRelationships.teamId, scope.teamId),
-          eq(entityRelationships.toEntityId, entityRow.id),
-          eq(entityRelationships.kind, 'child'),
-        ),
-      )
-      .limit(200),
-    db
-      .select({ lastVisitedAt: objectViews.lastVisitedAt })
-      .from(objectViews)
-      .where(
-        and(
-          eq(objectViews.teamId, scope.teamId),
-          eq(objectViews.userId, scope.userId),
-          eq(objectViews.entityId, entityRow.id),
-        ),
-      )
-      .limit(1),
-  ]);
+    ]);
 
   const taskIds = taskRows.map((r) => r.taskId);
   const tasks: ObjectRow[] =
@@ -1105,14 +1163,29 @@ export async function getObject(
   }
 
   const base = toObjectRow(entityRow);
-  const summary = await getObjectSummary(db, scope, entityRow.id);
+  const relationships = [
+    ...outRows.map((r) => ({ ...r, direction: 'out' as const })),
+    ...inRows.map((r) => ({ ...r, direction: 'in' as const })),
+  ];
+  const summary = await getObjectSummaryFromSnapshot(
+    db,
+    scope,
+    entityRow.id,
+    objectSummarySnapshotFromDetail(entityRow, {
+      notes: noteRows,
+      relationships,
+      recentChanges: changeRows,
+      openTasks: tasks,
+      factCounts: {
+        facts: factCountRows[0]?.facts ?? 0,
+        events: factCountRows[0]?.events ?? 0,
+      },
+    }),
+  );
   return {
     ...base,
     notes: noteRows,
-    relationships: [
-      ...outRows.map((r) => ({ ...r, direction: 'out' as const })),
-      ...inRows.map((r) => ({ ...r, direction: 'in' as const })),
-    ],
+    relationships,
     recentChanges: changeRows,
     openTasks: tasks,
     summary,
@@ -1605,7 +1678,7 @@ export async function createObject(
     entityId: txResult.object.id,
     op: 'createObject',
   });
-  await refreshObjectAndLinkedParentSummaries(db, scope, txResult.object, {
+  refreshObjectAndLinkedParentSummaries(db, scope, txResult.object, {
     teamId: scope.teamId,
     op: 'createObject',
   });
@@ -1855,7 +1928,7 @@ export async function updateObject(
         op: 'updateObject',
       });
     }
-    await refreshObjectAndLinkedParentSummaries(db, scope, txResult.object, {
+    refreshObjectAndLinkedParentSummaries(db, scope, txResult.object, {
       teamId: scope.teamId,
       op: 'updateObject',
     });
@@ -2319,7 +2392,7 @@ export async function mergeObjects(
     entityId: result.survivor.id,
     op: 'mergeObjects',
   });
-  await fireAndForgetObjectSummaryRefresh(db, scope, result.survivor.id, {
+  void fireAndForgetObjectSummaryRefresh(db, scope, result.survivor.id, {
     teamId: scope.teamId,
     objectId: result.survivor.id,
     op: 'mergeObjects',
@@ -2462,16 +2535,14 @@ export async function addRelationship(
     return row;
   });
   if (result) {
-    await Promise.all(
-      [endpoints.fromEntityId, endpoints.toEntityId].map((objectId) =>
-        fireAndForgetObjectSummaryRefresh(db, scope, objectId, {
-          teamId: scope.teamId,
-          objectId,
-          relationshipId: result.id,
-          op: 'addRelationship',
-        }),
-      ),
-    );
+    for (const objectId of [endpoints.fromEntityId, endpoints.toEntityId]) {
+      void fireAndForgetObjectSummaryRefresh(db, scope, objectId, {
+        teamId: scope.teamId,
+        objectId,
+        relationshipId: result.id,
+        op: 'addRelationship',
+      });
+    }
   }
   return result;
 }
@@ -2551,16 +2622,14 @@ export async function removeRelationship(
     return { fromEntityId: rel.fromEntityId, toEntityId: rel.toEntityId };
   });
   if (!result) return false;
-  await Promise.all(
-    [result.fromEntityId, result.toEntityId].map((objectId) =>
-      fireAndForgetObjectSummaryRefresh(db, scope, objectId, {
-        teamId: scope.teamId,
-        objectId,
-        relationshipId,
-        op: 'removeRelationship',
-      }),
-    ),
-  );
+  for (const objectId of [result.fromEntityId, result.toEntityId]) {
+    void fireAndForgetObjectSummaryRefresh(db, scope, objectId, {
+      teamId: scope.teamId,
+      objectId,
+      relationshipId,
+      op: 'removeRelationship',
+    });
+  }
   return true;
 }
 
@@ -2645,7 +2714,7 @@ export async function createNote(
     noteId: result.id,
     op: 'createNote',
   });
-  await fireAndForgetObjectSummaryRefresh(db, scope, input.entityId, {
+  void fireAndForgetObjectSummaryRefresh(db, scope, input.entityId, {
     teamId: scope.teamId,
     objectId: input.entityId,
     noteId: result.id,
@@ -2921,7 +2990,7 @@ export async function createIdentityFacet(
     entityId: input.entityId,
     op: 'createIdentityFacet',
   });
-  await fireAndForgetObjectSummaryRefresh(db, scope, input.entityId, {
+  void fireAndForgetObjectSummaryRefresh(db, scope, input.entityId, {
     teamId: scope.teamId,
     objectId: input.entityId,
     identityFacetId: result.id,
@@ -3014,7 +3083,7 @@ export async function updateNote(
       noteId: input.noteId,
       op: 'updateNote',
     });
-    await fireAndForgetObjectSummaryRefresh(db, scope, updated.entityId, {
+    void fireAndForgetObjectSummaryRefresh(db, scope, updated.entityId, {
       teamId: scope.teamId,
       objectId: updated.entityId,
       noteId: input.noteId,
@@ -3085,7 +3154,7 @@ export async function deleteNote(
     return { entityId: note.entityId };
   });
   if (!result) return false;
-  await fireAndForgetObjectSummaryRefresh(db, scope, result.entityId, {
+  void fireAndForgetObjectSummaryRefresh(db, scope, result.entityId, {
     teamId: scope.teamId,
     objectId: result.entityId,
     noteId: input.noteId,
