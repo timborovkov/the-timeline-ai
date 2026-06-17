@@ -303,31 +303,58 @@ async function upsertWorkspaceObjects(
     // Linear-mapped entity (e.g. "EngOnDeck" added by hand) survives
     // the next sync alongside the provider's own ones (e.g. "ENG-42").
     await db.execute(sql`
-      UPDATE ${entities} AS e
-      SET
-        canonical_name = CASE
-          WHEN EXISTS (
+      WITH incoming(id, type, canonical_name, status, priority, aliases, metadata) AS (
+        VALUES ${sql.join(rows, sql.raw(', '))}
+      ),
+      resolved AS (
+        SELECT
+          e.id,
+          incoming.type,
+          incoming.canonical_name,
+          incoming.status,
+          incoming.priority,
+          incoming.aliases,
+          incoming.metadata,
+          EXISTS (
             SELECT 1
             FROM ${entities} AS other
             WHERE other.team_id = e.team_id
-              AND other.type = v.type
-              AND lower(other.canonical_name) = lower(v.canonical_name)
+              AND other.type = incoming.type
+              AND lower(other.canonical_name) = lower(incoming.canonical_name)
               AND other.merged_into_id IS NULL
               AND other.id <> e.id
-          ) THEN e.canonical_name
-          ELSE v.canonical_name
+          ) AS canonical_collision
+        FROM ${entities} AS e
+        JOIN incoming ON incoming.id = e.id
+        WHERE e.team_id = ${integration.teamId}
+      )
+      UPDATE ${entities} AS e
+      SET
+        canonical_name = CASE
+          WHEN resolved.canonical_collision THEN e.canonical_name
+          ELSE resolved.canonical_name
         END,
-        status = v.status,
-        priority = COALESCE(v.priority, e.priority),
+        status = resolved.status,
+        priority = COALESCE(resolved.priority, e.priority),
         aliases = (
           SELECT COALESCE(jsonb_agg(DISTINCT a), '[]'::jsonb)
-          FROM jsonb_array_elements(COALESCE(e.aliases, '[]'::jsonb) || v.aliases) AS t(a)
+          FROM jsonb_array_elements(COALESCE(e.aliases, '[]'::jsonb) || resolved.aliases) AS t(a)
         ),
-        metadata = e.metadata || v.metadata,
+        metadata = (e.metadata - 'display_title_canonical_name_collision') || CASE
+          WHEN resolved.canonical_collision
+            AND resolved.metadata ? 'display_title_canonical_name'
+          THEN (resolved.metadata - 'display_title_canonical_name')
+            || jsonb_build_object(
+              'display_title_canonical_name',
+              e.canonical_name,
+              'display_title_canonical_name_collision',
+              resolved.canonical_name
+            )
+          ELSE resolved.metadata - 'display_title_canonical_name_collision'
+        END,
         updated_at = NOW()
-      FROM (VALUES ${sql.join(rows, sql.raw(', '))})
-        AS v(id, type, canonical_name, status, priority, aliases, metadata)
-      WHERE e.id = v.id
+      FROM resolved
+      WHERE e.id = resolved.id
         AND e.team_id = ${integration.teamId}
     `);
     for (const u of toUpdate) affectedIds.push(u.id);

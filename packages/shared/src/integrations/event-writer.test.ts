@@ -457,13 +457,17 @@ describe('writeIntegrationEvents visibility', () => {
       .returning();
     if (!existing) throw new Error('object insert failed');
 
-    await db.insert(entities).values({
-      teamId: TEAM_ID,
-      type: 'task',
-      canonicalName: 'timborovkov/the-timeline-ai#202: New provider title',
-      status: 'todo',
-      metadata: {},
-    });
+    const [conflicting] = await db
+      .insert(entities)
+      .values({
+        teamId: TEAM_ID,
+        type: 'task',
+        canonicalName: 'timborovkov/the-timeline-ai#202: New provider title',
+        status: 'todo',
+        metadata: {},
+      })
+      .returning();
+    if (!conflicting) throw new Error('conflicting object insert failed');
 
     await writeIntegrationEvents({
       db: db as never,
@@ -487,13 +491,122 @@ describe('writeIntegrationEvents visibility', () => {
       ],
     });
 
+    const [blocked] = await db.select().from(entities).where(eq(entities.id, existing.id));
+    expect(blocked?.canonicalName).toBe('timborovkov/the-timeline-ai#202: Old provider title');
+    expect(blocked?.status).toBe('done');
+    expect(blocked?.metadata).toMatchObject({
+      display_title: 'the-timeline-ai: New provider title',
+      display_title_canonical_name: 'timborovkov/the-timeline-ai#202: Old provider title',
+      display_title_canonical_name_collision: 'timborovkov/the-timeline-ai#202: New provider title',
+      last_event_type: 'pr.closed',
+    });
+
+    await db
+      .update(entities)
+      .set({ mergedIntoId: existing.id })
+      .where(eq(entities.id, conflicting.id));
+
+    await writeIntegrationEvents({
+      db: db as never,
+      integration,
+      events: [
+        {
+          dedupKey: 'github:pr:202:canonical-collision-retry',
+          provider: 'github',
+          externalObjectId: 'timborovkov/the-timeline-ai#202',
+          eventType: 'pr.reopened',
+          occurredAt: new Date('2026-06-17T11:00:00Z'),
+          contentText: 'GitHub PR timborovkov/the-timeline-ai#202 — New provider title',
+          objectMap: {
+            type: 'task',
+            canonicalName: 'timborovkov/the-timeline-ai#202: New provider title',
+            displayTitle: 'the-timeline-ai: New provider title',
+            externalId: 'timborovkov/the-timeline-ai#202',
+            status: 'open',
+          },
+        },
+      ],
+    });
+
     const [row] = await db.select().from(entities).where(eq(entities.id, existing.id));
-    expect(row?.canonicalName).toBe('timborovkov/the-timeline-ai#202: Old provider title');
-    expect(row?.status).toBe('done');
+    expect(row?.canonicalName).toBe('timborovkov/the-timeline-ai#202: New provider title');
+    expect(row?.status).toBe('open');
     expect(row?.metadata).toMatchObject({
       display_title: 'the-timeline-ai: New provider title',
       display_title_canonical_name: 'timborovkov/the-timeline-ai#202: New provider title',
+      last_event_type: 'pr.reopened',
+    });
+    expect(row?.metadata).not.toHaveProperty('display_title_canonical_name_collision');
+  });
+
+  it('preserves user-renamed integration objects while a provider rename is blocked', async () => {
+    const [integration] = await db
+      .insert(integrations)
+      .values({
+        teamId: TEAM_ID,
+        connectedByUserId: USER_ID,
+        provider: 'github',
+        displayName: 'GitHub',
+        externalAccountId: 'acct-user-rename-collision',
+        visibilityDefault: 'team',
+      })
+      .returning();
+    if (!integration) throw new Error('integration insert failed');
+
+    const [existing] = await db
+      .insert(entities)
+      .values({
+        teamId: TEAM_ID,
+        type: 'task',
+        canonicalName: 'Use cursor pagination in the task board',
+        status: 'open',
+        metadata: {
+          integration_provider: 'github',
+          integration_external_id: 'timborovkov/the-timeline-ai#203',
+          display_title_canonical_name: 'timborovkov/the-timeline-ai#203: Add cursor pagination',
+        },
+      })
+      .returning();
+    if (!existing) throw new Error('object insert failed');
+
+    await db.insert(entities).values({
+      teamId: TEAM_ID,
+      type: 'task',
+      canonicalName: 'timborovkov/the-timeline-ai#203: New provider title',
+      status: 'todo',
+      metadata: {},
+    });
+
+    await writeIntegrationEvents({
+      db: db as never,
+      integration,
+      events: [
+        {
+          dedupKey: 'github:pr:203:user-rename-collision',
+          provider: 'github',
+          externalObjectId: 'timborovkov/the-timeline-ai#203',
+          eventType: 'pr.closed',
+          occurredAt: new Date('2026-06-17T10:00:00Z'),
+          contentText: 'GitHub PR timborovkov/the-timeline-ai#203 — New provider title',
+          objectMap: {
+            type: 'task',
+            canonicalName: 'timborovkov/the-timeline-ai#203: New provider title',
+            displayTitle: 'the-timeline-ai: New provider title',
+            externalId: 'timborovkov/the-timeline-ai#203',
+            status: 'done',
+          },
+        },
+      ],
+    });
+
+    const [row] = await db.select().from(entities).where(eq(entities.id, existing.id));
+    expect(row?.canonicalName).toBe('Use cursor pagination in the task board');
+    expect(row?.status).toBe('done');
+    expect(row?.metadata).toMatchObject({
+      display_title: 'the-timeline-ai: New provider title',
+      display_title_canonical_name: 'timborovkov/the-timeline-ai#203: New provider title',
       last_event_type: 'pr.closed',
     });
+    expect(row?.metadata).not.toHaveProperty('display_title_canonical_name_collision');
   });
 });
