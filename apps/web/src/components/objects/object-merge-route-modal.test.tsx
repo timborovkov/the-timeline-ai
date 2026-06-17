@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type * as objects from '@timeline/shared/objects';
+import type * as objects from '@timeline/shared/objects/types';
 import type { ReactNode } from 'react';
 
 const fakes = vi.hoisted(() => ({

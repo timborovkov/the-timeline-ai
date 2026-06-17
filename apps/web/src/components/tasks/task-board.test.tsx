@@ -4,7 +4,7 @@ import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type * as objects from '@timeline/shared/objects';
+import type * as objects from '@timeline/shared/objects/types';
 
 const fakes = vi.hoisted(() => ({
   refresh: vi.fn(),

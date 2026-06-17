@@ -6,7 +6,7 @@ import { useCallback, useMemo, useState } from 'react';
 
 import type { BoardLayout } from '@/lib/board-links';
 import type * as boards from '@timeline/shared/boards';
-import type * as objects from '@timeline/shared/objects';
+import type * as objects from '@timeline/shared/objects/types';
 
 import { updateBoardItemAction } from '@/app/actions/boards';
 import { BoardActionsMenu } from '@/components/boards/board-actions-menu';

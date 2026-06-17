@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import type * as objects from '@timeline/shared/objects';
+import type * as objects from '@timeline/shared/objects/types';
 
 import { filterObjectsByText, objectMatchesTextFilter } from '@/lib/object-filter';
 

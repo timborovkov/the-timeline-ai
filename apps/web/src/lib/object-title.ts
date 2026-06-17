@@ -1,1 +1,1 @@
-export { displayObjectTitle } from '@timeline/shared/objects';
+export { displayObjectTitle } from '@timeline/shared/objects/types';
