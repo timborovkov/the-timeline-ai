@@ -40,6 +40,8 @@ const fakes = vi.hoisted(() => ({
   fakeCreateUIMessageStreamResponse: vi.fn(),
   fakeLoggerWarn: vi.fn(),
   fakeLoggerInfo: vi.fn(),
+  fakeReportCaughtError: vi.fn(),
+  fakeReportHandledEvent: vi.fn(),
 }));
 
 vi.mock('@/lib/auth', () => ({ auth: fakes.fakeAuth }));
@@ -101,6 +103,10 @@ vi.mock('@timeline/shared/llm', () => ({
   resolveAgentModelId: fakes.fakeResolveAgentModelId,
   streamChat: fakes.fakeStreamChat,
 }));
+vi.mock('@/lib/sentry-report', () => ({
+  reportCaughtError: fakes.fakeReportCaughtError,
+  reportHandledEvent: fakes.fakeReportHandledEvent,
+}));
 vi.mock('ai', () => ({
   convertToModelMessages: fakes.fakeConvertToModelMessages,
   createUIMessageStream: fakes.fakeCreateUIMessageStream,
@@ -122,6 +128,7 @@ const followUpMessage = {
   parts: [{ type: 'text', text: 'What changed since then?' }],
 };
 let capturedOnFinish: ((event: Record<string, unknown>) => void) | null = null;
+let capturedOnError: ((event: { error: unknown }) => void) | null = null;
 
 function request(body: unknown, url = 'https://timeline.test/api/chat'): Request {
   return new Request(url, {
@@ -157,6 +164,7 @@ function isStreamBody(value: unknown): value is { chunks: TestStreamChunk[] } {
 beforeEach(() => {
   vi.clearAllMocks();
   capturedOnFinish = null;
+  capturedOnError = null;
   delete process.env.E2E_DETERMINISTIC_CHAT;
   fakes.fakeAuth.mockResolvedValue({
     user: { id: USER_ID, name: 'Tim', email: 'tim@example.test' },
@@ -236,7 +244,11 @@ beforeEach(() => {
   });
   fakes.fakeChatStructured.mockResolvedValue({ object: { title: 'Generated chat title' } });
   fakes.fakeStreamChat.mockImplementation(
-    (input: { onFinish?: (event: Record<string, unknown>) => void }) => {
+    (input: {
+      onError?: (event: { error: unknown }) => void;
+      onFinish?: (event: Record<string, unknown>) => void;
+    }) => {
+      capturedOnError = input.onError ?? null;
       capturedOnFinish = input.onFinish ?? null;
       return { toUIMessageStreamResponse: () => streamResponse() };
     },
@@ -840,5 +852,54 @@ describe('POST /api/chat', () => {
       expect.objectContaining({ sessionId: SESSION_ID, teamId: TEAM_ID, userId: USER_ID }),
       'chat session append failed',
     );
+  });
+
+  it('reports stream-time AI provider failures as handled telemetry events', async () => {
+    const response = await POST(request(validBody({ sessionId: SESSION_ID })));
+
+    expect(response.status).toBe(200);
+    expect(capturedOnError).toBeTypeOf('function');
+    capturedOnError?.({
+      error: {
+        timelineAi: true,
+        operation: 'llm.streamChat',
+        model: 'agent-model',
+        causeName: 'AI_APICallError',
+        causeMessage: 'OpenRouter 503 response body: [redacted]',
+      },
+    });
+
+    expect(fakes.fakeReportCaughtError).not.toHaveBeenCalled();
+    expect(fakes.fakeReportHandledEvent).toHaveBeenCalledWith({
+      message: 'chat_stream_ai_provider_error',
+      surface: 'api',
+      operation: 'chat_stream',
+      tags: {
+        model: 'agent-model',
+        reason: 'AI_APICallError',
+        aiOperation: 'llm.streamChat',
+        aiModel: 'agent-model',
+        aiCauseName: 'AI_APICallError',
+      },
+    });
+  });
+
+  it('does not report client-aborted chat streams as provider failures', async () => {
+    const response = await POST(request(validBody({ sessionId: SESSION_ID })));
+
+    expect(response.status).toBe(200);
+    expect(capturedOnError).toBeTypeOf('function');
+    capturedOnError?.({
+      error: {
+        timelineAi: true,
+        operation: 'llm.streamChat',
+        model: 'agent-model',
+        causeName: 'AbortError',
+        causeMessage: 'This operation was aborted',
+      },
+    });
+
+    expect(fakes.fakeReportCaughtError).not.toHaveBeenCalled();
+    expect(fakes.fakeReportHandledEvent).not.toHaveBeenCalled();
   });
 });
