@@ -68,6 +68,17 @@ describe('AppMainScrollRestoration', () => {
     });
   });
 
+  it('resets the app main scroller when the hash points at main itself', async () => {
+    const { scrollTo } = addMain();
+    window.history.replaceState(null, '', '/app#main');
+
+    render(<AppMainScrollRestoration />);
+
+    await waitFor(() => {
+      expect(scrollTo).toHaveBeenCalledWith({ top: 0, left: 0 });
+    });
+  });
+
   it('resets the app main scroller on search param changes', async () => {
     const { scrollTo } = addMain();
 
@@ -114,5 +125,45 @@ describe('AppMainScrollRestoration', () => {
 
     expect(scrollTo).not.toHaveBeenCalled();
     expect(scrollIntoView).not.toHaveBeenCalled();
+  });
+
+  it('waits briefly for hash targets that mount after navigation', () => {
+    const frames = new Map<number, FrameRequestCallback>();
+    let nextFrameId = 0;
+    vi.mocked(window.requestAnimationFrame).mockImplementation((callback) => {
+      nextFrameId += 1;
+      frames.set(nextFrameId, callback);
+      return nextFrameId;
+    });
+    vi.mocked(window.cancelAnimationFrame).mockImplementation((frameId) => {
+      frames.delete(frameId);
+    });
+
+    const runNextFrame = () => {
+      const entry = frames.entries().next().value;
+      if (!entry) {
+        throw new Error('Expected a queued animation frame');
+      }
+      const [frameId, callback] = entry;
+      frames.delete(frameId);
+      callback(0);
+    };
+
+    const { main, scrollTo } = addMain();
+    window.history.replaceState(null, '', '/app#late-target');
+    render(<AppMainScrollRestoration />);
+
+    runNextFrame();
+    expect(scrollTo).not.toHaveBeenCalled();
+
+    const target = document.createElement('section');
+    const scrollIntoView = vi.fn();
+    target.id = 'late-target';
+    target.scrollIntoView = scrollIntoView;
+    main.append(target);
+    runNextFrame();
+
+    expect(scrollIntoView).toHaveBeenCalledWith({ block: 'start' });
+    expect(scrollTo).not.toHaveBeenCalled();
   });
 });

@@ -3,6 +3,9 @@
 import { usePathname } from 'next/navigation';
 import { useEffect } from 'react';
 
+const MAIN_ID = 'main';
+const MAX_HASH_SCROLL_ATTEMPTS = 8;
+
 function targetFromHash(): HTMLElement | null {
   const hash = window.location.hash.slice(1);
   if (!hash) return null;
@@ -17,24 +20,18 @@ export function AppMainScrollRestoration() {
   const pathname = usePathname();
 
   useEffect(() => {
-    const frame = scrollMainToRouteTarget();
-
-    return () => {
-      window.cancelAnimationFrame(frame);
-    };
+    return scheduleMainScrollToRouteTarget();
   }, [pathname]);
 
   useEffect(() => {
     const originalPushState = window.history.pushState.bind(window.history);
     const originalReplaceState = window.history.replaceState.bind(window.history);
-    let frame: number | null = null;
+    let cancelScheduledScroll: (() => void) | null = null;
     let currentUrl = window.location.href;
 
     const scheduleScroll = () => {
-      if (frame !== null) {
-        window.cancelAnimationFrame(frame);
-      }
-      frame = scrollMainToRouteTarget();
+      cancelScheduledScroll?.();
+      cancelScheduledScroll = scheduleMainScrollToRouteTarget();
     };
 
     const scheduleScrollIfUrlChanged = () => {
@@ -67,22 +64,56 @@ export function AppMainScrollRestoration() {
       window.history.replaceState = originalReplaceState;
       window.removeEventListener('popstate', syncUrlAndScheduleScroll);
       window.removeEventListener('hashchange', syncUrlAndScheduleScroll);
-      if (frame !== null) {
-        window.cancelAnimationFrame(frame);
-      }
+      cancelScheduledScroll?.();
     };
   }, []);
 
   return null;
 }
 
-function scrollMainToRouteTarget(): number {
-  return window.requestAnimationFrame(() => {
+function scheduleMainScrollToRouteTarget(): () => void {
+  let cancelled = false;
+  let frame: number | null = null;
+  let attempts = 0;
+
+  const scheduleAttempt = () => {
+    frame = window.requestAnimationFrame(runAttempt);
+  };
+
+  const runAttempt = () => {
+    frame = null;
+    if (cancelled) return;
+
+    const main = document.getElementById(MAIN_ID);
     const target = targetFromHash();
+    if (!window.location.hash) {
+      main?.scrollTo({ top: 0, left: 0 });
+      return;
+    }
+    if (main && target === main) {
+      main.scrollTo({ top: 0, left: 0 });
+      return;
+    }
     if (target) {
       target.scrollIntoView({ block: 'start' });
       return;
     }
-    document.getElementById('main')?.scrollTo({ top: 0, left: 0 });
-  });
+
+    attempts += 1;
+    if (attempts < MAX_HASH_SCROLL_ATTEMPTS) {
+      scheduleAttempt();
+      return;
+    }
+
+    main?.scrollTo({ top: 0, left: 0 });
+  };
+
+  scheduleAttempt();
+
+  return () => {
+    cancelled = true;
+    if (frame !== null) {
+      window.cancelAnimationFrame(frame);
+    }
+  };
 }
