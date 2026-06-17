@@ -85,8 +85,8 @@ export default async function ObjectsIndexPage({
   const nextHref =
     type && objectWindow.nextCursor
       ? objectsPageHref({
-          type: params.type,
-          status: params.status,
+          type,
+          status,
           cursor: objectWindow.nextCursor,
         })
       : null;
@@ -197,7 +197,7 @@ export default async function ObjectsIndexPage({
           }
           href={
             type && cursor
-              ? objectsPageHref({ type: params.type, status: params.status })
+              ? objectsPageHref({ type, status })
               : type || status
                 ? '/app/objects'
                 : '/app#capture'

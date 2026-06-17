@@ -117,7 +117,7 @@ describe('ObjectsIndexPage', () => {
 
     const html = renderToStaticMarkup(
       await ObjectsIndexPage({
-        searchParams: Promise.resolve({ type: 'task', status: 'open', cursor }),
+        searchParams: Promise.resolve({ type: 'task', status: ' open ', cursor }),
       }),
     );
 
