@@ -1349,9 +1349,7 @@ async function createObjectCleanupSuggestionsForTeam(
       throw new UnrecoverableError('Object memory repair requires an unmerged object');
     }
   }
-  const cleanupTypes: EntityType[] = Array.from(
-    new Set<EntityType>([...Array.from(CLEANUP_MERGE_TYPES), 'topic', 'other']),
-  );
+  const cleanupTypes: EntityType[] = Array.from(CLEANUP_MERGE_TYPES);
   const activeObjectFilter = and(
     eq(entities.teamId, teamId),
     isNull(entities.archivedAt),
