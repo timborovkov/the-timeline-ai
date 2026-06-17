@@ -21,7 +21,16 @@ export const metadata: Metadata = {
   description: 'Review tasks discovered from timeline activity.',
 };
 
-const TASK_COLUMNS = ['todo', 'doing', 'done', 'blocked', 'cancelled'];
+const TASK_COLUMNS = [
+  'suggested',
+  'proposed',
+  'open',
+  'todo',
+  'doing',
+  'blocked',
+  'done',
+  'cancelled',
+];
 
 type PageSearchParams = Record<string, string | string[] | undefined>;
 

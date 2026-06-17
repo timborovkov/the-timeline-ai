@@ -292,13 +292,13 @@ function KanbanCard({
       )}
     >
       {optimistic ? (
-        <span className="block min-w-0 truncate font-medium">
+        <span className="block min-w-0 whitespace-normal break-words font-medium leading-snug">
           {displayText(item.object.canonicalName)}
         </span>
       ) : (
         <Link
           href={`/app/boards/${boardId}?item=${item.id}`}
-          className="block min-w-0 truncate font-medium hover:underline"
+          className="block min-w-0 whitespace-normal break-words font-medium leading-snug hover:underline"
         >
           {displayText(item.object.canonicalName)}
         </Link>

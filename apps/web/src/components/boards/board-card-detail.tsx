@@ -197,8 +197,8 @@ function BoardCardHeader({
   return (
     <div className="border-b border-border p-4">
       <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h2 className="truncate text-lg font-semibold text-fg">
+        <div className="min-w-0 flex-1">
+          <h2 className="whitespace-normal break-words text-lg font-semibold leading-snug text-fg">
             {displayText(item.object.canonicalName)}
           </h2>
           <p className="mt-1 font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
@@ -207,7 +207,7 @@ function BoardCardHeader({
         </div>
         <Link
           href={boardViewHref(boardId, view, null)}
-          className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-muted hover:text-fg"
+          className="shrink-0 font-mono text-[11px] uppercase tracking-[0.12em] text-fg-muted hover:text-fg"
         >
           Close
         </Link>

@@ -242,7 +242,7 @@ export function CuratedBoardList({
       {items.map((item) => {
         const content = (
           <>
-            <span className="min-w-0 flex-1 truncate font-medium text-fg">
+            <span className="min-w-0 flex-1 whitespace-normal break-words font-medium leading-snug text-fg">
               {displayText(item.object.canonicalName)}
             </span>
             <span className="font-mono text-[11px] uppercase tracking-[0.1em] text-fg-dim">

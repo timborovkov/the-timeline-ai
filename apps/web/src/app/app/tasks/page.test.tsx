@@ -40,16 +40,18 @@ vi.mock('@/components/approvals/approvals-client', () => ({
 vi.mock('@/components/tasks/task-board', () => ({
   TaskBoard: ({
     rows,
+    columns,
     selectedTaskId,
     members,
   }: {
     rows: { canonicalName: string }[];
+    columns: string[];
     selectedTaskId: string | null;
     members: { label: string }[];
   }) => (
     <div data-testid="task-board">
-      {rows.map((row) => row.canonicalName).join(', ')} · selected {selectedTaskId ?? 'none'} ·{' '}
-      members {members.map((member) => member.label).join(', ')}
+      columns {columns.join(', ')} · {rows.map((row) => row.canonicalName).join(', ')} · selected{' '}
+      {selectedTaskId ?? 'none'} · members {members.map((member) => member.label).join(', ')}
     </div>
   ),
 }));
@@ -196,5 +198,33 @@ describe('TasksPage', () => {
 
     expect(html).toContain('Send proposal');
     expect(html).toContain('selected task-1');
+  });
+
+  it('passes workflow columns in active-to-terminal order', async () => {
+    fakes.listObjects.mockResolvedValue([
+      {
+        id: 'task-1',
+        type: 'task',
+        canonicalName: 'Send proposal',
+        status: 'open',
+        stage: null,
+        priority: 2,
+        ownerUserId: null,
+        assigneeUserId: null,
+        dueAt: null,
+        agentSuggested: false,
+        archivedAt: null,
+        aliases: [],
+        metadata: {},
+        updatedAt: new Date('2026-06-01T10:00:00.000Z'),
+        createdAt: new Date('2026-06-01T10:00:00.000Z'),
+      },
+    ]);
+
+    const html = renderToStaticMarkup(await TasksPage());
+
+    expect(html).toContain(
+      'columns suggested, proposed, open, todo, doing, blocked, done, cancelled',
+    );
   });
 });
