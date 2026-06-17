@@ -29,7 +29,7 @@ export function InspectorPane() {
       aria-label={`Inspector for ${id}`}
       aria-labelledby="inspector-title"
       className={cn(
-        'sticky top-0 hidden h-screen w-96 shrink-0 self-start border-l border-border bg-surface lg:flex lg:flex-col',
+        'sticky top-0 hidden h-full w-96 shrink-0 self-start border-l border-border bg-surface lg:flex lg:flex-col',
       )}
     >
       <header className="flex h-12 shrink-0 items-center justify-between border-b border-border px-3">
