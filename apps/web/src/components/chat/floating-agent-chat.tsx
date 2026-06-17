@@ -1,7 +1,7 @@
 'use client';
 
 import { type UIMessage } from 'ai';
-import { ExternalLink, MessageSquare, X } from 'lucide-react';
+import { ExternalLink, MessageSquare, MessageSquarePlus, X } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
@@ -128,16 +128,33 @@ function FloatingAgentChatContent({ teamId, teamName }: FloatingAgentChatProps) 
           showCloseButton={false}
         >
           <DialogHeader className="flex-row items-start justify-between gap-3 border-b border-border px-4 py-3">
-            <div>
-              <DialogTitle className="text-base">Ask {teamName}</DialogTitle>
-              <DialogDescription>
+            <div className="min-w-0">
+              <DialogTitle className="truncate text-base">Ask {teamName}</DialogTitle>
+              <DialogDescription className="truncate">
                 {context.routeKind === 'dashboard'
                   ? 'Context from the current dashboard page is included.'
                   : `Context: ${context.routeKind}`}
               </DialogDescription>
             </div>
-            <div className="flex items-center gap-1">
-              <Button variant="ghost" size="icon" asChild aria-label="Open full chat">
+            <div className="flex shrink-0 items-center gap-1">
+              <Button
+                variant="ghost"
+                size="icon"
+                type="button"
+                className="shrink-0"
+                aria-label="Start new conversation"
+                title="Start new conversation"
+                onClick={resetFloatingSession}
+              >
+                <MessageSquarePlus className="size-4" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="shrink-0"
+                asChild
+                aria-label="Open full chat"
+              >
                 <Link href={fullChatHref}>
                   <ExternalLink className="size-4" />
                 </Link>
@@ -146,6 +163,7 @@ function FloatingAgentChatContent({ teamId, teamName }: FloatingAgentChatProps) 
                 variant="ghost"
                 size="icon"
                 type="button"
+                className="shrink-0"
                 aria-label="Close floating agent chat"
                 onClick={() => {
                   setOpen(false);
