@@ -173,10 +173,8 @@ function rawEventBody(event: TimelineEvent): string {
   if (content) return displayText(content);
   const caption = stringMeta(meta, 'tg_caption');
   if (caption) return displayText(caption);
-  if (event.contentAudioUrl)
-    return transcribeFailed(event.sourceMetadata)
-      ? 'Voice memo captured; transcription failed.'
-      : 'Voice memo captured; transcription pending.';
+  const transcriptionStatus = transcriptionStatusMessage(event);
+  if (transcriptionStatus) return transcriptionStatus;
   return 'Source event captured.';
 }
 
@@ -234,6 +232,21 @@ function transcribeFailed(meta: unknown): boolean {
     meta !== null &&
     typeof (meta as Record<string, unknown>).transcription_failed_at === 'string'
   );
+}
+
+function transcribed(meta: unknown): boolean {
+  return (
+    typeof meta === 'object' &&
+    meta !== null &&
+    typeof (meta as Record<string, unknown>).transcribed_at === 'string'
+  );
+}
+
+function transcriptionStatusMessage(event: TimelineEvent): string | null {
+  if (!event.contentAudioUrl || transcribed(event.sourceMetadata)) return null;
+  return transcribeFailed(event.sourceMetadata)
+    ? 'Transcription failed; voice memo is still playable.'
+    : 'Transcribing...';
 }
 
 function canRemoveConversational(
@@ -447,6 +460,7 @@ function RawEventExpansion({
         {conversationEvents.map((event, index) => {
           const documentLink = rawEventDocumentLink(event);
           const context = rawEventContextLabel(event);
+          const transcriptionStatus = transcriptionStatusMessage(event);
           return (
             <li
               key={event.id}
@@ -510,12 +524,9 @@ function RawEventExpansion({
                 <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-relaxed text-fg-muted">
                   {displayText(event.contentText)}
                 </p>
-              ) : event.contentAudioUrl ? (
-                <p className="mt-2 text-sm italic text-fg-dim">
-                  {transcribeFailed(event.sourceMetadata)
-                    ? 'Transcription failed; voice memo is still playable.'
-                    : 'Transcribing...'}
-                </p>
+              ) : null}
+              {transcriptionStatus ? (
+                <p className="mt-2 text-sm italic text-fg-dim">{transcriptionStatus}</p>
               ) : null}
               <div className="mt-2 flex flex-wrap items-center gap-2">
                 {canEditVisibility(event, currentUserId) ? (

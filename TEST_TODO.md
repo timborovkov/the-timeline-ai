@@ -23,7 +23,7 @@ shape:
   calendar, timeline, MCP, integration/provider-connection, meeting, document,
   object, assistant, Slack, recovery, connection-attention, and onboarding
   coverage.
-- Web Vitest: 118 files / 577+ tests, including route/action/component coverage
+- Web Vitest: 118 files / 580+ tests, including route/action/component coverage
   for core recovery, onboarding, object sections, board add-item interactions,
   provider-connection routes/UI, app dialog flows, and other high-value UI
   states.
