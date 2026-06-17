@@ -286,6 +286,7 @@ const audioVisibilitySchema = z.enum(['team', 'private']).default('team');
 const createAudioSchema = z.object({
   key: z.string().min(1).max(500),
   mimeType: mimeTypeSchema,
+  noteText: z.string().trim().max(10_000).optional(),
   durationSec: z
     .number()
     .int()
@@ -332,6 +333,9 @@ export async function createAudioEventAction(
     const sourceMetadata: Record<string, unknown> = {
       audio_mime_type: parsed.data.mimeType,
     };
+    if (parsed.data.noteText) {
+      sourceMetadata.audio_note_text = parsed.data.noteText;
+    }
     if (typeof parsed.data.durationSec === 'number') {
       sourceMetadata.audio_duration_sec = parsed.data.durationSec;
     }
@@ -339,7 +343,7 @@ export async function createAudioEventAction(
       authorUserId: session.user.id,
       visibilityOwnerUserId: session.user.id,
       source: 'web',
-      contentText: null,
+      contentText: parsed.data.noteText ?? null,
       contentAudioUrl: parsed.data.key,
       visibility: parsed.data.visibility,
       sourceMetadata,

@@ -167,8 +167,8 @@
         </li>
         <li>
           <strong>Transcription</strong> (if audio). OpenRouter
-          <code>/audio/transcriptions</code> for short memos; direct provider fallback for
-          long-form.
+          <code>/audio/transcriptions</code> for short memos; larger stored audio is transcoded into
+          provider-sized speech chunks before transcription.
         </li>
         <li>
           <strong>File processing</strong> (if file/document). Store immutable file versions in
@@ -288,7 +288,7 @@
           </tr>
           <tr>
             <td>Inference</td>
-            <td>OpenRouter (chat, embeddings, transcription) via OpenAI SDK and Vercel AI SDK</td>
+            <td>OpenRouter (chat, embeddings, transcription) via shared provider adapters</td>
           </tr>
           <tr>
             <td>Email ingest</td>
@@ -412,12 +412,13 @@
           index — done only via documented re-embed procedure.
         </li>
         <li>
-          <strong>Transcription</strong>: OpenRouter via OpenAI SDK. The model id is pinned in the
-          same catalog; output is text and remains auditable on the raw event.
+          <strong>Transcription</strong>: OpenRouter speech-to-text via its JSON/base64 audio API.
+          The model id is pinned in the same catalog; output is text and remains auditable on the
+          raw event.
         </li>
         <li>
           <strong>Fallback</strong>: direct provider access only for limitations OpenRouter hasn't
-          yet covered (e.g., URL-based audio input for long recordings, if still missing).
+          yet covered.
         </li>
       </ul>
       <p>

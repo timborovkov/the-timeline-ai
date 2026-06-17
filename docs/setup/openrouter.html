@@ -90,13 +90,17 @@ OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
       <h2 id="phase-3">Phase 3 verification (transcription)</h2>
       <p>After setting <code>OPENROUTER_API_KEY</code> and starting <code>pnpm dev</code>:</p>
       <ol>
-        <li>Record a ~5s voice memo via the web recorder on <code>/app</code>.</li>
         <li>
-          The row appears immediately with an audio player and a "Transcribing…" placeholder. The
-          BullMQ <code>transcribe</code> worker pulls the bytes from RustFS, POSTs to
+          Record a ~5s voice memo via the web recorder on <code>/app</code>. Optionally type a note
+          in the same capture before posting.
+        </li>
+        <li>
+          The row appears immediately with an audio player, the typed note if provided, and a
+          "Transcribing…" placeholder. The BullMQ <code>transcribe</code> worker pulls the bytes
+          from RustFS, posts JSON/base64 audio to
           <code>${OPENROUTER_BASE_URL}/audio/transcriptions</code> with the pinned transcription
-          model from <code>TIMELINE_MODELS</code>, and writes the result back onto
-          <code>content_text</code>.
+          model from <code>TIMELINE_MODELS</code>, and writes the transcript back onto
+          <code>content_text</code> alongside the note.
         </li>
         <li>Refresh — the transcript appears.</li>
       </ol>

@@ -227,4 +227,34 @@ describe('audio event actions', () => {
     expect(fakes.fakeDbUpdate).toHaveBeenCalledOnce();
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/timeline');
   });
+
+  it('createAudioEventAction stores typed note context on the audio row', async () => {
+    const key = `teams/${TEAM_ID}/web/${USER_ID}/audio.webm`;
+
+    const result = await createAudioEventAction({
+      key,
+      mimeType: 'audio/webm',
+      noteText: "Today's Nexia meetings voice recording",
+      durationSec: 12,
+      visibility: 'team',
+    });
+
+    expect(result).toEqual({ ok: true });
+    expect(fakes.fakeCreateEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        contentText: "Today's Nexia meetings voice recording",
+        contentAudioUrl: key,
+        sourceMetadata: {
+          audio_mime_type: 'audio/webm',
+          audio_note_text: "Today's Nexia meetings voice recording",
+          audio_duration_sec: 12,
+        },
+      }),
+    );
+    expect(fakes.fakeEnqueueTranscribeJob).toHaveBeenCalledWith({
+      rawEventId: RAW_EVENT_ID,
+      teamId: TEAM_ID,
+      audioKey: key,
+    });
+  });
 });

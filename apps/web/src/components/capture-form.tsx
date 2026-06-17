@@ -191,6 +191,7 @@ async function uploadAudioBlob(input: {
   blob: Blob;
   mimeType: string;
   visibility: 'private' | 'team';
+  noteText?: string;
   durationSec?: number;
 }): Promise<string | null> {
   const req = await requestAudioUploadAction(input.mimeType);
@@ -206,6 +207,7 @@ async function uploadAudioBlob(input: {
   const create = await createAudioEventAction({
     key: req.key,
     mimeType: input.mimeType,
+    noteText: input.noteText,
     durationSec: input.durationSec,
     visibility: input.visibility,
   });
@@ -327,9 +329,11 @@ export function CaptureForm({
   async function submitAudio(): Promise<string | null> {
     if (!clip) throw new Error('No clip to upload');
     const base = baseMimeType(clip.mimeType);
+    const noteText = (textareaRef.current?.value ?? '').trim();
     return uploadAudioBlob({
       blob: clip.blob,
       mimeType: base,
+      ...(noteText ? { noteText } : {}),
       durationSec: clip.durationSec,
       visibility: isPrivate ? 'private' : 'team',
     });
@@ -350,17 +354,7 @@ export function CaptureForm({
     let serverStateChanged = false;
     const warnings: string[] = [];
     try {
-      // Text + voice in the same Post become two separate events on the
-      // timeline. We deliberately do NOT pack typed text into the audio
-      // row's content_text: the transcribe worker overwrites that column
-      // with the transcript on completion (transcribe.ts), which would
-      // silently destroy the user's note.
-      //
-      // Two-step submit: if the text event succeeds but the audio upload
-      // then fails, clear the textarea immediately so a retry only resubmits
-      // the audio. Otherwise the user clicks Post again and we'd duplicate
-      // the (already-committed) text event on the timeline.
-      if (text.length > 0) {
+      if (text.length > 0 && !clip) {
         optimisticTextId = addOptimisticTextEvent(text);
         const result = await submitTextOnly(text);
         if (!result.ok) {
@@ -375,6 +369,7 @@ export function CaptureForm({
         const audioWarning = await submitAudio();
         if (audioWarning) warnings.push(audioWarning);
         serverStateChanged = true;
+        if (textareaRef.current) textareaRef.current.value = '';
         setCaptureUi((current) =>
           current.clip === clip
             ? {

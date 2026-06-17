@@ -30,6 +30,7 @@ function timelineEvent(input: {
   id: string;
   occurredAt: string;
   contentText?: string;
+  contentAudioUrl?: string | null;
   source?: TimelineEvent['source'];
   sourceMetadata?: Record<string, unknown>;
 }): TimelineEvent {
@@ -39,7 +40,7 @@ function timelineEvent(input: {
     authorUserId: null,
     source: input.source ?? 'meeting',
     contentText: input.contentText ?? 'Daily call notes',
-    contentAudioUrl: null,
+    contentAudioUrl: input.contentAudioUrl ?? null,
     occurredAt: input.occurredAt,
     createdAt: input.occurredAt,
     visibility: 'team',
@@ -146,5 +147,64 @@ describe('TimelineList document attachments', () => {
     expect(html).toContain('Attachment · photo.jpg');
     expect(html).toContain('Attachment · notes.txt');
     expect(html.match(/Preview/g)).toHaveLength(1);
+  });
+});
+
+describe('TimelineList audio transcription status', () => {
+  it('shows pending transcription status even when an audio event has typed note text', () => {
+    const html = renderTimeline([
+      timelineEvent({
+        id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+        occurredAt: '2026-06-03T13:04:00.000Z',
+        source: 'web',
+        contentText: "Today's Nexia meetings voice recording",
+        contentAudioUrl: 'teams/team-1/web/user-1/voice.m4a',
+        sourceMetadata: {
+          audio_note_text: "Today's Nexia meetings voice recording",
+        },
+      }),
+    ]);
+
+    expect(html).toContain('Today&#x27;s Nexia meetings voice recording');
+    expect(html).toContain('Transcribing...');
+  });
+
+  it('shows failed transcription status even when an audio event has typed note text', () => {
+    const html = renderTimeline([
+      timelineEvent({
+        id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+        occurredAt: '2026-06-03T13:04:00.000Z',
+        source: 'web',
+        contentText: "Today's Nexia meetings voice recording",
+        contentAudioUrl: 'teams/team-1/web/user-1/voice.m4a',
+        sourceMetadata: {
+          audio_note_text: "Today's Nexia meetings voice recording",
+          transcription_failed_at: '2026-06-03T13:05:00.000Z',
+        },
+      }),
+    ]);
+
+    expect(html).toContain('Today&#x27;s Nexia meetings voice recording');
+    expect(html).toContain('Transcription failed; voice memo is still playable.');
+  });
+
+  it('hides transcription status once an audio event has been transcribed', () => {
+    const html = renderTimeline([
+      timelineEvent({
+        id: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+        occurredAt: '2026-06-03T13:04:00.000Z',
+        source: 'web',
+        contentText: "Today's Nexia meetings voice recording\n\nTranscript text.",
+        contentAudioUrl: 'teams/team-1/web/user-1/voice.m4a',
+        sourceMetadata: {
+          audio_note_text: "Today's Nexia meetings voice recording",
+          transcribed_at: '2026-06-03T13:05:00.000Z',
+        },
+      }),
+    ]);
+
+    expect(html).toContain('Transcript text.');
+    expect(html).not.toContain('Transcribing...');
+    expect(html).not.toContain('Transcription failed');
   });
 });

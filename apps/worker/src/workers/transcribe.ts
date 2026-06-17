@@ -1,3 +1,9 @@
+import { spawn } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
+import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+
 import { type Db, rawEvents } from '@timeline/db';
 import {
   childLogger,
@@ -10,17 +16,18 @@ import {
 } from '@timeline/shared';
 import { UnrecoverableError, Worker, type Job } from 'bullmq';
 import { eq, sql } from 'drizzle-orm';
+import ffmpegPath from 'ffmpeg-static';
 
 import { captureWorkerException, captureWorkerJobFailure } from '#src/monitoring.js';
 
 const log = childLogger('worker:transcribe');
 
-// Phase 3 cap: 25 MB. Telegram voice memos are well under this; the web
-// recorder doesn't enforce a duration cap (acceptable Phase 3 trade-off),
-// but we refuse to read a runaway upload into memory on the worker side.
-// When long-form audio lands (Phase 4+), this should be replaced with
-// streaming straight from S3 to the transcription provider.
-const MAX_AUDIO_BYTES = 25 * 1024 * 1024;
+// Provider requests stay below the OpenAI-compatible transcription upload
+// ceiling. Larger source objects are accepted, then transcoded into speech-sized
+// chunks before transcription.
+const MAX_TRANSCRIPTION_CHUNK_BYTES = 24_000_000;
+const MAX_SOURCE_AUDIO_BYTES = 200 * 1024 * 1024;
+const LARGE_AUDIO_SEGMENT_SECONDS = 10 * 60;
 
 interface TranscribeWorkerDeps {
   db: Db;
@@ -29,7 +36,11 @@ interface TranscribeWorkerDeps {
 export interface TranscribeWorkerIO {
   headObject(input: { audioKey: string }): Promise<{ contentLength?: number | undefined }>;
   getObjectBuffer(input: { audioKey: string; maxBytes: number }): Promise<{ body: Buffer }>;
-  transcribeAudio(input: { audio: Buffer }): Promise<{ text: string; model: string }>;
+  transcribeAudio(input: {
+    audio: Buffer;
+    format?: llm.AudioFormat;
+  }): Promise<{ text: string; model: string }>;
+  splitAudio(input: { audioKey: string; audio: Buffer }): Promise<Buffer[]>;
   enqueueExtract(input: queue.ExtractJobData): Promise<void>;
   enqueueEmbed(input: queue.EmbedRawEventJobData): Promise<void>;
   enqueueSuggestion(input: queue.SuggestionJobData): Promise<void>;
@@ -47,6 +58,9 @@ function defaultIO(): TranscribeWorkerIO {
     },
     async transcribeAudio(input) {
       return llm.transcribeAudio(input);
+    },
+    async splitAudio(input) {
+      return splitAudioForTranscription(input);
     },
     async enqueueExtract(input) {
       await queue.enqueueExtractJob(input);
@@ -72,13 +86,43 @@ export async function processTranscribeJobForTests(
       `Audio object ${audioKey} has no Content-Length; cannot bounds-check`,
     );
   }
-  if (head.contentLength > MAX_AUDIO_BYTES) {
+  if (head.contentLength > MAX_SOURCE_AUDIO_BYTES) {
     throw new UnrecoverableError(
-      `Audio object ${audioKey} is ${head.contentLength} bytes; max is ${MAX_AUDIO_BYTES}`,
+      `Audio object ${audioKey} is ${head.contentLength} bytes; max source size is ${MAX_SOURCE_AUDIO_BYTES}`,
     );
   }
-  const { body } = await io.getObjectBuffer({ audioKey, maxBytes: MAX_AUDIO_BYTES });
-  const result = await io.transcribeAudio({ audio: body });
+  const { body } = await io.getObjectBuffer({ audioKey, maxBytes: MAX_SOURCE_AUDIO_BYTES });
+  const audioChunks =
+    body.byteLength > MAX_TRANSCRIPTION_CHUNK_BYTES
+      ? await io.splitAudio({ audioKey, audio: body })
+      : [body];
+  const format =
+    body.byteLength > MAX_TRANSCRIPTION_CHUNK_BYTES ? 'mp3' : audioFormatFromAudioKey(audioKey);
+  const transcriptions = [];
+  for (const audio of audioChunks) {
+    transcriptions.push(await io.transcribeAudio({ audio, ...(format ? { format } : {}) }));
+  }
+  const result = {
+    text: transcriptions
+      .map((r) => r.text.trim())
+      .filter(Boolean)
+      .join('\n\n'),
+    model: Array.from(new Set(transcriptions.map((r) => r.model))).join('+'),
+  };
+  const current = await deps.db
+    .select({ sourceMetadata: rawEvents.sourceMetadata })
+    .from(rawEvents)
+    .where(eq(rawEvents.id, rawEventId))
+    .limit(1);
+  const sourceMetadata =
+    typeof current[0]?.sourceMetadata === 'object' &&
+    current[0].sourceMetadata !== null &&
+    !Array.isArray(current[0].sourceMetadata)
+      ? (current[0].sourceMetadata as Record<string, unknown>)
+      : {};
+  const noteText =
+    typeof sourceMetadata.audio_note_text === 'string' ? sourceMetadata.audio_note_text.trim() : '';
+  const contentText = [noteText, result.text].filter(Boolean).join('\n\n');
 
   const patch = JSON.stringify({
     transcription_model: result.model,
@@ -90,7 +134,7 @@ export async function processTranscribeJobForTests(
   const update = await deps.db
     .update(rawEvents)
     .set({
-      contentText: result.text,
+      contentText,
       sourceMetadata: sql`(COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) - 'transcription_failed_at' - 'transcription_error') || ${patch}::jsonb`,
     })
     .where(eq(rawEvents.id, rawEventId))
@@ -199,6 +243,94 @@ export async function processTranscribeJobForTests(
       });
   }
   return { rawEventId, model: result.model };
+}
+
+function audioKeyExtension(audioKey: string): string {
+  const ext = path
+    .extname(audioKey)
+    .toLowerCase()
+    .replace(/[^a-z0-9.]/g, '');
+  return ext.length > 1 && ext.length <= 8 ? ext : '.audio';
+}
+
+function audioFormatFromAudioKey(audioKey: string): llm.AudioFormat | undefined {
+  const ext = path.extname(audioKey).toLowerCase().replace(/^\./u, '');
+  if (ext === 'mp3') return 'mp3';
+  if (ext === 'wav') return 'wav';
+  if (ext === 'flac') return 'flac';
+  if (ext === 'm4a' || ext === 'mp4') return 'm4a';
+  if (ext === 'ogg' || ext === 'oga') return 'ogg';
+  if (ext === 'webm') return 'webm';
+  if (ext === 'aac') return 'aac';
+  return undefined;
+}
+
+async function splitAudioForTranscription(input: {
+  audioKey: string;
+  audio: Buffer;
+}): Promise<Buffer[]> {
+  if (!ffmpegPath) throw new Error('ffmpeg binary is not available for large audio transcription');
+
+  const workdir = await mkdtemp(path.join(tmpdir(), `timeline-transcribe-${randomUUID()}-`));
+  try {
+    const inputPath = path.join(workdir, `source${audioKeyExtension(input.audioKey)}`);
+    const outputPattern = path.join(workdir, 'chunk-%03d.mp3');
+    await writeFile(inputPath, input.audio);
+    await runFfmpeg([
+      '-hide_banner',
+      '-loglevel',
+      'error',
+      '-i',
+      inputPath,
+      '-vn',
+      '-ac',
+      '1',
+      '-ar',
+      '16000',
+      '-b:a',
+      '32k',
+      '-f',
+      'segment',
+      '-segment_time',
+      String(LARGE_AUDIO_SEGMENT_SECONDS),
+      '-reset_timestamps',
+      '1',
+      outputPattern,
+    ]);
+
+    const files = (await readdir(workdir)).filter((file) => file.endsWith('.mp3')).sort();
+    if (files.length === 0) throw new Error('ffmpeg produced no audio chunks');
+
+    const chunks = await Promise.all(files.map((file) => readFile(path.join(workdir, file))));
+    const oversize = chunks.find((chunk) => chunk.byteLength > MAX_TRANSCRIPTION_CHUNK_BYTES);
+    if (oversize) {
+      throw new Error(
+        `ffmpeg produced ${oversize.byteLength} byte chunk; max is ${MAX_TRANSCRIPTION_CHUNK_BYTES}`,
+      );
+    }
+    return chunks;
+  } finally {
+    await rm(workdir, { recursive: true, force: true });
+  }
+}
+
+async function runFfmpeg(args: string[]): Promise<void> {
+  const binary = ffmpegPath;
+  if (!binary) throw new Error('ffmpeg binary is not available');
+  await new Promise<void>((resolve, reject) => {
+    const child = spawn(binary, args, { stdio: ['ignore', 'ignore', 'pipe'] });
+    const stderr: Buffer[] = [];
+    child.stderr.on('data', (chunk: Buffer) => stderr.push(chunk));
+    child.on('error', reject);
+    child.on('close', (code) => {
+      if (code === 0) {
+        resolve();
+        return;
+      }
+      const details = Buffer.concat(stderr).toString('utf8').trim().slice(0, 1200);
+      reject(new Error(`ffmpeg exited with code ${code}${details ? `: ${details}` : ''}`));
+    });
+  });
 }
 
 export async function markTranscribeFailureForTests(
