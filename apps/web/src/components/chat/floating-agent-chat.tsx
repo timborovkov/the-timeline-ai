@@ -47,11 +47,13 @@ function FloatingAgentChatContent({ teamId, teamName }: FloatingAgentChatProps) 
     initialMessages: [],
   }));
   const hydratedSessionIdRef = useRef<string | null>(null);
+  const sessionGenerationRef = useRef(0);
   const context = useMemo(
     () => buildDashboardChatContext(pathname, searchParams),
     [pathname, searchParams],
   );
   const resetFloatingSession = () => {
+    sessionGenerationRef.current += 1;
     window.localStorage.removeItem(storageKey);
     hydratedSessionIdRef.current = null;
     setSessionState({ sessionId: null, initialMessages: [] });
@@ -95,6 +97,7 @@ function FloatingAgentChatContent({ teamId, teamName }: FloatingAgentChatProps) 
   if (!pathname || pathname.startsWith('/app/chat')) return null;
 
   const fullChatHref = sessionId ? `/app/chat?session=${sessionId}` : '/app/chat';
+  const activeSessionGeneration = sessionGenerationRef.current;
 
   return (
     <>
@@ -155,6 +158,7 @@ function FloatingAgentChatContent({ teamId, teamName }: FloatingAgentChatProps) 
           </DialogHeader>
           <div className="min-h-0 flex-1 p-4">
             <ChatSurface
+              key={activeSessionGeneration}
               compact
               teamName={teamName}
               sessionId={sessionId}
@@ -163,6 +167,9 @@ function FloatingAgentChatContent({ teamId, teamName }: FloatingAgentChatProps) 
               pinnedEntityName={null}
               dashboardContext={context}
               onSessionIdChange={(id) => {
+                if (activeSessionGeneration !== sessionGenerationRef.current) {
+                  return;
+                }
                 window.localStorage.setItem(storageKey, id);
                 setSessionState((state) => ({ ...state, sessionId: id }));
               }}
