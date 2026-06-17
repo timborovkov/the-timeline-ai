@@ -479,6 +479,72 @@ describe('processSuggestionJobForTests', () => {
     expect(bundles).toEqual([]);
   });
 
+  it('suggests short company duplicate candidates when the short token is an alias', async () => {
+    const [aliasedShort, fullName] = await db
+      .insert(entities)
+      .values([
+        {
+          teamId: TEAM_ID,
+          type: 'company',
+          canonicalName: 'DFK Industries',
+          aliases: ['DFK'],
+        },
+        { teamId: TEAM_ID, type: 'company', canonicalName: 'DFK Finland Oy' },
+      ])
+      .returning({ id: entities.id });
+    if (!aliasedShort || !fullName) throw new Error('expected company fixtures');
+    const [raw] = await db
+      .insert(rawEvents)
+      .values({
+        teamId: TEAM_ID,
+        authorUserId: OWNER_ID,
+        source: 'web',
+        contentText: 'DFK and DFK Finland Oy are both involved in the pilot.',
+        occurredAt: REFERENCE_DATE,
+        visibility: 'team',
+      })
+      .returning({ id: rawEvents.id });
+    if (!raw) throw new Error('expected raw event');
+    const insertedFacts = await db
+      .insert(facts)
+      .values([
+        {
+          teamId: TEAM_ID,
+          rawEventId: raw.id,
+          statement: 'DFK is involved in the pilot.',
+          confidence: 0.9,
+          modelVersion: 'test',
+        },
+        {
+          teamId: TEAM_ID,
+          rawEventId: raw.id,
+          statement: 'DFK Finland Oy is involved in the pilot.',
+          confidence: 0.9,
+          modelVersion: 'test',
+        },
+      ])
+      .returning({ id: facts.id });
+    await db.insert(factEntities).values([
+      { factId: insertedFacts[0]?.id ?? '', entityId: aliasedShort.id, role: 'subject' },
+      { factId: insertedFacts[1]?.id ?? '', entityId: fullName.id, role: 'subject' },
+    ]);
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { scope: 'object_cleanup', teamId: TEAM_ID, triggeredBy: 'manual' },
+    );
+
+    const bundles = await withTeam(
+      db as never,
+      TEAM_ID,
+      OWNER_ID,
+    ).suggestions.listPendingSuggestions();
+    expect(bundles).toHaveLength(1);
+    const objectIds = bundles[0]?.items[0]?.proposedPayload.objectIds;
+    if (!Array.isArray(objectIds)) throw new Error('expected merge object ids');
+    expect(new Set(objectIds)).toEqual(new Set([aliasedShort.id, fullName.id]));
+  });
+
   it('scopes object memory repair cleanup to duplicates involving the selected object', async () => {
     const [shortName, fullName] = await db
       .insert(entities)

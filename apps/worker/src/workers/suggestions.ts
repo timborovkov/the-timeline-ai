@@ -519,11 +519,15 @@ function normalizePersonHandle(value: string): string {
   return normalizeCleanupName(value).replace(/0/g, 'o');
 }
 
-function cleanupNames(row: CleanupObjectRow): string[] {
+function rawCleanupNames(row: Pick<CleanupObjectRow, 'canonicalName' | 'aliases'>): string[] {
   const aliases = Array.isArray(row.aliases)
     ? row.aliases.filter((v): v is string => typeof v === 'string')
     : [];
-  const rawNames = [row.canonicalName, ...aliases];
+  return [row.canonicalName, ...aliases];
+}
+
+function cleanupNames(row: CleanupObjectRow): string[] {
+  const rawNames = rawCleanupNames(row);
   const names = rawNames.map(normalizeCleanupName);
   if (row.type === 'person') names.push(...rawNames.map(normalizePersonHandle));
   return Array.from(new Set(names.filter((name) => name.length >= 2)));
@@ -608,14 +612,20 @@ function shortCompanyMatch(left: string, right: string, a: CleanupObjectRow, b: 
   ) {
     return false;
   }
-  const [short, long] = left.length <= right.length ? [left, right] : [right, left];
+  const leftIsShort = left.length <= right.length;
+  const [short, long] = leftIsShort ? [left, right] : [right, left];
+  const [shortRow, longRow] = leftIsShort ? [a, b] : [b, a];
   if (short.length < 2 || short.length > 4 || long.length <= short.length) return false;
-  const rawLong = left.length <= right.length ? b.canonicalName : a.canonicalName;
-  const rawShort = left.length <= right.length ? a.canonicalName : b.canonicalName;
-  const tokenMatch = new RegExp(`(^|[^a-z0-9])${escapeRegex(rawShort)}([^a-z0-9]|$)`, 'i').test(
-    rawLong,
+  const rawShorts = rawCleanupNames(shortRow).filter(
+    (name) => normalizeCleanupName(name) === short,
   );
-  return tokenMatch || acronymForName(rawLong) === short;
+  const rawLongs = rawCleanupNames(longRow);
+  const tokenMatch = rawShorts.some((rawShort) =>
+    rawLongs.some((rawLong) =>
+      new RegExp(`(^|[^a-z0-9])${escapeRegex(rawShort)}([^a-z0-9]|$)`, 'i').test(rawLong),
+    ),
+  );
+  return tokenMatch || rawLongs.some((rawLong) => acronymForName(rawLong) === short);
 }
 
 function cleanupMatch(a: CleanupObjectRow, b: CleanupObjectRow): CleanupMatch | null {
