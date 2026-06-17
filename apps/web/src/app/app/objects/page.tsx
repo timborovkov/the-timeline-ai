@@ -1,3 +1,5 @@
+import { OBJECT_TYPES } from '@timeline/shared/objects';
+import { decodeCursor, encodeCursor } from '@timeline/shared/pagination';
 import { withTeam } from '@timeline/shared/team-scope';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
@@ -36,6 +38,14 @@ const TYPE_LABEL: Record<string, string> = {
   follow_up: 'Follow-ups',
   other: 'Other',
 };
+
+const OBJECTS_PAGE_SIZE = 48;
+const OBJECTS_SECTION_PREVIEW_SIZE = 8;
+
+interface ObjectListScope {
+  listObjects(filter: objects.ObjectListFilter): Promise<objects.ObjectRow[]>;
+}
+
 function objectIdsForMergeSuggestion(item: { proposedPayload: unknown }): string[] {
   if (!item.proposedPayload || typeof item.proposedPayload !== 'object') return [];
   const payload = item.proposedPayload as Record<string, unknown>;
@@ -50,7 +60,7 @@ function objectIdsForMergeSuggestion(item: { proposedPayload: unknown }): string
 export default async function ObjectsIndexPage({
   searchParams,
 }: {
-  searchParams: Promise<{ type?: string; status?: string }>;
+  searchParams: Promise<{ type?: string; status?: string; cursor?: string }>;
 }) {
   const session = await auth();
   if (!session?.user) redirect('/sign-in');
@@ -63,20 +73,23 @@ export default async function ObjectsIndexPage({
   const type =
     params.type && TYPE_LABEL[params.type] ? (params.type as objects.ObjectType) : undefined;
   const status = params.status?.trim() ?? undefined;
+  const cursor = parseCursorParam(params.cursor);
 
-  // Default to hiding archived objects — `listObjects` only applies the
-  // archived predicate when `filter.archived` is explicitly set, so an
-  // unset value would surface archived rows in the main index and defeat
-  // the archive button on the detail page. A dedicated "Archived" filter
-  // chip (with `?archived=1`) is a future addition.
-  const filter: objects.ObjectListFilter = { limit: 500, archived: false };
-  if (type) filter.type = type;
-  if (status) filter.status = status;
-
-  const [rows, suggestionBundles] = await Promise.all([
-    scope.objects.listObjects(filter),
+  const [objectWindow, suggestionBundles] = await Promise.all([
+    type
+      ? loadTypedObjectPage(scope.objects, { type, status, cursor })
+      : loadObjectSectionPreviews(scope.objects, { status }),
     scope.suggestions.listPendingSuggestions(),
   ]);
+  const rows = objectWindow.rows;
+  const nextHref =
+    type && objectWindow.nextCursor
+      ? objectsPageHref({
+          type,
+          status,
+          cursor: objectWindow.nextCursor,
+        })
+      : null;
   const cleanupSuggestions: ReturnType<typeof serializeSuggestionBundle>[] = [];
   const mergeSuggestionItems: {
     id: string;
@@ -117,10 +130,15 @@ export default async function ObjectsIndexPage({
   return (
     <div className="mx-auto max-w-5xl space-y-6">
       <IndexStrip
-        srLabel={`Objects · ${rows.length} total${type ? ` · filtered to ${TYPE_LABEL[type] ?? type}` : ''}`}
+        srLabel={
+          type
+            ? `Objects · ${rows.length} shown · filtered to ${TYPE_LABEL[type] ?? type}`
+            : `Objects · previews · ${rows.length} shown`
+        }
         segments={[
           { value: 'OBJECTS' },
-          { label: 'total', value: rows.length },
+          ...(type ? ([{ value: 'PAGE' }] as const) : ([{ value: 'PREVIEWS' }] as const)),
+          { label: 'shown', value: rows.length },
           ...(type
             ? ([{ label: 'type', value: TYPE_LABEL[type] ?? type, signal: true }] as const)
             : ([] as const)),
@@ -165,14 +183,132 @@ export default async function ObjectsIndexPage({
 
       {rows.length === 0 ? (
         <EmptyAction
-          title={type ? 'No objects match this filter' : 'No objects yet'}
-          body="Objects are extracted from captured work. You can also create one manually when you already know what should be tracked."
-          href={type ? '/app/objects' : '/app#capture'}
-          action={type ? 'Clear filter' : 'Capture first note'}
+          title={
+            type && cursor
+              ? 'No objects on this page'
+              : type || status
+                ? 'No objects match this filter'
+                : 'No objects yet'
+          }
+          body={
+            type && cursor
+              ? 'This page is empty. Earlier pages may still have objects.'
+              : 'Objects are extracted from captured work. You can also create one manually when you already know what should be tracked.'
+          }
+          href={
+            type && cursor
+              ? objectsPageHref({ type, status })
+              : type || status
+                ? '/app/objects'
+                : '/app#capture'
+          }
+          action={
+            type && cursor
+              ? 'Open first page'
+              : type || status
+                ? 'Clear filter'
+                : 'Capture first note'
+          }
         />
       ) : (
-        <ObjectCleanupList rows={rows} typeLabels={TYPE_LABEL} />
+        <ObjectCleanupList
+          rows={rows}
+          typeLabels={TYPE_LABEL}
+          pageInfo={
+            type
+              ? {
+                  shownCount: rows.length,
+                  nextHref,
+                }
+              : undefined
+          }
+          sectionMoreHrefs={objectWindow.sectionMoreHrefs}
+        />
       )}
     </div>
   );
+}
+
+async function loadTypedObjectPage(
+  objectScope: ObjectListScope,
+  {
+    type,
+    status,
+    cursor,
+  }: {
+    type: objects.ObjectType;
+    status: string | undefined;
+    cursor: string | undefined;
+  },
+): Promise<{
+  rows: objects.ObjectRow[];
+  hasNextPage: boolean;
+  nextCursor: string | null;
+  sectionMoreHrefs?: Record<string, string>;
+}> {
+  const pageRows = await objectScope.listObjects({
+    limit: OBJECTS_PAGE_SIZE + 1,
+    archived: false,
+    type,
+    cursor,
+    ...(status ? { status } : {}),
+  });
+  const rows = pageRows.slice(0, OBJECTS_PAGE_SIZE);
+  const last = rows.at(-1);
+  return {
+    rows,
+    hasNextPage: pageRows.length > OBJECTS_PAGE_SIZE,
+    nextCursor:
+      pageRows.length > OBJECTS_PAGE_SIZE && last
+        ? encodeCursor({ at: last.updatedAt.toISOString(), id: last.id })
+        : null,
+  };
+}
+
+async function loadObjectSectionPreviews(
+  objectScope: ObjectListScope,
+  { status }: { status: string | undefined },
+): Promise<{
+  rows: objects.ObjectRow[];
+  hasNextPage: boolean;
+  nextCursor: string | null;
+  sectionMoreHrefs: Record<string, string>;
+}> {
+  const previews = await Promise.all(
+    OBJECT_TYPES.map(async (typeKey) => {
+      const sectionRows = await objectScope.listObjects({
+        limit: OBJECTS_SECTION_PREVIEW_SIZE + 1,
+        archived: false,
+        type: typeKey,
+        ...(status ? { status } : {}),
+      });
+      return [typeKey, sectionRows] as const;
+    }),
+  );
+  const sectionMoreHrefs: Record<string, string> = {};
+  const rows: objects.ObjectRow[] = [];
+  for (const [typeKey, sectionRows] of previews) {
+    rows.push(...sectionRows.slice(0, OBJECTS_SECTION_PREVIEW_SIZE));
+    if (sectionRows.length > OBJECTS_SECTION_PREVIEW_SIZE) {
+      sectionMoreHrefs[typeKey] = objectsPageHref({ type: typeKey, status });
+    }
+  }
+  return { rows, hasNextPage: false, nextCursor: null, sectionMoreHrefs };
+}
+
+function parseCursorParam(value: string | undefined): string | undefined {
+  return decodeCursor(value) ? value : undefined;
+}
+
+function objectsPageHref(params: {
+  type?: string;
+  status?: string;
+  cursor?: string | null;
+}): string {
+  const query = new URLSearchParams();
+  if (params.type) query.set('type', params.type);
+  if (params.status) query.set('status', params.status);
+  if (params.cursor) query.set('cursor', params.cursor);
+  const qs = query.toString();
+  return qs ? `/app/objects?${qs}` : '/app/objects';
 }
