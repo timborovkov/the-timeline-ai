@@ -154,6 +154,8 @@ describe('ApprovalsClient', () => {
                 proposedPayload: {
                   fromRef: 'jonne-granqvist',
                   toEntityId: '44444444-4444-4444-8444-444444444444',
+                  fromName: 'Jonne Granqvist',
+                  toName: 'DFK',
                   kind: 'related',
                 },
                 failureReason: null,
@@ -621,7 +623,7 @@ describe('ApprovalsClient', () => {
     expect(html).not.toContain('localRef');
   });
 
-  it('uses endpoint names from the item title for existing-object relationship summaries', () => {
+  it('uses payload endpoint names for existing-object relationship summaries', () => {
     const html = renderToStaticMarkup(
       createElement(ApprovalsClient, {
         suggestions: [
@@ -642,7 +644,49 @@ describe('ApprovalsClient', () => {
                 operation: 'create',
                 targetKind: 'object_relationship',
                 targetId: null,
-                title: 'Relate John Doe and Acme Corporation',
+                title: 'Relate Research and Development and Sales and Ops',
+                description: null,
+                proposedPayload: {
+                  fromEntityId: '11111111-1111-4111-8111-111111111111',
+                  toEntityId: '22222222-2222-4222-8222-222222222222',
+                  fromName: 'Research and Development',
+                  toName: 'Sales and Ops',
+                  kind: 'related',
+                },
+                failureReason: null,
+              },
+            ],
+          },
+        ],
+      }),
+    );
+
+    expect(html).toContain('Research and Development ↔ Sales and Ops · related');
+    expect(html).not.toContain('existing object ↔ existing object');
+  });
+
+  it('does not split unlabeled existing-object relationship summaries on title text', () => {
+    const html = renderToStaticMarkup(
+      createElement(ApprovalsClient, {
+        suggestions: [
+          {
+            id: 'bundle-existing-relationship',
+            source: 'background',
+            status: 'pending',
+            title: 'Remember Research and Development and Sales and Ops',
+            summary: null,
+            reason: null,
+            confidence: 'high',
+            createdAt: '2026-06-01T10:00:00.000Z',
+            evidence: [],
+            items: [
+              {
+                id: 'item-existing-relationship',
+                status: 'pending',
+                operation: 'create',
+                targetKind: 'object_relationship',
+                targetId: null,
+                title: 'Relate Research and Development and Sales and Ops',
                 description: null,
                 proposedPayload: {
                   fromEntityId: '11111111-1111-4111-8111-111111111111',
@@ -657,8 +701,8 @@ describe('ApprovalsClient', () => {
       }),
     );
 
-    expect(html).toContain('John Doe ↔ Acme Corporation · related');
-    expect(html).not.toContain('existing object ↔ existing object');
+    expect(html).toContain('Relate Research and Development and Sales and Ops · related');
+    expect(html).not.toContain('Research ↔ Development and Sales and Ops');
   });
 
   it('updates folded pending count after optimistic row removal', async () => {

@@ -23,7 +23,7 @@ import {
   time,
   withTeam,
 } from '@timeline/shared';
-import { likeMentionCondition } from '@timeline/shared/sql-like';
+import { likeMentionCondition, textMentionsAnyValue } from '@timeline/shared/sql-like';
 import { UnrecoverableError, Worker, type Job } from 'bullmq';
 import { and, count, desc, eq, inArray, isNull, lt, ne, or, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
@@ -574,12 +574,6 @@ function objectNamesForRepair(row: Pick<CleanupObjectRow, 'canonicalName' | 'ali
     .slice(0, 8);
 }
 
-function mentionsObjectName(text: string, names: readonly string[]): boolean {
-  return names.some((name) =>
-    new RegExp(`(^|[^a-z0-9])${escapeRegex(name)}([^a-z0-9]|$)`, 'i').test(text),
-  );
-}
-
 function activeConnectedWorkCondition() {
   return or(
     eq(entities.type, 'decision'),
@@ -665,9 +659,13 @@ async function cleanupSharedEvidencePairKeys(
         ),
       )
       .innerJoin(factsTable, eq(factsTable.id, leftFactEntities.factId))
+      .innerJoin(rawEvents, eq(rawEvents.id, factsTable.rawEventId))
       .where(
         and(
           eq(factsTable.teamId, teamId),
+          eq(rawEvents.teamId, teamId),
+          eq(rawEvents.visibility, 'team'),
+          sql`COALESCE(${rawEvents.sourceMetadata} ->> 'deleted', 'false') <> 'true'`,
           inArray(leftFactEntities.entityId, objectIds),
           inArray(rightFactEntities.entityId, objectIds),
         ),
@@ -803,7 +801,7 @@ async function repairConnectedWorkRelationshipCandidates(
 
   const candidates = new Map<string, RepairRelationshipCandidate>();
   for (const row of rows) {
-    if (!row.statement || !mentionsObjectName(row.canonicalName, names)) continue;
+    if (!row.statement || !textMentionsAnyValue(row.canonicalName, names)) continue;
     if (candidates.has(row.id)) continue;
     candidates.set(row.id, {
       id: row.id,
@@ -1564,6 +1562,18 @@ async function createObjectCleanupSuggestionsForTeam(
           objectIds,
         });
         const reason = repairRelationshipReason(candidate);
+        const payload = relationshipPayload(repairObjectId, candidate.id);
+        const proposedPayload = {
+          ...payload,
+          fromName:
+            payload.fromEntityId === repairObjectId
+              ? repairObject.canonicalName
+              : candidate.canonicalName,
+          toName:
+            payload.toEntityId === repairObjectId
+              ? repairObject.canonicalName
+              : candidate.canonicalName,
+        };
         await scope.suggestions.createOrMergeSuggestionBundle({
           source: 'background',
           title: `Relate ${repairObject.canonicalName} and ${candidate.canonicalName}`,
@@ -1603,7 +1613,7 @@ async function createObjectCleanupSuggestionsForTeam(
               title: `Relate ${repairObject.canonicalName} and ${candidate.canonicalName}`,
               description: reason,
               dedupeKey: `${dedupeKey}:relationship`,
-              proposedPayload: relationshipPayload(repairObjectId, candidate.id),
+              proposedPayload,
             },
           ],
         });
@@ -1671,6 +1681,8 @@ async function createObjectCleanupSuggestionsForTeam(
               proposedPayload: {
                 fromRef: candidate.localRef,
                 toEntityId: repairObjectId,
+                fromName: candidate.canonicalName,
+                toName: repairObject.canonicalName,
                 kind: 'related',
               },
             },

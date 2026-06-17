@@ -408,30 +408,42 @@ describe('processSuggestionJobForTests', () => {
   });
 
   it('requires supporting evidence for short company duplicate candidates and suppresses rejected pairs', async () => {
-    const [shortName, fullName, bareShort, bareFull] = await db
+    const [shortName, fullName, bareShort, bareFull, privateShort, privateFull] = await db
       .insert(entities)
       .values([
         { teamId: TEAM_ID, type: 'company', canonicalName: 'DFK' },
         { teamId: TEAM_ID, type: 'company', canonicalName: 'DFK Finland Oy' },
         { teamId: TEAM_ID, type: 'company', canonicalName: 'ABC' },
         { teamId: TEAM_ID, type: 'company', canonicalName: 'ABC Services Oy' },
+        { teamId: TEAM_ID, type: 'company', canonicalName: 'XYZ' },
+        { teamId: TEAM_ID, type: 'company', canonicalName: 'XYZ Finland Oy' },
       ])
       .returning({ id: entities.id });
-    if (!shortName || !fullName || !bareShort || !bareFull) {
+    if (!shortName || !fullName || !bareShort || !bareFull || !privateShort || !privateFull) {
       throw new Error('expected company fixtures');
     }
-    const [raw] = await db
+    const [raw, privateRaw] = await db
       .insert(rawEvents)
-      .values({
-        teamId: TEAM_ID,
-        authorUserId: OWNER_ID,
-        source: 'web',
-        contentText: 'DFK and DFK Finland Oy are both involved in the pilot.',
-        occurredAt: REFERENCE_DATE,
-        visibility: 'team',
-      })
+      .values([
+        {
+          teamId: TEAM_ID,
+          authorUserId: OWNER_ID,
+          source: 'web',
+          contentText: 'DFK and DFK Finland Oy are both involved in the pilot.',
+          occurredAt: REFERENCE_DATE,
+          visibility: 'team',
+        },
+        {
+          teamId: TEAM_ID,
+          authorUserId: OWNER_ID,
+          source: 'web',
+          contentText: 'XYZ and XYZ Finland Oy are both involved in private planning.',
+          occurredAt: REFERENCE_DATE,
+          visibility: 'private',
+        },
+      ])
       .returning({ id: rawEvents.id });
-    if (!raw) throw new Error('expected raw event');
+    if (!raw || !privateRaw) throw new Error('expected raw events');
     const insertedFacts = await db
       .insert(facts)
       .values([
@@ -456,6 +468,13 @@ describe('processSuggestionJobForTests', () => {
           confidence: 0.9,
           modelVersion: 'test',
         },
+        {
+          teamId: TEAM_ID,
+          rawEventId: privateRaw.id,
+          statement: 'XYZ and XYZ Finland Oy are both involved in private planning.',
+          confidence: 0.9,
+          modelVersion: 'test',
+        },
       ])
       .returning({ id: facts.id });
     await db.insert(factEntities).values([
@@ -463,6 +482,8 @@ describe('processSuggestionJobForTests', () => {
       { factId: insertedFacts[0]?.id ?? '', entityId: fullName.id, role: 'object' },
       { factId: insertedFacts[1]?.id ?? '', entityId: bareShort.id, role: 'subject' },
       { factId: insertedFacts[2]?.id ?? '', entityId: bareFull.id, role: 'subject' },
+      { factId: insertedFacts[3]?.id ?? '', entityId: privateShort.id, role: 'subject' },
+      { factId: insertedFacts[3]?.id ?? '', entityId: privateFull.id, role: 'object' },
     ]);
 
     await processSuggestionJobForTests(

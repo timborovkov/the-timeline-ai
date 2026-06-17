@@ -10,3 +10,13 @@ export function likeMentionCondition(column: unknown, values: readonly string[])
   );
   return conditions.length > 0 ? or(...conditions) : undefined;
 }
+
+function escapeRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+export function textMentionsAnyValue(text: string, values: readonly string[]): boolean {
+  return values.some((value) =>
+    new RegExp(`(^|[^a-z0-9])${escapeRegex(value)}([^a-z0-9]|$)`, 'i').test(text),
+  );
+}

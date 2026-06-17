@@ -649,6 +649,12 @@ describe('object scope — notes and suggestions', () => {
       status: 'done',
       actor: { kind: 'user', userId: USER_OWNER },
     });
+    const substringTask = await scope.createObject({
+      type: 'task',
+      canonicalName: 'Investigate ADFK parser warning',
+      status: 'todo',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
     await db.insert(calendarEvents).values({
       teamId: TEAM_A,
       createdByUserId: USER_OWNER,
@@ -723,6 +729,9 @@ describe('object scope — notes and suggestions', () => {
 
     expect(detail?.connectedWork.openTasks).toEqual([expect.objectContaining({ id: openTask.id })]);
     expect(detail?.openTasks).toEqual([expect.objectContaining({ id: openTask.id })]);
+    expect(detail?.connectedWork.openTasks).not.toContainEqual(
+      expect.objectContaining({ id: substringTask.id }),
+    );
     expect(detail?.connectedWork.recentTasks).toEqual([
       expect.objectContaining({ id: doneTask.id }),
     ]);

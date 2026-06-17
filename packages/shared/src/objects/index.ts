@@ -68,7 +68,7 @@ import { decodeCursor, pageWindow } from '#src/pagination.js';
 import { getQdrantClient } from '#src/qdrant/client.js';
 import { buildPointId } from '#src/qdrant/point-id.js';
 import * as embedQueue from '#src/queue/queues.js';
-import { likeMentionCondition, likePattern } from '#src/sql-like.js';
+import { likeMentionCondition, likePattern, textMentionsAnyValue } from '#src/sql-like.js';
 import { rawEventVisibleToUser } from '#src/visibility.js';
 
 const embedLog = childLogger('objects:embed');
@@ -988,7 +988,7 @@ async function getConnectedWork(
       : Promise.resolve([]),
     nameMatch
       ? db
-          .select({ id: entities.id })
+          .select({ id: entities.id, canonicalName: entities.canonicalName })
           .from(entities)
           .where(
             and(
@@ -1115,7 +1115,9 @@ async function getConnectedWork(
   for (const row of sharedObjectRows) {
     if (row.type === 'task' || row.type === 'follow_up') taskIds.add(row.id);
   }
-  for (const row of titleTaskRows) taskIds.add(row.id);
+  for (const row of titleTaskRows) {
+    if (textMentionsAnyValue(row.canonicalName, names)) taskIds.add(row.id);
+  }
 
   const taskRows =
     taskIds.size > 0
