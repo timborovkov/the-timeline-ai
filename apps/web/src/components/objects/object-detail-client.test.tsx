@@ -120,7 +120,6 @@ describe('ObjectDetailClient', () => {
     expect(html).toContain('Send proposal');
     expect(html).toContain('Notes');
     expect(html).toContain('Connected work');
-    expect(html).toContain('Open tasks');
     expect(html).toContain('Related');
     expect(html).toContain('Search objects');
     expect(html).not.toContain('Object id');
@@ -269,6 +268,40 @@ describe('ObjectDetailClient', () => {
     expect(html).toContain('Merge DFK Finland Oy into DFK');
     expect(html).toContain('Send pilot times to DFK');
     expect(html).toContain('DFK pilot deck.pdf');
+  });
+
+  it('shows connected open tasks once on the object detail page', () => {
+    const taskTitle = 'Send message to DFK with proposed meeting times';
+    const html = renderObjectDetail({
+      detail: {
+        ...detail,
+        openTasks: [
+          {
+            ...detail,
+            id: 'task-1',
+            type: 'task',
+            canonicalName: taskTitle,
+            status: 'todo',
+          },
+        ],
+        connectedWork: {
+          ...detail.connectedWork,
+          openTasks: [
+            {
+              ...detail,
+              id: 'task-1',
+              type: 'task',
+              canonicalName: taskTitle,
+              status: 'todo',
+            },
+          ],
+        },
+      },
+      userId: 'user-1',
+      suggestions: [],
+    });
+
+    expect(html.match(new RegExp(taskTitle, 'g'))).toHaveLength(1);
   });
 
   it('edits the object name and aliases from the fields panel', async () => {

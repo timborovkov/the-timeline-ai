@@ -589,6 +589,16 @@ function mentionsObjectName(text: string, names: readonly string[]): boolean {
   );
 }
 
+function activeConnectedWorkCondition() {
+  return or(
+    eq(entities.type, 'decision'),
+    and(
+      inArray(entities.type, ['task', 'follow_up']),
+      sql`COALESCE(${entities.status}, '') NOT IN ('done', 'cancelled')`,
+    ),
+  );
+}
+
 function shortCompanyMatch(left: string, right: string, a: CleanupObjectRow, b: CleanupObjectRow) {
   if (
     !(
@@ -774,6 +784,7 @@ async function repairConnectedWorkRelationshipCandidates(
         isNull(entities.archivedAt),
         isNull(entities.mergedIntoId),
         ne(entities.id, repairObject.id),
+        activeConnectedWorkCondition(),
         nameMatch,
       ),
     )

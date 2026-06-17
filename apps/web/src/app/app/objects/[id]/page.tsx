@@ -60,6 +60,7 @@ function objectPageSuggestionItems(
   }
   if (localRefs.size > 0) {
     for (const item of bundle.items) {
+      if (!isActionableSuggestionStatus(item.status)) continue;
       const ref =
         typeof item.proposedPayload.localRef === 'string'
           ? item.proposedPayload.localRef.toLowerCase()

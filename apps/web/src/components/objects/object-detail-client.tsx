@@ -837,8 +837,6 @@ function ObjectDetailView(props: Props) {
             onRemoveRelationship={view.removeRelationship}
           />
 
-          <ObjectOpenTasksSection tasks={view.detail.openTasks} />
-
           <ObjectRecentChangesSection
             changes={view.viewDetail.recentChanges}
             pending={view.pending}
@@ -1564,33 +1562,6 @@ function ConnectedDocumentList({
         </ul>
       )}
     </ConnectedWorkSection>
-  );
-}
-
-function ObjectOpenTasksSection({ tasks }: { tasks: ObjectDetail['openTasks'] }) {
-  return (
-    <ObjectPanel title="Open tasks" eyebrow={String(tasks.length)}>
-      {tasks.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No open tasks linked to this object.</p>
-      ) : (
-        <ul className="space-y-2">
-          {tasks.map((task) => (
-            <li
-              key={task.id}
-              className="flex items-center justify-between rounded-sm border border-border bg-surface px-4 py-2 text-sm"
-            >
-              <a href={`/app/objects/${task.id}`} className="font-medium hover:underline">
-                {displayText(task.canonicalName)}
-              </a>
-              <span className="text-xs text-muted-foreground">
-                {task.status}
-                {task.dueAt ? ` · due ${new Date(task.dueAt).toLocaleDateString()}` : ''}
-              </span>
-            </li>
-          ))}
-        </ul>
-      )}
-    </ObjectPanel>
   );
 }
 

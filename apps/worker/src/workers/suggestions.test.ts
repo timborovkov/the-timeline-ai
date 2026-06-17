@@ -786,6 +786,70 @@ describe('processSuggestionJobForTests', () => {
     expect(relationshipItems).toEqual([{ status: 'rejected' }]);
   });
 
+  it('does not queue connected-work relationship repair from completed or cancelled work', async () => {
+    const [company, doneTask, cancelledFollowUp] = await db
+      .insert(entities)
+      .values([
+        { teamId: TEAM_ID, type: 'company', canonicalName: 'DFK Finland Oy' },
+        {
+          teamId: TEAM_ID,
+          type: 'task',
+          canonicalName: 'Send pilot times to DFK Finland Oy',
+          status: 'done',
+        },
+        {
+          teamId: TEAM_ID,
+          type: 'follow_up',
+          canonicalName: 'Follow up with DFK Finland Oy after cancellation',
+          status: 'cancelled',
+        },
+      ])
+      .returning({ id: entities.id });
+    if (!company || !doneTask || !cancelledFollowUp) throw new Error('expected object fixtures');
+    await db.insert(rawEvents).values([
+      {
+        teamId: TEAM_ID,
+        authorUserId: OWNER_ID,
+        source: 'system',
+        contentText: 'Created task: Send pilot times to DFK Finland Oy',
+        occurredAt: REFERENCE_DATE,
+        visibility: 'team',
+        sourceMetadata: {
+          kind: 'object_create',
+          entity_id: doneTask.id,
+          actor_kind: 'user',
+        },
+      },
+      {
+        teamId: TEAM_ID,
+        authorUserId: OWNER_ID,
+        source: 'system',
+        contentText: 'Created follow-up: Follow up with DFK Finland Oy after cancellation',
+        occurredAt: REFERENCE_DATE,
+        visibility: 'team',
+        sourceMetadata: {
+          kind: 'object_create',
+          entity_id: cancelledFollowUp.id,
+          actor_kind: 'user',
+        },
+      },
+    ]);
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      {
+        scope: 'object_cleanup',
+        teamId: TEAM_ID,
+        objectId: company.id,
+        triggeredBy: 'memory_repair',
+      },
+    );
+
+    await expect(
+      withTeam(db as never, TEAM_ID, OWNER_ID).suggestions.listPendingSuggestions(),
+    ).resolves.toEqual([]);
+  });
+
   it('queues missing person-object relationship repair as one approval bundle without reoffering rejected edges', async () => {
     const [company] = await db
       .insert(entities)
