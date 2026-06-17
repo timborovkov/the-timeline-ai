@@ -363,6 +363,52 @@ describe('POST /api/search/global', () => {
     expect(result?.metadata?.summary).toBe(true);
   });
 
+  it('surfaces summary-only object matches for short queries', async () => {
+    fakes.fakeSearchObjects.mockResolvedValue([]);
+    fakes.fakeSearchObjectsBySummary.mockResolvedValue([
+      {
+        id: 'object-summary-short',
+        type: 'company',
+        canonicalName: 'DFK',
+        status: 'open',
+        stage: null,
+        priority: null,
+        ownerUserId: null,
+        assigneeUserId: null,
+        dueAt: null,
+        agentSuggested: false,
+        archivedAt: null,
+        aliases: [],
+        metadata: {},
+        updatedAt: new Date('2026-06-10T00:00:00.000Z'),
+        createdAt: new Date('2026-06-01T00:00:00.000Z'),
+      },
+    ]);
+    fakes.fakeListReadyObjectSummaries.mockResolvedValue([
+      {
+        entityId: 'object-summary-short',
+        plainText: 'The pilot discussion is confirmed for June 30.',
+        generatedAt: new Date('2026-06-15T00:00:00.000Z'),
+      },
+    ]);
+
+    const response = await POST(request({ query: '30', mode: 'full', kinds: ['object'] }));
+    const data = (await response.json()) as {
+      ok: true;
+      results: { kind: string; title: string; snippet: string; metadata?: { summary?: boolean } }[];
+    };
+
+    expect(response.status).toBe(200);
+    expect(fakes.fakeSearchObjectsBySummary).toHaveBeenCalledWith({
+      query: '30',
+      archived: false,
+      limit: 300,
+    });
+    const result = data.results.find((item) => item.kind === 'object');
+    expect(result?.title).toBe('DFK');
+    expect(result?.metadata?.summary).toBe(true);
+  });
+
   it('forwards timeline source and date filters to semantic timeline, document, and calendar search', async () => {
     const response = await POST(
       request({

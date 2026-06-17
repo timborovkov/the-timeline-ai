@@ -437,7 +437,7 @@ export async function POST(req: Request): Promise<Response> {
             }),
           )
         : Promise.resolve([]),
-      wantsObjectsOrTasks && query.length >= 3
+      wantsObjectsOrTasks
         ? guardedSearch(
             warnings,
             'object',
