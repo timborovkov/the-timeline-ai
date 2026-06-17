@@ -354,9 +354,10 @@ export function ScheduleMeetingBotForm({
 
   async function onSubmit(e: React.SyntheticEvent<HTMLFormElement>) {
     e.preventDefault();
+    const formElement = e.currentTarget;
     dispatch({ type: 'error', error: null });
     dispatch({ type: 'pending', pending: true });
-    const form = new FormData(e.currentTarget);
+    const form = new FormData(formElement);
     const rawUrl = form.get('meetingUrl');
     const rawTitle = form.get('title');
     const meetingUrl = (typeof rawUrl === 'string' ? rawUrl : '').trim();
@@ -533,9 +534,10 @@ export function SavedMeetingForm({
 
   async function onSubmit(e: React.SyntheticEvent<HTMLFormElement>) {
     e.preventDefault();
+    const formElement = e.currentTarget;
     dispatch({ type: 'error', error: null });
     dispatch({ type: 'pending', pending: true });
-    const form = new FormData(e.currentTarget);
+    const form = new FormData(formElement);
     const scheduleConfig = formScheduleConfig(form, scheduled);
     try {
       const result = await createSavedMeetingAction({
@@ -555,7 +557,7 @@ export function SavedMeetingForm({
         return;
       }
       router.refresh();
-      e.currentTarget.reset();
+      formElement.reset();
       dispatch({ type: 'scheduled', scheduled: false });
       dispatch({ type: 'autoJoin', autoJoin: false });
       dispatch({ type: 'timezone', timezone: localTimezone() });

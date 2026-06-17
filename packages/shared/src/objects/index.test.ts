@@ -25,6 +25,7 @@ import type { ChatStructuredInput, ChatStructuredResult } from '#src/llm/chat.js
 import type { z } from 'zod';
 
 import { generateAndStoreObjectSummary } from '#src/objects/summaries.js';
+import { encodeCursor } from '#src/pagination.js';
 import * as queue from '#src/queue/queues.js';
 import { withTeam } from '#src/team-scope.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
@@ -852,6 +853,48 @@ describe('object scope — archive visibility', () => {
       limit: 10,
     });
     expect(found.map((row) => row.canonicalName)).toEqual(['Ancient Customer Contract']);
+  });
+
+  it('lists objects after an updated-at cursor', async () => {
+    const newestId = '00000000-0000-4000-8000-000000000101';
+    const middleId = '00000000-0000-4000-8000-000000000102';
+    const oldestId = '00000000-0000-4000-8000-000000000103';
+    await db.insert(entities).values([
+      {
+        id: newestId,
+        teamId: TEAM_A,
+        type: 'task',
+        canonicalName: 'Cursor newest',
+        updatedAt: new Date('2026-06-01T10:00:03.000Z'),
+      },
+      {
+        id: middleId,
+        teamId: TEAM_A,
+        type: 'task',
+        canonicalName: 'Cursor middle',
+        updatedAt: new Date('2026-06-01T10:00:02.000Z'),
+      },
+      {
+        id: oldestId,
+        teamId: TEAM_A,
+        type: 'task',
+        canonicalName: 'Cursor oldest',
+        updatedAt: new Date('2026-06-01T10:00:01.000Z'),
+      },
+    ]);
+    const ownerScope = withTeam(db, TEAM_A, USER_OWNER).objects;
+
+    const rows = await ownerScope.listObjects({
+      archived: false,
+      type: 'task',
+      limit: 20,
+      cursor: encodeCursor({ at: '2026-06-01T10:00:02.000Z', id: middleId }),
+    });
+    const rowIds = rows.map((row) => row.id);
+
+    expect(rowIds).toContain(oldestId);
+    expect(rowIds).not.toContain(newestId);
+    expect(rowIds).not.toContain(middleId);
   });
 });
 

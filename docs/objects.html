@@ -50,7 +50,7 @@
         <div class="stat"><b>13</b><span>object types in the enum</span></div>
         <div class="stat"><b>8</b><span>new tables</span></div>
         <div class="stat"><b>1</b><span>shared module (<code>objects</code>)</span></div>
-        <div class="stat"><b>0</b><span>data migrations needed</span></div>
+        <div class="stat"><b>1</b><span>list index migration</span></div>
       </div>
       <p>
         Everything routes through <code>withTeam(db, teamId, userId)</code> — the single chokepoint
@@ -413,9 +413,12 @@
           <tr>
             <td><code>/app/objects</code></td>
             <td>
-              Index grouped by type. Type-filter chips along the top, "New object" CTA, and select
-              mode for bulk archive or merge cleanup, plus a collapsed cleanup suggestions panel
-              with a pending count and manual "Find suggestions" enqueue.
+              Sectioned index over active objects. The unfiltered page shows a small preview per
+              type with "View all" links for larger sections; typed views paginate 48 rows at a time
+              with cursor-based "Next" links that preserve <code>type</code> and
+              <code>status</code> filters. Type-filter chips along the top, "New object" CTA, and
+              select mode for bulk archive or merge cleanup, plus a collapsed cleanup suggestions
+              panel with a pending count and manual "Find suggestions" enqueue.
             </td>
           </tr>
           <tr>
