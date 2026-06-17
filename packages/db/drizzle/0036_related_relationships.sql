@@ -22,7 +22,7 @@ WHERE kind IN ('related', 'linked');
 
 UPDATE agent_suggestion_items
 SET proposed_payload = jsonb_set(proposed_payload, '{kind}', '"related"'::jsonb)
-WHERE target_kind = 'object_relationship'
+WHERE target_kind::text = 'object_relationship'
   AND proposed_payload ->> 'kind' = 'linked';
 
 ALTER TYPE relationship_kind RENAME TO relationship_kind_old;
