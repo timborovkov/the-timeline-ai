@@ -15,6 +15,19 @@ describe('displayObjectTitle', () => {
     ).toBe('the-timeline-ai: Add cursor pagination');
   });
 
+  it('uses the stored canonical name after a GitHub task is renamed by a user', () => {
+    expect(
+      displayObjectTitle({
+        canonicalName: 'Use cursor pagination in the task board',
+        metadata: {
+          integration_provider: 'github',
+          integration_external_id: 'timborovkov/the-timeline-ai#202',
+          display_title: 'the-timeline-ai: Add cursor pagination',
+        },
+      }),
+    ).toBe('Use cursor pagination in the task board');
+  });
+
   it('cleans legacy GitHub PR and issue canonical names', () => {
     expect(
       displayObjectTitle({
