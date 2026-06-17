@@ -6,6 +6,7 @@ import type { RecipientInvite } from '@/components/team-switcher';
 import type { TeamMembership } from '@/lib/active-team';
 import type { ReactNode } from 'react';
 
+import { AppMainScrollRestoration } from '@/components/app-shell-scroll-restoration';
 import { FloatingAgentChat } from '@/components/chat/floating-agent-chat';
 import { DesktopSidebar } from '@/components/desktop-sidebar';
 import { GlobalSearchPalette } from '@/components/global-search-palette';
@@ -54,7 +55,7 @@ export function AppShell({
   return (
     <InspectorProvider>
       <SkipLink />
-      <div className="flex min-h-screen w-full bg-bg">
+      <div className="flex h-dvh w-full overflow-hidden bg-bg">
         {/* ── Left rail (desktop) ─────────────────────────────────── */}
         <TooltipProvider>
           <DesktopSidebar
@@ -66,7 +67,7 @@ export function AppShell({
         </TooltipProvider>
 
         {/* ── Main column ─────────────────────────────────────────── */}
-        <div className="flex min-w-0 flex-1 flex-col">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           <header className="sticky top-0 z-30 flex h-14 items-center gap-2 border-b border-border bg-bg/85 px-3 backdrop-blur md:px-4">
             <div className="flex items-center gap-2 md:hidden">
               <MobileNav
@@ -100,7 +101,11 @@ export function AppShell({
           {/* Main content area. No artificial max-width: pages opt into
               <ProseContainer> for long-form text; operational surfaces
               (timeline, board, objects) fill the column. */}
-          <main id="main" className="flex-1 px-4 py-6 md:px-8 md:py-8">
+          <main
+            id="main"
+            className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-6 md:px-8 md:py-8"
+          >
+            <AppMainScrollRestoration />
             {children}
           </main>
         </div>
