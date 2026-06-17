@@ -10,7 +10,12 @@ const fakes = vi.hoisted(() => ({
   searchParams: vi.fn(),
   useChat: vi.fn(),
   loadChatSessionAction: vi.fn(),
-  transports: [] as { options: { body?: () => unknown } }[],
+  transports: [] as {
+    options: {
+      body?: () => unknown;
+      fetch?: (url: string, init?: RequestInit) => Promise<Response>;
+    };
+  }[],
 }));
 const boardItemId = '55555555-5555-4555-8555-555555555555';
 
@@ -131,5 +136,66 @@ describe('FloatingAgentChat', () => {
         (fakes.transports.at(-1)?.options.body?.() as { sessionId?: string | null }).sessionId,
       ).toBe(team2Session);
     });
+  });
+
+  it('starts a fresh floating session after the modal closes', async () => {
+    const user = userEvent.setup();
+    const storedSession = 'aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa';
+    const storageKey = 'timeline:floating-agent-chat:team-1:session';
+    window.localStorage.setItem(storageKey, storedSession);
+
+    render(<FloatingAgentChat teamId="team-1" teamName="AuditAI" />);
+    await user.click(screen.getByRole('button', { name: 'Open floating agent chat' }));
+
+    await waitFor(() => {
+      expect(
+        (fakes.transports.at(-1)?.options.body?.() as { sessionId?: string | null }).sessionId,
+      ).toBe(storedSession);
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Close floating agent chat' }));
+    expect(window.localStorage.getItem(storageKey)).toBeNull();
+
+    await user.click(screen.getByRole('button', { name: 'Open floating agent chat' }));
+
+    await waitFor(() => {
+      expect(fakes.transports.length).toBeGreaterThanOrEqual(2);
+    });
+    expect(
+      fakes.transports.at(-1)?.options.body?.() as {
+        sessionId?: string | null;
+        startNewSession?: boolean;
+      },
+    ).toMatchObject({ sessionId: undefined, startNewSession: true });
+  });
+
+  it('ignores late session ids from requests that finish after close', async () => {
+    const user = userEvent.setup();
+    const storageKey = 'timeline:floating-agent-chat:team-1:session';
+    const lateSession = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(null, { headers: { 'x-tl-session-id': lateSession } }),
+    );
+
+    render(<FloatingAgentChat teamId="team-1" teamName="AuditAI" />);
+    await user.click(screen.getByRole('button', { name: 'Open floating agent chat' }));
+    const transport = fakes.transports.at(-1)?.options;
+
+    await user.click(screen.getByRole('button', { name: 'Close floating agent chat' }));
+    await transport?.fetch?.('/api/chat', {});
+
+    expect(window.localStorage.getItem(storageKey)).toBeNull();
+
+    await user.click(screen.getByRole('button', { name: 'Open floating agent chat' }));
+
+    await waitFor(() => {
+      expect(fakes.transports.length).toBeGreaterThanOrEqual(2);
+    });
+    expect(
+      fakes.transports.at(-1)?.options.body?.() as {
+        sessionId?: string | null;
+        startNewSession?: boolean;
+      },
+    ).toMatchObject({ sessionId: undefined, startNewSession: true });
   });
 });

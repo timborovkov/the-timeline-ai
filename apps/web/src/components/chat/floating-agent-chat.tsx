@@ -47,10 +47,17 @@ function FloatingAgentChatContent({ teamId, teamName }: FloatingAgentChatProps) 
     initialMessages: [],
   }));
   const hydratedSessionIdRef = useRef<string | null>(null);
+  const sessionGenerationRef = useRef(0);
   const context = useMemo(
     () => buildDashboardChatContext(pathname, searchParams),
     [pathname, searchParams],
   );
+  const resetFloatingSession = () => {
+    sessionGenerationRef.current += 1;
+    window.localStorage.removeItem(storageKey);
+    hydratedSessionIdRef.current = null;
+    setSessionState({ sessionId: null, initialMessages: [] });
+  };
 
   useEffect(() => {
     if (!sessionId) {
@@ -90,6 +97,7 @@ function FloatingAgentChatContent({ teamId, teamName }: FloatingAgentChatProps) 
   if (!pathname || pathname.startsWith('/app/chat')) return null;
 
   const fullChatHref = sessionId ? `/app/chat?session=${sessionId}` : '/app/chat';
+  const activeSessionGeneration = sessionGenerationRef.current;
 
   return (
     <>
@@ -108,7 +116,13 @@ function FloatingAgentChatContent({ teamId, teamName }: FloatingAgentChatProps) 
         <span className="hidden sm:inline">Ask</span>
       </Button>
 
-      <Dialog open={open} onOpenChange={setOpen}>
+      <Dialog
+        open={open}
+        onOpenChange={(nextOpen) => {
+          setOpen(nextOpen);
+          if (!nextOpen) resetFloatingSession();
+        }}
+      >
         <DialogContent
           className="flex h-[min(720px,calc(100vh-2rem))] max-h-[calc(100vh-2rem)] flex-col border-border bg-bg p-0 sm:max-w-2xl"
           showCloseButton={false}
@@ -135,6 +149,7 @@ function FloatingAgentChatContent({ teamId, teamName }: FloatingAgentChatProps) 
                 aria-label="Close floating agent chat"
                 onClick={() => {
                   setOpen(false);
+                  resetFloatingSession();
                 }}
               >
                 <X className="size-4" />
@@ -143,6 +158,7 @@ function FloatingAgentChatContent({ teamId, teamName }: FloatingAgentChatProps) 
           </DialogHeader>
           <div className="min-h-0 flex-1 p-4">
             <ChatSurface
+              key={activeSessionGeneration}
               compact
               teamName={teamName}
               sessionId={sessionId}
@@ -151,6 +167,9 @@ function FloatingAgentChatContent({ teamId, teamName }: FloatingAgentChatProps) 
               pinnedEntityName={null}
               dashboardContext={context}
               onSessionIdChange={(id) => {
+                if (activeSessionGeneration !== sessionGenerationRef.current) {
+                  return;
+                }
                 window.localStorage.setItem(storageKey, id);
                 setSessionState((state) => ({ ...state, sessionId: id }));
               }}
