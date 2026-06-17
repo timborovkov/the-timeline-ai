@@ -69,6 +69,10 @@ const USER_OTHER_TEAM = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
 let pg: PGlite;
 let db: AnyDb;
 
+async function flushBackgroundWork(): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, 0));
+}
+
 async function seedWorkspace(): Promise<void> {
   await pg.exec(`
     INSERT INTO teams (id, slug, name)
@@ -103,6 +107,7 @@ beforeEach(async () => {
 }, 60_000);
 
 afterEach(async () => {
+  await flushBackgroundWork();
   await pg.close();
 });
 
@@ -2035,6 +2040,7 @@ describe('object scope — merge cleanup', () => {
         resolveSummaryJob({ enqueued: true, jobId: 'summary-job' });
       }
       await updatePromise.catch(() => undefined);
+      await flushBackgroundWork();
     }
   });
 

@@ -220,7 +220,7 @@ describe('queue wrappers', () => {
     expect(fakes.queues[0]?.addCalls[0]).toMatchObject({
       name: 'suggestions',
       opts: {
-        jobId: 'object-cleanup|22222222-2222-4222-8222-222222222222|manual|manual',
+        jobId: 'object-cleanup|22222222-2222-4222-8222-222222222222|team|manual|manual',
       },
     });
     expect(fakes.queues[0]?.addCalls).toHaveLength(1);

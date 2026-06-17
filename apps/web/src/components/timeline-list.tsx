@@ -1,19 +1,6 @@
 'use client';
 
-import {
-  Bot,
-  CalendarDays,
-  Cable,
-  ExternalLink,
-  FileText,
-  Mail,
-  MessageSquare,
-  MousePointer,
-  Send,
-  Trash2,
-  Video,
-  type LucideIcon,
-} from 'lucide-react';
+import { ExternalLink, Trash2 } from 'lucide-react';
 import Link from 'next/link';
 import { useMemo } from 'react';
 
@@ -57,18 +44,6 @@ interface Props {
 }
 
 const EMPTY_MEMBERS: NonNullable<Props['members']> = [];
-
-const SOURCE_ICON: Record<TimelineEvent['source'], LucideIcon> = {
-  web: MousePointer,
-  telegram: Send,
-  email: Mail,
-  system: Bot,
-  document: FileText,
-  meeting: Video,
-  integration: Cable,
-  calendar: CalendarDays,
-  slack: MessageSquare,
-};
 
 const IMPACT_LABEL: Record<ImpactItem['kind'], string> = {
   task: 'Task',
@@ -342,7 +317,7 @@ function groupedByDate(moments: TimelineMoment[]): [string, TimelineMoment[]][] 
 function InspectorBody({ moment }: { moment: TimelineMoment }) {
   const metadata = inspectorSourceDetailEntries(moment);
   const summary = sourceTruthSummary(moment);
-  const visibleRawEvents = [...moment.rawEvents].reverse().slice(0, INSPECTOR_RAW_EVENT_LIMIT);
+  const visibleRawEvents = moment.rawEvents.slice(0, INSPECTOR_RAW_EVENT_LIMIT);
   const hiddenRawEventCount = moment.rawEvents.length - visibleRawEvents.length;
   const actorByTelegramUserId = actorLabelsByTelegramUserId(moment.rawEvents);
 
@@ -350,11 +325,13 @@ function InspectorBody({ moment }: { moment: TimelineMoment }) {
     <div className="space-y-5">
       <section>
         <h3 className="mb-2 font-mono text-[11px] uppercase tracking-[0.14em] text-fg">
-          Source truth
+          Why this row exists
         </h3>
-        <p className="break-words text-sm font-medium leading-6 text-fg">{summary.title}</p>
+        <p className="break-words text-sm font-medium leading-6 text-fg">{moment.summary}</p>
         {summary.body ? (
-          <p className="mt-1 break-words text-sm leading-6 text-fg-muted">{summary.body}</p>
+          <p className="mt-1 break-words text-sm leading-6 text-fg-muted">
+            Source truth · {summary.body}
+          </p>
         ) : null}
         <p className="mt-2 font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
           Visibility · {formatVisibilitySummary(moment.rawEvents)}
@@ -388,30 +365,20 @@ function InspectorBody({ moment }: { moment: TimelineMoment }) {
       ) : null}
       <section>
         <h3 className="mb-2 font-mono text-[11px] uppercase tracking-[0.14em] text-fg">
-          Source events
+          Source evidence
         </h3>
         <ol className="space-y-2">
           {visibleRawEvents.map((event) => (
-            <li
+            <SourceEvidenceCard
               key={event.id}
-              className="min-w-0 overflow-hidden rounded-sm border border-border bg-bg px-2.5 py-2"
-            >
-              <div className="flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-[11px] uppercase tracking-[0.1em] text-fg-dim">
-                <span className="text-fg-muted">
-                  {rawEventActorLabel(event, actorByTelegramUserId)}
-                </span>
-                {rawEventContextLabel(event) ? <span>{rawEventContextLabel(event)}</span> : null}
-                <time dateTime={event.occurredAt}>{formatTimestamp(event.occurredAt)}</time>
-              </div>
-              <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-relaxed text-fg-muted">
-                {rawEventBody(event)}
-              </p>
-            </li>
+              event={event}
+              actorLabel={rawEventActorLabel(event, actorByTelegramUserId)}
+            />
           ))}
         </ol>
         {hiddenRawEventCount > 0 ? (
           <p className="mt-2 rounded-sm border border-border bg-surface-2 px-2 py-1.5 text-fg-dim">
-            + {hiddenRawEventCount} older raw event{hiddenRawEventCount === 1 ? '' : 's'}
+            + {hiddenRawEventCount} older source{hiddenRawEventCount === 1 ? '' : 's'}
           </p>
         ) : null}
       </section>
@@ -436,7 +403,54 @@ function InspectorBody({ moment }: { moment: TimelineMoment }) {
   );
 }
 
-function RawEventExpansion({
+function SourceEvidenceCard({ event, actorLabel }: { event: TimelineEvent; actorLabel: string }) {
+  const documentLink = rawEventDocumentLink(event);
+  const context = rawEventContextLabel(event);
+  const transcriptionStatus = transcriptionStatusMessage(event);
+  const body = rawEventBody(event);
+  return (
+    <li className="min-w-0 overflow-hidden rounded-sm border border-border bg-bg px-2.5 py-2">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-[11px] uppercase tracking-[0.1em] text-fg-dim">
+        <span className="text-fg-muted">{actorLabel}</span>
+        <span>{event.source}</span>
+        {context ? <span>{context}</span> : null}
+        <time dateTime={event.occurredAt}>{formatTimestamp(event.occurredAt)}</time>
+        {event.visibility === 'private' ? <span>Private</span> : null}
+      </div>
+      {documentLink ? (
+        <div className="mt-2 flex min-w-0 flex-wrap items-start gap-2">
+          <Link
+            href={documentLink.href}
+            title={documentLink.label}
+            className="inline-flex min-h-7 max-w-full min-w-0 items-center rounded-sm border border-border bg-surface px-2 py-1 font-mono text-[11px] uppercase tracking-[0.1em] text-fg-muted transition-colors hover:text-signal"
+          >
+            <span className="min-w-0 truncate">Attachment · {documentLink.label}</span>
+          </Link>
+          {documentLink.canPreview ? (
+            <DocumentPreview
+              target={{
+                documentId: documentLink.documentId,
+                versionId: documentLink.versionId,
+                versionNumber: documentLink.versionNumber,
+              }}
+              label="Preview"
+              compact
+              className="w-full sm:w-auto sm:min-w-72"
+            />
+          ) : null}
+        </div>
+      ) : null}
+      <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-relaxed text-fg-muted">
+        {body}
+      </p>
+      {transcriptionStatus && body !== transcriptionStatus ? (
+        <p className="mt-2 text-sm italic text-fg-dim">{transcriptionStatus}</p>
+      ) : null}
+    </li>
+  );
+}
+
+function InspectorActions({
   moment,
   audioUrlMap,
   currentUserId,
@@ -449,133 +463,86 @@ function RawEventExpansion({
   isAdmin: boolean;
   members: { id: string; label: string }[];
 }) {
-  const conversationEvents = [...moment.rawEvents].reverse();
-  const actorByTelegramUserId = actorLabelsByTelegramUserId(moment.rawEvents);
+  const editableEvents = moment.rawEvents.filter((event) =>
+    canEditVisibility(event, currentUserId),
+  );
+  const removableEvents = moment.rawEvents.filter((event) =>
+    canRemoveConversational(event, currentUserId, isAdmin),
+  );
+  const audioEvents = moment.rawEvents.filter((event) => event.contentAudioUrl);
+  if (editableEvents.length === 0 && removableEvents.length === 0 && audioEvents.length === 0) {
+    return null;
+  }
   return (
-    <details className="mt-3 border-t border-border pt-3" open={moment.rawEvents.length > 1}>
-      <summary className="cursor-pointer list-none font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim transition-colors hover:text-fg">
-        {moment.rawEvents.length} raw event{moment.rawEvents.length === 1 ? '' : 's'} · inspect
-      </summary>
-      <ol className="mt-3 space-y-3">
-        {conversationEvents.map((event, index) => {
-          const documentLink = rawEventDocumentLink(event);
-          const context = rawEventContextLabel(event);
-          const transcriptionStatus = transcriptionStatusMessage(event);
-          return (
-            <li
+    <section>
+      <h3 className="mb-2 font-mono text-[11px] uppercase tracking-[0.14em] text-fg">
+        Event controls
+      </h3>
+      <div className="space-y-3">
+        {audioEvents.map((event) =>
+          audioUrlMap?.get(event.id) ? (
+            <audio
               key={event.id}
-              id={moment.rawEvents.length > 1 ? `ev-${event.id}` : undefined}
-              className="scroll-mt-24 border-l border-border pl-3 target:bg-signal-soft target:ring-1 target:ring-signal/40"
+              src={audioUrlMap.get(event.id)}
+              controls
+              aria-label="Voice memo"
+              preload="metadata"
+              className="w-full"
             >
-              <div className="flex flex-wrap items-center gap-2 font-mono text-[11px] uppercase tracking-[0.1em] text-fg-dim">
-                <span>{index + 1}</span>
-                <span>{formatTimestamp(event.occurredAt)}</span>
-                <span>{event.source}</span>
-                <span>{rawEventActorLabel(event, actorByTelegramUserId)}</span>
-                {context ? <span>{context}</span> : null}
-                {event.visibility === 'private' ? <span>Private</span> : null}
-              </div>
-              {documentLink ? (
-                <div className="mt-2 flex min-w-0 flex-wrap items-start gap-2">
-                  <Link
-                    href={documentLink.href}
-                    title={documentLink.label}
-                    className="inline-flex min-h-7 max-w-full min-w-0 items-center rounded-sm border border-border bg-surface px-2 py-1 font-mono text-[11px] uppercase tracking-[0.1em] text-fg-muted transition-colors hover:text-signal"
-                  >
-                    <span className="min-w-0 truncate">Attachment · {documentLink.label}</span>
-                  </Link>
-                  {documentLink.canPreview ? (
-                    <DocumentPreview
-                      target={{
-                        documentId: documentLink.documentId,
-                        versionId: documentLink.versionId,
-                        versionNumber: documentLink.versionNumber,
-                      }}
-                      label="Preview"
-                      compact
-                      className="w-full sm:w-auto sm:min-w-72"
-                    />
-                  ) : null}
-                </div>
-              ) : null}
-              {event.contentAudioUrl ? (
-                audioUrlMap?.get(event.id) ? (
-                  <audio
-                    src={audioUrlMap.get(event.id)}
-                    controls
-                    aria-label="Voice memo"
-                    preload="metadata"
-                    className="mt-2 w-full max-w-md"
-                  >
-                    <track
-                      kind="captions"
-                      src="data:text/vtt,WEBVTT"
-                      srcLang="en"
-                      label="Captions"
-                    />
-                  </audio>
-                ) : (
-                  <p className="mt-2 font-mono text-[11px] uppercase tracking-[0.1em] text-fg-dim">
-                    [audio unavailable]
-                  </p>
-                )
-              ) : null}
-              {event.contentText?.trim() ? (
-                <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-relaxed text-fg-muted">
-                  {displayText(event.contentText)}
-                </p>
-              ) : null}
-              {transcriptionStatus ? (
-                <p className="mt-2 text-sm italic text-fg-dim">{transcriptionStatus}</p>
-              ) : null}
-              <div className="mt-2 flex flex-wrap items-center gap-2">
-                {canEditVisibility(event, currentUserId) ? (
-                  <details className="text-xs">
-                    <summary className="cursor-pointer font-mono uppercase tracking-[0.1em] text-fg-dim">
-                      Visibility
-                    </summary>
-                    <EventVisibilityForm
-                      eventId={event.id}
-                      visibility={event.visibility}
-                      visibilityUserIds={event.visibilityUserIds}
-                      members={members}
-                    />
-                  </details>
-                ) : null}
-                {canRemoveConversational(event, currentUserId, isAdmin) ? (
-                  <form action={removeConversationalEventAction}>
-                    <input type="hidden" name="id" value={event.id} />
-                    <Button
-                      type="submit"
-                      variant="ghost"
-                      size="icon"
-                      className="size-7 text-fg-dim hover:text-danger"
-                      title="Remove from timeline"
-                    >
-                      <Trash2 aria-hidden="true" className="size-3.5" />
-                      <span className="sr-only">Remove from timeline</span>
-                    </Button>
-                  </form>
-                ) : null}
-              </div>
-            </li>
-          );
-        })}
-      </ol>
-    </details>
+              <track kind="captions" src="data:text/vtt,WEBVTT" srcLang="en" label="Captions" />
+            </audio>
+          ) : (
+            <p
+              key={event.id}
+              className="font-mono text-[11px] uppercase tracking-[0.1em] text-fg-dim"
+            >
+              [audio unavailable]
+            </p>
+          ),
+        )}
+        {editableEvents.map((event) => (
+          <details key={event.id} className="text-xs">
+            <summary className="cursor-pointer font-mono uppercase tracking-[0.1em] text-fg-dim">
+              Visibility · {formatTimestamp(event.occurredAt)}
+            </summary>
+            <EventVisibilityForm
+              eventId={event.id}
+              visibility={event.visibility}
+              visibilityUserIds={event.visibilityUserIds}
+              members={members}
+            />
+          </details>
+        ))}
+        {removableEvents.map((event) => (
+          <form key={event.id} action={removeConversationalEventAction}>
+            <input type="hidden" name="id" value={event.id} />
+            <Button
+              type="submit"
+              variant="ghost"
+              size="sm"
+              className="h-8 px-2 text-fg-dim hover:text-danger"
+              title="Remove from timeline"
+            >
+              <Trash2 aria-hidden="true" className="mr-1.5 size-3.5" />
+              Remove {formatTimestamp(event.occurredAt)}
+            </Button>
+          </form>
+        ))}
+      </div>
+    </section>
   );
 }
 
 function ImpactStrip({ items }: { items: ImpactItem[] }) {
   if (items.length === 0) return null;
   return (
-    <div className="mt-3 flex flex-wrap gap-1.5" aria-label="Impact context">
-      {items.map((item, index) => {
+    <div className="flex min-w-0 flex-wrap justify-end gap-1.5" aria-label="Impact context">
+      {items.slice(0, 2).map((item, index) => {
         const count = item.count && item.count > 1 ? ` ×${item.count}` : '';
         const status = item.status ? ` · ${item.status}` : '';
         const label = displayText(`${IMPACT_LABEL[item.kind]} · ${item.label}${count}${status}`);
         const className =
-          'inline-flex min-h-6 max-w-full min-w-0 items-center rounded-sm border border-border bg-surface px-2 py-1 font-mono text-[10px] uppercase tracking-[0.12em] text-fg-muted';
+          'inline-flex min-h-6 max-w-full min-w-0 items-center rounded-sm border border-border bg-surface px-2 py-1 font-mono text-[10px] uppercase tracking-[0.12em] text-fg-muted first:border-signal/40 first:bg-signal-soft first:text-signal';
         return item.href ? (
           <Link key={`${item.kind}:${item.label}:${index}`} href={item.href} className={className}>
             <span className="min-w-0 truncate">{label}</span>
@@ -588,6 +555,14 @@ function ImpactStrip({ items }: { items: ImpactItem[] }) {
       })}
     </div>
   );
+}
+
+function momentTranscriptionStatus(moment: TimelineMoment): string | null {
+  for (const event of moment.rawEvents) {
+    const status = transcriptionStatusMessage(event);
+    if (status) return status;
+  }
+  return null;
 }
 
 function TimelineMomentRow({
@@ -606,26 +581,36 @@ function TimelineMomentRow({
   compact: boolean;
 }) {
   const inspector = useInspector();
-  const Icon = SOURCE_ICON[moment.source];
   const selected = inspector.open && inspector.content?.id === moment.id;
   const meetingHref = meetingDetailHrefForMoment(moment);
-  const singleRawEventId = moment.rawEvents.length === 1 ? moment.rawEvents[0]?.id : null;
+  const transcriptionStatus = momentTranscriptionStatus(moment);
   return (
     <li
-      id={singleRawEventId ? `ev-${singleRawEventId}` : undefined}
       className={cn(
-        'grid scroll-mt-24 grid-cols-[5.75rem_minmax(0,1fr)] border-b border-border transition-colors hover:bg-surface target:bg-signal-soft target:ring-1 target:ring-signal/40',
-        selected && 'bg-surface',
+        'relative grid scroll-mt-24 grid-cols-1 border-b border-border transition-colors hover:bg-surface md:grid-cols-[6.75rem_minmax(0,1fr)_auto]',
+        selected && 'bg-surface shadow-[inset_2px_0_0_var(--signal)]',
       )}
     >
-      <div className="relative py-4 pr-4 font-mono text-xs text-fg-dim">
+      {moment.rawEvents.map((event) => (
+        <span
+          key={event.id}
+          id={`ev-${event.id}`}
+          aria-hidden="true"
+          className="absolute -top-16 left-0 size-px scroll-mt-24 overflow-hidden target:h-full target:w-0.5 target:bg-signal"
+        />
+      ))}
+      <div className="relative px-0 pt-3 font-mono text-xs text-fg-dim md:px-0 md:py-3 md:pr-4">
         <span>{moment.timeLabel}</span>
-        <span aria-hidden="true" className="absolute right-1 top-0 h-full w-px bg-border" />
-        <span className="absolute right-[-5px] top-5 grid size-3 place-items-center border border-border-strong bg-bg text-signal">
-          <Icon className="size-2.5" aria-hidden="true" />
-        </span>
+        <span
+          aria-hidden="true"
+          className="absolute right-1 top-0 hidden h-full w-px bg-border md:block"
+        />
+        <span
+          aria-hidden="true"
+          className="absolute right-[-5px] top-4 hidden size-2.5 border border-border-strong bg-bg md:block"
+        />
       </div>
-      <div className="min-w-0 py-4 pl-4">
+      <div className="min-w-0 py-2 md:py-3 md:pl-4">
         <button
           type="button"
           onClick={() => {
@@ -633,26 +618,35 @@ function TimelineMomentRow({
               id: moment.id,
               kind: moment.sourceLabel.toUpperCase(),
               title: inspectorTitle(moment),
-              render: () => <InspectorBody moment={moment} />,
+              render: () => (
+                <div className="space-y-5">
+                  <InspectorBody moment={moment} />
+                  <InspectorActions
+                    moment={moment}
+                    audioUrlMap={audioUrlMap}
+                    currentUserId={currentUserId}
+                    isAdmin={isAdmin}
+                    members={members}
+                  />
+                </div>
+              ),
             });
           }}
           className="block w-full text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong"
         >
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">
             <span className="text-fg">{moment.sourceLabel}</span>
             <span>{moment.actorLabel}</span>
             <span>{moment.contextLabel}</span>
-            <span>
-              {moment.rawEvents.length} raw event{moment.rawEvents.length === 1 ? '' : 's'}
-            </span>
           </div>
+          <p className="mt-1 truncate text-sm font-semibold leading-5 text-fg">{moment.summary}</p>
           <p
             className={cn(
-              'mt-2 break-words text-sm leading-relaxed text-fg-muted',
-              compact && 'line-clamp-2',
+              'mt-0.5 truncate text-sm leading-5 text-fg-muted',
+              !compact && 'md:max-w-[72ch]',
             )}
           >
-            {moment.summary}
+            {sourceTruthSummary(moment).body ?? 'Source evidence available'}
           </p>
         </button>
         {meetingHref ? (
@@ -664,16 +658,17 @@ function TimelineMomentRow({
             Open transcript
           </Link>
         ) : null}
+      </div>
+      <div className="flex min-w-0 items-start justify-start gap-1.5 pb-3 md:min-w-48 md:justify-end md:py-3">
         <ImpactStrip items={moment.impactItems} />
-        {!compact ? (
-          <RawEventExpansion
-            moment={moment}
-            audioUrlMap={audioUrlMap}
-            currentUserId={currentUserId}
-            isAdmin={isAdmin}
-            members={members}
-          />
+        {transcriptionStatus ? (
+          <span className="inline-flex min-h-6 max-w-full min-w-0 items-center rounded-sm border border-border bg-surface px-2 py-1 font-mono text-[10px] uppercase tracking-[0.12em] text-fg-muted">
+            {transcriptionStatus}
+          </span>
         ) : null}
+        <span className="whitespace-nowrap font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">
+          {moment.rawEvents.length} source{moment.rawEvents.length === 1 ? '' : 's'}
+        </span>
       </div>
     </li>
   );
