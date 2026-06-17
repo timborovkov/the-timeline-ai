@@ -814,7 +814,7 @@ export async function getObjectSectionPage(
     return pageWindow(rows, limit, (row) => ({ at: row.createdAt.toISOString(), id: row.id }));
   }
   if (section === 'facts') {
-    const cursorSql = cursorCondition(args.cursor, factsTable.extractedAt, factsTable.id);
+    const cursorSql = cursorCondition(args.cursor, rawEvents.occurredAt, factsTable.id);
     const rows = await db
       .select({
         id: factsTable.id,
@@ -822,6 +822,8 @@ export async function getObjectSectionPage(
         confidence: factsTable.confidence,
         rawEventId: factsTable.rawEventId,
         extractedAt: factsTable.extractedAt,
+        occurredAt: rawEvents.occurredAt,
+        source: rawEvents.source,
         sharedObjects: sql<
           { id: string; canonicalName: string; type: ObjectType; role: string }[]
         >`coalesce(
@@ -871,9 +873,9 @@ export async function getObjectSectionPage(
           ...(cursorSql ? [cursorSql] : []),
         ),
       )
-      .orderBy(desc(factsTable.extractedAt), desc(factsTable.id))
+      .orderBy(desc(rawEvents.occurredAt), desc(factsTable.id))
       .limit(limit + 1);
-    return pageWindow(rows, limit, (row) => ({ at: row.extractedAt.toISOString(), id: row.id }));
+    return pageWindow(rows, limit, (row) => ({ at: row.occurredAt.toISOString(), id: row.id }));
   }
 
   const cursorSql = cursorCondition(args.cursor, rawEvents.occurredAt, rawEvents.id);

@@ -1580,6 +1580,85 @@ describe('suggestion scope', () => {
     expect(result.rows[0]?.status).toBe('todo');
   });
 
+  it('falls back to the proposal title when a create object payload omits canonicalName', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Pilot Case Scoping Criteria',
+      dedupeKey: 'create-object-title-fallback',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'object',
+          title:
+            'Include both integrated software (Netvisor, ProCountor) and non-integrated software with standardized exports in pilot scope',
+          dedupeKey: 'create-object-title-fallback:item',
+          proposedPayload: {
+            type: 'decision',
+            status: 'accepted',
+          },
+        },
+      ],
+    });
+    const itemId = bundle.items[0]?.id;
+    expect(itemId).toBeDefined();
+
+    await expect(scope.suggestions.acceptSuggestionItem(itemId ?? '')).resolves.toBe(true);
+
+    const result = await pg.query<{ canonical_name: string; type: string; status: string }>(
+      `SELECT canonical_name, type, status
+       FROM entities
+       WHERE team_id = '${TEAM_ID}'
+         AND canonical_name = 'Include both integrated software (Netvisor, ProCountor) and non-integrated software with standardized exports in pilot scope'`,
+    );
+    expect(result.rows[0]).toEqual({
+      canonical_name:
+        'Include both integrated software (Netvisor, ProCountor) and non-integrated software with standardized exports in pilot scope',
+      type: 'decision',
+      status: 'accepted',
+    });
+  });
+
+  it('keeps accepting long object-create titles when the payload omits canonicalName', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const longTitle = `Long title ${'with enough detail '.repeat(12)}`.trim();
+    expect(longTitle.length).toBeGreaterThan(200);
+
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Long decision title',
+      dedupeKey: 'create-object-long-title-fallback',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'object',
+          title: longTitle,
+          dedupeKey: 'create-object-long-title-fallback:item',
+          proposedPayload: {
+            type: 'decision',
+            status: 'accepted',
+          },
+        },
+      ],
+    });
+    const itemId = bundle.items[0]?.id;
+    expect(itemId).toBeDefined();
+
+    await expect(scope.suggestions.acceptSuggestionItem(itemId ?? '')).resolves.toBe(true);
+
+    const result = await pg.query<{ canonical_name: string; type: string; status: string }>(
+      `SELECT canonical_name, type, status
+       FROM entities
+       WHERE team_id = '${TEAM_ID}'
+         AND canonical_name = '${longTitle}'`,
+    );
+    expect(result.rows[0]).toEqual({
+      canonical_name: longTitle,
+      type: 'decision',
+      status: 'accepted',
+    });
+  });
+
   it('accepts task create and update suggestions with assignee, due date, and priority', async () => {
     const scope = withTeam(db as never, TEAM_ID, USER_ID);
     const createBundle = await scope.suggestions.createOrMergeSuggestionBundle({
@@ -1662,6 +1741,46 @@ describe('suggestion scope', () => {
       priority: 1,
     });
     expect(updated.rows[0]?.due_at?.toISOString()).toBe('2026-08-02T12:00:00.000Z');
+  });
+
+  it('stores a readable failure reason for calendar creates missing a time range', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'DFK pilot discussion',
+      dedupeKey: 'calendar-create-missing-range',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'calendar_event',
+          title: 'DFK pilot discussion',
+          dedupeKey: 'calendar-create-missing-range:item',
+          proposedPayload: {
+            description: 'Proposed pilot discussion with DFK.',
+          },
+        },
+      ],
+    });
+    const itemId = bundle.items[0]?.id;
+    expect(itemId).toBeDefined();
+
+    await expect(scope.suggestions.acceptSuggestionItem(itemId ?? '')).rejects.toMatchObject({
+      name: 'ExpectedSuggestionApplyFailure',
+      code: 'TIMELINE_EXPECTED_SUGGESTION_APPLY_FAILURE',
+      message:
+        'Calendar proposal is missing a start or end time. Reject it or revise the source details before accepting.',
+    });
+
+    const result = await pg.query<{ status: string; failure_reason: string | null }>(
+      `SELECT status, failure_reason
+       FROM agent_suggestion_items
+       WHERE id = '${itemId ?? ''}'`,
+    );
+    expect(result.rows[0]).toEqual({
+      status: 'failed',
+      failure_reason:
+        'Calendar proposal is missing a start or end time. Reject it or revise the source details before accepting.',
+    });
   });
 
   it('treats blank optional object update fields as absent values', async () => {
@@ -1754,11 +1873,13 @@ describe('suggestion scope', () => {
       count: string;
       result_id: string | null;
       status: string;
+      failure_reason: string | null;
     }>(
       `SELECT max(e.id::text) AS id,
               count(e.id)::text,
               max(asi.result_id::text) AS result_id,
-              max(asi.status::text) AS status
+              max(asi.status::text) AS status,
+              max(asi.failure_reason) AS failure_reason
        FROM entities e
        LEFT JOIN agent_suggestion_items asi ON asi.id = '${itemId}'
        WHERE e.team_id = '${TEAM_ID}'
@@ -1770,6 +1891,8 @@ describe('suggestion scope', () => {
       count: '1',
       result_id: null,
       status: 'failed',
+      failure_reason:
+        'A workspace object with this name already exists. Reject this proposal or update the existing object instead.',
     });
   });
 
@@ -4207,7 +4330,7 @@ describe('suggestion scope', () => {
     expect(itemId).toBeDefined();
 
     await expect(scope.suggestions.acceptSuggestionItem(itemId ?? '')).rejects.toThrow(
-      /expected string/i,
+      'Calendar proposal is missing a start or end time. Reject it or revise the source details before accepting.',
     );
 
     const events = await pg.query<{ count: string }>(
@@ -4218,7 +4341,9 @@ describe('suggestion scope', () => {
       `SELECT status, failure_reason FROM agent_suggestion_items WHERE id = '${itemId}'`,
     );
     expect(item.rows[0]?.status).toBe('failed');
-    expect(item.rows[0]?.failure_reason).toMatch(/expected string/i);
+    expect(item.rows[0]?.failure_reason).toBe(
+      'Calendar proposal is missing a start or end time. Reject it or revise the source details before accepting.',
+    );
   });
 
   it('rejecting a create suggestion leaves durable state unchanged', async () => {

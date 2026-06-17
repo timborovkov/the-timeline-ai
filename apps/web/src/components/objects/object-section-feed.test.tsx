@@ -19,6 +19,8 @@ const fakes = vi.hoisted(() => {
             id: 'fact-1',
             statement: 'Atlas rollout depends on Northwind approval.',
             confidence: 0.91,
+            occurredAt: '2026-06-14T12:45:00.000Z',
+            source: 'telegram',
             sharedObjects: [
               {
                 id: 'object-2',
@@ -58,6 +60,8 @@ function factData(): ObjectSectionQueryData {
             id: 'fact-1',
             statement: 'Atlas rollout depends on Northwind approval.',
             confidence: 0.91,
+            occurredAt: '2026-06-14T12:45:00.000Z',
+            source: 'telegram',
             sharedObjects: [
               {
                 id: 'object-2',
@@ -166,6 +170,12 @@ describe('ObjectSectionFeed', () => {
     );
 
     expect(html).toContain('Atlas rollout depends on Northwind approval.');
+    expect(html).toContain(
+      `Observed ${new Date('2026-06-14T12:45:00.000Z').toLocaleString(undefined, {
+        dateStyle: 'medium',
+        timeStyle: 'short',
+      })} · telegram · confidence 0.91`,
+    );
     expect(html).toContain('Fact (2)');
     expect(html).toContain('Objects sharing this fact');
     expect(html).toContain('/app/objects/object-2');
