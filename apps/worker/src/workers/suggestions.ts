@@ -574,6 +574,17 @@ function objectNamesForRepair(row: Pick<CleanupObjectRow, 'canonicalName' | 'ali
     .slice(0, 8);
 }
 
+function duplicatePartnerSearchNames(row: CleanupObjectRow): string[] {
+  const names = new Set(objectNamesForRepair(row));
+  for (const rawName of rawCleanupNames(row)) {
+    const firstToken = rawName.trim().split(/[^A-Za-z0-9]+/)[0];
+    if (firstToken && firstToken.length >= 2 && firstToken.length <= 4) names.add(firstToken);
+    const acronym = acronymForName(rawName);
+    if (acronym.length >= 2 && acronym.length <= 4) names.add(acronym);
+  }
+  return Array.from(names).slice(0, 16);
+}
+
 function activeConnectedWorkCondition() {
   return or(
     eq(entities.type, 'decision'),
@@ -581,6 +592,14 @@ function activeConnectedWorkCondition() {
       inArray(entities.type, ['task', 'follow_up']),
       sql`COALESCE(${entities.status}, '') NOT IN ('done', 'cancelled')`,
     ),
+  );
+}
+
+function teamVisibleRawEventCondition(teamId: string) {
+  return and(
+    eq(rawEvents.teamId, teamId),
+    eq(rawEvents.visibility, 'team'),
+    sql`COALESCE(${rawEvents.sourceMetadata} ->> 'deleted', 'false') <> 'true'`,
   );
 }
 
@@ -663,9 +682,7 @@ async function cleanupSharedEvidencePairKeys(
       .where(
         and(
           eq(factsTable.teamId, teamId),
-          eq(rawEvents.teamId, teamId),
-          eq(rawEvents.visibility, 'team'),
-          sql`COALESCE(${rawEvents.sourceMetadata} ->> 'deleted', 'false') <> 'true'`,
+          teamVisibleRawEventCondition(teamId),
           inArray(leftFactEntities.entityId, objectIds),
           inArray(rightFactEntities.entityId, objectIds),
         ),
@@ -718,8 +735,7 @@ async function repairRelationshipCandidates(
     .where(
       and(
         eq(factsTable.teamId, teamId),
-        eq(rawEvents.teamId, teamId),
-        eq(rawEvents.visibility, 'team'),
+        teamVisibleRawEventCondition(teamId),
         eq(anchorFactEntities.entityId, objectId),
         eq(entities.teamId, teamId),
         inArray(entities.type, Array.from(REPAIR_RELATIONSHIP_TYPES)),
@@ -782,8 +798,7 @@ async function repairFactRowsForObject(
       and(
         eq(factEntities.entityId, objectId),
         eq(factsTable.teamId, teamId),
-        eq(rawEvents.teamId, teamId),
-        eq(rawEvents.visibility, 'team'),
+        teamVisibleRawEventCondition(teamId),
       ),
     )
     .orderBy(desc(factsTable.extractedAt))
@@ -1006,6 +1021,56 @@ async function repairPersonCandidates(
     }
   }
   return Array.from(candidates.values()).slice(0, 3);
+}
+
+async function objectScopedMergeCandidates(
+  db: Db,
+  teamId: string,
+  rows: CleanupObjectRow[],
+  repairObjectId: string | null,
+): Promise<CleanupObjectRow[]> {
+  const mergeCandidatesById = new Map(
+    rows.filter((row) => CLEANUP_MERGE_TYPES.has(row.type)).map((row) => [row.id, row]),
+  );
+  if (!repairObjectId) return Array.from(mergeCandidatesById.values());
+  const repairObject = rows.find((row) => row.id === repairObjectId);
+  if (!repairObject || !CLEANUP_MERGE_TYPES.has(repairObject.type)) {
+    return Array.from(mergeCandidatesById.values());
+  }
+  const names = duplicatePartnerSearchNames(repairObject);
+  const nameMatchConditions = [
+    likeMentionCondition(entities.canonicalName, names),
+    likeMentionCondition(sql`${entities.aliases}::text`, names),
+  ].filter((condition): condition is NonNullable<typeof condition> => Boolean(condition));
+  const nameMatch = nameMatchConditions.length > 0 ? or(...nameMatchConditions) : undefined;
+  if (!nameMatch) return Array.from(mergeCandidatesById.values());
+  const partnerRows = await db
+    .select({
+      id: entities.id,
+      teamId: entities.teamId,
+      type: entities.type,
+      canonicalName: entities.canonicalName,
+      aliases: entities.aliases,
+      status: entities.status,
+      updatedAt: entities.updatedAt,
+    })
+    .from(entities)
+    .where(
+      and(
+        eq(entities.teamId, teamId),
+        inArray(entities.type, Array.from(CLEANUP_MERGE_TYPES)),
+        isNull(entities.archivedAt),
+        isNull(entities.mergedIntoId),
+        ne(entities.id, repairObjectId),
+        nameMatch,
+      ),
+    )
+    .orderBy(desc(entities.updatedAt), desc(entities.id))
+    .limit(200);
+  for (const row of partnerRows) {
+    mergeCandidatesById.set(row.id, row);
+  }
+  return Array.from(mergeCandidatesById.values());
 }
 
 function aliasesForRow(row: Pick<CleanupObjectRow, 'aliases'>): string[] {
@@ -1429,7 +1494,7 @@ async function createObjectCleanupSuggestionsForTeam(
     throw new UnrecoverableError('Object memory repair target was not available for cleanup');
   }
   const scope = withTeam(db, teamId, PSEUDO_USER, { skipMembershipCheck: true });
-  const mergeCandidates = rows.filter((row) => CLEANUP_MERGE_TYPES.has(row.type));
+  const mergeCandidates = await objectScopedMergeCandidates(db, teamId, rows, repairObjectId);
   const proposedMergeKeys = new Set<string>();
   const sharedEvidencePairKeys = await cleanupSharedEvidencePairKeys(
     db,

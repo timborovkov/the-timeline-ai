@@ -634,6 +634,78 @@ describe('processSuggestionJobForTests', () => {
     });
   });
 
+  it('finds object-scoped duplicate partners outside the recent cleanup window', async () => {
+    const oldDate = new Date('2026-01-01T10:00:00.000Z');
+    const [shortName, fullName] = await db
+      .insert(entities)
+      .values([
+        { teamId: TEAM_ID, type: 'company', canonicalName: 'DFK', updatedAt: REFERENCE_DATE },
+        {
+          teamId: TEAM_ID,
+          type: 'company',
+          canonicalName: 'DFK Finland Oy',
+          updatedAt: oldDate,
+        },
+      ])
+      .returning({ id: entities.id });
+    if (!shortName || !fullName) throw new Error('expected company fixtures');
+    await db.insert(entities).values(
+      Array.from({ length: 520 }, (_unused, index) => ({
+        teamId: TEAM_ID,
+        type: 'company' as const,
+        canonicalName: `Recent cleanup company ${index}`,
+        updatedAt: new Date(`2026-06-01T10:${String(index % 60).padStart(2, '0')}:00.000Z`),
+      })),
+    );
+    const [raw] = await db
+      .insert(rawEvents)
+      .values({
+        teamId: TEAM_ID,
+        authorUserId: OWNER_ID,
+        source: 'web',
+        contentText: 'DFK and DFK Finland Oy are both involved in the pilot.',
+        occurredAt: REFERENCE_DATE,
+        visibility: 'team',
+      })
+      .returning({ id: rawEvents.id });
+    if (!raw) throw new Error('expected raw event');
+    const [fact] = await db
+      .insert(facts)
+      .values({
+        teamId: TEAM_ID,
+        rawEventId: raw.id,
+        statement: 'DFK and DFK Finland Oy are both involved in the pilot.',
+        confidence: 0.9,
+        modelVersion: 'test',
+      })
+      .returning({ id: facts.id });
+    if (!fact) throw new Error('expected fact');
+    await db.insert(factEntities).values([
+      { factId: fact.id, entityId: shortName.id, role: 'subject' },
+      { factId: fact.id, entityId: fullName.id, role: 'object' },
+    ]);
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      {
+        scope: 'object_cleanup',
+        teamId: TEAM_ID,
+        objectId: shortName.id,
+        triggeredBy: 'memory_repair',
+      },
+    );
+
+    const bundles = await withTeam(
+      db as never,
+      TEAM_ID,
+      OWNER_ID,
+    ).suggestions.listPendingSuggestions();
+    expect(bundles).toHaveLength(1);
+    const objectIds = bundles[0]?.items[0]?.proposedPayload.objectIds;
+    if (!Array.isArray(objectIds)) throw new Error('expected merge object ids');
+    expect(new Set(objectIds)).toEqual(new Set([shortName.id, fullName.id]));
+  });
+
   it('fails object memory repair explicitly for archived objects', async () => {
     const [archived] = await db
       .insert(entities)
@@ -674,7 +746,8 @@ describe('processSuggestionJobForTests', () => {
     if (!company || !person) throw new Error('expected object fixtures');
     const olderRawId = '00000000-0000-4000-8000-000000000010';
     const newerRawId = '00000000-0000-4000-8000-000000000020';
-    const [olderRaw, newerRaw] = await db
+    const deletedRawId = '00000000-0000-4000-8000-000000000030';
+    const [olderRaw, newerRaw, deletedRaw] = await db
       .insert(rawEvents)
       .values([
         {
@@ -695,9 +768,19 @@ describe('processSuggestionJobForTests', () => {
           occurredAt: new Date('2026-06-18T10:00:00.000Z'),
           visibility: 'team',
         },
+        {
+          id: deletedRawId,
+          teamId: TEAM_ID,
+          authorUserId: OWNER_ID,
+          source: 'web',
+          contentText: 'Deleted note: Jonne from DFK owns the newest pilot follow-up.',
+          occurredAt: new Date('2026-06-19T10:00:00.000Z'),
+          visibility: 'team',
+          sourceMetadata: { deleted: true },
+        },
       ])
       .returning({ id: rawEvents.id });
-    if (!olderRaw || !newerRaw) throw new Error('expected raw events');
+    if (!olderRaw || !newerRaw || !deletedRaw) throw new Error('expected raw events');
     const insertedFacts = await db
       .insert(facts)
       .values([
@@ -717,14 +800,24 @@ describe('processSuggestionJobForTests', () => {
           modelVersion: 'test',
           extractedAt: new Date('2026-06-18T10:00:00.000Z'),
         },
+        {
+          teamId: TEAM_ID,
+          rawEventId: deletedRaw.id,
+          statement: 'Deleted fact: Jonne from DFK owns the newest pilot follow-up.',
+          confidence: 0.9,
+          modelVersion: 'test',
+          extractedAt: new Date('2026-06-19T10:00:00.000Z'),
+        },
       ])
       .returning({ id: facts.id });
-    if (insertedFacts.length !== 2) throw new Error('expected facts');
+    if (insertedFacts.length !== 3) throw new Error('expected facts');
     await db.insert(factEntities).values([
       { factId: insertedFacts[0]?.id ?? '', entityId: company.id, role: 'subject' },
       { factId: insertedFacts[0]?.id ?? '', entityId: person.id, role: 'object' },
       { factId: insertedFacts[1]?.id ?? '', entityId: company.id, role: 'subject' },
       { factId: insertedFacts[1]?.id ?? '', entityId: person.id, role: 'object' },
+      { factId: insertedFacts[2]?.id ?? '', entityId: company.id, role: 'subject' },
+      { factId: insertedFacts[2]?.id ?? '', entityId: person.id, role: 'object' },
     ]);
 
     await processSuggestionJobForTests(
@@ -820,6 +913,57 @@ describe('processSuggestionJobForTests', () => {
       { factId: fact.id, entityId: company.id, role: 'subject' },
       { factId: fact.id, entityId: person.id, role: 'object' },
     ]);
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      {
+        scope: 'object_cleanup',
+        teamId: TEAM_ID,
+        objectId: company.id,
+        triggeredBy: 'memory_repair',
+      },
+    );
+
+    await expect(
+      withTeam(db as never, TEAM_ID, OWNER_ID).suggestions.listPendingSuggestions(),
+    ).resolves.toEqual([]);
+  });
+
+  it('does not queue memory repair proposals from deleted raw-event facts', async () => {
+    const [company] = await db
+      .insert(entities)
+      .values({ teamId: TEAM_ID, type: 'company', canonicalName: 'DFK' })
+      .returning({ id: entities.id });
+    if (!company) throw new Error('expected company fixture');
+    const [raw] = await db
+      .insert(rawEvents)
+      .values({
+        teamId: TEAM_ID,
+        authorUserId: OWNER_ID,
+        source: 'web',
+        contentText: 'Jonne Granqvist from DFK discussed the pilot scope.',
+        occurredAt: REFERENCE_DATE,
+        visibility: 'team',
+        sourceMetadata: { deleted: true },
+      })
+      .returning({ id: rawEvents.id });
+    if (!raw) throw new Error('expected raw event');
+    const [fact] = await db
+      .insert(facts)
+      .values({
+        teamId: TEAM_ID,
+        rawEventId: raw.id,
+        statement: 'Jonne Granqvist from DFK discussed the pilot scope.',
+        confidence: 0.9,
+        modelVersion: 'test',
+      })
+      .returning({ id: facts.id });
+    if (!fact) throw new Error('expected fact');
+    await db.insert(factEntities).values({
+      factId: fact.id,
+      entityId: company.id,
+      role: 'subject',
+    });
 
     await processSuggestionJobForTests(
       { db: db as never },
