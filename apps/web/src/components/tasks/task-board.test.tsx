@@ -39,10 +39,10 @@ function task(input: Partial<objects.ObjectRow> = {}): objects.ObjectRow {
   };
 }
 
-function renderBoard(selectedTaskId: string | null = null) {
+function renderBoard(selectedTaskId: string | null = null, rows: objects.ObjectRow[] = [task()]) {
   return render(
     <TaskBoard
-      rows={[task()]}
+      rows={rows}
       columns={['todo', 'doing', 'done', 'blocked', 'cancelled']}
       selectedTaskId={selectedTaskId}
       members={[
@@ -70,6 +70,20 @@ describe('TaskBoard', () => {
     expect(screen.getByText('Ada Lovelace')).toBeTruthy();
     expect(screen.getByText('Due 2026-07-04')).toBeTruthy();
     expect(screen.getByText('P2')).toBeTruthy();
+  });
+
+  it('wraps long task titles on cards and in the selected panel', () => {
+    const longTitle =
+      'timborovkov/the-timeline-ai#202: Add cursor pagination to the visible tasks board so the title can be read';
+    renderBoard('task-1', [task({ canonicalName: longTitle })]);
+
+    const cardTitle = screen.getByRole('link', { name: longTitle });
+    const panelTitle = screen.getByRole('heading', { name: longTitle });
+
+    expect(cardTitle.className).toContain('break-words');
+    expect(cardTitle.className).not.toContain('truncate');
+    expect(panelTitle.className).toContain('break-words');
+    expect(panelTitle.className).not.toContain('truncate');
   });
 
   it('renders the selected task panel with an object link that can return to the panel', () => {
