@@ -25,6 +25,7 @@ import {
 import { boardViewHref } from '@/lib/board-links';
 import { displayText, formatDisplayDateTime } from '@/lib/display-dates';
 import { objectDetailHref } from '@/lib/object-links';
+import { displayObjectTitle } from '@/lib/object-title';
 import { cn } from '@/lib/utils';
 
 interface Props {
@@ -194,12 +195,13 @@ function BoardCardHeader({
   nextStepDraft: string;
 }) {
   const visibleNextStep = nextStepDraft.trim();
+  const title = displayObjectTitle(item.object);
   return (
     <div className="border-b border-border p-4">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <h2 className="whitespace-normal break-words text-lg font-semibold leading-snug text-fg">
-            {displayText(item.object.canonicalName)}
+            {displayText(title)}
           </h2>
           <p className="mt-1 font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
             {item.object.type} · board item
@@ -531,6 +533,7 @@ function BoardActivity({
 }
 
 function ObjectPreviewDialog({ item, view }: { item: boards.BoardItemRow; view: BoardLayout }) {
+  const title = displayObjectTitle(item.object);
   return (
     <Dialog>
       <DialogTrigger asChild>
@@ -543,7 +546,7 @@ function ObjectPreviewDialog({ item, view }: { item: boards.BoardItemRow; view: 
       </DialogTrigger>
       <DialogContent className="border-border bg-bg sm:max-w-xl">
         <DialogHeader>
-          <DialogTitle>{displayText(item.object.canonicalName)}</DialogTitle>
+          <DialogTitle>{displayText(title)}</DialogTitle>
           <DialogDescription className="font-mono text-[11px] uppercase tracking-[0.12em]">
             {item.object.type} · object preview
           </DialogDescription>

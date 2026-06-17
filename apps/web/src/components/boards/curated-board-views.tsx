@@ -8,6 +8,7 @@ import type * as boards from '@timeline/shared/boards';
 
 import { boardViewHref, type BoardLayout } from '@/lib/board-links';
 import { displayText } from '@/lib/display-dates';
+import { displayObjectTitle } from '@/lib/object-title';
 
 export interface BoardMemberOption {
   id: string;
@@ -77,19 +78,18 @@ export function CuratedBoardTable({
         <tbody>
           {items.map((item) => {
             const optimistic = isOptimisticItem(item);
+            const objectTitle = displayObjectTitle(item.object);
             return (
               <tr key={item.id} className="border-t border-border transition-colors hover:bg-bg">
                 <td className="px-3 py-2">
                   {optimistic ? (
-                    <span className="font-medium text-fg">
-                      {displayText(item.object.canonicalName)}
-                    </span>
+                    <span className="font-medium text-fg">{displayText(objectTitle)}</span>
                   ) : (
                     <Link
                       href={boardViewHref(boardId, view, item.id)}
                       className="font-medium hover:underline"
                     >
-                      {displayText(item.object.canonicalName)}
+                      {displayText(objectTitle)}
                     </Link>
                   )}
                 </td>
@@ -102,7 +102,7 @@ export function CuratedBoardTable({
                       updateItem(item.id, { responsibleUserId: event.target.value || null });
                     }}
                     className="h-8 w-full rounded-sm border border-border bg-bg px-2 text-xs disabled:opacity-60"
-                    aria-label={`Responsible person for ${displayText(item.object.canonicalName)}`}
+                    aria-label={`Responsible person for ${displayText(objectTitle)}`}
                   >
                     <option value="">Unassigned</option>
                     {members.map((member) => (
@@ -125,7 +125,7 @@ export function CuratedBoardTable({
                       });
                     }}
                     className="h-8 w-full rounded-sm border border-border bg-bg px-2 text-xs disabled:opacity-60"
-                    aria-label={`Due date for ${displayText(item.object.canonicalName)}`}
+                    aria-label={`Due date for ${displayText(objectTitle)}`}
                   />
                 </td>
                 <td className="min-w-28 px-3 py-2">
@@ -138,7 +138,7 @@ export function CuratedBoardTable({
                       });
                     }}
                     className="h-8 w-full rounded-sm border border-border bg-bg px-2 text-xs disabled:opacity-60"
-                    aria-label={`Priority for ${displayText(item.object.canonicalName)}`}
+                    aria-label={`Priority for ${displayText(objectTitle)}`}
                   >
                     <option value="">None</option>
                     {[1, 2, 3, 4].map((priority) => (
@@ -156,7 +156,7 @@ export function CuratedBoardTable({
                       updateItem(item.id, { laneId: event.target.value || null });
                     }}
                     className="h-8 w-full rounded-sm border border-border bg-bg px-2 text-xs disabled:opacity-60"
-                    aria-label={`Lane for ${displayText(item.object.canonicalName)}`}
+                    aria-label={`Lane for ${displayText(objectTitle)}`}
                   >
                     <option value="">Unset</option>
                     {lanes.map((lane) => (
@@ -169,7 +169,7 @@ export function CuratedBoardTable({
                 <td className="min-w-64 px-3 py-2">
                   <BoardNextStepInput
                     key={`${item.id}:${item.nextStep ?? ''}`}
-                    objectName={item.object.canonicalName}
+                    objectName={objectTitle}
                     nextStep={item.nextStep}
                     disabled={optimistic || !onUpdateItem}
                     onSave={(nextStep) => {
@@ -240,10 +240,11 @@ export function CuratedBoardList({
   return (
     <ul className="divide-y divide-border border border-border bg-surface">
       {items.map((item) => {
+        const objectTitle = displayObjectTitle(item.object);
         const content = (
           <>
             <span className="min-w-0 flex-1 whitespace-normal break-words font-medium leading-snug text-fg">
-              {displayText(item.object.canonicalName)}
+              {displayText(objectTitle)}
             </span>
             <span className="font-mono text-[11px] uppercase tracking-[0.1em] text-fg-dim">
               {item.object.type}

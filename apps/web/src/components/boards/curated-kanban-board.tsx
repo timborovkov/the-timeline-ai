@@ -32,6 +32,7 @@ import {
   type CuratedKanbanSaveState,
 } from '@/components/boards/curated-kanban-state';
 import { displayText } from '@/lib/display-dates';
+import { displayObjectTitle } from '@/lib/object-title';
 import { cn, errorMessage } from '@/lib/utils';
 
 interface Props {
@@ -275,6 +276,7 @@ function KanbanCard({
     : undefined;
   const blocked = lane.kind === 'blocked';
   const due = dueState(item.dueAt);
+  const title = displayObjectTitle(item.object);
   return (
     <li
       ref={setNodeRef}
@@ -293,14 +295,14 @@ function KanbanCard({
     >
       {optimistic ? (
         <span className="block min-w-0 whitespace-normal break-words font-medium leading-snug">
-          {displayText(item.object.canonicalName)}
+          {displayText(title)}
         </span>
       ) : (
         <Link
           href={`/app/boards/${boardId}?item=${item.id}`}
           className="block min-w-0 whitespace-normal break-words font-medium leading-snug hover:underline"
         >
-          {displayText(item.object.canonicalName)}
+          {displayText(title)}
         </Link>
       )}
       <div className="mt-1.5 flex flex-wrap items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.1em] text-fg-dim">

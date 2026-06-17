@@ -13,6 +13,7 @@ import { z } from 'zod';
 import type { DailyDigestPayload } from '#src/messaging/types.js';
 
 import { chatStructured } from '#src/llm/chat.js';
+import { displayObjectTitle } from '#src/objects/index.js';
 import { withTeam } from '#src/team-scope.js';
 
 const digestSectionTitleSchema = z.enum([
@@ -376,7 +377,7 @@ export async function generateDailyDigest(
     .slice(0, 10)
     .map((task) => ({
       id: task.id,
-      title: task.canonicalName,
+      title: displayObjectTitle(task),
       status: task.status,
       dueAt: task.dueAt ? iso(task.dueAt) : null,
       href: `/app/objects/${task.id}`,
