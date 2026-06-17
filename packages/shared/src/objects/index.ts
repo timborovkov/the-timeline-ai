@@ -638,6 +638,17 @@ function objectNamesForMatching(object: Pick<ObjectRow, 'canonicalName' | 'alias
     .slice(0, 8);
 }
 
+function jsonishText(value: unknown): string {
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return '';
+  }
+}
+
 function calendarVisibleToScope(scope: TeamScopeCore): SQL {
   return sql`(
     ${calendarEvents.visibility} = 'team'
@@ -1044,9 +1055,16 @@ async function getConnectedWork(
       .select({
         suggestionId: agentSuggestions.id,
         itemId: agentSuggestionItems.id,
+        suggestionTitle: agentSuggestions.title,
+        summary: agentSuggestions.summary,
+        reason: agentSuggestions.reason,
         title: agentSuggestionItems.title,
+        description: agentSuggestionItems.description,
         operation: agentSuggestionItems.operation,
         targetKind: agentSuggestionItems.targetKind,
+        targetId: agentSuggestionItems.targetId,
+        resultId: agentSuggestionItems.resultId,
+        proposedPayload: agentSuggestionItems.proposedPayload,
         createdAt: agentSuggestions.createdAt,
       })
       .from(agentSuggestionItems)
@@ -1076,13 +1094,15 @@ async function getConnectedWork(
         ),
       )
       .orderBy(desc(agentSuggestions.createdAt), desc(agentSuggestionItems.id))
-      .limit(8),
+      .limit(16),
     names.length > 0
       ? db
           .select({
             id: documents.id,
             name: documents.name,
             fileKind: documents.fileKind,
+            metadata: documents.metadata,
+            chunkText: documentChunks.text,
             updatedAt: documents.updatedAt,
           })
           .from(documents)
@@ -1106,7 +1126,7 @@ async function getConnectedWork(
             ),
           )
           .orderBy(desc(documents.updatedAt), desc(documents.id))
-          .limit(20)
+          .limit(40)
       : Promise.resolve([]),
   ]);
 
@@ -1223,6 +1243,45 @@ async function getConnectedWork(
       return textMentionsAnyValue(`${row.title} ${row.description ?? ''}`, names);
     })
     .slice(0, 10);
+  const filteredPendingApprovalRows = pendingApprovalRows
+    .filter((row) => {
+      if (row.targetId === object.id || row.resultId === object.id) return true;
+      if (jsonishText(row.proposedPayload).includes(object.id)) return true;
+      return textMentionsAnyValue(
+        [
+          row.suggestionTitle,
+          row.summary,
+          row.reason,
+          row.title,
+          row.description,
+          jsonishText(row.proposedPayload),
+        ]
+          .filter(Boolean)
+          .join(' '),
+        names,
+      );
+    })
+    .slice(0, 8);
+  const filteredDocumentRows = Array.from(
+    new Map(
+      documentRows
+        .filter((row) =>
+          textMentionsAnyValue(
+            `${row.name} ${jsonishText(row.metadata)} ${row.chunkText ?? ''}`,
+            names,
+          ),
+        )
+        .map((row) => [
+          row.id,
+          {
+            id: row.id,
+            name: row.name,
+            fileKind: row.fileKind,
+            updatedAt: row.updatedAt,
+          },
+        ]),
+    ).values(),
+  ).slice(0, 8);
 
   return {
     openTasks,
@@ -1233,8 +1292,8 @@ async function getConnectedWork(
       .filter((row) => row.type !== 'task' && row.type !== 'follow_up')
       .slice(0, 12),
     boards: boardRows,
-    pendingApprovals: pendingApprovalRows,
-    documents: Array.from(new Map(documentRows.map((row) => [row.id, row])).values()).slice(0, 8),
+    pendingApprovals: filteredPendingApprovalRows,
+    documents: filteredDocumentRows,
   };
 }
 

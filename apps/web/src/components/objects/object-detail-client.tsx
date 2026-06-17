@@ -11,6 +11,7 @@ import {
   useMemo,
   useReducer,
   useRef,
+  useState,
   useTransition,
 } from 'react';
 
@@ -247,6 +248,7 @@ export function ObjectDetailClient({ detail, userId, suggestions }: Props) {
 function useObjectDetailController({ detail, userId, suggestions }: Props) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
+  const [repairPending, setRepairPending] = useState(false);
   const [
     {
       overrides,
@@ -690,11 +692,16 @@ function useObjectDetailController({ detail, userId, suggestions }: Props) {
 
   function repairMemory(): void {
     dispatchObjectUi({ error: null });
+    setRepairPending(true);
     startTransition(async () => {
-      const result = await repairObjectMemoryAction({ id: detail.id });
-      if ('error' in result && result.error) {
-        dispatchObjectUi({ error: result.error });
-      } else router.refresh();
+      try {
+        const result = await repairObjectMemoryAction({ id: detail.id });
+        if ('error' in result && result.error) {
+          dispatchObjectUi({ error: result.error });
+        } else router.refresh();
+      } finally {
+        setRepairPending(false);
+      }
     });
   }
 
@@ -719,6 +726,7 @@ function useObjectDetailController({ detail, userId, suggestions }: Props) {
     noteBody,
     patch,
     pending,
+    repairPending,
     rejectChange,
     repairMemory,
     removeRelationship,
@@ -743,6 +751,7 @@ function ObjectDetailView(props: Props) {
         detail={view.viewDetail}
         error={view.error}
         pending={view.pending}
+        repairPending={view.repairPending}
         saveState={view.saveState}
         savingCount={view.savingCount}
         onRepairMemory={view.repairMemory}
@@ -896,6 +905,7 @@ function ObjectDetailHeader({
   detail,
   error,
   pending,
+  repairPending,
   saveState,
   savingCount,
   onRepairMemory,
@@ -903,6 +913,7 @@ function ObjectDetailHeader({
   detail: ObjectDetail;
   error: string | null;
   pending: boolean;
+  repairPending: boolean;
   saveState: SaveState;
   savingCount: number;
   onRepairMemory: () => void;
@@ -964,7 +975,7 @@ function ObjectDetailHeader({
           <button
             type="button"
             onClick={onRepairMemory}
-            disabled={pending || detail.archivedAt !== null}
+            disabled={pending || repairPending || detail.archivedAt !== null}
             title={
               detail.archivedAt
                 ? 'Unarchive this object before repairing memory'
@@ -972,7 +983,11 @@ function ObjectDetailHeader({
             }
             className="rounded-sm border border-border bg-surface px-3 py-2 font-mono text-[11px] uppercase tracking-[0.12em] text-fg-muted transition hover:border-signal/50 hover:text-signal disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {detail.archivedAt ? 'Repair unavailable' : pending ? 'Repairing...' : 'Repair memory'}
+            {detail.archivedAt
+              ? 'Repair unavailable'
+              : repairPending
+                ? 'Repairing...'
+                : 'Repair memory'}
           </button>
         </div>
       </div>

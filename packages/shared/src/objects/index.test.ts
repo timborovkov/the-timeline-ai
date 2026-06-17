@@ -720,31 +720,59 @@ describe('object scope — notes and suggestions', () => {
       nextStep: 'Agree pilot scope',
       actor: { kind: 'user', userId: USER_OWNER },
     });
-    await db.insert(documents).values({
-      teamId: TEAM_A,
-      ownerUserId: USER_OWNER,
-      name: 'DFK pilot deck.pdf',
-      visibility: 'team',
-    });
-    const [suggestion] = await db
-      .insert(agentSuggestions)
-      .values({
+    await db.insert(documents).values([
+      {
         teamId: TEAM_A,
-        source: 'background',
-        title: 'Merge duplicate DFK object',
-        dedupeKey: 'merge-dfk-object',
+        ownerUserId: USER_OWNER,
+        name: 'DFK pilot deck.pdf',
         visibility: 'team',
-      })
+      },
+      {
+        teamId: TEAM_A,
+        ownerUserId: USER_OWNER,
+        name: 'ADFK parser notes.pdf',
+        visibility: 'team',
+      },
+    ]);
+    const [suggestion, substringSuggestion] = await db
+      .insert(agentSuggestions)
+      .values([
+        {
+          teamId: TEAM_A,
+          source: 'background',
+          title: 'Merge duplicate DFK object',
+          dedupeKey: 'merge-dfk-object',
+          visibility: 'team',
+        },
+        {
+          teamId: TEAM_A,
+          source: 'background',
+          title: 'Review ADFK parser object',
+          dedupeKey: 'review-adfk-parser',
+          visibility: 'team',
+        },
+      ])
       .returning({ id: agentSuggestions.id });
-    await db.insert(agentSuggestionItems).values({
-      suggestionId: suggestion?.id ?? '',
-      teamId: TEAM_A,
-      operation: 'merge',
-      targetKind: 'object_merge',
-      title: 'Merge DFK Finland Oy into DFK',
-      dedupeKey: 'merge-dfk-object:item',
-      proposedPayload: { objectIds: [company.id, '77777777-7777-4777-8777-777777777777'] },
-    });
+    await db.insert(agentSuggestionItems).values([
+      {
+        suggestionId: suggestion?.id ?? '',
+        teamId: TEAM_A,
+        operation: 'merge',
+        targetKind: 'object_merge',
+        title: 'Merge DFK Finland Oy into DFK',
+        dedupeKey: 'merge-dfk-object:item',
+        proposedPayload: { objectIds: [company.id, '77777777-7777-4777-8777-777777777777'] },
+      },
+      {
+        suggestionId: substringSuggestion?.id ?? '',
+        teamId: TEAM_A,
+        operation: 'update',
+        targetKind: 'object',
+        title: 'Review ADFK parser settings',
+        dedupeKey: 'review-adfk-parser:item',
+        proposedPayload: { canonicalName: 'ADFK parser settings' },
+      },
+    ]);
 
     const detail = await scope.getObject(company.id);
 
@@ -777,9 +805,15 @@ describe('object scope — notes and suggestions', () => {
     expect(detail?.connectedWork.pendingApprovals).toEqual([
       expect.objectContaining({ title: 'Merge DFK Finland Oy into DFK' }),
     ]);
+    expect(detail?.connectedWork.pendingApprovals).not.toContainEqual(
+      expect.objectContaining({ title: 'Review ADFK parser settings' }),
+    );
     expect(detail?.connectedWork.documents).toEqual([
       expect.objectContaining({ name: 'DFK pilot deck.pdf' }),
     ]);
+    expect(detail?.connectedWork.documents).not.toContainEqual(
+      expect.objectContaining({ name: 'ADFK parser notes.pdf' }),
+    );
   });
 
   it('does not surface fact-backed connected work from raw events hidden from the viewer', async () => {
