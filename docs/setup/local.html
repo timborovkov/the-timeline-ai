@@ -62,10 +62,11 @@ docker compose ps           # all services should be "healthy"
         console). The <code>rustfs-init</code> container runs once to create the required buckets.
       </p>
 
-      <p>Install deps and run migrations:</p>
+      <p>Install deps, run migrations, and optionally seed demo data:</p>
       <pre><code>pnpm install
 pnpm db:generate            # only if you changed schema
 pnpm db:migrate
+pnpm dev:seed               # optional demo team, users, events, objects, integrations
 </code></pre>
 
       <p>Run the app:</p>
@@ -144,6 +145,7 @@ pnpm check:web-bundle                 # scan built Next server chunks after a we
 pnpm e2e                              # Playwright core journeys; requires compose infra + migrations
 pnpm e2e:prod-smoke                   # build + standalone-server smoke; requires compose infra + migrations
 pnpm e2e:setup / pnpm e2e:cleanup     # seed/remove deterministic e2e users and team
+pnpm dev:seed                         # seed a local demo team, users, events, objects, integrations
 pnpm lint &amp;&amp; pnpm typecheck           # quick static checks
 pnpm knip                             # dead code / unused deps
 pnpm format                           # prettier write

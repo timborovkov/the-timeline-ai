@@ -92,10 +92,45 @@ openssl rand -base64 32 # SECRETS_ENCRYPTION_KEY
 docker compose up -d
 pnpm install
 pnpm db:migrate
+pnpm dev:seed
 pnpm dev
 ```
 
 Open <http://localhost:3000>.
+
+### Dev Seed
+
+`pnpm dev:seed` loads `.env`, connects to `DATABASE_URL`, and creates a local
+demo workspace without wiping any existing data. Run it after migrations, or run
+`pnpm dev:wipe && pnpm dev:seed` when you want a fresh local database with the
+seed data.
+
+Seeded account credentials:
+
+| Role | Email | Password |
+| --- | --- | --- |
+| Owner | `owner@timeline.dev` | `timeline-dev` |
+| Member | `member@timeline.dev` | `timeline-dev` |
+
+Seeded workspace data:
+
+- Team: `Acme Labs` (`acme-labs`) with inbound email
+  `acme-labs@inbound.timeline.dev`.
+- Events: manual web note, inbound email, Slack message, meeting transcript,
+  GitHub integration event, and Linear integration event.
+- Objects: Project Atlas, vendor appendix task, transcript-only meeting-bot
+  decision, Acme Labs company, and Mika Product person.
+- Board: `Atlas Launch` with Todo, Doing, and Done lanes.
+- Integrations: fake GitHub and Linear provider connections, resource shares,
+  selections, sync cursors, and audit rows.
+
+The seeded provider credentials are intentionally fake and are encrypted through
+the normal `SECRETS_ENCRYPTION_KEY` flow before storage:
+
+| Provider | Access token | Refresh token |
+| --- | --- | --- |
+| GitHub | `gho_dev_seed_access_token_123` | `ghr_dev_seed_refresh_token_123` |
+| Linear | `lin_api_dev_seed_access_token_456` | `lin_refresh_dev_seed_refresh_token_456` |
 
 For the full walkthrough, see
 [`docs/setup/local.html`](./docs/setup/local.html).
@@ -110,6 +145,7 @@ pnpm test:eval            # fast deterministic agent and retrieval evals
 pnpm test:dist-imports    # build db/shared and import compiled runtime modules with Node
 pnpm e2e                  # Playwright core journey tests
 pnpm run doctor           # React Doctor scan for React/Next health regressions
+pnpm dev:seed             # seed a local demo team, users, events, objects, and integrations
 pnpm db:generate          # generate Drizzle migrations after schema changes
 pnpm db:migrate           # apply database migrations
 pnpm check:web-bundle     # inspect built Next server chunks
