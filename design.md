@@ -600,9 +600,10 @@ key/value pairs.
   fact-backed relationship proposals, and conservative missing-person bundles.
   It should not imply that rejected duplicate pairs or rejected relationship
   edges will be resuggested.
-- Object-scoped pending approvals preserve dependent bundle items. A
-  missing-person relationship proposal should read as a create-person row plus a
-  named relationship row, not as raw refs or UUID endpoints.
+- Object-scoped pending approvals show only items that target the object plus
+  dependent bundle items required by those proposals. A missing-person
+  relationship proposal should read as a create-person row plus a named
+  relationship row, not as raw refs or UUID endpoints.
 
 ### Motion
 

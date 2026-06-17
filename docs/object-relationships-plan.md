@@ -66,9 +66,10 @@ objects that should become shared memory.
 9. Surface accepted and pending relationships on both existing endpoint object
    pages, with relationship activity and nearby object evidence available while
    cited per-edge explanations wait for the later graph/mind-map view. Pending
-   object-page approval bundles must keep sibling create items needed by a
-   relationship proposal so accepting from the object page can materialize the
-   full bundle.
+   object-page approvals should include only items that target the object plus
+   sibling create items needed by those relationship proposals, so accepting from
+   the object page can materialize the required dependency without surfacing
+   unrelated bundle work.
 10. Replace manual UUID linking on object detail pages with object search/select.
 11. Keep the full graph/mind-map view out of this slice; revisit after real
    relationship data exists.
