@@ -24,6 +24,11 @@ interface MemberOption {
 }
 
 const EMPTY_MEMBERS: MemberOption[] = [];
+const DATE_FORMAT = new Intl.DateTimeFormat('en-US', {
+  dateStyle: 'medium',
+  timeStyle: 'short',
+  timeZone: 'UTC',
+});
 
 export function ConnectedIntegrations({
   connected,
@@ -74,7 +79,7 @@ export function ConnectedIntegrations({
               </div>
               <div className="text-xs text-fg-muted">
                 {c.lastSyncedAt
-                  ? `Last synced ${new Date(c.lastSyncedAt).toLocaleString()}`
+                  ? `Last synced ${DATE_FORMAT.format(new Date(c.lastSyncedAt))}`
                   : 'Never synced'}
                 {c.lastError ? (
                   <span className="ml-2 text-destructive">· {c.lastError}</span>
@@ -85,12 +90,12 @@ export function ConnectedIntegrations({
             <Button
               size="sm"
               variant="secondary"
-              disabled={busy !== null}
+              disabled={busy !== null || !c.enabled}
               onClick={() => {
                 void call('sync', c.id);
               }}
             >
-              {busy === `sync:${c.id}` ? 'Syncing…' : 'Sync now'}
+              {busy === `sync:${c.id}` ? 'Syncing…' : c.enabled ? 'Sync now' : 'Disabled'}
             </Button>
             <Button
               size="sm"

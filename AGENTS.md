@@ -125,8 +125,10 @@ Treat this file as an operating contract for agents, not a loose README.
   Turborepo; `pnpm -r build` is the canonical build.
 - **Use the dev seed for local demo data.** `pnpm dev:seed` creates the
   documented Acme Labs team, fake login users, events, objects, board, and
-  encrypted fake integration credentials after migrations. Keep the credential
-  list in [README.md](README.md) current when the seed changes.
+  encrypted fake integration credentials after migrations. The fake
+  integrations stay disabled for sync so local workers do not call real
+  providers. Keep the credential list in [README.md](README.md) current when
+  the seed changes.
 - **Use the repo's canonical import paths.** In `apps/web/src`, use the `@/`
   alias for source imports and exports instead of relative paths (`../`,
   `./foo`). The only expected relative side-effect import there is local CSS,

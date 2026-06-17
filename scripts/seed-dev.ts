@@ -16,6 +16,7 @@ import {
   integrations,
   integrationSelections,
   integrationSyncState,
+  messagePreferences,
   providerConnections,
   rawEvents,
   teamMembers,
@@ -25,7 +26,7 @@ import {
 } from '@timeline/db';
 import { encryptJson } from '@timeline/shared/crypto';
 import { hashPassword } from '@timeline/shared/passwords';
-import { sql } from 'drizzle-orm';
+import { and, eq, inArray, or, sql } from 'drizzle-orm';
 
 loadDotEnv(resolve(process.cwd(), '.env'));
 
@@ -74,24 +75,175 @@ const IDS = {
 } as const;
 
 const now = new Date('2026-06-18T09:00:00.000Z');
+const LOCAL_DEV_SEED_OVERRIDE = 'I_UNDERSTAND_THIS_SEEDS_KNOWN_DEV_CREDENTIALS';
 
-async function main(): Promise<void> {
-  if (!process.env.DATABASE_URL) throw new Error('DATABASE_URL is required');
+function assertDevSeedEnvironment(): void {
+  const databaseUrl = process.env.DATABASE_URL;
+  if (!databaseUrl) throw new Error('DATABASE_URL is required');
+  if (!process.env.AUTH_SECRET) throw new Error('AUTH_SECRET is required');
   if (!process.env.SECRETS_ENCRYPTION_KEY) {
     throw new Error('SECRETS_ENCRYPTION_KEY is required to seed fake integration credentials');
   }
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('Refusing to run dev seed with NODE_ENV=production');
+  }
+
+  const host = new URL(databaseUrl).hostname.toLowerCase();
+  const isLocalDatabase = host === 'localhost' || host === '127.0.0.1' || host === '::1';
+  if (!isLocalDatabase && process.env.ALLOW_DEV_SEED !== LOCAL_DEV_SEED_OVERRIDE) {
+    throw new Error(
+      `Refusing to seed non-local database host "${host}". Set ALLOW_DEV_SEED=${LOCAL_DEV_SEED_OVERRIDE} only if this is an isolated development database.`,
+    );
+  }
+}
+
+async function assertReservedSeedRowsAreCompatible(db: ReturnType<typeof getDb>): Promise<void> {
+  const [reservedUsers, reservedTeams, reservedConnections, reservedIntegrations] =
+    await Promise.all([
+      db
+        .select({ id: users.id, email: users.email })
+        .from(users)
+        .where(
+          or(
+            inArray(users.id, [IDS.owner, IDS.member]),
+            inArray(users.email, ['owner@timeline.dev', 'member@timeline.dev']),
+          ),
+        ),
+      db
+        .select({ id: teams.id, slug: teams.slug })
+        .from(teams)
+        .where(or(eq(teams.id, IDS.team), eq(teams.slug, 'acme-labs'))),
+      db
+        .select({
+          id: providerConnections.id,
+          provider: providerConnections.provider,
+          externalAccountId: providerConnections.externalAccountId,
+        })
+        .from(providerConnections)
+        .where(
+          or(
+            inArray(providerConnections.id, [IDS.githubConnection, IDS.linearConnection]),
+            and(
+              eq(providerConnections.ownerUserId, IDS.owner),
+              eq(providerConnections.provider, 'github'),
+              eq(providerConnections.externalAccountId, 'github-user-avery-dev'),
+            ),
+            and(
+              eq(providerConnections.ownerUserId, IDS.owner),
+              eq(providerConnections.provider, 'linear'),
+              eq(providerConnections.externalAccountId, 'linear-org-acme-dev'),
+            ),
+          ),
+        ),
+      db
+        .select({
+          id: integrations.id,
+          provider: integrations.provider,
+          externalAccountId: integrations.externalAccountId,
+        })
+        .from(integrations)
+        .where(
+          or(
+            inArray(integrations.id, [IDS.githubIntegration, IDS.linearIntegration]),
+            and(
+              eq(integrations.teamId, IDS.team),
+              eq(integrations.provider, 'github'),
+              eq(integrations.externalAccountId, 'github-installation-acme-dev'),
+            ),
+            and(
+              eq(integrations.teamId, IDS.team),
+              eq(integrations.provider, 'linear'),
+              eq(integrations.externalAccountId, 'linear-org-acme-dev'),
+            ),
+          ),
+        ),
+    ]);
+
+  for (const row of reservedUsers) {
+    const expected =
+      row.email === 'owner@timeline.dev'
+        ? IDS.owner
+        : row.email === 'member@timeline.dev'
+          ? IDS.member
+          : undefined;
+    if (expected && row.id !== expected) {
+      throw new Error(
+        `Cannot seed: ${row.email} already exists with id ${row.id}. Run pnpm dev:wipe or remove the conflicting dev row first.`,
+      );
+    }
+    if (row.id === IDS.owner && row.email !== 'owner@timeline.dev') {
+      throw new Error(
+        `Cannot seed: reserved owner id ${IDS.owner} already belongs to ${row.email}.`,
+      );
+    }
+    if (row.id === IDS.member && row.email !== 'member@timeline.dev') {
+      throw new Error(
+        `Cannot seed: reserved member id ${IDS.member} already belongs to ${row.email}.`,
+      );
+    }
+  }
+
+  for (const row of reservedTeams) {
+    if (row.slug === 'acme-labs' && row.id !== IDS.team) {
+      throw new Error(
+        `Cannot seed: acme-labs already exists with id ${row.id}. Run pnpm dev:wipe or remove the conflicting dev row first.`,
+      );
+    }
+    if (row.id === IDS.team && row.slug !== 'acme-labs') {
+      throw new Error(`Cannot seed: reserved team id ${IDS.team} already belongs to ${row.slug}.`);
+    }
+  }
+
+  assertReservedIntegrationRows(
+    reservedConnections,
+    IDS.githubConnection,
+    IDS.linearConnection,
+    'provider connection',
+  );
+  assertReservedIntegrationRows(
+    reservedIntegrations,
+    IDS.githubIntegration,
+    IDS.linearIntegration,
+    'integration',
+  );
+}
+
+function assertReservedIntegrationRows(
+  rows: Array<{ id: string; provider: string; externalAccountId: string | null }>,
+  expectedGithubId: string,
+  expectedLinearId: string,
+  label: string,
+): void {
+  for (const row of rows) {
+    const expected =
+      row.provider === 'github'
+        ? expectedGithubId
+        : row.provider === 'linear'
+          ? expectedLinearId
+          : undefined;
+    if (expected && row.id !== expected) {
+      throw new Error(
+        `Cannot seed: ${label} for ${row.provider}:${row.externalAccountId ?? '(none)'} already exists with id ${row.id}. Run pnpm dev:wipe or remove the conflicting dev row first.`,
+      );
+    }
+  }
+}
+
+async function main(): Promise<void> {
+  assertDevSeedEnvironment();
 
   const db = getDb();
+  await assertReservedSeedRowsAreCompatible(db);
   const passwordHash = await hashPassword(DEV_PASSWORD);
   const githubSecret = encryptJson({
-    accessToken: 'gho_dev_seed_access_token_123',
-    refreshToken: 'ghr_dev_seed_refresh_token_123',
-    expiresAt: '2026-12-31T23:59:59.000Z',
+    access_token: 'gho_dev_seed_access_token_123',
+    refresh_token: 'ghr_dev_seed_refresh_token_123',
+    expires_at: '2026-12-31T23:59:59.000Z',
   });
   const linearSecret = encryptJson({
-    accessToken: 'lin_api_dev_seed_access_token_456',
-    refreshToken: 'lin_refresh_dev_seed_refresh_token_456',
-    expiresAt: '2026-12-31T23:59:59.000Z',
+    access_token: 'lin_api_dev_seed_access_token_456',
+    refresh_token: 'lin_refresh_dev_seed_refresh_token_456',
+    expires_at: '2026-12-31T23:59:59.000Z',
   });
 
   try {
@@ -165,6 +317,35 @@ async function main(): Promise<void> {
         });
 
       await tx
+        .insert(messagePreferences)
+        .values([
+          {
+            teamId: IDS.team,
+            userId: IDS.owner,
+            dailyDigestEnabled: false,
+            dailyDigestHour: 12,
+            timezone: 'UTC',
+          },
+          {
+            teamId: IDS.team,
+            userId: IDS.member,
+            dailyDigestEnabled: false,
+            dailyDigestHour: 12,
+            timezone: 'UTC',
+          },
+        ])
+        .onConflictDoUpdate({
+          target: [messagePreferences.teamId, messagePreferences.userId],
+          targetWhere: sql`${messagePreferences.teamId} IS NOT NULL AND ${messagePreferences.userId} IS NOT NULL`,
+          set: {
+            dailyDigestEnabled: sql`excluded.daily_digest_enabled`,
+            dailyDigestHour: sql`excluded.daily_digest_hour`,
+            timezone: sql`excluded.timezone`,
+            updatedAt: now,
+          },
+        });
+
+      await tx
         .insert(providerConnections)
         .values([
           {
@@ -221,7 +402,8 @@ async function main(): Promise<void> {
             authSecretIv: githubSecret.iv,
             authSecretTag: githubSecret.tag,
             visibilityDefault: 'team',
-            enabled: true,
+            enabled: false,
+            lastError: null,
             lastSyncedAt: new Date('2026-06-18T08:40:00.000Z'),
           },
           {
@@ -237,7 +419,8 @@ async function main(): Promise<void> {
             authSecretIv: linearSecret.iv,
             authSecretTag: linearSecret.tag,
             visibilityDefault: 'team',
-            enabled: true,
+            enabled: false,
+            lastError: null,
             lastSyncedAt: new Date('2026-06-18T08:45:00.000Z'),
           },
         ])
@@ -251,6 +434,7 @@ async function main(): Promise<void> {
             authSecretTag: sql`excluded.auth_secret_tag`,
             visibilityDefault: sql`excluded.visibility_default`,
             enabled: sql`excluded.enabled`,
+            lastError: null,
             lastSyncedAt: sql`excluded.last_synced_at`,
             updatedAt: now,
           },

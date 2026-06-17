@@ -100,10 +100,12 @@ Open <http://localhost:3000>.
 
 ### Dev Seed
 
-`pnpm dev:seed` loads `.env`, connects to `DATABASE_URL`, and creates a local
-demo workspace without wiping any existing data. Run it after migrations, or run
-`pnpm dev:wipe && pnpm dev:seed` when you want a fresh local database with the
-seed data.
+`pnpm dev:seed` loads `.env`, refuses production and non-local database hosts by
+default, and creates a deterministic local demo workspace. Run it after
+migrations, or run `pnpm dev:wipe && pnpm dev:seed` when you want a fresh local
+database with the seed data. If reserved demo emails, slugs, or UUIDs already
+belong to different local rows, the seed exits with a clear conflict instead of
+rewiring the graph.
 
 Seeded account credentials:
 
@@ -121,11 +123,13 @@ Seeded workspace data:
 - Objects: Project Atlas, vendor appendix task, transcript-only meeting-bot
   decision, Acme Labs company, and Mika Product person.
 - Board: `Atlas Launch` with Todo, Doing, and Done lanes.
-- Integrations: fake GitHub and Linear provider connections, resource shares,
-  selections, sync cursors, and audit rows.
+- Message preferences: daily digest email disabled for both demo users so local
+  workers do not need outbound email configured.
+- Integrations: disabled fake GitHub and Linear provider connections, resource
+  shares, selections, sync cursors, and audit rows.
 
-The seeded provider credentials are intentionally fake and are encrypted through
-the normal `SECRETS_ENCRYPTION_KEY` flow before storage:
+The seeded provider credentials are intentionally fake, disabled for sync, and
+encrypted through the normal `SECRETS_ENCRYPTION_KEY` flow before storage:
 
 | Provider | Access token | Refresh token |
 | --- | --- | --- |
@@ -145,7 +149,7 @@ pnpm test:eval            # fast deterministic agent and retrieval evals
 pnpm test:dist-imports    # build db/shared and import compiled runtime modules with Node
 pnpm e2e                  # Playwright core journey tests
 pnpm run doctor           # React Doctor scan for React/Next health regressions
-pnpm dev:seed             # seed a local demo team, users, events, objects, and integrations
+pnpm dev:seed             # seed local demo data with disabled fake integrations
 pnpm db:generate          # generate Drizzle migrations after schema changes
 pnpm db:migrate           # apply database migrations
 pnpm check:web-bundle     # inspect built Next server chunks
