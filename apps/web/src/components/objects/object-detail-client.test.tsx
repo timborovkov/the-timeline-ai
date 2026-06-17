@@ -115,7 +115,7 @@ describe('ObjectDetailClient', () => {
     expect(html).toContain('Archive object');
   });
 
-  it('uses display titles for linked GitHub open tasks', () => {
+  it('uses source-tracked display titles for linked integration open tasks', () => {
     const html = renderObjectDetail({
       detail: {
         ...detail,
@@ -128,6 +128,8 @@ describe('ObjectDetailClient', () => {
               integration_provider: 'github',
               integration_external_id: 'timborovkov/the-timeline-ai#202',
               display_title: 'the-timeline-ai: Add cursor pagination',
+              display_title_canonical_name:
+                'timborovkov/the-timeline-ai#202: Add cursor pagination',
             },
           },
         ],

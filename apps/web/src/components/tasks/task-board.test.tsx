@@ -72,7 +72,7 @@ describe('TaskBoard', () => {
     expect(screen.getByText('P2')).toBeTruthy();
   });
 
-  it('prefers GitHub task display titles over provider identity canonical names', () => {
+  it('prefers source-tracked integration display titles over provider identity canonical names', () => {
     render(
       <TaskBoard
         rows={[
@@ -82,6 +82,8 @@ describe('TaskBoard', () => {
               integration_provider: 'github',
               integration_external_id: 'timborovkov/the-timeline-ai#202',
               display_title: 'the-timeline-ai: Add cursor pagination',
+              display_title_canonical_name:
+                'timborovkov/the-timeline-ai#202: Add cursor pagination',
             },
           }),
         ]}
@@ -95,7 +97,7 @@ describe('TaskBoard', () => {
     expect(screen.queryByText(/timborovkov\/the-timeline-ai#202/)).toBeNull();
   });
 
-  it('cleans up legacy GitHub task canonical names when display metadata is absent', () => {
+  it('uses provider identity canonical names when display metadata is absent', () => {
     render(
       <TaskBoard
         rows={[
@@ -114,9 +116,11 @@ describe('TaskBoard', () => {
     );
 
     expect(
-      screen.getByRole('link', { name: 'the-timeline-ai: Add cursor pagination' }),
+      screen.getByRole('link', {
+        name: 'timborovkov/the-timeline-ai#202: Add cursor pagination',
+      }),
     ).toBeTruthy();
-    expect(screen.queryByText(/timborovkov\/the-timeline-ai#202/)).toBeNull();
+    expect(screen.queryByText('the-timeline-ai: Add cursor pagination')).toBeNull();
   });
 
   it('wraps long task titles on cards and in the selected panel', () => {

@@ -22,6 +22,7 @@ function task(input: Partial<objects.ObjectRow> = {}): objects.ObjectRow {
       integration_provider: 'github',
       integration_external_id: 'timborovkov/the-timeline-ai#202',
       display_title: 'the-timeline-ai: Add cursor pagination',
+      display_title_canonical_name: 'timborovkov/the-timeline-ai#202: Add cursor pagination',
     },
     updatedAt: new Date('2026-06-01T10:00:00.000Z'),
     createdAt: new Date('2026-06-01T10:00:00.000Z'),
@@ -30,7 +31,7 @@ function task(input: Partial<objects.ObjectRow> = {}): objects.ObjectRow {
 }
 
 describe('objectQueueItem', () => {
-  it('uses display titles for GitHub-derived task queue titles', () => {
+  it('uses source-tracked display titles for integration-derived task queue titles', () => {
     const item = objectQueueItem(
       task(),
       'user-1',
