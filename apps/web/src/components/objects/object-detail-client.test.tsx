@@ -136,6 +136,33 @@ describe('ObjectDetailClient', () => {
     expect(
       screen.getByRole('heading', { level: 1, name: 'the-timeline-ai: Add cursor pagination' }),
     ).toBeTruthy();
+    expect(screen.getByDisplayValue('the-timeline-ai: Add cursor pagination')).toBeTruthy();
+  });
+
+  it('does not rename integration objects when the display title field is focused and blurred unchanged', async () => {
+    const user = userEvent.setup();
+    render(
+      objectDetailElement({
+        detail: {
+          ...detail,
+          canonicalName: 'timborovkov/the-timeline-ai#202: Add cursor pagination',
+          metadata: {
+            integration_provider: 'github',
+            integration_external_id: 'timborovkov/the-timeline-ai#202',
+            display_title: 'the-timeline-ai: Add cursor pagination',
+            display_title_canonical_name: 'timborovkov/the-timeline-ai#202: Add cursor pagination',
+          },
+        },
+        userId: 'user-1',
+        suggestions: [],
+      }),
+    );
+
+    const nameInput = screen.getByLabelText('Name');
+    await user.click(nameInput);
+    await user.tab();
+
+    expect(objectActions.updateObjectAction).not.toHaveBeenCalled();
   });
 
   it('uses source-tracked display titles for linked integration open tasks', () => {

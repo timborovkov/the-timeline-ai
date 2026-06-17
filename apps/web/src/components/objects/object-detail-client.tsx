@@ -157,7 +157,7 @@ function isOptimisticRelationship(relationship: ObjectDetail['relationships'][nu
 function initObjectDetailUiState(detail: ObjectDetail): ObjectDetailUiState {
   return {
     overrides: {},
-    nameDraft: detail.canonicalName,
+    nameDraft: editableObjectName(detail),
     aliasesDraft: detail.aliases.join(', '),
     stageDraft: detail.stage ?? '',
     dueDraft: toLocalInputValue(detail.dueAt),
@@ -169,6 +169,10 @@ function initObjectDetailUiState(detail: ObjectDetail): ObjectDetailUiState {
     editingBody: '',
     linkKind: 'related',
   };
+}
+
+function editableObjectName(detail: Pick<ObjectDetail, 'canonicalName' | 'metadata'>): string {
+  return displayObjectTitle(detail);
 }
 
 function objectDetailUiReducer(
@@ -415,7 +419,7 @@ function useObjectDetailController({ detail, userId, suggestions }: Props) {
         [field]: field === 'dueAt' ? toDateOrNull(rollbackValue) : rollbackValue,
       }));
       if (field === 'canonicalName') {
-        dispatchObjectUi({ nameDraft: String(rollbackValue ?? '') });
+        dispatchObjectUi({ nameDraft: editableObjectName(serverDetailRef.current) });
       }
       if (field === 'aliases') {
         dispatchObjectUi({ aliasesDraft: normalizeAliases(rollbackValue).join(', ') });
@@ -651,7 +655,7 @@ function useObjectDetailController({ detail, userId, suggestions }: Props) {
         dispatchLocalDetail({ recentChangeStatuses: previousRecentChangeStatuses });
         updateLocalDetail(() => previousDetail);
         dispatchObjectUi({
-          nameDraft: previousDetail.canonicalName,
+          nameDraft: editableObjectName(previousDetail),
           aliasesDraft: previousDetail.aliases.join(', '),
           stageDraft: previousDetail.stage ?? '',
           dueDraft: toLocalInputValue(previousDetail.dueAt),
@@ -1133,10 +1137,11 @@ function ObjectEditableFields({
             focusedDraftsRef.current.canonicalName = false;
             const v = e.target.value.trim();
             if (v === '') {
-              dispatchObjectUi({ nameDraft: detail.canonicalName });
+              dispatchObjectUi({ nameDraft: editableObjectName(detail) });
               return;
             }
             dispatchObjectUi({ nameDraft: v });
+            if (v === editableObjectName(detail)) return;
             patch('canonicalName', v);
           }}
           className="w-full rounded-md border bg-surface px-3 py-2 text-sm"
