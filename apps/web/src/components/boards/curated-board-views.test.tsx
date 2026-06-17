@@ -10,9 +10,9 @@ const fakes = vi.hoisted(() => ({
   updateItem: vi.fn(),
 }));
 
-const { CuratedBoardTable } = await import('./curated-board-views.js');
+const { CuratedBoardList, CuratedBoardTable } = await import('./curated-board-views.js');
 
-function boardItem(): boards.BoardItemRow {
+function boardItem(input: Partial<boards.BoardItemRow['object']> = {}): boards.BoardItemRow {
   return {
     id: 'item-1',
     boardId: 'board-1',
@@ -44,6 +44,7 @@ function boardItem(): boards.BoardItemRow {
       archivedAt: null,
       createdAt: new Date('2026-01-01T00:00:00.000Z'),
       updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+      ...input,
     },
   };
 }
@@ -143,5 +144,24 @@ describe('CuratedBoardTable', () => {
     );
 
     expect(screen.getByLabelText<HTMLInputElement>('Next step for Launch review').value).toBe('');
+  });
+});
+
+describe('CuratedBoardList', () => {
+  it('wraps long board item titles', () => {
+    const longTitle =
+      'timborovkov/the-timeline-ai#202: Add cursor pagination to the visible sales pipeline so full titles remain readable';
+
+    render(
+      <CuratedBoardList
+        boardId="board-1"
+        view="list"
+        items={[boardItem({ canonicalName: longTitle })]}
+      />,
+    );
+
+    const title = screen.getByText(longTitle);
+    expect(title.className).toContain('break-words');
+    expect(title.className).not.toContain('truncate');
   });
 });

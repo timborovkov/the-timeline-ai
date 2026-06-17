@@ -105,6 +105,24 @@ describe('BoardCardDetail', () => {
     expect(html).not.toContain('Delete object');
   });
 
+  it('wraps long board item titles in the detail panel', () => {
+    const longTitle =
+      'timborovkov/the-timeline-ai#202: Add cursor pagination to the visible board so the full sales opportunity title can be read';
+    const item = boardItem({
+      id: 'item-1',
+      entityId: 'object-1',
+      canonicalName: longTitle,
+    });
+
+    render(
+      <BoardCardDetail boardId="board-1" view="kanban" item={item} history={[]} lanes={lanes} />,
+    );
+
+    const heading = screen.getByRole('heading', { name: longTitle });
+    expect(heading.className).toContain('break-words');
+    expect(heading.className).not.toContain('truncate');
+  });
+
   it('links source evidence to the focused timeline event', () => {
     const sourceEventId = '11111111-1111-4111-8111-111111111111';
     const item = boardItem({
