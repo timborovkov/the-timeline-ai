@@ -17,6 +17,10 @@ vi.mock('@/app/actions/events', () => ({
   createTextEventAction: vi.fn(),
   requestAudioUploadAction: vi.fn(),
 }));
+vi.mock('@/app/actions/documents', () => ({
+  finalizeDocumentVersionAction: vi.fn(),
+  requestDocumentUploadAction: vi.fn(),
+}));
 
 const { CaptureForm } = await import('./capture-form.js');
 
@@ -40,6 +44,8 @@ describe('CaptureForm', () => {
     expect(html).toContain('What happened?');
     expect(html).toContain('Visible to team');
     expect(html).toContain('Voice recorder');
+    expect(html).toContain('Attach');
+    expect(html).toContain('Audio, images, PDFs, docs, and notes');
     expect(html).toContain('Post');
   });
 

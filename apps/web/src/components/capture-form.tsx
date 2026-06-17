@@ -1,10 +1,23 @@
 'use client';
 
 import { type InfiniteData, useQueryClient } from '@tanstack/react-query';
-import { Lock, Send, Users } from 'lucide-react';
+import {
+  FileAudio,
+  FileText,
+  Image as ImageIcon,
+  Lock,
+  Paperclip,
+  Send,
+  Users,
+  X,
+} from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { type SyntheticEvent, useReducer, useRef } from 'react';
+import { type RefObject, type SyntheticEvent, useReducer, useRef } from 'react';
 
+import {
+  finalizeDocumentVersionAction,
+  requestDocumentUploadAction,
+} from '@/app/actions/documents';
 import {
   createAudioEventAction,
   createTextEventAction,
@@ -20,6 +33,98 @@ import { cn } from '@/lib/utils';
 
 function baseMimeType(mt: string): string {
   return mt.split(';')[0]?.trim() ?? mt;
+}
+
+function mimeTypeForAudioFile(file: File): string | null {
+  const type = baseMimeType(file.type || '');
+  if (type.startsWith('audio/')) return type;
+  const ext = file.name.split('.').pop()?.toLowerCase() ?? '';
+  if (ext === 'm4a') return 'audio/mp4';
+  if (ext === 'mp3') return 'audio/mpeg';
+  if (ext === 'ogg' || ext === 'oga') return 'audio/ogg';
+  if (ext === 'wav') return 'audio/wav';
+  if (ext === 'webm') return 'audio/webm';
+  if (ext === 'aac') return 'audio/aac';
+  if (ext === 'flac') return 'audio/flac';
+  return null;
+}
+
+function SelectedFileIcon({ file }: { file: File }) {
+  const audioType = mimeTypeForAudioFile(file);
+  if (audioType) return <FileAudio className="size-3.5" />;
+  if (file.type.startsWith('image/')) return <ImageIcon className="size-3.5" />;
+  return <FileText className="size-3.5" />;
+}
+
+interface AttachmentPickerProps {
+  files: File[];
+  pending: boolean;
+  fileInputRef: RefObject<HTMLInputElement | null>;
+  onAddFiles: (files: File[]) => void;
+  onRemoveFile: (index: number) => void;
+}
+
+function AttachmentPicker({
+  files,
+  pending,
+  fileInputRef,
+  onAddFiles,
+  onRemoveFile,
+}: AttachmentPickerProps) {
+  return (
+    <div className="rounded-sm border border-dashed border-border/70 p-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <Button
+          type="button"
+          variant="secondary"
+          size="sm"
+          className="gap-2"
+          disabled={pending}
+          onClick={() => fileInputRef.current?.click()}
+        >
+          <Paperclip className="size-3.5" />
+          Attach
+        </Button>
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          className="hidden"
+          aria-label="Attach files"
+          onChange={(event) => {
+            onAddFiles(Array.from(event.currentTarget.files ?? []));
+            event.currentTarget.value = '';
+          }}
+        />
+        {files.length === 0 ? (
+          <span className="text-xs text-muted-foreground">
+            Audio, images, PDFs, docs, and notes
+          </span>
+        ) : (
+          files.map((file, index) => (
+            <span
+              key={`${file.name}-${String(file.size)}-${String(index)}`}
+              className="inline-flex max-w-full items-center gap-2 rounded-full border border-border bg-background px-2.5 py-1 text-xs text-muted-foreground"
+            >
+              <SelectedFileIcon file={file} />
+              <span className="max-w-48 truncate">{file.name}</span>
+              <button
+                type="button"
+                className="text-muted-foreground transition-colors hover:text-foreground"
+                disabled={pending}
+                onClick={() => {
+                  onRemoveFile(index);
+                }}
+                aria-label={`Remove ${file.name}`}
+              >
+                <X className="size-3" />
+              </button>
+            </span>
+          ))
+        )}
+      </div>
+    </div>
+  );
 }
 
 interface Props {
@@ -41,6 +146,7 @@ const EMPTY_FILTERS: CaptureFilters = {};
 interface CaptureUiState {
   isPrivate: boolean;
   clip: RecordedClip | null;
+  files: File[];
   pending: boolean;
   error: string | null;
   notice: { tone: 'success' | 'warning'; message: string } | null;
@@ -55,6 +161,7 @@ function initCaptureUiState(
   return {
     isPrivate: initialVisibility === 'private',
     clip: null,
+    files: [],
     pending: false,
     error: null,
     notice: null,
@@ -81,6 +188,59 @@ function filterAllowsEvent(
   return true;
 }
 
+async function uploadAudioBlob(input: {
+  blob: Blob;
+  mimeType: string;
+  visibility: 'private' | 'team';
+  durationSec?: number;
+}): Promise<string | null> {
+  const req = await requestAudioUploadAction(input.mimeType);
+  if (!req.ok || !req.url || !req.key) {
+    throw new Error(req.error ?? 'Upload request failed');
+  }
+  const put = await fetch(req.url, {
+    method: 'PUT',
+    headers: { 'content-type': req.contentType ?? input.mimeType },
+    body: input.blob,
+  });
+  if (!put.ok) throw new Error(`Upload failed: ${put.status}`);
+  const create = await createAudioEventAction({
+    key: req.key,
+    mimeType: input.mimeType,
+    durationSec: input.durationSec,
+    visibility: input.visibility,
+  });
+  if (!create.ok) throw new Error(create.error ?? 'Save failed');
+  return create.warning ?? null;
+}
+
+async function uploadDocumentFile(file: File, visibility: 'private' | 'team'): Promise<void> {
+  const contentType = file.type || 'application/octet-stream';
+  const req = await requestDocumentUploadAction({
+    name: file.name,
+    filename: file.name,
+    contentType,
+    visibility,
+    visibilityUserIds: [],
+  });
+  if (!req.ok || !req.url || !req.versionId) {
+    throw new Error(req.error ?? `Upload request failed for ${file.name}`);
+  }
+  if (req.maxBytes && file.size > req.maxBytes) {
+    throw new Error(
+      `${file.name} exceeds ${String(Math.round(req.maxBytes / 1024 / 1024))} MiB limit`,
+    );
+  }
+  const put = await fetch(req.url, {
+    method: 'PUT',
+    headers: { 'content-type': contentType },
+    body: file,
+  });
+  if (!put.ok) throw new Error(`Upload failed for ${file.name}: ${put.status}`);
+  const finalized = await finalizeDocumentVersionAction({ versionId: req.versionId });
+  if (!finalized.ok) throw new Error(finalized.error ?? `Finalize failed for ${file.name}`);
+}
+
 export function CaptureForm({
   initialVisibility = 'team',
   currentUser,
@@ -90,11 +250,9 @@ export function CaptureForm({
   const queryClient = useQueryClient();
   const formRef = useRef<HTMLFormElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const [{ isPrivate, clip, pending, error, notice, recorderKey }, setCaptureUi] = useReducer(
-    captureUiReducer,
-    initialVisibility,
-    initCaptureUiState,
-  );
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [{ isPrivate, clip, files, pending, error, notice, recorderKey }, setCaptureUi] =
+    useReducer(captureUiReducer, initialVisibility, initCaptureUiState);
   // Bumped on successful post; passed as `key` to AudioRecorder so React
   // remounts it with a fresh `phase: 'idle'` / `clip: null` state. The
   // recorder owns its own clip state internally; without remount it would
@@ -170,32 +328,20 @@ export function CaptureForm({
   async function submitAudio(): Promise<string | null> {
     if (!clip) throw new Error('No clip to upload');
     const base = baseMimeType(clip.mimeType);
-    const req = await requestAudioUploadAction(base);
-    if (!req.ok || !req.url || !req.key) {
-      throw new Error(req.error ?? 'Upload request failed');
-    }
-    const put = await fetch(req.url, {
-      method: 'PUT',
-      headers: { 'content-type': req.contentType ?? base },
-      body: clip.blob,
-    });
-    if (!put.ok) throw new Error(`Upload failed: ${put.status}`);
-    const create = await createAudioEventAction({
-      key: req.key,
+    return uploadAudioBlob({
+      blob: clip.blob,
       mimeType: base,
       durationSec: clip.durationSec,
       visibility: isPrivate ? 'private' : 'team',
     });
-    if (!create.ok) throw new Error(create.error ?? 'Save failed');
-    return create.warning ?? null;
   }
 
   async function handleSubmit(e: SyntheticEvent<HTMLFormElement>): Promise<void> {
     e.preventDefault();
     if (inFlightRef.current) return;
     const text = (textareaRef.current?.value ?? '').trim();
-    if (!clip && text.length === 0) {
-      setCaptureUi({ error: 'Write something or record a voice note.' });
+    if (!clip && files.length === 0 && text.length === 0) {
+      setCaptureUi({ error: 'Write something, record a voice note, or attach a file.' });
       return;
     }
     inFlightRef.current = true;
@@ -229,6 +375,21 @@ export function CaptureForm({
         const audioWarning = await submitAudio();
         if (audioWarning) warnings.push(audioWarning);
       }
+      const attachmentWarnings = await Promise.all(
+        files.map(async (file) => {
+          const audioType = mimeTypeForAudioFile(file);
+          if (audioType) {
+            return uploadAudioBlob({
+              blob: file,
+              mimeType: audioType,
+              visibility: isPrivate ? 'private' : 'team',
+            });
+          }
+          await uploadDocumentFile(file, isPrivate ? 'private' : 'team');
+          return null;
+        }),
+      );
+      warnings.push(...attachmentWarnings.filter((warning): warning is string => Boolean(warning)));
       formRef.current?.reset();
       // Only clear clip / remount the recorder when an audio clip was
       // actually posted. A text-only Post must not touch recorder state —
@@ -245,6 +406,8 @@ export function CaptureForm({
           recorderKey: current.recorderKey + 1,
         }));
       }
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      setCaptureUi({ files: [] });
       // Keep visibility pill sticky — it's a preference, not per-post.
       setCaptureUi({
         notice: {
@@ -296,6 +459,20 @@ export function CaptureForm({
         }}
         disabled={pending}
       />
+      <AttachmentPicker
+        files={files}
+        pending={pending}
+        fileInputRef={fileInputRef}
+        onAddFiles={(nextFiles) => {
+          setCaptureUi((current) => ({ ...current, files: [...current.files, ...nextFiles] }));
+        }}
+        onRemoveFile={(index) => {
+          setCaptureUi((current) => ({
+            ...current,
+            files: current.files.filter((_, fileIndex) => fileIndex !== index),
+          }));
+        }}
+      />
       <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border/60 pt-4">
         <button
           type="button"
@@ -317,7 +494,7 @@ export function CaptureForm({
           {error ? <span className="text-xs text-destructive">{error}</span> : null}
           <Button type="submit" disabled={pending} className="gap-2">
             {pending ? (
-              clip ? (
+              clip || files.length > 0 ? (
                 'Uploading…'
               ) : (
                 'Posting…'
