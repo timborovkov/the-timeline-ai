@@ -1,6 +1,8 @@
 import type * as boards from '@timeline/shared/boards';
 import type * as objects from '@timeline/shared/objects';
 
+import { displayObjectTitle } from '@/lib/object-title';
+
 export type WorkQueueReason =
   | 'pending_approval'
   | 'responsible_to_you'
@@ -108,7 +110,7 @@ export function boardQueueItem(
     id: `board:${row.id}`,
     entityId: row.entityId,
     href: `/app/boards/${row.boardId}?item=${row.id}`,
-    title: row.object.canonicalName,
+    title: displayObjectTitle(row.object),
     subtitle: [row.boardName, row.laneName].filter(Boolean).join(' · '),
     source: 'board',
     sourceLabel: 'Board item',
@@ -144,7 +146,7 @@ export function objectQueueItem(
     id: `object:${row.id}`,
     entityId: row.id,
     href: `/app/objects/${row.id}`,
-    title: row.canonicalName,
+    title: displayObjectTitle(row),
     subtitle: `${row.type.replace('_', ' ')} · ${row.status}`,
     source: 'object',
     sourceLabel: row.type === 'task' ? 'Task' : 'Object',

@@ -38,6 +38,7 @@ import {
 } from '@/components/objects/object-search-results';
 import { ObjectSectionFeed } from '@/components/objects/object-section-feed';
 import { displayText, formatDisplayDateTime } from '@/lib/display-dates';
+import { displayObjectTitle } from '@/lib/object-title';
 import { readJson } from '@/lib/paginated-api';
 import { queryKeys } from '@/lib/query-keys';
 import { cn, errorMessage } from '@/lib/utils';
@@ -1406,7 +1407,7 @@ function ObjectOpenTasksSection({ tasks }: { tasks: ObjectDetail['openTasks'] })
               className="flex items-center justify-between rounded-sm border border-border bg-surface px-4 py-2 text-sm"
             >
               <a href={`/app/objects/${task.id}`} className="font-medium hover:underline">
-                {displayText(task.canonicalName)}
+                {displayText(displayObjectTitle(task))}
               </a>
               <span className="text-xs text-muted-foreground">
                 {task.status}

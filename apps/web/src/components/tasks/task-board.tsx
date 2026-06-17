@@ -33,6 +33,7 @@ import { ObjectTextFilter } from '@/components/boards/object-text-filter';
 import { displayText } from '@/lib/display-dates';
 import { filterObjectsByText } from '@/lib/object-filter';
 import { objectDetailHref } from '@/lib/object-links';
+import { displayObjectTitle } from '@/lib/object-title';
 import { cn, errorMessage } from '@/lib/utils';
 
 interface TaskMemberOption {
@@ -364,7 +365,7 @@ function TaskCard({
     ? { transform: `translate3d(${String(transform.x)}px,${String(transform.y)}px,0)` }
     : undefined;
   const due = dueState(row.dueAt);
-  const title = taskTitle(row);
+  const title = displayObjectTitle(row);
   return (
     <li
       ref={setNodeRef}
@@ -420,7 +421,7 @@ function TaskDetailPanel({
 }) {
   const [saving, setSaving] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const title = taskTitle(task);
+  const title = displayObjectTitle(task);
 
   function save(field: string, patch: TaskPatch): void {
     setSaving(field);
@@ -568,29 +569,6 @@ function Detail({ label, value }: { label: string; value: string }) {
       <div className="mt-2 text-sm text-fg">{displayText(value)}</div>
     </div>
   );
-}
-
-function metadataString(metadata: Record<string, unknown>, key: string): string | null {
-  const value = metadata[key];
-  if (typeof value !== 'string' && typeof value !== 'number') return null;
-  const text = String(value).replace(/\s+/g, ' ').trim();
-  return text || null;
-}
-
-function taskTitle(row: objects.ObjectRow): string {
-  const explicit = metadataString(row.metadata, 'display_title');
-  if (explicit) return explicit;
-  if (metadataString(row.metadata, 'integration_provider') !== 'github') return row.canonicalName;
-
-  const match = /^(.+?)#(?:issue:)?\d+:\s*(.+)$/.exec(row.canonicalName);
-  if (!match) return row.canonicalName;
-  const [, canonicalRepo, title] = match;
-  if (!canonicalRepo || !title) return row.canonicalName;
-
-  const externalId = metadataString(row.metadata, 'integration_external_id');
-  const repo = externalId?.split('#')[0] ?? canonicalRepo;
-  const repoName = repo.split('/').pop() ?? repo;
-  return repoName ? `${repoName}: ${title}` : title;
 }
 
 function CardMeta({

@@ -115,6 +115,31 @@ describe('ObjectDetailClient', () => {
     expect(html).toContain('Archive object');
   });
 
+  it('uses display titles for linked GitHub open tasks', () => {
+    const html = renderObjectDetail({
+      detail: {
+        ...detail,
+        openTasks: [
+          {
+            ...detail,
+            id: 'task-2',
+            canonicalName: 'timborovkov/the-timeline-ai#202: Add cursor pagination',
+            metadata: {
+              integration_provider: 'github',
+              integration_external_id: 'timborovkov/the-timeline-ai#202',
+              display_title: 'the-timeline-ai: Add cursor pagination',
+            },
+          },
+        ],
+      },
+      userId: 'user-1',
+      suggestions: [],
+    });
+
+    expect(html).toContain('the-timeline-ai: Add cursor pagination');
+    expect(html).not.toContain('timborovkov/the-timeline-ai#202');
+  });
+
   it('renders pending approvals on the object detail surface', () => {
     const html = renderObjectDetail({
       detail,
