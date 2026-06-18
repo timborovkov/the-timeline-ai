@@ -116,10 +116,21 @@ describe('digest map-reduce summarization', () => {
     fakes.withTeam.mockReturnValue(makeScope(events));
 
     fakes.chatStructured
-      .mockResolvedValueOnce(makeDigestResult('Batch 1 summary.', [{ title: 'Highlights', items: ['A'] }]))
-      .mockResolvedValueOnce(makeDigestResult('Batch 2 summary.', [{ title: 'Highlights', items: ['B'] }]))
-      .mockResolvedValueOnce(makeDigestResult('Batch 3 summary.', [{ title: 'Completed', items: ['C'] }]))
-      .mockResolvedValueOnce(makeDigestResult('Reduced final summary.', [{ title: 'Highlights', items: ['A', 'B'] }, { title: 'Completed', items: ['C'] }]));
+      .mockResolvedValueOnce(
+        makeDigestResult('Batch 1 summary.', [{ title: 'Highlights', items: ['A'] }]),
+      )
+      .mockResolvedValueOnce(
+        makeDigestResult('Batch 2 summary.', [{ title: 'Highlights', items: ['B'] }]),
+      )
+      .mockResolvedValueOnce(
+        makeDigestResult('Batch 3 summary.', [{ title: 'Completed', items: ['C'] }]),
+      )
+      .mockResolvedValueOnce(
+        makeDigestResult('Reduced final summary.', [
+          { title: 'Highlights', items: ['A', 'B'] },
+          { title: 'Completed', items: ['C'] },
+        ]),
+      );
 
     const db = makeDb([
       chainResult([{ dailyDigestEnabled: true, dailyDigestHour: 12, timezone: 'UTC' }]),
@@ -150,8 +161,12 @@ describe('digest map-reduce summarization', () => {
     fakes.withTeam.mockReturnValue(makeScope(events));
 
     fakes.chatStructured
-      .mockResolvedValueOnce(makeDigestResult('Batch 1 summary.', [{ title: 'Highlights', items: ['A'] }]))
-      .mockResolvedValueOnce(makeDigestResult('Batch 2 summary.', [{ title: 'Highlights', items: ['B'] }]))
+      .mockResolvedValueOnce(
+        makeDigestResult('Batch 1 summary.', [{ title: 'Highlights', items: ['A'] }]),
+      )
+      .mockResolvedValueOnce(
+        makeDigestResult('Batch 2 summary.', [{ title: 'Highlights', items: ['B'] }]),
+      )
       .mockRejectedValueOnce(new Error('Reduce failed'));
 
     const db = makeDb([
@@ -201,6 +216,297 @@ describe('digest map-reduce summarization', () => {
 
     expect(result.payload.summary).toMatch(/timeline event/);
     expect(result.payload.eventCount).toBe(60);
+    expect(result.payload.sections).toEqual([]);
+  });
+
+  it('uses a single LLM call at exactly the batch size boundary (50 events)', async () => {
+    const events = Array.from({ length: 50 }, (_, i) => makeEventBrief(i));
+    fakes.withTeam.mockReturnValue(makeScope(events));
+    fakes.chatStructured.mockResolvedValue(
+      makeDigestResult('Boundary summary.', [{ title: 'Highlights', items: ['Edge case.'] }]),
+    );
+
+    const db = makeDb([
+      chainResult([{ dailyDigestEnabled: true, dailyDigestHour: 12, timezone: 'UTC' }]),
+      chainResult([]),
+      chainResult([{ name: 'Tim', email: 'tim@example.test' }]),
+      chainResult([]),
+    ]);
+
+    const result = await generateDailyDigest({
+      db: db as never,
+      teamId: 'team-1',
+      userId: 'user-1',
+      windowStart: new Date('2026-06-13T11:00:00Z'),
+      windowEnd: new Date('2026-06-14T12:00:00Z'),
+      now: new Date('2026-06-14T12:05:00Z'),
+    });
+
+    expect(fakes.chatStructured).toHaveBeenCalledTimes(1);
+    expect(result.payload.summary).toBe('Boundary summary.');
+    expect(result.payload.eventCount).toBe(50);
+  });
+
+  it('triggers map-reduce at 51 events (one past the boundary)', async () => {
+    const events = Array.from({ length: 51 }, (_, i) => makeEventBrief(i));
+    fakes.withTeam.mockReturnValue(makeScope(events));
+
+    fakes.chatStructured
+      .mockResolvedValueOnce(makeDigestResult('Batch 1 summary.'))
+      .mockResolvedValueOnce(makeDigestResult('Batch 2 summary.'))
+      .mockResolvedValueOnce(makeDigestResult('Reduced summary.'));
+
+    const db = makeDb([
+      chainResult([{ dailyDigestEnabled: true, dailyDigestHour: 12, timezone: 'UTC' }]),
+      chainResult([]),
+      chainResult([{ name: 'Tim', email: 'tim@example.test' }]),
+      chainResult([]),
+    ]);
+
+    const result = await generateDailyDigest({
+      db: db as never,
+      teamId: 'team-1',
+      userId: 'user-1',
+      windowStart: new Date('2026-06-13T11:00:00Z'),
+      windowEnd: new Date('2026-06-14T12:00:00Z'),
+      now: new Date('2026-06-14T12:05:00Z'),
+    });
+
+    expect(fakes.chatStructured).toHaveBeenCalledTimes(3);
+    expect(result.payload.summary).toBe('Reduced summary.');
+    expect(result.payload.eventCount).toBe(51);
+  });
+
+  it('returns fallback when the single-batch LLM call fails', async () => {
+    const events = Array.from({ length: 5 }, (_, i) => makeEventBrief(i));
+    fakes.withTeam.mockReturnValue(makeScope(events));
+    fakes.chatStructured.mockRejectedValue(new Error('Single call failed'));
+
+    const db = makeDb([
+      chainResult([{ dailyDigestEnabled: true, dailyDigestHour: 12, timezone: 'UTC' }]),
+      chainResult([]),
+      chainResult([{ name: 'Tim', email: 'tim@example.test' }]),
+      chainResult([]),
+    ]);
+
+    const result = await generateDailyDigest({
+      db: db as never,
+      teamId: 'team-1',
+      userId: 'user-1',
+      windowStart: new Date('2026-06-13T11:00:00Z'),
+      windowEnd: new Date('2026-06-14T12:00:00Z'),
+      now: new Date('2026-06-14T12:05:00Z'),
+    });
+
+    expect(fakes.chatStructured).toHaveBeenCalledTimes(1);
+    expect(result.payload.summary).toMatch(/timeline event/);
+    expect(result.payload.eventCount).toBe(5);
+    expect(result.payload.sections).toEqual([]);
+  });
+
+  it('reduces only successful batches when some fail', async () => {
+    const events = Array.from({ length: 120 }, (_, i) => makeEventBrief(i));
+    fakes.withTeam.mockReturnValue(makeScope(events));
+
+    fakes.chatStructured
+      .mockResolvedValueOnce(
+        makeDigestResult('Batch 1 summary.', [{ title: 'Highlights', items: ['A'] }]),
+      )
+      .mockRejectedValueOnce(new Error('Batch 2 failed'))
+      .mockResolvedValueOnce(
+        makeDigestResult('Batch 3 summary.', [{ title: 'Completed', items: ['C'] }]),
+      )
+      .mockResolvedValueOnce(
+        makeDigestResult('Reduced from 2 of 3.', [
+          { title: 'Highlights', items: ['A'] },
+          { title: 'Completed', items: ['C'] },
+        ]),
+      );
+
+    const db = makeDb([
+      chainResult([{ dailyDigestEnabled: true, dailyDigestHour: 12, timezone: 'UTC' }]),
+      chainResult([]),
+      chainResult([{ name: 'Tim', email: 'tim@example.test' }]),
+      chainResult([]),
+    ]);
+
+    const result = await generateDailyDigest({
+      db: db as never,
+      teamId: 'team-1',
+      userId: 'user-1',
+      windowStart: new Date('2026-06-13T11:00:00Z'),
+      windowEnd: new Date('2026-06-14T12:00:00Z'),
+      now: new Date('2026-06-14T12:05:00Z'),
+    });
+
+    expect(fakes.chatStructured).toHaveBeenCalledTimes(4);
+    expect(result.payload.summary).toBe('Reduced from 2 of 3.');
+    expect(result.payload.sections).toHaveLength(2);
+  });
+
+  it('returns the single successful batch without reduce when only one survives', async () => {
+    const events = Array.from({ length: 120 }, (_, i) => makeEventBrief(i));
+    fakes.withTeam.mockReturnValue(makeScope(events));
+
+    fakes.chatStructured
+      .mockRejectedValueOnce(new Error('Batch 1 failed'))
+      .mockResolvedValueOnce(
+        makeDigestResult('Only batch 2 succeeded.', [{ title: 'Highlights', items: ['B'] }]),
+      )
+      .mockRejectedValueOnce(new Error('Batch 3 failed'));
+
+    const db = makeDb([
+      chainResult([{ dailyDigestEnabled: true, dailyDigestHour: 12, timezone: 'UTC' }]),
+      chainResult([]),
+      chainResult([{ name: 'Tim', email: 'tim@example.test' }]),
+      chainResult([]),
+    ]);
+
+    const result = await generateDailyDigest({
+      db: db as never,
+      teamId: 'team-1',
+      userId: 'user-1',
+      windowStart: new Date('2026-06-13T11:00:00Z'),
+      windowEnd: new Date('2026-06-14T12:00:00Z'),
+      now: new Date('2026-06-14T12:05:00Z'),
+    });
+
+    expect(fakes.chatStructured).toHaveBeenCalledTimes(3);
+    expect(result.payload.summary).toBe('Only batch 2 succeeded.');
+    expect(result.payload.sections?.[0]?.items).toEqual(['B']);
+  });
+
+  it('bypasses map-reduce when summarize injection is provided, even with many events', async () => {
+    const events = Array.from({ length: 200 }, (_, i) => makeEventBrief(i));
+    fakes.withTeam.mockReturnValue(makeScope(events));
+    const summarize = vi.fn().mockResolvedValue('Injected summary.');
+
+    const db = makeDb([
+      chainResult([{ dailyDigestEnabled: true, dailyDigestHour: 12, timezone: 'UTC' }]),
+      chainResult([]),
+      chainResult([{ name: 'Tim', email: 'tim@example.test' }]),
+      chainResult([]),
+    ]);
+
+    const result = await generateDailyDigest({
+      db: db as never,
+      teamId: 'team-1',
+      userId: 'user-1',
+      windowStart: new Date('2026-06-13T11:00:00Z'),
+      windowEnd: new Date('2026-06-14T12:00:00Z'),
+      now: new Date('2026-06-14T12:05:00Z'),
+      summarize,
+    });
+
+    expect(summarize).toHaveBeenCalledTimes(1);
+    expect(fakes.chatStructured).not.toHaveBeenCalled();
+    expect(result.payload.summary).toBe('Injected summary.');
+    expect(result.payload.eventCount).toBe(200);
+  });
+
+  it('deduplicates overlapping items and orders sections canonically in mergeSections', async () => {
+    const events = Array.from({ length: 60 }, (_, i) => makeEventBrief(i));
+    fakes.withTeam.mockReturnValue(makeScope(events));
+
+    fakes.chatStructured
+      .mockResolvedValueOnce(
+        makeDigestResult('Batch 1.', [
+          { title: 'Risks', items: ['Risk A', 'Risk B'] },
+          { title: 'Highlights', items: ['Shared highlight'] },
+        ]),
+      )
+      .mockResolvedValueOnce(
+        makeDigestResult('Batch 2.', [
+          { title: 'Highlights', items: ['Shared highlight', 'Unique highlight'] },
+          { title: 'Completed', items: ['Done thing'] },
+        ]),
+      )
+      .mockRejectedValueOnce(new Error('Reduce failed'));
+
+    const db = makeDb([
+      chainResult([{ dailyDigestEnabled: true, dailyDigestHour: 12, timezone: 'UTC' }]),
+      chainResult([]),
+      chainResult([{ name: 'Tim', email: 'tim@example.test' }]),
+      chainResult([]),
+    ]);
+
+    const result = await generateDailyDigest({
+      db: db as never,
+      teamId: 'team-1',
+      userId: 'user-1',
+      windowStart: new Date('2026-06-13T11:00:00Z'),
+      windowEnd: new Date('2026-06-14T12:00:00Z'),
+      now: new Date('2026-06-14T12:05:00Z'),
+    });
+
+    expect(result.payload.sections).toEqual([
+      { title: 'Highlights', items: ['Shared highlight', 'Unique highlight'] },
+      { title: 'Completed', items: ['Done thing'] },
+      { title: 'Risks', items: ['Risk A', 'Risk B'] },
+    ]);
+  });
+
+  it('includes batch index and total in batch prompts but not in single-batch prompts', async () => {
+    const events = Array.from({ length: 120 }, (_, i) => makeEventBrief(i));
+    fakes.withTeam.mockReturnValue(makeScope(events));
+
+    fakes.chatStructured
+      .mockResolvedValueOnce(makeDigestResult('B1.'))
+      .mockResolvedValueOnce(makeDigestResult('B2.'))
+      .mockResolvedValueOnce(makeDigestResult('B3.'))
+      .mockResolvedValueOnce(makeDigestResult('Reduced.'));
+
+    const db = makeDb([
+      chainResult([{ dailyDigestEnabled: true, dailyDigestHour: 12, timezone: 'UTC' }]),
+      chainResult([]),
+      chainResult([{ name: 'Tim', email: 'tim@example.test' }]),
+      chainResult([]),
+    ]);
+
+    await generateDailyDigest({
+      db: db as never,
+      teamId: 'team-1',
+      userId: 'user-1',
+      windowStart: new Date('2026-06-13T11:00:00Z'),
+      windowEnd: new Date('2026-06-14T12:00:00Z'),
+      now: new Date('2026-06-14T12:05:00Z'),
+    });
+
+    const calls = fakes.chatStructured.mock.calls as unknown as [{ prompt: string }, unknown][];
+    const batch1Prompt = calls[0]?.[0]?.prompt;
+    const batch2Prompt = calls[1]?.[0]?.prompt;
+    const reducePrompt = calls[3]?.[0]?.prompt;
+
+    expect(batch1Prompt).toContain('"batch"');
+    expect(batch1Prompt).toContain('batch 1 of 3');
+    expect(batch2Prompt).toContain('batch 2 of 3');
+    expect(reducePrompt).toContain('batchSummaries');
+    expect(reducePrompt).not.toContain('"batch"');
+  });
+
+  it('handles zero events with a single LLM call', async () => {
+    fakes.withTeam.mockReturnValue(makeScope([]));
+    fakes.chatStructured.mockResolvedValue(makeDigestResult('No activity today.', []));
+
+    const db = makeDb([
+      chainResult([{ dailyDigestEnabled: true, dailyDigestHour: 12, timezone: 'UTC' }]),
+      chainResult([]),
+      chainResult([{ name: 'Tim', email: 'tim@example.test' }]),
+      chainResult([]),
+    ]);
+
+    const result = await generateDailyDigest({
+      db: db as never,
+      teamId: 'team-1',
+      userId: 'user-1',
+      windowStart: new Date('2026-06-13T11:00:00Z'),
+      windowEnd: new Date('2026-06-14T12:00:00Z'),
+      now: new Date('2026-06-14T12:05:00Z'),
+    });
+
+    expect(fakes.chatStructured).toHaveBeenCalledTimes(1);
+    expect(result.payload.summary).toBe('No activity today.');
+    expect(result.payload.eventCount).toBe(0);
     expect(result.payload.sections).toEqual([]);
   });
 });
