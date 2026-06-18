@@ -42,7 +42,7 @@ interface ConnectionResourcesPayload {
 type SourcePickerAction =
   | { type: 'query'; query: string }
   | { type: 'toggle'; key: string; currentSelected: Set<string> }
-  | { type: 'busy'; busy: 'save' | 'delete' | null }
+  | { type: 'busy'; busy: 'save' | 'delete' | 'reconnect' | null }
   | { type: 'error'; error: string | null }
   | { type: 'confirmDelete' }
   | { type: 'resetSelection' };
@@ -50,7 +50,7 @@ type SourcePickerAction =
 interface SourcePickerState {
   selectedOverride: Set<string> | null;
   query: string;
-  busy: 'save' | 'delete' | null;
+  busy: 'save' | 'delete' | 'reconnect' | null;
   error: string | null;
   confirmDelete: boolean;
 }
@@ -203,7 +203,7 @@ function ConnectionSources({ connection }: { connection: ProviderConnection }) {
   }
 
   async function reconnect() {
-    dispatch({ type: 'busy', busy: 'save' });
+    dispatch({ type: 'busy', busy: 'reconnect' });
     dispatch({ type: 'error', error: null });
     try {
       const res = await fetch(`/api/integrations/${connection.provider}/start`, {
@@ -239,7 +239,7 @@ function ConnectionSources({ connection }: { connection: ProviderConnection }) {
               disabled={state.busy !== null}
               onClick={() => void reconnect()}
             >
-              {state.busy === 'save' ? 'Redirecting…' : 'Reconnect'}
+              {state.busy === 'reconnect' ? 'Redirecting…' : 'Reconnect'}
             </Button>
           </>
         ) : null}
