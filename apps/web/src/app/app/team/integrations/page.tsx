@@ -20,7 +20,6 @@ import { Button } from '@/components/ui/button';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
-import { providerLabel } from '@/lib/resource-labels';
 import { connectionErrorMessage } from '@/lib/ux-errors';
 
 export const metadata: Metadata = {
@@ -129,8 +128,7 @@ export default async function IntegrationsPage({
 
       {params.connected ? (
         <div className="rounded-sm border border-signal/40 bg-signal/10 px-3 py-2 text-sm text-signal">
-          Connected to {providerLabel(params.connected)}. Choose the sources this team may use
-          below.
+          MCP server connected successfully. It should now appear in the list above.
         </div>
       ) : null}
       {params.error ? (

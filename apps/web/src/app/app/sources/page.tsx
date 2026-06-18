@@ -195,7 +195,7 @@ export default async function SourcesPage() {
   const attentionSources = sources.filter((s) => s.status === 'attention');
   const notSetupSources = sources.filter((s) => s.status === 'not-setup');
   const connectedSources = sources.filter((s) => s.status === 'connected');
-  const attentionCount = attentionSources.length;
+  const attentionCount = summary.attention;
   const connectedCount = connectedSources.length;
   const notSetupCount = notSetupSources.length;
   const sorted = [...attentionSources, ...notSetupSources, ...connectedSources];
