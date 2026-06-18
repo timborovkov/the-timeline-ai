@@ -39,7 +39,7 @@ describe('generateDailyDigest conflict handling', () => {
       requireMembership: vi.fn().mockResolvedValue('member'),
       timeline: {
         team: vi.fn().mockResolvedValue({ name: 'AuditAI' }),
-        listEvents: vi.fn().mockResolvedValue([
+        listAllEventsInWindow: vi.fn().mockResolvedValue([
           {
             source: 'slack',
             occurredAt: new Date('2026-06-14T10:00:00Z'),

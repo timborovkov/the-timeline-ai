@@ -13,8 +13,11 @@ import { z } from 'zod';
 import type { DailyDigestPayload } from '#src/messaging/types.js';
 
 import { chatStructured } from '#src/llm/chat.js';
+import { childLogger } from '#src/logger.js';
 import { displayObjectTitle } from '#src/objects/index.js';
 import { withTeam } from '#src/team-scope.js';
+
+const log = childLogger('digest');
 
 const digestSectionTitleSchema = z.enum([
   'Highlights',
@@ -185,7 +188,11 @@ async function summarizeDigest(
       prompt,
     });
     return result.object;
-  } catch {
+  } catch (err) {
+    log.warn(
+      { err, promptLength: prompt.length, fallbackSummary: fallback },
+      'digest summarizer failed; returning fallback summary',
+    );
     return { summary: fallback, sections: fallbackSections() };
   }
 }
@@ -322,7 +329,7 @@ export async function generateDailyDigest(
         .from(users)
         .where(eq(users.id, input.userId))
         .limit(1),
-      scope.timeline.listEvents({ from: input.windowStart, to: input.windowEnd, limit: 100 }),
+      scope.timeline.listAllEventsInWindow({ from: input.windowStart, to: input.windowEnd }),
       scope.suggestions.countPendingSuggestions(),
       scope.objects.listObjects({
         type: ['task', 'follow_up'],
@@ -399,7 +406,7 @@ export async function generateDailyDigest(
     taskCount: taskRows.length,
     calendarCount: calendarRows.length,
   });
-  const eventBriefs = events.slice(0, 40).map((event) => ({
+  const eventBriefs = events.map((event) => ({
     occurredAt: event.occurredAt.toISOString(),
     source: event.source,
     context: eventContext(event),
@@ -532,5 +539,6 @@ export async function generateDailyDigest(
 export function defaultDigestWindow(now: Date = new Date()): { start: Date; end: Date } {
   const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 12));
   if (now < end) end.setUTCDate(end.getUTCDate() - 1);
-  return { start: addDays(end, -1), end };
+  const start = new Date(end.getTime() - 25 * 60 * 60 * 1000);
+  return { start, end };
 }
