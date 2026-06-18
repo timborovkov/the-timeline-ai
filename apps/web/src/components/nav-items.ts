@@ -1,10 +1,10 @@
 import {
+  Cable,
   Clock,
   Files,
   LayoutDashboard,
   LibraryBig,
   MessageSquare,
-  Plug,
   Settings,
   type LucideIcon,
 } from 'lucide-react';
@@ -28,7 +28,7 @@ interface NavItem {
 
 export interface NavBadgeMap {
   work?: number;
-  sources?: number;
+  connections?: number;
 }
 
 const NAV_ITEMS: readonly NavItem[] = [
@@ -57,9 +57,9 @@ const NAV_ITEMS: readonly NavItem[] = [
   },
   {
     href: '/app/sources',
-    label: 'Sources',
-    icon: Plug,
-    badgeKey: 'sources',
+    label: 'Connections',
+    icon: Cable,
+    badgeKey: 'connections',
     activeHrefs: [
       '/app/sources',
       '/app/meetings',
@@ -67,6 +67,8 @@ const NAV_ITEMS: readonly NavItem[] = [
       '/app/team/slack',
       '/app/team/integrations',
       '/app/team/mcp-servers',
+      '/app/team/mcp-share',
+      '/app/me/connections',
       '/app/me/mcp-servers',
     ],
   },
@@ -74,7 +76,7 @@ const NAV_ITEMS: readonly NavItem[] = [
     href: '/app/team',
     label: 'Team',
     icon: Settings,
-    activeHrefs: ['/app/team', '/app/team/audit', '/app/team/jobs', '/app/team/mcp-share'],
+    activeHrefs: ['/app/team', '/app/team/audit', '/app/team/jobs'],
   },
 ] as const;
 

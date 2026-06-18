@@ -8,6 +8,7 @@ import { redirect } from 'next/navigation';
 import type { Metadata } from 'next';
 import type { ComponentProps, ReactNode } from 'react';
 
+import { Coachmark } from '@/components/coachmark';
 import { IndexStrip } from '@/components/index-strip';
 import { TimelineFeed } from '@/components/timeline-feed';
 import { resolveActiveTeam } from '@/lib/active-team';
@@ -196,6 +197,12 @@ export default async function TimelinePage({ searchParams }: Props) {
             : []),
         ]}
       />
+
+      <Coachmark storageKey="citation-inspector">
+        Every claim in the timeline is cited. Click any{' '}
+        <span className="font-mono text-signal">[c:…]</span> chip to see the raw source evidence.
+        That is the point of this product.
+      </Coachmark>
 
       <TimelineBrowserSection
         sp={sp}

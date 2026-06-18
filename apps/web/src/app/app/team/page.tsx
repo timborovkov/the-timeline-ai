@@ -14,7 +14,7 @@ import {
   revokeInviteAction,
 } from '@/app/actions/teams';
 import { ActionChip } from '@/components/action-chip';
-import { IndexStrip } from '@/components/index-strip';
+import { PageHeader } from '@/components/page-header';
 import {
   InboundEmailWhitelistForm,
   DigestPreferenceForm,
@@ -191,10 +191,11 @@ export default async function TeamSettingsPage() {
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
-      <IndexStrip
+      <PageHeader
+        title="Team"
+        subtitle="Manage members, defaults, and access."
         srLabel={`Team ${active.teamName} · your role: ${role} · ${memberRows.length} members`}
-        segments={[
-          { value: 'TEAM' },
+        metadata={[
           { label: 'name', value: active.teamName, signal: true },
           { label: 'role', value: role },
           { label: 'members', value: memberRows.length },

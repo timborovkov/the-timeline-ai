@@ -17,7 +17,7 @@ import type { Metadata } from 'next';
 
 import { bindSlackConversationAction, unbindSlackConversationAction } from '@/app/actions/slack';
 import { HistoryBackLink } from '@/components/history-back-link';
-import { IndexStrip } from '@/components/index-strip';
+import { PageHeader } from '@/components/page-header';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -99,10 +99,11 @@ export default async function SlackSettingsPage() {
   return (
     <div className="mx-auto max-w-3xl space-y-6">
       <HistoryBackLink fallbackHref="/app/team" label="Back" />
-      <IndexStrip
+      <PageHeader
+        title="Slack"
+        subtitle="Capture DMs, channel messages, slash-command answers, and linked sender context."
         srLabel={`Slack capture for ${active.teamName} · ${bindings.length} bound conversations · ${linkedSlackUsers.length} linked users`}
-        segments={[
-          { value: 'TEAM / SLACK' },
+        metadata={[
           { label: 'team', value: active.teamName, signal: true },
           { label: 'channels', value: bindings.length },
           { label: 'users', value: linkedSlackUsers.length },

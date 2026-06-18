@@ -5,30 +5,36 @@ import { useState } from 'react';
 
 import type * as integrationsLib from '@timeline/shared/integrations';
 
-import { useAppDialog } from '@/components/ui/app-dialog';
+import { InlineError } from '@/components/inline-error';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { connectionErrorMessage } from '@/lib/ux-errors';
 
 type CatalogEntry = ReturnType<typeof integrationsLib.listAvailableProviders>[number];
 
 export function IntegrationsCatalog({ catalog }: { catalog: CatalogEntry[] }) {
   const [pending, setPending] = useState<string | null>(null);
-  const dialog = useAppDialog();
+  const [error, setError] = useState<{ id: string; message: string; details: string } | null>(null);
 
   async function startConnect(id: string) {
     setPending(id);
+    setError(null);
     try {
       const res = await fetch(`/api/integrations/${id}/start`, { method: 'POST' });
       if (!res.ok) {
         const text = await res.text();
-        await dialog.alert({ title: 'Connect failed', description: text });
+        setError({ id, message: connectionErrorMessage(text, res.status), details: text });
         return;
       }
       const data = (await res.json()) as { url?: string; error?: string };
       if (data.url) {
         window.location.href = data.url;
       } else {
-        await dialog.alert({ title: 'Connect failed', description: data.error ?? 'unknown' });
+        setError({
+          id,
+          message: connectionErrorMessage(data.error, res.status),
+          details: data.error ?? 'unknown',
+        });
       }
     } finally {
       setPending(null);
@@ -57,6 +63,15 @@ export function IntegrationsCatalog({ catalog }: { catalog: CatalogEntry[] }) {
             </CardHeader>
             <CardContent className="flex flex-1 flex-col">
               <p className="text-sm text-fg-muted">{c.description}</p>
+              {error?.id === c.id ? (
+                <InlineError
+                  message={error.message}
+                  details={error.details}
+                  onRetry={() => void startConnect(c.id)}
+                  retrying={pending === c.id}
+                  className="mt-3"
+                />
+              ) : null}
               <div className="mt-auto pt-3">
                 <Button
                   size="sm"
@@ -72,7 +87,6 @@ export function IntegrationsCatalog({ catalog }: { catalog: CatalogEntry[] }) {
           </Card>
         ))}
       </div>
-      {dialog.node}
     </>
   );
 }

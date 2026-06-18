@@ -1,0 +1,30 @@
+// @vitest-environment happy-dom
+
+import { render, screen } from '@testing-library/react';
+import { describe, expect, it } from 'vitest';
+
+import { SectionHeading } from '@/components/section-heading';
+
+describe('SectionHeading', () => {
+  it('renders the title as an h2 in sentence case', () => {
+    render(<SectionHeading>Quick actions</SectionHeading>);
+    const headings = screen.getAllByRole('heading', { level: 2 });
+    expect(headings).toHaveLength(1);
+    expect(headings[0]?.textContent).toBe('Quick actions');
+  });
+
+  it('renders right-aligned actions when provided', () => {
+    render(
+      <SectionHeading actions={<a href="/app/timeline">Open timeline</a>}>
+        Recent moments
+      </SectionHeading>,
+    );
+    expect(screen.getByRole('link', { name: 'Open timeline' })).toBeTruthy();
+    expect(screen.getByText('Recent moments')).toBeTruthy();
+  });
+
+  it('does not render an actions slot when omitted', () => {
+    const { container } = render(<SectionHeading>Native integrations</SectionHeading>);
+    expect(container.querySelector('h2')?.textContent).toBe('Native integrations');
+  });
+});

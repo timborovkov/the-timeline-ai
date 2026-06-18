@@ -48,7 +48,7 @@ export interface SourcesStatusSummary {
 
 interface NavAttentionSummary {
   work: number;
-  sources: number;
+  connections: number;
 }
 
 export function attentionCount(...counts: number[]): number {
@@ -289,5 +289,5 @@ export async function getNavAttentionSummary(
     getWorkStatusSummary(scope),
     getSourcesStatusSummary(scope),
   ]);
-  return { work: work.attention, sources: sources.attention };
+  return { work: work.attention, connections: sources.attention };
 }

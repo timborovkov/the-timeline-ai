@@ -6,9 +6,10 @@ import type { Metadata } from 'next';
 
 import { ActionChip } from '@/components/action-chip';
 import { Breadcrumb } from '@/components/breadcrumb';
-import { IndexStrip } from '@/components/index-strip';
 import { IntegrationsCatalog } from '@/components/integrations/catalog';
 import { PersonalConnectionsUi } from '@/components/integrations/provider-connections';
+import { PageHeader } from '@/components/page-header';
+import { SectionHeading } from '@/components/section-heading';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
@@ -47,10 +48,11 @@ export default async function PersonalConnectionsPage({
         ]}
       />
 
-      <IndexStrip
+      <PageHeader
+        title="Personal connections"
+        subtitle="Manage provider accounts you have granted to Timeline."
         srLabel={`Personal connections · ${String(connections.length)} connected`}
-        segments={[
-          { value: 'CONNECTIONS' },
+        metadata={[
           { label: 'team', value: active.teamName, signal: true },
           { label: 'owned', value: connections.length },
         ]}
@@ -73,7 +75,7 @@ export default async function PersonalConnectionsPage({
       ) : null}
 
       <section className="space-y-3">
-        <SectionHeader>Your provider connections</SectionHeader>
+        <SectionHeading>Your provider connections</SectionHeading>
         <PersonalConnectionsUi
           connections={connections.map((connection) => ({
             id: connection.id,
@@ -86,15 +88,9 @@ export default async function PersonalConnectionsPage({
       </section>
 
       <section className="space-y-3">
-        <SectionHeader>Connect another account</SectionHeader>
+        <SectionHeading>Connect another account</SectionHeading>
         <IntegrationsCatalog catalog={nativeCatalog} />
       </section>
     </div>
-  );
-}
-
-function SectionHeader({ children }: { children: React.ReactNode }) {
-  return (
-    <h2 className="font-mono text-xs uppercase tracking-[0.14em] text-fg-muted">{children}</h2>
   );
 }

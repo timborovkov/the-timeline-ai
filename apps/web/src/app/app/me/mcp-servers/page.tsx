@@ -4,8 +4,8 @@ import { redirect } from 'next/navigation';
 import type { Metadata } from 'next';
 
 import { Breadcrumb } from '@/components/breadcrumb';
-import { IndexStrip } from '@/components/index-strip';
 import { McpServersUi } from '@/components/integrations/mcp-servers';
+import { PageHeader } from '@/components/page-header';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
@@ -37,10 +37,11 @@ export default async function PersonalMcpServersPage() {
           { label: 'Personal MCP' },
         ]}
       />
-      <IndexStrip
+      <PageHeader
+        title="Personal MCP servers"
+        subtitle="Custom external tools visible only to you, layered on the team catalog."
         srLabel={`Personal MCP servers · ${String(servers.length)} connected`}
-        segments={[
-          { value: 'PERSONAL MCP' },
+        metadata={[
           { label: 'team', value: active.teamName, signal: true },
           { label: 'mine', value: servers.length },
         ]}

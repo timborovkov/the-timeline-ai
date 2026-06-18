@@ -4,8 +4,11 @@ import { useRouter } from 'next/navigation';
 import { useActionState, useState } from 'react';
 
 import { setIntegrationVisibilityDefaultAction } from '@/app/actions/visibility';
+import { InlineError } from '@/components/inline-error';
 import { useAppDialog } from '@/components/ui/app-dialog';
 import { Button } from '@/components/ui/button';
+import { providerLabel } from '@/lib/resource-labels';
+import { connectionErrorMessage } from '@/lib/ux-errors';
 
 interface ConnectedRow {
   id: string;
@@ -40,6 +43,7 @@ export function ConnectedIntegrations({
   const router = useRouter();
   const dialog = useAppDialog();
   const [busy, setBusy] = useState<string | null>(null);
+  const [retryError, setRetryError] = useState<string | null>(null);
 
   if (connected.length === 0) {
     return <p className="text-sm text-fg-muted">No integrations connected yet.</p>;
@@ -47,14 +51,17 @@ export function ConnectedIntegrations({
 
   async function call(method: 'sync' | 'disconnect', id: string) {
     setBusy(`${method}:${id}`);
+    setRetryError(null);
     try {
       const res = await fetch(`/api/integrations/manage/${id}/${method}`, { method: 'POST' });
       if (!res.ok) {
         const text = await res.text();
-        await dialog.alert({ title: `${method} failed`, description: text });
+        setRetryError(text);
         return;
       }
       router.refresh();
+    } catch (err) {
+      setRetryError(err instanceof Error ? err.message : 'Request failed');
     } finally {
       setBusy(null);
     }
@@ -67,10 +74,8 @@ export function ConnectedIntegrations({
           <li key={c.id} className="flex items-center gap-3 px-3 py-2">
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2">
-                <span className="font-mono text-xs uppercase tracking-[0.14em] text-fg-muted">
-                  {c.provider}
-                </span>
-                <span className="truncate text-sm">{c.displayName}</span>
+                <span className="text-sm font-medium">{providerLabel(c.provider)}</span>
+                <span className="truncate text-sm text-fg-muted">{c.displayName}</span>
                 {!c.enabled ? (
                   <span className="rounded-sm border border-border px-1 text-[10px] uppercase text-fg-muted">
                     Disabled
@@ -81,10 +86,28 @@ export function ConnectedIntegrations({
                 {c.lastSyncedAt
                   ? `Last synced ${DATE_FORMAT.format(new Date(c.lastSyncedAt))}`
                   : 'Never synced'}
-                {c.lastError ? (
-                  <span className="ml-2 text-destructive">· {c.lastError}</span>
-                ) : null}
               </div>
+              {c.lastError ? (
+                <InlineError
+                  message={connectionErrorMessage(c.lastError)}
+                  details={c.lastError}
+                  onRetry={() => void call('sync', c.id)}
+                  retrying={busy === `sync:${c.id}`}
+                  retryLabel="Retry sync"
+                  className="mt-2"
+                />
+              ) : null}
+              {retryError && busy === null ? (
+                <InlineError
+                  message={connectionErrorMessage(retryError)}
+                  details={retryError}
+                  onRetry={() => {
+                    setRetryError(null);
+                  }}
+                  retryLabel="Dismiss"
+                  className="mt-2"
+                />
+              ) : null}
               <IntegrationVisibilityForm integration={c} members={members} />
             </div>
             <Button
