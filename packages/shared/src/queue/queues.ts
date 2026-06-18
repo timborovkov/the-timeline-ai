@@ -1,5 +1,6 @@
 import { Queue, type JobsOptions } from 'bullmq';
 
+import { defaultDigestWindow } from '#src/messaging/digest.js';
 import { getRedisConnection } from '#src/queue/connection.js';
 
 type TimelineQueue<TData> = Queue<TData, unknown, string, TData, unknown, string>;
@@ -909,16 +910,8 @@ export async function scheduleDailyDigest(): Promise<void> {
   await enqueueDailyDigestCatchupJob();
 }
 
-function latestDailyDigestWindow(now: Date = new Date()): { start: Date; end: Date } {
-  const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 12));
-  if (now < end) end.setUTCDate(end.getUTCDate() - 1);
-  const start = new Date(end);
-  start.setUTCDate(start.getUTCDate() - 1);
-  return { start, end };
-}
-
 export async function enqueueDailyDigestCatchupJob(now: Date = new Date()): Promise<void> {
-  const window = latestDailyDigestWindow(now);
+  const window = defaultDigestWindow(now);
   await getDailyDigestQueue().add(
     'tick',
     {
@@ -927,7 +920,13 @@ export async function enqueueDailyDigestCatchupJob(now: Date = new Date()): Prom
       windowStart: window.start.toISOString(),
       windowEnd: window.end.toISOString(),
     },
-    { jobId: bullmqCustomJobId(['daily-digest-catchup', window.end.toISOString()]) },
+    {
+      jobId: bullmqCustomJobId([
+        'daily-digest-catchup',
+        window.start.toISOString(),
+        window.end.toISOString(),
+      ]),
+    },
   );
 }
 
@@ -935,7 +934,13 @@ export async function enqueueDailyDigestRecipientJob(
   data: Extract<DailyDigestJobData, { kind: 'recipient' }>,
 ): Promise<void> {
   await getDailyDigestQueue().add('recipient', data, {
-    jobId: bullmqCustomJobId(['daily-digest', data.teamId, data.userId, data.windowEnd]),
+    jobId: bullmqCustomJobId([
+      'daily-digest',
+      data.teamId,
+      data.userId,
+      data.windowStart,
+      data.windowEnd,
+    ]),
   });
 }
 
