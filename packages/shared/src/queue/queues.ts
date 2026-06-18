@@ -920,7 +920,13 @@ export async function enqueueDailyDigestCatchupJob(now: Date = new Date()): Prom
       windowStart: window.start.toISOString(),
       windowEnd: window.end.toISOString(),
     },
-    { jobId: bullmqCustomJobId(['daily-digest-catchup', window.end.toISOString()]) },
+    {
+      jobId: bullmqCustomJobId([
+        'daily-digest-catchup',
+        window.start.toISOString(),
+        window.end.toISOString(),
+      ]),
+    },
   );
 }
 
@@ -928,7 +934,13 @@ export async function enqueueDailyDigestRecipientJob(
   data: Extract<DailyDigestJobData, { kind: 'recipient' }>,
 ): Promise<void> {
   await getDailyDigestQueue().add('recipient', data, {
-    jobId: bullmqCustomJobId(['daily-digest', data.teamId, data.userId, data.windowEnd]),
+    jobId: bullmqCustomJobId([
+      'daily-digest',
+      data.teamId,
+      data.userId,
+      data.windowStart,
+      data.windowEnd,
+    ]),
   });
 }
 
