@@ -1,7 +1,7 @@
 'use client';
 
 import { X } from 'lucide-react';
-import { useState } from 'react';
+import { useState, useSyncExternalStore } from 'react';
 
 import { cn } from '@/lib/utils';
 
@@ -14,12 +14,27 @@ interface CoachmarkProps {
   className?: string;
 }
 
-function shouldShow(storageKey: string): boolean {
+function subscribeToCoachmark(onStoreChange: () => void): () => void {
+  if (typeof window === 'undefined') return () => undefined;
+  const handler = (e: StorageEvent) => {
+    if (e.key?.startsWith('tl-coachmark:')) onStoreChange();
+  };
+  window.addEventListener('storage', handler);
+  return () => {
+    window.removeEventListener('storage', handler);
+  };
+}
+
+function isVisible(storageKey: string): boolean {
   try {
     return localStorage.getItem(`tl-coachmark:${storageKey}`) !== 'dismissed';
   } catch {
     return true;
   }
+}
+
+function serverSnapshot(): boolean {
+  return true;
 }
 
 /**
@@ -31,7 +46,11 @@ function shouldShow(storageKey: string): boolean {
  * button. Respects `prefers-reduced-motion` (no animation).
  */
 export function Coachmark({ storageKey, children, className }: CoachmarkProps) {
-  const [visible, setVisible] = useState(() => shouldShow(storageKey));
+  const [dismissed, setDismissed] = useState(false);
+  const visible =
+    useSyncExternalStore(subscribeToCoachmark, () => isVisible(storageKey), serverSnapshot) &&
+    !dismissed;
+
   if (!visible) return null;
 
   return (
@@ -52,7 +71,7 @@ export function Coachmark({ storageKey, children, className }: CoachmarkProps) {
           } catch {
             // localStorage unavailable (private mode); dismiss for this session
           }
-          setVisible(false);
+          setDismissed(true);
         }}
         className="grid size-6 shrink-0 place-items-center rounded-sm text-fg-muted hover:bg-surface-2 hover:text-fg"
       >

@@ -57,7 +57,7 @@ function buildSources(summary: SourcesStatusSummary): SourceEntry[] {
         ? 'Ready, no mail yet'
         : 'Not set up',
     actionHref: emailConnected ? '/app#email-ingest' : '/app/team',
-    actionLabel: emailConnected ? 'Copy address' : 'Set up email',
+    actionLabel: emailConnected ? 'Manage' : 'Set up email',
     detail: emailConnected ? `Inbound: ${summary.inboundEmail}` : 'No inbound address configured',
   };
 

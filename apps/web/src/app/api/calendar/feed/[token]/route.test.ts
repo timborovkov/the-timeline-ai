@@ -24,34 +24,39 @@ const fakes = vi.hoisted<{
   updateWhere: null,
 }));
 
-vi.mock('@timeline/db', () => ({
-  calendarEvents: {
-    table: 'calendar_events',
-    teamId: 'calendar_team_id',
-    visibility: 'calendar_visibility',
-    createdByUserId: 'calendar_created_by_user_id',
-    visibilityUserIds: 'calendar_visibility_user_ids',
-    deletedAt: 'calendar_deleted_at',
-    endAt: 'calendar_end_at',
-    startAt: 'calendar_start_at',
-  },
-  teamCalendarSubscriptions: {
-    table: 'team_calendar_subscriptions',
-    id: 'subscription_id',
-    teamId: 'subscription_team_id',
-    userId: 'subscription_user_id',
-    tokenHash: 'subscription_token_hash',
-    lastUsedAt: 'subscription_last_used_at',
-    updatedAt: 'subscription_updated_at',
-  },
-  teamMembers: {
-    table: 'team_members',
-    teamId: 'member_team_id',
-    userId: 'member_user_id',
-    removedAt: 'member_removed_at',
-  },
-  teams: { table: 'teams', id: 'team_id', name: 'team_name' },
-}));
+vi.mock('@timeline/db', async (importOriginal) => {
+  // eslint-disable-next-line @typescript-eslint/consistent-type-imports
+  const actual = await importOriginal<typeof import('@timeline/db')>();
+  return {
+    ...actual,
+    calendarEvents: {
+      table: 'calendar_events',
+      teamId: 'calendar_team_id',
+      visibility: 'calendar_visibility',
+      createdByUserId: 'calendar_created_by_user_id',
+      visibilityUserIds: 'calendar_visibility_user_ids',
+      deletedAt: 'calendar_deleted_at',
+      endAt: 'calendar_end_at',
+      startAt: 'calendar_start_at',
+    },
+    teamCalendarSubscriptions: {
+      table: 'team_calendar_subscriptions',
+      id: 'subscription_id',
+      teamId: 'subscription_team_id',
+      userId: 'subscription_user_id',
+      tokenHash: 'subscription_token_hash',
+      lastUsedAt: 'subscription_last_used_at',
+      updatedAt: 'subscription_updated_at',
+    },
+    teamMembers: {
+      table: 'team_members',
+      teamId: 'member_team_id',
+      userId: 'member_user_id',
+      removedAt: 'member_removed_at',
+    },
+    teams: { table: 'teams', id: 'team_id', name: 'team_name' },
+  };
+});
 vi.mock('drizzle-orm', () => ({
   and: (...args: unknown[]) => ({ op: 'and', args }),
   asc: (arg: unknown) => ({ op: 'asc', arg }),

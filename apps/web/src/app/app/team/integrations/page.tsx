@@ -135,12 +135,11 @@ export default async function IntegrationsPage({
       ) : null}
       {params.error ? (
         <div className="rounded-sm border border-danger/40 bg-danger/10 px-3 py-2 text-sm text-danger">
-          {connectionErrorMessage(params.error)}
-        </div>
-      ) : null}
-      {params.error ? (
-        <div className="rounded-sm border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-          Connection failed: <span className="font-mono">{params.error}</span>
+          <p>{connectionErrorMessage(params.error)}</p>
+          <details className="mt-1">
+            <summary className="cursor-pointer text-xs text-fg-dim">Error details</summary>
+            <code className="mt-1 block text-xs">{params.error}</code>
+          </details>
         </div>
       ) : null}
 

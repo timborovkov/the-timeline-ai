@@ -43,7 +43,7 @@ export function ConnectedIntegrations({
   const router = useRouter();
   const dialog = useAppDialog();
   const [busy, setBusy] = useState<string | null>(null);
-  const [retryError, setRetryError] = useState<string | null>(null);
+  const [retryError, setRetryError] = useState<{ id: string; message: string } | null>(null);
 
   if (connected.length === 0) {
     return <p className="text-sm text-fg-muted">No integrations connected yet.</p>;
@@ -56,12 +56,12 @@ export function ConnectedIntegrations({
       const res = await fetch(`/api/integrations/manage/${id}/${method}`, { method: 'POST' });
       if (!res.ok) {
         const text = await res.text();
-        setRetryError(text);
+        setRetryError({ id, message: text });
         return;
       }
       router.refresh();
     } catch (err) {
-      setRetryError(err instanceof Error ? err.message : 'Request failed');
+      setRetryError({ id, message: err instanceof Error ? err.message : 'Request failed' });
     } finally {
       setBusy(null);
     }
@@ -97,10 +97,10 @@ export function ConnectedIntegrations({
                   className="mt-2"
                 />
               ) : null}
-              {retryError && busy === null ? (
+              {retryError?.id === c.id ? (
                 <InlineError
-                  message={connectionErrorMessage(retryError)}
-                  details={retryError}
+                  message={connectionErrorMessage(retryError.message)}
+                  details={retryError.message}
                   onRetry={() => {
                     setRetryError(null);
                   }}
