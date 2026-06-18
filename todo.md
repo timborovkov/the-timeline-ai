@@ -30,6 +30,32 @@ implementation detail.
       useful retry or rejoin path. Failed meetings are already captured as
       `meetings.status='failed'`.
 
+## UX Overhaul
+
+Direction: soften the surface. Keep the forensic mono treatment for data
+(timestamps, IDs, citations); replace mono-uppercase eyebrows and
+`IndexStrip` headers with normal sentence-case headers on non-operational
+pages. Full phased plan with file-level tasks:
+[docs/ux-overhaul-plan.md](docs/ux-overhaul-plan.md).
+
+- [x] U1 — Design-language softening: new `PageHeader` + `SectionHeading`,
+      surface split (operational keeps `IndexStrip`; standard gets `H1`),
+      update `design.md` in the same PR.
+- [x] U2 — Connect-flow wizard: one guided Connect → Choose → Done flow
+      per provider; hide `externalId` / `resourceKind` / `.org` kinds;
+      fold `me/connections` + `team/integrations` activation into steps.
+- [x] U3 — Actionable errors: Reconnect / Retry / Re-share CTAs beside
+      every error chip; raw `res.text()` → human sentence + collapsible
+      Details; no empty state telling users to edit env.
+- [x] U4 — Discoverability: Sources hub → Connections status overview +
+      one-click fix; timeline citation→inspector coachmark; Home
+      first-run hero above the fold.
+- [x] U5 — IA consolidation: merge Sources + Team integrations into one
+      Connections area; admin-only Admin group; 7 top-level destinations
+      (down from 13+); redirects + keymap updates.
+- [ ] U6 — Polish and verification: `/plan-design-review`, `/qa`,
+      before/after screenshots, `pnpm validate` + `pnpm run doctor` 100.
+
 ## Workspace Reconciliation
 
 - [ ] Wire workspace reconciliation into future authoritative external sync

@@ -48,7 +48,7 @@ export interface SourcesStatusSummary {
 
 interface NavAttentionSummary {
   work: number;
-  sources: number;
+  connections: number;
 }
 
 export function attentionCount(...counts: number[]): number {
@@ -258,9 +258,20 @@ export async function getSourcesStatusSummary(scope: TeamScope): Promise<Sources
   ]);
   const integrationErrors = countIntegrationErrors(integrations);
   const mcpErrors = countMcpErrors(mcpServerRows);
+  const emailAttention =
+    team?.inboundEmail &&
+    !onboarding.steps.some((step) => step.step === 'email_forwarding' && step.completed)
+      ? 1
+      : 0;
 
   return {
-    attention: attentionCount(documentAttention, meetingsFailed, integrationErrors, mcpErrors),
+    attention: attentionCount(
+      documentAttention,
+      meetingsFailed,
+      integrationErrors,
+      mcpErrors,
+      emailAttention,
+    ),
     inboundEmail: team?.inboundEmail ?? null,
     emailForwarded: onboarding.steps.some(
       (step) => step.step === 'email_forwarding' && step.completed,
@@ -289,5 +300,5 @@ export async function getNavAttentionSummary(
     getWorkStatusSummary(scope),
     getSourcesStatusSummary(scope),
   ]);
-  return { work: work.attention, sources: sources.attention };
+  return { work: work.attention, connections: sources.attention };
 }

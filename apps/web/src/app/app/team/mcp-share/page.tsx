@@ -6,8 +6,8 @@ import { redirect } from 'next/navigation';
 import type { Metadata } from 'next';
 
 import { Breadcrumb } from '@/components/breadcrumb';
-import { IndexStrip } from '@/components/index-strip';
 import { McpShareUi } from '@/components/integrations/mcp-share';
+import { PageHeader } from '@/components/page-header';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
@@ -62,10 +62,11 @@ export default async function McpSharePage() {
           { label: 'Timeline as MCP' },
         ]}
       />
-      <IndexStrip
+      <PageHeader
+        title="Timeline as MCP server"
+        subtitle="Expose team events to external agents via a bearer-keyed MCP endpoint."
         srLabel={`Timeline as MCP server · ${String(keys.length)} active keys`}
-        segments={[
-          { value: 'TIMELINE AS MCP' },
+        metadata={[
           { label: 'team', value: active.teamName, signal: true },
           { label: 'keys', value: keys.length },
         ]}

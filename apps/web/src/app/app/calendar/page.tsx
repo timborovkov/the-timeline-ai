@@ -9,7 +9,7 @@ import type { Metadata } from 'next';
 import { ApprovalsClient } from '@/components/approvals/approvals-client';
 import { CalendarSubscriptionPanel } from '@/components/calendar/calendar-subscription-panel';
 import { CalendarView } from '@/components/calendar/calendar-view';
-import { IndexStrip } from '@/components/index-strip';
+import { PageHeader } from '@/components/page-header';
 import { WORK_BACK_LINK } from '@/components/work-back-link';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
@@ -199,7 +199,7 @@ export default async function CalendarPage({ searchParams }: PageProps) {
   });
   return (
     <div className="mx-auto max-w-[92rem] space-y-6">
-      <IndexStrip srLabel="Calendar" segments={[{ value: 'CALENDAR' }]} leading={WORK_BACK_LINK} />
+      <PageHeader title="Calendar" leading={WORK_BACK_LINK} />
 
       <p className="text-sm text-muted-foreground">
         Track deadlines, meetings, and follow-ups. Events appear on the timeline.

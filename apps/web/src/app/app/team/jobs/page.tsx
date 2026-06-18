@@ -16,10 +16,19 @@ export const metadata: Metadata = {
   description: 'Review background jobs, retries, and finished history.',
 };
 
+const VALID_JOB_KINDS = [
+  'transcription',
+  'extraction',
+  'embedding',
+  'document_processing',
+  'meeting_finalization',
+  'integration_sync',
+] as const;
+
 export const dynamic = 'force-dynamic';
 
-export default async function JobRecoveryPage() {
-  const session = await auth();
+export default async function JobRecoveryPage(props: { searchParams: Promise<{ kind?: string }> }) {
+  const [{ kind }, session] = await Promise.all([props.searchParams, auth()]);
   if (!session?.user) redirect('/sign-in');
   const { active } = await resolveActiveTeam(session.user.id);
   if (!active) redirect('/sign-in');
@@ -34,6 +43,11 @@ export default async function JobRecoveryPage() {
   if (!canViewJobs) redirect('/app/team');
 
   const items = await scope.jobRecovery.listRecoverableJobs();
+
+  const defaultFilter =
+    kind && VALID_JOB_KINDS.includes(kind as (typeof VALID_JOB_KINDS)[number])
+      ? (kind as (typeof VALID_JOB_KINDS)[number])
+      : undefined;
 
   return (
     <div className="mx-auto max-w-4xl space-y-8">
@@ -52,7 +66,7 @@ export default async function JobRecoveryPage() {
         </h2>
         <JobDashboard />
       </section>
-      <JobRecoveryList items={items} />
+      <JobRecoveryList items={items} defaultFilter={defaultFilter} />
     </div>
   );
 }

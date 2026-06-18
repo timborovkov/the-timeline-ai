@@ -20,8 +20,9 @@ import type { ReactNode } from 'react';
 
 import { PinnedBoards } from '@/components/boards/pinned-boards';
 import { CaptureForm } from '@/components/capture-form';
-import { IndexStrip } from '@/components/index-strip';
 import { OnboardingChecklist } from '@/components/onboarding-checklist';
+import { PageHeader } from '@/components/page-header';
+import { SectionHeading } from '@/components/section-heading';
 import { TeamAccessPanel } from '@/components/team-access-panel';
 import { TimelineFeed } from '@/components/timeline-feed';
 import { Button } from '@/components/ui/button';
@@ -129,10 +130,10 @@ export default async function HomeDashboardPage() {
 
   return (
     <div className="mx-auto max-w-6xl space-y-6 md:space-y-8">
-      <IndexStrip
+      <PageHeader
+        title="Home"
         srLabel={`Home dashboard · ${active.teamName} · ${events.length} recent event${events.length === 1 ? '' : 's'} · ${pendingApprovals} pending approval${pendingApprovals === 1 ? '' : 's'}`}
-        segments={[
-          { value: 'HOME' },
+        metadata={[
           { label: 'team', value: active.teamName },
           { label: 'recent', value: events.length },
           ...(pendingApprovals > 0
@@ -150,6 +151,8 @@ export default async function HomeDashboardPage() {
           inboundEmail={team?.inboundEmail ?? null}
         />
       ) : null}
+
+      <OnboardingChecklist />
 
       <PinnedBoards boards={pinnedBoards} />
 
@@ -170,46 +173,51 @@ export default async function HomeDashboardPage() {
           />
         </section>
 
-        <section aria-label="Quick actions" className="space-y-3">
-          <h2 className="font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">
-            Quick actions
-          </h2>
-          <div className="grid gap-2">
-            <AttentionLink
-              href="/app/approvals"
-              icon={<CircleCheckBig className="size-4" aria-hidden="true" />}
-              label={
-                pendingApprovals > 0
-                  ? `${pendingApprovals} pending approval${pendingApprovals === 1 ? '' : 's'}`
-                  : 'No pending approvals'
-              }
-              active={pendingApprovals > 0}
-            />
-            <AttentionLink
-              href="/app/work"
-              icon={<FileText className="size-4" aria-hidden="true" />}
-              label="Work"
-            />
-            <AttentionLink
-              href="/app/calendar"
-              icon={<Clock className="size-4" aria-hidden="true" />}
-              label="Calendar"
-            />
-            <AttentionLink
-              href="/app/meetings"
-              icon={<Video className="size-4" aria-hidden="true" />}
-              label="Invite notetaker"
-            />
-            <AttentionLink
-              href="#email-ingest"
-              icon={<Mail className="size-4" aria-hidden="true" />}
-              label={team?.inboundEmail ? 'Email ingest ready' : 'Configure email ingest'}
-            />
-          </div>
-        </section>
+        {completedSetupCount >= 2 ? (
+          <section aria-label="Quick actions" className="space-y-3">
+            <SectionHeading>Quick actions</SectionHeading>
+            <div className="grid gap-2">
+              <AttentionLink
+                href="/app/approvals"
+                icon={<CircleCheckBig className="size-4" aria-hidden="true" />}
+                label={
+                  pendingApprovals > 0
+                    ? `${pendingApprovals} pending approval${pendingApprovals === 1 ? '' : 's'}`
+                    : 'No pending approvals'
+                }
+                active={pendingApprovals > 0}
+              />
+              <AttentionLink
+                href="/app/work"
+                icon={<FileText className="size-4" aria-hidden="true" />}
+                label="Work"
+              />
+              <AttentionLink
+                href="/app/calendar"
+                icon={<Clock className="size-4" aria-hidden="true" />}
+                label="Calendar"
+              />
+              <AttentionLink
+                href="/app/meetings"
+                icon={<Video className="size-4" aria-hidden="true" />}
+                label="Invite notetaker"
+              />
+              <AttentionLink
+                href="#email-ingest"
+                icon={<Mail className="size-4" aria-hidden="true" />}
+                label={team?.inboundEmail ? 'Email ingest ready' : 'Configure email ingest'}
+              />
+            </div>
+          </section>
+        ) : (
+          <section className="space-y-3">
+            <SectionHeading>Getting started</SectionHeading>
+            <p className="text-sm text-fg-muted">
+              Complete a few setup steps above to unlock quick actions. It takes about two minutes.
+            </p>
+          </section>
+        )}
       </div>
-
-      <OnboardingChecklist />
 
       <section aria-label="Team access" className="space-y-3">
         <TeamAccessPanel
@@ -221,14 +229,15 @@ export default async function HomeDashboardPage() {
       </section>
 
       <section className="space-y-3">
-        <div className="flex items-center justify-between gap-3">
-          <h2 className="font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">
-            Recent moments
-          </h2>
-          <Button asChild variant="ghost" size="sm">
-            <Link href="/app/timeline">Open timeline</Link>
-          </Button>
-        </div>
+        <SectionHeading
+          actions={
+            <Button asChild variant="ghost" size="sm">
+              <Link href="/app/timeline">Open timeline</Link>
+            </Button>
+          }
+        >
+          Recent moments
+        </SectionHeading>
         <TimelineFeed
           initialPage={{
             items: events.map((event) => ({

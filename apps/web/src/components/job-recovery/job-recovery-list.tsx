@@ -33,6 +33,11 @@ interface RetryFailedResponse {
   failedIds?: string[];
 }
 
+interface JobRecoveryListProps {
+  items: JobRecoveryItem[];
+  defaultFilter?: JobRecoveryKind;
+}
+
 interface JobRecoveryUiState {
   actionError: string | null;
   busy: string | null;
@@ -107,13 +112,14 @@ function jobRecoveryUiReducer(
   }
 }
 
-export function JobRecoveryList({ items }: { items: JobRecoveryItem[] }) {
+export function JobRecoveryList({ items, defaultFilter }: JobRecoveryListProps) {
   const router = useRouter();
   const dialog = useAppDialog();
   const finishedJobs = useFinishedJobsInfiniteQuery();
   const [{ actionError, busy, dismissedKeys, filter, retrySnapshots }, dispatchUi] = useReducer(
     jobRecoveryUiReducer,
     initialJobRecoveryUiState,
+    (initial): JobRecoveryUiState => ({ ...initial, filter: defaultFilter ?? 'all' }),
   );
 
   const visibleItems = useMemo(

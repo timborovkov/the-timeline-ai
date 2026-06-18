@@ -36,3 +36,25 @@ export function chatErrorMessage(error: string | undefined, status?: number): st
       return error ?? `Chat failed${status ? ` (${String(status)})` : ''}.`;
   }
 }
+
+export function connectionErrorMessage(error: string | undefined, status?: number): string {
+  switch (error) {
+    case 'unauthorized':
+    case 'unauthenticated':
+      return 'Sign in again to manage this connection.';
+    case 'forbidden':
+      return 'Only an admin can do this. Ask a team admin to help.';
+    case 'not_found':
+      return 'This connection no longer exists. Refresh the page to update the list.';
+    case 'no_team':
+      return 'Choose a team before connecting a source.';
+    case 'unknown_provider':
+      return 'This source is not supported yet.';
+    case 'oauth_start_failed':
+      return 'Could not start the connection. The provider may be temporarily unavailable — try again in a moment.';
+    case 'no_active_team':
+      return 'Choose a team before managing connections.';
+    default:
+      return error ?? `Connection failed${status ? ` (${String(status)})` : ''}.`;
+  }
+}

@@ -9,15 +9,18 @@ import type { Metadata } from 'next';
 
 import { ActionChip } from '@/components/action-chip';
 import { Breadcrumb } from '@/components/breadcrumb';
-import { IndexStrip } from '@/components/index-strip';
 import { IntegrationsCatalog } from '@/components/integrations/catalog';
 import { ConnectedIntegrations } from '@/components/integrations/connected';
 import { McpCatalog } from '@/components/integrations/mcp-catalog';
 import { AddCustomMcpServerLauncher, McpServersUi } from '@/components/integrations/mcp-servers';
 import { TeamSourcesUi } from '@/components/integrations/provider-connections';
+import { PageHeader } from '@/components/page-header';
+import { SectionHeading } from '@/components/section-heading';
+import { Button } from '@/components/ui/button';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { connectionErrorMessage } from '@/lib/ux-errors';
 
 export const metadata: Metadata = {
   title: 'Integrations',
@@ -29,7 +32,7 @@ export const dynamic = 'force-dynamic';
 /**
  * Single integrations page. Sits under /app/team. The layout is:
  *   1. Breadcrumb  (Team / Integrations)
- *   2. IndexStrip header
+ *   2. PageHeader (title + metadata strip)
  *   3. Top action bar: secondary nav chips + "+ Add custom MCP server"
  *   4. Connected list (native + MCP) when anything is connected
  *   5. Native catalog (GitHub/Linear/Drive) when env-configured
@@ -91,38 +94,50 @@ export default async function IntegrationsPage({
     <div className="mx-auto max-w-4xl space-y-8">
       <Breadcrumb items={[{ label: 'Team', href: '/app/team' }, { label: 'Integrations' }]} />
 
-      <IndexStrip
+      <PageHeader
+        title="Integrations"
+        subtitle="Connect and manage third-party integrations."
         srLabel={`Integrations · ${String(totalConnected)} connected · ${String(totalCatalog)} in catalog`}
-        segments={[
-          { value: 'INTEGRATIONS' },
+        metadata={[
           { label: 'team', value: active.teamName, signal: true },
           { label: 'connected', value: totalConnected },
           { label: 'catalog', value: totalCatalog },
         ]}
       />
 
-      {/* Action bar. Stays above the fold; the three secondary links
-          previously buried under the catalog footer are chips here, and
-          the most-requested affordance ("+ Add custom MCP server") sits
-          on the right. */}
-      <div className="flex flex-wrap items-center gap-2 border-y border-border py-2">
-        <ActionChip href="/app/team/mcp-share" label="Expose as MCP →" />
-        <ActionChip href="/app/me/connections" label="Personal connections →" />
-        <ActionChip href="/app/me/mcp-servers" label="Personal MCP →" />
-        <ActionChip href="/app/team/integrations/audit" label="Audit log →" />
-        {isAdmin ? <ActionChip href="/app/team/jobs" label="Job recovery →" /> : null}
-        <span className="ml-auto" />
+      {/* Primary action: add a custom MCP server. The jargon-y secondary
+          links (Expose-as-MCP, Personal connections, Personal MCP, Audit
+          log, Job recovery) collapse into a single Advanced disclosure so
+          they don't compete with the connect flow. */}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <details className="group">
+          <summary className="inline-flex cursor-pointer items-center gap-1 text-sm text-fg-muted transition-colors hover:text-fg">
+            Advanced
+            <span className="font-mono text-[10px] text-fg-dim group-open:hidden">+</span>
+            <span className="hidden font-mono text-[10px] text-fg-dim group-open:inline">-</span>
+          </summary>
+          <div className="mt-2 flex flex-wrap items-center gap-2 border-y border-border py-2">
+            <ActionChip href="/app/team/integrations/audit" label="Audit log →" />
+            {isAdmin ? <ActionChip href="/app/team/jobs" label="Job recovery →" /> : null}
+            <ActionChip href="/app/me/connections" label="Personal connections →" />
+            <ActionChip href="/app/me/mcp-servers" label="Personal MCP →" />
+          </div>
+        </details>
         <AddCustomMcpServerLauncher ownership="team" />
       </div>
 
       {params.connected ? (
         <div className="rounded-sm border border-signal/40 bg-signal/10 px-3 py-2 text-sm text-signal">
-          Connected to <span className="font-mono">{params.connected}</span>.
+          MCP server connected successfully. It should now appear in the list above.
         </div>
       ) : null}
       {params.error ? (
-        <div className="rounded-sm border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-          Connection failed: <span className="font-mono">{params.error}</span>
+        <div className="rounded-sm border border-danger/40 bg-danger/10 px-3 py-2 text-sm text-danger">
+          <p>{connectionErrorMessage(params.error)}</p>
+          <details className="mt-1">
+            <summary className="cursor-pointer text-xs text-fg-dim">Error details</summary>
+            <code className="mt-1 block text-xs">{params.error}</code>
+          </details>
         </div>
       ) : null}
 
@@ -136,7 +151,7 @@ export default async function IntegrationsPage({
 
       {totalConnected > 0 || totalSharedSources > 0 ? (
         <section className="space-y-3">
-          <SectionHeader>Connected</SectionHeader>
+          <SectionHeading>Connected</SectionHeading>
           <TeamSourcesUi
             rows={resourceShares.map((row) => ({
               share: {
@@ -204,7 +219,7 @@ export default async function IntegrationsPage({
 
       {nativeCatalog.length > 0 ? (
         <section className="space-y-3">
-          <SectionHeader>Native integrations</SectionHeader>
+          <SectionHeading>Native integrations</SectionHeading>
           <p className="text-sm text-fg-muted">
             GitHub, Linear, and Google Drive sync directly into Timeline as first-party providers.
           </p>
@@ -214,7 +229,7 @@ export default async function IntegrationsPage({
 
       {mcpCatalogAvailable.length > 0 ? (
         <section className="space-y-3">
-          <SectionHeader>MCP servers</SectionHeader>
+          <SectionHeading>MCP servers</SectionHeading>
           <McpCatalog
             entries={mcpCatalogAvailable.map((c) => ({
               id: c.id,
@@ -232,23 +247,34 @@ export default async function IntegrationsPage({
 
       {!hasAnything ? (
         <div className="rounded-sm border border-dashed border-border bg-surface p-6 text-sm text-fg-muted">
-          <p className="mb-1 font-medium text-fg">No integrations configured.</p>
+          <p className="mb-1 font-medium text-fg">No sources connected yet.</p>
           <p>
-            Add the provider credentials in env to enable native GitHub, Linear, or Google Drive
-            sync; see{' '}
-            <Link className="text-signal underline" href="/docs/setup/integrations.html">
-              setup
-            </Link>
-            . Or add any MCP-compatible server above.
+            Connect Google Drive, Linear, or GitHub to sync work into the timeline, or add any
+            MCP-compatible server above.
           </p>
+          {isAdmin ? (
+            <p className="mt-2">
+              <Link className="text-signal underline" href="/docs/setup/integrations.html">
+                Read the setup guide
+              </Link>
+            </p>
+          ) : (
+            <p className="mt-2">Ask a team admin to enable a source to get started.</p>
+          )}
         </div>
       ) : null}
-    </div>
-  );
-}
 
-function SectionHeader({ children }: { children: React.ReactNode }) {
-  return (
-    <h2 className="font-mono text-xs uppercase tracking-[0.14em] text-fg-muted">{children}</h2>
+      <section className="space-y-3 border-t border-border pt-6">
+        <SectionHeading>Expose Timeline as an MCP server</SectionHeading>
+        <p className="text-sm text-fg-muted">
+          Let external agents read this team&apos;s timeline events through a bearer-keyed MCP
+          endpoint. This is outbound access: external tools reading from Timeline, not Timeline
+          reading from them.
+        </p>
+        <Button asChild variant="outline" size="sm">
+          <Link href="/app/team/mcp-share">Manage MCP endpoint</Link>
+        </Button>
+      </section>
+    </div>
   );
 }

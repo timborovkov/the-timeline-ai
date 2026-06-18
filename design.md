@@ -143,9 +143,15 @@ default, 1.65 in long-form prose.
 ### Patterns
 
 - **Eyebrow label** above titles uses mono: `text-xs uppercase tracking-[0.14em] text-fg-dim font-mono`.
+  Reserved for operational surfaces. Standard pages use `<SectionHeading>`
+  (sentence-case) instead.
 - **Page title:** `text-2xl font-semibold tracking-tight` (Switzer 600,
-  letter-spacing -0.02em).
+  letter-spacing -0.02em). Operational surfaces render the title inside
+  `<IndexStrip>` (mono uppercase, `segments[0]`); standard surfaces render
+  it via `<PageHeader title>`.
 - **Metadata one-liner** (index strip): `text-xs font-mono uppercase tracking-[0.12em] text-fg-muted`.
+  On standard pages, `<PageHeader metadata>` renders the same strip below
+  the sentence-case title.
 - **Long-form note / doc body:** Switzer 400, 16px, line-height 1.65, max
   `60ch` width.
 
@@ -162,13 +168,31 @@ Departs from the v1 centered `max-w-3xl` prose column. New shell:
 │Ask    │ ───────────────────────────────│  raw evidence   │
 │Work   │  feed / board / object / chat  │  related links  │
 │Docs   │                                │                 │
-│Sources│                                │                 │
+│Connect│                                │                 │
 │Team   │                                │                 │
 └─────┴──────────────────────────────────┴─────────────────┘
 ```
 
+### Surface split — operational vs standard
+
+Not every page is a terminal. The forensic `IndexStrip` + mono-uppercase
+eyebrows belong on **operational** surfaces where the product's
+"differentiator is structurally visible" promise lands. **Standard**
+surfaces (settings, hubs, connect flows) get a readable Switzer `<h1>`
+via `<PageHeader>` and sentence-case `<SectionHeading>`. Data (counts,
+IDs, status, team name) stays mono in a metadata strip — the title does
+not.
+
+| Surface kind | Pages | Header treatment |
+| ------------ | ----- | ----------------- |
+| Operational | Timeline, Approvals, Jobs, Audit, Objects list, Boards, Tasks, Work, Inbox | `<IndexStrip>` + mono eyebrows. Dense, terminal-grade. |
+| Standard | Home, Connections, Documents, Team, Integrations, Slack, Telegram, MCP share, Personal connections, Personal MCP, Calendar, Meetings | `<PageHeader title subtitle>` + `<SectionHeading>`. Mono reserved for data. |
+
+If a screen disagrees with its kind, fix the screen — or reclassify the
+surface here in the same PR.
+
 - **Left sidebar** (`w-64` = 256px default, foldable to `w-14` = 56px):
-  seven primary destinations: Home, Timeline, Ask, Work, Documents, Sources,
+  seven primary destinations: Home, Timeline, Ask, Work, Documents, Connections,
   Team. Nav labels and the current team are visible by default. Folded mode
   uses the icon-only rail with tooltips. Active route shows a 2px signal-color
   bar at its left edge plus `bg-surface-2 text-signal`. Work groups Objects,
@@ -178,8 +202,8 @@ Departs from the v1 centered `max-w-3xl` prose column. New shell:
   knowledge-first surface: curated uploads are the default team library, while
   event-backed files live in a secondary Captured inbox until promoted. Inbox lives as a
   notification bell in the shell header with a compact unread badge and a
-  dropdown preview. Sources groups Email, Slack, Telegram, Meetings,
-  Integrations, and MCP servers. Work and Sources may show compact numeric
+  dropdown preview. Connections groups Email, Slack, Telegram, Meetings,
+  Integrations, and MCP servers. Work and Connections may show compact numeric
   attention badges; zero
   state stays hidden. Their hub pages use the same hairline grid as the
   sidebar IA and expose status chips for counts, health, and next actions.
@@ -218,9 +242,25 @@ Linear-tight on operational surfaces. Comfortable on mobile and on forms.
   carries the link to the full timeline row. This is the product's primary
   visual symbol — it should be recognizable from a thumbnail.
 - **Index strip** — `<IndexStrip />`. A mono uppercase one-liner replacing
-  decorative page headers: `EVENTS · 2,847 TOTAL · LAST 14d · TEAM acme · FILTER →`.
-  Top + bottom hairline border. Inspired by `git log --stat` and Bloomberg
-  terminal header bars.
+  decorative page headers on **operational** surfaces:
+  `EVENTS · 2,847 TOTAL · LAST 14d · TEAM acme · FILTER →`. Top + bottom
+  hairline border. Inspired by `git log --stat` and Bloomberg terminal
+  header bars. `segments[0]` is the page `<h1>`.
+- **Page header** — `<PageHeader title subtitle metadata />`. Standard
+  page header for **non-operational** surfaces (Home, Connections, Team,
+  Connections, Calendar, etc.). Title is a Switzer 600 `text-2xl`
+  `<h1>` (sentence-case); optional `subtitle` is `text-sm text-fg-muted`;
+  optional `metadata` renders as the same mono uppercase data strip
+  `IndexStrip` uses (counts, team name, role, status), `aria-hidden` with
+  an `srLabel` sentence-case summary for screen readers. Data stays mono;
+  the title does not. One `<h1>` per page.
+- **Section heading** — `<SectionHeading actions>`. Sentence-case
+  `<h2>` (`text-base font-semibold tracking-tight text-fg`) for section
+  titles on standard pages. Optional right-aligned `actions` slot.
+  Replaces the mono-uppercase eyebrow labels (`font-mono text-[11px]
+  uppercase tracking-[0.14em]`) that sat above content blocks. Operational
+  surfaces keep mono eyebrows for their metadata strips; this component
+  is for plain section titles on non-operational pages.
 - **Document row** — compact, dense, and operational. The headline is the
   display title, not necessarily the stored filename: human names win,
   generated filenames use `metadata.suggested_title`, and unsupported cases
@@ -366,10 +406,10 @@ All icons from `lucide-react`. Canonical mapping:
 | Ask         | `MessageSquare` |
 | Work        | `LibraryBig`    |
 | Documents   | `Files`         |
-| Sources     | `Plug`          |
+| Connections | `Cable`         |
 | Team        | `Settings`      |
 
-Other recurring icons: `Send` (submit, Telegram connection), `Cable` (integrations),
+Other recurring icons: `Send` (submit, Telegram connection), `Plug` (legacy integrations label),
 `Search` (search inputs),
 `Lock`/`Users` (visibility toggle), `Inbox` (empty timeline),
 `ChevronsUpDown` (team switcher), `Mail`/`Check`/`X` (invite actions),
@@ -648,8 +688,10 @@ key/value pairs.
 - Theme follows OS by default. Manual toggle persists per-user in
   `localStorage` under `tl-theme`.
 - Selection color uses `--signal-soft`.
-- Every list/feed/board opens with an index strip, not a soft eyebrow +
-  title + subtitle stack.
+- Every **operational** list/feed/board opens with an index strip, not a
+  soft eyebrow + title + subtitle stack. **Standard** pages open with
+  `<PageHeader>` (sentence-case `<h1>` + optional subtitle + optional mono
+  metadata strip). See the surface split under Layout.
 - Mono is mandatory for: timestamps, IDs, citations, status codes,
   metadata strips, keyboard shortcuts, code, file paths, hashes.
 
@@ -675,3 +717,4 @@ No `shadcn` CLI is required to be installed or run.
 | 2026-05-25 | Three-pane shell, 56px icon rail, right inspector                          | Makes the "every claim is cited" promise structural.                                     |
 | 2026-06-01 | Desktop sidebar defaults expanded and folds to the icon rail               | Keeps team context and labels visible while preserving the dense rail mode.              |
 | 2026-05-25 | Timeline loses card chrome                                                 | Lets the timeline scale to thousands of events without visual clutter.                   |
+| 2026-06-18 | Surface split — operational keeps `IndexStrip`, standard gets `PageHeader` | Stops non-technical "needs a degree" fatigue on settings/hubs while keeping the forensic timeline. |

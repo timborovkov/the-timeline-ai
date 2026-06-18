@@ -4,8 +4,11 @@ import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import { useMemo, useReducer, useState } from 'react';
 
+import { InlineError } from '@/components/inline-error';
 import { Button } from '@/components/ui/button';
 import { queryKeys } from '@/lib/query-keys';
+import { groupResourcesByKind, providerLabel, shareDisplayName } from '@/lib/resource-labels';
+import { connectionErrorMessage } from '@/lib/ux-errors';
 
 interface ProviderResource {
   kind: string;
@@ -39,7 +42,7 @@ interface ConnectionResourcesPayload {
 type SourcePickerAction =
   | { type: 'query'; query: string }
   | { type: 'toggle'; key: string; currentSelected: Set<string> }
-  | { type: 'busy'; busy: 'save' | 'delete' | null }
+  | { type: 'busy'; busy: 'save' | 'delete' | 'reconnect' | null }
   | { type: 'error'; error: string | null }
   | { type: 'confirmDelete' }
   | { type: 'resetSelection' };
@@ -47,7 +50,7 @@ type SourcePickerAction =
 interface SourcePickerState {
   selectedOverride: Set<string> | null;
   query: string;
-  busy: 'save' | 'delete' | null;
+  busy: 'save' | 'delete' | 'reconnect' | null;
   error: string | null;
   confirmDelete: boolean;
 }
@@ -152,14 +155,7 @@ function ConnectionSources({ connection }: { connection: ProviderConnection }) {
     );
   }, [query, resources]);
 
-  const grouped = useMemo(() => {
-    const groups = { orgs: [] as ProviderResource[], sources: [] as ProviderResource[] };
-    for (const resource of filtered) {
-      if (resource.kind.endsWith('.org')) groups.orgs.push(resource);
-      else groups.sources.push(resource);
-    }
-    return groups;
-  }, [filtered]);
+  const grouped = useMemo(() => groupResourcesByKind(filtered), [filtered]);
 
   function toggle(resource: ProviderResource) {
     dispatch({ type: 'toggle', key: resourceKey(resource), currentSelected: selected });
@@ -206,17 +202,46 @@ function ConnectionSources({ connection }: { connection: ProviderConnection }) {
     }
   }
 
+  async function reconnect() {
+    dispatch({ type: 'busy', busy: 'reconnect' });
+    dispatch({ type: 'error', error: null });
+    try {
+      const res = await fetch(`/api/integrations/${connection.provider}/start`, {
+        method: 'POST',
+      });
+      const data = (await res.json()) as { url?: string; error?: string };
+      if (!res.ok || !data.url) {
+        throw new Error(data.error ?? connectionErrorMessage(data.error, res.status));
+      }
+      window.location.href = data.url;
+    } catch (err) {
+      dispatch({
+        type: 'error',
+        error: err instanceof Error ? err.message : 'Reconnect failed',
+      });
+      dispatch({ type: 'busy', busy: null });
+    }
+  }
+
   return (
     <section className="rounded-md border border-border bg-surface">
       <div className="flex flex-wrap items-center gap-2 border-b border-border px-3 py-2">
-        <span className="font-mono text-xs uppercase tracking-[0.14em] text-fg-muted">
-          {connection.provider}
-        </span>
-        <span className="text-sm font-medium">{connection.displayName}</span>
+        <span className="text-sm font-medium">{providerLabel(connection.provider)}</span>
+        <span className="text-sm text-fg-muted">{connection.displayName}</span>
         {connection.lastError ? (
-          <span className="rounded-sm border border-destructive/40 px-1.5 py-0.5 text-[10px] uppercase text-destructive">
-            Needs reconnect
-          </span>
+          <>
+            <span className="rounded-sm border border-destructive/40 px-1.5 py-0.5 text-[10px] uppercase text-destructive">
+              Needs reconnect
+            </span>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={state.busy !== null}
+              onClick={() => void reconnect()}
+            >
+              {state.busy === 'reconnect' ? 'Redirecting…' : 'Reconnect'}
+            </Button>
+          </>
         ) : null}
         <span className="ml-auto text-xs text-fg-muted">
           Shared {String([...selected].length)} source{selected.size === 1 ? '' : 's'}
@@ -262,20 +287,26 @@ function ConnectionSources({ connection }: { connection: ProviderConnection }) {
             </Button>
           </div>
         ) : null}
-        {error ? <p className="text-sm text-destructive">{error}</p> : null}
+        {error ? (
+          <InlineError
+            message={connectionErrorMessage(error)}
+            details={error}
+            onRetry={() => {
+              dispatch({ type: 'error', error: null });
+            }}
+            retryLabel="Dismiss"
+          />
+        ) : null}
         {isLoading ? <p className="text-sm text-fg-muted">Loading sources…</p> : null}
-        <ResourceGroup
-          title="Organizations"
-          resources={grouped.orgs}
-          selected={selected}
-          onToggle={toggle}
-        />
-        <ResourceGroup
-          title="Sources"
-          resources={grouped.sources}
-          selected={selected}
-          onToggle={toggle}
-        />
+        {grouped.map((group) => (
+          <ResourceGroup
+            key={group.kind}
+            title={group.label}
+            resources={group.resources}
+            selected={selected}
+            onToggle={toggle}
+          />
+        ))}
       </div>
     </section>
   );
@@ -312,7 +343,6 @@ function ResourceGroup({
                 }}
               />
               <span className="min-w-0 flex-1 truncate">{resource.label}</span>
-              <span className="font-mono text-[10px] uppercase text-fg-muted">{resource.kind}</span>
             </label>
           );
         })}
@@ -410,7 +440,16 @@ export function TeamSourcesUi({
 
   return (
     <div className="space-y-3">
-      {error ? <p className="text-sm text-destructive">{error}</p> : null}
+      {error ? (
+        <InlineError
+          message={connectionErrorMessage(error)}
+          details={error}
+          onRetry={() => {
+            setError(null);
+          }}
+          retryLabel="Dismiss"
+        />
+      ) : null}
       {[...groups.entries()].map(([connectionId, groupRows]) => {
         const connection = groupRows[0]?.connection;
         if (!connection) return null;
@@ -429,10 +468,8 @@ export function TeamSourcesUi({
         return (
           <section key={connectionId} className="rounded-md border border-border bg-surface">
             <div className="flex flex-wrap items-center gap-2 border-b border-border px-3 py-2">
-              <span className="font-mono text-xs uppercase tracking-[0.14em] text-fg-muted">
-                {connection.provider}
-              </span>
-              <span className="text-sm font-medium">{connection.displayName}</span>
+              <span className="text-sm font-medium">{providerLabel(connection.provider)}</span>
+              <span className="text-sm text-fg-muted">{connection.displayName}</span>
               <span className="text-xs text-fg-muted">Owner: {connection.ownerLabel}</span>
               <span className="ml-auto text-xs text-fg-muted">
                 {selected.size === 0
@@ -468,17 +505,30 @@ export function TeamSourcesUi({
                         });
                       }}
                     />
-                    <span className="min-w-0 flex-1 truncate">
-                      {row.share.externalLabel ?? row.share.externalId}
-                    </span>
+                    <span className="min-w-0 flex-1 truncate">{shareDisplayName(row.share)}</span>
                     {revoked ? (
-                      <span className="rounded-sm border border-destructive/40 px-1.5 py-0.5 text-[10px] uppercase text-destructive">
-                        Access revoked
-                      </span>
+                      <>
+                        <span className="rounded-sm border border-destructive/40 px-1.5 py-0.5 text-[10px] uppercase text-destructive">
+                          Access revoked
+                        </span>
+                        {isAdmin ? (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            disabled={busy !== null}
+                            onClick={() => {
+                              setSelectedOverrides((current) => {
+                                const next = new Set(selected);
+                                next.delete(row.share.id);
+                                return { ...current, [connectionId]: next };
+                              });
+                            }}
+                          >
+                            Remove
+                          </Button>
+                        ) : null}
+                      </>
                     ) : null}
-                    <span className="font-mono text-[10px] uppercase text-fg-muted">
-                      {row.share.resourceKind}
-                    </span>
                   </label>
                 );
               })}

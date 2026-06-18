@@ -11,7 +11,7 @@ describe('nav items', () => {
       'Ask',
       'Work',
       'Documents',
-      'Sources',
+      'Connections',
       'Team',
     ]);
   });

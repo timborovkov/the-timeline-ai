@@ -14,7 +14,7 @@ import type { Metadata } from 'next';
 
 import { revokeLinkTokenAction, unbindChatAction } from '@/app/actions/telegram';
 import { HistoryBackLink } from '@/components/history-back-link';
-import { IndexStrip } from '@/components/index-strip';
+import { PageHeader } from '@/components/page-header';
 import { GenerateGroupTokenForm, GeneratePersonalTokenForm } from '@/components/telegram-forms';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -104,10 +104,11 @@ export default async function TelegramSettingsPage() {
   return (
     <div className="mx-auto max-w-3xl space-y-6">
       <HistoryBackLink fallbackHref="/app/team" label="Back" />
-      <IndexStrip
+      <PageHeader
+        title="Telegram"
+        subtitle="Route chat and voice notes into the same capture pipeline."
         srLabel={`Telegram integration for ${active.teamName} · ${bindings.length} bound groups · ${linkedTgUsers.length} linked users`}
-        segments={[
-          { value: 'TEAM / TELEGRAM' },
+        metadata={[
           { label: 'team', value: active.teamName, signal: true },
           { label: 'groups', value: bindings.length },
           { label: 'users', value: linkedTgUsers.length },

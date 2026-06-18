@@ -177,6 +177,10 @@ boundaries.
 - [`docs/object-summaries-plan.md`](./docs/object-summaries-plan.md) —
   implementation plan for grounded generated object briefs across object pages,
   search, embeddings, and chat.
+- [`docs/ux-overhaul-plan.md`](./docs/ux-overhaul-plan.md) — UX overhaul plan:
+  soften the forensic surface for non-technical users with standard-page
+  headers, a guided connect-flow wizard, actionable error states,
+  discoverability, and IA consolidation.
 - [`docs/calendar.html`](./docs/calendar.html) — approval-backed calendar
   suggestions, recurrence, occurrence exceptions, and tentative slots.
 - [`docs/setup/local.html`](./docs/setup/local.html) — complete local setup.
