@@ -40,7 +40,7 @@ import { createMeetingScope } from '#src/meetings/scope.js';
 import { createObjectScope, normalizeIdentityFacet } from '#src/objects/index.js';
 import { invalidateObjectSummariesForRawEvent } from '#src/objects/summaries.js';
 import { createOnboardingScope } from '#src/onboarding/index.js';
-import { decodeCursor, pageWindow } from '#src/pagination.js';
+import { decodeCursor, encodeCursor, pageWindow } from '#src/pagination.js';
 import {
   getQdrantClient,
   type SearchHit,
@@ -1694,6 +1694,30 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
           at: row.occurredAt.toISOString(),
           id: row.id,
         }));
+      },
+
+      async listAllEventsInWindow(filters: {
+        from: Date;
+        to: Date;
+      }): Promise<(typeof rawEvents.$inferSelect)[]> {
+        const all: (typeof rawEvents.$inferSelect)[] = [];
+        let cursor: string | null = null;
+        do {
+          const rows = await listEvents({
+            from: filters.from,
+            to: filters.to,
+            limit: 101,
+            ...(cursor ? { cursor } : {}),
+          });
+          const page = rows.slice(0, 100);
+          all.push(...page);
+          const last = page.at(-1);
+          cursor =
+            rows.length > 100 && last
+              ? encodeCursor({ at: last.occurredAt.toISOString(), id: last.id })
+              : null;
+        } while (cursor);
+        return all;
       },
 
       async getEvent(id: string) {
