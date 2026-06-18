@@ -213,8 +213,7 @@ export default async function HomeDashboardPage() {
           <section className="space-y-3">
             <SectionHeading>Getting started</SectionHeading>
             <p className="text-sm text-fg-muted">
-              Complete a few setup steps above to unlock quick actions, boards, and the full
-              timeline. It takes about two minutes.
+              Complete a few setup steps above to unlock quick actions. It takes about two minutes.
             </p>
           </section>
         )}

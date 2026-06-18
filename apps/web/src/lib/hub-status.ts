@@ -258,9 +258,20 @@ export async function getSourcesStatusSummary(scope: TeamScope): Promise<Sources
   ]);
   const integrationErrors = countIntegrationErrors(integrations);
   const mcpErrors = countMcpErrors(mcpServerRows);
+  const emailAttention =
+    team?.inboundEmail &&
+    !onboarding.steps.some((step) => step.step === 'email_forwarding' && step.completed)
+      ? 1
+      : 0;
 
   return {
-    attention: attentionCount(documentAttention, meetingsFailed, integrationErrors, mcpErrors),
+    attention: attentionCount(
+      documentAttention,
+      meetingsFailed,
+      integrationErrors,
+      mcpErrors,
+      emailAttention,
+    ),
     inboundEmail: team?.inboundEmail ?? null,
     emailForwarded: onboarding.steps.some(
       (step) => step.step === 'email_forwarding' && step.completed,

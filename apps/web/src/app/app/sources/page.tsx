@@ -125,7 +125,8 @@ function buildSources(summary: SourcesStatusSummary): SourceEntry[] {
         : meetingsAny
           ? 'Connected'
           : 'Not set up',
-    actionHref: '/app/meetings',
+    actionHref:
+      summary.meetingsFailed > 0 ? '/app/team/jobs?kind=meeting_finalization' : '/app/meetings',
     actionLabel:
       summary.meetingsFailed > 0 ? 'Review failures' : meetingsAny ? 'Manage' : 'Invite notetaker',
     detail: meetingsAny ? `${summary.meetingsRecent} recent` : 'No meetings captured yet',

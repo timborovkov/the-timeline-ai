@@ -87,16 +87,6 @@ export function ConnectedIntegrations({
                   ? `Last synced ${DATE_FORMAT.format(new Date(c.lastSyncedAt))}`
                   : 'Never synced'}
               </div>
-              {c.lastError ? (
-                <InlineError
-                  message={connectionErrorMessage(c.lastError)}
-                  details={c.lastError}
-                  onRetry={() => void call('sync', c.id)}
-                  retrying={busy === `sync:${c.id}`}
-                  retryLabel="Retry sync"
-                  className="mt-2"
-                />
-              ) : null}
               {retryError?.id === c.id ? (
                 <InlineError
                   message={connectionErrorMessage(retryError.message)}
@@ -105,6 +95,15 @@ export function ConnectedIntegrations({
                     setRetryError(null);
                   }}
                   retryLabel="Dismiss"
+                  className="mt-2"
+                />
+              ) : c.lastError ? (
+                <InlineError
+                  message={connectionErrorMessage(c.lastError)}
+                  details={c.lastError}
+                  onRetry={() => void call('sync', c.id)}
+                  retrying={busy === `sync:${c.id}`}
+                  retryLabel="Retry sync"
                   className="mt-2"
                 />
               ) : null}
