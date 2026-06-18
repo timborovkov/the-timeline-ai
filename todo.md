@@ -51,7 +51,7 @@ pages. Full phased plan with file-level tasks:
       one-click fix; timeline citation→inspector coachmark; Home
       first-run hero above the fold.
 - [x] U5 — IA consolidation: merge Sources + Team integrations into one
-      Connections area; admin-only Admin group; 7 top-level destinations
+      Connections area; admin-only Admin group; 8 top-level destinations
       (down from 13+); redirects + keymap updates.
 - [ ] U6 — Polish and verification: `/plan-design-review`, `/qa`,
       before/after screenshots, `pnpm validate` + `pnpm run doctor` 100.

@@ -11,6 +11,7 @@ describe('nav items', () => {
       'Ask',
       'Work',
       'Documents',
+      'Meetings',
       'Connections',
       'Team',
     ]);
@@ -35,6 +36,7 @@ describe('nav items', () => {
         '/app/team/slack',
       ),
     ).toBe(true);
+    expect(isNavItemActive({ href: '/app/meetings' }, '/app/meetings/123')).toBe(true);
   });
 
   it('does not keep Team active for source routes nested under team settings', () => {

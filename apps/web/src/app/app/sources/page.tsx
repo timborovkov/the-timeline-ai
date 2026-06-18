@@ -39,6 +39,8 @@ interface SourceEntry {
   statusLabel: string;
   actionHref: string;
   actionLabel: string;
+  secondaryActionHref?: string;
+  secondaryActionLabel?: string;
   detail: string;
 }
 
@@ -129,6 +131,8 @@ function buildSources(summary: SourcesStatusSummary): SourceEntry[] {
       summary.meetingsFailed > 0 ? '/app/team/jobs?kind=meeting_finalization' : '/app/meetings',
     actionLabel:
       summary.meetingsFailed > 0 ? 'Review failures' : meetingsAny ? 'Manage' : 'Invite notetaker',
+    secondaryActionHref: summary.meetingsFailed > 0 ? '/app/meetings' : undefined,
+    secondaryActionLabel: summary.meetingsFailed > 0 ? 'Open meetings' : undefined,
     detail: meetingsAny ? `${summary.meetingsRecent} recent` : 'No meetings captured yet',
   };
 
@@ -248,6 +252,14 @@ export default async function SourcesPage() {
             </div>
             <div className="flex items-center gap-2">
               <StatusIcon status={source.status} />
+              {source.secondaryActionHref ? (
+                <Link
+                  href={source.secondaryActionHref}
+                  className="inline-flex min-h-8 items-center rounded-sm border border-transparent px-2.5 text-sm text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg"
+                >
+                  {source.secondaryActionLabel}
+                </Link>
+              ) : null}
               <Link
                 href={source.actionHref}
                 className="inline-flex min-h-8 items-center rounded-sm border border-border px-2.5 text-sm text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg"

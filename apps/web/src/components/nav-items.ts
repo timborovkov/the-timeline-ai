@@ -6,6 +6,7 @@ import {
   LibraryBig,
   MessageSquare,
   Settings,
+  Video,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -56,13 +57,17 @@ const NAV_ITEMS: readonly NavItem[] = [
     activeHrefs: ['/app/documents', '/app/documents/'],
   },
   {
+    href: '/app/meetings',
+    label: 'Meetings',
+    icon: Video,
+  },
+  {
     href: '/app/sources',
     label: 'Connections',
     icon: Cable,
     badgeKey: 'connections',
     activeHrefs: [
       '/app/sources',
-      '/app/meetings',
       '/app/team/telegram',
       '/app/team/slack',
       '/app/team/integrations',
