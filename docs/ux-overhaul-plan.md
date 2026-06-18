@@ -220,7 +220,7 @@ status + fix, not just links.
 
 ## Phase U5 — IA consolidation
 
-Collapse 13+ destinations down to 7.
+Collapse 13+ destinations down to 8.
 
 - Merge **Sources** + **Team → integrations / telegram / slack /
   mcp-servers / mcp-share** into one **Connections** area whose hub is the
@@ -229,15 +229,15 @@ Collapse 13+ destinations down to 7.
   (not top-level nav).
 - Fold `me/connections` and `me/mcp-servers` into the U2 wizard; redirect
   the old routes to the wizard's relevant step.
-- New top-level nav: **Home, Timeline, Ask, Work, Documents, Connections,
-  Team** (7). Update `components/nav-items.ts`,
+- New top-level nav: **Home, Timeline, Ask, Work, Documents, Meetings,
+  Connections, Team** (8). Update `components/nav-items.ts`,
   `components/desktop-sidebar.tsx`, `components/mobile-nav.tsx`,
   `components/rail-nav.tsx`, and `design.md` iconography table.
 - Add redirects for retired routes so bookmarks and `g t`/`g o`/`g b`
   keymap entries still resolve (update
   [`components/keymap.tsx`](../apps/web/src/components/keymap.tsx)).
 
-**Acceptance:** 7 top-level destinations; no jargon labels in nav; old
+**Acceptance:** 8 top-level destinations; no jargon labels in nav; old
 routes redirect; keymap still works; `pnpm validate` + doctor 100.
 
 ## Phase U6 — Polish and verification

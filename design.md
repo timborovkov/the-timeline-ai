@@ -192,12 +192,12 @@ If a screen disagrees with its kind, fix the screen — or reclassify the
 surface here in the same PR.
 
 - **Left sidebar** (`w-64` = 256px default, foldable to `w-14` = 56px):
-  seven primary destinations: Home, Timeline, Ask, Work, Documents, Connections,
-  Team. Nav labels and the current team are visible by default. Folded mode
+  eight primary destinations: Home, Timeline, Ask, Work, Documents, Meetings,
+  Connections, Team. Nav labels and the current team are visible by default. Folded mode
   uses the icon-only rail with tooltips. Active route shows a 2px signal-color
   bar at its left edge plus `bg-surface-2 text-signal`. Work groups Objects,
-  Tasks, Boards, Calendar, and Approvals, with a Meetings shortcut for notetaker
-  capture; Documents owns the document drive,
+  Tasks, Boards, Calendar, and Approvals; Meetings owns notetaker
+  capture, saved meeting links, and transcripts; Documents owns the document drive,
   captured-file triage, version review, and previews. Documents is a
   knowledge-first surface: curated uploads are the default team library, while
   event-backed files live in a secondary Captured inbox until promoted. Inbox lives as a
@@ -406,6 +406,7 @@ All icons from `lucide-react`. Canonical mapping:
 | Ask         | `MessageSquare` |
 | Work        | `LibraryBig`    |
 | Documents   | `Files`         |
+| Meetings    | `Video`         |
 | Connections | `Cable`         |
 | Team        | `Settings`      |
 

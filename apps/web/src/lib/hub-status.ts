@@ -11,12 +11,15 @@ import {
 import { withTeam } from '@timeline/shared/team-scope';
 import { and, eq, isNull, lt, ne, or, sql } from 'drizzle-orm';
 
+import type * as jobRecovery from '@timeline/shared/job-recovery';
+
 import { db } from '@/lib/db';
 
 type TeamScope = ReturnType<typeof withTeam>;
 type IntegrationRow = typeof integrations.$inferSelect;
 type McpServerRow = typeof mcpServers.$inferSelect;
 type MeetingStatus = (typeof meetingStatus.enumValues)[number];
+type JobRecoveryItem = jobRecovery.JobRecoveryItem;
 
 interface WorkStatusSummary {
   attention: number;
@@ -79,6 +82,20 @@ function countMeetingsByStatus(
 ): number {
   const statusSet = new Set(statuses);
   return rows.filter((row) => statusSet.has(row.status)).length;
+}
+
+export function countDismissibleMeetingFailures(items: JobRecoveryItem[]): number {
+  return items.filter((item) => item.kind === 'meeting_finalization' && item.status === 'failed')
+    .length;
+}
+
+async function listAdminRecoverableJobs(scope: TeamScope): Promise<JobRecoveryItem[]> {
+  try {
+    await scope.requireMembership('admin');
+  } catch {
+    return [];
+  }
+  return scope.jobRecovery.listRecoverableJobs();
 }
 
 async function countVisibleDocumentAttention(teamId: string, userId: string): Promise<number> {
@@ -228,6 +245,7 @@ export async function getSourcesStatusSummary(scope: TeamScope): Promise<Sources
     documentsTotal,
     documentAttention,
     meetings,
+    recoverableJobs,
     meetingMinutesUsed,
     integrations,
     mcpServerRows,
@@ -237,6 +255,7 @@ export async function getSourcesStatusSummary(scope: TeamScope): Promise<Sources
     countVisibleDocuments(scope.teamId, scope.userId),
     countVisibleDocumentAttention(scope.teamId, scope.userId),
     scope.meetings.listMeetings({ limit: 50 }),
+    listAdminRecoverableJobs(scope),
     scope.meetings.getCurrentMonthMinutes(),
     scope.integrations.listIntegrations(),
     scope.mcp.listServers(),
@@ -249,7 +268,7 @@ export async function getSourcesStatusSummary(scope: TeamScope): Promise<Sources
     onboarding.connectionCounts.slackWorkspaceTeams +
     onboarding.connectionCounts.slackConversationBindings +
     onboarding.connectionCounts.slackUserTeams;
-  const meetingsFailed = countMeetingsByStatus(meetings, ['failed']);
+  const meetingsFailed = countDismissibleMeetingFailures(recoverableJobs);
   const meetingsActive = countMeetingsByStatus(meetings, [
     'pending',
     'joining',

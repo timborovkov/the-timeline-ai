@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { attentionCount, workAttentionCount } from '@/lib/hub-status';
+import {
+  attentionCount,
+  countDismissibleMeetingFailures,
+  workAttentionCount,
+} from '@/lib/hub-status';
 
 describe('hub status helpers', () => {
   it('aggregates only positive attention counts', () => {
@@ -23,5 +27,15 @@ describe('hub status helpers', () => {
         overdueTasks: -2,
       }),
     ).toBe(3);
+  });
+
+  it('counts only failed meeting recovery jobs as dismissible meeting attention', () => {
+    expect(
+      countDismissibleMeetingFailures([
+        { kind: 'meeting_finalization', status: 'failed' },
+        { kind: 'meeting_finalization', status: 'stuck' },
+        { kind: 'embedding', status: 'failed' },
+      ] as Parameters<typeof countDismissibleMeetingFailures>[0]),
+    ).toBe(1);
   });
 });
