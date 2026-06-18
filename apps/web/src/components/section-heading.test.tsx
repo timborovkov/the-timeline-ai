@@ -11,6 +11,7 @@ describe('SectionHeading', () => {
     const headings = screen.getAllByRole('heading', { level: 2 });
     expect(headings).toHaveLength(1);
     expect(headings[0]?.textContent).toBe('Quick actions');
+    expect(headings[0]?.className).toContain('text-lg');
   });
 
   it('renders right-aligned actions when provided', () => {
