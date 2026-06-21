@@ -32,6 +32,7 @@ const EVENT_SOURCES = [
   'integration',
   'calendar',
   'slack',
+  'ingest_webhook',
 ] as const;
 
 const schema = z.object({

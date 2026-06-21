@@ -1,16 +1,18 @@
-import { users } from '@timeline/db';
+import { ingestWebhookCredentials, ingestWebhooks, users } from '@timeline/db';
 import * as integrationsLib from '@timeline/shared/integrations';
 import { withTeam } from '@timeline/shared/team-scope';
-import { inArray } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull } from 'drizzle-orm';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
+import type { IngestWebhookRow } from '@/components/integrations/ingest-webhooks';
 import type { Metadata } from 'next';
 
 import { ActionChip } from '@/components/action-chip';
 import { Breadcrumb } from '@/components/breadcrumb';
 import { IntegrationsCatalog } from '@/components/integrations/catalog';
 import { ConnectedIntegrations } from '@/components/integrations/connected';
+import { IngestWebhooksUi } from '@/components/integrations/ingest-webhooks';
 import { McpCatalog } from '@/components/integrations/mcp-catalog';
 import { AddCustomMcpServerLauncher, McpServersUi } from '@/components/integrations/mcp-servers';
 import { TeamSourcesUi } from '@/components/integrations/provider-connections';
@@ -28,6 +30,37 @@ export const metadata: Metadata = {
 };
 
 export const dynamic = 'force-dynamic';
+
+function ingestWebhookListFromRows(
+  rows: {
+    webhook: typeof ingestWebhooks.$inferSelect;
+    credential: typeof ingestWebhookCredentials.$inferSelect | null;
+  }[],
+): IngestWebhookRow[] {
+  const webhookMap = new Map<string, IngestWebhookRow>();
+  for (const row of rows) {
+    const webhookId = row.webhook.id;
+    const existing = webhookMap.get(webhookId) ?? {
+      id: webhookId,
+      name: row.webhook.name,
+      visibilityDefault: row.webhook.visibilityDefault,
+      proposalGenerationEnabled: row.webhook.proposalGenerationEnabled,
+      disabledAt: row.webhook.disabledAt ? row.webhook.disabledAt.toISOString() : null,
+      createdAt: row.webhook.createdAt.toISOString(),
+      credentials: [],
+    };
+    if (row.credential) {
+      existing.credentials.push({
+        id: row.credential.id,
+        prefix: row.credential.keyPrefix,
+        lastUsedAt: row.credential.lastUsedAt ? row.credential.lastUsedAt.toISOString() : null,
+        createdAt: row.credential.createdAt.toISOString(),
+      });
+    }
+    webhookMap.set(webhookId, existing);
+  }
+  return Array.from(webhookMap.values());
+}
 
 /**
  * Single integrations page. Sits under /app/team. The layout is:
@@ -54,14 +87,27 @@ export default async function IntegrationsPage({
 
   const params = await searchParams;
   const scope = withTeam(db, active.teamId, session.user.id);
-  const [role, connected, mcpServers, members, resourceShares, attention] = await Promise.all([
-    scope.requireMembership(),
-    scope.integrations.listIntegrations(),
-    scope.mcp.listTeamServers(),
-    scope.timeline.listMembers(),
-    scope.integrations.listTeamResourceShares(),
-    scope.integrations.listConnectionAttention(),
-  ]);
+  const [role, connected, mcpServers, members, resourceShares, attention, ingestWebhookRows] =
+    await Promise.all([
+      scope.requireMembership(),
+      scope.integrations.listIntegrations(),
+      scope.mcp.listTeamServers(),
+      scope.timeline.listMembers(),
+      scope.integrations.listTeamResourceShares(),
+      scope.integrations.listConnectionAttention(),
+      db
+        .select({ webhook: ingestWebhooks, credential: ingestWebhookCredentials })
+        .from(ingestWebhooks)
+        .leftJoin(
+          ingestWebhookCredentials,
+          and(
+            eq(ingestWebhookCredentials.webhookId, ingestWebhooks.id),
+            isNull(ingestWebhookCredentials.revokedAt),
+          ),
+        )
+        .where(eq(ingestWebhooks.teamId, active.teamId))
+        .orderBy(desc(ingestWebhooks.createdAt), desc(ingestWebhookCredentials.createdAt)),
+    ]);
   const isAdmin = role === 'owner' || role === 'admin';
   const ownerIds = resourceShares.map((row) => row.connection.ownerUserId);
   const userIds = [...new Set([...members.map((m) => m.userId), ...ownerIds])];
@@ -75,13 +121,18 @@ export default async function IntegrationsPage({
   const memberUserMap = new Map(memberUsers.map((u) => [u.id, u] as const));
   const nativeCatalog = integrationsLib.listAvailableProviders();
   const mcpCatalog = integrationsLib.listCatalog().filter((c) => c.kind === 'mcp' && c.mcpUrl);
+  const ingestWebhookList = ingestWebhookListFromRows(ingestWebhookRows);
   const connectedUrls = new Set(mcpServers.map((s) => s.url));
   const mcpCatalogAvailable = mcpCatalog.filter((c) => !connectedUrls.has(c.mcpUrl ?? ''));
 
   const totalConnected = connected.length + mcpServers.length;
   const totalCatalog = nativeCatalog.length + mcpCatalogAvailable.length;
   const totalSharedSources = resourceShares.length;
-  const hasAnything = totalConnected > 0 || totalCatalog > 0 || totalSharedSources > 0;
+  const hasAnything =
+    totalConnected > 0 ||
+    totalCatalog > 0 ||
+    totalSharedSources > 0 ||
+    ingestWebhookList.length > 0;
   const selectionLists = await Promise.all(
     connected.map(async (integration) => scope.integrations.listSelections(integration.id)),
   );
@@ -245,6 +296,13 @@ export default async function IntegrationsPage({
             GitHub, Linear, and Google Drive sync directly into Timeline as first-party providers.
           </p>
           <IntegrationsCatalog catalog={nativeCatalog} />
+        </section>
+      ) : null}
+
+      {isAdmin ? (
+        <section className="space-y-3">
+          <SectionHeading>Ingest webhooks</SectionHeading>
+          <IngestWebhooksUi webhooks={ingestWebhookList} />
         </section>
       ) : null}
 

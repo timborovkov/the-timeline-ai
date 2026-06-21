@@ -28,6 +28,7 @@ export * as meetingBots from '#src/meeting-bots/index.js';
 export * as meetingsScope from '#src/meetings/index.js';
 export * as crypto from '#src/crypto/index.js';
 export * as integrations from '#src/integrations/index.js';
+export * as ingestWebhooks from '#src/ingest-webhooks/index.js';
 export * as mcp from '#src/mcp/index.js';
 export * as mcpServer from '#src/mcp-server/index.js';
 export * as calendarScope from '#src/calendar/index.js';

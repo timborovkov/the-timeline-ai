@@ -2,8 +2,11 @@
 
 import {
   auditLog,
+  ingestWebhookCredentials,
+  ingestWebhooks,
   integrations,
   messagePreferences,
+  rawEvents,
   slackConversationBindings,
   slackUserTeams,
   teamCalendarSubscriptions,
@@ -832,6 +835,58 @@ export async function removeMemberAction(formData: FormData): Promise<void> {
               integrationId: row.id,
             });
           }
+        }
+        const webhookRows = await tx
+          .select({
+            id: ingestWebhooks.id,
+            visibilityDefault: ingestWebhooks.visibilityDefault,
+          })
+          .from(ingestWebhooks)
+          .where(
+            and(
+              eq(ingestWebhooks.teamId, active.teamId),
+              eq(ingestWebhooks.ownerUserId, memberUserId),
+              isNull(ingestWebhooks.disabledAt),
+            ),
+          );
+        for (const row of webhookRows) {
+          const disabledAt = new Date();
+          await tx
+            .update(ingestWebhooks)
+            .set({
+              ownerUserId: null,
+              visibilityDefault:
+                row.visibilityDefault === 'private' ? 'team' : row.visibilityDefault,
+              disabledAt,
+              updatedAt: disabledAt,
+            })
+            .where(eq(ingestWebhooks.id, row.id));
+          await tx
+            .update(ingestWebhookCredentials)
+            .set({ revokedAt: disabledAt, updatedAt: disabledAt })
+            .where(
+              and(
+                eq(ingestWebhookCredentials.teamId, active.teamId),
+                eq(ingestWebhookCredentials.webhookId, row.id),
+                isNull(ingestWebhookCredentials.revokedAt),
+              ),
+            );
+          await tx
+            .update(rawEvents)
+            .set({
+              visibility: 'team',
+              visibilityOwnerUserId: null,
+              visibilityUserIds: null,
+            })
+            .where(
+              and(
+                eq(rawEvents.teamId, active.teamId),
+                eq(rawEvents.source, 'ingest_webhook'),
+                eq(rawEvents.visibility, 'private'),
+                eq(rawEvents.visibilityOwnerUserId, memberUserId),
+                sql`${rawEvents.sourceMetadata} ->> 'ingest_webhook_id' = ${row.id}`,
+              ),
+            );
         }
         // Revoke Telegram routing for this user — two anchors, both needed:
         //

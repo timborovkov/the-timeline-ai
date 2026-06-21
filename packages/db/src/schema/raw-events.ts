@@ -37,6 +37,10 @@ export const eventSource = pgEnum('event_source', [
   // routing, sender, conversation, thread, edit/delete, and attachment
   // provenance lives in source_metadata.
   'slack',
+  // Generic team-managed inbound webhooks. The named webhook source and
+  // credential live in ingest_webhooks / ingest_webhook_credentials; arbitrary
+  // textual payload provenance lives in source_metadata.
+  'ingest_webhook',
 ]);
 
 export const eventVisibility = pgEnum('event_visibility', ['private', 'team', 'specific_users']);
@@ -121,5 +125,8 @@ export const rawEvents = pgTable(
     uniqueIndex('raw_events_slack_event_id_unq')
       .on(sql`((${table.sourceMetadata} ->> 'slack_event_id'))`)
       .where(sql`${table.sourceMetadata} ? 'slack_event_id'`),
+    uniqueIndex('raw_events_ingest_webhook_dedup_unq')
+      .on(table.teamId, sql`((${table.sourceMetadata} ->> 'ingest_webhook_dedup_key'))`)
+      .where(sql`${table.sourceMetadata} ? 'ingest_webhook_dedup_key'`),
   ],
 );

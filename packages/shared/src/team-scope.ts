@@ -184,7 +184,8 @@ export interface SearchEventsInput {
     | 'document'
     | 'meeting'
     | 'calendar'
-    | 'slack';
+    | 'slack'
+    | 'ingest_webhook';
   entityIds?: string[];
   /**
    * Narrow vector search to a subset of Qdrant source kinds. Phase 8 adds

@@ -35,9 +35,9 @@ source material instead of hiding behind black-box summaries.
   Teams, and Zoom.
 - Read-only team calendar subscription feeds for viewing Timeline events in a
   default calendar app.
-- Slack, Telegram, email, native GitHub/Linear/Google Drive sync, and custom
-  MCP-powered ingestion surfaces.
-- An outbound MCP server so tools like Claude Desktop and Cursor can query
+- Slack, Telegram, email, native GitHub/Linear/Google Drive sync, generic
+  ingest webhooks, and custom MCP-powered ingestion surfaces.
+- An outbound MCP server so tools like Claude Desktop and Cursor can query a
   team-level workspace context across Timeline events, objects, tasks, boards,
   calendar, documents, and integrations.
 
@@ -182,6 +182,9 @@ boundaries.
   soften the forensic surface for non-technical users with standard-page
   headers, a guided connect-flow wizard, actionable error states,
   discoverability, and IA consolidation.
+- [`docs/ingest-webhooks-plan.md`](./docs/ingest-webhooks-plan.md) — domain
+  plan for named evidence-only ingest webhooks, credential rotation, duplicate
+  handling, visibility defaults, and proposal generation.
 - [`docs/calendar.html`](./docs/calendar.html) — approval-backed calendar
   suggestions, recurrence, occurrence exceptions, and tentative slots.
 - [`docs/setup/local.html`](./docs/setup/local.html) — complete local setup.
@@ -193,8 +196,8 @@ boundaries.
 
 Setup guides for external services live under [`docs/setup`](./docs/setup/):
 Telegram, Slack, OpenRouter, LangSmith, Postmark transactional/inbound email,
-Recall.ai meeting bots, PostHog analytics, Sentry, Railway, third-party integrations,
-and Timeline-as-MCP-server.
+Recall.ai meeting bots, PostHog analytics, Sentry, Railway, third-party
+integrations including ingest webhooks, and Timeline-as-MCP-server.
 
 ## Contributing
 

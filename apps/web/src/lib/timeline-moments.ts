@@ -56,6 +56,7 @@ const SOURCE_LABEL: Record<TimelineEvent['source'], string> = {
   document: 'Document',
   meeting: 'Meeting',
   integration: 'Integration',
+  ingest_webhook: 'Ingest webhook',
   calendar: 'Calendar',
   slack: 'Slack',
 };
@@ -68,6 +69,7 @@ const SOURCE_ICON: Record<TimelineEvent['source'], string> = {
   document: 'document',
   meeting: 'meeting',
   integration: 'integration',
+  ingest_webhook: 'webhook',
   calendar: 'calendar',
   slack: 'slack',
 };
@@ -185,6 +187,12 @@ export function timelineGroupKey(event: TimelineEvent): string {
     const external =
       stringMeta(meta, 'external_object_id') ?? stringMeta(meta, 'external_event_id');
     return external ? `integration:${provider}:${external}` : `integration:${event.id}`;
+  }
+  if (event.source === 'ingest_webhook') {
+    const webhook = stringMeta(meta, 'ingest_webhook_id') ?? 'webhook';
+    return `ingest_webhook:${webhook}:${dateKey(event.occurredAt)}:${fifteenMinuteBucket(
+      event.occurredAt,
+    )}`;
   }
   return `${event.source}:${event.id}`;
 }
@@ -311,6 +319,9 @@ function contextLabel(event: TimelineEvent): string {
     const provider = label(stringMeta(meta, 'provider'), 'Integration');
     const type = stringMeta(meta, 'event_type');
     return type ? `${provider} · ${type}` : provider;
+  }
+  if (event.source === 'ingest_webhook') {
+    return label(stringMeta(meta, 'ingest_webhook_name'), 'Ingest webhook');
   }
   return SOURCE_LABEL[event.source];
 }

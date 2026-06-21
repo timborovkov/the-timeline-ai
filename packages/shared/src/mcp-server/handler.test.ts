@@ -118,7 +118,7 @@ describe('handleMcpRequest', () => {
     });
   });
 
-  it('resolves a valid bearer and lists tools with calendar and Slack event sources', async () => {
+  it('resolves a valid bearer and lists tools with current event sources', async () => {
     const response = await handleMcpRequest(
       { db: db as never, bearer: TOKEN },
       { jsonrpc: '2.0', id: 1, method: 'tools/list' },
@@ -128,7 +128,7 @@ describe('handleMcpRequest', () => {
     const listEvents = tools.find((tool) => tool.name === 'timeline.list_events');
     expect(listEvents).toBeDefined();
     expect(listEvents?.inputSchema.properties?.source?.enum).toEqual(
-      expect.arrayContaining(['calendar', 'slack']),
+      expect.arrayContaining(['calendar', 'slack', 'ingest_webhook']),
     );
     expect(tools.map((tool) => tool.name)).toEqual(
       expect.arrayContaining([
@@ -214,13 +214,14 @@ describe('handleMcpRequest', () => {
     });
   });
 
-  it('pushes calendar and Slack source filters into list_events', async () => {
+  it('pushes supported source filters into list_events', async () => {
     await pg.exec(`
       INSERT INTO raw_events (team_id, source, content_text, occurred_at, source_metadata)
       VALUES
         ('${TEAM_ID}', 'web', 'web note', '2026-05-01T10:00:00Z', '{}'),
         ('${TEAM_ID}', 'calendar', 'calendar note', '2026-05-02T10:00:00Z', '{}'),
-        ('${TEAM_ID}', 'slack', 'slack note', '2026-05-03T10:00:00Z', '{}');
+        ('${TEAM_ID}', 'slack', 'slack note', '2026-05-03T10:00:00Z', '{}'),
+        ('${TEAM_ID}', 'ingest_webhook', 'webhook note', '2026-05-04T10:00:00Z', '{}');
     `);
 
     await expect(
@@ -232,6 +233,12 @@ describe('handleMcpRequest', () => {
     await expect(callTool(db, 'timeline.list_events', { source: 'slack' })).resolves.toMatchObject({
       count: 1,
       events: [expect.objectContaining({ source: 'slack', content_text: 'slack note' })],
+    });
+    await expect(
+      callTool(db, 'timeline.list_events', { source: 'ingest_webhook' }),
+    ).resolves.toMatchObject({
+      count: 1,
+      events: [expect.objectContaining({ source: 'ingest_webhook', content_text: 'webhook note' })],
     });
   });
 

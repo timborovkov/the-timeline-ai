@@ -10,13 +10,15 @@
     <a class="skip" href="#main">Skip to content</a>
     <main id="main">
       <h1>Native integrations &amp; custom MCPs</h1>
-      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-06-17</span></div>
+      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-06-21</span></div>
       <p class="tldr">
         Connect native GitHub, Linear, and Google Drive provider accounts from
         <code>/app/me/connections</code>, activate shared team sources from
         <code>/app/team/integrations</code>, or plug arbitrary custom MCP servers in at
         <code>/app/team/mcp-servers</code>. Every synced external event lands on the timeline as
-        <code>source='integration'</code> and becomes searchable and citable by the agent.
+        <code>source='integration'</code> and becomes searchable and citable by the agent. For tools
+        that only need to push arbitrary evidence into Timeline, admins can also create named ingest
+        webhooks from <code>/app/team/integrations</code>.
       </p>
 
       <h2 id="secrets">Encryption key (required first)</h2>
@@ -157,6 +159,44 @@ GITHUB_APP_CLIENT_SECRET=...</code></pre>
         attention banner and the affected provider groups so admins can ask the owner to reconnect,
         replace a connection with another shared source, or narrow shared sources; the worker pauses
         only the affected sync path and keeps previously captured raw events.
+      </p>
+
+      <h2 id="ingest-webhooks">Ingest webhooks</h2>
+      <p>
+        Ingest webhooks are named evidence-only sources for arbitrary provider payloads: JSON, XML,
+        text, form bodies, or any other text-like content. They do not require a provider-specific
+        schema and never become authoritative state by themselves; the AI extraction pipeline can
+        turn them into facts, citations, embeddings, and approval proposals.
+      </p>
+      <ol>
+        <li>Go to <code>/app/team/integrations</code> as a team admin.</li>
+        <li>
+          Create a named webhook, for example <em>Pipedrive webhook</em>. Choose whether new events
+          default to team-visible evidence or private evidence owned by the creating admin.
+        </li>
+        <li>
+          Copy the one-time secret URL or bearer token. Plaintext credentials are shown once; stored
+          credentials are SHA-256 hashes and can be rotated without changing the webhook source.
+        </li>
+        <li>
+          Configure the third-party provider to send <code>POST</code> requests to the copied URL.
+          Providers that cannot store the key in the URL can call
+          <code>/api/webhooks/ingest</code> with <code>Authorization: Bearer tli_...</code>.
+        </li>
+        <li>
+          Keep proposal generation enabled when the source may contain task, date, object, or
+          relationship evidence. Disable it when the source should only land searchable evidence.
+          The worker checks the current setting again before processing queued proposal jobs.
+        </li>
+      </ol>
+      <p>
+        The public endpoint rate-limits both authentication attempts and accepted deliveries, dedups
+        identical same-day deliveries per webhook, redacts sensitive request headers from metadata,
+        enforces the payload size cap while reading the request body, and rejects binary/multipart
+        uploads for now. Payload text is fenced as external content before extraction and proposal
+        prompts, so sender-authored instructions remain evidence instead of agent instructions.
+        Documents and rich files should still go through the document drive until binary webhook
+        ingestion is intentionally designed.
       </p>
 
       <h2 id="mcp">Custom MCP servers (inbound)</h2>

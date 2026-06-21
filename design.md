@@ -203,7 +203,7 @@ surface here in the same PR.
   event-backed files live in a secondary Captured inbox until promoted. Inbox lives as a
   notification bell in the shell header with a compact unread badge and a
   dropdown preview. Connections groups Email, Slack, Telegram, Meetings,
-  Integrations, and MCP servers. Work and Connections may show compact numeric
+  Ingest webhooks, Integrations, and MCP servers. Work and Connections may show compact numeric
   attention badges; zero
   state stays hidden. Their hub pages use the same hairline grid as the
   sidebar IA and expose status chips for counts, health, and next actions.

@@ -673,7 +673,7 @@ describe('removeMemberAction', () => {
 
   it('lets admins remove members but not admins or owners', async () => {
     fakes.fakeRequireMembership.mockResolvedValue('admin');
-    const memberRemoval = makeTx([[{ role: 'member' }], [], [], [], [], [], [], []]);
+    const memberRemoval = makeTx([[{ role: 'member' }], [], [], [], [], [], [], [], []]);
     mockTransactionWithTx(memberRemoval.tx);
     await expect(removeMemberAction(form({ userId: MEMBER_ID }))).resolves.toBeUndefined();
     expect(memberRemoval.updates).toContainEqual(
@@ -714,6 +714,7 @@ describe('removeMemberAction', () => {
           visibilityDefaultUserIds: [MEMBER_ID],
         },
       ],
+      [{ id: 'ingest-webhook-id', visibilityDefault: 'private' }],
       [{ id: 'telegram-user-id' }],
       [{ telegramUserId: 'telegram-user-id' }],
       [{ id: 'telegram-team-id', isActive: false }],
@@ -739,6 +740,28 @@ describe('removeMemberAction', () => {
     );
     expect(updates).toContainEqual(expect.objectContaining({ visibilityDefault: 'team' }));
     expect(updates).toContainEqual(expect.objectContaining({ enabled: false }));
+    const webhookUpdate = updates.find(
+      (update): update is { disabledAt: Date; ownerUserId: null; visibilityDefault: 'team' } =>
+        typeof update === 'object' &&
+        update !== null &&
+        'disabledAt' in update &&
+        'ownerUserId' in update &&
+        'visibilityDefault' in update,
+    );
+    expect(webhookUpdate).toMatchObject({ ownerUserId: null, visibilityDefault: 'team' });
+    expect(webhookUpdate?.disabledAt).toBeInstanceOf(Date);
+    const webhookCredentialUpdate = updates.find(
+      (update): update is { revokedAt: Date } =>
+        typeof update === 'object' && update !== null && 'revokedAt' in update,
+    );
+    expect(webhookCredentialUpdate?.revokedAt).toBeInstanceOf(Date);
+    expect(updates).toContainEqual(
+      expect.objectContaining({
+        visibility: 'team',
+        visibilityOwnerUserId: null,
+        visibilityUserIds: null,
+      }),
+    );
     expect(updates).toContainEqual(expect.objectContaining({ isActive: true }));
     expect(deletes.length).toBeGreaterThanOrEqual(3);
     expect(inserts).toContainEqual(
