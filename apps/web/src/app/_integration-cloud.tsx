@@ -2,8 +2,6 @@ import * as integrationsLib from '@timeline/shared/integrations/registry';
 import Image from 'next/image';
 import Link from 'next/link';
 
-import { cn } from '@/lib/utils';
-
 // Landing-page integration cloud:
 // shape: featured logos in a grid + an example-prompt strip + an
 // extensibility tagline that points at /app/team/mcp-servers as the
@@ -42,7 +40,6 @@ export function IntegrationCloud() {
             <span className="font-mono text-[11px] uppercase tracking-[0.14em] text-fg">
               {c.label}
             </span>
-            <StatusPill status={c.status} />
           </li>
         ))}
         <li className="flex flex-col items-center justify-center gap-2 rounded-sm border border-dashed border-border bg-surface p-4 text-center">
@@ -52,7 +49,9 @@ export function IntegrationCloud() {
           <span className="font-mono text-[11px] uppercase tracking-[0.14em] text-fg-muted">
             Any MCP server
           </span>
-          <span className="text-[10px] uppercase tracking-[0.14em] text-fg-dim">long tail</span>
+          <span className="text-[10px] uppercase tracking-[0.14em] text-fg-dim">
+            internal tools
+          </span>
         </li>
       </ul>
 
@@ -74,40 +73,15 @@ export function IntegrationCloud() {
       </div>
 
       <p className="text-center text-xs text-fg-dim">
-        Works with any MCP-compatible server. Custom servers connect under{' '}
+        Work with any MCP-compatible server. Custom servers connect under{' '}
         <Link
           href="/app/team/mcp-servers"
           className="underline-offset-4 hover:text-fg hover:underline"
         >
           team settings
         </Link>
-        , bring your own auth. MCP is live tool access, not automatic timeline ingestion.
+        , bring your own auth, and let Timeline reach the tools that matter to your team.
       </p>
     </div>
-  );
-}
-
-function StatusPill({ status }: { status: integrationsLib.IntegrationStatus }) {
-  const label =
-    status === 'native_available'
-      ? 'Native'
-      : status === 'native_unconfigured'
-        ? 'Native'
-        : status === 'mcp_available'
-          ? 'MCP'
-          : 'Soon';
-  const tone =
-    status === 'native_available' || status === 'mcp_available'
-      ? 'border-signal/40 bg-signal/10 text-signal'
-      : 'border-border bg-surface-2 text-fg-dim';
-  return (
-    <span
-      className={cn(
-        'rounded-sm border px-1.5 py-[1px] font-mono text-[9px] uppercase tracking-[0.14em]',
-        tone,
-      )}
-    >
-      {label}
-    </span>
   );
 }

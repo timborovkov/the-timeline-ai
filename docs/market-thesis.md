@@ -1,4 +1,4 @@
-# Timeline Investor Memo
+# Timeline Market Thesis
 
 ## Thesis
 
@@ -90,6 +90,6 @@ a painful workflow:
 
 > Stop manually reporting on work your team already did.
 
-The investor story can carry the larger transition:
+The broader market story can carry the larger transition:
 
 > Manual systems of record are giving way to event-derived systems of record.

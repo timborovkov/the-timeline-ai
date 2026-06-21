@@ -1,4 +1,15 @@
-import { CalendarDays, GitPullRequest, Mail, MessageCircle, Send, Video } from 'lucide-react';
+import {
+  Briefcase,
+  CalendarDays,
+  FileText,
+  GitPullRequest,
+  LifeBuoy,
+  Mail,
+  MessageCircle,
+  Send,
+  Video,
+  Wrench,
+} from 'lucide-react';
 import Link from 'next/link';
 
 import type { Metadata } from 'next';
@@ -48,7 +59,7 @@ export const metadata: Metadata = {
         url: '/opengraph-image',
         width: 1200,
         height: 630,
-        alt: 'The Timeline — the operations log your team can talk to',
+        alt: 'The Timeline — the work becomes the record',
       },
     ],
   },
@@ -73,15 +84,17 @@ const JSON_SCRIPT_ESCAPES: Record<string, string> = {
   '&': '\\u0026',
 };
 
-const NATIVE_INGEST = [
+const WORK_SURFACES = [
   { label: 'Telegram', icon: Send },
   { label: 'Slack', icon: MessageCircle },
-  { label: 'GitHub', icon: GitPullRequest },
-  { label: 'Google Meet', icon: Video },
-  { label: 'Zoom', icon: Video },
-  { label: 'Microsoft Teams', icon: Video },
+  { label: 'Meetings', icon: Video },
   { label: 'Email', icon: Mail },
+  { label: 'Documents', icon: FileText },
   { label: 'Calendar', icon: CalendarDays },
+  { label: 'Projects', icon: Briefcase },
+  { label: 'Code', icon: GitPullRequest },
+  { label: 'Support', icon: LifeBuoy },
+  { label: 'MCP tools', icon: Wrench },
 ] as const;
 
 export default async function LandingPage() {
@@ -217,7 +230,7 @@ const FAQ_ITEMS = [
   },
   {
     q: 'How is capture done?',
-    a: 'Native surfaces feed one pipeline. Telegram and Slack capture chat, voice, files, /ask, and @Timeline context. GitHub, Linear, and Google Drive sync as native integrations. Google Meet, Zoom, and Microsoft Teams land through meeting bots. Email, calendar events, and web notes become cited timeline events. MCP servers give the agent live access to long-tail tools, but they do not create timeline events unless paired with a native sync adapter or custom ingestion layer.',
+    a: 'Work surfaces feed one pipeline. Telegram and Slack capture chat, voice, files, /ask, and @Timeline context. Meetings, email, documents, calendar events, web notes, project tools, code systems, support queues, customer systems, and internal tools all become part of the same evidence model. MCP servers extend the agent into long-tail systems and internal tools.',
   },
   {
     q: 'What models power the agent?',
@@ -392,20 +405,20 @@ function Hero({ isSignedIn }: { isSignedIn: boolean }) {
           </div>
           <HeroMock />
         </div>
-        <NativeIngestStrip />
+        <WorkSurfaceStrip />
       </div>
     </section>
   );
 }
 
-function NativeIngestStrip() {
+function WorkSurfaceStrip() {
   return (
     <div className="mt-14 border-y border-border py-3">
       <div className="flex flex-wrap items-center gap-x-5 gap-y-3">
         <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-fg-dim">
-          Native ingest
+          Work surfaces
         </span>
-        {NATIVE_INGEST.map(({ label, icon: Icon }) => (
+        {WORK_SURFACES.map(({ label, icon: Icon }) => (
           <span
             key={label}
             className="inline-flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.14em] text-fg-muted"
@@ -748,7 +761,7 @@ const CDG_STYLES = `
 function Surfaces() {
   return (
     <Section id="surfaces">
-      <IndexStrip>SURFACES · NATIVE INGEST + EXTENSIBILITY</IndexStrip>
+      <IndexStrip>SURFACES · WORK GRAPH + EXTENSIBILITY</IndexStrip>
       <div className="mt-10 grid gap-px overflow-hidden border border-border bg-border sm:grid-cols-2 lg:grid-cols-4">
         <SurfaceTile
           label="TELEGRAM"
@@ -771,8 +784,8 @@ function Surfaces() {
           body="Scheduled work, all-day events, and time-aware context appear in the same timeline."
         />
         <SurfaceTile
-          label="GITHUB / LINEAR / DRIVE"
-          body="Native connectors sync repos, issues, PRs, releases, CI, project updates, and Drive changes."
+          label="PROJECTS / CODE / DOCS"
+          body="Project updates, document changes, issues, PRs, releases, CI, and delivery events become cited evidence."
         />
         <SurfaceTile
           label="WEB APP"
@@ -784,23 +797,18 @@ function Surfaces() {
         />
         <SurfaceTile
           label="MCP + INTEGRATIONS"
-          body="Connect long-tail MCP servers for live tool access, then promote high-value systems to native sync when they need durable events."
+          body="Connect internal tools and long-tail SaaS through MCP, alongside first-party integrations for the systems your team uses most."
         />
       </div>
     </Section>
   );
 }
 
-function SurfaceTile({ label, body, coming }: { label: string; body: string; coming?: boolean }) {
+function SurfaceTile({ label, body }: { label: string; body: string }) {
   return (
     <div className="bg-bg p-6 sm:p-8">
       <div className="flex items-center gap-2">
         <span className="font-mono text-xs uppercase tracking-[0.18em] text-fg">{label}</span>
-        {coming && (
-          <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-fg-dim">
-            · coming soon
-          </span>
-        )}
       </div>
       <p className="mt-4 text-base leading-[1.55] text-fg-muted">{body}</p>
     </div>
@@ -817,10 +825,10 @@ function Integrations() {
             Timeline sits beside the stack before it replaces any manual upkeep.
           </h2>
           <p className="text-base leading-[1.55] text-fg-muted">
-            Slack, Telegram, meetings, email, calendar, documents, GitHub, Linear, and Google Drive
-            feed the same event history. Teams keep their current tools while Timeline generates
-            cited updates, digests, handoffs, and answers from the work already happening there.
-            Long-tail tools plug in as{' '}
+            Conversations, meetings, docs, projects, code, customer systems, support queues,
+            calendars, and internal tools feed the same event history. Teams keep their current
+            tools while Timeline generates cited updates, digests, handoffs, and answers from the
+            work already happening there. Long-tail tools plug in as{' '}
             <a
               href="https://modelcontextprotocol.io"
               target="_blank"
@@ -830,8 +838,8 @@ function Integrations() {
               MCP servers
             </a>{' '}
             : Notion, Jira, Figma, Sentry, Stripe, your internal tool, anything that speaks the
-            protocol. The agent gets live tools; those systems become durable event history only
-            when you add native sync or a custom ingestion layer.
+            protocol. Timeline is designed around the work graph, not one vendor's idea of a system
+            of record.
           </p>
         </div>
         <IntegrationCloud />

@@ -32,7 +32,7 @@
           <li><a href="#ai-provider-strategy">AI provider strategy</a></li>
           <li><a href="#infrastructure">Infrastructure</a></li>
           <li><a href="#out-of-scope">Out of scope for v1</a></li>
-          <li><a href="#future-roadmap">Future roadmap</a></li>
+          <li><a href="#expansion-path">Expansion path</a></li>
           <li><a href="#risks-and-unknowns">Risks and unknowns</a></li>
           <li><a href="#success-criteria">Success criteria</a></li>
         </ul>
@@ -104,9 +104,10 @@
 
       <h2 id="target-user">Target user</h2>
       <p>
-        Small to mid-sized teams (5–50 people) doing knowledge work where context compounds: sales,
-        consulting, product, founding teams. The kind of team where one person being out of the loop
-        on a client conversation creates real friction.
+        Small to mid-sized teams (5–50 people) doing knowledge work where context compounds: growth,
+        consulting, product, implementation, customer success, and founder-led operations. The kind
+        of team where one person being out of the loop on a client or project conversation creates
+        real friction.
       </p>
 
       <h2 id="core-principles">Core principles</h2>
@@ -134,7 +135,7 @@
 
       <h2 id="architecture-overview">Architecture overview</h2>
 
-      <h3 id="capture-surfaces">Capture surfaces</h3>
+      <h3 id="capture-surfaces">Work surfaces and integrations</h3>
       <ul>
         <li><strong>Web/PWA</strong>: typed notes, uploaded audio, drag-and-drop documents.</li>
         <li>
@@ -168,14 +169,11 @@
           else.
         </li>
         <li>
-          <strong>Native integrations</strong>: GitHub, Linear, and Google Drive sync activity and
-          changes into the same event stream. GitHub is optional for teams that do not live in
-          engineering workflows, but it is a first-party connector: repo selection, PRs, issues,
-          reviews, commits, releases, and CI activity become cited timeline events. Teams can also
-          connect arbitrary <strong>custom MCP servers</strong> — their own internal tools or any
-          third-party MCP — to extend the agent's live tool reach without us shipping a bespoke
-          connector per provider. MCP does not automatically backfill or persist external activity
-          as timeline events.
+          <strong>Work-system integrations</strong>: project updates, document changes, issues, PRs,
+          reviews, commits, releases, CI activity, customer records, support queues, incidents, and
+          operational systems all belong in the same event history. Teams can also connect arbitrary
+          <strong>custom MCP servers</strong> — their own internal tools or any third-party MCP — so
+          Timeline can reach the long-tail systems that matter to the team.
         </li>
       </ul>
 
@@ -493,9 +491,9 @@
           versions files; it does not replace Google Docs-style live editing.
         </li>
         <li>
-          <strong>Additional bespoke integrations</strong> beyond the native GitHub, Linear, and
-          Google Drive providers. HubSpot/CRM tools can start through MCP where they fit, then move
-          to native APIs/webhooks when volume or product polish justifies it.
+          <strong>Every bespoke integration on day one.</strong> The product starts with the work
+          graph that matters most and expands first-party adapters as teams prove which systems are
+          core to their daily workflow.
         </li>
         <li><strong>Real-time collaboration</strong> on entity pages. Later.</li>
         <li><strong>Mobile native apps.</strong> PWA covers this for v1.</li>
@@ -505,7 +503,7 @@
         </li>
       </ul>
 
-      <h2 id="future-roadmap">Future roadmap</h2>
+      <h2 id="expansion-path">Expansion path</h2>
       <ul>
         <li>
           <strong>Knowledge base depth</strong> on RustFS: richer folder management, promotion
@@ -522,11 +520,9 @@
           companies, deals, vendors, incidents, documents, and team-defined object types.
         </li>
         <li>
-          <strong>More native integrations</strong>: GitHub, Linear, and Google Drive already use
-          native sync into the shared event pipeline. Add CRM and finance systems the same way once
-          they prove core to daily workflow; MCP remains the adapter layer for long-tail and
-          experimental tools. Teams can additionally connect arbitrary custom MCP servers to extend
-          the agent's reach.
+          <strong>More work-system integrations</strong>: expand first-party adapters across CRM,
+          finance, project, support, engineering, and communication systems as they prove core to
+          daily workflow. MCP remains the reach layer for long-tail and experimental tools.
         </li>
         <li>
           <strong>Meeting bots</strong>: join Google Meet, Microsoft Teams, and Zoom calls (default
