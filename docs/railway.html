@@ -11,7 +11,7 @@
     <main id="main">
       <h1>Railway deployment</h1>
       <div class="meta">
-        <span class="kind">Operations</span><span>Last updated 2026-06-14</span>
+        <span class="kind">Operations</span><span>Last updated 2026-06-21</span>
       </div>
       <p class="tldr">
         How the Timeline's web + worker + plugin + custom services are arranged on Railway, and what
@@ -301,7 +301,8 @@ rclone sync s3:timeline-attachments backblaze-b2:timeline-backup-attachments
 
       <h2 id="webhooks">Webhooks</h2>
       <p>
-        Telegram, Slack, and Postmark webhooks point at the <code>web</code> service public URL:
+        Telegram, Slack, Postmark, and team-managed ingest webhooks point at the
+        <code>web</code> service public URL:
       </p>
       <ul>
         <li>Telegram: <code>https://thetimeline.cc/api/telegram/webhook</code></li>
@@ -309,6 +310,11 @@ rclone sync s3:timeline-attachments backblaze-b2:timeline-backup-attachments
         <li>Slack slash commands: <code>https://thetimeline.cc/api/slack/commands</code></li>
         <li>Slack Interactivity: <code>https://thetimeline.cc/api/slack/interactions</code></li>
         <li>Postmark: <code>https://thetimeline.cc/api/email/inbound</code></li>
+        <li>
+          Ingest webhooks: <code>https://thetimeline.cc/api/webhooks/ingest</code> with
+          <code>Authorization: Bearer tli_...</code>, or the secret URL copied from
+          <code>/app/team/integrations</code>.
+        </li>
       </ul>
       <p>
         The Telegram webhook is registered automatically by the <code>web</code> service on startup.
@@ -331,6 +337,11 @@ rclone sync s3:timeline-attachments backblaze-b2:timeline-backup-attachments
         The <code>web</code> service verifies the
         <code>X-Telegram-Bot-Api-Secret-Token</code> header on every request and rejects anything
         that doesn't match.
+      </p>
+      <p>
+        Ingest webhook credentials are managed in the dashboard and stored as database hashes, so
+        Railway does not need a per-source env var. Rotate or disable them from the team
+        integrations page; new deliveries fail immediately after revocation.
       </p>
 
       <h2 id="deploy-flow">Deploy flow</h2>

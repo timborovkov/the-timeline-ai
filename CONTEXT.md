@@ -457,6 +457,68 @@ A way information enters the timeline, such as web capture, Telegram, Slack,
 email, documents, meetings, integrations, or calendar import.
 _Avoid_: Connector when the surface is first-party
 
+**Ingest Webhook**:
+A team-managed capture surface that accepts arbitrary external payloads as raw
+source evidence. Ingest webhooks capture textual request bodies first; direct
+file and binary capture are separate source-file flows. An ingest webhook is
+not an integration scope and is not an authoritative source by default. Sender
+identity in an ingest webhook payload is interpreted from the evidence rather
+than mapped by a required provider schema.
+_Avoid_: Generic integration, provider connection
+
+**Ingest Webhook Owner**:
+The team member who creates or configures an ingest webhook. The ingest webhook
+owner controls the source's future defaults and visibility for captured events,
+even when the payload describes an external sender.
+_Avoid_: Webhook author, external sender
+
+**Ingest Webhook Credential**:
+A team-managed secret that authorizes writes into one ingest webhook. The
+credential may appear in a webhook URL or as a bearer credential, and possession
+of it is treated as permission to create source evidence for that webhook.
+_Avoid_: Password, API account
+
+**Ingest Webhook Rotation**:
+Replacing an ingest webhook credential without changing the named ingest
+webhook source. Rotation preserves the source identity shown on the timeline
+while retiring a leaked or obsolete credential.
+_Avoid_: New webhook when only the secret changed
+
+**Ingest Webhook Duplicate Delivery**:
+A repeated webhook delivery whose payload is identical to a recent delivery for
+the same ingest webhook. Duplicate delivery should not create additional source
+evidence; changed payloads remain new evidence even when they describe the same
+external object.
+_Avoid_: Semantic duplicate, provider event merge
+
+**Ingest Webhook Burst**:
+Multiple distinct webhook deliveries from the same ingest webhook that arrive
+close together. A burst should preserve each delivery as separate source
+evidence while allowing timeline display and evidence review to group the
+deliveries as one source moment.
+_Avoid_: Batch import when the provider sent individual deliveries
+
+**Evidence-Only Source**:
+A capture surface whose incoming information can support search, answers, and
+approval-backed suggestions but cannot directly update canonical workspace
+state. Generic ingest webhooks are evidence-only sources; only native
+integrations may become authoritative sources.
+_Avoid_: Untrusted source, read-only integration
+
+**Proposal Generation Default**:
+The source-level setting that decides whether future source evidence should
+immediately ask the agent to propose approval-backed workspace changes. Turning
+it off keeps the evidence searchable without inviting new proposals from that
+source.
+_Avoid_: Automation permission, write access
+
+**Event-Local Proposal**:
+An approval-backed suggestion generated primarily from one raw event plus its
+available extracted facts, recent context, and existing workspace state. Event-
+local proposals are useful for ingest webhooks, but they are not the same as a
+cross-source evidence review.
+_Avoid_: Full-context proposal, automatic synthesis
+
 **Event Visibility**:
 The audience attached to a raw event or equivalent timeline item: private,
 team, or specific users. Visibility is per item, not inherited from the team.

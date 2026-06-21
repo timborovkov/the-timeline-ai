@@ -1236,7 +1236,7 @@ describe('buildAgentTools — team isolation', () => {
     expect(passed).not.toHaveProperty('userId');
   });
 
-  it('search_timeline accepts the Slack source filter', async () => {
+  it('search_timeline accepts source filters that mirror event_source', async () => {
     const scope = makeFakeScope();
     scope.timeline.searchEvents.mockResolvedValue([]);
     const tools = buildAgentTools(scope as unknown as TeamScope);
@@ -1245,8 +1245,12 @@ describe('buildAgentTools — team isolation', () => {
       opts: unknown,
     ) => Promise<unknown>;
     await exec({ query: 'launch update', source: 'slack' }, {});
+    await exec({ query: 'deal update', source: 'ingest_webhook' }, {});
     expect(scope.timeline.searchEvents).toHaveBeenCalledWith(
       expect.objectContaining({ query: 'launch update', source: 'slack' }),
+    );
+    expect(scope.timeline.searchEvents).toHaveBeenCalledWith(
+      expect.objectContaining({ query: 'deal update', source: 'ingest_webhook' }),
     );
   });
 
@@ -1261,7 +1265,7 @@ describe('buildAgentTools — team isolation', () => {
     );
   });
 
-  it('list_events forwards Slack and calendar source filters', async () => {
+  it('list_events forwards source filters that mirror event_source', async () => {
     const scope = makeFakeScope();
     scope.timeline.listEvents.mockResolvedValue([]);
     const tools = buildAgentTools(scope as unknown as TeamScope);
@@ -1269,6 +1273,7 @@ describe('buildAgentTools — team isolation', () => {
 
     await exec({ source: 'slack' }, {});
     await exec({ source: 'calendar' }, {});
+    await exec({ source: 'ingest_webhook' }, {});
 
     expect(scope.timeline.listEvents).toHaveBeenNthCalledWith(
       1,
@@ -1277,6 +1282,10 @@ describe('buildAgentTools — team isolation', () => {
     expect(scope.timeline.listEvents).toHaveBeenNthCalledWith(
       2,
       expect.objectContaining({ source: 'calendar' }),
+    );
+    expect(scope.timeline.listEvents).toHaveBeenNthCalledWith(
+      3,
+      expect.objectContaining({ source: 'ingest_webhook' }),
     );
   });
 
