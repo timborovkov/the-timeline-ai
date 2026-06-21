@@ -1,5 +1,7 @@
 import { defineConfig } from 'vitest/config';
 
+import { filterExpectedTestConsole } from '../../scripts/vitest-console';
+
 const env = {
   LOG_LEVEL: 'silent',
   // Many helpers (env-guarded webhook verifiers, OAuth state signing)
@@ -42,6 +44,7 @@ export default defineConfig({
           exclude: pgliteTests,
           environment: 'node',
           env,
+          onConsoleLog: filterExpectedTestConsole,
         },
       },
       {
@@ -52,8 +55,10 @@ export default defineConfig({
           fileParallelism: false,
           hookTimeout: 60_000,
           env,
+          onConsoleLog: filterExpectedTestConsole,
         },
       },
     ],
+    onConsoleLog: filterExpectedTestConsole,
   },
 });
