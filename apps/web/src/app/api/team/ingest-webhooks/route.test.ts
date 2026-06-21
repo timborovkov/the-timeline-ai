@@ -163,6 +163,26 @@ describe('/api/team/ingest-webhooks', () => {
       .where(isNull(ingestWebhookCredentials.revokedAt));
     expect(activeAfterSoftDisable).toHaveLength(0);
 
+    const reenable = await itemRoute.PATCH(request({ disabled: false }), {
+      params: Promise.resolve({ id: created.id }),
+    });
+    expect(reenable.status).toBe(200);
+    const reenableBody = (await reenable.json()) as {
+      credential?: { plaintext: string; prefix: string };
+    };
+    expect(reenableBody.credential?.plaintext).toMatch(/^tli_/);
+    const activeAfterReenable = await db
+      .select()
+      .from(ingestWebhookCredentials)
+      .where(isNull(ingestWebhookCredentials.revokedAt));
+    expect(activeAfterReenable).toHaveLength(1);
+    expect(activeAfterReenable[0]?.keyPrefix).toBe(reenableBody.credential?.prefix);
+    const [reenabledWebhook] = await db
+      .select()
+      .from(ingestWebhooks)
+      .where(eq(ingestWebhooks.id, created.id));
+    expect(reenabledWebhook?.disabledAt).toBeNull();
+
     const disable = await itemRoute.DELETE(new Request('https://timeline.test'), {
       params: Promise.resolve({ id: created.id }),
     });

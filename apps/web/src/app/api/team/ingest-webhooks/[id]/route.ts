@@ -1,4 +1,5 @@
 import { auditLog, ingestWebhookCredentials, ingestWebhooks } from '@timeline/db';
+import * as ingestWebhookKeys from '@timeline/shared/ingest-webhooks';
 import { withTeam } from '@timeline/shared/team-scope';
 import { and, eq, isNull } from 'drizzle-orm';
 import { NextResponse } from 'next/server';
@@ -65,7 +66,8 @@ export async function PATCH(
   if (parsed.data.disabled !== undefined) {
     patch.disabledAt = parsed.data.disabled ? new Date() : null;
   }
-  const row = await db.transaction(async (tx) => {
+  const minted = parsed.data.disabled === false ? ingestWebhookKeys.mintCredential() : null;
+  const result = await db.transaction(async (tx) => {
     const rows = await tx
       .update(ingestWebhooks)
       .set(patch)
@@ -85,23 +87,71 @@ export async function PATCH(
           ),
         );
     }
-    return updated;
+    const activeCredentialRows =
+      parsed.data.disabled === false
+        ? await tx
+            .select({ id: ingestWebhookCredentials.id })
+            .from(ingestWebhookCredentials)
+            .where(
+              and(
+                eq(ingestWebhookCredentials.webhookId, id),
+                eq(ingestWebhookCredentials.teamId, gate.active.teamId),
+                isNull(ingestWebhookCredentials.revokedAt),
+              ),
+            )
+            .limit(1)
+        : [];
+    const shouldMintCredential =
+      parsed.data.disabled === false && activeCredentialRows.length === 0;
+    const credentialRows =
+      shouldMintCredential && minted
+        ? await tx
+            .insert(ingestWebhookCredentials)
+            .values({
+              teamId: gate.active.teamId,
+              webhookId: id,
+              createdByUserId: gate.session.user.id,
+              keyHash: minted.hash,
+              keyPrefix: minted.prefix,
+            })
+            .returning()
+        : [];
+    return { row: updated, credential: credentialRows[0] ?? null };
   });
-  if (!row) return NextResponse.json({ error: 'not_found' }, { status: 404 });
+  if (!result) return NextResponse.json({ error: 'not_found' }, { status: 404 });
   await db.insert(auditLog).values({
     teamId: gate.active.teamId,
     actorUserId: gate.session.user.id,
-    action: parsed.data.disabled === true ? 'ingest_webhook.disable' : 'ingest_webhook.update',
+    action:
+      parsed.data.disabled === true
+        ? 'ingest_webhook.disable'
+        : parsed.data.disabled === false
+          ? 'ingest_webhook.enable'
+          : 'ingest_webhook.update',
     targetType: 'ingest_webhook',
-    targetId: row.id,
-    targetVisibility: row.visibilityDefault,
-    targetOwnerUserId: row.ownerUserId,
+    targetId: result.row.id,
+    targetVisibility: result.row.visibilityDefault,
+    targetOwnerUserId: result.row.ownerUserId,
     metadata: {
       changed: Object.keys(parsed.data),
       revoked_credentials: parsed.data.disabled === true,
+      credential_id: result.credential?.id,
     },
   });
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({
+    ok: true,
+    ...(result.credential && minted
+      ? {
+          name: result.row.name,
+          credential: {
+            id: result.credential.id,
+            prefix: result.credential.keyPrefix,
+            plaintext: minted.plaintext,
+            createdAt: result.credential.createdAt,
+          },
+        }
+      : {}),
+  });
 }
 
 export async function DELETE(

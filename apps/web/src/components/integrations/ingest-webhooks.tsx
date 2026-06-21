@@ -144,6 +144,16 @@ export function IngestWebhooksUi({ webhooks }: { webhooks: IngestWebhookRow[] })
       await alertFailure('Update failed', res);
       return;
     }
+    const data = (await res.json()) as {
+      name?: string;
+      credential?: { plaintext: string };
+    };
+    if (data.credential?.plaintext && data.name) {
+      dispatch({
+        type: 'minted',
+        minted: { webhookName: data.name, plaintext: data.credential.plaintext },
+      });
+    }
     router.refresh();
   }
 
