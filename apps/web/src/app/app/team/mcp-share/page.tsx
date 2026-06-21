@@ -11,6 +11,7 @@ import { PageHeader } from '@/components/page-header';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { appUrl } from '@/lib/site-url';
 
 export const metadata: Metadata = {
   title: 'MCP share',
@@ -64,14 +65,14 @@ export default async function McpSharePage() {
       />
       <PageHeader
         title="Timeline as MCP server"
-        subtitle="Expose team events to external agents via a bearer-keyed MCP endpoint."
+        subtitle="Expose team-level workspace retrieval to external agents via a bearer-keyed MCP endpoint."
         srLabel={`Timeline as MCP server · ${String(keys.length)} active keys`}
         metadata={[
           { label: 'team', value: active.teamName, signal: true },
           { label: 'keys', value: keys.length },
         ]}
       />
-      <McpShareUi keys={keys} />
+      <McpShareUi keys={keys} mcpUrl={appUrl('/api/mcp/server').toString()} />
     </div>
   );
 }

@@ -23,23 +23,15 @@ function copyToClipboard(text: string): void {
   void navigator.clipboard.writeText(text).catch(() => undefined);
 }
 
-function endpointUrl(mcpUrl: string): string {
-  return mcpUrl || 'https://thetimeline.cc/api/mcp/server';
-}
-
-function keyValue(mintedKey: MintedKey | null): string {
-  return mintedKey?.plaintext ?? 'tla_your_key';
-}
-
-function remoteJsonConfig(mcpUrl: string, mintedKey: MintedKey | null): string {
+function remoteJsonConfig(mcpUrl: string, mintedKey: MintedKey): string {
   return JSON.stringify(
     {
       mcpServers: {
         timeline: {
           type: 'streamable-http',
-          url: endpointUrl(mcpUrl),
+          url: mcpUrl,
           headers: {
-            Authorization: `Bearer ${keyValue(mintedKey)}`,
+            Authorization: `Bearer ${mintedKey.plaintext}`,
           },
         },
       },
@@ -49,10 +41,10 @@ function remoteJsonConfig(mcpUrl: string, mintedKey: MintedKey | null): string {
   );
 }
 
-function codexCommand(mcpUrl: string, mintedKey: MintedKey | null): string {
+function codexCommand(mcpUrl: string, mintedKey: MintedKey): string {
   return [
-    `export TIMELINE_MCP_KEY="${keyValue(mintedKey)}"`,
-    `codex mcp add timeline --url "${endpointUrl(mcpUrl)}" --bearer-token-env-var TIMELINE_MCP_KEY`,
+    `export TIMELINE_MCP_KEY="${mintedKey.plaintext}"`,
+    `codex mcp add timeline --url "${mcpUrl}" --bearer-token-env-var TIMELINE_MCP_KEY`,
   ].join('\n');
 }
 
@@ -61,7 +53,7 @@ function chatGptConnectorDetails(mcpUrl: string): string {
     'Settings -> Apps & Connectors -> Advanced settings -> Developer mode',
     'Create app / connector',
     'Connector name: Timeline',
-    `Connector URL: ${endpointUrl(mcpUrl)}`,
+    `Connector URL: ${mcpUrl}`,
     'Protocol: Streaming HTTP / Streamable HTTP',
   ].join('\n');
 }
@@ -194,6 +186,28 @@ function McpRetrievalSummary() {
 }
 
 function McpClientGuides({ mcpUrl, mintedKey }: { mcpUrl: string; mintedKey: MintedKey | null }) {
+  const codexSnippet = mintedKey
+    ? codexCommand(mcpUrl, mintedKey)
+    : [
+        'export TIMELINE_MCP_KEY="<create a key first>"',
+        `codex mcp add timeline --url "${mcpUrl}" --bearer-token-env-var TIMELINE_MCP_KEY`,
+      ].join('\n');
+  const jsonSnippet = mintedKey
+    ? remoteJsonConfig(mcpUrl, mintedKey)
+    : JSON.stringify(
+        {
+          mcpServers: {
+            timeline: {
+              type: 'streamable-http',
+              url: mcpUrl,
+              headers: { Authorization: 'Bearer <create a key first>' },
+            },
+          },
+        },
+        null,
+        2,
+      );
+
   return (
     <section className="space-y-3">
       <div className="font-mono text-xs uppercase tracking-[0.14em] text-fg-muted">
@@ -212,10 +226,16 @@ function McpClientGuides({ mcpUrl, mintedKey }: { mcpUrl: string; mintedKey: Min
             </p>
             <div className="overflow-hidden rounded-sm border border-border bg-surface-2">
               <pre className="overflow-x-auto p-3 font-mono text-xs leading-5">
-                <code>{codexCommand(mcpUrl, mintedKey)}</code>
+                <code>{codexSnippet}</code>
               </pre>
             </div>
-            <CopyButton value={codexCommand(mcpUrl, mintedKey)} label="Copy command" />
+            {mintedKey ? (
+              <CopyButton value={codexSnippet} label="Copy command" />
+            ) : (
+              <p className="text-xs leading-5 text-fg-dim">
+                Create a new key to generate a copy-ready command with the real bearer token.
+              </p>
+            )}
           </CardContent>
         </Card>
 
@@ -231,10 +251,16 @@ function McpClientGuides({ mcpUrl, mintedKey }: { mcpUrl: string; mintedKey: Min
             </p>
             <div className="overflow-hidden rounded-sm border border-border bg-surface-2">
               <pre className="overflow-x-auto p-3 font-mono text-xs leading-5">
-                <code>{remoteJsonConfig(mcpUrl, mintedKey)}</code>
+                <code>{jsonSnippet}</code>
               </pre>
             </div>
-            <CopyButton value={remoteJsonConfig(mcpUrl, mintedKey)} label="Copy JSON" />
+            {mintedKey ? (
+              <CopyButton value={jsonSnippet} label="Copy JSON" />
+            ) : (
+              <p className="text-xs leading-5 text-fg-dim">
+                Create a new key to generate copy-ready JSON with the real Authorization header.
+              </p>
+            )}
           </CardContent>
         </Card>
 
@@ -270,7 +296,7 @@ function McpClientGuides({ mcpUrl, mintedKey }: { mcpUrl: string; mintedKey: Min
   );
 }
 
-export function McpShareUi({ keys }: { keys: KeyRow[] }) {
+export function McpShareUi({ keys, mcpUrl: initialMcpUrl }: { keys: KeyRow[]; mcpUrl: string }) {
   const router = useRouter();
   const dialog = useAppDialog();
   const [{ showCreate, name, busy, mintedKey, mcpUrl }, dispatch] = useReducer(mcpShareReducer, {
@@ -278,17 +304,13 @@ export function McpShareUi({ keys }: { keys: KeyRow[] }) {
     name: '',
     busy: false,
     mintedKey: null,
-    mcpUrl: '',
+    mcpUrl: initialMcpUrl,
   });
 
   useEffect(() => {
-    // Compute the absolute MCP endpoint URL on the client so it matches
-    // whatever origin the user is browsing under (localhost, staging,
-    // prod). Server-side rendering doesn't know about origin without
-    // forwarding headers, and getting that wrong gives the user a
-    // copy-paste URL that doesn't work.
+    if (initialMcpUrl) return;
     dispatch({ type: 'mcpUrl', mcpUrl: `${window.location.origin}/api/mcp/server` });
-  }, []);
+  }, [initialMcpUrl]);
 
   async function create() {
     dispatch({ type: 'busy', busy: true });
