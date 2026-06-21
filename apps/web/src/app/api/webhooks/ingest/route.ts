@@ -111,17 +111,18 @@ export async function handlePost(req: Request, pathToken?: string): Promise<Resp
     request_headers: redactedHeaders(req.headers),
     proposal_generation_enabled: resolved.proposalGenerationEnabled,
   };
+  const visibility = ingestVisibilityFor(resolved.visibilityDefault, resolved.ownerUserId);
 
   const rows = await db
     .insert(rawEvents)
     .values({
       teamId: resolved.teamId,
       authorUserId: null,
-      visibilityOwnerUserId: resolved.ownerUserId,
+      visibilityOwnerUserId: visibility.ownerUserId,
       source: 'ingest_webhook',
       contentText,
       occurredAt: receivedAt,
-      visibility: resolved.visibilityDefault,
+      visibility: visibility.value,
       sourceMetadata,
     })
     .onConflictDoNothing()
@@ -247,6 +248,16 @@ function dedupKeyFor(webhookId: string, bodyHash: string, receivedAt: Date): str
 function clientIpFromHeaders(headers: Headers): string {
   const forwarded = headers.get('x-forwarded-for')?.split(',')[0]?.trim();
   return forwarded ?? headers.get('x-real-ip') ?? 'unknown';
+}
+
+function ingestVisibilityFor(
+  visibilityDefault: 'private' | 'team' | 'specific_users',
+  ownerUserId: string | null,
+): { value: 'private' | 'team' | 'specific_users'; ownerUserId: string | null } {
+  if (visibilityDefault === 'private' && !ownerUserId) {
+    return { value: 'team', ownerUserId: null };
+  }
+  return { value: visibilityDefault, ownerUserId };
 }
 
 async function checkInvalidCredentialLimit(req: Request): Promise<{ ok: boolean }> {

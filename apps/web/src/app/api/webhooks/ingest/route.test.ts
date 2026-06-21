@@ -3,6 +3,7 @@ import { ingestWebhookCredentials, ingestWebhooks, rawEvents } from '@timeline/d
 import { hashCredential } from '@timeline/shared/ingest-webhooks';
 import * as rateLimit from '@timeline/shared/rate-limit';
 import { applyDbMigrations } from '@timeline/shared/test/pglite';
+import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -165,6 +166,25 @@ describe('/api/webhooks/ingest', () => {
     });
     expect(vi.mocked(rateLimit.checkRateLimit)).toHaveBeenCalledTimes(1);
     expect(vi.mocked(rateLimit.checkRateLimit).mock.calls[0]?.[0]?.key).toContain('credential');
+  });
+
+  it('falls back ownerless private webhooks to team-visible evidence', async () => {
+    const [webhook] = await db.select().from(ingestWebhooks).limit(1);
+    if (!webhook) throw new Error('webhook not seeded');
+    await db
+      .update(ingestWebhooks)
+      .set({ ownerUserId: null, visibilityDefault: 'private' })
+      .where(eq(ingestWebhooks.id, webhook.id));
+
+    const response = await POST(request('{"event":"owner.deleted"}'));
+
+    expect(response.status).toBe(202);
+    const [event] = await db.select().from(rawEvents);
+    expect(event).toMatchObject({
+      source: 'ingest_webhook',
+      visibility: 'team',
+      visibilityOwnerUserId: null,
+    });
   });
 
   it('charges only invalid credentials against the auth-IP lockout bucket', async () => {
