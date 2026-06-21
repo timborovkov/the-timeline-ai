@@ -190,11 +190,16 @@ GITHUB_APP_CLIENT_SECRET=...</code></pre>
       <h2 id="timeline-as-mcp">Timeline as an MCP server (outbound)</h2>
       <p>
         Expose this Timeline as an MCP server so external agents (Claude Desktop, Cursor, web-based
-        agents, etc.) can query its events, entities, and documents. Admins mint bearer keys at
-        <code>/app/team/mcp-share</code>:
+        agents, etc.) can query team-level workspace context: events, entities, objects, tasks,
+        boards, calendar, documents, and connected integration activity. Admins can open the
+        <strong>Connections</strong> sidebar item (<code>/app/team/integrations</code>) and use
+        <em>Manage Timeline MCP endpoint</em>, or go directly to <code>/app/team/mcp-share</code>:
       </p>
       <ol>
-        <li>Go to <code>/app/team/mcp-share</code> and copy the MCP endpoint URL shown there.</li>
+        <li>
+          Open <strong>Connections</strong> (<code>/app/team/integrations</code>), choose
+          <em>Manage Timeline MCP endpoint</em>, and copy the MCP endpoint URL shown there.
+        </li>
         <li>
           Click <em>New key</em>, give it a label (e.g. "Claude Desktop — personal mac"), and copy
           the one-time plaintext.
@@ -202,25 +207,71 @@ GITHUB_APP_CLIENT_SECRET=...</code></pre>
         <li>
           In the consuming agent, add an MCP server with:
           <ul>
-            <li>URL: <code>https://thetimeline.cc/api/mcp/server</code></li>
+            <li>URL: <code>&lt;your Timeline origin&gt;/api/mcp/server</code></li>
             <li>Header: <code>Authorization: Bearer tla_...</code></li>
           </ul>
         </li>
       </ol>
       <p>
-        The server speaks MCP protocol <code>2024-11-05</code> over streamable HTTP. Methods:
+        Use Streamable HTTP / remote URL client settings, not legacy SSE. Timeline currently
+        advertises MCP protocol <code>2024-11-05</code> during <code>initialize</code> and exposes a
+        single HTTP JSON-RPC endpoint at <code>/api/mcp/server</code>. Methods:
         <code>initialize</code>, <code>tools/list</code>, <code>tools/call</code>,
         <code>resources/list</code>, <code>resources/read</code>, <code>prompts/list</code>,
         <code>prompts/get</code>. Tools exposed:
       </p>
+      <p>Codex CLI users can connect it with an environment-backed bearer token:</p>
+      <pre><code>export TIMELINE_MCP_KEY="tla_..."
+codex mcp add timeline --url "&lt;copied MCP endpoint URL&gt;" --bearer-token-env-var TIMELINE_MCP_KEY</code></pre>
+      <p>Remote-MCP JSON clients can use the same endpoint and bearer key:</p>
+      <pre><code>{
+  "mcpServers": {
+    "timeline": {
+      "type": "streamable-http",
+      "url": "&lt;copied MCP endpoint URL&gt;",
+      "headers": {
+        "Authorization": "Bearer tla_..."
+      }
+    }
+  }
+}</code></pre>
+      <p>
+        ChatGPT can create apps from remote MCP servers in Developer mode:
+        <strong>Settings → Apps &amp; Connectors → Advanced settings → Developer mode</strong>, then
+        create an app/connector and use the copied MCP endpoint URL as the connector URL. OpenAI's
+        ChatGPT app flow currently documents OAuth, no-auth, and mixed auth for created apps;
+        Timeline's outbound endpoint currently uses static bearer keys, so a first-class ChatGPT
+        connector needs an OAuth-backed auth path or bridge before it is a one-click setup.
+      </p>
       <ul>
+        <li>
+          <code>timeline.retrieve_workspace_context</code> — broad read-only retrieval across
+          objects, notes, events, tasks, boards, calendar, documents, and route guides
+        </li>
         <li><code>timeline.search_events</code> — semantic search across raw events</li>
         <li>
           <code>timeline.get_event</code> / <code>timeline.list_events</code> — fetch + paginate
         </li>
         <li><code>timeline.get_entity</code> — lookup person / company / project / topic</li>
         <li>
-          <code>timeline.search_documents</code> — semantic search across the team document drive
+          <code>timeline.get_object</code>, <code>timeline.search_objects</code>,
+          <code>timeline.list_objects</code>, <code>timeline.list_tasks</code> — read workspace
+          objects and tasks
+        </li>
+        <li><code>timeline.search_boards</code> — read boards and matching board items</li>
+        <li>
+          <code>timeline.list_calendar_events</code>, <code>timeline.get_calendar_event</code>,
+          <code>timeline.resolve_time_context</code> — read calendar state and resolve date ranges
+        </li>
+        <li>
+          <code>timeline.search_documents</code>, <code>timeline.search_documents_structured</code>,
+          <code>timeline.get_document</code>, <code>timeline.get_document_chunk</code>,
+          <code>timeline.list_recent_document_changes</code> — search and inspect team documents
+        </li>
+        <li>
+          <code>timeline.list_integrations</code>, <code>timeline.search_integration_events</code>,
+          <code>timeline.get_integration_resource</code> — inspect connected integrations and synced
+          external-resource history
         </li>
       </ul>
       <p>
@@ -232,7 +283,8 @@ GITHUB_APP_CLIENT_SECRET=...</code></pre>
       </p>
       <p>
         Wildcard CORS is set so browser-based agents work; Authorization-header auth means cookies
-        cannot authenticate the cross-origin call. Per-IP rate limit 600/min.
+        cannot authenticate the cross-origin call. When proxy IP headers are available, requests are
+        rate-limited per IP at 600/min.
       </p>
 
       <h2 id="sync">How sync runs</h2>

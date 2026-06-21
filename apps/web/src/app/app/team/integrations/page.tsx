@@ -123,7 +123,14 @@ export default async function IntegrationsPage({
             <ActionChip href="/app/me/mcp-servers" label="Personal MCP →" />
           </div>
         </details>
-        <AddCustomMcpServerLauncher ownership="team" />
+        <div className="flex flex-wrap items-center gap-2">
+          {isAdmin ? (
+            <Button asChild variant="outline" size="sm">
+              <Link href="/app/team/mcp-share">Manage Timeline MCP endpoint</Link>
+            </Button>
+          ) : null}
+          <AddCustomMcpServerLauncher ownership="team" />
+        </div>
       </div>
 
       {params.connected ? (
@@ -147,6 +154,20 @@ export default async function IntegrationsPage({
           attention. Use the affected provider below to reconnect credentials, replace the
           connection, or narrow shared sources.
         </div>
+      ) : null}
+
+      {isAdmin ? (
+        <section className="space-y-3 border-y border-border py-5">
+          <SectionHeading>Expose Timeline as an MCP server</SectionHeading>
+          <p className="max-w-2xl text-sm text-fg-muted">
+            Let external agents read this team&apos;s timeline events through a bearer-keyed MCP
+            endpoint. This is outbound access: external tools reading from Timeline, not Timeline
+            reading from them.
+          </p>
+          <Button asChild variant="outline" size="sm">
+            <Link href="/app/team/mcp-share">Manage MCP endpoint</Link>
+          </Button>
+        </section>
       ) : null}
 
       {totalConnected > 0 || totalSharedSources > 0 ? (
@@ -263,18 +284,6 @@ export default async function IntegrationsPage({
           )}
         </div>
       ) : null}
-
-      <section className="space-y-3 border-t border-border pt-6">
-        <SectionHeading>Expose Timeline as an MCP server</SectionHeading>
-        <p className="text-sm text-fg-muted">
-          Let external agents read this team&apos;s timeline events through a bearer-keyed MCP
-          endpoint. This is outbound access: external tools reading from Timeline, not Timeline
-          reading from them.
-        </p>
-        <Button asChild variant="outline" size="sm">
-          <Link href="/app/team/mcp-share">Manage MCP endpoint</Link>
-        </Button>
-      </section>
     </div>
   );
 }
