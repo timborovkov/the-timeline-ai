@@ -74,9 +74,9 @@ export default async function IntegrationsPage({
       : [];
   const memberUserMap = new Map(memberUsers.map((u) => [u.id, u] as const));
   const nativeCatalog = integrationsLib.listAvailableProviders();
-  const mcpCatalog = integrationsLib.listCatalog().filter((c) => c.kind === 'mcp' && c.mcpUrl);
+  const mcpCatalog = integrationsLib.listCatalog().filter((c) => c.kind === 'mcp');
   const connectedUrls = new Set(mcpServers.map((s) => s.url));
-  const mcpCatalogAvailable = mcpCatalog.filter((c) => !connectedUrls.has(c.mcpUrl ?? ''));
+  const mcpCatalogAvailable = mcpCatalog.filter((c) => !c.mcpUrl || !connectedUrls.has(c.mcpUrl));
 
   const totalConnected = connected.length + mcpServers.length;
   const totalCatalog = nativeCatalog.length + mcpCatalogAvailable.length;
@@ -262,9 +262,10 @@ export default async function IntegrationsPage({
               description: c.description,
               logo: c.logo,
               category: c.category,
-              authType: c.mcpAuthType ?? 'none',
+              authType: c.mcpAuthType ?? null,
               authHint: c.mcpAuthHint ?? null,
               status: c.status,
+              ingestStatus: c.ingestStatus,
             }))}
           />
         </section>
