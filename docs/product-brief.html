@@ -11,11 +11,11 @@
     <main id="main">
       <h1>The Timeline — Product Brief</h1>
       <div class="meta">
-        <span class="kind">Product brief</span><span>Last updated 2026-05-28</span>
+        <span class="kind">Product brief</span><span>Last updated 2026-06-22</span>
       </div>
       <p class="tldr">
-        Multi-tenant team memory: voice-, chat-, and email-first capture, agentically compiled into
-        a searchable history of who did what — with auditable citations on every answer.
+        Capture work as it happens, then generate cited updates, digests, handoffs, answers, and
+        operational memory from the evidence.
       </p>
 
       <nav class="toc" aria-label="On this page">
@@ -40,16 +40,26 @@
 
       <h2 id="what-were-building">What we're building</h2>
       <p>
-        A multi-tenant team memory and object management system that replaces the patchwork of CRMs,
-        internal wikis, FAQs, and TODO lists. Team members capture work as it happens — voice notes
-        after a call, a forwarded email, a quick text dump at end of day — and The Timeline
-        agentically compiles it into a searchable, queryable history of who did what, talked to
-        whom, decided what, and what changed.
+        An evidence-derived operating record that turns everyday work into cited updates, digests,
+        handoffs, answers, and object memory. Team members capture work as it happens — voice notes
+        after a call, a forwarded email, a quick text dump at end of day, Slack messages, meeting
+        transcripts, documents, and integration events — and The Timeline compiles it into a
+        searchable event history of who did what, talked to whom, decided what, what changed, and
+        why the system believes it.
       </p>
       <p>
         The interaction model is voice-first and chat-first. People resist updating systems of
-        record because the systems demand structure up front. The Timeline accepts unstructured
-        capture and <em>derives</em> the structure, so the cost of contributing is near zero.
+        record because those systems demand structure up front and then ask the team to report on
+        work it already did. The Timeline accepts unstructured capture and <em>derives</em> the
+        structure, so the cost of contributing is near zero.
+      </p>
+      <p>
+        The larger thesis: manually maintained systems of record are becoming obsolete for many
+        teams. CRMs, project trackers, wikis, and status reports only know what people remembered to
+        update. The actual source of truth is the event stream — the conversations, meetings,
+        commits, documents, customer promises, decisions, and artifacts created while work happens.
+        Timeline preserves that event history, extracts operational state from it, and keeps the
+        important state approval-backed and cited.
       </p>
 
       <h2 id="problem">Problem</h2>
@@ -65,23 +75,32 @@
         Conversations with clients, decisions made in meetings, the reasoning behind a choice three
         months ago — all of it lives in people's heads or scattered across tools.
       </p>
+      <p>
+        The most visible symptom is duplicate communication work: stakeholder updates, daily
+        digests, handoffs, project summaries, CRM hygiene, and "what happened with this account?"
+        questions are reconstructed manually from work that already happened somewhere else.
+      </p>
 
       <h2 id="solution">Solution</h2>
       <p>
         One ingest pipeline, many capture surfaces. Voice notes, written notes, forwarded emails,
-        Telegram messages, team documents, and later third-party systems all flow into the same
-        event stream. An LLM extracts useful facts ("Tim discussed SaaS licensing with John Ternus
-        at Apple"), links them to existing objects when possible, and proposes approval-backed
-        object changes only when the evidence is durable. Documents are processed into searchable
-        chunks with version-aware citations. Calendar suggestions use the same approval-backed path:
-        clear deadlines, meetings, recurring calls, proposed time slots, confirmations, and
-        reschedules become reviewable calendar changes before they materialize. Everything important
-        is embedded and indexed. An agent answers questions over the timeline and knowledge base:
+        Telegram and Slack messages, team documents, meetings, calendar rows, and third-party
+        systems all flow into the same event stream. An LLM extracts useful facts ("Tim discussed
+        SaaS licensing with John Ternus at Apple"), links them to existing objects when possible,
+        and proposes approval-backed object changes only when the evidence is durable. Documents are
+        processed into searchable chunks with version-aware citations. Calendar suggestions use the
+        same approval-backed path: clear deadlines, meetings, recurring calls, proposed time slots,
+        confirmations, and reschedules become reviewable calendar changes before they materialize.
+        Everything important is embedded and indexed. An agent answers questions over the event
+        history and knowledge base:
         <em>what did the team work on yesterday</em>,
         <em>what changed on the Apple licensing deal</em>, <em>what's outstanding for Acme</em>,
         <em>what are our office rules</em>, <em>which projects have gone stale</em>.
       </p>
-      <p>The product is intentionally low-structure on input and high-structure on output.</p>
+      <p>
+        The product is intentionally low-structure on input and high-structure on output: the team
+        does the work, Timeline generates the communication and memory from the evidence.
+      </p>
 
       <h2 id="target-user">Target user</h2>
       <p>

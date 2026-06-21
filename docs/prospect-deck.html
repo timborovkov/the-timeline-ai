@@ -1,0 +1,720 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>The Timeline — Prospect Deck</title>
+    <style>
+      :root {
+        --bg: #f7f4ee;
+        --ink: #18201e;
+        --muted: #5f6862;
+        --line: #d8d0c2;
+        --green: #155e50;
+        --green-soft: #e1f1e9;
+        --amber: #d8a93b;
+        --amber-soft: #fff1c2;
+        --coral: #c95e4d;
+        --coral-soft: #f7d8d1;
+        --blue: #315c72;
+        --blue-soft: #dceaf0;
+        --white: #fff;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html {
+        scroll-snap-type: y mandatory;
+        background: var(--bg);
+      }
+
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--ink);
+        font-family:
+          ui-sans-serif,
+          system-ui,
+          -apple-system,
+          BlinkMacSystemFont,
+          'Segoe UI',
+          sans-serif;
+      }
+
+      .skip {
+        position: absolute;
+        left: -9999px;
+      }
+
+      .skip:focus {
+        left: 1rem;
+        top: 1rem;
+        z-index: 10;
+        background: var(--white);
+        border: 1px solid var(--line);
+        padding: 0.5rem 0.75rem;
+      }
+
+      .deck {
+        width: 100%;
+      }
+
+      .slide {
+        min-height: 100vh;
+        scroll-snap-align: start;
+        display: grid;
+        grid-template-rows: 1fr auto;
+        padding: clamp(2rem, 5vw, 4.5rem);
+        border-bottom: 1px solid var(--line);
+        page-break-after: always;
+      }
+
+      .slide.dark {
+        background: var(--green);
+        color: var(--white);
+      }
+
+      .frame {
+        width: min(1120px, 100%);
+        margin: 0 auto;
+      }
+
+      .eyebrow,
+      .footer,
+      .num,
+      .tag {
+        font-family: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+        text-transform: uppercase;
+        letter-spacing: 0.12em;
+      }
+
+      .eyebrow {
+        color: var(--green);
+        font-size: 0.78rem;
+        font-weight: 700;
+      }
+
+      .dark .eyebrow {
+        color: #e6f4ef;
+      }
+
+      h1,
+      h2 {
+        letter-spacing: -0.04em;
+        line-height: 1.02;
+        margin: 0;
+      }
+
+      h1 {
+        max-width: 760px;
+        margin-top: 4.5rem;
+        font-size: clamp(3.2rem, 8vw, 6.5rem);
+      }
+
+      h2 {
+        max-width: 1000px;
+        font-size: clamp(2.4rem, 5vw, 4.2rem);
+      }
+
+      p {
+        margin: 0;
+        color: var(--muted);
+        font-size: clamp(1.2rem, 2vw, 1.75rem);
+        line-height: 1.35;
+      }
+
+      .dark p {
+        color: #e6f4ef;
+      }
+
+      .lead {
+        max-width: 860px;
+        margin-top: 2rem;
+      }
+
+      .signal {
+        color: var(--green);
+      }
+
+      .dark .signal {
+        color: var(--white);
+      }
+
+      .grid {
+        display: grid;
+        gap: clamp(1rem, 2vw, 1.75rem);
+      }
+
+      .cols-2 {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .cols-3 {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+
+      .cols-4 {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+      }
+
+      .cards {
+        margin-top: clamp(3rem, 7vw, 5rem);
+      }
+
+      .card {
+        min-height: 12rem;
+        background: var(--white);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: clamp(1.5rem, 2.5vw, 2.25rem);
+      }
+
+      .card.green {
+        background: var(--green-soft);
+        border-left: 8px solid var(--green);
+      }
+
+      .card.amber {
+        background: var(--amber-soft);
+        border-left: 8px solid var(--amber);
+      }
+
+      .card.coral {
+        background: var(--coral-soft);
+        border-left: 8px solid var(--coral);
+      }
+
+      .card.blue {
+        background: var(--blue-soft);
+        border-left: 8px solid var(--blue);
+      }
+
+      .card h3,
+      .step h3 {
+        margin: 0 0 1.25rem;
+        color: var(--green);
+        font-size: clamp(1.5rem, 2vw, 2rem);
+        line-height: 1.1;
+      }
+
+      .card p,
+      .step p {
+        font-size: clamp(1.05rem, 1.45vw, 1.35rem);
+        line-height: 1.28;
+      }
+
+      .note {
+        max-width: 650px;
+        margin-top: 3.5rem;
+        border-left: 4px solid var(--green);
+        padding-left: 1.25rem;
+        color: var(--ink);
+        font-size: clamp(1.35rem, 2.2vw, 2rem);
+        font-weight: 700;
+        line-height: 1.2;
+      }
+
+      .strip {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: center;
+        gap: 1.25rem;
+        margin-top: 4rem;
+      }
+
+      .tag {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 8.5rem;
+        min-height: 4.25rem;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--green-soft);
+        color: var(--green);
+        font-size: 1rem;
+        font-weight: 700;
+        text-align: center;
+      }
+
+      .tag:nth-child(2n) {
+        background: var(--blue-soft);
+        color: var(--blue);
+      }
+
+      .tag:nth-child(3n) {
+        background: var(--amber-soft);
+      }
+
+      .tag:nth-child(4n) {
+        background: var(--coral-soft);
+      }
+
+      .answer {
+        margin-top: 3.5rem;
+        background: var(--green-soft);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: clamp(1.75rem, 3vw, 2.75rem);
+      }
+
+      .integration-board {
+        margin-top: clamp(2.5rem, 5vw, 4rem);
+        display: grid;
+        grid-template-columns: 0.95fr 1.05fr;
+        gap: clamp(1rem, 2vw, 1.5rem);
+      }
+
+      .integration-panel {
+        background: var(--white);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: clamp(1.35rem, 2vw, 2rem);
+      }
+
+      .integration-panel h3 {
+        margin: 0 0 1rem;
+        color: var(--green);
+        font-size: clamp(1.3rem, 1.8vw, 1.8rem);
+        line-height: 1.1;
+      }
+
+      .integration-list {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.6rem;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+
+      .integration-list li {
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        padding: 0.45rem 0.7rem;
+        background: var(--green-soft);
+        color: var(--green);
+        font-size: clamp(0.9rem, 1.15vw, 1.05rem);
+        font-weight: 700;
+      }
+
+      .answer ul,
+      .bullets {
+        margin: 1.5rem 0 0;
+        padding-left: 1.25rem;
+      }
+
+      .answer li,
+      .bullets li {
+        margin: 0.8rem 0;
+        color: var(--ink);
+        font-size: clamp(1.1rem, 1.7vw, 1.55rem);
+        line-height: 1.25;
+      }
+
+      .citation {
+        display: inline-block;
+        border: 1px solid color-mix(in srgb, var(--green) 30%, transparent);
+        background: var(--white);
+        border-radius: 4px;
+        padding: 0.08rem 0.35rem;
+        color: var(--green);
+        font-family: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+        font-size: 0.78em;
+      }
+
+      .steps {
+        margin-top: 4rem;
+      }
+
+      .step {
+        position: relative;
+        min-height: 13rem;
+        background: var(--white);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 2rem;
+      }
+
+      .dot {
+        display: inline-grid;
+        place-items: center;
+        width: 2.8rem;
+        height: 2.8rem;
+        margin-bottom: 2rem;
+        border-radius: 999px;
+        background: var(--green);
+        color: var(--white);
+        font-weight: 800;
+      }
+
+      .dot.later {
+        background: var(--amber);
+      }
+
+      .footer-row {
+        width: min(1120px, 100%);
+        margin: 2rem auto 0;
+        display: flex;
+        justify-content: space-between;
+        gap: 2rem;
+        color: var(--muted);
+      }
+
+      .dark .footer-row {
+        color: #e6f4ef;
+      }
+
+      .footer,
+      .num {
+        font-size: 0.8rem;
+      }
+
+      @media (max-width: 820px) {
+        html {
+          scroll-snap-type: none;
+        }
+
+        .slide {
+          min-height: auto;
+        }
+
+        .cols-2,
+        .cols-3,
+        .cols-4,
+        .integration-board {
+          grid-template-columns: 1fr;
+        }
+
+        h1 {
+          margin-top: 3rem;
+        }
+      }
+
+      @media print {
+        html {
+          scroll-snap-type: none;
+        }
+
+        .slide {
+          min-height: 100vh;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <a class="skip" href="#main">Skip to content</a>
+    <main id="main" class="deck">
+      <section class="slide">
+        <div class="frame">
+          <div class="eyebrow">Prospect deck</div>
+          <h1>The work becomes the record.</h1>
+          <p class="lead">
+            Timeline captures work as it happens, then generates cited updates, digests, handoffs,
+            and answers from the evidence.
+          </p>
+          <div class="card" style="max-width: 330px; margin-top: 4rem">
+            <h3>No new process.</h3>
+            <p>No manual reporting. No "where was that decided?" archaeology.</p>
+          </div>
+        </div>
+        <div class="footer-row">
+          <span class="footer">The Timeline</span>
+          <span class="num">01</span>
+        </div>
+      </section>
+
+      <section class="slide">
+        <div class="frame">
+          <h2>The old way is breaking</h2>
+          <p class="lead">Teams do the work, then separately document that the work happened.</p>
+          <div class="grid cols-3 cards">
+            <div class="card coral">
+              <p>Meetings create decisions, but the decision disappears into notes.</p>
+            </div>
+            <div class="card amber">
+              <p>Slack creates commitments, but status still has to be written later.</p>
+            </div>
+            <div class="card blue">
+              <p>CRMs and trackers only know what someone remembered to update.</p>
+            </div>
+          </div>
+          <div class="note">
+            Stakeholder updates, handoffs, CRM hygiene, and project reporting become duplicate
+            labor.
+          </div>
+        </div>
+        <div class="footer-row">
+          <span class="footer">The Timeline</span>
+          <span class="num">02</span>
+        </div>
+      </section>
+
+      <section class="slide">
+        <div class="frame">
+          <h2>Timeline removes the second pass</h2>
+          <p class="lead">
+            Your team keeps communicating and shipping. Timeline turns that activity into the
+            operational record.
+          </p>
+          <ul class="bullets">
+            <li>Capture Slack, meetings, docs, email, tasks, and customer conversations.</li>
+            <li>Preserve raw evidence so every answer can point back to the source.</li>
+            <li>Extract updates, commitments, decisions, risks, and project/client memory.</li>
+            <li>Let people ask what happened without interrupting the team.</li>
+          </ul>
+        </div>
+        <div class="footer-row">
+          <span class="footer">The Timeline</span>
+          <span class="num">03</span>
+        </div>
+      </section>
+
+      <section class="slide">
+        <div class="frame">
+          <h2>What teams get</h2>
+          <p class="lead">Generated communication and memory from the work already happening.</p>
+          <div class="grid cols-4 cards">
+            <div class="card">
+              <h3>Updates</h3>
+              <p>Answer stakeholder questions from the work itself.</p>
+            </div>
+            <div class="card">
+              <h3>Daily digests</h3>
+              <p>Show what changed, what moved, and what needs attention.</p>
+            </div>
+            <div class="card">
+              <h3>Handoffs</h3>
+              <p>Bring a teammate into context without a meeting.</p>
+            </div>
+            <div class="card">
+              <h3>Answers</h3>
+              <p>Ask why something happened and get cited sources.</p>
+            </div>
+          </div>
+          <div class="note">The value is fewer reports to write manually.</div>
+        </div>
+        <div class="footer-row">
+          <span class="footer">The Timeline</span>
+          <span class="num">04</span>
+        </div>
+      </section>
+
+      <section class="slide">
+        <div class="frame">
+          <h2>It captures the places work already happens</h2>
+          <p class="lead">
+            No migration. No rip-and-replace. Conversations, meetings, docs, projects, code,
+            customers, support, and internal tools all feed the same evidence model.
+          </p>
+          <div class="integration-board">
+            <div class="integration-panel">
+              <h3>Conversations and meetings</h3>
+              <ul class="integration-list">
+                <li>Slack</li>
+                <li>Telegram</li>
+                <li>Email</li>
+                <li>Discord</li>
+                <li>Google Meet</li>
+                <li>Microsoft Teams</li>
+                <li>Zoom</li>
+              </ul>
+            </div>
+            <div class="integration-panel">
+              <h3>Docs, projects, and code</h3>
+              <ul class="integration-list">
+                <li>Google Drive</li>
+                <li>Confluence</li>
+                <li>Notion</li>
+                <li>Linear</li>
+                <li>Jira</li>
+                <li>Asana</li>
+                <li>Monday.com</li>
+                <li>Trello</li>
+                <li>Basecamp</li>
+                <li>GitHub</li>
+                <li>GitLab</li>
+                <li>Bitbucket</li>
+              </ul>
+            </div>
+            <div class="integration-panel">
+              <h3>Customer and operations systems</h3>
+              <ul class="integration-list">
+                <li>HubSpot</li>
+                <li>Salesforce</li>
+                <li>Pipedrive</li>
+                <li>Attio</li>
+                <li>Close</li>
+                <li>Zendesk</li>
+                <li>Intercom</li>
+                <li>Sentry</li>
+                <li>Datadog</li>
+              </ul>
+            </div>
+            <div class="integration-panel">
+              <h3>Direct capture and live tools</h3>
+              <ul class="integration-list">
+                <li>Web notes</li>
+                <li>Uploads</li>
+                <li>Calendar</li>
+                <li>Documents</li>
+                <li>Custom MCPs</li>
+                <li>Internal tools</li>
+                <li>Long-tail SaaS</li>
+              </ul>
+            </div>
+          </div>
+          <div class="answer">
+            <h3>Timeline evidence layer</h3>
+            <p>Captures, syncs, cites, extracts, and proposes durable memory.</p>
+          </div>
+        </div>
+        <div class="footer-row">
+          <span class="footer">The Timeline</span>
+          <span class="num">05</span>
+        </div>
+      </section>
+
+      <section class="slide">
+        <div class="frame">
+          <h2>A normal stakeholder question</h2>
+          <p class="lead">Instead of asking three people and searching five tools, ask Timeline.</p>
+          <div class="grid cols-2 cards">
+            <div class="card">
+              <h3>"What changed with Acme, and what did we promise next?"</h3>
+            </div>
+            <div class="answer" style="margin-top: 0">
+              <h3>Timeline returns</h3>
+              <ul>
+                <li>The short update.</li>
+                <li>Open commitments.</li>
+                <li>Risks and blockers.</li>
+                <li>Citations to source events.</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+        <div class="footer-row">
+          <span class="footer">The Timeline</span>
+          <span class="num">06</span>
+        </div>
+      </section>
+
+      <section class="slide">
+        <div class="frame">
+          <h2>Why teams trust it</h2>
+          <p class="lead">Timeline is not a black-box summary pasted over company memory.</p>
+          <div class="grid cards">
+            <div class="card">
+              <h3>Evidence first</h3>
+              <p>Raw events remain intact. Summaries point back to the source.</p>
+            </div>
+            <div class="card">
+              <h3>Approval-backed state</h3>
+              <p>
+                Important facts, commitments, and object memory can be reviewed before becoming
+                durable.
+              </p>
+            </div>
+            <div class="card">
+              <h3>Permission-aware</h3>
+              <p>Team, private, and specific-user visibility are part of the model.</p>
+            </div>
+          </div>
+        </div>
+        <div class="footer-row">
+          <span class="footer">The Timeline</span>
+          <span class="num">07</span>
+        </div>
+      </section>
+
+      <section class="slide">
+        <div class="frame">
+          <h2>Who feels the pain first</h2>
+          <p class="lead">Teams where context loss becomes client risk, delivery drag, or noise.</p>
+          <div class="grid cols-3 cards">
+            <div class="card green">
+              <h3>Agencies and consultancies</h3>
+              <p>
+                Client promises, project context, and status updates are scattered across calls.
+              </p>
+            </div>
+            <div class="card blue">
+              <h3>Implementation and CS teams</h3>
+              <p>Handoffs break when growth, onboarding, success, and support disagree.</p>
+            </div>
+            <div class="card amber">
+              <h3>Fast-moving operators</h3>
+              <p>Founders, COOs, and chiefs of staff need to know what changed.</p>
+            </div>
+          </div>
+        </div>
+        <div class="footer-row">
+          <span class="footer">The Timeline</span>
+          <span class="num">08</span>
+        </div>
+      </section>
+
+      <section class="slide">
+        <div class="frame">
+          <h2>The path to a self-maintaining system</h2>
+          <p class="lead">Start with generated communication. Expand into operational state.</p>
+          <div class="grid cols-4 steps">
+            <div class="step">
+              <span class="dot">1</span>
+              <h3>Capture</h3>
+              <p>Work enters as events.</p>
+            </div>
+            <div class="step">
+              <span class="dot">2</span>
+              <h3>Generate</h3>
+              <p>Updates, digests, handoffs, answers.</p>
+            </div>
+            <div class="step">
+              <span class="dot later">3</span>
+              <h3>Remember</h3>
+              <p>Approved client and project state.</p>
+            </div>
+            <div class="step">
+              <span class="dot later">4</span>
+              <h3>Replace</h3>
+              <p>Less manual CRM and tracker upkeep.</p>
+            </div>
+          </div>
+        </div>
+        <div class="footer-row">
+          <span class="footer">The Timeline</span>
+          <span class="num">09</span>
+        </div>
+      </section>
+
+      <section class="slide dark">
+        <div class="frame">
+          <div class="eyebrow">Pilot</div>
+          <h2>Try it on one real project.</h2>
+          <p class="lead">
+            Connect the tools your team already uses. Timeline will generate the next update,
+            digest, handoff, and answer from the evidence.
+          </p>
+          <div class="grid cols-2 cards">
+            <div class="card">
+              <h3>Pilot goal</h3>
+              <p>Prove your team can stop manually reconstructing what already happened.</p>
+            </div>
+            <div class="card">
+              <h3>Success signal</h3>
+              <p>Stakeholders trust the generated update because every claim has a source.</p>
+            </div>
+          </div>
+        </div>
+        <div class="footer-row">
+          <span class="footer">The Timeline</span>
+          <span class="num">10</span>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

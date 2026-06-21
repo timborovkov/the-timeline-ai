@@ -5,23 +5,27 @@
 <h1 align="center">The Timeline</h1>
 
 <p align="center">
-  Open-source team memory: capture work as it happens, then query it with cited answers.
+  Capture work as it happens, then generate cited updates, digests, handoffs, and answers.
 </p>
 
-The Timeline is a multi-tenant knowledge system for teams that need a reliable
-record of what happened, what changed, and why. It accepts messy real-world
+The Timeline is an evidence-derived operating record for teams that should not
+have to manually report on work they already did. It accepts messy real-world
 inputs — notes, voice memos, email, Slack, Telegram, documents, meetings, and
-integration events — and turns them into an auditable timeline of raw events,
-extracted facts, workspace objects, calendar entries, approvals, and searchable
-documents.
+integration events — and turns them into an auditable event history of raw
+events, extracted facts, workspace objects, calendar entries, approvals, and
+searchable documents.
 
-Every agent answer is grounded in evidence. Raw events remain immutable, derived
-facts can be reprocessed as extraction improves, and citations point back to the
+The work becomes the record: updates, daily digests, handoffs, stakeholder
+answers, project memory, and customer context are generated from evidence
+instead of being rewritten by hand. Raw events remain immutable, derived facts
+can be reprocessed as extraction improves, and citations point back to the
 source material instead of hiding behind black-box summaries.
 
 ## What You Can Build With It
 
 - A searchable team activity archive with source-level citations.
+- Cited updates, daily digests, and handoff briefs generated from the work your
+  team already did.
 - Global search across app pages, timeline events, documents, objects, tasks,
   boards, calendar events, and integration setup surfaces.
 - A chat interface that can answer questions across events, documents,
@@ -173,6 +177,14 @@ boundaries.
 
 - [`docs/product-brief.html`](./docs/product-brief.html) — product vision,
   principles, and architecture overview.
+- [`docs/prospect-brief.md`](./docs/prospect-brief.md) — pilot brief for early
+  prospects, including ingest surfaces and integration breadth.
+- [`docs/prospect-deck.html`](./docs/prospect-deck.html) — self-contained
+  prospect deck with the integration story.
+- [`docs/demo-script.md`](./docs/demo-script.md) — crisp Acme demo narrative:
+  stakeholder question → cited answer from Slack, meeting, docs, and tasks.
+- [`docs/investor-memo.md`](./docs/investor-memo.md) — market transition from
+  manual systems of record to event-derived systems of record.
 - [`docs/captured-files.md`](./docs/captured-files.md) — captured-file vs.
   document semantics, processing rules, and follow-up implementation bar.
 - [`docs/work-system-plan.md`](./docs/work-system-plan.md) — priority plan for
