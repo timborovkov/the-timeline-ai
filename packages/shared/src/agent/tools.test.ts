@@ -65,6 +65,10 @@ interface FakeScope {
   boards: {
     listBoards: ReturnType<typeof vi.fn>;
     getBoard: ReturnType<typeof vi.fn>;
+    getBoardItem: ReturnType<typeof vi.fn>;
+    addBoardItem: ReturnType<typeof vi.fn>;
+    updateBoardItem: ReturnType<typeof vi.fn>;
+    removeBoardItem: ReturnType<typeof vi.fn>;
     listObjectBoardContext: ReturnType<typeof vi.fn>;
   };
 }
@@ -114,6 +118,10 @@ function makeFakeScope(): FakeScope {
     boards: {
       listBoards: vi.fn(),
       getBoard: vi.fn(),
+      getBoardItem: vi.fn(),
+      addBoardItem: vi.fn(),
+      updateBoardItem: vi.fn(),
+      removeBoardItem: vi.fn(),
       listObjectBoardContext: vi.fn(),
     },
   };
@@ -159,6 +167,43 @@ function calendarEventFixture(overrides: Record<string, unknown> = {}) {
     updatedAt: new Date('2026-06-01T12:00:00.000Z'),
     deletedAt: null,
     redacted: false,
+    ...overrides,
+  };
+}
+
+function boardItemFixture(overrides: Record<string, unknown> = {}) {
+  return {
+    id: BOARD_ITEM_ID,
+    boardId: BOARD_ID,
+    entityId: OBJECT_ID,
+    laneId: LANE_ID,
+    position: 0,
+    responsibleUserId: null,
+    dueAt: null,
+    priority: null,
+    nextStep: null,
+    notes: null,
+    customFields: {},
+    archivedAt: null,
+    createdAt: new Date('2026-06-01T09:00:00.000Z'),
+    updatedAt: new Date('2026-06-14T09:00:00.000Z'),
+    object: {
+      id: OBJECT_ID,
+      type: 'deal',
+      canonicalName: 'AuditAI pilot',
+      status: 'open',
+      stage: null,
+      priority: null,
+      ownerUserId: null,
+      assigneeUserId: null,
+      dueAt: null,
+      agentSuggested: false,
+      archivedAt: null,
+      aliases: [],
+      metadata: {},
+      updatedAt: new Date('2026-06-14T09:00:00.000Z'),
+      createdAt: new Date('2026-06-01T09:00:00.000Z'),
+    },
     ...overrides,
   };
 }
@@ -598,6 +643,164 @@ describe('buildAgentTools — team isolation', () => {
       error: 'stale_state',
       expected_object_ids: [OBJECT_ID, otherId].sort(),
       current_object_ids: [OBJECT_ID, resolvedId].sort(),
+    });
+  });
+
+  it('execute_board_add_item requires approval and places an object on a board lane', async () => {
+    const scope = makeFakeScope();
+    scope.boards.addBoardItem.mockResolvedValue(
+      boardItemFixture({ nextStep: 'Send pilot proposal', priority: 2 }),
+    );
+    const tools = buildAgentTools(scope as unknown as TeamScope);
+    expect(tools.execute_board_add_item?.needsApproval).toBe(true);
+    const exec = tools.execute_board_add_item?.execute as (
+      input: unknown,
+      opts: unknown,
+    ) => Promise<unknown>;
+
+    const result = await exec(
+      {
+        boardId: BOARD_ID,
+        entityId: OBJECT_ID,
+        laneId: LANE_ID,
+        priority: 2,
+        nextStep: 'Send pilot proposal',
+        reason: 'User asked to add the pilot to the New lane.',
+      },
+      {},
+    );
+
+    expect(scope.boards.addBoardItem).toHaveBeenCalledWith(BOARD_ID, {
+      entityId: OBJECT_ID,
+      laneId: LANE_ID,
+      responsibleUserId: null,
+      dueAt: null,
+      priority: 2,
+      nextStep: 'Send pilot proposal',
+      notes: null,
+      customFields: {},
+      actor: { kind: 'agent', userId: scope.userId },
+    });
+    expect(result).toMatchObject({
+      ok: true,
+      board_id: BOARD_ID,
+      board_citation: `[board:${BOARD_ID}]`,
+      board_item_id: BOARD_ITEM_ID,
+      board_item_citation: `[board-item:${BOARD_ITEM_ID}]`,
+      object_id: OBJECT_ID,
+      object_citation: `[ent:${OBJECT_ID}]`,
+    });
+  });
+
+  it('execute_board_update_item rejects stale card state before moving it', async () => {
+    const scope = makeFakeScope();
+    const currentLaneId = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
+    scope.boards.getBoardItem.mockResolvedValue(boardItemFixture({ laneId: currentLaneId }));
+    const tools = buildAgentTools(scope as unknown as TeamScope);
+    const exec = tools.execute_board_update_item?.execute as (
+      input: unknown,
+      opts: unknown,
+    ) => Promise<unknown>;
+
+    const result = await exec(
+      {
+        itemId: BOARD_ITEM_ID,
+        expectedCurrent: { laneId: LANE_ID },
+        patch: { laneId: 'ffffffff-ffff-4fff-8fff-ffffffffffff' },
+        reason: 'User asked to move it to Proposal.',
+      },
+      {},
+    );
+
+    expect(scope.boards.updateBoardItem).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      ok: false,
+      error: 'stale_state',
+      board_item_citation: `[board-item:${BOARD_ITEM_ID}]`,
+      stale_fields: {
+        laneId: {
+          expected: LANE_ID,
+          current: currentLaneId,
+        },
+      },
+    });
+  });
+
+  it('execute_board_update_item requires expected state for every changed card field', async () => {
+    const scope = makeFakeScope();
+    scope.boards.getBoardItem.mockResolvedValue(
+      boardItemFixture({
+        dueAt: new Date('2026-06-20T09:00:00.000Z'),
+        laneId: LANE_ID,
+      }),
+    );
+    const tools = buildAgentTools(scope as unknown as TeamScope);
+    const exec = tools.execute_board_update_item?.execute as (
+      input: unknown,
+      opts: unknown,
+    ) => Promise<unknown>;
+
+    const result = await exec(
+      {
+        itemId: BOARD_ITEM_ID,
+        expectedCurrent: { laneId: LANE_ID },
+        patch: {
+          laneId: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+          dueAt: '2026-06-21T09:00:00.000Z',
+        },
+        reason: 'User asked to move it and change the due date.',
+      },
+      {},
+    );
+
+    expect(scope.boards.updateBoardItem).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      ok: false,
+      error: 'stale_state',
+      board_item_citation: `[board-item:${BOARD_ITEM_ID}]`,
+      stale_fields: {
+        dueAt: {
+          expected: 'missing_expected_current',
+          current: '2026-06-20T09:00:00.000Z',
+        },
+      },
+    });
+  });
+
+  it('execute_board_remove_item requires approval and removes only the board card', async () => {
+    const scope = makeFakeScope();
+    scope.boards.getBoardItem.mockResolvedValue(boardItemFixture());
+    scope.boards.removeBoardItem.mockResolvedValue(boardItemFixture({ archivedAt: new Date() }));
+    const tools = buildAgentTools(scope as unknown as TeamScope);
+    expect(tools.execute_board_remove_item?.needsApproval).toBe(true);
+    const exec = tools.execute_board_remove_item?.execute as (
+      input: unknown,
+      opts: unknown,
+    ) => Promise<unknown>;
+
+    const result = await exec(
+      {
+        itemId: BOARD_ITEM_ID,
+        expectedCurrent: {
+          boardId: BOARD_ID,
+          objectId: OBJECT_ID,
+          laneId: LANE_ID,
+        },
+        reason: 'User asked to remove this card from the board.',
+      },
+      {},
+    );
+
+    expect(scope.boards.removeBoardItem).toHaveBeenCalledWith(BOARD_ITEM_ID, {
+      kind: 'agent',
+      userId: scope.userId,
+    });
+    expect(scope.objects.archiveObject).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      ok: true,
+      board_id: BOARD_ID,
+      board_item_id: BOARD_ITEM_ID,
+      removed: true,
     });
   });
 
