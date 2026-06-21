@@ -726,6 +726,47 @@ describe('buildAgentTools — team isolation', () => {
     });
   });
 
+  it('execute_board_update_item requires expected state for every changed card field', async () => {
+    const scope = makeFakeScope();
+    scope.boards.getBoardItem.mockResolvedValue(
+      boardItemFixture({
+        dueAt: new Date('2026-06-20T09:00:00.000Z'),
+        laneId: LANE_ID,
+      }),
+    );
+    const tools = buildAgentTools(scope as unknown as TeamScope);
+    const exec = tools.execute_board_update_item?.execute as (
+      input: unknown,
+      opts: unknown,
+    ) => Promise<unknown>;
+
+    const result = await exec(
+      {
+        itemId: BOARD_ITEM_ID,
+        expectedCurrent: { laneId: LANE_ID },
+        patch: {
+          laneId: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+          dueAt: '2026-06-21T09:00:00.000Z',
+        },
+        reason: 'User asked to move it and change the due date.',
+      },
+      {},
+    );
+
+    expect(scope.boards.updateBoardItem).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      ok: false,
+      error: 'stale_state',
+      board_item_citation: `[board-item:${BOARD_ITEM_ID}]`,
+      stale_fields: {
+        dueAt: {
+          expected: 'missing_expected_current',
+          current: '2026-06-20T09:00:00.000Z',
+        },
+      },
+    });
+  });
+
   it('execute_board_remove_item requires approval and removes only the board card', async () => {
     const scope = makeFakeScope();
     scope.boards.getBoardItem.mockResolvedValue(boardItemFixture());

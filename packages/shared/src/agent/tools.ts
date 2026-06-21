@@ -1135,8 +1135,16 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
           const current = await scope.boards.getBoardItem(input.itemId);
           if (!current) return { ok: false, error: 'not_found' };
           const staleFields: Record<string, { expected: unknown; current: unknown }> = {};
-          for (const [field, expected] of Object.entries(input.expectedCurrent)) {
+          for (const field of Object.keys(input.patch)) {
             const currentValue = currentBoardItemValue(current, field);
+            if (!(field in input.expectedCurrent)) {
+              staleFields[field] = {
+                expected: 'missing_expected_current',
+                current: normalizeBoardItemComparableValue(field, currentValue),
+              };
+              continue;
+            }
+            const expected = input.expectedCurrent[field];
             const normalizedExpected = normalizeBoardItemComparableValue(field, expected);
             const normalizedCurrent = normalizeBoardItemComparableValue(field, currentValue);
             if (!valuesMatchForApproval(normalizedCurrent, normalizedExpected)) {
