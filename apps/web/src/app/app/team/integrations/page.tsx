@@ -251,6 +251,10 @@ export default async function IntegrationsPage({
       {mcpCatalogAvailable.length > 0 ? (
         <section className="space-y-3">
           <SectionHeading>MCP servers</SectionHeading>
+          <p className="text-sm text-fg-muted">
+            MCP servers give the agent live tool access. They do not create timeline events unless
+            paired with native sync or custom ingestion.
+          </p>
           <McpCatalog
             entries={mcpCatalogAvailable.map((c) => ({
               id: c.id,
@@ -270,8 +274,8 @@ export default async function IntegrationsPage({
         <div className="rounded-sm border border-dashed border-border bg-surface p-6 text-sm text-fg-muted">
           <p className="mb-1 font-medium text-fg">No sources connected yet.</p>
           <p>
-            Connect Google Drive, Linear, or GitHub to sync work into the timeline, or add any
-            MCP-compatible server above.
+            Connect Google Drive, Linear, or GitHub to sync work into the timeline, or add an
+            MCP-compatible server for live agent tool access.
           </p>
           {isAdmin ? (
             <p className="mt-2">

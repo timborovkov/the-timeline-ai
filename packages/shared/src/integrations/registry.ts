@@ -27,6 +27,10 @@ import { linearProvider } from '#src/integrations/providers/linear.js';
 //   - `native_unconfigured` — adapter implemented, env credentials missing.
 //   - `mcp_available`     — connectable today via the custom-MCP flow.
 //   - `coming_soon`       — listed on the landing page; not yet routable.
+//
+// `ingestStatus` is intentionally separate from `status`: an integration can
+// be queryable through MCP today while its first-party timeline ingestion
+// adapter is still on the roadmap.
 
 const _registry: Record<string, IntegrationProvider> = {
   google_drive: googleDriveProvider,
@@ -57,6 +61,8 @@ export type IntegrationStatus =
   | 'mcp_available'
   | 'coming_soon';
 
+export type IntegrationIngestStatus = 'implemented' | 'coming_soon';
+
 export interface CatalogEntry {
   id: string;
   label: string;
@@ -67,6 +73,7 @@ export interface CatalogEntry {
   category: IntegrationCategory;
   kind: IntegrationKind;
   status: IntegrationStatus;
+  ingestStatus: IntegrationIngestStatus;
   /** True when shown on the landing-page integration cloud. */
   featured: boolean;
   /** Native adapters expose Connect on `/app/team/integrations`. */
@@ -109,6 +116,7 @@ const CATALOG_SEEDS: CatalogSeed[] = [
     kind: 'native',
     featured: true,
     connectablePath: '/app/team/integrations',
+    ingestStatus: 'implemented',
     examplePrompt: 'What shipped in last week’s releases?',
     envCheck: () => {
       const env = getEnv();
@@ -125,6 +133,7 @@ const CATALOG_SEEDS: CatalogSeed[] = [
     kind: 'native',
     featured: true,
     connectablePath: '/app/team/integrations',
+    ingestStatus: 'implemented',
     examplePrompt: 'Which ENG issues did Alice complete this week?',
     envCheck: () => {
       const env = getEnv();
@@ -141,6 +150,7 @@ const CATALOG_SEEDS: CatalogSeed[] = [
     kind: 'native',
     featured: true,
     connectablePath: '/app/team/integrations',
+    ingestStatus: 'implemented',
     examplePrompt: 'Summarize the latest version of the partnership agreement.',
     envCheck: () => {
       const env = getEnv();
@@ -152,12 +162,14 @@ const CATALOG_SEEDS: CatalogSeed[] = [
   {
     id: 'notion',
     label: 'Notion',
-    description: 'Search pages, databases, and wiki content through the agent.',
+    description:
+      'Search pages, databases, and wiki content through MCP today; native page, database, comment, and revision ingestion is planned.',
     logo: '/connectors/notion.svg',
     category: 'productivity',
     kind: 'mcp',
     featured: true,
     connectablePath: '/app/team/mcp-servers',
+    ingestStatus: 'coming_soon',
     mcpUrl: 'https://mcp.notion.com/mcp',
     mcpAuthType: 'oauth',
     examplePrompt: 'What’s in our incident response runbook?',
@@ -166,12 +178,14 @@ const CATALOG_SEEDS: CatalogSeed[] = [
   {
     id: 'slack',
     label: 'Slack',
-    description: 'Search messages, files, and channel context during a conversation.',
+    description:
+      'Search messages, files, and channel context through MCP today; native workspace-wide channel, thread, file, and reaction ingestion is planned.',
     logo: '/connectors/slack.svg',
     category: 'communication',
     kind: 'mcp',
     featured: true,
     connectablePath: '/app/team/mcp-servers',
+    ingestStatus: 'coming_soon',
     // Slack publishes a bearer-token MCP shim; OAuth coming once their
     // first-party MCP server lands publicly.
     mcpUrl: 'https://mcp.composio.dev/slack',
@@ -182,27 +196,47 @@ const CATALOG_SEEDS: CatalogSeed[] = [
   },
   {
     id: 'jira',
-    label: 'Atlassian (Jira + Confluence)',
-    description: 'Issues, sprints, project status, and Confluence pages in one connector.',
+    label: 'Jira',
+    description:
+      'Issues, sprints, project status, and Confluence pages are queryable through Atlassian MCP today; native Jira issue, sprint, comment, and workflow ingestion is planned.',
     logo: '/connectors/jira.svg',
     category: 'project-management',
     kind: 'mcp',
     featured: true,
     connectablePath: '/app/team/mcp-servers',
+    ingestStatus: 'coming_soon',
     mcpUrl: 'https://mcp.atlassian.com/v1/sse',
     mcpAuthType: 'oauth',
     examplePrompt: 'How many P0 bugs are open for the mobile team?',
     staticStatus: 'mcp_available',
   },
   {
+    id: 'confluence',
+    label: 'Confluence',
+    description:
+      'Native page, blog, comment, label, and space activity ingestion is planned; Atlassian MCP can provide live tool access meanwhile.',
+    logo: '/connectors/confluence.svg',
+    category: 'productivity',
+    kind: 'mcp',
+    featured: false,
+    connectablePath: '/app/team/mcp-servers',
+    mcpUrl: 'https://mcp.atlassian.com/v1/sse',
+    mcpAuthType: 'oauth',
+    ingestStatus: 'coming_soon',
+    examplePrompt: 'What changed in the enterprise onboarding space?',
+    staticStatus: 'mcp_available',
+  },
+  {
     id: 'figma',
     label: 'Figma',
-    description: 'Recent design changes and shared file activity become timeline events.',
+    description:
+      'Recent design changes and shared file activity are queryable through MCP today; native durable design-event ingestion is planned.',
     logo: '/connectors/figma.svg',
     category: 'productivity',
     kind: 'mcp',
     featured: true,
     connectablePath: '/app/team/mcp-servers',
+    ingestStatus: 'coming_soon',
     mcpUrl: 'http://127.0.0.1:3845/sse',
     mcpAuthType: 'none',
     mcpAuthHint:
@@ -213,12 +247,14 @@ const CATALOG_SEEDS: CatalogSeed[] = [
   {
     id: 'sentry',
     label: 'Sentry',
-    description: 'Errors, regressions, and release health visible from chat.',
+    description:
+      'Errors, regressions, and release health are visible through MCP today; native issue, release, and alert ingestion is planned.',
     logo: '/connectors/sentry.svg',
     category: 'dev-tools',
     kind: 'mcp',
     featured: true,
     connectablePath: '/app/team/mcp-servers',
+    ingestStatus: 'coming_soon',
     mcpUrl: 'https://mcp.sentry.dev/sse',
     mcpAuthType: 'oauth',
     examplePrompt: 'What broke after yesterday’s deploy?',
@@ -233,6 +269,7 @@ const CATALOG_SEEDS: CatalogSeed[] = [
     kind: 'mcp',
     featured: true,
     connectablePath: '/app/team/mcp-servers',
+    ingestStatus: 'coming_soon',
     mcpUrl: 'https://mcp.stripe.com',
     mcpAuthType: 'bearer',
     mcpAuthHint: 'Stripe restricted key (read-only). Generate at dashboard.stripe.com → API keys.',
@@ -244,12 +281,14 @@ const CATALOG_SEEDS: CatalogSeed[] = [
   {
     id: 'hubspot',
     label: 'HubSpot',
-    description: 'Deals, contacts, and pipeline activity — connect via MCP when published.',
+    description:
+      'Native company, contact, deal, ticket, note, and pipeline-event ingestion is planned.',
     logo: '/connectors/hubspot.svg',
     category: 'crm',
     kind: 'mcp',
     featured: true,
     connectablePath: '/app/team/mcp-servers',
+    ingestStatus: 'coming_soon',
     examplePrompt: 'Which Q3 deals slipped to Q4?',
     staticStatus: 'coming_soon',
   },
@@ -262,31 +301,76 @@ const CATALOG_SEEDS: CatalogSeed[] = [
     kind: 'mcp',
     featured: true,
     connectablePath: '/app/team/mcp-servers',
+    ingestStatus: 'coming_soon',
     examplePrompt: 'What did we discuss with Acme on our last call?',
     staticStatus: 'coming_soon',
   },
   {
     id: 'attio',
     label: 'Attio',
-    description: 'Pipeline activity and people data — modern CRM, MCP-backed.',
+    description:
+      'Native people, company, list, note, task, and pipeline-event ingestion is planned.',
     logo: '/connectors/attio.svg',
     category: 'crm',
     kind: 'mcp',
     featured: false,
     connectablePath: '/app/team/mcp-servers',
+    ingestStatus: 'coming_soon',
     examplePrompt: 'List all customers we onboarded in May.',
     staticStatus: 'coming_soon',
   },
   {
     id: 'asana',
     label: 'Asana',
-    description: 'Task status, comments, and project rollups.',
+    description:
+      'Native task, project, comment, assignee, status, and custom-field ingestion is planned.',
     logo: '/connectors/asana.svg',
     category: 'project-management',
     kind: 'mcp',
     featured: false,
     connectablePath: '/app/team/mcp-servers',
+    ingestStatus: 'coming_soon',
     examplePrompt: 'What’s blocking the launch checklist?',
+    staticStatus: 'coming_soon',
+  },
+  {
+    id: 'monday',
+    label: 'Monday.com',
+    description: 'Native board, item, update, owner, and status-change ingestion is planned.',
+    logo: '/connectors/monday.svg',
+    category: 'project-management',
+    kind: 'mcp',
+    featured: false,
+    connectablePath: '/app/team/mcp-servers',
+    ingestStatus: 'coming_soon',
+    examplePrompt: 'Which launch board items changed status this week?',
+    staticStatus: 'coming_soon',
+  },
+  {
+    id: 'trello',
+    label: 'Trello',
+    description: 'Native board, card, checklist, comment, and lane-move ingestion is planned.',
+    logo: '/connectors/trello.svg',
+    category: 'project-management',
+    kind: 'mcp',
+    featured: false,
+    connectablePath: '/app/team/mcp-servers',
+    ingestStatus: 'coming_soon',
+    examplePrompt: 'What cards moved to Done yesterday?',
+    staticStatus: 'coming_soon',
+  },
+  {
+    id: 'basecamp',
+    label: 'Basecamp',
+    description:
+      'Native project, message-board, to-do, schedule, document, and comment ingestion is planned.',
+    logo: '/connectors/basecamp.svg',
+    category: 'project-management',
+    kind: 'mcp',
+    featured: false,
+    connectablePath: '/app/team/mcp-servers',
+    ingestStatus: 'coming_soon',
+    examplePrompt: 'What changed in the client rollout project?',
     staticStatus: 'coming_soon',
   },
   {
@@ -298,7 +382,105 @@ const CATALOG_SEEDS: CatalogSeed[] = [
     kind: 'mcp',
     featured: false,
     connectablePath: '/app/team/mcp-servers',
+    ingestStatus: 'coming_soon',
     examplePrompt: 'Which MRs are awaiting review on the infra team?',
+    staticStatus: 'coming_soon',
+  },
+  {
+    id: 'bitbucket',
+    label: 'Bitbucket',
+    description:
+      'Native repository, pull request, commit, pipeline, and deployment ingestion is planned.',
+    logo: '/connectors/bitbucket.svg',
+    category: 'dev-tools',
+    kind: 'mcp',
+    featured: false,
+    connectablePath: '/app/team/mcp-servers',
+    ingestStatus: 'coming_soon',
+    examplePrompt: 'Which Bitbucket pull requests are blocked?',
+    staticStatus: 'coming_soon',
+  },
+  {
+    id: 'datadog',
+    label: 'Datadog',
+    description:
+      'Native incident, monitor, alert, deployment marker, and service-event ingestion is planned.',
+    logo: '/connectors/datadog.svg',
+    category: 'dev-tools',
+    kind: 'mcp',
+    featured: false,
+    connectablePath: '/app/team/mcp-servers',
+    ingestStatus: 'coming_soon',
+    examplePrompt: 'What incidents affected checkout this month?',
+    staticStatus: 'coming_soon',
+  },
+  {
+    id: 'discord',
+    label: 'Discord',
+    description:
+      'Native server, channel, thread, message, attachment, and voice-summary ingestion is planned.',
+    logo: '/connectors/discord.svg',
+    category: 'communication',
+    kind: 'mcp',
+    featured: false,
+    connectablePath: '/app/team/mcp-servers',
+    ingestStatus: 'coming_soon',
+    examplePrompt: 'What did the community moderators decide last week?',
+    staticStatus: 'coming_soon',
+  },
+  {
+    id: 'pipedrive',
+    label: 'Pipedrive',
+    description:
+      'Native deal, person, organization, activity, note, and pipeline-stage ingestion is planned.',
+    logo: '/connectors/pipedrive.svg',
+    category: 'crm',
+    kind: 'mcp',
+    featured: false,
+    connectablePath: '/app/team/mcp-servers',
+    ingestStatus: 'coming_soon',
+    examplePrompt: 'Which deals moved stages this week?',
+    staticStatus: 'coming_soon',
+  },
+  {
+    id: 'close',
+    label: 'Close',
+    description: 'Native lead, opportunity, call, email, note, and task ingestion is planned.',
+    logo: '/connectors/close.svg',
+    category: 'crm',
+    kind: 'mcp',
+    featured: false,
+    connectablePath: '/app/team/mcp-servers',
+    ingestStatus: 'coming_soon',
+    examplePrompt: 'Which prospects need follow-up after recent calls?',
+    staticStatus: 'coming_soon',
+  },
+  {
+    id: 'zendesk',
+    label: 'Zendesk',
+    description:
+      'Native ticket, comment, status, priority, requester, and SLA-event ingestion is planned.',
+    logo: '/connectors/zendesk.svg',
+    category: 'other',
+    kind: 'mcp',
+    featured: false,
+    connectablePath: '/app/team/mcp-servers',
+    ingestStatus: 'coming_soon',
+    examplePrompt: 'Which support tickets mention onboarding friction?',
+    staticStatus: 'coming_soon',
+  },
+  {
+    id: 'intercom',
+    label: 'Intercom',
+    description:
+      'Native conversation, ticket, user, company, note, and assignment ingestion is planned.',
+    logo: '/connectors/intercom.svg',
+    category: 'communication',
+    kind: 'mcp',
+    featured: false,
+    connectablePath: '/app/team/mcp-servers',
+    ingestStatus: 'coming_soon',
+    examplePrompt: 'What are customers asking about billing this week?',
     staticStatus: 'coming_soon',
   },
 ];

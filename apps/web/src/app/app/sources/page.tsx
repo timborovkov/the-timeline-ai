@@ -162,7 +162,7 @@ function buildSources(summary: SourcesStatusSummary): SourceEntry[] {
   const mcp: SourceEntry = {
     href: '/app/team/integrations',
     label: 'MCP servers',
-    description: 'Attach custom external tools and searchable systems to the team.',
+    description: 'Attach custom external tools for live agent access.',
     icon: Bot,
     status: summary.mcpErrors > 0 ? 'attention' : mcpAny ? 'connected' : 'not-setup',
     statusLabel:
@@ -209,7 +209,7 @@ export default async function SourcesPage() {
     <div className="mx-auto max-w-5xl space-y-6">
       <PageHeader
         title="Connections"
-        subtitle="Capture and integration surfaces that feed the timeline."
+        subtitle="Capture surfaces, native sync, and live external tools."
         srLabel={`Connections · ${active.teamName} · ${connectedCount} connected · ${attentionCount} need attention · ${notSetupCount} not set up`}
         metadata={[
           { label: 'team', value: active.teamName, signal: true },

@@ -1,7 +1,14 @@
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
+
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { resetEnvForTests } from '#src/env.js';
-import { listAvailableProviders, listFeaturedCatalog } from '#src/integrations/registry.js';
+import {
+  listAvailableProviders,
+  listCatalog,
+  listFeaturedCatalog,
+} from '#src/integrations/registry.js';
 
 const ENV_BACKUP = { ...process.env };
 
@@ -46,5 +53,63 @@ describe('integration registry catalog visibility', () => {
         .filter((entry) => entry.kind === 'native')
         .map((entry) => entry.id),
     ).toEqual(['github']);
+  });
+
+  it('tracks the required first-party ingestion catalog', () => {
+    resetEnv();
+
+    const required = [
+      'google_drive',
+      'notion',
+      'confluence',
+      'linear',
+      'jira',
+      'asana',
+      'monday',
+      'trello',
+      'basecamp',
+      'github',
+      'gitlab',
+      'bitbucket',
+      'sentry',
+      'datadog',
+      'slack',
+      'discord',
+      'salesforce',
+      'hubspot',
+      'pipedrive',
+      'attio',
+      'close',
+      'zendesk',
+      'intercom',
+    ];
+    const byId = new Map(listCatalog().map((entry) => [entry.id, entry]));
+
+    for (const id of required) {
+      const entry = byId.get(id);
+      expect(entry, `${id} should be represented in the integration catalog`).toBeDefined();
+      expect(
+        entry?.ingestStatus,
+        `${id} should be implemented or on the first-party ingestion roadmap`,
+      ).toMatch(/^(implemented|coming_soon)$/);
+    }
+
+    expect(byId.get('google_drive')?.ingestStatus).toBe('implemented');
+    expect(byId.get('linear')?.ingestStatus).toBe('implemented');
+    expect(byId.get('github')?.ingestStatus).toBe('implemented');
+  });
+
+  it('points catalog logos at checked-in assets', () => {
+    resetEnv();
+
+    for (const entry of listCatalog()) {
+      expect(entry.logo, `${entry.id} should use a local connector asset`).toMatch(
+        /^\/connectors\/.+\.(svg|png)$/,
+      );
+      expect(
+        existsSync(join(process.cwd(), '../../apps/web/public', entry.logo)),
+        `${entry.id} logo should exist at ${entry.logo}`,
+      ).toBe(true);
+    }
   });
 });

@@ -59,7 +59,7 @@ export function IntegrationCloud() {
       {/* Example prompts */}
       <div className="mx-auto max-w-2xl">
         <div className="mb-3 text-center font-mono text-[10px] uppercase tracking-[0.18em] text-fg-muted">
-          Questions the agent answers once connected
+          Questions the agent can answer once connected
         </div>
         <ul className="space-y-2">
           {prompts.map((p) => (
@@ -81,7 +81,7 @@ export function IntegrationCloud() {
         >
           team settings
         </Link>
-        , bring your own auth.
+        , bring your own auth. MCP is live tool access, not automatic timeline ingestion.
       </p>
     </div>
   );
