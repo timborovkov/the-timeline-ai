@@ -107,6 +107,10 @@ export function IngestWebhooksUi({ webhooks }: { webhooks: IngestWebhookRow[] })
     return `${origin || 'https://thetimeline.cc'}/api/webhooks/ingest/${plaintext}`;
   }
 
+  async function alertFailure(title: string, res: Response): Promise<void> {
+    await dialog.alert({ title, description: await res.text() });
+  }
+
   async function create() {
     dispatch({ type: 'busy', busy: true });
     try {
@@ -116,7 +120,7 @@ export function IngestWebhooksUi({ webhooks }: { webhooks: IngestWebhookRow[] })
         body: JSON.stringify({ name, visibilityDefault, proposalGenerationEnabled }),
       });
       if (!res.ok) {
-        await dialog.alert({ title: 'Create failed', description: await res.text() });
+        await alertFailure('Create failed', res);
         return;
       }
       const data = (await res.json()) as { name: string; credential: { plaintext: string } };
@@ -131,11 +135,15 @@ export function IngestWebhooksUi({ webhooks }: { webhooks: IngestWebhookRow[] })
   }
 
   async function patch(id: string, body: Record<string, unknown>) {
-    await fetch(`/api/team/ingest-webhooks/${id}`, {
+    const res = await fetch(`/api/team/ingest-webhooks/${id}`, {
       method: 'PATCH',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(body),
     });
+    if (!res.ok) {
+      await alertFailure('Update failed', res);
+      return;
+    }
     router.refresh();
   }
 
@@ -148,7 +156,7 @@ export function IngestWebhooksUi({ webhooks }: { webhooks: IngestWebhookRow[] })
     if (!confirmed) return;
     const res = await fetch(`/api/team/ingest-webhooks/${id}/credentials`, { method: 'POST' });
     if (!res.ok) {
-      await dialog.alert({ title: 'Rotate failed', description: await res.text() });
+      await alertFailure('Rotate failed', res);
       return;
     }
     const data = (await res.json()) as { plaintext: string };
@@ -164,7 +172,11 @@ export function IngestWebhooksUi({ webhooks }: { webhooks: IngestWebhookRow[] })
       destructive: true,
     });
     if (!confirmed) return;
-    await fetch(`/api/team/ingest-webhooks/${id}`, { method: 'DELETE' });
+    const res = await fetch(`/api/team/ingest-webhooks/${id}`, { method: 'DELETE' });
+    if (!res.ok) {
+      await alertFailure('Disable failed', res);
+      return;
+    }
     router.refresh();
   }
 

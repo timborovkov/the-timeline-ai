@@ -41,7 +41,13 @@ export async function handleGet(req: Request, pathToken?: string): Promise<Respo
   const token = tokenFromRequest(req, pathToken);
   if (!token) return Response.json({ ok: false, reason: 'missing_credential' }, { status: 401 });
   const resolved = await ingestWebhooks.resolveCredential(db, token);
-  if (!resolved) return Response.json({ ok: false, reason: 'invalid_credential' }, { status: 401 });
+  if (!resolved) {
+    const authLimit = await checkInvalidCredentialLimit(req);
+    if (!authLimit.ok) {
+      return Response.json({ ok: false, reason: 'rate_limited' }, { status: 429 });
+    }
+    return Response.json({ ok: false, reason: 'invalid_credential' }, { status: 401 });
+  }
   return Response.json({
     ok: true,
     name: resolved.name,
@@ -56,11 +62,7 @@ export async function handlePost(req: Request, pathToken?: string): Promise<Resp
 
   const resolved = await ingestWebhooks.resolveCredential(db, token);
   if (!resolved) {
-    const clientIp = clientIpFromHeaders(req.headers);
-    const authLimit = await rateLimit.checkRateLimit({
-      key: rateLimit.rateLimitKey('ingest_webhook', 'auth_ip', clientIp),
-      ...rateLimit.RATE_LIMITS.ingestWebhookAuth,
-    });
+    const authLimit = await checkInvalidCredentialLimit(req);
     if (!authLimit.ok) {
       return Response.json({ ok: false, reason: 'rate_limited' }, { status: 429 });
     }
@@ -245,6 +247,14 @@ function dedupKeyFor(webhookId: string, bodyHash: string, receivedAt: Date): str
 function clientIpFromHeaders(headers: Headers): string {
   const forwarded = headers.get('x-forwarded-for')?.split(',')[0]?.trim();
   return forwarded ?? headers.get('x-real-ip') ?? 'unknown';
+}
+
+async function checkInvalidCredentialLimit(req: Request): Promise<{ ok: boolean }> {
+  const clientIp = clientIpFromHeaders(req.headers);
+  return rateLimit.checkRateLimit({
+    key: rateLimit.rateLimitKey('ingest_webhook', 'auth_ip', clientIp),
+    ...rateLimit.RATE_LIMITS.ingestWebhookAuth,
+  });
 }
 
 async function enqueueProcessing(

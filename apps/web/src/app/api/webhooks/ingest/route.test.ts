@@ -108,6 +108,21 @@ describe('/api/webhooks/ingest', () => {
     await expect(db.select().from(rawEvents)).resolves.toHaveLength(0);
   });
 
+  it('charges invalid GET verification credentials against the auth-IP lockout bucket', async () => {
+    expect(
+      (
+        await GET(
+          new Request('https://timeline.test/api/webhooks/ingest?key=tli_invalid', {
+            headers: { 'x-forwarded-for': '203.0.113.42' },
+          }),
+        )
+      ).status,
+    ).toBe(401);
+
+    expect(vi.mocked(rateLimit.checkRateLimit)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(rateLimit.checkRateLimit).mock.calls[0]?.[0]?.key).toContain('auth_ip');
+  });
+
   it('stores textual payloads as ingest_webhook raw events and enqueues processing', async () => {
     const response = await POST(
       request('{"event":"deal.updated","actor":"Maya"}', {
