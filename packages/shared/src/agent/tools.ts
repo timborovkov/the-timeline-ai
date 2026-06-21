@@ -301,6 +301,56 @@ const executeObjectArchiveInput = z.object({
   reason: z.string().trim().min(1).max(1000),
 });
 
+const boardItemPatchInput = z.object({
+  laneId: z.string().regex(UUID_RE).nullable().optional(),
+  position: z.number().int().min(0).optional(),
+  responsibleUserId: z.string().regex(UUID_RE).nullable().optional(),
+  dueAt: z.iso.datetime().nullable().optional(),
+  priority: z.number().int().min(1).max(4).nullable().optional(),
+  nextStep: z.string().trim().max(300).nullable().optional(),
+  notes: z.string().trim().max(5000).nullable().optional(),
+  customFields: z.record(z.string(), z.unknown()).optional(),
+});
+
+const boardItemComparableValueSchema = z.union([
+  z.string(),
+  z.number(),
+  z.boolean(),
+  z.null(),
+  z.record(z.string(), z.unknown()),
+]);
+
+const executeBoardAddItemInput = z.object({
+  boardId: z.string().regex(UUID_RE),
+  entityId: z.string().regex(UUID_RE),
+  laneId: z.string().regex(UUID_RE).nullable().optional(),
+  position: z.number().int().min(0).optional(),
+  responsibleUserId: z.string().regex(UUID_RE).nullable().optional(),
+  dueAt: z.iso.datetime().nullable().optional(),
+  priority: z.number().int().min(1).max(4).nullable().optional(),
+  nextStep: z.string().trim().max(300).nullable().optional(),
+  notes: z.string().trim().max(5000).nullable().optional(),
+  customFields: z.record(z.string(), z.unknown()).optional(),
+  reason: z.string().trim().min(1).max(1000),
+});
+
+const executeBoardUpdateItemInput = z.object({
+  itemId: z.string().regex(UUID_RE),
+  expectedCurrent: z.record(z.string(), boardItemComparableValueSchema),
+  patch: boardItemPatchInput,
+  reason: z.string().trim().min(1).max(1000),
+});
+
+const executeBoardRemoveItemInput = z.object({
+  itemId: z.string().regex(UUID_RE),
+  expectedCurrent: z.object({
+    boardId: z.string().regex(UUID_RE),
+    objectId: z.string().regex(UUID_RE),
+    laneId: z.string().regex(UUID_RE).nullable(),
+  }),
+  reason: z.string().trim().min(1).max(1000),
+});
+
 const calendarVisibilitySchema = z.enum(['team', 'private', 'specific_users']);
 const calendarShowAsSchema = z.enum(['busy', 'free', 'tentative']);
 const recurrenceEditModeSchema = z.enum(['single', 'series', 'this_and_future']);
@@ -747,6 +797,57 @@ function buildCalendarPatch(
   return out;
 }
 
+function currentBoardItemValue(item: boards.BoardItemRow, field: string): unknown {
+  switch (field) {
+    case 'boardId':
+      return item.boardId;
+    case 'objectId':
+    case 'entityId':
+      return item.entityId;
+    case 'laneId':
+      return item.laneId;
+    case 'position':
+      return item.position;
+    case 'responsibleUserId':
+      return item.responsibleUserId;
+    case 'dueAt':
+      return item.dueAt?.toISOString() ?? null;
+    case 'priority':
+      return item.priority;
+    case 'nextStep':
+      return item.nextStep;
+    case 'notes':
+      return item.notes;
+    case 'customFields':
+      return item.customFields;
+    default:
+      return undefined;
+  }
+}
+
+function normalizeBoardItemComparableValue(field: string, value: unknown): unknown {
+  if (field === 'dueAt') {
+    if (value === null || value === undefined) return null;
+    return typeof value === 'string' ? new Date(value).toISOString() : value;
+  }
+  return value ?? null;
+}
+
+function buildBoardItemPatch(
+  patch: z.infer<typeof boardItemPatchInput>,
+): Parameters<TeamScope['boards']['updateBoardItem']>[1] {
+  const out: Parameters<TeamScope['boards']['updateBoardItem']>[1] = {};
+  if (patch.laneId !== undefined) out.laneId = patch.laneId;
+  if (patch.position !== undefined) out.position = patch.position;
+  if (patch.responsibleUserId !== undefined) out.responsibleUserId = patch.responsibleUserId;
+  if (patch.dueAt !== undefined) out.dueAt = patch.dueAt === null ? null : new Date(patch.dueAt);
+  if (patch.priority !== undefined) out.priority = patch.priority;
+  if (patch.nextStep !== undefined) out.nextStep = patch.nextStep;
+  if (patch.notes !== undefined) out.notes = patch.notes;
+  if (patch.customFields !== undefined) out.customFields = patch.customFields;
+  return out;
+}
+
 async function normalizeCalendarCreateInput(
   scope: TeamScope,
   input: z.infer<typeof executeCalendarCreateInput>,
@@ -982,6 +1083,165 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
             message: `Merged ${String(result.mergedIds.length)} object${
               result.mergedIds.length === 1 ? '' : 's'
             } into ${result.survivor.canonicalName}.`,
+          };
+        }),
+    }),
+
+    execute_board_add_item: tool({
+      description:
+        'Approval-required dashboard action. Directly add an existing object/task to a board lane after the user approves in chat. Use only for explicit commands like "add this company to the New lane" or after execute_object_create when the user asked to create an object and place it on the current board. First resolve the board/lane/object with search_boards/search_objects/dashboard context. This writes canonical board state and does NOT create a background approval queue item.',
+      inputSchema: executeBoardAddItemInput,
+      needsApproval: true,
+      execute: async (raw) =>
+        runSafe('execute_board_add_item', async () => {
+          const input = executeBoardAddItemInput.parse(raw);
+          const item = await scope.boards.addBoardItem(input.boardId, {
+            entityId: input.entityId,
+            laneId: input.laneId ?? null,
+            ...(input.position !== undefined ? { position: input.position } : {}),
+            responsibleUserId: input.responsibleUserId ?? null,
+            dueAt: input.dueAt ? new Date(input.dueAt) : null,
+            priority: input.priority ?? null,
+            nextStep: input.nextStep ?? null,
+            notes: input.notes ?? null,
+            customFields: input.customFields ?? {},
+            actor: { kind: 'agent', userId: scope.userId },
+          });
+          return {
+            ok: true,
+            board_id: item.boardId,
+            board_citation: artifactRefCitation({ kind: 'board', id: item.boardId }),
+            board_item_id: item.id,
+            board_item_citation: artifactRefCitation({ kind: 'board_item', id: item.id }),
+            object_id: item.entityId,
+            object_citation: artifactRefCitation({
+              kind: objectKindForCitation(item.object),
+              id: item.entityId,
+            }),
+            item: serializeBoardItemRow(item),
+            message: `Added ${item.object.canonicalName} to the board.`,
+          };
+        }),
+    }),
+
+    execute_board_update_item: tool({
+      description:
+        'Approval-required dashboard action. Directly update or move one board card after the user approves in chat. Use for explicit board commands like "move this card to Proposal", "set the board card priority to 2", or "add next step X". First read the current card with search_boards, then pass observed fields in expectedCurrent so stale state is rejected. This writes canonical board state and does NOT create a background approval queue item.',
+      inputSchema: executeBoardUpdateItemInput,
+      needsApproval: true,
+      execute: async (raw) =>
+        runSafe('execute_board_update_item', async () => {
+          const input = executeBoardUpdateItemInput.parse(raw);
+          const current = await scope.boards.getBoardItem(input.itemId);
+          if (!current) return { ok: false, error: 'not_found' };
+          const staleFields: Record<string, { expected: unknown; current: unknown }> = {};
+          for (const [field, expected] of Object.entries(input.expectedCurrent)) {
+            const currentValue = currentBoardItemValue(current, field);
+            const normalizedExpected = normalizeBoardItemComparableValue(field, expected);
+            const normalizedCurrent = normalizeBoardItemComparableValue(field, currentValue);
+            if (!valuesMatchForApproval(normalizedCurrent, normalizedExpected)) {
+              staleFields[field] = { expected: normalizedExpected, current: normalizedCurrent };
+            }
+          }
+          if (Object.keys(staleFields).length > 0) {
+            return {
+              ok: false,
+              error: 'stale_state',
+              message:
+                'The board card changed since this action was prepared. Re-read the board before retrying.',
+              board_item_citation: artifactRefCitation({
+                kind: 'board_item',
+                id: input.itemId,
+              }),
+              stale_fields: staleFields,
+            };
+          }
+          const item = await scope.boards.updateBoardItem(
+            input.itemId,
+            buildBoardItemPatch(input.patch),
+            { kind: 'agent', userId: scope.userId },
+          );
+          if (!item) return { ok: false, error: 'not_found' };
+          const changedFields = Object.keys(input.patch).filter((field) => {
+            const previous = normalizeBoardItemComparableValue(
+              field,
+              currentBoardItemValue(current, field),
+            );
+            const next = normalizeBoardItemComparableValue(
+              field,
+              currentBoardItemValue(item, field),
+            );
+            return !valuesMatchForApproval(previous, next);
+          });
+          return {
+            ok: true,
+            board_id: item.boardId,
+            board_citation: artifactRefCitation({ kind: 'board', id: item.boardId }),
+            board_item_id: item.id,
+            board_item_citation: artifactRefCitation({ kind: 'board_item', id: item.id }),
+            object_id: item.entityId,
+            object_citation: artifactRefCitation({
+              kind: objectKindForCitation(item.object),
+              id: item.entityId,
+            }),
+            changed_fields: changedFields,
+            item: serializeBoardItemRow(item),
+            message:
+              changedFields.length === 0
+                ? `No board-card change needed for ${item.object.canonicalName}.`
+                : `Updated board card for ${item.object.canonicalName}.`,
+          };
+        }),
+    }),
+
+    execute_board_remove_item: tool({
+      description:
+        'Approval-required dashboard action. Directly remove one card from a board after the user approves in chat. Use only for explicit board removal commands, not for archiving the underlying object. First read the current card with search_boards and pass boardId/objectId/laneId in expectedCurrent so stale state is rejected.',
+      inputSchema: executeBoardRemoveItemInput,
+      needsApproval: true,
+      execute: async (raw) =>
+        runSafe('execute_board_remove_item', async () => {
+          const input = executeBoardRemoveItemInput.parse(raw);
+          const current = await scope.boards.getBoardItem(input.itemId);
+          if (!current) return { ok: false, error: 'not_found' };
+          const staleFields: Record<string, { expected: unknown; current: unknown }> = {};
+          for (const [field, expected] of Object.entries(input.expectedCurrent)) {
+            const currentValue = currentBoardItemValue(current, field);
+            if (!valuesMatchForApproval(currentValue, expected)) {
+              staleFields[field] = { expected, current: currentValue };
+            }
+          }
+          if (Object.keys(staleFields).length > 0) {
+            return {
+              ok: false,
+              error: 'stale_state',
+              message:
+                'The board card changed since this action was prepared. Re-read the board before retrying.',
+              board_item_citation: artifactRefCitation({
+                kind: 'board_item',
+                id: input.itemId,
+              }),
+              stale_fields: staleFields,
+            };
+          }
+          const removed = await scope.boards.removeBoardItem(input.itemId, {
+            kind: 'agent',
+            userId: scope.userId,
+          });
+          if (!removed) return { ok: false, error: 'not_found' };
+          return {
+            ok: true,
+            board_id: removed.boardId,
+            board_citation: artifactRefCitation({ kind: 'board', id: removed.boardId }),
+            board_item_id: removed.id,
+            board_item_citation: artifactRefCitation({ kind: 'board_item', id: removed.id }),
+            object_id: removed.entityId,
+            object_citation: artifactRefCitation({
+              kind: objectKindForCitation(removed.object),
+              id: removed.entityId,
+            }),
+            removed: true,
+            message: `Removed ${removed.object.canonicalName} from the board.`,
           };
         }),
     }),
@@ -2697,6 +2957,9 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
       'execute_object_update',
       'execute_object_archive',
       'execute_object_merge',
+      'execute_board_add_item',
+      'execute_board_update_item',
+      'execute_board_remove_item',
       'suggest_task',
       'propose_object_change',
       'suggest_object_memory',

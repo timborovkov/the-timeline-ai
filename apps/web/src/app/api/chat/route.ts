@@ -197,6 +197,9 @@ const nativeToolGroups = {
     'execute_object_update',
     'execute_object_archive',
     'execute_object_merge',
+    'execute_board_add_item',
+    'execute_board_update_item',
+    'execute_board_remove_item',
     'execute_calendar_create',
     'execute_calendar_update',
     'execute_calendar_cancel',
@@ -279,6 +282,13 @@ function selectAgentToolGroups(input: {
   ) {
     groups.add('actions');
     groups.add('objects');
+    if (
+      input.dashboardContext?.boardId ||
+      input.dashboardContext?.boardItemId ||
+      matchesAny(text, [/\b(board|kanban|lane|card|pipeline)\b/])
+    ) {
+      groups.add('boards');
+    }
   }
 
   if (hasObjectContext && matchesAny(text, [/\b(mark|done|complete|close|finish)\b/])) {

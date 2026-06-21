@@ -392,18 +392,18 @@ caused this giant context window?"
 
 ## 7. In-Chat HITL And Two-Phase Action Contract
 
-Status: object and calendar action slices implemented. Dashboard chat now has
+Status: object, calendar, and board-item action slices implemented. Dashboard chat now has
 approval-required Vercel AI SDK tools for object create/update/archive/merge
-and calendar create/update/cancel, all without creating background
+calendar create/update/cancel, and board item add/update/remove, all without creating background
 approval-queue items. Object updates require the observed current field value
-and reject stale state before writing. Object archives and calendar
-updates/cancellations render preview chips, run through canonical scope methods,
-and reconcile duplicate pending approvals. Object merges re-preview all target
+and board item updates/removals require observed board-card fields; both reject
+stale state before writing. Object archives and calendar updates/cancellations
+render preview chips, run through canonical scope methods, and reconcile duplicate pending approvals. Object merges re-preview all target
 objects, render survivor/merged objects as preview chips, reject stale/resolved
 targets, execute through `scope.objects.mergeObjects`, and reconcile duplicate
 pending merge approvals. Remaining work is a persisted `preparedActionId` store
 for multi-step/high-risk actions and expanding the same direct HITL pattern to
-board and task mutations.
+task-specific mutations plus more board-level operations.
 
 ### Goal
 
@@ -520,13 +520,15 @@ Merge flow requirements:
 
 ### Board Tools
 
-- create board
-- archive board
-- add existing object to board
-- quick-create object and add to board
+- create board (planned)
+- archive board (planned)
+- add existing object to board (implemented through `execute_board_add_item`)
+- quick-create object and add to board (implemented as `execute_object_create`
+  followed by `execute_board_add_item`)
 - update board item lane/position/responsible/due/priority/next step/notes
-- remove board item
-- pin/unpin board for the current user
+  (implemented through `execute_board_update_item`)
+- remove board item (implemented through `execute_board_remove_item`)
+- pin/unpin board for the current user (planned)
 
 ### Guardrails
 
@@ -705,7 +707,7 @@ records directly into the same internal tables the agents normally read from.
 7. In-chat HITL with the two-phase action contract and one simple approved
    action.
 8. Expand dashboard action tools: object update, object merge, calendar update,
-   board item update.
+   and board item add/update/remove.
 9. Simple retrieval freshness and index health checks.
 10. Bring Slack/Telegram/background agents onto the shared retrieval planner
     where appropriate.

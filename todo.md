@@ -65,8 +65,8 @@ pages. Full phased plan with file-level tasks:
 
 - [ ] Strengthen board-agent behavior after real usage: board-scoped answers
       should cite evidence, distinguish accepted board state from pending
-      suggestions, and direct commands should apply unambiguous board updates
-      through the same permission and audit paths as manual board edits.
+      suggestions, and expand direct board commands beyond the first
+      approval-required add/update/remove card actions.
 
 ## Object Relationships
 
