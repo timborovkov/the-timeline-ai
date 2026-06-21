@@ -12,7 +12,8 @@
       <h1>Native integrations &amp; custom MCPs</h1>
       <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-06-22</span></div>
       <p class="tldr">
-        Connect native GitHub, Linear, and Google Drive provider accounts from
+        Connect native GitHub, Linear, Google Drive, Monday.com, Slack, and Sentry provider accounts
+        from
         <code>/app/me/connections</code>, activate shared team sources from
         <code>/app/team/integrations</code>, or plug arbitrary custom MCP servers in at
         <code>/app/team/mcp-servers</code>. Native providers sync external activity into the
@@ -143,6 +144,85 @@ GITHUB_APP_CLIENT_SECRET=...</code></pre>
         <li>
           Selected GitHub sources are synced by the integration worker poller; no repo/org webhook
           setup is required.
+        </li>
+      </ol>
+
+      <h2 id="monday">Monday.com</h2>
+      <ol>
+        <li>
+          Create a monday.com OAuth app in the monday.com developer center and request read access
+          for boards, users, and updates.
+        </li>
+        <li>
+          Redirect URI:
+          <code>https://thetimeline.cc/api/integrations/monday/callback</code>.
+        </li>
+        <li>
+          Set:
+          <pre><code>MONDAY_CLIENT_ID=...
+MONDAY_CLIENT_SECRET=...</code></pre>
+        </li>
+        <li>
+          Any team member can connect Monday.com from the native catalog. The member chooses which
+          boards are shared with the current Timeline team.
+        </li>
+        <li>
+          A team admin activates shared boards from <code>/app/team/integrations</code>. The
+          integration worker imports board activity, items, updates, status changes, owners, and
+          column changes into cited timeline events.
+        </li>
+      </ol>
+
+      <h2 id="slack-native">Slack workspace ingestion</h2>
+      <p>
+        Slack has two first-party modes. <a href="./slack.html">Conversational capture</a> handles
+        DMs, bound-channel capture, <code>/ask</code>, and <code>/timeline join</code>. Native
+        workspace ingestion uses the same Slack app credentials but syncs selected channels as a
+        passive integration with <code>source='integration'</code> and
+        <code>provider='slack'</code>.
+      </p>
+      <ol>
+        <li>
+          Configure the Slack app from
+          <a href="./slack.html">Slack conversational capture setup</a>, including
+          <code>SLACK_CLIENT_ID</code>, <code>SLACK_CLIENT_SECRET</code>, and
+          <code>SLACK_SIGNING_SECRET</code>.
+        </li>
+        <li>
+          Add the native ingestion redirect URI:
+          <code>https://thetimeline.cc/api/integrations/slack/callback</code>.
+        </li>
+        <li>
+          Ensure the bot scopes include <code>channels:read</code>, <code>channels:history</code>,
+          <code>groups:read</code>, <code>groups:history</code>, <code>files:read</code>, and
+          <code>reactions:read</code>.
+        </li>
+        <li>
+          Connect Slack from the native catalog, share selected channels, then activate them from
+          <code>/app/team/integrations</code>. Private channels require the bot to be present before
+          Slack will expose history.
+        </li>
+      </ol>
+
+      <h2 id="sentry-native">Sentry native source</h2>
+      <ol>
+        <li>
+          Create a Sentry integration/OAuth application with organization, project, event, release,
+          and team read permissions.
+        </li>
+        <li>
+          Redirect URI:
+          <code>https://thetimeline.cc/api/integrations/sentry/callback</code>.
+        </li>
+        <li>
+          Set:
+          <pre><code>SENTRY_INTEGRATION_CLIENT_ID=...
+SENTRY_INTEGRATION_CLIENT_SECRET=...</code></pre>
+        </li>
+        <li>
+          Connect Sentry from the native catalog, share selected projects, and activate them from
+          <code>/app/team/integrations</code>. Timeline imports issues, regressions, releases, and
+          resolved/regressed incident state as cited events and incident objects.
         </li>
       </ol>
 

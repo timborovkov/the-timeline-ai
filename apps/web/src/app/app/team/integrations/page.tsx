@@ -35,8 +35,8 @@ export const dynamic = 'force-dynamic';
  *   2. PageHeader (title + metadata strip)
  *   3. Top action bar: secondary nav chips + "+ Add custom MCP server"
  *   4. Connected list (native + MCP) when anything is connected
- *   5. Native catalog (GitHub/Linear/Drive) when env-configured
- *   6. MCP catalog (Notion, Slack, Atlassian, Figma, Sentry, Stripe…)
+ *   5. Native catalog when env-configured
+ *   6. MCP catalog (Notion, Atlassian, Figma, Stripe…)
  *
  * Secondary actions (Expose-as-MCP, Personal MCP, Audit log) live in the
  * action bar — pinned at the top so they don't sink below the fold as
@@ -242,7 +242,8 @@ export default async function IntegrationsPage({
         <section className="space-y-3">
           <SectionHeading>Native integrations</SectionHeading>
           <p className="text-sm text-fg-muted">
-            GitHub, Linear, and Google Drive sync directly into Timeline as first-party providers.
+            Native providers sync selected external resources directly into Timeline as cited
+            events.
           </p>
           <IntegrationsCatalog catalog={nativeCatalog} />
         </section>
@@ -275,8 +276,8 @@ export default async function IntegrationsPage({
         <div className="rounded-sm border border-dashed border-border bg-surface p-6 text-sm text-fg-muted">
           <p className="mb-1 font-medium text-fg">No sources connected yet.</p>
           <p>
-            Connect Google Drive, Linear, or GitHub to sync work into the timeline, or add an
-            MCP-compatible server for live agent tool access.
+            Connect a native provider to sync work into the timeline, or add an MCP-compatible
+            server for live agent tool access.
           </p>
           {isAdmin ? (
             <p className="mt-2">

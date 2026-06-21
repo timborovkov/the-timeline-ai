@@ -27,7 +27,7 @@ const LANDING_SECTIONS = [
   },
   {
     title: 'Main capture surfaces',
-    body: 'Native surfaces include the web app, Telegram, Slack, inbound email, calendar, document uploads, meeting transcripts for Google Meet, Microsoft Teams, and Zoom, and first-party integrations for GitHub, Linear, and Google Drive. Custom MCP servers cover long-tail connected tools.',
+    body: 'Native surfaces include the web app, Telegram, Slack, inbound email, calendar, document uploads, meeting transcripts for Google Meet, Microsoft Teams, and Zoom, and first-party integrations for GitHub, Linear, Google Drive, Monday.com, Slack workspace history, and Sentry. Custom MCP servers cover long-tail connected tools.',
   },
 ];
 

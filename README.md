@@ -35,8 +35,8 @@ source material instead of hiding behind black-box summaries.
   Teams, and Zoom.
 - Read-only team calendar subscription feeds for viewing Timeline events in a
   default calendar app.
-- Slack, Telegram, email, and native GitHub/Linear/Google Drive sync into cited
-  timeline events.
+- Telegram, email, conversational Slack, and native GitHub/Linear/Google
+  Drive/Monday.com/Slack workspace/Sentry sync into cited timeline events.
 - Custom MCP servers that give the agent live access to long-tail tools without
   automatically ingesting those tools into the event store.
 - An outbound MCP server so tools like Claude Desktop and Cursor can query
@@ -181,7 +181,7 @@ boundaries.
   implementation plan for grounded generated object briefs across object pages,
   search, embeddings, and chat.
 - [`docs/integration-ingest-plan.md`](./docs/integration-ingest-plan.md) —
-  first-party ingestion roadmap for work systems beyond Drive, Linear, and GitHub.
+  first-party ingestion roadmap for work systems beyond the implemented native providers.
 - [`docs/ux-overhaul-plan.md`](./docs/ux-overhaul-plan.md) — UX overhaul plan:
   soften the forensic surface for non-technical users with standard-page
   headers, a guided connect-flow wizard, actionable error states,

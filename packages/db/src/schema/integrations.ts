@@ -35,6 +35,9 @@ export const integrationProvider = pgEnum('integration_provider', [
   'google_drive',
   'linear',
   'github',
+  'monday',
+  'slack',
+  'sentry',
   'mcp',
 ]);
 

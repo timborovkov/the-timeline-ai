@@ -10,11 +10,12 @@
     <a class="skip" href="#main">Skip to content</a>
     <main id="main">
       <h1>Slack conversational capture setup</h1>
-      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-06-16</span></div>
+      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-06-22</span></div>
       <p class="tldr">
         Slack is a first-party Capture Surface like Telegram: install the app with OAuth, link Slack
         users with OAuth, bind channels from Timeline, and let DMs route through the user's active
-        external team.
+        external team. The same app credentials can also power native Slack workspace ingestion for
+        selected channels from <code>/app/team/integrations</code>.
       </p>
 
       <nav class="toc" aria-label="On this page">
@@ -47,7 +48,9 @@ SLACK_SIGNING_SECRET=
         <li>
           OAuth redirect URLs:
           <code>https://thetimeline.cc/api/slack/install/callback</code> and
-          <code>https://thetimeline.cc/api/slack/user-link/callback</code>.
+          <code>https://thetimeline.cc/api/slack/user-link/callback</code>. Add
+          <code>https://thetimeline.cc/api/integrations/slack/callback</code> when enabling native
+          workspace ingestion.
         </li>
         <li>Events Request URL: <code>https://thetimeline.cc/api/slack/events</code>.</li>
         <li>
@@ -97,7 +100,7 @@ channels:history channels:read
 chat:write commands files:read
 groups:history groups:read
 im:history im:read
-reactions:write users:read users:read.email
+reactions:read reactions:write users:read users:read.email
 </code></pre>
       <p>User scope used for identity linking:</p>
       <pre><code>identity.basic
@@ -124,6 +127,16 @@ app_mention
       <p>
         The bot must be present in a private channel before Slack will deliver history/events for
         it. DMs need no channel binding; they route through the linked Slack user's active team.
+      </p>
+
+      <h2 id="native-ingestion">Native workspace ingestion</h2>
+      <p>
+        Conversational capture writes <code>raw_events.source='slack'</code> for messages that
+        actively route through Timeline. Native workspace ingestion is passive: an admin connects
+        Slack from <code>/app/team/integrations</code>, shares selected channels, and the
+        integration worker imports message history, thread replies, files, reactions, and edits as
+        <code>source='integration'</code> with <code>provider='slack'</code>. This makes selected
+        channel history searchable and citable even when nobody mentioned Timeline in the moment.
       </p>
 
       <h2 id="model">Mental model</h2>

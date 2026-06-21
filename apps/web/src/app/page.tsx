@@ -1,4 +1,12 @@
-import { CalendarDays, GitPullRequest, Mail, MessageCircle, Send, Video } from 'lucide-react';
+import {
+  AlertCircle,
+  CalendarDays,
+  GitPullRequest,
+  Mail,
+  MessageCircle,
+  Send,
+  Video,
+} from 'lucide-react';
 import Link from 'next/link';
 
 import type { Metadata } from 'next';
@@ -76,6 +84,8 @@ const NATIVE_INGEST = [
   { label: 'Telegram', icon: Send },
   { label: 'Slack', icon: MessageCircle },
   { label: 'GitHub', icon: GitPullRequest },
+  { label: 'Monday.com', icon: CalendarDays },
+  { label: 'Sentry', icon: AlertCircle },
   { label: 'Google Meet', icon: Video },
   { label: 'Zoom', icon: Video },
   { label: 'Microsoft Teams', icon: Video },
@@ -215,7 +225,7 @@ const FAQ_ITEMS = [
   },
   {
     q: 'How is capture done?',
-    a: 'Native surfaces feed one pipeline. Telegram and Slack capture chat, voice, files, /ask, and @Timeline context. GitHub, Linear, and Google Drive sync as native integrations. Google Meet, Zoom, and Microsoft Teams land through meeting bots. Email, calendar events, and web notes become cited timeline events. MCP servers give the agent live access to long-tail tools, but they do not create timeline events unless paired with a native sync adapter or custom ingestion layer.',
+    a: 'Native surfaces feed one pipeline. Telegram and Slack capture chat, voice, files, /ask, and @Timeline context. GitHub, Linear, Google Drive, Monday.com, Slack workspace history, and Sentry sync as native integrations. Google Meet, Zoom, and Microsoft Teams land through meeting bots. Email, calendar events, and web notes become cited timeline events. MCP servers give the agent live access to long-tail tools, but they do not create timeline events unless paired with a native sync adapter or custom ingestion layer.',
   },
   {
     q: 'What models power the agent?',
@@ -813,9 +823,9 @@ function Integrations() {
             Native systems feed the timeline. MCP extends the agent's reach.
           </h2>
           <p className="text-base leading-[1.55] text-fg-muted">
-            GitHub is a native integration alongside Linear and Google Drive: repos, PRs, issues,
-            reviews, releases, commits, and CI runs become cited events. Slack and Telegram stay the
-            fastest daily capture surfaces; GitHub is there when engineering context matters.
+            GitHub, Linear, Google Drive, Monday.com, Slack workspace history, and Sentry are native
+            integrations: PRs, issues, docs, board updates, channel decisions, errors, and releases
+            become cited events. Slack and Telegram stay the fastest daily capture surfaces.
             Long-tail tools plug in as{' '}
             <a
               href="https://modelcontextprotocol.io"

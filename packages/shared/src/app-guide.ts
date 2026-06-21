@@ -182,7 +182,8 @@ export const APP_GUIDE_ROUTES: readonly AppGuideRoute[] = [
   {
     id: 'team/integrations',
     title: 'Integrations',
-    description: 'Connect Drive, Linear, GitHub, Slack, Telegram, and MCP sources or tools.',
+    description:
+      'Connect Drive, Linear, GitHub, Monday.com, Slack, Sentry, Telegram, and MCP sources or tools.',
     href: '/app/team/integrations',
     group: 'dashboard',
     minRole: 'admin',
@@ -192,8 +193,10 @@ export const APP_GUIDE_ROUTES: readonly AppGuideRoute[] = [
       'google drive',
       'linear',
       'github',
+      'monday',
       'mcp',
       'slack',
+      'sentry',
       'telegram',
     ],
     guide:

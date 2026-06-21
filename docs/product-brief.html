@@ -149,14 +149,14 @@
           else.
         </li>
         <li>
-          <strong>Native integrations</strong>: GitHub, Linear, and Google Drive sync activity and
-          changes into the same event stream. GitHub is optional for teams that do not live in
-          engineering workflows, but it is a first-party connector: repo selection, PRs, issues,
-          reviews, commits, releases, and CI activity become cited timeline events. Teams can also
-          connect arbitrary <strong>custom MCP servers</strong> — their own internal tools or any
-          third-party MCP — to extend the agent's live tool reach without us shipping a bespoke
-          connector per provider. MCP does not automatically backfill or persist external activity
-          as timeline events.
+          <strong>Native integrations</strong>: GitHub, Linear, Google Drive, Monday.com, Slack
+          workspace history, and Sentry sync activity and changes into the same event stream. GitHub
+          is optional for teams that do not live in engineering workflows, but it is a first-party
+          connector: repo selection, PRs, issues, reviews, commits, releases, and CI activity become
+          cited timeline events. Teams can also connect arbitrary
+          <strong>custom MCP servers</strong> — their own internal tools or any third-party MCP — to
+          extend the agent's live tool reach without us shipping a bespoke connector per provider.
+          MCP does not automatically backfill or persist external activity as timeline events.
         </li>
       </ul>
 
@@ -474,9 +474,9 @@
           versions files; it does not replace Google Docs-style live editing.
         </li>
         <li>
-          <strong>Additional bespoke integrations</strong> beyond the native GitHub, Linear, and
-          Google Drive providers. HubSpot/CRM tools can start through MCP where they fit, then move
-          to native APIs/webhooks when volume or product polish justifies it.
+          <strong>Additional bespoke integrations</strong> beyond the implemented native providers.
+          HubSpot/CRM tools can start through MCP where they fit, then move to native APIs/webhooks
+          when volume or product polish justifies it.
         </li>
         <li><strong>Real-time collaboration</strong> on entity pages. Later.</li>
         <li><strong>Mobile native apps.</strong> PWA covers this for v1.</li>
@@ -503,11 +503,11 @@
           companies, deals, vendors, incidents, documents, and team-defined object types.
         </li>
         <li>
-          <strong>More native integrations</strong>: GitHub, Linear, and Google Drive already use
-          native sync into the shared event pipeline. Add CRM and finance systems the same way once
-          they prove core to daily workflow; MCP remains the adapter layer for long-tail and
-          experimental tools. Teams can additionally connect arbitrary custom MCP servers to extend
-          the agent's reach.
+          <strong>More native integrations</strong>: GitHub, Linear, Google Drive, Monday.com, Slack
+          workspace history, and Sentry already use native sync into the shared event pipeline. Add
+          CRM and finance systems the same way once they prove core to daily workflow; MCP remains
+          the adapter layer for long-tail and experimental tools. Teams can additionally connect
+          arbitrary custom MCP servers to extend the agent's reach.
         </li>
         <li>
           <strong>Meeting bots</strong>: join Google Meet, Microsoft Teams, and Zoom calls (default

@@ -70,4 +70,12 @@ describe('POST /api/integrations/[provider]/start', () => {
     });
     expect(input.state).toEqual(expect.any(String));
   });
+
+  it('allows priority native providers through the generic OAuth start route', async () => {
+    const response = await POST(request(), { params: Promise.resolve({ provider: 'monday' }) });
+
+    expect(response.status).toBe(200);
+    const [[input]] = fakes.startOAuth.mock.calls as unknown as [[StartOAuthInput]];
+    expect(input.redirectUri).toBe(`${PUBLIC_ORIGIN}/api/integrations/monday/callback`);
+  });
 });

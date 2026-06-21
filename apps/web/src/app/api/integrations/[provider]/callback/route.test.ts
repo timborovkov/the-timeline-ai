@@ -43,11 +43,11 @@ const TEAM_ID = '11111111-1111-4111-8111-111111111111';
 const CONNECTION_ID = '55555555-5555-4555-8555-555555555555';
 const PUBLIC_ORIGIN = 'https://thetimeline.cc';
 
-function signState(): string {
+function signState(provider = 'github'): string {
   const payload = {
     teamId: TEAM_ID,
     userId: USER_ID,
-    provider: 'github',
+    provider,
     nonce: 'nonce',
     iat: Date.now(),
   };
@@ -123,6 +123,24 @@ describe('GET /api/integrations/[provider]/callback', () => {
     expect(response.status).toBe(307);
     expect(response.headers.get('location')).toBe(
       `${PUBLIC_ORIGIN}/app/team/integrations?error=access_denied`,
+    );
+  });
+
+  it('allows priority native providers through the generic OAuth callback route', async () => {
+    const response = await GET(
+      request(`?code=auth-code&state=${encodeURIComponent(signState('sentry'))}`),
+      {
+        params: Promise.resolve({ provider: 'sentry' }),
+      },
+    );
+
+    expect(response.status).toBe(307);
+    expect(fakes.handleOAuthCallback).toHaveBeenCalledWith({
+      code: 'auth-code',
+      redirectUri: `${PUBLIC_ORIGIN}/api/integrations/sentry/callback`,
+    });
+    expect(fakes.upsertProviderConnection).toHaveBeenCalledWith(
+      expect.objectContaining({ provider: 'sentry' }),
     );
   });
 });

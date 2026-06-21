@@ -16,12 +16,19 @@ const KIND_LABELS: Record<string, string> = {
   'linear.team': 'Linear team',
   'drive.folder': 'Google Drive folder',
   'drive.shared_drive': 'Google Drive shared drive',
+  'monday.board': 'Monday.com board',
+  'slack.channel': 'Slack channel',
+  'sentry.org': 'Sentry organization',
+  'sentry.project': 'Sentry project',
 };
 
 const PROVIDER_LABELS: Record<string, string> = {
   google_drive: 'Google Drive',
   linear: 'Linear',
   github: 'GitHub',
+  monday: 'Monday.com',
+  slack: 'Slack',
+  sentry: 'Sentry',
 };
 
 export function providerLabel(provider: string): string {

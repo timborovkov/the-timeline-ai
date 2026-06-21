@@ -186,10 +186,10 @@ packages/
             scope, RustFS object-key builder, text chunker), meeting-bots
             module (Phase 10 — Recall.ai provider, Svix verifier) +
             meetings scope (meeting/chunk/usage helpers), integrations
-            module (Phase 11 — Drive/Linear/GitHub providers, person-owned
-            provider connections, team resource shares, active source paths,
-            connection attention, event-writer, registry catalog, AES-GCM
-            secrets helper), mcp module (Phase 11
+            module (Phase 11 — Drive/Linear/GitHub/Monday.com/Slack/Sentry
+            providers, person-owned provider connections, team resource
+            shares, active source paths, connection attention, event-writer,
+            registry catalog, AES-GCM secrets helper), mcp module (Phase 11
             — JSON-RPC client, OAuth client + state JWT, SSRF guard,
             team+user-overlay scope), mcp-server module (Phase 11 outbound —
             JSON-RPC handler, bearer-key mint/verify for /api/mcp/server),

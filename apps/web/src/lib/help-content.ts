@@ -128,7 +128,8 @@ export const HELP_PAGES: HelpPage[] = [
   {
     slug: 'integrations',
     title: 'Integrations',
-    description: 'Connect Drive, Linear, GitHub, and MCP tools without breaking team isolation.',
+    description:
+      'Connect Drive, Linear, GitHub, Monday.com, Slack, Sentry, and MCP tools without breaking team isolation.',
     icon: PlugZap,
     related: ['capture', 'documents'],
     sections: [
@@ -137,7 +138,7 @@ export const HELP_PAGES: HelpPage[] = [
         body: 'Integrations import external activity into the same event pipeline as manual capture. Members own provider connections; admins activate the shared sources that feed team memory.',
         items: [
           'Google Drive can sync selected folders and files.',
-          'Linear and GitHub bring project activity into team memory.',
+          'Linear, GitHub, Monday.com, Slack, and Sentry bring project and operational activity into team memory.',
           'Custom MCP servers can expose approved tools to the agent.',
         ],
         appLink: { href: '/app/team/integrations', label: 'Open integrations' },

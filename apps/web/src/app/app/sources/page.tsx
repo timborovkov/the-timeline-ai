@@ -140,7 +140,7 @@ function buildSources(summary: SourcesStatusSummary): SourceEntry[] {
   const integrations: SourceEntry = {
     href: '/app/team/integrations',
     label: 'Integrations',
-    description: 'Connect Google Drive, Linear, and GitHub.',
+    description: 'Connect Google Drive, Linear, GitHub, Monday.com, Slack, and Sentry.',
     icon: Plug,
     status:
       summary.integrationErrors > 0 ? 'attention' : integrationsAny ? 'connected' : 'not-setup',

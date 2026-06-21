@@ -4,6 +4,9 @@ import { getEnv } from '#src/env.js';
 import { githubProvider } from '#src/integrations/providers/github.js';
 import { googleDriveProvider } from '#src/integrations/providers/google-drive.js';
 import { linearProvider } from '#src/integrations/providers/linear.js';
+import { mondayProvider } from '#src/integrations/providers/monday.js';
+import { sentryProvider } from '#src/integrations/providers/sentry.js';
+import { slackProvider } from '#src/integrations/providers/slack.js';
 
 // Phase 11 — Provider registry + integration catalog.
 //
@@ -12,7 +15,7 @@ import { linearProvider } from '#src/integrations/providers/linear.js';
 //   - `_registry` maps native-provider ids to their adapter
 //     implementations. The settings flow / worker resolve providers via
 //     `getProvider(id)`. Only natives we actually drive sync for live
-//     here (GitHub, Linear, Drive).
+//     here.
 //
 //   - `CATALOG` is the marketing + UX surface. It includes the natives
 //     above PLUS featured MCP-backed integrations the team can connect
@@ -36,6 +39,9 @@ const _registry: Record<string, IntegrationProvider> = {
   google_drive: googleDriveProvider,
   linear: linearProvider,
   github: githubProvider,
+  monday: mondayProvider,
+  slack: slackProvider,
+  sentry: sentryProvider,
 };
 
 export function getProvider(id: string): IntegrationProvider {
@@ -157,6 +163,57 @@ const CATALOG_SEEDS: CatalogSeed[] = [
       return Boolean(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET);
     },
   },
+  {
+    id: 'monday',
+    label: 'Monday.com',
+    description:
+      'Native board sync: items, updates, status changes, owners, and column activity become cited events.',
+    logo: '/connectors/monday.svg',
+    category: 'project-management',
+    kind: 'native',
+    featured: true,
+    connectablePath: '/app/team/integrations',
+    ingestStatus: 'implemented',
+    examplePrompt: 'Which launch board items changed status this week?',
+    envCheck: () => {
+      const env = getEnv();
+      return Boolean(env.MONDAY_CLIENT_ID && env.MONDAY_CLIENT_SECRET);
+    },
+  },
+  {
+    id: 'slack',
+    label: 'Slack',
+    description:
+      'Native workspace sync: selected channels, threads, files, reactions, and edits become cited events.',
+    logo: '/connectors/slack.svg',
+    category: 'communication',
+    kind: 'native',
+    featured: true,
+    connectablePath: '/app/team/integrations',
+    ingestStatus: 'implemented',
+    examplePrompt: 'What did the team decide about pricing in #leadership last week?',
+    envCheck: () => {
+      const env = getEnv();
+      return Boolean(env.SLACK_CLIENT_ID && env.SLACK_CLIENT_SECRET && env.SLACK_SIGNING_SECRET);
+    },
+  },
+  {
+    id: 'sentry',
+    label: 'Sentry',
+    description:
+      'Native issue sync: issues, regressions, releases, and resolved incidents become cited events.',
+    logo: '/connectors/sentry.svg',
+    category: 'dev-tools',
+    kind: 'native',
+    featured: true,
+    connectablePath: '/app/team/integrations',
+    ingestStatus: 'implemented',
+    examplePrompt: 'What broke after yesterday’s deploy?',
+    envCheck: () => {
+      const env = getEnv();
+      return Boolean(env.SENTRY_INTEGRATION_CLIENT_ID && env.SENTRY_INTEGRATION_CLIENT_SECRET);
+    },
+  },
 
   // ─────────────────────── MCP-backed (connectable today) ────────────
   {
@@ -173,25 +230,6 @@ const CATALOG_SEEDS: CatalogSeed[] = [
     mcpUrl: 'https://mcp.notion.com/mcp',
     mcpAuthType: 'oauth',
     examplePrompt: 'What’s in our incident response runbook?',
-    staticStatus: 'mcp_available',
-  },
-  {
-    id: 'slack',
-    label: 'Slack',
-    description:
-      'Search messages, files, and channel context through MCP today; native workspace-wide channel, thread, file, and reaction ingestion is planned.',
-    logo: '/connectors/slack.svg',
-    category: 'communication',
-    kind: 'mcp',
-    featured: true,
-    connectablePath: '/app/team/mcp-servers',
-    ingestStatus: 'coming_soon',
-    // Slack publishes a bearer-token MCP shim; OAuth coming once their
-    // first-party MCP server lands publicly.
-    mcpUrl: 'https://mcp.composio.dev/slack',
-    mcpAuthType: 'bearer',
-    mcpAuthHint: 'Composio Slack MCP token — generate at https://app.composio.dev',
-    examplePrompt: 'What did the team decide about pricing in #leadership last week?',
     staticStatus: 'mcp_available',
   },
   {
@@ -242,22 +280,6 @@ const CATALOG_SEEDS: CatalogSeed[] = [
     mcpAuthHint:
       'Figma ships an MCP server inside the desktop app. Enable it in Preferences → MCP, then click Connect (no token needed).',
     examplePrompt: 'Show me the latest design iterations on the checkout flow.',
-    staticStatus: 'mcp_available',
-  },
-  {
-    id: 'sentry',
-    label: 'Sentry',
-    description:
-      'Errors, regressions, and release health are visible through MCP today; native issue, release, and alert ingestion is planned.',
-    logo: '/connectors/sentry.svg',
-    category: 'dev-tools',
-    kind: 'mcp',
-    featured: true,
-    connectablePath: '/app/team/mcp-servers',
-    ingestStatus: 'coming_soon',
-    mcpUrl: 'https://mcp.sentry.dev/sse',
-    mcpAuthType: 'oauth',
-    examplePrompt: 'What broke after yesterday’s deploy?',
     staticStatus: 'mcp_available',
   },
   {
@@ -331,19 +353,6 @@ const CATALOG_SEEDS: CatalogSeed[] = [
     connectablePath: '/app/team/mcp-servers',
     ingestStatus: 'coming_soon',
     examplePrompt: 'What’s blocking the launch checklist?',
-    staticStatus: 'coming_soon',
-  },
-  {
-    id: 'monday',
-    label: 'Monday.com',
-    description: 'Native board, item, update, owner, and status-change ingestion is planned.',
-    logo: '/connectors/monday.svg',
-    category: 'project-management',
-    kind: 'mcp',
-    featured: false,
-    connectablePath: '/app/team/mcp-servers',
-    ingestStatus: 'coming_soon',
-    examplePrompt: 'Which launch board items changed status this week?',
     staticStatus: 'coming_soon',
   },
   {
@@ -524,7 +533,7 @@ export function listFeaturedCatalog(): CatalogEntry[] {
  * in the cloud + the `/app/team/mcp-servers` flow.
  */
 export interface LegacyCatalogEntry {
-  id: 'google_drive' | 'linear' | 'github';
+  id: 'google_drive' | 'linear' | 'github' | 'monday' | 'slack' | 'sentry';
   label: string;
   description: string;
   logo: string;
@@ -541,7 +550,7 @@ export function listAvailableProviders(): LegacyCatalogEntry[] {
   return listCatalog()
     .filter((c) => c.kind === 'native' && c.status === 'native_available')
     .map((c) => ({
-      id: c.id as 'google_drive' | 'linear' | 'github',
+      id: c.id as LegacyCatalogEntry['id'],
       label: c.label,
       description: c.description,
       logo: c.logo,

@@ -316,6 +316,13 @@
       "when": 1795653000000,
       "tag": "0044_object_summaries",
       "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1782082229570,
+      "tag": "0045_priority_integrations",
+      "breakpoints": true
     }
   ]
 }

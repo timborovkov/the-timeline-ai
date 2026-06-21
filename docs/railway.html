@@ -311,6 +311,12 @@ rclone sync s3:timeline-attachments backblaze-b2:timeline-backup-attachments
         <li>Postmark: <code>https://thetimeline.cc/api/email/inbound</code></li>
       </ul>
       <p>
+        Native integration OAuth callbacks also land on the web service, including
+        <code>/api/integrations/monday/callback</code>,
+        <code>/api/integrations/slack/callback</code>, and
+        <code>/api/integrations/sentry/callback</code>.
+      </p>
+      <p>
         The Telegram webhook is registered automatically by the <code>web</code> service on startup.
         The Next.js instrumentation hook at <code>apps/web/src/instrumentation.ts</code> runs once
         per server process, reads <code>TELEGRAM_BOT_TOKEN</code>,

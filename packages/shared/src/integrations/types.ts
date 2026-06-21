@@ -5,7 +5,8 @@ import type {
 
 // Phase 11 — Provider adapter interface.
 //
-// Every integration (Google Drive, Linear, GitHub, custom MCP-backed)
+// Every integration (Google Drive, Linear, GitHub, Monday.com, Slack, Sentry,
+// custom MCP-backed)
 // implements this. The shared worker + API routes drive providers through
 // this surface so business logic stays out of route handlers and webhooks.
 
@@ -151,7 +152,7 @@ export interface OAuthCallbackOutput {
 }
 
 export interface IntegrationProvider {
-  id: 'google_drive' | 'linear' | 'github';
+  id: 'google_drive' | 'linear' | 'github' | 'monday' | 'slack' | 'sentry';
   displayLabel: string;
   /**
    * Build the OAuth authorize URL. Returns the URL only — the route

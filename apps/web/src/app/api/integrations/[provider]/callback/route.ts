@@ -18,12 +18,13 @@ export const dynamic = 'force-dynamic';
 
 const log = childLogger('web:api:integrations:callback');
 
-const PROVIDERS = new Set(['google_drive', 'linear', 'github']);
+const PROVIDER_VALUES = ['google_drive', 'linear', 'github', 'monday', 'slack', 'sentry'] as const;
+const PROVIDERS = new Set<string>(PROVIDER_VALUES);
 
 const stateSchema = z.object({
   teamId: z.uuid(),
   userId: z.uuid(),
-  provider: z.enum(['google_drive', 'linear', 'github']),
+  provider: z.enum(PROVIDER_VALUES),
   nonce: z.string(),
   iat: z.number(),
 });
