@@ -16,9 +16,10 @@ interface CatalogEntryProps {
   description: string;
   logo: string;
   category: string;
-  authType: 'none' | 'oauth' | 'bearer' | 'header';
+  authType: 'none' | 'oauth' | 'bearer' | 'header' | null;
   authHint: string | null;
   status: string;
+  ingestStatus: string;
 }
 
 const FILTER_THRESHOLD = 4;
@@ -152,6 +153,13 @@ export function McpCatalog({ entries }: { entries: CatalogEntryProps[] }) {
 function CatalogCard({ entry }: { entry: CatalogEntryProps }) {
   const router = useRouter();
   const dialog = useAppDialog();
+  const isConnectable = entry.status === 'mcp_available' && entry.authType !== null;
+  const statusLabel =
+    entry.status === 'coming_soon'
+      ? 'Coming soon'
+      : entry.ingestStatus === 'coming_soon'
+        ? 'MCP now'
+        : 'Available';
   const [{ open, bearer, headerName, headerValue, busy }, setCardState] = useReducer(
     patchCardState,
     INITIAL_CARD_STATE,
@@ -198,6 +206,7 @@ function CatalogCard({ entry }: { entry: CatalogEntryProps }) {
   }
 
   async function onClickConnect() {
+    if (!isConnectable) return;
     if (entry.authType === 'none' || entry.authType === 'oauth') {
       await connect({});
       return;
@@ -242,7 +251,19 @@ function CatalogCard({ entry }: { entry: CatalogEntryProps }) {
       </CardHeader>
       <CardContent className="flex flex-1 flex-col">
         <p className="text-sm text-fg-muted">{entry.description}</p>
-        {entry.authHint ? <p className="mt-2 text-xs text-fg-dim">{entry.authHint}</p> : null}
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <span className="rounded-sm border border-border bg-surface-2 px-1.5 py-0.5 text-[10px] uppercase tracking-[0.14em] text-fg-muted">
+            {statusLabel}
+          </span>
+          {entry.ingestStatus === 'coming_soon' ? (
+            <span className="rounded-sm border border-border bg-surface px-1.5 py-0.5 text-[10px] uppercase tracking-[0.14em] text-fg-dim">
+              Native ingest planned
+            </span>
+          ) : null}
+        </div>
+        {entry.authHint && isConnectable ? (
+          <p className="mt-2 text-xs text-fg-dim">{entry.authHint}</p>
+        ) : null}
 
         {open && entry.authType === 'bearer' ? (
           <div className="mt-3 space-y-2">
@@ -308,22 +329,24 @@ function CatalogCard({ entry }: { entry: CatalogEntryProps }) {
           ) : (
             <Button
               size="sm"
-              disabled={busy}
+              disabled={busy || !isConnectable}
               onClick={() => {
                 void onClickConnect();
               }}
             >
-              {busy
-                ? 'Connecting…'
-                : entry.authType === 'oauth'
-                  ? 'Connect with OAuth'
-                  : entry.authType === 'none'
-                    ? 'Connect'
-                    : 'Connect with token'}
+              {!isConnectable
+                ? 'Coming soon'
+                : busy
+                  ? 'Connecting…'
+                  : entry.authType === 'oauth'
+                    ? 'Connect with OAuth'
+                    : entry.authType === 'none'
+                      ? 'Connect'
+                      : 'Connect with token'}
             </Button>
           )}
           <span className="ml-auto font-mono text-[10px] uppercase tracking-[0.14em] text-fg-dim">
-            {entry.authType}
+            {entry.authType ?? 'planned'}
           </span>
         </div>
       </CardContent>

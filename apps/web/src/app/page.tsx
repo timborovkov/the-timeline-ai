@@ -215,7 +215,7 @@ const FAQ_ITEMS = [
   },
   {
     q: 'How is capture done?',
-    a: 'Native surfaces feed one pipeline. Telegram and Slack capture chat, voice, files, /ask, and @Timeline context. GitHub, Linear, and Google Drive sync as native integrations. Google Meet, Zoom, and Microsoft Teams land through meeting bots. Email, calendar events, web notes, MCP servers, and long-tail third-party integrations all become cited timeline events.',
+    a: 'Native surfaces feed one pipeline. Telegram and Slack capture chat, voice, files, /ask, and @Timeline context. GitHub, Linear, and Google Drive sync as native integrations. Google Meet, Zoom, and Microsoft Teams land through meeting bots. Email, calendar events, and web notes become cited timeline events. MCP servers give the agent live access to long-tail tools, but they do not create timeline events unless paired with a native sync adapter or custom ingestion layer.',
   },
   {
     q: 'What models power the agent?',
@@ -780,7 +780,7 @@ function Surfaces() {
         />
         <SurfaceTile
           label="MCP + INTEGRATIONS"
-          body="Connect long-tail MCP servers and additional third-party systems like CRMs, ERPs, and docs."
+          body="Connect long-tail MCP servers for live tool access, then promote high-value systems to native sync when they need durable events."
         />
       </div>
     </Section>
@@ -810,7 +810,7 @@ function Integrations() {
       <div className="mt-10 grid gap-12 lg:grid-cols-[1fr,2fr] lg:items-start">
         <div className="space-y-4">
           <h2 className="text-2xl font-medium tracking-tight text-fg sm:text-3xl">
-            Every system the team works in feeds the same timeline.
+            Native systems feed the timeline. MCP extends the agent's reach.
           </h2>
           <p className="text-base leading-[1.55] text-fg-muted">
             GitHub is a native integration alongside Linear and Google Drive: repos, PRs, issues,
@@ -826,7 +826,8 @@ function Integrations() {
               MCP servers
             </a>{' '}
             : Notion, Jira, Figma, Sentry, Stripe, your internal tool, anything that speaks the
-            protocol. The agent gets the tools; you don&apos;t write a bespoke connector.
+            protocol. The agent gets live tools; those systems only become durable timeline events
+            when you add native sync or a custom ingestion layer.
           </p>
         </div>
         <IntegrationCloud />

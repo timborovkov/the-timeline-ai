@@ -120,10 +120,10 @@ export default async function IntegrationsPage({
       : [];
   const memberUserMap = new Map(memberUsers.map((u) => [u.id, u] as const));
   const nativeCatalog = integrationsLib.listAvailableProviders();
-  const mcpCatalog = integrationsLib.listCatalog().filter((c) => c.kind === 'mcp' && c.mcpUrl);
+  const mcpCatalog = integrationsLib.listCatalog().filter((c) => c.kind === 'mcp');
   const ingestWebhookList = ingestWebhookListFromRows(ingestWebhookRows);
   const connectedUrls = new Set(mcpServers.map((s) => s.url));
-  const mcpCatalogAvailable = mcpCatalog.filter((c) => !connectedUrls.has(c.mcpUrl ?? ''));
+  const mcpCatalogAvailable = mcpCatalog.filter((c) => !c.mcpUrl || !connectedUrls.has(c.mcpUrl));
 
   const totalConnected = connected.length + mcpServers.length;
   const totalCatalog = nativeCatalog.length + mcpCatalogAvailable.length;
@@ -309,6 +309,10 @@ export default async function IntegrationsPage({
       {mcpCatalogAvailable.length > 0 ? (
         <section className="space-y-3">
           <SectionHeading>MCP servers</SectionHeading>
+          <p className="text-sm text-fg-muted">
+            MCP servers give the agent live tool access. They do not create timeline events unless
+            paired with native sync or custom ingestion.
+          </p>
           <McpCatalog
             entries={mcpCatalogAvailable.map((c) => ({
               id: c.id,
@@ -316,9 +320,10 @@ export default async function IntegrationsPage({
               description: c.description,
               logo: c.logo,
               category: c.category,
-              authType: c.mcpAuthType ?? 'none',
+              authType: c.mcpAuthType ?? null,
               authHint: c.mcpAuthHint ?? null,
               status: c.status,
+              ingestStatus: c.ingestStatus,
             }))}
           />
         </section>
@@ -328,8 +333,8 @@ export default async function IntegrationsPage({
         <div className="rounded-sm border border-dashed border-border bg-surface p-6 text-sm text-fg-muted">
           <p className="mb-1 font-medium text-fg">No sources connected yet.</p>
           <p>
-            Connect Google Drive, Linear, or GitHub to sync work into the timeline, or add any
-            MCP-compatible server above.
+            Connect Google Drive, Linear, or GitHub to sync work into the timeline, or add an
+            MCP-compatible server for live agent tool access.
           </p>
           {isAdmin ? (
             <p className="mt-2">
