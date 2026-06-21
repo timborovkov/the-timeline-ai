@@ -190,11 +190,15 @@ GITHUB_APP_CLIENT_SECRET=...</code></pre>
       <h2 id="timeline-as-mcp">Timeline as an MCP server (outbound)</h2>
       <p>
         Expose this Timeline as an MCP server so external agents (Claude Desktop, Cursor, web-based
-        agents, etc.) can query its events, entities, and documents. Admins mint bearer keys at
-        <code>/app/team/mcp-share</code>:
+        agents, etc.) can query its events, entities, and documents. Admins can open
+        <strong>Connections</strong> and use <em>Manage Timeline MCP endpoint</em>, or go directly
+        to <code>/app/team/mcp-share</code>:
       </p>
       <ol>
-        <li>Go to <code>/app/team/mcp-share</code> and copy the MCP endpoint URL shown there.</li>
+        <li>
+          Open <strong>Connections</strong>, choose <em>Manage Timeline MCP endpoint</em>, and copy
+          the MCP endpoint URL shown there.
+        </li>
         <li>
           Click <em>New key</em>, give it a label (e.g. "Claude Desktop — personal mac"), and copy
           the one-time plaintext.
