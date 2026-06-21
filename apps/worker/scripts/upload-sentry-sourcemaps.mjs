@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
-import SentryCli from '@sentry/cli/js/index.js';
+import { SentryCli } from '@sentry/cli/js/index.js';
 
 const required = ['SENTRY_AUTH_TOKEN', 'SENTRY_ORG', 'SENTRY_PROJECT'];
 const missing = required.filter((name) => !process.env[name]);
