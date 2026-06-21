@@ -37,8 +37,9 @@ source material instead of hiding behind black-box summaries.
   default calendar app.
 - Slack, Telegram, email, native GitHub/Linear/Google Drive sync, and custom
   MCP-powered ingestion surfaces.
-- An outbound MCP server so tools like Claude Desktop and Cursor can query a
-  team's Timeline.
+- An outbound MCP server so tools like Claude Desktop and Cursor can query
+  team-level workspace context across Timeline events, objects, tasks, boards,
+  calendar, documents, and integrations.
 
 ## Project Status
 

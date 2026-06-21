@@ -3,7 +3,9 @@
 import { useRouter } from 'next/navigation';
 import { useEffect, useReducer } from 'react';
 
+import { CopyButton } from '@/components/copy-button';
 import { useAppDialog } from '@/components/ui/app-dialog';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -19,6 +21,49 @@ interface KeyRow {
 
 function copyToClipboard(text: string): void {
   void navigator.clipboard.writeText(text).catch(() => undefined);
+}
+
+function endpointUrl(mcpUrl: string): string {
+  return mcpUrl || 'https://thetimeline.cc/api/mcp/server';
+}
+
+function keyValue(mintedKey: MintedKey | null): string {
+  return mintedKey?.plaintext ?? 'tla_your_key';
+}
+
+function remoteJsonConfig(mcpUrl: string, mintedKey: MintedKey | null): string {
+  return JSON.stringify(
+    {
+      mcpServers: {
+        timeline: {
+          type: 'streamable-http',
+          url: endpointUrl(mcpUrl),
+          headers: {
+            Authorization: `Bearer ${keyValue(mintedKey)}`,
+          },
+        },
+      },
+    },
+    null,
+    2,
+  );
+}
+
+function codexCommand(mcpUrl: string, mintedKey: MintedKey | null): string {
+  return [
+    `export TIMELINE_MCP_KEY="${keyValue(mintedKey)}"`,
+    `codex mcp add timeline --url "${endpointUrl(mcpUrl)}" --bearer-token-env-var TIMELINE_MCP_KEY`,
+  ].join('\n');
+}
+
+function chatGptConnectorDetails(mcpUrl: string): string {
+  return [
+    'Settings -> Apps & Connectors -> Advanced settings -> Developer mode',
+    'Create app / connector',
+    'Connector name: Timeline',
+    `Connector URL: ${endpointUrl(mcpUrl)}`,
+    'Protocol: Streaming HTTP / Streamable HTTP',
+  ].join('\n');
 }
 
 interface MintedKey {
@@ -55,6 +100,174 @@ function mcpShareReducer(state: McpShareState, action: McpShareAction): McpShare
     case 'created':
       return { ...state, mintedKey: action.mintedKey, name: '', showCreate: false };
   }
+}
+
+function McpStatusGrid() {
+  return (
+    <section className="grid gap-3 md:grid-cols-4">
+      {[
+        ['Transport', 'Streamable HTTP URL', 'Use the URL below, not an SSE endpoint.'],
+        ['Protocol', '2024-11-05', 'Compatibility target returned during initialize.'],
+        ['Auth', 'Bearer header', 'Keys are team-scoped and can be revoked here.'],
+        ['Visibility', 'Team-visible only', 'Private and specific-user events stay out.'],
+      ].map(([label, value, description]) => (
+        <div key={label} className="rounded-sm border border-border bg-surface p-3">
+          <div className="font-mono text-[10px] uppercase tracking-[0.14em] text-fg-muted">
+            {label}
+          </div>
+          <div className="mt-1 text-sm font-medium text-fg">{value}</div>
+          <p className="mt-1 text-xs leading-5 text-fg-muted">{description}</p>
+        </div>
+      ))}
+    </section>
+  );
+}
+
+function McpEndpointCard({ mcpUrl }: { mcpUrl: string }) {
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <CardTitle className="text-sm">MCP endpoint</CardTitle>
+          <Badge variant="outline" className="rounded-sm font-mono uppercase tracking-[0.14em]">
+            Streamable HTTP
+          </Badge>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <p className="text-sm text-fg-muted">
+          Configure a remote MCP client with this URL plus a bearer key from this page. Pick
+          Streamable HTTP or HTTP URL in clients that ask for a transport. Do not choose legacy SSE;
+          Timeline does not expose an <code className="font-mono">/sse</code> endpoint.
+        </p>
+        <p className="text-sm text-fg-muted">
+          The endpoint is read-only and exposes team-level retrieval for workspace context, timeline
+          events, entities, objects, tasks, boards, calendar, documents, and connected integration
+          activity.
+        </p>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <code className="flex-1 break-all rounded-sm border border-border bg-surface-2 px-2 py-1.5 font-mono text-xs">
+            {mcpUrl || 'Loading…'}
+          </code>
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={!mcpUrl}
+            onClick={() => {
+              copyToClipboard(mcpUrl);
+            }}
+          >
+            Copy
+          </Button>
+        </div>
+        <p className="text-xs text-fg-dim">
+          Timeline currently advertises MCP protocol <code className="font-mono">2024-11-05</code>{' '}
+          during <code className="font-mono">initialize</code>. Modern clients that support
+          Streamable HTTP compatibility should use this endpoint directly.
+        </p>
+      </CardContent>
+    </Card>
+  );
+}
+
+function McpRetrievalSummary() {
+  return (
+    <section className="space-y-3">
+      <div className="font-mono text-xs uppercase tracking-[0.14em] text-fg-muted">
+        Available retrieval
+      </div>
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        {[
+          ['Workspace context', 'retrieve_workspace_context for broad cross-surface questions.'],
+          ['Objects and tasks', 'get/search/list objects, active tasks, and board state.'],
+          ['Calendar and time', 'list/get events and resolve workspace-relative dates.'],
+          ['Docs and integrations', 'semantic and structured document plus integration search.'],
+        ].map(([title, description]) => (
+          <div key={title} className="rounded-sm border border-border bg-surface p-3">
+            <div className="text-sm font-medium text-fg">{title}</div>
+            <p className="mt-1 text-xs leading-5 text-fg-muted">{description}</p>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function McpClientGuides({ mcpUrl, mintedKey }: { mcpUrl: string; mintedKey: MintedKey | null }) {
+  return (
+    <section className="space-y-3">
+      <div className="font-mono text-xs uppercase tracking-[0.14em] text-fg-muted">
+        Connect from clients
+      </div>
+      <div className="grid gap-3 lg:grid-cols-3">
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-sm">Codex CLI</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <p className="text-sm text-fg-muted">
+              Codex supports Streamable HTTP MCP servers through <code>codex mcp add --url</code>.
+              Store the key in an environment variable so it is not written directly into shell
+              history.
+            </p>
+            <div className="overflow-hidden rounded-sm border border-border bg-surface-2">
+              <pre className="overflow-x-auto p-3 font-mono text-xs leading-5">
+                <code>{codexCommand(mcpUrl, mintedKey)}</code>
+              </pre>
+            </div>
+            <CopyButton value={codexCommand(mcpUrl, mintedKey)} label="Copy command" />
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-sm">Claude Desktop, Cursor, and URL clients</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <p className="text-sm text-fg-muted">
+              Clients with remote MCP JSON config usually need a transport type, URL, and
+              Authorization header. If your client only supports local command servers, use its
+              remote-MCP bridge and point the bridge at this same URL.
+            </p>
+            <div className="overflow-hidden rounded-sm border border-border bg-surface-2">
+              <pre className="overflow-x-auto p-3 font-mono text-xs leading-5">
+                <code>{remoteJsonConfig(mcpUrl, mintedKey)}</code>
+              </pre>
+            </div>
+            <CopyButton value={remoteJsonConfig(mcpUrl, mintedKey)} label="Copy JSON" />
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <CardTitle className="text-sm">ChatGPT</CardTitle>
+              <Badge variant="outline" className="rounded-sm font-mono uppercase tracking-[0.14em]">
+                Needs OAuth
+              </Badge>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <p className="text-sm text-fg-muted">
+              ChatGPT can create apps from remote MCP servers in Developer mode. Use this endpoint
+              as the connector URL, but note that ChatGPT&apos;s app flow expects OAuth, no-auth, or
+              mixed auth; Timeline&apos;s current outbound endpoint uses static bearer keys.
+            </p>
+            <div className="overflow-hidden rounded-sm border border-border bg-surface-2">
+              <pre className="overflow-x-auto p-3 font-mono text-xs leading-5">
+                <code>{chatGptConnectorDetails(mcpUrl)}</code>
+              </pre>
+            </div>
+            <p className="text-xs leading-5 text-fg-dim">
+              Treat this as the rollout path, not a guaranteed one-click setup, until Timeline adds
+              an OAuth-backed ChatGPT connector or bridge.
+            </p>
+            <CopyButton value={chatGptConnectorDetails(mcpUrl)} label="Copy details" />
+          </CardContent>
+        </Card>
+      </div>
+    </section>
+  );
 }
 
 export function McpShareUi({ keys }: { keys: KeyRow[] }) {
@@ -111,33 +324,10 @@ export function McpShareUi({ keys }: { keys: KeyRow[] }) {
 
   return (
     <div className="space-y-6">
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-sm">MCP endpoint</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <p className="text-sm text-fg-muted">
-            Configure your MCP client (Claude Desktop, Cursor, etc.) with the URL below plus a
-            bearer key from this page. The server speaks MCP protocol{' '}
-            <code className="font-mono">2024-11-05</code> over streamable HTTP.
-          </p>
-          <div className="flex items-center gap-2">
-            <code className="flex-1 break-all rounded-sm border border-border bg-surface-2 px-2 py-1.5 font-mono text-xs">
-              {mcpUrl || 'Loading…'}
-            </code>
-            <Button
-              size="sm"
-              variant="ghost"
-              disabled={!mcpUrl}
-              onClick={() => {
-                copyToClipboard(mcpUrl);
-              }}
-            >
-              Copy
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+      <McpStatusGrid />
+      <McpEndpointCard mcpUrl={mcpUrl} />
+      <McpRetrievalSummary />
+      <McpClientGuides mcpUrl={mcpUrl} mintedKey={mintedKey} />
 
       {mintedKey ? (
         <Card className="border-signal/40">

@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 
 import { handleMcpRequest } from '#src/mcp-server/handler.js';
 import { hashKey } from '#src/mcp-server/keys.js';
+import { withTeam } from '#src/team-scope.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
 
 const TEAM_ID = '11111111-1111-1111-1111-111111111111';
@@ -129,6 +130,88 @@ describe('handleMcpRequest', () => {
     expect(listEvents?.inputSchema.properties?.source?.enum).toEqual(
       expect.arrayContaining(['calendar', 'slack']),
     );
+    expect(tools.map((tool) => tool.name)).toEqual(
+      expect.arrayContaining([
+        'timeline.retrieve_workspace_context',
+        'timeline.get_object',
+        'timeline.search_objects',
+        'timeline.list_objects',
+        'timeline.list_tasks',
+        'timeline.search_boards',
+        'timeline.search_documents_structured',
+        'timeline.get_document',
+        'timeline.get_document_chunk',
+        'timeline.list_recent_document_changes',
+        'timeline.list_calendar_events',
+        'timeline.get_calendar_event',
+        'timeline.resolve_time_context',
+        'timeline.list_integrations',
+        'timeline.search_integration_events',
+        'timeline.get_integration_resource',
+      ]),
+    );
+  });
+
+  it('exposes team-level object and task retrieval through bearer auth', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const task = await scope.objects.createObject({
+      type: 'task',
+      canonicalName: 'Ship expanded outbound MCP',
+      status: 'doing',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    await scope.objects.createObject({
+      type: 'company',
+      canonicalName: 'Acme Corp',
+      status: 'active',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+
+    await expect(callTool(db, 'timeline.list_tasks', {})).resolves.toMatchObject({
+      count: 1,
+      tasks: [expect.objectContaining({ id: task.id, name: 'Ship expanded outbound MCP' })],
+    });
+    await expect(
+      callTool(db, 'timeline.get_object', { idOrName: 'Acme Corp' }),
+    ).resolves.toMatchObject({
+      found: true,
+      name: 'Acme Corp',
+      type: 'company',
+    });
+  });
+
+  it('exposes team-level calendar retrieval through bearer auth', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const event = await scope.calendar.createCalendarEvent({
+      title: 'Outbound MCP review',
+      description: 'Review expanded retrieval tools',
+      startAt: new Date('2026-06-22T10:00:00Z'),
+      endAt: new Date('2026-06-22T10:30:00Z'),
+      timezone: 'UTC',
+      allDay: false,
+      location: null,
+      showAs: 'busy',
+      rrule: null,
+      visibility: 'team',
+      visibilityUserIds: null,
+      reminderMinutes: null,
+    });
+
+    await expect(
+      callTool(db, 'timeline.list_calendar_events', {
+        from: '2026-06-22T00:00:00Z',
+        to: '2026-06-23T00:00:00Z',
+      }),
+    ).resolves.toMatchObject({
+      count: 1,
+      events: [expect.objectContaining({ id: event.id, title: 'Outbound MCP review' })],
+    });
+    await expect(
+      callTool(db, 'timeline.get_calendar_event', { id: event.id }),
+    ).resolves.toMatchObject({
+      found: true,
+      title: 'Outbound MCP review',
+    });
   });
 
   it('pushes calendar and Slack source filters into list_events', async () => {
