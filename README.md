@@ -78,7 +78,7 @@ The two most important boundaries are:
 Prerequisites:
 
 - Node 24+
-- pnpm 9+
+- pnpm 11.8+
 - Docker Desktop or a compatible Docker runtime
 
 ```bash

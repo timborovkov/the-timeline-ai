@@ -10,6 +10,12 @@ import { extractionResultSchema } from '#src/extract/schema.js';
 import { chatStructured, resolveAgentModelId, streamChat } from '#src/llm/chat.js';
 import { TIMELINE_MODELS } from '#src/llm/models.js';
 
+const aiSdkGlobal = globalThis as typeof globalThis & {
+  AI_SDK_LOG_WARNINGS?: boolean;
+};
+
+aiSdkGlobal.AI_SDK_LOG_WARNINGS = false;
+
 const ENV_BACKUP = { ...process.env };
 const liveOpenRouterIt =
   ENV_BACKUP.OPENROUTER_API_KEY && ENV_BACKUP.OPENROUTER_LIVE_TESTS === '1' ? it : it.skip;

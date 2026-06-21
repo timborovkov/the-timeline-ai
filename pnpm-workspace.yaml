@@ -2,6 +2,18 @@ packages:
   - 'apps/*'
   - 'packages/*'
 
+allowBuilds:
+  '@sentry/cli': true
+  core-js: false
+  esbuild: true
+  ffmpeg-static: true
+  msgpackr-extract: true
+  sharp: true
+
+peerDependencyRules:
+  allowedVersions:
+    '@sentry/server-utils>vite': '8'
+
 # Hoist all drizzle-orm/pglite/postgres-js transitives to a single
 # resolution so peer-dep variants don't fork the type identity of
 # drizzle's column types. Without this, adding @electric-sql/pglite

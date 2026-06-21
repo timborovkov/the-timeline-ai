@@ -2,7 +2,7 @@
   "name": "timeline",
   "version": "0.1.0",
   "private": true,
-  "packageManager": "pnpm@9.12.0",
+  "packageManager": "pnpm@11.8.0+sha512.c1f5e7c4cb241c8f174b743851d82f42b802324afc8b0f116b96adb15aa06664948dde36960a3ba1079ba5b4b29dd0140135b94b5b5f5263592249d68e555f26",
   "type": "module",
   "scripts": {
     "dev": "turbo run dev",
@@ -31,26 +31,26 @@
     "doctor": "react-doctor"
   },
   "devDependencies": {
-    "@playwright/test": "^1.60.0",
-    "@sentry/cli": "2.58.6",
+    "@playwright/test": "^1.61.0",
+    "@sentry/cli": "3.5.1",
     "@timeline/db": "workspace:*",
     "@timeline/shared": "workspace:*",
-    "@typescript-eslint/eslint-plugin": "^8.60.0",
+    "@typescript-eslint/eslint-plugin": "^8.61.1",
     "drizzle-orm": "^0.45.2",
     "eslint": "^9.39.4",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-import": "^2.32.0",
     "eslint-plugin-unused-imports": "^4.4.1",
-    "knip": "^6.15.0",
-    "prettier": "^3.8.3",
-    "react-doctor": "^0.2.16",
+    "knip": "^6.17.1",
+    "prettier": "^3.8.4",
+    "react-doctor": "^0.5.8",
     "tsx": "^4.22.4",
-    "turbo": "^2.9.16",
-    "typescript": "^5.9.3",
-    "typescript-eslint": "^8.60.0"
+    "turbo": "^2.9.18",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.61.1"
   },
   "engines": {
     "node": ">=24.0.0",
-    "pnpm": ">=9.0.0"
+    "pnpm": ">=11.8.0"
   }
 }

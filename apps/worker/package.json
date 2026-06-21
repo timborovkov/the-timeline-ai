@@ -29,20 +29,20 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@sentry/node": "^10.55.0",
+    "@sentry/node": "^10.59.0",
     "@timeline/db": "workspace:*",
     "@timeline/shared": "workspace:*",
-    "bullmq": "^5.77.7",
+    "bullmq": "5.79.0",
     "drizzle-orm": "^0.45.2",
     "ffmpeg-static": "^5.3.0",
     "mammoth": "^1.12.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@electric-sql/pglite": "^0.4.6",
-    "@types/node": "^24.12.4",
+    "@electric-sql/pglite": "^0.5.3",
+    "@types/node": "^26.0.0",
     "tsx": "^4.22.4",
-    "typescript": "^5.9.3",
-    "vitest": "^4.1.8"
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.9"
   }
 }

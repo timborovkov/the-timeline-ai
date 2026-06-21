@@ -249,7 +249,7 @@ function rawEventActorLabel(
     return (
       stringMeta(meta, 'tg_sender_name') ??
       telegramUsernameLabel(meta) ??
-      (userId ? (actorByTelegramUserId.get(userId) ?? null) : null) ??
+      (userId ? actorByTelegramUserId.get(userId) : null) ??
       'Telegram sender'
     );
   }

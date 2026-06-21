@@ -1,5 +1,7 @@
 import { defineConfig } from 'vitest/config';
 
+import { filterExpectedTestConsole } from '../../scripts/vitest-console';
+
 const env = {
   LOG_LEVEL: 'silent',
   // Bypass the OPENROUTER_API_KEY env gate in handlers that call
@@ -41,8 +43,10 @@ export default defineConfig({
           testTimeout: 15_000,
           hookTimeout: 60_000,
           env,
+          onConsoleLog: filterExpectedTestConsole,
         },
       },
     ],
+    onConsoleLog: filterExpectedTestConsole,
   },
 });

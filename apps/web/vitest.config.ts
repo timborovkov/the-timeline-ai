@@ -1,6 +1,8 @@
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vitest/config';
 
+import { filterExpectedTestConsole } from '../../scripts/vitest-console';
+
 export default defineConfig({
   plugins: [react()],
   resolve: {
@@ -15,5 +17,6 @@ export default defineConfig({
       AUTH_SECRET: 'test-secret-at-least-sixteen-characters',
       S3_BUCKET_DOCUMENTS: 'test-documents',
     },
+    onConsoleLog: filterExpectedTestConsole,
   },
 });
