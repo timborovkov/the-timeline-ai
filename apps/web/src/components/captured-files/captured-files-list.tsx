@@ -383,7 +383,10 @@ function CapturedFileRow({ file, onPromote }: { file: CapturedFileItem; onPromot
             <span className="mt-0.5 block truncate font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
               {contentType || 'captured file'}
               {storedName ? (
-                <span className="normal-case tracking-normal text-muted-foreground">
+                <span
+                  title={presentation.storedName}
+                  className="normal-case tracking-normal text-muted-foreground"
+                >
                   {' '}
                   · stored as {storedName}
                 </span>

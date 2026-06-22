@@ -29,6 +29,7 @@ import { Button } from '@/components/ui/button';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { listTimelineCapturedFilesByEventId } from '@/lib/timeline-captured-files';
 
 export const metadata: Metadata = {
   title: 'Dashboard',
@@ -108,9 +109,15 @@ export default async function HomeDashboardPage() {
   const completedGuideCount = countFirstRunGuideCompleted(onboardingState.steps);
   const showFirstRunGuide =
     !onboardingState.dismissed && (events.length === 0 || completedSetupCount < 2);
-  const [impactItems, audioUrlMap] = await Promise.all([
+  const [impactItems, audioUrlMap, capturedFiles] = await Promise.all([
     scope.timeline.listImpactItems(events.map((event) => event.id)),
     signAudio(events),
+    listTimelineCapturedFilesByEventId({
+      db,
+      teamId: active.teamId,
+      userId: session.user.id,
+      eventIds: events.map((event) => event.id),
+    }),
   ]);
 
   const userIds = Array.from(
@@ -249,7 +256,7 @@ export default async function HomeDashboardPage() {
             authors: Object.fromEntries(userRows.map((row) => [row.id, row])),
             audioUrls: Object.fromEntries(audioUrlMap),
             impactItems,
-            capturedFiles: {},
+            capturedFiles,
           }}
           filters={{}}
           currentUserId={session.user.id}

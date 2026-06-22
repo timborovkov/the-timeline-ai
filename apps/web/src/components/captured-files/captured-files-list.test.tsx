@@ -85,6 +85,9 @@ describe('CapturedFilesList', () => {
     expect(html).toContain('All sources');
     expect(html).toContain('Whiteboard planning photo');
     expect(html).toContain('stored as');
+    expect(html).toContain(
+      'title="AgACAgQAAyEFAATcv6dYAAP3aimENrbqY6kNAAEqxvEv6YGMrdExAAK5DmsbjOI.jpg"',
+    );
     expect(html).toContain('Preview');
     expect(html).toContain('Event');
     expect(html).toContain('Promote');

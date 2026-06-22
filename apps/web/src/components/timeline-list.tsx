@@ -307,6 +307,7 @@ function rawEventContextLabel(event: TimelineEvent): string | null {
 function rawEventDocumentLink(event: TimelineEvent): {
   href: string;
   label: string;
+  title: string;
   documentId: string;
   versionId: string | null;
   versionNumber: number | null;
@@ -316,13 +317,11 @@ function rawEventDocumentLink(event: TimelineEvent): {
   const documentId = stringMeta(meta, 'document_id') ?? stringMeta(meta, 'documentId');
   if (!documentId) return null;
   const action = stringMeta(meta, 'action');
+  const filename = stringMeta(meta, 'document_name') ?? stringMeta(meta, 'name') ?? 'Attachment';
   return {
     href: `/app/documents/${documentId}`,
-    label: displayText(
-      truncateFilenameMiddle(
-        stringMeta(meta, 'document_name') ?? stringMeta(meta, 'name') ?? 'Attachment',
-      ),
-    ),
+    label: displayText(truncateFilenameMiddle(filename)),
+    title: displayText(filename),
     documentId,
     versionId: stringMeta(meta, 'document_version_id') ?? stringMeta(meta, 'documentVersionId'),
     versionNumber: positiveIntegerMeta(meta, 'document_version'),
@@ -462,7 +461,7 @@ function SourceEvidenceCard({
         <div className="mt-2 flex min-w-0 flex-wrap items-start gap-2">
           <Link
             href={documentLink.href}
-            title={documentLink.label}
+            title={documentLink.title}
             className="inline-flex min-h-7 max-w-full min-w-0 items-center rounded-sm border border-border bg-surface px-2 py-1 font-mono text-[11px] uppercase tracking-[0.1em] text-fg-muted transition-colors hover:text-signal"
           >
             <span className="min-w-0 truncate">Attachment · {documentLink.label}</span>
