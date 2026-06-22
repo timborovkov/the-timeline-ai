@@ -1,7 +1,9 @@
 import {
   AlertCircle,
   CalendarDays,
+  FolderOpen,
   GitPullRequest,
+  ListTodo,
   Mail,
   MessageCircle,
   Send,
@@ -84,6 +86,8 @@ const NATIVE_INGEST = [
   { label: 'Telegram', icon: Send },
   { label: 'Slack', icon: MessageCircle },
   { label: 'GitHub', icon: GitPullRequest },
+  { label: 'Linear', icon: ListTodo },
+  { label: 'Google Drive', icon: FolderOpen },
   { label: 'Monday.com', icon: CalendarDays },
   { label: 'Sentry', icon: AlertCircle },
   { label: 'Google Meet', icon: Video },

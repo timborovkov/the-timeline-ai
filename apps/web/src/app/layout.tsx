@@ -55,7 +55,7 @@ export const metadata: Metadata = {
     template: '%s · The Timeline',
   },
   description:
-    'Voice-, chat-, and email-first capture, agentically compiled into a searchable team history with auditable citations on every answer.',
+    'Voice-, chat-, email-, meeting-, document-, and integration-first capture, agentically compiled into a searchable team history with auditable citations on every answer.',
   keywords: [
     'AI CRM',
     'team memory',
@@ -81,7 +81,7 @@ export const metadata: Metadata = {
   openGraph: {
     title: 'The Timeline — The operations log your team can talk to',
     description:
-      'Capture voice notes, Slack threads, emails, meetings, documents, and calendar events into one searchable team history with cited AI answers.',
+      'Capture voice notes, Slack threads, emails, meetings, documents, calendar events, and native integration activity into one searchable team history with cited AI answers.',
     url: '/',
     siteName: 'The Timeline',
     images: [

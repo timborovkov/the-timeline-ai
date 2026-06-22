@@ -144,8 +144,9 @@ export default function PrivacyPage() {
       <h2>6. Optional User-Enabled Integrations</h2>
       <p>
         Teams may choose to connect external services such as Slack, Telegram, GitHub, Google Drive,
-        Linear, calendar providers, and custom MCP servers. When enabled, The Timeline processes
-        data from those services according to the permissions granted by the user or team.
+        Linear, Monday.com, Sentry, calendar providers, custom ingest webhooks, and custom MCP
+        servers. When enabled, The Timeline processes data from those services according to the
+        permissions granted by the user or team.
       </p>
 
       <h2>7. Cookies</h2>

@@ -94,14 +94,18 @@ SLACK_SIGNING_SECRET=
       </p>
 
       <h2 id="scopes">3. Add scopes and events</h2>
-      <p>Bot scopes used by Timeline:</p>
+      <p>Bot scopes used by conversational capture:</p>
       <pre><code>app_mentions:read
 channels:history channels:read
 chat:write commands files:read
 groups:history groups:read
 im:history im:read
-reactions:read reactions:write users:read users:read.email
+reactions:write users:read users:read.email
 </code></pre>
+      <p>
+        Native workspace ingestion also needs <code>reactions:read</code> so synced channel history
+        can include reactions.
+      </p>
       <p>User scope used for identity linking:</p>
       <pre><code>identity.basic
 </code></pre>
@@ -132,11 +136,13 @@ app_mention
       <h2 id="native-ingestion">Native workspace ingestion</h2>
       <p>
         Conversational capture writes <code>raw_events.source='slack'</code> for messages that
-        actively route through Timeline. Native workspace ingestion is passive: an admin connects
-        Slack from <code>/app/team/integrations</code>, shares selected channels, and the
-        integration worker imports message history, thread replies, files, reactions, and edits as
-        <code>source='integration'</code> with <code>provider='slack'</code>. This makes selected
-        channel history searchable and citable even when nobody mentioned Timeline in the moment.
+        actively route through Timeline. Native workspace ingestion is passive: a member connects
+        Slack from the native catalog, shares selected channels from
+        <code>/app/me/connections</code>, and an admin activates those shared channels from
+        <code>/app/team/integrations</code>. The integration worker imports message history, thread
+        replies, files, reactions, and edits as <code>source='integration'</code> with
+        <code>provider='slack'</code>. This makes selected channel history searchable and citable
+        even when nobody mentioned Timeline in the moment.
       </p>
 
       <h2 id="model">Mental model</h2>

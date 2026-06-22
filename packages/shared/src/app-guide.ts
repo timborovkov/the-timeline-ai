@@ -183,7 +183,7 @@ export const APP_GUIDE_ROUTES: readonly AppGuideRoute[] = [
     id: 'team/integrations',
     title: 'Integrations',
     description:
-      'Connect Drive, Linear, GitHub, Monday.com, Slack, Sentry, Telegram, and MCP sources or tools.',
+      'Connect Drive, Linear, GitHub, Monday.com, Slack workspace, Sentry, custom ingest webhooks, and MCP tools.',
     href: '/app/team/integrations',
     group: 'dashboard',
     minRole: 'admin',
@@ -198,9 +198,13 @@ export const APP_GUIDE_ROUTES: readonly AppGuideRoute[] = [
       'slack',
       'sentry',
       'telegram',
+      'figma',
+      'stripe',
+      'custom webhooks',
+      'ingest webhooks',
     ],
     guide:
-      'Use Team Integrations to connect and manage external sources. Provider connections are person-owned, while admins activate shared team sources.',
+      'Use Team Integrations to connect native sources, activate shared provider resources, manage ingest webhooks, and add MCP tools. Provider connections are person-owned; admins activate shared team sources.',
     relatedRouteIds: ['help/integrations', 'team'],
   },
   {
@@ -279,7 +283,7 @@ export const APP_GUIDE_ROUTES: readonly AppGuideRoute[] = [
     minRole: 'member',
     intents: ['how integrations work', 'mcp tools', 'connected sources', 'oauth security'],
     guide:
-      'Integrations import external activity into the event pipeline. Tokens are encrypted, source snippets are treated as external content, and admins control shared sources.',
+      'Native integrations import external activity into the event pipeline; MCP tools give live tool access but are not passive ingestion. Tokens are encrypted, source snippets are treated as external content, and admins control shared sources.',
     relatedRouteIds: ['team/integrations'],
   },
   {

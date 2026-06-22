@@ -247,7 +247,8 @@ MONDAY_CLIENT_SECRET=...</code></pre>
           mentions.
         </li>
         <li>
-          Connect Slack from the native catalog, share selected channels, then activate them from
+          Connect Slack from the native catalog, share selected channels from
+          <code>/app/me/connections</code>, then activate them from
           <code>/app/team/integrations</code>. Private channels require the bot to be present before
           Slack will expose history.
         </li>
@@ -292,7 +293,8 @@ MONDAY_CLIENT_SECRET=...</code></pre>
 SENTRY_INTEGRATION_CLIENT_SECRET=...</code></pre>
         </li>
         <li>
-          Connect Sentry from the native catalog, share selected projects, and activate them from
+          Connect Sentry from the native catalog, share selected projects from
+          <code>/app/me/connections</code>, and activate them from
           <code>/app/team/integrations</code>. Timeline imports issue updates, resolved issues, and
           releases as cited events; Sentry issues map to Timeline incident objects.
         </li>
@@ -306,11 +308,12 @@ SENTRY_INTEGRATION_CLIENT_SECRET=...</code></pre>
         provider resources that have not been shared with the team.
       </p>
       <p>
-        If a connection owner leaves the team, deletes a connection, or GitHub/Drive/Linear requires
-        reconnecting, Timeline creates connection attention. The team integrations page shows an
-        attention banner and the affected provider groups so admins can ask the owner to reconnect,
-        replace a connection with another shared source, or narrow shared sources; the worker pauses
-        only the affected sync path and keeps previously captured raw events.
+        If a connection owner leaves the team, deletes a connection, or GitHub, Drive, Linear,
+        Monday.com, Slack, or Sentry requires reconnecting, Timeline creates connection attention.
+        The team integrations page shows an attention banner and the affected provider groups so
+        admins can ask the owner to reconnect, replace a connection with another shared source, or
+        narrow shared sources; the worker pauses only the affected sync path and keeps previously
+        captured raw events.
       </p>
 
       <h2 id="ingest-webhooks">Ingest webhooks</h2>

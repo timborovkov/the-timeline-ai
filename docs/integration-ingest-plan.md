@@ -78,8 +78,10 @@ This is the difference between adding many integrations and maintaining them.
 
 ### Wave 1: Priority 1 Native Integrations
 
-These are the strongest next native connectors because they carry daily work
-state, cross-functional decisions, and operational failure signals:
+These were the strongest first native connectors because they carry daily work
+state, cross-functional decisions, and operational failure signals. They are now
+implemented on the shared provider-connection, resource-selection, cursor, and
+integration-worker foundation:
 
 | Provider | Ingest surface |
 | --- | --- |
@@ -87,9 +89,9 @@ state, cross-functional decisions, and operational failure signals:
 | Slack | Workspace-wide channel/thread/file/reaction ingestion beyond the current conversational capture model. |
 | Sentry | Issue updates, resolved issues, and releases, mapped into cited events and incident objects. |
 
-Exit criteria: each provider can backfill selected resources, run incremental
-sync, recover cleanly when credentials need reconnecting, and answer "what
-changed last week?" with cited Timeline events.
+Exit criteria for every new wave remains the same: each provider can backfill
+selected resources, run incremental sync, recover cleanly when credentials need
+reconnecting, and answer "what changed last week?" with cited Timeline events.
 
 ### Wave 2: Highest Workflow Density
 
@@ -194,12 +196,9 @@ visible: `status: 'mcp_available'` and `ingestStatus: 'coming_soon'`.
 
 ## Open Decisions
 
-1. Whether Slack's existing conversational capture should graduate into the same
-   provider-connection model as the other native integrations, or remain a
-   separate capture surface with a broader ingest mode.
-2. Whether Jira and Confluence should share one Atlassian OAuth connection while
+1. Whether Jira and Confluence should share one Atlassian OAuth connection while
    appearing as separate catalog/provider resources.
-3. Whether support systems should create Timeline task objects by default or
+2. Whether support systems should create Timeline task objects by default or
    only link evidence to company/person/ticket objects.
 4. How much historical backfill is safe by default for chat-heavy systems like
    Slack and Discord.
