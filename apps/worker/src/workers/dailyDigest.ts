@@ -21,21 +21,23 @@ export async function processDailyDigestJob(
   job: queue.DailyDigestJobData,
 ): Promise<{ recipients?: number; digestId?: string; sent?: boolean; skipped?: boolean }> {
   if (job.kind === 'tick') {
+    const explicitWindow =
+      job.reason !== 'catchup' && job.windowStart && job.windowEnd
+        ? { start: job.windowStart, end: job.windowEnd }
+        : null;
     const recipients = await messaging.listDailyDigestRecipients(deps.db);
     await Promise.all(
       recipients.map(async (recipient) => {
-        const preference =
-          job.windowStart && job.windowEnd
-            ? null
-            : await messaging.getDigestPreference({
-                db: deps.db,
-                teamId: recipient.teamId,
-                userId: recipient.userId,
-              });
-        const window =
-          job.windowStart && job.windowEnd
-            ? { start: new Date(job.windowStart), end: new Date(job.windowEnd) }
-            : messaging.defaultDigestWindow(new Date(), preference?.timezone, preference?.hour);
+        const preference = explicitWindow
+          ? null
+          : await messaging.getDigestPreference({
+              db: deps.db,
+              teamId: recipient.teamId,
+              userId: recipient.userId,
+            });
+        const window = explicitWindow
+          ? { start: new Date(explicitWindow.start), end: new Date(explicitWindow.end) }
+          : messaging.defaultDigestWindow(new Date(), preference?.timezone, preference?.hour);
         await queue.enqueueDailyDigestRecipientJob({
           kind: 'recipient',
           teamId: recipient.teamId,
