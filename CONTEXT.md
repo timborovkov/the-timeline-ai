@@ -396,18 +396,21 @@ _Avoid_: Automatic fix, silent update
 **Superseded Approval**:
 A pending approval that is no longer actionable because newer evidence or a
 newer proposal has replaced it before the team accepted or rejected it.
-Supersession is limited to the stale lifecycle dimension, approval item, or
-incoherent proposed outcome inside an artifact cluster; unrelated pending
-proposals for the same artifact remain actionable even when they appear in the
-same review bundle. A pending approval is also superseded when canonical state
-already reflects the proposed outcome, including after a direct edit or an
-accepted approval. When a reviewer tries to accept a pending approval whose
-target has already disappeared, or when a failed retryable approval points at a
-target object or calendar event that was archived, merged away, or deleted, it
-may be superseded instead of staying in the active retry queue. Narrower or
-private evidence does not supersede a broader approval queue. Superseded
-approvals leave the active approval queue but remain available as history with
-their evidence and replacement relationship.
+Supersession is limited to the stale lifecycle dimension, approval item,
+semantically duplicate proposed create or relationship/facet/note/board
+approval, same-target overlapping update, or incoherent proposed outcome inside
+an artifact cluster; unrelated pending proposals for the same artifact remain
+actionable even when they appear in the same review bundle. A pending approval
+is also superseded when canonical state already reflects the proposed outcome,
+including after a direct edit or an accepted approval. When a reviewer tries to
+accept a pending approval whose target has already disappeared, or when a
+failed retryable approval points at a target object or calendar event that was
+archived, merged away, or deleted, it may be superseded instead of staying in
+the active retry queue. Narrower or private evidence does not supersede a
+broader approval queue. Superseded approvals leave the active approval queue
+but remain available as history with their evidence and replacement
+relationship; when duplicate active/retryable reconciliation supersedes a
+proposal, its evidence is merged into the surviving active proposal.
 _Avoid_: Rejected approval, deleted approval, failed approval
 
 **Rejected Approval**:
@@ -821,14 +824,14 @@ _Avoid_: Midnight UTC event
 
 **Date-Only Calendar Event**:
 A calendar event mentioned with a date but no time. Date-only calendar events
-enter the calendar as all-day events and can later be refined into timed events
-when a specific time is agreed.
+enter the calendar as all-day events; a single-day date-only proposal can later
+be refined into a timed event when a specific time is agreed.
 _Avoid_: Unschedulable meeting
 
 **Calendar Refinement**:
 An update that turns an existing calendar event into a more precise version of
-the same commitment, such as converting a date-only all-day call into a timed
-call once the time is known.
+the same commitment, such as converting a single-day date-only all-day call into
+a timed call once the time is known.
 _Avoid_: Duplicate calendar event
 
 **Recurring Calendar Series**:
@@ -994,13 +997,27 @@ _Avoid_: Hard delete suggestion
 **Suggestion Dedupe Key**:
 A stable identity for an agent suggestion derived from its team, source
 evidence, operation, target, and normalized proposed payload. It prevents
-background retries from producing duplicate pending approvals.
+background retries from producing duplicate pending approvals. The exact key is
+not the only duplicate guard: active or retryable approval items are also
+reconciled by kind-aware identity, including semantic create matching for
+objects/tasks/calendar events, endpoint matching for
+relationships, normalized value matching for identity facets, semantic object
+note matching, board target/field matching, plus same-target overlapping
+updates. Calendar create dedupe treats exact external events, same timed range
+with matching title subject, older single-day date-only proposals refined by
+newer timed proposals, and same date-only range matches as deterministic;
+similar same-day timed proposals with different times require high-confidence
+AI adjudication before one supersedes the other. Calendar adjudication goes
+through the shared `llm.chatStructured` inference layer; tests can inject
+`TeamScopeDeps.chatStructured` or `SuggestionScopeDeps.chatStructured` for
+deterministic outcomes without provider calls.
 _Avoid_: Best-effort duplicate detection
 
 **Suggestion Evidence**:
 The raw events and extracted context that justify an agent suggestion. A single
 suggestion can have multiple evidence links when later events confirm or refine
-the same proposed workspace change.
+the same proposed workspace change, including when a semantically duplicate
+pending proposal is merged into one surviving active approval.
 _Avoid_: Single-source assumption
 
 **Suggestion Approver**:
@@ -1175,7 +1192,18 @@ objects."
 Developer: "Can more than one raw event support the same suggestion?"
 
 Domain expert: "Yes. Suggestions can accumulate evidence links so reviewers can
-see why the agent proposed the change."
+see why the agent proposed the change. If two active proposals describe the
+same real-world change with different wording, the survivor should keep the
+combined evidence instead of showing duplicate approvals."
+
+Developer: "What if an early calendar proposal only names the day, and later
+evidence gives the time?"
+
+Domain expert: "That is a refinement. The timed proposal should replace the
+single-day date-only approval and keep the old evidence. Multi-day date-only
+proposals should not collapse into one timed slot on the start day. Two timed
+slots on the same day should stay separate unless adjudication is highly
+confident that the newer one replaces or corrects the older one."
 
 Developer: "Should calendar and task suggestions have separate queues?"
 

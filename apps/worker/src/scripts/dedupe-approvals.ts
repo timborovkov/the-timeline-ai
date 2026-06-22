@@ -1,7 +1,10 @@
 /**
- * Approval dedupe script. Scans a team's active approval queue and supersedes
- * stale duplicate pending items using the same conservative reconciliation
- * predicate the app runs for new suggestions.
+ * Approval dedupe script. Scans a team's active/retryable approval queue and
+ * supersedes stale duplicate pending or failed retryable items using the same
+ * reconciliation path the app runs for new suggestions. Apply mode may call AI
+ * adjudication for ambiguous same-day timed calendar proposals, copy duplicate
+ * evidence, and record merge history on the survivor; dry-run stays
+ * deterministic and can undercount apply-mode results.
  *
  * Usage:
  *   pnpm --filter @timeline/worker dedupe-approvals -- --team=<teamId> [--limit=N] [--apply]

@@ -1,6 +1,6 @@
 import { PGlite } from '@electric-sql/pglite';
-import { agentSuggestionItems, agentSuggestions, entities } from '@timeline/db';
-import { eq } from 'drizzle-orm';
+import { agentSuggestionItems, agentSuggestions, entities, rawEvents } from '@timeline/db';
+import { asc, eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -30,6 +30,25 @@ const REVIEWER_ID = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
 const OTHER_USER_ID = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
 const PSEUDO_USER = '00000000-0000-0000-0000-000000000000';
 const OTHER_RAW_EVENT_ID = 'dddddddd-dddd-dddd-dddd-dddddddddddd';
+
+function adjudicationStub(object: {
+  verdict: 'duplicate' | 'refinement' | 'conflict' | 'distinct';
+  confidence: 'low' | 'medium' | 'high';
+  canonicalTitle?: string | null;
+  mergeReason: string;
+  fieldsToCarryForward?: string[];
+}) {
+  return vi.fn(() =>
+    Promise.resolve({
+      object: {
+        canonicalTitle: null,
+        fieldsToCarryForward: [],
+        ...object,
+      },
+      model: 'test-calendar-dedupe',
+    }),
+  );
+}
 
 async function seed(pg: PGlite): Promise<void> {
   await pg.exec(`
@@ -742,6 +761,1258 @@ describe('suggestion scope', () => {
     expect(applied).toMatchObject({ scanned: 2, superseded: 1 });
     const rows = await db.select().from(agentSuggestionItems);
     expect(rows.map((row) => row.status).sort()).toEqual(['pending', 'superseded']);
+  });
+
+  it('merges semi-identical decision proposals across review runs with all evidence', async () => {
+    const scope = withTeam(db as never, TEAM_ID, PSEUDO_USER, { skipMembershipCheck: true });
+    const olderRawEventId = '10000000-0000-0000-0000-000000000101';
+    const newerRawEventId = '10000000-0000-0000-0000-000000000102';
+    await db.insert(rawEvents).values([
+      {
+        id: olderRawEventId,
+        teamId: TEAM_ID,
+        authorUserId: USER_ID,
+        source: 'slack',
+        contentText: 'We decided the app needs to support relatively small models locally.',
+        occurredAt: new Date('2026-06-22T04:33:00.000Z'),
+        visibility: 'team',
+      },
+      {
+        id: newerRawEventId,
+        teamId: TEAM_ID,
+        authorUserId: USER_ID,
+        source: 'slack',
+        contentText: 'Reminder: support smaller models for local inference.',
+        occurredAt: new Date('2026-06-22T07:30:00.000Z'),
+        visibility: 'team',
+      },
+    ]);
+
+    const older = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Decision: Support small models for local inference',
+      dedupeKey: 'decision-small-models:older',
+      visibility: 'team',
+      metadata: { conversation_review_id: 'review-small-models-older' },
+      evidence: [{ rawEventId: olderRawEventId, quote: 'support relatively small models locally' }],
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'object',
+          title: 'Support relatively small models for local inference',
+          dedupeKey: 'decision-small-models:older:item',
+          proposedPayload: {
+            type: 'decision',
+            canonicalName: 'Support relatively small models for local inference',
+            status: 'accepted',
+          },
+        },
+      ],
+    });
+    const newer = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Support smaller models for local inference',
+      dedupeKey: 'decision-small-models:newer',
+      visibility: 'team',
+      metadata: { conversation_review_id: 'review-small-models-newer' },
+      evidence: [
+        { rawEventId: newerRawEventId, quote: 'support smaller models for local inference' },
+      ],
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'object',
+          title: 'Support smaller models for local inference',
+          dedupeKey: 'decision-small-models:newer:item',
+          proposedPayload: {
+            type: 'decision',
+            canonicalName: 'Support smaller models for local inference',
+            status: 'accepted',
+          },
+        },
+      ],
+    });
+
+    const rows = await db
+      .select()
+      .from(agentSuggestionItems)
+      .where(eq(agentSuggestionItems.teamId, TEAM_ID))
+      .orderBy(asc(agentSuggestionItems.createdAt), asc(agentSuggestionItems.id));
+    expect(rows.map((row) => [row.suggestionId, row.status, row.supersededByItemId])).toEqual([
+      [older.id, 'superseded', newer.items[0]?.id ?? null],
+      [newer.id, 'pending', null],
+    ]);
+
+    const survivor = await scope.suggestions.getSuggestion(newer.id);
+    expect(survivor?.evidence.map((ev) => ev.rawEventId).sort()).toEqual([
+      olderRawEventId,
+      newerRawEventId,
+    ]);
+    expect(survivor?.metadata.merged_duplicate_suggestions).toMatchObject([
+      { id: older.id, title: 'Decision: Support small models for local inference' },
+    ]);
+    await expect(scope.suggestions.listPendingSuggestions()).resolves.toHaveLength(1);
+  });
+
+  it('keeps negated decision proposals separate from affirmative proposals', async () => {
+    const scope = withTeam(db as never, TEAM_ID, PSEUDO_USER, { skipMembershipCheck: true });
+    const affirmative = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Support local inference',
+      dedupeKey: 'decision-local-inference-affirmative',
+      visibility: 'team',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'object',
+          title: 'Support local inference',
+          dedupeKey: 'decision-local-inference-affirmative:item',
+          proposedPayload: {
+            type: 'decision',
+            canonicalName: 'Support local inference',
+            status: 'accepted',
+          },
+        },
+      ],
+    });
+    const negated = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Do not support local inference',
+      dedupeKey: 'decision-local-inference-negated',
+      visibility: 'team',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'object',
+          title: 'Do not support local inference',
+          dedupeKey: 'decision-local-inference-negated:item',
+          proposedPayload: {
+            type: 'decision',
+            canonicalName: 'Do not support local inference',
+            status: 'accepted',
+          },
+        },
+      ],
+    });
+
+    const rows = await db
+      .select({
+        suggestionId: agentSuggestionItems.suggestionId,
+        status: agentSuggestionItems.status,
+        supersededByItemId: agentSuggestionItems.supersededByItemId,
+      })
+      .from(agentSuggestionItems)
+      .where(eq(agentSuggestionItems.teamId, TEAM_ID))
+      .orderBy(asc(agentSuggestionItems.createdAt), asc(agentSuggestionItems.id));
+
+    expect(rows).toEqual([
+      { suggestionId: affirmative.id, status: 'pending', supersededByItemId: null },
+      { suggestionId: negated.id, status: 'pending', supersededByItemId: null },
+    ]);
+  });
+
+  it('keeps same-title create proposals separate under different parents', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const firstParent = await scope.objects.createObject({
+      type: 'project',
+      canonicalName: 'Local inference',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const secondParent = await scope.objects.createObject({
+      type: 'project',
+      canonicalName: 'Security review',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const first = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Create follow-up task',
+      dedupeKey: 'parented-task:first',
+      visibility: 'team',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Send update',
+          dedupeKey: 'parented-task:first:item',
+          proposedPayload: {
+            canonicalName: 'Send update',
+            status: 'todo',
+            parentObjectId: firstParent.id,
+          },
+        },
+      ],
+    });
+    const second = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Create follow-up task',
+      dedupeKey: 'parented-task:second',
+      visibility: 'team',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Send update',
+          dedupeKey: 'parented-task:second:item',
+          proposedPayload: {
+            canonicalName: 'Send update',
+            status: 'todo',
+            parentObjectId: secondParent.id,
+          },
+        },
+      ],
+    });
+
+    const rows = await db
+      .select({
+        suggestionId: agentSuggestionItems.suggestionId,
+        status: agentSuggestionItems.status,
+        supersededByItemId: agentSuggestionItems.supersededByItemId,
+      })
+      .from(agentSuggestionItems)
+      .where(eq(agentSuggestionItems.teamId, TEAM_ID))
+      .orderBy(asc(agentSuggestionItems.createdAt), asc(agentSuggestionItems.id));
+
+    expect(rows).toEqual([
+      { suggestionId: first.id, status: 'pending', supersededByItemId: null },
+      { suggestionId: second.id, status: 'pending', supersededByItemId: null },
+    ]);
+  });
+
+  it('keeps typed and untyped object create proposals separate', async () => {
+    const scope = withTeam(db as never, TEAM_ID, PSEUDO_USER, { skipMembershipCheck: true });
+    const typed = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Create AuditAI company',
+      dedupeKey: 'typed-object-create',
+      visibility: 'team',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'object',
+          title: 'AuditAI',
+          dedupeKey: 'typed-object-create:item',
+          proposedPayload: { type: 'company', canonicalName: 'AuditAI' },
+        },
+      ],
+    });
+    const untyped = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Create AuditAI object',
+      dedupeKey: 'untyped-object-create',
+      visibility: 'team',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'object',
+          title: 'AuditAI',
+          dedupeKey: 'untyped-object-create:item',
+          proposedPayload: { canonicalName: 'AuditAI' },
+        },
+      ],
+    });
+
+    const rows = await db
+      .select({
+        suggestionId: agentSuggestionItems.suggestionId,
+        status: agentSuggestionItems.status,
+        supersededByItemId: agentSuggestionItems.supersededByItemId,
+      })
+      .from(agentSuggestionItems)
+      .where(eq(agentSuggestionItems.teamId, TEAM_ID))
+      .orderBy(asc(agentSuggestionItems.createdAt), asc(agentSuggestionItems.id));
+
+    expect(rows).toEqual([
+      { suggestionId: typed.id, status: 'pending', supersededByItemId: null },
+      { suggestionId: untyped.id, status: 'pending', supersededByItemId: null },
+    ]);
+  });
+
+  it('keeps same-title create proposals separate when legacy owner names conflict', async () => {
+    const scope = withTeam(db as never, TEAM_ID, PSEUDO_USER, { skipMembershipCheck: true });
+    const sarah = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Send Acme deck',
+      dedupeKey: 'legacy-owner-conflict:sarah',
+      visibility: 'team',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Send Acme deck',
+          dedupeKey: 'legacy-owner-conflict:sarah:item',
+          proposedPayload: { canonicalName: 'Send Acme deck', ownerName: 'Sarah' },
+        },
+      ],
+    });
+    const john = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Send Acme deck',
+      dedupeKey: 'legacy-owner-conflict:john',
+      visibility: 'team',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Send Acme deck',
+          dedupeKey: 'legacy-owner-conflict:john:item',
+          proposedPayload: { canonicalName: 'Send Acme deck', ownerName: 'John' },
+        },
+      ],
+    });
+
+    const rows = await db
+      .select({
+        suggestionId: agentSuggestionItems.suggestionId,
+        status: agentSuggestionItems.status,
+        supersededByItemId: agentSuggestionItems.supersededByItemId,
+      })
+      .from(agentSuggestionItems)
+      .where(eq(agentSuggestionItems.teamId, TEAM_ID))
+      .orderBy(asc(agentSuggestionItems.createdAt), asc(agentSuggestionItems.id));
+
+    expect(rows).toEqual([
+      { suggestionId: sarah.id, status: 'pending', supersededByItemId: null },
+      { suggestionId: john.id, status: 'pending', supersededByItemId: null },
+    ]);
+  });
+
+  it('keeps same-conversation same-title creates separate when owner names conflict', async () => {
+    const scope = withTeam(db as never, TEAM_ID, PSEUDO_USER, { skipMembershipCheck: true });
+    const sarah = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Send Acme deck',
+      dedupeKey: 'conversation-owner-conflict:sarah',
+      visibility: 'team',
+      metadata: { conversation_review_id: 'review-owner-conflict' },
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Send Acme deck',
+          dedupeKey: 'conversation-owner-conflict:sarah:item',
+          proposedPayload: { canonicalName: 'Send Acme deck', ownerName: 'Sarah' },
+        },
+      ],
+    });
+    const john = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Send Acme deck',
+      dedupeKey: 'conversation-owner-conflict:john',
+      visibility: 'team',
+      metadata: { conversation_review_id: 'review-owner-conflict' },
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Send Acme deck',
+          dedupeKey: 'conversation-owner-conflict:john:item',
+          proposedPayload: { canonicalName: 'Send Acme deck', ownerName: 'John' },
+        },
+      ],
+    });
+
+    const rows = await db
+      .select({
+        suggestionId: agentSuggestionItems.suggestionId,
+        status: agentSuggestionItems.status,
+        supersededByItemId: agentSuggestionItems.supersededByItemId,
+      })
+      .from(agentSuggestionItems)
+      .where(eq(agentSuggestionItems.teamId, TEAM_ID))
+      .orderBy(asc(agentSuggestionItems.createdAt), asc(agentSuggestionItems.id));
+
+    expect(rows).toEqual([
+      { suggestionId: sarah.id, status: 'pending', supersededByItemId: null },
+      { suggestionId: john.id, status: 'pending', supersededByItemId: null },
+    ]);
+  });
+
+  it('dedupes object task creates against task creates', async () => {
+    const scope = withTeam(db as never, TEAM_ID, PSEUDO_USER, { skipMembershipCheck: true });
+    const objectTask = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Create task object',
+      dedupeKey: 'object-task-create',
+      visibility: 'team',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'object',
+          title: 'Send Acme deck',
+          dedupeKey: 'object-task-create:item',
+          proposedPayload: { type: 'task', canonicalName: 'Send Acme deck' },
+        },
+      ],
+    });
+    const task = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Create task',
+      dedupeKey: 'task-create',
+      visibility: 'team',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Send Acme deck',
+          dedupeKey: 'task-create:item',
+          proposedPayload: { canonicalName: 'Send Acme deck' },
+        },
+      ],
+    });
+
+    const rows = await db
+      .select({
+        suggestionId: agentSuggestionItems.suggestionId,
+        status: agentSuggestionItems.status,
+        supersededByItemId: agentSuggestionItems.supersededByItemId,
+      })
+      .from(agentSuggestionItems)
+      .where(eq(agentSuggestionItems.teamId, TEAM_ID))
+      .orderBy(asc(agentSuggestionItems.createdAt), asc(agentSuggestionItems.id));
+
+    expect(rows).toEqual([
+      {
+        suggestionId: objectTask.id,
+        status: 'superseded',
+        supersededByItemId: task.items[0]?.id ?? null,
+      },
+      { suggestionId: task.id, status: 'pending', supersededByItemId: null },
+    ]);
+  });
+
+  it('dedupes specific-user suggestions regardless of audience ordering', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const first = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Create AuditAI company',
+      dedupeKey: 'specific-audience-company:older',
+      visibility: 'specific_users',
+      visibilityOwnerUserId: USER_ID,
+      visibilityUserIds: [USER_ID, REVIEWER_ID],
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'object',
+          title: 'AuditAI',
+          dedupeKey: 'specific-audience-company:older:item',
+          proposedPayload: { type: 'company', canonicalName: 'AuditAI' },
+        },
+      ],
+    });
+    const duplicate = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Create Audit AI company',
+      dedupeKey: 'specific-audience-company:newer',
+      visibility: 'specific_users',
+      visibilityOwnerUserId: USER_ID,
+      visibilityUserIds: [REVIEWER_ID, USER_ID],
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'object',
+          title: 'Audit AI',
+          dedupeKey: 'specific-audience-company:newer:item',
+          proposedPayload: { type: 'company', canonicalName: 'Audit AI' },
+        },
+      ],
+    });
+
+    const rows = await db
+      .select({
+        suggestionId: agentSuggestionItems.suggestionId,
+        status: agentSuggestionItems.status,
+        supersededByItemId: agentSuggestionItems.supersededByItemId,
+      })
+      .from(agentSuggestionItems)
+      .where(eq(agentSuggestionItems.teamId, TEAM_ID))
+      .orderBy(asc(agentSuggestionItems.createdAt), asc(agentSuggestionItems.id));
+
+    expect(rows).toEqual([
+      {
+        suggestionId: first.id,
+        status: 'superseded',
+        supersededByItemId: duplicate.items[0]?.id ?? null,
+      },
+      { suggestionId: duplicate.id, status: 'pending', supersededByItemId: null },
+    ]);
+  });
+
+  it('semantically dedupes pending create proposals across object and calendar kinds', async () => {
+    const scope = withTeam(db as never, TEAM_ID, PSEUDO_USER, { skipMembershipCheck: true });
+    const company = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Create AuditAI company',
+      dedupeKey: 'company-auditai:older',
+      visibility: 'team',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'object',
+          title: 'AuditAI',
+          dedupeKey: 'company-auditai:older:item',
+          proposedPayload: { type: 'company', canonicalName: 'AuditAI' },
+        },
+      ],
+    });
+    const companyDuplicate = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Create Audit AI company',
+      dedupeKey: 'company-auditai:newer',
+      visibility: 'team',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'object',
+          title: 'Audit AI',
+          dedupeKey: 'company-auditai:newer:item',
+          proposedPayload: { type: 'company', canonicalName: 'Audit AI' },
+        },
+      ],
+    });
+    const calendar = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Schedule local inference planning',
+      dedupeKey: 'calendar-local-inference:older',
+      visibility: 'team',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'calendar_event',
+          title: 'Local inference planning',
+          dedupeKey: 'calendar-local-inference:older:item',
+          proposedPayload: {
+            title: 'Local inference planning',
+            startAt: '2026-06-25T14:00:00.000Z',
+            endAt: '2026-06-25T15:00:00.000Z',
+            timezone: 'UTC',
+          },
+        },
+      ],
+    });
+    const calendarDuplicate = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Schedule local inference plan',
+      dedupeKey: 'calendar-local-inference:newer',
+      visibility: 'team',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'calendar_event',
+          title: 'Local inference plan',
+          dedupeKey: 'calendar-local-inference:newer:item',
+          proposedPayload: {
+            title: 'Local inference plan',
+            startAt: '2026-06-25T14:00:00.000Z',
+            endAt: '2026-06-25T15:00:00.000Z',
+            timezone: 'UTC',
+          },
+        },
+      ],
+    });
+
+    const statuses = await db
+      .select({
+        suggestionId: agentSuggestionItems.suggestionId,
+        status: agentSuggestionItems.status,
+        supersededByItemId: agentSuggestionItems.supersededByItemId,
+      })
+      .from(agentSuggestionItems)
+      .where(eq(agentSuggestionItems.teamId, TEAM_ID))
+      .orderBy(asc(agentSuggestionItems.createdAt), asc(agentSuggestionItems.id));
+
+    expect(statuses).toEqual(
+      [
+        [company.id, 'superseded', companyDuplicate.items[0]?.id ?? null],
+        [companyDuplicate.id, 'pending', null],
+        [calendar.id, 'superseded', calendarDuplicate.items[0]?.id ?? null],
+        [calendarDuplicate.id, 'pending', null],
+      ].map(([suggestionId, status, supersededByItemId]) => ({
+        suggestionId,
+        status,
+        supersededByItemId,
+      })),
+    );
+  });
+
+  it('keeps same-day calendar proposals with different times separate', async () => {
+    const chatStructured = adjudicationStub({
+      verdict: 'distinct',
+      confidence: 'high',
+      mergeReason: 'The evidence describes two separately actionable timed slots.',
+    });
+    const scope = withTeam(db as never, TEAM_ID, PSEUDO_USER, {
+      skipMembershipCheck: true,
+      chatStructured: chatStructured as never,
+    });
+    const morning = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Schedule local inference planning',
+      dedupeKey: 'calendar-local-inference-morning',
+      visibility: 'team',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'calendar_event',
+          title: 'Local inference planning',
+          dedupeKey: 'calendar-local-inference-morning:item',
+          proposedPayload: {
+            title: 'Local inference planning',
+            startAt: '2026-06-25T10:00:00.000Z',
+            endAt: '2026-06-25T11:00:00.000Z',
+            timezone: 'UTC',
+          },
+        },
+      ],
+    });
+    const afternoon = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Schedule local inference plan',
+      dedupeKey: 'calendar-local-inference-afternoon',
+      visibility: 'team',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'calendar_event',
+          title: 'Local inference plan',
+          dedupeKey: 'calendar-local-inference-afternoon:item',
+          proposedPayload: {
+            title: 'Local inference plan',
+            startAt: '2026-06-25T14:00:00.000Z',
+            endAt: '2026-06-25T15:00:00.000Z',
+            timezone: 'UTC',
+          },
+        },
+      ],
+    });
+
+    const statuses = await db
+      .select({
+        suggestionId: agentSuggestionItems.suggestionId,
+        status: agentSuggestionItems.status,
+        supersededByItemId: agentSuggestionItems.supersededByItemId,
+      })
+      .from(agentSuggestionItems)
+      .where(eq(agentSuggestionItems.teamId, TEAM_ID))
+      .orderBy(asc(agentSuggestionItems.createdAt), asc(agentSuggestionItems.id));
+
+    expect(statuses).toEqual([
+      { suggestionId: morning.id, status: 'pending', supersededByItemId: null },
+      { suggestionId: afternoon.id, status: 'pending', supersededByItemId: null },
+    ]);
+    expect(chatStructured).toHaveBeenCalledTimes(1);
+  });
+
+  it('dedupes date-only calendar proposals when later evidence adds the time', async () => {
+    const chatStructured = adjudicationStub({
+      verdict: 'distinct',
+      confidence: 'high',
+      mergeReason: 'This should not be needed for deterministic date-only refinement.',
+    });
+    const scope = withTeam(db as never, TEAM_ID, PSEUDO_USER, {
+      skipMembershipCheck: true,
+      chatStructured: chatStructured as never,
+    });
+    const dateOnly = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Schedule local inference planning',
+      dedupeKey: 'calendar-date-only-local-inference',
+      visibility: 'team',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'calendar_event',
+          title: 'Local inference planning',
+          dedupeKey: 'calendar-date-only-local-inference:item',
+          proposedPayload: {
+            title: 'Local inference planning',
+            startDate: '2026-06-25',
+            timezone: 'UTC',
+          },
+        },
+      ],
+    });
+    const timed = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Schedule local inference planning at 2pm',
+      dedupeKey: 'calendar-timed-local-inference',
+      visibility: 'team',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'calendar_event',
+          title: 'Local inference planning',
+          dedupeKey: 'calendar-timed-local-inference:item',
+          proposedPayload: {
+            title: 'Local inference planning',
+            startAt: '2026-06-25T14:00:00.000Z',
+            endAt: '2026-06-25T15:00:00.000Z',
+            timezone: 'UTC',
+          },
+        },
+      ],
+    });
+
+    const statuses = await db
+      .select({
+        suggestionId: agentSuggestionItems.suggestionId,
+        status: agentSuggestionItems.status,
+        supersededByItemId: agentSuggestionItems.supersededByItemId,
+      })
+      .from(agentSuggestionItems)
+      .where(eq(agentSuggestionItems.teamId, TEAM_ID))
+      .orderBy(asc(agentSuggestionItems.createdAt), asc(agentSuggestionItems.id));
+
+    expect(statuses).toEqual([
+      {
+        suggestionId: dateOnly.id,
+        status: 'superseded',
+        supersededByItemId: timed.items[0]?.id ?? null,
+      },
+      { suggestionId: timed.id, status: 'pending', supersededByItemId: null },
+    ]);
+    expect(chatStructured).not.toHaveBeenCalled();
+  });
+
+  it('does not let a newer date-only calendar proposal supersede an older timed event', async () => {
+    const chatStructured = adjudicationStub({
+      verdict: 'refinement',
+      confidence: 'high',
+      mergeReason: 'This should not be needed for a newer date-only proposal.',
+    });
+    const scope = withTeam(db as never, TEAM_ID, PSEUDO_USER, {
+      skipMembershipCheck: true,
+      chatStructured: chatStructured as never,
+    });
+    const timed = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Schedule local inference planning at 2pm',
+      dedupeKey: 'calendar-timed-before-date-only',
+      visibility: 'team',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'calendar_event',
+          title: 'Local inference planning',
+          dedupeKey: 'calendar-timed-before-date-only:item',
+          proposedPayload: {
+            title: 'Local inference planning',
+            startAt: '2026-06-25T14:00:00.000Z',
+            endAt: '2026-06-25T15:00:00.000Z',
+            timezone: 'UTC',
+          },
+        },
+      ],
+    });
+    const dateOnly = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Schedule local inference planning',
+      dedupeKey: 'calendar-date-only-after-timed',
+      visibility: 'team',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'calendar_event',
+          title: 'Local inference planning',
+          dedupeKey: 'calendar-date-only-after-timed:item',
+          proposedPayload: {
+            title: 'Local inference planning',
+            startDate: '2026-06-25',
+            timezone: 'UTC',
+          },
+        },
+      ],
+    });
+
+    const statuses = await db
+      .select({
+        suggestionId: agentSuggestionItems.suggestionId,
+        status: agentSuggestionItems.status,
+        supersededByItemId: agentSuggestionItems.supersededByItemId,
+      })
+      .from(agentSuggestionItems)
+      .where(eq(agentSuggestionItems.teamId, TEAM_ID))
+      .orderBy(asc(agentSuggestionItems.createdAt), asc(agentSuggestionItems.id));
+
+    expect(statuses).toEqual([
+      { suggestionId: timed.id, status: 'pending', supersededByItemId: null },
+      { suggestionId: dateOnly.id, status: 'pending', supersededByItemId: null },
+    ]);
+    expect(chatStructured).not.toHaveBeenCalled();
+  });
+
+  it('keeps multi-day date-only calendar proposals separate from a timed start-day event', async () => {
+    const chatStructured = adjudicationStub({
+      verdict: 'refinement',
+      confidence: 'high',
+      mergeReason: 'This should not be needed for a multi-day date-only proposal.',
+    });
+    const scope = withTeam(db as never, TEAM_ID, PSEUDO_USER, {
+      skipMembershipCheck: true,
+      chatStructured: chatStructured as never,
+    });
+    const multiDay = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Schedule local inference offsite',
+      dedupeKey: 'calendar-multi-day-before-timed',
+      visibility: 'team',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'calendar_event',
+          title: 'Local inference offsite',
+          dedupeKey: 'calendar-multi-day-before-timed:item',
+          proposedPayload: {
+            title: 'Local inference offsite',
+            startDate: '2026-06-25',
+            endDate: '2026-06-27',
+            timezone: 'UTC',
+          },
+        },
+      ],
+    });
+    const timed = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Schedule local inference offsite at 2pm',
+      dedupeKey: 'calendar-timed-after-multi-day',
+      visibility: 'team',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'calendar_event',
+          title: 'Local inference offsite',
+          dedupeKey: 'calendar-timed-after-multi-day:item',
+          proposedPayload: {
+            title: 'Local inference offsite',
+            startAt: '2026-06-25T14:00:00.000Z',
+            endAt: '2026-06-25T15:00:00.000Z',
+            timezone: 'UTC',
+          },
+        },
+      ],
+    });
+
+    const statuses = await db
+      .select({
+        suggestionId: agentSuggestionItems.suggestionId,
+        status: agentSuggestionItems.status,
+        supersededByItemId: agentSuggestionItems.supersededByItemId,
+      })
+      .from(agentSuggestionItems)
+      .where(eq(agentSuggestionItems.teamId, TEAM_ID))
+      .orderBy(asc(agentSuggestionItems.createdAt), asc(agentSuggestionItems.id));
+
+    expect(statuses).toEqual([
+      { suggestionId: multiDay.id, status: 'pending', supersededByItemId: null },
+      { suggestionId: timed.id, status: 'pending', supersededByItemId: null },
+    ]);
+    expect(chatStructured).not.toHaveBeenCalled();
+  });
+
+  it('keeps date-only calendar proposals with different ranges separate', async () => {
+    const scope = withTeam(db as never, TEAM_ID, PSEUDO_USER, { skipMembershipCheck: true });
+    const oneDay = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Schedule local inference offsite',
+      dedupeKey: 'calendar-date-only-one-day',
+      visibility: 'team',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'calendar_event',
+          title: 'Local inference offsite',
+          dedupeKey: 'calendar-date-only-one-day:item',
+          proposedPayload: {
+            title: 'Local inference offsite',
+            startDate: '2026-06-25',
+            endDate: '2026-06-26',
+            timezone: 'UTC',
+          },
+        },
+      ],
+    });
+    const multiDay = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Schedule local inference offsite',
+      dedupeKey: 'calendar-date-only-multi-day',
+      visibility: 'team',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'calendar_event',
+          title: 'Local inference offsite',
+          dedupeKey: 'calendar-date-only-multi-day:item',
+          proposedPayload: {
+            title: 'Local inference offsite',
+            startDate: '2026-06-25',
+            endDate: '2026-06-27',
+            timezone: 'UTC',
+          },
+        },
+      ],
+    });
+
+    const statuses = await db
+      .select({
+        suggestionId: agentSuggestionItems.suggestionId,
+        status: agentSuggestionItems.status,
+        supersededByItemId: agentSuggestionItems.supersededByItemId,
+      })
+      .from(agentSuggestionItems)
+      .where(eq(agentSuggestionItems.teamId, TEAM_ID))
+      .orderBy(asc(agentSuggestionItems.createdAt), asc(agentSuggestionItems.id));
+
+    expect(statuses).toEqual([
+      { suggestionId: oneDay.id, status: 'pending', supersededByItemId: null },
+      { suggestionId: multiDay.id, status: 'pending', supersededByItemId: null },
+    ]);
+  });
+
+  it('uses AI adjudication to merge ambiguous same-day calendar refinements', async () => {
+    const chatStructured = adjudicationStub({
+      verdict: 'refinement',
+      confidence: 'high',
+      canonicalTitle: 'Local inference planning',
+      mergeReason: 'The newer 2pm proposal corrects the earlier tentative 10am time.',
+      fieldsToCarryForward: ['startAt', 'endAt'],
+    });
+    const scope = withTeam(db as never, TEAM_ID, PSEUDO_USER, {
+      skipMembershipCheck: true,
+      chatStructured: chatStructured as never,
+    });
+    const tentative = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Schedule local inference planning',
+      dedupeKey: 'calendar-ai-local-inference-old',
+      visibility: 'team',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'calendar_event',
+          title: 'Local inference planning',
+          dedupeKey: 'calendar-ai-local-inference-old:item',
+          proposedPayload: {
+            title: 'Local inference planning',
+            startAt: '2026-06-25T10:00:00.000Z',
+            endAt: '2026-06-25T11:00:00.000Z',
+            timezone: 'UTC',
+          },
+        },
+      ],
+    });
+    const refined = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Schedule local inference planning at 2pm',
+      dedupeKey: 'calendar-ai-local-inference-new',
+      visibility: 'team',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'calendar_event',
+          title: 'Local inference planning',
+          dedupeKey: 'calendar-ai-local-inference-new:item',
+          proposedPayload: {
+            title: 'Local inference planning',
+            startAt: '2026-06-25T14:00:00.000Z',
+            endAt: '2026-06-25T15:00:00.000Z',
+            timezone: 'UTC',
+          },
+        },
+      ],
+    });
+
+    const statuses = await db
+      .select({
+        suggestionId: agentSuggestionItems.suggestionId,
+        status: agentSuggestionItems.status,
+        supersededByItemId: agentSuggestionItems.supersededByItemId,
+      })
+      .from(agentSuggestionItems)
+      .where(eq(agentSuggestionItems.teamId, TEAM_ID))
+      .orderBy(asc(agentSuggestionItems.createdAt), asc(agentSuggestionItems.id));
+    const survivor = await scope.suggestions.getSuggestion(refined.id);
+
+    expect(statuses).toEqual([
+      {
+        suggestionId: tentative.id,
+        status: 'superseded',
+        supersededByItemId: refined.items[0]?.id ?? null,
+      },
+      { suggestionId: refined.id, status: 'pending', supersededByItemId: null },
+    ]);
+    expect(survivor?.metadata.merged_duplicate_suggestions).toMatchObject([
+      {
+        id: tentative.id,
+        adjudication: {
+          verdict: 'refinement',
+          confidence: 'high',
+          mergeReason: 'The newer 2pm proposal corrects the earlier tentative 10am time.',
+        },
+      },
+    ]);
+    expect(chatStructured).toHaveBeenCalledTimes(1);
+  });
+
+  it('semantically dedupes pending relationship and identity proposals', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const project = await scope.objects.createObject({
+      type: 'project',
+      canonicalName: 'Local inference',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const decision = await scope.objects.createObject({
+      type: 'decision',
+      canonicalName: 'Small model support',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const person = await scope.objects.createObject({
+      type: 'person',
+      canonicalName: 'Ada Lovelace',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+
+    const relationship = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Relate local inference and small model support',
+      dedupeKey: 'relationship-local-inference:older',
+      visibility: 'team',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'object_relationship',
+          title: 'Relate local inference and small model support',
+          dedupeKey: 'relationship-local-inference:older:item',
+          proposedPayload: {
+            fromEntityId: project.id,
+            toEntityId: decision.id,
+            kind: 'related',
+          },
+        },
+      ],
+    });
+    const relationshipDuplicate = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Relate small model support and local inference',
+      dedupeKey: 'relationship-local-inference:newer',
+      visibility: 'team',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'object_relationship',
+          title: 'Relate small model support and local inference',
+          dedupeKey: 'relationship-local-inference:newer:item',
+          proposedPayload: {
+            fromEntityId: decision.id,
+            toEntityId: project.id,
+            kind: 'related',
+          },
+        },
+      ],
+    });
+    const identity = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Add Ada email',
+      dedupeKey: 'identity-ada-email:older',
+      visibility: 'team',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'identity_facet',
+          title: 'Add Ada email',
+          dedupeKey: 'identity-ada-email:older:item',
+          proposedPayload: {
+            entityId: person.id,
+            kind: 'email',
+            value: 'Ada@Example.com',
+            normalizedValue: 'ada@example.com',
+          },
+        },
+      ],
+    });
+    const identityDuplicate = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Add normalized Ada email',
+      dedupeKey: 'identity-ada-email:newer',
+      visibility: 'team',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'identity_facet',
+          title: 'Add normalized Ada email',
+          dedupeKey: 'identity-ada-email:newer:item',
+          proposedPayload: {
+            entityId: person.id,
+            kind: 'email',
+            value: 'ada@example.com',
+            normalizedValue: 'ada@example.com',
+          },
+        },
+      ],
+    });
+
+    const statuses = await db
+      .select({
+        suggestionId: agentSuggestionItems.suggestionId,
+        status: agentSuggestionItems.status,
+        supersededByItemId: agentSuggestionItems.supersededByItemId,
+      })
+      .from(agentSuggestionItems)
+      .where(eq(agentSuggestionItems.teamId, TEAM_ID))
+      .orderBy(asc(agentSuggestionItems.createdAt), asc(agentSuggestionItems.id));
+
+    expect(statuses).toEqual(
+      [
+        [relationship.id, 'superseded', relationshipDuplicate.items[0]?.id ?? null],
+        [relationshipDuplicate.id, 'pending', null],
+        [identity.id, 'superseded', identityDuplicate.items[0]?.id ?? null],
+        [identityDuplicate.id, 'pending', null],
+      ].map(([suggestionId, status, supersededByItemId]) => ({
+        suggestionId,
+        status,
+        supersededByItemId,
+      })),
+    );
+  });
+
+  it('does not dedupe relationship proposals by bundle-local refs across bundles', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const first = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Create Alice, Acme, and their relationship',
+      dedupeKey: 'local-ref-dedupe:first',
+      visibility: 'team',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'object',
+          title: 'Alice Person',
+          dedupeKey: 'local-ref-dedupe:first:person',
+          proposedPayload: { type: 'person', canonicalName: 'Alice Person', localRef: 'person' },
+        },
+        {
+          operation: 'create',
+          targetKind: 'object',
+          title: 'Acme Company',
+          dedupeKey: 'local-ref-dedupe:first:company',
+          proposedPayload: { type: 'company', canonicalName: 'Acme Company', localRef: 'company' },
+        },
+        {
+          operation: 'create',
+          targetKind: 'object_relationship',
+          title: 'Relate person and company',
+          dedupeKey: 'local-ref-dedupe:first:relationship',
+          proposedPayload: {
+            fromRef: 'person',
+            toRef: 'company',
+            kind: 'related',
+          },
+        },
+      ],
+    });
+    const second = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Create Bob, Beta, and their relationship',
+      dedupeKey: 'local-ref-dedupe:second',
+      visibility: 'team',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'object',
+          title: 'Bob Person',
+          dedupeKey: 'local-ref-dedupe:second:person',
+          proposedPayload: { type: 'person', canonicalName: 'Bob Person', localRef: 'person' },
+        },
+        {
+          operation: 'create',
+          targetKind: 'object',
+          title: 'Beta Company',
+          dedupeKey: 'local-ref-dedupe:second:company',
+          proposedPayload: { type: 'company', canonicalName: 'Beta Company', localRef: 'company' },
+        },
+        {
+          operation: 'create',
+          targetKind: 'object_relationship',
+          title: 'Relate person and company',
+          dedupeKey: 'local-ref-dedupe:second:relationship',
+          proposedPayload: {
+            fromRef: 'person',
+            toRef: 'company',
+            kind: 'related',
+          },
+        },
+      ],
+    });
+
+    const relationshipRows = await db
+      .select({
+        suggestionId: agentSuggestionItems.suggestionId,
+        status: agentSuggestionItems.status,
+        supersededByItemId: agentSuggestionItems.supersededByItemId,
+      })
+      .from(agentSuggestionItems)
+      .where(eq(agentSuggestionItems.targetKind, 'object_relationship'))
+      .orderBy(asc(agentSuggestionItems.createdAt), asc(agentSuggestionItems.id));
+
+    expect(relationshipRows).toEqual([
+      { suggestionId: first.id, status: 'pending', supersededByItemId: null },
+      { suggestionId: second.id, status: 'pending', supersededByItemId: null },
+    ]);
+  });
+
+  it('does not dedupe object notes by same entity name across different entity types', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const personNote = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Remember Ada note',
+      dedupeKey: 'note-name-type:person',
+      visibility: 'team',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'object_note',
+          title: 'Remember Ada note',
+          dedupeKey: 'note-name-type:person:item',
+          proposedPayload: {
+            entityName: 'Ada',
+            entityType: 'person',
+            body: 'Follow up about local inference planning.',
+          },
+        },
+      ],
+    });
+    const projectNote = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Remember Ada note',
+      dedupeKey: 'note-name-type:project',
+      visibility: 'team',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'object_note',
+          title: 'Remember Ada note',
+          dedupeKey: 'note-name-type:project:item',
+          proposedPayload: {
+            entityName: 'Ada',
+            entityType: 'project',
+            body: 'Follow up about local inference planning.',
+          },
+        },
+      ],
+    });
+
+    const noteRows = await db
+      .select({
+        suggestionId: agentSuggestionItems.suggestionId,
+        status: agentSuggestionItems.status,
+        supersededByItemId: agentSuggestionItems.supersededByItemId,
+      })
+      .from(agentSuggestionItems)
+      .where(eq(agentSuggestionItems.targetKind, 'object_note'))
+      .orderBy(asc(agentSuggestionItems.createdAt), asc(agentSuggestionItems.id));
+
+    expect(noteRows).toEqual([
+      { suggestionId: personNote.id, status: 'pending', supersededByItemId: null },
+      { suggestionId: projectNote.id, status: 'pending', supersededByItemId: null },
+    ]);
   });
 
   it('keeps mixed bundles active with only non-superseded items actionable', async () => {
@@ -1515,6 +2786,116 @@ describe('suggestion scope', () => {
     `);
     expect(rows.rows[0]?.count).toBe('3');
     expect(rows.rows[0]?.reoffered_dedupe_key).toContain(':reoffer:1');
+  });
+
+  it('re-offers a rejected first proposal when later evidence proposes it again', async () => {
+    const creator = withTeam(db as never, TEAM_ID, PSEUDO_USER, { skipMembershipCheck: true });
+    const reviewer = withTeam(db as never, TEAM_ID, USER_ID);
+    const earlyRawEventId = '10000000-0000-0000-0000-000000000201';
+    const agreedRawEventId = '10000000-0000-0000-0000-000000000202';
+    await db.insert(rawEvents).values([
+      {
+        id: earlyRawEventId,
+        teamId: TEAM_ID,
+        authorUserId: USER_ID,
+        source: 'slack',
+        contentText: 'We might support local inference, but this is not decided yet.',
+        occurredAt: new Date('2026-06-22T09:00:00.000Z'),
+        visibility: 'team',
+      },
+      {
+        id: agreedRawEventId,
+        teamId: TEAM_ID,
+        authorUserId: USER_ID,
+        source: 'slack',
+        contentText: 'We agree to support local inference.',
+        occurredAt: new Date('2026-06-22T10:00:00.000Z'),
+        visibility: 'team',
+      },
+    ]);
+    const early = await creator.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Decision: Support local inference',
+      summary: 'The discussion sounded like a decision, but it was premature.',
+      dedupeKey: 'conversation:local-inference-decision',
+      visibility: 'team',
+      evidence: [{ rawEventId: earlyRawEventId, quote: 'maybe support local inference' }],
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'object',
+          title: 'Support local inference',
+          dedupeKey: 'conversation:local-inference-decision:item',
+          proposedPayload: {
+            type: 'decision',
+            canonicalName: 'Support local inference',
+            status: 'accepted',
+          },
+        },
+      ],
+    });
+    await expect(reviewer.suggestions.rejectSuggestionItem(early.items[0]?.id ?? '')).resolves.toBe(
+      true,
+    );
+
+    const agreed = await creator.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Decision: Support local inference',
+      summary: 'The team later explicitly agreed to support local inference.',
+      dedupeKey: 'conversation:local-inference-decision',
+      visibility: 'team',
+      evidence: [{ rawEventId: agreedRawEventId, quote: 'we agree to support local inference' }],
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'object',
+          title: 'Support local inference',
+          dedupeKey: 'conversation:local-inference-decision:item',
+          proposedPayload: {
+            type: 'decision',
+            canonicalName: 'Support local inference',
+            status: 'accepted',
+          },
+        },
+      ],
+    });
+    const replay = await creator.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Decision: Support local inference',
+      summary: 'The team later explicitly agreed to support local inference.',
+      dedupeKey: 'conversation:local-inference-decision',
+      visibility: 'team',
+      evidence: [{ rawEventId: agreedRawEventId, quote: 'we agree to support local inference' }],
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'object',
+          title: 'Support local inference',
+          dedupeKey: 'conversation:local-inference-decision:item',
+          proposedPayload: {
+            type: 'decision',
+            canonicalName: 'Support local inference',
+            status: 'accepted',
+          },
+        },
+      ],
+    });
+
+    expect(agreed.id).not.toBe(early.id);
+    expect(agreed.status).toBe('pending');
+    expect(replay.id).toBe(agreed.id);
+    const rows = await pg.query<{ status: string; dedupe_key: string }>(`
+      SELECT status, dedupe_key
+      FROM agent_suggestions
+      WHERE team_id = '${TEAM_ID}'
+      ORDER BY created_at, id;
+    `);
+    expect(rows.rows[0]).toEqual({
+      status: 'rejected',
+      dedupe_key: 'conversation:local-inference-decision',
+    });
+    expect(rows.rows[1]?.status).toBe('pending');
+    expect(rows.rows[1]?.dedupe_key).toContain('conversation:local-inference-decision:correction:');
   });
 
   it('claims accept once before applying canonical changes', async () => {
