@@ -69,16 +69,18 @@ SUPPORT_EMAIL=contact@thetimeline.cc
       </p>
       <p>
         Daily digests are personalized per active team member, generated against a 25-hour lookback
-        window ending at the most recent noon UTC, stored in <code>daily_digests</code>, and sent
-        once per generated digest unless the recipient has disabled the digest in Team settings →
-        Messaging. The 25h span gives a 1h overlap with the previous digest so late-arriving events
-        and clock skew between daily runs never leave a gap. Each digest covers <em>all</em>
-        timeline events in its window (paginated, not capped), with every event surfaced to the
-        summarizer and the true totals reflected in the email metrics. The worker registers the noon
-        UTC scheduler on boot and also queues one idempotent catch-up tick for the latest noon
-        window only, so a deploy or missed scheduler state still creates the current expected digest
-        rows. In-app notifications remain inbox-only; digest email may summarize pending approvals
-        and inbox state, but individual notification rows are not fanned out as standalone emails.
+        window ending at the recipient's configured digest hour in their effective digest timezone,
+        stored in <code>daily_digests</code>, and sent once per generated digest unless the
+        recipient has disabled the digest in Team settings → Messaging. When a recipient has no
+        explicit messaging preference row, the digest timezone comes from the team's workspace
+        timezone. The 25h span gives a 1h overlap with the previous digest so late-arriving events
+        and clock skew between daily runs never leave a gap. Each digest covers
+        <em>all</em> timeline events in its window (paginated, not capped), with every event
+        surfaced to the summarizer and the true totals reflected in the email metrics. The worker
+        registers the noon UTC scheduler on boot and also queues one idempotent catch-up tick, so a
+        deploy or missed scheduler state still creates the current expected digest rows. In-app
+        notifications remain inbox-only; digest email may summarize pending approvals and inbox
+        state, but individual notification rows are not fanned out as standalone emails.
       </p>
       <p>
         New signups receive a non-blocking verification email through the same messaging module.

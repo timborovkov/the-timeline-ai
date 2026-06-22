@@ -3,6 +3,7 @@ import {
   dailyDigests,
   entities,
   messagePreferences,
+  teamCalendarSettings,
   teamMembers,
   teams,
   users,
@@ -16,8 +17,11 @@ import { chatStructured } from '#src/llm/chat.js';
 import { childLogger } from '#src/logger.js';
 import { displayObjectTitle } from '#src/objects/index.js';
 import { withTeam } from '#src/team-scope.js';
+import { assertValidTimezone, dateFromInstant, zonedDateTimeFromDate } from '#src/time/index.js';
 
 const log = childLogger('digest');
+const DEFAULT_WORKSPACE_TIMEZONE = 'Europe/Helsinki';
+const DEFAULT_DIGEST_HOUR = 12;
 
 const digestSectionTitleSchema = z.enum([
   'Highlights',
@@ -397,11 +401,21 @@ export async function getDigestPreference(input: {
     )
     .limit(1);
   const row = rows[0];
+  const timezone = row?.timezone ?? (await getTeamDigestTimezone(input.db, input.teamId));
   return {
     enabled: row?.dailyDigestEnabled ?? true,
     hour: row?.dailyDigestHour ?? 12,
-    timezone: row?.timezone ?? 'UTC',
+    timezone,
   };
+}
+
+async function getTeamDigestTimezone(db: Db, teamId: string): Promise<string> {
+  const rows = await db
+    .select({ defaultTimezone: teamCalendarSettings.defaultTimezone })
+    .from(teamCalendarSettings)
+    .where(eq(teamCalendarSettings.teamId, teamId))
+    .limit(1);
+  return rows[0]?.defaultTimezone ?? DEFAULT_WORKSPACE_TIMEZONE;
 }
 
 export async function listDailyDigestRecipients(db: Db): Promise<DigestRecipient[]> {
@@ -708,9 +722,22 @@ export async function generateDailyDigest(
   };
 }
 
-export function defaultDigestWindow(now: Date = new Date()): { start: Date; end: Date } {
-  const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 12));
-  if (now < end) end.setUTCDate(end.getUTCDate() - 1);
+export function defaultDigestWindow(
+  now: Date = new Date(),
+  timezone = 'UTC',
+  hour = DEFAULT_DIGEST_HOUR,
+): { start: Date; end: Date } {
+  const tz = assertValidTimezone(timezone);
+  const digestHour = Number.isInteger(hour) && hour >= 0 && hour <= 23 ? hour : DEFAULT_DIGEST_HOUR;
+  const current = zonedDateTimeFromDate(now, tz);
+  let endInTimezone = current.toPlainDate().toZonedDateTime({
+    timeZone: tz,
+    plainTime: { hour: digestHour },
+  });
+  if (current.epochMilliseconds < endInTimezone.epochMilliseconds) {
+    endInTimezone = endInTimezone.subtract({ days: 1 });
+  }
+  const end = dateFromInstant(endInTimezone.toInstant());
   const start = new Date(end.getTime() - 25 * 60 * 60 * 1000);
   return { start, end };
 }
