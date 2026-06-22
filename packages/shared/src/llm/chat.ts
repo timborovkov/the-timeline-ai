@@ -189,11 +189,22 @@ function hasRetryableProviderMessage(err: unknown): boolean {
   );
 }
 
+function hasStructuredOutputFailureMessage(err: unknown): boolean {
+  const message = errorMessage(err).toLowerCase();
+  return (
+    message.includes('llm.chatstructured json_object fallback returned invalid json') ||
+    message.includes('json_object fallback') ||
+    message.includes('structured output') ||
+    message.includes('no object')
+  );
+}
+
 function shouldFallbackToAlternateModel(err: unknown): boolean {
   const statusCodes = statusCodesFromError(err);
   return (
     hasNoObjectGeneratedError(err) ||
     hasSchemaValidationError(err) ||
+    hasStructuredOutputFailureMessage(err) ||
     statusCodes.some(isRetryableStatusCode) ||
     hasRetryableProviderMessage(err)
   );
