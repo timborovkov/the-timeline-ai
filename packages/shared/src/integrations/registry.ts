@@ -201,7 +201,7 @@ const CATALOG_SEEDS: CatalogSeed[] = [
     id: 'sentry',
     label: 'Sentry',
     description:
-      'Native issue sync: issues, regressions, releases, and resolved incidents become cited events.',
+      'Native issue sync: issue updates, resolved issues, and releases become cited events and incident objects.',
     logo: '/connectors/sentry.svg',
     category: 'dev-tools',
     kind: 'native',

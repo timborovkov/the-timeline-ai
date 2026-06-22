@@ -270,10 +270,10 @@ export const QUICK_LINKS: readonly QuickLinkSeed[] = [
     id: 'sentry-integration',
     kind: 'quick_link',
     title: 'Sentry integration',
-    snippet: 'Connect Sentry projects, issues, regressions, and releases.',
+    snippet: 'Connect Sentry projects, issue updates, resolved issues, and releases.',
     href: '/app/team/integrations#sentry',
     group: 'Sources',
-    keywords: ['sentry', 'errors', 'issues', 'regressions', 'releases'],
+    keywords: ['sentry', 'errors', 'issues', 'resolved', 'releases'],
   },
   {
     id: 'slack-setup',

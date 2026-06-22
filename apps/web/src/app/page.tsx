@@ -536,7 +536,7 @@ const INPUTS = [
   'GOOGLE MEET / ZOOM / TEAMS',
   'EMAIL',
   'CALENDAR',
-  'GITHUB / LINEAR / DRIVE',
+  'NATIVE INTEGRATIONS',
   'WEB APP',
   'TEAM DOCUMENT DRIVE',
   'MCP SERVERS',
@@ -777,8 +777,8 @@ function Surfaces() {
           body="Scheduled work, all-day events, and time-aware context appear in the same timeline."
         />
         <SurfaceTile
-          label="GITHUB / LINEAR / DRIVE"
-          body="Native connectors sync repos, issues, PRs, releases, CI, project updates, and Drive changes."
+          label="NATIVE INTEGRATIONS"
+          body="GitHub, Linear, Drive, Monday.com, Slack workspace history, and Sentry sync into cited events."
         />
         <SurfaceTile
           label="WEB APP"
@@ -835,9 +835,9 @@ function Integrations() {
             >
               MCP servers
             </a>{' '}
-            : Notion, Jira, Figma, Sentry, Stripe, your internal tool, anything that speaks the
-            protocol. The agent gets live tools; those systems only become durable timeline events
-            when you add native sync or a custom ingestion layer.
+            : Notion, Jira, Figma, Stripe, your internal tool, anything that speaks the protocol.
+            The agent gets live tools; those systems only become durable timeline events when you
+            add native sync or a custom ingestion layer.
           </p>
         </div>
         <IntegrationCloud />

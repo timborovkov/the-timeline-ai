@@ -85,11 +85,11 @@ state, cross-functional decisions, and operational failure signals:
 | --- | --- |
 | Monday.com | Boards, generic records, subitems, updates, columns, status changes, owners, and WorkDocs. |
 | Slack | Workspace-wide channel/thread/file/reaction ingestion beyond the current conversational capture model. |
-| Sentry | Issues, releases, suspect commits, regressions, ownership, resolution events. |
+| Sentry | Issue updates, resolved issues, and releases, mapped into cited events and incident objects. |
 
 Exit criteria: each provider can backfill selected resources, run incremental
-sync, survive token refresh, and answer "what changed last week?" with cited
-Timeline events.
+sync, recover cleanly when credentials need reconnecting, and answer "what
+changed last week?" with cited Timeline events.
 
 ### Wave 2: Highest Workflow Density
 
