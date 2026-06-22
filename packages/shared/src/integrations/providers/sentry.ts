@@ -87,32 +87,133 @@ async function postForm(
     body: new URLSearchParams(body).toString(),
   });
   const text = await res.text();
-  const parsed = parseJson(text);
+  const parsed = parseJson(text) as Record<string, unknown>;
   if (!res.ok) throw new Error(`Sentry ${String(res.status)}: ${text}`);
   return parsed;
 }
 
-async function sentryGet<T>(tokens: SentryTokens, path: string): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
+async function sentryRequest(tokens: SentryTokens, pathOrUrl: string): Promise<Response> {
+  const url = pathOrUrl.startsWith('http') ? pathOrUrl : `${API_BASE}${pathOrUrl}`;
+  return fetch(url, {
     headers: { authorization: `Bearer ${tokens.access_token}` },
   });
-  const text = await res.text();
-  if (!res.ok) throw new Error(`Sentry API ${String(res.status)}: ${text}`);
-  return parseJson(text) as T;
 }
 
-function parseJson(text: string): Record<string, unknown> {
+async function sentryGetPage(
+  tokens: SentryTokens,
+  pathOrUrl: string,
+): Promise<{ items: unknown[]; next: string | null }> {
+  const res = await sentryRequest(tokens, pathOrUrl);
+  const text = await res.text();
+  if (!res.ok) throw new Error(`Sentry API ${String(res.status)}: ${text}`);
+  return {
+    items: parseJson(text) as unknown[],
+    next: nextLink(res.headers.get('link')),
+  };
+}
+
+async function sentryGetAll<T>(tokens: SentryTokens, path: string): Promise<T[]> {
+  const items: T[] = [];
+  let next: string | null = path;
+  while (next) {
+    const page = await sentryGetPage(tokens, next);
+    items.push(...(page.items as T[]));
+    next = page.next;
+  }
+  return items;
+}
+
+function nextLink(header: string | null): string | null {
+  if (!header) return null;
+  for (const entry of header.split(',')) {
+    const urlMatch = /<([^>]+)>/.exec(entry);
+    if (!urlMatch?.[1]) continue;
+    const relMatch = /\brel="next"/.test(entry);
+    const resultsMatch = /\bresults="true"/.test(entry);
+    if (relMatch && resultsMatch) return urlMatch[1];
+  }
+  return null;
+}
+
+function parseJson(text: string): unknown {
   if (!text) return {};
-  return JSON.parse(text) as Record<string, unknown>;
+  return JSON.parse(text) as unknown;
 }
 
 function stringValue(value: unknown): string | null {
   return typeof value === 'string' && value.trim() ? value : null;
 }
 
+function numberValue(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return null;
+}
+
 function dateValue(value: unknown, fallback = new Date()): Date {
   const raw = typeof value === 'string' || typeof value === 'number' ? new Date(value) : fallback;
   return Number.isNaN(raw.getTime()) ? fallback : raw;
+}
+
+function tokenExpiry(body: Record<string, unknown>): number | null {
+  const expiresIn = numberValue(body.expires_in);
+  return expiresIn ? Date.now() + expiresIn * 1000 : null;
+}
+
+function tokenFromBody(body: Record<string, unknown>, previous?: SentryTokens): SentryTokens {
+  const access = stringValue(body.access_token) ?? stringValue(body.token);
+  if (!access) throw new Error('Sentry token exchange returned no access_token');
+  const refreshToken =
+    stringValue(body.refresh_token) ?? stringValue(body.refreshToken) ?? previous?.refresh_token;
+  const tokenType = stringValue(body.token_type) ?? previous?.token_type;
+  const scope = stringValue(body.scope) ?? previous?.scope;
+  const expiresAt = tokenExpiry(body);
+  return {
+    access_token: access,
+    ...(refreshToken ? { refresh_token: refreshToken } : {}),
+    ...(tokenType ? { token_type: tokenType } : {}),
+    ...(scope ? { scope } : {}),
+    ...(expiresAt ? { expires_at: expiresAt } : {}),
+  };
+}
+
+async function refreshAccessToken(tokens: SentryTokens): Promise<SentryTokens> {
+  const env = getEnv();
+  if (
+    !tokens.refresh_token ||
+    !env.SENTRY_INTEGRATION_CLIENT_ID ||
+    !env.SENTRY_INTEGRATION_CLIENT_SECRET
+  ) {
+    return tokens;
+  }
+  const body = await postForm(TOKEN_URL, {
+    grant_type: 'refresh_token',
+    refresh_token: tokens.refresh_token,
+    client_id: env.SENTRY_INTEGRATION_CLIENT_ID,
+    client_secret: env.SENTRY_INTEGRATION_CLIENT_SECRET,
+  });
+  return tokenFromBody(body, tokens);
+}
+
+async function ensureAccessToken(
+  tokens: SentryTokens,
+  ctx: { persistTokens(tokens: Record<string, unknown>): Promise<void> },
+): Promise<SentryTokens> {
+  const shouldRefresh =
+    Boolean(tokens.refresh_token) &&
+    (!tokens.expires_at || tokens.expires_at <= Date.now() + 60_000);
+  if (!shouldRefresh) return tokens;
+  const refreshed = await refreshAccessToken(tokens);
+  if (
+    refreshed.access_token !== tokens.access_token ||
+    refreshed.expires_at !== tokens.expires_at
+  ) {
+    await ctx.persistTokens(refreshed as unknown as Record<string, unknown>);
+  }
+  return refreshed;
 }
 
 function priorityFromLevel(level?: string): ObjectMapping['priority'] | null {
@@ -201,17 +302,23 @@ async function syncProject(
   const query = cursor.issues_since
     ? `?query=${encodeURIComponent(`lastSeen:>${cursor.issues_since}`)}`
     : '?query=';
-  const issues = await sentryGet<SentryIssue[]>(
+  const issues = await sentryGetAll<SentryIssue>(
     tokens,
     `/projects/${encodeURIComponent(orgSlug)}/${encodeURIComponent(projectSlug)}/issues/${query}`,
   );
-  const releases = await sentryGet<SentryRelease[]>(
+  const releases = await sentryGetAll<SentryRelease>(
     tokens,
     `/projects/${encodeURIComponent(orgSlug)}/${encodeURIComponent(projectSlug)}/releases/`,
   ).catch(() => []);
+  const releaseEvents = releases
+    .map((release) => releaseEvent(orgSlug, projectSlug, release))
+    .filter(
+      (event) =>
+        !cursor.releases_since || event.occurredAt > dateValue(cursor.releases_since, new Date(0)),
+    );
   const events = [
     ...issues.map((issue) => issueEvent(orgSlug, projectSlug, issue)),
-    ...releases.map((release) => releaseEvent(orgSlug, projectSlug, release)),
+    ...releaseEvents,
   ];
   const latestIssue = events
     .filter((event) => event.eventType.startsWith('issue.'))
@@ -240,7 +347,7 @@ async function selectedProjects(
     .filter((selection) => selection.kind === 'sentry.project')
     .map((selection) => selection.externalId);
   for (const selection of selections.filter((item) => item.kind === 'sentry.org')) {
-    const orgProjects = await sentryGet<SentryProject[]>(
+    const orgProjects = await sentryGetAll<SentryProject>(
       tokens,
       `/organizations/${encodeURIComponent(selection.externalId)}/projects/`,
     );
@@ -282,18 +389,8 @@ export const sentryProvider: IntegrationProvider = {
       code: input.code,
       redirect_uri: input.redirectUri,
     });
-    const access = stringValue(body.access_token);
-    if (!access) throw new Error('Sentry token exchange returned no access_token');
-    const refreshToken = stringValue(body.refresh_token);
-    const tokenType = stringValue(body.token_type);
-    const scope = stringValue(body.scope);
-    const tokens: SentryTokens = {
-      access_token: access,
-      ...(refreshToken ? { refresh_token: refreshToken } : {}),
-      ...(tokenType ? { token_type: tokenType } : {}),
-      ...(scope ? { scope } : {}),
-    };
-    const orgs = await sentryGet<SentryOrg[]>(tokens, '/organizations/');
+    const tokens = tokenFromBody(body);
+    const orgs = await sentryGetAll<SentryOrg>(tokens, '/organizations/');
     const externalAccountId =
       orgs
         .map((org) => org.slug)
@@ -310,7 +407,7 @@ export const sentryProvider: IntegrationProvider = {
 
   async listSyncableResources(_integration, tokens): Promise<ProviderResource[]> {
     const sentryTokens = tokens as SentryTokens;
-    const orgs = await sentryGet<SentryOrg[]>(sentryTokens, '/organizations/');
+    const orgs = await sentryGetAll<SentryOrg>(sentryTokens, '/organizations/');
     const resources: ProviderResource[] = [];
     for (const org of orgs) {
       resources.push({
@@ -318,7 +415,7 @@ export const sentryProvider: IntegrationProvider = {
         label: `${org.name ?? org.slug} (all projects)`,
         kind: 'sentry.org',
       });
-      const projects = await sentryGet<SentryProject[]>(
+      const projects = await sentryGetAll<SentryProject>(
         sentryTokens,
         `/organizations/${encodeURIComponent(org.slug)}/projects/`,
       );
@@ -334,12 +431,13 @@ export const sentryProvider: IntegrationProvider = {
   },
 
   async backfill({ tokens, selections, ctx }) {
-    const projects = await selectedProjects(tokens as SentryTokens, selections);
+    const sentryTokens = await ensureAccessToken(tokens as SentryTokens, ctx);
+    const projects = await selectedProjects(sentryTokens, selections);
     for (const project of projects) {
       const [orgSlug, projectSlug] = project.split('/');
       if (!orgSlug || !projectSlug) continue;
       const cursor = (await ctx.loadCursor(`sentry.project:${project}`)) as SentryCursor;
-      const result = await syncProject(tokens as SentryTokens, orgSlug, projectSlug, cursor);
+      const result = await syncProject(sentryTokens, orgSlug, projectSlug, cursor);
       await ctx.writeEvents(result.events);
       await ctx.saveCursor(`sentry.project:${project}`, result.cursor);
     }

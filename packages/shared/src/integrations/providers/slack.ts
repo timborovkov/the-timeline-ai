@@ -105,7 +105,7 @@ async function fetchHistory(
   const messages: SlackMessage[] = [];
   let pageCursor: string | undefined;
   let maxTs = cursor.latest_ts;
-  for (let page = 0; page < 5; page++) {
+  for (;;) {
     const res = await slackCall<SlackHistoryResponse>(token, 'conversations.history', {
       channel,
       limit: 200,
@@ -118,8 +118,8 @@ async function fetchHistory(
       messages.push(message);
       if (!maxTs || Number(message.ts) > Number(maxTs)) maxTs = message.ts;
     }
-    pageCursor = res.response_metadata?.next_cursor;
-    if (!pageCursor && !res.has_more) break;
+    pageCursor = res.response_metadata?.next_cursor ?? undefined;
+    if (!pageCursor) break;
   }
   return {
     messages,
@@ -133,12 +133,20 @@ async function fetchReplies(
   root: SlackMessage,
 ): Promise<SlackMessage[]> {
   if (!root.thread_ts || root.thread_ts !== root.ts) return [];
-  const res = await slackCall<SlackHistoryResponse>(token, 'conversations.replies', {
-    channel,
-    ts: root.thread_ts,
-    limit: 200,
-  });
-  return (res.messages ?? []).filter((message) => message.ts !== root.ts);
+  const replies: SlackMessage[] = [];
+  let pageCursor: string | undefined;
+  for (;;) {
+    const res = await slackCall<SlackHistoryResponse>(token, 'conversations.replies', {
+      channel,
+      ts: root.thread_ts,
+      limit: 200,
+      cursor: pageCursor,
+    });
+    replies.push(...(res.messages ?? []).filter((message) => message.ts !== root.ts));
+    pageCursor = res.response_metadata?.next_cursor ?? undefined;
+    if (!pageCursor) break;
+  }
+  return replies;
 }
 
 function occurredAtFromTs(ts: string): Date {

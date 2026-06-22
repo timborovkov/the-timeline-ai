@@ -14,6 +14,12 @@ function jsonResponse(body: unknown): Response {
   });
 }
 
+function requestUrl(input: Parameters<typeof fetch>[0]): string {
+  if (typeof input === 'string') return input;
+  if (input instanceof URL) return input.toString();
+  return input.url;
+}
+
 describe('slackProvider', () => {
   beforeEach(() => {
     process.env.SLACK_CLIENT_ID = 'slack-client';
@@ -138,6 +144,67 @@ describe('slackProvider', () => {
     expect(events[2]?.objectMap).toMatchObject({ type: 'document', externalId: 'F123' });
     expect(ctx.saveCursor).toHaveBeenCalledWith('slack.channel:C123', {
       latest_ts: '1782000001.000200',
+    });
+  });
+
+  it('paginates Slack channel history until Slack returns no next cursor', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>((input, init) => {
+      if (typeof input !== 'string') throw new Error('expected Slack URL string');
+      const requestBody = init?.body;
+      if (typeof requestBody !== 'string') throw new Error('expected form request body');
+      const params = new URLSearchParams(requestBody);
+      if (!input.endsWith('/conversations.history')) {
+        return Promise.resolve(jsonResponse({ ok: true, messages: [] }));
+      }
+      const cursor = params.get('cursor');
+      const page = cursor ? Number(cursor.replace('page-', '')) : 0;
+      return Promise.resolve(
+        jsonResponse({
+          ok: true,
+          messages: [
+            {
+              type: 'message',
+              user: 'U123',
+              text: `Message ${String(page)}`,
+              ts: `178200000${String(page)}.000100`,
+            },
+          ],
+          response_metadata: page < 6 ? { next_cursor: `page-${String(page + 1)}` } : {},
+        }),
+      );
+    });
+    vi.stubGlobal('fetch', fetch);
+    const ctx = {
+      loadCursor: vi.fn().mockResolvedValue({}),
+      saveCursor: vi.fn().mockResolvedValue(undefined),
+      writeEvents: vi.fn().mockResolvedValue([]),
+      persistTokens: vi.fn(),
+      recordAudit: vi.fn(),
+    };
+
+    await slackProvider.backfill({
+      integration: { id: 'integration-1' } as never,
+      tokens: { access_token: 'xoxb-token', team: { id: 'T123', name: 'Acme' } },
+      selections: [{ kind: 'slack.channel', externalId: 'C123' }],
+      ctx,
+    });
+
+    const historyCalls = fetch.mock.calls.filter(([input]) =>
+      requestUrl(input).endsWith('/conversations.history'),
+    );
+    const events = (ctx.writeEvents.mock.calls[0]?.[0] ?? []) as IntegrationEvent[];
+    expect(historyCalls).toHaveLength(7);
+    expect(events.map((event) => event.contentText)).toEqual([
+      'Message 0',
+      'Message 1',
+      'Message 2',
+      'Message 3',
+      'Message 4',
+      'Message 5',
+      'Message 6',
+    ]);
+    expect(ctx.saveCursor).toHaveBeenCalledWith('slack.channel:C123', {
+      latest_ts: '1782000006.000100',
     });
   });
 });

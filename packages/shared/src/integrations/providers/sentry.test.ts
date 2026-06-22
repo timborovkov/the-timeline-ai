@@ -7,10 +7,10 @@ import { sentryProvider } from '#src/integrations/providers/sentry.js';
 
 const ENV_BACKUP = { ...process.env };
 
-function jsonResponse(body: unknown): Response {
+function jsonResponse(body: unknown, headers?: Record<string, string>): Response {
   return new Response(JSON.stringify(body), {
     status: 200,
-    headers: { 'content-type': 'application/json' },
+    headers: { 'content-type': 'application/json', ...headers },
   });
 }
 
@@ -26,6 +26,12 @@ describe('sentryProvider', () => {
     resetEnvForTests();
     vi.unstubAllGlobals();
   });
+
+  function requestUrl(input: Parameters<typeof fetch>[0]): string {
+    if (typeof input === 'string') return input;
+    if (input instanceof URL) return input.toString();
+    return input.url;
+  }
 
   it('builds a Sentry OAuth authorize URL', async () => {
     const result = await sentryProvider.startOAuth({
@@ -45,8 +51,8 @@ describe('sentryProvider', () => {
   it('lists organizations and projects as syncable resources', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn((input) => {
-        const url = String(input);
+      vi.fn<typeof globalThis.fetch>((input) => {
+        const url = requestUrl(input);
         if (url.endsWith('/organizations/')) {
           return Promise.resolve(jsonResponse([{ id: 'org-1', slug: 'acme', name: 'Acme' }]));
         }
@@ -67,8 +73,8 @@ describe('sentryProvider', () => {
   it('syncs issues and releases into incident events', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn((input) => {
-        const url = String(input);
+      vi.fn<typeof globalThis.fetch>((input) => {
+        const url = requestUrl(input);
         if (url.includes('/issues/')) {
           return Promise.resolve(
             jsonResponse([
@@ -121,11 +127,157 @@ describe('sentryProvider', () => {
     );
   });
 
+  it('refreshes expired Sentry tokens and persists the replacement before syncing', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>((input, init) => {
+      const url = requestUrl(input);
+      if (url === 'https://sentry.io/oauth/token/') {
+        const body = typeof init?.body === 'string' ? new URLSearchParams(init.body) : null;
+        expect(body?.get('grant_type')).toBe('refresh_token');
+        expect(body?.get('refresh_token')).toBe('refresh-old');
+        return Promise.resolve(
+          jsonResponse({
+            access_token: 'token-new',
+            refresh_token: 'refresh-new',
+            expires_in: 3600,
+          }),
+        );
+      }
+      expect(init?.headers).toMatchObject({ authorization: 'Bearer token-new' });
+      if (url.includes('/issues/')) return Promise.resolve(jsonResponse([]));
+      return Promise.resolve(jsonResponse([]));
+    });
+    vi.stubGlobal('fetch', fetch);
+    const ctx = {
+      loadCursor: vi.fn().mockResolvedValue({}),
+      saveCursor: vi.fn().mockResolvedValue(undefined),
+      writeEvents: vi.fn().mockResolvedValue([]),
+      persistTokens: vi.fn().mockResolvedValue(undefined),
+      recordAudit: vi.fn(),
+    };
+
+    await sentryProvider.backfill({
+      integration: { id: 'integration-1' } as never,
+      tokens: {
+        access_token: 'token-old',
+        refresh_token: 'refresh-old',
+        expires_at: Date.now() - 1_000,
+      },
+      selections: [{ kind: 'sentry.project', externalId: 'acme/web' }],
+      ctx,
+    });
+
+    expect(ctx.persistTokens).toHaveBeenCalledWith(
+      expect.objectContaining({
+        access_token: 'token-new',
+        refresh_token: 'refresh-new',
+      }),
+    );
+  });
+
+  it('follows Sentry Link pagination for project issues', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof globalThis.fetch>((input) => {
+        const url = requestUrl(input);
+        if (url.includes('/issues/') && !url.includes('cursor=page-2')) {
+          return Promise.resolve(
+            jsonResponse(
+              [
+                {
+                  id: 'issue-1',
+                  shortId: 'WEB-1',
+                  title: 'Checkout failed',
+                  lastSeen: '2026-06-20T10:00:00Z',
+                },
+              ],
+              {
+                link: '<https://sentry.io/api/0/projects/acme/web/issues/?cursor=page-2>; rel="next"; results="true"',
+              },
+            ),
+          );
+        }
+        if (url.includes('/issues/') && url.includes('cursor=page-2')) {
+          return Promise.resolve(
+            jsonResponse([
+              {
+                id: 'issue-2',
+                shortId: 'WEB-2',
+                title: 'Cart failed',
+                lastSeen: '2026-06-20T11:00:00Z',
+              },
+            ]),
+          );
+        }
+        return Promise.resolve(jsonResponse([]));
+      }),
+    );
+    const ctx = {
+      loadCursor: vi.fn().mockResolvedValue({}),
+      saveCursor: vi.fn().mockResolvedValue(undefined),
+      writeEvents: vi.fn().mockResolvedValue([]),
+      persistTokens: vi.fn(),
+      recordAudit: vi.fn(),
+    };
+
+    await sentryProvider.backfill({
+      integration: { id: 'integration-1' } as never,
+      tokens: { access_token: 'token' },
+      selections: [{ kind: 'sentry.project', externalId: 'acme/web' }],
+      ctx,
+    });
+
+    const events = (ctx.writeEvents.mock.calls[0]?.[0] ?? []) as IntegrationEvent[];
+    expect(events.map((event) => event.externalObjectId)).toEqual(['issue-1', 'issue-2']);
+    expect(ctx.saveCursor).toHaveBeenCalledWith(
+      'sentry.project:acme/web',
+      expect.objectContaining({ issues_since: '2026-06-20T11:00:00.000Z' }),
+    );
+  });
+
+  it('filters releases by the stored release cursor', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof globalThis.fetch>((input) => {
+        const url = requestUrl(input);
+        if (url.includes('/issues/')) return Promise.resolve(jsonResponse([]));
+        return Promise.resolve(
+          jsonResponse([
+            { version: 'web@1.2.3', dateCreated: '2026-06-20T10:00:00Z' },
+            { version: 'web@1.2.4', dateCreated: '2026-06-20T12:00:00Z' },
+          ]),
+        );
+      }),
+    );
+    const ctx = {
+      loadCursor: vi.fn().mockResolvedValue({
+        releases_since: '2026-06-20T11:00:00.000Z',
+      }),
+      saveCursor: vi.fn().mockResolvedValue(undefined),
+      writeEvents: vi.fn().mockResolvedValue([]),
+      persistTokens: vi.fn(),
+      recordAudit: vi.fn(),
+    };
+
+    await sentryProvider.backfill({
+      integration: { id: 'integration-1' } as never,
+      tokens: { access_token: 'token' },
+      selections: [{ kind: 'sentry.project', externalId: 'acme/web' }],
+      ctx,
+    });
+
+    const events = (ctx.writeEvents.mock.calls[0]?.[0] ?? []) as IntegrationEvent[];
+    expect(events.map((event) => event.externalObjectId)).toEqual(['acme/web/release/web@1.2.4']);
+    expect(ctx.saveCursor).toHaveBeenCalledWith(
+      'sentry.project:acme/web',
+      expect.objectContaining({ releases_since: '2026-06-20T12:00:00.000Z' }),
+    );
+  });
+
   it('expands selected organizations to their projects before syncing', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn((input) => {
-        const url = String(input);
+      vi.fn<typeof globalThis.fetch>((input) => {
+        const url = requestUrl(input);
         if (url.endsWith('/organizations/acme/projects/')) {
           return Promise.resolve(jsonResponse([{ id: 'project-1', slug: 'web', name: 'Web' }]));
         }
