@@ -9,14 +9,15 @@ import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { reportCaughtError } from '@/lib/sentry-report';
+import { appUrl } from '@/lib/site-url';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const log = childLogger('web:calendar-subscription');
 
-function feedUrl(origin: string, token: string): string {
-  return new URL(`/api/calendar/feed/${token}.ics`, origin).toString();
+function feedUrl(token: string): string {
+  return appUrl(`/api/calendar/feed/${token}.ics`).toString();
 }
 
 async function activeMemberScope() {
@@ -66,13 +67,14 @@ export async function GET(): Promise<Response> {
   });
 }
 
-export async function POST(req: Request): Promise<Response> {
+export async function POST(_req: Request): Promise<Response> {
   const got = await activeMemberScope();
   if ('error' in got) return NextResponse.json({ error: got.error }, { status: got.status });
 
   const minted = mintCalendarSubscriptionToken();
   const now = new Date();
   try {
+    const url = feedUrl(minted.plaintext);
     const [row] = await db
       .insert(teamCalendarSubscriptions)
       .values({
@@ -101,7 +103,7 @@ export async function POST(req: Request): Promise<Response> {
         createdAt: row.createdAt,
         updatedAt: row.updatedAt,
       },
-      url: feedUrl(new URL(req.url).origin, minted.plaintext),
+      url,
     });
   } catch (err) {
     log.error(
