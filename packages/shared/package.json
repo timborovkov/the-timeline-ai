@@ -23,6 +23,12 @@
       "import": "./dist/integrations/registry.js",
       "types": "./dist/integrations/registry.d.ts"
     },
+    "./ingest-webhooks": {
+      "types": "./src/ingest-webhooks/index.ts",
+      "development": "./src/ingest-webhooks/index.ts",
+      "import": "./dist/ingest-webhooks/index.js",
+      "default": "./dist/ingest-webhooks/index.js"
+    },
     "./analytics": {
       "types": "./src/analytics/events.ts",
       "development": "./src/analytics/events.ts",
@@ -108,6 +114,12 @@
       "development": "./src/team-scope.ts",
       "import": "./dist/team-scope.js",
       "default": "./dist/team-scope.js"
+    },
+    "./test/pglite": {
+      "types": "./src/test/pglite.ts",
+      "development": "./src/test/pglite.ts",
+      "import": "./dist/test/pglite.js",
+      "default": "./dist/test/pglite.js"
     },
     "./env-reset": {
       "types": "./src/env-reset.ts",

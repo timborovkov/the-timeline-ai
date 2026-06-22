@@ -55,4 +55,8 @@ export const RATE_LIMITS = {
   integrationWebhook: { capacity: 300, refillPerSec: 300 / 60 },
   /** Timeline-as-MCP-server endpoint: 600/min per source IP. */
   mcpServer: { capacity: 600, refillPerSec: 600 / 60 },
+  /** Generic ingest webhooks: 300/min per credential for provider bursts. */
+  ingestWebhook: { capacity: 300, refillPerSec: 300 / 60 },
+  /** 401/lookup lockout for ingest webhooks: 60/min per source IP. */
+  ingestWebhookAuth: { capacity: 60, refillPerSec: 60 / 60 },
 } as const;

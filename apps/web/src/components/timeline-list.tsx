@@ -196,6 +196,9 @@ function inspectorSourceDetailEntries(moment: TimelineMoment): [string, string][
       addDetail(entries, seen, 'Provider', stringMeta(meta, 'provider'));
       addDetail(entries, seen, 'Event', stringMeta(meta, 'event_type'));
       addDetail(entries, seen, 'Actor', friendlyMeta(meta, 'actor'));
+    } else if (event.source === 'ingest_webhook') {
+      addDetail(entries, seen, 'Webhook', stringMeta(meta, 'ingest_webhook_name'));
+      addDetail(entries, seen, 'Content type', stringMeta(meta, 'content_type'));
     }
   }
   return entries;
@@ -260,6 +263,9 @@ function rawEventActorLabel(
     const source = stringMeta(meta, 'source');
     return source ? `${source} attachment` : 'Document';
   }
+  if (event.source === 'ingest_webhook') {
+    return stringMeta(meta, 'ingest_webhook_name') ?? 'Ingest webhook';
+  }
   return event.source;
 }
 
@@ -275,6 +281,10 @@ function rawEventContextLabel(event: TimelineEvent): string | null {
   }
   if (event.source === 'document') {
     const label = stringMeta(meta, 'document_name') ?? stringMeta(meta, 'name');
+    return label ? displayText(label) : null;
+  }
+  if (event.source === 'ingest_webhook') {
+    const label = stringMeta(meta, 'ingest_webhook_name');
     return label ? displayText(label) : null;
   }
   return null;

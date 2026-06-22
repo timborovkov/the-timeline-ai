@@ -82,6 +82,9 @@ pages. Full phased plan with file-level tasks:
 
 - [ ] Wire workspace reconciliation into future authoritative external sync
       paths when calendar/provider imports directly update artifacts they own.
+- [ ] Design cross-source evidence reviews for generic ingest webhook events so
+      webhook evidence can combine with conversations and object-linked source
+      events before proposal generation.
 
 ## Boards
 

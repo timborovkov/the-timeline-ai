@@ -250,6 +250,7 @@ const TOOLS = [
             'integration',
             'calendar',
             'slack',
+            'ingest_webhook',
           ],
         },
         limit: { type: 'integer', minimum: 1, maximum: 50 },
@@ -622,6 +623,7 @@ async function callTool(
         'integration',
         'calendar',
         'slack',
+        'ingest_webhook',
       ];
       if (typeof args.source === 'string' && ALLOWED_SOURCES.includes(args.source)) {
         filters.source = args.source;

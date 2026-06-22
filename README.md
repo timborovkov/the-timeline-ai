@@ -39,11 +39,13 @@ source material instead of hiding behind black-box summaries.
   Teams, and Zoom.
 - Read-only team calendar subscription feeds for viewing Timeline events in a
   default calendar app.
-- Slack, Telegram, email, meetings, documents, calendar, project tools, code
-  systems, support queues, account systems, and internal tools flowing into
-  cited timeline evidence.
-- Custom MCP servers that give the agent live access to long-tail tools and
-  internal systems.
+- Slack, Telegram, email, meetings, documents, calendar, native
+  GitHub/Linear/Google Drive sync, project tools, code systems, support queues,
+  account systems, and internal tools flowing into cited timeline evidence.
+- Generic ingest webhooks for arbitrary external evidence that should land in
+  Timeline without becoming authoritative provider state.
+- Custom MCP servers that give the agent live access to long-tail tools without
+  automatically ingesting those tools into the event store.
 - An outbound MCP server so tools like Claude Desktop and Cursor can query
   team-level workspace context across Timeline events, objects, tasks, boards,
   calendar, documents, and integrations.
@@ -199,6 +201,9 @@ boundaries.
   soften the forensic surface for non-technical users with standard-page
   headers, a guided connect-flow wizard, actionable error states,
   discoverability, and IA consolidation.
+- [`docs/ingest-webhooks-plan.md`](./docs/ingest-webhooks-plan.md) — domain
+  plan for named evidence-only ingest webhooks, credential rotation, duplicate
+  handling, visibility defaults, and proposal generation.
 - [`docs/calendar.html`](./docs/calendar.html) — approval-backed calendar
   suggestions, recurrence, occurrence exceptions, and tentative slots.
 - [`docs/setup/local.html`](./docs/setup/local.html) — complete local setup.
@@ -210,8 +215,8 @@ boundaries.
 
 Setup guides for external services live under [`docs/setup`](./docs/setup/):
 Telegram, Slack, OpenRouter, LangSmith, Postmark transactional/inbound email,
-Recall.ai meeting bots, PostHog analytics, Sentry, Railway, third-party integrations,
-and Timeline-as-MCP-server.
+Recall.ai meeting bots, PostHog analytics, Sentry, Railway, third-party
+integrations including ingest webhooks, and Timeline-as-MCP-server.
 
 ## Contributing
 

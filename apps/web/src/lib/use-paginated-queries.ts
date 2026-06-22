@@ -355,7 +355,8 @@ export interface TimelineEvent {
     | 'meeting'
     | 'integration'
     | 'calendar'
-    | 'slack';
+    | 'slack'
+    | 'ingest_webhook';
   contentText: string | null;
   contentAudioUrl: string | null;
   occurredAt: string;
