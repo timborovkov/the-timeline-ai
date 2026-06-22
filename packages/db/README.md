@@ -24,6 +24,23 @@ pnpm db:migrate    # apply pending migrations
 pnpm db:studio     # local schema browser
 ```
 
+## Connection guardrails
+
+Runtime Postgres clients should come from `createPgClient()` or `getDb()`, not a
+direct `postgres()` call. The shared builder applies:
+
+- `application_name` labels for lock diagnosis (`timeline-web`,
+  `timeline-worker`, `timeline-migrator`, `timeline-migration-waiter`,
+  `timeline-reset`, or `timeline-script`).
+- Pool lifecycle limits: 10 second connection timeout, 30 second idle timeout,
+  and 30 minute max connection lifetime.
+- Session fuses: 10 second `lock_timeout`, 120 second `statement_timeout`, and
+  60 second `idle_in_transaction_session_timeout`.
+
+The migrator uses one connection, a 10 second lock wait, and a 10 minute
+statement budget so blocked deploys fail clearly while legitimate schema work
+has room to finish.
+
 ## Where it fits
 
 - Deploy/startup migration wiring: [docs/railway.html](../../docs/railway.html).

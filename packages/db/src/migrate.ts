@@ -4,9 +4,9 @@ import { fileURLToPath } from 'node:url';
 
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { migrate } from 'drizzle-orm/postgres-js/migrator';
-import postgres from 'postgres';
 
-const silenceNotices = (): void => undefined;
+import { PG_TIMEOUTS, createPgClient } from '#src/client.js';
+
 const MIGRATION_LOCK_KEY = 911_202_501;
 
 interface MigrateDatabaseOptions {
@@ -22,7 +22,13 @@ export async function migrateDatabase(options: MigrateDatabaseOptions = {}): Pro
   const here = dirname(fileURLToPath(import.meta.url));
   const migrationsFolder = options.migrationsFolder ?? resolve(here, '../drizzle');
 
-  const client = postgres(url, { max: 1, onnotice: silenceNotices });
+  const client = createPgClient(url, {
+    applicationName: 'timeline-migrator',
+    max: 1,
+    silenceOperationalNotices: true,
+    lockTimeoutMs: PG_TIMEOUTS.migratorLockTimeoutMs,
+    statementTimeoutMs: PG_TIMEOUTS.migratorStatementTimeoutMs,
+  });
   try {
     if (options.withAdvisoryLock ?? false) {
       await client`SELECT pg_advisory_lock(${MIGRATION_LOCK_KEY})`;
