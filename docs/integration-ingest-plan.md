@@ -18,18 +18,25 @@ This plan covers:
 | Area | Platforms |
 | --- | --- |
 | Documents and knowledge | Google Drive, Notion, Confluence |
+| Design and product research | Figma |
 | Project and task work | Linear, Jira, Asana, Monday.com, Trello, Basecamp |
 | Engineering and operations | GitHub, GitLab, Bitbucket, Sentry, Datadog |
 | Communication | Slack, Discord |
 | CRM and sales | Salesforce, HubSpot, Pipedrive, Attio, Close |
+| Revenue and finance | Stripe |
 | Support and success | Zendesk, Intercom |
 
-Current implemented native ingestion: Google Drive, Linear, GitHub.
+Current implemented native ingestion: Google Drive, Linear, GitHub,
+Monday.com, Slack workspace ingestion, and Sentry.
 
 Everything else above must stay represented in
 `packages/shared/src/integrations/registry.ts` with
 `ingestStatus: 'coming_soon'` until its adapter ships. The registry test locks
 this list so the catalog cannot silently drop a requested provider.
+
+Priority 1 native integrations shipped first: Monday.com, full Slack workspace
+ingestion, and Sentry. Keep them on the same provider-connection, source
+selection, cursor, and integration-worker foundation as the existing adapters.
 
 ## Product Bar
 
@@ -49,8 +56,8 @@ Every first-party integration must ship the same baseline:
 
 ## Shared Adapter Kit
 
-Before adding more providers, extract the repeatable pieces from the existing
-Google Drive, Linear, and GitHub adapters:
+Before adding more providers, keep extracting the repeatable pieces from the
+implemented Google Drive, Linear, GitHub, Monday.com, Slack, and Sentry adapters:
 
 1. Provider SDK helpers for OAuth start/callback, refresh, and token persistence.
 2. Cursor helpers for per-resource backfill and incremental sync.
@@ -69,9 +76,26 @@ This is the difference between adding many integrations and maintaining them.
 
 ## Provider Waves
 
-### Wave 1: Highest Workflow Density
+### Wave 1: Priority 1 Native Integrations
 
-These are the strongest next native connectors because they carry daily work
+These were the strongest first native connectors because they carry daily work
+state, cross-functional decisions, and operational failure signals. They are now
+implemented on the shared provider-connection, resource-selection, cursor, and
+integration-worker foundation:
+
+| Provider | Ingest surface |
+| --- | --- |
+| Monday.com | Boards, generic records, subitems, updates, columns, status changes, owners, and WorkDocs. |
+| Slack | Workspace-wide channel/thread/file/reaction ingestion beyond the current conversational capture model. |
+| Sentry | Issue updates, resolved issues, and releases, mapped into cited events and incident objects. |
+
+Exit criteria for every new wave remains the same: each provider can backfill
+selected resources, run incremental sync, recover cleanly when credentials need
+reconnecting, and answer "what changed last week?" with cited Timeline events.
+
+### Wave 2: Highest Workflow Density
+
+These follow the Priority 1 adapters and cover adjacent systems with dense work
 state and decisions:
 
 | Provider | Ingest surface |
@@ -79,32 +103,31 @@ state and decisions:
 | Jira | Projects, issues, comments, transitions, sprints, assignees, priorities, links. |
 | Confluence | Spaces, pages, comments, labels, page versions, attachments, mentions. |
 | Notion | Pages, databases, comments, property changes, page versions where available. |
-| Slack | Workspace-wide channel/thread/file/reaction ingestion beyond the current conversational capture model. |
 | GitLab | Projects, merge requests, reviews, commits, releases, pipelines, deployments. |
 | HubSpot | Companies, contacts, deals, tickets, notes, calls, emails, stage changes. |
+| Figma | Files, projects, branches, comments, versions, shared links, and design handoff updates. |
 
 Exit criteria: each provider can backfill selected resources, run incremental
 sync, survive token refresh, and answer "what changed last week?" with cited
 Timeline events.
 
-### Wave 2: Project, CRM, and Support Coverage
+### Wave 3: Project, CRM, and Support Coverage
 
 These broaden the systems of record used by non-engineering teams:
 
 | Provider | Ingest surface |
 | --- | --- |
 | Asana | Workspaces, projects, tasks, stories/comments, custom fields, assignees, completions. |
-| Monday.com | Boards, items, updates, columns, status changes, owners, automations where exposed. |
 | Salesforce | Accounts, contacts, opportunities, activities, notes, cases, stage history. |
 | Zendesk | Tickets, comments, requester/org links, status, priority, assignments, SLA events. |
 | Intercom | Conversations, tickets, users, companies, notes, assignments, tags. |
-| Sentry | Issues, alerts, releases, suspect commits, regressions, ownership, resolution events. |
 | Datadog | Incidents, monitors, alerts, service events, deployment markers, recovery events. |
+| Stripe | Customers, subscriptions, invoices, payments, refunds, disputes, and revenue-state changes. |
 
 Exit criteria: Timeline can connect customer, support, and operational events to
 the same objects used by sales, product, and engineering.
 
-### Wave 3: Long-Tail but Common Work Systems
+### Wave 4: Long-Tail but Common Work Systems
 
 These complete the requested catalog and cover common team variants:
 
@@ -173,12 +196,9 @@ visible: `status: 'mcp_available'` and `ingestStatus: 'coming_soon'`.
 
 ## Open Decisions
 
-1. Whether Slack's existing conversational capture should graduate into the same
-   provider-connection model as the other native integrations, or remain a
-   separate capture surface with a broader ingest mode.
-2. Whether Jira and Confluence should share one Atlassian OAuth connection while
+1. Whether Jira and Confluence should share one Atlassian OAuth connection while
    appearing as separate catalog/provider resources.
-3. Whether support systems should create Timeline task objects by default or
+2. Whether support systems should create Timeline task objects by default or
    only link evidence to company/person/ticket objects.
 4. How much historical backfill is safe by default for chat-heavy systems like
    Slack and Discord.

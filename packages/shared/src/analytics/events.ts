@@ -30,7 +30,15 @@ export interface ProductEventPayloads {
     userId: string;
     integrationId?: string;
     providerConnectionId?: string;
-    provider: 'google_drive' | 'linear' | 'github' | 'slack' | 'telegram' | 'mcp';
+    provider:
+      | 'google_drive'
+      | 'linear'
+      | 'github'
+      | 'monday'
+      | 'slack'
+      | 'sentry'
+      | 'telegram'
+      | 'mcp';
   };
   document_uploaded: {
     teamId: string;

@@ -90,6 +90,10 @@ export async function GET(
         updatedAt: connection.updatedAt,
       },
       tokens,
+      {
+        persistTokens: (fresh) =>
+          integrationsLib.adminPersistProviderConnectionTokens(db, connection.id, fresh),
+      },
     ),
     scope.integrations.listOwnedTeamResourceShares(),
   ]);
@@ -148,6 +152,10 @@ export async function PUT(
       updatedAt: connection.updatedAt,
     },
     tokens,
+    {
+      persistTokens: (fresh) =>
+        integrationsLib.adminPersistProviderConnectionTokens(db, connection.id, fresh),
+    },
   );
   const allowed = new Set(available.map((r) => `${r.kind}\x00${r.externalId}`));
   const invalid = parsed.data.resources.filter((r) => !allowed.has(`${r.kind}\x00${r.externalId}`));

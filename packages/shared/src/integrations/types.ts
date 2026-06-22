@@ -5,7 +5,8 @@ import type {
 
 // Phase 11 — Provider adapter interface.
 //
-// Every integration (Google Drive, Linear, GitHub, custom MCP-backed)
+// Every integration (Google Drive, Linear, GitHub, Monday.com, Slack, Sentry,
+// custom MCP-backed)
 // implements this. The shared worker + API routes drive providers through
 // this surface so business logic stays out of route handlers and webhooks.
 
@@ -47,6 +48,8 @@ export interface ObjectMapping {
   url?: string;
   /** Optional aliases (e.g. ENG-42 for a Linear issue). */
   aliases?: string[];
+  /** Optional provider metadata to merge onto the mapped entity row. */
+  metadata?: Record<string, unknown>;
 }
 
 /**
@@ -123,6 +126,15 @@ export interface ProviderResource {
   kind: string;
 }
 
+export interface ListSyncableResourcesContext {
+  /**
+   * Persist refreshed OAuth tokens while listing picker resources. Without
+   * this, a provider can successfully refresh for the list call but leave the
+   * encrypted connection with the expired token.
+   */
+  persistTokens(tokens: Record<string, unknown>): Promise<void>;
+}
+
 export interface OAuthStartInput {
   teamId: string;
   userId: string;
@@ -151,7 +163,7 @@ export interface OAuthCallbackOutput {
 }
 
 export interface IntegrationProvider {
-  id: 'google_drive' | 'linear' | 'github';
+  id: 'google_drive' | 'linear' | 'github' | 'monday' | 'slack' | 'sentry';
   displayLabel: string;
   /**
    * Build the OAuth authorize URL. Returns the URL only — the route
@@ -169,7 +181,11 @@ export interface IntegrationProvider {
    * List the resources the user can pick to sync (folders, projects,
    * repos). Called by the settings UI after the OAuth handshake.
    */
-  listSyncableResources(integration: IntegrationRow, tokens: unknown): Promise<ProviderResource[]>;
+  listSyncableResources(
+    integration: IntegrationRow,
+    tokens: unknown,
+    ctx?: ListSyncableResourcesContext,
+  ): Promise<ProviderResource[]>;
   /**
    * Full backfill of the chosen resources. Idempotent under the
    * dedup_key index. Must paginate internally and call

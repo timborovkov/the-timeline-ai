@@ -3,8 +3,8 @@
 Cross-package code: the `withTeam` team workspace port, the single `llm`
 inference layer, Qdrant + S3 wrappers, Telegram dispatch, shared messaging and
 email templates, BullMQ queue names, the shared embedding source planner, the
-integrations module (Drive/Linear/GitHub providers, person-owned provider
-connections, team resource shares, active source paths, connection attention),
+integrations module (Drive/Linear/GitHub/Monday.com/Slack/Sentry providers,
+person-owned provider connections, team resource shares, active source paths, connection attention),
 the objects module, the documents module (Phase 9 —
 folders/documents/versions/chunks scope + RustFS object-key builder + text
 chunker), the meeting-bots module (Phase 10 — Recall.ai provider + Svix webhook

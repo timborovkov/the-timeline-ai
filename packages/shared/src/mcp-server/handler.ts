@@ -115,7 +115,7 @@ const listCalendarEventsInput = z.object({
 
 const searchIntegrationEventsInput = z.object({
   query: z.string().trim().min(1).max(500),
-  provider: z.enum(['google_drive', 'linear', 'github']).optional(),
+  provider: z.enum(['google_drive', 'linear', 'github', 'monday', 'slack', 'sentry']).optional(),
   limit: z.number().int().min(1).max(20).optional(),
 });
 
@@ -479,12 +479,15 @@ const TOOLS = [
   {
     name: 'timeline.search_integration_events',
     description:
-      'Semantic search restricted to events synced from connected integrations such as Google Drive, Linear, and GitHub.',
+      'Semantic search restricted to events synced from connected integrations such as Google Drive, Linear, GitHub, Monday.com, Slack, and Sentry.',
     inputSchema: {
       type: 'object',
       properties: {
         query: { type: 'string', minLength: 1, maxLength: 500 },
-        provider: { type: 'string', enum: ['google_drive', 'linear', 'github'] },
+        provider: {
+          type: 'string',
+          enum: ['google_drive', 'linear', 'github', 'monday', 'slack', 'sentry'],
+        },
         limit: { type: 'integer', minimum: 1, maximum: 20 },
       },
       required: ['query'],
@@ -497,7 +500,10 @@ const TOOLS = [
     inputSchema: {
       type: 'object',
       properties: {
-        provider: { type: 'string', enum: ['google_drive', 'linear', 'github'] },
+        provider: {
+          type: 'string',
+          enum: ['google_drive', 'linear', 'github', 'monday', 'slack', 'sentry'],
+        },
         externalObjectId: { type: 'string', minLength: 1, maxLength: 512 },
         historyLimit: { type: 'integer', minimum: 1, maximum: 50 },
       },
@@ -1103,7 +1109,7 @@ async function callTool(
     case 'timeline.get_integration_resource': {
       const input = z
         .object({
-          provider: z.enum(['google_drive', 'linear', 'github']),
+          provider: z.enum(['google_drive', 'linear', 'github', 'monday', 'slack', 'sentry']),
           externalObjectId: z.string().min(1).max(512),
           historyLimit: z.number().int().min(1).max(50).optional(),
         })

@@ -172,10 +172,11 @@
           <strong>Work-system integrations</strong>: project updates, document changes, issues, PRs,
           reviews, commits, releases, CI activity, customer records, support queues, incidents, and
           operational systems can all become durable evidence through capture surfaces, first-party
-          integrations, or ingest webhooks. Teams can also connect arbitrary
-          <strong>custom MCP servers</strong> — their own internal tools or any third-party MCP — so
-          Timeline can reach the long-tail systems that matter to the team without implying passive
-          ingestion by default.
+          integrations, or ingest webhooks. GitHub, Linear, Google Drive, Monday.com, Slack
+          workspace history, and Sentry are implemented native sync paths into the shared event
+          pipeline. Teams can also connect arbitrary <strong>custom MCP servers</strong> — their own
+          internal tools or any third-party MCP — so Timeline can reach the long-tail systems that
+          matter to the team without implying passive ingestion by default.
         </li>
       </ul>
 
@@ -524,7 +525,9 @@
         <li>
           <strong>More work-system integrations</strong>: expand first-party adapters across CRM,
           finance, project, support, engineering, and communication systems as they prove core to
-          daily workflow. MCP remains the reach layer for long-tail and experimental tools.
+          daily workflow. GitHub, Linear, Google Drive, Monday.com, Slack workspace history, and
+          Sentry already use native sync into the shared event pipeline; MCP remains the reach layer
+          for long-tail and experimental tools.
         </li>
         <li>
           <strong>Meeting bots</strong>: join Google Meet, Microsoft Teams, and Zoom calls (default

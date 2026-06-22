@@ -23,6 +23,13 @@ function resetEnv(overrides: NodeJS.ProcessEnv = {}): void {
     LINEAR_CLIENT_SECRET: '',
     GITHUB_APP_CLIENT_ID: '',
     GITHUB_APP_CLIENT_SECRET: '',
+    MONDAY_CLIENT_ID: '',
+    MONDAY_CLIENT_SECRET: '',
+    SLACK_CLIENT_ID: '',
+    SLACK_CLIENT_SECRET: '',
+    SLACK_SIGNING_SECRET: '',
+    SENTRY_INTEGRATION_CLIENT_ID: '',
+    SENTRY_INTEGRATION_CLIENT_SECRET: '',
     ...overrides,
   };
   resetEnvForTests();
@@ -55,6 +62,18 @@ describe('integration registry catalog visibility', () => {
     ).toEqual(['github']);
   });
 
+  it('shows Slack native sync when OAuth credentials are configured without Events API signing', () => {
+    resetEnv({
+      SLACK_CLIENT_ID: 'slack-client-id',
+      SLACK_CLIENT_SECRET: 'slack-client-secret',
+      SLACK_SIGNING_SECRET: '',
+    });
+
+    const byId = new Map(listCatalog().map((entry) => [entry.id, entry]));
+    expect(byId.get('slack')?.status).toBe('native_available');
+    expect(listAvailableProviders().map((entry) => entry.id)).toEqual(['slack']);
+  });
+
   it('tracks the required first-party ingestion catalog', () => {
     resetEnv();
 
@@ -62,6 +81,7 @@ describe('integration registry catalog visibility', () => {
       'google_drive',
       'notion',
       'confluence',
+      'figma',
       'linear',
       'jira',
       'asana',
@@ -80,6 +100,7 @@ describe('integration registry catalog visibility', () => {
       'pipedrive',
       'attio',
       'close',
+      'stripe',
       'zendesk',
       'intercom',
     ];
@@ -97,6 +118,9 @@ describe('integration registry catalog visibility', () => {
     expect(byId.get('google_drive')?.ingestStatus).toBe('implemented');
     expect(byId.get('linear')?.ingestStatus).toBe('implemented');
     expect(byId.get('github')?.ingestStatus).toBe('implemented');
+    expect(byId.get('monday')?.ingestStatus).toBe('implemented');
+    expect(byId.get('slack')?.ingestStatus).toBe('implemented');
+    expect(byId.get('sentry')?.ingestStatus).toBe('implemented');
   });
 
   it('points catalog logos at checked-in assets', () => {

@@ -2278,7 +2278,7 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
     // Phase 11 — Third-party integrations and custom MCP tools.
     list_integrations: tool({
       description:
-        "List third-party integrations connected to this team (Google Drive, Linear, GitHub) and custom MCP servers. Returns provider, displayName, and last_synced_at. Use when the user asks 'what's connected' or to confirm a source before searching.",
+        "List third-party integrations connected to this team (Google Drive, Linear, GitHub, Monday.com, Slack, Sentry) and custom MCP servers. Returns provider, displayName, and last_synced_at. Use when the user asks 'what's connected' or to confirm a source before searching.",
       inputSchema: z.object({}).strict(),
       execute: async () =>
         runSafe('list_integrations', async () => {
@@ -2309,11 +2309,13 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
 
     search_integration_events: tool({
       description:
-        'Semantic search restricted to events synced from connected integrations (Google Drive activity, Linear issue changes, GitHub PR/issue/release events). Returns event_ids you can cite as [ev:<id>]. Use when the user asks about something that happened in an external system.',
+        'Semantic search restricted to events synced from connected integrations (Google Drive activity, Linear issue changes, GitHub PR/issue/release events, Monday.com board updates, Slack workspace history, and Sentry issues/releases). Returns event_ids you can cite as [ev:<id>]. Use when the user asks about something that happened in an external system.',
       inputSchema: z
         .object({
           query: z.string().trim().min(1).max(500),
-          provider: z.enum(['google_drive', 'linear', 'github']).optional(),
+          provider: z
+            .enum(['google_drive', 'linear', 'github', 'monday', 'slack', 'sentry'])
+            .optional(),
           limit: z.number().int().min(1).max(20).optional(),
         })
         .strict(),
@@ -2322,7 +2324,9 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
           const parsed = z
             .object({
               query: z.string().trim().min(1).max(500),
-              provider: z.enum(['google_drive', 'linear', 'github']).optional(),
+              provider: z
+                .enum(['google_drive', 'linear', 'github', 'monday', 'slack', 'sentry'])
+                .optional(),
               limit: z.number().int().min(1).max(20).optional(),
             })
             .parse(raw);
@@ -2377,7 +2381,7 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
         "Look up the current state of an external object that was synced from a connected integration. Returns the workspace entity (when one exists) plus the most recent integration_event history. Use when the user names a specific external object (e.g. 'ENG-42', 'acme/repo#7', 'Drive file ...') and you want the latest status before answering.",
       inputSchema: z
         .object({
-          provider: z.enum(['google_drive', 'linear', 'github']),
+          provider: z.enum(['google_drive', 'linear', 'github', 'monday', 'slack', 'sentry']),
           externalObjectId: z.string().min(1).max(512),
           historyLimit: z.number().int().min(1).max(50).optional(),
         })
@@ -2386,7 +2390,7 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
         runSafe('get_integration_resource', async () => {
           const parsed = z
             .object({
-              provider: z.enum(['google_drive', 'linear', 'github']),
+              provider: z.enum(['google_drive', 'linear', 'github', 'monday', 'slack', 'sentry']),
               externalObjectId: z.string().min(1).max(512),
               historyLimit: z.number().int().min(1).max(50).optional(),
             })
@@ -2399,7 +2403,7 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
           const result = await scope.integrations.getIntegrationResource(args);
           if (!result) return { found: false };
           // canonical_name + metadata are provider-authored (GitHub PR
-          // titles, Linear issue summaries, Drive file labels, etc) and
+          // titles, Linear issue summaries, Drive file labels, etc.) and
           // are untrusted external content per Rule 8. Stringify the
           // metadata JSON and fence both fields so a prompt-injection
           // payload in an upstream resource can't reach the model

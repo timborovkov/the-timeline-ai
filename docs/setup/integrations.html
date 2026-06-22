@@ -12,7 +12,8 @@
       <h1>Native integrations &amp; custom MCPs</h1>
       <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-06-22</span></div>
       <p class="tldr">
-        Connect native GitHub, Linear, and Google Drive provider accounts from
+        Connect native GitHub, Linear, Google Drive, Monday.com, Slack, and Sentry provider accounts
+        from
         <code>/app/me/connections</code>, activate shared team sources from
         <code>/app/team/integrations</code>, or plug arbitrary custom MCP servers in at
         <code>/app/team/mcp-servers</code>. Native providers sync external activity into the
@@ -36,17 +37,30 @@
       </p>
 
       <h2 id="google-drive">Google Drive</h2>
+      <p>
+        Timeline uses a server-side OAuth web flow and requests Drive read-only access. Google
+        scopes are requested by the authorize URL, but the OAuth consent screen must be configured
+        for external/internal use before non-test users can connect.
+      </p>
       <ol>
         <li>
-          Create an OAuth 2.0 client at
-          <a href="https://console.cloud.google.com/apis/credentials">console.cloud.google.com</a>
-          (type: <em>Web application</em>).
+          In
+          <a href="https://console.cloud.google.com/apis/credentials"
+            >Google Cloud Console → APIs &amp; Services → Credentials</a
+          >, create an OAuth 2.0 client with type <em>Web application</em>.
         </li>
         <li>
-          Add the redirect URI:
-          <code>https://thetimeline.cc/api/integrations/google_drive/callback</code>.
+          Under <strong>Authorized redirect URIs</strong>, add:
+          <code>https://thetimeline.cc/api/integrations/google_drive/callback</code>. Authorized
+          JavaScript origins are not used by Timeline's server-side callback flow.
         </li>
         <li>Enable the Google Drive API for the project.</li>
+        <li>
+          Ensure the OAuth consent screen allows these scopes:
+          <code>https://www.googleapis.com/auth/drive.readonly</code> and
+          <code>https://www.googleapis.com/auth/drive.metadata.readonly</code>.
+        </li>
+        <li>Copy the OAuth client id and client secret from the credential details page.</li>
         <li>
           Set:
           <pre><code>GOOGLE_CLIENT_ID=...
@@ -78,6 +92,10 @@ GOOGLE_DRIVE_WEBHOOK_SECRET=...</code></pre>
       </ol>
 
       <h2 id="linear">Linear</h2>
+      <p>
+        Timeline uses Linear OAuth plus an optional signed webhook. OAuth grants the connection
+        owner read access; the team only activates Linear teams that owner shares.
+      </p>
       <ol>
         <li>
           Create an OAuth application at
@@ -89,6 +107,8 @@ GOOGLE_DRIVE_WEBHOOK_SECRET=...</code></pre>
           Redirect URI:
           <code>https://thetimeline.cc/api/integrations/linear/callback</code>.
         </li>
+        <li>Grant the OAuth app the <code>read</code> scope.</li>
+        <li>Copy the OAuth client id and client secret from the Linear application page.</li>
         <li>
           Set:
           <pre><code>LINEAR_CLIENT_ID=...
@@ -119,12 +139,23 @@ LINEAR_WEBHOOK_SECRET=...</code></pre>
       </p>
       <ol>
         <li>
-          Create an OAuth App (or a GitHub App with OAuth) at
-          <a href="https://github.com/settings/developers">github.com/settings/developers</a>.
+          Create an OAuth App at
+          <a href="https://github.com/settings/developers">github.com/settings/developers</a>. For
+          an organization-owned app, use the organization's
+          <strong>Settings → Developer settings</strong> page instead.
         </li>
         <li>
           Callback URL:
           <code>https://thetimeline.cc/api/integrations/github/callback</code>.
+        </li>
+        <li>
+          Timeline requests scopes in the OAuth authorize URL, so there is no separate scope picker
+          on the GitHub OAuth App page. The requested scopes are <code>repo</code> and
+          <code>read:org</code>.
+        </li>
+        <li>
+          Copy the OAuth app <strong>Client ID</strong> and generate/copy a
+          <strong>Client secret</strong>.
         </li>
         <li>
           Set:
@@ -147,6 +178,128 @@ GITHUB_APP_CLIENT_SECRET=...</code></pre>
         </li>
       </ol>
 
+      <h2 id="monday">Monday.com</h2>
+      <p>
+        Timeline uses monday.com's OAuth app flow, not a marketplace-only integration recipe. The
+        app needs read scopes for boards, users, updates, and WorkDocs so selected boards and docs
+        can become cited Timeline evidence.
+      </p>
+      <ol>
+        <li>
+          Open
+          <a href="https://developer.monday.com/apps">monday.com Developer Center</a>, create an
+          app, and open its OAuth / Permissions settings.
+        </li>
+        <li>
+          Add the redirect URI:
+          <code>https://thetimeline.cc/api/integrations/monday/callback</code>.
+        </li>
+        <li>
+          Add these OAuth scopes exactly: <code>boards:read</code>, <code>users:read</code>,
+          <code>updates:read</code>, and <code>docs:read</code>. Timeline also sends the same
+          space-separated scope list in the OAuth authorize URL.
+        </li>
+        <li>
+          Copy the app's <strong>Client ID</strong> and <strong>Client Secret</strong> from the
+          Basic Information / OAuth settings.
+        </li>
+        <li>
+          Set:
+          <pre><code>MONDAY_CLIENT_ID=...
+MONDAY_CLIENT_SECRET=...</code></pre>
+        </li>
+        <li>
+          Any team member can connect Monday.com from the native catalog. The member chooses which
+          boards and WorkDocs are shared with the current Timeline team.
+        </li>
+        <li>
+          A team admin activates shared sources from <code>/app/team/integrations</code>. The
+          integration worker imports board schema, generic records, subitems, record updates, status
+          changes, owners, column changes, and selected WorkDocs into cited timeline events.
+        </li>
+      </ol>
+
+      <h2 id="slack-native">Slack workspace ingestion</h2>
+      <p>
+        Slack has two first-party modes. <a href="./slack.html">Conversational capture</a> handles
+        DMs, bound-channel capture, <code>/ask</code>, and <code>/timeline join</code>. Native
+        workspace ingestion uses the same Slack app credentials but syncs selected channels as a
+        passive integration with <code>source='integration'</code> and
+        <code>provider='slack'</code>.
+      </p>
+      <ol>
+        <li>
+          Configure the Slack app from
+          <a href="./slack.html">Slack conversational capture setup</a>, including
+          <code>SLACK_CLIENT_ID</code>, <code>SLACK_CLIENT_SECRET</code>, and
+          <code>SLACK_SIGNING_SECRET</code>.
+        </li>
+        <li>
+          Add the native ingestion redirect URI:
+          <code>https://thetimeline.cc/api/integrations/slack/callback</code>.
+        </li>
+        <li>
+          Ensure the bot scopes include the native-ingestion scopes:
+          <code>channels:read</code>, <code>channels:history</code>, <code>groups:read</code>,
+          <code>groups:history</code>, <code>files:read</code>, <code>reactions:read</code>,
+          <code>users:read</code>, and <code>users:read.email</code>. The conversational Slack setup
+          page also lists the additional scopes/events needed for commands, DMs, reactions, and app
+          mentions.
+        </li>
+        <li>
+          Connect Slack from the native catalog, share selected channels from
+          <code>/app/me/connections</code>, then activate them from
+          <code>/app/team/integrations</code>. Private channels require the bot to be present before
+          Slack will expose history.
+        </li>
+      </ol>
+
+      <h2 id="sentry-native">Sentry native source</h2>
+      <p>
+        These credentials are separate from <code>SENTRY_DSN</code>. Timeline uses Sentry OAuth to
+        read selected Sentry organizations/projects into Timeline; it does not change where Timeline
+        reports its own application errors.
+      </p>
+      <ol>
+        <li>
+          In Sentry, open
+          <a href="https://sentry.io/settings/account/api/applications/"
+            >Account Settings → API → Applications</a
+          >
+          and create an OAuth application for Timeline.
+        </li>
+        <li>
+          Add the redirect URI:
+          <code>https://thetimeline.cc/api/integrations/sentry/callback</code>.
+        </li>
+        <li>
+          Sentry OAuth scopes are requested by Timeline in the authorize URL; the app page may not
+          have a separate scope picker. Timeline requests <code>org:read</code>,
+          <code>project:read</code>, <code>event:read</code>, <code>event:admin</code>, and
+          <code>team:read</code>.
+        </li>
+        <li>
+          Use a confidential/server-side OAuth app that exposes a client secret. If the page says
+          <em>Public Client</em> and only shows a client id, that PKCE-only app is not compatible
+          with the current Timeline provider until the Sentry adapter adds PKCE support.
+        </li>
+        <li>
+          Copy the <strong>Client ID</strong> and <strong>Client Secret</strong>. Authorized
+          JavaScript origins are not used by Timeline's server-side callback flow.
+        </li>
+        <li>
+          Set:
+          <pre><code>SENTRY_INTEGRATION_CLIENT_ID=...
+SENTRY_INTEGRATION_CLIENT_SECRET=...</code></pre>
+        </li>
+        <li>
+          Connect Sentry from the native catalog, share selected projects from
+          <code>/app/me/connections</code>, and activate them from
+          <code>/app/team/integrations</code>. Timeline imports issue updates, resolved issues, and
+          releases as cited events; Sentry issues map to Timeline incident objects.
+        </li>
+      </ol>
+
       <h2 id="native-ownership">Native provider ownership</h2>
       <p>
         Native provider credentials are <em>provider connections</em>: they belong to the team
@@ -155,11 +308,12 @@ GITHUB_APP_CLIENT_SECRET=...</code></pre>
         provider resources that have not been shared with the team.
       </p>
       <p>
-        If a connection owner leaves the team, deletes a connection, or GitHub/Drive/Linear requires
-        reconnecting, Timeline creates connection attention. The team integrations page shows an
-        attention banner and the affected provider groups so admins can ask the owner to reconnect,
-        replace a connection with another shared source, or narrow shared sources; the worker pauses
-        only the affected sync path and keeps previously captured raw events.
+        If a connection owner leaves the team, deletes a connection, or GitHub, Drive, Linear,
+        Monday.com, Slack, or Sentry requires reconnecting, Timeline creates connection attention.
+        The team integrations page shows an attention banner and the affected provider groups so
+        admins can ask the owner to reconnect, replace a connection with another shared source, or
+        narrow shared sources; the worker pauses only the affected sync path and keeps previously
+        captured raw events.
       </p>
 
       <h2 id="ingest-webhooks">Ingest webhooks</h2>

@@ -203,7 +203,8 @@ export const APP_GUIDE_ROUTES: readonly AppGuideRoute[] = [
   {
     id: 'team/integrations',
     title: 'Integrations',
-    description: 'Connect durable sources, capture surfaces, and MCP live tools.',
+    description:
+      'Connect Drive, Linear, GitHub, Monday.com, Slack workspace, Sentry, custom ingest webhooks, and MCP tools.',
     href: '/app/team/integrations',
     group: 'dashboard',
     minRole: 'admin',
@@ -213,12 +214,18 @@ export const APP_GUIDE_ROUTES: readonly AppGuideRoute[] = [
       'google drive',
       'linear',
       'github',
+      'monday',
       'mcp',
       'slack',
+      'sentry',
       'telegram',
+      'figma',
+      'stripe',
+      'custom webhooks',
+      'ingest webhooks',
     ],
     guide:
-      'Use Team Integrations to connect and manage external sources. Provider connections are person-owned, admins activate shared team sources, and MCP provides live tool/context access rather than passive ingestion by default.',
+      'Use Team Integrations to connect native sources, activate shared provider resources, manage ingest webhooks, and add MCP tools. Provider connections are person-owned, admins activate shared team sources, and MCP provides live tool/context access rather than passive ingestion by default.',
     relatedRouteIds: ['help/integrations', 'team'],
   },
   {

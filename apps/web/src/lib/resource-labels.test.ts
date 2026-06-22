@@ -15,6 +15,9 @@ describe('resource labels', () => {
     expect(providerLabel('google_drive')).toBe('Google Drive');
     expect(providerLabel('linear')).toBe('Linear');
     expect(providerLabel('github')).toBe('GitHub');
+    expect(providerLabel('monday')).toBe('Monday.com');
+    expect(providerLabel('slack')).toBe('Slack');
+    expect(providerLabel('sentry')).toBe('Sentry');
     expect(providerLabel('unknown')).toBe('unknown');
   });
 
@@ -22,6 +25,10 @@ describe('resource labels', () => {
     expect(resourceKindLabel('github.org')).toBe('GitHub organization');
     expect(resourceKindLabel('github.repo')).toBe('GitHub repository');
     expect(resourceKindLabel('linear.team')).toBe('Linear team');
+    expect(resourceKindLabel('monday.board')).toBe('Monday.com board');
+    expect(resourceKindLabel('monday.doc')).toBe('Monday.com doc');
+    expect(resourceKindLabel('slack.channel')).toBe('Slack channel');
+    expect(resourceKindLabel('sentry.project')).toBe('Sentry project');
     expect(resourceKindLabel('drive.shared_drive')).toBe('Google Drive shared drive');
     expect(resourceKindLabel('drive.folder')).toBe('Google Drive folder');
   });

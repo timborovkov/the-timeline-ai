@@ -230,7 +230,7 @@ const FAQ_ITEMS = [
   },
   {
     q: 'How is capture done?',
-    a: 'Work surfaces feed one pipeline. Telegram and Slack bots capture chat, voice, files, /ask, and @Timeline context. Meeting bots join Google Meet, Zoom, and Microsoft Teams calls to take notes and transcribe discussions. Email, documents, calendar events, web notes, project tools, code systems, support queues, account systems, and internal tools can become part of the same evidence model through capture surfaces, integrations, and ingest webhooks. MCP servers extend the agent into long-tail systems and internal tools for live access.',
+    a: 'Work surfaces feed one pipeline. Telegram and Slack bots capture chat, voice, files, /ask, and @Timeline context. Meeting bots join Google Meet, Zoom, and Microsoft Teams calls to take notes and transcribe discussions. Email, documents, calendar events, web notes, project tools, code systems, support queues, account systems, and internal tools can become part of the same evidence model through capture surfaces, integrations, and ingest webhooks. GitHub, Linear, Google Drive, Monday.com, Slack workspace history, and Sentry sync as native integrations. MCP servers extend the agent into long-tail systems for live access, but they do not create timeline events unless paired with native sync or custom ingestion.',
   },
   {
     q: 'What models power the agent?',
@@ -606,7 +606,7 @@ const INPUTS = [
   'GOOGLE MEET / TEAMS / ZOOM',
   'EMAIL CC / BCC',
   'CALENDAR',
-  'GITHUB / LINEAR / DRIVE',
+  'NATIVE INTEGRATIONS',
   'WEB APP',
   'TEAM DOCUMENT DRIVE',
   'MCP SERVERS',
@@ -847,9 +847,9 @@ function Surfaces() {
           body="Forwarded mail, CCs, BCCs, scheduled work, and time-aware context sit beside chat."
         />
         <SurfaceTile
-          label="PROJECT WORK"
+          label="NATIVE INTEGRATIONS"
           icon={GitPullRequest}
-          body="Issues, PRs, releases, CI, document changes, and delivery events become cited evidence."
+          body="GitHub, Linear, Drive, Monday.com, Slack workspace history, and Sentry sync into cited events."
         />
         <SurfaceTile
           label="WEB APP"
@@ -902,8 +902,21 @@ function Integrations() {
           Keep the stack. Let Timeline collect the evidence around it.
         </h2>
         <p className="mt-4 max-w-3xl text-base leading-[1.6] text-fg-muted">
-          Connect chat, meetings, docs, code, support, CRM, and internal tools. Timeline turns the
-          work already happening there into cited updates, digests, handoffs, and answers.
+          GitHub, Linear, Google Drive, Monday.com, Slack workspace history, and Sentry are native
+          integrations: PRs, issues, docs, board updates, channel decisions, errors, and releases
+          become cited events. Connect chat, meetings, docs, code, support, CRM, and internal tools.
+          Timeline turns the work already happening there into cited updates, digests, handoffs, and
+          answers. Long-tail systems plug in as{' '}
+          <a
+            href="https://modelcontextprotocol.io"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-fg underline-offset-4 hover:underline"
+          >
+            MCP servers
+          </a>
+          ; those systems become durable timeline events only when paired with native sync or custom
+          ingestion.
         </p>
         <IntegrationCloud />
       </div>

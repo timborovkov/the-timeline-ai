@@ -5,3 +5,6 @@ export * from '#src/integrations/registry.js';
 export { googleDriveProvider } from '#src/integrations/providers/google-drive.js';
 export { linearProvider, verifyLinearSignature } from '#src/integrations/providers/linear.js';
 export { githubProvider } from '#src/integrations/providers/github.js';
+export { mondayProvider } from '#src/integrations/providers/monday.js';
+export { sentryProvider } from '#src/integrations/providers/sentry.js';
+export { slackProvider } from '#src/integrations/providers/slack.js';

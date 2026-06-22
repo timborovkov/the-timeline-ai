@@ -40,8 +40,9 @@ source material instead of hiding behind black-box summaries.
 - Read-only team calendar subscription feeds for viewing Timeline events in a
   default calendar app.
 - Slack, Telegram, email, meetings, documents, calendar, native
-  GitHub/Linear/Google Drive sync, project tools, code systems, support queues,
-  account systems, and internal tools flowing into cited timeline evidence.
+  GitHub/Linear/Google Drive/Monday.com/Slack workspace/Sentry sync, project
+  tools, code systems, support queues, account systems, and internal tools
+  flowing into cited timeline evidence.
 - Generic ingest webhooks for arbitrary external evidence that should land in
   Timeline without becoming authoritative provider state.
 - Custom MCP servers that give the agent live access to long-tail tools without
@@ -196,7 +197,8 @@ boundaries.
   implementation plan for grounded generated object briefs across object pages,
   search, embeddings, and chat.
 - [`docs/integration-ingest-plan.md`](./docs/integration-ingest-plan.md) —
-  first-party ingestion implementation plan for work systems.
+  first-party ingestion implementation plan for work systems, including the
+  implemented native providers and future waves.
 - [`docs/ux-overhaul-plan.md`](./docs/ux-overhaul-plan.md) — UX overhaul plan:
   soften the forensic surface for non-technical users with standard-page
   headers, a guided connect-flow wizard, actionable error states,

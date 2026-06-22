@@ -1,5 +1,13 @@
+import { Buffer } from 'node:buffer';
+
 import { PGlite } from '@electric-sql/pglite';
-import { entities, integrations, rawEvents } from '@timeline/db';
+import {
+  entities,
+  integrations,
+  rawEvents,
+  slackConversationBindings,
+  slackWorkspaces,
+} from '@timeline/db';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -16,6 +24,7 @@ vi.mock('#src/queue/queues.js', () => ({
 const TEAM_ID = '11111111-1111-1111-1111-111111111111';
 const USER_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 const USER_B_ID = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
+const SLACK_WORKSPACE_ID = '33333333-3333-3333-3333-333333333333';
 
 describe('writeIntegrationEvents visibility', () => {
   let pg: PGlite;
@@ -144,6 +153,151 @@ describe('writeIntegrationEvents visibility', () => {
     expect(row?.visibilityUserIds).toEqual([USER_B_ID]);
   });
 
+  it('skips native Slack message rows for conversationally bound channels', async () => {
+    await db.insert(slackWorkspaces).values({
+      id: SLACK_WORKSPACE_ID,
+      slackTeamId: 'T_SLACK',
+      name: 'Acme Slack',
+      tokenCiphertext: Buffer.from('ciphertext'),
+      tokenIv: Buffer.from('iv'),
+      tokenTag: Buffer.from('tag'),
+    });
+    await db.insert(slackConversationBindings).values({
+      workspaceId: SLACK_WORKSPACE_ID,
+      teamId: TEAM_ID,
+      slackConversationId: 'C_BOUND',
+      conversationType: 'channel',
+      title: 'bound',
+      boundByUserId: USER_ID,
+    });
+    const [integration] = await db
+      .insert(integrations)
+      .values({
+        teamId: TEAM_ID,
+        connectedByUserId: USER_ID,
+        provider: 'slack',
+        displayName: 'Slack',
+        externalAccountId: 'T_SLACK',
+        visibilityDefault: 'team',
+      })
+      .returning();
+    if (!integration) throw new Error('integration insert failed');
+
+    const inserted = await writeIntegrationEvents({
+      db: db as never,
+      integration,
+      events: [
+        {
+          dedupKey: 'slack:message:T_SLACK:C_BOUND:1700000000.000100',
+          provider: 'slack',
+          externalObjectId: 'C_BOUND:1700000000.000100',
+          externalEventId: '1700000000.000100',
+          eventType: 'message.created',
+          occurredAt: new Date('2026-05-27T09:00:00Z'),
+          contentText: 'captured by conversational Slack',
+          extra: {
+            slack_team_id: 'T_SLACK',
+            slack_channel_id: 'C_BOUND',
+            slack_message_ts: '1700000000.000100',
+          },
+        },
+        {
+          dedupKey: 'slack:reaction:T_SLACK:C_BOUND:1700000000.000100:eyes',
+          provider: 'slack',
+          externalObjectId: 'C_BOUND:1700000000.000100',
+          externalEventId: '1700000000.000100:eyes',
+          eventType: 'reaction.added',
+          occurredAt: new Date('2026-05-27T09:01:00Z'),
+          contentText: 'Slack reaction :eyes:',
+          extra: {
+            slack_team_id: 'T_SLACK',
+            slack_channel_id: 'C_BOUND',
+            slack_message_ts: '1700000000.000100',
+          },
+        },
+        {
+          dedupKey: 'slack:file:T_SLACK:C_BOUND:1700000000.000100:F_BOUND',
+          provider: 'slack',
+          externalObjectId: 'F_BOUND',
+          externalEventId: '1700000000.000100:F_BOUND',
+          eventType: 'file.shared',
+          occurredAt: new Date('2026-05-27T09:02:00Z'),
+          contentText: 'Slack file shared: roadmap.pdf',
+          extra: {
+            slack_team_id: 'T_SLACK',
+            slack_channel_id: 'C_BOUND',
+            slack_message_ts: '1700000000.000100',
+            slack_file_id: 'F_BOUND',
+          },
+        },
+      ],
+    });
+
+    expect(inserted).toHaveLength(1);
+    const rows = await db.select().from(rawEvents);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.contentText).toBe('Slack reaction :eyes:');
+    expect(rows[0]?.sourceMetadata).toMatchObject({
+      provider: 'slack',
+      event_type: 'reaction.added',
+    });
+  });
+
+  it('returns an empty insert result when every native Slack event belongs to a bound channel', async () => {
+    await db.insert(slackWorkspaces).values({
+      id: SLACK_WORKSPACE_ID,
+      slackTeamId: 'T_SLACK',
+      name: 'Acme Slack',
+      tokenCiphertext: Buffer.from('ciphertext'),
+      tokenIv: Buffer.from('iv'),
+      tokenTag: Buffer.from('tag'),
+    });
+    await db.insert(slackConversationBindings).values({
+      workspaceId: SLACK_WORKSPACE_ID,
+      teamId: TEAM_ID,
+      slackConversationId: 'C_BOUND',
+      conversationType: 'channel',
+      title: 'bound',
+      boundByUserId: USER_ID,
+    });
+    const [integration] = await db
+      .insert(integrations)
+      .values({
+        teamId: TEAM_ID,
+        connectedByUserId: USER_ID,
+        provider: 'slack',
+        displayName: 'Slack',
+        externalAccountId: 'T_SLACK',
+        visibilityDefault: 'team',
+      })
+      .returning();
+    if (!integration) throw new Error('integration insert failed');
+
+    const inserted = await writeIntegrationEvents({
+      db: db as never,
+      integration,
+      events: [
+        {
+          dedupKey: 'slack:message:T_SLACK:C_BOUND:1700000000.000100',
+          provider: 'slack',
+          externalObjectId: 'C_BOUND:1700000000.000100',
+          externalEventId: '1700000000.000100',
+          eventType: 'message.created',
+          occurredAt: new Date('2026-05-27T09:00:00Z'),
+          contentText: 'captured by conversational Slack',
+          extra: {
+            slack_team_id: 'T_SLACK',
+            slack_channel_id: 'C_BOUND',
+            slack_message_ts: '1700000000.000100',
+          },
+        },
+      ],
+    });
+
+    expect(inserted).toEqual([]);
+    await expect(db.select().from(rawEvents)).resolves.toEqual([]);
+  });
+
   it('falls back to team visibility for private integration events without a connector owner', async () => {
     const [integration] = await db
       .insert(integrations)
@@ -227,6 +381,57 @@ describe('writeIntegrationEvents visibility', () => {
       display_title: 'the-timeline-ai: Add cursor pagination',
       display_title_canonical_name: 'timborovkov/the-timeline-ai#202: Add cursor pagination',
       url: 'https://github.com/timborovkov/the-timeline-ai/pull/202',
+    });
+  });
+
+  it('does not let provider metadata override protected integration identity fields', async () => {
+    const [integration] = await db
+      .insert(integrations)
+      .values({
+        teamId: TEAM_ID,
+        connectedByUserId: USER_ID,
+        provider: 'github',
+        displayName: 'GitHub',
+        externalAccountId: 'acct-protected-metadata',
+        visibilityDefault: 'team',
+      })
+      .returning();
+    if (!integration) throw new Error('integration insert failed');
+
+    await writeIntegrationEvents({
+      db: db as never,
+      integration,
+      events: [
+        {
+          dedupKey: 'github:protected-metadata',
+          provider: 'github',
+          externalObjectId: 'real-external-id',
+          eventType: 'issue.updated',
+          occurredAt: new Date('2026-06-17T09:00:00Z'),
+          contentText: 'GitHub issue with provider metadata',
+          objectMap: {
+            type: 'task',
+            canonicalName: 'acme/app#7: Fix checkout',
+            displayTitle: 'Fix checkout',
+            externalId: 'real-external-id',
+            metadata: {
+              integration_provider: 'sentry',
+              integration_external_id: 'fake-external-id',
+              provider_specific_key: 'kept',
+            },
+          },
+        },
+      ],
+    });
+
+    const [row] = await db
+      .select()
+      .from(entities)
+      .where(eq(entities.canonicalName, 'acme/app#7: Fix checkout'));
+    expect(row?.metadata).toMatchObject({
+      integration_provider: 'github',
+      integration_external_id: 'real-external-id',
+      provider_specific_key: 'kept',
     });
   });
 
