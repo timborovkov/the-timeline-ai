@@ -206,7 +206,9 @@ surface here in the same PR.
   Ingest webhooks, Integrations, and MCP servers. Work and Connections may show compact numeric
   attention badges; zero
   state stays hidden. Their hub pages use the same hairline grid as the
-  sidebar IA and expose status chips for counts, health, and next actions.
+  sidebar IA and expose status chips for counts, health, and next actions. A
+  muted secondary Help link sits above the team switcher and opens `/help` in a
+  new tab; it is discoverable without competing with the primary route list.
 - **Main column** fills available width. **No `max-w-3xl` artificial
   column** except long-form prose surfaces (single document view, single
   note view) — those wrap in a `<ProseContainer>` that sets `max-w-prose`.

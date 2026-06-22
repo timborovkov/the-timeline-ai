@@ -1,6 +1,6 @@
 'use client';
 
-import { Menu, X } from 'lucide-react';
+import { BookOpen, ExternalLink, Menu, X } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
@@ -157,6 +157,20 @@ export function MobileNav({ active, memberships, recipientInvites, badges = EMPT
               })}
             </nav>
             <div className="mt-auto space-y-3 border-t border-border pt-4">
+              <Link
+                href="/help"
+                target="_blank"
+                rel="noreferrer"
+                aria-label="Open help docs in a new tab"
+                onClick={() => {
+                  setOpen(false);
+                }}
+                className="flex items-center gap-3 rounded-sm px-3 py-2 text-sm text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-offset-1 focus-visible:ring-offset-bg"
+              >
+                <BookOpen aria-hidden="true" className="size-4" />
+                <span className="min-w-0 flex-1 truncate">Help</span>
+                <ExternalLink aria-hidden="true" className="size-3.5 shrink-0" />
+              </Link>
               <TeamSwitcher
                 active={active}
                 memberships={memberships}

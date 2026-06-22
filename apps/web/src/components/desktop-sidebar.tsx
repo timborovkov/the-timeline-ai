@@ -1,6 +1,7 @@
 'use client';
 
-import { PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { BookOpen, ExternalLink, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import Link from 'next/link';
 import { useEffect, useState } from 'react';
 
 import type { NavBadgeMap } from '@/components/nav-items';
@@ -129,7 +130,35 @@ export function DesktopSidebar({
         <RailNav role={active.role} expanded={expanded} badges={badges} />
       </div>
 
-      <div className={cn('flex shrink-0 flex-col pt-3', expanded ? 'w-full' : 'items-center')}>
+      <div
+        className={cn('flex shrink-0 flex-col gap-3 pt-3', expanded ? 'w-full' : 'items-center')}
+      >
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Link
+              href="/help"
+              target="_blank"
+              rel="noreferrer"
+              aria-label="Open help docs in a new tab"
+              className={cn(
+                'rounded-sm text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg',
+                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-offset-1 focus-visible:ring-offset-bg',
+                expanded
+                  ? 'flex h-9 w-full items-center gap-3 px-3 text-sm'
+                  : 'grid size-9 place-items-center',
+              )}
+            >
+              <BookOpen aria-hidden="true" className="size-4" />
+              {expanded ? (
+                <>
+                  <span className="min-w-0 flex-1 truncate">Help</span>
+                  <ExternalLink aria-hidden="true" className="size-3.5 shrink-0" />
+                </>
+              ) : null}
+            </Link>
+          </TooltipTrigger>
+          {!expanded ? <TooltipContent side="right">Help docs</TooltipContent> : null}
+        </Tooltip>
         <TeamSwitcher
           active={active}
           memberships={memberships}
