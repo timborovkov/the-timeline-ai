@@ -333,7 +333,7 @@ async function syncProject(
   return {
     events,
     cursor: {
-      issues_since: latestIssue ?? cursor.issues_since ?? new Date().toISOString(),
+      issues_since: latestIssue ?? cursor.issues_since,
       releases_since: latestRelease ?? cursor.releases_since,
     },
   };

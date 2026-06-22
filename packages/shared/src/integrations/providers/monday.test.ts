@@ -22,6 +22,12 @@ function requestPayload(init: RequestInit | undefined): {
   return JSON.parse(init.body) as { query: string; variables?: Record<string, unknown> };
 }
 
+function requestUrl(input: Parameters<typeof fetch>[0]): string {
+  if (typeof input === 'string') return input;
+  if (input instanceof URL) return input.toString();
+  return input.url;
+}
+
 describe('mondayProvider', () => {
   beforeEach(() => {
     process.env.MONDAY_CLIENT_ID = 'monday-client';
@@ -97,6 +103,76 @@ describe('mondayProvider', () => {
       { externalId: 'board-1', label: 'Product / Launch', kind: 'monday.board' },
       { externalId: 'doc-1', label: 'Product / Launch notes', kind: 'monday.doc' },
     ]);
+  });
+
+  it('refreshes expired monday.com tokens and persists the replacement before syncing', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>((input, init) => {
+      if (requestUrl(input) === 'https://auth.monday.com/oauth2/token') {
+        const body = typeof init?.body === 'string' ? new URLSearchParams(init.body) : null;
+        expect(body?.get('grant_type')).toBe('refresh_token');
+        expect(body?.get('refresh_token')).toBe('refresh-old');
+        return Promise.resolve(
+          jsonResponse({
+            access_token: 'token-new',
+            refresh_token: 'refresh-new',
+            expires_in: 3600,
+          }),
+        );
+      }
+      expect(init?.headers).toMatchObject({ authorization: 'token-new' });
+      const body = requestPayload(init);
+      if (body.query.includes('columns { id title type }')) {
+        return Promise.resolve(
+          jsonResponse({
+            data: {
+              boards: [
+                {
+                  id: 'board-1',
+                  name: 'Pipeline',
+                  updated_at: '2026-06-20T09:00:00Z',
+                  columns: [],
+                },
+              ],
+            },
+          }),
+        );
+      }
+      if (body.query.includes('activity_logs')) {
+        return Promise.resolve(jsonResponse({ data: { boards: [{ activity_logs: [] }] } }));
+      }
+      if (body.query.includes('items_page')) {
+        return Promise.resolve(
+          jsonResponse({ data: { boards: [{ items_page: { cursor: null, items: [] } }] } }),
+        );
+      }
+      throw new Error(`unexpected query: ${body.query}`);
+    });
+    vi.stubGlobal('fetch', fetch);
+    const ctx = {
+      loadCursor: vi.fn().mockResolvedValue({}),
+      saveCursor: vi.fn().mockResolvedValue(undefined),
+      writeEvents: vi.fn().mockResolvedValue([]),
+      persistTokens: vi.fn().mockResolvedValue(undefined),
+      recordAudit: vi.fn(),
+    };
+
+    await mondayProvider.backfill({
+      integration: { id: 'integration-1' } as never,
+      tokens: {
+        access_token: 'token-old',
+        refresh_token: 'refresh-old',
+        expires_at: Date.now() - 1_000,
+      },
+      selections: [{ kind: 'monday.board', externalId: 'board-1' }],
+      ctx,
+    });
+
+    expect(ctx.persistTokens).toHaveBeenCalledWith(
+      expect.objectContaining({
+        access_token: 'token-new',
+        refresh_token: 'refresh-new',
+      }),
+    );
   });
 
   it('syncs board activity, records, subitems, paginated items, and updates into timeline events', async () => {

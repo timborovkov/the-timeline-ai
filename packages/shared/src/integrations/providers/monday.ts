@@ -24,6 +24,7 @@ interface MondayTokens {
   refresh_token?: string;
   token_type?: string;
   scope?: string;
+  expires_at?: number;
 }
 
 interface MondayWorkspace {
@@ -195,6 +196,71 @@ async function gql<T>(
 
 function stringValue(value: unknown): string | null {
   return typeof value === 'string' && value.trim() ? value : null;
+}
+
+function numberValue(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return null;
+}
+
+function tokenExpiry(body: Record<string, unknown>): number | null {
+  const expiresIn = numberValue(body.expires_in);
+  return expiresIn ? Date.now() + expiresIn * 1000 : null;
+}
+
+function tokenFromBody(body: Record<string, unknown>, previous?: MondayTokens): MondayTokens {
+  const access = stringValue(body.access_token);
+  if (!access) throw new Error('Monday token exchange returned no access_token');
+  const refreshToken =
+    stringValue(body.refresh_token) ?? stringValue(body.refreshToken) ?? previous?.refresh_token;
+  const tokenType = stringValue(body.token_type) ?? previous?.token_type;
+  const scope = stringValue(body.scope) ?? previous?.scope;
+  const expiresAt = tokenExpiry(body);
+  return {
+    access_token: access,
+    ...(refreshToken ? { refresh_token: refreshToken } : {}),
+    ...(tokenType ? { token_type: tokenType } : {}),
+    ...(scope ? { scope } : {}),
+    ...(expiresAt ? { expires_at: expiresAt } : {}),
+  };
+}
+
+async function refreshAccessToken(tokens: MondayTokens): Promise<MondayTokens> {
+  const env = getEnv();
+  if (!tokens.refresh_token || !env.MONDAY_CLIENT_ID || !env.MONDAY_CLIENT_SECRET) {
+    return tokens;
+  }
+  const body = await postForm(TOKEN_URL, {
+    grant_type: 'refresh_token',
+    refresh_token: tokens.refresh_token,
+    client_id: env.MONDAY_CLIENT_ID,
+    client_secret: env.MONDAY_CLIENT_SECRET,
+  });
+  return tokenFromBody(body, tokens);
+}
+
+async function ensureAccessToken(
+  tokens: MondayTokens,
+  ctx?: { persistTokens(tokens: Record<string, unknown>): Promise<void> },
+): Promise<MondayTokens> {
+  const shouldRefresh =
+    Boolean(tokens.refresh_token) &&
+    (!tokens.expires_at || tokens.expires_at <= Date.now() + 60_000);
+  if (!shouldRefresh) return tokens;
+  const refreshed = await refreshAccessToken(tokens);
+  if (
+    ctx &&
+    (refreshed.access_token !== tokens.access_token ||
+      refreshed.refresh_token !== tokens.refresh_token ||
+      refreshed.expires_at !== tokens.expires_at)
+  ) {
+    await ctx.persistTokens(refreshed as unknown as Record<string, unknown>);
+  }
+  return refreshed;
 }
 
 function dateValue(value: unknown, fallback = new Date()): Date {
@@ -695,17 +761,7 @@ export const mondayProvider: IntegrationProvider = {
       code: input.code,
       redirect_uri: input.redirectUri,
     });
-    const access = stringValue(body.access_token);
-    if (!access) throw new Error('Monday token exchange returned no access_token');
-    const refreshToken = stringValue(body.refresh_token);
-    const tokenType = stringValue(body.token_type);
-    const scope = stringValue(body.scope);
-    const tokens: MondayTokens = {
-      access_token: access,
-      ...(refreshToken ? { refresh_token: refreshToken } : {}),
-      ...(tokenType ? { token_type: tokenType } : {}),
-      ...(scope ? { scope } : {}),
-    };
+    const tokens = tokenFromBody(body);
     const me = await gql<{ me?: { id?: string; name?: string; email?: string } }>(
       tokens,
       'query { me { id name email } }',
@@ -720,8 +776,9 @@ export const mondayProvider: IntegrationProvider = {
   },
 
   async listSyncableResources(_integration, tokens): Promise<ProviderResource[]> {
+    const mondayTokens = await ensureAccessToken(tokens as MondayTokens);
     const data = await gql<{ boards: MondayBoard[] }>(
-      tokens as MondayTokens,
+      mondayTokens,
       `query { boards(limit: 100) { id name workspace { id name } } }`,
     );
     const boards = data.boards.map((board) => ({
@@ -729,7 +786,7 @@ export const mondayProvider: IntegrationProvider = {
       label: board.workspace?.name ? `${board.workspace.name} / ${board.name}` : board.name,
       kind: 'monday.board',
     }));
-    const docs = await listDocs(tokens as MondayTokens).catch(() => []);
+    const docs = await listDocs(mondayTokens).catch(() => []);
     return [
       ...boards,
       ...docs.map((doc) => ({
@@ -741,7 +798,7 @@ export const mondayProvider: IntegrationProvider = {
   },
 
   async backfill({ tokens, selections, ctx }) {
-    const mondayTokens = tokens as MondayTokens;
+    const mondayTokens = await ensureAccessToken(tokens as MondayTokens, ctx);
     for (const selection of selections.filter((item) => item.kind === 'monday.board')) {
       const cursor = (await ctx.loadCursor(`monday.board:${selection.externalId}`)) as MondayCursor;
       const result = await syncBoard(mondayTokens, selection.externalId, cursor);

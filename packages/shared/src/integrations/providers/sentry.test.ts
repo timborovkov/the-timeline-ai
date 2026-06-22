@@ -174,6 +174,37 @@ describe('sentryProvider', () => {
     );
   });
 
+  it('does not advance the issue cursor when no issues are returned', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof globalThis.fetch>((input) => {
+        const url = requestUrl(input);
+        if (url.includes('/issues/')) return Promise.resolve(jsonResponse([]));
+        return Promise.resolve(
+          jsonResponse([{ version: 'web@1.2.3', dateCreated: '2026-06-20T11:00:00Z' }]),
+        );
+      }),
+    );
+    const ctx = {
+      loadCursor: vi.fn().mockResolvedValue({}),
+      saveCursor: vi.fn().mockResolvedValue(undefined),
+      writeEvents: vi.fn().mockResolvedValue([]),
+      persistTokens: vi.fn(),
+      recordAudit: vi.fn(),
+    };
+
+    await sentryProvider.backfill({
+      integration: { id: 'integration-1' } as never,
+      tokens: { access_token: 'token' },
+      selections: [{ kind: 'sentry.project', externalId: 'acme/web' }],
+      ctx,
+    });
+
+    expect(ctx.saveCursor).toHaveBeenCalledWith('sentry.project:acme/web', {
+      releases_since: '2026-06-20T11:00:00.000Z',
+    });
+  });
+
   it('follows Sentry Link pagination for project issues', async () => {
     vi.stubGlobal(
       'fetch',
