@@ -1,6 +1,7 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
+import { ExternalLink } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useMemo, useReducer, useState } from 'react';
 
@@ -101,16 +102,43 @@ function sourcePickerReducer(
 export function PersonalConnectionsUi({ connections }: { connections: ProviderConnection[] }) {
   if (connections.length === 0) {
     return (
-      <div className="rounded-sm border border-dashed border-border bg-surface p-4 text-sm text-fg-muted">
-        No provider connections yet.
+      <div className="space-y-3">
+        <PersonalConnectionFlow />
+        <div className="rounded-sm border border-dashed border-border bg-surface p-4 text-sm text-fg-muted">
+          No provider connections yet.
+        </div>
       </div>
     );
   }
   return (
     <div className="space-y-3">
+      <PersonalConnectionFlow />
       {connections.map((connection) => (
         <ConnectionSources key={connection.id} connection={connection} />
       ))}
+    </div>
+  );
+}
+
+function PersonalConnectionFlow() {
+  return (
+    <div className="grid gap-2 rounded-sm border border-border bg-surface-2 p-3 text-sm md:grid-cols-3">
+      <div>
+        <p className="font-medium text-fg">1. Connect personally</p>
+        <p className="mt-1 text-fg-muted">Timeline uses your provider account to see sources.</p>
+      </div>
+      <div>
+        <p className="font-medium text-fg">2. Share to this team</p>
+        <p className="mt-1 text-fg-muted">
+          Select only the repos or organizations this team may use.
+        </p>
+      </div>
+      <div>
+        <p className="font-medium text-fg">3. Activate sync</p>
+        <p className="mt-1 text-fg-muted">
+          A team admin enables the shared sources on Team integrations.
+        </p>
+      </div>
     </div>
   );
 }
@@ -248,6 +276,7 @@ function ConnectionSources({ connection }: { connection: ProviderConnection }) {
         </span>
       </div>
       <div className="space-y-3 p-3">
+        {connection.provider === 'github' ? <GitHubConnectionHint /> : null}
         <div className="flex flex-wrap items-center gap-2">
           <input
             className="h-8 min-w-56 flex-1 rounded-sm border border-border bg-bg px-2 text-sm"
@@ -309,6 +338,32 @@ function ConnectionSources({ connection }: { connection: ProviderConnection }) {
         ))}
       </div>
     </section>
+  );
+}
+
+function GitHubConnectionHint() {
+  return (
+    <div className="rounded-sm border border-signal/30 bg-signal-soft px-3 py-2 text-sm text-fg">
+      <div className="flex flex-wrap items-start gap-2">
+        <p className="min-w-0 flex-1">
+          Choose individual repositories for a fixed list, or choose a GitHub organization to
+          include all repos your GitHub account can access there.
+        </p>
+        <a
+          className="inline-flex shrink-0 items-center gap-1 font-mono text-[10px] uppercase tracking-[0.12em] text-signal hover:underline"
+          href="https://github.com/settings/applications"
+          target="_blank"
+          rel="noreferrer"
+        >
+          GitHub access
+          <ExternalLink aria-hidden="true" className="size-3" />
+        </a>
+      </div>
+      <p className="mt-1 text-fg-muted">
+        Missing an organization? GitHub may require org owner approval or SAML authorization before
+        it appears here.
+      </p>
+    </div>
   );
 }
 
@@ -440,6 +495,10 @@ export function TeamSourcesUi({
 
   return (
     <div className="space-y-3">
+      <div className="rounded-sm border border-border bg-surface-2 px-3 py-2 text-sm text-fg-muted">
+        These sources were shared by connection owners. Select what this Timeline team should sync,
+        then save.
+      </div>
       {error ? (
         <InlineError
           message={connectionErrorMessage(error)}
