@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Member-managed calendar subscriptions are bearer URLs, so the API must guard
 // membership while revealing plaintext only at create/reset time.
@@ -95,9 +95,15 @@ const { DELETE, GET, POST } = await import('./route.js');
 
 const USER_ID = '22222222-2222-4222-8222-222222222222';
 const TEAM_ID = '11111111-1111-4111-8111-111111111111';
+const ORIGINAL_AUTH_URL = process.env.AUTH_URL;
+const ORIGINAL_NEXTAUTH_URL = process.env.NEXTAUTH_URL;
+const ORIGINAL_VERCEL_URL = process.env.VERCEL_URL;
 
 beforeEach(() => {
   vi.clearAllMocks();
+  process.env.AUTH_URL = 'https://timeline.test';
+  delete process.env.NEXTAUTH_URL;
+  delete process.env.VERCEL_URL;
   fakes.auth.mockResolvedValue({ user: { id: USER_ID } });
   fakes.resolveActiveTeam.mockResolvedValue({ active: { teamId: TEAM_ID } });
   fakes.requireMembership.mockResolvedValue('member');
@@ -126,6 +132,15 @@ beforeEach(() => {
   fakes.conflictSet = null;
   fakes.deleted = false;
   fakes.insertError = null;
+});
+
+afterEach(() => {
+  if (ORIGINAL_AUTH_URL === undefined) delete process.env.AUTH_URL;
+  else process.env.AUTH_URL = ORIGINAL_AUTH_URL;
+  if (ORIGINAL_NEXTAUTH_URL === undefined) delete process.env.NEXTAUTH_URL;
+  else process.env.NEXTAUTH_URL = ORIGINAL_NEXTAUTH_URL;
+  if (ORIGINAL_VERCEL_URL === undefined) delete process.env.VERCEL_URL;
+  else process.env.VERCEL_URL = ORIGINAL_VERCEL_URL;
 });
 
 describe('/api/team/calendar-subscription', () => {
@@ -188,6 +203,33 @@ describe('/api/team/calendar-subscription', () => {
     expect(fakes.conflictSet).toMatchObject({
       set: { tokenHash: 'hashed', tokenPrefix: 'tlcal_pre', lastUsedAt: null },
     });
+  });
+
+  it('uses the canonical app origin instead of an internal request host', async () => {
+    process.env.AUTH_URL = 'https://thetimeline.cc';
+
+    const response = await POST(
+      new Request('https://0.0.0.0:8080/api/team/calendar-subscription', { method: 'POST' }),
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      url: 'https://thetimeline.cc/api/calendar/feed/tlcal_plaintext_once.ics',
+    });
+  });
+
+  it('does not rotate the token when the canonical app origin is invalid', async () => {
+    process.env.AUTH_URL = 'not-a-url';
+
+    const response = await POST(
+      new Request('https://0.0.0.0:8080/api/team/calendar-subscription', { method: 'POST' }),
+    );
+
+    expect(response.status).toBe(500);
+    await expect(response.json()).resolves.toEqual({ error: 'create_failed' });
+    expect(fakes.insertValues).toEqual([]);
+    expect(fakes.loggerError).toHaveBeenCalled();
+    expect(fakes.reportCaughtError).toHaveBeenCalled();
   });
 
   it('deletes the member subscription', async () => {

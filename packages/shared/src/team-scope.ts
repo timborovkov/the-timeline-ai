@@ -30,6 +30,7 @@ import { and, asc, desc, eq, gte, inArray, isNull, lt, ne, or, sql } from 'drizz
 import { createAuditScope } from '#src/audit/scope.js';
 import { createBoardScope } from '#src/boards/index.js';
 import { createCalendarScope } from '#src/calendar/scope.js';
+import { documentPresentation } from '#src/documents/presentation.js';
 import { createDocumentScope } from '#src/documents/scope.js';
 import { createIntegrationScope } from '#src/integrations/scope.js';
 import { createJobRecoveryScope } from '#src/job-recovery/index.js';
@@ -101,12 +102,12 @@ export interface EventListFilters {
    *  day X" should pass midnight UTC of day X+1. */
   to?: Date;
   /**
-   * Narrow to a specific `event_source` value. Pushes the predicate into
+   * Narrow to one or more `event_source` values. Pushes the predicate into
    * SQL so `limit` bounds the matching rows (not the pre-filter window).
    * Mirrors the pg enum: 'web' | 'telegram' | 'slack' | 'email' |
    * 'system' | 'document' | 'meeting' | 'integration' | 'calendar'.
    */
-  source?: string;
+  source?: string | string[];
   limit?: number;
   cursor?: string | null;
 }
@@ -1088,7 +1089,11 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
     if (senderCondition) conditions.push(senderCondition);
     if (filters.from) conditions.push(gte(rawEvents.occurredAt, filters.from));
     if (filters.to) conditions.push(lt(rawEvents.occurredAt, filters.to));
-    if (filters.source) {
+    if (Array.isArray(filters.source) && filters.source.length > 0) {
+      conditions.push(
+        inArray(rawEvents.source, filters.source as (typeof rawEvents.source.enumValues)[number][]),
+      );
+    } else if (filters.source) {
       conditions.push(
         eq(rawEvents.source, filters.source as (typeof rawEvents.source.enumValues)[number]),
       );
@@ -1268,6 +1273,9 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
             rawEventId: documentVersions.sourceEventId,
             documentId: documents.id,
             documentName: documents.name,
+            documentMetadata: documents.metadata,
+            fileKind: documents.fileKind,
+            contentType: documentVersions.contentType,
             status: documentVersions.processingStatus,
           })
           .from(documentVersions)
@@ -1387,7 +1395,15 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
     for (const row of documentRows) {
       pushTimelineImpact(impact, row.rawEventId, {
         kind: 'document',
-        label: row.documentName,
+        label: documentPresentation({
+          name: row.documentName,
+          contentType: row.contentType,
+          metadata:
+            typeof row.documentMetadata === 'object' && row.documentMetadata !== null
+              ? (row.documentMetadata as Record<string, unknown>)
+              : {},
+          fileKind: row.fileKind,
+        }).displayTitle,
         href: `/app/documents/${row.documentId}`,
         status: row.status,
       });

@@ -14,6 +14,7 @@ import { TimelineFeed } from '@/components/timeline-feed';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { listTimelineCapturedFilesByEventId } from '@/lib/timeline-captured-files';
 import {
   TIMELINE_IMPACT_FILTERS,
   TIMELINE_PRESETS,
@@ -21,6 +22,7 @@ import {
   parseTimelineImpact,
   parseTimelineSource,
   timelineHref,
+  timelineSourceValues,
 } from '@/lib/timeline-controls';
 import { collectTimelinePage, serializeTimelineEvent } from '@/lib/timeline-page';
 
@@ -97,6 +99,7 @@ export default async function TimelinePage({ searchParams }: Props) {
 
   const authorFilter = parseUuid(sp.author);
   const sourceFilter = parseTimelineSource(sp.source);
+  const sourceValues = timelineSourceValues(sourceFilter);
   const impactFilter = parseTimelineImpact(sp.impact);
   const focusEventId = parseUuid(sp.event);
   const fromFilter = parseDate(sp.from);
@@ -112,7 +115,7 @@ export default async function TimelinePage({ searchParams }: Props) {
           authorUserId: authorFilter,
           from: fromFilter,
           to: toQueryFilter,
-          source: sourceFilter,
+          source: sourceValues,
           cursor: cursor ?? undefined,
           limit,
         });
@@ -165,6 +168,12 @@ export default async function TimelinePage({ searchParams }: Props) {
       console.error('[timeline] audio playback unavailable; S3 is not configured', err);
     }
   }
+  const capturedFiles = await listTimelineCapturedFilesByEventId({
+    db,
+    teamId: active.teamId,
+    userId: session.user.id,
+    eventIds: events.map((event) => event.id),
+  });
 
   const hasPanelFilters = Boolean(
     authorFilter ?? fromFilter ?? toFilter ?? sourceFilter ?? impactFilter,
@@ -222,6 +231,7 @@ export default async function TimelinePage({ searchParams }: Props) {
         userRows={userRows}
         audioUrlMap={audioUrlMap}
         impactItems={timelinePage.impactItems}
+        capturedFiles={capturedFiles}
         currentUserId={session.user.id}
         isAdmin={isAdmin}
       />
@@ -247,6 +257,7 @@ function TimelineBrowserSection({
   userRows,
   audioUrlMap,
   impactItems,
+  capturedFiles,
   currentUserId,
   isAdmin,
 }: {
@@ -267,6 +278,7 @@ function TimelineBrowserSection({
   userRows: { id: string; name: string | null; email: string }[];
   audioUrlMap: Map<string, string>;
   impactItems: TimelineFeedProps['initialPage']['impactItems'];
+  capturedFiles: TimelineFeedProps['initialPage']['capturedFiles'];
   currentUserId: string;
   isAdmin: boolean;
 }) {
@@ -296,6 +308,7 @@ function TimelineBrowserSection({
           authors: Object.fromEntries(userRows.map((row) => [row.id, row])),
           audioUrls: Object.fromEntries(audioUrlMap),
           impactItems,
+          capturedFiles,
         }}
         filters={{
           author: authorFilter ?? null,
@@ -471,12 +484,11 @@ function TimelinePresetControls({
             'all' in preset
               ? timelineHref(baseParams, { source: null, impact: null })
               : timelineHref(baseParams, {
-                  source: 'source' in preset ? preset.source : null,
-                  impact: 'impact' in preset ? preset.impact : null,
+                  source: preset.source,
+                  impact: null,
                 });
           const active =
             ('source' in preset && preset.source === sourceFilter) ||
-            ('impact' in preset && preset.impact === impactFilter) ||
             ('all' in preset && !sourceFilter && !impactFilter);
           return (
             <Link

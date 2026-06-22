@@ -136,6 +136,8 @@ describe('TimelineList document attachments', () => {
   it('moves document previews into the inspector and keeps lifecycle rules', () => {
     const uploadId = '66666666-6666-4666-8666-666666666666';
     const renameId = '77777777-7777-4777-8777-777777777777';
+    const generatedName =
+      'AgACAgQAAyEFAATcv6dYAAIBuWo4jeyMZiYwKT1k92NCNuPTCoTcAALpDWsbBCfJUUAcqaMvf4JYAQADAgADdwADPAQ.jpg';
     render(
       createElement(TimelineList, {
         events: [
@@ -143,11 +145,11 @@ describe('TimelineList document attachments', () => {
             id: uploadId,
             occurredAt: '2026-06-03T13:04:00.000Z',
             source: 'document',
-            contentText: 'Uploaded photo.jpg',
+            contentText: `Uploaded ${generatedName}`,
             sourceMetadata: {
               action: 'upload',
               document_id: '88888888-8888-4888-8888-888888888888',
-              document_name: 'photo.jpg',
+              document_name: generatedName,
               document_version_id: '99999999-9999-4999-8999-999999999999',
             },
           }),
@@ -169,15 +171,68 @@ describe('TimelineList document attachments', () => {
       }),
     );
 
-    fireEvent.click(screen.getByRole('button', { name: /Uploaded photo\.jpg/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Uploaded AgACAgQ/i }));
     const uploadInspector = renderLastInspector();
-    expect(uploadInspector).toContain('Attachment · photo.jpg');
+    expect(uploadInspector).toContain('Attachment · AgACAgQ…wADPAQ.jpg');
+    expect(uploadInspector).toContain(`title="${generatedName}"`);
     expect(uploadInspector).toContain('Preview');
 
     fireEvent.click(screen.getByRole('button', { name: /Renamed notes\.txt/i }));
     const renameInspector = renderLastInspector();
     expect(renameInspector).toContain('Attachment · notes.txt');
     expect(renameInspector).not.toContain('Preview');
+  });
+
+  it('shows captured Telegram files in the inspector with truncated stored names and preview', () => {
+    const eventId = '12121212-1212-4121-8121-121212121212';
+    render(
+      createElement(TimelineList, {
+        events: [
+          timelineEvent({
+            id: eventId,
+            occurredAt: '2026-06-03T13:04:00.000Z',
+            source: 'telegram',
+            contentText:
+              'Attached image AgACAgQAAyEFAATcv6dYAAIBuWo4jeyMZiYwKT1k92NCNuPTCoTcAALpDWsbBCfJUUAcqaMvf4JYAQADAgADdwADPAQ.jpg',
+            sourceMetadata: { tg_chat_title: 'AuditAI', tg_sender_name: 'Tim' },
+          }),
+        ],
+        authorMap: new Map(),
+        currentUserId: 'user-1',
+        isAdmin: false,
+        capturedFilesByEventId: {
+          [eventId]: [
+            {
+              id: 'doc-captured',
+              name: 'AgACAgQAAyEFAATcv6dYAAIBuWo4jeyMZiYwKT1k92NCNuPTCoTcAALpDWsbBCfJUUAcqaMvf4JYAQADAgADdwADPAQ.jpg',
+              presentation: {
+                displayTitle: 'Image attachment',
+                storedName:
+                  'AgACAgQAAyEFAATcv6dYAAIBuWo4jeyMZiYwKT1k92NCNuPTCoTcAALpDWsbBCfJUUAcqaMvf4JYAQADAgADdwADPAQ.jpg',
+                suggestedTitle: null,
+                isGeneratedName: true,
+                fallbackTitle: 'Image attachment',
+              },
+              currentVersion: {
+                id: 'version-captured',
+                version: 1,
+                contentType: 'image/jpeg',
+                processingStatus: 'chunked',
+              },
+            },
+          ],
+        },
+      }),
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /Attached image AgACAgQ/i }));
+    const inspector = renderLastInspector();
+    expect(inspector).toContain('Attached image AgACAgQ…wADPAQ.jpg');
+    expect(inspector).toContain('Attachment · Image attachment');
+    expect(inspector).toContain('Stored as');
+    expect(inspector).toContain('AgACAgQ…wADPAQ.jpg');
+    expect(inspector).toContain('Preview');
+    expect(inspector).toContain('>Attached image AgACAgQ…wADPAQ.jpg</p>');
   });
 });
 

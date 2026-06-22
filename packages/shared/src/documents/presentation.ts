@@ -16,6 +16,7 @@ export interface DocumentPresentation {
 const GENERATED_PREFIXES = ['agacag', 'baacag', 'caacag', 'dqacag', 'file_', 'photo_', 'image_'];
 
 const MAX_SUGGESTED_TITLE_LENGTH = 96;
+const DEFAULT_FILENAME_MAX_LENGTH = 18;
 
 export function normalizeSuggestedTitle(value: unknown): string | null {
   if (typeof value !== 'string') return null;
@@ -78,6 +79,24 @@ export function documentKindLabel(contentType?: string | null): 'image' | 'pdf' 
   if (base === 'application/pdf') return 'pdf';
   if (base.startsWith('audio/')) return 'audio';
   return 'file';
+}
+
+export function truncateFilenameMiddle(
+  filename: string,
+  maxLength = DEFAULT_FILENAME_MAX_LENGTH,
+): string {
+  const normalized = filename.replace(/\s+/g, ' ').trim();
+  if (normalized.length <= maxLength) return normalized;
+  if (maxLength < 8) return normalized.slice(0, maxLength);
+  const dot = normalized.lastIndexOf('.');
+  const extension =
+    dot > 0 && dot < normalized.length - 1 && normalized.length - dot <= 8
+      ? normalized.slice(dot)
+      : '';
+  const budget = maxLength - extension.length - 1;
+  const headLength = Math.max(3, Math.ceil(budget / 2));
+  const tailLength = Math.max(2, budget - headLength);
+  return `${normalized.slice(0, headLength)}…${normalized.slice(normalized.length - tailLength - extension.length, normalized.length - extension.length)}${extension}`;
 }
 
 function stripExtension(name: string): string {

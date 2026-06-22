@@ -27,7 +27,7 @@ import { cn } from '@/lib/utils';
 const SITE_NAME = 'The Timeline';
 const SITE_TAGLINE = 'The work becomes the record';
 const SITE_DESCRIPTION =
-  'Capture work as it happens through Slack, Telegram, meetings, docs, email, and connected tools, then generate cited updates, digests, handoffs, answers, and work memory from the evidence.';
+  'Capture work from Slack, Telegram, meetings, docs, email, code, CRM, and internal tools, then generate cited updates, handoffs, digests, and answers from the evidence.';
 
 export const metadata: Metadata = {
   title: `${SITE_NAME} — ${SITE_TAGLINE}`,
@@ -50,7 +50,7 @@ export const metadata: Metadata = {
   openGraph: {
     title: `${SITE_NAME} — ${SITE_TAGLINE}`,
     description:
-      'Stop manually reporting on work your team already did. Timeline shows up as a Slack or Telegram bot, joins calls, and generates updates, digests, handoffs, and answers from evidence.',
+      'Ask what changed and get a cited answer from Slack, meetings, docs, email, code, CRM, and internal tools.',
     type: 'website',
     siteName: SITE_NAME,
     url: '/',
@@ -67,7 +67,7 @@ export const metadata: Metadata = {
     card: 'summary_large_image',
     title: `${SITE_NAME} — ${SITE_TAGLINE}`,
     description:
-      'Timeline shows up as a Slack or Telegram bot, joins calls, and generates updates, digests, handoffs, and answers from evidence.',
+      'Ask what changed and get a cited answer from Slack, meetings, docs, email, code, CRM, and internal tools.',
     images: ['/twitter-image'],
   },
   robots: {
@@ -364,31 +364,28 @@ function Hero({ isSignedIn }: { isSignedIn: boolean }) {
   return (
     <section className="px-6 pb-24 pt-16 sm:pt-24">
       <div className="mx-auto max-w-6xl">
-        <Mono>THE TIMELINE · EVENT HISTORY · OPERATIONAL MEMORY</Mono>
+        <Mono>THE TIMELINE · CITED WORK ANSWERS · AUTOMATIC UPDATES</Mono>
         <div className="mt-8 grid gap-12 lg:grid-cols-[1.1fr_1fr] lg:items-center">
           <div>
             <h1 className="text-4xl font-semibold leading-[1.05] tracking-tight sm:text-5xl lg:text-6xl">
-              Your team
+              Ask what changed.
               <br />
-              does the work.
+              Get the update
               <br />
-              <span className="text-signal">Timeline</span>
-              <br />
-              writes the update.
+              with receipts.
             </h1>
             <p className="mt-8 max-w-prose text-lg leading-relaxed text-fg-muted">
-              Use Timeline as a Slack or Telegram bot, let it join calls to take notes, and connect
-              docs, emails, tasks, and account conversations. It turns that work into cited updates,
-              daily digests, handoffs, stakeholder answers, and project or client memory.
+              Timeline captures work from Slack, meetings, docs, email, code, CRM, and internal
+              tools, then writes cited updates, handoffs, digests, and answers automatically.
             </p>
             <div className="mt-10 flex flex-wrap items-center gap-3">
               <Button asChild size="lg">
                 <Link href={isSignedIn ? '/app' : '/sign-up'}>
-                  {isSignedIn ? 'Go to dashboard →' : 'Create your team →'}
+                  {isSignedIn ? 'Go to dashboard →' : 'Try on one project →'}
                 </Link>
               </Button>
               <Button asChild size="lg" variant="outline">
-                <a href={CONTACT_HREF}>Talk to us</a>
+                <a href="#receipts">See how it works</a>
               </Button>
               {isSignedIn ? null : (
                 <Link
@@ -400,14 +397,49 @@ function Hero({ isSignedIn }: { isSignedIn: boolean }) {
               )}
             </div>
             <p className="mt-10 font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">
-              CAPTURED · CITED · APPROVAL-BACKED
+              CAPTURE ONCE · ANSWER OFTEN · CITE EVERYTHING
             </p>
           </div>
           <HeroMock />
         </div>
+        <AudienceStrip />
         <WorkSurfaceStrip />
       </div>
     </section>
+  );
+}
+
+const AUDIENCES = [
+  {
+    label: 'AGENCIES',
+    body: 'Client context, decisions, promises, and delivery updates without Friday archaeology.',
+  },
+  {
+    label: 'IMPLEMENTATION TEAMS',
+    body: 'Project memory across kickoff calls, customer Slack, docs, issues, and launch tasks.',
+  },
+  {
+    label: 'PRODUCT + OPS',
+    body: 'What shipped, what blocked, and what changed without chasing every owner.',
+  },
+  {
+    label: 'FOUNDER-LED TEAMS',
+    body: 'Investor, customer, and team answers from the work already happening.',
+  },
+] as const;
+
+function AudienceStrip() {
+  return (
+    <div className="mt-14 grid gap-px overflow-hidden border border-border bg-border sm:grid-cols-2 lg:grid-cols-4">
+      {AUDIENCES.map((item) => (
+        <div key={item.label} className="bg-bg p-4 sm:p-5">
+          <div className="font-mono text-[11px] uppercase tracking-[0.16em] text-signal">
+            {item.label}
+          </div>
+          <p className="mt-3 text-sm leading-[1.5] text-fg-muted">{item.body}</p>
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -436,7 +468,13 @@ function HeroMock() {
   return (
     <div className="border border-border bg-surface" aria-hidden>
       <div className="border-b border-border bg-surface-2 px-4 py-2 font-mono text-[11px] uppercase tracking-[0.14em] text-fg-muted">
-        ACME PROJECT MEMORY · 2,847 EVENTS · LAST 14d
+        /ASK · ACME LAUNCH · LAST 7 DAYS
+      </div>
+      <div className="border-b border-border bg-bg p-4">
+        <div className="font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">YOU</div>
+        <p className="mt-1 text-base leading-snug text-fg">
+          What changed with Acme, and what do we owe them next?
+        </p>
       </div>
       <ol className="divide-y divide-border">
         <li className="grid grid-cols-[88px_1fr] gap-4 px-4 py-3 font-mono text-xs">
@@ -460,13 +498,12 @@ function HeroMock() {
       </ol>
       <div className="border-t border-border bg-surface-2/60 p-4">
         <div className="font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">
-          /ASK · AGENT REPLY
+          TIMELINE
         </div>
         <p className="mt-2 text-sm leading-relaxed text-fg">
-          Acme changed in three ways: SSO became the launch blocker{' '}
-          <CitationChipStatic id="ev:1923" />
-          , onboarding copy was approved <CitationChipStatic id="ev:1924" />, and the migration
-          owner moved to Priya <CitationChipStatic id="doc:acme-checklist" />.
+          SSO became the launch blocker <CitationChipStatic id="ev:1923" />. Onboarding copy was
+          approved <CitationChipStatic id="ev:1924" />. Priya owns the migration checklist and owes
+          Acme a timeline by Friday <CitationChipStatic id="doc:acme-checklist" />.
         </p>
       </div>
     </div>
@@ -481,18 +518,24 @@ function Problem() {
         Teams do the work, then separately report that the work happened.
       </h2>
 
-      <div className="mt-12 grid gap-px overflow-hidden border border-border bg-border sm:grid-cols-3">
-        <IndictmentCell
-          label="UPDATES"
-          body="Stakeholders ask what changed, so someone reconstructs the story from Slack, docs, calls, and tasks."
+      <div className="mt-12 grid gap-px overflow-hidden border border-border bg-border lg:grid-cols-2">
+        <BeforeAfterPanel
+          label="WITHOUT TIMELINE"
+          title="Someone reconstructs reality by hand."
+          items={[
+            'Search Slack, docs, meeting notes, tickets, and CRM.',
+            'Ask three people what changed and what was promised.',
+            'Rewrite the same update for clients, leadership, and teammates.',
+          ]}
         />
-        <IndictmentCell
-          label="DIGESTS"
-          body="Daily or recurring summaries become another manual ritual layered on top of the actual work."
-        />
-        <IndictmentCell
-          label="HANDOFFS"
-          body="A teammate joins late and the team has to retell the project, account, and decision history."
+        <BeforeAfterPanel
+          label="WITH TIMELINE"
+          title="The answer is generated from evidence."
+          items={[
+            'Capture the work where it already happens.',
+            'Ask a project, client, or status question in plain English.',
+            'Share a cited answer with links back to the source events.',
+          ]}
         />
       </div>
 
@@ -511,11 +554,30 @@ function Problem() {
   );
 }
 
-function IndictmentCell({ label, body }: { label: string; body: string }) {
+function BeforeAfterPanel({
+  label,
+  title,
+  items,
+}: {
+  label: string;
+  title: string;
+  items: readonly string[];
+}) {
   return (
     <div className="bg-bg p-6 sm:p-8">
       <div className="font-mono text-xs uppercase tracking-[0.18em] text-signal">{label}</div>
-      <p className="mt-4 text-base leading-[1.55] text-fg">{body}</p>
+      <h3 className="mt-4 text-xl font-semibold leading-snug tracking-tight text-fg">{title}</h3>
+      <ul className="mt-6 space-y-3">
+        {items.map((item) => (
+          <li
+            key={item}
+            className="grid grid-cols-[18px_1fr] gap-3 text-sm leading-[1.55] text-fg-muted"
+          >
+            <span className="mt-2 size-1.5 bg-fg-dim" />
+            <span>{item}</span>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
@@ -529,8 +591,9 @@ function Solution() {
       <div className="mt-10 max-w-3xl border-l-2 border-signal pl-5">
         <Mono className="text-signal">THE PAYOFF</Mono>
         <p className="mt-4 text-lg leading-snug text-fg">
-          The output starts as updates, daily digests, handoffs, and answers. Over time it becomes
-          project and client state: current, queryable, cited, and approval-backed.
+          Start with one real project: connect the channels and calls, let Timeline capture a week
+          of work, then ask for the update. The answer becomes the entry point to project and client
+          state: current, queryable, cited, and approval-backed.
         </p>
       </div>
     </Section>
@@ -765,52 +828,67 @@ function Surfaces() {
       <div className="mt-10 grid gap-px overflow-hidden border border-border bg-border sm:grid-cols-2 lg:grid-cols-4">
         <SurfaceTile
           label="TELEGRAM"
-          body="A Telegram bot captures voice memos, text, and attachments in DMs or team groups. /ask runs the same cited agent."
+          icon={Send}
+          body="Voice memos, text, files, team groups, and /ask all land in the same cited history."
         />
         <SurfaceTile
           label="SLACK"
-          body="A Slack bot captures DMs, bound channels, files, /ask, and @Timeline replies. Thread context becomes searchable memory."
+          icon={MessageCircle}
+          body="DMs, bound channels, files, slash commands, and thread replies become searchable memory."
         />
         <SurfaceTile
           label="MEET / ZOOM / TEAMS"
-          body="Meeting bots join calls, take notes, transcribe discussions, and file decisions, tasks, and cited summaries."
+          icon={Video}
+          body="Meeting bots join calls, transcribe discussion, and extract decisions, tasks, and summaries."
         />
         <SurfaceTile
-          label="EMAIL"
-          body="Forward, CC, or BCC to your team address. Parsed mail lands beside chat and meetings."
-        />
-        <SurfaceTile
-          label="CALENDAR"
-          body="Scheduled work, all-day events, and time-aware context appear in the same timeline."
+          label="EMAIL / CALENDAR"
+          icon={Mail}
+          body="Forwarded mail, CCs, BCCs, scheduled work, and time-aware context sit beside chat."
         />
         <SurfaceTile
           label="NATIVE INTEGRATIONS"
+          icon={GitPullRequest}
           body="GitHub, Linear, Drive, Monday.com, Slack workspace history, and Sentry sync into cited events."
         />
         <SurfaceTile
           label="WEB APP"
+          icon={FileText}
           body="Typed notes, audio uploads, drag-drop files, approvals, and cited agent chat."
         />
         <SurfaceTile
-          label="DRIVE UPLOAD"
-          body="Team folders with version history. Uploads and edits become searchable document events."
+          label="TEAM DRIVE"
+          icon={Briefcase}
+          body="Versioned folders keep uploads, edits, and document history queryable with source links."
         />
         <SurfaceTile
           label="MCP + INTEGRATIONS"
-          body="Connect internal tools and long-tail SaaS through MCP, alongside first-party integrations for the systems your team uses most."
+          icon={Wrench}
+          body="First-party connectors and MCP servers extend Timeline into SaaS and internal systems."
         />
       </div>
     </Section>
   );
 }
 
-function SurfaceTile({ label, body }: { label: string; body: string }) {
+function SurfaceTile({
+  label,
+  body,
+  icon: Icon,
+}: {
+  label: string;
+  body: string;
+  icon: typeof Send;
+}) {
   return (
-    <div className="bg-bg p-6 sm:p-8">
-      <div className="flex items-center gap-2">
+    <div className="bg-bg p-5 sm:p-6">
+      <div className="flex items-center gap-3">
+        <span className="grid size-8 shrink-0 place-items-center border border-border bg-surface text-fg-muted">
+          <Icon className="size-4" aria-hidden="true" />
+        </span>
         <span className="font-mono text-xs uppercase tracking-[0.18em] text-fg">{label}</span>
       </div>
-      <p className="mt-4 text-base leading-[1.55] text-fg-muted">{body}</p>
+      <p className="mt-4 text-sm leading-[1.55] text-fg-muted">{body}</p>
     </div>
   );
 }
@@ -819,33 +897,27 @@ function Integrations() {
   return (
     <Section id="integrations">
       <IndexStrip>INTEGRATIONS · KEEP YOUR CURRENT TOOLS</IndexStrip>
-      <div className="mt-10 grid gap-12 lg:grid-cols-[1fr,2fr] lg:items-start">
-        <div className="space-y-4">
-          <h2 className="text-2xl font-medium tracking-tight text-fg sm:text-3xl">
-            Timeline sits beside the stack before it replaces any manual upkeep.
-          </h2>
-          <p className="text-base leading-[1.55] text-fg-muted">
-            GitHub, Linear, Google Drive, Monday.com, Slack workspace history, and Sentry are native
-            integrations: PRs, issues, docs, board updates, channel decisions, errors, and releases
-            become cited events. Slack and Telegram stay the fastest daily capture surfaces.
-            Conversations, meetings, docs, projects, code, account systems, support queues,
-            calendars, and internal tools can all sit around the same event history. Teams keep
-            their current tools while Timeline generates cited updates, digests, handoffs, and
-            answers from the work already happening there. Long-tail tools plug in as{' '}
-            <a
-              href="https://modelcontextprotocol.io"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-fg underline-offset-4 hover:underline"
-            >
-              MCP servers
-            </a>{' '}
-            : Notion, Jira, Figma, Stripe, your internal tool, anything that speaks the protocol.
-            The agent gets live tools; those systems only become durable timeline events when you
-            add native sync or a custom ingestion layer. Timeline is designed around the work graph,
-            not one vendor's idea of a system of record.
-          </p>
-        </div>
+      <div className="mt-10">
+        <h2 className="max-w-3xl text-2xl font-medium tracking-tight text-fg sm:text-3xl">
+          Keep the stack. Let Timeline collect the evidence around it.
+        </h2>
+        <p className="mt-4 max-w-3xl text-base leading-[1.6] text-fg-muted">
+          GitHub, Linear, Google Drive, Monday.com, Slack workspace history, and Sentry are native
+          integrations: PRs, issues, docs, board updates, channel decisions, errors, and releases
+          become cited events. Connect chat, meetings, docs, code, support, CRM, and internal tools.
+          Timeline turns the work already happening there into cited updates, digests, handoffs, and
+          answers. Long-tail systems plug in as{' '}
+          <a
+            href="https://modelcontextprotocol.io"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-fg underline-offset-4 hover:underline"
+          >
+            MCP servers
+          </a>
+          ; those systems become durable timeline events only when paired with native sync or custom
+          ingestion.
+        </p>
         <IntegrationCloud />
       </div>
     </Section>
@@ -963,33 +1035,78 @@ function Faq() {
 function FinalCTA({ isSignedIn }: { isSignedIn: boolean }) {
   return (
     <Section id="cta" className="bg-surface">
-      <div className="border-l-2 border-signal pl-6 sm:pl-10">
-        <Mono className="text-signal">READY?</Mono>
-        <h2 className="mt-4 max-w-3xl text-3xl font-semibold leading-tight tracking-tight sm:text-4xl">
-          Try it on one real project.
-        </h2>
-        <p className="mt-5 max-w-2xl text-base leading-[1.65] text-fg-muted">
-          Add Timeline to the conversations and calls where work already happens, then connect the
-          surrounding tools. Timeline will generate the next update, digest, handoff, and answer
-          from the evidence.
-        </p>
-        <div className="mt-10 flex flex-wrap items-center gap-3">
-          <Button asChild size="lg">
-            <Link href={isSignedIn ? '/app' : '/sign-up'}>
-              {isSignedIn ? 'Go to dashboard →' : 'Create your team →'}
-            </Link>
-          </Button>
-          <Button asChild size="lg" variant="outline">
-            <a href={CONTACT_HREF}>Talk to us</a>
-          </Button>
+      <div className="grid gap-10 lg:grid-cols-[1fr_1.1fr] lg:items-start">
+        <div className="border-l-2 border-signal pl-6 sm:pl-10">
+          <Mono className="text-signal">START SMALL</Mono>
+          <h2 className="mt-4 max-w-3xl text-3xl font-semibold leading-tight tracking-tight sm:text-4xl">
+            Try it on one real project.
+          </h2>
+          <p className="mt-5 max-w-2xl text-base leading-[1.65] text-fg-muted">
+            Add Timeline to the conversations and calls where work already happens, then ask the
+            first status question you normally answer by hand.
+          </p>
+          <div className="mt-10 flex flex-wrap items-center gap-3">
+            <Button asChild size="lg">
+              <Link href={isSignedIn ? '/app' : '/sign-up'}>
+                {isSignedIn ? 'Go to dashboard →' : 'Try on one project →'}
+              </Link>
+            </Button>
+            <Button asChild size="lg" variant="outline">
+              <a href={CONTACT_HREF}>Book a walkthrough</a>
+            </Button>
+          </div>
+          <p className="mt-10 font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">
+            CAPTURED · CITED · TEAM-SCOPED
+          </p>
         </div>
-        <p className="mt-10 font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">
-          CAPTURED · CITED · APPROVAL-BACKED
-        </p>
+
+        <div className="grid gap-px overflow-hidden border border-border bg-border sm:grid-cols-2">
+          <div className="bg-bg p-5 sm:p-6">
+            <Mono>FIRST PROJECT PATH</Mono>
+            <ol className="mt-5 space-y-4">
+              {FIRST_PROJECT_STEPS.map((step, index) => (
+                <li key={step} className="grid grid-cols-[28px_1fr] gap-3">
+                  <span className="grid size-7 place-items-center border border-border bg-surface font-mono text-[11px] text-fg-muted">
+                    {index + 1}
+                  </span>
+                  <span className="text-sm leading-[1.55] text-fg-muted">{step}</span>
+                </li>
+              ))}
+            </ol>
+          </div>
+          <div className="bg-bg p-5 sm:p-6">
+            <Mono>TRUST DEFAULTS</Mono>
+            <ul className="mt-5 space-y-4">
+              {TRUST_DEFAULTS.map((item) => (
+                <li
+                  key={item}
+                  className="grid grid-cols-[18px_1fr] gap-3 text-sm leading-[1.55] text-fg-muted"
+                >
+                  <span className="mt-2 size-1.5 bg-signal" />
+                  <span>{item}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
       </div>
     </Section>
   );
 }
+
+const FIRST_PROJECT_STEPS = [
+  'Connect Slack, Telegram, meetings, or the project docs you already use.',
+  'Let Timeline capture one week of decisions, blockers, files, and promises.',
+  'Ask: "What changed, what is blocked, and what did we promise next?"',
+  'Share the cited answer instead of writing a fresh status report.',
+] as const;
+
+const TRUST_DEFAULTS = [
+  'Every claim links back to the raw event, transcript, message, email, or document.',
+  'Raw events are immutable; derived facts can be reprocessed without changing the source.',
+  'Team isolation and per-event visibility are enforced below the UI.',
+  'Custom MCP servers provide live reach without turning every tool into source-of-truth data.',
+] as const;
 
 function Footer({ isSignedIn }: { isSignedIn: boolean }) {
   return (

@@ -1,5 +1,6 @@
 'use client';
 
+import { truncateFilenameMiddle } from '@timeline/shared/documents/presentation';
 import { FileText, Image as ImageIcon, Link2, Upload } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useReducer, useTransition } from 'react';
@@ -361,7 +362,9 @@ function CapturedFileRow({ file, onPromote }: { file: CapturedFileItem; onPromot
   const Icon = contentType.startsWith('image/') ? ImageIcon : FileText;
   const eventId = file.provenance.parentEventId ?? file.sourceRawEventId;
   const presentation = file.presentation;
-  const storedName = presentation.isGeneratedName ? presentation.storedName : null;
+  const storedName = presentation.isGeneratedName
+    ? truncateFilenameMiddle(presentation.storedName)
+    : null;
 
   return (
     <li className="grid gap-3 rounded-sm border border-border bg-card p-3 md:grid-cols-[minmax(0,1fr)_auto]">
@@ -380,7 +383,10 @@ function CapturedFileRow({ file, onPromote }: { file: CapturedFileItem; onPromot
             <span className="mt-0.5 block truncate font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
               {contentType || 'captured file'}
               {storedName ? (
-                <span className="normal-case tracking-normal text-muted-foreground">
+                <span
+                  title={presentation.storedName}
+                  className="normal-case tracking-normal text-muted-foreground"
+                >
                   {' '}
                   · stored as {storedName}
                 </span>

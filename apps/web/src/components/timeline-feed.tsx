@@ -2,6 +2,7 @@
 
 import { useMemo } from 'react';
 
+import type { TimelineCapturedFile } from '@/lib/timeline-captured-files';
 import type { ImpactKind, ImpactItem } from '@/lib/timeline-moments';
 
 import { TimelineList } from '@/components/timeline-list';
@@ -14,6 +15,7 @@ interface Props {
     authors: Record<string, { id: string; name: string | null; email: string }>;
     audioUrls: Record<string, string>;
     impactItems: Record<string, ImpactItem[]>;
+    capturedFiles: Record<string, TimelineCapturedFile[]>;
   };
   filters: {
     author?: string | null;
@@ -85,6 +87,14 @@ export function TimelineFeed({
       >,
     [pages],
   );
+  const capturedFilesByEventId = useMemo(
+    () =>
+      Object.fromEntries(pages.flatMap((page) => Object.entries(page.capturedFiles))) as Record<
+        string,
+        TimelineCapturedFile[]
+      >,
+    [pages],
+  );
 
   return (
     <div className="space-y-3">
@@ -101,6 +111,7 @@ export function TimelineFeed({
         emptyAction={emptyAction}
         impactFilter={impactFilter}
         impactItemsByEventId={impactItemsByEventId}
+        capturedFilesByEventId={capturedFilesByEventId}
         focusEventId={focusEventId}
       />
       <div className={compact ? 'hidden' : 'flex justify-center'}>

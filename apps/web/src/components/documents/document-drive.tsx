@@ -1,7 +1,10 @@
 'use client';
 
 import { type InfiniteData, useQueryClient } from '@tanstack/react-query';
-import { documentPresentation } from '@timeline/shared/documents/presentation';
+import {
+  documentPresentation,
+  truncateFilenameMiddle,
+} from '@timeline/shared/documents/presentation';
 import {
   Clock3,
   FileText,
@@ -825,7 +828,8 @@ function DocumentListItem({ document }: { document: DocumentItem }) {
           document={document}
           fileKind={fileKind}
           title={title}
-          storedName={usingFriendlyTitle ? document.name : null}
+          storedName={usingFriendlyTitle ? truncateFilenameMiddle(document.name) : null}
+          fullStoredName={usingFriendlyTitle ? document.name : null}
         />
         <DocumentMetaLine items={metaItems} />
         {summary ? (
@@ -865,11 +869,13 @@ function DocumentTitleRow({
   fileKind,
   title,
   storedName,
+  fullStoredName,
 }: {
   document: DocumentItem;
   fileKind: { icon: LucideIcon; label: string };
   title: string;
   storedName: string | null;
+  fullStoredName: string | null;
 }) {
   const Icon = fileKind.icon;
   const content = (
@@ -884,7 +890,10 @@ function DocumentTitleRow({
         <span className="mt-0.5 flex min-w-0 items-center gap-2 font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
           <span className="shrink-0">{fileKind.label}</span>
           {storedName ? (
-            <span className="min-w-0 truncate normal-case tracking-normal text-muted-foreground">
+            <span
+              className="min-w-0 truncate normal-case tracking-normal text-muted-foreground"
+              title={fullStoredName ?? storedName}
+            >
               Stored as {storedName}
             </span>
           ) : null}

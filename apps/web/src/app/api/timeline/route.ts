@@ -7,7 +7,12 @@ import { inArray } from 'drizzle-orm';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
-import { parseTimelineImpact, parseTimelineSource } from '@/lib/timeline-controls';
+import { listTimelineCapturedFilesByEventId } from '@/lib/timeline-captured-files';
+import {
+  parseTimelineImpact,
+  parseTimelineSource,
+  timelineSourceValues,
+} from '@/lib/timeline-controls';
 import { collectTimelinePage, serializeTimelineEvent } from '@/lib/timeline-page';
 
 export const runtime = 'nodejs';
@@ -57,6 +62,7 @@ export async function GET(req: Request): Promise<Response> {
   const authorUserId = author && UUID_RE.test(author) ? author : undefined;
   const cursor = url.searchParams.get('cursor');
   const source = parseTimelineSource(url.searchParams.get('source') ?? undefined);
+  const sourceValues = timelineSourceValues(source);
   const impact = parseTimelineImpact(url.searchParams.get('impact') ?? undefined);
   const event = url.searchParams.get('event');
   const focusEventId = event && UUID_RE.test(event) ? event : null;
@@ -89,7 +95,7 @@ export async function GET(req: Request): Promise<Response> {
           authorUserId,
           from,
           to,
-          source,
+          source: sourceValues,
           cursor: pageCursor ?? undefined,
           limit,
         });
@@ -117,6 +123,12 @@ export async function GET(req: Request): Promise<Response> {
       nextCursor: result.nextCursor,
       authors: Object.fromEntries(authorRows.map((row) => [row.id, row])),
       impactItems: result.impactItems,
+      capturedFiles: await listTimelineCapturedFilesByEventId({
+        db,
+        teamId: active.teamId,
+        userId: session.user.id,
+        eventIds: result.items.map((eventItem) => eventItem.id),
+      }),
     };
   });
 

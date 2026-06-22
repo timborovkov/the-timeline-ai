@@ -19,12 +19,16 @@ const fakes = vi.hoisted(() => ({
   fakeGetS3PresignClient: vi.fn(),
   fakeGetAudioBucket: vi.fn(),
   fakeGetSignedGetObjectUrl: vi.fn(),
+  fakeListTimelineCapturedFilesByEventId: vi.fn(),
   fakeDbSelect: vi.fn(),
 }));
 
 vi.mock('@/lib/auth', () => ({ auth: fakes.fakeAuth }));
 vi.mock('@/lib/active-team', () => ({ resolveActiveTeam: fakes.fakeResolveActiveTeam }));
 vi.mock('@/lib/db', () => ({ db: { select: fakes.fakeDbSelect } }));
+vi.mock('@/lib/timeline-captured-files', () => ({
+  listTimelineCapturedFilesByEventId: fakes.fakeListTimelineCapturedFilesByEventId,
+}));
 vi.mock('@timeline/shared/cache', () => ({
   cacheKey: fakes.fakeCacheKey,
   cachedJson: fakes.fakeCachedJson,
@@ -96,6 +100,7 @@ beforeEach(() => {
   fakes.fakeGetS3PresignClient.mockReturnValue({ s3: true });
   fakes.fakeGetAudioBucket.mockReturnValue('audio-bucket');
   fakes.fakeGetSignedGetObjectUrl.mockResolvedValue('https://signed-audio.test/event-1');
+  fakes.fakeListTimelineCapturedFilesByEventId.mockResolvedValue({});
   mockAuthorRows([{ id: AUTHOR_ID, name: 'Ada', email: 'ada@example.test' }]);
 });
 
@@ -152,6 +157,7 @@ describe('GET /api/timeline', () => {
       nextCursor: null,
       authors: { [AUTHOR_ID]: { id: AUTHOR_ID, name: 'Ada', email: 'ada@example.test' } },
       impactItems: { 'event-1': [{ kind: 'task', label: 'Follow up' }] },
+      capturedFiles: {},
       audioUrls: { 'event-1': 'https://signed-audio.test/event-1' },
     });
     expect(fakes.fakeListEventsPage).toHaveBeenCalledWith(
@@ -159,7 +165,7 @@ describe('GET /api/timeline', () => {
         authorUserId: AUTHOR_ID,
         from: new Date('2026-06-01'),
         to: new Date(new Date('2026-06-02').getTime() + 24 * 60 * 60 * 1000),
-        source: 'slack',
+        source: ['slack'],
         cursor: 'abc',
       }),
     );
@@ -201,6 +207,16 @@ describe('GET /api/timeline', () => {
       }),
     );
     expect(fakes.fakeListImpactItems).toHaveBeenCalledWith(['event-1']);
+  });
+
+  it('expands grouped source filters before querying timeline events', async () => {
+    await GET(request('/api/timeline?source=chat'));
+
+    expect(fakes.fakeListEventsPage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        source: ['telegram', 'slack'],
+      }),
+    );
   });
 
   it('omits audio URL when a single object signing call fails', async () => {
