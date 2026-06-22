@@ -1,4 +1,10 @@
-import { type Db, entities, rawEvents } from '@timeline/db';
+import {
+  type Db,
+  entities,
+  rawEvents,
+  slackConversationBindings,
+  slackWorkspaces,
+} from '@timeline/db';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 
 import type { IntegrationEvent, IntegrationRow, ObjectMapping } from '#src/integrations/types.js';
@@ -77,8 +83,9 @@ export async function writeIntegrationEvents(deps: {
     seenDedup.add(evt.dedupKey);
     return true;
   });
+  const writableEvents = await filterEventsOwnedByNativeIntegrations(deps, uniqueEvents);
 
-  const values = uniqueEvents.map((evt) => {
+  const values = writableEvents.map((evt) => {
     const visibilityOwnerUserId = deps.integration.connectedByUserId ?? null;
     const requestedVisibility = evt.visibility ?? visibility;
     const requestedUserIds =
@@ -147,7 +154,7 @@ export async function writeIntegrationEvents(deps: {
   // pre-dedup list would let a later same-dedupKey event silently
   // override the winner's objectMap and decouple the entity row from
   // the stored raw_event content.
-  for (const evt of uniqueEvents) {
+  for (const evt of writableEvents) {
     if (!evt.objectMap) continue;
     if (!insertedDedupKeys.has(evt.dedupKey)) continue;
     byExternal.set(
@@ -160,6 +167,67 @@ export async function writeIntegrationEvents(deps: {
   }
 
   return inserted.map((r) => r.id);
+}
+
+async function filterEventsOwnedByNativeIntegrations(
+  deps: {
+    db: Db;
+    integration: IntegrationRow;
+  },
+  events: IntegrationEvent[],
+): Promise<IntegrationEvent[]> {
+  if (deps.integration.provider !== 'slack') return events;
+
+  const messageEvents = events.filter(isSlackMessageEvent);
+  if (messageEvents.length === 0) return events;
+
+  const channels = [...new Set(messageEvents.map(slackBindingKey).filter((key) => key !== null))];
+  if (channels.length === 0) return events;
+
+  const boundRows = await deps.db
+    .select({
+      slackTeamId: slackWorkspaces.slackTeamId,
+      channelId: slackConversationBindings.slackConversationId,
+    })
+    .from(slackConversationBindings)
+    .innerJoin(slackWorkspaces, eq(slackWorkspaces.id, slackConversationBindings.workspaceId))
+    .where(
+      and(
+        eq(slackConversationBindings.teamId, deps.integration.teamId),
+        eq(slackConversationBindings.enabled, true),
+        inArray(
+          sql<string>`${slackWorkspaces.slackTeamId} || ${':'} || ${slackConversationBindings.slackConversationId}`,
+          channels,
+        ),
+      ),
+    );
+  if (boundRows.length === 0) return events;
+
+  const bound = new Set(
+    boundRows.map((row) => slackBindingKeyParts(row.slackTeamId, row.channelId)),
+  );
+  return events.filter((event) => {
+    if (!isSlackMessageEvent(event)) return true;
+    const key = slackBindingKey(event);
+    return !key || !bound.has(key);
+  });
+}
+
+function isSlackMessageEvent(event: IntegrationEvent): boolean {
+  return (
+    event.provider === 'slack' &&
+    ['message.created', 'message.edited', 'thread.reply'].includes(event.eventType)
+  );
+}
+
+function slackBindingKey(event: IntegrationEvent): string | null {
+  const teamId = metadataString(event.extra, 'slack_team_id');
+  const channelId = metadataString(event.extra, 'slack_channel_id');
+  return teamId && channelId ? slackBindingKeyParts(teamId, channelId) : null;
+}
+
+function slackBindingKeyParts(slackTeamId: string, channelId: string): string {
+  return `${slackTeamId}:${channelId}`;
 }
 
 /**
@@ -371,8 +439,8 @@ async function upsertWorkspaceObjects(
   await Promise.all(affectedIds.map((id) => enqueueObjectEmbedJob(integration.teamId, id)));
 }
 
-function metadataString(metadata: Record<string, unknown>, key: string): string | null {
-  const value = metadata[key];
+function metadataString(metadata: Record<string, unknown> | undefined, key: string): string | null {
+  const value = metadata?.[key];
   if (typeof value !== 'string' && typeof value !== 'number') return null;
   const text = String(value).trim();
   return text || null;
