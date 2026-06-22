@@ -232,10 +232,21 @@ async function syncProject(
   };
 }
 
-function selectedProjects(selections: { kind: string; externalId: string }[]): string[] {
-  return selections
+async function selectedProjects(
+  tokens: SentryTokens,
+  selections: { kind: string; externalId: string }[],
+): Promise<string[]> {
+  const projects = selections
     .filter((selection) => selection.kind === 'sentry.project')
     .map((selection) => selection.externalId);
+  for (const selection of selections.filter((item) => item.kind === 'sentry.org')) {
+    const orgProjects = await sentryGet<SentryProject[]>(
+      tokens,
+      `/organizations/${encodeURIComponent(selection.externalId)}/projects/`,
+    );
+    projects.push(...orgProjects.map((project) => `${selection.externalId}/${project.slug}`));
+  }
+  return [...new Set(projects)];
 }
 
 export const sentryProvider: IntegrationProvider = {
@@ -323,7 +334,7 @@ export const sentryProvider: IntegrationProvider = {
   },
 
   async backfill({ tokens, selections, ctx }) {
-    const projects = selectedProjects(selections);
+    const projects = await selectedProjects(tokens as SentryTokens, selections);
     for (const project of projects) {
       const [orgSlug, projectSlug] = project.split('/');
       if (!orgSlug || !projectSlug) continue;

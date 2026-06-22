@@ -749,11 +749,13 @@ export const mondayProvider: IntegrationProvider = {
       await ctx.saveCursor(`monday.board:${selection.externalId}`, result.cursor);
     }
     for (const selection of selections.filter((item) => item.kind === 'monday.doc')) {
+      const cursor = (await ctx.loadCursor(`monday.doc:${selection.externalId}`)) as MondayCursor;
       const doc = await fetchDoc(mondayTokens, selection.externalId);
       if (!doc) continue;
       const event = docEvent(doc);
-      await ctx.writeEvents([event]);
-      if (ctx.harvestDocument) {
+      const eventIds = await ctx.writeEvents([event]);
+      const docSince = event.occurredAt.toISOString();
+      if (ctx.harvestDocument && (eventIds.length > 0 || cursor.doc_since !== docSince)) {
         await ctx.harvestDocument({
           filename: `${doc.name}.md`,
           contentType: 'text/markdown',
@@ -768,7 +770,7 @@ export const mondayProvider: IntegrationProvider = {
         });
       }
       await ctx.saveCursor(`monday.doc:${selection.externalId}`, {
-        doc_since: event.occurredAt.toISOString(),
+        doc_since: docSince,
       });
     }
   },

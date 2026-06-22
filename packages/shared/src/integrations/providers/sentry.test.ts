@@ -121,6 +121,55 @@ describe('sentryProvider', () => {
     );
   });
 
+  it('expands selected organizations to their projects before syncing', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input) => {
+        const url = String(input);
+        if (url.endsWith('/organizations/acme/projects/')) {
+          return Promise.resolve(jsonResponse([{ id: 'project-1', slug: 'web', name: 'Web' }]));
+        }
+        if (url.includes('/issues/')) {
+          return Promise.resolve(
+            jsonResponse([
+              {
+                id: 'issue-1',
+                shortId: 'WEB-1',
+                title: 'Checkout failed',
+                status: 'unresolved',
+                level: 'error',
+                lastSeen: '2026-06-20T10:00:00Z',
+              },
+            ]),
+          );
+        }
+        return Promise.resolve(jsonResponse([]));
+      }),
+    );
+    const ctx = {
+      loadCursor: vi.fn().mockResolvedValue({}),
+      saveCursor: vi.fn().mockResolvedValue(undefined),
+      writeEvents: vi.fn().mockResolvedValue([]),
+      persistTokens: vi.fn(),
+      recordAudit: vi.fn(),
+    };
+
+    await sentryProvider.backfill({
+      integration: { id: 'integration-1' } as never,
+      tokens: { access_token: 'token' },
+      selections: [{ kind: 'sentry.org', externalId: 'acme' }],
+      ctx,
+    });
+
+    expect(ctx.writeEvents).toHaveBeenCalledTimes(1);
+    const events = (ctx.writeEvents.mock.calls[0]?.[0] ?? []) as IntegrationEvent[];
+    expect(events.map((event) => event.externalObjectId)).toEqual(['issue-1']);
+    expect(ctx.saveCursor).toHaveBeenCalledWith(
+      'sentry.project:acme/web',
+      expect.objectContaining({ issues_since: '2026-06-20T10:00:00.000Z' }),
+    );
+  });
+
   it('normalizes issue alert webhooks', async () => {
     const events = await sentryProvider.handleWebhook?.({
       integration: { id: 'integration-1' } as never,

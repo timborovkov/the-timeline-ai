@@ -230,6 +230,57 @@ describe('writeIntegrationEvents visibility', () => {
     });
   });
 
+  it('does not let provider metadata override protected integration identity fields', async () => {
+    const [integration] = await db
+      .insert(integrations)
+      .values({
+        teamId: TEAM_ID,
+        connectedByUserId: USER_ID,
+        provider: 'github',
+        displayName: 'GitHub',
+        externalAccountId: 'acct-protected-metadata',
+        visibilityDefault: 'team',
+      })
+      .returning();
+    if (!integration) throw new Error('integration insert failed');
+
+    await writeIntegrationEvents({
+      db: db as never,
+      integration,
+      events: [
+        {
+          dedupKey: 'github:protected-metadata',
+          provider: 'github',
+          externalObjectId: 'real-external-id',
+          eventType: 'issue.updated',
+          occurredAt: new Date('2026-06-17T09:00:00Z'),
+          contentText: 'GitHub issue with provider metadata',
+          objectMap: {
+            type: 'task',
+            canonicalName: 'acme/app#7: Fix checkout',
+            displayTitle: 'Fix checkout',
+            externalId: 'real-external-id',
+            metadata: {
+              integration_provider: 'sentry',
+              integration_external_id: 'fake-external-id',
+              provider_specific_key: 'kept',
+            },
+          },
+        },
+      ],
+    });
+
+    const [row] = await db
+      .select()
+      .from(entities)
+      .where(eq(entities.canonicalName, 'acme/app#7: Fix checkout'));
+    expect(row?.metadata).toMatchObject({
+      integration_provider: 'github',
+      integration_external_id: 'real-external-id',
+      provider_specific_key: 'kept',
+    });
+  });
+
   it('does not overwrite a user-renamed integration object on later syncs', async () => {
     const [integration] = await db
       .insert(integrations)

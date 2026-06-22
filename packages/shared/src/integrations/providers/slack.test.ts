@@ -137,7 +137,7 @@ describe('slackProvider', () => {
     });
     expect(events[2]?.objectMap).toMatchObject({ type: 'document', externalId: 'F123' });
     expect(ctx.saveCursor).toHaveBeenCalledWith('slack.channel:C123', {
-      latest_ts: '1782000000.000100',
+      latest_ts: '1782000001.000200',
     });
   });
 });

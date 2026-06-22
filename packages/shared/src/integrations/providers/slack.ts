@@ -259,12 +259,16 @@ async function syncChannel(
   for (const message of history.messages) {
     withReplies.push(message, ...(await fetchReplies(token, channel, message)));
   }
+  const latestTs = withReplies.reduce(
+    (latest, message) => (!latest || Number(message.ts) > Number(latest) ? message.ts : latest),
+    history.next.latest_ts,
+  );
   const events = withReplies.flatMap((message) => [
     messageEvent(teamId, channel, message),
     ...reactionEvents(teamId, channel, message),
     ...fileEvents(teamId, channel, message),
   ]);
-  return { events, cursor: history.next };
+  return { events, cursor: latestTs ? { latest_ts: latestTs } : history.next };
 }
 
 export const slackProvider: IntegrationProvider = {

@@ -226,10 +226,10 @@ async function upsertWorkspaceObjects(
       map.displayTitle && (!preserveCanonicalName || hasDisplayTitleSource),
     );
     const metadata: Record<string, unknown> = {
+      ...(map.metadata ?? {}),
       integration_id: integration.id,
       integration_provider: integration.provider,
       integration_external_id: map.externalId,
-      ...(map.metadata ?? {}),
       ...(shouldWriteDisplayTitle
         ? { display_title: map.displayTitle, display_title_canonical_name: map.canonicalName }
         : {}),

@@ -351,4 +351,48 @@ describe('mondayProvider', () => {
       doc_since: '2026-06-20T14:00:00.000Z',
     });
   });
+
+  it('skips WorkDoc harvest when the event and cursor already match', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof globalThis.fetch>((_input, init) => {
+        const body = requestPayload(init);
+        if (body.query.includes('blocks(limit: $blockLimit')) {
+          return Promise.resolve(
+            jsonResponse({
+              data: {
+                docs: [
+                  {
+                    id: 'doc-1',
+                    name: 'Launch notes',
+                    updated_at: '2026-06-20T14:00:00Z',
+                    blocks: [{ id: 'block-1', content: 'No change.' }],
+                  },
+                ],
+              },
+            }),
+          );
+        }
+        throw new Error(`unexpected query: ${body.query}`);
+      }),
+    );
+    const ctx = {
+      loadCursor: vi.fn().mockResolvedValue({ doc_since: '2026-06-20T14:00:00.000Z' }),
+      saveCursor: vi.fn().mockResolvedValue(undefined),
+      writeEvents: vi.fn().mockResolvedValue([]),
+      harvestDocument: vi.fn().mockResolvedValue({ documentId: 'doc-id', versionId: 'version-id' }),
+      persistTokens: vi.fn(),
+      recordAudit: vi.fn(),
+    };
+
+    await mondayProvider.backfill({
+      integration: { id: 'integration-1' } as never,
+      tokens: { access_token: 'token' },
+      selections: [{ kind: 'monday.doc', externalId: 'doc-1' }],
+      ctx,
+    });
+
+    expect(ctx.writeEvents).toHaveBeenCalledTimes(1);
+    expect(ctx.harvestDocument).not.toHaveBeenCalled();
+  });
 });
