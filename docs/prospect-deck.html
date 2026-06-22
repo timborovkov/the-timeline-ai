@@ -373,16 +373,15 @@
 
       .system-slide h2 {
         max-width: 1040px;
-        font-size: clamp(2.35rem, 4.05vw, 3.7rem);
+        font-size: clamp(2.15rem, 3.65vw, 3.35rem);
       }
 
       .system-visual {
-        position: relative;
         display: grid;
-        grid-template-columns: repeat(4, minmax(0, 1fr));
-        overflow: hidden;
+        grid-template-columns: minmax(0, 1fr) auto minmax(0, 0.86fr) auto minmax(0, 1.02fr);
+        align-items: stretch;
         border: 1px solid var(--border);
-        background: var(--border);
+        background: var(--surface-2);
       }
 
       .flow-card {
@@ -390,29 +389,87 @@
         z-index: 1;
         display: grid;
         align-content: start;
-        gap: 0.7rem;
+        gap: 0.85rem;
         min-width: 0;
-        min-height: 17.5rem;
-        padding: clamp(0.95rem, 1.55vw, 1.25rem);
+        min-height: 15.5rem;
+        padding: clamp(1rem, 1.8vw, 1.45rem);
         background: var(--surface);
       }
 
-      .flow-card:not(:last-child)::after {
-        content: '→';
-        position: absolute;
-        top: 50%;
-        right: -0.58rem;
-        z-index: 2;
+      .flow-arrow {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: clamp(2.6rem, 3.5vw, 3.4rem);
+        border-left: 1px solid var(--border);
+        border-right: 1px solid var(--border);
+        background: var(--surface-2);
+        color: var(--fg-muted);
+      }
+
+      .flow-arrow span {
         display: grid;
-        width: 1.16rem;
-        height: 1.16rem;
+        width: 1.75rem;
+        height: 1.75rem;
         place-items: center;
+        border: 1px solid var(--border-strong);
+        background: var(--bg);
+        font-family: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+        font-size: 0.86rem;
+      }
+
+      .system-caption {
+        display: block;
+        color: var(--fg-muted);
+        font-size: clamp(0.84rem, 1vw, 0.96rem);
+        line-height: 1.42;
+      }
+
+      .channel-strip,
+      .record-strip,
+      .surface-stack {
+        display: grid;
+        gap: 0.5rem;
+      }
+
+      .channel-strip {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .channel-pill {
         border: 1px solid var(--border);
         background: var(--bg);
+        padding: 0.52rem 0.6rem;
         color: var(--fg-dim);
         font-family: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
-        font-size: 0.72rem;
-        transform: translateY(-50%);
+        font-size: clamp(0.55rem, 0.7vw, 0.64rem);
+        font-weight: 700;
+        letter-spacing: 0.14em;
+        line-height: 1.25;
+        text-transform: uppercase;
+      }
+
+      .receipt-line {
+        display: flex;
+        align-items: center;
+        gap: 0.55rem;
+        min-width: 0;
+        border-top: 1px solid var(--border);
+        padding-top: 0.68rem;
+        color: var(--fg-muted);
+        font-size: clamp(0.82rem, 0.98vw, 0.94rem);
+      }
+
+      .receipt-line:first-child {
+        border-top: 0;
+        padding-top: 0;
+      }
+
+      .receipt-mark {
+        flex: 0 0 auto;
+        width: 0.44rem;
+        height: 0.44rem;
+        background: var(--signal);
       }
 
       .system-label,
@@ -430,7 +487,7 @@
       .system-label {
         display: block;
         color: var(--fg-muted);
-        font-size: clamp(0.58rem, 0.78vw, 0.68rem);
+        font-size: clamp(0.6rem, 0.78vw, 0.7rem);
         font-weight: 700;
         line-height: 1.35;
       }
@@ -460,8 +517,7 @@
         line-height: 1.35;
       }
 
-      .evidence-card,
-      .agent-card,
+      .record-card,
       .output-card {
         background: var(--surface-2);
       }
@@ -471,7 +527,7 @@
         gap: 0.48rem;
         border: 1px solid var(--signal-border);
         background: var(--signal-soft);
-        padding: 0.66rem 0.72rem;
+        padding: clamp(0.8rem, 1.3vw, 1rem);
       }
 
       .agent-core strong {
@@ -489,34 +545,14 @@
         line-height: 1.35;
       }
 
-      .surface-stack {
-        display: grid;
-        gap: 0.48rem;
-      }
-
       .surface-row {
         display: grid;
-        gap: 0.12rem;
+        grid-template-columns: minmax(7.6rem, 0.8fr) minmax(0, 1fr);
+        align-items: center;
+        gap: 0.7rem;
         border: 1px solid var(--signal-border);
         background: var(--signal-soft);
-        padding: 0.43rem 0.55rem;
-        animation: lit 8s ease-out infinite;
-      }
-
-      .surface-row:nth-child(2) {
-        animation-delay: 0.18s;
-      }
-
-      .surface-row:nth-child(3) {
-        animation-delay: 0.36s;
-      }
-
-      .surface-row:nth-child(4) {
-        animation-delay: 0.54s;
-      }
-
-      .surface-row:nth-child(5) {
-        animation-delay: 0.72s;
+        padding: 0.62rem 0.7rem;
       }
 
       .surface-kicker {
@@ -532,39 +568,11 @@
       }
 
       .system-payoff {
-        max-width: 1040px;
+        max-width: 900px;
         border-left: 2px solid var(--signal);
         padding-left: 1rem;
         color: var(--fg-muted);
-      }
-
-      @keyframes blink {
-        0%,
-        10% {
-          opacity: 0.35;
-        }
-        22%,
-        48% {
-          opacity: 1;
-        }
-        70%,
-        100% {
-          opacity: 0.5;
-        }
-      }
-
-      @keyframes lit {
-        0%,
-        25% {
-          opacity: 0.55;
-        }
-        35%,
-        92% {
-          opacity: 1;
-        }
-        100% {
-          opacity: 0.7;
-        }
+        font-size: clamp(0.98rem, 1.22vw, 1.12rem);
       }
 
       @media (max-width: 860px) {
@@ -589,11 +597,16 @@
           min-height: auto;
         }
 
-        .flow-card:not(:last-child)::after {
-          top: auto;
-          right: 50%;
-          bottom: -0.58rem;
-          transform: translateX(50%) rotate(90deg);
+        .flow-arrow {
+          width: 100%;
+          min-height: 2.4rem;
+          border: 0;
+          border-top: 1px solid var(--border);
+          border-bottom: 1px solid var(--border);
+        }
+
+        .flow-arrow span {
+          transform: rotate(90deg);
         }
 
         .work-item {
@@ -643,8 +656,6 @@
           font-size: clamp(1.8rem, 3.5vw, 3rem);
         }
 
-        .system-panel,
-        .agent-panel,
         .flow-card {
           padding: 0.85rem;
         }
@@ -653,20 +664,20 @@
           margin-bottom: 0;
         }
 
-        .event-stack {
+        .channel-strip,
+        .record-strip,
+        .surface-stack {
           gap: 0.38rem;
         }
 
-        .system-event {
+        .channel-pill,
+        .receipt-line,
+        .surface-row {
           padding: 0.42rem 0.52rem;
         }
 
-        .surface-stack {
-          gap: 0.34rem;
-        }
-
         .surface-row {
-          padding: 0.38rem 0.55rem;
+          gap: 0.5rem;
         }
       }
 
@@ -787,83 +798,42 @@
           <h2>Capture once. Keep every work surface current.</h2>
           <div class="system-visual">
             <div class="flow-card">
-              <span class="system-label">1 · Capture where work happens</span>
-              <div class="event-stack">
-                <div class="system-event">
-                  <span class="event-source">Slack / Telegram</span>
-                  <span class="event-copy"
-                    >Bots collect threads, voice notes, files, and decisions.</span
-                  >
-                </div>
-                <div class="system-event">
-                  <span class="event-source">Calls</span>
-                  <span class="event-copy"
-                    >Timeline joins Meet, Teams, and Zoom as a note-taker.</span
-                  >
-                </div>
-                <div class="system-event">
-                  <span class="event-source">Email cc</span>
-                  <span class="event-copy"
-                    >Keep Timeline copied when agreements arrive by email.</span
-                  >
-                </div>
-                <div class="system-event">
-                  <span class="event-source">Apps</span>
-                  <span class="event-copy"
-                    >Docs, projects, code, account systems, and webhooks.</span
-                  >
-                </div>
+              <span class="system-label">1 · Work happens naturally</span>
+              <span class="system-caption"
+                >Timeline sits where the team already talks, meets, and ships.</span
+              >
+              <div class="channel-strip">
+                <span class="channel-pill">Slack</span>
+                <span class="channel-pill">Telegram</span>
+                <span class="channel-pill">Calls</span>
+                <span class="channel-pill">Email cc</span>
+                <span class="channel-pill">Docs</span>
+                <span class="channel-pill">Apps</span>
               </div>
             </div>
-            <div class="flow-card evidence-card">
-              <span class="system-label">2 · Preserve the evidence</span>
-              <div class="event-stack">
-                <div class="system-event">
-                  <span class="event-source">Raw events</span>
-                  <span class="event-copy"
-                    >Messages, transcripts, emails, files, and app changes stay intact.</span
-                  >
-                </div>
-                <div class="system-event">
-                  <span class="event-source">Source links</span>
-                  <span class="event-copy"
-                    >Every useful fact keeps a receipt back to where it came from.</span
-                  >
-                </div>
-                <div class="system-event">
-                  <span class="event-source">Entity links</span>
-                  <span class="event-copy"
-                    >Events attach to people, companies, projects, docs, and deals.</span
-                  >
-                </div>
+            <div class="flow-arrow" aria-hidden="true"><span>→</span></div>
+            <div class="flow-card record-card">
+              <span class="system-label">2 · Timeline keeps the record</span>
+              <span class="system-caption"
+                >Raw events stay intact. Useful facts keep source receipts.</span
+              >
+              <div class="record-strip">
+                <span class="receipt-line"><span class="receipt-mark"></span>Events</span>
+                <span class="receipt-line"><span class="receipt-mark"></span>Decisions</span>
+                <span class="receipt-line"><span class="receipt-mark"></span>Tasks</span>
+                <span class="receipt-line"><span class="receipt-mark"></span>Source links</span>
               </div>
-            </div>
-            <div class="flow-card agent-card">
-              <span class="system-label">3 · Extract and link state</span>
               <div class="agent-core">
-                <strong>Extraction agent</strong>
-                <span
-                  >Finds decisions, commitments, blockers, owners, due dates, and cited
-                  answers.</span
-                >
-              </div>
-              <div class="event-stack">
-                <div class="system-event">
-                  <span class="event-source">Human review</span>
-                  <span class="event-copy"
-                    >Important state can be approved before it changes the workspace.</span
-                  >
-                </div>
-                <div class="system-event">
-                  <span class="event-source">No rewrite</span>
-                  <span class="event-copy"
-                    >The record stays auditable even when summaries change.</span
-                  >
-                </div>
+                <strong>Extract · Link · Cite</strong>
+                <span>Owners, blockers, due dates, and answers stay attached to evidence.</span>
               </div>
             </div>
+            <div class="flow-arrow" aria-hidden="true"><span>→</span></div>
             <div class="flow-card output-card">
-              <span class="system-label">4 · Work surface stays current</span>
+              <span class="system-label">3 · Work stays current</span>
+              <span class="system-caption"
+                >The result feels like your CRM, tracker, doc index, and update stream.</span
+              >
               <div class="surface-stack">
                 <div class="surface-row">
                   <span class="surface-kicker">Timeline</span
@@ -878,19 +848,15 @@
                   ><span class="surface-meta">owners · status · blockers</span>
                 </div>
                 <div class="surface-row">
-                  <span class="surface-kicker">Answers / digests</span
-                  ><span class="surface-meta">cited · current · shareable</span>
-                </div>
-                <div class="surface-row">
-                  <span class="surface-kicker">Handoffs</span
-                  ><span class="surface-meta">what changed · what needs attention</span>
+                  <span class="surface-kicker">Updates</span
+                  ><span class="surface-meta">digests · handoffs · answers</span>
                 </div>
               </div>
             </div>
           </div>
           <p class="lead system-payoff">
-            Timeline is both the record and the workspace: it captures work as it happens, keeps the
-            receipts, and updates the operational surfaces without a separate reporting step.
+            The team keeps doing the work. Timeline keeps the state current without a separate
+            reporting step.
           </p>
         </div>
         <div class="footer">
