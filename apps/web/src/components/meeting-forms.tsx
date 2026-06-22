@@ -17,42 +17,14 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { DEFAULT_TIMEZONE, timezoneOptions } from '@/lib/timezones';
 
 const EMPTY_MEMBERS: { id: string; label: string }[] = [];
 type Visibility = 'team' | 'private' | 'specific_users';
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const;
-const COMMON_TIMEZONES = [
-  'UTC',
-  'Europe/Helsinki',
-  'Europe/London',
-  'Europe/Paris',
-  'Europe/Berlin',
-  'America/New_York',
-  'America/Chicago',
-  'America/Denver',
-  'America/Los_Angeles',
-  'Asia/Dubai',
-  'Asia/Kolkata',
-  'Asia/Singapore',
-  'Asia/Tokyo',
-  'Australia/Sydney',
-] as const;
 
-function localTimezone(): string {
-  return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
-}
-
-function timezoneOptions(selectedTimezone: string): string[] {
-  const intlWithTimezones = Intl as typeof Intl & {
-    supportedValuesOf?: (key: 'timeZone') => string[];
-  };
-  const supported =
-    typeof intlWithTimezones.supportedValuesOf === 'function'
-      ? intlWithTimezones.supportedValuesOf('timeZone')
-      : [];
-  return Array.from(new Set([selectedTimezone, localTimezone(), ...COMMON_TIMEZONES, ...supported]))
-    .filter(Boolean)
-    .sort((a, b) => (a === 'UTC' ? -1 : b === 'UTC' ? 1 : a.localeCompare(b)));
+function browserTimezone(): string {
+  return Intl.DateTimeFormat().resolvedOptions().timeZone || DEFAULT_TIMEZONE;
 }
 
 function formString(form: FormData, key: string, fallback = ''): string {
@@ -96,7 +68,7 @@ function formScheduleConfig(form: FormData, scheduled: boolean) {
     ? {
         weekdays,
         times,
-        timezone: formString(form, 'timezone', 'UTC').trim() || 'UTC',
+        timezone: formString(form, 'timezone', DEFAULT_TIMEZONE).trim() || DEFAULT_TIMEZONE,
         joinOffsetMinutes: formNumber(form, 'joinOffsetMinutes', 2),
       }
     : null;
@@ -529,7 +501,7 @@ export function SavedMeetingForm({
   });
 
   useEffect(() => {
-    dispatch({ type: 'timezone', timezone: localTimezone() });
+    dispatch({ type: 'timezone', timezone: browserTimezone() });
   }, []);
 
   async function onSubmit(e: React.SyntheticEvent<HTMLFormElement>) {
@@ -560,7 +532,7 @@ export function SavedMeetingForm({
       formElement.reset();
       dispatch({ type: 'scheduled', scheduled: false });
       dispatch({ type: 'autoJoin', autoJoin: false });
-      dispatch({ type: 'timezone', timezone: localTimezone() });
+      dispatch({ type: 'timezone', timezone: browserTimezone() });
     } finally {
       dispatch({ type: 'pending', pending: false });
     }
@@ -716,7 +688,7 @@ export function EditSavedMeetingForm({
 
   function onScheduleToggle(checked: boolean) {
     dispatch({ type: 'scheduled', scheduled: checked });
-    if (checked && !schedule) dispatch({ type: 'timezone', timezone: localTimezone() });
+    if (checked && !schedule) dispatch({ type: 'timezone', timezone: browserTimezone() });
   }
 
   async function onSubmit(e: React.SyntheticEvent<HTMLFormElement>) {

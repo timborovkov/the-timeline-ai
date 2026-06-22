@@ -158,7 +158,10 @@ function mutationChain(records: unknown[]) {
     }),
     values: vi.fn((values: unknown) => {
       records.push(values);
-      return { returning: vi.fn().mockResolvedValue([{ id: INVITE_ID }]) };
+      return {
+        onConflictDoUpdate: vi.fn(() => Promise.resolve()),
+        returning: vi.fn().mockResolvedValue([{ id: INVITE_ID }]),
+      };
     }),
     where: vi.fn(() => Promise.resolve()),
   };
@@ -387,7 +390,7 @@ describe('updateTeamTimezoneAction', () => {
     fakes.fakeResolveActiveTeam.mockResolvedValue({
       active: { teamId: TEAM_ID, teamName: 'Timeline E2E' },
     });
-    fakes.fakeUpsertCalendarSettings.mockRejectedValue(new Error('forbidden'));
+    fakes.fakeRequireMembership.mockRejectedValue(new Error('forbidden'));
 
     await expect(
       updateTeamTimezoneAction({}, form({ timezone: 'Europe/Tallinn' })),
@@ -399,29 +402,34 @@ describe('updateTeamTimezoneAction', () => {
       { error: 'Choose a valid timezone' },
     );
 
-    expect(fakes.fakeUpsertCalendarSettings).not.toHaveBeenCalled();
+    expect(fakes.fakeTransaction).not.toHaveBeenCalled();
   });
 
   it('updates the default timezone, audits, and revalidates dependent surfaces', async () => {
-    const inserts: unknown[] = [];
-    const updates: unknown[] = [];
-    okInsertChain(inserts);
-    fakes.fakeDbUpdate.mockReturnValue({
-      set: vi.fn((values: unknown) => {
-        updates.push(values);
-        return { where: vi.fn(() => Promise.resolve()) };
-      }),
-    });
+    const tx = makeTx([]);
+    mockTransactionWithTx(tx.tx);
 
     await expect(
       updateTeamTimezoneAction({}, form({ timezone: 'Europe/Tallinn' })),
     ).resolves.toEqual({ ok: true });
 
-    expect(fakes.fakeUpsertCalendarSettings).toHaveBeenCalledWith({
-      defaultTimezone: 'Europe/Tallinn',
-    });
+    expect(fakes.fakeRequireMembership).toHaveBeenCalledWith('admin');
+    expect(fakes.fakeTransaction).toHaveBeenCalledOnce();
     expect(
-      updates.some(
+      tx.inserts.some(
+        (value) =>
+          typeof value === 'object' &&
+          value !== null &&
+          'teamId' in value &&
+          value.teamId === TEAM_ID &&
+          'defaultTimezone' in value &&
+          value.defaultTimezone === 'Europe/Tallinn' &&
+          'updatedAt' in value &&
+          value.updatedAt instanceof Date,
+      ),
+    ).toBe(true);
+    expect(
+      tx.updates.some(
         (value) =>
           typeof value === 'object' &&
           value !== null &&
@@ -431,7 +439,7 @@ describe('updateTeamTimezoneAction', () => {
           value.updatedAt instanceof Date,
       ),
     ).toBe(true);
-    expect(inserts).toContainEqual(
+    expect(tx.inserts).toContainEqual(
       expect.objectContaining({
         actorUserId: USER_ID,
         metadata: {
@@ -440,10 +448,22 @@ describe('updateTeamTimezoneAction', () => {
         },
       }),
     );
-    expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app');
+    expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app', 'layout');
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/team');
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/calendar');
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/meetings');
+    expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/timeline');
+    expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/approvals');
+  });
+
+  it('reports write failures without masking them as permission failures', async () => {
+    fakes.fakeTransaction.mockRejectedValue(new Error('database offline'));
+
+    await expect(
+      updateTeamTimezoneAction({}, form({ timezone: 'Europe/Tallinn' })),
+    ).resolves.toEqual({ error: 'Failed to update team timezone' });
+
+    expect(fakes.fakeRequireMembership).toHaveBeenCalledWith('admin');
   });
 });
 

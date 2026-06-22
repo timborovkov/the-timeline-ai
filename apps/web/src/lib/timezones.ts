@@ -1,9 +1,39 @@
 export const DEFAULT_TIMEZONE = 'UTC';
 
-const SUPPORTED_TIMEZONES = new Set([DEFAULT_TIMEZONE, ...Intl.supportedValuesOf('timeZone')]);
+const COMMON_TIMEZONES = [
+  DEFAULT_TIMEZONE,
+  'Europe/Helsinki',
+  'Europe/London',
+  'Europe/Paris',
+  'Europe/Berlin',
+  'America/New_York',
+  'America/Chicago',
+  'America/Denver',
+  'America/Los_Angeles',
+  'Asia/Dubai',
+  'Asia/Kolkata',
+  'Asia/Singapore',
+  'Asia/Tokyo',
+  'Australia/Sydney',
+] as const;
+
+function supportedTimezones(): string[] {
+  const intlWithTimezones = Intl as typeof Intl & {
+    supportedValuesOf?: (key: 'timeZone') => string[];
+  };
+  return typeof intlWithTimezones.supportedValuesOf === 'function'
+    ? intlWithTimezones.supportedValuesOf('timeZone')
+    : [];
+}
 
 function isValidTimezone(timezone: string): boolean {
-  return SUPPORTED_TIMEZONES.has(timezone);
+  if (!timezone) return false;
+  try {
+    Intl.DateTimeFormat(undefined, { timeZone: timezone });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export function normalizeTimezone(value: FormDataEntryValue | string | null | undefined): string {
@@ -12,7 +42,11 @@ export function normalizeTimezone(value: FormDataEntryValue | string | null | un
 }
 
 export function timezoneOptions(selectedTimezone: string): string[] {
-  const options = new Set(SUPPORTED_TIMEZONES);
+  const browserTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const options = new Set([...COMMON_TIMEZONES, ...supportedTimezones()]);
   if (isValidTimezone(selectedTimezone)) options.add(selectedTimezone);
-  return Array.from(options).sort((a, b) => a.localeCompare(b));
+  if (isValidTimezone(browserTimezone)) options.add(browserTimezone);
+  return Array.from(options).sort((a, b) =>
+    a === DEFAULT_TIMEZONE ? -1 : b === DEFAULT_TIMEZONE ? 1 : a.localeCompare(b),
+  );
 }

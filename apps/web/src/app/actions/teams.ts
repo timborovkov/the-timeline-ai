@@ -341,32 +341,54 @@ export async function updateTeamTimezoneAction(
 
     const scope = withTeam(db, active.teamId, session.user.id);
     try {
-      await scope.calendar.upsertCalendarSettings({ defaultTimezone: parsed.data.timezone });
-      await db
-        .update(messagePreferences)
-        .set({ timezone: parsed.data.timezone, updatedAt: new Date() })
-        .where(eq(messagePreferences.teamId, active.teamId));
-      await db.insert(auditLog).values({
-        teamId: active.teamId,
-        actorUserId: session.user.id,
-        action: 'settings.change',
-        targetType: 'team',
-        targetId: active.teamId,
-        targetVisibility: 'team',
-        metadata: {
-          setting: 'team.calendar.default_timezone',
-          timezone: parsed.data.timezone,
-        },
-      });
+      await scope.requireMembership('admin');
     } catch (err) {
-      reportCaughtError(err, { surface: 'server_action', operation: 'update_team_timezone' });
+      reportCaughtError(err, { surface: 'server_action', operation: 'update_team_timezone_auth' });
       return { error: 'Only admins can update team timezone' };
     }
 
-    revalidatePath('/app');
+    try {
+      await db.transaction(async (tx) => {
+        const updatedAt = new Date();
+        await tx
+          .insert(teamCalendarSettings)
+          .values({
+            teamId: active.teamId,
+            defaultTimezone: parsed.data.timezone,
+            updatedAt,
+          })
+          .onConflictDoUpdate({
+            target: teamCalendarSettings.teamId,
+            set: { defaultTimezone: parsed.data.timezone, updatedAt },
+          });
+        await tx
+          .update(messagePreferences)
+          .set({ timezone: parsed.data.timezone, updatedAt })
+          .where(eq(messagePreferences.teamId, active.teamId));
+        await tx.insert(auditLog).values({
+          teamId: active.teamId,
+          actorUserId: session.user.id,
+          action: 'settings.change',
+          targetType: 'team',
+          targetId: active.teamId,
+          targetVisibility: 'team',
+          metadata: {
+            setting: 'team.calendar.default_timezone',
+            timezone: parsed.data.timezone,
+          },
+        });
+      });
+    } catch (err) {
+      reportCaughtError(err, { surface: 'server_action', operation: 'update_team_timezone' });
+      return { error: 'Failed to update team timezone' };
+    }
+
+    revalidatePath('/app', 'layout');
     revalidatePath('/app/team');
     revalidatePath('/app/calendar');
     revalidatePath('/app/meetings');
+    revalidatePath('/app/timeline');
+    revalidatePath('/app/approvals');
     return { ok: true };
   });
 }
