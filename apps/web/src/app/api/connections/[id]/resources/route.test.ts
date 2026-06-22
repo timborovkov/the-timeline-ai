@@ -144,14 +144,20 @@ describe('/api/connections/[id]/resources', () => {
       resourceKind: 'github.repo',
       resourceExternalId: 'openai/codex',
     });
-    expect(fakes.listSyncableResources).toHaveBeenCalledWith(
+    const [integrationArg, tokensArg, ctxArg] = fakes.listSyncableResources.mock.calls[0] as [
+      unknown,
+      unknown,
+      { persistTokens?: unknown },
+    ];
+    expect(integrationArg).toEqual(
       expect.objectContaining({
         id: CONNECTION_ID,
         teamId: TEAM_ID,
         providerConnectionId: CONNECTION_ID,
       }),
-      { accessToken: 'token' },
     );
+    expect(tokensArg).toEqual({ accessToken: 'token' });
+    expect(typeof ctxArg.persistTokens).toBe('function');
   });
 
   it('validates selected resources before sharing them', async () => {

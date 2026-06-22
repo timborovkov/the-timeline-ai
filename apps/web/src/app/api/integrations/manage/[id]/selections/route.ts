@@ -63,7 +63,9 @@ export async function GET(
   }
   try {
     const provider = integrationsLib.getProvider(integration.provider);
-    const resources = await provider.listSyncableResources(integration, tokens);
+    const resources = await provider.listSyncableResources(integration, tokens, {
+      persistTokens: (fresh) => integrationsLib.adminPersistTokens(db, integration.id, fresh),
+    });
     return NextResponse.json({ resources, selections });
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'list_resources_failed';
@@ -114,7 +116,9 @@ export async function PUT(
   let resources: { externalId: string; kind: string }[];
   try {
     const provider = integrationsLib.getProvider(integration.provider);
-    resources = await provider.listSyncableResources(integration, tokens);
+    resources = await provider.listSyncableResources(integration, tokens, {
+      persistTokens: (fresh) => integrationsLib.adminPersistTokens(db, integration.id, fresh),
+    });
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'list_resources_failed';
     return NextResponse.json({ error: msg }, { status: 502 });

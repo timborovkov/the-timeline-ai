@@ -19,6 +19,7 @@ const SCOPES = [
   'users:read',
   'users:read.email',
 ];
+const INCREMENTAL_LOOKBACK_MS = 14 * 24 * 60 * 60 * 1000;
 
 interface SlackTokens {
   access_token: string;
@@ -60,6 +61,13 @@ interface SlackHistoryResponse {
 
 interface SlackCursor {
   latest_ts?: string | undefined;
+}
+
+function historyOldest(cursor: SlackCursor): string | undefined {
+  if (!cursor.latest_ts) return undefined;
+  const shifted = Number(cursor.latest_ts) - INCREMENTAL_LOOKBACK_MS / 1000;
+  if (!Number.isFinite(shifted) || shifted <= 0) return undefined;
+  return shifted.toFixed(6);
 }
 
 function buildAuthorizeUrl(input: {
@@ -105,13 +113,14 @@ async function fetchHistory(
   const messages: SlackMessage[] = [];
   let pageCursor: string | undefined;
   let maxTs = cursor.latest_ts;
+  const oldest = historyOldest(cursor);
   for (;;) {
     const res = await slackCall<SlackHistoryResponse>(token, 'conversations.history', {
       channel,
       limit: 200,
       cursor: pageCursor,
-      oldest: cursor.latest_ts,
-      inclusive: false,
+      oldest,
+      inclusive: Boolean(oldest),
       include_all_metadata: true,
     });
     for (const message of res.messages ?? []) {

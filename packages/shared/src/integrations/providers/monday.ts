@@ -775,8 +775,8 @@ export const mondayProvider: IntegrationProvider = {
     };
   },
 
-  async listSyncableResources(_integration, tokens): Promise<ProviderResource[]> {
-    const mondayTokens = await ensureAccessToken(tokens as MondayTokens);
+  async listSyncableResources(_integration, tokens, ctx): Promise<ProviderResource[]> {
+    const mondayTokens = await ensureAccessToken(tokens as MondayTokens, ctx);
     const data = await gql<{ boards: MondayBoard[] }>(
       mondayTokens,
       `query { boards(limit: 100) { id name workspace { id name } } }`,

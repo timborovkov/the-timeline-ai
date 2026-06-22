@@ -105,6 +105,52 @@ describe('mondayProvider', () => {
     ]);
   });
 
+  it('persists refreshed monday.com tokens while listing syncable resources', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>((input, init) => {
+      if (requestUrl(input) === 'https://auth.monday.com/oauth2/token') {
+        return Promise.resolve(
+          jsonResponse({
+            access_token: 'token-new',
+            refresh_token: 'refresh-new',
+            expires_in: 3600,
+          }),
+        );
+      }
+      expect(init?.headers).toMatchObject({ authorization: 'token-new' });
+      const body = requestPayload(init);
+      if (body.query.includes('boards(limit: 100)')) {
+        return Promise.resolve(
+          jsonResponse({
+            data: {
+              boards: [{ id: 'board-1', name: 'Launch', workspace: null }],
+            },
+          }),
+        );
+      }
+      return Promise.resolve(jsonResponse({ data: { docs: [] } }));
+    });
+    vi.stubGlobal('fetch', fetch);
+    const ctx = { persistTokens: vi.fn().mockResolvedValue(undefined) };
+
+    const resources = await mondayProvider.listSyncableResources(
+      {} as never,
+      {
+        access_token: 'token-old',
+        refresh_token: 'refresh-old',
+        expires_at: Date.now() - 1_000,
+      },
+      ctx,
+    );
+
+    expect(resources).toEqual([{ externalId: 'board-1', label: 'Launch', kind: 'monday.board' }]);
+    expect(ctx.persistTokens).toHaveBeenCalledWith(
+      expect.objectContaining({
+        access_token: 'token-new',
+        refresh_token: 'refresh-new',
+      }),
+    );
+  });
+
   it('refreshes expired monday.com tokens and persists the replacement before syncing', async () => {
     const fetch = vi.fn<typeof globalThis.fetch>((input, init) => {
       if (requestUrl(input) === 'https://auth.monday.com/oauth2/token') {

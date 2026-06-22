@@ -207,4 +207,55 @@ describe('slackProvider', () => {
       latest_ts: '1782000006.000100',
     });
   });
+
+  it('uses an incremental lookback so older edits and reactions are not skipped', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>((input, init) => {
+      if (typeof input !== 'string') throw new Error('expected Slack URL string');
+      const requestBody = init?.body;
+      if (typeof requestBody !== 'string') throw new Error('expected form request body');
+      const params = new URLSearchParams(requestBody);
+      if (input.endsWith('/conversations.history')) {
+        expect(Number(params.get('oldest'))).toBeLessThan(1782000100);
+        expect(params.get('inclusive')).toBe('true');
+        return Promise.resolve(
+          jsonResponse({
+            ok: true,
+            messages: [
+              {
+                type: 'message',
+                user: 'U123',
+                text: 'Edited older decision',
+                ts: '1782000000.000100',
+                edited: { user: 'U123', ts: '1782000090.000100' },
+                reactions: [{ name: 'eyes', count: 1, users: ['U456'] }],
+              },
+            ],
+            response_metadata: {},
+          }),
+        );
+      }
+      return Promise.resolve(jsonResponse({ ok: true, messages: [] }));
+    });
+    vi.stubGlobal('fetch', fetch);
+    const ctx = {
+      loadCursor: vi.fn().mockResolvedValue({ latest_ts: '1782000100.000000' }),
+      saveCursor: vi.fn().mockResolvedValue(undefined),
+      writeEvents: vi.fn().mockResolvedValue([]),
+      persistTokens: vi.fn(),
+      recordAudit: vi.fn(),
+    };
+
+    await slackProvider.incrementalSync({
+      integration: { id: 'integration-1' } as never,
+      tokens: { access_token: 'xoxb-token', team: { id: 'T123', name: 'Acme' } },
+      selections: [{ kind: 'slack.channel', externalId: 'C123' }],
+      ctx,
+    });
+
+    const events = (ctx.writeEvents.mock.calls[0]?.[0] ?? []) as IntegrationEvent[];
+    expect(events.map((event) => event.eventType)).toEqual(['message.edited', 'reaction.added']);
+    expect(ctx.saveCursor).toHaveBeenCalledWith('slack.channel:C123', {
+      latest_ts: '1782000100.000000',
+    });
+  });
 });
