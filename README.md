@@ -80,9 +80,9 @@ The two most important boundaries are:
 
 - **Team isolation:** Postgres access flows through `withTeam(db, teamId,
   userId)` in `@timeline/shared`; Qdrant searches are filtered by `team_id`.
-- **One inference layer:** app and worker code call `llm.chat()`,
-  `llm.embed()`, `llm.transcribe()`, and `llm.extractTextFromMedia()` from
-  `@timeline/shared`.
+- **One inference layer:** app and worker code call `llm.chatStructured()`,
+  `llm.streamChat()`, `llm.embed()`, `llm.embedMany()`, `llm.transcribeAudio()`, and
+  `llm.extractTextFromMedia()` from `@timeline/shared`.
 
 ## Quick Start
 

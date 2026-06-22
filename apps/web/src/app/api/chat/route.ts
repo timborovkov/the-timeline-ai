@@ -877,18 +877,21 @@ export async function POST(req: Request): Promise<Response> {
         surface: 'api',
         operation: 'chat_stream',
         tags: {
-          model: modelId,
+          requestedModel: modelId,
+          fallbackModels: llm.streamChatFallbackModelIds(modelId).join(','),
           ...aiStreamErrorTags(e.error),
         },
       });
     },
     onFinish: (e) => {
+      const modelAttribution = llm.streamChatModelAttribution(e, modelId);
       log.info(
         {
           promptVersion: agent.AGENT_PROMPT_VERSION,
           teamId: active.teamId,
           userId: session.user.id,
           sessionId: sessionId ?? null,
+          ...modelAttribution,
           usage: e.usage,
         },
         'chat completion',
@@ -898,7 +901,9 @@ export async function POST(req: Request): Promise<Response> {
         userId: session.user.id,
         sessionId: sessionId ?? null,
         persisted: Boolean(sessionId),
-        modelId,
+        modelId: modelAttribution.responseModelId,
+        requestedModelId: modelAttribution.requestedModelId,
+        fallbackModelIds: modelAttribution.fallbackModelIds,
         toolCount: 'toolCalls' in e && Array.isArray(e.toolCalls) ? e.toolCalls.length : 0,
         promptVersion: agent.AGENT_PROMPT_VERSION,
         ...tokenUsage(e.usage),

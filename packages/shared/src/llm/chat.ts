@@ -5,6 +5,7 @@ import {
   type RepairTextFunction,
   type LanguageModel,
   type ModelMessage,
+  type StreamTextOnFinishCallback,
   type StreamTextResult,
   type ToolSet,
 } from 'ai';
@@ -13,7 +14,12 @@ import { z } from 'zod';
 import { getEnv } from '#src/env.js';
 import { TimelineAiError, toTimelineAiError, wrapAiFailure } from '#src/llm/errors.js';
 import { TIMELINE_MODELS } from '#src/llm/models.js';
-import { generateObject, streamText, withLangSmithProviderOptions } from '#src/llm/tracing.js';
+import {
+  generateObject,
+  generateText,
+  streamText,
+  withLangSmithProviderOptions,
+} from '#src/llm/tracing.js';
 
 type GenerateObjectProviderOptions = NonNullable<
   Parameters<typeof generateObject>[0]['providerOptions']
@@ -40,6 +46,21 @@ export interface ChatStructuredResult<TSchema extends z.ZodType> {
   object: z.infer<TSchema>;
   /** Identifier of the model that produced the response — persisted for audits. */
   model: string;
+}
+
+type StreamFinishEvent = Parameters<StreamTextOnFinishCallback<ToolSet>>[0];
+
+export interface StreamChatModelAttribution {
+  requestedModelId: string;
+  responseModelId: string;
+  fallbackModelIds: string[];
+}
+
+class JsonObjectFallbackParseError extends Error {
+  constructor(cause: unknown) {
+    super('llm.chatStructured json_object fallback returned invalid JSON', { cause });
+    this.name = 'JsonObjectFallbackParseError';
+  }
 }
 
 function resolveDefaultModelId(): string {
@@ -74,6 +95,45 @@ function openRouterRequireParametersOptions(): GenerateObjectProviderOptions {
   };
 }
 
+function openRouterJsonObjectOptions(): GenerateObjectProviderOptions {
+  return {
+    openrouter: {
+      provider: {
+        require_parameters: true,
+      },
+      response_format: { type: 'json_object' },
+    },
+  };
+}
+
+export function streamChatFallbackModelIds(modelId: string): string[] {
+  const fallbackModelId = TIMELINE_MODELS.structuredFallback.id;
+  return fallbackModelId === modelId ? [] : [fallbackModelId];
+}
+
+export function streamChatModelAttribution(
+  event: Pick<StreamFinishEvent, 'model' | 'response'>,
+  requestedModelId = event.model.modelId,
+): StreamChatModelAttribution {
+  return {
+    requestedModelId,
+    responseModelId: event.response.modelId,
+    fallbackModelIds: streamChatFallbackModelIds(requestedModelId),
+  };
+}
+
+function openRouterModelFallbackOptions(
+  modelId: string,
+): GenerateObjectProviderOptions | undefined {
+  const fallbackModelIds = streamChatFallbackModelIds(modelId);
+  if (fallbackModelIds.length === 0) return undefined;
+  return {
+    openrouter: {
+      models: [modelId, ...fallbackModelIds],
+    },
+  };
+}
+
 function errorMessage(err: unknown): string {
   if (err instanceof AggregateError) return err.errors.map(errorMessage).join('\n');
   if (err instanceof Error) return `${err.name}: ${err.message}`;
@@ -84,6 +144,13 @@ function hasNoObjectGeneratedError(err: unknown): boolean {
   if (NoObjectGeneratedError.isInstance(err)) return true;
   if (err instanceof AggregateError) return err.errors.some(hasNoObjectGeneratedError);
   if (err instanceof Error && 'cause' in err) return hasNoObjectGeneratedError(err.cause);
+  return false;
+}
+
+function hasSchemaValidationError(err: unknown): boolean {
+  if (err instanceof z.ZodError) return true;
+  if (err instanceof AggregateError) return err.errors.some(hasSchemaValidationError);
+  if (err instanceof Error && 'cause' in err) return hasSchemaValidationError(err.cause);
   return false;
 }
 
@@ -129,10 +196,19 @@ function hasRetryableProviderMessage(err: unknown): boolean {
   );
 }
 
+function hasJsonObjectFallbackParseError(err: unknown): boolean {
+  if (err instanceof JsonObjectFallbackParseError) return true;
+  if (err instanceof AggregateError) return err.errors.some(hasJsonObjectFallbackParseError);
+  if (err instanceof Error && 'cause' in err) return hasJsonObjectFallbackParseError(err.cause);
+  return false;
+}
+
 function shouldFallbackToAlternateModel(err: unknown): boolean {
   const statusCodes = statusCodesFromError(err);
   return (
     hasNoObjectGeneratedError(err) ||
+    hasSchemaValidationError(err) ||
+    hasJsonObjectFallbackParseError(err) ||
     statusCodes.some(isRetryableStatusCode) ||
     hasRetryableProviderMessage(err)
   );
@@ -228,6 +304,48 @@ async function generateStructuredObject<TSchema extends z.ZodType>({
   });
 }
 
+async function generateJsonObjectFallback<TSchema extends z.ZodType>({
+  schema,
+  prompt,
+  system,
+  model,
+  modelId,
+}: {
+  schema: TSchema;
+  prompt: string;
+  system: string;
+  model: LanguageModel;
+  modelId: string;
+}) {
+  const result = await generateText({
+    model,
+    prompt,
+    system,
+    maxRetries: 0,
+    providerOptions: withLangSmithProviderOptions(openRouterJsonObjectOptions(), {
+      name: 'llm.chatStructured',
+      model: modelId,
+      metadata: {
+        operation: 'chat_structured_json_object_fallback',
+      },
+    }),
+  });
+  const repair = repairKnownStructuredOutput(schema);
+  const repaired = await repair({
+    text: result.text,
+    error: new Error('json_object fallback validation') as never,
+  });
+  const candidateText = repaired ?? result.text;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(candidateText);
+  } catch (err) {
+    throw new JsonObjectFallbackParseError(err);
+  }
+  const object: z.infer<TSchema> = schema.parse(parsed);
+  return { object };
+}
+
 /**
  * Structured-output chat against OpenRouter (OpenAI-compatible). Returns the
  * parsed object plus the model id that produced it; the model id is persisted
@@ -243,7 +361,7 @@ export async function chatStructured<TSchema extends z.ZodType>(
 ): Promise<ChatStructuredResult<TSchema>> {
   const modelId = input.model ?? resolveDefaultModelId();
   return wrapAiFailure({ operation: 'llm.chatStructured', model: modelId }, async () => {
-    const runModel = async (candidateModelId: string) => {
+    const runModel = async (candidateModelId: string): Promise<ChatStructuredResult<TSchema>> => {
       const model = deps.model ?? buildOpenRouterLanguageModel(candidateModelId, deps);
       try {
         const result = await generateStructuredObject({
@@ -254,26 +372,26 @@ export async function chatStructured<TSchema extends z.ZodType>(
           modelId: candidateModelId,
           operation: 'chat_structured',
         });
-        return { object: result.object as z.infer<TSchema>, model: candidateModelId };
+        const object: z.infer<TSchema> = input.schema.parse(result.object);
+        return { object, model: candidateModelId };
       } catch (err) {
         if (deps.model || !shouldFallbackToJsonObject(err)) throw err;
         const fallbackModel = buildOpenRouterLanguageModel(candidateModelId, deps, {
           supportsStructuredOutputs: false,
         });
-        const result = await generateStructuredObject({
+        const result = await generateJsonObjectFallback({
           schema: input.schema,
           prompt: input.prompt,
           system: structuredOutputFallbackSystem(input.schema, input.system),
           model: fallbackModel,
           modelId: candidateModelId,
-          operation: 'chat_structured_json_object_fallback',
         }).catch((fallbackErr: unknown) => {
           throw new AggregateError(
             [err, fallbackErr],
             'llm.chatStructured failed with json_schema and json_object response formats',
           );
         });
-        return { object: result.object as z.infer<TSchema>, model: candidateModelId };
+        return { object: result.object, model: candidateModelId };
       }
     };
 
@@ -344,12 +462,14 @@ export function streamChat<TTools extends ToolSet>(
     messages: input.messages,
     tools: input.tools,
     stopWhen: stepCountIs(input.maxSteps ?? DEFAULT_AGENT_MAX_STEPS),
-    providerOptions: withLangSmithProviderOptions(undefined, {
+    providerOptions: withLangSmithProviderOptions(openRouterModelFallbackOptions(modelId), {
       name: 'llm.streamChat',
       model: modelId,
       metadata: {
         operation: 'stream_chat',
         max_steps: input.maxSteps ?? DEFAULT_AGENT_MAX_STEPS,
+        requested_model_id: modelId,
+        fallback_model_ids: streamChatFallbackModelIds(modelId).join(','),
       },
     }),
   };

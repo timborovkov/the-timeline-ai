@@ -255,7 +255,7 @@ describe('processEmbedJobForTests', () => {
       },
     );
 
-    expect(embed.mock.calls.length).toBe(16);
+    expect(embed.mock.calls.length).toBe(embedWorkerInternals.embeddingChunksPerJob);
     expect(upsertVector).toHaveBeenCalledTimes(embed.mock.calls.length);
     const sentText = embed.mock.calls.map((call) => call[0].text);
     for (const text of sentText) {
@@ -287,12 +287,286 @@ describe('processEmbedJobForTests', () => {
       scope: 'raw_event',
       teamId: TEAM_ID,
       rawEventId,
-      embeddingStartChunk: 16,
+      embeddingStartChunk: embedWorkerInternals.embeddingChunksPerJob,
       embeddingModel: 'test-embed-model',
     });
     expect(continuation?.embeddingSourceHash).toMatch(/^[0-9a-f]{64}$/);
     const row = (await db.select().from(rawEvents).where(eq(rawEvents.id, rawEventId)))[0];
     expect(row?.sourceMetadata).not.toHaveProperty('embedded_at');
+  });
+
+  it('embeds each oversized chunk batch with one provider request', async () => {
+    const rawEventId = '12121212-2222-4333-8444-555555555555';
+    const longText = Array.from(
+      { length: 10_000 },
+      (_, i) => `Batched embedding sentence ${String(i)} with a useful detail.`,
+    ).join(' ');
+    await db.insert(rawEvents).values({
+      id: rawEventId,
+      teamId: TEAM_ID,
+      authorUserId: USER_ID,
+      source: 'web',
+      contentText: longText,
+      occurredAt: new Date('2026-05-27T12:00:00Z'),
+      visibility: 'team',
+      visibilityOwnerUserId: USER_ID,
+      sourceMetadata: {},
+    });
+    const embedMany = vi.fn<
+      (input: { texts: string[] }) => Promise<{ vectors: number[][]; model: string }>
+    >(({ texts }) =>
+      Promise.resolve({
+        vectors: texts.map(() => [0.1, 0.2, 0.3, 0.4]),
+        model: 'test-embed-model',
+      }),
+    );
+    const upsertVector = vi.fn().mockResolvedValue(undefined);
+    const deletePointsForSource = vi.fn().mockResolvedValue(undefined);
+    const deletePointsForSourceFromChunk = vi
+      .fn<DeletePointsForSourceFromChunk>()
+      .mockResolvedValue(undefined);
+    const enqueueEmbedJob = vi.fn<EnqueueEmbed>().mockResolvedValue(undefined);
+
+    const result = await processEmbedJobForTests(
+      { db: db as never },
+      { scope: 'raw_event', teamId: TEAM_ID, rawEventId },
+      {
+        getEnv: () =>
+          ({ OPENROUTER_API_KEY: 'test-key', QDRANT_URL: 'http://qdrant.test' }) as never,
+        embedMany,
+        enqueueEmbedJob,
+        getQdrantClient: vi.fn(
+          () => ({ deletePointsForSource, deletePointsForSourceFromChunk, upsertVector }) as never,
+        ),
+      },
+    );
+
+    expect(embedMany).toHaveBeenCalledOnce();
+    const batchTexts = embedMany.mock.calls[0]?.[0].texts ?? [];
+    expect(batchTexts).toHaveLength(embedWorkerInternals.embeddingChunksPerJob);
+    expect(upsertVector).toHaveBeenCalledTimes(embedWorkerInternals.embeddingChunksPerJob);
+    expect(result).toMatchObject({
+      scope: 'event',
+      sourceId: rawEventId,
+      model: 'test-embed-model',
+    });
+    expect(enqueueEmbedJob).toHaveBeenCalledWith(
+      expect.objectContaining({
+        embeddingStartChunk: embedWorkerInternals.embeddingChunksPerJob,
+        embeddingModel: 'test-embed-model',
+      }),
+    );
+  });
+
+  it('splits oversized provider batches when the provider rejects request size', async () => {
+    const rawEventId = '15151515-2222-4333-8444-555555555555';
+    const longText = Array.from(
+      { length: 10_000 },
+      (_, i) => `Adaptive batch split sentence ${String(i)} with detail.`,
+    ).join(' ');
+    await db.insert(rawEvents).values({
+      id: rawEventId,
+      teamId: TEAM_ID,
+      authorUserId: USER_ID,
+      source: 'web',
+      contentText: longText,
+      occurredAt: new Date('2026-05-27T12:00:00Z'),
+      visibility: 'team',
+      visibilityOwnerUserId: USER_ID,
+      sourceMetadata: {},
+    });
+    const embedMany = vi.fn<
+      (input: { texts: string[] }) => Promise<{ vectors: number[][]; model: string }>
+    >(({ texts }) => {
+      if (texts.length === embedWorkerInternals.embeddingChunksPerJob) {
+        return Promise.reject(new Error('payload too large'));
+      }
+      return Promise.resolve({
+        vectors: texts.map(() => [0.1, 0.2, 0.3, 0.4]),
+        model: 'test-embed-model',
+      });
+    });
+    const upsertVector = vi.fn().mockResolvedValue(undefined);
+    const deletePointsForSource = vi.fn().mockResolvedValue(undefined);
+    const deletePointsForSourceFromChunk = vi
+      .fn<DeletePointsForSourceFromChunk>()
+      .mockResolvedValue(undefined);
+    const enqueueEmbedJob = vi.fn<EnqueueEmbed>().mockResolvedValue(undefined);
+
+    await processEmbedJobForTests(
+      { db: db as never },
+      { scope: 'raw_event', teamId: TEAM_ID, rawEventId },
+      {
+        getEnv: () =>
+          ({ OPENROUTER_API_KEY: 'test-key', QDRANT_URL: 'http://qdrant.test' }) as never,
+        embedMany,
+        enqueueEmbedJob,
+        getQdrantClient: vi.fn(
+          () => ({ deletePointsForSource, deletePointsForSourceFromChunk, upsertVector }) as never,
+        ),
+      },
+    );
+
+    expect(embedMany.mock.calls.map((call) => call[0].texts.length)).toEqual([
+      embedWorkerInternals.embeddingChunksPerJob,
+      embedWorkerInternals.embeddingChunksPerJob / 2,
+      embedWorkerInternals.embeddingChunksPerJob / 2,
+    ]);
+    expect(upsertVector).toHaveBeenCalledTimes(embedWorkerInternals.embeddingChunksPerJob);
+  });
+
+  it('does not split retryable provider outages inside the job', async () => {
+    const rawEventId = '16161616-2222-4333-8444-555555555555';
+    const longText = Array.from(
+      { length: 10_000 },
+      (_, i) => `Provider outage sentence ${String(i)} with detail.`,
+    ).join(' ');
+    await db.insert(rawEvents).values({
+      id: rawEventId,
+      teamId: TEAM_ID,
+      authorUserId: USER_ID,
+      source: 'web',
+      contentText: longText,
+      occurredAt: new Date('2026-05-27T12:00:00Z'),
+      visibility: 'team',
+      visibilityOwnerUserId: USER_ID,
+      sourceMetadata: {},
+    });
+    const embedMany = vi
+      .fn<(input: { texts: string[] }) => Promise<{ vectors: number[][]; model: string }>>()
+      .mockRejectedValue(new Error('OpenRouter unavailable'));
+    const upsertVector = vi.fn().mockResolvedValue(undefined);
+    const deletePointsForSource = vi.fn().mockResolvedValue(undefined);
+    const deletePointsForSourceFromChunk = vi
+      .fn<DeletePointsForSourceFromChunk>()
+      .mockResolvedValue(undefined);
+    const enqueueEmbedJob = vi.fn<EnqueueEmbed>().mockResolvedValue(undefined);
+
+    await expect(
+      processEmbedJobForTests(
+        { db: db as never },
+        { scope: 'raw_event', teamId: TEAM_ID, rawEventId },
+        {
+          getEnv: () =>
+            ({ OPENROUTER_API_KEY: 'test-key', QDRANT_URL: 'http://qdrant.test' }) as never,
+          embedMany,
+          enqueueEmbedJob,
+          getQdrantClient: vi.fn(
+            () =>
+              ({ deletePointsForSource, deletePointsForSourceFromChunk, upsertVector }) as never,
+          ),
+        },
+      ),
+    ).rejects.toThrow('OpenRouter unavailable');
+
+    expect(embedMany).toHaveBeenCalledOnce();
+    expect(upsertVector).not.toHaveBeenCalled();
+    expect(enqueueEmbedJob).not.toHaveBeenCalled();
+  });
+
+  it('fails without writing vectors when a batch response omits an embedding', async () => {
+    const rawEventId = '13131313-2222-4333-8444-555555555555';
+    const longText = Array.from(
+      { length: 10_000 },
+      (_, i) => `Short batch response sentence ${String(i)} with detail.`,
+    ).join(' ');
+    await db.insert(rawEvents).values({
+      id: rawEventId,
+      teamId: TEAM_ID,
+      authorUserId: USER_ID,
+      source: 'web',
+      contentText: longText,
+      occurredAt: new Date('2026-05-27T12:00:00Z'),
+      visibility: 'team',
+      visibilityOwnerUserId: USER_ID,
+      sourceMetadata: {},
+    });
+    const embedMany = vi
+      .fn<(input: { texts: string[] }) => Promise<{ vectors: number[][]; model: string }>>()
+      .mockResolvedValue({
+        vectors: [[0.1, 0.2, 0.3, 0.4]],
+        model: 'test-embed-model',
+      });
+    const upsertVector = vi.fn().mockResolvedValue(undefined);
+    const deletePointsForSource = vi.fn().mockResolvedValue(undefined);
+    const deletePointsForSourceFromChunk = vi
+      .fn<DeletePointsForSourceFromChunk>()
+      .mockResolvedValue(undefined);
+    const enqueueEmbedJob = vi.fn<EnqueueEmbed>().mockResolvedValue(undefined);
+
+    await expect(
+      processEmbedJobForTests(
+        { db: db as never },
+        { scope: 'raw_event', teamId: TEAM_ID, rawEventId },
+        {
+          getEnv: () =>
+            ({ OPENROUTER_API_KEY: 'test-key', QDRANT_URL: 'http://qdrant.test' }) as never,
+          embedMany,
+          enqueueEmbedJob,
+          getQdrantClient: vi.fn(
+            () =>
+              ({ deletePointsForSource, deletePointsForSourceFromChunk, upsertVector }) as never,
+          ),
+        },
+      ),
+    ).rejects.toThrow(
+      `embedMany returned 1 vectors for ${String(embedWorkerInternals.embeddingChunksPerJob)} chunks`,
+    );
+
+    expect(upsertVector).not.toHaveBeenCalled();
+    expect(enqueueEmbedJob).not.toHaveBeenCalled();
+  });
+
+  it('fails without partial writes when a later batch vector is malformed', async () => {
+    const rawEventId = '14141414-2222-4333-8444-555555555555';
+    const longText = Array.from(
+      { length: 10_000 },
+      (_, i) => `Malformed batch vector sentence ${String(i)} with detail.`,
+    ).join(' ');
+    await db.insert(rawEvents).values({
+      id: rawEventId,
+      teamId: TEAM_ID,
+      authorUserId: USER_ID,
+      source: 'web',
+      contentText: longText,
+      occurredAt: new Date('2026-05-27T12:00:00Z'),
+      visibility: 'team',
+      visibilityOwnerUserId: USER_ID,
+      sourceMetadata: {},
+    });
+    const vectors = Array.from({ length: embedWorkerInternals.embeddingChunksPerJob }, () => [
+      0.1, 0.2, 0.3, 0.4,
+    ]);
+    vectors[4] = [0.1, Number.NaN, 0.3, 0.4];
+    const embedMany = vi
+      .fn<(input: { texts: string[] }) => Promise<{ vectors: number[][]; model: string }>>()
+      .mockResolvedValue({ vectors, model: 'test-embed-model' });
+    const upsertVector = vi.fn().mockResolvedValue(undefined);
+    const deletePointsForSource = vi.fn().mockResolvedValue(undefined);
+    const deletePointsForSourceFromChunk = vi
+      .fn<DeletePointsForSourceFromChunk>()
+      .mockResolvedValue(undefined);
+    const enqueueEmbedJob = vi.fn<EnqueueEmbed>().mockResolvedValue(undefined);
+
+    await expect(
+      processEmbedJobForTests(
+        { db: db as never },
+        { scope: 'raw_event', teamId: TEAM_ID, rawEventId },
+        {
+          getEnv: () =>
+            ({ OPENROUTER_API_KEY: 'test-key', QDRANT_URL: 'http://qdrant.test' }) as never,
+          embedMany,
+          enqueueEmbedJob,
+          getQdrantClient: vi.fn(
+            () =>
+              ({ deletePointsForSource, deletePointsForSourceFromChunk, upsertVector }) as never,
+          ),
+        },
+      ),
+    ).rejects.toThrow('embedMany returned non-finite value at vector 4, dimension 1');
+
+    expect(upsertVector).not.toHaveBeenCalled();
+    expect(enqueueEmbedJob).not.toHaveBeenCalled();
   });
 
   it('continues oversized source text without deleting earlier chunk batches', async () => {
@@ -328,7 +602,12 @@ describe('processEmbedJobForTests', () => {
 
     const result = await processEmbedJobForTests(
       { db: db as never },
-      { scope: 'raw_event', teamId: TEAM_ID, rawEventId, embeddingStartChunk: 16 },
+      {
+        scope: 'raw_event',
+        teamId: TEAM_ID,
+        rawEventId,
+        embeddingStartChunk: embedWorkerInternals.embeddingChunksPerJob,
+      },
       {
         getEnv: () =>
           ({ OPENROUTER_API_KEY: 'test-key', QDRANT_URL: 'http://qdrant.test' }) as never,
@@ -349,7 +628,7 @@ describe('processEmbedJobForTests', () => {
       sourceId: rawEventId,
       model: 'test-embed-model',
     });
-    expect(cleanup?.minChunkIndex).toBeGreaterThan(16);
+    expect(cleanup?.minChunkIndex).toBeGreaterThan(embedWorkerInternals.embeddingChunksPerJob);
     expect(enqueueEmbedJob).not.toHaveBeenCalled();
     expect(result).toMatchObject({ scope: 'event', sourceId: rawEventId });
     const sentText = embed.mock.calls.map((call) => call[0].text).join(' ');
@@ -388,7 +667,7 @@ describe('processEmbedJobForTests', () => {
         scope: 'raw_event',
         teamId: TEAM_ID,
         rawEventId,
-        embeddingStartChunk: 16,
+        embeddingStartChunk: embedWorkerInternals.embeddingChunksPerJob,
         embeddingModel: 'test-embed-model',
       },
       {
@@ -517,7 +796,7 @@ describe('processEmbedJobForTests', () => {
         scope: 'raw_event',
         teamId: TEAM_ID,
         rawEventId,
-        embeddingStartChunk: 16,
+        embeddingStartChunk: embedWorkerInternals.embeddingChunksPerJob,
         embeddingSourceHash: 'stale-hash',
       },
       {

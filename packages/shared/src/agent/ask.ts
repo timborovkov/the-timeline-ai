@@ -5,7 +5,13 @@ import { AGENT_PROMPT_VERSION, buildSystemPrompt } from '#src/agent/system-promp
 import { buildAgentTools, type AgentToolErrorReporter } from '#src/agent/tools.js';
 import { parseCitations } from '#src/citation.js';
 import { getEnv } from '#src/env.js';
-import { DEFAULT_AGENT_MAX_STEPS, streamChat, type ChatDeps } from '#src/llm/chat.js';
+import {
+  DEFAULT_AGENT_MAX_STEPS,
+  streamChat,
+  streamChatModelAttribution,
+  type ChatDeps,
+  type StreamChatModelAttribution,
+} from '#src/llm/chat.js';
 import { childLogger } from '#src/logger.js';
 import { withTeam } from '#src/team-scope.js';
 import { workspaceTimeContext } from '#src/time/index.js';
@@ -122,6 +128,7 @@ export async function askAgent(
   });
 
   const messages: ModelMessage[] = [{ role: 'user', content: input.question }];
+  const modelAttribution: Partial<StreamChatModelAttribution> = {};
 
   try {
     const result = streamChat(
@@ -130,6 +137,9 @@ export async function askAgent(
         messages,
         tools,
         maxSteps: input.maxSteps ?? DEFAULT_AGENT_MAX_STEPS,
+        onFinish: (event) => {
+          Object.assign(modelAttribution, streamChatModelAttribution(event));
+        },
       },
       deps,
     );
@@ -142,6 +152,7 @@ export async function askAgent(
         promptVersion: AGENT_PROMPT_VERSION,
         teamId: input.teamId,
         userId: input.userId,
+        ...modelAttribution,
         chars: text.length,
       },
       'ask completion',
