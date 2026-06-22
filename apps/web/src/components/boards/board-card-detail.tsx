@@ -566,7 +566,7 @@ function ObjectPreviewDialog({ item, view }: { item: boards.BoardItemRow; view: 
               Aliases
             </h3>
             <p className="text-sm text-fg-muted">
-              {item.object.aliases.map(displayText).join(', ')}
+              {item.object.aliases.map((alias) => displayText(alias)).join(', ')}
             </p>
           </section>
         ) : null}

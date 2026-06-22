@@ -14,6 +14,16 @@ describe('displayText', () => {
     expect(text).toContain(' to ');
     expect(text).not.toMatch(RAW_ISO_INSTANT);
   });
+
+  it('formats embedded ISO instants in the requested timezone', () => {
+    const text = displayText('Deadline 2026-07-01T00:00:00.000Z', {
+      timezone: 'America/Los_Angeles',
+    });
+
+    expect(text).toContain('Deadline');
+    expect(text).toContain('Jun 30, 2026');
+    expect(text).not.toMatch(RAW_ISO_INSTANT);
+  });
 });
 
 describe('formatDisplayDate', () => {
@@ -22,5 +32,13 @@ describe('formatDisplayDate', () => {
 
     expect(text).not.toMatch(RAW_ISO_INSTANT);
     expect(text).not.toContain('T00:00:00');
+  });
+
+  it('formats standalone dates in the requested timezone', () => {
+    const text = formatDisplayDate(new Date('2026-07-01T00:00:00.000Z'), {
+      timezone: 'America/Los_Angeles',
+    });
+
+    expect(text).toBe('Jun 30, 2026');
   });
 });

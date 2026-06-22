@@ -82,6 +82,7 @@ export default async function HomeDashboardPage() {
     webDefault,
     pinnedBoards,
     latestDigest,
+    calendarSettings,
   ] = await Promise.all([
     scope.onboarding.getChecklistState(),
     scope.timeline.team(),
@@ -91,7 +92,9 @@ export default async function HomeDashboardPage() {
     scope.timeline.resolveVisibilityDefault('web'),
     scope.boards.listPinnedBoards(),
     latestDailyDigest({ db, teamId: active.teamId, userId: session.user.id }),
+    scope.calendar.getCalendarSettings(),
   ]);
+  const timezone = calendarSettings.defaultTimezone;
 
   const telegramConnectionCount =
     onboardingState.connectionCounts.telegramUserTeams +
@@ -268,6 +271,7 @@ export default async function HomeDashboardPage() {
           compact
           maxMoments={8}
           live={false}
+          timezone={timezone}
           emptyLabel="NO MOMENTS YET"
           emptyAction={{
             href: '#capture',

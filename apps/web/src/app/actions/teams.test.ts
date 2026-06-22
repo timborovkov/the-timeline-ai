@@ -9,6 +9,7 @@ import {
   resendInviteAction,
   revokeInviteAction,
   updateInboundEmailWhitelistAction,
+  updateTeamTimezoneAction,
 } from '@/app/actions/teams';
 
 /**
@@ -24,9 +25,12 @@ const fakes = vi.hoisted(() => ({
   fakeRequireMembership: vi.fn(),
   fakeTransaction: vi.fn(),
   fakeDbUpdate: vi.fn(),
+  fakeDbInsert: vi.fn(),
   fakeSendMessage: vi.fn(),
   fakeAssertNotLastOwner: vi.fn(),
   fakeAdminRecordConnectionAttention: vi.fn(),
+  fakeUpsertCalendarSettings: vi.fn(),
+  fakeGetCalendarSettings: vi.fn(),
   fakeRevalidatePath: vi.fn(),
   fakeCookieSet: vi.fn(),
   fakeRedirect: vi.fn((url: string) => {
@@ -43,6 +47,7 @@ vi.mock('@/lib/db', () => ({
   db: {
     transaction: fakes.fakeTransaction,
     update: fakes.fakeDbUpdate,
+    insert: fakes.fakeDbInsert,
   },
 }));
 vi.mock('@timeline/shared/integrations', () => ({
@@ -55,7 +60,13 @@ vi.mock('next/headers', () => ({
 }));
 vi.mock('next/navigation', () => ({ redirect: fakes.fakeRedirect }));
 vi.mock('@timeline/shared/team-scope', () => ({
-  withTeam: () => ({ requireMembership: fakes.fakeRequireMembership }),
+  withTeam: () => ({
+    requireMembership: fakes.fakeRequireMembership,
+    calendar: {
+      getCalendarSettings: fakes.fakeGetCalendarSettings,
+      upsertCalendarSettings: fakes.fakeUpsertCalendarSettings,
+    },
+  }),
 }));
 vi.mock('@timeline/shared/messaging', () => ({ sendMessage: fakes.fakeSendMessage }));
 vi.mock('@timeline/shared/team-roles', () => ({
@@ -92,6 +103,15 @@ function okUpdateChain(): void {
     set: vi.fn(() => ({
       where: vi.fn(() => Promise.resolve()),
     })),
+  });
+}
+
+function okInsertChain(records: unknown[] = []): void {
+  fakes.fakeDbInsert.mockReturnValue({
+    values: vi.fn((values: unknown) => {
+      records.push(values);
+      return Promise.resolve();
+    }),
   });
 }
 
@@ -183,10 +203,15 @@ beforeEach(() => {
   fakes.fakeSendMessage.mockResolvedValue({ ok: true });
   fakes.fakeAssertNotLastOwner.mockResolvedValue(undefined);
   fakes.fakeAdminRecordConnectionAttention.mockResolvedValue(undefined);
+  fakes.fakeGetCalendarSettings.mockResolvedValue({
+    defaultTimezone: 'Europe/Tallinn',
+  });
+  fakes.fakeUpsertCalendarSettings.mockResolvedValue(undefined);
   fakes.fakeTransaction.mockImplementation((fn: (tx: unknown) => unknown) =>
     Promise.resolve(fn(txForCreateTeam())),
   );
   okUpdateChain();
+  okInsertChain();
 });
 
 describe('createTeamAction', () => {
@@ -348,6 +373,77 @@ describe('updateInboundEmailWhitelistAction', () => {
       }),
     );
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/team');
+  });
+});
+
+describe('updateTeamTimezoneAction', () => {
+  it('requires active team and admin calendar settings access', async () => {
+    fakes.fakeResolveActiveTeam.mockResolvedValue({ active: null });
+
+    await expect(
+      updateTeamTimezoneAction({}, form({ timezone: 'Europe/Tallinn' })),
+    ).resolves.toEqual({ error: 'No active team' });
+
+    fakes.fakeResolveActiveTeam.mockResolvedValue({
+      active: { teamId: TEAM_ID, teamName: 'Timeline E2E' },
+    });
+    fakes.fakeUpsertCalendarSettings.mockRejectedValue(new Error('forbidden'));
+
+    await expect(
+      updateTeamTimezoneAction({}, form({ timezone: 'Europe/Tallinn' })),
+    ).resolves.toEqual({ error: 'Only admins can update team timezone' });
+  });
+
+  it('validates IANA timezone names before writing', async () => {
+    await expect(updateTeamTimezoneAction({}, form({ timezone: 'Tallinn time' }))).resolves.toEqual(
+      { error: 'Choose a valid timezone' },
+    );
+
+    expect(fakes.fakeUpsertCalendarSettings).not.toHaveBeenCalled();
+  });
+
+  it('updates the default timezone, audits, and revalidates dependent surfaces', async () => {
+    const inserts: unknown[] = [];
+    const updates: unknown[] = [];
+    okInsertChain(inserts);
+    fakes.fakeDbUpdate.mockReturnValue({
+      set: vi.fn((values: unknown) => {
+        updates.push(values);
+        return { where: vi.fn(() => Promise.resolve()) };
+      }),
+    });
+
+    await expect(
+      updateTeamTimezoneAction({}, form({ timezone: 'Europe/Tallinn' })),
+    ).resolves.toEqual({ ok: true });
+
+    expect(fakes.fakeUpsertCalendarSettings).toHaveBeenCalledWith({
+      defaultTimezone: 'Europe/Tallinn',
+    });
+    expect(
+      updates.some(
+        (value) =>
+          typeof value === 'object' &&
+          value !== null &&
+          'timezone' in value &&
+          value.timezone === 'Europe/Tallinn' &&
+          'updatedAt' in value &&
+          value.updatedAt instanceof Date,
+      ),
+    ).toBe(true);
+    expect(inserts).toContainEqual(
+      expect.objectContaining({
+        actorUserId: USER_ID,
+        metadata: {
+          setting: 'team.calendar.default_timezone',
+          timezone: 'Europe/Tallinn',
+        },
+      }),
+    );
+    expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app');
+    expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/team');
+    expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/calendar');
+    expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/meetings');
   });
 });
 

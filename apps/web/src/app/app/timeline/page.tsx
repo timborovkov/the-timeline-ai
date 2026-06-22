@@ -1,6 +1,7 @@
 import { users } from '@timeline/db';
 import { getAudioBucket, getS3PresignClient, getSignedGetObjectUrl } from '@timeline/shared/s3';
 import { withTeam } from '@timeline/shared/team-scope';
+import { localDateSpanToUtcRange } from '@timeline/shared/time';
 import { inArray } from 'drizzle-orm';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
@@ -56,16 +57,28 @@ interface TimelineBaseParams extends Record<string, string | null | undefined> {
   to: string | null;
 }
 
-function parseDate(input: string | undefined): Date | undefined {
-  if (!input) return undefined;
-  const d = new Date(input);
-  return Number.isNaN(d.getTime()) ? undefined : d;
+function nextDateInput(input: string): string {
+  const d = new Date(`${input}T00:00:00.000Z`);
+  d.setUTCDate(d.getUTCDate() + 1);
+  return d.toISOString().slice(0, 10);
 }
 
-function parseEndOfDay(input: string | undefined): Date | undefined {
-  const d = parseDate(input);
-  if (!d) return undefined;
-  return new Date(d.getTime() + 24 * 60 * 60 * 1000);
+function parseStartOfDay(input: string | undefined, timezone: string): Date | undefined {
+  if (!input || !/^\d{4}-\d{2}-\d{2}$/.test(input)) return undefined;
+  try {
+    return localDateSpanToUtcRange(input, nextDateInput(input), timezone).from;
+  } catch {
+    return undefined;
+  }
+}
+
+function parseEndOfDay(input: string | undefined, timezone: string): Date | undefined {
+  if (!input || !/^\d{4}-\d{2}-\d{2}$/.test(input)) return undefined;
+  try {
+    return localDateSpanToUtcRange(input, nextDateInput(input), timezone).to;
+  } catch {
+    return undefined;
+  }
 }
 
 function parseUuid(input: string | undefined): string | undefined {
@@ -73,8 +86,8 @@ function parseUuid(input: string | undefined): string | undefined {
   return UUID_RE.test(input) ? input : undefined;
 }
 
-function toDateInputValue(d: Date | undefined): string {
-  return d ? d.toISOString().slice(0, 10) : '';
+function toDateInputValue(input: string | undefined): string {
+  return input && /^\d{4}-\d{2}-\d{2}$/.test(input) ? input : '';
 }
 
 export default async function TimelinePage({ searchParams }: Props) {
@@ -96,15 +109,17 @@ export default async function TimelinePage({ searchParams }: Props) {
   const scope = withTeam(db, active.teamId, session.user.id);
   const role = await scope.requireMembership();
   const isAdmin = role === 'owner' || role === 'admin';
+  const calendarSettings = await scope.calendar.getCalendarSettings();
+  const timezone = calendarSettings.defaultTimezone;
 
   const authorFilter = parseUuid(sp.author);
   const sourceFilter = parseTimelineSource(sp.source);
   const sourceValues = timelineSourceValues(sourceFilter);
   const impactFilter = parseTimelineImpact(sp.impact);
   const focusEventId = parseUuid(sp.event);
-  const fromFilter = parseDate(sp.from);
-  const toFilter = parseDate(sp.to);
-  const toQueryFilter = parseEndOfDay(sp.to);
+  const fromFilter = parseStartOfDay(sp.from, timezone);
+  const toFilter = parseStartOfDay(sp.to, timezone);
+  const toQueryFilter = parseEndOfDay(sp.to, timezone);
 
   const [timelinePage, members] = await Promise.all([
     collectTimelinePage({
@@ -224,8 +239,6 @@ export default async function TimelinePage({ searchParams }: Props) {
         impactFilter={impactFilter}
         focusEventId={focusEventId}
         authorFilter={authorFilter}
-        fromFilter={fromFilter}
-        toFilter={toFilter}
         events={events}
         nextCursor={timelinePage.nextCursor}
         userRows={userRows}
@@ -234,6 +247,7 @@ export default async function TimelinePage({ searchParams }: Props) {
         capturedFiles={capturedFiles}
         currentUserId={session.user.id}
         isAdmin={isAdmin}
+        timezone={timezone}
       />
     </div>
   );
@@ -250,8 +264,6 @@ function TimelineBrowserSection({
   impactFilter,
   focusEventId,
   authorFilter,
-  fromFilter,
-  toFilter,
   events,
   nextCursor,
   userRows,
@@ -260,6 +272,7 @@ function TimelineBrowserSection({
   capturedFiles,
   currentUserId,
   isAdmin,
+  timezone,
 }: {
   sp: SearchParams;
   members: TimelineMember[];
@@ -271,8 +284,6 @@ function TimelineBrowserSection({
   impactFilter: ReturnType<typeof parseTimelineImpact>;
   focusEventId: string | undefined;
   authorFilter: string | undefined;
-  fromFilter: Date | undefined;
-  toFilter: Date | undefined;
   events: TimelineFeedProps['initialPage']['items'];
   nextCursor: TimelineFeedProps['initialPage']['nextCursor'];
   userRows: { id: string; name: string | null; email: string }[];
@@ -281,6 +292,7 @@ function TimelineBrowserSection({
   capturedFiles: TimelineFeedProps['initialPage']['capturedFiles'];
   currentUserId: string;
   isAdmin: boolean;
+  timezone: string;
 }) {
   return (
     <section className="space-y-3">
@@ -293,8 +305,8 @@ function TimelineBrowserSection({
         sourceFilter={sourceFilter}
         impactFilter={impactFilter}
         authorFilter={authorFilter}
-        fromFilter={fromFilter}
-        toFilter={toFilter}
+        fromValue={toDateInputValue(sp.from)}
+        toValue={toDateInputValue(sp.to)}
       />
       <TimelinePresetControls
         baseParams={baseParams}
@@ -326,6 +338,7 @@ function TimelineBrowserSection({
         })}
         impactFilter={impactFilter ?? 'all'}
         focusEventId={focusEventId ?? null}
+        timezone={timezone}
         emptyLabel={hasFilters ? 'NO EVENTS MATCH THIS VIEW' : 'NO EVENTS YET'}
         emptyAction={{
           href: hasFilters ? '/app/timeline' : '/app#capture',
@@ -348,8 +361,8 @@ function TimelineFilterPanel({
   sourceFilter,
   impactFilter,
   authorFilter,
-  fromFilter,
-  toFilter,
+  fromValue,
+  toValue,
 }: {
   members: TimelineMember[];
   userMap: TimelineUserMap;
@@ -359,8 +372,8 @@ function TimelineFilterPanel({
   sourceFilter: ReturnType<typeof parseTimelineSource>;
   impactFilter: ReturnType<typeof parseTimelineImpact>;
   authorFilter: string | undefined;
-  fromFilter: Date | undefined;
-  toFilter: Date | undefined;
+  fromValue: string;
+  toValue: string;
 }) {
   return (
     <div className="flex items-center justify-between gap-3">
@@ -400,8 +413,8 @@ function TimelineFilterPanel({
               );
             })}
           </TimelineSelect>
-          <TimelineDateField name="from" label="From" value={toDateInputValue(fromFilter)} />
-          <TimelineDateField name="to" label="To" value={toDateInputValue(toFilter)} />
+          <TimelineDateField name="from" label="From" value={fromValue} />
+          <TimelineDateField name="to" label="To" value={toValue} />
           <button
             type="submit"
             className="h-9 rounded-sm border border-border bg-bg px-3 text-sm transition-colors hover:border-border-strong hover:bg-surface-2"

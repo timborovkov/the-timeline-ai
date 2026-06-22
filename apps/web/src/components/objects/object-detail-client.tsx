@@ -1119,7 +1119,7 @@ function ObjectDetailHeader({
           </h1>
           {detail.aliases.length > 0 && (
             <p className="mt-2 font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
-              aka {detail.aliases.map(displayText).join(' · ')}
+              aka {detail.aliases.map((alias) => displayText(alias)).join(' · ')}
             </p>
           )}
         </div>
@@ -2075,7 +2075,8 @@ function summarizeObjectValue(value: Record<string, unknown>): string {
   if (name && type) return `${displayText(name)} (${displayText(type)})`;
   if (name) return displayText(name);
   const aliases = normalizeAliases(value.aliases);
-  if (aliases.length > 0) return `aliases: ${aliases.map(displayText).join(', ')}`;
+  if (aliases.length > 0)
+    return `aliases: ${aliases.map((alias) => displayText(alias)).join(', ')}`;
   const mergedIds = Array.isArray(value.merged_entity_ids) ? value.merged_entity_ids.length : 0;
   if (mergedIds > 0) return `${mergedIds} merged object${mergedIds === 1 ? '' : 's'}`;
   return 'updated details';

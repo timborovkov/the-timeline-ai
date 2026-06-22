@@ -9,6 +9,7 @@ import {
   rawEvents,
   slackConversationBindings,
   slackUserTeams,
+  teamCalendarSettings,
   teamCalendarSubscriptions,
   teamInvites,
   teamMembers,
@@ -36,13 +37,20 @@ import { db } from '@/lib/db';
 import { runSentryServerAction } from '@/lib/sentry-action';
 import { reportCaughtError } from '@/lib/sentry-report';
 import { getSiteUrl } from '@/lib/site-url';
+import { normalizeTimezone } from '@/lib/timezones';
 
 const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
-const createTeamSchema = z.object({ name: z.string().min(1).max(80) });
+const createTeamSchema = z.object({
+  name: z.string().min(1).max(80),
+  timezone: z.string().optional(),
+});
 const renameTeamSchema = z.object({
   teamId: z.uuid(),
   name: z.string().trim().min(1).max(80),
+});
+const updateTeamTimezoneSchema = z.object({
+  timezone: z.string().trim().min(1).max(100),
 });
 const emailListSchema = z.array(z.email());
 
@@ -58,8 +66,12 @@ export async function createTeamAction(
     const session = await auth();
     if (!session?.user) return { error: 'Not signed in' };
 
-    const parsed = createTeamSchema.safeParse({ name: formData.get('name') });
+    const parsed = createTeamSchema.safeParse({
+      name: formData.get('name'),
+      timezone: formData.get('timezone') ?? undefined,
+    });
     if (!parsed.success) return { error: 'Invalid team name' };
+    const defaultTimezone = normalizeTimezone(parsed.data.timezone);
 
     const baseSlug = slugify(parsed.data.name) || 'team';
     const slug = `${baseSlug}-${randomSlugSuffix()}`;
@@ -77,6 +89,10 @@ export async function createTeamAction(
           teamId: id,
           userId: session.user.id,
           role: 'owner',
+        });
+        await tx.insert(teamCalendarSettings).values({
+          teamId: id,
+          defaultTimezone,
         });
         return id;
       });
@@ -157,6 +173,11 @@ export interface InboundEmailWhitelistState {
 }
 
 export interface DigestPreferenceState {
+  error?: string;
+  ok?: boolean;
+}
+
+export interface TeamTimezoneState {
   error?: string;
   ok?: boolean;
 }
@@ -259,8 +280,9 @@ export async function updateDigestPreferenceAction(
     const { active } = await resolveActiveTeam(session.user.id);
     if (!active) return { error: 'No active team' };
 
+    const scope = withTeam(db, active.teamId, session.user.id);
     try {
-      await withTeam(db, active.teamId, session.user.id).requireMembership();
+      await scope.requireMembership();
     } catch (err) {
       reportCaughtError(err, { surface: 'server_action', operation: 'digest_preference_auth' });
       return { error: 'You are not a member of this team' };
@@ -284,17 +306,67 @@ export async function updateDigestPreferenceAction(
         .set({ dailyDigestEnabled: enabled, updatedAt: new Date() })
         .where(eq(messagePreferences.id, existing[0].id));
     } else {
+      const calendarSettings = await scope.calendar.getCalendarSettings();
       await db.insert(messagePreferences).values({
         teamId: active.teamId,
         userId: session.user.id,
         dailyDigestEnabled: enabled,
         dailyDigestHour: 12,
-        timezone: 'UTC',
+        timezone: calendarSettings.defaultTimezone,
       });
     }
 
     revalidatePath('/app');
     revalidatePath('/app/team');
+    return { ok: true };
+  });
+}
+
+export async function updateTeamTimezoneAction(
+  _prev: TeamTimezoneState,
+  formData: FormData,
+): Promise<TeamTimezoneState> {
+  return runSentryServerAction('update_team_timezone', async () => {
+    const session = await auth();
+    if (!session?.user) return { error: 'Not signed in' };
+    const { active } = await resolveActiveTeam(session.user.id);
+    if (!active) return { error: 'No active team' };
+
+    const parsed = updateTeamTimezoneSchema.safeParse({
+      timezone: formData.get('timezone'),
+    });
+    if (!parsed.success || normalizeTimezone(parsed.data.timezone) !== parsed.data.timezone) {
+      return { error: 'Choose a valid timezone' };
+    }
+
+    const scope = withTeam(db, active.teamId, session.user.id);
+    try {
+      await scope.calendar.upsertCalendarSettings({ defaultTimezone: parsed.data.timezone });
+      await db
+        .update(messagePreferences)
+        .set({ timezone: parsed.data.timezone, updatedAt: new Date() })
+        .where(eq(messagePreferences.teamId, active.teamId));
+      await db.insert(auditLog).values({
+        teamId: active.teamId,
+        actorUserId: session.user.id,
+        action: 'settings.change',
+        targetType: 'team',
+        targetId: active.teamId,
+        targetVisibility: 'team',
+        metadata: {
+          setting: 'team.calendar.default_timezone',
+          timezone: parsed.data.timezone,
+        },
+      });
+    } catch (err) {
+      reportCaughtError(err, { surface: 'server_action', operation: 'update_team_timezone' });
+      return { error: 'Only admins can update team timezone' };
+    }
+
+    revalidatePath('/app');
+    revalidatePath('/app/team');
+    revalidatePath('/app/calendar');
+    revalidatePath('/app/meetings');
     return { ok: true };
   });
 }

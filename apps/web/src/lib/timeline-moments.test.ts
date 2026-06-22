@@ -42,6 +42,13 @@ describe('timeline moment grouping', () => {
     expect(formatDateSection('2026-05-27T09:00:00.000Z', now)).toBe('Yesterday');
   });
 
+  it('labels date buckets in the workspace timezone', () => {
+    const now = new Date('2026-07-01T02:00:00.000Z');
+
+    expect(formatDateSection('2026-06-30T23:30:00.000Z', now, 'UTC')).toBe('Yesterday');
+    expect(formatDateSection('2026-06-30T23:30:00.000Z', now, 'America/New_York')).toBe('Today');
+  });
+
   it('groups meetings by meeting id', () => {
     const moments = buildTimelineMoments(
       [
@@ -80,6 +87,33 @@ describe('timeline moment grouping', () => {
     expect(
       [moment?.summary, moment?.contextLabel, moment?.impactItems[0]?.label].join(' '),
     ).not.toMatch(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z/);
+  });
+
+  it('formats timeline moment times and embedded instants in the workspace timezone', () => {
+    const moments = buildTimelineMoments(
+      [
+        event({
+          id: 'calendar-event',
+          source: 'calendar',
+          occurredAt: '2026-07-01T00:30:00.000Z',
+          contentText: 'Deadline 2026-07-01T00:00:00.000Z',
+          sourceMetadata: {
+            calendar_event_id: 'cal-1',
+            title: 'Deadline 2026-07-01T00:00:00.000Z',
+          },
+        }),
+      ],
+      authorMap,
+      {
+        now: new Date('2026-07-01T02:00:00.000Z'),
+        timezone: 'America/Los_Angeles',
+      },
+    );
+
+    expect(moments[0]?.dateLabel).toBe('Today');
+    expect(moments[0]?.timeLabel).toBe('17:30');
+    expect(moments[0]?.summary).toContain('Jun 30, 2026');
+    expect(moments[0]?.contextLabel).toContain('Jun 30, 2026');
   });
 
   it('links meeting moments to the meeting transcript detail', () => {

@@ -44,6 +44,7 @@ interface Props {
   impactItemsByEventId?: Record<string, ImpactItem[]>;
   capturedFilesByEventId?: Record<string, TimelineCapturedFile[]>;
   focusEventId?: string | null;
+  timezone?: string;
 }
 
 const EMPTY_MEMBERS: NonNullable<Props['members']> = [];
@@ -66,13 +67,13 @@ function eventDate(input: Date | string): Date {
   return new Date(input);
 }
 
-function formatTimestamp(input: string): string {
-  return formatDisplayDateTime(eventDate(input));
+function formatTimestamp(input: string, timezone?: string): string {
+  return formatDisplayDateTime(eventDate(input), { timezone });
 }
 
-function formatMetadataValue(value: unknown): string {
+function formatMetadataValue(value: unknown, timezone?: string): string {
   if (value === null || value === undefined) return '';
-  if (typeof value === 'string') return displayText(value);
+  if (typeof value === 'string') return displayText(value, { timezone });
   if (typeof value === 'number' || typeof value === 'boolean') return String(value);
   try {
     return JSON.stringify(value);
@@ -95,8 +96,12 @@ function positiveIntegerMeta(meta: Record<string, unknown>, key: string): number
   return typeof value === 'number' && Number.isInteger(value) && value > 0 ? value : null;
 }
 
-function friendlyMeta(meta: Record<string, unknown>, key: string): string | null {
-  const value = formatMetadataValue(meta[key]).trim();
+function friendlyMeta(
+  meta: Record<string, unknown>,
+  key: string,
+  timezone?: string,
+): string | null {
+  const value = formatMetadataValue(meta[key], timezone).trim();
   return value.length > 0 ? value : null;
 }
 
@@ -146,12 +151,12 @@ function sourceTruthSummary(moment: TimelineMoment): { title: string; body: stri
   };
 }
 
-function rawEventBody(event: TimelineEvent): string {
+function rawEventBody(event: TimelineEvent, timezone?: string): string {
   const meta = metaObject(event.sourceMetadata);
   const content = event.contentText?.trim();
-  if (content) return displayText(truncateAttachedFilenameText(content));
+  if (content) return displayText(truncateAttachedFilenameText(content), { timezone });
   const caption = stringMeta(meta, 'tg_caption');
-  if (caption) return displayText(caption);
+  if (caption) return displayText(caption, { timezone });
   const transcriptionStatus = transcriptionStatusMessage(event);
   if (transcriptionStatus) return transcriptionStatus;
   return 'Source event captured.';
@@ -172,13 +177,17 @@ function addDetail(
   seen: Set<string>,
   label: string,
   value: string | null,
+  timezone?: string,
 ) {
   if (!value || seen.has(label)) return;
   seen.add(label);
-  entries.push([label, displayText(value)]);
+  entries.push([label, displayText(value, { timezone })]);
 }
 
-function inspectorSourceDetailEntries(moment: TimelineMoment): [string, string][] {
+function inspectorSourceDetailEntries(
+  moment: TimelineMoment,
+  timezone?: string,
+): [string, string][] {
   const entries: [string, string][] = [];
   const seen = new Set<string>();
   const actorByTelegramUserId = actorLabelsByTelegramUserId(moment.rawEvents);
@@ -186,33 +195,46 @@ function inspectorSourceDetailEntries(moment: TimelineMoment): [string, string][
     if (typeof event.sourceMetadata !== 'object' || event.sourceMetadata === null) continue;
     const meta = event.sourceMetadata as Record<string, unknown>;
     if (event.source === 'telegram') {
-      addDetail(entries, seen, 'Sender', rawEventActorLabel(event, actorByTelegramUserId));
-      addDetail(entries, seen, 'Chat', stringMeta(meta, 'tg_chat_title'));
-      addDetail(entries, seen, 'Chat type', stringMeta(meta, 'tg_chat_type'));
-      addDetail(entries, seen, 'Caption', stringMeta(meta, 'tg_caption'));
+      addDetail(
+        entries,
+        seen,
+        'Sender',
+        rawEventActorLabel(event, actorByTelegramUserId),
+        timezone,
+      );
+      addDetail(entries, seen, 'Chat', stringMeta(meta, 'tg_chat_title'), timezone);
+      addDetail(entries, seen, 'Chat type', stringMeta(meta, 'tg_chat_type'), timezone);
+      addDetail(entries, seen, 'Caption', stringMeta(meta, 'tg_caption'), timezone);
     } else if (event.source === 'slack') {
-      addDetail(entries, seen, 'Sender', stringMeta(meta, 'slack_sender_name'));
-      addDetail(entries, seen, 'Channel', stringMeta(meta, 'slack_channel_name'));
+      addDetail(entries, seen, 'Sender', stringMeta(meta, 'slack_sender_name'), timezone);
+      addDetail(entries, seen, 'Channel', stringMeta(meta, 'slack_channel_name'), timezone);
     } else if (event.source === 'email') {
-      addDetail(entries, seen, 'Subject', stringMeta(meta, 'subject'));
-      addDetail(entries, seen, 'From', formatMetadataValue(meta.from).trim() || null);
+      addDetail(entries, seen, 'Subject', stringMeta(meta, 'subject'), timezone);
+      addDetail(
+        entries,
+        seen,
+        'From',
+        formatMetadataValue(meta.from, timezone).trim() || null,
+        timezone,
+      );
     } else if (event.source === 'document') {
       addDetail(
         entries,
         seen,
         'Document',
         truncateNullableFilename(stringMeta(meta, 'document_name') ?? stringMeta(meta, 'name')),
+        timezone,
       );
-      addDetail(entries, seen, 'Origin', stringMeta(meta, 'source'));
+      addDetail(entries, seen, 'Origin', stringMeta(meta, 'source'), timezone);
     } else if (event.source === 'meeting' || event.source === 'calendar') {
-      addDetail(entries, seen, 'Title', stringMeta(meta, 'title'));
+      addDetail(entries, seen, 'Title', stringMeta(meta, 'title'), timezone);
     } else if (event.source === 'integration') {
-      addDetail(entries, seen, 'Provider', stringMeta(meta, 'provider'));
-      addDetail(entries, seen, 'Event', stringMeta(meta, 'event_type'));
-      addDetail(entries, seen, 'Actor', friendlyMeta(meta, 'actor'));
+      addDetail(entries, seen, 'Provider', stringMeta(meta, 'provider'), timezone);
+      addDetail(entries, seen, 'Event', stringMeta(meta, 'event_type'), timezone);
+      addDetail(entries, seen, 'Actor', friendlyMeta(meta, 'actor', timezone), timezone);
     } else if (event.source === 'ingest_webhook') {
-      addDetail(entries, seen, 'Webhook', stringMeta(meta, 'ingest_webhook_name'));
-      addDetail(entries, seen, 'Content type', stringMeta(meta, 'content_type'));
+      addDetail(entries, seen, 'Webhook', stringMeta(meta, 'ingest_webhook_name'), timezone);
+      addDetail(entries, seen, 'Content type', stringMeta(meta, 'content_type'), timezone);
     }
   }
   return entries;
@@ -342,11 +364,13 @@ function groupedByDate(moments: TimelineMoment[]): [string, TimelineMoment[]][] 
 function InspectorBody({
   moment,
   capturedFilesByEventId,
+  timezone,
 }: {
   moment: TimelineMoment;
   capturedFilesByEventId: Record<string, TimelineCapturedFile[]>;
+  timezone?: string;
 }) {
-  const metadata = inspectorSourceDetailEntries(moment);
+  const metadata = inspectorSourceDetailEntries(moment, timezone);
   const summary = sourceTruthSummary(moment);
   const visibleRawEvents = moment.rawEvents.slice(0, INSPECTOR_RAW_EVENT_LIMIT);
   const hiddenRawEventCount = moment.rawEvents.length - visibleRawEvents.length;
@@ -405,6 +429,7 @@ function InspectorBody({
               event={event}
               actorLabel={rawEventActorLabel(event, actorByTelegramUserId)}
               capturedFiles={capturedFilesByEventId[event.id] ?? []}
+              timezone={timezone}
             />
           ))}
         </ol>
@@ -439,22 +464,24 @@ function SourceEvidenceCard({
   event,
   actorLabel,
   capturedFiles,
+  timezone,
 }: {
   event: TimelineEvent;
   actorLabel: string;
   capturedFiles: TimelineCapturedFile[];
+  timezone?: string;
 }) {
   const documentLink = rawEventDocumentLink(event);
   const context = rawEventContextLabel(event);
   const transcriptionStatus = transcriptionStatusMessage(event);
-  const body = rawEventBody(event);
+  const body = rawEventBody(event, timezone);
   return (
     <li className="min-w-0 overflow-hidden rounded-sm border border-border bg-bg px-2.5 py-2">
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-[11px] uppercase tracking-[0.1em] text-fg-dim">
         <span className="text-fg-muted">{actorLabel}</span>
         <span>{event.source}</span>
         {context ? <span>{context}</span> : null}
-        <time dateTime={event.occurredAt}>{formatTimestamp(event.occurredAt)}</time>
+        <time dateTime={event.occurredAt}>{formatTimestamp(event.occurredAt, timezone)}</time>
         {event.visibility === 'private' ? <span>Private</span> : null}
       </div>
       {documentLink ? (
@@ -545,12 +572,14 @@ function InspectorActions({
   currentUserId,
   isAdmin,
   members,
+  timezone,
 }: {
   moment: TimelineMoment;
   audioUrlMap?: Map<string, string>;
   currentUserId: string;
   isAdmin: boolean;
   members: { id: string; label: string }[];
+  timezone?: string;
 }) {
   const editableEvents = moment.rawEvents.filter((event) =>
     canEditVisibility(event, currentUserId),
@@ -592,7 +621,7 @@ function InspectorActions({
         {editableEvents.map((event) => (
           <details key={event.id} className="text-xs">
             <summary className="cursor-pointer font-mono uppercase tracking-[0.1em] text-fg-dim">
-              Visibility · {formatTimestamp(event.occurredAt)}
+              Visibility · {formatTimestamp(event.occurredAt, timezone)}
             </summary>
             <EventVisibilityForm
               eventId={event.id}
@@ -613,7 +642,7 @@ function InspectorActions({
               title="Remove from timeline"
             >
               <Trash2 aria-hidden="true" className="mr-1.5 size-3.5" />
-              Remove {formatTimestamp(event.occurredAt)}
+              Remove {formatTimestamp(event.occurredAt, timezone)}
             </Button>
           </form>
         ))}
@@ -622,7 +651,7 @@ function InspectorActions({
   );
 }
 
-function ImpactStrip({ items }: { items: ImpactItem[] }) {
+function ImpactStrip({ items, timezone }: { items: ImpactItem[]; timezone?: string }) {
   if (items.length === 0) return null;
   return (
     <div
@@ -632,7 +661,9 @@ function ImpactStrip({ items }: { items: ImpactItem[] }) {
       {items.slice(0, 2).map((item, index) => {
         const count = item.count && item.count > 1 ? ` ×${item.count}` : '';
         const status = item.status ? ` · ${item.status}` : '';
-        const label = displayText(`${IMPACT_LABEL[item.kind]} · ${item.label}${count}${status}`);
+        const label = displayText(`${IMPACT_LABEL[item.kind]} · ${item.label}${count}${status}`, {
+          timezone,
+        });
         const className =
           'inline-flex min-h-6 max-w-full min-w-0 items-center font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim transition-colors hover:text-fg';
         return item.href ? (
@@ -665,6 +696,7 @@ function TimelineMomentRow({
   members,
   capturedFilesByEventId,
   compact,
+  timezone,
 }: {
   moment: TimelineMoment;
   audioUrlMap?: Map<string, string>;
@@ -673,6 +705,7 @@ function TimelineMomentRow({
   members: { id: string; label: string }[];
   capturedFilesByEventId: Record<string, TimelineCapturedFile[]>;
   compact: boolean;
+  timezone?: string;
 }) {
   const inspector = useInspector();
   const selected = inspector.open && inspector.content?.id === moment.id;
@@ -714,13 +747,18 @@ function TimelineMomentRow({
               title: inspectorTitle(moment),
               render: () => (
                 <div className="space-y-5">
-                  <InspectorBody moment={moment} capturedFilesByEventId={capturedFilesByEventId} />
+                  <InspectorBody
+                    moment={moment}
+                    capturedFilesByEventId={capturedFilesByEventId}
+                    timezone={timezone}
+                  />
                   <InspectorActions
                     moment={moment}
                     audioUrlMap={audioUrlMap}
                     currentUserId={currentUserId}
                     isAdmin={isAdmin}
                     members={members}
+                    timezone={timezone}
                   />
                 </div>
               ),
@@ -754,7 +792,7 @@ function TimelineMomentRow({
         ) : null}
       </div>
       <div className="flex min-w-0 items-start justify-start gap-2 pb-3 md:justify-end md:py-3">
-        <ImpactStrip items={moment.impactItems} />
+        <ImpactStrip items={moment.impactItems} timezone={timezone} />
         {transcriptionStatus ? (
           <span className="inline-flex min-h-6 max-w-full min-w-0 items-center rounded-sm border border-border bg-surface px-2 py-1 font-mono text-[10px] uppercase tracking-[0.12em] text-fg-muted">
             {transcriptionStatus}
@@ -783,15 +821,16 @@ export function TimelineList({
   impactItemsByEventId,
   capturedFilesByEventId = EMPTY_CAPTURED_FILES_BY_EVENT_ID,
   focusEventId = null,
+  timezone,
 }: Props) {
   const moments = useMemo(
     () =>
       buildTimelineMoments(
         events,
         authorMap,
-        impactItemsByEventId === undefined ? {} : { impactItemsByEventId },
+        impactItemsByEventId === undefined ? { timezone } : { impactItemsByEventId, timezone },
       ),
-    [events, authorMap, impactItemsByEventId],
+    [events, authorMap, impactItemsByEventId, timezone],
   );
   const focusedMoments =
     focusEventId === null
@@ -845,6 +884,7 @@ export function TimelineList({
                 members={members}
                 capturedFilesByEventId={capturedFilesByEventId}
                 compact={compact}
+                timezone={timezone}
               />
             ))}
           </ol>
