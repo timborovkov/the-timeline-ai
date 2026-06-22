@@ -33,4 +33,11 @@ describe('app guide route metadata', () => {
     expect(results.map((result) => result.id)).toContain('help/documents');
     expect(results[0]?.citation).toMatch(/^\[route:/);
   });
+
+  it('routes Work-surface questions to the Work guide', () => {
+    const results = searchAppGuide('where are updates digests handoffs and boards?', 5);
+
+    expect(results.map((result) => result.id)).toContain('help/work');
+    expect(results.map((result) => result.id)).toContain('work');
+  });
 });

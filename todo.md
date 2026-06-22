@@ -15,6 +15,28 @@ This file now tracks only remaining work and recurring operating obligations.
 Use the repository history, release notes, and phase PRs for shipped
 implementation detail.
 
+## Product North Star
+
+Reframe remaining work around the path from passive capture to self-maintaining
+records:
+
+`capture → evidence → generated communication → object/project/account state → self-maintaining CRM/project layer`
+
+- Capture: work enters through Slack, Telegram, meetings, email, documents,
+  calendar, native integrations, custom MCPs, and web notes without asking the
+  team to update another system first.
+- Evidence: raw events, document versions, transcript chunks, integration
+  events, calendar rows, and object/task changes stay inspectable and cited.
+- Generated communication: updates, daily digests, handoffs, and answers are
+  generated from evidence so teams stop manually reporting on work they already
+  did.
+- Object/project/account state: durable operational memory emerges from the
+  event history through extraction, retrieval, and approval-backed state
+  changes.
+- Self-maintaining CRM/project layer: for teams that trust the evidence and
+  approval path, Timeline should reduce or replace manual CRM and project
+  tracker upkeep rather than asking people to maintain parallel records.
+
 ## Beta Readiness
 
 - [ ] Audit the remaining security-relevant actions that landed after the
