@@ -66,6 +66,32 @@ const initialSourcePickerState: SourcePickerState = {
 
 const emptyResources: ProviderResource[] = [];
 const emptyShares: ResourceShare[] = [];
+const providerSourceHints: Partial<
+  Record<
+    string,
+    {
+      body: string;
+      detail?: string;
+      link?: { href: string; label: string };
+    }
+  >
+> = {
+  github: {
+    body: 'Choose individual repositories for a fixed list, or choose a GitHub organization to include all repos your GitHub account can access there.',
+    detail:
+      'Missing an organization? GitHub may require org owner approval or SAML authorization before it appears here.',
+    link: { href: 'https://github.com/settings/applications', label: 'GitHub access' },
+  },
+  monday: {
+    body: 'Choose Monday.com boards for records, subitems, updates, and column activity. Choose WorkDocs when docs should become cited timeline evidence too.',
+  },
+  slack: {
+    body: 'Choose the Slack channels whose messages, threads, files, reactions, and edits should become cited timeline events.',
+  },
+  sentry: {
+    body: 'Choose individual Sentry projects for a fixed list, or choose an organization to include all projects your Sentry account can access there.',
+  },
+};
 
 function resourceKey(resource: Pick<ProviderResource, 'kind' | 'externalId'>) {
   return `${resource.kind}\x00${resource.externalId}`;
@@ -129,9 +155,7 @@ function PersonalConnectionFlow() {
       </div>
       <div>
         <p className="font-medium text-fg">2. Share to this team</p>
-        <p className="mt-1 text-fg-muted">
-          Select only the repos or organizations this team may use.
-        </p>
+        <p className="mt-1 text-fg-muted">Select only the sources this team may use.</p>
       </div>
       <div>
         <p className="font-medium text-fg">3. Activate sync</p>
@@ -276,7 +300,7 @@ function ConnectionSources({ connection }: { connection: ProviderConnection }) {
         </span>
       </div>
       <div className="space-y-3 p-3">
-        {connection.provider === 'github' ? <GitHubConnectionHint /> : null}
+        <ProviderSourceHint provider={connection.provider} />
         <div className="flex flex-wrap items-center gap-2">
           <input
             className="h-8 min-w-56 flex-1 rounded-sm border border-border bg-bg px-2 text-sm"
@@ -341,28 +365,26 @@ function ConnectionSources({ connection }: { connection: ProviderConnection }) {
   );
 }
 
-function GitHubConnectionHint() {
+function ProviderSourceHint({ provider }: { provider: string }) {
+  const hint = providerSourceHints[provider];
+  if (!hint) return null;
   return (
     <div className="rounded-sm border border-signal/30 bg-signal-soft px-3 py-2 text-sm text-fg">
       <div className="flex flex-wrap items-start gap-2">
-        <p className="min-w-0 flex-1">
-          Choose individual repositories for a fixed list, or choose a GitHub organization to
-          include all repos your GitHub account can access there.
-        </p>
-        <a
-          className="inline-flex shrink-0 items-center gap-1 font-mono text-[10px] uppercase tracking-[0.12em] text-signal hover:underline"
-          href="https://github.com/settings/applications"
-          target="_blank"
-          rel="noreferrer"
-        >
-          GitHub access
-          <ExternalLink aria-hidden="true" className="size-3" />
-        </a>
+        <p className="min-w-0 flex-1">{hint.body}</p>
+        {hint.link ? (
+          <a
+            className="inline-flex shrink-0 items-center gap-1 font-mono text-[10px] uppercase tracking-[0.12em] text-signal hover:underline"
+            href={hint.link.href}
+            target="_blank"
+            rel="noreferrer"
+          >
+            {hint.link.label}
+            <ExternalLink aria-hidden="true" className="size-3" />
+          </a>
+        ) : null}
       </div>
-      <p className="mt-1 text-fg-muted">
-        Missing an organization? GitHub may require org owner approval or SAML authorization before
-        it appears here.
-      </p>
+      {hint.detail ? <p className="mt-1 text-fg-muted">{hint.detail}</p> : null}
     </div>
   );
 }

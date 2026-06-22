@@ -90,6 +90,63 @@ describe('TeamSourcesUi', () => {
     expect(screen.getByRole('link', { name: /GitHub access/i })).toBeTruthy();
   });
 
+  it('explains source sharing for Monday.com, Slack, and Sentry connections', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const url =
+        input instanceof URL ? input.toString() : typeof input === 'string' ? input : input.url;
+      const resourcesByConnection: Record<
+        string,
+        { kind: string; externalId: string; label: string }[]
+      > = {
+        monday: [{ kind: 'monday.board', externalId: 'board-1', label: 'Launch' }],
+        slack: [{ kind: 'slack.channel', externalId: 'C123', label: '#leadership' }],
+        sentry: [{ kind: 'sentry.project', externalId: 'acme/web', label: 'acme/web' }],
+      };
+      const connectionId = url.split('/').at(-2) ?? '';
+      return Promise.resolve({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            resources: resourcesByConnection[connectionId] ?? [],
+            shares: [],
+          }),
+      } as Response);
+    });
+
+    renderWithQueryClient(
+      <PersonalConnectionsUi
+        connections={[
+          {
+            id: 'monday',
+            provider: 'monday',
+            displayName: 'Monday.com — Tim',
+            lastError: null,
+            lastConnectedAt: '2026-06-01T00:00:00.000Z',
+          },
+          {
+            id: 'slack',
+            provider: 'slack',
+            displayName: 'Slack — Acme',
+            lastError: null,
+            lastConnectedAt: '2026-06-01T00:00:00.000Z',
+          },
+          {
+            id: 'sentry',
+            provider: 'sentry',
+            displayName: 'Sentry — Acme',
+            lastError: null,
+            lastConnectedAt: '2026-06-01T00:00:00.000Z',
+          },
+        ]}
+      />,
+    );
+
+    expect(await screen.findByText(/Choose Monday.com boards/i)).toBeTruthy();
+    expect(screen.getByText(/Choose the Slack channels/i)).toBeTruthy();
+    expect(screen.getByText(/Choose individual Sentry projects/i)).toBeTruthy();
+    expect(screen.queryByRole('link', { name: /GitHub access/i })).toBeNull();
+  });
+
   it('explains that admins activate shared team sources', () => {
     render(
       <TeamSourcesUi
