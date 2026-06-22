@@ -247,7 +247,7 @@ function reactionEvents(
   message: SlackMessage,
 ): IntegrationEvent[] {
   return (message.reactions ?? []).map((reaction) => ({
-    dedupKey: `slack:reaction:${teamId}:${channel}:${message.ts}:${reaction.name}:${String(reaction.count)}`,
+    dedupKey: `slack:reaction:${teamId}:${channel}:${message.ts}:${reaction.name}`,
     provider: 'slack',
     externalObjectId: `${channel}:${message.thread_ts ?? message.ts}`,
     externalEventId: `${message.ts}:${reaction.name}`,

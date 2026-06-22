@@ -137,6 +137,7 @@ describe('slackProvider', () => {
       'file.shared',
       'message.created',
     ]);
+    expect(events[1]?.dedupKey).toBe('slack:reaction:T123:C123:1782000000.000100:white_check_mark');
     expect(events[0]?.objectMap).toMatchObject({
       type: 'topic',
       externalId: 'C123:1782000000.000100',

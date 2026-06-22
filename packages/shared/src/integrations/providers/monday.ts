@@ -570,19 +570,45 @@ async function fetchBoard(tokens: MondayTokens, boardId: string): Promise<Monday
 async function fetchInitialItemsPage(
   tokens: MondayTokens,
   boardId: string,
+  updatedSince?: string,
 ): Promise<MondayItemsPage> {
-  const data = await gql<{ boards: { items_page?: MondayItemsPage }[] }>(
-    tokens,
-    `query ($ids: [ID!], $limit: Int!) {
-      boards(ids: $ids) {
-        items_page(limit: $limit) {
-          cursor
-          items { ${ITEM_FIELDS} }
+  const updatedSinceDate = updatedSince ? dateValue(updatedSince, new Date(0)) : null;
+  const updatedSinceDay =
+    updatedSinceDate && updatedSinceDate.getTime() > 0
+      ? updatedSinceDate.toISOString().slice(0, 10)
+      : null;
+  const queryParams = updatedSinceDay
+    ? `, query_params: {
+          rules: [{
+            column_id: "__last_updated__",
+            compare_value: ["EXACT", $updatedSinceDay],
+            operator: greater_than_or_equals,
+            compare_attribute: "UPDATED_AT"
+          }]
+        }`
+    : '';
+  const query = updatedSinceDay
+    ? `query ($ids: [ID!], $limit: Int!, $updatedSinceDay: String!) {
+        boards(ids: $ids) {
+          items_page(limit: $limit${queryParams}) {
+            cursor
+            items { ${ITEM_FIELDS} }
+          }
         }
-      }
-    }`,
-    { ids: [boardId], limit: ITEM_PAGE_LIMIT },
-  );
+      }`
+    : `query ($ids: [ID!], $limit: Int!) {
+        boards(ids: $ids) {
+          items_page(limit: $limit) {
+            cursor
+            items { ${ITEM_FIELDS} }
+          }
+        }
+      }`;
+  const data = await gql<{ boards: { items_page?: MondayItemsPage }[] }>(tokens, query, {
+    ids: [boardId],
+    limit: ITEM_PAGE_LIMIT,
+    ...(updatedSinceDay ? { updatedSinceDay } : {}),
+  });
   return data.boards[0]?.items_page ?? {};
 }
 
@@ -600,9 +626,13 @@ async function fetchNextItemsPage(tokens: MondayTokens, cursor: string): Promise
   return data.next_items_page ?? {};
 }
 
-async function fetchAllBoardItems(tokens: MondayTokens, boardId: string): Promise<MondayItem[]> {
+async function fetchAllBoardItems(
+  tokens: MondayTokens,
+  boardId: string,
+  updatedSince?: string,
+): Promise<MondayItem[]> {
   const items: MondayItem[] = [];
-  let page = await fetchInitialItemsPage(tokens, boardId);
+  let page = await fetchInitialItemsPage(tokens, boardId, updatedSince);
   for (let index = 0; index < 100; index++) {
     items.push(...(page.items ?? []));
     if (!page.cursor) break;
@@ -728,6 +758,7 @@ async function syncBoard(
   tokens: MondayTokens,
   boardId: string,
   cursor: MondayCursor,
+  options: { incremental: boolean },
 ): Promise<{ events: IntegrationEvent[]; cursor: MondayCursor }> {
   const board = await fetchBoard(tokens, boardId);
   if (!board) return { events: [], cursor };
@@ -736,7 +767,7 @@ async function syncBoard(
   const to = new Date().toISOString();
   const [activityLogs, items] = await Promise.all([
     fetchActivityLogs(tokens, boardId, from, to),
-    fetchAllBoardItems(tokens, boardId),
+    fetchAllBoardItems(tokens, boardId, options.incremental ? cursor.item_since : undefined),
   ]);
   const activityEvents = activityLogs.map((log) => activityEvent(board, log));
   const itemEvents = items.flatMap((item) => [
@@ -827,7 +858,9 @@ export const mondayProvider: IntegrationProvider = {
     const mondayTokens = await ensureAccessToken(tokens as MondayTokens, ctx);
     for (const selection of selections.filter((item) => item.kind === 'monday.board')) {
       const cursor = (await ctx.loadCursor(`monday.board:${selection.externalId}`)) as MondayCursor;
-      const result = await syncBoard(mondayTokens, selection.externalId, cursor);
+      const result = await syncBoard(mondayTokens, selection.externalId, cursor, {
+        incremental: false,
+      });
       await ctx.writeEvents(result.events);
       await ctx.saveCursor(`monday.board:${selection.externalId}`, result.cursor);
     }
@@ -859,6 +892,22 @@ export const mondayProvider: IntegrationProvider = {
   },
 
   async incrementalSync({ tokens, selections, ctx }) {
-    await this.backfill({ integration: {} as never, tokens, selections, ctx });
+    const mondayTokens = await ensureAccessToken(tokens as MondayTokens, ctx);
+    for (const selection of selections.filter((item) => item.kind === 'monday.board')) {
+      const cursor = (await ctx.loadCursor(`monday.board:${selection.externalId}`)) as MondayCursor;
+      const result = await syncBoard(mondayTokens, selection.externalId, cursor, {
+        incremental: true,
+      });
+      await ctx.writeEvents(result.events);
+      await ctx.saveCursor(`monday.board:${selection.externalId}`, result.cursor);
+    }
+    for (const selection of selections.filter((item) => item.kind === 'monday.doc')) {
+      await this.backfill({
+        integration: {} as never,
+        tokens: mondayTokens,
+        selections: [selection],
+        ctx,
+      });
+    }
   },
 };

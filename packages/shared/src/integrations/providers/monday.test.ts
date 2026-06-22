@@ -447,6 +447,86 @@ describe('mondayProvider', () => {
     );
   });
 
+  it('uses the item cursor to filter monday.com records during incremental sync', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>((_input, init) => {
+      const body = requestPayload(init);
+      if (body.query.includes('columns { id title type }')) {
+        return Promise.resolve(
+          jsonResponse({
+            data: {
+              boards: [
+                {
+                  id: 'board-1',
+                  name: 'Pipeline',
+                  updated_at: '2026-06-20T09:00:00Z',
+                  columns: [],
+                },
+              ],
+            },
+          }),
+        );
+      }
+      if (body.query.includes('activity_logs')) {
+        return Promise.resolve(jsonResponse({ data: { boards: [{ activity_logs: [] }] } }));
+      }
+      if (body.query.includes('items_page')) {
+        expect(body.query).toContain('column_id: "__last_updated__"');
+        expect(body.query).toContain('compare_attribute: "UPDATED_AT"');
+        expect(body.query).toContain('operator: greater_than_or_equals');
+        expect(body.variables).toMatchObject({ updatedSinceDay: '2026-06-19' });
+        return Promise.resolve(
+          jsonResponse({
+            data: {
+              boards: [
+                {
+                  items_page: {
+                    cursor: null,
+                    items: [
+                      {
+                        id: 'item-1',
+                        name: 'Updated account',
+                        updated_at: '2026-06-20T11:00:00Z',
+                        column_values: [],
+                        updates: [],
+                        subitems: [],
+                      },
+                    ],
+                  },
+                },
+              ],
+            },
+          }),
+        );
+      }
+      throw new Error(`unexpected query: ${body.query}`);
+    });
+    vi.stubGlobal('fetch', fetch);
+    const ctx = {
+      loadCursor: vi.fn().mockResolvedValue({
+        activity_since: '2026-06-19T10:00:00.000Z',
+        item_since: '2026-06-19T10:00:00.000Z',
+      }),
+      saveCursor: vi.fn().mockResolvedValue(undefined),
+      writeEvents: vi.fn().mockResolvedValue([]),
+      persistTokens: vi.fn(),
+      recordAudit: vi.fn(),
+    };
+
+    await mondayProvider.incrementalSync({
+      integration: { id: 'integration-1' } as never,
+      tokens: { access_token: 'token' },
+      selections: [{ kind: 'monday.board', externalId: 'board-1' }],
+      ctx,
+    });
+
+    const events = (ctx.writeEvents.mock.calls[0]?.[0] ?? []) as IntegrationEvent[];
+    expect(events.map((event) => event.externalObjectId)).toContain('item-1');
+    expect(ctx.saveCursor).toHaveBeenCalledWith(
+      'monday.board:board-1',
+      expect.objectContaining({ item_since: '2026-06-20T11:00:00.000Z' }),
+    );
+  });
+
   it('syncs selected WorkDocs as timeline events and harvested documents', async () => {
     vi.stubGlobal(
       'fetch',
