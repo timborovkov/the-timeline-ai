@@ -378,8 +378,11 @@ visible change.
 - **Calendar state.** Recurring calendar rows show a compact recurrence marker,
   modified occurrences use the same marker plus their edited time, and proposed
   slots render as visible tentative holds until one slot is confirmed.
-- **Preset filters.** Timeline presets cover All, Meetings, Slack, Email,
-  Documents, Calendar, Approvals, Tasks, and Decisions.
+- **Preset filters.** Timeline presets stay conceptual and source-oriented:
+  All, Chat, Meetings, Email, Documents, Calendar, and Integrations. Exact
+  source filters such as Telegram, Slack, and ingest webhooks, plus impact
+  filters such as tasks, decisions, and approvals, live in the full filter
+  panel.
 - **Attribution split.** Scan-level copy preserves source truth ("who said or
   did it in the source system"). Timeline control details such as captured by,
   source owner, visibility owner, event controls, and curated source metadata

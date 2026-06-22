@@ -54,6 +54,7 @@ function page(items: TimelineEvent[]): TimelinePage {
     authors: {},
     audioUrls: {},
     impactItems: {},
+    capturedFiles: {},
   };
 }
 

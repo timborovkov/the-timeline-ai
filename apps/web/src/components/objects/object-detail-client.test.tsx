@@ -331,7 +331,7 @@ describe('ObjectDetailClient', () => {
           documents: [
             {
               id: 'document-1',
-              name: 'DFK pilot deck.pdf',
+              name: 'AgACAgQAAyEFAATcv6dYAAIBuWo4jeyMZiYwKT1k92NCNuPTCoTcAALpDWsbBCfJUUAcqaMvf4JYAQADAgADdwADPAQ.jpg',
               fileKind: 'document',
               updatedAt: new Date('2026-06-16T11:00:00.000Z'),
             },
@@ -349,7 +349,10 @@ describe('ObjectDetailClient', () => {
     expect(html).toContain('Pilot pipeline');
     expect(html).toContain('Merge DFK Finland Oy into DFK');
     expect(html).toContain('Send pilot times to DFK');
-    expect(html).toContain('DFK pilot deck.pdf');
+    expect(html).toContain('AgACAgQ…wADPAQ.jpg');
+    expect(html).toContain(
+      'title="AgACAgQAAyEFAATcv6dYAAIBuWo4jeyMZiYwKT1k92NCNuPTCoTcAALpDWsbBCfJUUAcqaMvf4JYAQADAgADdwADPAQ.jpg"',
+    );
   });
 
   it('shows connected open tasks once on the object detail page', () => {

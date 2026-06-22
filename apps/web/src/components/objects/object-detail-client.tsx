@@ -1,5 +1,6 @@
 'use client';
 import { useQuery } from '@tanstack/react-query';
+import { truncateFilenameMiddle } from '@timeline/shared/documents/presentation';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
@@ -1715,8 +1716,12 @@ function ConnectedDocumentList({
               key={document.id}
               className="grid gap-1 rounded-sm border border-border bg-surface px-3 py-2 text-sm"
             >
-              <a href={`/app/documents/${document.id}`} className="font-medium hover:underline">
-                {displayText(document.name)}
+              <a
+                href={`/app/documents/${document.id}`}
+                title={document.name}
+                className="font-medium hover:underline"
+              >
+                {displayText(truncateFilenameMiddle(document.name))}
               </a>
               <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">
                 {document.fileKind} · updated {formatDisplayDateTime(document.updatedAt)}

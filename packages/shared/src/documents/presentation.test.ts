@@ -4,6 +4,7 @@ import {
   documentPresentation,
   isLikelyGeneratedDocumentName,
   normalizeSuggestedTitle,
+  truncateFilenameMiddle,
 } from '#src/documents/presentation.js';
 
 describe('document presentation', () => {
@@ -57,5 +58,14 @@ describe('document presentation', () => {
     expect(normalizeSuggestedTitle('  Q3   board     pack  ')).toBe('Q3 board pack');
     expect(normalizeSuggestedTitle('[no title]')).toBeNull();
     expect(isLikelyGeneratedDocumentName('Screenshot 2026-06-11 at 10.32.24 PM.png')).toBe(false);
+  });
+
+  it('middle-truncates long stored filenames while preserving the extension', () => {
+    expect(
+      truncateFilenameMiddle(
+        'AgACAgQAAyEFAATcv6dYAAIBuWo4jeyMZiYwKT1k92NCNuPTCoTcAALpDWsbBCfJUUAcqaMvf4JYAQADAgADdwADPAQ.jpg',
+      ),
+    ).toBe('AgACAgQ…wADPAQ.jpg');
+    expect(truncateFilenameMiddle('contract.pdf')).toBe('contract.pdf');
   });
 });

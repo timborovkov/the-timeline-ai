@@ -1,11 +1,23 @@
 import { describe, expect, it } from 'vitest';
 
-import { parseTimelineImpact, parseTimelineSource, timelineHref } from '@/lib/timeline-controls';
+import {
+  parseTimelineImpact,
+  parseTimelineSource,
+  timelineHref,
+  timelineSourceValues,
+} from '@/lib/timeline-controls';
 
 describe('timeline controls', () => {
   it('parses source presets and rejects unknown values', () => {
     expect(parseTimelineSource('slack')).toBe('slack');
+    expect(parseTimelineSource('chat')).toBe('chat');
     expect(parseTimelineSource('jira')).toBeUndefined();
+  });
+
+  it('maps grouped source filters to concrete event sources', () => {
+    expect(timelineSourceValues('chat')).toEqual(['telegram', 'slack']);
+    expect(timelineSourceValues('integrations')).toEqual(['integration', 'ingest_webhook']);
+    expect(timelineSourceValues('telegram')).toEqual(['telegram']);
   });
 
   it('parses impact presets and rejects unknown values', () => {

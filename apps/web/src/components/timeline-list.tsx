@@ -1,9 +1,11 @@
 'use client';
 
+import { truncateFilenameMiddle } from '@timeline/shared/documents/presentation';
 import { ExternalLink, Trash2 } from 'lucide-react';
 import Link from 'next/link';
 import { useMemo } from 'react';
 
+import type { TimelineCapturedFile } from '@/lib/timeline-captured-files';
 import type { TimelineEvent } from '@/lib/use-paginated-queries';
 
 import { removeConversationalEventAction } from '@/app/actions/events';
@@ -40,10 +42,12 @@ interface Props {
   emptyAction?: { href: string; label: string; body: string };
   impactFilter?: TimelineImpactFilter;
   impactItemsByEventId?: Record<string, ImpactItem[]>;
+  capturedFilesByEventId?: Record<string, TimelineCapturedFile[]>;
   focusEventId?: string | null;
 }
 
 const EMPTY_MEMBERS: NonNullable<Props['members']> = [];
+const EMPTY_CAPTURED_FILES_BY_EVENT_ID: NonNullable<Props['capturedFilesByEventId']> = {};
 
 const IMPACT_LABEL: Record<ImpactItem['kind'], string> = {
   task: 'Task',
@@ -145,12 +149,22 @@ function sourceTruthSummary(moment: TimelineMoment): { title: string; body: stri
 function rawEventBody(event: TimelineEvent): string {
   const meta = metaObject(event.sourceMetadata);
   const content = event.contentText?.trim();
-  if (content) return displayText(content);
+  if (content) return displayText(truncateAttachedFilenameText(content));
   const caption = stringMeta(meta, 'tg_caption');
   if (caption) return displayText(caption);
   const transcriptionStatus = transcriptionStatusMessage(event);
   if (transcriptionStatus) return transcriptionStatus;
   return 'Source event captured.';
+}
+
+function truncateAttachedFilenameText(text: string): string {
+  const match = /^(Attached (?:image|file) )(.+)$/i.exec(text.trim());
+  if (!match) return text;
+  return `${match[1] ?? ''}${truncateFilenameMiddle(match[2] ?? '')}`;
+}
+
+function truncateNullableFilename(value: string | null): string | null {
+  return value ? truncateFilenameMiddle(value) : null;
 }
 
 function addDetail(
@@ -187,7 +201,7 @@ function inspectorSourceDetailEntries(moment: TimelineMoment): [string, string][
         entries,
         seen,
         'Document',
-        stringMeta(meta, 'document_name') ?? stringMeta(meta, 'name'),
+        truncateNullableFilename(stringMeta(meta, 'document_name') ?? stringMeta(meta, 'name')),
       );
       addDetail(entries, seen, 'Origin', stringMeta(meta, 'source'));
     } else if (event.source === 'meeting' || event.source === 'calendar') {
@@ -281,7 +295,7 @@ function rawEventContextLabel(event: TimelineEvent): string | null {
   }
   if (event.source === 'document') {
     const label = stringMeta(meta, 'document_name') ?? stringMeta(meta, 'name');
-    return label ? displayText(label) : null;
+    return label ? displayText(truncateFilenameMiddle(label)) : null;
   }
   if (event.source === 'ingest_webhook') {
     const label = stringMeta(meta, 'ingest_webhook_name');
@@ -293,6 +307,7 @@ function rawEventContextLabel(event: TimelineEvent): string | null {
 function rawEventDocumentLink(event: TimelineEvent): {
   href: string;
   label: string;
+  title: string;
   documentId: string;
   versionId: string | null;
   versionNumber: number | null;
@@ -302,11 +317,11 @@ function rawEventDocumentLink(event: TimelineEvent): {
   const documentId = stringMeta(meta, 'document_id') ?? stringMeta(meta, 'documentId');
   if (!documentId) return null;
   const action = stringMeta(meta, 'action');
+  const filename = stringMeta(meta, 'document_name') ?? stringMeta(meta, 'name') ?? 'Attachment';
   return {
     href: `/app/documents/${documentId}`,
-    label: displayText(
-      stringMeta(meta, 'document_name') ?? stringMeta(meta, 'name') ?? 'Attachment',
-    ),
+    label: displayText(truncateFilenameMiddle(filename)),
+    title: displayText(filename),
     documentId,
     versionId: stringMeta(meta, 'document_version_id') ?? stringMeta(meta, 'documentVersionId'),
     versionNumber: positiveIntegerMeta(meta, 'document_version'),
@@ -324,7 +339,13 @@ function groupedByDate(moments: TimelineMoment[]): [string, TimelineMoment[]][] 
   return [...groups.entries()];
 }
 
-function InspectorBody({ moment }: { moment: TimelineMoment }) {
+function InspectorBody({
+  moment,
+  capturedFilesByEventId,
+}: {
+  moment: TimelineMoment;
+  capturedFilesByEventId: Record<string, TimelineCapturedFile[]>;
+}) {
   const metadata = inspectorSourceDetailEntries(moment);
   const summary = sourceTruthSummary(moment);
   const visibleRawEvents = moment.rawEvents.slice(0, INSPECTOR_RAW_EVENT_LIMIT);
@@ -383,6 +404,7 @@ function InspectorBody({ moment }: { moment: TimelineMoment }) {
               key={event.id}
               event={event}
               actorLabel={rawEventActorLabel(event, actorByTelegramUserId)}
+              capturedFiles={capturedFilesByEventId[event.id] ?? []}
             />
           ))}
         </ol>
@@ -413,7 +435,15 @@ function InspectorBody({ moment }: { moment: TimelineMoment }) {
   );
 }
 
-function SourceEvidenceCard({ event, actorLabel }: { event: TimelineEvent; actorLabel: string }) {
+function SourceEvidenceCard({
+  event,
+  actorLabel,
+  capturedFiles,
+}: {
+  event: TimelineEvent;
+  actorLabel: string;
+  capturedFiles: TimelineCapturedFile[];
+}) {
   const documentLink = rawEventDocumentLink(event);
   const context = rawEventContextLabel(event);
   const transcriptionStatus = transcriptionStatusMessage(event);
@@ -431,7 +461,7 @@ function SourceEvidenceCard({ event, actorLabel }: { event: TimelineEvent; actor
         <div className="mt-2 flex min-w-0 flex-wrap items-start gap-2">
           <Link
             href={documentLink.href}
-            title={documentLink.label}
+            title={documentLink.title}
             className="inline-flex min-h-7 max-w-full min-w-0 items-center rounded-sm border border-border bg-surface px-2 py-1 font-mono text-[11px] uppercase tracking-[0.1em] text-fg-muted transition-colors hover:text-signal"
           >
             <span className="min-w-0 truncate">Attachment · {documentLink.label}</span>
@@ -450,6 +480,13 @@ function SourceEvidenceCard({ event, actorLabel }: { event: TimelineEvent; actor
           ) : null}
         </div>
       ) : null}
+      {capturedFiles.length > 0 ? (
+        <div className="mt-2 space-y-2">
+          {capturedFiles.map((file) => (
+            <CapturedFileEvidence key={file.id} file={file} />
+          ))}
+        </div>
+      ) : null}
       <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-relaxed text-fg-muted">
         {body}
       </p>
@@ -457,6 +494,48 @@ function SourceEvidenceCard({ event, actorLabel }: { event: TimelineEvent; actor
         <p className="mt-2 text-sm italic text-fg-dim">{transcriptionStatus}</p>
       ) : null}
     </li>
+  );
+}
+
+function CapturedFileEvidence({ file }: { file: TimelineCapturedFile }) {
+  const version = file.currentVersion;
+  const contentType = version?.contentType?.toLowerCase().split(';')[0]?.trim() ?? '';
+  const canPreview = Boolean(
+    version?.id &&
+    (contentType.startsWith('image/') ||
+      contentType.startsWith('audio/') ||
+      contentType === 'application/pdf'),
+  );
+  const displayTitle = file.presentation.displayTitle;
+  const storedName =
+    file.presentation.isGeneratedName && displayTitle !== file.name
+      ? truncateFilenameMiddle(file.name)
+      : null;
+  return (
+    <div className="min-w-0 rounded-sm border border-border bg-surface-2 p-2">
+      <div className="flex min-w-0 flex-wrap items-start gap-2">
+        <Link
+          href={`/app/documents/${file.id}`}
+          title={file.name}
+          className="inline-flex min-h-7 max-w-full min-w-0 items-center rounded-sm border border-border bg-bg px-2 py-1 font-mono text-[11px] uppercase tracking-[0.1em] text-fg-muted transition-colors hover:text-signal"
+        >
+          <span className="min-w-0 truncate">Attachment · {displayTitle}</span>
+        </Link>
+        {canPreview && version ? (
+          <DocumentPreview
+            target={{ documentId: file.id, versionId: version.id }}
+            label="Preview"
+            compact
+            className="w-full sm:w-auto sm:min-w-72"
+          />
+        ) : null}
+      </div>
+      {storedName ? (
+        <p className="mt-1 truncate font-mono text-[10px] uppercase tracking-[0.1em] text-fg-dim">
+          Stored as <span title={file.name}>{storedName}</span>
+        </p>
+      ) : null}
+    </div>
   );
 }
 
@@ -584,6 +663,7 @@ function TimelineMomentRow({
   currentUserId,
   isAdmin,
   members,
+  capturedFilesByEventId,
   compact,
 }: {
   moment: TimelineMoment;
@@ -591,6 +671,7 @@ function TimelineMomentRow({
   currentUserId: string;
   isAdmin: boolean;
   members: { id: string; label: string }[];
+  capturedFilesByEventId: Record<string, TimelineCapturedFile[]>;
   compact: boolean;
 }) {
   const inspector = useInspector();
@@ -633,7 +714,7 @@ function TimelineMomentRow({
               title: inspectorTitle(moment),
               render: () => (
                 <div className="space-y-5">
-                  <InspectorBody moment={moment} />
+                  <InspectorBody moment={moment} capturedFilesByEventId={capturedFilesByEventId} />
                   <InspectorActions
                     moment={moment}
                     audioUrlMap={audioUrlMap}
@@ -700,6 +781,7 @@ export function TimelineList({
   emptyAction,
   impactFilter = 'all',
   impactItemsByEventId,
+  capturedFilesByEventId = EMPTY_CAPTURED_FILES_BY_EVENT_ID,
   focusEventId = null,
 }: Props) {
   const moments = useMemo(
@@ -761,6 +843,7 @@ export function TimelineList({
                 currentUserId={currentUserId}
                 isAdmin={isAdmin}
                 members={members}
+                capturedFilesByEventId={capturedFilesByEventId}
                 compact={compact}
               />
             ))}
