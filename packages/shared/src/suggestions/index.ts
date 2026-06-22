@@ -2114,6 +2114,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         ),
       );
 
+    let aiAdjudications = 0;
     for (const newerItem of newerItems) {
       for (const candidate of candidateRows) {
         if (!isOlderPendingItem(candidate.item, newerItem)) continue;
@@ -2122,7 +2123,9 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
           olderSuggestion: candidate.suggestion,
           newerItem,
           newerSuggestion,
+          allowAiAdjudication: aiAdjudications < MAX_CALENDAR_DEDUPE_AI_ADJUDICATIONS,
         });
+        if (supersede.adjudicated) aiAdjudications += 1;
         if (supersede.supersede) {
           const superseded = await supersedeItem(
             candidate.item.id,

@@ -1402,6 +1402,67 @@ describe('suggestion scope', () => {
     expect(chatStructured).toHaveBeenCalledTimes(1);
   });
 
+  it('caps live calendar AI adjudication for a new proposal', async () => {
+    const chatStructured = adjudicationStub({
+      verdict: 'distinct',
+      confidence: 'high',
+      mergeReason: 'The evidence describes separately actionable timed slots.',
+    });
+    const scope = withTeam(db as never, TEAM_ID, PSEUDO_USER, {
+      skipMembershipCheck: true,
+      chatStructured: chatStructured as never,
+    });
+    for (let index = 0; index < 26; index += 1) {
+      const hour = Math.floor(index / 4);
+      const minute = (index % 4) * 15;
+      const nextMinute = minute + 10;
+      await scope.suggestions.createOrMergeSuggestionBundle({
+        source: 'background',
+        title: `Schedule local inference planning ${index}`,
+        dedupeKey: `calendar-ai-cap-older:${index}`,
+        visibility: 'team',
+        items: [
+          {
+            operation: 'create',
+            targetKind: 'calendar_event',
+            title: 'Local inference planning',
+            dedupeKey: `calendar-ai-cap-older:${index}:item`,
+            proposedPayload: {
+              title: 'Local inference planning',
+              startAt: `2026-06-25T${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}:00.000Z`,
+              endAt: `2026-06-25T${String(hour).padStart(2, '0')}:${String(nextMinute).padStart(2, '0')}:00.000Z`,
+              timezone: 'UTC',
+            },
+          },
+        ],
+      });
+    }
+    chatStructured.mockClear();
+
+    await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Schedule local inference planning latest',
+      dedupeKey: 'calendar-ai-cap-newer',
+      visibility: 'team',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'calendar_event',
+          title: 'Local inference planning',
+          dedupeKey: 'calendar-ai-cap-newer:item',
+          proposedPayload: {
+            title: 'Local inference planning',
+            startAt: '2026-06-25T07:00:00.000Z',
+            endAt: '2026-06-25T07:30:00.000Z',
+            timezone: 'UTC',
+          },
+        },
+      ],
+    });
+
+    expect(chatStructured).toHaveBeenCalledTimes(25);
+  });
+
   it('dedupes date-only calendar proposals when later evidence adds the time', async () => {
     const chatStructured = adjudicationStub({
       verdict: 'distinct',
