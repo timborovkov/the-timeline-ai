@@ -37,17 +37,30 @@
       </p>
 
       <h2 id="google-drive">Google Drive</h2>
+      <p>
+        Timeline uses a server-side OAuth web flow and requests Drive read-only access. Google
+        scopes are requested by the authorize URL, but the OAuth consent screen must be configured
+        for external/internal use before non-test users can connect.
+      </p>
       <ol>
         <li>
-          Create an OAuth 2.0 client at
-          <a href="https://console.cloud.google.com/apis/credentials">console.cloud.google.com</a>
-          (type: <em>Web application</em>).
+          In
+          <a href="https://console.cloud.google.com/apis/credentials"
+            >Google Cloud Console → APIs &amp; Services → Credentials</a
+          >, create an OAuth 2.0 client with type <em>Web application</em>.
         </li>
         <li>
-          Add the redirect URI:
-          <code>https://thetimeline.cc/api/integrations/google_drive/callback</code>.
+          Under <strong>Authorized redirect URIs</strong>, add:
+          <code>https://thetimeline.cc/api/integrations/google_drive/callback</code>. Authorized
+          JavaScript origins are not used by Timeline's server-side callback flow.
         </li>
         <li>Enable the Google Drive API for the project.</li>
+        <li>
+          Ensure the OAuth consent screen allows these scopes:
+          <code>https://www.googleapis.com/auth/drive.readonly</code> and
+          <code>https://www.googleapis.com/auth/drive.metadata.readonly</code>.
+        </li>
+        <li>Copy the OAuth client id and client secret from the credential details page.</li>
         <li>
           Set:
           <pre><code>GOOGLE_CLIENT_ID=...
@@ -79,6 +92,10 @@ GOOGLE_DRIVE_WEBHOOK_SECRET=...</code></pre>
       </ol>
 
       <h2 id="linear">Linear</h2>
+      <p>
+        Timeline uses Linear OAuth plus an optional signed webhook. OAuth grants the connection
+        owner read access; the team only activates Linear teams that owner shares.
+      </p>
       <ol>
         <li>
           Create an OAuth application at
@@ -90,6 +107,8 @@ GOOGLE_DRIVE_WEBHOOK_SECRET=...</code></pre>
           Redirect URI:
           <code>https://thetimeline.cc/api/integrations/linear/callback</code>.
         </li>
+        <li>Grant the OAuth app the <code>read</code> scope.</li>
+        <li>Copy the OAuth client id and client secret from the Linear application page.</li>
         <li>
           Set:
           <pre><code>LINEAR_CLIENT_ID=...
@@ -120,12 +139,23 @@ LINEAR_WEBHOOK_SECRET=...</code></pre>
       </p>
       <ol>
         <li>
-          Create an OAuth App (or a GitHub App with OAuth) at
-          <a href="https://github.com/settings/developers">github.com/settings/developers</a>.
+          Create an OAuth App at
+          <a href="https://github.com/settings/developers">github.com/settings/developers</a>. For
+          an organization-owned app, use the organization's
+          <strong>Settings → Developer settings</strong> page instead.
         </li>
         <li>
           Callback URL:
           <code>https://thetimeline.cc/api/integrations/github/callback</code>.
+        </li>
+        <li>
+          Timeline requests scopes in the OAuth authorize URL, so there is no separate scope picker
+          on the GitHub OAuth App page. The requested scopes are <code>repo</code> and
+          <code>read:org</code>.
+        </li>
+        <li>
+          Copy the OAuth app <strong>Client ID</strong> and generate/copy a
+          <strong>Client secret</strong>.
         </li>
         <li>
           Set:
@@ -149,15 +179,29 @@ GITHUB_APP_CLIENT_SECRET=...</code></pre>
       </ol>
 
       <h2 id="monday">Monday.com</h2>
+      <p>
+        Timeline uses monday.com's OAuth app flow, not a marketplace-only integration recipe. The
+        app needs read scopes for boards, users, updates, and WorkDocs so selected boards and docs
+        can become cited Timeline evidence.
+      </p>
       <ol>
         <li>
-          Create a monday.com OAuth app in the monday.com developer center and request read access
-          for boards, users, updates, and docs: <code>boards:read</code>, <code>users:read</code>,
-          <code>updates:read</code>, and <code>docs:read</code>.
+          Open
+          <a href="https://developer.monday.com/apps">monday.com Developer Center</a>, create an
+          app, and open its OAuth / Permissions settings.
         </li>
         <li>
-          Redirect URI:
+          Add the redirect URI:
           <code>https://thetimeline.cc/api/integrations/monday/callback</code>.
+        </li>
+        <li>
+          Add these OAuth scopes exactly: <code>boards:read</code>, <code>users:read</code>,
+          <code>updates:read</code>, and <code>docs:read</code>. Timeline also sends the same
+          space-separated scope list in the OAuth authorize URL.
+        </li>
+        <li>
+          Copy the app's <strong>Client ID</strong> and <strong>Client Secret</strong> from the
+          Basic Information / OAuth settings.
         </li>
         <li>
           Set:
@@ -195,9 +239,12 @@ MONDAY_CLIENT_SECRET=...</code></pre>
           <code>https://thetimeline.cc/api/integrations/slack/callback</code>.
         </li>
         <li>
-          Ensure the bot scopes include <code>channels:read</code>, <code>channels:history</code>,
-          <code>groups:read</code>, <code>groups:history</code>, <code>files:read</code>, and
-          <code>reactions:read</code>.
+          Ensure the bot scopes include the native-ingestion scopes:
+          <code>channels:read</code>, <code>channels:history</code>, <code>groups:read</code>,
+          <code>groups:history</code>, <code>files:read</code>, <code>reactions:read</code>,
+          <code>users:read</code>, and <code>users:read.email</code>. The conversational Slack setup
+          page also lists the additional scopes/events needed for commands, DMs, reactions, and app
+          mentions.
         </li>
         <li>
           Connect Slack from the native catalog, share selected channels, then activate them from
@@ -207,14 +254,37 @@ MONDAY_CLIENT_SECRET=...</code></pre>
       </ol>
 
       <h2 id="sentry-native">Sentry native source</h2>
+      <p>
+        These credentials are separate from <code>SENTRY_DSN</code>. Timeline uses Sentry OAuth to
+        read selected Sentry organizations/projects into Timeline; it does not change where Timeline
+        reports its own application errors.
+      </p>
       <ol>
         <li>
-          Create a Sentry integration/OAuth application with organization, project, event, release,
-          and team read permissions.
+          In Sentry, open
+          <a href="https://sentry.io/settings/account/api/applications/"
+            >Account Settings → API → Applications</a
+          >
+          and create an OAuth application for Timeline.
         </li>
         <li>
-          Redirect URI:
+          Add the redirect URI:
           <code>https://thetimeline.cc/api/integrations/sentry/callback</code>.
+        </li>
+        <li>
+          Sentry OAuth scopes are requested by Timeline in the authorize URL; the app page may not
+          have a separate scope picker. Timeline requests <code>org:read</code>,
+          <code>project:read</code>, <code>event:read</code>, <code>event:admin</code>, and
+          <code>team:read</code>.
+        </li>
+        <li>
+          Use a confidential/server-side OAuth app that exposes a client secret. If the page says
+          <em>Public Client</em> and only shows a client id, that PKCE-only app is not compatible
+          with the current Timeline provider until the Sentry adapter adds PKCE support.
+        </li>
+        <li>
+          Copy the <strong>Client ID</strong> and <strong>Client Secret</strong>. Authorized
+          JavaScript origins are not used by Timeline's server-side callback flow.
         </li>
         <li>
           Set:

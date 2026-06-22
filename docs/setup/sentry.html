@@ -147,12 +147,25 @@ SENTRY_INTEGRATION_CLIENT_SECRET=
 </code></pre>
       <ol>
         <li>
-          Create a Sentry integration/OAuth application with organization, project, event, release,
-          and team read permissions.
+          Open
+          <a href="https://sentry.io/settings/account/api/applications/"
+            >Account Settings → API → Applications</a
+          >
+          and create an OAuth application for Timeline.
         </li>
         <li>
           Add <code>https://thetimeline.cc/api/integrations/sentry/callback</code> as the OAuth
           callback.
+        </li>
+        <li>
+          Timeline requests scopes in the OAuth authorize URL: <code>org:read</code>,
+          <code>project:read</code>, <code>event:read</code>, <code>event:admin</code>, and
+          <code>team:read</code>. The Sentry app page may not have a separate scope picker.
+        </li>
+        <li>
+          Use a confidential/server-side OAuth app with a client secret. A Sentry app marked
+          <em>Public Client</em> is PKCE-only and does not expose the secret required by the current
+          Timeline adapter.
         </li>
         <li>
           Restart web and worker services. Sentry appears in the native integrations catalog once
