@@ -228,6 +228,61 @@ describe('writeIntegrationEvents visibility', () => {
     });
   });
 
+  it('returns an empty insert result when every native Slack event belongs to a bound channel', async () => {
+    await db.insert(slackWorkspaces).values({
+      id: SLACK_WORKSPACE_ID,
+      slackTeamId: 'T_SLACK',
+      name: 'Acme Slack',
+      tokenCiphertext: Buffer.from('ciphertext'),
+      tokenIv: Buffer.from('iv'),
+      tokenTag: Buffer.from('tag'),
+    });
+    await db.insert(slackConversationBindings).values({
+      workspaceId: SLACK_WORKSPACE_ID,
+      teamId: TEAM_ID,
+      slackConversationId: 'C_BOUND',
+      conversationType: 'channel',
+      title: 'bound',
+      boundByUserId: USER_ID,
+    });
+    const [integration] = await db
+      .insert(integrations)
+      .values({
+        teamId: TEAM_ID,
+        connectedByUserId: USER_ID,
+        provider: 'slack',
+        displayName: 'Slack',
+        externalAccountId: 'T_SLACK',
+        visibilityDefault: 'team',
+      })
+      .returning();
+    if (!integration) throw new Error('integration insert failed');
+
+    const inserted = await writeIntegrationEvents({
+      db: db as never,
+      integration,
+      events: [
+        {
+          dedupKey: 'slack:message:T_SLACK:C_BOUND:1700000000.000100',
+          provider: 'slack',
+          externalObjectId: 'C_BOUND:1700000000.000100',
+          externalEventId: '1700000000.000100',
+          eventType: 'message.created',
+          occurredAt: new Date('2026-05-27T09:00:00Z'),
+          contentText: 'captured by conversational Slack',
+          extra: {
+            slack_team_id: 'T_SLACK',
+            slack_channel_id: 'C_BOUND',
+            slack_message_ts: '1700000000.000100',
+          },
+        },
+      ],
+    });
+
+    expect(inserted).toEqual([]);
+    await expect(db.select().from(rawEvents)).resolves.toEqual([]);
+  });
+
   it('falls back to team visibility for private integration events without a connector owner', async () => {
     const [integration] = await db
       .insert(integrations)

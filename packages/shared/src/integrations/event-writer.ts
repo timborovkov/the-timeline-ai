@@ -84,6 +84,7 @@ export async function writeIntegrationEvents(deps: {
     return true;
   });
   const writableEvents = await filterEventsOwnedByNativeIntegrations(deps, uniqueEvents);
+  if (writableEvents.length === 0) return [];
 
   const values = writableEvents.map((evt) => {
     const visibilityOwnerUserId = deps.integration.connectedByUserId ?? null;
