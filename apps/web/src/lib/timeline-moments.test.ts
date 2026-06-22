@@ -49,6 +49,12 @@ describe('timeline moment grouping', () => {
     expect(formatDateSection('2026-06-30T23:30:00.000Z', now, 'America/New_York')).toBe('Today');
   });
 
+  it('derives yesterday from the workspace date instead of the server timezone', () => {
+    const now = new Date('2026-03-29T23:30:00.000Z');
+
+    expect(formatDateSection('2026-03-28T12:00:00.000Z', now, 'UTC')).toBe('Yesterday');
+  });
+
   it('groups meetings by meeting id', () => {
     const moments = buildTimelineMoments(
       [

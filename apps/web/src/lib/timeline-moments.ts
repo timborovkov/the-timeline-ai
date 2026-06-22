@@ -113,6 +113,12 @@ function dateKey(input: Date | string, timezone?: string): string {
   return eventDate(input).toLocaleDateString('en-CA', { timeZone: timezone });
 }
 
+function previousDateKey(key: string): string {
+  const date = new Date(`${key}T00:00:00.000Z`);
+  date.setUTCDate(date.getUTCDate() - 1);
+  return date.toISOString().slice(0, 10);
+}
+
 export function formatDateSection(
   input: Date | string,
   now = new Date(),
@@ -120,11 +126,9 @@ export function formatDateSection(
 ): string {
   const d = eventDate(input);
   const today = dateKey(now, timezone);
-  const yesterday = new Date(now);
-  yesterday.setDate(yesterday.getDate() - 1);
   const key = dateKey(d, timezone);
   if (key === today) return 'Today';
-  if (key === dateKey(yesterday, timezone)) return 'Yesterday';
+  if (key === previousDateKey(today)) return 'Yesterday';
   return d.toLocaleDateString(undefined, {
     weekday: 'long',
     month: 'short',
