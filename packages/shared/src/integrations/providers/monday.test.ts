@@ -527,6 +527,120 @@ describe('mondayProvider', () => {
     );
   });
 
+  it('persists the monday.com item page cursor when a board exceeds one sync batch', async () => {
+    const itemForPage = (page: number) => ({
+      id: `item-${String(page)}`,
+      name: `Record ${String(page)}`,
+      updated_at: `2026-06-20T${String(Math.floor(page / 60)).padStart(2, '0')}:${String(
+        page % 60,
+      ).padStart(2, '0')}:00Z`,
+      column_values: [],
+      updates: [],
+      subitems: [],
+    });
+    const fetch = vi.fn<typeof globalThis.fetch>((_input, init) => {
+      const body = requestPayload(init);
+      if (body.query.includes('columns { id title type }')) {
+        return Promise.resolve(
+          jsonResponse({
+            data: {
+              boards: [
+                {
+                  id: 'board-1',
+                  name: 'Pipeline',
+                  updated_at: '2026-06-20T00:00:00Z',
+                  columns: [],
+                },
+              ],
+            },
+          }),
+        );
+      }
+      if (body.query.includes('activity_logs')) {
+        return Promise.resolve(jsonResponse({ data: { boards: [{ activity_logs: [] }] } }));
+      }
+      if (body.query.includes('next_items_page')) {
+        const cursor = String(body.variables?.cursor);
+        const page = Number(cursor.replace('cursor-', ''));
+        return Promise.resolve(
+          jsonResponse({
+            data: {
+              next_items_page: {
+                cursor: page < 101 ? `cursor-${String(page + 1)}` : null,
+                items: [itemForPage(page)],
+              },
+            },
+          }),
+        );
+      }
+      if (body.query.includes('items_page')) {
+        return Promise.resolve(
+          jsonResponse({
+            data: {
+              boards: [
+                {
+                  items_page: {
+                    cursor: 'cursor-2',
+                    items: [itemForPage(1)],
+                  },
+                },
+              ],
+            },
+          }),
+        );
+      }
+      throw new Error(`unexpected query: ${body.query}`);
+    });
+    vi.stubGlobal('fetch', fetch);
+    const ctx = {
+      loadCursor: vi.fn().mockResolvedValueOnce({}).mockResolvedValueOnce({
+        activity_since: '2026-06-20T00:00:00.000Z',
+        item_page_cursor: 'cursor-101',
+      }),
+      saveCursor: vi.fn().mockResolvedValue(undefined),
+      writeEvents: vi.fn().mockResolvedValue([]),
+      persistTokens: vi.fn(),
+      recordAudit: vi.fn(),
+    };
+
+    await mondayProvider.backfill({
+      integration: { id: 'integration-1' } as never,
+      tokens: { access_token: 'token' },
+      selections: [{ kind: 'monday.board', externalId: 'board-1' }],
+      ctx,
+    });
+    await mondayProvider.incrementalSync({
+      integration: { id: 'integration-1' } as never,
+      tokens: { access_token: 'token' },
+      selections: [{ kind: 'monday.board', externalId: 'board-1' }],
+      ctx,
+    });
+
+    expect(ctx.saveCursor).toHaveBeenNthCalledWith(
+      1,
+      'monday.board:board-1',
+      expect.objectContaining({ item_page_cursor: 'cursor-101' }),
+    );
+    expect(ctx.saveCursor).toHaveBeenNthCalledWith(
+      2,
+      'monday.board:board-1',
+      expect.objectContaining({
+        item_since: '2026-06-20T01:41:00.000Z',
+      }),
+    );
+    expect(ctx.saveCursor.mock.calls[1]?.[1]).not.toHaveProperty('item_page_cursor');
+    expect(
+      (ctx.writeEvents.mock.calls[0]?.[0] as IntegrationEvent[]).map(
+        (event) => event.externalObjectId,
+      ),
+    ).toContain('item-100');
+    expect(
+      (ctx.writeEvents.mock.calls[1]?.[0] as IntegrationEvent[]).map(
+        (event) => event.externalObjectId,
+      ),
+    ).toContain('item-101');
+  });
+
   it('does not advance the monday.com item cursor from board schema timestamps', async () => {
     vi.stubGlobal(
       'fetch',

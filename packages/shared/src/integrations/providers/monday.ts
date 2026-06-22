@@ -116,6 +116,7 @@ interface MondayDoc {
 interface MondayCursor {
   activity_since?: string | undefined;
   item_since?: string | undefined;
+  item_page_cursor?: string | undefined;
   doc_since?: string | undefined;
 }
 
@@ -626,19 +627,25 @@ async function fetchNextItemsPage(tokens: MondayTokens, cursor: string): Promise
   return data.next_items_page ?? {};
 }
 
-async function fetchAllBoardItems(
+async function fetchBoardItemsBatch(
   tokens: MondayTokens,
   boardId: string,
-  updatedSince?: string,
-): Promise<MondayItem[]> {
+  input: {
+    updatedSince?: string;
+    pageCursor?: string;
+  },
+): Promise<{ items: MondayItem[]; nextCursor?: string }> {
   const items: MondayItem[] = [];
-  let page = await fetchInitialItemsPage(tokens, boardId, updatedSince);
+  let page = input.pageCursor
+    ? await fetchNextItemsPage(tokens, input.pageCursor)
+    : await fetchInitialItemsPage(tokens, boardId, input.updatedSince);
   for (let index = 0; index < 100; index++) {
     items.push(...(page.items ?? []));
-    if (!page.cursor) break;
+    if (!page.cursor) return { items };
+    if (index === 99) return { items, nextCursor: page.cursor };
     page = await fetchNextItemsPage(tokens, page.cursor);
   }
-  return items;
+  return { items };
 }
 
 async function fetchActivityLogs(
@@ -765,10 +772,15 @@ async function syncBoard(
   const from =
     cursor.activity_since ?? new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
   const to = new Date().toISOString();
-  const [activityLogs, items] = await Promise.all([
+  const itemInput = {
+    ...(options.incremental && cursor.item_since ? { updatedSince: cursor.item_since } : {}),
+    ...(cursor.item_page_cursor ? { pageCursor: cursor.item_page_cursor } : {}),
+  };
+  const [activityLogs, itemBatch] = await Promise.all([
     fetchActivityLogs(tokens, boardId, from, to),
-    fetchAllBoardItems(tokens, boardId, options.incremental ? cursor.item_since : undefined),
+    fetchBoardItemsBatch(tokens, boardId, itemInput),
   ]);
+  const items = itemBatch.items;
   const activityEvents = activityLogs.map((log) => activityEvent(board, log));
   const itemEvents = items.flatMap((item) => [
     ...recordEvents(board, item, 'item'),
@@ -788,7 +800,10 @@ async function syncBoard(
     events,
     cursor: {
       activity_since: latestActivity ?? cursor.activity_since ?? to,
-      item_since: latestItem ?? cursor.item_since ?? to,
+      item_since: itemBatch.nextCursor
+        ? cursor.item_since
+        : (latestItem ?? cursor.item_since ?? to),
+      ...(itemBatch.nextCursor ? { item_page_cursor: itemBatch.nextCursor } : {}),
     },
   };
 }
