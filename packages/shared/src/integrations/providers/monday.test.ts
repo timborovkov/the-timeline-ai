@@ -790,6 +790,65 @@ describe('mondayProvider', () => {
     });
   });
 
+  it('continues WorkDoc block pagination until the current page is short', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof globalThis.fetch>((_input, init) => {
+        const body = requestPayload(init);
+        if (body.query.includes('blocks(limit: $blockLimit')) {
+          const page = Number(body.variables?.blockPage ?? 1);
+          const blocks =
+            page < 3
+              ? Array.from({ length: 100 }, (_, index) => ({
+                  id: `block-${String(page)}-${String(index)}`,
+                  type: 'normal_text',
+                  content: `Page ${String(page)} block ${String(index)}`,
+                }))
+              : [{ id: 'block-3-tail', type: 'normal_text', content: 'Third page tail.' }];
+          return Promise.resolve(
+            jsonResponse({
+              data: {
+                docs: [
+                  {
+                    id: 'doc-1',
+                    object_id: 'object-1',
+                    name: 'Long WorkDoc',
+                    created_at: '2026-06-18T09:00:00Z',
+                    updated_at: '2026-06-20T14:00:00Z',
+                    url: 'https://monday.com/docs/doc-1',
+                    workspace_id: 'workspace-1',
+                    workspace: { id: 'workspace-1', name: 'Product' },
+                    created_by: { id: 'user-1', name: 'Ada' },
+                    blocks,
+                  },
+                ],
+              },
+            }),
+          );
+        }
+        throw new Error(`unexpected query: ${body.query}`);
+      }),
+    );
+    const ctx = {
+      loadCursor: vi.fn().mockResolvedValue({}),
+      saveCursor: vi.fn().mockResolvedValue(undefined),
+      writeEvents: vi.fn().mockResolvedValue([]),
+      harvestDocument: vi.fn().mockResolvedValue({ documentId: 'doc-id', versionId: 'version-id' }),
+      persistTokens: vi.fn(),
+      recordAudit: vi.fn(),
+    };
+
+    await mondayProvider.backfill({
+      integration: { id: 'integration-1' } as never,
+      tokens: { access_token: 'token' },
+      selections: [{ kind: 'monday.doc', externalId: 'doc-1' }],
+      ctx,
+    });
+
+    const harvested = ctx.harvestDocument.mock.calls[0]?.[0] as { body: Buffer };
+    expect(harvested.body.toString('utf8')).toContain('Third page tail.');
+  });
+
   it('skips WorkDoc harvest when the event and cursor already match', async () => {
     vi.stubGlobal(
       'fetch',

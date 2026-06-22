@@ -692,12 +692,12 @@ async function fetchDoc(tokens: MondayTokens, docId: string): Promise<MondayDoc 
   const first = await fetchDocPage(tokens, docId, 1);
   if (!first) return null;
   const blocks = [...(first.blocks ?? [])];
-  for (let page = 2; page <= 100; page++) {
-    if ((first.blocks?.length ?? 0) < BLOCK_PAGE_LIMIT) break;
+  let previousPageBlockCount = first.blocks?.length ?? 0;
+  for (let page = 2; page <= 100 && previousPageBlockCount === BLOCK_PAGE_LIMIT; page++) {
     const next = await fetchDocPage(tokens, docId, page);
     const nextBlocks = next?.blocks ?? [];
     blocks.push(...nextBlocks);
-    if (nextBlocks.length < BLOCK_PAGE_LIMIT) break;
+    previousPageBlockCount = nextBlocks.length;
   }
   return { ...first, blocks };
 }

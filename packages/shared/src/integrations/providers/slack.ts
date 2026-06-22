@@ -386,9 +386,10 @@ export const slackProvider: IntegrationProvider = {
     }));
   },
 
-  async backfill({ tokens, selections, ctx }) {
+  async backfill({ integration, tokens, selections, ctx }) {
     const slackTokens = tokens as SlackTokens;
-    const teamId = slackTokens.team?.id ?? 'slack';
+    const teamId = integration.externalAccountId ?? slackTokens.team?.id;
+    if (!teamId) throw new Error('slack_missing_team_id');
     for (const selection of selections.filter((item) => item.kind === 'slack.channel')) {
       const cursor = (await ctx.loadCursor(`slack.channel:${selection.externalId}`)) as SlackCursor;
       const result = await syncChannel(
@@ -402,7 +403,7 @@ export const slackProvider: IntegrationProvider = {
     }
   },
 
-  async incrementalSync({ tokens, selections, ctx }) {
-    await this.backfill({ integration: {} as never, tokens, selections, ctx });
+  async incrementalSync({ integration, tokens, selections, ctx }) {
+    await this.backfill({ integration, tokens, selections, ctx });
   },
 };

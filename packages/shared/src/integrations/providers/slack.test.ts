@@ -148,6 +148,50 @@ describe('slackProvider', () => {
     });
   });
 
+  it('uses the persisted integration account id as the Slack workspace id', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>((input, init) => {
+      if (typeof input !== 'string') throw new Error('expected Slack URL string');
+      const requestBody = init?.body;
+      if (typeof requestBody !== 'string') throw new Error('expected form request body');
+      if (input.endsWith('/conversations.history')) {
+        return Promise.resolve(
+          jsonResponse({
+            ok: true,
+            messages: [
+              {
+                type: 'message',
+                user: 'U123',
+                text: 'Workspace id should come from the connection',
+                ts: '1782000000.000100',
+              },
+            ],
+            response_metadata: {},
+          }),
+        );
+      }
+      return Promise.resolve(jsonResponse({ ok: true, messages: [] }));
+    });
+    vi.stubGlobal('fetch', fetch);
+    const ctx = {
+      loadCursor: vi.fn().mockResolvedValue({}),
+      saveCursor: vi.fn().mockResolvedValue(undefined),
+      writeEvents: vi.fn().mockResolvedValue([]),
+      persistTokens: vi.fn(),
+      recordAudit: vi.fn(),
+    };
+
+    await slackProvider.backfill({
+      integration: { id: 'integration-1', externalAccountId: 'T_FROM_CONNECTION' } as never,
+      tokens: { access_token: 'xoxb-token', team: { id: 'T_FROM_TOKEN', name: 'Acme' } },
+      selections: [{ kind: 'slack.channel', externalId: 'C123' }],
+      ctx,
+    });
+
+    const events = (ctx.writeEvents.mock.calls[0]?.[0] ?? []) as IntegrationEvent[];
+    expect(events[0]?.dedupKey).toBe('slack:message:T_FROM_CONNECTION:C123:1782000000.000100:');
+    expect(events[0]?.extra).toMatchObject({ slack_team_id: 'T_FROM_CONNECTION' });
+  });
+
   it('paginates Slack channel history until Slack returns no next cursor', async () => {
     const fetch = vi.fn<typeof globalThis.fetch>((input, init) => {
       if (typeof input !== 'string') throw new Error('expected Slack URL string');
