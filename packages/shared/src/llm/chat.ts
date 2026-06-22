@@ -56,6 +56,13 @@ export interface StreamChatModelAttribution {
   fallbackModelIds: string[];
 }
 
+class JsonObjectFallbackParseError extends Error {
+  constructor(cause: unknown) {
+    super('llm.chatStructured json_object fallback returned invalid JSON', { cause });
+    this.name = 'JsonObjectFallbackParseError';
+  }
+}
+
 function resolveDefaultModelId(): string {
   return TIMELINE_MODELS.extraction.id;
 }
@@ -189,14 +196,11 @@ function hasRetryableProviderMessage(err: unknown): boolean {
   );
 }
 
-function hasStructuredOutputFailureMessage(err: unknown): boolean {
-  const message = errorMessage(err).toLowerCase();
-  return (
-    message.includes('llm.chatstructured json_object fallback returned invalid json') ||
-    message.includes('json_object fallback') ||
-    message.includes('structured output') ||
-    message.includes('no object')
-  );
+function hasJsonObjectFallbackParseError(err: unknown): boolean {
+  if (err instanceof JsonObjectFallbackParseError) return true;
+  if (err instanceof AggregateError) return err.errors.some(hasJsonObjectFallbackParseError);
+  if (err instanceof Error && 'cause' in err) return hasJsonObjectFallbackParseError(err.cause);
+  return false;
 }
 
 function shouldFallbackToAlternateModel(err: unknown): boolean {
@@ -204,7 +208,7 @@ function shouldFallbackToAlternateModel(err: unknown): boolean {
   return (
     hasNoObjectGeneratedError(err) ||
     hasSchemaValidationError(err) ||
-    hasStructuredOutputFailureMessage(err) ||
+    hasJsonObjectFallbackParseError(err) ||
     statusCodes.some(isRetryableStatusCode) ||
     hasRetryableProviderMessage(err)
   );
@@ -336,9 +340,7 @@ async function generateJsonObjectFallback<TSchema extends z.ZodType>({
   try {
     parsed = JSON.parse(candidateText);
   } catch (err) {
-    throw new Error('llm.chatStructured json_object fallback returned invalid JSON', {
-      cause: err,
-    });
+    throw new JsonObjectFallbackParseError(err);
   }
   const object: z.infer<TSchema> = schema.parse(parsed);
   return { object };
