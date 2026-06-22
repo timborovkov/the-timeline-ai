@@ -394,6 +394,18 @@ rclone sync s3:timeline-attachments backblaze-b2:timeline-backup-attachments
             every deploy that ships schema changes.
           </p>
           <p>
+            <strong>Postgres pool guardrails.</strong> Shared clients set
+            <code>application_name</code> labels (<code>timeline-web</code>,
+            <code>timeline-worker</code>, <code>timeline-migrator</code>,
+            <code>timeline-migration-waiter</code>, <code>timeline-reset</code>, or
+            <code>timeline-script</code>) so <code>pg_stat_activity</code> shows which service owns
+            a lock. App pools use a 10 second <code>lock_timeout</code>, 120 second
+            <code>statement_timeout</code>, and 60 second
+            <code>idle_in_transaction_session_timeout</code>; migration sessions keep the short lock
+            wait but get a 10 minute statement budget. A deploy that is blocked behind an old lock
+            should fail clearly instead of waiting indefinitely.
+          </p>
+          <p>
             <strong>SSL note.</strong> Inside a Railway project, <code>DATABASE_URL</code> resolves
             to the Postgres plugin's internal hostname and uses plain TCP. If you ever point this at
             the <em>external</em> Postgres proxy (e.g., to run <code>pnpm db:migrate</code> from

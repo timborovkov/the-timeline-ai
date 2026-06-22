@@ -1,6 +1,4 @@
-import postgres from 'postgres';
-
-const silenceNotices = (): void => undefined;
+import { createPgClient } from '#src/client.js';
 
 export function postgresResetStatements(): string[] {
   return [
@@ -19,7 +17,11 @@ WHERE datname = current_database()
 export async function resetPostgresSchema(url = process.env.DATABASE_URL): Promise<void> {
   if (!url) throw new Error('DATABASE_URL is required');
 
-  const client = postgres(url, { max: 1, onnotice: silenceNotices });
+  const client = createPgClient(url, {
+    applicationName: 'timeline-reset',
+    max: 1,
+    silenceOperationalNotices: true,
+  });
   try {
     for (const statement of postgresResetStatements()) {
       await client.unsafe(statement);

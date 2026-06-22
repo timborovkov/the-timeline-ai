@@ -3,9 +3,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import postgres from 'postgres';
-
-const silenceNotices = (): void => undefined;
+import { createPgClient } from '#src/client.js';
 
 interface JournalEntry {
   idx: number;
@@ -55,7 +53,11 @@ export async function waitForMigrations(options: WaitForMigrationsOptions = {}):
   const intervalMs = options.intervalMs ?? 2_000;
   const deadline = Date.now() + timeoutMs;
 
-  const client = postgres(url, { max: 1, onnotice: silenceNotices });
+  const client = createPgClient(url, {
+    applicationName: 'timeline-migration-waiter',
+    max: 1,
+    silenceOperationalNotices: true,
+  });
   let applied = 0;
   try {
     for (;;) {

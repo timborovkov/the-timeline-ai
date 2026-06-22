@@ -1,9 +1,10 @@
 import { drizzle } from 'drizzle-orm/postgres-js';
-import postgres from 'postgres';
 
+import { createPgClient, type PgClient } from '#src/client.js';
 import * as schema from '#src/schema/index.js';
 
 export * from '#src/schema/index.js';
+export { buildPgClientOptions, createPgClient, PG_TIMEOUTS } from '#src/client.js';
 export { schema };
 export { migrateDatabase } from '#src/migrate.js';
 export { postgresResetStatements, resetPostgresSchema } from '#src/reset.js';
@@ -13,7 +14,7 @@ type Schema = typeof schema;
 export type Db = ReturnType<typeof drizzle<Schema>>;
 
 let _db: Db | undefined;
-let _client: ReturnType<typeof postgres> | undefined;
+let _client: PgClient | undefined;
 
 export function getDb(): Db {
   if (_db) return _db;
@@ -29,9 +30,21 @@ export function getDb(): Db {
     }
     url = 'postgres://placeholder@localhost:5432/placeholder';
   }
-  _client = postgres(url, { max: 10 });
+  _client = createPgClient(url, { applicationName: resolveAppApplicationName() });
   _db = drizzle(_client, { schema });
   return _db;
+}
+
+export function resolveAppApplicationName():
+  | 'timeline-web'
+  | 'timeline-worker'
+  | 'timeline-script' {
+  const service = process.env.RAILWAY_SERVICE_NAME?.toLowerCase();
+  if (service?.includes('worker')) return 'timeline-worker';
+  if (service?.includes('web')) return 'timeline-web';
+  if (process.env.npm_package_name === '@timeline/worker') return 'timeline-worker';
+  if (process.env.npm_package_name === '@timeline/web') return 'timeline-web';
+  return 'timeline-script';
 }
 
 /**
@@ -42,7 +55,7 @@ export function getDb(): Db {
  * `pg_advisory_unlock` on connection B is a no-op, so the lock leaks
  * until A is recycled).
  */
-export function getDbClient(): ReturnType<typeof postgres> {
+export function getDbClient(): PgClient {
   if (_client) return _client;
   // Side-effect: forces _client init via the drizzle path so we use the
   // same pool as the rest of the app. getDb() always sets _client.
