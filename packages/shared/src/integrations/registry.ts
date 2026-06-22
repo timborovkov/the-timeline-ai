@@ -194,7 +194,7 @@ const CATALOG_SEEDS: CatalogSeed[] = [
     examplePrompt: 'What did the team decide about pricing in #leadership last week?',
     envCheck: () => {
       const env = getEnv();
-      return Boolean(env.SLACK_CLIENT_ID && env.SLACK_CLIENT_SECRET && env.SLACK_SIGNING_SECRET);
+      return Boolean(env.SLACK_CLIENT_ID && env.SLACK_CLIENT_SECRET);
     },
   },
   {

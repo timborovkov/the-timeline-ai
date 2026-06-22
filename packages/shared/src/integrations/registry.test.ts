@@ -62,6 +62,18 @@ describe('integration registry catalog visibility', () => {
     ).toEqual(['github']);
   });
 
+  it('shows Slack native sync when OAuth credentials are configured without Events API signing', () => {
+    resetEnv({
+      SLACK_CLIENT_ID: 'slack-client-id',
+      SLACK_CLIENT_SECRET: 'slack-client-secret',
+      SLACK_SIGNING_SECRET: '',
+    });
+
+    const byId = new Map(listCatalog().map((entry) => [entry.id, entry]));
+    expect(byId.get('slack')?.status).toBe('native_available');
+    expect(listAvailableProviders().map((entry) => entry.id)).toEqual(['slack']);
+  });
+
   it('tracks the required first-party ingestion catalog', () => {
     resetEnv();
 
