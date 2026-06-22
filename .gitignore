@@ -11,6 +11,7 @@ node_modules/
 dist/
 .next/
 .turbo/
+outputs/
 
 # ---- Env files ----
 .env

@@ -48,11 +48,11 @@ export const APP_GUIDE_ROUTES: readonly AppGuideRoute[] = [
   {
     id: 'chat',
     title: 'Ask',
-    description: 'Full-screen agent chat for asking questions about team memory.',
+    description: 'Full-screen agent chat for asking questions about the operational record.',
     href: '/app/chat',
     group: 'dashboard',
     minRole: 'member',
-    intents: ['ask', 'agent chat', 'question', 'team memory', 'timeline answer'],
+    intents: ['ask', 'agent chat', 'question', 'operational record', 'timeline answer'],
     guide:
       'Use Ask for the full-screen agent chat. It is the power surface for longer questions, citations, tool steps, and persisted private chat sessions.',
     relatedRouteIds: ['home', 'timeline'],
@@ -67,7 +67,7 @@ export const APP_GUIDE_ROUTES: readonly AppGuideRoute[] = [
     intents: ['objects', 'people', 'companies', 'projects', 'deals', 'topics', 'object cleanup'],
     guide:
       'Use Objects to browse durable records resolved from team activity. Object pages collect facts, notes, relationships, tasks, and recent changes.',
-    relatedRouteIds: ['tasks', 'boards', 'help/objects'],
+    relatedRouteIds: ['work', 'tasks', 'boards', 'help/objects'],
   },
   {
     id: 'objects/new',
@@ -78,7 +78,7 @@ export const APP_GUIDE_ROUTES: readonly AppGuideRoute[] = [
     minRole: 'member',
     intents: ['create object', 'new object', 'add person', 'add company', 'add project'],
     guide:
-      'Use New Object when the user wants to create durable workspace memory manually instead of waiting for extraction or suggestions.',
+      'Use New Object when the user wants to create a durable workspace record manually instead of waiting for extraction or suggestions.',
     relatedRouteIds: ['objects', 'help/objects'],
   },
   {
@@ -91,7 +91,28 @@ export const APP_GUIDE_ROUTES: readonly AppGuideRoute[] = [
     intents: ['tasks', 'follow ups', 'todos', 'next actions', 'blocked work', 'due dates'],
     guide:
       'Use Tasks for task and follow-up objects. Tasks are still workspace objects, so object details and citations stay connected.',
-    relatedRouteIds: ['objects', 'calendar', 'boards'],
+    relatedRouteIds: ['work', 'objects', 'calendar', 'boards'],
+  },
+  {
+    id: 'work',
+    title: 'Work',
+    description:
+      'Daily operating surface for tasks, boards, objects, updates, digests, handoffs, and evidence.',
+    href: '/app/work',
+    group: 'dashboard',
+    minRole: 'member',
+    intents: [
+      'work',
+      'work surface',
+      'operating surface',
+      'updates',
+      'digests',
+      'handoffs',
+      'tasks and boards',
+    ],
+    guide:
+      'Use Work as the daily operating surface. It keeps tasks, boards, objects, updates, digests, and handoffs current from captured evidence without requiring a separate tracker.',
+    relatedRouteIds: ['tasks', 'boards', 'objects', 'timeline', 'help/work'],
   },
   {
     id: 'boards',
@@ -103,7 +124,7 @@ export const APP_GUIDE_ROUTES: readonly AppGuideRoute[] = [
     intents: ['boards', 'kanban', 'pipeline', 'lanes', 'table view', 'workflow board'],
     guide:
       'Use Boards for curated kanban, table, and list workflows over the same workspace objects shown elsewhere.',
-    relatedRouteIds: ['objects', 'tasks', 'help/boards'],
+    relatedRouteIds: ['work', 'objects', 'tasks', 'help/boards'],
   },
   {
     id: 'boards/new',
@@ -152,7 +173,7 @@ export const APP_GUIDE_ROUTES: readonly AppGuideRoute[] = [
     minRole: 'member',
     intents: ['meetings', 'transcripts', 'meeting bot', 'call recap', 'recorded meetings'],
     guide:
-      'Use Meetings to view saved meeting transcripts, meeting-bot capture status, and meeting-derived memory.',
+      'Use Meetings to view saved meeting transcripts, meeting-bot capture status, and meeting-derived evidence.',
     relatedRouteIds: ['calendar', 'help/capture'],
   },
   {
@@ -204,7 +225,7 @@ export const APP_GUIDE_ROUTES: readonly AppGuideRoute[] = [
       'ingest webhooks',
     ],
     guide:
-      'Use Team Integrations to connect native sources, activate shared provider resources, manage ingest webhooks, and add MCP tools. Provider connections are person-owned; admins activate shared team sources.',
+      'Use Team Integrations to connect native sources, activate shared provider resources, manage ingest webhooks, and add MCP tools. Provider connections are person-owned, admins activate shared team sources, and MCP provides live tool/context access rather than passive ingestion by default.',
     relatedRouteIds: ['help/integrations', 'team'],
   },
   {
@@ -223,20 +244,43 @@ export const APP_GUIDE_ROUTES: readonly AppGuideRoute[] = [
     id: 'help/capture',
     title: 'Capture Surfaces Guide',
     description:
-      'How to send raw work into Timeline from web, Telegram, email, meetings, and uploads.',
+      'How to send raw work into Timeline from web, Slack, Telegram, email, meetings, and uploads.',
     href: '/help/capture',
     group: 'help',
     minRole: 'member',
     intents: [
       'how to capture',
+      'slack capture',
       'telegram capture',
       'email capture',
+      'email cc',
       'audio upload',
       'meeting capture',
     ],
     guide:
-      'Capture raw work wherever it happens: web notes, audio uploads, Telegram, email, meeting transcripts, and document uploads all become timeline events.',
-    relatedRouteIds: ['timeline', 'documents', 'meetings'],
+      'Capture raw work wherever it happens: web notes, audio uploads, Slack, Telegram, CCed email, meeting transcripts, and document uploads all become timeline events.',
+    relatedRouteIds: ['timeline', 'work', 'documents', 'meetings'],
+  },
+  {
+    id: 'help/work',
+    title: 'Work Surface Guide',
+    description:
+      'How tasks, boards, objects, updates, digests, and handoffs stay current from evidence.',
+    href: '/help/work',
+    group: 'help',
+    minRole: 'member',
+    intents: [
+      'work surface',
+      'work guide',
+      'updates',
+      'digests',
+      'handoffs',
+      'tasks and boards',
+      'operational record',
+    ],
+    guide:
+      'Work explains how Timeline turns captured evidence into current tasks, boards, objects, updates, digests, and handoffs while keeping source receipts attached.',
+    relatedRouteIds: ['work', 'tasks', 'boards', 'objects'],
   },
   {
     id: 'help/documents',
@@ -271,30 +315,30 @@ export const APP_GUIDE_ROUTES: readonly AppGuideRoute[] = [
     minRole: 'member',
     intents: ['how objects work', 'object notes', 'relationships', 'duplicates', 'cleanup'],
     guide:
-      'Objects are durable records resolved from activity. Use notes, relationships, cleanup suggestions, and object pages to keep memory accurate.',
-    relatedRouteIds: ['objects', 'tasks'],
+      'Objects are durable records resolved from activity. Use notes, relationships, cleanup suggestions, and object pages to keep the operational record accurate.',
+    relatedRouteIds: ['work', 'objects', 'tasks'],
   },
   {
     id: 'help/integrations',
     title: 'Integrations Guide',
-    description: 'How connected sources and MCP tools feed team memory.',
+    description: 'How connected sources, capture surfaces, and MCP live tools fit together.',
     href: '/help/integrations',
     group: 'help',
     minRole: 'member',
     intents: ['how integrations work', 'mcp tools', 'connected sources', 'oauth security'],
     guide:
-      'Native integrations import external activity into the event pipeline; MCP tools give live tool access but are not passive ingestion. Tokens are encrypted, source snippets are treated as external content, and admins control shared sources.',
-    relatedRouteIds: ['team/integrations'],
+      'First-party integrations and ingest paths can create durable evidence. MCP servers give the agent approved live tool/context access. Tokens are encrypted, source snippets are treated as external content, and admins control shared sources.',
+    relatedRouteIds: ['team/integrations', 'help/capture'],
   },
   {
     id: 'help/support',
     title: 'Support',
-    description: 'Contact support, sales, or the product team.',
+    description: 'Contact support or the product team.',
     href: '/help/support',
     group: 'help',
     minRole: 'member',
-    intents: ['support', 'contact', 'sales', 'help'],
-    guide: 'Use Support to contact the Timeline team for product help, sales, or support requests.',
+    intents: ['support', 'contact', 'product team', 'help'],
+    guide: 'Use Support to contact the Timeline team for product help or support requests.',
   },
 ];
 

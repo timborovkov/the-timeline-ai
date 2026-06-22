@@ -14,7 +14,7 @@ import {
 
 import type { LucideIcon } from 'lucide-react';
 
-type HelpSlug = 'capture' | 'documents' | 'boards' | 'integrations' | 'objects';
+type HelpSlug = 'capture' | 'work' | 'documents' | 'boards' | 'integrations' | 'objects';
 
 interface HelpLink {
   href: string;
@@ -42,18 +42,19 @@ export const HELP_PAGES: HelpPage[] = [
   {
     slug: 'capture',
     title: 'Capture surfaces',
-    description: 'Send raw work into Timeline from web, Telegram, email, meetings, and uploads.',
+    description:
+      'Send raw work into Timeline from web, Slack, Telegram, email, meetings, and uploads.',
     icon: Inbox,
-    related: ['documents', 'integrations'],
+    related: ['work', 'integrations'],
     sections: [
       {
         title: 'What gets captured',
         body: 'Timeline accepts unstructured notes first and turns them into events, objects, facts, tasks, and searchable citations after capture.',
         items: [
           'Text notes and audio uploads from the web app.',
-          'Telegram messages and voice memos from linked DMs or team groups.',
+          'Slack and Telegram messages, files, and voice memos from linked spaces.',
           'Forwarded, CCed, or BCCed email sent to your team address.',
-          'Meeting transcripts from consent-gated meeting bots.',
+          'Meeting transcripts from consent-gated bots that join calls.',
           'Document uploads that become searchable chunks after extraction.',
         ],
         appLink: { href: '/app/timeline', label: 'Open timeline capture' },
@@ -70,11 +71,40 @@ export const HELP_PAGES: HelpPage[] = [
     ],
   },
   {
+    slug: 'work',
+    title: 'Work surface',
+    description:
+      'Use tasks, boards, objects, updates, digests, and handoffs that stay current from evidence.',
+    icon: ClipboardList,
+    related: ['capture', 'objects', 'boards'],
+    sections: [
+      {
+        title: 'What Work is',
+        body: 'Work is the operating surface Timeline keeps current from captured evidence. It brings tasks, boards, objects, comments, updates, digests, and handoffs together without asking teammates to maintain a separate tracker.',
+        items: [
+          'Tasks and boards show owners, status, blockers, due dates, and source evidence.',
+          'Object pages keep people, companies, projects, deals, documents, and tasks tied to the event history.',
+          'Updates, digests, and handoffs are generated from the current work state with citations.',
+        ],
+        appLink: { href: '/app/work', label: 'Open Work' },
+      },
+      {
+        title: 'How it stays current',
+        body: 'Timeline extracts proposed state from conversations, email, meetings, documents, and integrations, then keeps receipts attached so changes can be reviewed.',
+        items: [
+          'Raw events stay intact; summaries can change without rewriting source evidence.',
+          'Important state can go through human review before it becomes canonical.',
+          'Use manual edits for judgment, not for retyping what already happened.',
+        ],
+      },
+    ],
+  },
+  {
     slug: 'documents',
     title: 'Document drive',
     description: 'Upload, version, search, and cite team documents alongside the event timeline.',
     icon: FolderOpen,
-    related: ['capture', 'objects'],
+    related: ['capture', 'work'],
     sections: [
       {
         title: 'How the drive works',
@@ -100,13 +130,13 @@ export const HELP_PAGES: HelpPage[] = [
   {
     slug: 'boards',
     title: 'Boards',
-    description: 'Use curated kanban, table, and list work surfaces over Timeline objects.',
+    description: 'Use kanban, table, and list views over tasks and workspace objects.',
     icon: KanbanSquare,
-    related: ['objects', 'capture'],
+    related: ['work', 'objects'],
     sections: [
       {
         title: 'What boards show',
-        body: 'Boards are curated work surfaces over workspace objects. They do not create a second task system; they organize the same people, companies, deals, projects, and tasks that appear in search and chat.',
+        body: 'Boards are part of Work. They do not create a second task system; they organize the same people, companies, deals, projects, and tasks that appear in objects, search, and answers.',
         items: [
           'Kanban boards group explicit board items by board-owned lanes.',
           'Table views help scan responsible people, due dates, priority, and recent activity.',
@@ -116,7 +146,7 @@ export const HELP_PAGES: HelpPage[] = [
       },
       {
         title: 'Keeping boards useful',
-        body: 'Boards work best when board item properties and object memory stay current. Timeline can suggest changes from raw events, but a user still chooses what becomes canonical.',
+        body: 'Boards work best when board item properties and object state stay current. Timeline can suggest changes from raw events, but a user still chooses what becomes canonical.',
         items: [
           'Drag board items between lanes when workflow state changes.',
           'Open card details for board notes, next steps, evidence, and object links.',
@@ -128,21 +158,21 @@ export const HELP_PAGES: HelpPage[] = [
   {
     slug: 'integrations',
     title: 'Integrations',
-    description:
-      'Connect native sources, Slack workspace history, and MCP tools without breaking team isolation.',
+    description: 'Connect durable sources and live MCP tools without breaking team isolation.',
     icon: PlugZap,
-    related: ['capture', 'documents'],
+    related: ['capture', 'work'],
     sections: [
       {
         title: 'Connected sources',
-        body: 'Integrations import external activity into the same event pipeline as manual capture. Members own provider connections; admins activate the shared sources that feed team memory.',
+        body: 'First-party integrations and ingest paths can create durable evidence. MCP servers give the agent live reach into approved tools; they are not passive ingestion by default.',
         items: [
           'Google Drive syncs selected folders and files into the document drive.',
-          'GitHub and Linear bring engineering and project activity into team memory.',
+          'GitHub and Linear bring engineering and project activity into the operational record.',
           'Monday.com syncs boards, generic records, subitems, updates, columns, and WorkDocs.',
           'Slack workspace ingestion syncs selected channels, threads, files, reactions, and edits.',
           'Sentry syncs issue updates, resolved issues, and releases into cited events and incident objects.',
-          'MCP servers expose approved live tools; they do not create durable timeline events unless paired with native sync or custom ingestion.',
+          'Slack, Telegram, email, and meeting bots are capture surfaces for conversations and calls.',
+          'Custom MCP servers expose approved live tools and context to the agent; they do not create durable timeline events unless paired with native sync or custom ingestion.',
         ],
         appLink: { href: '/app/team/integrations', label: 'Open integrations' },
       },
@@ -164,7 +194,7 @@ export const HELP_PAGES: HelpPage[] = [
     description:
       'Track the people, companies, projects, deals, and tasks extracted from team activity.',
     icon: Boxes,
-    related: ['boards', 'documents'],
+    related: ['work', 'boards'],
     sections: [
       {
         title: 'What objects are',
@@ -204,7 +234,7 @@ export const HELP_INDEX_GROUPS = [
     title: 'Start here',
     items: [
       { href: '/help/capture', label: 'Capture surfaces', icon: Upload },
-      { href: '/help/documents', label: 'Document drive', icon: FolderOpen },
+      { href: '/help/work', label: 'Work surface', icon: ClipboardList },
       { href: '/help/objects', label: 'Object management', icon: Boxes },
     ],
   },
@@ -212,6 +242,7 @@ export const HELP_INDEX_GROUPS = [
     title: 'Workflows',
     items: [
       { href: '/help/boards', label: 'Boards', icon: ClipboardList },
+      { href: '/help/documents', label: 'Document drive', icon: FolderOpen },
       { href: '/help/integrations', label: 'Integrations', icon: GitBranch },
       { href: '/help/support', label: 'Contact support', icon: Settings2 },
     ],

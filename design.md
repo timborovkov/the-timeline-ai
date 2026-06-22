@@ -8,14 +8,41 @@ component and page follows this. If a screen disagrees, fix the screen.
 
 ## Memorable thing
 
-**The operations log your team can talk to.** A precision instrument that
-feels forensic where it matters and quiet everywhere else. Bloomberg Terminal
-× git log × Linear. Every timestamp, every ID, every citation is first-class
-type. The product's differentiator — _every claim the agent makes is cited
-back to a raw event_ — is structurally visible, not implied.
+**The work becomes the record.** A precision instrument that feels forensic
+where it matters and quiet everywhere else. Bloomberg Terminal × git log ×
+Linear. Every timestamp, every ID, every citation is first-class type. The
+product's differentiator — _every claim the agent makes is cited back to a raw
+event_ — is structurally visible, not implied.
 
 This is **not** a Notion / Mem / Reflect re-skin. It is an instrument panel
-for "what did the team do and how do you know?"
+for "what changed, what was promised, and how do you know?"
+
+## Product language
+
+Use language that makes the evidence-derived operating model concrete:
+
+- **Event history** — the immutable sequence of source events created while
+  work happens. Prefer this over generic "activity feed" or "log" when the
+  source-of-truth role matters.
+- **Evidence** — source material that backs a generated claim: raw events,
+  meeting transcript chunks, Slack/Telegram messages, emails, document
+  versions, integration events, calendar rows, and cited object/task changes.
+- **Updates** — on-demand stakeholder answers or progress summaries generated
+  from evidence. Do not narrow the product to weekly status reports.
+- **Digests** — proactive recurring summaries, especially daily team digests,
+  that show what changed and what needs attention.
+- **Handoffs** — context packs for a teammate, stakeholder, or operator joining
+  a project, account, or decision late.
+- **Operational memory** — the durable, queryable record of projects, clients,
+  people, commitments, decisions, documents, and work state derived from event
+  history.
+- **Approval-backed state** — durable object, task, calendar, relationship, and
+  memory changes that came from evidence and passed a human review path.
+
+Avoid leaning on **team memory** by itself in product copy. It is useful
+shorthand inside technical docs, but public and customer-facing surfaces should
+say what the memory does: generate cited updates, digests, handoffs, answers,
+and operational state from work that already happened.
 
 ## Stack
 
@@ -206,7 +233,9 @@ surface here in the same PR.
   Ingest webhooks, Integrations, and MCP servers. Work and Connections may show compact numeric
   attention badges; zero
   state stays hidden. Their hub pages use the same hairline grid as the
-  sidebar IA and expose status chips for counts, health, and next actions.
+  sidebar IA and expose status chips for counts, health, and next actions. A
+  muted secondary Help link sits above the team switcher and opens `/help` in a
+  new tab; it is discoverable without competing with the primary route list.
 - **Main column** fills available width. **No `max-w-3xl` artificial
   column** except long-form prose surfaces (single document view, single
   note view) — those wrap in a `<ProseContainer>` that sets `max-w-prose`.

@@ -1,13 +1,14 @@
 import {
-  AlertCircle,
+  Briefcase,
   CalendarDays,
-  FolderOpen,
+  FileText,
   GitPullRequest,
-  ListTodo,
+  LifeBuoy,
   Mail,
   MessageCircle,
   Send,
   Video,
+  Wrench,
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -24,16 +25,17 @@ import { getSiteUrl } from '@/lib/site-url';
 import { cn } from '@/lib/utils';
 
 const SITE_NAME = 'The Timeline';
-const SITE_TAGLINE = 'The operations log your team can talk to';
+const SITE_TAGLINE = 'The work becomes the record';
 const SITE_DESCRIPTION =
-  'Multi-tenant team memory: voice-, chat-, and email-first capture, agentically compiled into a searchable history of who did what — with auditable citations on every answer.';
+  'Capture work as it happens through Slack, Telegram, meetings, docs, email, and connected tools, then generate cited updates, digests, handoffs, answers, and work memory from the evidence.';
 
 export const metadata: Metadata = {
   title: `${SITE_NAME} — ${SITE_TAGLINE}`,
   description: SITE_DESCRIPTION,
   keywords: [
-    'team memory',
-    'operations log',
+    'operational memory',
+    'event history',
+    'evidence-based updates',
     'voice-first capture',
     'AI knowledge base',
     'CRM alternative',
@@ -48,7 +50,7 @@ export const metadata: Metadata = {
   openGraph: {
     title: `${SITE_NAME} — ${SITE_TAGLINE}`,
     description:
-      'Stop updating the CRM. Capture work as it happens; the agent files it. Every answer cited back to the raw event.',
+      'Stop manually reporting on work your team already did. Timeline shows up as a Slack or Telegram bot, joins calls, and generates updates, digests, handoffs, and answers from evidence.',
     type: 'website',
     siteName: SITE_NAME,
     url: '/',
@@ -57,7 +59,7 @@ export const metadata: Metadata = {
         url: '/opengraph-image',
         width: 1200,
         height: 630,
-        alt: 'The Timeline — the operations log your team can talk to',
+        alt: 'The Timeline — the work becomes the record',
       },
     ],
   },
@@ -65,7 +67,7 @@ export const metadata: Metadata = {
     card: 'summary_large_image',
     title: `${SITE_NAME} — ${SITE_TAGLINE}`,
     description:
-      'Stop updating the CRM. Capture work as it happens; the agent files it. Every answer cited back to the raw event.',
+      'Timeline shows up as a Slack or Telegram bot, joins calls, and generates updates, digests, handoffs, and answers from evidence.',
     images: ['/twitter-image'],
   },
   robots: {
@@ -82,19 +84,17 @@ const JSON_SCRIPT_ESCAPES: Record<string, string> = {
   '&': '\\u0026',
 };
 
-const NATIVE_INGEST = [
-  { label: 'Telegram', icon: Send },
-  { label: 'Slack', icon: MessageCircle },
-  { label: 'GitHub', icon: GitPullRequest },
-  { label: 'Linear', icon: ListTodo },
-  { label: 'Google Drive', icon: FolderOpen },
-  { label: 'Monday.com', icon: CalendarDays },
-  { label: 'Sentry', icon: AlertCircle },
-  { label: 'Google Meet', icon: Video },
-  { label: 'Zoom', icon: Video },
-  { label: 'Microsoft Teams', icon: Video },
+const WORK_SURFACES = [
+  { label: 'Telegram bot', icon: Send },
+  { label: 'Slack bot', icon: MessageCircle },
+  { label: 'Meeting notes', icon: Video },
   { label: 'Email', icon: Mail },
+  { label: 'Documents', icon: FileText },
   { label: 'Calendar', icon: CalendarDays },
+  { label: 'Projects', icon: Briefcase },
+  { label: 'Code', icon: GitPullRequest },
+  { label: 'Support', icon: LifeBuoy },
+  { label: 'MCP tools', icon: Wrench },
 ] as const;
 
 export default async function LandingPage() {
@@ -181,12 +181,13 @@ function StructuredData() {
         offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
         featureList: [
           'Voice-, chat-, and email-first capture',
+          'Evidence-generated updates, daily digests, handoffs, and answers',
           'Telegram bot ingest with /ask agent',
           'Slack bot ingest with /ask and @Timeline agent answers',
           'Email ingest via Postmark',
           'Calendar events in the same operational timeline',
           'Document drive with version history',
-          'Meeting transcripts from Google Meet, Microsoft Teams, and Zoom (Recall.ai)',
+          'Meeting bot joins Google Meet, Microsoft Teams, and Zoom calls for notes and transcripts',
           'Agent answers with auditable citations',
           'Team-scoped vector + structured storage',
         ],
@@ -217,19 +218,19 @@ function stringifyJsonForHtmlScript(value: unknown): string {
 const FAQ_ITEMS = [
   {
     q: 'What is The Timeline?',
-    a: 'The Timeline is a multi-tenant team memory and object management system. Team members capture work as it happens — voice notes, forwarded emails, Telegram and Slack messages, meeting transcripts, document uploads — and the agent compiles a searchable, queryable history of who did what, talked to whom, decided what, and what changed. Every answer the agent returns is cited back to the raw event it came from.',
+    a: 'The Timeline is an evidence-derived operating record for teams. It can show up as a Slack or Telegram bot, join calls to take notes and transcribe meetings, ingest forwarded emails and document uploads, and compile the event history into updates, digests, handoffs, answers, and project or client memory. Every answer the agent returns is cited back to the raw event it came from.',
   },
   {
     q: 'Who is The Timeline for?',
-    a: 'Small to mid-sized teams of 5 to 50 people doing knowledge work where context compounds: sales, consulting, product, and founding teams. The kind of team where one person being out of the loop on a client conversation creates real friction. A team member can record a voice note and have it queryable via the agent within 60 seconds of pressing send.',
+    a: 'Small to mid-sized teams doing work where context loss creates client risk, delivery drag, or leadership noise: agencies, consultancies, implementation teams, account success teams, product teams, and founder-led operations. The kind of team where one person being out of the loop on a client or project conversation creates real friction.',
   },
   {
     q: 'How is The Timeline different from a CRM, wiki, or ticket board?',
-    a: 'Existing tools punish recording. CRMs require the contact, deal stage, and next step before you can log a single sentence. Wikis demand a page hierarchy. Ticket boards demand a project and status. The Timeline inverts this: capture is unstructured, output is structured. The agent extracts objects (people, companies, projects, deals, tasks, documents), facts, relationships, and changes from raw input — and resolves them against everything your team has ever said.',
+    a: 'Existing tools punish recording. CRMs require the contact, deal stage, and next step before you can log a single sentence. Wikis demand a page hierarchy. Ticket boards demand a project and status. The Timeline inverts this: capture is unstructured, output is structured. The agent extracts objects (people, companies, projects, deals, tasks, documents), facts, relationships, and changes from raw input, then proposes approval-backed state only when the evidence is durable.',
   },
   {
     q: 'How is capture done?',
-    a: 'Native surfaces feed one pipeline. Telegram and Slack capture chat, voice, files, /ask, and @Timeline context. GitHub, Linear, Google Drive, Monday.com, Slack workspace history, and Sentry sync as native integrations. Google Meet, Zoom, and Microsoft Teams land through meeting bots. Email, calendar events, and web notes become cited timeline events. MCP servers give the agent live access to long-tail tools, but they do not create timeline events unless paired with a native sync adapter or custom ingestion layer.',
+    a: 'Work surfaces feed one pipeline. Telegram and Slack bots capture chat, voice, files, /ask, and @Timeline context. Meeting bots join Google Meet, Zoom, and Microsoft Teams calls to take notes and transcribe discussions. Email, documents, calendar events, web notes, project tools, code systems, support queues, account systems, and internal tools can become part of the same evidence model through capture surfaces, integrations, and ingest webhooks. GitHub, Linear, Google Drive, Monday.com, Slack workspace history, and Sentry sync as native integrations. MCP servers extend the agent into long-tail systems for live access, but they do not create timeline events unless paired with native sync or custom ingestion.',
   },
   {
     q: 'What models power the agent?',
@@ -342,7 +343,7 @@ function TopNav({ isSignedIn }: { isSignedIn: boolean }) {
           {isSignedIn ? null : (
             <Link
               href="/sign-in"
-              className="px-3 py-2 text-fg-muted transition-colors hover:text-fg"
+              className="whitespace-nowrap px-3 py-2 text-fg-muted transition-colors hover:text-fg"
             >
               Sign in
             </Link>
@@ -363,22 +364,22 @@ function Hero({ isSignedIn }: { isSignedIn: boolean }) {
   return (
     <section className="px-6 pb-24 pt-16 sm:pt-24">
       <div className="mx-auto max-w-6xl">
-        <Mono>THE TIMELINE · OPERATIONAL ARCHIVE · v1</Mono>
+        <Mono>THE TIMELINE · EVENT HISTORY · OPERATIONAL MEMORY</Mono>
         <div className="mt-8 grid gap-12 lg:grid-cols-[1.1fr_1fr] lg:items-center">
           <div>
             <h1 className="text-4xl font-semibold leading-[1.05] tracking-tight sm:text-5xl lg:text-6xl">
-              Nobody updates
+              Your team
               <br />
-              the CRM.
+              does the work.
               <br />
-              <span className="text-signal">The Timeline</span>
+              <span className="text-signal">Timeline</span>
               <br />
-              updates itself.
+              writes the update.
             </h1>
             <p className="mt-8 max-w-prose text-lg leading-relaxed text-fg-muted">
-              Voice-note the call in Telegram. Capture the Slack thread. Forward the email. Drop a
-              Meet, Teams, or Zoom link. The agent extracts who, what, and when, reconciled against
-              everything your team has ever said. Ask anything; every answer cites its source.
+              Use Timeline as a Slack or Telegram bot, let it join calls to take notes, and connect
+              docs, emails, tasks, and account conversations. It turns that work into cited updates,
+              daily digests, handoffs, stakeholder answers, and project or client memory.
             </p>
             <div className="mt-10 flex flex-wrap items-center gap-3">
               <Button asChild size="lg">
@@ -399,25 +400,25 @@ function Hero({ isSignedIn }: { isSignedIn: boolean }) {
               )}
             </div>
             <p className="mt-10 font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">
-              INDEXED · CITED · NEVER FORGOTTEN
+              CAPTURED · CITED · APPROVAL-BACKED
             </p>
           </div>
           <HeroMock />
         </div>
-        <NativeIngestStrip />
+        <WorkSurfaceStrip />
       </div>
     </section>
   );
 }
 
-function NativeIngestStrip() {
+function WorkSurfaceStrip() {
   return (
     <div className="mt-14 border-y border-border py-3">
       <div className="flex flex-wrap items-center gap-x-5 gap-y-3">
         <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-fg-dim">
-          Native ingest
+          Work surfaces
         </span>
-        {NATIVE_INGEST.map(({ label, icon: Icon }) => (
+        {WORK_SURFACES.map(({ label, icon: Icon }) => (
           <span
             key={label}
             className="inline-flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.14em] text-fg-muted"
@@ -435,25 +436,25 @@ function HeroMock() {
   return (
     <div className="border border-border bg-surface" aria-hidden>
       <div className="border-b border-border bg-surface-2 px-4 py-2 font-mono text-[11px] uppercase tracking-[0.14em] text-fg-muted">
-        TIMELINE · 2,847 EVENTS · LAST 14d · TEAM acme
+        ACME PROJECT MEMORY · 2,847 EVENTS · LAST 14d
       </div>
       <ol className="divide-y divide-border">
         <li className="grid grid-cols-[88px_1fr] gap-4 px-4 py-3 font-mono text-xs">
-          <span className="text-fg-dim">14:02 · VOICE</span>
+          <span className="text-fg-dim">14:02 · MEET</span>
           <span className="font-sans text-sm text-fg">
-            Tim → John Ternus (Apple), agreed on revised SaaS licensing terms; deck by Friday.
+            Acme asked for SSO before launch; Priya agreed to confirm timeline by Friday.
           </span>
         </li>
         <li className="grid grid-cols-[88px_1fr] gap-4 px-4 py-3 font-mono text-xs">
-          <span className="text-fg-dim">11:47 · EMAIL</span>
+          <span className="text-fg-dim">11:47 · SLACK</span>
           <span className="font-sans text-sm text-fg">
-            Acme: signed renewal arrived. Auto-linked to Acme deal.
+            Design approved the onboarding copy; implementation unblocked.
           </span>
         </li>
         <li className="grid grid-cols-[88px_1fr] gap-4 px-4 py-3 font-mono text-xs">
-          <span className="text-fg-dim">09:15 · TELEGRAM</span>
+          <span className="text-fg-dim">09:15 · DOC</span>
           <span className="font-sans text-sm text-fg">
-            Otto uploaded <em>Office Rules v3.pdf</em>; TikTok section added.
+            <em>Acme launch checklist</em> updated with migration owner and rollout window.
           </span>
         </li>
       </ol>
@@ -462,9 +463,10 @@ function HeroMock() {
           /ASK · AGENT REPLY
         </div>
         <p className="mt-2 text-sm leading-relaxed text-fg">
-          On the Apple licensing deal: Tim and John Ternus aligned on revised terms this afternoon{' '}
-          <CitationChipStatic id="ev:1923" />. Tim owes a revised deck by Friday{' '}
-          <CitationChipStatic id="ev:1924" />.
+          Acme changed in three ways: SSO became the launch blocker{' '}
+          <CitationChipStatic id="ev:1923" />
+          , onboarding copy was approved <CitationChipStatic id="ev:1924" />, and the migration
+          owner moved to Priya <CitationChipStatic id="doc:acme-checklist" />.
         </p>
       </div>
     </div>
@@ -474,35 +476,36 @@ function HeroMock() {
 function Problem() {
   return (
     <Section id="problem">
-      <Mono className="text-fg-muted">PROBLEM · WHY NOTHING STAYS UPDATED</Mono>
+      <Mono className="text-fg-muted">PROBLEM · DUPLICATE COMMUNICATION WORK</Mono>
       <h2 className="mt-6 max-w-3xl text-3xl font-semibold leading-tight tracking-tight sm:text-4xl">
-        Every tool you have punishes recording.
+        Teams do the work, then separately report that the work happened.
       </h2>
 
       <div className="mt-12 grid gap-px overflow-hidden border border-border bg-border sm:grid-cols-3">
         <IndictmentCell
-          label="CRM"
-          body="Wants the contact, the deal stage, the next step, the amount, the close date. Before you can log a single sentence."
+          label="UPDATES"
+          body="Stakeholders ask what changed, so someone reconstructs the story from Slack, docs, calls, and tasks."
         />
         <IndictmentCell
-          label="WIKI"
-          body="Wants a page hierarchy, a parent, a template, a tag. Before you can write the thing down."
+          label="DIGESTS"
+          body="Daily or recurring summaries become another manual ritual layered on top of the actual work."
         />
         <IndictmentCell
-          label="TICKETS"
-          body="Want a project, a status, an assignee, a priority. Before you can flag what just broke."
+          label="HANDOFFS"
+          body="A teammate joins late and the team has to retell the project, account, and decision history."
         />
       </div>
 
       <p className="mt-10 max-w-prose text-base leading-[1.65] text-fg-muted">
-        The result is predictable. Nobody updates the CRM. The wiki is three months stale. Half the
-        team&apos;s decisions live in Slack threads no one can find. When someone asks{' '}
-        <em>&ldquo;what happened with Acme?&rdquo;</em> the only honest answer is{' '}
-        <em>&ldquo;let me check with three people.&rdquo;</em>
+        The result is predictable. CRMs, trackers, and wikis drift because they depend on people
+        re-entering reality after the fact. Half the team&apos;s decisions live in threads no one
+        can find. When someone asks <em>&ldquo;what changed with Acme?&rdquo;</em> the honest answer
+        is <em>&ldquo;let me check with three people.&rdquo;</em>
       </p>
 
       <blockquote className="mt-10 max-w-2xl border-l-2 border-signal pl-5 text-lg italic leading-snug text-fg">
-        The Timeline inverts it: capture is unstructured, output is structured. You talk; it files.
+        The Timeline inverts it: capture work as it happens, then generate communication and memory
+        from the evidence.
       </blockquote>
     </Section>
   );
@@ -520,14 +523,14 @@ function IndictmentCell({ label, body }: { label: string; body: string }) {
 function Solution() {
   return (
     <Section id="solution">
-      <IndexStrip>CONCEPTS · HOW IT FITS TOGETHER</IndexStrip>
+      <IndexStrip>CONCEPTS · CAPTURE → EVIDENCE → OPERATIONAL MEMORY</IndexStrip>
       <ConceptDiagram />
 
       <div className="mt-10 max-w-3xl border-l-2 border-signal pl-5">
         <Mono className="text-signal">THE PAYOFF</Mono>
         <p className="mt-4 text-lg leading-snug text-fg">
-          The output looks like a CRM, a project tracker, and a doc index: current, queryable,
-          cited. You just never had to update it.
+          The output starts as updates, daily digests, handoffs, and answers. Over time it becomes
+          project and client state: current, queryable, cited, and approval-backed.
         </p>
       </div>
     </Section>
@@ -535,10 +538,10 @@ function Solution() {
 }
 
 const INPUTS = [
-  'TELEGRAM',
-  'SLACK',
-  'GOOGLE MEET / ZOOM / TEAMS',
-  'EMAIL',
+  'TELEGRAM BOT',
+  'SLACK BOT',
+  'GOOGLE MEET / TEAMS / ZOOM',
+  'EMAIL CC / BCC',
   'CALENDAR',
   'NATIVE INTEGRATIONS',
   'WEB APP',
@@ -549,32 +552,32 @@ const INPUTS = [
 
 const WORKSPACE_OUTPUTS = [
   {
-    label: 'TIMELINE',
-    detail: 'Events · decisions · who did what · when',
+    label: 'EVENT HISTORY',
+    detail: 'Who did what · when · source evidence',
     icon: '▤',
     delay: 3.0,
   },
   {
-    label: 'AI CHAT',
-    detail: 'Free-form Q&A for the team · cited answers',
+    label: 'UPDATES',
+    detail: 'Stakeholder-ready answers · cited',
     icon: '⌬',
     delay: 3.45,
   },
   {
-    label: 'CALENDAR EVENTS',
-    detail: 'When the team agreed to do something',
+    label: 'DIGESTS',
+    detail: 'What changed · what needs attention',
     icon: '◷',
     delay: 3.9,
   },
   {
-    label: 'OBJECTS / PEOPLE',
-    detail: 'CRM-style people, companies, deals, documents',
+    label: 'HANDOFFS',
+    detail: 'Project and client context for teammates',
     icon: '◆',
     delay: 4.35,
   },
   {
-    label: 'TASKS',
-    detail: 'What we agreed to do · owner · due date',
+    label: 'APPROVAL-BACKED STATE',
+    detail: 'Objects · tasks · commitments · decisions',
     icon: '☑',
     delay: 4.8,
   },
@@ -758,19 +761,19 @@ const CDG_STYLES = `
 function Surfaces() {
   return (
     <Section id="surfaces">
-      <IndexStrip>SURFACES · NATIVE INGEST + EXTENSIBILITY</IndexStrip>
+      <IndexStrip>SURFACES · WORK GRAPH + EXTENSIBILITY</IndexStrip>
       <div className="mt-10 grid gap-px overflow-hidden border border-border bg-border sm:grid-cols-2 lg:grid-cols-4">
         <SurfaceTile
           label="TELEGRAM"
-          body="Voice memos, text, and attachments in DMs or team groups. /ask runs the same cited agent."
+          body="A Telegram bot captures voice memos, text, and attachments in DMs or team groups. /ask runs the same cited agent."
         />
         <SurfaceTile
           label="SLACK"
-          body="DMs, bound channels, files, /ask, and @Timeline replies. Thread context becomes searchable memory."
+          body="A Slack bot captures DMs, bound channels, files, /ask, and @Timeline replies. Thread context becomes searchable memory."
         />
         <SurfaceTile
           label="MEET / ZOOM / TEAMS"
-          body="Meeting bots transcribe calls and file decisions, tasks, and cited summaries."
+          body="Meeting bots join calls, take notes, transcribe discussions, and file decisions, tasks, and cited summaries."
         />
         <SurfaceTile
           label="EMAIL"
@@ -794,23 +797,18 @@ function Surfaces() {
         />
         <SurfaceTile
           label="MCP + INTEGRATIONS"
-          body="Connect long-tail MCP servers for live tool access, then promote high-value systems to native sync when they need durable events."
+          body="Connect internal tools and long-tail SaaS through MCP, alongside first-party integrations for the systems your team uses most."
         />
       </div>
     </Section>
   );
 }
 
-function SurfaceTile({ label, body, coming }: { label: string; body: string; coming?: boolean }) {
+function SurfaceTile({ label, body }: { label: string; body: string }) {
   return (
     <div className="bg-bg p-6 sm:p-8">
       <div className="flex items-center gap-2">
         <span className="font-mono text-xs uppercase tracking-[0.18em] text-fg">{label}</span>
-        {coming && (
-          <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-fg-dim">
-            · coming soon
-          </span>
-        )}
       </div>
       <p className="mt-4 text-base leading-[1.55] text-fg-muted">{body}</p>
     </div>
@@ -820,17 +818,20 @@ function SurfaceTile({ label, body, coming }: { label: string; body: string; com
 function Integrations() {
   return (
     <Section id="integrations">
-      <IndexStrip>INTEGRATIONS · BRING YOUR WHOLE STACK</IndexStrip>
+      <IndexStrip>INTEGRATIONS · KEEP YOUR CURRENT TOOLS</IndexStrip>
       <div className="mt-10 grid gap-12 lg:grid-cols-[1fr,2fr] lg:items-start">
         <div className="space-y-4">
           <h2 className="text-2xl font-medium tracking-tight text-fg sm:text-3xl">
-            Native systems feed the timeline. MCP extends the agent's reach.
+            Timeline sits beside the stack before it replaces any manual upkeep.
           </h2>
           <p className="text-base leading-[1.55] text-fg-muted">
             GitHub, Linear, Google Drive, Monday.com, Slack workspace history, and Sentry are native
             integrations: PRs, issues, docs, board updates, channel decisions, errors, and releases
             become cited events. Slack and Telegram stay the fastest daily capture surfaces.
-            Long-tail tools plug in as{' '}
+            Conversations, meetings, docs, projects, code, account systems, support queues,
+            calendars, and internal tools can all sit around the same event history. Teams keep
+            their current tools while Timeline generates cited updates, digests, handoffs, and
+            answers from the work already happening there. Long-tail tools plug in as{' '}
             <a
               href="https://modelcontextprotocol.io"
               target="_blank"
@@ -841,7 +842,8 @@ function Integrations() {
             </a>{' '}
             : Notion, Jira, Figma, Stripe, your internal tool, anything that speaks the protocol.
             The agent gets live tools; those systems only become durable timeline events when you
-            add native sync or a custom ingestion layer.
+            add native sync or a custom ingestion layer. Timeline is designed around the work graph,
+            not one vendor's idea of a system of record.
           </p>
         </div>
         <IntegrationCloud />
@@ -853,11 +855,11 @@ function Integrations() {
 function Receipts() {
   return (
     <Section id="receipts" className="bg-surface">
-      <IndexStrip>AUDIT · EVERY CLAIM IS CITED</IndexStrip>
+      <IndexStrip>EVIDENCE · EVERY CLAIM IS CITED</IndexStrip>
       <div className="mt-10 grid gap-10 lg:grid-cols-2">
         <div>
           <h2 className="text-3xl font-semibold leading-tight tracking-tight sm:text-4xl">
-            Ask. See the receipts.
+            Ask what changed. See the receipts.
           </h2>
           <p className="mt-6 max-w-prose text-base leading-[1.65] text-fg-muted">
             Every fact resolves to a raw event: voice memo, Slack or Telegram message, email,
@@ -876,7 +878,7 @@ function Receipts() {
           <div className="border-b border-border p-4">
             <div className="font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">YOU</div>
             <p className="mt-1 text-sm text-fg">
-              What did we agree with Ternus on the licensing deal?
+              What changed with Acme, and what did we promise next?
             </p>
           </div>
           <div className="p-4">
@@ -884,14 +886,14 @@ function Receipts() {
               AGENT
             </div>
             <p className="mt-1 text-sm leading-relaxed text-fg">
-              Revised SaaS licensing terms agreed in this afternoon&apos;s call{' '}
-              <CitationChipStatic id="ev:1923" />. Tim owes John a revised deck by Friday{' '}
-              <CitationChipStatic id="ev:1924" />. The original term sheet sits on the Apple deal
-              object <CitationChipStatic id="obj:apple-q2" />.
+              SSO became the launch blocker in yesterday&apos;s meeting{' '}
+              <CitationChipStatic id="ev:1923" />. Design approved onboarding copy in Slack{' '}
+              <CitationChipStatic id="ev:1924" />. Priya owns the migration checklist update{' '}
+              <CitationChipStatic id="doc:acme-checklist" />.
             </p>
           </div>
           <div className="border-t border-border bg-surface-2/60 p-4 font-mono text-[11px] uppercase tracking-[0.14em] text-fg-muted">
-            INSPECTOR · ev:1923 · VOICE · TIM · 14:02 · 0:38
+            INSPECTOR · ev:1923 · MEETING · ACME · 14:02 · 0:38
           </div>
         </div>
       </div>
@@ -964,8 +966,13 @@ function FinalCTA({ isSignedIn }: { isSignedIn: boolean }) {
       <div className="border-l-2 border-signal pl-6 sm:pl-10">
         <Mono className="text-signal">READY?</Mono>
         <h2 className="mt-4 max-w-3xl text-3xl font-semibold leading-tight tracking-tight sm:text-4xl">
-          Capture five days. See what the agent saw.
+          Try it on one real project.
         </h2>
+        <p className="mt-5 max-w-2xl text-base leading-[1.65] text-fg-muted">
+          Add Timeline to the conversations and calls where work already happens, then connect the
+          surrounding tools. Timeline will generate the next update, digest, handoff, and answer
+          from the evidence.
+        </p>
         <div className="mt-10 flex flex-wrap items-center gap-3">
           <Button asChild size="lg">
             <Link href={isSignedIn ? '/app' : '/sign-up'}>
@@ -977,7 +984,7 @@ function FinalCTA({ isSignedIn }: { isSignedIn: boolean }) {
           </Button>
         </div>
         <p className="mt-10 font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">
-          INDEXED · CITED · NEVER FORGOTTEN
+          CAPTURED · CITED · APPROVAL-BACKED
         </p>
       </div>
     </Section>
