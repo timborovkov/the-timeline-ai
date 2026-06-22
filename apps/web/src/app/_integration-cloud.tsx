@@ -13,7 +13,6 @@ interface CuratedLogo {
   id: string;
   label: string;
   logo: string;
-  wide?: boolean;
 }
 
 const CURATED_LOGOS: CuratedLogo[] = [
@@ -28,9 +27,10 @@ const CURATED_LOGOS: CuratedLogo[] = [
   { id: 'linear', label: 'Linear', logo: '/connectors/linear.svg' },
   { id: 'github', label: 'GitHub', logo: '/connectors/github.svg' },
   { id: 'jira', label: 'Jira', logo: '/connectors/jira.svg' },
-  { id: 'salesforce', label: 'Salesforce', logo: '/connectors/salesforce.svg', wide: true },
-  { id: 'pipedrive', label: 'Pipedrive', logo: '/connectors/pipedrive.svg', wide: true },
+  { id: 'salesforce', label: 'Salesforce', logo: '/connectors/salesforce.svg' },
+  { id: 'pipedrive', label: 'Pipedrive', logo: '/connectors/pipedrive.svg' },
   { id: 'hubspot', label: 'HubSpot', logo: '/connectors/hubspot.svg' },
+  { id: 'figma', label: 'Figma', logo: '/connectors/figma.svg' },
 ] as const;
 
 export function IntegrationCloud() {
@@ -46,49 +46,29 @@ export function IntegrationCloud() {
   }
 
   return (
-    <div className="space-y-12">
+    <div className="mt-12 space-y-10">
       {/* Logo cloud */}
-      <ul className="grid grid-cols-3 gap-4 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6">
-        {CURATED_LOGOS.map((c) => {
-          const logoSize = c.wide
-            ? 'grid h-12 w-28 place-items-center rounded-sm bg-surface-2 p-2'
-            : 'grid size-12 place-items-center rounded-sm bg-surface-2 p-2';
-          const imageSize = c.wide ? 'h-8 w-24 object-contain' : 'size-7';
-          const imageWidth = c.wide ? 96 : 28;
-          const imageHeight = c.wide ? 32 : 28;
-
-          return (
-            <li
-              key={c.id}
-              className="flex flex-col items-center gap-2 rounded-sm border border-border bg-surface p-4 text-center"
-            >
-              <span className={logoSize}>
-                <Image
-                  src={c.logo}
-                  alt=""
-                  width={imageWidth}
-                  height={imageHeight}
-                  className={imageSize}
-                  unoptimized
-                />
-              </span>
-              <span className="font-mono text-[11px] uppercase tracking-[0.14em] text-fg">
-                {c.label}
-              </span>
-            </li>
-          );
-        })}
-        <li className="flex flex-col items-center justify-center gap-2 rounded-sm border border-dashed border-border bg-surface p-4 text-center">
-          <span className="grid size-12 place-items-center rounded-sm bg-surface-2 font-mono text-lg text-fg-muted">
-            +
-          </span>
-          <span className="font-mono text-[11px] uppercase tracking-[0.14em] text-fg-muted">
-            Any MCP server
-          </span>
-          <span className="text-[10px] uppercase tracking-[0.14em] text-fg-dim">
-            internal tools
-          </span>
-        </li>
+      <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-5">
+        {CURATED_LOGOS.map((c) => (
+          <li
+            key={c.id}
+            className="flex min-h-28 flex-col items-center justify-center gap-3 border border-border bg-surface px-3 py-4 text-center"
+          >
+            <span className="grid size-12 place-items-center rounded-sm bg-surface-2 p-2">
+              <Image
+                src={c.logo}
+                alt=""
+                width={48}
+                height={48}
+                className="h-auto w-auto max-h-7 max-w-16 object-contain"
+                unoptimized
+              />
+            </span>
+            <span className="font-mono text-[11px] uppercase tracking-[0.14em] text-fg">
+              {c.label}
+            </span>
+          </li>
+        ))}
       </ul>
 
       {/* Example prompts */}
@@ -109,15 +89,14 @@ export function IntegrationCloud() {
       </div>
 
       <p className="text-center text-xs text-fg-dim">
-        Reach any MCP-compatible server for live context. Durable evidence comes from capture,
-        integrations, and ingest paths; custom servers connect under{' '}
+        Need an internal tool? Connect any MCP-compatible server under{' '}
         <Link
           href="/app/team/mcp-servers"
           className="underline-offset-4 hover:text-fg hover:underline"
         >
           team settings
         </Link>
-        , bring your own auth, and let Timeline reach the tools that matter to your team.
+        .
       </p>
     </div>
   );
