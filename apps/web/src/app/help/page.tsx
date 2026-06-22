@@ -20,7 +20,7 @@ export default function HelpIndexPage() {
           Use Timeline without needing a private tour.
         </h1>
         <p className="text-lg text-fg-muted">
-          Public guides for capture, documents, boards, integrations, and object management.
+          Public guides for capture, Work, documents, boards, integrations, and object management.
         </p>
       </header>
 
