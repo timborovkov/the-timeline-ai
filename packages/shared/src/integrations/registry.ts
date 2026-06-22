@@ -167,14 +167,14 @@ const CATALOG_SEEDS: CatalogSeed[] = [
     id: 'monday',
     label: 'Monday.com',
     description:
-      'Native board sync: items, updates, status changes, owners, and column activity become cited events.',
+      'Native workspace sync: boards, records, subitems, updates, column activity, and WorkDocs become cited events.',
     logo: '/connectors/monday.svg',
     category: 'project-management',
     kind: 'native',
     featured: true,
     connectablePath: '/app/team/integrations',
     ingestStatus: 'implemented',
-    examplePrompt: 'Which launch board items changed status this week?',
+    examplePrompt: 'Which launch board records changed this week?',
     envCheck: () => {
       const env = getEnv();
       return Boolean(env.MONDAY_CLIENT_ID && env.MONDAY_CLIENT_SECRET);

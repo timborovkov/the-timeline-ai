@@ -26,6 +26,7 @@ describe('resource labels', () => {
     expect(resourceKindLabel('github.repo')).toBe('GitHub repository');
     expect(resourceKindLabel('linear.team')).toBe('Linear team');
     expect(resourceKindLabel('monday.board')).toBe('Monday.com board');
+    expect(resourceKindLabel('monday.doc')).toBe('Monday.com doc');
     expect(resourceKindLabel('slack.channel')).toBe('Slack channel');
     expect(resourceKindLabel('sentry.project')).toBe('Sentry project');
     expect(resourceKindLabel('drive.shared_drive')).toBe('Google Drive shared drive');

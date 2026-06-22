@@ -129,11 +129,9 @@ export async function runOneIntegration(
       harvestableUserId !== null
         ? await integrationsLib.adminVerifyTeamMember(db, integration.teamId, harvestableUserId)
         : false;
-    if (
-      integration.provider === 'google_drive' &&
-      harvestableUserId !== null &&
-      !harvestUserStillMember
-    ) {
+    const providerSupportsDocumentHarvest =
+      integration.provider === 'google_drive' || integration.provider === 'monday';
+    if (providerSupportsDocumentHarvest && harvestableUserId !== null && !harvestUserStillMember) {
       await integrationsLib.adminRecordAudit(
         db,
         integration.teamId,
@@ -143,9 +141,7 @@ export async function runOneIntegration(
       );
     }
     const harvestEnabled =
-      integration.provider === 'google_drive' &&
-      harvestableUserId !== null &&
-      harvestUserStillMember;
+      providerSupportsDocumentHarvest && harvestableUserId !== null && harvestUserStillMember;
 
     const ctx: integrationsLib.SyncContext = {
       async writeEvents(events) {

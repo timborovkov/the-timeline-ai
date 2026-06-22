@@ -17,6 +17,7 @@ const KIND_LABELS: Record<string, string> = {
   'drive.folder': 'Google Drive folder',
   'drive.shared_drive': 'Google Drive shared drive',
   'monday.board': 'Monday.com board',
+  'monday.doc': 'Monday.com doc',
   'slack.channel': 'Slack channel',
   'sentry.org': 'Sentry organization',
   'sentry.project': 'Sentry project',

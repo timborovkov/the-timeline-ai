@@ -14,6 +14,14 @@ function jsonResponse(body: unknown): Response {
   });
 }
 
+function requestPayload(init: RequestInit | undefined): {
+  query: string;
+  variables?: Record<string, unknown>;
+} {
+  if (typeof init?.body !== 'string') throw new Error('expected JSON request body');
+  return JSON.parse(init.body) as { query: string; variables?: Record<string, unknown> };
+}
+
 describe('mondayProvider', () => {
   beforeEach(() => {
     process.env.MONDAY_CLIENT_ID = 'monday-client';
@@ -41,22 +49,44 @@ describe('mondayProvider', () => {
     expect(url.searchParams.get('redirect_uri')).toBe(
       'https://timeline.test/api/integrations/monday/callback',
     );
-    expect(url.searchParams.get('scope')).toContain('boards:read');
+    expect(url.searchParams.get('scope')).toBe('boards:read users:read updates:read docs:read');
     expect(url.searchParams.get('state')).toBe('signed-state');
   });
 
-  it('lists boards as syncable resources', async () => {
+  it('lists boards and WorkDocs as syncable resources', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn().mockResolvedValue(
-        jsonResponse({
-          data: {
-            boards: [
-              { id: 'board-1', name: 'Launch', workspace: { id: 'workspace-1', name: 'Product' } },
-            ],
-          },
-        }),
-      ),
+      vi.fn<typeof globalThis.fetch>((_input, init) => {
+        const body = requestPayload(init);
+        if (body.query.includes('boards(limit: 100)')) {
+          return Promise.resolve(
+            jsonResponse({
+              data: {
+                boards: [
+                  {
+                    id: 'board-1',
+                    name: 'Launch',
+                    workspace: { id: 'workspace-1', name: 'Product' },
+                  },
+                ],
+              },
+            }),
+          );
+        }
+        return Promise.resolve(
+          jsonResponse({
+            data: {
+              docs: [
+                {
+                  id: 'doc-1',
+                  name: 'Launch notes',
+                  workspace: { id: 'workspace-1', name: 'Product' },
+                },
+              ],
+            },
+          }),
+        );
+      }),
     );
 
     const resources = await mondayProvider.listSyncableResources({} as never, {
@@ -65,64 +95,133 @@ describe('mondayProvider', () => {
 
     expect(resources).toEqual([
       { externalId: 'board-1', label: 'Product / Launch', kind: 'monday.board' },
+      { externalId: 'doc-1', label: 'Product / Launch notes', kind: 'monday.doc' },
     ]);
   });
 
-  it('syncs board activity, items, and updates into integration events', async () => {
+  it('syncs board activity, records, subitems, paginated items, and updates into timeline events', async () => {
     const fetch = vi.fn<typeof globalThis.fetch>((_input, init) => {
-      const requestBody = init?.body;
-      if (typeof requestBody !== 'string') throw new Error('expected JSON request body');
-      const body = JSON.parse(requestBody) as { query: string };
-      if (body.query.includes('boards(ids: $ids) { id name')) {
+      const body = requestPayload(init);
+      if (body.query.includes('columns { id title type }')) {
         return Promise.resolve(
           jsonResponse({
-            data: { boards: [{ id: 'board-1', name: 'Launch', workspace: { name: 'Product' } }] },
+            data: {
+              boards: [
+                {
+                  id: 'board-1',
+                  name: 'Pipeline',
+                  updated_at: '2026-06-20T09:00:00Z',
+                  workspace: { id: 'workspace-1', name: 'Sales' },
+                  columns: [
+                    { id: 'status', title: 'Stage', type: 'status' },
+                    { id: 'deal_value', title: 'Deal value', type: 'numbers' },
+                  ],
+                },
+              ],
+            },
           }),
         );
       }
-      return Promise.resolve(
-        jsonResponse({
-          data: {
-            boards: [
-              {
-                activity_logs: [
-                  {
-                    id: 'activity-1',
-                    event: 'change_status_column_value',
-                    created_at: '2026-06-20T10:00:00Z',
-                    user_id: 'user-1',
-                    data: JSON.stringify({
-                      pulse_id: 'item-1',
-                      pulse_name: 'Ship beta',
-                      column_title: 'Status',
-                      value: 'Done',
-                    }),
-                  },
-                ],
-                items_page: {
-                  items: [
+      if (body.query.includes('activity_logs')) {
+        return Promise.resolve(
+          jsonResponse({
+            data: {
+              boards: [
+                {
+                  activity_logs: [
                     {
-                      id: 'item-1',
-                      name: 'Ship beta',
-                      updated_at: '2026-06-20T11:00:00Z',
-                      url: 'https://monday.com/boards/1/pulses/1',
-                      column_values: [{ id: 'status', type: 'status', text: 'Done' }],
-                      updates: [
-                        {
-                          id: 'update-1',
-                          body: 'Ready to launch',
-                          created_at: '2026-06-20T12:00:00Z',
-                          creator: { id: 'user-1', name: 'Ada' },
-                        },
-                      ],
+                      id: 'activity-1',
+                      event: 'change_status_column_value',
+                      created_at: '2026-06-20T10:00:00Z',
+                      user_id: 'user-1',
+                      data: JSON.stringify({
+                        pulse_id: 'item-1',
+                        pulse_name: 'Acme renewal',
+                        column_title: 'Stage',
+                        value: 'Won',
+                      }),
                     },
                   ],
                 },
+              ],
+            },
+          }),
+        );
+      }
+      if (body.query.includes('next_items_page')) {
+        return Promise.resolve(
+          jsonResponse({
+            data: {
+              next_items_page: {
+                cursor: null,
+                items: [
+                  {
+                    id: 'item-2',
+                    name: 'Globex expansion',
+                    updated_at: '2026-06-20T11:30:00Z',
+                    column_values: [{ id: 'status', type: 'status', text: 'Working on it' }],
+                    updates: [],
+                    subitems: [],
+                  },
+                ],
               },
-            ],
-          },
-        }),
-      );
+            },
+          }),
+        );
+      }
+      if (body.query.includes('items_page')) {
+        return Promise.resolve(
+          jsonResponse({
+            data: {
+              boards: [
+                {
+                  items_page: {
+                    cursor: 'cursor-2',
+                    items: [
+                      {
+                        id: 'item-1',
+                        name: 'Acme renewal',
+                        updated_at: '2026-06-20T11:00:00Z',
+                        url: 'https://monday.com/boards/1/pulses/1',
+                        creator: { id: 'user-1', name: 'Ada' },
+                        column_values: [
+                          { id: 'status', type: 'status', text: 'Won' },
+                          { id: 'deal_value', type: 'numbers', text: '$42,000', value: '42000' },
+                        ],
+                        updates: [
+                          {
+                            id: 'update-1',
+                            body: 'Legal approved the renewal',
+                            created_at: '2026-06-20T12:00:00Z',
+                            creator: { id: 'user-1', name: 'Ada' },
+                          },
+                        ],
+                        subitems: [
+                          {
+                            id: 'subitem-1',
+                            name: 'Security review',
+                            updated_at: '2026-06-20T12:30:00Z',
+                            parent_item: { id: 'item-1', name: 'Acme renewal' },
+                            column_values: [{ id: 'status', type: 'status', text: 'Done' }],
+                            updates: [
+                              {
+                                id: 'update-2',
+                                body: 'Security signed off',
+                                created_at: '2026-06-20T13:00:00Z',
+                              },
+                            ],
+                          },
+                        ],
+                      },
+                    ],
+                  },
+                },
+              ],
+            },
+          }),
+        );
+      }
+      throw new Error(`unexpected query: ${body.query}`);
     });
     vi.stubGlobal('fetch', fetch);
     const ctx = {
@@ -143,14 +242,113 @@ describe('mondayProvider', () => {
     expect(ctx.writeEvents).toHaveBeenCalledTimes(1);
     const events = (ctx.writeEvents.mock.calls[0]?.[0] ?? []) as IntegrationEvent[];
     expect(events.map((event) => event.eventType)).toEqual([
+      'board.schema',
       'status.changed',
       'item.updated',
       'update.created',
+      'subitem.updated',
+      'update.created',
+      'item.updated',
     ]);
-    expect(events[0]?.objectMap).toMatchObject({ type: 'task', status: 'done' });
+    expect(events[1]?.contentText).toContain('Monday status changed on Pipeline: Acme renewal');
+    expect(events[2]?.objectMap).toMatchObject({
+      type: 'other',
+      displayTitle: 'Acme renewal',
+      status: 'done',
+      metadata: {
+        monday_record_kind: 'item',
+        monday_board_id: 'board-1',
+      },
+    });
+    expect(events[3]?.contentText).toContain('Legal approved the renewal');
+    expect(events[4]?.objectMap).toMatchObject({
+      type: 'other',
+      displayTitle: 'Security review',
+      metadata: {
+        monday_record_kind: 'subitem',
+        monday_parent_item_id: 'item-1',
+      },
+    });
+    expect(events[5]?.contentText).toContain('Security signed off');
     expect(ctx.saveCursor).toHaveBeenCalledWith(
       'monday.board:board-1',
-      expect.objectContaining({ activity_since: '2026-06-20T12:00:00.000Z' }),
+      expect.objectContaining({ activity_since: '2026-06-20T13:00:00.000Z' }),
     );
+  });
+
+  it('syncs selected WorkDocs as timeline events and harvested documents', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof globalThis.fetch>((_input, init) => {
+        const body = requestPayload(init);
+        if (body.query.includes('blocks(limit: $blockLimit')) {
+          return Promise.resolve(
+            jsonResponse({
+              data: {
+                docs: [
+                  {
+                    id: 'doc-1',
+                    object_id: 'object-1',
+                    name: 'Launch notes',
+                    created_at: '2026-06-18T09:00:00Z',
+                    updated_at: '2026-06-20T14:00:00Z',
+                    url: 'https://monday.com/docs/doc-1',
+                    workspace_id: 'workspace-1',
+                    workspace: { id: 'workspace-1', name: 'Product' },
+                    created_by: { id: 'user-1', name: 'Ada' },
+                    blocks: [
+                      { id: 'block-1', type: 'normal_text', content: 'Launch moved to Friday.' },
+                    ],
+                  },
+                ],
+              },
+            }),
+          );
+        }
+        throw new Error(`unexpected query: ${body.query}`);
+      }),
+    );
+    const ctx = {
+      loadCursor: vi.fn().mockResolvedValue({}),
+      saveCursor: vi.fn().mockResolvedValue(undefined),
+      writeEvents: vi.fn().mockResolvedValue([]),
+      harvestDocument: vi.fn().mockResolvedValue({ documentId: 'doc-id', versionId: 'version-id' }),
+      persistTokens: vi.fn(),
+      recordAudit: vi.fn(),
+    };
+
+    await mondayProvider.backfill({
+      integration: { id: 'integration-1' } as never,
+      tokens: { access_token: 'token' },
+      selections: [{ kind: 'monday.doc', externalId: 'doc-1' }],
+      ctx,
+    });
+
+    const events = (ctx.writeEvents.mock.calls[0]?.[0] ?? []) as IntegrationEvent[];
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      provider: 'monday',
+      externalObjectId: 'doc-1',
+      eventType: 'doc.updated',
+      objectMap: {
+        type: 'document',
+        displayTitle: 'Launch notes',
+        externalId: 'doc:doc-1',
+      },
+    });
+    expect(events[0]?.contentText).toContain('Launch moved to Friday.');
+    expect(ctx.harvestDocument).toHaveBeenCalledWith(
+      expect.objectContaining({
+        filename: 'Launch notes.md',
+        contentType: 'text/markdown',
+        externalId: 'monday.doc:doc-1',
+      }),
+    );
+    const harvested = ctx.harvestDocument.mock.calls[0]?.[0] as { body: Buffer };
+    expect(harvested.body.toString('utf8')).toContain('# Launch notes');
+    expect(harvested.body.toString('utf8')).toContain('Launch moved to Friday.');
+    expect(ctx.saveCursor).toHaveBeenCalledWith('monday.doc:doc-1', {
+      doc_since: '2026-06-20T14:00:00.000Z',
+    });
   });
 });

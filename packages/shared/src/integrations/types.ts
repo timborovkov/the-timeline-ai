@@ -48,6 +48,8 @@ export interface ObjectMapping {
   url?: string;
   /** Optional aliases (e.g. ENG-42 for a Linear issue). */
   aliases?: string[];
+  /** Optional provider metadata to merge onto the mapped entity row. */
+  metadata?: Record<string, unknown>;
 }
 
 /**

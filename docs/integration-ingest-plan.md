@@ -83,7 +83,7 @@ state, cross-functional decisions, and operational failure signals:
 
 | Provider | Ingest surface |
 | --- | --- |
-| Monday.com | Boards, items, updates, columns, status changes, owners, automations where exposed. |
+| Monday.com | Boards, generic records, subitems, updates, columns, status changes, owners, and WorkDocs. |
 | Slack | Workspace-wide channel/thread/file/reaction ingestion beyond the current conversational capture model. |
 | Sentry | Issues, releases, suspect commits, regressions, ownership, resolution events. |
 

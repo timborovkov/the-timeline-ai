@@ -1,3 +1,5 @@
+import { Buffer } from 'node:buffer';
+
 import type {
   IntegrationEvent,
   IntegrationProvider,
@@ -11,7 +13,11 @@ import { getEnv } from '#src/env.js';
 const AUTH_URL = 'https://auth.monday.com/oauth2/authorize';
 const TOKEN_URL = 'https://auth.monday.com/oauth2/token';
 const GRAPHQL_URL = 'https://api.monday.com/v2';
-const SCOPES = ['boards:read', 'users:read', 'updates:read'];
+const SCOPES = ['boards:read', 'users:read', 'updates:read', 'docs:read'];
+const ITEM_PAGE_LIMIT = 100;
+const UPDATE_LIMIT = 50;
+const DOC_PAGE_LIMIT = 100;
+const BLOCK_PAGE_LIMIT = 100;
 
 interface MondayTokens {
   access_token: string;
@@ -20,11 +26,31 @@ interface MondayTokens {
   scope?: string;
 }
 
+interface MondayWorkspace {
+  id?: string;
+  name?: string;
+}
+
+interface MondayColumn {
+  id: string;
+  title?: string | null;
+  type?: string | null;
+}
+
 interface MondayBoard {
   id: string;
   name: string;
   updated_at?: string;
-  workspace?: { id?: string; name?: string } | null;
+  workspace?: MondayWorkspace | null;
+  columns?: MondayColumn[];
+}
+
+interface MondayColumnValue {
+  id: string;
+  text?: string | null;
+  type?: string;
+  value?: unknown;
+  updated_at?: string | null;
 }
 
 interface MondayActivityLog {
@@ -49,14 +75,71 @@ interface MondayItem {
   updated_at?: string;
   url?: string;
   creator?: { id?: string; name?: string; email?: string | null } | null;
-  column_values?: { id: string; text?: string | null; type?: string; updated_at?: string | null }[];
+  parent_item?: { id?: string; name?: string } | null;
+  column_values?: MondayColumnValue[];
   updates?: MondayUpdate[];
+  subitems?: MondayItem[];
+}
+
+interface MondayItemsPage {
+  cursor?: string | null;
+  items?: MondayItem[];
+}
+
+interface MondayDocBlock {
+  id: string;
+  type?: string | null;
+  content?: unknown;
+  position?: number | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+  parent_block_id?: string | null;
+}
+
+interface MondayDoc {
+  id: string;
+  object_id?: string;
+  name: string;
+  created_at?: string;
+  updated_at?: string;
+  url?: string;
+  relative_url?: string | null;
+  doc_kind?: string;
+  workspace?: MondayWorkspace | null;
+  workspace_id?: string | null;
+  created_by?: { id?: string; name?: string; email?: string | null } | null;
+  blocks?: MondayDocBlock[];
 }
 
 interface MondayCursor {
   activity_since?: string | undefined;
   item_since?: string | undefined;
+  doc_since?: string | undefined;
 }
+
+interface NormalizedColumn {
+  id: string;
+  title: string;
+  type: string | null;
+  text: string | null;
+  value: unknown;
+  updated_at: string | null;
+}
+
+const ITEM_FIELDS = `
+  id name updated_at url
+  creator { id name email }
+  parent_item { id name }
+  column_values { id text type value updated_at }
+  updates(limit: ${String(UPDATE_LIMIT)}) { id body created_at updated_at creator { id name email } }
+  subitems {
+    id name updated_at url
+    creator { id name email }
+    parent_item { id name }
+    column_values { id text type value updated_at }
+    updates(limit: ${String(UPDATE_LIMIT)}) { id body created_at updated_at creator { id name email } }
+  }
+`;
 
 function buildAuthorizeUrl(input: {
   clientId: string;
@@ -131,9 +214,13 @@ function parseActivityData(data?: string | null): Record<string, unknown> {
 
 function mondayStatus(text?: string | null): NonNullable<ObjectMapping['status']> {
   const lowered = text?.toLowerCase() ?? '';
-  if (lowered.includes('done') || lowered.includes('complete')) return 'done';
-  if (lowered.includes('working') || lowered.includes('progress')) return 'in_progress';
-  if (lowered.includes('cancel')) return 'cancelled';
+  if (lowered.includes('done') || lowered.includes('complete') || lowered.includes('won')) {
+    return 'done';
+  }
+  if (lowered.includes('working') || lowered.includes('progress') || lowered.includes('active')) {
+    return 'in_progress';
+  }
+  if (lowered.includes('cancel') || lowered.includes('lost')) return 'cancelled';
   return 'open';
 }
 
@@ -145,6 +232,89 @@ function actor(
     ...(input.id ? { externalId: input.id } : {}),
     ...(input.name ? { name: input.name } : {}),
     ...(input.email ? { email: input.email } : {}),
+  };
+}
+
+function boardMetadata(board: MondayBoard): Record<string, unknown> {
+  return {
+    monday_board_id: board.id,
+    monday_board_name: board.name,
+    monday_workspace_id: board.workspace?.id ?? null,
+    monday_workspace_name: board.workspace?.name ?? null,
+  };
+}
+
+function normalizedColumns(board: MondayBoard, item: MondayItem): NormalizedColumn[] {
+  const schemaById = new Map((board.columns ?? []).map((column) => [column.id, column]));
+  return (item.column_values ?? []).map((column) => {
+    const schema = schemaById.get(column.id);
+    return {
+      id: column.id,
+      title: schema?.title ?? column.id,
+      type: column.type ?? schema?.type ?? null,
+      text: column.text ?? null,
+      value: column.value ?? null,
+      updated_at: column.updated_at ?? null,
+    };
+  });
+}
+
+function statusColumn(board: MondayBoard, item: MondayItem): NormalizedColumn | undefined {
+  return normalizedColumns(board, item).find((column) => column.type === 'status');
+}
+
+function mondayRecordMap(
+  board: MondayBoard,
+  item: MondayItem,
+  kind: 'item' | 'subitem',
+): ObjectMapping {
+  const status = statusColumn(board, item);
+  const parent = item.parent_item;
+  return {
+    type: 'other',
+    canonicalName: `Monday ${kind} ${item.id}: ${item.name}`,
+    displayTitle: item.name,
+    externalId: item.id,
+    status: mondayStatus(status?.text),
+    ...(item.url ? { url: item.url } : {}),
+    metadata: {
+      monday_record_kind: kind,
+      ...boardMetadata(board),
+      monday_item_id: item.id,
+      monday_item_name: item.name,
+      monday_parent_item_id: parent?.id ?? null,
+      monday_parent_item_name: parent?.name ?? null,
+      monday_columns: normalizedColumns(board, item),
+    },
+  };
+}
+
+function boardSchemaEvent(board: MondayBoard): IntegrationEvent {
+  const occurredAt = dateValue(board.updated_at);
+  return {
+    dedupKey: `monday:board-schema:${board.id}:${occurredAt.toISOString()}`,
+    provider: 'monday',
+    externalObjectId: board.id,
+    eventType: 'board.schema',
+    occurredAt,
+    contentText: [
+      `Monday board schema: ${board.name}`,
+      ...(board.columns ?? []).map(
+        (column) => `Column: ${column.title ?? column.id} (${column.type ?? 'unknown'})`,
+      ),
+    ].join('\n'),
+    extra: { ...boardMetadata(board), columns: board.columns ?? [] },
+    objectMap: {
+      type: 'other',
+      canonicalName: `Monday board ${board.id}: ${board.name}`,
+      displayTitle: board.name,
+      externalId: `board:${board.id}`,
+      metadata: {
+        monday_record_kind: 'board',
+        ...boardMetadata(board),
+        columns: board.columns ?? [],
+      },
+    },
   };
 }
 
@@ -162,7 +332,7 @@ function activityEvent(board: MondayBoard, log: MondayActivityLog): IntegrationE
         : log.event.includes('person')
           ? 'owner.changed'
           : 'item.updated';
-  const title = itemName ?? `Monday item ${itemId}`;
+  const title = itemName ?? `Monday record ${itemId}`;
   return {
     dedupKey: `monday:activity:${board.id}:${log.id}`,
     provider: 'monday',
@@ -179,56 +349,68 @@ function activityEvent(board: MondayBoard, log: MondayActivityLog): IntegrationE
       .filter(Boolean)
       .join('\n'),
     extra: {
-      monday_board_id: board.id,
-      monday_board_name: board.name,
+      ...boardMetadata(board),
+      monday_item_id: itemId,
       monday_activity_event: log.event,
       monday_activity_data: data,
     },
     objectMap: {
-      type: 'task',
-      canonicalName: title,
+      type: 'other',
+      canonicalName: `Monday record ${itemId}: ${title}`,
       displayTitle: title,
       externalId: itemId,
       status: mondayStatus(stringValue(data.value)),
+      metadata: {
+        monday_record_kind: 'activity-record',
+        ...boardMetadata(board),
+        monday_item_id: itemId,
+      },
     },
   };
 }
 
-function itemEvent(board: MondayBoard, item: MondayItem): IntegrationEvent {
+function itemEvent(
+  board: MondayBoard,
+  item: MondayItem,
+  kind: 'item' | 'subitem',
+): IntegrationEvent {
   const occurredAt = dateValue(item.updated_at);
-  const statusColumn = item.column_values?.find((column) => column.type === 'status');
+  const status = statusColumn(board, item);
   return {
-    dedupKey: `monday:item:${board.id}:${item.id}:${occurredAt.toISOString()}`,
+    dedupKey: `monday:${kind}:${board.id}:${item.id}:${occurredAt.toISOString()}`,
     provider: 'monday',
     externalObjectId: item.id,
-    eventType: 'item.updated',
+    eventType: kind === 'subitem' ? 'subitem.updated' : 'item.updated',
     occurredAt,
     actor: actor(item.creator),
     contentText: [
-      `Monday item updated on ${board.name}: ${item.name}`,
-      statusColumn?.text ? `Status: ${statusColumn.text}` : null,
+      `Monday ${kind} updated on ${board.name}: ${item.name}`,
+      item.parent_item?.name ? `Parent: ${item.parent_item.name}` : null,
+      status?.text ? `Status: ${status.text}` : null,
+      ...normalizedColumns(board, item)
+        .filter((column) => column.text && column.type !== 'status')
+        .slice(0, 12)
+        .map((column) => `${column.title}: ${column.text}`),
     ]
       .filter(Boolean)
       .join('\n'),
     extra: {
-      monday_board_id: board.id,
-      monday_board_name: board.name,
+      ...boardMetadata(board),
       monday_item_id: item.id,
+      monday_parent_item_id: item.parent_item?.id ?? null,
       external_url: item.url ?? null,
-      columns: item.column_values ?? [],
+      columns: normalizedColumns(board, item),
     },
-    objectMap: {
-      type: 'task',
-      canonicalName: item.name,
-      displayTitle: item.name,
-      externalId: item.id,
-      status: mondayStatus(statusColumn?.text),
-      ...(item.url ? { url: item.url } : {}),
-    },
+    objectMap: mondayRecordMap(board, item, kind),
   };
 }
 
-function updateEvent(board: MondayBoard, item: MondayItem, update: MondayUpdate): IntegrationEvent {
+function updateEvent(
+  board: MondayBoard,
+  item: MondayItem,
+  update: MondayUpdate,
+  kind: 'item' | 'subitem',
+): IntegrationEvent {
   const occurredAt = dateValue(update.updated_at ?? update.created_at);
   return {
     dedupKey: `monday:update:${item.id}:${update.id}:${occurredAt.toISOString()}`,
@@ -240,18 +422,65 @@ function updateEvent(board: MondayBoard, item: MondayItem, update: MondayUpdate)
     actor: actor(update.creator),
     contentText: `Monday update on ${item.name}: ${update.body ?? ''}`.trim(),
     extra: {
-      monday_board_id: board.id,
-      monday_board_name: board.name,
+      ...boardMetadata(board),
       monday_item_id: item.id,
+      monday_record_kind: kind,
+      monday_parent_item_id: item.parent_item?.id ?? null,
       monday_update_id: update.id,
       external_url: item.url ?? null,
     },
+    objectMap: mondayRecordMap(board, item, kind),
+  };
+}
+
+function docTextFromBlocks(blocks: MondayDocBlock[] | undefined): string {
+  if (!blocks?.length) return '';
+  return blocks
+    .map((block) => {
+      const content = block.content;
+      if (typeof content === 'string') return content;
+      return JSON.stringify(content ?? {});
+    })
+    .join('\n');
+}
+
+function docMarkdown(doc: MondayDoc): string {
+  return [`# ${doc.name}`, '', docTextFromBlocks(doc.blocks)].filter(Boolean).join('\n');
+}
+
+function docEvent(doc: MondayDoc): IntegrationEvent {
+  const occurredAt = dateValue(doc.updated_at ?? doc.created_at);
+  const text = docTextFromBlocks(doc.blocks);
+  return {
+    dedupKey: `monday:doc:${doc.id}:${occurredAt.toISOString()}`,
+    provider: 'monday',
+    externalObjectId: doc.id,
+    eventType: 'doc.updated',
+    occurredAt,
+    actor: actor(doc.created_by),
+    contentText: [`Monday doc updated: ${doc.name}`, text].filter(Boolean).join('\n'),
+    extra: {
+      monday_doc_id: doc.id,
+      monday_doc_object_id: doc.object_id ?? null,
+      monday_workspace_id: doc.workspace_id ?? doc.workspace?.id ?? null,
+      monday_workspace_name: doc.workspace?.name ?? null,
+      external_url: doc.url ?? null,
+      doc_kind: doc.doc_kind ?? null,
+      blocks: doc.blocks ?? [],
+    },
     objectMap: {
-      type: 'task',
-      canonicalName: item.name,
-      displayTitle: item.name,
-      externalId: item.id,
-      ...(item.url ? { url: item.url } : {}),
+      type: 'document',
+      canonicalName: `Monday doc ${doc.id}: ${doc.name}`,
+      displayTitle: doc.name,
+      externalId: `doc:${doc.id}`,
+      ...(doc.url ? { url: doc.url } : {}),
+      metadata: {
+        monday_record_kind: 'doc',
+        monday_doc_id: doc.id,
+        monday_doc_object_id: doc.object_id ?? null,
+        monday_workspace_id: doc.workspace_id ?? doc.workspace?.id ?? null,
+        monday_workspace_name: doc.workspace?.name ?? null,
+      },
     },
   };
 }
@@ -260,11 +489,148 @@ async function fetchBoard(tokens: MondayTokens, boardId: string): Promise<Monday
   const data = await gql<{ boards: MondayBoard[] }>(
     tokens,
     `query ($ids: [ID!]) {
-      boards(ids: $ids) { id name updated_at workspace { id name } }
+      boards(ids: $ids) {
+        id name updated_at
+        workspace { id name }
+        columns { id title type }
+      }
     }`,
     { ids: [boardId] },
   );
   return data.boards[0] ?? null;
+}
+
+async function fetchInitialItemsPage(
+  tokens: MondayTokens,
+  boardId: string,
+): Promise<MondayItemsPage> {
+  const data = await gql<{ boards: { items_page?: MondayItemsPage }[] }>(
+    tokens,
+    `query ($ids: [ID!], $limit: Int!) {
+      boards(ids: $ids) {
+        items_page(limit: $limit) {
+          cursor
+          items { ${ITEM_FIELDS} }
+        }
+      }
+    }`,
+    { ids: [boardId], limit: ITEM_PAGE_LIMIT },
+  );
+  return data.boards[0]?.items_page ?? {};
+}
+
+async function fetchNextItemsPage(tokens: MondayTokens, cursor: string): Promise<MondayItemsPage> {
+  const data = await gql<{ next_items_page?: MondayItemsPage }>(
+    tokens,
+    `query ($cursor: String!, $limit: Int!) {
+      next_items_page(cursor: $cursor, limit: $limit) {
+        cursor
+        items { ${ITEM_FIELDS} }
+      }
+    }`,
+    { cursor, limit: ITEM_PAGE_LIMIT },
+  );
+  return data.next_items_page ?? {};
+}
+
+async function fetchAllBoardItems(tokens: MondayTokens, boardId: string): Promise<MondayItem[]> {
+  const items: MondayItem[] = [];
+  let page = await fetchInitialItemsPage(tokens, boardId);
+  for (let index = 0; index < 100; index++) {
+    items.push(...(page.items ?? []));
+    if (!page.cursor) break;
+    page = await fetchNextItemsPage(tokens, page.cursor);
+  }
+  return items;
+}
+
+async function fetchActivityLogs(
+  tokens: MondayTokens,
+  boardId: string,
+  from: string,
+  to: string,
+): Promise<MondayActivityLog[]> {
+  const data = await gql<{ boards: { activity_logs?: MondayActivityLog[] }[] }>(
+    tokens,
+    `query ($ids: [ID!], $from: ISO8601DateTime!, $to: ISO8601DateTime!) {
+      boards(ids: $ids) {
+        activity_logs(from: $from, to: $to) { id event data created_at user_id }
+      }
+    }`,
+    { ids: [boardId], from, to },
+  );
+  return data.boards[0]?.activity_logs ?? [];
+}
+
+async function fetchDocPage(
+  tokens: MondayTokens,
+  docId: string,
+  page: number,
+): Promise<MondayDoc | null> {
+  const data = await gql<{ docs: MondayDoc[] }>(
+    tokens,
+    `query ($ids: [ID!], $blockLimit: Int!, $blockPage: Int!) {
+      docs(ids: $ids) {
+        id object_id name doc_kind created_at updated_at url relative_url workspace_id
+        workspace { id name }
+        created_by { id name email }
+        blocks(limit: $blockLimit, page: $blockPage) {
+          id type content position created_at updated_at parent_block_id
+        }
+      }
+    }`,
+    { ids: [docId], blockLimit: BLOCK_PAGE_LIMIT, blockPage: page },
+  );
+  return data.docs[0] ?? null;
+}
+
+async function fetchDoc(tokens: MondayTokens, docId: string): Promise<MondayDoc | null> {
+  const first = await fetchDocPage(tokens, docId, 1);
+  if (!first) return null;
+  const blocks = [...(first.blocks ?? [])];
+  for (let page = 2; page <= 100; page++) {
+    if ((first.blocks?.length ?? 0) < BLOCK_PAGE_LIMIT) break;
+    const next = await fetchDocPage(tokens, docId, page);
+    const nextBlocks = next?.blocks ?? [];
+    blocks.push(...nextBlocks);
+    if (nextBlocks.length < BLOCK_PAGE_LIMIT) break;
+  }
+  return { ...first, blocks };
+}
+
+async function fetchDocsPage(tokens: MondayTokens, page: number): Promise<MondayDoc[]> {
+  const data = await gql<{ docs: MondayDoc[] }>(
+    tokens,
+    `query ($limit: Int!, $page: Int!) {
+      docs(limit: $limit, page: $page, order_by: used_at) {
+        id object_id name doc_kind created_at updated_at url relative_url workspace_id
+        workspace { id name }
+      }
+    }`,
+    { limit: DOC_PAGE_LIMIT, page },
+  );
+  return data.docs;
+}
+
+async function listDocs(tokens: MondayTokens): Promise<MondayDoc[]> {
+  const docs: MondayDoc[] = [];
+  for (let page = 1; page <= 25; page++) {
+    const batch = await fetchDocsPage(tokens, page);
+    docs.push(...batch);
+    if (batch.length < DOC_PAGE_LIMIT) break;
+  }
+  return docs;
+}
+
+function recordEvents(
+  board: MondayBoard,
+  item: MondayItem,
+  kind: 'item' | 'subitem',
+): IntegrationEvent[] {
+  return [
+    itemEvent(board, item, kind),
+    ...(item.updates ?? []).map((update) => updateEvent(board, item, update, kind)),
+  ];
 }
 
 async function syncBoard(
@@ -277,35 +643,16 @@ async function syncBoard(
   const from =
     cursor.activity_since ?? new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
   const to = new Date().toISOString();
-  const data = await gql<{
-    boards: {
-      activity_logs?: MondayActivityLog[];
-      items_page?: { items?: MondayItem[] };
-    }[];
-  }>(
-    tokens,
-    `query ($ids: [ID!], $from: ISO8601DateTime!, $to: ISO8601DateTime!) {
-      boards(ids: $ids) {
-        activity_logs(from: $from, to: $to) { id event data created_at user_id }
-        items_page(limit: 50) {
-          items {
-            id name updated_at url
-            creator { id name email }
-            column_values { id text type updated_at }
-            updates(limit: 10) { id body created_at updated_at creator { id name email } }
-          }
-        }
-      }
-    }`,
-    { ids: [boardId], from, to },
-  );
-  const payload = data.boards[0];
-  const activityEvents = (payload?.activity_logs ?? []).map((log) => activityEvent(board, log));
-  const itemEvents = (payload?.items_page?.items ?? []).flatMap((item) => [
-    itemEvent(board, item),
-    ...(item.updates ?? []).map((update) => updateEvent(board, item, update)),
+  const [activityLogs, items] = await Promise.all([
+    fetchActivityLogs(tokens, boardId, from, to),
+    fetchAllBoardItems(tokens, boardId),
   ]);
-  const events = [...activityEvents, ...itemEvents];
+  const activityEvents = activityLogs.map((log) => activityEvent(board, log));
+  const itemEvents = items.flatMap((item) => [
+    ...recordEvents(board, item, 'item'),
+    ...(item.subitems ?? []).flatMap((subitem) => recordEvents(board, subitem, 'subitem')),
+  ]);
+  const events = [boardSchemaEvent(board), ...activityEvents, ...itemEvents];
   const latest = events
     .map((event) => event.occurredAt.toISOString())
     .sort()
@@ -314,7 +661,7 @@ async function syncBoard(
     events,
     cursor: {
       activity_since: latest ?? cursor.activity_since ?? to,
-      item_since: latest ?? cursor.item_since,
+      item_since: latest ?? cursor.item_since ?? to,
     },
   };
 }
@@ -377,19 +724,52 @@ export const mondayProvider: IntegrationProvider = {
       tokens as MondayTokens,
       `query { boards(limit: 100) { id name workspace { id name } } }`,
     );
-    return data.boards.map((board) => ({
+    const boards = data.boards.map((board) => ({
       externalId: board.id,
       label: board.workspace?.name ? `${board.workspace.name} / ${board.name}` : board.name,
       kind: 'monday.board',
     }));
+    const docs = await listDocs(tokens as MondayTokens).catch(() => []);
+    return [
+      ...boards,
+      ...docs.map((doc) => ({
+        externalId: doc.id,
+        label: doc.workspace?.name ? `${doc.workspace.name} / ${doc.name}` : doc.name,
+        kind: 'monday.doc',
+      })),
+    ];
   },
 
   async backfill({ tokens, selections, ctx }) {
+    const mondayTokens = tokens as MondayTokens;
     for (const selection of selections.filter((item) => item.kind === 'monday.board')) {
       const cursor = (await ctx.loadCursor(`monday.board:${selection.externalId}`)) as MondayCursor;
-      const result = await syncBoard(tokens as MondayTokens, selection.externalId, cursor);
+      const result = await syncBoard(mondayTokens, selection.externalId, cursor);
       await ctx.writeEvents(result.events);
       await ctx.saveCursor(`monday.board:${selection.externalId}`, result.cursor);
+    }
+    for (const selection of selections.filter((item) => item.kind === 'monday.doc')) {
+      const doc = await fetchDoc(mondayTokens, selection.externalId);
+      if (!doc) continue;
+      const event = docEvent(doc);
+      await ctx.writeEvents([event]);
+      if (ctx.harvestDocument) {
+        await ctx.harvestDocument({
+          filename: `${doc.name}.md`,
+          contentType: 'text/markdown',
+          body: Buffer.from(docMarkdown(doc), 'utf8'),
+          externalId: `monday.doc:${doc.id}`,
+          metadata: {
+            monday_doc_id: doc.id,
+            monday_doc_object_id: doc.object_id ?? null,
+            monday_workspace_id: doc.workspace_id ?? doc.workspace?.id ?? null,
+            integration_provider: 'monday',
+          },
+        });
+      }
+      await ctx.saveCursor(`monday.doc:${selection.externalId}`, {
+        doc_since: event.occurredAt.toISOString(),
+      });
     }
   },
 

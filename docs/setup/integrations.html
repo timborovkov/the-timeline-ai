@@ -151,7 +151,8 @@ GITHUB_APP_CLIENT_SECRET=...</code></pre>
       <ol>
         <li>
           Create a monday.com OAuth app in the monday.com developer center and request read access
-          for boards, users, and updates.
+          for boards, users, updates, and docs: <code>boards:read</code>, <code>users:read</code>,
+          <code>updates:read</code>, and <code>docs:read</code>.
         </li>
         <li>
           Redirect URI:
@@ -164,12 +165,12 @@ MONDAY_CLIENT_SECRET=...</code></pre>
         </li>
         <li>
           Any team member can connect Monday.com from the native catalog. The member chooses which
-          boards are shared with the current Timeline team.
+          boards and WorkDocs are shared with the current Timeline team.
         </li>
         <li>
-          A team admin activates shared boards from <code>/app/team/integrations</code>. The
-          integration worker imports board activity, items, updates, status changes, owners, and
-          column changes into cited timeline events.
+          A team admin activates shared sources from <code>/app/team/integrations</code>. The
+          integration worker imports board schema, generic records, subitems, record updates, status
+          changes, owners, column changes, and selected WorkDocs into cited timeline events.
         </li>
       </ol>
 

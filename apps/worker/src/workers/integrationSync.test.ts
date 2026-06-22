@@ -227,4 +227,18 @@ describe('runOneIntegration attention classification', () => {
       categories: ['needs_reconnect', 'sync_error'],
     });
   });
+
+  it('mounts document harvest for monday integrations with an active connector owner', async () => {
+    fakes.adminLoadIntegration.mockResolvedValueOnce({ ...integration, provider: 'monday' });
+    fakes.incrementalSync.mockImplementationOnce(
+      ({ ctx }: { ctx: { harvestDocument?: unknown } }) => {
+        expect(ctx.harvestDocument).toEqual(expect.any(Function));
+        return Promise.resolve();
+      },
+    );
+
+    await runOneIntegration({} as never, INTEGRATION_ID, 'incremental');
+
+    expect(fakes.incrementalSync).toHaveBeenCalled();
+  });
 });
