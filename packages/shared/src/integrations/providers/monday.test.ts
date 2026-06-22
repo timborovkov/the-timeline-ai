@@ -64,7 +64,8 @@ describe('mondayProvider', () => {
       'fetch',
       vi.fn<typeof globalThis.fetch>((_input, init) => {
         const body = requestPayload(init);
-        if (body.query.includes('boards(limit: 100)')) {
+        if (body.query.includes('boards(limit: $limit')) {
+          expect(body.variables).toMatchObject({ limit: 100, page: 1 });
           return Promise.resolve(
             jsonResponse({
               data: {
@@ -118,7 +119,8 @@ describe('mondayProvider', () => {
       }
       expect(init?.headers).toMatchObject({ authorization: 'token-new' });
       const body = requestPayload(init);
-      if (body.query.includes('boards(limit: 100)')) {
+      if (body.query.includes('boards(limit: $limit')) {
+        expect(body.variables).toMatchObject({ limit: 100, page: 1 });
         return Promise.resolve(
           jsonResponse({
             data: {
@@ -149,6 +151,50 @@ describe('mondayProvider', () => {
         refresh_token: 'refresh-new',
       }),
     );
+  });
+
+  it('paginates monday.com boards while listing syncable resources', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof globalThis.fetch>((_input, init) => {
+        const body = requestPayload(init);
+        if (body.query.includes('boards(limit: $limit')) {
+          if (body.variables?.page === 1) {
+            return Promise.resolve(
+              jsonResponse({
+                data: {
+                  boards: Array.from({ length: 100 }, (_, index) => ({
+                    id: `board-${String(index + 1)}`,
+                    name: `Board ${String(index + 1)}`,
+                    workspace: null,
+                  })),
+                },
+              }),
+            );
+          }
+          expect(body.variables?.page).toBe(2);
+          return Promise.resolve(
+            jsonResponse({
+              data: {
+                boards: [{ id: 'board-101', name: 'Board 101', workspace: null }],
+              },
+            }),
+          );
+        }
+        return Promise.resolve(jsonResponse({ data: { docs: [] } }));
+      }),
+    );
+
+    const resources = await mondayProvider.listSyncableResources({} as never, {
+      access_token: 'token',
+    });
+
+    expect(resources).toHaveLength(101);
+    expect(resources.at(-1)).toEqual({
+      externalId: 'board-101',
+      label: 'Board 101',
+      kind: 'monday.board',
+    });
   });
 
   it('refreshes expired monday.com tokens and persists the replacement before syncing', async () => {

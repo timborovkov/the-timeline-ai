@@ -200,7 +200,7 @@ async function refreshAccessToken(tokens: SentryTokens): Promise<SentryTokens> {
 
 async function ensureAccessToken(
   tokens: SentryTokens,
-  ctx: { persistTokens(tokens: Record<string, unknown>): Promise<void> },
+  ctx?: { persistTokens(tokens: Record<string, unknown>): Promise<void> },
 ): Promise<SentryTokens> {
   const shouldRefresh =
     Boolean(tokens.refresh_token) &&
@@ -208,8 +208,10 @@ async function ensureAccessToken(
   if (!shouldRefresh) return tokens;
   const refreshed = await refreshAccessToken(tokens);
   if (
-    refreshed.access_token !== tokens.access_token ||
-    refreshed.expires_at !== tokens.expires_at
+    ctx &&
+    (refreshed.access_token !== tokens.access_token ||
+      refreshed.refresh_token !== tokens.refresh_token ||
+      refreshed.expires_at !== tokens.expires_at)
   ) {
     await ctx.persistTokens(refreshed as unknown as Record<string, unknown>);
   }
@@ -405,8 +407,8 @@ export const sentryProvider: IntegrationProvider = {
     };
   },
 
-  async listSyncableResources(_integration, tokens): Promise<ProviderResource[]> {
-    const sentryTokens = tokens as SentryTokens;
+  async listSyncableResources(_integration, tokens, ctx): Promise<ProviderResource[]> {
+    const sentryTokens = await ensureAccessToken(tokens as SentryTokens, ctx);
     const orgs = await sentryGetAll<SentryOrg>(sentryTokens, '/organizations/');
     const resources: ProviderResource[] = [];
     for (const org of orgs) {

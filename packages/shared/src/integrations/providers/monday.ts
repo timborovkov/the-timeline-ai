@@ -14,6 +14,7 @@ const AUTH_URL = 'https://auth.monday.com/oauth2/authorize';
 const TOKEN_URL = 'https://auth.monday.com/oauth2/token';
 const GRAPHQL_URL = 'https://api.monday.com/v2';
 const SCOPES = ['boards:read', 'users:read', 'updates:read', 'docs:read'];
+const BOARD_PAGE_LIMIT = 100;
 const ITEM_PAGE_LIMIT = 100;
 const UPDATE_LIMIT = 50;
 const DOC_PAGE_LIMIT = 100;
@@ -688,6 +689,30 @@ async function listDocs(tokens: MondayTokens): Promise<MondayDoc[]> {
   return docs;
 }
 
+async function fetchBoardsPage(tokens: MondayTokens, page: number): Promise<MondayBoard[]> {
+  const data = await gql<{ boards: MondayBoard[] }>(
+    tokens,
+    `query ($limit: Int!, $page: Int!) {
+      boards(limit: $limit, page: $page) {
+        id name
+        workspace { id name }
+      }
+    }`,
+    { limit: BOARD_PAGE_LIMIT, page },
+  );
+  return data.boards;
+}
+
+async function listBoards(tokens: MondayTokens): Promise<MondayBoard[]> {
+  const boards: MondayBoard[] = [];
+  for (let page = 1; page <= 100; page++) {
+    const batch = await fetchBoardsPage(tokens, page);
+    boards.push(...batch);
+    if (batch.length < BOARD_PAGE_LIMIT) break;
+  }
+  return boards;
+}
+
 function recordEvents(
   board: MondayBoard,
   item: MondayItem,
@@ -777,11 +802,7 @@ export const mondayProvider: IntegrationProvider = {
 
   async listSyncableResources(_integration, tokens, ctx): Promise<ProviderResource[]> {
     const mondayTokens = await ensureAccessToken(tokens as MondayTokens, ctx);
-    const data = await gql<{ boards: MondayBoard[] }>(
-      mondayTokens,
-      `query { boards(limit: 100) { id name workspace { id name } } }`,
-    );
-    const boards = data.boards.map((board) => ({
+    const boards = (await listBoards(mondayTokens)).map((board) => ({
       externalId: board.id,
       label: board.workspace?.name ? `${board.workspace.name} / ${board.name}` : board.name,
       kind: 'monday.board',

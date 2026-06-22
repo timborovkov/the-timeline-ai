@@ -70,6 +70,52 @@ describe('sentryProvider', () => {
     ]);
   });
 
+  it('refreshes expired Sentry tokens while listing syncable resources', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>((input, init) => {
+      const url = requestUrl(input);
+      if (url === 'https://sentry.io/oauth/token/') {
+        const body = typeof init?.body === 'string' ? new URLSearchParams(init.body) : null;
+        expect(body?.get('grant_type')).toBe('refresh_token');
+        expect(body?.get('refresh_token')).toBe('refresh-old');
+        return Promise.resolve(
+          jsonResponse({
+            access_token: 'token-new',
+            refresh_token: 'refresh-new',
+            expires_in: 3600,
+          }),
+        );
+      }
+      expect(init?.headers).toMatchObject({ authorization: 'Bearer token-new' });
+      if (url.endsWith('/organizations/')) {
+        return Promise.resolve(jsonResponse([{ id: 'org-1', slug: 'acme', name: 'Acme' }]));
+      }
+      return Promise.resolve(jsonResponse([{ id: 'project-1', slug: 'web', name: 'Web' }]));
+    });
+    vi.stubGlobal('fetch', fetch);
+    const ctx = { persistTokens: vi.fn().mockResolvedValue(undefined) };
+
+    const resources = await sentryProvider.listSyncableResources(
+      {} as never,
+      {
+        access_token: 'token-old',
+        refresh_token: 'refresh-old',
+        expires_at: Date.now() - 1_000,
+      },
+      ctx,
+    );
+
+    expect(resources).toEqual([
+      { externalId: 'acme', label: 'Acme (all projects)', kind: 'sentry.org' },
+      { externalId: 'acme/web', label: 'acme/web', kind: 'sentry.project' },
+    ]);
+    expect(ctx.persistTokens).toHaveBeenCalledWith(
+      expect.objectContaining({
+        access_token: 'token-new',
+        refresh_token: 'refresh-new',
+      }),
+    );
+  });
+
   it('syncs issues and releases into incident events', async () => {
     vi.stubGlobal(
       'fetch',
