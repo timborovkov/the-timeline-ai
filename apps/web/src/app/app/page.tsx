@@ -249,6 +249,7 @@ export default async function HomeDashboardPage() {
             authors: Object.fromEntries(userRows.map((row) => [row.id, row])),
             audioUrls: Object.fromEntries(audioUrlMap),
             impactItems,
+            capturedFiles: {},
           }}
           filters={{}}
           currentUserId={session.user.id}

@@ -60,9 +60,11 @@ evidence; documents are curated workspace knowledge.
 - Extraction enriches source evidence. It does not create separate timeline
   activity unless a person takes an explicit workspace action such as promotion,
   deletion, or visibility change.
-- Timeline lists show compact attachment and preview signals today. Richer
-  transcript/OCR/visual-description indicators remain follow-up UI work; full
-  extracted representations belong in event detail, citations, and agent tools.
+- Timeline source evidence shows compact attachment and preview signals today,
+  including inline previews for viewable captured images, PDFs, and audio.
+  Richer transcript/OCR/visual-description indicators remain follow-up UI work;
+  full extracted representations belong in event detail, citations, and agent
+  tools.
 - Representation corrections are planned as layered, audited user edits over
   model output. They should not mutate the source file or require the workspace
   approval queue.
@@ -94,6 +96,9 @@ evidence; documents are curated workspace knowledge.
   Slack, and other event-backed attachments. Captured rows show suggested
   titles, source/type/status/date filters, preview affordances, event links,
   and an explicit promotion flow.
+- Generated provider filenames are visually middle-truncated wherever the raw
+  stored name is shown, while the full filename remains preserved for hover
+  detail, storage, provenance, and extraction routing.
 - Timeline-oriented retrieval includes captured-file evidence, while document
   search remains scoped to curated documents.
 

@@ -9,6 +9,7 @@ import {
 } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef } from 'react';
 
+import type { TimelineCapturedFile } from '@/lib/timeline-captured-files';
 import type { ImpactItem } from '@/lib/timeline-moments';
 
 import { readJson } from '@/lib/paginated-api';
@@ -20,6 +21,7 @@ export interface TimelinePage {
   authors: Record<string, { id: string; name: string | null; email: string }>;
   audioUrls: Record<string, string>;
   impactItems: Record<string, ImpactItem[]>;
+  capturedFiles: Record<string, TimelineCapturedFile[]>;
 }
 
 export interface DocumentListPage {
@@ -133,6 +135,7 @@ export function useTimelineInfiniteQuery(
         authors: Record<string, { id: string; name: string | null; email: string }>;
         audioUrls: Record<string, string>;
         impactItems: Record<string, ImpactItem[]>;
+        capturedFiles: Record<string, TimelineCapturedFile[]>;
       }>(await fetch(`/api/timeline?${params.toString()}`));
     },
     getNextPageParam: (lastPage) => lastPage.nextCursor,

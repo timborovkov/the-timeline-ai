@@ -1,6 +1,9 @@
 'use client';
 
-import { documentPresentation } from '@timeline/shared/documents/presentation';
+import {
+  documentPresentation,
+  truncateFilenameMiddle,
+} from '@timeline/shared/documents/presentation';
 import { Download, EyeOff, FileText, Link2, Trash2 } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -214,7 +217,10 @@ export function DocumentDetail({
             </p>
             {usingFriendlyName ? (
               <p className="max-w-full truncate text-xs text-muted-foreground">
-                Stored as <span title={currentDocument.name}>{currentDocument.name}</span>
+                Stored as{' '}
+                <span title={currentDocument.name}>
+                  {truncateFilenameMiddle(currentDocument.name)}
+                </span>
               </p>
             ) : null}
           </div>

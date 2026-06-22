@@ -179,6 +179,58 @@ describe('TimelineList document attachments', () => {
     expect(renameInspector).toContain('Attachment · notes.txt');
     expect(renameInspector).not.toContain('Preview');
   });
+
+  it('shows captured Telegram files in the inspector with truncated stored names and preview', () => {
+    const eventId = '12121212-1212-4121-8121-121212121212';
+    render(
+      createElement(TimelineList, {
+        events: [
+          timelineEvent({
+            id: eventId,
+            occurredAt: '2026-06-03T13:04:00.000Z',
+            source: 'telegram',
+            contentText:
+              'Attached image AgACAgQAAyEFAATcv6dYAAIBuWo4jeyMZiYwKT1k92NCNuPTCoTcAALpDWsbBCfJUUAcqaMvf4JYAQADAgADdwADPAQ.jpg',
+            sourceMetadata: { tg_chat_title: 'AuditAI', tg_sender_name: 'Tim' },
+          }),
+        ],
+        authorMap: new Map(),
+        currentUserId: 'user-1',
+        isAdmin: false,
+        capturedFilesByEventId: {
+          [eventId]: [
+            {
+              id: 'doc-captured',
+              name: 'AgACAgQAAyEFAATcv6dYAAIBuWo4jeyMZiYwKT1k92NCNuPTCoTcAALpDWsbBCfJUUAcqaMvf4JYAQADAgADdwADPAQ.jpg',
+              presentation: {
+                displayTitle: 'Image attachment',
+                storedName:
+                  'AgACAgQAAyEFAATcv6dYAAIBuWo4jeyMZiYwKT1k92NCNuPTCoTcAALpDWsbBCfJUUAcqaMvf4JYAQADAgADdwADPAQ.jpg',
+                suggestedTitle: null,
+                isGeneratedName: true,
+                fallbackTitle: 'Image attachment',
+              },
+              currentVersion: {
+                id: 'version-captured',
+                version: 1,
+                contentType: 'image/jpeg',
+                processingStatus: 'chunked',
+              },
+            },
+          ],
+        },
+      }),
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /Attached image AgACAgQ/i }));
+    const inspector = renderLastInspector();
+    expect(inspector).toContain('Attached image AgACAgQ…wADPAQ.jpg');
+    expect(inspector).toContain('Attachment · Image attachment');
+    expect(inspector).toContain('Stored as');
+    expect(inspector).toContain('AgACAgQ…wADPAQ.jpg');
+    expect(inspector).toContain('Preview');
+    expect(inspector).toContain('>Attached image AgACAgQ…wADPAQ.jpg</p>');
+  });
 });
 
 describe('TimelineList inspector source caps', () => {
