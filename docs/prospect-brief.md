@@ -31,7 +31,9 @@ places work already happens.
 
 ## Ingest Surfaces And Integrations
 
-Every source flows into the same cited event history:
+Timeline should meet the team wherever work happens. Durable event history comes
+through capture surfaces, first-party integrations, and ingest webhooks; MCP
+extends the agent into long-tail systems for live access.
 
 - **Slack and Telegram:** conversations, files, voice notes, forwarded messages,
   channel context, `/ask`, and `@Timeline` answers.

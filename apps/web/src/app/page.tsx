@@ -230,7 +230,7 @@ const FAQ_ITEMS = [
   },
   {
     q: 'How is capture done?',
-    a: 'Work surfaces feed one pipeline. Telegram and Slack bots capture chat, voice, files, /ask, and @Timeline context. Meeting bots join Google Meet, Zoom, and Microsoft Teams calls to take notes and transcribe discussions. Email, documents, calendar events, web notes, project tools, code systems, support queues, account systems, and internal tools all become part of the same evidence model. MCP servers extend the agent into long-tail systems and internal tools.',
+    a: 'Work surfaces feed one pipeline. Telegram and Slack bots capture chat, voice, files, /ask, and @Timeline context. Meeting bots join Google Meet, Zoom, and Microsoft Teams calls to take notes and transcribe discussions. Email, documents, calendar events, web notes, project tools, code systems, support queues, account systems, and internal tools can become part of the same evidence model through capture surfaces, integrations, and ingest webhooks. MCP servers extend the agent into long-tail systems and internal tools for live access.',
   },
   {
     q: 'What models power the agent?',
@@ -826,10 +826,11 @@ function Integrations() {
           </h2>
           <p className="text-base leading-[1.55] text-fg-muted">
             Conversations, meetings, docs, projects, code, account systems, support queues,
-            calendars, and internal tools feed the same event history. Teams keep their current
-            tools while Timeline generates cited updates, digests, handoffs, and answers from the
-            work already happening there. It can be present as a Slack or Telegram bot, join calls
-            as a note-taker, and still plug long-tail tools in as{' '}
+            calendars, and internal tools can all sit around the same event history. Teams keep
+            their current tools while Timeline generates cited updates, digests, handoffs, and
+            answers from the work already happening there. It can be present as a Slack or Telegram
+            bot, join calls as a note-taker, ingest high-value external events, and still plug
+            long-tail tools in as{' '}
             <a
               href="https://modelcontextprotocol.io"
               target="_blank"
@@ -839,7 +840,8 @@ function Integrations() {
               MCP servers
             </a>{' '}
             : Notion, Jira, Figma, Sentry, Stripe, your internal tool, anything that speaks the
-            protocol. Timeline is designed around the work graph, not one vendor's idea of a system
+            protocol. MCP gives the agent live reach; capture surfaces and ingest paths make durable
+            evidence. Timeline is designed around the work graph, not one vendor's idea of a system
             of record.
           </p>
         </div>

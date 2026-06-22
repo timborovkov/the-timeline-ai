@@ -94,7 +94,7 @@ export function IntegrationCloud() {
       {/* Example prompts */}
       <div className="mx-auto max-w-2xl">
         <div className="mb-3 text-center font-mono text-[10px] uppercase tracking-[0.18em] text-fg-muted">
-          Questions the agent can answer once connected
+          Questions from captured evidence and connected context
         </div>
         <ul className="space-y-2">
           {prompts.map((p) => (
@@ -109,7 +109,8 @@ export function IntegrationCloud() {
       </div>
 
       <p className="text-center text-xs text-fg-dim">
-        Work with any MCP-compatible server. Custom servers connect under{' '}
+        Reach any MCP-compatible server for live context. Durable evidence comes from capture,
+        integrations, and ingest paths; custom servers connect under{' '}
         <Link
           href="/app/team/mcp-servers"
           className="underline-offset-4 hover:text-fg hover:underline"
