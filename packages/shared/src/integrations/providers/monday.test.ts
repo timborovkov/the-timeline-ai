@@ -440,7 +440,10 @@ describe('mondayProvider', () => {
     expect(events[5]?.contentText).toContain('Security signed off');
     expect(ctx.saveCursor).toHaveBeenCalledWith(
       'monday.board:board-1',
-      expect.objectContaining({ activity_since: '2026-06-20T13:00:00.000Z' }),
+      expect.objectContaining({
+        activity_since: '2026-06-20T10:00:00.000Z',
+        item_since: '2026-06-20T13:00:00.000Z',
+      }),
     );
   });
 

@@ -20,6 +20,8 @@ const SCOPES = [
   'users:read.email',
 ];
 const INCREMENTAL_LOOKBACK_MS = 14 * 24 * 60 * 60 * 1000;
+const HISTORY_PAGE_LIMIT = 25;
+const REPLIES_PAGE_LIMIT = 10;
 
 interface SlackTokens {
   access_token: string;
@@ -61,6 +63,7 @@ interface SlackHistoryResponse {
 
 interface SlackCursor {
   latest_ts?: string | undefined;
+  backfill_before_ts?: string | undefined;
 }
 
 function historyOldest(cursor: SlackCursor): string | undefined {
@@ -111,28 +114,63 @@ async function fetchHistory(
   cursor: SlackCursor,
 ): Promise<{ messages: SlackMessage[]; next: SlackCursor }> {
   const messages: SlackMessage[] = [];
-  let pageCursor: string | undefined;
   let maxTs = cursor.latest_ts;
+  let backfillBeforeTs = cursor.backfill_before_ts;
+
+  async function collectPages(
+    params: Record<string, string | number | boolean | undefined>,
+    pageLimit: number,
+  ): Promise<{ exhausted: boolean; minTs?: string }> {
+    let pageCursor: string | undefined;
+    let minTs: string | undefined;
+    for (let page = 0; page < pageLimit; page++) {
+      const res = await slackCall<SlackHistoryResponse>(token, 'conversations.history', {
+        channel,
+        limit: 200,
+        cursor: pageCursor,
+        include_all_metadata: true,
+        ...params,
+      });
+      for (const message of res.messages ?? []) {
+        messages.push(message);
+        if (!maxTs || Number(message.ts) > Number(maxTs)) maxTs = message.ts;
+        if (!minTs || Number(message.ts) < Number(minTs)) minTs = message.ts;
+      }
+      pageCursor = res.response_metadata?.next_cursor ?? undefined;
+      if (!pageCursor) return { exhausted: true, ...(minTs ? { minTs } : {}) };
+    }
+    return { exhausted: false, ...(minTs ? { minTs } : {}) };
+  }
+
   const oldest = historyOldest(cursor);
-  for (;;) {
-    const res = await slackCall<SlackHistoryResponse>(token, 'conversations.history', {
-      channel,
-      limit: 200,
-      cursor: pageCursor,
+  const recent = await collectPages(
+    {
       oldest,
       inclusive: Boolean(oldest),
-      include_all_metadata: true,
-    });
-    for (const message of res.messages ?? []) {
-      messages.push(message);
-      if (!maxTs || Number(message.ts) > Number(maxTs)) maxTs = message.ts;
-    }
-    pageCursor = res.response_metadata?.next_cursor ?? undefined;
-    if (!pageCursor) break;
+    },
+    HISTORY_PAGE_LIMIT,
+  );
+  if (!cursor.latest_ts && !recent.exhausted) {
+    backfillBeforeTs = recent.minTs;
   }
+
+  if (cursor.backfill_before_ts) {
+    const backfill = await collectPages(
+      {
+        latest: cursor.backfill_before_ts,
+        inclusive: false,
+      },
+      HISTORY_PAGE_LIMIT,
+    );
+    backfillBeforeTs = backfill.exhausted ? undefined : backfill.minTs;
+  }
+
+  const next: SlackCursor = {};
+  if (maxTs ?? cursor.latest_ts) next.latest_ts = maxTs ?? cursor.latest_ts;
+  if (backfillBeforeTs) next.backfill_before_ts = backfillBeforeTs;
   return {
     messages,
-    next: (maxTs ?? cursor.latest_ts) ? { latest_ts: maxTs ?? cursor.latest_ts } : {},
+    next,
   };
 }
 
@@ -144,7 +182,7 @@ async function fetchReplies(
   if (!root.thread_ts || root.thread_ts !== root.ts) return [];
   const replies: SlackMessage[] = [];
   let pageCursor: string | undefined;
-  for (;;) {
+  for (let page = 0; page < REPLIES_PAGE_LIMIT; page++) {
     const res = await slackCall<SlackHistoryResponse>(token, 'conversations.replies', {
       channel,
       ts: root.thread_ts,
@@ -285,7 +323,7 @@ async function syncChannel(
     ...reactionEvents(teamId, channel, message),
     ...fileEvents(teamId, channel, message),
   ]);
-  return { events, cursor: latestTs ? { latest_ts: latestTs } : history.next };
+  return { events, cursor: latestTs ? { ...history.next, latest_ts: latestTs } : history.next };
 }
 
 export const slackProvider: IntegrationProvider = {

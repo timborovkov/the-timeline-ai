@@ -743,16 +743,21 @@ async function syncBoard(
     ...recordEvents(board, item, 'item'),
     ...(item.subitems ?? []).flatMap((subitem) => recordEvents(board, subitem, 'subitem')),
   ]);
-  const events = [boardSchemaEvent(board), ...activityEvents, ...itemEvents];
-  const latest = events
+  const schemaEvent = boardSchemaEvent(board);
+  const events = [schemaEvent, ...activityEvents, ...itemEvents];
+  const latestActivity = activityEvents
+    .map((event) => event.occurredAt.toISOString())
+    .sort()
+    .at(-1);
+  const latestItem = [schemaEvent, ...itemEvents]
     .map((event) => event.occurredAt.toISOString())
     .sort()
     .at(-1);
   return {
     events,
     cursor: {
-      activity_since: latest ?? cursor.activity_since ?? to,
-      item_since: latest ?? cursor.item_since ?? to,
+      activity_since: latestActivity ?? cursor.activity_since ?? to,
+      item_since: latestItem ?? cursor.item_since ?? to,
     },
   };
 }

@@ -208,6 +208,106 @@ describe('slackProvider', () => {
     });
   });
 
+  it('caps Slack history pages and stores a bounded backfill continuation marker', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>((input, init) => {
+      if (typeof input !== 'string') throw new Error('expected Slack URL string');
+      const requestBody = init?.body;
+      if (typeof requestBody !== 'string') throw new Error('expected form request body');
+      const params = new URLSearchParams(requestBody);
+      if (!input.endsWith('/conversations.history')) {
+        return Promise.resolve(jsonResponse({ ok: true, messages: [] }));
+      }
+      const cursor = params.get('cursor');
+      const page = cursor ? Number(cursor.replace('page-', '')) : 0;
+      const ts = `${String(1782001000 - page)}.000100`;
+      return Promise.resolve(
+        jsonResponse({
+          ok: true,
+          messages: [{ type: 'message', user: 'U123', text: `Message ${String(page)}`, ts }],
+          response_metadata: { next_cursor: `page-${String(page + 1)}` },
+        }),
+      );
+    });
+    vi.stubGlobal('fetch', fetch);
+    const ctx = {
+      loadCursor: vi.fn().mockResolvedValue({}),
+      saveCursor: vi.fn().mockResolvedValue(undefined),
+      writeEvents: vi.fn().mockResolvedValue([]),
+      persistTokens: vi.fn(),
+      recordAudit: vi.fn(),
+    };
+
+    await slackProvider.backfill({
+      integration: { id: 'integration-1' } as never,
+      tokens: { access_token: 'xoxb-token', team: { id: 'T123', name: 'Acme' } },
+      selections: [{ kind: 'slack.channel', externalId: 'C123' }],
+      ctx,
+    });
+
+    const historyCalls = fetch.mock.calls.filter(([input]) =>
+      requestUrl(input).endsWith('/conversations.history'),
+    );
+    const events = (ctx.writeEvents.mock.calls[0]?.[0] ?? []) as IntegrationEvent[];
+    expect(historyCalls).toHaveLength(25);
+    expect(events).toHaveLength(25);
+    expect(ctx.saveCursor).toHaveBeenCalledWith('slack.channel:C123', {
+      latest_ts: '1782001000.000100',
+      backfill_before_ts: '1782000976.000100',
+    });
+  });
+
+  it('continues older Slack backfill from the stored continuation marker', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>((input, init) => {
+      if (typeof input !== 'string') throw new Error('expected Slack URL string');
+      const requestBody = init?.body;
+      if (typeof requestBody !== 'string') throw new Error('expected form request body');
+      const params = new URLSearchParams(requestBody);
+      if (!input.endsWith('/conversations.history')) {
+        return Promise.resolve(jsonResponse({ ok: true, messages: [] }));
+      }
+      if (params.get('latest') === '1782000976.000100') {
+        return Promise.resolve(
+          jsonResponse({
+            ok: true,
+            messages: [
+              { type: 'message', user: 'U123', text: 'Older message', ts: '1782000975.000100' },
+            ],
+            response_metadata: {},
+          }),
+        );
+      }
+      return Promise.resolve(jsonResponse({ ok: true, messages: [], response_metadata: {} }));
+    });
+    vi.stubGlobal('fetch', fetch);
+    const ctx = {
+      loadCursor: vi.fn().mockResolvedValue({
+        latest_ts: '1782001000.000100',
+        backfill_before_ts: '1782000976.000100',
+      }),
+      saveCursor: vi.fn().mockResolvedValue(undefined),
+      writeEvents: vi.fn().mockResolvedValue([]),
+      persistTokens: vi.fn(),
+      recordAudit: vi.fn(),
+    };
+
+    await slackProvider.incrementalSync({
+      integration: { id: 'integration-1' } as never,
+      tokens: { access_token: 'xoxb-token', team: { id: 'T123', name: 'Acme' } },
+      selections: [{ kind: 'slack.channel', externalId: 'C123' }],
+      ctx,
+    });
+
+    const historyParams = fetch.mock.calls
+      .filter(([input]) => requestUrl(input).endsWith('/conversations.history'))
+      .map(([, init]) => new URLSearchParams(init?.body as string));
+    expect(historyParams.some((params) => params.get('latest') === '1782000976.000100')).toBe(true);
+    const events = (ctx.writeEvents.mock.calls[0]?.[0] ?? []) as IntegrationEvent[];
+    expect(events.map((event) => event.contentText)).toEqual(['Older message']);
+    expect(ctx.saveCursor).toHaveBeenCalledWith('slack.channel:C123', {
+      latest_ts: '1782001000.000100',
+    });
+  });
+
   it('uses an incremental lookback so older edits and reactions are not skipped', async () => {
     const fetch = vi.fn<typeof globalThis.fetch>((input, init) => {
       if (typeof input !== 'string') throw new Error('expected Slack URL string');
