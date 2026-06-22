@@ -15,7 +15,9 @@
         --fg-muted: oklch(0.4 0.006 240);
         --fg-dim: oklch(0.58 0.006 240);
         --signal: oklch(0.65 0.22 130);
-        --signal-soft: oklch(0.65 0.22 130 / 0.14);
+        --signal-ink: oklch(0.42 0.16 130);
+        --signal-border: oklch(0.78 0.16 130 / 0.5);
+        --signal-soft: oklch(0.94 0.075 130);
         --radius: 2px;
         color-scheme: light;
       }
@@ -335,7 +337,7 @@
 
       .citation {
         display: inline-block;
-        border: 1px solid oklch(0.65 0.22 130 / 0.3);
+        border: 1px solid var(--signal-border);
         background: var(--signal-soft);
         color: var(--fg);
         padding: 0.02rem 0.24rem;
@@ -452,13 +454,13 @@
         display: grid;
         gap: 0.85rem;
         width: min(17rem, 100%);
-        border: 1px solid oklch(0.65 0.22 130 / 0.34);
+        border: 1px solid var(--signal-border);
         background: var(--signal-soft);
         padding: clamp(1rem, 2vw, 1.45rem);
       }
 
       .agent-core strong {
-        color: oklch(0.46 0.17 130);
+        color: var(--signal-ink);
         font-family: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
         font-size: clamp(0.7rem, 1vw, 0.82rem);
         font-weight: 600;
@@ -490,7 +492,7 @@
         grid-template-columns: minmax(6.5rem, 0.6fr) minmax(0, 1fr);
         gap: 0.8rem;
         align-items: center;
-        border: 1px solid oklch(0.65 0.22 130 / 0.24);
+        border: 1px solid var(--signal-border);
         background: var(--signal-soft);
         padding: 0.5rem 0.68rem;
         animation: lit 8s ease-out infinite;
