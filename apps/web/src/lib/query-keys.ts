@@ -1,5 +1,6 @@
 export const queryKeys = {
-  timeline: (filters: Record<string, string | null | undefined>) => ['timeline', filters] as const,
+  timeline: (filters: Record<string, string | null | undefined>, timezone?: string) =>
+    timezone ? (['timeline', filters, timezone] as const) : (['timeline', filters] as const),
   objectSection: (objectId: string, section: string) => ['object', objectId, section] as const,
   objectSearch: (query: string, excludeId: string) =>
     ['objects', 'search', query, excludeId] as const,

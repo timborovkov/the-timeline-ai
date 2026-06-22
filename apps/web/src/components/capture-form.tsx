@@ -287,7 +287,7 @@ export function CaptureForm({
     };
     if (!filterAllowsEvent(filters, event)) return null;
     queryClient.setQueriesData<InfiniteData<TimelinePage, string | null>>(
-      { queryKey: queryKeys.timeline(filters), exact: true },
+      { queryKey: queryKeys.timeline(filters) },
       (previous) => {
         if (!previous?.pages[0]) return previous;
         const first = previous.pages[0];
@@ -312,7 +312,7 @@ export function CaptureForm({
 
   function removeOptimisticTextEvent(id: string): void {
     queryClient.setQueriesData<InfiniteData<TimelinePage, string | null>>(
-      { queryKey: queryKeys.timeline(filters), exact: true },
+      { queryKey: queryKeys.timeline(filters) },
       (previous) => {
         if (!previous) return previous;
         return {

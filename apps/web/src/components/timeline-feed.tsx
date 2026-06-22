@@ -53,7 +53,7 @@ export function TimelineFeed({
   live = true,
   timezone,
 }: Props) {
-  const query = useTimelineInfiniteQuery(filters, initialPage, { enabled: live });
+  const query = useTimelineInfiniteQuery(filters, initialPage, { enabled: live, timezone });
   const pages = query.data.pages;
   const events = useMemo(() => {
     const seen = new Set<string>();
