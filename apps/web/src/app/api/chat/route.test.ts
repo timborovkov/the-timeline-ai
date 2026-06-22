@@ -101,6 +101,16 @@ vi.mock('@timeline/shared/llm', () => ({
   compressMessagesForContext: fakes.fakeCompressMessagesForContext,
   chatStructured: fakes.fakeChatStructured,
   resolveAgentModelId: fakes.fakeResolveAgentModelId,
+  streamChatFallbackModelIds: (modelId: string) =>
+    modelId === 'fallback-agent-model' ? [] : ['fallback-agent-model'],
+  streamChatModelAttribution: (
+    event: { model?: { modelId?: string }; response?: { modelId?: string } },
+    requestedModelId?: string,
+  ) => ({
+    requestedModelId: requestedModelId ?? event.model?.modelId ?? 'agent-model',
+    responseModelId: event.response?.modelId ?? event.model?.modelId ?? requestedModelId,
+    fallbackModelIds: requestedModelId === 'fallback-agent-model' ? [] : ['fallback-agent-model'],
+  }),
   streamChat: fakes.fakeStreamChat,
 }));
 vi.mock('@/lib/sentry-report', () => ({
@@ -831,6 +841,8 @@ describe('POST /api/chat', () => {
       toolCalls: [{ toolName: 'search_timeline' }],
       finishReason: 'stop',
       usage: { inputTokens: 10, outputTokens: 5 },
+      model: { modelId: 'agent-model' },
+      response: { modelId: 'fallback-agent-model' },
     });
     await Promise.resolve();
 
@@ -875,7 +887,8 @@ describe('POST /api/chat', () => {
       surface: 'api',
       operation: 'chat_stream',
       tags: {
-        model: 'agent-model',
+        requestedModel: 'agent-model',
+        fallbackModels: 'fallback-agent-model',
         reason: 'AI_APICallError',
         aiOperation: 'llm.streamChat',
         aiModel: 'agent-model',

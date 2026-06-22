@@ -16,7 +16,7 @@ parsing.
 Two hard rules in this repo route through this package:
 
 1. **Team isolation.** Every Postgres read goes through `withTeam(db, teamId, userId)` so row-level filtering can't be forgotten in a route or worker. Callers use named modules on the returned scope (`timeline`, `documents`, `meetings`, `objects`, `calendar`, `integrations`, `mcp`) instead of passing `db` and team identifiers around.
-2. **One inference layer.** App and worker code call `llm.chat()`, `llm.embed()`, `llm.transcribe()` — never the OpenAI or OpenRouter SDK directly. Swapping providers or pinning a model happens here, once.
+2. **One inference layer.** App and worker code call `llm.chatStructured()`, `llm.streamChat()`, `llm.embed()`, `llm.embedMany()`, `llm.transcribeAudio()`, and `llm.extractTextFromMedia()` — never the OpenAI or OpenRouter SDK directly. Swapping providers or pinning a model happens here, once.
 
 Putting both behind a single package keeps the rules enforceable.
 
@@ -24,6 +24,7 @@ Putting both behind a single package keeps the rules enforceable.
 
 ```ts
 import { withTeam, llm } from "@timeline/shared";
+import { z } from "zod";
 
 const scoped = withTeam(db, teamId, userId);
 const events = await scoped.timeline.listEvents({ limit: 20 });
@@ -31,7 +32,10 @@ const impact = await scoped.timeline.listImpactItems(events.map((event) => event
 const docs = await scoped.documents.searchDocumentChunks({ query: "pricing" });
 const tasks = await scoped.objects.listObjects({ type: "task", archived: false });
 
-const { text } = await llm.chat({ messages, model: "qwen/qwen3.7-max" });
+const { object } = await llm.chatStructured({
+  schema: z.object({ summary: z.string() }),
+  prompt: "Summarize today's timeline.",
+});
 ```
 
 Workspace commands:

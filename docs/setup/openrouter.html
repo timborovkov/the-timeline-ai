@@ -10,13 +10,14 @@
     <a class="skip" href="#main">Skip to content</a>
     <main id="main">
       <h1>OpenRouter setup</h1>
-      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-06-10</span></div>
+      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-06-23</span></div>
       <blockquote>
         <p>Used from <strong>Phase 3</strong> (transcription) and onwards.</p>
       </blockquote>
       <p class="tldr">
-        OpenRouter is the single provider for chat, embeddings, and transcription. The internal LLM
-        wrapper talks to it via the OpenAI SDK shape.
+        OpenRouter is the single provider for chat, embeddings, and transcription. Chat, embeddings,
+        and vision OCR route through the Vercel AI SDK OpenAI-compatible provider; production
+        transcription calls OpenRouter's JSON audio endpoint through the same internal LLM wrapper.
       </p>
 
       <nav class="toc" aria-label="On this page">
@@ -61,11 +62,20 @@ OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
         misconfiguration is not hidden.
       </p>
       <p>
+        Agent chat streams also include an OpenRouter <code>models</code> fallback list so transient
+        primary-model failures can route to <code>structuredFallback</code> before the UI or
+        Telegram sees a failed answer. Chat logs and product analytics record both the requested
+        model and the response model reported by the SDK, so server-side fallback routing is visible
+        during incident review.
+      </p>
+      <p>
         The embedding model remains special: changing it or its dimensions invalidates the current
         vector index. Embed jobs therefore do not model-fallback the way structured chat calls can;
-        transient provider failures are handled by the worker queue retry policy while preserving
-        the pinned <code>openai/text-embedding-3-small</code> vector contract. Update the catalog
-        and follow the re-embed procedure before switching traffic to the new collection.
+        the shared <code>llm.embedMany()</code> helper retries direct callers, while the production
+        worker disables SDK retries and lets BullMQ own outage backoff. Oversized provider requests
+        are split recursively inside the job, and every vector is validated before Qdrant writes,
+        preserving the pinned <code>openai/text-embedding-3-small</code> vector contract. Update the
+        catalog and follow the re-embed procedure before switching traffic to the new collection.
       </p>
       <p>
         The default Qdrant collection is <code>QDRANT_COLLECTION=events</code>. The app creates that
@@ -220,9 +230,11 @@ OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
 </code></pre>
           A missing collection before the first write is fine. Any existing value other than
           <code>1536</code> means the collection belongs to an older embedding model and must not be
-          reused. Recoverable embedding API failures retry from the <code>embed</code> queue with
-          six exponential-backoff attempts; after terminal failure the source row is stamped with
-          <code>embedding_failed_at</code> and can be picked up by the coverage audit/re-embed flow.
+          reused. Each worker batch embeds up to 16 chunks with one OpenRouter embeddings request;
+          request-size failures split the batch recursively, while transient provider outages retry
+          from the <code>embed</code> queue with six exponential-backoff attempts. After terminal
+          failure the source row is stamped with <code>embedding_failed_at</code> and can be picked
+          up by the coverage audit/re-embed flow.
         </li>
         <li>
           If creating the collection through the Qdrant dashboard, use:

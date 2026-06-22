@@ -18,6 +18,7 @@ interface EmbedWorkerDeps {
 interface EmbedWorkerIO {
   getEnv?: typeof getEnv;
   embed?: typeof llm.embed;
+  embedMany?: typeof llm.embedMany;
   getQdrantClient?: typeof qdrant.getQdrantClient;
   enqueueEmbedJob?: typeof queue.enqueueEmbedJob;
 }
@@ -101,6 +102,87 @@ function restartJob(data: queue.EmbedJobData): queue.EmbedJobData {
   return rest;
 }
 
+function vectorForChunk(result: llm.EmbedManyResult, index: number): number[] {
+  const vector = result.vectors[index];
+  if (!vector) {
+    throw new Error(
+      `embedMany returned ${String(result.vectors.length)} vectors for chunk index ${String(index)}`,
+    );
+  }
+  return vector;
+}
+
+function embeddingBatchErrorMessage(err: unknown): string {
+  if (err instanceof Error) {
+    const causeMessage =
+      'causeMessage' in err && typeof err.causeMessage === 'string' ? err.causeMessage : '';
+    const cause = 'cause' in err ? embeddingBatchErrorMessage(err.cause) : '';
+    return `${err.message} ${causeMessage} ${cause}`.toLowerCase();
+  }
+  return String(err).toLowerCase();
+}
+
+function shouldSplitEmbeddingBatch(err: unknown): boolean {
+  const message = embeddingBatchErrorMessage(err);
+  return (
+    message.includes('413') ||
+    message.includes('payload too large') ||
+    message.includes('request body') ||
+    message.includes('body size') ||
+    message.includes('too many input') ||
+    message.includes('too many values') ||
+    message.includes('max tokens') ||
+    message.includes('maximum context') ||
+    message.includes('context length')
+  );
+}
+
+function validateEmbedManyResult(result: llm.EmbedManyResult, expectedCount: number): void {
+  if (result.vectors.length !== expectedCount) {
+    throw new Error(
+      `embedMany returned ${String(result.vectors.length)} vectors for ${String(expectedCount)} chunks`,
+    );
+  }
+  const dimensions = result.vectors[0]?.length;
+  for (const [index, vector] of result.vectors.entries()) {
+    if (dimensions !== undefined && vector.length !== dimensions) {
+      throw new Error(
+        `embedMany returned vector ${String(index)} with ${String(
+          vector.length,
+        )} dimensions; expected ${String(dimensions)}`,
+      );
+    }
+    const invalidIndex = vector.findIndex((value) => !Number.isFinite(value));
+    if (invalidIndex !== -1) {
+      throw new Error(
+        `embedMany returned non-finite value at vector ${String(index)}, dimension ${String(
+          invalidIndex,
+        )}`,
+      );
+    }
+  }
+}
+
+async function embedTextBatch(
+  embedMany: NonNullable<EmbedWorkerIO['embedMany']>,
+  texts: string[],
+): Promise<llm.EmbedManyResult> {
+  try {
+    return await embedMany({ texts });
+  } catch (err) {
+    if (texts.length <= 1 || !shouldSplitEmbeddingBatch(err)) throw err;
+    const midpoint = Math.ceil(texts.length / 2);
+    const first = await embedTextBatch(embedMany, texts.slice(0, midpoint));
+    const second = await embedTextBatch(embedMany, texts.slice(midpoint));
+    if (first.model !== second.model) {
+      throw new Error(
+        `embedMany split batches returned different models: ${first.model}, ${second.model}`,
+      );
+    }
+    return { vectors: [...first.vectors, ...second.vectors], model: first.model };
+  }
+}
+
 async function finalizeSourceEmbedding(input: {
   db: Db;
   client: qdrant.QdrantClient;
@@ -162,7 +244,26 @@ async function processEmbedJob(
   // LLM calls BEFORE Qdrant writes so transient embedding failures retry
   // cleanly. Long source text is split into multiple deterministic points
   // instead of being truncated, preserving retrievable evidence.
-  const embed = io.embed ?? llm.embed;
+  const embed =
+    io.embed ??
+    (async ({ text }) => {
+      const result = await llm.embedMany({ texts: [text] }, { maxRetries: 0 });
+      return { vector: vectorForChunk(result, 0), model: result.model };
+    });
+  const embedMany =
+    io.embedMany ??
+    (io.embed
+      ? async ({ texts }: { texts: string[] }) => {
+          const results = [];
+          for (const text of texts) {
+            results.push(await embed({ text }));
+          }
+          return {
+            vectors: results.map((result) => result.vector),
+            model: results[0]?.model ?? llm.TIMELINE_MODELS.embedding.id,
+          };
+        }
+      : async ({ texts }: { texts: string[] }) => llm.embedMany({ texts }, { maxRetries: 0 }));
   const chunks = chunkForEmbedding(plan.text);
   const startChunk = embeddingStartChunk(data);
   const sourceHash = embeddingSourceHash(plan.text);
@@ -201,12 +302,17 @@ async function processEmbedJob(
       model,
     };
   }
-  const embeddedChunks = [];
-  for (const chunk of chunksForJob) {
-    const result = await embed({ text: chunk.text });
-    embeddedChunks.push({ ...chunk, vector: result.vector, model: result.model });
-  }
-  const model = embeddedChunks[0]?.model;
+  const result = await embedTextBatch(
+    embedMany,
+    chunksForJob.map((chunk) => chunk.text),
+  );
+  validateEmbedManyResult(result, chunksForJob.length);
+  const embeddedChunks = chunksForJob.map((chunk, index) => ({
+    ...chunk,
+    vector: vectorForChunk(result, index),
+    model: result.model,
+  }));
+  const model = result.model;
   if (!model) return { skipped: true };
 
   const basePayload = embedding.blankEmbeddingPayload({
@@ -338,4 +444,8 @@ export async function processEmbedJobForTests(
   return processEmbedJob(deps, data, io);
 }
 
-export const embedWorkerInternals = { embedFailureTags, embedFailureMessage };
+export const embedWorkerInternals = {
+  embedFailureTags,
+  embedFailureMessage,
+  embeddingChunksPerJob: EMBEDDING_CHUNKS_PER_JOB,
+};

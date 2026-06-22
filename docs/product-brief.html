@@ -11,7 +11,7 @@
     <main id="main">
       <h1>The Timeline — Product Brief</h1>
       <div class="meta">
-        <span class="kind">Product brief</span><span>Last updated 2026-06-22</span>
+        <span class="kind">Product brief</span><span>Last updated 2026-06-23</span>
       </div>
       <p class="tldr">
         Capture work as it happens, then generate cited updates, digests, handoffs, answers, and
@@ -428,7 +428,7 @@
           runtime env cannot silently drift between services.
         </li>
         <li>
-          <strong>Embeddings</strong>: OpenRouter via OpenAI SDK.
+          <strong>Embeddings</strong>: OpenRouter via Vercel AI SDK.
           <strong>Pinned to one model.</strong> Changing the embedding model invalidates the entire
           index — done only via documented re-embed procedure.
         </li>
@@ -443,9 +443,10 @@
         </li>
       </ul>
       <p>
-        Internal abstraction: <code>llm.chat()</code>, <code>llm.embed()</code>,
-        <code>llm.transcribe()</code> — keeps the rest of the codebase provider-agnostic and makes
-        testing tractable.
+        Internal abstraction: <code>llm.chatStructured()</code>, <code>llm.streamChat()</code>,
+        <code>llm.embed()</code>, <code>llm.embedMany()</code>, <code>llm.transcribeAudio()</code>,
+        and <code>llm.extractTextFromMedia()</code> — keeps the rest of the codebase
+        provider-agnostic and makes testing tractable.
       </p>
 
       <h2 id="infrastructure">Infrastructure</h2>

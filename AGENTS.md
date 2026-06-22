@@ -118,8 +118,8 @@ Treat this file as an operating contract for agents, not a loose README.
 - **Design system lives in [design.md](design.md).** If a screen disagrees with
   it, fix the screen — not the doc. If you're intentionally evolving the design
   language, update [design.md](design.md) in the same PR.
-- **One inference layer.** `llm.chat()`, `llm.embed()`, `llm.transcribe()`,
-  `llm.extractTextFromMedia()` (Phase 9 vision OCR) in `packages/shared`.
+- **One inference layer.** `llm.chatStructured()`, `llm.streamChat()`, `llm.embed()`,
+  `llm.embedMany()`, `llm.transcribeAudio()`, `llm.extractTextFromMedia()` (Phase 9 vision OCR) in `packages/shared`.
   No direct OpenAI / OpenRouter SDK calls from app or worker code.
 - **`pnpm` only** (no `npm` / `yarn`). Workspace packages are wired via
   Turborepo; `pnpm -r build` is the canonical build.

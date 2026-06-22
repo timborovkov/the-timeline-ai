@@ -76,6 +76,8 @@ export interface ProductEventPayloads {
     sessionId: string | null;
     persisted: boolean;
     modelId: string;
+    requestedModelId?: string;
+    fallbackModelIds?: string[];
     toolCount: number;
     promptVersion: string;
     inputTokens?: number;
