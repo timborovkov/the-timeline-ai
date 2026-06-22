@@ -28,8 +28,11 @@ The suggestion worker normalizes lifecycle status aliases into the target artifa
 (`in progress` → `doing` for tasks/follow-ups, but `active` for projects), proposes
 cross-artifact lifecycle updates only when evidence resolves to one artifact, and supersedes stale
 pending lifecycle approvals while preserving unrelated approval items in the same bundle.
-`dedupe-approvals` defaults to dry-run and supersedes stale duplicate pending approval items only
-when the same conservative workspace reconciliation predicate can identify a survivor.
+`dedupe-approvals` defaults to dry-run and supersedes stale duplicate active or retryable approval
+items only when workspace reconciliation can identify a survivor. Apply mode also copies duplicate
+evidence and records merge history/adjudication metadata on the surviving approval, and can use AI
+adjudication for ambiguous same-day timed calendar proposals; dry-run uses only deterministic
+checks, so it may undercount apply-mode calendar supersessions.
 `dedupe-calendar-events` defaults to dry-run, scans recent and future rows by default, accepts
 `--from`/`--to` for explicit date windows, and queues cancellation approvals rather than deleting
 calendar rows directly. It uses exact same-slot deterministic text evidence plus an AI semantic pass

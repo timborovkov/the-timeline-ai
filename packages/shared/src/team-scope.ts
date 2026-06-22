@@ -27,6 +27,8 @@ import {
 } from '@timeline/db';
 import { and, asc, desc, eq, gte, inArray, isNull, lt, ne, or, sql } from 'drizzle-orm';
 
+import type { chatStructured } from '#src/llm/chat.js';
+
 import { createAuditScope } from '#src/audit/scope.js';
 import { createBoardScope } from '#src/boards/index.js';
 import { createCalendarScope } from '#src/calendar/scope.js';
@@ -368,6 +370,9 @@ export interface TeamScopeDeps {
   /** Inject raw-event embedding enqueue. Keeping this dependency lazy avoids
    *  pulling BullMQ worker internals into read-only web server bundles. */
   enqueueRawEventEmbed?: (input: { teamId: string; rawEventId: string }) => Promise<void>;
+  /** Inject structured chat for suggestion adjudication in tests. Production
+   *  falls back to the shared OpenRouter-backed llm wrapper. */
+  chatStructured?: typeof chatStructured;
   /**
    * Skip the team-membership check on first query. Set only by trusted
    * callers that have already authenticated the team boundary via some
@@ -1440,6 +1445,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
     objects: objectScope,
     boards: boardScope,
     calendar: calendarScope,
+    ...(deps.chatStructured ? { chatStructured: deps.chatStructured } : {}),
   });
 
   return {

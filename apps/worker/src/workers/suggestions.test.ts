@@ -4898,6 +4898,118 @@ describe('processSuggestionJobForTests', () => {
     expect(review?.metadata).toMatchObject({ review_outcome: 'no_action' });
   });
 
+  it('re-offers a rejected conversation proposal when later evidence confirms it', async () => {
+    const firstId = '10000000-0000-0000-0000-0000000000c2';
+    const secondId = '10000000-0000-0000-0000-0000000000c3';
+    const reviewId = '20000000-0000-0000-0000-0000000000c2';
+    const conversationKey = `telegram:${TEAM_ID}:chat:1000`;
+    const scope = withTeam(db as never, TEAM_ID, OWNER_ID);
+    await seedRawEvent(db as never, {
+      id: firstId,
+      source: 'telegram',
+      text: 'We might support local inference on smaller models.',
+      occurredAt: new Date('2026-05-27T10:00:00.000Z'),
+      sourceMetadata: { tg_chat_id: '1000', tg_message_id: '1' },
+    });
+    await seedConversationReview(db as never, {
+      id: reviewId,
+      conversationKey,
+      lastRawEventId: firstId,
+      quietUntil: new Date('2026-05-27T09:00:00.000Z'),
+    });
+    const chat = vi
+      .fn()
+      .mockResolvedValueOnce({
+        model: MODEL_ID,
+        object: {
+          bundles: [
+            {
+              title: 'Support smaller models for local inference',
+              summary: 'The team may support smaller models for local inference.',
+              reason: 'The statement mentions a possible direction.',
+              confidence: 'medium',
+              quote: 'might support local inference',
+              items: [
+                {
+                  operation: 'create',
+                  targetKind: 'object',
+                  title: 'Support smaller models for local inference',
+                  proposedPayload: {
+                    type: 'decision',
+                    canonicalName: 'Support smaller models for local inference',
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      })
+      .mockResolvedValueOnce({
+        model: MODEL_ID,
+        object: {
+          bundles: [
+            {
+              title: 'Support smaller models for local inference',
+              summary: 'The team agreed to support smaller models for local inference.',
+              reason: 'The later message explicitly says the decision is agreed.',
+              confidence: 'high',
+              quote: 'Agreed: we should support local inference',
+              items: [
+                {
+                  operation: 'create',
+                  targetKind: 'object',
+                  title: 'Support smaller models for local inference',
+                  proposedPayload: {
+                    type: 'decision',
+                    canonicalName: 'Support smaller models for local inference',
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      });
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { scope: 'conversation_review', conversationReviewId: reviewId, teamId: TEAM_ID },
+      { getEnv: env, chatStructured: chat, modelId: MODEL_ID },
+    );
+    const [early] = await scope.suggestions.listPendingSuggestions();
+    await expect(scope.suggestions.rejectSuggestionItem(early?.items[0]?.id ?? '')).resolves.toBe(
+      true,
+    );
+    await seedRawEvent(db as never, {
+      id: secondId,
+      source: 'telegram',
+      text: 'Agreed: we should support local inference with smaller models.',
+      occurredAt: new Date('2026-05-27T10:05:00.000Z'),
+      sourceMetadata: { tg_chat_id: '1000', tg_message_id: '2' },
+    });
+    await db
+      .update(conversationReviews)
+      .set({
+        status: 'pending',
+        lastRawEventId: secondId,
+        quietUntil: new Date('2026-05-27T09:00:00.000Z'),
+      })
+      .where(eq(conversationReviews.id, reviewId));
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { scope: 'conversation_review', conversationReviewId: reviewId, teamId: TEAM_ID },
+      { getEnv: env, chatStructured: chat, modelId: MODEL_ID },
+    );
+
+    const rows = await db.select().from(agentSuggestions);
+    expect(rows).toHaveLength(2);
+    expect(rows.map((row) => row.status).sort()).toEqual(['pending', 'rejected']);
+    const pending = rows.find((row) => row.status === 'pending');
+    expect(pending?.dedupeKey).toContain(':correction:');
+    const items = await db.select().from(agentSuggestionItems);
+    expect(items.map((item) => item.status).sort()).toEqual(['pending', 'rejected']);
+  });
+
   it('stores model-backed object update suggestions with existing context in the prompt', async () => {
     const rawEventId = '10000000-0000-0000-0000-000000000002';
     await seedRawEvent(db as never, {
