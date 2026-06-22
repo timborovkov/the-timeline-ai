@@ -215,6 +215,21 @@ describe('writeIntegrationEvents visibility', () => {
             slack_message_ts: '1700000000.000100',
           },
         },
+        {
+          dedupKey: 'slack:file:T_SLACK:C_BOUND:1700000000.000100:F_BOUND',
+          provider: 'slack',
+          externalObjectId: 'F_BOUND',
+          externalEventId: '1700000000.000100:F_BOUND',
+          eventType: 'file.shared',
+          occurredAt: new Date('2026-05-27T09:02:00Z'),
+          contentText: 'Slack file shared: roadmap.pdf',
+          extra: {
+            slack_team_id: 'T_SLACK',
+            slack_channel_id: 'C_BOUND',
+            slack_message_ts: '1700000000.000100',
+            slack_file_id: 'F_BOUND',
+          },
+        },
       ],
     });
 

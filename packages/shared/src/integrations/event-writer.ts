@@ -179,10 +179,12 @@ async function filterEventsOwnedByNativeIntegrations(
 ): Promise<IntegrationEvent[]> {
   if (deps.integration.provider !== 'slack') return events;
 
-  const messageEvents = events.filter(isSlackMessageEvent);
-  if (messageEvents.length === 0) return events;
+  const nativeOwnedEvents = events.filter(isSlackEventOwnedByConversationalCapture);
+  if (nativeOwnedEvents.length === 0) return events;
 
-  const channels = [...new Set(messageEvents.map(slackBindingKey).filter((key) => key !== null))];
+  const channels = [
+    ...new Set(nativeOwnedEvents.map(slackBindingKey).filter((key) => key !== null)),
+  ];
   if (channels.length === 0) return events;
 
   const boundRows = await deps.db
@@ -208,16 +210,16 @@ async function filterEventsOwnedByNativeIntegrations(
     boundRows.map((row) => slackBindingKeyParts(row.slackTeamId, row.channelId)),
   );
   return events.filter((event) => {
-    if (!isSlackMessageEvent(event)) return true;
+    if (!isSlackEventOwnedByConversationalCapture(event)) return true;
     const key = slackBindingKey(event);
     return !key || !bound.has(key);
   });
 }
 
-function isSlackMessageEvent(event: IntegrationEvent): boolean {
+function isSlackEventOwnedByConversationalCapture(event: IntegrationEvent): boolean {
   return (
     event.provider === 'slack' &&
-    ['message.created', 'message.edited', 'thread.reply'].includes(event.eventType)
+    ['message.created', 'message.edited', 'thread.reply', 'file.shared'].includes(event.eventType)
   );
 }
 
