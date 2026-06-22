@@ -52,7 +52,9 @@
       <p>
         Each team has a workspace timezone stored in
         <code>team_calendar_settings.default_timezone</code>. Admins configure it from Team
-        settings, and new teams initialize it from the creator's browser timezone when available.
+        settings, and new teams initialize it from the creator's browser timezone when available
+        with <code>Europe/Helsinki</code> as the product fallback. Existing teams that still carried
+        the old implicit <code>UTC</code> default were backfilled to <code>Europe/Helsinki</code>.
         Timeline grouping and timestamps, calendar views, event defaults, saved meeting schedules,
         daily digests, and workspace-relative chat dates use this timezone unless a specific
         calendar event supplies its own <code>calendar_events.timezone</code>.

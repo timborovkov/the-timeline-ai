@@ -217,6 +217,57 @@ describe('database schema contracts', () => {
     }
   });
 
+  it('backfills existing teams to the Helsinki workspace timezone default', async () => {
+    const migrationPg = new PGlite();
+    const explicitTeamId = '33333333-3333-4333-8333-333333333333';
+    try {
+      await applyMigrations(migrationPg, { throughFile: '0046_priority_integrations.sql' });
+      await seedBase(migrationPg);
+      await migrationPg.exec(`
+        INSERT INTO teams (id, slug, name, inbound_email)
+        VALUES ('${explicitTeamId}', 'explicit-db', 'Explicit DB', 'explicit-db@example.test');
+        INSERT INTO team_calendar_settings (team_id, default_timezone)
+        VALUES
+          ('${TEAM_ID}', 'UTC'),
+          ('${explicitTeamId}', 'Europe/Paris');
+        INSERT INTO message_preferences (team_id, user_id, timezone)
+        VALUES
+          ('${TEAM_ID}', '${OWNER_ID}', 'UTC'),
+          ('${explicitTeamId}', '${OWNER_ID}', 'Europe/Paris');
+      `);
+
+      await applyMigrationFile(migrationPg, '0047_existing_team_timezones.sql');
+
+      const settingsRows = await migrationPg.query<{
+        team_id: string;
+        default_timezone: string;
+      }>(`
+        SELECT team_id::text, default_timezone
+        FROM team_calendar_settings
+        WHERE team_id IN ('${TEAM_ID}', '${OTHER_TEAM_ID}', '${explicitTeamId}')
+        ORDER BY team_id
+      `);
+      expect(settingsRows.rows).toEqual([
+        { team_id: TEAM_ID, default_timezone: 'Europe/Helsinki' },
+        { team_id: OTHER_TEAM_ID, default_timezone: 'Europe/Helsinki' },
+        { team_id: explicitTeamId, default_timezone: 'Europe/Paris' },
+      ]);
+
+      const preferenceRows = await migrationPg.query<{ team_id: string; timezone: string }>(`
+        SELECT team_id::text, timezone
+        FROM message_preferences
+        WHERE team_id IN ('${TEAM_ID}', '${explicitTeamId}')
+        ORDER BY team_id
+      `);
+      expect(preferenceRows.rows).toEqual([
+        { team_id: TEAM_ID, timezone: 'Europe/Helsinki' },
+        { team_id: explicitTeamId, timezone: 'Europe/Paris' },
+      ]);
+    } finally {
+      await migrationPg.close();
+    }
+  });
+
   it('enforces member, invite, visibility-default, and enum invariants', async () => {
     await expect(
       pg.exec(`INSERT INTO team_members (team_id, user_id, role)

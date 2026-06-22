@@ -125,6 +125,6 @@ export const teamCalendarSettings = pgTable('team_calendar_settings', {
     .references(() => teams.id, { onDelete: 'cascade' }),
   defaultReminderMinutes: integer('default_reminder_minutes').notNull().default(15),
   defaultVisibility: eventVisibility('default_visibility').notNull().default('team'),
-  defaultTimezone: text('default_timezone').notNull().default('UTC'),
+  defaultTimezone: text('default_timezone').notNull().default('Europe/Helsinki'),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 });

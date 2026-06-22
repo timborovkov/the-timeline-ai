@@ -65,6 +65,17 @@ describe('calendar scope', () => {
     fakes.deletePointsForSource.mockResolvedValue(undefined);
   });
 
+  it('defaults missing team calendar settings to Helsinki workspace time', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+
+    await expect(scope.calendar.getCalendarSettings()).resolves.toMatchObject({
+      teamId: TEAM_ID,
+      defaultReminderMinutes: 15,
+      defaultVisibility: 'team',
+      defaultTimezone: 'Europe/Helsinki',
+    });
+  });
+
   it('keeps the occurrence timeline row rich enough for search hydration', async () => {
     const scope = withTeam(db as never, TEAM_ID, USER_ID);
 

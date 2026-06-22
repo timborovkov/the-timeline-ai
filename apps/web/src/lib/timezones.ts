@@ -1,8 +1,8 @@
-export const DEFAULT_TIMEZONE = 'UTC';
+export const DEFAULT_TIMEZONE = 'Europe/Helsinki';
 
 const COMMON_TIMEZONES = [
   DEFAULT_TIMEZONE,
-  'Europe/Helsinki',
+  'UTC',
   'Europe/London',
   'Europe/Paris',
   'Europe/Berlin',
