@@ -27,7 +27,7 @@ import { cn } from '@/lib/utils';
 const SITE_NAME = 'The Timeline';
 const SITE_TAGLINE = 'The work becomes the record';
 const SITE_DESCRIPTION =
-  'Capture work as it happens, then generate cited updates, daily digests, handoffs, stakeholder answers, and project or client memory from the evidence.';
+  'Capture work as it happens through Slack, Telegram, meetings, docs, email, and connected tools, then generate cited updates, digests, handoffs, answers, and work memory from the evidence.';
 
 export const metadata: Metadata = {
   title: `${SITE_NAME} — ${SITE_TAGLINE}`,
@@ -50,7 +50,7 @@ export const metadata: Metadata = {
   openGraph: {
     title: `${SITE_NAME} — ${SITE_TAGLINE}`,
     description:
-      'Stop manually reporting on work your team already did. Capture work as it happens; Timeline generates updates, digests, handoffs, and answers from evidence.',
+      'Stop manually reporting on work your team already did. Timeline shows up as a Slack or Telegram bot, joins calls, and generates updates, digests, handoffs, and answers from evidence.',
     type: 'website',
     siteName: SITE_NAME,
     url: '/',
@@ -67,7 +67,7 @@ export const metadata: Metadata = {
     card: 'summary_large_image',
     title: `${SITE_NAME} — ${SITE_TAGLINE}`,
     description:
-      'Stop manually reporting on work your team already did. Capture work as it happens; Timeline generates updates, digests, handoffs, and answers from evidence.',
+      'Timeline shows up as a Slack or Telegram bot, joins calls, and generates updates, digests, handoffs, and answers from evidence.',
     images: ['/twitter-image'],
   },
   robots: {
@@ -85,9 +85,9 @@ const JSON_SCRIPT_ESCAPES: Record<string, string> = {
 };
 
 const WORK_SURFACES = [
-  { label: 'Telegram', icon: Send },
-  { label: 'Slack', icon: MessageCircle },
-  { label: 'Meetings', icon: Video },
+  { label: 'Telegram bot', icon: Send },
+  { label: 'Slack bot', icon: MessageCircle },
+  { label: 'Meeting notes', icon: Video },
   { label: 'Email', icon: Mail },
   { label: 'Documents', icon: FileText },
   { label: 'Calendar', icon: CalendarDays },
@@ -187,7 +187,7 @@ function StructuredData() {
           'Email ingest via Postmark',
           'Calendar events in the same operational timeline',
           'Document drive with version history',
-          'Meeting transcripts from Google Meet, Microsoft Teams, and Zoom (Recall.ai)',
+          'Meeting bot joins Google Meet, Microsoft Teams, and Zoom calls for notes and transcripts',
           'Agent answers with auditable citations',
           'Team-scoped vector + structured storage',
         ],
@@ -218,11 +218,11 @@ function stringifyJsonForHtmlScript(value: unknown): string {
 const FAQ_ITEMS = [
   {
     q: 'What is The Timeline?',
-    a: 'The Timeline is an evidence-derived operating record for teams. Team members capture work as it happens — voice notes, forwarded emails, Telegram and Slack messages, meeting transcripts, document uploads — and the agent compiles an event history that can generate updates, digests, handoffs, answers, and project or client memory. Every answer the agent returns is cited back to the raw event it came from.',
+    a: 'The Timeline is an evidence-derived operating record for teams. It can show up as a Slack or Telegram bot, join calls to take notes and transcribe meetings, ingest forwarded emails and document uploads, and compile the event history into updates, digests, handoffs, answers, and project or client memory. Every answer the agent returns is cited back to the raw event it came from.',
   },
   {
     q: 'Who is The Timeline for?',
-    a: 'Small to mid-sized teams doing work where context loss creates client risk, delivery drag, or leadership noise: agencies, consultancies, implementation teams, customer success teams, product teams, and founder-led operations. The kind of team where one person being out of the loop on a client or project conversation creates real friction.',
+    a: 'Small to mid-sized teams doing work where context loss creates client risk, delivery drag, or leadership noise: agencies, consultancies, implementation teams, account success teams, product teams, and founder-led operations. The kind of team where one person being out of the loop on a client or project conversation creates real friction.',
   },
   {
     q: 'How is The Timeline different from a CRM, wiki, or ticket board?',
@@ -230,7 +230,7 @@ const FAQ_ITEMS = [
   },
   {
     q: 'How is capture done?',
-    a: 'Work surfaces feed one pipeline. Telegram and Slack capture chat, voice, files, /ask, and @Timeline context. Meetings, email, documents, calendar events, web notes, project tools, code systems, support queues, customer systems, and internal tools all become part of the same evidence model. MCP servers extend the agent into long-tail systems and internal tools.',
+    a: 'Work surfaces feed one pipeline. Telegram and Slack bots capture chat, voice, files, /ask, and @Timeline context. Meeting bots join Google Meet, Zoom, and Microsoft Teams calls to take notes and transcribe discussions. Email, documents, calendar events, web notes, project tools, code systems, support queues, account systems, and internal tools all become part of the same evidence model. MCP servers extend the agent into long-tail systems and internal tools.',
   },
   {
     q: 'What models power the agent?',
@@ -343,7 +343,7 @@ function TopNav({ isSignedIn }: { isSignedIn: boolean }) {
           {isSignedIn ? null : (
             <Link
               href="/sign-in"
-              className="px-3 py-2 text-fg-muted transition-colors hover:text-fg"
+              className="whitespace-nowrap px-3 py-2 text-fg-muted transition-colors hover:text-fg"
             >
               Sign in
             </Link>
@@ -377,9 +377,9 @@ function Hero({ isSignedIn }: { isSignedIn: boolean }) {
               writes the update.
             </h1>
             <p className="mt-8 max-w-prose text-lg leading-relaxed text-fg-muted">
-              Capture Slack threads, meetings, docs, emails, tasks, and customer conversations.
-              Timeline turns them into cited updates, daily digests, handoffs, stakeholder answers,
-              and project or client memory.
+              Use Timeline as a Slack or Telegram bot, let it join calls to take notes, and connect
+              docs, emails, tasks, and account conversations. It turns that work into cited updates,
+              daily digests, handoffs, stakeholder answers, and project or client memory.
             </p>
             <div className="mt-10 flex flex-wrap items-center gap-3">
               <Button asChild size="lg">
@@ -538,10 +538,10 @@ function Solution() {
 }
 
 const INPUTS = [
-  'TELEGRAM',
-  'SLACK',
-  'GOOGLE MEET / ZOOM / TEAMS',
-  'EMAIL',
+  'TELEGRAM BOT',
+  'SLACK BOT',
+  'GOOGLE MEET / TEAMS / ZOOM',
+  'EMAIL CC / BCC',
   'CALENDAR',
   'GITHUB / LINEAR / DRIVE',
   'WEB APP',
@@ -765,15 +765,15 @@ function Surfaces() {
       <div className="mt-10 grid gap-px overflow-hidden border border-border bg-border sm:grid-cols-2 lg:grid-cols-4">
         <SurfaceTile
           label="TELEGRAM"
-          body="Voice memos, text, and attachments in DMs or team groups. /ask runs the same cited agent."
+          body="A Telegram bot captures voice memos, text, and attachments in DMs or team groups. /ask runs the same cited agent."
         />
         <SurfaceTile
           label="SLACK"
-          body="DMs, bound channels, files, /ask, and @Timeline replies. Thread context becomes searchable memory."
+          body="A Slack bot captures DMs, bound channels, files, /ask, and @Timeline replies. Thread context becomes searchable memory."
         />
         <SurfaceTile
           label="MEET / ZOOM / TEAMS"
-          body="Meeting bots transcribe calls and file decisions, tasks, and cited summaries."
+          body="Meeting bots join calls, take notes, transcribe discussions, and file decisions, tasks, and cited summaries."
         />
         <SurfaceTile
           label="EMAIL"
@@ -825,10 +825,11 @@ function Integrations() {
             Timeline sits beside the stack before it replaces any manual upkeep.
           </h2>
           <p className="text-base leading-[1.55] text-fg-muted">
-            Conversations, meetings, docs, projects, code, customer systems, support queues,
+            Conversations, meetings, docs, projects, code, account systems, support queues,
             calendars, and internal tools feed the same event history. Teams keep their current
             tools while Timeline generates cited updates, digests, handoffs, and answers from the
-            work already happening there. Long-tail tools plug in as{' '}
+            work already happening there. It can be present as a Slack or Telegram bot, join calls
+            as a note-taker, and still plug long-tail tools in as{' '}
             <a
               href="https://modelcontextprotocol.io"
               target="_blank"
@@ -965,8 +966,9 @@ function FinalCTA({ isSignedIn }: { isSignedIn: boolean }) {
           Try it on one real project.
         </h2>
         <p className="mt-5 max-w-2xl text-base leading-[1.65] text-fg-muted">
-          Connect the tools your team already uses. Timeline will generate the next update, digest,
-          handoff, and answer from the evidence.
+          Add Timeline to the conversations and calls where work already happens, then connect the
+          surrounding tools. Timeline will generate the next update, digest, handoff, and answer
+          from the evidence.
         </p>
         <div className="mt-10 flex flex-wrap items-center gap-3">
           <Button asChild size="lg">

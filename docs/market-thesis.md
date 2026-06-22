@@ -85,7 +85,7 @@ Timeline is an event-derived operating record for teams.
 ## Key Risk
 
 The biggest risk is not whether the product can be built; it is whether
-customers understand the wedge quickly enough. The customer story must lead with
+prospects understand the wedge quickly enough. The prospect story must lead with
 a painful workflow:
 
 > Stop manually reporting on work your team already did.

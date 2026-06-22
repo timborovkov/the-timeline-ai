@@ -16,7 +16,7 @@ events, extracted facts, workspace objects, calendar entries, approvals, and
 searchable documents.
 
 The work becomes the record: updates, daily digests, handoffs, stakeholder
-answers, project memory, and customer context are generated from evidence
+answers, project memory, and account context are generated from evidence
 instead of being rewritten by hand. Raw events remain immutable, derived facts
 can be reprocessed as extraction improves, and citations point back to the
 source material instead of hiding behind black-box summaries.
@@ -40,7 +40,7 @@ source material instead of hiding behind black-box summaries.
 - Read-only team calendar subscription feeds for viewing Timeline events in a
   default calendar app.
 - Slack, Telegram, email, meetings, documents, calendar, project tools, code
-  systems, support queues, customer systems, and internal tools flowing into
+  systems, support queues, account systems, and internal tools flowing into
   cited timeline evidence.
 - Custom MCP servers that give the agent live access to long-tail tools and
   internal systems.
@@ -181,7 +181,7 @@ boundaries.
 - [`docs/prospect-brief.md`](./docs/prospect-brief.md) — pilot brief for early
   prospects, including ingest surfaces and integration breadth.
 - [`docs/prospect-deck.html`](./docs/prospect-deck.html) — self-contained
-  prospect deck with the integration story.
+  prospect deck with the integration story and Work surface framing.
 - [`docs/demo-script.md`](./docs/demo-script.md) — crisp Acme demo narrative:
   stakeholder question → cited answer from Slack, meeting, docs, and tasks.
 - [`docs/market-thesis.md`](./docs/market-thesis.md) — market transition from

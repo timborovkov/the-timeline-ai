@@ -1,6 +1,6 @@
 # Timeline Demo Script
 
-Use this for customer calls and quick product walkthroughs. Keep the demo anchored
+Use this for prospect calls and quick product walkthroughs. Keep the demo anchored
 to one recognizable workflow: a stakeholder asks what changed, and Timeline
 answers from evidence.
 
@@ -10,7 +10,7 @@ answers from evidence.
 - Project/account: Acme launch
 - Sources visible in the demo: Slack, a meeting transcript, a document update,
   a task/project tool event, and the Timeline answer with citations.
-- Buyer context: an operator, founder, delivery lead, or customer success leader
+- Buyer context: an operator, founder, delivery lead, or account success leader
   who currently chases updates across people and tools.
 
 ## One-Sentence Open
