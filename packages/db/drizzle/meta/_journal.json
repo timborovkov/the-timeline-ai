@@ -330,6 +330,13 @@
       "when": 1795653120000,
       "tag": "0046_priority_integrations",
       "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1795653180000,
+      "tag": "0047_existing_team_timezones",
+      "breakpoints": true
     }
   ]
 }

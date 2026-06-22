@@ -298,7 +298,10 @@ function CandidateList({
                     <span className="block truncate font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">
                       {row.type}
                       {row.aliases.length > 0
-                        ? ` · ${row.aliases.slice(0, 2).map(displayText).join(', ')}`
+                        ? ` · ${row.aliases
+                            .slice(0, 2)
+                            .map((alias) => displayText(alias))
+                            .join(', ')}`
                         : ''}
                     </span>
                   </span>

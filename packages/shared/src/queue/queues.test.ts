@@ -499,6 +499,8 @@ describe('queue wrappers', () => {
       name: 'tick',
       data: { kind: 'tick', reason: 'catchup' },
     });
+    expect(fakes.queues[4]?.addCalls[0]?.data).not.toHaveProperty('windowStart');
+    expect(fakes.queues[4]?.addCalls[0]?.data).not.toHaveProperty('windowEnd');
     const catchupJobId = fakes.queues[4]?.addCalls[0]?.opts as { jobId?: string };
     expect(catchupJobId.jobId).toMatch(/^daily-digest-catchup\|/);
     expect(catchupJobId.jobId).not.toContain(':');

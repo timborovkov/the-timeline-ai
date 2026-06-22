@@ -1,21 +1,29 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { TimelineEvent, TimelinePage } from '@/lib/use-paginated-queries';
 
 const fakes = vi.hoisted(() => ({
   pages: [] as TimelinePage[],
+  useTimelineInfiniteQuery: vi.fn(),
 }));
 
 vi.mock('@/lib/use-paginated-queries', () => {
   return {
-    useTimelineInfiniteQuery: () => ({
-      data: { pages: fakes.pages },
-      fetchNextPage: vi.fn(),
-      hasNextPage: false,
-      isFetchingNextPage: false,
-    }),
+    useTimelineInfiniteQuery: (
+      filters: Record<string, string | null | undefined>,
+      initialPage: TimelinePage,
+      options: { enabled?: boolean; timezone?: string },
+    ) => {
+      fakes.useTimelineInfiniteQuery(filters, initialPage, options);
+      return {
+        data: { pages: fakes.pages },
+        fetchNextPage: vi.fn(),
+        hasNextPage: false,
+        isFetchingNextPage: false,
+      };
+    },
   };
 });
 
@@ -59,6 +67,11 @@ function page(items: TimelineEvent[]): TimelinePage {
 }
 
 describe('TimelineFeed', () => {
+  beforeEach(() => {
+    fakes.pages = [];
+    fakes.useTimelineInfiniteQuery.mockClear();
+  });
+
   it('deduplicates focused events that reappear on later pages', () => {
     const focused = timelineEvent('focused', '2026-06-01T12:00:00.000Z');
     fakes.pages = [
@@ -79,5 +92,26 @@ describe('TimelineFeed', () => {
     expect(html.match(/<li>focused<\/li>/g)).toHaveLength(1);
     expect(html).toContain('<li>newer</li>');
     expect(html).toContain('<li>older</li>');
+  });
+
+  it('passes timezone into the infinite-query cache identity', () => {
+    const initialPage = page([]);
+
+    renderToStaticMarkup(
+      createElement(TimelineFeed, {
+        initialPage,
+        filters: { from: '2026-06-22' },
+        currentUserId: 'user-1',
+        isAdmin: false,
+        members: [],
+        timezone: 'Europe/Tallinn',
+      }),
+    );
+
+    expect(fakes.useTimelineInfiniteQuery).toHaveBeenCalledWith(
+      { from: '2026-06-22' },
+      initialPage,
+      expect.objectContaining({ timezone: 'Europe/Tallinn' }),
+    );
   });
 });

@@ -11,7 +11,7 @@
     <main id="main">
       <h1>The Timeline — Calendar</h1>
       <div class="meta">
-        <span class="kind">Product guide</span><span>Last updated 2026-06-16</span>
+        <span class="kind">Product guide</span><span>Last updated 2026-06-22</span>
       </div>
       <p class="tldr">
         Calendar state is approval-backed workspace memory. The agent can suggest one-off events,
@@ -23,6 +23,7 @@
         <strong>On this page</strong>
         <ul>
           <li><a href="#mental-model">Mental model</a></li>
+          <li><a href="#workspace-timezone">Workspace timezone</a></li>
           <li><a href="#agent-suggestions">Agent suggestions</a></li>
           <li><a href="#due-dates">Due dates</a></li>
           <li><a href="#recurring-events">Recurring events</a></li>
@@ -45,6 +46,18 @@
         A calendar suggestion needs a concrete timed range or an all-day date span. If the evidence
         only implies future work without a schedule, it should become a task or object-memory
         suggestion instead of a placeholder calendar event.
+      </p>
+
+      <h2 id="workspace-timezone">Workspace timezone</h2>
+      <p>
+        Each team has a workspace timezone stored in
+        <code>team_calendar_settings.default_timezone</code>. Admins configure it from Team
+        settings, and new teams initialize it from the creator's browser timezone when available
+        with <code>Europe/Helsinki</code> as the product fallback. Existing teams that still carried
+        the old implicit <code>UTC</code> default were backfilled to <code>Europe/Helsinki</code>.
+        Timeline grouping and timestamps, calendar views, event defaults, saved meeting schedules,
+        daily digests, and workspace-relative chat dates use this timezone unless a specific
+        calendar event supplies its own <code>calendar_events.timezone</code>.
       </p>
 
       <h2 id="agent-suggestions">Agent suggestions</h2>

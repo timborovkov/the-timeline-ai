@@ -1,6 +1,6 @@
 'use client';
 
-import { useActionState } from 'react';
+import { useActionState, useMemo, useSyncExternalStore } from 'react';
 import { useFormStatus } from 'react-dom';
 
 import {
@@ -13,8 +13,10 @@ import {
   type DigestPreferenceState,
   inviteMemberAction,
   renameTeamAction,
+  type TeamTimezoneState,
   updateDigestPreferenceAction,
   updateInboundEmailWhitelistAction,
+  updateTeamTimezoneAction,
   type CreateTeamState,
   type InboundEmailWhitelistState,
   type InviteState,
@@ -24,6 +26,18 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { DEFAULT_TIMEZONE, timezoneOptions } from '@/lib/timezones';
+
+function unsubscribeTimezone(): void {
+  return undefined;
+}
+
+function subscribeTimezone(): () => void {
+  return unsubscribeTimezone;
+}
+
+const browserTimezone = () => Intl.DateTimeFormat().resolvedOptions().timeZone || DEFAULT_TIMEZONE;
+const serverTimezone = () => DEFAULT_TIMEZONE;
 
 function Submit({ label }: { label: string }) {
   const { pending } = useFormStatus();
@@ -36,8 +50,11 @@ function Submit({ label }: { label: string }) {
 
 export function CreateTeamForm({ id = 'new-team-name' }: { id?: string }) {
   const [state, action] = useActionState<CreateTeamState, FormData>(createTeamAction, {});
+  const timezone = useSyncExternalStore(subscribeTimezone, browserTimezone, serverTimezone);
+
   return (
     <form action={action} className="flex flex-col gap-3 sm:flex-row sm:items-end">
+      <input type="hidden" name="timezone" value={timezone} />
       <div className="flex-1 space-y-2">
         <Label htmlFor={id}>Team name</Label>
         <Input id={id} name="name" placeholder="Acme Sales" required />
@@ -46,6 +63,39 @@ export function CreateTeamForm({ id = 'new-team-name' }: { id?: string }) {
       {state.error ? (
         <span className="self-center text-xs text-destructive">{state.error}</span>
       ) : null}
+    </form>
+  );
+}
+
+export function TeamTimezoneForm({ timezone }: { timezone: string }) {
+  const [state, action] = useActionState<TeamTimezoneState, FormData>(updateTeamTimezoneAction, {});
+  const options = useMemo(() => timezoneOptions(timezone), [timezone]);
+  return (
+    <form action={action} className="space-y-4">
+      <div className="space-y-2">
+        <Label htmlFor="team-timezone">Team timezone</Label>
+        <select
+          id="team-timezone"
+          name="timezone"
+          defaultValue={timezone}
+          className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+        >
+          {options.map((option) => (
+            <option key={option} value={option}>
+              {option}
+            </option>
+          ))}
+        </select>
+        <p className="text-sm text-muted-foreground">
+          Used for calendar views, event defaults, meeting schedules, daily digests, and
+          workspace-relative dates in chat.
+        </p>
+      </div>
+      <div className="flex flex-wrap items-center gap-3">
+        <Submit label="Save timezone" />
+        {state.error ? <p className="text-sm text-destructive">{state.error}</p> : null}
+        {state.ok ? <p className="text-sm text-muted-foreground">Timezone updated.</p> : null}
+      </div>
     </form>
   );
 }

@@ -25,7 +25,7 @@ import {
 import { EmptyAction } from '@/components/empty-action';
 import { EvidenceLink } from '@/components/evidence-link';
 import { Button } from '@/components/ui/button';
-import { displayText, formatDisplayDateTime } from '@/lib/display-dates';
+import { displayText, formatDisplayDate, formatDisplayDateTime } from '@/lib/display-dates';
 import { isActionableSuggestionStatus } from '@/lib/suggestion-status';
 
 interface SuggestionItem {
@@ -91,6 +91,7 @@ type ApprovalAction = (
 interface Props {
   suggestions: SuggestionBundle[];
   allowBulkAccept?: boolean;
+  timezone?: string;
   folded?: {
     title: string;
     summary: {
@@ -202,30 +203,38 @@ function calendarRangeLabel(input: {
   startAt: string | null;
   endAt: string | null;
   allDay?: boolean | null;
+  timezone?: string;
 }): string | null {
   if (!input.startAt || !input.endAt) return null;
   if (input.allDay) {
-    return `${formatDisplayDateTime(input.startAt).replace(/, 12:00 AM$/, '')} - ${formatDisplayDateTime(
-      input.endAt,
-    ).replace(/, 12:00 AM$/, '')}`;
+    const end = new Date(input.endAt);
+    const displayEnd = Number.isNaN(end.getTime()) ? input.endAt : new Date(end.getTime() - 1);
+    const startLabel = formatDisplayDate(input.startAt, { timezone: input.timezone });
+    const endLabel = formatDisplayDate(displayEnd, { timezone: input.timezone });
+    return startLabel === endLabel ? startLabel : `${startLabel} - ${endLabel}`;
   }
-  return `${formatDisplayDateTime(input.startAt)} -> ${formatDisplayDateTime(input.endAt)}`;
+  return `${formatDisplayDateTime(input.startAt, {
+    timezone: input.timezone,
+  })} -> ${formatDisplayDateTime(input.endAt, { timezone: input.timezone })}`;
 }
 
-function proposedCalendarRange(item: SuggestionItem): string | null {
+function proposedCalendarRange(item: SuggestionItem, timezone?: string): string | null {
+  const eventTimezone = payloadString(item.proposedPayload, 'timezone') ?? timezone;
   return calendarRangeLabel({
     startAt: payloadString(item.proposedPayload, 'startAt'),
     endAt: payloadString(item.proposedPayload, 'endAt'),
     allDay: payloadBoolean(item.proposedPayload, 'allDay'),
+    timezone: eventTimezone,
   });
 }
 
-function calendarEventRange(event: CalendarResolutionEvent): string {
+function calendarEventRange(event: CalendarResolutionEvent, timezone?: string): string {
   return (
     calendarRangeLabel({
       startAt: event.startAt,
       endAt: event.endAt,
       allDay: event.allDay,
+      timezone: event.timezone || timezone,
     }) ?? event.startAt
   );
 }
@@ -318,7 +327,7 @@ function foldedSummaryText(
   return `${count} ${count === 1 ? summary.singular : summary.plural}`;
 }
 
-export function ApprovalsClient({ suggestions, allowBulkAccept = true, folded }: Props) {
+export function ApprovalsClient({ suggestions, allowBulkAccept = true, timezone, folded }: Props) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -458,6 +467,7 @@ export function ApprovalsClient({ suggestions, allowBulkAccept = true, folded }:
       error={error}
       pending={pending}
       run={run}
+      timezone={timezone}
       visibleSuggestions={visibleSuggestions}
     />
   );
@@ -503,6 +513,7 @@ function ApprovalListBody({
   error,
   pending,
   run,
+  timezone,
   visibleSuggestions,
 }: {
   allowBulkAccept: boolean;
@@ -512,6 +523,7 @@ function ApprovalListBody({
   error: string | null;
   pending: boolean;
   run: ApprovalAction;
+  timezone?: string;
   visibleSuggestions: SuggestionBundle[];
 }) {
   return (
@@ -532,6 +544,7 @@ function ApprovalListBody({
           key={bundle.id}
           pending={pending}
           run={run}
+          timezone={timezone}
         />
       ))}
     </div>
@@ -581,19 +594,21 @@ function ApprovalBundleRow({
   busyItemIds,
   pending,
   run,
+  timezone,
 }: {
   allowBulkAccept: boolean;
   bundle: SuggestionBundle;
   busyItemIds: Set<string>;
   pending: boolean;
   run: ApprovalAction;
+  timezone?: string;
 }) {
   const pendingItems = bundle.items.filter((item) => isActionableSuggestionStatus(item.status));
   const bulkAcceptItems = pendingItems.filter((item) => item.targetKind !== 'object_merge');
   return (
     <article className="border-t border-border py-3">
       <div className="flex flex-wrap items-center gap-3">
-        <ApprovalBundleHeader bundle={bundle} />
+        <ApprovalBundleHeader bundle={bundle} timezone={timezone} />
         {allowBulkAccept && bulkAcceptItems.length > 1 ? (
           <Button
             type="button"
@@ -620,6 +635,7 @@ function ApprovalBundleRow({
             key={item.id}
             pending={pending}
             run={run}
+            timezone={timezone}
           />
         ))}
       </ul>
@@ -628,11 +644,18 @@ function ApprovalBundleRow({
   );
 }
 
-function ApprovalBundleHeader({ bundle }: { bundle: SuggestionBundle }) {
+function ApprovalBundleHeader({
+  bundle,
+  timezone,
+}: {
+  bundle: SuggestionBundle;
+  timezone?: string;
+}) {
   return (
     <div className="min-w-0 flex-1">
       <div className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
-        {bundle.source} · {bundle.confidence} · {formatDisplayDateTime(bundle.createdAt)}
+        {bundle.source} · {bundle.confidence} ·{' '}
+        {formatDisplayDateTime(bundle.createdAt, { timezone })}
       </div>
       <h2 className="mt-1 text-base font-semibold tracking-tight text-fg">
         {displayText(bundle.title)}
@@ -653,17 +676,19 @@ function ApprovalItemRow({
   item,
   pending,
   run,
+  timezone,
 }: {
   bundle: SuggestionBundle;
   busy: boolean;
   item: SuggestionItem;
   pending: boolean;
   run: ApprovalAction;
+  timezone?: string;
 }) {
   return (
     <li className="grid gap-3 p-3 md:grid-cols-[minmax(0,1.3fr)_minmax(10rem,0.8fr)_minmax(9rem,auto)]">
       <ApprovalItemMain item={item} />
-      <ApprovalItemPayload bundle={bundle} item={item} />
+      <ApprovalItemPayload bundle={bundle} item={item} timezone={timezone} />
       {isActionableSuggestionStatus(item.status) ? (
         <ApprovalItemActions busy={busy} item={item} pending={pending} run={run} />
       ) : null}
@@ -685,9 +710,17 @@ function ApprovalItemMain({ item }: { item: SuggestionItem }) {
   );
 }
 
-function ApprovalItemPayload({ bundle, item }: { bundle: SuggestionBundle; item: SuggestionItem }) {
+function ApprovalItemPayload({
+  bundle,
+  item,
+  timezone,
+}: {
+  bundle: SuggestionBundle;
+  item: SuggestionItem;
+  timezone?: string;
+}) {
   if (item.targetKind === 'calendar_event') {
-    return <CalendarApprovalPayload item={item} />;
+    return <CalendarApprovalPayload item={item} timezone={timezone} />;
   }
   const summary = relationshipPayloadSummary(item, bundle) ?? formatPayload(item.proposedPayload);
   return (
@@ -705,10 +738,10 @@ function ApprovalItemPayload({ bundle, item }: { bundle: SuggestionBundle; item:
   );
 }
 
-function CalendarApprovalPayload({ item }: { item: SuggestionItem }) {
+function CalendarApprovalPayload({ item, timezone }: { item: SuggestionItem; timezone?: string }) {
   const action = calendarActionSummary(item);
   const Icon = action.icon;
-  const proposedRange = proposedCalendarRange(item);
+  const proposedRange = proposedCalendarRange(item, timezone);
   const showAs = payloadString(item.proposedPayload, 'showAs');
   const recurrenceEditMode = payloadString(item.proposedPayload, 'recurrenceEditMode');
   const proposalGroupId = payloadString(item.proposedPayload, 'proposalGroupId');
@@ -734,7 +767,7 @@ function CalendarApprovalPayload({ item }: { item: SuggestionItem }) {
         {action.label}
       </div>
       <div className="space-y-1 text-xs text-fg-muted">
-        <CalendarResolutionLine item={item} proposedRange={proposedRange} />
+        <CalendarResolutionLine item={item} proposedRange={proposedRange} timezone={timezone} />
         {showAs ? <p>Availability: {displayText(showAs)}</p> : null}
         {recurrenceEditMode ? <p>Recurrence: {displayText(recurrenceEditMode)}</p> : null}
         {cancelsSiblingSlots ? (
@@ -751,24 +784,28 @@ function CalendarApprovalPayload({ item }: { item: SuggestionItem }) {
 function CalendarResolutionLine({
   item,
   proposedRange,
+  timezone,
 }: {
   item: SuggestionItem;
   proposedRange: string | null;
+  timezone?: string;
 }) {
   const hint = item.calendarResolutionHint;
   if (hint?.kind === 'exact_duplicate_reuse') {
     return (
       <p>
-        Matches existing event "{displayText(hint.event.title)}" at {calendarEventRange(hint.event)}
-        . Accept will reuse it instead of creating a duplicate.
+        Matches existing event "{displayText(hint.event.title)}" at{' '}
+        {calendarEventRange(hint.event, timezone)}. Accept will reuse it instead of creating a
+        duplicate.
       </p>
     );
   }
   if (hint?.kind === 'semantic_update_candidate') {
     return (
       <p>
-        Looks related to "{displayText(hint.event.title)}" at {calendarEventRange(hint.event)}.
-        Accept will create a new event unless this proposal is revised to target that event.
+        Looks related to "{displayText(hint.event.title)}" at{' '}
+        {calendarEventRange(hint.event, timezone)}. Accept will create a new event unless this
+        proposal is revised to target that event.
       </p>
     );
   }
@@ -783,7 +820,7 @@ function CalendarResolutionLine({
   if (hint?.kind === 'target_event') {
     return (
       <p>
-        Target: "{displayText(hint.event.title)}" at {calendarEventRange(hint.event)}.
+        Target: "{displayText(hint.event.title)}" at {calendarEventRange(hint.event, timezone)}.
         {proposedRange ? ` Proposed: ${proposedRange}.` : ''}
       </p>
     );

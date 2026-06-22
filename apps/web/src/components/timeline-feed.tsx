@@ -35,6 +35,7 @@ interface Props {
   impactFilter?: ImpactKind | 'all';
   focusEventId?: string | null;
   live?: boolean;
+  timezone?: string;
 }
 
 export function TimelineFeed({
@@ -50,8 +51,9 @@ export function TimelineFeed({
   impactFilter = 'all',
   focusEventId = null,
   live = true,
+  timezone,
 }: Props) {
-  const query = useTimelineInfiniteQuery(filters, initialPage, { enabled: live });
+  const query = useTimelineInfiniteQuery(filters, initialPage, { enabled: live, timezone });
   const pages = query.data.pages;
   const events = useMemo(() => {
     const seen = new Set<string>();
@@ -113,6 +115,7 @@ export function TimelineFeed({
         impactItemsByEventId={impactItemsByEventId}
         capturedFilesByEventId={capturedFilesByEventId}
         focusEventId={focusEventId}
+        timezone={timezone}
       />
       <div className={compact ? 'hidden' : 'flex justify-center'}>
         <button

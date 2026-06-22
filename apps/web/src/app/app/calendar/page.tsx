@@ -238,6 +238,7 @@ export default async function CalendarPage({ searchParams }: PageProps) {
         <ApprovalsClient
           suggestions={calendarSuggestions}
           allowBulkAccept={false}
+          timezone={settings.defaultTimezone}
           folded={{
             title: 'Calendar approvals',
             summary: {

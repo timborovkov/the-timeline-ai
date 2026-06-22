@@ -46,6 +46,7 @@ export type TimelineImpactFilter = ImpactKind | 'all';
 interface BuildTimelineMomentOptions {
   now?: Date;
   impactItemsByEventId?: Record<string, ImpactItem[]>;
+  timezone?: string;
 }
 
 const SOURCE_LABEL: Record<TimelineEvent['source'], string> = {
@@ -108,54 +109,73 @@ function formatAddress(value: unknown): string | null {
   return name ? `${name} <${email}>` : email;
 }
 
-function dateKey(input: Date | string): string {
-  return eventDate(input).toLocaleDateString('en-CA');
+function dateKey(input: Date | string, timezone?: string): string {
+  return eventDate(input).toLocaleDateString('en-CA', { timeZone: timezone });
 }
 
-export function formatDateSection(input: Date | string, now = new Date()): string {
+function previousDateKey(key: string): string {
+  const date = new Date(`${key}T00:00:00.000Z`);
+  date.setUTCDate(date.getUTCDate() - 1);
+  return date.toISOString().slice(0, 10);
+}
+
+export function formatDateSection(
+  input: Date | string,
+  now = new Date(),
+  timezone?: string,
+): string {
   const d = eventDate(input);
-  const today = dateKey(now);
-  const yesterday = new Date(now);
-  yesterday.setDate(yesterday.getDate() - 1);
-  const key = dateKey(d);
+  const today = dateKey(now, timezone);
+  const key = dateKey(d, timezone);
   if (key === today) return 'Today';
-  if (key === dateKey(yesterday)) return 'Yesterday';
+  if (key === previousDateKey(today)) return 'Yesterday';
   return d.toLocaleDateString(undefined, {
     weekday: 'long',
     month: 'short',
     day: 'numeric',
-    year: d.getFullYear() === now.getFullYear() ? undefined : 'numeric',
+    year: key.slice(0, 4) === today.slice(0, 4) ? undefined : 'numeric',
+    timeZone: timezone,
   });
 }
 
-function formatTime(input: Date | string): string {
+function formatTime(input: Date | string, timezone?: string): string {
   return eventDate(input).toLocaleTimeString(undefined, {
     hour: '2-digit',
     minute: '2-digit',
     hour12: false,
+    timeZone: timezone,
   });
 }
 
-function timeLabel(events: TimelineEvent[]): string {
+function timeLabel(events: TimelineEvent[], timezone?: string): string {
   const sorted = [...events].sort(
     (a: TimelineEvent, b: TimelineEvent) =>
       eventDate(a.occurredAt).getTime() - eventDate(b.occurredAt).getTime(),
   );
   const first = sorted[0];
   const last = sorted[sorted.length - 1];
-  if (!first || !last || first.id === last.id) return first ? formatTime(first.occurredAt) : '';
-  const start = formatTime(first.occurredAt);
-  const end = formatTime(last.occurredAt);
+  if (!first || !last || first.id === last.id)
+    return first ? formatTime(first.occurredAt, timezone) : '';
+  const start = formatTime(first.occurredAt, timezone);
+  const end = formatTime(last.occurredAt, timezone);
   return start === end ? start : `${start}-${end}`;
 }
 
-function fifteenMinuteBucket(input: Date | string): string {
-  const d = eventDate(input);
-  const bucket = Math.floor(d.getMinutes() / 15) * 15;
-  return `${String(d.getHours()).padStart(2, '0')}:${String(bucket).padStart(2, '0')}`;
+function fifteenMinuteBucket(input: Date | string, timezone?: string): string {
+  const [hour = '00', rawMinute = '00'] = eventDate(input)
+    .toLocaleTimeString('en-US', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+      timeZone: timezone,
+    })
+    .split(':');
+  const minute = Number(rawMinute);
+  const bucket = Math.floor(minute / 15) * 15;
+  return `${hour.padStart(2, '0')}:${String(bucket).padStart(2, '0')}`;
 }
 
-export function timelineGroupKey(event: TimelineEvent): string {
+export function timelineGroupKey(event: TimelineEvent, timezone?: string): string {
   const meta = metaObject(event.sourceMetadata);
   if (event.source === 'meeting') {
     return `meeting:${stringMeta(meta, 'meeting_id') ?? event.id}`;
@@ -171,7 +191,10 @@ export function timelineGroupKey(event: TimelineEvent): string {
   if (event.source === 'telegram') {
     const chat = displayMeta(meta, 'tg_chat_id') ?? stringMeta(meta, 'tg_chat_title');
     return chat
-      ? `telegram:${chat}:${dateKey(event.occurredAt)}:${fifteenMinuteBucket(event.occurredAt)}`
+      ? `telegram:${chat}:${dateKey(event.occurredAt, timezone)}:${fifteenMinuteBucket(
+          event.occurredAt,
+          timezone,
+        )}`
       : `telegram:${event.id}`;
   }
   if (event.source === 'calendar') {
@@ -180,7 +203,9 @@ export function timelineGroupKey(event: TimelineEvent): string {
   if (event.source === 'document') {
     const doc = stringMeta(meta, 'document_id') ?? stringMeta(meta, 'documentId');
     const action = stringMeta(meta, 'action') ?? 'activity';
-    return doc ? `document:${doc}:${dateKey(event.occurredAt)}:${action}` : `document:${event.id}`;
+    return doc
+      ? `document:${doc}:${dateKey(event.occurredAt, timezone)}:${action}`
+      : `document:${event.id}`;
   }
   if (event.source === 'integration') {
     const provider = stringMeta(meta, 'provider') ?? 'provider';
@@ -190,8 +215,9 @@ export function timelineGroupKey(event: TimelineEvent): string {
   }
   if (event.source === 'ingest_webhook') {
     const webhook = stringMeta(meta, 'ingest_webhook_id') ?? 'webhook';
-    return `ingest_webhook:${webhook}:${dateKey(event.occurredAt)}:${fifteenMinuteBucket(
+    return `ingest_webhook:${webhook}:${dateKey(event.occurredAt, timezone)}:${fifteenMinuteBucket(
       event.occurredAt,
+      timezone,
     )}`;
   }
   return `${event.source}:${event.id}`;
@@ -294,10 +320,10 @@ function actorLabelForGroup(
   return label ?? actorLabel(event, authorMap);
 }
 
-function contextLabel(event: TimelineEvent): string {
+function contextLabel(event: TimelineEvent, timezone?: string): string {
   const meta = metaObject(event.sourceMetadata);
   const label = (value: string | null | undefined, fallback: string) =>
-    value ? displayText(value) : fallback;
+    value ? displayText(value, { timezone }) : fallback;
   if (event.source === 'slack') {
     return label(
       stringMeta(meta, 'slack_channel_name') ?? stringMeta(meta, 'slack_channel_id'),
@@ -326,18 +352,19 @@ function contextLabel(event: TimelineEvent): string {
   return SOURCE_LABEL[event.source];
 }
 
-function summaryForEvent(event: TimelineEvent): string {
+function summaryForEvent(event: TimelineEvent, timezone?: string): string {
   const meta = metaObject(event.sourceMetadata);
   if (event.source === 'meeting') {
     const summary = stringMeta(meta, 'summary');
-    if (summary) return displayText(summary);
+    if (summary) return displayText(summary, { timezone });
   }
   if (event.source === 'email') {
     const subject = stringMeta(meta, 'subject');
-    if (subject && event.contentText) return displayText(`${subject}: ${event.contentText}`);
+    if (subject && event.contentText)
+      return displayText(`${subject}: ${event.contentText}`, { timezone });
   }
   const content = event.contentText?.trim();
-  if (content) return displayText(content);
+  if (content) return displayText(content, { timezone });
   if (event.contentAudioUrl) return 'Voice memo captured; transcript pending or unavailable.';
   return 'Source event captured.';
 }
@@ -349,7 +376,7 @@ function clipped(text: string, max = 220): string {
 
 function impactItemsForEvent(
   event: TimelineEvent,
-  options: { includeVisibilityScopedMetadata: boolean } = {
+  options: { includeVisibilityScopedMetadata: boolean; timezone?: string } = {
     includeVisibilityScopedMetadata: true,
   },
 ): ImpactItem[] {
@@ -376,7 +403,9 @@ function impactItemsForEvent(
     const calendarId = stringMeta(meta, 'calendar_event_id');
     items.push({
       kind: 'calendar',
-      label: displayText(stringMeta(meta, 'title') ?? 'Calendar event'),
+      label: displayText(stringMeta(meta, 'title') ?? 'Calendar event', {
+        timezone: options.timezone,
+      }),
       href: calendarId ? '/app/calendar' : undefined,
       sourceEventId: event.id,
     });
@@ -435,11 +464,15 @@ export function buildTimelineMoments(
 ): TimelineMoment[] {
   const now = options instanceof Date ? options : (options.now ?? new Date());
   const hydrated = options instanceof Date ? {} : (options.impactItemsByEventId ?? {});
+  const timezone = options instanceof Date ? undefined : options.timezone;
   const hasAuthoritativeHydration =
     !(options instanceof Date) && options.impactItemsByEventId !== undefined;
   const groups = new Map<string, TimelineEvent[]>();
   const baseGroupKeyByEventId = new Map(
-    events.map((event) => [event.id, `${dateKey(event.occurredAt)}:${timelineGroupKey(event)}`]),
+    events.map((event) => [
+      event.id,
+      `${dateKey(event.occurredAt, timezone)}:${timelineGroupKey(event, timezone)}`,
+    ]),
   );
   for (const event of events) {
     const parentId = parentRawEventId(event);
@@ -463,19 +496,22 @@ export function buildTimelineMoments(
       const displayLead = displayLeadForGroup(sorted, lead);
       const summary =
         sorted.length === 1
-          ? summaryForEvent(lead)
-          : sorted.map(summaryForEvent).slice(0, 3).join(' / ');
+          ? summaryForEvent(lead, timezone)
+          : sorted
+              .map((event) => summaryForEvent(event, timezone))
+              .slice(0, 3)
+              .join(' / ');
       return [
         {
           id: `moment:${key}`,
-          dateKey: dateKey(lead.occurredAt),
-          dateLabel: formatDateSection(lead.occurredAt, now),
-          timeLabel: timeLabel(sorted),
+          dateKey: dateKey(lead.occurredAt, timezone),
+          dateLabel: formatDateSection(lead.occurredAt, now, timezone),
+          timeLabel: timeLabel(sorted, timezone),
           source: displayLead.source,
           sourceLabel: SOURCE_LABEL[displayLead.source],
           sourceIcon: SOURCE_ICON[displayLead.source],
           actorLabel: actorLabelForGroup(displayLead, sorted, authorMap),
-          contextLabel: contextLabel(displayLead),
+          contextLabel: contextLabel(displayLead, timezone),
           summary: clipped(summary),
           rawEvents: sorted,
           impactItems: dedupeImpact(
@@ -483,6 +519,7 @@ export function buildTimelineMoments(
               ...(hydrated[event.id] ?? []),
               ...impactItemsForEvent(event, {
                 includeVisibilityScopedMetadata: !hasAuthoritativeHydration,
+                timezone,
               }),
             ]),
           ),

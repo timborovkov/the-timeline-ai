@@ -116,7 +116,7 @@ export const messagePreferences = pgTable(
     userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }),
     dailyDigestEnabled: boolean('daily_digest_enabled').notNull().default(true),
     dailyDigestHour: integer('daily_digest_hour').notNull().default(12),
-    timezone: text('timezone').notNull().default('UTC'),
+    timezone: text('timezone').notNull().default('Europe/Helsinki'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },

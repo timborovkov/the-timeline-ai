@@ -1556,7 +1556,7 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
         teamId,
         defaultReminderMinutes: 15,
         defaultVisibility: 'team' as const,
-        defaultTimezone: 'UTC',
+        defaultTimezone: 'Europe/Helsinki',
         updatedAt: new Date(),
       };
     },

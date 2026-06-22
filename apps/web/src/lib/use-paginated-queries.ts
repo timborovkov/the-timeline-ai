@@ -89,7 +89,7 @@ export function useTimelineInfiniteQuery(
     event?: string | null;
   },
   initialPage: TimelinePage,
-  options: { enabled?: boolean } = {},
+  options: { enabled?: boolean; timezone?: string } = {},
 ) {
   const queryClient = useQueryClient();
   const mounted = useRef(false);
@@ -104,7 +104,10 @@ export function useTimelineInfiniteQuery(
     }),
     [filters.author, filters.from, filters.to, filters.source, filters.impact, filters.event],
   );
-  const queryKey = useMemo(() => queryKeys.timeline(stableFilters), [stableFilters]);
+  const queryKey = useMemo(
+    () => queryKeys.timeline(stableFilters, options.timezone),
+    [options.timezone, stableFilters],
+  );
   useEffect(() => {
     if (!mounted.current) {
       mounted.current = true;

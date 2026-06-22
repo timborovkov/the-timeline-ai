@@ -20,6 +20,7 @@ import {
   DigestPreferenceForm,
   InviteMemberForm,
   RenameTeamForm,
+  TeamTimezoneForm,
   TeamExportPanel,
 } from '@/components/team-forms';
 import { Badge } from '@/components/ui/badge';
@@ -67,6 +68,7 @@ type TeamExportRows = ComponentProps<typeof TeamExportPanel>['exports'];
 type VisibilityDefaults = ComponentProps<typeof VisibilityDefaultSettings>['defaults'];
 type VisibilityMembers = ComponentProps<typeof VisibilityDefaultSettings>['members'];
 type InboundEmailWhitelistSettings = ComponentProps<typeof InboundEmailWhitelistForm>;
+type TeamTimezoneSettings = ComponentProps<typeof TeamTimezoneForm>;
 
 export default async function TeamSettingsPage() {
   const session = await auth();
@@ -184,6 +186,9 @@ export default async function TeamSettingsPage() {
       : [];
   const userMap = new Map(userInfo.map((u) => [u.id, u] as const));
   const visibilityDefaults = isAdmin ? await scope.timeline.getVisibilityDefaults() : [];
+  const timezoneSettings: TeamTimezoneSettings = {
+    timezone: isAdmin ? (await scope.calendar.getCalendarSettings()).defaultTimezone : 'UTC',
+  };
   const visibilityMembers = memberRows.map((m) => {
     const u = userMap.get(m.userId);
     return { id: m.userId, label: u?.name ?? u?.email ?? m.userId };
@@ -212,6 +217,7 @@ export default async function TeamSettingsPage() {
         visibilityDefaults={visibilityDefaults}
         visibilityMembers={visibilityMembers}
         inboundEmailSettings={inboundEmailSettings}
+        timezoneSettings={timezoneSettings}
       />
       <MembersCard
         members={memberRows}
@@ -262,6 +268,7 @@ function AdminSettingsCards({
   visibilityDefaults,
   visibilityMembers,
   inboundEmailSettings,
+  timezoneSettings,
 }: {
   isAdmin: boolean;
   teamName: string;
@@ -270,6 +277,7 @@ function AdminSettingsCards({
   visibilityDefaults: VisibilityDefaults;
   visibilityMembers: VisibilityMembers;
   inboundEmailSettings: InboundEmailWhitelistSettings;
+  timezoneSettings: TeamTimezoneSettings;
 }) {
   if (!isAdmin) return null;
   return (
@@ -280,6 +288,22 @@ function AdminSettingsCards({
         </CardHeader>
         <CardContent>
           <RenameTeamForm currentName={teamName} teamId={teamId} />
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader>
+          <CardTitle>Team defaults</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <TeamTimezoneForm {...timezoneSettings} />
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader>
+          <CardTitle>Visibility defaults</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <VisibilityDefaultSettings defaults={visibilityDefaults} members={visibilityMembers} />
         </CardContent>
       </Card>
       <Card>
@@ -296,14 +320,6 @@ function AdminSettingsCards({
         </CardHeader>
         <CardContent>
           <InboundEmailWhitelistForm {...inboundEmailSettings} />
-        </CardContent>
-      </Card>
-      <Card>
-        <CardHeader>
-          <CardTitle>Visibility defaults</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <VisibilityDefaultSettings defaults={visibilityDefaults} members={visibilityMembers} />
         </CardContent>
       </Card>
     </>

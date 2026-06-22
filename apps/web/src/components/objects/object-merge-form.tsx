@@ -187,7 +187,8 @@ export function ObjectMergeForm({
         <div className="text-sm text-fg-muted">
           {aliases.length > 0 ? (
             <>
-              <span className="text-fg">Aliases added:</span> {aliases.map(displayText).join(', ')}
+              <span className="text-fg">Aliases added:</span>{' '}
+              {aliases.map((alias) => displayText(alias)).join(', ')}
             </>
           ) : (
             'No new aliases will be added.'

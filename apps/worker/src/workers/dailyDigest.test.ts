@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const fakes = vi.hoisted(() => ({
   defaultDigestWindow: vi.fn(),
+  getDigestPreference: vi.fn(),
   listDailyDigestRecipients: vi.fn(),
   generateDailyDigest: vi.fn(),
   sendDailyDigest: vi.fn(),
@@ -13,6 +14,7 @@ vi.mock('@timeline/shared', () => ({
   childLogger: () => ({ info: vi.fn(), error: vi.fn() }),
   messaging: {
     defaultDigestWindow: fakes.defaultDigestWindow,
+    getDigestPreference: fakes.getDigestPreference,
     listDailyDigestRecipients: fakes.listDailyDigestRecipients,
     generateDailyDigest: fakes.generateDailyDigest,
     sendDailyDigest: fakes.sendDailyDigest,
@@ -40,9 +42,14 @@ describe('daily digest worker', () => {
       start: new Date('2026-06-13T12:00:00Z'),
       end: new Date('2026-06-14T12:00:00Z'),
     });
+    fakes.getDigestPreference.mockResolvedValue({
+      enabled: true,
+      hour: 12,
+      timezone: 'Europe/Helsinki',
+    });
   });
 
-  it('fans out one recipient job per active member', async () => {
+  it('fans out one recipient job per active member using their digest timezone', async () => {
     fakes.listDailyDigestRecipients.mockResolvedValue([
       { teamId: 'team-1', userId: 'user-1', email: 'a@example.test' },
       { teamId: 'team-1', userId: 'user-2', email: 'b@example.test' },
@@ -51,6 +58,12 @@ describe('daily digest worker', () => {
     await expect(processDailyDigestJob({ db: {} as never }, { kind: 'tick' })).resolves.toEqual({
       recipients: 2,
     });
+    expect(fakes.getDigestPreference).toHaveBeenCalledWith({
+      db: {},
+      teamId: 'team-1',
+      userId: 'user-1',
+    });
+    expect(fakes.defaultDigestWindow).toHaveBeenCalledWith(expect.any(Date), 'Europe/Helsinki', 12);
     expect(fakes.enqueueDailyDigestRecipientJob).toHaveBeenCalledTimes(2);
     expect(fakes.enqueueDailyDigestRecipientJob).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -63,7 +76,7 @@ describe('daily digest worker', () => {
     );
   });
 
-  it('uses the explicit catch-up window when one is queued', async () => {
+  it('uses recipient digest timezone for catch-up jobs even when legacy windows are present', async () => {
     fakes.listDailyDigestRecipients.mockResolvedValue([
       { teamId: 'team-1', userId: 'user-1', email: 'a@example.test' },
     ]);
@@ -80,7 +93,38 @@ describe('daily digest worker', () => {
       ),
     ).resolves.toEqual({ recipients: 1 });
 
+    expect(fakes.getDigestPreference).toHaveBeenCalledWith({
+      db: {},
+      teamId: 'team-1',
+      userId: 'user-1',
+    });
+    expect(fakes.defaultDigestWindow).toHaveBeenCalledWith(expect.any(Date), 'Europe/Helsinki', 12);
+    expect(fakes.enqueueDailyDigestRecipientJob).toHaveBeenCalledWith(
+      expect.objectContaining({
+        windowStart: '2026-06-13T12:00:00.000Z',
+        windowEnd: '2026-06-14T12:00:00.000Z',
+      }),
+    );
+  });
+
+  it('uses an explicit window for non-catch-up tick jobs', async () => {
+    fakes.listDailyDigestRecipients.mockResolvedValue([
+      { teamId: 'team-1', userId: 'user-1', email: 'a@example.test' },
+    ]);
+
+    await expect(
+      processDailyDigestJob(
+        { db: {} as never },
+        {
+          kind: 'tick',
+          windowStart: '2026-06-15T12:00:00.000Z',
+          windowEnd: '2026-06-16T12:00:00.000Z',
+        },
+      ),
+    ).resolves.toEqual({ recipients: 1 });
+
     expect(fakes.defaultDigestWindow).not.toHaveBeenCalled();
+    expect(fakes.getDigestPreference).not.toHaveBeenCalled();
     expect(fakes.enqueueDailyDigestRecipientJob).toHaveBeenCalledWith(
       expect.objectContaining({
         windowStart: '2026-06-15T12:00:00.000Z',

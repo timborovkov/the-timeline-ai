@@ -917,8 +917,6 @@ export async function enqueueDailyDigestCatchupJob(now: Date = new Date()): Prom
     {
       kind: 'tick',
       reason: 'catchup',
-      windowStart: window.start.toISOString(),
-      windowEnd: window.end.toISOString(),
     },
     {
       jobId: bullmqCustomJobId([

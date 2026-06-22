@@ -112,6 +112,54 @@ describe('generateDailyDigest conflict handling', () => {
     });
   });
 
+  it('uses the team timezone when no digest preference row exists', async () => {
+    const updates: unknown[] = [];
+    const db = {
+      select: vi
+        .fn()
+        .mockReturnValueOnce(chainResult([]))
+        .mockReturnValueOnce(chainResult([{ defaultTimezone: 'Europe/Helsinki' }]))
+        .mockReturnValueOnce(chainResult([{ id: 'digest-1', status: 'skipped', payload: {} }]))
+        .mockReturnValueOnce(chainResult([{ name: 'Tim', email: 'tim@example.test' }]))
+        .mockReturnValueOnce(chainResult([]))
+        .mockReturnValueOnce(chainResult([])),
+      insert: vi.fn(() => insertConflict()),
+      update: vi.fn(() => ({
+        set: vi.fn((values: unknown) => {
+          updates.push(values);
+          return { where: vi.fn().mockResolvedValue(undefined) };
+        }),
+      })),
+    };
+
+    await expect(
+      generateDailyDigest({
+        db: db as never,
+        teamId: 'team-1',
+        userId: 'user-1',
+        windowStart: new Date('2026-06-13T12:00:00Z'),
+        windowEnd: new Date('2026-06-14T12:00:00Z'),
+        now: new Date('2026-06-14T12:05:00Z'),
+        summarize: vi.fn().mockResolvedValue('Pilot invite flow moved toward launch.'),
+      }),
+    ).resolves.toMatchObject({
+      digestId: 'digest-1',
+      skipped: false,
+      payload: {
+        timezone: 'Europe/Helsinki',
+      },
+    });
+
+    const generatedUpdate = updates.find(
+      (update): update is { status: unknown; payload: unknown } =>
+        typeof update === 'object' &&
+        update !== null &&
+        'status' in update &&
+        update.status === 'generated',
+    );
+    expect(generatedUpdate?.payload).toMatchObject({ timezone: 'Europe/Helsinki' });
+  });
+
   it('returns an existing generated digest without rebuilding the summary', async () => {
     const summarize = vi.fn().mockResolvedValue('Should not be used.');
     const db = {

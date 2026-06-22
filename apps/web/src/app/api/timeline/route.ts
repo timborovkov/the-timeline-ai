@@ -2,6 +2,7 @@ import { users } from '@timeline/db';
 import { cacheKey, cachedJson } from '@timeline/shared/cache';
 import { getAudioBucket, getS3PresignClient, getSignedGetObjectUrl } from '@timeline/shared/s3';
 import { withTeam } from '@timeline/shared/team-scope';
+import { localDateSpanToUtcRange } from '@timeline/shared/time';
 import { inArray } from 'drizzle-orm';
 
 import { resolveActiveTeam } from '@/lib/active-team';
@@ -19,10 +20,28 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-function parseDate(input: string | null): Date | undefined {
-  if (!input) return undefined;
-  const d = new Date(input);
-  return Number.isNaN(d.getTime()) ? undefined : d;
+function nextDateInput(input: string): string {
+  const d = new Date(`${input}T00:00:00.000Z`);
+  d.setUTCDate(d.getUTCDate() + 1);
+  return d.toISOString().slice(0, 10);
+}
+
+function parseStartOfDay(input: string | null, timezone: string): Date | undefined {
+  if (!input || !/^\d{4}-\d{2}-\d{2}$/.test(input)) return undefined;
+  try {
+    return localDateSpanToUtcRange(input, nextDateInput(input), timezone).from;
+  } catch {
+    return undefined;
+  }
+}
+
+function parseEndOfDay(input: string | null, timezone: string): Date | undefined {
+  if (!input || !/^\d{4}-\d{2}-\d{2}$/.test(input)) return undefined;
+  try {
+    return localDateSpanToUtcRange(input, nextDateInput(input), timezone).to;
+  } catch {
+    return undefined;
+  }
 }
 
 async function signAudio(events: { id: string; contentAudioUrl: string | null }[]) {
@@ -66,12 +85,13 @@ export async function GET(req: Request): Promise<Response> {
   const impact = parseTimelineImpact(url.searchParams.get('impact') ?? undefined);
   const event = url.searchParams.get('event');
   const focusEventId = event && UUID_RE.test(event) ? event : null;
-  const from = parseDate(url.searchParams.get('from'));
-  const toRaw = parseDate(url.searchParams.get('to'));
-  const to = toRaw ? new Date(toRaw.getTime() + 24 * 60 * 60 * 1000) : undefined;
 
   const scope = withTeam(db, active.teamId, session.user.id);
   await scope.requireMembership();
+  const settings = await scope.calendar.getCalendarSettings();
+  const timezone = settings.defaultTimezone;
+  const from = parseStartOfDay(url.searchParams.get('from'), timezone);
+  const to = parseEndOfDay(url.searchParams.get('to'), timezone);
 
   const key = cacheKey([
     'timeline-page',
@@ -83,6 +103,7 @@ export async function GET(req: Request): Promise<Response> {
     source,
     impact,
     focusEventId,
+    timezone,
     cursor,
   ]);
   const page = await cachedJson(key, 30, async () => {
