@@ -160,6 +160,22 @@ describe('TeamSourcesUi', () => {
     expect(screen.getByText(/Select what this Timeline team should sync/i)).toBeTruthy();
   });
 
+  it('does not tell non-admins to select and save shared team sources', () => {
+    render(
+      <TeamSourcesUi
+        isAdmin={false}
+        activeShareIds={[]}
+        rows={[row({ id: 'share-a', connectionId: 'conn-a', ownerLabel: 'Tim' })]}
+      />,
+    );
+
+    expect(
+      screen.getByText(/Team admins choose what this Timeline team should sync/i),
+    ).toBeTruthy();
+    expect(screen.queryByText(/then save/i)).toBeNull();
+    expect(screen.queryByRole('button', { name: /Activate sources|Save sources/i })).toBeNull();
+  });
+
   it('shows owner labels and replacement action for another active source owner', async () => {
     const user = userEvent.setup();
     render(

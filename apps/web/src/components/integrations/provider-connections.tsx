@@ -518,8 +518,9 @@ export function TeamSourcesUi({
   return (
     <div className="space-y-3">
       <div className="rounded-sm border border-border bg-surface-2 px-3 py-2 text-sm text-fg-muted">
-        These sources were shared by connection owners. Select what this Timeline team should sync,
-        then save.
+        {isAdmin
+          ? 'These sources were shared by connection owners. Select what this Timeline team should sync, then save.'
+          : 'These sources were shared by connection owners. Team admins choose what this Timeline team should sync.'}
       </div>
       {error ? (
         <InlineError
