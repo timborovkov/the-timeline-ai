@@ -320,6 +320,26 @@ ul.group li:hover,
 ol.group li:hover {
   border-color: var(--border-strong);
 }
+ul.group a,
+ol.group a {
+  display: block;
+  color: var(--fg);
+  font-weight: 600;
+  text-decoration: none;
+}
+ul.group a:hover,
+ol.group a:hover {
+  color: var(--signal);
+}
+ul.group .desc,
+ol.group .desc {
+  display: block;
+  margin-top: 0.12rem;
+  color: var(--fg-muted);
+  font-size: 0.94rem;
+  font-weight: 400;
+  line-height: 1.45;
+}
 
 /* ── Callouts ───────────────────────────────────────────────────── */
 .callout {
