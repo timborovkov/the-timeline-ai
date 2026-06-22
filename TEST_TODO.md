@@ -223,8 +223,7 @@ Covered route tests include:
   document/transcribe/extract/embed, invalid input, not-found, and non-audio
   retry behavior.
 - Native integration OAuth start/callback, provider-connection resource sharing,
-  activation, delete, provider-specific source guidance, and legacy selection
-  guard behavior.
+  activation, delete, and legacy selection guard behavior.
 
 Important uncovered route files:
 
