@@ -780,7 +780,7 @@ async function syncBoard(
     .map((event) => event.occurredAt.toISOString())
     .sort()
     .at(-1);
-  const latestItem = [schemaEvent, ...itemEvents]
+  const latestItem = itemEvents
     .map((event) => event.occurredAt.toISOString())
     .sort()
     .at(-1);

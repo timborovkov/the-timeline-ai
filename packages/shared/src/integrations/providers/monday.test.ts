@@ -527,6 +527,79 @@ describe('mondayProvider', () => {
     );
   });
 
+  it('does not advance the monday.com item cursor from board schema timestamps', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof globalThis.fetch>((_input, init) => {
+        const body = requestPayload(init);
+        if (body.query.includes('columns { id title type }')) {
+          return Promise.resolve(
+            jsonResponse({
+              data: {
+                boards: [
+                  {
+                    id: 'board-1',
+                    name: 'Pipeline',
+                    updated_at: '2026-06-22T12:00:00Z',
+                    columns: [],
+                  },
+                ],
+              },
+            }),
+          );
+        }
+        if (body.query.includes('activity_logs')) {
+          return Promise.resolve(jsonResponse({ data: { boards: [{ activity_logs: [] }] } }));
+        }
+        if (body.query.includes('items_page')) {
+          return Promise.resolve(
+            jsonResponse({
+              data: {
+                boards: [
+                  {
+                    items_page: {
+                      cursor: null,
+                      items: [
+                        {
+                          id: 'item-1',
+                          name: 'Older record',
+                          updated_at: '2026-06-20T11:00:00Z',
+                          column_values: [],
+                          updates: [],
+                          subitems: [],
+                        },
+                      ],
+                    },
+                  },
+                ],
+              },
+            }),
+          );
+        }
+        throw new Error(`unexpected query: ${body.query}`);
+      }),
+    );
+    const ctx = {
+      loadCursor: vi.fn().mockResolvedValue({}),
+      saveCursor: vi.fn().mockResolvedValue(undefined),
+      writeEvents: vi.fn().mockResolvedValue([]),
+      persistTokens: vi.fn(),
+      recordAudit: vi.fn(),
+    };
+
+    await mondayProvider.backfill({
+      integration: { id: 'integration-1' } as never,
+      tokens: { access_token: 'token' },
+      selections: [{ kind: 'monday.board', externalId: 'board-1' }],
+      ctx,
+    });
+
+    expect(ctx.saveCursor).toHaveBeenCalledWith(
+      'monday.board:board-1',
+      expect.objectContaining({ item_since: '2026-06-20T11:00:00.000Z' }),
+    );
+  });
+
   it('syncs selected WorkDocs as timeline events and harvested documents', async () => {
     vi.stubGlobal(
       'fetch',
