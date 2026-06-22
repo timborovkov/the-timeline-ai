@@ -10,15 +10,22 @@ import { AnalyticsProvider } from '@/components/analytics-provider';
 import { AppShell } from '@/components/app-shell';
 import { QueryProvider } from '@/components/query-provider';
 import { resolveActiveTeam } from '@/lib/active-team';
+import { appMetadataForTeam } from '@/lib/app-metadata';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { getNavAttentionSummary } from '@/lib/hub-status';
 import { getUserLegalAcceptance, hasCurrentLegalAcceptance } from '@/lib/legal';
 import { reportCaughtError } from '@/lib/sentry-report';
 
-export const metadata: Metadata = {
-  robots: { index: false, follow: false },
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const session = await auth();
+  if (!session?.user) {
+    return appMetadataForTeam(null);
+  }
+
+  const { active } = await resolveActiveTeam(session.user.id);
+  return appMetadataForTeam(active?.teamName ?? null);
+}
 
 export default async function AppLayout({
   children,
