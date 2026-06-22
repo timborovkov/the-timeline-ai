@@ -25,7 +25,7 @@ import {
 import { EmptyAction } from '@/components/empty-action';
 import { EvidenceLink } from '@/components/evidence-link';
 import { Button } from '@/components/ui/button';
-import { displayText, formatDisplayDateTime } from '@/lib/display-dates';
+import { displayText, formatDisplayDate, formatDisplayDateTime } from '@/lib/display-dates';
 import { isActionableSuggestionStatus } from '@/lib/suggestion-status';
 
 interface SuggestionItem {
@@ -207,13 +207,11 @@ function calendarRangeLabel(input: {
 }): string | null {
   if (!input.startAt || !input.endAt) return null;
   if (input.allDay) {
-    return `${formatDisplayDateTime(input.startAt, { timezone: input.timezone }).replace(
-      /, 12:00 AM$/,
-      '',
-    )} - ${formatDisplayDateTime(input.endAt, { timezone: input.timezone }).replace(
-      /, 12:00 AM$/,
-      '',
-    )}`;
+    const end = new Date(input.endAt);
+    const displayEnd = Number.isNaN(end.getTime()) ? input.endAt : new Date(end.getTime() - 1);
+    const startLabel = formatDisplayDate(input.startAt, { timezone: input.timezone });
+    const endLabel = formatDisplayDate(displayEnd, { timezone: input.timezone });
+    return startLabel === endLabel ? startLabel : `${startLabel} - ${endLabel}`;
   }
   return `${formatDisplayDateTime(input.startAt, {
     timezone: input.timezone,
@@ -221,11 +219,12 @@ function calendarRangeLabel(input: {
 }
 
 function proposedCalendarRange(item: SuggestionItem, timezone?: string): string | null {
+  const eventTimezone = payloadString(item.proposedPayload, 'timezone') ?? timezone;
   return calendarRangeLabel({
     startAt: payloadString(item.proposedPayload, 'startAt'),
     endAt: payloadString(item.proposedPayload, 'endAt'),
     allDay: payloadBoolean(item.proposedPayload, 'allDay'),
-    timezone,
+    timezone: eventTimezone,
   });
 }
 
@@ -235,7 +234,7 @@ function calendarEventRange(event: CalendarResolutionEvent, timezone?: string): 
       startAt: event.startAt,
       endAt: event.endAt,
       allDay: event.allDay,
-      timezone,
+      timezone: event.timezone || timezone,
     }) ?? event.startAt
   );
 }

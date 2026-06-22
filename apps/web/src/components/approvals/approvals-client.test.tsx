@@ -462,6 +462,51 @@ describe('ApprovalsClient', () => {
     expect(html).toContain('Proposed:');
   });
 
+  it('renders all-day calendar proposal ranges as date-only labels in the event timezone', () => {
+    const html = renderToStaticMarkup(
+      createElement(ApprovalsClient, {
+        timezone: 'America/New_York',
+        suggestions: [
+          {
+            id: 'bundle-calendar',
+            source: 'background',
+            status: 'pending',
+            title: 'Calendar cleanup',
+            summary: null,
+            reason: null,
+            confidence: 'medium',
+            createdAt: '2026-06-01T10:00:00.000Z',
+            evidence: [],
+            items: [
+              {
+                id: 'item-all-day',
+                status: 'pending',
+                operation: 'create',
+                targetKind: 'calendar_event',
+                targetId: null,
+                title: 'Nexia offsite',
+                description: null,
+                proposedPayload: {
+                  title: 'Nexia offsite',
+                  startAt: '2026-06-16T21:00:00.000Z',
+                  endAt: '2026-06-17T21:00:00.000Z',
+                  timezone: 'Europe/Helsinki',
+                  allDay: true,
+                },
+                calendarResolutionHint: { kind: 'new_event' },
+                failureReason: null,
+              },
+            ],
+          },
+        ],
+      }),
+    );
+
+    expect(html).toContain('Scheduled for Jun 17, 2026.');
+    expect(html).not.toContain('5:00 PM');
+    expect(html).not.toContain('12:00 AM');
+  });
+
   it('does not show sibling cancellation copy for calendar proposal creates', () => {
     const html = renderToStaticMarkup(
       createElement(ApprovalsClient, {
