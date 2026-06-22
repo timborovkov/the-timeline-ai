@@ -117,10 +117,20 @@ describe('onboarding checklist scope', () => {
     ]);
   });
 
-  it('counts non-web captured events as the first timeline event', async () => {
+  it('counts non-web and ingest webhook events as the first timeline event', async () => {
     await pg.exec(`
       INSERT INTO raw_events (team_id, author_user_id, source, content_text)
-      VALUES ('${TEAM_ID}', '${OWNER_ID}', 'telegram', 'captured from chat');
+      VALUES
+        ('${TEAM_ID}', '${OWNER_ID}', 'telegram', 'captured from chat'),
+        ('${OTHER_TEAM_ID}', '${OWNER_ID}', 'ingest_webhook', 'captured elsewhere');
+    `);
+
+    expect(completedKeys(await scope().getChecklistState())).toEqual(['first_note']);
+
+    await pg.exec(`
+      DELETE FROM raw_events WHERE team_id = '${TEAM_ID}';
+      INSERT INTO raw_events (team_id, source, content_text)
+      VALUES ('${TEAM_ID}', 'ingest_webhook', 'captured from webhook');
     `);
 
     expect(completedKeys(await scope().getChecklistState())).toEqual(['first_note']);

@@ -53,6 +53,7 @@ const eventSourceSchema = z.enum([
   'integration',
   'calendar',
   'slack',
+  'ingest_webhook',
 ]);
 const objectTypeSchema = z.enum(
   objects.OBJECT_TYPES as [objects.ObjectType, ...objects.ObjectType[]],
@@ -2339,7 +2340,8 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
               | 'system'
               | 'integration'
               | 'document'
-              | 'meeting';
+              | 'meeting'
+              | 'ingest_webhook';
           } = {
             query: parsed.query,
             source: 'integration',

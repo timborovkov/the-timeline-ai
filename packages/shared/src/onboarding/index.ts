@@ -36,6 +36,7 @@ const CAPTURE_EVENT_SOURCES = [
   'integration',
   'calendar',
   'slack',
+  'ingest_webhook',
 ] as const;
 
 export interface OnboardingStepState {

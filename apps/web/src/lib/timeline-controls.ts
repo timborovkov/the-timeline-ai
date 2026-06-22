@@ -8,6 +8,7 @@ export const TIMELINE_SOURCES = [
   ['document', 'Document'],
   ['meeting', 'Meeting'],
   ['integration', 'Integration'],
+  ['ingest_webhook', 'Ingest webhook'],
   ['calendar', 'Calendar'],
   ['system', 'System'],
 ] as const;
@@ -28,6 +29,7 @@ export const TIMELINE_PRESETS = [
   { label: 'Email', source: 'email' },
   { label: 'Documents', source: 'document' },
   { label: 'Calendar', source: 'calendar' },
+  { label: 'Webhooks', source: 'ingest_webhook' },
   { label: 'Approvals', impact: 'approval' },
   { label: 'Tasks', impact: 'task' },
   { label: 'Decisions', impact: 'decision' },
