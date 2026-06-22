@@ -379,24 +379,40 @@
       .system-visual {
         position: relative;
         display: grid;
-        grid-template-columns: minmax(0, 1.05fr) minmax(15rem, 0.72fr) minmax(0, 1.08fr);
+        grid-template-columns: repeat(4, minmax(0, 1fr));
         overflow: hidden;
         border: 1px solid var(--border);
         background: var(--border);
       }
 
-      .system-panel,
-      .agent-panel {
+      .flow-card {
         position: relative;
         z-index: 1;
+        display: grid;
+        align-content: start;
+        gap: 0.7rem;
         min-width: 0;
-        padding: clamp(1rem, 2vw, 1.45rem);
+        min-height: 17.5rem;
+        padding: clamp(0.95rem, 1.55vw, 1.25rem);
         background: var(--surface);
       }
 
-      .system-panel + .agent-panel,
-      .agent-panel + .system-panel {
-        border-left: 1px solid var(--border);
+      .flow-card:not(:last-child)::after {
+        content: '→';
+        position: absolute;
+        top: 50%;
+        right: -0.58rem;
+        z-index: 2;
+        display: grid;
+        width: 1.16rem;
+        height: 1.16rem;
+        place-items: center;
+        border: 1px solid var(--border);
+        background: var(--bg);
+        color: var(--fg-dim);
+        font-family: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+        font-size: 0.72rem;
+        transform: translateY(-50%);
       }
 
       .system-label,
@@ -413,73 +429,64 @@
 
       .system-label {
         display: block;
-        margin-bottom: 1.1rem;
-        color: var(--fg-dim);
-        font-size: clamp(0.62rem, 0.9vw, 0.76rem);
+        color: var(--fg-muted);
+        font-size: clamp(0.58rem, 0.78vw, 0.68rem);
+        font-weight: 700;
+        line-height: 1.35;
       }
 
       .event-stack {
         display: grid;
-        gap: 0.6rem;
+        gap: 0.48rem;
       }
 
       .system-event {
         display: grid;
-        grid-template-columns: 4.8rem minmax(0, 1fr);
-        gap: 1rem;
+        gap: 0.18rem;
         border: 1px solid var(--border);
         background: var(--bg);
-        padding: 0.72rem 0.82rem;
+        padding: 0.52rem 0.62rem;
       }
 
       .event-source {
         color: var(--fg-dim);
-        font-size: clamp(0.58rem, 0.78vw, 0.68rem);
+        font-size: clamp(0.55rem, 0.7vw, 0.62rem);
         line-height: 1.35;
       }
 
       .event-copy {
         color: var(--fg-muted);
-        font-size: clamp(0.8rem, 1.02vw, 0.94rem);
+        font-size: clamp(0.72rem, 0.88vw, 0.82rem);
         line-height: 1.35;
       }
 
-      .agent-panel {
-        display: grid;
-        place-items: center;
-        text-align: center;
+      .evidence-card,
+      .agent-card,
+      .output-card {
+        background: var(--surface-2);
       }
 
       .agent-core {
         display: grid;
-        gap: 0.85rem;
-        width: min(17rem, 100%);
+        gap: 0.48rem;
         border: 1px solid var(--signal-border);
         background: var(--signal-soft);
-        padding: clamp(1rem, 2vw, 1.45rem);
+        padding: 0.66rem 0.72rem;
       }
 
       .agent-core strong {
         color: var(--signal-ink);
         font-family: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
-        font-size: clamp(0.7rem, 1vw, 0.82rem);
+        font-size: clamp(0.62rem, 0.8vw, 0.72rem);
         font-weight: 600;
-        letter-spacing: 0.18em;
+        letter-spacing: 0.16em;
         text-transform: uppercase;
       }
 
       .agent-core span {
         color: var(--fg-muted);
-        font-family: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
-        font-size: clamp(0.65rem, 0.9vw, 0.74rem);
-        letter-spacing: 0.14em;
-        text-transform: uppercase;
-      }
-
-      .agent-dots {
-        color: var(--fg-dim);
-        letter-spacing: 0.28em;
-        animation: blink 8s ease-in-out infinite;
+        font-size: clamp(0.72rem, 0.88vw, 0.82rem);
+        line-height: 1.35;
       }
 
       .surface-stack {
@@ -489,12 +496,10 @@
 
       .surface-row {
         display: grid;
-        grid-template-columns: minmax(6.5rem, 0.6fr) minmax(0, 1fr);
-        gap: 0.8rem;
-        align-items: center;
+        gap: 0.12rem;
         border: 1px solid var(--signal-border);
         background: var(--signal-soft);
-        padding: 0.5rem 0.68rem;
+        padding: 0.43rem 0.55rem;
         animation: lit 8s ease-out infinite;
       }
 
@@ -516,15 +521,14 @@
 
       .surface-kicker {
         color: var(--fg);
-        font-size: clamp(0.62rem, 0.88vw, 0.74rem);
+        font-size: clamp(0.58rem, 0.74vw, 0.66rem);
         font-weight: 700;
       }
 
       .surface-meta {
         min-width: 0;
         color: var(--fg-dim);
-        font-size: clamp(0.58rem, 0.78vw, 0.68rem);
-        text-align: right;
+        font-size: clamp(0.55rem, 0.7vw, 0.62rem);
       }
 
       .system-payoff {
@@ -581,6 +585,17 @@
           grid-template-columns: 1fr;
         }
 
+        .flow-card {
+          min-height: auto;
+        }
+
+        .flow-card:not(:last-child)::after {
+          top: auto;
+          right: 50%;
+          bottom: -0.58rem;
+          transform: translateX(50%) rotate(90deg);
+        }
+
         .work-item {
           grid-template-columns: 1fr;
           gap: 0.25rem;
@@ -629,20 +644,21 @@
         }
 
         .system-panel,
-        .agent-panel {
+        .agent-panel,
+        .flow-card {
           padding: 0.85rem;
         }
 
         .system-label {
-          margin-bottom: 0.7rem;
+          margin-bottom: 0;
         }
 
         .event-stack {
-          gap: 0.45rem;
+          gap: 0.38rem;
         }
 
         .system-event {
-          padding: 0.5rem 0.65rem;
+          padding: 0.42rem 0.52rem;
         }
 
         .surface-stack {
@@ -770,38 +786,84 @@
         <div class="frame">
           <h2>Capture once. Keep every work surface current.</h2>
           <div class="system-visual">
-            <div class="system-panel">
-              <span class="system-label">Incoming work</span>
+            <div class="flow-card">
+              <span class="system-label">1 · Capture where work happens</span>
               <div class="event-stack">
                 <div class="system-event">
-                  <span class="event-source">14:02 · call</span>
-                  <span class="event-copy">Launch blocker moved to SSO; Priya owns migration.</span>
-                </div>
-                <div class="system-event">
-                  <span class="event-source">11:47 · email cc</span>
+                  <span class="event-source">Slack / Telegram</span>
                   <span class="event-copy"
-                    >Signed renewal arrived and linked to the Acme account.</span
+                    >Bots collect threads, voice notes, files, and decisions.</span
                   >
                 </div>
                 <div class="system-event">
-                  <span class="event-source">09:15 · telegram</span>
-                  <span class="event-copy">Voice note: onboarding copy approved for Monday.</span>
+                  <span class="event-source">Calls</span>
+                  <span class="event-copy"
+                    >Timeline joins Meet, Teams, and Zoom as a note-taker.</span
+                  >
                 </div>
                 <div class="system-event">
-                  <span class="event-source">08:38 · linear</span>
-                  <span class="event-copy">Import task moved to review after the data fix.</span>
+                  <span class="event-source">Email cc</span>
+                  <span class="event-copy"
+                    >Keep Timeline copied when agreements arrive by email.</span
+                  >
+                </div>
+                <div class="system-event">
+                  <span class="event-source">Apps</span>
+                  <span class="event-copy"
+                    >Docs, projects, code, account systems, and webhooks.</span
+                  >
                 </div>
               </div>
             </div>
-            <div class="agent-panel">
-              <div class="agent-core">
-                <strong>Extract · link · cite</strong>
-                <span class="agent-dots">◇ ◇ ◇</span>
-                <span>raw events stay intact</span>
+            <div class="flow-card evidence-card">
+              <span class="system-label">2 · Preserve the evidence</span>
+              <div class="event-stack">
+                <div class="system-event">
+                  <span class="event-source">Raw events</span>
+                  <span class="event-copy"
+                    >Messages, transcripts, emails, files, and app changes stay intact.</span
+                  >
+                </div>
+                <div class="system-event">
+                  <span class="event-source">Source links</span>
+                  <span class="event-copy"
+                    >Every useful fact keeps a receipt back to where it came from.</span
+                  >
+                </div>
+                <div class="system-event">
+                  <span class="event-source">Entity links</span>
+                  <span class="event-copy"
+                    >Events attach to people, companies, projects, docs, and deals.</span
+                  >
+                </div>
               </div>
             </div>
-            <div class="system-panel">
-              <span class="system-label">Work surface</span>
+            <div class="flow-card agent-card">
+              <span class="system-label">3 · Extract and link state</span>
+              <div class="agent-core">
+                <strong>Extraction agent</strong>
+                <span
+                  >Finds decisions, commitments, blockers, owners, due dates, and cited
+                  answers.</span
+                >
+              </div>
+              <div class="event-stack">
+                <div class="system-event">
+                  <span class="event-source">Human review</span>
+                  <span class="event-copy"
+                    >Important state can be approved before it changes the workspace.</span
+                  >
+                </div>
+                <div class="system-event">
+                  <span class="event-source">No rewrite</span>
+                  <span class="event-copy"
+                    >The record stays auditable even when summaries change.</span
+                  >
+                </div>
+              </div>
+            </div>
+            <div class="flow-card output-card">
+              <span class="system-label">4 · Work surface stays current</span>
               <div class="surface-stack">
                 <div class="surface-row">
                   <span class="surface-kicker">Timeline</span
@@ -812,23 +874,23 @@
                   ><span class="surface-meta">accounts · projects · documents</span>
                 </div>
                 <div class="surface-row">
-                  <span class="surface-kicker">Tasks</span
-                  ><span class="surface-meta">owner · due date · source</span>
+                  <span class="surface-kicker">Tasks / boards</span
+                  ><span class="surface-meta">owners · status · blockers</span>
                 </div>
                 <div class="surface-row">
-                  <span class="surface-kicker">Boards</span
-                  ><span class="surface-meta">pipeline · status · blockers</span>
-                </div>
-                <div class="surface-row">
-                  <span class="surface-kicker">Answers</span
+                  <span class="surface-kicker">Answers / digests</span
                   ><span class="surface-meta">cited · current · shareable</span>
+                </div>
+                <div class="surface-row">
+                  <span class="surface-kicker">Handoffs</span
+                  ><span class="surface-meta">what changed · what needs attention</span>
                 </div>
               </div>
             </div>
           </div>
           <p class="lead system-payoff">
-            The output can look like a CRM, project tracker, board, and doc index. Your team just
-            never had to keep those systems updated by hand.
+            Timeline is both the record and the workspace: it captures work as it happens, keeps the
+            receipts, and updates the operational surfaces without a separate reporting step.
           </p>
         </div>
         <div class="footer">
