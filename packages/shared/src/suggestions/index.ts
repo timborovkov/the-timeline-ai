@@ -2154,6 +2154,11 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       .where(eq(agentSuggestions.id, item.suggestionId))
       .limit(1);
     if (!acceptedSuggestion) return;
+    const candidateTargetKinds = [item.targetKind];
+    if (item.targetKind === 'object' || item.targetKind === 'task') {
+      if (!candidateTargetKinds.includes('object')) candidateTargetKinds.push('object');
+      if (!candidateTargetKinds.includes('task')) candidateTargetKinds.push('task');
+    }
     const candidateRows = await db
       .select({ item: agentSuggestionItems, suggestion: agentSuggestions })
       .from(agentSuggestionItems)
@@ -2162,7 +2167,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         and(
           eq(agentSuggestionItems.teamId, teamId),
           inArray(agentSuggestionItems.status, ACTIONABLE_ITEM_STATUSES),
-          eq(agentSuggestionItems.targetKind, item.targetKind),
+          inArray(agentSuggestionItems.targetKind, candidateTargetKinds),
           inArray(agentSuggestions.status, ['pending', 'partially_resolved']),
         ),
       );
@@ -2176,11 +2181,17 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
           newerSuggestion: acceptedSuggestion,
         })
       ) {
-        await supersedeItem(
+        const superseded = await supersedeItem(
           candidate.item.id,
           item.id,
           'Canonical state changed through an accepted approval.',
         );
+        if (superseded) {
+          await mergeDuplicateSuggestionIntoSurvivor({
+            duplicateSuggestion: candidate.suggestion,
+            survivorSuggestion: acceptedSuggestion,
+          });
+        }
       }
     }
   }

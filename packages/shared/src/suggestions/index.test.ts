@@ -1,5 +1,11 @@
 import { PGlite } from '@electric-sql/pglite';
-import { agentSuggestionItems, agentSuggestions, entities, rawEvents } from '@timeline/db';
+import {
+  agentSuggestionEvidence,
+  agentSuggestionItems,
+  agentSuggestions,
+  entities,
+  rawEvents,
+} from '@timeline/db';
 import { asc, eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -1177,6 +1183,101 @@ describe('suggestion scope', () => {
         supersededByItemId: task.items[0]?.id ?? null,
       },
       { suggestionId: task.id, status: 'pending', supersededByItemId: null },
+    ]);
+  });
+
+  it('supersedes pending task-object duplicates after accepting an equivalent create', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID, { skipMembershipCheck: true });
+    const acceptedRawEventId = '10000000-0000-0000-0000-000000000111';
+    const duplicateRawEventId = '10000000-0000-0000-0000-000000000112';
+    await db.insert(rawEvents).values([
+      {
+        id: acceptedRawEventId,
+        teamId: TEAM_ID,
+        authorUserId: USER_ID,
+        source: 'slack',
+        contentText: 'Please send the Acme deck.',
+        occurredAt: new Date('2026-06-22T08:00:00.000Z'),
+        visibility: 'team',
+      },
+      {
+        id: duplicateRawEventId,
+        teamId: TEAM_ID,
+        authorUserId: USER_ID,
+        source: 'slack',
+        contentText: 'Reminder to send Acme deck.',
+        occurredAt: new Date('2026-06-22T08:05:00.000Z'),
+        visibility: 'team',
+      },
+    ]);
+    const survivor = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Create task object',
+      dedupeKey: 'accept-object-task-create',
+      visibility: 'team',
+      evidence: [{ rawEventId: acceptedRawEventId, quote: 'send the Acme deck' }],
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'object',
+          title: 'Send Acme deck',
+          dedupeKey: 'accept-object-task-create:item',
+          proposedPayload: { type: 'task', canonicalName: 'Send Acme deck' },
+        },
+      ],
+    });
+    const [duplicate] = await db
+      .insert(agentSuggestions)
+      .values({
+        teamId: TEAM_ID,
+        source: 'background',
+        title: 'Create task',
+        dedupeKey: 'accept-task-create-duplicate',
+        visibility: 'team',
+      })
+      .returning();
+    expect(duplicate).toBeDefined();
+    const [duplicateItem] = await db
+      .insert(agentSuggestionItems)
+      .values({
+        suggestionId: duplicate?.id ?? '',
+        teamId: TEAM_ID,
+        operation: 'create',
+        targetKind: 'task',
+        title: 'Send Acme deck',
+        dedupeKey: 'accept-task-create-duplicate:item',
+        proposedPayload: { canonicalName: 'Send Acme deck' },
+      })
+      .returning();
+    await db.insert(agentSuggestionEvidence).values({
+      suggestionId: duplicate?.id ?? '',
+      teamId: TEAM_ID,
+      rawEventId: duplicateRawEventId,
+      quote: 'Reminder to send Acme deck',
+    });
+
+    await expect(scope.suggestions.acceptSuggestionItem(survivor.items[0]?.id ?? '')).resolves.toBe(
+      true,
+    );
+
+    const [duplicateRow] = await db
+      .select({
+        status: agentSuggestionItems.status,
+        supersededByItemId: agentSuggestionItems.supersededByItemId,
+      })
+      .from(agentSuggestionItems)
+      .where(eq(agentSuggestionItems.id, duplicateItem?.id ?? ''));
+    expect(duplicateRow).toEqual({
+      status: 'superseded',
+      supersededByItemId: survivor.items[0]?.id ?? null,
+    });
+    const loadedSurvivor = await scope.suggestions.getSuggestion(survivor.id);
+    expect(loadedSurvivor?.evidence.map((ev) => ev.rawEventId).sort()).toEqual([
+      acceptedRawEventId,
+      duplicateRawEventId,
+    ]);
+    expect(loadedSurvivor?.metadata.merged_duplicate_suggestions).toMatchObject([
+      { id: duplicate?.id, title: 'Create task' },
     ]);
   });
 
