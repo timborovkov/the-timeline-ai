@@ -105,7 +105,13 @@ export default async function TasksPage({
   ];
 
   return (
-    <div className="space-y-5">
+    <div
+      className={
+        rows.length > 0
+          ? '-mx-4 -my-6 flex h-[calc(100dvh-3.5rem)] min-w-0 flex-col md:-mx-8 md:-my-8'
+          : 'space-y-5'
+      }
+    >
       <IndexStrip
         srLabel={srSegments.join(' · ')}
         segments={[
@@ -120,7 +126,7 @@ export default async function TasksPage({
             : ([] as const)),
         ]}
         leading={WORK_BACK_LINK}
-        className="shrink-0"
+        className={rows.length > 0 ? 'w-full shrink-0 px-4 md:px-8' : 'shrink-0'}
       />
 
       {rows.length === 0 ? (
@@ -135,7 +141,7 @@ export default async function TasksPage({
           action="Capture a follow-up"
         />
       ) : (
-        <div className="h-[calc(100dvh-16rem)] min-h-[24rem]">
+        <div className="min-h-0 flex-1">
           <TaskBoard
             rows={rows}
             columns={TASK_COLUMNS}
@@ -155,7 +161,10 @@ export default async function TasksPage({
               singular: 'pending task proposal',
               plural: 'pending task proposals',
             },
-            className: 'border-t border-border pt-4',
+            className:
+              rows.length > 0
+                ? 'mx-4 border-t border-border pt-4 md:mx-8'
+                : 'border-t border-border pt-4',
           }}
         />
       ) : null}
