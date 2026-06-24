@@ -310,6 +310,44 @@ describe('parseForwardedChain', () => {
     ]);
   });
 
+  it('keeps an outer Outlook-style forward before nested explicit markers', () => {
+    const text = [
+      'FYI',
+      '',
+      'From: Procurement <procurement@vendor.example>',
+      'Sent: Wednesday, June 17, 2026 4:05 PM',
+      'To: Tim <tim@team.example>',
+      'Subject: Renewal quote',
+      '',
+      'Please review the attached context.',
+      '',
+      '---------- Forwarded message ---------',
+      'From: Ada Lovelace <ada@example.com>',
+      'Date: Wed, Jun 17, 2026 at 2:15 PM',
+      'Subject: Launch checklist',
+      'To: Procurement <procurement@vendor.example>',
+      '',
+      'The launch checklist is approved.',
+    ].join('\n');
+
+    expect(parseForwardedChain({ subject: 'FW: Renewal quote', textBody: text })).toEqual([
+      {
+        from: { email: 'procurement@vendor.example', name: 'Procurement' },
+        date: 'Wednesday, June 17, 2026 4:05 PM',
+        subject: 'Renewal quote',
+        to: [{ email: 'tim@team.example', name: 'Tim' }],
+        body: 'Please review the attached context.',
+      },
+      {
+        from: { email: 'ada@example.com', name: 'Ada Lovelace' },
+        date: 'Wed, Jun 17, 2026 at 2:15 PM',
+        subject: 'Launch checklist',
+        to: [{ email: 'procurement@vendor.example', name: 'Procurement' }],
+        body: 'The launch checklist is approved.',
+      },
+    ]);
+  });
+
   it('does not treat ordinary reply text as a forwarded chain', () => {
     expect(
       parseForwardedChain({

@@ -329,12 +329,17 @@ function forwardedCandidates(lines: IndexedLine[], includeOutlook: boolean): For
       }
     }
   }
-  if (markedCandidates.length > 0 || !includeOutlook) return markedCandidates;
+  if (!includeOutlook) return markedCandidates;
 
   const candidates: ForwardedCandidate[] = [];
+  const firstMarkedLine =
+    markedCandidates.length > 0
+      ? Math.min(...markedCandidates.map((candidate) => candidate.markerLine))
+      : Number.POSITIVE_INFINITY;
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     if (!line) continue;
+    if (i >= firstMarkedLine) break;
     if (
       !usedHeaderLines.has(i) &&
       isHeaderLine(line.text, 'from') &&
@@ -344,7 +349,7 @@ function forwardedCandidates(lines: IndexedLine[], includeOutlook: boolean): For
       usedHeaderLines.add(i);
     }
   }
-  return candidates;
+  return [...candidates, ...markedCandidates].sort((a, b) => a.markerLine - b.markerLine);
 }
 
 function isForwardedMarker(line: string): boolean {
