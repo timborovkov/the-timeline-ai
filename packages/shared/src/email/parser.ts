@@ -13,6 +13,15 @@ export interface ParsedAddress {
   name?: string;
 }
 
+export interface ForwardedMessage {
+  from: ParsedAddress;
+  to?: ParsedAddress[];
+  cc?: ParsedAddress[];
+  subject?: string;
+  date?: string;
+  body?: string;
+}
+
 /**
  * Header lookup is case-insensitive — the wire format is mixed-case in
  * practice (Mail clients shotgun "Message-ID", "Message-Id", "MESSAGE-ID").
@@ -188,6 +197,8 @@ export function parseForwardedFrom(opts: {
   subject: string;
   textBody: string;
 }): ParsedAddress | null {
+  const first = parseForwardedChain(opts)[0];
+  if (first) return first.from;
   const { subject, textBody } = opts;
   if (!textBody) return null;
 
@@ -232,6 +243,242 @@ export function parseForwardedFrom(opts: {
   const addr = ADDR_RE.exec(rawFrom);
   if (addr?.[1]) return { email: normalizeEmail(addr[1]) };
   return null;
+}
+
+export function parseForwardedChain(opts: {
+  subject: string;
+  textBody: string;
+}): ForwardedMessage[] {
+  const { subject, textBody } = opts;
+  if (!textBody) return [];
+  const lines = indexedLines(textBody);
+  const candidates = forwardedCandidates(lines, /^(?:fw|fwd):/i.test(subject.trim()));
+  const parsed: ParsedForwardedCandidate[] = [];
+  for (const candidate of candidates) {
+    const message = parseForwardedCandidate(lines, candidate);
+    if (message) parsed.push(message);
+  }
+  const out: ForwardedMessage[] = [];
+  for (let i = 0; i < parsed.length; i++) {
+    const item = parsed[i];
+    if (!item) continue;
+    const next = parsed[i + 1];
+    const bodyEnd = next ? next.markerStart : textBody.length;
+    const body = textBody.slice(item.bodyStart, bodyEnd).trim();
+    const msg: ForwardedMessage = { from: item.from };
+    if (item.to.length > 0) msg.to = item.to;
+    if (item.cc.length > 0) msg.cc = item.cc;
+    if (item.subject) msg.subject = item.subject;
+    if (item.date) msg.date = item.date;
+    if (body) msg.body = body;
+    out.push(msg);
+  }
+  return out;
+}
+
+interface IndexedLine {
+  text: string;
+  start: number;
+  end: number;
+  nextStart: number;
+}
+
+interface ForwardedCandidate {
+  markerLine: number;
+  headerLine: number;
+}
+
+interface ParsedForwardedCandidate extends ForwardedMessage {
+  markerStart: number;
+  bodyStart: number;
+  to: ParsedAddress[];
+  cc: ParsedAddress[];
+}
+
+function indexedLines(text: string): IndexedLine[] {
+  const lines: IndexedLine[] = [];
+  const re = /.*(?:\r?\n|$)/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) {
+    const raw = m[0];
+    if (!raw && m.index === text.length) break;
+    const lineBreak = /\r?\n$/.exec(raw)?.[0] ?? '';
+    const end = m.index + raw.length - lineBreak.length;
+    lines.push({
+      text: raw.slice(0, raw.length - lineBreak.length),
+      start: m.index,
+      end,
+      nextStart: m.index + raw.length,
+    });
+    if (m.index + raw.length >= text.length) break;
+  }
+  return lines;
+}
+
+function forwardedCandidates(lines: IndexedLine[], includeOutlook: boolean): ForwardedCandidate[] {
+  const candidates: ForwardedCandidate[] = [];
+  const usedHeaderLines = new Set<number>();
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (!line) continue;
+    if (isForwardedMarker(line.text)) {
+      const headerLine = findNextHeaderLine(lines, i + 1);
+      if (headerLine !== -1 && !usedHeaderLines.has(headerLine)) {
+        candidates.push({ markerLine: i, headerLine });
+        usedHeaderLines.add(headerLine);
+      }
+      continue;
+    }
+    if (
+      includeOutlook &&
+      !usedHeaderLines.has(i) &&
+      isHeaderLine(line.text, 'from') &&
+      looksLikeOutlookForward(lines, i)
+    ) {
+      candidates.push({ markerLine: i, headerLine: i });
+      usedHeaderLines.add(i);
+    }
+  }
+  return candidates;
+}
+
+function isForwardedMarker(line: string): boolean {
+  return (
+    /[-_=]{2,}\s*forwarded message\s*[-_=]{0,}/i.test(line) ||
+    /begin forwarded message:/i.test(line)
+  );
+}
+
+function findNextHeaderLine(lines: IndexedLine[], start: number): number {
+  for (let i = start; i < Math.min(lines.length, start + 10); i++) {
+    const line = lines[i];
+    if (!line) continue;
+    if (isHeaderLine(line.text, 'from')) return i;
+    if (line.text.trim() && !/^[>\s]*$/.test(line.text)) continue;
+  }
+  return -1;
+}
+
+function looksLikeOutlookForward(lines: IndexedLine[], fromLine: number): boolean {
+  let hasDate = false;
+  let hasRecipientOrSubject = false;
+  for (let i = fromLine + 1; i < Math.min(lines.length, fromLine + 8); i++) {
+    const text = lines[i]?.text ?? '';
+    if (!text.trim()) break;
+    if (isHeaderLine(text, 'sent') || isHeaderLine(text, 'date')) hasDate = true;
+    if (isHeaderLine(text, 'to') || isHeaderLine(text, 'subject')) hasRecipientOrSubject = true;
+  }
+  return hasDate && hasRecipientOrSubject;
+}
+
+function isHeaderLine(line: string, name: string): boolean {
+  return new RegExp(`^\\s*${name}\\s*:`, 'i').test(line);
+}
+
+function parseForwardedCandidate(
+  lines: IndexedLine[],
+  candidate: ForwardedCandidate,
+): ParsedForwardedCandidate | null {
+  const headers: Record<string, string> = {};
+  let currentKey: string | null = null;
+  let bodyLine = candidate.headerLine + 1;
+  for (let i = candidate.headerLine; i < lines.length; i++) {
+    const line = lines[i];
+    if (!line) break;
+    const text = line.text;
+    if (!text.trim()) {
+      bodyLine = i + 1;
+      break;
+    }
+    const match = /^\s*([A-Za-z][A-Za-z-]{0,40})\s*:\s*(.*)$/.exec(text);
+    if (match?.[1]) {
+      const key = normalizeForwardedHeaderName(match[1]);
+      if (!key) {
+        bodyLine = i;
+        break;
+      }
+      headers[key] = headers[key]
+        ? `${headers[key]} ${match[2]?.trim() ?? ''}`
+        : (match[2]?.trim() ?? '');
+      currentKey = key;
+      bodyLine = i + 1;
+      continue;
+    }
+    if (/^\s+/.test(text) && currentKey) {
+      headers[currentKey] = `${headers[currentKey]} ${text.trim()}`.trim();
+      bodyLine = i + 1;
+      continue;
+    }
+    bodyLine = i;
+    break;
+  }
+  const from = parseAddress(headers.from);
+  if (!from) return null;
+  const parsed: ParsedForwardedCandidate = {
+    markerStart: lines[candidate.markerLine]?.start ?? lines[candidate.headerLine]?.start ?? 0,
+    bodyStart: lines[bodyLine]?.start ?? lines.at(-1)?.nextStart ?? 0,
+    from,
+    to: parseAddressList(headers.to),
+    cc: parseAddressList(headers.cc),
+  };
+  const subject = cleanHeaderValue(headers.subject);
+  const date = cleanHeaderValue(headers.date ?? headers.sent);
+  if (subject) parsed.subject = subject;
+  if (date) parsed.date = date;
+  return parsed;
+}
+
+function normalizeForwardedHeaderName(raw: string): string | null {
+  const key = raw.trim().toLowerCase();
+  if (key === 'from') return 'from';
+  if (key === 'to') return 'to';
+  if (key === 'cc') return 'cc';
+  if (key === 'subject') return 'subject';
+  if (key === 'date') return 'date';
+  if (key === 'sent') return 'sent';
+  return null;
+}
+
+function cleanHeaderValue(raw: string | undefined): string | undefined {
+  const value = raw?.replace(/\s+/g, ' ').trim();
+  return value && value.length > 0 ? value : undefined;
+}
+
+function parseAddress(raw: string | undefined): ParsedAddress | null {
+  const value = cleanHeaderValue(raw);
+  if (!value) return null;
+  const named = NAME_AND_ADDR_RE.exec(value);
+  if (named?.[1] && named[2]) {
+    return { email: normalizeEmail(named[2]), name: named[1].trim() };
+  }
+  const addr = ADDR_RE.exec(value);
+  if (addr?.[1]) return { email: normalizeEmail(addr[1]) };
+  return null;
+}
+
+function parseAddressList(raw: string | undefined): ParsedAddress[] {
+  const value = cleanHeaderValue(raw);
+  if (!value) return [];
+  const out: ParsedAddress[] = [];
+  const seen = new Set<string>();
+  const namedRe = /"?([^"<>]+?)"?\s*<\s*([^>\s]+@[^>\s]+)\s*>/g;
+  let m: RegExpExecArray | null;
+  while ((m = namedRe.exec(value)) !== null) {
+    const email = normalizeEmail(m[2]);
+    if (m[1] && email && !seen.has(email)) {
+      seen.add(email);
+      out.push({ email, name: m[1].trim() });
+    }
+  }
+  const addrRe = /([^<>,\s]+@[^<>,\s]+)/g;
+  while ((m = addrRe.exec(value)) !== null) {
+    const email = normalizeEmail(m[1]);
+    if (email && !seen.has(email)) {
+      seen.add(email);
+      out.push({ email });
+    }
+  }
+  return out;
 }
 
 /**
@@ -350,6 +597,19 @@ export function chooseContentText(payload: PostmarkInbound): string {
   // carry the actual message the sender pasted in. The chain is:
   //   StrippedTextReply (Postmark's tuned stripper) → stripQuotedReply(TextBody)
   //   → htmlToText(HtmlBody) → ''.
+  const forwarded = parseForwardedChain({
+    subject: payload.Subject,
+    textBody: payload.TextBody,
+  });
+  if (forwarded.length > 0) {
+    const intro =
+      payload.StrippedTextReply.trim() ||
+      forwardedIntro({
+        subject: payload.Subject,
+        textBody: payload.TextBody,
+      });
+    return [intro, renderForwardedMessages(forwarded)].filter(Boolean).join('\n\n').trim();
+  }
   const stripped = payload.StrippedTextReply.trim();
   if (stripped) return stripped;
   if (payload.TextBody.trim()) {
@@ -361,6 +621,41 @@ export function chooseContentText(payload: PostmarkInbound): string {
     if (out) return out;
   }
   return '';
+}
+
+function forwardedIntro(opts: { subject: string; textBody: string }): string {
+  const { subject, textBody } = opts;
+  const lines = indexedLines(textBody);
+  const candidates = forwardedCandidates(lines, /^(?:fw|fwd):/i.test(subject.trim()));
+  const first = candidates[0];
+  if (!first) return '';
+  const start = lines[first.markerLine]?.start ?? lines[first.headerLine]?.start ?? 0;
+  return textBody.slice(0, start).trim();
+}
+
+function renderForwardedMessages(messages: ForwardedMessage[]): string {
+  return messages
+    .map((message, index) => {
+      const lines = [
+        `Forwarded message ${index + 1}:`,
+        `From: ${formatParsedAddress(message.from)}`,
+      ];
+      if (message.date) lines.push(`Date: ${message.date}`);
+      if (message.subject) lines.push(`Subject: ${message.subject}`);
+      if (message.to && message.to.length > 0) {
+        lines.push(`To: ${message.to.map(formatParsedAddress).join(', ')}`);
+      }
+      if (message.cc && message.cc.length > 0) {
+        lines.push(`Cc: ${message.cc.map(formatParsedAddress).join(', ')}`);
+      }
+      if (message.body) lines.push('', message.body);
+      return lines.join('\n');
+    })
+    .join('\n\n');
+}
+
+function formatParsedAddress(addr: ParsedAddress): string {
+  return addr.name ? `${addr.name} <${addr.email}>` : addr.email;
 }
 
 /**
