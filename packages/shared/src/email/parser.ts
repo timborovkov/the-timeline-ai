@@ -316,7 +316,7 @@ function indexedLines(text: string): IndexedLine[] {
 }
 
 function forwardedCandidates(lines: IndexedLine[], includeOutlook: boolean): ForwardedCandidate[] {
-  const candidates: ForwardedCandidate[] = [];
+  const markedCandidates: ForwardedCandidate[] = [];
   const usedHeaderLines = new Set<number>();
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
@@ -324,13 +324,18 @@ function forwardedCandidates(lines: IndexedLine[], includeOutlook: boolean): For
     if (isForwardedMarker(line.text)) {
       const headerLine = findNextHeaderLine(lines, i + 1);
       if (headerLine !== -1 && !usedHeaderLines.has(headerLine)) {
-        candidates.push({ markerLine: i, headerLine });
+        markedCandidates.push({ markerLine: i, headerLine });
         usedHeaderLines.add(headerLine);
       }
-      continue;
     }
+  }
+  if (markedCandidates.length > 0 || !includeOutlook) return markedCandidates;
+
+  const candidates: ForwardedCandidate[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (!line) continue;
     if (
-      includeOutlook &&
       !usedHeaderLines.has(i) &&
       isHeaderLine(line.text, 'from') &&
       looksLikeOutlookForward(lines, i)
@@ -603,7 +608,10 @@ export function chooseContentText(payload: PostmarkInbound): string {
   });
   if (forwarded.length > 0) {
     const intro =
-      payload.StrippedTextReply.trim() ||
+      strippedForwardedIntro({
+        subject: payload.Subject,
+        textBody: payload.StrippedTextReply,
+      }) ||
       forwardedIntro({
         subject: payload.Subject,
         textBody: payload.TextBody,
@@ -621,6 +629,14 @@ export function chooseContentText(payload: PostmarkInbound): string {
     if (out) return out;
   }
   return '';
+}
+
+function strippedForwardedIntro(opts: { subject: string; textBody: string }): string {
+  const stripped = opts.textBody.trim();
+  if (!stripped) return '';
+  const forwarded = parseForwardedChain(opts);
+  if (forwarded.length === 0) return stripped;
+  return forwardedIntro(opts);
 }
 
 function forwardedIntro(opts: { subject: string; textBody: string }): string {

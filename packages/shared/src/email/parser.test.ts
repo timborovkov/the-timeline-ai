@@ -274,6 +274,42 @@ describe('parseForwardedChain', () => {
     ]);
   });
 
+  it('does not add Outlook-looking signatures when explicit forwarded markers exist', () => {
+    const text = [
+      'Team, see below.',
+      '',
+      '---------- Forwarded message ---------',
+      'From: Ada Lovelace <ada@example.com>',
+      'Date: Wed, Jun 17, 2026 at 2:15 PM',
+      'Subject: Launch checklist',
+      'To: Tim <tim@team.example>',
+      '',
+      'The launch checklist is approved.',
+      '',
+      'From: Tim Borovkov <tim@team.example>',
+      'Sent: Wednesday, June 17, 2026 5:05 PM',
+      'To: Operations <ops@team.example>',
+      'Subject: Signature footer',
+    ].join('\n');
+
+    expect(parseForwardedChain({ subject: 'Fwd: Launch checklist', textBody: text })).toEqual([
+      {
+        from: { email: 'ada@example.com', name: 'Ada Lovelace' },
+        date: 'Wed, Jun 17, 2026 at 2:15 PM',
+        subject: 'Launch checklist',
+        to: [{ email: 'tim@team.example', name: 'Tim' }],
+        body: [
+          'The launch checklist is approved.',
+          '',
+          'From: Tim Borovkov <tim@team.example>',
+          'Sent: Wednesday, June 17, 2026 5:05 PM',
+          'To: Operations <ops@team.example>',
+          'Subject: Signature footer',
+        ].join('\n'),
+      },
+    ]);
+  });
+
   it('does not treat ordinary reply text as a forwarded chain', () => {
     expect(
       parseForwardedChain({
@@ -317,6 +353,39 @@ describe('chooseContentText', () => {
     expect(chooseContentText(payload)).toContain('Team, see below.');
     expect(chooseContentText(payload)).toContain('From: Ada Lovelace <ada@example.com>');
     expect(chooseContentText(payload)).toContain('The launch checklist is approved.');
+  });
+
+  it('does not duplicate forwarded blocks left inside StrippedTextReply', () => {
+    const payload = parse({
+      Subject: 'Fwd: Launch checklist',
+      StrippedTextReply: [
+        'Team, see below.',
+        '',
+        '---------- Forwarded message ---------',
+        'From: Ada Lovelace <ada@example.com>',
+        'Date: Wed, Jun 17, 2026 at 2:15 PM',
+        'Subject: Launch checklist',
+        'To: Tim <tim@team.example>',
+        '',
+        'The launch checklist is approved.',
+      ].join('\n'),
+      TextBody: [
+        'Team, see below.',
+        '',
+        '---------- Forwarded message ---------',
+        'From: Ada Lovelace <ada@example.com>',
+        'Date: Wed, Jun 17, 2026 at 2:15 PM',
+        'Subject: Launch checklist',
+        'To: Tim <tim@team.example>',
+        '',
+        'The launch checklist is approved.',
+      ].join('\n'),
+    });
+
+    const content = chooseContentText(payload);
+    expect(content).toContain('Team, see below.');
+    expect(content.match(/From: Ada Lovelace <ada@example.com>/g)).toHaveLength(1);
+    expect(content.match(/The launch checklist is approved\./g)).toHaveLength(1);
   });
 
   it('keeps the forwarder intro for Outlook-style forwards without StrippedTextReply', () => {
