@@ -115,9 +115,23 @@ async function ghGet<T>(tokens: GithubTokens, path: string): Promise<T> {
   });
   const text = await res.text();
   if (!res.ok) {
-    throw new Error(`GitHub GET ${path} ${String(res.status)}: ${text}`);
+    throw new Error(githubErrorMessage(path, res.status, text));
   }
   return JSON.parse(text) as T;
+}
+
+function githubErrorMessage(path: string, status: number, body: string): string {
+  if ((status === 401 || status === 403) && /^\/repos\/[^/]+\/[^/]+\/pulls(?:\?|$)/u.test(path)) {
+    return `GitHub Pull requests read permission required; update the GitHub App repository permissions and reconnect (GET ${path} ${String(status)}): ${body}`;
+  }
+  return `GitHub GET ${path} ${String(status)}: ${body}`;
+}
+
+function summarizeGithubFailure(message: string): string {
+  if (message.includes('Pull requests read permission required')) {
+    return 'Pull requests read permission required; update GitHub App repository permissions and reconnect';
+  }
+  return message.slice(0, 80);
 }
 
 interface GhRepo {
@@ -696,7 +710,7 @@ async function syncRepo(
   if (failures.length > 0) {
     throw new Error(
       `github_repo_sync_partial:${repo}: ${failures
-        .map((f) => `${f.area} (${f.error.slice(0, 80)})`)
+        .map((f) => `${f.area} (${summarizeGithubFailure(f.error)})`)
         .join('; ')
         .slice(0, 400)}`,
     );
@@ -872,7 +886,7 @@ export const githubProvider: IntegrationProvider = {
     if (failures.length > 0) {
       throw new Error(
         `github_backfill_partial: ${String(failures.length)} repo(s) failed: ${failures
-          .map((f) => `${f.repo} (${f.error.slice(0, 80)})`)
+          .map((f) => `${f.repo} (${summarizeGithubFailure(f.error)})`)
           .join('; ')
           .slice(0, 400)}`,
       );
@@ -903,7 +917,7 @@ export const githubProvider: IntegrationProvider = {
     if (failures.length > 0) {
       throw new Error(
         `github_incremental_partial: ${String(failures.length)} repo(s) failed: ${failures
-          .map((f) => `${f.repo} (${f.error.slice(0, 80)})`)
+          .map((f) => `${f.repo} (${summarizeGithubFailure(f.error)})`)
           .join('; ')
           .slice(0, 400)}`,
       );

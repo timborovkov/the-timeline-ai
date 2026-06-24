@@ -154,6 +154,13 @@ LINEAR_WEBHOOK_SECRET=...</code></pre>
           <code>read:org</code>.
         </li>
         <li>
+          If you configure Timeline with a GitHub App client, grant repository read permissions for
+          Contents, Issues, Pull requests, Actions, and Metadata. Missing Pull requests read access
+          causes the worker to fail repo sync with <code>github_incremental_partial</code> on the
+          <code>/pulls</code> endpoint even when commits, issues, releases, and workflow runs are
+          readable.
+        </li>
+        <li>
           Copy the OAuth app <strong>Client ID</strong> and generate/copy a
           <strong>Client secret</strong>.
         </li>

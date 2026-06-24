@@ -586,6 +586,36 @@ describe('githubProvider.incrementalSync', () => {
     ).toBe(false);
   });
 
+  it('surfaces the missing GitHub App pull request permission clearly', async () => {
+    const fetchMock = vi.fn<typeof fetch>((input) => {
+      const requestUrl =
+        typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+      const url = new URL(requestUrl);
+      if (url.pathname.endsWith('/pulls') && url.searchParams.get('state') === 'open') {
+        return Promise.resolve(jsonResponse({ message: 'Bad credentials' }, 401));
+      }
+      if (url.pathname.endsWith('/commits')) return Promise.resolve(jsonResponse([]));
+      const base = emptyGithubFetch(input);
+      return Promise.resolve(base ?? jsonResponse({ message: 'unexpected' }, 404));
+    });
+    globalThis.fetch = fetchMock;
+
+    await expect(
+      githubProvider.incrementalSync({
+        integration: {} as never,
+        tokens: { access_token: 'gho_token' },
+        selections: [{ kind: 'github.repo', externalId: 'acme/app' }],
+        ctx: {
+          writeEvents: vi.fn().mockResolvedValue([]),
+          recordAudit: vi.fn(),
+          saveCursor: vi.fn().mockResolvedValue(undefined),
+          loadCursor: vi.fn().mockResolvedValue({}),
+          persistTokens: vi.fn(),
+        },
+      }),
+    ).rejects.toThrow('Pull requests read permission required');
+  });
+
   it('captures release publish transitions even when the release id was already seen', async () => {
     const fetchMock = vi.fn<typeof fetch>((input) => {
       const requestUrl =

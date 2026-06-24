@@ -154,6 +154,28 @@ describe('runOneIntegration attention classification', () => {
     );
   });
 
+  it('classifies GitHub pull-request permission partial syncs as reconnect-needed attention', async () => {
+    const errorMessage =
+      'github_incremental_partial: 1 repo(s) failed: acme/app (github_repo_sync_partial:acme/app: prs:open (Pull requests read permission required; update GitHub App repository permissions and reconnect))';
+    fakes.incrementalSync.mockRejectedValueOnce(new Error(errorMessage));
+
+    await expect(runOneIntegration({} as never, INTEGRATION_ID, 'incremental')).rejects.toThrow(
+      'Pull requests read permission required',
+    );
+
+    expect(fakes.adminRecordConnectionAttention).toHaveBeenCalledWith(
+      expect.anything(),
+      TEAM_ID,
+      expect.objectContaining({
+        providerConnectionId: CONNECTION_ID,
+        integrationId: INTEGRATION_ID,
+        category: 'needs_reconnect',
+        summary: errorMessage,
+      }),
+    );
+    expect(fakes.adminRecordTransientSyncFailure).not.toHaveBeenCalled();
+  });
+
   it('does not create sync_error attention for the first two transient provider failures', async () => {
     fakes.incrementalSync.mockRejectedValueOnce(new Error('GitHub temporarily overloaded'));
     fakes.adminRecordTransientSyncFailure.mockResolvedValueOnce({
