@@ -19,7 +19,9 @@ function requestPayload(init: RequestInit | undefined): {
   variables?: Record<string, unknown>;
 } {
   if (typeof init?.body !== 'string') throw new Error('expected JSON request body');
-  return JSON.parse(init.body) as { query: string; variables?: Record<string, unknown> };
+  const payload = JSON.parse(init.body) as { query: string; variables?: Record<string, unknown> };
+  expect(payload.query).not.toMatch(/\bemail\b/);
+  return payload;
 }
 
 function requestUrl(input: Parameters<typeof fetch>[0]): string {
@@ -57,6 +59,78 @@ describe('mondayProvider', () => {
     );
     expect(url.searchParams.get('scope')).toBe('boards:read users:read updates:read docs:read');
     expect(url.searchParams.get('state')).toBe('signed-state');
+  });
+
+  it('exchanges a monday.com OAuth code and labels the connection from the viewer', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>((input, init) => {
+      if (requestUrl(input) === 'https://auth.monday.com/oauth2/token') {
+        const body = typeof init?.body === 'string' ? new URLSearchParams(init.body) : null;
+        expect(body?.get('grant_type')).toBe('authorization_code');
+        expect(body?.get('code')).toBe('oauth-code');
+        expect(body?.get('redirect_uri')).toBe(
+          'https://timeline.test/api/integrations/monday/callback',
+        );
+        return Promise.resolve(
+          jsonResponse({
+            access_token: 'token',
+            refresh_token: 'refresh',
+            expires_in: 3600,
+          }),
+        );
+      }
+
+      const body = requestPayload(init);
+      expect(body.query).toBe('query { me { id name } }');
+      return Promise.resolve(
+        jsonResponse({
+          data: {
+            me: { id: 'user-1', name: 'Ada Lovelace' },
+          },
+        }),
+      );
+    });
+    vi.stubGlobal('fetch', fetch);
+
+    const result = await mondayProvider.handleOAuthCallback({
+      code: 'oauth-code',
+      redirectUri: 'https://timeline.test/api/integrations/monday/callback',
+    });
+
+    expect(result).toMatchObject({
+      externalAccountId: 'user-1',
+      displayName: 'Monday.com — Ada Lovelace',
+      scopes: ['boards:read', 'users:read', 'updates:read', 'docs:read'],
+    });
+    expect(result.tokens).toMatchObject({
+      access_token: 'token',
+      refresh_token: 'refresh',
+    });
+  });
+
+  it('connects monday.com from token metadata when the viewer query is unauthorized', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>((input, init) => {
+      if (requestUrl(input) === 'https://auth.monday.com/oauth2/token') {
+        return Promise.resolve(
+          jsonResponse({
+            access_token: 'token',
+            account_id: 'account-1',
+          }),
+        );
+      }
+
+      const body = requestPayload(init);
+      expect(body.query).toBe('query { me { id name } }');
+      return Promise.resolve(jsonResponse({ errors: [{ message: 'Unauthorized field or type' }] }));
+    });
+    vi.stubGlobal('fetch', fetch);
+
+    const result = await mondayProvider.handleOAuthCallback({
+      code: 'oauth-code',
+      redirectUri: 'https://timeline.test/api/integrations/monday/callback',
+    });
+
+    expect(result.externalAccountId).toBe('account-1');
+    expect(result.displayName).toBe('Monday.com — account-1');
   });
 
   it('lists boards and WorkDocs as syncable resources', async () => {

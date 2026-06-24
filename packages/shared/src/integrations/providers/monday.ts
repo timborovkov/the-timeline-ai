@@ -28,6 +28,11 @@ interface MondayTokens {
   expires_at?: number;
 }
 
+interface MondayIdentity {
+  id?: string;
+  name?: string;
+}
+
 interface MondayWorkspace {
   id?: string;
   name?: string;
@@ -68,7 +73,7 @@ interface MondayUpdate {
   body?: string | null;
   created_at?: string;
   updated_at?: string | null;
-  creator?: { id?: string; name?: string; email?: string | null } | null;
+  creator?: { id?: string; name?: string } | null;
 }
 
 interface MondayItem {
@@ -76,7 +81,7 @@ interface MondayItem {
   name: string;
   updated_at?: string;
   url?: string;
-  creator?: { id?: string; name?: string; email?: string | null } | null;
+  creator?: { id?: string; name?: string } | null;
   parent_item?: { id?: string; name?: string } | null;
   column_values?: MondayColumnValue[];
   updates?: MondayUpdate[];
@@ -109,7 +114,7 @@ interface MondayDoc {
   doc_kind?: string;
   workspace?: MondayWorkspace | null;
   workspace_id?: string | null;
-  created_by?: { id?: string; name?: string; email?: string | null } | null;
+  created_by?: { id?: string; name?: string } | null;
   blocks?: MondayDocBlock[];
 }
 
@@ -131,16 +136,16 @@ interface NormalizedColumn {
 
 const ITEM_FIELDS = `
   id name updated_at url
-  creator { id name email }
+  creator { id name }
   parent_item { id name }
   column_values { id text type value updated_at }
-  updates(limit: ${String(UPDATE_LIMIT)}) { id body created_at updated_at creator { id name email } }
+  updates(limit: ${String(UPDATE_LIMIT)}) { id body created_at updated_at creator { id name } }
   subitems {
     id name updated_at url
-    creator { id name email }
+    creator { id name }
     parent_item { id name }
     column_values { id text type value updated_at }
-    updates(limit: ${String(UPDATE_LIMIT)}) { id body created_at updated_at creator { id name email } }
+    updates(limit: ${String(UPDATE_LIMIT)}) { id body created_at updated_at creator { id name } }
   }
 `;
 
@@ -194,6 +199,20 @@ async function gql<T>(
   }
   if (!json.data) throw new Error('Monday GraphQL returned no data');
   return json.data;
+}
+
+function isMondayUnauthorizedFieldError(error: unknown): boolean {
+  return error instanceof Error && /Unauthorized field or type/i.test(error.message);
+}
+
+async function fetchViewerIdentity(tokens: MondayTokens): Promise<MondayIdentity | null> {
+  try {
+    const data = await gql<{ me?: MondayIdentity }>(tokens, 'query { me { id name } }');
+    return data.me ?? null;
+  } catch (error) {
+    if (!isMondayUnauthorizedFieldError(error)) throw error;
+    return null;
+  }
 }
 
 function stringValue(value: unknown): string | null {
@@ -293,13 +312,12 @@ function mondayStatus(text?: string | null): NonNullable<ObjectMapping['status']
 }
 
 function actor(
-  input?: { id?: string; name?: string; email?: string | null } | null,
-): { externalId?: string; name?: string; email?: string } | null {
+  input?: { id?: string; name?: string } | null,
+): { externalId?: string; name?: string } | null {
   if (!input) return null;
   return {
     ...(input.id ? { externalId: input.id } : {}),
     ...(input.name ? { name: input.name } : {}),
-    ...(input.email ? { email: input.email } : {}),
   };
 }
 
@@ -677,7 +695,7 @@ async function fetchDocPage(
       docs(ids: $ids) {
         id object_id name doc_kind created_at updated_at url relative_url workspace_id
         workspace { id name }
-        created_by { id name email }
+        created_by { id name }
         blocks(limit: $blockLimit, page: $blockPage) {
           id type content position created_at updated_at parent_block_id
         }
@@ -838,14 +856,12 @@ export const mondayProvider: IntegrationProvider = {
       redirect_uri: input.redirectUri,
     });
     const tokens = tokenFromBody(body);
-    const me = await gql<{ me?: { id?: string; name?: string; email?: string } }>(
-      tokens,
-      'query { me { id name email } }',
-    );
-    const externalAccountId = me.me?.id ?? 'monday';
+    const me = await fetchViewerIdentity(tokens);
+    const externalAccountId =
+      me?.id ?? stringValue(body.user_id) ?? stringValue(body.account_id) ?? 'monday';
     return {
       externalAccountId,
-      displayName: `Monday.com — ${me.me?.name ?? me.me?.email ?? externalAccountId}`,
+      displayName: `Monday.com — ${me?.name ?? externalAccountId}`,
       scopes: SCOPES,
       tokens: tokens as unknown as Record<string, unknown>,
     };
