@@ -182,6 +182,14 @@ SUPPORT_EMAIL=contact@thetimeline.cc
           thread.
         </li>
         <li>
+          Parses forwarded-message chains from Gmail, Apple Mail, and Outlook-style headers. The
+          first forwarded sender remains available as <code>source_metadata.forwarded_from</code>,
+          while the ordered chain is stored as <code>source_metadata.forwarded_chain[]</code> with
+          sender, recipients, subject, date, and body text. Forwarded bodies are included in
+          <code>content_text</code> so extraction, embeddings, and suggestions can evaluate the
+          thread instead of only the forwarder's intro.
+        </li>
+        <li>
           Parses <code>In-Reply-To</code> and <code>References</code> headers and links the row to
           its thread via <code>source_metadata.thread_root_id</code>.
         </li>

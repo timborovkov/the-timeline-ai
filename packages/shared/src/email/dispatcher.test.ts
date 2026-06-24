@@ -132,6 +132,57 @@ describe('email dispatcher', () => {
     });
   });
 
+  it('stores forwarded chains as structured metadata and extraction-visible text', async () => {
+    const queues = textQueueDeps();
+    const payload = inboundPayload('forwarded-chain');
+    payload.Subject = 'Fwd: Launch checklist';
+    payload.StrippedTextReply = 'Team, see the customer thread below.';
+    payload.TextBody = [
+      'Team, see the customer thread below.',
+      '',
+      '---------- Forwarded message ---------',
+      'From: Ada Lovelace <ada@example.com>',
+      'Date: Wed, Jun 17, 2026 at 2:15 PM',
+      'Subject: Re: Launch checklist',
+      'To: Tim <tim@team.example>',
+      '',
+      'The launch checklist is approved.',
+      '',
+      '---------- Forwarded message ---------',
+      'From: Grace Hopper <grace@example.com>',
+      'Date: Wed, Jun 17, 2026 at 1:03 PM',
+      'Subject: Launch checklist',
+      'To: Ada <ada@example.com>',
+      '',
+      'Please confirm the rollout window.',
+    ].join('\n');
+
+    await expect(
+      handleInbound({ db: db as never, inboundDomain: 'inbound.test', ...queues }, payload),
+    ).resolves.toMatchObject({ ok: true, inserted: 1 });
+
+    const [row] = await db.select().from(rawEvents).where(eq(rawEvents.teamId, TEAM_ID));
+    expect(row?.contentText).toContain('Team, see the customer thread below.');
+    expect(row?.contentText).toContain('From: Ada Lovelace <ada@example.com>');
+    expect(row?.contentText).toContain('The launch checklist is approved.');
+    expect(row?.contentText).toContain('Please confirm the rollout window.');
+    expect(row?.sourceMetadata).toMatchObject({
+      forwarded_from: { email: 'ada@example.com', name: 'Ada Lovelace' },
+      forwarded_chain: [
+        expect.objectContaining({
+          from: { email: 'ada@example.com', name: 'Ada Lovelace' },
+          subject: 'Re: Launch checklist',
+          body: 'The launch checklist is approved.',
+        }),
+        expect.objectContaining({
+          from: { email: 'grace@example.com', name: 'Grace Hopper' },
+          subject: 'Launch checklist',
+          body: 'Please confirm the rollout window.',
+        }),
+      ],
+    });
+  });
+
   it('allows whitelisted senders case-insensitively when the whitelist is enabled', async () => {
     await db
       .update(teams)

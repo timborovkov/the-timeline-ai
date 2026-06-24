@@ -7,6 +7,7 @@ import {
   MAX_EMAIL_REFERENCES,
   normalizeMessageId,
   parseAuthenticationResults,
+  parseForwardedChain,
   parseForwardedFrom,
   parseReferences,
   senderAuthVerdict,
@@ -208,6 +209,155 @@ describe('parseForwardedFrom', () => {
   });
 });
 
+describe('parseForwardedChain', () => {
+  it('parses nested Gmail-style forwarded messages with bodies', () => {
+    const text = [
+      'Team, see the customer thread below.',
+      '',
+      '---------- Forwarded message ---------',
+      'From: Ada Lovelace <ada@example.com>',
+      'Date: Wed, Jun 17, 2026 at 2:15 PM',
+      'Subject: Re: Launch checklist',
+      'To: Tim <tim@team.example>',
+      '',
+      'The launch checklist is approved.',
+      '',
+      '---------- Forwarded message ---------',
+      'From: Grace Hopper <grace@example.com>',
+      'Date: Wed, Jun 17, 2026 at 1:03 PM',
+      'Subject: Launch checklist',
+      'To: Ada <ada@example.com>',
+      '',
+      'Please confirm the rollout window.',
+    ].join('\n');
+
+    expect(parseForwardedChain({ subject: 'Fwd: Launch checklist', textBody: text })).toEqual([
+      {
+        from: { email: 'ada@example.com', name: 'Ada Lovelace' },
+        date: 'Wed, Jun 17, 2026 at 2:15 PM',
+        subject: 'Re: Launch checklist',
+        to: [{ email: 'tim@team.example', name: 'Tim' }],
+        body: 'The launch checklist is approved.',
+      },
+      {
+        from: { email: 'grace@example.com', name: 'Grace Hopper' },
+        date: 'Wed, Jun 17, 2026 at 1:03 PM',
+        subject: 'Launch checklist',
+        to: [{ email: 'ada@example.com', name: 'Ada' }],
+        body: 'Please confirm the rollout window.',
+      },
+    ]);
+  });
+
+  it('parses Outlook-style forwarded chains when the subject is forwarded', () => {
+    const text = [
+      'FYI',
+      '',
+      'From: Procurement <procurement@vendor.example>',
+      'Sent: Wednesday, June 17, 2026 4:05 PM',
+      'To: Tim <tim@team.example>, ops@team.example',
+      'Cc: Legal <legal@team.example>',
+      'Subject: Renewal quote',
+      '',
+      'The renewal quote expires Friday.',
+    ].join('\n');
+
+    expect(parseForwardedChain({ subject: 'FW: Renewal quote', textBody: text })).toEqual([
+      {
+        from: { email: 'procurement@vendor.example', name: 'Procurement' },
+        date: 'Wednesday, June 17, 2026 4:05 PM',
+        subject: 'Renewal quote',
+        to: [{ email: 'tim@team.example', name: 'Tim' }, { email: 'ops@team.example' }],
+        cc: [{ email: 'legal@team.example', name: 'Legal' }],
+        body: 'The renewal quote expires Friday.',
+      },
+    ]);
+  });
+
+  it('does not add Outlook-looking signatures when explicit forwarded markers exist', () => {
+    const text = [
+      'Team, see below.',
+      '',
+      '---------- Forwarded message ---------',
+      'From: Ada Lovelace <ada@example.com>',
+      'Date: Wed, Jun 17, 2026 at 2:15 PM',
+      'Subject: Launch checklist',
+      'To: Tim <tim@team.example>',
+      '',
+      'The launch checklist is approved.',
+      '',
+      'From: Tim Borovkov <tim@team.example>',
+      'Sent: Wednesday, June 17, 2026 5:05 PM',
+      'To: Operations <ops@team.example>',
+      'Subject: Signature footer',
+    ].join('\n');
+
+    expect(parseForwardedChain({ subject: 'Fwd: Launch checklist', textBody: text })).toEqual([
+      {
+        from: { email: 'ada@example.com', name: 'Ada Lovelace' },
+        date: 'Wed, Jun 17, 2026 at 2:15 PM',
+        subject: 'Launch checklist',
+        to: [{ email: 'tim@team.example', name: 'Tim' }],
+        body: [
+          'The launch checklist is approved.',
+          '',
+          'From: Tim Borovkov <tim@team.example>',
+          'Sent: Wednesday, June 17, 2026 5:05 PM',
+          'To: Operations <ops@team.example>',
+          'Subject: Signature footer',
+        ].join('\n'),
+      },
+    ]);
+  });
+
+  it('keeps an outer Outlook-style forward before nested explicit markers', () => {
+    const text = [
+      'FYI',
+      '',
+      'From: Procurement <procurement@vendor.example>',
+      'Sent: Wednesday, June 17, 2026 4:05 PM',
+      'To: Tim <tim@team.example>',
+      'Subject: Renewal quote',
+      '',
+      'Please review the attached context.',
+      '',
+      '---------- Forwarded message ---------',
+      'From: Ada Lovelace <ada@example.com>',
+      'Date: Wed, Jun 17, 2026 at 2:15 PM',
+      'Subject: Launch checklist',
+      'To: Procurement <procurement@vendor.example>',
+      '',
+      'The launch checklist is approved.',
+    ].join('\n');
+
+    expect(parseForwardedChain({ subject: 'FW: Renewal quote', textBody: text })).toEqual([
+      {
+        from: { email: 'procurement@vendor.example', name: 'Procurement' },
+        date: 'Wednesday, June 17, 2026 4:05 PM',
+        subject: 'Renewal quote',
+        to: [{ email: 'tim@team.example', name: 'Tim' }],
+        body: 'Please review the attached context.',
+      },
+      {
+        from: { email: 'ada@example.com', name: 'Ada Lovelace' },
+        date: 'Wed, Jun 17, 2026 at 2:15 PM',
+        subject: 'Launch checklist',
+        to: [{ email: 'procurement@vendor.example', name: 'Procurement' }],
+        body: 'The launch checklist is approved.',
+      },
+    ]);
+  });
+
+  it('does not treat ordinary reply text as a forwarded chain', () => {
+    expect(
+      parseForwardedChain({
+        subject: 'Re: Launch checklist',
+        textBody: 'Yes, agreed.\n\nFrom: Tim\nTim Borovkov',
+      }),
+    ).toEqual([]);
+  });
+});
+
 describe('chooseContentText', () => {
   function parse(input: Record<string, unknown>) {
     return postmarkInboundSchema.parse({ MessageID: 'm@x', ...input });
@@ -219,6 +369,82 @@ describe('chooseContentText', () => {
       TextBody: 'just the reply\n\nOn ... wrote:\n> old',
     });
     expect(chooseContentText(payload)).toBe('just the reply');
+  });
+
+  it('keeps forwarded chain content visible when StrippedTextReply only has the intro', () => {
+    const payload = parse({
+      Subject: 'Fwd: Launch checklist',
+      StrippedTextReply: 'Team, see below.',
+      TextBody: [
+        'Team, see below.',
+        '',
+        '---------- Forwarded message ---------',
+        'From: Ada Lovelace <ada@example.com>',
+        'Date: Wed, Jun 17, 2026 at 2:15 PM',
+        'Subject: Re: Launch checklist',
+        'To: Tim <tim@team.example>',
+        '',
+        'The launch checklist is approved.',
+      ].join('\n'),
+    });
+
+    expect(chooseContentText(payload)).toContain('Team, see below.');
+    expect(chooseContentText(payload)).toContain('From: Ada Lovelace <ada@example.com>');
+    expect(chooseContentText(payload)).toContain('The launch checklist is approved.');
+  });
+
+  it('does not duplicate forwarded blocks left inside StrippedTextReply', () => {
+    const payload = parse({
+      Subject: 'Fwd: Launch checklist',
+      StrippedTextReply: [
+        'Team, see below.',
+        '',
+        '---------- Forwarded message ---------',
+        'From: Ada Lovelace <ada@example.com>',
+        'Date: Wed, Jun 17, 2026 at 2:15 PM',
+        'Subject: Launch checklist',
+        'To: Tim <tim@team.example>',
+        '',
+        'The launch checklist is approved.',
+      ].join('\n'),
+      TextBody: [
+        'Team, see below.',
+        '',
+        '---------- Forwarded message ---------',
+        'From: Ada Lovelace <ada@example.com>',
+        'Date: Wed, Jun 17, 2026 at 2:15 PM',
+        'Subject: Launch checklist',
+        'To: Tim <tim@team.example>',
+        '',
+        'The launch checklist is approved.',
+      ].join('\n'),
+    });
+
+    const content = chooseContentText(payload);
+    expect(content).toContain('Team, see below.');
+    expect(content.match(/From: Ada Lovelace <ada@example.com>/g)).toHaveLength(1);
+    expect(content.match(/The launch checklist is approved\./g)).toHaveLength(1);
+  });
+
+  it('keeps the forwarder intro for Outlook-style forwards without StrippedTextReply', () => {
+    const payload = parse({
+      Subject: 'FW: Renewal quote',
+      StrippedTextReply: '',
+      TextBody: [
+        'FYI for renewal planning.',
+        '',
+        'From: Procurement <procurement@vendor.example>',
+        'Sent: Wednesday, June 17, 2026 4:05 PM',
+        'To: Tim <tim@team.example>',
+        'Subject: Renewal quote',
+        '',
+        'The renewal quote expires Friday.',
+      ].join('\n'),
+    });
+
+    expect(chooseContentText(payload)).toContain('FYI for renewal planning.');
+    expect(chooseContentText(payload)).toContain('From: Procurement <procurement@vendor.example>');
+    expect(chooseContentText(payload)).toContain('The renewal quote expires Friday.');
   });
 
   it('falls through to stripQuotedReply(TextBody) when StrippedTextReply is empty', () => {

@@ -8,6 +8,7 @@ import {
   normalizeEmail,
   normalizeMessageId,
   parseAuthenticationResults,
+  parseForwardedChain,
   parseForwardedFrom,
   parseReferences,
   senderAuthVerdict,
@@ -579,6 +580,10 @@ async function ingestForTeam(
     subject: payload.Subject,
     textBody: payload.TextBody,
   });
+  const forwardedChain = parseForwardedChain({
+    subject: payload.Subject,
+    textBody: payload.TextBody,
+  });
 
   const baseMetadata: Record<string, unknown> = {
     subject: payload.Subject,
@@ -591,6 +596,7 @@ async function ingestForTeam(
     raw_postmark: stripRawForStorage(payload),
   };
   if (forwardedFrom) baseMetadata.forwarded_from = forwardedFrom;
+  if (forwardedChain.length > 0) baseMetadata.forwarded_chain = forwardedChain;
   if (senderUnverified) baseMetadata.sender_unverified = true;
   // Auth audit trail. `auth_verdict` captures the upstream verification
   // result so a security review can distinguish "no auth signal" (dev
