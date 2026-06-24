@@ -67,6 +67,7 @@ export interface ResolveConnectionAttentionInput {
 
 const transientSyncResourceType = 'integration.run';
 const transientSyncAttentionThreshold = 3;
+const githubRateLimitedUntilKey = 'github_rate_limited_until';
 const connectionAttentionCategoryValues: ConnectionAttentionInput['category'][] = [
   'needs_reconnect',
   'needs_new_owner',
@@ -1297,6 +1298,45 @@ export async function adminResetTransientSyncFailures(
     transientSyncResourceType,
     { transient_failure_count: 0 },
     { lastStatus: 'ok', lastError: null },
+  );
+}
+
+export async function adminLoadIntegrationSyncPause(
+  db: Db,
+  integrationId: string,
+): Promise<{ retryAt: Date; reason: string } | null> {
+  const cursor = (await adminLoadCursor(db, integrationId, transientSyncResourceType)) as {
+    [githubRateLimitedUntilKey]?: unknown;
+    sync_pause_reason?: unknown;
+  };
+  const value = cursor[githubRateLimitedUntilKey];
+  if (typeof value !== 'string') return null;
+  const retryAt = new Date(value);
+  if (Number.isNaN(retryAt.getTime()) || retryAt.getTime() <= Date.now()) return null;
+  return {
+    retryAt,
+    reason: typeof cursor.sync_pause_reason === 'string' ? cursor.sync_pause_reason : 'rate_limit',
+  };
+}
+
+export async function adminRecordIntegrationSyncPause(
+  db: Db,
+  integrationId: string,
+  input: { retryAt: Date; reason: string; error: string },
+): Promise<void> {
+  const cursor = (await adminLoadCursor(db, integrationId, transientSyncResourceType)) as {
+    transient_failure_count?: unknown;
+  };
+  await adminSaveCursor(
+    db,
+    integrationId,
+    transientSyncResourceType,
+    {
+      ...cursor,
+      [githubRateLimitedUntilKey]: input.retryAt.toISOString(),
+      sync_pause_reason: input.reason,
+    },
+    { lastStatus: 'rate_limited', lastError: input.error },
   );
 }
 

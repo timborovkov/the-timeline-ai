@@ -26,6 +26,8 @@ const fakes = vi.hoisted(() => {
     adminRecordAudit: vi.fn(),
     adminMarkSynced: vi.fn(),
     adminResetTransientSyncFailures: vi.fn(),
+    adminLoadIntegrationSyncPause: vi.fn(),
+    adminRecordIntegrationSyncPause: vi.fn(),
     adminResolveConnectionAttention: vi.fn(),
     adminRecordTransientSyncFailure: vi.fn(),
     getProvider: vi.fn(),
@@ -54,6 +56,8 @@ vi.mock('@timeline/shared', async (importOriginal) => {
       adminRecordAudit: fakes.adminRecordAudit,
       adminMarkSynced: fakes.adminMarkSynced,
       adminResetTransientSyncFailures: fakes.adminResetTransientSyncFailures,
+      adminLoadIntegrationSyncPause: fakes.adminLoadIntegrationSyncPause,
+      adminRecordIntegrationSyncPause: fakes.adminRecordIntegrationSyncPause,
       adminResolveConnectionAttention: fakes.adminResolveConnectionAttention,
       adminRecordTransientSyncFailure: fakes.adminRecordTransientSyncFailure,
       getProvider: fakes.getProvider,
@@ -91,6 +95,8 @@ beforeEach(() => {
   fakes.adminRecordConnectionAttention.mockResolvedValue(undefined);
   fakes.adminMarkSynced.mockResolvedValue(undefined);
   fakes.adminResetTransientSyncFailures.mockResolvedValue(undefined);
+  fakes.adminLoadIntegrationSyncPause.mockResolvedValue(null);
+  fakes.adminRecordIntegrationSyncPause.mockResolvedValue(undefined);
   fakes.adminResolveConnectionAttention.mockResolvedValue(undefined);
   fakes.adminRecordTransientSyncFailure.mockResolvedValue({
     count: 1,
@@ -212,6 +218,70 @@ describe('runOneIntegration attention classification', () => {
       'GitHub required field missing',
     );
     expect(fakes.adminRecordConnectionAttention).not.toHaveBeenCalled();
+  });
+
+  it('records GitHub rate limits as a paused sync without BullMQ retry pressure', async () => {
+    const retryAt = new Date('2026-06-25T03:00:00.000Z');
+    const err = Object.assign(
+      new Error(
+        'github_rate_limited: GitHub API rate limit reached; retry after 2026-06-25T03:00:00.000Z',
+      ),
+      { code: 'github_rate_limited', retryAt },
+    );
+    fakes.incrementalSync.mockRejectedValueOnce(err);
+
+    await runOneIntegration({} as never, INTEGRATION_ID, 'incremental');
+
+    expect(fakes.adminRecordError).toHaveBeenCalledWith(
+      expect.anything(),
+      INTEGRATION_ID,
+      err.message,
+    );
+    expect(fakes.adminRecordIntegrationSyncPause).toHaveBeenCalledWith(
+      expect.anything(),
+      INTEGRATION_ID,
+      {
+        retryAt,
+        reason: 'github_rate_limited',
+        error: err.message,
+      },
+    );
+    expect(fakes.adminRecordConnectionAttention).not.toHaveBeenCalled();
+    expect(fakes.adminRecordTransientSyncFailure).not.toHaveBeenCalled();
+    expect(fakes.adminRecordAudit).toHaveBeenCalledWith(
+      expect.anything(),
+      TEAM_ID,
+      'sync_paused:incremental',
+      {
+        provider: 'github',
+        reason: 'github_rate_limited',
+        retryAt: retryAt.toISOString(),
+      },
+      { integrationId: INTEGRATION_ID },
+    );
+  });
+
+  it('skips provider work while a recorded sync pause is active', async () => {
+    const retryAt = new Date(Date.now() + 60_000);
+    fakes.adminLoadIntegrationSyncPause.mockResolvedValueOnce({
+      retryAt,
+      reason: 'github_rate_limited',
+    });
+
+    await runOneIntegration({} as never, INTEGRATION_ID, 'incremental');
+
+    expect(fakes.incrementalSync).not.toHaveBeenCalled();
+    expect(fakes.adminRecordAudit).toHaveBeenCalledWith(
+      expect.anything(),
+      TEAM_ID,
+      'sync_skipped:incremental',
+      {
+        provider: 'github',
+        reason: 'github_rate_limited',
+        retryAt: retryAt.toISOString(),
+      },
+      { integrationId: INTEGRATION_ID },
+    );
   });
 
   it('creates sync_error attention on the third consecutive transient provider failure', async () => {

@@ -67,8 +67,9 @@ export async function GET(
   const tokens = await scope.integrations.getProviderConnectionTokens(id);
   if (!tokens) return NextResponse.json({ error: 'no_tokens' }, { status: 400 });
   const provider = integrationsLib.getProvider(connection.provider);
-  const [resources, shares] = await Promise.all([
-    provider.listSyncableResources(
+  let resources;
+  try {
+    resources = await provider.listSyncableResources(
       {
         id: connection.id,
         teamId: resolved.active.teamId,
@@ -94,9 +95,17 @@ export async function GET(
         persistTokens: (fresh) =>
           integrationsLib.adminPersistProviderConnectionTokens(db, connection.id, fresh),
       },
-    ),
-    scope.integrations.listOwnedTeamResourceShares(),
-  ]);
+    );
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'list_resources_failed';
+    return NextResponse.json({ error: message }, { status: 502 });
+  }
+  let shares;
+  try {
+    shares = await scope.integrations.listOwnedTeamResourceShares();
+  } catch {
+    return NextResponse.json({ error: 'list_resource_shares_failed' }, { status: 500 });
+  }
   const connectionShares = [];
   for (const row of shares) {
     if (row.connection.id === connection.id) connectionShares.push(row.share);

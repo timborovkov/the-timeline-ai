@@ -38,6 +38,13 @@ export function chatErrorMessage(error: string | undefined, status?: number): st
 }
 
 export function connectionErrorMessage(error: string | undefined, status?: number): string {
+  if (
+    error?.includes('github_rate_limited') ||
+    error?.includes('API rate limit exceeded') ||
+    error?.includes('secondary rate limit')
+  ) {
+    return 'GitHub is rate limiting this connection. Sync will resume automatically after the cooldown window.';
+  }
   switch (error) {
     case 'unauthorized':
     case 'unauthenticated':

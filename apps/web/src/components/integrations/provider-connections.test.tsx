@@ -59,17 +59,18 @@ function row(input: {
 
 describe('TeamSourcesUi', () => {
   it('explains GitHub source sharing before team activation', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue({
-      ok: true,
-      json: () =>
-        Promise.resolve({
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
           resources: [
             { kind: 'github.org', externalId: 'acme', label: 'acme (all accessible repos)' },
             { kind: 'github.repo', externalId: 'acme/app', label: 'acme/app' },
           ],
           shares: [],
         }),
-    } as Response);
+        { status: 200 },
+      ),
+    );
 
     renderWithQueryClient(
       <PersonalConnectionsUi
@@ -103,14 +104,15 @@ describe('TeamSourcesUi', () => {
         sentry: [{ kind: 'sentry.project', externalId: 'acme/web', label: 'acme/web' }],
       };
       const connectionId = url.split('/').at(-2) ?? '';
-      return Promise.resolve({
-        ok: true,
-        json: () =>
-          Promise.resolve({
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
             resources: resourcesByConnection[connectionId] ?? [],
             shares: [],
           }),
-      } as Response);
+          { status: 200 },
+        ),
+      );
     });
 
     renderWithQueryClient(
@@ -145,6 +147,32 @@ describe('TeamSourcesUi', () => {
     expect(screen.getByText(/Choose the Slack channels/i)).toBeTruthy();
     expect(screen.getByText(/Choose individual Sentry projects/i)).toBeTruthy();
     expect(screen.queryByRole('link', { name: /GitHub access/i })).toBeNull();
+  });
+
+  it('surfaces provider resource errors from JSON responses', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ error: 'Monday GraphQL errors: Unauthorized field or type' }), {
+        status: 502,
+      }),
+    );
+
+    renderWithQueryClient(
+      <PersonalConnectionsUi
+        connections={[
+          {
+            id: 'monday',
+            provider: 'monday',
+            displayName: 'Monday.com — Tim',
+            lastError: null,
+            lastConnectedAt: '2026-06-01T00:00:00.000Z',
+          },
+        ]}
+      />,
+    );
+
+    expect(
+      await screen.findByText(/Monday GraphQL errors: Unauthorized field or type/i),
+    ).toBeTruthy();
   });
 
   it('explains that admins activate shared team sources', () => {

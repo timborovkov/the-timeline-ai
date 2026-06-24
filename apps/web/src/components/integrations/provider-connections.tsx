@@ -66,6 +66,22 @@ const initialSourcePickerState: SourcePickerState = {
 
 const emptyResources: ProviderResource[] = [];
 const emptyShares: ResourceShare[] = [];
+
+async function readJsonResponse<T extends { error?: string }>(res: Response): Promise<T> {
+  const text = await res.text();
+  let data = {} as T;
+  if (text) {
+    try {
+      data = JSON.parse(text) as T;
+    } catch {
+      if (!res.ok) throw new Error(text);
+      throw new Error(connectionErrorMessage('request_failed'));
+    }
+  }
+  if (!res.ok) throw new Error(data.error ?? (text || connectionErrorMessage('request_failed')));
+  return data;
+}
+
 const providerSourceHints: Partial<
   Record<
     string,
@@ -179,9 +195,7 @@ function ConnectionSources({ connection }: { connection: ProviderConnection }) {
     queryKey: queryKeys.providerConnectionResources(connection.id),
     queryFn: async () => {
       const res = await fetch(`/api/connections/${connection.id}/resources`);
-      const data = (await res.json()) as ConnectionResourcesPayload;
-      if (!res.ok) throw new Error(data.error ?? 'Failed to load resources');
-      return data;
+      return readJsonResponse<ConnectionResourcesPayload>(res);
     },
   });
 

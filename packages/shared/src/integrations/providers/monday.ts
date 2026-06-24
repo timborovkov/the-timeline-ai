@@ -572,17 +572,20 @@ function docEvent(doc: MondayDoc): IntegrationEvent {
 }
 
 async function fetchBoard(tokens: MondayTokens, boardId: string): Promise<MondayBoard | null> {
-  const data = await gql<{ boards: MondayBoard[] }>(
-    tokens,
-    `query ($ids: [ID!]) {
-      boards(ids: $ids) {
-        id name updated_at
-        workspace { id name }
-        columns { id title type }
-      }
-    }`,
-    { ids: [boardId] },
-  );
+  const query = (includeWorkspace: boolean) => `query ($ids: [ID!]) {
+    boards(ids: $ids) {
+      id name updated_at
+      ${includeWorkspace ? 'workspace { id name }' : ''}
+      columns { id title type }
+    }
+  }`;
+  let data: { boards: MondayBoard[] };
+  try {
+    data = await gql<{ boards: MondayBoard[] }>(tokens, query(true), { ids: [boardId] });
+  } catch (error) {
+    if (!isMondayUnauthorizedFieldError(error)) throw error;
+    data = await gql<{ boards: MondayBoard[] }>(tokens, query(false), { ids: [boardId] });
+  }
   return data.boards[0] ?? null;
 }
 
@@ -744,24 +747,41 @@ async function listDocs(tokens: MondayTokens): Promise<MondayDoc[]> {
   return docs;
 }
 
-async function fetchBoardsPage(tokens: MondayTokens, page: number): Promise<MondayBoard[]> {
-  const data = await gql<{ boards: MondayBoard[] }>(
-    tokens,
-    `query ($limit: Int!, $page: Int!) {
-      boards(limit: $limit, page: $page) {
-        id name
-        workspace { id name }
-      }
-    }`,
-    { limit: BOARD_PAGE_LIMIT, page },
-  );
-  return data.boards;
+async function fetchBoardsPage(
+  tokens: MondayTokens,
+  page: number,
+  includeWorkspace: boolean,
+): Promise<{ boards: MondayBoard[]; includeWorkspace: boolean }> {
+  const query = (includeWorkspace: boolean) => `query ($limit: Int!, $page: Int!) {
+    boards(limit: $limit, page: $page) {
+      id name
+      ${includeWorkspace ? 'workspace { id name }' : ''}
+    }
+  }`;
+  let data: { boards: MondayBoard[] };
+  try {
+    data = await gql<{ boards: MondayBoard[] }>(tokens, query(includeWorkspace), {
+      limit: BOARD_PAGE_LIMIT,
+      page,
+    });
+  } catch (error) {
+    if (!includeWorkspace || !isMondayUnauthorizedFieldError(error)) throw error;
+    data = await gql<{ boards: MondayBoard[] }>(tokens, query(false), {
+      limit: BOARD_PAGE_LIMIT,
+      page,
+    });
+    return { boards: data.boards, includeWorkspace: false };
+  }
+  return { boards: data.boards, includeWorkspace };
 }
 
 async function listBoards(tokens: MondayTokens): Promise<MondayBoard[]> {
   const boards: MondayBoard[] = [];
+  let includeWorkspace = true;
   for (let page = 1; page <= 100; page++) {
-    const batch = await fetchBoardsPage(tokens, page);
+    const result = await fetchBoardsPage(tokens, page, includeWorkspace);
+    includeWorkspace = result.includeWorkspace;
+    const batch = result.boards;
     boards.push(...batch);
     if (batch.length < BOARD_PAGE_LIMIT) break;
   }
