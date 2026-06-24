@@ -234,8 +234,8 @@ export function TaskBoard({ rows, columns, selectedTaskId, members }: Props) {
         collisionDetection={closestCenter}
         onDragEnd={onDragEnd}
       >
-        <div className="flex h-full min-h-0 min-w-0 flex-col gap-3">
-          <div className="flex shrink-0 flex-wrap items-center justify-between gap-2">
+        <div className="flex h-full min-h-0 min-w-0 flex-col">
+          <div className="flex w-full shrink-0 flex-wrap items-center justify-between gap-3 px-4 py-4 md:px-8">
             <ObjectTextFilter
               query={filterQuery}
               onQueryChange={setFilterQuery}
@@ -255,7 +255,7 @@ export function TaskBoard({ rows, columns, selectedTaskId, members }: Props) {
           </div>
           {moveErrors.length > 0 ? (
             <p
-              className="shrink-0 rounded-sm border border-danger/30 bg-danger/10 px-3 py-2 font-mono text-[11px] uppercase tracking-[0.1em] text-danger"
+              className="mx-4 mb-3 shrink-0 rounded-sm border border-danger/30 bg-danger/10 px-3 py-2 font-mono text-[11px] uppercase tracking-[0.1em] text-danger md:mx-8"
               role="alert"
             >
               {moveErrors.length === 1
@@ -263,7 +263,7 @@ export function TaskBoard({ rows, columns, selectedTaskId, members }: Props) {
                 : `${moveErrors.length} task moves failed. Clear the filter to inspect affected cards.`}
             </p>
           ) : null}
-          <div className="flex min-h-0 flex-1 gap-3 overflow-x-auto pb-2">
+          <div className="flex min-h-0 flex-1 gap-3 overflow-x-auto overflow-y-hidden px-4 pb-2 md:px-8">
             {allColumns.map((column) => (
               <TaskColumn
                 key={column}
