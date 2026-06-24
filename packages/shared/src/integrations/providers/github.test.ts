@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SyncContext } from '#src/integrations/index.js';
 
 import { resetEnvForTests } from '#src/env.js';
-import { githubProvider } from '#src/integrations/providers/github.js';
+import { GithubRateLimitError, githubProvider } from '#src/integrations/providers/github.js';
 
 const ENV_BACKUP = { ...process.env };
 
@@ -64,6 +64,7 @@ describe('githubProvider.listSyncableResources', () => {
 
   afterEach(() => {
     globalThis.fetch = originalFetch;
+    vi.useRealTimers();
     vi.restoreAllMocks();
   });
 
@@ -129,6 +130,36 @@ describe('githubProvider.listSyncableResources', () => {
       'https://api.github.com/user/repos?sort=updated&direction=desc&per_page=100&page=2',
     );
   });
+
+  it('surfaces GitHub primary rate limits with the provider retry time', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-06-25T02:00:00.000Z'));
+    const fetchMock = vi.fn<typeof fetch>(() =>
+      Promise.resolve(
+        new Response(JSON.stringify({ message: 'API rate limit exceeded' }), {
+          status: 403,
+          headers: {
+            'content-type': 'application/json',
+            'x-ratelimit-remaining': '0',
+            'x-ratelimit-reset': String(Date.parse('2026-06-25T03:00:00.000Z') / 1000),
+          },
+        }),
+      ),
+    );
+    globalThis.fetch = fetchMock;
+
+    await expect(
+      githubProvider.listSyncableResources({} as never, { access_token: 'gho_token' }),
+    ).rejects.toMatchObject({
+      code: 'github_rate_limited',
+      retryAt: new Date('2026-06-25T03:00:00.000Z'),
+      rateLimitKind: 'primary',
+    });
+    await expect(
+      githubProvider.listSyncableResources({} as never, { access_token: 'gho_token' }),
+    ).rejects.toBeInstanceOf(GithubRateLimitError);
+    vi.useRealTimers();
+  });
 });
 
 describe('githubProvider.incrementalSync', () => {
@@ -136,6 +167,7 @@ describe('githubProvider.incrementalSync', () => {
 
   afterEach(() => {
     globalThis.fetch = originalFetch;
+    vi.useRealTimers();
     vi.restoreAllMocks();
   });
 
@@ -558,7 +590,7 @@ describe('githubProvider.incrementalSync', () => {
         );
       }
       if (url.pathname.endsWith('/pulls/7/reviews')) {
-        return Promise.resolve(jsonResponse({ message: 'secondary rate limit' }, 403));
+        return Promise.resolve(jsonResponse({ message: 'reviews unavailable' }, 500));
       }
       if (url.pathname.endsWith('/commits')) return Promise.resolve(jsonResponse([]));
       const base = emptyGithubFetch(input);
@@ -584,6 +616,49 @@ describe('githubProvider.incrementalSync', () => {
     expect(
       saveCursor.mock.calls.some(([, cursor]) => Boolean((cursor as TestGithubCursor).prs_since)),
     ).toBe(false);
+  });
+
+  it('aborts the sync immediately when GitHub returns a secondary rate limit', async () => {
+    const fetchMock = vi.fn<typeof fetch>((input) => {
+      const requestUrl =
+        typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+      const url = new URL(requestUrl);
+      if (url.pathname.endsWith('/issues')) {
+        return Promise.resolve(
+          new Response(JSON.stringify({ message: 'secondary rate limit' }), {
+            status: 403,
+            headers: { 'content-type': 'application/json', 'retry-after': '90' },
+          }),
+        );
+      }
+      if (url.pathname.endsWith('/commits')) return Promise.resolve(jsonResponse([]));
+      const base = emptyGithubFetch(input);
+      return Promise.resolve(base ?? jsonResponse({ message: 'unexpected' }, 404));
+    });
+    globalThis.fetch = fetchMock;
+
+    await expect(
+      githubProvider.incrementalSync({
+        integration: {} as never,
+        tokens: { access_token: 'gho_token' },
+        selections: [{ kind: 'github.repo', externalId: 'acme/app' }],
+        ctx: {
+          writeEvents: vi.fn(),
+          saveCursor: vi.fn(),
+          loadCursor: vi.fn().mockResolvedValue({}),
+          recordAudit: vi.fn(),
+          persistTokens: vi.fn(),
+        },
+      }),
+    ).rejects.toMatchObject({
+      code: 'github_rate_limited',
+      rateLimitKind: 'secondary',
+      retryAfterSeconds: 90,
+    });
+    expect(fetchMock).not.toHaveBeenCalledWith(
+      expect.stringContaining('/repos/acme/app/releases'),
+      expect.any(Object),
+    );
   });
 
   it('surfaces the missing GitHub App pull request permission clearly', async () => {

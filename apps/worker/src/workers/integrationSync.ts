@@ -29,10 +29,34 @@ interface IntegrationSyncDeps {
 }
 
 function isAuthOrAccessFailure(message: string): boolean {
+  if (message.includes('github_rate_limited')) return false;
   return (
     /\b(?:401|403|404)\b/.test(message) ||
     /\b(?:reconnect|expired|unauthorized|forbidden)\b/i.test(message)
   );
+}
+
+function githubRateLimitPause(err: unknown): { retryAt: Date; message: string } | null {
+  if (
+    typeof err !== 'object' ||
+    err === null ||
+    !('code' in err) ||
+    (err as { code?: unknown }).code !== 'github_rate_limited'
+  ) {
+    return null;
+  }
+  const retryAtValue = (err as { retryAt?: unknown }).retryAt;
+  const retryAt =
+    retryAtValue instanceof Date
+      ? retryAtValue
+      : typeof retryAtValue === 'string'
+        ? new Date(retryAtValue)
+        : null;
+  if (!retryAt || Number.isNaN(retryAt.getTime())) return null;
+  return {
+    retryAt,
+    message: err instanceof Error ? err.message : 'github_rate_limited',
+  };
 }
 
 export async function runOneIntegration(
@@ -109,6 +133,22 @@ export async function runOneIntegration(
         category: 'needs_reconnect',
         summary: msg,
       });
+      return;
+    }
+    const pause = await integrationsLib.adminLoadIntegrationSyncPause(db, integrationId);
+    if (pause) {
+      log.info({ integrationId, kind, retryAt: pause.retryAt }, 'integration sync paused');
+      await integrationsLib.adminRecordAudit(
+        db,
+        integration.teamId,
+        `sync_skipped:${kind}`,
+        {
+          provider: integration.provider,
+          reason: pause.reason,
+          retryAt: pause.retryAt.toISOString(),
+        },
+        { integrationId },
+      );
       return;
     }
     const provider = integrationsLib.getProvider(integration.provider);
@@ -269,6 +309,26 @@ export async function runOneIntegration(
       const msg = err instanceof Error ? err.message : String(err);
       log.warn({ err, integrationId }, 'integration sync failed');
       await integrationsLib.adminRecordError(db, integrationId, msg);
+      const rateLimit = githubRateLimitPause(err);
+      if (rateLimit) {
+        await integrationsLib.adminRecordIntegrationSyncPause(db, integrationId, {
+          retryAt: rateLimit.retryAt,
+          reason: 'github_rate_limited',
+          error: rateLimit.message.slice(0, 500),
+        });
+        await integrationsLib.adminRecordAudit(
+          db,
+          integration.teamId,
+          `sync_paused:${kind}`,
+          {
+            provider: integration.provider,
+            reason: 'github_rate_limited',
+            retryAt: rateLimit.retryAt.toISOString(),
+          },
+          { integrationId },
+        );
+        return;
+      }
       if (isAuthOrAccessFailure(msg)) {
         await integrationsLib.adminRecordConnectionAttention(db, integration.teamId, {
           providerConnectionId: integration.providerConnectionId,

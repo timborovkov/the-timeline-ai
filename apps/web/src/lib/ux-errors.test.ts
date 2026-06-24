@@ -18,6 +18,9 @@ describe('UX error messages', () => {
   it('maps connection failures to human recovery copy with an action path', () => {
     expect(connectionErrorMessage('forbidden')).toContain('Ask a team admin');
     expect(connectionErrorMessage('oauth_start_failed')).toContain('try again');
+    expect(
+      connectionErrorMessage('github_rate_limited: retry after 2026-06-25T03:00:00.000Z'),
+    ).toContain('Sync will resume automatically');
     expect(connectionErrorMessage('not_found')).toContain('no longer exists');
     expect(connectionErrorMessage(undefined, 500)).toBe('Connection failed (500).');
   });

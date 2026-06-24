@@ -31,6 +31,34 @@ const TOKEN_URL = 'https://github.com/login/oauth/access_token';
 const API_BASE = 'https://api.github.com';
 
 const SCOPES = ['repo', 'read:org'];
+export const GITHUB_RATE_LIMIT_CODE = 'github_rate_limited';
+
+type GithubRateLimitKind = 'primary' | 'secondary' | 'unknown';
+
+export class GithubRateLimitError extends Error {
+  readonly code = GITHUB_RATE_LIMIT_CODE;
+  readonly provider = 'github';
+  readonly retryAt: Date;
+  readonly retryAfterSeconds: number;
+  readonly rateLimitKind: GithubRateLimitKind;
+  readonly path: string;
+
+  constructor(input: {
+    path: string;
+    retryAt: Date;
+    retryAfterSeconds: number;
+    rateLimitKind: GithubRateLimitKind;
+  }) {
+    super(
+      `github_rate_limited: GitHub API rate limit reached; retry after ${input.retryAt.toISOString()}`,
+    );
+    this.name = 'GithubRateLimitError';
+    this.path = input.path;
+    this.retryAt = input.retryAt;
+    this.retryAfterSeconds = input.retryAfterSeconds;
+    this.rateLimitKind = input.rateLimitKind;
+  }
+}
 
 interface GithubTokens {
   access_token: string;
@@ -115,9 +143,56 @@ async function ghGet<T>(tokens: GithubTokens, path: string): Promise<T> {
   });
   const text = await res.text();
   if (!res.ok) {
+    const rateLimit = githubRateLimitError(path, res, text);
+    if (rateLimit) throw rateLimit;
     throw new Error(githubErrorMessage(path, res.status, text));
   }
   return JSON.parse(text) as T;
+}
+
+function githubRateLimitError(
+  path: string,
+  res: Response,
+  body: string,
+): GithubRateLimitError | null {
+  if (res.status !== 403 && res.status !== 429) return null;
+  const retryAfter = parsePositiveInt(res.headers.get('retry-after'));
+  const remaining = res.headers.get('x-ratelimit-remaining');
+  const resetEpoch = parsePositiveInt(res.headers.get('x-ratelimit-reset'));
+  const secondary = /secondary rate limit|abuse detection|too many requests/i.test(body);
+  const primary = remaining === '0';
+  if (!retryAfter && !primary && !secondary && res.status !== 429) return null;
+
+  const now = Date.now();
+  const resetMs = resetEpoch ? resetEpoch * 1000 : null;
+  const retryAtMs =
+    retryAfter !== null
+      ? now + retryAfter * 1000
+      : resetMs && resetMs > now
+        ? resetMs
+        : now + 60_000;
+  return new GithubRateLimitError({
+    path,
+    retryAt: new Date(retryAtMs),
+    retryAfterSeconds: Math.max(1, Math.ceil((retryAtMs - now) / 1000)),
+    rateLimitKind: primary ? 'primary' : secondary ? 'secondary' : 'unknown',
+  });
+}
+
+function parsePositiveInt(value: string | null): number | null {
+  if (!value) return null;
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+function isGithubRateLimitError(err: unknown): err is GithubRateLimitError {
+  return (
+    err instanceof GithubRateLimitError ||
+    (typeof err === 'object' &&
+      err !== null &&
+      'code' in err &&
+      (err as { code?: unknown }).code === GITHUB_RATE_LIMIT_CODE)
+  );
 }
 
 function githubErrorMessage(path: string, status: number, body: string): string {
@@ -506,6 +581,7 @@ async function syncRepo(
                 }
               }
             } catch (err) {
+              if (isGithubRateLimitError(err)) throw err;
               log.warn({ err, repo, pr: pr.number }, 'fetching reviews failed');
               failures.push({
                 area: `reviews:${String(pr.number)}`,
@@ -523,6 +599,7 @@ async function syncRepo(
         }
       }
     } catch (err) {
+      if (isGithubRateLimitError(err)) throw err;
       log.warn({ err, repo, state }, 'github PR fetch failed');
       failures.push({
         area: `prs:${state}`,
@@ -567,6 +644,7 @@ async function syncRepo(
       await saveRepoCursor(ctx, repo, next);
     }
   } catch (err) {
+    if (isGithubRateLimitError(err)) throw err;
     log.warn({ err, repo }, 'github issues fetch failed');
     failures.push({ area: 'issues', error: err instanceof Error ? err.message : String(err) });
   }
@@ -619,6 +697,7 @@ async function syncRepo(
       await saveRepoCursor(ctx, repo, next);
     }
   } catch (err) {
+    if (isGithubRateLimitError(err)) throw err;
     log.warn({ err, repo }, 'github releases fetch failed');
     failures.push({ area: 'releases', error: err instanceof Error ? err.message : String(err) });
   }
@@ -662,6 +741,7 @@ async function syncRepo(
       await saveRepoCursor(ctx, repo, next);
     }
   } catch (err) {
+    if (isGithubRateLimitError(err)) throw err;
     log.warn({ err, repo }, 'github commits fetch failed');
     failures.push({ area: 'commits', error: err instanceof Error ? err.message : String(err) });
   }
@@ -700,6 +780,7 @@ async function syncRepo(
       await saveRepoCursor(ctx, repo, next);
     }
   } catch (err) {
+    if (isGithubRateLimitError(err)) throw err;
     log.warn({ err, repo }, 'github workflow runs fetch failed');
     failures.push({
       area: 'workflow_runs',
@@ -839,6 +920,7 @@ export const githubProvider: IntegrationProvider = {
         })),
       );
     } catch (err) {
+      if (isGithubRateLimitError(err)) throw err;
       log.warn({ err }, 'listing github orgs failed');
     }
     const all: GhRepo[] = [];
@@ -872,6 +954,7 @@ export const githubProvider: IntegrationProvider = {
         const next = await syncRepo(fresh, repo, {}, ctx);
         await ctx.saveCursor(`github.repo:${repo}`, next);
       } catch (err) {
+        if (isGithubRateLimitError(err)) throw err;
         log.warn({ err, repo }, 'github backfill failed for repo');
         failures.push({
           repo,
@@ -907,6 +990,7 @@ export const githubProvider: IntegrationProvider = {
         const next = await syncRepo(fresh, repo, cursor, ctx);
         await ctx.saveCursor(`github.repo:${repo}`, next);
       } catch (err) {
+        if (isGithubRateLimitError(err)) throw err;
         log.warn({ err, repo }, 'github incremental sync failed for repo');
         failures.push({
           repo,
