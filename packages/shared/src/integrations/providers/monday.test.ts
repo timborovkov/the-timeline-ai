@@ -271,6 +271,89 @@ describe('mondayProvider', () => {
     });
   });
 
+  it('lists monday.com boards without workspace labels when workspace metadata is unauthorized', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>((_input, init) => {
+      const body = requestPayload(init);
+      if (body.query.includes('workspace { id name }')) {
+        return Promise.resolve(
+          jsonResponse({ errors: [{ message: 'Unauthorized field or type' }] }),
+        );
+      }
+      if (body.query.includes('boards(limit: $limit')) {
+        return Promise.resolve(
+          jsonResponse({
+            data: {
+              boards: [{ id: 'board-1', name: 'Launch' }],
+            },
+          }),
+        );
+      }
+      return Promise.resolve(jsonResponse({ data: { docs: [] } }));
+    });
+    vi.stubGlobal('fetch', fetch);
+
+    const resources = await mondayProvider.listSyncableResources({} as never, {
+      access_token: 'token',
+    });
+
+    expect(resources).toEqual([{ externalId: 'board-1', label: 'Launch', kind: 'monday.board' }]);
+    expect(fetch).toHaveBeenCalledTimes(3);
+  });
+
+  it('reuses the workspace-free monday.com boards query after workspace metadata is unauthorized', async () => {
+    let workspaceBoardQueries = 0;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof globalThis.fetch>((_input, init) => {
+        const body = requestPayload(init);
+        if (body.query.includes('docs(')) {
+          return Promise.resolve(jsonResponse({ data: { docs: [] } }));
+        }
+        if (body.query.includes('workspace { id name }')) {
+          workspaceBoardQueries += 1;
+          return Promise.resolve(
+            jsonResponse({ errors: [{ message: 'Unauthorized field or type' }] }),
+          );
+        }
+        if (body.query.includes('boards(limit: $limit')) {
+          if (body.variables?.page === 1) {
+            return Promise.resolve(
+              jsonResponse({
+                data: {
+                  boards: Array.from({ length: 100 }, (_, index) => ({
+                    id: `board-${String(index + 1)}`,
+                    name: `Board ${String(index + 1)}`,
+                  })),
+                },
+              }),
+            );
+          }
+          expect(body.variables?.page).toBe(2);
+          return Promise.resolve(
+            jsonResponse({
+              data: {
+                boards: [{ id: 'board-101', name: 'Board 101' }],
+              },
+            }),
+          );
+        }
+        throw new Error(`unexpected query: ${body.query}`);
+      }),
+    );
+
+    const resources = await mondayProvider.listSyncableResources({} as never, {
+      access_token: 'token',
+    });
+
+    expect(resources).toHaveLength(101);
+    expect(resources.at(-1)).toEqual({
+      externalId: 'board-101',
+      label: 'Board 101',
+      kind: 'monday.board',
+    });
+    expect(workspaceBoardQueries).toBe(1);
+  });
+
   it('refreshes expired monday.com tokens and persists the replacement before syncing', async () => {
     const fetch = vi.fn<typeof globalThis.fetch>((input, init) => {
       if (requestUrl(input) === 'https://auth.monday.com/oauth2/token') {
@@ -339,6 +422,63 @@ describe('mondayProvider', () => {
         refresh_token: 'refresh-new',
       }),
     );
+  });
+
+  it('syncs monday.com boards when workspace metadata is unauthorized', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>((_input, init) => {
+      const body = requestPayload(init);
+      if (body.query.includes('workspace { id name }')) {
+        return Promise.resolve(
+          jsonResponse({ errors: [{ message: 'Unauthorized field or type' }] }),
+        );
+      }
+      if (body.query.includes('columns { id title type }')) {
+        return Promise.resolve(
+          jsonResponse({
+            data: {
+              boards: [
+                {
+                  id: 'board-1',
+                  name: 'Pipeline',
+                  updated_at: '2026-06-20T09:00:00Z',
+                  columns: [],
+                },
+              ],
+            },
+          }),
+        );
+      }
+      if (body.query.includes('activity_logs')) {
+        return Promise.resolve(jsonResponse({ data: { boards: [{ activity_logs: [] }] } }));
+      }
+      if (body.query.includes('items_page')) {
+        return Promise.resolve(
+          jsonResponse({ data: { boards: [{ items_page: { cursor: null, items: [] } }] } }),
+        );
+      }
+      throw new Error(`unexpected query: ${body.query}`);
+    });
+    vi.stubGlobal('fetch', fetch);
+    const ctx = {
+      loadCursor: vi.fn().mockResolvedValue({}),
+      saveCursor: vi.fn().mockResolvedValue(undefined),
+      writeEvents: vi.fn().mockResolvedValue([]),
+      persistTokens: vi.fn().mockResolvedValue(undefined),
+      recordAudit: vi.fn(),
+    };
+
+    await mondayProvider.backfill({
+      integration: { id: 'integration-1' } as never,
+      tokens: { access_token: 'token' },
+      selections: [{ kind: 'monday.board', externalId: 'board-1' }],
+      ctx,
+    });
+
+    expect(ctx.writeEvents).toHaveBeenCalledWith([
+      expect.objectContaining({
+        dedupKey: 'monday:board-schema:board-1:2026-06-20T09:00:00.000Z',
+      }),
+    ]);
   });
 
   it('syncs board activity, records, subitems, paginated items, and updates into timeline events', async () => {

@@ -160,6 +160,28 @@ describe('/api/connections/[id]/resources', () => {
     expect(typeof ctxArg.persistTokens).toBe('function');
   });
 
+  it('returns a JSON error when provider resource listing fails', async () => {
+    fakes.listSyncableResources.mockRejectedValueOnce(
+      new Error('Monday GraphQL errors: Unauthorized field or type'),
+    );
+
+    const response = await GET(new Request('https://timeline.test'), params());
+
+    expect(response.status).toBe(502);
+    await expect(response.json()).resolves.toEqual({
+      error: 'Monday GraphQL errors: Unauthorized field or type',
+    });
+  });
+
+  it('keeps local share loading failures separate from provider failures', async () => {
+    fakes.listOwnedTeamResourceShares.mockRejectedValueOnce(new Error('database unavailable'));
+
+    const response = await GET(new Request('https://timeline.test'), params());
+
+    expect(response.status).toBe(500);
+    await expect(response.json()).resolves.toEqual({ error: 'list_resource_shares_failed' });
+  });
+
   it('validates selected resources before sharing them', async () => {
     const rejected = await PUT(
       request({
