@@ -26,7 +26,11 @@ The current branch completes the first two slices of this plan:
   responsible person, lane and blocked-state changes, due date, priority, next
   step, notes, and readable recent activity using the existing board item schema.
   The board scan layer shows responsible/unassigned state, due state, priority,
-  next step, and blocked state.
+  next step, and blocked state. Board table and list views now also support
+  multi-select bulk updates for responsible person, lane, due date, and priority.
+- **Adjacent Tasks page convergence.** Object-backed tasks now support the same
+  operational scan layer in kanban and list views, with inline status,
+  assignee, due date, and priority edits plus bulk updates for selected tasks.
 - **Adjacent object-page cleanup.** Object detail pages now expose editable name
   and aliases, hide internal pagination terminators, and render recent changes
   as readable summaries instead of raw JSON.
@@ -605,10 +609,11 @@ Done in the current branch:
 2. Work Queue model, board-scope queue helper, and due/responsible queue
    normalization.
 3. Board item command center with responsible person, lane/blocked state, due
-   date, priority, next step, notes, and activity.
+   date, priority, next step, notes, activity, and table/list bulk updates.
 4. Card and row scan layer improvements.
 5. Object-backed Tasks page convergence with board-style cards, side-panel
-   first task detail, and editable assignee/due/priority fields.
+   first task detail, list view, bulk updates, and editable
+   assignee/due/priority fields.
 
 Next:
 

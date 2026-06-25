@@ -35,10 +35,16 @@ const TASK_COLUMNS = [
 type PageSearchParams = Record<string, string | string[] | undefined>;
 
 const EMPTY_SEARCH_PARAMS: PageSearchParams = {};
+type TaskView = 'kanban' | 'list';
 
 function taskParam(value: string | string[] | undefined): string | null {
   const v = Array.isArray(value) ? value[0] : value;
   return typeof v === 'string' && v.length > 0 ? v : null;
+}
+
+function viewParam(value: string | string[] | undefined): TaskView {
+  const v = Array.isArray(value) ? value[0] : value;
+  return v === 'list' ? v : 'kanban';
 }
 
 export default async function TasksPage({
@@ -88,6 +94,7 @@ export default async function TasksPage({
     return items.length > 0 ? [serializeSuggestionBundle({ ...bundle, items })] : [];
   });
   const pendingTaskItems = taskSuggestions.reduce((sum, bundle) => sum + bundle.items.length, 0);
+  const view = viewParam(query.view);
 
   const open = rows.filter((r) => r.status !== 'done' && r.status !== 'cancelled').length;
   const overdue = rows.filter(
@@ -146,6 +153,7 @@ export default async function TasksPage({
             rows={rows}
             columns={TASK_COLUMNS}
             selectedTaskId={selectedTaskId}
+            view={view}
             members={memberOptions}
           />
         </div>
