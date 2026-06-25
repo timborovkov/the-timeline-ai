@@ -4,6 +4,7 @@ import type {
   OAuthCallbackInput,
   OAuthStartInput,
   ProviderResource,
+  SyncPartialFailure,
   SyncContext,
 } from '#src/integrations/types.js';
 
@@ -32,6 +33,8 @@ const API_BASE = 'https://api.github.com';
 
 const SCOPES = ['repo', 'read:org'];
 export const GITHUB_RATE_LIMIT_CODE = 'github_rate_limited';
+const GITHUB_QUOTA_RESERVE = 250;
+const GITHUB_ORG_REPO_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 
 type GithubRateLimitKind = 'primary' | 'secondary' | 'unknown';
 
@@ -67,6 +70,17 @@ interface GithubTokens {
   scope?: string;
   token_type?: string;
   expires_at?: number;
+}
+
+interface GithubRequestBudget {
+  remaining?: number;
+  resetAt?: Date;
+  limitedPath?: string;
+}
+
+interface GithubOrgRepoCursor {
+  repos?: string[];
+  fetched_at?: string;
 }
 
 /**
@@ -133,7 +147,12 @@ async function postJson(
   return parsed as Record<string, unknown>;
 }
 
-async function ghGet<T>(tokens: GithubTokens, path: string): Promise<T> {
+async function ghGet<T>(
+  tokens: GithubTokens,
+  path: string,
+  budget?: GithubRequestBudget,
+): Promise<T> {
+  throwIfQuotaReserveReached(budget, path);
   const res = await fetch(`${API_BASE}${path}`, {
     headers: {
       accept: 'application/vnd.github+json',
@@ -142,12 +161,46 @@ async function ghGet<T>(tokens: GithubTokens, path: string): Promise<T> {
     },
   });
   const text = await res.text();
+  updateQuotaBudget(budget, path, res);
   if (!res.ok) {
     const rateLimit = githubRateLimitError(path, res, text);
     if (rateLimit) throw rateLimit;
     throw new Error(githubErrorMessage(path, res.status, text));
   }
   return JSON.parse(text) as T;
+}
+
+function updateQuotaBudget(
+  budget: GithubRequestBudget | undefined,
+  path: string,
+  res: Response,
+): void {
+  if (!budget) return;
+  const remaining = parseNonNegativeInt(res.headers.get('x-ratelimit-remaining'));
+  const resetEpoch = parsePositiveInt(res.headers.get('x-ratelimit-reset'));
+  if (remaining === null || resetEpoch === null) return;
+  budget.remaining = remaining;
+  budget.resetAt = new Date(resetEpoch * 1000);
+  if (remaining <= GITHUB_QUOTA_RESERVE && budget.resetAt.getTime() > Date.now()) {
+    budget.limitedPath = path;
+  }
+}
+
+function throwIfQuotaReserveReached(budget: GithubRequestBudget | undefined, path: string): void {
+  if (
+    !budget?.resetAt ||
+    budget.remaining === undefined ||
+    budget.remaining > GITHUB_QUOTA_RESERVE ||
+    budget.resetAt.getTime() <= Date.now()
+  ) {
+    return;
+  }
+  throw new GithubRateLimitError({
+    path: budget.limitedPath ?? path,
+    retryAt: budget.resetAt,
+    retryAfterSeconds: Math.max(1, Math.ceil((budget.resetAt.getTime() - Date.now()) / 1000)),
+    rateLimitKind: 'primary',
+  });
 }
 
 function githubRateLimitError(
@@ -183,6 +236,12 @@ function parsePositiveInt(value: string | null): number | null {
   if (!value) return null;
   const parsed = Number.parseInt(value, 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+function parseNonNegativeInt(value: string | null): number | null {
+  if (!value) return null;
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
 }
 
 function isGithubRateLimitError(err: unknown): err is GithubRateLimitError {
@@ -319,9 +378,21 @@ interface RepoCursor {
   commit_gap_until?: string;
   /** Legacy release cursor; retained for old rows. */
   last_release_id?: number;
+  /** Last time this surface was polled, used to slow down lower-value surfaces. */
+  last_polled_at?: string;
 }
 
 const MAX_SYNC_PAGES = 20;
+const GITHUB_RELEASE_SYNC_INTERVAL_MS = 6 * 60 * 60 * 1000;
+const GITHUB_WORKFLOW_RUN_SYNC_INTERVAL_MS = 2 * 60 * 60 * 1000;
+type GithubRepoSurface = 'prs' | 'issues' | 'releases' | 'commits' | 'workflow_runs';
+
+interface GithubSurfaceFailure {
+  repo: string;
+  surface: GithubRepoSurface;
+  area: string;
+  error: string;
+}
 
 function maxIso(current: string | undefined, candidate: string): string {
   return !current || candidate > current ? candidate : current;
@@ -346,8 +417,94 @@ function clearCommitGap(cursor: RepoCursor): void {
   });
 }
 
-async function saveRepoCursor(ctx: SyncContext, repo: string, cursor: RepoCursor): Promise<void> {
-  await ctx.saveCursor(`github.repo:${repo}`, cursor);
+function repoSurfaceResourceType(repo: string, surface: GithubRepoSurface): string {
+  return `github.repo:${repo}:${surface}`;
+}
+
+function surfaceCursor(
+  surface: GithubRepoSurface,
+  existingCursor: RepoCursor,
+  legacyCursor: RepoCursor,
+): RepoCursor {
+  const legacy: RepoCursor = {};
+  if (surface === 'prs') {
+    const since = legacyCursor.prs_since ?? legacyCursor.since;
+    if (since) {
+      legacy.prs_since = since;
+      legacy.since = since;
+    }
+  } else if (surface === 'issues') {
+    const since = legacyCursor.issues_since ?? legacyCursor.since;
+    if (since) {
+      legacy.issues_since = since;
+      legacy.since = since;
+    }
+  } else if (surface === 'releases') {
+    if (legacyCursor.releases_since) legacy.releases_since = legacyCursor.releases_since;
+    if (legacyCursor.last_release_id !== undefined)
+      legacy.last_release_id = legacyCursor.last_release_id;
+  } else if (surface === 'commits') {
+    if (legacyCursor.last_sha) legacy.last_sha = legacyCursor.last_sha;
+    if (legacyCursor.commit_gap_target_sha) {
+      legacy.commit_gap_target_sha = legacyCursor.commit_gap_target_sha;
+    }
+    if (legacyCursor.commit_gap_high_water_sha) {
+      legacy.commit_gap_high_water_sha = legacyCursor.commit_gap_high_water_sha;
+    }
+    if (legacyCursor.commit_gap_until) legacy.commit_gap_until = legacyCursor.commit_gap_until;
+  } else {
+    const since = legacyCursor.workflow_runs_since ?? legacyCursor.since;
+    if (since) {
+      legacy.workflow_runs_since = since;
+      legacy.since = since;
+    }
+  }
+  return { ...legacy, ...existingCursor };
+}
+
+function markPolled(cursor: RepoCursor): RepoCursor {
+  return { ...cursor, last_polled_at: new Date().toISOString() };
+}
+
+function surfaceDue(cursor: RepoCursor, intervalMs: number): boolean {
+  if (!cursor.last_polled_at) return true;
+  const lastPolledAt = new Date(cursor.last_polled_at);
+  return Number.isNaN(lastPolledAt.getTime()) || Date.now() - lastPolledAt.getTime() >= intervalMs;
+}
+
+async function loadRepoSurfaceCursor(
+  ctx: SyncContext,
+  repo: string,
+  surface: GithubRepoSurface,
+  legacyCursor: RepoCursor,
+): Promise<RepoCursor> {
+  const cursor = (await ctx.loadCursor(repoSurfaceResourceType(repo, surface))) as RepoCursor;
+  return surfaceCursor(surface, cursor, legacyCursor);
+}
+
+async function saveRepoSurfaceCursor(
+  ctx: SyncContext,
+  repo: string,
+  surface: GithubRepoSurface,
+  cursor: RepoCursor,
+  status?: { lastStatus?: string; lastError?: string | null },
+): Promise<void> {
+  await ctx.saveCursor(repoSurfaceResourceType(repo, surface), markPolled(cursor), status);
+}
+
+async function saveRepoSurfaceFailure(
+  ctx: SyncContext,
+  repo: string,
+  surface: GithubRepoSurface,
+  cursor: RepoCursor,
+  error: string,
+): Promise<void> {
+  const retryCursor = { ...cursor };
+  delete retryCursor.last_polled_at;
+  await ctx.saveCursor(repoSurfaceResourceType(repo, surface), retryCursor, {
+    lastStatus: 'error',
+    lastError: error.slice(0, 500),
+  });
 }
 
 function buildAuthorizeUrl(input: OAuthStartInput): string {
@@ -555,34 +712,51 @@ function workflowRunToEvent(repo: string, run: GhWorkflowRun): IntegrationEvent 
 async function syncRepo(
   tokens: GithubTokens,
   repo: string,
-  cursor: RepoCursor,
   ctx: SyncContext,
-): Promise<RepoCursor> {
+  options: { mode: 'backfill' | 'incremental'; legacyCursor?: RepoCursor },
+  budget?: GithubRequestBudget,
+): Promise<GithubSurfaceFailure[]> {
+  const legacyCursor = options.legacyCursor ?? {};
+  const failures: GithubSurfaceFailure[] = [];
+  failures.push(...(await syncPullRequestsSurface(tokens, repo, ctx, legacyCursor, budget)));
+  failures.push(...(await syncIssuesSurface(tokens, repo, ctx, legacyCursor, budget)));
+  failures.push(
+    ...(await syncReleasesSurface(tokens, repo, ctx, legacyCursor, options.mode, budget)),
+  );
+  failures.push(...(await syncCommitsSurface(tokens, repo, ctx, legacyCursor, budget)));
+  failures.push(
+    ...(await syncWorkflowRunsSurface(tokens, repo, ctx, legacyCursor, options.mode, budget)),
+  );
+  return failures;
+}
+
+async function syncPullRequestsSurface(
+  tokens: GithubTokens,
+  repo: string,
+  ctx: SyncContext,
+  legacyCursor: RepoCursor,
+  budget?: GithubRequestBudget,
+): Promise<GithubSurfaceFailure[]> {
+  const cursor = await loadRepoSurfaceCursor(ctx, repo, 'prs', legacyCursor);
   const next: RepoCursor = { ...cursor };
   const legacySince = cursor.since ?? new Date(0).toISOString();
   const prsSince = cursor.prs_since ?? legacySince;
-  const issuesSince = cursor.issues_since ?? legacySince;
-  const releasesSince = cursor.releases_since ?? new Date(0).toISOString();
-  const workflowRunsSince = cursor.workflow_runs_since ?? legacySince;
-  const failures: { area: string; error: string }[] = [];
-
-  // ── PRs (open + closed) ─────────────────────────────────────────────
-  const prFailureCount = failures.length;
-  const prNext: RepoCursor = { ...next };
+  const failures: GithubSurfaceFailure[] = [];
   for (const state of ['open', 'closed'] as const) {
     try {
       for (let page = 1; page <= MAX_SYNC_PAGES; page++) {
         const prs = await ghGet<GhPullRequest[]>(
           tokens,
           `/repos/${repo}/pulls?state=${state}&sort=updated&direction=desc&per_page=100&page=${String(page)}`,
+          budget,
         );
         if (prs.length === 0) break;
         const filtered = prs.filter((p) => p.updated_at > prsSince);
         if (filtered.length > 0) {
           await ctx.writeEvents(filtered.map((pr) => prToEvent(repo, pr)));
           for (const pr of filtered) {
-            prNext.prs_since = maxIso(prNext.prs_since, pr.updated_at);
-            prNext.since = maxIso(prNext.since, pr.updated_at);
+            next.prs_since = maxIso(next.prs_since, pr.updated_at);
+            next.since = maxIso(next.since, pr.updated_at);
           }
           // Also fetch reviews for these PRs.
           for (const pr of filtered) {
@@ -591,6 +765,7 @@ async function syncRepo(
                 const reviews = await ghGet<GhReview[]>(
                   tokens,
                   `/repos/${repo}/pulls/${String(pr.number)}/reviews?per_page=100&page=${String(reviewPage)}`,
+                  budget,
                 );
                 if (reviews.length === 0) break;
                 const reviewEvents = reviews
@@ -600,6 +775,8 @@ async function syncRepo(
                 if (reviews.length < 100) break;
                 if (reviewPage === MAX_SYNC_PAGES) {
                   failures.push({
+                    repo,
+                    surface: 'prs',
                     area: `reviews:${String(pr.number)}:page_cap`,
                     error: `hit ${String(MAX_SYNC_PAGES)} review pages without reaching the end`,
                   });
@@ -609,6 +786,8 @@ async function syncRepo(
               if (isGithubRateLimitError(err)) throw err;
               log.warn({ err, repo, pr: pr.number }, 'fetching reviews failed');
               failures.push({
+                repo,
+                surface: 'prs',
                 area: `reviews:${String(pr.number)}`,
                 error: err instanceof Error ? err.message : String(err),
               });
@@ -618,6 +797,8 @@ async function syncRepo(
         if (filtered.length < prs.length || prs.length < 100) break;
         if (page === MAX_SYNC_PAGES) {
           failures.push({
+            repo,
+            surface: 'prs',
             area: `prs:${state}:page_cap`,
             error: `hit ${String(MAX_SYNC_PAGES)} pages without reaching cursor`,
           });
@@ -627,23 +808,39 @@ async function syncRepo(
       if (isGithubRateLimitError(err)) throw err;
       log.warn({ err, repo, state }, 'github PR fetch failed');
       failures.push({
+        repo,
+        surface: 'prs',
         area: `prs:${state}`,
         error: err instanceof Error ? err.message : String(err),
       });
     }
   }
-  if (failures.length === prFailureCount) {
-    Object.assign(next, prNext);
-    await saveRepoCursor(ctx, repo, next);
+  if (failures.length === 0) {
+    await saveRepoSurfaceCursor(ctx, repo, 'prs', next);
+  } else {
+    await saveRepoSurfaceFailure(ctx, repo, 'prs', cursor, summarizeSurfaceFailures(failures));
   }
+  return failures;
+}
 
-  // ── Issues ──────────────────────────────────────────────────────────
+async function syncIssuesSurface(
+  tokens: GithubTokens,
+  repo: string,
+  ctx: SyncContext,
+  legacyCursor: RepoCursor,
+  budget?: GithubRequestBudget,
+): Promise<GithubSurfaceFailure[]> {
+  const cursor = await loadRepoSurfaceCursor(ctx, repo, 'issues', legacyCursor);
+  const next: RepoCursor = { ...cursor };
+  const legacySince = cursor.since ?? new Date(0).toISOString();
+  const issuesSince = cursor.issues_since ?? legacySince;
+  const failures: GithubSurfaceFailure[] = [];
   try {
-    const issueNext: RepoCursor = { ...next };
     for (let page = 1; page <= MAX_SYNC_PAGES; page++) {
       const issues = await ghGet<GhIssue[]>(
         tokens,
         `/repos/${repo}/issues?state=all&since=${encodeURIComponent(issuesSince)}&sort=updated&direction=desc&per_page=100&page=${String(page)}`,
+        budget,
       );
       if (issues.length === 0) break;
       const issueEvents = issues
@@ -653,36 +850,58 @@ async function syncRepo(
         await ctx.writeEvents(issueEvents);
       }
       for (const i of issues) {
-        issueNext.issues_since = maxIso(issueNext.issues_since, i.updated_at);
-        issueNext.since = maxIso(issueNext.since, i.updated_at);
+        next.issues_since = maxIso(next.issues_since, i.updated_at);
+        next.since = maxIso(next.since, i.updated_at);
       }
       if (issues.length < 100) break;
       if (page === MAX_SYNC_PAGES) {
         failures.push({
+          repo,
+          surface: 'issues',
           area: 'issues:page_cap',
           error: `hit ${String(MAX_SYNC_PAGES)} pages without reaching the end`,
         });
       }
     }
-    if (!failures.some((f) => f.area.startsWith('issues'))) {
-      Object.assign(next, issueNext);
-      await saveRepoCursor(ctx, repo, next);
-    }
   } catch (err) {
     if (isGithubRateLimitError(err)) throw err;
     log.warn({ err, repo }, 'github issues fetch failed');
-    failures.push({ area: 'issues', error: err instanceof Error ? err.message : String(err) });
+    failures.push({
+      repo,
+      surface: 'issues',
+      area: 'issues',
+      error: err instanceof Error ? err.message : String(err),
+    });
   }
+  if (failures.length === 0) {
+    await saveRepoSurfaceCursor(ctx, repo, 'issues', next);
+  } else {
+    await saveRepoSurfaceFailure(ctx, repo, 'issues', cursor, summarizeSurfaceFailures(failures));
+  }
+  return failures;
+}
 
-  // ── Releases ────────────────────────────────────────────────────────
+async function syncReleasesSurface(
+  tokens: GithubTokens,
+  repo: string,
+  ctx: SyncContext,
+  legacyCursor: RepoCursor,
+  mode: 'backfill' | 'incremental',
+  budget?: GithubRequestBudget,
+): Promise<GithubSurfaceFailure[]> {
+  const cursor = await loadRepoSurfaceCursor(ctx, repo, 'releases', legacyCursor);
+  if (mode === 'incremental' && !surfaceDue(cursor, GITHUB_RELEASE_SYNC_INTERVAL_MS)) return [];
+  const next: RepoCursor = { ...cursor };
+  const releasesSince = cursor.releases_since ?? new Date(0).toISOString();
+  const failures: GithubSurfaceFailure[] = [];
   try {
-    const releaseNext: RepoCursor = { ...next };
     const hasReleaseSince = Boolean(cursor.releases_since);
     const legacyLastReleaseId = cursor.last_release_id ?? 0;
     for (let page = 1; page <= MAX_SYNC_PAGES; page++) {
       const releases = await ghGet<GhRelease[]>(
         tokens,
         `/repos/${repo}/releases?per_page=100&page=${String(page)}`,
+        budget,
       );
       if (releases.length === 0) break;
       const newReleases = releases.filter((r) => {
@@ -691,13 +910,10 @@ async function syncRepo(
       });
       if (newReleases.length > 0) {
         await ctx.writeEvents(newReleases.map((r) => releaseToEvent(repo, r)));
-        releaseNext.last_release_id = Math.max(
-          releaseNext.last_release_id ?? 0,
-          ...newReleases.map((r) => r.id),
-        );
+        next.last_release_id = Math.max(next.last_release_id ?? 0, ...newReleases.map((r) => r.id));
         for (const release of newReleases) {
-          releaseNext.releases_since = maxIso(
-            releaseNext.releases_since,
+          next.releases_since = maxIso(
+            next.releases_since,
             release.published_at ?? release.created_at,
           );
         }
@@ -705,32 +921,50 @@ async function syncRepo(
       if (!hasReleaseSince) {
         for (const release of releases) {
           if (release.id <= legacyLastReleaseId) {
-            releaseNext.releases_since = maxIso(releaseNext.releases_since, release.created_at);
+            next.releases_since = maxIso(next.releases_since, release.created_at);
           }
         }
       }
       if (newReleases.length === 0 || releases.length < 100) break;
       if (page === MAX_SYNC_PAGES) {
         failures.push({
+          repo,
+          surface: 'releases',
           area: 'releases:page_cap',
           error: `hit ${String(MAX_SYNC_PAGES)} pages without reaching the end`,
         });
       }
     }
-    if (!failures.some((f) => f.area.startsWith('releases'))) {
-      Object.assign(next, releaseNext);
-      await saveRepoCursor(ctx, repo, next);
-    }
   } catch (err) {
     if (isGithubRateLimitError(err)) throw err;
     log.warn({ err, repo }, 'github releases fetch failed');
-    failures.push({ area: 'releases', error: err instanceof Error ? err.message : String(err) });
+    failures.push({
+      repo,
+      surface: 'releases',
+      area: 'releases',
+      error: err instanceof Error ? err.message : String(err),
+    });
   }
+  if (failures.length === 0) {
+    await saveRepoSurfaceCursor(ctx, repo, 'releases', next);
+  } else {
+    await saveRepoSurfaceFailure(ctx, repo, 'releases', cursor, summarizeSurfaceFailures(failures));
+  }
+  return failures;
+}
 
-  // ── Recent commits on default branch ────────────────────────────────
+async function syncCommitsSurface(
+  tokens: GithubTokens,
+  repo: string,
+  ctx: SyncContext,
+  legacyCursor: RepoCursor,
+  budget?: GithubRequestBudget,
+): Promise<GithubSurfaceFailure[]> {
+  const cursor = await loadRepoSurfaceCursor(ctx, repo, 'commits', legacyCursor);
+  const next: RepoCursor = { ...cursor };
+  const failures: GithubSurfaceFailure[] = [];
   try {
-    const commitNext: RepoCursor = { ...next };
-    const meta = await ghGet<GhRepo>(tokens, `/repos/${repo}`);
+    const meta = await ghGet<GhRepo>(tokens, `/repos/${repo}`, budget);
     const gapTargetSha = cursor.commit_gap_target_sha;
     const lastSha = gapTargetSha ?? cursor.last_sha;
     let newest: string | undefined = gapTargetSha ? cursor.commit_gap_high_water_sha : undefined;
@@ -745,6 +979,7 @@ async function syncRepo(
       const commits = await ghGet<GhCommit[]>(
         tokens,
         `/repos/${repo}/commits?sha=${encodeURIComponent(meta.default_branch)}&per_page=100&page=${String(page)}${untilParam}`,
+        budget,
       );
       if (commits.length === 0) {
         reachedCommitEnd = true;
@@ -771,9 +1006,9 @@ async function syncRepo(
       }
       if (page === MAX_SYNC_PAGES) {
         if (lastSha) {
-          commitNext.commit_gap_target_sha = lastSha;
-          if (newest) commitNext.commit_gap_high_water_sha = newest;
-          if (nextGapUntil) commitNext.commit_gap_until = nextGapUntil;
+          next.commit_gap_target_sha = lastSha;
+          if (newest) next.commit_gap_high_water_sha = newest;
+          if (nextGapUntil) next.commit_gap_until = nextGapUntil;
           await ctx.recordAudit('github_commit_gap_checkpoint', {
             repo,
             targetSha: lastSha,
@@ -800,26 +1035,48 @@ async function syncRepo(
       });
     }
     if (newest && (!lastSha || sawLastSha || reachedCommitEnd)) {
-      commitNext.last_sha = newest;
-      clearCommitGap(commitNext);
-    }
-    if (!failures.some((f) => f.area.startsWith('commits'))) {
-      Object.assign(next, commitNext);
-      await saveRepoCursor(ctx, repo, next);
+      next.last_sha = newest;
+      clearCommitGap(next);
     }
   } catch (err) {
     if (isGithubRateLimitError(err)) throw err;
     log.warn({ err, repo }, 'github commits fetch failed');
-    failures.push({ area: 'commits', error: err instanceof Error ? err.message : String(err) });
+    failures.push({
+      repo,
+      surface: 'commits',
+      area: 'commits',
+      error: err instanceof Error ? err.message : String(err),
+    });
   }
+  if (failures.length === 0) {
+    await saveRepoSurfaceCursor(ctx, repo, 'commits', next);
+  } else {
+    await saveRepoSurfaceFailure(ctx, repo, 'commits', cursor, summarizeSurfaceFailures(failures));
+  }
+  return failures;
+}
 
-  // ── Workflow runs ──────────────────────────────────────────────────
+async function syncWorkflowRunsSurface(
+  tokens: GithubTokens,
+  repo: string,
+  ctx: SyncContext,
+  legacyCursor: RepoCursor,
+  mode: 'backfill' | 'incremental',
+  budget?: GithubRequestBudget,
+): Promise<GithubSurfaceFailure[]> {
+  const cursor = await loadRepoSurfaceCursor(ctx, repo, 'workflow_runs', legacyCursor);
+  if (mode === 'incremental' && !surfaceDue(cursor, GITHUB_WORKFLOW_RUN_SYNC_INTERVAL_MS))
+    return [];
+  const next: RepoCursor = { ...cursor };
+  const legacySince = cursor.since ?? new Date(0).toISOString();
+  const workflowRunsSince = cursor.workflow_runs_since ?? legacySince;
+  const failures: GithubSurfaceFailure[] = [];
   try {
-    const workflowRunNext: RepoCursor = { ...next };
     for (let page = 1; page <= MAX_SYNC_PAGES; page++) {
       const runs = await ghGet<{ workflow_runs: GhWorkflowRun[] }>(
         tokens,
         `/repos/${repo}/actions/runs?per_page=100&page=${String(page)}`,
+        budget,
       );
       const workflowRuns = runs.workflow_runs;
       if (workflowRuns.length === 0) break;
@@ -827,52 +1084,62 @@ async function syncRepo(
       if (filtered.length > 0) {
         await ctx.writeEvents(filtered.map((r) => workflowRunToEvent(repo, r)));
         for (const r of filtered) {
-          workflowRunNext.workflow_runs_since = maxIso(
-            workflowRunNext.workflow_runs_since,
-            r.updated_at,
-          );
-          workflowRunNext.since = maxIso(workflowRunNext.since, r.updated_at);
+          next.workflow_runs_since = maxIso(next.workflow_runs_since, r.updated_at);
+          next.since = maxIso(next.since, r.updated_at);
         }
       }
       if (filtered.length === 0 || workflowRuns.length < 100) break;
       if (page === MAX_SYNC_PAGES) {
         failures.push({
+          repo,
+          surface: 'workflow_runs',
           area: 'workflow_runs:page_cap',
           error: `hit ${String(MAX_SYNC_PAGES)} pages without reaching the end`,
         });
       }
     }
-    if (!failures.some((f) => f.area.startsWith('workflow_runs'))) {
-      Object.assign(next, workflowRunNext);
-      await saveRepoCursor(ctx, repo, next);
-    }
   } catch (err) {
     if (isGithubRateLimitError(err)) throw err;
     log.warn({ err, repo }, 'github workflow runs fetch failed');
     failures.push({
+      repo,
+      surface: 'workflow_runs',
       area: 'workflow_runs',
       error: err instanceof Error ? err.message : String(err),
     });
   }
-
-  if (failures.length > 0) {
-    throw new Error(
-      `github_repo_sync_partial:${repo}: ${failures
-        .map((f) => `${f.area} (${summarizeGithubFailure(f.error)})`)
-        .join('; ')
-        .slice(0, 400)}`,
+  if (failures.length === 0) {
+    await saveRepoSurfaceCursor(ctx, repo, 'workflow_runs', next);
+  } else {
+    await saveRepoSurfaceFailure(
+      ctx,
+      repo,
+      'workflow_runs',
+      cursor,
+      summarizeSurfaceFailures(failures),
     );
   }
-
-  return next;
+  return failures;
 }
 
-async function listOrgRepos(tokens: GithubTokens, org: string): Promise<string[]> {
+function summarizeSurfaceFailures(failures: GithubSurfaceFailure[]): string {
+  return failures
+    .map((f) => `${f.area} (${summarizeGithubFailure(f.error)})`)
+    .join('; ')
+    .slice(0, 400);
+}
+
+async function listOrgRepos(
+  tokens: GithubTokens,
+  org: string,
+  budget?: GithubRequestBudget,
+): Promise<string[]> {
   const repos: string[] = [];
   for (let page = 1; page <= 20; page++) {
     const batch = await ghGet<GhRepo[]>(
       tokens,
       `/orgs/${encodeURIComponent(org)}/repos?type=all&sort=updated&direction=desc&per_page=100&page=${String(page)}`,
+      budget,
     );
     if (!Array.isArray(batch) || batch.length === 0) break;
     repos.push(...batch.map((repo) => repo.full_name));
@@ -884,6 +1151,8 @@ async function listOrgRepos(tokens: GithubTokens, org: string): Promise<string[]
 async function expandGithubSelections(
   tokens: GithubTokens,
   selections: { kind: string; externalId: string }[],
+  ctx: SyncContext,
+  budget?: GithubRequestBudget,
 ): Promise<string[]> {
   const repos = new Set<string>();
   for (const sel of selections) {
@@ -891,7 +1160,24 @@ async function expandGithubSelections(
   }
   for (const sel of selections) {
     if (sel.kind !== 'github.org') continue;
-    const orgRepos = await listOrgRepos(tokens, sel.externalId);
+    const resourceType = `github.org:${sel.externalId}:repos`;
+    const cached = (await ctx.loadCursor(resourceType)) as GithubOrgRepoCursor;
+    const fetchedAt = typeof cached.fetched_at === 'string' ? new Date(cached.fetched_at) : null;
+    const cacheFresh =
+      Array.isArray(cached.repos) &&
+      fetchedAt !== null &&
+      !Number.isNaN(fetchedAt.getTime()) &&
+      Date.now() - fetchedAt.getTime() < GITHUB_ORG_REPO_CACHE_TTL_MS;
+    const orgRepos =
+      cacheFresh && cached.repos
+        ? cached.repos
+        : await listOrgRepos(tokens, sel.externalId, budget);
+    if (!cacheFresh) {
+      await ctx.saveCursor(resourceType, {
+        repos: orgRepos,
+        fetched_at: new Date().toISOString(),
+      } satisfies GithubOrgRepoCursor);
+    }
     for (const repo of orgRepos) repos.add(repo);
   }
   return [...repos].sort();
@@ -1014,32 +1300,15 @@ export const githubProvider: IntegrationProvider = {
     if (fresh.access_token !== input.access_token) {
       await ctx.persistTokens(fresh as unknown as Record<string, unknown>);
     }
-    const failures: { repo: string; error: string }[] = [];
-    const repos = await expandGithubSelections(fresh, selections);
+    const budget: GithubRequestBudget = {};
+    const repos = await expandGithubSelections(fresh, selections, ctx, budget);
+    const failures: GithubSurfaceFailure[] = [];
     for (const repo of repos) {
-      try {
-        const next = await syncRepo(fresh, repo, {}, ctx);
-        await ctx.saveCursor(`github.repo:${repo}`, next);
-      } catch (err) {
-        if (isGithubRateLimitError(err)) throw err;
-        log.warn({ err, repo }, 'github backfill failed for repo');
-        failures.push({
-          repo,
-          error: err instanceof Error ? err.message : String(err),
-        });
-      }
+      failures.push(...(await syncRepo(fresh, repo, ctx, { mode: 'backfill' }, budget)));
     }
-    // Surface per-repo failures via a throw — the worker catches and
-    // writes `last_error`. Otherwise a sync that hit 401/403/500 on
-    // every selected repo would still mark `last_synced_at` fresh and
-    // clear `last_error`, hiding the breakage from operators.
     if (failures.length > 0) {
-      throw new Error(
-        `github_backfill_partial: ${String(failures.length)} repo(s) failed: ${failures
-          .map((f) => `${f.repo} (${summarizeGithubFailure(f.error)})`)
-          .join('; ')
-          .slice(0, 400)}`,
-      );
+      await ctx.recordAudit('github_backfill_partial', summarizeIntegrationFailures(failures));
+      return { partialFailures: toSyncPartialFailures(failures) };
     }
   },
 
@@ -1049,29 +1318,40 @@ export const githubProvider: IntegrationProvider = {
     if (fresh.access_token !== input.access_token) {
       await ctx.persistTokens(fresh as unknown as Record<string, unknown>);
     }
-    const failures: { repo: string; error: string }[] = [];
-    const repos = await expandGithubSelections(fresh, selections);
+    const budget: GithubRequestBudget = {};
+    const repos = await expandGithubSelections(fresh, selections, ctx, budget);
+    const failures: GithubSurfaceFailure[] = [];
     for (const repo of repos) {
-      const cursor = (await ctx.loadCursor(`github.repo:${repo}`)) as RepoCursor;
-      try {
-        const next = await syncRepo(fresh, repo, cursor, ctx);
-        await ctx.saveCursor(`github.repo:${repo}`, next);
-      } catch (err) {
-        if (isGithubRateLimitError(err)) throw err;
-        log.warn({ err, repo }, 'github incremental sync failed for repo');
-        failures.push({
-          repo,
-          error: err instanceof Error ? err.message : String(err),
-        });
-      }
+      const legacyCursor = (await ctx.loadCursor(`github.repo:${repo}`)) as RepoCursor;
+      failures.push(
+        ...(await syncRepo(fresh, repo, ctx, { mode: 'incremental', legacyCursor }, budget)),
+      );
     }
     if (failures.length > 0) {
-      throw new Error(
-        `github_incremental_partial: ${String(failures.length)} repo(s) failed: ${failures
-          .map((f) => `${f.repo} (${summarizeGithubFailure(f.error)})`)
-          .join('; ')
-          .slice(0, 400)}`,
-      );
+      await ctx.recordAudit('github_incremental_partial', summarizeIntegrationFailures(failures));
+      return { partialFailures: toSyncPartialFailures(failures) };
     }
   },
 };
+
+function toSyncPartialFailures(failures: GithubSurfaceFailure[]): SyncPartialFailure[] {
+  return failures.map((failure) => ({
+    resource: failure.repo,
+    surface: failure.surface,
+    area: failure.area,
+    error: summarizeGithubFailure(failure.error),
+  }));
+}
+
+function summarizeIntegrationFailures(
+  failures: GithubSurfaceFailure[],
+): Record<string, string | number> {
+  return {
+    failure_count: failures.length,
+    repo_count: new Set(failures.map((f) => f.repo)).size,
+    summary: failures
+      .map((f) => `${f.repo}:${f.surface}:${f.area} (${summarizeGithubFailure(f.error)})`)
+      .join('; ')
+      .slice(0, 400),
+  };
+}

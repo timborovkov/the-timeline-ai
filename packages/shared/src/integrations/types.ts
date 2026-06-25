@@ -95,8 +95,12 @@ export interface SyncContext {
   writeEvents(events: IntegrationEvent[]): Promise<string[]>;
   /** Provider may emit progress notes into the audit log mid-sync. */
   recordAudit(kind: string, payload: Record<string, unknown>): Promise<void>;
-  /** Update the per-resource cursor after a successful page. */
-  saveCursor(resourceType: string, cursor: unknown): Promise<void>;
+  /** Update the per-resource cursor after a successful page or surface-specific failure. */
+  saveCursor(
+    resourceType: string,
+    cursor: unknown,
+    status?: { lastStatus?: string; lastError?: string | null },
+  ): Promise<void>;
   /** Load the last persisted cursor for a resource. Returns `{}` when unset. */
   loadCursor(resourceType: string): Promise<unknown>;
   /**
@@ -115,6 +119,17 @@ export interface SyncContext {
    * The worker writes via `adminPersistTokens` (AES-256-GCM at rest).
    */
   persistTokens(tokens: Record<string, unknown>): Promise<void>;
+}
+
+export interface SyncPartialFailure {
+  resource: string;
+  surface?: string;
+  area?: string;
+  error: string;
+}
+
+export interface SyncResult {
+  partialFailures?: SyncPartialFailure[];
 }
 
 export interface ProviderResource {
@@ -197,7 +212,7 @@ export interface IntegrationProvider {
     tokens: unknown;
     selections: { kind: string; externalId: string }[];
     ctx: SyncContext;
-  }): Promise<void>;
+  }): Promise<SyncResult | undefined>;
   /**
    * Delta sync since the last cursor. Same idempotency rules.
    */
@@ -206,7 +221,7 @@ export interface IntegrationProvider {
     tokens: unknown;
     selections: { kind: string; externalId: string }[];
     ctx: SyncContext;
-  }): Promise<void>;
+  }): Promise<SyncResult | undefined>;
   /**
    * Normalize a verified webhook payload into IntegrationEvents. The
    * route handler is responsible for HMAC verification; this just

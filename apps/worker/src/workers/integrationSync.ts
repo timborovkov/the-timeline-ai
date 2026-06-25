@@ -23,6 +23,7 @@ import { captureWorkerException, captureWorkerJobFailure } from '#src/monitoring
 //     synthetic tick job (integrationId='__tick__').
 
 const log = childLogger('worker:integration-sync');
+const GITHUB_BACKGROUND_SYNC_INTERVAL_MS = 60 * 60 * 1000;
 
 interface IntegrationSyncDeps {
   db: Db;
@@ -34,6 +35,27 @@ function isAuthOrAccessFailure(message: string): boolean {
     /\b(?:401|403|404)\b/.test(message) ||
     /\b(?:reconnect|expired|unauthorized|forbidden)\b/i.test(message)
   );
+}
+
+function syncPartialFailures(
+  result?: integrationsLib.SyncResult,
+): integrationsLib.SyncPartialFailure[] {
+  if (!result || !Array.isArray(result.partialFailures)) return [];
+  return result.partialFailures.filter(
+    (failure) => typeof failure.error === 'string' && failure.error.length > 0,
+  );
+}
+
+function summarizeSyncPartialFailures(failures: integrationsLib.SyncPartialFailure[]): string {
+  return failures
+    .map((failure) => {
+      const location = [failure.resource, failure.surface, failure.area]
+        .filter((part) => typeof part === 'string' && part.length > 0)
+        .join(':');
+      return `${location || 'resource'} (${failure.error})`;
+    })
+    .join('; ')
+    .slice(0, 500);
 }
 
 function githubRateLimitPause(err: unknown): { retryAt: Date; message: string } | null {
@@ -192,8 +214,8 @@ export async function runOneIntegration(
           integrationId,
         });
       },
-      async saveCursor(resourceType, cursor) {
-        await integrationsLib.adminSaveCursor(db, integrationId, resourceType, cursor);
+      async saveCursor(resourceType, cursor, status) {
+        await integrationsLib.adminSaveCursor(db, integrationId, resourceType, cursor, status);
       },
       async loadCursor(resourceType) {
         return integrationsLib.adminLoadCursor(db, integrationId, resourceType);
@@ -286,18 +308,48 @@ export async function runOneIntegration(
       { integrationId },
     );
     try {
+      let syncResult: integrationsLib.SyncResult | undefined;
       if (kind === 'backfill') {
-        await provider.backfill({ integration, tokens, selections, ctx });
+        syncResult = await provider.backfill({ integration, tokens, selections, ctx });
       } else {
-        await provider.incrementalSync({ integration, tokens, selections, ctx });
+        syncResult = await provider.incrementalSync({ integration, tokens, selections, ctx });
       }
+      const partialFailures = syncPartialFailures(syncResult);
+      const partialSummary =
+        partialFailures.length > 0 ? summarizeSyncPartialFailures(partialFailures) : null;
       await integrationsLib.adminMarkSynced(db, integrationId);
-      await integrationsLib.adminResetTransientSyncFailures(db, integrationId);
-      await integrationsLib.adminResolveConnectionAttention(db, integration.teamId, {
-        providerConnectionId: integration.providerConnectionId,
-        integrationId,
-        categories: ['needs_reconnect', 'sync_error'],
-      });
+      if (partialSummary) {
+        await integrationsLib.adminRecordError(db, integrationId, partialSummary);
+        if (isAuthOrAccessFailure(partialSummary)) {
+          await integrationsLib.adminRecordConnectionAttention(db, integration.teamId, {
+            providerConnectionId: integration.providerConnectionId,
+            integrationId,
+            category: 'needs_reconnect',
+            summary: partialSummary,
+          });
+        } else {
+          const transient = await integrationsLib.adminRecordTransientSyncFailure(
+            db,
+            integrationId,
+            partialSummary,
+          );
+          if (transient.shouldCreateAttention) {
+            await integrationsLib.adminRecordConnectionAttention(db, integration.teamId, {
+              providerConnectionId: integration.providerConnectionId,
+              integrationId,
+              category: 'sync_error',
+              summary: partialSummary,
+            });
+          }
+        }
+      } else {
+        await integrationsLib.adminResetTransientSyncFailures(db, integrationId);
+        await integrationsLib.adminResolveConnectionAttention(db, integration.teamId, {
+          providerConnectionId: integration.providerConnectionId,
+          integrationId,
+          categories: ['needs_reconnect', 'sync_error'],
+        });
+      }
       await integrationsLib.adminRecordAudit(
         db,
         integration.teamId,
@@ -373,10 +425,39 @@ export async function runOneIntegration(
   }
 }
 
-async function handleTick(db: Db): Promise<void> {
+function githubBackgroundSyncDue(
+  integration: { provider: string; lastSyncedAt?: Date | string | null },
+  now = Date.now(),
+): boolean {
+  if (integration.provider !== 'github') return true;
+  if (!integration.lastSyncedAt) return true;
+  const lastSyncedAt =
+    integration.lastSyncedAt instanceof Date
+      ? integration.lastSyncedAt
+      : new Date(integration.lastSyncedAt);
+  if (Number.isNaN(lastSyncedAt.getTime())) return true;
+  return now - lastSyncedAt.getTime() >= GITHUB_BACKGROUND_SYNC_INTERVAL_MS;
+}
+
+export async function handleTick(db: Db): Promise<void> {
   const all = await integrationsLib.adminListEnabledIntegrations(db);
   for (const i of all) {
     if (i.provider === 'mcp') continue;
+    const pause = await integrationsLib.adminLoadIntegrationSyncPause(db, i.id);
+    if (pause) {
+      log.info(
+        { integrationId: i.id, provider: i.provider, retryAt: pause.retryAt },
+        'integration sync paused — not enqueueing tick',
+      );
+      continue;
+    }
+    if (!githubBackgroundSyncDue(i)) {
+      log.debug(
+        { integrationId: i.id, lastSyncedAt: i.lastSyncedAt },
+        'github background sync not due yet',
+      );
+      continue;
+    }
     try {
       await queue.enqueueIntegrationSyncJob({
         kind: 'incremental',
