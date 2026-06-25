@@ -1178,6 +1178,70 @@ describe('githubProvider.incrementalSync', () => {
     vi.useRealTimers();
   });
 
+  it('clears the poll marker when a low-cadence surface fails', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-06-25T12:00:00.000Z'));
+    const fetchMock = vi.fn<typeof fetch>((input) => {
+      const requestUrl =
+        typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+      const url = new URL(requestUrl);
+      if (url.pathname.endsWith('/releases')) {
+        return Promise.resolve(jsonResponse({ message: 'release API unavailable' }, 500));
+      }
+      if (url.pathname.endsWith('/commits')) return Promise.resolve(jsonResponse([]));
+      const base = emptyGithubFetch(input);
+      return Promise.resolve(base ?? jsonResponse({ message: 'unexpected' }, 404));
+    });
+    globalThis.fetch = fetchMock;
+    const saveCursor = vi.fn().mockResolvedValue(undefined);
+    const loadCursor = vi.fn((resourceType: string) =>
+      Promise.resolve(
+        resourceType === 'github.repo:acme/app:releases'
+          ? {
+              last_polled_at: '2026-06-24T09:30:00.000Z',
+              releases_since: '2026-06-10T00:00:00Z',
+            }
+          : {},
+      ),
+    );
+
+    const result = await githubProvider.incrementalSync({
+      integration: {} as never,
+      tokens: { access_token: 'gho_token' },
+      selections: [{ kind: 'github.repo', externalId: 'acme/app' }],
+      ctx: {
+        writeEvents: vi.fn().mockResolvedValue([]),
+        recordAudit: vi.fn(),
+        saveCursor,
+        loadCursor,
+        persistTokens: vi.fn(),
+      },
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining('/repos/acme/app/releases'),
+      expect.any(Object),
+    );
+    expect(result?.partialFailures?.[0]).toMatchObject({
+      resource: 'acme/app',
+      surface: 'releases',
+      area: 'releases',
+    });
+    expect(result?.partialFailures?.[0]?.error).toContain(
+      'GitHub GET /repos/acme/app/releases?per_page=100&page=1',
+    );
+    expect(savedCursor(saveCursor, 'github.repo:acme/app:releases')).toMatchObject({
+      releases_since: '2026-06-10T00:00:00Z',
+    });
+    expect(
+      savedCursor(saveCursor, 'github.repo:acme/app:releases')?.last_polled_at,
+    ).toBeUndefined();
+    expect(savedStatus(saveCursor, 'github.repo:acme/app:releases')).toMatchObject({
+      lastStatus: 'error',
+    });
+    vi.useRealTimers();
+  });
+
   it('advances the issue cursor when fetched rows are PRs filtered out of issue events', async () => {
     const fetchMock = vi.fn<typeof fetch>((input) => {
       const requestUrl =

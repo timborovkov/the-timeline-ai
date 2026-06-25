@@ -499,7 +499,9 @@ async function saveRepoSurfaceFailure(
   cursor: RepoCursor,
   error: string,
 ): Promise<void> {
-  await saveRepoSurfaceCursor(ctx, repo, surface, cursor, {
+  const retryCursor = { ...cursor };
+  delete retryCursor.last_polled_at;
+  await ctx.saveCursor(repoSurfaceResourceType(repo, surface), retryCursor, {
     lastStatus: 'error',
     lastError: error.slice(0, 500),
   });
