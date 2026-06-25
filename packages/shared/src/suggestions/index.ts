@@ -786,6 +786,36 @@ function normalizeLifecyclePayload(
   return payload;
 }
 
+function normalizeSuggestionSourceEventPayload(
+  payload: Record<string, unknown>,
+  opts: {
+    fallbackSourceEventId?: string | null;
+    allowedSourceEventIds?: ReadonlySet<string>;
+  } = {},
+): Record<string, unknown> {
+  if (!Object.hasOwn(payload, 'sourceEventId')) return payload;
+
+  const sourceEventId = payload.sourceEventId;
+  if (sourceEventId === null || sourceEventId === undefined) return payload;
+
+  if (typeof sourceEventId === 'string') {
+    const trimmed = sourceEventId.trim();
+    if (trimmed !== '' && UUID_RE.test(trimmed)) {
+      if (!opts.allowedSourceEventIds || opts.allowedSourceEventIds.has(trimmed)) {
+        return { ...payload, sourceEventId: trimmed };
+      }
+    }
+  }
+
+  const normalized = { ...payload };
+  if (opts.fallbackSourceEventId) {
+    normalized.sourceEventId = opts.fallbackSourceEventId;
+  } else {
+    delete normalized.sourceEventId;
+  }
+  return normalized;
+}
+
 function recordFromUnknown(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -2872,7 +2902,9 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     item: typeof agentSuggestionItems.$inferSelect,
     payload: Record<string, unknown>,
   ): Promise<string> {
-    const parsed = objectCreatePayload.parse(payload);
+    const parsed = objectCreatePayload.parse(
+      await normalizeObjectCreatePayloadForAcceptance(item, payload),
+    );
     const canonicalName =
       parsed.canonicalName !== undefined && parsed.canonicalName.length > 0
         ? parsed.canonicalName
@@ -2941,6 +2973,34 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     };
     await objects.updateObject(existing.id, patch, { kind: 'agent', userId: null });
     return existing.id;
+  }
+
+  async function normalizeObjectCreatePayloadForAcceptance(
+    item: typeof agentSuggestionItems.$inferSelect,
+    payload: Record<string, unknown>,
+  ): Promise<Record<string, unknown>> {
+    if (!Object.hasOwn(payload, 'sourceEventId')) return payload;
+
+    const evidence = await db
+      .select({ rawEventId: agentSuggestionEvidence.rawEventId })
+      .from(agentSuggestionEvidence)
+      .where(
+        and(
+          eq(agentSuggestionEvidence.teamId, teamId),
+          eq(agentSuggestionEvidence.suggestionId, item.suggestionId),
+        ),
+      )
+      .orderBy(asc(agentSuggestionEvidence.createdAt))
+      .limit(2);
+    const evidenceIds = evidence.map((ev) => ev.rawEventId);
+    const opts: {
+      allowedSourceEventIds?: ReadonlySet<string>;
+      fallbackSourceEventId?: string | null;
+    } = { fallbackSourceEventId: evidenceIds.length === 1 ? (evidenceIds[0] ?? null) : null };
+    if (evidenceIds.length > 0) {
+      opts.allowedSourceEventIds = new Set(evidenceIds);
+    }
+    return normalizeSuggestionSourceEventPayload(payload, opts);
   }
 
   function acceptancePriority(item: SuggestionItem): number {
@@ -3660,6 +3720,14 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       const metadata = input.metadata ?? {};
       await validateEvidenceVisible((input.evidence ?? []).map((ev) => ev.rawEventId));
       const objectTypeByTargetId = await objectTypesForItems(input.items);
+      const evidenceIds = Array.from(new Set((input.evidence ?? []).map((ev) => ev.rawEventId)));
+      const sourceEventFallback: {
+        allowedSourceEventIds?: ReadonlySet<string>;
+        fallbackSourceEventId?: string | null;
+      } = { fallbackSourceEventId: evidenceIds.length === 1 ? (evidenceIds[0] ?? null) : null };
+      if (evidenceIds.length > 0) {
+        sourceEventFallback.allowedSourceEventIds = new Set(evidenceIds);
+      }
       const correctionDedupeKey = `${input.dedupeKey}:correction:${suggestionDedupeKey({
         title: input.title,
         summary: input.summary ?? null,
@@ -3795,16 +3863,19 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
           .insert(agentSuggestionItems)
           .values(
             input.items.map((item) => {
-              const proposedPayload = normalizeLifecyclePayload({
-                operation: item.operation,
-                targetKind: item.targetKind,
-                title: item.title,
-                proposedPayload: item.proposedPayload,
-                objectType:
-                  item.targetKind === 'object' && item.operation !== 'create'
-                    ? (objectTypeByTargetId.get(item.targetId ?? '') ?? null)
-                    : null,
-              });
+              const proposedPayload = normalizeSuggestionSourceEventPayload(
+                normalizeLifecyclePayload({
+                  operation: item.operation,
+                  targetKind: item.targetKind,
+                  title: item.title,
+                  proposedPayload: item.proposedPayload,
+                  objectType:
+                    item.targetKind === 'object' && item.operation !== 'create'
+                      ? (objectTypeByTargetId.get(item.targetId ?? '') ?? null)
+                      : null,
+                }),
+                sourceEventFallback,
+              );
               return {
                 suggestionId: inserted.id,
                 teamId,

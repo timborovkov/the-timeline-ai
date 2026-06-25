@@ -6192,6 +6192,236 @@ describe('suggestion scope', () => {
     });
   });
 
+  it('normalizes invalid task create source event ids to suggestion evidence when storing', async () => {
+    const sourceRawEventId = '99999999-9999-4999-8999-999999999999';
+    await db.insert(rawEvents).values({
+      id: sourceRawEventId,
+      teamId: TEAM_ID,
+      authorUserId: USER_ID,
+      source: 'web',
+      contentText: 'Daily meeting: investigate agent memory usage for pulling wrong numbers.',
+      occurredAt: new Date('2026-06-25T13:07:00.000Z'),
+      visibility: 'team',
+    });
+
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Developer task board items from daily meeting',
+      dedupeKey: 'task-create-invalid-source-event-id',
+      evidence: [{ rawEventId: sourceRawEventId }],
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Investigate agent memory usage for pulling wrong numbers',
+          dedupeKey: 'task-create-invalid-source-event-id:item',
+          proposedPayload: {
+            canonicalName: 'Investigate agent memory usage for pulling wrong numbers',
+            status: 'todo',
+            sourceEventId: 'daily-meeting',
+          },
+        },
+      ],
+    });
+    const itemId = bundle.items[0]?.id;
+    expect(itemId).toBeDefined();
+    expect(bundle.items[0]?.proposedPayload.sourceEventId).toBe(sourceRawEventId);
+
+    await expect(scope.suggestions.acceptSuggestionItem(itemId ?? '')).resolves.toBe(true);
+
+    const result = await pg.query<{ source_event_id: string | null }>(
+      `SELECT source_event_id
+       FROM entities
+       WHERE team_id = '${TEAM_ID}'
+         AND canonical_name = 'Investigate agent memory usage for pulling wrong numbers'`,
+    );
+    expect(result.rows[0]?.source_event_id).toBe(sourceRawEventId);
+  });
+
+  it('drops invalid task create source event ids when bundle evidence is ambiguous', async () => {
+    const firstRawEventId = '99999999-9999-4999-8999-999999999997';
+    const secondRawEventId = '99999999-9999-4999-8999-999999999996';
+    await db.insert(rawEvents).values([
+      {
+        id: firstRawEventId,
+        teamId: TEAM_ID,
+        authorUserId: USER_ID,
+        source: 'web',
+        contentText: 'Daily meeting: investigate agent memory usage.',
+        occurredAt: new Date('2026-06-25T13:07:00.000Z'),
+        visibility: 'team',
+      },
+      {
+        id: secondRawEventId,
+        teamId: TEAM_ID,
+        authorUserId: USER_ID,
+        source: 'web',
+        contentText: 'Daily meeting: refine the FSLI scoping process.',
+        occurredAt: new Date('2026-06-25T13:08:00.000Z'),
+        visibility: 'team',
+      },
+    ]);
+
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Developer task board items from daily meeting',
+      dedupeKey: 'task-create-ambiguous-invalid-source-event-id',
+      evidence: [{ rawEventId: firstRawEventId }, { rawEventId: secondRawEventId }],
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Scope in all over-PM FSLIs even when netting below PM',
+          dedupeKey: 'task-create-ambiguous-invalid-source-event-id:item',
+          proposedPayload: {
+            canonicalName: 'Scope in all over-PM FSLIs even when netting below PM',
+            status: 'todo',
+            sourceEventId: 'daily-meeting',
+          },
+        },
+      ],
+    });
+    const itemId = bundle.items[0]?.id;
+    expect(itemId).toBeDefined();
+    expect(bundle.items[0]?.proposedPayload).not.toHaveProperty('sourceEventId');
+
+    await expect(scope.suggestions.acceptSuggestionItem(itemId ?? '')).resolves.toBe(true);
+
+    const result = await pg.query<{ source_event_id: string | null }>(
+      `SELECT source_event_id
+       FROM entities
+       WHERE team_id = '${TEAM_ID}'
+         AND canonical_name = 'Scope in all over-PM FSLIs even when netting below PM'`,
+    );
+    expect(result.rows[0]?.source_event_id).toBeNull();
+  });
+
+  it('falls back to suggestion evidence when accepting a legacy task payload with an invalid source event id', async () => {
+    const sourceRawEventId = '99999999-9999-4999-8999-999999999998';
+    await db.insert(rawEvents).values({
+      id: sourceRawEventId,
+      teamId: TEAM_ID,
+      authorUserId: USER_ID,
+      source: 'web',
+      contentText: 'Daily meeting: refine the FSLI scoping process.',
+      occurredAt: new Date('2026-06-25T13:07:00.000Z'),
+      visibility: 'team',
+    });
+
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Developer task board items from daily meeting',
+      dedupeKey: 'task-create-legacy-invalid-source-event-id',
+      evidence: [{ rawEventId: sourceRawEventId }],
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Refine FSLI scoping process',
+          dedupeKey: 'task-create-legacy-invalid-source-event-id:item',
+          proposedPayload: {
+            canonicalName: 'Refine FSLI scoping process',
+            status: 'todo',
+          },
+        },
+      ],
+    });
+    const itemId = bundle.items[0]?.id;
+    expect(itemId).toBeDefined();
+
+    await db
+      .update(agentSuggestionItems)
+      .set({
+        proposedPayload: {
+          canonicalName: 'Refine FSLI scoping process',
+          status: 'todo',
+          sourceEventId: 'daily-meeting',
+        },
+      })
+      .where(eq(agentSuggestionItems.id, itemId ?? ''));
+
+    await expect(scope.suggestions.acceptSuggestionItem(itemId ?? '')).resolves.toBe(true);
+
+    const result = await pg.query<{ source_event_id: string | null }>(
+      `SELECT source_event_id
+       FROM entities
+       WHERE team_id = '${TEAM_ID}'
+         AND canonical_name = 'Refine FSLI scoping process'`,
+    );
+    expect(result.rows[0]?.source_event_id).toBe(sourceRawEventId);
+  });
+
+  it('drops invalid legacy task source event ids when bundle evidence is ambiguous', async () => {
+    const firstRawEventId = '99999999-9999-4999-8999-999999999995';
+    const secondRawEventId = '99999999-9999-4999-8999-999999999994';
+    await db.insert(rawEvents).values([
+      {
+        id: firstRawEventId,
+        teamId: TEAM_ID,
+        authorUserId: USER_ID,
+        source: 'web',
+        contentText: 'Daily meeting: first source.',
+        occurredAt: new Date('2026-06-25T13:07:00.000Z'),
+        visibility: 'team',
+      },
+      {
+        id: secondRawEventId,
+        teamId: TEAM_ID,
+        authorUserId: USER_ID,
+        source: 'web',
+        contentText: 'Daily meeting: second source.',
+        occurredAt: new Date('2026-06-25T13:08:00.000Z'),
+        visibility: 'team',
+      },
+    ]);
+
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Developer task board items from daily meeting',
+      dedupeKey: 'task-create-legacy-ambiguous-invalid-source-event-id',
+      evidence: [{ rawEventId: firstRawEventId }, { rawEventId: secondRawEventId }],
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Investigate agent memory usage',
+          dedupeKey: 'task-create-legacy-ambiguous-invalid-source-event-id:item',
+          proposedPayload: {
+            canonicalName: 'Investigate agent memory usage',
+            status: 'todo',
+          },
+        },
+      ],
+    });
+    const itemId = bundle.items[0]?.id;
+    expect(itemId).toBeDefined();
+
+    await db
+      .update(agentSuggestionItems)
+      .set({
+        proposedPayload: {
+          canonicalName: 'Investigate agent memory usage',
+          status: 'todo',
+          sourceEventId: 'daily-meeting',
+        },
+      })
+      .where(eq(agentSuggestionItems.id, itemId ?? ''));
+
+    await expect(scope.suggestions.acceptSuggestionItem(itemId ?? '')).resolves.toBe(true);
+
+    const result = await pg.query<{ source_event_id: string | null }>(
+      `SELECT source_event_id
+       FROM entities
+       WHERE team_id = '${TEAM_ID}'
+         AND canonical_name = 'Investigate agent memory usage'`,
+    );
+    expect(result.rows[0]?.source_event_id).toBeNull();
+  });
+
   it('accepts calendar cancellation suggestions by soft-deleting the event', async () => {
     const scope = withTeam(db as never, TEAM_ID, USER_ID);
     const event = await scope.calendar.createCalendarEvent({
