@@ -856,10 +856,30 @@ async function collectQueueCandidates(
   userId: string,
   q: Required<RecoveryQueues>,
 ): Promise<JobRecoveryItem[]> {
-  const [embed, meetingsFailed, integrationsFailed] = await Promise.all([
+  const [
+    embed,
+    meetingsFailed,
+    integrationsFailed,
+    embedCompleted,
+    meetingsCompleted,
+    integrationsCompleted,
+  ] = await Promise.all([
     failedJobs(q.getEmbedQueue).catch(() => []),
     failedJobs(q.getMeetingFinalizeQueue).catch(() => []),
     failedJobs(q.getIntegrationSyncQueue).catch(() => []),
+    completedJobRecoveryTimes(q.getEmbedQueue, teamId, completedEmbedJobRecoveryId).catch(
+      () => new Map(),
+    ),
+    completedJobRecoveryTimes(
+      q.getMeetingFinalizeQueue,
+      teamId,
+      completedMeetingJobRecoveryId,
+    ).catch(() => new Map()),
+    completedJobRecoveryTimes(
+      q.getIntegrationSyncQueue,
+      teamId,
+      completedIntegrationJobRecoveryId,
+    ).catch(() => new Map()),
   ]);
 
   const [embedItems, meetingItems, integrationItems] = await Promise.all([
@@ -867,7 +887,11 @@ async function collectQueueCandidates(
     meetingJobsToItems(db, teamId, userId, meetingsFailed),
     integrationJobsToItems(db, teamId, integrationsFailed),
   ]);
-  return [...embedItems, ...meetingItems, ...integrationItems];
+  return [
+    ...filterSupersededQueueFailures(embedItems, embedCompleted),
+    ...filterSupersededQueueFailures(meetingItems, meetingsCompleted),
+    ...filterSupersededQueueFailures(integrationItems, integrationsCompleted),
+  ];
 }
 
 async function embedJobsToItems(
@@ -1026,6 +1050,93 @@ async function integrationJobsToItems(
           }),
         ]
       : [];
+  });
+}
+
+function filterSupersededQueueFailures(
+  items: JobRecoveryItem[],
+  completedAtByRecoveryId: Map<string, Date>,
+): JobRecoveryItem[] {
+  return items.filter((item) => {
+    const completedAt = completedAtByRecoveryId.get(item.id);
+    return !completedAt || completedAt <= item.detectedAt;
+  });
+}
+
+function completedEmbedJobRecoveryId(data: Record<string, unknown>): string | null {
+  if (typeof data.teamId !== 'string') return null;
+  if (
+    (data.scope === undefined || data.scope === 'raw_event') &&
+    typeof data.rawEventId === 'string'
+  ) {
+    return encodeRecoveryId({
+      kind: 'embedding',
+      artifactKind: 'raw_event',
+      artifactId: data.rawEventId,
+    });
+  }
+  if (data.scope === 'fact' && typeof data.factId === 'string') {
+    return encodeRecoveryId({
+      kind: 'embedding',
+      artifactKind: 'fact',
+      artifactId: data.factId,
+    });
+  }
+  if (data.scope === 'object' && typeof data.objectId === 'string') {
+    return encodeRecoveryId({
+      kind: 'embedding',
+      artifactKind: 'object',
+      artifactId: data.objectId,
+      embedScope: 'object',
+    });
+  }
+  if (data.scope === 'entity' && typeof data.entityId === 'string') {
+    return encodeRecoveryId({
+      kind: 'embedding',
+      artifactKind: 'object',
+      artifactId: data.entityId,
+      embedScope: 'entity',
+    });
+  }
+  if (data.scope === 'doc_chunk' && typeof data.documentChunkId === 'string') {
+    return encodeRecoveryId({
+      kind: 'embedding',
+      artifactKind: 'document_chunk',
+      artifactId: data.documentChunkId,
+    });
+  }
+  if (data.scope === 'calendar_event' && typeof data.calendarEventId === 'string') {
+    return encodeRecoveryId({
+      kind: 'embedding',
+      artifactKind: 'calendar_event',
+      artifactId: data.calendarEventId,
+    });
+  }
+  return null;
+}
+
+function completedMeetingJobRecoveryId(data: Record<string, unknown>): string | null {
+  if (typeof data.teamId !== 'string' || typeof data.meetingId !== 'string') return null;
+  return encodeRecoveryId({
+    kind: 'meeting_finalization',
+    artifactKind: 'meeting',
+    artifactId: data.meetingId,
+  });
+}
+
+function completedIntegrationJobRecoveryId(data: Record<string, unknown>): string | null {
+  if (
+    typeof data.teamId !== 'string' ||
+    data.integrationId === '__tick__' ||
+    typeof data.integrationId !== 'string'
+  ) {
+    return null;
+  }
+  return encodeRecoveryId({
+    kind: 'integration_sync',
+    artifactKind: 'integration',
+    artifactId: data.integrationId,
+    syncKind: data.kind === 'backfill' ? 'backfill' : 'incremental',
   });
 }
 
@@ -1755,6 +1866,32 @@ async function failedJobs(getQueue: () => FailedQueueLike): Promise<FailedJob[]>
       failedReason: typeof job.failedReason === 'string' ? job.failedReason : undefined,
       finishedOn: typeof job.finishedOn === 'number' ? job.finishedOn : undefined,
     }));
+}
+
+async function completedJobRecoveryTimes(
+  getQueue: () => FailedQueueLike,
+  teamId: string,
+  recoveryIdForData: (data: Record<string, unknown>) => string | null,
+): Promise<Map<string, Date>> {
+  const q = getQueue();
+  const jobs = await q.getJobs(['completed'], 0, LIMIT);
+  const completedAtByRecoveryId = new Map<string, Date>();
+  for (const raw of jobs) {
+    const job = objectMeta(raw);
+    if (typeof job.failedReason === 'string') continue;
+    const finishedOn = typeof job.finishedOn === 'number' ? job.finishedOn : null;
+    if (!finishedOn) continue;
+    const data = objectMeta(job.data);
+    if (data.teamId !== teamId) continue;
+    const recoveryId = recoveryIdForData(data);
+    if (!recoveryId) continue;
+    const completedAt = new Date(finishedOn);
+    const existing = completedAtByRecoveryId.get(recoveryId);
+    if (!existing || completedAt > existing) {
+      completedAtByRecoveryId.set(recoveryId, completedAt);
+    }
+  }
+  return completedAtByRecoveryId;
 }
 
 interface FailedJob {

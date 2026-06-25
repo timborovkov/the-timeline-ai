@@ -2,7 +2,7 @@
 
 import { CheckCircle2, CircleAlert, LoaderCircle, RotateCcw, X } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { useMemo, useReducer, useState } from 'react';
+import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
 
 import type * as jobRecovery from '@timeline/shared/job-recovery';
 
@@ -121,6 +121,7 @@ export function JobRecoveryList({ items, defaultFilter }: JobRecoveryListProps) 
     initialJobRecoveryUiState,
     (initial): JobRecoveryUiState => ({ ...initial, filter: defaultFilter ?? 'all' }),
   );
+  const refreshedRetrySnapshots = useRef<Set<string> | null>(null);
 
   const visibleItems = useMemo(
     () => items.filter((item) => !dismissedKeys.has(itemSnapshotKey(item))),
@@ -168,6 +169,19 @@ export function JobRecoveryList({ items, defaultFilter }: JobRecoveryListProps) 
     }
     return states;
   }, [finishedByIdentity, retrySnapshots, visibleItems]);
+
+  useEffect(() => {
+    const refreshed = refreshedRetrySnapshots.current ?? new Set<string>();
+    refreshedRetrySnapshots.current = refreshed;
+    for (const [id, snapshot] of Object.entries(retryStates)) {
+      if (snapshot.status !== 'completed') continue;
+      const key = `${id}:${String(snapshot.startedAt)}`;
+      if (refreshed.has(key)) continue;
+      refreshed.add(key);
+      router.refresh();
+      break;
+    }
+  }, [retryStates, router]);
 
   const filtered = useMemo(
     () => (filter === 'all' ? visibleItems : visibleItems.filter((item) => item.kind === filter)),
@@ -593,9 +607,9 @@ function itemSnapshotKey(item: Pick<JobRecoveryItem, 'detectedAt' | 'id'>) {
 function RetryStatus({ snapshot }: { snapshot: RetrySnapshot }) {
   if (snapshot.status === 'completed') {
     return (
-      <p className="flex items-center gap-1 text-xs text-signal">
+      <p className="flex items-center gap-1 text-xs text-fg-muted">
         <CheckCircle2 aria-hidden="true" className="size-3.5" />
-        Retry finished successfully.
+        Retry run completed. This item remains listed until recovery clears.
       </p>
     );
   }

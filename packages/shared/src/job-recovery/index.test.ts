@@ -1,5 +1,5 @@
 import { PGlite } from '@electric-sql/pglite';
-import { type Db, documents, documentVersions, rawEvents } from '@timeline/db';
+import { type Db, documents, documentVersions, meetings, rawEvents } from '@timeline/db';
 import { eq, inArray } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -535,6 +535,89 @@ describe('job recovery scope', () => {
     });
   });
 
+  it('hides retained failed meeting jobs superseded by a newer completed retry', async () => {
+    const meetingId = '15151515-1515-1515-1515-151515151515';
+    const oldFailure = Date.now() - 60_000;
+    const newCompletion = Date.now() - 10_000;
+    await (db as never as Db).insert(meetings).values({
+      id: meetingId,
+      teamId: TEAM_ID,
+      createdByUserId: ADMIN_ID,
+      platform: 'meet',
+      meetingUrl: 'https://meet.google.com/abc-defg-hij',
+      title: 'Internal daily call',
+      status: 'completed',
+      defaultVisibility: 'team',
+      participants: [],
+      metadata: {},
+    });
+    const scope = scopeFor(ADMIN_ID, 'admin', {
+      getMeetingFinalizeQueue: () =>
+        fakeStateQueue({
+          failed: [
+            {
+              id: 'old-failure',
+              name: 'meeting-finalize',
+              data: { meetingId, teamId: TEAM_ID },
+              failedReason: 'llm.chatStructured failed',
+              finishedOn: oldFailure,
+            },
+          ],
+          completed: [
+            {
+              id: 'new-completion',
+              name: 'meeting-finalize',
+              data: { meetingId, teamId: TEAM_ID },
+              attemptsMade: 1,
+              finishedOn: newCompletion,
+            },
+          ],
+        }),
+    });
+
+    const items = await scope.listRecoverableJobs();
+
+    expect(items.filter((item) => item.kind === 'meeting_finalization')).toEqual([]);
+  });
+
+  it('keeps retained failed meeting jobs when a later retry also failed', async () => {
+    const meetingId = '16161616-1616-1616-1616-161616161616';
+    await (db as never as Db).insert(meetings).values({
+      id: meetingId,
+      teamId: TEAM_ID,
+      createdByUserId: ADMIN_ID,
+      platform: 'meet',
+      meetingUrl: 'https://meet.google.com/def-ghij-klm',
+      title: 'Internal daily call',
+      status: 'processing',
+      defaultVisibility: 'team',
+      participants: [],
+      metadata: {},
+    });
+    const scope = scopeFor(ADMIN_ID, 'admin', {
+      getMeetingFinalizeQueue: () =>
+        fakeQueue([
+          {
+            id: 'latest-failure',
+            name: 'meeting-finalize',
+            data: { meetingId, teamId: TEAM_ID },
+            failedReason: '402 insufficient credits',
+            finishedOn: Date.now() - 10_000,
+          },
+        ]),
+    });
+
+    const items = await scope.listRecoverableJobs();
+
+    expect(items).toEqual([
+      expect.objectContaining({
+        artifactId: meetingId,
+        error: '402 insufficient credits',
+        kind: 'meeting_finalization',
+      }),
+    ]);
+  });
+
   it('retry clears integration sync-state errors after enqueueing', async () => {
     await pg.exec(`
       INSERT INTO integrations (id, team_id, provider, display_name, external_account_id)
@@ -760,6 +843,22 @@ function fakeQueue(jobs: unknown[], name = 'queue') {
   return {
     name,
     getJobs: vi.fn().mockImplementation((_types: unknown, start?: number, end?: number) => {
+      const startIndex = start ?? 0;
+      const endIndex = end ?? jobs.length - 1;
+      return Promise.resolve(jobs.slice(startIndex, endIndex + 1));
+    }),
+  };
+}
+
+function fakeStateQueue(states: { failed?: unknown[]; completed?: unknown[] }, name = 'queue') {
+  return {
+    name,
+    getJobs: vi.fn().mockImplementation((types?: unknown, start?: number, end?: number) => {
+      const requested = Array.isArray(types) ? types : typeof types === 'string' ? [types] : [];
+      const jobs = [
+        ...(requested.includes('failed') ? (states.failed ?? []) : []),
+        ...(requested.includes('completed') ? (states.completed ?? []) : []),
+      ];
       const startIndex = start ?? 0;
       const endIndex = end ?? jobs.length - 1;
       return Promise.resolve(jobs.slice(startIndex, endIndex + 1));
