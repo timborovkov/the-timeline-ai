@@ -2990,8 +2990,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
           eq(agentSuggestionEvidence.suggestionId, item.suggestionId),
         ),
       )
-      .orderBy(asc(agentSuggestionEvidence.createdAt))
-      .limit(2);
+      .orderBy(asc(agentSuggestionEvidence.createdAt));
     const evidenceIds = evidence.map((ev) => ev.rawEventId);
     const opts: {
       allowedSourceEventIds?: ReadonlySet<string>;

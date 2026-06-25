@@ -6298,6 +6298,79 @@ describe('suggestion scope', () => {
     expect(result.rows[0]?.source_event_id).toBeNull();
   });
 
+  it('preserves valid task create source event ids beyond the first two evidence events', async () => {
+    const firstRawEventId = '99999999-9999-4999-8999-999999999993';
+    const secondRawEventId = '99999999-9999-4999-8999-999999999992';
+    const thirdRawEventId = '99999999-9999-4999-8999-999999999991';
+    await db.insert(rawEvents).values([
+      {
+        id: firstRawEventId,
+        teamId: TEAM_ID,
+        authorUserId: USER_ID,
+        source: 'web',
+        contentText: 'Daily meeting: first source.',
+        occurredAt: new Date('2026-06-25T13:07:00.000Z'),
+        visibility: 'team',
+      },
+      {
+        id: secondRawEventId,
+        teamId: TEAM_ID,
+        authorUserId: USER_ID,
+        source: 'web',
+        contentText: 'Daily meeting: second source.',
+        occurredAt: new Date('2026-06-25T13:08:00.000Z'),
+        visibility: 'team',
+      },
+      {
+        id: thirdRawEventId,
+        teamId: TEAM_ID,
+        authorUserId: USER_ID,
+        source: 'web',
+        contentText: 'Daily meeting: preserve this source event.',
+        occurredAt: new Date('2026-06-25T13:09:00.000Z'),
+        visibility: 'team',
+      },
+    ]);
+
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Developer task board items from daily meeting',
+      dedupeKey: 'task-create-third-evidence-source-event-id',
+      evidence: [
+        { rawEventId: firstRawEventId },
+        { rawEventId: secondRawEventId },
+        { rawEventId: thirdRawEventId },
+      ],
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Preserve source event from third evidence row',
+          dedupeKey: 'task-create-third-evidence-source-event-id:item',
+          proposedPayload: {
+            canonicalName: 'Preserve source event from third evidence row',
+            status: 'todo',
+            sourceEventId: thirdRawEventId,
+          },
+        },
+      ],
+    });
+    const itemId = bundle.items[0]?.id;
+    expect(itemId).toBeDefined();
+    expect(bundle.items[0]?.proposedPayload.sourceEventId).toBe(thirdRawEventId);
+
+    await expect(scope.suggestions.acceptSuggestionItem(itemId ?? '')).resolves.toBe(true);
+
+    const result = await pg.query<{ source_event_id: string | null }>(
+      `SELECT source_event_id
+       FROM entities
+       WHERE team_id = '${TEAM_ID}'
+         AND canonical_name = 'Preserve source event from third evidence row'`,
+    );
+    expect(result.rows[0]?.source_event_id).toBe(thirdRawEventId);
+  });
+
   it('falls back to suggestion evidence when accepting a legacy task payload with an invalid source event id', async () => {
     const sourceRawEventId = '99999999-9999-4999-8999-999999999998';
     await db.insert(rawEvents).values({
