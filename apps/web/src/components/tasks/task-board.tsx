@@ -52,6 +52,11 @@ interface Props {
 type TaskPatch = Partial<
   Pick<objects.ObjectRow, 'status' | 'assigneeUserId' | 'dueAt' | 'priority'>
 >;
+type TaskPatchKey = keyof TaskPatch;
+interface TaskPatchOverlay {
+  baseline: TaskPatch;
+  patch: TaskPatch;
+}
 type TaskView = 'kanban' | 'list';
 type BulkField = 'status' | 'assignee' | 'due' | 'priority';
 
@@ -112,34 +117,76 @@ function taskViewHref(view: TaskView, taskId: string | null): string {
 }
 
 function patchTaskRow(
-  patches: Record<string, TaskPatch>,
+  patches: Record<string, TaskPatchOverlay>,
   id: string,
   patch: TaskPatch,
-): Record<string, TaskPatch> {
+  baseline: TaskPatch,
+): Record<string, TaskPatchOverlay> {
   return {
     ...patches,
     [id]: {
-      ...(patches[id] ?? {}),
-      ...patch,
+      baseline: {
+        ...(patches[id]?.baseline ?? {}),
+        ...baseline,
+      },
+      patch: {
+        ...(patches[id]?.patch ?? {}),
+        ...patch,
+      },
     },
   };
 }
 
 function removePatchKeys(
-  patches: Record<string, TaskPatch>,
+  patches: Record<string, TaskPatchOverlay>,
   id: string,
-  keys: (keyof TaskPatch)[],
-): Record<string, TaskPatch> {
+  keys: TaskPatchKey[],
+): Record<string, TaskPatchOverlay> {
   const current = patches[id];
   if (!current) return patches;
-  let nextPatch = current;
+  let nextBaseline = current.baseline;
+  let nextPatch = current.patch;
   for (const key of keys) {
-    const { [key]: _removed, ...rest } = nextPatch;
-    nextPatch = rest;
+    const { [key]: _removedBaseline, ...baselineRest } = nextBaseline;
+    const { [key]: _removedPatch, ...patchRest } = nextPatch;
+    nextBaseline = baselineRest;
+    nextPatch = patchRest;
   }
-  if (Object.keys(nextPatch).length > 0) return { ...patches, [id]: nextPatch };
+  if (Object.keys(nextPatch).length > 0) {
+    return { ...patches, [id]: { baseline: nextBaseline, patch: nextPatch } };
+  }
   const { [id]: _removed, ...rest } = patches;
   return rest;
+}
+
+function sameTaskPatchValue(
+  left: TaskPatch[TaskPatchKey],
+  right: TaskPatch[TaskPatchKey],
+): boolean {
+  if (left instanceof Date || right instanceof Date) {
+    const leftTime = left instanceof Date ? left.getTime() : null;
+    const rightTime = right instanceof Date ? right.getTime() : null;
+    return leftTime === rightTime;
+  }
+  return left === right;
+}
+
+function applyTaskPatch(row: objects.ObjectRow, overlay: TaskPatchOverlay | undefined) {
+  if (!overlay) return row;
+  const effectiveEntries: [TaskPatchKey, TaskPatch[TaskPatchKey]][] = [];
+  for (const key of Object.keys(overlay.patch) as TaskPatchKey[]) {
+    const baselineValue = overlay.baseline[key];
+    const patchValue = overlay.patch[key];
+    if (sameTaskPatchValue(row[key], baselineValue) && !sameTaskPatchValue(row[key], patchValue)) {
+      effectiveEntries.push([key, patchValue]);
+    }
+  }
+  const effectivePatch = Object.fromEntries(effectiveEntries) as TaskPatch;
+  return Object.keys(effectivePatch).length > 0 ? { ...row, ...effectivePatch } : row;
+}
+
+function taskPatchBaseline(row: objects.ObjectRow, patch: TaskPatch): TaskPatch {
+  return Object.fromEntries((Object.keys(patch) as TaskPatchKey[]).map((key) => [key, row[key]]));
 }
 
 function moveUiReducer(state: MoveUiState, action: MoveUiAction): MoveUiState {
@@ -181,13 +228,13 @@ export function TaskBoard({ rows, columns, selectedTaskId, view, members }: Prop
   const [moveUi, dispatchMoveUi] = useReducer(moveUiReducer, INITIAL_MOVE_UI);
   const [filterQuery, setFilterQuery] = useState('');
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(new Set());
-  const [rowPatches, setRowPatches] = useState<Record<string, TaskPatch>>({});
+  const [rowPatches, setRowPatches] = useState<Record<string, TaskPatchOverlay>>({});
   const savingCountRef = useRef(0);
   const savingCardIdsRef = useRef<Set<string> | null>(null);
   const batchHadFailureRef = useRef(false);
   const savedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const effectiveRows = useMemo(
-    () => optimisticRows.map((row) => ({ ...row, ...(rowPatches[row.id] ?? {}) })),
+    () => optimisticRows.map((row) => applyTaskPatch(row, rowPatches[row.id])),
     [optimisticRows, rowPatches],
   );
   const visibleRows = useMemo(
@@ -233,10 +280,13 @@ export function TaskBoard({ rows, columns, selectedTaskId, view, members }: Prop
     if (!status || activeSavingCardIds().has(id)) return;
     const row = effectiveRows.find((candidate) => candidate.id === id);
     if (!row || row.status === status) return;
-    const previousStatusPatch = rowPatches[id]?.status;
+    const previousStatusPatch = rowPatches[id]?.patch.status;
+    const previousStatusBaseline = rowPatches[id]?.baseline.status;
     startTransition(async () => {
       applyMove({ id, status });
-      setRowPatches((current) => patchTaskRow(current, id, { status }));
+      setRowPatches((current) =>
+        patchTaskRow(current, id, { status }, taskPatchBaseline(row, { status })),
+      );
       clearSavedTimer();
       if (savingCountRef.current === 0) batchHadFailureRef.current = false;
       savingCountRef.current += 1;
@@ -254,18 +304,26 @@ export function TaskBoard({ rows, columns, selectedTaskId, view, members }: Prop
           setRowPatches((current) =>
             previousStatusPatch === undefined
               ? removePatchKeys(current, id, ['status'])
-              : patchTaskRow(current, id, { status: previousStatusPatch }),
+              : patchTaskRow(
+                  current,
+                  id,
+                  { status: previousStatusPatch },
+                  { status: previousStatusBaseline },
+                ),
           );
           dispatchMoveUi({ type: 'move-fail', id, message: result.error });
-        } else {
-          setRowPatches((current) => removePatchKeys(current, id, ['status']));
         }
       } catch (err) {
         batchHadFailureRef.current = true;
         setRowPatches((current) =>
           previousStatusPatch === undefined
             ? removePatchKeys(current, id, ['status'])
-            : patchTaskRow(current, id, { status: previousStatusPatch }),
+            : patchTaskRow(
+                current,
+                id,
+                { status: previousStatusPatch },
+                { status: previousStatusBaseline },
+              ),
         );
         dispatchMoveUi({ type: 'move-fail', id, message: errorMessage(err, 'Move failed') });
       } finally {
@@ -292,9 +350,11 @@ export function TaskBoard({ rows, columns, selectedTaskId, view, members }: Prop
     patch: TaskPatch,
   ): Promise<{ ok?: boolean; error?: string }> {
     const previousPatch = rowPatches[id];
-    setRowPatches((current) => patchTaskRow(current, id, patch));
+    const row = effectiveRows.find((candidate) => candidate.id === id);
+    setRowPatches((current) =>
+      row ? patchTaskRow(current, id, patch, taskPatchBaseline(row, patch)) : current,
+    );
     const dueAt = patch.dueAt === undefined ? undefined : (patch.dueAt?.toISOString() ?? null);
-    const patchKeys = Object.keys(patch) as (keyof TaskPatch)[];
     const result = await updateObjectAction({
       id,
       ...patch,
@@ -306,8 +366,6 @@ export function TaskBoard({ rows, columns, selectedTaskId, view, members }: Prop
         const { [id]: _removed, ...rest } = current;
         return rest;
       });
-    } else {
-      setRowPatches((current) => removePatchKeys(current, id, patchKeys));
     }
     router.refresh();
     return result;

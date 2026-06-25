@@ -234,7 +234,7 @@ describe('TaskBoard', () => {
     });
   });
 
-  it('reconciles saved status patches when refreshed rows catch up', async () => {
+  it('keeps saved status patches visible until refreshed rows catch up', async () => {
     const user = userEvent.setup();
     const { rerender } = render(
       <TaskBoard
@@ -252,6 +252,11 @@ describe('TaskBoard', () => {
         id: 'task-1',
         status: 'doing',
       });
+    });
+    await waitFor(() => {
+      expect(screen.getByLabelText<HTMLSelectElement>('Status for Send proposal').value).toBe(
+        'doing',
+      );
     });
 
     rerender(
