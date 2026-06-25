@@ -26,6 +26,7 @@ type GenerateObjectProviderOptions = NonNullable<
 >;
 
 export const DEFAULT_AGENT_MAX_STEPS = 20;
+export const DEFAULT_STRUCTURED_MAX_OUTPUT_TOKENS = 32_768;
 
 export interface ChatStructuredInput<TSchema extends z.ZodType> {
   schema: TSchema;
@@ -292,6 +293,7 @@ async function generateStructuredObject<TSchema extends z.ZodType>({
     schema,
     prompt,
     system,
+    maxOutputTokens: DEFAULT_STRUCTURED_MAX_OUTPUT_TOKENS,
     maxRetries: 0,
     experimental_repairText: repairKnownStructuredOutput(schema),
     providerOptions: withLangSmithProviderOptions(openRouterRequireParametersOptions(), {
@@ -321,6 +323,7 @@ async function generateJsonObjectFallback<TSchema extends z.ZodType>({
     model,
     prompt,
     system,
+    maxOutputTokens: DEFAULT_STRUCTURED_MAX_OUTPUT_TOKENS,
     maxRetries: 0,
     providerOptions: withLangSmithProviderOptions(openRouterJsonObjectOptions(), {
       name: 'llm.chatStructured',

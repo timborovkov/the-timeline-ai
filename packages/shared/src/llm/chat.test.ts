@@ -7,7 +7,12 @@ import type { LanguageModel, StreamTextOnErrorCallback } from 'ai';
 import { resetEnvForTests } from '#src/env.js';
 import { EXTRACTION_SYSTEM_PROMPT } from '#src/extract/prompt.js';
 import { extractionResultSchema } from '#src/extract/schema.js';
-import { chatStructured, resolveAgentModelId, streamChat } from '#src/llm/chat.js';
+import {
+  DEFAULT_STRUCTURED_MAX_OUTPUT_TOKENS,
+  chatStructured,
+  resolveAgentModelId,
+  streamChat,
+} from '#src/llm/chat.js';
 import { TIMELINE_MODELS } from '#src/llm/models.js';
 
 const aiSdkGlobal = globalThis as typeof globalThis & {
@@ -21,6 +26,8 @@ const liveOpenRouterIt =
   ENV_BACKUP.OPENROUTER_API_KEY && ENV_BACKUP.OPENROUTER_LIVE_TESTS === '1' ? it : it.skip;
 const openRouterRequestSchema = z.object({
   model: z.unknown(),
+  max_completion_tokens: z.number().optional(),
+  max_tokens: z.number().optional(),
   messages: z.array(z.object({ role: z.unknown(), content: z.unknown() })),
   provider: z
     .object({
@@ -298,6 +305,9 @@ describe('chatStructured', () => {
       body.messages.some((message) => String(message.content).toLowerCase().includes('json')),
     ).toBe(true);
     expect(body.response_format.type).toBe('json_schema');
+    expect(body.max_completion_tokens ?? body.max_tokens).toBe(
+      DEFAULT_STRUCTURED_MAX_OUTPUT_TOKENS,
+    );
     expect(body.provider?.require_parameters).toBe(true);
     expect(body.response_format.json_schema.strict).toBe(true);
     const factSchema = body.response_format.json_schema.schema.properties.facts.items;
@@ -381,10 +391,15 @@ describe('chatStructured', () => {
             require_parameters: z.unknown(),
           })
           .optional(),
+        max_completion_tokens: z.number().optional(),
+        max_tokens: z.number().optional(),
         response_format: z.object({ type: z.unknown() }),
       })
       .parse(requests[1]);
     expect(fallback.response_format.type).toBe('json_object');
+    expect(fallback.max_completion_tokens ?? fallback.max_tokens).toBe(
+      DEFAULT_STRUCTURED_MAX_OUTPUT_TOKENS,
+    );
     expect(fallback.provider?.require_parameters).toBe(true);
     expect(
       fallback.messages.some((message) =>

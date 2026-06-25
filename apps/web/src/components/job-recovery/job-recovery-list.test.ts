@@ -18,11 +18,15 @@ describe('JobRecoveryList', () => {
     expect(source).toContain('Integrations');
     expect(source).toContain('Retry');
     expect(source).toContain('Retry failed');
+    expect(source).toContain(
+      'Retry run completed. This item remains listed until recovery clears.',
+    );
     expect(source).toContain('Dismiss');
     expect(source).not.toContain('BullMQ');
     expect(source).not.toContain('jobId');
     expect(source).not.toContain('waiting');
     expect(source).not.toContain('delayed');
+    expect(source).not.toContain('Retry finished successfully');
   });
 
   it('keys transient retry and dismiss state to the current job snapshot', () => {
@@ -30,6 +34,8 @@ describe('JobRecoveryList', () => {
 
     expect(source).toContain('const retryStartedAt = Date.now()');
     expect(source).toContain('new Date(finished.finishedAt).getTime() >= snapshot.startedAt');
+    expect(source).toContain("snapshot.status !== 'completed'");
+    expect(source).toContain('router.refresh();');
     expect(source).toContain('/api/team/job-recovery/retry-failed');
     expect(source).not.toContain('snapshot.startedAt - 1_000');
     expect(source).toContain('function itemSnapshotKey');
