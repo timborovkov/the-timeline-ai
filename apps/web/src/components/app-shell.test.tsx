@@ -7,6 +7,10 @@ import type { ReactNode } from 'react';
 
 import { AppShell } from '@/components/app-shell';
 
+vi.mock('@/components/app-document-scroll-lock', () => ({
+  AppDocumentScrollLock: () => createElement('div', { 'data-testid': 'app-document-scroll-lock' }),
+}));
+
 vi.mock('@/components/chat/floating-agent-chat', () => ({
   FloatingAgentChat: () => createElement('div', { 'data-testid': 'floating-agent-chat' }),
 }));
@@ -75,6 +79,7 @@ describe('AppShell', () => {
     );
 
     expect(html).toContain('flex h-dvh w-full overflow-hidden bg-bg');
+    expect(html).toContain('data-testid="app-document-scroll-lock"');
     expect(html).toContain('flex min-h-0 min-w-0 flex-1 flex-col');
     expect(html).toContain(
       'min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-6 md:px-8 md:py-8',
