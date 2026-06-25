@@ -12,7 +12,10 @@ const fakes = vi.hoisted(() => ({
 
 const { CuratedBoardList, CuratedBoardTable } = await import('./curated-board-views.js');
 
-function boardItem(input: Partial<boards.BoardItemRow['object']> = {}): boards.BoardItemRow {
+function boardItem(
+  input: Partial<boards.BoardItemRow['object']> = {},
+  itemInput: Partial<Omit<boards.BoardItemRow, 'object'>> = {},
+): boards.BoardItemRow {
   return {
     id: 'item-1',
     boardId: 'board-1',
@@ -28,6 +31,7 @@ function boardItem(input: Partial<boards.BoardItemRow['object']> = {}): boards.B
     archivedAt: null,
     createdAt: new Date('2026-01-01T00:00:00.000Z'),
     updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+    ...itemInput,
     object: {
       id: 'object-1',
       canonicalName: 'Launch review',
@@ -49,6 +53,25 @@ function boardItem(input: Partial<boards.BoardItemRow['object']> = {}): boards.B
   };
 }
 
+const LANES: boards.BoardLaneRow[] = [
+  {
+    id: 'lane-1',
+    boardId: 'board-1',
+    name: 'Open',
+    position: 0,
+    kind: 'active',
+    archivedAt: null,
+  },
+  {
+    id: 'lane-2',
+    boardId: 'board-1',
+    name: 'Done',
+    position: 1,
+    kind: 'done',
+    archivedAt: null,
+  },
+];
+
 describe('CuratedBoardTable', () => {
   beforeEach(() => {
     cleanup();
@@ -62,24 +85,7 @@ describe('CuratedBoardTable', () => {
       <CuratedBoardTable
         boardId="board-1"
         view="table"
-        lanes={[
-          {
-            id: 'lane-1',
-            boardId: 'board-1',
-            name: 'Open',
-            position: 0,
-            kind: 'active',
-            archivedAt: null,
-          },
-          {
-            id: 'lane-2',
-            boardId: 'board-1',
-            name: 'Done',
-            position: 1,
-            kind: 'done',
-            archivedAt: null,
-          },
-        ]}
+        lanes={LANES}
         items={[boardItem()]}
         members={[{ id: 'user-1', label: 'Ada' }]}
         onUpdateItem={fakes.updateItem}
@@ -172,9 +178,49 @@ describe('CuratedBoardTable', () => {
 
     expect(screen.getByLabelText<HTMLInputElement>('Next step for Launch review').value).toBe('');
   });
+
+  it('bulk assigns selected board items in table view', async () => {
+    const user = userEvent.setup();
+    render(
+      <CuratedBoardTable
+        boardId="board-1"
+        view="table"
+        lanes={LANES}
+        items={[
+          boardItem({ canonicalName: 'Launch review' }, { id: 'item-1', entityId: 'object-1' }),
+          boardItem(
+            { id: 'object-2', canonicalName: 'Security review' },
+            { id: 'item-2', entityId: 'object-2' },
+          ),
+        ]}
+        members={[{ id: 'user-1', label: 'Ada' }]}
+        onUpdateItem={fakes.updateItem}
+      />,
+    );
+
+    await user.click(screen.getByRole('checkbox', { name: 'Select Launch review' }));
+    await user.click(screen.getByRole('checkbox', { name: 'Select Security review' }));
+    await user.selectOptions(screen.getByLabelText('Bulk responsible person'), 'user-1');
+    await user.click(screen.getByRole('button', { name: 'Apply' }));
+
+    await waitFor(() => {
+      expect(fakes.updateItem).toHaveBeenCalledWith('item-1', {
+        responsibleUserId: 'user-1',
+      });
+      expect(fakes.updateItem).toHaveBeenCalledWith('item-2', {
+        responsibleUserId: 'user-1',
+      });
+    });
+  });
 });
 
 describe('CuratedBoardList', () => {
+  beforeEach(() => {
+    cleanup();
+    fakes.updateItem.mockReset();
+    fakes.updateItem.mockResolvedValue({ ok: true });
+  });
+
   it('wraps long board item titles', () => {
     const longTitle =
       'timborovkov/the-timeline-ai#202: Add cursor pagination to the visible sales pipeline so full titles remain readable';
@@ -190,5 +236,40 @@ describe('CuratedBoardList', () => {
     const title = screen.getByText(longTitle);
     expect(title.className).toContain('break-words');
     expect(title.className).not.toContain('truncate');
+  });
+
+  it('bulk sets due dates for selected board items in list view', async () => {
+    const user = userEvent.setup();
+    render(
+      <CuratedBoardList
+        boardId="board-1"
+        view="list"
+        lanes={LANES}
+        items={[
+          boardItem({ canonicalName: 'Launch review' }, { id: 'item-1', entityId: 'object-1' }),
+          boardItem(
+            { id: 'object-2', canonicalName: 'Security review' },
+            { id: 'item-2', entityId: 'object-2' },
+          ),
+        ]}
+        members={[{ id: 'user-1', label: 'Ada' }]}
+        onUpdateItem={fakes.updateItem}
+      />,
+    );
+
+    await user.click(screen.getByRole('checkbox', { name: 'Select Launch review' }));
+    await user.click(screen.getByRole('checkbox', { name: 'Select Security review' }));
+    await user.selectOptions(screen.getByLabelText('Bulk board field'), 'due');
+    await user.type(screen.getByLabelText('Bulk board due date'), '2026-07-04');
+    await user.click(screen.getByRole('button', { name: 'Apply' }));
+
+    await waitFor(() => {
+      expect(fakes.updateItem).toHaveBeenCalledWith('item-1', {
+        dueAt: new Date('2026-07-04T00:00:00.000Z'),
+      });
+      expect(fakes.updateItem).toHaveBeenCalledWith('item-2', {
+        dueAt: new Date('2026-07-04T00:00:00.000Z'),
+      });
+    });
   });
 });

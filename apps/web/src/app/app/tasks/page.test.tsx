@@ -42,16 +42,19 @@ vi.mock('@/components/tasks/task-board', () => ({
     rows,
     columns,
     selectedTaskId,
+    view,
     members,
   }: {
     rows: { canonicalName: string }[];
     columns: string[];
     selectedTaskId: string | null;
+    view: 'kanban' | 'list';
     members: { label: string }[];
   }) => (
     <div data-testid="task-board">
       columns {columns.join(', ')} · {rows.map((row) => row.canonicalName).join(', ')} · selected{' '}
-      {selectedTaskId ?? 'none'} · members {members.map((member) => member.label).join(', ')}
+      {selectedTaskId ?? 'none'} · view {view} · members{' '}
+      {members.map((member) => member.label).join(', ')}
     </div>
   ),
 }));
@@ -198,6 +201,34 @@ describe('TasksPage', () => {
 
     expect(html).toContain('Send proposal');
     expect(html).toContain('selected task-1');
+  });
+
+  it('passes list view into the task board', async () => {
+    fakes.listObjects.mockResolvedValue([
+      {
+        id: 'task-1',
+        type: 'task',
+        canonicalName: 'Send proposal',
+        status: 'todo',
+        stage: null,
+        priority: 2,
+        ownerUserId: null,
+        assigneeUserId: null,
+        dueAt: null,
+        agentSuggested: false,
+        archivedAt: null,
+        aliases: [],
+        metadata: {},
+        updatedAt: new Date('2026-06-01T10:00:00.000Z'),
+        createdAt: new Date('2026-06-01T10:00:00.000Z'),
+      },
+    ]);
+
+    const html = renderToStaticMarkup(
+      await TasksPage({ searchParams: Promise.resolve({ view: 'list' }) }),
+    );
+
+    expect(html).toContain('view list');
   });
 
   it('passes workflow columns in active-to-terminal order', async () => {

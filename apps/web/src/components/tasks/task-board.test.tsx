@@ -39,12 +39,17 @@ function task(input: Partial<objects.ObjectRow> = {}): objects.ObjectRow {
   };
 }
 
-function renderBoard(selectedTaskId: string | null = null, rows: objects.ObjectRow[] = [task()]) {
+function renderBoard(
+  selectedTaskId: string | null = null,
+  rows: objects.ObjectRow[] = [task()],
+  view: 'kanban' | 'list' = 'kanban',
+) {
   return render(
     <TaskBoard
       rows={rows}
       columns={['todo', 'doing', 'done', 'blocked', 'cancelled']}
       selectedTaskId={selectedTaskId}
+      view={view}
       members={[
         { id: 'user-1', label: 'Ada Lovelace' },
         { id: 'user-2', label: 'Grace Hopper' },
@@ -89,6 +94,7 @@ describe('TaskBoard', () => {
         ]}
         columns={['todo', 'doing', 'done', 'blocked', 'cancelled']}
         selectedTaskId="task-1"
+        view="kanban"
         members={[{ id: 'user-1', label: 'Ada Lovelace' }]}
       />,
     );
@@ -111,6 +117,7 @@ describe('TaskBoard', () => {
         ]}
         columns={['todo', 'doing', 'done', 'blocked', 'cancelled']}
         selectedTaskId={null}
+        view="kanban"
         members={[{ id: 'user-1', label: 'Ada Lovelace' }]}
       />,
     );
@@ -182,5 +189,151 @@ describe('TaskBoard', () => {
         status: 'doing',
       });
     });
+  });
+
+  it('switches to list view and preserves list mode when opening a task', () => {
+    renderBoard(null, [task()], 'list');
+
+    expect(screen.getByRole('link', { name: 'kanban' }).getAttribute('href')).toBe(
+      '/app/tasks?view=kanban',
+    );
+    expect(screen.getByRole('link', { name: 'list' }).getAttribute('href')).toBe(
+      '/app/tasks?view=list',
+    );
+    expect(screen.getByRole('link', { name: 'Send proposal' }).getAttribute('href')).toBe(
+      '/app/tasks?view=list&task=task-1',
+    );
+    expect(screen.getByRole('checkbox', { name: 'Select Send proposal' })).toBeTruthy();
+  });
+
+  it('bulk assigns selected tasks from list view', async () => {
+    const user = userEvent.setup();
+    renderBoard(
+      null,
+      [
+        task({ id: 'task-1', canonicalName: 'Send proposal' }),
+        task({ id: 'task-2', canonicalName: 'Draft kickoff', assigneeUserId: null }),
+      ],
+      'list',
+    );
+
+    await user.click(screen.getByRole('checkbox', { name: 'Select Send proposal' }));
+    await user.click(screen.getByRole('checkbox', { name: 'Select Draft kickoff' }));
+    await user.selectOptions(screen.getByLabelText('Bulk assignee'), 'user-2');
+    await user.click(screen.getByRole('button', { name: 'Apply' }));
+
+    await waitFor(() => {
+      expect(fakes.updateObjectAction).toHaveBeenCalledWith({
+        id: 'task-1',
+        assigneeUserId: 'user-2',
+      });
+      expect(fakes.updateObjectAction).toHaveBeenCalledWith({
+        id: 'task-2',
+        assigneeUserId: 'user-2',
+      });
+    });
+  });
+
+  it('keeps saved status patches visible until refreshed rows catch up', async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(
+      <TaskBoard
+        rows={[task({ status: 'todo' })]}
+        columns={['todo', 'doing', 'done', 'blocked', 'cancelled']}
+        selectedTaskId={null}
+        view="list"
+        members={[{ id: 'user-1', label: 'Ada Lovelace' }]}
+      />,
+    );
+
+    await user.selectOptions(screen.getByLabelText('Status for Send proposal'), 'doing');
+    await waitFor(() => {
+      expect(fakes.updateObjectAction).toHaveBeenCalledWith({
+        id: 'task-1',
+        status: 'doing',
+      });
+    });
+    await waitFor(() => {
+      expect(screen.getByLabelText<HTMLSelectElement>('Status for Send proposal').value).toBe(
+        'doing',
+      );
+    });
+
+    rerender(
+      <TaskBoard
+        rows={[task({ status: 'doing' })]}
+        columns={['todo', 'doing', 'done', 'blocked', 'cancelled']}
+        selectedTaskId={null}
+        view="list"
+        members={[{ id: 'user-1', label: 'Ada Lovelace' }]}
+      />,
+    );
+    await waitFor(() => {
+      expect(screen.getByLabelText<HTMLSelectElement>('Status for Send proposal').value).toBe(
+        'doing',
+      );
+    });
+
+    rerender(
+      <TaskBoard
+        rows={[task({ status: 'done' })]}
+        columns={['todo', 'doing', 'done', 'blocked', 'cancelled']}
+        selectedTaskId={null}
+        view="list"
+        members={[{ id: 'user-1', label: 'Ada Lovelace' }]}
+      />,
+    );
+
+    expect(screen.getByLabelText<HTMLSelectElement>('Status for Send proposal').value).toBe('done');
+  });
+
+  it('keeps the latest repeated status edit visible before refreshed rows arrive', async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(
+      <TaskBoard
+        rows={[task({ status: 'todo' })]}
+        columns={['todo', 'doing', 'done', 'blocked', 'cancelled']}
+        selectedTaskId={null}
+        view="list"
+        members={[{ id: 'user-1', label: 'Ada Lovelace' }]}
+      />,
+    );
+
+    await user.selectOptions(screen.getByLabelText('Status for Send proposal'), 'doing');
+    await waitFor(() => {
+      expect(screen.getByLabelText<HTMLSelectElement>('Status for Send proposal').value).toBe(
+        'doing',
+      );
+    });
+
+    await user.selectOptions(screen.getByLabelText('Status for Send proposal'), 'done');
+    await waitFor(() => {
+      expect(fakes.updateObjectAction).toHaveBeenCalledWith({
+        id: 'task-1',
+        status: 'done',
+      });
+    });
+
+    rerender(
+      <TaskBoard
+        rows={[task({ status: 'doing' })]}
+        columns={['todo', 'doing', 'done', 'blocked', 'cancelled']}
+        selectedTaskId={null}
+        view="list"
+        members={[{ id: 'user-1', label: 'Ada Lovelace' }]}
+      />,
+    );
+    expect(screen.getByLabelText<HTMLSelectElement>('Status for Send proposal').value).toBe('done');
+
+    rerender(
+      <TaskBoard
+        rows={[task({ status: 'done' })]}
+        columns={['todo', 'doing', 'done', 'blocked', 'cancelled']}
+        selectedTaskId={null}
+        view="list"
+        members={[{ id: 'user-1', label: 'Ada Lovelace' }]}
+      />,
+    );
+    expect(screen.getByLabelText<HTMLSelectElement>('Status for Send proposal').value).toBe('done');
   });
 });

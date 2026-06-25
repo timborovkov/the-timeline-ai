@@ -267,7 +267,16 @@ export function BoardDetailClient({
               onUpdateItem={updateItem}
             />
           )}
-          {view === 'list' && <CuratedBoardList boardId={boardId} view={view} items={items} />}
+          {view === 'list' && (
+            <CuratedBoardList
+              boardId={boardId}
+              view={view}
+              lanes={lanes}
+              items={items}
+              members={members}
+              onUpdateItem={updateItem}
+            />
+          )}
         </div>
         {selectedItem ? (
           <BoardCardDetail
