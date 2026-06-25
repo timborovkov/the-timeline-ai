@@ -21,6 +21,16 @@ describe('UX error messages', () => {
     expect(
       connectionErrorMessage('github_rate_limited: retry after 2026-06-25T03:00:00.000Z'),
     ).toContain('Sync will resume automatically');
+    expect(
+      connectionErrorMessage(
+        'github_incremental_partial: 1 repo(s) failed: acme/app (github_repo_sync_partial:acme/app: commits:page_cap (hit 20 pages))',
+      ),
+    ).toContain('more commit history to catch up');
+    expect(
+      connectionErrorMessage(
+        'github_incremental_partial: 1 repo(s) failed: acme/app (github_repo_sync_partial:acme/app: commits (GitHub GET /repos/acme/app 404: Not Found))',
+      ),
+    ).toContain('could not read one or more selected repos');
     expect(connectionErrorMessage('not_found')).toContain('no longer exists');
     expect(connectionErrorMessage(undefined, 500)).toBe('Connection failed (500).');
   });

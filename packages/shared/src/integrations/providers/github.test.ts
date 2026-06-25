@@ -13,6 +13,9 @@ interface TestGithubCursor {
   releases_since?: string;
   workflow_runs_since?: string;
   last_sha?: string;
+  commit_gap_target_sha?: string;
+  commit_gap_high_water_sha?: string;
+  commit_gap_until?: string;
 }
 
 describe('githubProvider.startOAuth', () => {
@@ -1037,7 +1040,7 @@ describe('githubProvider.incrementalSync', () => {
     );
   });
 
-  it('fails instead of advancing the commit cursor when the page cap truncates a burst', async () => {
+  it('truncates oversized initial commit history and advances the high-water cursor', async () => {
     const fetchMock = vi.fn<typeof fetch>((input) => {
       const requestUrl =
         typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
@@ -1052,24 +1055,126 @@ describe('githubProvider.incrementalSync', () => {
     });
     globalThis.fetch = fetchMock;
     const saveCursor = vi.fn().mockResolvedValue(undefined);
+    const recordAudit = vi.fn().mockResolvedValue(undefined);
 
-    await expect(
-      githubProvider.incrementalSync({
-        integration: {} as never,
-        tokens: { access_token: 'gho_token' },
-        selections: [{ kind: 'github.repo', externalId: 'acme/app' }],
-        ctx: {
-          writeEvents: vi.fn().mockResolvedValue([]),
-          recordAudit: vi.fn(),
-          saveCursor,
-          loadCursor: vi.fn().mockResolvedValue({}),
-          persistTokens: vi.fn(),
-        },
+    await githubProvider.incrementalSync({
+      integration: {} as never,
+      tokens: { access_token: 'gho_token' },
+      selections: [{ kind: 'github.repo', externalId: 'acme/app' }],
+      ctx: {
+        writeEvents: vi.fn().mockResolvedValue([]),
+        recordAudit,
+        saveCursor,
+        loadCursor: vi.fn().mockResolvedValue({}),
+        persistTokens: vi.fn(),
+      },
+    });
+
+    expect(recordAudit).toHaveBeenCalledWith(
+      'github_commit_history_truncated',
+      expect.objectContaining({ repo: 'acme/app', pages: 20, highWaterSha: 'sha-001' }),
+    );
+    expect(saveCursor).toHaveBeenCalledWith(
+      'github.repo:acme/app',
+      expect.objectContaining({ last_sha: 'sha-001' }),
+    );
+  });
+
+  it('checkpoints oversized commit gaps so later syncs can continue draining them', async () => {
+    const fetchMock = vi.fn<typeof fetch>((input) => {
+      const requestUrl =
+        typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+      const url = new URL(requestUrl);
+      if (url.pathname.endsWith('/commits')) {
+        return Promise.resolve(
+          jsonResponse(Array.from({ length: 100 }, (_, index) => commit(index + 1))),
+        );
+      }
+      const base = emptyGithubFetch(input);
+      return Promise.resolve(base ?? jsonResponse({ message: 'unexpected' }, 404));
+    });
+    globalThis.fetch = fetchMock;
+    const saveCursor = vi.fn().mockResolvedValue(undefined);
+    const recordAudit = vi.fn().mockResolvedValue(undefined);
+
+    await githubProvider.incrementalSync({
+      integration: {} as never,
+      tokens: { access_token: 'gho_token' },
+      selections: [{ kind: 'github.repo', externalId: 'acme/app' }],
+      ctx: {
+        writeEvents: vi.fn().mockResolvedValue([]),
+        recordAudit,
+        saveCursor,
+        loadCursor: vi.fn().mockResolvedValue({ last_sha: 'sha-old' }),
+        persistTokens: vi.fn(),
+      },
+    });
+
+    expect(recordAudit).toHaveBeenCalledWith(
+      'github_commit_gap_checkpoint',
+      expect.objectContaining({
+        repo: 'acme/app',
+        targetSha: 'sha-old',
+        highWaterSha: 'sha-001',
+        until: '2026-06-10T10:40:01.000Z',
+        oldestProcessedAt: '2026-06-10T10:40:00Z',
+        pages: 20,
       }),
-    ).rejects.toThrow('github_incremental_partial');
-    expect(
-      saveCursor.mock.calls.some(([, cursor]) => Boolean((cursor as TestGithubCursor).last_sha)),
-    ).toBe(false);
+    );
+    const checkpointCursor = saveCursor.mock.calls.at(-1)?.[1] as TestGithubCursor | undefined;
+    expect(checkpointCursor).toMatchObject({
+      last_sha: 'sha-old',
+      commit_gap_target_sha: 'sha-old',
+      commit_gap_high_water_sha: 'sha-001',
+      commit_gap_until: '2026-06-10T10:40:01.000Z',
+    });
+  });
+
+  it('continues a checkpointed commit gap and promotes the saved high-water sha', async () => {
+    const fetchMock = vi.fn<typeof fetch>((input) => {
+      const requestUrl =
+        typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+      const url = new URL(requestUrl);
+      if (url.pathname.endsWith('/commits')) {
+        return Promise.resolve(jsonResponse([commit(201), { ...commit(999), sha: 'sha-old' }]));
+      }
+      const base = emptyGithubFetch(input);
+      return Promise.resolve(base ?? jsonResponse({ message: 'unexpected' }, 404));
+    });
+    globalThis.fetch = fetchMock;
+    const saveCursor = vi.fn().mockResolvedValue(undefined);
+
+    await githubProvider.incrementalSync({
+      integration: {} as never,
+      tokens: { access_token: 'gho_token' },
+      selections: [{ kind: 'github.repo', externalId: 'acme/app' }],
+      ctx: {
+        writeEvents: vi.fn().mockResolvedValue([]),
+        recordAudit: vi.fn(),
+        saveCursor,
+        loadCursor: vi.fn().mockResolvedValue({
+          last_sha: 'sha-old',
+          commit_gap_target_sha: 'sha-old',
+          commit_gap_high_water_sha: 'sha-001',
+          commit_gap_until: '2026-06-10T10:00:00Z',
+        }),
+        persistTokens: vi.fn(),
+      },
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining('&until=2026-06-10T10%3A00%3A00Z'),
+      expect.any(Object),
+    );
+    expect(saveCursor).toHaveBeenCalledWith(
+      'github.repo:acme/app',
+      expect.objectContaining({
+        last_sha: 'sha-001',
+        commit_gap_target_sha: undefined,
+        commit_gap_high_water_sha: undefined,
+        commit_gap_until: undefined,
+      }),
+    );
   });
 
   it('surfaces GitHub API failures instead of marking a broken sync healthy', async () => {
