@@ -26,7 +26,7 @@ type GenerateObjectProviderOptions = NonNullable<
 >;
 
 export const DEFAULT_AGENT_MAX_STEPS = 20;
-export const DEFAULT_STRUCTURED_MAX_OUTPUT_TOKENS = 8_000;
+export const DEFAULT_STRUCTURED_MAX_OUTPUT_TOKENS = 32_768;
 
 export interface ChatStructuredInput<TSchema extends z.ZodType> {
   schema: TSchema;
