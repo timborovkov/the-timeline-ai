@@ -10,7 +10,7 @@
     <a class="skip" href="#main">Skip to content</a>
     <main id="main">
       <h1>OpenRouter setup</h1>
-      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-06-23</span></div>
+      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-06-25</span></div>
       <blockquote>
         <p>Used from <strong>Phase 3</strong> (transcription) and onwards.</p>
       </blockquote>
@@ -54,7 +54,7 @@ OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
         key/base URL.
       </p>
       <p>
-        Structured extraction calls use Qwen as the primary route. If the provider accepts the
+        Structured extraction calls use GLM as the primary route. If the provider accepts the
         request but returns no schema-valid object, the wrapper retries the same model in JSON
         object mode before falling back to the <code>structuredFallback</code> model. Retryable
         OpenRouter/provider failures such as 429s, 5xx responses, and structured no-object outputs
@@ -67,6 +67,13 @@ OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
         Telegram sees a failed answer. Chat logs and product analytics record both the requested
         model and the response model reported by the SDK, so server-side fallback routing is visible
         during incident review.
+      </p>
+      <p>
+        The catalog should mirror OpenRouter's advertised capabilities, not just model family names.
+        The primary extraction and agent routes use GLM 5.2 because those paths need long-context
+        structured output, tools, and reasoning support. The vision/OCR route uses a model that
+        advertises image and file input because PDF uploads are sent as file parts. Transcription
+        uses a dedicated audio-to-transcription model through OpenRouter's JSON audio endpoint.
       </p>
       <p>
         The embedding model remains special: changing it or its dimensions invalidates the current
@@ -89,7 +96,7 @@ OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
       <pre><code>curl https://openrouter.ai/api/v1/chat/completions \
   -H "Authorization: Bearer $OPENROUTER_API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{"model":"qwen/qwen3.7-max","messages":[{"role":"user","content":"ping"}]}'
+  -d '{"model":"z-ai/glm-5.2","messages":[{"role":"user","content":"ping"}]}'
 </code></pre>
       <p>
         The normal test suite mocks OpenRouter. To run the optional live structured-extraction smoke

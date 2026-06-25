@@ -6,19 +6,19 @@ import { TIMELINE_MODELS } from '#src/llm/models.js';
 describe('TIMELINE_MODELS', () => {
   it('matches OpenRouter metadata for OSS chat-capable roles', () => {
     expect(TIMELINE_MODELS.extraction).toMatchObject({
-      id: 'qwen/qwen3.7-max',
+      id: 'z-ai/glm-5.2',
       provider: 'openrouter',
-      contextWindowTokens: 1_000_000,
+      contextWindowTokens: 1_048_576,
       capabilities: ['chat', 'structured', 'tools'],
     });
     expect(TIMELINE_MODELS.agent).toMatchObject({
-      id: 'qwen/qwen3.7-max',
+      id: 'z-ai/glm-5.2',
       provider: 'openrouter',
-      contextWindowTokens: 1_000_000,
+      contextWindowTokens: 1_048_576,
       capabilities: ['chat', 'structured', 'tools'],
     });
     expect(TIMELINE_MODELS.structuredFallback).toMatchObject({
-      id: 'deepseek/deepseek-v4-flash',
+      id: 'deepseek/deepseek-v4-pro',
       provider: 'openrouter',
       contextWindowTokens: 1_048_576,
       capabilities: ['chat', 'structured', 'tools'],
@@ -31,12 +31,12 @@ describe('TIMELINE_MODELS', () => {
     });
   });
 
-  it('matches OpenRouter metadata for the OSS vision role', () => {
+  it('matches OpenRouter metadata for the PDF-capable vision role', () => {
     expect(TIMELINE_MODELS.vision).toMatchObject({
-      id: 'qwen/qwen3.6-flash',
+      id: 'google/gemini-3.5-flash',
       provider: 'openrouter',
-      contextWindowTokens: 1_000_000,
-      capabilities: ['chat', 'structured', 'tools', 'vision', 'video'],
+      contextWindowTokens: 1_048_576,
+      capabilities: ['chat', 'structured', 'tools', 'vision', 'file', 'audio', 'video'],
     });
   });
 
@@ -49,7 +49,7 @@ describe('TIMELINE_MODELS', () => {
       capabilities: ['embedding'],
     });
     expect(TIMELINE_MODELS.transcription).toMatchObject({
-      id: 'openai/whisper-large-v3',
+      id: 'openai/gpt-4o-transcribe',
       provider: 'openrouter',
       capabilities: ['transcription'],
     });
