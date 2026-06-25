@@ -45,6 +45,18 @@ export function connectionErrorMessage(error: string | undefined, status?: numbe
   ) {
     return 'GitHub is rate limiting this connection. Sync will resume automatically after the cooldown window.';
   }
+  if (error?.includes('github_incremental_partial') || error?.includes('github_backfill_partial')) {
+    if (error.includes('commits:page_cap')) {
+      return 'GitHub has more commit history to catch up. Timeline saved the current checkpoint and the next sync will continue from there.';
+    }
+    if (error.includes('Pull requests read permission required')) {
+      return 'GitHub needs pull request read access for one or more selected repos. Update the GitHub App permissions, then reconnect.';
+    }
+    if (error.includes('GitHub GET /repos/')) {
+      return 'GitHub could not read one or more selected repos. Check that the connection still has access, then sync again.';
+    }
+    return 'GitHub synced partially. Some selected repos need attention before Timeline can finish syncing them.';
+  }
   switch (error) {
     case 'unauthorized':
     case 'unauthenticated':

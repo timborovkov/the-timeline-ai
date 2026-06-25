@@ -311,6 +311,12 @@ interface RepoCursor {
   workflow_runs_since?: string;
   /** Last commit sha we processed; used for commit feed. */
   last_sha?: string;
+  /** Previous high-water sha we still need to find while draining a large commit burst. */
+  commit_gap_target_sha?: string;
+  /** New high-water sha to promote once the commit gap has been drained. */
+  commit_gap_high_water_sha?: string;
+  /** GitHub `until` boundary used to continue draining a large commit burst. */
+  commit_gap_until?: string;
   /** Legacy release cursor; retained for old rows. */
   last_release_id?: number;
 }
@@ -319,6 +325,25 @@ const MAX_SYNC_PAGES = 20;
 
 function maxIso(current: string | undefined, candidate: string): string {
   return !current || candidate > current ? candidate : current;
+}
+
+function commitTimestamp(commit: GhCommit): string {
+  return commit.commit.committer?.date ?? commit.commit.author?.date ?? new Date(0).toISOString();
+}
+
+function commitGapUntil(commit: GhCommit): string {
+  const timestamp = commitTimestamp(commit);
+  const parsed = new Date(timestamp);
+  if (Number.isNaN(parsed.getTime())) return timestamp;
+  return new Date(parsed.getTime() + 1000).toISOString();
+}
+
+function clearCommitGap(cursor: RepoCursor): void {
+  Object.assign(cursor, {
+    commit_gap_target_sha: undefined,
+    commit_gap_high_water_sha: undefined,
+    commit_gap_until: undefined,
+  });
 }
 
 async function saveRepoCursor(ctx: SyncContext, repo: string, cursor: RepoCursor): Promise<void> {
@@ -706,18 +731,30 @@ async function syncRepo(
   try {
     const commitNext: RepoCursor = { ...next };
     const meta = await ghGet<GhRepo>(tokens, `/repos/${repo}`);
-    const lastSha = cursor.last_sha;
-    let newest: string | undefined;
+    const gapTargetSha = cursor.commit_gap_target_sha;
+    const lastSha = gapTargetSha ?? cursor.last_sha;
+    let newest: string | undefined = gapTargetSha ? cursor.commit_gap_high_water_sha : undefined;
     let sawLastSha = false;
+    let reachedCommitEnd = false;
+    let oldestProcessedAt: string | undefined;
+    let nextGapUntil: string | undefined;
+    const untilParam = cursor.commit_gap_until
+      ? `&until=${encodeURIComponent(cursor.commit_gap_until)}`
+      : '';
     for (let page = 1; page <= MAX_SYNC_PAGES; page++) {
       const commits = await ghGet<GhCommit[]>(
         tokens,
-        `/repos/${repo}/commits?sha=${encodeURIComponent(meta.default_branch)}&per_page=100&page=${String(page)}`,
+        `/repos/${repo}/commits?sha=${encodeURIComponent(meta.default_branch)}&per_page=100&page=${String(page)}${untilParam}`,
       );
-      if (commits.length === 0) break;
+      if (commits.length === 0) {
+        reachedCommitEnd = true;
+        break;
+      }
       const fresh: GhCommit[] = [];
       for (const c of commits) {
         newest ??= c.sha;
+        oldestProcessedAt = commitTimestamp(c);
+        nextGapUntil = commitGapUntil(c);
         if (lastSha && c.sha === lastSha) {
           sawLastSha = true;
           break;
@@ -727,15 +764,45 @@ async function syncRepo(
       if (fresh.length > 0) {
         await ctx.writeEvents(fresh.map((c) => commitToEvent(repo, c)));
       }
-      if (sawLastSha || commits.length < 100) break;
+      if (sawLastSha) break;
+      if (commits.length < 100) {
+        reachedCommitEnd = true;
+        break;
+      }
       if (page === MAX_SYNC_PAGES) {
-        failures.push({
-          area: 'commits:page_cap',
-          error: `hit ${String(MAX_SYNC_PAGES)} pages without reaching last_sha`,
-        });
+        if (lastSha) {
+          commitNext.commit_gap_target_sha = lastSha;
+          if (newest) commitNext.commit_gap_high_water_sha = newest;
+          if (nextGapUntil) commitNext.commit_gap_until = nextGapUntil;
+          await ctx.recordAudit('github_commit_gap_checkpoint', {
+            repo,
+            targetSha: lastSha,
+            highWaterSha: newest ?? null,
+            until: nextGapUntil ?? null,
+            oldestProcessedAt: oldestProcessedAt ?? null,
+            pages: MAX_SYNC_PAGES,
+          });
+        } else {
+          await ctx.recordAudit('github_commit_history_truncated', {
+            repo,
+            highWaterSha: newest ?? null,
+            oldestProcessedAt: oldestProcessedAt ?? null,
+            pages: MAX_SYNC_PAGES,
+          });
+        }
       }
     }
-    if (newest) commitNext.last_sha = newest;
+    if (lastSha && reachedCommitEnd && !sawLastSha) {
+      await ctx.recordAudit('github_commit_cursor_target_missing', {
+        repo,
+        targetSha: lastSha,
+        promotedSha: newest ?? null,
+      });
+    }
+    if (newest && (!lastSha || sawLastSha || reachedCommitEnd)) {
+      commitNext.last_sha = newest;
+      clearCommitGap(commitNext);
+    }
     if (!failures.some((f) => f.area.startsWith('commits'))) {
       Object.assign(next, commitNext);
       await saveRepoCursor(ctx, repo, next);
