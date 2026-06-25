@@ -111,6 +111,37 @@ function taskViewHref(view: TaskView, taskId: string | null): string {
   return `/app/tasks?${params.toString()}`;
 }
 
+function patchTaskRow(
+  patches: Record<string, TaskPatch>,
+  id: string,
+  patch: TaskPatch,
+): Record<string, TaskPatch> {
+  return {
+    ...patches,
+    [id]: {
+      ...(patches[id] ?? {}),
+      ...patch,
+    },
+  };
+}
+
+function removePatchKeys(
+  patches: Record<string, TaskPatch>,
+  id: string,
+  keys: (keyof TaskPatch)[],
+): Record<string, TaskPatch> {
+  const current = patches[id];
+  if (!current) return patches;
+  let nextPatch = current;
+  for (const key of keys) {
+    const { [key]: _removed, ...rest } = nextPatch;
+    nextPatch = rest;
+  }
+  if (Object.keys(nextPatch).length > 0) return { ...patches, [id]: nextPatch };
+  const { [id]: _removed, ...rest } = patches;
+  return rest;
+}
+
 function moveUiReducer(state: MoveUiState, action: MoveUiAction): MoveUiState {
   switch (action.type) {
     case 'move-start': {
@@ -200,10 +231,12 @@ export function TaskBoard({ rows, columns, selectedTaskId, view, members }: Prop
     const id = String(event.active.id);
     const status = event.over?.id ? String(event.over.id) : null;
     if (!status || activeSavingCardIds().has(id)) return;
-    const row = optimisticRows.find((candidate) => candidate.id === id);
+    const row = effectiveRows.find((candidate) => candidate.id === id);
     if (!row || row.status === status) return;
+    const previousStatusPatch = rowPatches[id]?.status;
     startTransition(async () => {
       applyMove({ id, status });
+      setRowPatches((current) => patchTaskRow(current, id, { status }));
       clearSavedTimer();
       if (savingCountRef.current === 0) batchHadFailureRef.current = false;
       savingCountRef.current += 1;
@@ -218,10 +251,22 @@ export function TaskBoard({ rows, columns, selectedTaskId, view, members }: Prop
         const result = await updateObjectAction({ id, status });
         if ('error' in result && result.error) {
           batchHadFailureRef.current = true;
+          setRowPatches((current) =>
+            previousStatusPatch === undefined
+              ? removePatchKeys(current, id, ['status'])
+              : patchTaskRow(current, id, { status: previousStatusPatch }),
+          );
           dispatchMoveUi({ type: 'move-fail', id, message: result.error });
+        } else {
+          setRowPatches((current) => removePatchKeys(current, id, ['status']));
         }
       } catch (err) {
         batchHadFailureRef.current = true;
+        setRowPatches((current) =>
+          previousStatusPatch === undefined
+            ? removePatchKeys(current, id, ['status'])
+            : patchTaskRow(current, id, { status: previousStatusPatch }),
+        );
         dispatchMoveUi({ type: 'move-fail', id, message: errorMessage(err, 'Move failed') });
       } finally {
         savingCountRef.current = Math.max(0, savingCountRef.current - 1);
@@ -247,14 +292,9 @@ export function TaskBoard({ rows, columns, selectedTaskId, view, members }: Prop
     patch: TaskPatch,
   ): Promise<{ ok?: boolean; error?: string }> {
     const previousPatch = rowPatches[id];
-    setRowPatches((current) => ({
-      ...current,
-      [id]: {
-        ...(current[id] ?? {}),
-        ...patch,
-      },
-    }));
+    setRowPatches((current) => patchTaskRow(current, id, patch));
     const dueAt = patch.dueAt === undefined ? undefined : (patch.dueAt?.toISOString() ?? null);
+    const patchKeys = Object.keys(patch) as (keyof TaskPatch)[];
     const result = await updateObjectAction({
       id,
       ...patch,
@@ -266,6 +306,8 @@ export function TaskBoard({ rows, columns, selectedTaskId, view, members }: Prop
         const { [id]: _removed, ...rest } = current;
         return rest;
       });
+    } else {
+      setRowPatches((current) => removePatchKeys(current, id, patchKeys));
     }
     router.refresh();
     return result;

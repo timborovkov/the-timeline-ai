@@ -233,4 +233,52 @@ describe('TaskBoard', () => {
       });
     });
   });
+
+  it('reconciles saved status patches when refreshed rows catch up', async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(
+      <TaskBoard
+        rows={[task({ status: 'todo' })]}
+        columns={['todo', 'doing', 'done', 'blocked', 'cancelled']}
+        selectedTaskId={null}
+        view="list"
+        members={[{ id: 'user-1', label: 'Ada Lovelace' }]}
+      />,
+    );
+
+    await user.selectOptions(screen.getByLabelText('Status for Send proposal'), 'doing');
+    await waitFor(() => {
+      expect(fakes.updateObjectAction).toHaveBeenCalledWith({
+        id: 'task-1',
+        status: 'doing',
+      });
+    });
+
+    rerender(
+      <TaskBoard
+        rows={[task({ status: 'doing' })]}
+        columns={['todo', 'doing', 'done', 'blocked', 'cancelled']}
+        selectedTaskId={null}
+        view="list"
+        members={[{ id: 'user-1', label: 'Ada Lovelace' }]}
+      />,
+    );
+    await waitFor(() => {
+      expect(screen.getByLabelText<HTMLSelectElement>('Status for Send proposal').value).toBe(
+        'doing',
+      );
+    });
+
+    rerender(
+      <TaskBoard
+        rows={[task({ status: 'done' })]}
+        columns={['todo', 'doing', 'done', 'blocked', 'cancelled']}
+        selectedTaskId={null}
+        view="list"
+        members={[{ id: 'user-1', label: 'Ada Lovelace' }]}
+      />,
+    );
+
+    expect(screen.getByLabelText<HTMLSelectElement>('Status for Send proposal').value).toBe('done');
+  });
 });
