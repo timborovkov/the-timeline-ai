@@ -121,6 +121,17 @@ export interface SyncContext {
   persistTokens(tokens: Record<string, unknown>): Promise<void>;
 }
 
+export interface SyncPartialFailure {
+  resource: string;
+  surface?: string;
+  area?: string;
+  error: string;
+}
+
+export interface SyncResult {
+  partialFailures?: SyncPartialFailure[];
+}
+
 export interface ProviderResource {
   /** External id (Drive folder id, Linear project id, GitHub repo full_name). */
   externalId: string;
@@ -201,7 +212,7 @@ export interface IntegrationProvider {
     tokens: unknown;
     selections: { kind: string; externalId: string }[];
     ctx: SyncContext;
-  }): Promise<void>;
+  }): Promise<SyncResult | undefined>;
   /**
    * Delta sync since the last cursor. Same idempotency rules.
    */
@@ -210,7 +221,7 @@ export interface IntegrationProvider {
     tokens: unknown;
     selections: { kind: string; externalId: string }[];
     ctx: SyncContext;
-  }): Promise<void>;
+  }): Promise<SyncResult | undefined>;
   /**
    * Normalize a verified webhook payload into IntegrationEvents. The
    * route handler is responsible for HMAC verification; this just

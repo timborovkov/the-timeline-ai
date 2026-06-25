@@ -157,7 +157,9 @@ LINEAR_WEBHOOK_SECRET=...</code></pre>
           If you configure Timeline with a GitHub App client, grant repository read permissions for
           Contents, Issues, Pull requests, Actions, and Metadata. Missing Pull requests read access
           records a PR-surface partial sync on the <code>/pulls</code> endpoint while commits,
-          issues, releases, and workflow runs continue to sync when readable.
+          issues, releases, and workflow runs continue to sync when readable. Timeline keeps the
+          connection attention visible until that partial failure clears, so admins can reconnect or
+          re-grant access without losing the other GitHub surfaces.
         </li>
         <li>
           Copy the OAuth app <strong>Client ID</strong> and generate/copy a

@@ -37,6 +37,27 @@ function isAuthOrAccessFailure(message: string): boolean {
   );
 }
 
+function syncPartialFailures(
+  result?: integrationsLib.SyncResult,
+): integrationsLib.SyncPartialFailure[] {
+  if (!result || !Array.isArray(result.partialFailures)) return [];
+  return result.partialFailures.filter(
+    (failure) => typeof failure.error === 'string' && failure.error.length > 0,
+  );
+}
+
+function summarizeSyncPartialFailures(failures: integrationsLib.SyncPartialFailure[]): string {
+  return failures
+    .map((failure) => {
+      const location = [failure.resource, failure.surface, failure.area]
+        .filter((part) => typeof part === 'string' && part.length > 0)
+        .join(':');
+      return `${location || 'resource'} (${failure.error})`;
+    })
+    .join('; ')
+    .slice(0, 500);
+}
+
 function githubRateLimitPause(err: unknown): { retryAt: Date; message: string } | null {
   if (
     typeof err !== 'object' ||
@@ -287,18 +308,48 @@ export async function runOneIntegration(
       { integrationId },
     );
     try {
+      let syncResult: integrationsLib.SyncResult | undefined;
       if (kind === 'backfill') {
-        await provider.backfill({ integration, tokens, selections, ctx });
+        syncResult = await provider.backfill({ integration, tokens, selections, ctx });
       } else {
-        await provider.incrementalSync({ integration, tokens, selections, ctx });
+        syncResult = await provider.incrementalSync({ integration, tokens, selections, ctx });
       }
+      const partialFailures = syncPartialFailures(syncResult);
+      const partialSummary =
+        partialFailures.length > 0 ? summarizeSyncPartialFailures(partialFailures) : null;
       await integrationsLib.adminMarkSynced(db, integrationId);
-      await integrationsLib.adminResetTransientSyncFailures(db, integrationId);
-      await integrationsLib.adminResolveConnectionAttention(db, integration.teamId, {
-        providerConnectionId: integration.providerConnectionId,
-        integrationId,
-        categories: ['needs_reconnect', 'sync_error'],
-      });
+      if (partialSummary) {
+        await integrationsLib.adminRecordError(db, integrationId, partialSummary);
+        if (isAuthOrAccessFailure(partialSummary)) {
+          await integrationsLib.adminRecordConnectionAttention(db, integration.teamId, {
+            providerConnectionId: integration.providerConnectionId,
+            integrationId,
+            category: 'needs_reconnect',
+            summary: partialSummary,
+          });
+        } else {
+          const transient = await integrationsLib.adminRecordTransientSyncFailure(
+            db,
+            integrationId,
+            partialSummary,
+          );
+          if (transient.shouldCreateAttention) {
+            await integrationsLib.adminRecordConnectionAttention(db, integration.teamId, {
+              providerConnectionId: integration.providerConnectionId,
+              integrationId,
+              category: 'sync_error',
+              summary: partialSummary,
+            });
+          }
+        }
+      } else {
+        await integrationsLib.adminResetTransientSyncFailures(db, integrationId);
+        await integrationsLib.adminResolveConnectionAttention(db, integration.teamId, {
+          providerConnectionId: integration.providerConnectionId,
+          integrationId,
+          categories: ['needs_reconnect', 'sync_error'],
+        });
+      }
       await integrationsLib.adminRecordAudit(
         db,
         integration.teamId,

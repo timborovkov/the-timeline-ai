@@ -4,6 +4,7 @@ import type {
   OAuthCallbackInput,
   OAuthStartInput,
   ProviderResource,
+  SyncPartialFailure,
   SyncContext,
 } from '#src/integrations/types.js';
 
@@ -1305,6 +1306,7 @@ export const githubProvider: IntegrationProvider = {
     }
     if (failures.length > 0) {
       await ctx.recordAudit('github_backfill_partial', summarizeIntegrationFailures(failures));
+      return { partialFailures: toSyncPartialFailures(failures) };
     }
   },
 
@@ -1325,9 +1327,19 @@ export const githubProvider: IntegrationProvider = {
     }
     if (failures.length > 0) {
       await ctx.recordAudit('github_incremental_partial', summarizeIntegrationFailures(failures));
+      return { partialFailures: toSyncPartialFailures(failures) };
     }
   },
 };
+
+function toSyncPartialFailures(failures: GithubSurfaceFailure[]): SyncPartialFailure[] {
+  return failures.map((failure) => ({
+    resource: failure.repo,
+    surface: failure.surface,
+    area: failure.area,
+    error: summarizeGithubFailure(failure.error),
+  }));
+}
 
 function summarizeIntegrationFailures(
   failures: GithubSurfaceFailure[],

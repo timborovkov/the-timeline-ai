@@ -827,7 +827,7 @@ describe('githubProvider.incrementalSync', () => {
     const saveCursor = vi.fn().mockResolvedValue(undefined);
     const recordAudit = vi.fn<SyncContext['recordAudit']>().mockResolvedValue(undefined);
 
-    await githubProvider.incrementalSync({
+    const result = await githubProvider.incrementalSync({
       integration: {} as never,
       tokens: { access_token: 'gho_token' },
       selections: [{ kind: 'github.repo', externalId: 'acme/app' }],
@@ -845,6 +845,15 @@ describe('githubProvider.incrementalSync', () => {
       lastStatus: 'error',
     });
     expect(prsStatus?.lastError).toContain('Pull requests read permission required');
+    expect(result?.partialFailures).toEqual([
+      {
+        resource: 'acme/app',
+        surface: 'prs',
+        area: 'prs:open',
+        error:
+          'Pull requests read permission required; update GitHub App repository permissions and reconnect',
+      },
+    ]);
     expect(savedCursor(saveCursor, 'github.repo:acme/app:commits')).toBeDefined();
     const auditPayload = recordAudit.mock.calls.find(
       ([kind]) => kind === 'github_incremental_partial',
