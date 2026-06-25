@@ -126,8 +126,8 @@ function patchTaskRow(
     ...patches,
     [id]: {
       baseline: {
-        ...(patches[id]?.baseline ?? {}),
         ...baseline,
+        ...(patches[id]?.baseline ?? {}),
       },
       patch: {
         ...(patches[id]?.patch ?? {}),

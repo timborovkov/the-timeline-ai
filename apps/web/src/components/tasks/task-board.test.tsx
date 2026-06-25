@@ -286,4 +286,34 @@ describe('TaskBoard', () => {
 
     expect(screen.getByLabelText<HTMLSelectElement>('Status for Send proposal').value).toBe('done');
   });
+
+  it('keeps the latest repeated status edit visible before refreshed rows arrive', async () => {
+    const user = userEvent.setup();
+    render(
+      <TaskBoard
+        rows={[task({ status: 'todo' })]}
+        columns={['todo', 'doing', 'done', 'blocked', 'cancelled']}
+        selectedTaskId={null}
+        view="list"
+        members={[{ id: 'user-1', label: 'Ada Lovelace' }]}
+      />,
+    );
+
+    await user.selectOptions(screen.getByLabelText('Status for Send proposal'), 'doing');
+    await waitFor(() => {
+      expect(screen.getByLabelText<HTMLSelectElement>('Status for Send proposal').value).toBe(
+        'doing',
+      );
+    });
+
+    await user.selectOptions(screen.getByLabelText('Status for Send proposal'), 'done');
+    await waitFor(() => {
+      expect(fakes.updateObjectAction).toHaveBeenCalledWith({
+        id: 'task-1',
+        status: 'done',
+      });
+    });
+
+    expect(screen.getByLabelText<HTMLSelectElement>('Status for Send proposal').value).toBe('done');
+  });
 });
