@@ -289,7 +289,7 @@ describe('TaskBoard', () => {
 
   it('keeps the latest repeated status edit visible before refreshed rows arrive', async () => {
     const user = userEvent.setup();
-    render(
+    const { rerender } = render(
       <TaskBoard
         rows={[task({ status: 'todo' })]}
         columns={['todo', 'doing', 'done', 'blocked', 'cancelled']}
@@ -314,6 +314,26 @@ describe('TaskBoard', () => {
       });
     });
 
+    rerender(
+      <TaskBoard
+        rows={[task({ status: 'doing' })]}
+        columns={['todo', 'doing', 'done', 'blocked', 'cancelled']}
+        selectedTaskId={null}
+        view="list"
+        members={[{ id: 'user-1', label: 'Ada Lovelace' }]}
+      />,
+    );
+    expect(screen.getByLabelText<HTMLSelectElement>('Status for Send proposal').value).toBe('done');
+
+    rerender(
+      <TaskBoard
+        rows={[task({ status: 'done' })]}
+        columns={['todo', 'doing', 'done', 'blocked', 'cancelled']}
+        selectedTaskId={null}
+        view="list"
+        members={[{ id: 'user-1', label: 'Ada Lovelace' }]}
+      />,
+    );
     expect(screen.getByLabelText<HTMLSelectElement>('Status for Send proposal').value).toBe('done');
   });
 });

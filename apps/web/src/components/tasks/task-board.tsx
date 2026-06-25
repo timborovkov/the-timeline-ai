@@ -53,8 +53,11 @@ type TaskPatch = Partial<
   Pick<objects.ObjectRow, 'status' | 'assigneeUserId' | 'dueAt' | 'priority'>
 >;
 type TaskPatchKey = keyof TaskPatch;
+type TaskPatchValue = TaskPatch[TaskPatchKey];
+type TaskPatchPendingValues = Partial<Record<TaskPatchKey, TaskPatchValue[]>>;
 interface TaskPatchOverlay {
   baseline: TaskPatch;
+  pendingValues: TaskPatchPendingValues;
   patch: TaskPatch;
 }
 type TaskView = 'kanban' | 'list';
@@ -122,15 +125,26 @@ function patchTaskRow(
   patch: TaskPatch,
   baseline: TaskPatch,
 ): Record<string, TaskPatchOverlay> {
+  const current = patches[id];
+  const pendingValues: TaskPatchPendingValues = { ...(current?.pendingValues ?? {}) };
+  for (const key of Object.keys(patch) as TaskPatchKey[]) {
+    pendingValues[key] = taskPatchPendingValues(
+      current?.pendingValues[key],
+      baseline[key],
+      current?.patch[key],
+      patch[key],
+    );
+  }
   return {
     ...patches,
     [id]: {
       baseline: {
         ...baseline,
-        ...(patches[id]?.baseline ?? {}),
+        ...(current?.baseline ?? {}),
       },
+      pendingValues,
       patch: {
-        ...(patches[id]?.patch ?? {}),
+        ...(current?.patch ?? {}),
         ...patch,
       },
     },
@@ -145,24 +159,45 @@ function removePatchKeys(
   const current = patches[id];
   if (!current) return patches;
   let nextBaseline = current.baseline;
+  let nextPendingValues = current.pendingValues;
   let nextPatch = current.patch;
   for (const key of keys) {
     const { [key]: _removedBaseline, ...baselineRest } = nextBaseline;
+    const { [key]: _removedPending, ...pendingRest } = nextPendingValues;
     const { [key]: _removedPatch, ...patchRest } = nextPatch;
     nextBaseline = baselineRest;
+    nextPendingValues = pendingRest;
     nextPatch = patchRest;
   }
   if (Object.keys(nextPatch).length > 0) {
-    return { ...patches, [id]: { baseline: nextBaseline, patch: nextPatch } };
+    return {
+      ...patches,
+      [id]: { baseline: nextBaseline, pendingValues: nextPendingValues, patch: nextPatch },
+    };
   }
   const { [id]: _removed, ...rest } = patches;
   return rest;
 }
 
-function sameTaskPatchValue(
-  left: TaskPatch[TaskPatchKey],
-  right: TaskPatch[TaskPatchKey],
-): boolean {
+function taskPatchPendingValues(
+  existing: TaskPatchValue[] | undefined,
+  baselineValue: TaskPatchValue,
+  previousPatchValue: TaskPatchValue,
+  nextPatchValue: TaskPatchValue,
+): TaskPatchValue[] {
+  const values: TaskPatchValue[] = [];
+  for (const value of [...(existing ?? []), baselineValue, previousPatchValue]) {
+    if (
+      !sameTaskPatchValue(value, nextPatchValue) &&
+      !values.some((candidate) => sameTaskPatchValue(candidate, value))
+    ) {
+      values.push(value);
+    }
+  }
+  return values;
+}
+
+function sameTaskPatchValue(left: TaskPatchValue, right: TaskPatchValue): boolean {
   if (left instanceof Date || right instanceof Date) {
     const leftTime = left instanceof Date ? left.getTime() : null;
     const rightTime = right instanceof Date ? right.getTime() : null;
@@ -175,9 +210,12 @@ function applyTaskPatch(row: objects.ObjectRow, overlay: TaskPatchOverlay | unde
   if (!overlay) return row;
   const effectiveEntries: [TaskPatchKey, TaskPatch[TaskPatchKey]][] = [];
   for (const key of Object.keys(overlay.patch) as TaskPatchKey[]) {
-    const baselineValue = overlay.baseline[key];
+    const pendingValues = overlay.pendingValues[key] ?? [overlay.baseline[key]];
     const patchValue = overlay.patch[key];
-    if (sameTaskPatchValue(row[key], baselineValue) && !sameTaskPatchValue(row[key], patchValue)) {
+    if (
+      pendingValues.some((value) => sameTaskPatchValue(row[key], value)) &&
+      !sameTaskPatchValue(row[key], patchValue)
+    ) {
       effectiveEntries.push([key, patchValue]);
     }
   }
