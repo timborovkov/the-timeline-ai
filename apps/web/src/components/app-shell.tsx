@@ -6,6 +6,7 @@ import type { RecipientInvite } from '@/components/team-switcher';
 import type { TeamMembership } from '@/lib/active-team';
 import type { ReactNode } from 'react';
 
+import { AppDocumentScrollLock } from '@/components/app-document-scroll-lock';
 import { AppMainScrollRestoration } from '@/components/app-shell-scroll-restoration';
 import { FloatingAgentChat } from '@/components/chat/floating-agent-chat';
 import { DesktopSidebar } from '@/components/desktop-sidebar';
@@ -54,6 +55,7 @@ export function AppShell({
 }: Props) {
   return (
     <InspectorProvider>
+      <AppDocumentScrollLock />
       <SkipLink />
       <div className="flex h-dvh w-full overflow-hidden bg-bg">
         {/* ── Left rail (desktop) ─────────────────────────────────── */}
