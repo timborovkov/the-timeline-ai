@@ -16,6 +16,7 @@ interface TestGithubCursor {
   commit_gap_target_sha?: string;
   commit_gap_high_water_sha?: string;
   commit_gap_until?: string;
+  last_polled_at?: string;
 }
 
 describe('githubProvider.startOAuth', () => {
@@ -174,11 +175,33 @@ describe('githubProvider.incrementalSync', () => {
     vi.restoreAllMocks();
   });
 
-  function jsonResponse(body: unknown, status = 200): Response {
+  function jsonResponse(
+    body: unknown,
+    status = 200,
+    headers: Record<string, string> = {},
+  ): Response {
     return new Response(JSON.stringify(body), {
       status,
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', ...headers },
     });
+  }
+
+  function savedCursor(
+    saveCursor: ReturnType<typeof vi.fn>,
+    resourceType: string,
+  ): TestGithubCursor | undefined {
+    return saveCursor.mock.calls.find(
+      ([savedResourceType]) => savedResourceType === resourceType,
+    )?.[1] as TestGithubCursor | undefined;
+  }
+
+  function savedStatus(
+    saveCursor: ReturnType<typeof vi.fn>,
+    resourceType: string,
+  ): { lastStatus?: string; lastError?: string | null } | undefined {
+    return saveCursor.mock.calls.find(
+      ([savedResourceType]) => savedResourceType === resourceType,
+    )?.[2] as { lastStatus?: string; lastError?: string | null } | undefined;
   }
 
   function commit(index: number): {
@@ -410,10 +433,9 @@ describe('githubProvider.incrementalSync', () => {
       expect.stringContaining('/repos/acme/app/commits?sha=main&per_page=100&page=2'),
       expect.any(Object),
     );
-    expect(saveCursor).toHaveBeenCalledWith(
-      'github.repo:acme/app',
-      expect.objectContaining({ last_sha: 'sha-001' }),
-    );
+    expect(savedCursor(saveCursor, 'github.repo:acme/app:commits')).toMatchObject({
+      last_sha: 'sha-001',
+    });
   });
 
   it('expands org selections at sync time and de-dupes explicit repo selections', async () => {
@@ -483,7 +505,19 @@ describe('githubProvider.incrementalSync', () => {
     });
 
     expect(new Set(saveCursor.mock.calls.map(([resourceType]) => String(resourceType)))).toEqual(
-      new Set(['github.repo:acme/api', 'github.repo:acme/app']),
+      new Set([
+        'github.org:acme:repos',
+        'github.repo:acme/api:prs',
+        'github.repo:acme/api:issues',
+        'github.repo:acme/api:releases',
+        'github.repo:acme/api:commits',
+        'github.repo:acme/api:workflow_runs',
+        'github.repo:acme/app:prs',
+        'github.repo:acme/app:issues',
+        'github.repo:acme/app:releases',
+        'github.repo:acme/app:commits',
+        'github.repo:acme/app:workflow_runs',
+      ]),
     );
     expect(
       fetchMock.mock.calls.filter(([input]) => {
@@ -492,6 +526,105 @@ describe('githubProvider.incrementalSync', () => {
         return new URL(requestUrl).pathname === '/repos/acme/app';
       }),
     ).toHaveLength(1);
+  });
+
+  it('uses the cached org repo expansion during steady-state syncs', async () => {
+    const fetchMock = vi.fn<typeof fetch>((input) => {
+      const requestUrl =
+        typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+      const url = new URL(requestUrl);
+      if (url.pathname === '/orgs/acme/repos') {
+        return Promise.resolve(jsonResponse({ message: 'should use cache' }, 500));
+      }
+      if (url.pathname === '/repos/acme/app') {
+        return Promise.resolve(
+          jsonResponse({
+            id: 1,
+            full_name: 'acme/app',
+            name: 'app',
+            owner: { login: 'acme' },
+            private: true,
+            default_branch: 'main',
+          }),
+        );
+      }
+      if (url.pathname.endsWith('/commits')) return Promise.resolve(jsonResponse([]));
+      const base = emptyGithubFetch(input);
+      return Promise.resolve(base ?? jsonResponse({ message: 'unexpected' }, 404));
+    });
+    globalThis.fetch = fetchMock;
+    const saveCursor = vi.fn().mockResolvedValue(undefined);
+    const loadCursor = vi.fn((resourceType: string) =>
+      Promise.resolve(
+        resourceType === 'github.org:acme:repos'
+          ? { repos: ['acme/app'], fetched_at: new Date().toISOString() }
+          : {},
+      ),
+    );
+
+    await githubProvider.incrementalSync({
+      integration: {} as never,
+      tokens: { access_token: 'gho_token' },
+      selections: [{ kind: 'github.org', externalId: 'acme' }],
+      ctx: {
+        writeEvents: vi.fn().mockResolvedValue([]),
+        recordAudit: vi.fn(),
+        saveCursor,
+        loadCursor,
+        persistTokens: vi.fn(),
+      },
+    });
+
+    expect(
+      fetchMock.mock.calls.some(([input]) => {
+        const requestUrl =
+          typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+        return new URL(requestUrl).pathname === '/orgs/acme/repos';
+      }),
+    ).toBe(false);
+    expect(saveCursor).not.toHaveBeenCalledWith('github.org:acme:repos', expect.anything());
+    expect(savedCursor(saveCursor, 'github.repo:acme/app:commits')).toBeDefined();
+  });
+
+  it('voluntarily pauses before draining the GitHub primary quota to zero', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-06-25T10:00:00.000Z'));
+    const fetchMock = vi.fn<typeof fetch>((input) => {
+      const requestUrl =
+        typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+      const url = new URL(requestUrl);
+      if (url.pathname.endsWith('/pulls') && url.searchParams.get('state') === 'open') {
+        return Promise.resolve(
+          jsonResponse([], 200, {
+            'x-ratelimit-remaining': '250',
+            'x-ratelimit-reset': String(Date.parse('2026-06-25T11:00:00.000Z') / 1000),
+          }),
+        );
+      }
+      return Promise.resolve(jsonResponse({ message: 'should pause before next call' }, 500));
+    });
+    globalThis.fetch = fetchMock;
+
+    await expect(
+      githubProvider.incrementalSync({
+        integration: {} as never,
+        tokens: { access_token: 'gho_token' },
+        selections: [{ kind: 'github.repo', externalId: 'acme/app' }],
+        ctx: {
+          writeEvents: vi.fn().mockResolvedValue([]),
+          recordAudit: vi.fn(),
+          saveCursor: vi.fn().mockResolvedValue(undefined),
+          loadCursor: vi.fn().mockResolvedValue({}),
+          persistTokens: vi.fn(),
+        },
+      }),
+    ).rejects.toMatchObject({
+      code: 'github_rate_limited',
+      retryAt: new Date('2026-06-25T11:00:00.000Z'),
+      rateLimitKind: 'primary',
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    vi.useRealTimers();
   });
 
   it('paginates PR reviews so polling replaces the removed webhook surface', async () => {
@@ -601,24 +734,37 @@ describe('githubProvider.incrementalSync', () => {
     });
     globalThis.fetch = fetchMock;
     const saveCursor = vi.fn().mockResolvedValue(undefined);
+    const recordAudit = vi.fn<SyncContext['recordAudit']>().mockResolvedValue(undefined);
 
-    await expect(
-      githubProvider.incrementalSync({
-        integration: {} as never,
-        tokens: { access_token: 'gho_token' },
-        selections: [{ kind: 'github.repo', externalId: 'acme/app' }],
-        ctx: {
-          writeEvents: vi.fn().mockResolvedValue([]),
-          recordAudit: vi.fn(),
-          saveCursor,
-          loadCursor: vi.fn().mockResolvedValue({ since: '2026-06-10T10:00:00Z' }),
-          persistTokens: vi.fn(),
-        },
-      }),
-    ).rejects.toThrow('github_incremental_partial');
-    expect(
-      saveCursor.mock.calls.some(([, cursor]) => Boolean((cursor as TestGithubCursor).prs_since)),
-    ).toBe(false);
+    await githubProvider.incrementalSync({
+      integration: {} as never,
+      tokens: { access_token: 'gho_token' },
+      selections: [{ kind: 'github.repo', externalId: 'acme/app' }],
+      ctx: {
+        writeEvents: vi.fn().mockResolvedValue([]),
+        recordAudit,
+        saveCursor,
+        loadCursor: vi.fn().mockResolvedValue({ since: '2026-06-10T10:00:00Z' }),
+        persistTokens: vi.fn(),
+      },
+    });
+
+    expect(savedCursor(saveCursor, 'github.repo:acme/app:prs')).toMatchObject({
+      prs_since: '2026-06-10T10:00:00Z',
+    });
+    const prsStatus = savedStatus(saveCursor, 'github.repo:acme/app:prs');
+    expect(prsStatus).toMatchObject({
+      lastStatus: 'error',
+    });
+    expect(prsStatus?.lastError).toContain('reviews:7');
+    expect(savedCursor(saveCursor, 'github.repo:acme/app:commits')).toBeDefined();
+    const auditPayload = recordAudit.mock.calls.find(
+      ([kind]) => kind === 'github_incremental_partial',
+    )?.[1];
+    expect(auditPayload).toMatchObject({ failure_count: 1 });
+    expect(typeof auditPayload?.summary === 'string' ? auditPayload.summary : undefined).toContain(
+      'acme/app:prs:reviews:7',
+    );
   });
 
   it('aborts the sync immediately when GitHub returns a secondary rate limit', async () => {
@@ -678,20 +824,34 @@ describe('githubProvider.incrementalSync', () => {
     });
     globalThis.fetch = fetchMock;
 
-    await expect(
-      githubProvider.incrementalSync({
-        integration: {} as never,
-        tokens: { access_token: 'gho_token' },
-        selections: [{ kind: 'github.repo', externalId: 'acme/app' }],
-        ctx: {
-          writeEvents: vi.fn().mockResolvedValue([]),
-          recordAudit: vi.fn(),
-          saveCursor: vi.fn().mockResolvedValue(undefined),
-          loadCursor: vi.fn().mockResolvedValue({}),
-          persistTokens: vi.fn(),
-        },
-      }),
-    ).rejects.toThrow('Pull requests read permission required');
+    const saveCursor = vi.fn().mockResolvedValue(undefined);
+    const recordAudit = vi.fn<SyncContext['recordAudit']>().mockResolvedValue(undefined);
+
+    await githubProvider.incrementalSync({
+      integration: {} as never,
+      tokens: { access_token: 'gho_token' },
+      selections: [{ kind: 'github.repo', externalId: 'acme/app' }],
+      ctx: {
+        writeEvents: vi.fn().mockResolvedValue([]),
+        recordAudit,
+        saveCursor,
+        loadCursor: vi.fn().mockResolvedValue({}),
+        persistTokens: vi.fn(),
+      },
+    });
+
+    const prsStatus = savedStatus(saveCursor, 'github.repo:acme/app:prs');
+    expect(prsStatus).toMatchObject({
+      lastStatus: 'error',
+    });
+    expect(prsStatus?.lastError).toContain('Pull requests read permission required');
+    expect(savedCursor(saveCursor, 'github.repo:acme/app:commits')).toBeDefined();
+    const auditPayload = recordAudit.mock.calls.find(
+      ([kind]) => kind === 'github_incremental_partial',
+    )?.[1];
+    expect(typeof auditPayload?.summary === 'string' ? auditPayload.summary : undefined).toContain(
+      'Pull requests read permission required',
+    );
   });
 
   it('captures release publish transitions even when the release id was already seen', async () => {
@@ -729,10 +889,9 @@ describe('githubProvider.incrementalSync', () => {
     expect(writeEvents.mock.calls.flatMap(([events]) => events)).toEqual([
       expect.objectContaining({ eventType: 'release.published' }),
     ]);
-    expect(saveCursor).toHaveBeenCalledWith(
-      'github.repo:acme/app',
-      expect.objectContaining({ releases_since: '2026-06-10T12:00:00Z' }),
-    );
+    expect(savedCursor(saveCursor, 'github.repo:acme/app:releases')).toMatchObject({
+      releases_since: '2026-06-10T12:00:00Z',
+    });
   });
 
   it('captures a published release during legacy id cursor migration', async () => {
@@ -767,13 +926,10 @@ describe('githubProvider.incrementalSync', () => {
     expect(writeEvents.mock.calls.flatMap(([events]) => events)).toEqual([
       expect.objectContaining({ eventType: 'release.published' }),
     ]);
-    expect(saveCursor).toHaveBeenCalledWith(
-      'github.repo:acme/app',
-      expect.objectContaining({
-        last_release_id: 1,
-        releases_since: '2026-06-10T12:00:00Z',
-      }),
-    );
+    expect(savedCursor(saveCursor, 'github.repo:acme/app:releases')).toMatchObject({
+      last_release_id: 1,
+      releases_since: '2026-06-10T12:00:00Z',
+    });
   });
 
   it('continues release pagination when a full page mixes old and new releases', async () => {
@@ -823,10 +979,9 @@ describe('githubProvider.incrementalSync', () => {
       expect.stringContaining('/repos/acme/app/releases?per_page=100&page=2'),
       expect.any(Object),
     );
-    expect(saveCursor).toHaveBeenCalledWith(
-      'github.repo:acme/app',
-      expect.objectContaining({ releases_since: '2026-06-10T13:00:00Z' }),
-    );
+    expect(savedCursor(saveCursor, 'github.repo:acme/app:releases')).toMatchObject({
+      releases_since: '2026-06-10T13:00:00Z',
+    });
   });
 
   it('stops release pagination on a full stale page without a page-cap failure', async () => {
@@ -916,10 +1071,9 @@ describe('githubProvider.incrementalSync', () => {
       expect.stringContaining('/repos/acme/app/actions/runs?per_page=100&page=2'),
       expect.any(Object),
     );
-    expect(saveCursor).toHaveBeenCalledWith(
-      'github.repo:acme/app',
-      expect.objectContaining({ workflow_runs_since: '2026-06-10T12:00:00Z' }),
-    );
+    expect(savedCursor(saveCursor, 'github.repo:acme/app:workflow_runs')).toMatchObject({
+      workflow_runs_since: '2026-06-10T12:00:00Z',
+    });
   });
 
   it('stops workflow run pagination on a full stale page without a page-cap failure', async () => {
@@ -963,6 +1117,58 @@ describe('githubProvider.incrementalSync', () => {
     );
   });
 
+  it('skips low-value repo surfaces when their surface cursors were polled recently', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-06-25T12:00:00.000Z'));
+    const fetchMock = vi.fn<typeof fetch>((input) => {
+      const requestUrl =
+        typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+      const url = new URL(requestUrl);
+      if (url.pathname.endsWith('/commits')) return Promise.resolve(jsonResponse([]));
+      const base = emptyGithubFetch(input);
+      return Promise.resolve(base ?? jsonResponse({ message: 'unexpected' }, 404));
+    });
+    globalThis.fetch = fetchMock;
+    const saveCursor = vi.fn().mockResolvedValue(undefined);
+    const loadCursor = vi.fn((resourceType: string) =>
+      Promise.resolve(
+        resourceType === 'github.repo:acme/app:releases' ||
+          resourceType === 'github.repo:acme/app:workflow_runs'
+          ? { last_polled_at: '2026-06-25T11:30:00.000Z' }
+          : {},
+      ),
+    );
+
+    await githubProvider.incrementalSync({
+      integration: {} as never,
+      tokens: { access_token: 'gho_token' },
+      selections: [{ kind: 'github.repo', externalId: 'acme/app' }],
+      ctx: {
+        writeEvents: vi.fn().mockResolvedValue([]),
+        recordAudit: vi.fn(),
+        saveCursor,
+        loadCursor,
+        persistTokens: vi.fn(),
+      },
+    });
+
+    expect(fetchMock).not.toHaveBeenCalledWith(
+      expect.stringContaining('/repos/acme/app/releases'),
+      expect.any(Object),
+    );
+    expect(fetchMock).not.toHaveBeenCalledWith(
+      expect.stringContaining('/repos/acme/app/actions/runs'),
+      expect.any(Object),
+    );
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining('/repos/acme/app/commits'),
+      expect.any(Object),
+    );
+    expect(savedCursor(saveCursor, 'github.repo:acme/app:releases')).toBeUndefined();
+    expect(savedCursor(saveCursor, 'github.repo:acme/app:workflow_runs')).toBeUndefined();
+    vi.useRealTimers();
+  });
+
   it('advances the issue cursor when fetched rows are PRs filtered out of issue events', async () => {
     const fetchMock = vi.fn<typeof fetch>((input) => {
       const requestUrl =
@@ -993,10 +1199,9 @@ describe('githubProvider.incrementalSync', () => {
     });
 
     expect(writeEvents.mock.calls.flatMap(([events]) => events)).toEqual([]);
-    expect(saveCursor).toHaveBeenCalledWith(
-      'github.repo:acme/app',
-      expect.objectContaining({ issues_since: '2026-06-10T13:08:00Z' }),
-    );
+    expect(savedCursor(saveCursor, 'github.repo:acme/app:issues')).toMatchObject({
+      issues_since: '2026-06-10T13:08:00Z',
+    });
   });
 
   it('seeds the release timestamp cursor from a legacy draft release', async () => {
@@ -1031,13 +1236,10 @@ describe('githubProvider.incrementalSync', () => {
     expect(writeEvents.mock.calls.flatMap(([events]) => events)).toEqual([
       expect.objectContaining({ eventType: 'release.draft' }),
     ]);
-    expect(saveCursor).toHaveBeenCalledWith(
-      'github.repo:acme/app',
-      expect.objectContaining({
-        last_release_id: 1,
-        releases_since: '2026-06-01T00:00:00Z',
-      }),
-    );
+    expect(savedCursor(saveCursor, 'github.repo:acme/app:releases')).toMatchObject({
+      last_release_id: 1,
+      releases_since: '2026-06-01T00:00:00Z',
+    });
   });
 
   it('truncates oversized initial commit history and advances the high-water cursor', async () => {
@@ -1074,10 +1276,9 @@ describe('githubProvider.incrementalSync', () => {
       'github_commit_history_truncated',
       expect.objectContaining({ repo: 'acme/app', pages: 20, highWaterSha: 'sha-001' }),
     );
-    expect(saveCursor).toHaveBeenCalledWith(
-      'github.repo:acme/app',
-      expect.objectContaining({ last_sha: 'sha-001' }),
-    );
+    expect(savedCursor(saveCursor, 'github.repo:acme/app:commits')).toMatchObject({
+      last_sha: 'sha-001',
+    });
   });
 
   it('checkpoints oversized commit gaps so later syncs can continue draining them', async () => {
@@ -1121,8 +1322,7 @@ describe('githubProvider.incrementalSync', () => {
         pages: 20,
       }),
     );
-    const checkpointCursor = saveCursor.mock.calls.at(-1)?.[1] as TestGithubCursor | undefined;
-    expect(checkpointCursor).toMatchObject({
+    expect(savedCursor(saveCursor, 'github.repo:acme/app:commits')).toMatchObject({
       last_sha: 'sha-old',
       commit_gap_target_sha: 'sha-old',
       commit_gap_high_water_sha: 'sha-001',
@@ -1166,15 +1366,12 @@ describe('githubProvider.incrementalSync', () => {
       expect.stringContaining('&until=2026-06-10T10%3A00%3A00Z'),
       expect.any(Object),
     );
-    expect(saveCursor).toHaveBeenCalledWith(
-      'github.repo:acme/app',
-      expect.objectContaining({
-        last_sha: 'sha-001',
-        commit_gap_target_sha: undefined,
-        commit_gap_high_water_sha: undefined,
-        commit_gap_until: undefined,
-      }),
-    );
+    expect(savedCursor(saveCursor, 'github.repo:acme/app:commits')).toMatchObject({
+      last_sha: 'sha-001',
+      commit_gap_target_sha: undefined,
+      commit_gap_high_water_sha: undefined,
+      commit_gap_until: undefined,
+    });
   });
 
   it('surfaces GitHub API failures instead of marking a broken sync healthy', async () => {
@@ -1191,25 +1388,33 @@ describe('githubProvider.incrementalSync', () => {
     });
     globalThis.fetch = fetchMock;
     const saveCursor = vi.fn().mockResolvedValue(undefined);
+    const recordAudit = vi.fn<SyncContext['recordAudit']>().mockResolvedValue(undefined);
 
-    await expect(
-      githubProvider.incrementalSync({
-        integration: {} as never,
-        tokens: { access_token: 'gho_token' },
-        selections: [{ kind: 'github.repo', externalId: 'acme/app' }],
-        ctx: {
-          writeEvents: vi.fn().mockResolvedValue([]),
-          recordAudit: vi.fn(),
-          saveCursor,
-          loadCursor: vi.fn().mockResolvedValue({}),
-          persistTokens: vi.fn(),
-        },
-      }),
-    ).rejects.toThrow('github_incremental_partial');
-    expect(
-      saveCursor.mock.calls.some(([, cursor]) =>
-        Boolean((cursor as TestGithubCursor).issues_since),
-      ),
-    ).toBe(false);
+    await githubProvider.incrementalSync({
+      integration: {} as never,
+      tokens: { access_token: 'gho_token' },
+      selections: [{ kind: 'github.repo', externalId: 'acme/app' }],
+      ctx: {
+        writeEvents: vi.fn().mockResolvedValue([]),
+        recordAudit,
+        saveCursor,
+        loadCursor: vi.fn().mockResolvedValue({}),
+        persistTokens: vi.fn(),
+      },
+    });
+
+    expect(savedCursor(saveCursor, 'github.repo:acme/app:issues')?.issues_since).toBeUndefined();
+    const issuesStatus = savedStatus(saveCursor, 'github.repo:acme/app:issues');
+    expect(issuesStatus).toMatchObject({
+      lastStatus: 'error',
+    });
+    expect(issuesStatus?.lastError).toContain('GitHub GET');
+    expect(savedCursor(saveCursor, 'github.repo:acme/app:commits')).toBeDefined();
+    const auditPayload = recordAudit.mock.calls.find(
+      ([kind]) => kind === 'github_incremental_partial',
+    )?.[1];
+    expect(typeof auditPayload?.summary === 'string' ? auditPayload.summary : undefined).toContain(
+      'acme/app:issues:issues',
+    );
   });
 });

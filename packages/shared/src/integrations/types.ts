@@ -95,8 +95,12 @@ export interface SyncContext {
   writeEvents(events: IntegrationEvent[]): Promise<string[]>;
   /** Provider may emit progress notes into the audit log mid-sync. */
   recordAudit(kind: string, payload: Record<string, unknown>): Promise<void>;
-  /** Update the per-resource cursor after a successful page. */
-  saveCursor(resourceType: string, cursor: unknown): Promise<void>;
+  /** Update the per-resource cursor after a successful page or surface-specific failure. */
+  saveCursor(
+    resourceType: string,
+    cursor: unknown,
+    status?: { lastStatus?: string; lastError?: string | null },
+  ): Promise<void>;
   /** Load the last persisted cursor for a resource. Returns `{}` when unset. */
   loadCursor(resourceType: string): Promise<unknown>;
   /**

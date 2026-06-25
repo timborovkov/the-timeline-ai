@@ -18,6 +18,7 @@ const fakes = vi.hoisted(() => {
     reserved,
     getDbClient: vi.fn(),
     adminLoadIntegration: vi.fn(),
+    adminListEnabledIntegrations: vi.fn(),
     adminVerifyTeamMember: vi.fn(),
     adminRecordError: vi.fn(),
     adminRecordConnectionAttention: vi.fn(),
@@ -32,6 +33,7 @@ const fakes = vi.hoisted(() => {
     adminRecordTransientSyncFailure: vi.fn(),
     getProvider: vi.fn(),
     incrementalSync: vi.fn(),
+    enqueueIntegrationSyncJob: vi.fn(),
   };
 });
 
@@ -48,6 +50,7 @@ vi.mock('@timeline/shared', async (importOriginal) => {
     integrations: {
       ...actual.integrations,
       adminLoadIntegration: fakes.adminLoadIntegration,
+      adminListEnabledIntegrations: fakes.adminListEnabledIntegrations,
       adminVerifyTeamMember: fakes.adminVerifyTeamMember,
       adminRecordError: fakes.adminRecordError,
       adminRecordConnectionAttention: fakes.adminRecordConnectionAttention,
@@ -62,10 +65,14 @@ vi.mock('@timeline/shared', async (importOriginal) => {
       adminRecordTransientSyncFailure: fakes.adminRecordTransientSyncFailure,
       getProvider: fakes.getProvider,
     },
+    queue: {
+      ...actual.queue,
+      enqueueIntegrationSyncJob: fakes.enqueueIntegrationSyncJob,
+    },
   };
 });
 
-const { runOneIntegration } = await import('./integrationSync.js');
+const { handleTick, runOneIntegration } = await import('./integrationSync.js');
 
 const TEAM_ID = '11111111-1111-4111-8111-111111111111';
 const USER_ID = '22222222-2222-4222-8222-222222222222';
@@ -87,6 +94,7 @@ beforeEach(() => {
   fakes.reserved.release.mockClear();
   fakes.getDbClient.mockReturnValue({ reserve: vi.fn(() => Promise.resolve(fakes.reserved)) });
   fakes.adminLoadIntegration.mockResolvedValue(integration);
+  fakes.adminListEnabledIntegrations.mockResolvedValue([]);
   fakes.adminVerifyTeamMember.mockResolvedValue(true);
   fakes.adminDecryptIntegrationTokens.mockResolvedValue({ access_token: 'token' });
   fakes.adminListSelections.mockResolvedValue([]);
@@ -104,6 +112,56 @@ beforeEach(() => {
   });
   fakes.incrementalSync.mockResolvedValue(undefined);
   fakes.getProvider.mockReturnValue({ incrementalSync: fakes.incrementalSync });
+  fakes.enqueueIntegrationSyncJob.mockResolvedValue(undefined);
+});
+
+describe('handleTick GitHub background cadence', () => {
+  it('does not enqueue paused integrations from the background tick', async () => {
+    const retryAt = new Date(Date.now() + 60_000);
+    fakes.adminListEnabledIntegrations.mockResolvedValueOnce([integration]);
+    fakes.adminLoadIntegrationSyncPause.mockResolvedValueOnce({
+      retryAt,
+      reason: 'github_rate_limited',
+    });
+
+    await handleTick({} as never);
+
+    expect(fakes.enqueueIntegrationSyncJob).not.toHaveBeenCalled();
+  });
+
+  it('throttles recently synced GitHub integrations while leaving other providers alone', async () => {
+    fakes.adminListEnabledIntegrations.mockResolvedValueOnce([
+      { ...integration, provider: 'github', lastSyncedAt: new Date(Date.now() - 10 * 60 * 1000) },
+      { ...integration, id: '55555555-5555-4555-8555-555555555555', provider: 'linear' },
+    ]);
+    fakes.adminLoadIntegrationSyncPause.mockResolvedValue(null);
+
+    await handleTick({} as never);
+
+    expect(fakes.enqueueIntegrationSyncJob).toHaveBeenCalledTimes(1);
+    expect(fakes.enqueueIntegrationSyncJob).toHaveBeenCalledWith({
+      kind: 'incremental',
+      integrationId: '55555555-5555-4555-8555-555555555555',
+      teamId: TEAM_ID,
+      triggeredBy: 'tick',
+    });
+  });
+
+  it('enqueues GitHub again after the slower background interval elapses', async () => {
+    fakes.adminListEnabledIntegrations.mockResolvedValueOnce([
+      { ...integration, lastSyncedAt: new Date(Date.now() - 61 * 60 * 1000) },
+    ]);
+    fakes.adminLoadIntegrationSyncPause.mockResolvedValue(null);
+
+    await handleTick({} as never);
+
+    expect(fakes.enqueueIntegrationSyncJob).toHaveBeenCalledWith({
+      kind: 'incremental',
+      integrationId: INTEGRATION_ID,
+      teamId: TEAM_ID,
+      triggeredBy: 'tick',
+    });
+  });
 });
 
 describe('runOneIntegration attention classification', () => {

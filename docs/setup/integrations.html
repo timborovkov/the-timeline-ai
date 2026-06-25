@@ -156,9 +156,8 @@ LINEAR_WEBHOOK_SECRET=...</code></pre>
         <li>
           If you configure Timeline with a GitHub App client, grant repository read permissions for
           Contents, Issues, Pull requests, Actions, and Metadata. Missing Pull requests read access
-          causes the worker to fail repo sync with <code>github_incremental_partial</code> on the
-          <code>/pulls</code> endpoint even when commits, issues, releases, and workflow runs are
-          readable.
+          records a PR-surface partial sync on the <code>/pulls</code> endpoint while commits,
+          issues, releases, and workflow runs continue to sync when readable.
         </li>
         <li>
           Copy the OAuth app <strong>Client ID</strong> and generate/copy a
@@ -181,7 +180,9 @@ GITHUB_APP_CLIENT_SECRET=...</code></pre>
         </li>
         <li>
           Selected GitHub sources are synced by the integration worker poller; no repo/org webhook
-          setup is required.
+          setup is required. After a successful sync, GitHub background polling runs on a slower
+          cadence than the global integration tick to protect the connection owner's GitHub API
+          quota.
         </li>
       </ol>
 
@@ -493,11 +494,17 @@ codex mcp add timeline --url "&lt;copied MCP endpoint URL&gt;" --bearer-token-en
       <h2 id="sync">How sync runs</h2>
       <p>
         A BullMQ repeatable enqueues an <code>integration-sync</code> tick every 5 minutes. The
-        worker fans out to every enabled team scope and runs <code>incrementalSync()</code> on each
-        native provider through the owning provider connection, using the per-resource cursor in
-        <code>integration_sync_state</code>. Providers with inbound webhooks, such as Google Drive,
-        can enqueue an extra one-shot incremental; GitHub selected repos and organization scopes are
-        covered by the poller only. MCP servers are monitored by the MCP health worker, but that
+        worker fans out to enabled native team scopes that are due and runs
+        <code>incrementalSync()</code> through the owning provider connection, using the
+        per-resource cursor in <code>integration_sync_state</code>. Providers with inbound webhooks,
+        such as Google Drive, can enqueue an extra one-shot incremental; GitHub selected repos and
+        organization scopes are covered by the poller only. GitHub background sync skips active
+        provider rate-limit pauses, waits at least an hour after the previous successful sync, and
+        caches organization repo expansion for a short window so org-wide selections do not re-list
+        every repository on every tick. GitHub repo cursors are also split by surface — PRs, issues,
+        commits, releases, and workflow runs — so one failing or noisy surface does not block cursor
+        advancement for the others. Releases and workflow runs poll less often than high-signal PR,
+        issue, and commit surfaces. MCP servers are monitored by the MCP health worker, but that
         health check only validates connectivity and cached tools.
       </p>
       <p>
