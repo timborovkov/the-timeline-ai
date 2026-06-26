@@ -11,6 +11,7 @@ const fakes = vi.hoisted(() => ({
   fakeAuth: vi.fn(),
   fakeResolveActiveTeam: vi.fn(),
   fakeRequireMembership: vi.fn(),
+  fakeGetCalendarSettings: vi.fn(),
   fakeListEventsPage: vi.fn(),
   fakeGetEventsByIds: vi.fn(),
   fakeListImpactItems: vi.fn(),
@@ -41,6 +42,9 @@ vi.mock('@timeline/shared/s3', () => ({
 vi.mock('@timeline/shared/team-scope', () => ({
   withTeam: () => ({
     requireMembership: fakes.fakeRequireMembership,
+    calendar: {
+      getCalendarSettings: fakes.fakeGetCalendarSettings,
+    },
     timeline: {
       listEventsPage: fakes.fakeListEventsPage,
       getEventsByIds: fakes.fakeGetEventsByIds,
@@ -92,6 +96,7 @@ beforeEach(() => {
     active: { teamId: TEAM_ID, teamName: 'Timeline E2E' },
   });
   fakes.fakeRequireMembership.mockResolvedValue('member');
+  fakes.fakeGetCalendarSettings.mockResolvedValue({ defaultTimezone: 'Europe/Helsinki' });
   fakes.fakeListEventsPage.mockResolvedValue({ items: [event()], nextCursor: 'next-page' });
   fakes.fakeGetEventsByIds.mockResolvedValue([]);
   fakes.fakeListImpactItems.mockResolvedValue({
@@ -163,8 +168,8 @@ describe('GET /api/timeline', () => {
     expect(fakes.fakeListEventsPage).toHaveBeenCalledWith(
       expect.objectContaining({
         authorUserId: AUTHOR_ID,
-        from: new Date('2026-06-01'),
-        to: new Date(new Date('2026-06-02').getTime() + 24 * 60 * 60 * 1000),
+        from: new Date('2026-05-31T21:00:00.000Z'),
+        to: new Date('2026-06-02T21:00:00.000Z'),
         source: ['slack'],
         cursor: 'abc',
       }),

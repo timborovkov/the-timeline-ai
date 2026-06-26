@@ -111,12 +111,20 @@ describe('POST /api/documents/search', () => {
     );
     expect(badJson.status).toBe(400);
 
-    const badSchema = await POST(request({ query: '', limit: 31, offset: 501 }));
+    const badSchema = await POST(request({ query: '', limit: 31 }));
     expect(badSchema.status).toBe(400);
     const payload = (await badSchema.json()) as { error: string };
     expect(payload.error).toBeTypeOf('string');
 
     expect(fakes.fakeResolveActiveTeam).not.toHaveBeenCalled();
+  });
+
+  it('rejects offsets beyond the bounded semantic search window', async () => {
+    const response = await POST(request({ query: 'roadmap', limit: 12, offset: 501 }));
+
+    expect(response.status).toBe(400);
+    expect(fakes.fakeResolveActiveTeam).not.toHaveBeenCalled();
+    expect(fakes.fakeSearchDocumentChunksPage).not.toHaveBeenCalled();
   });
 
   it('returns no-active-team and propagates membership failures before searching', async () => {

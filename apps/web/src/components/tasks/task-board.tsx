@@ -28,12 +28,17 @@ import type { SaveState } from '@/lib/utils';
 import type * as objects from '@timeline/shared/objects/types';
 import type { Dispatch, ReactNode, SetStateAction } from 'react';
 
-import { updateObjectAction } from '@/app/actions/objects';
+import { loadTaskRowsAction, updateObjectAction } from '@/app/actions/objects';
 import { ObjectTextFilter } from '@/components/boards/object-text-filter';
 import { displayText } from '@/lib/display-dates';
 import { filterObjectsByText } from '@/lib/object-filter';
 import { objectDetailHref } from '@/lib/object-links';
 import { displayObjectTitle } from '@/lib/object-title';
+import {
+  TASK_BOARD_COLUMN_RENDER_LIMIT,
+  TASK_BOARD_LIST_RENDER_LIMIT,
+  TASK_BOARD_TOTAL_LIMIT,
+} from '@/lib/task-board-config';
 import { cn, errorMessage } from '@/lib/utils';
 
 interface TaskMemberOption {
@@ -47,6 +52,8 @@ interface Props {
   selectedTaskId: string | null;
   view: TaskView;
   members: TaskMemberOption[];
+  totalCount: number;
+  nextCursor: string | null;
 }
 
 type TaskPatch = Partial<
@@ -87,6 +94,21 @@ interface MoveUiState {
   savingCardIds: ReadonlySet<string>;
 }
 
+interface TaskPaginationState {
+  inputRows: objects.ObjectRow[];
+  inputCursor: string | null;
+  loadedRows: objects.ObjectRow[];
+  cursor: string | null;
+}
+
+interface TaskBoardState {
+  pagination: TaskPaginationState;
+  loadError: string | null;
+  filterQuery: string;
+  selectedIds: ReadonlySet<string>;
+  rowPatches: Record<string, TaskPatchOverlay>;
+}
+
 type MoveUiAction =
   | { type: 'move-start'; id: string; savingCount: number; savingCardIds: ReadonlySet<string> }
   | { type: 'move-fail'; id: string; message: string }
@@ -98,12 +120,94 @@ type MoveUiAction =
     }
   | { type: 'saved-timeout' };
 
+type TaskBoardAction =
+  | { type: 'props'; rows: objects.ObjectRow[]; nextCursor: string | null }
+  | { type: 'load-error'; message: string | null }
+  | { type: 'append-page'; rows: objects.ObjectRow[]; nextCursor: string | null }
+  | { type: 'filter'; query: string }
+  | { type: 'selected'; next: SetStateAction<ReadonlySet<string>> }
+  | { type: 'patches'; next: SetStateAction<Record<string, TaskPatchOverlay>> };
+
 const INITIAL_MOVE_UI: MoveUiState = {
   saveState: 'idle',
   savingCount: 0,
   cardErrors: {},
   savingCardIds: new Set(),
 };
+
+function taskPaginationStateForProps(
+  rows: objects.ObjectRow[],
+  nextCursor: string | null,
+): TaskPaginationState {
+  return {
+    inputRows: rows,
+    inputCursor: nextCursor,
+    loadedRows: rows,
+    cursor: nextCursor,
+  };
+}
+
+function taskBoardStateForProps(
+  rows: objects.ObjectRow[],
+  nextCursor: string | null,
+): TaskBoardState {
+  return {
+    pagination: taskPaginationStateForProps(rows, nextCursor),
+    loadError: null,
+    filterQuery: '',
+    selectedIds: new Set(),
+    rowPatches: {},
+  };
+}
+
+function reduceSetState<T>(current: T, next: SetStateAction<T>): T {
+  return typeof next === 'function' ? (next as (value: T) => T)(current) : next;
+}
+
+function taskBoardReducer(state: TaskBoardState, action: TaskBoardAction): TaskBoardState {
+  switch (action.type) {
+    case 'props':
+      const refreshedRows = new Map(action.rows.map((row) => [row.id, row]));
+      return {
+        ...state,
+        pagination: {
+          inputRows: action.rows,
+          inputCursor: action.nextCursor,
+          loadedRows: [
+            ...action.rows,
+            ...state.pagination.loadedRows.filter((row) => !refreshedRows.has(row.id)),
+          ],
+          cursor:
+            state.pagination.loadedRows.length > action.rows.length
+              ? state.pagination.cursor
+              : action.nextCursor,
+        },
+        loadError: null,
+      };
+    case 'load-error':
+      return { ...state, loadError: action.message };
+    case 'append-page': {
+      const seen = new Set(state.pagination.loadedRows.map((row) => row.id));
+      return {
+        ...state,
+        pagination: {
+          ...state.pagination,
+          loadedRows: [
+            ...state.pagination.loadedRows,
+            ...action.rows.filter((row) => !seen.has(row.id)),
+          ],
+          cursor: action.nextCursor,
+        },
+      };
+    }
+    case 'filter':
+      return { ...state, filterQuery: action.query };
+    case 'selected':
+      return { ...state, selectedIds: reduceSetState(state.selectedIds, action.next) };
+    case 'patches':
+      return { ...state, rowPatches: reduceSetState(state.rowPatches, action.next) };
+  }
+}
 
 function taskHref(taskId: string): string {
   return `/app/tasks?task=${encodeURIComponent(taskId)}`;
@@ -253,20 +357,39 @@ function moveUiReducer(state: MoveUiState, action: MoveUiAction): MoveUiState {
   }
 }
 
-export function TaskBoard({ rows, columns, selectedTaskId, view, members }: Props) {
+function useTaskBoardController({ rows, columns, selectedTaskId, totalCount, nextCursor }: Props) {
   const dndContextId = useId();
   const router = useRouter();
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
+  const [boardState, dispatchBoard] = useReducer(taskBoardReducer, { rows, nextCursor }, (input) =>
+    taskBoardStateForProps(input.rows, input.nextCursor),
+  );
+  const [loadingMore, startLoadMore] = useTransition();
+  const pagination = boardState.pagination;
+  if (pagination.inputRows !== rows || pagination.inputCursor !== nextCursor) {
+    dispatchBoard({ type: 'props', rows, nextCursor });
+  }
+  const { loadedRows, cursor } = pagination;
   const [optimisticRows, applyMove] = useOptimistic(
-    rows,
+    loadedRows,
     (state, move: { id: string; status: string }) =>
       state.map((row) => (row.id === move.id ? { ...row, status: move.status } : row)),
   );
   const [, startTransition] = useTransition();
   const [moveUi, dispatchMoveUi] = useReducer(moveUiReducer, INITIAL_MOVE_UI);
-  const [filterQuery, setFilterQuery] = useState('');
-  const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(new Set());
-  const [rowPatches, setRowPatches] = useState<Record<string, TaskPatchOverlay>>({});
+  const { filterQuery, loadError, rowPatches, selectedIds } = boardState;
+  const setFilterQuery = useCallback((query: string) => {
+    dispatchBoard({ type: 'filter', query });
+  }, []);
+  const setSelectedIds: Dispatch<SetStateAction<ReadonlySet<string>>> = useCallback((next) => {
+    dispatchBoard({ type: 'selected', next });
+  }, []);
+  const setRowPatches: Dispatch<SetStateAction<Record<string, TaskPatchOverlay>>> = useCallback(
+    (next) => {
+      dispatchBoard({ type: 'patches', next });
+    },
+    [],
+  );
   const savingCountRef = useRef(0);
   const savingCardIdsRef = useRef<Set<string> | null>(null);
   const batchHadFailureRef = useRef(false);
@@ -295,6 +418,8 @@ export function TaskBoard({ rows, columns, selectedTaskId, view, members }: Prop
     const visibleIds = new Set(visibleRows.map((row) => row.id));
     return new Set([...selectedIds].filter((id) => visibleIds.has(id)));
   }, [selectedIds, visibleRows]);
+  const canLoadMore =
+    Boolean(cursor) && loadedRows.length < Math.min(totalCount, TASK_BOARD_TOTAL_LIMIT);
 
   const clearSavedTimer = useCallback(() => {
     if (savedTimer.current) {
@@ -419,6 +544,73 @@ export function TaskBoard({ rows, columns, selectedTaskId, view, members }: Prop
     };
   }
 
+  function loadMoreTasks(): void {
+    if (!cursor || loadingMore) return;
+    dispatchBoard({ type: 'load-error', message: null });
+    startLoadMore(async () => {
+      const page = await loadTaskRowsAction({ cursor });
+      if (page.error) {
+        dispatchBoard({ type: 'load-error', message: page.error });
+        return;
+      }
+      dispatchBoard({ type: 'append-page', rows: page.rows, nextCursor: page.nextCursor });
+    });
+  }
+
+  return {
+    allColumns,
+    byStatus,
+    canLoadMore,
+    dndContextId,
+    effectiveRows,
+    filterQuery,
+    loadError,
+    loadingMore,
+    loadMoreTasks,
+    moveErrors,
+    moveUi,
+    onDragEnd,
+    selectedTask,
+    selectedVisibleIds,
+    sensors,
+    setFilterQuery,
+    setSelectedIds,
+    updateTask,
+    updateTasks,
+    visibleRows,
+  };
+}
+
+export function TaskBoard(props: Props) {
+  return <TaskBoardView {...props} {...useTaskBoardController(props)} />;
+}
+
+function TaskBoardView({
+  allColumns,
+  byStatus,
+  canLoadMore,
+  dndContextId,
+  effectiveRows,
+  filterQuery,
+  loadError,
+  loadingMore,
+  loadMoreTasks,
+  members,
+  moveErrors,
+  moveUi,
+  onDragEnd,
+  selectedTask,
+  selectedTaskId,
+  selectedVisibleIds,
+  sensors,
+  setFilterQuery,
+  setSelectedIds,
+  totalCount,
+  updateTask,
+  updateTasks,
+  view,
+  visibleRows,
+}: Props & ReturnType<typeof useTaskBoardController>) {
   return (
     <div
       className={
@@ -506,6 +698,32 @@ export function TaskBoard({ rows, columns, selectedTaskId, view, members }: Prop
               onUpdateTasks={updateTasks}
             />
           )}
+          <div className="flex shrink-0 flex-wrap items-center gap-3 px-4 pb-4 pt-3 md:px-8">
+            <output
+              className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim"
+              aria-live="polite"
+            >
+              {`${effectiveRows.length} loaded of ${totalCount}`}
+            </output>
+            {canLoadMore ? (
+              <button
+                type="button"
+                onClick={loadMoreTasks}
+                disabled={loadingMore}
+                className="h-8 rounded-sm border border-border bg-bg px-3 text-xs font-medium hover:bg-signal-soft disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {loadingMore ? 'Loading...' : 'Load older tasks'}
+              </button>
+            ) : null}
+            {loadError ? (
+              <span
+                className="font-mono text-[11px] uppercase tracking-[0.1em] text-danger"
+                role="alert"
+              >
+                {loadError}
+              </span>
+            ) : null}
+          </div>
         </div>
       </DndContext>
       {selectedTask ? (
@@ -525,6 +743,7 @@ export function TaskBoard({ rows, columns, selectedTaskId, view, members }: Prop
   );
 }
 
+// react-doctor-disable-next-line react-doctor/no-multi-comp -- Task board subviews share task patch types, column state, and local selection behavior; moving them is a separate file-layout migration.
 function TaskListView({
   rows,
   columns,
@@ -552,12 +771,14 @@ function TaskListView({
     );
   }
 
-  const allVisibleSelected = rows.every((row) => selectedIds.has(row.id));
+  const renderedRows = rows.slice(0, TASK_BOARD_LIST_RENDER_LIMIT);
+  const hiddenRows = rows.length - renderedRows.length;
+  const allVisibleSelected = renderedRows.every((row) => selectedIds.has(row.id));
 
   function toggleAll(checked: boolean): void {
     setSelectedIds((current) => {
       const next = new Set(current);
-      for (const row of rows) {
+      for (const row of renderedRows) {
         if (checked) next.add(row.id);
         else next.delete(row.id);
       }
@@ -606,7 +827,7 @@ function TaskListView({
             </tr>
           </thead>
           <tbody>
-            {rows.map((row) => (
+            {renderedRows.map((row) => (
               <TaskListRow
                 key={row.id}
                 row={row}
@@ -620,6 +841,16 @@ function TaskListView({
                 onUpdateTask={onUpdateTask}
               />
             ))}
+            {hiddenRows > 0 ? (
+              <tr>
+                <td
+                  colSpan={6}
+                  className="bg-bg px-3 py-3 text-center font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim"
+                >
+                  {hiddenRows} loaded tasks hidden. Narrow the filter to inspect them.
+                </td>
+              </tr>
+            ) : null}
           </tbody>
         </table>
       </div>
@@ -627,6 +858,7 @@ function TaskListView({
   );
 }
 
+// react-doctor-disable-next-line react-doctor/no-multi-comp -- Inline row editor is tightly coupled to task board patch semantics and tested through the board.
 function TaskListRow({
   row,
   columns,
@@ -771,6 +1003,7 @@ function TaskListRow({
   );
 }
 
+// react-doctor-disable-next-line react-doctor/no-multi-comp -- Bulk controls are local to the task list view and share the same selected-id contract.
 function TaskBulkToolbar({
   columns,
   members,
@@ -955,6 +1188,7 @@ function bulkReducer(state: BulkState, action: BulkAction): BulkState {
   }
 }
 
+// react-doctor-disable-next-line react-doctor/no-multi-comp -- Kanban columns are local task-board presentation, not reusable app components.
 function TaskColumn({
   id,
   rows,
@@ -973,6 +1207,8 @@ function TaskColumn({
   taskHref: (taskId: string) => string;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id });
+  const renderedRows = rows.slice(0, TASK_BOARD_COLUMN_RENDER_LIMIT);
+  const hiddenRows = rows.length - renderedRows.length;
   return (
     <div
       ref={setNodeRef}
@@ -988,7 +1224,7 @@ function TaskColumn({
         </span>
       </div>
       <ul className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto">
-        {rows.map((row) => (
+        {renderedRows.map((row) => (
           <TaskCard
             key={row.id}
             row={row}
@@ -999,11 +1235,17 @@ function TaskColumn({
             members={members}
           />
         ))}
+        {hiddenRows > 0 ? (
+          <li className="rounded-sm border border-dashed border-border bg-bg px-3 py-2 text-center font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">
+            {hiddenRows} more loaded. Narrow filter.
+          </li>
+        ) : null}
       </ul>
     </div>
   );
 }
 
+// react-doctor-disable-next-line react-doctor/no-multi-comp -- Cards depend on task-board drag state and patch rendering conventions.
 function TaskCard({
   row,
   href,
@@ -1069,6 +1311,7 @@ function TaskCard({
   );
 }
 
+// react-doctor-disable-next-line react-doctor/no-multi-comp -- The side panel is the task board's selected-row editor and shares the same update path.
 function TaskDetailPanel({
   task,
   columns,
@@ -1218,6 +1461,7 @@ function TaskDetailPanel({
   );
 }
 
+// react-doctor-disable-next-line react-doctor/no-multi-comp -- Tiny local field wrapper for the task detail panel.
 function TaskField({ label, children }: { label: string; children: ReactNode }) {
   return (
     <label className="border-b border-r border-border p-4">
@@ -1229,6 +1473,7 @@ function TaskField({ label, children }: { label: string; children: ReactNode }) 
   );
 }
 
+// react-doctor-disable-next-line react-doctor/no-multi-comp -- Tiny local read-only field wrapper for the task detail panel.
 function Detail({ label, value }: { label: string; value: string }) {
   return (
     <div className="border-b border-r border-border p-4">
@@ -1238,6 +1483,7 @@ function Detail({ label, value }: { label: string; value: string }) {
   );
 }
 
+// react-doctor-disable-next-line react-doctor/no-multi-comp -- Tiny local card metadata cell for task cards.
 function CardMeta({
   value,
   missing,
