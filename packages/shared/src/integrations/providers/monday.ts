@@ -131,7 +131,6 @@ interface NormalizedColumn {
   type: string | null;
   text: string | null;
   value: unknown;
-  updated_at: string | null;
 }
 
 const ITEM_FIELDS = `
@@ -341,7 +340,6 @@ function normalizedColumns(board: MondayBoard, item: MondayItem): NormalizedColu
       type: column.type ?? schema?.type ?? null,
       text: column.text ?? null,
       value: column.value ?? null,
-      updated_at: null,
     };
   });
 }
