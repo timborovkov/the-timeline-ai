@@ -100,7 +100,9 @@ export function BoardCardDetail({
   if (nextDraftState !== draftState) setDraftState(nextDraftState);
 
   if (!item) return null;
-  const sourceEvents = history.filter((change) => change.sourceEventId);
+  const provenanceChanges = history.filter(
+    (change) => change.status === 'applied' && (change.evidence.length > 0 || change.sourceEventId),
+  );
   const lane = lanes.find((candidate) => candidate.id === item.laneId) ?? null;
   const blocked = lane?.kind === 'blocked';
 
@@ -173,7 +175,7 @@ export function BoardCardDetail({
         onSave={saveNotes}
       />
       <BoardActions boardId={boardId} view={view} item={item} onItemRemoved={onItemRemoved} />
-      <BoardEvidence sourceEvents={sourceEvents} />
+      <BoardEvidence changes={provenanceChanges} lanes={lanes} members={members} />
       <BoardActivity history={history} lanes={lanes} members={members} />
     </aside>
   );
@@ -455,26 +457,63 @@ function BoardActions({
   );
 }
 
-function BoardEvidence({ sourceEvents }: { sourceEvents: boards.BoardItemChangeRow[] }) {
+function BoardEvidence({
+  changes,
+  lanes,
+  members,
+}: {
+  changes: boards.BoardItemChangeRow[];
+  lanes: boards.BoardLaneRow[];
+  members: BoardMemberOption[];
+}) {
   return (
     <section className="p-4">
       <h3 className="mb-2 font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">
-        Evidence
+        Board provenance
       </h3>
-      {sourceEvents.length === 0 ? (
+      {changes.length === 0 ? (
         <p className="text-sm text-fg-muted">No source evidence linked to board changes yet.</p>
       ) : (
-        <ul className="space-y-1">
-          {sourceEvents.slice(0, 5).map((change) => (
-            <li key={change.id}>
-              <Link
-                href={`/app/timeline?event=${change.sourceEventId}#ev-${change.sourceEventId}`}
-                className="text-xs text-fg-muted underline-offset-2 hover:text-fg hover:underline"
-              >
-                {change.field} source · {change.changedAt.toLocaleDateString('en-CA')}
-              </Link>
-            </li>
-          ))}
+        <ul className="space-y-3">
+          {changes.slice(0, 5).map((change) => {
+            const evidence =
+              change.evidence.length > 0
+                ? change.evidence
+                : change.sourceEventId
+                  ? [
+                      {
+                        rawEventId: change.sourceEventId,
+                        source: 'source',
+                        contentText: null,
+                        quote: null,
+                        occurredAt: change.changedAt,
+                      } satisfies boards.BoardItemEvidence,
+                    ]
+                  : [];
+            return (
+              <li key={change.id} className="rounded-sm border border-border bg-surface p-3">
+                <p className="text-xs font-medium text-fg">
+                  {fieldLabel(change.field)} · {formatProvenanceChangeValue(change, lanes, members)}
+                </p>
+                {change.note ? (
+                  <p className="mt-1 line-clamp-2 text-xs text-fg-muted">
+                    {displayText(change.note)}
+                  </p>
+                ) : null}
+                <div className="mt-2 space-y-1">
+                  {evidence.slice(0, 3).map((source) => (
+                    <Link
+                      key={source.rawEventId}
+                      href={`/app/timeline?event=${source.rawEventId}#ev-${source.rawEventId}`}
+                      className="block text-xs text-fg-muted underline-offset-2 hover:text-fg hover:underline"
+                    >
+                      {displayText(source.source)} · {formatDisplayDateTime(source.occurredAt)}
+                    </Link>
+                  ))}
+                </div>
+              </li>
+            );
+          })}
         </ul>
       )}
     </section>
@@ -721,4 +760,25 @@ function formatChangeValue(
   if (typeof value === 'string') return displayText(value);
   if (typeof value === 'number' || typeof value === 'boolean') return String(value);
   return displayText(JSON.stringify(value));
+}
+
+function formatProvenanceChangeValue(
+  change: boards.BoardItemChangeRow,
+  lanes: boards.BoardLaneRow[],
+  members: BoardMemberOption[],
+): string {
+  if (change.field === '__add__' || change.field === '__remove__') {
+    const value = change.field === '__remove__' ? change.previousValue : change.newValue;
+    const laneId =
+      typeof value === 'object' &&
+      value !== null &&
+      'laneId' in value &&
+      typeof value.laneId === 'string'
+        ? value.laneId
+        : null;
+    return laneId
+      ? displayText(lanes.find((lane) => lane.id === laneId)?.name ?? 'Board membership')
+      : 'Board membership';
+  }
+  return formatChangeValue(change.field, change.newValue, lanes, members);
 }

@@ -6230,13 +6230,28 @@ describe('suggestion scope', () => {
 
     await expect(scope.suggestions.acceptSuggestionItem(itemId ?? '')).resolves.toBe(true);
 
-    const result = await pg.query<{ source_event_id: string | null }>(
-      `SELECT source_event_id
+    const result = await pg.query<{ id: string; source_event_id: string | null }>(
+      `SELECT id, source_event_id
        FROM entities
        WHERE team_id = '${TEAM_ID}'
          AND canonical_name = 'Investigate agent memory usage for pulling wrong numbers'`,
     );
     expect(result.rows[0]?.source_event_id).toBe(sourceRawEventId);
+
+    const detail = await scope.objects.getObject(result.rows[0]?.id ?? '');
+    expect(detail?.provenance.whyThisExists).toEqual([
+      expect.objectContaining({
+        id: itemId,
+        title: 'Investigate agent memory usage for pulling wrong numbers',
+        evidence: [
+          expect.objectContaining({
+            rawEventId: sourceRawEventId,
+            source: 'web',
+            contentText: 'Daily meeting: investigate agent memory usage for pulling wrong numbers.',
+          }),
+        ],
+      }),
+    ]);
   });
 
   it('drops invalid task create source event ids when bundle evidence is ambiguous', async () => {
@@ -6289,13 +6304,75 @@ describe('suggestion scope', () => {
 
     await expect(scope.suggestions.acceptSuggestionItem(itemId ?? '')).resolves.toBe(true);
 
-    const result = await pg.query<{ source_event_id: string | null }>(
-      `SELECT source_event_id
+    const result = await pg.query<{ id: string; source_event_id: string | null }>(
+      `SELECT id, source_event_id
        FROM entities
        WHERE team_id = '${TEAM_ID}'
          AND canonical_name = 'Scope in all over-PM FSLIs even when netting below PM'`,
     );
     expect(result.rows[0]?.source_event_id).toBeNull();
+
+    const detail = await scope.objects.getObject(result.rows[0]?.id ?? '');
+    expect(detail?.provenance.whyThisExists).toEqual([]);
+  });
+
+  it('does not treat one visible event from a multi-event bundle as unambiguous object provenance', async () => {
+    const visibleRawEventId = '99999999-9999-4999-8999-999999999994';
+    const hiddenRawEventId = '99999999-9999-4999-8999-999999999995';
+    await db.insert(rawEvents).values([
+      {
+        id: visibleRawEventId,
+        teamId: TEAM_ID,
+        authorUserId: REVIEWER_ID,
+        source: 'web',
+        contentText: 'Daily meeting: investigate agent memory usage.',
+        occurredAt: new Date('2026-06-25T13:07:00.000Z'),
+        visibility: 'team',
+      },
+      {
+        id: hiddenRawEventId,
+        teamId: TEAM_ID,
+        authorUserId: REVIEWER_ID,
+        source: 'web',
+        contentText: 'Private note: refine the FSLI scoping process.',
+        occurredAt: new Date('2026-06-25T13:08:00.000Z'),
+        visibility: 'private',
+      },
+    ]);
+
+    const reviewer = withTeam(db as never, TEAM_ID, REVIEWER_ID);
+    const bundle = await reviewer.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Developer task board items from daily meeting',
+      dedupeKey: 'task-create-visibility-skew-evidence',
+      evidence: [{ rawEventId: visibleRawEventId }, { rawEventId: hiddenRawEventId }],
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Investigate visible-only task provenance',
+          dedupeKey: 'task-create-visibility-skew-evidence:item',
+          proposedPayload: {
+            canonicalName: 'Investigate visible-only task provenance',
+            status: 'todo',
+          },
+        },
+      ],
+    });
+    const itemId = bundle.items[0]?.id;
+    await expect(reviewer.suggestions.acceptSuggestionItem(itemId ?? '')).resolves.toBe(true);
+
+    const result = await pg.query<{ id: string; source_event_id: string | null }>(
+      `SELECT id, source_event_id
+       FROM entities
+       WHERE team_id = '${TEAM_ID}'
+         AND canonical_name = 'Investigate visible-only task provenance'`,
+    );
+    expect(result.rows[0]?.source_event_id).toBeNull();
+
+    const owner = withTeam(db as never, TEAM_ID, USER_ID);
+    const detail = await owner.objects.getObject(result.rows[0]?.id ?? '');
+    expect(detail?.provenance.whyThisExists).toEqual([]);
   });
 
   it('preserves valid task create source event ids beyond the first two evidence events', async () => {

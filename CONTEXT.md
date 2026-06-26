@@ -50,6 +50,29 @@ hydrate it from existing metadata, suggestion evidence, object/task changes,
 document versions, and calendar rows without inventing missing graph links.
 _Avoid_: Related items when discussing what changed because of source evidence
 
+**Artifact Provenance**:
+The source-backed origin story for a derived workspace artifact, explaining why
+the artifact exists, belongs on a work surface, or changed, and which raw-event
+evidence window supported that creation, membership, or update. Artifact
+provenance applies across workspace objects, tasks, calendar events, board
+memberships, and board item updates; it distinguishes primary raw events from
+surrounding conversation context, can accumulate later evidence, and is shown in
+trust tiers such as why the artifact exists, what changed it, and related
+observed evidence. Audit history records what Timeline did rather than why the
+artifact was proposed or changed.
+_Avoid_: Audit history, system event, single source event when discussing origin
+
+**Evidence Association**:
+A source-backed link between raw-event evidence and a workspace artifact,
+including direct references, conversation replies, attachments, links, and
+object-mediated context that make the evidence relevant to the artifact. An
+evidence association can remain observed context until a teammate accepts a
+proposal or an authoritative source turns it into durable artifact provenance;
+semantic similarity alone is not enough to associate evidence with an artifact.
+The same raw event can support multiple artifacts or board-local roles, but
+each association needs its own artifact- or board-specific rationale.
+_Avoid_: Mention when the connection is indirect
+
 **Connected Work**:
 The source-backed work context shown around one workspace object, such as
 tasks, calendar events, documents, boards, timeline moments, fact-backed
@@ -301,13 +324,17 @@ _Avoid_: Separate board when only the layout changed
 The intentional relationship that places a workspace object on a board for that
 board's purpose. Board membership is distinct from the object's type: not every
 company belongs on a pilot pipeline, and the same task can belong on one work
-board without belonging on every task board.
+board without belonging on every task board. Evidence may be relevant to an
+object generally without justifying board membership; membership provenance
+must explain why the object belongs on that specific board.
 _Avoid_: Type filter, implicit inclusion
 
 **Board Item**:
 The user-facing card or row created by a board membership. A board item combines
 one workspace object with board-local workflow context so the team can run that
-board without changing the object's meaning everywhere else.
+board without changing the object's meaning everywhere else. Board item
+provenance explains why the object is on this board and why its board-local
+state changed; broader object provenance belongs on the object page.
 _Avoid_: Object when discussing the board-local work item
 
 **Board Membership Proposal**:
@@ -328,7 +355,10 @@ _Avoid_: Object fields when the value only governs one board workflow
 An approval-backed suggestion to change board item properties based on timeline
 evidence. Conversation, email, and meeting evidence suggest board item changes
 by default; direct user commands and authoritative sources can apply changes
-without review when the target board item is unambiguous.
+without review when the target board item is unambiguous. Board item update
+evidence must explain why the object's role or local state changed on that
+specific board, not only why the underlying object is relevant somewhere in the
+workspace.
 _Avoid_: Silent board update
 
 **Board Item History**:
@@ -350,7 +380,8 @@ _Avoid_: Object status when the value only matters on one board
 **Board Card Detail**:
 The board-context view of a workspace object on a board. It shows the object's
 canonical memory alongside board membership state, board-local notes, next
-steps, and evidence relevant to why the object belongs on that board.
+steps, and board-local provenance for why the object belongs on that board and
+why its board item properties changed.
 _Avoid_: Object page when the user is staying inside one board workflow
 
 **Object Board Context**:

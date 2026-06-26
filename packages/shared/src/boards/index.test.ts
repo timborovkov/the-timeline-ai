@@ -734,6 +734,195 @@ describe('board scope', () => {
     expect(changes[0]?.id).toBe(suggestion.id);
   });
 
+  it('hydrates accepted board suggestion evidence into board item history', async () => {
+    const scope = withTeam(db, TEAM_A, USER_OWNER);
+    const event = await scope.timeline.createEvent({
+      authorUserId: USER_OWNER,
+      source: 'telegram',
+      contentText: 'Add Revigo to the pilot pipeline negotiation lane.',
+      visibility: 'team',
+    });
+    const board = await scope.boards.createBoard({
+      name: 'Pilot pipeline',
+      templateKind: 'pipeline',
+      lanes: [{ name: 'Negotiation', kind: 'active' }],
+    });
+    const company = await scope.objects.createObject({
+      type: 'company',
+      canonicalName: 'Revigo',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Add Revigo to pilot pipeline',
+      dedupeKey: 'board-history-evidence',
+      evidence: [{ rawEventId: event.id, quote: 'Add Revigo to the pilot pipeline' }],
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'board_membership',
+          title: 'Add Revigo to Pilot pipeline',
+          dedupeKey: 'board-history-evidence:item',
+          proposedPayload: {
+            boardId: board.id,
+            entityId: company.id,
+            laneId: board.lanes[0]?.id ?? null,
+          },
+        },
+      ],
+    });
+
+    await expect(scope.suggestions.acceptSuggestionItem(bundle.items[0]?.id ?? '')).resolves.toBe(
+      true,
+    );
+    const detail = await scope.boards.getBoard(board.id, { itemLimit: 'all' });
+    const item = detail?.items[0];
+    expect(item).toBeDefined();
+
+    const history = await scope.boards.listBoardItemHistory(item?.id ?? '');
+
+    expect(history[0]).toEqual(
+      expect.objectContaining({
+        field: '__add__',
+        suggestionItemId: bundle.items[0]?.id,
+        evidence: [
+          expect.objectContaining({
+            rawEventId: event.id,
+            source: 'telegram',
+            quote: 'Add Revigo to the pilot pipeline',
+            contentText: 'Add Revigo to the pilot pipeline negotiation lane.',
+          }),
+        ],
+      }),
+    );
+  });
+
+  it('does not hydrate ambiguous bundle evidence into board item history', async () => {
+    const scope = withTeam(db, TEAM_A, USER_OWNER);
+    const firstEvent = await scope.timeline.createEvent({
+      authorUserId: USER_OWNER,
+      source: 'telegram',
+      contentText: 'Add Revigo to the pilot pipeline.',
+      visibility: 'team',
+    });
+    const secondEvent = await scope.timeline.createEvent({
+      authorUserId: USER_OWNER,
+      source: 'telegram',
+      contentText: 'Add DFK to the pilot pipeline.',
+      visibility: 'team',
+    });
+    const board = await scope.boards.createBoard({
+      name: 'Pilot pipeline',
+      templateKind: 'pipeline',
+      lanes: [{ name: 'Negotiation', kind: 'active' }],
+    });
+    const company = await scope.objects.createObject({
+      type: 'company',
+      canonicalName: 'Revigo',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Add companies to pilot pipeline',
+      dedupeKey: 'board-history-ambiguous-evidence',
+      evidence: [
+        { rawEventId: firstEvent.id, quote: 'Add Revigo' },
+        { rawEventId: secondEvent.id, quote: 'Add DFK' },
+      ],
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'board_membership',
+          title: 'Add Revigo to Pilot pipeline',
+          dedupeKey: 'board-history-ambiguous-evidence:item',
+          proposedPayload: {
+            boardId: board.id,
+            entityId: company.id,
+            laneId: board.lanes[0]?.id ?? null,
+          },
+        },
+      ],
+    });
+
+    await expect(scope.suggestions.acceptSuggestionItem(bundle.items[0]?.id ?? '')).resolves.toBe(
+      true,
+    );
+    const detail = await scope.boards.getBoard(board.id, { itemLimit: 'all' });
+    const history = await scope.boards.listBoardItemHistory(detail?.items[0]?.id ?? '');
+
+    expect(history[0]).toEqual(
+      expect.objectContaining({
+        field: '__add__',
+        suggestionItemId: bundle.items[0]?.id,
+        sourceEventId: null,
+        evidence: [],
+      }),
+    );
+  });
+
+  it('does not treat one visible event from a multi-event bundle as unambiguous evidence', async () => {
+    const member = withTeam(db, TEAM_A, USER_MEMBER);
+    const owner = withTeam(db, TEAM_A, USER_OWNER);
+    const visibleEvent = await member.timeline.createEvent({
+      authorUserId: USER_MEMBER,
+      source: 'telegram',
+      contentText: 'Add Revigo to the pilot pipeline.',
+      visibility: 'team',
+    });
+    const hiddenEvent = await member.timeline.createEvent({
+      authorUserId: USER_MEMBER,
+      source: 'telegram',
+      contentText: 'Add DFK to the pilot pipeline.',
+      visibility: 'private',
+    });
+    const board = await member.boards.createBoard({
+      name: 'Pilot pipeline',
+      templateKind: 'pipeline',
+      lanes: [{ name: 'Negotiation', kind: 'active' }],
+    });
+    const company = await member.objects.createObject({
+      type: 'company',
+      canonicalName: 'Revigo',
+      actor: { kind: 'user', userId: USER_MEMBER },
+    });
+    const bundle = await member.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Add companies to pilot pipeline',
+      dedupeKey: 'board-history-visibility-skew-evidence',
+      evidence: [
+        { rawEventId: visibleEvent.id, quote: 'Add Revigo' },
+        { rawEventId: hiddenEvent.id, quote: 'Add DFK' },
+      ],
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'board_membership',
+          title: 'Add Revigo to Pilot pipeline',
+          dedupeKey: 'board-history-visibility-skew-evidence:item',
+          proposedPayload: {
+            boardId: board.id,
+            entityId: company.id,
+            laneId: board.lanes[0]?.id ?? null,
+          },
+        },
+      ],
+    });
+
+    await expect(member.suggestions.acceptSuggestionItem(bundle.items[0]?.id ?? '')).resolves.toBe(
+      true,
+    );
+    const detail = await owner.boards.getBoard(board.id, { itemLimit: 'all' });
+    const history = await owner.boards.listBoardItemHistory(detail?.items[0]?.id ?? '');
+
+    expect(history[0]).toEqual(
+      expect.objectContaining({
+        field: '__add__',
+        suggestionItemId: bundle.items[0]?.id,
+        evidence: [],
+      }),
+    );
+  });
+
   it('returns bounded board item pages with the full active item count', async () => {
     const scope = withTeam(db, TEAM_A, USER_OWNER);
     const board = await scope.boards.createBoard({

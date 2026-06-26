@@ -77,6 +77,11 @@ const detail = {
     pendingApprovals: [],
     documents: [],
   },
+  provenance: {
+    whyThisExists: [],
+    whatChangedIt: [],
+    relatedEvidence: [],
+  },
   recentChanges: [],
   facts: [],
   timelineEvents: [],
@@ -389,7 +394,7 @@ describe('ObjectDetailClient', () => {
     expect(html.match(new RegExp(taskTitle, 'g'))).toHaveLength(1);
   });
 
-  it('renders object summaries above evidence', () => {
+  it('renders object summaries and provenance above evidence', () => {
     const html = renderObjectDetail({
       detail: {
         ...detail,
@@ -431,10 +436,53 @@ describe('ObjectDetailClient', () => {
       suggestions: [],
     });
 
+    expect(html.indexOf('Summary')).toBeLessThan(html.indexOf('Provenance'));
+    expect(html.indexOf('Provenance')).toBeLessThan(html.indexOf('Connected work'));
     expect(html.indexOf('Summary')).toBeLessThan(html.indexOf('Evidence'));
     expect(html).toContain('DFK has a confirmed June 30 pilot discussion.');
     expect(html).toContain('Timing');
     expect(html).not.toContain('Generate summary');
+  });
+
+  it('renders accepted source provenance for generated tasks', () => {
+    const sourceEventId = '33333333-3333-4333-8333-333333333333';
+    const html = renderObjectDetail({
+      detail: {
+        ...detail,
+        canonicalName: 'Research tilintarkastusyhteisö founding process',
+        provenance: {
+          whyThisExists: [
+            {
+              id: 'suggestion-item-1',
+              title: 'Research tilintarkastusyhteisö founding process',
+              reason: 'Mikael asked for this from the Telegram discussion.',
+              operation: 'create',
+              targetKind: 'task',
+              createdAt: new Date('2026-06-25T19:08:00.000Z'),
+              evidence: [
+                {
+                  rawEventId: sourceEventId,
+                  source: 'telegram',
+                  contentText: 'Research the founding process and use the screenshots.',
+                  quote: 'Research the founding process',
+                  occurredAt: new Date('2026-06-25T19:05:00.000Z'),
+                },
+              ],
+            },
+          ],
+          whatChangedIt: [],
+          relatedEvidence: [],
+        },
+      },
+      userId: 'user-1',
+      suggestions: [],
+    });
+
+    expect(html).toContain('Provenance');
+    expect(html).toContain('Why this exists');
+    expect(html).toContain('Mikael asked for this from the Telegram discussion.');
+    expect(html).toContain('telegram');
+    expect(html).toContain(`/app/timeline?event=${sourceEventId}#ev-${sourceEventId}`);
   });
 
   it('shows manual generation for missing summaries with enough source material', () => {

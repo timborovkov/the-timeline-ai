@@ -1,11 +1,14 @@
 import {
   type Db,
+  agentSuggestionEvidence,
+  agentSuggestionItems,
   boardItemChanges,
   boardItems,
   boardLanes,
   boardPins,
   boards,
   entities,
+  rawEvents,
 } from '@timeline/db';
 import { and, asc, desc, eq, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
 
@@ -20,6 +23,7 @@ import {
   syncBoardItemDueDateCalendarEvent,
   type DueDateCalendarSyncResult,
 } from '#src/calendar/due-dates.js';
+import { rawEventVisibleToUser } from '#src/visibility.js';
 
 type DbTx = Parameters<Parameters<Db['transaction']>[0]>[0];
 type DbOrTx = Db | DbTx;
@@ -113,8 +117,17 @@ export interface BoardItemChangeRow {
   newValue: unknown;
   sourceEventId: string | null;
   suggestionItemId: string | null;
+  evidence: BoardItemEvidence[];
   note: string | null;
   changedAt: Date;
+}
+
+export interface BoardItemEvidence {
+  rawEventId: string;
+  source: string;
+  contentText: string | null;
+  quote: string | null;
+  occurredAt: Date;
 }
 
 export interface ObjectBoardContextRow {
@@ -212,6 +225,11 @@ function jsonObject(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : {};
+}
+
+function sourceEventIdFromPayload(value: unknown): string | null {
+  const sourceEventId = jsonObject(value).sourceEventId;
+  return typeof sourceEventId === 'string' && UUID_RE.test(sourceEventId) ? sourceEventId : null;
 }
 
 function jsonStringArray(value: unknown): ObjectType[] {
@@ -313,9 +331,138 @@ function toBoardItemChangeRow(row: BoardItemChangeSelect): BoardItemChangeRow {
     newValue: row.newValue,
     sourceEventId: row.sourceEventId,
     suggestionItemId: row.suggestionItemId,
+    evidence: [],
     note: row.note,
     changedAt: row.changedAt,
   };
+}
+
+async function enrichBoardItemHistoryEvidence(
+  db: DbOrTx,
+  scope: TeamScopeCore,
+  changes: BoardItemChangeRow[],
+): Promise<BoardItemChangeRow[]> {
+  if (changes.length === 0) return changes;
+
+  const evidenceByChangeId = new Map<string, BoardItemEvidence[]>();
+  const changeBySuggestionItemId = new Map<string, BoardItemChangeRow[]>();
+  const suggestionItemIds = new Set<string>();
+  const sourceEventIds = new Set<string>();
+  for (const change of changes) {
+    if (change.suggestionItemId) {
+      suggestionItemIds.add(change.suggestionItemId);
+      const list = changeBySuggestionItemId.get(change.suggestionItemId) ?? [];
+      list.push(change);
+      changeBySuggestionItemId.set(change.suggestionItemId, list);
+    }
+    if (change.sourceEventId) sourceEventIds.add(change.sourceEventId);
+  }
+
+  if (suggestionItemIds.size > 0) {
+    const rows = await db
+      .select({
+        itemId: agentSuggestionItems.id,
+        proposedPayload: agentSuggestionItems.proposedPayload,
+        bundleEvidenceCount: sql<number>`(
+          SELECT COUNT(*)::int
+          FROM agent_suggestion_evidence AS all_evidence
+          WHERE all_evidence.suggestion_id = ${agentSuggestionItems.suggestionId}
+            AND all_evidence.team_id = ${scope.teamId}
+        )`,
+        rawEventId: agentSuggestionEvidence.rawEventId,
+        quote: agentSuggestionEvidence.quote,
+        source: rawEvents.source,
+        contentText: rawEvents.contentText,
+        occurredAt: rawEvents.occurredAt,
+      })
+      .from(agentSuggestionItems)
+      .innerJoin(
+        agentSuggestionEvidence,
+        eq(agentSuggestionEvidence.suggestionId, agentSuggestionItems.suggestionId),
+      )
+      .innerJoin(rawEvents, eq(rawEvents.id, agentSuggestionEvidence.rawEventId))
+      .where(
+        and(
+          eq(agentSuggestionItems.teamId, scope.teamId),
+          eq(agentSuggestionEvidence.teamId, scope.teamId),
+          eq(rawEvents.teamId, scope.teamId),
+          inArray(agentSuggestionItems.id, [...suggestionItemIds]),
+          rawEventVisibleToUser(scope.userId),
+          sql`COALESCE(${rawEvents.sourceMetadata} ->> 'deleted', 'false') <> 'true'`,
+        ),
+      )
+      .orderBy(desc(rawEvents.occurredAt), desc(rawEvents.id));
+
+    const rowsByItemId = new Map<string, typeof rows>();
+    for (const row of rows) {
+      rowsByItemId.set(row.itemId, [...(rowsByItemId.get(row.itemId) ?? []), row]);
+    }
+    for (const itemRows of rowsByItemId.values()) {
+      const sourceEventId = sourceEventIdFromPayload(itemRows[0]?.proposedPayload);
+      const relevantRows = sourceEventId
+        ? itemRows.filter((row) => row.rawEventId === sourceEventId)
+        : itemRows[0]?.bundleEvidenceCount === 1 && itemRows.length === 1
+          ? itemRows
+          : [];
+      for (const row of relevantRows) {
+        const relatedChanges = changeBySuggestionItemId.get(row.itemId) ?? [];
+        for (const change of relatedChanges) {
+          const list = evidenceByChangeId.get(change.id) ?? [];
+          if (!list.some((evidence) => evidence.rawEventId === row.rawEventId)) {
+            list.push({
+              rawEventId: row.rawEventId,
+              source: row.source,
+              contentText: row.contentText,
+              quote: row.quote,
+              occurredAt: row.occurredAt,
+            });
+          }
+          evidenceByChangeId.set(change.id, list);
+        }
+      }
+    }
+  }
+
+  if (sourceEventIds.size > 0) {
+    const rows = await db
+      .select({
+        rawEventId: rawEvents.id,
+        source: rawEvents.source,
+        contentText: rawEvents.contentText,
+        occurredAt: rawEvents.occurredAt,
+      })
+      .from(rawEvents)
+      .where(
+        and(
+          eq(rawEvents.teamId, scope.teamId),
+          inArray(rawEvents.id, [...sourceEventIds]),
+          rawEventVisibleToUser(scope.userId),
+          sql`COALESCE(${rawEvents.sourceMetadata} ->> 'deleted', 'false') <> 'true'`,
+        ),
+      );
+    const directById = new Map(rows.map((row) => [row.rawEventId, row]));
+    for (const change of changes) {
+      if (!change.sourceEventId) continue;
+      const row = directById.get(change.sourceEventId);
+      if (!row) continue;
+      const list = evidenceByChangeId.get(change.id) ?? [];
+      if (!list.some((evidence) => evidence.rawEventId === row.rawEventId)) {
+        list.push({
+          rawEventId: row.rawEventId,
+          source: row.source,
+          contentText: row.contentText,
+          quote: null,
+          occurredAt: row.occurredAt,
+        });
+      }
+      evidenceByChangeId.set(change.id, list);
+    }
+  }
+
+  return changes.map((change) => ({
+    ...change,
+    evidence: evidenceByChangeId.get(change.id) ?? [],
+  }));
 }
 
 function stableEqual(a: unknown, b: unknown): boolean {
@@ -1099,7 +1246,7 @@ export function createBoardScope({
           and(eq(boardItemChanges.boardItemId, itemId), eq(boardItemChanges.teamId, scope.teamId)),
         )
         .orderBy(desc(boardItemChanges.changedAt));
-      return rows.map(toBoardItemChangeRow);
+      return enrichBoardItemHistoryEvidence(db, scope, rows.map(toBoardItemChangeRow));
     },
 
     async listObjectBoardContext(entityId: string): Promise<ObjectBoardContextRow[]> {
