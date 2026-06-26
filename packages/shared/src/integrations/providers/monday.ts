@@ -791,6 +791,7 @@ async function listBoards(tokens: MondayTokens): Promise<MondayBoard[]> {
 }
 
 function isSubitemsBoard(board: MondayBoard): boolean {
+  if (board.board_kind === 'sub_items_board') return true;
   return board.name.trim().toLowerCase().startsWith('subitems of ');
 }
 

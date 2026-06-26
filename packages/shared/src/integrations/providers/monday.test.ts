@@ -201,11 +201,19 @@ describe('mondayProvider', () => {
                   {
                     id: 'board-1',
                     name: 'KIESI',
+                    board_kind: 'public',
                     workspace: null,
                   },
                   {
                     id: 'subitems-board-1',
                     name: 'Subitems of KIESI',
+                    board_kind: 'public',
+                    workspace: null,
+                  },
+                  {
+                    id: 'localized-subitems-board-1',
+                    name: 'Alitehtävät KIESI',
+                    board_kind: 'sub_items_board',
                     workspace: null,
                   },
                 ],

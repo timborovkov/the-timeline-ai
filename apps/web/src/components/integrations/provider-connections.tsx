@@ -213,19 +213,6 @@ function ConnectionSources({ connection }: { connection: ProviderConnection }) {
   const error = state.error ?? (queryError instanceof Error ? queryError.message : null);
   const query = state.query;
 
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return resources;
-    return resources.filter(
-      (resource) =>
-        resource.label.toLowerCase().includes(q) ||
-        resource.externalId.toLowerCase().includes(q) ||
-        (resource.searchText?.toLowerCase().includes(q) ?? false) ||
-        resourceKindSearchText(resource.kind).includes(q),
-    );
-  }, [query, resources]);
-
-  const grouped = useMemo(() => groupResourcesByKind(filtered), [filtered]);
   const resourceByKey = useMemo(() => {
     return new Map(resources.map((resource) => [resourceKey(resource), resource]));
   }, [resources]);
@@ -236,6 +223,29 @@ function ConnectionSources({ connection }: { connection: ProviderConnection }) {
     }
     return next;
   }, [shares]);
+  const selectableResources = useMemo(() => {
+    const hiddenSelectedResources: ProviderResource[] = [];
+    for (const key of selected) {
+      if (resourceByKey.has(key)) continue;
+      const resource = activeShareToResource(activeShareByKey.get(key));
+      if (resource) hiddenSelectedResources.push(resource);
+    }
+    return [...resources, ...hiddenSelectedResources];
+  }, [activeShareByKey, resourceByKey, resources, selected]);
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return selectableResources;
+    return selectableResources.filter(
+      (resource) =>
+        resource.label.toLowerCase().includes(q) ||
+        resource.externalId.toLowerCase().includes(q) ||
+        (resource.searchText?.toLowerCase().includes(q) ?? false) ||
+        resourceKindSearchText(resource.kind).includes(q),
+    );
+  }, [query, selectableResources]);
+
+  const grouped = useMemo(() => groupResourcesByKind(filtered), [filtered]);
 
   function toggle(resource: ProviderResource) {
     dispatch({ type: 'toggle', key: resourceKey(resource), currentSelected: selected });
