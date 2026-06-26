@@ -2,6 +2,9 @@ import { Buffer } from 'node:buffer';
 
 import { PGlite } from '@electric-sql/pglite';
 import {
+  artifactClusterAnchors,
+  artifactClusterMembers,
+  artifactClusters,
   entities,
   integrations,
   rawEvents,
@@ -884,5 +887,198 @@ describe('writeIntegrationEvents visibility', () => {
       last_event_type: 'pr.closed',
     });
     expect(row?.metadata).not.toHaveProperty('display_title_canonical_name_collision');
+  });
+
+  it('clusters technical evidence across Sentry and GitHub when a shared incident key appears', async () => {
+    const [sentryIntegration] = await db
+      .insert(integrations)
+      .values({
+        teamId: TEAM_ID,
+        connectedByUserId: USER_ID,
+        provider: 'sentry',
+        displayName: 'Sentry',
+        externalAccountId: 'sentry-acct',
+        visibilityDefault: 'team',
+      })
+      .returning();
+    const [githubIntegration] = await db
+      .insert(integrations)
+      .values({
+        teamId: TEAM_ID,
+        connectedByUserId: USER_ID,
+        provider: 'github',
+        displayName: 'GitHub',
+        externalAccountId: 'github-acct',
+        visibilityDefault: 'team',
+      })
+      .returning();
+    if (!sentryIntegration || !githubIntegration) throw new Error('integration insert failed');
+
+    await writeIntegrationEvents({
+      db: db as never,
+      integration: sentryIntegration,
+      events: [
+        {
+          dedupKey: 'sentry:issue:100:first',
+          provider: 'sentry',
+          externalObjectId: '100',
+          eventType: 'issue.updated',
+          occurredAt: new Date('2026-06-18T10:00:00Z'),
+          contentText: 'Sentry issue TIMELINE-AI-100: Login fails on mobile',
+          extra: {
+            sentry_issue_id: '100',
+            sentry_short_id: 'TIMELINE-AI-100',
+          },
+          objectMap: {
+            type: 'incident',
+            canonicalName: 'TIMELINE-AI-100: Login fails on mobile',
+            displayTitle: 'Login fails on mobile',
+            externalId: '100',
+            status: 'open',
+            aliases: ['TIMELINE-AI-100'],
+          },
+        },
+      ],
+    });
+
+    await writeIntegrationEvents({
+      db: db as never,
+      integration: githubIntegration,
+      events: [
+        {
+          dedupKey: 'github:pr:77:fix-sentry',
+          provider: 'github',
+          externalObjectId: 'timborovkov/the-timeline-ai#77',
+          eventType: 'pr.merged',
+          occurredAt: new Date('2026-06-18T11:00:00Z'),
+          contentText:
+            'GitHub PR timborovkov/the-timeline-ai#77 — Fix mobile login crash\n\nFixes TIMELINE-AI-100',
+          extra: {
+            github: {
+              type: 'pull_request',
+              repo: 'timborovkov/the-timeline-ai',
+              number: 77,
+              url: 'https://github.com/timborovkov/the-timeline-ai/pull/77',
+              state: 'closed',
+              merged_at: '2026-06-18T11:00:00Z',
+              head: 'fix/mobile-login',
+            },
+          },
+          objectMap: {
+            type: 'task',
+            canonicalName: 'timborovkov/the-timeline-ai#77: Fix mobile login crash',
+            displayTitle: 'the-timeline-ai: Fix mobile login crash',
+            externalId: 'timborovkov/the-timeline-ai#77',
+            status: 'done',
+            url: 'https://github.com/timborovkov/the-timeline-ai/pull/77',
+          },
+        },
+      ],
+    });
+
+    const clusters = await db.select().from(artifactClusters);
+    expect(clusters).toHaveLength(1);
+    expect(clusters[0]?.artifactType).toBe('incident');
+
+    const members = await db.select().from(artifactClusterMembers);
+    expect(members).toHaveLength(2);
+    expect(members.map((member) => member.provider).sort()).toEqual(['github', 'sentry']);
+    expect(members.find((member) => member.provider === 'github')?.authoritative).toBe(true);
+    expect(members.find((member) => member.provider === 'sentry')?.role).toBe('error');
+
+    const anchors = await db.select().from(artifactClusterAnchors);
+    expect(anchors).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          anchorType: 'sentry_short_id',
+          anchorValue: 'timeline-ai-100',
+        }),
+        expect.objectContaining({
+          anchorType: 'github_pr',
+          anchorValue: 'timborovkov/the-timeline-ai#77',
+        }),
+      ]),
+    );
+  });
+
+  it('clusters non-technical work artifacts with explicit artifact keys without granting authority to context', async () => {
+    const [integration] = await db
+      .insert(integrations)
+      .values({
+        teamId: TEAM_ID,
+        connectedByUserId: USER_ID,
+        provider: 'monday',
+        displayName: 'Monday',
+        externalAccountId: 'monday-acct',
+        visibilityDefault: 'team',
+      })
+      .returning();
+    if (!integration) throw new Error('integration insert failed');
+
+    await writeIntegrationEvents({
+      db: db as never,
+      integration,
+      events: [
+        {
+          dedupKey: 'monday:contract:first',
+          provider: 'monday',
+          externalObjectId: 'contract-item-1',
+          eventType: 'item.updated',
+          occurredAt: new Date('2026-06-19T10:00:00Z'),
+          contentText: 'Contract tracker item: Acme master services agreement is in legal review',
+          objectMap: {
+            type: 'document',
+            canonicalName: 'Acme master services agreement',
+            externalId: 'contract-item-1',
+            status: 'in_progress',
+            metadata: {
+              artifact_key: 'contract:acme-msa-2026',
+              contract_id: 'ACME-MSA-2026',
+            },
+          },
+        },
+        {
+          dedupKey: 'monday:contract:comment',
+          provider: 'monday',
+          externalObjectId: 'comment-2',
+          eventType: 'update.created',
+          occurredAt: new Date('2026-06-19T11:00:00Z'),
+          contentText:
+            'Legal said the Acme MSA can go out for signature after pricing appendix update',
+          objectMap: {
+            type: 'document',
+            canonicalName: 'Acme MSA legal update',
+            externalId: 'comment-2',
+            status: 'open',
+            metadata: {
+              artifact_key: 'contract:acme-msa-2026',
+            },
+          },
+        },
+      ],
+    });
+
+    const clusters = await db.select().from(artifactClusters);
+    expect(clusters).toHaveLength(1);
+    expect(clusters[0]?.artifactType).toBe('document');
+
+    const members = await db.select().from(artifactClusterMembers);
+    expect(members).toHaveLength(2);
+    expect(members.some((member) => member.authoritative)).toBe(false);
+    expect(members.map((member) => member.role)).toEqual(['document', 'document']);
+
+    const anchors = await db.select().from(artifactClusterAnchors);
+    expect(anchors).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          anchorType: 'artifact_key',
+          anchorValue: 'contract:acme-msa-2026',
+        }),
+        expect.objectContaining({
+          anchorType: 'contract_id',
+          anchorValue: 'acme-msa-2026',
+        }),
+      ]),
+    );
   });
 });

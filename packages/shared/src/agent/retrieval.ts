@@ -156,6 +156,26 @@ export async function retrieveWorkspaceContext(
         occurred_at: event.occurredAt,
         score: event.score,
         snippet: event.snippet,
+        artifact_cluster: event.artifactCluster
+          ? {
+              id: event.artifactCluster.id,
+              type: event.artifactCluster.artifactType,
+              name: event.artifactCluster.canonicalName,
+              status: event.artifactCluster.status,
+              related_evidence: event.artifactCluster.relatedEvidence.map((evidence) => ({
+                event_citation: evidence.rawEventId
+                  ? artifactRefCitation({ kind: 'timeline_event', id: evidence.rawEventId })
+                  : null,
+                provider: evidence.provider,
+                external_object_id: evidence.externalObjectId,
+                role: evidence.role,
+                strength: evidence.strength,
+                authoritative: evidence.authoritative,
+                occurred_at: evidence.occurredAt,
+                snippet: evidence.snippet,
+              })),
+            }
+          : null,
       })),
       ...facts,
     ],
@@ -253,15 +273,21 @@ function collectRefs(result: Omit<WorkspaceContextResult, 'refs'>): string[] {
     result.routes,
   ]) {
     for (const item of group as Record<string, unknown>[]) {
-      for (const value of Object.values(item)) {
-        if (
-          typeof value === 'string' &&
-          /^\[(?:ev|ent|note|doc|cal|board|board-item|task|route):/.test(value)
-        ) {
-          refs.add(value);
-        }
-      }
+      collectRefsFromValue(item, refs);
     }
   }
   return [...refs].slice(0, 50);
+}
+
+function collectRefsFromValue(value: unknown, refs: Set<string>): void {
+  if (typeof value === 'string') {
+    if (/^\[(?:ev|ent|note|doc|cal|board|board-item|task|route):/.test(value)) refs.add(value);
+    return;
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) collectRefsFromValue(item, refs);
+    return;
+  }
+  if (!value || typeof value !== 'object') return;
+  for (const nested of Object.values(value)) collectRefsFromValue(nested, refs);
 }

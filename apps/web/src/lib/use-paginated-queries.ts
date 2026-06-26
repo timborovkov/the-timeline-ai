@@ -11,9 +11,12 @@ import { useEffect, useMemo, useRef } from 'react';
 
 import type { TimelineCapturedFile } from '@/lib/timeline-captured-files';
 import type { ImpactItem } from '@/lib/timeline-moments';
+import type { SearchEventArtifactCluster } from '@timeline/shared/team-scope';
 
 import { readJson } from '@/lib/paginated-api';
 import { queryKeys } from '@/lib/query-keys';
+
+export type TimelineArtifactCluster = SearchEventArtifactCluster;
 
 export interface TimelinePage {
   items: TimelineEvent[];
@@ -21,6 +24,7 @@ export interface TimelinePage {
   authors: Record<string, { id: string; name: string | null; email: string }>;
   audioUrls: Record<string, string>;
   impactItems: Record<string, ImpactItem[]>;
+  artifactClusters: Record<string, TimelineArtifactCluster>;
   capturedFiles: Record<string, TimelineCapturedFile[]>;
 }
 
@@ -138,6 +142,7 @@ export function useTimelineInfiniteQuery(
         authors: Record<string, { id: string; name: string | null; email: string }>;
         audioUrls: Record<string, string>;
         impactItems: Record<string, ImpactItem[]>;
+        artifactClusters: Record<string, TimelineArtifactCluster>;
         capturedFiles: Record<string, TimelineCapturedFile[]>;
       }>(await fetch(`/api/timeline?${params.toString()}`));
     },

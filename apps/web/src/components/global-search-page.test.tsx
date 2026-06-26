@@ -203,7 +203,12 @@ describe('GlobalSearchPage', () => {
               href: '/app/objects',
               score: 2,
               scoreParts: { navigation: 1 },
-              metadata: { group: 'Go to' },
+              metadata: {
+                group: 'Go to',
+                relatedEvidence: 'Acme renewal',
+                relatedEvidenceSignals: 3,
+                relatedEvidenceStatusSources: 1,
+              },
             },
             {
               id: 'help-docs',
@@ -224,6 +229,9 @@ describe('GlobalSearchPage', () => {
     render(<GlobalSearchPage initialQuery="docs" />);
 
     expect(await screen.findByText('Semantic search is not configured.')).toBeTruthy();
+    expect(
+      screen.getByText(/Related evidence · Acme renewal · 3 signals · 1 status source/i),
+    ).toBeTruthy();
     expect(screen.getByRole('link', { name: /Objects/ }).getAttribute('href')).toBe('/app/objects');
     const external = screen.getByRole('link', { name: /Public help docs/ });
     expect(external.getAttribute('href')).toBe('/help');

@@ -1,5 +1,8 @@
 import { PGlite } from '@electric-sql/pglite';
 import {
+  artifactClusterAnchors,
+  artifactClusterMembers,
+  artifactClusters,
   agentSuggestionEvidence,
   agentSuggestionItems,
   agentSuggestions,
@@ -36,6 +39,7 @@ const REVIEWER_ID = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
 const OTHER_USER_ID = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
 const PSEUDO_USER = '00000000-0000-0000-0000-000000000000';
 const OTHER_RAW_EVENT_ID = 'dddddddd-dddd-dddd-dddd-dddddddddddd';
+const TEAM_RAW_EVENT_ID = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee';
 
 function adjudicationStub(object: {
   verdict: 'duplicate' | 'refinement' | 'conflict' | 'distinct';
@@ -132,6 +136,79 @@ describe('suggestion scope', () => {
 
     expect(bundle.visibilityOwnerUserId).toBeNull();
     expect(bundle.items).toHaveLength(1);
+  });
+
+  it('creates non-authoritative artifact cluster evidence for pending conversation suggestions', async () => {
+    await db.insert(rawEvents).values({
+      id: TEAM_RAW_EVENT_ID,
+      teamId: TEAM_ID,
+      authorUserId: USER_ID,
+      source: 'telegram',
+      contentText: 'Customer says mobile login is failing. Looks like TIMELINE-AI-100.',
+      occurredAt: new Date('2026-06-20T10:00:00Z'),
+      visibility: 'team',
+    });
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Investigate mobile login failure',
+      dedupeKey: 'telegram-login-failure',
+      visibility: 'team',
+      evidence: [
+        {
+          rawEventId: TEAM_RAW_EVENT_ID,
+          quote: 'Customer says mobile login is failing. Looks like TIMELINE-AI-100.',
+        },
+      ],
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'object',
+          title: 'Mobile login failure',
+          dedupeKey: 'telegram-login-failure:item',
+          proposedPayload: {
+            type: 'incident',
+            canonicalName: 'Mobile login failure',
+            aliases: ['TIMELINE-AI-100'],
+          },
+        },
+      ],
+    });
+
+    const clusters = await db.select().from(artifactClusters);
+    expect(clusters).toHaveLength(1);
+    expect(clusters[0]).toMatchObject({
+      teamId: TEAM_ID,
+      artifactType: 'incident',
+      canonicalName: 'Mobile login failure',
+    });
+
+    const members = await db.select().from(artifactClusterMembers);
+    expect(members).toEqual([
+      expect.objectContaining({
+        clusterId: clusters[0]?.id,
+        rawEventId: TEAM_RAW_EVENT_ID,
+        suggestionId: bundle.id,
+        role: 'report',
+        strength: 'structured',
+        authoritative: false,
+      }),
+    ]);
+
+    const anchors = await db.select().from(artifactClusterAnchors);
+    expect(anchors).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          anchorType: 'alias:incident',
+          anchorValue: 'timeline-ai-100',
+        }),
+        expect.objectContaining({
+          anchorType: 'sentry_short_id',
+          anchorValue: 'timeline-ai-100',
+        }),
+      ]),
+    );
   });
 
   it('requires merge suggestions to be confirmed through object merge preview', async () => {

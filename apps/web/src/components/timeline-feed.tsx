@@ -6,7 +6,11 @@ import type { TimelineCapturedFile } from '@/lib/timeline-captured-files';
 import type { ImpactKind, ImpactItem } from '@/lib/timeline-moments';
 
 import { TimelineList } from '@/components/timeline-list';
-import { useTimelineInfiniteQuery, type TimelineEvent } from '@/lib/use-paginated-queries';
+import {
+  useTimelineInfiniteQuery,
+  type TimelineEvent,
+  type TimelinePage,
+} from '@/lib/use-paginated-queries';
 
 interface Props {
   initialPage: {
@@ -15,6 +19,7 @@ interface Props {
     authors: Record<string, { id: string; name: string | null; email: string }>;
     audioUrls: Record<string, string>;
     impactItems: Record<string, ImpactItem[]>;
+    artifactClusters: TimelinePage['artifactClusters'];
     capturedFiles: Record<string, TimelineCapturedFile[]>;
   };
   filters: {
@@ -89,6 +94,10 @@ export function TimelineFeed({
       >,
     [pages],
   );
+  const artifactClustersByEventId = useMemo(
+    () => Object.fromEntries(pages.flatMap((page) => Object.entries(page.artifactClusters))),
+    [pages],
+  );
   const capturedFilesByEventId = useMemo(
     () =>
       Object.fromEntries(pages.flatMap((page) => Object.entries(page.capturedFiles))) as Record<
@@ -113,6 +122,7 @@ export function TimelineFeed({
         emptyAction={emptyAction}
         impactFilter={impactFilter}
         impactItemsByEventId={impactItemsByEventId}
+        artifactClustersByEventId={artifactClustersByEventId}
         capturedFilesByEventId={capturedFilesByEventId}
         focusEventId={focusEventId}
         timezone={timezone}

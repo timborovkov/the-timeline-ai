@@ -9,6 +9,13 @@ import { and, eq, inArray, sql } from 'drizzle-orm';
 
 import type { IntegrationEvent, IntegrationRow, ObjectMapping } from '#src/integrations/types.js';
 
+import {
+  reconcileArtifactEvidence,
+  type ArtifactAnchorInput,
+  type ArtifactStatus,
+  type EvidenceRole,
+  type EvidenceStrength,
+} from '#src/artifacts/index.js';
 import { enqueueEmbedJob, enqueueObjectEmbedJob } from '#src/queue/queues.js';
 
 // Phase 11 — Persist normalized integration events into raw_events with
@@ -164,7 +171,16 @@ export async function writeIntegrationEvents(deps: {
     );
   }
   if (byExternal.size > 0) {
-    await upsertWorkspaceObjects(deps.db, deps.integration, [...byExternal.values()]);
+    const entityByExternalId = await upsertWorkspaceObjects(deps.db, deps.integration, [
+      ...byExternal.values(),
+    ]);
+    await reconcileIntegrationArtifacts({
+      db: deps.db,
+      integration: deps.integration,
+      rawEventIdsByDedupKey: new Map(inserted.map((row) => [row.dedupKey, row.id])),
+      entityByExternalId,
+      events: [...byExternal.values()],
+    });
   }
 
   return inserted.map((r) => r.id);
@@ -251,7 +267,7 @@ async function upsertWorkspaceObjects(
   db: Db,
   integration: IntegrationRow,
   evts: (IntegrationEvent & { objectMap: ObjectMapping })[],
-): Promise<void> {
+): Promise<Map<string, string>> {
   const externalIds = evts.map((e) => e.objectMap.externalId);
 
   // 1) Bulk-fetch existing entity rows for this provider × externalId.
@@ -276,6 +292,7 @@ async function upsertWorkspaceObjects(
   const toInsert: (typeof entities.$inferInsert)[] = [];
   const toUpdate: {
     id: string;
+    externalId: string;
     type: ObjectMapping['type'];
     canonicalName: string;
     status: NonNullable<ObjectMapping['status']>;
@@ -312,6 +329,7 @@ async function upsertWorkspaceObjects(
       const canonicalName = preserveCanonicalName ? existing.canonicalName : map.canonicalName;
       toUpdate.push({
         id: existing.id,
+        externalId: map.externalId,
         type: map.type,
         canonicalName,
         status: map.status ?? 'open',
@@ -333,6 +351,7 @@ async function upsertWorkspaceObjects(
   }
 
   const affectedIds: string[] = [];
+  const entityByExternalId = new Map<string, string>();
 
   // 2) Bulk INSERT new rows. `onConflictDoNothing()` catches collisions on
   //    the existing partial canonical-name unique
@@ -362,8 +381,15 @@ async function upsertWorkspaceObjects(
       .insert(entities)
       .values(dedupedInsert)
       .onConflictDoNothing()
-      .returning({ id: entities.id });
-    for (const r of inserted) affectedIds.push(r.id);
+      .returning({ id: entities.id, metadata: entities.metadata });
+    for (const r of inserted) {
+      affectedIds.push(r.id);
+      const externalId = metadataString(
+        r.metadata as Record<string, unknown>,
+        'integration_external_id',
+      );
+      if (externalId) entityByExternalId.set(externalId, r.id);
+    }
   }
 
   // 3) Bulk UPDATE existing rows. One statement with a VALUES list joined
@@ -437,9 +463,215 @@ async function upsertWorkspaceObjects(
         AND e.team_id = ${integration.teamId}
     `);
     for (const u of toUpdate) affectedIds.push(u.id);
+    for (const u of toUpdate) entityByExternalId.set(u.externalId, u.id);
   }
 
   await Promise.all(affectedIds.map((id) => enqueueObjectEmbedJob(integration.teamId, id)));
+  return entityByExternalId;
+}
+
+async function reconcileIntegrationArtifacts(deps: {
+  db: Db;
+  integration: IntegrationRow;
+  rawEventIdsByDedupKey: Map<string, string>;
+  entityByExternalId: Map<string, string>;
+  events: (IntegrationEvent & { objectMap: ObjectMapping })[];
+}): Promise<void> {
+  for (const event of deps.events) {
+    const rawEventId = deps.rawEventIdsByDedupKey.get(event.dedupKey);
+    const entityId = deps.entityByExternalId.get(event.objectMap.externalId);
+    if (!rawEventId || !entityId) continue;
+    await reconcileArtifactEvidence(deps.db, {
+      teamId: deps.integration.teamId,
+      artifactType: event.objectMap.type,
+      canonicalName: event.objectMap.displayTitle ?? event.objectMap.canonicalName,
+      status: clusterStatusFromObjectStatus(event.objectMap.status),
+      canonicalEntityId: entityId,
+      rawEventId,
+      provider: event.provider,
+      externalObjectId: event.externalObjectId,
+      role: evidenceRoleForIntegrationEvent(event),
+      strength: evidenceStrengthForIntegrationEvent(event),
+      authoritative: integrationEventIsAuthoritative(event),
+      anchors: artifactAnchorsForIntegrationEvent(event),
+      metadata: {
+        provider: event.provider,
+        event_type: event.eventType,
+        integration_id: deps.integration.id,
+      },
+    });
+  }
+}
+
+function clusterStatusFromObjectStatus(status: ObjectMapping['status']): ArtifactStatus {
+  if (status === 'done') return 'resolved';
+  if (status === 'cancelled') return 'cancelled';
+  if (status === 'in_progress') return 'active';
+  return 'open';
+}
+
+function evidenceStrengthForIntegrationEvent(event: IntegrationEvent): EvidenceStrength {
+  if (event.provider === 'github' || event.provider === 'sentry') return 'provider';
+  return 'structured';
+}
+
+function evidenceRoleForIntegrationEvent(event: IntegrationEvent): EvidenceRole {
+  const github = recordField(event.extra, 'github');
+  const githubType = metadataString(github, 'type');
+  if (event.provider === 'sentry') {
+    return event.eventType === 'issue.resolved' ? 'lifecycle_update' : 'error';
+  }
+  if (event.provider === 'github') {
+    if (githubType === 'issue')
+      return event.eventType === 'issue.closed' ? 'lifecycle_update' : 'issue';
+    if (githubType === 'pull_request') {
+      return event.eventType === 'pr.merged' || event.eventType === 'pr.closed'
+        ? 'lifecycle_update'
+        : 'implementation';
+    }
+    if (githubType === 'review') return 'review';
+    if (githubType === 'release') return 'release';
+    if (githubType === 'commit') return 'implementation';
+  }
+  if (event.eventType.includes('release')) return 'release';
+  if (event.objectMap?.type === 'document') return 'document';
+  if (event.objectMap?.type === 'decision') return 'decision';
+  return event.eventType.includes('status') || event.eventType.includes('completed')
+    ? 'lifecycle_update'
+    : 'related_context';
+}
+
+function integrationEventIsAuthoritative(event: IntegrationEvent): boolean {
+  if (!event.objectMap) return false;
+  if (event.provider === 'github') {
+    return [
+      'issue.closed',
+      'issue.updated',
+      'pr.merged',
+      'pr.closed',
+      'pr.updated',
+      'release.published',
+    ].includes(event.eventType);
+  }
+  if (event.provider === 'sentry') return event.eventType.startsWith('issue.');
+  if (event.provider === 'linear') return event.eventType.startsWith('issue.');
+  if (event.provider === 'monday') return event.eventType.includes('status');
+  return false;
+}
+
+function artifactAnchorsForIntegrationEvent(event: IntegrationEvent): ArtifactAnchorInput[] {
+  const anchors: ArtifactAnchorInput[] = [
+    {
+      type: 'provider_object',
+      value: `${event.provider}:${event.externalObjectId}`,
+      strength: 'hard',
+    },
+  ];
+  if (event.objectMap) {
+    anchors.push({
+      type: `provider_external:${event.provider}`,
+      value: event.objectMap.externalId,
+      strength: 'hard',
+    });
+    for (const alias of event.objectMap.aliases ?? []) {
+      anchors.push({
+        type: `alias:${event.objectMap.type}`,
+        value: alias,
+        strength: 'structured',
+      });
+    }
+    const artifactKey = metadataString(event.objectMap.metadata, 'artifact_key');
+    if (artifactKey) anchors.push({ type: 'artifact_key', value: artifactKey, strength: 'hard' });
+    const contractId = metadataString(event.objectMap.metadata, 'contract_id');
+    if (contractId) anchors.push({ type: 'contract_id', value: contractId, strength: 'hard' });
+    const dealId = metadataString(event.objectMap.metadata, 'deal_id');
+    if (dealId) anchors.push({ type: 'deal_id', value: dealId, strength: 'hard' });
+    if (event.objectMap.url)
+      anchors.push({
+        type: 'url',
+        value: normalizeUrlAnchor(event.objectMap.url),
+        strength: 'hard',
+      });
+  }
+
+  const externalUrl =
+    metadataString(event.extra, 'external_url') ?? metadataString(event.extra, 'url');
+  if (externalUrl)
+    anchors.push({ type: 'url', value: normalizeUrlAnchor(externalUrl), strength: 'hard' });
+
+  const github = recordField(event.extra, 'github');
+  const repo = metadataString(github, 'repo');
+  const ghNumber = metadataString(github, 'number') ?? metadataString(github, 'pr_number');
+  const ghType = metadataString(github, 'type');
+  if (repo && ghNumber) {
+    anchors.push({
+      type: ghType === 'issue' ? 'github_issue' : 'github_pr',
+      value: `${repo}#${ghNumber}`,
+      strength: 'hard',
+    });
+  }
+  const head = metadataString(github, 'head') ?? metadataString(github, 'head_branch');
+  if (repo && head)
+    anchors.push({ type: 'github_branch', value: `${repo}:${head}`, strength: 'structured' });
+  const sha = metadataString(github, 'sha') ?? metadataString(github, 'head_sha');
+  if (repo && sha) anchors.push({ type: 'commit_sha', value: `${repo}@${sha}`, strength: 'hard' });
+  if (repo) {
+    for (const issueRef of githubIssueRefs(event.contentText)) {
+      anchors.push({ type: 'github_issue', value: `${repo}#${issueRef}`, strength: 'structured' });
+    }
+  }
+
+  const sentryIssueId = metadataString(event.extra, 'sentry_issue_id');
+  if (sentryIssueId) anchors.push({ type: 'sentry_issue', value: sentryIssueId, strength: 'hard' });
+  const sentryShortId = metadataString(event.extra, 'sentry_short_id');
+  if (sentryShortId)
+    anchors.push({ type: 'sentry_short_id', value: sentryShortId, strength: 'structured' });
+  for (const shortId of sentryShortIds(event.contentText)) {
+    anchors.push({ type: 'sentry_short_id', value: shortId, strength: 'structured' });
+  }
+
+  return anchors;
+}
+
+function githubIssueRefs(text: string): string[] {
+  const refs = new Set<string>();
+  for (const match of text.matchAll(/(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)?\s+#(\d+)\b/gi)) {
+    if (match[1]) refs.add(match[1]);
+  }
+  return [...refs];
+}
+
+function sentryShortIds(text: string): string[] {
+  const refs = new Set<string>();
+  for (const match of text.matchAll(/\b[A-Z][A-Z0-9_-]+-\d+\b/g)) {
+    if (match[0]) refs.add(match[0]);
+  }
+  return [...refs];
+}
+
+function recordField(
+  value: Record<string, unknown> | undefined,
+  key: string,
+): Record<string, unknown> | undefined {
+  const field = value?.[key];
+  return field && typeof field === 'object' && !Array.isArray(field)
+    ? (field as Record<string, unknown>)
+    : undefined;
+}
+
+function normalizeUrlAnchor(value: string): string {
+  try {
+    const url = new URL(value);
+    url.hash = '';
+    const params = [...url.searchParams.entries()].filter(
+      ([key]) => !key.toLowerCase().startsWith('utm_'),
+    );
+    url.search = '';
+    for (const [key, paramValue] of params) url.searchParams.append(key, paramValue);
+    return url.toString().replace(/\/$/, '');
+  } catch {
+    return value.trim();
+  }
 }
 
 function metadataString(metadata: Record<string, unknown> | undefined, key: string): string | null {

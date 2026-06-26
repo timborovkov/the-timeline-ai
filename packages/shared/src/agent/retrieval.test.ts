@@ -66,6 +66,7 @@ function makeScope() {
           occurredAt: '2026-06-14T09:00:00.000Z',
           score: 0.7,
           snippet: 'Discussed Otto follow-up',
+          artifactCluster: null,
         },
       ]),
     },
@@ -196,5 +197,73 @@ describe('retrieveWorkspaceContext', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('includes artifact cluster related evidence in event context', async () => {
+    const scope = makeScope();
+    const relatedEventId = '99999999-9999-4999-8999-999999999999';
+    scope.timeline.searchEvents = vi.fn().mockResolvedValue([
+      {
+        eventId: EVENT_ID,
+        source: 'integration',
+        occurredAt: '2026-06-14T09:00:00.000Z',
+        score: 0.9,
+        snippet: 'Sentry issue TIMELINE-AI-100',
+        artifactCluster: {
+          id: 'cluster-1',
+          artifactType: 'incident',
+          canonicalName: 'Login fails on mobile',
+          status: 'open',
+          relatedEvidence: [
+            {
+              rawEventId: EVENT_ID,
+              provider: 'sentry',
+              externalObjectId: '100',
+              role: 'error',
+              strength: 'provider',
+              authoritative: true,
+              occurredAt: '2026-06-14T09:00:00.000Z',
+              snippet: 'Sentry issue TIMELINE-AI-100',
+            },
+            {
+              rawEventId: relatedEventId,
+              provider: 'github',
+              externalObjectId: 'timborovkov/the-timeline-ai#77',
+              role: 'lifecycle_update',
+              strength: 'provider',
+              authoritative: true,
+              occurredAt: '2026-06-14T10:00:00.000Z',
+              snippet: 'GitHub PR fixes TIMELINE-AI-100',
+            },
+          ],
+        },
+      },
+    ]);
+
+    const result = await retrieveWorkspaceContext(scope as unknown as TeamScope, {
+      query: 'What is the status of TIMELINE-AI-100?',
+      limit: 5,
+    });
+
+    expect(result.events[0]).toMatchObject({
+      artifact_cluster: {
+        id: 'cluster-1',
+        type: 'incident',
+        name: 'Login fails on mobile',
+        related_evidence: [
+          expect.objectContaining({
+            event_citation: `[ev:${EVENT_ID}]`,
+            provider: 'sentry',
+            role: 'error',
+          }),
+          expect.objectContaining({
+            event_citation: `[ev:${relatedEventId}]`,
+            provider: 'github',
+            role: 'lifecycle_update',
+          }),
+        ],
+      },
+    });
+    expect(result.refs).toContain(`[ev:${relatedEventId}]`);
   });
 });

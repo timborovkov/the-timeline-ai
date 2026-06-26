@@ -24,6 +24,9 @@ const PRIVATE_EVENT = '00000000-0000-0000-0000-000000000102';
 const SPECIFIC_EVENT = '00000000-0000-0000-0000-000000000103';
 const OTHER_TEAM_EVENT = '00000000-0000-0000-0000-000000000201';
 const NULL_ANCHORED_ID = '00000000-0000-0000-0000-000000000301';
+const RELATED_EVENT = '00000000-0000-0000-0000-000000000401';
+const RELATED_PRIVATE_EVENT = '00000000-0000-0000-0000-000000000402';
+const ARTIFACT_CLUSTER = '30000000-0000-0000-0000-000000000101';
 
 const TEAM_FACT = '10000000-0000-0000-0000-000000000101';
 const OTHER_TEAM_FACT = '10000000-0000-0000-0000-000000000201';
@@ -56,6 +59,8 @@ async function seed(pg: PGlite): Promise<void> {
       ('${TEAM_EVENT}', '${TEAM_A}', '${OWNER}', '${OWNER}', 'web', 'Acme renewal needs a pricing proposal by Friday.', '2026-06-01T09:00:00Z', 'team', NULL, '{"kind":"team"}'::jsonb),
       ('${PRIVATE_EVENT}', '${TEAM_A}', '${OWNER}', '${OWNER}', 'web', 'Owner private compensation note for Acme.', '2026-06-01T10:00:00Z', 'private', NULL, '{"kind":"private"}'::jsonb),
       ('${SPECIFIC_EVENT}', '${TEAM_A}', '${OWNER}', '${OWNER}', 'slack', 'Specific-users Acme escalation for the member.', '2026-06-01T11:00:00Z', 'specific_users', ARRAY['${MEMBER}'::uuid], '{"kind":"specific"}'::jsonb),
+      ('${RELATED_EVENT}', '${TEAM_A}', '${OWNER}', '${OWNER}', 'integration', 'GitHub PR merged for the Acme pricing proposal.', '2026-06-01T13:00:00Z', 'team', NULL, '{"kind":"related"}'::jsonb),
+      ('${RELATED_PRIVATE_EVENT}', '${TEAM_A}', '${OWNER}', '${OWNER}', 'telegram', 'Private Acme pricing side note.', '2026-06-01T14:00:00Z', 'private', NULL, '{"kind":"private-related"}'::jsonb),
       ('${OTHER_TEAM_EVENT}', '${TEAM_B}', '${OUTSIDER}', '${OUTSIDER}', 'web', 'Other team Acme proposal should never hydrate.', '2026-06-01T12:00:00Z', 'team', NULL, '{"kind":"other-team"}'::jsonb);
 
     INSERT INTO entities (id, team_id, type, canonical_name)
@@ -235,6 +240,56 @@ describe('withTeam timeline semantic search', () => {
         snippet: 'Acme renewal needs a pricing proposal by Friday.',
       }),
     ]);
+  });
+
+  it('hydrates artifact cluster context for search hits without leaking private related evidence', async () => {
+    await pg.exec(`
+      INSERT INTO artifact_clusters
+        (id, team_id, artifact_type, canonical_name, status)
+      VALUES
+        ('${ARTIFACT_CLUSTER}', '${TEAM_A}', 'deal', 'Acme renewal', 'active');
+
+      INSERT INTO artifact_cluster_members
+        (team_id, cluster_id, raw_event_id, provider, external_object_id, role, strength, authoritative)
+      VALUES
+        ('${TEAM_A}', '${ARTIFACT_CLUSTER}', '${TEAM_EVENT}', 'telegram', 'chat:acme', 'report', 'human', false),
+        ('${TEAM_A}', '${ARTIFACT_CLUSTER}', '${RELATED_EVENT}', 'github', 'repo#77', 'lifecycle_update', 'provider', true),
+        ('${TEAM_A}', '${ARTIFACT_CLUSTER}', '${RELATED_PRIVATE_EVENT}', 'telegram', 'private:acme', 'discussion', 'human', false);
+    `);
+    hits = [hit(TEAM_EVENT, 0.9)];
+
+    const memberResults = await scopeFor(MEMBER).timeline.searchEvents({
+      query: 'Acme renewal',
+      limit: 5,
+    });
+    expect(memberResults[0]?.artifactCluster).toMatchObject({
+      id: ARTIFACT_CLUSTER,
+      artifactType: 'deal',
+      canonicalName: 'Acme renewal',
+      status: 'active',
+    });
+    const memberEvidence = memberResults[0]?.artifactCluster?.relatedEvidence ?? [];
+    expect(memberEvidence.find((evidence) => evidence.rawEventId === TEAM_EVENT)).toMatchObject({
+      provider: 'telegram',
+      role: 'report',
+      authoritative: false,
+    });
+    expect(memberEvidence.find((evidence) => evidence.rawEventId === RELATED_EVENT)).toMatchObject({
+      provider: 'github',
+      role: 'lifecycle_update',
+      authoritative: true,
+    });
+    expect(
+      memberResults[0]?.artifactCluster?.relatedEvidence.map((evidence) => evidence.rawEventId),
+    ).not.toContain(RELATED_PRIVATE_EVENT);
+
+    const ownerResults = await scopeFor(OWNER).timeline.searchEvents({
+      query: 'Acme renewal',
+      limit: 5,
+    });
+    expect(
+      ownerResults[0]?.artifactCluster?.relatedEvidence.map((evidence) => evidence.rawEventId),
+    ).toContain(RELATED_PRIVATE_EVENT);
   });
 
   it('requires membership before embedding or searching', async () => {

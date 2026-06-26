@@ -14,6 +14,8 @@ const fakes = vi.hoisted(() => ({
   fakeListEventsPage: vi.fn(),
   fakeGetEventsByIds: vi.fn(),
   fakeListImpactItems: vi.fn(),
+  fakeListArtifactClusters: vi.fn(),
+  fakeGetCalendarSettings: vi.fn(),
   fakeCacheKey: vi.fn((parts: unknown[]) => `cache:${parts.map((p) => String(p)).join('|')}`),
   fakeCachedJson: vi.fn((_key: string, _ttl: number, load: () => unknown) => load()),
   fakeGetS3PresignClient: vi.fn(),
@@ -41,10 +43,12 @@ vi.mock('@timeline/shared/s3', () => ({
 vi.mock('@timeline/shared/team-scope', () => ({
   withTeam: () => ({
     requireMembership: fakes.fakeRequireMembership,
+    calendar: { getCalendarSettings: fakes.fakeGetCalendarSettings },
     timeline: {
       listEventsPage: fakes.fakeListEventsPage,
       getEventsByIds: fakes.fakeGetEventsByIds,
       listImpactItems: fakes.fakeListImpactItems,
+      listArtifactClusters: fakes.fakeListArtifactClusters,
     },
   }),
 }));
@@ -97,6 +101,8 @@ beforeEach(() => {
   fakes.fakeListImpactItems.mockResolvedValue({
     'event-1': [{ kind: 'task', label: 'Follow up' }],
   });
+  fakes.fakeListArtifactClusters.mockResolvedValue({});
+  fakes.fakeGetCalendarSettings.mockResolvedValue({ defaultTimezone: 'UTC' });
   fakes.fakeGetS3PresignClient.mockReturnValue({ s3: true });
   fakes.fakeGetAudioBucket.mockReturnValue('audio-bucket');
   fakes.fakeGetSignedGetObjectUrl.mockResolvedValue('https://signed-audio.test/event-1');
@@ -157,6 +163,7 @@ describe('GET /api/timeline', () => {
       nextCursor: null,
       authors: { [AUTHOR_ID]: { id: AUTHOR_ID, name: 'Ada', email: 'ada@example.test' } },
       impactItems: { 'event-1': [{ kind: 'task', label: 'Follow up' }] },
+      artifactClusters: {},
       capturedFiles: {},
       audioUrls: { 'event-1': 'https://signed-audio.test/event-1' },
     });
@@ -207,6 +214,7 @@ describe('GET /api/timeline', () => {
       }),
     );
     expect(fakes.fakeListImpactItems).toHaveBeenCalledWith(['event-1']);
+    expect(fakes.fakeListArtifactClusters).toHaveBeenCalledWith(['event-1']);
   });
 
   it('expands grouped source filters before querying timeline events', async () => {

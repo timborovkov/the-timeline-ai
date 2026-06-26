@@ -62,6 +62,7 @@ function page(items: TimelineEvent[]): TimelinePage {
     authors: {},
     audioUrls: {},
     impactItems: {},
+    artifactClusters: {},
     capturedFiles: {},
   };
 }

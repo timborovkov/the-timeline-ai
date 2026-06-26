@@ -146,6 +146,7 @@ export default async function TimelinePage({ searchParams }: Props) {
     scope.timeline.listMembers(),
   ]);
   const events = timelinePage.items;
+  const eventIds = events.map((event) => event.id);
 
   const userIds = Array.from(
     new Set([
@@ -183,12 +184,15 @@ export default async function TimelinePage({ searchParams }: Props) {
       console.error('[timeline] audio playback unavailable; S3 is not configured', err);
     }
   }
-  const capturedFiles = await listTimelineCapturedFilesByEventId({
-    db,
-    teamId: active.teamId,
-    userId: session.user.id,
-    eventIds: events.map((event) => event.id),
-  });
+  const [capturedFiles, artifactClusters] = await Promise.all([
+    listTimelineCapturedFilesByEventId({
+      db,
+      teamId: active.teamId,
+      userId: session.user.id,
+      eventIds,
+    }),
+    scope.timeline.listArtifactClusters(eventIds),
+  ]);
 
   const hasPanelFilters = Boolean(
     authorFilter ?? fromFilter ?? toFilter ?? sourceFilter ?? impactFilter,
@@ -244,6 +248,7 @@ export default async function TimelinePage({ searchParams }: Props) {
         userRows={userRows}
         audioUrlMap={audioUrlMap}
         impactItems={timelinePage.impactItems}
+        artifactClusters={artifactClusters}
         capturedFiles={capturedFiles}
         currentUserId={session.user.id}
         isAdmin={isAdmin}
@@ -269,6 +274,7 @@ function TimelineBrowserSection({
   userRows,
   audioUrlMap,
   impactItems,
+  artifactClusters,
   capturedFiles,
   currentUserId,
   isAdmin,
@@ -289,6 +295,7 @@ function TimelineBrowserSection({
   userRows: { id: string; name: string | null; email: string }[];
   audioUrlMap: Map<string, string>;
   impactItems: TimelineFeedProps['initialPage']['impactItems'];
+  artifactClusters: TimelineFeedProps['initialPage']['artifactClusters'];
   capturedFiles: TimelineFeedProps['initialPage']['capturedFiles'];
   currentUserId: string;
   isAdmin: boolean;
@@ -320,6 +327,7 @@ function TimelineBrowserSection({
           authors: Object.fromEntries(userRows.map((row) => [row.id, row])),
           audioUrls: Object.fromEntries(audioUrlMap),
           impactItems,
+          artifactClusters,
           capturedFiles,
         }}
         filters={{
