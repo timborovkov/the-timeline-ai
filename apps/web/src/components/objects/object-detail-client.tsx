@@ -789,6 +789,7 @@ function ObjectDetailView(props: Props) {
           ) : null}
 
           <ObjectSummaryPanel detail={view.viewDetail} />
+          <ObjectProvenancePanel provenance={view.viewDetail.provenance} />
           <ObjectConnectedWorkSection connectedWork={view.detail.connectedWork} />
 
           <ObjectPanel title="Evidence" eyebrow="events">
@@ -1041,6 +1042,92 @@ function sourceLabel(ref: objects.ObjectSummarySourceRef): string {
   if (ref.kind === 'object_note') return 'note';
   if (ref.kind === 'object_change') return 'change';
   return ref.kind;
+}
+
+function ObjectProvenancePanel({ provenance }: { provenance: ObjectDetail['provenance'] }) {
+  const hasProvenance =
+    provenance.whyThisExists.length > 0 ||
+    provenance.whatChangedIt.length > 0 ||
+    provenance.relatedEvidence.length > 0;
+  return (
+    <ObjectPanel title="Provenance" eyebrow="source backed">
+      {!hasProvenance ? (
+        <p className="text-sm text-fg-muted">No source provenance linked yet.</p>
+      ) : (
+        <div className="grid gap-5 lg:grid-cols-3">
+          <ProvenanceGroup
+            title="Why this exists"
+            empty="No accepted creation evidence yet."
+            entries={provenance.whyThisExists}
+          />
+          <ProvenanceGroup
+            title="What changed it"
+            empty="No accepted update evidence yet."
+            entries={provenance.whatChangedIt}
+          />
+          <ProvenanceGroup
+            title="Related evidence"
+            empty="No observed related evidence yet."
+            entries={provenance.relatedEvidence}
+            muted
+          />
+        </div>
+      )}
+    </ObjectPanel>
+  );
+}
+
+function ProvenanceGroup({
+  title,
+  empty,
+  entries,
+  muted = false,
+}: {
+  title: string;
+  empty: string;
+  entries: ObjectDetail['provenance']['whyThisExists'];
+  muted?: boolean;
+}) {
+  return (
+    <section className="min-w-0">
+      <h3 className="mb-2 font-mono text-[11px] uppercase tracking-[0.12em] text-fg-muted">
+        {title}
+      </h3>
+      {entries.length === 0 ? (
+        <p className="text-sm text-fg-muted">{empty}</p>
+      ) : (
+        <ul className="space-y-3">
+          {entries.map((entry) => (
+            <li
+              key={`${entry.targetKind}:${entry.operation}:${entry.id}`}
+              className={cn(
+                'rounded-sm border border-border bg-surface p-3 text-sm',
+                muted && 'bg-bg text-fg-muted',
+              )}
+            >
+              <p className="font-medium leading-5 text-fg">{displayText(entry.title)}</p>
+              {entry.reason ? (
+                <p className="mt-1 line-clamp-3 text-xs leading-5 text-fg-muted">
+                  {displayText(entry.reason)}
+                </p>
+              ) : null}
+              <div className="mt-3 space-y-1">
+                {entry.evidence.slice(0, 3).map((evidence) => (
+                  <Link
+                    key={evidence.rawEventId}
+                    href={`/app/timeline?event=${evidence.rawEventId}#ev-${evidence.rawEventId}`}
+                    className="block text-xs text-fg-muted underline-offset-2 hover:text-fg hover:underline"
+                  >
+                    {displayText(evidence.source)} · {formatDisplayDateTime(evidence.occurredAt)}
+                  </Link>
+                ))}
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
 }
 
 function Field({ label, children }: { label: string; children: ReactNode }) {

@@ -201,9 +201,32 @@ export interface ObjectDetail extends ObjectRow {
       updatedAt: Date;
     }[];
   };
+  provenance: {
+    whyThisExists: ObjectProvenanceEntry[];
+    whatChangedIt: ObjectProvenanceEntry[];
+    relatedEvidence: ObjectProvenanceEntry[];
+  };
   summary: ObjectSummaryView | null;
   newSinceLastVisit: number;
   lastVisitedAt: Date | null;
+}
+
+export interface ObjectProvenanceEvidence {
+  rawEventId: string;
+  quote: string | null;
+  source: string;
+  contentText: string | null;
+  occurredAt: Date;
+}
+
+export interface ObjectProvenanceEntry {
+  id: string;
+  title: string;
+  reason: string | null;
+  operation: string;
+  targetKind: string;
+  createdAt: Date;
+  evidence: ObjectProvenanceEvidence[];
 }
 
 export interface ObjectNotePreview {

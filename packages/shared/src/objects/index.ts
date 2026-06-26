@@ -9,6 +9,7 @@
  */
 import {
   type Db,
+  agentSuggestionEvidence,
   agentSuggestionItems,
   agentSuggestions,
   boardLanes,
@@ -639,10 +640,33 @@ export interface ObjectDetail extends ObjectRow {
       updatedAt: Date;
     }[];
   };
+  provenance: {
+    whyThisExists: ObjectProvenanceEntry[];
+    whatChangedIt: ObjectProvenanceEntry[];
+    relatedEvidence: ObjectProvenanceEntry[];
+  };
   summary: ObjectSummaryView | null;
   /** Count of object_changes and notes since the caller's last visit. */
   newSinceLastVisit: number;
   lastVisitedAt: Date | null;
+}
+
+export interface ObjectProvenanceEvidence {
+  rawEventId: string;
+  quote: string | null;
+  source: string;
+  contentText: string | null;
+  occurredAt: Date;
+}
+
+export interface ObjectProvenanceEntry {
+  id: string;
+  title: string;
+  reason: string | null;
+  operation: string;
+  targetKind: string;
+  createdAt: Date;
+  evidence: ObjectProvenanceEvidence[];
 }
 
 export interface ObjectNotePreview {
@@ -786,6 +810,153 @@ function suggestionVisibleToScope(scope: TeamScopeCore): SQL {
       AND ${scope.userId} = ANY(${agentSuggestions.visibilityUserIds})
     )
   )`;
+}
+
+function emptyObjectProvenance(): ObjectDetail['provenance'] {
+  return { whyThisExists: [], whatChangedIt: [], relatedEvidence: [] };
+}
+
+function provenanceEntryKey(
+  row: Pick<ObjectProvenanceEntry, 'id' | 'operation' | 'targetKind'>,
+): string {
+  return `${row.id}:${row.operation}:${row.targetKind}`;
+}
+
+async function getObjectProvenance(
+  db: Db,
+  scope: TeamScopeCore,
+  object: Pick<ObjectRow, 'id' | 'metadata'>,
+  connectedWork: ObjectDetail['connectedWork'],
+): Promise<ObjectDetail['provenance']> {
+  const agentSuggestionItemId = metadataString(object.metadata, 'agent_suggestion_item_id');
+  const payloadMention = likePattern(object.id);
+  const objectMatchConditions: SQL[] = [
+    eq(agentSuggestionItems.targetId, object.id),
+    eq(agentSuggestionItems.resultId, object.id),
+    sql`${agentSuggestionItems.proposedPayload}::text LIKE ${payloadMention}`,
+  ];
+  if (agentSuggestionItemId) {
+    objectMatchConditions.push(eq(agentSuggestionItems.id, agentSuggestionItemId));
+  }
+  const rows = await db
+    .select({
+      suggestionId: agentSuggestions.id,
+      suggestionTitle: agentSuggestions.title,
+      suggestionReason: agentSuggestions.reason,
+      suggestionCreatedAt: agentSuggestions.createdAt,
+      itemId: agentSuggestionItems.id,
+      operation: agentSuggestionItems.operation,
+      targetKind: agentSuggestionItems.targetKind,
+      targetId: agentSuggestionItems.targetId,
+      resultId: agentSuggestionItems.resultId,
+      itemTitle: agentSuggestionItems.title,
+      rawEventId: agentSuggestionEvidence.rawEventId,
+      quote: agentSuggestionEvidence.quote,
+      source: rawEvents.source,
+      contentText: rawEvents.contentText,
+      occurredAt: rawEvents.occurredAt,
+    })
+    .from(agentSuggestionItems)
+    .innerJoin(agentSuggestions, eq(agentSuggestions.id, agentSuggestionItems.suggestionId))
+    .innerJoin(
+      agentSuggestionEvidence,
+      eq(agentSuggestionEvidence.suggestionId, agentSuggestions.id),
+    )
+    .innerJoin(rawEvents, eq(rawEvents.id, agentSuggestionEvidence.rawEventId))
+    .where(
+      and(
+        eq(agentSuggestions.teamId, scope.teamId),
+        eq(agentSuggestionItems.teamId, scope.teamId),
+        eq(agentSuggestionEvidence.teamId, scope.teamId),
+        eq(rawEvents.teamId, scope.teamId),
+        eq(agentSuggestionItems.status, 'accepted'),
+        suggestionVisibleToScope(scope),
+        rawEventVisibility(scope),
+        sql`COALESCE(${rawEvents.sourceMetadata} ->> 'deleted', 'false') <> 'true'`,
+        or(...objectMatchConditions),
+      ),
+    )
+    .orderBy(desc(agentSuggestions.createdAt), desc(rawEvents.occurredAt), desc(rawEvents.id))
+    .limit(80);
+
+  const byItem = new Map<string, ObjectProvenanceEntry>();
+  for (const row of rows) {
+    const id = row.itemId;
+    const existing =
+      byItem.get(id) ??
+      ({
+        id,
+        title: row.itemTitle || row.suggestionTitle,
+        reason: row.suggestionReason,
+        operation: row.operation,
+        targetKind: row.targetKind,
+        createdAt: row.suggestionCreatedAt,
+        evidence: [],
+      } satisfies ObjectProvenanceEntry);
+    if (!existing.evidence.some((ev) => ev.rawEventId === row.rawEventId)) {
+      existing.evidence.push({
+        rawEventId: row.rawEventId,
+        quote: row.quote,
+        source: row.source,
+        contentText: row.contentText,
+        occurredAt: row.occurredAt,
+      });
+    }
+    byItem.set(id, existing);
+  }
+
+  const provenance = emptyObjectProvenance();
+  const usedRelated = new Set<string>();
+  for (const entry of byItem.values()) {
+    if (
+      entry.operation === 'create' &&
+      (entry.targetKind === 'object' || entry.targetKind === 'task')
+    ) {
+      provenance.whyThisExists.push(entry);
+      continue;
+    }
+    provenance.whatChangedIt.push(entry);
+    for (const evidence of entry.evidence) usedRelated.add(evidence.rawEventId);
+  }
+  for (const entry of provenance.whyThisExists) {
+    for (const evidence of entry.evidence) usedRelated.add(evidence.rawEventId);
+  }
+
+  for (const event of connectedWork.timelineEvents) {
+    if (usedRelated.has(event.id)) continue;
+    const title = event.contentText?.trim();
+    provenance.relatedEvidence.push({
+      id: `observed:${event.id}`,
+      title: title && title.length > 0 ? title : 'Related source event',
+      reason: 'Observed through connected work and concrete object evidence.',
+      operation: 'observed',
+      targetKind: 'raw_event',
+      createdAt: event.occurredAt,
+      evidence: [
+        {
+          rawEventId: event.id,
+          quote: null,
+          source: event.source,
+          contentText: event.contentText,
+          occurredAt: event.occurredAt,
+        },
+      ],
+    });
+  }
+
+  const sortEntries = (entries: ObjectProvenanceEntry[]) =>
+    entries
+      .filter(
+        (entry, index, list) =>
+          list.findIndex((other) => provenanceEntryKey(other) === provenanceEntryKey(entry)) ===
+          index,
+      )
+      .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime());
+  return {
+    whyThisExists: sortEntries(provenance.whyThisExists),
+    whatChangedIt: sortEntries(provenance.whatChangedIt),
+    relatedEvidence: sortEntries(provenance.relatedEvidence).slice(0, 8),
+  };
 }
 
 function cursorCondition(
@@ -1020,6 +1191,7 @@ export async function getObjectSectionPage(
     .where(
       and(
         eq(rawEvents.teamId, scope.teamId),
+        ne(rawEvents.source, 'system'),
         rawEventVisibility(scope),
         sql`COALESCE(${rawEvents.sourceMetadata} ->> 'deleted', 'false') <> 'true'`,
         sql`${rawEvents.sourceMetadata} ->> 'entity_id' = ${entityId}`,
@@ -1726,6 +1898,7 @@ export async function getObject(
 
   const base = toObjectRow(entityRow);
   const connectedWork = await getConnectedWork(db, scope, base);
+  const provenance = await getObjectProvenance(db, scope, base, connectedWork);
   const relationships = [
     ...outRows.map((r) => ({ ...r, direction: 'out' as const })),
     ...inRows.map((r) => ({ ...r, direction: 'in' as const })),
@@ -1752,6 +1925,7 @@ export async function getObject(
     recentChanges: changeRows,
     openTasks: connectedWork.openTasks,
     connectedWork,
+    provenance,
     summary,
     newSinceLastVisit,
     lastVisitedAt,

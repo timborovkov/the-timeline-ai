@@ -734,6 +734,69 @@ describe('board scope', () => {
     expect(changes[0]?.id).toBe(suggestion.id);
   });
 
+  it('hydrates accepted board suggestion evidence into board item history', async () => {
+    const scope = withTeam(db, TEAM_A, USER_OWNER);
+    const event = await scope.timeline.createEvent({
+      authorUserId: USER_OWNER,
+      source: 'telegram',
+      contentText: 'Add Revigo to the pilot pipeline negotiation lane.',
+      visibility: 'team',
+    });
+    const board = await scope.boards.createBoard({
+      name: 'Pilot pipeline',
+      templateKind: 'pipeline',
+      lanes: [{ name: 'Negotiation', kind: 'active' }],
+    });
+    const company = await scope.objects.createObject({
+      type: 'company',
+      canonicalName: 'Revigo',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Add Revigo to pilot pipeline',
+      dedupeKey: 'board-history-evidence',
+      evidence: [{ rawEventId: event.id, quote: 'Add Revigo to the pilot pipeline' }],
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'board_membership',
+          title: 'Add Revigo to Pilot pipeline',
+          dedupeKey: 'board-history-evidence:item',
+          proposedPayload: {
+            boardId: board.id,
+            entityId: company.id,
+            laneId: board.lanes[0]?.id ?? null,
+          },
+        },
+      ],
+    });
+
+    await expect(scope.suggestions.acceptSuggestionItem(bundle.items[0]?.id ?? '')).resolves.toBe(
+      true,
+    );
+    const detail = await scope.boards.getBoard(board.id, { itemLimit: 'all' });
+    const item = detail?.items[0];
+    expect(item).toBeDefined();
+
+    const history = await scope.boards.listBoardItemHistory(item?.id ?? '');
+
+    expect(history[0]).toEqual(
+      expect.objectContaining({
+        field: '__add__',
+        suggestionItemId: bundle.items[0]?.id,
+        evidence: [
+          expect.objectContaining({
+            rawEventId: event.id,
+            source: 'telegram',
+            quote: 'Add Revigo to the pilot pipeline',
+            contentText: 'Add Revigo to the pilot pipeline negotiation lane.',
+          }),
+        ],
+      }),
+    );
+  });
+
   it('returns bounded board item pages with the full active item count', async () => {
     const scope = withTeam(db, TEAM_A, USER_OWNER);
     const board = await scope.boards.createBoard({

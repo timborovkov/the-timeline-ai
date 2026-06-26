@@ -6230,13 +6230,28 @@ describe('suggestion scope', () => {
 
     await expect(scope.suggestions.acceptSuggestionItem(itemId ?? '')).resolves.toBe(true);
 
-    const result = await pg.query<{ source_event_id: string | null }>(
-      `SELECT source_event_id
+    const result = await pg.query<{ id: string; source_event_id: string | null }>(
+      `SELECT id, source_event_id
        FROM entities
        WHERE team_id = '${TEAM_ID}'
          AND canonical_name = 'Investigate agent memory usage for pulling wrong numbers'`,
     );
     expect(result.rows[0]?.source_event_id).toBe(sourceRawEventId);
+
+    const detail = await scope.objects.getObject(result.rows[0]?.id ?? '');
+    expect(detail?.provenance.whyThisExists).toEqual([
+      expect.objectContaining({
+        id: itemId,
+        title: 'Investigate agent memory usage for pulling wrong numbers',
+        evidence: [
+          expect.objectContaining({
+            rawEventId: sourceRawEventId,
+            source: 'web',
+            contentText: 'Daily meeting: investigate agent memory usage for pulling wrong numbers.',
+          }),
+        ],
+      }),
+    ]);
   });
 
   it('drops invalid task create source event ids when bundle evidence is ambiguous', async () => {
