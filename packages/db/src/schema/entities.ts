@@ -92,6 +92,12 @@ export const entities = pgTable(
     index('entities_team_type_active_updated_id_idx')
       .on(table.teamId, table.type, table.updatedAt, table.id)
       .where(sql`${table.archivedAt} IS NULL AND ${table.mergedIntoId} IS NULL`),
+    index('entities_team_lower_canonical_name_pattern_idx')
+      .on(table.teamId, sql`lower(${table.canonicalName}) text_pattern_ops`)
+      .where(sql`${table.mergedIntoId} IS NULL`),
+    index('entities_canonical_name_tsv_idx')
+      .using('gin', sql`to_tsvector('simple', ${table.canonicalName})`)
+      .where(sql`${table.mergedIntoId} IS NULL`),
     // Case-insensitive uniqueness on (team, type, canonical name). Scoped to
     // active (non-merged) rows so merges don't create permanent collisions.
     // Includes `type` so cross-type same-name entities coexist legitimately

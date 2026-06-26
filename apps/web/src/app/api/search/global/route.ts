@@ -431,11 +431,16 @@ export async function POST(req: Request): Promise<Response> {
     await Promise.all([
       wantsObjectsOrTasks
         ? guardedSearch(warnings, 'object', 'Object search is temporarily unavailable.', [], () =>
-            scope.objects.searchObjects({
-              query,
-              archived: false,
-              limit: sourceLimit(input, 30) * 10,
-            }),
+            query
+              ? scope.objects.searchObjects({
+                  query,
+                  archived: false,
+                  limit: sourceLimit(input, 30) * 10,
+                })
+              : scope.objects.listObjects({
+                  archived: false,
+                  limit: sourceLimit(input, 30) * 10,
+                }),
           )
         : Promise.resolve([]),
       wantsObjectsOrTasks

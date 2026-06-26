@@ -484,12 +484,23 @@ function objectTokenSearchCondition(token: string): SQL {
     OR lower(${entities.type}::text) = ${exact}
     OR lower(${entities.status}) = ${exact}
     OR lower(coalesce(${entities.stage}, '')) = ${exact}
-    OR ${entities.aliases} @> ${JSON.stringify([token])}::jsonb
+    OR EXISTS (
+      SELECT 1
+      FROM jsonb_array_elements_text(${entities.aliases}) AS alias(value)
+      WHERE lower(alias.value) = ${exact}
+        OR lower(alias.value) LIKE ${prefix} ESCAPE '\\'
+        OR to_tsvector('simple', alias.value) @@ to_tsquery('simple', ${tsPrefix})
+    )
   )`;
 }
 
 function objectSearchCondition(query: string, tokens: string[]): SQL {
-  const exactAlias = sql`${entities.aliases} @> ${JSON.stringify([query])}::jsonb`;
+  const exact = query.toLowerCase();
+  const exactAlias = sql`EXISTS (
+    SELECT 1
+    FROM jsonb_array_elements_text(${entities.aliases}) AS alias(value)
+    WHERE lower(alias.value) = ${exact}
+  )`;
   if (tokens.length === 1) return objectTokenSearchCondition(tokens[0] ?? query);
   return sql`(
     (${and(...tokens.map(objectTokenSearchCondition))})

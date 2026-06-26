@@ -337,6 +337,13 @@
       "when": 1795653180000,
       "tag": "0047_existing_team_timezones",
       "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1795653240000,
+      "tag": "0048_object_search_indexes",
+      "breakpoints": true
     }
   ]
 }
