@@ -862,6 +862,12 @@ async function getObjectProvenance(
       resultId: agentSuggestionItems.resultId,
       itemTitle: agentSuggestionItems.title,
       proposedPayload: agentSuggestionItems.proposedPayload,
+      bundleEvidenceCount: sql<number>`(
+        SELECT COUNT(*)::int
+        FROM agent_suggestion_evidence AS all_evidence
+        WHERE all_evidence.suggestion_id = ${agentSuggestionItems.suggestionId}
+          AND all_evidence.team_id = ${scope.teamId}
+      )`,
       rawEventId: agentSuggestionEvidence.rawEventId,
       quote: agentSuggestionEvidence.quote,
       source: rawEvents.source,
@@ -900,7 +906,7 @@ async function getObjectProvenance(
     const sourceEventId = sourceEventIdFromPayload(itemRows[0]?.proposedPayload);
     const relevantRows = sourceEventId
       ? itemRows.filter((row) => row.rawEventId === sourceEventId)
-      : itemRows.length === 1
+      : itemRows[0]?.bundleEvidenceCount === 1 && itemRows.length === 1
         ? itemRows
         : [];
     for (const row of relevantRows) {
