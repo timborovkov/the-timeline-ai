@@ -37,6 +37,16 @@ export function chatErrorMessage(error: string | undefined, status?: number): st
   }
 }
 
+function hasGithubRepoAccessFailure(error: string | undefined): boolean {
+  return /GitHub GET \/repos\/[^\s)]*(?: failed with status)?\s+(?:401|403|404)\b/u.test(
+    error ?? '',
+  );
+}
+
+function hasGithubRepoReadFailure(error: string | undefined): boolean {
+  return error?.includes('GitHub GET /repos/') ?? false;
+}
+
 export function connectionErrorMessage(error: string | undefined, status?: number): string {
   if (
     error?.includes('github_rate_limited') ||
@@ -45,15 +55,18 @@ export function connectionErrorMessage(error: string | undefined, status?: numbe
   ) {
     return 'GitHub is rate limiting this connection. Sync will resume automatically after the cooldown window.';
   }
+  if (error?.includes('Pull requests read permission required')) {
+    return 'GitHub needs pull request read access for one or more selected repos. Update the GitHub App permissions, then reconnect.';
+  }
+  if (hasGithubRepoAccessFailure(error)) {
+    return 'GitHub could not read one or more selected repos. Check that the connection still has access, then sync again.';
+  }
+  if (hasGithubRepoReadFailure(error)) {
+    return 'GitHub could not finish syncing one or more selected repos. Retry sync after the provider recovers.';
+  }
   if (error?.includes('github_incremental_partial') || error?.includes('github_backfill_partial')) {
     if (error.includes('commits:page_cap')) {
       return 'GitHub has more commit history to catch up. Timeline saved the current checkpoint and the next sync will continue from there.';
-    }
-    if (error.includes('Pull requests read permission required')) {
-      return 'GitHub needs pull request read access for one or more selected repos. Update the GitHub App permissions, then reconnect.';
-    }
-    if (error.includes('GitHub GET /repos/')) {
-      return 'GitHub could not read one or more selected repos. Check that the connection still has access, then sync again.';
     }
     return 'GitHub synced partially. Some selected repos need attention before Timeline can finish syncing them.';
   }

@@ -1228,7 +1228,7 @@ describe('githubProvider.incrementalSync', () => {
       area: 'releases',
     });
     expect(result?.partialFailures?.[0]?.error).toContain(
-      'GitHub GET /repos/acme/app/releases?per_page=100&page=1',
+      'GitHub GET /repos/acme/app/releases 500:',
     );
     expect(savedCursor(saveCursor, 'github.repo:acme/app:releases')).toMatchObject({
       releases_since: '2026-06-10T00:00:00Z',
@@ -1240,6 +1240,59 @@ describe('githubProvider.incrementalSync', () => {
       lastStatus: 'error',
     });
     vi.useRealTimers();
+  });
+
+  it('keeps GitHub HTTP status visible when summarizing long commit URLs', async () => {
+    const repo = 'acme/super-long-repository-name-for-status-retention-tests';
+    const fetchMock = vi.fn<typeof fetch>((input) => {
+      const requestUrl =
+        typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+      const url = new URL(requestUrl);
+      if (url.pathname === `/repos/${repo}`) {
+        return Promise.resolve(
+          jsonResponse({
+            id: 1,
+            full_name: repo,
+            name: 'super-long-repository-name-for-status-retention-tests',
+            owner: { login: 'acme' },
+            private: true,
+            default_branch: 'main',
+          }),
+        );
+      }
+      if (url.pathname.endsWith('/commits')) {
+        return Promise.resolve(jsonResponse({ message: 'Not Found' }, 404));
+      }
+      if (url.pathname.endsWith('/pulls')) return Promise.resolve(jsonResponse([]));
+      if (url.pathname.endsWith('/issues')) return Promise.resolve(jsonResponse([]));
+      if (url.pathname.endsWith('/releases')) return Promise.resolve(jsonResponse([]));
+      if (url.pathname.endsWith('/actions/runs')) {
+        return Promise.resolve(jsonResponse({ workflow_runs: [] }));
+      }
+      return Promise.resolve(jsonResponse({ message: 'unexpected' }, 404));
+    });
+    globalThis.fetch = fetchMock;
+
+    const result = await githubProvider.incrementalSync({
+      integration: {} as never,
+      tokens: { access_token: 'gho_token' },
+      selections: [{ kind: 'github.repo', externalId: repo }],
+      ctx: {
+        writeEvents: vi.fn().mockResolvedValue([]),
+        recordAudit: vi.fn(),
+        saveCursor: vi.fn().mockResolvedValue(undefined),
+        loadCursor: vi.fn().mockResolvedValue({}),
+        persistTokens: vi.fn(),
+      },
+    });
+
+    const commitsFailure = result?.partialFailures?.find(
+      (failure) => failure.resource === repo && failure.surface === 'commits',
+    );
+    expect(commitsFailure?.error).toContain(
+      'GitHub GET /repos/acme/super-long-repository-name-for-status-retention-tests/commits 404:',
+    );
+    expect(commitsFailure?.error).not.toContain('sha=main');
   });
 
   it('advances the issue cursor when fetched rows are PRs filtered out of issue events', async () => {

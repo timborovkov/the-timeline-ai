@@ -31,6 +31,21 @@ describe('UX error messages', () => {
         'github_incremental_partial: 1 repo(s) failed: acme/app (github_repo_sync_partial:acme/app: commits (GitHub GET /repos/acme/app 404: Not Found))',
       ),
     ).toContain('could not read one or more selected repos');
+    expect(
+      connectionErrorMessage(
+        'acme/app:commits:commits (GitHub GET /repos/acme/app/commits?sha=main&per_page=100&page=1 failed with status 404: Not Found)',
+      ),
+    ).toContain('could not read one or more selected repos');
+    expect(
+      connectionErrorMessage(
+        'acme/super-long-repository-name-for-status-retention-tests:commits:commits (GitHub GET /repos/acme/super-long-repository-name-for-status-retention-tests/commits 404: Not Found)',
+      ),
+    ).toContain('could not read one or more selected repos');
+    expect(
+      connectionErrorMessage(
+        'acme/app:commits:commits (GitHub GET /repos/acme/app/commits?sha=main&per_page=100&page=1 failed with status 500: Server Error)',
+      ),
+    ).toContain('Retry sync after the provider recovers');
     expect(connectionErrorMessage('not_found')).toContain('no longer exists');
     expect(connectionErrorMessage(undefined, 500)).toBe('Connection failed (500).');
   });
