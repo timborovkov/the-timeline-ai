@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   attentionCount,
   countDismissibleMeetingFailures,
+  countMeetingFailuresForSources,
   workAttentionCount,
 } from '@/lib/hub-status';
 
@@ -36,6 +37,29 @@ describe('hub status helpers', () => {
         { kind: 'meeting_finalization', status: 'stuck' },
         { kind: 'embedding', status: 'failed' },
       ] as Parameters<typeof countDismissibleMeetingFailures>[0]),
+    ).toBe(1);
+  });
+
+  it('omits meeting failures from lightweight source attention', () => {
+    expect(
+      countMeetingFailuresForSources({
+        includeRecoverableJobs: false,
+        recoverableJobs: [
+          { kind: 'meeting_finalization', status: 'failed' },
+          { kind: 'meeting_finalization', status: 'failed' },
+        ] as Parameters<typeof countMeetingFailuresForSources>[0]['recoverableJobs'],
+      }),
+    ).toBe(0);
+  });
+
+  it('uses recovery jobs for the full sources summary', () => {
+    expect(
+      countMeetingFailuresForSources({
+        includeRecoverableJobs: true,
+        recoverableJobs: [{ kind: 'meeting_finalization', status: 'failed' }] as Parameters<
+          typeof countMeetingFailuresForSources
+        >[0]['recoverableJobs'],
+      }),
     ).toBe(1);
   });
 });

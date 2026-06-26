@@ -54,6 +54,10 @@ interface NavAttentionSummary {
   connections: number;
 }
 
+interface SourcesStatusOptions {
+  includeRecoverableJobs?: boolean;
+}
+
 export function attentionCount(...counts: number[]): number {
   return counts.reduce((sum, count) => sum + Math.max(0, count), 0);
 }
@@ -87,6 +91,16 @@ function countMeetingsByStatus(
 export function countDismissibleMeetingFailures(items: JobRecoveryItem[]): number {
   return items.filter((item) => item.kind === 'meeting_finalization' && item.status === 'failed')
     .length;
+}
+
+export function countMeetingFailuresForSources(input: {
+  includeRecoverableJobs: boolean;
+  recoverableJobs: JobRecoveryItem[];
+}): number {
+  if (input.includeRecoverableJobs) {
+    return countDismissibleMeetingFailures(input.recoverableJobs);
+  }
+  return 0;
 }
 
 async function listAdminRecoverableJobs(scope: TeamScope): Promise<JobRecoveryItem[]> {
@@ -238,7 +252,11 @@ async function getWorkStatusSummary(scope: TeamScope): Promise<WorkStatusSummary
   };
 }
 
-export async function getSourcesStatusSummary(scope: TeamScope): Promise<SourcesStatusSummary> {
+export async function getSourcesStatusSummary(
+  scope: TeamScope,
+  options: SourcesStatusOptions = {},
+): Promise<SourcesStatusSummary> {
+  const includeRecoverableJobs = options.includeRecoverableJobs ?? true;
   const [
     onboarding,
     team,
@@ -255,7 +273,7 @@ export async function getSourcesStatusSummary(scope: TeamScope): Promise<Sources
     countVisibleDocuments(scope.teamId, scope.userId),
     countVisibleDocumentAttention(scope.teamId, scope.userId),
     scope.meetings.listMeetings({ limit: 50 }),
-    listAdminRecoverableJobs(scope),
+    includeRecoverableJobs ? listAdminRecoverableJobs(scope) : Promise.resolve([]),
     scope.meetings.getCurrentMonthMinutes(),
     scope.integrations.listIntegrations(),
     scope.mcp.listServers(),
@@ -268,7 +286,10 @@ export async function getSourcesStatusSummary(scope: TeamScope): Promise<Sources
     onboarding.connectionCounts.slackWorkspaceTeams +
     onboarding.connectionCounts.slackConversationBindings +
     onboarding.connectionCounts.slackUserTeams;
-  const meetingsFailed = countDismissibleMeetingFailures(recoverableJobs);
+  const meetingsFailed = countMeetingFailuresForSources({
+    includeRecoverableJobs,
+    recoverableJobs,
+  });
   const meetingsActive = countMeetingsByStatus(meetings, [
     'pending',
     'joining',
@@ -317,7 +338,7 @@ export async function getNavAttentionSummary(
   const scope = withTeam(db, teamId, userId);
   const [work, sources] = await Promise.all([
     getWorkStatusSummary(scope),
-    getSourcesStatusSummary(scope),
+    getSourcesStatusSummary(scope, { includeRecoverableJobs: false }),
   ]);
   return { work: work.attention, connections: sources.attention };
 }
