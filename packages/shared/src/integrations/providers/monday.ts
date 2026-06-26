@@ -58,7 +58,6 @@ interface MondayColumnValue {
   text?: string | null;
   type?: string;
   value?: unknown;
-  updated_at?: string | null;
 }
 
 interface MondayActivityLog {
@@ -139,13 +138,13 @@ const ITEM_FIELDS = `
   id name updated_at url
   creator { id name }
   parent_item { id name }
-  column_values { id text type value updated_at }
+  column_values { id text type value }
   updates(limit: ${String(UPDATE_LIMIT)}) { id body created_at updated_at creator { id name } }
   subitems {
     id name updated_at url
     creator { id name }
     parent_item { id name }
-    column_values { id text type value updated_at }
+    column_values { id text type value }
     updates(limit: ${String(UPDATE_LIMIT)}) { id body created_at updated_at creator { id name } }
   }
 `;
@@ -342,7 +341,7 @@ function normalizedColumns(board: MondayBoard, item: MondayItem): NormalizedColu
       type: column.type ?? schema?.type ?? null,
       text: column.text ?? null,
       value: column.value ?? null,
-      updated_at: column.updated_at ?? null,
+      updated_at: null,
     };
   });
 }

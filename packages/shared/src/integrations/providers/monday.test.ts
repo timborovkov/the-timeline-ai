@@ -21,6 +21,7 @@ function requestPayload(init: RequestInit | undefined): {
   if (typeof init?.body !== 'string') throw new Error('expected JSON request body');
   const payload = JSON.parse(init.body) as { query: string; variables?: Record<string, unknown> };
   expect(payload.query).not.toMatch(/\bemail\b/);
+  expect(payload.query).not.toMatch(/column_values\s*{[^}]*\bupdated_at\b/);
   return payload;
 }
 
