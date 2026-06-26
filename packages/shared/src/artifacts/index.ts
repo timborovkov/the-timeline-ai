@@ -211,11 +211,29 @@ async function claimAnchors(
 
 function statusAuthorityRank(input: ArtifactEvidenceInput): number {
   if (!input.authoritative || !input.status) return 0;
-  if (input.strength === 'hard') return 50;
-  if (input.strength === 'provider') return 40;
-  if (input.strength === 'structured') return 30;
-  if (input.strength === 'human') return 20;
-  return 10;
+  const roleRank = statusRoleRank(input);
+  if (roleRank === 0) return 0;
+  return statusStateRank(input.status) * 10_000 + roleRank * 100 + evidenceStrengthRank(input);
+}
+
+function statusStateRank(status: ArtifactStatus): number {
+  if (status === 'archived') return 70;
+  if (status === 'cancelled') return 60;
+  if (status === 'resolved') return 50;
+  if (status === 'blocked') return 40;
+  if (status === 'active') return 30;
+  return 20;
+}
+
+function statusRoleRank(input: ArtifactEvidenceInput): number {
+  if (!input.authoritative || !input.status) return 0;
+  if (input.role === 'lifecycle_update') return 50;
+  if (['approval', 'signature', 'payment', 'release'].includes(input.role)) return 40;
+  if (['error', 'issue', 'document', 'decision', 'schedule', 'rsvp'].includes(input.role))
+    return 30;
+  if (['implementation', 'review'].includes(input.role)) return 20;
+  if (input.role === 'discussion') return 10;
+  return 5;
 }
 
 function identityRoleRank(input: ArtifactEvidenceInput): number {
@@ -260,7 +278,6 @@ async function updateClusterStatusFromAuthoritativeEvidence(
     UPDATE ${artifactClusters}
     SET
       status = ${input.status},
-      canonical_name = ${input.canonicalName},
       metadata = ${artifactClusters.metadata}
         || jsonb_build_object(
           'status_authority_rank', ${rank}::int,

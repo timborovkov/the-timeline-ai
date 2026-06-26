@@ -502,13 +502,13 @@ async function reconcileIntegrationArtifacts(deps: {
   for (const event of deps.events) {
     const rawEventId = deps.rawEventIdsByDedupKey.get(event.dedupKey);
     const entityId = deps.entityByExternalId.get(event.objectMap.externalId);
-    if (!rawEventId || !entityId) continue;
+    if (!rawEventId) continue;
     await reconcileArtifactEvidence(deps.db, {
       teamId: deps.integration.teamId,
       artifactType: event.objectMap.type,
       canonicalName: event.objectMap.displayTitle ?? event.objectMap.canonicalName,
       status: clusterStatusFromObjectStatus(event.objectMap.status),
-      canonicalEntityId: entityId,
+      canonicalEntityId: entityId ?? null,
       rawEventId,
       occurredAt: event.occurredAt,
       provider: event.provider,

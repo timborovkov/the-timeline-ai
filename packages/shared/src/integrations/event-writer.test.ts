@@ -1072,6 +1072,86 @@ describe('writeIntegrationEvents visibility', () => {
     ]);
   });
 
+  it('records artifact evidence even when workspace object mapping is skipped by a name conflict', async () => {
+    const [integration] = await db
+      .insert(integrations)
+      .values({
+        teamId: TEAM_ID,
+        connectedByUserId: USER_ID,
+        provider: 'github',
+        displayName: 'GitHub',
+        externalAccountId: 'github-conflict-acct',
+        visibilityDefault: 'team',
+      })
+      .returning();
+    if (!integration) throw new Error('integration insert failed');
+
+    await db.insert(entities).values({
+      teamId: TEAM_ID,
+      type: 'task',
+      canonicalName: 'timborovkov/the-timeline-ai#912: Existing manual object',
+      status: 'open',
+      metadata: {},
+    });
+
+    const insertedIds = await writeIntegrationEvents({
+      db: db as never,
+      integration,
+      events: [
+        {
+          dedupKey: 'github:issue:912:conflict',
+          provider: 'github',
+          externalObjectId: 'timborovkov/the-timeline-ai#912',
+          eventType: 'issue.updated',
+          occurredAt: new Date('2026-06-18T12:30:00Z'),
+          contentText: 'GitHub issue timborovkov/the-timeline-ai#912 updated',
+          extra: {
+            github: {
+              type: 'issue',
+              repo: 'timborovkov/the-timeline-ai',
+              number: 912,
+            },
+          },
+          objectMap: {
+            type: 'task',
+            canonicalName: 'timborovkov/the-timeline-ai#912: Existing manual object',
+            displayTitle: 'the-timeline-ai: Existing manual object',
+            externalId: 'timborovkov/the-timeline-ai#912',
+            status: 'open',
+          },
+        },
+      ],
+    });
+    expect(insertedIds).toHaveLength(1);
+
+    const clusters = await db.select().from(artifactClusters);
+    expect(clusters).toHaveLength(1);
+    expect(clusters[0]).toMatchObject({
+      canonicalName: 'the-timeline-ai: Existing manual object',
+      status: 'open',
+    });
+
+    const members = await db.select().from(artifactClusterMembers);
+    expect(members).toEqual([
+      expect.objectContaining({
+        rawEventId: insertedIds[0],
+        entityId: null,
+        provider: 'github',
+        externalObjectId: 'timborovkov/the-timeline-ai#912',
+      }),
+    ]);
+
+    const anchors = await db.select().from(artifactClusterAnchors);
+    expect(anchors).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          anchorType: 'github_issue',
+          anchorValue: 'timborovkov/the-timeline-ai#912',
+        }),
+      ]),
+    );
+  });
+
   it('clusters non-technical work artifacts with explicit artifact keys without granting authority to context', async () => {
     const [integration] = await db
       .insert(integrations)

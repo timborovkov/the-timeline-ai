@@ -356,4 +356,48 @@ describe('artifact reconciliation', () => {
       status: 'resolved',
     });
   });
+
+  it('does not let later routine updates revert terminal lifecycle status', async () => {
+    const merged = await rawEvent('GitHub PR merged for checkout fix.', '2026-06-20T12:00:00Z');
+    const updated = await rawEvent(
+      'GitHub PR updated after merge with stale open status.',
+      '2026-06-20T12:10:00Z',
+    );
+
+    const first = await reconcileArtifactEvidence(db as never, {
+      teamId: TEAM_ID,
+      artifactType: 'task',
+      canonicalName: 'github/repo#91: Fix checkout',
+      status: 'resolved',
+      rawEventId: merged.id,
+      role: 'lifecycle_update',
+      strength: 'provider',
+      authoritative: true,
+      occurredAt: merged.occurredAt,
+      provider: 'github',
+      externalObjectId: 'github/repo#91',
+      anchors: [{ type: 'github_pr', value: 'github/repo#91', strength: 'hard' }],
+    });
+    const second = await reconcileArtifactEvidence(db as never, {
+      teamId: TEAM_ID,
+      artifactType: 'task',
+      canonicalName: 'github/repo#91: Fix checkout',
+      status: 'active',
+      rawEventId: updated.id,
+      role: 'implementation',
+      strength: 'provider',
+      authoritative: true,
+      occurredAt: updated.occurredAt,
+      provider: 'github',
+      externalObjectId: 'github/repo#91',
+      anchors: [{ type: 'github_pr', value: 'github/repo#91', strength: 'hard' }],
+    });
+
+    expect(second.clusterId).toBe(first.clusterId);
+    const [cluster] = await db
+      .select()
+      .from(artifactClusters)
+      .where(eq(artifactClusters.id, first.clusterId));
+    expect(cluster?.status).toBe('resolved');
+  });
 });
