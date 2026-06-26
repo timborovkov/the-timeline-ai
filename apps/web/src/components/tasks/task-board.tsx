@@ -365,9 +365,8 @@ function useTaskBoardController({ rows, columns, selectedTaskId, totalCount, nex
     taskBoardStateForProps(input.rows, input.nextCursor),
   );
   const [loadingMore, startLoadMore] = useTransition();
-  let pagination = boardState.pagination;
+  const pagination = boardState.pagination;
   if (pagination.inputRows !== rows || pagination.inputCursor !== nextCursor) {
-    pagination = taskPaginationStateForProps(rows, nextCursor);
     dispatchBoard({ type: 'props', rows, nextCursor });
   }
   const { loadedRows, cursor } = pagination;

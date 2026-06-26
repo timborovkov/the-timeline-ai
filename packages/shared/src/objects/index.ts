@@ -473,16 +473,27 @@ function objectSearchTokens(query: string): string[] {
     .slice(0, 8);
 }
 
-function objectTextSearchCondition(query: string): SQL {
-  const exact = query.toLowerCase();
+function objectTokenSearchCondition(token: string): SQL {
+  const exact = token.toLowerCase();
   const prefix = `${exact.replace(/[\\%_]/g, (match) => `\\${match}`)}%`;
+  const tsPrefix = `${exact}:*`;
   return sql`(
     lower(${entities.canonicalName}) = ${exact}
     OR lower(${entities.canonicalName}) LIKE ${prefix} ESCAPE '\\'
+    OR to_tsvector('simple', ${entities.canonicalName}) @@ to_tsquery('simple', ${tsPrefix})
     OR lower(${entities.type}::text) = ${exact}
     OR lower(${entities.status}) = ${exact}
     OR lower(coalesce(${entities.stage}, '')) = ${exact}
-    OR ${entities.aliases} @> ${JSON.stringify([query])}::jsonb
+    OR ${entities.aliases} @> ${JSON.stringify([token])}::jsonb
+  )`;
+}
+
+function objectSearchCondition(query: string, tokens: string[]): SQL {
+  const exactAlias = sql`${entities.aliases} @> ${JSON.stringify([query])}::jsonb`;
+  if (tokens.length === 1) return objectTokenSearchCondition(tokens[0] ?? query);
+  return sql`(
+    (${and(...tokens.map(objectTokenSearchCondition))})
+    OR ${exactAlias}
   )`;
 }
 
@@ -608,7 +619,7 @@ export async function searchObjects(
   const tokens = objectSearchTokens(query);
   if (tokens.length === 0) return [];
   const searchText = tokens.join(' ');
-  conds.push(objectTextSearchCondition(searchText));
+  conds.push(objectSearchCondition(searchText, tokens));
 
   const limit = Math.min(Math.max(filter.limit ?? 100, 1), OBJECT_QUERY_LIMIT_MAX);
   const exact = searchText.toLowerCase();

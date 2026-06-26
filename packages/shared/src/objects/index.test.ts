@@ -1099,6 +1099,26 @@ describe('object scope — archive visibility', () => {
     expect(found.map((row) => row.canonicalName)).toEqual(['Ancient Customer Contract']);
   });
 
+  it('requires every object search token to match across indexed object fields', async () => {
+    await pg.query(
+      `INSERT INTO entities (team_id, type, canonical_name, status, aliases, metadata, updated_at)
+       VALUES
+         ($1, 'company', 'Acme Corporation', 'open', '[]'::jsonb, '{}'::jsonb, '2026-01-01T00:00:00.000Z'),
+         ($1, 'project', 'Acme Migration', 'open', '[]'::jsonb, '{}'::jsonb, '2026-01-01T00:00:01.000Z'),
+         ($1, 'company', 'Beta Corporation', 'open', '[]'::jsonb, '{}'::jsonb, '2026-01-01T00:00:02.000Z')`,
+      [TEAM_A],
+    );
+    const ownerScope = withTeam(db, TEAM_A, USER_OWNER).objects;
+
+    const found = await ownerScope.searchObjects({
+      query: 'acme company',
+      archived: false,
+      limit: 10,
+    });
+
+    expect(found.map((row) => row.canonicalName)).toEqual(['Acme Corporation']);
+  });
+
   it('lists object, search, and notification pages beyond the old 500-row cap', async () => {
     await pg.query(
       `INSERT INTO entities (team_id, type, canonical_name, status, aliases, metadata, updated_at)
