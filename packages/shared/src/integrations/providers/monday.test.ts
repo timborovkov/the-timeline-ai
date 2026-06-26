@@ -207,6 +207,11 @@ describe('mondayProvider', () => {
                   {
                     id: 'subitems-board-1',
                     name: 'Subitems of KIESI',
+                    workspace: null,
+                  },
+                  {
+                    id: 'real-board-with-subitems-name',
+                    name: 'Subitems of Marketing',
                     board_kind: 'public',
                     workspace: null,
                   },
@@ -229,13 +234,18 @@ describe('mondayProvider', () => {
       access_token: 'token',
     });
 
-    expect(resources).toHaveLength(1);
+    expect(resources).toHaveLength(2);
     expect(resources[0]).toMatchObject({
       externalId: 'board-1',
       label: 'KIESI',
       kind: 'monday.board',
     });
     expect(resources[0]?.searchText).toContain('subitems');
+    expect(resources[1]).toMatchObject({
+      externalId: 'real-board-with-subitems-name',
+      label: 'Subitems of Marketing',
+      kind: 'monday.board',
+    });
   });
 
   it('persists refreshed monday.com tokens while listing syncable resources', async () => {
