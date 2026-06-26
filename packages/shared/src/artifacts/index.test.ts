@@ -1,5 +1,11 @@
 import { PGlite } from '@electric-sql/pglite';
-import { artifactClusterMembers, artifactClusters, entities, rawEvents } from '@timeline/db';
+import {
+  artifactClusterAnchors,
+  artifactClusterMembers,
+  artifactClusters,
+  entities,
+  rawEvents,
+} from '@timeline/db';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { beforeEach, describe, expect, it } from 'vitest';
@@ -213,5 +219,141 @@ describe('artifact reconciliation', () => {
 
     expect(foundDeal.map((row) => row.id)).toEqual([deal.clusterId]);
     expect(foundParty.map((row) => row.id)).toEqual([party.clusterId]);
+  });
+
+  it('keeps existing cluster anchors when a race claims only the current evidence anchor', async () => {
+    const [entity] = await db
+      .insert(entities)
+      .values({
+        teamId: TEAM_ID,
+        type: 'deal',
+        canonicalName: 'Northstar expansion',
+      })
+      .returning();
+    if (!entity) throw new Error('entity insert failed');
+    const source = await rawEvent('Northstar expansion contract started.');
+    const winnerEvent = await rawEvent('Race winner event.', '2026-06-20T11:00:00Z');
+    const raceEvent = await rawEvent(
+      'Late evidence mentions a racy anchor.',
+      '2026-06-20T12:00:00Z',
+    );
+
+    const original = await reconcileArtifactEvidence(db as never, {
+      teamId: TEAM_ID,
+      artifactType: 'deal',
+      canonicalName: 'Northstar expansion',
+      canonicalEntityId: entity.id,
+      rawEventId: source.id,
+      role: 'report',
+      strength: 'structured',
+      anchors: [{ type: 'artifact_key', value: 'deal:northstar', strength: 'hard' }],
+    });
+    const winner = await reconcileArtifactEvidence(db as never, {
+      teamId: TEAM_ID,
+      artifactType: 'deal',
+      canonicalName: 'Winning race cluster',
+      rawEventId: winnerEvent.id,
+      role: 'report',
+      strength: 'structured',
+      anchors: [{ type: 'artifact_key', value: 'deal:race-winner', strength: 'hard' }],
+    });
+
+    await pg.exec(`
+      CREATE OR REPLACE FUNCTION inject_artifact_anchor_race() RETURNS trigger AS $$
+      BEGIN
+        IF NEW.anchor_type = 'deal_id'
+          AND NEW.anchor_value = 'racy-claim'
+          AND NEW.cluster_id <> '${winner.clusterId}'::uuid
+        THEN
+          INSERT INTO artifact_cluster_anchors
+            (team_id, cluster_id, anchor_type, anchor_value, strength, source_raw_event_id, metadata)
+          VALUES
+            (NEW.team_id, '${winner.clusterId}'::uuid, NEW.anchor_type, NEW.anchor_value, NEW.strength, NEW.source_raw_event_id, NEW.metadata)
+          ON CONFLICT DO NOTHING;
+        END IF;
+        RETURN NEW;
+      END;
+      $$ LANGUAGE plpgsql;
+
+      CREATE TRIGGER inject_artifact_anchor_race_before_insert
+      BEFORE INSERT ON artifact_cluster_anchors
+      FOR EACH ROW EXECUTE FUNCTION inject_artifact_anchor_race();
+    `);
+
+    const reconciled = await reconcileArtifactEvidence(db as never, {
+      teamId: TEAM_ID,
+      artifactType: 'deal',
+      canonicalName: 'Northstar expansion',
+      canonicalEntityId: entity.id,
+      rawEventId: raceEvent.id,
+      role: 'report',
+      strength: 'structured',
+      anchors: [{ type: 'deal_id', value: 'racy-claim', strength: 'hard' }],
+    });
+
+    expect(reconciled.clusterId).toBe(winner.clusterId);
+    const anchors = await db.select().from(artifactClusterAnchors);
+    expect(anchors).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          clusterId: original.clusterId,
+          anchorType: 'artifact_key',
+          anchorValue: 'deal:northstar',
+        }),
+        expect.objectContaining({
+          clusterId: winner.clusterId,
+          anchorType: 'deal_id',
+          anchorValue: 'racy-claim',
+        }),
+      ]),
+    );
+  });
+
+  it('promotes artifact identity when authoritative source evidence arrives after implementation evidence', async () => {
+    const pr = await rawEvent('GitHub PR merged. Fixes TIMELINE-AI-100.', '2026-06-20T12:00:00Z');
+    const sentry = await rawEvent(
+      'Sentry issue TIMELINE-AI-100: Login fails on mobile.',
+      '2026-06-20T10:00:00Z',
+    );
+
+    const first = await reconcileArtifactEvidence(db as never, {
+      teamId: TEAM_ID,
+      artifactType: 'task',
+      canonicalName: 'github/repo#77: Fix mobile login crash',
+      status: 'resolved',
+      rawEventId: pr.id,
+      role: 'implementation',
+      strength: 'provider',
+      authoritative: true,
+      occurredAt: pr.occurredAt,
+      provider: 'github',
+      externalObjectId: 'github/repo#77',
+      anchors: [{ type: 'sentry_short_id', value: 'TIMELINE-AI-100', strength: 'structured' }],
+    });
+    const second = await reconcileArtifactEvidence(db as never, {
+      teamId: TEAM_ID,
+      artifactType: 'incident',
+      canonicalName: 'Login fails on mobile',
+      status: 'open',
+      rawEventId: sentry.id,
+      role: 'error',
+      strength: 'provider',
+      authoritative: true,
+      occurredAt: sentry.occurredAt,
+      provider: 'sentry',
+      externalObjectId: '100',
+      anchors: [{ type: 'sentry_short_id', value: 'TIMELINE-AI-100', strength: 'structured' }],
+    });
+
+    expect(second.clusterId).toBe(first.clusterId);
+    const [cluster] = await db
+      .select()
+      .from(artifactClusters)
+      .where(eq(artifactClusters.id, first.clusterId));
+    expect(cluster).toMatchObject({
+      artifactType: 'incident',
+      canonicalName: 'Login fails on mobile',
+      status: 'resolved',
+    });
   });
 });

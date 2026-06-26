@@ -254,7 +254,8 @@ describe('withTeam timeline semantic search', () => {
       VALUES
         ('${TEAM_A}', '${ARTIFACT_CLUSTER}', '${TEAM_EVENT}', 'telegram', 'chat:acme', 'report', 'human', false, '{"canonical_name":"Public Acme renewal","status":"open"}'::jsonb),
         ('${TEAM_A}', '${ARTIFACT_CLUSTER}', '${RELATED_EVENT}', 'github', 'repo#77', 'lifecycle_update', 'provider', true, '{"canonical_name":"GitHub Acme implementation","status":"active"}'::jsonb),
-        ('${TEAM_A}', '${ARTIFACT_CLUSTER}', '${RELATED_PRIVATE_EVENT}', 'telegram', 'private:acme', 'lifecycle_update', 'human', true, '{"canonical_name":"Owner-only Acme acquisition","status":"resolved"}'::jsonb);
+        ('${TEAM_A}', '${ARTIFACT_CLUSTER}', '${RELATED_PRIVATE_EVENT}', 'telegram', 'private:acme', 'lifecycle_update', 'human', true, '{"canonical_name":"Owner-only Acme acquisition","status":"resolved"}'::jsonb),
+        ('${TEAM_A}', '${ARTIFACT_CLUSTER}', '${OTHER_TEAM_EVENT}', 'web', 'other-team:acme', 'lifecycle_update', 'human', true, '{"canonical_name":"Other-team Acme acquisition","status":"blocked"}'::jsonb);
     `);
     hits = [hit(TEAM_EVENT, 0.9)];
 
@@ -282,6 +283,9 @@ describe('withTeam timeline semantic search', () => {
     expect(
       memberResults[0]?.artifactCluster?.relatedEvidence.map((evidence) => evidence.rawEventId),
     ).not.toContain(RELATED_PRIVATE_EVENT);
+    expect(
+      memberResults[0]?.artifactCluster?.relatedEvidence.map((evidence) => evidence.rawEventId),
+    ).not.toContain(OTHER_TEAM_EVENT);
 
     const ownerResults = await scopeFor(OWNER).timeline.searchEvents({
       query: 'Acme renewal',
@@ -294,6 +298,9 @@ describe('withTeam timeline semantic search', () => {
     expect(
       ownerResults[0]?.artifactCluster?.relatedEvidence.map((evidence) => evidence.rawEventId),
     ).toContain(RELATED_PRIVATE_EVENT);
+    expect(
+      ownerResults[0]?.artifactCluster?.relatedEvidence.map((evidence) => evidence.rawEventId),
+    ).not.toContain(OTHER_TEAM_EVENT);
   });
 
   it('requires membership before embedding or searching', async () => {

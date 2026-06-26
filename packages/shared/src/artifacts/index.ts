@@ -6,7 +6,7 @@ import {
   rawEvents,
   type Db,
 } from '@timeline/db';
-import { and, eq, isNull, sql } from 'drizzle-orm';
+import { and, eq, isNull, or, sql } from 'drizzle-orm';
 
 export type ArtifactType = (typeof artifactClusters.$inferSelect)['artifactType'];
 export type ArtifactStatus = (typeof artifactClusters.$inferSelect)['status'];
@@ -218,6 +218,30 @@ function statusAuthorityRank(input: ArtifactEvidenceInput): number {
   return 10;
 }
 
+function identityRoleRank(input: ArtifactEvidenceInput): number {
+  if (!input.authoritative) return 0;
+  if (['error', 'report', 'issue'].includes(input.role)) return 50;
+  if (['document', 'signature', 'payment', 'schedule', 'rsvp', 'decision'].includes(input.role))
+    return 45;
+  if (['approval', 'lifecycle_update'].includes(input.role)) return 40;
+  if (['implementation', 'review', 'release'].includes(input.role)) return 20;
+  if (input.role === 'discussion') return 10;
+  return 5;
+}
+
+function evidenceStrengthRank(input: ArtifactEvidenceInput): number {
+  if (input.strength === 'hard') return 50;
+  if (input.strength === 'provider') return 40;
+  if (input.strength === 'structured') return 30;
+  if (input.strength === 'human') return 20;
+  return 10;
+}
+
+function identityAuthorityRank(input: ArtifactEvidenceInput): number {
+  const roleRank = identityRoleRank(input);
+  return roleRank === 0 ? 0 : roleRank * 100 + evidenceStrengthRank(input);
+}
+
 function statusAuthorityAt(input: ArtifactEvidenceInput): string {
   const value = input.occurredAt;
   const date = value instanceof Date ? value : value ? new Date(value) : new Date();
@@ -257,13 +281,54 @@ async function updateClusterStatusFromAuthoritativeEvidence(
   `);
 }
 
+async function updateClusterIdentityFromAuthoritativeEvidence(
+  db: Db,
+  input: ArtifactEvidenceInput,
+  clusterId: string,
+): Promise<void> {
+  const rank = identityAuthorityRank(input);
+  if (rank === 0) return;
+  const authorityAt = statusAuthorityAt(input);
+  await db.execute(sql`
+    UPDATE ${artifactClusters}
+    SET
+      artifact_type = ${input.artifactType},
+      canonical_name = ${input.canonicalName},
+      metadata = ${artifactClusters.metadata}
+        || jsonb_build_object(
+          'identity_authority_rank', ${rank}::int,
+          'identity_authority_at', ${authorityAt}::text,
+          'identity_authority_source', ${input.provider ?? input.strength}::text
+        ),
+      updated_at = NOW()
+    WHERE ${artifactClusters.teamId} = ${input.teamId}
+      AND ${artifactClusters.id} = ${clusterId}
+      AND (
+        (${artifactClusters.metadata} ->> 'identity_authority_rank') IS NULL
+        OR ((${artifactClusters.metadata} ->> 'identity_authority_rank')::int < ${rank}::int)
+        OR (
+          ((${artifactClusters.metadata} ->> 'identity_authority_rank')::int = ${rank}::int)
+          AND COALESCE(${artifactClusters.metadata} ->> 'identity_authority_at', '') <= ${authorityAt}::text
+        )
+      )
+  `);
+}
+
 async function moveClaimedAnchorsToWinningCluster(
   db: Db,
   input: ArtifactEvidenceInput,
   fromClusterId: string,
   toClusterId: string,
+  anchors: ArtifactAnchorInput[],
 ): Promise<void> {
   if (fromClusterId === toClusterId) return;
+  const anchorClauses = anchors.map((anchor) =>
+    and(
+      eq(artifactClusterAnchors.anchorType, anchor.type),
+      eq(artifactClusterAnchors.anchorValue, anchor.value),
+    ),
+  );
+  if (anchorClauses.length === 0) return;
   await db
     .update(artifactClusterAnchors)
     .set({ clusterId: toClusterId })
@@ -271,6 +336,7 @@ async function moveClaimedAnchorsToWinningCluster(
       and(
         eq(artifactClusterAnchors.teamId, input.teamId),
         eq(artifactClusterAnchors.clusterId, fromClusterId),
+        or(...anchorClauses),
       ),
     );
 }
@@ -296,9 +362,10 @@ export async function reconcileArtifactEvidence(
     (await findClusterByEntity(db, input.teamId, input.canonicalEntityId));
   const result = clusterId ? { clusterId, created: false } : await createCluster(db, input);
   const claimedClusterId = await claimAnchors(db, input, result.clusterId, anchors);
-  await moveClaimedAnchorsToWinningCluster(db, input, result.clusterId, claimedClusterId);
+  await moveClaimedAnchorsToWinningCluster(db, input, result.clusterId, claimedClusterId, anchors);
 
   await attachMember(db, input, claimedClusterId);
+  await updateClusterIdentityFromAuthoritativeEvidence(db, input, claimedClusterId);
   await updateClusterStatusFromAuthoritativeEvidence(db, input, claimedClusterId);
 
   return {

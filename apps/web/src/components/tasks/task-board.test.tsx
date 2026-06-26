@@ -17,6 +17,13 @@ vi.mock('@/app/actions/objects', () => ({
   updateObjectAction: fakes.updateObjectAction,
   loadTaskRowsAction: fakes.loadTaskRowsAction,
 }));
+vi.mock('@/lib/task-board-config', () => ({
+  TASK_BOARD_PAGE_SIZE: 500,
+  TASK_BOARD_TOTAL_LIMIT: 50_000,
+  TASK_BOARD_COLUMN_RENDER_LIMIT: 5,
+  TASK_BOARD_LIST_RENDER_LIMIT: 20,
+  TASK_OPEN_STATUSES_EXCLUDED: ['done', 'cancelled'],
+}));
 
 const { TaskBoard } = await import('./task-board.js');
 
@@ -287,26 +294,26 @@ describe('TaskBoard', () => {
   });
 
   it('bounds large kanban columns and reports hidden loaded tasks', () => {
-    const rows = Array.from({ length: 252 }, (_, index) =>
+    const rows = Array.from({ length: 7 }, (_, index) =>
       task({ id: `task-${index}`, canonicalName: `Task ${index}`, status: 'done' }),
     );
 
     renderBoard(null, rows);
 
-    expect(screen.getByRole('link', { name: 'Task 249' })).toBeTruthy();
-    expect(screen.queryByRole('link', { name: 'Task 250' })).toBeNull();
+    expect(screen.getByRole('link', { name: 'Task 4' })).toBeTruthy();
+    expect(screen.queryByRole('link', { name: 'Task 5' })).toBeNull();
     expect(screen.getByText('2 more loaded. Narrow filter.')).toBeTruthy();
   });
 
   it('bounds large list views and reports hidden loaded tasks', () => {
-    const rows = Array.from({ length: 1002 }, (_, index) =>
+    const rows = Array.from({ length: 22 }, (_, index) =>
       task({ id: `task-${index}`, canonicalName: `Task ${index}` }),
     );
 
     renderBoard(null, rows, 'list');
 
-    expect(screen.getByText('Task 999')).toBeTruthy();
-    expect(screen.queryByText('Task 1000')).toBeNull();
+    expect(screen.getByText('Task 19')).toBeTruthy();
+    expect(screen.queryByText('Task 20')).toBeNull();
     expect(
       screen.getByText('2 loaded tasks hidden. Narrow the filter to inspect them.'),
     ).toBeTruthy();
