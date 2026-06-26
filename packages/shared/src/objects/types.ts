@@ -20,12 +20,14 @@ export type ActorKind = 'user' | 'agent' | 'system';
 export interface ObjectListFilter {
   type?: ObjectType | ObjectType[];
   status?: string | string[];
+  statusNot?: string | string[];
   stage?: string | string[];
   ownerUserId?: string | null;
   assigneeUserId?: string | null;
   dueBefore?: Date;
   dueAfter?: Date;
   archived?: boolean;
+  order?: 'updated' | 'due';
   limit?: number;
   offset?: number;
   cursor?: string | null;

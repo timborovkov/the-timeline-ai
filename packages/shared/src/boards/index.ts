@@ -30,6 +30,7 @@ type DbOrTx = Db | DbTx;
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const BOARD_TEMPLATES = ['pipeline', 'task_board', 'catalog', 'custom'] as const;
+const BOARD_ITEM_QUERY_LIMIT_MAX = 50_000;
 
 export type BoardTemplateKind = (typeof BOARD_TEMPLATES)[number];
 export type BoardLaneKind = 'active' | 'done' | 'terminal' | 'lost' | 'blocked';
@@ -755,8 +756,8 @@ export function createBoardScope({
         options.itemLimit === 'all'
           ? 'all'
           : options.itemLimit === undefined || !Number.isFinite(options.itemLimit)
-            ? 500
-            : Math.max(0, Math.min(Math.floor(options.itemLimit), 500));
+            ? BOARD_ITEM_QUERY_LIMIT_MAX
+            : Math.max(0, Math.min(Math.floor(options.itemLimit), BOARD_ITEM_QUERY_LIMIT_MAX));
       const boardRows = await db
         .select()
         .from(boards)
@@ -1281,7 +1282,7 @@ export function createBoardScope({
 
     async listWorkQueueItems(options: BoardWorkQueueOptions): Promise<BoardWorkQueueItemRow[]> {
       await scope.requireMembership();
-      const limit = Math.min(Math.max(options.limit ?? 100, 1), 500);
+      const limit = Math.min(Math.max(options.limit ?? 100, 1), BOARD_ITEM_QUERY_LIMIT_MAX);
       const rows = await db
         .select({ board: boards, item: boardItems, lane: boardLanes, object: entities })
         .from(boardItems)

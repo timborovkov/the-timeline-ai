@@ -1,6 +1,7 @@
 'use server';
 import * as objects from '@timeline/shared/objects';
 import { enqueueSuggestionJob } from '@timeline/shared/queue';
+import * as rateLimit from '@timeline/shared/rate-limit';
 import { withTeam } from '@timeline/shared/team-scope';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
@@ -10,6 +11,7 @@ import { trackProductEventBestEffort } from '@/lib/analytics';
 import { db } from '@/lib/db';
 import { runSentryServerAction } from '@/lib/sentry-action';
 import { reportCaughtError } from '@/lib/sentry-report';
+import { loadTaskRowsPage } from '@/lib/task-page';
 
 // Derived from the Postgres enum so adding a new object type doesn't
 // require synchronizing this schema with the drizzle enum by hand.
@@ -107,14 +109,17 @@ function revalidateObjectMutationSurfaces(ids: string | string[]): void {
   bestEffortRevalidatePath('/app/approvals', 'revalidate_object_mutation_surfaces');
 }
 
-function matchesObjectSearch(
-  row: { canonicalName: string; type: string; aliases: string[] },
-  query: string,
-): boolean {
-  const tokens = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
-  if (tokens.length === 0) return true;
-  const text = [row.canonicalName, row.type, ...row.aliases].join(' ').toLowerCase();
-  return tokens.every((token) => text.includes(token));
+const OBJECT_SEARCH_RESULT_LIMIT = 12;
+const loadTaskRowsSchema = z.object({
+  cursor: z.string().max(500).nullable().optional(),
+});
+
+async function checkUserSearchRateLimit(userId: string): Promise<boolean> {
+  const rl = await rateLimit.checkRateLimit({
+    key: rateLimit.rateLimitKey('search', 'user', userId),
+    ...rateLimit.RATE_LIMITS.search,
+  });
+  return rl.ok;
 }
 
 export async function searchObjectsAction(input: unknown): Promise<{
@@ -125,18 +130,50 @@ export async function searchObjectsAction(input: unknown): Promise<{
     if (!parsed.success) return { results: [] };
     const r = await resolveScope();
     if (!r.ok) return { results: [] };
-    const rows = await r.scope.objects.listObjects({ archived: false, limit: 500 });
+    if (!(await checkUserSearchRateLimit(r.userId))) return { results: [] };
+    const query = parsed.data.query.trim();
+    const rows = query
+      ? await r.scope.objects.searchObjects({
+          query,
+          archived: false,
+          limit: OBJECT_SEARCH_RESULT_LIMIT + 1,
+        })
+      : await r.scope.objects.listObjects({
+          archived: false,
+          limit: OBJECT_SEARCH_RESULT_LIMIT + 1,
+        });
     const results: { id: string; canonicalName: string; type: string }[] = [];
     for (const row of rows) {
-      if (row.id === parsed.data.exclude || !matchesObjectSearch(row, parsed.data.query)) continue;
+      if (row.id === parsed.data.exclude) continue;
       results.push({
         id: row.id,
         canonicalName: row.canonicalName,
         type: row.type,
       });
-      if (results.length >= 12) break;
+      if (results.length >= OBJECT_SEARCH_RESULT_LIMIT) break;
     }
     return { results };
+  });
+}
+
+export async function loadTaskRowsAction(input: unknown): Promise<{
+  rows: objects.ObjectRow[];
+  nextCursor: string | null;
+  error?: string;
+}> {
+  return runSentryServerAction('load_task_rows', async () => {
+    const parsed = loadTaskRowsSchema.safeParse(input);
+    if (!parsed.success) return { rows: [], nextCursor: null, error: 'Invalid cursor' };
+    const r = await resolveScope();
+    if (!r.ok) return { rows: [], nextCursor: null, error: r.error };
+    if (!(await checkUserSearchRateLimit(r.userId))) {
+      return { rows: [], nextCursor: null, error: 'Too many task loads. Try again shortly.' };
+    }
+    const page = await loadTaskRowsPage(r.scope.objects, parsed.data.cursor ?? null);
+    return {
+      rows: page.rows,
+      nextCursor: page.nextCursor,
+    };
   });
 }
 

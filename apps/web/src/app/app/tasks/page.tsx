@@ -15,6 +15,7 @@ import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { isActionableSuggestionStatus } from '@/lib/suggestion-status';
 import { serializeSuggestionBundle } from '@/lib/suggestions';
+import { countTaskRows, loadTaskRowsPage } from '@/lib/task-page';
 
 export const metadata: Metadata = {
   title: 'Tasks',
@@ -61,15 +62,20 @@ export default async function TasksPage({
   if (!active) redirect('/sign-in');
 
   const scope = withTeam(db, active.teamId, session.user.id);
-  const [rows, pendingSuggestions, members] = await Promise.all([
-    scope.objects.listObjects({
-      type: 'task',
-      archived: false,
-      limit: 500,
-    }),
+  const selectedTaskId = taskParam(query.task);
+  const [taskPage, counts, pendingSuggestions, members] = await Promise.all([
+    loadTaskRowsPage(scope.objects),
+    countTaskRows(scope.objects),
     scope.suggestions.listPendingSuggestions(),
     scope.timeline.listMembers(),
   ]);
+  let rows = taskPage.rows;
+  if (selectedTaskId && !rows.some((row) => row.id === selectedTaskId)) {
+    const selectedTask = await scope.objects.getObject(selectedTaskId).catch(() => null);
+    if (selectedTask?.type === 'task' && !selectedTask.archivedAt) {
+      rows = [selectedTask, ...rows];
+    }
+  }
   const memberIds = members.map((member) => member.userId);
   const memberRows =
     memberIds.length > 0
@@ -86,7 +92,6 @@ export default async function TasksPage({
       label: user?.name ?? user?.email ?? member.userId,
     };
   });
-  const selectedTaskId = taskParam(query.task);
   const taskSuggestions = pendingSuggestions.flatMap((bundle) => {
     const items = bundle.items.filter(
       (item) => item.targetKind === 'task' && isActionableSuggestionStatus(item.status),
@@ -96,19 +101,14 @@ export default async function TasksPage({
   const pendingTaskItems = taskSuggestions.reduce((sum, bundle) => sum + bundle.items.length, 0);
   const view = viewParam(query.view);
 
-  const open = rows.filter((r) => r.status !== 'done' && r.status !== 'cancelled').length;
-  const overdue = rows.filter(
-    (r) =>
-      r.dueAt !== null && r.dueAt < new Date() && r.status !== 'done' && r.status !== 'cancelled',
-  ).length;
   const srSegments = [
     'Tasks',
-    `${rows.length} total`,
-    `${open} open`,
+    `${counts.total} total`,
+    `${counts.open} open`,
     ...(pendingTaskItems > 0
       ? [`${pendingTaskItems} pending ${pendingTaskItems === 1 ? 'approval' : 'approvals'}`]
       : []),
-    ...(overdue > 0 ? [`${overdue} overdue`] : []),
+    ...(counts.overdue > 0 ? [`${counts.overdue} overdue`] : []),
   ];
 
   return (
@@ -123,13 +123,13 @@ export default async function TasksPage({
         srLabel={srSegments.join(' · ')}
         segments={[
           { value: 'TASKS' },
-          { label: 'total', value: rows.length },
-          { label: 'open', value: open },
+          { label: 'total', value: counts.total },
+          { label: 'open', value: counts.open },
           ...(pendingTaskItems > 0
             ? ([{ label: 'approvals', value: pendingTaskItems, signal: true }] as const)
             : ([] as const)),
-          ...(overdue > 0
-            ? ([{ label: 'overdue', value: overdue, danger: true }] as const)
+          ...(counts.overdue > 0
+            ? ([{ label: 'overdue', value: counts.overdue, danger: true }] as const)
             : ([] as const)),
         ]}
         leading={WORK_BACK_LINK}
@@ -155,6 +155,8 @@ export default async function TasksPage({
             selectedTaskId={selectedTaskId}
             view={view}
             members={memberOptions}
+            totalCount={counts.total}
+            nextCursor={taskPage.nextCursor}
           />
         </div>
       )}

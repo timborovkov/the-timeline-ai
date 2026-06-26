@@ -346,6 +346,41 @@ describe('POST /api/search/global', () => {
     expect(fakes.fakeListObjects).not.toHaveBeenCalled();
   });
 
+  it('uses recent objects for blank preview searches', async () => {
+    fakes.fakeListObjects.mockResolvedValue([
+      {
+        id: 'recent-task',
+        type: 'task',
+        canonicalName: 'Recent task',
+        status: 'todo',
+        stage: null,
+        priority: null,
+        ownerUserId: null,
+        assigneeUserId: null,
+        dueAt: null,
+        agentSuggested: false,
+        archivedAt: null,
+        aliases: [],
+        metadata: {},
+        updatedAt: new Date('2026-06-10T00:00:00.000Z'),
+        createdAt: new Date('2026-06-01T00:00:00.000Z'),
+      },
+    ]);
+
+    const response = await POST(request({ query: '', mode: 'preview' }));
+    const data = (await response.json()) as {
+      ok: true;
+      results: { kind: string; title: string }[];
+    };
+
+    expect(response.status).toBe(200);
+    expect(data.results).toEqual(
+      expect.arrayContaining([expect.objectContaining({ kind: 'task', title: 'Recent task' })]),
+    );
+    expect(fakes.fakeListObjects).toHaveBeenCalledWith({ archived: false, limit: 80 });
+    expect(fakes.fakeSearchObjects).not.toHaveBeenCalled();
+  });
+
   it('uses ready object summaries for object search snippets and lexical matching', async () => {
     fakes.fakeListReadyObjectSummaries.mockResolvedValue([
       {

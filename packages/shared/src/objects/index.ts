@@ -39,6 +39,7 @@ import {
 import {
   type SQL,
   and,
+  asc,
   desc,
   eq,
   gte,
@@ -47,6 +48,7 @@ import {
   isNull,
   lt,
   ne,
+  notInArray,
   or,
   sql,
 } from 'drizzle-orm';
@@ -90,6 +92,8 @@ export type { ObjectSummarySourceRef } from '#src/objects/summaries.js';
 
 const embedLog = childLogger('objects:embed');
 const summaryRefreshLog = childLogger('objects:summary-refresh');
+const OBJECT_QUERY_LIMIT_MAX = 50_000;
+const NOTIFICATION_QUERY_LIMIT_MAX = 50_000;
 type DbTx = Parameters<Parameters<Db['transaction']>[0]>[0];
 type DbOrTx = Db | DbTx;
 
@@ -346,16 +350,20 @@ export type ActorKind = 'user' | 'agent' | 'system';
 export interface ObjectListFilter {
   type?: ObjectType | ObjectType[];
   status?: string | string[];
+  statusNot?: string | string[];
   stage?: string | string[];
   ownerUserId?: string | null;
   assigneeUserId?: string | null;
   dueBefore?: Date;
   dueAfter?: Date;
   archived?: boolean;
+  order?: 'updated' | 'due';
   limit?: number;
   offset?: number;
   cursor?: string | null;
 }
+
+export type ObjectCountFilter = Omit<ObjectListFilter, 'cursor' | 'limit' | 'offset'>;
 
 export interface ObjectSearchFilter extends Omit<ObjectListFilter, 'cursor' | 'offset'> {
   query: string;
@@ -459,30 +467,60 @@ function objectSearchTokens(query: string): string[] {
   return query
     .toLowerCase()
     .replace(/['"]/g, '')
-    .split(/[^a-z0-9]+/i)
+    .split(/[^\p{L}\p{N}]+/u)
     .map((token) => token.trim())
     .filter(Boolean)
     .slice(0, 8);
 }
 
-function objectTextSearchCondition(token: string): SQL {
-  const pattern = likePattern(token);
+function objectTokenSearchCondition(token: string): SQL {
+  const exact = token.toLowerCase();
+  const prefix = `${exact.replace(/[\\%_]/g, (match) => `\\${match}`)}%`;
+  const tsPrefix = `${exact}:*`;
   return sql`(
-    lower(${entities.canonicalName}) LIKE ${pattern} ESCAPE '\\'
-    OR lower(${entities.type}::text) LIKE ${pattern} ESCAPE '\\'
-    OR lower(${entities.status}) LIKE ${pattern} ESCAPE '\\'
-    OR lower(coalesce(${entities.stage}, '')) LIKE ${pattern} ESCAPE '\\'
-    OR lower(${entities.aliases}::text) LIKE ${pattern} ESCAPE '\\'
-    OR lower(${entities.metadata}::text) LIKE ${pattern} ESCAPE '\\'
+    lower(${entities.canonicalName}) = ${exact}
+    OR lower(${entities.canonicalName}) LIKE ${prefix} ESCAPE '\\'
+    OR to_tsvector('simple', ${entities.canonicalName}) @@ to_tsquery('simple', ${tsPrefix})
+    OR lower(${entities.type}::text) = ${exact}
+    OR lower(${entities.status}) = ${exact}
+    OR lower(coalesce(${entities.stage}, '')) = ${exact}
+    OR EXISTS (
+      SELECT 1
+      FROM jsonb_array_elements_text(${entities.aliases}) AS alias(value)
+      WHERE lower(alias.value) = ${exact}
+        OR lower(alias.value) LIKE ${prefix} ESCAPE '\\'
+        OR to_tsvector('simple', alias.value) @@ to_tsquery('simple', ${tsPrefix})
+    )
   )`;
 }
 
-export async function listObjects(
-  db: Db,
-  scope: TeamScopeCore,
-  filter: ObjectListFilter = {},
-): Promise<ObjectRow[]> {
-  await scope.requireMembership();
+function objectSearchCondition(query: string, tokens: string[]): SQL {
+  const exact = query.toLowerCase();
+  const exactAlias = sql`EXISTS (
+    SELECT 1
+    FROM jsonb_array_elements_text(${entities.aliases}) AS alias(value)
+    WHERE lower(alias.value) = ${exact}
+  )`;
+  if (tokens.length === 1) return objectTokenSearchCondition(tokens[0] ?? query);
+  return sql`(
+    (${and(...tokens.map(objectTokenSearchCondition))})
+    OR ${exactAlias}
+  )`;
+}
+
+function objectListOrder(filter: Pick<ObjectListFilter, 'order'>): SQL[] {
+  if (filter.order === 'due') {
+    return [
+      sql`(${entities.dueAt} IS NULL) ASC`,
+      asc(entities.dueAt),
+      desc(entities.updatedAt),
+      desc(entities.id),
+    ];
+  }
+  return [desc(entities.updatedAt), desc(entities.id)];
+}
+
+function objectListConditions(scope: TeamScopeCore, filter: ObjectCountFilter = {}): SQL[] {
   const conds = [eq(entities.teamId, scope.teamId), isNull(entities.mergedIntoId)];
 
   const types = toArray(filter.type);
@@ -490,6 +528,11 @@ export async function listObjects(
 
   const statuses = toArray(filter.status);
   if (statuses && statuses.length > 0) conds.push(inArray(entities.status, statuses));
+
+  const excludedStatuses = toArray(filter.statusNot);
+  if (excludedStatuses && excludedStatuses.length > 0) {
+    conds.push(notInArray(entities.status, excludedStatuses));
+  }
 
   const stages = toArray(filter.stage);
   if (stages && stages.length > 0) {
@@ -509,17 +552,41 @@ export async function listObjects(
   if (filter.archived === true) conds.push(isNotNull(entities.archivedAt));
   else if (filter.archived !== undefined) conds.push(isNull(entities.archivedAt));
 
+  return conds;
+}
+
+export async function countObjects(
+  db: Db,
+  scope: TeamScopeCore,
+  filter: ObjectCountFilter = {},
+): Promise<number> {
+  await scope.requireMembership();
+  const rows = await db
+    .select({ total: sql<number>`count(*)::int` })
+    .from(entities)
+    .where(and(...objectListConditions(scope, filter)));
+  return rows[0]?.total ?? 0;
+}
+
+export async function listObjects(
+  db: Db,
+  scope: TeamScopeCore,
+  filter: ObjectListFilter = {},
+): Promise<ObjectRow[]> {
+  await scope.requireMembership();
+  const conds = objectListConditions(scope, filter);
+
   const cursorSql = cursorCondition(filter.cursor, entities.updatedAt, entities.id);
   if (cursorSql) conds.push(cursorSql);
 
-  const limit = Math.min(Math.max(filter.limit ?? 100, 1), 500);
+  const limit = Math.min(Math.max(filter.limit ?? 100, 1), OBJECT_QUERY_LIMIT_MAX);
   const offset = Math.max(filter.offset ?? 0, 0);
 
   const rows = await db
     .select()
     .from(entities)
     .where(and(...conds))
-    .orderBy(desc(entities.updatedAt), desc(entities.id))
+    .orderBy(...objectListOrder(filter))
     .limit(limit)
     .offset(offset);
   return rows.map(toObjectRow);
@@ -539,6 +606,11 @@ export async function searchObjects(
   const statuses = toArray(filter.status);
   if (statuses && statuses.length > 0) conds.push(inArray(entities.status, statuses));
 
+  const excludedStatuses = toArray(filter.statusNot);
+  if (excludedStatuses && excludedStatuses.length > 0) {
+    conds.push(notInArray(entities.status, excludedStatuses));
+  }
+
   const stages = toArray(filter.stage);
   if (stages && stages.length > 0) conds.push(inArray(entities.stage, stages));
 
@@ -556,10 +628,12 @@ export async function searchObjects(
 
   const query = filter.query.trim();
   const tokens = objectSearchTokens(query);
-  for (const token of tokens) conds.push(objectTextSearchCondition(token));
+  if (tokens.length === 0) return [];
+  const searchText = tokens.join(' ');
+  conds.push(objectSearchCondition(searchText, tokens));
 
-  const limit = Math.min(Math.max(filter.limit ?? 100, 1), 500);
-  const exact = query.toLowerCase();
+  const limit = Math.min(Math.max(filter.limit ?? 100, 1), OBJECT_QUERY_LIMIT_MAX);
+  const exact = searchText.toLowerCase();
   const prefix = `${exact.replace(/[\\%_]/g, (match) => `\\${match}`)}%`;
   const rows = await db
     .select()
@@ -2045,7 +2119,7 @@ export async function searchObjectsBySummary(
     .innerJoin(entities, eq(entities.id, objectSummaries.entityId))
     .where(and(...conds))
     .orderBy(desc(objectSummaries.updatedAt))
-    .limit(Math.min(Math.max(input.limit ?? 100, 1), 500));
+    .limit(Math.min(Math.max(input.limit ?? 100, 1), OBJECT_QUERY_LIMIT_MAX));
   return rows.map((row) => toObjectRow(row.object));
 }
 
@@ -3983,7 +4057,7 @@ export async function listNotifications(
   await scope.requireMembership();
   const conds = [eq(notifications.teamId, scope.teamId), eq(notifications.userId, scope.userId)];
   if (filter.unreadOnly) conds.push(isNull(notifications.readAt));
-  const limit = Math.min(Math.max(filter.limit ?? 100, 1), 500);
+  const limit = Math.min(Math.max(filter.limit ?? 100, 1), NOTIFICATION_QUERY_LIMIT_MAX);
   const offset = Math.max(filter.offset ?? 0, 0);
   // Unread-first, then newest. Matches the shape of
   // `notifications_team_user_inbox_idx` (team_id, user_id, read_at,
@@ -4839,6 +4913,7 @@ export async function rejectObjectChange(
 export function createObjectScope(db: Db, scope: TeamScopeCore) {
   return {
     listObjects: (filter?: ObjectListFilter) => listObjects(db, scope, filter),
+    countObjects: (filter?: ObjectCountFilter) => countObjects(db, scope, filter),
     searchObjects: (filter: ObjectSearchFilter) => searchObjects(db, scope, filter),
     searchObjectsBySummary: (input: { query: string; archived?: boolean; limit?: number }) =>
       searchObjectsBySummary(db, scope, input),

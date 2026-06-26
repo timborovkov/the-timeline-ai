@@ -1099,6 +1099,105 @@ describe('object scope — archive visibility', () => {
     expect(found.map((row) => row.canonicalName)).toEqual(['Ancient Customer Contract']);
   });
 
+  it('requires every object search token to match across indexed object fields', async () => {
+    await pg.query(
+      `INSERT INTO entities (team_id, type, canonical_name, status, aliases, metadata, updated_at)
+       VALUES
+         ($1, 'company', 'Acme Corporation', 'open', '[]'::jsonb, '{}'::jsonb, '2026-01-01T00:00:00.000Z'),
+         ($1, 'project', 'Acme Migration', 'open', '[]'::jsonb, '{}'::jsonb, '2026-01-01T00:00:01.000Z'),
+         ($1, 'company', 'Beta Corporation', 'open', '[]'::jsonb, '{}'::jsonb, '2026-01-01T00:00:02.000Z')`,
+      [TEAM_A],
+    );
+    const ownerScope = withTeam(db, TEAM_A, USER_OWNER).objects;
+
+    const found = await ownerScope.searchObjects({
+      query: 'acme company',
+      archived: false,
+      limit: 10,
+    });
+
+    expect(found.map((row) => row.canonicalName)).toEqual(['Acme Corporation']);
+  });
+
+  it('matches object search tokens against aliases case-insensitively', async () => {
+    await pg.query(
+      `INSERT INTO entities (team_id, type, canonical_name, status, aliases, metadata, updated_at)
+       VALUES
+         ($1, 'company', 'Acme Corporation', 'open', '["Acme Corp"]'::jsonb, '{}'::jsonb, '2026-01-01T00:00:00.000Z'),
+         ($1, 'company', 'Beta Corporation', 'open', '[]'::jsonb, '{}'::jsonb, '2026-01-01T00:00:01.000Z')`,
+      [TEAM_A],
+    );
+    const ownerScope = withTeam(db, TEAM_A, USER_OWNER).objects;
+
+    const found = await ownerScope.searchObjects({
+      query: 'acme corp',
+      archived: false,
+      limit: 10,
+    });
+
+    expect(found.map((row) => row.canonicalName)).toEqual(['Acme Corporation']);
+  });
+
+  it('lists object, search, and notification pages beyond the old 500-row cap', async () => {
+    await pg.query(
+      `INSERT INTO entities (team_id, type, canonical_name, status, aliases, metadata, updated_at)
+       SELECT $1, 'task', 'Bulk Window Task ' || gs::text, 'open', '[]'::jsonb, '{}'::jsonb, '2026-01-01T00:00:00.000Z'::timestamptz + (gs || ' seconds')::interval
+       FROM generate_series(1, 501) AS gs`,
+      [TEAM_A],
+    );
+    await pg.query(
+      `INSERT INTO notifications (team_id, user_id, kind, summary, payload, created_at)
+       SELECT $1, $2, 'mention', 'Bulk notification ' || gs::text, '{}'::jsonb, '2026-01-01T00:00:00.000Z'::timestamptz + (gs || ' seconds')::interval
+       FROM generate_series(1, 501) AS gs`,
+      [TEAM_A, USER_OWNER],
+    );
+    const ownerScope = withTeam(db, TEAM_A, USER_OWNER).objects;
+
+    await expect(
+      ownerScope.listObjects({ archived: false, type: 'task', limit: 501 }),
+    ).resolves.toHaveLength(501);
+    await expect(
+      ownerScope.searchObjects({ query: 'Bulk Window Task', archived: false, limit: 501 }),
+    ).resolves.toHaveLength(501);
+    await expect(ownerScope.listNotifications({ limit: 501 })).resolves.toHaveLength(501);
+  });
+
+  it('returns no object search results for queries without searchable tokens', async () => {
+    await pg.query(
+      `INSERT INTO entities (team_id, type, canonical_name, status, aliases, metadata, updated_at)
+       VALUES ($1, 'project', 'Visible Recent Object', 'open', '[]'::jsonb, '{}'::jsonb, '2026-01-01T00:00:00.000Z')`,
+      [TEAM_A],
+    );
+    const ownerScope = withTeam(db, TEAM_A, USER_OWNER).objects;
+
+    await expect(
+      ownerScope.searchObjects({ query: '---', archived: false, limit: 10 }),
+    ).resolves.toEqual([]);
+  });
+
+  it('searches non-Latin object-name prefixes and exact aliases', async () => {
+    await pg.query(
+      `INSERT INTO entities (team_id, type, canonical_name, status, aliases, metadata, updated_at)
+       VALUES ($1, 'project', '東京 Project', 'open', '["首都"]'::jsonb, '{}'::jsonb, '2026-01-01T00:00:00.000Z')`,
+      [TEAM_A],
+    );
+    const ownerScope = withTeam(db, TEAM_A, USER_OWNER).objects;
+
+    const foundByName = await ownerScope.searchObjects({
+      query: '東京',
+      archived: false,
+      limit: 10,
+    });
+    const foundByAlias = await ownerScope.searchObjects({
+      query: '首都',
+      archived: false,
+      limit: 10,
+    });
+
+    expect(foundByName.map((row) => row.canonicalName)).toEqual(['東京 Project']);
+    expect(foundByAlias.map((row) => row.canonicalName)).toEqual(['東京 Project']);
+  });
+
   it('lists objects after an updated-at cursor', async () => {
     const newestId = '00000000-0000-4000-8000-000000000101';
     const middleId = '00000000-0000-4000-8000-000000000102';

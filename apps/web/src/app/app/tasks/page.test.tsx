@@ -5,6 +5,8 @@ const fakes = vi.hoisted(() => ({
   auth: vi.fn(),
   resolveActiveTeam: vi.fn(),
   listObjects: vi.fn(),
+  countObjects: vi.fn(),
+  getObject: vi.fn(),
   listPendingSuggestions: vi.fn(),
   listMembers: vi.fn(),
   redirect: vi.fn((path: string) => {
@@ -15,7 +17,11 @@ const fakes = vi.hoisted(() => ({
 vi.mock('next/navigation', () => ({ redirect: fakes.redirect }));
 vi.mock('@timeline/shared/team-scope', () => ({
   withTeam: () => ({
-    objects: { listObjects: fakes.listObjects },
+    objects: {
+      listObjects: fakes.listObjects,
+      countObjects: fakes.countObjects,
+      getObject: fakes.getObject,
+    },
     suggestions: { listPendingSuggestions: fakes.listPendingSuggestions },
     timeline: { listMembers: fakes.listMembers },
   }),
@@ -44,17 +50,22 @@ vi.mock('@/components/tasks/task-board', () => ({
     selectedTaskId,
     view,
     members,
+    totalCount,
+    nextCursor,
   }: {
     rows: { canonicalName: string }[];
     columns: string[];
     selectedTaskId: string | null;
     view: 'kanban' | 'list';
     members: { label: string }[];
+    totalCount: number;
+    nextCursor: string | null;
   }) => (
     <div data-testid="task-board">
       columns {columns.join(', ')} · {rows.map((row) => row.canonicalName).join(', ')} · selected{' '}
       {selectedTaskId ?? 'none'} · view {view} · members{' '}
-      {members.map((member) => member.label).join(', ')}
+      {members.map((member) => member.label).join(', ')} · total {totalCount} · cursor{' '}
+      {nextCursor ?? 'none'}
     </div>
   ),
 }));
@@ -66,9 +77,32 @@ beforeEach(() => {
   fakes.auth.mockResolvedValue({ user: { id: 'user-1' } });
   fakes.resolveActiveTeam.mockResolvedValue({ active: { teamId: 'team-1' } });
   fakes.listObjects.mockResolvedValue([]);
+  fakes.countObjects.mockResolvedValue(0);
+  fakes.getObject.mockResolvedValue(null);
   fakes.listPendingSuggestions.mockResolvedValue([]);
   fakes.listMembers.mockResolvedValue([]);
 });
+
+function taskRow(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 'task-1',
+    type: 'task',
+    canonicalName: 'Send proposal',
+    status: 'todo',
+    stage: null,
+    priority: 2,
+    ownerUserId: null,
+    assigneeUserId: null,
+    dueAt: null,
+    agentSuggested: false,
+    archivedAt: null,
+    aliases: [],
+    metadata: {},
+    updatedAt: new Date('2026-06-01T10:00:00.000Z'),
+    createdAt: new Date('2026-06-01T10:00:00.000Z'),
+    ...overrides,
+  };
+}
 
 describe('TasksPage', () => {
   it('renders pending task approvals even when the kanban has no task rows', async () => {
@@ -172,6 +206,49 @@ describe('TasksPage', () => {
 
     expect(html).toContain('No active tasks');
     expect(html).not.toContain('Pending task proposals');
+  });
+
+  it('fetches one bounded task batch and exposes a cursor for older tasks', async () => {
+    const firstPage = Array.from({ length: 501 }, (_, index) =>
+      taskRow({ id: `task-${index}`, canonicalName: `Task ${index}`, status: 'done' }),
+    );
+    fakes.listObjects.mockResolvedValue(firstPage);
+    fakes.countObjects.mockImplementation((filter: Record<string, unknown>) =>
+      filter.statusNot ? 490 : 501,
+    );
+
+    const html = renderToStaticMarkup(await TasksPage());
+
+    expect(html).toContain('Task 499');
+    expect(html).not.toContain('Task 500');
+    expect(html).toContain('total 501');
+    expect(html).not.toContain('cursor none');
+    expect(fakes.listObjects).toHaveBeenCalledWith({
+      type: 'task',
+      archived: false,
+      limit: 501,
+      cursor: undefined,
+    });
+    expect(fakes.listObjects).toHaveBeenCalledTimes(1);
+    expect(fakes.countObjects).toHaveBeenCalledWith({
+      type: 'task',
+      archived: false,
+    });
+  });
+
+  it('adds a selected older task to the initial board window', async () => {
+    fakes.listObjects.mockResolvedValue([taskRow({ id: 'newer-task', canonicalName: 'Newer' })]);
+    fakes.getObject.mockResolvedValue(
+      taskRow({ id: 'selected-task', canonicalName: 'Selected older task' }),
+    );
+
+    const html = renderToStaticMarkup(
+      await TasksPage({ searchParams: Promise.resolve({ task: 'selected-task' }) }),
+    );
+
+    expect(html).toContain('Selected older task');
+    expect(html).toContain('Newer');
+    expect(fakes.getObject).toHaveBeenCalledWith('selected-task');
   });
 
   it('passes the selected task query into the task board', async () => {

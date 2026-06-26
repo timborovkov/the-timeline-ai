@@ -9,11 +9,13 @@ import type * as objects from '@timeline/shared/objects/types';
 const fakes = vi.hoisted(() => ({
   refresh: vi.fn(),
   updateObjectAction: vi.fn(),
+  loadTaskRowsAction: vi.fn(),
 }));
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: fakes.refresh }) }));
 vi.mock('@/app/actions/objects', () => ({
   updateObjectAction: fakes.updateObjectAction,
+  loadTaskRowsAction: fakes.loadTaskRowsAction,
 }));
 
 const { TaskBoard } = await import('./task-board.js');
@@ -54,6 +56,8 @@ function renderBoard(
         { id: 'user-1', label: 'Ada Lovelace' },
         { id: 'user-2', label: 'Grace Hopper' },
       ]}
+      totalCount={rows.length}
+      nextCursor={null}
     />,
   );
 }
@@ -63,7 +67,9 @@ describe('TaskBoard', () => {
     cleanup();
     fakes.refresh.mockReset();
     fakes.updateObjectAction.mockReset();
+    fakes.loadTaskRowsAction.mockReset();
     fakes.updateObjectAction.mockResolvedValue({ ok: true });
+    fakes.loadTaskRowsAction.mockResolvedValue({ rows: [], nextCursor: null });
   });
 
   it('opens a task side panel route from the card instead of object detail', () => {
@@ -96,6 +102,8 @@ describe('TaskBoard', () => {
         selectedTaskId="task-1"
         view="kanban"
         members={[{ id: 'user-1', label: 'Ada Lovelace' }]}
+        totalCount={1}
+        nextCursor={null}
       />,
     );
 
@@ -119,6 +127,8 @@ describe('TaskBoard', () => {
         selectedTaskId={null}
         view="kanban"
         members={[{ id: 'user-1', label: 'Ada Lovelace' }]}
+        totalCount={1}
+        nextCursor={null}
       />,
     );
 
@@ -206,6 +216,102 @@ describe('TaskBoard', () => {
     expect(screen.getByRole('checkbox', { name: 'Select Send proposal' })).toBeTruthy();
   });
 
+  it('loads older tasks from the cursor action without duplicating loaded rows', async () => {
+    const user = userEvent.setup();
+    fakes.loadTaskRowsAction.mockResolvedValue({
+      rows: [
+        task({ id: 'task-1', canonicalName: 'Send proposal duplicate' }),
+        task({ id: 'task-2', canonicalName: 'Older task' }),
+      ],
+      nextCursor: null,
+    });
+    render(
+      <TaskBoard
+        rows={[task({ id: 'task-1', canonicalName: 'Send proposal' })]}
+        columns={['todo', 'doing', 'done', 'blocked', 'cancelled']}
+        selectedTaskId={null}
+        view="kanban"
+        members={[{ id: 'user-1', label: 'Ada Lovelace' }]}
+        totalCount={2}
+        nextCursor="older-cursor"
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Load older tasks' }));
+
+    await waitFor(() => {
+      expect(fakes.loadTaskRowsAction).toHaveBeenCalledWith({ cursor: 'older-cursor' });
+      expect(screen.getByRole('link', { name: 'Older task' })).toBeTruthy();
+    });
+    expect(screen.queryByText('Send proposal duplicate')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Load older tasks' })).toBeNull();
+    expect(screen.getByText('2 loaded of 2')).toBeTruthy();
+  });
+
+  it('keeps loaded older tasks when refreshed first-page props arrive', async () => {
+    const user = userEvent.setup();
+    fakes.loadTaskRowsAction.mockResolvedValue({
+      rows: [task({ id: 'task-2', canonicalName: 'Older task' })],
+      nextCursor: null,
+    });
+    const { rerender } = render(
+      <TaskBoard
+        rows={[task({ id: 'task-1', canonicalName: 'Send proposal' })]}
+        columns={['todo', 'doing', 'done', 'blocked', 'cancelled']}
+        selectedTaskId={null}
+        view="kanban"
+        members={[{ id: 'user-1', label: 'Ada Lovelace' }]}
+        totalCount={2}
+        nextCursor="older-cursor"
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Load older tasks' }));
+    await screen.findByRole('link', { name: 'Older task' });
+
+    rerender(
+      <TaskBoard
+        rows={[task({ id: 'task-1', canonicalName: 'Send proposal refreshed' })]}
+        columns={['todo', 'doing', 'done', 'blocked', 'cancelled']}
+        selectedTaskId={null}
+        view="kanban"
+        members={[{ id: 'user-1', label: 'Ada Lovelace' }]}
+        totalCount={2}
+        nextCursor="older-cursor"
+      />,
+    );
+
+    expect(screen.getByRole('link', { name: 'Send proposal refreshed' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Older task' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Load older tasks' })).toBeNull();
+  });
+
+  it('bounds large kanban columns and reports hidden loaded tasks', () => {
+    const rows = Array.from({ length: 252 }, (_, index) =>
+      task({ id: `task-${index}`, canonicalName: `Task ${index}`, status: 'done' }),
+    );
+
+    renderBoard(null, rows);
+
+    expect(screen.getByRole('link', { name: 'Task 249' })).toBeTruthy();
+    expect(screen.queryByRole('link', { name: 'Task 250' })).toBeNull();
+    expect(screen.getByText('2 more loaded. Narrow filter.')).toBeTruthy();
+  });
+
+  it('bounds large list views and reports hidden loaded tasks', () => {
+    const rows = Array.from({ length: 1002 }, (_, index) =>
+      task({ id: `task-${index}`, canonicalName: `Task ${index}` }),
+    );
+
+    renderBoard(null, rows, 'list');
+
+    expect(screen.getByText('Task 999')).toBeTruthy();
+    expect(screen.queryByText('Task 1000')).toBeNull();
+    expect(
+      screen.getByText('2 loaded tasks hidden. Narrow the filter to inspect them.'),
+    ).toBeTruthy();
+  });
+
   it('bulk assigns selected tasks from list view', async () => {
     const user = userEvent.setup();
     renderBoard(
@@ -243,6 +349,8 @@ describe('TaskBoard', () => {
         selectedTaskId={null}
         view="list"
         members={[{ id: 'user-1', label: 'Ada Lovelace' }]}
+        totalCount={1}
+        nextCursor={null}
       />,
     );
 
@@ -266,6 +374,8 @@ describe('TaskBoard', () => {
         selectedTaskId={null}
         view="list"
         members={[{ id: 'user-1', label: 'Ada Lovelace' }]}
+        totalCount={1}
+        nextCursor={null}
       />,
     );
     await waitFor(() => {
@@ -281,6 +391,8 @@ describe('TaskBoard', () => {
         selectedTaskId={null}
         view="list"
         members={[{ id: 'user-1', label: 'Ada Lovelace' }]}
+        totalCount={1}
+        nextCursor={null}
       />,
     );
 
@@ -296,6 +408,8 @@ describe('TaskBoard', () => {
         selectedTaskId={null}
         view="list"
         members={[{ id: 'user-1', label: 'Ada Lovelace' }]}
+        totalCount={1}
+        nextCursor={null}
       />,
     );
 
@@ -321,6 +435,8 @@ describe('TaskBoard', () => {
         selectedTaskId={null}
         view="list"
         members={[{ id: 'user-1', label: 'Ada Lovelace' }]}
+        totalCount={1}
+        nextCursor={null}
       />,
     );
     expect(screen.getByLabelText<HTMLSelectElement>('Status for Send proposal').value).toBe('done');
@@ -332,6 +448,8 @@ describe('TaskBoard', () => {
         selectedTaskId={null}
         view="list"
         members={[{ id: 'user-1', label: 'Ada Lovelace' }]}
+        totalCount={1}
+        nextCursor={null}
       />,
     );
     expect(screen.getByLabelText<HTMLSelectElement>('Status for Send proposal').value).toBe('done');
