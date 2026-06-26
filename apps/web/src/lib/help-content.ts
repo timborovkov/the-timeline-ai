@@ -168,7 +168,7 @@ export const HELP_PAGES: HelpPage[] = [
         items: [
           'Google Drive syncs selected folders and files into the document drive.',
           'GitHub and Linear bring engineering and project activity into the operational record.',
-          'Monday.com syncs boards, generic records, subitems, updates, columns, and WorkDocs.',
+          'Monday.com syncs selected boards, generic records, subitems, updates, columns, and WorkDocs.',
           'Slack workspace ingestion syncs selected channels, threads, files, reactions, and edits.',
           'Sentry syncs issue updates, resolved issues, and releases into cited events and incident objects.',
           'Slack, Telegram, email, and meeting bots are capture surfaces for conversations and calls.',
@@ -182,6 +182,7 @@ export const HELP_PAGES: HelpPage[] = [
         items: [
           'Admins control team-level source activation.',
           'Connection owners control what provider resources are shared.',
+          'For Monday.com, selecting a parent board also captures its classic subitems; hidden “Subitems of …” helper boards are not selected separately.',
           'Personal MCP connections are visible only to their owner.',
           'Outbound Timeline MCP keys see only team-visible events.',
         ],

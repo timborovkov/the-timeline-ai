@@ -15,6 +15,7 @@ interface ProviderResource {
   kind: string;
   externalId: string;
   label: string;
+  searchText?: string;
 }
 
 interface ResourceShare {
@@ -99,7 +100,7 @@ const providerSourceHints: Partial<
     link: { href: 'https://github.com/settings/applications', label: 'GitHub access' },
   },
   monday: {
-    body: 'Choose Monday.com boards for records, subitems, updates, and column activity. Choose WorkDocs when docs should become cited timeline evidence too.',
+    body: 'Choose Monday.com boards to capture items, updates, columns, and subitems together. Classic “Subitems of …” helper boards stay hidden because the parent board already imports them. Choose WorkDocs when docs should become cited timeline evidence too.',
   },
   slack: {
     body: 'Choose the Slack channels whose messages, threads, files, reactions, and edits should become cited timeline events.',
@@ -212,14 +213,37 @@ function ConnectionSources({ connection }: { connection: ProviderConnection }) {
   const error = state.error ?? (queryError instanceof Error ? queryError.message : null);
   const query = state.query;
 
+  const resourceByKey = useMemo(() => {
+    return new Map(resources.map((resource) => [resourceKey(resource), resource]));
+  }, [resources]);
+  const activeShareByKey = useMemo(() => {
+    const next = new Map<string, ResourceShare>();
+    for (const share of shares) {
+      if (!share.revokedAt) next.set(shareKey(share), share);
+    }
+    return next;
+  }, [shares]);
+  const selectableResources = useMemo(() => {
+    const hiddenSelectedResources: ProviderResource[] = [];
+    for (const key of selected) {
+      if (resourceByKey.has(key)) continue;
+      const resource = activeShareToResource(activeShareByKey.get(key));
+      if (resource) hiddenSelectedResources.push(resource);
+    }
+    return [...resources, ...hiddenSelectedResources];
+  }, [activeShareByKey, resourceByKey, resources, selected]);
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return resources;
-    return resources.filter(
+    if (!q) return selectableResources;
+    return selectableResources.filter(
       (resource) =>
-        resource.label.toLowerCase().includes(q) || resource.externalId.toLowerCase().includes(q),
+        resource.label.toLowerCase().includes(q) ||
+        resource.externalId.toLowerCase().includes(q) ||
+        (resource.searchText?.toLowerCase().includes(q) ?? false) ||
+        resourceKindSearchText(resource.kind).includes(q),
     );
-  }, [query, resources]);
+  }, [query, selectableResources]);
 
   const grouped = useMemo(() => groupResourcesByKind(filtered), [filtered]);
 
@@ -230,7 +254,9 @@ function ConnectionSources({ connection }: { connection: ProviderConnection }) {
   async function save() {
     dispatch({ type: 'busy', busy: 'save' });
     dispatch({ type: 'error', error: null });
-    const chosen = resources.filter((resource) => selected.has(resourceKey(resource)));
+    const chosen = [...selected]
+      .map((key) => resourceByKey.get(key) ?? activeShareToResource(activeShareByKey.get(key)))
+      .filter((resource): resource is ProviderResource => Boolean(resource));
     try {
       const res = await fetch(`/api/connections/${connection.id}/resources`, {
         method: 'PUT',
@@ -433,13 +459,58 @@ function ResourceGroup({
                   onToggle(resource);
                 }}
               />
-              <span className="min-w-0 flex-1 truncate">{resource.label}</span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate">{resource.label}</span>
+                <span className="block truncate text-xs text-fg-muted">
+                  {resourceKindDescription(resource.kind)}
+                </span>
+              </span>
             </label>
           );
         })}
       </div>
     </div>
   );
+}
+
+function resourceKindDescription(kind: string): string {
+  switch (kind) {
+    case 'drive.folder':
+      return 'Folder files imported into the document drive';
+    case 'drive.shared_drive':
+      return 'Shared drive files imported into the document drive';
+    case 'monday.board':
+      return 'Board items, updates, columns, and subitems';
+    case 'monday.doc':
+      return 'WorkDoc pages imported as cited documents';
+    case 'github.org':
+      return 'All accessible repositories in this organization';
+    case 'github.repo':
+      return 'Repository activity and changes';
+    case 'linear.team':
+      return 'Team issues, projects, comments, and workflow changes';
+    case 'slack.channel':
+      return 'Channel messages, threads, files, reactions, and edits';
+    case 'sentry.org':
+      return 'All accessible projects in this organization';
+    case 'sentry.project':
+      return 'Project issues, resolutions, and releases';
+    default:
+      return 'Selected provider source';
+  }
+}
+
+function resourceKindSearchText(kind: string): string {
+  return resourceKindDescription(kind).toLowerCase();
+}
+
+function activeShareToResource(share: ResourceShare | undefined): ProviderResource | null {
+  if (!share) return null;
+  return {
+    kind: share.resourceKind,
+    externalId: share.externalId,
+    label: shareDisplayName(share),
+  };
 }
 
 interface TeamShareRow {

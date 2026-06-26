@@ -84,8 +84,8 @@ beforeEach(() => {
         id: '66666666-6666-4666-8666-666666666666',
         providerConnectionId: CONNECTION_ID,
         resourceKind: 'github.repo',
-        resourceExternalId: 'openai/codex',
-        resourceLabel: 'openai/codex',
+        externalId: 'openai/codex',
+        externalLabel: 'openai/codex',
         revokedAt: null,
       },
     },
@@ -95,8 +95,8 @@ beforeEach(() => {
         id: '88888888-8888-4888-8888-888888888888',
         providerConnectionId: '77777777-7777-4777-8777-777777777777',
         resourceKind: 'github.repo',
-        resourceExternalId: 'other/repo',
-        resourceLabel: 'other/repo',
+        externalId: 'other/repo',
+        externalLabel: 'other/repo',
         revokedAt: null,
       },
     },
@@ -142,7 +142,7 @@ describe('/api/connections/[id]/resources', () => {
     expect(payload.shares).toHaveLength(1);
     expect(payload.shares[0]).toMatchObject({
       resourceKind: 'github.repo',
-      resourceExternalId: 'openai/codex',
+      externalId: 'openai/codex',
     });
     const [integrationArg, tokensArg, ctxArg] = fakes.listSyncableResources.mock.calls[0] as [
       unknown,
@@ -203,6 +203,38 @@ describe('/api/connections/[id]/resources', () => {
     await expect(accepted.json()).resolves.toEqual({ ok: true });
     expect(fakes.shareProviderResources).toHaveBeenCalledWith(CONNECTION_ID, [
       { kind: 'github.org', externalId: 'openai', label: 'OpenAI' },
+    ]);
+  });
+
+  it('preserves active owned shares that no longer appear in the live provider list', async () => {
+    fakes.listSyncableResources.mockResolvedValueOnce([
+      { kind: 'github.org', externalId: 'openai', label: 'OpenAI' },
+    ]);
+    fakes.listOwnedTeamResourceShares.mockResolvedValueOnce([
+      {
+        connection,
+        share: {
+          id: '66666666-6666-4666-8666-666666666666',
+          providerConnectionId: CONNECTION_ID,
+          resourceKind: 'github.repo',
+          externalId: 'openai/legacy',
+          externalLabel: 'openai/legacy',
+          revokedAt: null,
+        },
+      },
+    ]);
+
+    const accepted = await PUT(
+      request({
+        resources: [{ kind: 'github.repo', externalId: 'openai/legacy', label: 'openai/legacy' }],
+      }),
+      params(),
+    );
+
+    expect(accepted.status).toBe(200);
+    await expect(accepted.json()).resolves.toEqual({ ok: true });
+    expect(fakes.shareProviderResources).toHaveBeenCalledWith(CONNECTION_ID, [
+      { kind: 'github.repo', externalId: 'openai/legacy', label: 'openai/legacy' },
     ]);
   });
 });

@@ -174,10 +174,78 @@ describe('mondayProvider', () => {
       access_token: 'token',
     });
 
-    expect(resources).toEqual([
-      { externalId: 'board-1', label: 'Product / Launch', kind: 'monday.board' },
-      { externalId: 'doc-1', label: 'Product / Launch notes', kind: 'monday.doc' },
-    ]);
+    expect(resources[0]).toMatchObject({
+      externalId: 'board-1',
+      label: 'Product / Launch',
+      kind: 'monday.board',
+    });
+    expect(resources[0]?.searchText).toContain('subitems');
+    expect(resources[1]).toMatchObject({
+      externalId: 'doc-1',
+      label: 'Product / Launch notes',
+      kind: 'monday.doc',
+    });
+    expect(resources[1]?.searchText).toContain('workdocs');
+  });
+
+  it('hides monday.com subitem boards from source sharing', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof globalThis.fetch>((_input, init) => {
+        const body = requestPayload(init);
+        if (body.query.includes('boards(limit: $limit')) {
+          return Promise.resolve(
+            jsonResponse({
+              data: {
+                boards: [
+                  {
+                    id: 'board-1',
+                    name: 'KIESI',
+                    board_kind: 'public',
+                    workspace: null,
+                  },
+                  {
+                    id: 'subitems-board-1',
+                    name: 'Subitems of KIESI',
+                    workspace: null,
+                  },
+                  {
+                    id: 'real-board-with-subitems-name',
+                    name: 'Subitems of Marketing',
+                    board_kind: 'public',
+                    workspace: null,
+                  },
+                  {
+                    id: 'localized-subitems-board-1',
+                    name: 'Alitehtävät KIESI',
+                    board_kind: 'sub_items_board',
+                    workspace: null,
+                  },
+                ],
+              },
+            }),
+          );
+        }
+        return Promise.resolve(jsonResponse({ data: { docs: [] } }));
+      }),
+    );
+
+    const resources = await mondayProvider.listSyncableResources({} as never, {
+      access_token: 'token',
+    });
+
+    expect(resources).toHaveLength(2);
+    expect(resources[0]).toMatchObject({
+      externalId: 'board-1',
+      label: 'KIESI',
+      kind: 'monday.board',
+    });
+    expect(resources[0]?.searchText).toContain('subitems');
+    expect(resources[1]).toMatchObject({
+      externalId: 'real-board-with-subitems-name',
+      label: 'Subitems of Marketing',
+      kind: 'monday.board',
+    });
   });
 
   it('persists refreshed monday.com tokens while listing syncable resources', async () => {
@@ -218,7 +286,9 @@ describe('mondayProvider', () => {
       ctx,
     );
 
-    expect(resources).toEqual([{ externalId: 'board-1', label: 'Launch', kind: 'monday.board' }]);
+    expect(resources).toEqual([
+      expect.objectContaining({ externalId: 'board-1', label: 'Launch', kind: 'monday.board' }),
+    ]);
     expect(ctx.persistTokens).toHaveBeenCalledWith(
       expect.objectContaining({
         access_token: 'token-new',
@@ -264,7 +334,7 @@ describe('mondayProvider', () => {
     });
 
     expect(resources).toHaveLength(101);
-    expect(resources.at(-1)).toEqual({
+    expect(resources.at(-1)).toMatchObject({
       externalId: 'board-101',
       label: 'Board 101',
       kind: 'monday.board',
@@ -296,7 +366,9 @@ describe('mondayProvider', () => {
       access_token: 'token',
     });
 
-    expect(resources).toEqual([{ externalId: 'board-1', label: 'Launch', kind: 'monday.board' }]);
+    expect(resources).toEqual([
+      expect.objectContaining({ externalId: 'board-1', label: 'Launch', kind: 'monday.board' }),
+    ]);
     expect(fetch).toHaveBeenCalledTimes(3);
   });
 
@@ -346,7 +418,7 @@ describe('mondayProvider', () => {
     });
 
     expect(resources).toHaveLength(101);
-    expect(resources.at(-1)).toEqual({
+    expect(resources.at(-1)).toMatchObject({
       externalId: 'board-101',
       label: 'Board 101',
       kind: 'monday.board',

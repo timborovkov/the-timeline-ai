@@ -40,4 +40,14 @@ describe('app guide route metadata', () => {
     expect(results.map((result) => result.id)).toContain('help/work');
     expect(results.map((result) => result.id)).toContain('work');
   });
+
+  it('routes Monday.com board, subitem, and WorkDoc questions to integrations', () => {
+    const results = searchAppGuide('where do I choose monday boards subitems and WorkDocs?', 5);
+
+    expect(results[0]).toMatchObject({
+      id: 'team/integrations/monday',
+      citation: '[route:team/integrations/monday]',
+      minRole: 'admin',
+    });
+  });
 });
