@@ -258,12 +258,21 @@ function githubErrorMessage(path: string, status: number, body: string): string 
   if ((status === 401 || status === 403) && /^\/repos\/[^/]+\/[^/]+\/pulls(?:\?|$)/u.test(path)) {
     return `GitHub Pull requests read permission required; update the GitHub App repository permissions and reconnect (GET ${path} ${String(status)}): ${body}`;
   }
-  return `GitHub GET ${path} ${String(status)}: ${body}`;
+  return `GitHub GET ${path} failed with status ${String(status)}: ${body}`;
 }
 
 function summarizeGithubFailure(message: string): string {
   if (message.includes('Pull requests read permission required')) {
     return 'Pull requests read permission required; update GitHub App repository permissions and reconnect';
+  }
+  const githubGet =
+    /^GitHub GET (?<path>\S+) failed with status (?<status>\d{3}): (?<body>.*)$/u.exec(message);
+  const pathGroup = githubGet?.groups?.path;
+  const statusGroup = githubGet?.groups?.status;
+  const bodyGroup = githubGet?.groups?.body;
+  if (pathGroup && statusGroup && bodyGroup !== undefined) {
+    const path = pathGroup.split('?')[0] ?? pathGroup;
+    return `GitHub GET ${path} ${statusGroup}: ${bodyGroup}`.slice(0, 160);
   }
   return message.slice(0, 80);
 }
