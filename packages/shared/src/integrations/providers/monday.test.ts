@@ -21,6 +21,7 @@ function requestPayload(init: RequestInit | undefined): {
   if (typeof init?.body !== 'string') throw new Error('expected JSON request body');
   const payload = JSON.parse(init.body) as { query: string; variables?: Record<string, unknown> };
   expect(payload.query).not.toMatch(/\bemail\b/);
+  expect(payload.query).not.toMatch(/column_values\s*{[^}]*\bupdated_at\b/);
   return payload;
 }
 
@@ -714,6 +715,17 @@ describe('mondayProvider', () => {
         monday_board_id: 'board-1',
       },
     });
+    const columns = events[2]?.objectMap?.metadata?.monday_columns;
+    expect(columns).toEqual([
+      { id: 'status', title: 'Stage', type: 'status', text: 'Won', value: null },
+      {
+        id: 'deal_value',
+        title: 'Deal value',
+        type: 'numbers',
+        text: '$42,000',
+        value: '42000',
+      },
+    ]);
     expect(events[3]?.contentText).toContain('Legal approved the renewal');
     expect(events[4]?.objectMap).toMatchObject({
       type: 'other',
