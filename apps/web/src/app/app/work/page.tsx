@@ -31,9 +31,10 @@ export const metadata: Metadata = {
 
 const DUE_SOON_DAYS = 14;
 const QUEUE_LIMIT = 20;
-const OBJECT_FETCH_PAGE_SIZE = 500;
+const OBJECT_QUEUE_SOURCE_LIMIT = QUEUE_LIMIT * 3;
 const RECENT_CHANGE_LIMIT = 5;
 const WORK_OBJECT_TYPES: objects.ObjectType[] = ['task', 'follow_up', 'project', 'deal'];
+const OPEN_WORK_STATUS_EXCLUDED = ['done', 'cancelled'] as const;
 
 const NAV_LINKS = [
   {
@@ -232,18 +233,6 @@ export default async function WorkPage() {
   );
 }
 
-async function listObjectPages(
-  listObjects: (filter: objects.ObjectListFilter) => Promise<objects.ObjectRow[]>,
-  filter: objects.ObjectListFilter,
-  offset = 0,
-  collected: objects.ObjectRow[] = [],
-): Promise<objects.ObjectRow[]> {
-  const page = await listObjects({ ...filter, limit: OBJECT_FETCH_PAGE_SIZE, offset });
-  const rows = [...collected, ...page];
-  if (page.length < OBJECT_FETCH_PAGE_SIZE) return rows;
-  return listObjectPages(listObjects, filter, offset + OBJECT_FETCH_PAGE_SIZE, rows);
-}
-
 async function listWorkQueueObjects(
   objectScope: { listObjects(filter: objects.ObjectListFilter): Promise<objects.ObjectRow[]> },
   userId: string,
@@ -252,12 +241,13 @@ async function listWorkQueueObjects(
   const baseFilter = {
     type: WORK_OBJECT_TYPES,
     archived: false,
+    statusNot: [...OPEN_WORK_STATUS_EXCLUDED],
+    limit: OBJECT_QUEUE_SOURCE_LIMIT,
   } satisfies objects.ObjectListFilter;
-  const listObjects = (filter: objects.ObjectListFilter) => objectScope.listObjects(filter);
   const [owned, assigned, teamDue] = await Promise.all([
-    listObjectPages(listObjects, { ...baseFilter, ownerUserId: userId }),
-    listObjectPages(listObjects, { ...baseFilter, assigneeUserId: userId }),
-    listObjectPages(listObjects, {
+    objectScope.listObjects({ ...baseFilter, ownerUserId: userId }),
+    objectScope.listObjects({ ...baseFilter, assigneeUserId: userId }),
+    objectScope.listObjects({
       ...baseFilter,
       ownerUserId: null,
       assigneeUserId: null,

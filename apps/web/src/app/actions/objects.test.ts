@@ -9,12 +9,14 @@ import {
   createObjectAction,
   deleteNoteAction,
   generateObjectSummaryAction,
+  loadTaskRowsAction,
   markAllNotificationsReadAction,
   markNotificationReadAction,
   mergeObjectsAction,
   rejectObjectChangeAction,
   removeRelationshipAction,
   repairObjectMemoryAction,
+  searchObjectsAction,
   updateNoteAction,
   updateObjectAction,
 } from '@/app/actions/objects';
@@ -33,6 +35,7 @@ const fakes = vi.hoisted(() => ({
   fakeTransaction: vi.fn(),
   fakeTx: { kind: 'tx' },
   fakeWithTeam: vi.fn(),
+  fakeCheckRateLimit: vi.fn(),
   fakeObjects: {
     createObject: vi.fn(),
     getObject: vi.fn(),
@@ -45,6 +48,9 @@ const fakes = vi.hoisted(() => ({
     updateNote: vi.fn(),
     deleteNote: vi.fn(),
     enqueueObjectSummaryRefresh: vi.fn(),
+    listObjects: vi.fn(),
+    countObjects: vi.fn(),
+    searchObjects: vi.fn(),
     markNotificationRead: vi.fn(),
     markAllNotificationsRead: vi.fn(),
     acceptObjectChange: vi.fn(),
@@ -74,6 +80,11 @@ vi.mock('@/lib/db', () => ({ db: { transaction: fakes.fakeTransaction } }));
 vi.mock('@timeline/shared/team-scope', () => ({ withTeam: fakes.fakeWithTeam }));
 vi.mock('@timeline/shared/queue', () => ({
   enqueueSuggestionJob: fakes.fakeEnqueueSuggestionJob,
+}));
+vi.mock('@timeline/shared/rate-limit', () => ({
+  RATE_LIMITS: { search: { capacity: 30, refillPerSec: 0.5 } },
+  checkRateLimit: fakes.fakeCheckRateLimit,
+  rateLimitKey: (...parts: string[]) => parts.join(':'),
 }));
 
 const USER_ID = '22222222-2222-4222-8222-222222222222';
@@ -136,6 +147,48 @@ beforeEach(() => {
     canGenerate: true,
     reason: null,
   });
+  fakes.fakeObjects.listObjects.mockResolvedValue([
+    {
+      id: OBJECT_ID,
+      canonicalName: 'Current Object',
+      type: 'project',
+      status: 'open',
+      stage: null,
+      priority: null,
+      ownerUserId: null,
+      assigneeUserId: null,
+      dueAt: null,
+      agentSuggested: false,
+      archivedAt: null,
+      aliases: [],
+      metadata: {},
+      updatedAt: new Date('2026-06-01T10:00:00.000Z'),
+      createdAt: new Date('2026-06-01T10:00:00.000Z'),
+    },
+    {
+      id: OTHER_OBJECT_ID,
+      canonicalName: 'Other Object',
+      type: 'company',
+      status: 'open',
+      stage: null,
+      priority: null,
+      ownerUserId: null,
+      assigneeUserId: null,
+      dueAt: null,
+      agentSuggested: false,
+      archivedAt: null,
+      aliases: [],
+      metadata: {},
+      updatedAt: new Date('2026-05-01T10:00:00.000Z'),
+      createdAt: new Date('2026-05-01T10:00:00.000Z'),
+    },
+  ]);
+  fakes.fakeObjects.countObjects.mockResolvedValue(2);
+  fakes.fakeObjects.searchObjects.mockResolvedValue([
+    { id: OBJECT_ID, canonicalName: 'Current Object', type: 'project' },
+    { id: OTHER_OBJECT_ID, canonicalName: 'Acme Corporation', type: 'company' },
+  ]);
+  fakes.fakeCheckRateLimit.mockResolvedValue({ ok: true, retryAfterMs: 0 });
   fakes.fakeObjects.markNotificationRead.mockResolvedValue(true);
   fakes.fakeObjects.markAllNotificationsRead.mockResolvedValue(undefined);
   fakes.fakeObjects.acceptObjectChange.mockResolvedValue(true);
@@ -153,6 +206,76 @@ beforeEach(() => {
     }),
   );
   fakes.fakeEnqueueSuggestionJob.mockResolvedValue({ enqueued: true, jobId: 'cleanup-job' });
+});
+
+describe('searchObjectsAction', () => {
+  it('uses indexed object search for non-empty queries and excludes the current object', async () => {
+    await expect(
+      searchObjectsAction({ query: 'acme company', exclude: OBJECT_ID }),
+    ).resolves.toEqual({
+      results: [{ id: OTHER_OBJECT_ID, canonicalName: 'Acme Corporation', type: 'company' }],
+    });
+
+    expect(fakes.fakeObjects.searchObjects).toHaveBeenCalledWith({
+      query: 'acme company',
+      archived: false,
+      limit: 13,
+    });
+    expect(fakes.fakeObjects.listObjects).not.toHaveBeenCalled();
+  });
+
+  it('lists recent active objects for empty queries', async () => {
+    await expect(searchObjectsAction({ query: '' })).resolves.toEqual({
+      results: [
+        { id: OBJECT_ID, canonicalName: 'Current Object', type: 'project' },
+        { id: OTHER_OBJECT_ID, canonicalName: 'Other Object', type: 'company' },
+      ],
+    });
+
+    expect(fakes.fakeObjects.listObjects).toHaveBeenCalledWith({ archived: false, limit: 13 });
+    expect(fakes.fakeObjects.searchObjects).not.toHaveBeenCalled();
+  });
+
+  it('returns no results when object search is rate limited', async () => {
+    fakes.fakeCheckRateLimit.mockResolvedValue({ ok: false, retryAfterMs: 2500 });
+
+    await expect(searchObjectsAction({ query: 'acme' })).resolves.toEqual({ results: [] });
+
+    expect(fakes.fakeObjects.searchObjects).not.toHaveBeenCalled();
+    expect(fakes.fakeObjects.listObjects).not.toHaveBeenCalled();
+  });
+});
+
+describe('loadTaskRowsAction', () => {
+  it('loads a cursor-paginated task window', async () => {
+    const result = await loadTaskRowsAction({ cursor: 'older' });
+
+    expect(result.nextCursor).toBeNull();
+    expect(result.rows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: OBJECT_ID, canonicalName: 'Current Object' }),
+      ]),
+    );
+
+    expect(fakes.fakeObjects.listObjects).toHaveBeenCalledWith({
+      type: 'task',
+      archived: false,
+      limit: 501,
+      cursor: 'older',
+    });
+  });
+
+  it('does not hit object scope when task loading is rate limited', async () => {
+    fakes.fakeCheckRateLimit.mockResolvedValue({ ok: false, retryAfterMs: 2500 });
+
+    await expect(loadTaskRowsAction({ cursor: null })).resolves.toEqual({
+      rows: [],
+      nextCursor: null,
+      error: 'Too many task loads. Try again shortly.',
+    });
+
+    expect(fakes.fakeObjects.listObjects).not.toHaveBeenCalled();
+  });
 });
 
 describe('object action validation and scope', () => {

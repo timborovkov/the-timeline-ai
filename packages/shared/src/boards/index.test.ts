@@ -953,6 +953,42 @@ describe('board scope', () => {
     expect(fullDetail?.items).toHaveLength(3);
   });
 
+  it('returns board item pages and work queue rows beyond the old 500-row cap', async () => {
+    const scope = withTeam(db, TEAM_A, USER_OWNER);
+    const board = await scope.boards.createBoard({
+      name: 'Expanded task board',
+      templateKind: 'task_board',
+      lanes: [{ name: 'Todo', kind: 'active' }],
+    });
+    const laneId = board.lanes[0]?.id;
+    if (!laneId) throw new Error('Expected board lane');
+
+    await pg.query(
+      `WITH inserted_entities AS (
+         INSERT INTO entities (team_id, type, canonical_name, status, aliases, metadata, updated_at)
+         SELECT $1, 'task', 'Bulk board task ' || gs::text, 'open', '[]'::jsonb, '{}'::jsonb, '2026-01-01T00:00:00.000Z'::timestamptz + (gs || ' seconds')::interval
+         FROM generate_series(1, 501) AS gs
+         RETURNING id, canonical_name
+       )
+       INSERT INTO board_items (team_id, board_id, entity_id, lane_id, position, responsible_user_id)
+       SELECT $1, $2, id, $3, row_number() OVER (ORDER BY canonical_name), $4
+       FROM inserted_entities`,
+      [TEAM_A, board.id, laneId, USER_OWNER],
+    );
+
+    const detail = await scope.boards.getBoard(board.id, { itemLimit: 501 });
+    expect(detail?.itemCount).toBe(501);
+    expect(detail?.items).toHaveLength(501);
+    expect(detail?.items.map((item) => item.object.canonicalName)).toContain('Bulk board task 1');
+
+    await expect(
+      scope.boards.listWorkQueueItems({
+        dueBefore: new Date('2026-06-30T00:00:00.000Z'),
+        limit: 501,
+      }),
+    ).resolves.toHaveLength(501);
+  });
+
   it('keeps pins per user and exposes object board context', async () => {
     const owner = withTeam(db, TEAM_A, USER_OWNER);
     const member = withTeam(db, TEAM_A, USER_MEMBER);

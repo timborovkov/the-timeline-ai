@@ -202,8 +202,8 @@ describe('WorkPage', () => {
     expect(html).toContain('Team due');
   });
 
-  it('pages eligible object subsets instead of only reading the newest objects', async () => {
-    const filler = Array.from({ length: 500 }, (_, index) =>
+  it('fetches bounded open object candidates for each queue subset', async () => {
+    const filler = Array.from({ length: 5_000 }, (_, index) =>
       objectRow({
         id: `done-task-${index}`,
         canonicalName: `Completed task ${index}`,
@@ -213,31 +213,24 @@ describe('WorkPage', () => {
     );
     fakes.listObjects.mockImplementation((filter: Record<string, unknown>) => {
       if (filter.ownerUserId !== USER_ID) return [];
-      if (filter.offset === 0) return filler;
-      if (filter.offset === 500) {
-        return [
-          objectRow({
-            id: 'stale-owned-task',
-            canonicalName: 'Stale owned task',
-            ownerUserId: USER_ID,
-            updatedAt: new Date('2025-01-01T00:00:00.000Z'),
-          }),
-        ];
-      }
-      return [];
+      expect(filter.statusNot).toEqual(['done', 'cancelled']);
+      expect(filter.limit).toBe(60);
+      return [
+        ...filler,
+        objectRow({
+          id: 'stale-owned-task',
+          canonicalName: 'Stale owned task',
+          ownerUserId: USER_ID,
+          updatedAt: new Date('2025-01-01T00:00:00.000Z'),
+        }),
+      ];
     });
 
     const html = renderToStaticMarkup(await WorkPage());
 
     expect(html).toContain('Stale owned task');
-    expect(fakes.listObjects).toHaveBeenCalledWith(
-      expect.objectContaining({
-        archived: false,
-        ownerUserId: USER_ID,
-        limit: 500,
-        offset: 500,
-      }),
-    );
+    expect(fakes.listObjects).toHaveBeenCalledTimes(3);
+    expect(fakes.listObjects).not.toHaveBeenCalledWith(expect.objectContaining({ offset: 5_000 }));
   });
 
   it('deduplicates board and object queue rows for the same entity', async () => {
