@@ -6304,13 +6304,16 @@ describe('suggestion scope', () => {
 
     await expect(scope.suggestions.acceptSuggestionItem(itemId ?? '')).resolves.toBe(true);
 
-    const result = await pg.query<{ source_event_id: string | null }>(
-      `SELECT source_event_id
+    const result = await pg.query<{ id: string; source_event_id: string | null }>(
+      `SELECT id, source_event_id
        FROM entities
        WHERE team_id = '${TEAM_ID}'
          AND canonical_name = 'Scope in all over-PM FSLIs even when netting below PM'`,
     );
     expect(result.rows[0]?.source_event_id).toBeNull();
+
+    const detail = await scope.objects.getObject(result.rows[0]?.id ?? '');
+    expect(detail?.provenance.whyThisExists).toEqual([]);
   });
 
   it('preserves valid task create source event ids beyond the first two evidence events', async () => {

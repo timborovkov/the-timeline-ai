@@ -386,6 +386,17 @@ function metadataString(metadata: Record<string, unknown>, key: string): string 
   return text || null;
 }
 
+function recordFromUnknown(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function sourceEventIdFromPayload(value: unknown): string | null {
+  const sourceEventId = recordFromUnknown(value).sourceEventId;
+  return typeof sourceEventId === 'string' && UUID_RE.test(sourceEventId) ? sourceEventId : null;
+}
+
 export function displayObjectTitle(row: Pick<ObjectRow, 'canonicalName' | 'metadata'>): string {
   const explicit = metadataString(row.metadata, 'display_title');
   const explicitSource = metadataString(row.metadata, 'display_title_canonical_name');
@@ -850,6 +861,7 @@ async function getObjectProvenance(
       targetId: agentSuggestionItems.targetId,
       resultId: agentSuggestionItems.resultId,
       itemTitle: agentSuggestionItems.title,
+      proposedPayload: agentSuggestionItems.proposedPayload,
       rawEventId: agentSuggestionEvidence.rawEventId,
       quote: agentSuggestionEvidence.quote,
       source: rawEvents.source,
@@ -880,29 +892,41 @@ async function getObjectProvenance(
     .limit(80);
 
   const byItem = new Map<string, ObjectProvenanceEntry>();
+  const rowsByItemId = new Map<string, typeof rows>();
   for (const row of rows) {
-    const id = row.itemId;
-    const existing =
-      byItem.get(id) ??
-      ({
-        id,
-        title: row.itemTitle || row.suggestionTitle,
-        reason: row.suggestionReason,
-        operation: row.operation,
-        targetKind: row.targetKind,
-        createdAt: row.suggestionCreatedAt,
-        evidence: [],
-      } satisfies ObjectProvenanceEntry);
-    if (!existing.evidence.some((ev) => ev.rawEventId === row.rawEventId)) {
-      existing.evidence.push({
-        rawEventId: row.rawEventId,
-        quote: row.quote,
-        source: row.source,
-        contentText: row.contentText,
-        occurredAt: row.occurredAt,
-      });
+    rowsByItemId.set(row.itemId, [...(rowsByItemId.get(row.itemId) ?? []), row]);
+  }
+  for (const itemRows of rowsByItemId.values()) {
+    const sourceEventId = sourceEventIdFromPayload(itemRows[0]?.proposedPayload);
+    const relevantRows = sourceEventId
+      ? itemRows.filter((row) => row.rawEventId === sourceEventId)
+      : itemRows.length === 1
+        ? itemRows
+        : [];
+    for (const row of relevantRows) {
+      const id = row.itemId;
+      const existing =
+        byItem.get(id) ??
+        ({
+          id,
+          title: row.itemTitle || row.suggestionTitle,
+          reason: row.suggestionReason,
+          operation: row.operation,
+          targetKind: row.targetKind,
+          createdAt: row.suggestionCreatedAt,
+          evidence: [],
+        } satisfies ObjectProvenanceEntry);
+      if (!existing.evidence.some((ev) => ev.rawEventId === row.rawEventId)) {
+        existing.evidence.push({
+          rawEventId: row.rawEventId,
+          quote: row.quote,
+          source: row.source,
+          contentText: row.contentText,
+          occurredAt: row.occurredAt,
+        });
+      }
+      byItem.set(id, existing);
     }
-    byItem.set(id, existing);
   }
 
   const provenance = emptyObjectProvenance();

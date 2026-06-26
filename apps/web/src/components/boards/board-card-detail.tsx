@@ -101,7 +101,7 @@ export function BoardCardDetail({
 
   if (!item) return null;
   const provenanceChanges = history.filter(
-    (change) => change.evidence.length > 0 || change.sourceEventId,
+    (change) => change.status === 'applied' && (change.evidence.length > 0 || change.sourceEventId),
   );
   const lane = lanes.find((candidate) => candidate.id === item.laneId) ?? null;
   const blocked = lane?.kind === 'blocked';
@@ -768,12 +768,13 @@ function formatProvenanceChangeValue(
   members: BoardMemberOption[],
 ): string {
   if (change.field === '__add__' || change.field === '__remove__') {
+    const value = change.field === '__remove__' ? change.previousValue : change.newValue;
     const laneId =
-      typeof change.newValue === 'object' &&
-      change.newValue !== null &&
-      'laneId' in change.newValue &&
-      typeof change.newValue.laneId === 'string'
-        ? change.newValue.laneId
+      typeof value === 'object' &&
+      value !== null &&
+      'laneId' in value &&
+      typeof value.laneId === 'string'
+        ? value.laneId
         : null;
     return laneId
       ? displayText(lanes.find((lane) => lane.id === laneId)?.name ?? 'Board membership')

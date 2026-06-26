@@ -239,6 +239,97 @@ describe('BoardCardDetail', () => {
     expect(html).toContain('Added because the Telegram message asked us to track this');
   });
 
+  it('does not present suggested changes as established board provenance', () => {
+    const sourceEventId = '22222222-2222-4222-8222-222222222222';
+    const item = boardItem({
+      id: 'item-1',
+      entityId: 'object-1',
+      canonicalName: 'MyAuditor',
+    });
+    const history: boards.BoardItemChangeRow[] = [
+      {
+        id: 'change-1',
+        boardId: 'board-1',
+        boardItemId: item.id,
+        entityId: item.entityId,
+        field: 'laneId',
+        previousValue: 'lane-1',
+        newValue: 'lane-blocked',
+        note: 'A pending proposal should stay in activity until accepted.',
+        sourceEventId,
+        suggestionItemId: 'suggestion-item-1',
+        evidence: [
+          {
+            rawEventId: sourceEventId,
+            source: 'telegram',
+            contentText: 'Maybe block MyAuditor.',
+            quote: 'Maybe block MyAuditor',
+            occurredAt: new Date('2026-01-02T00:00:00.000Z'),
+          },
+        ],
+        actorUserId: null,
+        actorKind: 'agent',
+        status: 'suggested',
+        changedAt: new Date('2026-01-02T00:00:00.000Z'),
+      },
+    ];
+
+    const html = renderToStaticMarkup(
+      createElement(BoardCardDetail, {
+        boardId: 'board-1',
+        view: 'kanban',
+        item,
+        history,
+        lanes,
+      }),
+    );
+
+    expect(html).toContain('No source evidence linked to board changes yet.');
+    expect(html).toContain('A pending proposal should stay in activity until accepted.');
+    expect(html).not.toContain('Maybe block MyAuditor.');
+  });
+
+  it('formats remove provenance using the lane the item left', () => {
+    const sourceEventId = '33333333-3333-4333-8333-333333333333';
+    const item = boardItem({
+      id: 'item-1',
+      entityId: 'object-1',
+      canonicalName: 'MyAuditor',
+      laneId: null,
+    });
+    const history: boards.BoardItemChangeRow[] = [
+      {
+        id: 'change-1',
+        boardId: 'board-1',
+        boardItemId: item.id,
+        entityId: item.entityId,
+        field: '__remove__',
+        previousValue: { boardId: 'board-1', laneId: 'lane-blocked' },
+        newValue: null,
+        note: null,
+        sourceEventId,
+        suggestionItemId: null,
+        evidence: [],
+        actorUserId: null,
+        actorKind: 'agent',
+        status: 'applied',
+        changedAt: new Date('2026-01-02T00:00:00.000Z'),
+      },
+    ];
+
+    const html = renderToStaticMarkup(
+      createElement(BoardCardDetail, {
+        boardId: 'board-1',
+        view: 'kanban',
+        item,
+        history,
+        lanes,
+      }),
+    );
+
+    expect(html).toContain('Blocked');
+  });
+
   it('edits command-center fields through board item patches', async () => {
     const user = userEvent.setup();
     const onUpdateItem = vi.fn(() => Promise.resolve({ ok: true }));

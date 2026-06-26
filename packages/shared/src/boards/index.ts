@@ -227,6 +227,11 @@ function jsonObject(value: unknown): Record<string, unknown> {
     : {};
 }
 
+function sourceEventIdFromPayload(value: unknown): string | null {
+  const sourceEventId = jsonObject(value).sourceEventId;
+  return typeof sourceEventId === 'string' && UUID_RE.test(sourceEventId) ? sourceEventId : null;
+}
+
 function jsonStringArray(value: unknown): ObjectType[] {
   return Array.isArray(value) ? value.filter((v): v is ObjectType => typeof v === 'string') : [];
 }
@@ -357,6 +362,7 @@ async function enrichBoardItemHistoryEvidence(
     const rows = await db
       .select({
         itemId: agentSuggestionItems.id,
+        proposedPayload: agentSuggestionItems.proposedPayload,
         rawEventId: agentSuggestionEvidence.rawEventId,
         quote: agentSuggestionEvidence.quote,
         source: rawEvents.source,
@@ -381,20 +387,32 @@ async function enrichBoardItemHistoryEvidence(
       )
       .orderBy(desc(rawEvents.occurredAt), desc(rawEvents.id));
 
+    const rowsByItemId = new Map<string, typeof rows>();
     for (const row of rows) {
-      const relatedChanges = changeBySuggestionItemId.get(row.itemId) ?? [];
-      for (const change of relatedChanges) {
-        const list = evidenceByChangeId.get(change.id) ?? [];
-        if (!list.some((evidence) => evidence.rawEventId === row.rawEventId)) {
-          list.push({
-            rawEventId: row.rawEventId,
-            source: row.source,
-            contentText: row.contentText,
-            quote: row.quote,
-            occurredAt: row.occurredAt,
-          });
+      rowsByItemId.set(row.itemId, [...(rowsByItemId.get(row.itemId) ?? []), row]);
+    }
+    for (const itemRows of rowsByItemId.values()) {
+      const sourceEventId = sourceEventIdFromPayload(itemRows[0]?.proposedPayload);
+      const relevantRows = sourceEventId
+        ? itemRows.filter((row) => row.rawEventId === sourceEventId)
+        : itemRows.length === 1
+          ? itemRows
+          : [];
+      for (const row of relevantRows) {
+        const relatedChanges = changeBySuggestionItemId.get(row.itemId) ?? [];
+        for (const change of relatedChanges) {
+          const list = evidenceByChangeId.get(change.id) ?? [];
+          if (!list.some((evidence) => evidence.rawEventId === row.rawEventId)) {
+            list.push({
+              rawEventId: row.rawEventId,
+              source: row.source,
+              contentText: row.contentText,
+              quote: row.quote,
+              occurredAt: row.occurredAt,
+            });
+          }
+          evidenceByChangeId.set(change.id, list);
         }
-        evidenceByChangeId.set(change.id, list);
       }
     }
   }
