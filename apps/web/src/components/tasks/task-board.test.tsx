@@ -248,6 +248,70 @@ describe('TaskBoard', () => {
     expect(screen.getByText('2 loaded of 2')).toBeTruthy();
   });
 
+  it('keeps loaded older tasks when refreshed first-page props arrive', async () => {
+    const user = userEvent.setup();
+    fakes.loadTaskRowsAction.mockResolvedValue({
+      rows: [task({ id: 'task-2', canonicalName: 'Older task' })],
+      nextCursor: null,
+    });
+    const { rerender } = render(
+      <TaskBoard
+        rows={[task({ id: 'task-1', canonicalName: 'Send proposal' })]}
+        columns={['todo', 'doing', 'done', 'blocked', 'cancelled']}
+        selectedTaskId={null}
+        view="kanban"
+        members={[{ id: 'user-1', label: 'Ada Lovelace' }]}
+        totalCount={2}
+        nextCursor="older-cursor"
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Load older tasks' }));
+    await screen.findByRole('link', { name: 'Older task' });
+
+    rerender(
+      <TaskBoard
+        rows={[task({ id: 'task-1', canonicalName: 'Send proposal refreshed' })]}
+        columns={['todo', 'doing', 'done', 'blocked', 'cancelled']}
+        selectedTaskId={null}
+        view="kanban"
+        members={[{ id: 'user-1', label: 'Ada Lovelace' }]}
+        totalCount={2}
+        nextCursor="older-cursor"
+      />,
+    );
+
+    expect(screen.getByRole('link', { name: 'Send proposal refreshed' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Older task' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Load older tasks' })).toBeNull();
+  });
+
+  it('bounds large kanban columns and reports hidden loaded tasks', () => {
+    const rows = Array.from({ length: 252 }, (_, index) =>
+      task({ id: `task-${index}`, canonicalName: `Task ${index}`, status: 'done' }),
+    );
+
+    renderBoard(null, rows);
+
+    expect(screen.getByRole('link', { name: 'Task 249' })).toBeTruthy();
+    expect(screen.queryByRole('link', { name: 'Task 250' })).toBeNull();
+    expect(screen.getByText('2 more loaded. Narrow filter.')).toBeTruthy();
+  });
+
+  it('bounds large list views and reports hidden loaded tasks', () => {
+    const rows = Array.from({ length: 1002 }, (_, index) =>
+      task({ id: `task-${index}`, canonicalName: `Task ${index}` }),
+    );
+
+    renderBoard(null, rows, 'list');
+
+    expect(screen.getByText('Task 999')).toBeTruthy();
+    expect(screen.queryByText('Task 1000')).toBeNull();
+    expect(
+      screen.getByText('2 loaded tasks hidden. Narrow the filter to inspect them.'),
+    ).toBeTruthy();
+  });
+
   it('bulk assigns selected tasks from list view', async () => {
     const user = userEvent.setup();
     renderBoard(

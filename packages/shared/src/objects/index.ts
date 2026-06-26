@@ -39,6 +39,7 @@ import {
 import {
   type SQL,
   and,
+  asc,
   desc,
   eq,
   gte,
@@ -356,6 +357,7 @@ export interface ObjectListFilter {
   dueBefore?: Date;
   dueAfter?: Date;
   archived?: boolean;
+  order?: 'updated' | 'due';
   limit?: number;
   offset?: number;
   cursor?: string | null;
@@ -471,16 +473,29 @@ function objectSearchTokens(query: string): string[] {
     .slice(0, 8);
 }
 
-function objectTextSearchCondition(token: string): SQL {
-  const pattern = likePattern(token);
+function objectTextSearchCondition(query: string): SQL {
+  const exact = query.toLowerCase();
+  const prefix = `${exact.replace(/[\\%_]/g, (match) => `\\${match}`)}%`;
   return sql`(
-    lower(${entities.canonicalName}) LIKE ${pattern} ESCAPE '\\'
-    OR lower(${entities.type}::text) LIKE ${pattern} ESCAPE '\\'
-    OR lower(${entities.status}) LIKE ${pattern} ESCAPE '\\'
-    OR lower(coalesce(${entities.stage}, '')) LIKE ${pattern} ESCAPE '\\'
-    OR lower(${entities.aliases}::text) LIKE ${pattern} ESCAPE '\\'
-    OR lower(${entities.metadata}::text) LIKE ${pattern} ESCAPE '\\'
+    lower(${entities.canonicalName}) = ${exact}
+    OR lower(${entities.canonicalName}) LIKE ${prefix} ESCAPE '\\'
+    OR lower(${entities.type}::text) = ${exact}
+    OR lower(${entities.status}) = ${exact}
+    OR lower(coalesce(${entities.stage}, '')) = ${exact}
+    OR ${entities.aliases} @> ${JSON.stringify([query])}::jsonb
   )`;
+}
+
+function objectListOrder(filter: Pick<ObjectListFilter, 'order'>): SQL[] {
+  if (filter.order === 'due') {
+    return [
+      sql`(${entities.dueAt} IS NULL) ASC`,
+      asc(entities.dueAt),
+      desc(entities.updatedAt),
+      desc(entities.id),
+    ];
+  }
+  return [desc(entities.updatedAt), desc(entities.id)];
 }
 
 function objectListConditions(scope: TeamScopeCore, filter: ObjectCountFilter = {}): SQL[] {
@@ -549,7 +564,7 @@ export async function listObjects(
     .select()
     .from(entities)
     .where(and(...conds))
-    .orderBy(desc(entities.updatedAt), desc(entities.id))
+    .orderBy(...objectListOrder(filter))
     .limit(limit)
     .offset(offset);
   return rows.map(toObjectRow);
@@ -592,10 +607,11 @@ export async function searchObjects(
   const query = filter.query.trim();
   const tokens = objectSearchTokens(query);
   if (tokens.length === 0) return [];
-  for (const token of tokens) conds.push(objectTextSearchCondition(token));
+  const searchText = tokens.join(' ');
+  conds.push(objectTextSearchCondition(searchText));
 
   const limit = Math.min(Math.max(filter.limit ?? 100, 1), OBJECT_QUERY_LIMIT_MAX);
-  const exact = query.toLowerCase();
+  const exact = searchText.toLowerCase();
   const prefix = `${exact.replace(/[\\%_]/g, (match) => `\\${match}`)}%`;
   const rows = await db
     .select()

@@ -32,9 +32,10 @@ export const metadata: Metadata = {
 const DUE_SOON_DAYS = 14;
 const QUEUE_LIMIT = 20;
 const OBJECT_QUEUE_SOURCE_LIMIT = QUEUE_LIMIT * 3;
+const OBJECT_QUEUE_PRIORITY_LIMIT = QUEUE_LIMIT;
 const RECENT_CHANGE_LIMIT = 5;
 const WORK_OBJECT_TYPES: objects.ObjectType[] = ['task', 'follow_up', 'project', 'deal'];
-const OPEN_WORK_STATUS_EXCLUDED = ['done', 'cancelled'] as const;
+const OPEN_WORK_STATUS_EXCLUDED = ['done', 'cancelled', 'canceled', 'shipped'] as const;
 
 const NAV_LINKS = [
   {
@@ -242,19 +243,71 @@ async function listWorkQueueObjects(
     type: WORK_OBJECT_TYPES,
     archived: false,
     statusNot: [...OPEN_WORK_STATUS_EXCLUDED],
-    limit: OBJECT_QUEUE_SOURCE_LIMIT,
   } satisfies objects.ObjectListFilter;
-  const [owned, assigned, teamDue] = await Promise.all([
-    objectScope.listObjects({ ...baseFilter, ownerUserId: userId }),
-    objectScope.listObjects({ ...baseFilter, assigneeUserId: userId }),
+  const dueBeforeCutoff = exclusiveDueBefore(dueBefore);
+  const [
+    ownedDue,
+    assignedDue,
+    teamDue,
+    ownedBlocked,
+    assignedBlocked,
+    ownedRecent,
+    assignedRecent,
+  ] = await Promise.all([
+    objectScope.listObjects({
+      ...baseFilter,
+      ownerUserId: userId,
+      dueBefore: dueBeforeCutoff,
+      order: 'due',
+      limit: OBJECT_QUEUE_PRIORITY_LIMIT,
+    }),
+    objectScope.listObjects({
+      ...baseFilter,
+      assigneeUserId: userId,
+      dueBefore: dueBeforeCutoff,
+      order: 'due',
+      limit: OBJECT_QUEUE_PRIORITY_LIMIT,
+    }),
     objectScope.listObjects({
       ...baseFilter,
       ownerUserId: null,
       assigneeUserId: null,
-      dueBefore: exclusiveDueBefore(dueBefore),
+      dueBefore: dueBeforeCutoff,
+      order: 'due',
+      limit: OBJECT_QUEUE_PRIORITY_LIMIT,
+    }),
+    objectScope.listObjects({
+      ...baseFilter,
+      ownerUserId: userId,
+      status: 'blocked',
+      limit: OBJECT_QUEUE_PRIORITY_LIMIT,
+    }),
+    objectScope.listObjects({
+      ...baseFilter,
+      assigneeUserId: userId,
+      status: 'blocked',
+      limit: OBJECT_QUEUE_PRIORITY_LIMIT,
+    }),
+    objectScope.listObjects({
+      ...baseFilter,
+      ownerUserId: userId,
+      limit: OBJECT_QUEUE_SOURCE_LIMIT,
+    }),
+    objectScope.listObjects({
+      ...baseFilter,
+      assigneeUserId: userId,
+      limit: OBJECT_QUEUE_SOURCE_LIMIT,
     }),
   ]);
-  return [...owned, ...assigned, ...teamDue];
+  return [
+    ...ownedDue,
+    ...assignedDue,
+    ...teamDue,
+    ...ownedBlocked,
+    ...assignedBlocked,
+    ...ownedRecent,
+    ...assignedRecent,
+  ];
 }
 
 function exclusiveDueBefore(dueBefore: Date): Date {

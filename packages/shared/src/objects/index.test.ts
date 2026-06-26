@@ -1136,7 +1136,7 @@ describe('object scope — archive visibility', () => {
     ).resolves.toEqual([]);
   });
 
-  it('searches non-Latin object-name substrings', async () => {
+  it('searches non-Latin object-name prefixes and exact aliases', async () => {
     await pg.query(
       `INSERT INTO entities (team_id, type, canonical_name, status, aliases, metadata, updated_at)
        VALUES ($1, 'project', '東京 Project', 'open', '["首都"]'::jsonb, '{}'::jsonb, '2026-01-01T00:00:00.000Z')`,
@@ -1145,12 +1145,12 @@ describe('object scope — archive visibility', () => {
     const ownerScope = withTeam(db, TEAM_A, USER_OWNER).objects;
 
     const foundByName = await ownerScope.searchObjects({
-      query: '京',
+      query: '東京',
       archived: false,
       limit: 10,
     });
     const foundByAlias = await ownerScope.searchObjects({
-      query: '首',
+      query: '首都',
       archived: false,
       limit: 10,
     });

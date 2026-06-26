@@ -27,6 +27,7 @@ export interface ObjectListFilter {
   dueBefore?: Date;
   dueAfter?: Date;
   archived?: boolean;
+  order?: 'updated' | 'due';
   limit?: number;
   offset?: number;
   cursor?: string | null;

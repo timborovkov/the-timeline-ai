@@ -34,7 +34,11 @@ import { displayText } from '@/lib/display-dates';
 import { filterObjectsByText } from '@/lib/object-filter';
 import { objectDetailHref } from '@/lib/object-links';
 import { displayObjectTitle } from '@/lib/object-title';
-import { TASK_BOARD_TOTAL_LIMIT } from '@/lib/task-board-config';
+import {
+  TASK_BOARD_COLUMN_RENDER_LIMIT,
+  TASK_BOARD_LIST_RENDER_LIMIT,
+  TASK_BOARD_TOTAL_LIMIT,
+} from '@/lib/task-board-config';
 import { cn, errorMessage } from '@/lib/utils';
 
 interface TaskMemberOption {
@@ -163,9 +167,21 @@ function reduceSetState<T>(current: T, next: SetStateAction<T>): T {
 function taskBoardReducer(state: TaskBoardState, action: TaskBoardAction): TaskBoardState {
   switch (action.type) {
     case 'props':
+      const refreshedRows = new Map(action.rows.map((row) => [row.id, row]));
       return {
         ...state,
-        pagination: taskPaginationStateForProps(action.rows, action.nextCursor),
+        pagination: {
+          inputRows: action.rows,
+          inputCursor: action.nextCursor,
+          loadedRows: [
+            ...action.rows,
+            ...state.pagination.loadedRows.filter((row) => !refreshedRows.has(row.id)),
+          ],
+          cursor:
+            state.pagination.loadedRows.length > action.rows.length
+              ? state.pagination.cursor
+              : action.nextCursor,
+        },
         loadError: null,
       };
     case 'load-error':
@@ -756,12 +772,14 @@ function TaskListView({
     );
   }
 
-  const allVisibleSelected = rows.every((row) => selectedIds.has(row.id));
+  const renderedRows = rows.slice(0, TASK_BOARD_LIST_RENDER_LIMIT);
+  const hiddenRows = rows.length - renderedRows.length;
+  const allVisibleSelected = renderedRows.every((row) => selectedIds.has(row.id));
 
   function toggleAll(checked: boolean): void {
     setSelectedIds((current) => {
       const next = new Set(current);
-      for (const row of rows) {
+      for (const row of renderedRows) {
         if (checked) next.add(row.id);
         else next.delete(row.id);
       }
@@ -810,7 +828,7 @@ function TaskListView({
             </tr>
           </thead>
           <tbody>
-            {rows.map((row) => (
+            {renderedRows.map((row) => (
               <TaskListRow
                 key={row.id}
                 row={row}
@@ -824,6 +842,16 @@ function TaskListView({
                 onUpdateTask={onUpdateTask}
               />
             ))}
+            {hiddenRows > 0 ? (
+              <tr>
+                <td
+                  colSpan={6}
+                  className="bg-bg px-3 py-3 text-center font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim"
+                >
+                  {hiddenRows} loaded tasks hidden. Narrow the filter to inspect them.
+                </td>
+              </tr>
+            ) : null}
           </tbody>
         </table>
       </div>
@@ -1180,6 +1208,8 @@ function TaskColumn({
   taskHref: (taskId: string) => string;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id });
+  const renderedRows = rows.slice(0, TASK_BOARD_COLUMN_RENDER_LIMIT);
+  const hiddenRows = rows.length - renderedRows.length;
   return (
     <div
       ref={setNodeRef}
@@ -1195,7 +1225,7 @@ function TaskColumn({
         </span>
       </div>
       <ul className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto">
-        {rows.map((row) => (
+        {renderedRows.map((row) => (
           <TaskCard
             key={row.id}
             row={row}
@@ -1206,6 +1236,11 @@ function TaskColumn({
             members={members}
           />
         ))}
+        {hiddenRows > 0 ? (
+          <li className="rounded-sm border border-dashed border-border bg-bg px-3 py-2 text-center font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">
+            {hiddenRows} more loaded. Narrow filter.
+          </li>
+        ) : null}
       </ul>
     </div>
   );

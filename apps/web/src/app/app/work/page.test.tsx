@@ -184,7 +184,9 @@ describe('WorkPage', () => {
     const dueSoonBoundary = new Date('2026-06-29T00:00:00.000Z');
 
     fakes.listObjects.mockImplementation((filter: Record<string, unknown>) => {
-      if (filter.ownerUserId !== null || filter.assigneeUserId !== null) return [];
+      if (filter.ownerUserId !== null || filter.assigneeUserId !== null || filter.order !== 'due') {
+        return [];
+      }
       expect(filter.dueBefore).toEqual(new Date(dueSoonBoundary.getTime() + 1));
       return [
         objectRow({
@@ -202,34 +204,45 @@ describe('WorkPage', () => {
     expect(html).toContain('Team due');
   });
 
-  it('fetches bounded open object candidates for each queue subset', async () => {
+  it('fetches priority object buckets before bounded recent candidates', async () => {
     const filler = Array.from({ length: 5_000 }, (_, index) =>
       objectRow({
-        id: `done-task-${index}`,
-        canonicalName: `Completed task ${index}`,
-        status: 'done',
+        id: `recent-task-${index}`,
+        canonicalName: `Recent task ${index}`,
         ownerUserId: USER_ID,
       }),
     );
     fakes.listObjects.mockImplementation((filter: Record<string, unknown>) => {
-      if (filter.ownerUserId !== USER_ID) return [];
-      expect(filter.statusNot).toEqual(['done', 'cancelled']);
+      expect(filter.statusNot).toEqual(['done', 'cancelled', 'canceled', 'shipped']);
+      if (filter.ownerUserId === USER_ID && filter.order === 'due') {
+        expect(filter.limit).toBe(20);
+        return [
+          objectRow({
+            id: 'stale-overdue-owned-task',
+            canonicalName: 'Stale overdue owned task',
+            ownerUserId: USER_ID,
+            dueAt: new Date('2025-01-01T00:00:00.000Z'),
+            updatedAt: new Date('2025-01-01T00:00:00.000Z'),
+          }),
+        ];
+      }
+      if (filter.ownerUserId !== USER_ID || filter.status || filter.dueBefore) return [];
       expect(filter.limit).toBe(60);
       return [
         ...filler,
         objectRow({
-          id: 'stale-owned-task',
-          canonicalName: 'Stale owned task',
+          id: 'recent-owned-task',
+          canonicalName: 'Recent owned task',
           ownerUserId: USER_ID,
-          updatedAt: new Date('2025-01-01T00:00:00.000Z'),
         }),
       ];
     });
 
     const html = renderToStaticMarkup(await WorkPage());
 
-    expect(html).toContain('Stale owned task');
-    expect(fakes.listObjects).toHaveBeenCalledTimes(3);
+    expect(html).toContain('Stale overdue owned task');
+    expect(html).not.toContain('Recent task 100');
+    expect(fakes.listObjects).toHaveBeenCalledTimes(7);
     expect(fakes.listObjects).not.toHaveBeenCalledWith(expect.objectContaining({ offset: 5_000 }));
   });
 
