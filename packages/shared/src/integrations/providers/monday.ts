@@ -47,6 +47,7 @@ interface MondayColumn {
 interface MondayBoard {
   id: string;
   name: string;
+  board_kind?: string | null;
   updated_at?: string;
   workspace?: MondayWorkspace | null;
   columns?: MondayColumn[];
@@ -325,6 +326,7 @@ function boardMetadata(board: MondayBoard): Record<string, unknown> {
   return {
     monday_board_id: board.id,
     monday_board_name: board.name,
+    monday_board_kind: board.board_kind ?? null,
     monday_workspace_id: board.workspace?.id ?? null,
     monday_workspace_name: board.workspace?.name ?? null,
   };
@@ -574,7 +576,7 @@ function docEvent(doc: MondayDoc): IntegrationEvent {
 async function fetchBoard(tokens: MondayTokens, boardId: string): Promise<MondayBoard | null> {
   const query = (includeWorkspace: boolean) => `query ($ids: [ID!]) {
     boards(ids: $ids) {
-      id name updated_at
+      id name board_kind updated_at
       ${includeWorkspace ? 'workspace { id name }' : ''}
       columns { id title type }
     }
@@ -754,7 +756,7 @@ async function fetchBoardsPage(
 ): Promise<{ boards: MondayBoard[]; includeWorkspace: boolean }> {
   const query = (includeWorkspace: boolean) => `query ($limit: Int!, $page: Int!) {
     boards(limit: $limit, page: $page) {
-      id name
+      id name board_kind
       ${includeWorkspace ? 'workspace { id name }' : ''}
     }
   }`;
@@ -786,6 +788,10 @@ async function listBoards(tokens: MondayTokens): Promise<MondayBoard[]> {
     if (batch.length < BOARD_PAGE_LIMIT) break;
   }
   return boards;
+}
+
+function isSubitemsBoard(board: MondayBoard): boolean {
+  return board.name.trim().toLowerCase().startsWith('subitems of ');
 }
 
 function recordEvents(
@@ -889,11 +895,21 @@ export const mondayProvider: IntegrationProvider = {
 
   async listSyncableResources(_integration, tokens, ctx): Promise<ProviderResource[]> {
     const mondayTokens = await ensureAccessToken(tokens as MondayTokens, ctx);
-    const boards = (await listBoards(mondayTokens)).map((board) => ({
-      externalId: board.id,
-      label: board.workspace?.name ? `${board.workspace.name} / ${board.name}` : board.name,
-      kind: 'monday.board',
-    }));
+    const boards = (await listBoards(mondayTokens))
+      .filter((board) => !isSubitemsBoard(board))
+      .map((board) => ({
+        externalId: board.id,
+        label: board.workspace?.name ? `${board.workspace.name} / ${board.name}` : board.name,
+        kind: 'monday.board',
+        searchText: [
+          board.name,
+          board.workspace?.name,
+          board.board_kind,
+          'monday monday.com board items records pulses updates columns subitems',
+        ]
+          .filter(Boolean)
+          .join(' '),
+      }));
     const docs = await listDocs(mondayTokens).catch(() => []);
     return [
       ...boards,
@@ -901,6 +917,14 @@ export const mondayProvider: IntegrationProvider = {
         externalId: doc.id,
         label: doc.workspace?.name ? `${doc.workspace.name} / ${doc.name}` : doc.name,
         kind: 'monday.doc',
+        searchText: [
+          doc.name,
+          doc.workspace?.name,
+          doc.doc_kind,
+          'monday monday.com workdoc workdocs doc document cited evidence',
+        ]
+          .filter(Boolean)
+          .join(' '),
       })),
     ];
   },

@@ -88,4 +88,13 @@ describe('global search ranking', () => {
 
     expect(rankGlobalSearchResults([...quick, chunk])[0]?.id).toBe('documents');
   });
+
+  it('routes Monday.com subitem and WorkDoc searches to the Monday integration', () => {
+    expect(searchQuickLinks({ query: 'monday subitems', includeAdmin: true })[0]?.id).toBe(
+      'monday-integration',
+    );
+    expect(searchQuickLinks({ query: 'workdocs monday', includeAdmin: true })[0]?.id).toBe(
+      'monday-integration',
+    );
+  });
 });

@@ -139,6 +139,8 @@ export interface ProviderResource {
   label: string;
   /** Provider-specific selection kind (e.g. `drive.folder`, `linear.project`, `github.repo`). */
   kind: string;
+  /** Optional provider-specific terms that make the source picker searchable by user language. */
+  searchText?: string;
 }
 
 export interface ListSyncableResourcesContext {

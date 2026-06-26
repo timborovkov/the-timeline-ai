@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -144,9 +144,158 @@ describe('TeamSourcesUi', () => {
     );
 
     expect(await screen.findByText(/Choose Monday.com boards/i)).toBeTruthy();
+    expect(screen.getByText(/parent board already imports them/i)).toBeTruthy();
+    expect(await screen.findByText(/Board items, updates, columns, and subitems/i)).toBeTruthy();
     expect(screen.getByText(/Choose the Slack channels/i)).toBeTruthy();
     expect(screen.getByText(/Choose individual Sentry projects/i)).toBeTruthy();
     expect(screen.queryByRole('link', { name: /GitHub access/i })).toBeNull();
+  });
+
+  it('finds parent Monday.com boards when searching for subitems', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          resources: [
+            {
+              kind: 'monday.board',
+              externalId: 'board-1',
+              label: 'KIESI',
+              searchText: 'KIESI monday.com board items updates columns subitems',
+            },
+            {
+              kind: 'monday.doc',
+              externalId: 'doc-1',
+              label: 'Launch notes',
+              searchText: 'Launch notes monday.com WorkDoc',
+            },
+          ],
+          shares: [],
+        }),
+        { status: 200 },
+      ),
+    );
+
+    renderWithQueryClient(
+      <PersonalConnectionsUi
+        connections={[
+          {
+            id: 'monday',
+            provider: 'monday',
+            displayName: 'Monday.com — Tim',
+            lastError: null,
+            lastConnectedAt: '2026-06-01T00:00:00.000Z',
+          },
+        ]}
+      />,
+    );
+
+    await screen.findByText('KIESI');
+    await user.type(screen.getByRole('textbox', { name: /Search provider sources/i }), 'subitems');
+
+    expect(screen.getByText('KIESI')).toBeTruthy();
+    expect(screen.queryByText('Launch notes')).toBeNull();
+  });
+
+  it('describes every known provider resource kind in the source picker', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          resources: [
+            { kind: 'drive.folder', externalId: 'root', label: 'My Drive (root)' },
+            { kind: 'drive.shared_drive', externalId: 'drive-1', label: 'Engineering' },
+            { kind: 'linear.team', externalId: 'team-1', label: 'Product' },
+            { kind: 'sentry.org', externalId: 'acme', label: 'Acme (all projects)' },
+          ],
+          shares: [],
+        }),
+        { status: 200 },
+      ),
+    );
+
+    renderWithQueryClient(
+      <PersonalConnectionsUi
+        connections={[
+          {
+            id: 'conn-a',
+            provider: 'google_drive',
+            displayName: 'Google Drive — Tim',
+            lastError: null,
+            lastConnectedAt: '2026-06-01T00:00:00.000Z',
+          },
+        ]}
+      />,
+    );
+
+    expect(await screen.findByText(/Folder files imported into the document drive/i)).toBeTruthy();
+    expect(screen.getByText(/Shared drive files imported into the document drive/i)).toBeTruthy();
+    expect(screen.getByText(/Team issues, projects, comments, and workflow changes/i)).toBeTruthy();
+    expect(screen.getByText(/All accessible projects in this organization/i)).toBeTruthy();
+  });
+
+  it('preserves active shares that are hidden from the live resource list when saving', async () => {
+    const user = userEvent.setup();
+    const requests: { method: string; body: unknown }[] = [];
+    vi.spyOn(globalThis, 'fetch').mockImplementation((_input, init) => {
+      const method = init?.method ?? 'GET';
+      if (method === 'PUT') {
+        const bodyText = typeof init?.body === 'string' ? init.body : null;
+        requests.push({
+          method,
+          body: bodyText ? JSON.parse(bodyText) : null,
+        });
+        return Promise.resolve(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+      }
+      requests.push({ method, body: null });
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            resources: [{ kind: 'monday.board', externalId: 'board-1', label: 'KIESI' }],
+            shares: [
+              {
+                id: 'share-hidden',
+                providerConnectionId: 'monday',
+                resourceKind: 'monday.board',
+                externalId: 'subitems-board-1',
+                externalLabel: 'Subitems of KIESI',
+                revokedAt: null,
+              },
+            ],
+          }),
+          { status: 200 },
+        ),
+      );
+    });
+
+    renderWithQueryClient(
+      <PersonalConnectionsUi
+        connections={[
+          {
+            id: 'monday',
+            provider: 'monday',
+            displayName: 'Monday.com — Tim',
+            lastError: null,
+            lastConnectedAt: '2026-06-01T00:00:00.000Z',
+          },
+        ]}
+      />,
+    );
+
+    await screen.findByText('KIESI');
+    await user.click(screen.getByRole('button', { name: /Save sharing/i }));
+
+    await waitFor(() => {
+      expect(requests.some((request) => request.method === 'PUT')).toBe(true);
+    });
+    expect(requests.find((request) => request.method === 'PUT')?.body).toEqual({
+      resources: [
+        {
+          kind: 'monday.board',
+          externalId: 'subitems-board-1',
+          label: 'Subitems of KIESI',
+        },
+      ],
+    });
   });
 
   it('surfaces provider resource errors from JSON responses', async () => {

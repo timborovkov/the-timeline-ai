@@ -167,6 +167,11 @@ export async function PUT(
     },
   );
   const allowed = new Set(available.map((r) => `${r.kind}\x00${r.externalId}`));
+  const shares = await scope.integrations.listOwnedTeamResourceShares();
+  for (const row of shares) {
+    if (row.connection.id !== connection.id || row.share.revokedAt) continue;
+    allowed.add(`${row.share.resourceKind}\x00${row.share.externalId}`);
+  }
   const invalid = parsed.data.resources.filter((r) => !allowed.has(`${r.kind}\x00${r.externalId}`));
   if (invalid.length > 0) {
     return NextResponse.json({ error: 'resource_not_in_scope', invalid }, { status: 400 });
