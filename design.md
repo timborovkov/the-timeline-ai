@@ -379,6 +379,12 @@ visible change.
   follow-ups, and approvals. Hydrate from existing source evidence, suggestion
   evidence, object/task changes, document versions, and calendar rows. Omit the
   strip when empty rather than inventing completeness.
+- **Related evidence stays quiet.** When a moment belongs to a cross-source work
+  artifact, the row shows a compact `Related evidence` signal with the
+  canonical artifact name and signal count. The inspector owns the full bundle:
+  related source snippets, provider/source labels, evidence roles, strength,
+  timestamps, links back to timeline events, and which sources are allowed to
+  update canonical status.
 - **Calendar state.** Recurring calendar rows show a compact recurrence marker,
   modified occurrences use the same marker plus their edited time, and proposed
   slots render as visible tentative holds until one slot is confirmed.
