@@ -146,29 +146,29 @@ export async function writeIntegrationEvents(deps: {
     inserted.map((row) => enqueueEmbedJob({ scope: 'raw_event', teamId, rawEventId: row.id })),
   );
 
-  // Workspace-object upsert only fires for events that actually
-  // inserted (i.e. the dedup_key wasn't already on raw_events). A
-  // webhook replay that produces zero new raw_events shouldn't bump
-  // mapped-entity rows or re-enqueue object embed jobs — that would
-  // re-embed unchanged entities every time the same payload arrives.
-  // Dedupe by externalId within the surviving set (a single PR can
-  // fire pr.updated AND pr.review.approved in one webhook; both carry
-  // the same objectMap).
-  const insertedDedupKeys = new Set(inserted.map((r) => r.dedupKey));
+  // Workspace-object upsert and artifact reconciliation are deliberately
+  // repairable from existing raw_events. If a previous run inserted the raw
+  // event and then failed while attaching artifact evidence, a replay with the
+  // same dedup_key must fill the missing cluster/member rows.
+  // Dedupe by externalId within the repairable set (a single PR can fire
+  // pr.updated AND pr.review.approved in one webhook; both carry the same
+  // objectMap).
+  const artifactEvents = writableEvents.filter(
+    (evt): evt is IntegrationEvent & { objectMap: ObjectMapping } => Boolean(evt.objectMap),
+  );
+  const rawEventIdsByDedupKey = await loadRawEventIdsByDedupKey(
+    deps.db,
+    teamId,
+    artifactEvents.map((event) => event.dedupKey),
+  );
   const byExternal = new Map<string, IntegrationEvent & { objectMap: ObjectMapping }>();
-  // Iterate `uniqueEvents` (the dedup-winning list) instead of
-  // `deps.events` so the objectMap paired with each externalId comes
-  // from the SAME event whose raw_events row landed. Iterating the
-  // pre-dedup list would let a later same-dedupKey event silently
-  // override the winner's objectMap and decouple the entity row from
-  // the stored raw_event content.
-  for (const evt of writableEvents) {
-    if (!evt.objectMap) continue;
-    if (!insertedDedupKeys.has(evt.dedupKey)) continue;
-    byExternal.set(
-      evt.objectMap.externalId,
-      evt as IntegrationEvent & { objectMap: ObjectMapping },
-    );
+  // Iterate `writableEvents` (the dedup-winning list) instead of `deps.events`
+  // so the objectMap paired with each externalId comes from the same event as
+  // the raw_events row. Iterating the pre-dedup list would let a later
+  // same-dedupKey event silently override the winner's objectMap.
+  for (const evt of artifactEvents) {
+    if (!rawEventIdsByDedupKey.has(evt.dedupKey)) continue;
+    byExternal.set(evt.objectMap.externalId, evt);
   }
   if (byExternal.size > 0) {
     const entityByExternalId = await upsertWorkspaceObjects(deps.db, deps.integration, [
@@ -177,13 +177,35 @@ export async function writeIntegrationEvents(deps: {
     await reconcileIntegrationArtifacts({
       db: deps.db,
       integration: deps.integration,
-      rawEventIdsByDedupKey: new Map(inserted.map((row) => [row.dedupKey, row.id])),
+      rawEventIdsByDedupKey,
       entityByExternalId,
       events: [...byExternal.values()],
     });
   }
 
   return inserted.map((r) => r.id);
+}
+
+async function loadRawEventIdsByDedupKey(
+  db: Db,
+  teamId: string,
+  dedupKeys: string[],
+): Promise<Map<string, string>> {
+  const keys = [...new Set(dedupKeys)];
+  if (keys.length === 0) return new Map();
+  const rows = await db
+    .select({
+      id: rawEvents.id,
+      dedupKey: sql<string>`${rawEvents.sourceMetadata} ->> 'dedup_key'`,
+    })
+    .from(rawEvents)
+    .where(
+      and(
+        eq(rawEvents.teamId, teamId),
+        inArray(sql<string>`${rawEvents.sourceMetadata} ->> 'dedup_key'`, keys),
+      ),
+    );
+  return new Map(rows.map((row) => [row.dedupKey, row.id]));
 }
 
 async function filterEventsOwnedByNativeIntegrations(
@@ -488,6 +510,7 @@ async function reconcileIntegrationArtifacts(deps: {
       status: clusterStatusFromObjectStatus(event.objectMap.status),
       canonicalEntityId: entityId,
       rawEventId,
+      occurredAt: event.occurredAt,
       provider: event.provider,
       externalObjectId: event.externalObjectId,
       role: evidenceRoleForIntegrationEvent(event),

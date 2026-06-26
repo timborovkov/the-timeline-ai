@@ -979,6 +979,7 @@ describe('writeIntegrationEvents visibility', () => {
     const clusters = await db.select().from(artifactClusters);
     expect(clusters).toHaveLength(1);
     expect(clusters[0]?.artifactType).toBe('incident');
+    expect(clusters[0]?.status).toBe('resolved');
 
     const members = await db.select().from(artifactClusterMembers);
     expect(members).toHaveLength(2);
@@ -999,6 +1000,76 @@ describe('writeIntegrationEvents visibility', () => {
         }),
       ]),
     );
+  });
+
+  it('repairs artifact evidence on duplicate webhook replay when raw event already exists', async () => {
+    const [integration] = await db
+      .insert(integrations)
+      .values({
+        teamId: TEAM_ID,
+        connectedByUserId: USER_ID,
+        provider: 'github',
+        displayName: 'GitHub',
+        externalAccountId: 'github-replay-acct',
+        visibilityDefault: 'team',
+      })
+      .returning();
+    if (!integration) throw new Error('integration insert failed');
+    const event = {
+      dedupKey: 'github:issue:911:closed',
+      provider: 'github',
+      externalObjectId: 'timborovkov/the-timeline-ai#911',
+      eventType: 'issue.closed',
+      occurredAt: new Date('2026-06-18T12:00:00Z'),
+      contentText: 'GitHub issue timborovkov/the-timeline-ai#911 closed',
+      extra: {
+        github: {
+          type: 'issue',
+          repo: 'timborovkov/the-timeline-ai',
+          number: 911,
+        },
+      },
+      objectMap: {
+        type: 'task',
+        canonicalName: 'timborovkov/the-timeline-ai#911: Fix artifact repair',
+        displayTitle: 'the-timeline-ai: Fix artifact repair',
+        externalId: 'timborovkov/the-timeline-ai#911',
+        status: 'done',
+      },
+    } as const;
+
+    const insertedIds = await writeIntegrationEvents({
+      db: db as never,
+      integration,
+      events: [event],
+    });
+    expect(insertedIds).toHaveLength(1);
+
+    await db.delete(artifactClusters);
+    expect(await db.select().from(artifactClusterMembers)).toHaveLength(0);
+    expect(await db.select().from(artifactClusterAnchors)).toHaveLength(0);
+
+    const replayedIds = await writeIntegrationEvents({
+      db: db as never,
+      integration,
+      events: [event],
+    });
+    expect(replayedIds).toEqual([]);
+
+    const clusters = await db.select().from(artifactClusters);
+    expect(clusters).toHaveLength(1);
+    expect(clusters[0]).toMatchObject({
+      canonicalName: 'the-timeline-ai: Fix artifact repair',
+      status: 'resolved',
+    });
+    const members = await db.select().from(artifactClusterMembers);
+    expect(members).toEqual([
+      expect.objectContaining({
+        rawEventId: insertedIds[0],
+        provider: 'github',
+        authoritative: true,
+      }),
+    ]);
   });
 
   it('clusters non-technical work artifacts with explicit artifact keys without granting authority to context', async () => {

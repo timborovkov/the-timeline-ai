@@ -247,14 +247,14 @@ describe('withTeam timeline semantic search', () => {
       INSERT INTO artifact_clusters
         (id, team_id, artifact_type, canonical_name, status)
       VALUES
-        ('${ARTIFACT_CLUSTER}', '${TEAM_A}', 'deal', 'Acme renewal', 'active');
+        ('${ARTIFACT_CLUSTER}', '${TEAM_A}', 'deal', 'Owner-only Acme acquisition', 'resolved');
 
       INSERT INTO artifact_cluster_members
-        (team_id, cluster_id, raw_event_id, provider, external_object_id, role, strength, authoritative)
+        (team_id, cluster_id, raw_event_id, provider, external_object_id, role, strength, authoritative, metadata)
       VALUES
-        ('${TEAM_A}', '${ARTIFACT_CLUSTER}', '${TEAM_EVENT}', 'telegram', 'chat:acme', 'report', 'human', false),
-        ('${TEAM_A}', '${ARTIFACT_CLUSTER}', '${RELATED_EVENT}', 'github', 'repo#77', 'lifecycle_update', 'provider', true),
-        ('${TEAM_A}', '${ARTIFACT_CLUSTER}', '${RELATED_PRIVATE_EVENT}', 'telegram', 'private:acme', 'discussion', 'human', false);
+        ('${TEAM_A}', '${ARTIFACT_CLUSTER}', '${TEAM_EVENT}', 'telegram', 'chat:acme', 'report', 'human', false, '{"canonical_name":"Public Acme renewal","status":"open"}'::jsonb),
+        ('${TEAM_A}', '${ARTIFACT_CLUSTER}', '${RELATED_EVENT}', 'github', 'repo#77', 'lifecycle_update', 'provider', true, '{"canonical_name":"GitHub Acme implementation","status":"active"}'::jsonb),
+        ('${TEAM_A}', '${ARTIFACT_CLUSTER}', '${RELATED_PRIVATE_EVENT}', 'telegram', 'private:acme', 'lifecycle_update', 'human', true, '{"canonical_name":"Owner-only Acme acquisition","status":"resolved"}'::jsonb);
     `);
     hits = [hit(TEAM_EVENT, 0.9)];
 
@@ -265,7 +265,7 @@ describe('withTeam timeline semantic search', () => {
     expect(memberResults[0]?.artifactCluster).toMatchObject({
       id: ARTIFACT_CLUSTER,
       artifactType: 'deal',
-      canonicalName: 'Acme renewal',
+      canonicalName: 'GitHub Acme implementation',
       status: 'active',
     });
     const memberEvidence = memberResults[0]?.artifactCluster?.relatedEvidence ?? [];
@@ -286,6 +286,10 @@ describe('withTeam timeline semantic search', () => {
     const ownerResults = await scopeFor(OWNER).timeline.searchEvents({
       query: 'Acme renewal',
       limit: 5,
+    });
+    expect(ownerResults[0]?.artifactCluster).toMatchObject({
+      canonicalName: 'Owner-only Acme acquisition',
+      status: 'resolved',
     });
     expect(
       ownerResults[0]?.artifactCluster?.relatedEvidence.map((evidence) => evidence.rawEventId),

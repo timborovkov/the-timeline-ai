@@ -76,7 +76,7 @@ This is a pnpm/Turborepo monorepo.
 | `apps/web` | Next.js app, public docs, auth, server actions, UI, API routes, and inbound webhooks. |
 | `apps/worker` | BullMQ workers for transcription, extraction, embeddings, documents, meetings, integrations, MCP health, and maintenance jobs. |
 | `packages/db` | Drizzle schema, migrations, and database package exports. |
-| `packages/shared` | Team-scoped data access, LLM wrapper, Qdrant/S3 wrappers, queues, integrations, calendar, documents, meetings, objects, MCP, and other shared domain modules. |
+| `packages/shared` | Team-scoped data access, LLM wrapper, Qdrant/S3 wrappers, queues, integrations, artifact reconciliation, calendar, documents, meetings, objects, MCP, and other shared domain modules. |
 | `docs` | Product, setup, architecture, and deployment documentation. |
 
 The two most important boundaries are:

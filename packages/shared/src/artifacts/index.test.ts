@@ -1,5 +1,5 @@
 import { PGlite } from '@electric-sql/pglite';
-import { artifactClusterMembers, artifactClusters, rawEvents } from '@timeline/db';
+import { artifactClusterMembers, artifactClusters, entities, rawEvents } from '@timeline/db';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { beforeEach, describe, expect, it } from 'vitest';
@@ -82,6 +82,67 @@ describe('artifact reconciliation', () => {
         expect.objectContaining({ role: 'signature', authoritative: true }),
       ]),
     );
+    const [cluster] = await db
+      .select()
+      .from(artifactClusters)
+      .where(eq(artifactClusters.id, first.clusterId));
+    expect(cluster?.status).toBe('resolved');
+  });
+
+  it('keeps multiple raw-event evidence rows for the same mapped entity', async () => {
+    const [entity] = await db
+      .insert(entities)
+      .values({
+        teamId: TEAM_ID,
+        type: 'task',
+        canonicalName: 'github/repo#17: Fix checkout',
+      })
+      .returning();
+    if (!entity) throw new Error('entity insert failed');
+    const opened = await rawEvent('GitHub issue opened for checkout failure.');
+    const closed = await rawEvent(
+      'GitHub issue closed after checkout fix.',
+      '2026-06-20T13:00:00Z',
+    );
+
+    const first = await reconcileArtifactEvidence(db as never, {
+      teamId: TEAM_ID,
+      artifactType: 'task',
+      canonicalName: 'github/repo#17: Fix checkout',
+      status: 'open',
+      canonicalEntityId: entity.id,
+      rawEventId: opened.id,
+      role: 'issue',
+      strength: 'provider',
+      authoritative: true,
+      occurredAt: opened.occurredAt,
+    });
+    const second = await reconcileArtifactEvidence(db as never, {
+      teamId: TEAM_ID,
+      artifactType: 'task',
+      canonicalName: 'github/repo#17: Fix checkout',
+      status: 'resolved',
+      canonicalEntityId: entity.id,
+      rawEventId: closed.id,
+      role: 'lifecycle_update',
+      strength: 'provider',
+      authoritative: true,
+      occurredAt: closed.occurredAt,
+    });
+
+    expect(second.clusterId).toBe(first.clusterId);
+    const members = await db
+      .select()
+      .from(artifactClusterMembers)
+      .where(eq(artifactClusterMembers.clusterId, first.clusterId));
+    expect(members.map((member) => member.rawEventId).sort()).toEqual(
+      [closed.id, opened.id].sort(),
+    );
+    const [cluster] = await db
+      .select()
+      .from(artifactClusters)
+      .where(eq(artifactClusters.id, first.clusterId));
+    expect(cluster?.status).toBe('resolved');
   });
 
   it('does not merge artifacts on semantic similarity alone', async () => {

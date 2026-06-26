@@ -490,6 +490,26 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
       );
   }
 
+  function displayNameForVisibleArtifactEvidence(row: {
+    artifactType: EntityType;
+    memberMetadata: unknown;
+    objectName: string | null;
+    contentText: string | null;
+  }): string {
+    const meta = metadataObject(row.memberMetadata);
+    return (
+      metadataString(meta, 'canonical_name') ??
+      row.objectName ??
+      row.contentText?.slice(0, 80) ??
+      `Related ${row.artifactType}`
+    );
+  }
+
+  function statusForVisibleArtifactEvidence(row: { memberMetadata: unknown }): string | null {
+    const status = metadataString(metadataObject(row.memberMetadata), 'status');
+    return status;
+  }
+
   async function hydrateArtifactClustersForVisibleEventIds(
     accessibleEventIds: string[],
   ): Promise<Map<string, SearchEventArtifactCluster>> {
@@ -516,8 +536,6 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
       .select({
         clusterId: artifactClusters.id,
         artifactType: artifactClusters.artifactType,
-        canonicalName: artifactClusters.canonicalName,
-        status: artifactClusters.status,
         rawEventId: artifactClusterMembers.rawEventId,
         source: rawEvents.source,
         provider: artifactClusterMembers.provider,
@@ -525,18 +543,21 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
         role: artifactClusterMembers.role,
         strength: artifactClusterMembers.strength,
         authoritative: artifactClusterMembers.authoritative,
+        memberMetadata: artifactClusterMembers.metadata,
         occurredAt: rawEvents.occurredAt,
         contentText: rawEvents.contentText,
+        objectName: entities.canonicalName,
       })
       .from(artifactClusterMembers)
       .innerJoin(artifactClusters, eq(artifactClusters.id, artifactClusterMembers.clusterId))
       .leftJoin(rawEvents, eq(rawEvents.id, artifactClusterMembers.rawEventId))
+      .leftJoin(entities, eq(entities.id, artifactClusterMembers.entityId))
       .where(
         and(
           eq(artifactClusterMembers.teamId, teamId),
           inArray(artifactClusterMembers.clusterId, clusterIds),
           isNull(artifactClusters.archivedAt),
-          or(isNull(artifactClusterMembers.rawEventId), visibilityFilter),
+          visibilityFilter,
         ),
       )
       .orderBy(desc(artifactClusterMembers.authoritative), desc(rawEvents.occurredAt));
@@ -549,8 +570,8 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
         ({
           id: row.clusterId,
           artifactType: row.artifactType,
-          canonicalName: row.canonicalName,
-          status: row.status,
+          canonicalName: displayNameForVisibleArtifactEvidence(row),
+          status: statusForVisibleArtifactEvidence(row) ?? 'open',
           relatedEvidence: [],
         } satisfies SearchEventArtifactCluster);
       if (!existing) clusterById.set(row.clusterId, cluster);

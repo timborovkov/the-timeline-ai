@@ -33,6 +33,7 @@ export interface ArtifactEvidenceInput {
   role: EvidenceRole;
   strength: EvidenceStrength;
   authoritative?: boolean;
+  occurredAt?: Date | string | null;
   anchors?: ArtifactAnchorInput[];
   metadata?: Record<string, unknown>;
 }
@@ -42,7 +43,7 @@ export interface ArtifactReconcileResult {
   created: boolean;
 }
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function normalizeAnchor(input: ArtifactAnchorInput): ArtifactAnchorInput | null {
   const type = input.type
@@ -159,18 +160,23 @@ async function attachMember(
       role: input.role,
       strength: input.strength,
       authoritative: input.authoritative ?? false,
-      metadata: input.metadata ?? {},
+      metadata: {
+        ...(input.metadata ?? {}),
+        canonical_name: input.canonicalName,
+        ...(input.status ? { status: input.status } : {}),
+      },
     })
     .onConflictDoNothing();
 }
 
-async function attachAnchors(
+async function claimAnchors(
   db: Db,
   input: ArtifactEvidenceInput,
   clusterId: string,
   anchors: ArtifactAnchorInput[],
-): Promise<void> {
-  if (anchors.length === 0) return;
+): Promise<string> {
+  if (anchors.length === 0) return clusterId;
+  const claimableAnchors = anchors.filter((anchor) => anchor.strength !== 'semantic');
   await db
     .insert(artifactClusterAnchors)
     .values(
@@ -185,6 +191,88 @@ async function attachAnchors(
       })),
     )
     .onConflictDoNothing();
+
+  if (claimableAnchors.length === 0) return clusterId;
+  const clauses = claimableAnchors.map(
+    (anchor) =>
+      sql`(${artifactClusterAnchors.anchorType} = ${anchor.type} AND ${artifactClusterAnchors.anchorValue} = ${anchor.value})`,
+  );
+  const rows = await db
+    .select({
+      clusterId: artifactClusterAnchors.clusterId,
+      createdAt: artifactClusterAnchors.createdAt,
+    })
+    .from(artifactClusterAnchors)
+    .where(and(eq(artifactClusterAnchors.teamId, input.teamId), sql.join(clauses, sql.raw(' OR '))))
+    .orderBy(artifactClusterAnchors.createdAt)
+    .limit(1);
+  return rows[0]?.clusterId ?? clusterId;
+}
+
+function statusAuthorityRank(input: ArtifactEvidenceInput): number {
+  if (!input.authoritative || !input.status) return 0;
+  if (input.strength === 'hard') return 50;
+  if (input.strength === 'provider') return 40;
+  if (input.strength === 'structured') return 30;
+  if (input.strength === 'human') return 20;
+  return 10;
+}
+
+function statusAuthorityAt(input: ArtifactEvidenceInput): string {
+  const value = input.occurredAt;
+  const date = value instanceof Date ? value : value ? new Date(value) : new Date();
+  return Number.isNaN(date.getTime()) ? new Date().toISOString() : date.toISOString();
+}
+
+async function updateClusterStatusFromAuthoritativeEvidence(
+  db: Db,
+  input: ArtifactEvidenceInput,
+  clusterId: string,
+): Promise<void> {
+  if (!input.authoritative || !input.status) return;
+  const rank = statusAuthorityRank(input);
+  const authorityAt = statusAuthorityAt(input);
+  await db.execute(sql`
+    UPDATE ${artifactClusters}
+    SET
+      status = ${input.status},
+      canonical_name = ${input.canonicalName},
+      metadata = ${artifactClusters.metadata}
+        || jsonb_build_object(
+          'status_authority_rank', ${rank}::int,
+          'status_authority_at', ${authorityAt}::text,
+          'status_authority_source', ${input.provider ?? input.strength}::text
+        ),
+      updated_at = NOW()
+    WHERE ${artifactClusters.teamId} = ${input.teamId}
+      AND ${artifactClusters.id} = ${clusterId}
+      AND (
+        (${artifactClusters.metadata} ->> 'status_authority_rank') IS NULL
+        OR ((${artifactClusters.metadata} ->> 'status_authority_rank')::int < ${rank}::int)
+        OR (
+          ((${artifactClusters.metadata} ->> 'status_authority_rank')::int = ${rank}::int)
+          AND COALESCE(${artifactClusters.metadata} ->> 'status_authority_at', '') <= ${authorityAt}::text
+        )
+      )
+  `);
+}
+
+async function moveClaimedAnchorsToWinningCluster(
+  db: Db,
+  input: ArtifactEvidenceInput,
+  fromClusterId: string,
+  toClusterId: string,
+): Promise<void> {
+  if (fromClusterId === toClusterId) return;
+  await db
+    .update(artifactClusterAnchors)
+    .set({ clusterId: toClusterId })
+    .where(
+      and(
+        eq(artifactClusterAnchors.teamId, input.teamId),
+        eq(artifactClusterAnchors.clusterId, fromClusterId),
+      ),
+    );
 }
 
 export async function reconcileArtifactEvidence(
@@ -207,11 +295,16 @@ export async function reconcileArtifactEvidence(
     (await findClusterByAnchors(db, input.teamId, anchors)) ??
     (await findClusterByEntity(db, input.teamId, input.canonicalEntityId));
   const result = clusterId ? { clusterId, created: false } : await createCluster(db, input);
+  const claimedClusterId = await claimAnchors(db, input, result.clusterId, anchors);
+  await moveClaimedAnchorsToWinningCluster(db, input, result.clusterId, claimedClusterId);
 
-  await attachMember(db, input, result.clusterId);
-  await attachAnchors(db, input, result.clusterId, anchors);
+  await attachMember(db, input, claimedClusterId);
+  await updateClusterStatusFromAuthoritativeEvidence(db, input, claimedClusterId);
 
-  return result;
+  return {
+    clusterId: claimedClusterId,
+    created: result.created && claimedClusterId === result.clusterId,
+  };
 }
 
 export async function listArtifactClusterEvidence(

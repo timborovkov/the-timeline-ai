@@ -122,9 +122,6 @@ export const artifactClusterMembers = pgTable(
     uniqueIndex('artifact_cluster_members_event_cluster_unq')
       .on(table.teamId, table.clusterId, table.rawEventId)
       .where(sql`${table.rawEventId} IS NOT NULL`),
-    uniqueIndex('artifact_cluster_members_entity_cluster_unq')
-      .on(table.teamId, table.clusterId, table.entityId)
-      .where(sql`${table.entityId} IS NOT NULL`),
   ],
 );
 

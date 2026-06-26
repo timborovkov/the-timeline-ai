@@ -191,10 +191,12 @@ calendar events, integration-owned objects, conversation evidence, signatures,
 payments, releases, and other impact context that should stay mutually
 consistent.
 An artifact cluster can exist before a canonical artifact exists; newer evidence
-may update or supersede a pending create approval when it clearly refers to the
-same real-world artifact. Meaningful completed commitments may still become
-canonical artifacts even when completion arrives before the create approval is
-accepted; trivial completed work can remain raw evidence with no active proposal.
+can be recorded alongside pending create approvals when it clearly refers to the
+same real-world artifact; suggestion reconciliation decides whether a pending
+approval is updated or superseded. Meaningful completed commitments may still
+become canonical artifacts even when completion arrives before the create
+approval is accepted; trivial completed work can remain raw evidence with no
+active proposal.
 Evidence association and lifecycle authority are separate: a Telegram report,
 Sentry issue, GitHub PR, signed contract PDF, deal approval, or party venue note
 can all belong to the same cluster without each source being allowed to change

@@ -60,6 +60,5 @@ CREATE INDEX "artifact_cluster_members_team_raw_event_idx" ON "artifact_cluster_
 CREATE INDEX "artifact_cluster_members_team_entity_idx" ON "artifact_cluster_members" USING btree ("team_id","entity_id");--> statement-breakpoint
 CREATE INDEX "artifact_cluster_members_team_provider_external_idx" ON "artifact_cluster_members" USING btree ("team_id","provider","external_object_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "artifact_cluster_members_event_cluster_unq" ON "artifact_cluster_members" USING btree ("team_id","cluster_id","raw_event_id") WHERE "artifact_cluster_members"."raw_event_id" IS NOT NULL;--> statement-breakpoint
-CREATE UNIQUE INDEX "artifact_cluster_members_entity_cluster_unq" ON "artifact_cluster_members" USING btree ("team_id","cluster_id","entity_id") WHERE "artifact_cluster_members"."entity_id" IS NOT NULL;--> statement-breakpoint
 CREATE UNIQUE INDEX "artifact_cluster_anchors_team_anchor_unq" ON "artifact_cluster_anchors" USING btree ("team_id","anchor_type","anchor_value");--> statement-breakpoint
 CREATE INDEX "artifact_cluster_anchors_team_cluster_idx" ON "artifact_cluster_anchors" USING btree ("team_id","cluster_id");
