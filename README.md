@@ -33,8 +33,9 @@ source material instead of hiding behind black-box summaries.
 - Lightweight CRM, project, task, and decision tracking derived from everyday
   communication.
 - Work artifact reconciliation that can connect bug reports, Sentry issues,
-  GitHub PRs, contracts, deals, clients, decisions, and events through cited
-  evidence without letting every related source mutate canonical status.
+  GitHub PRs, shared links, contracts, deals, clients, decisions, and events
+  through cited evidence without letting every related source mutate canonical
+  status.
 - Team document search with versioned uploads, chunked embeddings, inline
   document citations, PDF/image/audio previews, and a captured-file inbox for
   promoting Telegram/Slack evidence into curated knowledge.

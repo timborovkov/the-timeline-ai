@@ -3,11 +3,14 @@ import {
   type Db,
   agentSuggestionItems,
   agentSuggestions,
+  artifactClusterMembers,
+  artifactClusters,
   boardItemChanges,
   boardItems,
   calendarEventEntities,
   calendarEvents,
   documents,
+  documentVersions,
   chatMessages,
   chatSessions,
   entities,
@@ -690,6 +693,86 @@ describe('object scope — notes and suggestions', () => {
     );
   });
 
+  it('creates link artifact evidence from object audit note text', async () => {
+    const scope = withTeam(db, TEAM_A, USER_OWNER).objects;
+    const object = await scope.createObject({
+      type: 'project',
+      canonicalName: 'Link audit project',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+
+    const note = await scope.createNote({
+      entityId: object.id,
+      body: 'Launch checklist: https://example.com/checklists/launch?utm_source=note&step=2',
+      authorUserId: USER_OWNER,
+    });
+
+    const clusters = await db.select().from(artifactClusters);
+    expect(clusters).toContainEqual(
+      expect.objectContaining({
+        artifactType: 'link',
+        canonicalName: 'example.com/checklists/launch',
+      }),
+    );
+    const linkCluster = clusters.find(
+      (cluster) =>
+        cluster.artifactType === 'link' &&
+        cluster.canonicalName === 'example.com/checklists/launch',
+    );
+    if (!linkCluster) throw new Error('expected link cluster');
+    await expect(
+      db
+        .select()
+        .from(artifactClusterMembers)
+        .where(eq(artifactClusterMembers.clusterId, linkCluster.id)),
+    ).resolves.toEqual([
+      expect.objectContaining({
+        role: 'related_context',
+        strength: 'semantic',
+        authoritative: false,
+      }),
+    ]);
+
+    const detail = await scope.getObject(object.id);
+    expect(detail?.connectedWork.links).toEqual([
+      expect.objectContaining({
+        canonicalUrl: 'https://example.com/checklists/launch?step=2',
+        displayUrl: 'example.com/checklists/launch',
+      }),
+    ]);
+
+    await expect(
+      scope.updateNote({
+        noteId: note.id,
+        body: 'Updated checklist: https://example.com/checklists/final?step=3',
+        actorUserId: USER_OWNER,
+      }),
+    ).resolves.toBe(true);
+    const detailAfterEdit = await scope.getObject(object.id);
+    expect(detailAfterEdit?.connectedWork.links).toEqual([
+      expect.objectContaining({
+        canonicalUrl: 'https://example.com/checklists/final?step=3',
+        displayUrl: 'example.com/checklists/final',
+      }),
+    ]);
+
+    await expect(
+      scope.updateNote({
+        noteId: note.id,
+        body: 'Updated checklist now lives in the internal launch tracker',
+        actorUserId: USER_OWNER,
+      }),
+    ).resolves.toBe(true);
+    const detailAfterDroppingLink = await scope.getObject(object.id);
+    expect(detailAfterDroppingLink?.connectedWork.links).toEqual([]);
+
+    await expect(scope.deleteNote({ noteId: note.id, actorUserId: USER_OWNER })).resolves.toBe(
+      true,
+    );
+    const detailAfterDelete = await scope.getObject(object.id);
+    expect(detailAfterDelete?.connectedWork.links).toEqual([]);
+  });
+
   it('accepts a suggested field change once and rejects unsupported suggestion fields', async () => {
     const scope = withTeam(db, TEAM_A, USER_OWNER).objects;
     const object = await scope.createObject({
@@ -845,6 +928,57 @@ describe('object scope — notes and suggestions', () => {
         visibility: 'team',
       },
     ]);
+    const [capturedFile] = await db
+      .insert(documents)
+      .values({
+        teamId: TEAM_A,
+        fileKind: 'captured',
+        ownerUserId: USER_OWNER,
+        name: 'dfk-whiteboard.png',
+        visibility: 'team',
+        sourceRawEventId: raw?.id ?? '',
+      })
+      .returning({ id: documents.id });
+    const [capturedVersion] = await db
+      .insert(documentVersions)
+      .values({
+        teamId: TEAM_A,
+        documentId: capturedFile?.id ?? '',
+        version: 1,
+        objectKey: 'team/captured/v1/dfk-whiteboard.png',
+        contentType: 'image/png',
+      })
+      .returning({ id: documentVersions.id });
+    await db
+      .update(documents)
+      .set({ currentVersionId: capturedVersion?.id ?? null })
+      .where(eq(documents.id, capturedFile?.id ?? ''));
+    const [linkCluster] = await db
+      .insert(artifactClusters)
+      .values({
+        teamId: TEAM_A,
+        artifactType: 'link',
+        canonicalName: 'example.com/dfk-pilot',
+        metadata: {
+          canonical_url: 'https://example.com/dfk-pilot',
+          display_url: 'example.com/dfk-pilot',
+          domain: 'example.com',
+        },
+      })
+      .returning({ id: artifactClusters.id });
+    await db.insert(artifactClusterMembers).values({
+      teamId: TEAM_A,
+      clusterId: linkCluster?.id ?? '',
+      rawEventId: raw?.id ?? '',
+      role: 'related_context',
+      strength: 'semantic',
+      metadata: {
+        canonical_name: 'example.com/dfk-pilot',
+        canonical_url: 'https://example.com/dfk-pilot',
+        display_url: 'example.com/dfk-pilot',
+        domain: 'example.com',
+      },
+    });
     const [suggestion, substringSuggestion] = await db
       .insert(agentSuggestions)
       .values([
@@ -925,6 +1059,15 @@ describe('object scope — notes and suggestions', () => {
     expect(detail?.connectedWork.documents).not.toContainEqual(
       expect.objectContaining({ name: 'ADFK parser notes.pdf' }),
     );
+    expect(detail?.connectedWork.links).toEqual([
+      expect.objectContaining({
+        canonicalUrl: 'https://example.com/dfk-pilot',
+        displayUrl: 'example.com/dfk-pilot',
+      }),
+    ]);
+    expect(detail?.connectedWork.capturedFiles).toEqual([
+      expect.objectContaining({ name: 'dfk-whiteboard.png', contentType: 'image/png' }),
+    ]);
   });
 
   it('does not surface fact-backed connected work from raw events hidden from the viewer', async () => {

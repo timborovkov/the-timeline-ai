@@ -1,6 +1,11 @@
 import { type Db, rawEvents } from '@timeline/db';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 
+import {
+  reconcileLinkArtifactsForRawEvent,
+  sourceMetadataWithLinks,
+} from '#src/conversational/link-artifacts.js';
+
 type DbTx = Parameters<Parameters<Db['transaction']>[0]>[0];
 type DbOrTx = Db | DbTx;
 
@@ -47,6 +52,8 @@ export async function insertCalendarRawEvents(
   const baseMetadata = {
     calendar_event_id: args.calendarEventId,
   };
+  const scheduledText = `Scheduled: ${args.title}`;
+  const startText = buildCalendarTimelineText(args);
 
   const [scheduledRow] = await tx
     .insert(rawEvents)
@@ -54,12 +61,15 @@ export async function insertCalendarRawEvents(
       teamId: args.teamId,
       authorUserId: args.userId,
       source: 'calendar',
-      contentText: `Scheduled: ${args.title}`,
+      contentText: scheduledText,
       occurredAt: new Date(),
       visibility: args.visibility,
       visibilityUserIds: args.visibilityUserIds,
       visibilityOwnerUserId: args.userId,
-      sourceMetadata: { ...baseMetadata, action: 'scheduled' },
+      sourceMetadata: sourceMetadataWithLinks(
+        { ...baseMetadata, action: 'scheduled' },
+        scheduledText,
+      ),
     })
     .onConflictDoNothing()
     .returning({ id: rawEvents.id });
@@ -86,12 +96,12 @@ export async function insertCalendarRawEvents(
       teamId: args.teamId,
       authorUserId: args.userId,
       source: 'calendar',
-      contentText: buildCalendarTimelineText(args),
+      contentText: startText,
       occurredAt: args.startAt,
       visibility: args.visibility,
       visibilityUserIds: args.visibilityUserIds,
       visibilityOwnerUserId: args.userId,
-      sourceMetadata: { ...baseMetadata, action: 'event' },
+      sourceMetadata: sourceMetadataWithLinks({ ...baseMetadata, action: 'event' }, startText),
     })
     .onConflictDoNothing()
     .returning({ id: rawEvents.id });
@@ -110,6 +120,22 @@ export async function insertCalendarRawEvents(
       )
       .limit(1);
     startAtId = existing[0]?.id;
+  }
+
+  if (scheduledId) {
+    await reconcileLinkArtifactsForRawEvent(tx, {
+      teamId: args.teamId,
+      rawEventId: scheduledId,
+      text: scheduledText,
+    });
+  }
+  if (startAtId) {
+    await reconcileLinkArtifactsForRawEvent(tx, {
+      teamId: args.teamId,
+      rawEventId: startAtId,
+      text: startText,
+      occurredAt: args.startAt,
+    });
   }
 
   return {

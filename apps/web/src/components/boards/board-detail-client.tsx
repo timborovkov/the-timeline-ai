@@ -51,6 +51,7 @@ interface Props {
   recommendedTypes: objects.ObjectType[];
   defaultLaneId: string | null;
   selectedItemId: string | null;
+  selectedObjectContext?: objects.ObjectDetail['connectedWork'] | null;
   history: boards.BoardItemChangeRow[];
   members: BoardMemberOption[];
   filters?: WorkFilterState;
@@ -93,6 +94,7 @@ export function BoardDetailClient({
   recommendedTypes,
   defaultLaneId,
   selectedItemId,
+  selectedObjectContext = null,
   history,
   members,
   filters = EMPTY_FILTERS,
@@ -334,6 +336,7 @@ export function BoardDetailClient({
             boardId={boardId}
             view={view}
             item={selectedItem}
+            connectedWork={selectedObjectContext}
             history={history}
             lanes={lanes}
             members={members}

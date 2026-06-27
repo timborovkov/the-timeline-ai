@@ -153,6 +153,11 @@ curl -F "url=https://&lt;ngrok-id&gt;.ngrok-free.app/api/telegram/webhook" \
           landed; group captures stay quiet to avoid channel noise. Rate-limited per Telegram user
           (10/min) because each <code>/ask</code> runs the agent against OpenRouter.
         </li>
+        <li>
+          Shared URLs in captured text are normalized into non-authoritative artifact evidence. The
+          canonical URL groups timeline context for the same link, while display-only URL text does
+          not merge separate resources that differ by meaningful query parameters.
+        </li>
       </ol>
       <p>
         For groups: have a team admin generate a <strong>group</strong> token, add the bot to a

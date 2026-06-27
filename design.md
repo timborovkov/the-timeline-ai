@@ -38,8 +38,8 @@ Use language that makes the evidence-derived operating model concrete:
   history.
 - **Artifact clusters** — the real-world work artifacts that collect related
   evidence across surfaces, such as a Telegram report, Sentry issue, GitHub PR,
-  contract signature, deal approval, or event-planning thread, while keeping
-  source authority separate from evidence association.
+  shared link, contract signature, deal approval, or event-planning thread,
+  while keeping source authority separate from evidence association.
 - **Approval-backed state** — durable object, task, calendar, relationship, and
   memory changes that came from evidence and passed a human review path.
 
@@ -680,7 +680,8 @@ key/value pairs.
 
 - Connected Work sits above Evidence as live context, not accepted memory. It
   uses compact grouped lists for open tasks, calendar, people/objects, boards,
-  pending approvals, recent history, timeline moments, and documents.
+  pending approvals, recent history, timeline moments, documents, shared links,
+  and captured files.
 - Repair Memory is a quiet header action. It queues focused object cleanup,
   fact-backed relationship proposals, and conservative missing-person bundles.
   It should not imply that rejected duplicate pairs or rejected relationship

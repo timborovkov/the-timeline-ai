@@ -65,6 +65,12 @@
       "import": "./dist/conversation-review/index.js",
       "default": "./dist/conversation-review/index.js"
     },
+    "./conversational/link-artifacts": {
+      "types": "./src/conversational/link-artifacts.ts",
+      "development": "./src/conversational/link-artifacts.ts",
+      "import": "./dist/conversational/link-artifacts.js",
+      "default": "./dist/conversational/link-artifacts.js"
+    },
     "./documents": {
       "types": "./src/documents/index.ts",
       "development": "./src/documents/index.ts",

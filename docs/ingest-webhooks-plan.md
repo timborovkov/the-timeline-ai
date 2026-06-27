@@ -45,6 +45,10 @@ authoritative sources that directly update canonical workspace state.
 - Each distinct webhook delivery is a separate immutable raw event.
 - Identical repeated deliveries from the same webhook inside a short dedup
   window are duplicate deliveries and should not create additional raw events.
+- URLs in textual payloads are normalized into non-authoritative link artifact
+  evidence. Duplicate delivery replay should repair missing link clusters or
+  members for the existing raw event instead of relying on first-pass enqueue
+  success.
 - Distinct same-webhook deliveries that arrive close together are ingest
   webhook bursts. Preserve each delivery, but allow timeline display and future
   evidence review to group the burst as one source moment.

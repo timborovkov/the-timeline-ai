@@ -19,6 +19,11 @@ import {
   CONVERSATIONAL_ATTACHMENT_LIMITS,
   extensionOf,
 } from '#src/conversational/attachments.js';
+import {
+  extractLinksFromText,
+  linkMetadata,
+  reconcileLinkArtifactsForRawEvent,
+} from '#src/conversational/link-artifacts.js';
 import { encryptJson, decryptJson, type EncryptedSecret } from '#src/crypto/secrets.js';
 import { buildDocumentObjectKey } from '#src/documents/object-key.js';
 import { childLogger } from '#src/logger.js';
@@ -683,6 +688,8 @@ async function handleMessageEvent(
     source_unverified: !route.linkedUserId,
     attachments: files.map(fileSummary),
   };
+  const links = extractLinksFromText(text);
+  if (links.length > 0) metadata.links = linkMetadata(links);
   if (route.conversationTitle) metadata.slack_channel_name = route.conversationTitle;
   if (isEdit)
     metadata.edits_event_id = await findRootSlackEventId(
@@ -707,7 +714,20 @@ async function handleMessageEvent(
     messageTs: ts,
   });
   const target =
-    inserted ?? (files.length > 0 ? await findEventBySlackEventId(deps.db, slackEventId) : null);
+    inserted ??
+    (files.length > 0 || links.length > 0
+      ? await findEventBySlackEventId(deps.db, slackEventId)
+      : null);
+  if (target && links.length > 0) {
+    await reconcileLinkArtifactsForRawEvent(deps.db, {
+      teamId: target.teamId,
+      rawEventId: target.id,
+      text,
+      occurredAt: slackTsToDate(eventTs),
+    }).catch((err: unknown) => {
+      log.warn({ err, rawEventId: target.id }, 'slack link artifact reconciliation failed');
+    });
+  }
   if (inserted) {
     if (text.trim()) await enqueueTextPipelines(deps, inserted);
   }

@@ -87,6 +87,8 @@ beforeEach(() => {
       boards: [],
       pendingApprovals: [],
       documents: [],
+      links: [],
+      capturedFiles: [],
     },
     newSinceLastVisit: 0,
     lastVisitedAt: null,

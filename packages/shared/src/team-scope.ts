@@ -34,6 +34,10 @@ import type { chatStructured } from '#src/llm/chat.js';
 import { createAuditScope } from '#src/audit/scope.js';
 import { createBoardScope } from '#src/boards/index.js';
 import { createCalendarScope } from '#src/calendar/scope.js';
+import {
+  reconcileLinkArtifactsForRawEvent,
+  sourceMetadataWithLinks,
+} from '#src/conversational/link-artifacts.js';
 import { documentPresentation } from '#src/documents/presentation.js';
 import { createDocumentScope } from '#src/documents/scope.js';
 import { createIntegrationScope } from '#src/integrations/scope.js';
@@ -300,20 +304,7 @@ export interface CoOccurringEntity {
 export interface EntityProfile {
   entity: {
     id: string;
-    type:
-      | 'person'
-      | 'company'
-      | 'project'
-      | 'topic'
-      | 'other'
-      | 'deal'
-      | 'vendor'
-      | 'incident'
-      | 'document'
-      | 'decision'
-      | 'hiring_loop'
-      | 'task'
-      | 'follow_up';
+    type: EntityType;
     canonicalName: string;
     aliases: string[];
     metadata: Record<string, unknown>;
@@ -2031,6 +2022,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
 
       async createEvent(input: CreateEventInput) {
         await ensureMember();
+        const contentText = input.contentText ?? null;
         const visibilityUserIds = await validateVisibilityPatch(
           {
             visibility: input.visibility ?? 'team',
@@ -2044,17 +2036,23 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
             teamId,
             authorUserId: input.authorUserId,
             source: input.source,
-            contentText: input.contentText ?? null,
+            contentText,
             contentAudioUrl: input.contentAudioUrl ?? null,
             occurredAt: input.occurredAt ?? new Date(),
             visibility: input.visibility ?? 'team',
             visibilityUserIds,
             visibilityOwnerUserId: input.visibilityOwnerUserId ?? input.authorUserId,
-            sourceMetadata: input.sourceMetadata ?? {},
+            sourceMetadata: sourceMetadataWithLinks(input.sourceMetadata ?? {}, contentText),
           })
           .returning();
         const row = rows[0];
         if (!row) throw new Error('Failed to create event');
+        await reconcileLinkArtifactsForRawEvent(db, {
+          teamId,
+          rawEventId: row.id,
+          text: contentText,
+          occurredAt: row.occurredAt,
+        });
         return row;
       },
 
@@ -2084,7 +2082,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
         if (visibility === 'specific_users') {
           throw new Error('specific_users visibility is not supported for email events');
         }
-        return db.transaction(async (tx) => {
+        const result = await db.transaction(async (tx) => {
           // Probe parent: in-reply-to first, then any reference we know about.
           let parentRootId: string | null = null;
           // Inherit the parent's unverified flag when threading. A child reply
@@ -2181,7 +2179,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
               visibility,
               visibilityUserIds: null,
               visibilityOwnerUserId: input.visibilityOwnerUserId ?? input.authorUserId,
-              sourceMetadata: composedMetadata,
+              sourceMetadata: sourceMetadataWithLinks(composedMetadata, input.contentText),
             })
             .onConflictDoNothing()
             .returning({ id: rawEvents.id, teamId: rawEvents.teamId });
@@ -2228,6 +2226,15 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
           }
           return { id: row.id, teamId: row.teamId, threadRootId: rootId, deduplicated: false };
         });
+        if (result) {
+          await reconcileLinkArtifactsForRawEvent(db, {
+            teamId,
+            rawEventId: result.id,
+            text: input.contentText,
+            occurredAt: input.occurredAt,
+          });
+        }
+        return result;
       },
 
       async listMembers() {

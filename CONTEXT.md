@@ -75,9 +75,9 @@ _Avoid_: Mention when the connection is indirect
 
 **Connected Work**:
 The source-backed work context shown around one workspace object, such as
-tasks, calendar events, documents, boards, timeline moments, fact-backed
-people/object context, or pending approvals that mention, target, or materially
-involve that object.
+tasks, calendar events, documents, shared links, captured files, boards,
+timeline moments, fact-backed people/object context, or pending approvals that
+mention, target, or materially involve that object.
 Connected Work can be useful before it becomes object memory; it should not be
 presented as an accepted object relationship unless a teammate accepts that
 relationship. Connected Work is computed from current evidence for immediate
@@ -188,8 +188,8 @@ A set of derived workspace artifacts that represent the same real-world
 commitment, object, schedule, decision, or follow-up across product surfaces.
 An artifact cluster can include pending approvals, workspace objects, tasks,
 calendar events, integration-owned objects, conversation evidence, signatures,
-payments, releases, and other impact context that should stay mutually
-consistent.
+payments, shared links, releases, and other impact context that should stay
+mutually consistent.
 An artifact cluster can exist before a canonical artifact exists; newer evidence
 can be recorded alongside pending create approvals when it clearly refers to the
 same real-world artifact; suggestion reconciliation decides whether a pending
@@ -198,10 +198,10 @@ become canonical artifacts even when completion arrives before the create
 approval is accepted; trivial completed work can remain raw evidence with no
 active proposal.
 Evidence association and lifecycle authority are separate: a Telegram report,
-Sentry issue, GitHub PR, signed contract PDF, deal approval, or party venue note
-can all belong to the same cluster without each source being allowed to change
-canonical state. Lifecycle updates require either the authoritative source for
-that owned artifact or a human-approved proposal.
+Sentry issue, GitHub PR, shared URL, signed contract PDF, deal approval, or
+party venue note can all belong to the same cluster without each source being
+allowed to change canonical state. Lifecycle updates require either the
+authoritative source for that owned artifact or a human-approved proposal.
 _Avoid_: Conversation, thread, timeline moment when discussing the consistency boundary
 
 **Workspace Object**:
