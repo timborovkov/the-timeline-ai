@@ -199,6 +199,9 @@ boundaries.
 - [`docs/object-summaries-plan.md`](./docs/object-summaries-plan.md) —
   implementation plan for grounded generated object briefs across object pages,
   search, embeddings, and chat.
+- [`docs/reconciliation-engine-plan.md`](./docs/reconciliation-engine-plan.md) —
+  replacement architecture for unifying source evidence, artifact clustering,
+  approval-backed memory, provider authority, and live reconciliation evals.
 - [`docs/integration-ingest-plan.md`](./docs/integration-ingest-plan.md) —
   first-party ingestion implementation plan for work systems, including the
   implemented native providers and future waves.

@@ -80,6 +80,10 @@ pages. Full phased plan with file-level tasks:
 
 ## Workspace Reconciliation
 
+- [ ] Build the replacement reconciliation engine architecture in
+      [docs/reconciliation-engine-plan.md](docs/reconciliation-engine-plan.md):
+      normalized evidence, artifact resolution, authority policy,
+      output-backed approvals, and deterministic/live reconciliation evals.
 - [ ] Wire workspace reconciliation into future authoritative external sync
       paths when calendar/provider imports directly update artifacts they own.
 - [ ] Design cross-source evidence reviews for generic ingest webhook events so
