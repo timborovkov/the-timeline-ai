@@ -79,6 +79,9 @@ vi.mock('@/components/work-filter-bar', () => ({
 
 const { default: TasksPage } = await import('./page.js');
 
+const NEWER_TASK_ID = '00000000-0000-4000-8000-000000000001';
+const SELECTED_TASK_ID = '00000000-0000-4000-8000-000000000002';
+
 beforeEach(() => {
   vi.clearAllMocks();
   fakes.auth.mockResolvedValue({ user: { id: 'user-1' } });
@@ -245,13 +248,13 @@ describe('TasksPage', () => {
 
   it('adds a selected older task to the initial board window', async () => {
     fakes.listObjects.mockImplementation((filter: Record<string, unknown>) =>
-      filter.id === 'selected-task'
-        ? Promise.resolve([taskRow({ id: 'selected-task', canonicalName: 'Selected older task' })])
-        : Promise.resolve([taskRow({ id: 'newer-task', canonicalName: 'Newer' })]),
+      filter.id === SELECTED_TASK_ID
+        ? Promise.resolve([taskRow({ id: SELECTED_TASK_ID, canonicalName: 'Selected older task' })])
+        : Promise.resolve([taskRow({ id: NEWER_TASK_ID, canonicalName: 'Newer' })]),
     );
 
     const html = renderToStaticMarkup(
-      await TasksPage({ searchParams: Promise.resolve({ task: 'selected-task' }) }),
+      await TasksPage({ searchParams: Promise.resolve({ task: SELECTED_TASK_ID }) }),
     );
 
     expect(html).toContain('Selected older task');
@@ -259,7 +262,7 @@ describe('TasksPage', () => {
     expect(fakes.listObjects).toHaveBeenCalledWith({
       type: 'task',
       archived: false,
-      id: 'selected-task',
+      id: SELECTED_TASK_ID,
       limit: 1,
     });
     expect(fakes.getObject).not.toHaveBeenCalled();
@@ -269,7 +272,7 @@ describe('TasksPage', () => {
     fakes.countObjects.mockResolvedValue(0);
     fakes.getObject.mockResolvedValue(
       taskRow({
-        id: 'selected-task',
+        id: SELECTED_TASK_ID,
         canonicalName: 'Selected done task',
         status: 'done',
       }),
@@ -277,7 +280,7 @@ describe('TasksPage', () => {
 
     const html = renderToStaticMarkup(
       await TasksPage({
-        searchParams: Promise.resolve({ task: 'selected-task', status: 'todo' }),
+        searchParams: Promise.resolve({ task: SELECTED_TASK_ID, status: 'todo' }),
       }),
     );
 
@@ -285,7 +288,7 @@ describe('TasksPage', () => {
       type: 'task',
       archived: false,
       status: ['todo'],
-      id: 'selected-task',
+      id: SELECTED_TASK_ID,
       limit: 1,
     });
     expect(html).toContain('No tasks match this filter');
@@ -299,7 +302,7 @@ describe('TasksPage', () => {
     fakes.countObjects.mockResolvedValue(0);
     fakes.getObject.mockResolvedValue(
       taskRow({
-        id: 'selected-task',
+        id: SELECTED_TASK_ID,
         canonicalName: 'Priority task',
         priority: 2,
       }),
@@ -307,7 +310,7 @@ describe('TasksPage', () => {
 
     const html = renderToStaticMarkup(
       await TasksPage({
-        searchParams: Promise.resolve({ task: 'selected-task', q: '2' }),
+        searchParams: Promise.resolve({ task: SELECTED_TASK_ID, q: '2' }),
       }),
     );
 
@@ -315,7 +318,7 @@ describe('TasksPage', () => {
       type: 'task',
       archived: false,
       query: '2',
-      id: 'selected-task',
+      id: SELECTED_TASK_ID,
       limit: 1,
     });
     expect(html).toContain('No tasks match this filter');

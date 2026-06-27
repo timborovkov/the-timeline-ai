@@ -535,7 +535,10 @@ function objectListConditions(scope: TeamScopeCore, filter: ObjectCountFilter = 
   const conds = [eq(entities.teamId, scope.teamId), isNull(entities.mergedIntoId)];
 
   const ids = toArray(filter.id);
-  if (ids && ids.length > 0) conds.push(inArray(entities.id, ids));
+  if (ids && ids.length > 0) {
+    const validIds = ids.filter((id) => UUID_RE.test(id));
+    conds.push(validIds.length > 0 ? inArray(entities.id, validIds) : sql`false`);
+  }
 
   const types = toArray(filter.type);
   if (types && types.length > 0) conds.push(inArray(entities.type, types));

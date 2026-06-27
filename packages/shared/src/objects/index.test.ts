@@ -338,6 +338,28 @@ describe('object scope — team ownership and audit behavior', () => {
 
     await expect(
       scope.listObjects({
+        id: 'not-a-uuid',
+        type: 'task',
+        query: 'nordics',
+      }),
+    ).resolves.toEqual([]);
+    await expect(
+      scope.countObjects({
+        id: 'not-a-uuid',
+        type: 'task',
+        query: 'nordics',
+      }),
+    ).resolves.toBe(0);
+    await expect(
+      scope.listObjects({
+        id: ['not-a-uuid', matching.id],
+        type: 'task',
+        query: 'nordics',
+      }),
+    ).resolves.toEqual([expect.objectContaining({ id: matching.id })]);
+
+    await expect(
+      scope.listObjects({
         type: 'task',
         priorityNull: true,
         dueNull: true,
