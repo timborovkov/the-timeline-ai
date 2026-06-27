@@ -845,6 +845,29 @@ describe('object scope — notes and suggestions', () => {
     ]);
   });
 
+  it('accepts local phone identity facets with a leading trunk zero', async () => {
+    const scope = withTeam(db, TEAM_A, USER_OWNER).objects;
+    const person = await scope.createObject({
+      type: 'person',
+      canonicalName: 'Alan Turing',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+
+    await scope.createIdentityFacet({
+      entityId: person.id,
+      kind: 'phone',
+      value: '07700 900123',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+
+    await expect(scope.listIdentityFacets(person.id)).resolves.toEqual([
+      expect.objectContaining({
+        kind: 'phone',
+        normalizedValue: '07700900123',
+      }),
+    ]);
+  });
+
   it('accepts a suggested field change once and rejects unsupported suggestion fields', async () => {
     const scope = withTeam(db, TEAM_A, USER_OWNER).objects;
     const object = await scope.createObject({
