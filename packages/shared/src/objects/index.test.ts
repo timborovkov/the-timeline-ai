@@ -741,6 +741,31 @@ describe('object scope — notes and suggestions', () => {
       }),
     ]);
 
+    await expect(
+      scope.updateNote({
+        noteId: note.id,
+        body: 'Updated checklist: https://example.com/checklists/final?step=3',
+        actorUserId: USER_OWNER,
+      }),
+    ).resolves.toBe(true);
+    const detailAfterEdit = await scope.getObject(object.id);
+    expect(detailAfterEdit?.connectedWork.links).toEqual([
+      expect.objectContaining({
+        canonicalUrl: 'https://example.com/checklists/final?step=3',
+        displayUrl: 'example.com/checklists/final',
+      }),
+    ]);
+
+    await expect(
+      scope.updateNote({
+        noteId: note.id,
+        body: 'Updated checklist now lives in the internal launch tracker',
+        actorUserId: USER_OWNER,
+      }),
+    ).resolves.toBe(true);
+    const detailAfterDroppingLink = await scope.getObject(object.id);
+    expect(detailAfterDroppingLink?.connectedWork.links).toEqual([]);
+
     await expect(scope.deleteNote({ noteId: note.id, actorUserId: USER_OWNER })).resolves.toBe(
       true,
     );

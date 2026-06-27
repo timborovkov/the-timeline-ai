@@ -1576,7 +1576,10 @@ async function getConnectedWork(
           .limit(40)
       : Promise.resolve([]),
     db
-      .select({ id: rawEvents.id })
+      .select({
+        id: rawEvents.id,
+        noteId: sql<string>`${rawEvents.sourceMetadata} ->> 'note_id'`,
+      })
       .from(rawEvents)
       .innerJoin(
         objectNotes,
@@ -1603,6 +1606,15 @@ async function getConnectedWork(
       .orderBy(desc(rawEvents.occurredAt), desc(rawEvents.id))
       .limit(100),
   ]);
+
+  const currentNoteRawEventRows = Array.from(
+    noteRawEventRows
+      .reduce((rowsByNoteId, row) => {
+        if (!rowsByNoteId.has(row.noteId)) rowsByNoteId.set(row.noteId, { id: row.id });
+        return rowsByNoteId;
+      }, new Map<string, { id: string }>())
+      .values(),
+  );
 
   const taskIds = new Set<string>();
   for (const row of relationshipTaskRows) taskIds.add(row.taskId);
@@ -1760,7 +1772,7 @@ async function getConnectedWork(
     new Set([
       ...factRawEventIds,
       ...filteredTimelineRows.map((row) => row.id),
-      ...noteRawEventRows.map((row) => row.id),
+      ...currentNoteRawEventRows.map((row) => row.id),
     ]),
   );
   const [linkRows, capturedFileRows] =
