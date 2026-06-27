@@ -732,6 +732,14 @@ describe('object scope — notes and suggestions', () => {
         authoritative: false,
       }),
     ]);
+
+    const detail = await scope.getObject(object.id);
+    expect(detail?.connectedWork.links).toEqual([
+      expect.objectContaining({
+        canonicalUrl: 'https://example.com/checklists/launch?step=2',
+        displayUrl: 'example.com/checklists/launch',
+      }),
+    ]);
   });
 
   it('accepts a suggested field change once and rejects unsupported suggestion fields', async () => {

@@ -1404,6 +1404,7 @@ async function getConnectedWork(
     boardRows,
     pendingApprovalRows,
     documentRows,
+    noteRawEventRows,
   ] = await Promise.all([
     db
       .select({ taskId: entityRelationships.fromEntityId })
@@ -1574,6 +1575,24 @@ async function getConnectedWork(
           .orderBy(desc(documents.updatedAt), desc(documents.id))
           .limit(40)
       : Promise.resolve([]),
+    db
+      .select({ id: rawEvents.id })
+      .from(rawEvents)
+      .where(
+        and(
+          eq(rawEvents.teamId, scope.teamId),
+          eq(rawEvents.source, 'system'),
+          rawEventVisibility(scope),
+          sql`COALESCE(${rawEvents.sourceMetadata} ->> 'deleted', 'false') <> 'true'`,
+          sql`${rawEvents.sourceMetadata} ->> 'entity_id' = ${object.id}`,
+          inArray(sql`${rawEvents.sourceMetadata} ->> 'kind'`, [
+            'object_note_create',
+            'object_note_update',
+          ]),
+        ),
+      )
+      .orderBy(desc(rawEvents.occurredAt), desc(rawEvents.id))
+      .limit(100),
   ]);
 
   const taskIds = new Set<string>();
@@ -1729,7 +1748,11 @@ async function getConnectedWork(
     ).values(),
   ).slice(0, 8);
   const relatedRawEventIds = Array.from(
-    new Set([...factRawEventIds, ...filteredTimelineRows.map((row) => row.id)]),
+    new Set([
+      ...factRawEventIds,
+      ...filteredTimelineRows.map((row) => row.id),
+      ...noteRawEventRows.map((row) => row.id),
+    ]),
   );
   const [linkRows, capturedFileRows] =
     relatedRawEventIds.length > 0

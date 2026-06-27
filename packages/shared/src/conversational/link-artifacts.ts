@@ -1,4 +1,5 @@
-import { type Db } from '@timeline/db';
+import { artifactClusterMembers, artifactClusters, type Db } from '@timeline/db';
+import { and, eq, inArray } from 'drizzle-orm';
 
 import { reconcileArtifactEvidence, type ArtifactAnchorInput } from '#src/artifacts/index.js';
 
@@ -286,4 +287,29 @@ export async function reconcileLinkArtifactsForRawEvent(
       },
     });
   }
+}
+
+export async function refreshLinkArtifactsForRawEvent(
+  db: DbOrTx,
+  input: Parameters<typeof reconcileLinkArtifactsForRawEvent>[1],
+): Promise<void> {
+  await db.delete(artifactClusterMembers).where(
+    and(
+      eq(artifactClusterMembers.teamId, input.teamId),
+      eq(artifactClusterMembers.rawEventId, input.rawEventId),
+      inArray(
+        artifactClusterMembers.clusterId,
+        db
+          .select({ id: artifactClusters.id })
+          .from(artifactClusters)
+          .where(
+            and(
+              eq(artifactClusters.teamId, input.teamId),
+              eq(artifactClusters.artifactType, 'link'),
+            ),
+          ),
+      ),
+    ),
+  );
+  await reconcileLinkArtifactsForRawEvent(db, input);
 }
