@@ -1,3 +1,5 @@
+<!-- /autoplan restore point: /Users/timborovkov/.gstack/projects/timborovkov-the-timeline-ai/tim-redesign-timeline-ui-autoplan-restore-20260627-230856.md -->
+
 # Timeline Moments Redesign Plan
 
 ## Goal
@@ -60,6 +62,39 @@ The important boundary: moments are a **projection**, not a new source of truth.
 Raw events remain the receipt. Artifact clusters and approval-backed workspace
 state remain the durable interpretation layer. Moment presentation makes the
 record readable and retrievable.
+
+### Current Implementation Constraints
+
+The repo is not starting from zero. The first implementation pass must respect
+the behavior already present in `apps/web/src/lib/timeline-moments.ts`,
+`apps/web/src/lib/timeline-page.ts`, `/api/timeline`, and shared agent
+retrieval.
+
+Current useful pieces:
+
+- `buildTimelineMoments()` already groups raw events in the web app.
+- `collectTimelinePage()` already scans additional raw pages for impact
+  filtering.
+- `/api/timeline` already returns raw events plus impact, artifact, author,
+  audio, and captured-file hydration.
+- Shared agent retrieval already has raw event search/list/get paths through
+  `withTeam(...).timeline`.
+
+Current constraints to fix before moments become the canonical UI projection:
+
+- The web grouping key includes the event date, so logical provider objects can
+  split across midnight or timezone boundaries.
+- Pagination is raw-event based, so a moment can be split or duplicated when
+  events for the same group land on different pages.
+- Focused-event loading includes the focused raw event, but not necessarily the
+  rest of its deterministic group.
+- Moment semantics live in `apps/web`, while agents, digests, updates, and
+  outbound MCP need the same projection from `packages/shared`.
+- Existing agent tools cite raw event IDs only; moment IDs are not yet stable
+  retrieval handles.
+
+The first milestone is therefore a refactor and hardening pass, not a greenfield
+rewrite.
 
 ## Overlaps And Ownership
 
@@ -259,6 +294,16 @@ interface TimelineMoment {
 The current `summary` can remain during migration, but the UI should move to
 `title`, `subtitle`, and `preview`.
 
+Short-term moment IDs must be deterministic but treated as presentation handles.
+They can be derived from team-safe grouping inputs, such as:
+
+```text
+moment:v1:{sourceFamily}:{groupingStrategy}:{canonicalGroupKey}:{visibleSourceEventHash}
+```
+
+Do not use raw provider payload text in the ID. Do not make IDs depend on AI
+wording.
+
 ### Medium-Term: Persisted Moment Presentation
 
 Persist only presentation metadata that is expensive or AI-generated:
@@ -300,6 +345,22 @@ This adapter can live in `apps/web/src/lib/timeline-moments.ts` first, then move
 to `packages/shared` before agents, digests, workers, or outbound MCP use the
 same projection. The UI should not become the owner of timeline semantics.
 
+Each adapter must also ship fixtures that cover:
+
+- one-event groups
+- high-volume burst groups
+- duplicate/replayed events
+- missing grouping metadata
+- events crossing a page boundary
+- events crossing midnight in the team timezone
+- private/specific-user visibility variants
+- edited/deleted/tombstoned source material when the source supports it
+- malformed provider payloads
+- future unknown event types from the same provider
+
+The fixture contract is part of the source adapter contract. A new high-volume
+source is not ready until it proves it can avoid flooding the default timeline.
+
 ## Grouping Pipeline
 
 The moment-building pipeline should run in this order:
@@ -327,6 +388,11 @@ Evidence: 3 visible events
 
 Do not show "5 events, 2 hidden" unless the product explicitly has a redaction
 language for that viewer.
+
+Visibility is also part of cache identity. Any persisted presentation cache must
+be partitioned by the exact visible source event set, not only by provider
+object ID. A team-visible summary generated from team-visible evidence cannot
+reuse wording generated from a private or specific-user event set.
 
 ### Step 2: Deterministic Source Grouping
 
@@ -370,6 +436,26 @@ Generate title/subtitle/preview in this order:
 2. Artifact title or object title.
 3. AI-generated presentation cache.
 4. Safe fallback: current source label plus summarized event content.
+
+Presentation text is valid only for the event set and visibility scope that
+generated it. Visibility changes, tombstones, deleted source material, changed
+artifact links, or impact hydration changes must invalidate cached AI wording
+before the next visible response uses it.
+
+## Moment Invariants
+
+Every implementation slice must preserve these invariants:
+
+| Invariant | Requirement | Why |
+| --- | --- | --- |
+| Source truth | Every moment can expand to visible raw event IDs. | Auditability and citations. |
+| Team isolation | Moment queries run behind `withTeam(db, teamId, userId)`. | Prevents cross-team leaks. |
+| Visibility safety | Hidden events never affect title, summary, count, impact, or related chips. | Prevents privacy leaks through aggregation. |
+| Determinism | Group membership is decided before AI runs. | Keeps AI from inventing history. |
+| Stable paging | A deterministic source cluster appears on one page, not split across pages. | Avoids duplicate or partial moments. |
+| Fallback | Timeline renders with AI unavailable. | Keeps core archive usable. |
+| Raw escape hatch | Source events mode remains available. | Supports audit/debug workflows. |
+| Agent parity | Agent results cite the same raw events the UI inspector shows. | Avoids two competing histories. |
 
 ## Companion Work
 
@@ -477,6 +563,31 @@ Add a collapsed inspector/debug area or dev-only diagnostics showing:
 
 This should be visible enough for support and dogfooding without turning the
 main row back into a technical log.
+
+Minimum metrics and logs:
+
+| Signal | Purpose |
+| --- | --- |
+| `timeline.moments.returned_count` | Tracks default row volume. |
+| `timeline.moments.raw_events_scanned_count` | Catches expensive collectors. |
+| `timeline.moments.raw_to_moment_ratio` | Measures whether bundling actually reduces noise. |
+| `timeline.moments.boundary_overfetch_count` | Finds page-boundary grouping pressure. |
+| `timeline.moments.scan_cap_hit_count` | Finds huge groups or bad grouping keys. |
+| `timeline.moments.missing_grouping_metadata_count` by provider/event type | Drives provider adapter fixes. |
+| `timeline.moments.ai_cache_hit_count` / `miss_count` / `stale_count` | Explains summary latency and cost. |
+| `timeline.moments.visibility_cache_partition_count` | Confirms cache partitioning is active. |
+| `timeline.moments.raw_mode_switch_count` | Shows when users distrust or need the raw log. |
+| `timeline.moments.agent_expansion_count` | Shows whether agents can retrieve moments before raw evidence. |
+
+Every bad-grouping support report should be answerable from a moment ID:
+
+- grouping version
+- source adapter version
+- visible raw event IDs
+- visible source event hash
+- boundary/scan-cap diagnostics
+- AI cache key/version when present
+- fallback reason when deterministic/AI presentation was weak
 
 ## Source-Specific Rules
 
@@ -896,6 +1007,27 @@ Regenerate AI presentation when:
 
 Do not regenerate on every page load.
 
+Persisted AI presentation must store enough provenance to prove the text was
+generated from the same evidence the viewer can inspect:
+
+```ts
+interface MomentPresentationCacheKey {
+  teamId: string;
+  momentKey: string;
+  visibilityScopeHash: string;
+  visibleSourceEventIdsHash: string;
+  visibleSourceContentHash: string;
+  impactHydrationHash: string;
+  artifactClusterHash: string;
+  promptVersion: string;
+  model: string;
+}
+```
+
+The cache may be shared across users only when the visible event set and
+visibility scope hash are identical. Otherwise regenerate or fall back to
+deterministic text.
+
 ## Agent Access And Retrieval
 
 The reworked timeline should become a retrieval surface for chat agents and
@@ -911,6 +1043,7 @@ the existing `withTeam(...).timeline` module once the projection moves out of
 ```ts
 interface TimelineMomentSearchResult {
   momentId: string;
+  version: 'timeline_moment.v1';
   title: string;
   summary: string;
   occurredAt: string;
@@ -946,6 +1079,10 @@ Agents should not receive:
 - AI-generated summaries without the underlying citation set
 - unfenced external/MCP content
 
+Moment IDs are retrieval handles, not citations. Agent answers should cite raw
+events, documents, tasks, calendar rows, or objects. A moment citation is
+acceptable only as a UI deep link paired with the underlying raw evidence IDs.
+
 ### Retrieval Behavior
 
 Moment retrieval should sit above raw event retrieval:
@@ -978,6 +1115,11 @@ The exact names can follow existing tool conventions, but the separation matters
 agents should not have to choose between "too much raw log" and "uncited
 summary."
 
+Migration default: add a new `search_timeline_moments` tool family instead of
+overloading existing raw event tools first. Once the moment contract is stable,
+the old tools may accept `mode='events' | 'moments'` for compatibility, but
+tool names should keep the audit path explicit.
+
 ### Digests, Handoffs, And Updates
 
 Daily digests, stakeholder updates, handoffs, and object summaries should be
@@ -1009,6 +1151,13 @@ Agent evals should include pairs that prove moments improve answer quality:
 - raw-event audit questions should still find the exact original events
 - private events should not leak through moment summaries or counts
 
+Add eval assertions for citations:
+
+- a moment-backed answer includes raw event citations for claims
+- a summary-only answer without raw evidence is considered a failure
+- an audit/debug question intentionally falls back to raw event search
+- an outbound MCP bearer key sees only team-visible moment evidence
+
 ## UI Redesign
 
 ### Moment Row Anatomy
@@ -1027,6 +1176,18 @@ Each row should have:
 
 Provider event type and raw object IDs should not appear in the row unless the
 user is in Source events mode.
+
+State matrix:
+
+| State | Row behavior | Inspector behavior |
+| --- | --- | --- |
+| Default | Title, subtitle, preview, impact, evidence count. | Closed. |
+| Hover | Subtle row background and rail/source marker emphasis. | Unchanged. |
+| Keyboard focus | Visible focus ring around the row action. | Unchanged until activated. |
+| Selected | Left signal bar, stable background, `aria-current`/selected state. | Opens and focuses first inspector heading on keyboard activation. |
+| Loading AI text | Deterministic title with quiet "summarizing" status only if useful. | Shows deterministic evidence immediately. |
+| AI unavailable | Deterministic fallback, no blocking skeleton. | Technical details can show fallback reason. |
+| Error/sync failure | Status chip in row, not raw provider error text. | Error details under Technical details. |
 
 ### Visual Treatment
 
@@ -1056,6 +1217,20 @@ Inspector default order:
 
 Source evidence cards should be capped with overflow. Long raw source payloads
 open a quick-view dialog before navigating.
+
+Accessibility requirements:
+
+- The timeline remains an ordered list of list items.
+- The inspector remains an `<aside aria-label="Inspector">`.
+- Row activation uses a button or link with a clear accessible name based on the
+  moment title and time range.
+- Escape closes the inspector and restores focus to the selected row.
+- On mobile, the inspector becomes a dismissible sheet with the same source
+  evidence order and focus restoration.
+- Technical details are collapsed by default but reachable by keyboard and
+  screen reader.
+- Long words, provider IDs, URLs, and multilingual text wrap without horizontal
+  page scrolling.
 
 ### Empty, Loading, Error
 
@@ -1102,6 +1277,29 @@ siblings derived from the same `packages/shared` projection. The web API can
 include UI hydration such as signed audio URLs and captured-file previews; agent
 retrieval should include citation snippets and structured filters.
 
+Version all moment DTOs. The first server response should identify both the API
+shape and the grouping algorithm:
+
+```ts
+interface TimelineMomentsPage {
+  version: 'timeline_moments_page.v1';
+  groupingVersion: 'timeline_grouping.v1';
+  mode: 'moments';
+  moments: TimelineMomentDto[];
+  rawEventsById: Record<string, TimelineEvent>;
+  nextCursor: string | null;
+  diagnostics?: TimelineMomentDiagnostics;
+  hydration: {
+    authors: Record<string, Author>;
+    audioUrls: Record<string, string>;
+    capturedFiles: Record<string, TimelineCapturedFile[]>;
+  };
+}
+```
+
+The diagnostics field should be omitted in normal production responses unless a
+support/debug flag is present.
+
 ### Pagination
 
 Moment pagination is harder than event pagination. A page of 50 raw events may
@@ -1117,6 +1315,29 @@ Rules:
 - never split a source cluster across pages when the group key is known
 - if a group is huge, show one moment and cap evidence in the inspector
 
+Collector requirements:
+
+1. Fetch raw events ordered by occurrence time.
+2. Build candidate groups from the scanned window.
+3. If the first or last candidate group might continue outside the scanned
+   window, overfetch until the boundary is closed or the raw scan cap is hit.
+4. Return complete moments up to the target count.
+5. Advance the cursor to the first raw event after the final returned complete
+   group.
+6. If the cap is hit before a boundary closes, return a capped huge-group
+   moment with a diagnostic flag and keep the raw-event escape hatch.
+
+Tests must cover:
+
+- a GitHub PR group split across two raw pages
+- a Telegram burst crossing the page boundary
+- a source cluster crossing midnight in the team timezone
+- a focused raw event whose siblings are outside the first fetched page
+- a huge group that reaches the scan cap
+- an impact filter that requires scanning multiple raw pages
+
+Do not expose a moment endpoint to agents until these boundary tests pass.
+
 ## Rollout Plan
 
 ### M0: Fit And Dependency Prep
@@ -1131,16 +1352,22 @@ Work:
 
 - Confirm this plan is the active timeline UX plan.
 - Cross-link or update agent/integration docs when implementation starts.
-- Decide whether moment search is a new agent tool family or a mode on existing
-  timeline search.
+- Start moment search as a new agent tool family, then evaluate a compatibility
+  `mode` on existing timeline search only after the moment contract is stable.
 - Identify provider metadata gaps for GitHub, Linear, Monday.com, Slack, Sentry,
   and generic webhooks.
+- Inventory current `buildTimelineMoments()` behavior and mark which existing
+  tests should be preserved, rewritten, or promoted into shared-package tests.
+- Add a feature flag or query-gated preview path for the server-built moment
+  response before making it the default.
 
 Acceptance:
 
 - No stale UX plan references remain.
 - Implementation issues can be sliced by UI, shared projection, provider
   metadata, and agent retrieval.
+- There is a rollback path to the current client-computed moment list and source
+  event mode.
 
 ### M1: Presentation Contract And Deterministic Titles
 
@@ -1184,11 +1411,16 @@ Work:
 - Add generic provider object grouping fallback.
 - Add provider metadata tests for grouping-critical fields.
 - Update seeded demo events if needed so local screenshots demonstrate bundling.
+- Add a provider fixture matrix for GitHub, Linear/Jira-style issue trackers,
+  Sentry/Datadog incidents, CRM objects, support tickets, document/design
+  updates, and generic webhooks.
 
 Acceptance:
 
 - CI runs and PR updates collapse into meaningful PR/workflow moments.
 - Replayed or duplicate events do not duplicate visible moments.
+- A provider event with missing grouping metadata falls back gracefully and emits
+  a diagnostic instead of flooding the default timeline silently.
 
 ### M3: Timeline Modes And Advanced Source Event View
 
@@ -1227,12 +1459,16 @@ Work:
   generic webhook groups.
 - Cache by source-event hash and prompt version.
 - Show deterministic fallback while cache is missing.
+- Partition cache entries by visible source event set and visibility scope.
+- Invalidate cached wording on visibility, tombstone/deletion, source content,
+  impact hydration, artifact cluster, model, or prompt-version changes.
 
 Acceptance:
 
 - Timeline works without model availability.
 - AI text is cited and never required for grouping correctness.
 - Prompt tests or eval fixtures cover representative sources.
+- Private/specific-user evidence cannot influence a team-visible cached summary.
 
 ### M5: Cross-Source Related Evidence
 
@@ -1272,6 +1508,9 @@ Work:
   existing tool names to the same shape.
 - Keep raw event search available for audit/debug questions.
 - Ensure MCP output fencing and visibility boundaries are preserved.
+- Add moment DTO versioning and raw-event citation expansion.
+- Keep moment IDs out of final answer citations unless paired with raw event,
+  document, task, object, or calendar citations.
 
 Acceptance:
 
@@ -1280,6 +1519,8 @@ Acceptance:
 - Slack/Telegram/background agents can adopt the same retrieval layer without
   duplicating dashboard-only logic.
 - `pnpm test:eval` covers moment retrieval quality and privacy boundaries.
+- Outbound MCP timeline tools return only team-visible moment evidence and can
+  expand to raw events for audit.
 
 ### M7: QA, Polish, And Documentation Sync
 
@@ -1293,6 +1534,34 @@ Work:
   API/server projection changes.
 - Update `design.md` if the visual language changes beyond existing Timeline
   rules.
+- Run a feature-flagged comparison against the old timeline: same visible raw
+  event set, fewer default rows, no lost audit evidence.
+- Add lightweight observability before rollout so support can diagnose bad
+  grouping from a moment ID.
+
+Acceptance:
+
+- Moments are enabled for dogfooding behind a flag before broad rollout.
+- A one-command rollback or config rollback restores the previous raw-event
+  backed UI path.
+- The release note names the raw event escape hatch and agent retrieval change.
+
+### M8: Rollout And Measurement
+
+Work:
+
+- Enable for internal users or a single team first.
+- Compare row-count reduction, inspector opens, raw-event mode switches, search
+  success, and agent citation quality.
+- Monitor missing metadata diagnostics by provider.
+- Monitor privacy/cache invalidation paths for hidden-event leakage regressions.
+
+Acceptance:
+
+- Default row count drops without increasing raw-event mode usage for normal
+  tasks.
+- Support can explain every bad grouping report from diagnostics.
+- No privacy, citation, or team-isolation regression is found during dogfooding.
 
 ## Edge Cases
 
@@ -1413,6 +1682,9 @@ Add or extend tests for:
 - malformed metadata fallbacks
 - agent-facing moment search and expansion
 - privacy-safe moment retrieval for private/specific-user events
+- server-built moment pagination and raw cursor stability
+- AI cache partitioning and invalidation inputs
+- source adapter fixture matrices for every high-volume source
 
 Primary files:
 
@@ -1429,11 +1701,15 @@ Cover:
 - default Moments view
 - Source events mode
 - inspector open/close
+- keyboard open/close and focus restoration
+- selected row state with inspector open
 - huge evidence overflow
 - mobile timeline layout
+- mobile inspector sheet behavior
 - long provider object labels
 - multilingual chat thread
 - transcript unavailable state
+- AI fallback, stale, and unavailable states
 
 ### Eval Tests
 
@@ -1443,6 +1719,33 @@ answer synthesis behavior changes.
 Moment-specific evals should prove that chat agents prefer bundled moments for
 normal questions, expand raw evidence for citations, and fall back to raw event
 search for audit/debug prompts.
+
+Eval failure examples:
+
+- an answer cites only an AI moment summary
+- a hidden/private event changes a team-visible answer
+- repeated CI events outrank the PR/review state they support
+- a raw audit question loses exact event ordering or provider metadata
+- outbound MCP returns evidence outside team visibility
+
+### Fixture Matrix
+
+Maintain a fixture table for current and future sources:
+
+| Source family | Required grouping fixtures |
+| --- | --- |
+| Web notes | one note, parented notes, repeated captures, long pasted text, attachments |
+| Telegram | 15-minute burst, multiple senders, parent raw event, long multilingual text, hidden/private message variant |
+| Slack | channel thread, unthreaded burst, edited/deleted message, bot noise, private channel visibility |
+| Email | thread replies, forwards, attachment-only mail, imported historical thread, missing subject |
+| Meetings | transcript present, no transcript, action items, multi-speaker summary, bot failure |
+| Calendar | reschedule, all-day, multi-day, cancellation, timezone boundary |
+| Documents | upload, extraction pending/failed/succeeded, version update, moved/renamed file |
+| GitHub | PR lifecycle, workflow run burst, review/comment, commit push, release/deploy, rerun/replay |
+| Issue trackers | issue created/updated/commented/status change/assignment change |
+| Incidents | alert storm, incident created/resolved, monitor flapping, related deploy |
+| CRM/support | deal/ticket created, status/stage change, comment, assignment, duplicate webhook |
+| Generic webhook | missing IDs, partial payload, replay, high-volume burst, unknown event type |
 
 ### Completion Gates
 
@@ -1455,22 +1758,21 @@ Every implementation PR must run:
 - `pnpm test:dist-imports` when shared package exports or Node loader
   boundaries change
 
-## Open Decisions
+## Implementation Defaults
 
-1. Whether AI-generated moment presentation should be persisted in Postgres
-   immediately or introduced as an in-memory/server cache first.
-2. Whether Moments vs Source events should be a route-level tab, query param, or
-   user preference.
-3. Whether cross-source artifact clusters should ever collapse into one visible
-   moment by default, or remain separate with `Related` until a user confirms.
-4. How much history a new integration should scan to regenerate AI presentation
-   for old events.
-5. Whether the Home "Recent moments" widget should use the same full moment DTO
-   or a lighter dashboard-specific projection.
-6. Whether future source adapters should live in `apps/web` until stable or move
-   directly into `packages/shared`.
-7. Whether agent tools should expose moments as a new tool family or fold them
-   into existing timeline/event search tools with a `mode` parameter.
+These decisions are defaults for the first implementation. Revisit only when
+evidence from dogfooding contradicts them.
+
+| Question | Default |
+| --- | --- |
+| AI presentation persistence | Start deterministic-only, then add persisted Postgres cache for expensive AI presentation once cache key and invalidation tests exist. Do not rely on process memory for production summaries. |
+| Moments vs Source events control | Use `mode=moments|events` in the route/query state first, default to Moments, and persist per user only if an existing preference mechanism is available. |
+| Cross-source collapse | Keep cross-source evidence separate with `Related` by default. Collapse only when authoritative metadata or user confirmation proves a shared artifact lifecycle. |
+| Historical AI regeneration | Do not bulk-regenerate old history by default. Generate on demand for viewed/searched windows, then schedule provider-specific backfills only after cost and privacy checks. |
+| Home Recent moments | Use a lighter projection derived from the same shared moment DTO, not a separate grouping implementation. |
+| Source adapter location | Prototype row presentation in `apps/web`, but move grouping semantics into `packages/shared` before agent, digest, worker, or MCP consumers depend on it. |
+| Agent tool shape | Add `search_timeline_moments` / `get_timeline_moment` first. Keep raw event tools explicit for audit/debug, and consider a shared `mode` parameter only after compatibility is proven. |
+| Rollout | Ship behind a feature flag or query-gated preview, dogfood internally, then make Moments the default while preserving Source events mode. |
 
 ## Success Criteria
 
@@ -1490,3 +1792,45 @@ The transformation is successful when:
   intact.
 - The new source adapter contract makes the next integration cheaper and more
   consistent than adding one-off timeline UI branches.
+
+## GSTACK REVIEW REPORT
+
+Review date: 27 June 2026
+
+Scope reviewed:
+
+- CEO/product coherence
+- Design and accessibility completeness
+- Engineering architecture and rollout safety
+- Developer experience, tests, and observability
+- Fit with current `TimelineMoment`, timeline API, and agent retrieval code
+
+Verdict: **Ready to implement after hardening changes in this document.** The
+original plan had the right product direction, but was not yet implementation
+safe because it left pagination, visibility-safe caching, source fixture
+contracts, agent citation rules, rollout defaults, and observability too
+implicit. Those gaps are now explicit requirements and defaults.
+
+| Review lane | Original risk | Plan change |
+| --- | --- | --- |
+| Product | Timeline could still fragment into raw event noise when provider metadata is weak. | Added source adapter fixture requirements, provider metadata bar, row-count success criteria, and raw-to-moment metrics. |
+| Design | UI direction was strong but interaction states, mobile inspector behavior, and keyboard flow were underspecified. | Added row state matrix and accessibility requirements for ordered list rows, inspector focus, mobile sheet, and long text. |
+| Engineering | Raw-event pagination could split or duplicate moments across pages. | Added collector invariants, boundary overfetch rules, cursor requirements, and pagination tests. |
+| Security/privacy | AI summaries could leak private evidence if cached only by provider object. | Added visibility-scope cache partitioning, cache provenance, and invalidation rules. |
+| Agents | Moment retrieval could become uncited summary retrieval. | Added versioned moment DTOs, new tool default, raw-event citation requirements, MCP visibility rules, and eval failures. |
+| Rollout | The plan implied a large default replacement. | Added feature flag/query preview, comparison against old timeline, dogfooding, observability, and rollback acceptance. |
+| DX | New integrations could add UI branches without proving grouping behavior. | Added a fixture matrix and diagnostics for missing grouping metadata. |
+
+Implementation order after review:
+
+1. Harden the existing web moment builder and tests.
+2. Add server/page-window collector invariants behind a preview flag.
+3. Add source adapter fixtures and provider metadata diagnostics.
+4. Redesign the row and inspector around moments, preserving Source events mode.
+5. Add AI presentation cache only after deterministic grouping is stable.
+6. Move grouping semantics to `packages/shared`.
+7. Expose moment retrieval to agents, digests, handoffs, and outbound MCP with
+   raw-event citation expansion.
+8. Dogfood with metrics before making Moments the default for all teams.
+
+NO UNRESOLVED DECISIONS
