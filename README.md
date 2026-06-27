@@ -202,10 +202,10 @@ boundaries.
 - [`docs/integration-ingest-plan.md`](./docs/integration-ingest-plan.md) —
   first-party ingestion implementation plan for work systems, including the
   implemented native providers and future waves.
-- [`docs/ux-overhaul-plan.md`](./docs/ux-overhaul-plan.md) — UX overhaul plan:
-  soften the forensic surface for non-technical users with standard-page
-  headers, a guided connect-flow wizard, actionable error states,
-  discoverability, and IA consolidation.
+- [`docs/timeline-moments-redesign-plan.md`](./docs/timeline-moments-redesign-plan.md) —
+  full plan for turning the timeline from a raw activity log into bundled,
+  evidence-backed work moments with deterministic grouping and AI-assisted
+  summaries.
 - [`docs/ingest-webhooks-plan.md`](./docs/ingest-webhooks-plan.md) — domain
   plan for named evidence-only ingest webhooks, credential rotation, duplicate
   handling, visibility defaults, and proposal generation.

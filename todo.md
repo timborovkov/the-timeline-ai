@@ -56,10 +56,13 @@ records:
 
 Direction: soften the surface. Keep the forensic mono treatment for data
 (timestamps, IDs, citations); replace mono-uppercase eyebrows and
-`IndexStrip` headers with normal sentence-case headers on non-operational
-pages. Full phased plan with file-level tasks:
-[docs/ux-overhaul-plan.md](docs/ux-overhaul-plan.md).
+`IndexStrip` headers with normal sentence-case headers on non-operational pages.
 
+- [ ] Timeline moments redesign: turn `/app/timeline` from a raw activity log
+      into bundled, evidence-backed work moments with deterministic grouping,
+      source-specific adapters, AI-assisted titles/summaries, and an advanced
+      raw source event mode. Full plan:
+      [docs/timeline-moments-redesign-plan.md](docs/timeline-moments-redesign-plan.md).
 - [x] U1 — Design-language softening: new `PageHeader` + `SectionHeading`,
       surface split (operational keeps `IndexStrip`; standard gets `H1`),
       update `design.md` in the same PR.
@@ -92,6 +95,22 @@ pages. Full phased plan with file-level tasks:
       should cite evidence, distinguish accepted board state from pending
       suggestions, and expand direct board commands beyond the first
       approval-required add/update/remove card actions.
+
+## Agent Reliability
+
+- [ ] Add richer per-tool observability for chat/retrieval turns: selected tool
+      groups, omitted groups, retrieval recipe, result counts, top artifact refs,
+      tool latency, and tool errors.
+- [ ] Add a reusable agent eval harness with retrieval, dashboard chat,
+      Slack/Telegram ask, background proposal, summary, and action/HITL suites
+      over a compact seeded workspace.
+- [ ] Finish advanced in-chat HITL follow-ups after dogfooding: persisted
+      prepared action IDs for multi-step/high-risk actions, task-specific direct
+      mutations, and remaining board-level operations such as board create,
+      archive, and pin/unpin.
+- [ ] Track retrieval freshness and index health by source kind, including
+      stale embeddings after object/calendar/document/board updates and failed
+      embedding/indexing jobs in job recovery or an admin health panel.
 
 ## Object Relationships
 
