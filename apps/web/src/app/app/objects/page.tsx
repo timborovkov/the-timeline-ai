@@ -1,6 +1,8 @@
+import { users } from '@timeline/db';
 import { OBJECT_TYPES } from '@timeline/shared/objects';
 import { decodeCursor, encodeCursor } from '@timeline/shared/pagination';
 import { withTeam } from '@timeline/shared/team-scope';
+import { inArray } from 'drizzle-orm';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
@@ -12,31 +14,24 @@ import { IndexStrip } from '@/components/index-strip';
 import { ObjectCleanupList } from '@/components/objects/object-cleanup-list';
 import { ObjectCleanupSuggestions } from '@/components/objects/object-cleanup-suggestions';
 import { WORK_BACK_LINK } from '@/components/work-back-link';
+import { WorkFilterBar } from '@/components/work-filter-bar';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { OBJECT_TYPE_LABELS } from '@/lib/object-type-labels';
 import { isActionableSuggestionStatus } from '@/lib/suggestion-status';
 import { serializeSuggestionBundle } from '@/lib/suggestions';
+import {
+  WORK_FILTER_PARAM_KEYS,
+  hasActiveWorkFilters,
+  objectListFilterFromWorkFilters,
+  parseWorkFilters,
+  workFilterHiddenParams,
+} from '@/lib/work-filters';
 
 export const metadata: Metadata = {
   title: 'Objects',
   description: 'Browse tracked timeline objects.',
-};
-
-const TYPE_LABEL: Record<string, string> = {
-  person: 'People',
-  company: 'Companies',
-  project: 'Projects',
-  topic: 'Topics',
-  deal: 'Deals',
-  vendor: 'Vendors',
-  incident: 'Incidents',
-  document: 'Documents',
-  decision: 'Decisions',
-  hiring_loop: 'Hiring loops',
-  task: 'Tasks',
-  follow_up: 'Follow-ups',
-  other: 'Other',
 };
 
 const OBJECTS_PAGE_SIZE = 48;
@@ -44,6 +39,7 @@ const OBJECTS_SECTION_PREVIEW_SIZE = 8;
 
 interface ObjectListScope {
   listObjects(filter: objects.ObjectListFilter): Promise<objects.ObjectRow[]>;
+  countObjects(filter: objects.ObjectCountFilter): Promise<number>;
 }
 
 function objectIdsForMergeSuggestion(item: { proposedPayload: unknown }): string[] {
@@ -60,7 +56,7 @@ function objectIdsForMergeSuggestion(item: { proposedPayload: unknown }): string
 export default async function ObjectsIndexPage({
   searchParams,
 }: {
-  searchParams: Promise<{ type?: string; status?: string; cursor?: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const session = await auth();
   if (!session?.user) redirect('/sign-in');
@@ -69,24 +65,45 @@ export default async function ObjectsIndexPage({
 
   const scope = withTeam(db, active.teamId, session.user.id);
   const params = await searchParams;
+  const filters = parseWorkFilters(params);
+  const filterParams = workFilterHiddenParams(params, WORK_FILTER_PARAM_KEYS);
+  const objectFilter = {
+    ...objectListFilterFromWorkFilters(filters),
+    archived: false,
+  } satisfies objects.ObjectListFilter;
 
-  const type =
-    params.type && TYPE_LABEL[params.type] ? (params.type as objects.ObjectType) : undefined;
-  const status = params.status?.trim() ?? undefined;
-  const cursor = parseCursorParam(params.cursor);
+  const type = filters.type || undefined;
+  const cursor = parseCursorParam(firstParam(params.cursor));
+  const activeFilters = hasActiveWorkFilters(filters);
 
-  const [objectWindow, suggestionBundles] = await Promise.all([
+  const [objectWindow, suggestionBundles, members] = await Promise.all([
     type
-      ? loadTypedObjectPage(scope.objects, { type, status, cursor })
-      : loadObjectSectionPreviews(scope.objects, { status }),
+      ? loadTypedObjectPage(scope.objects, { filter: { ...objectFilter, type }, cursor })
+      : loadObjectSectionPreviews(scope.objects, { filter: objectFilter, filterParams }),
     scope.suggestions.listPendingSuggestions(),
+    scope.timeline.listMembers(),
   ]);
+  const memberIds = members.map((member) => member.userId);
+  const memberRows =
+    memberIds.length > 0
+      ? await db
+          .select({ id: users.id, name: users.name, email: users.email })
+          .from(users)
+          .where(inArray(users.id, memberIds))
+      : [];
+  const memberMap = new Map(memberRows.map((member) => [member.id, member] as const));
+  const memberOptions = members.map((member) => {
+    const user = memberMap.get(member.userId);
+    return {
+      id: member.userId,
+      label: user?.name ?? user?.email ?? member.userId,
+    };
+  });
   const rows = objectWindow.rows;
   const nextHref =
     type && objectWindow.nextCursor
       ? objectsPageHref({
-          type,
-          status,
+          filters: filterParams,
           cursor: objectWindow.nextCursor,
         })
       : null;
@@ -132,7 +149,7 @@ export default async function ObjectsIndexPage({
       <IndexStrip
         srLabel={
           type
-            ? `Objects · ${rows.length} shown · filtered to ${TYPE_LABEL[type] ?? type}`
+            ? `Objects · ${rows.length} shown · filtered to ${OBJECT_TYPE_LABELS[type] ?? type}`
             : `Objects · previews · ${rows.length} shown`
         }
         segments={[
@@ -140,7 +157,7 @@ export default async function ObjectsIndexPage({
           ...(type ? ([{ value: 'PAGE' }] as const) : ([{ value: 'PREVIEWS' }] as const)),
           { label: 'shown', value: rows.length },
           ...(type
-            ? ([{ label: 'type', value: TYPE_LABEL[type] ?? type, signal: true }] as const)
+            ? ([{ label: 'type', value: OBJECT_TYPE_LABELS[type] ?? type, signal: true }] as const)
             : ([] as const)),
         ]}
         leading={WORK_BACK_LINK}
@@ -158,16 +175,16 @@ export default async function ObjectsIndexPage({
         className="flex flex-wrap gap-1.5 font-mono text-[11px] uppercase tracking-[0.12em]"
       >
         <Link
-          href="/app/objects"
+          href={objectsTypeHref(null, params)}
           aria-current={!type ? 'page' : undefined}
           className={`rounded-sm border px-2.5 py-1 transition-colors ${!type ? 'border-signal/40 bg-signal-soft text-signal' : 'border-border text-fg-muted hover:bg-surface-2 hover:text-fg'}`}
         >
           All
         </Link>
-        {Object.entries(TYPE_LABEL).map(([key, label]) => (
+        {Object.entries(OBJECT_TYPE_LABELS).map(([key, label]) => (
           <Link
             key={key}
-            href={`/app/objects?type=${key}`}
+            href={objectsTypeHref(key, params)}
             aria-current={type === key ? 'page' : undefined}
             className={`rounded-sm border px-2.5 py-1 transition-colors ${type === key ? 'border-signal/40 bg-signal-soft text-signal' : 'border-border text-fg-muted hover:bg-surface-2 hover:text-fg'}`}
           >
@@ -175,6 +192,18 @@ export default async function ObjectsIndexPage({
           </Link>
         ))}
       </nav>
+
+      <WorkFilterBar
+        mode="objects"
+        basePath="/app/objects"
+        filters={filters}
+        active={hasActiveWorkFilters(filters)}
+        resultCount={rows.length}
+        totalCount={objectWindow.totalCount}
+        hiddenParams={type ? { type } : undefined}
+        members={memberOptions}
+        typeLabels={OBJECT_TYPE_LABELS}
+      />
 
       <ObjectCleanupSuggestions
         suggestions={cleanupSuggestions}
@@ -186,7 +215,7 @@ export default async function ObjectsIndexPage({
           title={
             type && cursor
               ? 'No objects on this page'
-              : type || status
+              : activeFilters
                 ? 'No objects match this filter'
                 : 'No objects yet'
           }
@@ -197,15 +226,15 @@ export default async function ObjectsIndexPage({
           }
           href={
             type && cursor
-              ? objectsPageHref({ type, status })
-              : type || status
+              ? objectsPageHref({ filters: filterParams })
+              : activeFilters
                 ? '/app/objects'
                 : '/app#capture'
           }
           action={
             type && cursor
               ? 'Open first page'
-              : type || status
+              : activeFilters
                 ? 'Clear filter'
                 : 'Capture first note'
           }
@@ -213,7 +242,7 @@ export default async function ObjectsIndexPage({
       ) : (
         <ObjectCleanupList
           rows={rows}
-          typeLabels={TYPE_LABEL}
+          typeLabels={OBJECT_TYPE_LABELS}
           pageInfo={
             type
               ? {
@@ -232,27 +261,27 @@ export default async function ObjectsIndexPage({
 async function loadTypedObjectPage(
   objectScope: ObjectListScope,
   {
-    type,
-    status,
+    filter,
     cursor,
   }: {
-    type: objects.ObjectType;
-    status: string | undefined;
+    filter: objects.ObjectListFilter;
     cursor: string | undefined;
   },
 ): Promise<{
   rows: objects.ObjectRow[];
   hasNextPage: boolean;
   nextCursor: string | null;
+  totalCount: number;
   sectionMoreHrefs?: Record<string, string>;
 }> {
-  const pageRows = await objectScope.listObjects({
-    limit: OBJECTS_PAGE_SIZE + 1,
-    archived: false,
-    type,
-    cursor,
-    ...(status ? { status } : {}),
-  });
+  const [pageRows, totalCount] = await Promise.all([
+    objectScope.listObjects({
+      ...filter,
+      limit: OBJECTS_PAGE_SIZE + 1,
+      cursor,
+    }),
+    objectScope.countObjects(filter),
+  ]);
   const rows = pageRows.slice(0, OBJECTS_PAGE_SIZE);
   const last = rows.at(-1);
   return {
@@ -262,38 +291,49 @@ async function loadTypedObjectPage(
       pageRows.length > OBJECTS_PAGE_SIZE && last
         ? encodeCursor({ at: last.updatedAt.toISOString(), id: last.id })
         : null,
+    totalCount,
   };
 }
 
 async function loadObjectSectionPreviews(
   objectScope: ObjectListScope,
-  { status }: { status: string | undefined },
+  {
+    filter,
+    filterParams,
+  }: { filter: objects.ObjectListFilter; filterParams: Record<string, string> },
 ): Promise<{
   rows: objects.ObjectRow[];
   hasNextPage: boolean;
   nextCursor: string | null;
+  totalCount: number;
   sectionMoreHrefs: Record<string, string>;
 }> {
   const previews = await Promise.all(
     OBJECT_TYPES.map(async (typeKey) => {
-      const sectionRows = await objectScope.listObjects({
-        limit: OBJECTS_SECTION_PREVIEW_SIZE + 1,
-        archived: false,
-        type: typeKey,
-        ...(status ? { status } : {}),
-      });
-      return [typeKey, sectionRows] as const;
+      const typedFilter = { ...filter, type: typeKey };
+      const [sectionRows, totalCount] = await Promise.all([
+        objectScope.listObjects({
+          ...typedFilter,
+          limit: OBJECTS_SECTION_PREVIEW_SIZE + 1,
+        }),
+        objectScope.countObjects(typedFilter),
+      ]);
+      return [typeKey, sectionRows, totalCount] as const;
     }),
   );
   const sectionMoreHrefs: Record<string, string> = {};
   const rows: objects.ObjectRow[] = [];
-  for (const [typeKey, sectionRows] of previews) {
+  let totalCount = 0;
+  for (const [typeKey, sectionRows, sectionTotal] of previews) {
+    totalCount += sectionTotal;
     rows.push(...sectionRows.slice(0, OBJECTS_SECTION_PREVIEW_SIZE));
     if (sectionRows.length > OBJECTS_SECTION_PREVIEW_SIZE) {
-      sectionMoreHrefs[typeKey] = objectsPageHref({ type: typeKey, status });
+      sectionMoreHrefs[typeKey] = objectsPageHref({
+        filters: { ...filterParams, type: typeKey },
+      });
     }
   }
-  return { rows, hasNextPage: false, nextCursor: null, sectionMoreHrefs };
+  return { rows, hasNextPage: false, nextCursor: null, totalCount, sectionMoreHrefs };
 }
 
 function parseCursorParam(value: string | undefined): string | undefined {
@@ -301,14 +341,26 @@ function parseCursorParam(value: string | undefined): string | undefined {
 }
 
 function objectsPageHref(params: {
-  type?: string;
-  status?: string;
+  filters?: Record<string, string>;
   cursor?: string | null;
 }): string {
-  const query = new URLSearchParams();
-  if (params.type) query.set('type', params.type);
-  if (params.status) query.set('status', params.status);
+  const query = new URLSearchParams(params.filters ?? {});
   if (params.cursor) query.set('cursor', params.cursor);
   const qs = query.toString();
   return qs ? `/app/objects?${qs}` : '/app/objects';
+}
+
+function objectsTypeHref(
+  type: string | null,
+  params: Record<string, string | string[] | undefined>,
+): string {
+  const filters = workFilterHiddenParams(params, WORK_FILTER_PARAM_KEYS);
+  if (type) filters.type = type;
+  else delete filters.type;
+  return objectsPageHref({ filters });
+}
+
+function firstParam(value: string | string[] | undefined): string {
+  const first = Array.isArray(value) ? value[0] : value;
+  return typeof first === 'string' ? first : '';
 }

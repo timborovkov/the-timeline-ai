@@ -12,6 +12,7 @@ import { db } from '@/lib/db';
 import { runSentryServerAction } from '@/lib/sentry-action';
 import { reportCaughtError } from '@/lib/sentry-report';
 import { loadTaskRowsPage } from '@/lib/task-page';
+import { parseWorkFilters, taskObjectFilterFromWorkFilters } from '@/lib/work-filters';
 
 // Derived from the Postgres enum so adding a new object type doesn't
 // require synchronizing this schema with the drizzle enum by hand.
@@ -112,6 +113,9 @@ function revalidateObjectMutationSurfaces(ids: string | string[]): void {
 const OBJECT_SEARCH_RESULT_LIMIT = 12;
 const loadTaskRowsSchema = z.object({
   cursor: z.string().max(500).nullable().optional(),
+  filters: z
+    .record(z.string(), z.union([z.string(), z.array(z.string()), z.undefined()]))
+    .optional(),
 });
 
 async function checkUserSearchRateLimit(userId: string): Promise<boolean> {
@@ -169,7 +173,8 @@ export async function loadTaskRowsAction(input: unknown): Promise<{
     if (!(await checkUserSearchRateLimit(r.userId))) {
       return { rows: [], nextCursor: null, error: 'Too many task loads. Try again shortly.' };
     }
-    const page = await loadTaskRowsPage(r.scope.objects, parsed.data.cursor ?? null);
+    const filters = taskObjectFilterFromWorkFilters(parseWorkFilters(parsed.data.filters ?? {}));
+    const page = await loadTaskRowsPage(r.scope.objects, parsed.data.cursor ?? null, filters);
     return {
       rows: page.rows,
       nextCursor: page.nextCursor,

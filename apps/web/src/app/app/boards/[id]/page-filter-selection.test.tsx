@@ -1,0 +1,143 @@
+import { renderToStaticMarkup } from 'react-dom/server';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+const fakes = vi.hoisted(() => ({
+  auth: vi.fn(),
+  resolveActiveTeam: vi.fn(),
+  getBoard: vi.fn(),
+  listBoardItemHistory: vi.fn(),
+  listObjects: vi.fn(),
+  listMembers: vi.fn(),
+  notFound: vi.fn(() => {
+    throw new Error('not-found');
+  }),
+  redirect: vi.fn((path: string) => {
+    throw new Error(`redirect:${path}`);
+  }),
+}));
+
+vi.mock('next/navigation', () => ({
+  notFound: fakes.notFound,
+  redirect: fakes.redirect,
+}));
+vi.mock('@timeline/shared/team-scope', () => ({
+  withTeam: () => ({
+    boards: {
+      getBoard: fakes.getBoard,
+      listBoardItemHistory: fakes.listBoardItemHistory,
+    },
+    objects: {
+      listObjects: fakes.listObjects,
+    },
+    timeline: {
+      listMembers: fakes.listMembers,
+    },
+  }),
+}));
+vi.mock('@/lib/auth', () => ({ auth: fakes.auth }));
+vi.mock('@/lib/active-team', () => ({ resolveActiveTeam: fakes.resolveActiveTeam }));
+vi.mock('@/lib/db', () => ({ db: {} }));
+vi.mock('@/components/boards/board-detail-client', () => ({
+  BoardDetailClient: ({
+    selectedItemId,
+    history,
+  }: {
+    selectedItemId: string | null;
+    history: unknown[];
+  }) => (
+    <div data-testid="board-detail-client">
+      selected:{selectedItemId ?? 'none'} history:{history.length}
+    </div>
+  ),
+}));
+
+const { default: BoardDetailPage } = await import('./page.js');
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  fakes.auth.mockResolvedValue({ user: { id: 'user-1' } });
+  fakes.resolveActiveTeam.mockResolvedValue({ active: { teamId: 'team-1' } });
+  fakes.listObjects.mockResolvedValue([]);
+  fakes.listMembers.mockResolvedValue([]);
+  fakes.listBoardItemHistory.mockResolvedValue([{ id: 'history-1' }]);
+  fakes.getBoard.mockResolvedValue({
+    id: 'board-1',
+    name: 'Pilot Pipeline',
+    purpose: 'Track pilots',
+    pinned: false,
+    itemCount: 1,
+    recommendedObjectTypes: ['company'],
+    lanes: [
+      {
+        id: 'lane-1',
+        boardId: 'board-1',
+        name: 'New',
+        position: 0,
+        archivedAt: null,
+        createdAt: new Date('2026-01-01T00:00:00.000Z'),
+        updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+      },
+    ],
+    items: [
+      {
+        id: 'item-1',
+        boardId: 'board-1',
+        entityId: 'object-1',
+        laneId: 'lane-1',
+        position: 0,
+        responsibleUserId: null,
+        dueAt: null,
+        priority: null,
+        nextStep: null,
+        notes: null,
+        customFields: {},
+        archivedAt: null,
+        createdAt: new Date('2026-01-01T00:00:00.000Z'),
+        updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+        object: {
+          id: 'object-1',
+          type: 'company',
+          canonicalName: 'Visible company',
+          status: 'open',
+          stage: null,
+          priority: null,
+          ownerUserId: null,
+          assigneeUserId: null,
+          dueAt: null,
+          agentSuggested: false,
+          archivedAt: null,
+          aliases: [],
+          metadata: {},
+          createdAt: new Date('2026-01-01T00:00:00.000Z'),
+          updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+        },
+      },
+    ],
+  });
+});
+
+describe('BoardDetailPage', () => {
+  it('drops a selected item query when server filters removed that board item', async () => {
+    const html = renderToStaticMarkup(
+      await BoardDetailPage({
+        params: Promise.resolve({ id: 'board-1' }),
+        searchParams: Promise.resolve({ item: 'filtered-out', status: 'open' }),
+      }),
+    );
+
+    expect(html).toContain('selected:none history:0');
+    expect(fakes.listBoardItemHistory).not.toHaveBeenCalled();
+  });
+
+  it('keeps the selected item query when the filtered board still contains it', async () => {
+    const html = renderToStaticMarkup(
+      await BoardDetailPage({
+        params: Promise.resolve({ id: 'board-1' }),
+        searchParams: Promise.resolve({ item: 'item-1', status: 'open' }),
+      }),
+    );
+
+    expect(html).toContain('selected:item-1 history:1');
+    expect(fakes.listBoardItemHistory).toHaveBeenCalledWith('item-1');
+  });
+});

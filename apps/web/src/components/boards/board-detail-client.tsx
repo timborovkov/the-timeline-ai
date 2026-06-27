@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useCallback, useMemo, useState } from 'react';
 
 import type { BoardLayout } from '@/lib/board-links';
+import type { WorkFilterState } from '@/lib/work-filters';
 import type * as boards from '@timeline/shared/boards';
 import type * as objects from '@timeline/shared/objects/types';
 
@@ -16,6 +17,7 @@ import { CuratedBoardList, CuratedBoardTable } from '@/components/boards/curated
 import { CuratedKanbanBoard } from '@/components/boards/curated-kanban-board';
 import { HistoryBackLink } from '@/components/history-back-link';
 import { IndexStrip } from '@/components/index-strip';
+import { WorkFilterBar } from '@/components/work-filter-bar';
 import { visibleBoardDescription } from '@/lib/board-description';
 import { boardViewHref } from '@/lib/board-links';
 
@@ -41,6 +43,7 @@ interface Props {
   boardName: string;
   purpose: string | null;
   pinned: boolean;
+  itemCount?: number;
   view: BoardLayout;
   lanes: boards.BoardLaneRow[];
   initialItems: boards.BoardItemRow[];
@@ -50,13 +53,39 @@ interface Props {
   selectedItemId: string | null;
   history: boards.BoardItemChangeRow[];
   members: BoardMemberOption[];
+  filters?: WorkFilterState;
+  activeFilters?: boolean;
+  filterParams?: Record<string, string>;
+  typeLabels?: Record<string, string>;
 }
+
+const EMPTY_FILTERS: WorkFilterState = {
+  q: '',
+  type: '',
+  status: '',
+  stage: '',
+  owner: '',
+  assignee: '',
+  responsible: '',
+  lane: '',
+  priority: '',
+  due: '',
+  dueFrom: '',
+  dueTo: '',
+  createdFrom: '',
+  createdTo: '',
+  updatedFrom: '',
+  updatedTo: '',
+};
+const EMPTY_FILTER_PARAMS: Record<string, string> = {};
+const EMPTY_TYPE_LABELS: Record<string, string> = {};
 
 export function BoardDetailClient({
   boardId,
   boardName,
   purpose,
   pinned,
+  itemCount,
   view,
   lanes,
   initialItems,
@@ -66,6 +95,10 @@ export function BoardDetailClient({
   selectedItemId,
   history,
   members,
+  filters = EMPTY_FILTERS,
+  activeFilters = false,
+  filterParams = EMPTY_FILTER_PARAMS,
+  typeLabels = EMPTY_TYPE_LABELS,
 }: Props) {
   const router = useRouter();
   const [localItems, setLocalItems] = useState<boards.BoardItemRow[]>([]);
@@ -217,7 +250,7 @@ export function BoardDetailClient({
           {(['kanban', 'table', 'list'] as const).map((nextView) => (
             <Link
               key={nextView}
-              href={boardViewHref(boardId, nextView, selectedItemId)}
+              href={boardViewHref(boardId, nextView, selectedItemId, filterParams)}
               className={`px-3 py-1.5 font-mono text-[11px] uppercase tracking-[0.12em] ${
                 view === nextView ? 'bg-signal text-signal-fg' : 'bg-bg text-fg-muted hover:text-fg'
               }`}
@@ -228,7 +261,21 @@ export function BoardDetailClient({
         </nav>
       </div>
 
-      <div className={view === 'kanban' ? 'w-full shrink-0 px-4 pb-4 md:px-8' : 'mb-4 shrink-0'}>
+      <WorkFilterBar
+        mode="board"
+        basePath={`/app/boards/${boardId}`}
+        filters={filters}
+        active={activeFilters}
+        resultCount={items.length}
+        totalCount={itemCount ?? items.length}
+        hiddenParams={{ view }}
+        members={members}
+        lanes={lanes}
+        typeLabels={typeLabels}
+        className={view === 'kanban' ? 'shrink-0' : 'mb-4'}
+      />
+
+      <div className={view === 'kanban' ? 'w-full shrink-0 px-4 py-4 md:px-8' : 'mb-4 shrink-0'}>
         <BoardAddItemForm
           boardId={boardId}
           defaultLaneId={defaultLaneId}
@@ -255,6 +302,7 @@ export function BoardDetailClient({
               items={items}
               selectedItemId={selectedItemId}
               members={members}
+              filterParams={filterParams}
             />
           )}
           {view === 'table' && (
@@ -265,6 +313,7 @@ export function BoardDetailClient({
               items={items}
               members={members}
               onUpdateItem={updateItem}
+              filterParams={filterParams}
             />
           )}
           {view === 'list' && (
@@ -275,6 +324,7 @@ export function BoardDetailClient({
               items={items}
               members={members}
               onUpdateItem={updateItem}
+              filterParams={filterParams}
             />
           )}
         </div>
@@ -289,6 +339,7 @@ export function BoardDetailClient({
             members={members}
             onUpdateItem={updateItem}
             onItemRemoved={removeLocalItem}
+            filterParams={filterParams}
           />
         ) : null}
       </div>

@@ -10,12 +10,20 @@ import { EmptyAction } from '@/components/empty-action';
 import { IndexStrip } from '@/components/index-strip';
 import { TaskBoard } from '@/components/tasks/task-board';
 import { WORK_BACK_LINK } from '@/components/work-back-link';
+import { WorkFilterBar } from '@/components/work-filter-bar';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { isActionableSuggestionStatus } from '@/lib/suggestion-status';
 import { serializeSuggestionBundle } from '@/lib/suggestions';
 import { countTaskRows, loadTaskRowsPage } from '@/lib/task-page';
+import {
+  WORK_FILTER_PARAM_KEYS,
+  hasActiveWorkFilters,
+  parseWorkFilters,
+  taskObjectFilterFromWorkFilters,
+  workFilterHiddenParams,
+} from '@/lib/work-filters';
 
 export const metadata: Metadata = {
   title: 'Tasks',
@@ -63,17 +71,25 @@ export default async function TasksPage({
 
   const scope = withTeam(db, active.teamId, session.user.id);
   const selectedTaskId = taskParam(query.task);
+  const filters = parseWorkFilters(query);
+  const taskFilter = taskObjectFilterFromWorkFilters(filters);
   const [taskPage, counts, pendingSuggestions, members] = await Promise.all([
-    loadTaskRowsPage(scope.objects),
-    countTaskRows(scope.objects),
+    loadTaskRowsPage(scope.objects, null, taskFilter),
+    countTaskRows(scope.objects, new Date(), taskFilter),
     scope.suggestions.listPendingSuggestions(),
     scope.timeline.listMembers(),
   ]);
   let rows = taskPage.rows;
-  if (selectedTaskId && !rows.some((row) => row.id === selectedTaskId)) {
-    const selectedTask = await scope.objects.getObject(selectedTaskId).catch(() => null);
-    if (selectedTask?.type === 'task' && !selectedTask.archivedAt) {
+  let selectedVisibleTaskId = rows.some((row) => row.id === selectedTaskId) ? selectedTaskId : null;
+  if (selectedTaskId && !selectedVisibleTaskId) {
+    const [selectedTask] = await scope.objects.listObjects({
+      ...taskFilter,
+      id: selectedTaskId,
+      limit: 1,
+    });
+    if (selectedTask) {
       rows = [selectedTask, ...rows];
+      selectedVisibleTaskId = selectedTask.id;
     }
   }
   const memberIds = members.map((member) => member.userId);
@@ -100,6 +116,9 @@ export default async function TasksPage({
   });
   const pendingTaskItems = taskSuggestions.reduce((sum, bundle) => sum + bundle.items.length, 0);
   const view = viewParam(query.view);
+  const activeFilters = hasActiveWorkFilters(filters);
+  const hiddenFilterParams = workFilterHiddenParams(query, ['view']);
+  const taskLoadFilterParams = workFilterHiddenParams(query, WORK_FILTER_PARAM_KEYS);
 
   const srSegments = [
     'Tasks',
@@ -136,27 +155,48 @@ export default async function TasksPage({
         className={rows.length > 0 ? 'w-full shrink-0 px-4 md:px-8' : 'shrink-0'}
       />
 
+      <WorkFilterBar
+        mode="tasks"
+        basePath="/app/tasks"
+        filters={filters}
+        active={activeFilters}
+        resultCount={rows.length}
+        totalCount={counts.total}
+        hiddenParams={hiddenFilterParams}
+        members={memberOptions}
+        statusOptions={TASK_COLUMNS}
+      />
+
       {rows.length === 0 ? (
         <EmptyAction
-          title="No active tasks"
+          title={activeFilters ? 'No tasks match this filter' : 'No active tasks'}
           body={
-            pendingTaskItems > 0
-              ? 'Pending task proposals are waiting below. Accepted proposals will appear on the board.'
-              : 'Tasks are proposed from captured decisions, meetings, and follow-ups. Capture one commitment to start the task board.'
+            activeFilters
+              ? 'The task archive is still intact. Clear the filters or broaden the slice to see more work.'
+              : pendingTaskItems > 0
+                ? 'Pending task proposals are waiting below. Accepted proposals will appear on the board.'
+                : 'Tasks are proposed from captured decisions, meetings, and follow-ups. Capture one commitment to start the task board.'
           }
-          href="/app#capture"
-          action="Capture a follow-up"
+          href={
+            activeFilters
+              ? view === 'list'
+                ? '/app/tasks?view=list'
+                : '/app/tasks'
+              : '/app#capture'
+          }
+          action={activeFilters ? 'Clear filters' : 'Capture a follow-up'}
         />
       ) : (
         <div className="min-h-0 flex-1">
           <TaskBoard
             rows={rows}
             columns={TASK_COLUMNS}
-            selectedTaskId={selectedTaskId}
+            selectedTaskId={selectedVisibleTaskId}
             view={view}
             members={memberOptions}
             totalCount={counts.total}
             nextCursor={taskPage.nextCursor}
+            filterParams={taskLoadFilterParams}
           />
         </div>
       )}

@@ -9,17 +9,21 @@ import { useAppDialog } from '@/components/ui/app-dialog';
 import { boardViewHref, type BoardLayout } from '@/lib/board-links';
 import { displayText } from '@/lib/display-dates';
 
+const EMPTY_FILTER_PARAMS: Record<string, string> = {};
+
 export function RemoveBoardItemButton({
   boardId,
   itemId,
   objectName,
   view,
+  filterParams = EMPTY_FILTER_PARAMS,
   onRemoved,
 }: {
   boardId: string;
   itemId: string;
   objectName: string;
   view: BoardLayout;
+  filterParams?: Record<string, string>;
   onRemoved?: () => void;
 }) {
   const router = useRouter();
@@ -43,7 +47,7 @@ export function RemoveBoardItemButton({
         return;
       }
       onRemoved?.();
-      router.push(boardViewHref(boardId, view, null));
+      router.push(boardViewHref(boardId, view, null, filterParams));
       router.refresh();
     });
   }

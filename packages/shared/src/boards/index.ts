@@ -10,9 +10,29 @@ import {
   entities,
   rawEvents,
 } from '@timeline/db';
-import { and, asc, desc, eq, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
+import {
+  type SQL,
+  and,
+  asc,
+  desc,
+  eq,
+  gte,
+  inArray,
+  isNotNull,
+  isNull,
+  lt,
+  notInArray,
+  or,
+  sql,
+} from 'drizzle-orm';
 
-import type { ActorKind, CreateObjectInput, ObjectRow, ObjectType } from '#src/objects/index.js';
+import type {
+  ActorKind,
+  CreateObjectInput,
+  ObjectCountFilter,
+  ObjectRow,
+  ObjectType,
+} from '#src/objects/index.js';
 import type { TeamScopeCore } from '#src/team-scope.js';
 
 import {
@@ -23,6 +43,7 @@ import {
   syncBoardItemDueDateCalendarEvent,
   type DueDateCalendarSyncResult,
 } from '#src/calendar/due-dates.js';
+import { likePattern } from '#src/sql-like.js';
 import { rawEventVisibleToUser } from '#src/visibility.js';
 
 type DbTx = Parameters<Parameters<Db['transaction']>[0]>[0];
@@ -209,6 +230,23 @@ export interface BoardItemPatch {
 
 export interface BoardReadOptions {
   itemLimit?: number | 'all';
+  itemFilter?: BoardItemFilter;
+}
+
+export interface BoardItemFilter {
+  query?: string;
+  laneId?: string | string[] | null;
+  responsibleUserId?: string | null;
+  priority?: number | number[];
+  priorityNull?: boolean;
+  dueBefore?: Date;
+  dueAfter?: Date;
+  dueNull?: boolean;
+  createdBefore?: Date;
+  createdAfter?: Date;
+  updatedBefore?: Date;
+  updatedAfter?: Date;
+  object?: ObjectCountFilter;
 }
 
 export interface BoardWorkQueueOptions {
@@ -235,6 +273,11 @@ function sourceEventIdFromPayload(value: unknown): string | null {
 
 function jsonStringArray(value: unknown): ObjectType[] {
   return Array.isArray(value) ? value.filter((v): v is ObjectType => typeof v === 'string') : [];
+}
+
+function toArray<T>(v: T | T[] | undefined): T[] | undefined {
+  if (v === undefined) return undefined;
+  return Array.isArray(v) ? v : [v];
 }
 
 function toObjectRow(row: EntitySelect): ObjectRow {
@@ -701,6 +744,139 @@ export function createBoardScope({
     return row ? toItemRow(row.item, row.object) : null;
   }
 
+  function boardItemSearchTokens(query: string): string[] {
+    return query
+      .toLowerCase()
+      .replace(/['"]/g, '')
+      .split(/[^\p{L}\p{N}]+/u)
+      .map((token) => token.trim())
+      .filter(Boolean)
+      .slice(0, 8);
+  }
+
+  function boardItemTokenSearchCondition(token: string): SQL {
+    const exact = token.toLowerCase();
+    const prefix = `${exact.replace(/[\\%_]/g, (match) => `\\${match}`)}%`;
+    const contains = likePattern(exact);
+    return sql`(
+      lower(${entities.canonicalName}) = ${exact}
+      OR lower(${entities.canonicalName}) LIKE ${prefix} ESCAPE '\\'
+      OR lower(${entities.type}::text) = ${exact}
+      OR lower(${entities.status}) = ${exact}
+      OR lower(coalesce(${entities.stage}, '')) = ${exact}
+      OR lower(coalesce(${boardItems.nextStep}, '')) LIKE ${contains} ESCAPE '\\'
+      OR lower(coalesce(${boardItems.notes}, '')) LIKE ${contains} ESCAPE '\\'
+      OR lower(${boardItems.customFields}::text) LIKE ${contains} ESCAPE '\\'
+      OR lower(${entities.metadata}::text) LIKE ${contains} ESCAPE '\\'
+      OR EXISTS (
+        SELECT 1
+        FROM jsonb_array_elements_text(${entities.aliases}) AS alias(value)
+        WHERE lower(alias.value) = ${exact}
+          OR lower(alias.value) LIKE ${prefix} ESCAPE '\\'
+      )
+    )`;
+  }
+
+  function boardItemTextSearchCondition(query: string | undefined): SQL | undefined {
+    const tokens = boardItemSearchTokens(query?.trim() ?? '');
+    if (tokens.length === 0) return undefined;
+    return and(...tokens.map(boardItemTokenSearchCondition));
+  }
+
+  function nullableUuidCondition(
+    column: unknown,
+    value: string | string[] | null | undefined,
+  ): SQL | undefined {
+    if (value === undefined) return undefined;
+    if (value === null) return isNull(column as never);
+    const values = toArray(value) ?? [];
+    const uuidValues = values.filter((candidate) => UUID_RE.test(candidate));
+    if (uuidValues.length === 0) return sql`false`;
+    return inArray(column as never, uuidValues);
+  }
+
+  function boardItemObjectFilterConditions(filter: ObjectCountFilter | undefined): SQL[] {
+    if (!filter) return [];
+    const conds: SQL[] = [];
+
+    const types = toArray(filter.type);
+    if (types && types.length > 0) conds.push(inArray(entities.type, types));
+
+    const statuses = toArray(filter.status);
+    if (statuses && statuses.length > 0) conds.push(inArray(entities.status, statuses));
+
+    const excludedStatuses = toArray(filter.statusNot);
+    if (excludedStatuses && excludedStatuses.length > 0) {
+      conds.push(notInArray(entities.status, excludedStatuses));
+    }
+
+    const stages = toArray(filter.stage);
+    if (stages && stages.length > 0) conds.push(inArray(entities.stage, stages));
+
+    const priorities = toArray(filter.priority);
+    if (filter.priorityNull) conds.push(isNull(entities.priority));
+    else if (priorities && priorities.length > 0)
+      conds.push(inArray(entities.priority, priorities));
+
+    if (filter.ownerUserId === null) conds.push(isNull(entities.ownerUserId));
+    else if (filter.ownerUserId) conds.push(eq(entities.ownerUserId, filter.ownerUserId));
+
+    if (filter.assigneeUserId === null) conds.push(isNull(entities.assigneeUserId));
+    else if (filter.assigneeUserId) conds.push(eq(entities.assigneeUserId, filter.assigneeUserId));
+
+    if (filter.dueNull) conds.push(isNull(entities.dueAt));
+    if (filter.dueBefore) conds.push(lt(entities.dueAt, filter.dueBefore));
+    if (filter.dueAfter) conds.push(gte(entities.dueAt, filter.dueAfter));
+    if (filter.createdBefore) conds.push(lt(entities.createdAt, filter.createdBefore));
+    if (filter.createdAfter) conds.push(gte(entities.createdAt, filter.createdAfter));
+    if (filter.updatedBefore) conds.push(lt(entities.updatedAt, filter.updatedBefore));
+    if (filter.updatedAfter) conds.push(gte(entities.updatedAt, filter.updatedAfter));
+
+    if (filter.archived === true) conds.push(isNotNull(entities.archivedAt));
+    else if (filter.archived !== undefined) conds.push(isNull(entities.archivedAt));
+
+    const textCondition = boardItemTextSearchCondition(filter.query);
+    if (textCondition) conds.push(textCondition);
+
+    return conds;
+  }
+
+  function boardItemFilterConditions(filter: BoardItemFilter | undefined): SQL[] {
+    if (!filter) return [];
+    const conds: SQL[] = [];
+
+    const laneCondition = nullableUuidCondition(boardItems.laneId, filter.laneId);
+    if (laneCondition) conds.push(laneCondition);
+
+    if (filter.responsibleUserId === null) conds.push(isNull(boardItems.responsibleUserId));
+    else if (filter.responsibleUserId) {
+      conds.push(
+        UUID_RE.test(filter.responsibleUserId)
+          ? eq(boardItems.responsibleUserId, filter.responsibleUserId)
+          : sql`false`,
+      );
+    }
+
+    const priorities = toArray(filter.priority);
+    if (filter.priorityNull) conds.push(isNull(boardItems.priority));
+    else if (priorities && priorities.length > 0)
+      conds.push(inArray(boardItems.priority, priorities));
+
+    if (filter.dueNull) conds.push(isNull(boardItems.dueAt));
+    if (filter.dueBefore) conds.push(lt(boardItems.dueAt, filter.dueBefore));
+    if (filter.dueAfter) conds.push(gte(boardItems.dueAt, filter.dueAfter));
+    if (filter.createdBefore) conds.push(lt(boardItems.createdAt, filter.createdBefore));
+    if (filter.createdAfter) conds.push(gte(boardItems.createdAt, filter.createdAfter));
+    if (filter.updatedBefore) conds.push(lt(boardItems.updatedAt, filter.updatedBefore));
+    if (filter.updatedAfter) conds.push(gte(boardItems.updatedAt, filter.updatedAfter));
+
+    const textCondition = boardItemTextSearchCondition(filter.query);
+    if (textCondition) conds.push(textCondition);
+
+    conds.push(...boardItemObjectFilterConditions(filter.object));
+    return conds;
+  }
+
   async function refreshBoardDueDateMetadata(
     query: DbOrTx,
     board: BoardSelect,
@@ -767,6 +943,7 @@ export function createBoardScope({
         .limit(1);
       const board = boardRows[0];
       if (!board) return null;
+      const itemFilterConditions = boardItemFilterConditions(options.itemFilter);
       const itemsQuery = db
         .select({ item: boardItems, object: entities })
         .from(boardItems)
@@ -776,6 +953,7 @@ export function createBoardScope({
             eq(boardItems.boardId, boardId),
             eq(boardItems.teamId, scope.teamId),
             isNull(boardItems.archivedAt),
+            ...itemFilterConditions,
           ),
         )
         .orderBy(asc(boardItems.position), asc(boardItems.createdAt));
@@ -795,11 +973,13 @@ export function createBoardScope({
         db
           .select({ count: sql<number>`count(*)::int` })
           .from(boardItems)
+          .innerJoin(entities, eq(boardItems.entityId, entities.id))
           .where(
             and(
               eq(boardItems.boardId, boardId),
               eq(boardItems.teamId, scope.teamId),
               isNull(boardItems.archivedAt),
+              ...itemFilterConditions,
             ),
           ),
         db

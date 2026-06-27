@@ -10,6 +10,14 @@ import { BoardDetailClient } from '@/components/boards/board-detail-client';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { OBJECT_TYPE_LABELS } from '@/lib/object-type-labels';
+import {
+  WORK_FILTER_PARAM_KEYS,
+  boardItemFilterFromWorkFilters,
+  hasActiveWorkFilters,
+  parseWorkFilters,
+  workFilterHiddenParams,
+} from '@/lib/work-filters';
 
 export const metadata: Metadata = {
   title: 'Board',
@@ -39,7 +47,11 @@ export default async function BoardDetailPage({
   if (!active) redirect('/sign-in');
 
   const scope = withTeam(db, active.teamId, session.user.id);
-  const board = await scope.boards.getBoard(id, { itemLimit: 'all' });
+  const filters = parseWorkFilters(query);
+  const board = await scope.boards.getBoard(id, {
+    itemLimit: 'all',
+    itemFilter: boardItemFilterFromWorkFilters(filters),
+  });
   if (!board) notFound();
   const view = viewParam(query.view);
   const selectedItemId = itemParam(query.item);
@@ -74,6 +86,8 @@ export default async function BoardDetailPage({
   });
   const firstLaneId = board.lanes.find((lane) => !lane.archivedAt)?.id ?? null;
   const isKanban = view === 'kanban';
+  const activeFilters = hasActiveWorkFilters(filters);
+  const filterParams = workFilterHiddenParams(query, WORK_FILTER_PARAM_KEYS);
 
   return (
     <div
@@ -88,15 +102,20 @@ export default async function BoardDetailPage({
         boardName={board.name}
         purpose={board.purpose}
         pinned={board.pinned}
+        itemCount={board.itemCount}
         view={view}
         lanes={board.lanes}
         initialItems={board.items}
         initialCandidates={candidates}
         recommendedTypes={board.recommendedObjectTypes}
         defaultLaneId={firstLaneId}
-        selectedItemId={selectedItemId}
+        selectedItemId={selectedServerItemId}
         history={history}
         members={memberOptions}
+        filters={filters}
+        activeFilters={activeFilters}
+        filterParams={filterParams}
+        typeLabels={OBJECT_TYPE_LABELS}
       />
     </div>
   );

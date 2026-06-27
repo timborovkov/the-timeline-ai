@@ -1,0 +1,15 @@
+export const OBJECT_TYPE_LABELS: Record<string, string> = {
+  person: 'People',
+  company: 'Companies',
+  project: 'Projects',
+  topic: 'Topics',
+  deal: 'Deals',
+  vendor: 'Vendors',
+  incident: 'Incidents',
+  document: 'Documents',
+  decision: 'Decisions',
+  hiring_loop: 'Hiring loops',
+  task: 'Tasks',
+  follow_up: 'Follow-ups',
+  other: 'Other',
+};

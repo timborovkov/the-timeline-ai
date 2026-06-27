@@ -23,8 +23,10 @@ export interface TaskCounts {
 export async function loadTaskRowsPage(
   objectScope: Pick<TaskObjectScope, 'listObjects'>,
   cursor?: string | null,
+  filter: objects.ObjectListFilter = {},
 ): Promise<TaskRowsPage> {
   const rows = await objectScope.listObjects({
+    ...filter,
     type: 'task',
     archived: false,
     limit: TASK_BOARD_PAGE_SIZE + 1,
@@ -44,8 +46,10 @@ export async function loadTaskRowsPage(
 export async function countTaskRows(
   objectScope: Pick<TaskObjectScope, 'countObjects'>,
   now = new Date(),
+  filter: objects.ObjectCountFilter = {},
 ): Promise<TaskCounts> {
   const base = {
+    ...filter,
     type: 'task' as const,
     archived: false,
   };

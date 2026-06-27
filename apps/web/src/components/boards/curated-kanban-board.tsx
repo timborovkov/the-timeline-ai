@@ -31,6 +31,7 @@ import {
   curatedKanbanSaveState,
   type CuratedKanbanSaveState,
 } from '@/components/boards/curated-kanban-state';
+import { boardViewHref } from '@/lib/board-links';
 import { displayText } from '@/lib/display-dates';
 import { displayObjectTitle } from '@/lib/object-title';
 import { cn, errorMessage } from '@/lib/utils';
@@ -41,9 +42,19 @@ interface Props {
   items: boards.BoardItemRow[];
   selectedItemId: string | null;
   members: BoardMemberOption[];
+  filterParams?: Record<string, string>;
 }
 
-export function CuratedKanbanBoard({ boardId, lanes, items, selectedItemId, members }: Props) {
+const EMPTY_FILTER_PARAMS: Record<string, string> = {};
+
+export function CuratedKanbanBoard({
+  boardId,
+  lanes,
+  items,
+  selectedItemId,
+  members,
+  filterParams = EMPTY_FILTER_PARAMS,
+}: Props) {
   const dndContextId = useId();
   const router = useRouter();
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
@@ -166,6 +177,7 @@ export function CuratedKanbanBoard({ boardId, lanes, items, selectedItemId, memb
               errors={errors}
               selectedItemId={selectedItemId}
               members={members}
+              filterParams={filterParams}
             />
           ))}
           {(byLane.get(null)?.length ?? 0) > 0 ? (
@@ -184,6 +196,7 @@ export function CuratedKanbanBoard({ boardId, lanes, items, selectedItemId, memb
               errors={errors}
               selectedItemId={selectedItemId}
               members={members}
+              filterParams={filterParams}
             />
           ) : null}
         </div>
@@ -205,6 +218,7 @@ function KanbanColumn({
   errors,
   selectedItemId,
   members,
+  filterParams,
 }: {
   boardId: string;
   lane: boards.BoardLaneRow;
@@ -213,6 +227,7 @@ function KanbanColumn({
   errors: Record<string, string>;
   selectedItemId: string | null;
   members: BoardMemberOption[];
+  filterParams: Record<string, string>;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: lane.id });
   return (
@@ -242,6 +257,7 @@ function KanbanColumn({
             error={errors[item.id]}
             selected={item.id === selectedItemId}
             members={members}
+            filterParams={filterParams}
           />
         ))}
       </ul>
@@ -257,6 +273,7 @@ function KanbanCard({
   error,
   selected,
   members,
+  filterParams,
 }: {
   boardId: string;
   item: boards.BoardItemRow;
@@ -265,6 +282,7 @@ function KanbanCard({
   error?: string;
   selected: boolean;
   members: BoardMemberOption[];
+  filterParams: Record<string, string>;
 }) {
   const optimistic = item.id.startsWith('optimistic-');
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
@@ -299,7 +317,7 @@ function KanbanCard({
         </span>
       ) : (
         <Link
-          href={`/app/boards/${boardId}?item=${item.id}`}
+          href={boardViewHref(boardId, 'kanban', item.id, filterParams)}
           className="block min-w-0 whitespace-normal break-words font-medium leading-snug hover:underline"
         >
           {displayText(title)}

@@ -348,14 +348,23 @@ export const OBJECT_TYPES = entityType.enumValues;
 export type ActorKind = 'user' | 'agent' | 'system';
 
 export interface ObjectListFilter {
+  id?: string | string[];
+  query?: string;
   type?: ObjectType | ObjectType[];
   status?: string | string[];
   statusNot?: string | string[];
   stage?: string | string[];
+  priority?: number | number[];
+  priorityNull?: boolean;
   ownerUserId?: string | null;
   assigneeUserId?: string | null;
   dueBefore?: Date;
   dueAfter?: Date;
+  dueNull?: boolean;
+  createdBefore?: Date;
+  createdAfter?: Date;
+  updatedBefore?: Date;
+  updatedAfter?: Date;
   archived?: boolean;
   order?: 'updated' | 'due';
   limit?: number;
@@ -476,6 +485,7 @@ function objectSearchTokens(query: string): string[] {
 function objectTokenSearchCondition(token: string): SQL {
   const exact = token.toLowerCase();
   const prefix = `${exact.replace(/[\\%_]/g, (match) => `\\${match}`)}%`;
+  const contains = likePattern(exact);
   const tsPrefix = `${exact}:*`;
   return sql`(
     lower(${entities.canonicalName}) = ${exact}
@@ -491,6 +501,7 @@ function objectTokenSearchCondition(token: string): SQL {
         OR lower(alias.value) LIKE ${prefix} ESCAPE '\\'
         OR to_tsvector('simple', alias.value) @@ to_tsquery('simple', ${tsPrefix})
     )
+    OR lower(${entities.metadata}::text) LIKE ${contains} ESCAPE '\\'
   )`;
 }
 
@@ -523,6 +534,12 @@ function objectListOrder(filter: Pick<ObjectListFilter, 'order'>): SQL[] {
 function objectListConditions(scope: TeamScopeCore, filter: ObjectCountFilter = {}): SQL[] {
   const conds = [eq(entities.teamId, scope.teamId), isNull(entities.mergedIntoId)];
 
+  const ids = toArray(filter.id);
+  if (ids && ids.length > 0) {
+    const validIds = ids.filter((id) => UUID_RE.test(id));
+    conds.push(validIds.length > 0 ? inArray(entities.id, validIds) : sql`false`);
+  }
+
   const types = toArray(filter.type);
   if (types && types.length > 0) conds.push(inArray(entities.type, types));
 
@@ -540,17 +557,32 @@ function objectListConditions(scope: TeamScopeCore, filter: ObjectCountFilter = 
     conds.push(inArray(entities.stage, stages));
   }
 
+  const priorities = toArray(filter.priority);
+  if (filter.priorityNull) conds.push(isNull(entities.priority));
+  else if (priorities && priorities.length > 0) conds.push(inArray(entities.priority, priorities));
+
   if (filter.ownerUserId === null) conds.push(isNull(entities.ownerUserId));
   else if (filter.ownerUserId) conds.push(eq(entities.ownerUserId, filter.ownerUserId));
 
   if (filter.assigneeUserId === null) conds.push(isNull(entities.assigneeUserId));
   else if (filter.assigneeUserId) conds.push(eq(entities.assigneeUserId, filter.assigneeUserId));
 
+  if (filter.dueNull) conds.push(isNull(entities.dueAt));
   if (filter.dueBefore) conds.push(lt(entities.dueAt, filter.dueBefore));
   if (filter.dueAfter) conds.push(gte(entities.dueAt, filter.dueAfter));
+  if (filter.createdBefore) conds.push(lt(entities.createdAt, filter.createdBefore));
+  if (filter.createdAfter) conds.push(gte(entities.createdAt, filter.createdAfter));
+  if (filter.updatedBefore) conds.push(lt(entities.updatedAt, filter.updatedBefore));
+  if (filter.updatedAfter) conds.push(gte(entities.updatedAt, filter.updatedAfter));
 
   if (filter.archived === true) conds.push(isNotNull(entities.archivedAt));
   else if (filter.archived !== undefined) conds.push(isNull(entities.archivedAt));
+
+  const query = filter.query?.trim();
+  if (query) {
+    const tokens = objectSearchTokens(query);
+    if (tokens.length > 0) conds.push(objectSearchCondition(tokens.join(' '), tokens));
+  }
 
   return conds;
 }

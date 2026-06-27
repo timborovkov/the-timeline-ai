@@ -279,6 +279,94 @@ describe('object scope — team ownership and audit behavior', () => {
     ]);
   });
 
+  it('filters object lists by text, people, priority, and due windows', async () => {
+    const scope = withTeam(db, TEAM_A, USER_OWNER).objects;
+    const dueAt = new Date('2026-08-05T09:00:00.000Z');
+    const matching = await scope.createObject({
+      type: 'task',
+      canonicalName: 'Prepare audit pilot',
+      status: 'todo',
+      priority: 1,
+      assigneeUserId: USER_MEMBER,
+      dueAt,
+      metadata: { customer_region: 'Nordics' },
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    await scope.createObject({
+      type: 'task',
+      canonicalName: 'Prepare sales pilot',
+      status: 'todo',
+      priority: 2,
+      assigneeUserId: USER_OWNER,
+      dueAt: null,
+      metadata: { customer_region: 'Benelux' },
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    await db
+      .update(entities)
+      .set({
+        createdAt: new Date('2026-07-10T00:00:00.000Z'),
+        updatedAt: new Date('2026-07-20T00:00:00.000Z'),
+      })
+      .where(eq(entities.id, matching.id));
+
+    await expect(
+      scope.listObjects({
+        id: matching.id,
+        type: 'task',
+        query: 'nordics',
+        priority: 1,
+        assigneeUserId: USER_MEMBER,
+        dueAfter: new Date('2026-08-01T00:00:00.000Z'),
+        dueBefore: new Date('2026-08-06T00:00:00.000Z'),
+        createdAfter: new Date('2026-07-01T00:00:00.000Z'),
+        createdBefore: new Date('2026-07-31T00:00:00.000Z'),
+        updatedAfter: new Date('2026-07-15T00:00:00.000Z'),
+        updatedBefore: new Date('2026-07-25T00:00:00.000Z'),
+      }),
+    ).resolves.toEqual([expect.objectContaining({ id: matching.id })]);
+
+    await expect(
+      scope.listObjects({
+        id: '00000000-0000-4000-8000-000000000000',
+        type: 'task',
+        query: 'nordics',
+        priority: 1,
+        assigneeUserId: USER_MEMBER,
+      }),
+    ).resolves.toEqual([]);
+
+    await expect(
+      scope.listObjects({
+        id: 'not-a-uuid',
+        type: 'task',
+        query: 'nordics',
+      }),
+    ).resolves.toEqual([]);
+    await expect(
+      scope.countObjects({
+        id: 'not-a-uuid',
+        type: 'task',
+        query: 'nordics',
+      }),
+    ).resolves.toBe(0);
+    await expect(
+      scope.listObjects({
+        id: ['not-a-uuid', matching.id],
+        type: 'task',
+        query: 'nordics',
+      }),
+    ).resolves.toEqual([expect.objectContaining({ id: matching.id })]);
+
+    await expect(
+      scope.listObjects({
+        type: 'task',
+        priorityNull: true,
+        dueNull: true,
+      }),
+    ).resolves.toEqual([]);
+  });
+
   it('does not mirror suggested task due dates before human acceptance', async () => {
     const scope = withTeam(db, TEAM_A, USER_OWNER).objects;
 
