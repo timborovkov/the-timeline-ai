@@ -18,6 +18,7 @@ export type ObjectType = (typeof OBJECT_TYPES)[number];
 export type ActorKind = 'user' | 'agent' | 'system';
 
 export interface ObjectListFilter {
+  id?: string | string[];
   type?: ObjectType | ObjectType[];
   status?: string | string[];
   statusNot?: string | string[];

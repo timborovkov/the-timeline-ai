@@ -348,6 +348,7 @@ export const OBJECT_TYPES = entityType.enumValues;
 export type ActorKind = 'user' | 'agent' | 'system';
 
 export interface ObjectListFilter {
+  id?: string | string[];
   query?: string;
   type?: ObjectType | ObjectType[];
   status?: string | string[];
@@ -532,6 +533,9 @@ function objectListOrder(filter: Pick<ObjectListFilter, 'order'>): SQL[] {
 
 function objectListConditions(scope: TeamScopeCore, filter: ObjectCountFilter = {}): SQL[] {
   const conds = [eq(entities.teamId, scope.teamId), isNull(entities.mergedIntoId)];
+
+  const ids = toArray(filter.id);
+  if (ids && ids.length > 0) conds.push(inArray(entities.id, ids));
 
   const types = toArray(filter.type);
   if (types && types.length > 0) conds.push(inArray(entities.type, types));

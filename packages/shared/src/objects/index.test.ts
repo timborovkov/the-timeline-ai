@@ -312,6 +312,7 @@ describe('object scope — team ownership and audit behavior', () => {
 
     await expect(
       scope.listObjects({
+        id: matching.id,
         type: 'task',
         query: 'nordics',
         priority: 1,
@@ -324,6 +325,16 @@ describe('object scope — team ownership and audit behavior', () => {
         updatedBefore: new Date('2026-07-25T00:00:00.000Z'),
       }),
     ).resolves.toEqual([expect.objectContaining({ id: matching.id })]);
+
+    await expect(
+      scope.listObjects({
+        id: '00000000-0000-4000-8000-000000000000',
+        type: 'task',
+        query: 'nordics',
+        priority: 1,
+        assigneeUserId: USER_MEMBER,
+      }),
+    ).resolves.toEqual([]);
 
     await expect(
       scope.listObjects({

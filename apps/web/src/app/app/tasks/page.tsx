@@ -3,7 +3,6 @@ import { withTeam } from '@timeline/shared/team-scope';
 import { inArray } from 'drizzle-orm';
 import { redirect } from 'next/navigation';
 
-import type { ObjectListFilter, ObjectRow } from '@timeline/shared/objects';
 import type { Metadata } from 'next';
 
 import { ApprovalsClient } from '@/components/approvals/approvals-client';
@@ -15,7 +14,6 @@ import { WorkFilterBar } from '@/components/work-filter-bar';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
-import { objectMatchesTextFilter } from '@/lib/object-filter';
 import { isActionableSuggestionStatus } from '@/lib/suggestion-status';
 import { serializeSuggestionBundle } from '@/lib/suggestions';
 import { countTaskRows, loadTaskRowsPage } from '@/lib/task-page';
@@ -84,8 +82,12 @@ export default async function TasksPage({
   let rows = taskPage.rows;
   let selectedVisibleTaskId = rows.some((row) => row.id === selectedTaskId) ? selectedTaskId : null;
   if (selectedTaskId && !selectedVisibleTaskId) {
-    const selectedTask = await scope.objects.getObject(selectedTaskId).catch(() => null);
-    if (selectedTask && objectRowMatchesFilter(selectedTask, taskFilter)) {
+    const [selectedTask] = await scope.objects.listObjects({
+      ...taskFilter,
+      id: selectedTaskId,
+      limit: 1,
+    });
+    if (selectedTask) {
       rows = [selectedTask, ...rows];
       selectedVisibleTaskId = selectedTask.id;
     }
@@ -218,47 +220,4 @@ export default async function TasksPage({
       ) : null}
     </div>
   );
-}
-
-function objectRowMatchesFilter(row: ObjectRow, filter: ObjectListFilter): boolean {
-  if (!matchesValue(row.type, filter.type)) return false;
-  if (!matchesValue(row.status, filter.status)) return false;
-  if (filter.statusNot !== undefined && matchesValue(row.status, filter.statusNot)) return false;
-  if (!matchesNullableValue(row.stage, filter.stage)) return false;
-  if (filter.priorityNull && row.priority !== null) return false;
-  if (!filter.priorityNull && !matchesNullableValue(row.priority, filter.priority)) return false;
-  if (!matchesPerson(row.ownerUserId, filter.ownerUserId)) return false;
-  if (!matchesPerson(row.assigneeUserId, filter.assigneeUserId)) return false;
-  if (filter.dueNull && row.dueAt !== null) return false;
-  if (filter.dueBefore && (!row.dueAt || row.dueAt >= filter.dueBefore)) return false;
-  if (filter.dueAfter && (!row.dueAt || row.dueAt < filter.dueAfter)) return false;
-  if (filter.createdBefore && row.createdAt >= filter.createdBefore) return false;
-  if (filter.createdAfter && row.createdAt < filter.createdAfter) return false;
-  if (filter.updatedBefore && row.updatedAt >= filter.updatedBefore) return false;
-  if (filter.updatedAfter && row.updatedAt < filter.updatedAfter) return false;
-  if (filter.archived === true && row.archivedAt === null) return false;
-  if (filter.archived === false && row.archivedAt !== null) return false;
-  return filter.query ? objectMatchesTextFilter(row, filter.query) : true;
-}
-
-function matchesValue<T extends string | number>(
-  value: T,
-  filterValue: T | T[] | undefined,
-): boolean {
-  if (filterValue === undefined) return true;
-  return Array.isArray(filterValue) ? filterValue.includes(value) : value === filterValue;
-}
-
-function matchesNullableValue<T extends string | number>(
-  value: T | null,
-  filterValue: T | T[] | undefined,
-): boolean {
-  if (filterValue === undefined) return true;
-  if (value === null) return false;
-  return matchesValue(value, filterValue);
-}
-
-function matchesPerson(value: string | null, filterValue: string | null | undefined): boolean {
-  if (filterValue === undefined) return true;
-  return value === filterValue;
 }
