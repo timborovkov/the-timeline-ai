@@ -216,6 +216,11 @@ function statusAuthorityRank(input: ArtifactEvidenceInput): number {
   return statusStateRank(input.status) * 10_000 + roleRank * 100 + evidenceStrengthRank(input);
 }
 
+function canRefreshStatusFromSameSource(input: ArtifactEvidenceInput): boolean {
+  if (!input.provider || !input.externalObjectId) return false;
+  return ['error', 'issue', 'document', 'decision', 'schedule', 'rsvp'].includes(input.role);
+}
+
 function statusStateRank(status: ArtifactStatus): number {
   if (status === 'archived') return 70;
   if (status === 'cancelled') return 60;
@@ -274,6 +279,7 @@ async function updateClusterStatusFromAuthoritativeEvidence(
   if (!input.authoritative || !input.status) return;
   const rank = statusAuthorityRank(input);
   const authorityAt = statusAuthorityAt(input);
+  const sourceCanRefresh = canRefreshStatusFromSameSource(input);
   await db.execute(sql`
     UPDATE ${artifactClusters}
     SET
@@ -282,7 +288,10 @@ async function updateClusterStatusFromAuthoritativeEvidence(
         || jsonb_build_object(
           'status_authority_rank', ${rank}::int,
           'status_authority_at', ${authorityAt}::text,
-          'status_authority_source', ${input.provider ?? input.strength}::text
+          'status_authority_source', ${input.provider ?? input.strength}::text,
+          'status_authority_provider', ${input.provider ?? ''}::text,
+          'status_authority_external_object_id', ${input.externalObjectId ?? ''}::text,
+          'status_authority_role', ${input.role}::text
         ),
       updated_at = NOW()
     WHERE ${artifactClusters.teamId} = ${input.teamId}
@@ -292,6 +301,12 @@ async function updateClusterStatusFromAuthoritativeEvidence(
         OR ((${artifactClusters.metadata} ->> 'status_authority_rank')::int < ${rank}::int)
         OR (
           ((${artifactClusters.metadata} ->> 'status_authority_rank')::int = ${rank}::int)
+          AND COALESCE(${artifactClusters.metadata} ->> 'status_authority_at', '') <= ${authorityAt}::text
+        )
+        OR (
+          ${sourceCanRefresh}::boolean
+          AND COALESCE(${artifactClusters.metadata} ->> 'status_authority_provider', '') = ${input.provider ?? ''}::text
+          AND COALESCE(${artifactClusters.metadata} ->> 'status_authority_external_object_id', '') = ${input.externalObjectId ?? ''}::text
           AND COALESCE(${artifactClusters.metadata} ->> 'status_authority_at', '') <= ${authorityAt}::text
         )
       )
@@ -412,9 +427,21 @@ export async function listArtifactClusterEvidence(
       objectName: entities.canonicalName,
     })
     .from(artifactClusters)
-    .innerJoin(artifactClusterMembers, eq(artifactClusterMembers.clusterId, artifactClusters.id))
-    .leftJoin(rawEvents, eq(rawEvents.id, artifactClusterMembers.rawEventId))
-    .leftJoin(entities, eq(entities.id, artifactClusterMembers.entityId))
+    .innerJoin(
+      artifactClusterMembers,
+      and(
+        eq(artifactClusterMembers.clusterId, artifactClusters.id),
+        eq(artifactClusterMembers.teamId, input.teamId),
+      ),
+    )
+    .leftJoin(
+      rawEvents,
+      and(eq(rawEvents.id, artifactClusterMembers.rawEventId), eq(rawEvents.teamId, input.teamId)),
+    )
+    .leftJoin(
+      entities,
+      and(eq(entities.id, artifactClusterMembers.entityId), eq(entities.teamId, input.teamId)),
+    )
     .where(
       and(eq(artifactClusters.teamId, input.teamId), eq(artifactClusters.id, input.clusterId)),
     );
@@ -440,7 +467,13 @@ export async function findArtifactClustersByAnchors(
       anchorValue: artifactClusterAnchors.anchorValue,
     })
     .from(artifactClusterAnchors)
-    .innerJoin(artifactClusters, eq(artifactClusters.id, artifactClusterAnchors.clusterId))
+    .innerJoin(
+      artifactClusters,
+      and(
+        eq(artifactClusters.id, artifactClusterAnchors.clusterId),
+        eq(artifactClusters.teamId, input.teamId),
+      ),
+    )
     .where(
       and(eq(artifactClusterAnchors.teamId, input.teamId), sql.join(clauses, sql.raw(' OR '))),
     );

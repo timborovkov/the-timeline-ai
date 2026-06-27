@@ -1152,6 +1152,81 @@ describe('writeIntegrationEvents visibility', () => {
     );
   });
 
+  it('keeps every same-object raw event as artifact evidence within one batch', async () => {
+    const [integration] = await db
+      .insert(integrations)
+      .values({
+        teamId: TEAM_ID,
+        connectedByUserId: USER_ID,
+        provider: 'github',
+        displayName: 'GitHub',
+        externalAccountId: 'github-same-object-batch',
+        visibilityDefault: 'team',
+      })
+      .returning();
+    if (!integration) throw new Error('integration insert failed');
+
+    const insertedIds = await writeIntegrationEvents({
+      db: db as never,
+      integration,
+      events: [
+        {
+          dedupKey: 'github:issue:913:opened',
+          provider: 'github',
+          externalObjectId: 'timborovkov/the-timeline-ai#913',
+          eventType: 'issue.updated',
+          occurredAt: new Date('2026-06-18T12:00:00Z'),
+          contentText: 'GitHub issue timborovkov/the-timeline-ai#913 opened',
+          extra: {
+            github: {
+              type: 'issue',
+              repo: 'timborovkov/the-timeline-ai',
+              number: 913,
+            },
+          },
+          objectMap: {
+            type: 'task',
+            canonicalName: 'timborovkov/the-timeline-ai#913: Preserve batch evidence',
+            displayTitle: 'the-timeline-ai: Preserve batch evidence',
+            externalId: 'timborovkov/the-timeline-ai#913',
+            status: 'open',
+          },
+        },
+        {
+          dedupKey: 'github:issue:913:closed',
+          provider: 'github',
+          externalObjectId: 'timborovkov/the-timeline-ai#913',
+          eventType: 'issue.closed',
+          occurredAt: new Date('2026-06-18T12:05:00Z'),
+          contentText: 'GitHub issue timborovkov/the-timeline-ai#913 closed',
+          extra: {
+            github: {
+              type: 'issue',
+              repo: 'timborovkov/the-timeline-ai',
+              number: 913,
+            },
+          },
+          objectMap: {
+            type: 'task',
+            canonicalName: 'timborovkov/the-timeline-ai#913: Preserve batch evidence',
+            displayTitle: 'the-timeline-ai: Preserve batch evidence',
+            externalId: 'timborovkov/the-timeline-ai#913',
+            status: 'done',
+          },
+        },
+      ],
+    });
+    expect(insertedIds).toHaveLength(2);
+
+    const clusters = await db.select().from(artifactClusters);
+    expect(clusters).toHaveLength(1);
+    expect(clusters[0]?.status).toBe('resolved');
+
+    const members = await db.select().from(artifactClusterMembers);
+    expect(members.map((member) => member.rawEventId).sort()).toEqual([...insertedIds].sort());
+    expect(members.map((member) => member.role).sort()).toEqual(['issue', 'lifecycle_update']);
+  });
+
   it('clusters non-technical work artifacts with explicit artifact keys without granting authority to context', async () => {
     const [integration] = await db
       .insert(integrations)

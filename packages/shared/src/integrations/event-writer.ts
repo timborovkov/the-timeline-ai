@@ -150,9 +150,9 @@ export async function writeIntegrationEvents(deps: {
   // repairable from existing raw_events. If a previous run inserted the raw
   // event and then failed while attaching artifact evidence, a replay with the
   // same dedup_key must fill the missing cluster/member rows.
-  // Dedupe by externalId within the repairable set (a single PR can fire
-  // pr.updated AND pr.review.approved in one webhook; both carry the same
-  // objectMap).
+  // Dedupe workspace-object upserts by externalId, but reconcile every raw
+  // event as evidence. Multiple lifecycle events for the same object in one
+  // batch should remain distinct cluster members.
   const artifactEvents = writableEvents.filter(
     (evt): evt is IntegrationEvent & { objectMap: ObjectMapping } => Boolean(evt.objectMap),
   );
@@ -170,6 +170,9 @@ export async function writeIntegrationEvents(deps: {
     if (!rawEventIdsByDedupKey.has(evt.dedupKey)) continue;
     byExternal.set(evt.objectMap.externalId, evt);
   }
+  const repairableArtifactEvents = artifactEvents.filter((evt) =>
+    rawEventIdsByDedupKey.has(evt.dedupKey),
+  );
   if (byExternal.size > 0) {
     const entityByExternalId = await upsertWorkspaceObjects(deps.db, deps.integration, [
       ...byExternal.values(),
@@ -179,7 +182,7 @@ export async function writeIntegrationEvents(deps: {
       integration: deps.integration,
       rawEventIdsByDedupKey,
       entityByExternalId,
-      events: [...byExternal.values()],
+      events: repairableArtifactEvents,
     });
   }
 

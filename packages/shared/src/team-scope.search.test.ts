@@ -303,6 +303,29 @@ describe('withTeam timeline semantic search', () => {
     ).not.toContain(OTHER_TEAM_EVENT);
   });
 
+  it('does not hydrate a cluster whose joined cluster row belongs to another team', async () => {
+    await pg.exec(`
+      INSERT INTO artifact_clusters
+        (id, team_id, artifact_type, canonical_name, status)
+      VALUES
+        ('${ARTIFACT_CLUSTER}', '${TEAM_B}', 'deal', 'Other-team Acme acquisition', 'resolved');
+
+      INSERT INTO artifact_cluster_members
+        (team_id, cluster_id, raw_event_id, provider, external_object_id, role, strength, authoritative, metadata)
+      VALUES
+        ('${TEAM_A}', '${ARTIFACT_CLUSTER}', '${TEAM_EVENT}', 'web', 'cross-team:acme', 'report', 'human', false, '{"canonical_name":"Cross-team Acme","status":"resolved"}'::jsonb);
+    `);
+    hits = [hit(TEAM_EVENT, 0.9)];
+
+    const results = await scopeFor(OWNER).timeline.searchEvents({
+      query: 'Acme renewal',
+      limit: 5,
+    });
+
+    expect(results[0]).toMatchObject({ eventId: TEAM_EVENT });
+    expect(results[0]?.artifactCluster).toBeNull();
+  });
+
   it('requires membership before embedding or searching', async () => {
     await expect(scopeFor(OUTSIDER).timeline.searchEvents({ query: 'Acme' })).rejects.toThrow(
       /not a member/i,

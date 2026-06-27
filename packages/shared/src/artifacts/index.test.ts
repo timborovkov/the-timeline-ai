@@ -10,10 +10,15 @@ import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { beforeEach, describe, expect, it } from 'vitest';
 
-import { findArtifactClustersByAnchors, reconcileArtifactEvidence } from '#src/artifacts/index.js';
+import {
+  findArtifactClustersByAnchors,
+  listArtifactClusterEvidence,
+  reconcileArtifactEvidence,
+} from '#src/artifacts/index.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
 
 const TEAM_ID = '11111111-1111-1111-1111-111111111111';
+const TEAM_B_ID = '22222222-2222-2222-2222-222222222222';
 const USER_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 
 describe('artifact reconciliation', () => {
@@ -25,7 +30,8 @@ describe('artifact reconciliation', () => {
     await applyDbMigrations(pg);
     db = drizzle(pg);
     await pg.exec(`
-      INSERT INTO teams (id, slug, name) VALUES ('${TEAM_ID}', 'team-a', 'Team A');
+      INSERT INTO teams (id, slug, name)
+      VALUES ('${TEAM_ID}', 'team-a', 'Team A'), ('${TEAM_B_ID}', 'team-b', 'Team B');
       INSERT INTO users (id, email) VALUES ('${USER_ID}', 'owner@example.com');
       INSERT INTO team_members (team_id, user_id, role) VALUES ('${TEAM_ID}', '${USER_ID}', 'owner');
     `);
@@ -399,5 +405,99 @@ describe('artifact reconciliation', () => {
       .from(artifactClusters)
       .where(eq(artifactClusters.id, first.clusterId));
     expect(cluster?.status).toBe('resolved');
+  });
+
+  it('lets a newer authoritative source event reopen the same issue artifact', async () => {
+    const closed = await rawEvent('GitHub issue closed for checkout fix.', '2026-06-20T12:00:00Z');
+    const reopened = await rawEvent(
+      'GitHub issue reopened for checkout fix.',
+      '2026-06-20T12:10:00Z',
+    );
+
+    const first = await reconcileArtifactEvidence(db as never, {
+      teamId: TEAM_ID,
+      artifactType: 'task',
+      canonicalName: 'github/repo#92: Fix checkout',
+      status: 'resolved',
+      rawEventId: closed.id,
+      role: 'lifecycle_update',
+      strength: 'provider',
+      authoritative: true,
+      occurredAt: closed.occurredAt,
+      provider: 'github',
+      externalObjectId: 'github/repo#92',
+      anchors: [{ type: 'github_issue', value: 'github/repo#92', strength: 'hard' }],
+    });
+    const second = await reconcileArtifactEvidence(db as never, {
+      teamId: TEAM_ID,
+      artifactType: 'task',
+      canonicalName: 'github/repo#92: Fix checkout',
+      status: 'open',
+      rawEventId: reopened.id,
+      role: 'issue',
+      strength: 'provider',
+      authoritative: true,
+      occurredAt: reopened.occurredAt,
+      provider: 'github',
+      externalObjectId: 'github/repo#92',
+      anchors: [{ type: 'github_issue', value: 'github/repo#92', strength: 'hard' }],
+    });
+
+    expect(second.clusterId).toBe(first.clusterId);
+    const [cluster] = await db
+      .select()
+      .from(artifactClusters)
+      .where(eq(artifactClusters.id, first.clusterId));
+    expect(cluster?.status).toBe('open');
+  });
+
+  it('keeps artifact helper joins scoped to the requested team', async () => {
+    const source = await rawEvent('Acme contract evidence.');
+    const cluster = await reconcileArtifactEvidence(db as never, {
+      teamId: TEAM_ID,
+      artifactType: 'document',
+      canonicalName: 'Acme contract',
+      rawEventId: source.id,
+      role: 'document',
+      strength: 'structured',
+      anchors: [{ type: 'contract_id', value: 'ACME-2026', strength: 'hard' }],
+    });
+    const crossTeamRawEventId = '00000000-0000-0000-0000-000000000222';
+    const crossTeamClusterId = '30000000-0000-0000-0000-000000000222';
+
+    await pg.exec(`
+      INSERT INTO raw_events
+        (id, team_id, author_user_id, source, content_text, occurred_at, visibility, source_metadata)
+      VALUES
+        ('${crossTeamRawEventId}', '${TEAM_B_ID}', '${USER_ID}', 'web', 'Other team evidence', '2026-06-20T13:00:00Z', 'team', '{}'::jsonb);
+
+      INSERT INTO artifact_cluster_members
+        (team_id, cluster_id, raw_event_id, role, strength, authoritative, metadata)
+      VALUES
+        ('${TEAM_B_ID}', '${cluster.clusterId}', '${crossTeamRawEventId}', 'document', 'structured', true, '{"canonical_name":"Other team contract"}'::jsonb);
+
+      INSERT INTO artifact_clusters
+        (id, team_id, artifact_type, canonical_name, status)
+      VALUES
+        ('${crossTeamClusterId}', '${TEAM_B_ID}', 'document', 'Other team contract', 'open');
+
+      INSERT INTO artifact_cluster_anchors
+        (team_id, cluster_id, anchor_type, anchor_value, strength, metadata)
+      VALUES
+        ('${TEAM_ID}', '${crossTeamClusterId}', 'contract_id', 'cross-team-contract', 'hard', '{}'::jsonb);
+    `);
+
+    const evidence = await listArtifactClusterEvidence(db as never, {
+      teamId: TEAM_ID,
+      clusterId: cluster.clusterId,
+    });
+    expect(evidence.map((row) => row.rawEventId)).toEqual([source.id]);
+
+    await expect(
+      findArtifactClustersByAnchors(db as never, {
+        teamId: TEAM_ID,
+        anchors: [{ type: 'contract_id', value: 'cross-team-contract', strength: 'hard' }],
+      }),
+    ).resolves.toEqual([]);
   });
 });

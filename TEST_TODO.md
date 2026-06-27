@@ -8,26 +8,26 @@ contracts, not private implementation structure.
 
 Last checked in this branch: full `pnpm validate`, `pnpm test:eval`,
 `pnpm test:dist-imports`, root `pnpm test`, and React Doctor `100 / 100` pass
-after syncing Documents UX V2 and scoped provider connections with upstream
-board, global-search, suggestion, and app-dialog polish. The suite includes
-captured-inbox promotion/pagination fixes,
-provider-connection hardening, recurring meeting capture, Saved Meeting
-visibility enforcement, scheduler idempotency, strict meeting URL host matching,
-generated calendar cleanup, quick-join failure/capacity/reuse, partial-cancel
-finalize queue regressions, and board/search UI regressions. Current suite
-shape:
+after artifact-cluster reconciliation, related-evidence hydration, and
+provider lifecycle authority fixes. The suite includes artifact status reopen
+regressions, same-object batch evidence preservation, cross-team artifact join
+guards, captured-inbox promotion/pagination fixes, provider-connection
+hardening, recurring meeting capture, Saved Meeting visibility enforcement,
+scheduler idempotency, strict meeting URL host matching, generated calendar
+cleanup, quick-join failure/capacity/reuse, partial-cancel finalize queue
+regressions, and board/search UI regressions. Current suite shape:
 
-- DB Vitest: 1 file / 8 tests, package-level PGlite schema contract suite now
+- DB Vitest: 2 files / 12 tests, package-level PGlite schema contract suite now
   runs under root `pnpm test`.
-- Shared Vitest: 76 files / 753+ tests plus 1 skipped, including PGlite
-  calendar, timeline, MCP, integration/provider-connection, meeting, document,
-  object, assistant, Slack, recovery, connection-attention, and onboarding
-  coverage.
-- Web Vitest: 118 files / 580+ tests, including route/action/component coverage
-  for core recovery, onboarding, object sections, board add-item interactions,
-  provider-connection routes/UI, app dialog flows, and other high-value UI
-  states.
-- Worker Vitest: 17 files / 208 tests, including extract, transcribe,
+- Shared Vitest: 84 files / 1,018 passing tests plus 1 skipped, including PGlite
+  artifact reconciliation, event writer, calendar, timeline, MCP,
+  integration/provider-connection, meeting, document, object, assistant, Slack,
+  recovery, connection-attention, and onboarding coverage.
+- Web Vitest: 143 files / 832 tests, including route/action/component coverage
+  for search, timeline, core recovery, onboarding, object sections, board
+  add-item interactions, provider-connection routes/UI, app dialog flows, and
+  other high-value UI states.
+- Worker Vitest: 17 files / 227 tests, including extract, transcribe,
   document-extract, meeting-finalize, meeting-scheduler, integration-sync
   attention behavior, overdue-scan, embedding, cleanup, and janitor behavior.
 - Playwright: 13 local core E2E journeys plus 1 production-ish smoke journey.

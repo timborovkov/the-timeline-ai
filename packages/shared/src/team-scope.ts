@@ -521,7 +521,13 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
         clusterId: artifactClusters.id,
       })
       .from(artifactClusterMembers)
-      .innerJoin(artifactClusters, eq(artifactClusters.id, artifactClusterMembers.clusterId))
+      .innerJoin(
+        artifactClusters,
+        and(
+          eq(artifactClusters.id, artifactClusterMembers.clusterId),
+          eq(artifactClusters.teamId, teamId),
+        ),
+      )
       .where(
         and(
           eq(artifactClusterMembers.teamId, teamId),
@@ -549,7 +555,13 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
         objectName: entities.canonicalName,
       })
       .from(artifactClusterMembers)
-      .innerJoin(artifactClusters, eq(artifactClusters.id, artifactClusterMembers.clusterId))
+      .innerJoin(
+        artifactClusters,
+        and(
+          eq(artifactClusters.id, artifactClusterMembers.clusterId),
+          eq(artifactClusters.teamId, teamId),
+        ),
+      )
       .leftJoin(
         rawEvents,
         and(eq(rawEvents.id, artifactClusterMembers.rawEventId), eq(rawEvents.teamId, teamId)),
