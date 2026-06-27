@@ -10,7 +10,7 @@
     <a class="skip" href="#main">Skip to content</a>
     <main id="main">
       <h1>Native integrations &amp; custom MCPs</h1>
-      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-06-25</span></div>
+      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-06-28</span></div>
       <p class="tldr">
         Connect native GitHub, Linear, Google Drive, Monday.com, Slack, and Sentry provider accounts
         from
@@ -361,11 +361,13 @@ SENTRY_INTEGRATION_CLIENT_SECRET=...</code></pre>
         identical same-day deliveries per webhook, redacts sensitive request headers from metadata,
         enforces the payload size cap while reading the request body, and rejects binary/multipart
         uploads for now. URLs in accepted payload text are normalized into non-authoritative link
-        artifact evidence, and duplicate delivery replay repairs missing link evidence for the
-        existing raw event. Payload text is fenced as external content before extraction and
-        proposal prompts, so sender-authored instructions remain evidence instead of agent
-        instructions. Documents and rich files should still go through the document drive until
-        binary webhook ingestion is intentionally designed.
+        artifact evidence, and emails, phone numbers, and conservative labeled addresses are stored
+        on <code>source_metadata.contacts</code>. Duplicate delivery replay repairs missing link
+        evidence for the existing raw event; contact metadata is captured when the raw event is
+        first accepted. Payload text is fenced as external content before extraction and proposal
+        prompts, so sender-authored instructions remain evidence instead of agent instructions.
+        Documents and rich files should still go through the document drive until binary webhook
+        ingestion is intentionally designed.
       </p>
 
       <h2 id="mcp">Custom MCP servers (inbound)</h2>

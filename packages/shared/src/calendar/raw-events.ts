@@ -1,10 +1,8 @@
 import { type Db, rawEvents } from '@timeline/db';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 
-import {
-  reconcileLinkArtifactsForRawEvent,
-  sourceMetadataWithLinks,
-} from '#src/conversational/link-artifacts.js';
+import { sourceMetadataWithConversationArtifacts } from '#src/conversational/contact-artifacts.js';
+import { reconcileLinkArtifactsForRawEvent } from '#src/conversational/link-artifacts.js';
 
 type DbTx = Parameters<Parameters<Db['transaction']>[0]>[0];
 type DbOrTx = Db | DbTx;
@@ -66,7 +64,7 @@ export async function insertCalendarRawEvents(
       visibility: args.visibility,
       visibilityUserIds: args.visibilityUserIds,
       visibilityOwnerUserId: args.userId,
-      sourceMetadata: sourceMetadataWithLinks(
+      sourceMetadata: sourceMetadataWithConversationArtifacts(
         { ...baseMetadata, action: 'scheduled' },
         scheduledText,
       ),
@@ -101,7 +99,10 @@ export async function insertCalendarRawEvents(
       visibility: args.visibility,
       visibilityUserIds: args.visibilityUserIds,
       visibilityOwnerUserId: args.userId,
-      sourceMetadata: sourceMetadataWithLinks({ ...baseMetadata, action: 'event' }, startText),
+      sourceMetadata: sourceMetadataWithConversationArtifacts(
+        { ...baseMetadata, action: 'event' },
+        startText,
+      ),
     })
     .onConflictDoNothing()
     .returning({ id: rawEvents.id });

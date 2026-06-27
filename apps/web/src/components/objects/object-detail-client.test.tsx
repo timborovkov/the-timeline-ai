@@ -85,6 +85,7 @@ const detail = {
     relatedEvidence: [],
   },
   recentChanges: [],
+  identityFacets: [],
   facts: [],
   timelineEvents: [],
   summary: null,
@@ -416,6 +417,45 @@ describe('ObjectDetailClient', () => {
     });
 
     expect(html.match(new RegExp(taskTitle, 'g'))).toHaveLength(1);
+  });
+
+  it('renders saved contact facets for people', () => {
+    const html = renderObjectDetail({
+      detail: {
+        ...detail,
+        type: 'person',
+        canonicalName: 'Ada Lovelace',
+        identityFacets: [
+          {
+            id: 'facet-email',
+            entityId: 'object-1',
+            kind: 'email',
+            value: 'ada@example.com',
+            normalizedValue: 'ada@example.com',
+            provider: null,
+            externalId: null,
+            linkedUserId: null,
+          },
+          {
+            id: 'facet-phone',
+            entityId: 'object-1',
+            kind: 'phone',
+            value: '+1 213 373 4253',
+            normalizedValue: '+12133734253',
+            provider: null,
+            externalId: null,
+            linkedUserId: null,
+          },
+        ],
+      },
+      userId: 'user-1',
+      suggestions: [],
+    });
+
+    expect(html).toContain('Contact');
+    expect(html).toContain('ada@example.com');
+    expect(html).toContain('href="mailto:ada@example.com"');
+    expect(html).toContain('href="tel:+12133734253"');
   });
 
   it('renders object summaries and provenance above evidence', () => {

@@ -9,10 +9,8 @@ import {
 } from '@timeline/db';
 import { type SQL, and, asc, desc, eq, gte, inArray, isNull, lt, or, sql } from 'drizzle-orm';
 
-import {
-  reconcileLinkArtifactsForRawEvent,
-  sourceMetadataWithLinks,
-} from '#src/conversational/link-artifacts.js';
+import { sourceMetadataWithConversationArtifacts } from '#src/conversational/contact-artifacts.js';
+import { reconcileLinkArtifactsForRawEvent } from '#src/conversational/link-artifacts.js';
 import { buildDocumentObjectKey } from '#src/documents/object-key.js';
 import { documentPresentation } from '#src/documents/presentation.js';
 import { embed as defaultEmbed, type EmbedResult } from '#src/llm/embed.js';
@@ -437,7 +435,7 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
         visibility: args.visibility,
         visibilityUserIds: args.visibilityUserIds,
         visibilityOwnerUserId: userId,
-        sourceMetadata: sourceMetadataWithLinks(meta, args.summary),
+        sourceMetadata: sourceMetadataWithConversationArtifacts(meta, args.summary),
       })
       .returning({ id: rawEvents.id });
     const row = inserted[0];

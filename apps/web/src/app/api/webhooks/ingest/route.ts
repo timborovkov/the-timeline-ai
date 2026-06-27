@@ -1,10 +1,8 @@
 import { createHash } from 'node:crypto';
 
 import { rawEvents } from '@timeline/db';
-import {
-  reconcileLinkArtifactsForRawEvent,
-  sourceMetadataWithLinks,
-} from '@timeline/shared/conversational/link-artifacts';
+import { sourceMetadataWithConversationArtifacts } from '@timeline/shared/conversational/contact-artifacts';
+import { reconcileLinkArtifactsForRawEvent } from '@timeline/shared/conversational/link-artifacts';
 import * as ingestWebhooks from '@timeline/shared/ingest-webhooks';
 import { childLogger } from '@timeline/shared/logger';
 import * as rateLimit from '@timeline/shared/rate-limit';
@@ -103,7 +101,7 @@ export async function handlePost(req: Request, pathToken?: string): Promise<Resp
     contentType,
     body,
   });
-  const sourceMetadata = sourceMetadataWithLinks(
+  const sourceMetadata = sourceMetadataWithConversationArtifacts(
     {
       ingest_webhook_id: resolved.webhookId,
       ingest_webhook_credential_id: resolved.credentialId,

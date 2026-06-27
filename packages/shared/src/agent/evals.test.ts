@@ -28,6 +28,7 @@ const OTHER_TEAM_EVENT = '00000000-0000-0000-0000-000000000404';
 const FACT_ID = '10000000-0000-0000-0000-000000000401';
 const TASK_ID = '20000000-0000-0000-0000-000000000401';
 const OBJECT_ID = '20000000-0000-0000-0000-000000000402';
+const PERSON_ID = '20000000-0000-0000-0000-000000000403';
 const CALENDAR_ID = '30000000-0000-0000-0000-000000000401';
 
 type Db = ReturnType<typeof drizzle>;
@@ -162,6 +163,13 @@ describe('agent tool evals', () => {
       canonicalName: 'Acme',
       status: 'active',
     });
+    await db.insert(entities).values({
+      id: PERSON_ID,
+      teamId: TEAM_A,
+      type: 'person',
+      canonicalName: 'Ada Lovelace',
+      status: 'active',
+    });
     await db.insert(calendarEvents).values({
       id: CALENDAR_ID,
       teamId: TEAM_A,
@@ -209,6 +217,65 @@ describe('agent tool evals', () => {
     });
     expect(calendarEval.output).toMatchObject({
       events: [expect.objectContaining({ id: CALENDAR_ID, title: 'Acme renewal review' })],
+    });
+  });
+
+  it('queues contact memory as identity facet approvals rather than mutating directly', async () => {
+    // Product behavior: emails and phone numbers extracted from chat are
+    // proposed as person identity memory, keeping contact details reviewable.
+    const scope = withTeam(db as never, TEAM_A, OWNER);
+    const tools = buildAgentTools(scope);
+    const exec = tools.suggest_object_memory?.execute as (
+      raw: unknown,
+      opts: unknown,
+    ) => Promise<unknown>;
+
+    const output = await exec(
+      {
+        title: 'Remember Ada contact details',
+        reason: 'Ada shared durable contact details in chat.',
+        confidence: 'high',
+        items: [
+          {
+            kind: 'add_identity_facet',
+            entityId: PERSON_ID,
+            facetKind: 'email',
+            value: 'Ada@Example.com',
+            normalizedValue: 'ada@example.com',
+          },
+          {
+            kind: 'add_identity_facet',
+            entityId: PERSON_ID,
+            facetKind: 'phone',
+            value: '+1 213 373 4253',
+            normalizedValue: '+12133734253',
+          },
+        ],
+      },
+      {},
+    );
+
+    expect(output).toMatchObject({ ok: true });
+    await expect(scope.objects.listIdentityFacets(PERSON_ID)).resolves.toEqual([]);
+    const pendingSuggestions = await scope.suggestions.listPendingSuggestions();
+    expect(pendingSuggestions).toHaveLength(1);
+    expect(pendingSuggestions[0]?.source).toBe('chat');
+    const suggestionItems = pendingSuggestions[0]?.items ?? [];
+    const emailItem = suggestionItems.find(
+      (item) => item.targetKind === 'identity_facet' && item.proposedPayload.kind === 'email',
+    );
+    const phoneItem = suggestionItems.find(
+      (item) => item.targetKind === 'identity_facet' && item.proposedPayload.kind === 'phone',
+    );
+    expect(emailItem?.proposedPayload).toMatchObject({
+      entityId: PERSON_ID,
+      kind: 'email',
+      normalizedValue: 'ada@example.com',
+    });
+    expect(phoneItem?.proposedPayload).toMatchObject({
+      entityId: PERSON_ID,
+      kind: 'phone',
+      normalizedValue: '+12133734253',
     });
   });
 

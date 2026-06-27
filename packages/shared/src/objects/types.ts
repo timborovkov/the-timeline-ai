@@ -157,6 +157,16 @@ export interface ObjectDetail extends ObjectRow {
     note: string | null;
     changedAt: Date;
   }[];
+  identityFacets: {
+    id: string;
+    entityId: string;
+    kind: 'email' | 'phone' | 'telegram' | 'slack' | 'github' | 'timeline_user' | 'other';
+    value: string;
+    normalizedValue: string;
+    provider: string | null;
+    externalId: string | null;
+    linkedUserId: string | null;
+  }[];
   openTasks: ObjectRow[];
   connectedWork: {
     openTasks: ObjectRow[];

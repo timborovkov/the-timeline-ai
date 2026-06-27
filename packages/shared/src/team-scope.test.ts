@@ -286,12 +286,46 @@ describe('withTeam namespaced port', () => {
     });
   });
 
+  it('stores contact metadata on threaded email raw events', async () => {
+    const scope = withTeam(db as never, TEAM_A, USER_A);
+    const event = await scope.timeline.createEmailEvent({
+      authorUserId: USER_A,
+      messageId: 'contact-email@example.com',
+      contentText: [
+        'Ada can be reached at ada@example.com.',
+        'Phone: +1 213-373-4253',
+        'Office address: 123 Market St, San Francisco, CA 94105',
+      ].join('\n'),
+      occurredAt: new Date('2026-06-20T09:00:00Z'),
+      sourceMetadata: {},
+    });
+    if (!event) throw new Error('expected email event');
+
+    const [row] = await db
+      .select({ sourceMetadata: rawEvents.sourceMetadata })
+      .from(rawEvents)
+      .where(eq(rawEvents.id, event.id));
+    expect(row?.sourceMetadata).toMatchObject({
+      contacts: {
+        emails: [expect.objectContaining({ normalized_value: 'ada@example.com' })],
+        phones: [expect.objectContaining({ normalized_value: '+12133734253' })],
+        addresses: [
+          expect.objectContaining({
+            normalized_value: '123 market st, san francisco, ca 94105',
+            address_kind: 'postal_address',
+          }),
+        ],
+      },
+    });
+  });
+
   it('creates link artifacts for generic timeline events', async () => {
     const scope = withTeam(db as never, TEAM_A, USER_A);
     const event = await scope.timeline.createEvent({
       authorUserId: USER_A,
       source: 'web',
-      contentText: 'Review https://example.com/specs/phase-14?utm_source=chat&ticket=42',
+      contentText:
+        'Review https://example.com/specs/phase-14?utm_source=chat&ticket=42 and ping ada@example.com',
       visibility: 'team',
       occurredAt: new Date('2026-06-20T10:00:00Z'),
     });
@@ -307,6 +341,9 @@ describe('withTeam namespaced port', () => {
           display_url: 'example.com/specs/phase-14',
         }),
       ],
+      contacts: {
+        emails: [expect.objectContaining({ normalized_value: 'ada@example.com' })],
+      },
     });
 
     const clusters = await db.select().from(artifactClusters);

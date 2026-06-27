@@ -726,6 +726,7 @@ export interface ObjectDetail extends ObjectRow {
     note: string | null;
     changedAt: Date;
   }[];
+  identityFacets: IdentityFacetRow[];
   openTasks: ObjectRow[];
   connectedWork: {
     openTasks: ObjectRow[];
@@ -1908,6 +1909,7 @@ export async function getObject(
     outRows,
     inRows,
     changeRows,
+    identityFacetRows,
     viewRows,
     factCountRows,
     summaryNoteCountRows,
@@ -1995,6 +1997,26 @@ export async function getObject(
       .where(and(eq(objectChanges.teamId, scope.teamId), eq(objectChanges.entityId, entityRow.id)))
       .orderBy(desc(objectChanges.changedAt), desc(objectChanges.id))
       .limit(20),
+    db
+      .select({
+        id: objectIdentityFacets.id,
+        entityId: objectIdentityFacets.entityId,
+        kind: objectIdentityFacets.kind,
+        value: objectIdentityFacets.value,
+        normalizedValue: objectIdentityFacets.normalizedValue,
+        provider: objectIdentityFacets.provider,
+        externalId: objectIdentityFacets.externalId,
+        linkedUserId: objectIdentityFacets.linkedUserId,
+      })
+      .from(objectIdentityFacets)
+      .where(
+        and(
+          eq(objectIdentityFacets.teamId, scope.teamId),
+          eq(objectIdentityFacets.entityId, entityRow.id),
+          eq(objectIdentityFacets.status, 'approved'),
+        ),
+      )
+      .orderBy(objectIdentityFacets.kind, objectIdentityFacets.value),
     db
       .select({ lastVisitedAt: objectViews.lastVisitedAt })
       .from(objectViews)
@@ -2212,6 +2234,7 @@ export async function getObject(
     notes: noteRows,
     relationships,
     recentChanges: changeRows,
+    identityFacets: identityFacetRows,
     openTasks: connectedWork.openTasks,
     connectedWork,
     provenance,

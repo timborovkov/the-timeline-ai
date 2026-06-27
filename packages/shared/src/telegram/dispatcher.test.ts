@@ -425,7 +425,7 @@ describe('handleUpdate telegram edit visibility', () => {
           date: 1700000000,
           chat: { id: 42, type: 'private' },
           from: { id: TG_USER_ID, username: 'alice' },
-          text: 'Review https://example.com/deck?utm_source=tg&token=secret&a=1.',
+          text: 'Review https://example.com/deck?utm_source=tg&token=secret&a=1. Call +1 213-373-4253.',
         },
       },
     );
@@ -442,6 +442,11 @@ describe('handleUpdate telegram edit visibility', () => {
           provider_object_id: null,
         },
       ],
+      contacts: {
+        emails: [],
+        phones: [expect.objectContaining({ normalized_value: '+12133734253' })],
+        addresses: [],
+      },
     });
 
     const artifacts = await pg.query<{

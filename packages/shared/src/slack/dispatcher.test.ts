@@ -485,7 +485,7 @@ describe('Slack dispatcher routing', () => {
         channel: 'C_DOCS',
         channel_type: 'channel',
         user: 'U_SLACK',
-        text: 'Discuss <https://github.com/timborovkov/the-timeline-ai/pull/202?utm_source=slack|PR 202>',
+        text: 'Discuss <https://github.com/timborovkov/the-timeline-ai/pull/202?utm_source=slack|PR 202> with ada@example.com',
         ts: '1700000000.000550',
       }),
     );
@@ -503,6 +503,11 @@ describe('Slack dispatcher routing', () => {
           provider_object_id: 'timborovkov/the-timeline-ai#202',
         },
       ],
+      contacts: {
+        emails: [expect.objectContaining({ normalized_value: 'ada@example.com' })],
+        phones: [],
+        addresses: [],
+      },
     });
 
     const artifacts = await pg.query<{

@@ -36,6 +36,9 @@ source material instead of hiding behind black-box summaries.
   GitHub PRs, shared links, contracts, deals, clients, decisions, and events
   through cited evidence without letting every related source mutate canonical
   status.
+- Contact extraction that records emails, phone numbers, and conservative
+  labeled addresses on raw-event metadata; accepted email/phone memory appears
+  as person identity facets instead of standalone artifact objects.
 - Team document search with versioned uploads, chunked embeddings, inline
   document citations, PDF/image/audio previews, and a captured-file inbox for
   promoting Telegram/Slack evidence into curated knowledge.

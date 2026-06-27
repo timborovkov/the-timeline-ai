@@ -34,10 +34,8 @@ import type { chatStructured } from '#src/llm/chat.js';
 import { createAuditScope } from '#src/audit/scope.js';
 import { createBoardScope } from '#src/boards/index.js';
 import { createCalendarScope } from '#src/calendar/scope.js';
-import {
-  reconcileLinkArtifactsForRawEvent,
-  sourceMetadataWithLinks,
-} from '#src/conversational/link-artifacts.js';
+import { sourceMetadataWithConversationArtifacts } from '#src/conversational/contact-artifacts.js';
+import { reconcileLinkArtifactsForRawEvent } from '#src/conversational/link-artifacts.js';
 import { documentPresentation } from '#src/documents/presentation.js';
 import { createDocumentScope } from '#src/documents/scope.js';
 import { createIntegrationScope } from '#src/integrations/scope.js';
@@ -2042,7 +2040,10 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
             visibility: input.visibility ?? 'team',
             visibilityUserIds,
             visibilityOwnerUserId: input.visibilityOwnerUserId ?? input.authorUserId,
-            sourceMetadata: sourceMetadataWithLinks(input.sourceMetadata ?? {}, contentText),
+            sourceMetadata: sourceMetadataWithConversationArtifacts(
+              input.sourceMetadata ?? {},
+              contentText,
+            ),
           })
           .returning();
         const row = rows[0];
@@ -2179,7 +2180,10 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
               visibility,
               visibilityUserIds: null,
               visibilityOwnerUserId: input.visibilityOwnerUserId ?? input.authorUserId,
-              sourceMetadata: sourceMetadataWithLinks(composedMetadata, input.contentText),
+              sourceMetadata: sourceMetadataWithConversationArtifacts(
+                composedMetadata,
+                input.contentText,
+              ),
             })
             .onConflictDoNothing()
             .returning({ id: rawEvents.id, teamId: rawEvents.teamId });

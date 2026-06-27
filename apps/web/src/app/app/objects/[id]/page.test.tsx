@@ -75,6 +75,7 @@ beforeEach(() => {
     notes: [],
     relationships: [],
     recentChanges: [],
+    identityFacets: [],
     sourceEvents: [],
     facts: [],
     openTasks: [],

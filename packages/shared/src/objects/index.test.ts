@@ -773,6 +773,43 @@ describe('object scope — notes and suggestions', () => {
     expect(detailAfterDelete?.connectedWork.links).toEqual([]);
   });
 
+  it('returns approved identity facets on object detail', async () => {
+    const scope = withTeam(db, TEAM_A, USER_OWNER).objects;
+    const person = await scope.createObject({
+      type: 'person',
+      canonicalName: 'Ada Lovelace',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+
+    await scope.createIdentityFacet({
+      entityId: person.id,
+      kind: 'email',
+      value: 'Ada@Example.com',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    await scope.createIdentityFacet({
+      entityId: person.id,
+      kind: 'phone',
+      value: '+1 213 373 4253',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+
+    await expect(scope.getObject(person.id)).resolves.toMatchObject({
+      identityFacets: [
+        expect.objectContaining({
+          kind: 'email',
+          value: 'Ada@Example.com',
+          normalizedValue: 'ada@example.com',
+        }),
+        expect.objectContaining({
+          kind: 'phone',
+          value: '+1 213 373 4253',
+          normalizedValue: '+12133734253',
+        }),
+      ],
+    });
+  });
+
   it('accepts a suggested field change once and rejects unsupported suggestion fields', async () => {
     const scope = withTeam(db, TEAM_A, USER_OWNER).objects;
     const object = await scope.createObject({
