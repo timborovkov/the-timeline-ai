@@ -32,6 +32,13 @@ import type {
 } from '#src/objects/index.js';
 import type { TeamRole } from '#src/team-scope.js';
 
+import {
+  reconcileArtifactEvidence,
+  type ArtifactAnchorInput,
+  type ArtifactType,
+  type EvidenceRole,
+  type EvidenceStrength,
+} from '#src/artifacts/index.js';
 import { chatStructured as defaultChatStructured } from '#src/llm/chat.js';
 import { childLogger } from '#src/logger.js';
 import { OBJECT_TYPES } from '#src/objects/index.js';
@@ -3703,6 +3710,135 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     return nextBundles;
   }
 
+  async function reconcileSuggestionArtifactsBestEffort(bundle: SuggestionBundle): Promise<void> {
+    try {
+      await reconcileSuggestionArtifacts(bundle);
+    } catch (err) {
+      childLogger('suggestions:artifacts').warn(
+        { err, suggestionId: bundle.id },
+        'artifact reconciliation failed for suggestion',
+      );
+    }
+  }
+
+  async function reconcileSuggestionArtifacts(bundle: SuggestionBundle): Promise<void> {
+    const primaryEvidence = bundle.evidence[0];
+    for (const item of bundle.items) {
+      const payload = recordFromUnknown(item.proposedPayload);
+      const artifactType = artifactTypeForSuggestionItem(item, payload);
+      if (!artifactType) continue;
+      const anchors = artifactAnchorsForSuggestionItem(item, payload, bundle);
+      const targetId =
+        item.targetKind === 'object' || item.targetKind === 'task' ? item.targetId : null;
+      await reconcileArtifactEvidence(db, {
+        teamId,
+        artifactType,
+        canonicalName: stringPayloadValue(payload, 'canonicalName') ?? item.title,
+        canonicalEntityId: targetId,
+        rawEventId: primaryEvidence?.rawEventId ?? null,
+        suggestionId: bundle.id,
+        role: evidenceRoleForSuggestionItem(item, artifactType),
+        strength: evidenceStrengthForSuggestion(bundle),
+        authoritative: false,
+        anchors,
+        metadata: {
+          suggestion_id: bundle.id,
+          suggestion_item_id: item.id,
+          suggestion_status: bundle.status,
+          suggestion_source: bundle.source,
+        },
+      });
+    }
+  }
+
+  function artifactTypeForSuggestionItem(
+    item: SuggestionItem,
+    payload: Record<string, unknown>,
+  ): ArtifactType | null {
+    if (item.targetKind === 'task') return 'task';
+    if (item.targetKind !== 'object') return null;
+    const payloadType = stringPayloadValue(payload, 'type');
+    return payloadType && OBJECT_TYPES.includes(payloadType as ArtifactType)
+      ? (payloadType as ArtifactType)
+      : null;
+  }
+
+  function evidenceRoleForSuggestionItem(
+    item: SuggestionItem,
+    artifactType: ArtifactType,
+  ): EvidenceRole {
+    if (item.operation !== 'create') return 'lifecycle_update';
+    if (artifactType === 'document') return 'document';
+    if (artifactType === 'decision') return 'decision';
+    return 'report';
+  }
+
+  function evidenceStrengthForSuggestion(bundle: SuggestionBundle): EvidenceStrength {
+    return bundle.source === 'chat' ? 'human' : 'structured';
+  }
+
+  function artifactAnchorsForSuggestionItem(
+    item: SuggestionItem,
+    payload: Record<string, unknown>,
+    bundle: SuggestionBundle,
+  ): ArtifactAnchorInput[] {
+    const anchors: ArtifactAnchorInput[] = [];
+    const metadata = recordFromUnknown(payload.metadata);
+    const aliases = Array.isArray(payload.aliases)
+      ? payload.aliases.filter((value): value is string => typeof value === 'string')
+      : [];
+    for (const key of ['artifact_key', 'contract_id', 'deal_id', 'event_slug']) {
+      const value = stringPayloadValue(metadata, key) ?? stringPayloadValue(payload, key);
+      if (value) anchors.push({ type: key, value, strength: 'hard' });
+    }
+    const url = stringPayloadValue(metadata, 'url') ?? stringPayloadValue(payload, 'url');
+    if (url)
+      anchors.push({ type: 'url', value: normalizeArtifactUrlAnchor(url), strength: 'hard' });
+    for (const alias of aliases) {
+      anchors.push({
+        type: `alias:${artifactTypeForSuggestionItem(item, payload) ?? 'object'}`,
+        value: alias,
+        strength: 'structured',
+      });
+    }
+    const text = [
+      bundle.title,
+      bundle.summary ?? '',
+      bundle.reason ?? '',
+      item.title,
+      item.description ?? '',
+      ...bundle.evidence.map((evidence) => evidence.quote ?? ''),
+    ].join('\n');
+    for (const shortId of text.matchAll(/\b[A-Z][A-Z0-9_-]+-\d+\b/g)) {
+      anchors.push({ type: 'sentry_short_id', value: shortId[0], strength: 'structured' });
+    }
+    for (const issueRef of text.matchAll(/\b([a-z0-9_.-]+\/[a-z0-9_.-]+)#(\d+)\b/gi)) {
+      if (issueRef[1] && issueRef[2]) {
+        anchors.push({
+          type: 'github_issue',
+          value: `${issueRef[1]}#${issueRef[2]}`,
+          strength: 'structured',
+        });
+      }
+    }
+    return anchors;
+  }
+
+  function normalizeArtifactUrlAnchor(value: string): string {
+    try {
+      const url = new URL(value);
+      url.hash = '';
+      const params = [...url.searchParams.entries()].filter(
+        ([key]) => !key.toLowerCase().startsWith('utm_'),
+      );
+      url.search = '';
+      for (const [key, paramValue] of params) url.searchParams.append(key, paramValue);
+      return url.toString().replace(/\/$/, '');
+    } catch {
+      return value.trim();
+    }
+  }
+
   return {
     async createOrMergeSuggestionBundle(input: CreateSuggestionInput): Promise<SuggestionBundle> {
       await ensureMember();
@@ -3908,6 +4044,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       }
       const loaded = await loadBundle(result.row.id);
       if (!loaded) throw new Error('Suggestion was not visible after creation');
+      if (result.changed) await reconcileSuggestionArtifactsBestEffort(loaded);
       return loaded;
     },
 

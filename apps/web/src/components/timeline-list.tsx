@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { useMemo } from 'react';
 
 import type { TimelineCapturedFile } from '@/lib/timeline-captured-files';
-import type { TimelineEvent } from '@/lib/use-paginated-queries';
+import type { TimelineArtifactCluster, TimelineEvent } from '@/lib/use-paginated-queries';
 
 import { removeConversationalEventAction } from '@/app/actions/events';
 import { DocumentPreview } from '@/components/documents/document-preview';
@@ -42,12 +42,14 @@ interface Props {
   emptyAction?: { href: string; label: string; body: string };
   impactFilter?: TimelineImpactFilter;
   impactItemsByEventId?: Record<string, ImpactItem[]>;
+  artifactClustersByEventId?: Record<string, TimelineArtifactCluster>;
   capturedFilesByEventId?: Record<string, TimelineCapturedFile[]>;
   focusEventId?: string | null;
   timezone?: string;
 }
 
 const EMPTY_MEMBERS: NonNullable<Props['members']> = [];
+const EMPTY_ARTIFACT_CLUSTERS_BY_EVENT_ID: NonNullable<Props['artifactClustersByEventId']> = {};
 const EMPTY_CAPTURED_FILES_BY_EVENT_ID: NonNullable<Props['capturedFilesByEventId']> = {};
 
 const IMPACT_LABEL: Record<ImpactItem['kind'], string> = {
@@ -115,6 +117,28 @@ function formatVisibilitySummary(events: TimelineEvent[]): string {
       count === events.length ? visibility : `${visibility} x ${count}`,
     )
     .join(' · ');
+}
+
+function titleCase(value: string): string {
+  return value
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (letter) => letter.toUpperCase())
+    .trim();
+}
+
+function evidenceSourceLabel(evidence: TimelineArtifactCluster['relatedEvidence'][number]): string {
+  return evidence.provider ?? evidence.source ?? 'source';
+}
+
+function evidenceStrengthLabel(
+  evidence: TimelineArtifactCluster['relatedEvidence'][number],
+): string {
+  if (evidence.authoritative) return 'status source';
+  return titleCase(evidence.strength);
+}
+
+function evidenceCountLabel(count: number): string {
+  return `${count} signal${count === 1 ? '' : 's'}`;
 }
 
 function uniqueLabels(labels: (string | null | undefined)[]): string[] {
@@ -418,6 +442,18 @@ function InspectorBody({
           </ul>
         </section>
       ) : null}
+      {moment.artifactClusters.length > 0 ? (
+        <section>
+          <h3 className="mb-2 font-mono text-[11px] uppercase tracking-[0.14em] text-fg">
+            Related evidence
+          </h3>
+          <div className="space-y-3">
+            {moment.artifactClusters.map((cluster) => (
+              <ArtifactEvidenceBundle key={cluster.id} cluster={cluster} timezone={timezone} />
+            ))}
+          </div>
+        </section>
+      ) : null}
       <section>
         <h3 className="mb-2 font-mono text-[11px] uppercase tracking-[0.14em] text-fg">
           Source evidence
@@ -457,6 +493,93 @@ function InspectorBody({
         </section>
       ) : null}
     </div>
+  );
+}
+
+function ArtifactEvidenceBundle({
+  cluster,
+  timezone,
+}: {
+  cluster: TimelineArtifactCluster;
+  timezone?: string;
+}) {
+  const statusSources = cluster.relatedEvidence.filter((evidence) => evidence.authoritative).length;
+  return (
+    <div className="rounded-sm border border-border bg-surface p-3">
+      <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="break-words text-sm font-medium leading-5 text-fg">
+            {cluster.canonicalName}
+          </p>
+          <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">
+            {titleCase(cluster.artifactType)} · {titleCase(cluster.status)} ·{' '}
+            {evidenceCountLabel(cluster.relatedEvidence.length)}
+          </p>
+        </div>
+        {statusSources > 0 ? (
+          <span className="shrink-0 rounded-sm border border-signal/30 bg-signal-soft px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.12em] text-signal">
+            {statusSources} status source{statusSources === 1 ? '' : 's'}
+          </span>
+        ) : null}
+      </div>
+      <ol className="mt-3 space-y-2">
+        {cluster.relatedEvidence.map((evidence, index) => {
+          const label = `${titleCase(evidenceSourceLabel(evidence))} · ${titleCase(evidence.role)}`;
+          const body =
+            evidence.snippet ??
+            (evidence.externalObjectId ? `External reference ${evidence.externalObjectId}` : null);
+          return (
+            <li
+              key={`${cluster.id}:${evidence.rawEventId ?? evidence.externalObjectId ?? index}`}
+              className="rounded-sm border border-border bg-bg px-2.5 py-2"
+            >
+              <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">
+                {evidence.rawEventId ? (
+                  <Link
+                    href={`/app/timeline?event=${evidence.rawEventId}#ev-${evidence.rawEventId}`}
+                    className="text-fg-muted transition-colors hover:text-signal"
+                  >
+                    {label}
+                  </Link>
+                ) : (
+                  <span className="text-fg-muted">{label}</span>
+                )}
+                <span>{evidenceStrengthLabel(evidence)}</span>
+                {evidence.occurredAt ? (
+                  <time dateTime={evidence.occurredAt}>
+                    {formatTimestamp(evidence.occurredAt, timezone)}
+                  </time>
+                ) : null}
+              </div>
+              {body ? (
+                <p className="mt-1 line-clamp-2 break-words text-sm leading-5 text-fg-muted">
+                  {displayText(body, { timezone })}
+                </p>
+              ) : null}
+            </li>
+          );
+        })}
+      </ol>
+    </div>
+  );
+}
+
+function RelatedEvidenceStrip({ clusters }: { clusters: TimelineArtifactCluster[] }) {
+  if (clusters.length === 0) return null;
+  const primary = clusters[0];
+  if (!primary) return null;
+  const signalCount = primary.relatedEvidence.length;
+  const extraClusters = clusters.length - 1;
+  const label = `${primary.canonicalName} · ${evidenceCountLabel(signalCount)}${
+    extraClusters > 0 ? ` · +${extraClusters}` : ''
+  }`;
+  return (
+    <span
+      className="inline-flex min-h-6 max-w-full min-w-0 items-center rounded-sm border border-border bg-surface px-2 py-1 font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim"
+      title={`Related evidence for ${primary.canonicalName}`}
+    >
+      <span className="min-w-0 truncate">Related · {label}</span>
+    </span>
   );
 }
 
@@ -793,6 +916,7 @@ function TimelineMomentRow({
       </div>
       <div className="flex min-w-0 items-start justify-start gap-2 pb-3 md:justify-end md:py-3">
         <ImpactStrip items={moment.impactItems} timezone={timezone} />
+        <RelatedEvidenceStrip clusters={moment.artifactClusters} />
         {transcriptionStatus ? (
           <span className="inline-flex min-h-6 max-w-full min-w-0 items-center rounded-sm border border-border bg-surface px-2 py-1 font-mono text-[10px] uppercase tracking-[0.12em] text-fg-muted">
             {transcriptionStatus}
@@ -819,6 +943,7 @@ export function TimelineList({
   emptyAction,
   impactFilter = 'all',
   impactItemsByEventId,
+  artifactClustersByEventId = EMPTY_ARTIFACT_CLUSTERS_BY_EVENT_ID,
   capturedFilesByEventId = EMPTY_CAPTURED_FILES_BY_EVENT_ID,
   focusEventId = null,
   timezone,
@@ -828,9 +953,11 @@ export function TimelineList({
       buildTimelineMoments(
         events,
         authorMap,
-        impactItemsByEventId === undefined ? { timezone } : { impactItemsByEventId, timezone },
+        impactItemsByEventId === undefined
+          ? { artifactClustersByEventId, timezone }
+          : { impactItemsByEventId, artifactClustersByEventId, timezone },
       ),
-    [events, authorMap, impactItemsByEventId, timezone],
+    [events, authorMap, impactItemsByEventId, artifactClustersByEventId, timezone],
   );
   const focusedMoments =
     focusEventId === null

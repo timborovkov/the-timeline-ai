@@ -344,6 +344,13 @@
       "when": 1795653240000,
       "tag": "0048_object_search_indexes",
       "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1795653300000,
+      "tag": "0049_artifact_clusters",
+      "breakpoints": true
     }
   ]
 }

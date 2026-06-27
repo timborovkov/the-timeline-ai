@@ -268,6 +268,73 @@ describe('TimelineList inspector source caps', () => {
   });
 });
 
+describe('TimelineList related evidence bundles', () => {
+  it('keeps related signals quiet on the row and detailed in the inspector', () => {
+    const reportId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    const mergedId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+    render(
+      createElement(TimelineList, {
+        events: [
+          timelineEvent({
+            id: reportId,
+            occurredAt: '2026-06-03T13:04:00.000Z',
+            source: 'telegram',
+            contentText: 'Checkout crashes on Apple Pay.',
+            sourceMetadata: { tg_chat_title: 'Support', tg_sender_name: 'Maya' },
+          }),
+        ],
+        authorMap: new Map(),
+        currentUserId: 'user-1',
+        isAdmin: false,
+        artifactClustersByEventId: {
+          [reportId]: {
+            id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+            artifactType: 'task',
+            canonicalName: 'Apple Pay checkout crash',
+            status: 'resolved',
+            relatedEvidence: [
+              {
+                rawEventId: reportId,
+                source: 'telegram',
+                provider: 'telegram',
+                externalObjectId: 'support-thread',
+                role: 'report',
+                strength: 'human',
+                authoritative: false,
+                occurredAt: '2026-06-03T13:04:00.000Z',
+                snippet: 'Checkout crashes on Apple Pay.',
+              },
+              {
+                rawEventId: mergedId,
+                source: 'integration',
+                provider: 'github',
+                externalObjectId: 'timeline#44',
+                role: 'lifecycle_update',
+                strength: 'provider',
+                authoritative: true,
+                occurredAt: '2026-06-03T15:04:00.000Z',
+                snippet: 'Merged fix for Apple Pay checkout crash.',
+              },
+            ],
+          },
+        },
+      }),
+    );
+
+    expect(screen.getByText(/Related · Apple Pay checkout crash · 2 signals/i)).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: /Checkout crashes on Apple Pay/i }));
+    const inspector = renderLastInspector();
+    expect(inspector).toContain('Related evidence');
+    expect(inspector).toContain('Apple Pay checkout crash');
+    expect(inspector).toContain('Task · Resolved · 2 signals');
+    expect(inspector).toContain('1 status source');
+    expect(inspector).toContain('Telegram · Report');
+    expect(inspector).toContain('Github · Lifecycle Update');
+    expect(inspector).toContain(`/app/timeline?event=${mergedId}#ev-${mergedId}`);
+  });
+});
+
 describe('TimelineList audio transcription status', () => {
   it('shows pending transcription status even when an audio event has typed note text', () => {
     const html = renderTimeline([

@@ -112,8 +112,9 @@ export default async function HomeDashboardPage() {
   const completedGuideCount = countFirstRunGuideCompleted(onboardingState.steps);
   const showFirstRunGuide =
     !onboardingState.dismissed && (events.length === 0 || completedSetupCount < 2);
-  const [impactItems, audioUrlMap, capturedFiles] = await Promise.all([
+  const [impactItems, artifactClusters, audioUrlMap, capturedFiles] = await Promise.all([
     scope.timeline.listImpactItems(events.map((event) => event.id)),
+    scope.timeline.listArtifactClusters(events.map((event) => event.id)),
     signAudio(events),
     listTimelineCapturedFilesByEventId({
       db,
@@ -259,6 +260,7 @@ export default async function HomeDashboardPage() {
             authors: Object.fromEntries(userRows.map((row) => [row.id, row])),
             audioUrls: Object.fromEntries(audioUrlMap),
             impactItems,
+            artifactClusters,
             capturedFiles,
           }}
           filters={{}}

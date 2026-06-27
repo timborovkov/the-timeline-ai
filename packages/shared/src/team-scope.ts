@@ -1,6 +1,8 @@
 import {
   type Db,
   auditLog,
+  artifactClusterMembers,
+  artifactClusters,
   agentSuggestionEvidence,
   agentSuggestionItems,
   agentSuggestions,
@@ -224,6 +226,27 @@ export interface SearchEventResult {
   senderResolutionStatus: SenderResolutionStatus;
   entityIds: string[];
   snippet: string;
+  artifactCluster?: SearchEventArtifactCluster | null;
+}
+
+export interface SearchEventArtifactCluster {
+  id: string;
+  artifactType: EntityType;
+  canonicalName: string;
+  status: string;
+  relatedEvidence: SearchEventArtifactClusterEvidence[];
+}
+
+export interface SearchEventArtifactClusterEvidence {
+  rawEventId: string | null;
+  source: EventSource | null;
+  provider: string | null;
+  externalObjectId: string | null;
+  role: string;
+  strength: string;
+  authoritative: boolean;
+  occurredAt: string | null;
+  snippet: string | null;
 }
 
 export interface SearchObjectNoteEvidence {
@@ -465,6 +488,144 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
           activeRawEventFilter,
         ),
       );
+  }
+
+  function displayNameForVisibleArtifactEvidence(row: {
+    artifactType: EntityType;
+    memberMetadata: unknown;
+    objectName: string | null;
+    contentText: string | null;
+  }): string {
+    const meta = metadataObject(row.memberMetadata);
+    return (
+      metadataString(meta, 'canonical_name') ??
+      row.objectName ??
+      row.contentText?.slice(0, 80) ??
+      `Related ${row.artifactType}`
+    );
+  }
+
+  function statusForVisibleArtifactEvidence(row: { memberMetadata: unknown }): string | null {
+    const status = metadataString(metadataObject(row.memberMetadata), 'status');
+    return status;
+  }
+
+  async function hydrateArtifactClustersForVisibleEventIds(
+    accessibleEventIds: string[],
+  ): Promise<Map<string, SearchEventArtifactCluster>> {
+    if (accessibleEventIds.length === 0) return new Map();
+
+    const eventClusterRows = await db
+      .select({
+        rawEventId: artifactClusterMembers.rawEventId,
+        clusterId: artifactClusters.id,
+      })
+      .from(artifactClusterMembers)
+      .innerJoin(
+        artifactClusters,
+        and(
+          eq(artifactClusters.id, artifactClusterMembers.clusterId),
+          eq(artifactClusters.teamId, teamId),
+        ),
+      )
+      .where(
+        and(
+          eq(artifactClusterMembers.teamId, teamId),
+          inArray(artifactClusterMembers.rawEventId, accessibleEventIds),
+          isNull(artifactClusters.archivedAt),
+        ),
+      );
+    const clusterIds = [...new Set(eventClusterRows.map((row) => row.clusterId))];
+    if (clusterIds.length === 0) return new Map();
+
+    const clusterMemberRows = await db
+      .select({
+        clusterId: artifactClusters.id,
+        artifactType: artifactClusters.artifactType,
+        rawEventId: artifactClusterMembers.rawEventId,
+        source: rawEvents.source,
+        provider: artifactClusterMembers.provider,
+        externalObjectId: artifactClusterMembers.externalObjectId,
+        role: artifactClusterMembers.role,
+        strength: artifactClusterMembers.strength,
+        authoritative: artifactClusterMembers.authoritative,
+        memberMetadata: artifactClusterMembers.metadata,
+        occurredAt: rawEvents.occurredAt,
+        contentText: rawEvents.contentText,
+        objectName: entities.canonicalName,
+      })
+      .from(artifactClusterMembers)
+      .innerJoin(
+        artifactClusters,
+        and(
+          eq(artifactClusters.id, artifactClusterMembers.clusterId),
+          eq(artifactClusters.teamId, teamId),
+        ),
+      )
+      .leftJoin(
+        rawEvents,
+        and(eq(rawEvents.id, artifactClusterMembers.rawEventId), eq(rawEvents.teamId, teamId)),
+      )
+      .leftJoin(
+        entities,
+        and(eq(entities.id, artifactClusterMembers.entityId), eq(entities.teamId, teamId)),
+      )
+      .where(
+        and(
+          eq(artifactClusterMembers.teamId, teamId),
+          inArray(artifactClusterMembers.clusterId, clusterIds),
+          isNull(artifactClusters.archivedAt),
+          visibilityFilter,
+        ),
+      )
+      .orderBy(desc(artifactClusterMembers.authoritative), desc(rawEvents.occurredAt));
+
+    const clusterById = new Map<string, SearchEventArtifactCluster>();
+    for (const row of clusterMemberRows) {
+      const existing = clusterById.get(row.clusterId);
+      const cluster =
+        existing ??
+        ({
+          id: row.clusterId,
+          artifactType: row.artifactType,
+          canonicalName: displayNameForVisibleArtifactEvidence(row),
+          status: statusForVisibleArtifactEvidence(row) ?? 'open',
+          relatedEvidence: [],
+        } satisfies SearchEventArtifactCluster);
+      if (!existing) clusterById.set(row.clusterId, cluster);
+      if (cluster.relatedEvidence.length >= 5) continue;
+      cluster.relatedEvidence.push({
+        rawEventId: row.rawEventId,
+        source: row.source,
+        provider: row.provider,
+        externalObjectId: row.externalObjectId,
+        role: row.role,
+        strength: row.strength,
+        authoritative: row.authoritative,
+        occurredAt: row.occurredAt?.toISOString() ?? null,
+        snippet: row.contentText?.slice(0, 180) ?? null,
+      });
+    }
+
+    const clusterByEventId = new Map<string, SearchEventArtifactCluster>();
+    for (const row of eventClusterRows) {
+      if (!row.rawEventId) continue;
+      const cluster = clusterById.get(row.clusterId);
+      if (cluster) clusterByEventId.set(row.rawEventId, cluster);
+    }
+    return clusterByEventId;
+  }
+
+  async function listTimelineArtifactClusters(
+    rawEventIds: string[],
+  ): Promise<Record<string, SearchEventArtifactCluster>> {
+    const ids = [...new Set(rawEventIds.filter((id) => UUID_RE.test(id)))];
+    if (ids.length === 0) return {};
+    const accessibleEvents = await getEventsByIdsImpl(ids);
+    const clusterByEventId = await hydrateArtifactClustersForVisibleEventIds(
+      accessibleEvents.map((event) => event.id),
+    );
+    return Object.fromEntries(clusterByEventId);
   }
 
   /**
@@ -1708,6 +1869,8 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
 
       listImpactItems: listTimelineImpactItems,
 
+      listArtifactClusters: listTimelineArtifactClusters,
+
       async listEventsPage(
         filters: EventListFilters = {},
       ): Promise<PaginatedResult<typeof rawEvents.$inferSelect>> {
@@ -2451,6 +2614,9 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
         const senderMap = await resolveSenderContexts(accessibleEvents);
         const eventMap = new Map<string, (typeof accessibleEvents)[number]>();
         for (const ev of accessibleEvents) eventMap.set(ev.id, ev);
+        const accessibleEventIds = accessibleEvents.map((event) => event.id);
+        const clusterByEventId =
+          await hydrateArtifactClustersForVisibleEventIds(accessibleEventIds);
 
         const allFactIds = Array.from(dedup.values()).flatMap((r) => r.factIds);
         const factRows =
@@ -2544,6 +2710,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
             senderResolutionStatus: senderInfo?.senderResolutionStatus ?? 'unresolved',
             entityIds: row.entityIds,
             snippet,
+            artifactCluster: clusterByEventId.get(ev.id) ?? null,
           });
           if (results.length >= (input.limit ?? 20)) break;
         }

@@ -238,6 +238,12 @@
       "import": "./dist/suggestions/index.js",
       "default": "./dist/suggestions/index.js"
     },
+    "./artifacts": {
+      "types": "./src/artifacts/index.ts",
+      "development": "./src/artifacts/index.ts",
+      "import": "./dist/artifacts/index.js",
+      "default": "./dist/artifacts/index.js"
+    },
     "./team-roles": {
       "types": "./src/team-roles.ts",
       "development": "./src/team-roles.ts",

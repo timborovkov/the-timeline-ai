@@ -152,6 +152,25 @@ function resultDate(result: GlobalSearchResult): string | null {
   return RESULT_DATE_FORMAT.format(date);
 }
 
+function relatedEvidenceLabel(result: GlobalSearchResult): string | null {
+  const name = result.metadata?.relatedEvidence;
+  if (typeof name !== 'string' || !name.trim()) return null;
+  const signalCount =
+    typeof result.metadata?.relatedEvidenceSignals === 'number'
+      ? result.metadata.relatedEvidenceSignals
+      : null;
+  const statusSources =
+    typeof result.metadata?.relatedEvidenceStatusSources === 'number'
+      ? result.metadata.relatedEvidenceStatusSources
+      : 0;
+  const signals = signalCount
+    ? `${signalCount} signal${signalCount === 1 ? '' : 's'}`
+    : 'related signals';
+  const authority =
+    statusSources > 0 ? ` · ${statusSources} status source${statusSources === 1 ? '' : 's'}` : '';
+  return `${name} · ${signals}${authority}`;
+}
+
 function filterFromParam(param: string): string {
   return FILTERS.find((filter) => filter.param === param)?.label ?? 'All';
 }
@@ -177,6 +196,7 @@ function searchPath(input: {
 function SearchResultRow({ result }: { result: GlobalSearchResult }) {
   const Icon = iconFor(result.kind);
   const date = resultDate(result);
+  const relatedEvidence = relatedEvidenceLabel(result);
   const content = (
     <span className="flex min-w-0 items-start gap-3 p-3">
       <Icon aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-fg-muted" />
@@ -193,6 +213,11 @@ function SearchResultRow({ result }: { result: GlobalSearchResult }) {
           {result.metadata?.source ? <span>{result.metadata.source}</span> : null}
           {result.metadata?.type ? <span>{result.metadata.type}</span> : null}
         </span>
+        {relatedEvidence ? (
+          <span className="mt-2 inline-flex max-w-full rounded-sm border border-border bg-surface px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">
+            <span className="truncate">Related evidence · {relatedEvidence}</span>
+          </span>
+        ) : null}
       </span>
       {result.externalHref ? (
         <ExternalLink aria-hidden="true" className="mt-1 size-4 shrink-0 text-fg-dim" />

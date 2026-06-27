@@ -91,6 +91,11 @@ evidence confirms, revises, supersedes, or invalidates earlier derived state.
 Workspace reconciliation never edits raw events; it updates, cancels, archives,
 supersedes, or proposes corrections to approvals, workspace objects, tasks,
 calendar events, and other impact context.
+Provider and conversation evidence first join an Artifact Cluster through hard
+or structured anchors such as external IDs, URLs, issue numbers, branch names,
+contract IDs, deal IDs, event slugs, or explicitly supplied artifact keys.
+Semantic similarity can suggest review candidates but is not enough to merge
+evidence into the same artifact cluster by itself.
 _Avoid_: Cleanup, removal, sync, extraction
 
 **Lifecycle Update**:
@@ -182,12 +187,21 @@ _Avoid_: Raw integration error, generic failure
 A set of derived workspace artifacts that represent the same real-world
 commitment, object, schedule, decision, or follow-up across product surfaces.
 An artifact cluster can include pending approvals, workspace objects, tasks,
-calendar events, and other impact context that should stay mutually consistent.
+calendar events, integration-owned objects, conversation evidence, signatures,
+payments, releases, and other impact context that should stay mutually
+consistent.
 An artifact cluster can exist before a canonical artifact exists; newer evidence
-may update or supersede a pending create approval when it clearly refers to the
-same real-world artifact. Meaningful completed commitments may still become
-canonical artifacts even when completion arrives before the create approval is
-accepted; trivial completed work can remain raw evidence with no active proposal.
+can be recorded alongside pending create approvals when it clearly refers to the
+same real-world artifact; suggestion reconciliation decides whether a pending
+approval is updated or superseded. Meaningful completed commitments may still
+become canonical artifacts even when completion arrives before the create
+approval is accepted; trivial completed work can remain raw evidence with no
+active proposal.
+Evidence association and lifecycle authority are separate: a Telegram report,
+Sentry issue, GitHub PR, signed contract PDF, deal approval, or party venue note
+can all belong to the same cluster without each source being allowed to change
+canonical state. Lifecycle updates require either the authoritative source for
+that owned artifact or a human-approved proposal.
 _Avoid_: Conversation, thread, timeline moment when discussing the consistency boundary
 
 **Workspace Object**:

@@ -214,6 +214,11 @@ async function searchTimeline(
           source: hit.source,
           entities: hit.entityIds.length,
           facts: hit.factIds.length,
+          relatedEvidence: hit.artifactCluster?.canonicalName ?? null,
+          relatedEvidenceSignals: hit.artifactCluster?.relatedEvidence.length ?? null,
+          relatedEvidenceStatusSources:
+            hit.artifactCluster?.relatedEvidence.filter((evidence) => evidence.authoritative)
+              .length ?? null,
         },
       }),
     );

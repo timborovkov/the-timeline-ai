@@ -1,4 +1,4 @@
-import type { TimelineEvent } from '@/lib/use-paginated-queries';
+import type { TimelineArtifactCluster, TimelineEvent } from '@/lib/use-paginated-queries';
 
 import { displayText } from '@/lib/display-dates';
 
@@ -33,6 +33,7 @@ export interface TimelineMoment {
   summary: string;
   rawEvents: TimelineEvent[];
   impactItems: ImpactItem[];
+  artifactClusters: TimelineArtifactCluster[];
 }
 
 export interface TimelineAuthor {
@@ -46,6 +47,7 @@ export type TimelineImpactFilter = ImpactKind | 'all';
 interface BuildTimelineMomentOptions {
   now?: Date;
   impactItemsByEventId?: Record<string, ImpactItem[]>;
+  artifactClustersByEventId?: Record<string, TimelineArtifactCluster>;
   timezone?: string;
 }
 
@@ -457,6 +459,15 @@ function dedupeImpact(items: ImpactItem[]): ImpactItem[] {
   });
 }
 
+function dedupeArtifactClusters(clusters: TimelineArtifactCluster[]): TimelineArtifactCluster[] {
+  const seen = new Set<string>();
+  return clusters.filter((cluster) => {
+    if (seen.has(cluster.id)) return false;
+    seen.add(cluster.id);
+    return true;
+  });
+}
+
 export function buildTimelineMoments(
   events: TimelineEvent[],
   authorMap: Map<string, TimelineAuthor>,
@@ -464,6 +475,8 @@ export function buildTimelineMoments(
 ): TimelineMoment[] {
   const now = options instanceof Date ? options : (options.now ?? new Date());
   const hydrated = options instanceof Date ? {} : (options.impactItemsByEventId ?? {});
+  const artifactClustersByEventId =
+    options instanceof Date ? {} : (options.artifactClustersByEventId ?? {});
   const timezone = options instanceof Date ? undefined : options.timezone;
   const hasAuthoritativeHydration =
     !(options instanceof Date) && options.impactItemsByEventId !== undefined;
@@ -522,6 +535,11 @@ export function buildTimelineMoments(
                 timezone,
               }),
             ]),
+          ),
+          artifactClusters: dedupeArtifactClusters(
+            sorted
+              .map((event) => artifactClustersByEventId[event.id])
+              .filter((cluster): cluster is TimelineArtifactCluster => Boolean(cluster)),
           ),
         },
       ];

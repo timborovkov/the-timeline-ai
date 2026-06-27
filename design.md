@@ -36,6 +36,10 @@ Use language that makes the evidence-derived operating model concrete:
 - **Operational memory** — the durable, queryable record of projects, clients,
   people, commitments, decisions, documents, and work state derived from event
   history.
+- **Artifact clusters** — the real-world work artifacts that collect related
+  evidence across surfaces, such as a Telegram report, Sentry issue, GitHub PR,
+  contract signature, deal approval, or event-planning thread, while keeping
+  source authority separate from evidence association.
 - **Approval-backed state** — durable object, task, calendar, relationship, and
   memory changes that came from evidence and passed a human review path.
 
@@ -375,6 +379,13 @@ visible change.
   follow-ups, and approvals. Hydrate from existing source evidence, suggestion
   evidence, object/task changes, document versions, and calendar rows. Omit the
   strip when empty rather than inventing completeness.
+- **Related evidence stays quiet.** When a moment belongs to a cross-source work
+  artifact, the row shows a compact `Related` signal with the viewer-authorized
+  artifact label and signal count. Search results and the inspector use `Related
+  evidence` wording; the inspector owns the full bundle: related source
+  snippets, provider/source labels, evidence roles, strength, timestamps, links
+  back to timeline events, and which visible sources are allowed to update
+  canonical status.
 - **Calendar state.** Recurring calendar rows show a compact recurrence marker,
   modified occurrences use the same marker plus their edited time, and proposed
   slots render as visible tentative holds until one slot is confirmed.

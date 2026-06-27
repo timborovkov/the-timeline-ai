@@ -11,7 +11,7 @@
     <main id="main">
       <h1>Workspace objects</h1>
       <div class="meta">
-        <span class="kind">Architecture</span><span>Last updated 2026-06-17</span>
+        <span class="kind">Architecture</span><span>Last updated 2026-06-26</span>
       </div>
       <p class="tldr">
         Phase 8 turned <code>entities</code> from an extraction artifact into the workspace's
@@ -50,7 +50,7 @@
         <div class="stat"><b>13</b><span>object types in the enum</span></div>
         <div class="stat"><b>8</b><span>new tables</span></div>
         <div class="stat"><b>1</b><span>shared module (<code>objects</code>)</span></div>
-        <div class="stat"><b>1</b><span>list index migration</span></div>
+        <div class="stat"><b>2</b><span>object index migrations</span></div>
       </div>
       <p>
         Everything routes through <code>withTeam(db, teamId, userId)</code> — the single chokepoint
@@ -155,6 +155,13 @@
         >, the object-field migration
         <a href="../packages/db/drizzle/0007_phase8_objects.sql"
           ><code>0007_phase8_objects.sql</code></a
+        >, the object list/search index migrations
+        <a href="../packages/db/drizzle/0043_object_list_cursor_index.sql"
+          ><code>0043_object_list_cursor_index.sql</code></a
+        >
+        and
+        <a href="../packages/db/drizzle/0048_object_search_indexes.sql"
+          ><code>0048_object_search_indexes.sql</code></a
         >, and the uniqueness no-op explanation in
         <a href="../packages/db/drizzle/0009_phase8_entity_unq.sql"
           ><code>0009_phase8_entity_unq.sql</code></a

@@ -12,8 +12,8 @@ The Timeline is an evidence-derived operating record for teams that should not
 have to manually report on work they already did. It accepts messy real-world
 inputs — notes, voice memos, email, Slack, Telegram, documents, meetings, and
 integration events — and turns them into an auditable event history of raw
-events, extracted facts, workspace objects, calendar entries, approvals, and
-searchable documents.
+events, extracted facts, artifact clusters, workspace objects, calendar
+entries, approvals, and searchable documents.
 
 The work becomes the record: updates, daily digests, handoffs, stakeholder
 answers, project memory, and account context are generated from evidence
@@ -32,6 +32,9 @@ source material instead of hiding behind black-box summaries.
   meetings, calendar rows, and connected tools.
 - Lightweight CRM, project, task, and decision tracking derived from everyday
   communication.
+- Work artifact reconciliation that can connect bug reports, Sentry issues,
+  GitHub PRs, contracts, deals, clients, decisions, and events through cited
+  evidence without letting every related source mutate canonical status.
 - Team document search with versioned uploads, chunked embeddings, inline
   document citations, PDF/image/audio previews, and a captured-file inbox for
   promoting Telegram/Slack evidence into curated knowledge.
@@ -73,7 +76,7 @@ This is a pnpm/Turborepo monorepo.
 | `apps/web` | Next.js app, public docs, auth, server actions, UI, API routes, and inbound webhooks. |
 | `apps/worker` | BullMQ workers for transcription, extraction, embeddings, documents, meetings, integrations, MCP health, and maintenance jobs. |
 | `packages/db` | Drizzle schema, migrations, and database package exports. |
-| `packages/shared` | Team-scoped data access, LLM wrapper, Qdrant/S3 wrappers, queues, integrations, calendar, documents, meetings, objects, MCP, and other shared domain modules. |
+| `packages/shared` | Team-scoped data access, LLM wrapper, Qdrant/S3 wrappers, queues, integrations, artifact reconciliation, calendar, documents, meetings, objects, MCP, and other shared domain modules. |
 | `docs` | Product, setup, architecture, and deployment documentation. |
 
 The two most important boundaries are:

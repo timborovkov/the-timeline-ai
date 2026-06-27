@@ -97,6 +97,36 @@ beforeEach(() => {
       senderResolutionStatus: 'unresolved',
       entityIds: [],
       snippet: 'GitHub came up in a meeting.',
+      artifactCluster: {
+        id: 'cluster-1',
+        artifactType: 'task',
+        canonicalName: 'GitHub integration migration',
+        status: 'active',
+        relatedEvidence: [
+          {
+            rawEventId: 'event-1',
+            source: 'slack',
+            provider: 'slack',
+            externalObjectId: 'C1:123',
+            role: 'discussion',
+            strength: 'human',
+            authoritative: false,
+            occurredAt: '2026-06-01T00:00:00.000Z',
+            snippet: 'GitHub came up in a meeting.',
+          },
+          {
+            rawEventId: 'event-2',
+            source: 'integration',
+            provider: 'github',
+            externalObjectId: 'repo#42',
+            role: 'lifecycle_update',
+            strength: 'provider',
+            authoritative: true,
+            occurredAt: '2026-06-02T00:00:00.000Z',
+            snippet: 'Merged the GitHub migration.',
+          },
+        ],
+      },
     },
   ]);
   fakes.fakeSearchDocumentChunksPage.mockResolvedValue({
@@ -277,6 +307,31 @@ describe('POST /api/search/global', () => {
     expect(fakes.fakeSearchObjects).not.toHaveBeenCalled();
     expect(fakes.fakeListBoards).not.toHaveBeenCalled();
     expect(fakes.fakeSearchObjectNotes).not.toHaveBeenCalled();
+  });
+
+  it('includes related evidence metadata on timeline search results', async () => {
+    const response = await POST(
+      request({ query: 'github', mode: 'full', kinds: ['timeline_event'] }),
+    );
+    const data = (await response.json()) as {
+      ok: true;
+      results: {
+        kind: string;
+        metadata?: {
+          relatedEvidence?: string | null;
+          relatedEvidenceSignals?: number | null;
+          relatedEvidenceStatusSources?: number | null;
+        };
+      }[];
+    };
+
+    expect(response.status).toBe(200);
+    const timeline = data.results.find((item) => item.kind === 'timeline_event');
+    expect(timeline?.metadata).toMatchObject({
+      relatedEvidence: 'GitHub integration migration',
+      relatedEvidenceSignals: 2,
+      relatedEvidenceStatusSources: 1,
+    });
   });
 
   it('uses scoped lexical object search instead of a recent object window', async () => {

@@ -144,6 +144,9 @@ export async function GET(req: Request): Promise<Response> {
       nextCursor: result.nextCursor,
       authors: Object.fromEntries(authorRows.map((row) => [row.id, row])),
       impactItems: result.impactItems,
+      artifactClusters: await scope.timeline.listArtifactClusters(
+        result.items.map((eventItem) => eventItem.id),
+      ),
       capturedFiles: await listTimelineCapturedFilesByEventId({
         db,
         teamId: active.teamId,
