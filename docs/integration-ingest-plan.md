@@ -161,6 +161,44 @@ Use provider-native objects as evidence, not as Timeline's source of truth:
 Raw provider data remains immutable once written. Derived objects can be
 re-extracted when mapping improves.
 
+## Generic Ingest Webhooks
+
+Generic ingest webhooks are implemented as named, team-managed, evidence-only
+capture surfaces for arbitrary textual payloads. They complement native
+integrations when a team needs to send events from a tool that does not yet
+deserve first-party provider support.
+
+Keep these boundaries intact as native integrations expand:
+
+- Webhook events may support search, answers, timeline moments, and
+  approval-backed proposals, but they must not directly mutate canonical
+  workspace state.
+- Native provider adapters remain the path for authoritative synchronization,
+  cursor semantics, and direct object/task/deal/incident updates.
+- Webhook credentials may rotate over time while preserving the named source.
+  Store only credential hashes, and show plaintext secrets only at creation or
+  rotation time.
+- Webhooks accept text-like bodies only: JSON, XML, form-encoded, CSV, NDJSON,
+  plain text, and unknown text-like content types. Binary and file intake should
+  use future source-file flows.
+- `occurred_at` is the Timeline receipt time. Provider-reported timestamps stay
+  evidence that extraction can interpret.
+- Each distinct accepted delivery is an immutable raw event. Duplicate
+  deliveries from the same webhook inside the dedupe window should not create
+  additional raw events, while distinct burst deliveries remain separate source
+  evidence that the timeline display may bundle.
+- Payloads are untrusted external content. Extraction, proposal generation, and
+  agent-facing snippets must treat sender-authored instructions as evidence, not
+  as system or developer instructions.
+- Disabling a webhook stops future intake and proposal generation for that
+  source. It must not delete, merge, or hide already-captured evidence.
+
+The remaining product gap is cross-source evidence review for generic webhook
+events. For example, a Pipedrive webhook delivery, a Telegram discussion, and an
+email thread may together justify a task or deal update even when no single
+event is enough. That synthesis belongs in a future evidence-review mechanism,
+not in the event-local webhook proposal path.
+
 ## Implementation Checklist Per Provider
 
 1. Add or update the catalog entry with `ingestStatus`.

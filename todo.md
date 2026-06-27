@@ -114,8 +114,6 @@ Direction: soften the surface. Keep the forensic mono treatment for data
 
 ## Object Relationships
 
-- [ ] Finish the scoped plan in
-      [docs/object-relationships-plan.md](docs/object-relationships-plan.md).
 - [x] Add the first live Connected Work surface to object detail pages so
       source-backed open work, recent completed work, calendar events, and
       repeated people/object context appear before durable relationships are
@@ -164,12 +162,10 @@ Direction: soften the surface. Keep the forensic mono treatment for data
 
 ## Object Summaries
 
-- [x] Ship the first scoped implementation from
-      [docs/object-summaries-plan.md](docs/object-summaries-plan.md): persisted
-      structured generated summaries, team-visible source packets, background
-      refresh from canonical object/fact updates, object-page generation/retry,
-      search and embedding updates, and chat retrieval consumption with
-      underlying-source citations.
+- [x] Ship persisted structured generated summaries, team-visible source
+      packets, background refresh from canonical object/fact updates,
+      object-page generation/retry, search and embedding updates, and chat
+      retrieval consumption with underlying-source citations.
 - [x] Finish remaining summary polish after dogfooding: indirect linked-task
       invalidation and deeper source-chip navigation for facts, relationships,
       object changes, notes, tasks, and timeline events.
