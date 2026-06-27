@@ -54,6 +54,7 @@ interface Props {
   members: TaskMemberOption[];
   totalCount: number;
   nextCursor: string | null;
+  filterParams?: Record<string, string>;
 }
 
 type TaskPatch = Partial<
@@ -134,6 +135,7 @@ const INITIAL_MOVE_UI: MoveUiState = {
   cardErrors: {},
   savingCardIds: new Set(),
 };
+const EMPTY_FILTER_PARAMS: Record<string, string> = {};
 
 function taskPaginationStateForProps(
   rows: objects.ObjectRow[],
@@ -209,18 +211,31 @@ function taskBoardReducer(state: TaskBoardState, action: TaskBoardAction): TaskB
   }
 }
 
-function taskHref(taskId: string): string {
-  return `/app/tasks?task=${encodeURIComponent(taskId)}`;
+function taskHref(taskId: string, extraParams: Record<string, string> = {}): string {
+  const params = new URLSearchParams(extraParams);
+  params.set('task', taskId);
+  return `/app/tasks?${params.toString()}`;
 }
 
-function closeHref(view: TaskView): string {
-  return view === 'kanban' ? '/app/tasks' : taskViewHref(view, null);
+function closeHref(view: TaskView, extraParams: Record<string, string> = {}): string {
+  return view === 'kanban'
+    ? hrefWithParams('/app/tasks', extraParams)
+    : taskViewHref(view, null, extraParams);
 }
 
-function taskViewHref(view: TaskView, taskId: string | null): string {
-  const params = new URLSearchParams({ view });
+function taskViewHref(
+  view: TaskView,
+  taskId: string | null,
+  extraParams: Record<string, string> = {},
+): string {
+  const params = new URLSearchParams({ ...extraParams, view });
   if (taskId) params.set('task', taskId);
   return `/app/tasks?${params.toString()}`;
+}
+
+function hrefWithParams(basePath: string, params: Record<string, string>): string {
+  const qs = new URLSearchParams(params).toString();
+  return qs ? `${basePath}?${qs}` : basePath;
 }
 
 function patchTaskRow(
@@ -357,7 +372,14 @@ function moveUiReducer(state: MoveUiState, action: MoveUiAction): MoveUiState {
   }
 }
 
-function useTaskBoardController({ rows, columns, selectedTaskId, totalCount, nextCursor }: Props) {
+function useTaskBoardController({
+  rows,
+  columns,
+  selectedTaskId,
+  totalCount,
+  nextCursor,
+  filterParams = EMPTY_FILTER_PARAMS,
+}: Props) {
   const dndContextId = useId();
   const router = useRouter();
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
@@ -548,7 +570,10 @@ function useTaskBoardController({ rows, columns, selectedTaskId, totalCount, nex
     if (!cursor || loadingMore) return;
     dispatchBoard({ type: 'load-error', message: null });
     startLoadMore(async () => {
-      const page = await loadTaskRowsAction({ cursor });
+      const page = await loadTaskRowsAction({
+        cursor,
+        ...(Object.keys(filterParams).length > 0 ? { filters: filterParams } : {}),
+      });
       if (page.error) {
         dispatchBoard({ type: 'load-error', message: page.error });
         return;
@@ -605,6 +630,7 @@ function TaskBoardView({
   sensors,
   setFilterQuery,
   setSelectedIds,
+  filterParams = EMPTY_FILTER_PARAMS,
   totalCount,
   updateTask,
   updateTasks,
@@ -648,7 +674,7 @@ function TaskBoardView({
                 {(['kanban', 'list'] as const).map((nextView) => (
                   <Link
                     key={nextView}
-                    href={taskViewHref(nextView, selectedTaskId)}
+                    href={taskViewHref(nextView, selectedTaskId, filterParams)}
                     className={`px-3 py-1.5 font-mono text-[11px] uppercase tracking-[0.12em] ${
                       view === nextView
                         ? 'bg-signal text-signal-fg'
@@ -682,7 +708,7 @@ function TaskBoardView({
                   savingCardIds={moveUi.savingCardIds}
                   cardErrors={moveUi.cardErrors}
                   members={members}
-                  taskHref={taskHref}
+                  taskHref={(taskId) => taskHref(taskId, filterParams)}
                 />
               ))}
             </div>
@@ -696,6 +722,7 @@ function TaskBoardView({
               setSelectedIds={setSelectedIds}
               onUpdateTask={updateTask}
               onUpdateTasks={updateTasks}
+              filterParams={filterParams}
             />
           )}
           <div className="flex shrink-0 flex-wrap items-center gap-3 px-4 pb-4 pt-3 md:px-8">
@@ -731,10 +758,12 @@ function TaskBoardView({
           task={selectedTask}
           columns={allColumns}
           members={members}
-          closeHref={closeHref(view)}
+          closeHref={closeHref(view, filterParams)}
           objectHref={objectDetailHref(
             selectedTask.id,
-            view === 'kanban' ? taskHref(selectedTask.id) : taskViewHref(view, selectedTask.id),
+            view === 'kanban'
+              ? taskHref(selectedTask.id, filterParams)
+              : taskViewHref(view, selectedTask.id, filterParams),
           )}
           onUpdate={updateTask}
         />
@@ -753,6 +782,7 @@ function TaskListView({
   setSelectedIds,
   onUpdateTask,
   onUpdateTasks,
+  filterParams,
 }: {
   rows: objects.ObjectRow[];
   columns: string[];
@@ -762,6 +792,7 @@ function TaskListView({
   setSelectedIds: Dispatch<SetStateAction<ReadonlySet<string>>>;
   onUpdateTask: (id: string, patch: TaskPatch) => Promise<{ ok?: boolean; error?: string }>;
   onUpdateTasks: (ids: string[], patch: TaskPatch) => Promise<{ failed: number }>;
+  filterParams: Record<string, string>;
 }) {
   if (rows.length === 0) {
     return (
@@ -839,6 +870,7 @@ function TaskListView({
                   toggleOne(row.id, checked);
                 }}
                 onUpdateTask={onUpdateTask}
+                filterParams={filterParams}
               />
             ))}
             {hiddenRows > 0 ? (
@@ -867,6 +899,7 @@ function TaskListRow({
   highlighted,
   onSelectedChange,
   onUpdateTask,
+  filterParams,
 }: {
   row: objects.ObjectRow;
   columns: string[];
@@ -875,6 +908,7 @@ function TaskListRow({
   highlighted: boolean;
   onSelectedChange: (checked: boolean) => void;
   onUpdateTask: (id: string, patch: TaskPatch) => Promise<{ ok?: boolean; error?: string }>;
+  filterParams: Record<string, string>;
 }) {
   const [saving, setSaving] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -916,7 +950,7 @@ function TaskListRow({
       </td>
       <td className="min-w-72 px-3 py-2 align-top">
         <Link
-          href={taskViewHref('list', row.id)}
+          href={taskViewHref('list', row.id, filterParams)}
           className="block whitespace-normal break-words font-medium leading-snug hover:underline"
         >
           {displayText(title)}

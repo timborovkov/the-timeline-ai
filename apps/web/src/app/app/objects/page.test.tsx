@@ -5,8 +5,11 @@ const fakes = vi.hoisted(() => ({
   auth: vi.fn(),
   resolveActiveTeam: vi.fn(),
   listObjects: vi.fn(),
+  countObjects: vi.fn(),
   listPendingSuggestions: vi.fn(),
+  listMembers: vi.fn(),
   getObjectMergePreview: vi.fn(),
+  userRows: [] as { id: string; name: string | null; email: string }[],
   redirect: vi.fn((path: string) => {
     throw new Error(`redirect:${path}`);
   }),
@@ -17,14 +20,24 @@ vi.mock('@timeline/shared/team-scope', () => ({
   withTeam: () => ({
     objects: {
       listObjects: fakes.listObjects,
+      countObjects: fakes.countObjects,
       getObjectMergePreview: fakes.getObjectMergePreview,
     },
     suggestions: { listPendingSuggestions: fakes.listPendingSuggestions },
+    timeline: { listMembers: fakes.listMembers },
   }),
 }));
 vi.mock('@/lib/auth', () => ({ auth: fakes.auth }));
 vi.mock('@/lib/active-team', () => ({ resolveActiveTeam: fakes.resolveActiveTeam }));
-vi.mock('@/lib/db', () => ({ db: {} }));
+vi.mock('@/lib/db', () => ({
+  db: {
+    select: vi.fn(() => ({
+      from: vi.fn(() => ({
+        where: vi.fn(() => Promise.resolve(fakes.userRows)),
+      })),
+    })),
+  },
+}));
 vi.mock('@/components/objects/object-cleanup-list', () => ({
   ObjectCleanupList: ({
     pageInfo,
@@ -50,6 +63,21 @@ vi.mock('@/components/objects/object-cleanup-suggestions', () => ({
     mergePreviewsByItemId: Record<string, unknown>;
   }) => <div data-testid="cleanup-suggestions">{Object.keys(mergePreviewsByItemId).join(',')}</div>,
 }));
+vi.mock('@/components/work-filter-bar', () => ({
+  WorkFilterBar: ({
+    resultCount,
+    totalCount,
+    members = [],
+  }: {
+    resultCount: number;
+    totalCount: number;
+    members?: { id: string; label: string }[];
+  }) => (
+    <div data-testid="work-filter-bar">
+      {resultCount}/{totalCount}|members:{members.map((member) => member.label).join(',')}
+    </div>
+  ),
+}));
 
 const { default: ObjectsIndexPage } = await import('./page.js');
 
@@ -58,7 +86,10 @@ beforeEach(() => {
   fakes.auth.mockResolvedValue({ user: { id: 'user-1' } });
   fakes.resolveActiveTeam.mockResolvedValue({ active: { teamId: 'team-1' } });
   fakes.listObjects.mockResolvedValue([]);
+  fakes.countObjects.mockResolvedValue(0);
   fakes.listPendingSuggestions.mockResolvedValue([]);
+  fakes.listMembers.mockResolvedValue([]);
+  fakes.userRows = [];
   fakes.getObjectMergePreview.mockResolvedValue({
     objects: [],
     survivorId: '00000000-0000-4000-8000-000000000001',
@@ -109,6 +140,8 @@ function objectRow(index: number, type = 'task') {
 
 describe('ObjectsIndexPage', () => {
   it('fetches one cursor-paginated object window and preserves filters in page links', async () => {
+    fakes.listMembers.mockResolvedValue([{ userId: 'user-1' }]);
+    fakes.userRows = [{ id: 'user-1', name: 'Ada Lovelace', email: 'ada@example.test' }];
     fakes.listObjects.mockResolvedValue(Array.from({ length: 49 }, (_, index) => objectRow(index)));
     const cursor = Buffer.from(
       JSON.stringify({ at: '2026-05-31T10:00:00.000Z', id: objectRow(50).id }),
@@ -122,12 +155,13 @@ describe('ObjectsIndexPage', () => {
     );
 
     expect(fakes.listObjects).toHaveBeenCalledWith({
-      limit: 49,
       archived: false,
       type: 'task',
-      status: 'open',
+      status: ['open'],
+      limit: 49,
       cursor,
     });
+    expect(html).toContain('members:Ada Lovelace');
     expect(html).toContain('48|/app/objects?type=task&amp;status=open&amp;cursor=');
   });
 
@@ -147,19 +181,19 @@ describe('ObjectsIndexPage', () => {
     );
 
     expect(fakes.listObjects).toHaveBeenCalledWith({
-      limit: 9,
       archived: false,
       type: 'task',
-      status: 'open',
+      status: ['open'],
+      limit: 9,
     });
     expect(fakes.listObjects).toHaveBeenCalledWith({
-      limit: 9,
       archived: false,
       type: 'person',
-      status: 'open',
+      status: ['open'],
+      limit: 9,
     });
     expect(html).toContain(
-      'sections:{&quot;task&quot;:&quot;/app/objects?type=task&amp;status=open&quot;}',
+      'sections:{&quot;task&quot;:&quot;/app/objects?status=open&amp;type=task&quot;}',
     );
     expect(html).not.toContain('page=2');
   });
@@ -176,10 +210,10 @@ describe('ObjectsIndexPage', () => {
     );
 
     expect(fakes.listObjects).toHaveBeenCalledWith({
-      limit: 49,
       archived: false,
       type: 'task',
-      status: 'open',
+      status: ['open'],
+      limit: 49,
       cursor,
     });
     expect(html).toContain('No objects on this page');
@@ -190,10 +224,10 @@ describe('ObjectsIndexPage', () => {
       searchParams: Promise.resolve({ type: 'task', status: 'open', cursor: 'not-a-cursor' }),
     });
     expect(fakes.listObjects).toHaveBeenLastCalledWith({
-      limit: 49,
       archived: false,
       type: 'task',
-      status: 'open',
+      status: ['open'],
+      limit: 49,
       cursor: undefined,
     });
   });

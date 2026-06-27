@@ -45,6 +45,7 @@ function renderBoard(
   selectedTaskId: string | null = null,
   rows: objects.ObjectRow[] = [task()],
   view: 'kanban' | 'list' = 'kanban',
+  filterParams: Record<string, string> = {},
 ) {
   return render(
     <TaskBoard
@@ -58,6 +59,7 @@ function renderBoard(
       ]}
       totalCount={rows.length}
       nextCursor={null}
+      filterParams={filterParams}
     />,
   );
 }
@@ -214,6 +216,27 @@ describe('TaskBoard', () => {
       '/app/tasks?view=list&task=task-1',
     );
     expect(screen.getByRole('checkbox', { name: 'Select Send proposal' })).toBeTruthy();
+  });
+
+  it('preserves server filter params in task navigation links', () => {
+    renderBoard('task-1', [task()], 'list', {
+      assignee: 'user-1',
+      due: 'next7',
+      q: 'proposal',
+    });
+
+    expect(screen.getByRole('link', { name: 'kanban' }).getAttribute('href')).toBe(
+      '/app/tasks?assignee=user-1&due=next7&q=proposal&view=kanban&task=task-1',
+    );
+    expect(screen.getByRole('link', { name: 'Send proposal' }).getAttribute('href')).toBe(
+      '/app/tasks?assignee=user-1&due=next7&q=proposal&view=list&task=task-1',
+    );
+    expect(screen.getByRole('link', { name: 'Close' }).getAttribute('href')).toBe(
+      '/app/tasks?assignee=user-1&due=next7&q=proposal&view=list',
+    );
+    expect(screen.getByRole('link', { name: 'Open object' }).getAttribute('href')).toBe(
+      '/app/objects/task-1?returnTo=%2Fapp%2Ftasks%3Fassignee%3Duser-1%26due%3Dnext7%26q%3Dproposal%26view%3Dlist%26task%3Dtask-1',
+    );
   });
 
   it('loads older tasks from the cursor action without duplicating loaded rows', async () => {

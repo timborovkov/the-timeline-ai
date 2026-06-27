@@ -69,6 +69,13 @@ vi.mock('@/components/tasks/task-board', () => ({
     </div>
   ),
 }));
+vi.mock('@/components/work-filter-bar', () => ({
+  WorkFilterBar: ({ resultCount, totalCount }: { resultCount: number; totalCount: number }) => (
+    <div data-testid="work-filter-bar">
+      {resultCount}/{totalCount}
+    </div>
+  ),
+}));
 
 const { default: TasksPage } = await import('./page.js');
 
@@ -227,7 +234,7 @@ describe('TasksPage', () => {
       type: 'task',
       archived: false,
       limit: 501,
-      cursor: undefined,
+      cursor: null,
     });
     expect(fakes.listObjects).toHaveBeenCalledTimes(1);
     expect(fakes.countObjects).toHaveBeenCalledWith({

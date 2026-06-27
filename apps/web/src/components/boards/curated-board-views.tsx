@@ -18,6 +18,7 @@ export interface BoardMemberOption {
 
 const EMPTY_LANES: boards.BoardLaneRow[] = [];
 const EMPTY_MEMBERS: BoardMemberOption[] = [];
+const EMPTY_FILTER_PARAMS: Record<string, string> = {};
 
 type BoardBulkField = 'responsible' | 'due' | 'priority' | 'lane';
 
@@ -45,12 +46,14 @@ export function CuratedBoardTable({
   items,
   members = EMPTY_MEMBERS,
   onUpdateItem,
+  filterParams = EMPTY_FILTER_PARAMS,
 }: {
   boardId: string;
   view: BoardLayout;
   lanes?: boards.BoardLaneRow[];
   items: boards.BoardItemRow[];
   members?: BoardMemberOption[];
+  filterParams?: Record<string, string>;
   onUpdateItem?: (
     itemId: string,
     patch: BoardItemOptimisticPatch,
@@ -203,7 +206,7 @@ export function CuratedBoardTable({
                       <span className="font-medium text-fg">{displayText(objectTitle)}</span>
                     ) : (
                       <Link
-                        href={boardViewHref(boardId, view, item.id)}
+                        href={boardViewHref(boardId, view, item.id, filterParams)}
                         className="font-medium hover:underline"
                       >
                         {displayText(objectTitle)}
@@ -538,12 +541,14 @@ export function CuratedBoardList({
   items,
   members = EMPTY_MEMBERS,
   onUpdateItem,
+  filterParams = EMPTY_FILTER_PARAMS,
 }: {
   boardId: string;
   view: BoardLayout;
   lanes?: boards.BoardLaneRow[];
   items: boards.BoardItemRow[];
   members?: BoardMemberOption[];
+  filterParams?: Record<string, string>;
   onUpdateItem?: (
     itemId: string,
     patch: BoardItemOptimisticPatch,
@@ -626,7 +631,7 @@ export function CuratedBoardList({
                 </span>
               ) : (
                 <Link
-                  href={boardViewHref(boardId, view, item.id)}
+                  href={boardViewHref(boardId, view, item.id, filterParams)}
                   className="flex min-w-0 flex-1 items-center justify-between gap-3"
                 >
                   {content}

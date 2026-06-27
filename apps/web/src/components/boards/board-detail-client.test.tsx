@@ -152,6 +152,7 @@ function renderClient(
     selectedItemId?: string | null;
     view?: 'kanban' | 'table' | 'list';
     purpose?: string;
+    itemCount?: number;
   } = {},
 ) {
   return (
@@ -160,6 +161,7 @@ function renderClient(
       boardName="Pilot board"
       purpose={options.purpose ?? 'Track pilots'}
       pinned={false}
+      itemCount={options.itemCount}
       view={options.view ?? 'list'}
       lanes={[]}
       initialItems={items}
@@ -231,6 +233,36 @@ describe('BoardDetailClient', () => {
       expect(screen.getByText('Beta')).toBeTruthy();
       expect(screen.getByLabelText('Board · Pilot board').textContent).not.toContain('items');
     });
+  });
+
+  it('shows the server filtered item count in the board filter bar', () => {
+    render(
+      <BoardDetailClient
+        boardId="board-1"
+        boardName="Pilot board"
+        purpose="Track pilots"
+        pinned={false}
+        itemCount={8}
+        view="list"
+        lanes={[]}
+        initialItems={[
+          boardItem({
+            id: 'item-1',
+            entityId: 'object-1',
+            canonicalName: 'Alpha',
+          }),
+        ]}
+        initialCandidates={[]}
+        recommendedTypes={['company']}
+        defaultLaneId="lane-1"
+        selectedItemId={null}
+        history={[]}
+        members={[]}
+        activeFilters
+      />,
+    );
+
+    expect(screen.getByText('1 / 8')).toBeTruthy();
   });
 
   it('does not resurrect a locally committed add after it is removed', async () => {

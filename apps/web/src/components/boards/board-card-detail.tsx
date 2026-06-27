@@ -35,6 +35,7 @@ interface Props {
   history: boards.BoardItemChangeRow[];
   lanes?: boards.BoardLaneRow[];
   members?: BoardMemberOption[];
+  filterParams?: Record<string, string>;
   onUpdateItem?: (
     itemId: string,
     patch: BoardItemOptimisticPatch,
@@ -44,6 +45,7 @@ interface Props {
 
 const EMPTY_LANES: boards.BoardLaneRow[] = [];
 const EMPTY_MEMBERS: BoardMemberOption[] = [];
+const EMPTY_FILTER_PARAMS: Record<string, string> = {};
 
 interface DraftState {
   itemId: string | null;
@@ -90,6 +92,7 @@ export function BoardCardDetail({
   history,
   lanes = EMPTY_LANES,
   members = EMPTY_MEMBERS,
+  filterParams = EMPTY_FILTER_PARAMS,
   onUpdateItem,
   onItemRemoved,
 }: Props) {
@@ -140,6 +143,7 @@ export function BoardCardDetail({
         lane={lane}
         blocked={blocked}
         nextStepDraft={currentDraftState.nextStepDraft}
+        filterParams={filterParams}
       />
       <BoardCommandFields
         item={item}
@@ -174,7 +178,13 @@ export function BoardCardDetail({
         }}
         onSave={saveNotes}
       />
-      <BoardActions boardId={boardId} view={view} item={item} onItemRemoved={onItemRemoved} />
+      <BoardActions
+        boardId={boardId}
+        view={view}
+        item={item}
+        filterParams={filterParams}
+        onItemRemoved={onItemRemoved}
+      />
       <BoardEvidence changes={provenanceChanges} lanes={lanes} members={members} />
       <BoardActivity history={history} lanes={lanes} members={members} />
     </aside>
@@ -188,6 +198,7 @@ function BoardCardHeader({
   lane,
   blocked,
   nextStepDraft,
+  filterParams,
 }: {
   boardId: string;
   view: BoardLayout;
@@ -195,6 +206,7 @@ function BoardCardHeader({
   lane: boards.BoardLaneRow | null;
   blocked: boolean;
   nextStepDraft: string;
+  filterParams: Record<string, string>;
 }) {
   const visibleNextStep = nextStepDraft.trim();
   const title = displayObjectTitle(item.object);
@@ -210,7 +222,7 @@ function BoardCardHeader({
           </p>
         </div>
         <Link
-          href={boardViewHref(boardId, view, null)}
+          href={boardViewHref(boardId, view, null, filterParams)}
           className="shrink-0 font-mono text-[11px] uppercase tracking-[0.12em] text-fg-muted hover:text-fg"
         >
           Close
@@ -421,17 +433,19 @@ function BoardActions({
   boardId,
   view,
   item,
+  filterParams,
   onItemRemoved,
 }: {
   boardId: string;
   view: BoardLayout;
   item: boards.BoardItemRow;
+  filterParams: Record<string, string>;
   onItemRemoved?: (itemId: string, entityId: string) => void;
 }) {
   const timelineHref = `/app/timeline?q=${encodeURIComponent(item.object.canonicalName)}`;
   return (
     <div className="flex flex-wrap gap-2 border-b border-border p-4">
-      <ObjectPreviewDialog item={item} view={view} />
+      <ObjectPreviewDialog item={item} view={view} filterParams={filterParams} />
       <Link
         href={`/app/chat?object=${item.entityId}`}
         className="rounded-sm border border-border px-2 py-1 text-xs font-medium hover:bg-surface"
@@ -449,6 +463,7 @@ function BoardActions({
         itemId={item.id}
         objectName={item.object.canonicalName}
         view={view}
+        filterParams={filterParams}
         onRemoved={() => {
           onItemRemoved?.(item.id, item.entityId);
         }}
@@ -571,7 +586,15 @@ function BoardActivity({
   );
 }
 
-function ObjectPreviewDialog({ item, view }: { item: boards.BoardItemRow; view: BoardLayout }) {
+function ObjectPreviewDialog({
+  item,
+  view,
+  filterParams,
+}: {
+  item: boards.BoardItemRow;
+  view: BoardLayout;
+  filterParams: Record<string, string>;
+}) {
   const title = displayObjectTitle(item.object);
   return (
     <Dialog>
@@ -611,7 +634,10 @@ function ObjectPreviewDialog({ item, view }: { item: boards.BoardItemRow; view: 
         ) : null}
         <div className="flex justify-end">
           <Link
-            href={objectDetailHref(item.entityId, boardViewHref(item.boardId, view, item.id))}
+            href={objectDetailHref(
+              item.entityId,
+              boardViewHref(item.boardId, view, item.id, filterParams),
+            )}
             className="inline-flex items-center gap-2 rounded-sm border border-border px-3 py-1.5 text-sm font-medium hover:bg-surface"
           >
             <ExternalLink className="size-3.5" aria-hidden="true" />

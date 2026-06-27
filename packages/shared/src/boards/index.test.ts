@@ -176,6 +176,91 @@ describe('board scope', () => {
     });
   });
 
+  it('filters board items by board fields and underlying object fields', async () => {
+    const scope = withTeam(db, TEAM_A, USER_OWNER);
+    const board = await scope.boards.createBoard({
+      name: 'Pilot pipeline',
+      templateKind: 'pipeline',
+      lanes: [
+        { name: 'New', kind: 'active' },
+        { name: 'Lost', kind: 'lost' },
+      ],
+    });
+    const matchingCompany = await scope.objects.createObject({
+      type: 'company',
+      canonicalName: 'Northstar Labs',
+      status: 'open',
+      assigneeUserId: USER_MEMBER,
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    const otherCompany = await scope.objects.createObject({
+      type: 'company',
+      canonicalName: 'Other Labs',
+      status: 'open',
+      assigneeUserId: USER_OWNER,
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    const firstLane = board.lanes[0];
+    const secondLane = board.lanes[1];
+    if (!firstLane || !secondLane) throw new Error('seeded board should include two lanes');
+    const firstLaneId = firstLane.id;
+    const secondLaneId = secondLane.id;
+
+    const matchingItem = await scope.boards.addBoardItem(board.id, {
+      entityId: matchingCompany.id,
+      laneId: firstLaneId,
+      responsibleUserId: USER_MEMBER,
+      priority: 1,
+      dueAt: new Date('2026-08-04T00:00:00.000Z'),
+      nextStep: 'Call finance lead',
+      customFields: { segment: 'audit' },
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    await scope.boards.addBoardItem(board.id, {
+      entityId: otherCompany.id,
+      laneId: secondLaneId,
+      responsibleUserId: USER_OWNER,
+      priority: 2,
+      dueAt: null,
+      nextStep: 'Wait',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    await db
+      .update(boardItems)
+      .set({
+        createdAt: new Date('2026-07-10T00:00:00.000Z'),
+        updatedAt: new Date('2026-07-20T00:00:00.000Z'),
+      })
+      .where(eq(boardItems.id, matchingItem.id));
+
+    await expect(
+      scope.boards.getBoard(board.id, {
+        itemLimit: 'all',
+        itemFilter: {
+          query: 'finance audit',
+          laneId: firstLaneId,
+          responsibleUserId: USER_MEMBER,
+          priority: 1,
+          dueAfter: new Date('2026-08-01T00:00:00.000Z'),
+          dueBefore: new Date('2026-08-05T00:00:00.000Z'),
+          createdAfter: new Date('2026-07-01T00:00:00.000Z'),
+          createdBefore: new Date('2026-07-31T00:00:00.000Z'),
+          updatedAfter: new Date('2026-07-15T00:00:00.000Z'),
+          updatedBefore: new Date('2026-07-25T00:00:00.000Z'),
+          object: {
+            type: 'company',
+            status: 'open',
+            assigneeUserId: USER_MEMBER,
+            archived: false,
+          },
+        },
+      }),
+    ).resolves.toMatchObject({
+      itemCount: 1,
+      items: [expect.objectContaining({ id: matchingItem.id })],
+    });
+  });
+
   it('notifies the responsible user and mirrors board item due dates to the team calendar', async () => {
     const scope = withTeam(db, TEAM_A, USER_OWNER);
     const board = await scope.boards.createBoard({
