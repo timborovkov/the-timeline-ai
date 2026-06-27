@@ -1364,6 +1364,10 @@ function shouldSupersedePendingItem(args: {
     newerItem.operation === 'create';
   if (olderItem.targetKind !== newerItem.targetKind && !isObjectTaskCreatePair) return false;
 
+  if (olderItem.targetKind === 'identity_facet' && newerItem.targetKind === 'identity_facet') {
+    return sameSemanticPendingItem(args);
+  }
+
   if (olderItem.targetKind === 'object_merge' && newerItem.targetKind === 'object_merge') {
     const olderPayload = objectMergePayload.safeParse(olderItem.proposedPayload);
     const newerPayload = objectMergePayload.safeParse(newerItem.proposedPayload);

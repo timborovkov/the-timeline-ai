@@ -49,6 +49,10 @@ authoritative sources that directly update canonical workspace state.
   evidence. Duplicate delivery replay should repair missing link clusters or
   members for the existing raw event instead of relying on first-pass enqueue
   success.
+- Emails, phone numbers, and conservative labeled addresses in textual payloads
+  are stored on raw-event contact metadata. Contact values remain evidence until
+  reviewable memory paths promote email/phone values into person identity
+  facets; duplicate replay repair stays focused on link evidence.
 - Distinct same-webhook deliveries that arrive close together are ingest
   webhook bursts. Preserve each delivery, but allow timeline display and future
   evidence review to group the burst as one source moment.

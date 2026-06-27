@@ -825,6 +825,8 @@ function ObjectDetailView(props: Props) {
         </main>
 
         <aside className="min-w-0 space-y-4 xl:sticky xl:top-6">
+          <ObjectContactSection detail={view.viewDetail} />
+
           <ObjectPanel title="Fields" eyebrow="editable">
             <ObjectEditableFields
               detail={view.localDetail}
@@ -872,6 +874,38 @@ function ObjectDetailView(props: Props) {
         </aside>
       </div>
     </div>
+  );
+}
+
+function ObjectContactSection({ detail }: { detail: ObjectDetail }) {
+  const contacts = detail.identityFacets.filter(
+    (facet) => facet.kind === 'email' || facet.kind === 'phone',
+  );
+  if (detail.type !== 'person' || contacts.length === 0) return null;
+
+  return (
+    <ObjectPanel title="Contact" eyebrow={`${contacts.length} saved`}>
+      <div className="space-y-2">
+        {contacts.map((facet) => {
+          const href =
+            facet.kind === 'email'
+              ? `mailto:${facet.normalizedValue}`
+              : `tel:${facet.normalizedValue}`;
+          return (
+            <a
+              key={facet.id}
+              href={href}
+              className="flex min-w-0 items-center justify-between gap-3 border border-border px-3 py-2 text-sm transition hover:border-signal/60 hover:bg-signal-soft/20"
+            >
+              <span className="min-w-0 truncate">{facet.value}</span>
+              <span className="shrink-0 font-mono text-[10px] uppercase tracking-[0.14em] text-fg-dim">
+                {facet.kind}
+              </span>
+            </a>
+          );
+        })}
+      </div>
+    </ObjectPanel>
   );
 }
 

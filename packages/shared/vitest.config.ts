@@ -14,6 +14,7 @@ const env = {
 const pgliteTests = [
   'src/agent/ask.test.ts',
   'src/agent/evals.test.ts',
+  'src/calendar/raw-events.test.ts',
   'src/calendar/scope.test.ts',
   'src/documents/scope.test.ts',
   'src/email/dispatcher.test.ts',

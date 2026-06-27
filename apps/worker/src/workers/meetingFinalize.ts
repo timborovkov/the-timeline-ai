@@ -8,10 +8,8 @@ import {
   savedMeetings,
 } from '@timeline/db';
 import { childLogger, formatMeetingTranscript, getEnv, llm, queue } from '@timeline/shared';
-import {
-  reconcileLinkArtifactsForRawEvent,
-  sourceMetadataWithLinks,
-} from '@timeline/shared/conversational/link-artifacts';
+import { sourceMetadataWithConversationArtifacts } from '@timeline/shared/conversational/contact-artifacts';
+import { reconcileLinkArtifactsForRawEvent } from '@timeline/shared/conversational/link-artifacts';
 import { currentExtractionModelVersion } from '@timeline/shared/extraction-model-version';
 import { participantNames } from '@timeline/shared/meetings';
 import { UnrecoverableError, Worker, type Job } from 'bullmq';
@@ -422,7 +420,7 @@ async function createMeetingCalendarEvent(
       visibility: args.meeting.defaultVisibility,
       visibilityUserIds: args.meeting.visibilityUserIds,
       visibilityOwnerUserId: args.meeting.createdByUserId,
-      sourceMetadata: sourceMetadataWithLinks(
+      sourceMetadata: sourceMetadataWithConversationArtifacts(
         {
           calendar_event_id: row.id,
           action: 'scheduled',
@@ -446,7 +444,7 @@ async function createMeetingCalendarEvent(
       visibility: args.meeting.defaultVisibility,
       visibilityUserIds: args.meeting.visibilityUserIds,
       visibilityOwnerUserId: args.meeting.createdByUserId,
-      sourceMetadata: sourceMetadataWithLinks(
+      sourceMetadata: sourceMetadataWithConversationArtifacts(
         {
           calendar_event_id: row.id,
           action: 'event',
@@ -701,7 +699,7 @@ export async function processMeetingFinalizeJob(
             visibility: meeting.defaultVisibility,
             visibilityUserIds: meeting.visibilityUserIds,
             visibilityOwnerUserId: meeting.createdByUserId,
-            sourceMetadata: sourceMetadataWithLinks(sourceMetadata, contentText),
+            sourceMetadata: sourceMetadataWithConversationArtifacts(sourceMetadata, contentText),
           })
           .onConflictDoNothing()
           .returning({ id: rawEvents.id });

@@ -19,6 +19,7 @@ import {
   CONVERSATIONAL_ATTACHMENT_LIMITS,
   extensionOf,
 } from '#src/conversational/attachments.js';
+import { contactMetadata, extractContactsFromText } from '#src/conversational/contact-artifacts.js';
 import {
   extractLinksFromText,
   linkMetadata,
@@ -690,6 +691,8 @@ async function handleMessageEvent(
   };
   const links = extractLinksFromText(text);
   if (links.length > 0) metadata.links = linkMetadata(links);
+  const contacts = extractContactsFromText(text);
+  if (contacts.length > 0) metadata.contacts = contactMetadata(contacts);
   if (route.conversationTitle) metadata.slack_channel_name = route.conversationTitle;
   if (isEdit)
     metadata.edits_event_id = await findRootSlackEventId(

@@ -20,6 +20,7 @@ import {
   CONVERSATIONAL_ATTACHMENT_LIMITS,
   extensionOf,
 } from '#src/conversational/attachments.js';
+import { contactMetadata, extractContactsFromText } from '#src/conversational/contact-artifacts.js';
 import {
   extractLinksFromText,
   linkMetadata,
@@ -1712,6 +1713,8 @@ async function insertEvent(
   }
   const links = extractLinksFromText(input.text);
   if (links.length > 0) metadata.links = linkMetadata(links);
+  const contacts = extractContactsFromText(input.text);
+  if (contacts.length > 0) metadata.contacts = contactMetadata(contacts);
 
   let teamId: string | null = input.fallbackTeamId;
   if (input.isEdit) {

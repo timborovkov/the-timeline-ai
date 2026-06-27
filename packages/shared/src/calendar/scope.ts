@@ -20,10 +20,10 @@ import {
   rruleUntil,
   validateRRule,
 } from '#src/calendar/recurrence.js';
+import { sourceMetadataWithConversationArtifacts } from '#src/conversational/contact-artifacts.js';
 import {
   refreshLinkArtifactsForRawEvent,
   reconcileLinkArtifactsForRawEvent,
-  sourceMetadataWithLinks,
 } from '#src/conversational/link-artifacts.js';
 import { TIMELINE_MODELS } from '#src/llm/models.js';
 import { childLogger } from '#src/logger.js';
@@ -55,7 +55,8 @@ function sourceMetadataReplacingLinks(
 ): Record<string, unknown> {
   const base = recordFromUnknown(metadata);
   delete base.links;
-  return sourceMetadataWithLinks(base, text);
+  delete base.contacts;
+  return sourceMetadataWithConversationArtifacts(base, text);
 }
 
 async function updateCalendarRawEventContent(
@@ -1175,7 +1176,7 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
               visibility: newVis,
               visibilityUserIds: newVisUserIds,
               visibilityOwnerUserId: row.createdByUserId,
-              sourceMetadata: sourceMetadataWithLinks(
+              sourceMetadata: sourceMetadataWithConversationArtifacts(
                 {
                   calendar_event_id: targetId,
                   action: 'updated',
@@ -1393,7 +1394,7 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
               visibility: parentRow.visibility,
               visibilityUserIds: parentRow.visibilityUserIds,
               visibilityOwnerUserId: parentRow.createdByUserId,
-              sourceMetadata: sourceMetadataWithLinks(
+              sourceMetadata: sourceMetadataWithConversationArtifacts(
                 {
                   calendar_event_id: parentId,
                   action: 'cancelled',
@@ -1480,7 +1481,7 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
             visibility: row.visibility,
             visibilityUserIds: row.visibilityUserIds,
             visibilityOwnerUserId: row.createdByUserId,
-            sourceMetadata: sourceMetadataWithLinks(
+            sourceMetadata: sourceMetadataWithConversationArtifacts(
               {
                 calendar_event_id: id,
                 action: 'cancelled',

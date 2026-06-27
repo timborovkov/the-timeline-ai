@@ -10,7 +10,7 @@
     <a class="skip" href="#main">Skip to content</a>
     <main id="main">
       <h1>Slack conversational capture setup</h1>
-      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-06-22</span></div>
+      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-06-28</span></div>
       <p class="tldr">
         Slack is a first-party Capture Surface like Telegram: install the app with OAuth, link Slack
         users with OAuth, bind channels from Timeline, and let DMs route through the user's active
@@ -169,9 +169,11 @@ app_mention
           Text-bearing Slack captures enqueue extraction, embeddings, and approval-suggestion work
           directly. Shared URLs in the text are normalized into non-authoritative artifact evidence
           so timeline grouping can surface the link context without letting the link change
-          canonical state. File-only messages create captured files for source evidence and route
-          those files to extraction without inventing approval suggestions before text or
-          transcripts exist.
+          canonical state. Emails, phone numbers, and conservative labeled addresses are recorded on
+          <code>source_metadata.contacts</code>; accepted email/phone memory still goes through
+          person identity facets rather than standalone artifacts. File-only messages create
+          captured files for source evidence and route those files to extraction without inventing
+          approval suggestions before text or transcripts exist.
         </li>
         <li>
           Slack DMs get a best-effort <code>:eyes:</code> reaction after capture. Channels never get

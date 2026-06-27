@@ -45,7 +45,11 @@ _Avoid_: Raw Event when referring to the grouped browsing unit
 The workspace consequences or links attached to a timeline moment, such as
 tasks, boards, objects, calendar events, documents, decisions, follow-ups, or
 pending approvals that were created, changed, referenced, or suggested from the
-underlying evidence. Impact Context is truthful partial context: v1/v2 surfaces
+underlying evidence. Extracted emails, phone numbers, and labeled addresses can
+ride on raw-event metadata as evidence, but emails/phones become useful product
+state only when they are accepted as person identity facets; addresses remain
+location/object metadata unless a later workflow promotes them. Impact Context
+is truthful partial context: v1/v2 surfaces
 hydrate it from existing metadata, suggestion evidence, object/task changes,
 document versions, and calendar rows without inventing missing graph links.
 _Avoid_: Related items when discussing what changed because of source evidence
@@ -498,6 +502,8 @@ number, Telegram handle, Slack user id, GitHub username, or linked Timeline
 team member. Identity facets are distinct from nicknames and freeform facts
 because they help resolve senders across capture surfaces; strong facet
 matches should update the existing person rather than create another one.
+Emails and phone numbers extracted from conversational text should be proposed
+or approved through this path rather than modeled as standalone artifacts.
 _Avoid_: Alias when referring to an external account or contact detail
 
 **Capture Surface**:

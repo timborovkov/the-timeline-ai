@@ -773,6 +773,101 @@ describe('object scope — notes and suggestions', () => {
     expect(detailAfterDelete?.connectedWork.links).toEqual([]);
   });
 
+  it('returns approved identity facets on object detail', async () => {
+    const scope = withTeam(db, TEAM_A, USER_OWNER).objects;
+    const person = await scope.createObject({
+      type: 'person',
+      canonicalName: 'Ada Lovelace',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+
+    await scope.createIdentityFacet({
+      entityId: person.id,
+      kind: 'email',
+      value: 'Ada@Example.com',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    await scope.createIdentityFacet({
+      entityId: person.id,
+      kind: 'phone',
+      value: '+1 213 373 4253',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+
+    await expect(scope.getObject(person.id)).resolves.toMatchObject({
+      identityFacets: [
+        expect.objectContaining({
+          kind: 'email',
+          value: 'Ada@Example.com',
+          normalizedValue: 'ada@example.com',
+        }),
+        expect.objectContaining({
+          kind: 'phone',
+          value: '+1 213 373 4253',
+          normalizedValue: '+12133734253',
+        }),
+      ],
+    });
+  });
+
+  it('canonicalizes email and phone identity facets instead of trusting supplied normalized values', async () => {
+    const scope = withTeam(db, TEAM_A, USER_OWNER).objects;
+    const person = await scope.createObject({
+      type: 'person',
+      canonicalName: 'Grace Hopper',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+
+    await scope.createIdentityFacet({
+      entityId: person.id,
+      kind: 'email',
+      value: 'Grace@Example.com',
+      normalizedValue: 'grace@example.com?bcc=attacker@example.com',
+      actor: { kind: 'agent', userId: null },
+    });
+    await scope.createIdentityFacet({
+      entityId: person.id,
+      kind: 'phone',
+      value: '+1 (213) 373-4253',
+      normalizedValue: '+12133734253;ext=999',
+      actor: { kind: 'agent', userId: null },
+    });
+
+    await expect(scope.listIdentityFacets(person.id)).resolves.toEqual([
+      expect.objectContaining({
+        kind: 'email',
+        normalizedValue: 'grace@example.com',
+      }),
+      expect.objectContaining({
+        kind: 'phone',
+        normalizedValue: '+12133734253',
+      }),
+    ]);
+  });
+
+  it('accepts local phone identity facets with a leading trunk zero', async () => {
+    const scope = withTeam(db, TEAM_A, USER_OWNER).objects;
+    const person = await scope.createObject({
+      type: 'person',
+      canonicalName: 'Alan Turing',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+
+    await scope.createIdentityFacet({
+      entityId: person.id,
+      kind: 'phone',
+      value: '07700 900123',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+
+    await expect(scope.listIdentityFacets(person.id)).resolves.toEqual([
+      expect.objectContaining({
+        kind: 'phone',
+        normalizedValue: '07700900123',
+      }),
+    ]);
+  });
+
   it('accepts a suggested field change once and rejects unsupported suggestion fields', async () => {
     const scope = withTeam(db, TEAM_A, USER_OWNER).objects;
     const object = await scope.createObject({

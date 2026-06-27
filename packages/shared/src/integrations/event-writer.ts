@@ -16,9 +16,9 @@ import {
   type EvidenceRole,
   type EvidenceStrength,
 } from '#src/artifacts/index.js';
+import { sourceMetadataWithConversationArtifacts } from '#src/conversational/contact-artifacts.js';
 import {
   reconcileLinkArtifactsForRawEvent,
-  sourceMetadataWithLinks,
   textHasLinks,
 } from '#src/conversational/link-artifacts.js';
 import { enqueueEmbedJob, enqueueObjectEmbedJob } from '#src/queue/queues.js';
@@ -123,7 +123,7 @@ export async function writeIntegrationEvents(deps: {
       occurredAt: evt.occurredAt,
       visibility: resolvedVisibility,
       visibilityUserIds: resolvedVisibility === 'specific_users' ? requestedUserIds : null,
-      sourceMetadata: sourceMetadataWithLinks(
+      sourceMetadata: sourceMetadataWithConversationArtifacts(
         {
           provider: evt.provider,
           integration_id: deps.integration.id,
