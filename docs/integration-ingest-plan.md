@@ -38,6 +38,10 @@ Priority 1 native integrations shipped first: Monday.com, full Slack workspace
 ingestion, and Sentry. Keep them on the same provider-connection, source
 selection, cursor, and integration-worker foundation as the existing adapters.
 
+For the plan to move polling-heavy native ingestion from poller-led sync to a
+webhook-first, provider-budget-aware model, see
+[`integration-webhook-transition-plan.md`](./integration-webhook-transition-plan.md).
+
 ## Product Bar
 
 Every first-party integration must ship the same baseline:

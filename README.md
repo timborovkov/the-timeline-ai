@@ -202,6 +202,9 @@ boundaries.
 - [`docs/integration-ingest-plan.md`](./docs/integration-ingest-plan.md) —
   first-party ingestion implementation plan for work systems, including the
   implemented native providers and future waves.
+- [`docs/integration-webhook-transition-plan.md`](./docs/integration-webhook-transition-plan.md) —
+  migration plan for moving polling-heavy native ingestion from poller-led sync
+  to a webhook-first, provider-budget-aware ingestion system.
 - [`docs/ux-overhaul-plan.md`](./docs/ux-overhaul-plan.md) — UX overhaul plan:
   soften the forensic surface for non-technical users with standard-page
   headers, a guided connect-flow wizard, actionable error states,
