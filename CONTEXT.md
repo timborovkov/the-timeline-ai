@@ -75,9 +75,9 @@ _Avoid_: Mention when the connection is indirect
 
 **Connected Work**:
 The source-backed work context shown around one workspace object, such as
-tasks, calendar events, documents, boards, timeline moments, fact-backed
-people/object context, or pending approvals that mention, target, or materially
-involve that object.
+tasks, calendar events, documents, shared links, captured files, boards,
+timeline moments, fact-backed people/object context, or pending approvals that
+mention, target, or materially involve that object.
 Connected Work can be useful before it becomes object memory; it should not be
 presented as an accepted object relationship unless a teammate accepts that
 relationship. Connected Work is computed from current evidence for immediate

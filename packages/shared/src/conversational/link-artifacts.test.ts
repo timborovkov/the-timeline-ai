@@ -33,12 +33,14 @@ describe('conversational link artifacts', () => {
       [
         'https://example.com/report?reference=alpha&author=mika&token=secret&api_key=hidden',
         'https://example.com/report?reference=beta&author=mika&accessToken=hidden&code_verifier=hidden',
+        'https://example.com/report?promo_code=summer&country_code=EE&x-api-key=hidden&code-challenge=hidden',
       ].join(' '),
     );
 
     expect(linkMetadata(links).map((link) => link.canonical_url)).toEqual([
       'https://example.com/report?author=mika&reference=alpha',
       'https://example.com/report?author=mika&reference=beta',
+      'https://example.com/report?country_code=EE&promo_code=summer',
     ]);
   });
 });

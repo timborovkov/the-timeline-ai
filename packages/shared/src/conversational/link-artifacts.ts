@@ -23,8 +23,11 @@ const TRACKING_PARAM_NAMES = new Set([
 ]);
 const SECRET_PARAM_NAMES = new Set([
   'access_token',
+  'access_key',
+  'access-key',
   'accesstoken',
   'api_key',
+  'api-key',
   'apikey',
   'auth',
   'auth_code',
@@ -33,21 +36,42 @@ const SECRET_PARAM_NAMES = new Set([
   'authtoken',
   'authorization',
   'client_secret',
+  'client-secret',
   'clientsecret',
   'code',
+  'code_challenge',
+  'code-challenge',
+  'code_verifier',
+  'code-verifier',
   'id_token',
+  'id-token',
   'idtoken',
   'key',
   'oauth_token',
+  'oauth-token',
   'oauthtoken',
   'refresh_token',
+  'refresh-token',
   'refreshtoken',
   'secret',
+  'secret_key',
+  'secret-key',
   'sig',
   'signature',
   'token',
+  'x_api_key',
+  'x-api-key',
 ]);
-const SECRET_PARAM_PARTS = new Set(['auth', 'code', 'key', 'secret', 'sig', 'signature', 'token']);
+const SECRET_PARAM_PARTS = new Set(['auth', 'secret', 'sig', 'signature', 'token']);
+const SECRET_PARAM_PART_SEQUENCES = [
+  ['access', 'key'],
+  ['api', 'key'],
+  ['client', 'secret'],
+  ['code', 'challenge'],
+  ['code', 'verifier'],
+  ['oauth', 'token'],
+  ['refresh', 'token'],
+] as const;
 
 export interface CapturedLink {
   rawUrl: string;
@@ -81,7 +105,12 @@ function shouldDropParam(name: string): boolean {
     TRACKING_PARAM_PREFIXES.some((prefix) => lower.startsWith(prefix)) ||
     TRACKING_PARAM_NAMES.has(lower) ||
     SECRET_PARAM_NAMES.has(lower) ||
-    parts.some((part) => SECRET_PARAM_PARTS.has(part))
+    parts.some((part) => SECRET_PARAM_PARTS.has(part)) ||
+    SECRET_PARAM_PART_SEQUENCES.some((sequence) =>
+      parts.some((_, index) =>
+        sequence.every((expected, offset) => parts[index + offset] === expected),
+      ),
+    )
   );
 }
 
