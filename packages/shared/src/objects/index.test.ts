@@ -701,7 +701,7 @@ describe('object scope — notes and suggestions', () => {
       actor: { kind: 'user', userId: USER_OWNER },
     });
 
-    await scope.createNote({
+    const note = await scope.createNote({
       entityId: object.id,
       body: 'Launch checklist: https://example.com/checklists/launch?utm_source=note&step=2',
       authorUserId: USER_OWNER,
@@ -740,6 +740,12 @@ describe('object scope — notes and suggestions', () => {
         displayUrl: 'example.com/checklists/launch',
       }),
     ]);
+
+    await expect(scope.deleteNote({ noteId: note.id, actorUserId: USER_OWNER })).resolves.toBe(
+      true,
+    );
+    const detailAfterDelete = await scope.getObject(object.id);
+    expect(detailAfterDelete?.connectedWork.links).toEqual([]);
   });
 
   it('accepts a suggested field change once and rejects unsupported suggestion fields', async () => {

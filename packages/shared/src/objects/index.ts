@@ -1578,6 +1578,15 @@ async function getConnectedWork(
     db
       .select({ id: rawEvents.id })
       .from(rawEvents)
+      .innerJoin(
+        objectNotes,
+        and(
+          eq(objectNotes.teamId, scope.teamId),
+          eq(objectNotes.entityId, object.id),
+          isNull(objectNotes.deletedAt),
+          sql`${objectNotes.id}::text = ${rawEvents.sourceMetadata} ->> 'note_id'`,
+        ),
+      )
       .where(
         and(
           eq(rawEvents.teamId, scope.teamId),
