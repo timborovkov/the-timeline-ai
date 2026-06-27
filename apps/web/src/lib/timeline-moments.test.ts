@@ -208,6 +208,28 @@ describe('timeline moment grouping', () => {
     expect(moments).toHaveLength(1);
   });
 
+  it('truncates generated Telegram attachment filenames in moment summaries', () => {
+    const moments = buildTimelineMoments(
+      [
+        event({
+          id: 'tg-image',
+          source: 'telegram',
+          contentText:
+            'Attached image AgACAgQAAyEFAATcv6dYAAIBuWo4jeyMZiYwKT1k92NCNuPTCoTcAALpDWsbBCfJUUAcqaMvf4JYAQADAgADdwADPAQ.jpg',
+          sourceMetadata: {
+            tg_chat_id: 'chat-1',
+            tg_chat_title: 'AuditAI',
+            tg_sender_name: 'Otto',
+          },
+        }),
+      ],
+      authorMap,
+      new Date('2026-05-28T12:00:00.000Z'),
+    );
+
+    expect(moments[0]?.summary).toBe('Attached image AgACAgQ…wADPAQ.jpg');
+  });
+
   it('groups Telegram private chats by numeric chat id when no title exists', () => {
     const moments = buildTimelineMoments(
       [

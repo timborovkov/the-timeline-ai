@@ -129,6 +129,7 @@ describe('TimelineList event anchors', () => {
     expect(html).toContain(`id="ev-${focusedEventId}"`);
     expect(html).toContain(`id="ev-${taskEventId}"`);
     expect(html.match(new RegExp(`id="ev-${focusedEventId}"`, 'g'))).toHaveLength(1);
+    expect(html).toContain('shadow-[inset_2px_0_0_var(--signal)]');
   });
 });
 
@@ -223,6 +224,11 @@ describe('TimelineList document attachments', () => {
           ],
         },
       }),
+    );
+
+    expect(document.body.textContent).toContain('Attached image AgACAgQ…wADPAQ.jpg');
+    expect(document.body.textContent).not.toContain(
+      'Attached image AgACAgQAAyEFAATcv6dYAAIBuWo4jeyMZiYwKT1k92NCNuPTCoTcAALpDWsbBCfJUUAcqaMvf4JYAQADAgADdwADPAQ.jpg',
     );
 
     fireEvent.click(screen.getByRole('button', { name: /Attached image AgACAgQ/i }));

@@ -1,3 +1,5 @@
+import { truncateFilenameMiddle } from '@timeline/shared/documents/presentation';
+
 import type { TimelineArtifactCluster, TimelineEvent } from '@/lib/use-paginated-queries';
 
 import { displayText } from '@/lib/display-dates';
@@ -366,9 +368,15 @@ function summaryForEvent(event: TimelineEvent, timezone?: string): string {
       return displayText(`${subject}: ${event.contentText}`, { timezone });
   }
   const content = event.contentText?.trim();
-  if (content) return displayText(content, { timezone });
+  if (content) return displayText(truncateAttachedFilenameText(content), { timezone });
   if (event.contentAudioUrl) return 'Voice memo captured; transcript pending or unavailable.';
   return 'Source event captured.';
+}
+
+export function truncateAttachedFilenameText(text: string): string {
+  const match = /^(Attached (?:image|file) )(.+)$/i.exec(text.trim());
+  if (!match) return text;
+  return `${match[1] ?? ''}${truncateFilenameMiddle(match[2] ?? '')}`;
 }
 
 function clipped(text: string, max = 220): string {
