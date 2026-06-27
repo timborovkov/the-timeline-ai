@@ -12,6 +12,9 @@ const ADDRESS_CUE_RE =
   /\b(address|office address|billing address|shipping address|hq|headquarters|venue|location)\s*:\s*([^\n;]{6,180})/gi;
 const TRAILING_PUNCTUATION_RE = /[),.;:!?]+$/;
 const TIMELINE_OWNED_EMAIL_DOMAINS = new Set(['inbound.invalid']);
+const MAX_EMAIL_CONTACTS = 50;
+const MAX_PHONE_CONTACTS = 50;
+const MAX_ADDRESS_CONTACTS = 25;
 
 export type ContactConfidence = 'structured' | 'explicit' | 'inferred';
 export type CapturedContactKind = 'email' | 'phone' | 'address';
@@ -122,14 +125,25 @@ function addressKindForCue(cue: string): CapturedAddressKind {
 }
 
 function rangesFor(text: string, regex: RegExp): Range[] {
-  return [...text.matchAll(regex)].map((match) => ({
-    start: match.index,
-    end: match.index + match[0].length,
-  }));
+  return [...text.matchAll(regex)]
+    .map((match) => ({
+      start: match.index,
+      end: match.index + match[0].length,
+    }))
+    .sort((left, right) => left.start - right.start || left.end - right.end);
 }
 
 function overlapsAny(range: Range, ranges: Range[]): boolean {
-  return ranges.some((candidate) => range.start < candidate.end && range.end > candidate.start);
+  let low = 0;
+  let high = ranges.length;
+  while (low < high) {
+    const mid = Math.floor((low + high) / 2);
+    const candidate = ranges[mid];
+    if (candidate && candidate.start < range.end) low = mid + 1;
+    else high = mid;
+  }
+  const candidate = ranges[low - 1];
+  return Boolean(candidate && range.start < candidate.end && range.end > candidate.start);
 }
 
 function contactContext(text: string, range: Range): string | null {
@@ -137,6 +151,13 @@ function contactContext(text: string, range: Range): string | null {
   const after = text.slice(range.end, Math.min(text.length, range.end + 48));
   const context = compactWhitespace(`${before}${text.slice(range.start, range.end)}${after}`);
   return context.length > 0 ? context : null;
+}
+
+function regexMatches(regex: RegExp, value: string): boolean {
+  regex.lastIndex = 0;
+  const matches = regex.test(value);
+  regex.lastIndex = 0;
+  return matches;
 }
 
 function addEmail(
@@ -148,6 +169,7 @@ function addEmail(
     confidence: ContactConfidence;
   },
 ): void {
+  if (emails.size >= MAX_EMAIL_CONTACTS) return;
   const normalized = normalizedEmail(input.rawValue);
   if (!normalized) return;
   if (emails.has(normalized)) return;
@@ -174,6 +196,7 @@ function addPhone(
     country?: string | null;
   },
 ): void {
+  if (phones.size >= MAX_PHONE_CONTACTS) return;
   const normalized = input.normalizedValue.trim();
   if (!normalized || phones.has(normalized)) return;
   phones.set(normalized, {
@@ -200,10 +223,9 @@ function addAddress(
 ): void {
   const displayValue = compactWhitespace(stripTrailingPunctuation(input.rawValue));
   const normalized = normalizedAddress(displayValue);
+  if (addresses.size >= MAX_ADDRESS_CONTACTS) return;
   if (normalized.length < 6 || addresses.has(normalized)) return;
-  if (EMAIL_RE.test(displayValue) || URL_RE.test(displayValue)) return;
-  EMAIL_RE.lastIndex = 0;
-  URL_RE.lastIndex = 0;
+  if (regexMatches(EMAIL_RE, displayValue) || regexMatches(URL_RE, displayValue)) return;
   addresses.set(normalized, {
     kind: 'address',
     rawValue: displayValue,

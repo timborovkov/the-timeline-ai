@@ -92,6 +92,32 @@ describe('conversational contact artifacts', () => {
     });
   });
 
+  it('bounds stored contact metadata and does not leak rejected address regex state', () => {
+    const manyEmails = Array.from({ length: 80 }, (_, index) => `user-${index}@example.com`);
+    const contacts = extractContactsFromText(
+      [
+        `Address: ignored@example.com`,
+        `Office address: 123 Market St, San Francisco, CA 94105`,
+        manyEmails.join(' '),
+      ].join('\n'),
+    );
+    const metadata = contactMetadata(contacts);
+
+    expect(metadata.emails).toHaveLength(50);
+    expect(metadata.addresses).toEqual([
+      expect.objectContaining({
+        normalized_value: '123 market st, san francisco, ca 94105',
+      }),
+    ]);
+    expect(metadata.addresses).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          normalized_value: 'ignored@example.com',
+        }),
+      ]),
+    );
+  });
+
   it('attaches contact metadata without dropping existing source metadata', () => {
     expect(
       sourceMetadataWithContacts(

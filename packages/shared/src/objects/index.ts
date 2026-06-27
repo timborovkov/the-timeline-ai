@@ -98,6 +98,8 @@ const embedLog = childLogger('objects:embed');
 const summaryRefreshLog = childLogger('objects:summary-refresh');
 const OBJECT_QUERY_LIMIT_MAX = 50_000;
 const NOTIFICATION_QUERY_LIMIT_MAX = 50_000;
+const EMAIL_IDENTITY_RE = /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i;
+const PHONE_IDENTITY_RE = /^\+?[1-9]\d{6,14}$/;
 type DbTx = Parameters<Parameters<Db['transaction']>[0]>[0];
 type DbOrTx = Db | DbTx;
 
@@ -331,6 +333,15 @@ export function normalizeIdentityFacet(kind: IdentityFacetKind, value: string): 
   if (kind === 'slack') return trimmed;
   if (kind === 'timeline_user') return trimmed.toLowerCase();
   return trimmed.toLowerCase();
+}
+
+function validateIdentityFacetValue(kind: IdentityFacetKind, normalizedValue: string): void {
+  if (kind === 'email' && !EMAIL_IDENTITY_RE.test(normalizedValue)) {
+    throw new Error('Identity facet email must be a valid email address');
+  }
+  if (kind === 'phone' && !PHONE_IDENTITY_RE.test(normalizedValue)) {
+    throw new Error('Identity facet phone must be a valid phone number');
+  }
 }
 
 /**
@@ -3879,10 +3890,14 @@ export async function createIdentityFacet(
   if (!value) throw new Error('Identity facet value cannot be empty');
   const normalizedInput = input.normalizedValue?.trim();
   const normalizedValue =
-    normalizedInput === undefined || normalizedInput === ''
+    input.kind === 'email' ||
+    input.kind === 'phone' ||
+    normalizedInput === undefined ||
+    normalizedInput === ''
       ? normalizeIdentityFacet(input.kind, value)
       : normalizedInput;
   if (!normalizedValue) throw new Error('Identity facet normalized value cannot be empty');
+  validateIdentityFacetValue(input.kind, normalizedValue);
   if (input.linkedUserId) await scope.requireTeamMember(input.linkedUserId);
 
   const result = await db.transaction(async (tx) => {
