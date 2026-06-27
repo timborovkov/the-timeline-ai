@@ -76,6 +76,8 @@ const detail = {
     boards: [],
     pendingApprovals: [],
     documents: [],
+    links: [],
+    capturedFiles: [],
   },
   provenance: {
     whyThisExists: [],
@@ -341,6 +343,26 @@ describe('ObjectDetailClient', () => {
               updatedAt: new Date('2026-06-16T11:00:00.000Z'),
             },
           ],
+          links: [
+            {
+              id: 'link-1',
+              canonicalName: 'example.com/dfk',
+              canonicalUrl: 'https://example.com/dfk',
+              displayUrl: 'example.com/dfk',
+              domain: 'example.com',
+              provider: null,
+              updatedAt: new Date('2026-06-16T11:00:00.000Z'),
+            },
+          ],
+          capturedFiles: [
+            {
+              id: 'file-1',
+              name: 'pilot-photo.png',
+              contentType: 'image/png',
+              sourceRawEventId: 'event-1',
+              updatedAt: new Date('2026-06-16T11:00:00.000Z'),
+            },
+          ],
         },
       },
       userId: 'user-1',
@@ -354,6 +376,8 @@ describe('ObjectDetailClient', () => {
     expect(html).toContain('Pilot pipeline');
     expect(html).toContain('Merge DFK Finland Oy into DFK');
     expect(html).toContain('Send pilot times to DFK');
+    expect(html).toContain('example.com/dfk');
+    expect(html).toContain('pilot-photo.png');
     expect(html).toContain('AgACAgQ…wADPAQ.jpg');
     expect(html).toContain(
       'title="AgACAgQAAyEFAATcv6dYAAIBuWo4jeyMZiYwKT1k92NCNuPTCoTcAALpDWsbBCfJUUAcqaMvf4JYAQADAgADdwADPAQ.jpg"',

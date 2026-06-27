@@ -7,6 +7,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type * as boards from '@timeline/shared/boards';
+import type * as objects from '@timeline/shared/objects/types';
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }) }));
 vi.mock('@/app/actions/boards', () => ({ removeBoardItemAction: vi.fn() }));
@@ -79,6 +80,53 @@ const lanes: boards.BoardLaneRow[] = [
   },
 ];
 
+function connectedWork(): objects.ObjectDetail['connectedWork'] {
+  return {
+    openTasks: [],
+    recentTasks: [],
+    calendarEvents: [],
+    timelineEvents: [
+      {
+        id: 'event-1',
+        source: 'slack',
+        contentText: 'Discussed pilot materials',
+        occurredAt: new Date('2026-06-16T10:00:00.000Z'),
+      },
+    ],
+    objects: [],
+    boards: [],
+    pendingApprovals: [],
+    documents: [
+      {
+        id: 'document-1',
+        name: 'DFK pilot deck.pdf',
+        fileKind: 'document',
+        updatedAt: new Date('2026-06-16T10:00:00.000Z'),
+      },
+    ],
+    links: [
+      {
+        id: 'link-1',
+        canonicalName: 'example.com/dfk',
+        canonicalUrl: 'https://example.com/dfk',
+        displayUrl: 'example.com/dfk',
+        domain: 'example.com',
+        provider: null,
+        updatedAt: new Date('2026-06-16T10:00:00.000Z'),
+      },
+    ],
+    capturedFiles: [
+      {
+        id: 'file-1',
+        name: 'whiteboard.png',
+        contentType: 'image/png',
+        sourceRawEventId: 'event-1',
+        updatedAt: new Date('2026-06-16T10:00:00.000Z'),
+      },
+    ],
+  };
+}
+
 describe('BoardCardDetail', () => {
   beforeEach(() => {
     cleanup();
@@ -143,6 +191,31 @@ describe('BoardCardDetail', () => {
       screen.getByRole('heading', { name: 'the-timeline-ai: Add cursor pagination' }),
     ).toBeTruthy();
     expect(screen.queryByText(/timborovkov\/the-timeline-ai#202/)).toBeNull();
+  });
+
+  it('surfaces selected object related context in the board card panel', () => {
+    const item = boardItem({
+      id: 'item-1',
+      entityId: 'object-1',
+      canonicalName: 'MyAuditor',
+    });
+
+    render(
+      <BoardCardDetail
+        boardId="board-1"
+        view="kanban"
+        item={item}
+        connectedWork={connectedWork()}
+        history={[]}
+        lanes={lanes}
+      />,
+    );
+
+    expect(screen.getByText('Related context')).toBeTruthy();
+    expect(screen.getByRole('link', { name: /example.com\/dfk/ })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'DFK pilot deck.pdf' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: /whiteboard.png/ })).toBeTruthy();
+    expect(screen.getByRole('link', { name: /Discussed pilot materials/ })).toBeTruthy();
   });
 
   it('links source evidence to the focused timeline event', () => {

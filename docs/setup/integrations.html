@@ -360,10 +360,12 @@ SENTRY_INTEGRATION_CLIENT_SECRET=...</code></pre>
         The public endpoint rate-limits both authentication attempts and accepted deliveries, dedups
         identical same-day deliveries per webhook, redacts sensitive request headers from metadata,
         enforces the payload size cap while reading the request body, and rejects binary/multipart
-        uploads for now. Payload text is fenced as external content before extraction and proposal
-        prompts, so sender-authored instructions remain evidence instead of agent instructions.
-        Documents and rich files should still go through the document drive until binary webhook
-        ingestion is intentionally designed.
+        uploads for now. URLs in accepted payload text are normalized into non-authoritative link
+        artifact evidence, and duplicate delivery replay repairs missing link evidence for the
+        existing raw event. Payload text is fenced as external content before extraction and
+        proposal prompts, so sender-authored instructions remain evidence instead of agent
+        instructions. Documents and rich files should still go through the document drive until
+        binary webhook ingestion is intentionally designed.
       </p>
 
       <h2 id="mcp">Custom MCP servers (inbound)</h2>

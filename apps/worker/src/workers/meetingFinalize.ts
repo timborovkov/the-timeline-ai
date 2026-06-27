@@ -8,6 +8,10 @@ import {
   savedMeetings,
 } from '@timeline/db';
 import { childLogger, formatMeetingTranscript, getEnv, llm, queue } from '@timeline/shared';
+import {
+  reconcileLinkArtifactsForRawEvent,
+  sourceMetadataWithLinks,
+} from '@timeline/shared/conversational/link-artifacts';
 import { currentExtractionModelVersion } from '@timeline/shared/extraction-model-version';
 import { participantNames } from '@timeline/shared/meetings';
 import { UnrecoverableError, Worker, type Job } from 'bullmq';
@@ -399,24 +403,35 @@ async function createMeetingCalendarEvent(
 
   if (!row) return null;
 
+  const scheduledText = `Scheduled: ${title}`;
+  const startText = buildMeetingCalendarRawText({
+    meeting: args.meeting,
+    title,
+    startAt: args.startAt,
+    endAt: args.endAt,
+  });
+
   const [scheduledRow] = await tx
     .insert(rawEvents)
     .values({
       teamId: args.teamId,
       authorUserId: args.meeting.createdByUserId,
       source: 'calendar',
-      contentText: `Scheduled: ${title}`,
+      contentText: scheduledText,
       occurredAt: args.meeting.createdAt,
       visibility: args.meeting.defaultVisibility,
       visibilityUserIds: args.meeting.visibilityUserIds,
       visibilityOwnerUserId: args.meeting.createdByUserId,
-      sourceMetadata: {
-        calendar_event_id: row.id,
-        action: 'scheduled',
-        meeting_id: args.meeting.id,
-        source: 'meeting_bot',
-        ...generatedCalendarExtractionSkipMetadata(),
-      },
+      sourceMetadata: sourceMetadataWithLinks(
+        {
+          calendar_event_id: row.id,
+          action: 'scheduled',
+          meeting_id: args.meeting.id,
+          source: 'meeting_bot',
+          ...generatedCalendarExtractionSkipMetadata(),
+        },
+        scheduledText,
+      ),
     })
     .returning({ id: rawEvents.id });
 
@@ -426,25 +441,40 @@ async function createMeetingCalendarEvent(
       teamId: args.teamId,
       authorUserId: args.meeting.createdByUserId,
       source: 'calendar',
-      contentText: buildMeetingCalendarRawText({
-        meeting: args.meeting,
-        title,
-        startAt: args.startAt,
-        endAt: args.endAt,
-      }),
+      contentText: startText,
       occurredAt: args.startAt,
       visibility: args.meeting.defaultVisibility,
       visibilityUserIds: args.meeting.visibilityUserIds,
       visibilityOwnerUserId: args.meeting.createdByUserId,
-      sourceMetadata: {
-        calendar_event_id: row.id,
-        action: 'event',
-        meeting_id: args.meeting.id,
-        source: 'meeting_bot',
-        ...generatedCalendarExtractionSkipMetadata(),
-      },
+      sourceMetadata: sourceMetadataWithLinks(
+        {
+          calendar_event_id: row.id,
+          action: 'event',
+          meeting_id: args.meeting.id,
+          source: 'meeting_bot',
+          ...generatedCalendarExtractionSkipMetadata(),
+        },
+        startText,
+      ),
     })
     .returning({ id: rawEvents.id });
+
+  if (scheduledRow?.id) {
+    await reconcileLinkArtifactsForRawEvent(tx, {
+      teamId: args.teamId,
+      rawEventId: scheduledRow.id,
+      text: scheduledText,
+      occurredAt: args.meeting.createdAt,
+    });
+  }
+  if (startAtRow?.id) {
+    await reconcileLinkArtifactsForRawEvent(tx, {
+      teamId: args.teamId,
+      rawEventId: startAtRow.id,
+      text: startText,
+      occurredAt: args.startAt,
+    });
+  }
 
   await tx
     .update(calendarEvents)
@@ -671,7 +701,7 @@ export async function processMeetingFinalizeJob(
             visibility: meeting.defaultVisibility,
             visibilityUserIds: meeting.visibilityUserIds,
             visibilityOwnerUserId: meeting.createdByUserId,
-            sourceMetadata,
+            sourceMetadata: sourceMetadataWithLinks(sourceMetadata, contentText),
           })
           .onConflictDoNothing()
           .returning({ id: rawEvents.id });
@@ -683,6 +713,13 @@ export async function processMeetingFinalizeJob(
         rawEventId ??= await findFinalizedRawEventId(tx as never, meetingId, teamId);
 
         if (rawEventId) {
+          await reconcileLinkArtifactsForRawEvent(tx, {
+            teamId,
+            rawEventId,
+            text: contentText,
+            occurredAt: meeting.startedAt ?? meeting.createdAt,
+          });
+
           // Backfill rawEventId on all chunks so Qdrant meeting_chunk points
           // link back to the consolidated parent event for search attribution.
           await tx

@@ -2,6 +2,9 @@ import { type Db } from '@timeline/db';
 
 import { reconcileArtifactEvidence, type ArtifactAnchorInput } from '#src/artifacts/index.js';
 
+type DbTx = Parameters<Parameters<Db['transaction']>[0]>[0];
+type DbOrTx = Db | DbTx;
+
 const URL_RE = /https?:\/\/[^\s<>"'|]+/gi;
 const SLACK_LINK_RE = /<((?:https?:\/\/)[^>|]+)(?:\|([^>]+))?>/gi;
 const TRAILING_PUNCTUATION_RE = /[),.;:!?]+$/;
@@ -18,7 +21,33 @@ const TRACKING_PARAM_NAMES = new Set([
   'ref',
   'ref_src',
 ]);
-const SECRET_PARAM_HINTS = ['token', 'secret', 'signature', 'sig', 'key', 'code', 'auth'];
+const SECRET_PARAM_NAMES = new Set([
+  'access_token',
+  'accesstoken',
+  'api_key',
+  'apikey',
+  'auth',
+  'auth_code',
+  'auth_token',
+  'authcode',
+  'authtoken',
+  'authorization',
+  'client_secret',
+  'clientsecret',
+  'code',
+  'id_token',
+  'idtoken',
+  'key',
+  'oauth_token',
+  'oauthtoken',
+  'refresh_token',
+  'refreshtoken',
+  'secret',
+  'sig',
+  'signature',
+  'token',
+]);
+const SECRET_PARAM_PARTS = new Set(['auth', 'code', 'key', 'secret', 'sig', 'signature', 'token']);
 
 export interface CapturedLink {
   rawUrl: string;
@@ -47,10 +76,12 @@ function stripTrailingPunctuation(value: string): string {
 
 function shouldDropParam(name: string): boolean {
   const lower = name.toLowerCase();
+  const parts = lower.split(/[^a-z0-9]+/).filter(Boolean);
   return (
     TRACKING_PARAM_PREFIXES.some((prefix) => lower.startsWith(prefix)) ||
     TRACKING_PARAM_NAMES.has(lower) ||
-    SECRET_PARAM_HINTS.some((hint) => lower.includes(hint))
+    SECRET_PARAM_NAMES.has(lower) ||
+    parts.some((part) => SECRET_PARAM_PARTS.has(part))
   );
 }
 
@@ -158,6 +189,19 @@ export function linkMetadata(links: CapturedLink[]): LinkArtifactMetadata[] {
   }));
 }
 
+export function sourceMetadataWithLinks(
+  metadata: Record<string, unknown>,
+  text: string | null | undefined,
+): Record<string, unknown> {
+  const links = extractLinksFromText(text);
+  if (links.length === 0) return metadata;
+  return { ...metadata, links: linkMetadata(links) };
+}
+
+export function textHasLinks(text: string | null | undefined): boolean {
+  return extractLinksFromText(text).length > 0;
+}
+
 function canonicalNameForLink(link: CapturedLink): string {
   const label = link.label && !/^https?:\/\//i.test(link.label) ? link.label : null;
   return label ? `${label} (${link.displayUrl})` : link.displayUrl;
@@ -179,7 +223,7 @@ function anchorsForLink(link: CapturedLink): ArtifactAnchorInput[] {
 }
 
 export async function reconcileLinkArtifactsForRawEvent(
-  db: Db,
+  db: DbOrTx,
   input: {
     teamId: string;
     rawEventId: string;
@@ -189,7 +233,7 @@ export async function reconcileLinkArtifactsForRawEvent(
 ): Promise<void> {
   const links = extractLinksFromText(input.text);
   for (const link of links) {
-    await reconcileArtifactEvidence(db, {
+    await reconcileArtifactEvidence(db as Db, {
       teamId: input.teamId,
       artifactType: 'link',
       canonicalName: canonicalNameForLink(link),

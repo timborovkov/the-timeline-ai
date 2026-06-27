@@ -27,4 +27,18 @@ describe('conversational link artifacts', () => {
       },
     ]);
   });
+
+  it('keeps meaningful query params while stripping exact secret-like names', () => {
+    const links = extractLinksFromText(
+      [
+        'https://example.com/report?reference=alpha&author=mika&token=secret&api_key=hidden',
+        'https://example.com/report?reference=beta&author=mika&accessToken=hidden&code_verifier=hidden',
+      ].join(' '),
+    );
+
+    expect(linkMetadata(links).map((link) => link.canonical_url)).toEqual([
+      'https://example.com/report?author=mika&reference=alpha',
+      'https://example.com/report?author=mika&reference=beta',
+    ]);
+  });
 });

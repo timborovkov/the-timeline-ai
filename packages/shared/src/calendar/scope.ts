@@ -20,6 +20,10 @@ import {
   rruleUntil,
   validateRRule,
 } from '#src/calendar/recurrence.js';
+import {
+  reconcileLinkArtifactsForRawEvent,
+  sourceMetadataWithLinks,
+} from '#src/conversational/link-artifacts.js';
 import { TIMELINE_MODELS } from '#src/llm/models.js';
 import { childLogger } from '#src/logger.js';
 import { getQdrantClient } from '#src/qdrant/client.js';
@@ -1113,20 +1117,34 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
         }
 
         if (hasTimelineChange) {
-          await tx.insert(rawEvents).values({
-            teamId,
-            authorUserId: userId,
-            source: 'calendar',
-            contentText: `Updated: ${newTitle}`,
-            occurredAt: new Date(),
-            visibility: newVis,
-            visibilityUserIds: newVisUserIds,
-            visibilityOwnerUserId: row.createdByUserId,
-            sourceMetadata: {
-              calendar_event_id: targetId,
-              action: 'updated',
-            },
-          });
+          const updateText = `Updated: ${newTitle}`;
+          const [updatedRawEvent] = await tx
+            .insert(rawEvents)
+            .values({
+              teamId,
+              authorUserId: userId,
+              source: 'calendar',
+              contentText: updateText,
+              occurredAt: new Date(),
+              visibility: newVis,
+              visibilityUserIds: newVisUserIds,
+              visibilityOwnerUserId: row.createdByUserId,
+              sourceMetadata: sourceMetadataWithLinks(
+                {
+                  calendar_event_id: targetId,
+                  action: 'updated',
+                },
+                updateText,
+              ),
+            })
+            .returning({ id: rawEvents.id });
+          if (updatedRawEvent?.id) {
+            await reconcileLinkArtifactsForRawEvent(tx, {
+              teamId,
+              rawEventId: updatedRawEvent.id,
+              text: updateText,
+            });
+          }
         }
 
         const cancelledProposalEventIds = await confirmProposalGroup(
@@ -1317,24 +1335,38 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
               ),
             );
           }
-          await tx.insert(rawEvents).values({
-            teamId,
-            authorUserId: userId,
-            source: 'calendar',
-            contentText: `Cancelled: ${parentRow.title}`,
-            occurredAt: new Date(),
-            visibility: parentRow.visibility,
-            visibilityUserIds: parentRow.visibilityUserIds,
-            visibilityOwnerUserId: parentRow.createdByUserId,
-            sourceMetadata: {
-              calendar_event_id: parentId,
-              action: 'cancelled',
-              recurrence_edit_mode: recurrenceMode,
-              ...(recurrenceMode === 'this_and_future'
-                ? { original_start_at: splitAt.toISOString() }
-                : {}),
-            },
-          });
+          const cancelledText = `Cancelled: ${parentRow.title}`;
+          const [cancelledRawEvent] = await tx
+            .insert(rawEvents)
+            .values({
+              teamId,
+              authorUserId: userId,
+              source: 'calendar',
+              contentText: cancelledText,
+              occurredAt: new Date(),
+              visibility: parentRow.visibility,
+              visibilityUserIds: parentRow.visibilityUserIds,
+              visibilityOwnerUserId: parentRow.createdByUserId,
+              sourceMetadata: sourceMetadataWithLinks(
+                {
+                  calendar_event_id: parentId,
+                  action: 'cancelled',
+                  recurrence_edit_mode: recurrenceMode,
+                  ...(recurrenceMode === 'this_and_future'
+                    ? { original_start_at: splitAt.toISOString() }
+                    : {}),
+                },
+                cancelledText,
+              ),
+            })
+            .returning({ id: rawEvents.id });
+          if (cancelledRawEvent?.id) {
+            await reconcileLinkArtifactsForRawEvent(tx, {
+              teamId,
+              rawEventId: cancelledRawEvent.id,
+              text: cancelledText,
+            });
+          }
           return {
             deleted: true,
             deletedEventIds:
@@ -1390,20 +1422,34 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
           ),
         );
 
-        await tx.insert(rawEvents).values({
-          teamId,
-          authorUserId: userId,
-          source: 'calendar',
-          contentText: `Cancelled: ${row.title}`,
-          occurredAt: new Date(),
-          visibility: row.visibility,
-          visibilityUserIds: row.visibilityUserIds,
-          visibilityOwnerUserId: row.createdByUserId,
-          sourceMetadata: {
-            calendar_event_id: id,
-            action: 'cancelled',
-          },
-        });
+        const cancelledText = `Cancelled: ${row.title}`;
+        const [cancelledRawEvent] = await tx
+          .insert(rawEvents)
+          .values({
+            teamId,
+            authorUserId: userId,
+            source: 'calendar',
+            contentText: cancelledText,
+            occurredAt: new Date(),
+            visibility: row.visibility,
+            visibilityUserIds: row.visibilityUserIds,
+            visibilityOwnerUserId: row.createdByUserId,
+            sourceMetadata: sourceMetadataWithLinks(
+              {
+                calendar_event_id: id,
+                action: 'cancelled',
+              },
+              cancelledText,
+            ),
+          })
+          .returning({ id: rawEvents.id });
+        if (cancelledRawEvent?.id) {
+          await reconcileLinkArtifactsForRawEvent(tx, {
+            teamId,
+            rawEventId: cancelledRawEvent.id,
+            text: cancelledText,
+          });
+        }
 
         return { deleted: true, deletedEventIds: [id, ...deletedChildIds] };
       });

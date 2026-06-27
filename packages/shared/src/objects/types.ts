@@ -203,6 +203,22 @@ export interface ObjectDetail extends ObjectRow {
       fileKind: string;
       updatedAt: Date;
     }[];
+    links: {
+      id: string;
+      canonicalName: string;
+      canonicalUrl: string | null;
+      displayUrl: string | null;
+      domain: string | null;
+      provider: string | null;
+      updatedAt: Date;
+    }[];
+    capturedFiles: {
+      id: string;
+      name: string;
+      contentType: string | null;
+      sourceRawEventId: string | null;
+      updatedAt: Date;
+    }[];
   };
   provenance: {
     whyThisExists: ObjectProvenanceEntry[];
