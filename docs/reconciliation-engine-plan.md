@@ -196,6 +196,8 @@ Add a normalized evidence table instead of making every worker reinterpret
 - `id`
 - `team_id`
 - `raw_event_id`
+- `source_payload_ref`
+- `payload_digest`
 - `source`
 - `provider`
 - `external_object_id`
@@ -203,6 +205,8 @@ Add a normalized evidence table instead of making every worker reinterpret
 - `event_type`
 - `occurred_at`
 - `visibility`
+- `visibility_owner_user_id`
+- `visibility_user_ids`
 - `actor`
 - `content_digest`
 - `title`
@@ -210,10 +214,58 @@ Add a normalized evidence table instead of making every worker reinterpret
 - `source_url`
 - `metadata`
 - `normalizer_version`
+- `dedupe_key`
 - `created_at`
 
-This row is the stable input for reconciliation. It is derived and replayable.
-It can be deleted and rebuilt from `raw_events` plus provider payload metadata.
+This row is the stable input for reconciliation. It is derived and replayable
+only when the source write retained an immutable payload snapshot or a durable
+reference to the exact provider/customer content the normalizer saw.
+
+`raw_events` remains the audit log, but it is not assumed to contain every
+future anchor. If a provider adapter, email parser, transcript finalizer,
+document extractor, webhook handler, or MCP capture normalizes away context, it
+must write `source_payload_ref` before evidence extraction. The reference can
+point at a raw MIME blob, parsed email chain, provider webhook payload,
+integration object snapshot, document version/chunk, transcript chunk, fenced
+MCP output, or redacted S3/object-store payload.
+
+Constraints:
+
+- Unique `(team_id, dedupe_key)`.
+- `dedupe_key` includes source, raw event, source payload digest, and
+  `normalizer_version`.
+- Index `(team_id, raw_event_id, normalizer_version)`.
+- Evidence without a usable payload snapshot is marked replay-degraded and
+  cannot satisfy historical replay or live-fixture generation exit criteria.
+
+### Source Payload Snapshots And Replay
+
+Every ingestion surface owns a payload snapshot policy before it can create
+reconciliation outputs.
+
+- **Email and forwarded conversations:** retain raw MIME where available, parsed
+  headers, normalized thread keys, attachment refs, and the forwarded-chain
+  segments used for anchor extraction.
+- **Chat and messaging:** retain message IDs, edited/deleted state, thread
+  windows, channel context, user identity refs, and redacted content chunks.
+- **Meetings and audio:** retain transcript chunk refs, speaker attribution,
+  meeting provider IDs, recording/transcript provider metadata, and consent
+  state.
+- **Documents:** retain document version refs, chunk IDs, source URL, extracted
+  text digest, and attachment/version metadata.
+- **Native integrations:** retain provider payload snapshots for object,
+  webhook, and sync records whenever the provider payload contains fields not
+  represented losslessly in `raw_events.source_metadata`.
+- **Ingest webhooks:** retain the signed payload ref, credential version,
+  declared source name, dedupe key, and redaction digest.
+- **MCP-derived evidence:** retain the fenced tool output ref, server/tool
+  identity, call ID, invocation actor, and visibility envelope.
+
+Snapshots are immutable. Secrets and credentials are redacted or encrypted
+before storage; customer content keeps the same team/user visibility envelope as
+the source event. Backfills use snapshots when available. If historical raw
+events lack enough source payload, the replay result must say so explicitly
+instead of claiming full rebuildability.
 
 ### Evidence Anchors
 
@@ -230,6 +282,14 @@ Move all cluster matching inputs into typed rows.
 - `confidence`
 - `source`: `adapter | extractor | model | human`
 - `metadata`
+- `dedupe_key`
+
+Constraints:
+
+- Unique `(team_id, evidence_id, anchor_type, anchor_value, source)`.
+- Index `(team_id, anchor_type, anchor_value)`.
+- Conflicting hard/provider anchors emit conflict outputs instead of silently
+  merging clusters.
 
 Anchor examples:
 
@@ -254,9 +314,14 @@ Changes:
 
 - Rename product language to **work artifact** in docs/UI where it helps
   non-technical users.
-- Add `cluster_kind` if `entity_type` is too narrow for project/account work:
-  `customer_project`, `incident`, `deal`, `document`, `decision`, `task`,
-  `meeting`, `calendar_event`, `provider_record`, `topic`.
+- Add a dedicated `artifact_cluster_kind` enum. Do not reuse canonical
+  `entity_type`; provider records, incidents, meetings, accounts, customer
+  projects, and system workflows are not the same type system as durable
+  workspace objects.
+- Initial `artifact_cluster_kind` values: `customer_project`, `account`,
+  `incident`, `deal`, `document`, `decision`, `task`, `meeting`,
+  `calendar_event`, `provider_record`, `topic`, `person_context`,
+  `relationship_bundle`, `system_workflow`, `other`.
 - Add `authority_owner` metadata for provider-owned clusters:
   `{ provider, externalObjectId, stateVocabulary }`.
 - Add `last_reconciled_at`, `reconciliation_version`, and `health_status`.
@@ -281,11 +346,29 @@ Replace ad hoc `artifact_cluster_members` usage with a richer association model.
   human | authoritative_provider`
 - `rationale`
 - `source_refs`
+- `visibility`
+- `visibility_owner_user_id`
+- `visibility_user_ids`
+- `visibility_floor`
 - `metadata`
+- `dedupe_key`
 - `created_at`
 
 Current `artifact_cluster_members` can be migrated into this shape and removed
 from application code. Do not keep both write paths.
+
+Constraints:
+
+- Unique `(team_id, cluster_id, evidence_id, role, association_source)`.
+- Unique `(team_id, dedupe_key)`.
+- `dedupe_key` includes team, cluster, evidence, role, association source, and
+  association policy version.
+
+Association visibility is copied from the evidence envelope or narrowed by
+policy. A private or specific-users evidence item may attach only as a
+visibility-compatible private/restricted association. It cannot raise a
+team-visible cluster identity, summary, approval row, search hit, MCP server
+response, or chat answer.
 
 ### Reconciliation Runs
 
@@ -330,6 +413,11 @@ Create a typed output table before applying changes.
 - `confidence`
 - `requires_approval`
 - `source_refs`
+- `source_payload_refs`
+- `visibility`
+- `visibility_owner_user_id`
+- `visibility_user_ids`
+- `visibility_floor`
 - `dedupe_key`
 - `status`: `pending | applied | approval_created | rejected | superseded |
   failed`
@@ -337,6 +425,62 @@ Create a typed output table before applying changes.
 
 `agent_suggestions` and `agent_suggestion_items` become the approval UI
 projection of `reconciliation_outputs`, not a separate proposal source.
+
+Constraints:
+
+- Unique `(team_id, dedupe_key)`.
+- `dedupe_key` includes team, cluster, target kind, operation, target identity,
+  source refs, authority policy version, and output planner version.
+- Index `(team_id, run_id, status)`.
+- Index `(team_id, cluster_id, output_kind, status)`.
+
+Output visibility is the most restrictive visibility floor of the supporting
+associations/evidence, unless a provider-owned direct write is backed by an
+explicitly team-visible authoritative provider source. Approval projections
+inherit output visibility exactly.
+
+### Visibility Envelope
+
+Every derived row that can influence memory or UI carries a visibility envelope:
+`visibility`, `visibility_owner_user_id`, `visibility_user_ids`, and
+`visibility_floor`.
+
+Rules:
+
+- A derived association, output, approval projection, summary, search document,
+  chat citation, or outbound MCP result cannot be more visible than the most
+  restrictive supporting source.
+- Team-visible cluster identity and lifecycle state are computed only from
+  team-visible associations or explicit team-visible provider authority.
+- Private/specific-user evidence can create private/specific-user outputs, but
+  it cannot create or strengthen team-visible object memory.
+- Human approval may accept a restricted output for the same restricted
+  audience; it does not promote private evidence into team memory.
+- Queries must filter both the cluster and each supporting association/output by
+  the viewer's visibility envelope.
+- Evals must include private, specific-user, and mixed-visibility clusters and
+  fail on any leak into team-visible fixtures or production-sampling artifacts.
+
+### Legacy Provenance Retirement
+
+The reconciliation provenance graph replaces the old single-event pointer model.
+`source_refs`, `source_payload_refs`, `reconciliation_output_id`, and
+`artifact_evidence_association_id` become the only authoritative provenance
+interfaces for canonical memory changes.
+
+Migration rules:
+
+- Stop writing `sourceEventId`/`source_event_id` as canonical object, object
+  change, board item, or suggestion provenance.
+- Stop writing `agentSuggested` as canonical object provenance. Approval status
+  lives on `reconciliation_outputs` and its projection rows.
+- Stop normalizing suggestion payloads whose only provenance is
+  `sourceEventId`; every payload must cite source refs and output IDs.
+- If legacy columns must remain during migration, they are read-only
+  compatibility projections generated from reconciliation provenance. They are
+  not accepted as write input.
+- Definition of Done requires removing legacy write paths and dropping or
+  deprecating the legacy columns after backfill verification.
 
 ## Engine Pipeline
 
@@ -379,6 +523,7 @@ For each evidence item, build a packet:
 
 - normalized evidence row
 - raw event source text
+- source payload snapshot refs and digests
 - provider metadata
 - extracted facts
 - participants and actor identities
@@ -504,6 +649,25 @@ as a projection:
 After migration, no code should call `createSuggestion` directly except through
 the reconciliation projection adapter.
 
+Projection consistency contract:
+
+- `reconciliation_outputs` is the source of truth for proposal status,
+  dependencies, suppression, application failures, and replay supersession.
+- Creating approval projection rows happens in the same database transaction as
+  the output status transition to `approval_created`, or through a durable
+  outbox row committed in that transaction and consumed exactly once.
+- Accept, reject, dismiss, retry, and supersede actions update the output first,
+  then update projection rows in the same transaction or through the same
+  output-owned outbox flow.
+- Item dependencies live on reconciliation output payloads. Projection rows may
+  render them, but they cannot invent separate dependency state.
+- Application failures are written to the output and mirrored to projection
+  metadata for UI. The retry source is still the output.
+- Rejection suppression keys are output-level keys. Replays consult rejected or
+  superseded outputs before creating replacement projections.
+- Projection repair jobs can rebuild `agent_suggestions` from outputs, but they
+  cannot create new proposal semantics.
+
 ## Authority Policy
 
 Create a policy module in `packages/shared/src/reconciliation/authority.ts`.
@@ -605,6 +769,7 @@ Each manifest names:
 - expected approval outputs
 - expected no-actions or conflicts
 - expected source refs
+- expected source payload refs when replay requires them
 - forbidden outputs
 - visibility assertions
 - model/prompt versions
@@ -904,34 +1069,49 @@ This plan intentionally removes legacy half-paths.
    - `ReconciliationOutput`
    - `AuthorityDecision`
 4. Add source-ref validation shared by suggestions, summaries, chat, and evals.
-5. Add replay-safe dedupe keys for evidence, associations, runs, and outputs.
+5. Add replay-safe dedupe keys and unique constraints for evidence, anchors,
+   associations, runs, and outputs.
+6. Add payload snapshot storage/ref support for provider/webhook/email/MCP
+   sources that cannot be replayed from `raw_events` alone.
+7. Add the visibility envelope fields and helpers shared by evidence,
+   associations, outputs, approval projections, search, chat, and outbound MCP.
+8. Add dedicated `artifact_cluster_kind`; do not couple cluster kind to
+   canonical object `entity_type`.
 
 Exit criteria:
 
 - Existing tests pass.
-- New schema has team-scoped indexes and uniqueness.
+- New schema has team-scoped indexes, uniqueness, and visibility indexes.
+- Every new reconciliation row shape includes the required dedupe key and
+  visibility envelope where applicable.
 - No application behavior changes yet except writing shadow evidence rows.
 
 ### Phase 2: Source Normalization
 
 1. Update integration event writer to write reconciliation evidence and anchors.
-2. Replace `objectMap` direct object upsert with evidence hints.
-3. Normalize email, Slack, Telegram, meetings, documents, calendar, and ingest
+2. Update source writers to persist `source_payload_ref` before lossy
+   normalization.
+3. Replace `objectMap` direct object upsert with evidence hints.
+4. Normalize email, Slack, Telegram, meetings, documents, calendar, and ingest
    webhooks.
-4. Normalize web notes, voice/audio transcripts, MCP-derived evidence, and
+5. Normalize web notes, voice/audio transcripts, MCP-derived evidence, and
    system object/approval events.
-5. Add backfill scripts to build reconciliation evidence for existing raw
+6. Add backfill scripts to build reconciliation evidence for existing raw
    events.
-6. Add coverage audit for raw events missing normalized evidence.
+7. Add coverage audit for raw events missing normalized evidence or payload
+   snapshots.
 
 Exit criteria:
 
 - Every new raw event source writes or enqueues normalized evidence.
+- Every lossy source writes immutable payload snapshots or is marked
+  replay-degraded.
 - Every ingestion surface in the coverage matrix has a normalizer contract,
   deterministic fixture, and live smoke case.
 - Existing provider `objectMap` behavior is still shadow-compared but no new
   code depends on it.
-- Backfill can reach 100% of eligible historical team-visible raw events.
+- Backfill can reach 100% of eligible historical team-visible raw events with
+  full source payloads, and reports degraded historical rows separately.
 
 ### Phase 3: Artifact Resolution Engine
 
@@ -942,12 +1122,15 @@ Exit criteria:
 4. Stop writing new `artifact_cluster_members`.
 5. Add conflict outputs for hard-anchor collisions.
 6. Add manual cluster association approval flow.
+7. Enforce association visibility floors when attaching evidence to clusters.
 
 Exit criteria:
 
 - New evidence attaches to clusters only through reconciliation associations.
 - Semantic matches never silently merge.
 - Provider-owned clusters win for exact provider identity.
+- Mixed-visibility clusters never promote private/specific-user evidence into
+  team-visible identity or lifecycle state.
 
 ### Phase 4: Planner And Authority Policy
 
@@ -959,27 +1142,36 @@ Exit criteria:
    where policy allows.
 5. Convert conversation suggestion worker to call reconciliation planner.
 6. Convert object repair to manual reconciliation replay.
+7. Add visibility floors to every emitted output.
+8. Generate output dedupe keys from target, operation, source refs, and policy
+   version.
 
 Exit criteria:
 
 - No code path creates approval suggestions directly from source evidence.
 - No provider code directly upserts Timeline-owned objects.
 - Every direct write has an authority decision and source refs.
+- Every output has dedupe, source refs, source payload refs when available, and
+  a visibility envelope.
 
 ### Phase 5: Approval Projection And Application
 
 1. Make `agent_suggestions` a projection of reconciliation outputs.
 2. Add output IDs to suggestion metadata.
-3. Apply accepted suggestions through reconciliation output application.
-4. Remove legacy suggestion dedupe keys that are not output-based.
-5. Add suppression rules to reconciliation outputs, not worker-specific logic.
-6. Refresh object summaries, embeddings, board context, and notifications from
+3. Add the transactional projection/outbox contract for create, accept, reject,
+   retry, supersede, and repair flows.
+4. Apply accepted suggestions through reconciliation output application.
+5. Remove legacy suggestion dedupe keys that are not output-based.
+6. Add suppression rules to reconciliation outputs, not worker-specific logic.
+7. Refresh object summaries, embeddings, board context, and notifications from
    accepted outputs.
 
 Exit criteria:
 
 - Approval UI behavior is unchanged or better.
 - Accept/reject/supersede updates the underlying reconciliation outputs.
+- Projection rows can be deleted and rebuilt from reconciliation outputs without
+  changing proposal semantics.
 - Replays do not recreate rejected exact proposals.
 
 ### Phase 6: UI And Observability
@@ -1011,12 +1203,19 @@ Exit criteria:
    - direct `createSuggestion` use from suggestion worker
    - object repair proposal code that bypasses reconciliation
    - `artifact_cluster_members` application writes
+   - direct `sourceEventId`/`source_event_id` canonical provenance writes
+   - direct `agentSuggested` canonical provenance writes
+   - suggestion payload normalizers that accept `sourceEventId` as the only
+     provenance
 9. Keep read-only migrations only until the cutover migration completes, then
    remove dead code.
+10. Drop or formally deprecate legacy provenance columns once output/source-ref
+    backfill verification passes.
 
 Exit criteria:
 
 - No legacy writer remains.
+- Legacy single-source provenance is no longer accepted as write input.
 - Deterministic, live, and production-sampling evals pass the quality bar for
   every active ingestion surface and scenario family.
 - Replay is idempotent.
@@ -1039,6 +1238,12 @@ Engineering requirements:
 - A projection layer that turns reconciliation outputs into approval UI rows.
 - A source-ref validator shared by reconciliation, suggestions, summaries, chat,
   and evals.
+- A payload snapshot/ref layer for source data that would otherwise be lost
+  during normalization.
+- A visibility envelope helper used by evidence, associations, outputs,
+  approval projections, retrieval, and outbound MCP.
+- A transaction/outbox projection layer that keeps approval rows consistent with
+  reconciliation outputs.
 - Historical backfill and audit scripts for normalized evidence and cluster
   association coverage.
 - A live eval runner that can call real models, persist artifacts, and fail the
@@ -1060,6 +1265,7 @@ Data requirements:
 
 - Stable source identifiers for every provider event that should participate in
   reconciliation.
+- Immutable source payload refs for lossy providers and user-generated inputs.
 - Team-visible source refs for every team-visible suggestion or direct write.
 - Redacted fixture packets for live evals.
 - Backfilled anchors for historical raw events where provider metadata is
@@ -1074,6 +1280,7 @@ Database:
 - `packages/db/src/schema/artifact-clusters.ts`
 - `packages/db/src/schema/agent-suggestions.ts`
 - `packages/db/src/schema/entities.ts`
+- source payload snapshot schema/storage refs
 - new reconciliation schema files and migrations
 
 Shared packages:
@@ -1119,10 +1326,15 @@ Docs:
 - Raw event content is never updated by reconciliation.
 - Every query remains team-scoped through `withTeam`.
 - Private and specific-user evidence cannot produce team-visible memory.
+- Visibility envelopes and floors are preserved on evidence, associations,
+  outputs, approval projections, search, chat, and outbound MCP.
 - External content is fenced before agent/model exposure.
 - Direct writes require a positive authority policy decision.
 - Semantic-only evidence never merges clusters without review.
 - Approval proposals require valid source refs.
+- Approval projection state cannot diverge from reconciliation output state.
+- Canonical objects do not rely on legacy `sourceEventId` or `agentSuggested`
+  provenance.
 - Replays are idempotent and converge.
 - Rejected exact proposals stay suppressed.
 - Object summaries and chat use derived memory for orientation, but cite source
@@ -1137,6 +1349,14 @@ The architecture is complete only when all of these are true:
 - Every active ingestion surface has a normalizer contract, deterministic
   fixture coverage, live smoke coverage, replay behavior, and source-ref
   validation.
+- Every lossy source has immutable source payload snapshots or is explicitly
+  excluded from full replay/eval-fixture guarantees.
+- Evidence, associations, outputs, and approval projections carry visibility
+  envelopes and enforce visibility floors.
+- Evidence, anchors, associations, and outputs have modeled dedupe keys and
+  team-scoped unique constraints.
+- Clusters use dedicated `artifact_cluster_kind`, not canonical object
+  `entity_type`.
 - Provider adapters no longer upsert Timeline-owned objects directly.
 - The suggestion worker no longer creates approval bundles directly from source
   evidence.
@@ -1145,6 +1365,8 @@ The architecture is complete only when all of these are true:
   application writer still writes `artifact_cluster_members`.
 - Direct writes are impossible without an authority policy decision.
 - Approval UI rows are projections of reconciliation outputs.
+- Approval projection changes are transactional with outputs or flow through an
+  output-owned durable outbox.
 - Rejected exact proposals are suppressed at the reconciliation-output layer.
 - Search, chat, summaries, and provenance views all read the same accepted
   associations and source refs.
@@ -1154,18 +1376,19 @@ The architecture is complete only when all of these are true:
   into deterministic fixtures.
 - Historical replay converges without duplicate clusters, duplicate proposals,
   or unauthorized memory changes.
+- Legacy `sourceEventId`/`source_event_id` and `agentSuggested` provenance write
+  paths are removed or read-only compatibility projections pending column
+  removal.
 - The old writer code is deleted after migration, not left as compatibility
   handling.
 
 ## Open Decisions
 
-1. Whether `artifact_clusters.artifact_type` should keep using `entity_type` or
-   move to a dedicated `artifact_cluster_kind`.
-2. Whether the work artifact detail surface should be a new route
+1. Whether the work artifact detail surface should be a new route
    `/app/work/[clusterId]` or embedded behind objects and boards first.
-3. Whether live eval artifacts belong in git when redacted or only in local/CI
+2. Whether live eval artifacts belong in git when redacted or only in local/CI
    run storage.
-4. Whether ingest webhooks can declare field-level authority in v1 or should
+3. Whether ingest webhooks can declare field-level authority in v1 or should
    start approval-only until real usage proves safe patterns.
 
 ## First Implementation Slice
