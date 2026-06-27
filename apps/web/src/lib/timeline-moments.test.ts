@@ -230,6 +230,102 @@ describe('timeline moment grouping', () => {
     expect(moments[0]?.summary).toBe('Attached image AgACAgQ…wADPAQ.jpg');
   });
 
+  it('truncates generated attachment filenames in non-Telegram upload text', () => {
+    const generatedName = '4f6dfcba7a6ef8085bdf0d3f604a8df3fbcacb8e55ba6d8eac71d4a9c52.png';
+    const moments = buildTimelineMoments(
+      [
+        event({
+          id: 'document-upload',
+          source: 'document',
+          contentText: `Uploaded ${generatedName}`,
+          sourceMetadata: {
+            action: 'upload',
+            document_id: 'doc-1',
+            document_name: generatedName,
+          },
+        }),
+      ],
+      authorMap,
+      new Date('2026-05-28T12:00:00.000Z'),
+    );
+
+    expect(moments[0]?.summary).toBe('Uploaded 4f6dfcb…4a9c52.png');
+  });
+
+  it('summarizes Slack file-only events from attachment metadata', () => {
+    const moments = buildTimelineMoments(
+      [
+        event({
+          id: 'slack-file',
+          source: 'slack',
+          contentText: '',
+          sourceMetadata: {
+            slack_channel_id: 'C1',
+            slack_message_ts: '1716717600.000200',
+            attachments: [
+              {
+                name: 'AgACAgQAAyEFAATcv6dYAAP3aimENrbqY6kNAAEqxvEv6YGMrdExAAK5DmsbjOI.jpg',
+                mimetype: 'image/jpeg',
+              },
+            ],
+          },
+        }),
+      ],
+      authorMap,
+      new Date('2026-05-28T12:00:00.000Z'),
+    );
+
+    expect(moments[0]?.summary).toBe('Attached image AgACAgQ…msbjOI.jpg');
+  });
+
+  it('summarizes email attachment-only events from source metadata', () => {
+    const moments = buildTimelineMoments(
+      [
+        event({
+          id: 'email-attachment',
+          source: 'email',
+          contentText: '',
+          sourceMetadata: {
+            subject: 'Proposal',
+            attachments: [
+              { filename: 'proposal.pdf', content_type: 'application/pdf' },
+              {
+                filename: 'f7d6c924b7dd3d40e38356fda91465cfacmeboardexportspreadsheet.csv',
+                content_type: 'text/csv',
+              },
+            ],
+          },
+        }),
+      ],
+      authorMap,
+      new Date('2026-05-28T12:00:00.000Z'),
+    );
+
+    expect(moments[0]?.summary).toBe(
+      '2 attachments · Attached file proposal.pdf, Attached file f7d6c92…dsheet.csv',
+    );
+  });
+
+  it('does not let whitespace email bodies hide attachment-only summaries', () => {
+    const moments = buildTimelineMoments(
+      [
+        event({
+          id: 'email-whitespace-attachment',
+          source: 'email',
+          contentText: '   \n\t',
+          sourceMetadata: {
+            subject: 'Proposal',
+            attachments: [{ filename: 'proposal.pdf', content_type: 'application/pdf' }],
+          },
+        }),
+      ],
+      authorMap,
+      new Date('2026-05-28T12:00:00.000Z'),
+    );
+
+    expect(moments[0]?.summary).toBe('Attached file proposal.pdf');
+  });
+
   it('groups Telegram private chats by numeric chat id when no title exists', () => {
     const moments = buildTimelineMoments(
       [

@@ -22,7 +22,8 @@ import {
   meetingDetailHrefForMoment,
   displayMeta,
   telegramUsernameLabel,
-  truncateAttachedFilenameText,
+  formatTimelineAttachmentText,
+  timelineAttachmentSummaryFromMetadata,
   type ImpactItem,
   type TimelineImpactFilter,
   type TimelineMoment,
@@ -179,9 +180,11 @@ function sourceTruthSummary(moment: TimelineMoment): { title: string; body: stri
 function rawEventBody(event: TimelineEvent, timezone?: string): string {
   const meta = metaObject(event.sourceMetadata);
   const content = event.contentText?.trim();
-  if (content) return displayText(truncateAttachedFilenameText(content), { timezone });
+  if (content) return displayText(formatTimelineAttachmentText(content), { timezone });
   const caption = stringMeta(meta, 'tg_caption');
   if (caption) return displayText(caption, { timezone });
+  const attachmentSummary = timelineAttachmentSummaryFromMetadata(meta);
+  if (attachmentSummary) return displayText(attachmentSummary, { timezone });
   const transcriptionStatus = transcriptionStatusMessage(event);
   if (transcriptionStatus) return transcriptionStatus;
   return 'Source event captured.';
