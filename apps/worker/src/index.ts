@@ -1,4 +1,4 @@
-import { closeDb, getDb } from '@timeline/db';
+import { closeDb, getDb, migrateDatabase } from '@timeline/db';
 import { waitForMigrations } from '@timeline/db/wait-for-migrations';
 import { childLogger, queue } from '@timeline/shared';
 import { shutdownPostHogNodeClients } from '@timeline/shared/analytics/posthog-node';
@@ -25,11 +25,12 @@ const log = childLogger('worker');
 initWorkerSentry();
 
 async function main(): Promise<void> {
-  // On Railway, the web service runs migrations in preDeploy and again from
-  // its start wrapper. Worker services deploy in parallel and can race that.
-  // Block here until the DB has at least as many migrations applied as the
-  // journal bundled with this image expects, so we don't crash-loop on every
-  // deploy that ships schema changes.
+  // Railway can deploy/restart the worker independently from web, so the
+  // worker must be able to advance migrations too. The shared advisory lock
+  // keeps concurrent web/worker migrators serialized and no-op once current.
+  await migrateDatabase({ withAdvisoryLock: true });
+  // Keep the explicit readiness check so a mismatched image or skipped
+  // migrator still fails before queues start consuming jobs.
   await waitForMigrations();
 
   const db = getDb();

@@ -19,20 +19,30 @@ export type ActorKind = 'user' | 'agent' | 'system';
 
 export interface ObjectListFilter {
   id?: string | string[];
+  query?: string;
   type?: ObjectType | ObjectType[];
   status?: string | string[];
   statusNot?: string | string[];
   stage?: string | string[];
+  priority?: number | number[];
+  priorityNull?: boolean;
   ownerUserId?: string | null;
   assigneeUserId?: string | null;
   dueBefore?: Date;
   dueAfter?: Date;
+  dueNull?: boolean;
+  createdBefore?: Date;
+  createdAfter?: Date;
+  updatedBefore?: Date;
+  updatedAfter?: Date;
   archived?: boolean;
   order?: 'updated' | 'due';
   limit?: number;
   offset?: number;
   cursor?: string | null;
 }
+
+export type ObjectCountFilter = Omit<ObjectListFilter, 'cursor' | 'limit' | 'offset'>;
 
 export interface ObjectSearchFilter extends Omit<ObjectListFilter, 'cursor' | 'offset'> {
   query: string;

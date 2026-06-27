@@ -371,9 +371,11 @@ rclone sync s3:timeline-attachments backblaze-b2:timeline-backup-attachments
           self-hosted fonts, and outbound email templates.
         </li>
         <li>
-          Migrations: run as a release-phase pre-deploy command on the <code>web</code> service and
-          again from the web start wrapper under a Postgres advisory lock. The pre-deploy command is
-          already wired in <code>apps/web/railway.json</code>:
+          Migrations: run as a release-phase pre-deploy command on both app services. They also run
+          from the web start wrapper and worker startup under the same Postgres advisory lock, so a
+          web and worker deploy can overlap safely and each service can recover from an independent
+          restart. The pre-deploy command is already wired in
+          <code>apps/web/railway.json</code> and <code>apps/worker/railway.json</code>:
           <pre><code>"preDeployCommand": [
   "NODE_ENV=production node packages/db/dist/migrate.js"
 ]
@@ -381,17 +383,18 @@ rclone sync s3:timeline-attachments backblaze-b2:timeline-backup-attachments
           The script (<code>packages/db/src/migrate.ts</code>) is built before deploy, and the
           Railpack runtime keeps the workspace files and installed dependencies available to the
           release command. The same migrate entrypoint is called by
-          <code>apps/web/start.mjs</code> before <code>apps/web/server.js</code>. It applies any new
-          SQL files against <code>DATABASE_URL</code> and exits; failure blocks deploy or startup.
-          Startup migrations make dev resets converge on the next web boot even when no deploy is in
-          progress.
+          <code>apps/web/start.mjs</code> before <code>apps/web/server.js</code> and by
+          <code>apps/worker/src/index.ts</code> before queues start consuming jobs. It applies any
+          new SQL files against <code>DATABASE_URL</code> and exits; failure blocks deploy or
+          startup. Startup migrations make dev resets and service-only redeploys converge on the
+          next app boot even when the other service is not redeployed.
           <p>
-            The worker service deploys in parallel with <code>web</code> and doesn't run migrations
-            itself. It calls <code>waitForMigrations()</code> from
-            <code>@timeline/db/wait-for-migrations</code> at startup, which polls
-            <code>drizzle.__drizzle_migrations</code> until the row count matches the journal
-            bundled with the worker image. Default timeout 5 minutes. This avoids crash-looping on
-            every deploy that ships schema changes.
+            The worker still calls <code>waitForMigrations()</code> from
+            <code>@timeline/db/wait-for-migrations</code> after the migrator returns. That readiness
+            check polls <code>drizzle.__drizzle_migrations</code> until the row count matches the
+            journal bundled with the worker image. Default timeout 5 minutes. This catches skipped
+            release commands or mismatched images before background queues start using a schema they
+            do not have.
           </p>
           <p>
             <strong>Postgres pool guardrails.</strong> Shared clients set

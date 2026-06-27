@@ -1,7 +1,7 @@
-import { OBJECT_TYPES } from '@timeline/shared/objects';
+import { OBJECT_TYPES } from '@timeline/shared/objects/types';
 
 import type { BoardItemFilter } from '@timeline/shared/boards';
-import type { ObjectListFilter, ObjectType } from '@timeline/shared/objects';
+import type { ObjectListFilter, ObjectType } from '@timeline/shared/objects/types';
 
 export const UNASSIGNED_FILTER_VALUE = 'unassigned';
 export const NONE_FILTER_VALUE = 'none';
