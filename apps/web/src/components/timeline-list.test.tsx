@@ -129,6 +129,7 @@ describe('TimelineList event anchors', () => {
     expect(html).toContain(`id="ev-${focusedEventId}"`);
     expect(html).toContain(`id="ev-${taskEventId}"`);
     expect(html.match(new RegExp(`id="ev-${focusedEventId}"`, 'g'))).toHaveLength(1);
+    expect(html).toContain('shadow-[inset_2px_0_0_var(--signal)]');
   });
 });
 
@@ -225,6 +226,11 @@ describe('TimelineList document attachments', () => {
       }),
     );
 
+    expect(document.body.textContent).toContain('Attached image AgACAgQ…wADPAQ.jpg');
+    expect(document.body.textContent).not.toContain(
+      'Attached image AgACAgQAAyEFAATcv6dYAAIBuWo4jeyMZiYwKT1k92NCNuPTCoTcAALpDWsbBCfJUUAcqaMvf4JYAQADAgADdwADPAQ.jpg',
+    );
+
     fireEvent.click(screen.getByRole('button', { name: /Attached image AgACAgQ/i }));
     const inspector = renderLastInspector();
     expect(inspector).toContain('Attached image AgACAgQ…wADPAQ.jpg');
@@ -233,6 +239,47 @@ describe('TimelineList document attachments', () => {
     expect(inspector).toContain('AgACAgQ…wADPAQ.jpg');
     expect(inspector).toContain('Preview');
     expect(inspector).toContain('>Attached image AgACAgQ…wADPAQ.jpg</p>');
+  });
+
+  it('uses attachment metadata for file-only source rows beyond Telegram', () => {
+    const eventId = '13131313-1313-4131-8131-131313131313';
+    render(
+      createElement(TimelineList, {
+        events: [
+          timelineEvent({
+            id: eventId,
+            occurredAt: '2026-06-03T13:04:00.000Z',
+            source: 'slack',
+            contentText: '',
+            sourceMetadata: {
+              slack_channel_name: 'design',
+              slack_sender_name: 'Alex',
+              attachments: [
+                {
+                  name: 'AgACAgQAAyEFAATcv6dYAAP3aimENrbqY6kNAAEqxvEv6YGMrdExAAK5DmsbjOI.jpg',
+                  mimetype: 'image/jpeg',
+                },
+              ],
+            },
+          }),
+        ],
+        authorMap: new Map(),
+        currentUserId: 'user-1',
+        isAdmin: false,
+      }),
+    );
+
+    expect(document.body.textContent).toContain('Attached image AgACAgQ…msbjOI.jpg');
+    expect(document.body.textContent).not.toContain(
+      'AgACAgQAAyEFAATcv6dYAAP3aimENrbqY6kNAAEqxvEv6YGMrdExAAK5DmsbjOI.jpg',
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /Attached image AgACAgQ/i }));
+    const inspector = renderLastInspector();
+    expect(inspector).toContain('Attached image AgACAgQ…msbjOI.jpg');
+    expect(inspector).not.toContain(
+      'AgACAgQAAyEFAATcv6dYAAP3aimENrbqY6kNAAEqxvEv6YGMrdExAAK5DmsbjOI.jpg',
+    );
   });
 });
 

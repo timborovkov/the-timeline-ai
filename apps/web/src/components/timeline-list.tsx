@@ -22,6 +22,8 @@ import {
   meetingDetailHrefForMoment,
   displayMeta,
   telegramUsernameLabel,
+  formatTimelineAttachmentText,
+  timelineAttachmentSummaryFromMetadata,
   type ImpactItem,
   type TimelineImpactFilter,
   type TimelineMoment,
@@ -178,18 +180,14 @@ function sourceTruthSummary(moment: TimelineMoment): { title: string; body: stri
 function rawEventBody(event: TimelineEvent, timezone?: string): string {
   const meta = metaObject(event.sourceMetadata);
   const content = event.contentText?.trim();
-  if (content) return displayText(truncateAttachedFilenameText(content), { timezone });
+  if (content) return displayText(formatTimelineAttachmentText(content), { timezone });
   const caption = stringMeta(meta, 'tg_caption');
   if (caption) return displayText(caption, { timezone });
+  const attachmentSummary = timelineAttachmentSummaryFromMetadata(meta);
+  if (attachmentSummary) return displayText(attachmentSummary, { timezone });
   const transcriptionStatus = transcriptionStatusMessage(event);
   if (transcriptionStatus) return transcriptionStatus;
   return 'Source event captured.';
-}
-
-function truncateAttachedFilenameText(text: string): string {
-  const match = /^(Attached (?:image|file) )(.+)$/i.exec(text.trim());
-  if (!match) return text;
-  return `${match[1] ?? ''}${truncateFilenameMiddle(match[2] ?? '')}`;
 }
 
 function truncateNullableFilename(value: string | null): string | null {
@@ -428,8 +426,14 @@ function InspectorBody({
                 className="rounded-sm border border-border bg-surface-2 px-2 py-1.5"
               >
                 {item.href ? (
-                  <Link href={item.href} className="break-words text-fg hover:text-signal">
-                    {IMPACT_LABEL[item.kind]} · {item.label}
+                  <Link
+                    href={item.href}
+                    className="inline-flex max-w-full items-center gap-1 break-words text-fg underline decoration-border underline-offset-4 transition-colors hover:text-signal hover:decoration-signal"
+                  >
+                    <span className="min-w-0 break-words">
+                      {IMPACT_LABEL[item.kind]} · {item.label}
+                    </span>
+                    <ExternalLink aria-hidden="true" className="size-3 shrink-0" />
                   </Link>
                 ) : (
                   <span className="break-words">
@@ -818,6 +822,7 @@ function TimelineMomentRow({
   isAdmin,
   members,
   capturedFilesByEventId,
+  focused,
   compact,
   timezone,
 }: {
@@ -827,11 +832,12 @@ function TimelineMomentRow({
   isAdmin: boolean;
   members: { id: string; label: string }[];
   capturedFilesByEventId: Record<string, TimelineCapturedFile[]>;
+  focused: boolean;
   compact: boolean;
   timezone?: string;
 }) {
   const inspector = useInspector();
-  const selected = inspector.open && inspector.content?.id === moment.id;
+  const selected = focused || (inspector.open && inspector.content?.id === moment.id);
   const meetingHref = meetingDetailHrefForMoment(moment);
   const transcriptionStatus = momentTranscriptionStatus(moment);
   return (
@@ -1010,6 +1016,7 @@ export function TimelineList({
                 isAdmin={isAdmin}
                 members={members}
                 capturedFilesByEventId={capturedFilesByEventId}
+                focused={moment.rawEvents.some((event) => event.id === focusEventId)}
                 compact={compact}
                 timezone={timezone}
               />

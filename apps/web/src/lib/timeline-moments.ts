@@ -1,3 +1,5 @@
+import { documentKindLabel, truncateFilenameMiddle } from '@timeline/shared/documents/presentation';
+
 import type { TimelineArtifactCluster, TimelineEvent } from '@/lib/use-paginated-queries';
 
 import { displayText } from '@/lib/display-dates';
@@ -356,19 +358,71 @@ function contextLabel(event: TimelineEvent, timezone?: string): string {
 
 function summaryForEvent(event: TimelineEvent, timezone?: string): string {
   const meta = metaObject(event.sourceMetadata);
+  const content = event.contentText?.trim();
   if (event.source === 'meeting') {
     const summary = stringMeta(meta, 'summary');
     if (summary) return displayText(summary, { timezone });
   }
   if (event.source === 'email') {
     const subject = stringMeta(meta, 'subject');
-    if (subject && event.contentText)
-      return displayText(`${subject}: ${event.contentText}`, { timezone });
+    if (subject && content)
+      return displayText(`${subject}: ${formatTimelineAttachmentText(content)}`, {
+        timezone,
+      });
   }
-  const content = event.contentText?.trim();
-  if (content) return displayText(content, { timezone });
+  if (content) return displayText(formatTimelineAttachmentText(content), { timezone });
+  const attachmentSummary = timelineAttachmentSummaryFromMetadata(meta);
+  if (attachmentSummary) return displayText(attachmentSummary, { timezone });
   if (event.contentAudioUrl) return 'Voice memo captured; transcript pending or unavailable.';
   return 'Source event captured.';
+}
+
+function truncateAttachedFilenameText(text: string): string {
+  const match = /^(Attached (?:image|file) )(.+)$/i.exec(text.trim());
+  if (!match) return text;
+  return `${match[1] ?? ''}${truncateFilenameMiddle(match[2] ?? '')}`;
+}
+
+export function formatTimelineAttachmentText(text: string): string {
+  return truncateLongFilenamesInText(truncateAttachedFilenameText(text));
+}
+
+function truncateLongFilenamesInText(text: string): string {
+  return text.replace(/\b[A-Za-z0-9_+=/@-]{24,}\.[A-Za-z0-9]{2,8}\b/g, (filename) =>
+    truncateFilenameMiddle(filename),
+  );
+}
+
+export function timelineAttachmentSummaryFromMetadata(
+  meta: Record<string, unknown>,
+): string | null {
+  const attachments = meta.attachments;
+  if (!Array.isArray(attachments) || attachments.length === 0) return null;
+  const labels = attachments
+    .map(attachmentLabel)
+    .filter((label): label is string => Boolean(label))
+    .slice(0, 2);
+  if (labels.length === 0) return null;
+  if (attachments.length === 1) return labels[0] ?? null;
+  const remainder = attachments.length - labels.length;
+  return `${String(attachments.length)} attachments · ${labels.join(', ')}${
+    remainder > 0 ? `, +${String(remainder)}` : ''
+  }`;
+}
+
+function attachmentLabel(value: unknown): string | null {
+  if (typeof value !== 'object' || value === null) return null;
+  const record = value as Record<string, unknown>;
+  const filename = stringMeta(record, 'filename') ?? stringMeta(record, 'name');
+  if (!filename) return null;
+  const contentType =
+    stringMeta(record, 'content_type') ??
+    stringMeta(record, 'contentType') ??
+    stringMeta(record, 'mimetype') ??
+    stringMeta(record, 'mime_type');
+  const kind = documentKindLabel(contentType);
+  const noun = kind === 'image' ? 'image' : 'file';
+  return `Attached ${noun} ${truncateFilenameMiddle(filename)}`;
 }
 
 function clipped(text: string, max = 220): string {
