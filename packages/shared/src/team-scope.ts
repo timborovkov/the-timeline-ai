@@ -300,20 +300,7 @@ export interface CoOccurringEntity {
 export interface EntityProfile {
   entity: {
     id: string;
-    type:
-      | 'person'
-      | 'company'
-      | 'project'
-      | 'topic'
-      | 'other'
-      | 'deal'
-      | 'vendor'
-      | 'incident'
-      | 'document'
-      | 'decision'
-      | 'hiring_loop'
-      | 'task'
-      | 'follow_up';
+    type: EntityType;
     canonicalName: string;
     aliases: string[];
     metadata: Record<string, unknown>;

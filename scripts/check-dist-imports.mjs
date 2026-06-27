@@ -20,7 +20,9 @@ const checks = [
       const { entityType } = await import('@timeline/db');
       const objectTypes = await import('@timeline/shared/objects/types');
 
-      const dbTypes = [...entityType.enumValues];
+      // `link` is an artifact-only enum value; client object selectors export
+      // only user-facing workspace object types.
+      const dbTypes = [...entityType.enumValues].filter((type) => type !== 'link');
       const clientTypes = [...objectTypes.OBJECT_TYPES];
 
       if (JSON.stringify(clientTypes) !== JSON.stringify(dbTypes)) {

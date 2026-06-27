@@ -20,6 +20,11 @@ import {
   CONVERSATIONAL_ATTACHMENT_LIMITS,
   extensionOf,
 } from '#src/conversational/attachments.js';
+import {
+  extractLinksFromText,
+  linkMetadata,
+  reconcileLinkArtifactsForRawEvent,
+} from '#src/conversational/link-artifacts.js';
 import { buildDocumentObjectKey } from '#src/documents/object-key.js';
 import { childLogger } from '#src/logger.js';
 import {
@@ -1705,6 +1710,8 @@ async function insertEvent(
   if (input.audio) {
     Object.assign(metadata, input.audio.extra);
   }
+  const links = extractLinksFromText(input.text);
+  if (links.length > 0) metadata.links = linkMetadata(links);
 
   let teamId: string | null = input.fallbackTeamId;
   if (input.isEdit) {
@@ -1818,36 +1825,49 @@ async function insertEvent(
     return inserted[0] ?? null;
   }
 
-  if (input.isEdit) {
-    return db.transaction(async (tx) => {
-      await lockTelegramMessageRevisions(tx, {
-        teamId,
-        chatId: input.message.chat.id,
-        messageId: input.message.message_id,
-      });
-      const inserted = await insertRawEvent(tx);
-      const row = inserted ?? (await findEventByUpdateId(tx, input.updateId));
-      if (row) {
-        const latest = await findLatestTelegramRevision(tx, {
+  const inserted = input.isEdit
+    ? await db.transaction(async (tx) => {
+        await lockTelegramMessageRevisions(tx, {
           teamId,
           chatId: input.message.chat.id,
           messageId: input.message.message_id,
         });
-        if (latest) {
-          await tombstoneSupersededTelegramRevisions(tx, {
+        const inserted = await insertRawEvent(tx);
+        const row = inserted ?? (await findEventByUpdateId(tx, input.updateId));
+        if (row) {
+          const latest = await findLatestTelegramRevision(tx, {
             teamId,
             chatId: input.message.chat.id,
             messageId: input.message.message_id,
-            supersededByEventId: latest.id,
           });
+          if (latest) {
+            await tombstoneSupersededTelegramRevisions(tx, {
+              teamId,
+              chatId: input.message.chat.id,
+              messageId: input.message.message_id,
+              supersededByEventId: latest.id,
+            });
+          }
+          return inserted && latest?.id === inserted.id ? inserted : null;
         }
-        return inserted && latest?.id === inserted.id ? inserted : null;
-      }
-      return null;
+        return null;
+      })
+    : await insertRawEvent(db);
+
+  const linkTarget =
+    links.length > 0 ? (inserted ?? (await findEventByUpdateId(db, input.updateId))) : null;
+  if (linkTarget) {
+    await reconcileLinkArtifactsForRawEvent(db, {
+      teamId: linkTarget.teamId,
+      rawEventId: linkTarget.id,
+      text: input.text,
+      occurredAt: eventValues.occurredAt,
+    }).catch((err: unknown) => {
+      log.warn({ err, rawEventId: linkTarget.id }, 'telegram link artifact reconciliation failed');
     });
   }
 
-  return insertRawEvent(db);
+  return inserted;
 }
 
 async function tombstoneSupersededTelegramRevisions(

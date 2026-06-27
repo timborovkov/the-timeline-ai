@@ -17,6 +17,10 @@ After **any** code, configuration, or documentation change:
      ESLint, and Knip.
 2. Run `pnpm run doctor`.
    - React Doctor must report a 100 score before handoff.
+   - The root script runs `scripts/run-react-doctor.mjs`, which executes the
+     real React Doctor analyzer in JSON mode and posts diagnostics to the
+     non-redirecting score endpoint. Treat `React Doctor score: 100` plus
+     `No issues found!` as the required pass signal.
    - If the command exits without showing a score, do not claim "React Doctor is
      100" unless you can verify that from the tool output, artifacts, or
      documented behavior. Say exactly what was verified.

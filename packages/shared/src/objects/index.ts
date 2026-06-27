@@ -337,13 +337,13 @@ function stableStringify(value: unknown): string {
   });
 }
 
-// Derive from the drizzle enum so adding a new type only requires touching
-// the schema + migration. The previous shape duplicated the union here, in
-// `team-scope.ts`, and in the server action — three places to forget.
+// Derive from the drizzle enum so DB-backed rows keep the full vocabulary.
 export type ObjectType = (typeof entityType.enumValues)[number];
 
-/** The exhaustive runtime list of object types (mirrors the Postgres enum). */
-export const OBJECT_TYPES = entityType.enumValues;
+/** The exhaustive runtime list of user-facing workspace object types. */
+export const OBJECT_TYPES = entityType.enumValues.filter(
+  (type): type is ObjectType => type !== 'link',
+);
 
 export type ActorKind = 'user' | 'agent' | 'system';
 

@@ -38,8 +38,8 @@ Use language that makes the evidence-derived operating model concrete:
   history.
 - **Artifact clusters** — the real-world work artifacts that collect related
   evidence across surfaces, such as a Telegram report, Sentry issue, GitHub PR,
-  contract signature, deal approval, or event-planning thread, while keeping
-  source authority separate from evidence association.
+  shared link, contract signature, deal approval, or event-planning thread,
+  while keeping source authority separate from evidence association.
 - **Approval-backed state** — durable object, task, calendar, relationship, and
   memory changes that came from evidence and passed a human review path.
 

@@ -167,9 +167,11 @@ app_mention
         </li>
         <li>
           Text-bearing Slack captures enqueue extraction, embeddings, and approval-suggestion work
-          directly. File-only messages create captured files for source evidence and route those
-          files to extraction without inventing approval suggestions before text or transcripts
-          exist.
+          directly. Shared URLs in the text are normalized into non-authoritative artifact evidence
+          so timeline grouping can surface the link context without letting the link change
+          canonical state. File-only messages create captured files for source evidence and route
+          those files to extraction without inventing approval suggestions before text or
+          transcripts exist.
         </li>
         <li>
           Slack DMs get a best-effort <code>:eyes:</code> reaction after capture. Channels never get

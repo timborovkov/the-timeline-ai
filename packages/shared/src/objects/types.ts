@@ -14,7 +14,7 @@ export const OBJECT_TYPES = [
   'follow_up',
 ] as const;
 
-export type ObjectType = (typeof OBJECT_TYPES)[number];
+export type ObjectType = (typeof OBJECT_TYPES)[number] | 'link';
 export type ActorKind = 'user' | 'agent' | 'system';
 
 export interface ObjectListFilter {
