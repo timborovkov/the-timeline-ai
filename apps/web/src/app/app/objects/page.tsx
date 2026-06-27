@@ -200,7 +200,7 @@ export default async function ObjectsIndexPage({
         active={hasActiveWorkFilters(filters)}
         resultCount={rows.length}
         totalCount={objectWindow.totalCount}
-        hiddenParams={{}}
+        hiddenParams={type ? { type } : undefined}
         members={memberOptions}
         typeLabels={OBJECT_TYPE_LABELS}
       />

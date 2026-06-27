@@ -109,7 +109,7 @@ export default async function BoardDetailPage({
         initialCandidates={candidates}
         recommendedTypes={board.recommendedObjectTypes}
         defaultLaneId={firstLaneId}
-        selectedItemId={selectedItemId}
+        selectedItemId={selectedServerItemId}
         history={history}
         members={memberOptions}
         filters={filters}

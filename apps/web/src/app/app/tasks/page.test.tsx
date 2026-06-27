@@ -258,6 +258,28 @@ describe('TasksPage', () => {
     expect(fakes.getObject).toHaveBeenCalledWith('selected-task');
   });
 
+  it('does not prepend a selected task that no longer matches active filters', async () => {
+    fakes.countObjects.mockResolvedValue(0);
+    fakes.getObject.mockResolvedValue(
+      taskRow({
+        id: 'selected-task',
+        canonicalName: 'Selected done task',
+        status: 'done',
+      }),
+    );
+
+    const html = renderToStaticMarkup(
+      await TasksPage({
+        searchParams: Promise.resolve({ task: 'selected-task', status: 'todo' }),
+      }),
+    );
+
+    expect(html).toContain('No tasks match this filter');
+    expect(html).toContain('0/0');
+    expect(html).not.toContain('Selected done task');
+    expect(html).not.toContain('selected selected-task');
+  });
+
   it('passes the selected task query into the task board', async () => {
     fakes.listObjects.mockResolvedValue([
       {

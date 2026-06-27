@@ -67,14 +67,17 @@ vi.mock('@/components/work-filter-bar', () => ({
   WorkFilterBar: ({
     resultCount,
     totalCount,
+    hiddenParams,
     members = [],
   }: {
     resultCount: number;
     totalCount: number;
+    hiddenParams?: Record<string, string>;
     members?: { id: string; label: string }[];
   }) => (
     <div data-testid="work-filter-bar">
-      {resultCount}/{totalCount}|members:{members.map((member) => member.label).join(',')}
+      {resultCount}/{totalCount}|hidden:{JSON.stringify(hiddenParams ?? {})}|members:
+      {members.map((member) => member.label).join(',')}
     </div>
   ),
 }));
@@ -161,6 +164,7 @@ describe('ObjectsIndexPage', () => {
       limit: 49,
       cursor,
     });
+    expect(html).toContain('hidden:{&quot;type&quot;:&quot;task&quot;}');
     expect(html).toContain('members:Ada Lovelace');
     expect(html).toContain('48|/app/objects?type=task&amp;status=open&amp;cursor=');
   });

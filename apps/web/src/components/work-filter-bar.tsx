@@ -66,7 +66,10 @@ export function WorkFilterBar({
     for (const [key, raw] of formData.entries()) {
       if (key.startsWith('__')) continue;
       const value = typeof raw === 'string' ? raw.trim() : '';
-      if (!value) continue;
+      if (!value) {
+        params.delete(key);
+        continue;
+      }
       params.set(key, value);
     }
     router.push(hrefWithParams(basePath, Object.fromEntries(params.entries())));
