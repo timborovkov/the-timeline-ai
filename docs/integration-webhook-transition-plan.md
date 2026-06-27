@@ -151,6 +151,30 @@ The route should dedupe before enqueueing work. Duplicate provider redeliveries
 should return success and may re-enqueue processing for the existing delivery if
 the prior processing did not finish.
 
+Delivery status is provider-request state only. Processing state must be tracked
+per matched Timeline target because one delivery can fan out to multiple
+integrations and teams. Store target processing in a second table, for example
+`integration_webhook_delivery_targets`:
+
+| Column | Purpose |
+| --- | --- |
+| `id` | Timeline UUID. |
+| `delivery_id` | Parent `integration_webhook_deliveries.id`. |
+| `team_id` | Target Timeline team. |
+| `integration_id` | Target native integration. |
+| `provider_connection_id` | Provider connection used for credentials and owner state. |
+| `status` | `pending`, `processing`, `processed`, `ignored`, `failed`, `dead_lettered`. |
+| `attempts` | Processing attempts for this target only. |
+| `next_attempt_at` | Backoff time for retryable target failures. |
+| `last_error` | Last target-specific processing error. |
+| `event_dedup_keys` | Optional list or side table of events written for this target. |
+| `sync_job_id` | Optional queued targeted sync job id. |
+
+Unique constraints should prevent duplicate target rows for
+`delivery_id + integration_id`, while event writes still dedupe through
+provider-scoped event keys. If one target succeeds and another fails, retries
+must resume only the failed target.
+
 ### Target
 
 A target is a Timeline integration that should receive this delivery. Target
@@ -235,6 +259,21 @@ Store budget state in a new table, for example `integration_provider_budgets`:
 Every outbound provider request should update this table when headers or error
 bodies expose quota state. The scheduler should consult this table before
 enqueueing provider work.
+
+Initial provider budget scopes:
+
+| Provider | Initial budget key | Pause behavior |
+| --- | --- | --- |
+| GitHub | `github + app_or_oauth_client + installation_or_user_id + core|secondary` | Use `Retry-After` when present, otherwise `x-ratelimit-reset` for primary limits and exponential backoff for secondary limits. |
+| Monday.com | `monday + MONDAY_CLIENT_ID + account_id + daily|minute|complexity|concurrency` | Use `retry_in_seconds`, `Retry-After`, and `RateLimit` reset metadata; pause all teams sharing that monday account/app key. |
+| Google Drive | `google_drive + GOOGLE_CLIENT_ID + account_or_drive_id + requests` | Start with observed 429/403 retry metadata and exponential backoff when reset time is unavailable. |
+| Linear | `linear + LINEAR_CLIENT_ID + organization_id + requests` | Start with observed retry headers and bounded backoff; do not promote retryable limits to user-action attention. |
+| Slack | `slack + SLACK_CLIENT_ID + team_id + web_api|events` | Respect Slack Web API retry metadata for hydration and keep Events API ingress limits separate from outbound hydration budgets. |
+| Sentry | `sentry + SENTRY_CLIENT_ID + organization_id + requests` | Start with observed retry headers and bounded backoff for issue/release hydration. |
+
+Providers without a known reset header still get budget rows. Their rows record
+the pause reason, last observed response, and conservative backoff so the
+scheduler has one place to ask whether work is allowed.
 
 ## Adapter Contract
 
@@ -457,6 +496,13 @@ Changes:
 - Keep selected-channel reconciliation so missed Slack events do not create
   holes in timelines.
 
+This decision must be made before Phase 1 exits. The gateway skeleton, target
+keys, provider contract tests, and scheduler policy differ depending on whether
+native Slack workspace ingestion is event-subscription-first or
+reconciliation-first. If the decision is not settled, Slack v1 should be
+documented as reconciliation-first while still using the shared status and
+budget paths.
+
 ### Sentry
 
 Sentry has provider payload normalization today, but no wired inbound native
@@ -565,6 +611,28 @@ The webhook gateway must preserve existing Team isolation rules.
 
 ## Implementation Phases
 
+### Phase 0: Provider Decisions Before Build
+
+Deliverables:
+
+1. Decide whether GitHub webhook-first requires GitHub App installation tokens
+   before launch, or whether OAuth polling continues until a separate app-token
+   migration.
+2. Decide whether native Slack workspace ingestion is event-subscription-first
+   or reconciliation-first for v1.
+3. Confirm Monday webhook provisioning scopes and the existing-connection
+   upgrade flow.
+4. Choose the first storage shape for provider budgets: Postgres-only, or Redis
+   fast checks backed by Postgres.
+
+Exit criteria:
+
+- Every implemented provider has an explicit v1 gateway posture:
+  webhook-first, wake-up-first, or reconciliation-first.
+- Slack is not left as an implementation-time product decision.
+- GitHub and Monday credential/scope changes are known before schema and UI
+  work begins.
+
 ### Phase 1: Shared Gateway Skeleton and Linear Migration
 
 Deliverables:
@@ -579,12 +647,16 @@ Deliverables:
    the gateway.
 8. Move Linear through the gateway first because it already verifies signed
    webhooks, writes direct events, and enqueues sync.
+9. Add `integration_webhook_delivery_targets` so multi-team fan-out tracks
+   processing, retry, and dead-letter state per target.
 
 Exit criteria:
 
 - Linear webhook route can be expressed through the gateway without behavior
   regression.
 - Duplicate deliveries are idempotent.
+- A delivery targeting multiple Timeline integrations can partially succeed and
+  retry only failed targets.
 - Delivery processing can recover when queue enqueue fails after persistence.
 
 ### Phase 2: Google Drive Gateway Migration
@@ -615,14 +687,19 @@ Deliverables:
 2. Parse GitHub `Retry-After`, `x-ratelimit-remaining`, and
    `x-ratelimit-reset`.
 3. Parse monday.com `retry_in_seconds`, `Retry-After`, and `RateLimit`.
-4. Update the worker so provider cooldowns do not throw into BullMQ retry
+4. Add initial budget-key derivation for Drive, Linear, Slack, and Sentry, even
+   when the first version uses conservative backoff instead of provider-specific
+   reset headers.
+5. Update the worker so provider cooldowns do not throw into BullMQ retry
    pressure.
-5. Update UI copy and button state for paused budgets.
+6. Update UI copy and button state for paused budgets.
 
 Exit criteria:
 
 - Monday `DAILY_LIMIT_EXCEEDED` pauses until the provider retry time.
 - GitHub primary and secondary rate limits use the same pause path.
+- Drive, Linear, Slack, and Sentry rate-limit responses create budget rows
+  instead of generic sync errors.
 - No user can click a retry button that knowingly burns a paused budget.
 
 ### Phase 4: Targeted Sync Jobs
@@ -766,6 +843,17 @@ End-to-end tests:
 
 - GitHub PR webhook writes one cited raw event and maps the PR object.
 - Monday board update webhook enqueues one targeted board/item sync.
+- Google Drive wake-up webhook persists one delivery and enqueues bounded sync
+  work for the matching integration.
+- Linear webhook gateway migration preserves direct event writes and existing
+  sync enqueue behavior.
+- Slack tests prove conversational `/api/slack/events` remains separate from
+  native workspace ingestion, and native Slack selected-channel policy is either
+  event-backed or explicitly reconciliation-first.
+- Sentry issue alert and release webhook payloads route through target
+  resolution, reuse provider normalization, and write cited events.
+- A single provider delivery that targets two Timeline integrations can succeed
+  for one target, fail for the other, and retry only the failed target.
 - Rate-limited Monday response pauses future Monday work for the same account
   and app.
 - Two Timeline teams connected to the same Monday account share a provider
@@ -783,20 +871,22 @@ also run `pnpm test:eval`.
 Use a strangler pattern: new gateway path first, existing routes preserved until
 each provider is moved.
 
-1. Add schema and gateway with no provider traffic.
-2. Route Linear through the gateway because it already writes direct events and
+1. Resolve Phase 0 provider decisions, especially Slack posture and GitHub token
+   model.
+2. Add schema and gateway with no provider traffic.
+3. Route Linear through the gateway because it already writes direct events and
    enqueues sync.
-3. Route Drive through the gateway because it is a pure wake-up signal.
-4. Add generic provider budget handling and convert GitHub rate-limit handling.
-5. Add Monday rate-limit parsing before enabling Monday webhooks.
-6. Add targeted sync jobs and bounded fallback behavior for every provider.
-7. Enable GitHub App webhooks and reduce GitHub polling.
-8. Enable Monday board webhook provisioning and reduce Monday polling.
-9. Decide and migrate the native Slack workspace surface while preserving the
+4. Route Drive through the gateway because it is a pure wake-up signal.
+5. Add generic provider budget handling and convert GitHub rate-limit handling.
+6. Add Monday rate-limit parsing before enabling Monday webhooks.
+7. Add targeted sync jobs and bounded fallback behavior for every provider.
+8. Enable GitHub App webhooks and reduce GitHub polling.
+9. Enable Monday board webhook provisioning and reduce Monday polling.
+10. Migrate the native Slack workspace surface while preserving the
    existing Slack Events conversational route.
-10. Add Sentry native webhooks and reuse existing Sentry normalization.
-11. Remove old provider-specific route logic after parity tests pass.
-12. Change the global integration tick into a budget-aware reconciliation
+11. Add Sentry native webhooks and reuse existing Sentry normalization.
+12. Remove old provider-specific route logic after parity tests pass.
+13. Change the global integration tick into a budget-aware reconciliation
     scheduler.
 
 During migration, keep backfill and manual sync working. Webhooks should improve
@@ -864,11 +954,13 @@ Update these docs as each phase lands:
 2. Whether Monday webhook provisioning needs a new OAuth scope beyond the
    current read scopes, and how that scope upgrade is presented to existing
    connections.
-3. Whether provider budget rows should live in Postgres only or use Redis for
+3. Whether native Slack workspace ingestion should be event-subscription-first
+   or reconciliation-first for v1.
+4. Whether provider budget rows should live in Postgres only or use Redis for
    short-lived fast checks with Postgres as the durable ledger.
-4. How aggressively to coalesce webhook bursts, especially for Slack channels,
+5. How aggressively to coalesce webhook bursts, especially for Slack channels,
    GitHub pushes, and Monday boards with automation-heavy workflows.
-5. Whether delivery payload retention should be indefinite like raw events or
+6. Whether delivery payload retention should be indefinite like raw events or
    shorter-lived operational data after normalized events are written.
 
 ## Success Criteria
@@ -877,6 +969,12 @@ The transition is complete when:
 
 - GitHub and Monday no longer rely on frequent global polling for normal
   freshness.
+- Linear and Google Drive route through the shared gateway while preserving
+  their existing webhook behavior.
+- Slack has an explicit native ingestion posture and uses shared budget/status
+  handling whether v1 is event-subscription-first or reconciliation-first.
+- Sentry native webhooks write issue/release events through the gateway, with
+  reconciliation fallback for missed or incomplete payloads.
 - Known provider quota limits pause work automatically and show as cooldowns,
   not product failures.
 - Every implemented native provider uses the same delivery persistence, budget
