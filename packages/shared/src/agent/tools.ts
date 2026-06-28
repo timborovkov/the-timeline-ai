@@ -579,6 +579,60 @@ function searchArgsFromTimelineInput(
   return args;
 }
 
+function timelineMomentEventFromScopeRow(event: {
+  id: string;
+  teamId: string;
+  source: TimelineMomentEvent['source'];
+  authorUserId: string | null;
+  contentText: string | null;
+  contentAudioUrl: string | null;
+  occurredAt: Date;
+  createdAt: Date;
+  visibility: string;
+  visibilityUserIds: string[] | null;
+  visibilityOwnerUserId: string | null;
+  sourceMetadata: unknown;
+}): TimelineMomentEvent {
+  return {
+    id: event.id,
+    teamId: event.teamId,
+    source: event.source,
+    authorUserId: event.authorUserId,
+    contentText: event.contentText,
+    contentAudioUrl: event.contentAudioUrl,
+    occurredAt: event.occurredAt,
+    createdAt: event.createdAt,
+    visibility: event.visibility,
+    visibilityUserIds: event.visibilityUserIds,
+    visibilityOwnerUserId: event.visibilityOwnerUserId,
+    sourceMetadata: event.sourceMetadata,
+  };
+}
+
+async function hydrateCompleteMomentEvents(
+  scope: TeamScope,
+  events: TimelineMomentEvent[],
+): Promise<TimelineMomentEvent[]> {
+  const eventsById = new Map(events.map((event) => [event.id, event]));
+  const seedMoments = buildTimelineMoments(events, new Map(), { groupingMode: 'moments' });
+  const seenMomentIds = new Set<string>();
+
+  await Promise.all(
+    seedMoments.map(async (moment) => {
+      if (seenMomentIds.has(moment.id)) return;
+      seenMomentIds.add(moment.id);
+      const plan = timelineMomentLookupPlan(moment.id);
+      if (!plan) return;
+      const related = await scope.timeline.listEventsForMomentLookup(plan);
+      for (const event of related) {
+        eventsById.set(event.id, timelineMomentEventFromScopeRow(event));
+      }
+    }),
+  );
+
+  return [...eventsById.values()];
+}
+
 async function buildAgentTimelineMoments(
   scope: TeamScope,
   hits: SearchHitForMoment[],
@@ -1475,25 +1529,12 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
           const input = searchTimelineInput.parse(raw);
           const hits = await scope.timeline.searchEvents(searchArgsFromTimelineInput(input));
           const eventIds = hits.map((hit) => hit.eventId);
-          const events = await scope.timeline.getEventsByIds(eventIds);
-          const moments = await buildAgentTimelineMoments(
+          const rows = await scope.timeline.getEventsByIds(eventIds);
+          const events = await hydrateCompleteMomentEvents(
             scope,
-            hits,
-            events.map((event) => ({
-              id: event.id,
-              teamId: event.teamId,
-              source: event.source,
-              authorUserId: event.authorUserId,
-              contentText: event.contentText,
-              contentAudioUrl: event.contentAudioUrl,
-              occurredAt: event.occurredAt,
-              createdAt: event.createdAt,
-              visibility: event.visibility,
-              visibilityUserIds: event.visibilityUserIds,
-              visibilityOwnerUserId: event.visibilityOwnerUserId,
-              sourceMetadata: event.sourceMetadata,
-            })),
+            rows.map(timelineMomentEventFromScopeRow),
           );
+          const moments = await buildAgentTimelineMoments(scope, hits, events);
           return { count: moments.length, moments };
         }),
     }),
@@ -1505,10 +1546,11 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
       execute: async (raw) =>
         runSafe('get_timeline_moment', async () => {
           const input = getTimelineMomentInput.parse(raw);
-          let events =
+          let events = (
             input.rawEventIds && input.rawEventIds.length > 0
               ? await scope.timeline.getEventsByIds(input.rawEventIds)
-              : [];
+              : []
+          ).map(timelineMomentEventFromScopeRow);
           if (events.length === 0 && input.momentId) {
             const plan = timelineMomentLookupPlan(input.momentId);
             if (!plan) {
@@ -1518,35 +1560,23 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
                 visible_raw_event_count: 0,
               };
             }
-            events = await scope.timeline.listEventsForMomentLookup(plan);
+            events = (await scope.timeline.listEventsForMomentLookup(plan)).map(
+              timelineMomentEventFromScopeRow,
+            );
+          } else if (events.length > 0) {
+            events = await hydrateCompleteMomentEvents(scope, events);
           }
           const hits = events.map((event) => ({
             eventId: event.id,
             factIds: [],
             score: 1,
-            occurredAt: event.occurredAt.toISOString(),
+            occurredAt:
+              event.occurredAt instanceof Date ? event.occurredAt.toISOString() : event.occurredAt,
             source: event.source,
             entityIds: [],
             snippet: event.contentText ?? '',
           }));
-          const moments = await buildAgentTimelineMoments(
-            scope,
-            hits,
-            events.map((event) => ({
-              id: event.id,
-              teamId: event.teamId,
-              source: event.source,
-              authorUserId: event.authorUserId,
-              contentText: event.contentText,
-              contentAudioUrl: event.contentAudioUrl,
-              occurredAt: event.occurredAt,
-              createdAt: event.createdAt,
-              visibility: event.visibility,
-              visibilityUserIds: event.visibilityUserIds,
-              visibilityOwnerUserId: event.visibilityOwnerUserId,
-              sourceMetadata: event.sourceMetadata,
-            })),
-          );
+          const moments = await buildAgentTimelineMoments(scope, hits, events);
           const expanded = input.momentId
             ? moments.find((moment) => moment.moment_id === input.momentId)
             : moments[0];

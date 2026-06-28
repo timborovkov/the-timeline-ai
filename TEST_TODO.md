@@ -10,8 +10,8 @@ Most recent full-suite inventory predates the timeline-moments slice and is
 kept below for broad suite shape. The current timeline-moments slice verified
 `pnpm validate`, `pnpm test:eval`, `pnpm test:dist-imports`, focused
 `@timeline/shared` and `@timeline/web` Vitest suites, and `pnpm run doctor`;
-React Doctor completed with no issues found, but the score API did not expose a
-numeric `100 / 100` result. The slice adds shared moment projection tests,
+React Doctor reported score `100 (Great)` with no issues found. The slice adds
+shared moment projection tests,
 moment-backed timeline API pagination and focused-link hydration coverage, UI
 mode/query-state coverage, versioned moment/page DTO assertions, debug-gated
 moment diagnostics assertions, and agent moment search/expansion evals. It also

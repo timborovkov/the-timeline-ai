@@ -1310,10 +1310,34 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
         return sql`${rawEvents.sourceMetadata} ->> 'thread_root_id' = ${value}`;
       case 'calendar_event_id':
         return sql`${rawEvents.sourceMetadata} ->> 'calendar_event_id' = ${value}`;
+      case 'document_id':
+        return sql`COALESCE(${rawEvents.sourceMetadata} ->> 'document_id', ${rawEvents.sourceMetadata} ->> 'documentId') = ${value}`;
+      case 'action':
+        return sql`${rawEvents.sourceMetadata} ->> 'action' = ${value}`;
+      case 'tg_chat_id':
+        return sql`${rawEvents.sourceMetadata} ->> 'tg_chat_id' = ${value}`;
+      case 'tg_chat_title':
+        return sql`${rawEvents.sourceMetadata} ->> 'tg_chat_title' = ${value}`;
+      case 'ingest_webhook_id':
+        return sql`${rawEvents.sourceMetadata} ->> 'ingest_webhook_id' = ${value}`;
+      case 'slack_channel_id':
+        return sql`${rawEvents.sourceMetadata} ->> 'slack_channel_id' = ${value}`;
+      case 'slack_channel_name':
+        return sql`${rawEvents.sourceMetadata} ->> 'slack_channel_name' = ${value}`;
+      case 'slack_thread_ts':
+        return sql`${rawEvents.sourceMetadata} ->> 'slack_thread_ts' = ${value}`;
+      case 'slack_message_ts':
+        return sql`${rawEvents.sourceMetadata} ->> 'slack_message_ts' = ${value}`;
+      case 'workflow_name':
+        return sql`${rawEvents.sourceMetadata} ->> 'workflow_name' = ${value}`;
       case 'github.type':
         return sql`${rawEvents.sourceMetadata} #>> '{github,type}' = ${value}`;
       case 'github.repo':
         return sql`${rawEvents.sourceMetadata} #>> '{github,repo}' = ${value}`;
+      case 'github.head_branch':
+        return sql`${rawEvents.sourceMetadata} #>> '{github,head_branch}' = ${value}`;
+      case 'github.workflow_name':
+        return sql`${rawEvents.sourceMetadata} #>> '{github,workflow_name}' = ${value}`;
       case 'github.pr_number':
         return sql`COALESCE(${rawEvents.sourceMetadata} #>> '{github,pr_number}', ${rawEvents.sourceMetadata} #>> '{github,number}') = ${value}`;
       case 'github.number':

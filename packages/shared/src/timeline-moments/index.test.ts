@@ -34,9 +34,21 @@ describe('shared timeline moments projection', () => {
     expect(workflow).toMatchObject({ source: 'integration', limit: 300 });
     expect(workflow?.from?.toISOString()).toBe('2026-06-26T00:00:00.000Z');
     expect(workflow?.to?.toISOString()).toBe('2026-06-29T00:00:00.000Z');
+    expect(workflow?.metadataPredicates).toEqual([
+      { path: ['provider'], equals: 'github' },
+      { path: ['github', 'type'], equals: 'workflow_run' },
+      { path: ['github', 'repo'], equals: 'timborovkov/audit-ai' },
+      { path: ['github', 'head_branch'], equals: 'main' },
+    ]);
     expect(telegram).toMatchObject({ source: 'telegram', limit: 300 });
     expect(telegram?.from?.toISOString()).toBe('2026-06-27T10:00:00.000Z');
     expect(telegram?.to?.toISOString()).toBe('2026-06-28T22:00:00.000Z');
+    expect(telegram?.metadataPredicateGroups).toEqual([
+      [
+        { path: ['tg_chat_id'], equals: 'chat-a' },
+        { path: ['tg_chat_title'], equals: 'chat-a' },
+      ],
+    ]);
   });
 
   it('creates exact metadata lookup plans for stable moment identities', () => {
@@ -54,6 +66,32 @@ describe('shared timeline moments projection', () => {
       source: 'calendar',
       limit: 100,
       metadataPredicates: [{ path: ['calendar_event_id'], equals: 'calendar-a' }],
+    });
+    expect(
+      timelineMomentLookupPlan(
+        'moment:document:00000000-0000-0000-0000-000000000123:2026-06-27:uploaded',
+      ),
+    ).toMatchObject({
+      source: 'document',
+      limit: 300,
+      metadataPredicates: [
+        { path: ['document_id'], equals: '00000000-0000-0000-0000-000000000123' },
+        { path: ['action'], equals: 'uploaded' },
+      ],
+    });
+    expect(timelineMomentLookupPlan('moment:slack:C123:1782600000.000100')).toMatchObject({
+      source: 'slack',
+      limit: 300,
+      metadataPredicateGroups: [
+        [
+          { path: ['slack_channel_id'], equals: 'C123' },
+          { path: ['slack_channel_name'], equals: 'C123' },
+        ],
+        [
+          { path: ['slack_thread_ts'], equals: '1782600000.000100' },
+          { path: ['slack_message_ts'], equals: '1782600000.000100' },
+        ],
+      ],
     });
     expect(
       timelineMomentLookupPlan('moment:integration:github:pr:timborovkov/audit-ai:292'),

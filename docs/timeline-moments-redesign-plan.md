@@ -118,10 +118,14 @@ The first implementation pass has shipped these pieces:
   have deterministic fallbacks.
 - The chat agent tool surface includes `search_timeline_moments` and
   `get_timeline_moment`, with eval coverage for noisy GitHub CI bursts and raw
-  event citations.
+  event citations. Moment search hydrates complete visible source siblings
+  before returning raw-event IDs, so agents do not expand a partial semantic hit
+  as if it were the full moment.
 - Timeline-as-MCP-server now exposes `timeline.search_moments`,
   `timeline.list_moments`, and `timeline.get_moment` for team-visible bundled
-  evidence, while keeping raw event tools available for audit/debug.
+  evidence, while keeping raw event tools available for audit/debug. MCP moment
+  search/list/expand shares the same complete visible-evidence hydration and
+  scans raw pages until it has enough bundled moments or reaches its scan cap.
 - `packages/shared/timeline-moments` now owns the deterministic projection used
   by both the UI and agent tools.
 - Shared moments, chat-agent moment results, and outbound MCP moment results
@@ -177,10 +181,11 @@ The first implementation pass has shipped these pieces:
 - `/app/timeline?moment=<moment-id>` and `/api/timeline?moment=<moment-id>` now
   hydrate supported deterministic moment IDs through shared visible-event
   lookup. Time-window plans cover burst/window moments; exact metadata plans
-  cover email threads, meetings, calendar events, GitHub PR/review activity, and
-  generic integration object/event moments. The focused moment remains visible
-  through filters, and the moment query is preserved in infinite-loading cache
-  keys.
+  cover email threads, meetings, calendar events, GitHub workflow and PR/review
+  activity, document activity, Slack threads, Telegram buckets, ingest webhook
+  buckets, and generic integration object/event moments. The focused moment
+  remains visible through filters, and the moment query is preserved in
+  infinite-loading cache keys.
 - Generic integration moment ID lookup now matches both `external_object_id` and
   `external_event_id` under the same provider, so future providers that only
   expose delivery/event IDs can still deep-link and expand evidence without
@@ -1300,9 +1305,11 @@ caller is allowed to access.
 Implemented first slice:
 
 - `timeline.search_moments` returns semantic hits as bundled moments with raw
-  event citations.
+  event citations, after hydrating complete visible source siblings for each
+  supported deterministic moment.
 - `timeline.list_moments` returns recent team-visible bundled moments for
-  recaps and digests.
+  recaps and digests, scanning raw pages until enough complete moments are
+  available or the scan cap is reached.
 - `timeline.get_moment` expands raw event IDs from a moment result and silently
   drops hidden raw events through the same bearer visibility boundary. It can
   also expand supported deterministic moment IDs through bounded visible-event
@@ -1699,8 +1706,9 @@ Implemented foundation:
   titles/summaries only when the current visible evidence matches the stored
   cache fingerprint.
 - `/app/timeline` and `/api/timeline` enqueue eligible uncached moments during
-  normal reads, then return deterministic presentation immediately while the
-  worker fills the cache asynchronously.
+  normal reads without waiting on Redis enqueue latency, then return
+  deterministic presentation immediately while the worker fills the cache
+  asynchronously.
 - The `timeline-moment-presentation` queue dedupes jobs by team, moment key,
   visibility scope, source IDs, source content, prompt version, and model, so
   repeated page loads do not fan out duplicate LLM work.

@@ -685,4 +685,38 @@ describe('collectTimelinePage', () => {
       visibilityPartitionCount: 1,
     });
   });
+
+  it('does not wait for slow missing-presentation enqueue work', async () => {
+    const [moment] = buildTimelineMoments(
+      [
+        event('message-a', '2026-06-27T18:00:00.000Z', {
+          source: 'telegram',
+          contentText: 'Can we meet at 16:20?',
+          sourceMetadata: { tg_chat_id: 'chat-a' },
+        }),
+        event('message-b', '2026-06-27T18:01:00.000Z', {
+          source: 'telegram',
+          contentText: '16:20 works.',
+          sourceMetadata: { tg_chat_id: 'chat-a' },
+        }),
+        event('message-c', '2026-06-27T18:02:00.000Z', {
+          source: 'telegram',
+          contentText: 'Booked.',
+          sourceMetadata: { tg_chat_id: 'chat-a' },
+        }),
+      ],
+      new Map(),
+    ) as TimelineMoment[];
+    if (!moment) throw new Error('expected moment');
+    const enqueueMissingPresentation = vi.fn(() => new Promise<void>(() => undefined));
+
+    const [presented] = await applyCachedTimelineMomentPresentations([moment], {
+      teamId: TEAM_ID,
+      listMomentPresentations: () => Promise.resolve({}),
+      enqueueMissingPresentation,
+    });
+
+    expect(presented).toBe(moment);
+    expect(enqueueMissingPresentation).toHaveBeenCalledTimes(1);
+  });
 });

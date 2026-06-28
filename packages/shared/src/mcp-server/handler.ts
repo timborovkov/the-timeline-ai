@@ -296,6 +296,30 @@ async function serializeMcpTimelineMoments(
   });
 }
 
+async function hydrateCompleteMcpMomentEvents(
+  scope: TeamScope,
+  events: TimelineMomentEvent[],
+): Promise<TimelineMomentEvent[]> {
+  const eventsById = new Map(events.map((event) => [event.id, event]));
+  const seedMoments = buildTimelineMoments(events, new Map(), { groupingMode: 'moments' });
+  const seenMomentIds = new Set<string>();
+
+  await Promise.all(
+    seedMoments.map(async (moment) => {
+      if (seenMomentIds.has(moment.id)) return;
+      seenMomentIds.add(moment.id);
+      const plan = timelineMomentLookupPlan(moment.id);
+      if (!plan) return;
+      const related = await scope.timeline.listEventsForMomentLookup(plan);
+      for (const event of related) {
+        eventsById.set(event.id, timelineMomentEvent(event));
+      }
+    }),
+  );
+
+  return [...eventsById.values()];
+}
+
 function serializeObjectRow(row: objects.ObjectRow): Record<string, unknown> {
   return {
     id: row.id,
@@ -820,7 +844,8 @@ async function callTool(
         ...(input.limit ? { limit: input.limit } : {}),
       });
       const rows = await scope.timeline.getEventsByIds(hits.map((hit) => hit.eventId));
-      const moments = await serializeMcpTimelineMoments(scope, hits, rows.map(timelineMomentEvent));
+      const events = await hydrateCompleteMcpMomentEvents(scope, rows.map(timelineMomentEvent));
+      const moments = await serializeMcpTimelineMoments(scope, hits, events);
       return { count: moments.length, moments };
     }
     case 'timeline.list_moments': {
@@ -833,26 +858,43 @@ async function callTool(
         })
         .parse(args);
       const momentLimit = input.limit ?? 10;
-      const filters: Parameters<typeof scope.timeline.listEvents>[0] = {
-        limit: Math.min(momentLimit * 4, 100),
-      };
+      const filters: Parameters<typeof scope.timeline.listEventsPage>[0] = {};
       if (input.from) filters.from = new Date(input.from);
       if (input.to) filters.to = new Date(input.to);
       if (input.source) filters.source = input.source;
-      const rows = await scope.timeline.listEvents(filters);
-      const hits = rows.map((row, index) => ({
-        eventId: row.id,
-        factIds: [],
-        score: rows.length - index,
-        occurredAt: row.occurredAt.toISOString(),
-        source: row.source,
-        entityIds: [],
-        snippet: row.contentText ?? '',
-      }));
-      const moments = (
-        await serializeMcpTimelineMoments(scope, hits, rows.map(timelineMomentEvent))
-      ).slice(0, momentLimit);
-      return { count: moments.length, moments };
+      const scannedRows = new Map<
+        string,
+        Awaited<ReturnType<typeof scope.timeline.listEventsPage>>['items'][number]
+      >();
+      let cursor: string | null = null;
+      let moments: Awaited<ReturnType<typeof serializeMcpTimelineMoments>> = [];
+      for (let scanned = 0; scanned < 8; scanned++) {
+        const page = await scope.timeline.listEventsPage({
+          ...filters,
+          ...(cursor ? { cursor } : {}),
+          limit: 50,
+        });
+        for (const row of page.items) scannedRows.set(row.id, row);
+        const events = await hydrateCompleteMcpMomentEvents(
+          scope,
+          [...scannedRows.values()].map(timelineMomentEvent),
+        );
+        const hits = events.map((event, index) => ({
+          eventId: event.id,
+          factIds: [],
+          score: events.length - index,
+          occurredAt:
+            event.occurredAt instanceof Date ? event.occurredAt.toISOString() : event.occurredAt,
+          source: event.source,
+          entityIds: [],
+          snippet: event.contentText ?? '',
+        }));
+        moments = await serializeMcpTimelineMoments(scope, hits, events);
+        if (moments.length >= momentLimit || !page.nextCursor) break;
+        cursor = page.nextCursor;
+      }
+      const visibleMoments = moments.slice(0, momentLimit);
+      return { count: visibleMoments.length, moments: visibleMoments };
     }
     case 'timeline.get_moment': {
       const input = z
@@ -865,7 +907,8 @@ async function callTool(
         input.rawEventIds && input.rawEventIds.length > 0
           ? await scope.timeline.getEventsByIds(input.rawEventIds)
           : [];
-      if (rows.length === 0 && input.momentId) {
+      let events = rows.map(timelineMomentEvent);
+      if (events.length === 0 && input.momentId) {
         const plan = timelineMomentLookupPlan(input.momentId);
         if (!plan) {
           return {
@@ -875,17 +918,21 @@ async function callTool(
           };
         }
         rows = await scope.timeline.listEventsForMomentLookup(plan);
+        events = rows.map(timelineMomentEvent);
+      } else if (events.length > 0) {
+        events = await hydrateCompleteMcpMomentEvents(scope, events);
       }
-      const hits = rows.map((row) => ({
-        eventId: row.id,
+      const hits = events.map((event, index) => ({
+        eventId: event.id,
         factIds: [],
-        score: 1,
-        occurredAt: row.occurredAt.toISOString(),
-        source: row.source,
+        score: events.length - index,
+        occurredAt:
+          event.occurredAt instanceof Date ? event.occurredAt.toISOString() : event.occurredAt,
+        source: event.source,
         entityIds: [],
-        snippet: row.contentText ?? '',
+        snippet: event.contentText ?? '',
       }));
-      const moments = await serializeMcpTimelineMoments(scope, hits, rows.map(timelineMomentEvent));
+      const moments = await serializeMcpTimelineMoments(scope, hits, events);
       const expanded = input.momentId
         ? moments.find((moment) => moment.moment_id === input.momentId)
         : moments[0];
@@ -893,7 +940,7 @@ async function callTool(
         return {
           found: false,
           reason: input.momentId ? 'moment_id_not_visible' : 'no_visible_events',
-          visible_raw_event_count: rows.length,
+          visible_raw_event_count: events.length,
         };
       }
       return {

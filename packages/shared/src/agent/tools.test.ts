@@ -87,7 +87,7 @@ function makeFakeScope(): FakeScope {
       getEventsByIds: vi.fn(),
       getEntity: vi.fn(),
       listEvents: vi.fn(),
-      listEventsForMomentLookup: vi.fn(),
+      listEventsForMomentLookup: vi.fn().mockResolvedValue([]),
       listMomentPresentations: vi.fn().mockResolvedValue({}),
       getEventWithFacts: vi.fn(),
       listMembers: vi.fn().mockResolvedValue([]),
@@ -1414,6 +1414,87 @@ describe('buildAgentTools — team isolation', () => {
     );
   });
 
+  it('search_timeline_moments hydrates complete visible evidence for a partial semantic hit', async () => {
+    const scope = makeFakeScope();
+    const eventA = '00000000-0000-0000-0000-0000000000a1';
+    const eventB = '00000000-0000-0000-0000-0000000000b2';
+    const workflowEvent = (id: string, run: string, occurredAt: string) => ({
+      id,
+      teamId: 'team-a',
+      source: 'integration',
+      authorUserId: null,
+      contentText: `GitHub workflow "CI" #${run} on timborovkov/audit-ai success`,
+      contentAudioUrl: null,
+      occurredAt: new Date(occurredAt),
+      createdAt: new Date(occurredAt),
+      visibility: 'team',
+      visibilityUserIds: null,
+      visibilityOwnerUserId: null,
+      sourceMetadata: {
+        provider: 'github',
+        event_type: 'workflow_run.success',
+        github: {
+          type: 'workflow_run',
+          repo: 'timborovkov/audit-ai',
+          head_branch: 'main',
+        },
+      },
+    });
+    scope.timeline.searchEvents.mockResolvedValue([
+      {
+        eventId: eventA,
+        factIds: [],
+        score: 0.94,
+        occurredAt: '2026-06-27T18:32:00.000Z',
+        source: 'integration',
+        authorUserId: null,
+        sender: null,
+        resolvedSenderObject: null,
+        senderResolutionStatus: 'unresolved',
+        entityIds: [],
+        snippet: 'GitHub workflow "CI" #1603 on timborovkov/audit-ai success',
+      },
+    ]);
+    scope.timeline.getEventsByIds.mockResolvedValue([
+      workflowEvent(eventA, '1603', '2026-06-27T18:32:00.000Z'),
+    ]);
+    scope.timeline.listEventsForMomentLookup.mockResolvedValue([
+      workflowEvent(eventA, '1603', '2026-06-27T18:32:00.000Z'),
+      workflowEvent(eventB, '1602', '2026-06-27T18:08:00.000Z'),
+    ]);
+    const tools = buildAgentTools(scope as unknown as TeamScope);
+    const exec = tools.search_timeline_moments?.execute as (
+      input: unknown,
+      opts: unknown,
+    ) => Promise<unknown>;
+
+    const result = (await exec({ query: 'CI success', source: 'integration' }, {})) as {
+      count: number;
+      moments: { evidence_count: number; raw_event_ids: string[] }[];
+    };
+
+    expect(scope.timeline.listEventsForMomentLookup).toHaveBeenCalledWith(
+      expect.objectContaining({
+        source: 'integration',
+      }),
+    );
+    const lookupPlan = scope.timeline.listEventsForMomentLookup.mock.calls[0]?.[0] as
+      | { metadataPredicates?: { path: string[]; equals: string }[] }
+      | undefined;
+    expect(lookupPlan?.metadataPredicates).toEqual(
+      expect.arrayContaining([
+        { path: ['provider'], equals: 'github' },
+        { path: ['github', 'repo'], equals: 'timborovkov/audit-ai' },
+        { path: ['github', 'head_branch'], equals: 'main' },
+      ]),
+    );
+    expect(result.count).toBe(1);
+    expect(result.moments[0]).toMatchObject({
+      evidence_count: 2,
+      raw_event_ids: [eventA, eventB],
+    });
+  });
+
   it('get_timeline_moment expands visible raw evidence through scope hydration', async () => {
     const scope = makeFakeScope();
     const eventA = '00000000-0000-0000-0000-0000000000a1';
@@ -1561,6 +1642,12 @@ describe('buildAgentTools — team isolation', () => {
       from: new Date('2026-06-26T00:00:00.000Z'),
       to: new Date('2026-06-29T00:00:00.000Z'),
       limit: 300,
+      metadataPredicates: [
+        { path: ['provider'], equals: 'github' },
+        { path: ['github', 'type'], equals: 'workflow_run' },
+        { path: ['github', 'repo'], equals: 'timborovkov/audit-ai' },
+        { path: ['github', 'head_branch'], equals: 'main' },
+      ],
     });
     expect(result.found).toBe(true);
     expect(result.moment).toMatchObject({

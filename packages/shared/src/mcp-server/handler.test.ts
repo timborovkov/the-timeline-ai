@@ -242,6 +242,59 @@ describe('handleMcpRequest', () => {
     expect(snippets.join('\n')).not.toContain('</external_content>GitHub');
   });
 
+  it('scans past large raw-event groups when listing outbound MCP moments', async () => {
+    const workflowRows = Array.from({ length: 50 }, (_, index) => {
+      const id = `dddddddd-dddd-4ddd-8ddd-${String(index + 1).padStart(12, '0')}`;
+      const occurredAt = new Date(Date.UTC(2026, 5, 27, 18, 59 - index, 0)).toISOString();
+      return `(
+        '${id}',
+        '${TEAM_ID}',
+        '${USER_ID}',
+        'integration',
+        'GitHub workflow "CI" #${1700 - index} on timborovkov/audit-ai success',
+        '${occurredAt}',
+        'team',
+        '{"provider":"github","event_type":"workflow_run.success","github":{"type":"workflow_run","repo":"timborovkov/audit-ai","head_branch":"main"}}'::jsonb
+      )`;
+    });
+    await pg.exec(`
+      INSERT INTO raw_events (
+        id,
+        team_id,
+        author_user_id,
+        source,
+        content_text,
+        occurred_at,
+        visibility,
+        source_metadata
+      )
+      VALUES
+        ${workflowRows.join(',')},
+        (
+          '${PR_EVENT_A}',
+          '${TEAM_ID}',
+          '${USER_ID}',
+          'integration',
+          'GitHub PR timborovkov/audit-ai#292 — Fix scoping tie-out extraction and timeline grouping',
+          '2026-06-26T18:00:00Z',
+          'team',
+          '{"provider":"github","event_type":"pr.updated","github":{"type":"pull_request","repo":"timborovkov/audit-ai","number":292}}'::jsonb
+        );
+    `);
+
+    const result = (await callTool(db, 'timeline.list_moments', {
+      source: 'integration',
+      limit: 2,
+    })) as {
+      count: number;
+      moments: { title: string; evidence_count: number; raw_event_ids: string[] }[];
+    };
+
+    expect(result.count).toBe(2);
+    expect(result.moments[0]?.evidence_count).toBe(50);
+    expect(result.moments[1]?.raw_event_ids).toEqual([PR_EVENT_A]);
+  });
+
   it('expands only visible raw evidence for outbound MCP moments', async () => {
     await pg.exec(`
       INSERT INTO raw_events (
@@ -313,6 +366,57 @@ describe('handleMcpRequest', () => {
     expect(
       result.moment.evidence.every((entry) => entry.snippet.startsWith('<external_content')),
     ).toBe(true);
+  });
+
+  it('expands partial raw-event ids into the complete visible outbound MCP moment', async () => {
+    await pg.exec(`
+      INSERT INTO raw_events (
+        id,
+        team_id,
+        author_user_id,
+        source,
+        content_text,
+        occurred_at,
+        visibility,
+        source_metadata
+      )
+      VALUES
+        (
+          '${WORKFLOW_EVENT_A}',
+          '${TEAM_ID}',
+          '${USER_ID}',
+          'integration',
+          'GitHub workflow "CI" #1603 on timborovkov/audit-ai success',
+          '2026-06-27T18:32:00Z',
+          'team',
+          '{"provider":"github","event_type":"workflow_run.success","github":{"type":"workflow_run","repo":"timborovkov/audit-ai","head_branch":"main"}}'::jsonb
+        ),
+        (
+          '${WORKFLOW_EVENT_B}',
+          '${TEAM_ID}',
+          '${USER_ID}',
+          'integration',
+          'GitHub workflow "CI" #1602 on timborovkov/audit-ai success',
+          '2026-06-27T18:08:00Z',
+          'team',
+          '{"provider":"github","event_type":"workflow_run.success","github":{"type":"workflow_run","repo":"timborovkov/audit-ai","head_branch":"main"}}'::jsonb
+        );
+    `);
+
+    const result = (await callTool(db, 'timeline.get_moment', {
+      rawEventIds: [WORKFLOW_EVENT_A],
+    })) as {
+      found: boolean;
+      moment: { evidence_count: number; raw_event_ids: string[] };
+    };
+
+    expect(result).toMatchObject({
+      found: true,
+      moment: {
+        evidence_count: 2,
+        raw_event_ids: [WORKFLOW_EVENT_A, WORKFLOW_EVENT_B],
+      },
+    });
   });
 
   it('expands supported moment ids through bounded team-visible lookup for outbound MCP callers', async () => {

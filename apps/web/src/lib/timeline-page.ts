@@ -196,7 +196,7 @@ export async function applyCachedTimelineMomentPresentations(
     return applied;
   });
   input.onCacheStats?.(stats);
-  if (missingJobs.length > 0) await Promise.all(missingJobs);
+  if (missingJobs.length > 0) void Promise.all(missingJobs).catch(() => undefined);
   return presented;
 }
 

@@ -473,7 +473,20 @@ export function timelineMomentLookupPlan(momentId: string): TimelineMomentLookup
   }
   if (family === 'integration' && parts[1] === 'github' && parts[2] === 'workflow_run') {
     const date = parts.at(-1);
-    return date && isDateKey(date) ? dayLookupPlan('integration', date) : null;
+    const branch = parts.at(-2);
+    const workflowName = parts.at(-3);
+    const repo = parts.slice(3, -3).join(':');
+    return date && isDateKey(date) && repo && workflowName && branch
+      ? {
+          ...dayLookupPlan('integration', date),
+          metadataPredicates: [
+            { path: ['provider'], equals: 'github' },
+            { path: ['github', 'type'], equals: 'workflow_run' },
+            { path: ['github', 'repo'], equals: repo },
+            { path: ['github', 'head_branch'], equals: branch },
+          ],
+        }
+      : null;
   }
   if (family === 'integration' && parts[1] === 'github' && parts[2] === 'pr') {
     const prNumber = parts.at(-1);
@@ -509,20 +522,56 @@ export function timelineMomentLookupPlan(momentId: string): TimelineMomentLookup
     const minute = parts.at(-1);
     const hour = parts.at(-2);
     const date = parts.at(-3);
+    const context = parts.slice(1, -3).join(':');
     const bucket = hour && minute ? `${hour}:${minute}` : null;
-    return date && bucket && isDateKey(date) && isTimeBucket(bucket)
-      ? bucketLookupPlan(family, date, bucket)
-      : null;
+    if (!date || !bucket || !isDateKey(date) || !isTimeBucket(bucket)) return null;
+    const plan = bucketLookupPlan(family, date, bucket);
+    if (family === 'telegram' && context) {
+      plan.metadataPredicateGroups = [
+        [
+          { path: ['tg_chat_id'], equals: context },
+          { path: ['tg_chat_title'], equals: context },
+        ],
+      ];
+    }
+    if (family === 'ingest_webhook' && context) {
+      plan.metadataPredicates = [{ path: ['ingest_webhook_id'], equals: context }];
+    }
+    return plan;
   }
   if (family === 'document') {
     const date = parts.at(-2);
-    return date && isDateKey(date) ? dayLookupPlan('document', date) : null;
+    const action = parts.at(-1);
+    const documentId = parts.slice(1, -2).join(':');
+    return date && isDateKey(date) && action && documentId
+      ? {
+          ...dayLookupPlan('document', date),
+          metadataPredicates: [
+            { path: ['document_id'], equals: documentId },
+            { path: ['action'], equals: action },
+          ],
+        }
+      : null;
   }
   if (family === 'slack') {
     const threadTs = parts.at(-1);
+    const channel = parts.slice(1, -1).join(':');
+    if (!threadTs || !channel) return null;
     const seconds = threadTs ? Number(threadTs) : Number.NaN;
     if (!Number.isFinite(seconds)) return null;
-    return centeredLookupPlan('slack', new Date(seconds * 1000), 24, 24, 300);
+    return {
+      ...centeredLookupPlan('slack', new Date(seconds * 1000), 24, 24, 300),
+      metadataPredicateGroups: [
+        [
+          { path: ['slack_channel_id'], equals: channel },
+          { path: ['slack_channel_name'], equals: channel },
+        ],
+        [
+          { path: ['slack_thread_ts'], equals: threadTs },
+          { path: ['slack_message_ts'], equals: threadTs },
+        ],
+      ],
+    };
   }
   return null;
 }

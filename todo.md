@@ -72,10 +72,13 @@ Direction: soften the surface. Keep the forensic mono treatment for data
       focused links hydrate visible deterministic siblings for the selected
       moment. Moment rows now expose shared stable anchors for UI, chat-agent,
       and outbound MCP deep links, and mixed raw-page boundaries advance without
-      looping the same bundled moment. Agent and outbound MCP expansion can now
-      hydrate supported deterministic moment IDs through bounded visible-event
-      lookup or exact source-metadata lookup for email, meeting, calendar,
-      GitHub PR/review, and generic provider-object moments.
+      looping the same bundled moment. Agent and outbound MCP moment
+      search/list/expand paths now hydrate complete visible source siblings
+      before returning raw-event IDs, and supported deterministic moment IDs
+      hydrate through bounded visible-event lookup or exact source-metadata
+      lookup for email, meeting, calendar, GitHub workflow, GitHub PR/review,
+      document, Slack, Telegram, ingest webhook, and generic provider-object
+      moments.
       `/api/timeline` and the initial server-rendered page now expose an
       additive server-built `timeline_moments_page.v1` DTO with raw-event
       compatibility and debug-gated pagination diagnostics; the client feed now
@@ -96,10 +99,11 @@ Direction: soften the surface. Keep the forensic mono treatment for data
       fingerprints, and the UI, chat-agent tools, and outbound MCP moment tools
       consume cached titles/summaries only when the current visible evidence
       matches the stored key. Eligible uncached moments are queued from timeline
-      reads and filled asynchronously by the worker after rebuilding the same
-      visible cache key. Daily digest generation now summarizes bundled moment
-      briefs, applies matching cached AI presentations, and renders moment
-      counts while preserving raw source-event counts. The
+      reads without blocking the page/API response, then filled asynchronously
+      by the worker after rebuilding the same visible cache key. Daily digest
+      generation now summarizes bundled moment briefs, applies matching cached
+      AI presentations, and renders moment counts while preserving raw
+      source-event counts. The
       `timeline-moment-presentations` worker script now provides bounded,
       dry-run-first production prewarming for missing AI presentation cache jobs.
       Timeline page/API reads now emit privacy-safe `timeline_moments_viewed`
