@@ -91,6 +91,7 @@ function object(overrides: Record<string, unknown> = {}) {
     notes: [],
     relationships: [],
     recentChanges: [],
+    identityFacets: [],
     openTasks: [],
     newSinceLastVisit: 0,
     lastVisitedAt: null,

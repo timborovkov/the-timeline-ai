@@ -13,8 +13,8 @@ import { db } from '@/lib/db';
 import { requireRedisQueue } from '@/lib/queue';
 import { listTimelineCapturedFilesByEventId } from '@/lib/timeline-captured-files';
 import {
-  parseTimelineImpact,
-  parseTimelineSource,
+  parseTimelineImpacts,
+  parseTimelineSources,
   timelineSourceValues,
 } from '@/lib/timeline-controls';
 import {
@@ -91,6 +91,20 @@ function parseEndOfDay(input: string | null, timezone: string): Date | undefined
   }
 }
 
+function parseUuids(input: string | null): string[] {
+  if (!input) return [];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of input.split(',')) {
+    const part = raw.trim();
+    if (UUID_RE.test(part) && !seen.has(part)) {
+      seen.add(part);
+      out.push(part);
+    }
+  }
+  return out;
+}
+
 async function signAudio(events: { id: string; contentAudioUrl: string | null }[]) {
   const audioEvents = events.filter((e) => e.contentAudioUrl);
   const audioUrls: Record<string, string> = {};
@@ -124,12 +138,14 @@ export async function GET(req: Request): Promise<Response> {
   if (!active) return Response.json({ error: 'no_active_team' }, { status: 400 });
 
   const url = new URL(req.url);
-  const author = url.searchParams.get('author');
-  const authorUserId = author && UUID_RE.test(author) ? author : undefined;
+  const authorUserIds = parseUuids(url.searchParams.get('author'));
+  const authorUserId = authorUserIds.length > 0 ? authorUserIds : undefined;
   const cursor = url.searchParams.get('cursor');
-  const source = parseTimelineSource(url.searchParams.get('source') ?? undefined);
+  const source = parseTimelineSources(url.searchParams.get('source') ?? undefined);
+  const sourceValue = source.join(',');
   const sourceValues = timelineSourceValues(source);
-  const impact = parseTimelineImpact(url.searchParams.get('impact') ?? undefined);
+  const impact = parseTimelineImpacts(url.searchParams.get('impact') ?? undefined);
+  const impactValue = impact.join(',');
   const event = url.searchParams.get('event');
   const focusEventId = event && UUID_RE.test(event) ? event : null;
   const focusMomentId = parseMomentId(url.searchParams.get('moment'));
@@ -149,11 +165,11 @@ export async function GET(req: Request): Promise<Response> {
     'timeline-page',
     active.teamId,
     session.user.id,
-    authorUserId,
+    authorUserIds.join(','),
     from?.toISOString(),
     to?.toISOString(),
-    source,
-    impact,
+    sourceValue,
+    impactValue,
     focusEventId,
     focusMomentId,
     mode,

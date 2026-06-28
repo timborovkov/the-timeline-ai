@@ -221,7 +221,7 @@ export interface TimelineAuthor {
   email: string;
 }
 
-export type TimelineImpactFilter = ImpactKind | 'all';
+export type TimelineImpactFilter = ImpactKind | ImpactKind[] | 'all';
 
 export interface BuildTimelineMomentOptions<
   TArtifactCluster extends TimelineArtifactCluster = TimelineArtifactCluster,
@@ -1505,8 +1505,11 @@ export function filterTimelineMomentsByImpact<TMoment extends TimelineMoment>(
   moments: TMoment[],
   impactFilter: TimelineImpactFilter,
 ): TMoment[] {
-  if (impactFilter === 'all') return moments;
-  return moments.filter((moment) => moment.impactItems.some((item) => item.kind === impactFilter));
+  if (impactFilter === 'all' || (Array.isArray(impactFilter) && impactFilter.length === 0)) {
+    return moments;
+  }
+  const allowed = new Set(Array.isArray(impactFilter) ? impactFilter : [impactFilter]);
+  return moments.filter((moment) => moment.impactItems.some((item) => allowed.has(item.kind)));
 }
 
 export function toTimelineMomentDto<

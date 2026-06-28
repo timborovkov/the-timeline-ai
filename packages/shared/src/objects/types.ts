@@ -14,25 +14,35 @@ export const OBJECT_TYPES = [
   'follow_up',
 ] as const;
 
-export type ObjectType = (typeof OBJECT_TYPES)[number];
+export type ObjectType = (typeof OBJECT_TYPES)[number] | 'link';
 export type ActorKind = 'user' | 'agent' | 'system';
 
 export interface ObjectListFilter {
   id?: string | string[];
+  query?: string;
   type?: ObjectType | ObjectType[];
   status?: string | string[];
   statusNot?: string | string[];
   stage?: string | string[];
-  ownerUserId?: string | null;
-  assigneeUserId?: string | null;
+  priority?: number | number[];
+  priorityNull?: boolean;
+  ownerUserId?: string | null | (string | null)[];
+  assigneeUserId?: string | null | (string | null)[];
   dueBefore?: Date;
   dueAfter?: Date;
+  dueNull?: boolean;
+  createdBefore?: Date;
+  createdAfter?: Date;
+  updatedBefore?: Date;
+  updatedAfter?: Date;
   archived?: boolean;
   order?: 'updated' | 'due';
   limit?: number;
   offset?: number;
   cursor?: string | null;
 }
+
+export type ObjectCountFilter = Omit<ObjectListFilter, 'cursor' | 'limit' | 'offset'>;
 
 export interface ObjectSearchFilter extends Omit<ObjectListFilter, 'cursor' | 'offset'> {
   query: string;
@@ -157,6 +167,16 @@ export interface ObjectDetail extends ObjectRow {
     note: string | null;
     changedAt: Date;
   }[];
+  identityFacets: {
+    id: string;
+    entityId: string;
+    kind: 'email' | 'phone' | 'telegram' | 'slack' | 'github' | 'timeline_user' | 'other';
+    value: string;
+    normalizedValue: string;
+    provider: string | null;
+    externalId: string | null;
+    linkedUserId: string | null;
+  }[];
   openTasks: ObjectRow[];
   connectedWork: {
     openTasks: ObjectRow[];
@@ -201,6 +221,22 @@ export interface ObjectDetail extends ObjectRow {
       id: string;
       name: string;
       fileKind: string;
+      updatedAt: Date;
+    }[];
+    links: {
+      id: string;
+      canonicalName: string;
+      canonicalUrl: string | null;
+      displayUrl: string | null;
+      domain: string | null;
+      provider: string | null;
+      updatedAt: Date;
+    }[];
+    capturedFiles: {
+      id: string;
+      name: string;
+      contentType: string | null;
+      sourceRawEventId: string | null;
       updatedAt: Date;
     }[];
   };

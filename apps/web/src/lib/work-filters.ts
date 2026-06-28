@@ -1,7 +1,7 @@
-import { OBJECT_TYPES } from '@timeline/shared/objects';
+import { OBJECT_TYPES } from '@timeline/shared/objects/types';
 
 import type { BoardItemFilter } from '@timeline/shared/boards';
-import type { ObjectListFilter, ObjectType } from '@timeline/shared/objects';
+import type { ObjectListFilter, ObjectType } from '@timeline/shared/objects/types';
 
 export const UNASSIGNED_FILTER_VALUE = 'unassigned';
 export const NONE_FILTER_VALUE = 'none';
@@ -37,7 +37,7 @@ export interface MemberFilterOption {
 
 export interface WorkFilterState {
   q: string;
-  type: ObjectType | '';
+  type: string;
   status: string;
   stage: string;
   owner: string;
@@ -58,14 +58,14 @@ const OBJECT_TYPE_SET = new Set<string>(OBJECT_TYPES);
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export function parseWorkFilters(params: FilterSearchParams): WorkFilterState {
-  const type = firstParam(params.type);
+  const type = validCsvValues(params.type, (value) => OBJECT_TYPE_SET.has(value));
   const due = firstParam(params.due);
   const priority = firstParam(params.priority);
   return {
     q: firstParam(params.q),
-    type: type && OBJECT_TYPE_SET.has(type) ? (type as ObjectType) : '',
-    status: firstParam(params.status),
-    stage: firstParam(params.stage),
+    type,
+    status: validCsvValues(params.status),
+    stage: validCsvValues(params.stage),
     owner: personParam(params.owner),
     assignee: personParam(params.assignee),
     responsible: personParam(params.responsible),
@@ -88,7 +88,7 @@ export function objectListFilterFromWorkFilters(
   const due = dueFilter(filters, now);
   return {
     ...(filters.q.trim() ? { query: filters.q.trim() } : {}),
-    ...(filters.type ? { type: filters.type } : {}),
+    ...(filters.type ? { type: objectTypeFilter(filters.type) } : {}),
     ...(filters.status.trim() ? { status: csvValues(filters.status) } : {}),
     ...(filters.stage.trim() ? { stage: csvValues(filters.stage) } : {}),
     ...personFilter('ownerUserId', filters.owner),
@@ -122,17 +122,13 @@ export function boardItemFilterFromWorkFilters(
       : filters.lane
         ? { laneId: filters.lane }
         : {}),
-    ...(filters.responsible === UNASSIGNED_FILTER_VALUE
-      ? { responsibleUserId: null }
-      : filters.responsible
-        ? { responsibleUserId: filters.responsible }
-        : {}),
+    ...boardResponsibleFilter(filters.responsible),
     ...priorityFilter(filters.priority),
     ...dueFilter(filters, now),
     ...dateRangeFilter('created', filters.createdFrom, filters.createdTo),
     ...dateRangeFilter('updated', filters.updatedFrom, filters.updatedTo),
     object: {
-      ...(filters.type ? { type: filters.type } : {}),
+      ...(filters.type ? { type: objectTypeFilter(filters.type) } : {}),
       ...(filters.status.trim() ? { status: csvValues(filters.status) } : {}),
       ...(filters.stage.trim() ? { stage: csvValues(filters.stage) } : {}),
       ...personFilter('ownerUserId', filters.owner),
@@ -181,9 +177,10 @@ function firstParam(value: string | string[] | undefined): string {
 }
 
 function personParam(value: string | string[] | undefined): string {
-  const person = firstParam(value);
-  if (person === UNASSIGNED_FILTER_VALUE) return person;
-  return UUID_RE.test(person) ? person : '';
+  return validCsvValues(
+    value,
+    (person) => person === UNASSIGNED_FILTER_VALUE || UUID_RE.test(person),
+  );
 }
 
 function csvValues(value: string): string[] {
@@ -193,12 +190,68 @@ function csvValues(value: string): string[] {
   });
 }
 
+function validCsvValues(
+  value: string | string[] | undefined,
+  isValid: (value: string) => boolean = () => true,
+): string {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of paramValues(value)) {
+    for (const part of csvValues(raw)) {
+      if (isValid(part) && !seen.has(part)) {
+        seen.add(part);
+        out.push(part);
+      }
+    }
+  }
+  return out.join(',');
+}
+
+function paramValues(value: string | string[] | undefined): string[] {
+  if (Array.isArray(value)) {
+    const out: string[] = [];
+    for (const part of value) {
+      const trimmed = part.trim();
+      if (trimmed) out.push(trimmed);
+    }
+    return out;
+  }
+  const first = firstParam(value);
+  return first ? [first] : [];
+}
+
 function personFilter<K extends 'ownerUserId' | 'assigneeUserId'>(
   key: K,
   value: string,
 ): Partial<Pick<ObjectListFilter, K>> {
-  if (value === UNASSIGNED_FILTER_VALUE) return { [key]: null } as Pick<ObjectListFilter, K>;
-  return value ? ({ [key]: value } as Pick<ObjectListFilter, K>) : {};
+  const people = csvValues(value);
+  if (people.length === 0) return {};
+  if (people.length === 1 && people[0] === UNASSIGNED_FILTER_VALUE) {
+    return { [key]: null } as Pick<ObjectListFilter, K>;
+  }
+  if (people.length === 1) return { [key]: people[0] } as Pick<ObjectListFilter, K>;
+  return {
+    [key]: people.map((person) => (person === UNASSIGNED_FILTER_VALUE ? null : person)),
+  } as Pick<ObjectListFilter, K>;
+}
+
+function objectTypeFilter(value: string): ObjectType | ObjectType[] {
+  const types = csvValues(value) as ObjectType[];
+  const first = types[0];
+  return types.length === 1 && first ? first : types;
+}
+
+function boardResponsibleFilter(
+  value: string,
+): Pick<BoardItemFilter, 'responsibleUserId'> | Record<string, never> {
+  const people = csvValues(value);
+  if (people.length === 0) return {};
+  if (people.length === 1 && people[0] === UNASSIGNED_FILTER_VALUE)
+    return { responsibleUserId: null };
+  if (people.length === 1) return { responsibleUserId: people[0] };
+  return {
+    responsibleUserId: people.map((person) => (person === UNASSIGNED_FILTER_VALUE ? null : person)),
+  };
 }
 
 function priorityFilter(value: string): Pick<ObjectListFilter, 'priority' | 'priorityNull'> {

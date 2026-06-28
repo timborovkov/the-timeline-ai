@@ -130,6 +130,57 @@ describe('CapturedFilesList', () => {
     expect(fakes.routerPush).toHaveBeenCalledWith('/app/documents/promoted-doc');
   });
 
+  it('filters captured files by multiple selected statuses', async () => {
+    const user = userEvent.setup();
+    render(
+      <CapturedFilesList
+        folders={[]}
+        members={[]}
+        files={[
+          capturedFile(),
+          capturedFile({
+            id: 'doc-2',
+            currentVersion: {
+              id: 'version-2',
+              version: 1,
+              contentType: 'application/pdf',
+              byteSize: 2048,
+              processingStatus: 'embedded',
+              createdAt: '2026-06-11T10:00:00.000Z',
+            },
+            presentation: {
+              displayTitle: 'Embedded contract',
+              storedName: 'contract.pdf',
+              suggestedTitle: null,
+              isGeneratedName: false,
+              fallbackTitle: 'PDF attachment',
+            },
+          }),
+          capturedFile({
+            id: 'doc-3',
+            currentVersion: null,
+            presentation: {
+              displayTitle: 'Pending screenshot',
+              storedName: 'pending.png',
+              suggestedTitle: null,
+              isGeneratedName: false,
+              fallbackTitle: 'Image attachment',
+            },
+          }),
+        ]}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Status' }));
+    await user.click(screen.getByRole('menuitemcheckbox', { name: 'chunked' }));
+    await user.click(screen.getByRole('menuitemcheckbox', { name: 'embedded' }));
+    await user.keyboard('{Escape}');
+
+    expect(screen.queryByText('Whiteboard planning photo')).not.toBeNull();
+    expect(screen.queryByText('Embedded contract')).not.toBeNull();
+    expect(screen.queryByText('Pending screenshot')).toBeNull();
+  });
+
   it('loads older captured pages from the cursor API', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response(

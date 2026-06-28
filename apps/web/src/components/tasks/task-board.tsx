@@ -30,6 +30,7 @@ import type { Dispatch, ReactNode, SetStateAction } from 'react';
 
 import { loadTaskRowsAction, updateObjectAction } from '@/app/actions/objects';
 import { ObjectTextFilter } from '@/components/boards/object-text-filter';
+import { ObjectRelatedContext } from '@/components/objects/object-related-context';
 import { displayText } from '@/lib/display-dates';
 import { filterObjectsByText } from '@/lib/object-filter';
 import { objectDetailHref } from '@/lib/object-links';
@@ -50,6 +51,7 @@ interface Props {
   rows: objects.ObjectRow[];
   columns: string[];
   selectedTaskId: string | null;
+  selectedTaskContext?: objects.ObjectDetail['connectedWork'] | null;
   view: TaskView;
   members: TaskMemberOption[];
   totalCount: number;
@@ -625,6 +627,7 @@ function TaskBoardView({
   moveUi,
   onDragEnd,
   selectedTask,
+  selectedTaskContext,
   selectedTaskId,
   selectedVisibleIds,
   sensors,
@@ -756,6 +759,7 @@ function TaskBoardView({
       {selectedTask ? (
         <TaskDetailPanel
           task={selectedTask}
+          connectedWork={selectedTaskContext}
           columns={allColumns}
           members={members}
           closeHref={closeHref(view, filterParams)}
@@ -1348,6 +1352,7 @@ function TaskCard({
 // react-doctor-disable-next-line react-doctor/no-multi-comp -- The side panel is the task board's selected-row editor and shares the same update path.
 function TaskDetailPanel({
   task,
+  connectedWork,
   columns,
   members,
   closeHref,
@@ -1355,6 +1360,7 @@ function TaskDetailPanel({
   onUpdate,
 }: {
   task: objects.ObjectRow;
+  connectedWork?: objects.ObjectDetail['connectedWork'] | null;
   columns: string[];
   members: TaskMemberOption[];
   closeHref: string;
@@ -1483,6 +1489,7 @@ function TaskDetailPanel({
           {error ? <span className="text-danger">{error}</span> : null}
         </div>
       ) : null}
+      <ObjectRelatedContext connectedWork={connectedWork} compact />
       <div className="flex flex-wrap gap-2 p-4">
         <Link
           href={objectHref}

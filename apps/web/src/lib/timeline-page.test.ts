@@ -91,6 +91,37 @@ describe('collectTimelinePage', () => {
     expect(page.nextCursor).toBe('c');
   });
 
+  it('matches any selected impact while scanning timeline pages', async () => {
+    const page = await collectTimelinePage({
+      impact: ['task', 'document'],
+      limit: 2,
+      fetchPage: () =>
+        Promise.resolve({
+          items: [
+            event('task-event', '2026-05-28T12:00:00.000Z'),
+            event('document-event', '2026-05-28T11:00:00.000Z'),
+            event('object-event', '2026-05-28T10:00:00.000Z'),
+          ],
+          nextCursor: null,
+        }),
+      hydrateImpact: (ids) =>
+        Promise.resolve(
+          Object.fromEntries(
+            ids.map((id) => [
+              id,
+              id === 'task-event'
+                ? [{ kind: 'task' as const, label: 'Follow up' }]
+                : id === 'document-event'
+                  ? [{ kind: 'document' as const, label: 'Brief' }]
+                  : [{ kind: 'object' as const, label: 'Account' }],
+            ]),
+          ),
+        ),
+    });
+
+    expect(page.items.map((item) => item.id)).toEqual(['task-event', 'document-event']);
+  });
+
   it('keeps grouped moment siblings from scanned pages when one event matches impact', async () => {
     const page = await collectTimelinePage({
       impact: 'task',

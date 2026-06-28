@@ -35,6 +35,7 @@ export const entityType = pgEnum('entity_type', [
   'hiring_loop',
   'task',
   'follow_up',
+  'link',
 ]);
 
 export const entities = pgTable(

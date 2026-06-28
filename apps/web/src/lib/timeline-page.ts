@@ -71,7 +71,7 @@ interface TimelinePageWindow {
 interface CollectTimelinePageOptions {
   cursor?: string | null;
   focusEventId?: string | null;
-  impact?: ImpactKind | null;
+  impact?: ImpactKind | ImpactKind[] | null;
   mode?: 'moments' | 'events';
   timezone?: string;
   limit?: number;
@@ -205,7 +205,8 @@ export async function collectTimelinePage({
   cursorForEvent,
   hydrateImpact,
 }: CollectTimelinePageOptions): Promise<TimelinePageData> {
-  if (!impact) {
+  const hasImpactFilter = Array.isArray(impact) ? impact.length > 0 : Boolean(impact);
+  if (!hasImpactFilter) {
     if (mode === 'moments') {
       const page = await collectMomentBackedPage({
         cursor,

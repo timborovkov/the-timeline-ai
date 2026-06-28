@@ -48,17 +48,66 @@ function task(input: Partial<objects.ObjectRow> = {}): objects.ObjectRow {
   };
 }
 
+function connectedWork(): objects.ObjectDetail['connectedWork'] {
+  return {
+    openTasks: [],
+    recentTasks: [],
+    calendarEvents: [],
+    timelineEvents: [
+      {
+        id: 'event-1',
+        source: 'telegram',
+        contentText: 'Pilot doc and screenshot are here',
+        occurredAt: new Date('2026-06-16T10:00:00.000Z'),
+      },
+    ],
+    objects: [],
+    boards: [],
+    pendingApprovals: [],
+    documents: [
+      {
+        id: 'document-1',
+        name: 'Pilot brief.pdf',
+        fileKind: 'document',
+        updatedAt: new Date('2026-06-16T10:00:00.000Z'),
+      },
+    ],
+    links: [
+      {
+        id: 'link-1',
+        canonicalName: 'example.com/pilot',
+        canonicalUrl: 'https://example.com/pilot',
+        displayUrl: 'example.com/pilot',
+        domain: 'example.com',
+        provider: null,
+        updatedAt: new Date('2026-06-16T10:00:00.000Z'),
+      },
+    ],
+    capturedFiles: [
+      {
+        id: 'file-1',
+        name: 'screenshot.png',
+        contentType: 'image/png',
+        sourceRawEventId: 'event-1',
+        updatedAt: new Date('2026-06-16T10:00:00.000Z'),
+      },
+    ],
+  };
+}
+
 function renderBoard(
   selectedTaskId: string | null = null,
   rows: objects.ObjectRow[] = [task()],
   view: 'kanban' | 'list' = 'kanban',
   filterParams: Record<string, string> = {},
+  selectedTaskContext?: objects.ObjectDetail['connectedWork'] | null,
 ) {
   return render(
     <TaskBoard
       rows={rows}
       columns={['todo', 'doing', 'done', 'blocked', 'cancelled']}
       selectedTaskId={selectedTaskId}
+      selectedTaskContext={selectedTaskContext}
       view={view}
       members={[
         { id: 'user-1', label: 'Ada Lovelace' },
@@ -118,6 +167,16 @@ describe('TaskBoard', () => {
 
     expect(screen.getAllByText('the-timeline-ai: Add cursor pagination')).toHaveLength(2);
     expect(screen.queryByText(/timborovkov\/the-timeline-ai#202/)).toBeNull();
+  });
+
+  it('surfaces selected task related context in the side panel', () => {
+    renderBoard('task-1', [task()], 'kanban', {}, connectedWork());
+
+    expect(screen.getByText('Related context')).toBeTruthy();
+    expect(screen.getByRole('link', { name: /example.com\/pilot/ })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Pilot brief.pdf' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: /screenshot.png/ })).toBeTruthy();
+    expect(screen.getByRole('link', { name: /Pilot doc and screenshot are here/ })).toBeTruthy();
   });
 
   it('uses provider identity canonical names when display metadata is absent', () => {

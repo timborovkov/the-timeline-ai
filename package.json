@@ -28,7 +28,7 @@
     "db:migrate": "pnpm --filter @timeline/db migrate",
     "db:generate": "pnpm --filter @timeline/db generate",
     "db:studio": "pnpm --filter @timeline/db studio",
-    "doctor": "react-doctor"
+    "doctor": "node scripts/run-react-doctor.mjs"
   },
   "devDependencies": {
     "@playwright/test": "^1.61.0",

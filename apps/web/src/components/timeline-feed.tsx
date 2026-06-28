@@ -36,7 +36,7 @@ interface Props {
   maxMoments?: number;
   emptyLabel?: string;
   emptyAction?: { href: string; label: string; body: string };
-  impactFilter?: ImpactKind | 'all';
+  impactFilter?: ImpactKind | ImpactKind[] | 'all';
   focusEventId?: string | null;
   focusMomentId?: string | null;
   live?: boolean;

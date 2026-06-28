@@ -1,6 +1,12 @@
 import { type Db, rawEvents } from '@timeline/db';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 
+import { sourceMetadataWithConversationArtifacts } from '#src/conversational/contact-artifacts.js';
+import {
+  reconcileLinkArtifactsForRawEvent,
+  refreshLinkArtifactsForRawEvent,
+} from '#src/conversational/link-artifacts.js';
+
 type DbTx = Parameters<Parameters<Db['transaction']>[0]>[0];
 type DbOrTx = Db | DbTx;
 
@@ -28,6 +34,59 @@ export function buildCalendarTimelineText(args: {
   return parts.filter((part) => part.length > 0).join(' | ');
 }
 
+function recordFromUnknown(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? { ...(value as Record<string, unknown>) }
+    : {};
+}
+
+function sourceMetadataReplacingConversationArtifacts(
+  metadata: unknown,
+  text: string | null | undefined,
+): Record<string, unknown> {
+  const base = recordFromUnknown(metadata);
+  delete base.links;
+  delete base.contacts;
+  return sourceMetadataWithConversationArtifacts(base, text);
+}
+
+async function updateCalendarRawEventText(
+  tx: DbOrTx,
+  args: {
+    rawEventId: string;
+    contentText: string;
+    occurredAt?: Date;
+  },
+): Promise<void> {
+  const [existing] = await tx
+    .select({
+      teamId: rawEvents.teamId,
+      sourceMetadata: rawEvents.sourceMetadata,
+    })
+    .from(rawEvents)
+    .where(eq(rawEvents.id, args.rawEventId))
+    .limit(1);
+  if (!existing) return;
+
+  await tx
+    .update(rawEvents)
+    .set({
+      contentText: args.contentText,
+      ...(args.occurredAt ? { occurredAt: args.occurredAt } : {}),
+      sourceMetadata: sourceMetadataReplacingConversationArtifacts(
+        existing.sourceMetadata,
+        args.contentText,
+      ),
+    })
+    .where(eq(rawEvents.id, args.rawEventId));
+  await refreshLinkArtifactsForRawEvent(tx, {
+    teamId: existing.teamId,
+    rawEventId: args.rawEventId,
+    text: args.contentText,
+    occurredAt: args.occurredAt ?? null,
+  });
+}
+
 export async function insertCalendarRawEvents(
   tx: DbOrTx,
   args: {
@@ -47,6 +106,8 @@ export async function insertCalendarRawEvents(
   const baseMetadata = {
     calendar_event_id: args.calendarEventId,
   };
+  const scheduledText = `Scheduled: ${args.title}`;
+  const startText = buildCalendarTimelineText(args);
 
   const [scheduledRow] = await tx
     .insert(rawEvents)
@@ -54,12 +115,15 @@ export async function insertCalendarRawEvents(
       teamId: args.teamId,
       authorUserId: args.userId,
       source: 'calendar',
-      contentText: `Scheduled: ${args.title}`,
+      contentText: scheduledText,
       occurredAt: new Date(),
       visibility: args.visibility,
       visibilityUserIds: args.visibilityUserIds,
       visibilityOwnerUserId: args.userId,
-      sourceMetadata: { ...baseMetadata, action: 'scheduled' },
+      sourceMetadata: sourceMetadataWithConversationArtifacts(
+        { ...baseMetadata, action: 'scheduled' },
+        scheduledText,
+      ),
     })
     .onConflictDoNothing()
     .returning({ id: rawEvents.id });
@@ -86,12 +150,15 @@ export async function insertCalendarRawEvents(
       teamId: args.teamId,
       authorUserId: args.userId,
       source: 'calendar',
-      contentText: buildCalendarTimelineText(args),
+      contentText: startText,
       occurredAt: args.startAt,
       visibility: args.visibility,
       visibilityUserIds: args.visibilityUserIds,
       visibilityOwnerUserId: args.userId,
-      sourceMetadata: { ...baseMetadata, action: 'event' },
+      sourceMetadata: sourceMetadataWithConversationArtifacts(
+        { ...baseMetadata, action: 'event' },
+        startText,
+      ),
     })
     .onConflictDoNothing()
     .returning({ id: rawEvents.id });
@@ -110,6 +177,22 @@ export async function insertCalendarRawEvents(
       )
       .limit(1);
     startAtId = existing[0]?.id;
+  }
+
+  if (scheduledId) {
+    await reconcileLinkArtifactsForRawEvent(tx, {
+      teamId: args.teamId,
+      rawEventId: scheduledId,
+      text: scheduledText,
+    });
+  }
+  if (startAtId) {
+    await reconcileLinkArtifactsForRawEvent(tx, {
+      teamId: args.teamId,
+      rawEventId: startAtId,
+      text: startText,
+      occurredAt: args.startAt,
+    });
   }
 
   return {
@@ -147,20 +230,18 @@ export async function updateCalendarRawEvents(
   }
 
   if (args.startAtRawEventId) {
-    await tx
-      .update(rawEvents)
-      .set({
-        contentText: buildCalendarTimelineText(args),
-        occurredAt: args.startAt,
-      })
-      .where(eq(rawEvents.id, args.startAtRawEventId));
+    await updateCalendarRawEventText(tx, {
+      rawEventId: args.startAtRawEventId,
+      contentText: buildCalendarTimelineText(args),
+      occurredAt: args.startAt,
+    });
   }
 
   if (args.scheduledRawEventId) {
-    await tx
-      .update(rawEvents)
-      .set({ contentText: `Scheduled: ${args.title}` })
-      .where(eq(rawEvents.id, args.scheduledRawEventId));
+    await updateCalendarRawEventText(tx, {
+      rawEventId: args.scheduledRawEventId,
+      contentText: `Scheduled: ${args.title}`,
+    });
   }
 }
 
