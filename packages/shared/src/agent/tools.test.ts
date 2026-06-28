@@ -1694,6 +1694,48 @@ describe('buildAgentTools — team isolation', () => {
     });
   });
 
+  it('suggest_object_memory can queue relationship proposals by object names', async () => {
+    const scope = makeFakeScope();
+    scope.suggestions.createOrMergeSuggestionBundle.mockResolvedValue({ id: 'suggestion-1' });
+    const tools = buildAgentTools(scope as unknown as TeamScope);
+    const exec = tools.suggest_object_memory?.execute as (
+      input: unknown,
+      opts: unknown,
+    ) => Promise<unknown>;
+
+    await exec(
+      {
+        title: 'Remember relationship by name',
+        items: [
+          {
+            kind: 'add_relationship',
+            fromName: 'Mikael Rintala',
+            toName: 'AuditAI',
+            relationshipKind: 'related',
+          },
+        ],
+      },
+      {},
+    );
+
+    const input = scope.suggestions.createOrMergeSuggestionBundle.mock.calls[0]?.[0] as {
+      items: {
+        targetKind: string;
+        targetId: string | null;
+        proposedPayload: Record<string, unknown>;
+      }[];
+    };
+    expect(input.items[0]).toMatchObject({
+      targetKind: 'object_relationship',
+      targetId: null,
+      proposedPayload: {
+        fromName: 'Mikael Rintala',
+        toName: 'AuditAI',
+        kind: 'related',
+      },
+    });
+  });
+
   it('tool execute catches thrown errors and returns { error } — keeps stream alive', async () => {
     const scope = makeFakeScope();
     scope.timeline.getEventWithFacts.mockRejectedValue(new Error('db down'));

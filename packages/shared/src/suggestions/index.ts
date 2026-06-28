@@ -365,14 +365,16 @@ const objectRelationshipPayload = z
     kind: z.enum(['parent', 'child', 'related', 'blocks', 'blocked_by', 'duplicate_of']),
   })
   .superRefine((payload, ctx) => {
-    if (Boolean(payload.fromEntityId) === Boolean(payload.fromRef)) {
+    const fromEndpoints = [payload.fromEntityId, payload.fromRef, payload.fromName].filter(Boolean);
+    if (fromEndpoints.length !== 1) {
       ctx.addIssue({
         code: 'custom',
         path: ['fromEntityId'],
         message: 'Provide exactly one relationship source endpoint',
       });
     }
-    if (Boolean(payload.toEntityId) === Boolean(payload.toRef)) {
+    const toEndpoints = [payload.toEntityId, payload.toRef, payload.toName].filter(Boolean);
+    if (toEndpoints.length !== 1) {
       ctx.addIssue({
         code: 'custom',
         path: ['toEntityId'],
@@ -3184,10 +3186,48 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
   }> {
     const parsed = objectRelationshipPayload.parse(payload);
     return {
-      fromEntityId: parsed.fromEntityId ?? (await resolveLocalRef(item, parsed.fromRef ?? '')),
-      toEntityId: parsed.toEntityId ?? (await resolveLocalRef(item, parsed.toRef ?? '')),
+      fromEntityId:
+        parsed.fromEntityId ??
+        (parsed.fromRef
+          ? await resolveLocalRef(item, parsed.fromRef)
+          : await resolveRelationshipEndpointName(parsed.fromName ?? '', 'source')),
+      toEntityId:
+        parsed.toEntityId ??
+        (parsed.toRef
+          ? await resolveLocalRef(item, parsed.toRef)
+          : await resolveRelationshipEndpointName(parsed.toName ?? '', 'target')),
       kind: parsed.kind,
     };
+  }
+
+  async function resolveRelationshipEndpointName(
+    name: string,
+    endpointLabel: 'source' | 'target',
+  ): Promise<string> {
+    const normalized = name.trim().toLowerCase();
+    if (!normalized) throw new Error(`Relationship ${endpointLabel} endpoint object is required`);
+    const rows = await db
+      .select({ id: entities.id })
+      .from(entities)
+      .where(
+        and(
+          eq(entities.teamId, teamId),
+          isNull(entities.mergedIntoId),
+          isNull(entities.archivedAt),
+          or(
+            sql`lower(${entities.canonicalName}) = ${normalized}`,
+            sql`EXISTS (
+              SELECT 1
+              FROM jsonb_array_elements_text(${entities.aliases}) AS alias(value)
+              WHERE lower(alias.value) = ${normalized}
+            )`,
+          ),
+        ),
+      )
+      .limit(2);
+    const row = rows[0];
+    if (rows.length === 1 && row) return row.id;
+    throw new Error(`Relationship ${endpointLabel} endpoint object was not uniquely matched`);
   }
 
   async function supersedeRelationshipDependents(

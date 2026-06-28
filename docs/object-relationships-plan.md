@@ -86,8 +86,12 @@ in the same approval bundle.
 
 - Create-object item payloads may include `localRef`, for example
   `{ "type": "person", "canonicalName": "John Doe", "localRef": "john-doe" }`.
-- Relationship item payloads use `fromEntityId` / `toEntityId` for existing
-  endpoints and `fromRef` / `toRef` for sibling-created endpoints.
+- Relationship item payloads use `fromEntityId` / `toEntityId` for resolved
+  existing endpoints, `fromName` / `toName` for clear existing endpoints whose
+  IDs are not available, and `fromRef` / `toRef` for sibling-created endpoints.
+- Name endpoints resolve only when exactly one active object matches the
+  canonical name or an alias; ambiguous names fail safe instead of creating an
+  edge.
 - `localRef`, `fromRef`, and `toRef` are internal approval plumbing and should
   not be copied into canonical object metadata.
 - Refs are scoped to a single suggestion bundle and must be unique inside that

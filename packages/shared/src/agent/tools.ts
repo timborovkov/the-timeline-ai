@@ -104,6 +104,39 @@ const listPendingApprovalsInput = z.object({
   limit: z.number().int().min(1).max(50).optional(),
 });
 
+const relationshipMemoryItemSchema = z
+  .object({
+    kind: z.literal('add_relationship'),
+    fromEntityId: z.string().regex(UUID_RE).optional(),
+    toEntityId: z.string().regex(UUID_RE).optional(),
+    fromName: z.string().trim().min(1).max(200).optional(),
+    toName: z.string().trim().min(1).max(200).optional(),
+    relationshipKind: z.enum([
+      'parent',
+      'child',
+      'related',
+      'blocks',
+      'blocked_by',
+      'duplicate_of',
+    ]),
+  })
+  .superRefine((item, ctx) => {
+    if ([item.fromEntityId, item.fromName].filter(Boolean).length !== 1) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['fromEntityId'],
+        message: 'Provide exactly one relationship source endpoint',
+      });
+    }
+    if ([item.toEntityId, item.toName].filter(Boolean).length !== 1) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['toEntityId'],
+        message: 'Provide exactly one relationship target endpoint',
+      });
+    }
+  });
+
 const objectMemoryItemSchema = z.discriminatedUnion('kind', [
   z.object({
     kind: z.literal('create_object'),
@@ -149,19 +182,7 @@ const objectMemoryItemSchema = z.discriminatedUnion('kind', [
     entityId: z.string().regex(UUID_RE),
     body: z.string().trim().min(1).max(5000),
   }),
-  z.object({
-    kind: z.literal('add_relationship'),
-    fromEntityId: z.string().regex(UUID_RE),
-    toEntityId: z.string().regex(UUID_RE),
-    relationshipKind: z.enum([
-      'parent',
-      'child',
-      'related',
-      'blocks',
-      'blocked_by',
-      'duplicate_of',
-    ]),
-  }),
+  relationshipMemoryItemSchema,
 ]);
 
 const suggestObjectMemoryInput = z.object({
@@ -2026,18 +2047,20 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
             return {
               operation: 'create' as const,
               targetKind: 'object_relationship' as const,
-              targetId: item.fromEntityId,
+              targetId: item.fromEntityId ?? null,
               title: `Add ${item.relationshipKind} relationship`,
               dedupeKey: suggestionDedupeKey([
                 'object-memory',
                 item.kind,
-                item.fromEntityId,
-                item.toEntityId,
+                item.fromEntityId ?? item.fromName,
+                item.toEntityId ?? item.toName,
                 item.relationshipKind,
               ]),
               proposedPayload: {
                 fromEntityId: item.fromEntityId,
                 toEntityId: item.toEntityId,
+                fromName: item.fromName,
+                toName: item.toName,
                 kind: item.relationshipKind,
               },
             };

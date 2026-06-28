@@ -4661,6 +4661,111 @@ describe('suggestion scope', () => {
     ]);
   });
 
+  it('resolves object relationship endpoint names to active objects', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const project = await scope.objects.createObject({
+      type: 'project',
+      canonicalName: 'Name resolved project',
+      aliases: ['NRP'],
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const company = await scope.objects.createObject({
+      type: 'company',
+      canonicalName: 'Name resolved company',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'chat',
+      title: 'Link objects by name',
+      dedupeKey: 'name-resolved-object-relationship',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'object_relationship',
+          title: 'Relate by names',
+          dedupeKey: 'name-resolved-object-relationship:item',
+          proposedPayload: {
+            fromName: 'NRP',
+            toName: 'Name resolved company',
+            kind: 'related',
+          },
+        },
+      ],
+    });
+    const itemId = bundle.items[0]?.id;
+    expect(itemId).toBeDefined();
+
+    await expect(scope.suggestions.acceptSuggestionItem(itemId ?? '')).resolves.toBe(true);
+
+    const detail = await scope.objects.getObject(project.id);
+    expect(detail?.relationships).toEqual([
+      expect.objectContaining({
+        kind: 'related',
+        otherId: company.id,
+        otherName: 'Name resolved company',
+      }),
+    ]);
+  });
+
+  it('does not guess ambiguous object relationship endpoint names', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    await scope.objects.createObject({
+      type: 'project',
+      canonicalName: 'Ambiguous relation target A',
+      aliases: ['Ambiguous relation target'],
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    await scope.objects.createObject({
+      type: 'project',
+      canonicalName: 'Ambiguous relation target B',
+      aliases: ['Ambiguous relation target'],
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    await scope.objects.createObject({
+      type: 'company',
+      canonicalName: 'Ambiguous relation company',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'chat',
+      title: 'Ambiguous relationship by name',
+      dedupeKey: 'ambiguous-name-object-relationship',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'object_relationship',
+          title: 'Relate ambiguous name',
+          dedupeKey: 'ambiguous-name-object-relationship:item',
+          proposedPayload: {
+            fromName: 'Ambiguous relation target',
+            toName: 'Ambiguous relation company',
+            kind: 'related',
+          },
+        },
+      ],
+    });
+    const itemId = bundle.items[0]?.id;
+    expect(itemId).toBeDefined();
+
+    await expect(scope.suggestions.acceptSuggestionItem(itemId ?? '')).rejects.toThrow(
+      'Relationship source endpoint object was not uniquely matched',
+    );
+
+    const itemRows = await db
+      .select({
+        status: agentSuggestionItems.status,
+        failureReason: agentSuggestionItems.failureReason,
+      })
+      .from(agentSuggestionItems)
+      .where(eq(agentSuggestionItems.id, itemId ?? ''));
+    expect(itemRows[0]).toEqual(
+      expect.objectContaining({
+        status: 'failed',
+        failureReason: 'Relationship source endpoint object was not uniquely matched',
+      }),
+    );
+  });
+
   it('supersedes relationship proposals when a sibling local-ref dependency is rejected', async () => {
     const scope = withTeam(db as never, TEAM_ID, USER_ID);
     const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
