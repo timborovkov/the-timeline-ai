@@ -10,7 +10,14 @@ function safeRunId(value: string | undefined): string {
 }
 
 function uuidFrom(label: string): string {
-  const hex = createHash('sha256').update(`${E2E_RUN_ID}:${label}`).digest('hex').slice(0, 32);
+  const chars = createHash('sha256')
+    .update(`${E2E_RUN_ID}:${label}`)
+    .digest('hex')
+    .slice(0, 32)
+    .split('');
+  chars[12] = '4';
+  chars[16] = ((Number.parseInt(chars[16] ?? '0', 16) & 0x3) | 0x8).toString(16);
+  const hex = chars.join('');
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 

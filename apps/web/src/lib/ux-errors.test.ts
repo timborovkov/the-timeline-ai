@@ -45,7 +45,7 @@ describe('UX error messages', () => {
       connectionErrorMessage(
         'acme/app:commits:commits (GitHub GET /repos/acme/app/commits?sha=main&per_page=100&page=1 failed with status 500: Server Error)',
       ),
-    ).toContain('Retry sync after the provider recovers');
+    ).toContain('temporary error');
     expect(connectionErrorMessage('not_found')).toContain('no longer exists');
     expect(connectionErrorMessage(undefined, 500)).toBe('Connection failed (500).');
   });

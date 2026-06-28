@@ -105,7 +105,7 @@ function FloatingAgentChatContent({ teamId, teamName }: FloatingAgentChatProps) 
         type="button"
         aria-label="Open floating agent chat"
         className={cn(
-          'fixed bottom-5 right-5 z-40 h-11 gap-2 rounded-sm border border-signal/40 bg-signal px-4 text-signal-fg shadow-lg shadow-black/10',
+          'fixed bottom-5 right-5 z-40 hidden h-11 gap-2 rounded-sm border border-signal/40 bg-signal px-4 text-signal-fg shadow-lg shadow-black/10 sm:inline-flex',
           'hover:bg-signal/90 focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-offset-2 focus-visible:ring-offset-bg',
         )}
         onClick={() => {

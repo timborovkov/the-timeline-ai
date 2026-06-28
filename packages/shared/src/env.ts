@@ -220,8 +220,12 @@ const baseSchema = z.object({
   LINEAR_WEBHOOK_SECRET: z.string().optional(),
   GITHUB_APP_CLIENT_ID: z.string().optional(),
   GITHUB_APP_CLIENT_SECRET: z.string().optional(),
+  GITHUB_APP_ID: z.string().optional(),
+  GITHUB_APP_PRIVATE_KEY: z.string().optional(),
+  GITHUB_WEBHOOK_SECRET: z.string().optional(),
   MONDAY_CLIENT_ID: z.string().optional(),
   MONDAY_CLIENT_SECRET: z.string().optional(),
+  MONDAY_WEBHOOK_SECRET: z.string().optional(),
   SENTRY_INTEGRATION_CLIENT_ID: z.string().optional(),
   SENTRY_INTEGRATION_CLIENT_SECRET: z.string().optional(),
   // HMAC secret for Google Drive push-channel tokens. The Drive watch

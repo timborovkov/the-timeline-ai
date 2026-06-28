@@ -15,14 +15,21 @@ const fakes = vi.hoisted(() => ({
   listSelections: vi.fn(),
   setSelections: vi.fn(),
   recordAudit: vi.fn(),
+  recordConnectionAttention: vi.fn(),
+  resolveConnectionAttention: vi.fn(),
   getProvider: vi.fn(),
+  adminReconcileIntegrationWebhookSubscriptions: vi.fn(),
   listSyncableResources: vi.fn(),
 }));
 
 vi.mock('@/lib/auth', () => ({ auth: fakes.auth }));
 vi.mock('@/lib/active-team', () => ({ resolveActiveTeam: fakes.resolveActiveTeam }));
 vi.mock('@/lib/db', () => ({ db: {} }));
-vi.mock('@timeline/shared/integrations', () => ({ getProvider: fakes.getProvider }));
+vi.mock('@timeline/shared/integrations', () => ({
+  getProvider: fakes.getProvider,
+  adminReconcileIntegrationWebhookSubscriptions:
+    fakes.adminReconcileIntegrationWebhookSubscriptions,
+}));
 vi.mock('@timeline/shared/team-scope', () => ({
   withTeam: () => ({
     requireMembership: fakes.requireMembership,
@@ -32,6 +39,8 @@ vi.mock('@timeline/shared/team-scope', () => ({
       listSelections: fakes.listSelections,
       setSelections: fakes.setSelections,
       recordAudit: fakes.recordAudit,
+      recordConnectionAttention: fakes.recordConnectionAttention,
+      resolveConnectionAttention: fakes.resolveConnectionAttention,
     },
   }),
 }));
@@ -66,6 +75,15 @@ beforeEach(() => {
   });
   fakes.getIntegrationTokens.mockResolvedValue({ accessToken: 'token' });
   fakes.listSelections.mockResolvedValue([]);
+  fakes.setSelections.mockResolvedValue(undefined);
+  fakes.recordAudit.mockResolvedValue(undefined);
+  fakes.recordConnectionAttention.mockResolvedValue(undefined);
+  fakes.resolveConnectionAttention.mockResolvedValue(undefined);
+  fakes.adminReconcileIntegrationWebhookSubscriptions.mockResolvedValue({
+    active: 0,
+    deprovisioned: 0,
+    skipped: true,
+  });
   fakes.getProvider.mockReturnValue({ listSyncableResources: fakes.listSyncableResources });
   fakes.listSyncableResources.mockResolvedValue([
     { kind: 'github.repo', externalId: 'acme/private' },
@@ -98,5 +116,67 @@ describe('/api/integrations/manage/[id]/selections', () => {
     });
     expect(fakes.getIntegrationTokens).not.toHaveBeenCalled();
     expect(fakes.setSelections).not.toHaveBeenCalled();
+  });
+
+  it('reconciles legacy integration webhooks after validated selection changes', async () => {
+    fakes.getIntegration.mockResolvedValueOnce({
+      id: INTEGRATION_ID,
+      provider: 'monday',
+      providerConnectionId: null,
+    });
+    fakes.listSyncableResources.mockResolvedValueOnce([
+      { kind: 'monday.board', externalId: 'board-1' },
+    ]);
+
+    const response = await PUT(
+      request({
+        selections: [{ kind: 'monday.board', externalId: 'board-1', label: 'Launch' }],
+      }),
+      params(),
+    );
+
+    expect(response.status).toBe(200);
+    expect(fakes.setSelections).toHaveBeenCalledWith(INTEGRATION_ID, [
+      { kind: 'monday.board', externalId: 'board-1', label: 'Launch' },
+    ]);
+    expect(fakes.adminReconcileIntegrationWebhookSubscriptions).toHaveBeenCalledWith(
+      {},
+      INTEGRATION_ID,
+    );
+  });
+
+  it('records degraded webhook attention when legacy selection provisioning fails', async () => {
+    fakes.getIntegration.mockResolvedValueOnce({
+      id: INTEGRATION_ID,
+      provider: 'monday',
+      providerConnectionId: null,
+    });
+    fakes.listSyncableResources.mockResolvedValueOnce([
+      { kind: 'monday.board', externalId: 'board-1' },
+    ]);
+    fakes.adminReconcileIntegrationWebhookSubscriptions.mockRejectedValueOnce(
+      new Error('MONDAY_WEBHOOK_SECRET not configured'),
+    );
+
+    const response = await PUT(
+      request({
+        selections: [{ kind: 'monday.board', externalId: 'board-1', label: 'Launch' }],
+      }),
+      params(),
+    );
+
+    expect(response.status).toBe(200);
+    expect(fakes.recordConnectionAttention).toHaveBeenCalledTimes(1);
+    const attentionInput = fakes.recordConnectionAttention.mock.calls[0]?.[0] as
+      | Record<string, unknown>
+      | undefined;
+    expect(attentionInput).toMatchObject({
+      providerConnectionId: null,
+      integrationId: INTEGRATION_ID,
+      category: 'webhook_degraded',
+    });
+    expect(attentionInput?.summary).toEqual(
+      expect.stringContaining('Webhook provisioning failed for monday'),
+    );
   });
 });

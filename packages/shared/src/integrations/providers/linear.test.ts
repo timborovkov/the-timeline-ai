@@ -11,28 +11,36 @@ function expectFirst<T>(arr: T[]): T {
   return first;
 }
 
+function webhookEvents(
+  result: Awaited<ReturnType<NonNullable<typeof linearProvider.handleWebhook>>>,
+) {
+  return Array.isArray(result) ? result : result.events;
+}
+
 describe('linearProvider.handleWebhook', () => {
   it('normalizes an Issue webhook', async () => {
     const handle = linearProvider.handleWebhook?.bind(linearProvider);
     if (!handle) throw new Error('no handleWebhook');
-    const events = await handle({
-      integration: { teamId: 't1' } as never,
-      payload: {
-        action: 'update',
-        type: 'Issue',
-        data: {
-          id: 'LIN-1',
-          identifier: 'ENG-42',
-          title: 'Wire Phase 11',
-          description: null,
-          url: 'https://linear.app/acme/issue/ENG-42',
-          updatedAt: '2026-05-25T10:00:00Z',
-          state: { name: 'In Progress', type: 'started' },
-          assignee: { id: 'u1', name: 'Alice', email: null },
-          team: { id: 't1', key: 'ENG' },
+    const events = webhookEvents(
+      await handle({
+        integration: { teamId: 't1' } as never,
+        payload: {
+          action: 'update',
+          type: 'Issue',
+          data: {
+            id: 'LIN-1',
+            identifier: 'ENG-42',
+            title: 'Wire Phase 11',
+            description: null,
+            url: 'https://linear.app/acme/issue/ENG-42',
+            updatedAt: '2026-05-25T10:00:00Z',
+            state: { name: 'In Progress', type: 'started' },
+            assignee: { id: 'u1', name: 'Alice', email: null },
+            team: { id: 't1', key: 'ENG' },
+          },
         },
-      },
-    });
+      }),
+    );
     expect(events).toHaveLength(1);
     const evt = expectFirst(events);
     expect(evt.dedupKey).toBe('linear:issue:LIN-1:2026-05-25T10:00:00Z');
@@ -49,10 +57,12 @@ describe('linearProvider.handleWebhook', () => {
   it('ignores non-Issue payloads', async () => {
     const handle = linearProvider.handleWebhook?.bind(linearProvider);
     if (!handle) throw new Error('no handleWebhook');
-    const events = await handle({
-      integration: { teamId: 't1' } as never,
-      payload: { action: 'create', type: 'Comment', data: { id: 'x' } },
-    });
+    const events = webhookEvents(
+      await handle({
+        integration: { teamId: 't1' } as never,
+        payload: { action: 'create', type: 'Comment', data: { id: 'x' } },
+      }),
+    );
     expect(events).toHaveLength(0);
   });
 });

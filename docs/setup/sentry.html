@@ -10,7 +10,7 @@
     <a class="skip" href="#main">Skip to content</a>
     <main id="main">
       <h1>Sentry setup</h1>
-      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-06-22</span></div>
+      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-06-28</span></div>
       <blockquote><p>Optional locally. Strongly recommended before production.</p></blockquote>
       <p class="tldr">
         Hook the web and worker services into Sentry for error tracking. Timeline can also connect
@@ -175,6 +175,14 @@ SENTRY_INTEGRATION_CLIENT_SECRET=
           Connect Sentry from the native catalog, share selected projects from
           <code>/app/me/connections</code>, then activate those shared projects from
           <code>/app/team/integrations</code>.
+        </li>
+        <li>
+          To stream issue alerts, issue lifecycle updates, and release events into native ingestion,
+          configure the Sentry integration webhook URL as
+          <code>https://thetimeline.cc/api/webhooks/sentry</code>. Timeline verifies
+          <code>Sentry-Hook-Signature</code> with <code>SENTRY_INTEGRATION_CLIENT_SECRET</code>,
+          stores the delivery, and lets <code>webhook-delivery</code> normalize direct events or
+          targeted reconciliation against the selected Sentry projects.
         </li>
       </ol>
     </main>

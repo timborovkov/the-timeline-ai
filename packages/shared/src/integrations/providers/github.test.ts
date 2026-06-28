@@ -1,3 +1,5 @@
+import { generateKeyPairSync } from 'node:crypto';
+
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { SyncContext } from '#src/integrations/index.js';
@@ -17,6 +19,7 @@ interface TestGithubCursor {
   commit_gap_high_water_sha?: string;
   commit_gap_until?: string;
   last_polled_at?: string;
+  github_conditional?: Record<string, { etag?: string; lastModified?: string }>;
 }
 
 describe('githubProvider.startOAuth', () => {
@@ -63,11 +66,95 @@ describe('githubProvider.startOAuth', () => {
   });
 });
 
+describe('githubProvider.handleOAuthCallback', () => {
+  const originalFetch = globalThis.fetch;
+
+  beforeEach(() => {
+    process.env.GITHUB_APP_CLIENT_ID = 'client-id';
+    process.env.GITHUB_APP_CLIENT_SECRET = 'client-secret';
+    resetEnvForTests();
+  });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+    process.env = { ...ENV_BACKUP };
+    resetEnvForTests();
+    vi.restoreAllMocks();
+  });
+
+  it('stores GitHub App installation metadata for later installation-token sync', async () => {
+    const fetchMock = vi.fn<typeof fetch>((input) => {
+      const requestUrl =
+        typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+      const url = new URL(requestUrl);
+      if (url.origin + url.pathname === 'https://github.com/login/oauth/access_token') {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              access_token: 'ghu_user',
+              token_type: 'bearer',
+              scope: 'repo,read:org',
+            }),
+            { status: 200, headers: { 'content-type': 'application/json' } },
+          ),
+        );
+      }
+      if (url.pathname === '/user') {
+        return Promise.resolve(
+          new Response(JSON.stringify({ id: 42, login: 'tim' }), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          }),
+        );
+      }
+      if (url.pathname === '/user/installations') {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              installations: [
+                { id: 123, account: { login: 'acme', type: 'Organization' } },
+                { id: 456, account: { login: 'tim', type: 'User' } },
+              ],
+            }),
+            { status: 200, headers: { 'content-type': 'application/json' } },
+          ),
+        );
+      }
+      return Promise.resolve(
+        new Response(JSON.stringify({ message: 'unexpected' }), {
+          status: 404,
+          headers: { 'content-type': 'application/json' },
+        }),
+      );
+    });
+    globalThis.fetch = fetchMock;
+
+    const result = await githubProvider.handleOAuthCallback({
+      code: 'code',
+      redirectUri: 'https://timeline.test/api/integrations/github/callback',
+    });
+
+    expect(result).toMatchObject({
+      externalAccountId: '42',
+      displayName: 'GitHub — tim',
+    });
+    expect(result.tokens).toMatchObject({
+      access_token: 'ghu_user',
+      github_app_installations: [
+        { id: '123', account_login: 'acme', account_type: 'Organization' },
+        { id: '456', account_login: 'tim', account_type: 'User' },
+      ],
+    });
+  });
+});
+
 describe('githubProvider.listSyncableResources', () => {
   const originalFetch = globalThis.fetch;
 
   afterEach(() => {
     globalThis.fetch = originalFetch;
+    process.env = { ...ENV_BACKUP };
+    resetEnvForTests();
     vi.useRealTimers();
     vi.restoreAllMocks();
   });
@@ -163,6 +250,174 @@ describe('githubProvider.listSyncableResources', () => {
       githubProvider.listSyncableResources({} as never, { access_token: 'gho_token' }),
     ).rejects.toBeInstanceOf(GithubRateLimitError);
     vi.useRealTimers();
+  });
+});
+
+describe('githubProvider.handleWebhook', () => {
+  it('normalizes pull request, issue, review, release, workflow, and push payloads', async () => {
+    const baseRepo = {
+      repository: { full_name: 'acme/app' },
+    };
+    const integration = { id: 'integration-1', teamId: 'team-1' } as never;
+    const handle = githubProvider.handleWebhook?.bind(githubProvider);
+    if (!handle) throw new Error('no handleWebhook');
+    const normalize = (
+      result: Awaited<ReturnType<NonNullable<typeof githubProvider.handleWebhook>>>,
+    ) => (Array.isArray(result) ? { events: result, syncTasks: [] } : result);
+
+    const pullRequestResult = await handle({
+      integration,
+      payload: {
+        ...baseRepo,
+        action: 'opened',
+        pull_request: {
+          id: 7,
+          number: 7,
+          title: 'Add webhook ingestion',
+          body: 'Webhook body',
+          html_url: 'https://github.com/acme/app/pull/7',
+          state: 'open',
+          merged_at: null,
+          updated_at: '2026-06-25T10:00:00Z',
+          user: { login: 'alice' },
+          base: { ref: 'main' },
+          head: { ref: 'webhooks' },
+        },
+      },
+    });
+    const issueResult = await handle({
+      integration,
+      payload: {
+        ...baseRepo,
+        action: 'opened',
+        issue: {
+          id: 8,
+          number: 8,
+          title: 'Bug report',
+          body: null,
+          html_url: 'https://github.com/acme/app/issues/8',
+          state: 'open',
+          updated_at: '2026-06-25T11:00:00Z',
+          user: { login: 'bob' },
+        },
+      },
+    });
+    const reviewResult = await handle({
+      integration,
+      payload: {
+        ...baseRepo,
+        action: 'submitted',
+        pull_request: { number: 7 },
+        review: {
+          id: 9,
+          body: 'Looks good',
+          state: 'APPROVED',
+          submitted_at: '2026-06-25T12:00:00Z',
+          html_url: 'https://github.com/acme/app/pull/7#pullrequestreview-9',
+          user: { login: 'reviewer' },
+        },
+      },
+    });
+    const releaseResult = await handle({
+      integration,
+      payload: {
+        ...baseRepo,
+        action: 'published',
+        release: {
+          id: 10,
+          tag_name: 'v1.2.3',
+          name: 'Release',
+          body: null,
+          html_url: 'https://github.com/acme/app/releases/tag/v1.2.3',
+          draft: false,
+          prerelease: false,
+          published_at: '2026-06-25T13:00:00Z',
+          created_at: '2026-06-25T12:55:00Z',
+          author: { login: 'alice' },
+        },
+      },
+    });
+    const workflowResult = await handle({
+      integration,
+      payload: {
+        ...baseRepo,
+        action: 'completed',
+        workflow_run: {
+          id: 11,
+          name: 'CI',
+          workflow_id: 1,
+          run_number: 99,
+          html_url: 'https://github.com/acme/app/actions/runs/11',
+          status: 'completed',
+          conclusion: 'success',
+          updated_at: '2026-06-25T14:00:00Z',
+          created_at: '2026-06-25T13:00:00Z',
+          head_branch: 'main',
+          head_sha: 'sha-001',
+          event: 'push',
+          actor: { login: 'alice' },
+        },
+      },
+    });
+    const pushResult = await handle({
+      integration,
+      payload: {
+        ...baseRepo,
+        commits: [
+          {
+            id: 'sha-abc',
+            message: 'Ship webhook ingestion',
+            timestamp: '2026-06-25T15:00:00Z',
+            url: 'https://github.com/acme/app/commit/sha-abc',
+            author: { name: 'Alice', email: 'alice@example.com', username: 'alice' },
+          },
+        ],
+      },
+    });
+    const pullRequestEvents = normalize(pullRequestResult).events;
+    const issueEvents = normalize(issueResult).events;
+    const reviewEvents = normalize(reviewResult).events;
+    const releaseEvents = normalize(releaseResult).events;
+    const workflowEvents = normalize(workflowResult).events;
+    const push = normalize(pushResult);
+    const pushEvents = push.events;
+
+    expect(pullRequestEvents[0]).toMatchObject({
+      dedupKey: 'github:pr:7:2026-06-25T10:00:00Z',
+      eventType: 'pr.updated',
+      objectMap: { type: 'task', externalId: 'acme/app#7' },
+    });
+    expect(issueEvents[0]).toMatchObject({
+      dedupKey: 'github:issue:8:2026-06-25T11:00:00Z',
+      eventType: 'issue.updated',
+      objectMap: { type: 'task', externalId: 'acme/app#issue:8' },
+    });
+    expect(reviewEvents[0]).toMatchObject({
+      dedupKey: 'github:review:9:2026-06-25T12:00:00Z',
+      eventType: 'pr.review.approved',
+    });
+    expect(releaseEvents[0]).toMatchObject({
+      dedupKey: 'github:release:10:2026-06-25T13:00:00Z',
+      eventType: 'release.published',
+    });
+    expect(workflowEvents[0]).toMatchObject({
+      dedupKey: 'github:workflow_run:11:2026-06-25T14:00:00Z',
+      eventType: 'workflow_run.success',
+    });
+    expect(pushEvents[0]).toMatchObject({
+      dedupKey: 'github:commit:sha-abc',
+      eventType: 'commit.pushed',
+    });
+    expect(push.syncTasks).toEqual([
+      {
+        integrationId: 'integration-1',
+        teamId: 'team-1',
+        triggeredBy: 'webhook',
+        resourceType: 'github.repo',
+        externalId: 'acme/app',
+        reason: 'github_repo_webhook',
+      },
+    ]);
   });
 });
 
@@ -392,6 +647,74 @@ describe('githubProvider.incrementalSync', () => {
     return undefined;
   }
 
+  it('uses GitHub App installation tokens for repository syncs without persisting the transient bearer', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-06-25T02:00:00.000Z'));
+    const { privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
+    process.env.GITHUB_APP_ID = '999';
+    process.env.GITHUB_APP_PRIVATE_KEY = privateKey
+      .export({ format: 'pem', type: 'pkcs1' })
+      .replaceAll('\n', '\\n');
+    resetEnvForTests();
+    const fetchMock = vi.fn<typeof fetch>((input, init) => {
+      const requestUrl =
+        typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+      const url = new URL(requestUrl);
+      if (url.pathname === '/app/installations/123/access_tokens') {
+        const headers = init?.headers as Record<string, string> | undefined;
+        expect(init?.method).toBe('POST');
+        expect(headers?.authorization).toMatch(/^Bearer [\w-]+\.[\w-]+\.[\w-]+$/u);
+        return Promise.resolve(
+          jsonResponse({
+            token: 'ghs_installation',
+            expires_at: '2026-06-25T03:00:00.000Z',
+          }),
+        );
+      }
+      const base = emptyGithubFetch(input);
+      return Promise.resolve(base ?? jsonResponse({ message: 'unexpected' }, 404));
+    });
+    globalThis.fetch = fetchMock;
+    const persistTokens = vi.fn<SyncContext['persistTokens']>().mockResolvedValue(undefined);
+
+    await githubProvider.incrementalSync({
+      integration: {} as never,
+      tokens: {
+        access_token: 'ghu_user',
+        github_app_installations: [{ id: '123', account_login: 'acme' }],
+      },
+      selections: [{ kind: 'github.repo', externalId: 'acme/app' }],
+      ctx: {
+        writeEvents: vi.fn().mockResolvedValue([]),
+        recordAudit: vi.fn(),
+        saveCursor: vi.fn().mockResolvedValue(undefined),
+        loadCursor: vi.fn().mockResolvedValue({}),
+        persistTokens,
+      },
+    });
+
+    const repoCalls = fetchMock.mock.calls.filter(([input]) => {
+      const requestUrl =
+        typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+      return new URL(requestUrl).pathname.startsWith('/repos/acme/app');
+    });
+    expect(repoCalls.length).toBeGreaterThan(0);
+    expect(
+      repoCalls.every(([, init]) => {
+        const headers = init?.headers as Record<string, string> | undefined;
+        return headers?.authorization === 'Bearer ghs_installation';
+      }),
+    ).toBe(true);
+    expect(persistTokens).toHaveBeenCalledWith({
+      access_token: 'ghu_user',
+      github_app_installations: [{ id: '123', account_login: 'acme' }],
+      github_app_installation_tokens: {
+        '123': { token: 'ghs_installation', expires_at: Date.parse('2026-06-25T03:00:00.000Z') },
+      },
+    });
+    expect(persistTokens.mock.calls[0]?.[0]).not.toHaveProperty('github_installation_access_token');
+  });
+
   it('paginates commit bursts so polling does not drop events beyond the first page', async () => {
     const fetchMock = vi.fn<typeof fetch>((input) => {
       const requestUrl =
@@ -436,6 +759,80 @@ describe('githubProvider.incrementalSync', () => {
     expect(savedCursor(saveCursor, 'github.repo:acme/app:commits')).toMatchObject({
       last_sha: 'sha-001',
     });
+  });
+
+  it('uses commit ETags to skip unchanged commit reconciliation', async () => {
+    const commitPath = '/repos/acme/app/commits?sha=main&per_page=100&page=1';
+    const fetchMock = vi.fn<typeof fetch>((input, init) => {
+      const requestUrl =
+        typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+      const url = new URL(requestUrl);
+      if (url.pathname.endsWith('/commits')) {
+        const headers = init?.headers as Record<string, string> | undefined;
+        expect(headers?.['if-none-match']).toBe('"commit-etag"');
+        return Promise.resolve(
+          new Response(null, {
+            status: 304,
+            headers: { etag: '"commit-etag-next"' },
+          }),
+        );
+      }
+      const base = emptyGithubFetch(input);
+      return Promise.resolve(base ?? jsonResponse({ message: 'unexpected' }, 404));
+    });
+    globalThis.fetch = fetchMock;
+    const writeEvents = vi.fn<SyncContext['writeEvents']>().mockResolvedValue([]);
+    const saveCursor = vi.fn().mockResolvedValue(undefined);
+    const recordAudit = vi.fn<SyncContext['recordAudit']>().mockResolvedValue(undefined);
+    const loadCursor = vi.fn((resourceType: string) =>
+      Promise.resolve(
+        resourceType === 'github.repo:acme/app:commits'
+          ? {
+              last_sha: 'sha-001',
+              github_conditional: {
+                [`commits:${commitPath}`]: { etag: '"commit-etag"' },
+              },
+            }
+          : resourceType === 'github.repo:acme/app:releases' ||
+              resourceType === 'github.repo:acme/app:workflow_runs'
+            ? { last_polled_at: new Date().toISOString() }
+            : {},
+      ),
+    );
+
+    await githubProvider.incrementalSync({
+      integration: {} as never,
+      tokens: { access_token: 'gho_token' },
+      selections: [{ kind: 'github.repo', externalId: 'acme/app' }],
+      ctx: {
+        writeEvents,
+        recordAudit,
+        saveCursor,
+        loadCursor,
+        persistTokens: vi.fn(),
+      },
+    });
+
+    expect(writeEvents.mock.calls.flatMap(([events]) => events)).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ eventType: 'commit' })]),
+    );
+    expect(recordAudit).not.toHaveBeenCalledWith(
+      'github_commit_cursor_target_missing',
+      expect.anything(),
+    );
+    expect(savedCursor(saveCursor, 'github.repo:acme/app:commits')).toMatchObject({
+      last_sha: 'sha-001',
+      github_conditional: {
+        [`commits:${commitPath}`]: { etag: '"commit-etag-next"' },
+      },
+    });
+    expect(
+      fetchMock.mock.calls.filter(([input]) => {
+        const requestUrl =
+          typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+        return new URL(requestUrl).pathname.endsWith('/commits');
+      }),
+    ).toHaveLength(1);
   });
 
   it('expands org selections at sync time and de-dupes explicit repo selections', async () => {
@@ -673,6 +1070,78 @@ describe('githubProvider.incrementalSync', () => {
       expect.stringContaining('/repos/acme/app/pulls/7/reviews?per_page=100&page=2'),
       expect.any(Object),
     );
+  });
+
+  it('uses PR ETags to skip unchanged PR reconciliation by state query', async () => {
+    const openPullsPath =
+      '/repos/acme/app/pulls?state=open&sort=updated&direction=desc&per_page=100&page=1';
+    const fetchMock = vi.fn<typeof fetch>((input, init) => {
+      const requestUrl =
+        typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+      const url = new URL(requestUrl);
+      if (url.pathname.endsWith('/pulls') && url.searchParams.get('state') === 'open') {
+        const headers = init?.headers as Record<string, string> | undefined;
+        expect(headers?.['if-none-match']).toBe('"open-pr-etag"');
+        return Promise.resolve(
+          new Response(null, {
+            status: 304,
+            headers: { etag: '"open-pr-etag-next"' },
+          }),
+        );
+      }
+      if (url.pathname.endsWith('/commits')) return Promise.resolve(jsonResponse([]));
+      const base = emptyGithubFetch(input);
+      return Promise.resolve(base ?? jsonResponse({ message: 'unexpected' }, 404));
+    });
+    globalThis.fetch = fetchMock;
+    const writeEvents = vi.fn<SyncContext['writeEvents']>().mockResolvedValue([]);
+    const saveCursor = vi.fn().mockResolvedValue(undefined);
+    const loadCursor = vi.fn((resourceType: string) =>
+      Promise.resolve(
+        resourceType === 'github.repo:acme/app:prs'
+          ? {
+              prs_since: '2026-06-10T10:00:00Z',
+              github_conditional: {
+                [`prs:${openPullsPath}`]: { etag: '"open-pr-etag"' },
+              },
+            }
+          : resourceType === 'github.repo:acme/app:releases' ||
+              resourceType === 'github.repo:acme/app:workflow_runs'
+            ? { last_polled_at: new Date().toISOString() }
+            : {},
+      ),
+    );
+
+    await githubProvider.incrementalSync({
+      integration: {} as never,
+      tokens: { access_token: 'gho_token' },
+      selections: [{ kind: 'github.repo', externalId: 'acme/app' }],
+      ctx: {
+        writeEvents,
+        recordAudit: vi.fn(),
+        saveCursor,
+        loadCursor,
+        persistTokens: vi.fn(),
+      },
+    });
+
+    expect(writeEvents.mock.calls.flatMap(([events]) => events)).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ eventType: 'pr.opened' })]),
+    );
+    expect(savedCursor(saveCursor, 'github.repo:acme/app:prs')).toMatchObject({
+      prs_since: '2026-06-10T10:00:00Z',
+      github_conditional: {
+        [`prs:${openPullsPath}`]: { etag: '"open-pr-etag-next"' },
+      },
+    });
+    expect(
+      fetchMock.mock.calls.filter(([input]) => {
+        const requestUrl =
+          typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+        const url = new URL(requestUrl);
+        return url.pathname.endsWith('/pulls') && url.searchParams.get('state') === 'open';
+      }),
+    ).toHaveLength(1);
   });
 
   it('maps GitHub PRs and issues to task display titles without numbers', async () => {
@@ -941,6 +1410,84 @@ describe('githubProvider.incrementalSync', () => {
     });
   });
 
+  it('uses release ETags to skip unchanged release reconciliation', async () => {
+    const fetchMock = vi.fn<typeof fetch>((input, init) => {
+      const requestUrl =
+        typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+      const url = new URL(requestUrl);
+      if (url.pathname.endsWith('/releases')) {
+        const headers = init?.headers as Record<string, string> | undefined;
+        expect(headers?.['if-none-match']).toBe('"release-etag"');
+        expect(headers?.['if-modified-since']).toBe('Wed, 25 Jun 2026 10:00:00 GMT');
+        return Promise.resolve(
+          new Response(null, {
+            status: 304,
+            headers: {
+              etag: '"release-etag-next"',
+              'last-modified': 'Wed, 25 Jun 2026 11:00:00 GMT',
+            },
+          }),
+        );
+      }
+      if (url.pathname.endsWith('/commits')) return Promise.resolve(jsonResponse([]));
+      const base = emptyGithubFetch(input);
+      return Promise.resolve(base ?? jsonResponse({ message: 'unexpected' }, 404));
+    });
+    globalThis.fetch = fetchMock;
+    const writeEvents = vi.fn<SyncContext['writeEvents']>().mockResolvedValue([]);
+    const saveCursor = vi.fn().mockResolvedValue(undefined);
+    const loadCursor = vi.fn((resourceType: string) =>
+      Promise.resolve(
+        resourceType === 'github.repo:acme/app:releases'
+          ? {
+              releases_since: '2026-06-10T00:00:00Z',
+              github_conditional: {
+                'releases:first': {
+                  etag: '"release-etag"',
+                  lastModified: 'Wed, 25 Jun 2026 10:00:00 GMT',
+                },
+              },
+            }
+          : resourceType === 'github.repo:acme/app:workflow_runs'
+            ? { last_polled_at: new Date().toISOString() }
+            : {},
+      ),
+    );
+
+    await githubProvider.incrementalSync({
+      integration: {} as never,
+      tokens: { access_token: 'gho_token' },
+      selections: [{ kind: 'github.repo', externalId: 'acme/app' }],
+      ctx: {
+        writeEvents,
+        recordAudit: vi.fn(),
+        saveCursor,
+        loadCursor,
+        persistTokens: vi.fn(),
+      },
+    });
+
+    expect(writeEvents.mock.calls.flatMap(([events]) => events)).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ eventType: 'release.published' })]),
+    );
+    expect(savedCursor(saveCursor, 'github.repo:acme/app:releases')).toMatchObject({
+      releases_since: '2026-06-10T00:00:00Z',
+      github_conditional: {
+        'releases:first': {
+          etag: '"release-etag-next"',
+          lastModified: 'Wed, 25 Jun 2026 11:00:00 GMT',
+        },
+      },
+    });
+    expect(
+      fetchMock.mock.calls.filter(([input]) => {
+        const requestUrl =
+          typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+        return new URL(requestUrl).pathname.endsWith('/releases');
+      }),
+    ).toHaveLength(1);
+  });
+
   it('continues release pagination when a full page mixes old and new releases', async () => {
     const fetchMock = vi.fn<typeof fetch>((input) => {
       const requestUrl =
@@ -1083,6 +1630,74 @@ describe('githubProvider.incrementalSync', () => {
     expect(savedCursor(saveCursor, 'github.repo:acme/app:workflow_runs')).toMatchObject({
       workflow_runs_since: '2026-06-10T12:00:00Z',
     });
+  });
+
+  it('uses workflow ETags to skip unchanged workflow run reconciliation', async () => {
+    const fetchMock = vi.fn<typeof fetch>((input, init) => {
+      const requestUrl =
+        typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+      const url = new URL(requestUrl);
+      if (url.pathname.endsWith('/actions/runs')) {
+        const headers = init?.headers as Record<string, string> | undefined;
+        expect(headers?.['if-none-match']).toBe('"workflow-etag"');
+        return Promise.resolve(
+          new Response(null, {
+            status: 304,
+            headers: { etag: '"workflow-etag-next"' },
+          }),
+        );
+      }
+      if (url.pathname.endsWith('/commits')) return Promise.resolve(jsonResponse([]));
+      const base = emptyGithubFetch(input);
+      return Promise.resolve(base ?? jsonResponse({ message: 'unexpected' }, 404));
+    });
+    globalThis.fetch = fetchMock;
+    const writeEvents = vi.fn<SyncContext['writeEvents']>().mockResolvedValue([]);
+    const saveCursor = vi.fn().mockResolvedValue(undefined);
+    const loadCursor = vi.fn((resourceType: string) =>
+      Promise.resolve(
+        resourceType === 'github.repo:acme/app:releases'
+          ? { last_polled_at: new Date().toISOString() }
+          : resourceType === 'github.repo:acme/app:workflow_runs'
+            ? {
+                workflow_runs_since: '2026-06-10T10:00:00Z',
+                github_conditional: {
+                  'workflow_runs:first': { etag: '"workflow-etag"' },
+                },
+              }
+            : {},
+      ),
+    );
+
+    await githubProvider.incrementalSync({
+      integration: {} as never,
+      tokens: { access_token: 'gho_token' },
+      selections: [{ kind: 'github.repo', externalId: 'acme/app' }],
+      ctx: {
+        writeEvents,
+        recordAudit: vi.fn(),
+        saveCursor,
+        loadCursor,
+        persistTokens: vi.fn(),
+      },
+    });
+
+    expect(writeEvents.mock.calls.flatMap(([events]) => events)).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ eventType: 'workflow_run.success' })]),
+    );
+    expect(savedCursor(saveCursor, 'github.repo:acme/app:workflow_runs')).toMatchObject({
+      workflow_runs_since: '2026-06-10T10:00:00Z',
+      github_conditional: {
+        'workflow_runs:first': { etag: '"workflow-etag-next"' },
+      },
+    });
+    expect(
+      fetchMock.mock.calls.filter(([input]) => {
+        const requestUrl =
+          typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+        return new URL(requestUrl).pathname.endsWith('/actions/runs');
+      }),
+    ).toHaveLength(1);
   });
 
   it('stops workflow run pagination on a full stale page without a page-cap failure', async () => {
@@ -1328,6 +1943,77 @@ describe('githubProvider.incrementalSync', () => {
     expect(savedCursor(saveCursor, 'github.repo:acme/app:issues')).toMatchObject({
       issues_since: '2026-06-10T13:08:00Z',
     });
+  });
+
+  it('uses issue ETags to skip unchanged issue reconciliation by since query', async () => {
+    const issuesPath =
+      '/repos/acme/app/issues?state=all&since=2026-06-10T12%3A00%3A00Z&sort=updated&direction=desc&per_page=100&page=1';
+    const fetchMock = vi.fn<typeof fetch>((input, init) => {
+      const requestUrl =
+        typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+      const url = new URL(requestUrl);
+      if (url.pathname.endsWith('/issues')) {
+        const headers = init?.headers as Record<string, string> | undefined;
+        expect(headers?.['if-none-match']).toBe('"issue-etag"');
+        return Promise.resolve(
+          new Response(null, {
+            status: 304,
+            headers: { etag: '"issue-etag-next"' },
+          }),
+        );
+      }
+      if (url.pathname.endsWith('/commits')) return Promise.resolve(jsonResponse([]));
+      const base = emptyGithubFetch(input);
+      return Promise.resolve(base ?? jsonResponse({ message: 'unexpected' }, 404));
+    });
+    globalThis.fetch = fetchMock;
+    const writeEvents = vi.fn<SyncContext['writeEvents']>().mockResolvedValue([]);
+    const saveCursor = vi.fn().mockResolvedValue(undefined);
+    const loadCursor = vi.fn((resourceType: string) =>
+      Promise.resolve(
+        resourceType === 'github.repo:acme/app:issues'
+          ? {
+              issues_since: '2026-06-10T12:00:00Z',
+              github_conditional: {
+                [`issues:${issuesPath}`]: { etag: '"issue-etag"' },
+              },
+            }
+          : resourceType === 'github.repo:acme/app:releases' ||
+              resourceType === 'github.repo:acme/app:workflow_runs'
+            ? { last_polled_at: new Date().toISOString() }
+            : {},
+      ),
+    );
+
+    await githubProvider.incrementalSync({
+      integration: {} as never,
+      tokens: { access_token: 'gho_token' },
+      selections: [{ kind: 'github.repo', externalId: 'acme/app' }],
+      ctx: {
+        writeEvents,
+        recordAudit: vi.fn(),
+        saveCursor,
+        loadCursor,
+        persistTokens: vi.fn(),
+      },
+    });
+
+    expect(writeEvents.mock.calls.flatMap(([events]) => events)).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ eventType: 'issue.opened' })]),
+    );
+    expect(savedCursor(saveCursor, 'github.repo:acme/app:issues')).toMatchObject({
+      issues_since: '2026-06-10T12:00:00Z',
+      github_conditional: {
+        [`issues:${issuesPath}`]: { etag: '"issue-etag-next"' },
+      },
+    });
+    expect(
+      fetchMock.mock.calls.filter(([input]) => {
+        const requestUrl =
+          typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+        return new URL(requestUrl).pathname.endsWith('/issues');
+      }),
+    ).toHaveLength(1);
   });
 
   it('seeds the release timestamp cursor from a legacy draft release', async () => {

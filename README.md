@@ -167,6 +167,7 @@ pnpm test:eval            # fast deterministic agent and retrieval evals
 pnpm test:dist-imports    # build db/shared and import compiled runtime modules with Node
 pnpm e2e                  # Playwright core journey tests
 pnpm run doctor           # React Doctor scan for React/Next health regressions
+pnpm canary:integrations  # secret-safe live provider/LLM credential canary
 pnpm dev:seed             # seed local demo data with disabled fake integrations
 pnpm db:generate          # generate Drizzle migrations after schema changes
 pnpm db:migrate           # apply database migrations
@@ -204,8 +205,12 @@ boundaries.
   implementation plan for grounded generated object briefs across object pages,
   search, embeddings, and chat.
 - [`docs/integration-ingest-plan.md`](./docs/integration-ingest-plan.md) —
-  first-party ingestion implementation plan for work systems, including the
-  implemented native providers and future waves.
+  first-party ingestion implementation plan for work systems, including native
+  provider posture, webhook/budget behavior, implemented providers, and future
+  waves.
+- [`docs/native-provider-template.md`](./docs/native-provider-template.md) —
+  implementation checklist and skeleton for adding native providers on the
+  shared policy, webhook, budget, and reconciliation path.
 - [`docs/ux-overhaul-plan.md`](./docs/ux-overhaul-plan.md) — UX overhaul plan:
   soften the forensic surface for non-technical users with standard-page
   headers, a guided connect-flow wizard, actionable error states,

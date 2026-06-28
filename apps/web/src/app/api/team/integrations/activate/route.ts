@@ -1,3 +1,4 @@
+import * as integrationsLib from '@timeline/shared/integrations';
 import { withTeam } from '@timeline/shared/team-scope';
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
@@ -24,6 +25,75 @@ async function markFirstIntegrationAfterActivation(
   return safeMarkOnboardingStep(scope, 'first_integration');
 }
 
+async function reconcileWebhooksBestEffort(
+  scope: ReturnType<typeof withTeam>,
+  integration: {
+    id: string;
+    provider: integrationsLib.IntegrationProviderName;
+    providerConnectionId?: string | null;
+    scopes?: string[] | null;
+  },
+) {
+  if (integration.provider === 'mcp') return;
+  const missingScopes = integrationsLib.missingRequiredProviderScopes(
+    integration.provider,
+    integration.scopes,
+  );
+  if (missingScopes.length > 0) {
+    await scope.integrations.recordAudit(
+      'webhook_provision_skipped_missing_scopes',
+      { provider: integration.provider, missingScopes },
+      integration.id,
+    );
+    await scope.integrations.recordConnectionAttention({
+      providerConnectionId: integration.providerConnectionId ?? null,
+      integrationId: integration.id,
+      category: 'needs_reconnect',
+      summary: `${integration.provider} connection is missing required OAuth scopes (${missingScopes.join(
+        ', ',
+      )}); reconnect to enable webhook provisioning and account-scoped provider budgets.`,
+    });
+    return;
+  }
+  try {
+    const result = await integrationsLib.adminReconcileIntegrationWebhookSubscriptions(
+      db,
+      integration.id,
+    );
+    if (!result.skipped) {
+      await Promise.all([
+        scope.integrations.recordAudit(
+          'webhooks_reconciled',
+          {
+            provider: integration.provider,
+            active: result.active,
+            deprovisioned: result.deprovisioned,
+          },
+          integration.id,
+        ),
+        scope.integrations.resolveConnectionAttention({
+          providerConnectionId: integration.providerConnectionId ?? null,
+          integrationId: integration.id,
+          categories: ['webhook_degraded'],
+        }),
+      ]);
+    }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    await scope.integrations.recordAudit(
+      'webhook_provision_failed',
+      { provider: integration.provider, error: message.slice(0, 500) },
+      integration.id,
+    );
+    await scope.integrations.recordConnectionAttention({
+      providerConnectionId: integration.providerConnectionId ?? null,
+      integrationId: integration.id,
+      category: 'webhook_degraded',
+      summary: `Webhook provisioning failed for ${integration.provider}: ${message.slice(0, 300)}`,
+    });
+  }
+}
+
 export async function POST(req: Request): Promise<Response> {
   const session = await auth();
   if (!session?.user.id) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
@@ -43,6 +113,7 @@ export async function POST(req: Request): Promise<Response> {
     );
   }
   const integration = await scope.integrations.activateSharedResources(parsed.data);
+  await reconcileWebhooksBestEffort(scope, integration);
   const completedFirstIntegration = await markFirstIntegrationAfterActivation(
     scope,
     integration.id,
