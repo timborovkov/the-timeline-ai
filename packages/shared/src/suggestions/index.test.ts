@@ -66,11 +66,11 @@ async function seed(pg: PGlite): Promise<void> {
     VALUES
       ('${TEAM_ID}', 'team-a', 'Team A'),
       ('${OTHER_TEAM_ID}', 'team-b', 'Team B');
-    INSERT INTO users (id, email)
+    INSERT INTO users (id, email, name)
     VALUES
-      ('${USER_ID}', 'a@example.com'),
-      ('${REVIEWER_ID}', 'b@example.com'),
-      ('${OTHER_USER_ID}', 'c@example.com');
+      ('${USER_ID}', 'a@example.com', 'Owner'),
+      ('${REVIEWER_ID}', 'b@example.com', 'Reviewer'),
+      ('${OTHER_USER_ID}', 'c@example.com', 'Other Owner');
     INSERT INTO team_members (team_id, user_id, role)
     VALUES
       ('${TEAM_ID}', '${USER_ID}', 'owner'),
@@ -3455,6 +3455,59 @@ describe('suggestion scope', () => {
     expect(updated.rows[0]?.due_at?.toISOString()).toBe('2026-08-03T09:00:00.000Z');
   });
 
+  it('fails object update assignment names that do not resolve uniquely', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const task = await scope.objects.createObject({
+      type: 'task',
+      canonicalName: 'Reassign unresolved task',
+      status: 'todo',
+      assigneeUserId: USER_ID,
+      actor: { kind: 'agent', userId: null },
+    });
+
+    const updateBundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Assign task to missing member',
+      dedupeKey: 'update-assignee-name-missing',
+      items: [
+        {
+          operation: 'update',
+          targetKind: 'task',
+          targetId: task.id,
+          title: 'Assign unresolved task',
+          dedupeKey: 'update-assignee-name-missing:item',
+          proposedPayload: {
+            assigneeName: 'Missing Reviewer',
+          },
+        },
+      ],
+    });
+    const itemId = updateBundle.items[0]?.id ?? '';
+
+    await expect(scope.suggestions.acceptSuggestionItem(itemId)).rejects.toThrow(
+      'assigneeName was not uniquely matched to an active team member',
+    );
+
+    const result = await pg.query<{
+      item_status: string;
+      failure_reason: string | null;
+      assignee_user_id: string | null;
+    }>(
+      `SELECT i.status AS item_status,
+              i.failure_reason,
+              e.assignee_user_id::text
+       FROM agent_suggestion_items i
+       CROSS JOIN entities e
+       WHERE i.id = '${itemId}'
+         AND e.id = '${task.id}'`,
+    );
+    expect(result.rows[0]).toEqual({
+      item_status: 'failed',
+      failure_reason: 'assigneeName was not uniquely matched to an active team member',
+      assignee_user_id: USER_ID,
+    });
+  });
+
   it('does not treat an unrelated exact existing create task as already represented', async () => {
     const scope = withTeam(db as never, TEAM_ID, USER_ID);
     const existing = await scope.objects.createObject({
@@ -4659,6 +4712,111 @@ describe('suggestion scope', () => {
         otherType: 'person',
       }),
     ]);
+  });
+
+  it('resolves object relationship endpoint names to active objects', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const project = await scope.objects.createObject({
+      type: 'project',
+      canonicalName: 'Name resolved project',
+      aliases: ['NRP'],
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const company = await scope.objects.createObject({
+      type: 'company',
+      canonicalName: 'Name resolved company',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'chat',
+      title: 'Link objects by name',
+      dedupeKey: 'name-resolved-object-relationship',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'object_relationship',
+          title: 'Relate by names',
+          dedupeKey: 'name-resolved-object-relationship:item',
+          proposedPayload: {
+            fromName: 'NRP',
+            toName: 'Name resolved company',
+            kind: 'related',
+          },
+        },
+      ],
+    });
+    const itemId = bundle.items[0]?.id;
+    expect(itemId).toBeDefined();
+
+    await expect(scope.suggestions.acceptSuggestionItem(itemId ?? '')).resolves.toBe(true);
+
+    const detail = await scope.objects.getObject(project.id);
+    expect(detail?.relationships).toEqual([
+      expect.objectContaining({
+        kind: 'related',
+        otherId: company.id,
+        otherName: 'Name resolved company',
+      }),
+    ]);
+  });
+
+  it('does not guess ambiguous object relationship endpoint names', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    await scope.objects.createObject({
+      type: 'project',
+      canonicalName: 'Ambiguous relation target A',
+      aliases: ['Ambiguous relation target'],
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    await scope.objects.createObject({
+      type: 'project',
+      canonicalName: 'Ambiguous relation target B',
+      aliases: ['Ambiguous relation target'],
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    await scope.objects.createObject({
+      type: 'company',
+      canonicalName: 'Ambiguous relation company',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'chat',
+      title: 'Ambiguous relationship by name',
+      dedupeKey: 'ambiguous-name-object-relationship',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'object_relationship',
+          title: 'Relate ambiguous name',
+          dedupeKey: 'ambiguous-name-object-relationship:item',
+          proposedPayload: {
+            fromName: 'Ambiguous relation target',
+            toName: 'Ambiguous relation company',
+            kind: 'related',
+          },
+        },
+      ],
+    });
+    const itemId = bundle.items[0]?.id;
+    expect(itemId).toBeDefined();
+
+    await expect(scope.suggestions.acceptSuggestionItem(itemId ?? '')).rejects.toThrow(
+      'Relationship source endpoint object was not uniquely matched',
+    );
+
+    const itemRows = await db
+      .select({
+        status: agentSuggestionItems.status,
+        failureReason: agentSuggestionItems.failureReason,
+      })
+      .from(agentSuggestionItems)
+      .where(eq(agentSuggestionItems.id, itemId ?? ''));
+    expect(itemRows[0]).toEqual(
+      expect.objectContaining({
+        status: 'failed',
+        failureReason: 'Relationship source endpoint object was not uniquely matched',
+      }),
+    );
   });
 
   it('supersedes relationship proposals when a sibling local-ref dependency is rejected', async () => {
@@ -6267,6 +6425,140 @@ describe('suggestion scope', () => {
       source_event_id: null,
       metadata_item_id: itemId,
     });
+  });
+
+  it('resolves task assignee names to active team member ids', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Create assigned task',
+      dedupeKey: 'task-create-assignee-name',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Review Acme deck',
+          dedupeKey: 'task-create-assignee-name:item',
+          proposedPayload: {
+            canonicalName: 'Review Acme deck',
+            assigneeName: 'Reviewer',
+          },
+        },
+      ],
+    });
+    const item = bundle.items[0];
+    expect(item?.proposedPayload).toMatchObject({
+      assigneeName: 'Reviewer',
+      assigneeUserId: REVIEWER_ID,
+    });
+
+    await expect(scope.suggestions.acceptSuggestionItem(item?.id ?? '')).resolves.toBe(true);
+
+    const result = await pg.query<{ assignee_user_id: string | null }>(
+      `SELECT assignee_user_id
+       FROM entities
+       WHERE team_id = '${TEAM_ID}'
+         AND canonical_name = 'Review Acme deck'`,
+    );
+    expect(result.rows[0]).toEqual({ assignee_user_id: REVIEWER_ID });
+  });
+
+  it('fails task create assignment names that do not resolve uniquely', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Create task for missing member',
+      dedupeKey: 'task-create-assignee-name-missing',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Review unresolved deck',
+          dedupeKey: 'task-create-assignee-name-missing:item',
+          proposedPayload: {
+            canonicalName: 'Review unresolved deck',
+            assigneeName: 'Missing Reviewer',
+          },
+        },
+      ],
+    });
+    const itemId = bundle.items[0]?.id ?? '';
+
+    await expect(scope.suggestions.acceptSuggestionItem(itemId)).rejects.toThrow(
+      'assigneeName was not uniquely matched to an active team member',
+    );
+
+    const result = await pg.query<{
+      item_status: string;
+      failure_reason: string | null;
+      entity_count: string;
+    }>(
+      `SELECT i.status AS item_status,
+              i.failure_reason,
+              (SELECT count(*)::text
+               FROM entities
+               WHERE team_id = '${TEAM_ID}'
+                 AND canonical_name = 'Review unresolved deck') AS entity_count
+       FROM agent_suggestion_items i
+       WHERE i.id = '${itemId}'`,
+    );
+    expect(result.rows[0]).toEqual({
+      item_status: 'failed',
+      failure_reason: 'assigneeName was not uniquely matched to an active team member',
+      entity_count: '0',
+    });
+  });
+
+  it('resolves board item responsible names to active team member ids', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const board = await scope.boards.createBoard({
+      name: 'Launch board',
+      templateKind: 'task_board',
+      lanes: [{ name: 'Todo', kind: 'active' }],
+    });
+    const task = await scope.objects.createObject({
+      type: 'task',
+      canonicalName: 'Review Acme deck',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const boardItem = await scope.boards.addBoardItem(board.id, {
+      entityId: task.id,
+      laneId: board.lanes[0]?.id ?? null,
+      actor: { kind: 'user', userId: USER_ID },
+    });
+
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Assign board item',
+      dedupeKey: 'board-item-responsible-name',
+      items: [
+        {
+          operation: 'update',
+          targetKind: 'board_item_update',
+          targetId: boardItem.id,
+          title: 'Assign Review Acme deck',
+          dedupeKey: 'board-item-responsible-name:item',
+          proposedPayload: {
+            boardItemId: boardItem.id,
+            field: 'responsibleUserId',
+            newValue: null,
+            responsibleName: 'Reviewer',
+          },
+        },
+      ],
+    });
+    const item = bundle.items[0];
+    expect(item?.proposedPayload).toMatchObject({
+      responsibleName: 'Reviewer',
+      newValue: REVIEWER_ID,
+    });
+
+    await expect(scope.suggestions.acceptSuggestionItem(item?.id ?? '')).resolves.toBe(true);
+
+    const updated = await scope.boards.getBoard(board.id, { itemLimit: 'all' });
+    expect(updated?.items.find((row) => row.id === boardItem.id)?.responsibleUserId).toBe(
+      REVIEWER_ID,
+    );
   });
 
   it('normalizes invalid task create source event ids to suggestion evidence when storing', async () => {

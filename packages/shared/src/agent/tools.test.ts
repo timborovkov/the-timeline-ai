@@ -32,6 +32,7 @@ interface FakeScope {
     listEventsForMomentLookup: ReturnType<typeof vi.fn>;
     listMomentPresentations: ReturnType<typeof vi.fn>;
     getEventWithFacts: ReturnType<typeof vi.fn>;
+    listMembers: ReturnType<typeof vi.fn>;
   };
   documents: {
     listDocuments: ReturnType<typeof vi.fn>;
@@ -89,6 +90,7 @@ function makeFakeScope(): FakeScope {
       listEventsForMomentLookup: vi.fn(),
       listMomentPresentations: vi.fn().mockResolvedValue({}),
       getEventWithFacts: vi.fn(),
+      listMembers: vi.fn().mockResolvedValue([]),
     },
     documents: {
       listDocuments: vi.fn(),
@@ -262,6 +264,39 @@ describe('buildAgentTools — team isolation', () => {
     expect(Object.keys(moment.shape)).not.toContain('teamId');
     expect(Object.keys(guide.shape)).not.toContain('teamId');
     expect(Object.keys(route.shape)).not.toContain('teamId');
+  });
+
+  it('lists active team members for assignment ids', async () => {
+    const scope = makeFakeScope();
+    scope.timeline.listMembers.mockResolvedValue([
+      {
+        userId: '11111111-1111-4111-8111-111111111111',
+        role: 'member',
+        name: 'Mikael Rintala',
+        email: 'mikael@example.test',
+        createdAt: new Date('2026-01-01T00:00:00.000Z'),
+      },
+    ]);
+    const tools = buildAgentTools(scope as unknown as TeamScope);
+    const exec = tools.list_team_members?.execute as (
+      input: Record<string, never>,
+      opts: unknown,
+    ) => Promise<unknown>;
+
+    const result = await exec({}, {});
+
+    expect(scope.timeline.listMembers).toHaveBeenCalled();
+    expect(result).toEqual({
+      count: 1,
+      members: [
+        {
+          user_id: '11111111-1111-4111-8111-111111111111',
+          role: 'member',
+          name: 'Mikael Rintala',
+          email: 'mikael@example.test',
+        },
+      ],
+    });
   });
 
   it('search_app_guide returns route citations for navigation questions without scope calls', async () => {
@@ -2099,6 +2134,48 @@ describe('buildAgentTools — team isolation', () => {
       proposedPayload: {
         fromEntityId,
         toEntityId,
+        kind: 'related',
+      },
+    });
+  });
+
+  it('suggest_object_memory can queue relationship proposals by object names', async () => {
+    const scope = makeFakeScope();
+    scope.suggestions.createOrMergeSuggestionBundle.mockResolvedValue({ id: 'suggestion-1' });
+    const tools = buildAgentTools(scope as unknown as TeamScope);
+    const exec = tools.suggest_object_memory?.execute as (
+      input: unknown,
+      opts: unknown,
+    ) => Promise<unknown>;
+
+    await exec(
+      {
+        title: 'Remember relationship by name',
+        items: [
+          {
+            kind: 'add_relationship',
+            fromName: 'Mikael Rintala',
+            toName: 'AuditAI',
+            relationshipKind: 'related',
+          },
+        ],
+      },
+      {},
+    );
+
+    const input = scope.suggestions.createOrMergeSuggestionBundle.mock.calls[0]?.[0] as {
+      items: {
+        targetKind: string;
+        targetId: string | null;
+        proposedPayload: Record<string, unknown>;
+      }[];
+    };
+    expect(input.items[0]).toMatchObject({
+      targetKind: 'object_relationship',
+      targetId: null,
+      proposedPayload: {
+        fromName: 'Mikael Rintala',
+        toName: 'AuditAI',
         kind: 'related',
       },
     });
