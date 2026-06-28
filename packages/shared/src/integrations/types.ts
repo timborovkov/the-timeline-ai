@@ -371,7 +371,7 @@ export interface WebhookProvisionInput {
   tokens: unknown;
   selections: { kind: string; externalId: string }[];
   existingSubscriptions?: WebhookSubscription[];
-  ctx?: ListSyncableResourcesContext;
+  ctx?: WebhookProvisionContext;
 }
 
 export interface WebhookDeprovisionInput {
@@ -387,6 +387,16 @@ export interface WebhookSubscription {
   externalResourceId: string;
   eventType: string;
   expiresAt?: Date | null;
+}
+
+export interface WebhookProvisionContext extends ListSyncableResourcesContext {
+  /**
+   * Persist a provider-side hook immediately after it is created. Provider
+   * provisioning is not transactional with our database, so callers should use
+   * this before creating the next hook to avoid leaking duplicate provider hooks
+   * when a later create call fails.
+   */
+  persistWebhookSubscription(subscription: WebhookSubscription): Promise<void>;
 }
 
 export interface ReconcilePolicyInput {

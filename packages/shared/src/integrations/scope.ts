@@ -1607,9 +1607,17 @@ export async function adminRecordConnectionAttention(
         category: input.category,
         summary: input.summary,
       })
+      .onConflictDoNothing()
       .returning({ id: connectionAttention.id });
     const attentionId = inserted[0]?.id ?? null;
-    await notifyConnectionAttentionActors(db, teamId, input, attentionId, shouldEmail);
+    if (attentionId) {
+      await notifyConnectionAttentionActors(db, teamId, input, attentionId, shouldEmail);
+    } else {
+      await db
+        .update(connectionAttention)
+        .set({ summary: input.summary, lastSeenAt: new Date() })
+        .where(and(...conditions));
+    }
   }
 }
 
@@ -1772,6 +1780,51 @@ function rowToWebhookSubscription(
   };
 }
 
+async function upsertIntegrationWebhookSubscriptions(
+  db: Db,
+  integration: IntegrationRow,
+  subscriptions: WebhookSubscription[],
+): Promise<void> {
+  if (subscriptions.length === 0) return;
+  await db
+    .insert(integrationWebhookSubscriptions)
+    .values(
+      subscriptions.map((subscription) => ({
+        integrationId: integration.id,
+        providerConnectionId: integration.providerConnectionId,
+        provider: integration.provider,
+        externalSubscriptionId: subscription.externalSubscriptionId ?? null,
+        resourceKind: subscription.resourceKind,
+        externalResourceId: subscription.externalResourceId,
+        eventType: subscription.eventType,
+        expiresAt: subscription.expiresAt ?? null,
+        status: 'active',
+        lastVerifiedAt: new Date(),
+        lastError: null,
+        updatedAt: new Date(),
+      })),
+    )
+    .onConflictDoUpdate({
+      target: [
+        integrationWebhookSubscriptions.provider,
+        integrationWebhookSubscriptions.integrationId,
+        integrationWebhookSubscriptions.resourceKind,
+        integrationWebhookSubscriptions.externalResourceId,
+        integrationWebhookSubscriptions.eventType,
+      ],
+      targetWhere: sql`${integrationWebhookSubscriptions.integrationId} IS NOT NULL`,
+      set: {
+        externalSubscriptionId: sql`excluded.external_subscription_id`,
+        providerConnectionId: sql`excluded.provider_connection_id`,
+        expiresAt: sql`excluded.expires_at`,
+        status: 'active',
+        lastVerifiedAt: new Date(),
+        lastError: null,
+        updatedAt: new Date(),
+      },
+    });
+}
+
 export async function adminReconcileIntegrationWebhookSubscriptions(
   db: Db,
   integrationId: string,
@@ -1805,47 +1858,11 @@ export async function adminReconcileIntegrationWebhookSubscriptions(
       .map(rowToWebhookSubscription),
     ctx: {
       persistTokens: (fresh) => adminPersistTokens(db, integration.id, fresh),
+      persistWebhookSubscription: (subscription) =>
+        upsertIntegrationWebhookSubscriptions(db, integration, [subscription]),
     },
   });
-  if (activeSubscriptions.length > 0) {
-    await db
-      .insert(integrationWebhookSubscriptions)
-      .values(
-        activeSubscriptions.map((subscription) => ({
-          integrationId: integration.id,
-          providerConnectionId: integration.providerConnectionId,
-          provider: integration.provider,
-          externalSubscriptionId: subscription.externalSubscriptionId ?? null,
-          resourceKind: subscription.resourceKind,
-          externalResourceId: subscription.externalResourceId,
-          eventType: subscription.eventType,
-          expiresAt: subscription.expiresAt ?? null,
-          status: 'active',
-          lastVerifiedAt: new Date(),
-          lastError: null,
-          updatedAt: new Date(),
-        })),
-      )
-      .onConflictDoUpdate({
-        target: [
-          integrationWebhookSubscriptions.provider,
-          integrationWebhookSubscriptions.integrationId,
-          integrationWebhookSubscriptions.resourceKind,
-          integrationWebhookSubscriptions.externalResourceId,
-          integrationWebhookSubscriptions.eventType,
-        ],
-        targetWhere: sql`${integrationWebhookSubscriptions.integrationId} IS NOT NULL`,
-        set: {
-          externalSubscriptionId: sql`excluded.external_subscription_id`,
-          providerConnectionId: sql`excluded.provider_connection_id`,
-          expiresAt: sql`excluded.expires_at`,
-          status: 'active',
-          lastVerifiedAt: new Date(),
-          lastError: null,
-          updatedAt: new Date(),
-        },
-      });
-  }
+  await upsertIntegrationWebhookSubscriptions(db, integration, activeSubscriptions);
 
   const activeKeys = new Set(activeSubscriptions.map(webhookSubscriptionKey));
   let deprovisioned = 0;

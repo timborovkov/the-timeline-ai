@@ -1457,7 +1457,9 @@ export const mondayProvider: IntegrationProvider = {
           });
           continue;
         }
-        active.push(await createMondayWebhook(mondayTokens, boardId, eventType, url));
+        const created = await createMondayWebhook(mondayTokens, boardId, eventType, url);
+        await ctx?.persistWebhookSubscription(created);
+        active.push(created);
       }
     }
     return active;

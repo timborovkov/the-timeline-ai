@@ -144,7 +144,14 @@ For `provisioningModel: 'provider_managed'`, implement both:
 - `provisionWebhooks(input): Promise<WebhookSubscription[]>`
 - `deprovisionWebhook(input): Promise<void>`
 
-The shared scope persists active subscriptions and deprovisions stale ones.
+The shared scope persists active subscriptions and deprovisions stale ones. When
+the provider creates subscriptions one at a time, call
+`input.ctx?.persistWebhookSubscription(subscription)` immediately after each
+successful provider-side create and before creating the next hook. Provider APIs
+are not transactional with Timeline's database; persisting each created hook
+prevents retries from creating duplicate provider webhooks after a later create
+call fails.
+
 Provider-managed provisioning should be best-effort from activation and
 selection changes: if it fails, record `webhook_degraded` or `sync_error`
 attention while keeping reconciliation alive.
@@ -163,6 +170,8 @@ Minimum deterministic tests:
 - Webhook route verification: valid signature, invalid signature, duplicate
   delivery, no selected target, persistence failure.
 - Provider `handleWebhook()` normalization and targeted sync hints.
+- Provider-managed provisioning persists each successfully-created hook before a
+  later create can fail.
 - Worker behavior when a targeted task is returned:
   `supportsTargetedSync=true` enqueues targeted sync;
   `supportsTargetedSync=false` falls back to broad catch-up.

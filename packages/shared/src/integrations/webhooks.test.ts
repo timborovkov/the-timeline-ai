@@ -9,11 +9,14 @@ import {
   teams,
   users,
 } from '@timeline/db';
-import { eq } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { adminReconcileExpiringWebhookSubscriptions } from '#src/integrations/scope.js';
+import {
+  adminRecordConnectionAttention,
+  adminReconcileExpiringWebhookSubscriptions,
+} from '#src/integrations/scope.js';
 import {
   loadWebhookDeliveryWork,
   markWebhookDeliveryDeadLettered,
@@ -175,6 +178,44 @@ describe('webhook delivery persistence', () => {
       status: 'dead_lettered',
       lastError: 'provider parse failed',
     });
+  });
+
+  it('keeps only one unresolved connection attention row for the same nullable target', async () => {
+    await Promise.all([
+      adminRecordConnectionAttention(db as never, TEAM_ID, {
+        providerConnectionId: CONNECTION_ID,
+        integrationId: INTEGRATION_ID,
+        category: 'sync_error',
+        summary: 'Linear sync failed once',
+      }),
+      adminRecordConnectionAttention(db as never, TEAM_ID, {
+        providerConnectionId: CONNECTION_ID,
+        integrationId: INTEGRATION_ID,
+        category: 'sync_error',
+        summary: 'Linear sync failed twice',
+      }),
+    ]);
+
+    const rows = await db
+      .select()
+      .from(connectionAttention)
+      .where(
+        and(
+          eq(connectionAttention.integrationId, INTEGRATION_ID),
+          eq(connectionAttention.category, 'sync_error'),
+          isNull(connectionAttention.resolvedAt),
+        ),
+      );
+    expect(rows).toHaveLength(1);
+    await expect(
+      db.insert(connectionAttention).values({
+        teamId: TEAM_ID,
+        providerConnectionId: CONNECTION_ID,
+        integrationId: INTEGRATION_ID,
+        category: 'sync_error',
+        summary: 'duplicate unresolved row',
+      }),
+    ).rejects.toThrow();
   });
 
   it('marks expired manual Drive channels as webhook-degraded while reconciliation remains available', async () => {

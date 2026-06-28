@@ -229,6 +229,15 @@ export const connectionAttention = pgTable(
     lastEmailedAt: timestamp('last_emailed_at', { withTimezone: true }),
   },
   (table) => [
+    uniqueIndex('connection_attention_unresolved_target_unq')
+      .on(
+        table.teamId,
+        table.category,
+        sql`COALESCE(${table.providerConnectionId}, '00000000-0000-0000-0000-000000000000'::uuid)`,
+        sql`COALESCE(${table.integrationId}, '00000000-0000-0000-0000-000000000000'::uuid)`,
+        sql`COALESCE(${table.resourceShareId}, '00000000-0000-0000-0000-000000000000'::uuid)`,
+      )
+      .where(sql`${table.resolvedAt} IS NULL`),
     index('connection_attention_team_idx').on(table.teamId),
     index('connection_attention_provider_connection_idx').on(table.providerConnectionId),
     index('connection_attention_integration_idx').on(table.integrationId),

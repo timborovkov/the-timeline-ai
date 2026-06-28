@@ -367,6 +367,68 @@ describe('mondayProvider', () => {
     expect(fetch).toHaveBeenCalledTimes(11);
   });
 
+  it('persists each created monday.com webhook before creating the next one', async () => {
+    process.env.AUTH_URL = 'https://timeline.test';
+    process.env.MONDAY_WEBHOOK_SECRET = 'webhook-secret';
+    resetEnvForTests();
+    const persisted: unknown[] = [];
+    const fetch = vi.fn<typeof globalThis.fetch>((_input, init) => {
+      const body = requestPayload(init);
+      expect(body.query).toContain('create_webhook');
+      const variables = body.variables ?? {};
+      if (variables.event === 'change_column_value') {
+        return Promise.resolve(
+          jsonResponse({
+            errors: [
+              {
+                message: 'Daily limit exceeded',
+                extensions: { code: 'DAILY_LIMIT_EXCEEDED', retry_in_seconds: 60 },
+              },
+            ],
+          }),
+        );
+      }
+      return Promise.resolve(
+        jsonResponse({
+          data: {
+            create_webhook: {
+              id: `hook-${String(variables.event)}`,
+              board_id: 'board-1',
+            },
+          },
+        }),
+      );
+    });
+    vi.stubGlobal('fetch', fetch);
+
+    await expect(
+      mondayProvider.provisionWebhooks?.({
+        integration: { id: 'integration-1', teamId: 'team-1' } as never,
+        tokens: { access_token: 'token' },
+        selections: [{ kind: 'monday.board', externalId: 'board-1' }],
+        existingSubscriptions: [],
+        ctx: {
+          persistTokens: vi.fn(),
+          persistWebhookSubscription: (subscription) => {
+            persisted.push(subscription);
+            return Promise.resolve();
+          },
+        },
+      }),
+    ).rejects.toBeInstanceOf(ProviderRateLimitError);
+
+    expect(persisted).toEqual([
+      {
+        externalSubscriptionId: 'hook-create_item',
+        resourceKind: 'monday.board',
+        externalResourceId: 'board-1',
+        eventType: 'create_item',
+        expiresAt: null,
+      },
+    ]);
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
+
   it('deprovisions stale monday.com webhooks', async () => {
     const fetch = vi.fn<typeof globalThis.fetch>((_input, init) => {
       const body = requestPayload(init);
