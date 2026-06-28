@@ -19,6 +19,7 @@ import type { ComponentType, SVGProps, SyntheticEvent } from 'react';
 import { FilterMultiSelect } from '@/components/filter-multi-select';
 import { selectedValues } from '@/lib/filter-values';
 import { fetchGlobalSearch } from '@/lib/global-search';
+import { GLOBAL_SEARCH_SOURCE_OPTIONS } from '@/lib/global-search-sources';
 import { searchErrorMessage } from '@/lib/ux-errors';
 
 type Icon = ComponentType<SVGProps<SVGSVGElement>>;
@@ -67,25 +68,13 @@ const FILTERS: { label: string; param: string; kinds: GlobalSearchKind[] | null 
   { label: 'Pages', param: 'pages', kinds: ['quick_link', 'external_link'] },
 ];
 
-const SOURCES = [
-  ['web', 'Web'],
-  ['telegram', 'Telegram'],
-  ['slack', 'Slack'],
-  ['email', 'Email'],
-  ['document', 'Document'],
-  ['meeting', 'Meeting'],
-  ['integration', 'Integration'],
-  ['calendar', 'Calendar'],
-  ['system', 'System'],
-] as const;
-
 const RESULT_TYPE_OPTIONS: { value: string; label: string }[] = [];
 const FILTERS_BY_PARAM = new Map<string, (typeof FILTERS)[number]>();
 for (const filter of FILTERS) {
   FILTERS_BY_PARAM.set(filter.param, filter);
   if (filter.kinds) RESULT_TYPE_OPTIONS.push({ value: filter.param, label: filter.label });
 }
-const SOURCE_OPTIONS = SOURCES.map(([value, label]) => ({ value, label }));
+const SOURCE_OPTIONS = GLOBAL_SEARCH_SOURCE_OPTIONS;
 
 const RESULT_DATE_FORMAT = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' });
 

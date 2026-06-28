@@ -18,29 +18,20 @@ import { z } from 'zod';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { GLOBAL_SEARCH_SOURCE_VALUES } from '@/lib/global-search-sources';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-
-const EVENT_SOURCES = [
-  'web',
-  'telegram',
-  'email',
-  'system',
-  'document',
-  'meeting',
-  'integration',
-  'calendar',
-  'slack',
-  'ingest_webhook',
-] as const;
 
 const schema = z.object({
   query: z.string().trim().max(500).default(''),
   mode: z.enum(['preview', 'full']).default('preview'),
   kinds: z.array(z.enum(GLOBAL_SEARCH_KINDS)).max(GLOBAL_SEARCH_KINDS.length).optional(),
   source: z
-    .union([z.enum(EVENT_SOURCES), z.array(z.enum(EVENT_SOURCES)).max(EVENT_SOURCES.length)])
+    .union([
+      z.enum(GLOBAL_SEARCH_SOURCE_VALUES),
+      z.array(z.enum(GLOBAL_SEARCH_SOURCE_VALUES)).max(GLOBAL_SEARCH_SOURCE_VALUES.length),
+    ])
     .optional(),
   from: z.iso.datetime().optional(),
   to: z.iso.datetime().optional(),

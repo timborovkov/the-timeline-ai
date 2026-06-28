@@ -1,23 +1,14 @@
 import type { Metadata } from 'next';
 
 import { GlobalSearchPage } from '@/components/global-search-page';
+import { GLOBAL_SEARCH_SOURCE_VALUES } from '@/lib/global-search-sources';
 
 export const metadata: Metadata = {
   title: 'Search',
   description: 'Search pages, work, timeline events, calendar, boards, and documents.',
 };
 
-const SEARCH_SOURCES = new Set([
-  'web',
-  'telegram',
-  'slack',
-  'email',
-  'document',
-  'meeting',
-  'integration',
-  'calendar',
-  'system',
-]);
+const SEARCH_SOURCES = new Set<string>(GLOBAL_SEARCH_SOURCE_VALUES);
 
 type SearchParamValue = string | string[] | undefined;
 

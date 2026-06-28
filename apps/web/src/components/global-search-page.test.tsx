@@ -138,6 +138,26 @@ describe('GlobalSearchPage', () => {
     });
   });
 
+  it('keeps ingest webhook as a selectable source filter', async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.mocked(fetch);
+
+    render(<GlobalSearchPage initialQuery="launch" />);
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalled();
+    });
+    await user.click(screen.getByRole('button', { name: 'Source' }));
+    await user.click(screen.getByRole('menuitemcheckbox', { name: 'Ingest webhook' }));
+
+    await waitFor(() => {
+      const lastBody = fetchMock.mock.calls.at(-1)?.[1]?.body;
+      expect(typeof lastBody).toBe('string');
+      const parsed = JSON.parse(lastBody as string) as { source?: string[] };
+      expect(parsed.source).toEqual(['ingest_webhook']);
+    });
+  });
+
   it('initializes source and date filters from URL props', async () => {
     const fetchMock = vi.mocked(fetch);
 
