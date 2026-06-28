@@ -251,6 +251,7 @@ export async function collectTimelinePage({
   let matchingMoments: TimelineMoment[] = [];
   let scannedPageCount = 0;
   let maxScanPagesReached = false;
+  const impactFilter = impact ?? 'all';
 
   for (let scanned = 0; scanned < maxScanPages; scanned++) {
     const page = await fetchPage({ cursor: scanCursor, limit: pageSize });
@@ -265,7 +266,7 @@ export async function collectTimelinePage({
         timezone,
         groupingMode: mode,
       }),
-      impact,
+      impactFilter,
     );
 
     nextCursor = page.nextCursor;

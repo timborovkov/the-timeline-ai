@@ -9,11 +9,8 @@ import { redirect } from 'next/navigation';
 import type { Metadata } from 'next';
 import type { ComponentProps } from 'react';
 
-<<<<<<< HEAD
-=======
 import { Coachmark } from '@/components/coachmark';
 import { FilterMultiSelect } from '@/components/filter-multi-select';
->>>>>>> origin/main
 import { IndexStrip } from '@/components/index-strip';
 import { TimelineFeed } from '@/components/timeline-feed';
 import { resolveActiveTeam } from '@/lib/active-team';
@@ -304,11 +301,11 @@ export default async function TimelinePage({ searchParams }: Props) {
     diagnostics: timelinePage.diagnostics,
     presentationCacheStats,
     filters: {
-      author: authorFilter ?? null,
+      author: authorFilterValue || null,
       from: sp.from ?? null,
       to: sp.to ?? null,
-      source: sourceFilter ?? null,
-      impact: impactFilter ?? null,
+      source: sourceFilterValue || null,
+      impact: impactFilterValue || null,
       event: focusEventId ?? null,
       moment: focusMomentId ?? null,
       cursor: null,
@@ -351,6 +348,12 @@ export default async function TimelinePage({ searchParams }: Props) {
         ]}
       />
 
+      <Coachmark storageKey="citation-inspector">
+        Every claim in the timeline is cited. Click any{' '}
+        <span className="font-mono text-signal">[c:...]</span> chip to see the raw source evidence.
+        That is the point of this product.
+      </Coachmark>
+
       <TimelineBrowserSection
         sp={sp}
         members={members}
@@ -363,12 +366,8 @@ export default async function TimelinePage({ searchParams }: Props) {
         impactFilters={impactFilters}
         impactFilterValue={impactFilterValue}
         focusEventId={focusEventId}
-<<<<<<< HEAD
         focusMomentId={focusMomentId}
-        authorFilter={authorFilter}
-=======
         authorFilterValue={authorFilterValue}
->>>>>>> origin/main
         events={events}
         moments={initialMoments}
         nextCursor={timelinePage.nextCursor}
@@ -398,12 +397,8 @@ function TimelineBrowserSection({
   impactFilters,
   impactFilterValue,
   focusEventId,
-<<<<<<< HEAD
   focusMomentId,
-  authorFilter,
-=======
   authorFilterValue,
->>>>>>> origin/main
   events,
   moments,
   nextCursor,
@@ -428,12 +423,8 @@ function TimelineBrowserSection({
   impactFilters: ReturnType<typeof parseTimelineImpacts>;
   impactFilterValue: string;
   focusEventId: string | undefined;
-<<<<<<< HEAD
   focusMomentId: string | undefined;
-  authorFilter: string | undefined;
-=======
   authorFilterValue: string;
->>>>>>> origin/main
   events: TimelineFeedProps['initialPage']['items'];
   moments: TimelineFeedProps['initialPage']['moments'];
   nextCursor: TimelineFeedProps['initialPage']['nextCursor'];
@@ -463,16 +454,11 @@ function TimelineBrowserSection({
       />
       <TimelinePresetControls
         baseParams={baseParams}
-<<<<<<< HEAD
-        sourceFilter={sourceFilter}
-        impactFilter={impactFilter}
         mode={mode}
         eventCount={events.length}
         momentCount={moments?.length ?? events.length}
-=======
         sourceFilters={sourceFilters}
         impactFilters={impactFilters}
->>>>>>> origin/main
       />
       <TimelineFeed
         initialPage={{
@@ -637,27 +623,18 @@ function TimelineDateField({ name, label, value }: { name: string; label: string
 
 function TimelinePresetControls({
   baseParams,
-<<<<<<< HEAD
-  sourceFilter,
-  impactFilter,
   mode,
   eventCount,
   momentCount,
-}: {
-  baseParams: TimelineBaseParams;
-  sourceFilter: ReturnType<typeof parseTimelineSource>;
-  impactFilter: ReturnType<typeof parseTimelineImpact>;
-  mode: TimelineMode;
-  eventCount: number;
-  momentCount: number;
-=======
   sourceFilters,
   impactFilters,
 }: {
   baseParams: TimelineBaseParams;
+  mode: TimelineMode;
+  eventCount: number;
+  momentCount: number;
   sourceFilters: ReturnType<typeof parseTimelineSources>;
   impactFilters: ReturnType<typeof parseTimelineImpacts>;
->>>>>>> origin/main
 }) {
   return (
     <div className="flex flex-wrap items-center justify-between gap-3 border-y border-border py-2">
