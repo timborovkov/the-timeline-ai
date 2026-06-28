@@ -104,6 +104,29 @@ interface SerializableTimelineEvent {
 const DEFAULT_PAGE_SIZE = 30;
 const DEFAULT_MAX_SCAN_PAGES = 10;
 
+export function focusedRelatedEventWindow(event: Pick<TimelineEvent, 'source' | 'occurredAt'>): {
+  from: Date;
+  to: Date;
+} {
+  const occurredAt = new Date(event.occurredAt);
+  const beforeHours =
+    event.source === 'email'
+      ? 24 * 45
+      : event.source === 'telegram' || event.source === 'slack' || event.source === 'ingest_webhook'
+        ? 2
+        : 48;
+  const afterHours =
+    event.source === 'email'
+      ? 24 * 2
+      : event.source === 'telegram' || event.source === 'slack' || event.source === 'ingest_webhook'
+        ? 2
+        : 48;
+  return {
+    from: new Date(occurredAt.getTime() - beforeHours * 60 * 60 * 1000),
+    to: new Date(occurredAt.getTime() + afterHours * 60 * 60 * 1000),
+  };
+}
+
 export function serializeTimelineEvent(event: SerializableTimelineEvent): TimelineEvent {
   return {
     ...event,
@@ -279,7 +302,16 @@ export async function collectTimelinePage({
   for (const moment of matchingMoments) {
     for (const event of moment.rawEvents) collected.set(event.id, event);
   }
-  const focusedEvents = await includeFocusedEvents([], focusEventId, fetchEventsByIds);
+  const focusedEvents =
+    mode === 'moments'
+      ? await focusedMomentEvents({
+          selectedEvents: Array.from(collected.values()),
+          focusEventId,
+          timezone,
+          fetchEventsByIds,
+          fetchRelatedEventsForFocus,
+        })
+      : await includeFocusedEvents([], focusEventId, fetchEventsByIds);
   for (const event of focusedEvents) {
     collected.set(event.id, event);
   }

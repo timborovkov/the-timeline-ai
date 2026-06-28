@@ -5,8 +5,6 @@ import { withTeam } from '@timeline/shared/team-scope';
 import { localDateSpanToUtcRange } from '@timeline/shared/time';
 import { inArray } from 'drizzle-orm';
 
-import type { TimelineEvent } from '@/lib/use-paginated-queries';
-
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
@@ -27,6 +25,7 @@ import {
   applyCachedTimelineMomentPresentations,
   collectTimelinePage,
   emptyTimelineMomentPresentationCacheStats,
+  focusedRelatedEventWindow,
   serializeTimelineEvent,
   type TimelineMomentPresentationCacheStats,
 } from '@/lib/timeline-page';
@@ -42,29 +41,6 @@ function parseTimelineMode(input: string | null): 'moments' | 'events' {
 function parseMomentId(input: string | null): string | null {
   if (!input || input.length > 500) return null;
   return input.startsWith('moment:') ? input : null;
-}
-
-function focusedRelatedEventWindow(event: Pick<TimelineEvent, 'source' | 'occurredAt'>): {
-  from: Date;
-  to: Date;
-} {
-  const occurredAt = new Date(event.occurredAt);
-  const beforeHours =
-    event.source === 'email'
-      ? 24 * 45
-      : event.source === 'telegram' || event.source === 'slack' || event.source === 'ingest_webhook'
-        ? 2
-        : 48;
-  const afterHours =
-    event.source === 'email'
-      ? 24 * 2
-      : event.source === 'telegram' || event.source === 'slack' || event.source === 'ingest_webhook'
-        ? 2
-        : 48;
-  return {
-    from: new Date(occurredAt.getTime() - beforeHours * 60 * 60 * 1000),
-    to: new Date(occurredAt.getTime() + afterHours * 60 * 60 * 1000),
-  };
 }
 
 function nextDateInput(input: string): string {

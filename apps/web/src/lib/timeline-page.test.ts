@@ -225,6 +225,65 @@ describe('collectTimelinePage', () => {
     });
   });
 
+  it('hydrates focused moment siblings while impact filters are active', async () => {
+    const fetchRelatedEventsForFocus = vi.fn((focused: TimelineEvent) =>
+      Promise.resolve([
+        focused,
+        event('focused-email-sibling', '2026-05-27T11:00:00.000Z', {
+          source: 'email',
+          sourceMetadata: { thread_root_id: 'thread-1' },
+        }),
+        event('other-email-thread', '2026-05-27T10:00:00.000Z', {
+          source: 'email',
+          sourceMetadata: { thread_root_id: 'thread-2' },
+        }),
+      ]),
+    );
+
+    const page = await collectTimelinePage({
+      impact: 'task',
+      focusEventId: 'focused-email',
+      fetchPage: () =>
+        Promise.resolve({
+          items: [event('task-event', '2026-05-28T12:00:00.000Z')],
+          nextCursor: null,
+        }),
+      fetchEventsByIds: (ids) =>
+        Promise.resolve(
+          ids.map((id) =>
+            event(id, '2026-05-27T12:00:00.000Z', {
+              source: 'email',
+              sourceMetadata: { thread_root_id: 'thread-1' },
+            }),
+          ),
+        ),
+      fetchRelatedEventsForFocus,
+      hydrateImpact: (ids) =>
+        Promise.resolve(
+          Object.fromEntries(
+            ids.map((id) => [
+              id,
+              id === 'task-event' ? [{ kind: 'task' as const, label: 'Follow up' }] : [],
+            ]),
+          ),
+        ),
+    });
+
+    expect(fetchRelatedEventsForFocus).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'focused-email' }),
+    );
+    expect(page.items.map((item) => item.id)).toEqual([
+      'task-event',
+      'focused-email',
+      'focused-email-sibling',
+    ]);
+    expect(page.impactItems).toEqual({
+      'task-event': [{ kind: 'task', label: 'Follow up' }],
+      'focused-email': [],
+      'focused-email-sibling': [],
+    });
+  });
+
   it('hydrates a focused moment id from a bounded lookup source', async () => {
     const focusMomentId = 'moment:telegram:chat-a:2026-06-27:18:00';
     const page = await collectTimelinePage({

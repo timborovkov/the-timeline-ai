@@ -37,6 +37,7 @@ import {
   applyCachedTimelineMomentPresentations,
   collectTimelinePage,
   emptyTimelineMomentPresentationCacheStats,
+  focusedRelatedEventWindow,
   serializeTimelineEvent,
   type TimelineMomentPresentationCacheStats,
 } from '@/lib/timeline-page';
@@ -190,6 +191,16 @@ export default async function TimelinePage({ searchParams }: Props) {
       },
       fetchEventsByIds: async (eventIds) =>
         (await scope.timeline.getEventsByIds(eventIds)).map(serializeTimelineEvent),
+      fetchRelatedEventsForFocus: async (focusedEvent) => {
+        const window = focusedRelatedEventWindow(focusedEvent);
+        const events = await scope.timeline.listEvents({
+          from: window.from,
+          to: window.to,
+          source: focusedEvent.source,
+          limit: 100,
+        });
+        return events.map(serializeTimelineEvent);
+      },
       fetchEventsForMoment: async (momentId) => {
         const plan = timelineMomentLookupPlan(momentId);
         if (!plan) return [];
