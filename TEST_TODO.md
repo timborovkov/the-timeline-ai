@@ -6,16 +6,19 @@ contracts, not private implementation structure.
 
 ## Test Status Overview
 
-Last checked in this branch: full `pnpm validate`, `pnpm test:eval`,
-`pnpm test:dist-imports`, root `pnpm test`, and React Doctor `100 / 100` pass
-after artifact-cluster reconciliation, related-evidence hydration, and
-provider lifecycle authority fixes. The suite includes artifact status reopen
-regressions, same-object batch evidence preservation, cross-team artifact join
-guards, captured-inbox promotion/pagination fixes, provider-connection
-hardening, recurring meeting capture, Saved Meeting visibility enforcement,
-scheduler idempotency, strict meeting URL host matching, generated calendar
-cleanup, quick-join failure/capacity/reuse, partial-cancel finalize queue
-regressions, and board/search UI regressions. Current suite shape:
+Most recent full-suite inventory predates the timeline-moments slice and is
+kept below for broad suite shape. The current timeline-moments slice verified
+`pnpm validate`, `pnpm test:eval`, `pnpm test:dist-imports`, focused
+`@timeline/shared` and `@timeline/web` Vitest suites, and `pnpm run doctor`;
+React Doctor completed with no issues found, but the score API did not expose a
+numeric `100 / 100` result. The slice adds shared moment projection tests,
+moment-backed timeline API pagination and focused-link hydration coverage, UI
+mode/query-state coverage, versioned moment/page DTO assertions, debug-gated
+moment diagnostics assertions, and agent moment search/expansion evals. It also
+adds stable moment-row anchor assertions, mixed raw-page boundary cursor
+regression coverage, and outbound MCP moment list/expand coverage for
+team-visible evidence, supported moment-ID-only expansion, and raw-event
+snippet fencing. Previous full-suite shape:
 
 - DB Vitest: 2 files / 12 tests, package-level PGlite schema contract suite now
   runs under root `pnpm test`.
@@ -49,15 +52,15 @@ Legend:
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | Auth, sessions, redirects | Partial: real credentials login, saved auth state, sign-out flow | Thin: Auth.js route itself untested | Thin: sign-up/sign-in actions not directly covered in this plan | Thin: env/auth redirect helpers | Missing | Thin: auth redirect helpers | Expired/invalid session flows, OAuth login E2E, sign-up action tests |
 | Team switching and membership | Partial: app shell, team switcher, invite/resend/revoke, invite acceptance, role change, member removal, cross-team isolation | Covered indirectly through active-team gates on many routes | Strong for teams/invites/member role/remove | Strong PGlite team isolation and membership scope | Missing | Missing team admin component tests | Deeper team settings component states and edge-case invite UI |
-| Timeline capture and visibility | Partial: create team event, private/team/specific-user/cross-team visibility | Strong for timeline list/search contracts and audio signing | Strong for capture and visibility actions | Strong PGlite team scope, visibility defaults, tombstones, embedding-source visibility | Strong extract/transcribe/embed contracts for text/audio handoff and privacy skips | Partial: capture composer static states plus timeline controls/page helpers and feed pagination dedupe | E2E timeline edit/delete/filtering and richer feed/list component states |
+| Timeline capture and visibility | Partial: create team event, private/team/specific-user/cross-team visibility | Strong for timeline list/search contracts, moment/source-event mode handling, focused moment hydration, and audio signing | Strong for capture and visibility actions | Strong PGlite team scope, visibility defaults, tombstones, embedding-source visibility, and shared moment projection | Strong extract/transcribe/embed contracts for text/audio handoff and privacy skips | Partial: capture composer static states plus timeline controls/page helpers, moment row rendering, source-event mode, and feed pagination dedupe | E2E timeline edit/delete/filtering and richer feed/list interaction states |
 | Objects, notes, and boards | Partial: object create/update/detail/archive, notes, board create/list/detail/filtering | Partial: object sections route covered | Strong for objects and boards actions | Strong PGlite object CRUD, notes, chat sessions, suggestions, board views, isolation | Suggestions worker covered | Partial: object detail static sections/approvals | E2E relationships and richer object/board component interaction states |
 | Documents and folders | Partial: folder create, upload/list/detail, rename/delete, team/private visibility | Strong list/search route contracts | Strong document actions | Strong PGlite document scope, object keys, folder ancestry, restore/delete semantics, single-document provenance lookup | Strong document-extract worker | Partial: document drive static empty/list states plus captured inbox rows, promotion defaults, and cursor loading | Semantic search E2E, extracted chunk citations, worker-backed search, richer document UI states |
-| Chat and agent UI | Partial: browser timeline question, tool activity, Event citation, session reload, degraded answer, visibility fences, and accepted task/calendar/object state | Strong chat route streaming/session/tool contract, including deterministic E2E seam coverage for durable workspace state | Missing chat action tests | Partial: deterministic agent tool evals, `askAgent` wrapper tests, MCP safety evals, structural tools, and LLM wrappers | Fast deterministic evals for timeline citation, task/calendar state, visibility fences, and tool failure honesty | Partial: chat pane static empty/message/pinned states | Remaining: live-model evals, broader chat UI states, and provider-backed retrieval |
+| Chat and agent UI | Partial: browser timeline question, tool activity, Event citation, session reload, degraded answer, visibility fences, and accepted task/calendar/object state | Strong chat route streaming/session/tool contract, including deterministic E2E seam coverage for durable workspace state | Missing chat action tests | Partial: deterministic agent tool evals, moment search/expansion coverage, `askAgent` wrapper tests, MCP safety evals, structural tools, and LLM wrappers | Fast deterministic evals for timeline citation, bundled moment retrieval, task/calendar state, visibility fences, and tool failure honesty | Partial: chat pane static empty/message/pinned states plus moment tool-step labels | Remaining: live-model evals, broader chat UI states, and provider-backed retrieval |
 | Calendar | Partial: browser all-day create/edit/delete plus team/private visibility | Missing calendar API routes, if any are added later | Strong calendar action tests | Strong PGlite calendar scope, queue degradation, and time helpers | Embed worker calendar plan covered | Missing calendar UI states | E2E specific-user/timed calendar behavior and richer calendar UI states |
 | Native integrations: Drive, GitHub, Linear, Monday.com, Slack workspace, Sentry | Missing UI/E2E connect/manage flows | Partial: Drive and Linear webhooks, OAuth start/callback, provider-connection resource sharing, activation, delete, and legacy selection guard routes covered | Missing integration actions if/when added | Strong provider parsing for Drive/GitHub/Linear/Monday.com/Slack/Sentry, event writer, provider-connection scope, attention lifecycle, source activation, duplicate-path replacement, token encryption, and email-throttle coverage | Partial: integration sync worker attention classification, transient-failure delay, owner-left, reconnect, and success-reset behavior covered | Partial: provider-connection source picker, provider-specific source guidance, team source actions, and app dialog guard covered | Browser E2E for OAuth connect/share/activate/replace, provider-backed canaries, and richer loading/error UI states |
 | Slack | Missing Slack settings E2E | Partial: events webhook covered; commands/install/user-link missing | Missing Slack action tests | Strong dispatcher/API/security/source-capture coverage, including text/file capture, linked attribution, visibility defaults, downstream queues, idempotent edits, `/timeline join` Saved Meeting aliases, and raw URL confirmation buttons | Missing provider-specific worker coverage | Missing Slack settings UI | Install/user-link routes, settings UI, provider-backed canary coverage |
 | Telegram | Partial: browser verifies deterministic Telegram voice transcript approval acceptance | Partial: webhook covered, including media env wiring | Missing Telegram action tests | Strong API/dispatcher coverage, including DM text, voice/audio, caption/photo, document routing, duplicate delivery, media skip behavior, `/join` Saved Meeting aliases, raw URL inline-button confirmation, direct-reply confirmation, and passive-text non-trigger behavior | Partial: transcribe processor handoff from audio transcript to extract/embed/suggestions is covered | Missing Telegram settings UI | Bind/unbind/settings actions and UI, provider-backed Telegram/OpenRouter canary, richer image/OCR-to-approval behavior |
-| MCP inbound/outbound | Missing MCP settings/key E2E | Strong MCP OAuth/server/key/server/tool route contracts | Missing MCP-specific actions if/when added | Strong auth/OAuth state/tool namespace/server handler, tool namespace, and deterministic untrusted-output/failure/reauth evals | MCP health worker missing | Missing MCP UI | MCP health worker, private-vs-team E2E, UI management states, provider-backed MCP behavior |
+| MCP inbound/outbound | Missing MCP settings/key E2E | Strong MCP OAuth/server/key/server/tool route contracts, including outbound moment retrieval and team-visible evidence filtering | Missing MCP-specific actions if/when added | Strong auth/OAuth state/tool namespace/server handler, tool namespace, and deterministic untrusted-output/failure/reauth evals | MCP health worker missing | Missing MCP UI | MCP health worker, private-vs-team E2E, UI management states, provider-backed MCP behavior |
 | Email inbound/outbound | Missing E2E inbound email journey | Partial: inbound webhook covered, including Redis queue wiring | Whitelist action covered; invite/support email action gaps remain | Strong parser/dispatcher/outbound/IP allowlist/source-capture coverage, including sender auth, sender whitelist filtering, visibility defaults, attachment/audio routing, downstream queues, and duplicate delivery recovery | Missing extract processor coverage for email attachments | Missing UI | Support action, sender whitelist UI component/E2E, inbound attachment extraction E2E/integration, provider-backed Postmark canary |
 | Meeting bots and meetings | Missing E2E scheduling/finalization | Strong Recall status/transcript webhook coverage for lifecycle, no-show, failure, and finalize handoff contracts | Thin meetings action coverage | Strong meetings scope, Saved Meeting alias/schedule/materialization/confirmation/failure-counter behavior, Recall/Svix/url helpers | Strong meeting-finalize and meeting-scheduler workers | Missing meeting UI states | Browser E2E for saved-meeting setup/auto-join and richer meeting UI states |
 | Job recovery and failed work | Missing dashboard E2E | Strong retry/dismiss/dashboard route coverage plus cron reconcile auth/failure behavior and direct finished archive route coverage | N/A | Strong job-recovery PGlite coverage, including retained finished-job archive pagination | Janitor worker covered | Partial job recovery list component with retry status and finished archive states | Retry/dismiss E2E flow |
@@ -66,7 +69,7 @@ Legend:
 | Embeddings and retrieval quality | Missing E2E semantic retrieval flow | Strong search/chat route contracts with mocked boundaries | N/A | Strong deterministic retrieval ranking, PGlite hydration, visibility/team filtering, embedding source planning, Qdrant point IDs, raw-event rendering, and LLM wrapper behavior | Partial: embed worker text/payload/skip/stale-source coverage | Missing retrieval UI assertions | Remaining: source rendering breadth for more providers and browser semantic retrieval assertions |
 | Support and team exports | Missing E2E | Missing direct routes if exposed | Missing support and team-export actions | Strong team-export archive integration | Team-export worker missing | Missing UI | Support validation/email failure, export enqueue/idempotency, worker failure cleanup |
 | Platform contracts: DB, queue, S3, env, rate limits | N/A | Rate-limit behavior covered through routes and token bucket | Queue degradation covered in some actions | Partial: env, crypto, rate limit, Qdrant, pagination, DB schema contracts, queue wrappers, Sentry scrubbing, and S3 wrappers covered | Queue/S3 wrapper behavior covered in shared tests | N/A | Deeper DB migration-compat history, queue/S3 live-emulator canaries |
-| Frontend components and UI states | Partial only where E2E crosses real pages | N/A | N/A | N/A | N/A | Partial: nav, job recovery list, capture composer, approvals, chat pane, document drive, object detail, board add-item flow, onboarding checklist, timeline controls/page helpers, timeline feed dedupe, hub/status/error helpers | Timeline list cards, document detail/search, boards, team settings, integrations, MCP, richer empty/error/loading states |
+| Frontend components and UI states | Partial only where E2E crosses real pages | N/A | N/A | N/A | N/A | Partial: nav, job recovery list, capture composer, approvals, chat pane, document drive, object detail, board add-item flow, onboarding checklist, timeline controls/page helpers, timeline moment rows/feed dedupe, hub/status/error helpers | Document detail/search, boards, team settings, integrations, MCP, richer empty/error/loading states |
 
 ## High-Level Read
 
@@ -79,6 +82,37 @@ Legend:
 - Most contract-freezing coverage today: mocked server-action and API route
   tests. These are valuable for auth/status/validation/side-effect intent, but
   they are less likely to discover deep product bugs on their own.
+- Timeline moment coverage now checks the server-built
+  `timeline_moments_page.v1` DTO contract, bounded page scanning, moment-agent
+  retrieval, exact metadata moment lookup for stable source identities, outbound
+  MCP moment tools, feed hydration into the renderer, and missing provider
+  grouping-metadata diagnostics. Component tests now also pin
+  focused moment visibility, selected row semantics, and inspector auto-open;
+  shared tests pin the AI presentation cache-key inputs, optional eligibility,
+  fenced prompt construction, injected structured-generation boundary,
+  persisted cache provenance lookup, stale-cache rejection, queue dedupe, and
+  worker-driven generation/storage through the shared LLM boundary;
+  daily digest tests now prove digest prompts consume bundled moments instead
+  of raw event rows while preserving source-event counts;
+  timeline observability tests now pin privacy-safe page/API dogfooding counters
+  for row-count reduction, scan pressure, missing grouping metadata, AI
+  presentation cache status, and visibility cache partitioning;
+  an opt-in live OpenRouter smoke test
+  (`OPENROUTER_LIVE_TESTS=1` with `OPENROUTER_API_KEY`) now verifies the
+  timeline moment presentation prompt/schema can produce a concrete
+  non-provider title and source-event preview IDs through the real structured
+  LLM boundary;
+  shared moment projection tests now include persisted live-adapter metadata
+  shapes for current provider writers, including nested Linear metadata,
+  Monday.com content-derived labels, and Sentry release versions;
+  worker script tests pin the dry-run-first policy for bounded timeline moment
+  presentation cache prewarming;
+  a manual live seeded-browser pass has covered owner login, timeline load,
+  desktop and mobile screenshots, and horizontal overflow checks; checked-in
+  browser coverage still needs to absorb more of that visual QA. Remaining risk
+  sits in
+  future handoff/update DTO design, future provider-adapter payload breadth, and
+  broader E2E flows.
 - Biggest remaining product-risk gaps: live-model chat eval coverage, broader
   document/provider-backed source-capture contracts, E2E browser flows for
   document search/extraction and integration OAuth/share/activate flows, richer
@@ -254,10 +288,11 @@ Covered shared areas include:
   extract/embed plus debounced conversation-review suggestions, voice/audio
   enqueues transcription, and the transcribed media path hands off to
   extract/embed plus conversation-review suggestions.
-- MCP auth, OAuth state, tool namespace, server handler behavior.
+- MCP auth, OAuth state, tool namespace, server handler behavior, and outbound
+  moment list/expand privacy boundaries.
 - Agent tools structural behavior plus fast deterministic evals for timeline
-  citations, durable task/calendar state, visibility fences, and failed-tool
-  honesty.
+  citations, bundled moment retrieval/expansion, durable task/calendar state,
+  visibility fences, and failed-tool honesty.
 - MCP tool safety evals for fenced custom-server output, nested
   `<external_content>` neutralization, call failures, and `needs_reauth`
   reconnect contracts.
@@ -304,7 +339,8 @@ Covered frontend pieces are still narrow:
 
 - Navigation items.
 - Job recovery list copy/behavior, retry status, and finished archive display.
-- Timeline controls, timeline page helpers, and timeline feed pagination dedupe.
+- Timeline controls, timeline page helpers, moment/source-event mode rendering,
+  and timeline feed pagination dedupe.
 - Hub status, timeline moments, safe redirects, auth redirects, site URL,
   Turnstile, and UX error helpers.
 
@@ -653,7 +689,8 @@ that tool schemas are shaped correctly.
 
 - Completed fast deterministic evals for:
   - Chat answering seeded timeline questions using retrieval/tool context and
-    correct citations.
+    correct citations, including bundled timeline moment retrieval for noisy
+    integration bursts.
   - Chat answering seeded object/task/calendar questions using the relevant
     scoped product tools or context.
   - Chat discovering that a background suggestion was accepted and reflecting

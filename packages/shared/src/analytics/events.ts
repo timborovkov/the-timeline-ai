@@ -108,6 +108,35 @@ export interface ProductEventPayloads {
     userId: string;
     exportId: string;
   };
+  timeline_moments_viewed: {
+    teamId: string;
+    userId: string;
+    surface: 'page' | 'api';
+    mode: 'moments' | 'events';
+    hasSourceFilter: boolean;
+    hasImpactFilter: boolean;
+    hasAuthorFilter: boolean;
+    hasDateFilter: boolean;
+    hasFocusedEvent: boolean;
+    hasFocusedMoment: boolean;
+    isCursorPage: boolean;
+    scannedPageCount: number;
+    scannedRawEventCount: number;
+    returnedRawEventCount: number;
+    returnedMomentCount: number | null;
+    rawToMomentRatio: number | null;
+    boundaryOverfetchCount: number;
+    scanCapHitCount: number;
+    missingGroupingMetadataCount: number;
+    missingGroupingMetadataAffectedEventCount: number;
+    missingGroupingMetadataByProvider: Record<string, number>;
+    aiCacheHitCount: number;
+    aiCacheMissCount: number;
+    aiCacheStaleCount: number;
+    aiCacheEligibleMissCount: number;
+    aiCacheQueuedMissingCount: number;
+    visibilityCachePartitionCount: number;
+  };
 }
 
 export type ProductEventName = keyof ProductEventPayloads;
@@ -182,6 +211,12 @@ export const PRODUCT_EVENT_METADATA: Record<ProductEventName, EventMetadata> = {
   team_export_requested: {
     owner: 'product',
     trigger: 'An admin queues a full team export.',
+    pii: 'none',
+    retention: 'PostHog project default retention.',
+  },
+  timeline_moments_viewed: {
+    owner: 'product',
+    trigger: 'A user opens or paginates the timeline moments browser.',
     pii: 'none',
     retention: 'PostHog project default retention.',
   },

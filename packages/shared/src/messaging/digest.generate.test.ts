@@ -41,12 +41,18 @@ describe('generateDailyDigest conflict handling', () => {
         team: vi.fn().mockResolvedValue({ name: 'AuditAI' }),
         listAllEventsInWindow: vi.fn().mockResolvedValue([
           {
+            id: 'event-1',
+            teamId: 'team-1',
+            authorUserId: null,
             source: 'slack',
             occurredAt: new Date('2026-06-14T10:00:00Z'),
+            createdAt: new Date('2026-06-14T10:00:00Z'),
             sourceMetadata: { slack_channel_name: 'general' },
             contentText: 'We decided to ship the pilot invite flow.',
+            contentAudioUrl: null,
           },
         ]),
+        listMomentPresentations: vi.fn().mockResolvedValue({}),
       },
       suggestions: { countPendingSuggestions: vi.fn().mockResolvedValue(2) },
       objects: { listObjects: vi.fn().mockResolvedValue([]) },
@@ -93,6 +99,7 @@ describe('generateDailyDigest conflict handling', () => {
         summary: 'Pilot invite flow moved toward launch.',
         sections: [],
         eventCount: 1,
+        momentCount: 1,
       },
     });
 
@@ -108,6 +115,7 @@ describe('generateDailyDigest conflict handling', () => {
     expect(generatedUpdate?.payload).toMatchObject({
       teamName: 'AuditAI',
       eventCount: 1,
+      momentCount: 1,
       sections: [],
     });
   });

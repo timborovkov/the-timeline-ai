@@ -25,13 +25,20 @@ const TEAM_EVENT = '00000000-0000-0000-0000-000000000401';
 const PRIVATE_EVENT = '00000000-0000-0000-0000-000000000402';
 const SPECIFIC_EVENT = '00000000-0000-0000-0000-000000000403';
 const OTHER_TEAM_EVENT = '00000000-0000-0000-0000-000000000404';
+const CI_EVENT_A = '00000000-0000-0000-0000-000000000405';
+const CI_EVENT_B = '00000000-0000-0000-0000-000000000406';
 const FACT_ID = '10000000-0000-0000-0000-000000000401';
 const TASK_ID = '20000000-0000-0000-0000-000000000401';
 const OBJECT_ID = '20000000-0000-0000-0000-000000000402';
 const CALENDAR_ID = '30000000-0000-0000-0000-000000000401';
 
 type Db = ReturnType<typeof drizzle>;
-type ToolName = 'search_timeline' | 'list_tasks' | 'list_objects' | 'list_calendar_events';
+type ToolName =
+  | 'search_timeline'
+  | 'search_timeline_moments'
+  | 'list_tasks'
+  | 'list_objects'
+  | 'list_calendar_events';
 
 async function seed(pg: PGlite): Promise<void> {
   await pg.exec(`
@@ -58,7 +65,9 @@ async function seed(pg: PGlite): Promise<void> {
       ('${TEAM_EVENT}', '${TEAM_A}', '${OWNER}', '${OWNER}', 'web', 'Acme renewal needs a pricing proposal by Friday.', '2026-06-01T09:00:00Z', 'team', NULL, '{}'::jsonb),
       ('${PRIVATE_EVENT}', '${TEAM_A}', '${OWNER}', '${OWNER}', 'web', 'Owner private Acme compensation detail.', '2026-06-01T10:00:00Z', 'private', NULL, '{}'::jsonb),
       ('${SPECIFIC_EVENT}', '${TEAM_A}', '${OWNER}', '${OWNER}', 'slack', 'Member-only Acme escalation.', '2026-06-01T11:00:00Z', 'specific_users', ARRAY['${MEMBER}'::uuid], '{}'::jsonb),
-      ('${OTHER_TEAM_EVENT}', '${TEAM_B}', '${OTHER_USER}', '${OTHER_USER}', 'web', 'Other-team Acme secret.', '2026-06-01T12:00:00Z', 'team', NULL, '{}'::jsonb);
+      ('${OTHER_TEAM_EVENT}', '${TEAM_B}', '${OTHER_USER}', '${OTHER_USER}', 'web', 'Other-team Acme secret.', '2026-06-01T12:00:00Z', 'team', NULL, '{}'::jsonb),
+      ('${CI_EVENT_A}', '${TEAM_A}', '${OWNER}', '${OWNER}', 'integration', 'GitHub workflow "CI" #1603 on timborovkov/audit-ai success', '2026-06-27T18:32:00Z', 'team', NULL, '{"provider":"github","event_type":"workflow_run.success","github":{"type":"workflow_run","repo":"timborovkov/audit-ai","head_branch":"main"}}'::jsonb),
+      ('${CI_EVENT_B}', '${TEAM_A}', '${OWNER}', '${OWNER}', 'integration', 'GitHub workflow "CI" #1602 on timborovkov/audit-ai success', '2026-06-27T18:08:00Z', 'team', NULL, '{"provider":"github","event_type":"workflow_run.success","github":{"type":"workflow_run","repo":"timborovkov/audit-ai","head_branch":"main"}}'::jsonb);
 
     INSERT INTO facts (id, team_id, raw_event_id, statement, confidence, model_version)
     VALUES ('${FACT_ID}', '${TEAM_A}', '${TEAM_EVENT}', 'Acme renewal needs pricing by Friday.', 0.96, 'eval-model');
@@ -113,6 +122,24 @@ function answerFromTimeline(result: unknown): string {
   return rows.map((row) => `${row.snippet} [event:${row.eventId}]`).join('\n');
 }
 
+function answerFromMoments(result: unknown): string {
+  const rows =
+    (
+      result as {
+        moments?: { title: string; raw_event_ids: string[]; evidence_count: number }[];
+      }
+    ).moments ?? [];
+  if (rows.length === 0) return "I couldn't verify that from accessible timeline moments.";
+  return rows
+    .map(
+      (row) =>
+        `${row.title} (${String(row.evidence_count)} events) ${row.raw_event_ids
+          .map((id) => `[event:${id}]`)
+          .join(' ')}`,
+    )
+    .join('\n');
+}
+
 async function runToolEval(
   db: Db,
   userId: string,
@@ -133,7 +160,16 @@ async function runToolEval(
   const exec = tools[name]?.execute as (raw: unknown, opts: unknown) => Promise<unknown>;
   const output = await exec(input, {});
   trace.push({ tool: name, input, output });
-  return { output, trace, answer: name === 'search_timeline' ? answerFromTimeline(output) : '' };
+  return {
+    output,
+    trace,
+    answer:
+      name === 'search_timeline'
+        ? answerFromTimeline(output)
+        : name === 'search_timeline_moments'
+          ? answerFromMoments(output)
+          : '',
+  };
 }
 
 describe('agent tool evals', () => {
@@ -187,6 +223,38 @@ describe('agent tool evals', () => {
     ]);
     expect(evalRun.answer).toContain('Acme renewal needs pricing by Friday.');
     expect(evalRun.answer).toContain(`[event:${TEAM_EVENT}]`);
+  });
+
+  it('bundles integration-heavy timeline answers into cited moments', async () => {
+    // Product behavior: chat should not read a burst of workflow webhooks as
+    // separate user-facing facts when provider metadata shows one work moment.
+    const evalRun = await runToolEval(
+      db,
+      OWNER,
+      'search_timeline_moments',
+      { query: 'CI audit-ai', source: 'integration' },
+      [
+        hit(CI_EVENT_A, 0.95, {
+          source: 'integration',
+          occurred_at: '2026-06-27T18:32:00.000Z',
+        }),
+        hit(CI_EVENT_B, 0.89, {
+          source: 'integration',
+          occurred_at: '2026-06-27T18:08:00.000Z',
+        }),
+      ],
+    );
+
+    expect(evalRun.trace).toEqual([
+      expect.objectContaining({
+        tool: 'search_timeline_moments',
+        input: { query: 'CI audit-ai', source: 'integration' },
+      }),
+    ]);
+    expect(evalRun.answer).toContain('CI passed on timborovkov/audit-ai');
+    expect(evalRun.answer).toContain('(2 events)');
+    expect(evalRun.answer).toContain(`[event:${CI_EVENT_A}]`);
+    expect(evalRun.answer).toContain(`[event:${CI_EVENT_B}]`);
   });
 
   it('surfaces accepted task and calendar state through durable workspace tools', async () => {

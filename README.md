@@ -51,8 +51,8 @@ source material instead of hiding behind black-box summaries.
 - Custom MCP servers that give the agent live access to long-tail tools without
   automatically ingesting those tools into the event store.
 - An outbound MCP server so tools like Claude Desktop and Cursor can query
-  team-level workspace context across Timeline events, objects, tasks, boards,
-  calendar, documents, and integrations.
+  team-level workspace context across bundled timeline moments, raw events,
+  objects, tasks, boards, calendar, documents, and integrations.
 
 ## Project Status
 
@@ -133,7 +133,9 @@ Seeded workspace data:
 - Team: `Acme Labs` (`acme-labs`) with inbound email
   `acme-labs@inbound.timeline.dev`.
 - Events: manual web note, inbound email, Slack message, meeting transcript,
-  GitHub integration event, and Linear integration event.
+  Linear issue update, bundled GitHub PR/review activity, and a bundled GitHub
+  CI workflow burst so the default timeline demonstrates moments instead of
+  single-event rows only.
 - Objects: Project Atlas, vendor appendix task, transcript-only meeting-bot
   decision, Acme Labs company, and Mika Product person.
 - Board: `Atlas Launch` with Todo, Doing, and Done lanes.
@@ -164,6 +166,11 @@ pnpm test:dist-imports    # build db/shared and import compiled runtime modules 
 pnpm e2e                  # Playwright core journey tests
 pnpm run doctor           # React Doctor scan for React/Next health regressions
 pnpm dev:seed             # seed local demo data with disabled fake integrations
+pnpm --filter @timeline/worker timeline-moment-presentations -- \
+  --team=<uuid> [--since=YYYY-MM-DD] [--until=YYYY-MM-DD] \
+  [--source=all|telegram|slack|integration|email|meeting|calendar|document|ingest_webhook|system] \
+  [--max-events=500] [--limit=100] [--user=<uuid>] [--enqueue]
+                          # dry-run/prewarm missing AI presentation cache jobs for timeline moments
 pnpm db:generate          # generate Drizzle migrations after schema changes
 pnpm db:migrate           # apply database migrations
 pnpm check:web-bundle     # inspect built Next server chunks
@@ -202,8 +209,8 @@ boundaries.
   waves.
 - [`docs/timeline-moments-redesign-plan.md`](./docs/timeline-moments-redesign-plan.md) —
   full plan for turning the timeline from a raw activity log into bundled,
-  evidence-backed work moments with deterministic grouping and AI-assisted
-  summaries.
+  evidence-backed work moments shared by the UI, chat agents, and outbound MCP
+  tools.
 - [`docs/calendar.html`](./docs/calendar.html) — approval-backed calendar
   suggestions, recurrence, occurrence exceptions, and tentative slots.
 - [`docs/setup/local.html`](./docs/setup/local.html) — complete local setup.

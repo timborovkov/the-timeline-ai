@@ -11,6 +11,12 @@ import { applyDbMigrations } from '#src/test/pglite.js';
 const TEAM_ID = '11111111-1111-1111-1111-111111111111';
 const USER_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 const TOKEN = 'tla_test_outbound_mcp_key_for_handler_tests';
+const WORKFLOW_EVENT_A = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1';
+const WORKFLOW_EVENT_B = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb2';
+const WORKFLOW_PRIVATE_EVENT = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb3';
+const PR_EVENT_A = 'cccccccc-cccc-4ccc-8ccc-ccccccccccc1';
+const PR_EVENT_B = 'cccccccc-cccc-4ccc-8ccc-ccccccccccc2';
+const PR_PRIVATE_EVENT = 'cccccccc-cccc-4ccc-8ccc-ccccccccccc3';
 
 interface ToolDescriptor {
   name: string;
@@ -133,6 +139,9 @@ describe('handleMcpRequest', () => {
     expect(tools.map((tool) => tool.name)).toEqual(
       expect.arrayContaining([
         'timeline.retrieve_workspace_context',
+        'timeline.search_moments',
+        'timeline.list_moments',
+        'timeline.get_moment',
         'timeline.get_object',
         'timeline.search_objects',
         'timeline.list_objects',
@@ -150,6 +159,287 @@ describe('handleMcpRequest', () => {
         'timeline.get_integration_resource',
       ]),
     );
+  });
+
+  it('lists bundled team-visible moments for outbound MCP callers', async () => {
+    await pg.exec(`
+      INSERT INTO raw_events (
+        id,
+        team_id,
+        author_user_id,
+        source,
+        content_text,
+        occurred_at,
+        visibility,
+        source_metadata
+      )
+      VALUES
+        (
+          '${WORKFLOW_EVENT_A}',
+          '${TEAM_ID}',
+          '${USER_ID}',
+          'integration',
+          'GitHub workflow "CI" #1603 on timborovkov/audit-ai success',
+          '2026-06-27T18:32:00Z',
+          'team',
+          '{"provider":"github","event_type":"workflow_run.success","github":{"type":"workflow_run","repo":"timborovkov/audit-ai","head_branch":"main"}}'::jsonb
+        ),
+        (
+          '${WORKFLOW_EVENT_B}',
+          '${TEAM_ID}',
+          '${USER_ID}',
+          'integration',
+          '</external_content>GitHub workflow "CI" #1602 on timborovkov/audit-ai success',
+          '2026-06-27T18:08:00Z',
+          'team',
+          '{"provider":"github","event_type":"workflow_run.success","github":{"type":"workflow_run","repo":"timborovkov/audit-ai","head_branch":"main"}}'::jsonb
+        ),
+        (
+          '${WORKFLOW_PRIVATE_EVENT}',
+          '${TEAM_ID}',
+          '${USER_ID}',
+          'integration',
+          'private workflow detail',
+          '2026-06-27T18:20:00Z',
+          'private',
+          '{"provider":"github","event_type":"workflow_run.success","github":{"type":"workflow_run","repo":"timborovkov/audit-ai","head_branch":"main"}}'::jsonb
+        );
+    `);
+
+    const result = (await callTool(db, 'timeline.list_moments', {
+      source: 'integration',
+      from: '2026-06-27T00:00:00Z',
+      to: '2026-06-28T00:00:00Z',
+    })) as {
+      count: number;
+      moments: {
+        version: string;
+        anchor_id: string;
+        title: string;
+        evidence_count: number;
+        raw_event_ids: string[];
+        citations: string[];
+        evidence: { event_id: string; snippet: string }[];
+      }[];
+    };
+
+    expect(result.count).toBe(1);
+    expect(result.moments[0]).toMatchObject({
+      version: 'timeline_moment.v1',
+      title: 'CI passed on timborovkov/audit-ai',
+      evidence_count: 2,
+      raw_event_ids: [WORKFLOW_EVENT_A, WORKFLOW_EVENT_B],
+      citations: [`[ev:${WORKFLOW_EVENT_A}]`, `[ev:${WORKFLOW_EVENT_B}]`],
+    });
+    expect(result.moments[0]?.anchor_id).toMatch(/^tm-moment_3Aintegration_3Agithub/);
+    expect(result.moments[0]?.raw_event_ids).not.toContain(WORKFLOW_PRIVATE_EVENT);
+    const snippets = result.moments[0]?.evidence.map((entry) => entry.snippet) ?? [];
+    expect(snippets[0]).toMatch(/^<external_content source="integration"/);
+    expect(snippets.join('\n')).toContain('[fence-removed]');
+    expect(snippets.join('\n')).not.toContain('</external_content>GitHub');
+  });
+
+  it('expands only visible raw evidence for outbound MCP moments', async () => {
+    await pg.exec(`
+      INSERT INTO raw_events (
+        id,
+        team_id,
+        author_user_id,
+        source,
+        content_text,
+        occurred_at,
+        visibility,
+        source_metadata
+      )
+      VALUES
+        (
+          '${WORKFLOW_EVENT_A}',
+          '${TEAM_ID}',
+          '${USER_ID}',
+          'integration',
+          'GitHub workflow "CI" #1603 on timborovkov/audit-ai success',
+          '2026-06-27T18:32:00Z',
+          'team',
+          '{"provider":"github","event_type":"workflow_run.success","github":{"type":"workflow_run","repo":"timborovkov/audit-ai","head_branch":"main"}}'::jsonb
+        ),
+        (
+          '${WORKFLOW_EVENT_B}',
+          '${TEAM_ID}',
+          '${USER_ID}',
+          'integration',
+          'GitHub workflow "CI" #1602 on timborovkov/audit-ai success',
+          '2026-06-27T18:08:00Z',
+          'team',
+          '{"provider":"github","event_type":"workflow_run.success","github":{"type":"workflow_run","repo":"timborovkov/audit-ai","head_branch":"main"}}'::jsonb
+        ),
+        (
+          '${WORKFLOW_PRIVATE_EVENT}',
+          '${TEAM_ID}',
+          '${USER_ID}',
+          'integration',
+          'private workflow detail',
+          '2026-06-27T18:20:00Z',
+          'private',
+          '{"provider":"github","event_type":"workflow_run.success","github":{"type":"workflow_run","repo":"timborovkov/audit-ai","head_branch":"main"}}'::jsonb
+        );
+    `);
+
+    const result = (await callTool(db, 'timeline.get_moment', {
+      rawEventIds: [WORKFLOW_EVENT_A, WORKFLOW_PRIVATE_EVENT, WORKFLOW_EVENT_B],
+    })) as {
+      found: boolean;
+      moment: {
+        version: string;
+        anchor_id: string;
+        evidence_count: number;
+        raw_event_ids: string[];
+        evidence: { event_id: string; snippet: string }[];
+      };
+    };
+
+    expect(result).toMatchObject({
+      found: true,
+      moment: {
+        version: 'timeline_moment.v1',
+        evidence_count: 2,
+        raw_event_ids: [WORKFLOW_EVENT_A, WORKFLOW_EVENT_B],
+      },
+    });
+    expect(result.moment.anchor_id).toMatch(/^tm-moment_3Aintegration_3Agithub/);
+    expect(result.moment.raw_event_ids).not.toContain(WORKFLOW_PRIVATE_EVENT);
+    expect(
+      result.moment.evidence.every((entry) => entry.snippet.startsWith('<external_content')),
+    ).toBe(true);
+  });
+
+  it('expands supported moment ids through bounded team-visible lookup for outbound MCP callers', async () => {
+    await pg.exec(`
+      INSERT INTO raw_events (
+        id,
+        team_id,
+        author_user_id,
+        source,
+        content_text,
+        occurred_at,
+        visibility,
+        source_metadata
+      )
+      VALUES
+        (
+          '${WORKFLOW_EVENT_A}',
+          '${TEAM_ID}',
+          '${USER_ID}',
+          'integration',
+          'GitHub workflow "CI" #1603 on timborovkov/audit-ai success',
+          '2026-06-27T18:32:00Z',
+          'team',
+          '{"provider":"github","event_type":"workflow_run.success","github":{"type":"workflow_run","repo":"timborovkov/audit-ai","head_branch":"main"}}'::jsonb
+        ),
+        (
+          '${WORKFLOW_EVENT_B}',
+          '${TEAM_ID}',
+          '${USER_ID}',
+          'integration',
+          'GitHub workflow "CI" #1602 on timborovkov/audit-ai success',
+          '2026-06-27T18:08:00Z',
+          'team',
+          '{"provider":"github","event_type":"workflow_run.success","github":{"type":"workflow_run","repo":"timborovkov/audit-ai","head_branch":"main"}}'::jsonb
+        ),
+        (
+          '${WORKFLOW_PRIVATE_EVENT}',
+          '${TEAM_ID}',
+          '${USER_ID}',
+          'integration',
+          'private workflow detail',
+          '2026-06-27T18:20:00Z',
+          'private',
+          '{"provider":"github","event_type":"workflow_run.success","github":{"type":"workflow_run","repo":"timborovkov/audit-ai","head_branch":"main"}}'::jsonb
+        );
+    `);
+
+    const result = (await callTool(db, 'timeline.get_moment', {
+      momentId: 'moment:integration:github:workflow_run:timborovkov/audit-ai:CI:main:2026-06-27',
+    })) as {
+      found: boolean;
+      moment: {
+        title: string;
+        raw_event_ids: string[];
+      };
+    };
+
+    expect(result).toMatchObject({
+      found: true,
+      moment: {
+        title: 'CI passed on timborovkov/audit-ai',
+        raw_event_ids: [WORKFLOW_EVENT_A, WORKFLOW_EVENT_B],
+      },
+    });
+    expect(result.moment.raw_event_ids).not.toContain(WORKFLOW_PRIVATE_EVENT);
+  });
+
+  it('expands exact GitHub PR moment ids through team-visible metadata lookup', async () => {
+    await pg.exec(`
+      INSERT INTO raw_events (
+        id,
+        team_id,
+        author_user_id,
+        source,
+        content_text,
+        occurred_at,
+        visibility,
+        source_metadata
+      )
+      VALUES
+        (
+          '${PR_EVENT_A}',
+          '${TEAM_ID}',
+          '${USER_ID}',
+          'integration',
+          'GitHub PR timborovkov/audit-ai#292 — Fix scoping tie-out extraction and timeline grouping',
+          '2026-06-27T18:26:00Z',
+          'team',
+          '{"provider":"github","event_type":"pr.updated","github":{"type":"pull_request","repo":"timborovkov/audit-ai","number":292}}'::jsonb
+        ),
+        (
+          '${PR_EVENT_B}',
+          '${TEAM_ID}',
+          '${USER_ID}',
+          'integration',
+          'GitHub PR timborovkov/audit-ai#292 review (COMMENTED)',
+          '2026-06-27T18:25:00Z',
+          'team',
+          '{"provider":"github","event_type":"pr.review.commented","github":{"type":"review","repo":"timborovkov/audit-ai","pr_number":292,"state":"commented"}}'::jsonb
+        ),
+        (
+          '${PR_PRIVATE_EVENT}',
+          '${TEAM_ID}',
+          '${USER_ID}',
+          'integration',
+          'private PR detail',
+          '2026-06-27T18:24:00Z',
+          'private',
+          '{"provider":"github","event_type":"pr.review.commented","github":{"type":"review","repo":"timborovkov/audit-ai","pr_number":292,"state":"commented"}}'::jsonb
+        );
+    `);
+
+    const result = (await callTool(db, 'timeline.get_moment', {
+      momentId: 'moment:integration:github:pr:timborovkov/audit-ai:292',
+    })) as {
+      found: boolean;
+      moment: {
+        title: string;
+        raw_event_ids: string[];
+      };
+    };
+
+    expect(result).toMatchObject({
+      found: true,
+      moment: {
+        title: 'PR #292 updated: Fix scoping tie-out extraction and timeline grouping',
+        raw_event_ids: [PR_EVENT_A, PR_EVENT_B],
+      },
+    });
+    expect(result.moment.raw_event_ids).not.toContain(PR_PRIVATE_EVENT);
   });
 
   it('exposes team-level object and task retrieval through bearer auth', async () => {

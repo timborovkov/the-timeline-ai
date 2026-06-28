@@ -82,7 +82,7 @@ describe('AppShell', () => {
     expect(html).toContain('data-testid="app-document-scroll-lock"');
     expect(html).toContain('flex min-h-0 min-w-0 flex-1 flex-col');
     expect(html).toContain(
-      'min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-6 md:px-8 md:py-8',
+      'min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-24 pt-6 md:px-8 md:py-8',
     );
   });
 });

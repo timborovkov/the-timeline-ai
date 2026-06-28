@@ -65,14 +65,16 @@ record readable and retrievable.
 
 ### Current Implementation Constraints
 
-The repo is not starting from zero. The first implementation pass must respect
-the behavior already present in `apps/web/src/lib/timeline-moments.ts`,
+The repo is not starting from zero. The implementation must respect the
+behavior now centralized in `packages/shared/src/timeline-moments/index.ts`,
+the web compatibility wrapper in `apps/web/src/lib/timeline-moments.ts`,
 `apps/web/src/lib/timeline-page.ts`, `/api/timeline`, and shared agent
 retrieval.
 
 Current useful pieces:
 
-- `buildTimelineMoments()` already groups raw events in the web app.
+- `buildTimelineMoments()` already groups raw events through the shared
+  projection.
 - `collectTimelinePage()` already scans additional raw pages for impact
   filtering.
 - `/api/timeline` already returns raw events plus impact, artifact, author,
@@ -82,16 +84,149 @@ Current useful pieces:
 
 Current constraints to fix before moments become the canonical UI projection:
 
-- The web grouping key includes the event date, so logical provider objects can
-  split across midnight or timezone boundaries.
-- Pagination is raw-event based, so a moment can be split or duplicated when
-  events for the same group land on different pages.
-- Focused-event loading includes the focused raw event, but not necessarily the
-  rest of its deterministic group.
-- Moment semantics live in `apps/web`, while agents, digests, updates, and
-  outbound MCP need the same projection from `packages/shared`.
-- Existing agent tools cite raw event IDs only; moment IDs are not yet stable
-  retrieval handles.
+- The web grouping key used to date-split too aggressively. The first
+  implementation pass removed the generic date prefix and now keeps
+  source-specific date windows only where they are part of the adapter rule
+  (for example chat/webhook windows and daily CI bursts).
+- Pagination is still raw-event based, but the current collector now advances
+  to the event immediately before the first unreturned moment so mixed boundary
+  pages do not loop the same bundled moment.
+- Focused-event loading now hydrates a bounded related-event window and uses
+  the shared projection to include the rest of the visible deterministic group.
+- Moment projection now lives in `packages/shared/timeline-moments` and is used
+  by both the web timeline wrapper and the first agent moment tools. This keeps
+  grouping, titles, evidence counts, and raw-event citations from drifting.
+- Moment IDs are deterministic presentation handles, and each moment now carries
+  a URL-safe `anchorId` for UI, chat-agent, and outbound MCP deep links. Agents
+  should still prefer passing visible `raw_event_ids` returned by
+  `search_timeline_moments` to `get_timeline_moment`, but moment-ID-only
+  expansion is available for deterministic IDs that encode source/time context
+  or exact source metadata, such as GitHub workflow bursts, GitHub PR/review
+  activity, chat buckets, webhook buckets, email threads, meetings, calendar
+  events, document-day activity, generic provider objects, and Slack threads.
+
+### Implemented First Slice
+
+The first implementation pass has shipped these pieces:
+
+- `/app/timeline` defaults to `Moments` and keeps `Audit trail` as an explicit
+  raw log mode backed by `mode=events`.
+- Timeline rows now show title, subtitle, preview, moment kind, source icon,
+  evidence count, and less technical inspector language.
+- GitHub workflow runs bundle into `ci_deploy` moments, and common chat,
+  meeting, email, calendar, document, integration, and webhook grouping rules
+  have deterministic fallbacks.
+- The chat agent tool surface includes `search_timeline_moments` and
+  `get_timeline_moment`, with eval coverage for noisy GitHub CI bursts and raw
+  event citations.
+- Timeline-as-MCP-server now exposes `timeline.search_moments`,
+  `timeline.list_moments`, and `timeline.get_moment` for team-visible bundled
+  evidence, while keeping raw event tools available for audit/debug.
+- `packages/shared/timeline-moments` now owns the deterministic projection used
+  by both the UI and agent tools.
+- Shared moments, chat-agent moment results, and outbound MCP moment results
+  now carry `version: 'timeline_moment.v1'` and a shared `anchorId`.
+- `/app/timeline` and `/api/timeline` now thread `mode=moments|events` through
+  paging. Moment mode performs bounded server-side raw-page scanning so grouped
+  source siblings are not split or skipped at the first page boundary; Source
+  events mode remains raw and page-sized.
+- `/api/timeline` and the server-rendered initial timeline page now include an
+  additive `timeline_moments_page.v1` shape with server-built moment DTOs,
+  `rawEventsById`, grouping version metadata, and debug-gated pagination
+  diagnostics while preserving the existing raw `items` response.
+- Debug-gated moment diagnostics now include provider metadata quality warnings,
+  including missing grouping fields by provider and event-level diagnostic
+  records for weak integration or ingest-webhook grouping.
+- Dev seed provider metadata now includes human-readable Slack/meeting context,
+  Linear event labels, bundled GitHub PR/review activity, and a bundled GitHub
+  CI workflow burst so local browser screenshots exercise moment titles,
+  row-count reduction, and impact context instead of generic provider activity
+  rows.
+- The timeline control bar now reports loaded moment/source-event counts instead
+  of explanatory product copy, and the mobile app shell keeps evidence rows clear
+  of floating chat chrome while preserving agent access through the primary Ask
+  route.
+- Integration moments now prefer human-readable resource labels over raw object
+  IDs when provider metadata exposes them, including Linear issue keys, Sentry
+  short IDs, Google Drive filenames, Monday.com item names, and generic
+  `resource_name` labels.
+- Shared provider fixtures now cover current GitHub commit/release shapes,
+  Linear issue metadata, Sentry issue metadata, Google Drive file metadata,
+  Monday.com item metadata, and generic custom-webhook metadata, with
+  diagnostics staying quiet for sufficiently structured events.
+- The provider fixture matrix now also covers representative Jira, Asana,
+  Trello, Basecamp, Datadog, Salesforce, HubSpot, Zendesk, Intercom, Notion,
+  Confluence, and Figma metadata shapes so future source adapters have a
+  readable-label contract before they add high-volume rows.
+- Provider projection tests now include persisted live-adapter metadata shapes
+  from current provider writers, including nested Linear comment/project
+  metadata, Monday.com rows whose item labels only appear in content text, and
+  Sentry release versions.
+- Production AI-presentation prewarming now has an explicit dry-run-first worker
+  command, `pnpm --filter @timeline/worker timeline-moment-presentations -- --team=<uuid>`.
+  It supports date, source, event-count, limit, service/user visibility, and
+  enqueue flags; scans a bounded visible event window; skips cached or
+  ineligible moments; and only enqueues existing `timeline-moment-presentation`
+  jobs when `--enqueue` is supplied.
+- The timeline feed now hydrates those server-built moment DTOs from
+  `rawEventsById` and passes them into the renderer, keeping client-side moment
+  building only as a compatibility fallback for legacy or partially hydrated
+  pages.
+- Focused raw-event links in Moments mode now pull visible deterministic
+  siblings from a bounded source-specific window before rendering the moment.
+- `/app/timeline?moment=<moment-id>` and `/api/timeline?moment=<moment-id>` now
+  hydrate supported deterministic moment IDs through shared visible-event
+  lookup. Time-window plans cover burst/window moments; exact metadata plans
+  cover email threads, meetings, calendar events, GitHub PR/review activity, and
+  generic integration object/event moments. The focused moment remains visible
+  through filters, and the moment query is preserved in infinite-loading cache
+  keys.
+- Generic integration moment ID lookup now matches both `external_object_id` and
+  `external_event_id` under the same provider, so future providers that only
+  expose delivery/event IDs can still deep-link and expand evidence without
+  broad time-window scans.
+- A server-side AI presentation foundation now lives in
+  `@timeline/shared/timeline-moments/presentation`. It defines the structured
+  output schema, eligibility rules, fenced prompt builder, injected
+  `llm.chatStructured()` generation helper, and cache-key provenance hashes for
+  visible source IDs, source content, visibility scope, impact hydration,
+  artifact clusters, prompt version, and model.
+- Persisted AI presentation cache rows now live in
+  `timeline_moment_presentations`, keyed by team plus cache fingerprint and
+  carrying the full provenance inputs. The web timeline, chat-agent moment
+  tools, and outbound MCP moment tools consume cached titles/summaries only when
+  the current visible evidence rebuilds the exact same cache key.
+- Eligible cache misses are now queued from `/app/timeline` and `/api/timeline`
+  without blocking reads. A worker rebuilds the visible moment through the same
+  team-scoped projection, rejects stale keys or partial visibility, calls the
+  shared structured LLM boundary, and stores validated presentation rows.
+- Focused raw-event and moment links now auto-open the shared inspector content
+  on first render, and selected rows expose `aria-current` alongside the signal
+  rail.
+- The shared inspector now becomes a real mobile bottom sheet with a backdrop,
+  focus on the close control, and the same Moment, Impact, Source evidence,
+  Related evidence, Controls, and Technical details order as the desktop side
+  pane.
+- Client-side timeline refresh failures now keep the loaded moments and filters
+  visible, show an inline retry action, and preserve raw error details behind
+  the standard details affordance.
+- Long source evidence bodies in the inspector are now visually capped and open
+  a full source-evidence quick-view dialog so raw provider payloads, pasted
+  text, and chat bursts stay inspectable without overwhelming the timeline.
+- `design.md` has been updated for the row and inspector anatomy.
+
+Still open:
+
+- broaden provider fixture coverage with live adapter payload shapes as each
+  future provider ships, especially when a real API payload differs from the
+  representative contract fixtures
+- broaden moment-ID-only hydration only for new/future non-integration source
+  families that do not yet expose a bounded or exact metadata lookup plan
+- build any future handoff/update DTO surface on the same moment-first
+  generated-output path; no current generated handoff DTO implementation exists
+  to migrate. Daily digests already summarize bundled moment briefs, apply
+  matching cached AI presentations, and render moment counts alongside raw
+  source-event counts.
 
 The first milestone is therefore a refactor and hardening pass, not a greenfield
 rewrite.
@@ -113,8 +248,8 @@ clarify ownership rather than duplicate behavior.
 | Design system | `design.md` Timeline rules | The visual direction fits the operational surface rules; update `design.md` only when implementation changes row/inspector patterns. |
 | Ingest webhooks | Evidence-only webhook plan | Webhooks get source/time/object grouping, but remain non-authoritative unless another approval/provider path promotes state. |
 
-The biggest overlap is with agent retrieval. Today the agent plan names
-`search_timeline_events`; after this redesign, raw event search should become
+The biggest overlap is with agent retrieval. Existing raw-event search is
+served by `search_timeline`; after this redesign, raw event search should become
 the advanced/audit path while moment search becomes the normal retrieval path
 for "what happened?" questions.
 
@@ -263,8 +398,9 @@ and impact should be open by default.
 ### Short-Term: Computed Moments
 
 Start by enriching the current computed `TimelineMoment` projection in
-`apps/web/src/lib/timeline-moments.ts`. This gives a fast UI improvement without
-schema changes.
+`packages/shared/src/timeline-moments/index.ts`, with
+`apps/web/src/lib/timeline-moments.ts` acting as a web-typed compatibility
+wrapper. This gives a fast UI and agent improvement without schema changes.
 
 Add fields to the computed shape:
 
@@ -341,9 +477,9 @@ interface TimelineSourcePresentationAdapter {
 }
 ```
 
-This adapter can live in `apps/web/src/lib/timeline-moments.ts` first, then move
-to `packages/shared` before agents, digests, workers, or outbound MCP use the
-same projection. The UI should not become the owner of timeline semantics.
+The adapter contract now starts in `packages/shared/src/timeline-moments` so
+agents, digests, workers, and future outbound MCP surfaces can consume the same
+projection. The UI should not become the owner of timeline semantics.
 
 Each adapter must also ship fixtures that cover:
 
@@ -505,8 +641,13 @@ events only for evidence.
 Required companion changes:
 
 - moment search tool or `mode='moments'` on existing timeline search
+  - started with `search_timeline_moments`, which bundles visible hydrated raw
+    events and returns raw citations
 - moment expansion tool for citations and inspector-style evidence
+  - started with `get_timeline_moment`, which expands visible raw event IDs
+    returned by moment search
 - evals proving moment retrieval improves noisy GitHub/chat/webhook questions
+  - started with an agent eval for repeated GitHub workflow runs
 - privacy tests proving hidden events do not leak through moment summaries,
   counts, or related evidence
 
@@ -514,10 +655,14 @@ Required companion changes:
 
 Do not remove the raw event log. It should become explicit:
 
-- UI mode: `Moments | Source events`
+- UI mode: `Moments | Audit trail`
 - agent path: `search_timeline_moments` for normal questions,
-  `search_timeline_events` for audit/debug
+  `search_timeline` for audit/debug
 - inspector path: source evidence cards link to exact raw event anchors
+- moment path: supported moment IDs can deep-link to
+  `/app/timeline?moment=<moment-id>` and hydrate their visible raw-event
+  evidence through the same bounded or exact metadata lookup plan agents and
+  outbound MCP use
 
 This keeps the product honest: moments make the archive readable, but raw events
 make it auditable.
@@ -578,6 +723,17 @@ Minimum metrics and logs:
 | `timeline.moments.visibility_cache_partition_count` | Confirms cache partitioning is active. |
 | `timeline.moments.raw_mode_switch_count` | Shows when users distrust or need the raw log. |
 | `timeline.moments.agent_expansion_count` | Shows whether agents can retrieve moments before raw evidence. |
+
+Implemented first slice:
+
+- `/app/timeline` and `/api/timeline` now emit a privacy-safe
+  `timeline_moments_viewed` product event with the page surface, mode, filter
+  booleans, scanned/returned raw-event counts, returned moment count,
+  raw-to-moment ratio, page-boundary/scan-cap counters, missing grouping
+  metadata counts by provider, AI presentation cache hit/miss/stale/eligible
+  miss counts, queued missing-cache jobs, and visibility cache partition count.
+- The API keeps this observability payload internal and does not expose it in
+  normal timeline JSON responses.
 
 Every bad-grouping support report should be answerable from a moment ID:
 
@@ -1108,7 +1264,7 @@ Add or update internal agent tools so they can choose the right level of detail:
 | --- | --- |
 | `search_timeline_moments` | Default agent retrieval over bundled moments. |
 | `get_timeline_moment` | Expand one moment into evidence, impact, related artifacts, and technical details. |
-| `search_timeline_events` | Advanced raw event retrieval for audit/debug questions. |
+| `search_timeline` | Advanced raw event retrieval for audit/debug questions. |
 | `search_integration_events` | Provider-specific evidence search, still fenced as external content. |
 
 The exact names can follow existing tool conventions, but the separation matters:
@@ -1140,6 +1296,20 @@ events. Bearer-key access remains team-scoped and must keep the existing
 privacy boundary: team bearer keys cannot see private or specific-user events.
 The moment projection must be computed from the same visible event set the MCP
 caller is allowed to access.
+
+Implemented first slice:
+
+- `timeline.search_moments` returns semantic hits as bundled moments with raw
+  event citations.
+- `timeline.list_moments` returns recent team-visible bundled moments for
+  recaps and digests.
+- `timeline.get_moment` expands raw event IDs from a moment result and silently
+  drops hidden raw events through the same bearer visibility boundary. It can
+  also expand supported deterministic moment IDs through bounded visible-event
+  lookup or exact source-metadata lookup, while returning
+  `raw_event_ids_required` for IDs that cannot be safely hydrated without broad
+  scanning.
+- MCP event snippets are fenced as external content before leaving the server.
 
 ### Eval Implications
 
@@ -1270,15 +1440,19 @@ interface TimelineMomentsPage {
 }
 ```
 
-The client can initially keep building moments locally, but the API should move
-toward server-built moment DTOs so pagination and AI presentation are stable.
-Once agents consume moments, the API DTO and the shared agent DTO should be
+The client now prefers server-built moment DTOs so pagination and AI
+presentation remain stable across SSR, infinite loading, chat citations, and
+outbound MCP tools. Client-side moment building remains only as a rollback path
+for legacy or partially hydrated pages. The API DTO and the shared agent DTO are
 siblings derived from the same `packages/shared` projection. The web API can
 include UI hydration such as signed audio URLs and captured-file previews; agent
 retrieval should include citation snippets and structured filters.
 
-Version all moment DTOs. The first server response should identify both the API
-shape and the grouping algorithm:
+Moment DTOs now start with `version: 'timeline_moment.v1'` on the shared
+projection and the agent/MCP retrieval payloads. They also include a stable,
+URL-safe `anchorId` for linking the bundled row while keeping raw-event IDs as
+the citation and expansion contract. The web timeline response now also
+identifies the API page shape and grouping algorithm:
 
 ```ts
 interface TimelineMomentsPage {
@@ -1297,8 +1471,8 @@ interface TimelineMomentsPage {
 }
 ```
 
-The diagnostics field should be omitted in normal production responses unless a
-support/debug flag is present.
+The diagnostics field is omitted in normal production responses unless
+`debug=moment_diagnostics` or `diagnostics=moments` is present.
 
 ### Pagination
 
@@ -1313,6 +1487,9 @@ Rules:
 - raw scan cap: configurable, e.g. 250 events per request
 - if focused event is requested, include its entire deterministic group
 - never split a source cluster across pages when the group key is known
+- when the first unreturned moment appears inside a mixed raw page, advance the
+  raw cursor to the event immediately before that moment's lead event rather
+  than rewinding to the whole page
 - if a group is huge, show one moment and cap evidence in the inspector
 
 Collector requirements:
@@ -1358,8 +1535,8 @@ Work:
   and generic webhooks.
 - Inventory current `buildTimelineMoments()` behavior and mark which existing
   tests should be preserved, rewritten, or promoted into shared-package tests.
-- Add a feature flag or query-gated preview path for the server-built moment
-  response before making it the default.
+- Keep Source events mode and local client grouping as the rollback path for the
+  default server-built moment response.
 
 Acceptance:
 
@@ -1373,6 +1550,8 @@ Acceptance:
 
 Files:
 
+- `packages/shared/src/timeline-moments/index.ts`
+- `packages/shared/src/timeline-moments/index.test.ts`
 - `apps/web/src/lib/timeline-moments.ts`
 - `apps/web/src/lib/timeline-moments.test.ts`
 - `apps/web/src/components/timeline-list.tsx`
@@ -1397,7 +1576,7 @@ Acceptance:
 
 Files:
 
-- `apps/web/src/lib/timeline-moments.ts`
+- `packages/shared/src/timeline-moments/index.ts`
 - integration provider metadata writers in `packages/shared/src/integrations`
 - provider tests where metadata is incomplete
 
@@ -1407,9 +1586,13 @@ Work:
   `provider`, `event_type`, `external_object_id`, `external_object_url`,
   `repository`, `pull_request_number`, `issue_number`, `workflow_run_id`,
   `commit_sha`, `deployment_id`, `release_id`, `resource_type`, `resource_name`.
+- Keep stable grouping IDs and readable resource labels separate. Moment
+  grouping should use immutable provider IDs, while row copy should prefer
+  user-facing labels such as issue keys, filenames, short IDs, item names, or
+  `resource_name`.
 - Add GitHub-specific grouping logic for PR/commit/workflow/release/deploy.
 - Add generic provider object grouping fallback.
-- Add provider metadata tests for grouping-critical fields.
+- Add provider metadata diagnostics and tests for grouping-critical fields.
 - Update seeded demo events if needed so local screenshots demonstrate bundling.
 - Add a provider fixture matrix for GitHub, Linear/Jira-style issue trackers,
   Sentry/Datadog incidents, CRM objects, support tickets, document/design
@@ -1418,9 +1601,13 @@ Work:
 Acceptance:
 
 - CI runs and PR updates collapse into meaningful PR/workflow moments.
+- Current provider fixture shapes produce readable titles without exposing raw
+  object IDs as the primary label when a better provider label exists.
 - Replayed or duplicate events do not duplicate visible moments.
 - A provider event with missing grouping metadata falls back gracefully and emits
   a diagnostic instead of flooding the default timeline silently.
+- Debug responses summarize missing grouping fields by provider without exposing
+  those diagnostics in the normal timeline UI.
 
 ### M3: Timeline Modes And Advanced Source Event View
 
@@ -1435,21 +1622,34 @@ Work:
 
 - Add `mode=moments|events` query/state.
 - Default to Moments.
-- Reuse existing raw row style in Source events mode, explicitly labeled.
+- Hydrate server-built moment DTOs from `rawEventsById` in the feed and pass
+  them into the renderer.
+- Keep local moment construction as a fallback when a legacy page lacks moment
+  DTOs or a partial page cannot hydrate all raw evidence.
+- Reuse existing raw row style in source-event mode, but label the UI control
+  `Audit trail` so the escape hatch reads as an audit view rather than the
+  primary product.
 - Persist mode per user if a preferences mechanism exists; otherwise use URL.
 
 Acceptance:
 
 - Power users can still inspect raw log order.
 - Normal users land on bundled moments.
+- Server-rendered pages, infinite-loaded pages, chat agents, and outbound MCP
+  share the same moment IDs and grouping semantics.
 
 ### M4: AI Presentation Cache
 
 Files:
 
-- new worker job or shared module for moment presentation
+- `packages/shared/src/timeline-moments/presentation.ts`
+- `packages/shared/src/timeline-moments/generation.ts`
+- `packages/db/src/schema/timeline-moment-presentations.ts`
+- `packages/db/drizzle/0050_timeline_moment_presentations.sql`
+- `packages/shared/src/team-scope.ts`
+- `packages/shared/src/queue/queues.ts`
+- `apps/worker/src/workers/timelineMomentPresentation.ts`
 - `packages/shared/src/llm` usage through existing wrapper
-- database migration only if persistence is chosen
 
 Work:
 
@@ -1458,6 +1658,7 @@ Work:
   multi-message chats, dense integrations, long email threads, long meetings,
   generic webhook groups.
 - Cache by source-event hash and prompt version.
+- Enqueue eligible cache misses without blocking timeline reads.
 - Show deterministic fallback while cache is missing.
 - Partition cache entries by visible source event set and visibility scope.
 - Invalidate cached wording on visibility, tombstone/deletion, source content,
@@ -1469,6 +1670,55 @@ Acceptance:
 - AI text is cited and never required for grouping correctness.
 - Prompt tests or eval fixtures cover representative sources.
 - Private/specific-user evidence cannot influence a team-visible cached summary.
+
+Implemented foundation:
+
+- The shared presentation module builds a cache key from the exact visible
+  source event set, visibility scope, source content, impact hydration, artifact
+  clusters, prompt version, and model.
+- Eligibility keeps AI optional and skips strong one-event moments.
+- Prompt construction fences source content as untrusted
+  `<external_content>` and strips nested fence tags before the model sees it.
+- An opt-in live OpenRouter test (`OPENROUTER_LIVE_TESTS=1` with
+  `OPENROUTER_API_KEY`) now exercises the same prompt/schema against the real
+  structured LLM boundary and asserts concrete wording plus valid preview
+  source-event IDs.
+- Generation uses injected or default `llm.chatStructured()` with the
+  summarization model and validates the structured output schema.
+- Generic provider-only generated titles are rejected so callers can keep the
+  deterministic fallback instead of showing low-signal AI wording.
+- Generated presentation must cite visible source event IDs in
+  `previewEventIds`; missing or non-visible preview IDs cause deterministic
+  fallback.
+- The Postgres cache stores validated suggestions with provenance columns and a
+  team-scoped cache fingerprint.
+- `withTeam(...).timeline` exposes exact-key list/upsert helpers and rejects
+  cache writes whose key belongs to another team.
+- `/app/timeline`, `/api/timeline`, `search_timeline_moments`,
+  `get_timeline_moment`, and outbound MCP moment tools apply cached
+  titles/summaries only when the current visible evidence matches the stored
+  cache fingerprint.
+- `/app/timeline` and `/api/timeline` enqueue eligible uncached moments during
+  normal reads, then return deterministic presentation immediately while the
+  worker fills the cache asynchronously.
+- The `timeline-moment-presentation` queue dedupes jobs by team, moment key,
+  visibility scope, source IDs, source content, prompt version, and model, so
+  repeated page loads do not fan out duplicate LLM work.
+- The worker rebuilds the moment through `withTeam(db, teamId, userId)`, refuses
+  stale or partially invisible raw-event sets, regenerates the exact cache key,
+  and stores only validated structured output.
+- The `timeline-moment-presentations` worker script can prewarm production
+  windows without changing the generation trust boundary. It defaults to a
+  dry-run team-visible service scope, accepts `--user=<uuid>` only for explicit
+  user-visible prewarming, supports `--since`, `--until`, `--source`,
+  `--max-events`, `--limit`, `--all`, and `--dry-run`, and requires `--enqueue`
+  before jobs are written.
+
+Still open:
+
+- Build any future generated handoff/update DTOs on the same moment-first path.
+  Current code has daily digest generation, but no separate generated handoff DTO
+  implementation to migrate.
 
 ### M5: Cross-Source Related Evidence
 
@@ -1502,10 +1752,10 @@ Files:
 
 Work:
 
-- Move stable moment-building logic into `packages/shared`.
-- Add team-scoped moment search/list/expand methods.
-- Add agent tools for `search_timeline_moments` and moment expansion, or adapt
-  existing tool names to the same shape.
+- Continue hardening the moment-building logic now living in `packages/shared`.
+- Continue hardening the team-scoped moment search/list/expand methods.
+- Extend the initial `search_timeline_moments` and `get_timeline_moment` tools
+  toward stable list/search/expand APIs.
 - Keep raw event search available for audit/debug questions.
 - Ensure MCP output fencing and visibility boundaries are preserved.
 - Add moment DTO versioning and raw-event citation expansion.
@@ -1538,6 +1788,8 @@ Work:
   event set, fewer default rows, no lost audit evidence.
 - Add lightweight observability before rollout so support can diagnose bad
   grouping from a moment ID.
+  - started with aggregate `timeline_moments_viewed` counters for page/API
+    dogfooding and debug-gated per-moment diagnostics.
 
 Acceptance:
 
@@ -1688,6 +1940,7 @@ Add or extend tests for:
 
 Primary files:
 
+- `packages/shared/src/timeline-moments/index.test.ts`
 - `apps/web/src/lib/timeline-moments.test.ts`
 - `apps/web/src/lib/timeline-page.test.ts`
 - `apps/web/src/components/timeline-list.test.tsx`
@@ -1747,6 +2000,14 @@ Maintain a fixture table for current and future sources:
 | CRM/support | deal/ticket created, status/stage change, comment, assignment, duplicate webhook |
 | Generic webhook | missing IDs, partial payload, replay, high-volume burst, unknown event type |
 
+The shared moment projection currently includes fixture coverage for GitHub
+workflow/PR/commit/release, Linear/Jira/Asana/Trello/Basecamp issue or task
+labels, Sentry/Datadog incident labels, Google Drive/Notion/Confluence/Figma
+document labels, Monday.com item labels, Salesforce/HubSpot CRM labels,
+Zendesk/Intercom support labels, and generic custom-webhook resource labels.
+New provider families should extend this table and the shared fixture matrix
+before they are allowed to add high-volume timeline rows.
+
 ### Completion Gates
 
 Every implementation PR must run:
@@ -1765,12 +2026,12 @@ evidence from dogfooding contradicts them.
 
 | Question | Default |
 | --- | --- |
-| AI presentation persistence | Start deterministic-only, then add persisted Postgres cache for expensive AI presentation once cache key and invalidation tests exist. Do not rely on process memory for production summaries. |
-| Moments vs Source events control | Use `mode=moments|events` in the route/query state first, default to Moments, and persist per user only if an existing preference mechanism is available. |
+| AI presentation persistence | Persist generated presentation in Postgres under `timeline_moment_presentations`, keyed by team plus exact evidence/provenance fingerprint. Do not rely on process memory for production summaries. |
+| Moments vs Source events control | Use `mode=moments|events` in the route/query state first, default to Moments, label the user-facing event mode `Audit trail`, and persist per user only if an existing preference mechanism is available. |
 | Cross-source collapse | Keep cross-source evidence separate with `Related` by default. Collapse only when authoritative metadata or user confirmation proves a shared artifact lifecycle. |
-| Historical AI regeneration | Do not bulk-regenerate old history by default. Generate on demand for viewed/searched windows, then schedule provider-specific backfills only after cost and privacy checks. |
+| Historical AI regeneration | Do not bulk-regenerate old history by default. Generate on demand for viewed/searched windows, then use `pnpm --filter @timeline/worker timeline-moment-presentations -- --team=<uuid> [--since=YYYY-MM-DD] [--until=YYYY-MM-DD] [--source=...] [--limit=100]` for bounded dry-run-first prewarming. Add `--enqueue` only after reviewing the candidate count and privacy scope. |
 | Home Recent moments | Use a lighter projection derived from the same shared moment DTO, not a separate grouping implementation. |
-| Source adapter location | Prototype row presentation in `apps/web`, but move grouping semantics into `packages/shared` before agent, digest, worker, or MCP consumers depend on it. |
+| Source adapter location | Keep grouping semantics in `packages/shared`; UI code should only hydrate/render shared moment DTOs and local fallback moments. |
 | Agent tool shape | Add `search_timeline_moments` / `get_timeline_moment` first. Keep raw event tools explicit for audit/debug, and consider a shared `mode` parameter only after compatibility is proven. |
 | Rollout | Ship behind a feature flag or query-gated preview, dogfood internally, then make Moments the default while preserving Source events mode. |
 
@@ -1827,10 +2088,12 @@ Implementation order after review:
 2. Add server/page-window collector invariants behind a preview flag.
 3. Add source adapter fixtures and provider metadata diagnostics.
 4. Redesign the row and inspector around moments, preserving Source events mode.
-5. Add AI presentation cache only after deterministic grouping is stable.
-6. Move grouping semantics to `packages/shared`.
-7. Expose moment retrieval to agents, digests, handoffs, and outbound MCP with
-   raw-event citation expansion.
-8. Dogfood with metrics before making Moments the default for all teams.
+5. Generate eligible persisted AI presentation rows lazily on reads, and use the
+   dry-run-first `timeline-moment-presentations` worker script for bounded
+   production prewarming when candidate counts and privacy scope are reviewed.
+6. Keep generated-output surfaces moment-first: daily digests already consume
+   moments, and any future handoff/update DTOs should use moments with raw-event
+   citation expansion from day one.
+7. Dogfood with metrics before making Moments the default for all teams.
 
 NO UNRESOLVED DECISIONS

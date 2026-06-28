@@ -8,8 +8,18 @@ import { artifactRefCitation } from '#src/citation.js';
 import { childLogger } from '#src/logger.js';
 import { resolveBearerKey } from '#src/mcp-server/keys.js';
 import * as objects from '#src/objects/index.js';
-import { withTeam } from '#src/team-scope.js';
+import { withTeam, type TeamScope } from '#src/team-scope.js';
 import { resolveTimePhrase, workspaceTimeContext } from '#src/time/index.js';
+import {
+  buildTimelineMoments,
+  timelineMomentLookupPlan,
+  type TimelineMomentEvent,
+} from '#src/timeline-moments/index.js';
+import {
+  applyTimelineMomentPresentationCache,
+  buildTimelineMomentPresentationCacheFingerprint,
+  buildTimelineMomentPresentationCacheKey,
+} from '#src/timeline-moments/presentation.js';
 
 const log = childLogger('mcp-server');
 
@@ -35,8 +45,30 @@ interface JsonRpcError {
 type JsonRpcResponse = JsonRpcSuccess | JsonRpcError;
 
 const PROTOCOL_VERSION = '2024-11-05';
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const PSEUDO_USER = '00000000-0000-0000-0000-000000000000';
+const EVENT_SOURCE_VALUES = [
+  'web',
+  'telegram',
+  'email',
+  'system',
+  'document',
+  'meeting',
+  'integration',
+  'calendar',
+  'slack',
+  'ingest_webhook',
+] as const;
+
+interface SearchHitForMoment {
+  eventId: string;
+  factIds: string[];
+  score: number;
+  occurredAt: string;
+  source: string;
+  entityIds: string[];
+  snippet: string;
+}
 
 const objectTypeSchema = z.enum(
   objects.OBJECT_TYPES as [objects.ObjectType, ...objects.ObjectType[]],
@@ -139,6 +171,119 @@ function dateInRange(value: Date | null | undefined, from?: string, to?: string)
   return true;
 }
 
+function fenceAttr(value: string): string {
+  return value.replace(/["&<>]/g, (char) => {
+    switch (char) {
+      case '"':
+        return '&quot;';
+      case '&':
+        return '&amp;';
+      case '<':
+        return '&lt;';
+      case '>':
+        return '&gt;';
+      default:
+        return char;
+    }
+  });
+}
+
+function fenceExternalContent(
+  text: string | null | undefined,
+  meta: { source: string; eventId: string },
+): string {
+  const sanitized = (text ?? '').replace(/<\/?external_content[^>]*>/gi, '[fence-removed]');
+  return `<external_content source="${fenceAttr(meta.source)}" event_id="${fenceAttr(
+    meta.eventId,
+  )}">${sanitized}</external_content>`;
+}
+
+function timelineMomentEvent(row: {
+  id: string;
+  teamId?: string | undefined;
+  source: TimelineMomentEvent['source'];
+  authorUserId: string | null;
+  contentText: string | null;
+  contentAudioUrl: string | null;
+  occurredAt: Date;
+  createdAt?: Date | undefined;
+  visibility?: string | undefined;
+  visibilityUserIds?: string[] | null | undefined;
+  visibilityOwnerUserId?: string | null | undefined;
+  sourceMetadata: unknown;
+}): TimelineMomentEvent {
+  return {
+    id: row.id,
+    teamId: row.teamId,
+    source: row.source,
+    authorUserId: row.authorUserId,
+    contentText: row.contentText,
+    contentAudioUrl: row.contentAudioUrl,
+    occurredAt: row.occurredAt,
+    createdAt: row.createdAt,
+    visibility: row.visibility,
+    visibilityUserIds: row.visibilityUserIds,
+    visibilityOwnerUserId: row.visibilityOwnerUserId,
+    sourceMetadata: row.sourceMetadata,
+  };
+}
+
+async function serializeMcpTimelineMoments(
+  scope: TeamScope,
+  hits: SearchHitForMoment[],
+  events: TimelineMomentEvent[],
+) {
+  const hitByEventId = new Map(hits.map((hit) => [hit.eventId, hit]));
+  const builtMoments = buildTimelineMoments(events, new Map(), { groupingMode: 'moments' });
+  const cacheKeys = builtMoments.map((moment) =>
+    buildTimelineMomentPresentationCacheKey({ teamId: scope.teamId, moment }),
+  );
+  const presentations = await scope.timeline.listMomentPresentations(cacheKeys);
+  return builtMoments.map((builtMoment, index) => {
+    const cacheKey = cacheKeys[index];
+    const moment = cacheKey
+      ? applyTimelineMomentPresentationCache(
+          builtMoment,
+          presentations[buildTimelineMomentPresentationCacheFingerprint(cacheKey)],
+          { teamId: scope.teamId },
+        )
+      : builtMoment;
+    const rawEvents = moment.rawEvents;
+    const topScore = Math.max(...rawEvents.map((event) => hitByEventId.get(event.id)?.score ?? 0));
+    return {
+      moment_id: moment.id,
+      version: moment.version,
+      anchor_id: moment.anchorId,
+      kind: moment.kind,
+      title: moment.title,
+      subtitle: moment.subtitle,
+      preview: moment.preview,
+      occurred_at:
+        rawEvents[0]?.occurredAt instanceof Date
+          ? rawEvents[0].occurredAt.toISOString()
+          : (rawEvents[0]?.occurredAt ?? null),
+      source_families: moment.grouping.sourceFamilies,
+      evidence_count: rawEvents.length,
+      raw_event_ids: rawEvents.map((event) => event.id),
+      citations: rawEvents.map((event) =>
+        artifactRefCitation({ kind: 'timeline_event', id: event.id }),
+      ),
+      score: topScore,
+      evidence: rawEvents.map((event) => ({
+        event_id: event.id,
+        citation: artifactRefCitation({ kind: 'timeline_event', id: event.id }),
+        source: event.source,
+        occurred_at:
+          event.occurredAt instanceof Date ? event.occurredAt.toISOString() : event.occurredAt,
+        snippet: fenceExternalContent(hitByEventId.get(event.id)?.snippet ?? event.contentText, {
+          source: event.source,
+          eventId: event.id,
+        }),
+      })),
+    };
+  });
+}
+
 function serializeObjectRow(row: objects.ObjectRow): Record<string, unknown> {
   return {
     id: row.id,
@@ -215,6 +360,59 @@ const TOOLS = [
         limit: { type: 'integer', minimum: 1, maximum: 20 },
       },
       required: ['query'],
+    },
+  },
+  {
+    name: 'timeline.search_moments',
+    description:
+      'Semantic search across the team timeline returned as bundled moments with raw event citations. Use first for recap, summary, and integration-heavy timeline questions.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', minLength: 1, maxLength: 500 },
+        limit: { type: 'integer', minimum: 1, maximum: 20 },
+      },
+      required: ['query'],
+    },
+  },
+  {
+    name: 'timeline.list_moments',
+    description:
+      'Recent team-visible timeline moments, optionally filtered by source and time range. Use for digests and recent-work recaps.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        from: { type: 'string', format: 'date-time' },
+        to: { type: 'string', format: 'date-time' },
+        source: {
+          type: 'string',
+          enum: [
+            'web',
+            'telegram',
+            'email',
+            'system',
+            'document',
+            'meeting',
+            'integration',
+            'calendar',
+            'slack',
+            'ingest_webhook',
+          ],
+        },
+        limit: { type: 'integer', minimum: 1, maximum: 20 },
+      },
+    },
+  },
+  {
+    name: 'timeline.get_moment',
+    description:
+      'Expand one timeline moment returned by search_moments or list_moments. Prefer raw_event_ids from that result; supported deterministic moment_id values can be expanded directly. Returns only team-visible raw evidence.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        momentId: { type: 'string' },
+        rawEventIds: { type: 'array', items: { type: 'string' }, minItems: 1, maxItems: 50 },
+      },
     },
   },
   {
@@ -571,6 +769,8 @@ interface CallToolArgs {
   from?: unknown;
   to?: unknown;
   source?: unknown;
+  momentId?: unknown;
+  rawEventIds?: unknown;
 }
 
 async function callTool(
@@ -592,8 +792,102 @@ async function callTool(
           occurred_at: r.occurredAt,
           score: r.score,
           source: r.source,
-          snippet: r.snippet,
+          snippet: fenceExternalContent(r.snippet, { source: r.source, eventId: r.eventId }),
         })),
+      };
+    }
+    case 'timeline.search_moments': {
+      const input = z
+        .object({
+          query: z.string().trim().min(1).max(500),
+          limit: z.number().int().min(1).max(20).optional(),
+        })
+        .parse(args);
+      const hits = await scope.timeline.searchEvents({
+        query: input.query,
+        ...(input.limit ? { limit: input.limit } : {}),
+      });
+      const rows = await scope.timeline.getEventsByIds(hits.map((hit) => hit.eventId));
+      const moments = await serializeMcpTimelineMoments(scope, hits, rows.map(timelineMomentEvent));
+      return { count: moments.length, moments };
+    }
+    case 'timeline.list_moments': {
+      const input = z
+        .object({
+          from: z.iso.datetime().optional(),
+          to: z.iso.datetime().optional(),
+          source: z.enum(EVENT_SOURCE_VALUES).optional(),
+          limit: z.number().int().min(1).max(20).optional(),
+        })
+        .parse(args);
+      const momentLimit = input.limit ?? 10;
+      const filters: Parameters<typeof scope.timeline.listEvents>[0] = {
+        limit: Math.min(momentLimit * 4, 100),
+      };
+      if (input.from) filters.from = new Date(input.from);
+      if (input.to) filters.to = new Date(input.to);
+      if (input.source) filters.source = input.source;
+      const rows = await scope.timeline.listEvents(filters);
+      const hits = rows.map((row, index) => ({
+        eventId: row.id,
+        factIds: [],
+        score: rows.length - index,
+        occurredAt: row.occurredAt.toISOString(),
+        source: row.source,
+        entityIds: [],
+        snippet: row.contentText ?? '',
+      }));
+      const moments = (
+        await serializeMcpTimelineMoments(scope, hits, rows.map(timelineMomentEvent))
+      ).slice(0, momentLimit);
+      return { count: moments.length, moments };
+    }
+    case 'timeline.get_moment': {
+      const input = z
+        .object({
+          momentId: z.string().trim().min(1).max(500).optional(),
+          rawEventIds: z.array(z.string().regex(UUID_RE)).min(1).max(50).optional(),
+        })
+        .parse(args);
+      let rows =
+        input.rawEventIds && input.rawEventIds.length > 0
+          ? await scope.timeline.getEventsByIds(input.rawEventIds)
+          : [];
+      if (rows.length === 0 && input.momentId) {
+        const plan = timelineMomentLookupPlan(input.momentId);
+        if (!plan) {
+          return {
+            found: false,
+            reason: 'raw_event_ids_required',
+            visible_raw_event_count: 0,
+          };
+        }
+        rows = await scope.timeline.listEventsForMomentLookup(plan);
+      }
+      const hits = rows.map((row) => ({
+        eventId: row.id,
+        factIds: [],
+        score: 1,
+        occurredAt: row.occurredAt.toISOString(),
+        source: row.source,
+        entityIds: [],
+        snippet: row.contentText ?? '',
+      }));
+      const moments = await serializeMcpTimelineMoments(scope, hits, rows.map(timelineMomentEvent));
+      const expanded = input.momentId
+        ? moments.find((moment) => moment.moment_id === input.momentId)
+        : moments[0];
+      if (!expanded) {
+        return {
+          found: false,
+          reason: input.momentId ? 'moment_id_not_visible' : 'no_visible_events',
+          visible_raw_event_count: rows.length,
+        };
+      }
+      return {
+        found: true,
+        moment: expanded,
+        related_moments: moments.filter((moment) => moment.moment_id !== expanded.moment_id),
       };
     }
     case 'timeline.get_event': {
@@ -619,19 +913,10 @@ async function callTool(
       // Push the source predicate into SQL so `limit` bounds matching
       // rows (not the pre-filter window). Mirrors the runtime
       // allow-list + the `event_source` pg enum.
-      const ALLOWED_SOURCES = [
-        'web',
-        'telegram',
-        'email',
-        'system',
-        'document',
-        'meeting',
-        'integration',
-        'calendar',
-        'slack',
-        'ingest_webhook',
-      ];
-      if (typeof args.source === 'string' && ALLOWED_SOURCES.includes(args.source)) {
+      if (
+        typeof args.source === 'string' &&
+        (EVENT_SOURCE_VALUES as readonly string[]).includes(args.source)
+      ) {
         filters.source = args.source;
       }
       const rows = await scope.timeline.listEvents(filters);
@@ -1102,7 +1387,7 @@ async function callTool(
           event_id: r.eventId,
           occurred_at: r.occurredAt,
           score: r.score,
-          snippet: r.snippet,
+          snippet: fenceExternalContent(r.snippet, { source: r.source, eventId: r.eventId }),
         })),
       };
     }
@@ -1137,7 +1422,7 @@ async function callTool(
           event_id: h.id,
           occurred_at: h.occurredAt.toISOString(),
           event_type: h.eventType,
-          snippet: h.contentText ?? '',
+          snippet: fenceExternalContent(h.contentText, { source: 'integration', eventId: h.id }),
         })),
       };
     }

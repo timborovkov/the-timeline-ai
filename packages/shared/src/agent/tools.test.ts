@@ -22,11 +22,15 @@ import { type TeamScope } from '#src/team-scope.js';
  */
 
 interface FakeScope {
+  teamId: string;
   userId: string;
   timeline: {
     searchEvents: ReturnType<typeof vi.fn>;
+    getEventsByIds: ReturnType<typeof vi.fn>;
     getEntity: ReturnType<typeof vi.fn>;
     listEvents: ReturnType<typeof vi.fn>;
+    listEventsForMomentLookup: ReturnType<typeof vi.fn>;
+    listMomentPresentations: ReturnType<typeof vi.fn>;
     getEventWithFacts: ReturnType<typeof vi.fn>;
   };
   documents: {
@@ -75,11 +79,15 @@ interface FakeScope {
 
 function makeFakeScope(): FakeScope {
   return {
+    teamId: '66666666-6666-4666-8666-666666666666',
     userId: '77777777-7777-4777-8777-777777777777',
     timeline: {
       searchEvents: vi.fn(),
+      getEventsByIds: vi.fn(),
       getEntity: vi.fn(),
       listEvents: vi.fn(),
+      listEventsForMomentLookup: vi.fn(),
+      listMomentPresentations: vi.fn().mockResolvedValue({}),
       getEventWithFacts: vi.fn(),
     },
     documents: {
@@ -231,18 +239,27 @@ describe('buildAgentTools — team isolation', () => {
     const search = tools.search_timeline?.inputSchema as unknown as {
       shape: Record<string, unknown>;
     };
+    const moments = tools.search_timeline_moments?.inputSchema as unknown as {
+      shape: Record<string, unknown>;
+    };
     const ent = tools.get_entity?.inputSchema as unknown as { shape: Record<string, unknown> };
     const list = tools.list_events?.inputSchema as unknown as { shape: Record<string, unknown> };
     const evt = tools.get_event?.inputSchema as unknown as { shape: Record<string, unknown> };
+    const moment = tools.get_timeline_moment?.inputSchema as unknown as {
+      shape: Record<string, unknown>;
+    };
     const guide = tools.search_app_guide?.inputSchema as unknown as {
       shape: Record<string, unknown>;
     };
     const route = tools.get_app_route?.inputSchema as unknown as { shape: Record<string, unknown> };
     expect(Object.keys(search.shape)).not.toContain('teamId');
     expect(Object.keys(search.shape)).not.toContain('userId');
+    expect(Object.keys(moments.shape)).not.toContain('teamId');
+    expect(Object.keys(moments.shape)).not.toContain('userId');
     expect(Object.keys(ent.shape)).not.toContain('teamId');
     expect(Object.keys(list.shape)).not.toContain('teamId');
     expect(Object.keys(evt.shape)).not.toContain('teamId');
+    expect(Object.keys(moment.shape)).not.toContain('teamId');
     expect(Object.keys(guide.shape)).not.toContain('teamId');
     expect(Object.keys(route.shape)).not.toContain('teamId');
   });
@@ -1252,6 +1269,425 @@ describe('buildAgentTools — team isolation', () => {
     expect(scope.timeline.searchEvents).toHaveBeenCalledWith(
       expect.objectContaining({ query: 'deal update', source: 'ingest_webhook' }),
     );
+  });
+
+  it('search_timeline_moments bundles integration noise while preserving raw citations', async () => {
+    const scope = makeFakeScope();
+    const eventA = '00000000-0000-0000-0000-0000000000a1';
+    const eventB = '00000000-0000-0000-0000-0000000000b2';
+    scope.timeline.searchEvents.mockResolvedValue([
+      {
+        eventId: eventA,
+        factIds: [],
+        score: 0.94,
+        occurredAt: '2026-06-27T18:32:00.000Z',
+        source: 'integration',
+        authorUserId: null,
+        sender: null,
+        resolvedSenderObject: null,
+        senderResolutionStatus: 'unresolved',
+        entityIds: [],
+        snippet: 'GitHub workflow "CI" #1603 on timborovkov/audit-ai success',
+      },
+      {
+        eventId: eventB,
+        factIds: [],
+        score: 0.88,
+        occurredAt: '2026-06-27T18:08:00.000Z',
+        source: 'integration',
+        authorUserId: null,
+        sender: null,
+        resolvedSenderObject: null,
+        senderResolutionStatus: 'unresolved',
+        entityIds: [],
+        snippet: 'GitHub workflow "CI" #1602 on timborovkov/audit-ai success',
+      },
+    ]);
+    scope.timeline.getEventsByIds.mockResolvedValue([
+      {
+        id: eventA,
+        source: 'integration',
+        authorUserId: null,
+        contentText: 'GitHub workflow "CI" #1603 on timborovkov/audit-ai success',
+        contentAudioUrl: null,
+        occurredAt: new Date('2026-06-27T18:32:00.000Z'),
+        sourceMetadata: {
+          provider: 'github',
+          event_type: 'workflow_run.success',
+          github: {
+            type: 'workflow_run',
+            repo: 'timborovkov/audit-ai',
+            head_branch: 'main',
+          },
+        },
+      },
+      {
+        id: eventB,
+        source: 'integration',
+        authorUserId: null,
+        contentText: 'GitHub workflow "CI" #1602 on timborovkov/audit-ai success',
+        contentAudioUrl: null,
+        occurredAt: new Date('2026-06-27T18:08:00.000Z'),
+        sourceMetadata: {
+          provider: 'github',
+          event_type: 'workflow_run.success',
+          github: {
+            type: 'workflow_run',
+            repo: 'timborovkov/audit-ai',
+            head_branch: 'main',
+          },
+        },
+      },
+    ]);
+    const tools = buildAgentTools(scope as unknown as TeamScope);
+    const exec = tools.search_timeline_moments?.execute as (
+      input: unknown,
+      opts: unknown,
+    ) => Promise<unknown>;
+
+    const result = (await exec({ query: 'CI success', source: 'integration' }, {})) as {
+      count: number;
+      moments: {
+        version: string;
+        anchor_id: string;
+        kind: string;
+        title: string;
+        evidence_count: number;
+        raw_event_ids: string[];
+        evidence: { snippet: string }[];
+      }[];
+    };
+
+    expect(scope.timeline.searchEvents).toHaveBeenCalledWith(
+      expect.objectContaining({ query: 'CI success', source: 'integration' }),
+    );
+    expect(scope.timeline.getEventsByIds).toHaveBeenCalledWith([eventA, eventB]);
+    expect(result.count).toBe(1);
+    expect(result.moments[0]).toMatchObject({
+      version: 'timeline_moment.v1',
+      kind: 'ci_deploy',
+      title: 'CI passed on timborovkov/audit-ai',
+      evidence_count: 2,
+      raw_event_ids: [eventA, eventB],
+    });
+    expect(result.moments[0]?.anchor_id).toMatch(/^tm-moment_3Aintegration_3Agithub/);
+    expect(result.moments[0]?.evidence[0]?.snippet).toContain(
+      `<external_content source="integration" event_id="${eventA}">`,
+    );
+  });
+
+  it('get_timeline_moment expands visible raw evidence through scope hydration', async () => {
+    const scope = makeFakeScope();
+    const eventA = '00000000-0000-0000-0000-0000000000a1';
+    const eventB = '00000000-0000-0000-0000-0000000000b2';
+    scope.timeline.getEventsByIds.mockResolvedValue([
+      {
+        id: eventA,
+        teamId: 'team-a',
+        source: 'telegram',
+        authorUserId: null,
+        contentText: 'Done / 16.20-16.30 asti vapaa',
+        contentAudioUrl: null,
+        occurredAt: new Date('2026-06-27T16:06:00.000Z'),
+        createdAt: new Date('2026-06-27T16:06:01.000Z'),
+        visibility: 'team',
+        visibilityUserIds: null,
+        visibilityOwnerUserId: null,
+        sourceMetadata: {
+          tg_chat_id: 'chat-a',
+          tg_chat_title: 'AuditAI',
+          tg_sender_name: 'Tim',
+        },
+      },
+      {
+        id: eventB,
+        teamId: 'team-a',
+        source: 'telegram',
+        authorUserId: null,
+        contentText: 'Sanokaa ku tuun meettii',
+        contentAudioUrl: null,
+        occurredAt: new Date('2026-06-27T16:07:00.000Z'),
+        createdAt: new Date('2026-06-27T16:07:01.000Z'),
+        visibility: 'team',
+        visibilityUserIds: null,
+        visibilityOwnerUserId: null,
+        sourceMetadata: {
+          tg_chat_id: 'chat-a',
+          tg_chat_title: 'AuditAI',
+          tg_sender_name: 'Mikael',
+        },
+      },
+    ]);
+    const tools = buildAgentTools(scope as unknown as TeamScope);
+    const exec = tools.get_timeline_moment?.execute as (
+      input: unknown,
+      opts: unknown,
+    ) => Promise<unknown>;
+
+    const result = (await exec({ rawEventIds: [eventA, eventB] }, {})) as {
+      found: boolean;
+      moment: {
+        version: string;
+        anchor_id: string;
+        title: string;
+        evidence_count: number;
+        raw_event_ids: string[];
+        evidence: { snippet: string }[];
+      };
+    };
+
+    expect(scope.timeline.getEventsByIds).toHaveBeenCalledWith([eventA, eventB]);
+    expect(result.found).toBe(true);
+    expect(result.moment).toMatchObject({
+      version: 'timeline_moment.v1',
+      title: 'Telegram conversation in AuditAI',
+      evidence_count: 2,
+      raw_event_ids: [eventB, eventA],
+    });
+    expect(result.moment.anchor_id).toMatch(/^tm-moment_3Atelegram_3Achat-a/);
+    expect(result.moment.evidence[0]?.snippet).toContain('<external_content source="telegram"');
+  });
+
+  it('get_timeline_moment can expand supported deterministic moment ids without raw event ids', async () => {
+    const scope = makeFakeScope();
+    const eventA = '00000000-0000-0000-0000-0000000000a1';
+    const eventB = '00000000-0000-0000-0000-0000000000b2';
+    scope.timeline.listEventsForMomentLookup.mockResolvedValue([
+      {
+        id: eventA,
+        teamId: 'team-a',
+        source: 'integration',
+        authorUserId: null,
+        contentText: 'GitHub workflow "CI" #1603 on timborovkov/audit-ai success',
+        contentAudioUrl: null,
+        occurredAt: new Date('2026-06-27T18:32:00.000Z'),
+        createdAt: new Date('2026-06-27T18:32:01.000Z'),
+        visibility: 'team',
+        visibilityUserIds: null,
+        visibilityOwnerUserId: null,
+        sourceMetadata: {
+          provider: 'github',
+          event_type: 'workflow_run.success',
+          github: {
+            type: 'workflow_run',
+            repo: 'timborovkov/audit-ai',
+            head_branch: 'main',
+          },
+        },
+      },
+      {
+        id: eventB,
+        teamId: 'team-a',
+        source: 'integration',
+        authorUserId: null,
+        contentText: 'GitHub workflow "CI" #1602 on timborovkov/audit-ai success',
+        contentAudioUrl: null,
+        occurredAt: new Date('2026-06-27T18:08:00.000Z'),
+        createdAt: new Date('2026-06-27T18:08:01.000Z'),
+        visibility: 'team',
+        visibilityUserIds: null,
+        visibilityOwnerUserId: null,
+        sourceMetadata: {
+          provider: 'github',
+          event_type: 'workflow_run.success',
+          github: {
+            type: 'workflow_run',
+            repo: 'timborovkov/audit-ai',
+            head_branch: 'main',
+          },
+        },
+      },
+    ]);
+    const tools = buildAgentTools(scope as unknown as TeamScope);
+    const exec = tools.get_timeline_moment?.execute as (
+      input: unknown,
+      opts: unknown,
+    ) => Promise<unknown>;
+
+    const result = (await exec(
+      {
+        momentId: 'moment:integration:github:workflow_run:timborovkov/audit-ai:CI:main:2026-06-27',
+      },
+      {},
+    )) as {
+      found: boolean;
+      moment: { title: string; raw_event_ids: string[] };
+    };
+
+    expect(scope.timeline.getEventsByIds).not.toHaveBeenCalled();
+    expect(scope.timeline.listEventsForMomentLookup).toHaveBeenCalledWith({
+      source: 'integration',
+      from: new Date('2026-06-26T00:00:00.000Z'),
+      to: new Date('2026-06-29T00:00:00.000Z'),
+      limit: 300,
+    });
+    expect(result.found).toBe(true);
+    expect(result.moment).toMatchObject({
+      title: 'CI passed on timborovkov/audit-ai',
+      raw_event_ids: [eventA, eventB],
+    });
+  });
+
+  it('get_timeline_moment can expand exact metadata moment ids without raw event ids', async () => {
+    const scope = makeFakeScope();
+    const eventA = '00000000-0000-0000-0000-0000000000a1';
+    const eventB = '00000000-0000-0000-0000-0000000000b2';
+    scope.timeline.listEventsForMomentLookup.mockResolvedValue([
+      {
+        id: eventA,
+        teamId: 'team-a',
+        source: 'email',
+        authorUserId: null,
+        contentText: 'Can you review the contract?',
+        contentAudioUrl: null,
+        occurredAt: new Date('2026-06-27T18:32:00.000Z'),
+        createdAt: new Date('2026-06-27T18:32:01.000Z'),
+        visibility: 'team',
+        visibilityUserIds: null,
+        visibilityOwnerUserId: null,
+        sourceMetadata: {
+          thread_root_id: 'thread-a',
+          subject: 'Contract review',
+          from: 'ada@example.test',
+        },
+      },
+      {
+        id: eventB,
+        teamId: 'team-a',
+        source: 'email',
+        authorUserId: null,
+        contentText: 'Reviewed and left comments.',
+        contentAudioUrl: null,
+        occurredAt: new Date('2026-06-27T18:08:00.000Z'),
+        createdAt: new Date('2026-06-27T18:08:01.000Z'),
+        visibility: 'team',
+        visibilityUserIds: null,
+        visibilityOwnerUserId: null,
+        sourceMetadata: {
+          thread_root_id: 'thread-a',
+          subject: 'Contract review',
+          from: 'tim@example.test',
+        },
+      },
+    ]);
+    const tools = buildAgentTools(scope as unknown as TeamScope);
+    const exec = tools.get_timeline_moment?.execute as (
+      input: unknown,
+      opts: unknown,
+    ) => Promise<unknown>;
+
+    const result = (await exec({ momentId: 'moment:email:thread-a' }, {})) as {
+      found: boolean;
+      moment: { title: string; raw_event_ids: string[] };
+    };
+
+    expect(scope.timeline.getEventsByIds).not.toHaveBeenCalled();
+    expect(scope.timeline.listEventsForMomentLookup).toHaveBeenCalledWith({
+      source: 'email',
+      limit: 300,
+      metadataPredicates: [{ path: ['thread_root_id'], equals: 'thread-a' }],
+    });
+    expect(result.found).toBe(true);
+    expect(result.moment).toMatchObject({
+      title: 'Contract review',
+      raw_event_ids: [eventA, eventB],
+    });
+  });
+
+  it('get_timeline_moment can expand generic integration moment ids by object or event id', async () => {
+    const scope = makeFakeScope();
+    const eventA = '00000000-0000-0000-0000-0000000000a1';
+    const eventB = '00000000-0000-0000-0000-0000000000b2';
+    scope.timeline.listEventsForMomentLookup.mockResolvedValue([
+      {
+        id: eventA,
+        teamId: 'team-a',
+        source: 'integration',
+        authorUserId: null,
+        contentText: 'Webhook object changed.',
+        contentAudioUrl: null,
+        occurredAt: new Date('2026-06-27T18:32:00.000Z'),
+        createdAt: new Date('2026-06-27T18:32:01.000Z'),
+        visibility: 'team',
+        visibilityUserIds: null,
+        visibilityOwnerUserId: null,
+        sourceMetadata: {
+          provider: 'webhook',
+          event_type: 'object.updated',
+          external_object_id: 'shared-key',
+        },
+      },
+      {
+        id: eventB,
+        teamId: 'team-a',
+        source: 'integration',
+        authorUserId: null,
+        contentText: 'Webhook delivery received.',
+        contentAudioUrl: null,
+        occurredAt: new Date('2026-06-27T18:08:00.000Z'),
+        createdAt: new Date('2026-06-27T18:08:01.000Z'),
+        visibility: 'team',
+        visibilityUserIds: null,
+        visibilityOwnerUserId: null,
+        sourceMetadata: {
+          provider: 'webhook',
+          event_type: 'delivery.received',
+          external_event_id: 'shared-key',
+        },
+      },
+    ]);
+    const tools = buildAgentTools(scope as unknown as TeamScope);
+    const exec = tools.get_timeline_moment?.execute as (
+      input: unknown,
+      opts: unknown,
+    ) => Promise<unknown>;
+
+    const result = (await exec({ momentId: 'moment:integration:webhook:shared-key' }, {})) as {
+      found: boolean;
+      moment: { title: string; raw_event_ids: string[] };
+    };
+
+    expect(scope.timeline.getEventsByIds).not.toHaveBeenCalled();
+    expect(scope.timeline.listEventsForMomentLookup).toHaveBeenCalledWith({
+      source: 'integration',
+      limit: 300,
+      metadataPredicates: [{ path: ['provider'], equals: 'webhook' }],
+      metadataPredicateGroups: [
+        [
+          { path: ['external_object_id'], equals: 'shared-key' },
+          { path: ['external_event_id'], equals: 'shared-key' },
+        ],
+      ],
+    });
+    expect(result.found).toBe(true);
+    expect(result.moment).toMatchObject({
+      title: 'Webhook object updated · shared-key',
+      raw_event_ids: [eventA, eventB],
+    });
+  });
+
+  it('get_timeline_moment asks for raw event ids when a moment id cannot be planned safely', async () => {
+    const scope = makeFakeScope();
+    const tools = buildAgentTools(scope as unknown as TeamScope);
+    const exec = tools.get_timeline_moment?.execute as (
+      input: unknown,
+      opts: unknown,
+    ) => Promise<unknown>;
+
+    const result = (await exec({ momentId: 'moment:unsupported:opaque' }, {})) as {
+      found: boolean;
+      reason: string;
+      visible_raw_event_count: number;
+    };
+
+    expect(result).toEqual({
+      found: false,
+      reason: 'raw_event_ids_required',
+      visible_raw_event_count: 0,
+    });
+    expect(scope.timeline.getEventsByIds).not.toHaveBeenCalled();
+    expect(scope.timeline.listEvents).not.toHaveBeenCalled();
+    expect(scope.timeline.listEventsForMomentLookup).not.toHaveBeenCalled();
   });
 
   it('list_events forwards authorUserId verbatim — scope must enforce team', async () => {

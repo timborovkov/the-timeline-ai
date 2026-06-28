@@ -18,6 +18,7 @@ import { startObjectSummaryWorker } from '#src/workers/objectSummary.js';
 import { startOverdueWorker } from '#src/workers/overdue.js';
 import { startSuggestionWorker } from '#src/workers/suggestions.js';
 import { startTeamExportWorker } from '#src/workers/teamExport.js';
+import { startTimelineMomentPresentationWorker } from '#src/workers/timelineMomentPresentation.js';
 import { startTranscribeWorker } from '#src/workers/transcribe.js';
 
 const log = childLogger('worker');
@@ -47,6 +48,7 @@ async function main(): Promise<void> {
   const integrationSyncWorker = startIntegrationSyncWorker({ db });
   const mcpHealthWorker = startMcpHealthWorker({ db });
   const teamExportWorker = startTeamExportWorker({ db });
+  const timelineMomentPresentationWorker = startTimelineMomentPresentationWorker({ db });
   const dailyDigestWorker = startDailyDigestWorker({ db });
   // Register the hourly repeatables. BullMQ keys by jobId so a
   // duplicate call on the next deploy is a no-op.
@@ -62,7 +64,7 @@ async function main(): Promise<void> {
   await queue.scheduleMeetingSchedulerTick();
   await queue.scheduleDailyDigest();
   log.info(
-    'transcribe + extract + suggestions + embed + overdue + calendar-recurrence + document-extract + meeting-finalize + meeting-scheduler + object-summary + janitor + integration-sync + mcp-health + team-export + daily-digest workers started',
+    'transcribe + extract + suggestions + embed + overdue + calendar-recurrence + document-extract + meeting-finalize + meeting-scheduler + object-summary + janitor + integration-sync + mcp-health + team-export + timeline-moment-presentation + daily-digest workers started',
   );
 
   const shutdown = async (signal: string): Promise<void> => {
@@ -83,6 +85,7 @@ async function main(): Promise<void> {
         integrationSyncWorker.close(),
         mcpHealthWorker.close(),
         teamExportWorker.close(),
+        timelineMomentPresentationWorker.close(),
         dailyDigestWorker.close(),
       ]);
       await queue.closeTranscribeQueue();
@@ -99,6 +102,7 @@ async function main(): Promise<void> {
       await queue.closeIntegrationSyncQueue();
       await queue.closeMcpHealthQueue();
       await queue.closeTeamExportQueue();
+      await queue.closeTimelineMomentPresentationQueue();
       await queue.closeDailyDigestQueue();
       await queue.closeRedisConnection();
     } catch (err: unknown) {

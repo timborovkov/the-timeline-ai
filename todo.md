@@ -63,6 +63,55 @@ Direction: soften the surface. Keep the forensic mono treatment for data
       source-specific adapters, AI-assisted titles/summaries, and an advanced
       raw source event mode. Full plan:
       [docs/timeline-moments-redesign-plan.md](docs/timeline-moments-redesign-plan.md).
+      First slice shipped the Moments/Audit trail mode split, clearer rows and
+      inspector copy, GitHub workflow bundling, and the
+      `search_timeline_moments`/`get_timeline_moment` agent tools, and the
+      shared `@timeline/shared/timeline-moments` projection. Outbound MCP now
+      has team-visible moment search/list/expand tools. Bounded server-side
+      moment-page scanning keeps first-page groups from splitting/skipping, and
+      focused links hydrate visible deterministic siblings for the selected
+      moment. Moment rows now expose shared stable anchors for UI, chat-agent,
+      and outbound MCP deep links, and mixed raw-page boundaries advance without
+      looping the same bundled moment. Agent and outbound MCP expansion can now
+      hydrate supported deterministic moment IDs through bounded visible-event
+      lookup or exact source-metadata lookup for email, meeting, calendar,
+      GitHub PR/review, and generic provider-object moments.
+      `/api/timeline` and the initial server-rendered page now expose an
+      additive server-built `timeline_moments_page.v1` DTO with raw-event
+      compatibility and debug-gated pagination diagnostics; the client feed now
+      hydrates those DTOs into the renderer with local grouping as fallback.
+      Debug diagnostics now summarize missing provider grouping metadata by
+      provider and raw event, so weak integration/webhook grouping can be
+      explained without polluting the normal UI. Dev seed provider metadata now
+      produces human-readable GitHub PR/review bundles, GitHub CI workflow
+      bundles, Linear issue, Slack channel, and meeting moments for local
+      screenshot QA. Timeline pages and the API now
+      accept `moment=<moment-id>` for supported deterministic moment IDs,
+      hydrate bounded visible evidence, preserve the cache key, and keep the
+      focused moment visible through filters. Focused raw-event and moment links
+      now auto-open the shared inspector content and mark selected rows with
+      `aria-current`. Generic integration moment IDs now hydrate by provider
+      plus either `external_object_id` or `external_event_id`. AI presentation
+      cache rows now persist in Postgres with team-scoped provenance
+      fingerprints, and the UI, chat-agent tools, and outbound MCP moment tools
+      consume cached titles/summaries only when the current visible evidence
+      matches the stored key. Eligible uncached moments are queued from timeline
+      reads and filled asynchronously by the worker after rebuilding the same
+      visible cache key. Daily digest generation now summarizes bundled moment
+      briefs, applies matching cached AI presentations, and renders moment
+      counts while preserving raw source-event counts. The
+      `timeline-moment-presentations` worker script now provides bounded,
+      dry-run-first production prewarming for missing AI presentation cache jobs.
+      Timeline page/API reads now emit privacy-safe `timeline_moments_viewed`
+      counters for mode, filters, row-count reduction, scan pressure, missing
+      grouping metadata, AI presentation cache status, and visibility cache
+      partitioning without exposing raw content.
+      An opt-in live OpenRouter smoke test (`OPENROUTER_LIVE_TESTS=1`) now
+      verifies the presentation prompt and schema through the real structured
+      LLM boundary.
+      Remaining work is future non-integration source moment-ID coverage, future
+      handoff/update DTO design, and live adapter payload fixtures for providers
+      as they ship.
 - [x] U1 — Design-language softening: new `PageHeader` + `SectionHeading`,
       surface split (operational keeps `IndexStrip`; standard gets `H1`),
       update `design.md` in the same PR.

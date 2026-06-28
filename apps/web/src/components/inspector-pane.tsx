@@ -14,9 +14,21 @@ import { cn } from '@/lib/utils';
 export function InspectorPane() {
   const inspector = useInspector();
   const closeRef = useRef<HTMLButtonElement>(null);
+  const paneRef = useRef<HTMLElement>(null);
+  const restoreFocusRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
-    if (inspector.open) closeRef.current?.focus();
+    if (inspector.open) {
+      const active = document.activeElement;
+      if (active instanceof HTMLElement && !paneRef.current?.contains(active)) {
+        restoreFocusRef.current = active;
+      }
+      closeRef.current?.focus();
+      return;
+    }
+
+    restoreFocusRef.current?.focus();
+    restoreFocusRef.current = null;
   }, [inspector.open, inspector.content?.id]);
 
   if (!inspector.open || !inspector.content) return null;
@@ -24,40 +36,50 @@ export function InspectorPane() {
   const { id, kind, title, render } = inspector.content;
 
   return (
-    <aside
-      id="inspector-pane"
-      aria-label={`Inspector for ${id}`}
-      aria-labelledby="inspector-title"
-      className={cn(
-        'sticky top-0 hidden h-full w-96 shrink-0 self-start border-l border-border bg-surface lg:flex lg:flex-col',
-      )}
-    >
-      <header className="flex h-12 shrink-0 items-center justify-between border-b border-border px-3">
-        <div className="flex min-w-0 items-baseline gap-2 font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">
-          <span className="shrink-0">{kind}</span>
-          <span className="shrink-0 text-fg-dim">·</span>
-          <span id="inspector-title" title={title ?? id} className="min-w-0 truncate text-signal">
-            {title ?? id}
-          </span>
-        </div>
-        <Button
-          ref={closeRef}
-          variant="ghost"
-          size="icon"
-          aria-label="Close inspector"
-          onClick={inspector.hide}
-          className="size-7"
-        >
-          <X className="size-3.5" />
-        </Button>
-      </header>
-      <div
-        className="flex-1 overflow-y-auto p-4 font-mono text-xs leading-relaxed text-fg-muted"
-        aria-live="polite"
+    <>
+      <button
+        type="button"
+        aria-label="Dismiss inspector"
+        className="fixed inset-0 z-40 bg-bg/60 backdrop-blur-sm lg:hidden"
+        onClick={inspector.hide}
+      />
+      <aside
+        ref={paneRef}
+        id="inspector-pane"
+        aria-label="Inspector"
+        aria-labelledby="inspector-title"
+        className={cn(
+          'fixed inset-x-0 bottom-0 z-50 flex max-h-[min(82dvh,42rem)] flex-col rounded-t-md border-t border-border bg-surface shadow-2xl shadow-black/20',
+          'lg:sticky lg:top-0 lg:z-auto lg:h-full lg:max-h-none lg:w-96 lg:shrink-0 lg:self-start lg:rounded-none lg:border-l lg:border-t-0 lg:shadow-none',
+        )}
       >
-        {render()}
-      </div>
-    </aside>
+        <header className="flex h-12 shrink-0 items-center justify-between border-b border-border px-3">
+          <div className="flex min-w-0 items-baseline gap-2 font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">
+            <span className="shrink-0">{kind}</span>
+            <span className="shrink-0 text-fg-dim">·</span>
+            <span id="inspector-title" title={title ?? id} className="min-w-0 truncate text-signal">
+              {title ?? id}
+            </span>
+          </div>
+          <Button
+            ref={closeRef}
+            variant="ghost"
+            size="icon"
+            aria-label="Close inspector"
+            onClick={inspector.hide}
+            className="size-7"
+          >
+            <X className="size-3.5" />
+          </Button>
+        </header>
+        <div
+          className="flex-1 overflow-y-auto p-4 font-mono text-xs leading-relaxed text-fg-muted"
+          aria-live="polite"
+        >
+          {render()}
+        </div>
+      </aside>
+    </>
   );
 }
 

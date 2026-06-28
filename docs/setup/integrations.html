@@ -458,6 +458,14 @@ codex mcp add timeline --url "&lt;copied MCP endpoint URL&gt;" --bearer-token-en
         </li>
         <li><code>timeline.search_events</code> — semantic search across raw events</li>
         <li>
+          <code>timeline.search_moments</code>, <code>timeline.list_moments</code>,
+          <code>timeline.get_moment</code> — retrieve bundled timeline moments first, then expand to
+          cited raw event evidence for audit; results include the versioned moment shape and stable
+          row anchor IDs. <code>timeline.get_moment</code> should prefer returned raw event IDs, but
+          supported deterministic moment IDs can be expanded directly through bounded or exact
+          source-metadata lookup.
+        </li>
+        <li>
           <code>timeline.get_event</code> / <code>timeline.list_events</code> — fetch + paginate
         </li>
         <li><code>timeline.get_entity</code> — lookup person / company / project / topic</li>
@@ -487,7 +495,9 @@ codex mcp add timeline --url "&lt;copied MCP endpoint URL&gt;" --bearer-token-en
         queries with a pseudo-zero-UUID actor so events with <code>visibility=private</code> or
         <code>specific_users</code> stay invisible to outbound clients — only
         <code>visibility=team</code> events flow out. Keys are stored as SHA-256 hashes (plaintext
-        shown once at creation). Revoke from the same page; revocation is immediate.
+        shown once at creation). Moment tools are built from that same visible event set and fence
+        raw snippets as external content before returning them. Revoke from the same page;
+        revocation is immediate.
       </p>
       <p>
         Wildcard CORS is set so browser-based agents work; Authorization-header auth means cookies

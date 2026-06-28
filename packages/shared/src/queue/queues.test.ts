@@ -460,6 +460,45 @@ describe('queue wrappers', () => {
     });
   });
 
+  it('dedupes timeline moment presentation jobs by cache provenance', async () => {
+    const queues = await importQueues();
+    const data = {
+      teamId: '22222222-2222-4222-8222-222222222222',
+      userId: '55555555-5555-4555-8555-555555555555',
+      rawEventIds: ['aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'],
+      cacheKey: {
+        teamId: '22222222-2222-4222-8222-222222222222',
+        momentKey: 'moment:telegram:chat-a:2026-06-27:18:00',
+        visibilityScopeHash: 'visibility-hash',
+        visibleSourceEventIdsHash: 'ids-hash',
+        visibleSourceContentHash: 'content-hash',
+        impactHydrationHash: 'impact-hash',
+        artifactClusterHash: 'artifact-hash',
+        promptVersion: 'timeline_moment_presentation.v1',
+        model: 'test/model',
+      },
+    };
+
+    const first = await queues.enqueueTimelineMomentPresentationJob(data, { delayMs: 30_000 });
+    const duplicate = await queues.enqueueTimelineMomentPresentationJob(data, { delayMs: 30_000 });
+
+    expect(fakes.queues[0]?.name).toBe('timeline-moment-presentation');
+    expect(fakes.queues[0]?.addCalls[0]).toMatchObject({
+      name: 'timeline-moment-presentation',
+      data,
+      opts: {
+        delay: 30_000,
+        jobId:
+          'timeline-moment-presentation|22222222-2222-4222-8222-222222222222|moment%3Atelegram%3Achat-a%3A2026-06-27%3A18%3A00|ids-hash|content-hash|visibility-hash|timeline_moment_presentation.v1|test%2Fmodel',
+      },
+    });
+    expect(first).toMatchObject({ enqueued: true });
+    expect(duplicate).toMatchObject({ enqueued: false, jobId: first.jobId });
+
+    await queues.closeTimelineMomentPresentationQueue();
+    expect(fakes.queues[0]?.close).toHaveBeenCalledTimes(1);
+  });
+
   it('registers repeatable jobs with stable job ids and closes singleton queues', async () => {
     const queues = await importQueues();
 

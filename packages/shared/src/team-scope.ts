@@ -24,12 +24,14 @@ import {
   teamVisibilityDefaults,
   teams,
   teamRole,
+  timelineMomentPresentations,
   users,
   visibilityDefaultSource,
 } from '@timeline/db';
 import { and, asc, desc, eq, gte, inArray, isNull, lt, ne, or, sql } from 'drizzle-orm';
 
 import type { chatStructured } from '#src/llm/chat.js';
+import type { TimelineMomentLookupPlan } from '#src/timeline-moments/index.js';
 
 import { createAuditScope } from '#src/audit/scope.js';
 import { createBoardScope } from '#src/boards/index.js';
@@ -54,6 +56,14 @@ import {
 } from '#src/qdrant/client.js';
 import { buildPointId } from '#src/qdrant/point-id.js';
 import { createSuggestionScope } from '#src/suggestions/index.js';
+import {
+  buildTimelineMomentPresentationCacheFingerprint,
+  timelineMomentPresentationCacheKeyMatches,
+  timelineMomentPresentationSuggestionSchema,
+  type TimelineMomentPresentationCacheKey,
+  type TimelineMomentPresentationCacheRecord,
+  type TimelineMomentPresentationSuggestion,
+} from '#src/timeline-moments/presentation.js';
 import { normalizeVisibilityUserIds, rawEventVisibleToUser } from '#src/visibility.js';
 
 // Note: `teamRole` value is referenced at runtime by drizzle elsewhere; keeping
@@ -263,6 +273,12 @@ export interface SearchObjectNoteResult {
   score: number;
   updatedAt: string;
   evidence: SearchObjectNoteEvidence[];
+}
+
+export interface UpsertTimelineMomentPresentationInput {
+  cacheKey: TimelineMomentPresentationCacheKey;
+  suggestion: TimelineMomentPresentationSuggestion;
+  generatedAt?: Date | undefined;
 }
 
 export interface SenderContext {
@@ -1283,6 +1299,187 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
       .limit(filters.limit ?? 200);
   }
 
+  function metadataPredicateCondition(
+    predicate: NonNullable<TimelineMomentLookupPlan['metadataPredicates']>[number],
+  ) {
+    const value = predicate.equals;
+    switch (predicate.path.join('.')) {
+      case 'provider':
+        return sql`${rawEvents.sourceMetadata} ->> 'provider' = ${value}`;
+      case 'event_type':
+        return sql`${rawEvents.sourceMetadata} ->> 'event_type' = ${value}`;
+      case 'external_object_id':
+        return sql`${rawEvents.sourceMetadata} ->> 'external_object_id' = ${value}`;
+      case 'external_event_id':
+        return sql`${rawEvents.sourceMetadata} ->> 'external_event_id' = ${value}`;
+      case 'meeting_id':
+        return sql`${rawEvents.sourceMetadata} ->> 'meeting_id' = ${value}`;
+      case 'thread_root_id':
+        return sql`${rawEvents.sourceMetadata} ->> 'thread_root_id' = ${value}`;
+      case 'calendar_event_id':
+        return sql`${rawEvents.sourceMetadata} ->> 'calendar_event_id' = ${value}`;
+      case 'github.type':
+        return sql`${rawEvents.sourceMetadata} #>> '{github,type}' = ${value}`;
+      case 'github.repo':
+        return sql`${rawEvents.sourceMetadata} #>> '{github,repo}' = ${value}`;
+      case 'github.pr_number':
+        return sql`COALESCE(${rawEvents.sourceMetadata} #>> '{github,pr_number}', ${rawEvents.sourceMetadata} #>> '{github,number}') = ${value}`;
+      case 'github.number':
+        return sql`COALESCE(${rawEvents.sourceMetadata} #>> '{github,number}', ${rawEvents.sourceMetadata} #>> '{github,pr_number}') = ${value}`;
+      case 'github.sha':
+        return sql`COALESCE(${rawEvents.sourceMetadata} #>> '{github,sha}', ${rawEvents.sourceMetadata} #>> '{github,head_sha}') = ${value}`;
+      case 'github.head_sha':
+        return sql`COALESCE(${rawEvents.sourceMetadata} #>> '{github,head_sha}', ${rawEvents.sourceMetadata} #>> '{github,sha}') = ${value}`;
+      case 'github.tag':
+        return sql`${rawEvents.sourceMetadata} #>> '{github,tag}' = ${value}`;
+      default:
+        throw new Error(
+          `Unsupported timeline moment metadata predicate: ${predicate.path.join('.')}`,
+        );
+    }
+  }
+
+  async function listEventsForMomentLookup(
+    plan: TimelineMomentLookupPlan,
+  ): Promise<(typeof rawEvents.$inferSelect)[]> {
+    await ensureMember();
+    const conditions = [
+      eq(rawEvents.teamId, teamId),
+      visibilityFilter,
+      activeRawEventFilter,
+      eq(rawEvents.source, plan.source),
+    ];
+    if (plan.from) conditions.push(gte(rawEvents.occurredAt, plan.from));
+    if (plan.to) conditions.push(lt(rawEvents.occurredAt, plan.to));
+    for (const predicate of plan.metadataPredicates ?? []) {
+      conditions.push(metadataPredicateCondition(predicate));
+    }
+    for (const group of plan.metadataPredicateGroups ?? []) {
+      const groupConditions = group.map(metadataPredicateCondition);
+      if (groupConditions.length === 1) {
+        conditions.push(groupConditions[0]);
+      } else if (groupConditions.length > 1) {
+        conditions.push(or(...groupConditions));
+      }
+    }
+    return db
+      .select()
+      .from(rawEvents)
+      .where(and(...conditions))
+      .orderBy(desc(rawEvents.occurredAt), desc(rawEvents.id))
+      .limit(plan.limit);
+  }
+
+  function timelineMomentPresentationCacheKeyFromRow(
+    row: typeof timelineMomentPresentations.$inferSelect,
+  ): TimelineMomentPresentationCacheKey {
+    return {
+      teamId: row.teamId,
+      momentKey: row.momentKey,
+      visibilityScopeHash: row.visibilityScopeHash,
+      visibleSourceEventIdsHash: row.visibleSourceEventIdsHash,
+      visibleSourceContentHash: row.visibleSourceContentHash,
+      impactHydrationHash: row.impactHydrationHash,
+      artifactClusterHash: row.artifactClusterHash,
+      promptVersion: row.promptVersion,
+      model: row.model,
+    };
+  }
+
+  async function listTimelineMomentPresentations(
+    cacheKeys: TimelineMomentPresentationCacheKey[],
+  ): Promise<Record<string, TimelineMomentPresentationCacheRecord>> {
+    await ensureMember();
+    if (cacheKeys.length === 0) return {};
+    const expectedByFingerprint = new Map(
+      cacheKeys.map((cacheKey) => [
+        buildTimelineMomentPresentationCacheFingerprint(cacheKey),
+        cacheKey,
+      ]),
+    );
+    const rows = await db
+      .select()
+      .from(timelineMomentPresentations)
+      .where(
+        and(
+          eq(timelineMomentPresentations.teamId, teamId),
+          inArray(timelineMomentPresentations.cacheFingerprint, [...expectedByFingerprint.keys()]),
+        ),
+      );
+    const result: Record<string, TimelineMomentPresentationCacheRecord> = {};
+    for (const row of rows) {
+      const expected = expectedByFingerprint.get(row.cacheFingerprint);
+      if (!expected) continue;
+      const cacheKey = timelineMomentPresentationCacheKeyFromRow(row);
+      if (!timelineMomentPresentationCacheKeyMatches(expected, cacheKey)) continue;
+      const parsed = timelineMomentPresentationSuggestionSchema.safeParse(row.suggestion);
+      if (!parsed.success) continue;
+      result[row.cacheFingerprint] = {
+        cacheKey,
+        cacheFingerprint: row.cacheFingerprint,
+        suggestion: parsed.data,
+        generatedAt: row.generatedAt,
+      };
+    }
+    return result;
+  }
+
+  async function upsertTimelineMomentPresentation(
+    input: UpsertTimelineMomentPresentationInput,
+  ): Promise<TimelineMomentPresentationCacheRecord> {
+    await ensureMember();
+    if (input.cacheKey.teamId !== teamId) {
+      throw new Error('Timeline moment presentation cache key belongs to another team');
+    }
+    const suggestion = timelineMomentPresentationSuggestionSchema.parse(input.suggestion);
+    const cacheFingerprint = buildTimelineMomentPresentationCacheFingerprint(input.cacheKey);
+    const generatedAt = input.generatedAt ?? new Date();
+    const rows = await db
+      .insert(timelineMomentPresentations)
+      .values({
+        teamId,
+        momentKey: input.cacheKey.momentKey,
+        cacheFingerprint,
+        visibilityScopeHash: input.cacheKey.visibilityScopeHash,
+        visibleSourceEventIdsHash: input.cacheKey.visibleSourceEventIdsHash,
+        visibleSourceContentHash: input.cacheKey.visibleSourceContentHash,
+        impactHydrationHash: input.cacheKey.impactHydrationHash,
+        artifactClusterHash: input.cacheKey.artifactClusterHash,
+        promptVersion: input.cacheKey.promptVersion,
+        model: input.cacheKey.model,
+        suggestion,
+        generatedAt,
+        updatedAt: new Date(),
+      })
+      .onConflictDoUpdate({
+        target: [timelineMomentPresentations.teamId, timelineMomentPresentations.cacheFingerprint],
+        set: {
+          momentKey: input.cacheKey.momentKey,
+          visibilityScopeHash: input.cacheKey.visibilityScopeHash,
+          visibleSourceEventIdsHash: input.cacheKey.visibleSourceEventIdsHash,
+          visibleSourceContentHash: input.cacheKey.visibleSourceContentHash,
+          impactHydrationHash: input.cacheKey.impactHydrationHash,
+          artifactClusterHash: input.cacheKey.artifactClusterHash,
+          promptVersion: input.cacheKey.promptVersion,
+          model: input.cacheKey.model,
+          suggestion,
+          generatedAt,
+          updatedAt: new Date(),
+        },
+      })
+      .returning();
+    const row = rows[0];
+    if (!row) {
+      throw new Error('Failed to persist timeline moment presentation');
+    }
+    return {
+      cacheKey: timelineMomentPresentationCacheKeyFromRow(row),
+      cacheFingerprint: row.cacheFingerprint,
+      suggestion,
+      generatedAt: row.generatedAt,
+    };
+  }
+
   function pushTimelineImpact(
     map: Map<string, TimelineImpactItem[]>,
     rawEventId: string | null | undefined,
@@ -1870,6 +2067,12 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
       listImpactItems: listTimelineImpactItems,
 
       listArtifactClusters: listTimelineArtifactClusters,
+
+      listEventsForMomentLookup,
+
+      listMomentPresentations: listTimelineMomentPresentations,
+
+      upsertMomentPresentation: upsertTimelineMomentPresentation,
 
       async listEventsPage(
         filters: EventListFilters = {},

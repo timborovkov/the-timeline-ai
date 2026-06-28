@@ -173,6 +173,8 @@ function dashboardContextPrompt(
 const nativeToolGroups = {
   core: [
     'retrieve_workspace_context',
+    'search_timeline_moments',
+    'get_timeline_moment',
     'search_timeline',
     'search_object_notes',
     'get_entity',

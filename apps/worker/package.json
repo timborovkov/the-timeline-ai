@@ -24,6 +24,7 @@
     "redocument-extract": "NODE_OPTIONS=--conditions=development tsx src/scripts/redocument-extract.ts",
     "redocument-embed": "NODE_OPTIONS=--conditions=development tsx src/scripts/redocument-embed.ts",
     "integration-resync": "NODE_OPTIONS=--conditions=development tsx src/scripts/integration-resync.ts",
+    "timeline-moment-presentations": "NODE_OPTIONS=--conditions=development tsx src/scripts/timeline-moment-presentations.ts",
     "lint": "eslint src",
     "test": "NODE_OPTIONS=--conditions=development vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit"
