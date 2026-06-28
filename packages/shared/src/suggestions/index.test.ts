@@ -66,11 +66,11 @@ async function seed(pg: PGlite): Promise<void> {
     VALUES
       ('${TEAM_ID}', 'team-a', 'Team A'),
       ('${OTHER_TEAM_ID}', 'team-b', 'Team B');
-    INSERT INTO users (id, email)
+    INSERT INTO users (id, email, name)
     VALUES
-      ('${USER_ID}', 'a@example.com'),
-      ('${REVIEWER_ID}', 'b@example.com'),
-      ('${OTHER_USER_ID}', 'c@example.com');
+      ('${USER_ID}', 'a@example.com', 'Owner'),
+      ('${REVIEWER_ID}', 'b@example.com', 'Reviewer'),
+      ('${OTHER_USER_ID}', 'c@example.com', 'Other Owner');
     INSERT INTO team_members (team_id, user_id, role)
     VALUES
       ('${TEAM_ID}', '${USER_ID}', 'owner'),
@@ -6267,6 +6267,42 @@ describe('suggestion scope', () => {
       source_event_id: null,
       metadata_item_id: itemId,
     });
+  });
+
+  it('resolves task assignee names to active team member ids', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Create assigned task',
+      dedupeKey: 'task-create-assignee-name',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Review Acme deck',
+          dedupeKey: 'task-create-assignee-name:item',
+          proposedPayload: {
+            canonicalName: 'Review Acme deck',
+            assigneeName: 'Reviewer',
+          },
+        },
+      ],
+    });
+    const item = bundle.items[0];
+    expect(item?.proposedPayload).toMatchObject({
+      assigneeName: 'Reviewer',
+      assigneeUserId: REVIEWER_ID,
+    });
+
+    await expect(scope.suggestions.acceptSuggestionItem(item?.id ?? '')).resolves.toBe(true);
+
+    const result = await pg.query<{ assignee_user_id: string | null }>(
+      `SELECT assignee_user_id
+       FROM entities
+       WHERE team_id = '${TEAM_ID}'
+         AND canonical_name = 'Review Acme deck'`,
+    );
+    expect(result.rows[0]).toEqual({ assignee_user_id: REVIEWER_ID });
   });
 
   it('normalizes invalid task create source event ids to suggestion evidence when storing', async () => {

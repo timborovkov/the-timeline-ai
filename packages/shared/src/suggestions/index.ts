@@ -11,6 +11,7 @@ import {
   notifications,
   rawEvents,
   teamMembers,
+  users,
   type Db,
 } from '@timeline/db';
 import { and, asc, count, desc, eq, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
@@ -311,6 +312,8 @@ const objectPayloadFields = {
   priority: z.number().int().min(1).max(4).nullable().optional(),
   ownerUserId: blankStringAsNull(uuid.nullable()).optional(),
   assigneeUserId: blankStringAsNull(uuid.nullable()).optional(),
+  ownerName: z.string().trim().min(1).max(200).optional(),
+  assigneeName: z.string().trim().min(1).max(200).optional(),
   dueAt: blankStringAsNull(z.iso.datetime().nullable()).optional(),
   metadata: z.record(z.string(), z.unknown()).optional(),
 };
@@ -821,6 +824,18 @@ function normalizeSuggestionSourceEventPayload(
     delete normalized.sourceEventId;
   }
   return normalized;
+}
+
+function memberRefKeys(value: string | null): string[] {
+  if (!value) return [];
+  const normalized = value.trim().toLowerCase();
+  if (!normalized) return [];
+  const keys = [normalized];
+  if (normalized.includes('@')) keys.push(normalized.split('@')[0] ?? '');
+  for (const token of normalized.split(/\s+/)) {
+    if (token.length >= 2) keys.push(token);
+  }
+  return [...new Set(keys.filter(Boolean))];
 }
 
 function recordFromUnknown(value: unknown): Record<string, unknown> {
@@ -1685,6 +1700,82 @@ function toBundle(
 export function createSuggestionScope(deps: SuggestionScopeDeps) {
   const { db, teamId, userId, ensureMember, objects, boards, calendar } = deps;
   const chatStructured = deps.chatStructured ?? defaultChatStructured;
+  let teamMemberRefMapPromise: Promise<Map<string, Set<string>>> | null = null;
+
+  async function teamMemberRefMap(): Promise<Map<string, Set<string>>> {
+    teamMemberRefMapPromise ??= (async () => {
+      const rows = await db
+        .select({ userId: teamMembers.userId, name: users.name, email: users.email })
+        .from(teamMembers)
+        .innerJoin(users, eq(users.id, teamMembers.userId))
+        .where(and(eq(teamMembers.teamId, teamId), isNull(teamMembers.removedAt)));
+      const refs = new Map<string, Set<string>>();
+      for (const row of rows) {
+        for (const key of [...memberRefKeys(row.name), ...memberRefKeys(row.email)]) {
+          const userIds = refs.get(key) ?? new Set<string>();
+          userIds.add(row.userId);
+          refs.set(key, userIds);
+        }
+      }
+      return refs;
+    })();
+    return teamMemberRefMapPromise;
+  }
+
+  async function resolveTeamMemberRef(value: unknown): Promise<string | null> {
+    if (typeof value !== 'string') return null;
+    const ids = (await teamMemberRefMap()).get(value.trim().toLowerCase());
+    if (ids?.size !== 1) return null;
+    return [...ids][0] ?? null;
+  }
+
+  async function resolvePayloadMemberRefs(
+    payload: Record<string, unknown>,
+  ): Promise<Record<string, unknown>> {
+    const normalized = { ...payload };
+    for (const [idKey, nameKey] of [
+      ['ownerUserId', 'ownerName'],
+      ['assigneeUserId', 'assigneeName'],
+    ] as const) {
+      if (typeof normalized[idKey] === 'string' && UUID_RE.test(normalized[idKey])) continue;
+      if (
+        normalized[idKey] !== undefined &&
+        normalized[idKey] !== null &&
+        normalized[idKey] !== ''
+      ) {
+        continue;
+      }
+      const resolved = await resolveTeamMemberRef(normalized[nameKey]);
+      if (resolved) normalized[idKey] = resolved;
+    }
+    return normalized;
+  }
+
+  async function normalizeSuggestionItemForStorage(
+    item: SuggestionItemInput,
+    objectTypeByTargetId: ReadonlyMap<string, ObjectType>,
+    sourceEventFallback: {
+      allowedSourceEventIds?: ReadonlySet<string>;
+      fallbackSourceEventId?: string | null;
+    },
+  ): Promise<SuggestionItemInput> {
+    const proposedPayload = normalizeSuggestionSourceEventPayload(
+      await resolvePayloadMemberRefs(
+        normalizeLifecyclePayload({
+          operation: item.operation,
+          targetKind: item.targetKind,
+          title: item.title,
+          proposedPayload: item.proposedPayload,
+          objectType:
+            item.targetKind === 'object' && item.operation !== 'create'
+              ? (objectTypeByTargetId.get(item.targetId ?? '') ?? null)
+              : null,
+        }),
+      ),
+      sourceEventFallback,
+    );
+    return { ...item, proposedPayload };
+  }
 
   async function resolveCurrentObjectId(entityId: string): Promise<string | null> {
     if (!UUID_RE.test(entityId)) return null;
@@ -2914,7 +3005,9 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     payload: Record<string, unknown>,
   ): Promise<string> {
     const parsed = objectCreatePayload.parse(
-      await normalizeObjectCreatePayloadForAcceptance(item, payload),
+      await resolvePayloadMemberRefs(
+        await normalizeObjectCreatePayloadForAcceptance(item, payload),
+      ),
     );
     const canonicalName =
       parsed.canonicalName !== undefined && parsed.canonicalName.length > 0
@@ -3170,13 +3263,15 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     const existingResultId = await existingResultForItem(item);
     if (existingResultId) return existingResultId;
     const targetId = item.targetId;
-    const payload = normalizeLifecyclePayload({
-      ...item,
-      objectType:
-        item.targetKind === 'object' && item.operation !== 'create'
-          ? await objectTypeForTarget(targetId)
-          : null,
-    });
+    const payload = await resolvePayloadMemberRefs(
+      normalizeLifecyclePayload({
+        ...item,
+        objectType:
+          item.targetKind === 'object' && item.operation !== 'create'
+            ? await objectTypeForTarget(targetId)
+            : null,
+      }),
+    );
 
     if (item.targetKind === 'task' || item.targetKind === 'object') {
       if (!targetId) throw new Error('Target id is required');
@@ -3867,10 +3962,15 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       if (evidenceIds.length > 0) {
         sourceEventFallback.allowedSourceEventIds = new Set(evidenceIds);
       }
+      const normalizedItems = await Promise.all(
+        input.items.map((item) =>
+          normalizeSuggestionItemForStorage(item, objectTypeByTargetId, sourceEventFallback),
+        ),
+      );
       const correctionDedupeKey = `${input.dedupeKey}:correction:${suggestionDedupeKey({
         title: input.title,
         summary: input.summary ?? null,
-        items: input.items,
+        items: normalizedItems,
         evidence: input.evidence?.map((ev) => ev.rawEventId) ?? [],
       })}`;
       const existingRows = await db
@@ -4001,20 +4101,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         await tx
           .insert(agentSuggestionItems)
           .values(
-            input.items.map((item) => {
-              const proposedPayload = normalizeSuggestionSourceEventPayload(
-                normalizeLifecyclePayload({
-                  operation: item.operation,
-                  targetKind: item.targetKind,
-                  title: item.title,
-                  proposedPayload: item.proposedPayload,
-                  objectType:
-                    item.targetKind === 'object' && item.operation !== 'create'
-                      ? (objectTypeByTargetId.get(item.targetId ?? '') ?? null)
-                      : null,
-                }),
-                sourceEventFallback,
-              );
+            normalizedItems.map((item) => {
               return {
                 suggestionId: inserted.id,
                 teamId,
@@ -4025,7 +4112,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
                 title: item.title,
                 description: item.description ?? null,
                 dedupeKey: item.dedupeKey,
-                proposedPayload,
+                proposedPayload: item.proposedPayload,
               };
             }),
           )

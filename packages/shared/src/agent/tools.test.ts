@@ -28,6 +28,7 @@ interface FakeScope {
     getEntity: ReturnType<typeof vi.fn>;
     listEvents: ReturnType<typeof vi.fn>;
     getEventWithFacts: ReturnType<typeof vi.fn>;
+    listMembers: ReturnType<typeof vi.fn>;
   };
   documents: {
     listDocuments: ReturnType<typeof vi.fn>;
@@ -81,6 +82,7 @@ function makeFakeScope(): FakeScope {
       getEntity: vi.fn(),
       listEvents: vi.fn(),
       getEventWithFacts: vi.fn(),
+      listMembers: vi.fn().mockResolvedValue([]),
     },
     documents: {
       listDocuments: vi.fn(),
@@ -245,6 +247,39 @@ describe('buildAgentTools — team isolation', () => {
     expect(Object.keys(evt.shape)).not.toContain('teamId');
     expect(Object.keys(guide.shape)).not.toContain('teamId');
     expect(Object.keys(route.shape)).not.toContain('teamId');
+  });
+
+  it('lists active team members for assignment ids', async () => {
+    const scope = makeFakeScope();
+    scope.timeline.listMembers.mockResolvedValue([
+      {
+        userId: '11111111-1111-4111-8111-111111111111',
+        role: 'member',
+        name: 'Mikael Rintala',
+        email: 'mikael@example.test',
+        createdAt: new Date('2026-01-01T00:00:00.000Z'),
+      },
+    ]);
+    const tools = buildAgentTools(scope as unknown as TeamScope);
+    const exec = tools.list_team_members?.execute as (
+      input: Record<string, never>,
+      opts: unknown,
+    ) => Promise<unknown>;
+
+    const result = await exec({}, {});
+
+    expect(scope.timeline.listMembers).toHaveBeenCalled();
+    expect(result).toEqual({
+      count: 1,
+      members: [
+        {
+          user_id: '11111111-1111-4111-8111-111111111111',
+          role: 'member',
+          name: 'Mikael Rintala',
+          email: 'mikael@example.test',
+        },
+      ],
+    });
   });
 
   it('search_app_guide returns route citations for navigation questions without scope calls', async () => {
