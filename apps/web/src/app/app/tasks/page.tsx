@@ -92,6 +92,9 @@ export default async function TasksPage({
       selectedVisibleTaskId = selectedTask.id;
     }
   }
+  const selectedTaskDetail = selectedVisibleTaskId
+    ? await scope.objects.getObject(selectedVisibleTaskId)
+    : null;
   const memberIds = members.map((member) => member.userId);
   const memberRows =
     memberIds.length > 0
@@ -192,6 +195,7 @@ export default async function TasksPage({
             rows={rows}
             columns={TASK_COLUMNS}
             selectedTaskId={selectedVisibleTaskId}
+            selectedTaskContext={selectedTaskDetail?.connectedWork ?? null}
             view={view}
             members={memberOptions}
             totalCount={counts.total}

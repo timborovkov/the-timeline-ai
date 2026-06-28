@@ -121,9 +121,11 @@ pages. Full phased plan with file-level tasks:
       `related` relationships/proposals by sorted object pair while preserving
       direction for directional relationship kinds.
 - [x] Expand Connected Work beyond the first slice with boards, pending
-      approvals, and documents ordered by object-page usefulness.
+      approvals, documents, links, and captured files ordered by object-page
+      usefulness.
 - [x] Add timeline moments to Connected Work so source-backed event context
-      appears after active work and before document context.
+      appears after active work and before document context, then surface the
+      same related context inside selected board cards and task side panels.
 - [x] Add object-centered Memory Repair entry point on object detail pages that
       queues duplicate and low-signal archive cleanup focused on the selected
       object while preserving rejected-pair suppression.

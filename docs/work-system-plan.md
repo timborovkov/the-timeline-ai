@@ -232,6 +232,9 @@ updates the UI can apply manually. For board items, worker context must include
 the current lane, responsible person, due date, priority, next step, and recent
 board item history so proposals can safely target `laneId`, `responsibleUserId`,
 `dueAt`, `priority`, `nextStep`, notes, or board membership without guessing.
+When the responsible person is clear but the member UUID is unavailable,
+proposals may carry `responsibleName`; acceptance resolves only a unique active
+team member.
 
 ### One Work Graph, Many Operational Views
 
@@ -441,8 +444,9 @@ Agent capabilities:
 
 Suggestion worker improvements:
 
-- Include `responsibleUserId` and a readable responsible-person label in the
-  existing board item context sent to the suggestion worker.
+- Include `responsibleUserId`, `responsibleName`, and a readable
+  responsible-person label in the existing board item context sent to the
+  suggestion worker.
 - Include enough lane metadata for the worker to propose board item stage moves
   without relying on lane names alone.
 - Include recent board item changes alongside recent timeline evidence when

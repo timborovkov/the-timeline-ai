@@ -1072,6 +1072,62 @@ describe('writeIntegrationEvents visibility', () => {
     ]);
   });
 
+  it('creates and repairs link artifacts from integration event text without object mappings', async () => {
+    const [integration] = await db
+      .insert(integrations)
+      .values({
+        teamId: TEAM_ID,
+        connectedByUserId: USER_ID,
+        provider: 'github',
+        displayName: 'GitHub',
+        externalAccountId: 'github-link-acct',
+        visibilityDefault: 'team',
+      })
+      .returning();
+    if (!integration) throw new Error('integration insert failed');
+    const event = {
+      dedupKey: 'github:plain-link:42',
+      provider: 'github',
+      externalObjectId: 'acme/app#42',
+      eventType: 'plain.link',
+      occurredAt: new Date('2026-06-18T13:00:00Z'),
+      contentText: 'Heads up: https://github.com/acme/app/pull/42?utm_source=linear',
+    } as const;
+
+    const insertedIds = await writeIntegrationEvents({
+      db: db as never,
+      integration,
+      events: [event],
+    });
+    expect(insertedIds).toHaveLength(1);
+
+    await db.delete(artifactClusters);
+    expect(await db.select().from(artifactClusterMembers)).toHaveLength(0);
+
+    const replayedIds = await writeIntegrationEvents({
+      db: db as never,
+      integration,
+      events: [event],
+    });
+    expect(replayedIds).toEqual([]);
+
+    const clusters = await db.select().from(artifactClusters);
+    expect(clusters).toHaveLength(1);
+    expect(clusters[0]).toMatchObject({
+      artifactType: 'link',
+      canonicalName: 'github.com/acme/app/pull/42',
+    });
+    const members = await db.select().from(artifactClusterMembers);
+    expect(members).toEqual([
+      expect.objectContaining({
+        rawEventId: insertedIds[0],
+        provider: 'github',
+        externalObjectId: 'acme/app#42',
+        authoritative: false,
+      }),
+    ]);
+  });
+
   it('records artifact evidence even when workspace object mapping is skipped by a name conflict', async () => {
     const [integration] = await db
       .insert(integrations)

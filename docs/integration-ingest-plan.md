@@ -52,7 +52,7 @@ Every first-party integration must ship the same baseline:
 | Resource selection | Team-safe resource picker using provider connections and team resource shares. |
 | Backfill | Bounded historical import with provider cursors and dedupe keys. |
 | Incremental sync | Polling, webhooks, or both; failures land in job recovery and audit logs. |
-| Event model | Provider activity normalized into immutable raw events with cited external URLs. |
+| Event model | Provider activity normalized into immutable raw events with cited external URLs; URL text becomes non-authoritative link artifact evidence and duplicate sync replays repair missing link evidence. |
 | Object mapping | External work items map into Timeline objects/tasks/deals/incidents when stable enough. |
 | Visibility | Team isolation through `withTeam`; no provider resource exposed unless shared. |
 | Replay | Safe resync from zero without duplicating raw events. |

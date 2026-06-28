@@ -76,4 +76,41 @@ describe('work filters', () => {
       },
     });
   });
+
+  it('maps multi-value type and people filters', () => {
+    const parsed = parseWorkFilters({
+      type: 'task,project',
+      status: ['todo', 'doing'],
+      owner: USER_ID,
+      assignee: `${USER_ID},${LANE_ID},unassigned`,
+      responsible: `${USER_ID},${LANE_ID}`,
+    });
+
+    expect(objectListFilterFromWorkFilters(parsed)).toMatchObject({
+      type: ['task', 'project'],
+      status: ['todo', 'doing'],
+      ownerUserId: USER_ID,
+      assigneeUserId: [USER_ID, LANE_ID, null],
+    });
+    const boardFilter = boardItemFilterFromWorkFilters(parsed);
+    expect(boardFilter).toMatchObject({
+      responsibleUserId: [USER_ID, LANE_ID],
+    });
+    expect(boardFilter.object).toMatchObject({
+      type: ['task', 'project'],
+      assigneeUserId: [USER_ID, LANE_ID, null],
+    });
+  });
+
+  it('normalizes canceled status params while keeping legacy rows filterable', () => {
+    const parsed = parseWorkFilters({ status: 'todo,canceled,cancelled' });
+
+    expect(parsed.status).toBe('todo,cancelled');
+    expect(objectListFilterFromWorkFilters(parsed)).toMatchObject({
+      status: ['todo', 'cancelled', 'canceled'],
+    });
+    expect(boardItemFilterFromWorkFilters(parsed).object).toMatchObject({
+      status: ['todo', 'cancelled', 'canceled'],
+    });
+  });
 });

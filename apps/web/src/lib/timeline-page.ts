@@ -17,7 +17,7 @@ interface TimelinePageWindow {
 interface CollectTimelinePageOptions {
   cursor?: string | null;
   focusEventId?: string | null;
-  impact?: ImpactKind | null;
+  impact?: ImpactKind | ImpactKind[] | null;
   limit?: number;
   maxScanPages?: number;
   pageSize?: number;
@@ -63,7 +63,7 @@ export async function collectTimelinePage({
   fetchEventsByIds,
   hydrateImpact,
 }: CollectTimelinePageOptions): Promise<TimelinePageData> {
-  if (!impact) {
+  if (!impact || (Array.isArray(impact) && impact.length === 0)) {
     const page = await fetchPage({ cursor, limit });
     const items = await includeFocusedEvents(page.items, focusEventId, fetchEventsByIds);
     return {

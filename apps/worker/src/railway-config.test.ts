@@ -4,17 +4,22 @@ import { describe, expect, it } from 'vitest';
 
 interface RailwayConfig {
   deploy?: {
+    preDeployCommand?: string[];
     startCommand?: string;
   };
 }
 
 describe('Railway worker config', () => {
-  it('starts with node in production mode at runtime', () => {
+  it('runs deploy and start commands with node in production mode', () => {
     const config = JSON.parse(
       readFileSync(new URL('../railway.json', import.meta.url), 'utf8'),
     ) as RailwayConfig;
 
+    expect(config.deploy?.preDeployCommand).toEqual([
+      'NODE_ENV=production node packages/db/dist/migrate.js',
+    ]);
     expect(config.deploy?.startCommand).toBe('NODE_ENV=production node apps/worker/dist/index.js');
+    expect(config.deploy?.preDeployCommand?.join(' ')).not.toContain('pnpm');
     expect(config.deploy?.startCommand).not.toContain('pnpm');
     expect(config.deploy?.startCommand).not.toContain('NODE_ENV=staging');
   });

@@ -42,6 +42,12 @@ type Action =
   | { type: 'canonicalName'; canonicalName: string }
   | { type: 'error'; error: string | null };
 
+type SelectableObjectType = (typeof OBJECT_TYPES)[number];
+
+function isSelectableObjectType(type: objects.ObjectType): type is SelectableObjectType {
+  return (OBJECT_TYPES as readonly objects.ObjectType[]).includes(type);
+}
+
 function reducer(state: State, action: Action): State {
   switch (action.type) {
     case 'mode':
@@ -388,7 +394,11 @@ export function BoardAddItemForm({
   });
   const existingTypeOptions = useMemo(() => {
     const typeRank = new Set(recommendedTypes);
-    return Array.from(new Set(candidates.map((row) => row.type))).sort(
+    const selectableTypes = new Set<SelectableObjectType>();
+    for (const row of candidates) {
+      if (isSelectableObjectType(row.type)) selectableTypes.add(row.type);
+    }
+    return Array.from(selectableTypes).sort(
       (a, b) =>
         Number(typeRank.has(b)) - Number(typeRank.has(a)) ||
         OBJECT_TYPES.indexOf(a) - OBJECT_TYPES.indexOf(b),

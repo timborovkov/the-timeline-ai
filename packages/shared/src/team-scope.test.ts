@@ -1,6 +1,8 @@
 import { PGlite } from '@electric-sql/pglite';
 import {
   auditLog,
+  artifactClusterMembers,
+  artifactClusters,
   calendarEvents,
   connectionAttention,
   documents,
@@ -282,6 +284,117 @@ describe('withTeam namespaced port', () => {
       thread_root_id: parent?.id,
       in_reply_to: 'FRWP191MB3001FC5DB2A53F79176AA7D4981C2@FRWP191MB3001.EURP191.PROD.OUTLOOK.COM',
     });
+  });
+
+  it('stores contact metadata on threaded email raw events', async () => {
+    const scope = withTeam(db as never, TEAM_A, USER_A);
+    const event = await scope.timeline.createEmailEvent({
+      authorUserId: USER_A,
+      messageId: 'contact-email@example.com',
+      contentText: [
+        'Ada can be reached at ada@example.com.',
+        'Phone: +1 213-373-4253',
+        'Office address: 123 Market St, San Francisco, CA 94105',
+      ].join('\n'),
+      occurredAt: new Date('2026-06-20T09:00:00Z'),
+      sourceMetadata: {},
+    });
+    if (!event) throw new Error('expected email event');
+
+    const [row] = await db
+      .select({ sourceMetadata: rawEvents.sourceMetadata })
+      .from(rawEvents)
+      .where(eq(rawEvents.id, event.id));
+    expect(row?.sourceMetadata).toMatchObject({
+      contacts: {
+        emails: [expect.objectContaining({ normalized_value: 'ada@example.com' })],
+        phones: [expect.objectContaining({ normalized_value: '+12133734253' })],
+        addresses: [
+          expect.objectContaining({
+            normalized_value: '123 market st, san francisco, ca 94105',
+            address_kind: 'postal_address',
+          }),
+        ],
+      },
+    });
+  });
+
+  it('creates link artifacts for generic timeline events', async () => {
+    const scope = withTeam(db as never, TEAM_A, USER_A);
+    const event = await scope.timeline.createEvent({
+      authorUserId: USER_A,
+      source: 'web',
+      contentText:
+        'Review https://example.com/specs/phase-14?utm_source=chat&ticket=42 and ping ada@example.com',
+      visibility: 'team',
+      occurredAt: new Date('2026-06-20T10:00:00Z'),
+    });
+
+    const [row] = await db
+      .select({ sourceMetadata: rawEvents.sourceMetadata })
+      .from(rawEvents)
+      .where(eq(rawEvents.id, event.id));
+    expect(row?.sourceMetadata).toMatchObject({
+      links: [
+        expect.objectContaining({
+          canonical_url: 'https://example.com/specs/phase-14?ticket=42',
+          display_url: 'example.com/specs/phase-14',
+        }),
+      ],
+      contacts: {
+        emails: [expect.objectContaining({ normalized_value: 'ada@example.com' })],
+      },
+    });
+
+    const clusters = await db.select().from(artifactClusters);
+    expect(clusters).toHaveLength(1);
+    expect(clusters[0]).toMatchObject({
+      teamId: TEAM_A,
+      artifactType: 'link',
+      canonicalName: 'example.com/specs/phase-14',
+    });
+    const members = await db.select().from(artifactClusterMembers);
+    expect(members).toEqual([
+      expect.objectContaining({
+        rawEventId: event.id,
+        role: 'related_context',
+        strength: 'semantic',
+        authoritative: false,
+      }),
+    ]);
+  });
+
+  it('repairs link artifacts when email delivery retries an existing raw event', async () => {
+    const scope = withTeam(db as never, TEAM_A, USER_A);
+    const first = await scope.timeline.createEmailEvent({
+      authorUserId: USER_A,
+      messageId: 'link-retry@example.com',
+      contentText: 'Please review https://docs.example.com/runbook?step=1&utm_campaign=launch',
+      occurredAt: new Date('2026-06-20T11:00:00Z'),
+      sourceMetadata: {},
+    });
+    if (!first) throw new Error('expected initial email event');
+
+    await db.delete(artifactClusters);
+    await expect(db.select().from(artifactClusterMembers)).resolves.toHaveLength(0);
+
+    const retry = await scope.timeline.createEmailEvent({
+      authorUserId: USER_A,
+      messageId: 'link-retry@example.com',
+      contentText: 'Please review https://docs.example.com/runbook?step=1&utm_campaign=launch',
+      occurredAt: new Date('2026-06-20T11:00:00Z'),
+      sourceMetadata: {},
+    });
+
+    expect(retry).toMatchObject({ id: first.id, deduplicated: true });
+    const clusters = await db.select().from(artifactClusters);
+    expect(clusters).toHaveLength(1);
+    expect(clusters[0]).toMatchObject({
+      artifactType: 'link',
+      canonicalName: 'docs.example.com/runbook',
+    });
+    const members = await db.select().from(artifactClusterMembers);
+    expect(members).toEqual([expect.objectContaining({ rawEventId: first.id })]);
   });
 
   it('materializes all visibility defaults from one settings fetch', async () => {

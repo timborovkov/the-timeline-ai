@@ -171,7 +171,7 @@ describe('GET /api/timeline', () => {
     });
     expect(fakes.fakeListEventsPage).toHaveBeenCalledWith(
       expect.objectContaining({
-        authorUserId: AUTHOR_ID,
+        authorUserId: [AUTHOR_ID],
         from: new Date('2026-05-31T21:00:00.000Z'),
         to: new Date('2026-06-02T21:00:00.000Z'),
         source: ['slack'],
@@ -227,6 +227,27 @@ describe('GET /api/timeline', () => {
       expect.objectContaining({
         source: ['telegram', 'slack'],
       }),
+    );
+  });
+
+  it('forwards multiple author, source, and impact filters', async () => {
+    const otherAuthor = '44444444-4444-4444-8444-444444444444';
+
+    await GET(
+      request(
+        `/api/timeline?author=${AUTHOR_ID},${otherAuthor}&source=chat,email&impact=task,document`,
+      ),
+    );
+
+    expect(fakes.fakeListEventsPage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        authorUserId: [AUTHOR_ID, otherAuthor],
+        source: ['telegram', 'slack', 'email'],
+      }),
+    );
+    expect(fakes.fakeListImpactItems).toHaveBeenCalledWith(['event-1']);
+    expect(fakes.fakeCacheKey).toHaveBeenCalledWith(
+      expect.arrayContaining([`${AUTHOR_ID},${otherAuthor}`, 'chat,email', 'task,document']),
     );
   });
 
