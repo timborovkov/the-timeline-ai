@@ -18,7 +18,7 @@ import { z } from 'zod';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
-import { GLOBAL_SEARCH_SOURCE_VALUES } from '@/lib/global-search-sources';
+import { GLOBAL_SEARCH_SOURCE_VALUES, type GlobalSearchSource } from '@/lib/global-search-sources';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -181,6 +181,44 @@ async function searchTimeline(
   scope: Scope,
   warnings: GlobalSearchWarning[],
 ): Promise<GlobalSearchResult[]> {
+  async function searchTimelineSource(
+    source: GlobalSearchSource | undefined,
+  ): Promise<GlobalSearchResult[]> {
+    const args: Parameters<Scope['timeline']['searchEvents']>[0] = {
+      query: input.query,
+      limit: sourceLimit(input, 10),
+    };
+    if (input.from) args.from = new Date(input.from);
+    if (input.to) args.to = new Date(input.to);
+    if (source) args.source = source;
+    const hits = await scope.timeline.searchEvents(args);
+    return hits.map((hit) =>
+      finalizeGlobalSearchResult({
+        id: `timeline:${hit.eventId}`,
+        kind: 'timeline_event',
+        title: hit.snippet || `${hit.source} event`,
+        snippet: hit.snippet,
+        href: `/app/timeline?event=${hit.eventId}`,
+        occurredAt: hit.occurredAt,
+        scoreParts: {
+          semantic: hit.score,
+          intent: scoreIntent(input.query, 'timeline_event', [hit.source]),
+          recency: scoreRecency(hit.occurredAt),
+        },
+        metadata: {
+          source: hit.source,
+          entities: hit.entityIds.length,
+          facts: hit.factIds.length,
+          relatedEvidence: hit.artifactCluster?.canonicalName ?? null,
+          relatedEvidenceSignals: hit.artifactCluster?.relatedEvidence.length ?? null,
+          relatedEvidenceStatusSources:
+            hit.artifactCluster?.relatedEvidence.filter((evidence) => evidence.authoritative)
+              .length ?? null,
+        },
+      }),
+    );
+  }
+
   try {
     const sources =
       input.source === undefined
@@ -188,43 +226,22 @@ async function searchTimeline(
         : Array.isArray(input.source)
           ? input.source
           : [input.source];
-    const resultGroups = await Promise.all(
-      sources.map(async (source) => {
-        const args: Parameters<Scope['timeline']['searchEvents']>[0] = {
-          query: input.query,
-          limit: sourceLimit(input, 10),
-        };
-        if (input.from) args.from = new Date(input.from);
-        if (input.to) args.to = new Date(input.to);
-        if (source) args.source = source;
-        const hits = await scope.timeline.searchEvents(args);
-        return hits.map((hit) =>
-          finalizeGlobalSearchResult({
-            id: `timeline:${hit.eventId}`,
-            kind: 'timeline_event',
-            title: hit.snippet || `${hit.source} event`,
-            snippet: hit.snippet,
-            href: `/app/timeline?event=${hit.eventId}`,
-            occurredAt: hit.occurredAt,
-            scoreParts: {
-              semantic: hit.score,
-              intent: scoreIntent(input.query, 'timeline_event', [hit.source]),
-              recency: scoreRecency(hit.occurredAt),
-            },
-            metadata: {
-              source: hit.source,
-              entities: hit.entityIds.length,
-              facts: hit.factIds.length,
-              relatedEvidence: hit.artifactCluster?.canonicalName ?? null,
-              relatedEvidenceSignals: hit.artifactCluster?.relatedEvidence.length ?? null,
-              relatedEvidenceStatusSources:
-                hit.artifactCluster?.relatedEvidence.filter((evidence) => evidence.authoritative)
-                  .length ?? null,
-            },
-          }),
-        );
-      }),
-    );
+    const resultGroups =
+      sources.length === 1
+        ? [await searchTimelineSource(sources[0])]
+        : await Promise.all(
+            sources.map(async (source) => {
+              try {
+                return await searchTimelineSource(source);
+              } catch {
+                warnings.push({
+                  source: 'timeline_event',
+                  message: `Timeline search is temporarily unavailable for ${source}.`,
+                });
+                return [];
+              }
+            }),
+          );
     const results = resultGroups.flat();
     return rankGlobalSearchResults(
       Array.from(new Map(results.map((result) => [result.id, result])).values()),

@@ -554,6 +554,52 @@ describe('POST /api/search/global', () => {
     );
   });
 
+  it('keeps successful timeline hits when one selected source fails', async () => {
+    fakes.fakeSearchEvents.mockImplementation((input: { source?: string }) =>
+      input.source === 'slack'
+        ? Promise.reject(new Error('slack search unavailable'))
+        : Promise.resolve([
+            {
+              eventId: 'telegram-event',
+              factIds: [],
+              score: 0.7,
+              occurredAt: '2026-06-01T00:00:00.000Z',
+              source: 'telegram',
+              authorUserId: null,
+              sender: null,
+              resolvedSenderObject: null,
+              senderResolutionStatus: 'unresolved',
+              entityIds: [],
+              snippet: 'Telegram launch update.',
+              artifactCluster: null,
+            },
+          ]),
+    );
+
+    const response = await POST(
+      request({
+        query: 'launch',
+        mode: 'full',
+        kinds: ['timeline_event'],
+        source: ['slack', 'telegram'],
+      }),
+    );
+    const data = (await response.json()) as {
+      ok: true;
+      results: { id: string; kind: string }[];
+      warnings: { source: string; message: string }[];
+    };
+
+    expect(response.status).toBe(200);
+    expect(data.results).toContainEqual(
+      expect.objectContaining({ id: 'timeline:telegram-event', kind: 'timeline_event' }),
+    );
+    expect(data.warnings).toContainEqual({
+      source: 'timeline_event',
+      message: 'Timeline search is temporarily unavailable for slack.',
+    });
+  });
+
   it('returns partial results and warnings when a lexical source fails', async () => {
     fakes.fakeSearchObjects.mockRejectedValue(new Error('postgres unavailable'));
 
