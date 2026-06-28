@@ -285,5 +285,5 @@ visible: `status: 'mcp_available'` and `ingestStatus: 'coming_soon'`.
    appearing as separate catalog/provider resources.
 2. Whether support systems should create Timeline task objects by default or
    only link evidence to company/person/ticket objects.
-4. How much historical backfill is safe by default for chat-heavy systems like
+3. How much historical backfill is safe by default for chat-heavy systems like
    Slack and Discord.

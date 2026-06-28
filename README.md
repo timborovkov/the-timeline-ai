@@ -174,7 +174,7 @@ pnpm dev:seed             # seed local demo data with disabled fake integrations
 pnpm --filter @timeline/worker timeline-moment-presentations -- \
   --team=<uuid> [--since=YYYY-MM-DD] [--until=YYYY-MM-DD] \
   [--source=all|telegram|slack|integration|email|meeting|calendar|document|ingest_webhook|system] \
-  [--max-events=500] [--limit=100] [--user=<uuid>] [--enqueue]
+  [--max-events=500] [--limit=100] [--user=<uuid>] [--all] [--enqueue|--dry-run]
                           # dry-run/prewarm missing AI presentation cache jobs for timeline moments
 pnpm db:generate          # generate Drizzle migrations after schema changes
 pnpm db:migrate           # apply database migrations

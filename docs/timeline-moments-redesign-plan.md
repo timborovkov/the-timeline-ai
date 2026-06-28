@@ -1,5 +1,3 @@
-<!-- /autoplan restore point: /Users/timborovkov/.gstack/projects/timborovkov-the-timeline-ai/tim-redesign-timeline-ui-autoplan-restore-20260627-230856.md -->
-
 # Timeline Moments Redesign Plan
 
 ## Goal
@@ -211,8 +209,9 @@ The first implementation pass has shipped these pieces:
 - Timeline-as-MCP-server now exposes `timeline.search_moments`,
   `timeline.list_moments`, and `timeline.get_moment` for team-visible bundled
   evidence, while keeping raw event tools available for audit/debug. MCP moment
-  search/list/expand shares the same complete visible-evidence hydration and
-  scans raw pages until it has enough bundled moments or reaches its scan cap.
+  search and expand hydrate complete visible source siblings before returning
+  raw-event IDs, while list mode scans raw pages until it has enough bundled
+  moments or reaches its scan cap.
 - `packages/shared/timeline-moments` now owns the deterministic projection used
   by both the UI and agent tools.
 - Shared moments, chat-agent moment results, and outbound MCP moment results
