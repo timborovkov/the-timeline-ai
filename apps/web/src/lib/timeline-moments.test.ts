@@ -206,6 +206,85 @@ describe('timeline moment grouping', () => {
     );
 
     expect(moments).toHaveLength(1);
+    expect(moments[0]?.kind).toBe('conversation');
+    expect(moments[0]?.title).toBe('Telegram conversation in Telegram');
+    expect(moments[0]?.subtitle).toContain('2 messages');
+    expect(moments[0]?.confidence).toBe('deterministic');
+  });
+
+  it('can render source-event mode without grouping raw events', () => {
+    const moments = buildTimelineMoments(
+      [
+        event({
+          id: 'tg-1',
+          source: 'telegram',
+          occurredAt: '2026-05-28T10:01:00.000Z',
+          sourceMetadata: { tg_chat_id: 'chat-1' },
+        }),
+        event({
+          id: 'tg-2',
+          source: 'telegram',
+          occurredAt: '2026-05-28T10:12:00.000Z',
+          sourceMetadata: { tg_chat_id: 'chat-1' },
+        }),
+      ],
+      authorMap,
+      {
+        now: new Date('2026-05-28T12:00:00.000Z'),
+        groupingMode: 'events',
+      },
+    );
+
+    expect(moments).toHaveLength(2);
+    expect(moments.map((moment) => moment.rawEvents)).toHaveLength(2);
+    expect(moments.every((moment) => moment.rawEvents.length === 1)).toBe(true);
+  });
+
+  it('bundles GitHub workflow runs by repo, workflow, branch, and day', () => {
+    const moments = buildTimelineMoments(
+      [
+        event({
+          id: 'workflow-1',
+          source: 'integration',
+          occurredAt: '2026-05-28T10:01:00.000Z',
+          contentText: 'GitHub workflow "CI" #1601 on timborovkov/audit-ai success',
+          sourceMetadata: {
+            provider: 'github',
+            event_type: 'workflow_run.success',
+            external_object_id: 'timborovkov/audit-ai#workflow_run:1601',
+            github: {
+              type: 'workflow_run',
+              repo: 'timborovkov/audit-ai',
+              head_branch: 'main',
+            },
+          },
+        }),
+        event({
+          id: 'workflow-2',
+          source: 'integration',
+          occurredAt: '2026-05-28T10:12:00.000Z',
+          contentText: 'GitHub workflow "CI" #1602 on timborovkov/audit-ai success',
+          sourceMetadata: {
+            provider: 'github',
+            event_type: 'workflow_run.success',
+            external_object_id: 'timborovkov/audit-ai#workflow_run:1602',
+            github: {
+              type: 'workflow_run',
+              repo: 'timborovkov/audit-ai',
+              head_branch: 'main',
+            },
+          },
+        }),
+      ],
+      authorMap,
+      new Date('2026-05-28T12:00:00.000Z'),
+    );
+
+    expect(moments).toHaveLength(1);
+    expect(moments[0]?.kind).toBe('ci_deploy');
+    expect(moments[0]?.title).toBe('CI passed on timborovkov/audit-ai');
+    expect(moments[0]?.subtitle).toBe('GitHub · workflow run success · 2 events');
+    expect(moments[0]?.grouping.strategy).toBe('provider_workflow_window');
   });
 
   it('truncates generated Telegram attachment filenames in moment summaries', () => {

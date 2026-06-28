@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -42,6 +42,20 @@ function renderLastInspector(): string {
   const lastCall = fakes.showInspector.mock.lastCall as [InspectorContentForTest] | undefined;
   if (!lastCall) throw new Error('Expected inspector content to be shown.');
   return renderToStaticMarkup(lastCall[0].render());
+}
+
+function renderLastInspectorContent() {
+  const lastCall = fakes.showInspector.mock.lastCall as [InspectorContentForTest] | undefined;
+  if (!lastCall) throw new Error('Expected inspector content to be shown.');
+  return render(createElement('div', null, lastCall[0].render()));
+}
+
+function expectTextOrder(html: string, first: string, second: string) {
+  const firstIndex = html.indexOf(first);
+  const secondIndex = html.indexOf(second);
+  expect(firstIndex).toBeGreaterThanOrEqual(0);
+  expect(secondIndex).toBeGreaterThanOrEqual(0);
+  expect(firstIndex).toBeLessThan(secondIndex);
 }
 
 function timelineEvent(input: {
@@ -90,6 +104,8 @@ describe('TimelineList event anchors', () => {
       timelineEvent({ id: eventId, occurredAt: '2026-06-03T13:04:00.000Z' }),
     ]);
 
+    expect(html).toContain('id="tm-moment_3Ameeting_3Ameeting-1"');
+    expect(html).toContain('data-moment-id="moment:meeting:meeting-1"');
     expect(html).toContain(`id="ev-${eventId}"`);
     expect(html.match(new RegExp(`id="ev-${eventId}"`, 'g'))).toHaveLength(1);
   });
@@ -129,7 +145,32 @@ describe('TimelineList event anchors', () => {
     expect(html).toContain(`id="ev-${focusedEventId}"`);
     expect(html).toContain(`id="ev-${taskEventId}"`);
     expect(html.match(new RegExp(`id="ev-${focusedEventId}"`, 'g'))).toHaveLength(1);
-    expect(html).toContain('shadow-[inset_2px_0_0_var(--signal)]');
+    expect(html).toContain('shadow-[inset_3px_0_0_var(--signal)]');
+  });
+
+  it('keeps a focused moment visible through impact filters', () => {
+    const focusedEventId = '66666666-6666-4666-8666-666666666666';
+    const taskEventId = '77777777-7777-4777-8777-777777777777';
+    const html = renderTimeline(
+      [
+        timelineEvent({ id: taskEventId, occurredAt: '2026-06-03T13:05:00.000Z' }),
+        timelineEvent({ id: focusedEventId, occurredAt: '2026-06-03T13:04:00.000Z' }),
+      ],
+      {
+        focusMomentId: 'moment:meeting:meeting-1',
+        impactFilter: 'task',
+        impactItemsByEventId: {
+          [taskEventId]: [{ kind: 'task', label: 'Follow up' }],
+          [focusedEventId]: [],
+        },
+      },
+    );
+
+    expect(html).toContain('data-moment-id="moment:meeting:meeting-1"');
+    expect(html).toContain('aria-current="true"');
+    expect(html).toContain(`id="ev-${focusedEventId}"`);
+    expect(html).toContain(`id="ev-${taskEventId}"`);
+    expect(html).toContain('shadow-[inset_3px_0_0_var(--signal)]');
   });
 });
 
@@ -283,8 +324,97 @@ describe('TimelineList document attachments', () => {
   });
 });
 
+describe('TimelineList moment presentation', () => {
+  it('opens the inspector automatically for focused moment links', async () => {
+    render(
+      createElement(TimelineList, {
+        events: [
+          timelineEvent({
+            id: '15151515-1515-4151-8151-151515151515',
+            occurredAt: '2026-06-03T13:04:00.000Z',
+            contentText: 'Daily call notes',
+          }),
+        ],
+        authorMap: new Map(),
+        currentUserId: 'user-1',
+        isAdmin: false,
+        focusMomentId: 'moment:meeting:meeting-1',
+      }),
+    );
+
+    await waitFor(() => {
+      expect(fakes.showInspector).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: 'moment:meeting:meeting-1',
+          title: 'Daily',
+        }),
+      );
+    });
+
+    expect(renderLastInspector()).toContain('Source evidence');
+  });
+
+  it('uses readable moment and evidence section names in the inspector', () => {
+    render(
+      createElement(TimelineList, {
+        events: [
+          timelineEvent({
+            id: '14141414-1414-4141-8141-141414141414',
+            occurredAt: '2026-06-03T13:04:00.000Z',
+            source: 'telegram',
+            contentText: 'Done / 16.20-16.30 asti vapaa täs about',
+            sourceMetadata: { tg_chat_title: 'AuditAI', tg_sender_name: 'Tim' },
+          }),
+        ],
+        authorMap: new Map(),
+        currentUserId: 'user-1',
+        isAdmin: false,
+      }),
+    );
+
+    expect(screen.getByText('1 signal')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: /Done \/ 16\.20/i }));
+    const inspector = renderLastInspector();
+    expect(inspector).toContain('Moment');
+    expect(inspector).toContain('Evidence summary');
+    expect(inspector).toContain('1 evidence item');
+    expect(inspector).toContain('Source evidence');
+    expect(inspector).toContain('Technical details');
+    expect(inspector).not.toContain('Why this row exists');
+    expect(inspector).not.toContain('Source truth');
+    expect(inspector).not.toContain('1 source event');
+  });
+
+  it('orders inspector evidence before controls and technical details', () => {
+    const eventId = '15151515-1515-4151-8151-151515151515';
+    render(
+      createElement(TimelineList, {
+        events: [
+          timelineEvent({
+            id: eventId,
+            occurredAt: '2026-06-03T13:04:00.000Z',
+            contentText: 'Voice note summary',
+            contentAudioUrl: 'teams/team-1/meeting/audio.m4a',
+          }),
+        ],
+        authorMap: new Map(),
+        audioUrlMap: new Map([[eventId, '/audio/current.m4a']]),
+        currentUserId: 'user-1',
+        isAdmin: false,
+      }),
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /Voice note summary/i }));
+    const inspector = renderLastInspector();
+    expectTextOrder(inspector, 'Moment', 'Source evidence');
+    expectTextOrder(inspector, 'Source evidence', 'Controls');
+    expectTextOrder(inspector, 'Controls', 'Technical details');
+  });
+});
+
 describe('TimelineList inspector source caps', () => {
-  it('shows the latest source evidence while keeping controls for hidden older sources', () => {
+  it('shows the latest source evidence while keeping controls for hidden older evidence', () => {
     const events = Array.from({ length: 9 }, (_, index) =>
       timelineEvent({
         id: `99999999-9999-4999-8999-99999999999${index}`,
@@ -310,8 +440,76 @@ describe('TimelineList inspector source caps', () => {
     const inspector = renderLastInspector();
     expect(inspector).toContain('Meeting note 8');
     expect(inspector).not.toContain('Meeting note 0');
-    expect(inspector).toContain('+ 1 older source');
+    expect(inspector).toContain('+ 1 older evidence item');
     expect(inspector).toContain('/audio/older-audio.m4a');
+  });
+
+  it('opens long source evidence in a quick-view dialog from the inspector', async () => {
+    const longUrl =
+      'https://example.com/integrations/github/actions/runs/1234567890/jobs/9876543210?check_suite_focus=true&veryLongReference=timeline-source-evidence';
+    const longBody = [
+      'Incident report for Apple Pay checkout.',
+      'The provider payload includes enough structured context to be useful but too much to read inline.',
+      longUrl,
+      'Affected storefront: EU production checkout.',
+      'Status: resolved after the deployment finished.',
+      'Follow-up: watch payment declines tomorrow morning.',
+      'Additional raw payload metadata that should live in the quick-view instead of expanding the source card.',
+    ].join('\n');
+
+    render(
+      createElement(TimelineList, {
+        events: [
+          timelineEvent({
+            id: '16161616-1616-4161-8161-161616161616',
+            occurredAt: '2026-06-03T13:04:00.000Z',
+            source: 'integration',
+            contentText: longBody,
+            sourceMetadata: {
+              provider: 'github',
+              event: 'workflow_run.success',
+              external_object_id: 'github:workflow:1234567890',
+            },
+          }),
+        ],
+        authorMap: new Map(),
+        currentUserId: 'user-1',
+        isAdmin: false,
+      }),
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /Incident report for Apple Pay/i }));
+    renderLastInspectorContent();
+
+    fireEvent.click(screen.getByRole('button', { name: 'View full evidence' }));
+
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByRole('heading', { name: 'Source evidence' })).toBeTruthy();
+    expect(within(dialog).getByText((content) => content.includes(longUrl))).toBeTruthy();
+  });
+
+  it('does not show a quick-view button for short source evidence', () => {
+    render(
+      createElement(TimelineList, {
+        events: [
+          timelineEvent({
+            id: '17171717-1717-4171-8171-171717171717',
+            occurredAt: '2026-06-03T13:04:00.000Z',
+            source: 'telegram',
+            contentText: 'Short source note.',
+            sourceMetadata: { tg_chat_title: 'AuditAI', tg_sender_name: 'Tim' },
+          }),
+        ],
+        authorMap: new Map(),
+        currentUserId: 'user-1',
+        isAdmin: false,
+      }),
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /Short source note/i }));
+    renderLastInspectorContent();
+
+    expect(screen.queryByRole('button', { name: 'View full evidence' })).toBeNull();
   });
 });
 
@@ -372,6 +570,7 @@ describe('TimelineList related evidence bundles', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /Checkout crashes on Apple Pay/i }));
     const inspector = renderLastInspector();
+    expectTextOrder(inspector, 'Source evidence', 'Related evidence');
     expect(inspector).toContain('Related evidence');
     expect(inspector).toContain('Apple Pay checkout crash');
     expect(inspector).toContain('Task · Resolved · 2 signals');

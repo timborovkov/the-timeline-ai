@@ -1,12 +1,24 @@
 import { PGlite } from '@electric-sql/pglite';
 import { drizzle } from 'drizzle-orm/pglite';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { ChatStructuredInput, ChatStructuredResult } from '#src/llm/chat.js';
 import type { EmbedResult } from '#src/llm/embed.js';
 import type { SearchHit, SearchOpts } from '#src/qdrant/client.js';
+import type { ZodType } from 'zod';
 
 import { withTeam } from '#src/team-scope.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
+import { generateAndStoreTimelineMomentPresentation } from '#src/timeline-moments/generation.js';
+import {
+  buildTimelineMoments,
+  timelineMomentLookupPlan,
+  type TimelineMomentEvent,
+} from '#src/timeline-moments/index.js';
+import {
+  buildTimelineMomentPresentationCacheFingerprint,
+  buildTimelineMomentPresentationCacheKey,
+} from '#src/timeline-moments/presentation.js';
 
 // These tests protect the semantic retrieval contract the agent depends on:
 // query text is embedded once, vector hits are only a first pass, and Postgres
@@ -26,6 +38,15 @@ const OTHER_TEAM_EVENT = '00000000-0000-0000-0000-000000000201';
 const NULL_ANCHORED_ID = '00000000-0000-0000-0000-000000000301';
 const RELATED_EVENT = '00000000-0000-0000-0000-000000000401';
 const RELATED_PRIVATE_EVENT = '00000000-0000-0000-0000-000000000402';
+const INTEGRATION_OBJECT_EVENT = '00000000-0000-0000-0000-000000000501';
+const INTEGRATION_EXTERNAL_EVENT = '00000000-0000-0000-0000-000000000502';
+const INTEGRATION_OTHER_TEAM_EVENT = '00000000-0000-0000-0000-000000000503';
+const WORKFLOW_CI_EVENT = '00000000-0000-0000-0000-000000000504';
+const WORKFLOW_DEPLOY_EVENT = '00000000-0000-0000-0000-000000000505';
+const WORKFLOW_METADATA_EVENT = '00000000-0000-0000-0000-000000000506';
+const CHAT_EVENT_A = '00000000-0000-0000-0000-000000000601';
+const CHAT_EVENT_B = '00000000-0000-0000-0000-000000000602';
+const CHAT_EVENT_C = '00000000-0000-0000-0000-000000000603';
 const ARTIFACT_CLUSTER = '30000000-0000-0000-0000-000000000101';
 
 const TEAM_FACT = '10000000-0000-0000-0000-000000000101';
@@ -324,6 +345,155 @@ describe('withTeam timeline semantic search', () => {
 
     expect(results[0]).toMatchObject({ eventId: TEAM_EVENT });
     expect(results[0]?.artifactCluster).toBeNull();
+  });
+
+  it('hydrates generic integration moment ids by object id or event id under team visibility', async () => {
+    await pg.exec(`
+      INSERT INTO raw_events
+        (id, team_id, author_user_id, visibility_owner_user_id, source, content_text, occurred_at, visibility, visibility_user_ids, source_metadata)
+      VALUES
+        ('${INTEGRATION_OBJECT_EVENT}', '${TEAM_A}', '${OWNER}', '${OWNER}', 'integration', 'Provider object update.', '2026-06-01T15:00:00Z', 'team', NULL, '{"provider":"webhook","event_type":"object.updated","external_object_id":"shared-key"}'::jsonb),
+        ('${INTEGRATION_EXTERNAL_EVENT}', '${TEAM_A}', '${OWNER}', '${OWNER}', 'integration', 'Provider delivery update.', '2026-06-01T15:05:00Z', 'team', NULL, '{"provider":"webhook","event_type":"delivery.received","external_event_id":"shared-key"}'::jsonb),
+        ('${INTEGRATION_OTHER_TEAM_EVENT}', '${TEAM_B}', '${OUTSIDER}', '${OUTSIDER}', 'integration', 'Other team provider delivery update.', '2026-06-01T15:10:00Z', 'team', NULL, '{"provider":"webhook","event_type":"delivery.received","external_event_id":"shared-key"}'::jsonb);
+    `);
+
+    const plan = timelineMomentLookupPlan('moment:integration:webhook:shared-key');
+    expect(plan).not.toBeNull();
+    if (!plan) throw new Error('Expected integration moment lookup plan');
+
+    const rows = await scopeFor(OWNER).timeline.listEventsForMomentLookup(plan);
+
+    expect(rows.map((row) => row.id)).toEqual([
+      INTEGRATION_EXTERNAL_EVENT,
+      INTEGRATION_OBJECT_EVENT,
+    ]);
+  });
+
+  it('hydrates GitHub workflow moment ids by workflow name without overfetching the branch', async () => {
+    await pg.exec(`
+      INSERT INTO raw_events
+        (id, team_id, author_user_id, visibility_owner_user_id, source, content_text, occurred_at, visibility, visibility_user_ids, source_metadata)
+      VALUES
+        ('${WORKFLOW_CI_EVENT}', '${TEAM_A}', '${OWNER}', '${OWNER}', 'integration', 'GitHub workflow "CI" #1603 on timborovkov/audit-ai success', '2026-06-27T18:32:00Z', 'team', NULL, '{"provider":"github","event_type":"workflow_run.success","github":{"type":"workflow_run","repo":"timborovkov/audit-ai","head_branch":"main"}}'::jsonb),
+        ('${WORKFLOW_METADATA_EVENT}', '${TEAM_A}', '${OWNER}', '${OWNER}', 'integration', 'GitHub workflow run #1604 on timborovkov/audit-ai success', '2026-06-27T18:40:00Z', 'team', NULL, '{"provider":"github","event_type":"workflow_run.success","workflow_name":"CI","github":{"type":"workflow_run","repo":"timborovkov/audit-ai","head_branch":"main","workflow_name":"CI"}}'::jsonb),
+        ('${WORKFLOW_DEPLOY_EVENT}', '${TEAM_A}', '${OWNER}', '${OWNER}', 'integration', 'GitHub workflow "Deploy" #44 on timborovkov/audit-ai success', '2026-06-27T18:36:00Z', 'team', NULL, '{"provider":"github","event_type":"workflow_run.success","github":{"type":"workflow_run","repo":"timborovkov/audit-ai","head_branch":"main"}}'::jsonb);
+    `);
+
+    const plan = timelineMomentLookupPlan(
+      'moment:integration:github:workflow_run:timborovkov/audit-ai:CI:main:2026-06-27',
+    );
+    expect(plan).not.toBeNull();
+    if (!plan) throw new Error('Expected GitHub workflow moment lookup plan');
+
+    const rows = await scopeFor(OWNER).timeline.listEventsForMomentLookup(plan);
+
+    expect(rows.map((row) => row.id)).toEqual([WORKFLOW_METADATA_EVENT, WORKFLOW_CI_EVENT]);
+  });
+
+  it('persists timeline moment presentations by exact cache provenance and team', async () => {
+    const scope = scopeFor(OWNER);
+    const events = await scope.timeline.getEventsByIds([TEAM_EVENT]);
+    const [moment] = buildTimelineMoments(events as TimelineMomentEvent[], new Map());
+    if (!moment) throw new Error('expected moment');
+    const cacheKey = buildTimelineMomentPresentationCacheKey({ teamId: TEAM_A, moment });
+    const cacheFingerprint = buildTimelineMomentPresentationCacheFingerprint(cacheKey);
+
+    await scope.timeline.upsertMomentPresentation({
+      cacheKey,
+      suggestion: {
+        title: 'Pricing proposal due Friday',
+        summary: 'Acme needs a pricing proposal by Friday.',
+        previewEventIds: [TEAM_EVENT],
+        topicLabels: ['pricing'],
+        impactHints: [],
+        crossSourceLinks: [],
+      },
+    });
+
+    const records = await scope.timeline.listMomentPresentations([cacheKey]);
+    expect(Object.keys(records)).toEqual([cacheFingerprint]);
+    expect(records[cacheFingerprint]).toMatchObject({
+      cacheFingerprint,
+      cacheKey,
+      suggestion: {
+        title: 'Pricing proposal due Friday',
+        previewEventIds: [TEAM_EVENT],
+      },
+    });
+
+    await expect(
+      scope.timeline.listMomentPresentations([
+        { ...cacheKey, visibleSourceContentHash: 'stale-content-hash' },
+      ]),
+    ).resolves.toEqual({});
+
+    await expect(
+      scope.timeline.upsertMomentPresentation({
+        cacheKey: { ...cacheKey, teamId: TEAM_B },
+        suggestion: {
+          title: 'Wrong team',
+          summary: 'This should be rejected.',
+          previewEventIds: [TEAM_EVENT],
+          topicLabels: [],
+          impactHints: [],
+          crossSourceLinks: [],
+        },
+      }),
+    ).rejects.toThrow(/another team/);
+  });
+
+  it('generates and stores timeline moment presentation through the shared LLM boundary', async () => {
+    await pg.exec(`
+      INSERT INTO raw_events
+        (id, team_id, author_user_id, visibility_owner_user_id, source, content_text, occurred_at, visibility, visibility_user_ids, source_metadata)
+      VALUES
+        ('${CHAT_EVENT_A}', '${TEAM_A}', '${OWNER}', '${OWNER}', 'telegram', 'Can we meet at 16:20 to review the launch checklist?', '2026-06-27T18:00:00Z', 'team', NULL, '{"tg_chat_id":"chat-a","tg_sender_name":"Ada"}'::jsonb),
+        ('${CHAT_EVENT_B}', '${TEAM_A}', '${OWNER}', '${OWNER}', 'telegram', '16:20 works for me.', '2026-06-27T18:01:00Z', 'team', NULL, '{"tg_chat_id":"chat-a","tg_sender_name":"Tim"}'::jsonb),
+        ('${CHAT_EVENT_C}', '${TEAM_A}', '${OWNER}', '${OWNER}', 'telegram', 'Booked. Use the daily call link.', '2026-06-27T18:02:00Z', 'team', NULL, '{"tg_chat_id":"chat-a","tg_sender_name":"Ada"}'::jsonb);
+    `);
+    const scope = scopeFor(OWNER);
+    const events = await scope.timeline.getEventsByIds([CHAT_EVENT_A, CHAT_EVENT_B, CHAT_EVENT_C]);
+    const [moment] = buildTimelineMoments(events as TimelineMomentEvent[], new Map());
+    if (!moment) throw new Error('expected moment');
+    const cacheKey = buildTimelineMomentPresentationCacheKey({ teamId: TEAM_A, moment });
+    const chatStructured = vi.fn(
+      <TSchema extends ZodType>(
+        input: ChatStructuredInput<TSchema>,
+      ): Promise<ChatStructuredResult<TSchema>> =>
+        Promise.resolve({
+          model: 'test/model',
+          object: input.schema.parse({
+            title: 'Launch checklist meeting booked at 16:20',
+            summary: 'The group agreed to meet at 16:20 for launch checklist review.',
+            previewEventIds: [CHAT_EVENT_A, CHAT_EVENT_B, CHAT_EVENT_C],
+            topicLabels: ['launch'],
+            impactHints: [],
+            crossSourceLinks: [],
+          }),
+        }),
+    );
+
+    await expect(
+      generateAndStoreTimelineMomentPresentation(
+        db as never,
+        scope,
+        {
+          rawEventIds: [CHAT_EVENT_A, CHAT_EVENT_B, CHAT_EVENT_C],
+          cacheKey,
+        },
+        { chatStructured },
+      ),
+    ).resolves.toMatchObject({
+      status: 'stored',
+      momentId: moment.id,
+    });
+
+    const records = await scope.timeline.listMomentPresentations([cacheKey]);
+    const cacheFingerprint = buildTimelineMomentPresentationCacheFingerprint(cacheKey);
+    expect(records[cacheFingerprint]?.suggestion.title).toBe(
+      'Launch checklist meeting booked at 16:20',
+    );
+    expect(chatStructured).toHaveBeenCalledOnce();
   });
 
   it('requires membership before embedding or searching', async () => {

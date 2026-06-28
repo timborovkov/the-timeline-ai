@@ -55,8 +55,8 @@ source material instead of hiding behind black-box summaries.
 - Custom MCP servers that give the agent live access to long-tail tools without
   automatically ingesting those tools into the event store.
 - An outbound MCP server so tools like Claude Desktop and Cursor can query
-  team-level workspace context across Timeline events, objects, tasks, boards,
-  calendar, documents, and integrations.
+  team-level workspace context across bundled timeline moments, raw events,
+  objects, tasks, boards, calendar, documents, and integrations.
 
 ## Project Status
 
@@ -137,7 +137,9 @@ Seeded workspace data:
 - Team: `Acme Labs` (`acme-labs`) with inbound email
   `acme-labs@inbound.timeline.dev`.
 - Events: manual web note, inbound email, Slack message, meeting transcript,
-  GitHub integration event, and Linear integration event.
+  Linear issue update, bundled GitHub PR/review activity, and a bundled GitHub
+  CI workflow burst so the default timeline demonstrates moments instead of
+  single-event rows only.
 - Objects: Project Atlas, vendor appendix task, transcript-only meeting-bot
   decision, Acme Labs company, and Mika Product person.
 - Board: `Atlas Launch` with Todo, Doing, and Done lanes.
@@ -169,6 +171,11 @@ pnpm e2e                  # Playwright core journey tests
 pnpm run doctor           # React Doctor scan for React/Next health regressions
 pnpm canary:integrations  # secret-safe live provider/LLM credential canary
 pnpm dev:seed             # seed local demo data with disabled fake integrations
+pnpm --filter @timeline/worker timeline-moment-presentations -- \
+  --team=<uuid> [--since=YYYY-MM-DD] [--until=YYYY-MM-DD] \
+  [--source=all|telegram|slack|integration|email|meeting|calendar|document|ingest_webhook|system] \
+  [--max-events=500] [--limit=100] [--user=<uuid>] [--all] [--enqueue|--dry-run]
+                          # dry-run/prewarm missing AI presentation cache jobs for timeline moments
 pnpm db:generate          # generate Drizzle migrations after schema changes
 pnpm db:migrate           # apply database migrations
 pnpm check:web-bundle     # inspect built Next server chunks
@@ -201,23 +208,17 @@ boundaries.
   document semantics, processing rules, and follow-up implementation bar.
 - [`docs/work-system-plan.md`](./docs/work-system-plan.md) — priority plan for
   turning Work into the daily operating surface.
-- [`docs/object-summaries-plan.md`](./docs/object-summaries-plan.md) —
-  implementation plan for grounded generated object briefs across object pages,
-  search, embeddings, and chat.
 - [`docs/integration-ingest-plan.md`](./docs/integration-ingest-plan.md) —
   first-party ingestion implementation plan for work systems, including native
-  provider posture, webhook/budget behavior, implemented providers, and future
-  waves.
+  provider posture, generic ingest webhook semantics, webhook/budget behavior,
+  implemented providers, and future waves.
+- [`docs/timeline-moments-redesign-plan.md`](./docs/timeline-moments-redesign-plan.md) —
+  full plan for turning the timeline from a raw activity log into bundled,
+  evidence-backed work moments shared by the UI, chat agents, and outbound MCP
+  tools.
 - [`docs/native-provider-template.md`](./docs/native-provider-template.md) —
   implementation checklist and skeleton for adding native providers on the
   shared policy, webhook, budget, and reconciliation path.
-- [`docs/ux-overhaul-plan.md`](./docs/ux-overhaul-plan.md) — UX overhaul plan:
-  soften the forensic surface for non-technical users with standard-page
-  headers, a guided connect-flow wizard, actionable error states,
-  discoverability, and IA consolidation.
-- [`docs/ingest-webhooks-plan.md`](./docs/ingest-webhooks-plan.md) — domain
-  plan for named evidence-only ingest webhooks, credential rotation, duplicate
-  handling, visibility defaults, and proposal generation.
 - [`docs/calendar.html`](./docs/calendar.html) — approval-backed calendar
   suggestions, recurrence, occurrence exceptions, and tentative slots.
 - [`docs/setup/local.html`](./docs/setup/local.html) — complete local setup.

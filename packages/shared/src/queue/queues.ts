@@ -63,6 +63,10 @@ export const QUEUE_NAMES = {
   // Generated object briefs. Produced by canonical object-memory writes and
   // manual object-page requests; consumed by the object-summary worker.
   objectSummary: 'object-summary',
+  // AI-assisted presentation for timeline moments. Produced by timeline reads
+  // when an eligible moment has no matching presentation cache; consumed by
+  // the timeline-moment-presentation worker.
+  timelineMomentPresentation: 'timeline-moment-presentation',
 } as const;
 
 export type QueueName = (typeof QUEUE_NAMES)[keyof typeof QUEUE_NAMES];
@@ -1119,5 +1123,78 @@ export async function enqueueObjectSummaryJob(
 export async function closeObjectSummaryQueue(): Promise<void> {
   await closeQueue(_objectSummaryQueue, () => {
     _objectSummaryQueue = undefined;
+  });
+}
+
+export interface TimelineMomentPresentationJobData {
+  teamId: string;
+  userId: string;
+  rawEventIds: string[];
+  cacheKey: {
+    teamId: string;
+    momentKey: string;
+    visibilityScopeHash: string;
+    visibleSourceEventIdsHash: string;
+    visibleSourceContentHash: string;
+    impactHydrationHash: string;
+    artifactClusterHash: string;
+    promptVersion: string;
+    model: string;
+  };
+}
+
+let _timelineMomentPresentationQueue: TimelineQueue<TimelineMomentPresentationJobData> | undefined;
+
+export function getTimelineMomentPresentationQueue(): TimelineQueue<TimelineMomentPresentationJobData> {
+  if (_timelineMomentPresentationQueue) return _timelineMomentPresentationQueue;
+  _timelineMomentPresentationQueue = createTimelineQueue<TimelineMomentPresentationJobData>(
+    QUEUE_NAMES.timelineMomentPresentation,
+    {
+      attempts: 3,
+      backoff: { type: 'exponential', delay: 5000 },
+      removeOnComplete: { age: 3600, count: 1000 },
+      removeOnFail: { age: 24 * 3600 },
+    },
+  );
+  return _timelineMomentPresentationQueue;
+}
+
+export async function enqueueTimelineMomentPresentationJob(
+  data: TimelineMomentPresentationJobData,
+  opts: { delayMs?: number } = {},
+): Promise<{ enqueued: boolean; jobId: string }> {
+  const jobId = bullmqCustomJobId([
+    'timeline-moment-presentation',
+    data.teamId,
+    data.cacheKey.momentKey,
+    data.cacheKey.visibleSourceEventIdsHash,
+    data.cacheKey.visibleSourceContentHash,
+    data.cacheKey.visibilityScopeHash,
+    data.cacheKey.promptVersion,
+    data.cacheKey.model,
+  ]);
+  const q = getTimelineMomentPresentationQueue();
+  const existing = (await q.getJob(jobId)) as ExistingJobLike | null;
+  if (existing) {
+    const state = await existing.getState?.().catch(() => null);
+    if (!state || SUGGESTION_JOB_DEDUPE_STATES.has(state)) {
+      return { enqueued: false, jobId };
+    }
+    if (SUGGESTION_JOB_REPLACEABLE_STATES.has(state) && existing.remove) {
+      await existing.remove().catch(() => undefined);
+    } else {
+      return { enqueued: false, jobId };
+    }
+  }
+  await q.add('timeline-moment-presentation', data, {
+    jobId,
+    ...(opts.delayMs ? { delay: opts.delayMs } : {}),
+  });
+  return { enqueued: true, jobId };
+}
+
+export async function closeTimelineMomentPresentationQueue(): Promise<void> {
+  await closeQueue(_timelineMomentPresentationQueue, () => {
+    _timelineMomentPresentationQueue = undefined;
   });
 }

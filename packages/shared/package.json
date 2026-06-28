@@ -131,6 +131,24 @@
       "import": "./dist/team-scope.js",
       "default": "./dist/team-scope.js"
     },
+    "./timeline-moments": {
+      "types": "./src/timeline-moments/index.ts",
+      "development": "./src/timeline-moments/index.ts",
+      "import": "./dist/timeline-moments/index.js",
+      "default": "./dist/timeline-moments/index.js"
+    },
+    "./timeline-moments/presentation": {
+      "types": "./src/timeline-moments/presentation.ts",
+      "development": "./src/timeline-moments/presentation.ts",
+      "import": "./dist/timeline-moments/presentation.js",
+      "default": "./dist/timeline-moments/presentation.js"
+    },
+    "./timeline-moments/generation": {
+      "types": "./src/timeline-moments/generation.ts",
+      "development": "./src/timeline-moments/generation.ts",
+      "import": "./dist/timeline-moments/generation.js",
+      "default": "./dist/timeline-moments/generation.js"
+    },
     "./test/pglite": {
       "types": "./src/test/pglite.ts",
       "development": "./src/test/pglite.ts",

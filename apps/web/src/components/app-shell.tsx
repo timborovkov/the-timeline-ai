@@ -105,7 +105,7 @@ export function AppShell({
               (timeline, board, objects) fill the column. */}
           <main
             id="main"
-            className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-6 md:px-8 md:py-8"
+            className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-24 pt-6 md:px-8 md:py-8"
           >
             <AppMainScrollRestoration />
             {children}

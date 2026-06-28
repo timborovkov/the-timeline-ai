@@ -77,6 +77,7 @@ export default async function ObjectsIndexPage({
   const selectedTypes = filters.type.split(',').filter(Boolean);
   const singleType = selectedTypes.length === 1 ? selectedTypes[0] : undefined;
   const hasTypeFilter = selectedTypes.length > 0;
+  const filterBarHiddenParams = filters.type ? { type: filters.type } : undefined;
   const cursor = parseCursorParam(firstParam(params.cursor));
   const activeFilters = hasActiveWorkFilters(filters);
 
@@ -214,6 +215,7 @@ export default async function ObjectsIndexPage({
         active={hasActiveWorkFilters(filters)}
         resultCount={rows.length}
         totalCount={objectWindow.totalCount}
+        hiddenParams={filterBarHiddenParams}
         members={memberOptions}
         typeLabels={OBJECT_TYPE_LABELS}
       />

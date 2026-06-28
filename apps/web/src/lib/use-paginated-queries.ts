@@ -10,7 +10,13 @@ import {
 import { useEffect, useMemo, useRef } from 'react';
 
 import type { TimelineCapturedFile } from '@/lib/timeline-captured-files';
-import type { ImpactItem } from '@/lib/timeline-moments';
+import type {
+  ImpactItem,
+  TimelineGroupingVersion,
+  TimelineMomentDiagnostic,
+  TimelineMomentsPageVersion,
+  WebTimelineMomentDto,
+} from '@/lib/timeline-moments';
 import type { SearchEventArtifactCluster } from '@timeline/shared/team-scope';
 
 import { readJson } from '@/lib/paginated-api';
@@ -19,6 +25,26 @@ import { queryKeys } from '@/lib/query-keys';
 export type TimelineArtifactCluster = SearchEventArtifactCluster;
 
 export interface TimelinePage {
+  version?: TimelineMomentsPageVersion;
+  groupingVersion?: TimelineGroupingVersion;
+  mode?: 'moments' | 'events';
+  moments?: WebTimelineMomentDto[];
+  rawEventsById?: Record<string, TimelineEvent>;
+  diagnostics?: {
+    mode: 'moments' | 'events';
+    scannedPageCount: number;
+    scannedRawEventCount: number;
+    returnedRawEventCount: number;
+    returnedMomentCount: number | null;
+    maxScanPagesReached: boolean;
+    boundaryCursorAdjusted: boolean;
+    providerMetadata: {
+      total: number;
+      affectedEventCount: number;
+      byProvider: Record<string, { count: number; missingFields: Record<string, number> }>;
+      diagnostics: TimelineMomentDiagnostic[];
+    };
+  };
   items: TimelineEvent[];
   nextCursor: string | null;
   authors: Record<string, { id: string; name: string | null; email: string }>;
@@ -91,6 +117,8 @@ export function useTimelineInfiniteQuery(
     source?: string | null;
     impact?: string | null;
     event?: string | null;
+    moment?: string | null;
+    mode?: 'moments' | 'events' | null;
   },
   initialPage: TimelinePage,
   options: { enabled?: boolean; timezone?: string } = {},
@@ -105,8 +133,19 @@ export function useTimelineInfiniteQuery(
       source: filters.source,
       impact: filters.impact,
       event: filters.event,
+      moment: filters.moment,
+      mode: filters.mode,
     }),
-    [filters.author, filters.from, filters.to, filters.source, filters.impact, filters.event],
+    [
+      filters.author,
+      filters.from,
+      filters.to,
+      filters.source,
+      filters.impact,
+      filters.event,
+      filters.moment,
+      filters.mode,
+    ],
   );
   const queryKey = useMemo(
     () => queryKeys.timeline(stableFilters, options.timezone),
@@ -135,8 +174,16 @@ export function useTimelineInfiniteQuery(
       if (stableFilters.source) params.set('source', stableFilters.source);
       if (stableFilters.impact) params.set('impact', stableFilters.impact);
       if (stableFilters.event) params.set('event', stableFilters.event);
+      if (stableFilters.moment) params.set('moment', stableFilters.moment);
+      if (stableFilters.mode === 'events') params.set('mode', 'events');
       if (pageParam) params.set('cursor', pageParam);
       return readJson<{
+        version?: TimelineMomentsPageVersion;
+        groupingVersion?: TimelineGroupingVersion;
+        mode?: 'moments' | 'events';
+        moments?: WebTimelineMomentDto[];
+        rawEventsById?: Record<string, TimelineEvent>;
+        diagnostics?: TimelinePage['diagnostics'];
         items: TimelineEvent[];
         nextCursor: string | null;
         authors: Record<string, { id: string; name: string | null; email: string }>;

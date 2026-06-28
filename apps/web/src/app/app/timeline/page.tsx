@@ -16,6 +16,7 @@ import { TimelineFeed } from '@/components/timeline-feed';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { requireRedisQueue } from '@/lib/queue';
 import { listTimelineCapturedFilesByEventId } from '@/lib/timeline-captured-files';
 import {
   TIMELINE_IMPACT_FILTERS,
@@ -26,7 +27,20 @@ import {
   timelineHref,
   timelineSourceValues,
 } from '@/lib/timeline-controls';
-import { collectTimelinePage, serializeTimelineEvent } from '@/lib/timeline-page';
+import {
+  buildTimelineMoments,
+  timelineMomentLookupPlan,
+  toTimelineMomentDto,
+} from '@/lib/timeline-moments';
+import { trackTimelineMomentsViewed } from '@/lib/timeline-observability';
+import {
+  applyCachedTimelineMomentPresentations,
+  collectTimelinePage,
+  emptyTimelineMomentPresentationCacheStats,
+  focusedRelatedEventWindow,
+  serializeTimelineEvent,
+  type TimelineMomentPresentationCacheStats,
+} from '@/lib/timeline-page';
 
 export const metadata: Metadata = {
   title: 'Timeline',
@@ -42,11 +56,14 @@ interface Props {
     impact?: string;
     event?: string;
     q?: string;
+    mode?: string;
+    moment?: string;
   }>;
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 type SearchParams = Awaited<Props['searchParams']>;
+type TimelineMode = 'moments' | 'events';
 type TimelineUserMap = Map<string, { id: string; name: string | null; email: string }>;
 interface TimelineMember {
   userId: string;
@@ -56,6 +73,16 @@ interface TimelineBaseParams extends Record<string, string | null | undefined> {
   author: string | null;
   from: string | null;
   to: string | null;
+  mode: string | null;
+}
+
+function parseTimelineMode(input: string | undefined): TimelineMode {
+  return input === 'events' ? 'events' : 'moments';
+}
+
+function parseMomentId(input: string | undefined): string | undefined {
+  if (!input || input.length > 500) return undefined;
+  return input.startsWith('moment:') ? input : undefined;
 }
 
 function nextDateInput(input: string): string {
@@ -135,6 +162,8 @@ export default async function TimelinePage({ searchParams }: Props) {
   const impactFilters = parseTimelineImpacts(sp.impact);
   const impactFilterValue = impactFilters.join(',');
   const focusEventId = parseUuid(sp.event);
+  const focusMomentId = parseMomentId(sp.moment);
+  const mode = parseTimelineMode(sp.mode);
   const fromFilter = parseStartOfDay(sp.from, timezone);
   const toFilter = parseStartOfDay(sp.to, timezone);
   const toQueryFilter = parseEndOfDay(sp.to, timezone);
@@ -143,6 +172,9 @@ export default async function TimelinePage({ searchParams }: Props) {
     collectTimelinePage({
       impact: impactFilters,
       focusEventId,
+      focusMomentId,
+      mode,
+      timezone,
       fetchPage: async ({ cursor, limit }) => {
         const page = await scope.timeline.listEventsPage({
           authorUserId: authorFilters.length > 0 ? authorFilters : undefined,
@@ -159,6 +191,22 @@ export default async function TimelinePage({ searchParams }: Props) {
       },
       fetchEventsByIds: async (eventIds) =>
         (await scope.timeline.getEventsByIds(eventIds)).map(serializeTimelineEvent),
+      fetchRelatedEventsForFocus: async (focusedEvent) => {
+        const window = focusedRelatedEventWindow(focusedEvent);
+        const events = await scope.timeline.listEvents({
+          from: window.from,
+          to: window.to,
+          source: focusedEvent.source,
+          limit: 100,
+        });
+        return events.map(serializeTimelineEvent);
+      },
+      fetchEventsForMoment: async (momentId) => {
+        const plan = timelineMomentLookupPlan(momentId);
+        if (!plan) return [];
+        const events = await scope.timeline.listEventsForMomentLookup(plan);
+        return events.map(serializeTimelineEvent);
+      },
       hydrateImpact: (eventIds) => scope.timeline.listImpactItems(eventIds),
     }),
     scope.timeline.listMembers(),
@@ -226,11 +274,61 @@ export default async function TimelinePage({ searchParams }: Props) {
         ? `${String(sourceFilters.length)} sources`
         : undefined;
   const eventCount = events.length;
+  let presentationCacheStats: TimelineMomentPresentationCacheStats =
+    emptyTimelineMomentPresentationCacheStats();
+  const initialMoments =
+    mode === 'moments'
+      ? (
+          await applyCachedTimelineMomentPresentations(
+            buildTimelineMoments(events, userMap, {
+              impactItemsByEventId: timelinePage.impactItems,
+              artifactClustersByEventId: artifactClusters,
+              timezone,
+            }),
+            {
+              teamId: active.teamId,
+              listMomentPresentations: (cacheKeys) =>
+                scope.timeline.listMomentPresentations(cacheKeys),
+              enqueueMissingPresentation: async ({ cacheKey, rawEventIds }) => {
+                const q = await requireRedisQueue();
+                await q.enqueueTimelineMomentPresentationJob({
+                  teamId: active.teamId,
+                  userId: session.user.id,
+                  cacheKey,
+                  rawEventIds,
+                });
+              },
+              onCacheStats: (stats) => {
+                presentationCacheStats = stats;
+              },
+            },
+          )
+        ).map(toTimelineMomentDto)
+      : [];
+  trackTimelineMomentsViewed({
+    teamId: active.teamId,
+    userId: session.user.id,
+    surface: 'page',
+    diagnostics: timelinePage.diagnostics,
+    presentationCacheStats,
+    filters: {
+      author: authorFilterValue || null,
+      from: sp.from ?? null,
+      to: sp.to ?? null,
+      source: sourceFilterValue || null,
+      impact: impactFilterValue || null,
+      event: focusEventId ?? null,
+      moment: focusMomentId ?? null,
+      cursor: null,
+    },
+  });
   const baseParams = {
     author: authorFilterValue || null,
     from: sp.from ?? null,
     to: sp.to ?? null,
     event: focusEventId ?? null,
+    moment: focusMomentId ?? null,
+    mode: mode === 'events' ? 'events' : null,
   };
   return (
     <div className="mx-auto max-w-6xl space-y-6">
@@ -263,7 +361,7 @@ export default async function TimelinePage({ searchParams }: Props) {
 
       <Coachmark storageKey="citation-inspector">
         Every claim in the timeline is cited. Click any{' '}
-        <span className="font-mono text-signal">[c:…]</span> chip to see the raw source evidence.
+        <span className="font-mono text-signal">[c:...]</span> chip to see the raw source evidence.
         That is the point of this product.
       </Coachmark>
 
@@ -279,8 +377,10 @@ export default async function TimelinePage({ searchParams }: Props) {
         impactFilters={impactFilters}
         impactFilterValue={impactFilterValue}
         focusEventId={focusEventId}
+        focusMomentId={focusMomentId}
         authorFilterValue={authorFilterValue}
         events={events}
+        moments={initialMoments}
         nextCursor={timelinePage.nextCursor}
         userRows={userRows}
         audioUrlMap={audioUrlMap}
@@ -290,6 +390,7 @@ export default async function TimelinePage({ searchParams }: Props) {
         currentUserId={session.user.id}
         isAdmin={isAdmin}
         timezone={timezone}
+        mode={mode}
       />
     </div>
   );
@@ -307,8 +408,10 @@ function TimelineBrowserSection({
   impactFilters,
   impactFilterValue,
   focusEventId,
+  focusMomentId,
   authorFilterValue,
   events,
+  moments,
   nextCursor,
   userRows,
   audioUrlMap,
@@ -318,6 +421,7 @@ function TimelineBrowserSection({
   currentUserId,
   isAdmin,
   timezone,
+  mode,
 }: {
   sp: SearchParams;
   members: TimelineMember[];
@@ -330,8 +434,10 @@ function TimelineBrowserSection({
   impactFilters: ReturnType<typeof parseTimelineImpacts>;
   impactFilterValue: string;
   focusEventId: string | undefined;
+  focusMomentId: string | undefined;
   authorFilterValue: string;
   events: TimelineFeedProps['initialPage']['items'];
+  moments: TimelineFeedProps['initialPage']['moments'];
   nextCursor: TimelineFeedProps['initialPage']['nextCursor'];
   userRows: { id: string; name: string | null; email: string }[];
   audioUrlMap: Map<string, string>;
@@ -341,6 +447,7 @@ function TimelineBrowserSection({
   currentUserId: string;
   isAdmin: boolean;
   timezone: string;
+  mode: TimelineMode;
 }) {
   return (
     <section className="space-y-3">
@@ -358,11 +465,22 @@ function TimelineBrowserSection({
       />
       <TimelinePresetControls
         baseParams={baseParams}
+        mode={mode}
+        eventCount={events.length}
+        momentCount={moments?.length ?? events.length}
         sourceFilters={sourceFilters}
         impactFilters={impactFilters}
       />
       <TimelineFeed
         initialPage={{
+          version: 'timeline_moments_page.v1',
+          groupingVersion: 'timeline_grouping.v1',
+          mode,
+          moments,
+          rawEventsById:
+            mode === 'moments'
+              ? Object.fromEntries(events.map((eventItem) => [eventItem.id, eventItem]))
+              : {},
           items: events,
           nextCursor,
           authors: Object.fromEntries(userRows.map((row) => [row.id, row])),
@@ -378,6 +496,7 @@ function TimelineBrowserSection({
           source: sourceFilterValue || null,
           impact: impactFilterValue || null,
           event: focusEventId ?? null,
+          moment: focusMomentId ?? null,
         }}
         currentUserId={currentUserId}
         isAdmin={isAdmin}
@@ -387,7 +506,9 @@ function TimelineBrowserSection({
         })}
         impactFilter={impactFilters}
         focusEventId={focusEventId ?? null}
+        focusMomentId={focusMomentId ?? null}
         timezone={timezone}
+        mode={mode}
         emptyLabel={hasFilters ? 'NO EVENTS MATCH THIS VIEW' : 'NO EVENTS YET'}
         emptyAction={{
           href: hasFilters ? '/app/timeline' : '/app#capture',
@@ -513,15 +634,21 @@ function TimelineDateField({ name, label, value }: { name: string; label: string
 
 function TimelinePresetControls({
   baseParams,
+  mode,
+  eventCount,
+  momentCount,
   sourceFilters,
   impactFilters,
 }: {
   baseParams: TimelineBaseParams;
+  mode: TimelineMode;
+  eventCount: number;
+  momentCount: number;
   sourceFilters: ReturnType<typeof parseTimelineSources>;
   impactFilters: ReturnType<typeof parseTimelineImpacts>;
 }) {
   return (
-    <div className="flex flex-wrap items-center gap-1.5 border-y border-border py-2">
+    <div className="flex flex-wrap items-center justify-between gap-3 border-y border-border py-2">
       <nav aria-label="Timeline presets" className="flex flex-wrap gap-1.5">
         {TIMELINE_PRESETS.map((preset) => {
           const href =
@@ -548,6 +675,34 @@ function TimelinePresetControls({
               }`}
             >
               {preset.label}
+            </Link>
+          );
+        })}
+      </nav>
+      <p className="min-w-0 flex-1 text-xs leading-5 text-fg-dim md:text-right">
+        {mode === 'moments'
+          ? `${momentCount} ${momentCount === 1 ? 'moment' : 'moments'} · ${eventCount} source ${eventCount === 1 ? 'event' : 'events'}`
+          : `${eventCount} source ${eventCount === 1 ? 'event' : 'events'}`}
+      </p>
+      <nav
+        aria-label="Timeline mode"
+        className="flex rounded-sm border border-border bg-surface p-0.5"
+      >
+        {[
+          ['moments', 'Moments'],
+          ['events', 'Audit trail'],
+        ].map(([value, label]) => {
+          const active = mode === value;
+          return (
+            <Link
+              key={value}
+              href={timelineHref(baseParams, { mode: value === 'events' ? value : null })}
+              aria-current={active ? 'page' : undefined}
+              className={`inline-flex min-h-7 items-center rounded-[3px] px-2.5 text-xs transition-colors ${
+                active ? 'bg-bg text-fg shadow-sm' : 'text-fg-muted hover:text-fg'
+              }`}
+            >
+              {label}
             </Link>
           );
         })}

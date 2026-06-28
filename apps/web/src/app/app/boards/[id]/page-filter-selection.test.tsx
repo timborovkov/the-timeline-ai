@@ -7,6 +7,7 @@ const fakes = vi.hoisted(() => ({
   getBoard: vi.fn(),
   listBoardItemHistory: vi.fn(),
   listObjects: vi.fn(),
+  getObject: vi.fn(),
   listMembers: vi.fn(),
   notFound: vi.fn(() => {
     throw new Error('not-found');
@@ -28,6 +29,7 @@ vi.mock('@timeline/shared/team-scope', () => ({
     },
     objects: {
       listObjects: fakes.listObjects,
+      getObject: fakes.getObject,
     },
     timeline: {
       listMembers: fakes.listMembers,
@@ -58,6 +60,7 @@ beforeEach(() => {
   fakes.auth.mockResolvedValue({ user: { id: 'user-1' } });
   fakes.resolveActiveTeam.mockResolvedValue({ active: { teamId: 'team-1' } });
   fakes.listObjects.mockResolvedValue([]);
+  fakes.getObject.mockResolvedValue({ connectedWork: [] });
   fakes.listMembers.mockResolvedValue([]);
   fakes.listBoardItemHistory.mockResolvedValue([{ id: 'history-1' }]);
   fakes.getBoard.mockResolvedValue({
