@@ -40,6 +40,13 @@ describe('shared timeline moments projection', () => {
       { path: ['github', 'repo'], equals: 'timborovkov/audit-ai' },
       { path: ['github', 'head_branch'], equals: 'main' },
     ]);
+    expect(workflow?.metadataPredicateGroups).toEqual([
+      [
+        { path: ['github', 'workflow_name'], equals: 'CI' },
+        { path: ['workflow_name'], equals: 'CI' },
+        { path: ['content', 'github_workflow_name'], equals: 'CI' },
+      ],
+    ]);
     expect(telegram).toMatchObject({ source: 'telegram', limit: 300 });
     expect(telegram?.from?.toISOString()).toBe('2026-06-27T10:00:00.000Z');
     expect(telegram?.to?.toISOString()).toBe('2026-06-28T22:00:00.000Z');

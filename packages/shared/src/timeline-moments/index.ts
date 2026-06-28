@@ -485,6 +485,16 @@ export function timelineMomentLookupPlan(momentId: string): TimelineMomentLookup
             { path: ['github', 'repo'], equals: repo },
             { path: ['github', 'head_branch'], equals: branch },
           ],
+          metadataPredicateGroups:
+            workflowName === 'workflow'
+              ? undefined
+              : [
+                  [
+                    { path: ['github', 'workflow_name'], equals: workflowName },
+                    { path: ['workflow_name'], equals: workflowName },
+                    { path: ['content', 'github_workflow_name'], equals: workflowName },
+                  ],
+                ],
         }
       : null;
   }

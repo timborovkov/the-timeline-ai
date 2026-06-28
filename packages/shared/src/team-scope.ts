@@ -1330,6 +1330,8 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
         return sql`${rawEvents.sourceMetadata} ->> 'slack_message_ts' = ${value}`;
       case 'workflow_name':
         return sql`${rawEvents.sourceMetadata} ->> 'workflow_name' = ${value}`;
+      case 'content.github_workflow_name':
+        return sql`POSITION(${`GitHub workflow "${value}"`} IN COALESCE(${rawEvents.contentText}, '')) > 0`;
       case 'github.type':
         return sql`${rawEvents.sourceMetadata} #>> '{github,type}' = ${value}`;
       case 'github.repo':

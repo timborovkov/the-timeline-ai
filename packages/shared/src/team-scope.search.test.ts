@@ -41,6 +41,9 @@ const RELATED_PRIVATE_EVENT = '00000000-0000-0000-0000-000000000402';
 const INTEGRATION_OBJECT_EVENT = '00000000-0000-0000-0000-000000000501';
 const INTEGRATION_EXTERNAL_EVENT = '00000000-0000-0000-0000-000000000502';
 const INTEGRATION_OTHER_TEAM_EVENT = '00000000-0000-0000-0000-000000000503';
+const WORKFLOW_CI_EVENT = '00000000-0000-0000-0000-000000000504';
+const WORKFLOW_DEPLOY_EVENT = '00000000-0000-0000-0000-000000000505';
+const WORKFLOW_METADATA_EVENT = '00000000-0000-0000-0000-000000000506';
 const CHAT_EVENT_A = '00000000-0000-0000-0000-000000000601';
 const CHAT_EVENT_B = '00000000-0000-0000-0000-000000000602';
 const CHAT_EVENT_C = '00000000-0000-0000-0000-000000000603';
@@ -364,6 +367,27 @@ describe('withTeam timeline semantic search', () => {
       INTEGRATION_EXTERNAL_EVENT,
       INTEGRATION_OBJECT_EVENT,
     ]);
+  });
+
+  it('hydrates GitHub workflow moment ids by workflow name without overfetching the branch', async () => {
+    await pg.exec(`
+      INSERT INTO raw_events
+        (id, team_id, author_user_id, visibility_owner_user_id, source, content_text, occurred_at, visibility, visibility_user_ids, source_metadata)
+      VALUES
+        ('${WORKFLOW_CI_EVENT}', '${TEAM_A}', '${OWNER}', '${OWNER}', 'integration', 'GitHub workflow "CI" #1603 on timborovkov/audit-ai success', '2026-06-27T18:32:00Z', 'team', NULL, '{"provider":"github","event_type":"workflow_run.success","github":{"type":"workflow_run","repo":"timborovkov/audit-ai","head_branch":"main"}}'::jsonb),
+        ('${WORKFLOW_METADATA_EVENT}', '${TEAM_A}', '${OWNER}', '${OWNER}', 'integration', 'GitHub workflow run #1604 on timborovkov/audit-ai success', '2026-06-27T18:40:00Z', 'team', NULL, '{"provider":"github","event_type":"workflow_run.success","workflow_name":"CI","github":{"type":"workflow_run","repo":"timborovkov/audit-ai","head_branch":"main","workflow_name":"CI"}}'::jsonb),
+        ('${WORKFLOW_DEPLOY_EVENT}', '${TEAM_A}', '${OWNER}', '${OWNER}', 'integration', 'GitHub workflow "Deploy" #44 on timborovkov/audit-ai success', '2026-06-27T18:36:00Z', 'team', NULL, '{"provider":"github","event_type":"workflow_run.success","github":{"type":"workflow_run","repo":"timborovkov/audit-ai","head_branch":"main"}}'::jsonb);
+    `);
+
+    const plan = timelineMomentLookupPlan(
+      'moment:integration:github:workflow_run:timborovkov/audit-ai:CI:main:2026-06-27',
+    );
+    expect(plan).not.toBeNull();
+    if (!plan) throw new Error('Expected GitHub workflow moment lookup plan');
+
+    const rows = await scopeFor(OWNER).timeline.listEventsForMomentLookup(plan);
+
+    expect(rows.map((row) => row.id)).toEqual([WORKFLOW_METADATA_EVENT, WORKFLOW_CI_EVENT]);
   });
 
   it('persists timeline moment presentations by exact cache provenance and team', async () => {

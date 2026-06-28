@@ -1637,18 +1637,33 @@ describe('buildAgentTools — team isolation', () => {
     };
 
     expect(scope.timeline.getEventsByIds).not.toHaveBeenCalled();
-    expect(scope.timeline.listEventsForMomentLookup).toHaveBeenCalledWith({
-      source: 'integration',
-      from: new Date('2026-06-26T00:00:00.000Z'),
-      to: new Date('2026-06-29T00:00:00.000Z'),
-      limit: 300,
-      metadataPredicates: [
-        { path: ['provider'], equals: 'github' },
-        { path: ['github', 'type'], equals: 'workflow_run' },
-        { path: ['github', 'repo'], equals: 'timborovkov/audit-ai' },
-        { path: ['github', 'head_branch'], equals: 'main' },
+    expect(scope.timeline.listEventsForMomentLookup).toHaveBeenCalledWith(
+      expect.objectContaining({
+        source: 'integration',
+        from: new Date('2026-06-26T00:00:00.000Z'),
+        to: new Date('2026-06-29T00:00:00.000Z'),
+        limit: 300,
+        metadataPredicates: [
+          { path: ['provider'], equals: 'github' },
+          { path: ['github', 'type'], equals: 'workflow_run' },
+          { path: ['github', 'repo'], equals: 'timborovkov/audit-ai' },
+          { path: ['github', 'head_branch'], equals: 'main' },
+        ],
+      }),
+    );
+    expect(
+      (
+        scope.timeline.listEventsForMomentLookup.mock.calls[0]?.[0] as
+          | { metadataPredicateGroups?: { path: string[]; equals: string }[][] }
+          | undefined
+      )?.metadataPredicateGroups,
+    ).toEqual([
+      [
+        { path: ['github', 'workflow_name'], equals: 'CI' },
+        { path: ['workflow_name'], equals: 'CI' },
+        { path: ['content', 'github_workflow_name'], equals: 'CI' },
       ],
-    });
+    ]);
     expect(result.found).toBe(true);
     expect(result.moment).toMatchObject({
       raw_event_ids: [eventA, eventB],
