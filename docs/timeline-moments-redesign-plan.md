@@ -13,6 +13,93 @@ This plan covers the full transformation of `/app/timeline`: event grouping,
 AI-assisted summaries, source-specific rules, future integration support, UI
 composition, rollout, and verification.
 
+## Continuation Status - 2026-06-29
+
+This plan is **not ready to delete yet**. The first implementation slice is
+substantially shipped, but the document still owns live requirements that are
+not fully captured in `design.md`, `todo.md`, tests, or source comments.
+
+Keep this file until the v1 completion bar below is met. Once those items are
+done, replace this long plan with a shorter living reference, likely
+`docs/timeline-moments.md`, that preserves only the source adapter contract,
+moment retrieval contract, and edge-case rules.
+
+### What Is Shipped
+
+- `/app/timeline` defaults to Moments and keeps Audit trail/source-event mode.
+- Shared deterministic moment projection lives in
+  `packages/shared/src/timeline-moments`.
+- Server-built `timeline_moments_page.v1` DTOs power the page and API, with
+  client-side moment building only as fallback.
+- Focused raw-event and moment links hydrate visible deterministic siblings.
+- Chat agents have `search_timeline_moments` and `get_timeline_moment`.
+- Outbound MCP has `timeline.search_moments`, `timeline.list_moments`, and
+  `timeline.get_moment`.
+- Agent/MCP moment search/list/expand now hydrate complete visible source
+  siblings before returning raw-event IDs.
+- AI presentation cache rows persist in Postgres, are keyed by team plus exact
+  visible evidence provenance, and are filled asynchronously.
+- Daily digest generation consumes bundled moment briefs.
+- Dev seed, provider fixture tests, focused shared/web tests, evals, dist
+  imports, `pnpm validate`, and React Doctor cover the current slice.
+
+### V1 Completion Bar
+
+Treat v1 as complete when all of these are true:
+
+1. **Source adapter contract is canonical.** Every high-volume provider family
+   writes stable grouping metadata or has an explicit graceful fallback, with
+   fixture tests for supported and weak payloads.
+2. **All moment consumers use one projection.** Timeline UI, API, chat agents,
+   outbound MCP, daily digests, future handoffs/updates, object summaries, and
+   Home/Recent moments either consume shared moment DTOs or explicitly document
+   why they stay raw-event based.
+3. **Pagination and capping are hardened.** Huge groups, cross-page groups,
+   midnight/time-zone boundaries, partial metadata, and scan-cap behavior have
+   tests and clear diagnostics.
+4. **Agent and MCP quality is eval-backed.** Evals prove moment-first retrieval
+   improves noisy integration/chat questions while preserving raw-event
+   citations, audit-mode access, fencing, and team visibility.
+5. **The UI survives messy real data.** Desktop/mobile screenshots and QA cover
+   long multilingual text, empty/error/loading states, selected row focus,
+   inspector overflow, attachments/media, and source-event escape hatches.
+6. **Observability closes the loop.** Moment count, raw-to-moment ratio,
+   scan-cap hits, missing metadata, AI cache hit/miss/stale, and agent expansion
+   metrics are emitted and useful during dogfooding.
+7. **Docs are compacted.** Remaining permanent rules move to `design.md`,
+   `todo.md`, tests, or a short reference doc; this plan is then removed from
+   README/docs index.
+
+### Next Implementation Slices
+
+Work these in order unless production usage reveals a sharper bug:
+
+1. **Provider metadata contract sweep.** Add or tighten fixtures for the native
+   providers and future provider shapes listed in this plan. Make weak metadata
+   diagnostics actionable instead of passive.
+2. **Shared moment service boundary.** Promote the repeated "search/list/expand
+   complete visible moments" behavior into one shared module so UI, agents, MCP,
+   digests, and future surfaces cannot drift.
+3. **Huge-group and scan-cap UX.** Add explicit capped-moment diagnostics,
+   evidence overflow behavior, and tests for groups that exceed normal page
+   scan limits.
+4. **Moment-first generated surfaces.** Move handoffs, stakeholder updates,
+   object summaries, and Home/Recent moments onto the shared moment DTO path
+   where useful.
+5. **Design QA on real messy data.** Run desktop and mobile browser QA against
+   seeded data plus at least one noisy real/team-like dataset, then polish row
+   hierarchy, inspector labels, overflow, and mobile focus behavior.
+6. **Plan retirement.** When the completion bar is green, extract a concise
+   reference and delete this file plus README/docs-index links.
+
+### What Does Not Require Special Infrastructure
+
+There is no special platform dependency needed to finish v1. The remaining work
+is product and engineering discipline: source metadata quality, shared-service
+deduplication, edge-case tests, real-data QA, and docs compaction. AI improves
+moment titles/summaries, but the grouping, visibility, citations, and fallback
+behavior must remain deterministic and source-backed.
+
 ## Current Problem
 
 The existing timeline already has a `TimelineMoment` layer, but the screen still
@@ -2090,18 +2177,21 @@ implicit. Those gaps are now explicit requirements and defaults.
 | Rollout | The plan implied a large default replacement. | Added feature flag/query preview, comparison against old timeline, dogfooding, observability, and rollback acceptance. |
 | DX | New integrations could add UI branches without proving grouping behavior. | Added a fixture matrix and diagnostics for missing grouping metadata. |
 
-Implementation order after review:
+Current continuation order:
 
-1. Harden the existing web moment builder and tests.
-2. Add server/page-window collector invariants behind a preview flag.
-3. Add source adapter fixtures and provider metadata diagnostics.
-4. Redesign the row and inspector around moments, preserving Source events mode.
-5. Generate eligible persisted AI presentation rows lazily on reads, and use the
-   dry-run-first `timeline-moment-presentations` worker script for bounded
-   production prewarming when candidate counts and privacy scope are reviewed.
-6. Keep generated-output surfaces moment-first: daily digests already consume
-   moments, and any future handoff/update DTOs should use moments with raw-event
-   citation expansion from day one.
-7. Dogfood with metrics before making Moments the default for all teams.
+1. Finish the provider metadata contract sweep and keep diagnostics actionable
+   for weak payloads.
+2. Promote repeated complete-moment search/list/expand behavior into a shared
+   service boundary so UI, agents, MCP, digests, and future generated surfaces
+   cannot drift.
+3. Harden huge-group and scan-cap behavior with explicit diagnostics, evidence
+   overflow, and tests.
+4. Move future handoff/update DTOs, object summaries, and Home/Recent moments
+   onto the shared moment DTO path where useful.
+5. Run real-data desktop/mobile design QA and polish row hierarchy, inspector
+   overflow, selected-row focus, and source-event escape hatches.
+6. Compact this file into a short living reference once the v1 completion bar is
+   green, then remove this plan and its README/docs-index links.
 
-NO UNRESOLVED DECISIONS
+NO UNRESOLVED DECISIONS FOR THE SHIPPED FIRST SLICE. Remaining work is scoped in
+the continuation status and v1 completion bar above.
