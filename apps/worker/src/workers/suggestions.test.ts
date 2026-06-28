@@ -2136,7 +2136,7 @@ describe('processSuggestionJobForTests', () => {
     expect(relationshipItems).toHaveLength(1);
   });
 
-  it('suppresses model-backed relationship proposals when the existing endpoint edge is already present', async () => {
+  it('suppresses name-only model-backed relationship proposals when the edge already exists', async () => {
     const rawEventId = '10000000-0000-0000-0000-0000000000a2';
     const [john, acme] = await db
       .insert(entities)
@@ -2184,8 +2184,8 @@ describe('processSuggestionJobForTests', () => {
                 targetKind: 'object_relationship',
                 title: 'Relate John Doe and Acme Corporation',
                 proposedPayload: {
-                  fromEntityId: john.id,
-                  toEntityId: acme.id,
+                  fromName: 'John Doe',
+                  toName: 'Acme Corporation',
                   kind: 'related',
                 },
               },
@@ -2240,7 +2240,7 @@ describe('processSuggestionJobForTests', () => {
       },
       occurredAt: new Date('2026-05-27T10:02:00.000Z'),
     });
-    const relationshipBundle = {
+    const relationshipBundle = (payload: Record<string, unknown>) => ({
       title: 'Relate John Doe and Acme Corporation',
       summary: 'John Doe is related to Acme Corporation.',
       reason: 'The source says John Doe is from Acme Corporation.',
@@ -2251,18 +2251,36 @@ describe('processSuggestionJobForTests', () => {
           operation: 'create' as const,
           targetKind: 'object_relationship' as const,
           title: 'Relate John Doe and Acme Corporation',
-          proposedPayload: {
-            fromEntityId: john.id,
-            toEntityId: acme.id,
-            kind: 'related',
-          },
+          proposedPayload: payload,
         },
       ],
-    };
-    const chat = vi.fn().mockResolvedValue({
-      model: MODEL_ID,
-      object: { bundles: [relationshipBundle] },
     });
+    const chat = vi
+      .fn()
+      .mockResolvedValueOnce({
+        model: MODEL_ID,
+        object: {
+          bundles: [
+            relationshipBundle({
+              fromName: 'John Doe',
+              toName: 'Acme Corporation',
+              kind: 'related',
+            }),
+          ],
+        },
+      })
+      .mockResolvedValueOnce({
+        model: MODEL_ID,
+        object: {
+          bundles: [
+            relationshipBundle({
+              fromName: 'John Doe',
+              toName: 'Acme Corporation',
+              kind: 'related',
+            }),
+          ],
+        },
+      });
 
     await processSuggestionJobForTests(
       { db: db as never },

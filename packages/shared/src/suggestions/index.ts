@@ -3053,6 +3053,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     const parsed = objectCreatePayload.parse(
       await resolvePayloadMemberRefs(
         await normalizeObjectCreatePayloadForAcceptance(item, payload),
+        { requireUnique: true },
       ),
     );
     const canonicalName =

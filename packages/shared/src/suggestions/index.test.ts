@@ -6463,6 +6463,52 @@ describe('suggestion scope', () => {
     expect(result.rows[0]).toEqual({ assignee_user_id: REVIEWER_ID });
   });
 
+  it('fails task create assignment names that do not resolve uniquely', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Create task for missing member',
+      dedupeKey: 'task-create-assignee-name-missing',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Review unresolved deck',
+          dedupeKey: 'task-create-assignee-name-missing:item',
+          proposedPayload: {
+            canonicalName: 'Review unresolved deck',
+            assigneeName: 'Missing Reviewer',
+          },
+        },
+      ],
+    });
+    const itemId = bundle.items[0]?.id ?? '';
+
+    await expect(scope.suggestions.acceptSuggestionItem(itemId)).rejects.toThrow(
+      'assigneeName was not uniquely matched to an active team member',
+    );
+
+    const result = await pg.query<{
+      item_status: string;
+      failure_reason: string | null;
+      entity_count: string;
+    }>(
+      `SELECT i.status AS item_status,
+              i.failure_reason,
+              (SELECT count(*)::text
+               FROM entities
+               WHERE team_id = '${TEAM_ID}'
+                 AND canonical_name = 'Review unresolved deck') AS entity_count
+       FROM agent_suggestion_items i
+       WHERE i.id = '${itemId}'`,
+    );
+    expect(result.rows[0]).toEqual({
+      item_status: 'failed',
+      failure_reason: 'assigneeName was not uniquely matched to an active team member',
+      entity_count: '0',
+    });
+  });
+
   it('resolves board item responsible names to active team member ids', async () => {
     const scope = withTeam(db as never, TEAM_ID, USER_ID);
     const board = await scope.boards.createBoard({

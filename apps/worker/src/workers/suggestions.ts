@@ -1320,40 +1320,83 @@ function relationshipEndpointKey(
   payload: Record<string, unknown>,
   side: 'from' | 'to',
   resolveRef: (ref: string) => string | null,
+  resolveName: (name: string) => string | null,
 ): string | null {
   const idKey = `${side}EntityId`;
   const refKey = `${side}Ref`;
+  const nameKey = `${side}Name`;
   if (typeof payload[idKey] === 'string') return `entity:${payload[idKey]}`;
-  return typeof payload[refKey] === 'string' ? resolveRef(payload[refKey]) : null;
+  if (typeof payload[refKey] === 'string') return resolveRef(payload[refKey]);
+  return typeof payload[nameKey] === 'string' ? resolveName(payload[nameKey]) : null;
 }
 
 function relationshipKeyFromPayload(
   payload: Record<string, unknown>,
   resolveRef: (ref: string) => string | null = () => null,
+  resolveName: (name: string) => string | null = () => null,
 ): string | null {
   if (payload.kind !== 'related') return null;
-  const from = relationshipEndpointKey(payload, 'from', resolveRef);
-  const to = relationshipEndpointKey(payload, 'to', resolveRef);
+  const from = relationshipEndpointKey(payload, 'from', resolveRef, resolveName);
+  const to = relationshipEndpointKey(payload, 'to', resolveRef, resolveName);
   if (!from || !to) return null;
   const [first, second] = [from, to].sort();
   return `${first}:${second}:related`;
 }
 
+interface RelationshipDedupeContext {
+  keys: Set<string>;
+  resolveName: (name: string) => string | null;
+}
+
 function filterExistingRelationshipItems(
   bundle: SuggestionBundleOutput,
-  existingRelationshipKeys: ReadonlySet<string>,
+  relationshipDedupe: RelationshipDedupeContext,
 ): SuggestionBundleOutput {
   const resolveRef = localRefResolverForItems(bundle.items);
   const items = bundle.items.filter((item) => {
     if (item.targetKind !== 'object_relationship') return true;
-    const key = relationshipKeyFromPayload(item.proposedPayload, resolveRef);
-    return !key || !existingRelationshipKeys.has(key);
+    const key = relationshipKeyFromPayload(
+      item.proposedPayload,
+      resolveRef,
+      relationshipDedupe.resolveName,
+    );
+    return !key || !relationshipDedupe.keys.has(key);
   });
   return { ...bundle, items };
 }
 
-async function existingRelationshipKeysForTeam(db: Db, teamId: string): Promise<Set<string>> {
+async function relationshipDedupeContextForTeam(
+  db: Db,
+  teamId: string,
+): Promise<RelationshipDedupeContext> {
   const keys = new Set<string>();
+  const objectNameRows = await db
+    .select({ id: entities.id, canonicalName: entities.canonicalName, aliases: entities.aliases })
+    .from(entities)
+    .where(
+      and(eq(entities.teamId, teamId), isNull(entities.mergedIntoId), isNull(entities.archivedAt)),
+    );
+  const nameRefs = new Map<string, Set<string>>();
+  for (const row of objectNameRows) {
+    for (const key of [
+      keyText(row.canonicalName),
+      ...(Array.isArray(row.aliases) ? row.aliases.map((aliasValue) => keyText(aliasValue)) : []),
+    ]) {
+      if (!key) continue;
+      const ids = nameRefs.get(key) ?? new Set<string>();
+      ids.add(row.id);
+      nameRefs.set(key, ids);
+    }
+  }
+  const resolveName = (name: string): string | null => {
+    const key = keyText(name);
+    if (!key) return null;
+    const ids = nameRefs.get(key);
+    if (ids?.size !== 1) return null;
+    const [id] = ids;
+    return id ? `entity:${id}` : null;
+  };
+
   const acceptedRows = await db
     .select({
       fromEntityId: entityRelationships.fromEntityId,
@@ -1420,10 +1463,11 @@ async function existingRelationshipKeysForTeam(db: Db, teamId: string): Promise<
     const key = relationshipKeyFromPayload(
       payload,
       localRefResolverForItems(rowsBySuggestionId.get(row.suggestionId) ?? []),
+      resolveName,
     );
     if (key) keys.add(key);
   }
-  return keys;
+  return { keys, resolveName };
 }
 
 function pickCleanupSurvivor(rows: CleanupObjectRow[]): CleanupObjectRow {
@@ -1688,7 +1732,7 @@ async function createObjectCleanupSuggestionsForTeam(
   if (repairObjectId) {
     const repairObject = rows.find((row) => row.id === repairObjectId);
     if (repairObject) {
-      const existingRelationshipKeys = await existingRelationshipKeysForTeam(db, teamId);
+      const relationshipDedupe = await relationshipDedupeContextForTeam(db, teamId);
       const candidates = [
         ...(await repairRelationshipCandidates(db, teamId, repairObjectId)),
         ...(await repairConnectedWorkRelationshipCandidates(db, teamId, repairObject)),
@@ -1698,7 +1742,7 @@ async function createObjectCleanupSuggestionsForTeam(
           continue;
         }
         const relationshipKey = relatedRelationshipKey(repairObjectId, candidate.id);
-        if (existingRelationshipKeys.has(relationshipKey)) continue;
+        if (relationshipDedupe.keys.has(relationshipKey)) continue;
         const objectIds = [repairObjectId, candidate.id].sort();
         const dedupeKey = suggestions.suggestionDedupeKey({
           kind: 'object_memory_repair_relationship',
@@ -1750,14 +1794,14 @@ async function createObjectCleanupSuggestionsForTeam(
             },
           ],
         });
-        existingRelationshipKeys.add(relationshipKey);
+        relationshipDedupe.keys.add(relationshipKey);
       }
       for (const candidate of await repairPersonCandidates(db, teamId, repairObject, rows)) {
         const relationshipKey = createdPersonRelationshipKey(
           candidate.canonicalName,
           repairObjectId,
         );
-        if (!relationshipKey || existingRelationshipKeys.has(relationshipKey)) continue;
+        if (!relationshipKey || relationshipDedupe.keys.has(relationshipKey)) continue;
         const dedupeKey = suggestions.suggestionDedupeKey({
           kind: 'object_memory_repair_person_relationship',
           teamId,
@@ -1819,7 +1863,7 @@ async function createObjectCleanupSuggestionsForTeam(
             },
           ],
         });
-        existingRelationshipKeys.add(relationshipKey);
+        relationshipDedupe.keys.add(relationshipKey);
       }
     }
   }
@@ -2101,13 +2145,13 @@ async function runSuggestionExtraction(
     return 0;
   }
 
-  const existingRelationshipKeys = await existingRelationshipKeysForTeam(deps.db, teamId);
+  const relationshipDedupe = await relationshipDedupeContextForTeam(deps.db, teamId);
   const bundles =
     result.object.bundles.length > 0
       ? result.object.bundles.map((bundle) =>
           filterExistingRelationshipItems(
             normalizeBundleAgainstExistingObjects(bundle, objectRowsForMatching),
-            existingRelationshipKeys,
+            relationshipDedupe,
           ),
         )
       : args.conversation
@@ -2572,7 +2616,7 @@ function buildPrompt(args: {
     `Use the source event time, not current time, for relative phrases inside the event.`,
     '',
     '# Team members',
-    'Use ownerUserId/assigneeUserId only when one listed member clearly matches. If the member is clear but the UUID is uncertain, use ownerName/assigneeName instead; acceptance resolves unique active members by name or email and leaves ambiguous names unassigned.',
+    'Use ownerUserId/assigneeUserId only when one listed member clearly matches. If the member is clear but the UUID is uncertain, use ownerName/assigneeName instead; acceptance resolves only unique active members by name or email and fails safe on ambiguous or missing names.',
     ...args.members.map((m) => `- ${m.userId}: ${m.name ?? 'Unnamed'} <${m.email ?? 'no-email'}>`),
     '',
     '# Existing workspace objects',
