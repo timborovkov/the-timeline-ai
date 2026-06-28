@@ -243,7 +243,7 @@ function eventPromptRows(moment: TimelineMoment): string {
         `id: ${event.id}`,
         `source: ${event.source}`,
         `occurred_at: ${occurredAt}`,
-        `metadata: ${metadata.slice(0, 1200)}`,
+        `metadata: ${fenceExternalContent(metadata.slice(0, 1200), event)}`,
         fenceExternalContent(event.contentText, event),
       ].join('\n');
     })

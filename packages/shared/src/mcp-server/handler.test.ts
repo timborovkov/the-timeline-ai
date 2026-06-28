@@ -226,11 +226,14 @@ describe('handleMcpRequest', () => {
     expect(result.count).toBe(1);
     expect(result.moments[0]).toMatchObject({
       version: 'timeline_moment.v1',
-      title: 'CI passed on timborovkov/audit-ai',
       evidence_count: 2,
       raw_event_ids: [WORKFLOW_EVENT_A, WORKFLOW_EVENT_B],
       citations: [`[ev:${WORKFLOW_EVENT_A}]`, `[ev:${WORKFLOW_EVENT_B}]`],
     });
+    expect(result.moments[0]?.title).toContain('CI passed on timborovkov/audit-ai');
+    expect(result.moments[0]?.title).toMatch(
+      /^<external_content source="timeline_moment" event_id="tm-moment_3Aintegration_3Agithub/,
+    );
     expect(result.moments[0]?.anchor_id).toMatch(/^tm-moment_3Aintegration_3Agithub/);
     expect(result.moments[0]?.raw_event_ids).not.toContain(WORKFLOW_PRIVATE_EVENT);
     const snippets = result.moments[0]?.evidence.map((entry) => entry.snippet) ?? [];
@@ -370,10 +373,11 @@ describe('handleMcpRequest', () => {
     expect(result).toMatchObject({
       found: true,
       moment: {
-        title: 'CI passed on timborovkov/audit-ai',
         raw_event_ids: [WORKFLOW_EVENT_A, WORKFLOW_EVENT_B],
       },
     });
+    expect(result.moment.title).toContain('CI passed on timborovkov/audit-ai');
+    expect(result.moment.title).toMatch(/^<external_content source="timeline_moment"/);
     expect(result.moment.raw_event_ids).not.toContain(WORKFLOW_PRIVATE_EVENT);
   });
 
@@ -435,10 +439,13 @@ describe('handleMcpRequest', () => {
     expect(result).toMatchObject({
       found: true,
       moment: {
-        title: 'PR #292 updated: Fix scoping tie-out extraction and timeline grouping',
         raw_event_ids: [PR_EVENT_A, PR_EVENT_B],
       },
     });
+    expect(result.moment.title).toContain(
+      'PR #292 updated: Fix scoping tie-out extraction and timeline grouping',
+    );
+    expect(result.moment.title).toMatch(/^<external_content source="timeline_moment"/);
     expect(result.moment.raw_event_ids).not.toContain(PR_PRIVATE_EVENT);
   });
 

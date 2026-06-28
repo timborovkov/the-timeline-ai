@@ -65,4 +65,35 @@ describe('timeline moment presentation worker', () => {
       },
     );
   });
+
+  it('uses a trusted team-visible scope for zero UUID service-actor backfills', async () => {
+    fakes.generateAndStoreTimelineMomentPresentation.mockResolvedValue({ status: 'stored' });
+    const data = {
+      teamId: 'team-1',
+      userId: '00000000-0000-0000-0000-000000000000',
+      rawEventIds: ['event-1'],
+      cacheKey: {
+        teamId: 'team-1',
+        momentKey: 'moment:telegram:chat-a:2026-06-27:18:00',
+        visibilityScopeHash: 'visibility-hash',
+        visibleSourceEventIdsHash: 'ids-hash',
+        visibleSourceContentHash: 'content-hash',
+        impactHydrationHash: 'impact-hash',
+        artifactClusterHash: 'artifact-hash',
+        promptVersion: 'timeline_moment_presentation.v1',
+        model: 'test/model',
+      },
+    };
+
+    await expect(
+      processTimelineMomentPresentationJobForTests({ db: {} as never }, data),
+    ).resolves.toEqual({ status: 'stored' });
+
+    expect(fakes.withTeam).toHaveBeenCalledWith(
+      {},
+      'team-1',
+      '00000000-0000-0000-0000-000000000000',
+      { skipMembershipCheck: true },
+    );
+  });
 });

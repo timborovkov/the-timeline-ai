@@ -13,6 +13,7 @@ import { resolveTimePhrase, workspaceTimeContext } from '#src/time/index.js';
 import {
   buildTimelineMoments,
   timelineMomentLookupPlan,
+  type TimelineMoment,
   type TimelineMomentEvent,
 } from '#src/timeline-moments/index.js';
 import {
@@ -198,6 +199,17 @@ function fenceExternalContent(
   )}">${sanitized}</external_content>`;
 }
 
+function fenceTimelineMomentText(
+  text: string | null | undefined,
+  moment: TimelineMoment,
+): string | null {
+  if (text === null || text === undefined) return null;
+  return fenceExternalContent(text, {
+    source: 'timeline_moment',
+    eventId: moment.anchorId,
+  });
+}
+
 function timelineMomentEvent(row: {
   id: string;
   teamId?: string | undefined;
@@ -255,9 +267,9 @@ async function serializeMcpTimelineMoments(
       version: moment.version,
       anchor_id: moment.anchorId,
       kind: moment.kind,
-      title: moment.title,
-      subtitle: moment.subtitle,
-      preview: moment.preview,
+      title: fenceTimelineMomentText(moment.title, moment),
+      subtitle: fenceTimelineMomentText(moment.subtitle, moment),
+      preview: fenceTimelineMomentText(moment.preview, moment),
       occurred_at:
         rawEvents[0]?.occurredAt instanceof Date
           ? rawEvents[0].occurredAt.toISOString()

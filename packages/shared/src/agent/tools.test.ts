@@ -1366,10 +1366,13 @@ describe('buildAgentTools — team isolation', () => {
     expect(result.moments[0]).toMatchObject({
       version: 'timeline_moment.v1',
       kind: 'ci_deploy',
-      title: 'CI passed on timborovkov/audit-ai',
       evidence_count: 2,
       raw_event_ids: [eventA, eventB],
     });
+    expect(result.moments[0]?.title).toContain('CI passed on timborovkov/audit-ai');
+    expect(result.moments[0]?.title).toMatch(
+      /^<external_content source="timeline_moment" event_id="tm-moment_3Aintegration_3Agithub/,
+    );
     expect(result.moments[0]?.anchor_id).toMatch(/^tm-moment_3Aintegration_3Agithub/);
     expect(result.moments[0]?.evidence[0]?.snippet).toContain(
       `<external_content source="integration" event_id="${eventA}">`,
@@ -1440,10 +1443,13 @@ describe('buildAgentTools — team isolation', () => {
     expect(result.found).toBe(true);
     expect(result.moment).toMatchObject({
       version: 'timeline_moment.v1',
-      title: 'Telegram conversation in AuditAI',
       evidence_count: 2,
       raw_event_ids: [eventB, eventA],
     });
+    expect(result.moment.title).toContain('Telegram conversation in AuditAI');
+    expect(result.moment.title).toMatch(
+      /^<external_content source="timeline_moment" event_id="tm-moment_3Atelegram_3Achat-a/,
+    );
     expect(result.moment.anchor_id).toMatch(/^tm-moment_3Atelegram_3Achat-a/);
     expect(result.moment.evidence[0]?.snippet).toContain('<external_content source="telegram"');
   });
@@ -1523,9 +1529,10 @@ describe('buildAgentTools — team isolation', () => {
     });
     expect(result.found).toBe(true);
     expect(result.moment).toMatchObject({
-      title: 'CI passed on timborovkov/audit-ai',
       raw_event_ids: [eventA, eventB],
     });
+    expect(result.moment.title).toContain('CI passed on timborovkov/audit-ai');
+    expect(result.moment.title).toMatch(/^<external_content source="timeline_moment"/);
   });
 
   it('get_timeline_moment can expand exact metadata moment ids without raw event ids', async () => {
@@ -1589,9 +1596,10 @@ describe('buildAgentTools — team isolation', () => {
     });
     expect(result.found).toBe(true);
     expect(result.moment).toMatchObject({
-      title: 'Contract review',
       raw_event_ids: [eventA, eventB],
     });
+    expect(result.moment.title).toContain('Contract review');
+    expect(result.moment.title).toMatch(/^<external_content source="timeline_moment"/);
   });
 
   it('get_timeline_moment can expand generic integration moment ids by object or event id', async () => {
@@ -1661,9 +1669,10 @@ describe('buildAgentTools — team isolation', () => {
     });
     expect(result.found).toBe(true);
     expect(result.moment).toMatchObject({
-      title: 'Webhook object updated · shared-key',
       raw_event_ids: [eventA, eventB],
     });
+    expect(result.moment.title).toContain('Webhook object updated · shared-key');
+    expect(result.moment.title).toMatch(/^<external_content source="timeline_moment"/);
   });
 
   it('get_timeline_moment asks for raw event ids when a moment id cannot be planned safely', async () => {

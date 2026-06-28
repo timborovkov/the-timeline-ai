@@ -21,6 +21,7 @@ import {
 import {
   buildTimelineMoments,
   timelineMomentLookupPlan,
+  type TimelineMoment,
   type TimelineMomentEvent,
 } from '#src/timeline-moments/index.js';
 import {
@@ -494,6 +495,16 @@ function fenceExternalContent(
   return `<external_content source="${source}" event_id="${eventId}">${sanitized}</external_content>`;
 }
 
+function fenceTimelineMomentText(
+  text: string | null | undefined,
+  moment: TimelineMoment,
+): string | null {
+  return fenceExternalContent(text, {
+    source: 'timeline_moment',
+    eventId: moment.anchorId,
+  });
+}
+
 function textMatches(value: string | null | undefined, query: string | undefined): boolean {
   if (!query) return true;
   return (value ?? '').toLowerCase().includes(query.toLowerCase());
@@ -578,9 +589,9 @@ async function buildAgentTimelineMoments(
         version: moment.version,
         anchor_id: moment.anchorId,
         kind: moment.kind,
-        title: moment.title,
-        subtitle: moment.subtitle,
-        preview: moment.preview,
+        title: fenceTimelineMomentText(moment.title, moment),
+        subtitle: fenceTimelineMomentText(moment.subtitle, moment),
+        preview: fenceTimelineMomentText(moment.preview, moment),
         occurred_at:
           sorted[0]?.occurredAt instanceof Date
             ? sorted[0].occurredAt.toISOString()

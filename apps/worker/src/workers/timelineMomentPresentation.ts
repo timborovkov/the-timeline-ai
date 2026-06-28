@@ -6,6 +6,8 @@ import { Worker, type Job } from 'bullmq';
 
 import { captureWorkerJobFailure } from '#src/monitoring.js';
 
+const ZERO_UUID = '00000000-0000-0000-0000-000000000000';
+
 export interface TimelineMomentPresentationWorkerDeps {
   db: Db;
 }
@@ -25,7 +27,10 @@ export async function processTimelineMomentPresentationJobForTests(
   deps: TimelineMomentPresentationWorkerDeps,
   data: queue.TimelineMomentPresentationJobData,
 ) {
-  const scope = withTeam(deps.db, data.teamId, data.userId);
+  const scope =
+    data.userId === ZERO_UUID
+      ? withTeam(deps.db, data.teamId, data.userId, { skipMembershipCheck: true })
+      : withTeam(deps.db, data.teamId, data.userId);
   return generateAndStoreTimelineMomentPresentation(deps.db, scope, {
     rawEventIds: data.rawEventIds,
     cacheKey: data.cacheKey,
