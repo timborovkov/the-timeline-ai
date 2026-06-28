@@ -5,10 +5,17 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import { resetEnvForTests } from '#src/env.js';
 import {
+  getProvider,
+  listRegisteredNativeProviderIds,
   listAvailableProviders,
   listCatalog,
   listFeaturedCatalog,
 } from '#src/integrations/registry.js';
+import {
+  NATIVE_PROVIDER_IDS,
+  PROVIDER_SYNC_POLICIES,
+  providerSyncPolicy,
+} from '#src/integrations/types.js';
 
 const ENV_BACKUP = { ...process.env };
 
@@ -121,6 +128,66 @@ describe('integration registry catalog visibility', () => {
     expect(byId.get('monday')?.ingestStatus).toBe('implemented');
     expect(byId.get('slack')?.ingestStatus).toBe('implemented');
     expect(byId.get('sentry')?.ingestStatus).toBe('implemented');
+  });
+
+  it('has a shared sync policy for every registered native provider', () => {
+    resetEnv();
+
+    expect(listRegisteredNativeProviderIds()).toEqual([...NATIVE_PROVIDER_IDS].sort());
+    for (const provider of NATIVE_PROVIDER_IDS) {
+      const policy = providerSyncPolicy(provider);
+      expect(policy, `${provider} should have a provider sync policy`).toBe(
+        PROVIDER_SYNC_POLICIES[provider],
+      );
+      expect(
+        policy.reconciliationIntervalMs,
+        `${provider} reconciliation should be bounded`,
+      ).toBeGreaterThan(0);
+      expect(
+        policy.budgetScopes.length,
+        `${provider} should declare budget scopes`,
+      ).toBeGreaterThan(0);
+      expect(
+        ['webhook_first', 'webhook_wakeup', 'reconciliation_first'],
+        `${provider} should declare a v1 ingestion posture`,
+      ).toContain(policy.ingestionPosture);
+      expect(
+        ['app_level', 'provider_managed', 'manual', 'none'],
+        `${provider} should declare how webhooks are provisioned`,
+      ).toContain(policy.provisioningModel);
+    }
+  });
+
+  it('keeps provider capabilities coherent with the shared sync policy', () => {
+    resetEnv();
+
+    for (const providerId of NATIVE_PROVIDER_IDS) {
+      const provider = getProvider(providerId);
+      const policy = providerSyncPolicy(providerId);
+
+      if (policy.supportsWebhookIngress) {
+        expect(
+          typeof Reflect.get(provider, 'handleWebhook'),
+          `${providerId} should normalize webhook payloads`,
+        ).toBe('function');
+      } else {
+        expect(
+          Reflect.get(provider, 'handleWebhook'),
+          `${providerId} should not expose native webhook ingress`,
+        ).toBe(undefined);
+      }
+
+      if (policy.provisioningModel === 'provider_managed') {
+        expect(
+          typeof Reflect.get(provider, 'provisionWebhooks'),
+          `${providerId} should provision provider-managed webhooks`,
+        ).toBe('function');
+        expect(
+          typeof Reflect.get(provider, 'deprovisionWebhook'),
+          `${providerId} should deprovision provider-managed webhooks`,
+        ).toBe('function');
+      }
+    }
   });
 
   it('points catalog logos at checked-in assets', () => {

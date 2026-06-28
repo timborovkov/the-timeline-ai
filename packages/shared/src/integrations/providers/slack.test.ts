@@ -31,6 +31,7 @@ describe('slackProvider', () => {
   afterEach(() => {
     process.env = { ...ENV_BACKUP };
     resetEnvForTests();
+    vi.useRealTimers();
     vi.unstubAllGlobals();
   });
 
@@ -401,6 +402,42 @@ describe('slackProvider', () => {
     expect(events.map((event) => event.eventType)).toEqual(['message.edited', 'reaction.added']);
     expect(ctx.saveCursor).toHaveBeenCalledWith('slack.channel:C123', {
       latest_ts: '1782000100.000000',
+    });
+  });
+
+  it('turns Slack Web API 429 responses into provider budget pauses', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-06-28T01:00:00.000Z'));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response('{}', {
+          status: 429,
+          headers: { 'retry-after': '120', 'content-type': 'application/json' },
+        }),
+      ),
+    );
+    const ctx = {
+      loadCursor: vi.fn().mockResolvedValue({}),
+      saveCursor: vi.fn().mockResolvedValue(undefined),
+      writeEvents: vi.fn().mockResolvedValue([]),
+      persistTokens: vi.fn(),
+      recordAudit: vi.fn(),
+    };
+
+    await expect(
+      slackProvider.incrementalSync({
+        integration: { id: 'integration-1', externalAccountId: 'T123' } as never,
+        tokens: { access_token: 'xoxb-token', team: { id: 'T123', name: 'Acme' } },
+        selections: [{ kind: 'slack.channel', externalId: 'C123' }],
+        ctx,
+      }),
+    ).rejects.toMatchObject({
+      provider: 'slack',
+      scope: 'web_api',
+      reason: 'slack_rate_limited',
+      retryAfterSeconds: 120,
+      retryAt: new Date('2026-06-28T01:02:00.000Z'),
     });
   });
 });

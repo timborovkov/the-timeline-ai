@@ -1,24 +1,50 @@
 import { Buffer } from 'node:buffer';
 
-import type {
-  IntegrationEvent,
-  IntegrationProvider,
-  ObjectMapping,
-  OAuthCallbackInput,
-  ProviderResource,
-} from '#src/integrations/types.js';
-
 import { getEnv } from '#src/env.js';
+import {
+  type IntegrationEvent,
+  type IntegrationProvider,
+  type ObjectMapping,
+  type OAuthCallbackInput,
+  ProviderRateLimitError as ProviderRateLimitErrorValue,
+  type ProviderRateLimitError as ProviderRateLimitErrorType,
+  type ProviderResource,
+  type SyncContext,
+  type TargetedSyncTask,
+  type WebhookSubscription,
+} from '#src/integrations/types.js';
 
 const AUTH_URL = 'https://auth.monday.com/oauth2/authorize';
 const TOKEN_URL = 'https://auth.monday.com/oauth2/token';
 const GRAPHQL_URL = 'https://api.monday.com/v2';
-const SCOPES = ['boards:read', 'users:read', 'updates:read', 'docs:read'];
+const SCOPES = [
+  'boards:read',
+  'users:read',
+  'updates:read',
+  'docs:read',
+  'account:read',
+  'webhooks:write',
+];
 const BOARD_PAGE_LIMIT = 100;
 const ITEM_PAGE_LIMIT = 100;
 const UPDATE_LIMIT = 50;
 const DOC_PAGE_LIMIT = 100;
 const BLOCK_PAGE_LIMIT = 100;
+const DOC_RECONCILIATION_INTERVAL_MS = 24 * 60 * 60 * 1000;
+const MONDAY_WEBHOOK_EVENTS = [
+  'create_item',
+  'change_column_value',
+  'change_status_column_value',
+  'change_name',
+  'create_update',
+  'edit_update',
+  'delete_update',
+  'create_subitem',
+  'change_subitem_column_value',
+  'item_archived',
+  'item_deleted',
+  'item_restored',
+] as const;
 
 interface MondayTokens {
   access_token: string;
@@ -31,6 +57,11 @@ interface MondayTokens {
 interface MondayIdentity {
   id?: string;
   name?: string;
+}
+
+interface MondayAccountIdentity {
+  id?: string;
+  slug?: string;
 }
 
 interface MondayWorkspace {
@@ -81,6 +112,7 @@ interface MondayItem {
   name: string;
   updated_at?: string;
   url?: string;
+  board?: MondayBoard | null;
   creator?: { id?: string; name?: string } | null;
   parent_item?: { id?: string; name?: string } | null;
   column_values?: MondayColumnValue[];
@@ -123,6 +155,20 @@ interface MondayCursor {
   item_since?: string | undefined;
   item_page_cursor?: string | undefined;
   doc_since?: string | undefined;
+  doc_last_polled_at?: string | undefined;
+}
+
+interface MondayGraphQLError {
+  message?: string;
+  extensions?: {
+    code?: string;
+    retry_in_seconds?: number;
+  };
+}
+
+interface MondayWebhookMutationResult {
+  id?: string | number | null;
+  board_id?: string | number | null;
 }
 
 interface NormalizedColumn {
@@ -191,13 +237,89 @@ async function gql<T>(
     body: JSON.stringify({ query, variables }),
   });
   const text = await res.text();
+  const httpRateLimit = mondayRateLimitError(res, text);
+  if (httpRateLimit) throw httpRateLimit;
   if (!res.ok) throw new Error(`Monday GraphQL ${String(res.status)}: ${text}`);
-  const json = JSON.parse(text) as { data?: T; errors?: { message: string }[] };
+  const json = JSON.parse(text) as { data?: T; errors?: MondayGraphQLError[] };
   if (json.errors?.length) {
+    const gqlRateLimit = mondayRateLimitError(res, text, json.errors);
+    if (gqlRateLimit) throw gqlRateLimit;
     throw new Error(`Monday GraphQL errors: ${json.errors.map((e) => e.message).join('; ')}`);
   }
   if (!json.data) throw new Error('Monday GraphQL returned no data');
   return json.data;
+}
+
+function mondayRateLimitError(
+  res: Response,
+  body: string,
+  errors?: MondayGraphQLError[],
+): ProviderRateLimitErrorType | null {
+  const parsedErrors = errors ?? parseMondayErrors(body);
+  const limitError = parsedErrors.find((error) => {
+    const code = error.extensions?.code ?? '';
+    return (
+      /LIMIT|RATE|COMPLEXITY|CONCURRENCY/i.test(code) ||
+      /limit|rate|complexity|concurrency/i.test(error.message ?? '')
+    );
+  });
+  if (!limitError && res.status !== 429) return null;
+
+  const retryAfter =
+    positiveNumber(limitError?.extensions?.retry_in_seconds) ??
+    parsePositiveInt(res.headers.get('retry-after')) ??
+    parseRateLimitWaitSeconds(res.headers.get('ratelimit')) ??
+    60;
+  const retryAt = new Date(Date.now() + retryAfter * 1000);
+  const code = limitError?.extensions?.code ?? (res.status === 429 ? 'HTTP_429' : 'LIMIT_EXCEEDED');
+  return new ProviderRateLimitErrorValue({
+    provider: 'monday',
+    retryAt,
+    retryAfterSeconds: retryAfter,
+    scope: mondayLimitScope(code, limitError?.message),
+    reason: code.toLowerCase(),
+    message: `monday_rate_limited: Monday API ${code}; retry after ${retryAt.toISOString()}`,
+  });
+}
+
+function parseMondayErrors(body: string): MondayGraphQLError[] {
+  try {
+    const parsed = JSON.parse(body) as { errors?: MondayGraphQLError[] };
+    return Array.isArray(parsed.errors) ? parsed.errors : [];
+  } catch {
+    return [];
+  }
+}
+
+function positiveNumber(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? Math.ceil(value) : null;
+}
+
+function parsePositiveInt(value: string | null): number | null {
+  if (!value) return null;
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+function parseRateLimitWaitSeconds(value: string | null): number | null {
+  if (!value) return null;
+  const waitMatch = /(?:^|[,\s])t=(\d+)/i.exec(value);
+  if (waitMatch?.[1]) return parsePositiveInt(waitMatch[1]);
+  const resetMatch = /(?:^|[,\s])reset=(\d+)/i.exec(value);
+  if (!resetMatch?.[1]) return null;
+  const reset = parsePositiveInt(resetMatch[1]);
+  if (!reset) return null;
+  return reset > 1_000_000_000 ? Math.max(1, reset - Math.floor(Date.now() / 1000)) : reset;
+}
+
+function mondayLimitScope(code: string, message = ''): string {
+  const value = `${code} ${message}`.toLowerCase();
+  if (value.includes('daily')) return 'daily';
+  if (value.includes('minute')) return 'minute';
+  if (value.includes('complexity')) return 'complexity';
+  if (value.includes('concurrency')) return 'concurrency';
+  if (value.includes('ip')) return 'ip';
+  return 'requests';
 }
 
 function isMondayUnauthorizedFieldError(error: unknown): boolean {
@@ -208,6 +330,19 @@ async function fetchViewerIdentity(tokens: MondayTokens): Promise<MondayIdentity
   try {
     const data = await gql<{ me?: MondayIdentity }>(tokens, 'query { me { id name } }');
     return data.me ?? null;
+  } catch (error) {
+    if (!isMondayUnauthorizedFieldError(error)) throw error;
+    return null;
+  }
+}
+
+async function fetchAccountIdentity(tokens: MondayTokens): Promise<MondayAccountIdentity | null> {
+  try {
+    const data = await gql<{ account?: MondayAccountIdentity }>(
+      tokens,
+      'query { account { id slug } }',
+    );
+    return data.account ?? null;
   } catch (error) {
     if (!isMondayUnauthorizedFieldError(error)) throw error;
     return null;
@@ -570,6 +705,193 @@ function docEvent(doc: MondayDoc): IntegrationEvent {
   };
 }
 
+function recordValue(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function mondayWebhookTextValue(value: unknown): string | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value === 'string') return value.trim() ? value : null;
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return null;
+  }
+}
+
+function mondayIdValue(value: unknown): string | null {
+  return stringValue(value) ?? (numberValue(value) !== null ? String(numberValue(value)) : null);
+}
+
+function mondayWebhookOccurredAt(event: Record<string, unknown>): Date {
+  const triggerTime = stringValue(event.triggerTime);
+  if (triggerTime) return dateValue(triggerTime);
+  const changedAt = numberValue(event.changedAt);
+  if (changedAt) return new Date(changedAt * 1000);
+  return new Date();
+}
+
+function mondayWebhookEventType(rawType: string): string {
+  if (rawType === 'create_pulse' || rawType === 'create_item') return 'item.created';
+  if (rawType === 'create_update') return 'update.created';
+  if (rawType === 'edit_update') return 'update.updated';
+  if (rawType === 'delete_update') return 'update.deleted';
+  if (rawType === 'create_subitem') return 'subitem.created';
+  if (rawType.includes('status')) return 'status.changed';
+  if (rawType.includes('column')) return 'column.changed';
+  if (rawType === 'change_name') return 'item.renamed';
+  if (rawType === 'item_archived') return 'item.archived';
+  if (rawType === 'item_deleted') return 'item.deleted';
+  if (rawType === 'item_restored') return 'item.restored';
+  return rawType || 'item.updated';
+}
+
+function mondayWebhookEvent(payload: unknown): IntegrationEvent[] {
+  const event = recordValue(recordValue(payload)?.event);
+  if (!event) return [];
+  const boardId = mondayIdValue(event.boardId);
+  if (!boardId) return [];
+  const rawType = stringValue(event.type) ?? 'item.updated';
+  const eventType = mondayWebhookEventType(rawType);
+  const itemId =
+    mondayIdValue(event.pulseId) ??
+    mondayIdValue(event.itemId) ??
+    mondayIdValue(event.parentItemId) ??
+    boardId;
+  const itemName = stringValue(event.pulseName) ?? stringValue(event.itemName);
+  const updateId = mondayIdValue(event.updateId);
+  const subscriptionId = mondayIdValue(event.subscriptionId);
+  const triggerUuid = stringValue(event.triggerUuid);
+  const occurredAt = mondayWebhookOccurredAt(event);
+  const columnTitle = stringValue(event.columnTitle) ?? stringValue(event.columnId);
+  const valueText = mondayWebhookTextValue(event.value);
+  const previousValueText = mondayWebhookTextValue(event.previousValue);
+  const title = itemName ?? `Monday item ${itemId}`;
+  return [
+    {
+      dedupKey: triggerUuid
+        ? `monday:webhook:${triggerUuid}`
+        : `monday:webhook:${boardId}:${subscriptionId ?? 'unknown'}:${itemId}:${rawType}:${occurredAt.toISOString()}`,
+      provider: 'monday',
+      externalObjectId: updateId ? `${itemId}:update:${updateId}` : itemId,
+      externalEventId: triggerUuid ?? updateId ?? subscriptionId ?? null,
+      eventType,
+      occurredAt,
+      actor: mondayIdValue(event.userId) ? { externalId: mondayIdValue(event.userId) ?? '' } : null,
+      contentText: [
+        `Monday ${eventType.replace('.', ' ')} on board ${boardId}: ${title}`,
+        columnTitle ? `Column: ${columnTitle}` : null,
+        valueText ? `Value: ${valueText}` : null,
+        previousValueText ? `Previous: ${previousValueText}` : null,
+      ]
+        .filter(Boolean)
+        .join('\n'),
+      extra: {
+        monday_board_id: boardId,
+        monday_item_id: itemId,
+        monday_update_id: updateId ?? null,
+        monday_webhook_type: rawType,
+        monday_subscription_id: subscriptionId ?? null,
+        monday_trigger_uuid: triggerUuid ?? null,
+        monday_column_id: stringValue(event.columnId),
+        monday_column_title: columnTitle,
+        monday_column_type: stringValue(event.columnType),
+        monday_group_id: stringValue(event.groupId),
+      },
+      objectMap: {
+        type: 'other',
+        canonicalName: `Monday record ${itemId}: ${title}`,
+        displayTitle: title,
+        externalId: itemId,
+        status: mondayStatus(valueText),
+        metadata: {
+          monday_record_kind: eventType.startsWith('subitem') ? 'subitem' : 'webhook-record',
+          monday_board_id: boardId,
+          monday_item_id: itemId,
+        },
+      },
+    },
+  ];
+}
+
+function mondayWebhookBoardId(payload: unknown): string | null {
+  const event = recordValue(recordValue(payload)?.event);
+  return event ? mondayIdValue(event.boardId) : null;
+}
+
+function mondayWebhookItemId(payload: unknown): string | null {
+  const event = recordValue(recordValue(payload)?.event);
+  if (!event) return null;
+  return (
+    mondayIdValue(event.pulseId) ?? mondayIdValue(event.itemId) ?? mondayIdValue(event.parentItemId)
+  );
+}
+
+function mondayWebhookUrl(): string {
+  const env = getEnv();
+  if (!env.MONDAY_WEBHOOK_SECRET) {
+    throw new Error('MONDAY_WEBHOOK_SECRET not configured');
+  }
+  const url = new URL('/api/webhooks/monday', env.AUTH_URL);
+  url.searchParams.set('token', env.MONDAY_WEBHOOK_SECRET);
+  const rendered = url.toString();
+  if (rendered.length > 255) {
+    throw new Error('Monday webhook URL exceeds provider 255 character limit');
+  }
+  return rendered;
+}
+
+function mondayWebhookKey(subscription: {
+  resourceKind: string;
+  externalResourceId: string;
+  eventType: string;
+}): string {
+  return `${subscription.resourceKind}\x00${subscription.externalResourceId}\x00${subscription.eventType}`;
+}
+
+async function createMondayWebhook(
+  tokens: MondayTokens,
+  boardId: string,
+  eventType: (typeof MONDAY_WEBHOOK_EVENTS)[number],
+  url: string,
+): Promise<WebhookSubscription> {
+  const data = await gql<{ create_webhook?: MondayWebhookMutationResult }>(
+    tokens,
+    `mutation CreateTimelineMondayWebhook($boardId: ID!, $url: String!, $event: WebhookEventType!) {
+      create_webhook(board_id: $boardId, url: $url, event: $event) {
+        id
+        board_id
+      }
+    }`,
+    { boardId, url, event: eventType },
+  );
+  const id = mondayIdValue(data.create_webhook?.id);
+  if (!id) throw new Error('Monday create_webhook returned no id');
+  return {
+    externalSubscriptionId: id,
+    resourceKind: 'monday.board',
+    externalResourceId: boardId,
+    eventType,
+    expiresAt: null,
+  };
+}
+
+async function deleteMondayWebhook(tokens: MondayTokens, subscriptionId: string): Promise<void> {
+  await gql<{ delete_webhook?: MondayWebhookMutationResult }>(
+    tokens,
+    `mutation DeleteTimelineMondayWebhook($id: ID!) {
+      delete_webhook(id: $id) {
+        id
+        board_id
+      }
+    }`,
+    { id: subscriptionId },
+  );
+}
+
 async function fetchBoard(tokens: MondayTokens, boardId: string): Promise<MondayBoard | null> {
   const query = (includeWorkspace: boolean) => `query ($ids: [ID!]) {
     boards(ids: $ids) {
@@ -586,6 +908,30 @@ async function fetchBoard(tokens: MondayTokens, boardId: string): Promise<Monday
     data = await gql<{ boards: MondayBoard[] }>(tokens, query(false), { ids: [boardId] });
   }
   return data.boards[0] ?? null;
+}
+
+async function fetchItemWithBoard(
+  tokens: MondayTokens,
+  itemId: string,
+): Promise<{ item: MondayItem; board: MondayBoard } | null> {
+  const data = await gql<{ items: MondayItem[] }>(
+    tokens,
+    `query ($itemIds: [ID!]) {
+      items(ids: $itemIds) {
+        ${ITEM_FIELDS}
+        board {
+          id name board_kind updated_at
+          workspace { id name }
+          columns { id title type }
+        }
+      }
+    }`,
+    { itemIds: [itemId] },
+  );
+  const item = data.items[0];
+  const board = item?.board ?? null;
+  if (!item || !board) return null;
+  return { item, board };
 }
 
 async function fetchInitialItemsPage(
@@ -720,6 +1066,89 @@ async function fetchDoc(tokens: MondayTokens, docId: string): Promise<MondayDoc 
     previousPageBlockCount = nextBlocks.length;
   }
   return { ...first, blocks };
+}
+
+function docReconciliationDue(cursor: MondayCursor, now = Date.now()): boolean {
+  if (!cursor.doc_last_polled_at) return true;
+  const lastPolledAt = new Date(cursor.doc_last_polled_at);
+  if (Number.isNaN(lastPolledAt.getTime())) return true;
+  return now - lastPolledAt.getTime() >= DOC_RECONCILIATION_INTERVAL_MS;
+}
+
+async function syncWorkDoc(
+  tokens: MondayTokens,
+  docId: string,
+  cursor: MondayCursor,
+  ctx: SyncContext,
+): Promise<void> {
+  const doc = await fetchDoc(tokens, docId);
+  const polledAt = new Date().toISOString();
+  if (!doc) {
+    await ctx.saveCursor(`monday.doc:${docId}`, {
+      ...cursor,
+      doc_last_polled_at: polledAt,
+    });
+    return;
+  }
+  const event = docEvent(doc);
+  const eventIds = await ctx.writeEvents([event]);
+  const docSince = event.occurredAt.toISOString();
+  if (ctx.harvestDocument && (eventIds.length > 0 || cursor.doc_since !== docSince)) {
+    await ctx.harvestDocument({
+      filename: `${doc.name}.md`,
+      contentType: 'text/markdown',
+      body: Buffer.from(docMarkdown(doc), 'utf8'),
+      externalId: `monday.doc:${doc.id}`,
+      metadata: {
+        monday_doc_id: doc.id,
+        monday_doc_object_id: doc.object_id ?? null,
+        monday_workspace_id: doc.workspace_id ?? doc.workspace?.id ?? null,
+        integration_provider: 'monday',
+      },
+    });
+  }
+  await ctx.saveCursor(`monday.doc:${docId}`, {
+    ...cursor,
+    doc_since: docSince,
+    doc_last_polled_at: polledAt,
+  });
+}
+
+async function syncTargetedItem(
+  tokens: MondayTokens,
+  boardId: string,
+  itemId: string,
+  ctx: SyncContext,
+): Promise<void> {
+  const result = await fetchItemWithBoard(tokens, itemId);
+  if (!result) {
+    await ctx.recordAudit('targeted_item_missing', { boardId, itemId });
+    return;
+  }
+  const { board, item } = result;
+  if (board.id !== boardId) {
+    await ctx.recordAudit('targeted_item_board_mismatch', {
+      expectedBoardId: boardId,
+      actualBoardId: board.id,
+      itemId,
+    });
+    return;
+  }
+  const kind = item.parent_item?.id ? 'subitem' : 'item';
+  const events = [
+    ...recordEvents(board, item, kind),
+    ...(kind === 'item'
+      ? (item.subitems ?? []).flatMap((subitem) => recordEvents(board, subitem, 'subitem'))
+      : []),
+  ];
+  await ctx.writeEvents(events);
+  const latestItem = events
+    .map((event) => event.occurredAt.toISOString())
+    .sort()
+    .at(-1);
+  await ctx.saveCursor(`monday.item:${boardId}:${itemId}`, {
+    item_since: latestItem ?? new Date().toISOString(),
+  });
 }
 
 async function fetchDocsPage(tokens: MondayTokens, page: number): Promise<MondayDoc[]> {
@@ -880,12 +1309,19 @@ export const mondayProvider: IntegrationProvider = {
       redirect_uri: input.redirectUri,
     });
     const tokens = tokenFromBody(body);
-    const me = await fetchViewerIdentity(tokens);
+    const [account, me] = await Promise.all([
+      fetchAccountIdentity(tokens),
+      fetchViewerIdentity(tokens),
+    ]);
     const externalAccountId =
-      me?.id ?? stringValue(body.user_id) ?? stringValue(body.account_id) ?? 'monday';
+      account?.id ??
+      stringValue(body.account_id) ??
+      me?.id ??
+      stringValue(body.user_id) ??
+      'monday';
     return {
       externalAccountId,
-      displayName: `Monday.com — ${me?.name ?? externalAccountId}`,
+      displayName: `Monday.com — ${account?.slug ?? me?.name ?? externalAccountId}`,
       scopes: SCOPES,
       tokens: tokens as unknown as Record<string, unknown>,
     };
@@ -939,33 +1375,19 @@ export const mondayProvider: IntegrationProvider = {
     }
     for (const selection of selections.filter((item) => item.kind === 'monday.doc')) {
       const cursor = (await ctx.loadCursor(`monday.doc:${selection.externalId}`)) as MondayCursor;
-      const doc = await fetchDoc(mondayTokens, selection.externalId);
-      if (!doc) continue;
-      const event = docEvent(doc);
-      const eventIds = await ctx.writeEvents([event]);
-      const docSince = event.occurredAt.toISOString();
-      if (ctx.harvestDocument && (eventIds.length > 0 || cursor.doc_since !== docSince)) {
-        await ctx.harvestDocument({
-          filename: `${doc.name}.md`,
-          contentType: 'text/markdown',
-          body: Buffer.from(docMarkdown(doc), 'utf8'),
-          externalId: `monday.doc:${doc.id}`,
-          metadata: {
-            monday_doc_id: doc.id,
-            monday_doc_object_id: doc.object_id ?? null,
-            monday_workspace_id: doc.workspace_id ?? doc.workspace?.id ?? null,
-            integration_provider: 'monday',
-          },
-        });
-      }
-      await ctx.saveCursor(`monday.doc:${selection.externalId}`, {
-        doc_since: docSince,
-      });
+      await syncWorkDoc(mondayTokens, selection.externalId, cursor, ctx);
     }
   },
 
-  async incrementalSync({ tokens, selections, ctx }) {
+  async incrementalSync({ tokens, selections, ctx, target }) {
     const mondayTokens = await ensureAccessToken(tokens as MondayTokens, ctx);
+    if (target?.resourceType === 'monday.item') {
+      const [boardId, itemId] = target.externalId.split(':');
+      if (boardId && itemId) {
+        await syncTargetedItem(mondayTokens, boardId, itemId, ctx);
+      }
+      return;
+    }
     for (const selection of selections.filter((item) => item.kind === 'monday.board')) {
       const cursor = (await ctx.loadCursor(`monday.board:${selection.externalId}`)) as MondayCursor;
       const result = await syncBoard(mondayTokens, selection.externalId, cursor, {
@@ -975,12 +1397,78 @@ export const mondayProvider: IntegrationProvider = {
       await ctx.saveCursor(`monday.board:${selection.externalId}`, result.cursor);
     }
     for (const selection of selections.filter((item) => item.kind === 'monday.doc')) {
-      await this.backfill({
-        integration: {} as never,
-        tokens: mondayTokens,
-        selections: [selection],
-        ctx,
+      const cursor = (await ctx.loadCursor(`monday.doc:${selection.externalId}`)) as MondayCursor;
+      if (!docReconciliationDue(cursor)) continue;
+      await syncWorkDoc(mondayTokens, selection.externalId, cursor, ctx);
+    }
+  },
+
+  // eslint-disable-next-line @typescript-eslint/require-await
+  async handleWebhook({ integration, payload }) {
+    const events = mondayWebhookEvent(payload);
+    const boardId = mondayWebhookBoardId(payload);
+    const itemId = mondayWebhookItemId(payload);
+    const syncTasks: TargetedSyncTask[] = [];
+    if (boardId) {
+      syncTasks.push({
+        integrationId: integration.id,
+        teamId: integration.teamId,
+        triggeredBy: 'webhook',
+        resourceType: itemId ? 'monday.item' : 'monday.board',
+        externalId: itemId ? `${boardId}:${itemId}` : boardId,
+        ...(events[0]?.eventType ? { surface: events[0].eventType } : {}),
+        reason: itemId ? 'monday_item_webhook' : 'monday_board_webhook',
       });
     }
+    return {
+      events,
+      syncTasks,
+    };
+  },
+
+  async provisionWebhooks({ tokens, selections, existingSubscriptions, ctx }) {
+    const mondayTokens = await ensureAccessToken(tokens as MondayTokens, ctx);
+    const url = mondayWebhookUrl();
+    const existingByKey = new Map(
+      (existingSubscriptions ?? [])
+        .filter((subscription) => subscription.externalSubscriptionId)
+        .map((subscription) => [mondayWebhookKey(subscription), subscription]),
+    );
+    const active: WebhookSubscription[] = [];
+    const boardIds = [
+      ...new Set(
+        selections
+          .filter((selection) => selection.kind === 'monday.board')
+          .map((selection) => selection.externalId),
+      ),
+    ];
+    for (const boardId of boardIds) {
+      for (const eventType of MONDAY_WEBHOOK_EVENTS) {
+        const desired = {
+          resourceKind: 'monday.board',
+          externalResourceId: boardId,
+          eventType,
+        };
+        const existing = existingByKey.get(mondayWebhookKey(desired));
+        if (existing) {
+          active.push({
+            ...desired,
+            externalSubscriptionId: existing.externalSubscriptionId ?? null,
+          });
+          continue;
+        }
+        const created = await createMondayWebhook(mondayTokens, boardId, eventType, url);
+        await ctx?.persistWebhookSubscription(created);
+        active.push(created);
+      }
+    }
+    return active;
+  },
+
+  async deprovisionWebhook({ tokens, subscription, ctx }) {
+    const subscriptionId = subscription.externalSubscriptionId;
+    if (!subscriptionId) return;
+    const mondayTokens = await ensureAccessToken(tokens as MondayTokens, ctx);
+    await deleteMondayWebhook(mondayTokens, subscriptionId);
   },
 };

@@ -21,8 +21,18 @@ function literalPattern(value: string): RegExp {
   return new RegExp(value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
 }
 
+function referenceButtonPattern(kind: 'ent' | 'ev'): RegExp {
+  return new RegExp(`Open reference \\[${kind}:`);
+}
+
 async function uploadTextDocument(page: Page, name: string, text: string): Promise<void> {
   const chooser = page.waitForEvent('filechooser');
+  let documentPostCount = 0;
+  const finalized = page.waitForResponse((res) => {
+    if (!res.url().includes('/app/documents') || res.request().method() !== 'POST') return false;
+    documentPostCount += 1;
+    return documentPostCount === 2;
+  });
   await page.getByRole('button', { name: /^Upload$/ }).click();
   const fileChooser = await chooser;
   await fileChooser.setFiles({
@@ -30,12 +40,13 @@ async function uploadTextDocument(page: Page, name: string, text: string): Promi
     mimeType: 'text/plain',
     buffer: Buffer.from(text),
   });
-  await expect(page.getByRole('status').getByText(name)).toBeVisible();
+  await finalized;
+  await page.reload();
   await expect(page.getByRole('link', { name: literalPattern(name) })).toBeVisible();
 }
 
 async function createMemberInvite(page: Page, email: string): Promise<string> {
-  await page.getByLabel('Email').fill(email);
+  await page.getByPlaceholder('teammate@example.com').fill(email);
   await page.getByLabel('Role', { exact: true }).selectOption('member');
   await page.getByRole('button', { name: 'Create invite' }).click();
   const inviteRow = page.locator('li').filter({ hasText: email }).last();
@@ -56,6 +67,14 @@ function teamMemberRow(page: Page, email: string) {
 async function waitForTeamSettingsPost(page: Page, action: () => Promise<void>): Promise<void> {
   const response = page.waitForResponse(
     (res) => res.url().includes('/app/team') && res.request().method() === 'POST',
+  );
+  await action();
+  await response;
+}
+
+async function waitForApprovalsPost(page: Page, action: () => Promise<void>): Promise<void> {
+  const response = page.waitForResponse(
+    (res) => res.url().includes('/app/approvals') && res.request().method() === 'POST',
   );
   await action();
   await response;
@@ -201,6 +220,7 @@ async function processTelegramVoiceSuggestion(transcript: string): Promise<strin
   );
   const job = transcribeJobs[0];
   if (!job) throw new Error('Telegram voice did not enqueue a transcribe job');
+  const scheduledSuggestionJobs: unknown[] = [];
 
   await processTranscribeJobForTests({ db }, job, {
     headObject: async () => ({ contentLength: 18 }),
@@ -208,7 +228,9 @@ async function processTelegramVoiceSuggestion(transcript: string): Promise<strin
     transcribeAudio: async () => ({ text: transcript, model: 'e2e-whisper' }),
     enqueueExtract: async () => undefined,
     enqueueEmbed: async () => undefined,
-    enqueueSuggestion: async () => undefined,
+    enqueueSuggestion: async (input) => {
+      scheduledSuggestionJobs.push(input);
+    },
   });
   await processSuggestionJobForTests(
     { db },
@@ -216,9 +238,70 @@ async function processTelegramVoiceSuggestion(transcript: string): Promise<strin
     {
       getEnv: () => ({ OPENROUTER_API_KEY: 'e2e-test-key' }) as never,
       chatStructured: async () => ({ object: { bundles: [] }, model: 'e2e' }) as never,
+      enqueueSuggestionJob: async (input) => {
+        scheduledSuggestionJobs.push(input);
+        return undefined as never;
+      },
       modelId: 'e2e-telegram-suggestion-model',
     },
   );
+  const conversationJob = scheduledSuggestionJobs.find(
+    (
+      input,
+    ): input is { scope: 'conversation_review'; conversationReviewId: string; teamId: string } =>
+      Boolean(
+        input &&
+        typeof input === 'object' &&
+        'scope' in input &&
+        input.scope === 'conversation_review' &&
+        'conversationReviewId' in input &&
+        typeof input.conversationReviewId === 'string' &&
+        'teamId' in input &&
+        typeof input.teamId === 'string',
+      ),
+  );
+  if (!conversationJob) throw new Error('Telegram voice did not schedule a conversation review');
+  await sql`
+    UPDATE conversation_reviews
+    SET quiet_until = NOW() - INTERVAL '1 second'
+    WHERE id = ${conversationJob.conversationReviewId}
+  `;
+  const taskTitle = transcript
+    .replace(/^I'll\s+/i, '')
+    .replace(/\s+next Monday$/i, '')
+    .replace(/^./, (char) => char.toUpperCase());
+  await processSuggestionJobForTests({ db }, conversationJob, {
+    getEnv: () => ({ OPENROUTER_API_KEY: 'e2e-test-key' }) as never,
+    chatStructured: async () =>
+      ({
+        object: {
+          bundles: [
+            {
+              title: `Commitment: ${taskTitle}`,
+              summary: transcript,
+              reason: 'A Telegram voice note contains a clear commitment.',
+              confidence: 'medium',
+              quote: transcript,
+              items: [
+                {
+                  operation: 'create',
+                  targetKind: 'task',
+                  title: taskTitle,
+                  proposedPayload: {
+                    canonicalName: taskTitle,
+                    ownerUserId: e2eUsers.owner.id,
+                    metadata: { extracted_from_telegram_voice_e2e: true },
+                  },
+                },
+              ],
+            },
+          ],
+        },
+        model: 'e2e-telegram-conversation-review',
+      }) as never,
+    enqueueSuggestionJob: async () => undefined as never,
+    modelId: 'e2e-telegram-conversation-review-model',
+  });
   return job.rawEventId;
 }
 
@@ -255,7 +338,8 @@ test('seeded owner can sign in, switch teams, and sign out', async ({ page }) =>
   await signIn(page, e2eUsers.owner.email);
 
   await page.goto('/app');
-  await expect(page.getByRole('heading', { name: /Home dashboard/i })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Home', exact: true })).toBeVisible();
+  await expect(page.getByText(/Home dashboard ·/)).toBeVisible();
 
   await page.getByRole('button', { name: new RegExp(`Switch team.*${e2eTeam.name}`) }).click();
   await expect(page.getByRole('heading', { name: 'Teams', exact: true })).toBeVisible();
@@ -333,7 +417,7 @@ test('agentic core capture-to-approval journey creates durable task state', asyn
   await expect(ownerPage.getByRole('heading', { name: /Commitment:/ })).toBeVisible();
   await expect(ownerPage.getByText(commitment).first()).toBeVisible();
   await expect(ownerPage.getByText(expectedTask).first()).toBeVisible();
-  await ownerPage.getByRole('button', { name: 'Accept all' }).click();
+  await ownerPage.getByRole('button', { name: 'Accept all', exact: true }).click();
   await expect(ownerPage.getByText('No pending approvals')).toBeVisible();
 
   await ownerPage.goto('/app/tasks');
@@ -358,7 +442,10 @@ test('Telegram voice approval journey creates durable task state', async ({ brow
   await expect(ownerPage.getByRole('heading', { name: /Commitment:/ })).toBeVisible();
   await expect(ownerPage.getByText(transcript).first()).toBeVisible();
   await expect(ownerPage.getByText(expectedTask).first()).toBeVisible();
-  await ownerPage.getByRole('button', { name: 'Accept all' }).click();
+  const approval = ownerPage.locator('article').filter({ hasText: expectedTask });
+  await waitForApprovalsPost(ownerPage, () =>
+    approval.getByRole('button', { name: 'Accept' }).click(),
+  );
   await expect(ownerPage.getByText('No pending approvals')).toBeVisible();
 
   await ownerPage.goto('/app/tasks');
@@ -396,27 +483,29 @@ test('agentic core object update approval updates existing object', async ({ bro
     text: sourceText,
     targetId: objectId,
     title: `Update ${objectName}`,
-    proposedPayload: { status: 'doing', stage: 'proposal' },
+    proposedPayload: { status: 'active', stage: 'proposal' },
   });
 
   await ownerPage.goto('/app/approvals');
   const approval = ownerPage.locator('article').filter({ hasText: objectName });
   await expect(approval).toBeVisible();
   await expect(approval.getByText(sourceText).first()).toBeVisible();
-  await expect(approval.getByText('status: doing')).toBeVisible();
+  await expect(approval.getByText('status: active')).toBeVisible();
   await expect(approval.getByText('stage: proposal')).toBeVisible();
-  await approval.getByRole('button', { name: 'Accept' }).click();
+  await waitForApprovalsPost(ownerPage, () =>
+    approval.getByRole('button', { name: 'Accept' }).click(),
+  );
   await expect(approval).toHaveCount(0);
 
   await ownerPage.goto(`/app/objects/${objectId}`);
   await expect(ownerPage.getByRole('heading', { name: objectName })).toBeVisible();
-  await expect(ownerPage.getByLabel('Status')).toHaveValue('doing');
+  await expect(ownerPage.getByLabel('Status')).toHaveValue('active');
   await expect(ownerPage.getByLabel('Stage')).toHaveValue('proposal');
   const recentChanges = ownerPage.locator('section').filter({
     has: ownerPage.getByRole('heading', { name: 'Recent changes' }),
   });
   await expect(
-    recentChanges.locator('li').filter({ hasText: 'status' }).filter({ hasText: 'open → doing' }),
+    recentChanges.locator('li').filter({ hasText: 'status' }).filter({ hasText: 'open → active' }),
   ).toBeVisible();
   await expect(
     recentChanges.locator('li').filter({ hasText: 'stage' }).filter({ hasText: 'proposal' }),
@@ -425,7 +514,7 @@ test('agentic core object update approval updates existing object', async ({ bro
 
   await memberPage.goto(`/app/objects/${objectId}`);
   await expect(memberPage.getByRole('heading', { name: objectName })).toBeVisible();
-  await expect(memberPage.getByLabel('Status')).toHaveValue('doing');
+  await expect(memberPage.getByLabel('Status')).toHaveValue('active');
   await expect(memberPage.getByLabel('Stage')).toHaveValue('proposal');
 
   await ownerPage.context().close();
@@ -453,11 +542,11 @@ test('chat answers timeline questions with citations and reloadable tool history
   await ownerPage.getByRole('button', { name: 'Send' }).click();
   await expect(ownerPage.getByText(`Searched timeline for "${question}" — 1 result`)).toBeVisible();
   await expect(ownerPage.getByText(chatFact).last()).toBeVisible();
-  const citation = ownerPage.getByRole('link', {
-    name: `Citation ev:${rawEventId.slice(0, 8)}, source Event.`,
-  });
-  await expect(citation).toBeVisible();
-  await expect(citation).toHaveAttribute('href', `/app/timeline#ev-${rawEventId}`);
+  await expect(
+    ownerPage.getByRole('button', {
+      name: `Open reference [ev:${rawEventId.slice(0, 8)}]`,
+    }),
+  ).toBeVisible();
 
   await expect(ownerPage).toHaveURL(/\/app\/chat\?session=/);
   const sessionUrl = ownerPage.url();
@@ -466,7 +555,11 @@ test('chat answers timeline questions with citations and reloadable tool history
   await expect(ownerPage.getByText(question).first()).toBeVisible();
   await expect(ownerPage.getByText(`Searched timeline for "${question}" — 1 result`)).toBeVisible();
   await expect(ownerPage.getByText(chatFact).last()).toBeVisible();
-  await expect(citation).toBeVisible();
+  await expect(
+    ownerPage.getByRole('button', {
+      name: `Open reference [ev:${rawEventId.slice(0, 8)}]`,
+    }),
+  ).toBeVisible();
 
   await ownerPage
     .getByPlaceholder("Ask anything about your team's timeline…")
@@ -475,7 +568,9 @@ test('chat answers timeline questions with citations and reloadable tool history
   await expect(
     ownerPage.getByText("I couldn't verify that from the accessible timeline."),
   ).toBeVisible();
-  await expect(ownerPage.getByRole('link', { name: /Citation ev:/ })).toHaveCount(1);
+  await expect(ownerPage.getByRole('button', { name: referenceButtonPattern('ev') })).toHaveCount(
+    1,
+  );
 
   await ownerPage.context().close();
 });
@@ -493,7 +588,9 @@ test('chat respects private and specific-user timeline visibility', async ({ bro
   await expect(
     memberPage.getByText("I couldn't verify that from the accessible timeline."),
   ).toBeVisible();
-  await expect(memberPage.getByRole('link', { name: /Citation ev:/ })).toHaveCount(0);
+  await expect(memberPage.getByRole('button', { name: referenceButtonPattern('ev') })).toHaveCount(
+    0,
+  );
 
   const specificQuestion = `What does the timeline say about ${e2eSeedEvents.specificForMember}?`;
   await memberPage
@@ -501,7 +598,9 @@ test('chat respects private and specific-user timeline visibility', async ({ bro
     .fill(specificQuestion);
   await memberPage.getByRole('button', { name: 'Send' }).click();
   await expect(memberPage.getByText(e2eSeedEvents.specificForMember).last()).toBeVisible();
-  await expect(memberPage.getByRole('link', { name: /Citation ev:/ })).toBeVisible();
+  await expect(
+    memberPage.getByRole('button', { name: referenceButtonPattern('ev') }),
+  ).toBeVisible();
 
   await ownerPage.goto('/app/chat');
   await ownerPage
@@ -511,7 +610,9 @@ test('chat respects private and specific-user timeline visibility', async ({ bro
   await expect(
     ownerPage.getByText("I couldn't verify that from the accessible timeline."),
   ).toBeVisible();
-  await expect(ownerPage.getByRole('link', { name: /Citation ev:/ })).toHaveCount(0);
+  await expect(ownerPage.getByRole('button', { name: referenceButtonPattern('ev') })).toHaveCount(
+    0,
+  );
 
   await ownerPage.context().close();
   await memberPage.context().close();
@@ -535,7 +636,7 @@ test('chat answers from accepted durable task calendar and object state', async 
   await processCapturedSuggestion(commitment);
   await ownerPage.goto('/app/approvals');
   await expect(ownerPage.getByText(expectedTask).first()).toBeVisible();
-  await ownerPage.getByRole('button', { name: 'Accept all' }).click();
+  await ownerPage.getByRole('button', { name: 'Accept all', exact: true }).click();
   await expect(ownerPage.getByText('No pending approvals')).toBeVisible();
 
   await ownerPage.goto('/app/objects/new');
@@ -570,7 +671,9 @@ test('chat answers from accepted durable task calendar and object state', async 
   await expect(ownerPage.getByText(expectedTask).last()).toBeVisible();
   await expect(ownerPage.getByText(objectName).last()).toBeVisible();
   await expect(ownerPage.getByText('Calendar:').last()).toBeVisible();
-  await expect(ownerPage.getByRole('link', { name: /Citation ent:/ }).first()).toBeVisible();
+  await expect(
+    ownerPage.getByRole('button', { name: referenceButtonPattern('ent') }).first(),
+  ).toBeVisible();
 
   await expect(ownerPage).toHaveURL(/\/app\/chat\?session=/);
   const sessionUrl = ownerPage.url();
@@ -723,11 +826,26 @@ test('owner can create a board and see matching objects on the board', async ({ 
   await expect(page.getByRole('heading', { name: objectName })).toBeVisible();
 
   await page.goto('/app/boards');
-  await page.getByLabel('Name').fill(boardName);
-  await page.getByLabel('Filter: type').selectOption('task');
   await page.getByRole('button', { name: 'Create board' }).click();
-  await expect(page).toHaveURL(/\/app\/boards\/[0-9a-f-]+/);
+  const boardDialog = page.getByRole('dialog', { name: 'New board' });
+  await expect(boardDialog).toBeVisible();
+  await boardDialog.getByRole('button', { name: /Task preset/ }).click();
+  await boardDialog.getByRole('textbox', { name: 'Name', exact: true }).fill(boardName);
+  const createBoardResponse = page.waitForResponse(
+    (res) => res.url().includes('/app/boards') && res.request().method() === 'POST',
+  );
+  await boardDialog.getByRole('button', { name: 'Create board' }).click();
+  await createBoardResponse;
+  await expect(page).toHaveURL(/\/app\/boards\/[0-9a-f-]+/, { timeout: 30_000 });
   await expect(page.getByText(boardName).first()).toBeVisible();
+  await page.getByRole('button', { name: 'Expand add item' }).click();
+  await page.getByPlaceholder('Search existing objects...').fill(objectName);
+  await page.getByRole('button', { name: new RegExp(objectName) }).click();
+  const addItemResponse = page.waitForResponse(
+    (res) => res.url().includes('/app/boards') && res.request().method() === 'POST',
+  );
+  await page.getByRole('button', { name: 'Add to board' }).click();
+  await addItemResponse;
   await expect(page.getByRole('link', { name: objectName })).toBeVisible();
   await page.context().close();
 });
@@ -743,7 +861,7 @@ test('calendar events can be created, edited, deleted, and visibility-scoped', a
   const privateTitle = `E2E calendar private ${stamp}`;
 
   await ownerPage.goto('/app/calendar?view=day&date=2026-06-02');
-  await expect(ownerPage.getByRole('heading', { name: 'Calendar' })).toBeVisible();
+  await expect(ownerPage.getByRole('heading', { name: 'Calendar', exact: true })).toBeVisible();
   await ownerPage.getByRole('button', { name: 'New' }).click();
   await expect(ownerPage.getByRole('dialog', { name: 'New event' })).toBeVisible();
   await ownerPage.getByLabel('Title').fill(teamTitle);
@@ -799,11 +917,11 @@ test('documents can be organized, uploaded, renamed, deleted, and visibility-sco
   await ownerPage.goto('/app/documents');
   await expect(ownerPage.getByPlaceholder('Search document chunks')).toBeVisible();
 
-  ownerPage.once('dialog', async (dialog) => {
-    expect(dialog.message()).toBe('Folder name');
-    await dialog.accept(folderName);
-  });
   await ownerPage.getByRole('button', { name: 'New folder' }).click();
+  const newFolderDialog = ownerPage.getByRole('dialog', { name: 'New folder' });
+  await expect(newFolderDialog).toBeVisible();
+  await newFolderDialog.getByLabel('Folder name').fill(folderName);
+  await newFolderDialog.getByRole('button', { name: 'Create folder' }).click();
   await expect(ownerPage.getByRole('link', { name: folderName })).toBeVisible();
 
   await ownerPage.getByRole('link', { name: folderName }).click();
@@ -818,28 +936,27 @@ test('documents can be organized, uploaded, renamed, deleted, and visibility-sco
   await ownerPage.getByRole('link', { name: literalPattern(documentName) }).click();
   await expect(ownerPage.getByText(documentName).first()).toBeVisible();
   await expect(ownerPage.getByText('Version history')).toBeVisible();
-  await expect(ownerPage.getByText('v1')).toBeVisible();
-  await expect(ownerPage.getByText('current')).toBeVisible();
-  await expect(ownerPage.getByText('text/plain')).toBeVisible();
+  await expect(ownerPage.getByText('v1', { exact: true })).toBeVisible();
+  await expect(ownerPage.getByText('current', { exact: true })).toBeVisible();
+  await expect(ownerPage.getByText('text/plain').first()).toBeVisible();
 
-  ownerPage.once('dialog', async (dialog) => {
-    expect(dialog.message()).toBe('New name');
-    await dialog.accept(renamedDocumentName);
-  });
   await ownerPage.getByRole('button', { name: 'Rename' }).click();
+  const renameDialog = ownerPage.getByRole('dialog', { name: 'Rename document' });
+  await expect(renameDialog).toBeVisible();
+  await renameDialog.getByLabel('Name').fill(renamedDocumentName);
+  await renameDialog.getByRole('button', { name: 'Rename' }).click();
   await expect(ownerPage.getByText(renamedDocumentName).first()).toBeVisible();
 
-  await ownerPage.getByRole('link', { name: literalPattern(`Back to /${folderName}`) }).click();
+  await ownerPage.getByRole('link', { name: 'Back' }).click();
   await expect(
     ownerPage.getByRole('link', { name: literalPattern(renamedDocumentName) }),
   ).toBeVisible();
 
   await ownerPage.getByRole('link', { name: literalPattern(renamedDocumentName) }).click();
-  ownerPage.once('dialog', async (dialog) => {
-    expect(dialog.message()).toContain('Delete this document?');
-    await dialog.accept();
-  });
   await ownerPage.getByRole('button', { name: 'Delete' }).click();
+  const deleteDialog = ownerPage.getByRole('dialog', { name: 'Delete document?' });
+  await expect(deleteDialog).toBeVisible();
+  await deleteDialog.getByRole('button', { name: 'Delete document' }).click();
   await expect(ownerPage).toHaveURL(/\/app\/documents\?folder=/);
   await expect(ownerPage.getByText(renamedDocumentName)).toHaveCount(0);
 

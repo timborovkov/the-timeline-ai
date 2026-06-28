@@ -29,6 +29,9 @@ const fakes = vi.hoisted(() => {
     adminResetTransientSyncFailures: vi.fn(),
     adminLoadIntegrationSyncPause: vi.fn(),
     adminRecordIntegrationSyncPause: vi.fn(),
+    adminLoadProviderBudgetPause: vi.fn(),
+    adminRecordProviderBudgetPause: vi.fn(),
+    adminReconcileExpiringWebhookSubscriptions: vi.fn(),
     adminResolveConnectionAttention: vi.fn(),
     adminRecordTransientSyncFailure: vi.fn(),
     getProvider: vi.fn(),
@@ -61,6 +64,9 @@ vi.mock('@timeline/shared', async (importOriginal) => {
       adminResetTransientSyncFailures: fakes.adminResetTransientSyncFailures,
       adminLoadIntegrationSyncPause: fakes.adminLoadIntegrationSyncPause,
       adminRecordIntegrationSyncPause: fakes.adminRecordIntegrationSyncPause,
+      adminLoadProviderBudgetPause: fakes.adminLoadProviderBudgetPause,
+      adminRecordProviderBudgetPause: fakes.adminRecordProviderBudgetPause,
+      adminReconcileExpiringWebhookSubscriptions: fakes.adminReconcileExpiringWebhookSubscriptions,
       adminResolveConnectionAttention: fakes.adminResolveConnectionAttention,
       adminRecordTransientSyncFailure: fakes.adminRecordTransientSyncFailure,
       getProvider: fakes.getProvider,
@@ -105,6 +111,14 @@ beforeEach(() => {
   fakes.adminResetTransientSyncFailures.mockResolvedValue(undefined);
   fakes.adminLoadIntegrationSyncPause.mockResolvedValue(null);
   fakes.adminRecordIntegrationSyncPause.mockResolvedValue(undefined);
+  fakes.adminLoadProviderBudgetPause.mockResolvedValue(null);
+  fakes.adminRecordProviderBudgetPause.mockResolvedValue(undefined);
+  fakes.adminReconcileExpiringWebhookSubscriptions.mockResolvedValue({
+    checked: 0,
+    renewed: 0,
+    degraded: 0,
+    skipped: 0,
+  });
   fakes.adminResolveConnectionAttention.mockResolvedValue(undefined);
   fakes.adminRecordTransientSyncFailure.mockResolvedValue({
     count: 1,
@@ -115,7 +129,18 @@ beforeEach(() => {
   fakes.enqueueIntegrationSyncJob.mockResolvedValue(undefined);
 });
 
-describe('handleTick GitHub background cadence', () => {
+describe('handleTick provider reconciliation cadence', () => {
+  it('sweeps expiring webhook subscriptions before scheduling reconciliation work', async () => {
+    fakes.adminListEnabledIntegrations.mockResolvedValueOnce([]);
+
+    await handleTick({} as never);
+
+    expect(fakes.adminReconcileExpiringWebhookSubscriptions).toHaveBeenCalledWith(
+      expect.anything(),
+    );
+    expect(fakes.enqueueIntegrationSyncJob).not.toHaveBeenCalled();
+  });
+
   it('does not enqueue paused integrations from the background tick', async () => {
     const retryAt = new Date(Date.now() + 60_000);
     fakes.adminListEnabledIntegrations.mockResolvedValueOnce([integration]);
@@ -129,10 +154,15 @@ describe('handleTick GitHub background cadence', () => {
     expect(fakes.enqueueIntegrationSyncJob).not.toHaveBeenCalled();
   });
 
-  it('throttles recently synced GitHub integrations while leaving other providers alone', async () => {
+  it('throttles recently synced integrations by provider reconciliation policy', async () => {
     fakes.adminListEnabledIntegrations.mockResolvedValueOnce([
       { ...integration, provider: 'github', lastSyncedAt: new Date(Date.now() - 10 * 60 * 1000) },
-      { ...integration, id: '55555555-5555-4555-8555-555555555555', provider: 'linear' },
+      {
+        ...integration,
+        id: '55555555-5555-4555-8555-555555555555',
+        provider: 'google_drive',
+        lastSyncedAt: new Date(Date.now() - 16 * 60 * 1000),
+      },
     ]);
     fakes.adminLoadIntegrationSyncPause.mockResolvedValue(null);
 
@@ -143,13 +173,79 @@ describe('handleTick GitHub background cadence', () => {
       kind: 'incremental',
       integrationId: '55555555-5555-4555-8555-555555555555',
       teamId: TEAM_ID,
-      triggeredBy: 'tick',
+      triggeredBy: 'reconcile',
     });
   });
 
-  it('enqueues GitHub again after the slower background interval elapses', async () => {
+  it('does not enqueue integrations while their provider account budget is paused', async () => {
+    const retryAt = new Date(Date.now() + 60_000);
     fakes.adminListEnabledIntegrations.mockResolvedValueOnce([
-      { ...integration, lastSyncedAt: new Date(Date.now() - 61 * 60 * 1000) },
+      {
+        ...integration,
+        provider: 'monday',
+        externalAccountId: 'monday-account-1',
+      },
+    ]);
+    fakes.adminLoadProviderBudgetPause.mockResolvedValueOnce({
+      retryAt,
+      reason: 'daily_limit_exceeded',
+      scope: 'daily',
+    });
+
+    await handleTick({} as never);
+
+    expect(fakes.adminLoadProviderBudgetPause).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        provider: 'monday',
+        appKey: 'monday',
+        externalAccountId: 'monday-account-1',
+      }),
+    );
+    expect(fakes.enqueueIntegrationSyncJob).not.toHaveBeenCalled();
+  });
+
+  it('checks provider-specific budget scopes before enqueueing reconciliation', async () => {
+    const retryAt = new Date(Date.now() + 60_000);
+    fakes.adminListEnabledIntegrations.mockResolvedValueOnce([
+      {
+        ...integration,
+        provider: 'slack',
+        externalAccountId: 'T123',
+      },
+    ]);
+    fakes.adminLoadProviderBudgetPause.mockResolvedValueOnce(null).mockResolvedValueOnce({
+      retryAt,
+      reason: 'slack_rate_limited',
+      scope: 'web_api',
+    });
+
+    await handleTick({} as never);
+
+    expect(fakes.adminLoadProviderBudgetPause).toHaveBeenNthCalledWith(
+      1,
+      expect.anything(),
+      expect.objectContaining({
+        provider: 'slack',
+        externalAccountId: 'T123',
+        scope: 'requests',
+      }),
+    );
+    expect(fakes.adminLoadProviderBudgetPause).toHaveBeenNthCalledWith(
+      2,
+      expect.anything(),
+      expect.objectContaining({
+        provider: 'slack',
+        externalAccountId: 'T123',
+        scope: 'web_api',
+      }),
+    );
+    expect(fakes.enqueueIntegrationSyncJob).not.toHaveBeenCalled();
+  });
+
+  it('enqueues GitHub again after the reconciliation interval elapses', async () => {
+    fakes.adminListEnabledIntegrations.mockResolvedValueOnce([
+      { ...integration, lastSyncedAt: new Date(Date.now() - 7 * 60 * 60 * 1000) },
     ]);
     fakes.adminLoadIntegrationSyncPause.mockResolvedValue(null);
 
@@ -159,7 +255,7 @@ describe('handleTick GitHub background cadence', () => {
       kind: 'incremental',
       integrationId: INTEGRATION_ID,
       teamId: TEAM_ID,
-      triggeredBy: 'tick',
+      triggeredBy: 'reconcile',
     });
   });
 });
@@ -196,6 +292,119 @@ describe('runOneIntegration attention classification', () => {
       summary: 'No tokens — reconnect required',
     });
     expect(fakes.incrementalSync).not.toHaveBeenCalled();
+  });
+
+  it('narrows targeted GitHub jobs to the changed repo when an org source is selected', async () => {
+    fakes.adminListSelections.mockResolvedValueOnce([{ kind: 'github.org', externalId: 'acme' }]);
+
+    await runOneIntegration({} as never, INTEGRATION_ID, 'targeted', {
+      kind: 'targeted',
+      integrationId: INTEGRATION_ID,
+      teamId: TEAM_ID,
+      triggeredBy: 'webhook',
+      resourceType: 'github.repo',
+      externalId: 'acme/app',
+      reason: 'github_repo_webhook',
+    });
+
+    expect(fakes.incrementalSync).toHaveBeenCalledWith(
+      expect.objectContaining({
+        selections: [{ kind: 'github.repo', externalId: 'acme/app' }],
+      }),
+    );
+  });
+
+  it('passes targeted Monday item jobs through the selected parent board', async () => {
+    fakes.adminLoadIntegration.mockResolvedValueOnce({ ...integration, provider: 'monday' });
+    fakes.adminListSelections.mockResolvedValueOnce([
+      { kind: 'monday.board', externalId: 'board-1' },
+    ]);
+
+    await runOneIntegration({} as never, INTEGRATION_ID, 'targeted', {
+      kind: 'targeted',
+      integrationId: INTEGRATION_ID,
+      teamId: TEAM_ID,
+      triggeredBy: 'webhook',
+      resourceType: 'monday.item',
+      externalId: 'board-1:item-1',
+      surface: 'column.changed',
+      reason: 'monday_item_webhook',
+    });
+
+    expect(fakes.incrementalSync).toHaveBeenCalledWith(
+      expect.objectContaining({
+        selections: [{ kind: 'monday.board', externalId: 'board-1' }],
+        target: {
+          resourceType: 'monday.item',
+          externalId: 'board-1:item-1',
+          surface: 'column.changed',
+          reason: 'monday_item_webhook',
+          triggeredBy: 'webhook',
+        },
+      }),
+    );
+  });
+
+  it('keeps legacy Monday connections syncing while surfacing reconnect for missing scopes', async () => {
+    fakes.adminLoadIntegration.mockResolvedValueOnce({
+      ...integration,
+      provider: 'monday',
+      scopes: ['boards:read', 'users:read', 'updates:read', 'docs:read'],
+    });
+
+    await runOneIntegration({} as never, INTEGRATION_ID, 'incremental');
+
+    expect(fakes.incrementalSync).toHaveBeenCalled();
+    expect(fakes.adminRecordAudit).toHaveBeenCalledWith(
+      expect.anything(),
+      TEAM_ID,
+      'sync_degraded:missing_provider_scopes',
+      {
+        provider: 'monday',
+        missingScopes: ['account:read', 'webhooks:write'],
+      },
+      { integrationId: INTEGRATION_ID },
+    );
+    expect(fakes.adminRecordConnectionAttention).toHaveBeenCalledWith(expect.anything(), TEAM_ID, {
+      providerConnectionId: CONNECTION_ID,
+      integrationId: INTEGRATION_ID,
+      category: 'needs_reconnect',
+      summary:
+        'monday connection is missing required OAuth scopes (account:read, webhooks:write); reconnect to enable webhook provisioning and account-scoped provider budgets.',
+    });
+    expect(fakes.adminResolveConnectionAttention).toHaveBeenCalledWith(expect.anything(), TEAM_ID, {
+      providerConnectionId: CONNECTION_ID,
+      integrationId: INTEGRATION_ID,
+      categories: ['sync_error'],
+    });
+  });
+
+  it('skips targeted syncs for resources outside the selected source set', async () => {
+    fakes.adminListSelections.mockResolvedValueOnce([{ kind: 'github.org', externalId: 'acme' }]);
+
+    await runOneIntegration({} as never, INTEGRATION_ID, 'targeted', {
+      kind: 'targeted',
+      integrationId: INTEGRATION_ID,
+      teamId: TEAM_ID,
+      triggeredBy: 'webhook',
+      resourceType: 'github.repo',
+      externalId: 'other/app',
+      reason: 'github_repo_webhook',
+    });
+
+    expect(fakes.incrementalSync).not.toHaveBeenCalled();
+    expect(fakes.adminRecordAudit).toHaveBeenCalledWith(
+      expect.anything(),
+      TEAM_ID,
+      'sync_skipped:targeted',
+      expect.objectContaining({
+        provider: 'github',
+        resourceType: 'github.repo',
+        externalId: 'other/app',
+        reason: 'resource_not_selected',
+      }),
+      { integrationId: INTEGRATION_ID },
+    );
   });
 
   it('classifies provider auth and access failures as reconnect-needed attention', async () => {
@@ -369,6 +578,156 @@ describe('runOneIntegration attention classification', () => {
     );
   });
 
+  it('records Slack Web API rate limits as provider budget pauses', async () => {
+    fakes.adminLoadIntegration.mockResolvedValueOnce({
+      ...integration,
+      provider: 'slack',
+      externalAccountId: 'T123',
+    });
+    const retryAt = new Date('2026-06-28T01:02:00.000Z');
+    const err = Object.assign(
+      new Error(
+        'slack_rate_limited: Slack Web API conversations.history limited; retry after 2026-06-28T01:02:00.000Z',
+      ),
+      {
+        code: 'provider_rate_limited',
+        provider: 'slack',
+        retryAt,
+        retryAfterSeconds: 120,
+        scope: 'web_api',
+        reason: 'slack_rate_limited',
+      },
+    );
+    fakes.incrementalSync.mockRejectedValueOnce(err);
+
+    await runOneIntegration({} as never, INTEGRATION_ID, 'incremental');
+
+    expect(fakes.adminRecordIntegrationSyncPause).toHaveBeenCalledWith(
+      expect.anything(),
+      INTEGRATION_ID,
+      expect.objectContaining({
+        retryAt,
+        reason: 'slack_rate_limited',
+      }),
+    );
+    expect(fakes.adminRecordProviderBudgetPause).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        provider: 'slack',
+        externalAccountId: 'T123',
+        scope: 'web_api',
+      }),
+      expect.objectContaining({
+        pausedUntil: retryAt,
+        reason: 'slack_rate_limited',
+      }),
+    );
+    expect(fakes.adminRecordTransientSyncFailure).not.toHaveBeenCalled();
+  });
+
+  it('records GitHub installation rate limits against the installation budget owner', async () => {
+    const retryAt = new Date('2026-06-25T03:00:00.000Z');
+    const err = Object.assign(
+      new Error(
+        'github_rate_limited: GitHub API rate limit reached; retry after 2026-06-25T03:00:00.000Z',
+      ),
+      {
+        code: 'github_rate_limited',
+        retryAt,
+        rateLimitKind: 'primary',
+        externalAccountId: 'installation:123',
+      },
+    );
+    fakes.incrementalSync.mockRejectedValueOnce(err);
+
+    await runOneIntegration({} as never, INTEGRATION_ID, 'incremental');
+
+    expect(fakes.adminRecordProviderBudgetPause).toHaveBeenCalledWith(
+      expect.anything(),
+      {
+        provider: 'github',
+        appKey: 'github',
+        externalAccountId: 'installation:123',
+        scope: 'primary',
+      },
+      {
+        pausedUntil: retryAt,
+        reason: 'github_rate_limited',
+        resetAt: retryAt,
+      },
+    );
+  });
+
+  it('records provider-neutral rate limits as a paused sync without attention', async () => {
+    const retryAt = new Date('2026-06-25T02:02:00.000Z');
+    const err = Object.assign(new Error('monday_rate_limited: Monday API DAILY_LIMIT_EXCEEDED'), {
+      provider: 'monday',
+      retryAt,
+      retryAfterSeconds: 120,
+      scope: 'daily',
+      reason: 'daily_limit_exceeded',
+    });
+    fakes.adminLoadIntegration.mockResolvedValueOnce({
+      ...integration,
+      provider: 'monday',
+      externalAccountId: 'monday-account-1',
+      scopes: [
+        'boards:read',
+        'users:read',
+        'updates:read',
+        'docs:read',
+        'account:read',
+        'webhooks:write',
+      ],
+    });
+    fakes.incrementalSync.mockRejectedValueOnce(err);
+
+    await runOneIntegration({} as never, INTEGRATION_ID, 'incremental');
+
+    expect(fakes.adminRecordError).toHaveBeenCalledWith(
+      expect.anything(),
+      INTEGRATION_ID,
+      err.message,
+    );
+    expect(fakes.adminRecordIntegrationSyncPause).toHaveBeenCalledWith(
+      expect.anything(),
+      INTEGRATION_ID,
+      {
+        retryAt,
+        reason: 'daily_limit_exceeded',
+        error: err.message,
+      },
+    );
+    expect(fakes.adminRecordProviderBudgetPause).toHaveBeenCalledWith(
+      expect.anything(),
+      {
+        provider: 'monday',
+        appKey: 'monday',
+        externalAccountId: 'monday-account-1',
+        scope: 'daily',
+      },
+      {
+        pausedUntil: retryAt,
+        reason: 'daily_limit_exceeded',
+        resetAt: retryAt,
+      },
+    );
+    expect(fakes.adminRecordConnectionAttention).not.toHaveBeenCalled();
+    expect(fakes.adminRecordTransientSyncFailure).not.toHaveBeenCalled();
+    expect(fakes.adminRecordAudit).toHaveBeenCalledWith(
+      expect.anything(),
+      TEAM_ID,
+      'sync_paused:incremental',
+      {
+        provider: 'monday',
+        reason: 'daily_limit_exceeded',
+        scope: 'daily',
+        retryAt: retryAt.toISOString(),
+      },
+      { integrationId: INTEGRATION_ID },
+    );
+  });
+
   it('skips provider work while a recorded sync pause is active', async () => {
     const retryAt = new Date(Date.now() + 60_000);
     fakes.adminLoadIntegrationSyncPause.mockResolvedValueOnce({
@@ -386,6 +745,79 @@ describe('runOneIntegration attention classification', () => {
       {
         provider: 'github',
         reason: 'github_rate_limited',
+        retryAt: retryAt.toISOString(),
+      },
+      { integrationId: INTEGRATION_ID },
+    );
+  });
+
+  it('skips provider work while a provider account budget pause is active', async () => {
+    const retryAt = new Date(Date.now() + 60_000);
+    fakes.adminLoadIntegration.mockResolvedValueOnce({
+      ...integration,
+      provider: 'monday',
+      externalAccountId: 'monday-account-1',
+    });
+    fakes.adminLoadProviderBudgetPause.mockResolvedValueOnce({
+      retryAt,
+      reason: 'daily_limit_exceeded',
+      scope: 'daily',
+    });
+
+    await runOneIntegration({} as never, INTEGRATION_ID, 'incremental');
+
+    expect(fakes.incrementalSync).not.toHaveBeenCalled();
+    expect(fakes.adminRecordAudit).toHaveBeenCalledWith(
+      expect.anything(),
+      TEAM_ID,
+      'sync_skipped:incremental',
+      {
+        provider: 'monday',
+        reason: 'daily_limit_exceeded',
+        scope: 'daily',
+        retryAt: retryAt.toISOString(),
+      },
+      { integrationId: INTEGRATION_ID },
+    );
+  });
+
+  it('skips GitHub provider work while an installation budget pause is active', async () => {
+    const retryAt = new Date(Date.now() + 60_000);
+    fakes.adminLoadIntegration.mockResolvedValueOnce({
+      ...integration,
+      externalAccountId: 'github-user-42',
+    });
+    fakes.adminDecryptIntegrationTokens.mockResolvedValueOnce({
+      access_token: 'ghu_user',
+      github_app_installations: [{ id: '123', account_login: 'acme' }],
+    });
+    fakes.adminLoadProviderBudgetPause.mockImplementation(
+      (_db: unknown, key: { externalAccountId?: string }) =>
+        Promise.resolve(
+          key.externalAccountId === 'installation:123'
+            ? { retryAt, reason: 'github_rate_limited', scope: 'primary' }
+            : null,
+        ),
+    );
+
+    await runOneIntegration({} as never, INTEGRATION_ID, 'incremental');
+
+    expect(fakes.incrementalSync).not.toHaveBeenCalled();
+    expect(fakes.adminLoadProviderBudgetPause).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        provider: 'github',
+        externalAccountId: 'installation:123',
+      }),
+    );
+    expect(fakes.adminRecordAudit).toHaveBeenCalledWith(
+      expect.anything(),
+      TEAM_ID,
+      'sync_skipped:incremental',
+      {
+        provider: 'github',
+        reason: 'github_rate_limited',
+        scope: 'primary',
         retryAt: retryAt.toISOString(),
       },
       { integrationId: INTEGRATION_ID },

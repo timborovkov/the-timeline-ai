@@ -1,3 +1,4 @@
+import * as integrationsLib from '@timeline/shared/integrations';
 import { withTeam } from '@timeline/shared/team-scope';
 import { NextResponse } from 'next/server';
 
@@ -7,6 +8,34 @@ import { db } from '@/lib/db';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+
+type TeamScope = ReturnType<typeof withTeam>;
+
+async function deprovisionWebhooksBestEffort(
+  scope: TeamScope,
+  integration: { id: string; provider: string },
+): Promise<void> {
+  try {
+    await integrationsLib.adminDeprovisionIntegrationWebhookSubscriptions(db, integration.id);
+  } catch (err) {
+    await scope.integrations.recordAudit(
+      'webhook_deprovision_failed',
+      {
+        provider: integration.provider,
+        error: err instanceof Error ? err.message.slice(0, 500) : String(err).slice(0, 500),
+      },
+      integration.id,
+    );
+  }
+}
+
+async function deleteIntegrationAndRecordDisconnect(
+  scope: TeamScope,
+  integration: { id: string; provider: string },
+): Promise<void> {
+  await scope.integrations.deleteIntegration(integration.id);
+  await scope.integrations.recordAudit('disconnect', { provider: integration.provider }, null);
+}
 
 export async function POST(
   req: Request,
@@ -26,7 +55,7 @@ export async function POST(
   }
   const integration = await scope.integrations.getIntegration(id);
   if (!integration) return NextResponse.json({ error: 'not_found' }, { status: 404 });
-  await scope.integrations.deleteIntegration(id);
-  await scope.integrations.recordAudit('disconnect', { provider: integration.provider }, null);
+  await deprovisionWebhooksBestEffort(scope, integration);
+  await deleteIntegrationAndRecordDisconnect(scope, integration);
   return NextResponse.json({ ok: true });
 }

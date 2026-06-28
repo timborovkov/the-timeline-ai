@@ -130,6 +130,9 @@ describe('/api/jobs/dashboard', () => {
     expect(serializedWheres).toContain('extraction_skipped_at');
     expect(serializedWheres).toContain('embedding_skipped_at');
     expect(serializedWheres).toContain('visibility');
+    expect(serializedWheres).toContain('provider_rate_limited');
+    expect(serializedWheres).toContain('daily_limit_exceeded');
+    expect(serializedWheres).toContain('retry after');
   });
 
   it('retries document, transcription, extraction, and embedding jobs through queue wrappers', async () => {

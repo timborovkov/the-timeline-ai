@@ -634,11 +634,19 @@ export function TeamSourcesUi({
             : 'Activate sources';
         return (
           <section key={connectionId} className="rounded-md border border-border bg-surface">
-            <div className="flex flex-wrap items-center gap-2 border-b border-border px-3 py-2">
-              <span className="text-sm font-medium">{providerLabel(connection.provider)}</span>
-              <span className="text-sm text-fg-muted">{connection.displayName}</span>
-              <span className="text-xs text-fg-muted">Owner: {connection.ownerLabel}</span>
-              <span className="ml-auto text-xs text-fg-muted">
+            <div className="grid gap-2 border-b border-border px-3 py-2 sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:items-center">
+              <div className="min-w-0">
+                <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
+                  <span className="text-sm font-medium">{providerLabel(connection.provider)}</span>
+                  <span className="min-w-0 truncate text-sm text-fg-muted">
+                    {connection.displayName}
+                  </span>
+                </div>
+                <p className="mt-0.5 truncate text-xs text-fg-muted">
+                  Owner: {connection.ownerLabel}
+                </p>
+              </div>
+              <span className="text-xs text-fg-muted sm:text-right">
                 {selected.size === 0
                   ? 'Available, no sources syncing'
                   : `${String(selected.size)} active`}
@@ -646,6 +654,7 @@ export function TeamSourcesUi({
               {isAdmin ? (
                 <Button
                   size="sm"
+                  className="w-full sm:w-auto"
                   disabled={busy !== null}
                   onClick={() => void activate(connectionId)}
                 >

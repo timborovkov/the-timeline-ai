@@ -169,6 +169,7 @@ pnpm test:eval            # fast deterministic agent and retrieval evals
 pnpm test:dist-imports    # build db/shared and import compiled runtime modules with Node
 pnpm e2e                  # Playwright core journey tests
 pnpm run doctor           # React Doctor scan for React/Next health regressions
+pnpm canary:integrations  # secret-safe live provider/LLM credential canary
 pnpm dev:seed             # seed local demo data with disabled fake integrations
 pnpm --filter @timeline/worker timeline-moment-presentations -- \
   --team=<uuid> [--since=YYYY-MM-DD] [--until=YYYY-MM-DD] \
@@ -208,13 +209,16 @@ boundaries.
 - [`docs/work-system-plan.md`](./docs/work-system-plan.md) — priority plan for
   turning Work into the daily operating surface.
 - [`docs/integration-ingest-plan.md`](./docs/integration-ingest-plan.md) —
-  first-party ingestion implementation plan for work systems, including the
-  implemented native providers, generic ingest webhook semantics, and future
-  waves.
+  first-party ingestion implementation plan for work systems, including native
+  provider posture, generic ingest webhook semantics, webhook/budget behavior,
+  implemented providers, and future waves.
 - [`docs/timeline-moments-redesign-plan.md`](./docs/timeline-moments-redesign-plan.md) —
   full plan for turning the timeline from a raw activity log into bundled,
   evidence-backed work moments shared by the UI, chat agents, and outbound MCP
   tools.
+- [`docs/native-provider-template.md`](./docs/native-provider-template.md) —
+  implementation checklist and skeleton for adding native providers on the
+  shared policy, webhook, budget, and reconciliation path.
 - [`docs/calendar.html`](./docs/calendar.html) — approval-backed calendar
   suggestions, recurrence, occurrence exceptions, and tentative slots.
 - [`docs/setup/local.html`](./docs/setup/local.html) — complete local setup.

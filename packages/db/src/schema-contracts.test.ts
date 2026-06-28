@@ -217,6 +217,173 @@ describe('database schema contracts', () => {
     }
   });
 
+  it('creates webhook gateway tables with delivery and target dedupe constraints', async () => {
+    await pg.exec(`
+      INSERT INTO provider_connections (
+        id,
+        owner_user_id,
+        provider,
+        display_name,
+        external_account_id,
+        auth_secret_ciphertext,
+        auth_secret_iv,
+        auth_secret_tag
+      )
+      VALUES (
+        '11111111-1111-4111-8111-111111111120',
+        '${OWNER_ID}',
+        'linear',
+        'Linear — Core DB',
+        'org-1',
+        decode('00', 'hex'),
+        decode('01', 'hex'),
+        decode('02', 'hex')
+      );
+      INSERT INTO integrations (
+        id,
+        team_id,
+        connected_by_user_id,
+        provider_connection_id,
+        provider,
+        display_name,
+        external_account_id
+      )
+      VALUES (
+        '11111111-1111-4111-8111-111111111121',
+        '${TEAM_ID}',
+        '${OWNER_ID}',
+        '11111111-1111-4111-8111-111111111120',
+        'linear',
+        'Linear — Core DB',
+        'org-1'
+      );
+      INSERT INTO integration_webhook_deliveries (
+        id,
+        provider,
+        external_delivery_id,
+        external_account_id,
+        resource_kind,
+        external_resource_id,
+        event_type,
+        payload,
+        dedup_key
+      )
+      VALUES (
+        '11111111-1111-4111-8111-111111111122',
+        'linear',
+        'delivery-1',
+        'org-1',
+        'linear.team',
+        'team-linear-1',
+        'Issue',
+        '{"type":"Issue"}'::jsonb,
+        'linear:delivery:delivery-1'
+      );
+      INSERT INTO integration_webhook_delivery_targets (
+        delivery_id,
+        team_id,
+        integration_id,
+        provider_connection_id
+      )
+      VALUES (
+        '11111111-1111-4111-8111-111111111122',
+        '${TEAM_ID}',
+        '11111111-1111-4111-8111-111111111121',
+        '11111111-1111-4111-8111-111111111120'
+      );
+      INSERT INTO integration_webhook_subscriptions (
+        integration_id,
+        provider_connection_id,
+        provider,
+        external_subscription_id,
+        resource_kind,
+        external_resource_id,
+        event_type
+      )
+      VALUES (
+        '11111111-1111-4111-8111-111111111121',
+        '11111111-1111-4111-8111-111111111120',
+        'linear',
+        'sub-1',
+        'linear.team',
+        'team-linear-1',
+        'Issue'
+      );
+      INSERT INTO integration_provider_budgets (
+        provider,
+        app_key,
+        external_account_id,
+        scope,
+        remaining,
+        "limit"
+      )
+      VALUES ('linear', 'linear-client', 'org-1', 'requests', 99, 100);
+      INSERT INTO connection_attention (
+        team_id,
+        provider_connection_id,
+        integration_id,
+        category,
+        summary
+      )
+      VALUES (
+        '${TEAM_ID}',
+        '11111111-1111-4111-8111-111111111120',
+        '11111111-1111-4111-8111-111111111121',
+        'webhook_degraded',
+        'Webhook provisioning failed, reconciliation remains active.'
+      );
+    `);
+
+    await expect(
+      pg.exec(`
+        INSERT INTO integration_webhook_deliveries (
+          provider,
+          event_type,
+          payload,
+          dedup_key
+        )
+        VALUES ('linear', 'Issue', '{}'::jsonb, 'linear:delivery:delivery-1')
+      `),
+    ).rejects.toThrow();
+
+    await expect(
+      pg.exec(`
+        INSERT INTO integration_webhook_delivery_targets (
+          delivery_id,
+          team_id,
+          integration_id
+        )
+        VALUES (
+          '11111111-1111-4111-8111-111111111122',
+          '${TEAM_ID}',
+          '11111111-1111-4111-8111-111111111121'
+        )
+      `),
+    ).rejects.toThrow();
+
+    const rows = await pg.query<{
+      delivery_count: number;
+      target_count: number;
+      subscription_count: number;
+      budget_count: number;
+      attention_count: number;
+    }>(`
+      SELECT
+        (SELECT count(*)::int FROM integration_webhook_deliveries) AS delivery_count,
+        (SELECT count(*)::int FROM integration_webhook_delivery_targets) AS target_count,
+        (SELECT count(*)::int FROM integration_webhook_subscriptions) AS subscription_count,
+        (SELECT count(*)::int FROM integration_provider_budgets) AS budget_count,
+        (SELECT count(*)::int FROM connection_attention WHERE category = 'webhook_degraded') AS attention_count
+    `);
+    expect(rows.rows[0]).toEqual({
+      delivery_count: 1,
+      target_count: 1,
+      subscription_count: 1,
+      budget_count: 1,
+      attention_count: 1,
+    });
+  });
+
   it('backfills existing teams to the Helsinki workspace timezone default', async () => {
     const migrationPg = new PGlite();
     const explicitTeamId = '33333333-3333-4333-8333-333333333333';

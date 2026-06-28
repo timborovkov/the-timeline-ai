@@ -247,6 +247,7 @@ describe('TasksPage', () => {
   });
 
   it('adds a selected older task to the initial board window', async () => {
+    fakes.getObject.mockResolvedValue(taskRow({ id: SELECTED_TASK_ID }));
     fakes.listObjects.mockImplementation((filter: Record<string, unknown>) =>
       filter.id === SELECTED_TASK_ID
         ? Promise.resolve([taskRow({ id: SELECTED_TASK_ID, canonicalName: 'Selected older task' })])
@@ -265,7 +266,7 @@ describe('TasksPage', () => {
       id: SELECTED_TASK_ID,
       limit: 1,
     });
-    expect(fakes.getObject).not.toHaveBeenCalled();
+    expect(fakes.getObject).toHaveBeenCalledWith(SELECTED_TASK_ID);
   });
 
   it('does not prepend a selected task that no longer matches active filters', async () => {
