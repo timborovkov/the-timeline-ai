@@ -205,11 +205,9 @@ boundaries.
   implementation plan for grounded generated object briefs across object pages,
   search, embeddings, and chat.
 - [`docs/integration-ingest-plan.md`](./docs/integration-ingest-plan.md) —
-  first-party ingestion implementation plan for work systems, including the
-  implemented native providers and future waves.
-- [`docs/integration-webhook-transition-plan.md`](./docs/integration-webhook-transition-plan.md) —
-  migration plan for moving polling-heavy native ingestion from poller-led sync
-  to a webhook-first, provider-budget-aware ingestion system.
+  first-party ingestion implementation plan for work systems, including native
+  provider posture, webhook/budget behavior, implemented providers, and future
+  waves.
 - [`docs/native-provider-template.md`](./docs/native-provider-template.md) —
   implementation checklist and skeleton for adding native providers on the
   shared policy, webhook, budget, and reconciliation path.

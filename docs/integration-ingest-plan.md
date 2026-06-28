@@ -36,11 +36,8 @@ this list so the catalog cannot silently drop a requested provider.
 
 Priority 1 native integrations shipped first: Monday.com, full Slack workspace
 ingestion, and Sentry. Keep them on the same provider-connection, source
-selection, cursor, and integration-worker foundation as the existing adapters.
-
-For the plan to move polling-heavy native ingestion from poller-led sync to a
-webhook-first, provider-budget-aware model, see
-[`integration-webhook-transition-plan.md`](./integration-webhook-transition-plan.md).
+selection, cursor, provider-budget, webhook-delivery, and integration-worker
+foundation as the existing adapters.
 
 ## Product Bar
 
@@ -87,6 +84,36 @@ webhook, budget, test, canary, and documentation expectations stay explicit:
    signing-secret, or API-access probe.
 
 This is the difference between adding many integrations and maintaining them.
+
+## Webhook and Budget Posture
+
+Native ingestion should be webhook-first where providers send useful signed
+events, wake-up-first where webhooks only announce that state changed, and
+reconciliation-first where polling is still the right v1 product posture.
+Webhooks are never webhook-only: every provider keeps a slow reconciliation or
+manual backfill path for missed, delayed, redacted, or incomplete provider
+events.
+
+Provider APIs are shared scarce resources. Rate limits and quota cooldowns
+should become provider budget pauses and calm integration status states, not
+generic red sync failures. Manual sync, background reconciliation, and webhook
+delivery should all check the same pause state before spending provider calls.
+
+Current provider posture:
+
+| Provider | V1 posture | Notes |
+| --- | --- | --- |
+| GitHub | Webhook-first with slow reconciliation. | Signed repo/org webhook ingress, durable delivery targets, repo-limited sync, GitHub App installation-token hydration when configured, installation-keyed budget pauses, and conditional REST reconciliation for repo surfaces. |
+| Monday.com | Webhook-first for selected board activity; reconciliation for WorkDocs and legacy grants. | Token-protected challenge/ingress, board webhook provisioning, lightweight board events, item-level hydration, account-keyed budgets for new grants, reconnect/degraded handling for legacy grants, and daily WorkDocs reconciliation. |
+| Sentry | Webhook-first for issue/release activity with daily reconciliation. | Signed issue-alert, issue lifecycle, and release ingress, installation/project routing, direct event normalization, and project-limited sync. |
+| Linear | Webhook-first with reconciliation fallback. | Signed ingress through durable delivery targets and `webhook-delivery`, direct event writes, and catch-up sync parity. |
+| Google Drive | Wake-up-first. | Channel wake-ups persist delivery targets and enqueue bounded sync; changes-cursor reconciliation remains authoritative. |
+| Slack native workspace | Reconciliation-first for v1. | Selected-channel reconciliation and Slack Web API budget pauses. Conversational `/api/slack/events` remains separate. |
+
+Production cutover for webhook-first providers requires deterministic tests,
+configured provider secrets/webhook URLs, and a secret-safe live canary where
+the provider exposes one. Broad polling should only be reduced after that proof
+exists.
 
 ## Provider Waves
 
