@@ -1,8 +1,8 @@
 'use client';
 
-import { Filter, Search, X } from 'lucide-react';
+import { ChevronDown, Filter, Search, X } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { useId, useMemo } from 'react';
+import { useId, useMemo, useState } from 'react';
 
 import type { MemberFilterOption, WorkFilterState } from '@/lib/work-filters';
 import type * as boards from '@timeline/shared/boards';
@@ -28,6 +28,11 @@ interface Props {
   className?: string;
 }
 
+type DateRangeToggle =
+  | { state: 'auto' }
+  | { state: 'open' }
+  | { state: 'closed'; filters: WorkFilterState };
+
 const EMPTY_PARAMS: Record<string, string> = {};
 const EMPTY_MEMBERS: MemberFilterOption[] = [];
 const EMPTY_LANES: boards.BoardLaneRow[] = [];
@@ -46,7 +51,6 @@ const COMMON_STATUS_OPTIONS = [
   'done',
   'shipped',
   'cancelled',
-  'canceled',
   'archived',
 ] as const;
 
@@ -66,8 +70,10 @@ export function WorkFilterBar({
 }: Props) {
   const router = useRouter();
   const formId = useId();
+  const filterKey = workFilterStateKey(filters);
   const clearHref = useMemo(() => hrefWithParams(basePath, hiddenParams), [basePath, hiddenParams]);
   const hasRangeFilters = Boolean(
+    filters.due === 'range' ||
     filters.dueFrom ||
     filters.dueTo ||
     filters.createdFrom ||
@@ -75,6 +81,11 @@ export function WorkFilterBar({
     filters.updatedFrom ||
     filters.updatedTo,
   );
+  const [dateRangeToggle, setDateRangeToggle] = useState<DateRangeToggle>({ state: 'auto' });
+  const dateRangesManuallyClosed =
+    dateRangeToggle.state === 'closed' && dateRangeToggle.filters === filters;
+  const showDateRanges =
+    dateRangeToggle.state === 'open' || (hasRangeFilters && !dateRangesManuallyClosed);
 
   function onSubmit(event: SyntheticEvent<HTMLFormElement>): void {
     event.preventDefault();
@@ -94,6 +105,7 @@ export function WorkFilterBar({
 
   return (
     <form
+      key={filterKey}
       id={formId}
       onSubmit={onSubmit}
       className={cn(
@@ -209,6 +221,9 @@ export function WorkFilterBar({
             name="due"
             label={mode === 'board' ? 'Board due' : 'Due'}
             defaultValue={filters.due}
+            onChange={(value) => {
+              if (value === 'range') setDateRangeToggle({ state: 'open' });
+            }}
           >
             <option value="">Any due date</option>
             <option value="overdue">Overdue</option>
@@ -218,44 +233,65 @@ export function WorkFilterBar({
             <option value="range">Date range</option>
           </FilterSelect>
 
-          <details className="min-w-full" open={hasRangeFilters || undefined}>
-            <summary className="inline-flex h-9 cursor-pointer select-none items-center rounded-sm border border-border bg-surface px-3 font-mono text-[11px] uppercase tracking-[0.12em] text-fg-muted transition-colors hover:border-border-strong hover:text-fg">
-              Date ranges
-            </summary>
-            <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-              <FilterInput
-                name="dueFrom"
-                label="Due from"
-                defaultValue={filters.dueFrom}
-                type="date"
-              />
-              <FilterInput name="dueTo" label="Due to" defaultValue={filters.dueTo} type="date" />
-              <FilterInput
-                name="createdFrom"
-                label={mode === 'board' ? 'Item created from' : 'Created from'}
-                defaultValue={filters.createdFrom}
-                type="date"
-              />
-              <FilterInput
-                name="createdTo"
-                label={mode === 'board' ? 'Item created to' : 'Created to'}
-                defaultValue={filters.createdTo}
-                type="date"
-              />
-              <FilterInput
-                name="updatedFrom"
-                label={mode === 'board' ? 'Item updated from' : 'Updated from'}
-                defaultValue={filters.updatedFrom}
-                type="date"
-              />
-              <FilterInput
-                name="updatedTo"
-                label={mode === 'board' ? 'Item updated to' : 'Updated to'}
-                defaultValue={filters.updatedTo}
-                type="date"
-              />
-            </div>
-          </details>
+          <button
+            type="button"
+            aria-expanded={showDateRanges}
+            aria-controls={`${formId}-date-ranges`}
+            onClick={() => {
+              setDateRangeToggle(showDateRanges ? { state: 'closed', filters } : { state: 'open' });
+            }}
+            className={cn(
+              'inline-flex h-9 items-center gap-2 rounded-sm border border-border bg-surface px-3 font-mono text-[11px] uppercase tracking-[0.12em] text-fg-muted transition-colors hover:border-border-strong hover:text-fg focus:border-signal/60 focus:outline-none',
+              (showDateRanges || hasRangeFilters) && 'border-border-strong text-fg',
+            )}
+          >
+            Date ranges
+            <ChevronDown
+              className={cn(
+                'size-3.5 text-fg-dim transition-transform',
+                showDateRanges && 'rotate-180',
+              )}
+              aria-hidden
+            />
+          </button>
+
+          <div
+            id={`${formId}-date-ranges`}
+            hidden={!showDateRanges}
+            className="grid min-w-full gap-2 pt-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6"
+          >
+            <FilterInput
+              name="dueFrom"
+              label="Due from"
+              defaultValue={filters.dueFrom}
+              type="date"
+            />
+            <FilterInput name="dueTo" label="Due to" defaultValue={filters.dueTo} type="date" />
+            <FilterInput
+              name="createdFrom"
+              label={mode === 'board' ? 'Item created from' : 'Created from'}
+              defaultValue={filters.createdFrom}
+              type="date"
+            />
+            <FilterInput
+              name="createdTo"
+              label={mode === 'board' ? 'Item created to' : 'Created to'}
+              defaultValue={filters.createdTo}
+              type="date"
+            />
+            <FilterInput
+              name="updatedFrom"
+              label={mode === 'board' ? 'Item updated from' : 'Updated from'}
+              defaultValue={filters.updatedFrom}
+              type="date"
+            />
+            <FilterInput
+              name="updatedTo"
+              label={mode === 'board' ? 'Item updated to' : 'Updated to'}
+              type="date"
+              defaultValue={filters.updatedTo}
+            />
+          </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-2 xl:justify-end xl:pt-[1.125rem]">
@@ -296,12 +332,15 @@ function StatusControl({
   mode: Props['mode'];
   statusOptions: readonly string[];
 }) {
-  if (statusOptions.length === 0) {
-    return (
-      <StatusMultiSelect defaultValue={defaultValue} mode={mode} options={COMMON_STATUS_OPTIONS} />
-    );
-  }
-  return <StatusMultiSelect defaultValue={defaultValue} mode={mode} options={statusOptions} />;
+  return (
+    <StatusMultiSelect
+      defaultValue={defaultValue}
+      mode={mode}
+      options={dedupeStatusOptions(
+        statusOptions.length === 0 ? COMMON_STATUS_OPTIONS : statusOptions,
+      )}
+    />
+  );
 }
 
 function StatusMultiSelect({
@@ -318,11 +357,35 @@ function StatusMultiSelect({
       key={`status:${defaultValue}`}
       name="status"
       label={mode === 'board' ? 'Object status' : 'Status'}
-      defaultValue={defaultValue}
+      defaultValue={normalizeStatusValue(defaultValue)}
       placeholder="Any status"
       options={options.map((status) => ({ value: status, label: status }))}
     />
   );
+}
+
+function dedupeStatusOptions(options: readonly string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const status of options) {
+    const canonical = status === 'canceled' ? 'cancelled' : status;
+    if (seen.has(canonical)) continue;
+    seen.add(canonical);
+    out.push(canonical);
+  }
+  return out;
+}
+
+function normalizeStatusValue(value: string): string {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const status of value.split(',')) {
+    const canonical = status.trim() === 'canceled' ? 'cancelled' : status.trim();
+    if (!canonical || seen.has(canonical)) continue;
+    seen.add(canonical);
+    out.push(canonical);
+  }
+  return out.join(',');
 }
 
 function PersonSelect({
@@ -413,4 +476,25 @@ function FilterInput({
 function hrefWithParams(basePath: string, params: Record<string, string>): string {
   const qs = new URLSearchParams(params).toString();
   return qs ? `${basePath}?${qs}` : basePath;
+}
+
+function workFilterStateKey(filters: WorkFilterState): string {
+  return [
+    filters.q,
+    filters.type,
+    filters.status,
+    filters.stage,
+    filters.owner,
+    filters.assignee,
+    filters.responsible,
+    filters.lane,
+    filters.priority,
+    filters.due,
+    filters.dueFrom,
+    filters.dueTo,
+    filters.createdFrom,
+    filters.createdTo,
+    filters.updatedFrom,
+    filters.updatedTo,
+  ].join('\0');
 }
