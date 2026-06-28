@@ -410,6 +410,7 @@ const boardItemUpdatePayload = z.object({
     'customFields',
   ]),
   newValue: z.unknown(),
+  responsibleName: z.string().trim().min(1).max(200).optional(),
   sourceEventId: uuid.nullable().optional(),
   note: z.string().trim().max(1000).nullable().optional(),
 });
@@ -1753,6 +1754,42 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     return normalized;
   }
 
+  async function resolveBoardItemMemberRefs(
+    payload: Record<string, unknown>,
+    options: { requireUnique: boolean },
+  ): Promise<Record<string, unknown>> {
+    if (payload.field !== 'responsibleUserId') return payload;
+    const normalized = { ...payload };
+    if (typeof normalized.newValue === 'string' && UUID_RE.test(normalized.newValue)) {
+      return normalized;
+    }
+    if (
+      (normalized.newValue === null ||
+        normalized.newValue === undefined ||
+        normalized.newValue === '') &&
+      normalized.responsibleName === undefined
+    ) {
+      return normalized;
+    }
+
+    const ref =
+      typeof normalized.responsibleName === 'string'
+        ? normalized.responsibleName
+        : typeof normalized.newValue === 'string'
+          ? normalized.newValue
+          : null;
+    if (!ref) return normalized;
+    const resolved = await resolveTeamMemberRef(ref);
+    if (resolved) {
+      normalized.newValue = resolved;
+      return normalized;
+    }
+    if (options.requireUnique) {
+      throw new Error('Responsible team member was not uniquely matched');
+    }
+    return normalized;
+  }
+
   async function normalizeSuggestionItemForStorage(
     item: SuggestionItemInput,
     objectTypeByTargetId: ReadonlyMap<string, ObjectType>,
@@ -1762,17 +1799,20 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     },
   ): Promise<SuggestionItemInput> {
     const proposedPayload = normalizeSuggestionSourceEventPayload(
-      await resolvePayloadMemberRefs(
-        normalizeLifecyclePayload({
-          operation: item.operation,
-          targetKind: item.targetKind,
-          title: item.title,
-          proposedPayload: item.proposedPayload,
-          objectType:
-            item.targetKind === 'object' && item.operation !== 'create'
-              ? (objectTypeByTargetId.get(item.targetId ?? '') ?? null)
-              : null,
-        }),
+      await resolveBoardItemMemberRefs(
+        await resolvePayloadMemberRefs(
+          normalizeLifecyclePayload({
+            operation: item.operation,
+            targetKind: item.targetKind,
+            title: item.title,
+            proposedPayload: item.proposedPayload,
+            objectType:
+              item.targetKind === 'object' && item.operation !== 'create'
+                ? (objectTypeByTargetId.get(item.targetId ?? '') ?? null)
+                : null,
+          }),
+        ),
+        { requireUnique: false },
       ),
       sourceEventFallback,
     );
@@ -3303,14 +3343,17 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     const existingResultId = await existingResultForItem(item);
     if (existingResultId) return existingResultId;
     const targetId = item.targetId;
-    const payload = await resolvePayloadMemberRefs(
-      normalizeLifecyclePayload({
-        ...item,
-        objectType:
-          item.targetKind === 'object' && item.operation !== 'create'
-            ? await objectTypeForTarget(targetId)
-            : null,
-      }),
+    const payload = await resolveBoardItemMemberRefs(
+      await resolvePayloadMemberRefs(
+        normalizeLifecyclePayload({
+          ...item,
+          objectType:
+            item.targetKind === 'object' && item.operation !== 'create'
+              ? await objectTypeForTarget(targetId)
+              : null,
+        }),
+      ),
+      { requireUnique: true },
     );
 
     if (item.targetKind === 'task' || item.targetKind === 'object') {

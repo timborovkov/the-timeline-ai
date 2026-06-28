@@ -1927,6 +1927,7 @@ describe('processSuggestionJobForTests', () => {
     const item = await scope.boards.addBoardItem(board.id, {
       entityId: company.id,
       laneId: board.lanes[0]?.id ?? null,
+      responsibleUserId: OWNER_ID,
       actor: { kind: 'user', userId: OWNER_ID },
     });
     const rawEventId = '10000000-0000-0000-0000-0000000000b0';
@@ -1950,6 +1951,7 @@ describe('processSuggestionJobForTests', () => {
     expect(call?.prompt).toContain('# Existing boards');
     expect(call?.prompt).toContain(`board ${board.id}: "Pilot pipeline"`);
     expect(call?.prompt).toContain(`item ${item.id}: object=${company.id} company "Revigo"`);
+    expect(call?.prompt).toContain(`responsible=${OWNER_ID} responsible_name=Owner`);
     expect(call?.prompt).toContain('targetKind=board_membership');
     expect(call?.prompt).toContain('Allowed fields: laneId, position, responsibleUserId');
     expect(call?.system).toContain('board_membership or board_item_update');

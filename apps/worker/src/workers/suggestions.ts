@@ -1949,6 +1949,7 @@ async function runSuggestionExtraction(
     .innerJoin(users, eq(users.id, teamMembers.userId))
     .where(and(eq(teamMembers.teamId, teamId), isNull(teamMembers.removedAt)))
     .limit(50);
+  const memberById = new Map(memberRows.map((member) => [member.userId, member]));
   const activeAuthorUserId = memberRows.some((member) => member.userId === row.authorUserId)
     ? row.authorUserId
     : null;
@@ -2081,6 +2082,10 @@ async function runSuggestionExtraction(
           objectType: item.object.type,
           objectName: item.object.canonicalName,
           laneId: item.laneId,
+          responsibleUserId: item.responsibleUserId,
+          responsibleName: item.responsibleUserId
+            ? (memberById.get(item.responsibleUserId)?.name ?? null)
+            : null,
           priority: item.priority,
           dueAt: item.dueAt?.toISOString() ?? null,
           nextStep: item.nextStep,
@@ -2562,6 +2567,8 @@ function buildPrompt(args: {
       objectType: string;
       objectName: string;
       laneId: string | null;
+      responsibleUserId: string | null;
+      responsibleName: string | null;
       priority: number | null;
       dueAt: string | null;
       nextStep: string | null;
@@ -2624,7 +2631,7 @@ function buildPrompt(args: {
     '',
     '# Existing boards',
     'Use board_membership only when evidence clearly says an existing object belongs on a listed board. operation=create, targetKind=board_membership, proposedPayload={ boardId, entityId, laneId?, sourceEventId?, note? }.',
-    'Use board_item_update only when evidence clearly changes one listed board item. operation=update, targetKind=board_item_update, targetId=<board item id>, proposedPayload={ boardItemId, field, newValue, sourceEventId?, note? }. Allowed fields: laneId, position, responsibleUserId, dueAt, priority, nextStep, notes, customFields.',
+    'Use board_item_update only when evidence clearly changes one listed board item. operation=update, targetKind=board_item_update, targetId=<board item id>, proposedPayload={ boardItemId, field, newValue, sourceEventId?, note? }. Allowed fields: laneId, position, responsibleUserId, dueAt, priority, nextStep, notes, customFields. For field=responsibleUserId, use a listed member UUID as newValue when known; otherwise set responsibleName to the clear member name/email and leave newValue null.',
     ...args.boards.flatMap((board) => [
       `- board ${board.id}: "${board.name}" template=${board.templateKind} purpose=${
         board.purpose ?? 'none'
@@ -2636,6 +2643,8 @@ function buildPrompt(args: {
             item.objectName
           }" lane=${item.laneId ?? 'none'} priority=${item.priority ?? 'none'} due=${
             item.dueAt ?? 'none'
+          } responsible=${item.responsibleUserId ?? 'none'} responsible_name=${
+            item.responsibleName ?? 'none'
           } next_step=${item.nextStep ?? 'none'}`,
       ),
     ]),

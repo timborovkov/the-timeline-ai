@@ -6410,6 +6410,58 @@ describe('suggestion scope', () => {
     expect(result.rows[0]).toEqual({ assignee_user_id: REVIEWER_ID });
   });
 
+  it('resolves board item responsible names to active team member ids', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const board = await scope.boards.createBoard({
+      name: 'Launch board',
+      templateKind: 'task_board',
+      lanes: [{ name: 'Todo', kind: 'active' }],
+    });
+    const task = await scope.objects.createObject({
+      type: 'task',
+      canonicalName: 'Review Acme deck',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const boardItem = await scope.boards.addBoardItem(board.id, {
+      entityId: task.id,
+      laneId: board.lanes[0]?.id ?? null,
+      actor: { kind: 'user', userId: USER_ID },
+    });
+
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Assign board item',
+      dedupeKey: 'board-item-responsible-name',
+      items: [
+        {
+          operation: 'update',
+          targetKind: 'board_item_update',
+          targetId: boardItem.id,
+          title: 'Assign Review Acme deck',
+          dedupeKey: 'board-item-responsible-name:item',
+          proposedPayload: {
+            boardItemId: boardItem.id,
+            field: 'responsibleUserId',
+            newValue: null,
+            responsibleName: 'Reviewer',
+          },
+        },
+      ],
+    });
+    const item = bundle.items[0];
+    expect(item?.proposedPayload).toMatchObject({
+      responsibleName: 'Reviewer',
+      newValue: REVIEWER_ID,
+    });
+
+    await expect(scope.suggestions.acceptSuggestionItem(item?.id ?? '')).resolves.toBe(true);
+
+    const updated = await scope.boards.getBoard(board.id, { itemLimit: 'all' });
+    expect(updated?.items.find((row) => row.id === boardItem.id)?.responsibleUserId).toBe(
+      REVIEWER_ID,
+    );
+  });
+
   it('normalizes invalid task create source event ids to suggestion evidence when storing', async () => {
     const sourceRawEventId = '99999999-9999-4999-8999-999999999999';
     await db.insert(rawEvents).values({
