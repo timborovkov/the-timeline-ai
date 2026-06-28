@@ -1706,18 +1706,7 @@ async function createObjectCleanupSuggestionsForTeam(
           objectIds,
         });
         const reason = repairRelationshipReason(candidate);
-        const payload = relationshipPayload(repairObjectId, candidate.id);
-        const proposedPayload = {
-          ...payload,
-          fromName:
-            payload.fromEntityId === repairObjectId
-              ? repairObject.canonicalName
-              : candidate.canonicalName,
-          toName:
-            payload.toEntityId === repairObjectId
-              ? repairObject.canonicalName
-              : candidate.canonicalName,
-        };
+        const proposedPayload = relationshipPayload(repairObjectId, candidate.id);
         await scope.suggestions.createOrMergeSuggestionBundle({
           source: 'background',
           title: `Relate ${repairObject.canonicalName} and ${candidate.canonicalName}`,
@@ -1825,8 +1814,6 @@ async function createObjectCleanupSuggestionsForTeam(
               proposedPayload: {
                 fromRef: candidate.localRef,
                 toEntityId: repairObjectId,
-                fromName: candidate.canonicalName,
-                toName: repairObject.canonicalName,
                 kind: 'related',
               },
             },

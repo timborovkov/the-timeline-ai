@@ -989,6 +989,8 @@ describe('processSuggestionJobForTests', () => {
     expect(Array.from(new Set(Object.values(relationshipItem?.proposedPayload ?? {})))).toEqual(
       expect.arrayContaining([company.id, person.id]),
     );
+    expect(relationshipItem?.proposedPayload).not.toHaveProperty('fromName');
+    expect(relationshipItem?.proposedPayload).not.toHaveProperty('toName');
 
     await expect(scope.suggestions.rejectSuggestionItem(relationshipItem?.id ?? '')).resolves.toBe(
       true,
@@ -1182,6 +1184,8 @@ describe('processSuggestionJobForTests', () => {
     expect(Array.from(new Set(Object.values(relationshipItem?.proposedPayload ?? {})))).toEqual(
       expect.arrayContaining([company.id, task.id]),
     );
+    expect(relationshipItem?.proposedPayload).not.toHaveProperty('fromName');
+    expect(relationshipItem?.proposedPayload).not.toHaveProperty('toName');
 
     await expect(scope.suggestions.rejectSuggestionItem(relationshipItem?.id ?? '')).resolves.toBe(
       true,
@@ -1342,6 +1346,8 @@ describe('processSuggestionJobForTests', () => {
         kind: 'related',
       },
     });
+    expect(relationshipItem?.proposedPayload).not.toHaveProperty('fromName');
+    expect(relationshipItem?.proposedPayload).not.toHaveProperty('toName');
 
     await expect(scope.suggestions.rejectSuggestionItem(relationshipItem?.id ?? '')).resolves.toBe(
       true,

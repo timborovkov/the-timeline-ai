@@ -1734,6 +1734,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
 
   async function resolvePayloadMemberRefs(
     payload: Record<string, unknown>,
+    options: { requireUnique?: boolean } = {},
   ): Promise<Record<string, unknown>> {
     const normalized = { ...payload };
     for (const [idKey, nameKey] of [
@@ -1750,6 +1751,9 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       }
       const resolved = await resolveTeamMemberRef(normalized[nameKey]);
       if (resolved) normalized[idKey] = resolved;
+      else if (options.requireUnique && typeof normalized[nameKey] === 'string') {
+        throw new Error(`${nameKey} was not uniquely matched to an active team member`);
+      }
     }
     return normalized;
   }
@@ -3352,6 +3356,11 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
               ? await objectTypeForTarget(targetId)
               : null,
         }),
+        {
+          requireUnique:
+            (item.targetKind === 'object' || item.targetKind === 'task') &&
+            item.operation === 'update',
+        },
       ),
       { requireUnique: true },
     );

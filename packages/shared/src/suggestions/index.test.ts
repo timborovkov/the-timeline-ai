@@ -3455,6 +3455,59 @@ describe('suggestion scope', () => {
     expect(updated.rows[0]?.due_at?.toISOString()).toBe('2026-08-03T09:00:00.000Z');
   });
 
+  it('fails object update assignment names that do not resolve uniquely', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const task = await scope.objects.createObject({
+      type: 'task',
+      canonicalName: 'Reassign unresolved task',
+      status: 'todo',
+      assigneeUserId: USER_ID,
+      actor: { kind: 'agent', userId: null },
+    });
+
+    const updateBundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Assign task to missing member',
+      dedupeKey: 'update-assignee-name-missing',
+      items: [
+        {
+          operation: 'update',
+          targetKind: 'task',
+          targetId: task.id,
+          title: 'Assign unresolved task',
+          dedupeKey: 'update-assignee-name-missing:item',
+          proposedPayload: {
+            assigneeName: 'Missing Reviewer',
+          },
+        },
+      ],
+    });
+    const itemId = updateBundle.items[0]?.id ?? '';
+
+    await expect(scope.suggestions.acceptSuggestionItem(itemId)).rejects.toThrow(
+      'assigneeName was not uniquely matched to an active team member',
+    );
+
+    const result = await pg.query<{
+      item_status: string;
+      failure_reason: string | null;
+      assignee_user_id: string | null;
+    }>(
+      `SELECT i.status AS item_status,
+              i.failure_reason,
+              e.assignee_user_id::text
+       FROM agent_suggestion_items i
+       CROSS JOIN entities e
+       WHERE i.id = '${itemId}'
+         AND e.id = '${task.id}'`,
+    );
+    expect(result.rows[0]).toEqual({
+      item_status: 'failed',
+      failure_reason: 'assigneeName was not uniquely matched to an active team member',
+      assignee_user_id: USER_ID,
+    });
+  });
+
   it('does not treat an unrelated exact existing create task as already represented', async () => {
     const scope = withTeam(db as never, TEAM_ID, USER_ID);
     const existing = await scope.objects.createObject({
