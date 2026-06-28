@@ -101,4 +101,16 @@ describe('work filters', () => {
       assigneeUserId: [USER_ID, LANE_ID, null],
     });
   });
+
+  it('normalizes canceled status params while keeping legacy rows filterable', () => {
+    const parsed = parseWorkFilters({ status: 'todo,canceled,cancelled' });
+
+    expect(parsed.status).toBe('todo,cancelled');
+    expect(objectListFilterFromWorkFilters(parsed)).toMatchObject({
+      status: ['todo', 'cancelled', 'canceled'],
+    });
+    expect(boardItemFilterFromWorkFilters(parsed).object).toMatchObject({
+      status: ['todo', 'cancelled', 'canceled'],
+    });
+  });
 });

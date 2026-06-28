@@ -64,7 +64,7 @@ export function parseWorkFilters(params: FilterSearchParams): WorkFilterState {
   return {
     q: firstParam(params.q),
     type,
-    status: validCsvValues(params.status),
+    status: validCsvValues(params.status, () => true, canonicalStatusValue),
     stage: validCsvValues(params.stage),
     owner: personParam(params.owner),
     assignee: personParam(params.assignee),
@@ -89,7 +89,7 @@ export function objectListFilterFromWorkFilters(
   return {
     ...(filters.q.trim() ? { query: filters.q.trim() } : {}),
     ...(filters.type ? { type: objectTypeFilter(filters.type) } : {}),
-    ...(filters.status.trim() ? { status: csvValues(filters.status) } : {}),
+    ...statusFilter(filters.status),
     ...(filters.stage.trim() ? { stage: csvValues(filters.stage) } : {}),
     ...personFilter('ownerUserId', filters.owner),
     ...personFilter('assigneeUserId', filters.assignee),
@@ -129,7 +129,7 @@ export function boardItemFilterFromWorkFilters(
     ...dateRangeFilter('updated', filters.updatedFrom, filters.updatedTo),
     object: {
       ...(filters.type ? { type: objectTypeFilter(filters.type) } : {}),
-      ...(filters.status.trim() ? { status: csvValues(filters.status) } : {}),
+      ...statusFilter(filters.status),
       ...(filters.stage.trim() ? { stage: csvValues(filters.stage) } : {}),
       ...personFilter('ownerUserId', filters.owner),
       ...personFilter('assigneeUserId', filters.assignee),
@@ -193,18 +193,24 @@ function csvValues(value: string): string[] {
 function validCsvValues(
   value: string | string[] | undefined,
   isValid: (value: string) => boolean = () => true,
+  normalize: (value: string) => string = (v) => v,
 ): string {
   const seen = new Set<string>();
   const out: string[] = [];
   for (const raw of paramValues(value)) {
     for (const part of csvValues(raw)) {
-      if (isValid(part) && !seen.has(part)) {
-        seen.add(part);
-        out.push(part);
+      const normalized = normalize(part);
+      if (isValid(normalized) && !seen.has(normalized)) {
+        seen.add(normalized);
+        out.push(normalized);
       }
     }
   }
   return out.join(',');
+}
+
+function canonicalStatusValue(value: string): string {
+  return value === 'canceled' ? 'cancelled' : value;
 }
 
 function paramValues(value: string | string[] | undefined): string[] {
@@ -239,6 +245,14 @@ function objectTypeFilter(value: string): ObjectType | ObjectType[] {
   const types = csvValues(value) as ObjectType[];
   const first = types[0];
   return types.length === 1 && first ? first : types;
+}
+
+function statusFilter(value: string): Pick<ObjectListFilter, 'status'> | Record<string, never> {
+  const statuses = csvValues(value).flatMap((status) =>
+    status === 'cancelled' ? ['cancelled', 'canceled'] : [status],
+  );
+  const uniqueStatuses = Array.from(new Set(statuses));
+  return uniqueStatuses.length > 0 ? { status: uniqueStatuses } : {};
 }
 
 function boardResponsibleFilter(
