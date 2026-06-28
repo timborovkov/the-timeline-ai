@@ -118,4 +118,34 @@ describe('/api/integrations/manage/[id]/sync', () => {
       INTEGRATION_ID,
     );
   });
+
+  it('reports the integration pause before checking provider budget pauses', async () => {
+    const retryAt = new Date('2026-06-28T11:00:00.000Z');
+    fakes.adminLoadIntegrationSyncPause.mockResolvedValueOnce({
+      retryAt,
+      reason: 'sync_error_backoff',
+    });
+
+    const response = await POST(new Request('https://timeline.test'), params());
+
+    expect(response.status).toBe(429);
+    await expect(response.json()).resolves.toMatchObject({
+      error: 'provider_budget_paused',
+      reason: 'sync_error_backoff',
+      retryAt: retryAt.toISOString(),
+    });
+    expect(fakes.providerBudgetKeyForIntegration).not.toHaveBeenCalled();
+    expect(fakes.adminLoadProviderBudgetPause).not.toHaveBeenCalled();
+    expect(fakes.requireRedisQueue).not.toHaveBeenCalled();
+    expect(fakes.recordAudit).toHaveBeenCalledWith(
+      'backfill_skipped:provider_budget',
+      {
+        actor: USER_ID,
+        provider: 'monday',
+        reason: 'sync_error_backoff',
+        retryAt: retryAt.toISOString(),
+      },
+      INTEGRATION_ID,
+    );
+  });
 });

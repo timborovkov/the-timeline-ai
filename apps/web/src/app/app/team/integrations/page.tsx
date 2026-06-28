@@ -34,6 +34,7 @@ export const dynamic = 'force-dynamic';
 type TeamSourceUiRow = Parameters<typeof TeamSourcesUi>[0]['rows'][number];
 type ConnectedIntegrationUiRow = Parameters<typeof ConnectedIntegrations>[0]['connected'][number];
 type ConnectedIntegrationAttention = ConnectedIntegrationUiRow['attention'][number];
+type ConnectedIntegrationSyncPause = NonNullable<ConnectedIntegrationUiRow['syncPause']>;
 type ConnectedMemberOption = NonNullable<
   Parameters<typeof ConnectedIntegrations>[0]['members']
 >[number];
@@ -118,24 +119,38 @@ async function loadIntegrationsPageModel(input: { teamId: string; userId: string
       connected.map(async (integration) => scope.integrations.listSelections(integration.id)),
     ),
     Promise.all(
-      connected.map(async (integration) => {
-        const budgetKey = integrationsLib.providerBudgetKeyForIntegration(integration);
-        const [integrationPause, providerPause] = await Promise.all([
-          integrationsLib.adminLoadIntegrationSyncPause(db, integration.id),
-          budgetKey ? integrationsLib.adminLoadProviderBudgetPause(db, budgetKey) : null,
-        ]);
-        const pause = providerPause ?? integrationPause;
-        return [
-          integration.id,
-          pause
-            ? {
-                retryAt: pause.retryAt.toISOString(),
-                reason: pause.reason,
-                scope: providerPause?.scope ?? null,
-              }
-            : null,
-        ] as const;
-      }),
+      connected.map(
+        async (integration): Promise<readonly [string, ConnectedIntegrationSyncPause | null]> => {
+          const integrationPause = await integrationsLib.adminLoadIntegrationSyncPause(
+            db,
+            integration.id,
+          );
+          if (integrationPause) {
+            return [
+              integration.id,
+              {
+                retryAt: integrationPause.retryAt.toISOString(),
+                reason: integrationPause.reason,
+                scope: null,
+              },
+            ] as const;
+          }
+          const budgetKey = integrationsLib.providerBudgetKeyForIntegration(integration);
+          const providerPause = budgetKey
+            ? await integrationsLib.adminLoadProviderBudgetPause(db, budgetKey)
+            : null;
+          return [
+            integration.id,
+            providerPause
+              ? {
+                  retryAt: providerPause.retryAt.toISOString(),
+                  reason: providerPause.reason,
+                  scope: providerPause.scope,
+                }
+              : null,
+          ] as const;
+        },
+      ),
     ),
   ]);
   const syncPauseByIntegrationId = new Map(syncPauseEntries);
