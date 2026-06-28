@@ -32,7 +32,12 @@ const PERSON_ID = '20000000-0000-0000-0000-000000000403';
 const CALENDAR_ID = '30000000-0000-0000-0000-000000000401';
 
 type Db = ReturnType<typeof drizzle>;
-type ToolName = 'search_timeline' | 'list_tasks' | 'list_objects' | 'list_calendar_events';
+type ToolName =
+  | 'search_timeline'
+  | 'list_tasks'
+  | 'list_objects'
+  | 'list_calendar_events'
+  | 'list_team_members';
 
 async function seed(pg: PGlite): Promise<void> {
   await pg.exec(`
@@ -220,6 +225,30 @@ describe('agent tool evals', () => {
     });
   });
 
+  it('lists active team members with ids for assignment references', async () => {
+    // Product behavior: agents should not have to guess user UUIDs when a
+    // teammate asks to assign work by a person's name.
+    const evalRun = await runToolEval(db, OWNER, 'list_team_members', {}, []);
+
+    expect(evalRun.output).toEqual({
+      count: 2,
+      members: [
+        {
+          user_id: OWNER,
+          role: 'owner',
+          name: 'Eval Owner',
+          email: 'eval-owner@example.com',
+        },
+        {
+          user_id: MEMBER,
+          role: 'member',
+          name: 'Eval Member',
+          email: 'eval-member@example.com',
+        },
+      ],
+    });
+  });
+
   it('queues contact memory as identity facet approvals rather than mutating directly', async () => {
     // Product behavior: emails and phone numbers extracted from chat are
     // proposed as person identity memory, keeping contact details reviewable.
@@ -277,6 +306,108 @@ describe('agent tool evals', () => {
       kind: 'phone',
       normalizedValue: '+12133734253',
     });
+  });
+
+  it('queues and accepts object relationship memory using object names as references', async () => {
+    // Product behavior: relationship proposals may come from natural language
+    // with object names but no UUIDs. Acceptance should resolve only clear
+    // active objects, preserving review while avoiding ID-only model traps.
+    const scope = withTeam(db as never, TEAM_A, OWNER);
+    const tools = buildAgentTools(scope);
+    const exec = tools.suggest_object_memory?.execute as (
+      raw: unknown,
+      opts: unknown,
+    ) => Promise<unknown>;
+
+    const output = await exec(
+      {
+        title: 'Remember Ada and Acme are related',
+        reason: 'The conversation explicitly linked Ada with Acme.',
+        confidence: 'high',
+        items: [
+          {
+            kind: 'add_relationship',
+            fromName: 'Ada Lovelace',
+            toName: 'Acme',
+            relationshipKind: 'related',
+          },
+        ],
+      },
+      {},
+    );
+
+    expect(output).toMatchObject({ ok: true });
+    const pendingSuggestions = await scope.suggestions.listPendingSuggestions();
+    const relationshipItem = pendingSuggestions
+      .flatMap((suggestion) => suggestion.items)
+      .find((item) => item.targetKind === 'object_relationship');
+    expect(relationshipItem?.proposedPayload).toMatchObject({
+      fromName: 'Ada Lovelace',
+      toName: 'Acme',
+      kind: 'related',
+    });
+
+    await expect(scope.suggestions.acceptSuggestionItem(relationshipItem?.id ?? '')).resolves.toBe(
+      true,
+    );
+    const acme = await scope.objects.getObject(OBJECT_ID);
+    expect(acme?.relationships).toEqual([
+      expect.objectContaining({
+        kind: 'related',
+        otherId: PERSON_ID,
+        otherName: 'Ada Lovelace',
+      }),
+    ]);
+  });
+
+  it('queues and accepts board item responsibility using teammate names as references', async () => {
+    // Product behavior: board suggestions can assign responsibility from a
+    // natural-language teammate mention without requiring the model to invent
+    // or already know a user UUID.
+    const scope = withTeam(db as never, TEAM_A, OWNER);
+    const board = await scope.boards.createBoard({
+      name: 'Acme launch board',
+      templateKind: 'task_board',
+      lanes: [{ name: 'Todo', kind: 'active' }],
+    });
+    const boardItem = await scope.boards.addBoardItem(board.id, {
+      entityId: TASK_ID,
+      laneId: board.lanes[0]?.id ?? null,
+      actor: { kind: 'user', userId: OWNER },
+    });
+
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Assign Acme proposal',
+      dedupeKey: 'eval-board-item-responsible-name',
+      items: [
+        {
+          operation: 'update',
+          targetKind: 'board_item_update',
+          targetId: boardItem.id,
+          title: 'Assign Send Acme pricing proposal',
+          dedupeKey: 'eval-board-item-responsible-name:item',
+          proposedPayload: {
+            boardItemId: boardItem.id,
+            field: 'responsibleUserId',
+            newValue: null,
+            responsibleName: 'Eval Member',
+          },
+        },
+      ],
+    });
+
+    const suggestionItem = bundle.items[0];
+    expect(suggestionItem?.proposedPayload).toMatchObject({
+      responsibleName: 'Eval Member',
+      newValue: MEMBER,
+    });
+
+    await expect(scope.suggestions.acceptSuggestionItem(suggestionItem?.id ?? '')).resolves.toBe(
+      true,
+    );
+    const updated = await scope.boards.getBoard(board.id, { itemLimit: 'all' });
+    expect(updated?.items.find((item) => item.id === boardItem.id)?.responsibleUserId).toBe(MEMBER);
   });
 
   it('does not leak owner-private evidence to a member', async () => {

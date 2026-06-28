@@ -104,6 +104,39 @@ const listPendingApprovalsInput = z.object({
   limit: z.number().int().min(1).max(50).optional(),
 });
 
+const relationshipMemoryItemSchema = z
+  .object({
+    kind: z.literal('add_relationship'),
+    fromEntityId: z.string().regex(UUID_RE).optional(),
+    toEntityId: z.string().regex(UUID_RE).optional(),
+    fromName: z.string().trim().min(1).max(200).optional(),
+    toName: z.string().trim().min(1).max(200).optional(),
+    relationshipKind: z.enum([
+      'parent',
+      'child',
+      'related',
+      'blocks',
+      'blocked_by',
+      'duplicate_of',
+    ]),
+  })
+  .superRefine((item, ctx) => {
+    if ([item.fromEntityId, item.fromName].filter(Boolean).length !== 1) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['fromEntityId'],
+        message: 'Provide exactly one relationship source endpoint',
+      });
+    }
+    if ([item.toEntityId, item.toName].filter(Boolean).length !== 1) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['toEntityId'],
+        message: 'Provide exactly one relationship target endpoint',
+      });
+    }
+  });
+
 const objectMemoryItemSchema = z.discriminatedUnion('kind', [
   z.object({
     kind: z.literal('create_object'),
@@ -115,6 +148,8 @@ const objectMemoryItemSchema = z.discriminatedUnion('kind', [
     priority: z.number().int().min(1).max(4).nullable().optional(),
     ownerUserId: z.string().regex(UUID_RE).nullable().optional(),
     assigneeUserId: z.string().regex(UUID_RE).nullable().optional(),
+    ownerName: z.string().trim().min(1).max(200).optional(),
+    assigneeName: z.string().trim().min(1).max(200).optional(),
     dueAt: z.iso.datetime().nullable().optional(),
     sourceEventId: z.string().regex(UUID_RE).nullable().optional(),
   }),
@@ -128,6 +163,8 @@ const objectMemoryItemSchema = z.discriminatedUnion('kind', [
     priority: z.number().int().min(1).max(4).nullable().optional(),
     ownerUserId: z.string().regex(UUID_RE).nullable().optional(),
     assigneeUserId: z.string().regex(UUID_RE).nullable().optional(),
+    ownerName: z.string().trim().min(1).max(200).optional(),
+    assigneeName: z.string().trim().min(1).max(200).optional(),
     dueAt: z.iso.datetime().nullable().optional(),
   }),
   z.object({
@@ -145,19 +182,7 @@ const objectMemoryItemSchema = z.discriminatedUnion('kind', [
     entityId: z.string().regex(UUID_RE),
     body: z.string().trim().min(1).max(5000),
   }),
-  z.object({
-    kind: z.literal('add_relationship'),
-    fromEntityId: z.string().regex(UUID_RE),
-    toEntityId: z.string().regex(UUID_RE),
-    relationshipKind: z.enum([
-      'parent',
-      'child',
-      'related',
-      'blocks',
-      'blocked_by',
-      'duplicate_of',
-    ]),
-  }),
+  relationshipMemoryItemSchema,
 ]);
 
 const suggestObjectMemoryInput = z.object({
@@ -894,6 +919,25 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
   const runSafe = <T>(label: string, fn: () => Promise<T>): Promise<T | { error: string }> =>
     safe(label, fn, options.onToolError);
   const tools: ToolSet = {
+    list_team_members: tool({
+      description:
+        'List active team members and their user IDs. Use before assigning ownerUserId, assigneeUserId, responsibleUserId, visibilityUserIds, or filtering work by a teammate name.',
+      inputSchema: z.object({}),
+      execute: async () =>
+        runSafe('list_team_members', async () => {
+          const members = await scope.timeline.listMembers();
+          return {
+            count: members.length,
+            members: members.map((member) => ({
+              user_id: member.userId,
+              role: member.role,
+              name: member.name,
+              email: member.email,
+            })),
+          };
+        }),
+    }),
+
     execute_object_create: tool({
       description:
         'Approval-required dashboard action. Directly create a canonical object/task after the user approves in chat. Use only for explicit commands like "create a project called X" or "add a task to follow up with Y". This writes canonical state through createObject and does NOT create a background approval queue item.',
@@ -1785,6 +1829,8 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
         dueAt: z.iso.datetime().optional(),
         ownerUserId: z.string().regex(UUID_RE).optional(),
         assigneeUserId: z.string().regex(UUID_RE).optional(),
+        ownerName: z.string().trim().min(1).max(200).optional(),
+        assigneeName: z.string().trim().min(1).max(200).optional(),
         priority: z.number().int().min(1).max(4).optional(),
         note: z.string().trim().max(1000).optional(),
         parentObjectId: z.string().regex(UUID_RE).optional(),
@@ -1797,6 +1843,8 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
             dueAt?: string;
             ownerUserId?: string;
             assigneeUserId?: string;
+            ownerName?: string;
+            assigneeName?: string;
             priority?: number;
             note?: string;
             parentObjectId?: string;
@@ -1808,6 +1856,8 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
             dueAt: input.dueAt ?? null,
             ownerUserId: input.ownerUserId ?? null,
             assigneeUserId: input.assigneeUserId ?? null,
+            ownerName: input.ownerName ?? null,
+            assigneeName: input.assigneeName ?? null,
             priority: input.priority ?? null,
             parentObjectId: input.parentObjectId ?? null,
             sourceEventId: input.sourceEventId ?? null,
@@ -1831,6 +1881,8 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
                   dueAt: input.dueAt ?? null,
                   ownerUserId: input.ownerUserId ?? null,
                   assigneeUserId: input.assigneeUserId ?? null,
+                  ownerName: input.ownerName ?? null,
+                  assigneeName: input.assigneeName ?? null,
                   priority: input.priority ?? null,
                   parentObjectId: input.parentObjectId ?? null,
                   sourceEventId: input.sourceEventId ?? null,
@@ -1924,6 +1976,8 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
                   priority: item.priority,
                   ownerUserId: item.ownerUserId,
                   assigneeUserId: item.assigneeUserId,
+                  ownerName: item.ownerName,
+                  assigneeName: item.assigneeName,
                   dueAt: item.dueAt,
                   sourceEventId: item.sourceEventId,
                   metadata: { object_memory: true },
@@ -1945,6 +1999,8 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
                   priority: item.priority,
                   ownerUserId: item.ownerUserId,
                   assigneeUserId: item.assigneeUserId,
+                  ownerName: item.ownerName,
+                  assigneeName: item.assigneeName,
                   dueAt: item.dueAt,
                 },
               };
@@ -1991,18 +2047,20 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
             return {
               operation: 'create' as const,
               targetKind: 'object_relationship' as const,
-              targetId: item.fromEntityId,
+              targetId: item.fromEntityId ?? null,
               title: `Add ${item.relationshipKind} relationship`,
               dedupeKey: suggestionDedupeKey([
                 'object-memory',
                 item.kind,
-                item.fromEntityId,
-                item.toEntityId,
+                item.fromEntityId ?? item.fromName,
+                item.toEntityId ?? item.toName,
                 item.relationshipKind,
               ]),
               proposedPayload: {
                 fromEntityId: item.fromEntityId,
                 toEntityId: item.toEntityId,
+                fromName: item.fromName,
+                toName: item.toName,
                 kind: item.relationshipKind,
               },
             };

@@ -989,6 +989,8 @@ describe('processSuggestionJobForTests', () => {
     expect(Array.from(new Set(Object.values(relationshipItem?.proposedPayload ?? {})))).toEqual(
       expect.arrayContaining([company.id, person.id]),
     );
+    expect(relationshipItem?.proposedPayload).not.toHaveProperty('fromName');
+    expect(relationshipItem?.proposedPayload).not.toHaveProperty('toName');
 
     await expect(scope.suggestions.rejectSuggestionItem(relationshipItem?.id ?? '')).resolves.toBe(
       true,
@@ -1182,6 +1184,8 @@ describe('processSuggestionJobForTests', () => {
     expect(Array.from(new Set(Object.values(relationshipItem?.proposedPayload ?? {})))).toEqual(
       expect.arrayContaining([company.id, task.id]),
     );
+    expect(relationshipItem?.proposedPayload).not.toHaveProperty('fromName');
+    expect(relationshipItem?.proposedPayload).not.toHaveProperty('toName');
 
     await expect(scope.suggestions.rejectSuggestionItem(relationshipItem?.id ?? '')).resolves.toBe(
       true,
@@ -1342,6 +1346,8 @@ describe('processSuggestionJobForTests', () => {
         kind: 'related',
       },
     });
+    expect(relationshipItem?.proposedPayload).not.toHaveProperty('fromName');
+    expect(relationshipItem?.proposedPayload).not.toHaveProperty('toName');
 
     await expect(scope.suggestions.rejectSuggestionItem(relationshipItem?.id ?? '')).resolves.toBe(
       true,
@@ -1927,6 +1933,7 @@ describe('processSuggestionJobForTests', () => {
     const item = await scope.boards.addBoardItem(board.id, {
       entityId: company.id,
       laneId: board.lanes[0]?.id ?? null,
+      responsibleUserId: OWNER_ID,
       actor: { kind: 'user', userId: OWNER_ID },
     });
     const rawEventId = '10000000-0000-0000-0000-0000000000b0';
@@ -1950,6 +1957,7 @@ describe('processSuggestionJobForTests', () => {
     expect(call?.prompt).toContain('# Existing boards');
     expect(call?.prompt).toContain(`board ${board.id}: "Pilot pipeline"`);
     expect(call?.prompt).toContain(`item ${item.id}: object=${company.id} company "Revigo"`);
+    expect(call?.prompt).toContain(`responsible=${OWNER_ID} responsible_name=Owner`);
     expect(call?.prompt).toContain('targetKind=board_membership');
     expect(call?.prompt).toContain('Allowed fields: laneId, position, responsibleUserId');
     expect(call?.system).toContain('board_membership or board_item_update');
@@ -2128,7 +2136,7 @@ describe('processSuggestionJobForTests', () => {
     expect(relationshipItems).toHaveLength(1);
   });
 
-  it('suppresses model-backed relationship proposals when the existing endpoint edge is already present', async () => {
+  it('suppresses name-only model-backed relationship proposals when the edge already exists', async () => {
     const rawEventId = '10000000-0000-0000-0000-0000000000a2';
     const [john, acme] = await db
       .insert(entities)
@@ -2176,8 +2184,8 @@ describe('processSuggestionJobForTests', () => {
                 targetKind: 'object_relationship',
                 title: 'Relate John Doe and Acme Corporation',
                 proposedPayload: {
-                  fromEntityId: john.id,
-                  toEntityId: acme.id,
+                  fromName: 'John Doe',
+                  toName: 'Acme Corporation',
                   kind: 'related',
                 },
               },
@@ -2232,7 +2240,7 @@ describe('processSuggestionJobForTests', () => {
       },
       occurredAt: new Date('2026-05-27T10:02:00.000Z'),
     });
-    const relationshipBundle = {
+    const relationshipBundle = (payload: Record<string, unknown>) => ({
       title: 'Relate John Doe and Acme Corporation',
       summary: 'John Doe is related to Acme Corporation.',
       reason: 'The source says John Doe is from Acme Corporation.',
@@ -2243,18 +2251,36 @@ describe('processSuggestionJobForTests', () => {
           operation: 'create' as const,
           targetKind: 'object_relationship' as const,
           title: 'Relate John Doe and Acme Corporation',
-          proposedPayload: {
-            fromEntityId: john.id,
-            toEntityId: acme.id,
-            kind: 'related',
-          },
+          proposedPayload: payload,
         },
       ],
-    };
-    const chat = vi.fn().mockResolvedValue({
-      model: MODEL_ID,
-      object: { bundles: [relationshipBundle] },
     });
+    const chat = vi
+      .fn()
+      .mockResolvedValueOnce({
+        model: MODEL_ID,
+        object: {
+          bundles: [
+            relationshipBundle({
+              fromName: 'John Doe',
+              toName: 'Acme Corporation',
+              kind: 'related',
+            }),
+          ],
+        },
+      })
+      .mockResolvedValueOnce({
+        model: MODEL_ID,
+        object: {
+          bundles: [
+            relationshipBundle({
+              fromName: 'John Doe',
+              toName: 'Acme Corporation',
+              kind: 'related',
+            }),
+          ],
+        },
+      });
 
     await processSuggestionJobForTests(
       { db: db as never },
@@ -2325,6 +2351,7 @@ describe('processSuggestionJobForTests', () => {
                   type: 'person',
                   canonicalName: 'Tim',
                   aliases: ['timbo0'],
+                  ownerName: 'Member',
                 },
               },
             ],
@@ -2355,6 +2382,7 @@ describe('processSuggestionJobForTests', () => {
       ? item.proposedPayload.aliases
       : [];
     expect(aliases).toEqual(expect.arrayContaining(['Tim', 'timbo0']));
+    expect(item?.proposedPayload.ownerName).toBe('Member');
   });
 
   it('does not rewrite person creates from first-name prefixes or numbered handle variants', async () => {

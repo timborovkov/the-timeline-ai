@@ -2250,9 +2250,12 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
           .select({
             userId: teamMembers.userId,
             role: teamMembers.role,
+            name: users.name,
+            email: users.email,
             createdAt: teamMembers.createdAt,
           })
           .from(teamMembers)
+          .innerJoin(users, eq(users.id, teamMembers.userId))
           .where(and(eq(teamMembers.teamId, teamId), isNull(teamMembers.removedAt)))
           .orderBy(asc(teamMembers.createdAt));
       },
