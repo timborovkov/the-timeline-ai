@@ -236,7 +236,7 @@ export interface BoardReadOptions {
 export interface BoardItemFilter {
   query?: string;
   laneId?: string | string[] | null;
-  responsibleUserId?: string | null;
+  responsibleUserId?: string | null | (string | null)[];
   priority?: number | number[];
   priorityNull?: boolean;
   dueBefore?: Date;
@@ -785,14 +785,18 @@ export function createBoardScope({
 
   function nullableUuidCondition(
     column: unknown,
-    value: string | string[] | null | undefined,
+    value: string | null | (string | null)[] | undefined,
   ): SQL | undefined {
     if (value === undefined) return undefined;
     if (value === null) return isNull(column as never);
     const values = toArray(value) ?? [];
-    const uuidValues = values.filter((candidate) => UUID_RE.test(candidate));
-    if (uuidValues.length === 0) return sql`false`;
-    return inArray(column as never, uuidValues);
+    const uuidValues = values.filter(
+      (candidate): candidate is string => typeof candidate === 'string' && UUID_RE.test(candidate),
+    );
+    const includesNull = values.some((candidate) => candidate === null);
+    if (uuidValues.length === 0) return includesNull ? isNull(column as never) : sql`false`;
+    const uuidCondition = inArray(column as never, uuidValues);
+    return includesNull ? or(isNull(column as never), uuidCondition) : uuidCondition;
   }
 
   function boardItemObjectFilterConditions(filter: ObjectCountFilter | undefined): SQL[] {
@@ -818,11 +822,11 @@ export function createBoardScope({
     else if (priorities && priorities.length > 0)
       conds.push(inArray(entities.priority, priorities));
 
-    if (filter.ownerUserId === null) conds.push(isNull(entities.ownerUserId));
-    else if (filter.ownerUserId) conds.push(eq(entities.ownerUserId, filter.ownerUserId));
+    const ownerCondition = nullableUuidCondition(entities.ownerUserId, filter.ownerUserId);
+    if (ownerCondition) conds.push(ownerCondition);
 
-    if (filter.assigneeUserId === null) conds.push(isNull(entities.assigneeUserId));
-    else if (filter.assigneeUserId) conds.push(eq(entities.assigneeUserId, filter.assigneeUserId));
+    const assigneeCondition = nullableUuidCondition(entities.assigneeUserId, filter.assigneeUserId);
+    if (assigneeCondition) conds.push(assigneeCondition);
 
     if (filter.dueNull) conds.push(isNull(entities.dueAt));
     if (filter.dueBefore) conds.push(lt(entities.dueAt, filter.dueBefore));
@@ -848,14 +852,11 @@ export function createBoardScope({
     const laneCondition = nullableUuidCondition(boardItems.laneId, filter.laneId);
     if (laneCondition) conds.push(laneCondition);
 
-    if (filter.responsibleUserId === null) conds.push(isNull(boardItems.responsibleUserId));
-    else if (filter.responsibleUserId) {
-      conds.push(
-        UUID_RE.test(filter.responsibleUserId)
-          ? eq(boardItems.responsibleUserId, filter.responsibleUserId)
-          : sql`false`,
-      );
-    }
+    const responsibleCondition = nullableUuidCondition(
+      boardItems.responsibleUserId,
+      filter.responsibleUserId,
+    );
+    if (responsibleCondition) conds.push(responsibleCondition);
 
     const priorities = toArray(filter.priority);
     if (filter.priorityNull) conds.push(isNull(boardItems.priority));

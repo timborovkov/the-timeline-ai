@@ -39,7 +39,9 @@ const schema = z.object({
   query: z.string().trim().max(500).default(''),
   mode: z.enum(['preview', 'full']).default('preview'),
   kinds: z.array(z.enum(GLOBAL_SEARCH_KINDS)).max(GLOBAL_SEARCH_KINDS.length).optional(),
-  source: z.enum(EVENT_SOURCES).optional(),
+  source: z
+    .union([z.enum(EVENT_SOURCES), z.array(z.enum(EVENT_SOURCES)).max(EVENT_SOURCES.length)])
+    .optional(),
   from: z.iso.datetime().optional(),
   to: z.iso.datetime().optional(),
   limit: z.number().int().min(1).max(80).optional(),
@@ -189,39 +191,53 @@ async function searchTimeline(
   warnings: GlobalSearchWarning[],
 ): Promise<GlobalSearchResult[]> {
   try {
-    const args: Parameters<Scope['timeline']['searchEvents']>[0] = {
-      query: input.query,
-      limit: sourceLimit(input, 10),
-    };
-    if (input.from) args.from = new Date(input.from);
-    if (input.to) args.to = new Date(input.to);
-    if (input.source) args.source = input.source;
-    const hits = await scope.timeline.searchEvents(args);
-    return hits.map((hit) =>
-      finalizeGlobalSearchResult({
-        id: `timeline:${hit.eventId}`,
-        kind: 'timeline_event',
-        title: hit.snippet || `${hit.source} event`,
-        snippet: hit.snippet,
-        href: `/app/timeline?event=${hit.eventId}`,
-        occurredAt: hit.occurredAt,
-        scoreParts: {
-          semantic: hit.score,
-          intent: scoreIntent(input.query, 'timeline_event', [hit.source]),
-          recency: scoreRecency(hit.occurredAt),
-        },
-        metadata: {
-          source: hit.source,
-          entities: hit.entityIds.length,
-          facts: hit.factIds.length,
-          relatedEvidence: hit.artifactCluster?.canonicalName ?? null,
-          relatedEvidenceSignals: hit.artifactCluster?.relatedEvidence.length ?? null,
-          relatedEvidenceStatusSources:
-            hit.artifactCluster?.relatedEvidence.filter((evidence) => evidence.authoritative)
-              .length ?? null,
-        },
+    const sources =
+      input.source === undefined
+        ? [undefined]
+        : Array.isArray(input.source)
+          ? input.source
+          : [input.source];
+    const resultGroups = await Promise.all(
+      sources.map(async (source) => {
+        const args: Parameters<Scope['timeline']['searchEvents']>[0] = {
+          query: input.query,
+          limit: sourceLimit(input, 10),
+        };
+        if (input.from) args.from = new Date(input.from);
+        if (input.to) args.to = new Date(input.to);
+        if (source) args.source = source;
+        const hits = await scope.timeline.searchEvents(args);
+        return hits.map((hit) =>
+          finalizeGlobalSearchResult({
+            id: `timeline:${hit.eventId}`,
+            kind: 'timeline_event',
+            title: hit.snippet || `${hit.source} event`,
+            snippet: hit.snippet,
+            href: `/app/timeline?event=${hit.eventId}`,
+            occurredAt: hit.occurredAt,
+            scoreParts: {
+              semantic: hit.score,
+              intent: scoreIntent(input.query, 'timeline_event', [hit.source]),
+              recency: scoreRecency(hit.occurredAt),
+            },
+            metadata: {
+              source: hit.source,
+              entities: hit.entityIds.length,
+              facts: hit.factIds.length,
+              relatedEvidence: hit.artifactCluster?.canonicalName ?? null,
+              relatedEvidenceSignals: hit.artifactCluster?.relatedEvidence.length ?? null,
+              relatedEvidenceStatusSources:
+                hit.artifactCluster?.relatedEvidence.filter((evidence) => evidence.authoritative)
+                  .length ?? null,
+            },
+          }),
+        );
       }),
     );
+    const results = resultGroups.flat();
+    return rankGlobalSearchResults(
+      Array.from(new Map(results.map((result) => [result.id, result])).values()),
+    ).slice(0, sourceLimit(input, 10));
   } catch {
     warnings.push({
       source: 'timeline_event',

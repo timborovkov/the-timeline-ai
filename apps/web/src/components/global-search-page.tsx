@@ -16,8 +16,9 @@ import { useEffect, useMemo, useReducer } from 'react';
 import type { GlobalSearchKind, GlobalSearchResult } from '@timeline/shared/search';
 import type { ComponentType, SVGProps, SyntheticEvent } from 'react';
 
+import { FilterMultiSelect } from '@/components/filter-multi-select';
+import { selectedValues } from '@/lib/filter-values';
 import { fetchGlobalSearch } from '@/lib/global-search';
-import { cn } from '@/lib/utils';
 import { searchErrorMessage } from '@/lib/ux-errors';
 
 type Icon = ComponentType<SVGProps<SVGSVGElement>>;
@@ -30,7 +31,7 @@ interface SearchViewState {
 interface PageState extends SearchViewState {
   draft: string;
   query: string;
-  activeFilter: string;
+  typeFilters: string;
   source: string;
   from: string;
   to: string;
@@ -38,17 +39,18 @@ interface PageState extends SearchViewState {
 type PageAction =
   | { type: 'draft'; value: string }
   | { type: 'query'; value: string }
-  | { type: 'filter'; value: string }
+  | { type: 'type_filters'; value: string }
   | { type: 'source'; value: string }
   | { type: 'from'; value: string }
   | { type: 'to'; value: string }
+  | { type: 'clear_filters' }
   | {
       type: 'route_sync';
       query: string;
       source: string;
       from: string;
       to: string;
-      activeFilter: string;
+      typeFilters: string;
     }
   | { type: 'search_start' }
   | { type: 'search_success'; results: GlobalSearchResult[]; warnings: string[] }
@@ -77,15 +79,26 @@ const SOURCES = [
   ['system', 'System'],
 ] as const;
 
+const RESULT_TYPE_OPTIONS: { value: string; label: string }[] = [];
+const FILTERS_BY_PARAM = new Map<string, (typeof FILTERS)[number]>();
+for (const filter of FILTERS) {
+  FILTERS_BY_PARAM.set(filter.param, filter);
+  if (filter.kinds) RESULT_TYPE_OPTIONS.push({ value: filter.param, label: filter.label });
+}
+const SOURCE_OPTIONS = SOURCES.map(([value, label]) => ({ value, label }));
+
 const RESULT_DATE_FORMAT = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' });
 
 function pageReducer(state: PageState, action: PageAction): PageState {
   if (action.type === 'draft') return { ...state, draft: action.value };
   if (action.type === 'query') return { ...state, query: action.value };
-  if (action.type === 'filter') return { ...state, activeFilter: action.value };
+  if (action.type === 'type_filters') return { ...state, typeFilters: action.value };
   if (action.type === 'source') return { ...state, source: action.value };
   if (action.type === 'from') return { ...state, from: action.value };
   if (action.type === 'to') return { ...state, to: action.value };
+  if (action.type === 'clear_filters') {
+    return { ...state, typeFilters: '', source: '', from: '', to: '' };
+  }
   if (action.type === 'route_sync') {
     if (
       state.query === action.query &&
@@ -93,7 +106,7 @@ function pageReducer(state: PageState, action: PageAction): PageState {
       state.source === action.source &&
       state.from === action.from &&
       state.to === action.to &&
-      state.activeFilter === action.activeFilter
+      state.typeFilters === action.typeFilters
     ) {
       return state;
     }
@@ -104,7 +117,7 @@ function pageReducer(state: PageState, action: PageAction): PageState {
       source: action.source,
       from: action.from,
       to: action.to,
-      activeFilter: action.activeFilter,
+      typeFilters: action.typeFilters,
     };
   }
   if (action.type === 'search_start') return { ...state, loading: true, error: null };
@@ -171,26 +184,64 @@ function relatedEvidenceLabel(result: GlobalSearchResult): string | null {
   return `${name} · ${signals}${authority}`;
 }
 
-function filterFromParam(param: string): string {
-  return FILTERS.find((filter) => filter.param === param)?.label ?? 'All';
+function filtersFromParam(param: string): string {
+  const selected = selectedValues(param, RESULT_TYPE_OPTIONS);
+  return selected.join(',');
+}
+
+function kindsForFilters(input: string): GlobalSearchKind[] | null {
+  const selected = selectedValues(input, RESULT_TYPE_OPTIONS);
+  if (selected.length === 0) return null;
+  const kinds = new Set<GlobalSearchKind>();
+  for (const param of selected) {
+    const filter = FILTERS_BY_PARAM.get(param);
+    for (const kind of filter?.kinds ?? []) kinds.add(kind);
+  }
+  return Array.from(kinds);
 }
 
 function searchPath(input: {
   query: string;
-  activeFilter: string;
+  typeFilters: string;
   source: string;
   from: string;
   to: string;
 }): string {
   const params = new URLSearchParams();
   const query = input.query.trim();
-  const filter = FILTERS.find((item) => item.label === input.activeFilter);
   if (query) params.set('q', query);
-  if (filter && filter.param !== 'all') params.set('type', filter.param);
+  if (input.typeFilters) params.set('type', input.typeFilters);
   if (input.source) params.set('source', input.source);
   if (input.from) params.set('from', input.from);
   if (input.to) params.set('to', input.to);
   return params.toString() ? `/app/search?${params.toString()}` : '/app/search';
+}
+
+function DateFilterInput({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label className="min-w-36">
+      <span className="mb-1 block font-mono text-[10px] uppercase tracking-[0.14em] text-fg-dim">
+        {label}
+      </span>
+      <input
+        type="date"
+        value={value}
+        aria-label={label}
+        onChange={(event) => {
+          onChange(event.target.value);
+        }}
+        className="h-9 w-full rounded-sm border border-border bg-surface px-2 text-xs font-mono text-fg outline-none transition-colors focus:border-signal/60"
+      />
+    </label>
+  );
 }
 
 function SearchResultRow({ result }: { result: GlobalSearchResult }) {
@@ -264,11 +315,11 @@ export function GlobalSearchPage({
   initialTo = '',
 }: GlobalSearchPageProps) {
   const router = useRouter();
-  const initialFilter = filterFromParam(initialType);
+  const initialTypeFilters = filtersFromParam(initialType);
   const [state, dispatch] = useReducer(pageReducer, {
     draft: initialQuery,
     query: initialQuery,
-    activeFilter: initialFilter,
+    typeFilters: initialTypeFilters,
     source: initialSource,
     from: initialFrom,
     to: initialTo,
@@ -285,13 +336,14 @@ export function GlobalSearchPage({
       source: initialSource,
       from: initialFrom,
       to: initialTo,
-      activeFilter: filterFromParam(initialType),
+      typeFilters: filtersFromParam(initialType),
     });
   }, [initialFrom, initialQuery, initialSource, initialTo, initialType]);
 
-  const kinds = useMemo(
-    () => FILTERS.find((filter) => filter.label === state.activeFilter)?.kinds ?? null,
-    [state.activeFilter],
+  const kinds = useMemo(() => kindsForFilters(state.typeFilters), [state.typeFilters]);
+  const selectedSources = useMemo(
+    () => selectedValues(state.source, SOURCE_OPTIONS),
+    [state.source],
   );
 
   useEffect(() => {
@@ -301,7 +353,7 @@ export function GlobalSearchPage({
       query: state.query,
       mode: 'full',
       kinds: kinds ?? undefined,
-      source: state.source || null,
+      source: selectedSources.length > 0 ? selectedSources : null,
       from: state.from || null,
       to: state.to || null,
       limit: 60,
@@ -324,15 +376,15 @@ export function GlobalSearchPage({
     return () => {
       controller.abort();
     };
-  }, [kinds, state.from, state.query, state.source, state.to]);
+  }, [kinds, selectedSources, state.from, state.query, state.to]);
 
   function replaceSearchUrl(
-    next: Partial<Pick<PageState, 'query' | 'activeFilter' | 'source' | 'from' | 'to'>>,
+    next: Partial<Pick<PageState, 'query' | 'typeFilters' | 'source' | 'from' | 'to'>>,
   ): void {
     router.replace(
       searchPath({
         query: next.query ?? state.query,
-        activeFilter: next.activeFilter ?? state.activeFilter,
+        typeFilters: next.typeFilters ?? state.typeFilters,
         source: next.source ?? state.source,
         from: next.from ?? state.from,
         to: next.to ?? state.to,
@@ -346,6 +398,17 @@ export function GlobalSearchPage({
     dispatch({ type: 'query', value: trimmed });
     replaceSearchUrl({ query: trimmed });
   }
+
+  function clearFilters(): void {
+    dispatch({ type: 'clear_filters' });
+    replaceSearchUrl({ typeFilters: '', source: '', from: '', to: '' });
+  }
+
+  const filterCount =
+    selectedValues(state.typeFilters, RESULT_TYPE_OPTIONS).length +
+    selectedSources.length +
+    (state.from ? 1 : 0) +
+    (state.to ? 1 : 0);
 
   return (
     <div className="mx-auto max-w-5xl space-y-5">
@@ -376,66 +439,55 @@ export function GlobalSearchPage({
         </button>
       </form>
 
-      <div className="space-y-3 border-y border-border py-3">
-        <nav aria-label="Result type" className="flex flex-wrap gap-1.5">
-          {FILTERS.map((filter) => (
-            <button
-              key={filter.label}
-              type="button"
-              onClick={() => {
-                dispatch({ type: 'filter', value: filter.label });
-                replaceSearchUrl({ activeFilter: filter.label });
-              }}
-              className={cn(
-                'inline-flex min-h-8 items-center rounded-sm border px-2.5 font-mono text-[11px] uppercase tracking-[0.12em] transition-colors',
-                state.activeFilter === filter.label
-                  ? 'border-signal/50 bg-signal-soft text-signal'
-                  : 'border-border text-fg-muted hover:bg-surface hover:text-fg',
-              )}
-            >
-              {filter.label}
-            </button>
-          ))}
-        </nav>
-        <div className="flex flex-wrap gap-2">
-          <select
+      <div className="grid gap-3 border-y border-border py-3 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-start">
+        <div className="flex min-w-0 flex-wrap items-end gap-2">
+          <FilterMultiSelect
+            label="Result types"
+            value={state.typeFilters}
+            onValueChange={(value) => {
+              dispatch({ type: 'type_filters', value });
+              replaceSearchUrl({ typeFilters: value });
+            }}
+            placeholder="All results"
+            options={RESULT_TYPE_OPTIONS}
+          />
+          <FilterMultiSelect
+            label="Source"
             value={state.source}
-            onChange={(event) => {
-              const value = event.target.value;
+            onValueChange={(value) => {
               dispatch({ type: 'source', value });
               replaceSearchUrl({ source: value });
             }}
-            className="h-9 rounded-sm border border-border bg-bg px-2 text-sm focus:border-border-strong focus:outline-none"
-          >
-            <option value="">All sources</option>
-            {SOURCES.map(([value, label]) => (
-              <option key={value} value={value}>
-                {label}
-              </option>
-            ))}
-          </select>
-          <input
-            type="date"
+            placeholder="All sources"
+            options={SOURCE_OPTIONS}
+          />
+          <DateFilterInput
+            label="From"
             value={state.from}
-            aria-label="From"
-            onChange={(event) => {
-              const value = event.target.value;
+            onChange={(value) => {
               dispatch({ type: 'from', value });
               replaceSearchUrl({ from: value });
             }}
-            className="h-9 rounded-sm border border-border bg-bg px-2 text-sm font-mono focus:border-border-strong focus:outline-none"
           />
-          <input
-            type="date"
+          <DateFilterInput
+            label="To"
             value={state.to}
-            aria-label="To"
-            onChange={(event) => {
-              const value = event.target.value;
+            onChange={(value) => {
               dispatch({ type: 'to', value });
               replaceSearchUrl({ to: value });
             }}
-            className="h-9 rounded-sm border border-border bg-bg px-2 text-sm font-mono focus:border-border-strong focus:outline-none"
           />
+        </div>
+        <div className="flex flex-wrap items-center gap-2 xl:justify-end xl:pt-[1.125rem]">
+          {filterCount > 0 ? (
+            <button
+              type="button"
+              onClick={clearFilters}
+              className="h-9 rounded-sm border border-border px-3 text-sm text-fg-muted transition-colors hover:border-border-strong hover:text-fg"
+            >
+              Clear
+            </button>
+          ) : null}
         </div>
       </div>
 
