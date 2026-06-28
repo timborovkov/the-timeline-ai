@@ -2351,6 +2351,7 @@ describe('processSuggestionJobForTests', () => {
                   type: 'person',
                   canonicalName: 'Tim',
                   aliases: ['timbo0'],
+                  ownerName: 'Member',
                 },
               },
             ],
@@ -2381,6 +2382,7 @@ describe('processSuggestionJobForTests', () => {
       ? item.proposedPayload.aliases
       : [];
     expect(aliases).toEqual(expect.arrayContaining(['Tim', 'timbo0']));
+    expect(item?.proposedPayload.ownerName).toBe('Member');
   });
 
   it('does not rewrite person creates from first-name prefixes or numbered handle variants', async () => {

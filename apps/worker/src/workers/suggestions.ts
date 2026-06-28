@@ -1185,7 +1185,16 @@ function updatePayloadFromCreate(
   aliases: string[],
 ): Record<string, unknown> {
   const payload: Record<string, unknown> = {};
-  for (const key of ['status', 'stage', 'priority', 'ownerUserId', 'assigneeUserId', 'dueAt']) {
+  for (const key of [
+    'status',
+    'stage',
+    'priority',
+    'ownerUserId',
+    'assigneeUserId',
+    'ownerName',
+    'assigneeName',
+    'dueAt',
+  ]) {
     if (payloadHasKey(item.proposedPayload, key)) payload[key] = item.proposedPayload[key];
   }
   if (aliases.length > 0) payload.aliases = aliases;
