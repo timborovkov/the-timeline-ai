@@ -1,8 +1,9 @@
-import { createHmac, timingSafeEqual } from 'node:crypto';
+import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 
 import { integrations as integrationsTable } from '@timeline/db';
 import * as email from '@timeline/shared/email';
 import { getEnv } from '@timeline/shared/env';
+import * as integrationsLib from '@timeline/shared/integrations';
 import * as rateLimit from '@timeline/shared/rate-limit';
 import { and, eq } from 'drizzle-orm';
 import { NextResponse } from 'next/server';
@@ -32,6 +33,25 @@ function verifyChannelToken(token: string, secret: string): string | null {
   if (a.length !== b.length) return null;
   if (!timingSafeEqual(a, b)) return null;
   return integrationId;
+}
+
+function googleHeaderEnvelope(headers: Headers): Record<string, string | null> {
+  return {
+    channelId: headers.get('x-goog-channel-id'),
+    channelExpiration: headers.get('x-goog-channel-expiration'),
+    messageNumber: headers.get('x-goog-message-number'),
+    resourceId: headers.get('x-goog-resource-id'),
+    resourceState: headers.get('x-goog-resource-state'),
+    resourceUri: headers.get('x-goog-resource-uri'),
+  };
+}
+
+function googleDeliveryDedupKey(integrationId: string, envelope: Record<string, string | null>) {
+  if (envelope.channelId && envelope.messageNumber) {
+    return `google_drive:channel:${envelope.channelId}:message:${envelope.messageNumber}`;
+  }
+  const fingerprint = createHash('sha256').update(JSON.stringify(envelope)).digest('hex');
+  return `google_drive:integration:${integrationId}:headers:${fingerprint}`;
 }
 
 export async function POST(req: Request): Promise<Response> {
@@ -98,18 +118,43 @@ export async function POST(req: Request): Promise<Response> {
   if (!integration) {
     return NextResponse.json({ ok: true });
   }
+  const envelope = googleHeaderEnvelope(req.headers);
+  let deliveryId: string;
   try {
-    const queue = await requireRedisQueue();
-    await queue.enqueueIntegrationSyncJob({
-      kind: 'incremental',
-      integrationId: integration.id,
-      teamId: integration.teamId,
-      triggeredBy: 'webhook',
+    const recorded = await integrationsLib.recordWebhookDeliveryTargets(db, {
+      provider: 'google_drive',
+      externalDeliveryId: envelope.messageNumber,
+      externalAccountId: integration.externalAccountId,
+      resourceKind: 'google_drive.channel',
+      externalResourceId: envelope.channelId ?? integration.id,
+      eventType: envelope.resourceState ?? 'unknown',
+      headers: envelope,
+      payload: { headers: envelope },
+      dedupKey: googleDeliveryDedupKey(integration.id, envelope),
+      targets: [
+        {
+          teamId: integration.teamId,
+          integrationId: integration.id,
+          providerConnectionId: integration.providerConnectionId,
+        },
+      ],
     });
+    deliveryId = recorded.deliveryId;
   } catch (err) {
     reportCaughtError(err, {
       surface: 'background',
-      operation: 'google_drive_webhook_enqueue_sync',
+      operation: 'google_drive_webhook_record_delivery',
+      tags: { provider: 'google_drive' },
+    });
+    return NextResponse.json({ ok: false, reason: 'delivery_persist_failed' }, { status: 503 });
+  }
+  try {
+    const queue = await requireRedisQueue();
+    await queue.enqueueWebhookDeliveryJob({ deliveryId });
+  } catch (err) {
+    reportCaughtError(err, {
+      surface: 'background',
+      operation: 'google_drive_webhook_enqueue_delivery',
       tags: { provider: 'google_drive' },
     });
     return NextResponse.json({ ok: true, reason: 'enqueue_failed' }, { status: 200 });

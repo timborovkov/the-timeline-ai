@@ -351,6 +351,20 @@
       "when": 1795653300000,
       "tag": "0049_artifact_clusters",
       "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1795653360000,
+      "tag": "0050_integration_webhook_gateway",
+      "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "7",
+      "when": 1795653420000,
+      "tag": "0051_connection_attention_webhook_degraded",
+      "breakpoints": true
     }
   ]
 }

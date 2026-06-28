@@ -23,14 +23,22 @@ import { captureWorkerException, captureWorkerJobFailure } from '#src/monitoring
 //     synthetic tick job (integrationId='__tick__').
 
 const log = childLogger('worker:integration-sync');
-const GITHUB_BACKGROUND_SYNC_INTERVAL_MS = 60 * 60 * 1000;
+type NativeSyncProvider = integrationsLib.NativeProviderId;
 
 interface IntegrationSyncDeps {
   db: Db;
 }
 
+function isNativeSyncProvider(
+  provider: integrationsLib.IntegrationProviderName,
+): provider is NativeSyncProvider {
+  return integrationsLib.isNativeProviderId(provider);
+}
+
 function isAuthOrAccessFailure(message: string): boolean {
-  if (message.includes('github_rate_limited')) return false;
+  if (message.includes('github_rate_limited') || message.includes('provider_rate_limited')) {
+    return false;
+  }
   return (
     /\b(?:401|403|404)\b/.test(message) ||
     /\b(?:reconnect|expired|unauthorized|forbidden)\b/i.test(message)
@@ -58,13 +66,21 @@ function summarizeSyncPartialFailures(failures: integrationsLib.SyncPartialFailu
     .slice(0, 500);
 }
 
-function githubRateLimitPause(err: unknown): { retryAt: Date; message: string } | null {
-  if (
-    typeof err !== 'object' ||
-    err === null ||
-    !('code' in err) ||
-    (err as { code?: unknown }).code !== 'github_rate_limited'
-  ) {
+function providerRateLimitPause(err: unknown): {
+  retryAt: Date;
+  message: string;
+  reason: string;
+  provider?: NativeSyncProvider;
+  scope?: string;
+  externalAccountId?: string;
+} | null {
+  const isProviderRateLimit =
+    integrationsLib.isProviderRateLimitError(err) ||
+    (typeof err === 'object' &&
+      err !== null &&
+      'code' in err &&
+      (err as { code?: unknown }).code === 'github_rate_limited');
+  if (!isProviderRateLimit) {
     return null;
   }
   const retryAtValue = (err as { retryAt?: unknown }).retryAt;
@@ -75,16 +91,82 @@ function githubRateLimitPause(err: unknown): { retryAt: Date; message: string } 
         ? new Date(retryAtValue)
         : null;
   if (!retryAt || Number.isNaN(retryAt.getTime())) return null;
+  const record = err as {
+    code?: unknown;
+    provider?: unknown;
+    rateLimitKind?: unknown;
+    reason?: unknown;
+    scope?: unknown;
+    externalAccountId?: unknown;
+  };
+  const reason =
+    typeof record.reason === 'string'
+      ? record.reason
+      : typeof record.code === 'string'
+        ? record.code
+        : 'provider_rate_limited';
+  const provider =
+    typeof record.provider === 'string' && record.provider !== 'mcp'
+      ? (record.provider as NativeSyncProvider)
+      : typeof record.code === 'string' && record.code === 'github_rate_limited'
+        ? 'github'
+        : undefined;
+  const scope =
+    typeof record.scope === 'string'
+      ? record.scope
+      : typeof record.rateLimitKind === 'string'
+        ? record.rateLimitKind
+        : undefined;
   return {
     retryAt,
-    message: err instanceof Error ? err.message : 'github_rate_limited',
+    reason,
+    message: err instanceof Error ? err.message : reason,
+    ...(provider ? { provider } : {}),
+    ...(scope ? { scope } : {}),
+    ...(typeof record.externalAccountId === 'string' && record.externalAccountId.length > 0
+      ? { externalAccountId: record.externalAccountId }
+      : {}),
   };
+}
+
+function providerBudgetKey(
+  integration: integrationsLib.IntegrationRow,
+  scope: string,
+  externalAccountId?: string,
+): integrationsLib.ProviderBudgetKey | null {
+  return integrationsLib.providerBudgetKeyForIntegration(integration, scope, externalAccountId);
+}
+
+function missingRequiredScopeSummary(
+  provider: NativeSyncProvider,
+  missingScopes: string[],
+): string {
+  return `${provider} connection is missing required OAuth scopes (${missingScopes.join(
+    ', ',
+  )}); reconnect to enable webhook provisioning and account-scoped provider budgets.`;
+}
+
+async function loadFirstProviderBudgetPause(
+  db: Db,
+  integration: integrationsLib.IntegrationRow,
+  tokens: Record<string, unknown> | null,
+): Promise<{ retryAt: Date; reason: string; scope: string } | null> {
+  if (!isNativeSyncProvider(integration.provider)) return null;
+  for (const scope of integrationsLib.providerSyncPolicy(integration.provider).budgetScopes) {
+    const budgetKeys = integrationsLib.providerBudgetKeysForIntegration(integration, scope, tokens);
+    for (const budgetKey of budgetKeys) {
+      const pause = await integrationsLib.adminLoadProviderBudgetPause(db, budgetKey);
+      if (pause) return pause;
+    }
+  }
+  return null;
 }
 
 export async function runOneIntegration(
   db: Db,
   integrationId: string,
-  kind: 'backfill' | 'incremental',
+  kind: 'backfill' | 'incremental' | 'targeted',
+  target?: Extract<queue.IntegrationSyncJobData, { kind: 'targeted' }>,
 ): Promise<void> {
   // Per-integration session-scoped advisory lock. With worker
   // concurrency=2 + no jobId dedup, the 5-min tick can race with a
@@ -126,6 +208,29 @@ export async function runOneIntegration(
       // sync. We skip cleanly so a future "MCP poll" extension is
       // additive.
       return;
+    }
+    const missingRequiredScopes = integrationsLib.missingRequiredProviderScopes(
+      integration.provider,
+      integration.scopes,
+    );
+    if (missingRequiredScopes.length > 0) {
+      const summary = missingRequiredScopeSummary(integration.provider, missingRequiredScopes);
+      await integrationsLib.adminRecordAudit(
+        db,
+        integration.teamId,
+        'sync_degraded:missing_provider_scopes',
+        {
+          provider: integration.provider,
+          missingScopes: missingRequiredScopes,
+        },
+        { integrationId },
+      );
+      await integrationsLib.adminRecordConnectionAttention(db, integration.teamId, {
+        providerConnectionId: integration.providerConnectionId,
+        integrationId,
+        category: 'needs_reconnect',
+        summary,
+      });
     }
     if (integration.connectedByUserId) {
       const ownerStillMember = await integrationsLib.adminVerifyTeamMember(
@@ -173,8 +278,47 @@ export async function runOneIntegration(
       );
       return;
     }
+    const providerBudgetPause = await loadFirstProviderBudgetPause(db, integration, tokens);
+    if (providerBudgetPause) {
+      log.info(
+        { integrationId, kind, retryAt: providerBudgetPause.retryAt },
+        'integration provider budget paused',
+      );
+      await integrationsLib.adminRecordAudit(
+        db,
+        integration.teamId,
+        `sync_skipped:${kind}`,
+        {
+          provider: integration.provider,
+          reason: providerBudgetPause.reason,
+          scope: providerBudgetPause.scope,
+          retryAt: providerBudgetPause.retryAt.toISOString(),
+        },
+        { integrationId },
+      );
+      return;
+    }
     const provider = integrationsLib.getProvider(integration.provider);
-    const selections = await integrationsLib.adminListSelections(db, integrationId);
+    const allSelections = await integrationsLib.adminListSelections(db, integrationId);
+    const selections =
+      kind === 'targeted' && target
+        ? targetedSelections(integration.provider, allSelections, target)
+        : allSelections;
+    if (kind === 'targeted' && selections.length === 0) {
+      await integrationsLib.adminRecordAudit(
+        db,
+        integration.teamId,
+        'sync_skipped:targeted',
+        {
+          provider: integration.provider,
+          resourceType: target?.resourceType,
+          externalId: target?.externalId,
+          reason: 'resource_not_selected',
+        },
+        { integrationId },
+      );
+      return;
+    }
 
     // Document harvest is opt-in per provider and requires the integration
     // to have a connected user we can attribute uploads to. For
@@ -312,7 +456,23 @@ export async function runOneIntegration(
       if (kind === 'backfill') {
         syncResult = await provider.backfill({ integration, tokens, selections, ctx });
       } else {
-        syncResult = await provider.incrementalSync({ integration, tokens, selections, ctx });
+        syncResult = await provider.incrementalSync({
+          integration,
+          tokens,
+          selections,
+          ctx,
+          ...(kind === 'targeted' && target
+            ? {
+                target: {
+                  resourceType: target.resourceType,
+                  externalId: target.externalId,
+                  ...(target.surface ? { surface: target.surface } : {}),
+                  ...(target.reason ? { reason: target.reason } : {}),
+                  ...(target.triggeredBy ? { triggeredBy: target.triggeredBy } : {}),
+                },
+              }
+            : {}),
+        });
       }
       const partialFailures = syncPartialFailures(syncResult);
       const partialSummary =
@@ -347,7 +507,8 @@ export async function runOneIntegration(
         await integrationsLib.adminResolveConnectionAttention(db, integration.teamId, {
           providerConnectionId: integration.providerConnectionId,
           integrationId,
-          categories: ['needs_reconnect', 'sync_error'],
+          categories:
+            missingRequiredScopes.length > 0 ? ['sync_error'] : ['needs_reconnect', 'sync_error'],
         });
       }
       await integrationsLib.adminRecordAudit(
@@ -361,20 +522,33 @@ export async function runOneIntegration(
       const msg = err instanceof Error ? err.message : String(err);
       log.warn({ err, integrationId }, 'integration sync failed');
       await integrationsLib.adminRecordError(db, integrationId, msg);
-      const rateLimit = githubRateLimitPause(err);
+      const rateLimit = providerRateLimitPause(err);
       if (rateLimit) {
         await integrationsLib.adminRecordIntegrationSyncPause(db, integrationId, {
           retryAt: rateLimit.retryAt,
-          reason: 'github_rate_limited',
+          reason: rateLimit.reason,
           error: rateLimit.message.slice(0, 500),
         });
+        const rateLimitBudgetKey = providerBudgetKey(
+          integration,
+          rateLimit.scope ?? rateLimit.reason,
+          rateLimit.externalAccountId,
+        );
+        if (rateLimitBudgetKey) {
+          await integrationsLib.adminRecordProviderBudgetPause(db, rateLimitBudgetKey, {
+            pausedUntil: rateLimit.retryAt,
+            reason: rateLimit.reason,
+            resetAt: rateLimit.retryAt,
+          });
+        }
         await integrationsLib.adminRecordAudit(
           db,
           integration.teamId,
           `sync_paused:${kind}`,
           {
             provider: integration.provider,
-            reason: 'github_rate_limited',
+            reason: rateLimit.reason,
+            ...(rateLimit.scope ? { scope: rateLimit.scope } : {}),
             retryAt: rateLimit.retryAt.toISOString(),
           },
           { integrationId },
@@ -425,36 +599,120 @@ export async function runOneIntegration(
   }
 }
 
-function githubBackgroundSyncDue(
-  integration: { provider: string; lastSyncedAt?: Date | string | null },
+function targetedSelections(
+  provider: NativeSyncProvider,
+  selections: { kind: string; externalId: string }[],
+  target: Extract<queue.IntegrationSyncJobData, { kind: 'targeted' }>,
+): { kind: string; externalId: string }[] {
+  const exact = selections.filter(
+    (selection) =>
+      selection.kind === target.resourceType && selection.externalId === target.externalId,
+  );
+  if (exact.length > 0) return exact;
+
+  if (provider === 'github' && target.resourceType === 'github.repo') {
+    const owner = target.externalId.split('/')[0];
+    if (
+      owner &&
+      selections.some(
+        (selection) => selection.kind === 'github.org' && selection.externalId === owner,
+      )
+    ) {
+      return [{ kind: 'github.repo', externalId: target.externalId }];
+    }
+  }
+
+  if (provider === 'sentry' && target.resourceType === 'sentry.project') {
+    const [orgSlug, projectSlug] = target.externalId.split('/');
+    if (
+      orgSlug &&
+      projectSlug &&
+      selections.some(
+        (selection) => selection.kind === 'sentry.org' && selection.externalId === orgSlug,
+      )
+    ) {
+      return [{ kind: 'sentry.project', externalId: target.externalId }];
+    }
+  }
+
+  if (provider === 'monday' && target.resourceType === 'monday.item') {
+    const [boardId, itemId] = target.externalId.split(':');
+    if (
+      boardId &&
+      itemId &&
+      selections.some(
+        (selection) => selection.kind === 'monday.board' && selection.externalId === boardId,
+      )
+    ) {
+      return [{ kind: 'monday.board', externalId: boardId }];
+    }
+  }
+
+  return [];
+}
+
+function reconciliationDue(
+  integration: {
+    provider: NativeSyncProvider;
+    lastSyncedAt?: Date | string | null;
+  },
   now = Date.now(),
 ): boolean {
-  if (integration.provider !== 'github') return true;
+  const policy = integrationsLib.providerSyncPolicy(integration.provider);
   if (!integration.lastSyncedAt) return true;
   const lastSyncedAt =
     integration.lastSyncedAt instanceof Date
       ? integration.lastSyncedAt
       : new Date(integration.lastSyncedAt);
   if (Number.isNaN(lastSyncedAt.getTime())) return true;
-  return now - lastSyncedAt.getTime() >= GITHUB_BACKGROUND_SYNC_INTERVAL_MS;
+  return now - lastSyncedAt.getTime() >= policy.reconciliationIntervalMs;
 }
 
 export async function handleTick(db: Db): Promise<void> {
+  try {
+    const webhookSubscriptions =
+      await integrationsLib.adminReconcileExpiringWebhookSubscriptions(db);
+    if (webhookSubscriptions.checked > 0) {
+      log.info(webhookSubscriptions, 'integration webhook subscription renewal sweep complete');
+    }
+  } catch (err) {
+    log.warn({ err }, 'integration webhook subscription renewal sweep failed');
+    captureWorkerException(err, {
+      component: 'worker_handoff',
+      queueName: queue.QUEUE_NAMES.integrationSync,
+      operation: 'reconcile_expiring_webhook_subscriptions',
+    });
+  }
+
   const all = await integrationsLib.adminListEnabledIntegrations(db);
   for (const i of all) {
-    if (i.provider === 'mcp') continue;
+    if (!isNativeSyncProvider(i.provider)) continue;
+    const provider = i.provider;
     const pause = await integrationsLib.adminLoadIntegrationSyncPause(db, i.id);
     if (pause) {
       log.info(
-        { integrationId: i.id, provider: i.provider, retryAt: pause.retryAt },
+        { integrationId: i.id, provider, retryAt: pause.retryAt },
         'integration sync paused — not enqueueing tick',
       );
       continue;
     }
-    if (!githubBackgroundSyncDue(i)) {
+    const providerBudgetPause = await loadFirstProviderBudgetPause(db, i, null);
+    if (providerBudgetPause) {
+      log.info(
+        {
+          integrationId: i.id,
+          provider,
+          retryAt: providerBudgetPause.retryAt,
+          scope: providerBudgetPause.scope,
+        },
+        'integration provider budget paused — not enqueueing tick',
+      );
+      continue;
+    }
+    if (!reconciliationDue({ provider, lastSyncedAt: i.lastSyncedAt })) {
       log.debug(
-        { integrationId: i.id, lastSyncedAt: i.lastSyncedAt },
-        'github background sync not due yet',
+        { integrationId: i.id, provider, lastSyncedAt: i.lastSyncedAt },
+        'integration reconciliation not due yet',
       );
       continue;
     }
@@ -463,7 +721,7 @@ export async function handleTick(db: Db): Promise<void> {
         kind: 'incremental',
         integrationId: i.id,
         teamId: i.teamId,
-        triggeredBy: 'tick',
+        triggeredBy: 'reconcile',
       });
     } catch (err) {
       log.warn({ err, integrationId: i.id }, 'failed to enqueue per-integration tick');
@@ -488,7 +746,12 @@ export function startIntegrationSyncWorker(
         await handleTick(deps.db);
         return { ticked: true, durationMs: Date.now() - startedAt };
       }
-      await runOneIntegration(deps.db, data.integrationId, data.kind);
+      await runOneIntegration(
+        deps.db,
+        data.integrationId,
+        data.kind,
+        data.kind === 'targeted' ? data : undefined,
+      );
       return {
         integrationId: data.integrationId,
         kind: data.kind,

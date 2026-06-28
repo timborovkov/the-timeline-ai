@@ -16,6 +16,7 @@ import { and, desc, eq, inArray, isNotNull, isNull, lt, notExists, or, sql } fro
 
 import type { JobType } from 'bullmq';
 
+import { isProviderCooldownErrorMessage } from '#src/integrations/types.js';
 import * as queue from '#src/queue/index.js';
 import { rawEventVisibleToUser } from '#src/visibility.js';
 
@@ -820,6 +821,7 @@ async function collectIntegrationCandidates(db: Db, teamId: string): Promise<Job
     .select({
       integration: integrations,
       stateError: integrationSyncState.lastError,
+      stateStatus: integrationSyncState.lastStatus,
       stateUpdatedAt: integrationSyncState.updatedAt,
     })
     .from(integrations)
@@ -836,6 +838,7 @@ async function collectIntegrationCandidates(db: Db, teamId: string): Promise<Job
   const byId = new Map<string, JobRecoveryItem>();
   for (const row of rows) {
     const error = row.integration.lastError ?? row.stateError;
+    if (row.stateStatus === 'rate_limited' || isProviderCooldownErrorMessage(error)) continue;
     const detectedAt = row.stateUpdatedAt ?? row.integration.updatedAt;
     const existing = byId.get(row.integration.id);
     if (existing && existing.detectedAt >= detectedAt) continue;

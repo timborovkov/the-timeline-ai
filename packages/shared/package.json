@@ -16,8 +16,10 @@
       "types": "./dist/index.d.ts"
     },
     "./integrations": {
+      "types": "./src/integrations/index.ts",
+      "development": "./src/integrations/index.ts",
       "import": "./dist/integrations/index.js",
-      "types": "./dist/integrations/index.d.ts"
+      "default": "./dist/integrations/index.js"
     },
     "./integrations/registry": {
       "import": "./dist/integrations/registry.js",
@@ -88,8 +90,10 @@
       "default": "./dist/messaging/index.js"
     },
     "./env": {
+      "types": "./src/env.ts",
+      "development": "./src/env.ts",
       "import": "./dist/env.js",
-      "types": "./dist/env.d.ts"
+      "default": "./dist/env.js"
     },
     "./extraction-model-version": {
       "types": "./src/extraction-model-version.ts",

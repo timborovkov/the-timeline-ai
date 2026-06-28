@@ -1,12 +1,12 @@
 import { users } from '@timeline/db';
-import { OBJECT_TYPES } from '@timeline/shared/objects';
+import { OBJECT_TYPES } from '@timeline/shared/objects/types';
 import { decodeCursor, encodeCursor } from '@timeline/shared/pagination';
 import { withTeam } from '@timeline/shared/team-scope';
 import { inArray } from 'drizzle-orm';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
-import type * as objects from '@timeline/shared/objects';
+import type * as objects from '@timeline/shared/objects/types';
 import type { Metadata } from 'next';
 
 import { EmptyAction } from '@/components/empty-action';
@@ -37,9 +37,11 @@ export const metadata: Metadata = {
 const OBJECTS_PAGE_SIZE = 48;
 const OBJECTS_SECTION_PREVIEW_SIZE = 8;
 
+type ObjectCountFilter = Omit<objects.ObjectListFilter, 'cursor' | 'limit' | 'offset'>;
+
 interface ObjectListScope {
   listObjects(filter: objects.ObjectListFilter): Promise<objects.ObjectRow[]>;
-  countObjects(filter: objects.ObjectCountFilter): Promise<number>;
+  countObjects(filter: ObjectCountFilter): Promise<number>;
 }
 
 function objectIdsForMergeSuggestion(item: { proposedPayload: unknown }): string[] {

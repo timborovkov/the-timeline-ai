@@ -45,6 +45,8 @@ export default defineConfig({
       S3_BUCKET_DOCUMENTS: process.env.S3_BUCKET_DOCUMENTS ?? 'timeline-documents',
       E2E_DETERMINISTIC_CHAT: process.env.E2E_DETERMINISTIC_CHAT ?? '1',
       OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY ?? 'e2e-deterministic-chat',
+      GITHUB_APP_CLIENT_ID: process.env.GITHUB_APP_CLIENT_ID ?? 'e2e-github-client-id',
+      GITHUB_APP_CLIENT_SECRET: process.env.GITHUB_APP_CLIENT_SECRET ?? 'e2e-github-client-secret',
       QDRANT_URL: process.env.QDRANT_URL ?? 'http://qdrant.e2e.invalid',
       INBOUND_EMAIL_DOMAIN: process.env.INBOUND_EMAIL_DOMAIN ?? 'e2e.localhost',
       LOG_LEVEL: process.env.LOG_LEVEL ?? 'silent',

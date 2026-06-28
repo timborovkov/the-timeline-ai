@@ -62,7 +62,7 @@ export function connectionErrorMessage(error: string | undefined, status?: numbe
     return 'GitHub could not read one or more selected repos. Check that the connection still has access, then sync again.';
   }
   if (hasGithubRepoReadFailure(error)) {
-    return 'GitHub could not finish syncing one or more selected repos. Retry sync after the provider recovers.';
+    return 'GitHub returned a temporary error while syncing one or more selected repos. Timeline will keep reconciliation available; try again after GitHub is stable.';
   }
   if (error?.includes('github_incremental_partial') || error?.includes('github_backfill_partial')) {
     if (error.includes('commits:page_cap')) {

@@ -163,6 +163,7 @@ pnpm test:eval            # fast deterministic agent and retrieval evals
 pnpm test:dist-imports    # build db/shared and import compiled runtime modules with Node
 pnpm e2e                  # Playwright core journey tests
 pnpm run doctor           # React Doctor scan for React/Next health regressions
+pnpm canary:integrations  # secret-safe live provider/LLM credential canary
 pnpm dev:seed             # seed local demo data with disabled fake integrations
 pnpm db:generate          # generate Drizzle migrations after schema changes
 pnpm db:migrate           # apply database migrations
@@ -205,6 +206,9 @@ boundaries.
 - [`docs/integration-webhook-transition-plan.md`](./docs/integration-webhook-transition-plan.md) —
   migration plan for moving polling-heavy native ingestion from poller-led sync
   to a webhook-first, provider-budget-aware ingestion system.
+- [`docs/native-provider-template.md`](./docs/native-provider-template.md) —
+  implementation checklist and skeleton for adding native providers on the
+  shared policy, webhook, budget, and reconciliation path.
 - [`docs/ux-overhaul-plan.md`](./docs/ux-overhaul-plan.md) — UX overhaul plan:
   soften the forensic surface for non-technical users with standard-page
   headers, a guided connect-flow wizard, actionable error states,

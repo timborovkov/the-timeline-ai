@@ -3,6 +3,7 @@ import {
   boolean,
   customType,
   index,
+  integer,
   jsonb,
   pgEnum,
   pgTable,
@@ -46,6 +47,7 @@ export const connectionAttentionCategory = pgEnum('connection_attention_category
   'needs_new_owner',
   'access_changed',
   'sync_error',
+  'webhook_degraded',
 ]);
 
 export const providerConnections = pgTable(
@@ -254,5 +256,148 @@ export const integrationAuditLog = pgTable(
   (table) => [
     index('integration_audit_team_created_idx').on(table.teamId, table.createdAt),
     index('integration_audit_integration_idx').on(table.integrationId),
+  ],
+);
+
+export const integrationWebhookDeliveries = pgTable(
+  'integration_webhook_deliveries',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    provider: integrationProvider('provider').notNull(),
+    externalDeliveryId: text('external_delivery_id'),
+    externalAccountId: text('external_account_id'),
+    resourceKind: text('resource_kind'),
+    externalResourceId: text('external_resource_id'),
+    eventType: text('event_type').notNull(),
+    action: text('action'),
+    headers: jsonb('headers').notNull().default({}),
+    payload: jsonb('payload').notNull().default({}),
+    dedupKey: text('dedup_key').notNull(),
+    status: text('status').notNull().default('accepted'),
+    lastError: text('last_error'),
+    receivedAt: timestamp('received_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex('integration_webhook_deliveries_provider_dedup_unq').on(
+      table.provider,
+      table.dedupKey,
+    ),
+    index('integration_webhook_deliveries_provider_received_idx').on(
+      table.provider,
+      table.receivedAt,
+    ),
+    index('integration_webhook_deliveries_external_account_idx').on(
+      table.provider,
+      table.externalAccountId,
+    ),
+    index('integration_webhook_deliveries_status_idx').on(table.status, table.receivedAt),
+  ],
+);
+
+export const integrationWebhookDeliveryTargets = pgTable(
+  'integration_webhook_delivery_targets',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    deliveryId: uuid('delivery_id')
+      .notNull()
+      .references(() => integrationWebhookDeliveries.id, { onDelete: 'cascade' }),
+    teamId: uuid('team_id')
+      .notNull()
+      .references(() => teams.id, { onDelete: 'cascade' }),
+    integrationId: uuid('integration_id')
+      .notNull()
+      .references(() => integrations.id, { onDelete: 'cascade' }),
+    providerConnectionId: uuid('provider_connection_id').references(() => providerConnections.id, {
+      onDelete: 'set null',
+    }),
+    status: text('status').notNull().default('pending'),
+    attempts: integer('attempts').notNull().default(0),
+    nextAttemptAt: timestamp('next_attempt_at', { withTimezone: true }),
+    lastError: text('last_error'),
+    eventDedupKeys: text('event_dedup_keys').array(),
+    syncJobId: text('sync_job_id'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex('integration_webhook_delivery_targets_delivery_integration_unq').on(
+      table.deliveryId,
+      table.integrationId,
+    ),
+    index('integration_webhook_delivery_targets_team_idx').on(table.teamId),
+    index('integration_webhook_delivery_targets_integration_idx').on(table.integrationId),
+    index('integration_webhook_delivery_targets_status_idx').on(table.status, table.nextAttemptAt),
+  ],
+);
+
+export const integrationWebhookSubscriptions = pgTable(
+  'integration_webhook_subscriptions',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    integrationId: uuid('integration_id').references(() => integrations.id, {
+      onDelete: 'cascade',
+    }),
+    providerConnectionId: uuid('provider_connection_id').references(() => providerConnections.id, {
+      onDelete: 'cascade',
+    }),
+    provider: integrationProvider('provider').notNull(),
+    externalSubscriptionId: text('external_subscription_id'),
+    resourceKind: text('resource_kind').notNull(),
+    externalResourceId: text('external_resource_id').notNull(),
+    eventType: text('event_type').notNull(),
+    status: text('status').notNull().default('active'),
+    expiresAt: timestamp('expires_at', { withTimezone: true }),
+    lastVerifiedAt: timestamp('last_verified_at', { withTimezone: true }),
+    lastError: text('last_error'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex('integration_webhook_subscriptions_integration_resource_event_unq')
+      .on(
+        table.provider,
+        table.integrationId,
+        table.resourceKind,
+        table.externalResourceId,
+        table.eventType,
+      )
+      .where(sql`${table.integrationId} IS NOT NULL`),
+    index('integration_webhook_subscriptions_integration_idx').on(table.integrationId),
+    index('integration_webhook_subscriptions_connection_idx').on(table.providerConnectionId),
+    index('integration_webhook_subscriptions_provider_resource_idx').on(
+      table.provider,
+      table.resourceKind,
+      table.externalResourceId,
+    ),
+    index('integration_webhook_subscriptions_status_expires_idx').on(table.status, table.expiresAt),
+  ],
+);
+
+export const integrationProviderBudgets = pgTable(
+  'integration_provider_budgets',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    provider: integrationProvider('provider').notNull(),
+    appKey: text('app_key').notNull(),
+    externalAccountId: text('external_account_id').notNull(),
+    scope: text('scope').notNull(),
+    remaining: integer('remaining'),
+    limit: integer('limit'),
+    resetAt: timestamp('reset_at', { withTimezone: true }),
+    pausedUntil: timestamp('paused_until', { withTimezone: true }),
+    reason: text('reason'),
+    lastObservedAt: timestamp('last_observed_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex('integration_provider_budgets_scope_unq').on(
+      table.provider,
+      table.appKey,
+      table.externalAccountId,
+      table.scope,
+    ),
+    index('integration_provider_budgets_pause_idx').on(table.provider, table.pausedUntil),
+    index('integration_provider_budgets_account_idx').on(table.provider, table.externalAccountId),
   ],
 );

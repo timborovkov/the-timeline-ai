@@ -2416,6 +2416,42 @@ describe('suggestion scope', () => {
     expect(loadedStarted?.status).toBe('superseded');
   });
 
+  it('applies normalized project lifecycle aliases when accepting an update', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const project = await scope.objects.createObject({
+      type: 'project',
+      canonicalName: 'Acme launch plan',
+      status: 'planning',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'chat',
+      title: 'Start Acme launch plan',
+      dedupeKey: 'project-lifecycle-accept:active',
+      items: [
+        {
+          operation: 'update',
+          targetKind: 'object',
+          targetId: project.id,
+          title: 'Mark project doing',
+          dedupeKey: 'project-lifecycle-accept:active:item',
+          proposedPayload: { status: 'doing', stage: 'proposal' },
+        },
+      ],
+    });
+
+    expect(bundle.items[0]?.proposedPayload).toMatchObject({ status: 'active' });
+    await expect(scope.suggestions.acceptSuggestionItem(bundle.items[0]?.id ?? '')).resolves.toBe(
+      true,
+    );
+
+    const updated = await pg.query<{ status: string; stage: string | null }>(
+      `SELECT status, stage FROM entities WHERE id = '${project.id}'`,
+    );
+    expect(updated.rows[0]).toMatchObject({ status: 'active', stage: 'proposal' });
+  });
+
   it('replaces a pending create proposal with create-as-done for the same artifact cluster', async () => {
     const scope = withTeam(db as never, TEAM_ID, PSEUDO_USER, { skipMembershipCheck: true });
     const older = await scope.suggestions.createOrMergeSuggestionBundle({

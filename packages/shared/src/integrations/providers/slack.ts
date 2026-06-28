@@ -2,10 +2,12 @@ import type {
   IntegrationEvent,
   IntegrationProvider,
   OAuthCallbackInput,
+  ProviderRateLimitError,
   ProviderResource,
 } from '#src/integrations/types.js';
 
 import { getEnv } from '#src/env.js';
+import { ProviderRateLimitError as ProviderRateLimit } from '#src/integrations/types.js';
 import { SlackApi } from '#src/slack/api.js';
 
 const AUTH_URL = 'https://slack.com/oauth/v2/authorize';
@@ -86,6 +88,25 @@ function buildAuthorizeUrl(input: {
   return url.toString();
 }
 
+function retryAfterSeconds(value: string | null): number {
+  if (!value) return 60;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.ceil(parsed) : 60;
+}
+
+function slackRateLimitError(method: string, res: Response): ProviderRateLimitError {
+  const retryAfter = retryAfterSeconds(res.headers.get('retry-after'));
+  const retryAt = new Date(Date.now() + retryAfter * 1000);
+  return new ProviderRateLimit({
+    provider: 'slack',
+    retryAt,
+    retryAfterSeconds: retryAfter,
+    scope: 'web_api',
+    reason: 'slack_rate_limited',
+    message: `slack_rate_limited: Slack Web API ${method} limited; retry after ${retryAt.toISOString()}`,
+  });
+}
+
 async function slackCall<T extends { ok: boolean; error?: string }>(
   token: string,
   method: string,
@@ -103,6 +124,7 @@ async function slackCall<T extends { ok: boolean; error?: string }>(
       ),
     ).toString(),
   });
+  if (res.status === 429) throw slackRateLimitError(method, res);
   const json = (await res.json()) as T;
   if (!res.ok || !json.ok) throw new Error(`Slack ${method} failed: ${json.error ?? res.status}`);
   return json;

@@ -124,7 +124,20 @@ export async function GET(): Promise<Response> {
       db
         .select({ count: count() })
         .from(integrations)
-        .where(and(eq(integrations.teamId, active.teamId), isNotNull(integrations.lastError))),
+        .where(
+          and(
+            eq(integrations.teamId, active.teamId),
+            isNotNull(integrations.lastError),
+            sql`LOWER(${integrations.lastError}) NOT LIKE '%provider_rate_limited%'`,
+            sql`LOWER(${integrations.lastError}) NOT LIKE '%github_rate_limited%'`,
+            sql`LOWER(${integrations.lastError}) NOT LIKE '%monday_rate_limited%'`,
+            sql`LOWER(${integrations.lastError}) NOT LIKE '%slack_rate_limited%'`,
+            sql`LOWER(${integrations.lastError}) NOT LIKE '%daily_limit_exceeded%'`,
+            sql`LOWER(${integrations.lastError}) NOT LIKE '%api rate limit exceeded%'`,
+            sql`LOWER(${integrations.lastError}) NOT LIKE '%secondary rate limit%'`,
+            sql`LOWER(${integrations.lastError}) NOT LIKE '%retry after%'`,
+          ),
+        ),
     ]);
     return {
       updatedAt: new Date().toISOString(),

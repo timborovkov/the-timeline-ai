@@ -11,7 +11,7 @@
     <main id="main">
       <h1>Railway deployment</h1>
       <div class="meta">
-        <span class="kind">Operations</span><span>Last updated 2026-06-21</span>
+        <span class="kind">Operations</span><span>Last updated 2026-06-28</span>
       </div>
       <p class="tldr">
         How the Timeline's web + worker + plugin + custom services are arranged on Railway, and what
@@ -171,8 +171,23 @@ SENTRY_AUTH_TOKEN=&lt;sentry source map upload token&gt;
 SENTRY_ORG=irmin-dw
 SENTRY_PROJECT=the-timeline-ai
 SENTRY_RELEASE=&lt;deployed git sha, optional&gt;
+GOOGLE_CLIENT_ID=&lt;google oauth client id&gt;
+GOOGLE_CLIENT_SECRET=&lt;google oauth client secret&gt;
+GOOGLE_DRIVE_WEBHOOK_SECRET=&lt;google drive webhook hmac secret&gt;
+LINEAR_CLIENT_ID=&lt;linear oauth app client id&gt;
+LINEAR_CLIENT_SECRET=&lt;linear oauth app client secret&gt;
+LINEAR_WEBHOOK_SECRET=&lt;linear webhook signing secret&gt;
+SLACK_CLIENT_ID=&lt;slack app client id&gt;
+SLACK_CLIENT_SECRET=&lt;slack app client secret&gt;
+SLACK_SIGNING_SECRET=&lt;slack signing secret&gt;
 MONDAY_CLIENT_ID=&lt;monday oauth app client id&gt;
 MONDAY_CLIENT_SECRET=&lt;monday oauth app client secret&gt;
+MONDAY_WEBHOOK_SECRET=&lt;monday webhook URL token&gt;
+GITHUB_APP_CLIENT_ID=&lt;github oauth/app client id&gt;
+GITHUB_APP_CLIENT_SECRET=&lt;github oauth/app client secret&gt;
+GITHUB_APP_ID=&lt;github app numeric id&gt;
+GITHUB_APP_PRIVATE_KEY=&lt;github app private key pem, use \n escapes for single-line secrets&gt;
+GITHUB_WEBHOOK_SECRET=&lt;github webhook hmac secret&gt;
 SENTRY_INTEGRATION_CLIENT_ID=&lt;sentry oauth app client id&gt;
 SENTRY_INTEGRATION_CLIENT_SECRET=&lt;sentry oauth app client secret&gt;
 NODE_ENV=production
@@ -314,6 +329,16 @@ rclone sync s3:timeline-attachments backblaze-b2:timeline-backup-attachments
         <li>Slack slash commands: <code>https://thetimeline.cc/api/slack/commands</code></li>
         <li>Slack Interactivity: <code>https://thetimeline.cc/api/slack/interactions</code></li>
         <li>Postmark: <code>https://thetimeline.cc/api/email/inbound</code></li>
+        <li>Google Drive: <code>https://thetimeline.cc/api/webhooks/google-drive</code></li>
+        <li>Linear: <code>https://thetimeline.cc/api/webhooks/linear</code></li>
+        <li>GitHub App: <code>https://thetimeline.cc/api/webhooks/github</code></li>
+        <li>
+          Monday.com:
+          <code
+            >https://thetimeline.cc/api/webhooks/monday?token=&lt;MONDAY_WEBHOOK_SECRET&gt;</code
+          >
+        </li>
+        <li>Sentry native integration: <code>https://thetimeline.cc/api/webhooks/sentry</code></li>
         <li>
           Ingest webhooks: <code>https://thetimeline.cc/api/webhooks/ingest</code> with
           <code>Authorization: Bearer tli_...</code>, or the secret URL copied from
@@ -322,6 +347,9 @@ rclone sync s3:timeline-attachments backblaze-b2:timeline-backup-attachments
       </ul>
       <p>
         Native integration OAuth callbacks also land on the web service, including
+        <code>/api/integrations/google_drive/callback</code>,
+        <code>/api/integrations/linear/callback</code>,
+        <code>/api/integrations/github/callback</code>,
         <code>/api/integrations/monday/callback</code>,
         <code>/api/integrations/slack/callback</code>, and
         <code>/api/integrations/sentry/callback</code>.
@@ -429,7 +457,7 @@ rclone sync s3:timeline-attachments backblaze-b2:timeline-backup-attachments
       </p>
       <ul>
         <li><code>web</code> service: small instance, mostly idle outside webhook spikes</li>
-        <li>3 workers: small each, most cost is during processing bursts</li>
+        <li><code>worker</code> service: small instance, most cost is during processing bursts</li>
         <li>Postgres: small instance + storage</li>
         <li>Redis: tiny</li>
         <li>Qdrant: moderate RAM (vectors live in memory)</li>

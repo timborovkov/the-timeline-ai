@@ -175,8 +175,8 @@ Treat this file as an operating contract for agents, not a loose README.
 apps/
   web/      Next.js 16 app (App Router, RSC, server actions, Auth.js)
   worker/   BullMQ workers (transcribe, extract, embed, document-extract,
-            meeting-finalize, overdue-scan, janitor, integration-sync,
-            mcp-health)
+            meeting-finalize, overdue-scan, janitor, webhook-delivery,
+            integration-sync, mcp-health)
 packages/
   db/       Drizzle schema + migrations
   shared/   Cross-package code: withTeam workspace port, llm wrapper, Qdrant

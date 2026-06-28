@@ -7,30 +7,30 @@ contracts, not private implementation structure.
 ## Test Status Overview
 
 Last checked in this branch: full `pnpm validate`, `pnpm test:eval`,
-`pnpm test:dist-imports`, root `pnpm test`, and React Doctor `100 / 100` pass
-after artifact-cluster reconciliation, related-evidence hydration, and
-provider lifecycle authority fixes. The suite includes artifact status reopen
-regressions, same-object batch evidence preservation, cross-team artifact join
-guards, captured-inbox promotion/pagination fixes, provider-connection
-hardening, recurring meeting capture, Saved Meeting visibility enforcement,
-scheduler idempotency, strict meeting URL host matching, generated calendar
-cleanup, quick-join failure/capacity/reuse, partial-cancel finalize queue
-regressions, and board/search UI regressions. Current suite shape:
+`pnpm test:dist-imports`, root `pnpm test`, and React Doctor pass with no
+reported issues; React Doctor's numeric score can be unavailable when its score
+API cannot be reached. The suite includes artifact status reopen regressions,
+same-object batch evidence preservation, cross-team artifact join guards,
+captured-inbox promotion/pagination fixes, provider-connection hardening,
+recurring meeting capture, Saved Meeting visibility enforcement, scheduler
+idempotency, strict meeting URL host matching, generated calendar cleanup,
+quick-join failure/capacity/reuse, partial-cancel finalize queue regressions,
+and board/search UI regressions. Current suite shape:
 
-- DB Vitest: 2 files / 12 tests, package-level PGlite schema contract suite now
+- DB Vitest: 2 files / 13 tests, package-level PGlite schema contract suite now
   runs under root `pnpm test`.
-- Shared Vitest: 84 files / 1,018 passing tests plus 1 skipped, including PGlite
+- Shared Vitest: 88 files / 1,059 passing tests plus 1 skipped, including PGlite
   artifact reconciliation, event writer, calendar, timeline, MCP,
   integration/provider-connection, meeting, document, object, assistant, Slack,
   recovery, connection-attention, and onboarding coverage.
-- Web Vitest: 143 files / 832 tests, including route/action/component coverage
+- Web Vitest: 157 files / 897 tests, including route/action/component coverage
   for search, timeline, core recovery, onboarding, object sections, board
-  add-item interactions, provider-connection routes/UI, app dialog flows, and
-  other high-value UI states.
-- Worker Vitest: 17 files / 227 tests, including extract, transcribe,
+  add-item interactions, provider-connection routes/UI, Slack events/commands/
+  install/user-link routes, app dialog flows, and other high-value UI states.
+- Worker Vitest: 18 files / 250 tests, including extract, transcribe,
   document-extract, meeting-finalize, meeting-scheduler, integration-sync
   attention behavior, overdue-scan, embedding, cleanup, and janitor behavior.
-- Playwright: 13 local core E2E journeys plus 1 production-ish smoke journey.
+- Playwright: 17 local core E2E journeys plus 1 production-ish smoke journey.
 - E2E CI is still manual and `continue-on-error: true`; it is not a merge
   gate yet.
 
@@ -54,13 +54,13 @@ Legend:
 | Documents and folders | Partial: folder create, upload/list/detail, rename/delete, team/private visibility | Strong list/search route contracts | Strong document actions | Strong PGlite document scope, object keys, folder ancestry, restore/delete semantics, single-document provenance lookup | Strong document-extract worker | Partial: document drive static empty/list states plus captured inbox rows, promotion defaults, and cursor loading | Semantic search E2E, extracted chunk citations, worker-backed search, richer document UI states |
 | Chat and agent UI | Partial: browser timeline question, tool activity, Event citation, session reload, degraded answer, visibility fences, and accepted task/calendar/object state | Strong chat route streaming/session/tool contract, including deterministic E2E seam coverage for durable workspace state | Missing chat action tests | Partial: deterministic agent tool evals, `askAgent` wrapper tests, MCP safety evals, structural tools, and LLM wrappers | Fast deterministic evals for timeline citation, task/calendar state, visibility fences, and tool failure honesty | Partial: chat pane static empty/message/pinned states | Remaining: live-model evals, broader chat UI states, and provider-backed retrieval |
 | Calendar | Partial: browser all-day create/edit/delete plus team/private visibility | Missing calendar API routes, if any are added later | Strong calendar action tests | Strong PGlite calendar scope, queue degradation, and time helpers | Embed worker calendar plan covered | Missing calendar UI states | E2E specific-user/timed calendar behavior and richer calendar UI states |
-| Native integrations: Drive, GitHub, Linear, Monday.com, Slack workspace, Sentry | Missing UI/E2E connect/manage flows | Partial: Drive and Linear webhooks, OAuth start/callback, provider-connection resource sharing, activation, delete, and legacy selection guard routes covered | Missing integration actions if/when added | Strong provider parsing for Drive/GitHub/Linear/Monday.com/Slack/Sentry, event writer, provider-connection scope, attention lifecycle, source activation, duplicate-path replacement, token encryption, and email-throttle coverage | Partial: integration sync worker attention classification, transient-failure delay, owner-left, reconnect, and success-reset behavior covered | Partial: provider-connection source picker, provider-specific source guidance, team source actions, and app dialog guard covered | Browser E2E for OAuth connect/share/activate/replace, provider-backed canaries, and richer loading/error UI states |
-| Slack | Missing Slack settings E2E | Partial: events webhook covered; commands/install/user-link missing | Missing Slack action tests | Strong dispatcher/API/security/source-capture coverage, including text/file capture, linked attribution, visibility defaults, downstream queues, idempotent edits, `/timeline join` Saved Meeting aliases, and raw URL confirmation buttons | Missing provider-specific worker coverage | Missing Slack settings UI | Install/user-link routes, settings UI, provider-backed canary coverage |
+| Native integrations: Drive, GitHub, Linear, Monday.com, Slack workspace, Sentry | Partial: browser covers catalog OAuth start, integrations cooldown/webhook-degraded health states, and source activation/replacement; provider OAuth callback and provider-backed source listing still need E2E | Partial: Drive, GitHub, Linear, Monday.com, and Sentry webhooks, OAuth start/callback, provider-connection resource sharing, activation, manual sync, delete/disconnect with webhook deprovision best effort, legacy Monday missing-scope reconnect guidance, degraded webhook provisioning attention, and legacy selection guard routes covered | Missing integration actions if/when added | Strong provider parsing for Drive/GitHub/Linear/Monday.com/Slack/Sentry, event writer, provider-connection scope, attention lifecycle, source activation, duplicate-path replacement, token encryption, GitHub App installation-token handoff, installation-keyed budget pauses, GitHub repo-surface conditional GETs, provider webhook sync hints, shared provider sync-policy contract, native provider adapter contract tests, native provider template, targeted sync queue coalescing, provider-policy reconciliation coalescing, Monday board webhook provisioning, Monday item-level webhook hydration, Monday missing-scope degraded-mode detection, Monday WorkDocs daily reconciliation, Drive channel-expiration degraded handling, Slack Web API budget pauses, Sentry issue lifecycle/release webhook normalization, webhook-degraded enum migration coverage, webhook delivery dead-letter persistence, and email-throttle coverage | Partial: integration sync worker attention classification, provider-policy reconciliation cadence, expiring webhook subscription sweep, targeted webhook sync narrowing, webhook delivery duplicate-redelivery and dead-letter attention handling, provider-specific budget-scope skipping, legacy Monday missing-scope reconnect preservation, transient-failure delay, owner-left, reconnect, and success-reset behavior covered | Partial: provider-connection source picker, provider-specific source guidance, team source actions, connected-row cooldown/reconnect/webhook-degraded attention states, app dialog guard, catalog OAuth-start E2E, integrations health-state E2E on desktop/mobile, and source activation/replacement E2E covered | Browser E2E for provider OAuth callback and provider-backed source listing, provider-backed canaries, remaining provider webhook provisioning, and richer loading/error UI states |
+| Slack | Missing Slack settings E2E | Strong events webhook plus signed command, install OAuth, and user-link OAuth route coverage | Missing Slack action tests | Strong dispatcher/API/security/source-capture coverage, including text/file capture, linked attribution, visibility defaults, downstream queues, idempotent edits, `/timeline join` Saved Meeting aliases, and raw URL confirmation buttons | Missing provider-specific worker coverage | Missing Slack settings UI | Settings UI, provider-backed canary coverage |
 | Telegram | Partial: browser verifies deterministic Telegram voice transcript approval acceptance | Partial: webhook covered, including media env wiring | Missing Telegram action tests | Strong API/dispatcher coverage, including DM text, voice/audio, caption/photo, document routing, duplicate delivery, media skip behavior, `/join` Saved Meeting aliases, raw URL inline-button confirmation, direct-reply confirmation, and passive-text non-trigger behavior | Partial: transcribe processor handoff from audio transcript to extract/embed/suggestions is covered | Missing Telegram settings UI | Bind/unbind/settings actions and UI, provider-backed Telegram/OpenRouter canary, richer image/OCR-to-approval behavior |
 | MCP inbound/outbound | Missing MCP settings/key E2E | Strong MCP OAuth/server/key/server/tool route contracts | Missing MCP-specific actions if/when added | Strong auth/OAuth state/tool namespace/server handler, tool namespace, and deterministic untrusted-output/failure/reauth evals | MCP health worker missing | Missing MCP UI | MCP health worker, private-vs-team E2E, UI management states, provider-backed MCP behavior |
 | Email inbound/outbound | Missing E2E inbound email journey | Partial: inbound webhook covered, including Redis queue wiring | Whitelist action covered; invite/support email action gaps remain | Strong parser/dispatcher/outbound/IP allowlist/source-capture coverage, including sender auth, sender whitelist filtering, visibility defaults, attachment/audio routing, downstream queues, and duplicate delivery recovery | Missing extract processor coverage for email attachments | Missing UI | Support action, sender whitelist UI component/E2E, inbound attachment extraction E2E/integration, provider-backed Postmark canary |
 | Meeting bots and meetings | Missing E2E scheduling/finalization | Strong Recall status/transcript webhook coverage for lifecycle, no-show, failure, and finalize handoff contracts | Thin meetings action coverage | Strong meetings scope, Saved Meeting alias/schedule/materialization/confirmation/failure-counter behavior, Recall/Svix/url helpers | Strong meeting-finalize and meeting-scheduler workers | Missing meeting UI states | Browser E2E for saved-meeting setup/auto-join and richer meeting UI states |
-| Job recovery and failed work | Missing dashboard E2E | Strong retry/dismiss/dashboard route coverage plus cron reconcile auth/failure behavior and direct finished archive route coverage | N/A | Strong job-recovery PGlite coverage, including retained finished-job archive pagination | Janitor worker covered | Partial job recovery list component with retry status and finished archive states | Retry/dismiss E2E flow |
+| Job recovery and failed work | Missing dashboard E2E | Strong retry/dismiss/dashboard route coverage plus integration cooldown exclusion, cron reconcile auth/failure behavior, and direct finished archive route coverage | N/A | Strong job-recovery PGlite coverage, including provider cooldown exclusion and retained finished-job archive pagination | Janitor worker covered | Partial job recovery list component with retry status and finished archive states | Retry/dismiss E2E flow |
 | Onboarding | Missing E2E checklist/dismissal | Strong checklist route coverage | Strong onboarding action coverage | Strong PGlite checklist inference, dismiss/reopen, manual completion, and team isolation | Missing | Partial checklist static states | Checklist E2E and richer interaction states |
 | Suggestions and background agent actions | Partial: capture-to-suggestion-to-acceptance creates durable task/calendar state, and object-update approval updates an existing object without duplication | Missing route coverage if surfaced later | Strong suggestions action boundary tests | Strong PGlite suggestions scope, dedupe, accept/reject, task/object/calendar/decision durability, and cross-team failure behavior | Partial: deterministic suggestion worker processor tests | Partial: object cleanup suggestions review/fallback/pagination | Remaining P1: richer suggestions UI states and live-model evals |
 | Embeddings and retrieval quality | Missing E2E semantic retrieval flow | Strong search/chat route contracts with mocked boundaries | N/A | Strong deterministic retrieval ranking, PGlite hydration, visibility/team filtering, embedding source planning, Qdrant point IDs, raw-event rendering, and LLM wrapper behavior | Partial: embed worker text/payload/skip/stale-source coverage | Missing retrieval UI assertions | Remaining: source rendering breadth for more providers and browser semantic retrieval assertions |
@@ -146,6 +146,14 @@ Current local coverage includes core product journeys:
 - Telegram voice approval journey: deterministic Telegram voice capture creates
   an audio raw event, transcription backfills text, suggestion processing
   creates an approval, owner accepts it, and durable task state appears.
+- Integrations health-state journey: webhook-degraded attention remains
+  non-blocking, provider budget cooldowns disable manual sync, and the mobile
+  management layout stays usable without horizontal overflow.
+- Integrations source-management journey: an admin activates shared provider
+  sources and replaces an active source with another shared connection.
+- Integrations catalog journey: a configured native GitHub card starts OAuth
+  and redirects to GitHub with the expected client id, redirect URI, scopes, and
+  signed state.
 - Production-ish smoke verifies seeded owner login and timeline load.
 
 Current CI E2E workflow is manual and `continue-on-error: true`, so E2E does
@@ -199,7 +207,7 @@ Covered route tests include:
 
 - Email inbound webhook.
 - Telegram webhook.
-- Slack events webhook.
+- Slack events webhook, signed slash commands, install OAuth, and user-link OAuth.
 - Google Drive, Linear, Recall, and other provider webhooks where exposed.
 - Per-job and bulk job recovery retry/dismiss routes.
 - Search route auth/config/rate-limit/schema/scope behavior.
@@ -223,12 +231,12 @@ Covered route tests include:
   document/transcribe/extract/embed, invalid input, not-found, and non-audio
   retry behavior.
 - Native integration OAuth start/callback, provider-connection resource sharing,
-  activation, delete, and legacy selection guard behavior.
+  activation, manual sync budget-paused/enqueue behavior, delete/disconnect
+  webhook deprovision behavior, and legacy selection guard behavior.
 
 Important uncovered route files:
 
-- Integration manual sync and disconnect routes.
-- Slack commands/install/user-link routes.
+- No native integration or Slack route files called out by this plan remain fully uncovered.
 
 ### Shared Packages
 
@@ -595,10 +603,9 @@ idempotency.
     retry behavior.
 
 - Remaining:
-  - Integrations manual sync/disconnect route behavior and richer provider
-    failure surfaces beyond the current OAuth/share/activate route contracts.
-  - Slack commands/install/user-link: signature/state validation, response URL
-    behavior, token encryption, and replay/invalid payload handling.
+  - Richer provider failure surfaces beyond the current OAuth/share/activate/
+    manual-sync/disconnect route contracts.
+  - Slack settings UI and provider-backed canary coverage.
   - Onboarding/job recovery/object-section browser E2E flows.
 
 ### Phase 5: Workers
@@ -696,6 +703,10 @@ Once the suite is mature, split commands by layer:
 - `pnpm test:eval`: fast deterministic agent evals.
 - `pnpm test:dist-imports`: compiled-package import smoke.
 - `pnpm validate`: format, typecheck, lint, and knip.
+- `pnpm canary:integrations`: manual secret-safe live OpenRouter, GitHub App,
+  Sentry, native OAuth credential, and webhook-secret canary.
+- `pnpm canary:integrations:strict`: same canary, failing unless every row is
+  `OK`.
 - CI PR gate: validate plus compiled-package import smoke, with core E2E when
   stable.
 - CI scheduled/manual gate: provider-backed E2E, production-ish smoke, and

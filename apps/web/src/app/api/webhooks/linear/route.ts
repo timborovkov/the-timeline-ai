@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import { integrationSelections, integrations as integrationsTable } from '@timeline/db';
 import * as email from '@timeline/shared/email';
 import * as integrationsLib from '@timeline/shared/integrations';
@@ -31,6 +33,16 @@ function extractLinearTeamId(payload: unknown): string | null {
     if (issueTeam && typeof issueTeam.id === 'string') return issueTeam.id;
   }
   return null;
+}
+
+function stringField(record: Record<string, unknown>, key: string): string | null {
+  const value = record[key];
+  return typeof value === 'string' && value.length > 0 ? value : null;
+}
+
+function linearDeliveryDedupKey(body: string, externalDeliveryId: string | null): string {
+  if (externalDeliveryId) return `linear:delivery:${externalDeliveryId}`;
+  return `linear:body:${createHash('sha256').update(body).digest('hex')}`;
 }
 
 export const runtime = 'nodejs';
@@ -139,30 +151,40 @@ export async function POST(req: Request): Promise<Response> {
   if (matchingRows.length === 0) {
     return NextResponse.json({ ok: true });
   }
-  const provider = integrationsLib.getProvider('linear');
-  const syncJobs = matchingRows.map((integration) => ({
-    kind: 'incremental' as const,
-    integrationId: integration.id,
-    teamId: integration.teamId,
-    triggeredBy: 'webhook' as const,
-  }));
-  await Promise.all(
-    matchingRows.map(async (integration) => {
-      try {
-        const events = (await provider.handleWebhook?.({ integration, payload })) ?? [];
-        if (events.length > 0) {
-          await integrationsLib.writeIntegrationEvents({ db, integration, events });
-        }
-      } catch (err) {
-        // continue
-        reportCaughtError(err, {
-          surface: 'background',
-          operation: 'linear_webhook_process',
-          tags: { provider: 'linear' },
-        });
-      }
-    }),
-  );
+  const payloadRecord =
+    payload && typeof payload === 'object' ? (payload as Record<string, unknown>) : {};
+  const externalDeliveryId = req.headers.get('linear-delivery') ?? null;
+  let deliveryId: string;
+  try {
+    const recorded = await integrationsLib.recordWebhookDeliveryTargets(db, {
+      provider: 'linear',
+      externalDeliveryId,
+      externalAccountId: orgId,
+      resourceKind: payloadTeamId ? 'linear.team' : null,
+      externalResourceId: payloadTeamId,
+      eventType: stringField(payloadRecord, 'type') ?? 'unknown',
+      action: stringField(payloadRecord, 'action'),
+      headers: {
+        has_signature: Boolean(sig),
+        linear_delivery: externalDeliveryId,
+      },
+      payload,
+      dedupKey: linearDeliveryDedupKey(body, externalDeliveryId),
+      targets: matchingRows.map((integration) => ({
+        teamId: integration.teamId,
+        integrationId: integration.id,
+        providerConnectionId: integration.providerConnectionId,
+      })),
+    });
+    deliveryId = recorded.deliveryId;
+  } catch (err) {
+    reportCaughtError(err, {
+      surface: 'background',
+      operation: 'linear_webhook_record_delivery',
+      tags: { provider: 'linear' },
+    });
+    return NextResponse.json({ ok: false, reason: 'delivery_persist_failed' }, { status: 503 });
+  }
   let queue: Awaited<ReturnType<typeof requireRedisQueue>>;
   try {
     queue = await requireRedisQueue();
@@ -174,18 +196,14 @@ export async function POST(req: Request): Promise<Response> {
     });
     return NextResponse.json({ ok: true });
   }
-  await Promise.all(
-    syncJobs.map(async (job) => {
-      try {
-        await queue.enqueueIntegrationSyncJob(job);
-      } catch (err) {
-        reportCaughtError(err, {
-          surface: 'background',
-          operation: 'linear_webhook_enqueue_sync',
-          tags: { provider: 'linear' },
-        });
-      }
-    }),
-  );
+  try {
+    await queue.enqueueWebhookDeliveryJob({ deliveryId });
+  } catch (err) {
+    reportCaughtError(err, {
+      surface: 'background',
+      operation: 'linear_webhook_enqueue_delivery',
+      tags: { provider: 'linear' },
+    });
+  }
   return NextResponse.json({ ok: true });
 }

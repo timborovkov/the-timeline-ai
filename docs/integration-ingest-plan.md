@@ -61,20 +61,30 @@ Every first-party integration must ship the same baseline:
 ## Shared Adapter Kit
 
 Before adding more providers, keep extracting the repeatable pieces from the
-implemented Google Drive, Linear, GitHub, Monday.com, Slack, and Sentry adapters:
+implemented Google Drive, Linear, GitHub, Monday.com, Slack, and Sentry adapters.
+New providers should start from
+[`native-provider-template.md`](./native-provider-template.md) so policy,
+webhook, budget, test, canary, and documentation expectations stay explicit:
 
 1. Provider SDK helpers for OAuth start/callback, refresh, and token persistence.
 2. Cursor helpers for per-resource backfill and incremental sync.
-3. Webhook verification helpers with provider-specific signing modules.
-4. A normalized `ExternalActivity` builder for common event kinds:
+3. Provider sync policies that declare webhook posture, reconciliation cadence,
+   budget scopes, targeted-sync support, and provisioning model.
+4. Webhook verification helpers with provider-specific signing modules, shared
+   delivery persistence, and `webhook-delivery` queue processing.
+5. Provider budget helpers that turn documented rate limits into cooldown state
+   instead of user-facing sync failures.
+6. A normalized `ExternalActivity` builder for common event kinds:
    created, updated, commented, status_changed, assigned, mentioned, linked,
    resolved, reopened, deleted, deployed, failed, recovered.
-5. Object mapping helpers for provider-native identities, URLs, aliases, and
+7. Object mapping helpers for provider-native identities, URLs, aliases, and
    display titles.
-6. A provider contract test harness that runs:
+8. A provider contract test harness that runs:
    resource listing, event normalization snapshots, cursor advancement,
    dedupe replay, visibility, token refresh, webhook verification, and failure
    recovery.
+9. A secret-safe live canary entry when the provider exposes a safe credential,
+   signing-secret, or API-access probe.
 
 This is the difference between adding many integrations and maintaining them.
 
@@ -174,12 +184,18 @@ re-extracted when mapping improves.
 4. Add OAuth callback/start behavior if OAuth differs from existing helpers.
 5. Add listable resource types and team activation semantics.
 6. Implement backfill and incremental sync.
-7. Add webhook route only when provider webhooks are reliable and signed.
-8. Normalize events through `writeIntegrationEvents`.
-9. Add object mapping hints and display-title metadata.
-10. Add provider contract tests and targeted worker/API tests.
-11. Update `docs/setup/integrations.html`, README, and product docs.
-12. Run `pnpm validate`, `pnpm run doctor`, and provider-specific tests.
+7. Add provider policy metadata for webhook posture, reconciliation cadence,
+   budget scopes, targeted-sync support, and provisioning model.
+8. Add webhook route only when provider webhooks are reliable and signed.
+9. Persist accepted webhook deliveries before asynchronous processing.
+10. Normalize events through `writeIntegrationEvents`.
+11. Add object mapping hints and display-title metadata.
+12. Parse provider rate-limit metadata into provider budget pauses.
+13. Add provider contract tests and targeted worker/API tests.
+14. Add or update a live canary probe when it can run without exposing secrets
+    or mutating production data.
+15. Update `docs/setup/integrations.html`, README, and product docs.
+16. Run `pnpm validate`, `pnpm run doctor`, and provider-specific tests.
 
 ## Catalog Status
 
