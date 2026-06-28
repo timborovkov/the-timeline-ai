@@ -26,8 +26,8 @@ export interface ObjectListFilter {
   stage?: string | string[];
   priority?: number | number[];
   priorityNull?: boolean;
-  ownerUserId?: string | null;
-  assigneeUserId?: string | null;
+  ownerUserId?: string | null | (string | null)[];
+  assigneeUserId?: string | null | (string | null)[];
   dueBefore?: Date;
   dueAfter?: Date;
   dueNull?: boolean;

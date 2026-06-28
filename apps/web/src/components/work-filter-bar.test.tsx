@@ -59,9 +59,33 @@ describe('WorkFilterBar', () => {
 
     expect(push).toHaveBeenCalledWith('/app/objects?type=task&q=proposal');
 
-    await user.selectOptions(screen.getByLabelText('Type'), '');
+    await user.click(screen.getByRole('button', { name: 'Type' }));
+    await user.click(screen.getByRole('menuitem', { name: 'Any type' }));
     await user.click(screen.getByRole('button', { name: 'Apply' }));
 
     expect(push).toHaveBeenLastCalledWith('/app/objects?q=proposal');
+  });
+
+  it('submits multiple dropdown values as comma-separated filters', async () => {
+    const user = userEvent.setup();
+    render(
+      <WorkFilterBar
+        mode="tasks"
+        basePath="/app/tasks"
+        filters={EMPTY_FILTERS}
+        active={false}
+        resultCount={10}
+        totalCount={10}
+        statusOptions={['todo', 'doing', 'done']}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Status' }));
+    await user.click(screen.getByRole('menuitemcheckbox', { name: 'todo' }));
+    await user.click(screen.getByRole('menuitemcheckbox', { name: 'doing' }));
+    await user.keyboard('{Escape}');
+    await user.click(screen.getByRole('button', { name: 'Apply' }));
+
+    expect(push).toHaveBeenCalledWith('/app/tasks?status=todo%2Cdoing');
   });
 });

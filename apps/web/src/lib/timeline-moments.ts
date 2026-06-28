@@ -44,7 +44,7 @@ export interface TimelineAuthor {
   email: string;
 }
 
-export type TimelineImpactFilter = ImpactKind | 'all';
+export type TimelineImpactFilter = ImpactKind | ImpactKind[] | 'all';
 
 interface BuildTimelineMomentOptions {
   now?: Date;
@@ -609,6 +609,9 @@ export function filterTimelineMomentsByImpact(
   moments: TimelineMoment[],
   impactFilter: TimelineImpactFilter,
 ): TimelineMoment[] {
-  if (impactFilter === 'all') return moments;
-  return moments.filter((moment) => moment.impactItems.some((item) => item.kind === impactFilter));
+  if (impactFilter === 'all' || (Array.isArray(impactFilter) && impactFilter.length === 0)) {
+    return moments;
+  }
+  const allowed = new Set(Array.isArray(impactFilter) ? impactFilter : [impactFilter]);
+  return moments.filter((moment) => moment.impactItems.some((item) => allowed.has(item.kind)));
 }

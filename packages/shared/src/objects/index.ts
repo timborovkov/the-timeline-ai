@@ -383,8 +383,8 @@ export interface ObjectListFilter {
   stage?: string | string[];
   priority?: number | number[];
   priorityNull?: boolean;
-  ownerUserId?: string | null;
-  assigneeUserId?: string | null;
+  ownerUserId?: string | null | (string | null)[];
+  assigneeUserId?: string | null | (string | null)[];
   dueBefore?: Date;
   dueAfter?: Date;
   dueNull?: boolean;
@@ -499,6 +499,22 @@ function toArray<T>(v: T | T[] | undefined): T[] | undefined {
   return Array.isArray(v) ? v : [v];
 }
 
+function nullableUuidCondition(
+  column: unknown,
+  value: string | null | (string | null)[] | undefined,
+): SQL | undefined {
+  if (value === undefined) return undefined;
+  if (value === null) return isNull(column as never);
+  const values = toArray(value) ?? [];
+  const uuidValues = values.filter(
+    (candidate): candidate is string => typeof candidate === 'string' && UUID_RE.test(candidate),
+  );
+  const includesNull = values.some((candidate) => candidate === null);
+  if (uuidValues.length === 0) return includesNull ? isNull(column as never) : sql`false`;
+  const uuidCondition = inArray(column as never, uuidValues);
+  return includesNull ? or(isNull(column as never), uuidCondition) : uuidCondition;
+}
+
 function objectSearchTokens(query: string): string[] {
   return query
     .toLowerCase()
@@ -588,11 +604,11 @@ function objectListConditions(scope: TeamScopeCore, filter: ObjectCountFilter = 
   if (filter.priorityNull) conds.push(isNull(entities.priority));
   else if (priorities && priorities.length > 0) conds.push(inArray(entities.priority, priorities));
 
-  if (filter.ownerUserId === null) conds.push(isNull(entities.ownerUserId));
-  else if (filter.ownerUserId) conds.push(eq(entities.ownerUserId, filter.ownerUserId));
+  const ownerCondition = nullableUuidCondition(entities.ownerUserId, filter.ownerUserId);
+  if (ownerCondition) conds.push(ownerCondition);
 
-  if (filter.assigneeUserId === null) conds.push(isNull(entities.assigneeUserId));
-  else if (filter.assigneeUserId) conds.push(eq(entities.assigneeUserId, filter.assigneeUserId));
+  const assigneeCondition = nullableUuidCondition(entities.assigneeUserId, filter.assigneeUserId);
+  if (assigneeCondition) conds.push(assigneeCondition);
 
   if (filter.dueNull) conds.push(isNull(entities.dueAt));
   if (filter.dueBefore) conds.push(lt(entities.dueAt, filter.dueBefore));
@@ -673,11 +689,11 @@ export async function searchObjects(
   const stages = toArray(filter.stage);
   if (stages && stages.length > 0) conds.push(inArray(entities.stage, stages));
 
-  if (filter.ownerUserId === null) conds.push(isNull(entities.ownerUserId));
-  else if (filter.ownerUserId) conds.push(eq(entities.ownerUserId, filter.ownerUserId));
+  const ownerCondition = nullableUuidCondition(entities.ownerUserId, filter.ownerUserId);
+  if (ownerCondition) conds.push(ownerCondition);
 
-  if (filter.assigneeUserId === null) conds.push(isNull(entities.assigneeUserId));
-  else if (filter.assigneeUserId) conds.push(eq(entities.assigneeUserId, filter.assigneeUserId));
+  const assigneeCondition = nullableUuidCondition(entities.assigneeUserId, filter.assigneeUserId);
+  if (assigneeCondition) conds.push(assigneeCondition);
 
   if (filter.dueBefore) conds.push(lt(entities.dueAt, filter.dueBefore));
   if (filter.dueAfter) conds.push(gte(entities.dueAt, filter.dueAfter));

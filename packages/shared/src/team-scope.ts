@@ -98,7 +98,7 @@ async function enqueueRawEventEmbed(input: { teamId: string; rawEventId: string 
 }
 
 export interface EventListFilters {
-  authorUserId?: string;
+  authorUserId?: string | string[];
   personObjectId?: string;
   senderHandle?: string;
   senderSource?: 'telegram' | 'slack' | 'email';
@@ -1237,8 +1237,11 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
   ): Promise<(typeof rawEvents.$inferSelect)[]> {
     await ensureMember();
     const conditions = [eq(rawEvents.teamId, teamId), visibilityFilter, activeRawEventFilter];
-    if (filters.authorUserId) {
-      conditions.push(eq(rawEvents.authorUserId, filters.authorUserId));
+    const authorUserId = filters.authorUserId;
+    if (Array.isArray(authorUserId) && authorUserId.length > 0) {
+      conditions.push(inArray(rawEvents.authorUserId, authorUserId));
+    } else if (typeof authorUserId === 'string') {
+      conditions.push(eq(rawEvents.authorUserId, authorUserId));
     }
     const senderCondition = await senderFilterCondition(filters);
     if (senderCondition) conditions.push(senderCondition);

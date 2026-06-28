@@ -18,28 +18,21 @@ import { z } from 'zod';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { GLOBAL_SEARCH_SOURCE_VALUES, type GlobalSearchSource } from '@/lib/global-search-sources';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-
-const EVENT_SOURCES = [
-  'web',
-  'telegram',
-  'email',
-  'system',
-  'document',
-  'meeting',
-  'integration',
-  'calendar',
-  'slack',
-  'ingest_webhook',
-] as const;
 
 const schema = z.object({
   query: z.string().trim().max(500).default(''),
   mode: z.enum(['preview', 'full']).default('preview'),
   kinds: z.array(z.enum(GLOBAL_SEARCH_KINDS)).max(GLOBAL_SEARCH_KINDS.length).optional(),
-  source: z.enum(EVENT_SOURCES).optional(),
+  source: z
+    .union([
+      z.enum(GLOBAL_SEARCH_SOURCE_VALUES),
+      z.array(z.enum(GLOBAL_SEARCH_SOURCE_VALUES)).max(GLOBAL_SEARCH_SOURCE_VALUES.length),
+    ])
+    .optional(),
   from: z.iso.datetime().optional(),
   to: z.iso.datetime().optional(),
   limit: z.number().int().min(1).max(80).optional(),
@@ -188,14 +181,16 @@ async function searchTimeline(
   scope: Scope,
   warnings: GlobalSearchWarning[],
 ): Promise<GlobalSearchResult[]> {
-  try {
+  async function searchTimelineSource(
+    source: GlobalSearchSource | undefined,
+  ): Promise<GlobalSearchResult[]> {
     const args: Parameters<Scope['timeline']['searchEvents']>[0] = {
       query: input.query,
       limit: sourceLimit(input, 10),
     };
     if (input.from) args.from = new Date(input.from);
     if (input.to) args.to = new Date(input.to);
-    if (input.source) args.source = input.source;
+    if (source) args.source = source;
     const hits = await scope.timeline.searchEvents(args);
     return hits.map((hit) =>
       finalizeGlobalSearchResult({
@@ -222,6 +217,35 @@ async function searchTimeline(
         },
       }),
     );
+  }
+
+  try {
+    const sources =
+      input.source === undefined
+        ? [undefined]
+        : Array.isArray(input.source)
+          ? input.source
+          : [input.source];
+    const resultGroups =
+      sources.length === 1
+        ? [await searchTimelineSource(sources[0])]
+        : await Promise.all(
+            sources.map(async (source) => {
+              try {
+                return await searchTimelineSource(source);
+              } catch {
+                warnings.push({
+                  source: 'timeline_event',
+                  message: `Timeline search is temporarily unavailable for ${source}.`,
+                });
+                return [];
+              }
+            }),
+          );
+    const results = resultGroups.flat();
+    return rankGlobalSearchResults(
+      Array.from(new Map(results.map((result) => [result.id, result])).values()),
+    ).slice(0, sourceLimit(input, 10));
   } catch {
     warnings.push({
       source: 'timeline_event',
