@@ -226,11 +226,12 @@ describe('WorkFilterBar', () => {
 
   it('reopens active date range controls when filter props change after a manual collapse', async () => {
     const user = userEvent.setup();
+    const activeFilters = { ...EMPTY_FILTERS, dueFrom: '2026-08-01' };
     const view = render(
       <WorkFilterBar
         mode="tasks"
         basePath="/app/tasks"
-        filters={{ ...EMPTY_FILTERS, dueFrom: '2026-08-01' }}
+        filters={activeFilters}
         active
         resultCount={2}
         totalCount={10}
@@ -238,6 +239,21 @@ describe('WorkFilterBar', () => {
     );
 
     await user.click(screen.getByRole('button', { name: 'Date ranges' }));
+
+    expect(screen.getByRole('button', { name: 'Date ranges' }).getAttribute('aria-expanded')).toBe(
+      'false',
+    );
+
+    view.rerender(
+      <WorkFilterBar
+        mode="tasks"
+        basePath="/app/tasks"
+        filters={{ ...activeFilters }}
+        active
+        resultCount={2}
+        totalCount={10}
+      />,
+    );
 
     expect(screen.getByRole('button', { name: 'Date ranges' }).getAttribute('aria-expanded')).toBe(
       'false',

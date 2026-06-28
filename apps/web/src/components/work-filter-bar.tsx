@@ -31,7 +31,7 @@ interface Props {
 type DateRangeToggle =
   | { state: 'auto' }
   | { state: 'open' }
-  | { state: 'closed'; filters: WorkFilterState };
+  | { state: 'closed'; filterKey: string };
 
 const EMPTY_PARAMS: Record<string, string> = {};
 const EMPTY_MEMBERS: MemberFilterOption[] = [];
@@ -83,7 +83,7 @@ export function WorkFilterBar({
   );
   const [dateRangeToggle, setDateRangeToggle] = useState<DateRangeToggle>({ state: 'auto' });
   const dateRangesManuallyClosed =
-    dateRangeToggle.state === 'closed' && dateRangeToggle.filters === filters;
+    dateRangeToggle.state === 'closed' && dateRangeToggle.filterKey === filterKey;
   const showDateRanges =
     dateRangeToggle.state === 'open' || (hasRangeFilters && !dateRangesManuallyClosed);
 
@@ -238,7 +238,9 @@ export function WorkFilterBar({
             aria-expanded={showDateRanges}
             aria-controls={`${formId}-date-ranges`}
             onClick={() => {
-              setDateRangeToggle(showDateRanges ? { state: 'closed', filters } : { state: 'open' });
+              setDateRangeToggle(
+                showDateRanges ? { state: 'closed', filterKey } : { state: 'open' },
+              );
             }}
             className={cn(
               'inline-flex h-9 items-center gap-2 rounded-sm border border-border bg-surface px-3 font-mono text-[11px] uppercase tracking-[0.12em] text-fg-muted transition-colors hover:border-border-strong hover:text-fg focus:border-signal/60 focus:outline-none',
