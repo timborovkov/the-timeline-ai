@@ -207,7 +207,7 @@ export function ConnectedIntegrations({
                         void call('disconnect', c.id);
                       }}
                     >
-                      {busy === `disconnect:${c.id}` ? 'Disconnecting' : 'Disconnect'}
+                      {busy === `disconnect:${c.id}` ? 'Disconnecting' : 'Confirm disconnect'}
                     </Button>
                   </div>
                 ) : null}
@@ -234,18 +234,20 @@ export function ConnectedIntegrations({
                           ? 'Paused'
                           : 'Sync now'}
                 </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="ghost"
-                  className="flex-1 sm:flex-none"
-                  disabled={busy !== null}
-                  onClick={() => {
-                    setConfirmDisconnectId(c.id);
-                  }}
-                >
-                  Disconnect
-                </Button>
+                {confirmDisconnectId === c.id ? null : (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    className="flex-1 sm:flex-none"
+                    disabled={busy !== null}
+                    onClick={() => {
+                      setConfirmDisconnectId(c.id);
+                    }}
+                  >
+                    Disconnect
+                  </Button>
+                )}
               </div>
             </li>
           );

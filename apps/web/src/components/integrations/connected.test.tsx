@@ -183,9 +183,8 @@ describe('ConnectedIntegrations', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Disconnect' }));
     expect(screen.getByText(/Future sync stops/i)).toBeTruthy();
-    const [confirmButton] = screen.getAllByRole('button', { name: 'Disconnect' });
-    if (!confirmButton) throw new Error('Expected inline disconnect confirmation');
-    fireEvent.click(confirmButton);
+    expect(screen.queryByRole('button', { name: 'Disconnect' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm disconnect' }));
 
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith('/api/integrations/manage/integration-1/disconnect', {
