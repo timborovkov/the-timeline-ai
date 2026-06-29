@@ -1,0 +1,139 @@
+// @vitest-environment happy-dom
+
+import { render, screen } from '@testing-library/react';
+import { describe, expect, it, vi } from 'vitest';
+
+import { IntegrationsPageView } from '@/app/app/team/integrations/page';
+
+vi.mock('next/navigation', () => ({
+  redirect: vi.fn(),
+  useRouter: () => ({ refresh: vi.fn() }),
+}));
+vi.mock('next/image', () => ({
+  default: (props: React.ImgHTMLAttributes<HTMLImageElement>) => (
+    <img {...props} alt={props.alt ?? ''} />
+  ),
+}));
+vi.mock('@/lib/auth', () => ({ auth: vi.fn() }));
+vi.mock('@/lib/active-team', () => ({ resolveActiveTeam: vi.fn() }));
+vi.mock('@/lib/db', () => ({ db: {} }));
+vi.mock('@/app/actions/visibility', () => ({
+  setIntegrationVisibilityDefaultAction: vi.fn(() => Promise.resolve({ ok: true })),
+}));
+
+const baseConnectedRow = {
+  provider: 'github',
+  displayName: 'GitHub — Tim',
+  enabled: true,
+  lastSyncedAt: '2026-06-29T10:00:00.000Z',
+  lastError: null,
+  syncPause: null,
+  visibilityDefault: 'team' as const,
+  visibilityDefaultUserIds: null,
+};
+
+function model() {
+  return {
+    isAdmin: true,
+    blockingAttentionCount: 1,
+    webhookDegradedCount: 0,
+    totalConnected: 2,
+    totalCatalog: 1,
+    totalSharedSources: 1,
+    hasAnything: true,
+    nativeCatalog: [
+      {
+        id: 'github' as const,
+        label: 'GitHub',
+        description: 'Repository activity and pull requests.',
+        logo: '/github.svg',
+        available: true,
+      },
+    ],
+    mcpCatalogAvailable: [],
+    ingestWebhookList: [],
+    activeShareIds: [],
+    teamSourceRows: [
+      {
+        share: {
+          id: 'share-1',
+          providerConnectionId: 'conn-1',
+          resourceKind: 'github.repo',
+          externalId: 'acme/app',
+          externalLabel: 'acme/app',
+          revokedAt: null,
+        },
+        connection: {
+          id: 'conn-1',
+          provider: 'github',
+          displayName: 'GitHub — Tim',
+          lastError: null,
+          lastConnectedAt: '2026-06-01T00:00:00.000Z',
+          ownerLabel: 'Tim',
+          ownerUserId: 'user-1',
+        },
+      },
+    ],
+    connectedRows: [
+      {
+        ...baseConnectedRow,
+        id: 'integration-needs-help',
+        displayName: 'GitHub — needs help',
+        lastError: 'github needs reconnect',
+        attention: [
+          {
+            id: 'attention-1',
+            category: 'needs_reconnect' as const,
+            summary: 'Reconnect GitHub before sync can continue.',
+            lastSeenAt: '2026-06-29T10:00:00.000Z',
+          },
+        ],
+      },
+      {
+        ...baseConnectedRow,
+        id: 'integration-healthy',
+        displayName: 'GitHub — healthy',
+        attention: [],
+      },
+    ],
+    connectedMembers: [],
+    mcpServerRows: [],
+  };
+}
+
+describe('IntegrationsPageView', () => {
+  it('orders integration management by recovery, active sync, available sources, connect, then advanced tools', () => {
+    render(<IntegrationsPageView params={{}} active={{ teamName: 'Acme' }} model={model()} />);
+
+    expect(screen.getByRole('heading', { name: 'Team integrations', level: 1 })).toBeTruthy();
+    expect(screen.getByRole('link', { name: /Provider accounts/i })).toBeTruthy();
+
+    const sectionNames = [
+      'Needs attention',
+      'Active team sync',
+      'Available shared sources',
+      'Connect provider account',
+      'Advanced integration tools',
+    ];
+    const topPositions = sectionNames.map((name) =>
+      screen.getByRole('heading', { name }).compareDocumentPosition(document.body),
+    );
+
+    expect(screen.getByText('GitHub — needs help')).toBeTruthy();
+    expect(screen.getByText('GitHub — healthy')).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Reconnect account' })).toBeTruthy();
+    expect(screen.getByText(/Choose which provider-account sources/i)).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Connect account' })).toBeTruthy();
+
+    expect(
+      sectionNames.every((name, index) => {
+        const current = screen.getByRole('heading', { name });
+        const nextName = sectionNames[index + 1];
+        if (!nextName) return true;
+        const next = screen.getByRole('heading', { name: nextName });
+        return Boolean(current.compareDocumentPosition(next) & Node.DOCUMENT_POSITION_FOLLOWING);
+      }),
+    ).toBe(true);
+    expect(topPositions.length).toBe(sectionNames.length);
+  });
+});

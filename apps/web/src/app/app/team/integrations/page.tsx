@@ -25,8 +25,8 @@ import { db } from '@/lib/db';
 import { connectionErrorMessage } from '@/lib/ux-errors';
 
 export const metadata: Metadata = {
-  title: 'Team integration sync',
-  description: 'Choose which shared provider sources this team imports.',
+  title: 'Team integrations',
+  description: 'Manage provider sync, source access, and integration recovery for this team.',
 };
 
 export const dynamic = 'force-dynamic';
@@ -39,6 +39,13 @@ type ConnectedMemberOption = NonNullable<
   Parameters<typeof ConnectedIntegrations>[0]['members']
 >[number];
 type McpServerUiRow = Parameters<typeof McpServersUi>[0]['servers'][number];
+type IntegrationsPageModel = Awaited<ReturnType<typeof loadIntegrationsPageModel>>;
+
+interface IntegrationsPageParams {
+  connected?: string;
+  error?: string;
+  integrationId?: string;
+}
 
 function isBlockingConnectionAttention(category: ConnectedIntegrationAttention['category']) {
   return category !== 'webhook_degraded';
@@ -302,14 +309,26 @@ export default async function IntegrationsPage({
     }),
   ]);
 
+  return <IntegrationsPageView params={params} active={active} model={model} />;
+}
+
+export function IntegrationsPageView({
+  params,
+  active,
+  model,
+}: {
+  params: IntegrationsPageParams;
+  active: { teamName: string };
+  model: IntegrationsPageModel;
+}) {
   return (
     <div className="mx-auto max-w-4xl space-y-8">
       <Breadcrumb items={[{ label: 'Team', href: '/app/team' }, { label: 'Integrations' }]} />
 
       <PageHeader
-        title="Team integration sync"
-        subtitle="Choose which shared provider sources this team imports as cited evidence."
-        srLabel={`Team integration sync · ${String(model.totalConnected)} active syncs · ${String(model.totalCatalog)} providers in catalog`}
+        title="Team integrations"
+        subtitle="Manage provider sync, source access, and integration recovery for this team."
+        srLabel={`Team integrations · ${String(model.totalConnected)} active syncs · ${String(model.totalCatalog)} providers in catalog`}
         metadata={[
           { label: 'team', value: active.teamName, signal: true },
           { label: 'active syncs', value: model.totalConnected },
@@ -350,28 +369,24 @@ export default async function IntegrationsPage({
         </div>
       ) : null}
 
-      {model.isAdmin ? <McpEndpointSection /> : null}
-
-      {model.totalConnected > 0 || model.totalSharedSources > 0 ? (
-        <ConnectedSection
-          sourceRows={model.teamSourceRows}
-          activeShareIds={model.activeShareIds}
-          isAdmin={model.isAdmin}
-          connectedRows={model.connectedRows}
-          connectedMembers={model.connectedMembers}
-          mcpServerRows={model.mcpServerRows}
-        />
-      ) : null}
+      <IntegrationWorkflow
+        sourceRows={model.teamSourceRows}
+        activeShareIds={model.activeShareIds}
+        isAdmin={model.isAdmin}
+        connectedRows={model.connectedRows}
+        connectedMembers={model.connectedMembers}
+      />
 
       {model.nativeCatalog.length > 0 ? (
         <NativeIntegrationsSection catalog={model.nativeCatalog} />
       ) : null}
 
-      {model.isAdmin ? <IngestWebhookSection webhooks={model.ingestWebhookList} /> : null}
-
-      {model.mcpCatalogAvailable.length > 0 ? (
-        <McpCatalogSection catalog={model.mcpCatalogAvailable} />
-      ) : null}
+      <AdvancedIntegrationSection
+        isAdmin={model.isAdmin}
+        webhooks={model.ingestWebhookList}
+        mcpServerRows={model.mcpServerRows}
+        mcpCatalog={model.mcpCatalogAvailable}
+      />
 
       {!model.hasAnything ? <NoSourcesState isAdmin={model.isAdmin} /> : null}
     </div>
@@ -380,36 +395,19 @@ export default async function IntegrationsPage({
 
 function IntegrationPageActions({ isAdmin }: { isAdmin: boolean }) {
   return (
-    <div className="flex flex-wrap items-center justify-between gap-2">
-      <details className="group">
-        <summary className="inline-flex cursor-pointer items-center gap-1 text-sm text-fg-muted transition-colors hover:text-fg">
-          Advanced
-          <span className="font-mono text-[10px] text-fg-dim group-open:hidden">+</span>
-          <span className="hidden font-mono text-[10px] text-fg-dim group-open:inline">-</span>
-        </summary>
-        <div className="mt-2 flex flex-wrap items-center gap-2 border-y border-border py-2">
-          <ActionChip href="/app/team/integrations/audit" label="Audit log →" />
-          {isAdmin ? <ActionChip href="/app/team/jobs" label="Job recovery →" /> : null}
-          <ActionChip href="/app/me/connections" label="Provider accounts →" />
-          <ActionChip href="/app/me/mcp-servers" label="Personal MCP →" />
-        </div>
-      </details>
-      <div className="flex flex-wrap items-center gap-2">
-        {isAdmin ? (
-          <Button asChild variant="outline" size="sm">
-            <Link href="/app/team/mcp-share">Manage Timeline MCP endpoint</Link>
-          </Button>
-        ) : null}
-        <AddCustomMcpServerLauncher ownership="team" />
-      </div>
+    <div className="flex flex-wrap items-center gap-2 border-y border-border py-2">
+      <ActionChip href="/app/me/connections" label="Provider accounts →" />
+      <ActionChip href="/app/team/integrations/audit" label="Audit log →" />
+      {isAdmin ? <ActionChip href="/app/team/jobs" label="Job recovery →" /> : null}
+      <ActionChip href="/app/me/mcp-servers" label="Personal MCP →" />
     </div>
   );
 }
 
 function McpEndpointSection() {
   return (
-    <section className="space-y-3 border-y border-border py-5">
-      <SectionHeading>Expose Timeline as an MCP server</SectionHeading>
+    <section className="space-y-3 border-t border-border pt-4 first:border-t-0 first:pt-0">
+      <h3 className="text-sm font-medium text-fg">Expose Timeline as an MCP server</h3>
       <p className="max-w-2xl text-sm text-fg-muted">
         Let external agents read this team&apos;s timeline events through a bearer-keyed MCP
         endpoint. This is outbound access: external tools reading from Timeline, not Timeline
@@ -422,37 +420,67 @@ function McpEndpointSection() {
   );
 }
 
-function ConnectedSection({
+function needsAttention(row: ConnectedIntegrationUiRow) {
+  return row.attention.length > 0 || Boolean(row.lastError);
+}
+
+function IntegrationWorkflow({
   sourceRows,
   activeShareIds,
   isAdmin,
   connectedRows,
   connectedMembers,
-  mcpServerRows,
 }: {
   sourceRows: TeamSourceUiRow[];
   activeShareIds: string[];
   isAdmin: boolean;
   connectedRows: ConnectedIntegrationUiRow[];
   connectedMembers: ConnectedMemberOption[];
-  mcpServerRows: McpServerUiRow[];
 }) {
+  const attentionRows = connectedRows.filter(needsAttention);
+  const healthyRows = connectedRows.filter((row) => !needsAttention(row));
+  const hasSharedSources = sourceRows.length > 0;
+  const hasActiveImports = connectedRows.length > 0;
+  if (!hasSharedSources && !hasActiveImports) return null;
+
   return (
-    <section className="space-y-3">
-      <SectionHeading>Team sync</SectionHeading>
-      <p className="max-w-2xl text-sm text-fg-muted">
-        Provider account owners share sources first. Team admins choose which shared sources sync
-        into the timeline.
-      </p>
-      <TeamSourcesUi rows={sourceRows} activeShareIds={activeShareIds} isAdmin={isAdmin} />
-      {connectedRows.length > 0 ? (
-        <div className="space-y-2">
-          <h3 className="text-sm font-medium text-fg">Active imports</h3>
-          <ConnectedIntegrations connected={connectedRows} members={connectedMembers} />
-        </div>
+    <div className="space-y-8">
+      {attentionRows.length > 0 ? (
+        <section className="space-y-3" aria-labelledby="integration-needs-attention">
+          <SectionHeading id="integration-needs-attention">Needs attention</SectionHeading>
+          <p className="max-w-2xl text-sm text-fg-muted">
+            Fix broken credentials, revoked access, or failed syncs before looking at healthy
+            imports.
+          </p>
+          <ConnectedIntegrations connected={attentionRows} members={connectedMembers} />
+        </section>
       ) : null}
-      {mcpServerRows.length > 0 ? <McpServersUi hideAddButton servers={mcpServerRows} /> : null}
-    </section>
+      {healthyRows.length > 0 ? (
+        <section className="space-y-3" aria-labelledby="active-team-sync">
+          <SectionHeading id="active-team-sync">Active team sync</SectionHeading>
+          <p className="max-w-2xl text-sm text-fg-muted">
+            These imports are currently writing cited evidence into the timeline.
+          </p>
+          <ConnectedIntegrations connected={healthyRows} members={connectedMembers} />
+        </section>
+      ) : hasActiveImports ? null : (
+        <section className="space-y-3" aria-labelledby="active-team-sync">
+          <SectionHeading id="active-team-sync">Active team sync</SectionHeading>
+          <p className="rounded-sm border border-dashed border-border bg-surface p-4 text-sm text-fg-muted">
+            No provider sources are actively syncing yet.
+          </p>
+        </section>
+      )}
+      {hasSharedSources ? (
+        <section className="space-y-3" aria-labelledby="available-shared-sources">
+          <SectionHeading id="available-shared-sources">Available shared sources</SectionHeading>
+          <p className="max-w-2xl text-sm text-fg-muted">
+            Choose which provider-account sources should become active team imports.
+          </p>
+          <TeamSourcesUi rows={sourceRows} activeShareIds={activeShareIds} isAdmin={isAdmin} />
+        </section>
+      ) : null}
+    </div>
   );
 }
 
@@ -475,8 +503,8 @@ function NativeIntegrationsSection({
 
 function IngestWebhookSection({ webhooks }: { webhooks: IngestWebhookRow[] }) {
   return (
-    <section className="space-y-3">
-      <SectionHeading>Ingest webhooks</SectionHeading>
+    <section className="space-y-3 border-t border-border pt-4 first:border-t-0 first:pt-0">
+      <h3 className="text-sm font-medium text-fg">Ingest webhooks</h3>
       <IngestWebhooksUi webhooks={webhooks} />
     </section>
   );
@@ -488,8 +516,8 @@ function McpCatalogSection({
   catalog: ReturnType<typeof integrationsLib.listCatalog>;
 }) {
   return (
-    <section className="space-y-3">
-      <SectionHeading>MCP servers</SectionHeading>
+    <section className="space-y-3 border-t border-border pt-4 first:border-t-0 first:pt-0">
+      <h3 className="text-sm font-medium text-fg">MCP servers</h3>
       <p className="text-sm text-fg-muted">
         MCP servers give the agent live tool access. They do not create timeline events unless
         paired with native sync or custom ingestion.
@@ -507,6 +535,42 @@ function McpCatalogSection({
           ingestStatus: c.ingestStatus,
         }))}
       />
+    </section>
+  );
+}
+
+function AdvancedIntegrationSection({
+  isAdmin,
+  webhooks,
+  mcpServerRows,
+  mcpCatalog,
+}: {
+  isAdmin: boolean;
+  webhooks: IngestWebhookRow[];
+  mcpServerRows: McpServerUiRow[];
+  mcpCatalog: ReturnType<typeof integrationsLib.listCatalog>;
+}) {
+  const hasContent =
+    isAdmin || webhooks.length > 0 || mcpServerRows.length > 0 || mcpCatalog.length > 0;
+  if (!hasContent) return null;
+  return (
+    <section className="space-y-4" aria-labelledby="advanced-integration-tools">
+      <SectionHeading
+        id="advanced-integration-tools"
+        actions={isAdmin ? <AddCustomMcpServerLauncher ownership="team" /> : null}
+      >
+        Advanced integration tools
+      </SectionHeading>
+      <p className="max-w-2xl text-sm text-fg-muted">
+        Use these for agent tool access, custom ingestion, and operator-level recovery. Native
+        provider sync stays above.
+      </p>
+      <div className="space-y-5 border-y border-border py-5">
+        {isAdmin ? <McpEndpointSection /> : null}
+        {mcpServerRows.length > 0 ? <McpServersUi hideAddButton servers={mcpServerRows} /> : null}
+        {isAdmin ? <IngestWebhookSection webhooks={webhooks} /> : null}
+        {mcpCatalog.length > 0 ? <McpCatalogSection catalog={mcpCatalog} /> : null}
+      </div>
     </section>
   );
 }

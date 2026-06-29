@@ -80,8 +80,8 @@ describe('ConnectedIntegrations', () => {
 
     expect(screen.getByText('Reconnect required:')).toBeTruthy();
     expect(screen.getByText(/Reconnect Monday\.com to grant account:read/i)).toBeTruthy();
-    expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Action needed' }).disabled).toBe(
-      true,
+    expect(screen.getByRole('link', { name: 'Reconnect account' }).getAttribute('href')).toBe(
+      '/app/me/connections',
     );
     expect(screen.queryByRole('button', { name: 'Retry sync' })).toBeNull();
     expect(screen.queryByText(/Monday GraphQL 429/)).toBeNull();
@@ -171,9 +171,7 @@ describe('ConnectedIntegrations', () => {
 
     const title = screen.getByText('Reconnect required:');
     expect(title.closest('div')?.className).toContain('border-danger');
-    expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Action needed' }).disabled).toBe(
-      true,
-    );
+    expect(screen.getByRole('link', { name: 'Reconnect account' })).toBeTruthy();
   });
 
   it('shows inline disconnect confirmation and removes the row after disconnect', async () => {

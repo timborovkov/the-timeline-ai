@@ -107,6 +107,21 @@ function hasOnlyWebhookDegradedAttention(attention: ConnectedAttention[]): boole
   return attention.length > 0 && attention.every((item) => item.category === 'webhook_degraded');
 }
 
+function blockingAttentionAction(
+  attention: ConnectedAttention[],
+): { href: string; label: string } | null {
+  if (attention.some((item) => item.category === 'needs_reconnect')) {
+    return { href: '/app/me/connections', label: 'Reconnect account' };
+  }
+  if (attention.some((item) => item.category === 'needs_new_owner')) {
+    return { href: '#available-shared-sources', label: 'Choose replacement' };
+  }
+  if (attention.some((item) => item.category === 'access_changed')) {
+    return { href: '#available-shared-sources', label: 'Review sources' };
+  }
+  return null;
+}
+
 function dedupeAttention(attention: ConnectedAttention[]): ConnectedAttention[] {
   const seen = new Set<string>();
   const deduped: ConnectedAttention[] = [];
@@ -174,6 +189,7 @@ export function ConnectedIntegrations({
         {visibleConnected.map((c) => {
           const pauseText = syncPauseText(c.syncPause);
           const attention = dedupeAttention(c.attention);
+          const blockingAction = blockingAttentionAction(attention);
           const syncDisabled =
             busy !== null || !c.enabled || Boolean(c.syncPause) || hasBlockingAttention(attention);
           return (
@@ -253,26 +269,30 @@ export function ConnectedIntegrations({
                 <IntegrationVisibilityForm integration={c} members={members} />
               </div>
               <div className="flex w-full flex-wrap gap-2 sm:w-auto sm:flex-nowrap sm:justify-end">
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="secondary"
-                  className="flex-1 sm:flex-none"
-                  disabled={syncDisabled}
-                  onClick={() => {
-                    void call('sync', c.id);
-                  }}
-                >
-                  {busy === `sync:${c.id}`
-                    ? 'Syncing…'
-                    : !c.enabled
-                      ? 'Disabled'
-                      : hasBlockingAttention(attention)
-                        ? 'Action needed'
+                {blockingAction ? (
+                  <Button asChild size="sm" variant="secondary" className="flex-1 sm:flex-none">
+                    <a href={blockingAction.href}>{blockingAction.label}</a>
+                  </Button>
+                ) : (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="secondary"
+                    className="flex-1 sm:flex-none"
+                    disabled={syncDisabled}
+                    onClick={() => {
+                      void call('sync', c.id);
+                    }}
+                  >
+                    {busy === `sync:${c.id}`
+                      ? 'Syncing…'
+                      : !c.enabled
+                        ? 'Disabled'
                         : c.syncPause
                           ? 'Paused'
                           : 'Sync now'}
-                </Button>
+                  </Button>
+                )}
                 {confirmDisconnectId === c.id ? null : (
                   <Button
                     type="button"
