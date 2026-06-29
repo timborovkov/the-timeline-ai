@@ -61,7 +61,7 @@ describe('mondayProvider', () => {
       'https://timeline.test/api/integrations/monday/callback',
     );
     expect(url.searchParams.get('scope')).toBe(
-      'boards:read users:read updates:read docs:read account:read webhooks:write',
+      'boards:read users:read updates:read docs:read account:read webhooks:read webhooks:write',
     );
     expect(url.searchParams.get('state')).toBe('signed-state');
   });
@@ -119,6 +119,7 @@ describe('mondayProvider', () => {
         'updates:read',
         'docs:read',
         'account:read',
+        'webhooks:read',
         'webhooks:write',
       ],
     });

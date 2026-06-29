@@ -223,7 +223,7 @@ export function providerSyncPolicy(provider: NativeProviderId): ProviderSyncPoli
 }
 
 const REQUIRED_PROVIDER_SCOPES: Partial<Record<NativeProviderId, readonly string[]>> = {
-  monday: ['account:read', 'webhooks:write'],
+  monday: ['account:read', 'webhooks:read', 'webhooks:write'],
 };
 
 export function missingRequiredProviderScopes(

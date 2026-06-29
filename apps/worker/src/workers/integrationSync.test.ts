@@ -361,7 +361,7 @@ describe('runOneIntegration attention classification', () => {
       'sync_degraded:missing_provider_scopes',
       {
         provider: 'monday',
-        missingScopes: ['account:read', 'webhooks:write'],
+        missingScopes: ['account:read', 'webhooks:read', 'webhooks:write'],
       },
       { integrationId: INTEGRATION_ID },
     );
@@ -370,7 +370,7 @@ describe('runOneIntegration attention classification', () => {
       integrationId: INTEGRATION_ID,
       category: 'needs_reconnect',
       summary:
-        'monday connection is missing required OAuth scopes (account:read, webhooks:write); reconnect to enable webhook provisioning and account-scoped provider budgets.',
+        'monday connection is missing required OAuth scopes (account:read, webhooks:read, webhooks:write); reconnect to enable webhook provisioning and account-scoped provider budgets.',
     });
     expect(fakes.adminResolveConnectionAttention).toHaveBeenCalledWith(expect.anything(), TEAM_ID, {
       providerConnectionId: CONNECTION_ID,
@@ -677,6 +677,7 @@ describe('runOneIntegration attention classification', () => {
         'updates:read',
         'docs:read',
         'account:read',
+        'webhooks:read',
         'webhooks:write',
       ],
     });

@@ -1661,6 +1661,56 @@ describe('withTeam namespaced port', () => {
     ).toBe(true);
   });
 
+  it('disconnects an integration even when unresolved attention would collide after set-null', async () => {
+    const ownerScope = withTeam(db as never, TEAM_A, USER_A);
+    const adminScope = withTeam(db as never, TEAM_A, USER_C);
+    const connection = await ownerScope.integrations.upsertProviderConnection({
+      provider: 'github',
+      displayName: 'GitHub — stale attention',
+      externalAccountId: 'owner-gh-stale-attention',
+      scopes: ['repo'],
+      tokens: { access_token: 'owner-token' },
+    });
+    await ownerScope.integrations.shareProviderResources(connection.id, [
+      { kind: 'github.repo', externalId: 'acme/stale', label: 'acme/stale' },
+    ]);
+    const [shareRow] = await ownerScope.integrations.listOwnedTeamResourceShares();
+    if (!shareRow) throw new Error('Expected owner share');
+    const integration = await adminScope.integrations.activateSharedResources({
+      providerConnectionId: connection.id,
+      resourceShareIds: [shareRow.share.id],
+    });
+    await db.insert(connectionAttention).values([
+      {
+        teamId: TEAM_A,
+        providerConnectionId: connection.id,
+        integrationId: integration.id,
+        category: 'needs_new_owner',
+        summary: 'Integration-scoped owner attention',
+      },
+      {
+        teamId: TEAM_A,
+        providerConnectionId: connection.id,
+        category: 'needs_new_owner',
+        summary: 'Connection-scoped owner attention',
+      },
+    ]);
+
+    await adminScope.integrations.deleteIntegration(integration.id);
+
+    await expect(
+      db.select().from(integrations).where(eq(integrations.id, integration.id)),
+    ).resolves.toHaveLength(0);
+    const attentionRows = await db.select().from(connectionAttention);
+    expect(attentionRows).toEqual([
+      expect.objectContaining({
+        integrationId: null,
+        providerConnectionId: connection.id,
+        summary: 'Connection-scoped owner attention',
+      }),
+    ]);
+  });
+
   it('updates active attention without duplicate notifications and resolves reconnect attention on refresh', async () => {
     const ownerScope = withTeam(db as never, TEAM_A, USER_A);
     const connection = await ownerScope.integrations.upsertProviderConnection({
@@ -1738,6 +1788,7 @@ describe('withTeam namespaced port', () => {
         'updates:read',
         'docs:read',
         'account:read',
+        'webhooks:read',
         'webhooks:write',
       ],
       tokens: { access_token: 'new-token' },
@@ -1753,6 +1804,7 @@ describe('withTeam namespaced port', () => {
       'updates:read',
       'docs:read',
       'account:read',
+      'webhooks:read',
       'webhooks:write',
     ]);
     await expect(adminDecryptIntegrationTokens(db as never, integration)).resolves.toEqual({

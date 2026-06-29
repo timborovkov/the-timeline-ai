@@ -236,7 +236,7 @@ GITHUB_WEBHOOK_SECRET=...</code></pre>
         Timeline uses monday.com's OAuth app flow, not a marketplace-only integration recipe. The
         app needs read scopes for boards, users, updates, WorkDocs, and account metadata so selected
         boards and docs can become cited Timeline evidence and provider budgets can be keyed by the
-        monday account instead of the connecting user. It also needs webhook write access so
+        monday account instead of the connecting user. It also needs webhook read/write access so
         Timeline can provision selected board webhooks automatically.
       </p>
       <ol>
@@ -251,9 +251,9 @@ GITHUB_WEBHOOK_SECRET=...</code></pre>
         </li>
         <li>
           Add these OAuth scopes exactly: <code>boards:read</code>, <code>users:read</code>,
-          <code>updates:read</code>, <code>docs:read</code>, <code>account:read</code>, and
-          <code>webhooks:write</code>. Timeline also sends the same space-separated scope list in
-          the OAuth authorize URL.
+          <code>updates:read</code>, <code>docs:read</code>, <code>account:read</code>,
+          <code>webhooks:read</code>, and <code>webhooks:write</code>. Timeline also sends the same
+          space-separated scope list in the OAuth authorize URL.
         </li>
         <li>
           Copy the app's <strong>Client ID</strong> and <strong>Client Secret</strong> from the
@@ -271,9 +271,9 @@ MONDAY_WEBHOOK_SECRET=...</code></pre>
           >. The route verifies the token, echoes monday.com's <code>challenge</code> body during
           URL verification, persists board deliveries, and lets
           <code>webhook-delivery</code> process selected board targets. If the app lacks
-          <code>account:read</code> or <code>webhooks:write</code>, Timeline skips provider-side
-          webhook provisioning, keeps selected-resource reconciliation running, and raises reconnect
-          attention for the connection owner after you add the scopes.
+          <code>account:read</code>, <code>webhooks:read</code>, or <code>webhooks:write</code>,
+          Timeline skips provider-side webhook provisioning, keeps selected-resource reconciliation
+          running, and raises reconnect attention for the connection owner after you add the scopes.
         </li>
         <li>
           Any team member can connect Monday.com from the native catalog. The member chooses which
