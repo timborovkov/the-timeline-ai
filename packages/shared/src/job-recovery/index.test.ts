@@ -2,7 +2,7 @@ import { PGlite } from '@electric-sql/pglite';
 import { type Db, documents, documentVersions, meetings, rawEvents } from '@timeline/db';
 import { eq, inArray } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createJobRecoveryScope } from '#src/job-recovery/index.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
@@ -32,6 +32,10 @@ beforeEach(async () => {
   await applyDbMigrations(pg);
   db = drizzle(pg);
   await seed(pg);
+});
+
+afterEach(async () => {
+  await pg.close();
 });
 
 describe('job recovery scope', () => {

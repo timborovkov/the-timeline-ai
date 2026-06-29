@@ -69,7 +69,8 @@ state.
 ## Differentiation
 
 - Evidence first: every answer cites source events.
-- Raw events are immutable; derived state can be regenerated.
+- Captured source content is immutable; derived calendar mirror rows can
+  refresh, and derived state can be regenerated.
 - Approval-backed state prevents unchecked AI drift.
 - Team and per-event visibility are core data-model concerns.
 - The product starts beside existing tools and earns the right to become the

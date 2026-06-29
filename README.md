@@ -17,9 +17,10 @@ entries, approvals, and searchable documents.
 
 The work becomes the record: updates, daily digests, handoffs, stakeholder
 answers, project memory, and account context are generated from evidence
-instead of being rewritten by hand. Raw events remain immutable, derived facts
-can be reprocessed as extraction improves, and citations point back to the
-source material instead of hiding behind black-box summaries.
+instead of being rewritten by hand. Captured source content remains immutable,
+derived calendar mirror rows can refresh when their calendar event changes,
+derived facts can be reprocessed as extraction improves, and citations point
+back to the source material instead of hiding behind black-box summaries.
 
 ## What You Can Build With It
 
@@ -76,7 +77,7 @@ This is a pnpm/Turborepo monorepo.
 | `apps/web` | Next.js app, public docs, auth, server actions, UI, API routes, and inbound webhooks. |
 | `apps/worker` | BullMQ workers for transcription, extraction, embeddings, documents, meetings, integrations, MCP health, and maintenance jobs. |
 | `packages/db` | Drizzle schema, migrations, and database package exports. |
-| `packages/shared` | Team-scoped data access, LLM wrapper, Qdrant/S3 wrappers, queues, integrations, artifact reconciliation, calendar, documents, meetings, objects, MCP, and other shared domain modules. |
+| `packages/shared` | Team-scoped data access, LLM wrapper, Qdrant/S3 wrappers, queues, integrations, artifact/workspace reconciliation, calendar, documents, meetings, objects, MCP, and other shared domain modules. |
 | `docs` | Product, setup, architecture, and deployment documentation. |
 
 The two most important boundaries are:
@@ -86,6 +87,28 @@ The two most important boundaries are:
 - **One inference layer:** app and worker code call `llm.chatStructured()`,
   `llm.streamChat()`, `llm.embed()`, `llm.embedMany()`, `llm.transcribeAudio()`, and
   `llm.extractTextFromMedia()` from `@timeline/shared`.
+
+The package root re-exports the reconciliation namespace, and the
+`@timeline/shared/reconciliation` subpath exports the shared source-ref
+validation, visibility-floor checks, replay-safe dedupe-key builders,
+artifact-cluster kind constants, and deterministic reconciliation eval matrix.
+The reconciliation schema also includes an output-owned projection outbox so
+approval UI rows can be rebuilt or repaired from `reconciliation_outputs`.
+The `@timeline/shared/reconciliation/eval-manifests` subpath exports typed
+surface and scenario coverage manifests for scheduled eval/reporting runners.
+The `@timeline/shared/reconciliation/authority` subpath exports the field-scoped
+authority policy that decides whether evidence can produce a direct write, an
+approval bundle, an observed association, or a no-action block.
+The `@timeline/shared/reconciliation/planner` subpath exports the shared
+structured planner prompt/schema used by live reconciliation evals and future
+worker planning flows.
+The `@timeline/shared/reconciliation/normalization` subpath exports raw-event
+and integration-event normalizers used by the capture surfaces. The
+`@timeline/shared/reconciliation/resolver` subpath exports the anchor-based
+evidence-to-cluster association resolver. The
+`@timeline/shared/reconciliation/backfill` subpath exports the historical
+evidence coverage audit and backfill helpers used by the worker
+`reconciliation-evidence` command.
 
 ## Quick Start
 
@@ -160,7 +183,14 @@ pnpm dev                  # Next.js app + worker in watch mode
 pnpm validate             # format check, typecheck, lint, knip
 pnpm test                 # unit and integration tests (package suites run sequentially)
 pnpm test:eval            # fast deterministic agent and retrieval evals
+pnpm test:reconciliation-eval       # deterministic reconciliation domain/eval matrix
+pnpm test:reconciliation-eval:live  # opt-in live LLM planner+judge matrix; set RECONCILIATION_LIVE_ENV_FILE=/path/.env when needed
+# optional: set RECONCILIATION_LIVE_ARTIFACT_DIR=/tmp/eval-run for one exact output dir,
+# or RECONCILIATION_LIVE_ARTIFACT_ROOT_DIR=eval-runs/reconciliation for timestamped run folders
+# optional: set RECONCILIATION_LIVE_CALL_TIMEOUT_MS=90000 to tune each live planner/judge call timeout
 pnpm test:dist-imports    # build db/shared and import compiled runtime modules with Node
+pnpm --filter @timeline/worker reconciliation-evidence -- --team=<uuid> --mode=audit
+pnpm --filter @timeline/worker reconciliation-evidence -- --team=<uuid> --mode=backfill --dry-run --page-size=500
 pnpm e2e                  # Playwright core journey tests
 pnpm run doctor           # React Doctor scan for React/Next health regressions
 pnpm dev:seed             # seed local demo data with disabled fake integrations
@@ -171,14 +201,14 @@ pnpm check:web-bundle     # inspect built Next server chunks
 
 `pnpm validate` is the main static pre-merge gate. Run tests separately with the
 smallest command that proves the behavior you changed: `pnpm test`, a
-package-filtered Vitest command, `pnpm test:eval`, `pnpm test:dist-imports`, or
-an e2e command.
+package-filtered Vitest command, `pnpm test:eval`,
+`pnpm test:reconciliation-eval`, `pnpm test:dist-imports`, or an e2e command.
 GitHub PR CI intentionally does not run `pnpm build` or `pnpm check:web-bundle`;
-TypeScript compilation, linting, formatting, Knip, and the compiled-package
-import smoke check are the required CI proof. Run broader tests, build, and
-bundle hygiene checks manually when a change touches behavior, production
-bundling, deployment output, agent/retrieval quality, or server/client import
-boundaries.
+TypeScript compilation, linting, formatting, Knip, reconciliation evals, and
+the compiled-package import smoke check are the required CI proof. Run broader
+tests, build, and bundle hygiene checks manually when a change touches
+behavior, production bundling, deployment output, agent/retrieval quality, or
+server/client import boundaries.
 
 ## Documentation
 
@@ -231,7 +261,8 @@ integrations including ingest webhooks, and Timeline-as-MCP-server.
 This project values changes that keep the system auditable, team-scoped, and
 operable. Before opening a change, please:
 
-- Keep raw events immutable.
+- Keep captured source-ingested raw event content immutable; derived calendar
+  mirror rows may refresh from their owning calendar event.
 - Route team data access through the scoped modules from `withTeam`.
 - Keep direct provider calls behind the shared inference and integration layers.
 - Encrypt integration secrets at rest through the shared secrets helpers.

@@ -1,8 +1,14 @@
 import { PGlite } from '@electric-sql/pglite';
-import { calendarEventEntities, calendarEvents, entities, rawEvents } from '@timeline/db';
-import { eq } from 'drizzle-orm';
+import {
+  calendarEventEntities,
+  calendarEvents,
+  entities,
+  rawEvents,
+  reconciliationEvidence,
+} from '@timeline/db';
+import { eq, inArray } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { withTeam } from '#src/team-scope.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
@@ -65,6 +71,10 @@ describe('calendar scope', () => {
     fakes.deletePointsForSource.mockResolvedValue(undefined);
   });
 
+  afterEach(async () => {
+    await pg.close();
+  });
+
   it('defaults missing team calendar settings to Helsinki workspace time', async () => {
     const scope = withTeam(db as never, TEAM_ID, USER_ID);
 
@@ -94,6 +104,15 @@ describe('calendar scope', () => {
     expect(occurrence?.contentText).toBe(
       'Launch review | Final launch readiness pass | at Room 3 | 2026-05-27T09:00:00.000Z to 2026-05-27T10:00:00.000Z | (Europe/Tallinn)',
     );
+    const rawIds = [event.scheduledRawEventId, event.startAtRawEventId].filter((id): id is string =>
+      Boolean(id),
+    );
+    let evidenceRows = await db
+      .select()
+      .from(reconciliationEvidence)
+      .where(inArray(reconciliationEvidence.rawEventId, rawIds));
+    expect(evidenceRows).toHaveLength(2);
+    expect(evidenceRows.every((row) => row.source === 'calendar')).toBe(true);
 
     await scope.calendar.updateCalendarEvent(event.id, {
       description: 'Updated readiness pass',
@@ -106,6 +125,14 @@ describe('calendar scope', () => {
     expect(occurrence?.contentText).toBe(
       'Launch review | Updated readiness pass | at Room 4 | 2026-05-27T09:00:00.000Z to 2026-05-27T10:30:00.000Z | (Europe/Tallinn)',
     );
+    evidenceRows = await db
+      .select()
+      .from(reconciliationEvidence)
+      .where(inArray(reconciliationEvidence.rawEventId, rawIds));
+    const occurrenceEvidence = evidenceRows.find(
+      (row) => row.rawEventId === event.startAtRawEventId,
+    );
+    expect(occurrenceEvidence?.summary).toBe(occurrence?.contentText);
   });
 
   it('persists team-visible creates and updates when embedding enqueue is unavailable', async () => {

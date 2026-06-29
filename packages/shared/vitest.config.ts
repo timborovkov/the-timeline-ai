@@ -25,12 +25,15 @@ const pgliteTests = [
   'src/meetings/scope.test.ts',
   'src/onboarding/index.test.ts',
   'src/objects/index.test.ts',
+  'src/reconciliation/backfill.test.ts',
+  'src/reconciliation/normalization.test.ts',
+  'src/reconciliation/resolver.test.ts',
   'src/slack/dispatcher.test.ts',
   'src/suggestions/index.test.ts',
+  'src/suggestions/reconciliation-projection.test.ts',
   'src/team-exports/index.test.ts',
   'src/team-scope.search.test.ts',
   'src/team-scope.test.ts',
-  'src/team-scope.search.test.ts',
   'src/telegram/dispatcher.test.ts',
 ];
 

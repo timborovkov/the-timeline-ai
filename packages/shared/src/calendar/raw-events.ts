@@ -1,8 +1,12 @@
 import { type Db, rawEvents } from '@timeline/db';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 
+import { childLogger } from '#src/logger.js';
+import { normalizeRawEventsToEvidence } from '#src/reconciliation/normalization.js';
+
 type DbTx = Parameters<Parameters<Db['transaction']>[0]>[0];
 type DbOrTx = Db | DbTx;
+const log = childLogger('calendar:raw-events');
 
 export type CalendarRawVisibility = 'private' | 'team' | 'specific_users';
 
@@ -112,6 +116,9 @@ export async function insertCalendarRawEvents(
     startAtId = existing[0]?.id;
   }
 
+  const rawEventIds = [scheduledId, startAtId].filter((id): id is string => Boolean(id));
+  await normalizeCalendarRawEventIds(tx, { teamId: args.teamId, rawEventIds });
+
   return {
     scheduledRawEventId: scheduledId ?? '',
     startAtRawEventId: startAtId ?? '',
@@ -123,6 +130,7 @@ export async function updateCalendarRawEvents(
   args: {
     scheduledRawEventId: string | null;
     startAtRawEventId: string | null;
+    teamId: string;
     title: string;
     description: string | null;
     startAt: Date;
@@ -161,6 +169,27 @@ export async function updateCalendarRawEvents(
       .update(rawEvents)
       .set({ contentText: `Scheduled: ${args.title}` })
       .where(eq(rawEvents.id, args.scheduledRawEventId));
+  }
+
+  await normalizeCalendarRawEventIds(tx, {
+    teamId: args.teamId,
+    rawEventIds: linkedRawEventIds,
+  });
+}
+
+export async function normalizeCalendarRawEventIds(
+  db: DbOrTx,
+  args: { teamId: string; rawEventIds: string[] },
+): Promise<void> {
+  const rawEventIds = uniqueIds(args.rawEventIds.filter((id) => id.length > 0));
+  if (rawEventIds.length === 0) return;
+  try {
+    await normalizeRawEventsToEvidence({ db, teamId: args.teamId, rawEventIds });
+  } catch (err) {
+    log.warn(
+      { err, teamId: args.teamId, rawEventIds },
+      'calendar reconciliation evidence normalization failed',
+    );
   }
 }
 

@@ -30,6 +30,7 @@ import {
 import { detectMeetingPlatform } from '#src/meetings/scope.js';
 import { getRedisConnection } from '#src/queue/connection.js';
 import { checkRateLimit, rateLimitKey, RATE_LIMITS } from '#src/rate-limit/index.js';
+import { normalizeRawEventsToEvidence } from '#src/reconciliation/normalization.js';
 import { withTeam } from '#src/team-scope.js';
 import { type TelegramApi } from '#src/telegram/api.js';
 import {
@@ -1818,36 +1819,51 @@ async function insertEvent(
     return inserted[0] ?? null;
   }
 
-  if (input.isEdit) {
-    return db.transaction(async (tx) => {
-      await lockTelegramMessageRevisions(tx, {
-        teamId,
-        chatId: input.message.chat.id,
-        messageId: input.message.message_id,
-      });
-      const inserted = await insertRawEvent(tx);
-      const row = inserted ?? (await findEventByUpdateId(tx, input.updateId));
-      if (row) {
-        const latest = await findLatestTelegramRevision(tx, {
+  const row = input.isEdit
+    ? await db.transaction(async (tx) => {
+        await lockTelegramMessageRevisions(tx, {
           teamId,
           chatId: input.message.chat.id,
           messageId: input.message.message_id,
         });
-        if (latest) {
-          await tombstoneSupersededTelegramRevisions(tx, {
+        const inserted = await insertRawEvent(tx);
+        const row = inserted ?? (await findEventByUpdateId(tx, input.updateId));
+        if (row) {
+          const latest = await findLatestTelegramRevision(tx, {
             teamId,
             chatId: input.message.chat.id,
             messageId: input.message.message_id,
-            supersededByEventId: latest.id,
           });
+          if (latest) {
+            await tombstoneSupersededTelegramRevisions(tx, {
+              teamId,
+              chatId: input.message.chat.id,
+              messageId: input.message.message_id,
+              supersededByEventId: latest.id,
+            });
+          }
+          return inserted && latest?.id === inserted.id ? inserted : null;
         }
-        return inserted && latest?.id === inserted.id ? inserted : null;
-      }
-      return null;
-    });
-  }
+        return null;
+      })
+    : await insertRawEvent(db);
 
-  return insertRawEvent(db);
+  if (row) await normalizeRawEventEvidence(db, row);
+  return row;
+}
+
+async function normalizeRawEventEvidence(
+  db: Db,
+  row: { id: string; teamId: string },
+): Promise<void> {
+  try {
+    await normalizeRawEventsToEvidence({ db, teamId: row.teamId, rawEventIds: [row.id] });
+  } catch (err) {
+    log.warn(
+      { err, teamId: row.teamId, rawEventId: row.id },
+      'telegram reconciliation evidence normalization failed',
+    );
+  }
 }
 
 async function tombstoneSupersededTelegramRevisions(
@@ -2332,6 +2348,7 @@ async function ingestTelegramDocumentAudioAttachment(
     .returning({ id: rawEvents.id, teamId: rawEvents.teamId });
   const row = rows[0];
   if (!row) return;
+  await normalizeRawEventEvidence(ctx.db, row);
 
   try {
     await ctx.audio.enqueueTranscribe({

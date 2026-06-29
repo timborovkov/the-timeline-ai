@@ -1,0 +1,139 @@
+import type {
+  DeterministicEvalCase,
+  ReconciliationEvalIngestionSurface,
+  ReconciliationEvalScenarioFamily,
+} from '#src/reconciliation/index.js';
+
+import {
+  RECONCILIATION_DETERMINISTIC_EVAL_CASES,
+  REQUIRED_RECONCILIATION_EVAL_SCENARIOS,
+  REQUIRED_RECONCILIATION_EVAL_SURFACES,
+} from '#src/reconciliation/eval-cases.js';
+
+export type ReconciliationEvalManifestKind = 'surface' | 'scenario';
+
+export interface ReconciliationEvalManifest {
+  manifestKind: ReconciliationEvalManifestKind;
+  name: string;
+  ingestionSurfaces: ReconciliationEvalIngestionSurface[];
+  scenarioFamily?: ReconciliationEvalScenarioFamily;
+  caseNames: string[];
+  expectedOutputKinds: string[];
+  expectedAssociationRoles: string[];
+  requiredSourcePayloadSurfaces: ReconciliationEvalIngestionSurface[];
+  forbiddenOutputKinds: string[];
+  visibilityAssertions: string[];
+  promptVersions: string[];
+  minimumScore: {
+    deterministic: 1;
+    live: 1;
+  };
+}
+
+const LIVE_PROMPT_VERSION = 'reconciliation-live-matrix-2026-06';
+const DETERMINISTIC_PROMPT_VERSION = 'reconciliation-deterministic-matrix-2026-06';
+
+const SURFACE_CASE_NAMES = {
+  web: ['generic-webhook-web-linear-drive'],
+  email: ['customer-project-email-monday-sentry', 'incident-response-sentry-github-slack-email'],
+  slack: ['incident-response-sentry-github-slack-email'],
+  telegram: ['decision-memory-meeting-telegram-document'],
+  meeting: ['decision-memory-meeting-telegram-document'],
+  document: ['decision-memory-meeting-telegram-document'],
+  calendar: ['calendar-project-private-visibility'],
+  ingest_webhook: ['generic-webhook-web-linear-drive'],
+  github: ['incident-response-sentry-github-slack-email'],
+  linear: ['generic-webhook-web-linear-drive'],
+  google_drive: ['generic-webhook-web-linear-drive'],
+  monday: ['customer-project-email-monday-sentry'],
+  sentry: ['customer-project-email-monday-sentry', 'incident-response-sentry-github-slack-email'],
+} satisfies Record<ReconciliationEvalIngestionSurface, string[]>;
+
+const SCENARIO_CASE_NAMES = {
+  customer_project: ['customer-project-email-monday-sentry'],
+  incident_response: ['incident-response-sentry-github-slack-email'],
+  decision_memory: ['decision-memory-meeting-telegram-document'],
+  calendar_project: ['calendar-project-private-visibility'],
+  generic_webhook: ['generic-webhook-web-linear-drive'],
+} satisfies Record<ReconciliationEvalScenarioFamily, string[]>;
+
+export const RECONCILIATION_EVAL_SURFACE_MANIFESTS: ReconciliationEvalManifest[] =
+  REQUIRED_RECONCILIATION_EVAL_SURFACES.map((surface) =>
+    buildManifest({
+      manifestKind: 'surface',
+      name: surface,
+      ingestionSurfaces: [surface],
+      cases: casesByName(SURFACE_CASE_NAMES[surface]),
+    }),
+  );
+
+export const RECONCILIATION_EVAL_SCENARIO_MANIFESTS: ReconciliationEvalManifest[] =
+  REQUIRED_RECONCILIATION_EVAL_SCENARIOS.map((scenarioFamily) => {
+    const cases = casesByName(SCENARIO_CASE_NAMES[scenarioFamily]);
+
+    return buildManifest({
+      manifestKind: 'scenario',
+      name: scenarioFamily,
+      scenarioFamily,
+      ingestionSurfaces: uniqueSorted(
+        cases.flatMap((testCase) => testCase.ingestionSurfaces),
+      ) as ReconciliationEvalIngestionSurface[],
+      cases,
+    });
+  });
+
+function buildManifest(input: {
+  manifestKind: ReconciliationEvalManifestKind;
+  name: string;
+  ingestionSurfaces: ReconciliationEvalIngestionSurface[];
+  scenarioFamily?: ReconciliationEvalScenarioFamily;
+  cases: DeterministicEvalCase[];
+}): ReconciliationEvalManifest {
+  const base = {
+    manifestKind: input.manifestKind,
+    name: input.name,
+    ingestionSurfaces: input.ingestionSurfaces,
+    caseNames: input.cases.map((testCase) => testCase.name).sort(),
+    expectedOutputKinds: uniqueSorted(
+      input.cases.flatMap((testCase) => Object.keys(testCase.expected.outputKindCounts)),
+    ),
+    expectedAssociationRoles: uniqueSorted(
+      input.cases.flatMap((testCase) => Object.keys(testCase.expected.associationRoleCounts ?? {})),
+    ),
+    requiredSourcePayloadSurfaces: uniqueSorted(
+      input.cases.flatMap((testCase) => testCase.expected.requiredSourcePayloadSurfaces ?? []),
+    ) as ReconciliationEvalIngestionSurface[],
+    forbiddenOutputKinds: [],
+    visibilityAssertions: uniqueSorted(
+      input.cases.flatMap((testCase) =>
+        testCase.expected.requireVisibilityFloors ? ['visibility_floor'] : [],
+      ),
+    ),
+    promptVersions: [DETERMINISTIC_PROMPT_VERSION, LIVE_PROMPT_VERSION],
+    minimumScore: {
+      deterministic: 1,
+      live: 1,
+    },
+  } satisfies Omit<ReconciliationEvalManifest, 'scenarioFamily'>;
+
+  if (!input.scenarioFamily) return base;
+
+  return {
+    ...base,
+    scenarioFamily: input.scenarioFamily,
+  };
+}
+
+function casesByName(caseNames: string[]): DeterministicEvalCase[] {
+  return caseNames.map((caseName) => {
+    const testCase = RECONCILIATION_DETERMINISTIC_EVAL_CASES.find(
+      (candidate) => candidate.name === caseName,
+    );
+    if (!testCase) throw new Error(`Unknown reconciliation eval case: ${caseName}`);
+    return testCase;
+  });
+}
+
+function uniqueSorted(values: string[]): string[] {
+  return [...new Set(values)].sort();
+}

@@ -6,10 +6,11 @@ import {
   meetingTranscriptChunks,
   meetingUsage,
   rawEvents,
+  reconciliationEvidence,
   savedMeetings,
 } from '@timeline/db';
 import { TimelineAiError } from '@timeline/shared/llm';
-import { eq } from 'drizzle-orm';
+import { eq, inArray } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -232,6 +233,26 @@ describe('processMeetingFinalizeJob', () => {
     expect(startEvent?.contentText).toContain('Participants: Alice, Bob');
     expect(startEvent?.contentText).not.toContain('Summary: Meeting summary here.');
     expect(startEvent?.contentText).not.toContain('Bob owns the migration');
+    const evidenceRows = await db
+      .select()
+      .from(reconciliationEvidence)
+      .where(
+        inArray(
+          reconciliationEvidence.rawEventId,
+          [events[0]?.id, scheduledEvent?.id, startEvent?.id].filter((id): id is string =>
+            Boolean(id),
+          ),
+        ),
+      );
+    expect(evidenceRows).toHaveLength(3);
+    expect(evidenceRows.map((row) => row.source).sort()).toEqual([
+      'calendar',
+      'calendar',
+      'meeting',
+    ]);
+    expect(evidenceRows.find((row) => row.source === 'meeting')?.externalObjectId).toBe(
+      `meeting-finalized:${MEETING_ID}`,
+    );
 
     const chunks = await db
       .select()

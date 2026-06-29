@@ -2,7 +2,7 @@ import { PGlite } from '@electric-sql/pglite';
 import { ingestWebhookCredentials, ingestWebhooks } from '@timeline/db';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { hashCredential, mintCredential, resolveCredential } from '#src/ingest-webhooks/keys.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
@@ -25,6 +25,10 @@ describe('ingest webhook credentials', () => {
       INSERT INTO users (id, email)
       VALUES ('${USER_ID}', 'owner@example.com');
     `);
+  });
+
+  afterEach(async () => {
+    await pg.close();
   });
 
   it('mints tli-prefixed credentials and resolves active webhook credentials', async () => {

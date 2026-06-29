@@ -1,7 +1,7 @@
 import { PGlite } from '@electric-sql/pglite';
 import { mcpOutboundKeys } from '@timeline/db';
 import { drizzle } from 'drizzle-orm/pglite';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { handleMcpRequest } from '#src/mcp-server/handler.js';
 import { hashKey } from '#src/mcp-server/keys.js';
@@ -82,6 +82,10 @@ describe('handleMcpRequest', () => {
     await applyDbMigrations(pg);
     db = drizzle(pg);
     await seed(pg, db);
+  });
+
+  afterEach(async () => {
+    await pg.close();
   });
 
   it('allows initialize without bearer auth', async () => {

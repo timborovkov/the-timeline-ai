@@ -3,19 +3,24 @@ import { Buffer } from 'node:buffer';
 import { PGlite } from '@electric-sql/pglite';
 import {
   artifactClusterAnchors,
-  artifactClusterMembers,
   artifactClusters,
+  artifactEvidenceAssociations,
   entities,
   integrations,
   rawEvents,
+  reconciliationEvidence,
+  reconciliationEvidenceAnchors,
+  reconciliationOutputs,
+  reconciliationRuns,
   slackConversationBindings,
   slackWorkspaces,
 } from '@timeline/db';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { writeIntegrationEvents } from '#src/integrations/event-writer.js';
+import { AUTHORITY_POLICY_VERSION } from '#src/reconciliation/authority.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
 
 vi.mock('#src/queue/queues.js', () => ({
@@ -46,6 +51,10 @@ describe('writeIntegrationEvents visibility', () => {
         ('${TEAM_ID}', '${USER_ID}', 'owner'),
         ('${TEAM_ID}', '${USER_B_ID}', 'member');
     `);
+  });
+
+  afterEach(async () => {
+    await pg.close();
   });
 
   it('does not write specific_users without user ids for per-event overrides', async () => {
@@ -154,6 +163,307 @@ describe('writeIntegrationEvents visibility', () => {
     const [row] = await db.select().from(rawEvents).where(eq(rawEvents.id, eventId));
     expect(row?.visibility).toBe('specific_users');
     expect(row?.visibilityUserIds).toEqual([USER_B_ID]);
+  });
+
+  it('normalizes integration events into replay-safe reconciliation evidence and anchors', async () => {
+    const [integration] = await db
+      .insert(integrations)
+      .values({
+        teamId: TEAM_ID,
+        connectedByUserId: USER_ID,
+        provider: 'monday',
+        displayName: 'Monday + Sentry',
+        externalAccountId: 'acct-reconcile-shadow',
+        visibilityDefault: 'team',
+      })
+      .returning();
+    if (!integration) throw new Error('integration insert failed');
+
+    const events = [
+      {
+        dedupKey: 'monday:item:456:status',
+        provider: 'monday',
+        externalObjectId: 'board-123:item-456',
+        externalEventId: 'evt-monday-1',
+        eventType: 'item.status_changed',
+        occurredAt: new Date('2026-06-20T09:00:00Z'),
+        contentText: 'Monday item Acme implementation moved to Waiting on Customer',
+        extra: {
+          source_payload_ref: 's3://timeline-test/reconciliation/monday/item-456.json',
+          payload_digest: 'sha256:monday-payload',
+        },
+        objectMap: {
+          type: 'task' as const,
+          canonicalName: 'Acme implementation board item',
+          displayTitle: 'Acme implementation',
+          externalId: 'board-123:item-456',
+          status: 'in_progress' as const,
+          aliases: ['ACME-IMPL'],
+          url: 'https://monday.com/boards/123/pulses/456',
+          metadata: { artifact_key: 'customer:acme:implementation' },
+        },
+      },
+      {
+        dedupKey: 'monday:item:999:comment',
+        provider: 'monday',
+        externalObjectId: 'board-123:item-999',
+        externalEventId: 'evt-monday-comment-1',
+        eventType: 'comment.created',
+        occurredAt: new Date('2026-06-20T09:10:00Z'),
+        contentText: 'Monday comment on Acme rollout notes: customer asked for rollout notes',
+        extra: {
+          source_payload_ref: 's3://timeline-test/reconciliation/monday/item-999-comment.json',
+          payload_digest: 'sha256:monday-comment-payload',
+        },
+        objectMap: {
+          type: 'task' as const,
+          canonicalName: 'Acme rollout notes board item',
+          displayTitle: 'Acme rollout notes',
+          externalId: 'board-123:item-999',
+          status: 'open' as const,
+          metadata: { artifact_key: 'customer:acme:rollout-notes' },
+        },
+      },
+      {
+        dedupKey: 'sentry:issue:789:resolved',
+        provider: 'sentry',
+        externalObjectId: 'issue-789',
+        externalEventId: 'evt-sentry-1',
+        eventType: 'issue.resolved',
+        occurredAt: new Date('2026-06-20T09:05:00Z'),
+        contentText: 'Sentry issue ISSUE-789 login crash resolved',
+        extra: {
+          source_payload_ref: 's3://timeline-test/reconciliation/sentry/issue-789.json',
+          payload_digest: 'sha256:sentry-payload',
+          url: 'https://sentry.example/issues/789',
+        },
+      },
+    ];
+
+    const insertedIds = await writeIntegrationEvents({
+      db: db as never,
+      integration,
+      events,
+    });
+    expect(insertedIds).toHaveLength(3);
+
+    const retryIds = await writeIntegrationEvents({
+      db: db as never,
+      integration,
+      events,
+    });
+    expect(retryIds).toEqual([]);
+
+    const evidenceRows = await db
+      .select()
+      .from(reconciliationEvidence)
+      .orderBy(reconciliationEvidence.provider);
+    expect(evidenceRows).toHaveLength(3);
+    expect(evidenceRows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          provider: 'monday',
+          externalObjectId: 'board-123:item-456',
+          eventType: 'item.status_changed',
+          replayState: 'full',
+          sourcePayloadRef: 's3://timeline-test/reconciliation/monday/item-456.json',
+          payloadDigest: 'sha256:monday-payload',
+          visibility: 'team',
+          visibilityOwnerUserId: USER_ID,
+        }),
+        expect.objectContaining({
+          provider: 'monday',
+          externalObjectId: 'board-123:item-999',
+          eventType: 'comment.created',
+          replayState: 'full',
+          sourcePayloadRef: 's3://timeline-test/reconciliation/monday/item-999-comment.json',
+          payloadDigest: 'sha256:monday-comment-payload',
+          visibility: 'team',
+          visibilityOwnerUserId: USER_ID,
+        }),
+        expect.objectContaining({
+          provider: 'sentry',
+          externalObjectId: 'issue-789',
+          eventType: 'issue.resolved',
+          replayState: 'full',
+          sourcePayloadRef: 's3://timeline-test/reconciliation/sentry/issue-789.json',
+          payloadDigest: 'sha256:sentry-payload',
+        }),
+      ]),
+    );
+
+    const anchors = await db.select().from(reconciliationEvidenceAnchors);
+    expect(anchors).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          anchorType: 'provider_object',
+          anchorValue: 'monday:board-123:item-456',
+          source: 'adapter',
+        }),
+        expect.objectContaining({
+          anchorType: 'provider_object',
+          anchorValue: 'monday:board-123:item-999',
+          source: 'adapter',
+        }),
+        expect.objectContaining({
+          anchorType: 'provider_object',
+          anchorValue: 'sentry:issue-789',
+          source: 'adapter',
+        }),
+        expect.objectContaining({
+          anchorType: 'artifact_key',
+          anchorValue: 'customer:acme:implementation',
+          strength: 'hard',
+        }),
+        expect.objectContaining({
+          anchorType: 'alias:task',
+          anchorValue: 'acme-impl',
+        }),
+      ]),
+    );
+
+    const associations = await db.select().from(artifactEvidenceAssociations);
+    expect(associations).toHaveLength(2);
+    const lifecycleAssociation = associations.find((row) => row.role === 'lifecycle_update');
+    const contextAssociation = associations.find((row) => row.role === 'related_context');
+    expect(lifecycleAssociation).toMatchObject({
+      role: 'lifecycle_update',
+      strength: 'structured',
+      associationSource: 'authoritative_provider',
+      visibility: 'team',
+      visibilityFloor: 'team',
+      visibilityOwnerUserId: USER_ID,
+      visibilityFloorOwnerUserId: USER_ID,
+    });
+    expect(lifecycleAssociation?.sourceRefs).toEqual([
+      expect.objectContaining({
+        source: 'monday',
+        rawEventId: lifecycleAssociation?.rawEventId,
+        evidenceId: evidenceRows.find((row) => row.eventType === 'item.status_changed')?.id,
+        sourcePayloadRef: 's3://timeline-test/reconciliation/monday/item-456.json',
+      }),
+    ]);
+    expect(contextAssociation).toMatchObject({
+      role: 'related_context',
+      strength: 'structured',
+      associationSource: 'hard_anchor',
+      visibility: 'team',
+      visibilityFloor: 'team',
+      visibilityOwnerUserId: USER_ID,
+      visibilityFloorOwnerUserId: USER_ID,
+    });
+    expect(contextAssociation?.sourceRefs).toEqual([
+      expect.objectContaining({
+        source: 'monday',
+        rawEventId: contextAssociation?.rawEventId,
+        evidenceId: evidenceRows.find((row) => row.eventType === 'comment.created')?.id,
+        sourcePayloadRef: 's3://timeline-test/reconciliation/monday/item-999-comment.json',
+      }),
+    ]);
+
+    const runs = await db.select().from(reconciliationRuns);
+    expect(runs).toHaveLength(2);
+    const directRun = runs.find((row) => row.scope === 'integration_direct_write');
+    const observedRun = runs.find((row) => row.scope === 'integration_observed_association');
+    expect(directRun).toMatchObject({
+      teamId: TEAM_ID,
+      trigger: 'raw_event',
+      scope: 'integration_direct_write',
+      status: 'completed',
+      engineVersion: 'integration-direct-write-2026-06',
+    });
+    expect(observedRun).toMatchObject({
+      teamId: TEAM_ID,
+      trigger: 'raw_event',
+      scope: 'integration_observed_association',
+      status: 'completed',
+      engineVersion: 'integration-observed-association-2026-06',
+    });
+
+    const outputs = await db.select().from(reconciliationOutputs);
+    expect(outputs).toHaveLength(2);
+    const directOutput = outputs.find((row) => row.outputKind === 'direct_write');
+    const observedOutput = outputs.find((row) => row.outputKind === 'observed_association');
+    expect(directOutput).toMatchObject({
+      runId: directRun?.id,
+      clusterId: lifecycleAssociation?.clusterId,
+      outputKind: 'direct_write',
+      targetKind: 'cluster_lifecycle',
+      operation: 'update',
+      requiresApproval: false,
+      status: 'applied',
+      visibility: 'team',
+      visibilityOwnerUserId: USER_ID,
+      visibilityFloor: 'team',
+      visibilityFloorOwnerUserId: USER_ID,
+    });
+    expect(directOutput?.authorityDecision).toMatchObject({
+      decision: 'direct_write',
+      reason: 'provider_owns_external_object_state',
+      provider: 'monday',
+      policy_version: AUTHORITY_POLICY_VERSION,
+    });
+    expect(directOutput?.payload).toMatchObject({
+      provider: 'monday',
+      event_type: 'item.status_changed',
+      object_map_external_id: 'board-123:item-456',
+      object_map_status: 'in_progress',
+      cluster_status: 'active',
+      association_role: 'lifecycle_update',
+    });
+    expect(directOutput?.sourceRefs).toEqual([
+      expect.objectContaining({
+        source: 'monday',
+        rawEventId: lifecycleAssociation?.rawEventId,
+        evidenceId: evidenceRows.find((row) => row.eventType === 'item.status_changed')?.id,
+        sourcePayloadRef: 's3://timeline-test/reconciliation/monday/item-456.json',
+      }),
+    ]);
+    expect(directOutput?.sourcePayloadRefs).toEqual([
+      's3://timeline-test/reconciliation/monday/item-456.json',
+    ]);
+
+    expect(observedOutput).toMatchObject({
+      runId: observedRun?.id,
+      clusterId: contextAssociation?.clusterId,
+      outputKind: 'observed_association',
+      targetKind: 'cluster_identity',
+      operation: 'link',
+      requiresApproval: false,
+      status: 'applied',
+      visibility: 'team',
+      visibilityOwnerUserId: USER_ID,
+      visibilityFloor: 'team',
+      visibilityFloorOwnerUserId: USER_ID,
+    });
+    expect(observedOutput?.authorityDecision).toMatchObject({
+      decision: 'observed_association',
+      reason: 'context_attached_without_canonical_state_change',
+      provider: 'monday',
+      policy_version: AUTHORITY_POLICY_VERSION,
+    });
+    expect(observedOutput?.payload).toMatchObject({
+      provider: 'monday',
+      event_type: 'comment.created',
+      integration_id: integration.id,
+      external_object_id: 'board-123:item-999',
+      object_map_external_id: 'board-123:item-999',
+      object_map_type: 'task',
+      association_role: 'related_context',
+      association_source: 'hard_anchor',
+      evidence_strength: 'structured',
+    });
+    expect(observedOutput?.sourceRefs).toEqual([
+      expect.objectContaining({
+        source: 'monday',
+        rawEventId: contextAssociation?.rawEventId,
+        evidenceId: evidenceRows.find((row) => row.eventType === 'comment.created')?.id,
+        sourcePayloadRef: 's3://timeline-test/reconciliation/monday/item-999-comment.json',
+      }),
+    ]);
+    expect(observedOutput?.sourcePayloadRefs).toEqual([
+      's3://timeline-test/reconciliation/monday/item-999-comment.json',
+    ]);
   });
 
   it('skips native Slack message rows for conversationally bound channels', async () => {
@@ -981,11 +1291,20 @@ describe('writeIntegrationEvents visibility', () => {
     expect(clusters[0]?.artifactType).toBe('incident');
     expect(clusters[0]?.status).toBe('resolved');
 
-    const members = await db.select().from(artifactClusterMembers);
-    expect(members).toHaveLength(2);
-    expect(members.map((member) => member.provider).sort()).toEqual(['github', 'sentry']);
-    expect(members.find((member) => member.provider === 'github')?.authoritative).toBe(true);
-    expect(members.find((member) => member.provider === 'sentry')?.role).toBe('error');
+    const associations = await db.select().from(artifactEvidenceAssociations);
+    expect(associations).toHaveLength(2);
+    expect(associations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          role: 'lifecycle_update',
+          associationSource: 'authoritative_provider',
+        }),
+        expect.objectContaining({
+          role: 'blocker',
+          associationSource: 'authoritative_provider',
+        }),
+      ]),
+    );
 
     const anchors = await db.select().from(artifactClusterAnchors);
     expect(anchors).toEqual(
@@ -1046,7 +1365,7 @@ describe('writeIntegrationEvents visibility', () => {
     expect(insertedIds).toHaveLength(1);
 
     await db.delete(artifactClusters);
-    expect(await db.select().from(artifactClusterMembers)).toHaveLength(0);
+    expect(await db.select().from(artifactEvidenceAssociations)).toHaveLength(0);
     expect(await db.select().from(artifactClusterAnchors)).toHaveLength(0);
 
     const replayedIds = await writeIntegrationEvents({
@@ -1062,12 +1381,12 @@ describe('writeIntegrationEvents visibility', () => {
       canonicalName: 'the-timeline-ai: Fix artifact repair',
       status: 'resolved',
     });
-    const members = await db.select().from(artifactClusterMembers);
-    expect(members).toEqual([
+    const associations = await db.select().from(artifactEvidenceAssociations);
+    expect(associations).toEqual([
       expect.objectContaining({
         rawEventId: insertedIds[0],
-        provider: 'github',
-        authoritative: true,
+        role: 'lifecycle_update',
+        associationSource: 'authoritative_provider',
       }),
     ]);
   });
@@ -1131,15 +1450,17 @@ describe('writeIntegrationEvents visibility', () => {
       status: 'open',
     });
 
-    const members = await db.select().from(artifactClusterMembers);
-    expect(members).toEqual([
+    const associations = await db.select().from(artifactEvidenceAssociations);
+    expect(associations).toEqual([
       expect.objectContaining({
         rawEventId: insertedIds[0],
-        entityId: null,
-        provider: 'github',
-        externalObjectId: 'timborovkov/the-timeline-ai#912',
+        role: 'blocker',
+        associationSource: 'authoritative_provider',
       }),
     ]);
+    expect(associations[0]?.metadata).toMatchObject({
+      external_object_id: 'timborovkov/the-timeline-ai#912',
+    });
 
     const anchors = await db.select().from(artifactClusterAnchors);
     expect(anchors).toEqual(
@@ -1222,9 +1543,14 @@ describe('writeIntegrationEvents visibility', () => {
     expect(clusters).toHaveLength(1);
     expect(clusters[0]?.status).toBe('resolved');
 
-    const members = await db.select().from(artifactClusterMembers);
-    expect(members.map((member) => member.rawEventId).sort()).toEqual([...insertedIds].sort());
-    expect(members.map((member) => member.role).sort()).toEqual(['issue', 'lifecycle_update']);
+    const associations = await db.select().from(artifactEvidenceAssociations);
+    expect(associations.map((association) => association.rawEventId).sort()).toEqual(
+      [...insertedIds].sort(),
+    );
+    expect(associations.map((association) => association.role).sort()).toEqual([
+      'blocker',
+      'lifecycle_update',
+    ]);
   });
 
   it('clusters non-technical work artifacts with explicit artifact keys without granting authority to context', async () => {
@@ -1288,10 +1614,17 @@ describe('writeIntegrationEvents visibility', () => {
     expect(clusters).toHaveLength(1);
     expect(clusters[0]?.artifactType).toBe('document');
 
-    const members = await db.select().from(artifactClusterMembers);
-    expect(members).toHaveLength(2);
-    expect(members.some((member) => member.authoritative)).toBe(false);
-    expect(members.map((member) => member.role)).toEqual(['document', 'document']);
+    const associations = await db.select().from(artifactEvidenceAssociations);
+    expect(associations).toHaveLength(2);
+    expect(
+      associations.some(
+        (association) => association.associationSource === 'authoritative_provider',
+      ),
+    ).toBe(false);
+    expect(associations.map((association) => association.role)).toEqual([
+      'evidence_only',
+      'evidence_only',
+    ]);
 
     const anchors = await db.select().from(artifactClusterAnchors);
     expect(anchors).toEqual(

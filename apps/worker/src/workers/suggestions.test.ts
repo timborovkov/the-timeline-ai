@@ -10,6 +10,8 @@ import {
   ingestWebhooks,
   objectNotes,
   rawEvents,
+  reconciliationOutputs,
+  reconciliationRuns,
   type Db,
 } from '@timeline/db';
 import { withTeam } from '@timeline/shared/team-scope';
@@ -4033,14 +4035,22 @@ describe('processSuggestionJobForTests', () => {
       source: 'telegram',
       text: 'Sarah can send the Acme deck Friday.',
       occurredAt: new Date('2026-05-27T10:00:00.000Z'),
-      sourceMetadata: { tg_chat_id: '456', tg_message_id: '1' },
+      sourceMetadata: {
+        tg_chat_id: '456',
+        tg_message_id: '1',
+        source_payload_ref: 'telegram://chat/456/message/1',
+      },
     });
     await seedRawEvent(db as never, {
       id: lastId,
       source: 'telegram',
       text: 'Actually wait for legal before sending anything.',
       occurredAt: new Date('2026-05-27T10:02:00.000Z'),
-      sourceMetadata: { tg_chat_id: '456', tg_message_id: '2' },
+      sourceMetadata: {
+        tg_chat_id: '456',
+        tg_message_id: '2',
+        source_payload_ref: 'telegram://chat/456/message/2',
+      },
     });
     await seedConversationReview(db as never, {
       id: reviewId,
@@ -4067,6 +4077,69 @@ describe('processSuggestionJobForTests', () => {
     expect(review?.status).toBe('completed');
     expect(review?.reviewedThroughRawEventId).toBe(lastId);
     expect(review?.metadata).toMatchObject({ review_outcome: 'no_action' });
+
+    const runs = await db.select().from(reconciliationRuns);
+    expect(runs).toHaveLength(1);
+    expect(runs[0]).toMatchObject({
+      teamId: TEAM_ID,
+      trigger: 'raw_event',
+      scope: 'conversation_review:no_action',
+      status: 'completed',
+      engineVersion: 'conversation-no-action-2026-06',
+    });
+    const outputs = await db.select().from(reconciliationOutputs);
+    expect(outputs).toHaveLength(1);
+    expect(outputs[0]).toMatchObject({
+      teamId: TEAM_ID,
+      runId: runs[0]?.id,
+      outputKind: 'no_action',
+      targetKind: 'cluster_identity',
+      operation: 'noop',
+      status: 'applied',
+      requiresApproval: false,
+      visibility: 'team',
+      visibilityFloor: 'team',
+    });
+    expect(outputs[0]?.sourceRefs).toEqual([
+      {
+        source: 'telegram',
+        rawEventId: firstId,
+        sourcePayloadRef: 'telegram://chat/456/message/1',
+      },
+      {
+        source: 'telegram',
+        rawEventId: lastId,
+        sourcePayloadRef: 'telegram://chat/456/message/2',
+      },
+    ]);
+    expect(outputs[0]?.sourcePayloadRefs).toEqual([
+      'telegram://chat/456/message/1',
+      'telegram://chat/456/message/2',
+    ]);
+    expect(outputs[0]?.payload).toMatchObject({
+      planner: 'conversation_review',
+      review_id: reviewId,
+      conversation_key: conversationKey,
+      raw_event_id: lastId,
+      outcome: 'no_action',
+    });
+
+    await db
+      .update(conversationReviews)
+      .set({
+        status: 'pending',
+        reviewedThroughRawEventId: null,
+        reviewedThroughOccurredAt: null,
+        quietUntil: new Date('2026-05-27T09:00:00.000Z'),
+      })
+      .where(eq(conversationReviews.id, reviewId));
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { scope: 'conversation_review', conversationReviewId: reviewId, teamId: TEAM_ID },
+      { getEnv: env, chatStructured: chat, modelId: MODEL_ID },
+    );
+    expect(await db.select().from(reconciliationRuns)).toHaveLength(1);
+    expect(await db.select().from(reconciliationOutputs)).toHaveLength(1);
   });
 
   it('revises a pending conversation proposal when a follow-up changes the owner', async () => {

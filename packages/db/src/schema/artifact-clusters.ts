@@ -29,6 +29,24 @@ export const artifactClusterStatus = pgEnum('artifact_cluster_status', [
   'archived',
 ]);
 
+export const artifactClusterKind = pgEnum('artifact_cluster_kind', [
+  'customer_project',
+  'account',
+  'incident',
+  'deal',
+  'document',
+  'decision',
+  'task',
+  'meeting',
+  'calendar_event',
+  'provider_record',
+  'topic',
+  'person_context',
+  'relationship_bundle',
+  'system_workflow',
+  'other',
+]);
+
 export const artifactEvidenceRole = pgEnum('artifact_evidence_role', [
   'report',
   'discussion',
@@ -63,6 +81,7 @@ export const artifactClusters = pgTable(
     teamId: uuid('team_id')
       .notNull()
       .references(() => teams.id, { onDelete: 'cascade' }),
+    artifactClusterKind: artifactClusterKind('artifact_cluster_kind').notNull().default('other'),
     artifactType: entityType('artifact_type').notNull(),
     canonicalName: text('canonical_name').notNull(),
     status: artifactClusterStatus('status').notNull().default('open'),
@@ -78,6 +97,11 @@ export const artifactClusters = pgTable(
     index('artifact_clusters_team_type_status_idx').on(
       table.teamId,
       table.artifactType,
+      table.status,
+    ),
+    index('artifact_clusters_team_kind_status_idx').on(
+      table.teamId,
+      table.artifactClusterKind,
       table.status,
     ),
     index('artifact_clusters_team_entity_idx').on(table.teamId, table.canonicalEntityId),

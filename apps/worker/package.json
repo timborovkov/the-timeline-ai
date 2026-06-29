@@ -21,6 +21,7 @@
     "dedupe-approvals": "NODE_OPTIONS=--conditions=development tsx src/scripts/dedupe-approvals.ts",
     "dedupe-calendar-events": "NODE_OPTIONS=--conditions=development tsx src/scripts/dedupe-calendar-events.ts",
     "embed-coverage": "NODE_OPTIONS=--conditions=development tsx src/scripts/embed-coverage.ts",
+    "reconciliation-evidence": "NODE_OPTIONS=--conditions=development tsx src/scripts/reconciliation-evidence.ts",
     "redocument-extract": "NODE_OPTIONS=--conditions=development tsx src/scripts/redocument-extract.ts",
     "redocument-embed": "NODE_OPTIONS=--conditions=development tsx src/scripts/redocument-embed.ts",
     "integration-resync": "NODE_OPTIONS=--conditions=development tsx src/scripts/integration-resync.ts",

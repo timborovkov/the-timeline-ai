@@ -18,7 +18,7 @@ import {
 } from '@timeline/db';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { SearchHit, SearchOpts } from '#src/qdrant/client.js';
 
@@ -136,6 +136,10 @@ describe('withTeam namespaced port', () => {
     await applyDbMigrations(pg);
     await seed(pg);
     db = drizzle(pg);
+  });
+
+  afterEach(async () => {
+    await pg.close();
   });
 
   it('exposes timeline and documents through modules, not flat methods', () => {

@@ -1,7 +1,7 @@
 import { PGlite } from '@electric-sql/pglite';
 import { calendarEvents, entities } from '@timeline/db';
 import { drizzle } from 'drizzle-orm/pglite';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import type { EmbedResult } from '#src/llm/embed.js';
 import type { SearchHit } from '#src/qdrant/client.js';
@@ -174,6 +174,10 @@ describe('agent tool evals', () => {
       agentSuggested: true,
     });
   }, 60_000);
+
+  afterEach(async () => {
+    await pg.close();
+  });
 
   it('answers a timeline question with cited evidence from accessible events', async () => {
     // Product behavior: chat should ground factual timeline answers in source

@@ -27,6 +27,11 @@ After **any** code, configuration, or documentation change:
      compiled output, or Node runtime loader boundaries.
    - Run `pnpm test:eval` when a change touches agent tools, retrieval,
      visibility filters, MCP tool handling, or answer synthesis.
+   - Run `pnpm test:reconciliation-eval` when a change touches reconciliation
+     schema, source refs, evidence associations, visibility floors, authority
+     policy, or reconciliation output planning. Run
+     `pnpm test:reconciliation-eval:live` when prompts or live-model
+     reconciliation behavior changed and the required env vars are available.
    - Run broader suites such as `pnpm test`, `pnpm e2e`, or a package-filtered
      Vitest/e2e command when the blast radius is shared, cross-package,
      user-facing, or hard to localize.
@@ -109,12 +114,16 @@ Treat this file as an operating contract for agents, not a loose README.
 - **Team isolation is sacred.** Every Postgres query goes through
   `withTeam(db, teamId, userId)` in `packages/shared`. Use the returned
   named modules (`scope.timeline`, `scope.documents`, `scope.meetings`,
-  `scope.objects`, `scope.calendar`, `scope.integrations`, `scope.mcp`,
-  `scope.onboarding`, `scope.jobRecovery`) rather than flat scope methods or manually passing
-  `db` into object helpers. Every Qdrant query filters on `team_id` via the
-  wrapper. Do not bypass these — even in "internal" tools.
-- **Raw events are immutable.** Never `UPDATE` a `raw_events` row's content.
-  Derived facts can be re-extracted; the source is the source.
+  `scope.objects`, `scope.boards`, `scope.suggestions`, `scope.calendar`,
+  `scope.integrations`, `scope.mcp`, `scope.onboarding`, `scope.jobRecovery`,
+  `scope.audit`) rather than flat scope methods or manually passing `db` into
+  object helpers. Every Qdrant query filters on `team_id` via the wrapper. Do
+  not bypass these — even in "internal" tools.
+- **Captured raw event content is immutable.** Never `UPDATE` a source-ingested
+  `raw_events` row's content. Derived facts can be re-extracted; the source is
+  the source. Calendar raw-event rows are derived schedule mirrors and may
+  refresh their timeline text, occurrence time, and visibility when the owning
+  calendar event changes.
 - **Design system lives in [design.md](design.md).** If a screen disagrees with
   it, fix the screen — not the doc. If you're intentionally evolving the design
   language, update [design.md](design.md) in the same PR.
@@ -189,9 +198,11 @@ packages/
             module (Phase 11 — Drive/Linear/GitHub/Monday.com/Slack/Sentry
             providers, person-owned provider connections, team resource
             shares, active source paths, connection attention, event-writer,
-            registry catalog, AES-GCM secrets helper), artifact reconciliation
-            module (evidence clusters, anchors, and authority flags), mcp module (Phase 11
-            — JSON-RPC client, OAuth client + state JWT, SSRF guard,
+            registry catalog, AES-GCM secrets helper), artifact/workspace
+            reconciliation modules (evidence clusters, anchors, source refs,
+            raw-event normalization, anchor resolution, reconciliation outputs,
+            approval projection outbox, and field-scoped authority policy),
+            mcp module (Phase 11 — JSON-RPC client, OAuth client + state JWT, SSRF guard,
             team+user-overlay scope), mcp-server module (Phase 11 outbound —
             JSON-RPC handler, bearer-key mint/verify for /api/mcp/server),
             calendar module (Phase 11 — event scope, raw-event audit rows,

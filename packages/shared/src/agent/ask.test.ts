@@ -130,7 +130,8 @@ describe('askAgent', () => {
     db = drizzle(pg);
   }, 60_000);
 
-  afterEach(() => {
+  afterEach(async () => {
+    await pg.close();
     process.env = { ...ENV_BACKUP };
     resetEnvForTests();
   });

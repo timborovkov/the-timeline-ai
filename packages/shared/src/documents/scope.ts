@@ -12,8 +12,10 @@ import { type SQL, and, asc, desc, eq, gte, inArray, isNull, lt, or, sql } from 
 import { buildDocumentObjectKey } from '#src/documents/object-key.js';
 import { documentPresentation } from '#src/documents/presentation.js';
 import { embed as defaultEmbed, type EmbedResult } from '#src/llm/embed.js';
+import { childLogger } from '#src/logger.js';
 import { decodeCursor, pageWindow } from '#src/pagination.js';
 import { getQdrantClient, type SearchHit, type SearchOpts } from '#src/qdrant/client.js';
+import { normalizeRawEventsToEvidence } from '#src/reconciliation/normalization.js';
 import { rawEventVisibleToUser, validateVisibilityUserIds } from '#src/visibility.js';
 
 // drizzle's transaction callback gives a PgTransaction that has the same
@@ -43,6 +45,7 @@ type DbOrTx = Db | DbTx;
 type Visibility = 'private' | 'team' | 'specific_users';
 type FileKind = 'captured' | 'document';
 type RepresentationKind = 'source_text' | 'transcript' | 'visual_description' | 'metadata_preview';
+const log = childLogger('documents:scope');
 
 export interface DocumentScopeDeps {
   db: Db;
@@ -438,6 +441,14 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
       .returning({ id: rawEvents.id });
     const row = inserted[0];
     if (!row) throw new Error('Failed to write document timeline event');
+    try {
+      await normalizeRawEventsToEvidence({ db: tx, teamId, rawEventIds: [row.id] });
+    } catch (err) {
+      log.warn(
+        { err, teamId, rawEventId: row.id, documentId: args.documentId },
+        'document reconciliation evidence normalization failed',
+      );
+    }
     return row.id;
   }
 

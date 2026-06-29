@@ -1,6 +1,7 @@
 import {
   type Db,
   auditLog,
+  artifactEvidenceAssociations,
   artifactClusterMembers,
   artifactClusters,
   agentSuggestionEvidence,
@@ -20,6 +21,7 @@ import {
   objectChanges,
   objectNotes,
   rawEvents,
+  reconciliationEvidence,
   teamMembers,
   teamVisibilityDefaults,
   teams,
@@ -40,6 +42,7 @@ import { createIntegrationScope } from '#src/integrations/scope.js';
 import { createJobRecoveryScope } from '#src/job-recovery/index.js';
 import { embed as defaultEmbed, type EmbedResult } from '#src/llm/embed.js';
 import { TIMELINE_MODELS } from '#src/llm/models.js';
+import { childLogger } from '#src/logger.js';
 import { createMcpScope } from '#src/mcp/scope.js';
 import { createMeetingScope } from '#src/meetings/scope.js';
 import { createObjectScope, normalizeIdentityFacet } from '#src/objects/index.js';
@@ -53,6 +56,7 @@ import {
   type SourceKind,
 } from '#src/qdrant/client.js';
 import { buildPointId } from '#src/qdrant/point-id.js';
+import { normalizeRawEventsToEvidence } from '#src/reconciliation/normalization.js';
 import { createSuggestionScope } from '#src/suggestions/index.js';
 import { normalizeVisibilityUserIds, rawEventVisibleToUser } from '#src/visibility.js';
 
@@ -89,10 +93,30 @@ const SPECIFIC_USERS_DEFAULT_SOURCES = new Set<VisibilityDefaultSource>([
   'calendar',
 ]);
 const DEFAULT_SENDER_SEARCH_EVENT_ID_BATCH_SIZE = 1000;
+const log = childLogger('team-scope');
 
 async function enqueueRawEventEmbed(input: { teamId: string; rawEventId: string }): Promise<void> {
   const { enqueueEmbedJob } = await import(/* webpackIgnore: true */ '#src/queue/queues.js');
   await enqueueEmbedJob({ scope: 'raw_event', teamId: input.teamId, rawEventId: input.rawEventId });
+}
+
+async function normalizeRawEventEvidence(input: {
+  db: Db;
+  teamId: string;
+  rawEventId: string;
+}): Promise<void> {
+  try {
+    await normalizeRawEventsToEvidence({
+      db: input.db,
+      teamId: input.teamId,
+      rawEventIds: [input.rawEventId],
+    });
+  } catch (err) {
+    log.warn(
+      { err, teamId: input.teamId, rawEventId: input.rawEventId },
+      'raw event reconciliation evidence normalization failed',
+    );
+  }
 }
 
 export interface EventListFilters {
@@ -510,12 +534,47 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
     return status;
   }
 
+  function visibilityEnvelopeVisibleToUser(row: {
+    visibility:
+      | typeof artifactEvidenceAssociations.visibility
+      | typeof artifactEvidenceAssociations.visibilityFloor;
+    visibilityOwnerUserId:
+      | typeof artifactEvidenceAssociations.visibilityOwnerUserId
+      | typeof artifactEvidenceAssociations.visibilityFloorOwnerUserId;
+    visibilityUserIds:
+      | typeof artifactEvidenceAssociations.visibilityUserIds
+      | typeof artifactEvidenceAssociations.visibilityFloorUserIds;
+  }) {
+    return or(
+      eq(row.visibility, 'team'),
+      and(eq(row.visibility, 'private'), eq(row.visibilityOwnerUserId, userId)),
+      and(
+        eq(row.visibility, 'specific_users'),
+        sql`COALESCE(${userId}::uuid = ANY(${row.visibilityUserIds}), false)`,
+      ),
+    );
+  }
+
   async function hydrateArtifactClustersForVisibleEventIds(
     accessibleEventIds: string[],
   ): Promise<Map<string, SearchEventArtifactCluster>> {
     if (accessibleEventIds.length === 0) return new Map();
 
-    const eventClusterRows = await db
+    const associationRawEventId = sql<string>`COALESCE(${artifactEvidenceAssociations.rawEventId}, ${reconciliationEvidence.rawEventId})`;
+    const associationVisibilityFilter = and(
+      visibilityEnvelopeVisibleToUser({
+        visibility: artifactEvidenceAssociations.visibility,
+        visibilityOwnerUserId: artifactEvidenceAssociations.visibilityOwnerUserId,
+        visibilityUserIds: artifactEvidenceAssociations.visibilityUserIds,
+      }),
+      visibilityEnvelopeVisibleToUser({
+        visibility: artifactEvidenceAssociations.visibilityFloor,
+        visibilityOwnerUserId: artifactEvidenceAssociations.visibilityFloorOwnerUserId,
+        visibilityUserIds: artifactEvidenceAssociations.visibilityFloorUserIds,
+      }),
+    );
+
+    const legacyEventClusterRows = await db
       .select({
         rawEventId: artifactClusterMembers.rawEventId,
         clusterId: artifactClusters.id,
@@ -535,10 +594,39 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
           isNull(artifactClusters.archivedAt),
         ),
       );
+    const associationEventClusterRows = await db
+      .select({
+        rawEventId: associationRawEventId,
+        clusterId: artifactClusters.id,
+      })
+      .from(artifactEvidenceAssociations)
+      .innerJoin(
+        reconciliationEvidence,
+        and(
+          eq(reconciliationEvidence.id, artifactEvidenceAssociations.evidenceId),
+          eq(reconciliationEvidence.teamId, teamId),
+        ),
+      )
+      .innerJoin(
+        artifactClusters,
+        and(
+          eq(artifactClusters.id, artifactEvidenceAssociations.clusterId),
+          eq(artifactClusters.teamId, teamId),
+        ),
+      )
+      .where(
+        and(
+          eq(artifactEvidenceAssociations.teamId, teamId),
+          inArray(associationRawEventId, accessibleEventIds),
+          associationVisibilityFilter,
+          isNull(artifactClusters.archivedAt),
+        ),
+      );
+    const eventClusterRows = [...legacyEventClusterRows, ...associationEventClusterRows];
     const clusterIds = [...new Set(eventClusterRows.map((row) => row.clusterId))];
     if (clusterIds.length === 0) return new Map();
 
-    const clusterMemberRows = await db
+    const legacyClusterMemberRows = await db
       .select({
         clusterId: artifactClusters.id,
         artifactType: artifactClusters.artifactType,
@@ -579,8 +667,61 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
         ),
       )
       .orderBy(desc(artifactClusterMembers.authoritative), desc(rawEvents.occurredAt));
+    const associationClusterMemberRows = await db
+      .select({
+        clusterId: artifactClusters.id,
+        artifactType: artifactClusters.artifactType,
+        rawEventId: rawEvents.id,
+        source: rawEvents.source,
+        provider: reconciliationEvidence.provider,
+        externalObjectId: reconciliationEvidence.externalObjectId,
+        role: artifactEvidenceAssociations.role,
+        strength: artifactEvidenceAssociations.strength,
+        authoritative: sql<boolean>`${artifactEvidenceAssociations.associationSource} = 'authoritative_provider'`,
+        memberMetadata: artifactEvidenceAssociations.metadata,
+        occurredAt: rawEvents.occurredAt,
+        contentText: rawEvents.contentText,
+        objectName: sql<string | null>`NULL`,
+      })
+      .from(artifactEvidenceAssociations)
+      .innerJoin(
+        artifactClusters,
+        and(
+          eq(artifactClusters.id, artifactEvidenceAssociations.clusterId),
+          eq(artifactClusters.teamId, teamId),
+        ),
+      )
+      .innerJoin(
+        reconciliationEvidence,
+        and(
+          eq(reconciliationEvidence.id, artifactEvidenceAssociations.evidenceId),
+          eq(reconciliationEvidence.teamId, teamId),
+        ),
+      )
+      .leftJoin(
+        rawEvents,
+        and(eq(rawEvents.id, associationRawEventId), eq(rawEvents.teamId, teamId)),
+      )
+      .where(
+        and(
+          eq(artifactEvidenceAssociations.teamId, teamId),
+          inArray(artifactEvidenceAssociations.clusterId, clusterIds),
+          isNull(artifactClusters.archivedAt),
+          associationVisibilityFilter,
+          visibilityFilter,
+          activeRawEventFilter,
+        ),
+      )
+      .orderBy(
+        desc(
+          sql<boolean>`${artifactEvidenceAssociations.associationSource} = 'authoritative_provider'`,
+        ),
+        desc(rawEvents.occurredAt),
+      );
+    const clusterMemberRows = [...associationClusterMemberRows, ...legacyClusterMemberRows];
 
     const clusterById = new Map<string, SearchEventArtifactCluster>();
+    const evidenceSeenByCluster = new Map<string, Set<string>>();
     for (const row of clusterMemberRows) {
       const existing = clusterById.get(row.clusterId);
       const cluster =
@@ -594,6 +735,17 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
         } satisfies SearchEventArtifactCluster);
       if (!existing) clusterById.set(row.clusterId, cluster);
       if (cluster.relatedEvidence.length >= 5) continue;
+      const evidenceKey = [
+        row.rawEventId ?? '',
+        row.provider ?? '',
+        row.externalObjectId ?? '',
+        row.role,
+        row.strength,
+      ].join('\0');
+      const seen = evidenceSeenByCluster.get(row.clusterId) ?? new Set<string>();
+      if (seen.has(evidenceKey)) continue;
+      seen.add(evidenceKey);
+      evidenceSeenByCluster.set(row.clusterId, seen);
       cluster.relatedEvidence.push({
         rawEventId: row.rawEventId,
         source: row.source,
@@ -2055,6 +2207,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
           .returning();
         const row = rows[0];
         if (!row) throw new Error('Failed to create event');
+        await normalizeRawEventEvidence({ db, teamId, rawEventId: row.id });
         return row;
       },
 
@@ -2084,7 +2237,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
         if (visibility === 'specific_users') {
           throw new Error('specific_users visibility is not supported for email events');
         }
-        return db.transaction(async (tx) => {
+        const result = await db.transaction(async (tx) => {
           // Probe parent: in-reply-to first, then any reference we know about.
           let parentRootId: string | null = null;
           // Inherit the parent's unverified flag when threading. A child reply
@@ -2228,6 +2381,10 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
           }
           return { id: row.id, teamId: row.teamId, threadRootId: rootId, deduplicated: false };
         });
+        if (result && !result.deduplicated) {
+          await normalizeRawEventEvidence({ db, teamId, rawEventId: result.id });
+        }
+        return result;
       },
 
       async listMembers() {

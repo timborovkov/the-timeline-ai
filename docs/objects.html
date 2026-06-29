@@ -11,7 +11,7 @@
     <main id="main">
       <h1>Workspace objects</h1>
       <div class="meta">
-        <span class="kind">Architecture</span><span>Last updated 2026-06-26</span>
+        <span class="kind">Architecture</span><span>Last updated 2026-06-28</span>
       </div>
       <p class="tldr">
         Phase 8 turned <code>entities</code> from an extraction artifact into the workspace's
@@ -63,7 +63,11 @@
         <code>entities</code> was widened in place. Existing rows default safely
         (<code>status='open'</code>, <code>agent_suggested=false</code>,
         <code>archived_at=NULL</code>), and the resolver keeps using the same canonical-name lookup
-        it always has.
+        it always has. <code>source_event_id</code> and <code>agent_suggested</code> are legacy
+        compatibility fields during the reconciliation migration. New reconciliation-backed writes
+        are moving durable provenance to source refs, reconciliation outputs, and evidence
+        associations, while older object create/update paths still keep these legacy columns as
+        read-compatible audit links until cutover finishes.
       </p>
       <p>
         Extraction filters low-signal <code>topic</code> and <code>other</code> mentions before
@@ -89,8 +93,9 @@
             <td>Workspace objects of any kind.</td>
             <td>
               <code>status</code>, <code>stage</code>, <code>priority</code>,
-              <code>owner_user_id</code>, <code>assignee_user_id</code>, <code>due_at</code>,
-              <code>source_event_id</code>, <code>agent_suggested</code>, <code>archived_at</code>
+              <code>owner_user_id</code>, <code>assignee_user_id</code>, <code>due_at</code>, legacy
+              <code>source_event_id</code>, legacy <code>agent_suggested</code>,
+              <code>archived_at</code>
             </td>
           </tr>
           <tr>
@@ -108,8 +113,7 @@
             <td>
               <code>actor_kind</code> (user/agent/system),
               <code>status</code> (applied/suggested/rejected), <code>previous_value</code>,
-              <code>new_value</code>,
-              <code>source_event_id</code>
+              <code>new_value</code>, legacy <code>source_event_id</code>
             </td>
           </tr>
           <tr>
@@ -268,8 +272,10 @@
         Every manual change — to an object's fields, to its notes, to its relationships — writes two
         rows in one transaction: a system-source <code>raw_events</code> row (so the change appears
         on the team timeline) and one <code>object_changes</code> row per modified field (so the
-        object page's "Recent changes" pane has structured data). The
-        <code>raw_events.id</code> threads through both as <code>source_event_id</code>.
+        object page's "Recent changes" pane has structured data). During the migration, legacy rows
+        may still thread the <code>raw_events.id</code> through <code>source_event_id</code>; new
+        reconciliation-backed provenance should instead cite source refs, output ids, and evidence
+        associations.
       </p>
       <div class="callout">
         <b>Why two writes per change.</b> The timeline view treats events as the unit; the object

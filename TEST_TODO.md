@@ -7,23 +7,35 @@ contracts, not private implementation structure.
 ## Test Status Overview
 
 Last checked in this branch: full `pnpm validate`, `pnpm test:eval`,
-`pnpm test:dist-imports`, root `pnpm test`, and React Doctor `100 / 100` pass
-after artifact-cluster reconciliation, related-evidence hydration, and
-provider lifecycle authority fixes. The suite includes artifact status reopen
-regressions, same-object batch evidence preservation, cross-team artifact join
-guards, captured-inbox promotion/pagination fixes, provider-connection
-hardening, recurring meeting capture, Saved Meeting visibility enforcement,
-scheduler idempotency, strict meeting URL host matching, generated calendar
-cleanup, quick-join failure/capacity/reuse, partial-cancel finalize queue
-regressions, and board/search UI regressions. Current suite shape:
+`pnpm test:reconciliation-eval`, `pnpm test:dist-imports`, root `pnpm test`,
+and React Doctor pass. React Doctor reported "No issues found"; its external
+score API was unreachable, so no numeric score was available. The suite
+includes reconciliation schema contracts, fixture-backed surface/scenario evals,
+source-ref and visibility-floor evals, source-payload replay coverage,
+projection-outbox status mirroring and repair, authority-policy checks,
+conversation-review no-action reconciliation outputs,
+artifact-helper association writes without legacy member rows,
+accepted object/task suggestions avoiding canonical `source_event_id` stamps,
+artifact status reopen regressions, same-object batch evidence preservation,
+cross-team artifact join guards, captured-inbox promotion/pagination fixes,
+provider-connection hardening, recurring meeting capture, Saved Meeting
+visibility enforcement, scheduler idempotency, strict meeting URL host matching,
+generated calendar cleanup,
+quick-join failure/capacity/reuse, partial-cancel finalize queue regressions,
+and board/search UI regressions. Current suite shape:
 
-- DB Vitest: 2 files / 12 tests, package-level PGlite schema contract suite now
+- DB Vitest: 2 files / 13 tests, package-level PGlite schema contract suite now
   runs under root `pnpm test`.
-- Shared Vitest: 84 files / 1,018 passing tests plus 1 skipped, including PGlite
-  artifact reconciliation, event writer, calendar, timeline, MCP,
-  integration/provider-connection, meeting, document, object, assistant, Slack,
-  recovery, connection-attention, and onboarding coverage.
-- Web Vitest: 143 files / 832 tests, including route/action/component coverage
+- Shared Vitest: 93 passing files plus 1 skipped / 1,063 passing tests plus 7
+  skipped, including PGlite artifact reconciliation, reconciliation
+  normalization/backfill/resolution, authority policy, planner prompt/schema,
+  event writer, calendar, timeline, MCP, integration/provider-connection,
+  meeting, document, object, assistant, Slack, recovery, connection-attention,
+  and onboarding coverage.
+  The shared package runner executes unit tests once and PGlite integration
+  tests in isolated chunks so long-lived PGlite state cannot starve later hooks
+  during root `pnpm test`.
+- Web Vitest: 146 files / 847 tests, including route/action/component coverage
   for search, timeline, core recovery, onboarding, object sections, board
   add-item interactions, provider-connection routes/UI, app dialog flows, and
   other high-value UI states.
@@ -94,11 +106,15 @@ Legend:
 - `pnpm --filter @timeline/db test` runs DB/PGlite schema contract tests.
 - `pnpm test:eval` runs the fast deterministic shared agent/retrieval eval
   slice.
+- `pnpm test:reconciliation-eval` runs deterministic reconciliation schema,
+  surface/scenario matrix, source-ref, visibility-floor, authority-policy,
+  planner prompt/schema, normalization, backfill, and resolver evals.
 - `pnpm test:dist-imports` builds `@timeline/db` and `@timeline/shared`, then
   imports selected compiled runtime modules with Node.
 - `pnpm validate` runs format, typecheck, lint, and knip. Tests run through
-  `pnpm test`, `pnpm test:eval`, `pnpm test:dist-imports`,
-  package-filtered Vitest commands, or E2E commands depending on the change.
+  `pnpm test`, `pnpm test:eval`, `pnpm test:reconciliation-eval`,
+  `pnpm test:dist-imports`, package-filtered Vitest commands, or E2E commands
+  depending on the change.
 - `pnpm e2e` runs local Playwright E2E through `scripts/run-e2e-strict.ts`.
 - `pnpm e2e:prod-smoke` runs the production-ish Playwright smoke suite.
 
@@ -694,10 +710,11 @@ Once the suite is mature, split commands by layer:
 - `pnpm e2e`: local core Playwright E2E.
 - `pnpm e2e:prod-smoke`: production-ish smoke.
 - `pnpm test:eval`: fast deterministic agent evals.
+- `pnpm test:reconciliation-eval`: deterministic reconciliation eval matrix.
 - `pnpm test:dist-imports`: compiled-package import smoke.
 - `pnpm validate`: format, typecheck, lint, and knip.
-- CI PR gate: validate plus compiled-package import smoke, with core E2E when
-  stable.
+- CI PR gate: validate, reconciliation evals, and compiled-package import smoke,
+  with core E2E when stable.
 - CI scheduled/manual gate: provider-backed E2E, production-ish smoke, and
   slower evals.
 

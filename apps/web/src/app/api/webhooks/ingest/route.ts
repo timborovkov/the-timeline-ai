@@ -4,6 +4,7 @@ import { rawEvents } from '@timeline/db';
 import * as ingestWebhooks from '@timeline/shared/ingest-webhooks';
 import { childLogger } from '@timeline/shared/logger';
 import * as rateLimit from '@timeline/shared/rate-limit';
+import { normalizeRawEventsToEvidence } from '@timeline/shared/reconciliation/normalization';
 import { and, eq, sql } from 'drizzle-orm';
 
 import { db } from '@/lib/db';
@@ -139,8 +140,20 @@ export async function handlePost(req: Request, pathToken?: string): Promise<Resp
     );
   }
 
+  await normalizeRawEventEvidence(event);
   await enqueueProcessing(event, resolved.proposalGenerationEnabled);
   return Response.json({ ok: true, status: 'accepted', rawEventId: event.id }, { status: 202 });
+}
+
+async function normalizeRawEventEvidence(event: { id: string; teamId: string }): Promise<void> {
+  try {
+    await normalizeRawEventsToEvidence({ db, teamId: event.teamId, rawEventIds: [event.id] });
+  } catch (err) {
+    log.warn(
+      { err, teamId: event.teamId, rawEventId: event.id },
+      'ingest webhook reconciliation evidence normalization failed',
+    );
+  }
 }
 
 async function findDedupedEvent(

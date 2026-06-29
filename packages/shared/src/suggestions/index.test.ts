@@ -1,13 +1,15 @@
 import { PGlite } from '@electric-sql/pglite';
 import {
   artifactClusterAnchors,
-  artifactClusterMembers,
   artifactClusters,
+  artifactEvidenceAssociations,
   agentSuggestionEvidence,
   agentSuggestionItems,
   agentSuggestions,
   entities,
   rawEvents,
+  reconciliationEvidence,
+  reconciliationOutputs,
 } from '@timeline/db';
 import { asc, eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
@@ -184,15 +186,34 @@ describe('suggestion scope', () => {
       canonicalName: 'Mobile login failure',
     });
 
-    const members = await db.select().from(artifactClusterMembers);
-    expect(members).toEqual([
+    const associations = await db.select().from(artifactEvidenceAssociations);
+    const evidenceRows = await db.select().from(reconciliationEvidence);
+    expect(evidenceRows).toEqual([
+      expect.objectContaining({
+        rawEventId: TEAM_RAW_EVENT_ID,
+        source: 'telegram',
+        visibility: 'team',
+      }),
+    ]);
+    expect(associations).toEqual([
       expect.objectContaining({
         clusterId: clusters[0]?.id,
         rawEventId: TEAM_RAW_EVENT_ID,
-        suggestionId: bundle.id,
-        role: 'report',
+        evidenceId: evidenceRows[0]?.id,
+        role: 'discussion',
         strength: 'structured',
-        authoritative: false,
+        associationSource: 'structured_anchor',
+      }),
+    ]);
+    expect(associations[0]?.metadata).toMatchObject({
+      suggestion_id: bundle.id,
+      original_evidence_role: 'report',
+    });
+    expect(associations[0]?.sourceRefs).toEqual([
+      expect.objectContaining({
+        source: 'telegram',
+        rawEventId: TEAM_RAW_EVENT_ID,
+        evidenceId: evidenceRows[0]?.id,
       }),
     ]);
 
@@ -606,6 +627,17 @@ describe('suggestion scope', () => {
 
     expect(bundle.visibilityOwnerUserId).toBeNull();
     expect(bundle.visibilityUserIds).toEqual([REVIEWER_ID]);
+
+    const outputs = await db.select().from(reconciliationOutputs);
+    expect(outputs).toHaveLength(1);
+    expect(outputs[0]).toMatchObject({
+      visibility: 'specific_users',
+      visibilityOwnerUserId: null,
+      visibilityUserIds: [REVIEWER_ID],
+      visibilityFloor: 'specific_users',
+      visibilityFloorOwnerUserId: null,
+      visibilityFloorUserIds: [REVIEWER_ID],
+    });
   });
 
   it('does not duplicate notifications when a suggestion bundle is merged', async () => {
@@ -6269,7 +6301,7 @@ describe('suggestion scope', () => {
     });
   });
 
-  it('normalizes invalid task create source event ids to suggestion evidence when storing', async () => {
+  it('normalizes invalid task create source event ids without stamping canonical objects', async () => {
     const sourceRawEventId = '99999999-9999-4999-8999-999999999999';
     await db.insert(rawEvents).values({
       id: sourceRawEventId,
@@ -6313,7 +6345,7 @@ describe('suggestion scope', () => {
        WHERE team_id = '${TEAM_ID}'
          AND canonical_name = 'Investigate agent memory usage for pulling wrong numbers'`,
     );
-    expect(result.rows[0]?.source_event_id).toBe(sourceRawEventId);
+    expect(result.rows[0]?.source_event_id).toBeNull();
 
     const detail = await scope.objects.getObject(result.rows[0]?.id ?? '');
     expect(detail?.provenance.whyThisExists).toEqual([
@@ -6452,7 +6484,7 @@ describe('suggestion scope', () => {
     expect(detail?.provenance.whyThisExists).toEqual([]);
   });
 
-  it('preserves valid task create source event ids beyond the first two evidence events', async () => {
+  it('keeps valid task create source event ids on proposal payloads only', async () => {
     const firstRawEventId = '99999999-9999-4999-8999-999999999993';
     const secondRawEventId = '99999999-9999-4999-8999-999999999992';
     const thirdRawEventId = '99999999-9999-4999-8999-999999999991';
@@ -6522,10 +6554,10 @@ describe('suggestion scope', () => {
        WHERE team_id = '${TEAM_ID}'
          AND canonical_name = 'Preserve source event from third evidence row'`,
     );
-    expect(result.rows[0]?.source_event_id).toBe(thirdRawEventId);
+    expect(result.rows[0]?.source_event_id).toBeNull();
   });
 
-  it('falls back to suggestion evidence when accepting a legacy task payload with an invalid source event id', async () => {
+  it('accepts legacy task payload source evidence without stamping canonical objects', async () => {
     const sourceRawEventId = '99999999-9999-4999-8999-999999999998';
     await db.insert(rawEvents).values({
       id: sourceRawEventId,
@@ -6578,7 +6610,7 @@ describe('suggestion scope', () => {
        WHERE team_id = '${TEAM_ID}'
          AND canonical_name = 'Refine FSLI scoping process'`,
     );
-    expect(result.rows[0]?.source_event_id).toBe(sourceRawEventId);
+    expect(result.rows[0]?.source_event_id).toBeNull();
   });
 
   it('drops invalid legacy task source event ids when bundle evidence is ambiguous', async () => {

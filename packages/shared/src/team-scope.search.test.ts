@@ -1,6 +1,6 @@
 import { PGlite } from '@electric-sql/pglite';
 import { drizzle } from 'drizzle-orm/pglite';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import type { EmbedResult } from '#src/llm/embed.js';
 import type { SearchHit, SearchOpts } from '#src/qdrant/client.js';
@@ -131,6 +131,10 @@ describe('withTeam timeline semantic search', () => {
     qdrantCalls = [];
     hits = [];
   }, 60_000);
+
+  afterEach(async () => {
+    await pg.close();
+  });
 
   function qdrantSearch(
     teamId: string,
@@ -324,6 +328,63 @@ describe('withTeam timeline semantic search', () => {
 
     expect(results[0]).toMatchObject({ eventId: TEAM_EVENT });
     expect(results[0]?.artifactCluster).toBeNull();
+  });
+
+  it('hydrates association-backed artifact context and enforces association visibility floors', async () => {
+    const baseEvidence = '40000000-0000-0000-0000-000000000101';
+    const ownerOnlyEvidence = '40000000-0000-0000-0000-000000000102';
+    await pg.exec(`
+      INSERT INTO artifact_clusters
+        (id, team_id, artifact_cluster_kind, artifact_type, canonical_name, status)
+      VALUES
+        ('${ARTIFACT_CLUSTER}', '${TEAM_A}', 'customer_project', 'project', 'Acme pricing rollout', 'active');
+
+      INSERT INTO reconciliation_evidence
+        (id, team_id, raw_event_id, source, provider, external_object_id, event_type, occurred_at, visibility, actor, content_digest, normalizer_version, dedupe_key)
+      VALUES
+        ('${baseEvidence}', '${TEAM_A}', '${TEAM_EVENT}', 'web', 'email', 'msg-acme-pricing', 'email.thread', '2026-06-01T09:00:00Z', 'team', '{}'::jsonb, 'digest:base', 'test-v1', 'evidence:base'),
+        ('${ownerOnlyEvidence}', '${TEAM_A}', '${RELATED_EVENT}', 'integration', 'github', 'repo#88', 'github.issue.updated', '2026-06-01T13:00:00Z', 'team', '{}'::jsonb, 'digest:owner-only', 'test-v1', 'evidence:owner-only');
+
+      INSERT INTO artifact_evidence_associations
+        (team_id, cluster_id, evidence_id, role, strength, association_source, source_refs, visibility, visibility_floor, visibility_floor_owner_user_id, metadata, dedupe_key)
+      VALUES
+        ('${TEAM_A}', '${ARTIFACT_CLUSTER}', '${baseEvidence}', 'origin', 'human', 'human', '[]'::jsonb, 'team', 'team', NULL, '{"canonical_name":"Acme pricing rollout","status":"active"}'::jsonb, 'association:base'),
+        ('${TEAM_A}', '${ARTIFACT_CLUSTER}', '${ownerOnlyEvidence}', 'lifecycle_update', 'provider', 'authoritative_provider', '[]'::jsonb, 'team', 'private', '${OWNER}', '{"canonical_name":"Owner-only Acme rollout state","status":"blocked"}'::jsonb, 'association:owner-only');
+    `);
+    hits = [hit(TEAM_EVENT, 0.9)];
+
+    const memberResults = await scopeFor(MEMBER).timeline.searchEvents({
+      query: 'Acme renewal',
+      limit: 5,
+    });
+    expect(memberResults[0]?.artifactCluster).toMatchObject({
+      id: ARTIFACT_CLUSTER,
+      artifactType: 'project',
+      canonicalName: 'Acme pricing rollout',
+      status: 'active',
+    });
+    expect(
+      memberResults[0]?.artifactCluster?.relatedEvidence.map((evidence) => evidence.rawEventId),
+    ).toEqual([TEAM_EVENT]);
+
+    const ownerResults = await scopeFor(OWNER).timeline.searchEvents({
+      query: 'Acme renewal',
+      limit: 5,
+    });
+    expect(ownerResults[0]?.artifactCluster).toMatchObject({
+      canonicalName: 'Owner-only Acme rollout state',
+      status: 'blocked',
+    });
+    expect(ownerResults[0]?.artifactCluster?.relatedEvidence).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          rawEventId: RELATED_EVENT,
+          provider: 'github',
+          role: 'lifecycle_update',
+          authoritative: true,
+        }),
+      ]),
+    );
   });
 
   it('requires membership before embedding or searching', async () => {

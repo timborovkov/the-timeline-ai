@@ -74,14 +74,27 @@ describe('database schema contracts', () => {
       SELECT tablename
       FROM pg_tables
       WHERE schemaname = 'public'
-        AND tablename IN ('teams', 'raw_events', 'entities', 'agent_suggestions')
+        AND tablename IN (
+          'teams',
+          'raw_events',
+          'entities',
+          'agent_suggestions',
+          'reconciliation_evidence',
+          'artifact_evidence_associations',
+          'reconciliation_outputs',
+          'reconciliation_projection_outbox'
+        )
       ORDER BY tablename
     `);
 
     expect(tables.rows.map((row) => row.tablename)).toEqual([
       'agent_suggestions',
+      'artifact_evidence_associations',
       'entities',
       'raw_events',
+      'reconciliation_evidence',
+      'reconciliation_outputs',
+      'reconciliation_projection_outbox',
       'teams',
     ]);
   });
@@ -409,6 +422,215 @@ describe('database schema contracts', () => {
       status: 'superseded',
       superseded_by_item_id: newerItemId,
       superseded_reason: 'newer evidence',
+    });
+  });
+
+  it('enforces reconciliation foundation dedupe and team cascade contracts', async () => {
+    const rawEventId = '99999999-9999-4999-8999-999999999950';
+    const evidenceId = '99999999-9999-4999-8999-999999999951';
+    const clusterId = '99999999-9999-4999-8999-999999999952';
+    const runId = '99999999-9999-4999-8999-999999999953';
+    const outputId = '99999999-9999-4999-8999-999999999954';
+
+    await pg.exec(`
+      INSERT INTO raw_events (id, team_id, author_user_id, source, content_text, source_metadata)
+      VALUES ('${rawEventId}', '${TEAM_ID}', '${OWNER_ID}', 'email', 'Forwarded customer note', '{"message_id":"reconcile-foundation"}'::jsonb);
+
+      INSERT INTO artifact_clusters
+        (id, team_id, artifact_cluster_kind, artifact_type, canonical_name, status)
+      VALUES
+        ('${clusterId}', '${TEAM_ID}', 'customer_project', 'project', 'Acme implementation', 'active');
+
+      INSERT INTO reconciliation_evidence
+        (
+          id,
+          team_id,
+          raw_event_id,
+          source_payload_ref,
+          payload_digest,
+          source,
+          event_type,
+          occurred_at,
+          visibility,
+          visibility_owner_user_id,
+          content_digest,
+          normalizer_version,
+          dedupe_key
+        )
+      VALUES
+        (
+          '${evidenceId}',
+          '${TEAM_ID}',
+          '${rawEventId}',
+          's3://timeline-test/payloads/email/reconcile-foundation',
+          'sha256:payload',
+          'email',
+          'forwarded_thread',
+          '2026-06-01T09:00:00Z',
+          'team',
+          '${OWNER_ID}',
+          'sha256:content',
+          'reconcile-normalize-2026-06',
+          'evidence-key'
+        );
+
+      INSERT INTO reconciliation_evidence_anchors
+        (team_id, evidence_id, anchor_type, anchor_value, strength, source, dedupe_key)
+      VALUES
+        ('${TEAM_ID}', '${evidenceId}', 'email_thread', 'thread-1', 'hard', 'adapter', 'anchor-key');
+
+      INSERT INTO artifact_evidence_associations
+        (
+          team_id,
+          cluster_id,
+          evidence_id,
+          raw_event_id,
+          role,
+          strength,
+          association_source,
+          source_refs,
+          visibility,
+          visibility_owner_user_id,
+          visibility_floor,
+          dedupe_key
+        )
+      VALUES
+        (
+          '${TEAM_ID}',
+          '${clusterId}',
+          '${evidenceId}',
+          '${rawEventId}',
+          'discussion',
+          'hard',
+          'hard_anchor',
+          '[{"source":"email","rawEventId":"${rawEventId}","evidenceId":"${evidenceId}"}]'::jsonb,
+          'team',
+          '${OWNER_ID}',
+          'team',
+          'association-key'
+        );
+
+      INSERT INTO reconciliation_runs
+        (id, team_id, trigger, scope, input_fingerprint, engine_version)
+      VALUES
+        ('${runId}', '${TEAM_ID}', 'raw_event', '${rawEventId}', 'fingerprint-1', 'engine-1');
+
+      INSERT INTO reconciliation_outputs
+        (
+          id,
+          team_id,
+          run_id,
+          cluster_id,
+          output_kind,
+          target_kind,
+          operation,
+          payload,
+          requires_approval,
+          source_refs,
+          source_payload_refs,
+          visibility,
+          visibility_owner_user_id,
+          visibility_floor,
+          dedupe_key
+        )
+      VALUES
+        (
+          '${outputId}',
+          '${TEAM_ID}',
+          '${runId}',
+          '${clusterId}',
+          'approval_bundle',
+          'object_relationship',
+          'create',
+          '{"relationship":"customer_project"}'::jsonb,
+          true,
+          '[{"source":"email","rawEventId":"${rawEventId}","evidenceId":"${evidenceId}"}]'::jsonb,
+          '["s3://timeline-test/payloads/email/reconcile-foundation"]'::jsonb,
+          'team',
+          '${OWNER_ID}',
+          'team',
+          'output-key'
+        );
+
+      INSERT INTO reconciliation_projection_outbox
+        (
+          id,
+          team_id,
+          output_id,
+          action,
+          status,
+          payload,
+          dedupe_key,
+          processed_at
+        )
+      VALUES
+        (
+          '11111111-1111-4111-8111-111111111122',
+          '${TEAM_ID}',
+          '${outputId}',
+          'create_projection',
+          'processed',
+          '{"projection":"agent_suggestions"}'::jsonb,
+          'projection-outbox-key',
+          now()
+        );
+    `);
+
+    await expect(
+      pg.query(
+        `INSERT INTO reconciliation_evidence
+          (
+            team_id,
+            raw_event_id,
+            source,
+            event_type,
+            occurred_at,
+            content_digest,
+            normalizer_version,
+            dedupe_key
+          )
+         VALUES ($1, $2, 'email', 'forwarded_thread', now(), 'sha256:retry', 'reconcile-normalize-2026-06', 'evidence-key')`,
+        [TEAM_ID, rawEventId],
+      ),
+    ).rejects.toThrow();
+
+    await expect(
+      pg.query(
+        `INSERT INTO reconciliation_outputs
+          (team_id, run_id, output_kind, target_kind, operation, dedupe_key)
+         VALUES ($1, $2, 'no_action', 'object', 'noop', 'output-key')`,
+        [TEAM_ID, runId],
+      ),
+    ).rejects.toThrow();
+
+    await expect(
+      pg.query(
+        `INSERT INTO reconciliation_projection_outbox
+          (team_id, output_id, action, dedupe_key)
+         VALUES ($1, $2, 'create_projection', 'projection-outbox-key')`,
+        [TEAM_ID, outputId],
+      ),
+    ).rejects.toThrow();
+
+    await pg.exec(`DELETE FROM teams WHERE id = '${TEAM_ID}'`);
+    const remaining = await pg.query<{
+      evidence_count: string;
+      association_count: string;
+      output_count: string;
+      outbox_count: string;
+    }>(`
+      SELECT
+        (SELECT count(*)::text FROM reconciliation_evidence WHERE team_id = '${TEAM_ID}') AS evidence_count,
+        (SELECT count(*)::text FROM artifact_evidence_associations WHERE team_id = '${TEAM_ID}') AS association_count,
+        (SELECT count(*)::text FROM reconciliation_outputs WHERE team_id = '${TEAM_ID}') AS output_count,
+        (SELECT count(*)::text FROM reconciliation_projection_outbox WHERE team_id = '${TEAM_ID}') AS outbox_count
+    `);
+
+    expect(remaining.rows[0]).toEqual({
+      evidence_count: '0',
+      association_count: '0',
+      output_count: '0',
+      outbox_count: '0',
     });
   });
 });

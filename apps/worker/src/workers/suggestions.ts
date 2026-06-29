@@ -9,6 +9,8 @@ import {
   ingestWebhooks,
   objectNotes,
   rawEvents,
+  reconciliationOutputs,
+  reconciliationRuns,
   teamMembers,
   users,
   type Db,
@@ -20,6 +22,7 @@ import {
   llm,
   objects,
   queue,
+  reconciliation,
   suggestions,
   time,
   withTeam,
@@ -34,6 +37,7 @@ import { captureWorkerJobFailure } from '#src/monitoring.js';
 
 const PSEUDO_USER = '00000000-0000-0000-0000-000000000000';
 const SUGGESTION_CODE_VERSION = '2026-06-a';
+const CONVERSATION_NO_ACTION_RECONCILIATION_VERSION = 'conversation-no-action-2026-06';
 const RECENT_CONTEXT_LIMIT = 5;
 const OBJECT_PROMPT_LIMIT = 40;
 const OBJECT_MATCHING_LIMIT = 500;
@@ -2399,6 +2403,11 @@ async function processConversationReviewJob(
     review.id,
     last,
     proposalsCreated > 0 ? 'proposal' : 'no_action',
+    proposalsCreated > 0
+      ? undefined
+      : {
+          sourceRefs: window.map((event) => conversationWindowSourceRef(identity.source, event)),
+        },
   );
 }
 
@@ -2490,26 +2499,213 @@ async function markReviewComplete(
   reviewId: string,
   last: typeof rawEvents.$inferSelect,
   outcome = 'no_action',
+  opts: { sourceRefs?: reconciliation.SourceRef[] } = {},
 ): Promise<void> {
-  await db
-    .update(conversationReviews)
-    .set({
+  const reviewedAt = new Date();
+  await db.transaction(async (tx) => {
+    const [updated] = await tx
+      .update(conversationReviews)
+      .set({
+        status: 'completed',
+        reviewedThroughRawEventId: last.id,
+        reviewedThroughOccurredAt: last.occurredAt,
+        metadata: sql`${conversationReviews.metadata} || ${JSON.stringify({
+          review_outcome: outcome,
+          reviewed_at: reviewedAt.toISOString(),
+        })}::jsonb`,
+        updatedAt: reviewedAt,
+      })
+      .where(
+        and(
+          eq(conversationReviews.id, reviewId),
+          eq(conversationReviews.status, 'pending'),
+          eq(conversationReviews.lastRawEventId, last.id),
+        ),
+      )
+      .returning({
+        id: conversationReviews.id,
+        teamId: conversationReviews.teamId,
+        conversationKey: conversationReviews.conversationKey,
+      });
+
+    if (!updated || outcome !== 'no_action') return;
+    await writeConversationNoActionOutput(tx, updated, last, reviewedAt, opts.sourceRefs);
+  });
+}
+
+async function writeConversationNoActionOutput(
+  tx: Parameters<Parameters<Db['transaction']>[0]>[0],
+  review: { id: string; teamId: string; conversationKey: string },
+  last: typeof rawEvents.$inferSelect,
+  now: Date,
+  sourceRefsOverride?: reconciliation.SourceRef[],
+): Promise<void> {
+  const fallbackSourceRef = rawEventSourceRef(last);
+  const sourceRefs =
+    sourceRefsOverride && sourceRefsOverride.length > 0
+      ? uniqueSourceRefs(sourceRefsOverride)
+      : [fallbackSourceRef];
+  const sourcePayloadRefs = sourceRefs
+    .map((ref) => ref.sourcePayloadRef)
+    .filter((value): value is string => typeof value === 'string' && value.length > 0);
+  const [run] = await tx
+    .insert(reconciliationRuns)
+    .values({
+      teamId: review.teamId,
+      trigger: 'raw_event',
+      scope: 'conversation_review:no_action',
       status: 'completed',
-      reviewedThroughRawEventId: last.id,
-      reviewedThroughOccurredAt: last.occurredAt,
-      metadata: sql`${conversationReviews.metadata} || ${JSON.stringify({
-        review_outcome: outcome,
-        reviewed_at: new Date().toISOString(),
-      })}::jsonb`,
-      updatedAt: new Date(),
+      inputFingerprint: reconciliation.reconciliationDedupeKey('conversation-no-action-run', {
+        teamId: review.teamId,
+        reviewId: review.id,
+        conversationKey: review.conversationKey,
+        rawEventId: last.id,
+        sourceRefs,
+      }),
+      engineVersion: CONVERSATION_NO_ACTION_RECONCILIATION_VERSION,
+      completedAt: now,
+      metrics: { no_action_count: 1, source_ref_count: sourceRefs.length },
     })
-    .where(
-      and(
-        eq(conversationReviews.id, reviewId),
-        eq(conversationReviews.status, 'pending'),
-        eq(conversationReviews.lastRawEventId, last.id),
-      ),
-    );
+    .onConflictDoUpdate({
+      target: [
+        reconciliationRuns.teamId,
+        reconciliationRuns.inputFingerprint,
+        reconciliationRuns.engineVersion,
+      ],
+      set: {
+        status: 'completed',
+        completedAt: now,
+        metrics: { no_action_count: 1, source_ref_count: sourceRefs.length },
+      },
+    })
+    .returning({ id: reconciliationRuns.id });
+  if (!run) throw new Error('Failed to create conversation no-action reconciliation run');
+
+  const dedupeKey = reconciliation.buildOutputDedupeKey({
+    teamId: review.teamId,
+    clusterId: null,
+    targetKind: 'cluster_identity',
+    operation: 'noop',
+    targetId: null,
+    targetIdentity: review.conversationKey,
+    sourceRefs,
+    authorityPolicyVersion: CONVERSATION_NO_ACTION_RECONCILIATION_VERSION,
+    plannerVersion: CONVERSATION_NO_ACTION_RECONCILIATION_VERSION,
+  });
+
+  await tx
+    .insert(reconciliationOutputs)
+    .values({
+      teamId: review.teamId,
+      runId: run.id,
+      outputKind: 'no_action',
+      targetKind: 'cluster_identity',
+      operation: 'noop',
+      targetId: null,
+      payload: {
+        planner: 'conversation_review',
+        review_id: review.id,
+        conversation_key: review.conversationKey,
+        raw_event_id: last.id,
+        outcome: 'no_action',
+        reason: 'conversation_review_completed_without_proposals',
+      },
+      authorityDecision: {
+        decision: 'blocked',
+        reason: 'no_action',
+        policy_version: CONVERSATION_NO_ACTION_RECONCILIATION_VERSION,
+      },
+      confidence: 'medium',
+      requiresApproval: false,
+      sourceRefs,
+      sourcePayloadRefs,
+      visibility: last.visibility,
+      visibilityOwnerUserId: last.visibilityOwnerUserId,
+      visibilityUserIds: last.visibilityUserIds,
+      visibilityFloor: last.visibility,
+      visibilityFloorOwnerUserId: last.visibilityOwnerUserId,
+      visibilityFloorUserIds: last.visibilityUserIds,
+      dedupeKey,
+      status: 'applied',
+    })
+    .onConflictDoUpdate({
+      target: [reconciliationOutputs.teamId, reconciliationOutputs.dedupeKey],
+      set: {
+        runId: run.id,
+        payload: {
+          planner: 'conversation_review',
+          review_id: review.id,
+          conversation_key: review.conversationKey,
+          raw_event_id: last.id,
+          outcome: 'no_action',
+          reason: 'conversation_review_completed_without_proposals',
+        },
+        authorityDecision: {
+          decision: 'blocked',
+          reason: 'no_action',
+          policy_version: CONVERSATION_NO_ACTION_RECONCILIATION_VERSION,
+        },
+        sourceRefs,
+        sourcePayloadRefs,
+        visibility: last.visibility,
+        visibilityOwnerUserId: last.visibilityOwnerUserId,
+        visibilityUserIds: last.visibilityUserIds,
+        visibilityFloor: last.visibility,
+        visibilityFloorOwnerUserId: last.visibilityOwnerUserId,
+        visibilityFloorUserIds: last.visibilityUserIds,
+        status: 'applied',
+        updatedAt: now,
+      },
+    });
+}
+
+function conversationWindowSourceRef(
+  source: string,
+  event: conversationReview.ConversationEvidenceEvent,
+): reconciliation.SourceRef {
+  const sourceRef: reconciliation.SourceRef = {
+    source,
+    rawEventId: event.id,
+  };
+  const sourcePayloadRef = sourcePayloadRefFromMetadata(event.sourceMetadata);
+  if (sourcePayloadRef) sourceRef.sourcePayloadRef = sourcePayloadRef;
+  return sourceRef;
+}
+
+function rawEventSourceRef(row: typeof rawEvents.$inferSelect): reconciliation.SourceRef {
+  const sourceRef: reconciliation.SourceRef = {
+    source: row.source,
+    rawEventId: row.id,
+  };
+  const sourcePayloadRef = sourcePayloadRefFromRawEvent(row);
+  if (sourcePayloadRef) sourceRef.sourcePayloadRef = sourcePayloadRef;
+  return sourceRef;
+}
+
+function uniqueSourceRefs(sourceRefs: reconciliation.SourceRef[]): reconciliation.SourceRef[] {
+  const seen = new Set<string>();
+  return sourceRefs.filter((ref) => {
+    const key = `${ref.source}:${ref.rawEventId ?? ''}:${ref.sourcePayloadRef ?? ''}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function sourcePayloadRefFromRawEvent(row: typeof rawEvents.$inferSelect): string | null {
+  return sourcePayloadRefFromMetadata(row.sourceMetadata);
+}
+
+function sourcePayloadRefFromMetadata(value: unknown): string | null {
+  const metadata = recordFromUnknown(value);
+  const ref = metadata.source_payload_ref ?? metadata.sourcePayloadRef;
+  return typeof ref === 'string' && ref.trim().length > 0 ? ref.trim() : null;
+}
+
+function recordFromUnknown(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
 }
 
 function buildPrompt(args: {

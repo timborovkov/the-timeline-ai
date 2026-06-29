@@ -10,6 +10,7 @@ import {
 import { childLogger, formatMeetingTranscript, getEnv, llm, queue } from '@timeline/shared';
 import { currentExtractionModelVersion } from '@timeline/shared/extraction-model-version';
 import { participantNames } from '@timeline/shared/meetings';
+import { normalizeRawEventsToEvidence } from '@timeline/shared/reconciliation/normalization';
 import { UnrecoverableError, Worker, type Job } from 'bullmq';
 import { and, asc, eq, sql } from 'drizzle-orm';
 import { z } from 'zod';
@@ -18,6 +19,8 @@ import { trackProductEventBestEffort } from '#src/analytics.js';
 import { captureWorkerJobFailure } from '#src/monitoring.js';
 
 const log = childLogger('worker:meeting-finalize');
+type DbTx = Parameters<Parameters<Db['transaction']>[0]>[0];
+type DbOrTx = Db | DbTx;
 
 interface MeetingFinalizeDeps {
   db: Db;
@@ -76,7 +79,7 @@ interface MeetingSummaryFailure {
   model: string;
 }
 
-async function loadMeetingChunks(db: Db, meetingId: string, teamId: string) {
+async function loadMeetingChunks(db: DbOrTx, meetingId: string, teamId: string) {
   return db
     .select()
     .from(meetingTranscriptChunks)
@@ -93,7 +96,7 @@ function meetingDedupKey(meetingId: string): string {
   return `meeting-finalized:${meetingId}`;
 }
 
-async function findFinalizedRawEventId(db: Db, meetingId: string, teamId: string) {
+async function findFinalizedRawEventId(db: DbOrTx, meetingId: string, teamId: string) {
   const dedupKey = meetingDedupKey(meetingId);
   const existing = await db
     .select({ id: rawEvents.id })
@@ -108,7 +111,23 @@ async function findFinalizedRawEventId(db: Db, meetingId: string, teamId: string
   return existing[0]?.id;
 }
 
-async function findMeetingCalendarEventId(db: Db, meetingId: string, teamId: string) {
+async function normalizeMeetingRawEventEvidence(
+  db: DbOrTx,
+  args: { teamId: string; rawEventIds: string[] },
+): Promise<void> {
+  const rawEventIds = [...new Set(args.rawEventIds.filter((id) => id.length > 0))];
+  if (rawEventIds.length === 0) return;
+  try {
+    await normalizeRawEventsToEvidence({ db, teamId: args.teamId, rawEventIds });
+  } catch (err) {
+    log.warn(
+      { err, teamId: args.teamId, rawEventIds },
+      'meeting reconciliation evidence normalization failed',
+    );
+  }
+}
+
+async function findMeetingCalendarEventId(db: DbOrTx, meetingId: string, teamId: string) {
   const existing = await db
     .select({ id: calendarEvents.id })
     .from(calendarEvents)
@@ -310,7 +329,7 @@ function retryableSummaryMessage(message: string): boolean {
 }
 
 async function createMeetingCalendarEvent(
-  tx: Db,
+  tx: DbOrTx,
   args: {
     meeting: MeetingRow;
     teamId: string;
@@ -454,6 +473,11 @@ async function createMeetingCalendarEvent(
     })
     .where(eq(calendarEvents.id, row.id));
 
+  await normalizeMeetingRawEventEvidence(tx, {
+    teamId: args.teamId,
+    rawEventIds: [scheduledRow?.id, startAtRow?.id].filter((id): id is string => Boolean(id)),
+  });
+
   return row.id;
 }
 
@@ -581,7 +605,7 @@ export async function processMeetingFinalizeJob(
       const dedupKey = meetingDedupKey(meetingId);
       const finalized = await deps.db.transaction(async (tx) => {
         await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${meetingId}, 0))`);
-        const finalChunks = await loadMeetingChunks(tx as never, meetingId, teamId);
+        const finalChunks = await loadMeetingChunks(tx, meetingId, teamId);
         const fullTranscript = finalChunks.length > 0 ? formatMeetingTranscript(finalChunks) : null;
         if ((fullTranscript ?? '') !== summarized.transcriptText) {
           return { retryChunks: finalChunks };
@@ -680,7 +704,7 @@ export async function processMeetingFinalizeJob(
 
         // On dedup conflict (prior run inserted but crashed before completing),
         // look up the existing row so backfill + enqueue still run.
-        rawEventId ??= await findFinalizedRawEventId(tx as never, meetingId, teamId);
+        rawEventId ??= await findFinalizedRawEventId(tx, meetingId, teamId);
 
         if (rawEventId) {
           // Backfill rawEventId on all chunks so Qdrant meeting_chunk points
@@ -712,7 +736,7 @@ export async function processMeetingFinalizeJob(
         if (calendarEndAt <= calendarStartAt) {
           calendarEndAt = new Date(calendarStartAt.getTime() + 60_000);
         }
-        const calendarEventId = await createMeetingCalendarEvent(tx as never, {
+        const calendarEventId = await createMeetingCalendarEvent(tx, {
           meeting,
           teamId,
           startAt: calendarStartAt,
@@ -757,6 +781,10 @@ export async function processMeetingFinalizeJob(
       }
 
       if (finalized.rawEventId) {
+        await normalizeMeetingRawEventEvidence(deps.db, {
+          teamId,
+          rawEventIds: [finalized.rawEventId],
+        });
         await Promise.all([
           enqueueRawEventPipeline(env, io, finalized.rawEventId, teamId),
           enqueueMeetingChunkEmbeds(env, io, finalized.meetingChunkIds, teamId),

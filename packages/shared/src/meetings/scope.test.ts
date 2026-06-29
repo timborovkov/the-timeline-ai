@@ -11,7 +11,7 @@ import {
 } from '@timeline/db';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { detectMeetingPlatform } from '#src/meetings/scope.js';
 import { withTeam } from '#src/team-scope.js';
@@ -50,6 +50,10 @@ describe('meetings scope', () => {
     await applyDbMigrations(pg);
     await seed(pg);
     db = drizzle(pg);
+  });
+
+  afterEach(async () => {
+    await pg.close();
   });
 
   it('detects meeting platforms only for trusted meeting hosts', () => {

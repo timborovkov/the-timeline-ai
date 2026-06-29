@@ -12,6 +12,8 @@ import {
   agentSuggestionEvidence,
   agentSuggestionItems,
   agentSuggestions,
+  artifactClusters,
+  artifactEvidenceAssociations,
   boardLanes,
   boardItemChanges,
   boardItems,
@@ -35,6 +37,8 @@ import {
   objectViews,
   rawEvents,
   relationshipKind,
+  reconciliationEvidence,
+  reconciliationOutputs,
 } from '@timeline/db';
 import {
   type SQL,
@@ -80,6 +84,7 @@ import { decodeCursor, pageWindow } from '#src/pagination.js';
 import { getQdrantClient } from '#src/qdrant/client.js';
 import { buildPointId } from '#src/qdrant/point-id.js';
 import * as embedQueue from '#src/queue/queues.js';
+import { normalizeRawEventsToEvidence } from '#src/reconciliation/normalization.js';
 import { likeMentionCondition, likePattern, textMentionsAnyValue } from '#src/sql-like.js';
 import { rawEventVisibleToUser } from '#src/visibility.js';
 
@@ -92,6 +97,7 @@ export type { ObjectSummarySourceRef } from '#src/objects/summaries.js';
 
 const embedLog = childLogger('objects:embed');
 const summaryRefreshLog = childLogger('objects:summary-refresh');
+const reconciliationLog = childLogger('objects:reconciliation');
 const OBJECT_QUERY_LIMIT_MAX = 50_000;
 const NOTIFICATION_QUERY_LIMIT_MAX = 50_000;
 type DbTx = Parameters<Parameters<Db['transaction']>[0]>[0];
@@ -109,6 +115,26 @@ function fireAndForgetEmbed(fn: () => Promise<void>, context: Record<string, unk
   void fn().catch((err: unknown) => {
     embedLog.error({ err, ...context }, 'failed to enqueue embed job');
   });
+}
+
+async function normalizeSystemRawEventEvidence(input: {
+  db: DbOrTx;
+  teamId: string;
+  rawEventId: string | null | undefined;
+}): Promise<void> {
+  if (!input.rawEventId) return;
+  try {
+    await normalizeRawEventsToEvidence({
+      db: input.db,
+      teamId: input.teamId,
+      rawEventIds: [input.rawEventId],
+    });
+  } catch (err) {
+    reconciliationLog.warn(
+      { err, teamId: input.teamId, rawEventId: input.rawEventId },
+      'system raw event reconciliation evidence normalization failed',
+    );
+  }
 }
 
 async function objectSummaryRefreshTargetsForObject(
@@ -929,6 +955,60 @@ function suggestionVisibleToScope(scope: TeamScopeCore): SQL {
   )`;
 }
 
+function artifactAssociationVisibleToScope(scope: TeamScopeCore): SQL {
+  return sql`(
+    (
+      ${artifactEvidenceAssociations.visibility} = 'team'
+      OR (
+        ${artifactEvidenceAssociations.visibility} = 'private'
+        AND ${artifactEvidenceAssociations.visibilityOwnerUserId} = ${scope.userId}
+      )
+      OR (
+        ${artifactEvidenceAssociations.visibility} = 'specific_users'
+        AND ${scope.userId} = ANY(${artifactEvidenceAssociations.visibilityUserIds})
+      )
+    )
+    AND (
+      ${artifactEvidenceAssociations.visibilityFloor} = 'team'
+      OR (
+        ${artifactEvidenceAssociations.visibilityFloor} = 'private'
+        AND ${artifactEvidenceAssociations.visibilityFloorOwnerUserId} = ${scope.userId}
+      )
+      OR (
+        ${artifactEvidenceAssociations.visibilityFloor} = 'specific_users'
+        AND ${scope.userId} = ANY(${artifactEvidenceAssociations.visibilityFloorUserIds})
+      )
+    )
+  )`;
+}
+
+function reconciliationOutputVisibleToScope(scope: TeamScopeCore): SQL {
+  return sql`(
+    (
+      ${reconciliationOutputs.visibility} = 'team'
+      OR (
+        ${reconciliationOutputs.visibility} = 'private'
+        AND ${reconciliationOutputs.visibilityOwnerUserId} = ${scope.userId}
+      )
+      OR (
+        ${reconciliationOutputs.visibility} = 'specific_users'
+        AND ${scope.userId} = ANY(${reconciliationOutputs.visibilityUserIds})
+      )
+    )
+    AND (
+      ${reconciliationOutputs.visibilityFloor} = 'team'
+      OR (
+        ${reconciliationOutputs.visibilityFloor} = 'private'
+        AND ${reconciliationOutputs.visibilityFloorOwnerUserId} = ${scope.userId}
+      )
+      OR (
+        ${reconciliationOutputs.visibilityFloor} = 'specific_users'
+        AND ${scope.userId} = ANY(${reconciliationOutputs.visibilityFloorUserIds})
+      )
+    )
+  )`;
+}
+
 function emptyObjectProvenance(): ObjectDetail['provenance'] {
   return { whyThisExists: [], whatChangedIt: [], relatedEvidence: [] };
 }
@@ -1369,8 +1449,10 @@ async function getConnectedWork(
     sharedObjectRows,
     titleTaskRows,
     linkedCalendarRows,
+    artifactAssociationRows,
     boardRows,
     pendingApprovalRows,
+    pendingReconciliationOutputRows,
     documentRows,
   ] = await Promise.all([
     db
@@ -1436,6 +1518,35 @@ async function getConnectedWork(
           eq(calendarEventEntities.entityId, object.id),
         ),
       )
+      .limit(100),
+    db
+      .select({
+        rawEventId: sql<string>`COALESCE(${artifactEvidenceAssociations.rawEventId}, ${reconciliationEvidence.rawEventId})`,
+      })
+      .from(artifactEvidenceAssociations)
+      .innerJoin(
+        artifactClusters,
+        and(
+          eq(artifactClusters.id, artifactEvidenceAssociations.clusterId),
+          eq(artifactClusters.teamId, scope.teamId),
+        ),
+      )
+      .innerJoin(
+        reconciliationEvidence,
+        and(
+          eq(reconciliationEvidence.id, artifactEvidenceAssociations.evidenceId),
+          eq(reconciliationEvidence.teamId, scope.teamId),
+        ),
+      )
+      .where(
+        and(
+          eq(artifactEvidenceAssociations.teamId, scope.teamId),
+          eq(artifactClusters.canonicalEntityId, object.id),
+          isNull(artifactClusters.archivedAt),
+          artifactAssociationVisibleToScope(scope),
+        ),
+      )
+      .orderBy(desc(artifactEvidenceAssociations.createdAt), desc(artifactEvidenceAssociations.id))
       .limit(100),
     db
       .select({
@@ -1507,6 +1618,36 @@ async function getConnectedWork(
         ),
       )
       .orderBy(desc(agentSuggestions.createdAt), desc(agentSuggestionItems.id))
+      .limit(16),
+    db
+      .select({
+        outputId: reconciliationOutputs.id,
+        title: sql<string | null>`${reconciliationOutputs.payload} ->> 'title'`,
+        operation: reconciliationOutputs.operation,
+        targetKind: reconciliationOutputs.targetKind,
+        targetId: reconciliationOutputs.targetId,
+        payload: reconciliationOutputs.payload,
+        createdAt: reconciliationOutputs.createdAt,
+      })
+      .from(reconciliationOutputs)
+      .where(
+        and(
+          eq(reconciliationOutputs.teamId, scope.teamId),
+          eq(reconciliationOutputs.status, 'pending'),
+          eq(reconciliationOutputs.requiresApproval, true),
+          reconciliationOutputVisibleToScope(scope),
+          or(
+            eq(reconciliationOutputs.targetId, object.id),
+            sql`${reconciliationOutputs.payload}::text LIKE ${likePattern(object.id)}`,
+            ...(names.length > 0
+              ? [likeMentionCondition(sql`${reconciliationOutputs.payload}::text`, names)].filter(
+                  (condition): condition is SQL => Boolean(condition),
+                )
+              : []),
+          ),
+        ),
+      )
+      .orderBy(desc(reconciliationOutputs.createdAt), desc(reconciliationOutputs.id))
       .limit(16),
     names.length > 0
       ? db
@@ -1584,6 +1725,12 @@ async function getConnectedWork(
   if (factRawEventIds.length > 0) {
     timelineConditions.push(inArray(rawEvents.id, factRawEventIds));
   }
+  const artifactRawEventIds = Array.from(
+    new Set(artifactAssociationRows.map((row) => row.rawEventId).filter(Boolean)),
+  );
+  if (artifactRawEventIds.length > 0) {
+    timelineConditions.push(inArray(rawEvents.id, artifactRawEventIds));
+  }
   const eventContentMatch = likeMentionCondition(rawEvents.contentText, names);
   if (eventContentMatch) timelineConditions.push(eventContentMatch);
   const timelineRows =
@@ -1610,9 +1757,16 @@ async function getConnectedWork(
           .limit(24)
       : [];
   const factRawEventIdSet = new Set(factRawEventIds);
+  const artifactRawEventIdSet = new Set(artifactRawEventIds);
   const filteredTimelineRows = timelineRows
     .filter((row) => {
-      if (row.sourceEntityId === object.id || factRawEventIdSet.has(row.id)) return true;
+      if (
+        row.sourceEntityId === object.id ||
+        factRawEventIdSet.has(row.id) ||
+        artifactRawEventIdSet.has(row.id)
+      ) {
+        return true;
+      }
       return textMentionsAnyValue(row.contentText ?? '', names);
     })
     .slice(0, 12);
@@ -1675,6 +1829,31 @@ async function getConnectedWork(
       );
     })
     .slice(0, 8);
+  const projectedApprovalKeys = new Set(
+    filteredPendingApprovalRows.map((row) =>
+      [row.operation, row.targetKind, row.targetId ?? '', jsonishText(row.proposedPayload)].join(
+        '\0',
+      ),
+    ),
+  );
+  const pendingReconciliationApprovals = pendingReconciliationOutputRows
+    .filter((row) => {
+      const key = [
+        row.operation,
+        row.targetKind,
+        row.targetId ?? '',
+        jsonishText(row.payload),
+      ].join('\0');
+      return !projectedApprovalKeys.has(key);
+    })
+    .map((row) => ({
+      suggestionId: row.outputId,
+      itemId: row.outputId,
+      title: row.title ?? 'Review reconciliation output',
+      operation: row.operation,
+      targetKind: row.targetKind,
+      createdAt: row.createdAt,
+    }));
   const filteredDocumentRows = Array.from(
     new Map(
       documentRows
@@ -1705,7 +1884,10 @@ async function getConnectedWork(
       .filter((row) => row.type !== 'task' && row.type !== 'follow_up')
       .slice(0, 12),
     boards: boardRows,
-    pendingApprovals: filteredPendingApprovalRows,
+    pendingApprovals: [...filteredPendingApprovalRows, ...pendingReconciliationApprovals].slice(
+      0,
+      8,
+    ),
     documents: filteredDocumentRows,
   };
 }
@@ -2454,6 +2636,11 @@ export async function createObject(
       })
       .returning({ id: rawEvents.id });
     const sourceEventId = eventInsert[0]?.id ?? null;
+    await normalizeSystemRawEventEvidence({
+      db: tx,
+      teamId: scope.teamId,
+      rawEventId: sourceEventId,
+    });
 
     const changeInsert = await tx
       .insert(objectChanges)
@@ -2690,6 +2877,11 @@ export async function updateObject(
       })
       .returning({ id: rawEvents.id });
     const sourceEventId = eventInsert[0]?.id ?? null;
+    await normalizeSystemRawEventEvidence({
+      db: tx,
+      teamId: scope.teamId,
+      rawEventId: sourceEventId,
+    });
 
     const changeRows = await tx
       .insert(objectChanges)
@@ -3193,6 +3385,11 @@ export async function mergeObjects(
       })
       .returning({ id: rawEvents.id });
     const sourceEventId = eventInsert[0]?.id ?? null;
+    await normalizeSystemRawEventEvidence({
+      db: tx,
+      teamId: scope.teamId,
+      rawEventId: sourceEventId,
+    });
 
     await tx
       .update(entities)
@@ -3378,6 +3575,12 @@ export async function addRelationship(
         },
       })
       .returning({ id: rawEvents.id });
+    const sourceEventId = ev[0]?.id ?? null;
+    await normalizeSystemRawEventEvidence({
+      db: tx,
+      teamId: scope.teamId,
+      rawEventId: sourceEventId,
+    });
 
     // Write one object_change row per endpoint so both object pages surface
     // the link in their "Recent changes" pane. Newer-first sorts naturally.
@@ -3391,7 +3594,7 @@ export async function addRelationship(
         field: '__relationship_create__',
         previousValue: null,
         newValue: { relationship_id: row.id, to: endpoints.toEntityId, kind: input.kind },
-        sourceEventId: ev[0]?.id ?? null,
+        sourceEventId,
       },
       {
         teamId: scope.teamId,
@@ -3402,7 +3605,7 @@ export async function addRelationship(
         field: '__relationship_create__',
         previousValue: null,
         newValue: { relationship_id: row.id, from: endpoints.fromEntityId, kind: input.kind },
-        sourceEventId: ev[0]?.id ?? null,
+        sourceEventId,
       },
     ]);
 
@@ -3468,6 +3671,12 @@ export async function removeRelationship(
         },
       })
       .returning({ id: rawEvents.id });
+    const sourceEventId = ev[0]?.id ?? null;
+    await normalizeSystemRawEventEvidence({
+      db: tx,
+      teamId: scope.teamId,
+      rawEventId: sourceEventId,
+    });
 
     await tx.insert(objectChanges).values([
       {
@@ -3479,7 +3688,7 @@ export async function removeRelationship(
         field: '__relationship_delete__',
         previousValue: { relationship_id: rel.id, to: rel.toEntityId, kind: rel.kind },
         newValue: null,
-        sourceEventId: ev[0]?.id ?? null,
+        sourceEventId,
       },
       {
         teamId: scope.teamId,
@@ -3490,7 +3699,7 @@ export async function removeRelationship(
         field: '__relationship_delete__',
         previousValue: { relationship_id: rel.id, from: rel.fromEntityId, kind: rel.kind },
         newValue: null,
-        sourceEventId: ev[0]?.id ?? null,
+        sourceEventId,
       },
     ]);
     return { fromEntityId: rel.fromEntityId, toEntityId: rel.toEntityId };
@@ -3568,6 +3777,12 @@ export async function createNote(
         },
       })
       .returning({ id: rawEvents.id });
+    const sourceEventId = ev[0]?.id ?? null;
+    await normalizeSystemRawEventEvidence({
+      db: tx,
+      teamId: scope.teamId,
+      rawEventId: sourceEventId,
+    });
     await tx.insert(objectChanges).values({
       teamId: scope.teamId,
       entityId: input.entityId,
@@ -3577,7 +3792,7 @@ export async function createNote(
       field: '__note_create__',
       previousValue: null,
       newValue: { note_id: noteId, body },
-      sourceEventId: ev[0]?.id ?? null,
+      sourceEventId,
     });
 
     return { id: noteId };
@@ -3775,6 +3990,12 @@ export async function createIdentityFacet(
           },
         })
         .returning({ id: rawEvents.id });
+      const sourceEventId = ev[0]?.id ?? null;
+      await normalizeSystemRawEventEvidence({
+        db: tx,
+        teamId: scope.teamId,
+        rawEventId: sourceEventId,
+      });
       await tx.insert(objectChanges).values({
         teamId: scope.teamId,
         entityId: input.entityId,
@@ -3793,7 +4014,7 @@ export async function createIdentityFacet(
           linkedUserId:
             input.linkedUserId !== undefined ? input.linkedUserId : existing[0].linkedUserId,
         },
-        sourceEventId: ev[0]?.id ?? null,
+        sourceEventId,
       });
       return { id: existing[0].id };
     }
@@ -3835,6 +4056,12 @@ export async function createIdentityFacet(
         },
       })
       .returning({ id: rawEvents.id });
+    const sourceEventId = ev[0]?.id ?? null;
+    await normalizeSystemRawEventEvidence({
+      db: tx,
+      teamId: scope.teamId,
+      rawEventId: sourceEventId,
+    });
 
     await tx.insert(objectChanges).values({
       teamId: scope.teamId,
@@ -3853,7 +4080,7 @@ export async function createIdentityFacet(
         externalId: input.externalId ?? null,
         linkedUserId: input.linkedUserId ?? null,
       },
-      sourceEventId: ev[0]?.id ?? null,
+      sourceEventId,
     });
 
     return row;
@@ -3937,6 +4164,12 @@ export async function updateNote(
         },
       })
       .returning({ id: rawEvents.id });
+    const sourceEventId = ev[0]?.id ?? null;
+    await normalizeSystemRawEventEvidence({
+      db: tx,
+      teamId: scope.teamId,
+      rawEventId: sourceEventId,
+    });
     await tx.insert(objectChanges).values({
       teamId: scope.teamId,
       entityId: note.entityId,
@@ -3946,7 +4179,7 @@ export async function updateNote(
       field: '__note_update__',
       previousValue: { note_id: note.id, body: note.body },
       newValue: { note_id: note.id, body },
-      sourceEventId: ev[0]?.id ?? null,
+      sourceEventId,
     });
     return { changed: true, entityId: note.entityId };
   });
@@ -4014,6 +4247,12 @@ export async function deleteNote(
         },
       })
       .returning({ id: rawEvents.id });
+    const sourceEventId = ev[0]?.id ?? null;
+    await normalizeSystemRawEventEvidence({
+      db: tx,
+      teamId: scope.teamId,
+      rawEventId: sourceEventId,
+    });
     await tx.insert(objectChanges).values({
       teamId: scope.teamId,
       entityId: note.entityId,
@@ -4023,7 +4262,7 @@ export async function deleteNote(
       field: '__note_delete__',
       previousValue: { note_id: note.id, body: note.body },
       newValue: null,
-      sourceEventId: ev[0]?.id ?? null,
+      sourceEventId,
     });
     return { entityId: note.entityId };
   });

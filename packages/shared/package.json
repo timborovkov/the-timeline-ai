@@ -244,6 +244,48 @@
       "import": "./dist/artifacts/index.js",
       "default": "./dist/artifacts/index.js"
     },
+    "./reconciliation": {
+      "types": "./src/reconciliation/index.ts",
+      "development": "./src/reconciliation/index.ts",
+      "import": "./dist/reconciliation/index.js",
+      "default": "./dist/reconciliation/index.js"
+    },
+    "./reconciliation/authority": {
+      "types": "./src/reconciliation/authority.ts",
+      "development": "./src/reconciliation/authority.ts",
+      "import": "./dist/reconciliation/authority.js",
+      "default": "./dist/reconciliation/authority.js"
+    },
+    "./reconciliation/normalization": {
+      "types": "./src/reconciliation/normalization.ts",
+      "development": "./src/reconciliation/normalization.ts",
+      "import": "./dist/reconciliation/normalization.js",
+      "default": "./dist/reconciliation/normalization.js"
+    },
+    "./reconciliation/planner": {
+      "types": "./src/reconciliation/planner.ts",
+      "development": "./src/reconciliation/planner.ts",
+      "import": "./dist/reconciliation/planner.js",
+      "default": "./dist/reconciliation/planner.js"
+    },
+    "./reconciliation/resolver": {
+      "types": "./src/reconciliation/resolver.ts",
+      "development": "./src/reconciliation/resolver.ts",
+      "import": "./dist/reconciliation/resolver.js",
+      "default": "./dist/reconciliation/resolver.js"
+    },
+    "./reconciliation/backfill": {
+      "types": "./src/reconciliation/backfill.ts",
+      "development": "./src/reconciliation/backfill.ts",
+      "import": "./dist/reconciliation/backfill.js",
+      "default": "./dist/reconciliation/backfill.js"
+    },
+    "./reconciliation/eval-manifests": {
+      "types": "./src/reconciliation/eval-manifests.ts",
+      "development": "./src/reconciliation/eval-manifests.ts",
+      "import": "./dist/reconciliation/eval-manifests.js",
+      "default": "./dist/reconciliation/eval-manifests.js"
+    },
     "./team-roles": {
       "types": "./src/team-roles.ts",
       "development": "./src/team-roles.ts",
@@ -294,7 +336,7 @@
     "dev": "tsc -p tsconfig.json --watch",
     "lint": "eslint src",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "NODE_OPTIONS=--conditions=development vitest run"
+    "test": "NODE_OPTIONS=--conditions=development node scripts/run-tests.mjs"
   },
   "dependencies": {
     "@ai-sdk/openai-compatible": "2.0.51",

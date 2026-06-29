@@ -20,6 +20,7 @@ const integrationTests = [
   'src/workers/meetingFinalize.test.ts',
   'src/workers/meetingScheduler.test.ts',
   'src/workers/overdue.test.ts',
+  'src/workers/suggestions.test.ts',
 ];
 
 export default defineConfig({

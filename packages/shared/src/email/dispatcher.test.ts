@@ -1,5 +1,12 @@
 import { PGlite } from '@electric-sql/pglite';
-import { rawEvents, teamMembers, teams, teamVisibilityDefaults, users } from '@timeline/db';
+import {
+  rawEvents,
+  reconciliationEvidence,
+  teamMembers,
+  teams,
+  teamVisibilityDefaults,
+  users,
+} from '@timeline/db';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -117,6 +124,20 @@ describe('email dispatcher', () => {
       message_id: 'vendor-note@example.net',
       auth_verdict: 'absent',
       sender_unverified: true,
+    });
+    const [evidence] = await db
+      .select()
+      .from(reconciliationEvidence)
+      .where(
+        eq(reconciliationEvidence.rawEventId, row?.id ?? '00000000-0000-0000-0000-000000000000'),
+      );
+    expect(evidence).toMatchObject({
+      source: 'email',
+      provider: 'email',
+      externalObjectId: 'vendor-note@example.net',
+      eventType: 'email.received',
+      replayState: 'full',
+      visibility: 'team',
     });
     expect(queues.extract.enqueueExtract).toHaveBeenCalledWith({
       rawEventId: row?.id,

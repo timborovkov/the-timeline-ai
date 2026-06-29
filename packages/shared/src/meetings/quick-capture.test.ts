@@ -2,7 +2,7 @@ import { PGlite } from '@electric-sql/pglite';
 import { meetingCaptureConfirmations, meetings, teamMeetingSettings } from '@timeline/db';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type * as MeetingBotsModule from '#src/meeting-bots/index.js';
 
@@ -49,6 +49,10 @@ describe('quick meeting capture', () => {
     await applyDbMigrations(pg);
     await seed(pg);
     db = drizzle(pg);
+  });
+
+  afterEach(async () => {
+    await pg.close();
   });
 
   it('claims raw-url confirmations before joining so prompt retries cannot create duplicate bots', async () => {

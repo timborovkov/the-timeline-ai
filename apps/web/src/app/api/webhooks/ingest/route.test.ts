@@ -1,5 +1,10 @@
 import { PGlite } from '@electric-sql/pglite';
-import { ingestWebhookCredentials, ingestWebhooks, rawEvents } from '@timeline/db';
+import {
+  ingestWebhookCredentials,
+  ingestWebhooks,
+  rawEvents,
+  reconciliationEvidence,
+} from '@timeline/db';
 import { hashCredential } from '@timeline/shared/ingest-webhooks';
 import * as rateLimit from '@timeline/shared/rate-limit';
 import { applyDbMigrations } from '@timeline/shared/test/pglite';
@@ -152,6 +157,18 @@ describe('/api/webhooks/ingest', () => {
     const requestHeaders = metadata.request_headers as Record<string, unknown>;
     expect(requestHeaders['x-hook-secret']).toBe('[redacted]');
     expect(requestHeaders['x-pipedrive-delivery']).toBe('delivery-1');
+    const [evidence] = await db
+      .select()
+      .from(reconciliationEvidence)
+      .where(eq(reconciliationEvidence.rawEventId, payload.rawEventId));
+    expect(evidence).toMatchObject({
+      source: 'ingest_webhook',
+      provider: 'ingest_webhook',
+      eventType: 'ingest_webhook.received',
+      payloadDigest: metadata.ingest_webhook_body_sha256,
+      replayState: 'full',
+      visibility: 'team',
+    });
     expect(fakes.enqueueExtractJob).toHaveBeenCalledWith({
       rawEventId: payload.rawEventId,
       teamId: TEAM_ID,

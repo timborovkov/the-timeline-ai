@@ -12,7 +12,7 @@ import {
 } from '@timeline/db';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { renderRawEventForAi } from '#src/embedding/raw-event-renderer.js';
 import { buildEmbeddingPlan } from '#src/embedding/sources.js';
@@ -39,6 +39,10 @@ describe('embedding source plans', () => {
     await applyDbMigrations(pg);
     await seed(pg);
     db = drizzle(pg);
+  });
+
+  afterEach(async () => {
+    await pg.close();
   });
 
   it('skips non-team raw events and stamps the skip metadata', async () => {

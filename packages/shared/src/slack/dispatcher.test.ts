@@ -5,6 +5,7 @@ import {
   meetingCaptureConfirmations,
   meetings,
   rawEvents,
+  reconciliationEvidence,
   savedMeetingAliases,
   savedMeetings,
   slackConversationBindings,
@@ -460,6 +461,23 @@ describe('Slack dispatcher routing', () => {
       slack_sender_name: 'Alice Slack',
       slack_sender_timeline_user_id: USER_A,
       source_unverified: false,
+    });
+    const [evidence] = await db
+      .select()
+      .from(reconciliationEvidence)
+      .where(
+        eq(
+          reconciliationEvidence.rawEventId,
+          rows[0]?.id ?? '00000000-0000-0000-0000-000000000000',
+        ),
+      );
+    expect(evidence).toMatchObject({
+      source: 'slack',
+      provider: 'slack',
+      externalObjectId: `${WORKSPACE_ID}:C_DOCS:1700000000.000500`,
+      eventType: 'slack.message',
+      replayState: 'degraded',
+      visibility: 'team',
     });
     expect(queues.extract.enqueueExtract).toHaveBeenCalledWith({
       rawEventId: rows[0]?.id,

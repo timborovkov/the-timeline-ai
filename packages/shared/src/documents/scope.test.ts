@@ -1,5 +1,6 @@
 import { PGlite } from '@electric-sql/pglite';
-import { type Db } from '@timeline/db';
+import { type Db, reconciliationEvidence } from '@timeline/db';
+import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
@@ -93,6 +94,13 @@ describe('document scope — finalizeDocumentVersion idempotency (P1 fix)', () =
       [created.document.id],
     );
     expect(events.rows[0]?.count).toBe('1');
+    const evidence = await db
+      .select()
+      .from(reconciliationEvidence)
+      .where(eq(reconciliationEvidence.rawEventId, first.eventId));
+    expect(evidence).toHaveLength(1);
+    expect(evidence[0]?.source).toBe('document');
+    expect(evidence[0]?.externalObjectId).toBe(created.version.id);
   });
 
   it('finalize is idempotent across separate scope instances (replay across requests)', async () => {

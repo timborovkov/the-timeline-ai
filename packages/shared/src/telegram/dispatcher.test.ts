@@ -2,6 +2,7 @@ import { PGlite } from '@electric-sql/pglite';
 import {
   meetingCaptureConfirmations,
   meetings,
+  reconciliationEvidence,
   savedMeetingAliases,
   savedMeetings,
 } from '@timeline/db';
@@ -444,6 +445,21 @@ describe('handleUpdate telegram edit visibility', () => {
     expect(rows).toHaveLength(1);
     const rawEventId = rows[0]?.id;
     expect(rawEventId).toBeTruthy();
+    const [evidence] = await db
+      .select()
+      .from(reconciliationEvidence)
+      .where(
+        eq(reconciliationEvidence.rawEventId, rawEventId ?? '00000000-0000-0000-0000-000000000000'),
+      );
+    expect(evidence).toMatchObject({
+      source: 'telegram',
+      provider: 'telegram',
+      externalObjectId: '42:24',
+      externalEventId: '204',
+      eventType: 'telegram.message',
+      replayState: 'degraded',
+      visibility: 'team',
+    });
     expect(enqueueExtract).toHaveBeenCalledWith({ rawEventId, teamId: TEAM_ID });
     expect(enqueueEmbed).toHaveBeenCalledWith({ rawEventId, teamId: TEAM_ID });
     expect(enqueueSuggestion).toHaveBeenCalledWith({ rawEventId, teamId: TEAM_ID });

@@ -29,6 +29,7 @@ import {
 } from '#src/meetings/quick-capture.js';
 import { detectMeetingPlatform } from '#src/meetings/scope.js';
 import { getRedisConnection } from '#src/queue/connection.js';
+import { normalizeRawEventsToEvidence } from '#src/reconciliation/normalization.js';
 import { SlackApi, type SlackConversation, type SlackOAuthAccessResponse } from '#src/slack/api.js';
 import {
   slackEnvelopeSchema,
@@ -767,16 +768,33 @@ async function insertSlackEvent(
       .returning({ id: rawEvents.id, teamId: rawEvents.teamId });
     return rows[0] ?? null;
   }
-  if (!input.isEdit) return insert(db);
-  return db.transaction(async (tx) => {
-    await lockSlackMessageRevisions(tx, input);
-    const row = await insert(tx);
-    const latest = await findLatestSlackRevision(tx, input);
-    if (latest) {
-      await tombstoneSupersededSlackRevisions(tx, { ...input, supersededByEventId: latest.id });
-    }
-    return row && latest?.id === row.id ? row : null;
-  });
+  const row = !input.isEdit
+    ? await insert(db)
+    : await db.transaction(async (tx) => {
+        await lockSlackMessageRevisions(tx, input);
+        const row = await insert(tx);
+        const latest = await findLatestSlackRevision(tx, input);
+        if (latest) {
+          await tombstoneSupersededSlackRevisions(tx, { ...input, supersededByEventId: latest.id });
+        }
+        return row && latest?.id === row.id ? row : null;
+      });
+  if (row) await normalizeRawEventEvidence(db, row);
+  return row;
+}
+
+async function normalizeRawEventEvidence(
+  db: Db,
+  row: { id: string; teamId: string },
+): Promise<void> {
+  try {
+    await normalizeRawEventsToEvidence({ db, teamId: row.teamId, rawEventIds: [row.id] });
+  } catch (err) {
+    log.warn(
+      { err, teamId: row.teamId, rawEventId: row.id },
+      'slack reconciliation evidence normalization failed',
+    );
+  }
 }
 
 async function resolveSlackRoute(
@@ -939,12 +957,14 @@ async function processSlackAttachments(
         })
         .returning({ id: rawEvents.id, teamId: rawEvents.teamId });
       const row = rows[0];
-      if (row)
+      if (row) {
+        await normalizeRawEventEvidence(deps.db, row);
         await deps.audio.enqueueTranscribe({
           rawEventId: row.id,
           teamId: row.teamId,
           audioKey: key,
         });
+      }
     } else {
       if (!deps.documents) continue;
       await createSlackDocumentAttachment(deps, {

@@ -3,6 +3,8 @@ import {
   type Db,
   agentSuggestionItems,
   agentSuggestions,
+  artifactClusters,
+  artifactEvidenceAssociations,
   boardItemChanges,
   boardItems,
   calendarEventEntities,
@@ -19,6 +21,10 @@ import {
   objectSummaries,
   notifications,
   rawEvents,
+  reconciliationEvidence,
+  reconciliationEvidenceAnchors,
+  reconciliationOutputs,
+  reconciliationRuns,
 } from '@timeline/db';
 import { eq, inArray } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
@@ -182,6 +188,55 @@ describe('object scope — team ownership and audit behavior', () => {
     );
     expect(eventKinds.filter((kind) => kind === 'object_create')).toHaveLength(1);
     expect(eventKinds.filter((kind) => kind === 'object_update')).toHaveLength(1);
+
+    const evidence = await db
+      .select()
+      .from(reconciliationEvidence)
+      .where(
+        inArray(
+          reconciliationEvidence.rawEventId,
+          events.map((event) => event.id),
+        ),
+      )
+      .orderBy(reconciliationEvidence.eventType);
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        source: 'system',
+        provider: 'system',
+        externalObjectId: object.id,
+        eventType: 'system.object_create',
+        replayState: 'degraded',
+      }),
+      expect.objectContaining({
+        source: 'system',
+        provider: 'system',
+        externalObjectId: object.id,
+        eventType: 'system.object_update',
+        replayState: 'degraded',
+      }),
+    ]);
+
+    const anchors = await db
+      .select()
+      .from(reconciliationEvidenceAnchors)
+      .where(
+        inArray(
+          reconciliationEvidenceAnchors.evidenceId,
+          evidence.map((row) => row.id),
+        ),
+      );
+    expect(anchors).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          anchorType: 'object',
+          anchorValue: object.id,
+        }),
+        expect.objectContaining({
+          anchorType: 'source_object:system',
+          anchorValue: object.id,
+        }),
+      ]),
+    );
 
     const changes = await db
       .select()
@@ -884,6 +939,85 @@ describe('object scope — notes and suggestions', () => {
         proposedPayload: { canonicalName: 'ADFK parser settings' },
       },
     ]);
+    const [artifactRaw] = await db
+      .insert(rawEvents)
+      .values({
+        teamId: TEAM_A,
+        authorUserId: USER_OWNER,
+        source: 'integration',
+        contentText: 'Sentry incident INC-42 moved to active customer impact.',
+        occurredAt: new Date('2026-06-19T10:00:00.000Z'),
+        visibility: 'team',
+      })
+      .returning({ id: rawEvents.id, occurredAt: rawEvents.occurredAt });
+    const [cluster] = await db
+      .insert(artifactClusters)
+      .values({
+        teamId: TEAM_A,
+        artifactClusterKind: 'incident',
+        artifactType: 'incident',
+        canonicalName: 'Checkout incident INC-42',
+        status: 'active',
+        canonicalEntityId: company.id,
+      })
+      .returning({ id: artifactClusters.id });
+    const [artifactEvidence] = await db
+      .insert(reconciliationEvidence)
+      .values({
+        teamId: TEAM_A,
+        rawEventId: artifactRaw?.id ?? '',
+        source: 'integration',
+        provider: 'sentry',
+        externalObjectId: 'INC-42',
+        eventType: 'issue.updated',
+        occurredAt: artifactRaw?.occurredAt ?? new Date('2026-06-19T10:00:00.000Z'),
+        visibility: 'team',
+        actor: {},
+        contentDigest: 'digest:connected-work-artifact',
+        normalizerVersion: 'test-v1',
+        dedupeKey: 'evidence:connected-work-artifact',
+      })
+      .returning({ id: reconciliationEvidence.id });
+    await db.insert(artifactEvidenceAssociations).values({
+      teamId: TEAM_A,
+      clusterId: cluster?.id ?? '',
+      evidenceId: artifactEvidence?.id ?? '',
+      role: 'lifecycle_update',
+      strength: 'provider',
+      associationSource: 'authoritative_provider',
+      sourceRefs: [],
+      visibility: 'team',
+      visibilityFloor: 'team',
+      dedupeKey: 'association:connected-work-artifact',
+    });
+    const [run] = await db
+      .insert(reconciliationRuns)
+      .values({
+        teamId: TEAM_A,
+        trigger: 'eval',
+        scope: 'connected-work-test',
+        status: 'completed',
+        inputFingerprint: 'connected-work-output',
+        engineVersion: 'test-v1',
+      })
+      .returning({ id: reconciliationRuns.id });
+    await db.insert(reconciliationOutputs).values({
+      teamId: TEAM_A,
+      runId: run?.id ?? '',
+      clusterId: cluster?.id ?? null,
+      outputKind: 'approval_bundle',
+      targetKind: 'object',
+      operation: 'update',
+      targetId: company.id,
+      payload: { title: 'Attach incident impact to DFK', status: 'blocked' },
+      authorityDecision: { decision: 'approval_required', policy_version: 'test-v1' },
+      requiresApproval: true,
+      sourceRefs: [],
+      visibility: 'team',
+      visibilityFloor: 'team',
+      dedupeKey: 'output:connected-work-artifact',
+      status: 'pending',
+    });
 
     const detail = await scope.getObject(company.id);
 
@@ -901,9 +1035,18 @@ describe('object scope — notes and suggestions', () => {
     expect(detail?.connectedWork.calendarEvents).not.toContainEqual(
       expect.objectContaining({ title: 'ADFK parser planning' }),
     );
-    expect(detail?.connectedWork.timelineEvents).toEqual([
-      expect.objectContaining({ id: raw?.id, contentText: 'Jonne from DFK discussed the pilot.' }),
-    ]);
+    expect(detail?.connectedWork.timelineEvents).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: raw?.id,
+          contentText: 'Jonne from DFK discussed the pilot.',
+        }),
+        expect.objectContaining({
+          id: artifactRaw?.id,
+          contentText: 'Sentry incident INC-42 moved to active customer impact.',
+        }),
+      ]),
+    );
     expect(detail?.connectedWork.timelineEvents).not.toContainEqual(
       expect.objectContaining({ id: substringRaw?.id }),
     );
@@ -913,9 +1056,12 @@ describe('object scope — notes and suggestions', () => {
     expect(detail?.connectedWork.boards).toEqual([
       expect.objectContaining({ boardName: 'Pilot pipeline', nextStep: 'Agree pilot scope' }),
     ]);
-    expect(detail?.connectedWork.pendingApprovals).toEqual([
-      expect.objectContaining({ title: 'Merge DFK Finland Oy into DFK' }),
-    ]);
+    expect(detail?.connectedWork.pendingApprovals).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ title: 'Merge DFK Finland Oy into DFK' }),
+        expect.objectContaining({ title: 'Attach incident impact to DFK' }),
+      ]),
+    );
     expect(detail?.connectedWork.pendingApprovals).not.toContainEqual(
       expect.objectContaining({ title: 'Review ADFK parser settings' }),
     );
@@ -964,6 +1110,46 @@ describe('object scope — notes and suggestions', () => {
       { factId: fact?.id ?? '', entityId: company.id, role: 'subject' },
       { factId: fact?.id ?? '', entityId: hiddenPerson.id, role: 'object' },
     ]);
+    const [cluster] = await db
+      .insert(artifactClusters)
+      .values({
+        teamId: TEAM_A,
+        artifactClusterKind: 'customer_project',
+        artifactType: 'project',
+        canonicalName: 'Private DFK terms',
+        canonicalEntityId: company.id,
+      })
+      .returning({ id: artifactClusters.id });
+    const [evidence] = await db
+      .insert(reconciliationEvidence)
+      .values({
+        teamId: TEAM_A,
+        rawEventId: raw?.id ?? '',
+        source: 'web',
+        eventType: 'private.note',
+        occurredAt: new Date('2026-06-16T10:00:00.000Z'),
+        visibility: 'private',
+        visibilityOwnerUserId: USER_MEMBER,
+        actor: {},
+        contentDigest: 'digest:hidden-connected-work',
+        normalizerVersion: 'test-v1',
+        dedupeKey: 'evidence:hidden-connected-work',
+      })
+      .returning({ id: reconciliationEvidence.id });
+    await db.insert(artifactEvidenceAssociations).values({
+      teamId: TEAM_A,
+      clusterId: cluster?.id ?? '',
+      evidenceId: evidence?.id ?? '',
+      role: 'evidence_only',
+      strength: 'human',
+      associationSource: 'human',
+      sourceRefs: [],
+      visibility: 'private',
+      visibilityOwnerUserId: USER_MEMBER,
+      visibilityFloor: 'private',
+      visibilityFloorOwnerUserId: USER_MEMBER,
+      dedupeKey: 'association:hidden-connected-work',
+    });
 
     const detail = await workspace.objects.getObject(company.id);
 
