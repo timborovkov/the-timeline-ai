@@ -175,7 +175,7 @@ describe('ConnectedIntegrations', () => {
     );
   });
 
-  it('shows inline disconnect confirmation and refreshes after disconnect', async () => {
+  it('shows inline disconnect confirmation and removes the row after disconnect', async () => {
     const fetchMock = vi.fn(() => Promise.resolve(new Response(JSON.stringify({ ok: true }))));
     vi.stubGlobal('fetch', fetchMock);
 
@@ -191,6 +191,12 @@ describe('ConnectedIntegrations', () => {
         method: 'POST',
       });
     });
+    await waitFor(() => {
+      expect(screen.queryByText(/Future sync stops/i)).toBeNull();
+      expect(screen.queryByRole('button', { name: 'Confirm disconnect' })).toBeNull();
+      expect(screen.queryByText('Monday.com — Acme')).toBeNull();
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(routerRefresh).toHaveBeenCalled();
   });
 });

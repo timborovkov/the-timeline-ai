@@ -107,8 +107,12 @@ export function ConnectedIntegrations({
   const [busy, setBusy] = useState<string | null>(null);
   const [retryError, setRetryError] = useState<{ id: string; message: string } | null>(null);
   const [confirmDisconnectId, setConfirmDisconnectId] = useState<string | null>(null);
+  const [locallyDisconnectedIds, setLocallyDisconnectedIds] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const visibleConnected = connected.filter((row) => !locallyDisconnectedIds.has(row.id));
 
-  if (connected.length === 0) {
+  if (visibleConnected.length === 0) {
     return <p className="text-sm text-fg-muted">No integrations connected yet.</p>;
   }
 
@@ -122,6 +126,14 @@ export function ConnectedIntegrations({
         setRetryError({ id, message: text });
         return;
       }
+      if (method === 'disconnect') {
+        setConfirmDisconnectId((current) => (current === id ? null : current));
+        setLocallyDisconnectedIds((current) => {
+          const next = new Set(current);
+          next.add(id);
+          return next;
+        });
+      }
       router.refresh();
     } catch (err) {
       setRetryError({ id, message: err instanceof Error ? err.message : 'Request failed' });
@@ -133,7 +145,7 @@ export function ConnectedIntegrations({
   return (
     <>
       <ul className="divide-y divide-border rounded-md border border-border bg-surface">
-        {connected.map((c) => {
+        {visibleConnected.map((c) => {
           const pauseText = syncPauseText(c.syncPause);
           const attention = dedupeAttention(c.attention);
           const syncDisabled =
