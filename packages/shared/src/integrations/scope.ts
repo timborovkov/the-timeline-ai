@@ -225,6 +225,16 @@ export function createIntegrationScope(deps: {
       .returning();
     const row = rows[0];
     if (!row) throw new Error('Failed to create provider connection');
+    await db
+      .update(integrationsTable)
+      .set({
+        displayName: input.displayName,
+        externalAccountId: input.externalAccountId,
+        scopes: input.scopes ?? [],
+        lastError: null,
+        updatedAt: new Date(),
+      })
+      .where(eq(integrationsTable.providerConnectionId, row.id));
     await adminResolveProviderConnectionAttention(db, row.id, [
       'needs_reconnect',
       'sync_error',

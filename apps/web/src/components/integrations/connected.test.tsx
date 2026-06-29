@@ -1,16 +1,15 @@
 // @vitest-environment happy-dom
 
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { ConnectedIntegrations } from '@/components/integrations/connected';
 
-vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
+const routerRefresh = vi.hoisted(() => vi.fn());
+
+vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: routerRefresh }) }));
 vi.mock('@/app/actions/visibility', () => ({
   setIntegrationVisibilityDefaultAction: vi.fn(() => Promise.resolve({ ok: true })),
-}));
-vi.mock('@/components/ui/app-dialog', () => ({
-  useAppDialog: () => ({ confirm: vi.fn(), node: null }),
 }));
 
 afterEach(() => {
@@ -87,6 +86,36 @@ describe('ConnectedIntegrations', () => {
     expect(screen.queryByText(/Monday GraphQL 429/)).toBeNull();
   });
 
+  it('dedupes identical attention rows from activation and worker checks', () => {
+    render(
+      <ConnectedIntegrations
+        connected={[
+          connectedRow({
+            attention: [
+              {
+                id: 'attention-1',
+                category: 'needs_reconnect',
+                summary:
+                  'monday connection is missing required OAuth scopes (account:read, webhooks:write); reconnect to enable webhook provisioning and account-scoped provider budgets.',
+                lastSeenAt: '2026-06-28T12:00:00.000Z',
+              },
+              {
+                id: 'attention-2',
+                category: 'needs_reconnect',
+                summary:
+                  'monday connection is missing required OAuth scopes (account:read, webhooks:write); reconnect to enable webhook provisioning and account-scoped provider budgets.',
+                lastSeenAt: '2026-06-28T12:01:00.000Z',
+              },
+            ],
+          }),
+        ]}
+      />,
+    );
+
+    expect(screen.getAllByText('Reconnect required:')).toHaveLength(1);
+    expect(screen.getAllByText(/missing required OAuth scopes/i)).toHaveLength(1);
+  });
+
   it('shows webhook degradation as non-blocking attention', () => {
     render(
       <ConnectedIntegrations
@@ -144,5 +173,25 @@ describe('ConnectedIntegrations', () => {
     expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Action needed' }).disabled).toBe(
       true,
     );
+  });
+
+  it('shows inline disconnect confirmation and refreshes after disconnect', async () => {
+    const fetchMock = vi.fn(() => Promise.resolve(new Response(JSON.stringify({ ok: true }))));
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<ConnectedIntegrations connected={[connectedRow()]} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Disconnect' }));
+    expect(screen.getByText(/Future sync stops/i)).toBeTruthy();
+    const [confirmButton] = screen.getAllByRole('button', { name: 'Disconnect' });
+    if (!confirmButton) throw new Error('Expected inline disconnect confirmation');
+    fireEvent.click(confirmButton);
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith('/api/integrations/manage/integration-1/disconnect', {
+        method: 'POST',
+      });
+    });
+    expect(routerRefresh).toHaveBeenCalled();
   });
 });

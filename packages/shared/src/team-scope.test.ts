@@ -1675,6 +1675,69 @@ describe('withTeam namespaced port', () => {
     expect(attentionRows[0]?.resolvedAt).toBeInstanceOf(Date);
   });
 
+  it('refreshes active team integration scopes when a provider connection reconnects', async () => {
+    const ownerScope = withTeam(db as never, TEAM_A, USER_A);
+    const adminScope = withTeam(db as never, TEAM_A, USER_C);
+    const connection = await ownerScope.integrations.upsertProviderConnection({
+      provider: 'monday',
+      displayName: 'Monday.com — Acme',
+      externalAccountId: 'monday-account',
+      scopes: ['boards:read', 'users:read', 'updates:read', 'docs:read'],
+      tokens: { access_token: 'old-token' },
+    });
+    await ownerScope.integrations.shareProviderResources(connection.id, [
+      { kind: 'monday.board', externalId: 'board-1', label: 'Roadmap' },
+    ]);
+    const [shareRow] = await ownerScope.integrations.listOwnedTeamResourceShares();
+    if (!shareRow) throw new Error('Expected owner share');
+    const integration = await adminScope.integrations.activateSharedResources({
+      providerConnectionId: connection.id,
+      resourceShareIds: [shareRow.share.id],
+    });
+    await adminScope.integrations.recordConnectionAttention({
+      providerConnectionId: connection.id,
+      integrationId: integration.id,
+      category: 'needs_reconnect',
+      summary: 'Monday scopes are missing',
+    });
+
+    await ownerScope.integrations.upsertProviderConnection({
+      provider: 'monday',
+      displayName: 'Monday.com — Acme',
+      externalAccountId: 'monday-account',
+      scopes: [
+        'boards:read',
+        'users:read',
+        'updates:read',
+        'docs:read',
+        'account:read',
+        'webhooks:write',
+      ],
+      tokens: { access_token: 'new-token' },
+    });
+
+    const [refreshedIntegration] = await db
+      .select()
+      .from(integrations)
+      .where(eq(integrations.id, integration.id));
+    expect(refreshedIntegration?.scopes).toEqual([
+      'boards:read',
+      'users:read',
+      'updates:read',
+      'docs:read',
+      'account:read',
+      'webhooks:write',
+    ]);
+    await expect(adminDecryptIntegrationTokens(db as never, integration)).resolves.toEqual({
+      access_token: 'new-token',
+    });
+    const [attentionRow] = await db
+      .select()
+      .from(connectionAttention)
+      .where(eq(connectionAttention.integrationId, integration.id));
+    expect(attentionRow?.resolvedAt).toBeInstanceOf(Date);
+  });
+
   it('resolves reconnect attention for the provider connection across every shared team', async () => {
     const teamAScope = withTeam(db as never, TEAM_A, USER_A);
     const teamBScope = withTeam(db as never, TEAM_B, USER_A);
