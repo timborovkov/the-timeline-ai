@@ -249,24 +249,21 @@ export function createIntegrationScope(deps: {
     await ensureMember();
     const connection = await getOwnedProviderConnection(id);
     if (!connection) return false;
-    const affected = await db
-      .select({ teamId: integrationsTable.teamId, integrationId: integrationsTable.id })
-      .from(integrationsTable)
-      .where(eq(integrationsTable.providerConnectionId, id));
     const pendingNotifications: {
       teamId: string;
       input: ConnectionAttentionInput;
       attentionId: string;
     }[] = [];
     await db.transaction(async (tx) => {
-      await tx
+      const affected = await tx
         .update(integrationsTable)
         .set({
           enabled: false,
           lastError: 'Provider connection deleted — replacement required',
           updatedAt: new Date(),
         })
-        .where(eq(integrationsTable.providerConnectionId, id));
+        .where(eq(integrationsTable.providerConnectionId, id))
+        .returning({ teamId: integrationsTable.teamId, integrationId: integrationsTable.id });
       await tx.delete(providerConnections).where(eq(providerConnections.id, id));
       const attentionRecordedAt = new Date();
       for (const row of affected) {

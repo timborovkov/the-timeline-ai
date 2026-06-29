@@ -282,14 +282,10 @@ async function loadIntegrationsPageModel(input: { teamId: string; userId: string
  * Single integrations page. Sits under /app/team. The layout is:
  *   1. Breadcrumb  (Team / Integrations)
  *   2. PageHeader (title + metadata strip)
- *   3. Top action bar: secondary nav chips + "+ Add custom MCP server"
- *   4. Connected list (native + MCP) when anything is connected
- *   5. Native catalog when env-configured
- *   6. MCP catalog (Notion, Atlassian, Figma, Stripe…)
- *
- * Secondary actions (Expose-as-MCP, Personal MCP, Audit log) live in the
- * action bar — pinned at the top so they don't sink below the fold as
- * the catalog grows.
+ *   3. Secondary navigation chips
+ *   4. Recovery-first native integration workflow
+ *   5. Native provider catalog
+ *   6. Advanced tools for MCP, webhooks, audit, and job recovery
  */
 export default async function IntegrationsPage({
   searchParams,

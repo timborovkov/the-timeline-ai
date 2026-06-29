@@ -15,6 +15,24 @@ type TeamScope = ReturnType<typeof withTeam>;
 
 const log = childLogger('web:api:integrations:disconnect');
 
+async function recordDisconnectAuditBestEffort(
+  scope: TeamScope,
+  kind: 'disconnect' | 'webhook_deprovision_failed',
+  payload: Record<string, unknown>,
+  integrationId: string | null,
+): Promise<void> {
+  try {
+    await scope.integrations.recordAudit(kind, payload, integrationId);
+  } catch (err) {
+    log.warn({ err, integrationId, kind }, 'disconnect audit write failed');
+    reportCaughtError(err, {
+      surface: 'api',
+      operation: 'integration_disconnect_audit',
+      tags: { kind },
+    });
+  }
+}
+
 async function deprovisionWebhooksBestEffort(
   scope: TeamScope,
   integration: { id: string; provider: string },
@@ -22,7 +40,8 @@ async function deprovisionWebhooksBestEffort(
   try {
     await integrationsLib.adminDeprovisionIntegrationWebhookSubscriptions(db, integration.id);
   } catch (err) {
-    await scope.integrations.recordAudit(
+    await recordDisconnectAuditBestEffort(
+      scope,
       'webhook_deprovision_failed',
       {
         provider: integration.provider,
@@ -31,14 +50,6 @@ async function deprovisionWebhooksBestEffort(
       integration.id,
     );
   }
-}
-
-async function deleteIntegrationAndRecordDisconnect(
-  scope: TeamScope,
-  integration: { id: string; provider: string },
-): Promise<void> {
-  await scope.integrations.deleteIntegration(integration.id);
-  await scope.integrations.recordAudit('disconnect', { provider: integration.provider }, null);
 }
 
 export async function POST(
@@ -60,8 +71,15 @@ export async function POST(
   const integration = await scope.integrations.getIntegration(id);
   if (!integration) return NextResponse.json({ error: 'not_found' }, { status: 404 });
   try {
+    // react-doctor-disable-next-line react-doctor/async-parallel -- Cleanup must run before deletion, and success audit only after the delete commits.
     await deprovisionWebhooksBestEffort(scope, integration);
-    await deleteIntegrationAndRecordDisconnect(scope, integration);
+    await scope.integrations.deleteIntegration(integration.id);
+    await recordDisconnectAuditBestEffort(
+      scope,
+      'disconnect',
+      { provider: integration.provider },
+      null,
+    );
     return NextResponse.json({ ok: true });
   } catch (err) {
     log.warn(
