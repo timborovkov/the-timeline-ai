@@ -200,7 +200,8 @@ export function ConnectedIntegrations({
                   <output className="mt-2 block rounded-sm border border-border bg-surface-2 px-3 py-2 text-sm text-fg-muted">
                     {pauseText}
                   </output>
-                ) : retryError?.id === c.id ? (
+                ) : null}
+                {retryError?.id === c.id ? (
                   <InlineError
                     message={connectionErrorMessage(retryError.message, retryError.status)}
                     details={retryError.details ?? retryError.message}
@@ -210,7 +211,7 @@ export function ConnectedIntegrations({
                     retryLabel="Dismiss"
                     className="mt-2"
                   />
-                ) : c.lastError && c.attention.length === 0 ? (
+                ) : c.lastError && !pauseText && c.attention.length === 0 ? (
                   <InlineError
                     message={connectionErrorMessage(c.lastError)}
                     details={c.lastError}

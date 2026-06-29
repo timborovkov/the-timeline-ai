@@ -15,14 +15,20 @@ const fakes = vi.hoisted(() => ({
   deleteIntegration: vi.fn(),
   recordAudit: vi.fn(),
   adminDeprovisionIntegrationWebhookSubscriptions: vi.fn(),
+  loggerWarn: vi.fn(),
+  reportCaughtError: vi.fn(),
 }));
 
 vi.mock('@/lib/auth', () => ({ auth: fakes.auth }));
 vi.mock('@/lib/active-team', () => ({ resolveActiveTeam: fakes.resolveActiveTeam }));
 vi.mock('@/lib/db', () => ({ db: {} }));
+vi.mock('@/lib/sentry-report', () => ({ reportCaughtError: fakes.reportCaughtError }));
 vi.mock('@timeline/shared/integrations', () => ({
   adminDeprovisionIntegrationWebhookSubscriptions:
     fakes.adminDeprovisionIntegrationWebhookSubscriptions,
+}));
+vi.mock('@timeline/shared/logger', () => ({
+  childLogger: () => ({ warn: fakes.loggerWarn, error: vi.fn(), info: vi.fn() }),
 }));
 vi.mock('@timeline/shared/team-scope', () => ({
   withTeam: () => ({
@@ -131,12 +137,22 @@ describe('/api/integrations/manage/[id]/disconnect', () => {
   });
 
   it('returns a JSON error when disconnect deletion fails', async () => {
-    fakes.deleteIntegration.mockRejectedValueOnce(new Error('database unavailable'));
+    const error = new Error('database unavailable');
+    fakes.deleteIntegration.mockRejectedValueOnce(error);
 
     const response = await POST(new Request('https://timeline.test'), params());
 
     expect(response.status).toBe(500);
     await expect(response.json()).resolves.toEqual({ error: 'disconnect_failed' });
+    expect(fakes.loggerWarn).toHaveBeenCalledWith(
+      { err: error, integrationId: INTEGRATION_ID, provider: 'monday' },
+      'disconnect failed',
+    );
+    expect(fakes.reportCaughtError).toHaveBeenCalledWith(error, {
+      surface: 'api',
+      operation: 'integration_disconnect',
+      tags: { provider: 'monday' },
+    });
     expect(fakes.recordAudit).toHaveBeenCalledWith(
       'disconnect_failed',
       {

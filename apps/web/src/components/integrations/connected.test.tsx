@@ -215,6 +215,31 @@ describe('ConnectedIntegrations', () => {
     expect(screen.getByText('Monday.com — Acme')).toBeTruthy();
   });
 
+  it('shows disconnect errors even when a cooldown notice is already visible', async () => {
+    const fetchMock = vi.fn(() => Promise.resolve(new Response('', { status: 500 })));
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(
+      <ConnectedIntegrations
+        connected={[
+          connectedRow({
+            syncPause: {
+              retryAt: '2026-06-28T12:00:00.000Z',
+              reason: 'daily_limit_exceeded',
+              scope: 'daily',
+            },
+          }),
+        ]}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Disconnect' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm disconnect' }));
+
+    expect(await screen.findByText('Connection failed (500).')).toBeTruthy();
+    expect(screen.getByText(/Provider quota cooldown \(daily\)/i)).toBeTruthy();
+  });
+
   it('maps JSON disconnect errors to user-facing copy', async () => {
     const fetchMock = vi.fn(() =>
       Promise.resolve(

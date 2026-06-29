@@ -1,15 +1,19 @@
 import * as integrationsLib from '@timeline/shared/integrations';
+import { childLogger } from '@timeline/shared/logger';
 import { withTeam } from '@timeline/shared/team-scope';
 import { NextResponse } from 'next/server';
 
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { reportCaughtError } from '@/lib/sentry-report';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 type TeamScope = ReturnType<typeof withTeam>;
+
+const log = childLogger('web:api:integrations:disconnect');
 
 async function deprovisionWebhooksBestEffort(
   scope: TeamScope,
@@ -60,6 +64,15 @@ export async function POST(
     await deleteIntegrationAndRecordDisconnect(scope, integration);
     return NextResponse.json({ ok: true });
   } catch (err) {
+    log.warn(
+      { err, integrationId: integration.id, provider: integration.provider },
+      'disconnect failed',
+    );
+    reportCaughtError(err, {
+      surface: 'api',
+      operation: 'integration_disconnect',
+      tags: { provider: integration.provider },
+    });
     try {
       await scope.integrations.recordAudit(
         'disconnect_failed',
