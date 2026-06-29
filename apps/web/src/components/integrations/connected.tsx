@@ -5,7 +5,6 @@ import { useActionState, useState } from 'react';
 
 import { setIntegrationVisibilityDefaultAction } from '@/app/actions/visibility';
 import { InlineError } from '@/components/inline-error';
-import { useAppDialog } from '@/components/ui/app-dialog';
 import { Button } from '@/components/ui/button';
 import { providerLabel } from '@/lib/resource-labels';
 import { connectionErrorMessage } from '@/lib/ux-errors';
@@ -85,6 +84,18 @@ function hasOnlyWebhookDegradedAttention(attention: ConnectedAttention[]): boole
   return attention.length > 0 && attention.every((item) => item.category === 'webhook_degraded');
 }
 
+function dedupeAttention(attention: ConnectedAttention[]): ConnectedAttention[] {
+  const seen = new Set<string>();
+  const deduped: ConnectedAttention[] = [];
+  for (const item of attention) {
+    const key = `${item.category}\x00${item.summary}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    deduped.push(item);
+  }
+  return deduped;
+}
+
 export function ConnectedIntegrations({
   connected,
   members = EMPTY_MEMBERS,
@@ -93,11 +104,15 @@ export function ConnectedIntegrations({
   members?: MemberOption[];
 }) {
   const router = useRouter();
-  const dialog = useAppDialog();
   const [busy, setBusy] = useState<string | null>(null);
   const [retryError, setRetryError] = useState<{ id: string; message: string } | null>(null);
+  const [confirmDisconnectId, setConfirmDisconnectId] = useState<string | null>(null);
+  const [locallyDisconnectedIds, setLocallyDisconnectedIds] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const visibleConnected = connected.filter((row) => !locallyDisconnectedIds.has(row.id));
 
-  if (connected.length === 0) {
+  if (visibleConnected.length === 0) {
     return <p className="text-sm text-fg-muted">No integrations connected yet.</p>;
   }
 
@@ -111,6 +126,14 @@ export function ConnectedIntegrations({
         setRetryError({ id, message: text });
         return;
       }
+      if (method === 'disconnect') {
+        setConfirmDisconnectId((current) => (current === id ? null : current));
+        setLocallyDisconnectedIds((current) => {
+          const next = new Set(current);
+          next.add(id);
+          return next;
+        });
+      }
       router.refresh();
     } catch (err) {
       setRetryError({ id, message: err instanceof Error ? err.message : 'Request failed' });
@@ -122,13 +145,11 @@ export function ConnectedIntegrations({
   return (
     <>
       <ul className="divide-y divide-border rounded-md border border-border bg-surface">
-        {connected.map((c) => {
+        {visibleConnected.map((c) => {
           const pauseText = syncPauseText(c.syncPause);
+          const attention = dedupeAttention(c.attention);
           const syncDisabled =
-            busy !== null ||
-            !c.enabled ||
-            Boolean(c.syncPause) ||
-            hasBlockingAttention(c.attention);
+            busy !== null || !c.enabled || Boolean(c.syncPause) || hasBlockingAttention(attention);
           return (
             <li key={c.id} className="flex flex-col gap-3 px-3 py-2 sm:flex-row sm:items-center">
               <div className="min-w-0 flex-1">
@@ -146,8 +167,8 @@ export function ConnectedIntegrations({
                     ? `Last synced ${DATE_FORMAT.format(new Date(c.lastSyncedAt))}`
                     : 'Never synced'}
                 </div>
-                {c.attention.length > 0 ? (
-                  <IntegrationAttentionPanel attention={c.attention} details={c.lastError} />
+                {attention.length > 0 ? (
+                  <IntegrationAttentionPanel attention={attention} details={c.lastError} />
                 ) : null}
                 {pauseText ? (
                   <output className="mt-2 block rounded-sm border border-border bg-surface-2 px-3 py-2 text-sm text-fg-muted">
@@ -173,10 +194,40 @@ export function ConnectedIntegrations({
                     className="mt-2"
                   />
                 ) : null}
+                {confirmDisconnectId === c.id ? (
+                  <div className="mt-2 flex flex-wrap items-center gap-2 rounded-sm border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm">
+                    <span className="min-w-0 flex-1 text-destructive">
+                      Future sync stops, but existing timeline events remain available.
+                    </span>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={busy !== null}
+                      onClick={() => {
+                        setConfirmDisconnectId(null);
+                      }}
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="destructive"
+                      disabled={busy !== null}
+                      onClick={() => {
+                        void call('disconnect', c.id);
+                      }}
+                    >
+                      {busy === `disconnect:${c.id}` ? 'Disconnecting' : 'Confirm disconnect'}
+                    </Button>
+                  </div>
+                ) : null}
                 <IntegrationVisibilityForm integration={c} members={members} />
               </div>
               <div className="flex w-full flex-wrap gap-2 sm:w-auto sm:flex-nowrap sm:justify-end">
                 <Button
+                  type="button"
                   size="sm"
                   variant="secondary"
                   className="flex-1 sm:flex-none"
@@ -189,36 +240,31 @@ export function ConnectedIntegrations({
                     ? 'Syncing…'
                     : !c.enabled
                       ? 'Disabled'
-                      : hasBlockingAttention(c.attention)
+                      : hasBlockingAttention(attention)
                         ? 'Action needed'
                         : c.syncPause
                           ? 'Paused'
                           : 'Sync now'}
                 </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="flex-1 sm:flex-none"
-                  disabled={busy !== null}
-                  onClick={async () => {
-                    const confirmed = await dialog.confirm({
-                      title: 'Disconnect integration?',
-                      description:
-                        'Future sync stops, but existing timeline events remain available.',
-                      confirmLabel: 'Disconnect',
-                      destructive: true,
-                    });
-                    if (confirmed) void call('disconnect', c.id);
-                  }}
-                >
-                  Disconnect
-                </Button>
+                {confirmDisconnectId === c.id ? null : (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    className="flex-1 sm:flex-none"
+                    disabled={busy !== null}
+                    onClick={() => {
+                      setConfirmDisconnectId(c.id);
+                    }}
+                  >
+                    Disconnect
+                  </Button>
+                )}
               </div>
             </li>
           );
         })}
       </ul>
-      {dialog.node}
     </>
   );
 }

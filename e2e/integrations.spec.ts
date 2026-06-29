@@ -356,7 +356,7 @@ test.describe.serial('integrations health states', () => {
       .locator('section.rounded-md')
       .filter({ hasText: `${SEED_PREFIX} GitHub connection` })
       .first();
-    const saveButton = sourceCard.getByRole('button', { name: 'Save sources' });
+    const saveButton = sourceCard.getByRole('button', { name: 'Save team sync' });
     await expect(saveButton).toBeVisible();
 
     const sourceBox = await sourceCard.boundingBox();
@@ -412,38 +412,38 @@ test.describe.serial('integrations source management', () => {
       .locator('section.rounded-md')
       .filter({ hasText: `${MANAGE_PREFIX} first GitHub connection` })
       .first();
-    await expect(firstCard.getByText('Available, no sources syncing')).toBeVisible();
+    await expect(firstCard.getByText('Shared, not syncing')).toBeVisible();
     await clickSourceCheckbox(firstCard, sourceLabel);
-    await expect(firstCard.getByText('1 active')).toBeVisible();
+    await expect(firstCard.getByText('1 source selected for team sync')).toBeVisible();
     await Promise.all([
       page.waitForResponse(
         (response) =>
           response.url().includes('/api/team/integrations/activate') &&
           response.request().method() === 'POST',
       ),
-      firstCard.getByRole('button', { name: 'Activate sources' }).click(),
+      firstCard.getByRole('button', { name: 'Activate team sync' }).click(),
     ]);
-    await expect(firstCard.getByRole('button', { name: 'Save sources' })).toBeVisible();
+    await expect(firstCard.getByRole('button', { name: 'Save team sync' })).toBeVisible();
     await expect.poll(() => activeIntegrationConnectionIdForManageRepo()).toBe(firstConnectionId);
 
     const secondCard = page
       .locator('section.rounded-md')
       .filter({ hasText: `${MANAGE_PREFIX} second GitHub connection` })
       .first();
-    await expect(secondCard.getByText('Available, no sources syncing')).toBeVisible();
+    await expect(secondCard.getByText('Shared, not syncing')).toBeVisible();
     await clickSourceCheckbox(secondCard, sourceLabel);
-    await expect(secondCard.getByRole('button', { name: 'Replace connection' })).toBeVisible();
+    await expect(secondCard.getByRole('button', { name: 'Replace active import' })).toBeVisible();
     await Promise.all([
       page.waitForResponse(
         (response) =>
           response.url().includes('/api/team/integrations/activate') &&
           response.request().method() === 'POST',
       ),
-      secondCard.getByRole('button', { name: 'Replace connection' }).click(),
+      secondCard.getByRole('button', { name: 'Replace active import' }).click(),
     ]);
 
-    await expect(secondCard.getByRole('button', { name: 'Save sources' })).toBeVisible();
-    await expect(firstCard.getByRole('button', { name: 'Activate sources' })).toBeVisible();
+    await expect(secondCard.getByRole('button', { name: 'Save team sync' })).toBeVisible();
+    await expect(firstCard.getByRole('button', { name: 'Activate team sync' })).toBeVisible();
     await expect.poll(() => activeIntegrationConnectionIdForManageRepo()).toBe(secondConnectionId);
   });
 });

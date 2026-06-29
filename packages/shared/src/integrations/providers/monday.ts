@@ -944,18 +944,19 @@ async function fetchInitialItemsPage(
     updatedSinceDate && updatedSinceDate.getTime() > 0
       ? updatedSinceDate.toISOString().slice(0, 10)
       : null;
-  const queryParams = updatedSinceDay
+  const updatedSinceCompareValue = updatedSinceDay ? ['EXACT', updatedSinceDay] : null;
+  const queryParams = updatedSinceCompareValue
     ? `, query_params: {
           rules: [{
             column_id: "__last_updated__",
-            compare_value: ["EXACT", $updatedSinceDay],
+            compare_value: $updatedSinceCompareValue,
             operator: greater_than_or_equals,
             compare_attribute: "UPDATED_AT"
           }]
         }`
     : '';
-  const query = updatedSinceDay
-    ? `query ($ids: [ID!], $limit: Int!, $updatedSinceDay: String!) {
+  const query = updatedSinceCompareValue
+    ? `query ($ids: [ID!], $limit: Int!, $updatedSinceCompareValue: CompareValue!) {
         boards(ids: $ids) {
           items_page(limit: $limit${queryParams}) {
             cursor
@@ -974,7 +975,7 @@ async function fetchInitialItemsPage(
   const data = await gql<{ boards: { items_page?: MondayItemsPage }[] }>(tokens, query, {
     ids: [boardId],
     limit: ITEM_PAGE_LIMIT,
-    ...(updatedSinceDay ? { updatedSinceDay } : {}),
+    ...(updatedSinceCompareValue ? { updatedSinceCompareValue } : {}),
   });
   return data.boards[0]?.items_page ?? {};
 }

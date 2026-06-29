@@ -18,7 +18,7 @@ import {
   teams,
   users,
 } from '@timeline/db';
-import { and, desc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNotNull, isNull, lte, or, sql } from 'drizzle-orm';
 
 import type {
   IntegrationRow,
@@ -225,6 +225,16 @@ export function createIntegrationScope(deps: {
       .returning();
     const row = rows[0];
     if (!row) throw new Error('Failed to create provider connection');
+    await db
+      .update(integrationsTable)
+      .set({
+        displayName: input.displayName,
+        externalAccountId: input.externalAccountId,
+        scopes: input.scopes ?? [],
+        lastError: null,
+        updatedAt: new Date(),
+      })
+      .where(eq(integrationsTable.providerConnectionId, row.id));
     await adminResolveProviderConnectionAttention(db, row.id, [
       'needs_reconnect',
       'sync_error',
@@ -1960,8 +1970,8 @@ export async function adminReconcileExpiringWebhookSubscriptions(
     .where(
       and(
         eq(integrationWebhookSubscriptions.status, 'active'),
-        sql`${integrationWebhookSubscriptions.expiresAt} IS NOT NULL`,
-        sql`${integrationWebhookSubscriptions.expiresAt} <= ${threshold}`,
+        isNotNull(integrationWebhookSubscriptions.expiresAt),
+        lte(integrationWebhookSubscriptions.expiresAt, threshold),
       ),
     );
 

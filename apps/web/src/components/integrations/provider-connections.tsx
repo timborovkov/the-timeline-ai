@@ -165,21 +165,138 @@ export function PersonalConnectionsUi({ connections }: { connections: ProviderCo
 
 function PersonalConnectionFlow() {
   return (
-    <div className="grid gap-2 rounded-sm border border-border bg-surface-2 p-3 text-sm md:grid-cols-3">
-      <div>
-        <p className="font-medium text-fg">1. Connect personally</p>
-        <p className="mt-1 text-fg-muted">Timeline uses your provider account to see sources.</p>
+    <div className="space-y-3 rounded-sm border border-border bg-surface-2 p-3 text-sm">
+      <div className="grid gap-2 md:grid-cols-3">
+        <div>
+          <p className="font-medium text-fg">1. Provider account</p>
+          <p className="mt-1 text-fg-muted">Your OAuth grant. It belongs to you, not the team.</p>
+        </div>
+        <div>
+          <p className="font-medium text-fg">2. Shared sources</p>
+          <p className="mt-1 text-fg-muted">
+            Pick the boards, repos, projects, or channels this team may use.
+          </p>
+        </div>
+        <div>
+          <p className="font-medium text-fg">3. Team sync</p>
+          <p className="mt-1 text-fg-muted">
+            A team admin chooses which shared sources become timeline evidence.
+          </p>
+        </div>
       </div>
-      <div>
-        <p className="font-medium text-fg">2. Share to this team</p>
-        <p className="mt-1 text-fg-muted">Select only the sources this team may use.</p>
+      <p className="border-t border-border pt-3 text-xs text-fg-muted">
+        Need a second Monday.com account? Click Connect account again, then pick another account in
+        Monday.com&apos;s account dropdown or switch accounts in Monday before approving. Timeline
+        stores it separately once Monday returns a different account.
+      </p>
+    </div>
+  );
+}
+
+function TeamSyncFlow({ isAdmin }: { isAdmin: boolean }) {
+  return (
+    <div className="rounded-sm border border-border bg-surface-2 px-3 py-2 text-sm text-fg-muted">
+      {isAdmin
+        ? 'Shared sources are not syncing yet. Select the sources this team should import, then activate team sync.'
+        : 'Shared sources are not syncing yet. A team admin chooses which shared sources this team imports.'}
+    </div>
+  );
+}
+
+function TeamSyncStatus({
+  selectedSize,
+  hasActiveSources,
+}: {
+  selectedSize: number;
+  hasActiveSources: boolean;
+}) {
+  if (selectedSize === 0) {
+    return (
+      <span className="text-xs text-fg-muted sm:text-right">
+        {hasActiveSources ? 'Team sync paused' : 'Shared, not syncing'}
+      </span>
+    );
+  }
+  return (
+    <span className="text-xs text-fg-muted sm:text-right">
+      {String(selectedSize)} source{selectedSize === 1 ? '' : 's'} selected for team sync
+    </span>
+  );
+}
+
+function TeamConnectionRoleLine({ ownerLabel }: { ownerLabel: string }) {
+  return (
+    <p className="mt-0.5 truncate text-xs text-fg-muted">Provider account owner: {ownerLabel}</p>
+  );
+}
+
+function PersonalConnectionRoleLine({ lastConnectedAt }: { lastConnectedAt: string }) {
+  return (
+    <p className="mt-0.5 truncate text-xs text-fg-muted">
+      Personal provider account · Connected {new Date(lastConnectedAt).toLocaleDateString()}
+    </p>
+  );
+}
+
+function ProviderAccountHint({ provider }: { provider: string }) {
+  if (provider !== 'monday') return null;
+  return (
+    <p className="rounded-sm border border-border bg-surface-2 px-2 py-1.5 text-xs text-fg-muted">
+      To add another Monday.com account, start Connect account again and choose a different account
+      in Monday.com before approving.
+    </p>
+  );
+}
+
+function PersonalConnectionHeader({ connection }: { connection: ProviderConnection }) {
+  return (
+    <div className="space-y-1">
+      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+        <span className="text-sm font-medium">{providerLabel(connection.provider)}</span>
+        <span className="min-w-0 truncate text-sm text-fg-muted">{connection.displayName}</span>
       </div>
+      <PersonalConnectionRoleLine lastConnectedAt={connection.lastConnectedAt} />
+    </div>
+  );
+}
+
+function TeamConnectionHeader({ connection }: { connection: TeamShareRow['connection'] }) {
+  return (
+    <div className="min-w-0">
+      <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
+        <span className="text-sm font-medium">{providerLabel(connection.provider)}</span>
+        <span className="min-w-0 truncate text-sm text-fg-muted">{connection.displayName}</span>
+      </div>
+      <TeamConnectionRoleLine ownerLabel={connection.ownerLabel} />
+    </div>
+  );
+}
+
+function PersonalConnectionToolbar({
+  selectedSize,
+  busy,
+  onSave,
+  onDelete,
+}: {
+  selectedSize: number;
+  busy: SourcePickerState['busy'];
+  onSave: () => void;
+  onDelete: () => void;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-2">
       <div>
-        <p className="font-medium text-fg">3. Activate sync</p>
-        <p className="mt-1 text-fg-muted">
-          A team admin enables the shared sources on Team integrations.
+        <p className="text-sm font-medium text-fg">
+          {String(selectedSize)} source{selectedSize === 1 ? '' : 's'} shared to this team
         </p>
+        <p className="text-xs text-fg-muted">Sharing allows team admins to activate sync later.</p>
       </div>
+      <Button size="sm" className="ml-auto" disabled={busy !== null} onClick={onSave}>
+        {busy === 'save' ? 'Saving' : 'Save sharing'}
+      </Button>
+      <Button size="sm" variant="ghost" disabled={busy !== null} onClick={onDelete}>
+        Delete account
+      </Button>
     </div>
   );
 }
@@ -318,8 +435,9 @@ function ConnectionSources({ connection }: { connection: ProviderConnection }) {
   return (
     <section className="rounded-md border border-border bg-surface">
       <div className="flex flex-wrap items-center gap-2 border-b border-border px-3 py-2">
-        <span className="text-sm font-medium">{providerLabel(connection.provider)}</span>
-        <span className="text-sm text-fg-muted">{connection.displayName}</span>
+        <div className="min-w-0 flex-1">
+          <PersonalConnectionHeader connection={connection} />
+        </div>
         {connection.lastError ? (
           <>
             <span className="rounded-sm border border-destructive/40 px-1.5 py-0.5 text-[10px] uppercase text-destructive">
@@ -335,13 +453,14 @@ function ConnectionSources({ connection }: { connection: ProviderConnection }) {
             </Button>
           </>
         ) : null}
-        <span className="ml-auto text-xs text-fg-muted">
+        <span className="text-xs text-fg-muted">
           Shared {String([...selected].length)} source{selected.size === 1 ? '' : 's'}
         </span>
       </div>
       <div className="space-y-3 p-3">
+        <ProviderAccountHint provider={connection.provider} />
         <ProviderSourceHint provider={connection.provider} />
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
           <input
             className="h-8 min-w-56 flex-1 rounded-sm border border-border bg-bg px-2 text-sm"
             aria-label="Search provider sources"
@@ -351,24 +470,19 @@ function ConnectionSources({ connection }: { connection: ProviderConnection }) {
               dispatch({ type: 'query', query: event.currentTarget.value });
             }}
           />
-          <Button size="sm" disabled={state.busy !== null} onClick={() => void save()}>
-            {state.busy === 'save' ? 'Saving' : 'Save sharing'}
-          </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            disabled={state.busy !== null}
-            onClick={() => {
+          <PersonalConnectionToolbar
+            selectedSize={selected.size}
+            busy={state.busy}
+            onSave={() => void save()}
+            onDelete={() => {
               dispatch({ type: 'confirmDelete' });
             }}
-          >
-            Delete
-          </Button>
+          />
         </div>
         {state.confirmDelete ? (
           <div className="flex flex-wrap items-center gap-2 rounded-sm border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm">
             <span className="text-destructive">
-              Deleting stops active sources powered by this connection.
+              Deleting this provider account stops team sync that depends on it.
             </span>
             <Button
               size="sm"
@@ -376,7 +490,7 @@ function ConnectionSources({ connection }: { connection: ProviderConnection }) {
               disabled={state.busy !== null}
               onClick={() => void deleteConnection()}
             >
-              {state.busy === 'delete' ? 'Deleting' : 'Delete connection'}
+              {state.busy === 'delete' ? 'Deleting' : 'Delete provider account'}
             </Button>
           </div>
         ) : null}
@@ -602,11 +716,7 @@ export function TeamSourcesUi({
 
   return (
     <div className="space-y-3">
-      <div className="rounded-sm border border-border bg-surface-2 px-3 py-2 text-sm text-fg-muted">
-        {isAdmin
-          ? 'These sources were shared by connection owners. Select what this Timeline team should sync, then save.'
-          : 'These sources were shared by connection owners. Team admins choose what this Timeline team should sync.'}
-      </div>
+      <TeamSyncFlow isAdmin={isAdmin} />
       {error ? (
         <InlineError
           message={connectionErrorMessage(error)}
@@ -628,29 +738,15 @@ export function TeamSourcesUi({
           return activeConnectionId !== undefined && activeConnectionId !== connectionId;
         });
         const actionLabel = replacesAnotherConnection
-          ? 'Replace connection'
+          ? 'Replace active import'
           : hasActiveSources
-            ? 'Save sources'
-            : 'Activate sources';
+            ? 'Save team sync'
+            : 'Activate team sync';
         return (
           <section key={connectionId} className="rounded-md border border-border bg-surface">
             <div className="grid gap-2 border-b border-border px-3 py-2 sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:items-center">
-              <div className="min-w-0">
-                <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
-                  <span className="text-sm font-medium">{providerLabel(connection.provider)}</span>
-                  <span className="min-w-0 truncate text-sm text-fg-muted">
-                    {connection.displayName}
-                  </span>
-                </div>
-                <p className="mt-0.5 truncate text-xs text-fg-muted">
-                  Owner: {connection.ownerLabel}
-                </p>
-              </div>
-              <span className="text-xs text-fg-muted sm:text-right">
-                {selected.size === 0
-                  ? 'Available, no sources syncing'
-                  : `${String(selected.size)} active`}
-              </span>
+              <TeamConnectionHeader connection={connection} />
+              <TeamSyncStatus selectedSize={selected.size} hasActiveSources={hasActiveSources} />
               {isAdmin ? (
                 <Button
                   size="sm"
