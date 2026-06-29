@@ -46,6 +46,29 @@ const DATE_FORMAT = new Intl.DateTimeFormat('en-US', {
   timeZone: 'UTC',
 });
 
+interface ConnectionRequestError {
+  id: string;
+  message: string | undefined;
+  status: number;
+  details?: string;
+}
+
+async function readConnectionRequestError(
+  res: Response,
+): Promise<Omit<ConnectionRequestError, 'id'>> {
+  const text = await res.text();
+  if (!text) return { message: undefined, status: res.status };
+  try {
+    const data = JSON.parse(text) as { error?: unknown };
+    if (typeof data.error === 'string' && data.error.length > 0) {
+      return { message: data.error, status: res.status, details: text };
+    }
+  } catch {
+    // Non-JSON error bodies still carry useful operational details.
+  }
+  return { message: text, status: res.status, details: text };
+}
+
 function syncPauseText(syncPause: ConnectedRow['syncPause']): string | null {
   if (!syncPause) return null;
   const retryAt = new Date(syncPause.retryAt);
@@ -84,6 +107,25 @@ function hasOnlyWebhookDegradedAttention(attention: ConnectedAttention[]): boole
   return attention.length > 0 && attention.every((item) => item.category === 'webhook_degraded');
 }
 
+function blockingAttentionAction(
+  attention: ConnectedAttention[],
+): { href: string; label: string } | null {
+  if (attention.some((item) => item.category === 'needs_reconnect')) {
+    return { href: '/app/me/connections', label: 'Reconnect account' };
+  }
+  if (attention.some((item) => item.category === 'needs_new_owner')) {
+    return { href: '#available-shared-sources', label: 'Choose replacement' };
+  }
+  if (attention.some((item) => item.category === 'access_changed')) {
+    return { href: '#available-shared-sources', label: 'Review sources' };
+  }
+  return null;
+}
+
+function needsReplacementFromLastError(lastError: string | null): boolean {
+  return lastError?.includes('Provider connection deleted') ?? false;
+}
+
 function dedupeAttention(attention: ConnectedAttention[]): ConnectedAttention[] {
   const seen = new Set<string>();
   const deduped: ConnectedAttention[] = [];
@@ -105,7 +147,7 @@ export function ConnectedIntegrations({
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState<string | null>(null);
-  const [retryError, setRetryError] = useState<{ id: string; message: string } | null>(null);
+  const [retryError, setRetryError] = useState<ConnectionRequestError | null>(null);
   const [confirmDisconnectId, setConfirmDisconnectId] = useState<string | null>(null);
   const [locallyDisconnectedIds, setLocallyDisconnectedIds] = useState<Set<string>>(
     () => new Set(),
@@ -122,8 +164,7 @@ export function ConnectedIntegrations({
     try {
       const res = await fetch(`/api/integrations/manage/${id}/${method}`, { method: 'POST' });
       if (!res.ok) {
-        const text = await res.text();
-        setRetryError({ id, message: text });
+        setRetryError({ id, ...(await readConnectionRequestError(res)) });
         return;
       }
       if (method === 'disconnect') {
@@ -136,7 +177,11 @@ export function ConnectedIntegrations({
       }
       router.refresh();
     } catch (err) {
-      setRetryError({ id, message: err instanceof Error ? err.message : 'Request failed' });
+      setRetryError({
+        id,
+        message: err instanceof Error ? err.message : 'request_failed',
+        status: 0,
+      });
     } finally {
       setBusy(null);
     }
@@ -148,8 +193,19 @@ export function ConnectedIntegrations({
         {visibleConnected.map((c) => {
           const pauseText = syncPauseText(c.syncPause);
           const attention = dedupeAttention(c.attention);
+          const needsReplacement =
+            attention.length === 0 && needsReplacementFromLastError(c.lastError);
+          const blockingAction =
+            blockingAttentionAction(attention) ??
+            (needsReplacement
+              ? { href: '#available-shared-sources', label: 'Choose replacement' }
+              : null);
           const syncDisabled =
-            busy !== null || !c.enabled || Boolean(c.syncPause) || hasBlockingAttention(attention);
+            busy !== null ||
+            !c.enabled ||
+            Boolean(c.syncPause) ||
+            hasBlockingAttention(attention) ||
+            needsReplacement;
           return (
             <li key={c.id} className="flex flex-col gap-3 px-3 py-2 sm:flex-row sm:items-center">
               <div className="min-w-0 flex-1">
@@ -174,21 +230,22 @@ export function ConnectedIntegrations({
                   <output className="mt-2 block rounded-sm border border-border bg-surface-2 px-3 py-2 text-sm text-fg-muted">
                     {pauseText}
                   </output>
-                ) : retryError?.id === c.id ? (
+                ) : null}
+                {retryError?.id === c.id ? (
                   <InlineError
-                    message={connectionErrorMessage(retryError.message)}
-                    details={retryError.message}
+                    message={connectionErrorMessage(retryError.message, retryError.status)}
+                    details={retryError.details ?? retryError.message}
                     onRetry={() => {
                       setRetryError(null);
                     }}
                     retryLabel="Dismiss"
                     className="mt-2"
                   />
-                ) : c.lastError && c.attention.length === 0 ? (
+                ) : c.lastError && !pauseText && c.attention.length === 0 ? (
                   <InlineError
                     message={connectionErrorMessage(c.lastError)}
                     details={c.lastError}
-                    onRetry={() => void call('sync', c.id)}
+                    onRetry={needsReplacement ? undefined : () => void call('sync', c.id)}
                     retrying={busy === `sync:${c.id}`}
                     retryLabel="Retry sync"
                     className="mt-2"
@@ -226,26 +283,30 @@ export function ConnectedIntegrations({
                 <IntegrationVisibilityForm integration={c} members={members} />
               </div>
               <div className="flex w-full flex-wrap gap-2 sm:w-auto sm:flex-nowrap sm:justify-end">
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="secondary"
-                  className="flex-1 sm:flex-none"
-                  disabled={syncDisabled}
-                  onClick={() => {
-                    void call('sync', c.id);
-                  }}
-                >
-                  {busy === `sync:${c.id}`
-                    ? 'Syncing…'
-                    : !c.enabled
-                      ? 'Disabled'
-                      : hasBlockingAttention(attention)
-                        ? 'Action needed'
+                {blockingAction ? (
+                  <Button asChild size="sm" variant="secondary" className="flex-1 sm:flex-none">
+                    <a href={blockingAction.href}>{blockingAction.label}</a>
+                  </Button>
+                ) : (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="secondary"
+                    className="flex-1 sm:flex-none"
+                    disabled={syncDisabled}
+                    onClick={() => {
+                      void call('sync', c.id);
+                    }}
+                  >
+                    {busy === `sync:${c.id}`
+                      ? 'Syncing…'
+                      : !c.enabled
+                        ? 'Disabled'
                         : c.syncPause
                           ? 'Paused'
                           : 'Sync now'}
-                </Button>
+                  </Button>
+                )}
                 {confirmDisconnectId === c.id ? null : (
                   <Button
                     type="button"

@@ -217,7 +217,7 @@ not.
 | Surface kind | Pages | Header treatment |
 | ------------ | ----- | ----------------- |
 | Operational | Timeline, Approvals, Jobs, Audit, Objects list, Boards, Tasks, Work, Inbox | `<IndexStrip>` + mono eyebrows. Dense, terminal-grade. |
-| Standard | Home, Connections, Documents, Team, Team integration sync, Slack, Telegram, MCP share, Provider accounts, Personal MCP, Calendar, Meetings | `<PageHeader title subtitle>` + `<SectionHeading>`. Mono reserved for data. |
+| Standard | Home, Connections, Documents, Team, Team integrations, Slack, Telegram, MCP share, Provider accounts, Personal MCP, Calendar, Meetings | `<PageHeader title subtitle>` + `<SectionHeading>`. Mono reserved for data. |
 
 If a screen disagrees with its kind, fix the screen — or reclassify the
 surface here in the same PR.

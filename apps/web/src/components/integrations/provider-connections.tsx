@@ -386,7 +386,7 @@ function ConnectionSources({ connection }: { connection: ProviderConnection }) {
           })),
         }),
       });
-      if (!res.ok) throw new Error(await res.text());
+      if (!res.ok) await readJsonResponse(res);
       await refetch();
       dispatch({ type: 'resetSelection' });
       router.refresh();
@@ -402,7 +402,7 @@ function ConnectionSources({ connection }: { connection: ProviderConnection }) {
     dispatch({ type: 'error', error: null });
     try {
       const res = await fetch(`/api/connections/${connection.id}`, { method: 'DELETE' });
-      if (!res.ok) throw new Error(await res.text());
+      await readJsonResponse(res);
       router.refresh();
     } catch (err) {
       dispatch({ type: 'error', error: err instanceof Error ? err.message : 'Delete failed' });
@@ -704,7 +704,7 @@ export function TeamSourcesUi({
           resourceShareIds: [...(selectedByConnection[providerConnectionId] ?? new Set())],
         }),
       });
-      if (!res.ok) throw new Error(await res.text());
+      await readJsonResponse(res);
       setSelectedOverrides({});
       router.refresh();
     } catch (err) {

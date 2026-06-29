@@ -1632,6 +1632,33 @@ describe('withTeam namespaced port', () => {
         }),
       ]),
     );
+    const notificationRows = await db.select().from(notifications);
+    expect(notificationRows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          teamId: TEAM_A,
+          userId: USER_A,
+          kind: 'connection_attention',
+          summary: 'GitHub — delete me was deleted; choose a replacement connection.',
+        }),
+        expect.objectContaining({
+          teamId: TEAM_A,
+          userId: USER_C,
+          kind: 'connection_attention',
+          summary: 'GitHub — delete me was deleted; choose a replacement connection.',
+        }),
+      ]),
+    );
+    expect(
+      notificationRows.some((row) => {
+        const payload = row.payload as Record<string, unknown>;
+        return (
+          payload.category === 'needs_new_owner' &&
+          payload.integration_id === integration.id &&
+          payload.provider_connection_id === null
+        );
+      }),
+    ).toBe(true);
   });
 
   it('updates active attention without duplicate notifications and resolves reconnect attention on refresh', async () => {

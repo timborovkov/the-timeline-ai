@@ -14,6 +14,7 @@ vi.mock('@/app/actions/visibility', () => ({
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
   cleanup();
 });
 
@@ -79,8 +80,8 @@ describe('ConnectedIntegrations', () => {
 
     expect(screen.getByText('Reconnect required:')).toBeTruthy();
     expect(screen.getByText(/Reconnect Monday\.com to grant account:read/i)).toBeTruthy();
-    expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Action needed' }).disabled).toBe(
-      true,
+    expect(screen.getByRole('link', { name: 'Reconnect account' }).getAttribute('href')).toBe(
+      '/app/me/connections',
     );
     expect(screen.queryByRole('button', { name: 'Retry sync' })).toBeNull();
     expect(screen.queryByText(/Monday GraphQL 429/)).toBeNull();
@@ -170,8 +171,25 @@ describe('ConnectedIntegrations', () => {
 
     const title = screen.getByText('Reconnect required:');
     expect(title.closest('div')?.className).toContain('border-danger');
-    expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Action needed' }).disabled).toBe(
-      true,
+    expect(screen.getByRole('link', { name: 'Reconnect account' })).toBeTruthy();
+  });
+
+  it('does not offer retry sync when a deleted provider connection has no attention row', () => {
+    render(
+      <ConnectedIntegrations
+        connected={[
+          connectedRow({
+            lastError: 'Provider connection deleted — replacement required',
+            attention: [],
+          }),
+        ]}
+      />,
+    );
+
+    expect(screen.getByText(/provider account for this sync was deleted/i)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Retry sync' })).toBeNull();
+    expect(screen.getByRole('link', { name: 'Choose replacement' }).getAttribute('href')).toBe(
+      '#available-shared-sources',
     );
   });
 
@@ -198,5 +216,65 @@ describe('ConnectedIntegrations', () => {
     });
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(routerRefresh).toHaveBeenCalled();
+  });
+
+  it('shows a readable disconnect error when the server returns an empty failure body', async () => {
+    const fetchMock = vi.fn(() => Promise.resolve(new Response('', { status: 500 })));
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<ConnectedIntegrations connected={[connectedRow()]} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Disconnect' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm disconnect' }));
+
+    expect(await screen.findByText('Connection failed (500).')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Confirm disconnect' })).toBeTruthy();
+    expect(screen.getByText('Monday.com — Acme')).toBeTruthy();
+  });
+
+  it('shows disconnect errors even when a cooldown notice is already visible', async () => {
+    const fetchMock = vi.fn(() => Promise.resolve(new Response('', { status: 500 })));
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(
+      <ConnectedIntegrations
+        connected={[
+          connectedRow({
+            syncPause: {
+              retryAt: '2026-06-28T12:00:00.000Z',
+              reason: 'daily_limit_exceeded',
+              scope: 'daily',
+            },
+          }),
+        ]}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Disconnect' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm disconnect' }));
+
+    expect(await screen.findByText('Connection failed (500).')).toBeTruthy();
+    expect(screen.getByText(/Provider quota cooldown \(daily\)/i)).toBeTruthy();
+  });
+
+  it('maps JSON disconnect errors to user-facing copy', async () => {
+    const fetchMock = vi.fn(() =>
+      Promise.resolve(
+        new Response(JSON.stringify({ error: 'forbidden' }), {
+          status: 403,
+          headers: { 'content-type': 'application/json' },
+        }),
+      ),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<ConnectedIntegrations connected={[connectedRow()]} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Disconnect' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm disconnect' }));
+
+    expect(
+      await screen.findByText('Only an admin can do this. Ask a team admin to help.'),
+    ).toBeTruthy();
   });
 });

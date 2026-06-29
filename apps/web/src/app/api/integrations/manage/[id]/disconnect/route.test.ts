@@ -15,14 +15,20 @@ const fakes = vi.hoisted(() => ({
   deleteIntegration: vi.fn(),
   recordAudit: vi.fn(),
   adminDeprovisionIntegrationWebhookSubscriptions: vi.fn(),
+  loggerWarn: vi.fn(),
+  reportCaughtError: vi.fn(),
 }));
 
 vi.mock('@/lib/auth', () => ({ auth: fakes.auth }));
 vi.mock('@/lib/active-team', () => ({ resolveActiveTeam: fakes.resolveActiveTeam }));
 vi.mock('@/lib/db', () => ({ db: {} }));
+vi.mock('@/lib/sentry-report', () => ({ reportCaughtError: fakes.reportCaughtError }));
 vi.mock('@timeline/shared/integrations', () => ({
   adminDeprovisionIntegrationWebhookSubscriptions:
     fakes.adminDeprovisionIntegrationWebhookSubscriptions,
+}));
+vi.mock('@timeline/shared/logger', () => ({
+  childLogger: () => ({ warn: fakes.loggerWarn, error: vi.fn(), info: vi.fn() }),
 }));
 vi.mock('@timeline/shared/team-scope', () => ({
   withTeam: () => ({
@@ -128,5 +134,84 @@ describe('/api/integrations/manage/[id]/disconnect', () => {
     );
     expect(fakes.deleteIntegration).toHaveBeenCalledWith(INTEGRATION_ID);
     expect(fakes.recordAudit).toHaveBeenCalledWith('disconnect', { provider: 'monday' }, null);
+  });
+
+  it('still disconnects when webhook cleanup audit persistence fails', async () => {
+    const auditError = new Error('audit unavailable');
+    fakes.adminDeprovisionIntegrationWebhookSubscriptions.mockRejectedValueOnce(
+      new Error('Monday delete_webhook failed'),
+    );
+    fakes.recordAudit.mockRejectedValueOnce(auditError);
+
+    const response = await POST(new Request('https://timeline.test'), params());
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ ok: true });
+    expect(fakes.deleteIntegration).toHaveBeenCalledWith(INTEGRATION_ID);
+    expect(fakes.recordAudit).toHaveBeenCalledWith(
+      'webhook_deprovision_failed',
+      {
+        provider: 'monday',
+        error: 'Monday delete_webhook failed',
+      },
+      INTEGRATION_ID,
+    );
+    expect(fakes.recordAudit).toHaveBeenCalledWith('disconnect', { provider: 'monday' }, null);
+    expect(fakes.loggerWarn).toHaveBeenCalledWith(
+      { err: auditError, integrationId: INTEGRATION_ID, kind: 'webhook_deprovision_failed' },
+      'disconnect audit write failed',
+    );
+    expect(fakes.reportCaughtError).toHaveBeenCalledWith(auditError, {
+      surface: 'api',
+      operation: 'integration_disconnect_audit',
+      tags: { kind: 'webhook_deprovision_failed' },
+    });
+  });
+
+  it('returns success when the integration is deleted but the disconnect audit fails', async () => {
+    const auditError = new Error('audit unavailable');
+    fakes.recordAudit.mockRejectedValueOnce(auditError);
+
+    const response = await POST(new Request('https://timeline.test'), params());
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ ok: true });
+    expect(fakes.deleteIntegration).toHaveBeenCalledWith(INTEGRATION_ID);
+    expect(fakes.loggerWarn).toHaveBeenCalledWith(
+      { err: auditError, integrationId: null, kind: 'disconnect' },
+      'disconnect audit write failed',
+    );
+    expect(fakes.reportCaughtError).toHaveBeenCalledWith(auditError, {
+      surface: 'api',
+      operation: 'integration_disconnect_audit',
+      tags: { kind: 'disconnect' },
+    });
+  });
+
+  it('returns a JSON error when disconnect deletion fails', async () => {
+    const error = new Error('database unavailable');
+    fakes.deleteIntegration.mockRejectedValueOnce(error);
+
+    const response = await POST(new Request('https://timeline.test'), params());
+
+    expect(response.status).toBe(500);
+    await expect(response.json()).resolves.toEqual({ error: 'disconnect_failed' });
+    expect(fakes.loggerWarn).toHaveBeenCalledWith(
+      { err: error, integrationId: INTEGRATION_ID, provider: 'monday' },
+      'disconnect failed',
+    );
+    expect(fakes.reportCaughtError).toHaveBeenCalledWith(error, {
+      surface: 'api',
+      operation: 'integration_disconnect',
+      tags: { provider: 'monday' },
+    });
+    expect(fakes.recordAudit).toHaveBeenCalledWith(
+      'disconnect_failed',
+      {
+        provider: 'monday',
+        error: 'database unavailable',
+      },
+      INTEGRATION_ID,
+    );
   });
 });
