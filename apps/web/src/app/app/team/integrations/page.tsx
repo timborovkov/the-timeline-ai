@@ -555,16 +555,16 @@ function AdvancedIntegrationSection({
   if (!hasContent) return null;
   return (
     <section className="space-y-4" aria-labelledby="advanced-integration-tools">
-      <SectionHeading
-        id="advanced-integration-tools"
-        actions={isAdmin ? <AddCustomMcpServerLauncher ownership="team" /> : null}
-      >
-        Advanced integration tools
-      </SectionHeading>
+      <SectionHeading id="advanced-integration-tools">Advanced integration tools</SectionHeading>
       <p className="max-w-2xl text-sm text-fg-muted">
         Use these for agent tool access, custom ingestion, and operator-level recovery. Native
         provider sync stays above.
       </p>
+      {isAdmin ? (
+        <div className="space-y-2">
+          <AddCustomMcpServerLauncher ownership="team" />
+        </div>
+      ) : null}
       <div className="space-y-5 border-y border-border py-5">
         {isAdmin ? <McpEndpointSection /> : null}
         {mcpServerRows.length > 0 ? <McpServersUi hideAddButton servers={mcpServerRows} /> : null}

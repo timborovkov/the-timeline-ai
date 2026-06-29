@@ -29,6 +29,7 @@ import type {
 import { decryptJson, encryptJson } from '#src/crypto/secrets.js';
 import { getEnv } from '#src/env.js';
 import { getProvider } from '#src/integrations/registry.js';
+import { childLogger } from '#src/logger.js';
 import { sendMessage } from '#src/messaging/delivery.js';
 import { rawEventVisibleToUser, validateVisibilityUserIds } from '#src/visibility.js';
 
@@ -38,6 +39,7 @@ import { rawEventVisibleToUser, validateVisibilityUserIds } from '#src/visibilit
 
 const _providerValues = integrationProvider.enumValues;
 export type IntegrationProviderName = (typeof _providerValues)[number];
+const log = childLogger('integrations:scope');
 
 export interface CreateIntegrationInput {
   provider: IntegrationProviderName;
@@ -262,15 +264,22 @@ export function createIntegrationScope(deps: {
         .where(eq(integrationsTable.providerConnectionId, id));
       await tx.delete(providerConnections).where(eq(providerConnections.id, id));
     });
-    await Promise.all(
-      affected.map((row) =>
-        adminRecordConnectionAttention(db, row.teamId, {
-          integrationId: row.integrationId,
-          category: 'needs_new_owner',
-          summary: `${connection.displayName} was deleted; choose a replacement connection.`,
-        }),
-      ),
-    );
+    try {
+      await Promise.all(
+        affected.map((row) =>
+          adminRecordConnectionAttention(db, row.teamId, {
+            integrationId: row.integrationId,
+            category: 'needs_new_owner',
+            summary: `${connection.displayName} was deleted; choose a replacement connection.`,
+          }),
+        ),
+      );
+    } catch (err) {
+      log.warn(
+        { err, providerConnectionId: id },
+        'failed to record provider connection deletion attention',
+      );
+    }
     return true;
   }
 
