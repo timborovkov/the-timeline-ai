@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 
-import { render, screen } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { cleanup, render, screen } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { IntegrationsPageView } from '@/app/app/team/integrations/page';
 
@@ -21,6 +21,10 @@ vi.mock('@/app/actions/visibility', () => ({
   setIntegrationVisibilityDefaultAction: vi.fn(() => Promise.resolve({ ok: true })),
 }));
 
+afterEach(() => {
+  cleanup();
+});
+
 const baseConnectedRow = {
   provider: 'github',
   displayName: 'GitHub — Tim',
@@ -32,7 +36,7 @@ const baseConnectedRow = {
   visibilityDefaultUserIds: null,
 };
 
-function model() {
+function model(): Parameters<typeof IntegrationsPageView>[0]['model'] {
   return {
     isAdmin: true,
     blockingAttentionCount: 1,
@@ -135,5 +139,47 @@ describe('IntegrationsPageView', () => {
       }),
     ).toBe(true);
     expect(topPositions.length).toBe(sectionNames.length);
+  });
+
+  it('keeps the shared-source anchor available when replacement attention has no sources yet', () => {
+    const pageModel = model();
+    pageModel.totalSharedSources = 0;
+    pageModel.teamSourceRows = [];
+    const firstConnectedRow = pageModel.connectedRows[0];
+    if (!firstConnectedRow) throw new Error('Expected connected row fixture');
+    pageModel.connectedRows[0] = {
+      ...firstConnectedRow,
+      attention: [
+        {
+          id: 'attention-2',
+          category: 'needs_new_owner',
+          summary: 'Choose a replacement connection before sync can continue.',
+          lastSeenAt: '2026-06-29T10:00:00.000Z',
+        },
+      ],
+    };
+
+    render(<IntegrationsPageView params={{}} active={{ teamName: 'Acme' }} model={pageModel} />);
+
+    expect(screen.getByRole('heading', { name: 'Available shared sources' })).toBeTruthy();
+    expect(screen.getByText(/No shared provider sources yet/i)).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Choose replacement' }).getAttribute('href')).toBe(
+      '#available-shared-sources',
+    );
+  });
+
+  it('points the MCP OAuth success banner to advanced integration tools', () => {
+    render(
+      <IntegrationsPageView
+        params={{ connected: '1' }}
+        active={{ teamName: 'Acme' }}
+        model={model()}
+      />,
+    );
+
+    expect(
+      screen.getByText(/MCP server connected successfully.*Advanced integration tools/i),
+    ).toBeTruthy();
+    expect(screen.queryByText(/list above/i)).toBeNull();
   });
 });

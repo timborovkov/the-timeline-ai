@@ -71,6 +71,9 @@ export function connectionErrorMessage(error: string | undefined, status?: numbe
     }
     return 'GitHub synced partially. Some selected repos need attention before Timeline can finish syncing them.';
   }
+  if (error.includes('Provider connection deleted')) {
+    return 'The provider account for this sync was deleted. Choose a replacement shared source before syncing again.';
+  }
   switch (error) {
     case 'unauthorized':
     case 'unauthenticated':

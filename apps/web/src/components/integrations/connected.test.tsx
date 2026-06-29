@@ -174,6 +174,25 @@ describe('ConnectedIntegrations', () => {
     expect(screen.getByRole('link', { name: 'Reconnect account' })).toBeTruthy();
   });
 
+  it('does not offer retry sync when a deleted provider connection has no attention row', () => {
+    render(
+      <ConnectedIntegrations
+        connected={[
+          connectedRow({
+            lastError: 'Provider connection deleted — replacement required',
+            attention: [],
+          }),
+        ]}
+      />,
+    );
+
+    expect(screen.getByText(/provider account for this sync was deleted/i)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Retry sync' })).toBeNull();
+    expect(screen.getByRole('link', { name: 'Choose replacement' }).getAttribute('href')).toBe(
+      '#available-shared-sources',
+    );
+  });
+
   it('shows inline disconnect confirmation and removes the row after disconnect', async () => {
     const fetchMock = vi.fn(() => Promise.resolve(new Response(JSON.stringify({ ok: true }))));
     vi.stubGlobal('fetch', fetchMock);

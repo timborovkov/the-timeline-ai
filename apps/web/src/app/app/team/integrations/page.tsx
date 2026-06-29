@@ -340,7 +340,7 @@ export function IntegrationsPageView({
 
       {params.connected ? (
         <div className="rounded-sm border border-signal/40 bg-signal/10 px-3 py-2 text-sm text-signal">
-          MCP server connected successfully. It should now appear in the list above.
+          MCP server connected successfully. It should now appear under Advanced integration tools.
         </div>
       ) : null}
       {params.error ? (
@@ -440,6 +440,11 @@ function IntegrationWorkflow({
   const attentionRows = connectedRows.filter(needsAttention);
   const healthyRows = connectedRows.filter((row) => !needsAttention(row));
   const hasSharedSources = sourceRows.length > 0;
+  const needsSharedSourceReview = attentionRows.some((row) =>
+    row.attention.some(
+      (item) => item.category === 'needs_new_owner' || item.category === 'access_changed',
+    ),
+  );
   const hasActiveImports = connectedRows.length > 0;
   if (!hasSharedSources && !hasActiveImports) return null;
 
@@ -471,7 +476,7 @@ function IntegrationWorkflow({
           </p>
         </section>
       )}
-      {hasSharedSources ? (
+      {hasSharedSources || needsSharedSourceReview ? (
         <section className="space-y-3" aria-labelledby="available-shared-sources">
           <SectionHeading id="available-shared-sources">Available shared sources</SectionHeading>
           <p className="max-w-2xl text-sm text-fg-muted">

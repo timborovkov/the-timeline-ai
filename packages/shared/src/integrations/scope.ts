@@ -29,7 +29,6 @@ import type {
 import { decryptJson, encryptJson } from '#src/crypto/secrets.js';
 import { getEnv } from '#src/env.js';
 import { getProvider } from '#src/integrations/registry.js';
-import { childLogger } from '#src/logger.js';
 import { sendMessage } from '#src/messaging/delivery.js';
 import { rawEventVisibleToUser, validateVisibilityUserIds } from '#src/visibility.js';
 
@@ -39,7 +38,6 @@ import { rawEventVisibleToUser, validateVisibilityUserIds } from '#src/visibilit
 
 const _providerValues = integrationProvider.enumValues;
 export type IntegrationProviderName = (typeof _providerValues)[number];
-const log = childLogger('integrations:scope');
 
 export interface CreateIntegrationInput {
   provider: IntegrationProviderName;
@@ -263,23 +261,59 @@ export function createIntegrationScope(deps: {
         })
         .where(eq(integrationsTable.providerConnectionId, id));
       await tx.delete(providerConnections).where(eq(providerConnections.id, id));
-    });
-    try {
+      const attentionRecordedAt = new Date();
       await Promise.all(
-        affected.map((row) =>
-          adminRecordConnectionAttention(db, row.teamId, {
-            integrationId: row.integrationId,
-            category: 'needs_new_owner',
-            summary: `${connection.displayName} was deleted; choose a replacement connection.`,
-          }),
-        ),
+        affected.map(async (row) => {
+          const summary = `${connection.displayName} was deleted; choose a replacement connection.`;
+          const targetConditions = attentionTargetConditions(
+            { integrationId: row.integrationId },
+            { exact: true },
+          );
+          const conditions = [
+            eq(connectionAttention.teamId, row.teamId),
+            eq(connectionAttention.category, 'needs_new_owner'),
+            isNull(connectionAttention.resolvedAt),
+            ...targetConditions,
+          ];
+          await tx
+            .update(connectionAttention)
+            .set({ resolvedAt: attentionRecordedAt, lastSeenAt: attentionRecordedAt })
+            .where(
+              and(
+                eq(connectionAttention.teamId, row.teamId),
+                inArray(
+                  connectionAttention.category,
+                  connectionAttentionCategoryValues.filter(
+                    (category) => category !== 'needs_new_owner',
+                  ),
+                ),
+                isNull(connectionAttention.resolvedAt),
+                ...targetConditions,
+              ),
+            );
+          const inserted = await tx
+            .insert(connectionAttention)
+            .values({
+              teamId: row.teamId,
+              providerConnectionId: null,
+              integrationId: row.integrationId,
+              resourceShareId: null,
+              category: 'needs_new_owner',
+              summary,
+              firstSeenAt: attentionRecordedAt,
+              lastSeenAt: attentionRecordedAt,
+            })
+            .onConflictDoNothing()
+            .returning({ id: connectionAttention.id });
+          if (!inserted[0]) {
+            await tx
+              .update(connectionAttention)
+              .set({ summary, lastSeenAt: attentionRecordedAt })
+              .where(and(...conditions));
+          }
+        }),
       );
-    } catch (err) {
-      log.warn(
-        { err, providerConnectionId: id },
-        'failed to record provider connection deletion attention',
-      );
-    }
+    });
     return true;
   }
 

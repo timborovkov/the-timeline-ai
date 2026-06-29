@@ -122,6 +122,10 @@ function blockingAttentionAction(
   return null;
 }
 
+function needsReplacementFromLastError(lastError: string | null): boolean {
+  return lastError?.includes('Provider connection deleted') ?? false;
+}
+
 function dedupeAttention(attention: ConnectedAttention[]): ConnectedAttention[] {
   const seen = new Set<string>();
   const deduped: ConnectedAttention[] = [];
@@ -189,9 +193,19 @@ export function ConnectedIntegrations({
         {visibleConnected.map((c) => {
           const pauseText = syncPauseText(c.syncPause);
           const attention = dedupeAttention(c.attention);
-          const blockingAction = blockingAttentionAction(attention);
+          const needsReplacement =
+            attention.length === 0 && needsReplacementFromLastError(c.lastError);
+          const blockingAction =
+            blockingAttentionAction(attention) ??
+            (needsReplacement
+              ? { href: '#available-shared-sources', label: 'Choose replacement' }
+              : null);
           const syncDisabled =
-            busy !== null || !c.enabled || Boolean(c.syncPause) || hasBlockingAttention(attention);
+            busy !== null ||
+            !c.enabled ||
+            Boolean(c.syncPause) ||
+            hasBlockingAttention(attention) ||
+            needsReplacement;
           return (
             <li key={c.id} className="flex flex-col gap-3 px-3 py-2 sm:flex-row sm:items-center">
               <div className="min-w-0 flex-1">
@@ -231,7 +245,7 @@ export function ConnectedIntegrations({
                   <InlineError
                     message={connectionErrorMessage(c.lastError)}
                     details={c.lastError}
-                    onRetry={() => void call('sync', c.id)}
+                    onRetry={needsReplacement ? undefined : () => void call('sync', c.id)}
                     retrying={busy === `sync:${c.id}`}
                     retryLabel="Retry sync"
                     className="mt-2"
