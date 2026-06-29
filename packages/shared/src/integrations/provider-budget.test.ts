@@ -105,9 +105,14 @@ describe('provider budget pauses', () => {
         'updates:read',
         'docs:read',
       ]),
-    ).toEqual(['account:read', 'webhooks:write']);
+    ).toEqual(['account:read', 'webhooks:read', 'webhooks:write']);
     expect(
-      missingRequiredProviderScopes('monday', ['boards:read', 'account:read', 'webhooks:write']),
+      missingRequiredProviderScopes('monday', [
+        'boards:read',
+        'account:read',
+        'webhooks:read',
+        'webhooks:write',
+      ]),
     ).toEqual([]);
     expect(missingRequiredProviderScopes('github', [])).toEqual([]);
   });

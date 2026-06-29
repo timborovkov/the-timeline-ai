@@ -1788,6 +1788,7 @@ describe('withTeam namespaced port', () => {
         'updates:read',
         'docs:read',
         'account:read',
+        'webhooks:read',
         'webhooks:write',
       ],
       tokens: { access_token: 'new-token' },
@@ -1803,6 +1804,7 @@ describe('withTeam namespaced port', () => {
       'updates:read',
       'docs:read',
       'account:read',
+      'webhooks:read',
       'webhooks:write',
     ]);
     await expect(adminDecryptIntegrationTokens(db as never, integration)).resolves.toEqual({
