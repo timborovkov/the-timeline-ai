@@ -424,6 +424,15 @@ function needsAttention(row: ConnectedIntegrationUiRow) {
   return row.attention.length > 0 || Boolean(row.lastError);
 }
 
+function needsSharedSourceRecovery(row: ConnectedIntegrationUiRow) {
+  return (
+    row.attention.some(
+      (item) => item.category === 'needs_new_owner' || item.category === 'access_changed',
+    ) ||
+    (row.lastError?.includes('Provider connection deleted') ?? false)
+  );
+}
+
 function IntegrationWorkflow({
   sourceRows,
   activeShareIds,
@@ -440,11 +449,7 @@ function IntegrationWorkflow({
   const attentionRows = connectedRows.filter(needsAttention);
   const healthyRows = connectedRows.filter((row) => !needsAttention(row));
   const hasSharedSources = sourceRows.length > 0;
-  const needsSharedSourceReview = attentionRows.some((row) =>
-    row.attention.some(
-      (item) => item.category === 'needs_new_owner' || item.category === 'access_changed',
-    ),
-  );
+  const needsSharedSourceReview = attentionRows.some(needsSharedSourceRecovery);
   const hasActiveImports = connectedRows.length > 0;
   if (!hasSharedSources && !hasActiveImports) return null;
 

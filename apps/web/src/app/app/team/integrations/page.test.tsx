@@ -168,6 +168,27 @@ describe('IntegrationsPageView', () => {
     );
   });
 
+  it('keeps the replacement anchor available for deleted-provider errors without attention rows', () => {
+    const pageModel = model();
+    pageModel.totalSharedSources = 0;
+    pageModel.teamSourceRows = [];
+    const firstConnectedRow = pageModel.connectedRows[0];
+    if (!firstConnectedRow) throw new Error('Expected connected row fixture');
+    pageModel.connectedRows[0] = {
+      ...firstConnectedRow,
+      lastError: 'Provider connection deleted — replacement required',
+      attention: [],
+    };
+
+    render(<IntegrationsPageView params={{}} active={{ teamName: 'Acme' }} model={pageModel} />);
+
+    expect(screen.getByRole('heading', { name: 'Available shared sources' })).toBeTruthy();
+    expect(screen.getByText(/No shared provider sources yet/i)).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Choose replacement' }).getAttribute('href')).toBe(
+      '#available-shared-sources',
+    );
+  });
+
   it('points the MCP OAuth success banner to advanced integration tools', () => {
     render(
       <IntegrationsPageView
