@@ -18,7 +18,12 @@ export async function DELETE(
   if (!active) return NextResponse.json({ error: 'no_team' }, { status: 400 });
   const scope = withTeam(db, active.teamId, session.user.id);
   const { id } = await ctx.params;
-  const deleted = await scope.integrations.deleteOwnedProviderConnection(id);
+  let deleted: boolean;
+  try {
+    deleted = await scope.integrations.deleteOwnedProviderConnection(id);
+  } catch {
+    return NextResponse.json({ error: 'disconnect_failed' }, { status: 500 });
+  }
   if (!deleted) return NextResponse.json({ error: 'not_found' }, { status: 404 });
   return NextResponse.json({ ok: true });
 }

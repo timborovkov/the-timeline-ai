@@ -48,14 +48,15 @@ function hasGithubRepoReadFailure(error: string | undefined): boolean {
 }
 
 export function connectionErrorMessage(error: string | undefined, status?: number): string {
+  if (!error) return `Connection failed${status ? ` (${String(status)})` : ''}.`;
   if (
-    error?.includes('github_rate_limited') ||
-    error?.includes('API rate limit exceeded') ||
-    error?.includes('secondary rate limit')
+    error.includes('github_rate_limited') ||
+    error.includes('API rate limit exceeded') ||
+    error.includes('secondary rate limit')
   ) {
     return 'GitHub is rate limiting this connection. Sync will resume automatically after the cooldown window.';
   }
-  if (error?.includes('Pull requests read permission required')) {
+  if (error.includes('Pull requests read permission required')) {
     return 'GitHub needs pull request read access for one or more selected repos. Update the GitHub App permissions, then reconnect.';
   }
   if (hasGithubRepoAccessFailure(error)) {
@@ -64,7 +65,7 @@ export function connectionErrorMessage(error: string | undefined, status?: numbe
   if (hasGithubRepoReadFailure(error)) {
     return 'GitHub returned a temporary error while syncing one or more selected repos. Timeline will keep reconciliation available; try again after GitHub is stable.';
   }
-  if (error?.includes('github_incremental_partial') || error?.includes('github_backfill_partial')) {
+  if (error.includes('github_incremental_partial') || error.includes('github_backfill_partial')) {
     if (error.includes('commits:page_cap')) {
       return 'GitHub has more commit history to catch up. Timeline saved the current checkpoint and the next sync will continue from there.';
     }
@@ -86,7 +87,11 @@ export function connectionErrorMessage(error: string | undefined, status?: numbe
       return 'Could not start the connection. The provider may be temporarily unavailable — try again in a moment.';
     case 'no_active_team':
       return 'Choose a team before managing connections.';
+    case 'disconnect_failed':
+      return 'Could not disconnect this connection. Try again, then check the server logs if it keeps failing.';
+    case 'request_failed':
+      return `Connection request failed${status ? ` (${String(status)})` : ''}. Try again in a moment.`;
     default:
-      return error ?? `Connection failed${status ? ` (${String(status)})` : ''}.`;
+      return error;
   }
 }

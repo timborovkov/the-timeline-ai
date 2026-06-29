@@ -70,4 +70,15 @@ describe('DELETE /api/connections/[id]', () => {
     expect(response.status).toBe(404);
     await expect(response.json()).resolves.toEqual({ error: 'not_found' });
   });
+
+  it('returns a JSON error when provider connection deletion fails', async () => {
+    fakes.deleteOwnedProviderConnection.mockRejectedValueOnce(new Error('database unavailable'));
+
+    const response = await DELETE(new Request('https://timeline.test'), {
+      params: Promise.resolve({ id: CONNECTION_ID }),
+    });
+
+    expect(response.status).toBe(500);
+    await expect(response.json()).resolves.toEqual({ error: 'disconnect_failed' });
+  });
 });

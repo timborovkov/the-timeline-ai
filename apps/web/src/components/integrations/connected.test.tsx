@@ -14,6 +14,7 @@ vi.mock('@/app/actions/visibility', () => ({
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
   cleanup();
 });
 
@@ -198,5 +199,40 @@ describe('ConnectedIntegrations', () => {
     });
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(routerRefresh).toHaveBeenCalled();
+  });
+
+  it('shows a readable disconnect error when the server returns an empty failure body', async () => {
+    const fetchMock = vi.fn(() => Promise.resolve(new Response('', { status: 500 })));
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<ConnectedIntegrations connected={[connectedRow()]} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Disconnect' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm disconnect' }));
+
+    expect(await screen.findByText('Connection failed (500).')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Confirm disconnect' })).toBeTruthy();
+    expect(screen.getByText('Monday.com — Acme')).toBeTruthy();
+  });
+
+  it('maps JSON disconnect errors to user-facing copy', async () => {
+    const fetchMock = vi.fn(() =>
+      Promise.resolve(
+        new Response(JSON.stringify({ error: 'forbidden' }), {
+          status: 403,
+          headers: { 'content-type': 'application/json' },
+        }),
+      ),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<ConnectedIntegrations connected={[connectedRow()]} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Disconnect' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm disconnect' }));
+
+    expect(
+      await screen.findByText('Only an admin can do this. Ask a team admin to help.'),
+    ).toBeTruthy();
   });
 });

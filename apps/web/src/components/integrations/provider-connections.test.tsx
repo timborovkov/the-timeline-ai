@@ -16,6 +16,7 @@ vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
   cleanup();
 });
 
@@ -384,6 +385,40 @@ describe('TeamSourcesUi', () => {
     expect(
       await screen.findByText(/Monday GraphQL errors: Unauthorized field or type/i),
     ).toBeTruthy();
+  });
+
+  it('maps provider account delete JSON errors to readable copy', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(globalThis, 'fetch').mockImplementation((_input, init) => {
+      if (init?.method === 'DELETE') {
+        return Promise.resolve(
+          new Response(JSON.stringify({ error: 'disconnect_failed' }), { status: 500 }),
+        );
+      }
+      return Promise.resolve(
+        new Response(JSON.stringify({ resources: [], shares: [] }), { status: 200 }),
+      );
+    });
+
+    renderWithQueryClient(
+      <PersonalConnectionsUi
+        connections={[
+          {
+            id: 'github',
+            provider: 'github',
+            displayName: 'GitHub — Tim',
+            lastError: null,
+            lastConnectedAt: '2026-06-01T00:00:00.000Z',
+          },
+        ]}
+      />,
+    );
+
+    await screen.findByText('GitHub — Tim');
+    await user.click(screen.getByRole('button', { name: 'Delete account' }));
+    await user.click(screen.getByRole('button', { name: 'Delete provider account' }));
+
+    expect(await screen.findByText(/Could not disconnect this connection/i)).toBeTruthy();
   });
 
   it('explains that admins activate shared team sources', () => {

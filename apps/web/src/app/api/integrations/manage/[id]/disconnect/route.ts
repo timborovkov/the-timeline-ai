@@ -55,7 +55,23 @@ export async function POST(
   }
   const integration = await scope.integrations.getIntegration(id);
   if (!integration) return NextResponse.json({ error: 'not_found' }, { status: 404 });
-  await deprovisionWebhooksBestEffort(scope, integration);
-  await deleteIntegrationAndRecordDisconnect(scope, integration);
-  return NextResponse.json({ ok: true });
+  try {
+    await deprovisionWebhooksBestEffort(scope, integration);
+    await deleteIntegrationAndRecordDisconnect(scope, integration);
+    return NextResponse.json({ ok: true });
+  } catch (err) {
+    try {
+      await scope.integrations.recordAudit(
+        'disconnect_failed',
+        {
+          provider: integration.provider,
+          error: err instanceof Error ? err.message.slice(0, 500) : String(err).slice(0, 500),
+        },
+        integration.id,
+      );
+    } catch {
+      // Preserve the client-facing error response even if audit persistence is also down.
+    }
+    return NextResponse.json({ error: 'disconnect_failed' }, { status: 500 });
+  }
 }

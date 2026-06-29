@@ -46,6 +46,29 @@ const DATE_FORMAT = new Intl.DateTimeFormat('en-US', {
   timeZone: 'UTC',
 });
 
+interface ConnectionRequestError {
+  id: string;
+  message: string | undefined;
+  status: number;
+  details?: string;
+}
+
+async function readConnectionRequestError(
+  res: Response,
+): Promise<Omit<ConnectionRequestError, 'id'>> {
+  const text = await res.text();
+  if (!text) return { message: undefined, status: res.status };
+  try {
+    const data = JSON.parse(text) as { error?: unknown };
+    if (typeof data.error === 'string' && data.error.length > 0) {
+      return { message: data.error, status: res.status, details: text };
+    }
+  } catch {
+    // Non-JSON error bodies still carry useful operational details.
+  }
+  return { message: text, status: res.status, details: text };
+}
+
 function syncPauseText(syncPause: ConnectedRow['syncPause']): string | null {
   if (!syncPause) return null;
   const retryAt = new Date(syncPause.retryAt);
@@ -105,7 +128,7 @@ export function ConnectedIntegrations({
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState<string | null>(null);
-  const [retryError, setRetryError] = useState<{ id: string; message: string } | null>(null);
+  const [retryError, setRetryError] = useState<ConnectionRequestError | null>(null);
   const [confirmDisconnectId, setConfirmDisconnectId] = useState<string | null>(null);
   const [locallyDisconnectedIds, setLocallyDisconnectedIds] = useState<Set<string>>(
     () => new Set(),
@@ -122,8 +145,7 @@ export function ConnectedIntegrations({
     try {
       const res = await fetch(`/api/integrations/manage/${id}/${method}`, { method: 'POST' });
       if (!res.ok) {
-        const text = await res.text();
-        setRetryError({ id, message: text });
+        setRetryError({ id, ...(await readConnectionRequestError(res)) });
         return;
       }
       if (method === 'disconnect') {
@@ -136,7 +158,11 @@ export function ConnectedIntegrations({
       }
       router.refresh();
     } catch (err) {
-      setRetryError({ id, message: err instanceof Error ? err.message : 'Request failed' });
+      setRetryError({
+        id,
+        message: err instanceof Error ? err.message : 'request_failed',
+        status: 0,
+      });
     } finally {
       setBusy(null);
     }
@@ -176,8 +202,8 @@ export function ConnectedIntegrations({
                   </output>
                 ) : retryError?.id === c.id ? (
                   <InlineError
-                    message={connectionErrorMessage(retryError.message)}
-                    details={retryError.message}
+                    message={connectionErrorMessage(retryError.message, retryError.status)}
+                    details={retryError.details ?? retryError.message}
                     onRetry={() => {
                       setRetryError(null);
                     }}

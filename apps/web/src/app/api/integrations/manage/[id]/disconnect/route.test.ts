@@ -129,4 +129,21 @@ describe('/api/integrations/manage/[id]/disconnect', () => {
     expect(fakes.deleteIntegration).toHaveBeenCalledWith(INTEGRATION_ID);
     expect(fakes.recordAudit).toHaveBeenCalledWith('disconnect', { provider: 'monday' }, null);
   });
+
+  it('returns a JSON error when disconnect deletion fails', async () => {
+    fakes.deleteIntegration.mockRejectedValueOnce(new Error('database unavailable'));
+
+    const response = await POST(new Request('https://timeline.test'), params());
+
+    expect(response.status).toBe(500);
+    await expect(response.json()).resolves.toEqual({ error: 'disconnect_failed' });
+    expect(fakes.recordAudit).toHaveBeenCalledWith(
+      'disconnect_failed',
+      {
+        provider: 'monday',
+        error: 'database unavailable',
+      },
+      INTEGRATION_ID,
+    );
+  });
 });
