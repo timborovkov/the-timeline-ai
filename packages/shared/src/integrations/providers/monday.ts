@@ -23,6 +23,7 @@ const SCOPES = [
   'updates:read',
   'docs:read',
   'account:read',
+  'webhooks:read',
   'webhooks:write',
 ];
 const BOARD_PAGE_LIMIT = 100;

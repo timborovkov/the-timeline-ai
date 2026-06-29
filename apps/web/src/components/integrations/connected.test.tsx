@@ -69,7 +69,7 @@ describe('ConnectedIntegrations', () => {
                 id: 'attention-1',
                 category: 'needs_reconnect',
                 summary:
-                  'Reconnect Monday.com to grant account:read and webhooks:write before webhook provisioning can resume.',
+                  'Reconnect Monday.com to grant account:read, webhooks:read, and webhooks:write before webhook provisioning can resume.',
                 lastSeenAt: '2026-06-28T12:00:00.000Z',
               },
             ],
@@ -97,14 +97,14 @@ describe('ConnectedIntegrations', () => {
                 id: 'attention-1',
                 category: 'needs_reconnect',
                 summary:
-                  'monday connection is missing required OAuth scopes (account:read, webhooks:write); reconnect to enable webhook provisioning and account-scoped provider budgets.',
+                  'monday connection is missing required OAuth scopes (account:read, webhooks:read, webhooks:write); reconnect to enable webhook provisioning and account-scoped provider budgets.',
                 lastSeenAt: '2026-06-28T12:00:00.000Z',
               },
               {
                 id: 'attention-2',
                 category: 'needs_reconnect',
                 summary:
-                  'monday connection is missing required OAuth scopes (account:read, webhooks:write); reconnect to enable webhook provisioning and account-scoped provider budgets.',
+                  'monday connection is missing required OAuth scopes (account:read, webhooks:read, webhooks:write); reconnect to enable webhook provisioning and account-scoped provider budgets.',
                 lastSeenAt: '2026-06-28T12:01:00.000Z',
               },
             ],

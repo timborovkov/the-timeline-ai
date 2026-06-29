@@ -178,7 +178,11 @@ describe('POST /api/team/integrations/activate', () => {
       providerConnectionId: CONNECTION_ID,
       scopes: ['boards:read', 'users:read', 'updates:read', 'docs:read'],
     });
-    fakes.missingRequiredProviderScopes.mockReturnValueOnce(['account:read', 'webhooks:write']);
+    fakes.missingRequiredProviderScopes.mockReturnValueOnce([
+      'account:read',
+      'webhooks:read',
+      'webhooks:write',
+    ]);
 
     const response = await POST(
       request({ providerConnectionId: CONNECTION_ID, resourceShareIds: [SHARE_ID] }),
@@ -190,7 +194,7 @@ describe('POST /api/team/integrations/activate', () => {
       'webhook_provision_skipped_missing_scopes',
       {
         provider: 'monday',
-        missingScopes: ['account:read', 'webhooks:write'],
+        missingScopes: ['account:read', 'webhooks:read', 'webhooks:write'],
       },
       INTEGRATION_ID,
     );
@@ -199,7 +203,7 @@ describe('POST /api/team/integrations/activate', () => {
       integrationId: INTEGRATION_ID,
       category: 'needs_reconnect',
       summary:
-        'monday connection is missing required OAuth scopes (account:read, webhooks:write); reconnect to enable webhook provisioning and account-scoped provider budgets.',
+        'monday connection is missing required OAuth scopes (account:read, webhooks:read, webhooks:write); reconnect to enable webhook provisioning and account-scoped provider budgets.',
     });
   });
 

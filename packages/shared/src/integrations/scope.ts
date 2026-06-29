@@ -8,6 +8,7 @@ import {
   integrationProvider,
   integrationSelections,
   integrationSyncState,
+  integrationWebhookDeliveryTargets,
   integrationWebhookSubscriptions,
   integrations as integrationsTable,
   notifications,
@@ -513,6 +514,25 @@ export function createIntegrationScope(deps: {
         .limit(1);
       const existing = existingRows[0];
       if (!existing) return;
+      await tx
+        .delete(connectionAttention)
+        .where(
+          and(eq(connectionAttention.teamId, teamId), eq(connectionAttention.integrationId, id)),
+        );
+      await tx
+        .delete(integrationWebhookDeliveryTargets)
+        .where(
+          and(
+            eq(integrationWebhookDeliveryTargets.teamId, teamId),
+            eq(integrationWebhookDeliveryTargets.integrationId, id),
+          ),
+        );
+      await tx
+        .delete(integrationWebhookSubscriptions)
+        .where(eq(integrationWebhookSubscriptions.integrationId, id));
+      await tx.delete(integrationSelections).where(eq(integrationSelections.integrationId, id));
+      await tx.delete(integrationSyncState).where(eq(integrationSyncState.integrationId, id));
+      await tx.delete(integrationAuditLog).where(eq(integrationAuditLog.integrationId, id));
       await tx
         .delete(integrationsTable)
         .where(and(eq(integrationsTable.id, id), eq(integrationsTable.teamId, teamId)));
