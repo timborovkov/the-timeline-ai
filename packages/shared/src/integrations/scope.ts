@@ -29,6 +29,7 @@ import type {
 import { decryptJson, encryptJson } from '#src/crypto/secrets.js';
 import { getEnv } from '#src/env.js';
 import { getProvider } from '#src/integrations/registry.js';
+import { childLogger } from '#src/logger.js';
 import { sendMessage } from '#src/messaging/delivery.js';
 import { rawEventVisibleToUser, validateVisibilityUserIds } from '#src/visibility.js';
 
@@ -90,6 +91,7 @@ type NativeProviderName = Exclude<IntegrationProviderName, 'mcp'>;
 const transientSyncResourceType = 'integration.run';
 const transientSyncAttentionThreshold = 3;
 const githubRateLimitedUntilKey = 'github_rate_limited_until';
+const log = childLogger('integrations:scope');
 const connectionAttentionCategoryValues: ConnectionAttentionInput['category'][] = [
   'needs_reconnect',
   'needs_new_owner',
@@ -251,6 +253,11 @@ export function createIntegrationScope(deps: {
       .select({ teamId: integrationsTable.teamId, integrationId: integrationsTable.id })
       .from(integrationsTable)
       .where(eq(integrationsTable.providerConnectionId, id));
+    const pendingNotifications: {
+      teamId: string;
+      input: ConnectionAttentionInput;
+      attentionId: string;
+    }[] = [];
     await db.transaction(async (tx) => {
       await tx
         .update(integrationsTable)
@@ -262,58 +269,84 @@ export function createIntegrationScope(deps: {
         .where(eq(integrationsTable.providerConnectionId, id));
       await tx.delete(providerConnections).where(eq(providerConnections.id, id));
       const attentionRecordedAt = new Date();
-      await Promise.all(
-        affected.map(async (row) => {
-          const summary = `${connection.displayName} was deleted; choose a replacement connection.`;
-          const targetConditions = attentionTargetConditions(
-            { integrationId: row.integrationId },
-            { exact: true },
+      for (const row of affected) {
+        const input: ConnectionAttentionInput = {
+          integrationId: row.integrationId,
+          category: 'needs_new_owner',
+          summary: `${connection.displayName} was deleted; choose a replacement connection.`,
+        };
+        const targetConditions = attentionTargetConditions(
+          { integrationId: row.integrationId },
+          { exact: true },
+        );
+        const conditions = [
+          eq(connectionAttention.teamId, row.teamId),
+          eq(connectionAttention.category, 'needs_new_owner'),
+          isNull(connectionAttention.resolvedAt),
+          ...targetConditions,
+        ];
+        await tx
+          .update(connectionAttention)
+          .set({ resolvedAt: attentionRecordedAt, lastSeenAt: attentionRecordedAt })
+          .where(
+            and(
+              eq(connectionAttention.teamId, row.teamId),
+              inArray(
+                connectionAttention.category,
+                connectionAttentionCategoryValues.filter(
+                  (category) => category !== 'needs_new_owner',
+                ),
+              ),
+              isNull(connectionAttention.resolvedAt),
+              ...targetConditions,
+            ),
           );
-          const conditions = [
-            eq(connectionAttention.teamId, row.teamId),
-            eq(connectionAttention.category, 'needs_new_owner'),
-            isNull(connectionAttention.resolvedAt),
-            ...targetConditions,
-          ];
+        const inserted = await tx
+          .insert(connectionAttention)
+          .values({
+            teamId: row.teamId,
+            providerConnectionId: null,
+            integrationId: row.integrationId,
+            resourceShareId: null,
+            category: input.category,
+            summary: input.summary,
+            firstSeenAt: attentionRecordedAt,
+            lastSeenAt: attentionRecordedAt,
+          })
+          .onConflictDoNothing()
+          .returning({ id: connectionAttention.id });
+        const attentionId = inserted[0]?.id ?? null;
+        if (attentionId) {
+          pendingNotifications.push({ teamId: row.teamId, input, attentionId });
+        } else {
           await tx
             .update(connectionAttention)
-            .set({ resolvedAt: attentionRecordedAt, lastSeenAt: attentionRecordedAt })
-            .where(
-              and(
-                eq(connectionAttention.teamId, row.teamId),
-                inArray(
-                  connectionAttention.category,
-                  connectionAttentionCategoryValues.filter(
-                    (category) => category !== 'needs_new_owner',
-                  ),
-                ),
-                isNull(connectionAttention.resolvedAt),
-                ...targetConditions,
-              ),
-            );
-          const inserted = await tx
-            .insert(connectionAttention)
-            .values({
-              teamId: row.teamId,
-              providerConnectionId: null,
-              integrationId: row.integrationId,
-              resourceShareId: null,
-              category: 'needs_new_owner',
-              summary,
-              firstSeenAt: attentionRecordedAt,
-              lastSeenAt: attentionRecordedAt,
-            })
-            .onConflictDoNothing()
-            .returning({ id: connectionAttention.id });
-          if (!inserted[0]) {
-            await tx
-              .update(connectionAttention)
-              .set({ summary, lastSeenAt: attentionRecordedAt })
-              .where(and(...conditions));
-          }
-        }),
-      );
+            .set({ summary: input.summary, lastSeenAt: attentionRecordedAt })
+            .where(and(...conditions));
+        }
+      }
     });
+    for (const notification of pendingNotifications) {
+      try {
+        const shouldEmail = await shouldEmailConnectionAttention(
+          db,
+          notification.teamId,
+          notification.input,
+        );
+        await notifyConnectionAttentionActors(
+          db,
+          notification.teamId,
+          notification.input,
+          notification.attentionId,
+          shouldEmail,
+        );
+      } catch (err) {
+        log.warn(
+          { err, providerConnectionId: id, integrationId: notification.input.integrationId },
+          'failed to notify provider connection deletion attention',
+        );
+      }
+    }
     return true;
   }
 
