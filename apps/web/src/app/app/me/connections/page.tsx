@@ -15,8 +15,8 @@ import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 
 export const metadata: Metadata = {
-  title: 'Personal connections',
-  description: 'Manage provider accounts you have granted to Timeline.',
+  title: 'Provider accounts',
+  description: 'Manage personal provider accounts you have granted to Timeline.',
 };
 
 export const dynamic = 'force-dynamic';
@@ -44,28 +44,28 @@ export default async function PersonalConnectionsPage({
         items={[
           { label: 'Team', href: '/app/team' },
           { label: 'Integrations', href: '/app/team/integrations' },
-          { label: 'Personal connections' },
+          { label: 'Provider accounts' },
         ]}
       />
 
       <PageHeader
-        title="Personal connections"
-        subtitle="Manage provider accounts you have granted to Timeline."
-        srLabel={`Personal connections · ${String(connections.length)} connected`}
+        title="Provider accounts"
+        subtitle="Manage personal OAuth accounts and share allowed sources to the active team."
+        srLabel={`Provider accounts · ${String(connections.length)} connected`}
         metadata={[
           { label: 'team', value: active.teamName, signal: true },
-          { label: 'owned', value: connections.length },
+          { label: 'accounts', value: connections.length },
         ]}
       />
 
       <div className="flex flex-wrap items-center gap-2 border-y border-border py-2">
-        <ActionChip href="/app/team/integrations" label="Team integrations ->" />
+        <ActionChip href="/app/team/integrations" label="Team sync ->" />
         <ActionChip href="/app/me/mcp-servers" label="Personal MCP ->" />
       </div>
 
       {params.connected ? (
         <div className="rounded-sm border border-signal/40 bg-signal/10 px-3 py-2 text-sm text-signal">
-          Connected {params.connected}. Choose the sources this team may use.
+          Connected {params.connected}. Choose which sources this team may use.
         </div>
       ) : null}
       {params.error ? (
@@ -75,7 +75,7 @@ export default async function PersonalConnectionsPage({
       ) : null}
 
       <section className="space-y-3">
-        <SectionHeading>Your provider connections</SectionHeading>
+        <SectionHeading>Your provider accounts</SectionHeading>
         <PersonalConnectionsUi
           connections={connections.map((connection) => ({
             id: connection.id,
@@ -88,7 +88,11 @@ export default async function PersonalConnectionsPage({
       </section>
 
       <section className="space-y-3">
-        <SectionHeading>Connect another account</SectionHeading>
+        <SectionHeading>Connect another provider account</SectionHeading>
+        <p className="text-sm text-fg-muted">
+          If the provider reuses the wrong account, switch accounts on the provider OAuth page or
+          sign out of the provider before approving.
+        </p>
         <IntegrationsCatalog catalog={nativeCatalog} />
       </section>
     </div>

@@ -1121,10 +1121,15 @@ describe('mondayProvider', () => {
         return Promise.resolve(jsonResponse({ data: { boards: [{ activity_logs: [] }] } }));
       }
       if (body.query.includes('items_page')) {
+        expect(body.query).toContain('$updatedSinceCompareValue: CompareValue!');
+        expect(body.query).toContain('compare_value: $updatedSinceCompareValue');
+        expect(body.query).not.toContain('$updatedSinceDay: String!');
         expect(body.query).toContain('column_id: "__last_updated__"');
         expect(body.query).toContain('compare_attribute: "UPDATED_AT"');
         expect(body.query).toContain('operator: greater_than_or_equals');
-        expect(body.variables).toMatchObject({ updatedSinceDay: '2026-06-19' });
+        expect(body.variables).toMatchObject({
+          updatedSinceCompareValue: ['EXACT', '2026-06-19'],
+        });
         return Promise.resolve(
           jsonResponse({
             data: {

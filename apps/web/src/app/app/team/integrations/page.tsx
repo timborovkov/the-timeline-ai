@@ -25,8 +25,8 @@ import { db } from '@/lib/db';
 import { connectionErrorMessage } from '@/lib/ux-errors';
 
 export const metadata: Metadata = {
-  title: 'Integrations',
-  description: 'Connect and manage third-party integrations.',
+  title: 'Team integration sync',
+  description: 'Choose which shared provider sources this team imports.',
 };
 
 export const dynamic = 'force-dynamic';
@@ -307,13 +307,13 @@ export default async function IntegrationsPage({
       <Breadcrumb items={[{ label: 'Team', href: '/app/team' }, { label: 'Integrations' }]} />
 
       <PageHeader
-        title="Integrations"
-        subtitle="Connect and manage third-party integrations."
-        srLabel={`Integrations · ${String(model.totalConnected)} connected · ${String(model.totalCatalog)} in catalog`}
+        title="Team integration sync"
+        subtitle="Choose which shared provider sources this team imports as cited evidence."
+        srLabel={`Team integration sync · ${String(model.totalConnected)} active syncs · ${String(model.totalCatalog)} providers in catalog`}
         metadata={[
           { label: 'team', value: active.teamName, signal: true },
-          { label: 'connected', value: model.totalConnected },
-          { label: 'catalog', value: model.totalCatalog },
+          { label: 'active syncs', value: model.totalConnected },
+          { label: 'providers', value: model.totalCatalog },
         ]}
       />
 
@@ -390,7 +390,7 @@ function IntegrationPageActions({ isAdmin }: { isAdmin: boolean }) {
         <div className="mt-2 flex flex-wrap items-center gap-2 border-y border-border py-2">
           <ActionChip href="/app/team/integrations/audit" label="Audit log →" />
           {isAdmin ? <ActionChip href="/app/team/jobs" label="Job recovery →" /> : null}
-          <ActionChip href="/app/me/connections" label="Personal connections →" />
+          <ActionChip href="/app/me/connections" label="Provider accounts →" />
           <ActionChip href="/app/me/mcp-servers" label="Personal MCP →" />
         </div>
       </details>
@@ -439,10 +439,17 @@ function ConnectedSection({
 }) {
   return (
     <section className="space-y-3">
-      <SectionHeading>Connected</SectionHeading>
+      <SectionHeading>Team sync</SectionHeading>
+      <p className="max-w-2xl text-sm text-fg-muted">
+        Provider account owners share sources first. Team admins choose which shared sources sync
+        into the timeline.
+      </p>
       <TeamSourcesUi rows={sourceRows} activeShareIds={activeShareIds} isAdmin={isAdmin} />
       {connectedRows.length > 0 ? (
-        <ConnectedIntegrations connected={connectedRows} members={connectedMembers} />
+        <div className="space-y-2">
+          <h3 className="text-sm font-medium text-fg">Active imports</h3>
+          <ConnectedIntegrations connected={connectedRows} members={connectedMembers} />
+        </div>
       ) : null}
       {mcpServerRows.length > 0 ? <McpServersUi hideAddButton servers={mcpServerRows} /> : null}
     </section>
@@ -456,9 +463,10 @@ function NativeIntegrationsSection({
 }) {
   return (
     <section className="space-y-3">
-      <SectionHeading>Native integrations</SectionHeading>
+      <SectionHeading>Connect provider account</SectionHeading>
       <p className="text-sm text-fg-muted">
-        Native providers sync selected external resources directly into Timeline as cited events.
+        Connect your own provider account first. After OAuth, choose which sources this team may
+        use, then return here to activate team sync.
       </p>
       <IntegrationsCatalog catalog={catalog} />
     </section>

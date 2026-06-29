@@ -18,7 +18,7 @@ import {
   teams,
   users,
 } from '@timeline/db';
-import { and, desc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNotNull, isNull, lte, or, sql } from 'drizzle-orm';
 
 import type {
   IntegrationRow,
@@ -1970,8 +1970,8 @@ export async function adminReconcileExpiringWebhookSubscriptions(
     .where(
       and(
         eq(integrationWebhookSubscriptions.status, 'active'),
-        sql`${integrationWebhookSubscriptions.expiresAt} IS NOT NULL`,
-        sql`${integrationWebhookSubscriptions.expiresAt} <= ${threshold}`,
+        isNotNull(integrationWebhookSubscriptions.expiresAt),
+        lte(integrationWebhookSubscriptions.expiresAt, threshold),
       ),
     );
 
