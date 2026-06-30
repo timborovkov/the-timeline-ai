@@ -51,6 +51,23 @@ function isBlockingConnectionAttention(category: ConnectedIntegrationAttention['
   return category !== 'webhook_degraded';
 }
 
+export function visibleConnectionAttentionStats(connectedRows: ConnectedIntegrationUiRow[]) {
+  const visibleAttention = new Map<string, ConnectedIntegrationAttention>();
+  for (const row of connectedRows) {
+    for (const item of row.attention) {
+      visibleAttention.set(item.id, item);
+    }
+  }
+  const attention = [...visibleAttention.values()];
+  const blockingAttentionCount = attention.filter((item) =>
+    isBlockingConnectionAttention(item.category),
+  ).length;
+  return {
+    blockingAttentionCount,
+    webhookDegradedCount: attention.length - blockingAttentionCount,
+  };
+}
+
 function ingestWebhookListFromRows(
   rows: {
     webhook: typeof ingestWebhooks.$inferSelect;
@@ -250,10 +267,8 @@ async function loadIntegrationsPageModel(input: { teamId: string; userId: string
   const totalConnected = connected.length + mcpServers.length;
   const totalCatalog = nativeCatalog.length + mcpCatalogAvailable.length;
   const totalSharedSources = resourceShares.length;
-  const blockingAttentionCount = attention.filter((item) =>
-    isBlockingConnectionAttention(item.category),
-  ).length;
-  const webhookDegradedCount = attention.length - blockingAttentionCount;
+  const { blockingAttentionCount, webhookDegradedCount } =
+    visibleConnectionAttentionStats(connectedRows);
 
   return {
     isAdmin,
