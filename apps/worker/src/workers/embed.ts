@@ -23,6 +23,11 @@ interface EmbedWorkerIO {
   enqueueEmbedJob?: typeof queue.enqueueEmbedJob;
 }
 
+interface EmbedAttemptContext {
+  attemptsMade: number;
+  maxAttempts: number;
+}
+
 function embedFailureTags(job: Pick<Job<queue.EmbedJobData>, 'data'> | undefined) {
   const data = job?.data;
   if (!data || typeof data !== 'object') return {};
@@ -122,9 +127,39 @@ function embeddingBatchErrorMessage(err: unknown): string {
   return String(err).toLowerCase();
 }
 
-function shouldSplitEmbeddingBatch(err: unknown): boolean {
-  const message = embeddingBatchErrorMessage(err);
+function embeddingBatchErrorName(err: unknown): string {
+  if (!err || typeof err !== 'object') return '';
+  const row = err as { name?: unknown; causeName?: unknown; cause?: unknown };
+  const ownName = typeof row.name === 'string' ? row.name : '';
+  const causeName = typeof row.causeName === 'string' ? row.causeName : '';
+  const nestedName = row.cause ? embeddingBatchErrorName(row.cause) : '';
+  return [ownName, causeName, nestedName].filter(Boolean).join(' ');
+}
+
+function isRetryableProviderOutageMessage(message: string): boolean {
   return (
+    message.includes('429') ||
+    message.includes('5xx') ||
+    /\b5\d\d\b/.test(message) ||
+    message.includes('rate limit') ||
+    message.includes('timeout') ||
+    message.includes('temporar') ||
+    message.includes('unavailable') ||
+    message.includes('overloaded') ||
+    message.includes('network') ||
+    message.includes('econn')
+  );
+}
+
+function isLastQueueAttempt(attempt: EmbedAttemptContext | undefined): boolean {
+  return Boolean(
+    attempt && attempt.maxAttempts > 0 && attempt.attemptsMade + 1 >= attempt.maxAttempts,
+  );
+}
+
+function shouldSplitEmbeddingBatch(err: unknown, attempt?: EmbedAttemptContext): boolean {
+  const message = embeddingBatchErrorMessage(err);
+  const explicitBatchLimit =
     message.includes('413') ||
     message.includes('payload too large') ||
     message.includes('request body') ||
@@ -133,7 +168,13 @@ function shouldSplitEmbeddingBatch(err: unknown): boolean {
     message.includes('too many values') ||
     message.includes('max tokens') ||
     message.includes('maximum context') ||
-    message.includes('context length')
+    message.includes('context length');
+  if (explicitBatchLimit) return true;
+
+  return (
+    isLastQueueAttempt(attempt) &&
+    embeddingBatchErrorName(err).includes('AI_APICallError') &&
+    !isRetryableProviderOutageMessage(message)
   );
 }
 
@@ -166,14 +207,15 @@ function validateEmbedManyResult(result: llm.EmbedManyResult, expectedCount: num
 async function embedTextBatch(
   embedMany: NonNullable<EmbedWorkerIO['embedMany']>,
   texts: string[],
+  attempt?: EmbedAttemptContext,
 ): Promise<llm.EmbedManyResult> {
   try {
     return await embedMany({ texts });
   } catch (err) {
-    if (texts.length <= 1 || !shouldSplitEmbeddingBatch(err)) throw err;
+    if (texts.length <= 1 || !shouldSplitEmbeddingBatch(err, attempt)) throw err;
     const midpoint = Math.ceil(texts.length / 2);
-    const first = await embedTextBatch(embedMany, texts.slice(0, midpoint));
-    const second = await embedTextBatch(embedMany, texts.slice(midpoint));
+    const first = await embedTextBatch(embedMany, texts.slice(0, midpoint), attempt);
+    const second = await embedTextBatch(embedMany, texts.slice(midpoint), attempt);
     if (first.model !== second.model) {
       throw new Error(
         `embedMany split batches returned different models: ${first.model}, ${second.model}`,
@@ -222,6 +264,7 @@ async function processEmbedJob(
   deps: EmbedWorkerDeps,
   data: queue.EmbedJobData,
   io: EmbedWorkerIO = {},
+  attempt?: EmbedAttemptContext,
 ) {
   const env = (io.getEnv ?? getEnv)();
   if (!env.OPENROUTER_API_KEY) {
@@ -305,6 +348,7 @@ async function processEmbedJob(
   const result = await embedTextBatch(
     embedMany,
     chunksForJob.map((chunk) => chunk.text),
+    attempt,
   );
   validateEmbedManyResult(result, chunksForJob.length);
   const embeddedChunks = chunksForJob.map((chunk, index) => ({
@@ -376,7 +420,15 @@ export function startEmbedWorker(deps: EmbedWorkerDeps): Worker<queue.EmbedJobDa
   const worker = new Worker<queue.EmbedJobData>(
     queue.QUEUE_NAMES.embed,
     async (job: Job<queue.EmbedJobData>) => {
-      return processEmbedJob(deps, job.data);
+      return processEmbedJob(
+        deps,
+        job.data,
+        {},
+        {
+          attemptsMade: job.attemptsMade,
+          maxAttempts: job.opts.attempts ?? 1,
+        },
+      );
     },
     {
       connection: queue.getRedisConnection(),
@@ -440,8 +492,9 @@ export async function processEmbedJobForTests(
   deps: EmbedWorkerDeps,
   data: queue.EmbedJobData,
   io: EmbedWorkerIO = {},
+  attempt?: EmbedAttemptContext,
 ) {
-  return processEmbedJob(deps, data, io);
+  return processEmbedJob(deps, data, io, attempt);
 }
 
 export const embedWorkerInternals = {

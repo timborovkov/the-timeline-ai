@@ -415,6 +415,69 @@ describe('processEmbedJobForTests', () => {
     expect(upsertVector).toHaveBeenCalledTimes(embedWorkerInternals.embeddingChunksPerJob);
   });
 
+  it('splits provider API batch failures on the final queue attempt', async () => {
+    const rawEventId = '17171717-2222-4333-8444-555555555555';
+    const longText = Array.from(
+      { length: 10_000 },
+      (_, i) => `Final attempt batch sentence ${String(i)} with detail.`,
+    ).join(' ');
+    await db.insert(rawEvents).values({
+      id: rawEventId,
+      teamId: TEAM_ID,
+      authorUserId: USER_ID,
+      source: 'web',
+      contentText: longText,
+      occurredAt: new Date('2026-05-27T12:00:00Z'),
+      visibility: 'team',
+      visibilityOwnerUserId: USER_ID,
+      sourceMetadata: {},
+    });
+    const batchError = Object.assign(new Error('llm.embedMany failed'), {
+      timelineAi: true,
+      causeName: 'AI_APICallError',
+      causeMessage: 'OpenRouter returned an invalid embedding batch response',
+    });
+    const embedMany = vi.fn<
+      (input: { texts: string[] }) => Promise<{ vectors: number[][]; model: string }>
+    >(({ texts }) => {
+      if (texts.length === embedWorkerInternals.embeddingChunksPerJob) {
+        return Promise.reject(batchError);
+      }
+      return Promise.resolve({
+        vectors: texts.map(() => [0.1, 0.2, 0.3, 0.4]),
+        model: 'test-embed-model',
+      });
+    });
+    const upsertVector = vi.fn().mockResolvedValue(undefined);
+    const deletePointsForSource = vi.fn().mockResolvedValue(undefined);
+    const deletePointsForSourceFromChunk = vi
+      .fn<DeletePointsForSourceFromChunk>()
+      .mockResolvedValue(undefined);
+    const enqueueEmbedJob = vi.fn<EnqueueEmbed>().mockResolvedValue(undefined);
+
+    await processEmbedJobForTests(
+      { db: db as never },
+      { scope: 'raw_event', teamId: TEAM_ID, rawEventId },
+      {
+        getEnv: () =>
+          ({ OPENROUTER_API_KEY: 'test-key', QDRANT_URL: 'http://qdrant.test' }) as never,
+        embedMany,
+        enqueueEmbedJob,
+        getQdrantClient: vi.fn(
+          () => ({ deletePointsForSource, deletePointsForSourceFromChunk, upsertVector }) as never,
+        ),
+      },
+      { attemptsMade: 5, maxAttempts: 6 },
+    );
+
+    expect(embedMany.mock.calls.map((call) => call[0].texts.length)).toEqual([
+      embedWorkerInternals.embeddingChunksPerJob,
+      embedWorkerInternals.embeddingChunksPerJob / 2,
+      embedWorkerInternals.embeddingChunksPerJob / 2,
+    ]);
+    expect(upsertVector).toHaveBeenCalledTimes(embedWorkerInternals.embeddingChunksPerJob);
+  });
+
   it('does not split retryable provider outages inside the job', async () => {
     const rawEventId = '16161616-2222-4333-8444-555555555555';
     const longText = Array.from(
@@ -458,6 +521,61 @@ describe('processEmbedJobForTests', () => {
         },
       ),
     ).rejects.toThrow('OpenRouter unavailable');
+
+    expect(embedMany).toHaveBeenCalledOnce();
+    expect(upsertVector).not.toHaveBeenCalled();
+    expect(enqueueEmbedJob).not.toHaveBeenCalled();
+  });
+
+  it('does not split retryable provider API outages on the final queue attempt', async () => {
+    const rawEventId = '18181818-2222-4333-8444-555555555555';
+    const longText = Array.from(
+      { length: 10_000 },
+      (_, i) => `Final outage sentence ${String(i)} with detail.`,
+    ).join(' ');
+    await db.insert(rawEvents).values({
+      id: rawEventId,
+      teamId: TEAM_ID,
+      authorUserId: USER_ID,
+      source: 'web',
+      contentText: longText,
+      occurredAt: new Date('2026-05-27T12:00:00Z'),
+      visibility: 'team',
+      visibilityOwnerUserId: USER_ID,
+      sourceMetadata: {},
+    });
+    const providerOutage = Object.assign(new Error('llm.embedMany failed'), {
+      timelineAi: true,
+      causeName: 'AI_APICallError',
+      causeMessage: 'OpenRouter 503 temporarily unavailable',
+    });
+    const embedMany = vi
+      .fn<(input: { texts: string[] }) => Promise<{ vectors: number[][]; model: string }>>()
+      .mockRejectedValue(providerOutage);
+    const upsertVector = vi.fn().mockResolvedValue(undefined);
+    const deletePointsForSource = vi.fn().mockResolvedValue(undefined);
+    const deletePointsForSourceFromChunk = vi
+      .fn<DeletePointsForSourceFromChunk>()
+      .mockResolvedValue(undefined);
+    const enqueueEmbedJob = vi.fn<EnqueueEmbed>().mockResolvedValue(undefined);
+
+    await expect(
+      processEmbedJobForTests(
+        { db: db as never },
+        { scope: 'raw_event', teamId: TEAM_ID, rawEventId },
+        {
+          getEnv: () =>
+            ({ OPENROUTER_API_KEY: 'test-key', QDRANT_URL: 'http://qdrant.test' }) as never,
+          embedMany,
+          enqueueEmbedJob,
+          getQdrantClient: vi.fn(
+            () =>
+              ({ deletePointsForSource, deletePointsForSourceFromChunk, upsertVector }) as never,
+          ),
+        },
+        { attemptsMade: 5, maxAttempts: 6 },
+      ),
+    ).rejects.toThrow('llm.embedMany failed');
 
     expect(embedMany).toHaveBeenCalledOnce();
     expect(upsertVector).not.toHaveBeenCalled();

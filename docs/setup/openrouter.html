@@ -10,7 +10,7 @@
     <a class="skip" href="#main">Skip to content</a>
     <main id="main">
       <h1>OpenRouter setup</h1>
-      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-06-25</span></div>
+      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-06-30</span></div>
       <blockquote>
         <p>Used from <strong>Phase 3</strong> (transcription) and onwards.</p>
       </blockquote>
@@ -82,9 +82,11 @@ OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
         vector index. Embed jobs therefore do not model-fallback the way structured chat calls can;
         the shared <code>llm.embedMany()</code> helper retries direct callers, while the production
         worker disables SDK retries and lets BullMQ own outage backoff. Oversized provider requests
-        are split recursively inside the job, and every vector is validated before Qdrant writes,
-        preserving the pinned <code>openai/text-embedding-3-small</code> vector contract. Update the
-        catalog and follow the re-embed procedure before switching traffic to the new collection.
+        split recursively inside the job; non-outage provider API batch failures get the same split
+        fallback on the final queue attempt before the source is marked failed. Every vector is
+        validated before Qdrant writes, preserving the pinned
+        <code>openai/text-embedding-3-small</code> vector contract. Update the catalog and follow
+        the re-embed procedure before switching traffic to the new collection.
       </p>
       <p>
         The default Qdrant collection is <code>QDRANT_COLLECTION=events</code>. The app creates that
@@ -241,9 +243,10 @@ OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
           <code>1536</code> means the collection belongs to an older embedding model and must not be
           reused. Each worker batch embeds up to 16 chunks with one OpenRouter embeddings request;
           request-size failures split the batch recursively, while transient provider outages retry
-          from the <code>embed</code> queue with six exponential-backoff attempts. After terminal
-          failure the source row is stamped with <code>embedding_failed_at</code> and can be picked
-          up by the coverage audit/re-embed flow.
+          from the <code>embed</code> queue with six exponential-backoff attempts. On the final
+          attempt, non-outage provider API batch failures also split recursively before the source
+          row is stamped with <code>embedding_failed_at</code> and picked up by the coverage
+          audit/re-embed flow.
         </li>
         <li>
           If creating the collection through the Qdrant dashboard, use:

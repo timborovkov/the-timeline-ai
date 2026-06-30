@@ -29,7 +29,7 @@ describe('TimelineAiError', () => {
           throw cause;
         },
       ),
-    ).rejects.not.toHaveProperty('cause');
+    ).rejects.toHaveProperty('cause', cause);
   });
 
   it('does not double-wrap existing AI failures', async () => {
