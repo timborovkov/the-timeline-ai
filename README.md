@@ -112,7 +112,8 @@ evidence coverage audit and backfill helpers used by the worker
 The `@timeline/shared/reconciliation/dashboard` subpath exports the admin
 dashboard snapshot used by Team → Reconciliation to inspect evidence coverage,
 run logs, output status, projection outbox health, association counts, conflict
-attention, provider/source diagnostics, and approval acceptance health.
+attention, provider/source diagnostics, approval acceptance health, and
+visibility-filtered cluster drilldowns.
 The `@timeline/shared/reconciliation/production-sampling` subpath exports the
 redacted production-sampling artifact loader and report writer used to
 aggregate live artifacts into pass-rate, miss, visibility, authority, and

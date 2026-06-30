@@ -789,6 +789,7 @@ function evidenceStrengthForIntegrationEvent(event: IntegrationEvent): EvidenceS
 function evidenceRoleForIntegrationEvent(event: IntegrationEvent): EvidenceRole {
   const github = recordField(event.extra, 'github');
   const githubType = metadataString(github, 'type');
+  if (event.eventType.includes('release')) return 'release';
   if (event.provider === 'sentry') {
     return event.eventType === 'issue.resolved' ? 'lifecycle_update' : 'error';
   }
@@ -804,7 +805,6 @@ function evidenceRoleForIntegrationEvent(event: IntegrationEvent): EvidenceRole 
     if (githubType === 'release') return 'release';
     if (githubType === 'commit') return 'implementation';
   }
-  if (event.eventType.includes('release')) return 'release';
   if (event.objectMap?.type === 'document') return 'document';
   if (event.objectMap?.type === 'decision') return 'decision';
   return event.eventType.includes('status') || event.eventType.includes('completed')

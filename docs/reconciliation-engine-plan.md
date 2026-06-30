@@ -197,7 +197,8 @@ evidence listing, timeline semantic search, and object Connected Work hydrate
 from `artifact_evidence_associations` as well as legacy members, pending
 reconciliation outputs can appear as related approval work, and association
 visibility floors are enforced before evidence reaches artifact evidence
-listings, search results, or object detail context. Phase 8 has started by cutting accepted object/task suggestion
+listings, search results, object detail context, or the Team → Reconciliation
+cluster detail drilldown. Phase 8 has started by cutting accepted object/task suggestion
 creates off the canonical `entities.source_event_id` write path and shared
 approval projection now strips legacy `sourceEventId` payload hints instead of
 copying or fallback-normalizing them into proposal payloads. The projection
@@ -1506,6 +1507,10 @@ Exit criteria:
 ### Phase 6: UI And Observability
 
 1. Add work artifact detail surface.
+   - Team → Reconciliation now links recent clusters into
+     `/app/team/reconciliation/clusters/[id]`, where admins can inspect
+     visibility-filtered evidence and outputs for one work artifact and queue a
+     cluster-scoped manual reconciliation run.
 2. Update object Connected Work to read associations and outputs.
    - Object detail Connected Work now pulls source events from
      `artifact_evidence_associations` when the associated cluster is tied to the

@@ -292,6 +292,21 @@ function releaseEvent(
       new_groups: release.newGroups ?? null,
       external_url: release.url ?? null,
     },
+    objectMap: {
+      type: 'other',
+      canonicalName: `Sentry release ${release.version}`,
+      displayTitle: `Release ${release.version}`,
+      externalId: `${orgSlug}/${projectSlug}/release/${release.version}`,
+      status: 'done',
+      ...(release.url ? { url: release.url } : {}),
+      aliases: [release.version],
+      metadata: {
+        sentry_record_kind: 'release',
+        sentry_org_slug: orgSlug,
+        sentry_project_slug: projectSlug,
+        release_version: release.version,
+      },
+    },
   };
 }
 

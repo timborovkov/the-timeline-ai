@@ -39,8 +39,8 @@ projection payload storage,
 object provenance and board history hydrating accepted suggestion evidence from
 reconciliation output source refs before legacy pointers, including hidden
 multi-source fail-closed behavior,
-admin reconciliation dashboard coverage plus conflict/source/no-action/approval
-diagnostics,
+admin reconciliation dashboard and visibility-filtered cluster detail coverage
+plus conflict/source/no-action/approval diagnostics,
 object cleanup and object-memory repair projections using `manual_repair`
 reconciliation runs while preserving cited source refs,
 cleanup replay suppression reading rejected reconciliation outputs even after
@@ -55,16 +55,17 @@ and board/search UI regressions. Current suite shape:
 
 - DB Vitest: 2 files / 13 tests, package-level PGlite schema contract suite now
   runs under root `pnpm test`.
-- Shared Vitest: 94 passing files plus 1 skipped / 1,067 passing tests plus 7
+- Shared Vitest: 94 passing files plus 1 skipped / 1,068 passing tests plus 7
   skipped, including PGlite artifact reconciliation, reconciliation
   normalization/backfill/resolution, authority policy, planner prompt/schema,
-  event writer, calendar, timeline, MCP, integration/provider-connection,
+  event writer, Sentry release link artifact capture, calendar, timeline, MCP,
+  integration/provider-connection,
   meeting, document, object, assistant, Slack, recovery, connection-attention,
   and onboarding coverage.
   The shared package runner executes unit tests once and PGlite integration
   tests in isolated chunks so long-lived PGlite state cannot starve later hooks
   during root `pnpm test`.
-- Web Vitest: 147 files / 853 tests, including route/action/component coverage
+- Web Vitest: 149 files / 859 tests, including route/action/component coverage
   for search, timeline, core recovery, onboarding, object sections, board
   add-item interactions, provider-connection routes/UI, app dialog flows, and
   other high-value UI states.

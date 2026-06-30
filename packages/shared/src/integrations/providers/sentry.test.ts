@@ -167,6 +167,20 @@ describe('sentryProvider', () => {
       externalId: 'issue-1',
       priority: 'high',
     });
+    expect(events[1]?.objectMap).toMatchObject({
+      type: 'other',
+      canonicalName: 'Sentry release web@1.2.3',
+      displayTitle: 'Release web@1.2.3',
+      externalId: 'acme/web/release/web@1.2.3',
+      status: 'done',
+      aliases: ['web@1.2.3'],
+      metadata: {
+        sentry_record_kind: 'release',
+        sentry_org_slug: 'acme',
+        sentry_project_slug: 'web',
+        release_version: 'web@1.2.3',
+      },
+    });
     expect(ctx.saveCursor).toHaveBeenCalledWith(
       'sentry.project:acme/web',
       expect.objectContaining({ issues_since: '2026-06-20T10:00:00.000Z' }),

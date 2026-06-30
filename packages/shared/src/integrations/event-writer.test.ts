@@ -924,6 +924,119 @@ describe('writeIntegrationEvents visibility', () => {
     );
   });
 
+  it('stores Sentry release links as provider-record artifact evidence', async () => {
+    const [integration] = await db
+      .insert(integrations)
+      .values({
+        teamId: TEAM_ID,
+        connectedByUserId: USER_ID,
+        provider: 'sentry',
+        displayName: 'Sentry',
+        externalAccountId: 'sentry-acct',
+        visibilityDefault: 'team',
+      })
+      .returning();
+    if (!integration) throw new Error('integration insert failed');
+
+    const [rawEventId] = await writeIntegrationEvents({
+      db: db as never,
+      integration,
+      events: [
+        {
+          dedupKey: 'sentry:release:acme:web:web@1.2.3',
+          provider: 'sentry',
+          externalObjectId: 'acme/web/release/web@1.2.3',
+          eventType: 'release.created',
+          occurredAt: new Date('2026-06-20T11:00:00Z'),
+          contentText: 'Sentry release web@1.2.3 for web',
+          extra: {
+            sentry_org_slug: 'acme',
+            sentry_project_slug: 'web',
+            release_version: 'web@1.2.3',
+            external_url: 'https://sentry.io/organizations/acme/releases/web@1.2.3/',
+          },
+          objectMap: {
+            type: 'other',
+            canonicalName: 'Sentry release web@1.2.3',
+            displayTitle: 'Release web@1.2.3',
+            externalId: 'acme/web/release/web@1.2.3',
+            status: 'done',
+            url: 'https://sentry.io/organizations/acme/releases/web@1.2.3/',
+            aliases: ['web@1.2.3'],
+            metadata: {
+              sentry_record_kind: 'release',
+              sentry_org_slug: 'acme',
+              sentry_project_slug: 'web',
+              release_version: 'web@1.2.3',
+            },
+          },
+        },
+      ],
+    });
+    if (!rawEventId) throw new Error('raw event insert failed');
+
+    const [evidence] = await db
+      .select()
+      .from(reconciliationEvidence)
+      .where(eq(reconciliationEvidence.rawEventId, rawEventId));
+    expect(evidence).toMatchObject({
+      provider: 'sentry',
+      externalObjectId: 'acme/web/release/web@1.2.3',
+      eventType: 'release.created',
+      sourceUrl: 'https://sentry.io/organizations/acme/releases/web@1.2.3/',
+    });
+
+    const [cluster] = await db.select().from(artifactClusters);
+    expect(cluster).toMatchObject({
+      artifactType: 'other',
+      canonicalName: 'Release web@1.2.3',
+      status: 'resolved',
+    });
+
+    const anchors = await db.select().from(artifactClusterAnchors);
+    expect(anchors).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          anchorType: 'provider_object',
+          anchorValue: 'sentry:acme/web/release/web@1.2.3',
+        }),
+        expect.objectContaining({
+          anchorType: 'provider_external:sentry',
+          anchorValue: 'acme/web/release/web@1.2.3',
+        }),
+        expect.objectContaining({
+          anchorType: 'alias:other',
+          anchorValue: 'web@1.2.3',
+        }),
+        expect.objectContaining({
+          anchorType: 'url',
+          anchorValue: 'https://sentry.io/organizations/acme/releases/web@1.2.3',
+        }),
+      ]),
+    );
+
+    const [association] = await db.select().from(artifactEvidenceAssociations);
+    expect(association).toMatchObject({
+      role: 'update',
+      associationSource: 'hard_anchor',
+      rawEventId,
+    });
+
+    const [output] = await db.select().from(reconciliationOutputs);
+    expect(output).toMatchObject({
+      outputKind: 'observed_association',
+      targetKind: 'cluster_identity',
+      operation: 'link',
+      status: 'applied',
+      clusterId: cluster?.id,
+    });
+    expect(output?.authorityDecision).toMatchObject({
+      decision: 'observed_association',
+      reason: 'context_attached_without_canonical_state_change',
+      provider: 'sentry',
+    });
+  });
+
   it('repairs artifact evidence on duplicate webhook replay when raw event already exists', async () => {
     const [integration] = await db
       .insert(integrations)

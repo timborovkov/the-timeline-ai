@@ -490,6 +490,7 @@ function rawActor(metadata: Record<string, unknown>): Record<string, unknown> {
 function rawSourceUrl(metadata: Record<string, unknown>): string | null {
   return (
     metadataString(metadata, 'url') ??
+    metadataString(metadata, 'external_url') ??
     metadataString(metadata, 'permalink') ??
     metadataString(metadata, 'source_url')
   );
