@@ -202,6 +202,15 @@ Use provider-native objects as evidence, not as Timeline's source of truth:
 Raw provider data remains immutable once written. Derived objects can be
 re-extracted when mapping improves.
 
+Provider-owned objects need hard identity before they can be merged. Native
+adapters should populate object metadata with the provider id, provider-native
+external id, source URL, and useful context such as board, repository, project,
+organization, or account. Cleanup may merge two provider-owned objects only
+when that hard identity proves they are the same external record. Similar names,
+matching titles, shared URLs across providers, or common source context can
+suggest an object relationship, but should not collapse distinct provider
+records into one canonical object.
+
 ## Generic Ingest Webhooks
 
 Generic ingest webhooks are implemented as named, team-managed, evidence-only
@@ -222,8 +231,9 @@ Keep these boundaries intact as native integrations expand:
 - Webhooks accept text-like bodies only: JSON, XML, form-encoded, CSV, NDJSON,
   plain text, and unknown text-like content types. Binary and file intake should
   use future source-file flows.
-- `occurred_at` is the Timeline receipt time. Provider-reported timestamps stay
-  evidence that extraction can interpret.
+- `occurred_at` is the provider event time so historical backfills land on the
+  correct timeline date. Timeline receipt/sync time stays in source metadata
+  such as `sync_at`.
 - Each distinct accepted delivery is an immutable raw event. Duplicate
   deliveries from the same webhook inside the dedupe window should not create
   additional raw events, while distinct burst deliveries remain separate source

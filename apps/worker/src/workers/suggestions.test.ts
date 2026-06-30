@@ -1513,6 +1513,163 @@ describe('processSuggestionJobForTests', () => {
     ).resolves.toEqual([]);
   });
 
+  it('does not merge provider-owned Sentry incidents from neighboring short ids', async () => {
+    await db.insert(entities).values([
+      {
+        teamId: TEAM_ID,
+        type: 'incident',
+        canonicalName: 'AUDIT-AI-C: Error: Failed query',
+        aliases: ['AUDIT-AI-C'],
+        metadata: {
+          integration_provider: 'sentry',
+          integration_external_id: 'issue-c',
+          display_title: 'Error: Failed query',
+          sentry_org_slug: 'auditai',
+          sentry_project_slug: 'api',
+          sentry_issue_id: 'issue-c',
+          sentry_short_id: 'AUDIT-AI-C',
+        },
+      },
+      {
+        teamId: TEAM_ID,
+        type: 'incident',
+        canonicalName: 'AUDIT-AI-B: Error: Failed query update',
+        aliases: ['AUDIT-AI-B'],
+        metadata: {
+          integration_provider: 'sentry',
+          integration_external_id: 'issue-b',
+          display_title: 'Error: Failed query update',
+          sentry_org_slug: 'auditai',
+          sentry_project_slug: 'api',
+          sentry_issue_id: 'issue-b',
+          sentry_short_id: 'AUDIT-AI-B',
+        },
+      },
+    ]);
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { scope: 'object_cleanup', teamId: TEAM_ID, triggeredBy: 'manual' },
+    );
+
+    await expect(
+      withTeam(db as never, TEAM_ID, OWNER_ID).suggestions.listPendingSuggestions(),
+    ).resolves.toEqual([]);
+  });
+
+  it('links same-title Sentry incidents instead of merging distinct provider records', async () => {
+    const inserted = await db
+      .insert(entities)
+      .values([
+        {
+          teamId: TEAM_ID,
+          type: 'incident',
+          canonicalName: 'AUDIT-AI-C: Error: Failed query',
+          aliases: ['AUDIT-AI-C'],
+          metadata: {
+            integration_provider: 'sentry',
+            integration_external_id: 'issue-c',
+            display_title: 'Error: Failed query',
+            sentry_org_slug: 'auditai',
+            sentry_project_slug: 'api',
+            sentry_issue_id: 'issue-c',
+            sentry_short_id: 'AUDIT-AI-C',
+          },
+        },
+        {
+          teamId: TEAM_ID,
+          type: 'incident',
+          canonicalName: 'AUDIT-AI-B: Error: Failed query',
+          aliases: ['AUDIT-AI-B'],
+          metadata: {
+            integration_provider: 'sentry',
+            integration_external_id: 'issue-b',
+            display_title: 'Error: Failed query',
+            sentry_org_slug: 'auditai',
+            sentry_project_slug: 'api',
+            sentry_issue_id: 'issue-b',
+            sentry_short_id: 'AUDIT-AI-B',
+          },
+        },
+      ])
+      .returning({ id: entities.id });
+    if (inserted.length !== 2) throw new Error('expected Sentry incident fixtures');
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { scope: 'object_cleanup', teamId: TEAM_ID, triggeredBy: 'manual' },
+    );
+
+    const bundles = await withTeam(
+      db as never,
+      TEAM_ID,
+      OWNER_ID,
+    ).suggestions.listPendingSuggestions();
+    expect(bundles).toHaveLength(1);
+    expect(bundles[0]?.title).toContain('Link related records');
+    expect(bundles[0]?.metadata).toMatchObject({
+      cleanup_kind: 'related',
+      relationship_signal: 'same_provider_title',
+    });
+    expect(bundles.flatMap((bundle) => bundle.items).map((item) => item.targetKind)).toEqual([
+      'object_relationship',
+    ]);
+    expect(new Set(Object.values(bundles[0]?.items[0]?.proposedPayload ?? {}))).toEqual(
+      new Set([inserted[0]?.id, inserted[1]?.id, 'related']),
+    );
+  });
+
+  it('links same-board Monday items by strong provider context without archive noise', async () => {
+    const inserted = await db
+      .insert(entities)
+      .values([
+        {
+          teamId: TEAM_ID,
+          type: 'other',
+          canonicalName: 'Monday item 100: Renew AuditAI contract',
+          metadata: {
+            integration_provider: 'monday',
+            integration_external_id: '100',
+            display_title: 'Renew AuditAI contract',
+            monday_board_id: 'board-1',
+            monday_board_name: 'Sales',
+          },
+        },
+        {
+          teamId: TEAM_ID,
+          type: 'other',
+          canonicalName: 'Monday item 200: Renew AuditAI contract',
+          metadata: {
+            integration_provider: 'monday',
+            integration_external_id: '200',
+            display_title: 'Renew AuditAI contract',
+            monday_board_id: 'board-1',
+            monday_board_name: 'Sales',
+          },
+        },
+      ])
+      .returning({ id: entities.id });
+    if (inserted.length !== 2) throw new Error('expected Monday item fixtures');
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { scope: 'object_cleanup', teamId: TEAM_ID, triggeredBy: 'manual' },
+    );
+
+    const bundles = await withTeam(
+      db as never,
+      TEAM_ID,
+      OWNER_ID,
+    ).suggestions.listPendingSuggestions();
+    expect(bundles).toHaveLength(1);
+    expect(bundles[0]).toMatchObject({
+      metadata: { cleanup_kind: 'related', relationship_signal: 'same_provider_title' },
+    });
+    expect(bundles.flatMap((bundle) => bundle.items).map((item) => item.targetKind)).toEqual([
+      'object_relationship',
+    ]);
+  });
+
   it('skips archive cleanup suggestions for objects with notes or relationships', async () => {
     const [withNote, withFact, withRelationship, related] = await db
       .insert(entities)

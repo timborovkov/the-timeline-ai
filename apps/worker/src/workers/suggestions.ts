@@ -495,10 +495,16 @@ export async function processSuggestionJobForTests(
 
 type CleanupObjectRow = Pick<
   typeof entities.$inferSelect,
-  'id' | 'teamId' | 'type' | 'canonicalName' | 'aliases' | 'status' | 'updatedAt'
+  'id' | 'teamId' | 'type' | 'canonicalName' | 'aliases' | 'metadata' | 'status' | 'updatedAt'
 >;
 
 type CleanupMatch = 'exact' | 'near' | 'short';
+
+interface ProviderRelatedMatch {
+  reason: string;
+  confidence: 'medium' | 'high';
+  signal: 'same_provider_title' | 'same_url' | 'cross_provider_title';
+}
 
 interface RepairRelationshipCandidate {
   id: string;
@@ -552,6 +558,144 @@ function cleanupCompatible(a: CleanupObjectRow, b: CleanupObjectRow): boolean {
     a.type === b.type ||
     ((a.type === 'company' || a.type === 'vendor') && (b.type === 'company' || b.type === 'vendor'))
   );
+}
+
+function cleanupMetadata(row: CleanupObjectRow): Record<string, unknown> {
+  return row.metadata && typeof row.metadata === 'object' && !Array.isArray(row.metadata)
+    ? (row.metadata as Record<string, unknown>)
+    : {};
+}
+
+function cleanupMetadataText(row: CleanupObjectRow, key: string): string | null {
+  const value = cleanupMetadata(row)[key];
+  if (typeof value !== 'string' && typeof value !== 'number') return null;
+  const text = String(value).trim();
+  return text.length > 0 ? text : null;
+}
+
+function providerIdentity(row: CleanupObjectRow): { provider: string; externalId: string } | null {
+  const provider = cleanupMetadataText(row, 'integration_provider');
+  const externalId = cleanupMetadataText(row, 'integration_external_id');
+  return provider && externalId ? { provider, externalId } : null;
+}
+
+function isProviderManagedObject(row: CleanupObjectRow): boolean {
+  return providerIdentity(row) !== null;
+}
+
+function normalizedUrlForCleanup(row: CleanupObjectRow): string | null {
+  const value = cleanupMetadataText(row, 'url') ?? cleanupMetadataText(row, 'external_url');
+  if (!value) return null;
+  try {
+    const url = new URL(value);
+    url.hash = '';
+    const params = [...url.searchParams.entries()].filter(
+      ([key]) => !key.toLowerCase().startsWith('utm_'),
+    );
+    url.search = '';
+    for (const [key, paramValue] of params) url.searchParams.append(key, paramValue);
+    return url.toString().replace(/\/$/, '').toLowerCase();
+  } catch {
+    return value.trim().replace(/\/$/, '').toLowerCase();
+  }
+}
+
+function hardIdentityMatch(a: CleanupObjectRow, b: CleanupObjectRow): boolean {
+  const left = providerIdentity(a);
+  const right = providerIdentity(b);
+  if (
+    left?.provider !== undefined &&
+    left.provider === right?.provider &&
+    left.externalId === right.externalId
+  ) {
+    return true;
+  }
+  const leftUrl = normalizedUrlForCleanup(a);
+  const rightUrl = normalizedUrlForCleanup(b);
+  if (!leftUrl || !rightUrl || leftUrl !== rightUrl) return false;
+
+  // Same URL is a merge signal for manual/provider duplicates or same-provider
+  // duplicate mappings. Cross-provider records can point at the same external
+  // work while still remaining distinct provider objects, so link them instead.
+  return !left || !right || left.provider === right.provider;
+}
+
+function providerContextKey(row: CleanupObjectRow): string | null {
+  const provider = providerIdentity(row)?.provider;
+  if (!provider) return null;
+  if (provider === 'sentry') {
+    const org = cleanupMetadataText(row, 'sentry_org_slug');
+    const project = cleanupMetadataText(row, 'sentry_project_slug');
+    return org && project ? `sentry:${org}:${project}` : provider;
+  }
+  if (provider === 'monday') {
+    const boardId = cleanupMetadataText(row, 'monday_board_id');
+    return boardId ? `monday:${boardId}` : provider;
+  }
+  const repo = cleanupMetadataText(row, 'repo') ?? cleanupMetadataText(row, 'github_repo');
+  if (provider === 'github' && repo) return `github:${repo}`;
+  return provider;
+}
+
+function displayTitleForCleanup(row: CleanupObjectRow): string {
+  const displayTitle = cleanupMetadataText(row, 'display_title');
+  if (displayTitle) return displayTitle;
+  return row.canonicalName.replace(/^[^:]{2,80}:\s+/, '');
+}
+
+function normalizedProviderTitle(row: CleanupObjectRow): string {
+  return normalizeCleanupName(displayTitleForCleanup(row));
+}
+
+function providerRelatedMatch(
+  a: CleanupObjectRow,
+  b: CleanupObjectRow,
+): ProviderRelatedMatch | null {
+  const left = providerIdentity(a);
+  const right = providerIdentity(b);
+  if (!left && !right) return null;
+  if (!cleanupCompatible(a, b)) return null;
+  if (hardIdentityMatch(a, b)) return null;
+
+  const leftUrl = normalizedUrlForCleanup(a);
+  const rightUrl = normalizedUrlForCleanup(b);
+  if (leftUrl && rightUrl && leftUrl === rightUrl) {
+    return {
+      reason:
+        'Provider records point at the same canonical URL and should stay linked as related records.',
+      confidence: 'high',
+      signal: 'same_url',
+    };
+  }
+
+  const leftTitle = normalizedProviderTitle(a);
+  const rightTitle = normalizedProviderTitle(b);
+  if (leftTitle.length < 12 || leftTitle !== rightTitle) return null;
+
+  const leftContext = providerContextKey(a);
+  const rightContext = providerContextKey(b);
+  if (
+    left?.provider !== undefined &&
+    left.provider === right?.provider &&
+    leftContext === rightContext
+  ) {
+    return {
+      reason:
+        'Provider records have the same title in the same provider context, but different external identities.',
+      confidence: 'medium',
+      signal: 'same_provider_title',
+    };
+  }
+  if (left && right && left.provider !== right.provider) {
+    return {
+      reason:
+        'Different providers describe the same titled work, so the records should be linked instead of merged.',
+      confidence: 'medium',
+      signal: 'cross_provider_title',
+    };
+  }
+
+  return null;
 }
 
 function normalizeCleanupName(value: string): string {
@@ -677,6 +821,9 @@ function shortCompanyMatch(left: string, right: string, a: CleanupObjectRow, b: 
 
 function cleanupMatch(a: CleanupObjectRow, b: CleanupObjectRow): CleanupMatch | null {
   if (!cleanupCompatible(a, b)) return null;
+  if (isProviderManagedObject(a) || isProviderManagedObject(b)) {
+    return hardIdentityMatch(a, b) ? 'exact' : null;
+  }
   const aNames = cleanupNames(a);
   const bNames = cleanupNames(b);
   if (aNames.some((name) => bNames.includes(name))) return 'exact';
@@ -1098,6 +1245,7 @@ async function objectScopedMergeCandidates(
       type: entities.type,
       canonicalName: entities.canonicalName,
       aliases: entities.aliases,
+      metadata: entities.metadata,
       status: entities.status,
       updatedAt: entities.updatedAt,
     })
@@ -1165,6 +1313,7 @@ function existingMatchForCreate(
     type: itemCreateType(item),
     canonicalName: itemCanonicalName(item),
     aliases: Array.isArray(item.proposedPayload.aliases) ? item.proposedPayload.aliases : [],
+    metadata: {},
     status: 'suggested',
     updatedAt: new Date(0),
   };
@@ -1576,6 +1725,7 @@ async function createObjectCleanupSuggestionsForTeam(
       type: entities.type,
       canonicalName: entities.canonicalName,
       aliases: entities.aliases,
+      metadata: entities.metadata,
       status: entities.status,
       updatedAt: entities.updatedAt,
     })
@@ -1595,7 +1745,9 @@ async function createObjectCleanupSuggestionsForTeam(
   }
   const scope = withTeam(db, teamId, PSEUDO_USER, { skipMembershipCheck: true });
   const mergeCandidates = await objectScopedMergeCandidates(db, teamId, rows, repairObjectId);
+  const relationshipDedupe = await relationshipDedupeContextForTeam(db, teamId);
   const proposedMergeKeys = new Set<string>();
+  const proposedRelationshipKeys = new Set<string>();
   const sharedEvidencePairKeys = await cleanupSharedEvidencePairKeys(
     db,
     teamId,
@@ -1606,8 +1758,55 @@ async function createObjectCleanupSuggestionsForTeam(
     for (const right of mergeCandidates.slice(i + 1)) {
       if (repairObjectId && left.id !== repairObjectId && right.id !== repairObjectId) continue;
       const match = cleanupMatch(left, right);
-      if (!match) continue;
       const groupKey = objectPairKey(left.id, right.id);
+      const providerRelation = match ? null : providerRelatedMatch(left, right);
+      if (!match && !providerRelation) continue;
+      if (providerRelation) {
+        const relationshipKey = relatedRelationshipKey(left.id, right.id);
+        if (
+          relationshipDedupe.keys.has(relationshipKey) ||
+          proposedRelationshipKeys.has(relationshipKey)
+        ) {
+          continue;
+        }
+        const objectIds = [left.id, right.id].sort();
+        const dedupeKey = suggestions.suggestionDedupeKey({
+          kind: 'object_cleanup_related',
+          teamId,
+          objectIds,
+          signal: providerRelation.signal,
+        });
+        proposedRelationshipKeys.add(relationshipKey);
+        relationshipDedupe.keys.add(relationshipKey);
+        await scope.suggestions.createOrMergeSuggestionBundle({
+          source: 'background',
+          title: `Link related records: ${left.canonicalName} / ${right.canonicalName}`,
+          summary: 'Two provider records look connected but should remain separate records.',
+          reason: providerRelation.reason,
+          confidence: providerRelation.confidence,
+          dedupeKey,
+          metadata: {
+            kind: 'object_cleanup',
+            cleanup_kind: 'related',
+            triggered_by: opts.triggeredBy,
+            object_ids: objectIds,
+            relationship_signal: providerRelation.signal,
+            ...(repairObjectId ? { repair_object_id: repairObjectId } : {}),
+          },
+          items: [
+            {
+              operation: 'create',
+              targetKind: 'object_relationship',
+              targetId: null,
+              title: `Relate ${left.canonicalName} and ${right.canonicalName}`,
+              description: providerRelation.reason,
+              dedupeKey: `${dedupeKey}:relationship`,
+              proposedPayload: relationshipPayload(left.id, right.id),
+            },
+          ],
+        });
+        continue;
+      }
       if (match === 'short' && !sharedEvidencePairKeys.has(groupKey)) {
         continue;
       }
@@ -1698,6 +1897,7 @@ async function createObjectCleanupSuggestionsForTeam(
 
   for (const row of rows) {
     if (repairObjectId && row.id !== repairObjectId) continue;
+    if (isProviderManagedObject(row)) continue;
     const normalized = normalizeCleanupName(row.canonicalName);
     if (!extract.isLowSignalObjectName({ name: row.canonicalName, type: row.type })) continue;
     if (row.type === 'task' || row.type === 'follow_up') continue;
@@ -1933,6 +2133,7 @@ async function runSuggestionExtraction(
       type: entities.type,
       name: entities.canonicalName,
       aliases: entities.aliases,
+      metadata: entities.metadata,
       status: entities.status,
       updatedAt: entities.updatedAt,
     })
@@ -1950,6 +2151,7 @@ async function runSuggestionExtraction(
       type: entities.type,
       name: entities.canonicalName,
       aliases: entities.aliases,
+      metadata: entities.metadata,
       status: entities.status,
       updatedAt: entities.updatedAt,
     })
@@ -2053,6 +2255,7 @@ async function runSuggestionExtraction(
     type: entity.type,
     canonicalName: entity.name,
     aliases: entity.aliases,
+    metadata: entity.metadata,
     status: entity.status,
     updatedAt: entity.updatedAt,
   }));

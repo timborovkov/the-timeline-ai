@@ -108,6 +108,11 @@ export const exampleProvider: IntegrationProvider = {
 Provider rules:
 
 - Use stable provider-scoped `dedupKey` values for every event.
+- When mapping provider-owned objects, include hard identity in `objectMap`
+  metadata: provider id, provider-native external id, source URL, and context
+  such as board, repository, project, organization, or account. Display titles
+  help users read the object, but cleanup must not rely on title similarity to
+  merge distinct provider records.
 - Treat webhook payloads as untrusted. Do not trust routing fields until the
   route verifies the provider signature or token.
 - Save cursors per resource/surface. A partial failure should not poison the
