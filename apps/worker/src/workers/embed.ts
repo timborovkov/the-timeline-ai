@@ -121,8 +121,7 @@ function embeddingBatchErrorMessage(err: unknown): string {
   if (err instanceof Error) {
     const causeMessage =
       'causeMessage' in err && typeof err.causeMessage === 'string' ? err.causeMessage : '';
-    const cause = 'cause' in err ? embeddingBatchErrorMessage(err.cause) : '';
-    return `${err.message} ${causeMessage} ${cause}`.toLowerCase();
+    return `${err.message} ${causeMessage}`.toLowerCase();
   }
   return String(err).toLowerCase();
 }
@@ -151,6 +150,43 @@ function isRetryableProviderOutageMessage(message: string): boolean {
   );
 }
 
+function embeddingBatchStatusCodes(err: unknown): number[] {
+  if (err instanceof AggregateError) {
+    return err.errors.flatMap(embeddingBatchStatusCodes);
+  }
+  if (!err || typeof err !== 'object') return [];
+  const row = err as {
+    cause?: unknown;
+    status?: unknown;
+    statusCode?: unknown;
+    responseStatus?: unknown;
+  };
+  const ownStatus = row.statusCode ?? row.status ?? row.responseStatus;
+  const nested = row.cause ? embeddingBatchStatusCodes(row.cause) : [];
+  return typeof ownStatus === 'number' ? [ownStatus, ...nested] : nested;
+}
+
+function hasNonBatchClientStatus(err: unknown): boolean {
+  return embeddingBatchStatusCodes(err).some(
+    (status) => status >= 400 && status < 500 && status !== 408 && status !== 413 && status !== 429,
+  );
+}
+
+function hasRetryableProviderStatus(err: unknown): boolean {
+  return embeddingBatchStatusCodes(err).some(
+    (status) => status === 408 || status === 429 || status >= 500,
+  );
+}
+
+function hasRetryableProviderFlag(err: unknown): boolean {
+  if (err instanceof AggregateError) {
+    return err.errors.some(hasRetryableProviderFlag);
+  }
+  if (!err || typeof err !== 'object') return false;
+  const row = err as { cause?: unknown; isRetryable?: unknown };
+  return row.isRetryable === true || Boolean(row.cause && hasRetryableProviderFlag(row.cause));
+}
+
 function isLastQueueAttempt(attempt: EmbedAttemptContext | undefined): boolean {
   return Boolean(
     attempt && attempt.maxAttempts > 0 && attempt.attemptsMade + 1 >= attempt.maxAttempts,
@@ -174,6 +210,9 @@ function shouldSplitEmbeddingBatch(err: unknown, attempt?: EmbedAttemptContext):
   return (
     isLastQueueAttempt(attempt) &&
     embeddingBatchErrorName(err).includes('AI_APICallError') &&
+    !hasNonBatchClientStatus(err) &&
+    !hasRetryableProviderStatus(err) &&
+    !hasRetryableProviderFlag(err) &&
     !isRetryableProviderOutageMessage(message)
   );
 }

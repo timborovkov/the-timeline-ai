@@ -12,7 +12,12 @@ import {
 import { z } from 'zod';
 
 import { getEnv } from '#src/env.js';
-import { TimelineAiError, toTimelineAiError, wrapAiFailure } from '#src/llm/errors.js';
+import {
+  TimelineAiError,
+  toTimelineAiError,
+  wrapAiFailure,
+  type TimelineAiErrorMetadata,
+} from '#src/llm/errors.js';
 import { TIMELINE_MODELS } from '#src/llm/models.js';
 import {
   generateObject,
@@ -479,11 +484,23 @@ export function streamChat<TTools extends ToolSet>(
   if (input.onFinish) args.onFinish = input.onFinish;
   if (input.onError) {
     args.onError = (event) => {
-      input.onError?.({ ...event, error: toTimelineAiError(metadata, event.error) });
+      input.onError?.({ ...event, error: callbackSafeTimelineAiError(metadata, event.error) });
     };
   }
   if (input.abortSignal) args.abortSignal = input.abortSignal;
   return streamText(args) as unknown as StreamTextResult<TTools, never>;
+}
+
+function callbackSafeTimelineAiError(
+  metadata: TimelineAiErrorMetadata,
+  err: unknown,
+): TimelineAiError {
+  const wrapped = toTimelineAiError(metadata, err);
+  const { cause: _cause, ...withoutCause } = wrapped as TimelineAiError & { cause?: unknown };
+  return Object.assign(new Error(wrapped.message), withoutCause, {
+    name: wrapped.name,
+    stack: wrapped.stack,
+  }) as TimelineAiError;
 }
 
 export { resolveAgentModelId };
