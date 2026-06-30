@@ -10,7 +10,7 @@
     <a class="skip" href="#main">Skip to content</a>
     <main id="main">
       <h1>Local development</h1>
-      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-06-28</span></div>
+      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-06-30</span></div>
       <p class="tldr">
         Bring up the full Timeline stack on your machine with Docker Compose for infra and
         <code>pnpm dev</code> for app + worker hot reload.
@@ -150,11 +150,21 @@ pnpm test                             # unit + integration tests (package suites
 pnpm test:eval                        # fast deterministic agent and retrieval evals
 pnpm test:reconciliation-eval         # deterministic reconciliation domain/eval checks
 RECONCILIATION_LIVE_ENV_FILE=/path/.env pnpm test:reconciliation-eval:live
-                                      # opt-in live LLM planner + judge smoke eval
+                                      # opt-in live LLM planner + judge matrix
+# optional: RECONCILIATION_LIVE_ARTIFACT_DIR=/tmp/eval-run writes one exact output dir
+# optional: RECONCILIATION_LIVE_ARTIFACT_ROOT_DIR=eval-runs/reconciliation writes timestamped runs
 # optional: RECONCILIATION_LIVE_CALL_TIMEOUT_MS=90000 tunes each live planner/judge call
+# optional: RECONCILIATION_LIVE_MAX_ATTEMPTS=3 retries transient planner/judge failures
 pnpm test:dist-imports                # build db/shared and import compiled runtime modules with Node
 pnpm --filter @timeline/worker reconciliation-evidence -- --team=&lt;uuid&gt; --mode=audit
 pnpm --filter @timeline/worker reconciliation-evidence -- --team=&lt;uuid&gt; --mode=backfill --dry-run --page-size=500
+pnpm --filter @timeline/worker reconciliation-production-sampling -- --input=/tmp/eval-run --out=/tmp/reconciliation-production-sampling.json --run-kind=closed_beta
+# production sampling accepts repeated --input paths; --run-kind defaults to manual
+# and may be manual, closed_beta, or post_deploy
+# pnpm dev also starts the reconciliation queue consumer for enqueued
+# evidence_audit/evidence_backfill/scope_reconcile jobs. Admins can enqueue
+# source-scoped audit/backfill and record manual team/object/cluster
+# reconciliation runs from /app/team/reconciliation.
 pnpm check:web-bundle                 # scan built Next server chunks after a web build
 pnpm e2e                              # Playwright core journeys; requires compose infra + migrations
 pnpm e2e:prod-smoke                   # build + standalone-server smoke; requires compose infra + migrations

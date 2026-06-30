@@ -75,7 +75,7 @@ This is a pnpm/Turborepo monorepo.
 | Path | Purpose |
 | --- | --- |
 | `apps/web` | Next.js app, public docs, auth, server actions, UI, API routes, and inbound webhooks. |
-| `apps/worker` | BullMQ workers for transcription, extraction, embeddings, documents, meetings, integrations, MCP health, and maintenance jobs. |
+| `apps/worker` | BullMQ workers for transcription, extraction, embeddings, documents, meetings, integrations, reconciliation, MCP health, object summaries, daily digest, team export, and maintenance jobs. |
 | `packages/db` | Drizzle schema, migrations, and database package exports. |
 | `packages/shared` | Team-scoped data access, LLM wrapper, Qdrant/S3 wrappers, queues, integrations, artifact/workspace reconciliation, calendar, documents, meetings, objects, MCP, and other shared domain modules. |
 | `docs` | Product, setup, architecture, and deployment documentation. |
@@ -91,7 +91,7 @@ The two most important boundaries are:
 The package root re-exports the reconciliation namespace, and the
 `@timeline/shared/reconciliation` subpath exports the shared source-ref
 validation, visibility-floor checks, replay-safe dedupe-key builders,
-artifact-cluster kind constants, and deterministic reconciliation eval matrix.
+artifact-cluster kind constants, and core reconciliation helpers.
 The reconciliation schema also includes an output-owned projection outbox so
 approval UI rows can be rebuilt or repaired from `reconciliation_outputs`.
 The `@timeline/shared/reconciliation/eval-manifests` subpath exports typed
@@ -100,15 +100,23 @@ The `@timeline/shared/reconciliation/authority` subpath exports the field-scoped
 authority policy that decides whether evidence can produce a direct write, an
 approval bundle, an observed association, or a no-action block.
 The `@timeline/shared/reconciliation/planner` subpath exports the shared
-structured planner prompt/schema used by live reconciliation evals and future
-worker planning flows.
+structured planner prompt/schema used by live reconciliation evals and
+proposal planning metadata for conversation reviews and raw-event batches.
 The `@timeline/shared/reconciliation/normalization` subpath exports raw-event
 and integration-event normalizers used by the capture surfaces. The
 `@timeline/shared/reconciliation/resolver` subpath exports the anchor-based
 evidence-to-cluster association resolver. The
 `@timeline/shared/reconciliation/backfill` subpath exports the historical
 evidence coverage audit and backfill helpers used by the worker
-`reconciliation-evidence` command.
+`reconciliation-evidence` command and the queue-backed reconciliation worker.
+The `@timeline/shared/reconciliation/dashboard` subpath exports the admin
+dashboard snapshot used by Team → Reconciliation to inspect evidence coverage,
+run logs, output status, projection outbox health, association counts, conflict
+attention, provider/source diagnostics, and approval acceptance health.
+The `@timeline/shared/reconciliation/production-sampling` subpath exports the
+redacted production-sampling artifact loader and report writer used to
+aggregate live artifacts into pass-rate, miss, visibility, authority, and
+fixture-candidate metrics.
 
 ## Quick Start
 
@@ -188,9 +196,20 @@ pnpm test:reconciliation-eval:live  # opt-in live LLM planner+judge matrix; set 
 # optional: set RECONCILIATION_LIVE_ARTIFACT_DIR=/tmp/eval-run for one exact output dir,
 # or RECONCILIATION_LIVE_ARTIFACT_ROOT_DIR=eval-runs/reconciliation for timestamped run folders
 # optional: set RECONCILIATION_LIVE_CALL_TIMEOUT_MS=90000 to tune each live planner/judge call timeout
+# optional: set RECONCILIATION_LIVE_MAX_ATTEMPTS=3 to retry transient planner/judge failures
 pnpm test:dist-imports    # build db/shared and import compiled runtime modules with Node
 pnpm --filter @timeline/worker reconciliation-evidence -- --team=<uuid> --mode=audit
 pnpm --filter @timeline/worker reconciliation-evidence -- --team=<uuid> --mode=backfill --dry-run --page-size=500
+pnpm --filter @timeline/worker reconciliation-production-sampling -- --input=/tmp/eval-run --out=/tmp/reconciliation-production-sampling.json --run-kind=closed_beta
+# production sampling accepts repeated --input paths; --run-kind defaults to manual
+# and may be manual, closed_beta, or post_deploy.
+# The worker process also starts a reconciliation queue consumer for the same
+# evidence_audit/evidence_backfill jobs when they are enqueued by product or
+# operator code. Queue payloads support optional source, limit, pageSize, dryRun,
+# and missingOnly controls.
+# Admins can enqueue the same source-scoped audit/backfill work from
+# /app/team/reconciliation in the web app, and can record manual team/object/cluster
+# scope_reconcile runs from the same dashboard.
 pnpm e2e                  # Playwright core journey tests
 pnpm run doctor           # React Doctor scan for React/Next health regressions
 pnpm dev:seed             # seed local demo data with disabled fake integrations

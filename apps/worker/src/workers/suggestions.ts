@@ -27,6 +27,11 @@ import {
   time,
   withTeam,
 } from '@timeline/shared';
+import {
+  RECONCILIATION_PLANNER_PROMPT_VERSION,
+  planReconciliation,
+  type ReconciliationPlannerResult,
+} from '@timeline/shared/reconciliation/planner';
 import { likeMentionCondition, textMentionsAnyValue } from '@timeline/shared/sql-like';
 import { UnrecoverableError, Worker, type Job } from 'bullmq';
 import { and, count, desc, eq, inArray, isNull, lt, ne, or, sql } from 'drizzle-orm';
@@ -59,6 +64,7 @@ interface SuggestionWorkerDeps {
 interface SuggestionWorkerIO {
   getEnv?: typeof getEnv;
   chatStructured?: typeof llm.chatStructured;
+  planReconciliation?: typeof planReconciliation;
   modelId?: string;
   enqueueSuggestionJob?: typeof queue.enqueueSuggestionJob;
 }
@@ -98,6 +104,14 @@ type RawEventRow = typeof rawEvents.$inferSelect;
 type SuggestionBundleOutput = z.infer<typeof suggestionBundleSchema>;
 type SuggestionItemOutput = z.infer<typeof suggestionItemSchema>;
 type EntityType = (typeof entities.$inferSelect)['type'];
+type PlannerSurface = Parameters<typeof planReconciliation>[0]['observedSurfaces'][number];
+
+interface ProposalPlannerMetadata {
+  reconciliation_planner_version: typeof RECONCILIATION_PLANNER_PROMPT_VERSION;
+  reconciliation_planner_status: 'completed' | 'failed' | 'skipped';
+  reconciliation_planner_result?: ReconciliationPlannerResult;
+  reconciliation_planner_failure?: string;
+}
 
 function tokenizeEvidence(text: string): string[] {
   return text
@@ -1445,19 +1459,23 @@ function pickCleanupSurvivor(rows: CleanupObjectRow[]): CleanupObjectRow {
   return survivor;
 }
 
-async function rejectedSuggestionExists(
+async function rejectedApprovalOutputExists(
   db: Db,
   teamId: string,
   dedupeKey: string,
 ): Promise<boolean> {
   const rows = await db
-    .select({ id: agentSuggestions.id })
-    .from(agentSuggestions)
+    .select({ id: reconciliationOutputs.id })
+    .from(reconciliationOutputs)
     .where(
       and(
-        eq(agentSuggestions.teamId, teamId),
-        eq(agentSuggestions.dedupeKey, dedupeKey),
-        eq(agentSuggestions.status, 'rejected'),
+        eq(reconciliationOutputs.teamId, teamId),
+        eq(reconciliationOutputs.outputKind, 'approval_bundle'),
+        eq(reconciliationOutputs.status, 'rejected'),
+        or(
+          sql`${reconciliationOutputs.payload} ->> 'suggestion_dedupe_key' = ${dedupeKey}`,
+          sql`${reconciliationOutputs.payload} ->> 'item_dedupe_key' = ${dedupeKey}`,
+        ),
       ),
     )
     .limit(1);
@@ -1577,7 +1595,7 @@ async function createObjectCleanupSuggestionsForTeam(
         teamId,
         objectIds,
       });
-      if (await rejectedSuggestionExists(db, teamId, dedupeKey)) continue;
+      if (await rejectedApprovalOutputExists(db, teamId, dedupeKey)) continue;
       await scope.suggestions.createOrMergeSuggestionBundle({
         source: 'background',
         title: `Merge duplicate objects: ${left.canonicalName} / ${right.canonicalName}`,
@@ -1592,6 +1610,7 @@ async function createObjectCleanupSuggestionsForTeam(
           object_ids: objectIds,
           ...(repairObjectId ? { repair_object_id: repairObjectId } : {}),
         },
+        reconciliationTrigger: 'manual_repair',
         items: [
           {
             operation: 'merge',
@@ -1659,7 +1678,7 @@ async function createObjectCleanupSuggestionsForTeam(
       objectId: row.id,
       evidenceHash: normalized,
     });
-    if (await rejectedSuggestionExists(db, teamId, dedupeKey)) continue;
+    if (await rejectedApprovalOutputExists(db, teamId, dedupeKey)) continue;
     await scope.suggestions.createOrMergeSuggestionBundle({
       source: 'background',
       title: `Archive low-signal object: ${row.canonicalName}`,
@@ -1675,6 +1694,7 @@ async function createObjectCleanupSuggestionsForTeam(
         object_id: row.id,
         ...(repairObjectId ? { repair_object_id: repairObjectId } : {}),
       },
+      reconciliationTrigger: 'manual_repair',
       items: [
         {
           operation: 'archive_or_cancel',
@@ -1753,6 +1773,7 @@ async function createObjectCleanupSuggestionsForTeam(
             fact_count: candidate.factCount,
             source: candidate.source,
           },
+          reconciliationTrigger: 'manual_repair',
           items: [
             {
               operation: 'create',
@@ -1805,6 +1826,7 @@ async function createObjectCleanupSuggestionsForTeam(
             person_name: candidate.canonicalName,
             fact_count: candidate.factCount,
           },
+          reconciliationTrigger: 'manual_repair',
           items: [
             {
               operation: 'create',
@@ -2131,6 +2153,21 @@ async function runSuggestionExtraction(
             authorUserId: activeAuthorUserId,
           });
   const objectTypeById = new Map(entityRows.map((entity) => [entity.id, entity.type]));
+  const proposalSourceRefs = uniqueSourceRefs(
+    args.conversation
+      ? args.conversation.window.map((event) => conversationWindowSourceRef(row.source, event))
+      : [rawEventSourceRef(row)],
+  );
+  const proposalPlannerMetadata = bundles.some((bundle) => bundle.items.length > 0)
+    ? await proposalPlannerMetadataFor({
+        io,
+        row,
+        sourceRefs: proposalSourceRefs,
+        bundles,
+        text,
+        conversationKey: args.conversation?.key ?? null,
+      })
+    : null;
 
   let proposalsCreated = 0;
   for (const bundle of bundles) {
@@ -2166,6 +2203,7 @@ async function runSuggestionExtraction(
       evidence,
       metadata: {
         suggestion_model_version: modelVersion,
+        ...(proposalPlannerMetadata ?? {}),
         ...(args.conversation
           ? {
               conversation_review_id: args.conversation.reviewId,
@@ -2659,6 +2697,103 @@ async function writeConversationNoActionOutput(
     });
 }
 
+async function proposalPlannerMetadataFor(args: {
+  io: SuggestionWorkerIO;
+  row: typeof rawEvents.$inferSelect;
+  sourceRefs: reconciliation.SourceRef[];
+  bundles: SuggestionBundleOutput[];
+  text: string;
+  conversationKey: string | null;
+}): Promise<ProposalPlannerMetadata | null> {
+  const planner =
+    args.io.planReconciliation ?? (args.io.chatStructured ? null : planReconciliation);
+  if (!planner) return null;
+  const anchorMetadata = recordFromUnknown(args.row.sourceMetadata);
+  const defaultSurface = plannerSurfaceForSource(args.row.source, anchorMetadata);
+  const plannerSourceRefs = plannerSourceRefsFor(args.sourceRefs, defaultSurface);
+  if (plannerSourceRefs.length === 0) return null;
+  const observedSurfaces = Array.from(new Set(plannerSourceRefs.map((ref) => ref.surface)));
+  try {
+    const result = await planner(
+      {
+        packetName: args.conversationKey
+          ? `conversation-review:${args.conversationKey}:${args.row.id}`
+          : `raw-event:${args.row.id}`,
+        observedSurfaces,
+        sourceRefs: plannerSourceRefs,
+        plannerContext: proposalPlannerContext(args),
+        policyDerivedOutputKinds: ['approval_bundle'],
+        policyDerivedDirectWriteSurfaces: [],
+        ...(args.io.modelId ? { model: args.io.modelId } : {}),
+      },
+      args.io.chatStructured ? { chatStructured: args.io.chatStructured } : {},
+    );
+    return {
+      reconciliation_planner_version: RECONCILIATION_PLANNER_PROMPT_VERSION,
+      reconciliation_planner_status: 'completed',
+      reconciliation_planner_result: result,
+    };
+  } catch (err) {
+    return {
+      reconciliation_planner_version: RECONCILIATION_PLANNER_PROMPT_VERSION,
+      reconciliation_planner_status: 'failed',
+      reconciliation_planner_failure: truncate(safeErrorMessage(err), 300),
+    };
+  }
+}
+
+function proposalPlannerContext(args: {
+  row: typeof rawEvents.$inferSelect;
+  bundles: SuggestionBundleOutput[];
+  text: string;
+  conversationKey: string | null;
+}): string {
+  const proposals = args.bundles
+    .filter((bundle) => bundle.items.length > 0)
+    .map((bundle) => {
+      const items = bundle.items
+        .map(
+          (item) =>
+            `  - ${item.operation} ${item.targetKind}${item.targetId ? ` ${item.targetId}` : ''}: ${item.title}`,
+        )
+        .join('\n');
+      return `- ${bundle.title}\n${items}`;
+    })
+    .join('\n');
+  return [
+    `Source: ${args.row.source}`,
+    `Visibility: ${args.row.visibility}`,
+    args.conversationKey ? `Conversation: ${args.conversationKey}` : null,
+    'The extraction worker produced approval-queue proposals. These proposals are not applied state; Timeline-owned memory changes require human approval.',
+    `Evidence excerpt: ${truncate(args.text, 1200)}`,
+    `Proposals:\n${proposals}`,
+  ]
+    .filter((line): line is string => Boolean(line))
+    .join('\n');
+}
+
+function plannerSourceRefsFor(
+  sourceRefs: reconciliation.SourceRef[],
+  defaultSurface: PlannerSurface | null,
+): { surface: PlannerSurface; rawEventId: string }[] {
+  const seen = new Set<string>();
+  const refs: { surface: PlannerSurface; rawEventId: string }[] = [];
+  for (const ref of sourceRefs) {
+    if (!ref.rawEventId) continue;
+    const surface = plannerSurfaceForSource(ref.source) ?? defaultSurface;
+    if (!surface) continue;
+    const key = `${surface}:${ref.rawEventId}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    refs.push({ surface, rawEventId: ref.rawEventId });
+  }
+  return refs;
+}
+
+function safeErrorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
 function conversationWindowSourceRef(
   source: string,
   event: conversationReview.ConversationEvidenceEvent,
@@ -2670,6 +2805,33 @@ function conversationWindowSourceRef(
   const sourcePayloadRef = sourcePayloadRefFromMetadata(event.sourceMetadata);
   if (sourcePayloadRef) sourceRef.sourcePayloadRef = sourcePayloadRef;
   return sourceRef;
+}
+
+function plannerSurfaceForSource(
+  source: string,
+  metadata: Record<string, unknown> = {},
+): PlannerSurface | null {
+  if (
+    source === 'web' ||
+    source === 'email' ||
+    source === 'slack' ||
+    source === 'telegram' ||
+    source === 'meeting' ||
+    source === 'document' ||
+    source === 'calendar' ||
+    source === 'ingest_webhook'
+  ) {
+    return source;
+  }
+  if (source !== 'integration') return null;
+  const provider = metadata.provider;
+  return provider === 'github' ||
+    provider === 'linear' ||
+    provider === 'google_drive' ||
+    provider === 'monday' ||
+    provider === 'sentry'
+    ? provider
+    : null;
 }
 
 function rawEventSourceRef(row: typeof rawEvents.$inferSelect): reconciliation.SourceRef {

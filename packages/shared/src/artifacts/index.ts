@@ -10,6 +10,9 @@ import {
 } from '@timeline/db';
 import { and, eq, isNull, or, sql } from 'drizzle-orm';
 
+import type { SQL } from 'drizzle-orm';
+import type { AnyPgColumn } from 'drizzle-orm/pg-core';
+
 import { buildAssociationDedupeKey, type SourceRef } from '#src/reconciliation/index.js';
 import { normalizeRawEventsToEvidence } from '#src/reconciliation/normalization.js';
 
@@ -19,6 +22,11 @@ export type EvidenceRole = (typeof artifactClusterMembers.$inferSelect)['role'];
 export type EvidenceStrength = (typeof artifactClusterMembers.$inferSelect)['strength'];
 type AssociationRole = (typeof artifactEvidenceAssociations.$inferInsert)['role'];
 type AssociationSource = (typeof artifactEvidenceAssociations.$inferInsert)['associationSource'];
+interface VisibilityColumns {
+  visibility: AnyPgColumn;
+  visibilityOwnerUserId: AnyPgColumn;
+  visibilityUserIds: AnyPgColumn;
+}
 
 export interface ArtifactAnchorInput {
   type: string;
@@ -279,6 +287,17 @@ function confidenceForEvidence(input: ArtifactEvidenceInput): string {
   return 'medium';
 }
 
+function visibilityVisibleToUser(row: VisibilityColumns, userId: string): SQL {
+  return sql`(
+    ${row.visibility} = 'team'
+    OR (${row.visibility} = 'private' AND ${row.visibilityOwnerUserId} = ${userId})
+    OR (
+      ${row.visibility} = 'specific_users'
+      AND COALESCE(${userId}::uuid = ANY(${row.visibilityUserIds}), false)
+    )
+  )`;
+}
+
 async function claimAnchors(
   db: Db,
   input: ArtifactEvidenceInput,
@@ -518,8 +537,35 @@ export async function reconcileArtifactEvidence(
 
 export async function listArtifactClusterEvidence(
   db: Db,
-  input: { teamId: string; clusterId: string },
+  input: { teamId: string; clusterId: string; viewerUserId: string },
 ) {
+  const rawEventVisibility = visibilityVisibleToUser(
+    {
+      visibility: rawEvents.visibility,
+      visibilityOwnerUserId: rawEvents.visibilityOwnerUserId,
+      visibilityUserIds: rawEvents.visibilityUserIds,
+    },
+    input.viewerUserId,
+  );
+  const associationVisibility = and(
+    visibilityVisibleToUser(
+      {
+        visibility: artifactEvidenceAssociations.visibility,
+        visibilityOwnerUserId: artifactEvidenceAssociations.visibilityOwnerUserId,
+        visibilityUserIds: artifactEvidenceAssociations.visibilityUserIds,
+      },
+      input.viewerUserId,
+    ),
+    visibilityVisibleToUser(
+      {
+        visibility: artifactEvidenceAssociations.visibilityFloor,
+        visibilityOwnerUserId: artifactEvidenceAssociations.visibilityFloorOwnerUserId,
+        visibilityUserIds: artifactEvidenceAssociations.visibilityFloorUserIds,
+      },
+      input.viewerUserId,
+    ),
+  );
+
   const legacyRows = await db
     .select({
       clusterId: artifactClusters.id,
@@ -553,7 +599,11 @@ export async function listArtifactClusterEvidence(
       and(eq(entities.id, artifactClusterMembers.entityId), eq(entities.teamId, input.teamId)),
     )
     .where(
-      and(eq(artifactClusters.teamId, input.teamId), eq(artifactClusters.id, input.clusterId)),
+      and(
+        eq(artifactClusters.teamId, input.teamId),
+        eq(artifactClusters.id, input.clusterId),
+        or(isNull(artifactClusterMembers.rawEventId), rawEventVisibility),
+      ),
     );
 
   const associationRows = await db
@@ -598,7 +648,11 @@ export async function listArtifactClusterEvidence(
       ),
     )
     .where(
-      and(eq(artifactClusters.teamId, input.teamId), eq(artifactClusters.id, input.clusterId)),
+      and(
+        eq(artifactClusters.teamId, input.teamId),
+        eq(artifactClusters.id, input.clusterId),
+        associationVisibility,
+      ),
     );
 
   const rows = [...associationRows, ...legacyRows];

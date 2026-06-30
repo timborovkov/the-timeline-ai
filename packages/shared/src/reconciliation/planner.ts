@@ -9,8 +9,7 @@ import {
   type ReconciliationEvalScenarioFamily,
 } from '#src/reconciliation/index.js';
 
-export const RECONCILIATION_PLANNER_PROMPT_VERSION =
-  'reconciliation-planner-2026-06-output-policy-minimum';
+export const RECONCILIATION_PLANNER_PROMPT_VERSION = 'reconciliation-planner-2026-06-privacy-floor';
 
 export const reconciliationPlannerOutputKinds = [
   'observed_association',
@@ -126,6 +125,7 @@ Do not omit approval_bundle just because the same packet also includes direct_wr
 Set approvalRequired to true exactly when outputKinds includes approval_bundle; otherwise set it to false.
 Return every listed raw source ref exactly once in sourceRefs.
 Set privacyRisk to true only if the planned output would expose private or specific-user evidence to a broader audience. The expected planner keeps each output at or below its visibility floor.
+Set privacyRisk to false when private or specific-user evidence remains private or specific-user for the same audience. Privacy risk means visibility broadening, not the mere presence of private evidence.
 All evidence is team-visible unless the planner context explicitly says it is private. Sensitive subject matter alone is not a privacy risk.
 Do not include conflict unless the planner context explicitly says there is competing or contradictory evidence.
 `;

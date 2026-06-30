@@ -303,6 +303,7 @@ export interface CreateSuggestionInput {
   visibilityUserIds?: string[] | null;
   metadata?: Record<string, unknown>;
   evidence?: SuggestionEvidenceInput[];
+  reconciliationTrigger?: 'raw_event' | 'manual_repair';
   items: SuggestionItemInput[];
 }
 
@@ -448,7 +449,6 @@ const objectCreatePayload = z.object({
   type: z.string().optional(),
   canonicalName: z.string().trim().max(200).optional(),
   parentObjectId: blankStringAsNull(uuid.nullable()).optional(),
-  sourceEventId: blankStringAsNull(uuid.nullable()).optional(),
 });
 
 const objectUpdatePayload = z.object({
@@ -516,7 +516,6 @@ const boardMembershipPayload = z.object({
   boardId: uuid,
   entityId: uuid,
   laneId: uuid.nullable().optional(),
-  sourceEventId: uuid.nullable().optional(),
   note: z.string().trim().max(1000).nullable().optional(),
 });
 
@@ -533,7 +532,6 @@ const boardItemUpdatePayload = z.object({
     'customFields',
   ]),
   newValue: z.unknown(),
-  sourceEventId: uuid.nullable().optional(),
   note: z.string().trim().max(1000).nullable().optional(),
 });
 
@@ -3193,7 +3191,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     item: typeof agentSuggestionItems.$inferSelect,
     payload: Record<string, unknown>,
   ): Promise<string> {
-    const parsed = objectCreatePayload.parse(normalizeObjectCreatePayloadForAcceptance(payload));
+    const parsed = objectCreatePayload.parse(payload);
     const canonicalName =
       parsed.canonicalName !== undefined && parsed.canonicalName.length > 0
         ? parsed.canonicalName
@@ -3213,9 +3211,6 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     if (parsed.assigneeUserId !== undefined) input.assigneeUserId = parsed.assigneeUserId;
     if (parsed.dueAt !== undefined) input.dueAt = parsed.dueAt ? new Date(parsed.dueAt) : null;
     if (parsed.parentObjectId !== undefined) input.parentObjectId = parsed.parentObjectId;
-    if (parsed.sourceEventId) {
-      await validateEvidenceVisible([parsed.sourceEventId]);
-    }
     input.metadata = {
       ...(parsed.metadata ?? {}),
       agent_suggestion_item_id: item.id,
@@ -3261,13 +3256,6 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     };
     await objects.updateObject(existing.id, patch, { kind: 'agent', userId: null });
     return existing.id;
-  }
-
-  function normalizeObjectCreatePayloadForAcceptance(
-    payload: Record<string, unknown>,
-  ): Record<string, unknown> {
-    if (!Object.hasOwn(payload, 'sourceEventId')) return payload;
-    return normalizeSuggestionSourceEventPayload(payload);
   }
 
   function acceptancePriority(item: SuggestionItem): number {
@@ -3537,7 +3525,6 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       if (item.operation !== 'create')
         throw new Error('Board membership suggestions only support create');
       const parsed = boardMembershipPayload.parse(payload);
-      if (parsed.sourceEventId) await validateEvidenceVisible([parsed.sourceEventId]);
       const change = await boards.proposeBoardMembership({
         boardId: parsed.boardId,
         entityId: parsed.entityId,
@@ -3556,7 +3543,6 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       if (item.operation !== 'update')
         throw new Error('Board item suggestions only support update');
       const parsed = boardItemUpdatePayload.parse(payload);
-      if (parsed.sourceEventId) await validateEvidenceVisible([parsed.sourceEventId]);
       const change = await boards.proposeBoardItemUpdate({
         boardItemId: parsed.boardItemId,
         field: parsed.field,
@@ -4391,6 +4377,21 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       for (const uid of input.visibilityUserIds ?? []) await deps.requireTeamMember(uid);
       await validateEvidenceVisible((input.evidence ?? []).map((ev) => ev.rawEventId));
       const objectTypeByTargetId = await objectTypesForItems(input.items);
+      const normalizedItems = input.items.map((item) => ({
+        ...item,
+        proposedPayload: normalizeSuggestionSourceEventPayload(
+          normalizeLifecyclePayload({
+            operation: item.operation,
+            targetKind: item.targetKind,
+            title: item.title,
+            proposedPayload: item.proposedPayload,
+            objectType:
+              item.targetKind === 'object' && item.operation !== 'create'
+                ? (objectTypeByTargetId.get(item.targetId ?? '') ?? null)
+                : null,
+          }),
+        ),
+      }));
       const evidenceIds = Array.from(new Set((input.evidence ?? []).map((ev) => ev.rawEventId)));
       const projectionContext = await buildApprovalProjectionContext({
         source: input.source,
@@ -4409,7 +4410,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       const correctionDedupeKey = `${input.dedupeKey}:correction:${suggestionDedupeKey({
         title: input.title,
         summary: input.summary ?? null,
-        items: input.items,
+        items: normalizedItems,
         evidence: input.evidence?.map((ev) => ev.rawEventId) ?? [],
       })}`;
       const existingRows = await db
@@ -4445,18 +4446,20 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
           .insert(reconciliationRuns)
           .values({
             teamId,
-            trigger: evidenceIds.length > 0 ? 'raw_event' : 'manual_repair',
+            trigger:
+              input.reconciliationTrigger ??
+              (evidenceIds.length > 0 ? 'raw_event' : 'manual_repair'),
             scope: 'approval_projection',
             status: 'completed',
             inputFingerprint: reconciliationDedupeKey('approval-projection-run', {
               teamId,
               dedupeKey,
-              itemDedupeKeys: input.items.map((item) => item.dedupeKey).sort(),
+              itemDedupeKeys: normalizedItems.map((item) => item.dedupeKey).sort(),
               sourceRefs: projectionContext.sourceRefs,
             }),
             engineVersion: RECONCILIATION_APPROVAL_PROJECTION_VERSION,
             completedAt: new Date(),
-            metrics: { item_count: input.items.length, evidence_count: evidenceIds.length },
+            metrics: { item_count: normalizedItems.length, evidence_count: evidenceIds.length },
           })
           .onConflictDoUpdate({
             target: [
@@ -4467,14 +4470,14 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
             set: {
               status: 'completed',
               completedAt: new Date(),
-              metrics: { item_count: input.items.length, evidence_count: evidenceIds.length },
+              metrics: { item_count: normalizedItems.length, evidence_count: evidenceIds.length },
             },
           })
           .returning();
         if (!run) throw new Error('Failed to create reconciliation run');
 
         const outputRows: ProjectionOutputRow[] = [];
-        for (const item of input.items) {
+        for (const item of normalizedItems) {
           const outputPayload = {
             projection: 'agent_suggestions',
             suggestion_dedupe_key: dedupeKey,
@@ -4669,19 +4672,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         await tx
           .insert(agentSuggestionItems)
           .values(
-            input.items.map((item) => {
-              const proposedPayload = normalizeSuggestionSourceEventPayload(
-                normalizeLifecyclePayload({
-                  operation: item.operation,
-                  targetKind: item.targetKind,
-                  title: item.title,
-                  proposedPayload: item.proposedPayload,
-                  objectType:
-                    item.targetKind === 'object' && item.operation !== 'create'
-                      ? (objectTypeByTargetId.get(item.targetId ?? '') ?? null)
-                      : null,
-                }),
-              );
+            normalizedItems.map((item) => {
               return {
                 suggestionId: inserted.id,
                 teamId,
@@ -4692,7 +4683,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
                 title: item.title,
                 description: item.description ?? null,
                 dedupeKey: item.dedupeKey,
-                proposedPayload,
+                proposedPayload: item.proposedPayload,
                 metadata: {
                   reconciliation_run_id: run.id,
                   reconciliation_output_id: outputIdByItemDedupeKey.get(item.dedupeKey) ?? null,
@@ -4721,7 +4712,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
               eq(agentSuggestionItems.suggestionId, inserted.id),
               inArray(
                 agentSuggestionItems.dedupeKey,
-                input.items.map((item) => item.dedupeKey),
+                normalizedItems.map((item) => item.dedupeKey),
               ),
             ),
           );

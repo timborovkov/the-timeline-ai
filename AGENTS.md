@@ -116,9 +116,9 @@ Treat this file as an operating contract for agents, not a loose README.
   named modules (`scope.timeline`, `scope.documents`, `scope.meetings`,
   `scope.objects`, `scope.boards`, `scope.suggestions`, `scope.calendar`,
   `scope.integrations`, `scope.mcp`, `scope.onboarding`, `scope.jobRecovery`,
-  `scope.audit`) rather than flat scope methods or manually passing `db` into
-  object helpers. Every Qdrant query filters on `team_id` via the wrapper. Do
-  not bypass these — even in "internal" tools.
+  `scope.reconciliation`, `scope.audit`) rather than flat scope methods or
+  manually passing `db` into object helpers. Every Qdrant query filters on
+  `team_id` via the wrapper. Do not bypass these — even in "internal" tools.
 - **Captured raw event content is immutable.** Never `UPDATE` a source-ingested
   `raw_events` row's content. Derived facts can be re-extracted; the source is
   the source. Calendar raw-event rows are derived schedule mirrors and may
@@ -184,8 +184,9 @@ Treat this file as an operating contract for agents, not a loose README.
 apps/
   web/      Next.js 16 app (App Router, RSC, server actions, Auth.js)
   worker/   BullMQ workers (transcribe, extract, embed, document-extract,
-            meeting-finalize, overdue-scan, janitor, integration-sync,
-            mcp-health)
+            meeting-finalize, meeting-scheduler, overdue-scan, janitor,
+            integration-sync, mcp-health, team-export, daily-digest,
+            object-summary, reconciliation)
 packages/
   db/       Drizzle schema + migrations
   shared/   Cross-package code: withTeam workspace port, llm wrapper, Qdrant

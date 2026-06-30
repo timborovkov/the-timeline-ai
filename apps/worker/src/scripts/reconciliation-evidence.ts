@@ -43,7 +43,9 @@ function parseArgs(): Args {
   let all = false;
 
   for (const arg of process.argv.slice(2)) {
-    if (arg.startsWith('--team=')) {
+    if (arg === '--') {
+      continue;
+    } else if (arg.startsWith('--team=')) {
       teamId = arg.slice('--team='.length);
     } else if (arg.startsWith('--mode=')) {
       const value = arg.slice('--mode='.length);

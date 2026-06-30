@@ -26,6 +26,7 @@ const pgliteTests = [
   'src/onboarding/index.test.ts',
   'src/objects/index.test.ts',
   'src/reconciliation/backfill.test.ts',
+  'src/reconciliation/dashboard.test.ts',
   'src/reconciliation/normalization.test.ts',
   'src/reconciliation/resolver.test.ts',
   'src/slack/dispatcher.test.ts',

@@ -17,6 +17,7 @@ import {
   factEntities,
   facts,
   objectChanges,
+  objectIdentityFacets,
   objectNotes,
   objectSummaries,
   notifications,
@@ -210,6 +211,16 @@ describe('object scope — team ownership and audit behavior', () => {
         rawEventId: rows[0]?.rawEventId,
       }),
     ]);
+    const createSourceRefs = outputs[0]?.sourceRefs as
+      | { sourcePayloadRef?: string | null }[]
+      | undefined;
+    const createSourceRef = createSourceRefs?.[0];
+    expect(createSourceRef?.sourcePayloadRef).toMatch(
+      /^inline:\/\/timeline\/system\/object_create\//,
+    );
+    expect(outputs[0]?.sourcePayloadRefs).toEqual([
+      expect.stringMatching(/^inline:\/\/timeline\/system\/object_create\//),
+    ]);
     expect(outputs[0]?.payload).toMatchObject({
       source: 'system',
       system_event_kind: 'object_create',
@@ -300,16 +311,35 @@ describe('object scope — team ownership and audit behavior', () => {
         provider: 'system',
         externalObjectId: object.id,
         eventType: 'system.object_create',
-        replayState: 'degraded',
+        replayState: 'full',
       }),
       expect.objectContaining({
         source: 'system',
         provider: 'system',
         externalObjectId: object.id,
         eventType: 'system.object_update',
-        replayState: 'degraded',
+        replayState: 'full',
       }),
     ]);
+    expect(evidence[0]?.sourcePayloadRef).toMatch(/^inline:\/\/timeline\/system\/object_create\//);
+    expect(evidence[1]?.sourcePayloadRef).toMatch(/^inline:\/\/timeline\/system\/object_update\//);
+    const updateMetadata = updateEvent?.sourceMetadata as Record<string, unknown> | undefined;
+    expect(updateMetadata).toMatchObject({
+      source_snapshot_kind: 'system_direct_write_event',
+      source_snapshot_version: 'system-direct-write-source-snapshot-2026-06',
+      changed_fields: ['status'],
+      source_snapshot: {
+        event_kind: 'object_update',
+        entity_id: object.id,
+        changes: [
+          expect.objectContaining({
+            field: 'status',
+            previousValue: 'todo',
+            newValue: 'done',
+          }),
+        ],
+      },
+    });
 
     const anchors = await db
       .select()
@@ -848,6 +878,116 @@ describe('object scope — team ownership and audit behavior', () => {
   });
 });
 
+describe('object scope — identity facets', () => {
+  it('emits direct-write outputs when identity facets are created and updated', async () => {
+    const scope = withTeam(db, TEAM_A, USER_OWNER).objects;
+    const person = await scope.createObject({
+      type: 'person',
+      canonicalName: 'Nora Acme',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+
+    const facet = await scope.createIdentityFacet({
+      entityId: person.id,
+      kind: 'email',
+      value: 'Nora@Acme.com',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    const updatedFacet = await scope.createIdentityFacet({
+      entityId: person.id,
+      kind: 'email',
+      value: 'nora@acme.com',
+      metadata: { verified: true },
+      actor: { kind: 'agent', userId: USER_OWNER },
+    });
+    expect(updatedFacet.id).toBe(facet.id);
+
+    const facetRows = await db
+      .select()
+      .from(objectIdentityFacets)
+      .where(eq(objectIdentityFacets.id, facet.id));
+    expect(facetRows[0]).toEqual(
+      expect.objectContaining({
+        entityId: person.id,
+        kind: 'email',
+        value: 'nora@acme.com',
+        normalizedValue: 'nora@acme.com',
+      }),
+    );
+
+    const changes = await db
+      .select()
+      .from(objectChanges)
+      .where(eq(objectChanges.entityId, person.id));
+    expect(changes.map((change) => change.field)).toEqual(
+      expect.arrayContaining(['__identity_facet_create__', '__identity_facet_update__']),
+    );
+
+    const outputs = await db
+      .select()
+      .from(reconciliationOutputs)
+      .where(eq(reconciliationOutputs.targetId, facet.id));
+    expect(outputs.map((output) => output.operation).sort()).toEqual(['create', 'update']);
+    for (const output of outputs) {
+      expect(output).toEqual(
+        expect.objectContaining({
+          outputKind: 'direct_write',
+          targetKind: 'identity_facet',
+          targetId: facet.id,
+          status: 'applied',
+          requiresApproval: false,
+          visibility: 'team',
+          visibilityFloor: 'team',
+        }),
+      );
+      expect(Array.isArray(output.sourceRefs)).toBe(true);
+      const [sourceRef] = output.sourceRefs as unknown[];
+      const sourceRefRecord =
+        sourceRef && typeof sourceRef === 'object' ? (sourceRef as Record<string, unknown>) : {};
+      expect(sourceRefRecord.source).toBe('system');
+      expect(typeof sourceRefRecord.rawEventId).toBe('string');
+      expect(typeof sourceRefRecord.evidenceId).toBe('string');
+      expect(sourceRefRecord.sourcePayloadRef).toEqual(
+        expect.stringMatching(/^inline:\/\/timeline\/system\/identity_facet_/),
+      );
+      expect(output.sourcePayloadRefs).toEqual([
+        expect.stringMatching(/^inline:\/\/timeline\/system\/identity_facet_/),
+      ]);
+    }
+
+    const createOutput = outputs.find((output) => output.operation === 'create');
+    expect(createOutput?.payload).toEqual(
+      expect.objectContaining({
+        system_event_kind: 'identity_facet_create',
+        entity_id: person.id,
+        identity_facet_id: facet.id,
+        identity_facet_kind: 'email',
+        value: 'Nora@Acme.com',
+        normalized_value: 'nora@acme.com',
+        actor_kind: 'user',
+        actor_user_id: USER_OWNER,
+      }),
+    );
+    const updateOutput = outputs.find((output) => output.operation === 'update');
+    expect(updateOutput?.payload).toEqual(
+      expect.objectContaining({
+        system_event_kind: 'identity_facet_update',
+        entity_id: person.id,
+        identity_facet_id: facet.id,
+        identity_facet_kind: 'email',
+        value: 'nora@acme.com',
+        normalized_value: 'nora@acme.com',
+        actor_kind: 'agent',
+        actor_user_id: USER_OWNER,
+        previous: expect.objectContaining({
+          value: 'Nora@Acme.com',
+          normalized_value: 'nora@acme.com',
+        }) as unknown,
+      }),
+    );
+  });
+});
+
 describe('object scope — notes and suggestions', () => {
   it('keeps note edits and deletes author-only, including direct action-style calls', async () => {
     const ownerScope = withTeam(db, TEAM_A, USER_OWNER).objects;
@@ -955,6 +1095,12 @@ describe('object scope — notes and suggestions', () => {
       expect(sourceRefRecord.source).toBe('system');
       expect(typeof sourceRefRecord.rawEventId).toBe('string');
       expect(typeof sourceRefRecord.evidenceId).toBe('string');
+      expect(sourceRefRecord.sourcePayloadRef).toEqual(
+        expect.stringMatching(/^inline:\/\/timeline\/system\/object_note_/),
+      );
+      expect(output.sourcePayloadRefs).toEqual([
+        expect.stringMatching(/^inline:\/\/timeline\/system\/object_note_/),
+      ]);
     }
     const updateOutput = noteOutputs.find((output) => output.operation === 'update');
     expect(updateOutput?.payload).toEqual(
@@ -1578,6 +1724,38 @@ describe('object scope — archive visibility', () => {
     expect(first.changedFields).toEqual(['archivedAt']);
     expect(second.changedFields).toEqual([]);
     expect(second.archivedAt?.getTime()).toBe(first.archivedAt?.getTime());
+
+    const outputs = await db
+      .select()
+      .from(reconciliationOutputs)
+      .where(eq(reconciliationOutputs.targetId, object.id));
+    expect(outputs.map((output) => output.operation).sort()).toEqual([
+      'archive_or_cancel',
+      'create',
+    ]);
+    const archiveOutput = outputs.find((output) => output.operation === 'archive_or_cancel');
+    expect(archiveOutput).toEqual(
+      expect.objectContaining({
+        outputKind: 'direct_write',
+        targetKind: 'object',
+        status: 'applied',
+        requiresApproval: false,
+        visibility: 'team',
+        visibilityFloor: 'team',
+      }),
+    );
+    expect(archiveOutput?.payload).toEqual(
+      expect.objectContaining({
+        system_event_kind: 'object_update',
+        changed_fields: ['archivedAt'],
+      }),
+    );
+    expect(archiveOutput?.authorityDecision).toEqual(
+      expect.objectContaining({
+        target_kind: 'object',
+        target_field: '__archive__',
+      }),
+    );
   });
 
   it('searches exact object names outside the recent list window', async () => {
@@ -1815,6 +1993,16 @@ describe('object scope — relationships', () => {
         rawEventId: linkEvent?.id,
       }),
     ]);
+    const linkSourceRefs = linkOutputs[0]?.sourceRefs as
+      | { sourcePayloadRef?: string | null }[]
+      | undefined;
+    const linkSourceRef = linkSourceRefs?.[0];
+    expect(linkSourceRef?.sourcePayloadRef).toMatch(
+      /^inline:\/\/timeline\/system\/relationship_create\//,
+    );
+    expect(linkOutputs[0]?.sourcePayloadRefs).toEqual([
+      expect.stringMatching(/^inline:\/\/timeline\/system\/relationship_create\//),
+    ]);
     expect(linkOutputs[0]?.payload).toMatchObject({
       source: 'system',
       system_event_kind: 'relationship_create',
@@ -1864,6 +2052,16 @@ describe('object scope — relationships', () => {
         source: 'system',
         rawEventId: unlinkEvent?.id,
       }),
+    ]);
+    const unlinkSourceRefs = unlinkOutput?.sourceRefs as
+      | { sourcePayloadRef?: string | null }[]
+      | undefined;
+    const unlinkSourceRef = unlinkSourceRefs?.[0];
+    expect(unlinkSourceRef?.sourcePayloadRef).toMatch(
+      /^inline:\/\/timeline\/system\/relationship_delete\//,
+    );
+    expect(unlinkOutput?.sourcePayloadRefs).toEqual([
+      expect.stringMatching(/^inline:\/\/timeline\/system\/relationship_delete\//),
     ]);
     expect(unlinkOutput?.payload).toMatchObject({
       source: 'system',
@@ -2368,6 +2566,16 @@ describe('object scope — merge cleanup', () => {
         source: 'system',
         rawEventId: mergeEvent?.id,
       }),
+    ]);
+    const mergeSourceRefs = mergeOutput?.sourceRefs as
+      | { sourcePayloadRef?: string | null }[]
+      | undefined;
+    const mergeSourceRef = mergeSourceRefs?.[0];
+    expect(mergeSourceRef?.sourcePayloadRef).toMatch(
+      /^inline:\/\/timeline\/system\/object_merge\//,
+    );
+    expect(mergeOutput?.sourcePayloadRefs).toEqual([
+      expect.stringMatching(/^inline:\/\/timeline\/system\/object_merge\//),
     ]);
     expect(mergeOutput?.payload).toMatchObject({
       source: 'system',
@@ -3071,6 +3279,120 @@ describe('object scope — merge cleanup', () => {
     expect(rows[0]?.status).toBe('ready');
     expect(rows[0]?.model).toBe('test-summary-model');
     expect(rows[0]?.plainText).toContain('confirmed June 30');
+  });
+
+  it('lets generated summaries cite reconciliation association evidence', async () => {
+    const scope = withTeam(db, TEAM_A, USER_OWNER);
+    const object = await scope.objects.createObject({
+      type: 'project',
+      canonicalName: 'Acme rollout',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    await db.update(entities).set({ stage: 'implementation' }).where(eq(entities.id, object.id));
+    const [event] = await db
+      .insert(rawEvents)
+      .values({
+        teamId: TEAM_A,
+        authorUserId: USER_OWNER,
+        source: 'email',
+        contentText: 'Forwarded email: Acme approved rollout implementation.',
+        occurredAt: new Date('2026-06-02T10:00:00.000Z'),
+        visibility: 'team',
+        sourceMetadata: {
+          source_payload_ref: 'inline://test/acme-rollout-email',
+          payload_digest: 'sha256:acme-rollout-email',
+        },
+      })
+      .returning({ id: rawEvents.id });
+    if (!event) throw new Error('failed to insert event');
+    const [cluster] = await db
+      .insert(artifactClusters)
+      .values({
+        teamId: TEAM_A,
+        artifactClusterKind: 'customer_project',
+        artifactType: 'project',
+        canonicalName: 'Acme rollout',
+        canonicalEntityId: object.id,
+      })
+      .returning({ id: artifactClusters.id });
+    if (!cluster) throw new Error('failed to insert cluster');
+    const [evidence] = await db
+      .insert(reconciliationEvidence)
+      .values({
+        teamId: TEAM_A,
+        rawEventId: event.id,
+        sourcePayloadRef: 'inline://test/acme-rollout-email',
+        payloadDigest: 'sha256:acme-rollout-email',
+        source: 'email',
+        provider: 'email',
+        eventType: 'customer_project_update',
+        occurredAt: new Date('2026-06-02T10:00:00.000Z'),
+        visibility: 'team',
+        actor: { kind: 'customer' },
+        contentDigest: 'sha256:acme-rollout-content',
+        title: 'Acme approved rollout implementation',
+        summary: 'Acme approved the rollout implementation plan.',
+        metadata: {},
+        normalizerVersion: 'summary-test',
+        replayState: 'full',
+        dedupeKey: 'summary-test-evidence',
+      })
+      .returning({ id: reconciliationEvidence.id });
+    if (!evidence) throw new Error('failed to insert evidence');
+    await db.insert(artifactEvidenceAssociations).values({
+      teamId: TEAM_A,
+      clusterId: cluster.id,
+      evidenceId: evidence.id,
+      rawEventId: event.id,
+      role: 'decision',
+      strength: 'hard',
+      associationSource: 'hard_anchor',
+      sourceRefs: [{ source: 'email', rawEventId: event.id, evidenceId: evidence.id }],
+      dedupeKey: 'summary-test-association',
+    });
+    let prompt = '';
+
+    await expect(
+      generateAndStoreObjectSummary(
+        db,
+        scope,
+        object.id,
+        { trigger: 'manual' },
+        {
+          chatStructured: <TSchema extends z.ZodType>(
+            input: ChatStructuredInput<TSchema>,
+          ): Promise<ChatStructuredResult<TSchema>> => {
+            prompt = input.prompt;
+            return Promise.resolve({
+              model: 'test-summary-model',
+              object: input.schema.parse({
+                overview: 'Acme rollout is in implementation after customer approval.',
+                overviewSourceRefs: [{ kind: 'timeline_event', id: event.id }],
+                currentState: [
+                  {
+                    label: 'Customer approval',
+                    text: 'Acme approved the implementation plan.',
+                    sourceRefs: [{ kind: 'timeline_event', id: event.id }],
+                  },
+                ],
+                openQuestions: [],
+                conflicts: [],
+              }),
+            });
+          },
+          enqueueObjectEmbedJob: vi.fn().mockResolvedValue(undefined),
+        },
+      ),
+    ).resolves.toEqual({ status: 'ready' });
+
+    expect(prompt).toContain('Reconciliation decision');
+    expect(prompt).toContain('Acme approved the rollout implementation plan.');
+    const [summary] = await db
+      .select()
+      .from(objectSummaries)
+      .where(eq(objectSummaries.entityId, object.id));
+    expect(summary?.sourceRefs).toEqual([{ kind: 'timeline_event', id: event.id }]);
+    expect(summary?.sourceCounts).toMatchObject({ events: 1, facts: 0 });
   });
 
   it('does not store a generated summary when the object changed during generation', async () => {

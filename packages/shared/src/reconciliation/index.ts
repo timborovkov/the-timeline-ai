@@ -1,5 +1,30 @@
 import { createHash } from 'node:crypto';
 
+export type {
+  ReconciliationClusterDetail,
+  ReconciliationClusterDetailEvidence,
+  ReconciliationClusterDetailOutput,
+  ReconciliationDashboardCount,
+  ReconciliationDashboardCluster,
+  ReconciliationDashboardInput,
+  ReconciliationDashboardOutput,
+  ReconciliationDashboardRun,
+  ReconciliationDashboardSnapshot,
+} from '#src/reconciliation/dashboard.js';
+export {
+  getReconciliationClusterDetail,
+  getReconciliationDashboardSnapshot,
+} from '#src/reconciliation/dashboard.js';
+export type {
+  ProductionSamplingBucket,
+  ProductionSamplingEvalReport,
+  ProductionSamplingEvalReportInput,
+  ProductionSamplingFixtureCandidate,
+  ProductionSamplingLatency,
+  ProductionSamplingRunKind,
+} from '#src/reconciliation/production-sampling.js';
+export { buildProductionSamplingEvalReport } from '#src/reconciliation/production-sampling.js';
+
 export type Visibility = 'team' | 'private' | 'specific_users';
 
 export interface VisibilityEnvelope {

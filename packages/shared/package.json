@@ -280,6 +280,18 @@
       "import": "./dist/reconciliation/backfill.js",
       "default": "./dist/reconciliation/backfill.js"
     },
+    "./reconciliation/dashboard": {
+      "types": "./src/reconciliation/dashboard.ts",
+      "development": "./src/reconciliation/dashboard.ts",
+      "import": "./dist/reconciliation/dashboard.js",
+      "default": "./dist/reconciliation/dashboard.js"
+    },
+    "./reconciliation/production-sampling": {
+      "types": "./src/reconciliation/production-sampling.ts",
+      "development": "./src/reconciliation/production-sampling.ts",
+      "import": "./dist/reconciliation/production-sampling.js",
+      "default": "./dist/reconciliation/production-sampling.js"
+    },
     "./reconciliation/eval-manifests": {
       "types": "./src/reconciliation/eval-manifests.ts",
       "development": "./src/reconciliation/eval-manifests.ts",

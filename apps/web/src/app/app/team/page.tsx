@@ -255,6 +255,7 @@ function AdminShortcuts({ isAdmin }: { isAdmin: boolean }) {
   return (
     <div className="flex flex-wrap items-center gap-2 border-y border-border py-2">
       <ActionChip href="/app/team/jobs" label="Job recovery →" />
+      <ActionChip href="/app/team/reconciliation" label="Reconciliation →" />
       <ActionChip href="/app/team/integrations/audit" label="Integration audit →" />
     </div>
   );

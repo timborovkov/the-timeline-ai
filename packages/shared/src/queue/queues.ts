@@ -59,6 +59,9 @@ export const QUEUE_NAMES = {
   // Generated object briefs. Produced by canonical object-memory writes and
   // manual object-page requests; consumed by the object-summary worker.
   objectSummary: 'object-summary',
+  // Reconciliation replay/audit work. This makes evidence coverage repair a
+  // first-class worker path instead of only an operator CLI.
+  reconciliation: 'reconciliation',
 } as const;
 
 export type QueueName = (typeof QUEUE_NAMES)[keyof typeof QUEUE_NAMES];
@@ -1028,5 +1031,80 @@ export async function enqueueObjectSummaryJob(
 export async function closeObjectSummaryQueue(): Promise<void> {
   await closeQueue(_objectSummaryQueue, () => {
     _objectSummaryQueue = undefined;
+  });
+}
+
+export type ReconciliationJobData =
+  | {
+      kind: 'evidence_audit';
+      teamId: string;
+      source?: string;
+      limit?: number;
+      pageSize?: number;
+      triggeredBy?: string;
+    }
+  | {
+      kind: 'evidence_backfill';
+      teamId: string;
+      source?: string;
+      limit?: number;
+      pageSize?: number;
+      dryRun?: boolean;
+      missingOnly?: boolean;
+      triggeredBy?: string;
+    }
+  | {
+      kind: 'scope_reconcile';
+      teamId: string;
+      scope: 'team' | 'object' | 'cluster';
+      targetId?: string;
+      triggeredBy?: string;
+      reason?: string;
+    };
+
+let _reconciliationQueue: TimelineQueue<ReconciliationJobData> | undefined;
+
+export function getReconciliationQueue(): TimelineQueue<ReconciliationJobData> {
+  if (_reconciliationQueue) return _reconciliationQueue;
+  _reconciliationQueue = createTimelineQueue<ReconciliationJobData>(QUEUE_NAMES.reconciliation, {
+    attempts: 2,
+    backoff: { type: 'exponential', delay: 10_000 },
+    removeOnComplete: { age: 24 * 3600, count: 1000 },
+    removeOnFail: { age: 7 * 24 * 3600 },
+  });
+  return _reconciliationQueue;
+}
+
+function reconciliationJobId(data: ReconciliationJobData): string {
+  if (data.kind === 'scope_reconcile') {
+    return bullmqCustomJobId([
+      data.kind,
+      data.teamId,
+      data.scope,
+      data.targetId ?? 'team',
+      data.triggeredBy ?? 'manual',
+      data.reason ?? 'manual',
+    ]);
+  }
+
+  return bullmqCustomJobId([
+    data.kind,
+    data.teamId,
+    data.source ?? 'all',
+    data.limit === undefined ? 'all' : String(data.limit),
+    data.pageSize === undefined ? 'default-page' : String(data.pageSize),
+    'dryRun' in data ? String(data.dryRun ?? false) : 'audit',
+    'missingOnly' in data ? String(data.missingOnly ?? true) : 'audit',
+    data.triggeredBy ?? 'manual',
+  ]);
+}
+
+export async function enqueueReconciliationJob(data: ReconciliationJobData): Promise<void> {
+  await getReconciliationQueue().add('reconciliation', data, { jobId: reconciliationJobId(data) });
+}
+
+export async function closeReconciliationQueue(): Promise<void> {
+  await closeQueue(_reconciliationQueue, () => {
+    _reconciliationQueue = undefined;
   });
 }

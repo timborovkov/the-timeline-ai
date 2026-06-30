@@ -16,7 +16,7 @@ import {
   type Db,
 } from '@timeline/db';
 import { withTeam } from '@timeline/shared/team-scope';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -533,6 +533,18 @@ describe('processSuggestionJobForTests', () => {
     const [bundle] = await scope.suggestions.listPendingSuggestions();
     const itemId = bundle?.items[0]?.id ?? '';
     await expect(scope.suggestions.rejectSuggestionItem(itemId)).resolves.toBe(true);
+    const outputId = bundle?.items[0]?.metadata.reconciliation_output_id;
+    if (typeof outputId !== 'string') throw new Error('expected projection output id');
+    await db.delete(agentSuggestions).where(eq(agentSuggestions.id, bundle?.id ?? ''));
+    const [output] = await db
+      .select({
+        status: reconciliationOutputs.status,
+        suggestionDedupeKey: sql<string>`${reconciliationOutputs.payload} ->> 'suggestion_dedupe_key'`,
+      })
+      .from(reconciliationOutputs)
+      .where(eq(reconciliationOutputs.id, outputId));
+    expect(output?.status).toBe('rejected');
+    expect(output?.suggestionDedupeKey).toEqual(expect.any(String));
 
     await processSuggestionJobForTests(
       { db: db as never },
@@ -540,9 +552,7 @@ describe('processSuggestionJobForTests', () => {
     );
 
     await expect(scope.suggestions.listPendingSuggestions()).resolves.toEqual([]);
-    await expect(scope.suggestions.listSuggestions({ status: 'resolved' })).resolves.toHaveLength(
-      1,
-    );
+    await expect(scope.suggestions.listSuggestions({ status: 'resolved' })).resolves.toEqual([]);
   });
 
   it('requires supporting evidence for short company duplicate candidates and suppresses rejected pairs', async () => {
@@ -1045,6 +1055,21 @@ describe('processSuggestionJobForTests', () => {
     expect(outputPayload.suggestion_dedupe_key).toBe(suggestionRow.dedupeKey);
     expect(outputPayload.item_dedupe_key).toBe(itemRow.dedupeKey);
     expect(outputPayload.proposed_payload).toMatchObject({ kind: 'related' });
+    const [run] = await db
+      .select()
+      .from(reconciliationRuns)
+      .where(eq(reconciliationRuns.id, output.runId));
+    expect(run).toMatchObject({
+      teamId: TEAM_ID,
+      trigger: 'manual_repair',
+      scope: 'approval_projection',
+      status: 'completed',
+      engineVersion: 'approval-projection-2026-06',
+    });
+    expect(run?.metrics).toMatchObject({
+      item_count: 1,
+      evidence_count: 1,
+    });
 
     const projectionOutboxRows = await db
       .select()
@@ -4449,6 +4474,15 @@ describe('processSuggestionJobForTests', () => {
         ],
       },
     });
+    const planReconciliation = vi.fn().mockResolvedValue({
+      scenarioFamily: 'decision_memory',
+      ingestionSurfaces: ['telegram'],
+      outputKinds: ['approval_bundle'],
+      directWriteSurfaces: [],
+      approvalRequired: true,
+      sourceRefs: [{ surface: 'telegram', rawEventId }],
+      privacyRisk: false,
+    });
 
     await processSuggestionJobForTests(
       { db: db as never },
@@ -4457,7 +4491,7 @@ describe('processSuggestionJobForTests', () => {
         conversationReviewId: reviewId,
         teamId: TEAM_ID,
       },
-      { getEnv: env, chatStructured: chat, modelId: MODEL_ID },
+      { getEnv: env, chatStructured: chat, planReconciliation, modelId: MODEL_ID },
     );
 
     const [item] = await db.select().from(agentSuggestionItems);
@@ -4468,6 +4502,34 @@ describe('processSuggestionJobForTests', () => {
       status: 'pending',
     });
     expect(item?.proposedPayload).toMatchObject({ status: 'done' });
+    expect(planReconciliation).toHaveBeenCalledWith(
+      expect.objectContaining({
+        observedSurfaces: ['telegram'],
+        sourceRefs: [{ surface: 'telegram', rawEventId }],
+        policyDerivedOutputKinds: ['approval_bundle'],
+      }),
+      expect.any(Object),
+    );
+    const [suggestion] = await db.select().from(agentSuggestions);
+    expect(suggestion?.metadata).toMatchObject({
+      reconciliation_planner_version: 'reconciliation-planner-2026-06-privacy-floor',
+      reconciliation_planner_status: 'completed',
+      reconciliation_planner_result: {
+        ingestionSurfaces: ['telegram'],
+        outputKinds: ['approval_bundle'],
+        approvalRequired: true,
+        privacyRisk: false,
+      },
+    });
+    const [output] = await db.select().from(reconciliationOutputs);
+    expect(output?.payload).toMatchObject({
+      projection_metadata: {
+        reconciliation_planner_status: 'completed',
+        reconciliation_planner_result: {
+          sourceRefs: [{ surface: 'telegram', rawEventId }],
+        },
+      },
+    });
     const [task] = await db.select().from(entities).where(eq(entities.id, OBJECT_ID));
     expect(task?.status).toBe('open');
   });

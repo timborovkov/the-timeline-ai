@@ -8,24 +8,43 @@ contracts, not private implementation structure.
 
 Last checked in this branch: full `pnpm validate`, `pnpm test:eval`,
 `pnpm test:reconciliation-eval`, `pnpm test:dist-imports`, root `pnpm test`,
-and React Doctor pass. React Doctor reported "No issues found"; its external
-score API was unreachable, so no numeric score was available. The suite
-includes reconciliation schema contracts, fixture-backed surface/scenario evals,
-source-ref and visibility-floor evals, source-payload replay coverage,
-projection-outbox status mirroring and repair, authority-policy checks,
-conversation-review no-action reconciliation outputs,
+and React Doctor pass. React Doctor reported "No issues found" with a 100/100
+score. Manual live reconciliation eval with real `llm.chatStructured()` calls
+also passed 5/5 cases with AI judge 5/5, average judge score 1.0, and redacted
+artifacts in
+`/tmp/timeline-reconciliation-live-eval/2026-06-30T15-31-23-768Z/manifest.json`.
+The suite includes reconciliation schema contracts, fixture-backed
+surface/scenario evals, source-ref and visibility-floor evals, source-payload
+replay coverage, projection-outbox status mirroring and repair, authority-policy
+checks, conversation-review planner metadata and no-action reconciliation outputs,
+queue-backed reconciliation evidence audit/backfill worker coverage,
+admin reconciliation dashboard snapshot coverage and queue-action contracts,
+production-sampling eval report aggregation over redacted live artifacts,
 artifact-helper association writes without legacy member rows,
 accepted object/task suggestions avoiding canonical `source_event_id` stamps,
 agent actor object creates avoiding canonical legacy provenance stamps,
-direct object creates, updates, merges, relationship link/unlink writes, and
-note create/update/delete writes
-emitting applied reconciliation `direct_write` outputs with source refs,
-authority decisions, dedupe, changed-field/merge/relationship/note payloads,
-and visibility floors,
+direct object creates, updates, archives, merges, relationship link/unlink
+writes, note create/update/delete writes, identity facet create/update writes,
+and manual board item add/update/remove writes emitting applied reconciliation
+`direct_write` outputs with inline source-payload snapshot refs, source refs,
+authority decisions, dedupe,
+changed-field/archive/merge/relationship/note/identity/board payloads, and
+visibility floors,
 provider `objectMap` syncs avoiding canonical object upserts,
 accepted board suggestions avoiding canonical `source_event_id` stamps,
 agent task/object-memory tools and shared approval projection stripping legacy
-`sourceEventId` payloads,
+`sourceEventId` payloads, board approval projections stripping legacy
+`sourceEventId` payloads from both suggestion-item and reconciliation-output
+projection payload storage,
+object provenance and board history hydrating accepted suggestion evidence from
+reconciliation output source refs before legacy pointers, including hidden
+multi-source fail-closed behavior,
+admin reconciliation dashboard coverage plus conflict/source/no-action/approval
+diagnostics,
+object cleanup and object-memory repair projections using `manual_repair`
+reconciliation runs while preserving cited source refs,
+cleanup replay suppression reading rejected reconciliation outputs even after
+approval projection rows are deleted,
 artifact status reopen regressions, same-object batch evidence preservation,
 cross-team artifact join guards, captured-inbox promotion/pagination fixes,
 provider-connection hardening, recurring meeting capture, Saved Meeting
@@ -36,7 +55,7 @@ and board/search UI regressions. Current suite shape:
 
 - DB Vitest: 2 files / 13 tests, package-level PGlite schema contract suite now
   runs under root `pnpm test`.
-- Shared Vitest: 93 passing files plus 1 skipped / 1,063 passing tests plus 7
+- Shared Vitest: 94 passing files plus 1 skipped / 1,067 passing tests plus 7
   skipped, including PGlite artifact reconciliation, reconciliation
   normalization/backfill/resolution, authority policy, planner prompt/schema,
   event writer, calendar, timeline, MCP, integration/provider-connection,
@@ -45,13 +64,15 @@ and board/search UI regressions. Current suite shape:
   The shared package runner executes unit tests once and PGlite integration
   tests in isolated chunks so long-lived PGlite state cannot starve later hooks
   during root `pnpm test`.
-- Web Vitest: 146 files / 847 tests, including route/action/component coverage
+- Web Vitest: 147 files / 853 tests, including route/action/component coverage
   for search, timeline, core recovery, onboarding, object sections, board
   add-item interactions, provider-connection routes/UI, app dialog flows, and
   other high-value UI states.
-- Worker Vitest: 17 files / 227 tests, including extract, transcribe,
+- Worker Vitest: 18 files / 232 tests, including extract, transcribe,
   document-extract, meeting-finalize, meeting-scheduler, integration-sync
-  attention behavior, overdue-scan, embedding, cleanup, and janitor behavior.
+  attention behavior, overdue-scan, embedding, cleanup, reconciliation
+  audit/backfill and advisory-locked manual scoped run recording, and janitor
+  behavior.
 - Playwright: 13 local core E2E journeys plus 1 production-ish smoke journey.
 - E2E CI is still manual and `continue-on-error: true`; it is not a merge
   gate yet.
@@ -78,7 +99,7 @@ Legend:
 | Calendar | Partial: browser all-day create/edit/delete plus team/private visibility | Missing calendar API routes, if any are added later | Strong calendar action tests | Strong PGlite calendar scope, queue degradation, and time helpers | Embed worker calendar plan covered | Missing calendar UI states | E2E specific-user/timed calendar behavior and richer calendar UI states |
 | Native integrations: Drive, GitHub, Linear, Monday.com, Slack workspace, Sentry | Missing UI/E2E connect/manage flows | Partial: Drive and Linear webhooks, OAuth start/callback, provider-connection resource sharing, activation, delete, and legacy selection guard routes covered | Missing integration actions if/when added | Strong provider parsing for Drive/GitHub/Linear/Monday.com/Slack/Sentry, event writer, provider-connection scope, attention lifecycle, source activation, duplicate-path replacement, token encryption, and email-throttle coverage | Partial: integration sync worker attention classification, transient-failure delay, owner-left, reconnect, and success-reset behavior covered | Partial: provider-connection source picker, provider-specific source guidance, team source actions, and app dialog guard covered | Browser E2E for OAuth connect/share/activate/replace, provider-backed canaries, and richer loading/error UI states |
 | Slack | Missing Slack settings E2E | Partial: events webhook covered; commands/install/user-link missing | Missing Slack action tests | Strong dispatcher/API/security/source-capture coverage, including text/file capture, linked attribution, visibility defaults, downstream queues, idempotent edits, `/timeline join` Saved Meeting aliases, and raw URL confirmation buttons | Missing provider-specific worker coverage | Missing Slack settings UI | Install/user-link routes, settings UI, provider-backed canary coverage |
-| Telegram | Partial: browser verifies deterministic Telegram voice transcript approval acceptance | Partial: webhook covered, including media env wiring | Missing Telegram action tests | Strong API/dispatcher coverage, including DM text, voice/audio, caption/photo, document routing, duplicate delivery, media skip behavior, `/join` Saved Meeting aliases, raw URL inline-button confirmation, direct-reply confirmation, and passive-text non-trigger behavior | Partial: transcribe processor handoff from audio transcript to extract/embed/suggestions is covered | Missing Telegram settings UI | Bind/unbind/settings actions and UI, provider-backed Telegram/OpenRouter canary, richer image/OCR-to-approval behavior |
+| Telegram | Partial: browser verifies deterministic Telegram voice transcript approval acceptance | Partial: webhook covered, including media env wiring | Missing Telegram action tests | Strong API/dispatcher coverage, including DM text, voice/audio, caption/photo, document routing, duplicate delivery, media skip behavior, `/join` Saved Meeting aliases, raw URL inline-button confirmation, direct-reply confirmation, and passive-text non-trigger behavior | Partial: transcribe processor handoff from audio transcript to normalized reconciliation evidence, extract/embed, and suggestions is covered | Missing Telegram settings UI | Bind/unbind/settings actions and UI, provider-backed Telegram/OpenRouter canary, richer image/OCR-to-approval behavior |
 | MCP inbound/outbound | Missing MCP settings/key E2E | Strong MCP OAuth/server/key/server/tool route contracts | Missing MCP-specific actions if/when added | Strong auth/OAuth state/tool namespace/server handler, tool namespace, and deterministic untrusted-output/failure/reauth evals | MCP health worker missing | Missing MCP UI | MCP health worker, private-vs-team E2E, UI management states, provider-backed MCP behavior |
 | Email inbound/outbound | Missing E2E inbound email journey | Partial: inbound webhook covered, including Redis queue wiring | Whitelist action covered; invite/support email action gaps remain | Strong parser/dispatcher/outbound/IP allowlist/source-capture coverage, including sender auth, sender whitelist filtering, visibility defaults, attachment/audio routing, downstream queues, and duplicate delivery recovery | Missing extract processor coverage for email attachments | Missing UI | Support action, sender whitelist UI component/E2E, inbound attachment extraction E2E/integration, provider-backed Postmark canary |
 | Meeting bots and meetings | Missing E2E scheduling/finalization | Strong Recall status/transcript webhook coverage for lifecycle, no-show, failure, and finalize handoff contracts | Thin meetings action coverage | Strong meetings scope, Saved Meeting alias/schedule/materialization/confirmation/failure-counter behavior, Recall/Svix/url helpers | Strong meeting-finalize and meeting-scheduler workers | Missing meeting UI states | Browser E2E for saved-meeting setup/auto-join and richer meeting UI states |
@@ -86,7 +107,7 @@ Legend:
 | Onboarding | Missing E2E checklist/dismissal | Strong checklist route coverage | Strong onboarding action coverage | Strong PGlite checklist inference, dismiss/reopen, manual completion, and team isolation | Missing | Partial checklist static states | Checklist E2E and richer interaction states |
 | Suggestions and background agent actions | Partial: capture-to-suggestion-to-acceptance creates durable task/calendar state, and object-update approval updates an existing object without duplication | Missing route coverage if surfaced later | Strong suggestions action boundary tests | Strong PGlite suggestions scope, dedupe, accept/reject, task/object/calendar/decision durability, and cross-team failure behavior | Partial: deterministic suggestion worker processor tests | Partial: object cleanup suggestions review/fallback/pagination | Remaining P1: richer suggestions UI states and live-model evals |
 | Embeddings and retrieval quality | Missing E2E semantic retrieval flow | Strong search/chat route contracts with mocked boundaries | N/A | Strong deterministic retrieval ranking, PGlite hydration, visibility/team filtering, embedding source planning, Qdrant point IDs, raw-event rendering, and LLM wrapper behavior | Partial: embed worker text/payload/skip/stale-source coverage | Missing retrieval UI assertions | Remaining: source rendering breadth for more providers and browser semantic retrieval assertions |
-| Support and team exports | Missing E2E | Missing direct routes if exposed | Missing support and team-export actions | Strong team-export archive integration | Team-export worker missing | Missing UI | Support validation/email failure, export enqueue/idempotency, worker failure cleanup |
+| Support and team exports | Missing E2E | Missing direct routes if exposed | Missing support and team-export actions | Strong team-export archive integration | Team-export worker implementation exists; direct worker failure cleanup coverage missing | Missing UI | Support validation/email failure, export enqueue/idempotency, worker failure cleanup |
 | Platform contracts: DB, queue, S3, env, rate limits | N/A | Rate-limit behavior covered through routes and token bucket | Queue degradation covered in some actions | Partial: env, crypto, rate limit, Qdrant, pagination, DB schema contracts, queue wrappers, Sentry scrubbing, and S3 wrappers covered | Queue/S3 wrapper behavior covered in shared tests | N/A | Deeper DB migration-compat history, queue/S3 live-emulator canaries |
 | Frontend components and UI states | Partial only where E2E crosses real pages | N/A | N/A | N/A | N/A | Partial: nav, job recovery list, capture composer, approvals, chat pane, document drive, object detail, board add-item flow, onboarding checklist, timeline controls/page helpers, timeline feed dedupe, hub/status/error helpers | Timeline list cards, document detail/search, boards, team settings, integrations, MCP, richer empty/error/loading states |
 
@@ -278,7 +299,8 @@ Covered shared areas include:
 - Telegram DM text and media capture now have regressions proving captured
   conversations enqueue the right downstream work: text/captions enqueue
   extract/embed plus debounced conversation-review suggestions, voice/audio
-  enqueues transcription, and the transcribed media path hands off to
+  enqueues transcription, and the transcribed media path records durable audio
+  payload refs, normalizes reconciliation evidence, and hands off to
   extract/embed plus conversation-review suggestions.
 - MCP auth, OAuth state, tool namespace, server handler behavior.
 - Agent tools structural behavior plus fast deterministic evals for timeline
@@ -312,17 +334,23 @@ Covered worker areas include:
 - Extract worker.
 - Embed worker.
 - Document extract worker.
+- Transcribe worker.
+- Calendar recurrence worker.
 - Meeting finalize worker.
+- Meeting scheduler worker.
+- Object summary worker.
 - Suggestions worker.
 - Janitor worker.
 - Overdue scan worker.
+- Daily digest worker.
+- Integration sync worker.
+- Reconciliation worker.
 - Railway config checks.
 
 Important uncovered worker processors:
 
-- `integrationSync`
 - `mcpHealth`
-- `teamExport`
+- `teamExport` direct worker failure cleanup
 
 ### Frontend Components and UI Logic
 
@@ -410,7 +438,9 @@ tests and evals carry the branch coverage and model/tool behavior.
     approval acceptance, and durable task state.
   - Suggestion worker processor seam with deterministic PGlite coverage for
     fallback task/calendar suggestions, model-backed object update suggestions,
-    private/specific-user visibility, skip stamping, and idempotent reruns.
+    conversation-review planner result projection, private/specific-user
+    visibility, output-owned cleanup rejection suppression, object-memory repair
+    replay classification, skip stamping, and idempotent reruns.
   - Suggestion action tests for accept/reject/accept-all validation, scope
     failures, no-longer-pending behavior, partial failures, errors, and
     revalidation paths.
@@ -458,8 +488,10 @@ tests and evals carry the branch coverage and model/tool behavior.
     and debounced conversation-review suggestion work for the source
     conversation.
   - Telegram voice/audio capture creates an audio raw event, enqueues
-    transcription, backfills transcript text, and enqueues extract/embed plus
-    conversation-review suggestion work from the transcript.
+    transcription, backfills transcript text, records a durable audio payload
+    ref/digest and transcript snapshot, normalizes reconciliation evidence, and
+    enqueues extract/embed plus conversation-review suggestion work from the
+    transcript.
   - Telegram image/document messages route attachments to document extraction;
     captions enqueue direct text follow-up work, while image-only messages do
     not invent approvals before extraction/OCR.
@@ -720,7 +752,9 @@ Once the suite is mature, split commands by layer:
 - `pnpm e2e`: local core Playwright E2E.
 - `pnpm e2e:prod-smoke`: production-ish smoke.
 - `pnpm test:eval`: fast deterministic agent evals.
-- `pnpm test:reconciliation-eval`: deterministic reconciliation eval matrix.
+- `pnpm test:reconciliation-eval`: deterministic reconciliation eval matrix,
+  replay coverage, reconciliation dashboard snapshot contracts, and
+  production-sampling artifact loading/report aggregation.
 - `pnpm test:dist-imports`: compiled-package import smoke.
 - `pnpm validate`: format, typecheck, lint, and knip.
 - CI PR gate: validate, reconciliation evals, and compiled-package import smoke,

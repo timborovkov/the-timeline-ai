@@ -30,7 +30,7 @@ describe('reconciliation planner', () => {
     });
 
     expect(RECONCILIATION_PLANNER_PROMPT_VERSION).toBe(
-      'reconciliation-planner-2026-06-output-policy-minimum',
+      'reconciliation-planner-2026-06-privacy-floor',
     );
     expect(prompt).toContain('Evidence packet: customer-project-email-monday-sentry');
     expect(prompt).toContain('- email');
@@ -45,6 +45,7 @@ describe('reconciliation planner', () => {
     expect(prompt).toContain('directWriteSurfaces must list every observed surface');
     expect(prompt).toContain('Never use direct_write for Timeline-owned company');
     expect(prompt).toContain('Do not omit approval_bundle');
+    expect(prompt).toContain('Privacy risk means visibility broadening');
     expect(prompt).toContain('Return every listed raw source ref exactly once');
   });
 

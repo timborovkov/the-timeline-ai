@@ -356,6 +356,67 @@ describe('queue wrappers', () => {
     expect(jobId.jobId).not.toContain(':');
   });
 
+  it('queues reconciliation audit and backfill jobs with stable encoded ids', async () => {
+    const queues = await importQueues();
+
+    await queues.enqueueReconciliationJob({
+      kind: 'evidence_audit',
+      teamId: '22222222-2222-4222-8222-222222222222',
+      source: 'email',
+      limit: 500,
+      triggeredBy: 'manual',
+    });
+    await queues.enqueueReconciliationJob({
+      kind: 'evidence_backfill',
+      teamId: '22222222-2222-4222-8222-222222222222',
+      source: 'email',
+      limit: 500,
+      pageSize: 100,
+      dryRun: true,
+      missingOnly: true,
+      triggeredBy: 'manual',
+    });
+    await queues.enqueueReconciliationJob({
+      kind: 'scope_reconcile',
+      teamId: '22222222-2222-4222-8222-222222222222',
+      scope: 'object',
+      targetId: '33333333-3333-4333-8333-333333333333',
+      triggeredBy: 'manual',
+      reason: 'admin_dashboard',
+    });
+
+    expect(fakes.queues[0]?.name).toBe('reconciliation');
+    expect(fakes.queues[0]?.options).toMatchObject({
+      defaultJobOptions: {
+        attempts: 2,
+        backoff: { type: 'exponential', delay: 10_000 },
+      },
+    });
+    expect(fakes.queues[0]?.addCalls).toEqual([
+      expect.objectContaining({
+        name: 'reconciliation',
+        opts: {
+          jobId:
+            'evidence_audit|22222222-2222-4222-8222-222222222222|email|500|default-page|audit|audit|manual',
+        },
+      }),
+      expect.objectContaining({
+        name: 'reconciliation',
+        opts: {
+          jobId:
+            'evidence_backfill|22222222-2222-4222-8222-222222222222|email|500|100|true|true|manual',
+        },
+      }),
+      expect.objectContaining({
+        name: 'reconciliation',
+        opts: {
+          jobId:
+            'scope_reconcile|22222222-2222-4222-8222-222222222222|object|33333333-3333-4333-8333-333333333333|manual|admin_dashboard',
+        },
+      }),
+    ]);
+  });
+
   it('dedupes object summary jobs by team and object id', async () => {
     const queues = await importQueues();
     const data = {

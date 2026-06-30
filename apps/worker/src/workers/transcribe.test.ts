@@ -1,5 +1,5 @@
 import { PGlite } from '@electric-sql/pglite';
-import { conversationReviews, rawEvents, type Db } from '@timeline/db';
+import { conversationReviews, rawEvents, reconciliationEvidence, type Db } from '@timeline/db';
 import { withTeam } from '@timeline/shared/team-scope';
 import { handleUpdate, type TelegramApi } from '@timeline/shared/telegram';
 import { UnrecoverableError } from 'bullmq';
@@ -44,6 +44,7 @@ async function seedAudioEvent(
   db: Db,
   id = RAW_EVENT_ID,
   sourceMetadata: Record<string, unknown> = {
+    tg_attachment_kind: 'voice',
     transcription_failed_at: '2026-05-27T10:01:00.000Z',
     transcription_error: 'old failure',
   },
@@ -97,7 +98,7 @@ describe('processTranscribeJobForTests', () => {
     await applyDbMigrations(pg);
     await seed(pg);
     db = drizzle(pg);
-  });
+  }, 20_000);
 
   afterEach(async () => {
     await pg.close();
@@ -124,10 +125,39 @@ describe('processTranscribeJobForTests', () => {
     });
     const row = (await db.select().from(rawEvents).where(eq(rawEvents.id, RAW_EVENT_ID)))[0];
     expect(row?.contentText).toBe("I'll schedule the lead meeting next Monday");
-    expect(row?.sourceMetadata).toMatchObject({ transcription_model: 'test-whisper' });
-    expect(row?.sourceMetadata).toHaveProperty('transcribed_at');
-    expect(row?.sourceMetadata).not.toHaveProperty('transcription_failed_at');
-    expect(row?.sourceMetadata).not.toHaveProperty('transcription_error');
+    const metadata = row?.sourceMetadata as Record<string, unknown> | undefined;
+    expect(metadata).toMatchObject({
+      transcription_model: 'test-whisper',
+      source_payload_ref: `s3://timeline-audio/${AUDIO_KEY}`,
+      source_snapshot_kind: 'transcribed_audio_event',
+      source_snapshot_version: 'transcribe-source-snapshot-2026-06',
+      source_snapshot: {
+        audio_key: AUDIO_KEY,
+        transcription_model: 'test-whisper',
+        transcript_text: "I'll schedule the lead meeting next Monday",
+        note_text: null,
+      },
+    });
+    expect(metadata).toHaveProperty('source_payload_digest');
+    expect(String(metadata?.source_payload_digest)).toMatch(/^sha256:[0-9a-f]{64}$/);
+    expect(metadata).toHaveProperty('transcribed_at');
+    expect(metadata).not.toHaveProperty('transcription_failed_at');
+    expect(metadata).not.toHaveProperty('transcription_error');
+    const [evidence] = await db
+      .select()
+      .from(reconciliationEvidence)
+      .where(eq(reconciliationEvidence.rawEventId, RAW_EVENT_ID));
+    expect(evidence).toMatchObject({
+      teamId: TEAM_ID,
+      rawEventId: RAW_EVENT_ID,
+      source: 'telegram',
+      provider: 'telegram',
+      eventType: 'telegram.voice',
+      replayState: 'full',
+      sourcePayloadRef: `s3://timeline-audio/${AUDIO_KEY}`,
+      visibility: 'team',
+    });
+    expect(evidence?.payloadDigest).toMatch(/^sha256:[0-9a-f]{64}$/);
     expect(enqueueExtract).toHaveBeenCalledWith({
       rawEventId: RAW_EVENT_ID,
       teamId: TEAM_ID,

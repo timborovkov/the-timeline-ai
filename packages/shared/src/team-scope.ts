@@ -57,6 +57,7 @@ import {
 } from '#src/qdrant/client.js';
 import { buildPointId } from '#src/qdrant/point-id.js';
 import { normalizeRawEventsToEvidence } from '#src/reconciliation/normalization.js';
+import { createReconciliationScope } from '#src/reconciliation/scope.js';
 import { createSuggestionScope } from '#src/suggestions/index.js';
 import { normalizeVisibilityUserIds, rawEventVisibleToUser } from '#src/visibility.js';
 
@@ -3019,6 +3020,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
     objects: objectScope,
     boards: boardScope,
     suggestions: suggestionScope,
+    reconciliation: createReconciliationScope({ db, scope: core }),
     integrations: integrationScope,
     mcp: mcpScope,
     onboarding: onboardingScope,

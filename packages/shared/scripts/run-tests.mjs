@@ -21,12 +21,12 @@ const pgliteChunks = [
     'src/onboarding/index.test.ts',
   ],
   ['src/objects/index.test.ts'],
+  ['src/suggestions/index.test.ts'],
   [
     'src/reconciliation/backfill.test.ts',
     'src/reconciliation/normalization.test.ts',
     'src/reconciliation/resolver.test.ts',
     'src/slack/dispatcher.test.ts',
-    'src/suggestions/index.test.ts',
   ],
   [
     'src/suggestions/reconciliation-projection.test.ts',

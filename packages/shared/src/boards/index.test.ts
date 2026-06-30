@@ -8,6 +8,8 @@ import {
   entities,
   notifications,
   rawEvents,
+  reconciliationEvidence,
+  reconciliationOutputs,
   type Db,
 } from '@timeline/db';
 import { eq } from 'drizzle-orm';
@@ -171,6 +173,80 @@ describe('board scope', () => {
       .from(boardItemChanges)
       .where(eq(boardItemChanges.boardItemId, item.id));
     expect(changes.map((change) => change.field).sort()).toEqual(['__add__', 'laneId', 'priority']);
+    expect(changes.every((change) => change.sourceEventId === null)).toBe(true);
+
+    const outputs = await db
+      .select()
+      .from(reconciliationOutputs)
+      .where(eq(reconciliationOutputs.targetId, item.id));
+    expect(outputs).toHaveLength(2);
+
+    const membershipOutput = outputs.find(
+      (output) => output.targetKind === 'board_membership' && output.operation === 'create',
+    );
+    const updateOutput = outputs.find(
+      (output) => output.targetKind === 'board_item_update' && output.operation === 'update',
+    );
+    expect(membershipOutput).toMatchObject({
+      outputKind: 'direct_write',
+      status: 'applied',
+      requiresApproval: false,
+      visibility: 'team',
+      visibilityFloor: 'team',
+    });
+    expect(updateOutput).toMatchObject({
+      outputKind: 'direct_write',
+      status: 'applied',
+      requiresApproval: false,
+      visibility: 'team',
+      visibilityFloor: 'team',
+    });
+    expect(updateOutput?.payload).toMatchObject({
+      system_event_kind: 'board_item_update',
+      changed_fields: ['laneId', 'priority'],
+    });
+    expect(updateOutput?.authorityDecision).toMatchObject({
+      authority_decision: 'direct',
+      target_kind: 'board_item_update',
+      target_field: '__update__',
+      changed_fields: ['laneId', 'priority'],
+    });
+
+    const updateSourceRef = (
+      updateOutput?.sourceRefs as
+        | { rawEventId?: string; evidenceId?: string; sourcePayloadRef?: string }[]
+        | null
+    )?.[0];
+    expect(updateSourceRef?.rawEventId).toEqual(expect.any(String));
+    expect(updateSourceRef?.evidenceId).toEqual(expect.any(String));
+    expect(updateSourceRef?.sourcePayloadRef).toEqual(
+      expect.stringMatching(/^inline:\/\/timeline\/system\/board_item_update\//),
+    );
+    expect(updateOutput?.sourcePayloadRefs).toEqual([
+      expect.stringMatching(/^inline:\/\/timeline\/system\/board_item_update\//),
+    ]);
+    const [evidence] = await db
+      .select()
+      .from(reconciliationEvidence)
+      .where(eq(reconciliationEvidence.id, updateSourceRef?.evidenceId ?? ''));
+    expect(evidence).toMatchObject({
+      rawEventId: updateSourceRef?.rawEventId,
+      source: 'system',
+      replayState: 'full',
+      visibility: 'team',
+    });
+    expect(evidence?.sourcePayloadRef).toMatch(/^inline:\/\/timeline\/system\/board_item_update\//);
+    const [sourceRawEvent] = await db
+      .select()
+      .from(rawEvents)
+      .where(eq(rawEvents.id, updateSourceRef?.rawEventId ?? ''));
+    expect(sourceRawEvent?.sourceMetadata).toMatchObject({
+      kind: 'board_item_update',
+      source_snapshot: {
+        board_item_id: item.id,
+        changed_fields: ['laneId', 'priority'],
+      },
+    });
     await expect(scope.boards.getBoard(board.id, { itemLimit: 'all' })).resolves.toMatchObject({
       items: [expect.objectContaining({ id: item.id, laneId: board.lanes[1]?.id })],
     });
@@ -772,6 +848,40 @@ describe('board scope', () => {
       .from(boardItemChanges)
       .where(eq(boardItemChanges.id, suggestion.id));
     expect(change?.status).toBe('suggested');
+
+    const outputs = await db
+      .select()
+      .from(reconciliationOutputs)
+      .where(eq(reconciliationOutputs.targetId, item.id));
+    const removeOutput = outputs.find(
+      (output) =>
+        output.targetKind === 'board_membership' && output.operation === 'archive_or_cancel',
+    );
+    expect(removeOutput).toMatchObject({
+      outputKind: 'direct_write',
+      status: 'applied',
+      requiresApproval: false,
+      visibility: 'team',
+      visibilityFloor: 'team',
+      payload: {
+        system_event_kind: 'board_item_remove',
+        board_item_id: item.id,
+        previous_lane_id: board.lanes[0]?.id ?? null,
+      },
+    });
+    const removeSourceRef = (
+      removeOutput?.sourceRefs as
+        | { rawEventId?: string; evidenceId?: string; sourcePayloadRef?: string }[]
+        | null
+    )?.[0];
+    expect(removeSourceRef?.rawEventId).toEqual(expect.any(String));
+    expect(removeSourceRef?.evidenceId).toEqual(expect.any(String));
+    expect(removeSourceRef?.sourcePayloadRef).toEqual(
+      expect.stringMatching(/^inline:\/\/timeline\/system\/board_item_remove\//),
+    );
+    expect(removeOutput?.sourcePayloadRefs).toEqual([
+      expect.stringMatching(/^inline:\/\/timeline\/system\/board_item_remove\//),
+    ]);
   });
 
   it('accepts board membership suggestions idempotently when the item was already added', async () => {
@@ -914,7 +1024,7 @@ describe('board scope', () => {
     );
   });
 
-  it('does not hydrate ambiguous bundle evidence into board item history', async () => {
+  it('hydrates multi-source output refs into board item history', async () => {
     const scope = withTeam(db, TEAM_A, USER_OWNER);
     const firstEvent = await scope.timeline.createEvent({
       authorUserId: USER_OWNER,
@@ -972,9 +1082,25 @@ describe('board scope', () => {
         field: '__add__',
         suggestionItemId: bundle.items[0]?.id,
         sourceEventId: null,
-        evidence: [],
       }),
     );
+    expect(history[0]?.evidence).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          rawEventId: firstEvent.id,
+          source: 'telegram',
+          quote: 'Add Revigo',
+          contentText: 'Add Revigo to the pilot pipeline.',
+        }),
+        expect.objectContaining({
+          rawEventId: secondEvent.id,
+          source: 'telegram',
+          quote: 'Add DFK',
+          contentText: 'Add DFK to the pilot pipeline.',
+        }),
+      ]),
+    );
+    expect(history[0]?.evidence).toHaveLength(2);
   });
 
   it('does not treat one visible event from a multi-event bundle as unambiguous evidence', async () => {

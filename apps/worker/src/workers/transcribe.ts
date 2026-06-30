@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -14,6 +14,7 @@ import {
   llm,
   queue,
 } from '@timeline/shared';
+import { normalizeRawEventsToEvidence } from '@timeline/shared/reconciliation/normalization';
 import { UnrecoverableError, Worker, type Job } from 'bullmq';
 import { eq, sql } from 'drizzle-orm';
 import ffmpegPath from 'ffmpeg-static';
@@ -28,6 +29,7 @@ const log = childLogger('worker:transcribe');
 const MAX_TRANSCRIPTION_CHUNK_BYTES = 24_000_000;
 const MAX_SOURCE_AUDIO_BYTES = 200 * 1024 * 1024;
 const LARGE_AUDIO_SEGMENT_SECONDS = 10 * 60;
+const TRANSCRIBE_SOURCE_SNAPSHOT_VERSION = 'transcribe-source-snapshot-2026-06';
 
 interface TranscribeWorkerDeps {
   db: Db;
@@ -123,10 +125,27 @@ export async function processTranscribeJobForTests(
   const noteText =
     typeof sourceMetadata.audio_note_text === 'string' ? sourceMetadata.audio_note_text.trim() : '';
   const contentText = [noteText, result.text].filter(Boolean).join('\n\n');
+  const existingPayloadRef =
+    typeof sourceMetadata.source_payload_ref === 'string' &&
+    sourceMetadata.source_payload_ref.trim()
+      ? sourceMetadata.source_payload_ref.trim()
+      : null;
+  const sourcePayloadRef = existingPayloadRef ?? `s3://timeline-audio/${audioKey}`;
+  const sourcePayloadDigest = `sha256:${createHash('sha256').update(body).digest('hex')}`;
 
   const patch = JSON.stringify({
     transcription_model: result.model,
     transcribed_at: new Date().toISOString(),
+    source_payload_ref: sourcePayloadRef,
+    source_payload_digest: sourcePayloadDigest,
+    source_snapshot_kind: 'transcribed_audio_event',
+    source_snapshot_version: TRANSCRIBE_SOURCE_SNAPSHOT_VERSION,
+    source_snapshot: {
+      audio_key: audioKey,
+      transcription_model: result.model,
+      transcript_text: result.text,
+      note_text: noteText || null,
+    },
   });
   // Clear stale failure markers on success. A row that previously failed
   // (Redis outage, enqueue-failed) then succeeds via retry must not
@@ -142,6 +161,22 @@ export async function processTranscribeJobForTests(
   if (update.length === 0) {
     log.warn({ rawEventId }, 'raw event not found at update');
     return { rawEventId, model: result.model };
+  }
+
+  try {
+    const row = update[0];
+    if (row) {
+      await normalizeRawEventsToEvidence({
+        db: deps.db,
+        teamId: row.teamId,
+        rawEventIds: [row.id],
+      });
+    }
+  } catch (normalizationErr) {
+    log.warn(
+      { err: normalizationErr, rawEventId },
+      'transcribed raw event reconciliation evidence normalization failed',
+    );
   }
 
   try {

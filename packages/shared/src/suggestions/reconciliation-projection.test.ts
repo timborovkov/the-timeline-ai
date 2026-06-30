@@ -453,14 +453,27 @@ describe('suggestion reconciliation projection', () => {
 
     const [acceptedItem] = await db.select().from(agentSuggestionItems);
     const outputs = await db.select().from(reconciliationOutputs);
+    const projectionOutput = outputs.find(
+      (output) => output.id === bundle.items[0]?.metadata.reconciliation_output_id,
+    );
+    const directWriteOutput = outputs.find(
+      (output) => output.id !== bundle.items[0]?.metadata.reconciliation_output_id,
+    );
     expect(acceptedItem?.resultId).toEqual(expect.any(String));
-    expect(outputs).toHaveLength(1);
-    expect(outputs[0]).toMatchObject({
+    expect(outputs).toHaveLength(2);
+    expect(projectionOutput).toMatchObject({
       id: bundle.items[0]?.metadata.reconciliation_output_id,
       status: 'applied',
     });
-    expect(outputs[0]?.payload).toMatchObject({
+    expect(projectionOutput?.payload).toMatchObject({
       projection_result_id: acceptedItem?.resultId,
+    });
+    expect(directWriteOutput).toMatchObject({
+      outputKind: 'direct_write',
+      targetKind: 'object',
+      operation: 'create',
+      targetId: acceptedItem?.resultId,
+      status: 'applied',
     });
 
     const outboxRows = await db

@@ -2,6 +2,8 @@ import { createHash } from 'node:crypto';
 
 import {
   type Db,
+  artifactClusters,
+  artifactEvidenceAssociations,
   entities,
   entityRelationships,
   factEntities,
@@ -11,6 +13,7 @@ import {
   objectSummaries,
   objectSummaryRuns,
   rawEvents,
+  reconciliationEvidence,
 } from '@timeline/db';
 import { and, desc, eq, inArray, isNull, ne, or, sql } from 'drizzle-orm';
 import { z } from 'zod';
@@ -229,6 +232,8 @@ function sourceKey(ref: ObjectSummarySourceRef): string {
 function sufficiency(counts: ObjectSummarySourceCounts, meaningfulFields: number) {
   if (counts.facts >= 2) return { canGenerate: true, reason: null };
   if (counts.facts >= 1 && meaningfulFields >= 1) return { canGenerate: true, reason: null };
+  if (counts.events >= 2) return { canGenerate: true, reason: null };
+  if (counts.events >= 1 && meaningfulFields >= 1) return { canGenerate: true, reason: null };
   if (counts.notes >= 1) return { canGenerate: true, reason: null };
   if (counts.tasks >= 1 && counts.facts + counts.notes + counts.relationships >= 1) {
     return { canGenerate: true, reason: null };
@@ -293,139 +298,187 @@ async function buildObjectSummaryPacket(
       : []),
   ];
 
-  const [factRows, noteRows, relationshipOutRows, relationshipInRows, taskRows, changeRows] =
-    await Promise.all([
-      db
-        .select({
-          id: facts.id,
-          statement: facts.statement,
-          confidence: facts.confidence,
-          rawEventId: facts.rawEventId,
-          extractedAt: facts.extractedAt,
-          occurredAt: rawEvents.occurredAt,
-        })
-        .from(facts)
-        .innerJoin(factEntities, eq(factEntities.factId, facts.id))
-        .innerJoin(rawEvents, eq(rawEvents.id, facts.rawEventId))
-        .where(
-          and(
-            eq(facts.teamId, scope.teamId),
-            eq(factEntities.entityId, entityId),
-            eq(rawEvents.teamId, scope.teamId),
-            eq(rawEvents.visibility, 'team'),
-            sql`COALESCE(${rawEvents.sourceMetadata} ->> 'deleted', 'false') <> 'true'`,
-          ),
-        )
-        .orderBy(desc(rawEvents.occurredAt), desc(facts.extractedAt))
-        .limit(24),
-      db
-        .select({
-          id: objectNotes.id,
-          body: objectNotes.body,
-          updatedAt: objectNotes.updatedAt,
-        })
-        .from(objectNotes)
-        .where(
-          and(
-            eq(objectNotes.teamId, scope.teamId),
-            eq(objectNotes.entityId, entityId),
-            isNull(objectNotes.deletedAt),
-          ),
-        )
-        .orderBy(desc(objectNotes.updatedAt), desc(objectNotes.id))
-        .limit(8),
-      db
-        .select({
-          id: entityRelationships.id,
-          kind: entityRelationships.kind,
-          createdAt: entityRelationships.createdAt,
-          otherName: entities.canonicalName,
-          otherType: entities.type,
-        })
-        .from(entityRelationships)
-        .innerJoin(entities, eq(entities.id, entityRelationships.toEntityId))
-        .where(
-          and(
-            eq(entityRelationships.teamId, scope.teamId),
-            eq(entityRelationships.fromEntityId, entityId),
-            eq(entities.teamId, scope.teamId),
-            isNull(entities.mergedIntoId),
-          ),
-        )
-        .orderBy(desc(entityRelationships.createdAt))
-        .limit(8),
-      db
-        .select({
-          id: entityRelationships.id,
-          kind: entityRelationships.kind,
-          createdAt: entityRelationships.createdAt,
-          otherName: entities.canonicalName,
-          otherType: entities.type,
-        })
-        .from(entityRelationships)
-        .innerJoin(entities, eq(entities.id, entityRelationships.fromEntityId))
-        .where(
-          and(
-            eq(entityRelationships.teamId, scope.teamId),
-            eq(entityRelationships.toEntityId, entityId),
-            eq(entities.teamId, scope.teamId),
-            isNull(entities.mergedIntoId),
-          ),
-        )
-        .orderBy(desc(entityRelationships.createdAt))
-        .limit(8),
-      db
-        .select({
-          id: entities.id,
-          canonicalName: entities.canonicalName,
-          status: entities.status,
-          dueAt: entities.dueAt,
-          updatedAt: entities.updatedAt,
-        })
-        .from(entityRelationships)
-        .innerJoin(entities, eq(entities.id, entityRelationships.fromEntityId))
-        .where(
-          and(
-            eq(entityRelationships.teamId, scope.teamId),
-            eq(entityRelationships.toEntityId, entityId),
-            eq(entityRelationships.kind, 'child'),
-            eq(entities.teamId, scope.teamId),
-            eq(entities.type, 'task'),
-            isNull(entities.archivedAt),
-            isNull(entities.mergedIntoId),
-            ne(entities.status, 'done'),
-            ne(entities.status, 'cancelled'),
-          ),
-        )
-        .orderBy(desc(entities.updatedAt), desc(entities.id))
-        .limit(8),
-      db
-        .select({
-          id: objectChanges.id,
-          field: objectChanges.field,
-          newValue: objectChanges.newValue,
-          note: objectChanges.note,
-          changedAt: objectChanges.changedAt,
-        })
-        .from(objectChanges)
-        .leftJoin(rawEvents, eq(rawEvents.id, objectChanges.sourceEventId))
-        .where(
-          and(
-            eq(objectChanges.teamId, scope.teamId),
-            eq(objectChanges.entityId, entityId),
-            or(
-              isNull(objectChanges.sourceEventId),
-              and(
-                eq(rawEvents.teamId, scope.teamId),
-                eq(rawEvents.visibility, 'team'),
-                sql`COALESCE(${rawEvents.sourceMetadata} ->> 'deleted', 'false') <> 'true'`,
-              ),
+  const [
+    factRows,
+    noteRows,
+    relationshipOutRows,
+    relationshipInRows,
+    taskRows,
+    changeRows,
+    associationRows,
+  ] = await Promise.all([
+    db
+      .select({
+        id: facts.id,
+        statement: facts.statement,
+        confidence: facts.confidence,
+        rawEventId: facts.rawEventId,
+        extractedAt: facts.extractedAt,
+        occurredAt: rawEvents.occurredAt,
+      })
+      .from(facts)
+      .innerJoin(factEntities, eq(factEntities.factId, facts.id))
+      .innerJoin(rawEvents, eq(rawEvents.id, facts.rawEventId))
+      .where(
+        and(
+          eq(facts.teamId, scope.teamId),
+          eq(factEntities.entityId, entityId),
+          eq(rawEvents.teamId, scope.teamId),
+          eq(rawEvents.visibility, 'team'),
+          sql`COALESCE(${rawEvents.sourceMetadata} ->> 'deleted', 'false') <> 'true'`,
+        ),
+      )
+      .orderBy(desc(rawEvents.occurredAt), desc(facts.extractedAt))
+      .limit(24),
+    db
+      .select({
+        id: objectNotes.id,
+        body: objectNotes.body,
+        updatedAt: objectNotes.updatedAt,
+      })
+      .from(objectNotes)
+      .where(
+        and(
+          eq(objectNotes.teamId, scope.teamId),
+          eq(objectNotes.entityId, entityId),
+          isNull(objectNotes.deletedAt),
+        ),
+      )
+      .orderBy(desc(objectNotes.updatedAt), desc(objectNotes.id))
+      .limit(8),
+    db
+      .select({
+        id: entityRelationships.id,
+        kind: entityRelationships.kind,
+        createdAt: entityRelationships.createdAt,
+        otherName: entities.canonicalName,
+        otherType: entities.type,
+      })
+      .from(entityRelationships)
+      .innerJoin(entities, eq(entities.id, entityRelationships.toEntityId))
+      .where(
+        and(
+          eq(entityRelationships.teamId, scope.teamId),
+          eq(entityRelationships.fromEntityId, entityId),
+          eq(entities.teamId, scope.teamId),
+          isNull(entities.mergedIntoId),
+        ),
+      )
+      .orderBy(desc(entityRelationships.createdAt))
+      .limit(8),
+    db
+      .select({
+        id: entityRelationships.id,
+        kind: entityRelationships.kind,
+        createdAt: entityRelationships.createdAt,
+        otherName: entities.canonicalName,
+        otherType: entities.type,
+      })
+      .from(entityRelationships)
+      .innerJoin(entities, eq(entities.id, entityRelationships.fromEntityId))
+      .where(
+        and(
+          eq(entityRelationships.teamId, scope.teamId),
+          eq(entityRelationships.toEntityId, entityId),
+          eq(entities.teamId, scope.teamId),
+          isNull(entities.mergedIntoId),
+        ),
+      )
+      .orderBy(desc(entityRelationships.createdAt))
+      .limit(8),
+    db
+      .select({
+        id: entities.id,
+        canonicalName: entities.canonicalName,
+        status: entities.status,
+        dueAt: entities.dueAt,
+        updatedAt: entities.updatedAt,
+      })
+      .from(entityRelationships)
+      .innerJoin(entities, eq(entities.id, entityRelationships.fromEntityId))
+      .where(
+        and(
+          eq(entityRelationships.teamId, scope.teamId),
+          eq(entityRelationships.toEntityId, entityId),
+          eq(entityRelationships.kind, 'child'),
+          eq(entities.teamId, scope.teamId),
+          eq(entities.type, 'task'),
+          isNull(entities.archivedAt),
+          isNull(entities.mergedIntoId),
+          ne(entities.status, 'done'),
+          ne(entities.status, 'cancelled'),
+        ),
+      )
+      .orderBy(desc(entities.updatedAt), desc(entities.id))
+      .limit(8),
+    db
+      .select({
+        id: objectChanges.id,
+        field: objectChanges.field,
+        newValue: objectChanges.newValue,
+        note: objectChanges.note,
+        changedAt: objectChanges.changedAt,
+      })
+      .from(objectChanges)
+      .leftJoin(rawEvents, eq(rawEvents.id, objectChanges.sourceEventId))
+      .where(
+        and(
+          eq(objectChanges.teamId, scope.teamId),
+          eq(objectChanges.entityId, entityId),
+          or(
+            isNull(objectChanges.sourceEventId),
+            and(
+              eq(rawEvents.teamId, scope.teamId),
+              eq(rawEvents.visibility, 'team'),
+              sql`COALESCE(${rawEvents.sourceMetadata} ->> 'deleted', 'false') <> 'true'`,
             ),
           ),
-        )
-        .orderBy(desc(objectChanges.changedAt), desc(objectChanges.id))
-        .limit(8),
-    ]);
+        ),
+      )
+      .orderBy(desc(objectChanges.changedAt), desc(objectChanges.id))
+      .limit(8),
+    db
+      .select({
+        associationId: artifactEvidenceAssociations.id,
+        role: artifactEvidenceAssociations.role,
+        rawEventId: sql<string>`COALESCE(${artifactEvidenceAssociations.rawEventId}, ${reconciliationEvidence.rawEventId})`,
+        title: reconciliationEvidence.title,
+        summary: reconciliationEvidence.summary,
+        occurredAt: reconciliationEvidence.occurredAt,
+        source: reconciliationEvidence.source,
+      })
+      .from(artifactClusters)
+      .innerJoin(
+        artifactEvidenceAssociations,
+        eq(artifactEvidenceAssociations.clusterId, artifactClusters.id),
+      )
+      .innerJoin(
+        reconciliationEvidence,
+        eq(reconciliationEvidence.id, artifactEvidenceAssociations.evidenceId),
+      )
+      .innerJoin(
+        rawEvents,
+        eq(
+          rawEvents.id,
+          sql`COALESCE(${artifactEvidenceAssociations.rawEventId}, ${reconciliationEvidence.rawEventId})`,
+        ),
+      )
+      .where(
+        and(
+          eq(artifactClusters.teamId, scope.teamId),
+          eq(artifactClusters.canonicalEntityId, entityId),
+          eq(artifactEvidenceAssociations.teamId, scope.teamId),
+          eq(artifactEvidenceAssociations.visibility, 'team'),
+          eq(artifactEvidenceAssociations.visibilityFloor, 'team'),
+          eq(reconciliationEvidence.teamId, scope.teamId),
+          eq(rawEvents.teamId, scope.teamId),
+          eq(rawEvents.visibility, 'team'),
+          sql`COALESCE(${rawEvents.sourceMetadata} ->> 'deleted', 'false') <> 'true'`,
+        ),
+      )
+      .orderBy(desc(reconciliationEvidence.occurredAt), desc(artifactEvidenceAssociations.id))
+      .limit(8),
+  ]);
 
   const factSources: SummaryPacketSource[] = factRows.map((fact) => ({
     ref: { kind: 'fact', id: fact.id },
@@ -434,15 +487,24 @@ async function buildObjectSummaryPacket(
     occurredAt: fact.occurredAt.toISOString(),
     confidence: fact.confidence,
   }));
-  const eventSources: SummaryPacketSource[] = uniqueRefs(
-    factRows.map((fact) => ({ kind: 'timeline_event' as const, id: fact.rawEventId })),
-  ).map((ref) => {
+  const eventSources: SummaryPacketSource[] = uniqueRefs([
+    ...factRows.map((fact) => ({ kind: 'timeline_event' as const, id: fact.rawEventId })),
+    ...associationRows.map((association) => ({
+      kind: 'timeline_event' as const,
+      id: association.rawEventId,
+    })),
+  ]).map((ref) => {
     const fact = factRows.find((row) => row.rawEventId === ref.id);
+    const association = associationRows.find((row) => row.rawEventId === ref.id);
     return {
       ref,
-      label: 'Source event',
-      text: fact?.statement ?? ref.id,
-      occurredAt: fact?.occurredAt.toISOString() ?? null,
+      label: association ? `Reconciliation ${association.role}` : 'Source event',
+      text:
+        association?.summary ??
+        association?.title ??
+        fact?.statement ??
+        `${association?.source ?? 'source'} event`,
+      occurredAt: association?.occurredAt.toISOString() ?? fact?.occurredAt.toISOString() ?? null,
       confidence: fact?.confidence ?? null,
     };
   });

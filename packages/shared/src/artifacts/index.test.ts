@@ -22,6 +22,7 @@ import { applyDbMigrations } from '#src/test/pglite.js';
 const TEAM_ID = '11111111-1111-1111-1111-111111111111';
 const TEAM_B_ID = '22222222-2222-2222-2222-222222222222';
 const USER_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+const OTHER_USER_ID = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
 
 describe('artifact reconciliation', () => {
   let pg: PGlite;
@@ -34,8 +35,10 @@ describe('artifact reconciliation', () => {
     await pg.exec(`
       INSERT INTO teams (id, slug, name)
       VALUES ('${TEAM_ID}', 'team-a', 'Team A'), ('${TEAM_B_ID}', 'team-b', 'Team B');
-      INSERT INTO users (id, email) VALUES ('${USER_ID}', 'owner@example.com');
-      INSERT INTO team_members (team_id, user_id, role) VALUES ('${TEAM_ID}', '${USER_ID}', 'owner');
+      INSERT INTO users (id, email)
+      VALUES ('${USER_ID}', 'owner@example.com'), ('${OTHER_USER_ID}', 'member@example.com');
+      INSERT INTO team_members (team_id, user_id, role)
+      VALUES ('${TEAM_ID}', '${USER_ID}', 'owner'), ('${TEAM_ID}', '${OTHER_USER_ID}', 'member');
     `);
   });
 
@@ -498,6 +501,7 @@ describe('artifact reconciliation', () => {
     const evidence = await listArtifactClusterEvidence(db as never, {
       teamId: TEAM_ID,
       clusterId: cluster.clusterId,
+      viewerUserId: USER_ID,
     });
     expect(evidence.map((row) => row.rawEventId)).toEqual([source.id]);
 
@@ -557,6 +561,7 @@ describe('artifact reconciliation', () => {
     const evidenceRows = await listArtifactClusterEvidence(db as never, {
       teamId: TEAM_ID,
       clusterId: cluster.id,
+      viewerUserId: USER_ID,
     });
 
     expect(evidenceRows).toEqual([
@@ -568,6 +573,84 @@ describe('artifact reconciliation', () => {
         role: 'lifecycle_update',
         strength: 'provider',
         authoritative: true,
+      }),
+    ]);
+  });
+
+  it('enforces association visibility floors when listing cluster evidence', async () => {
+    const source = await rawEvent('Private Sentry incident notes for Acme checkout.');
+    const [cluster] = await db
+      .insert(artifactClusters)
+      .values({
+        teamId: TEAM_ID,
+        artifactClusterKind: 'incident',
+        artifactType: 'incident',
+        canonicalName: 'Private checkout incident',
+        status: 'active',
+      })
+      .returning();
+    if (!cluster) throw new Error('artifact cluster insert failed');
+    const [evidence] = await db
+      .insert(reconciliationEvidence)
+      .values({
+        teamId: TEAM_ID,
+        rawEventId: source.id,
+        source: 'telegram',
+        provider: 'sentry',
+        externalObjectId: 'SENTRY-PRIVATE',
+        eventType: 'issue.private_note',
+        occurredAt: source.occurredAt,
+        visibility: 'private',
+        visibilityOwnerUserId: USER_ID,
+        actor: {},
+        contentDigest: 'digest:sentry-private-checkout',
+        normalizerVersion: 'test-v1',
+        dedupeKey: 'evidence:sentry-private-checkout',
+      })
+      .returning();
+    if (!evidence) throw new Error('reconciliation evidence insert failed');
+    await db.insert(artifactEvidenceAssociations).values({
+      teamId: TEAM_ID,
+      clusterId: cluster.id,
+      evidenceId: evidence.id,
+      rawEventId: source.id,
+      role: 'discussion',
+      strength: 'human',
+      associationSource: 'human',
+      sourceRefs: [
+        {
+          source: 'telegram',
+          rawEventId: source.id,
+          evidenceId: evidence.id,
+        },
+      ],
+      visibility: 'private',
+      visibilityOwnerUserId: USER_ID,
+      visibilityFloor: 'private',
+      visibilityFloorOwnerUserId: USER_ID,
+      metadata: { canonical_name: 'Private checkout incident' },
+      dedupeKey: 'association:sentry-private-checkout',
+    });
+
+    await expect(
+      listArtifactClusterEvidence(db as never, {
+        teamId: TEAM_ID,
+        clusterId: cluster.id,
+        viewerUserId: OTHER_USER_ID,
+      }),
+    ).resolves.toEqual([]);
+
+    await expect(
+      listArtifactClusterEvidence(db as never, {
+        teamId: TEAM_ID,
+        clusterId: cluster.id,
+        viewerUserId: USER_ID,
+      }),
+    ).resolves.toEqual([
+      expect.objectContaining({
+        clusterId: cluster.id,
+        rawEventId: source.id,
+        role: 'discussion',
       }),
     ]);
   });

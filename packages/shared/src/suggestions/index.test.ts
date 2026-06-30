@@ -6,6 +6,7 @@ import {
   agentSuggestionEvidence,
   agentSuggestionItems,
   agentSuggestions,
+  boardItemChanges,
   entities,
   rawEvents,
   reconciliationEvidence,
@@ -6336,6 +6337,16 @@ describe('suggestion scope', () => {
     const itemId = bundle.items[0]?.id;
     expect(itemId).toBeDefined();
     expect(bundle.items[0]?.proposedPayload).not.toHaveProperty('sourceEventId');
+    const outputId = bundle.items[0]?.metadata.reconciliation_output_id;
+    if (typeof outputId !== 'string') throw new Error('expected projection output id');
+    const [output] = await db
+      .select({ payload: reconciliationOutputs.payload })
+      .from(reconciliationOutputs)
+      .where(eq(reconciliationOutputs.id, outputId));
+    const outputPayload = output?.payload as
+      | { proposed_payload?: Record<string, unknown> }
+      | undefined;
+    expect(outputPayload?.proposed_payload).not.toHaveProperty('sourceEventId');
 
     await expect(scope.suggestions.acceptSuggestionItem(itemId ?? '')).resolves.toBe(true);
 
@@ -6410,6 +6421,16 @@ describe('suggestion scope', () => {
     const itemId = bundle.items[0]?.id;
     expect(itemId).toBeDefined();
     expect(bundle.items[0]?.proposedPayload).not.toHaveProperty('sourceEventId');
+    const outputId = bundle.items[0]?.metadata.reconciliation_output_id;
+    if (typeof outputId !== 'string') throw new Error('expected projection output id');
+    const [output] = await db
+      .select({ payload: reconciliationOutputs.payload })
+      .from(reconciliationOutputs)
+      .where(eq(reconciliationOutputs.id, outputId));
+    const outputPayload = output?.payload as
+      | { proposed_payload?: Record<string, unknown> }
+      | undefined;
+    expect(outputPayload?.proposed_payload).not.toHaveProperty('sourceEventId');
 
     await expect(scope.suggestions.acceptSuggestionItem(itemId ?? '')).resolves.toBe(true);
 
@@ -6422,7 +6443,27 @@ describe('suggestion scope', () => {
     expect(result.rows[0]?.source_event_id).toBeNull();
 
     const detail = await scope.objects.getObject(result.rows[0]?.id ?? '');
-    expect(detail?.provenance.whyThisExists).toEqual([]);
+    expect(detail?.provenance.whyThisExists).toEqual([
+      expect.objectContaining({
+        id: itemId,
+        title: 'Scope in all over-PM FSLIs even when netting below PM',
+      }),
+    ]);
+    expect(detail?.provenance.whyThisExists[0]?.evidence).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          rawEventId: firstRawEventId,
+          source: 'web',
+          contentText: 'Daily meeting: investigate agent memory usage.',
+        }),
+        expect.objectContaining({
+          rawEventId: secondRawEventId,
+          source: 'web',
+          contentText: 'Daily meeting: refine the FSLI scoping process.',
+        }),
+      ]),
+    );
+    expect(detail?.provenance.whyThisExists[0]?.evidence).toHaveLength(2);
   });
 
   it('does not treat one visible event from a multi-event bundle as unambiguous object provenance', async () => {
@@ -6555,6 +6596,81 @@ describe('suggestion scope', () => {
          AND canonical_name = 'Preserve source event from third evidence row'`,
     );
     expect(result.rows[0]?.source_event_id).toBeNull();
+
+    const object = await pg.query<{ id: string }>(
+      `SELECT id
+       FROM entities
+       WHERE team_id = '${TEAM_ID}'
+         AND canonical_name = 'Preserve source event from third evidence row'`,
+    );
+    const detail = await scope.objects.getObject(object.rows[0]?.id ?? '');
+    expect(detail?.provenance.whyThisExists[0]?.evidence).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ rawEventId: firstRawEventId }),
+        expect.objectContaining({ rawEventId: secondRawEventId }),
+        expect.objectContaining({ rawEventId: thirdRawEventId }),
+      ]),
+    );
+    expect(detail?.provenance.whyThisExists[0]?.evidence).toHaveLength(3);
+  });
+
+  it('strips board suggestion source event ids without stamping board history', async () => {
+    const sourceRawEventId = '99999999-9999-4999-8999-999999999990';
+    await db.insert(rawEvents).values({
+      id: sourceRawEventId,
+      teamId: TEAM_ID,
+      authorUserId: USER_ID,
+      source: 'web',
+      contentText: 'Customer email: add Digital Audit Company to the pilot board.',
+      occurredAt: new Date('2026-06-25T13:10:00.000Z'),
+      visibility: 'team',
+    });
+
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const board = await scope.boards.createBoard({
+      name: 'Pilot pipeline',
+      templateKind: 'pipeline',
+      lanes: [{ name: 'Discovery', kind: 'active' }],
+    });
+    const company = await scope.objects.createObject({
+      type: 'company',
+      canonicalName: 'Digital Audit Company',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Board update from customer email',
+      dedupeKey: 'board-membership-source-event-id-strip',
+      evidence: [{ rawEventId: sourceRawEventId }],
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'board_membership',
+          title: 'Add Digital Audit Company to Pilot pipeline',
+          dedupeKey: 'board-membership-source-event-id-strip:item',
+          proposedPayload: {
+            boardId: board.id,
+            entityId: company.id,
+            laneId: board.lanes[0]?.id,
+            sourceEventId: sourceRawEventId,
+          },
+        },
+      ],
+    });
+    const itemId = bundle.items[0]?.id;
+    expect(itemId).toBeDefined();
+    expect(bundle.items[0]?.proposedPayload).not.toHaveProperty('sourceEventId');
+
+    await expect(scope.suggestions.acceptSuggestionItem(itemId ?? '')).resolves.toBe(true);
+
+    const changes = await db.select().from(boardItemChanges);
+    expect(changes).toEqual([
+      expect.objectContaining({
+        field: '__add__',
+        sourceEventId: null,
+      }),
+    ]);
   });
 
   it('accepts legacy task payload source evidence without stamping canonical objects', async () => {
