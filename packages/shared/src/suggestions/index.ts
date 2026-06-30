@@ -923,31 +923,10 @@ function normalizeLifecyclePayload(
 
 function normalizeSuggestionSourceEventPayload(
   payload: Record<string, unknown>,
-  opts: {
-    fallbackSourceEventId?: string | null;
-    allowedSourceEventIds?: ReadonlySet<string>;
-  } = {},
 ): Record<string, unknown> {
   if (!Object.hasOwn(payload, 'sourceEventId')) return payload;
-
-  const sourceEventId = payload.sourceEventId;
-  if (sourceEventId === null || sourceEventId === undefined) return payload;
-
-  if (typeof sourceEventId === 'string') {
-    const trimmed = sourceEventId.trim();
-    if (trimmed !== '' && UUID_RE.test(trimmed)) {
-      if (!opts.allowedSourceEventIds || opts.allowedSourceEventIds.has(trimmed)) {
-        return { ...payload, sourceEventId: trimmed };
-      }
-    }
-  }
-
   const normalized = { ...payload };
-  if (opts.fallbackSourceEventId) {
-    normalized.sourceEventId = opts.fallbackSourceEventId;
-  } else {
-    delete normalized.sourceEventId;
-  }
+  delete normalized.sourceEventId;
   return normalized;
 }
 
@@ -3214,9 +3193,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     item: typeof agentSuggestionItems.$inferSelect,
     payload: Record<string, unknown>,
   ): Promise<string> {
-    const parsed = objectCreatePayload.parse(
-      await normalizeObjectCreatePayloadForAcceptance(item, payload),
-    );
+    const parsed = objectCreatePayload.parse(normalizeObjectCreatePayloadForAcceptance(payload));
     const canonicalName =
       parsed.canonicalName !== undefined && parsed.canonicalName.length > 0
         ? parsed.canonicalName
@@ -3286,31 +3263,11 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     return existing.id;
   }
 
-  async function normalizeObjectCreatePayloadForAcceptance(
-    item: typeof agentSuggestionItems.$inferSelect,
+  function normalizeObjectCreatePayloadForAcceptance(
     payload: Record<string, unknown>,
-  ): Promise<Record<string, unknown>> {
+  ): Record<string, unknown> {
     if (!Object.hasOwn(payload, 'sourceEventId')) return payload;
-
-    const evidence = await db
-      .select({ rawEventId: agentSuggestionEvidence.rawEventId })
-      .from(agentSuggestionEvidence)
-      .where(
-        and(
-          eq(agentSuggestionEvidence.teamId, teamId),
-          eq(agentSuggestionEvidence.suggestionId, item.suggestionId),
-        ),
-      )
-      .orderBy(asc(agentSuggestionEvidence.createdAt));
-    const evidenceIds = evidence.map((ev) => ev.rawEventId);
-    const opts: {
-      allowedSourceEventIds?: ReadonlySet<string>;
-      fallbackSourceEventId?: string | null;
-    } = { fallbackSourceEventId: evidenceIds.length === 1 ? (evidenceIds[0] ?? null) : null };
-    if (evidenceIds.length > 0) {
-      opts.allowedSourceEventIds = new Set(evidenceIds);
-    }
-    return normalizeSuggestionSourceEventPayload(payload, opts);
+    return normalizeSuggestionSourceEventPayload(payload);
   }
 
   function acceptancePriority(item: SuggestionItem): number {
@@ -3585,7 +3542,6 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         boardId: parsed.boardId,
         entityId: parsed.entityId,
         laneId: parsed.laneId ?? null,
-        sourceEventId: parsed.sourceEventId ?? null,
         suggestionItemId: item.id,
         note: parsed.note ?? item.description,
       });
@@ -3605,7 +3561,6 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         boardItemId: parsed.boardItemId,
         field: parsed.field,
         newValue: parsed.newValue,
-        sourceEventId: parsed.sourceEventId ?? null,
         suggestionItemId: item.id,
         note: parsed.note ?? item.description,
       });
@@ -4451,13 +4406,6 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         reconciliation_projection_version: RECONCILIATION_APPROVAL_PROJECTION_VERSION,
         reconciliation_source_ref_validation: sourceRefValidation,
       };
-      const sourceEventFallback: {
-        allowedSourceEventIds?: ReadonlySet<string>;
-        fallbackSourceEventId?: string | null;
-      } = { fallbackSourceEventId: evidenceIds.length === 1 ? (evidenceIds[0] ?? null) : null };
-      if (evidenceIds.length > 0) {
-        sourceEventFallback.allowedSourceEventIds = new Set(evidenceIds);
-      }
       const correctionDedupeKey = `${input.dedupeKey}:correction:${suggestionDedupeKey({
         title: input.title,
         summary: input.summary ?? null,
@@ -4733,7 +4681,6 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
                       ? (objectTypeByTargetId.get(item.targetId ?? '') ?? null)
                       : null,
                 }),
-                sourceEventFallback,
               );
               return {
                 suggestionId: inserted.id,

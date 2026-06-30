@@ -42,7 +42,7 @@ describe('reconciliation source normalization', () => {
     await pg.close();
   });
 
-  it('marks provider events without source payload snapshots as replay degraded', async () => {
+  it('persists inline source snapshots when provider events omit payload refs', async () => {
     const [integration] = await db
       .insert(integrations)
       .values({
@@ -67,6 +67,12 @@ describe('reconciliation source normalization', () => {
           eventType: 'issue.updated',
           occurredAt: new Date('2026-06-21T09:00:00Z'),
           contentText: 'Sentry issue without a retained provider payload ref',
+          extra: {
+            provider: 'wrong-provider',
+            source_payload_ref: '',
+            payload_digest: '',
+            source_snapshot_kind: 'stale-adapter-value',
+          },
         },
       ],
     });
@@ -79,15 +85,42 @@ describe('reconciliation source normalization', () => {
       .where(eq(reconciliationEvidence.rawEventId, rawEventId));
 
     expect(raw?.source).toBe('integration');
+    const metadata = raw?.sourceMetadata as {
+      source_payload_ref?: string;
+      payload_digest?: string;
+      provider?: string;
+      source_snapshot_kind?: string;
+      source_snapshot_version?: string;
+      source_snapshot?: {
+        dedupKey?: string;
+        provider?: string;
+        externalObjectId?: string;
+        eventType?: string;
+        contentText?: string;
+      };
+    };
+    expect(metadata.provider).toBe('sentry');
+    expect(metadata.source_payload_ref).toMatch(/^inline:\/\/timeline\/integration\/sentry\//);
+    expect(metadata.payload_digest).toMatch(/^sha256:/);
+    expect(metadata.source_snapshot_kind).toBe('normalized_integration_event');
+    expect(metadata.source_snapshot_version).toBe('integration-source-snapshot-2026-06');
+    expect(metadata.source_snapshot).toMatchObject({
+      dedupKey: 'sentry:issue:no-payload-ref',
+      provider: 'sentry',
+      externalObjectId: 'issue-no-payload',
+      eventType: 'issue.updated',
+      contentText: 'Sentry issue without a retained provider payload ref',
+    });
     expect(evidence).toMatchObject({
       rawEventId,
       provider: 'sentry',
       externalObjectId: 'issue-no-payload',
-      replayState: 'degraded',
-      sourcePayloadRef: null,
+      replayState: 'full',
+      sourcePayloadRef: metadata.source_payload_ref,
+      payloadDigest: metadata.payload_digest,
     });
     expect(evidence?.metadata).toMatchObject({
-      replay_degraded_reason: 'missing_source_payload_ref',
+      replay_degraded_reason: null,
     });
   });
 

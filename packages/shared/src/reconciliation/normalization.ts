@@ -67,12 +67,15 @@ export async function normalizeIntegrationEventsToEvidence(
     const rawEventId = input.rawEventIdsByDedupKey.get(event.dedupKey);
     const raw = rawEventId ? rawById.get(rawEventId) : null;
     if (!rawEventId || !raw) return [];
+    const rawMetadata = recordField(raw.sourceMetadata) ?? {};
     const sourcePayloadRef =
       metadataString(event.extra, 'source_payload_ref') ??
-      metadataString(event.extra, 'payload_ref');
+      metadataString(event.extra, 'payload_ref') ??
+      sourcePayloadRefForMetadata(rawMetadata);
     const payloadDigest =
       metadataString(event.extra, 'payload_digest') ??
-      metadataString(event.extra, 'source_payload_digest');
+      metadataString(event.extra, 'source_payload_digest') ??
+      payloadDigestForMetadata(rawMetadata);
     return [
       {
         teamId: input.teamId,

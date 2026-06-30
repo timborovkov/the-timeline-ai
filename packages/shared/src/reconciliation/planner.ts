@@ -9,7 +9,8 @@ import {
   type ReconciliationEvalScenarioFamily,
 } from '#src/reconciliation/index.js';
 
-export const RECONCILIATION_PLANNER_PROMPT_VERSION = 'reconciliation-planner-2026-06';
+export const RECONCILIATION_PLANNER_PROMPT_VERSION =
+  'reconciliation-planner-2026-06-output-policy-minimum';
 
 export const reconciliationPlannerOutputKinds = [
   'observed_association',
@@ -110,14 +111,18 @@ ${input.plannerContext}
 
 Task:
 Classify the scenario family and ingestion surfaces.
+The ingestionSurfaces result must be a subset of Observed surfaces. Do not add candidate surfaces that are not listed under Observed surfaces.
 List outputKinds as a unique set of planner category names, not one entry per source ref.
+Treat the policy-derived output kind set as required minimum categories for this packet unless the planner context explicitly says a category is unsafe or impossible.
 Include observed_association whenever evidence should attach to a cluster without changing canonical Timeline memory.
 Use direct_write only when the planner context explicitly says a provider owns the target state being changed.
 Never use direct_write for Timeline-owned company, person, project, task, note, decision, relationship, or customer-memory changes.
+Mixed packets can require both direct_write for provider-owned state and approval_bundle for Timeline-owned memory; provider direct writes do not replace human approval for Timeline memory.
 If outputKinds includes direct_write, directWriteSurfaces must list every observed surface whose evidence directly owns provider state for this packet.
 Use the policy-derived direct-write surfaces as hints for directWriteSurfaces; do not leave directWriteSurfaces empty when those hints are present.
 If outputKinds does not include direct_write, directWriteSurfaces must be empty.
 Use approval_bundle for Timeline-owned company, person, project, task, note, decision, relationship, or customer-memory changes.
+Do not omit approval_bundle just because the same packet also includes direct_write or observed_association.
 Set approvalRequired to true exactly when outputKinds includes approval_bundle; otherwise set it to false.
 Return every listed raw source ref exactly once in sourceRefs.
 Set privacyRisk to true only if the planned output would expose private or specific-user evidence to a broader audience. The expected planner keeps each output at or below its visibility floor.

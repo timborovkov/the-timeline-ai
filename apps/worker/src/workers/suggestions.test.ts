@@ -11,6 +11,7 @@ import {
   objectNotes,
   rawEvents,
   reconciliationOutputs,
+  reconciliationProjectionOutbox,
   reconciliationRuns,
   type Db,
 } from '@timeline/db';
@@ -992,9 +993,73 @@ describe('processSuggestionJobForTests', () => {
       expect.arrayContaining([company.id, person.id]),
     );
 
-    await expect(scope.suggestions.rejectSuggestionItem(relationshipItem?.id ?? '')).resolves.toBe(
-      true,
-    );
+    const relationshipItemId = relationshipItem?.id;
+    if (!relationshipItemId) throw new Error('expected relationship repair item id');
+    const [itemRow] = await db
+      .select({
+        id: agentSuggestionItems.id,
+        suggestionId: agentSuggestionItems.suggestionId,
+        dedupeKey: agentSuggestionItems.dedupeKey,
+      })
+      .from(agentSuggestionItems)
+      .where(eq(agentSuggestionItems.id, relationshipItemId));
+    if (!itemRow) throw new Error('expected projected relationship item row');
+    const [suggestionRow] = await db
+      .select({ id: agentSuggestions.id, dedupeKey: agentSuggestions.dedupeKey })
+      .from(agentSuggestions)
+      .where(eq(agentSuggestions.id, itemRow.suggestionId));
+    if (!suggestionRow) throw new Error('expected projected suggestion row');
+
+    const outputId = relationshipItem.metadata.reconciliation_output_id;
+    if (typeof outputId !== 'string') throw new Error('expected projected output id');
+    const outputs = await db
+      .select()
+      .from(reconciliationOutputs)
+      .where(eq(reconciliationOutputs.id, outputId));
+    expect(outputs).toHaveLength(1);
+    const output = outputs[0];
+    if (!output) throw new Error('expected reconciliation output row');
+    expect(output).toMatchObject({
+      teamId: TEAM_ID,
+      outputKind: 'approval_bundle',
+      targetKind: 'object_relationship',
+      operation: 'create',
+      status: 'approval_created',
+      requiresApproval: true,
+      visibility: 'team',
+      visibilityFloor: 'team',
+    });
+    expect(output.sourceRefs).toEqual([
+      expect.objectContaining({
+        source: 'web',
+        rawEventId: newerRaw.id,
+      }),
+    ]);
+    const outputPayload = output.payload as {
+      projection?: unknown;
+      suggestion_dedupe_key?: unknown;
+      item_dedupe_key?: unknown;
+      proposed_payload?: unknown;
+    };
+    expect(outputPayload.projection).toBe('agent_suggestions');
+    expect(outputPayload.suggestion_dedupe_key).toBe(suggestionRow.dedupeKey);
+    expect(outputPayload.item_dedupe_key).toBe(itemRow.dedupeKey);
+    expect(outputPayload.proposed_payload).toMatchObject({ kind: 'related' });
+
+    const projectionOutboxRows = await db
+      .select()
+      .from(reconciliationProjectionOutbox)
+      .where(eq(reconciliationProjectionOutbox.outputId, outputId));
+    expect(projectionOutboxRows).toHaveLength(1);
+    expect(projectionOutboxRows[0]).toMatchObject({
+      teamId: TEAM_ID,
+      suggestionId: suggestionRow.id,
+      suggestionItemId: itemRow.id,
+      action: 'create_projection',
+      status: 'processed',
+    });
+
+    await expect(scope.suggestions.rejectSuggestionItem(relationshipItemId)).resolves.toBe(true);
     await processSuggestionJobForTests(
       { db: db as never },
       {
@@ -1953,6 +2018,8 @@ describe('processSuggestionJobForTests', () => {
     expect(call?.prompt).toContain(`board ${board.id}: "Pilot pipeline"`);
     expect(call?.prompt).toContain(`item ${item.id}: object=${company.id} company "Revigo"`);
     expect(call?.prompt).toContain('targetKind=board_membership');
+    expect(call?.prompt).toContain('Evidence is carried by the approval source refs');
+    expect(call?.prompt).not.toContain('sourceEventId?');
     expect(call?.prompt).toContain('Allowed fields: laneId, position, responsibleUserId');
     expect(call?.system).toContain('board_membership or board_item_update');
   });

@@ -39,6 +39,7 @@ import {
   relationshipKind,
   reconciliationEvidence,
   reconciliationOutputs,
+  reconciliationRuns,
 } from '@timeline/db';
 import {
   type SQL,
@@ -84,6 +85,8 @@ import { decodeCursor, pageWindow } from '#src/pagination.js';
 import { getQdrantClient } from '#src/qdrant/client.js';
 import { buildPointId } from '#src/qdrant/point-id.js';
 import * as embedQueue from '#src/queue/queues.js';
+import { AUTHORITY_POLICY_VERSION } from '#src/reconciliation/authority.js';
+import { buildOutputDedupeKey, reconciliationDedupeKey } from '#src/reconciliation/index.js';
 import { normalizeRawEventsToEvidence } from '#src/reconciliation/normalization.js';
 import { likeMentionCondition, likePattern, textMentionsAnyValue } from '#src/sql-like.js';
 import { rawEventVisibleToUser } from '#src/visibility.js';
@@ -100,6 +103,8 @@ const summaryRefreshLog = childLogger('objects:summary-refresh');
 const reconciliationLog = childLogger('objects:reconciliation');
 const OBJECT_QUERY_LIMIT_MAX = 50_000;
 const NOTIFICATION_QUERY_LIMIT_MAX = 50_000;
+const OBJECT_DIRECT_WRITE_RUN_VERSION = 'object-direct-write-2026-06';
+const OBJECT_DIRECT_WRITE_PLANNER_VERSION = 'object-direct-write-planner-2026-06';
 type DbTx = Parameters<Parameters<Db['transaction']>[0]>[0];
 type DbOrTx = Db | DbTx;
 
@@ -135,6 +140,611 @@ async function normalizeSystemRawEventEvidence(input: {
       'system raw event reconciliation evidence normalization failed',
     );
   }
+}
+
+async function emitObjectDirectWriteOutput(input: {
+  db: DbTx;
+  teamId: string;
+  entityId: string;
+  objectType: ObjectType;
+  canonicalName: string;
+  actor: { kind: ActorKind; userId?: string | null };
+  sourceEventId: string | null;
+  operation: 'create' | 'update' | 'merge';
+  systemEventKind: 'object_create' | 'object_update' | 'object_merge';
+  changedFields?: string[];
+  changes?: { field: string; previousValue: unknown; newValue: unknown }[];
+  merge?: {
+    mergedEntityIds: string[];
+    mergedObjects: { id: string; canonicalName: string; type: ObjectType }[];
+    aliases: string[];
+  };
+}): Promise<void> {
+  if (!input.sourceEventId) return;
+  const [evidence] = await input.db
+    .select({
+      id: reconciliationEvidence.id,
+      sourcePayloadRef: reconciliationEvidence.sourcePayloadRef,
+    })
+    .from(reconciliationEvidence)
+    .where(
+      and(
+        eq(reconciliationEvidence.teamId, input.teamId),
+        eq(reconciliationEvidence.rawEventId, input.sourceEventId),
+      ),
+    )
+    .limit(1);
+  const sourceRefs = [
+    {
+      source: 'system',
+      rawEventId: input.sourceEventId,
+      ...(evidence?.id ? { evidenceId: evidence.id } : {}),
+      ...(evidence?.sourcePayloadRef ? { sourcePayloadRef: evidence.sourcePayloadRef } : {}),
+    },
+  ];
+  const [run] = await input.db
+    .insert(reconciliationRuns)
+    .values({
+      teamId: input.teamId,
+      trigger: 'raw_event',
+      scope: 'object_direct_write',
+      status: 'completed',
+      inputFingerprint: reconciliationDedupeKey('object-direct-write-run', {
+        teamId: input.teamId,
+        entityId: input.entityId,
+        rawEventId: input.sourceEventId,
+        operation: input.operation,
+        policyVersion: AUTHORITY_POLICY_VERSION,
+      }),
+      engineVersion: OBJECT_DIRECT_WRITE_RUN_VERSION,
+      completedAt: new Date(),
+      metrics: {
+        target_kind: 'object',
+        operation: input.operation,
+        object_type: input.objectType,
+        actor_kind: input.actor.kind,
+        ...(input.changedFields ? { changed_fields: input.changedFields } : {}),
+        ...(input.merge ? { merged_entity_count: input.merge.mergedEntityIds.length } : {}),
+      },
+    })
+    .onConflictDoUpdate({
+      target: [
+        reconciliationRuns.teamId,
+        reconciliationRuns.inputFingerprint,
+        reconciliationRuns.engineVersion,
+      ],
+      set: {
+        status: 'completed',
+        completedAt: new Date(),
+        metrics: {
+          target_kind: 'object',
+          operation: input.operation,
+          object_type: input.objectType,
+          actor_kind: input.actor.kind,
+          ...(input.changedFields ? { changed_fields: input.changedFields } : {}),
+          ...(input.merge ? { merged_entity_count: input.merge.mergedEntityIds.length } : {}),
+        },
+      },
+    })
+    .returning({ id: reconciliationRuns.id });
+  if (!run) return;
+
+  await input.db
+    .insert(reconciliationOutputs)
+    .values({
+      teamId: input.teamId,
+      runId: run.id,
+      outputKind: 'direct_write',
+      targetKind: 'object',
+      operation: input.operation,
+      targetId: input.entityId,
+      payload: {
+        source: 'system',
+        system_event_kind: input.systemEventKind,
+        object_type: input.objectType,
+        canonical_name: input.canonicalName,
+        actor_kind: input.actor.kind,
+        actor_user_id: input.actor.userId ?? null,
+        ...(input.changedFields ? { changed_fields: input.changedFields } : {}),
+        ...(input.changes ? { changes: input.changes } : {}),
+        ...(input.merge
+          ? {
+              merged_entity_ids: input.merge.mergedEntityIds,
+              merged_objects: input.merge.mergedObjects,
+              aliases: input.merge.aliases,
+            }
+          : {}),
+      },
+      authorityDecision: {
+        decision: 'direct_write',
+        authority_decision: 'direct',
+        reason: 'user_or_agent_confirmed_workspace_write',
+        source: 'system',
+        provider: null,
+        target_kind: 'object',
+        target_field:
+          input.operation === 'create'
+            ? '__create__'
+            : input.operation === 'merge'
+              ? '__merge__'
+              : '__update__',
+        ...(input.changedFields ? { changed_fields: input.changedFields } : {}),
+        policy_version: AUTHORITY_POLICY_VERSION,
+      },
+      confidence: 'high',
+      requiresApproval: false,
+      sourceRefs,
+      sourcePayloadRefs: evidence?.sourcePayloadRef ? [evidence.sourcePayloadRef] : [],
+      visibility: 'team',
+      visibilityOwnerUserId: null,
+      visibilityUserIds: null,
+      visibilityFloor: 'team',
+      visibilityFloorOwnerUserId: null,
+      visibilityFloorUserIds: null,
+      dedupeKey: buildOutputDedupeKey({
+        teamId: input.teamId,
+        targetKind: 'object',
+        operation: input.operation,
+        targetId: input.entityId,
+        sourceRefs,
+        authorityPolicyVersion: AUTHORITY_POLICY_VERSION,
+        plannerVersion: OBJECT_DIRECT_WRITE_PLANNER_VERSION,
+      }),
+      status: 'applied',
+    })
+    .onConflictDoUpdate({
+      target: [reconciliationOutputs.teamId, reconciliationOutputs.dedupeKey],
+      set: {
+        runId: run.id,
+        status: 'applied',
+        updatedAt: new Date(),
+      },
+    });
+}
+
+async function emitRelationshipDirectWriteOutput(input: {
+  db: DbTx;
+  teamId: string;
+  relationshipId: string;
+  fromEntityId: string;
+  toEntityId: string;
+  relationshipKind: RelationshipKind;
+  actor: { kind: ActorKind; userId?: string | null };
+  sourceEventId: string | null;
+  operation: 'link' | 'unlink';
+  systemEventKind: 'relationship_create' | 'relationship_delete';
+}): Promise<void> {
+  if (!input.sourceEventId) return;
+  const [evidence] = await input.db
+    .select({
+      id: reconciliationEvidence.id,
+      sourcePayloadRef: reconciliationEvidence.sourcePayloadRef,
+    })
+    .from(reconciliationEvidence)
+    .where(
+      and(
+        eq(reconciliationEvidence.teamId, input.teamId),
+        eq(reconciliationEvidence.rawEventId, input.sourceEventId),
+      ),
+    )
+    .limit(1);
+  const sourceRefs = [
+    {
+      source: 'system',
+      rawEventId: input.sourceEventId,
+      ...(evidence?.id ? { evidenceId: evidence.id } : {}),
+      ...(evidence?.sourcePayloadRef ? { sourcePayloadRef: evidence.sourcePayloadRef } : {}),
+    },
+  ];
+  const [run] = await input.db
+    .insert(reconciliationRuns)
+    .values({
+      teamId: input.teamId,
+      trigger: 'raw_event',
+      scope: 'relationship_direct_write',
+      status: 'completed',
+      inputFingerprint: reconciliationDedupeKey('relationship-direct-write-run', {
+        teamId: input.teamId,
+        relationshipId: input.relationshipId,
+        rawEventId: input.sourceEventId,
+        operation: input.operation,
+        policyVersion: AUTHORITY_POLICY_VERSION,
+      }),
+      engineVersion: OBJECT_DIRECT_WRITE_RUN_VERSION,
+      completedAt: new Date(),
+      metrics: {
+        target_kind: 'object_relationship',
+        operation: input.operation,
+        relationship_kind: input.relationshipKind,
+        actor_kind: input.actor.kind,
+      },
+    })
+    .onConflictDoUpdate({
+      target: [
+        reconciliationRuns.teamId,
+        reconciliationRuns.inputFingerprint,
+        reconciliationRuns.engineVersion,
+      ],
+      set: {
+        status: 'completed',
+        completedAt: new Date(),
+        metrics: {
+          target_kind: 'object_relationship',
+          operation: input.operation,
+          relationship_kind: input.relationshipKind,
+          actor_kind: input.actor.kind,
+        },
+      },
+    })
+    .returning({ id: reconciliationRuns.id });
+  if (!run) return;
+
+  await input.db
+    .insert(reconciliationOutputs)
+    .values({
+      teamId: input.teamId,
+      runId: run.id,
+      outputKind: 'direct_write',
+      targetKind: 'object_relationship',
+      operation: input.operation,
+      targetId: input.relationshipId,
+      payload: {
+        source: 'system',
+        system_event_kind: input.systemEventKind,
+        relationship_id: input.relationshipId,
+        from_entity_id: input.fromEntityId,
+        to_entity_id: input.toEntityId,
+        relationship_kind: input.relationshipKind,
+        actor_kind: input.actor.kind,
+        actor_user_id: input.actor.userId ?? null,
+      },
+      authorityDecision: {
+        decision: 'direct_write',
+        authority_decision: 'direct',
+        reason: 'user_or_agent_confirmed_workspace_write',
+        source: 'system',
+        provider: null,
+        target_kind: 'object_relationship',
+        target_field:
+          input.operation === 'link' ? '__relationship_create__' : '__relationship_delete__',
+        policy_version: AUTHORITY_POLICY_VERSION,
+      },
+      confidence: 'high',
+      requiresApproval: false,
+      sourceRefs,
+      sourcePayloadRefs: evidence?.sourcePayloadRef ? [evidence.sourcePayloadRef] : [],
+      visibility: 'team',
+      visibilityOwnerUserId: null,
+      visibilityUserIds: null,
+      visibilityFloor: 'team',
+      visibilityFloorOwnerUserId: null,
+      visibilityFloorUserIds: null,
+      dedupeKey: buildOutputDedupeKey({
+        teamId: input.teamId,
+        targetKind: 'object_relationship',
+        operation: input.operation,
+        targetId: input.relationshipId,
+        sourceRefs,
+        authorityPolicyVersion: AUTHORITY_POLICY_VERSION,
+        plannerVersion: OBJECT_DIRECT_WRITE_PLANNER_VERSION,
+      }),
+      status: 'applied',
+    })
+    .onConflictDoUpdate({
+      target: [reconciliationOutputs.teamId, reconciliationOutputs.dedupeKey],
+      set: {
+        runId: run.id,
+        status: 'applied',
+        updatedAt: new Date(),
+      },
+    });
+}
+
+async function emitNoteDirectWriteOutput(input: {
+  db: DbTx;
+  teamId: string;
+  entityId: string;
+  noteId: string;
+  actor: { kind: ActorKind; userId?: string | null };
+  sourceEventId: string | null;
+  operation: 'create' | 'update' | 'archive_or_cancel';
+  systemEventKind: 'object_note_create' | 'object_note_update' | 'object_note_delete';
+  body?: string | null;
+  previousBody?: string | null;
+}): Promise<void> {
+  if (!input.sourceEventId) return;
+  const [evidence] = await input.db
+    .select({
+      id: reconciliationEvidence.id,
+      sourcePayloadRef: reconciliationEvidence.sourcePayloadRef,
+    })
+    .from(reconciliationEvidence)
+    .where(
+      and(
+        eq(reconciliationEvidence.teamId, input.teamId),
+        eq(reconciliationEvidence.rawEventId, input.sourceEventId),
+      ),
+    )
+    .limit(1);
+  const sourceRefs = [
+    {
+      source: 'system',
+      rawEventId: input.sourceEventId,
+      ...(evidence?.id ? { evidenceId: evidence.id } : {}),
+      ...(evidence?.sourcePayloadRef ? { sourcePayloadRef: evidence.sourcePayloadRef } : {}),
+    },
+  ];
+  const [run] = await input.db
+    .insert(reconciliationRuns)
+    .values({
+      teamId: input.teamId,
+      trigger: 'raw_event',
+      scope: 'note_direct_write',
+      status: 'completed',
+      inputFingerprint: reconciliationDedupeKey('note-direct-write-run', {
+        teamId: input.teamId,
+        noteId: input.noteId,
+        rawEventId: input.sourceEventId,
+        operation: input.operation,
+        policyVersion: AUTHORITY_POLICY_VERSION,
+      }),
+      engineVersion: OBJECT_DIRECT_WRITE_RUN_VERSION,
+      completedAt: new Date(),
+      metrics: {
+        target_kind: 'object_note',
+        operation: input.operation,
+        actor_kind: input.actor.kind,
+      },
+    })
+    .onConflictDoUpdate({
+      target: [
+        reconciliationRuns.teamId,
+        reconciliationRuns.inputFingerprint,
+        reconciliationRuns.engineVersion,
+      ],
+      set: {
+        status: 'completed',
+        completedAt: new Date(),
+        metrics: {
+          target_kind: 'object_note',
+          operation: input.operation,
+          actor_kind: input.actor.kind,
+        },
+      },
+    })
+    .returning({ id: reconciliationRuns.id });
+  if (!run) return;
+
+  const targetField =
+    input.operation === 'create'
+      ? '__note_create__'
+      : input.operation === 'update'
+        ? '__note_update__'
+        : '__note_delete__';
+
+  await input.db
+    .insert(reconciliationOutputs)
+    .values({
+      teamId: input.teamId,
+      runId: run.id,
+      outputKind: 'direct_write',
+      targetKind: 'object_note',
+      operation: input.operation,
+      targetId: input.noteId,
+      payload: {
+        source: 'system',
+        system_event_kind: input.systemEventKind,
+        entity_id: input.entityId,
+        note_id: input.noteId,
+        actor_kind: input.actor.kind,
+        actor_user_id: input.actor.userId ?? null,
+        ...(input.body !== undefined ? { body: input.body } : {}),
+        ...(input.previousBody !== undefined ? { previous_body: input.previousBody } : {}),
+      },
+      authorityDecision: {
+        decision: 'direct_write',
+        authority_decision: 'direct',
+        reason: 'user_or_agent_confirmed_workspace_write',
+        source: 'system',
+        provider: null,
+        target_kind: 'object_note',
+        target_field: targetField,
+        policy_version: AUTHORITY_POLICY_VERSION,
+      },
+      confidence: 'high',
+      requiresApproval: false,
+      sourceRefs,
+      sourcePayloadRefs: evidence?.sourcePayloadRef ? [evidence.sourcePayloadRef] : [],
+      visibility: 'team',
+      visibilityOwnerUserId: null,
+      visibilityUserIds: null,
+      visibilityFloor: 'team',
+      visibilityFloorOwnerUserId: null,
+      visibilityFloorUserIds: null,
+      dedupeKey: buildOutputDedupeKey({
+        teamId: input.teamId,
+        targetKind: 'object_note',
+        operation: input.operation,
+        targetId: input.noteId,
+        sourceRefs,
+        authorityPolicyVersion: AUTHORITY_POLICY_VERSION,
+        plannerVersion: OBJECT_DIRECT_WRITE_PLANNER_VERSION,
+      }),
+      status: 'applied',
+    })
+    .onConflictDoUpdate({
+      target: [reconciliationOutputs.teamId, reconciliationOutputs.dedupeKey],
+      set: {
+        runId: run.id,
+        status: 'applied',
+        updatedAt: new Date(),
+      },
+    });
+}
+
+async function emitIdentityFacetDirectWriteOutput(input: {
+  db: DbTx;
+  teamId: string;
+  entityId: string;
+  identityFacetId: string;
+  identityFacetKind: IdentityFacetKind;
+  actor: { kind: ActorKind; userId?: string | null };
+  sourceEventId: string | null;
+  operation: 'create' | 'update';
+  systemEventKind: 'identity_facet_create' | 'identity_facet_update';
+  value: string;
+  normalizedValue: string;
+  provider: string | null;
+  externalId: string | null;
+  linkedUserId: string | null;
+  previous?: {
+    value: string;
+    normalizedValue: string;
+    provider: string | null;
+    externalId: string | null;
+    linkedUserId: string | null;
+  };
+}): Promise<void> {
+  if (!input.sourceEventId) return;
+  const [evidence] = await input.db
+    .select({
+      id: reconciliationEvidence.id,
+      sourcePayloadRef: reconciliationEvidence.sourcePayloadRef,
+    })
+    .from(reconciliationEvidence)
+    .where(
+      and(
+        eq(reconciliationEvidence.teamId, input.teamId),
+        eq(reconciliationEvidence.rawEventId, input.sourceEventId),
+      ),
+    )
+    .limit(1);
+  const sourceRefs = [
+    {
+      source: 'system',
+      rawEventId: input.sourceEventId,
+      ...(evidence?.id ? { evidenceId: evidence.id } : {}),
+      ...(evidence?.sourcePayloadRef ? { sourcePayloadRef: evidence.sourcePayloadRef } : {}),
+    },
+  ];
+  const [run] = await input.db
+    .insert(reconciliationRuns)
+    .values({
+      teamId: input.teamId,
+      trigger: 'raw_event',
+      scope: 'identity_facet_direct_write',
+      status: 'completed',
+      inputFingerprint: reconciliationDedupeKey('identity-facet-direct-write-run', {
+        teamId: input.teamId,
+        identityFacetId: input.identityFacetId,
+        rawEventId: input.sourceEventId,
+        operation: input.operation,
+        policyVersion: AUTHORITY_POLICY_VERSION,
+      }),
+      engineVersion: OBJECT_DIRECT_WRITE_RUN_VERSION,
+      completedAt: new Date(),
+      metrics: {
+        target_kind: 'identity_facet',
+        operation: input.operation,
+        identity_facet_kind: input.identityFacetKind,
+        actor_kind: input.actor.kind,
+      },
+    })
+    .onConflictDoUpdate({
+      target: [
+        reconciliationRuns.teamId,
+        reconciliationRuns.inputFingerprint,
+        reconciliationRuns.engineVersion,
+      ],
+      set: {
+        status: 'completed',
+        completedAt: new Date(),
+        metrics: {
+          target_kind: 'identity_facet',
+          operation: input.operation,
+          identity_facet_kind: input.identityFacetKind,
+          actor_kind: input.actor.kind,
+        },
+      },
+    })
+    .returning({ id: reconciliationRuns.id });
+  if (!run) return;
+
+  const targetField =
+    input.operation === 'create' ? '__identity_facet_create__' : '__identity_facet_update__';
+  await input.db
+    .insert(reconciliationOutputs)
+    .values({
+      teamId: input.teamId,
+      runId: run.id,
+      outputKind: 'direct_write',
+      targetKind: 'identity_facet',
+      operation: input.operation,
+      targetId: input.identityFacetId,
+      payload: {
+        source: 'system',
+        system_event_kind: input.systemEventKind,
+        entity_id: input.entityId,
+        identity_facet_id: input.identityFacetId,
+        identity_facet_kind: input.identityFacetKind,
+        value: input.value,
+        normalized_value: input.normalizedValue,
+        provider: input.provider,
+        external_id: input.externalId,
+        linked_user_id: input.linkedUserId,
+        actor_kind: input.actor.kind,
+        actor_user_id: input.actor.userId ?? null,
+        ...(input.previous
+          ? {
+              previous: {
+                value: input.previous.value,
+                normalized_value: input.previous.normalizedValue,
+                provider: input.previous.provider,
+                external_id: input.previous.externalId,
+                linked_user_id: input.previous.linkedUserId,
+              },
+            }
+          : {}),
+      },
+      authorityDecision: {
+        decision: 'direct_write',
+        authority_decision: 'direct',
+        reason: 'user_or_agent_confirmed_workspace_write',
+        source: 'system',
+        provider: null,
+        target_kind: 'identity_facet',
+        target_field: targetField,
+        policy_version: AUTHORITY_POLICY_VERSION,
+      },
+      confidence: 'high',
+      requiresApproval: false,
+      sourceRefs,
+      sourcePayloadRefs: evidence?.sourcePayloadRef ? [evidence.sourcePayloadRef] : [],
+      visibility: 'team',
+      visibilityOwnerUserId: null,
+      visibilityUserIds: null,
+      visibilityFloor: 'team',
+      visibilityFloorOwnerUserId: null,
+      visibilityFloorUserIds: null,
+      dedupeKey: buildOutputDedupeKey({
+        teamId: input.teamId,
+        targetKind: 'identity_facet',
+        operation: input.operation,
+        targetId: input.identityFacetId,
+        sourceRefs,
+        authorityPolicyVersion: AUTHORITY_POLICY_VERSION,
+        plannerVersion: OBJECT_DIRECT_WRITE_PLANNER_VERSION,
+      }),
+      status: 'applied',
+    })
+    .onConflictDoUpdate({
+      target: [reconciliationOutputs.teamId, reconciliationOutputs.dedupeKey],
+      set: {
+        runId: run.id,
+        status: 'applied',
+        updatedAt: new Date(),
+      },
+    });
 }
 
 async function objectSummaryRefreshTargetsForObject(
@@ -2568,8 +3178,6 @@ export interface CreateObjectInput {
   dueAt?: Date | null;
   aliases?: string[];
   metadata?: Record<string, unknown>;
-  sourceEventId?: string | null;
-  agentSuggested?: boolean;
   parentObjectId?: string | null;
   /** Who/what created this. Users go through server actions; agents through
    *  `propose_object_change`/`suggest_task` tools. */
@@ -2602,7 +3210,7 @@ export async function createObject(
         teamId: scope.teamId,
         type: input.type,
         canonicalName: name,
-        status: input.status ?? (input.agentSuggested ? 'suggested' : 'open'),
+        status: input.status ?? 'open',
         stage: input.stage ?? null,
         priority: input.priority ?? null,
         ownerUserId: input.ownerUserId ?? null,
@@ -2610,8 +3218,8 @@ export async function createObject(
         dueAt: input.dueAt ?? null,
         aliases: input.aliases ?? [],
         metadata: input.metadata ?? {},
-        sourceEventId: input.sourceEventId ?? null,
-        agentSuggested: input.agentSuggested ?? false,
+        sourceEventId: null,
+        agentSuggested: false,
       })
       .returning();
     const row = insertRows[0];
@@ -2625,7 +3233,7 @@ export async function createObject(
         teamId: scope.teamId,
         authorUserId: input.actor.kind === 'user' ? (input.actor.userId ?? null) : null,
         source: 'system',
-        contentText: `${input.actor.kind === 'agent' ? 'Agent suggested' : 'Created'} ${input.type}: ${name}`,
+        contentText: `${input.actor.kind === 'agent' ? 'Agent created' : 'Created'} ${input.type}: ${name}`,
         occurredAt: new Date(),
         visibility: 'team',
         sourceMetadata: {
@@ -2642,49 +3250,28 @@ export async function createObject(
       rawEventId: sourceEventId,
     });
 
-    const changeInsert = await tx
-      .insert(objectChanges)
-      .values({
-        teamId: scope.teamId,
-        entityId: row.id,
-        actorUserId: input.actor.userId ?? null,
-        actorKind: input.actor.kind,
-        status: input.agentSuggested ? 'suggested' : 'applied',
-        field: '__create__',
-        previousValue: null,
-        newValue: { type: input.type, canonicalName: name, status: row.status },
-        sourceEventId,
-      })
-      .returning({ id: objectChanges.id });
-    const changeId = changeInsert[0]?.id ?? null;
-
-    // Agent-suggested creates need an inbox entry — otherwise the user
-    // never sees that the agent dropped a task into their workspace.
-    // Mirrors the fan-out shape in `proposeObjectChange`. Skip when the
-    // create came from a human (UI) since they already know.
-    if (input.agentSuggested && changeId) {
-      const recipients = new Set<string>();
-      if (input.ownerUserId) recipients.add(input.ownerUserId);
-      if (input.assigneeUserId) recipients.add(input.assigneeUserId);
-      if (recipients.size > 0) {
-        const summary = `Agent suggested ${input.type}: ${name}`;
-        await tx.insert(notifications).values(
-          Array.from(recipients).map((uid) => ({
-            teamId: scope.teamId,
-            userId: uid,
-            kind: 'agent_suggestion' as const,
-            entityId: row.id,
-            objectChangeId: changeId,
-            summary,
-            payload: {
-              entity_id: row.id,
-              type: input.type,
-              canonical_name: name,
-            },
-          })),
-        );
-      }
-    }
+    await tx.insert(objectChanges).values({
+      teamId: scope.teamId,
+      entityId: row.id,
+      actorUserId: input.actor.userId ?? null,
+      actorKind: input.actor.kind,
+      status: 'applied',
+      field: '__create__',
+      previousValue: null,
+      newValue: { type: input.type, canonicalName: name, status: row.status },
+      sourceEventId,
+    });
+    await emitObjectDirectWriteOutput({
+      db: tx,
+      teamId: scope.teamId,
+      entityId: row.id,
+      objectType: input.type,
+      canonicalName: name,
+      actor: input.actor,
+      sourceEventId,
+      operation: 'create',
+      systemEventKind: 'object_create',
+    });
 
     if (input.parentObjectId && UUID_RE.test(input.parentObjectId)) {
       // Verify the parent belongs to this team before linking — otherwise a
@@ -2899,6 +3486,19 @@ export async function updateObject(
         })),
       )
       .returning({ id: objectChanges.id });
+    await emitObjectDirectWriteOutput({
+      db: tx,
+      teamId: scope.teamId,
+      entityId,
+      objectType: updated.type,
+      canonicalName: updated.canonicalName,
+      actor,
+      sourceEventId,
+      operation: 'update',
+      systemEventKind: 'object_update',
+      changedFields: changes.map((c) => c.field),
+      changes,
+    });
 
     // Fan out to owner + assignee. The actor shouldn't notify themselves on
     // their own change, so we filter actor.userId out. Dedup by recipient so
@@ -3434,6 +4034,26 @@ export async function mergeObjects(
         sourceEventId,
       })),
     ]);
+    await emitObjectDirectWriteOutput({
+      db: tx,
+      teamId: scope.teamId,
+      entityId: survivor.id,
+      objectType: survivor.type,
+      canonicalName: survivor.canonicalName,
+      actor: input.actor,
+      sourceEventId,
+      operation: 'merge',
+      systemEventKind: 'object_merge',
+      merge: {
+        mergedEntityIds: loserIds,
+        mergedObjects: losers.map((loser) => ({
+          id: loser.id,
+          canonicalName: loser.canonicalName,
+          type: loser.type,
+        })),
+        aliases: nextAliases,
+      },
+    });
 
     const updatedRows = await tx
       .select()
@@ -3608,6 +4228,21 @@ export async function addRelationship(
         sourceEventId,
       },
     ]);
+    await emitRelationshipDirectWriteOutput({
+      db: tx,
+      teamId: scope.teamId,
+      relationshipId: row.id,
+      fromEntityId: endpoints.fromEntityId,
+      toEntityId: endpoints.toEntityId,
+      relationshipKind: input.kind,
+      actor: {
+        kind: input.actor?.kind ?? 'user',
+        userId: input.actor?.userId ?? input.actorUserId,
+      },
+      sourceEventId,
+      operation: 'link',
+      systemEventKind: 'relationship_create',
+    });
 
     return row;
   });
@@ -3702,6 +4337,18 @@ export async function removeRelationship(
         sourceEventId,
       },
     ]);
+    await emitRelationshipDirectWriteOutput({
+      db: tx,
+      teamId: scope.teamId,
+      relationshipId: rel.id,
+      fromEntityId: rel.fromEntityId,
+      toEntityId: rel.toEntityId,
+      relationshipKind: rel.kind,
+      actor,
+      sourceEventId,
+      operation: 'unlink',
+      systemEventKind: 'relationship_delete',
+    });
     return { fromEntityId: rel.fromEntityId, toEntityId: rel.toEntityId };
   });
   if (!result) return false;
@@ -3793,6 +4440,20 @@ export async function createNote(
       previousValue: null,
       newValue: { note_id: noteId, body },
       sourceEventId,
+    });
+    await emitNoteDirectWriteOutput({
+      db: tx,
+      teamId: scope.teamId,
+      entityId: input.entityId,
+      noteId,
+      actor: {
+        kind: input.actor?.kind ?? 'user',
+        userId: input.actor ? (input.actor.userId ?? null) : input.authorUserId,
+      },
+      sourceEventId,
+      operation: 'create',
+      systemEventKind: 'object_note_create',
+      body,
     });
 
     return { id: noteId };
@@ -4181,6 +4842,18 @@ export async function updateNote(
       newValue: { note_id: note.id, body },
       sourceEventId,
     });
+    await emitNoteDirectWriteOutput({
+      db: tx,
+      teamId: scope.teamId,
+      entityId: note.entityId,
+      noteId: note.id,
+      actor,
+      sourceEventId,
+      operation: 'update',
+      systemEventKind: 'object_note_update',
+      body,
+      previousBody: note.body,
+    });
     return { changed: true, entityId: note.entityId };
   });
 
@@ -4263,6 +4936,17 @@ export async function deleteNote(
       previousValue: { note_id: note.id, body: note.body },
       newValue: null,
       sourceEventId,
+    });
+    await emitNoteDirectWriteOutput({
+      db: tx,
+      teamId: scope.teamId,
+      entityId: note.entityId,
+      noteId: note.id,
+      actor: { kind: 'user', userId: input.actorUserId },
+      sourceEventId,
+      operation: 'archive_or_cancel',
+      systemEventKind: 'object_note_delete',
+      previousBody: note.body,
     });
     return { entityId: note.entityId };
   });
@@ -5081,12 +5765,12 @@ export async function acceptObjectChange(
 
   // Build a patch object keyed by the suggestion's field. Two cases:
   //
-  // 1. `__create__` — accepting an agent-suggested object (from
-  //    `suggest_task` and friends). The entity already exists with
-  //    `status='suggested'`; accepting flips it to a working status so
-  //    the object leaves the "needs review" state. We pick the default
-  //    by type so a suggested task lands in 'todo' (matches the task
-  //    status vocabulary) and other types land in 'open'.
+  // 1. Legacy `__create__` suggestions. New object creation approvals are
+  //    represented by reconciliation outputs and suggestion projection rows,
+  //    but older rows may still point at an entity with `status='suggested'`.
+  //    Accepting flips it to a working status so the object leaves the
+  //    "needs review" state. We pick the default by type so a suggested task
+  //    lands in 'todo' and other types land in 'open'.
   //
   // 2. A field-scoped suggestion (`status`/`stage`/...) from
   //    `proposeObjectChange`. Restrict to the exact set the proposer

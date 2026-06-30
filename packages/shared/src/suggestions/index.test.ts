@@ -6301,7 +6301,7 @@ describe('suggestion scope', () => {
     });
   });
 
-  it('normalizes invalid task create source event ids without stamping canonical objects', async () => {
+  it('strips invalid task create source event ids without stamping canonical objects', async () => {
     const sourceRawEventId = '99999999-9999-4999-8999-999999999999';
     await db.insert(rawEvents).values({
       id: sourceRawEventId,
@@ -6335,7 +6335,7 @@ describe('suggestion scope', () => {
     });
     const itemId = bundle.items[0]?.id;
     expect(itemId).toBeDefined();
-    expect(bundle.items[0]?.proposedPayload.sourceEventId).toBe(sourceRawEventId);
+    expect(bundle.items[0]?.proposedPayload).not.toHaveProperty('sourceEventId');
 
     await expect(scope.suggestions.acceptSuggestionItem(itemId ?? '')).resolves.toBe(true);
 
@@ -6484,7 +6484,7 @@ describe('suggestion scope', () => {
     expect(detail?.provenance.whyThisExists).toEqual([]);
   });
 
-  it('keeps valid task create source event ids on proposal payloads only', async () => {
+  it('strips valid task create source event ids from proposal payloads', async () => {
     const firstRawEventId = '99999999-9999-4999-8999-999999999993';
     const secondRawEventId = '99999999-9999-4999-8999-999999999992';
     const thirdRawEventId = '99999999-9999-4999-8999-999999999991';
@@ -6544,7 +6544,7 @@ describe('suggestion scope', () => {
     });
     const itemId = bundle.items[0]?.id;
     expect(itemId).toBeDefined();
-    expect(bundle.items[0]?.proposedPayload.sourceEventId).toBe(thirdRawEventId);
+    expect(bundle.items[0]?.proposedPayload).not.toHaveProperty('sourceEventId');
 
     await expect(scope.suggestions.acceptSuggestionItem(itemId ?? '')).resolves.toBe(true);
 

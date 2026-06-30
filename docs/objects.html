@@ -66,8 +66,13 @@
         it always has. <code>source_event_id</code> and <code>agent_suggested</code> are legacy
         compatibility fields during the reconciliation migration. New reconciliation-backed writes
         are moving durable provenance to source refs, reconciliation outputs, and evidence
-        associations, while older object create/update paths still keep these legacy columns as
-        read-compatible audit links until cutover finishes.
+        associations, and the public object-create path now forces
+        <code>source_event_id=NULL</code> and <code>agent_suggested=false</code>. Older object rows
+        and suggested create changes remain read-compatible until cutover finishes. Direct object
+        creates, updates, merges, relationship link/unlink writes, and note create/update/delete
+        writes also write applied reconciliation <code>direct_write</code> outputs with source refs
+        to their system audit events, so the audit table remains useful without being the canonical
+        provenance graph.
       </p>
       <p>
         Extraction filters low-signal <code>topic</code> and <code>other</code> mentions before
@@ -284,8 +289,10 @@
         the new body.
       </div>
       <p>
-        Agent-proposed changes land as <code>object_changes.status = 'suggested'</code>. A human
-        accepts (flips to <code>applied</code> and runs the update) or rejects (terminal). The
+        Field-scoped <code>propose_object_change</code> proposals still land as
+        <code>object_changes.status = 'suggested'</code>. Broader agent proposals such as
+        <code>suggest_task</code> and <code>suggest_object_memory</code> use approval bundles and
+        reconciliation projection rows instead. A human accepts or rejects either shape, and the
         rejected rows stay visible so agent quality is measurable over time.
       </p>
 

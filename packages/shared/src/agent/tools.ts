@@ -104,6 +104,16 @@ const listPendingApprovalsInput = z.object({
   limit: z.number().int().min(1).max(50).optional(),
 });
 
+const suggestTaskInput = z.object({
+  title: z.string().trim().min(1).max(200),
+  dueAt: z.iso.datetime().optional(),
+  ownerUserId: z.string().regex(UUID_RE).optional(),
+  assigneeUserId: z.string().regex(UUID_RE).optional(),
+  priority: z.number().int().min(1).max(4).optional(),
+  note: z.string().trim().max(1000).optional(),
+  parentObjectId: z.string().regex(UUID_RE).optional(),
+});
+
 const objectMemoryItemSchema = z.discriminatedUnion('kind', [
   z.object({
     kind: z.literal('create_object'),
@@ -116,7 +126,6 @@ const objectMemoryItemSchema = z.discriminatedUnion('kind', [
     ownerUserId: z.string().regex(UUID_RE).nullable().optional(),
     assigneeUserId: z.string().regex(UUID_RE).nullable().optional(),
     dueAt: z.iso.datetime().nullable().optional(),
-    sourceEventId: z.string().regex(UUID_RE).nullable().optional(),
   }),
   z.object({
     kind: z.literal('update_object'),
@@ -1780,28 +1789,10 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
     suggest_task: tool({
       description:
         'Propose a new task. Records an approval-queue suggestion only; it does not create the canonical task until a human accepts it. Use when the conversation reveals a concrete next action. Set parentObjectId to link the task to a relevant deal/project/person.',
-      inputSchema: z.object({
-        title: z.string().trim().min(1).max(200),
-        dueAt: z.iso.datetime().optional(),
-        ownerUserId: z.string().regex(UUID_RE).optional(),
-        assigneeUserId: z.string().regex(UUID_RE).optional(),
-        priority: z.number().int().min(1).max(4).optional(),
-        note: z.string().trim().max(1000).optional(),
-        parentObjectId: z.string().regex(UUID_RE).optional(),
-        sourceEventId: z.string().regex(UUID_RE).optional(),
-      }),
+      inputSchema: suggestTaskInput,
       execute: async (raw) =>
         runSafe('suggest_task', async () => {
-          const input = raw as {
-            title: string;
-            dueAt?: string;
-            ownerUserId?: string;
-            assigneeUserId?: string;
-            priority?: number;
-            note?: string;
-            parentObjectId?: string;
-            sourceEventId?: string;
-          };
+          const input = suggestTaskInput.parse(raw);
           const dedupeKey = suggestionDedupeKey({
             tool: 'suggest_task',
             title: input.title,
@@ -1810,7 +1801,6 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
             assigneeUserId: input.assigneeUserId ?? null,
             priority: input.priority ?? null,
             parentObjectId: input.parentObjectId ?? null,
-            sourceEventId: input.sourceEventId ?? null,
           });
           const suggestion = await scope.suggestions.createOrMergeSuggestionBundle({
             source: 'chat',
@@ -1819,7 +1809,7 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
             reason: 'The chat conversation implies a concrete next action.',
             confidence: 'medium',
             dedupeKey,
-            evidence: input.sourceEventId ? [{ rawEventId: input.sourceEventId }] : [],
+            evidence: [],
             items: [
               {
                 operation: 'create',
@@ -1833,7 +1823,6 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
                   assigneeUserId: input.assigneeUserId ?? null,
                   priority: input.priority ?? null,
                   parentObjectId: input.parentObjectId ?? null,
-                  sourceEventId: input.sourceEventId ?? null,
                   metadata: input.note ? { agent_note: input.note } : {},
                 },
               },
@@ -1925,7 +1914,6 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
                   ownerUserId: item.ownerUserId,
                   assigneeUserId: item.assigneeUserId,
                   dueAt: item.dueAt,
-                  sourceEventId: item.sourceEventId,
                   metadata: { object_memory: true },
                 },
               };

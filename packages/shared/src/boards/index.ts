@@ -1643,6 +1643,7 @@ export function createBoardScope({
       boardId: string;
       entityId: string;
       laneId?: string | null;
+      /** Legacy disambiguation hint. New suggested board history cites suggestion evidence instead. */
       sourceEventId?: string | null;
       suggestionItemId?: string | null;
       note?: string | null;
@@ -1661,7 +1662,7 @@ export function createBoardScope({
           entityId: input.entityId,
           laneId: input.laneId ?? null,
         },
-        sourceEventId: input.sourceEventId ?? null,
+        sourceEventId: null,
         suggestionItemId: input.suggestionItemId ?? null,
         note: input.note ?? null,
       });
@@ -1671,6 +1672,7 @@ export function createBoardScope({
       boardItemId: string;
       field: Exclude<BoardItemField, '__add__' | '__remove__'>;
       newValue: unknown;
+      /** Legacy disambiguation hint. New suggested board history cites suggestion evidence instead. */
       sourceEventId?: string | null;
       suggestionItemId?: string | null;
       note?: string | null;
@@ -1687,7 +1689,7 @@ export function createBoardScope({
         field: input.field,
         previousValue: item[input.field],
         newValue: input.newValue,
-        sourceEventId: input.sourceEventId ?? null,
+        sourceEventId: null,
         suggestionItemId: input.suggestionItemId ?? null,
         note: input.note ?? null,
       });

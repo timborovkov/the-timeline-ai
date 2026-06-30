@@ -16,6 +16,16 @@ projection-outbox status mirroring and repair, authority-policy checks,
 conversation-review no-action reconciliation outputs,
 artifact-helper association writes without legacy member rows,
 accepted object/task suggestions avoiding canonical `source_event_id` stamps,
+agent actor object creates avoiding canonical legacy provenance stamps,
+direct object creates, updates, merges, relationship link/unlink writes, and
+note create/update/delete writes
+emitting applied reconciliation `direct_write` outputs with source refs,
+authority decisions, dedupe, changed-field/merge/relationship/note payloads,
+and visibility floors,
+provider `objectMap` syncs avoiding canonical object upserts,
+accepted board suggestions avoiding canonical `source_event_id` stamps,
+agent task/object-memory tools and shared approval projection stripping legacy
+`sourceEventId` payloads,
 artifact status reopen regressions, same-object batch evidence preservation,
 cross-team artifact join guards, captured-inbox promotion/pagination fixes,
 provider-connection hardening, recurring meeting capture, Saved Meeting

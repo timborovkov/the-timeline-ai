@@ -42,8 +42,9 @@ The repo already has strong primitives:
 
 The problem is that these primitives are not governed by one pipeline:
 
-- Integration sync currently writes raw events, optionally upserts objects, then
-  attaches artifact evidence.
+- Integration sync currently writes raw events, turns provider object maps into
+  artifact evidence/outputs, and resolves only existing provider-linked objects
+  as compatibility links.
 - Conversation capture currently routes through the suggestion worker and can
   create object/task/calendar/relationship proposals.
 - Object repair has a separate object-centered proposal path.
@@ -141,11 +142,14 @@ Coverage rules:
 Implementation status: Phase 1 currently writes normalized evidence for
 integration events and generic raw-event surfaces such as web/email,
 Slack/Telegram, ingest webhooks, document events, calendar events and due-date
-mirrors, meeting finalization, and system object events. Integration events
-that still carry `objectMap` also write associations, direct-write outputs, and
-observed-association outputs alongside the existing integration object upsert
-path. That bridge keeps current product behavior stable while later phases
-retire direct provider object writes. Phase 2 now also includes a shared
+mirrors, meeting finalization, and system object events. Integration writes now
+preserve replay payload identity: adapter-supplied `source_payload_ref` and
+`payload_digest` win, and events that omit them get a compact inline normalized
+source snapshot, stable `source_payload_ref`, and digest in `raw_events`.
+Integration events that still carry `objectMap` write associations, direct-write
+outputs, and observed-association outputs without creating or rewriting
+workspace objects. Existing provider-linked `entities` rows are resolved only
+as compatibility links for cluster hydration. Phase 2 now also includes a shared
 coverage/backfill module and the worker command
 `pnpm --filter @timeline/worker reconciliation-evidence -- --team=<uuid>
 --mode=audit|backfill`, so historical rebuildability can be measured before it
@@ -180,10 +184,27 @@ from `artifact_evidence_associations` as well as legacy members, pending
 reconciliation outputs can appear as related approval work, and association
 visibility floors are enforced before evidence reaches search results or object
 detail context. Phase 8 has started by cutting accepted object/task suggestion
-creates off the canonical `entities.source_event_id` write path: legacy
-`sourceEventId` payloads are still validated and used for proposal evidence
-selection while authoritative provenance remains on suggestion/reconciliation
-evidence rather than the object row. Phase 7 now has a reusable eval matrix
+creates off the canonical `entities.source_event_id` write path and shared
+approval projection now strips legacy `sourceEventId` payload hints instead of
+copying or fallback-normalizing them into proposal payloads. Authoritative
+proposal provenance remains on suggestion evidence, source refs, and
+reconciliation outputs rather than the item payload or object row. New object
+creates also no longer accept legacy provenance fields as canonical object
+provenance: create writes force `entities.source_event_id=NULL` and
+`entities.agent_suggested=false`. Direct object creates, updates, merges,
+relationship link/unlink writes, and note create/update/delete writes now emit
+applied `direct_write` reconciliation outputs in the same transaction as the
+system raw event and audit change, with source refs, an authority decision,
+output dedupe, changed-field payloads for updates, merge payloads for
+losers/aliases, relationship endpoint payloads, note payloads, and a team
+visibility floor; legacy suggested `__create__` rows remain
+acceptance-compatible only for migration. Board
+membership/item approvals no longer stamp `board_item_changes.source_event_id`
+for new suggested rows; board history hydrates accepted approval evidence from
+the suggestion/reconciliation projection instead, with legacy direct pointers
+remaining readable. Agent chat `suggest_task` and create-object
+`suggest_object_memory` inputs now strip legacy `sourceEventId` hints instead
+of copying them into proposal payloads. Phase 7 now has a reusable eval matrix
 that covers every active ingestion surface across customer-project, incident,
 decision, calendar-project, and generic-webhook scenarios. Deterministic evals
 score the matrix for output kinds, association roles, source refs, source
@@ -284,7 +305,10 @@ document extractor, webhook handler, or MCP capture normalizes away context, it
 must write `source_payload_ref` before evidence extraction. The reference can
 point at a raw MIME blob, parsed email chain, provider webhook payload,
 integration object snapshot, document version/chunk, transcript chunk, fenced
-MCP output, or redacted S3/object-store payload.
+MCP output, redacted S3/object-store payload, or an inline JSON snapshot when
+the retained normalized payload is intentionally small enough to store on
+`raw_events.source_metadata`. Integration event writes use that inline snapshot
+fallback whenever an adapter has not provided an external snapshot ref.
 
 Constraints:
 
@@ -580,8 +604,10 @@ Migration rules:
 - Stop normalizing suggestion payloads whose only provenance is
   `sourceEventId`; every payload must cite source refs and output IDs.
 - If legacy columns must remain during migration, they are read-only
-  compatibility projections generated from reconciliation provenance. They are
-  not accepted as write input.
+  compatibility projections generated from reconciliation provenance. While
+  the cutover is in progress, remaining write inputs may accept legacy hints
+  only for backward compatibility, but shared projection must strip them before
+  storage and they must not be the authoritative provenance system.
 - Definition of Done requires removing legacy write paths and dropping or
   deprecating the legacy columns after backfill verification.
 
@@ -603,8 +629,9 @@ Affected paths:
 - `apps/worker/src/workers/integrationSync.ts`
 - ingest webhook handlers
 
-Provider adapters stop returning `objectMap` as "please upsert an object now".
-They return normalized evidence hints:
+Provider adapters stop treating `objectMap` as "please upsert an object now".
+They may still return `objectMap`, but the event-writer consumes it as
+normalized reconciliation evidence hints:
 
 - source identity
 - provider object identity
@@ -739,8 +766,13 @@ Application has exactly two write paths:
 2. `createApprovalProjection(outputId)` for review-required changes.
 
 All current direct writes from provider `objectMap`, conversation suggestion
-creation, and object repair proposals should be migrated to emit
-`reconciliation_outputs` first.
+creation, object creation, relationship writes, note writes, and object repair
+proposals should be migrated to emit `reconciliation_outputs` first. Direct
+object creation, update, merge, relationship link/unlink, and note
+create/update/delete have been cut over for new writes: they still write
+immutable system raw events and `object_changes` audit rows, but canonical
+provenance is the applied `direct_write` output plus source refs, not a legacy
+single-event pointer.
 
 Existing `agent_suggestions` can remain as the review UI table if it is treated
 as a projection:
@@ -1263,7 +1295,8 @@ Exit criteria:
 
 1. Update integration event writer to write reconciliation evidence and anchors.
 2. Update source writers to persist `source_payload_ref` before lossy
-   normalization.
+   normalization. Integration events now persist adapter refs or inline
+   normalized source snapshots automatically.
 3. Replace `objectMap` direct object upsert with evidence hints.
 4. Normalize email, Slack, Telegram, meetings, documents, calendar, and ingest
    webhooks.
@@ -1292,8 +1325,8 @@ Exit criteria:
   replay-degraded.
 - Every ingestion surface in the coverage matrix has a normalizer contract,
   deterministic fixture, and live smoke case.
-- Existing provider `objectMap` behavior is still shadow-compared but no new
-  code depends on it.
+- Provider `objectMap` is evidence-only for new writes; no new workspace object
+  row is created or rewritten from provider sync payloads.
 - Backfill can reach 100% of eligible historical raw events while preserving
   their visibility envelopes, and reports degraded historical rows separately.
 - Coverage audit is a release artifact: if any surface has missing evidence or
@@ -1348,6 +1381,11 @@ Exit criteria:
    - Conversation-review no-action outcomes now emit applied `no_action`
      outputs with source refs, source payload refs when present, visibility
      floors, and dedupe keys.
+   - Direct object creates, updates, merges, relationship link/unlink writes,
+     and note create/update/delete writes now emit applied `direct_write`
+     outputs with source refs to the system raw event, authority decisions,
+     dedupe keys, changed-field/merge/relationship/note payloads, and team
+     visibility floors while keeping canonical object legacy provenance empty.
 4. Convert integration direct object updates into authoritative outputs only
    where policy allows.
 5. Convert conversation suggestion worker to call reconciliation planner.
@@ -1429,12 +1467,16 @@ Exit criteria:
 6. Run historical replay against seeded/demo data.
 7. Run production-sampling evals during closed beta before broad rollout.
 8. Delete old write paths:
-   - provider `objectMap` upsert path
+   - provider `objectMap` upsert path: retired for new writes; existing
+     provider-linked entities are read as compatibility links only
    - direct `createSuggestion` use from suggestion worker
    - object repair proposal code that bypasses reconciliation
    - `artifact_cluster_members` application writes
    - direct `sourceEventId`/`source_event_id` canonical provenance writes
-   - direct `agentSuggested` canonical provenance writes
+     (new object creates already force the column to `NULL` and emit
+     reconciliation output provenance)
+   - direct `agentSuggested` canonical provenance writes (new object creates
+     already force the column to `false`)
    - suggestion payload normalizers that accept `sourceEventId` as the only
      provenance
 9. Keep read-only migrations only until the cutover migration completes, then

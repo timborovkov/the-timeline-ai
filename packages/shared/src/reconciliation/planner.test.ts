@@ -29,16 +29,22 @@ describe('reconciliation planner', () => {
       policyDerivedDirectWriteSurfaces: ['monday', 'sentry'],
     });
 
-    expect(RECONCILIATION_PLANNER_PROMPT_VERSION).toBe('reconciliation-planner-2026-06');
+    expect(RECONCILIATION_PLANNER_PROMPT_VERSION).toBe(
+      'reconciliation-planner-2026-06-output-policy-minimum',
+    );
     expect(prompt).toContain('Evidence packet: customer-project-email-monday-sentry');
     expect(prompt).toContain('- email');
     expect(prompt).toContain('- monday: raw-monday-1');
     expect(prompt).toContain(
       'Policy-derived direct-write surfaces for this packet: monday, sentry',
     );
+    expect(prompt).toContain('ingestionSurfaces result must be a subset of Observed surfaces');
     expect(prompt).toContain('Use direct_write only when the planner context explicitly says');
+    expect(prompt).toContain('policy-derived output kind set as required minimum categories');
+    expect(prompt).toContain('provider direct writes do not replace human approval');
     expect(prompt).toContain('directWriteSurfaces must list every observed surface');
     expect(prompt).toContain('Never use direct_write for Timeline-owned company');
+    expect(prompt).toContain('Do not omit approval_bundle');
     expect(prompt).toContain('Return every listed raw source ref exactly once');
   });
 

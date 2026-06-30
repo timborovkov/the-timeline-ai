@@ -2818,8 +2818,8 @@ function buildPrompt(args: {
     ),
     '',
     '# Existing boards',
-    'Use board_membership only when evidence clearly says an existing object belongs on a listed board. operation=create, targetKind=board_membership, proposedPayload={ boardId, entityId, laneId?, sourceEventId?, note? }.',
-    'Use board_item_update only when evidence clearly changes one listed board item. operation=update, targetKind=board_item_update, targetId=<board item id>, proposedPayload={ boardItemId, field, newValue, sourceEventId?, note? }. Allowed fields: laneId, position, responsibleUserId, dueAt, priority, nextStep, notes, customFields.',
+    'Use board_membership only when evidence clearly says an existing object belongs on a listed board. operation=create, targetKind=board_membership, proposedPayload={ boardId, entityId, laneId?, note? }. Evidence is carried by the approval source refs, not by sourceEventId payload fields.',
+    'Use board_item_update only when evidence clearly changes one listed board item. operation=update, targetKind=board_item_update, targetId=<board item id>, proposedPayload={ boardItemId, field, newValue, note? }. Evidence is carried by the approval source refs. Allowed fields: laneId, position, responsibleUserId, dueAt, priority, nextStep, notes, customFields.',
     ...args.boards.flatMap((board) => [
       `- board ${board.id}: "${board.name}" template=${board.templateKind} purpose=${
         board.purpose ?? 'none'

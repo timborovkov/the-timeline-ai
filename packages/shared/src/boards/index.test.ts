@@ -636,6 +636,36 @@ describe('board scope', () => {
     ).rejects.toThrow('Invalid priority');
   });
 
+  it('does not stamp sourceEventId on new suggested board history rows', async () => {
+    const scope = withTeam(db, TEAM_A, USER_OWNER);
+    const event = await scope.timeline.createEvent({
+      authorUserId: USER_OWNER,
+      source: 'telegram',
+      contentText: 'Add Revigo to the pipeline.',
+      visibility: 'team',
+    });
+    const board = await scope.boards.createBoard({
+      name: 'Pilot pipeline',
+      templateKind: 'pipeline',
+      lanes: [{ name: 'Negotiation', kind: 'active' }],
+    });
+    const company = await scope.objects.createObject({
+      type: 'company',
+      canonicalName: 'Revigo',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+
+    const change = await scope.boards.proposeBoardMembership({
+      boardId: board.id,
+      entityId: company.id,
+      laneId: board.lanes[0]?.id ?? null,
+      sourceEventId: event.id,
+      note: 'Legacy callers may still pass this pointer.',
+    });
+
+    expect(change.sourceEventId).toBeNull();
+  });
+
   it('does not leave a board behind when lane creation input is invalid', async () => {
     const scope = withTeam(db, TEAM_A, USER_OWNER);
 
@@ -852,6 +882,7 @@ describe('board scope', () => {
             boardId: board.id,
             entityId: company.id,
             laneId: board.lanes[0]?.id ?? null,
+            sourceEventId: event.id,
           },
         },
       ],
@@ -870,6 +901,7 @@ describe('board scope', () => {
       expect.objectContaining({
         field: '__add__',
         suggestionItemId: bundle.items[0]?.id,
+        sourceEventId: null,
         evidence: [
           expect.objectContaining({
             rawEventId: event.id,

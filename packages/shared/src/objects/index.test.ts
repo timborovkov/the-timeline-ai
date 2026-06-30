@@ -155,6 +155,91 @@ describe('object scope — team ownership and audit behavior', () => {
     ).rejects.toThrow('Referenced user is not a member of this team');
   });
 
+  it('creates agent actor objects without canonical legacy provenance fields', async () => {
+    const scope = withTeam(db, TEAM_A, USER_OWNER).objects;
+
+    const object = await scope.createObject({
+      type: 'task',
+      canonicalName: 'Follow up on approved chat command',
+      actor: { kind: 'agent', userId: USER_OWNER },
+    });
+
+    expect(object.status).toBe('open');
+    expect(object.agentSuggested).toBe(false);
+
+    const [entityRow] = await db
+      .select({ sourceEventId: entities.sourceEventId })
+      .from(entities)
+      .where(eq(entities.id, object.id));
+    expect(entityRow?.sourceEventId).toBeNull();
+
+    const rows = await db
+      .select({
+        rawEventId: rawEvents.id,
+        changeStatus: objectChanges.status,
+        eventText: rawEvents.contentText,
+      })
+      .from(objectChanges)
+      .innerJoin(rawEvents, eq(rawEvents.id, objectChanges.sourceEventId))
+      .where(eq(objectChanges.entityId, object.id));
+
+    expect(rows).toEqual([
+      expect.objectContaining({
+        changeStatus: 'applied',
+        eventText: 'Agent created task: Follow up on approved chat command',
+      }),
+    ]);
+
+    const outputs = await db
+      .select()
+      .from(reconciliationOutputs)
+      .where(eq(reconciliationOutputs.targetId, object.id));
+    expect(outputs).toHaveLength(1);
+    expect(outputs[0]).toMatchObject({
+      outputKind: 'direct_write',
+      targetKind: 'object',
+      operation: 'create',
+      status: 'applied',
+      requiresApproval: false,
+      visibility: 'team',
+      visibilityFloor: 'team',
+    });
+    expect(outputs[0]?.sourceRefs).toEqual([
+      expect.objectContaining({
+        source: 'system',
+        rawEventId: rows[0]?.rawEventId,
+      }),
+    ]);
+    expect(outputs[0]?.payload).toMatchObject({
+      source: 'system',
+      system_event_kind: 'object_create',
+      object_type: 'task',
+      canonical_name: 'Follow up on approved chat command',
+      actor_kind: 'agent',
+      actor_user_id: USER_OWNER,
+    });
+    expect(outputs[0]?.authorityDecision).toMatchObject({
+      decision: 'direct_write',
+      authority_decision: 'direct',
+      source: 'system',
+      target_kind: 'object',
+      target_field: '__create__',
+    });
+
+    const output = outputs[0];
+    if (!output) throw new Error('Expected object create reconciliation output');
+    const runs = await db
+      .select()
+      .from(reconciliationRuns)
+      .where(eq(reconciliationRuns.id, output.runId));
+    expect(runs).toHaveLength(1);
+    expect(runs[0]).toMatchObject({
+      trigger: 'raw_event',
+      scope: 'object_direct_write',
+      status: 'completed',
+    });
+  });
+
   it('writes one timeline event and one object change for a real update, but none for a no-op', async () => {
     const scope = withTeam(db, TEAM_A, USER_OWNER).objects;
     const object = await scope.createObject({
@@ -170,6 +255,12 @@ describe('object scope — team ownership and audit behavior', () => {
       { kind: 'user', userId: USER_OWNER },
     );
     expect(noOp.changedFields).toEqual([]);
+    const outputsAfterNoOp = await db
+      .select()
+      .from(reconciliationOutputs)
+      .where(eq(reconciliationOutputs.targetId, object.id));
+    expect(outputsAfterNoOp).toHaveLength(1);
+    expect(outputsAfterNoOp[0]?.operation).toBe('create');
 
     const update = await scope.updateObject(
       object.id,
@@ -188,6 +279,10 @@ describe('object scope — team ownership and audit behavior', () => {
     );
     expect(eventKinds.filter((kind) => kind === 'object_create')).toHaveLength(1);
     expect(eventKinds.filter((kind) => kind === 'object_update')).toHaveLength(1);
+    const updateEvent = events.find(
+      (event) => (event.sourceMetadata as { kind?: string } | null)?.kind === 'object_update',
+    );
+    expect(updateEvent?.id).toEqual(expect.any(String));
 
     const evidence = await db
       .select()
@@ -243,6 +338,55 @@ describe('object scope — team ownership and audit behavior', () => {
       .from(objectChanges)
       .where(eq(objectChanges.entityId, object.id));
     expect(changes.map((change) => change.field).sort()).toEqual(['__create__', 'status']);
+
+    const directWriteOutputs = await db
+      .select()
+      .from(reconciliationOutputs)
+      .where(eq(reconciliationOutputs.targetId, object.id));
+    expect(directWriteOutputs.map((output) => output.operation).sort()).toEqual([
+      'create',
+      'update',
+    ]);
+    const updateOutput = directWriteOutputs.find((output) => output.operation === 'update');
+    expect(updateOutput).toMatchObject({
+      outputKind: 'direct_write',
+      targetKind: 'object',
+      operation: 'update',
+      status: 'applied',
+      requiresApproval: false,
+      visibility: 'team',
+      visibilityFloor: 'team',
+    });
+    expect(updateOutput?.sourceRefs).toEqual([
+      expect.objectContaining({
+        source: 'system',
+        rawEventId: updateEvent?.id,
+      }),
+    ]);
+    expect(updateOutput?.payload).toMatchObject({
+      source: 'system',
+      system_event_kind: 'object_update',
+      object_type: 'task',
+      canonical_name: 'Prepare launch review',
+      actor_kind: 'user',
+      actor_user_id: USER_OWNER,
+      changed_fields: ['status'],
+      changes: [
+        expect.objectContaining({
+          field: 'status',
+          previousValue: 'todo',
+          newValue: 'done',
+        }),
+      ],
+    });
+    expect(updateOutput?.authorityDecision).toMatchObject({
+      decision: 'direct_write',
+      authority_decision: 'direct',
+      source: 'system',
+      target_kind: 'object',
+      target_field: '__update__',
+      changed_fields: ['status'],
+    });
   });
 
   it('notifies the responsible user and mirrors task due dates to the team calendar', async () => {
@@ -422,7 +566,7 @@ describe('object scope — team ownership and audit behavior', () => {
     ).resolves.toEqual([]);
   });
 
-  it('does not mirror suggested task due dates before human acceptance', async () => {
+  it('does not mirror legacy suggested task due dates before human acceptance', async () => {
     const scope = withTeam(db, TEAM_A, USER_OWNER).objects;
 
     const task = await scope.createObject({
@@ -430,26 +574,35 @@ describe('object scope — team ownership and audit behavior', () => {
       canonicalName: 'Review agent-suggested deadline',
       assigneeUserId: USER_MEMBER,
       dueAt: new Date('2026-07-11T09:00:00.000Z'),
-      agentSuggested: true,
+      status: 'suggested',
       actor: { kind: 'agent', userId: null },
     });
+    const [legacySuggestion] = await db
+      .insert(objectChanges)
+      .values({
+        teamId: TEAM_A,
+        entityId: task.id,
+        actorKind: 'agent',
+        status: 'suggested',
+        field: '__create__',
+        previousValue: null,
+        newValue: { type: 'task', canonicalName: task.canonicalName, status: 'suggested' },
+      })
+      .returning({ id: objectChanges.id });
 
     const inboxRows = await db
       .select()
       .from(notifications)
       .where(eq(notifications.entityId, task.id));
-    expect(inboxRows).toEqual([
-      expect.objectContaining({
-        userId: USER_MEMBER,
-        kind: 'agent_suggestion',
-      }),
-    ]);
+    expect(inboxRows).toEqual([]);
     expect(inboxRows.some((row) => row.kind === 'task_due')).toBe(false);
     await expect(
       db.select().from(calendarEvents).where(eq(calendarEvents.teamId, TEAM_A)),
     ).resolves.toEqual([]);
 
-    await scope.updateObject(task.id, { status: 'open' }, { kind: 'user', userId: USER_OWNER });
+    await expect(
+      scope.acceptObjectChange(legacySuggestion?.id ?? '', { kind: 'user', userId: USER_OWNER }),
+    ).resolves.toBe(true);
 
     const acceptedInboxRows = await db
       .select()
@@ -709,6 +862,31 @@ describe('object scope — notes and suggestions', () => {
       body: 'Original rollout note',
       authorUserId: USER_OWNER,
     });
+    const noteOutputsAfterCreate = await db
+      .select()
+      .from(reconciliationOutputs)
+      .where(eq(reconciliationOutputs.targetId, note.id));
+    expect(noteOutputsAfterCreate).toHaveLength(1);
+    expect(noteOutputsAfterCreate[0]).toEqual(
+      expect.objectContaining({
+        outputKind: 'direct_write',
+        targetKind: 'object_note',
+        operation: 'create',
+        status: 'applied',
+        requiresApproval: false,
+        visibility: 'team',
+        visibilityFloor: 'team',
+      }),
+    );
+    expect(noteOutputsAfterCreate[0]?.payload).toEqual(
+      expect.objectContaining({
+        source: 'system',
+        system_event_kind: 'object_note_create',
+        entity_id: object.id,
+        note_id: note.id,
+        body: 'Original rollout note',
+      }),
+    );
 
     await expect(
       memberScope.updateNote({
@@ -720,6 +898,11 @@ describe('object scope — notes and suggestions', () => {
     await expect(
       memberScope.deleteNote({ noteId: note.id, actorUserId: USER_MEMBER }),
     ).resolves.toBe(false);
+    const noteOutputsAfterUnauthorizedAttempts = await db
+      .select()
+      .from(reconciliationOutputs)
+      .where(eq(reconciliationOutputs.targetId, note.id));
+    expect(noteOutputsAfterUnauthorizedAttempts).toHaveLength(1);
 
     await expect(
       ownerScope.updateNote({
@@ -742,6 +925,55 @@ describe('object scope — notes and suggestions', () => {
       .where(eq(objectChanges.entityId, object.id));
     expect(changes.map((change) => change.field)).toEqual(
       expect.arrayContaining(['__note_create__', '__note_update__', '__note_delete__']),
+    );
+
+    const noteOutputs = await db
+      .select()
+      .from(reconciliationOutputs)
+      .where(eq(reconciliationOutputs.targetId, note.id));
+    expect(noteOutputs.map((output) => output.operation).sort()).toEqual([
+      'archive_or_cancel',
+      'create',
+      'update',
+    ]);
+    for (const output of noteOutputs) {
+      expect(output).toEqual(
+        expect.objectContaining({
+          outputKind: 'direct_write',
+          targetKind: 'object_note',
+          targetId: note.id,
+          status: 'applied',
+          requiresApproval: false,
+          visibility: 'team',
+          visibilityFloor: 'team',
+        }),
+      );
+      expect(Array.isArray(output.sourceRefs)).toBe(true);
+      const [sourceRef] = output.sourceRefs as unknown[];
+      const sourceRefRecord =
+        sourceRef && typeof sourceRef === 'object' ? (sourceRef as Record<string, unknown>) : {};
+      expect(sourceRefRecord.source).toBe('system');
+      expect(typeof sourceRefRecord.rawEventId).toBe('string');
+      expect(typeof sourceRefRecord.evidenceId).toBe('string');
+    }
+    const updateOutput = noteOutputs.find((output) => output.operation === 'update');
+    expect(updateOutput?.payload).toEqual(
+      expect.objectContaining({
+        system_event_kind: 'object_note_update',
+        entity_id: object.id,
+        note_id: note.id,
+        body: 'Updated rollout note',
+        previous_body: 'Original rollout note',
+      }),
+    );
+    const deleteOutput = noteOutputs.find((output) => output.operation === 'archive_or_cancel');
+    expect(deleteOutput?.payload).toEqual(
+      expect.objectContaining({
+        system_event_kind: 'object_note_delete',
+        entity_id: object.id,
+        note_id: note.id,
+        previous_body: 'Updated rollout note',
+      }),
     );
   });
 
@@ -1516,7 +1748,7 @@ describe('object scope — archive visibility', () => {
 });
 
 describe('object scope — relationships', () => {
-  it('stores related relationships in canonical endpoint order and dedupes reverse inserts', async () => {
+  it('stores related relationships in canonical endpoint order, dedupes reverse inserts, and emits direct-write outputs', async () => {
     const scope = withTeam(db, TEAM_A, USER_OWNER).objects;
     const first = await scope.createObject({
       type: 'person',
@@ -1544,6 +1776,8 @@ describe('object scope — relationships', () => {
     });
 
     expect(duplicate?.id).toBe(created?.id);
+    const relationshipId = created?.id;
+    if (!relationshipId) throw new Error('expected relationship id');
     const relationships = await db
       .select()
       .from(entityRelationships)
@@ -1555,6 +1789,97 @@ describe('object scope — relationships', () => {
         kind: 'related',
       }),
     ]);
+
+    const linkEventRows = await db.select().from(rawEvents).where(eq(rawEvents.teamId, TEAM_A));
+    const linkEvent = linkEventRows.find(
+      (row) => (row.sourceMetadata as { kind?: string } | null)?.kind === 'relationship_create',
+    );
+    expect(linkEvent?.id).toEqual(expect.any(String));
+    const linkOutputs = await db
+      .select()
+      .from(reconciliationOutputs)
+      .where(eq(reconciliationOutputs.targetId, relationshipId));
+    expect(linkOutputs).toHaveLength(1);
+    expect(linkOutputs[0]).toMatchObject({
+      outputKind: 'direct_write',
+      targetKind: 'object_relationship',
+      operation: 'link',
+      status: 'applied',
+      requiresApproval: false,
+      visibility: 'team',
+      visibilityFloor: 'team',
+    });
+    expect(linkOutputs[0]?.sourceRefs).toEqual([
+      expect.objectContaining({
+        source: 'system',
+        rawEventId: linkEvent?.id,
+      }),
+    ]);
+    expect(linkOutputs[0]?.payload).toMatchObject({
+      source: 'system',
+      system_event_kind: 'relationship_create',
+      relationship_id: relationshipId,
+      from_entity_id: expectedFrom,
+      to_entity_id: expectedTo,
+      relationship_kind: 'related',
+      actor_kind: 'user',
+      actor_user_id: USER_OWNER,
+    });
+    expect(linkOutputs[0]?.authorityDecision).toMatchObject({
+      decision: 'direct_write',
+      authority_decision: 'direct',
+      source: 'system',
+      target_kind: 'object_relationship',
+      target_field: '__relationship_create__',
+    });
+
+    await expect(
+      scope.removeRelationship(relationshipId, { kind: 'user', userId: USER_OWNER }),
+    ).resolves.toBe(true);
+    const unlinkEventRows = await db.select().from(rawEvents).where(eq(rawEvents.teamId, TEAM_A));
+    const unlinkEvent = unlinkEventRows.find(
+      (row) => (row.sourceMetadata as { kind?: string } | null)?.kind === 'relationship_delete',
+    );
+    expect(unlinkEvent?.id).toEqual(expect.any(String));
+    const relationshipOutputs = await db
+      .select()
+      .from(reconciliationOutputs)
+      .where(eq(reconciliationOutputs.targetId, relationshipId));
+    expect(relationshipOutputs.map((output) => output.operation).sort()).toEqual([
+      'link',
+      'unlink',
+    ]);
+    const unlinkOutput = relationshipOutputs.find((output) => output.operation === 'unlink');
+    expect(unlinkOutput).toMatchObject({
+      outputKind: 'direct_write',
+      targetKind: 'object_relationship',
+      operation: 'unlink',
+      status: 'applied',
+      requiresApproval: false,
+      visibility: 'team',
+      visibilityFloor: 'team',
+    });
+    expect(unlinkOutput?.sourceRefs).toEqual([
+      expect.objectContaining({
+        source: 'system',
+        rawEventId: unlinkEvent?.id,
+      }),
+    ]);
+    expect(unlinkOutput?.payload).toMatchObject({
+      source: 'system',
+      system_event_kind: 'relationship_delete',
+      relationship_id: relationshipId,
+      from_entity_id: expectedFrom,
+      to_entity_id: expectedTo,
+      relationship_kind: 'related',
+    });
+    expect(unlinkOutput?.authorityDecision).toMatchObject({
+      decision: 'direct_write',
+      authority_decision: 'direct',
+      source: 'system',
+      target_kind: 'object_relationship',
+      target_field: '__relationship_delete__',
+    });
   });
 
   it('collapses reverse related duplicates when transferring relationships during merge', async () => {
@@ -2019,6 +2344,51 @@ describe('object scope — merge cleanup', () => {
     expect(changeRows.map((row) => row.field)).toEqual(
       expect.arrayContaining(['__merge__', '__merged_from__', '__note_create__']),
     );
+    const mergeEventRows = await db.select().from(rawEvents).where(eq(rawEvents.teamId, TEAM_A));
+    const mergeEvent = mergeEventRows.find(
+      (row) => (row.sourceMetadata as { kind?: string } | null)?.kind === 'object_merge',
+    );
+    expect(mergeEvent?.id).toEqual(expect.any(String));
+    const mergeOutputs = await db
+      .select()
+      .from(reconciliationOutputs)
+      .where(eq(reconciliationOutputs.targetId, survivor.id));
+    const mergeOutput = mergeOutputs.find((output) => output.operation === 'merge');
+    expect(mergeOutput).toMatchObject({
+      outputKind: 'direct_write',
+      targetKind: 'object',
+      operation: 'merge',
+      status: 'applied',
+      requiresApproval: false,
+      visibility: 'team',
+      visibilityFloor: 'team',
+    });
+    expect(mergeOutput?.sourceRefs).toEqual([
+      expect.objectContaining({
+        source: 'system',
+        rawEventId: mergeEvent?.id,
+      }),
+    ]);
+    expect(mergeOutput?.payload).toMatchObject({
+      source: 'system',
+      system_event_kind: 'object_merge',
+      object_type: 'company',
+      canonical_name: 'PwC',
+      actor_kind: 'user',
+      actor_user_id: USER_OWNER,
+      merged_entity_ids: [typo.id, vendor.id],
+      merged_objects: [
+        expect.objectContaining({ id: typo.id, canonicalName: 'PVC', type: 'company' }),
+        expect.objectContaining({ id: vendor.id, canonicalName: 'PwC Finland', type: 'vendor' }),
+      ],
+    });
+    expect(mergeOutput?.authorityDecision).toMatchObject({
+      decision: 'direct_write',
+      authority_decision: 'direct',
+      source: 'system',
+      target_kind: 'object',
+      target_field: '__merge__',
+    });
     const cardRows = await db.select().from(boardItems).where(eq(boardItems.boardId, board.id));
     expect(cardRows.filter((row) => !row.archivedAt)).toEqual([
       expect.objectContaining({ id: survivorCard.id, entityId: survivor.id }),

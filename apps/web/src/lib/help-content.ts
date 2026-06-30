@@ -170,7 +170,7 @@ export const HELP_PAGES: HelpPage[] = [
           'GitHub and Linear bring engineering and project activity into the operational record.',
           'Monday.com syncs selected boards, generic records, subitems, updates, columns, and WorkDocs.',
           'Slack workspace ingestion syncs selected channels, threads, files, reactions, and edits.',
-          'Sentry syncs issue updates, resolved issues, and releases into cited events and incident objects.',
+          'Sentry syncs issue updates, resolved issues, and releases into cited events, evidence clusters, and customer/project associations.',
           'Slack, Telegram, email, and meeting bots are capture surfaces for conversations and calls.',
           'Custom MCP servers expose approved live tools and context to the agent; they do not create durable timeline events unless paired with native sync or custom ingestion.',
         ],

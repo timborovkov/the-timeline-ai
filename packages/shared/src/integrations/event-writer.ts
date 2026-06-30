@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import {
   artifactEvidenceAssociations,
   type Db,
@@ -20,7 +22,7 @@ import {
   type EvidenceRole,
   type EvidenceStrength,
 } from '#src/artifacts/index.js';
-import { enqueueEmbedJob, enqueueObjectEmbedJob } from '#src/queue/queues.js';
+import { enqueueEmbedJob } from '#src/queue/queues.js';
 import {
   AUTHORITY_POLICY_VERSION,
   authorityDecisionPayload,
@@ -42,25 +44,17 @@ import { normalizeIntegrationEventsToEvidence } from '#src/reconciliation/normal
 // raw_event embed job. The worker stamps `source_kind='integration_event'`
 // onto the Qdrant payload so the agent can narrow searches.
 //
-// Workspace object mapping (Phase 11): events that carry `objectMap`
-// upsert an entities row keyed on
-// `(team_id, metadata->>'integration_provider', metadata->>'integration_external_id')`.
-// A backfill of 50 Linear issues used to issue 50× (SELECT + INSERT-or-
-// UPDATE) round-trips. The current path collapses that to three:
-// one bulk SELECT to learn which externalIds already exist,
-// one bulk INSERT for the new ones,
-// one bulk UPDATE for the existing ones via `UPDATE ... FROM (VALUES …)`.
-//
-// We can't use ON CONFLICT against our partial expression index because
-// drizzle's typed `target` can't express it. Three queries is the
-// simplest path that's both correct (the canonical-name unique
-// `entities_team_type_canonical_name_unq` would collapse distinct
-// external objects sharing a name) and bulk-friendly.
+// Workspace object mapping: events that carry `objectMap` now feed artifact
+// reconciliation instead of upserting workspace objects. Existing provider-
+// linked entities are still resolved as compatibility links so old object pages
+// can hydrate connected work, but new provider records are represented by
+// clusters, associations, source refs, and reconciliation outputs.
 
 const INTEGRATION_DIRECT_WRITE_RUN_VERSION = 'integration-direct-write-2026-06';
 const INTEGRATION_DIRECT_WRITE_PLANNER_VERSION = 'integration-object-map-2026-06';
 const INTEGRATION_OBSERVED_ASSOCIATION_RUN_VERSION = 'integration-observed-association-2026-06';
 const INTEGRATION_OBSERVED_ASSOCIATION_PLANNER_VERSION = 'integration-association-2026-06';
+const INTEGRATION_SOURCE_SNAPSHOT_VERSION = 'integration-source-snapshot-2026-06';
 
 function resolveEventVisibility(args: {
   requestedVisibility: 'team' | 'private' | 'specific_users';
@@ -116,6 +110,7 @@ export async function writeIntegrationEvents(deps: {
 
   const values = writableEvents.map((evt) => {
     const visibilityOwnerUserId = deps.integration.connectedByUserId ?? null;
+    const sourcePayloadMetadata = sourcePayloadMetadataForEvent(evt);
     const requestedVisibility = evt.visibility ?? visibility;
     const requestedUserIds =
       requestedVisibility === 'specific_users'
@@ -140,6 +135,7 @@ export async function writeIntegrationEvents(deps: {
       visibility: resolvedVisibility,
       visibilityUserIds: resolvedVisibility === 'specific_users' ? requestedUserIds : null,
       sourceMetadata: {
+        ...(evt.extra ?? {}),
         provider: evt.provider,
         integration_id: deps.integration.id,
         external_object_id: evt.externalObjectId,
@@ -149,7 +145,7 @@ export async function writeIntegrationEvents(deps: {
         dedup_key: evt.dedupKey,
         sync_at: new Date().toISOString(),
         source_kind: 'integration_event',
-        ...(evt.extra ?? {}),
+        ...sourcePayloadMetadata,
       },
     };
   });
@@ -201,8 +197,8 @@ export async function writeIntegrationEvents(deps: {
   const repairableArtifactEvents = artifactEvents.filter((evt) =>
     rawEventIdsByDedupKey.has(evt.dedupKey),
   );
-  if (byExternal.size > 0) {
-    const entityByExternalId = await upsertWorkspaceObjects(deps.db, deps.integration, [
+  if (repairableArtifactEvents.length > 0) {
+    const entityByExternalId = await loadExistingWorkspaceObjectLinks(deps.db, deps.integration, [
       ...byExternal.values(),
     ]);
     await reconcileIntegrationArtifacts({
@@ -215,6 +211,51 @@ export async function writeIntegrationEvents(deps: {
   }
 
   return inserted.map((r) => r.id);
+}
+
+function sourcePayloadMetadataForEvent(event: IntegrationEvent): Record<string, unknown> {
+  const existingRef =
+    metadataString(event.extra, 'source_payload_ref') ??
+    metadataString(event.extra, 'payload_ref') ??
+    metadataString(event.extra, 'raw_payload_ref') ??
+    metadataString(event.extra, 'source_snapshot_ref');
+  const existingDigest =
+    metadataString(event.extra, 'payload_digest') ??
+    metadataString(event.extra, 'source_payload_digest') ??
+    metadataString(event.extra, 'raw_payload_digest');
+  if (existingRef) {
+    return {
+      source_payload_ref: existingRef,
+      ...(existingDigest ? { payload_digest: existingDigest } : {}),
+    };
+  }
+
+  const snapshot = normalizedIntegrationSourceSnapshot(event);
+  const digest = `sha256:${createHash('sha256').update(stableJson(snapshot)).digest('hex')}`;
+  return {
+    source_payload_ref: `inline://timeline/integration/${event.provider}/${digest.slice('sha256:'.length)}`,
+    payload_digest: digest,
+    source_snapshot: snapshot,
+    source_snapshot_kind: 'normalized_integration_event',
+    source_snapshot_version: INTEGRATION_SOURCE_SNAPSHOT_VERSION,
+  };
+}
+
+function normalizedIntegrationSourceSnapshot(event: IntegrationEvent): Record<string, unknown> {
+  return {
+    dedupKey: event.dedupKey,
+    provider: event.provider,
+    externalObjectId: event.externalObjectId,
+    externalEventId: event.externalEventId ?? null,
+    eventType: event.eventType,
+    occurredAt: event.occurredAt.toISOString(),
+    actor: event.actor ?? null,
+    contentText: event.contentText,
+    visibility: event.visibility ?? null,
+    visibilityUserIds: event.visibilityUserIds ?? null,
+    extra: event.extra ?? {},
+    objectMap: event.objectMap ?? null,
+  };
 }
 
 async function loadRawEventIdsByDedupKey(
@@ -302,34 +343,18 @@ function slackBindingKeyParts(slackTeamId: string, channelId: string): string {
   return `${slackTeamId}:${channelId}`;
 }
 
-/**
- * Batched upsert. Three queries regardless of N:
- *
- *   1. SELECT `id, metadata->>integration_external_id` for every
- *      externalId in the batch — split into existing vs new.
- *   2. INSERT new rows in one statement.
- *   3. UPDATE existing rows via `UPDATE entities SET … FROM (VALUES …)
- *      WHERE entities.id = v.id`.
- *
- * The bulk UPDATE merges the incoming metadata into the existing jsonb
- * (`entities.metadata || incoming.metadata`) so per-event additions
- * (last_event_at, last_event_type) win without clobbering anything else
- * a previous sync stamped.
- */
-async function upsertWorkspaceObjects(
+async function loadExistingWorkspaceObjectLinks(
   db: Db,
   integration: IntegrationRow,
   evts: (IntegrationEvent & { objectMap: ObjectMapping })[],
 ): Promise<Map<string, string>> {
-  const externalIds = evts.map((e) => e.objectMap.externalId);
+  const externalIds = [...new Set(evts.map((e) => e.objectMap.externalId))];
+  if (externalIds.length === 0) return new Map();
 
-  // 1) Bulk-fetch existing entity rows for this provider × externalId.
-  const existingRows = await db
+  const rows = await db
     .select({
       id: entities.id,
-      canonicalName: entities.canonicalName,
       externalId: sql<string>`${entities.metadata} ->> 'integration_external_id'`,
-      metadata: sql<Record<string, unknown>>`${entities.metadata}`,
     })
     .from(entities)
     .where(
@@ -339,187 +364,8 @@ async function upsertWorkspaceObjects(
         inArray(sql`(${entities.metadata} ->> 'integration_external_id')`, [...externalIds]),
       ),
     );
-  const existingByExternal = new Map<string, (typeof existingRows)[number]>();
-  for (const r of existingRows) existingByExternal.set(r.externalId, r);
-
-  const toInsert: (typeof entities.$inferInsert)[] = [];
-  const toUpdate: {
-    id: string;
-    externalId: string;
-    type: ObjectMapping['type'];
-    canonicalName: string;
-    status: NonNullable<ObjectMapping['status']>;
-    priority: number | null;
-    aliases: string[];
-    metadata: Record<string, unknown>;
-  }[] = [];
-
-  for (const evt of evts) {
-    const map = evt.objectMap;
-    const existing = existingByExternal.get(map.externalId);
-    const preserveCanonicalName = existing
-      ? shouldPreserveExistingCanonicalName(existing, map)
-      : false;
-    const hasDisplayTitleSource = existing
-      ? metadataString(existing.metadata, 'display_title_canonical_name') !== null
-      : false;
-    const shouldWriteDisplayTitle = Boolean(
-      map.displayTitle && (!preserveCanonicalName || hasDisplayTitleSource),
-    );
-    const metadata: Record<string, unknown> = {
-      ...(map.metadata ?? {}),
-      integration_id: integration.id,
-      integration_provider: integration.provider,
-      integration_external_id: map.externalId,
-      ...(shouldWriteDisplayTitle
-        ? { display_title: map.displayTitle, display_title_canonical_name: map.canonicalName }
-        : {}),
-      ...(map.url ? { url: map.url } : {}),
-      last_event_at: evt.occurredAt.toISOString(),
-      last_event_type: evt.eventType,
-    };
-    if (existing) {
-      const canonicalName = preserveCanonicalName ? existing.canonicalName : map.canonicalName;
-      toUpdate.push({
-        id: existing.id,
-        externalId: map.externalId,
-        type: map.type,
-        canonicalName,
-        status: map.status ?? 'open',
-        priority: mapPriorityLabel(map.priority) ?? null,
-        aliases: map.aliases ?? [],
-        metadata,
-      });
-    } else {
-      toInsert.push({
-        teamId: integration.teamId,
-        type: map.type,
-        canonicalName: map.canonicalName,
-        status: map.status ?? 'open',
-        priority: mapPriorityLabel(map.priority) ?? null,
-        aliases: map.aliases ?? [],
-        metadata,
-      });
-    }
-  }
-
-  const affectedIds: string[] = [];
   const entityByExternalId = new Map<string, string>();
-
-  // 2) Bulk INSERT new rows. `onConflictDoNothing()` catches collisions on
-  //    the existing partial canonical-name unique
-  //    (entities_team_type_canonical_name_unq) — a user who already
-  //    created `"acme/repo#7: Add feature"` by hand before connecting
-  //    GitHub doesn't have their row clobbered, and the sync doesn't
-  //    23505 out the whole batch. The integration_event for that PR
-  //    still lands in raw_events; only the workspace-object mapping is
-  //    skipped for that one row.
-  if (toInsert.length > 0) {
-    // Dedupe within the batch by `(type, canonical_name)` — the partial
-    // unique that `onConflictDoNothing` is meant to catch is a
-    // row-vs-existing predicate, so two new rows in the same VALUES list
-    // sharing the index expression still 23505 the whole batch. Real
-    // payloads can carry duplicates (two Linear projects sharing a
-    // title; two GitHub issues with the same number across forks). First
-    // occurrence wins; the second event's `objectMap` is dropped from
-    // mapping (its raw_event still lands).
-    const seenKey = new Set<string>();
-    const dedupedInsert = toInsert.filter((r) => {
-      const key = `${r.type}\x00${r.canonicalName}`;
-      if (seenKey.has(key)) return false;
-      seenKey.add(key);
-      return true;
-    });
-    const inserted = await db
-      .insert(entities)
-      .values(dedupedInsert)
-      .onConflictDoNothing()
-      .returning({ id: entities.id, metadata: entities.metadata });
-    for (const r of inserted) {
-      affectedIds.push(r.id);
-      const externalId = metadataString(
-        r.metadata as Record<string, unknown>,
-        'integration_external_id',
-      );
-      if (externalId) entityByExternalId.set(externalId, r.id);
-    }
-  }
-
-  // 3) Bulk UPDATE existing rows. One statement with a VALUES list joined
-  //    on entities.id. drizzle doesn't have a typed `update FROM`
-  //    builder, so we drop to a parameterised raw query with sql.join.
-  if (toUpdate.length > 0) {
-    const rows = toUpdate.map(
-      (u) =>
-        sql`(${u.id}::uuid, ${u.type}::entity_type, ${u.canonicalName}::text, ${u.status}::text, ${u.priority}::smallint, ${JSON.stringify(u.aliases)}::jsonb, ${JSON.stringify(u.metadata)}::jsonb)`,
-    );
-    // Defense-in-depth: the WHERE clause also pins team_id. The ids in
-    // toUpdate came from a team-scoped SELECT, but stamping the team
-    // here closes the door on a future bug accidentally crossing teams.
-    //
-    // Aliases merge instead of overwrite — a manually-added alias on a
-    // Linear-mapped entity (e.g. "EngOnDeck" added by hand) survives
-    // the next sync alongside the provider's own ones (e.g. "ENG-42").
-    await db.execute(sql`
-      WITH incoming(id, type, canonical_name, status, priority, aliases, metadata) AS (
-        VALUES ${sql.join(rows, sql.raw(', '))}
-      ),
-      resolved AS (
-        SELECT
-          e.id,
-          incoming.type,
-          incoming.canonical_name,
-          incoming.status,
-          incoming.priority,
-          incoming.aliases,
-          incoming.metadata,
-          EXISTS (
-            SELECT 1
-            FROM ${entities} AS other
-            WHERE other.team_id = e.team_id
-              AND other.type = incoming.type
-              AND lower(other.canonical_name) = lower(incoming.canonical_name)
-              AND other.merged_into_id IS NULL
-              AND other.id <> e.id
-          ) AS canonical_collision
-        FROM ${entities} AS e
-        JOIN incoming ON incoming.id = e.id
-        WHERE e.team_id = ${integration.teamId}
-      )
-      UPDATE ${entities} AS e
-      SET
-        canonical_name = CASE
-          WHEN resolved.canonical_collision THEN e.canonical_name
-          ELSE resolved.canonical_name
-        END,
-        status = resolved.status,
-        priority = COALESCE(resolved.priority, e.priority),
-        aliases = (
-          SELECT COALESCE(jsonb_agg(DISTINCT a), '[]'::jsonb)
-          FROM jsonb_array_elements(COALESCE(e.aliases, '[]'::jsonb) || resolved.aliases) AS t(a)
-        ),
-        metadata = (e.metadata - 'display_title_canonical_name_collision') || CASE
-          WHEN resolved.canonical_collision
-            AND resolved.metadata ? 'display_title_canonical_name'
-          THEN (resolved.metadata - 'display_title_canonical_name')
-            || jsonb_build_object(
-              'display_title_canonical_name',
-              e.canonical_name,
-              'display_title_canonical_name_collision',
-              resolved.canonical_name
-            )
-          ELSE resolved.metadata - 'display_title_canonical_name_collision'
-        END,
-        updated_at = NOW()
-      FROM resolved
-      WHERE e.id = resolved.id
-        AND e.team_id = ${integration.teamId}
-    `);
-    for (const u of toUpdate) affectedIds.push(u.id);
-    for (const u of toUpdate) entityByExternalId.set(u.externalId, u.id);
-  }
-
-  await Promise.all(affectedIds.map((id) => enqueueObjectEmbedJob(integration.teamId, id)));
+  for (const row of rows) entityByExternalId.set(row.externalId, row.id);
   return entityByExternalId;
 }
 
@@ -1127,38 +973,21 @@ function normalizeUrlAnchor(value: string): string {
   }
 }
 
+function stableJson(value: unknown): string {
+  if (value instanceof Date) return JSON.stringify(value.toISOString());
+  if (value === null || typeof value !== 'object') return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`;
+  const record = value as Record<string, unknown>;
+  return `{${Object.keys(record)
+    .filter((key) => record[key] !== undefined)
+    .sort()
+    .map((key) => `${JSON.stringify(key)}:${stableJson(record[key])}`)
+    .join(',')}}`;
+}
+
 function metadataString(metadata: Record<string, unknown> | undefined, key: string): string | null {
   const value = metadata?.[key];
   if (typeof value !== 'string' && typeof value !== 'number') return null;
   const text = String(value).trim();
   return text || null;
-}
-
-function shouldPreserveExistingCanonicalName(
-  existing: { canonicalName: string; metadata: Record<string, unknown> },
-  map: ObjectMapping,
-): boolean {
-  const previousProviderName = metadataString(existing.metadata, 'display_title_canonical_name');
-  if (previousProviderName) return existing.canonicalName !== previousProviderName;
-  return existing.canonicalName !== map.canonicalName;
-}
-
-/**
- * Translate a string priority label from a provider into the small-int
- * scale entities.priority uses: 1=urgent, 2=high, 3=medium, 4=low (mirrors
- * Linear's own scale). null means "leave priority alone".
- */
-function mapPriorityLabel(label: ObjectMapping['priority']): number | null | undefined {
-  if (label === undefined) return undefined;
-  if (label === null) return null;
-  switch (label) {
-    case 'urgent':
-      return 1;
-    case 'high':
-      return 2;
-    case 'medium':
-      return 3;
-    case 'low':
-      return 4;
-  }
 }

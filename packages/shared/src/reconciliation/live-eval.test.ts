@@ -44,6 +44,10 @@ const LIVE_EVAL_JUDGE_MIN_SCORE = 0.9;
 const LIVE_EVAL_CALL_TIMEOUT_MS = parseLiveEvalCallTimeoutMs(
   process.env.RECONCILIATION_LIVE_CALL_TIMEOUT_MS,
 );
+const LIVE_EVAL_MAX_ATTEMPTS = parseLiveEvalMaxAttempts(
+  process.env.RECONCILIATION_LIVE_MAX_ATTEMPTS,
+);
+const LIVE_EVAL_RETRY_DELAY_MS = 1_000;
 const LIVE_EVAL_RUN_STARTED_AT = new Date().toISOString();
 const LIVE_EVAL_ARTIFACT_OUTPUT_DIR = liveEvalArtifactOutputDir({
   artifactDir: process.env.RECONCILIATION_LIVE_ARTIFACT_DIR,
@@ -107,16 +111,24 @@ maybeDescribe('live reconciliation model evals', () => {
       let judge: LiveEvalJudgeResult | null = null;
       let failures: string[];
       try {
-        result = await planReconciliation({
-          ...plannerInput,
-          model: TIMELINE_MODELS.summarization.id,
-          abortSignal: liveEvalCallAbortSignal(),
-        });
+        result = await withLiveEvalRetry('planner', () =>
+          planReconciliation({
+            ...plannerInput,
+            model: TIMELINE_MODELS.summarization.id,
+            abortSignal: liveEvalCallAbortSignal(),
+          }),
+        );
         const deterministicFailures = liveEvalFailures(testCase, result);
-        judge = await liveEvalJudge(testCase, result, deterministicFailures);
-        failures = [...deterministicFailures, ...liveEvalJudgeFailures(judge)];
+        try {
+          judge = await withLiveEvalRetry('judge', () =>
+            liveEvalJudge(testCase, result, deterministicFailures),
+          );
+          failures = [...deterministicFailures, ...liveEvalJudgeFailures(judge)];
+        } catch (err) {
+          failures = [...deterministicFailures, `live eval judge failed: ${safeErrorSummary(err)}`];
+        }
       } catch (err) {
-        failures = [`live eval call failed: ${safeErrorSummary(err)}`];
+        failures = [`live eval planner failed: ${safeErrorSummary(err)}`];
       }
       const completedAt = new Date().toISOString();
 
@@ -139,7 +151,7 @@ maybeDescribe('live reconciliation model evals', () => {
 
       expect(failures).toEqual([]);
     },
-    Math.max(240_000, LIVE_EVAL_CALL_TIMEOUT_MS * 3),
+    Math.max(240_000, LIVE_EVAL_CALL_TIMEOUT_MS * LIVE_EVAL_MAX_ATTEMPTS * 3),
   );
 
   it('keeps the live fixture suite aligned with required coverage', () => {
@@ -206,9 +218,43 @@ function liveEvalCallAbortSignal(): AbortSignal {
   return AbortSignal.timeout(LIVE_EVAL_CALL_TIMEOUT_MS);
 }
 
+async function withLiveEvalRetry<T>(label: string, fn: () => Promise<T>): Promise<T> {
+  const errors: string[] = [];
+  for (let attempt = 1; attempt <= LIVE_EVAL_MAX_ATTEMPTS; attempt += 1) {
+    try {
+      return await fn();
+    } catch (err) {
+      const summary = safeErrorSummary(err);
+      errors.push(`attempt ${attempt}: ${summary}`);
+      if (attempt >= LIVE_EVAL_MAX_ATTEMPTS || isNonRetryableLiveEvalError(summary)) break;
+      await delay(LIVE_EVAL_RETRY_DELAY_MS * attempt);
+    }
+  }
+  throw new Error(`${label} failed after ${errors.length} attempt(s): ${errors.join(' | ')}`);
+}
+
+function isNonRetryableLiveEvalError(summary: string): boolean {
+  const text = summary.toLowerCase();
+  return (
+    text.includes('openrouter_api_key') ||
+    text.includes('invalid api key') ||
+    text.includes('401') ||
+    text.includes('403')
+  );
+}
+
+async function delay(ms: number): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 function parseLiveEvalCallTimeoutMs(value: string | undefined): number {
   const parsed = Number.parseInt(value ?? '', 10);
   return Number.isFinite(parsed) && parsed >= 10_000 ? parsed : 90_000;
+}
+
+function parseLiveEvalMaxAttempts(value: string | undefined): number {
+  const parsed = Number.parseInt(value ?? '', 10);
+  return Number.isFinite(parsed) && parsed >= 1 && parsed <= 5 ? parsed : 2;
 }
 
 function safeErrorSummary(err: unknown): string {
@@ -243,6 +289,11 @@ function liveEvalFailures(testCase: DeterministicEvalCase, result: LiveEvalModel
   for (const surface of testCase.expected.ingestionSurfaces) {
     if (!result.ingestionSurfaces.includes(surface)) {
       failures.push(`missing ingestion surface ${surface}`);
+    }
+  }
+  for (const surface of result.ingestionSurfaces) {
+    if (!testCase.expected.ingestionSurfaces.includes(surface)) {
+      failures.push(`unexpected ingestion surface ${surface}`);
     }
   }
 
