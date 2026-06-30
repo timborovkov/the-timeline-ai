@@ -42,6 +42,7 @@ const SURFACE_CASE_NAMES = {
   meeting: ['decision-memory-meeting-telegram-document'],
   document: ['decision-memory-meeting-telegram-document'],
   calendar: ['calendar-project-private-visibility'],
+  system: ['generic-webhook-web-linear-drive'],
   ingest_webhook: ['generic-webhook-web-linear-drive'],
   github: ['incident-response-sentry-github-slack-email'],
   linear: ['generic-webhook-web-linear-drive'],

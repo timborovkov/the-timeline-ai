@@ -498,7 +498,7 @@ export const RECONCILIATION_DETERMINISTIC_EVAL_CASES: DeterministicEvalCase[] = 
   {
     name: 'generic-webhook-web-linear-drive',
     scenarioFamily: 'generic_webhook',
-    ingestionSurfaces: ['ingest_webhook', 'web', 'linear', 'google_drive'],
+    ingestionSurfaces: ['ingest_webhook', 'web', 'linear', 'google_drive', 'system'],
     associations: [
       {
         id: 'web-note-context',
@@ -512,6 +512,21 @@ export const RECONCILIATION_DETERMINISTIC_EVAL_CASES: DeterministicEvalCase[] = 
             rawEventId: 'raw-web-note',
             evidenceId: 'evidence-web-note',
             sourcePayloadRef: 'inline://timeline/web-note/raw-web-note',
+          },
+        ],
+      },
+      {
+        id: 'system-approval-audit-context',
+        role: 'audit_trail',
+        artifactClusterKind: 'system_workflow',
+        visibility: TEAM_VISIBILITY,
+        visibilityFloor: TEAM_VISIBILITY,
+        sourceRefs: [
+          {
+            source: 'system',
+            rawEventId: 'raw-system-approval-applied',
+            evidenceId: 'evidence-system-approval-applied',
+            sourcePayloadRef: 'inline://timeline/system/approval-applied',
           },
         ],
       },
@@ -550,6 +565,12 @@ export const RECONCILIATION_DETERMINISTIC_EVAL_CASES: DeterministicEvalCase[] = 
             evidenceId: 'evidence-web-note',
             sourcePayloadRef: 'inline://timeline/web-note/raw-web-note',
           },
+          {
+            source: 'system',
+            rawEventId: 'raw-system-approval-applied',
+            evidenceId: 'evidence-system-approval-applied',
+            sourcePayloadRef: 'inline://timeline/system/approval-applied',
+          },
         ],
       },
       {
@@ -571,9 +592,10 @@ export const RECONCILIATION_DETERMINISTIC_EVAL_CASES: DeterministicEvalCase[] = 
       },
     ],
     expected: {
-      ingestionSurfaces: ['ingest_webhook', 'web', 'linear', 'google_drive'],
+      ingestionSurfaces: ['ingest_webhook', 'web', 'linear', 'google_drive', 'system'],
       associationRoleCounts: {
         related_context: 1,
+        audit_trail: 1,
       },
       outputKindCounts: {
         observed_association: 1,
@@ -581,8 +603,8 @@ export const RECONCILIATION_DETERMINISTIC_EVAL_CASES: DeterministicEvalCase[] = 
       },
       requireValidSourceRefs: true,
       requireVisibilityFloors: true,
-      requiredSourcePayloadSurfaces: ['ingest_webhook', 'web', 'linear', 'google_drive'],
-      requiredArtifactClusterKinds: ['topic', 'customer_project', 'account'],
+      requiredSourcePayloadSurfaces: ['ingest_webhook', 'web', 'linear', 'google_drive', 'system'],
+      requiredArtifactClusterKinds: ['topic', 'customer_project', 'account', 'system_workflow'],
     },
   },
 ];

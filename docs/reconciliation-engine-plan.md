@@ -962,7 +962,8 @@ Phase 1 currently runs a fixture-backed matrix in
 `packages/shared/src/reconciliation/eval-cases.ts` plus PGlite tests for
 normalization, coverage/backfill, and anchor resolution. These cases assert
 coverage across web, email, Slack, Telegram, meeting, document, calendar,
-ingest-webhook, GitHub, Linear, Google Drive, Monday, and Sentry evidence;
+system, ingest-webhook, GitHub, Linear, Google Drive, Monday, and Sentry
+evidence;
 source-ref validity; source payload refs; output kind counts; association
 roles; forbidden-output policy; artifact-cluster kind coverage; visibility
 floors; private-evidence leak failures; replay coverage; resolver outputs; and
@@ -1072,9 +1073,9 @@ Phase 1 behavior:
   `packages/shared/src/reconciliation/live-eval.test.ts`.
 - Current branch live check, run on June 30, 2026 with
   `RECONCILIATION_LIVE_ENV_FILE` pointing at the local project `.env`, passed
-  5/5 live cases and 5/5 AI-judge checks with average judge score 1.0. The
-  redacted run manifest was written to
-  `/tmp/timeline-reconciliation-live-eval/2026-06-30T22-35-53-726Z/manifest.json`.
+  5/5 live cases across the current fourteen-surface matrix and 5/5 AI-judge
+  checks with average judge score 1.0. The redacted run manifest was written to
+  `/tmp/timeline-reconciliation-live-eval/2026-06-30T23-00-19-939Z/manifest.json`.
 - Calls the real `llm.chatStructured()` path when
   `RECONCILIATION_LIVE_EVAL=1` is set.
 - Can load a local env file before the live call with
@@ -1796,8 +1797,9 @@ The architecture is complete only when all of these are true:
 
 ## Open Decisions
 
-1. Whether the work artifact detail surface should be a new route
-   `/app/work/[clusterId]` or embedded behind objects and boards first.
+1. Whether the shipped Team -> Reconciliation cluster detail route should later
+   graduate into a primary `/app/work/[clusterId]` surface or remain an admin
+   drilldown behind objects, boards, and Team settings.
 2. Whether live eval artifacts belong in git when redacted or only in local/CI
    run storage.
 3. Whether ingest webhooks can declare field-level authority in v1 or should

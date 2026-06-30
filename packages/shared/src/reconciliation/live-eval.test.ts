@@ -418,10 +418,11 @@ function plannerContext(testCase: DeterministicEvalCase): string {
       return [
         'A generic ingest webhook reports customer-health evidence.',
         'A web note, Linear issue, and Google Drive project plan provide related context.',
+        'A system approval audit event proves the workflow already touched this account; use it only as audit-backed association context.',
         'This is a generic_webhook scenario because the generic webhook is the source that triggers reconciliation; do not reclassify it as customer_project.',
-        'The generic webhook, web note, Linear issue, and Drive plan are context links in this packet, so include observed_association.',
+        'The generic webhook, web note, Linear issue, Drive plan, and system audit row are context links in this packet, so include observed_association.',
         'The generic webhook is evidence-only unless a human approves Timeline memory, so include approval_bundle for memory.',
-        'No provider-owned lifecycle or status field changes in this packet, so do not include direct_write.',
+        'The system audit row records prior workflow state; it is not provider-owned lifecycle authority, so do not include direct_write.',
       ].join('\n');
     default:
       return 'Use only the listed evidence and source refs.';

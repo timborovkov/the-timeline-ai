@@ -332,8 +332,9 @@ SENTRY_INTEGRATION_CLIENT_SECRET=...</code></pre>
       <p>
         Ingest webhooks are named evidence-only sources for arbitrary provider payloads: JSON, XML,
         text, form bodies, or any other text-like content. They do not require a provider-specific
-        schema and never become authoritative state by themselves; the AI extraction pipeline can
-        turn them into facts, citations, embeddings, and approval proposals.
+        schema and never become authoritative state by themselves. Accepted deliveries are
+        normalized into reconciliation evidence before downstream extraction; the AI extraction
+        pipeline can then turn them into facts, citations, embeddings, and approval proposals.
       </p>
       <ol>
         <li>Go to <code>/app/team/integrations</code> as a team admin.</li>

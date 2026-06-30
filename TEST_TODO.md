@@ -10,14 +10,14 @@ Last checked in this branch: full `pnpm validate`, `pnpm test:eval`,
 `pnpm test:reconciliation-eval`, `pnpm test:dist-imports`, root `pnpm test`,
 and React Doctor pass. React Doctor reported "No issues found" with a 100/100
 score. Manual live reconciliation eval with real `llm.chatStructured()` calls
-also passed 5/5 cases with AI judge 5/5, average judge score 1.0, and redacted
-artifacts in
-`/tmp/timeline-reconciliation-live-eval/2026-06-30T22-35-53-726Z/manifest.json`.
+also passed 5/5 cases across fourteen ingestion surfaces, including system
+events, with AI judge 5/5, average judge score 1.0, and redacted artifacts in
+`/tmp/timeline-reconciliation-live-eval/2026-06-30T23-00-19-939Z/manifest.json`.
 Production-sampling over that live run accepted schema-v2 artifacts with
 artifact-kind expectations/results and reported 5/5 passed with no ignored
 files; the schema-v2 report now exposes required artifact-kind miss counts for
 closed-beta regression dashboards at
-`/tmp/timeline-reconciliation-live-eval/2026-06-30T22-35-53-726Z/production-sampling-report.json`.
+`/tmp/timeline-reconciliation-live-eval/2026-06-30T23-00-19-939Z/production-sampling-report.json`.
 The suite includes reconciliation schema contracts, fixture-backed
 surface/scenario evals, source-ref and visibility-floor evals, source-payload
 replay coverage, forbidden-output eval policy checks, projection-outbox status
@@ -62,13 +62,13 @@ and board/search UI regressions. Current suite shape:
 
 - DB Vitest: 2 files / 13 tests, package-level PGlite schema contract suite now
   runs under root `pnpm test`.
-- Shared Vitest: 94 passing files plus 1 skipped / 1,072 passing tests plus 7
-  skipped, including PGlite artifact reconciliation, reconciliation
+- Shared Vitest: root runner reported 94 passed files and 1 skipped file /
+  1,072 passed tests and 7 skipped tests, including PGlite artifact reconciliation, reconciliation
   normalization/backfill/resolution, authority policy, planner prompt/schema,
-  artifact-kind and forbidden-output eval contracts, live artifact-kind eval
-  artifacts, production-sampling artifact-kind miss reporting, event writer,
-  Sentry release and Monday item link artifact capture, resolver DB-state
-  artifact-kind assertions, calendar, timeline, MCP,
+  artifact-kind and forbidden-output eval contracts, system-event eval surface
+  coverage, live artifact-kind eval artifacts, production-sampling artifact-kind
+  miss reporting, event writer, Sentry release and Monday item link artifact
+  capture, resolver DB-state artifact-kind assertions, calendar, timeline, MCP,
   integration/provider-connection,
   meeting, document, object, assistant, Slack, recovery, connection-attention,
   and onboarding coverage.

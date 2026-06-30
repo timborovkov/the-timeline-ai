@@ -132,6 +132,7 @@ export const reconciliationEvalIngestionSurfaces = [
   'meeting',
   'document',
   'calendar',
+  'system',
   'ingest_webhook',
   'github',
   'linear',
