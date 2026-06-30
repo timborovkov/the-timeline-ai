@@ -503,7 +503,7 @@ type CleanupMatch = 'exact' | 'near' | 'short';
 interface ProviderRelatedMatch {
   reason: string;
   confidence: 'medium' | 'high';
-  signal: 'same_provider_title' | 'same_url' | 'cross_provider_title';
+  signal: 'same_provider_title' | 'same_url';
 }
 
 interface RepairRelationshipCandidate {
@@ -594,9 +594,9 @@ function normalizedUrlForCleanup(row: CleanupObjectRow): string | null {
     );
     url.search = '';
     for (const [key, paramValue] of params) url.searchParams.append(key, paramValue);
-    return url.toString().replace(/\/$/, '').toLowerCase();
+    return url.toString().replace(/\/$/, '');
   } catch {
-    return value.trim().replace(/\/$/, '').toLowerCase();
+    return value.trim().replace(/\/$/, '');
   }
 }
 
@@ -626,15 +626,15 @@ function providerContextKey(row: CleanupObjectRow): string | null {
   if (provider === 'sentry') {
     const org = cleanupMetadataText(row, 'sentry_org_slug');
     const project = cleanupMetadataText(row, 'sentry_project_slug');
-    return org && project ? `sentry:${org}:${project}` : provider;
+    return org && project ? `sentry:${org}:${project}` : null;
   }
   if (provider === 'monday') {
     const boardId = cleanupMetadataText(row, 'monday_board_id');
-    return boardId ? `monday:${boardId}` : provider;
+    return boardId ? `monday:${boardId}` : null;
   }
   const repo = cleanupMetadataText(row, 'repo') ?? cleanupMetadataText(row, 'github_repo');
   if (provider === 'github' && repo) return `github:${repo}`;
-  return provider;
+  return null;
 }
 
 function displayTitleForCleanup(row: CleanupObjectRow): string {
@@ -677,6 +677,7 @@ function providerRelatedMatch(
   if (
     left?.provider !== undefined &&
     left.provider === right?.provider &&
+    leftContext !== null &&
     leftContext === rightContext
   ) {
     return {
@@ -686,15 +687,6 @@ function providerRelatedMatch(
       signal: 'same_provider_title',
     };
   }
-  if (left && right && left.provider !== right.provider) {
-    return {
-      reason:
-        'Different providers describe the same titled work, so the records should be linked instead of merged.',
-      confidence: 'medium',
-      signal: 'cross_provider_title',
-    };
-  }
-
   return null;
 }
 

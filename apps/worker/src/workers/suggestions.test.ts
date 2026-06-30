@@ -1670,6 +1670,106 @@ describe('processSuggestionJobForTests', () => {
     ]);
   });
 
+  it('does not link same-provider records by title when provider context is missing', async () => {
+    await db.insert(entities).values([
+      {
+        teamId: TEAM_ID,
+        type: 'task',
+        canonicalName: 'Linear issue ENG-1: Fix checkout failure',
+        metadata: {
+          integration_provider: 'linear',
+          integration_external_id: 'issue-1',
+          display_title: 'Fix checkout failure',
+        },
+      },
+      {
+        teamId: TEAM_ID,
+        type: 'task',
+        canonicalName: 'Linear issue ENG-2: Fix checkout failure',
+        metadata: {
+          integration_provider: 'linear',
+          integration_external_id: 'issue-2',
+          display_title: 'Fix checkout failure',
+        },
+      },
+    ]);
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { scope: 'object_cleanup', teamId: TEAM_ID, triggeredBy: 'manual' },
+    );
+
+    await expect(
+      withTeam(db as never, TEAM_ID, OWNER_ID).suggestions.listPendingSuggestions(),
+    ).resolves.toEqual([]);
+  });
+
+  it('does not merge provider objects with manual objects when URL paths differ by case', async () => {
+    await db.insert(entities).values([
+      {
+        teamId: TEAM_ID,
+        type: 'incident',
+        canonicalName: 'Provider incident',
+        metadata: {
+          integration_provider: 'sentry',
+          integration_external_id: 'issue-1',
+          url: 'https://example.com/issues/Issue-1',
+        },
+      },
+      {
+        teamId: TEAM_ID,
+        type: 'incident',
+        canonicalName: 'Manual incident',
+        metadata: {
+          url: 'https://example.com/issues/issue-1',
+        },
+      },
+    ]);
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { scope: 'object_cleanup', teamId: TEAM_ID, triggeredBy: 'manual' },
+    );
+
+    await expect(
+      withTeam(db as never, TEAM_ID, OWNER_ID).suggestions.listPendingSuggestions(),
+    ).resolves.toEqual([]);
+  });
+
+  it('does not link cross-provider records by title alone', async () => {
+    await db.insert(entities).values([
+      {
+        teamId: TEAM_ID,
+        type: 'task',
+        canonicalName: 'Linear issue ENG-1: Fix checkout failure',
+        metadata: {
+          integration_provider: 'linear',
+          integration_external_id: 'linear-issue-1',
+          display_title: 'Fix checkout failure',
+        },
+      },
+      {
+        teamId: TEAM_ID,
+        type: 'task',
+        canonicalName: 'GitHub issue auditai/app#12: Fix checkout failure',
+        metadata: {
+          integration_provider: 'github',
+          integration_external_id: 'auditai/app#issue:12',
+          display_title: 'Fix checkout failure',
+        },
+      },
+    ]);
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { scope: 'object_cleanup', teamId: TEAM_ID, triggeredBy: 'manual' },
+    );
+
+    await expect(
+      withTeam(db as never, TEAM_ID, OWNER_ID).suggestions.listPendingSuggestions(),
+    ).resolves.toEqual([]);
+  });
+
   it('skips archive cleanup suggestions for objects with notes or relationships', async () => {
     const [withNote, withFact, withRelationship, related] = await db
       .insert(entities)

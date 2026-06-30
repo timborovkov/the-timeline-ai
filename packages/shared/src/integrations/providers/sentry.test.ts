@@ -422,7 +422,16 @@ describe('sentryProvider', () => {
     expect(normalized?.events[0]).toMatchObject({
       dedupKey: 'sentry:webhook:issue-1:2026-06-20T10:00:00.000Z:triggered',
       eventType: 'alert.triggered',
-      objectMap: { type: 'incident', externalId: 'issue-1' },
+      objectMap: {
+        type: 'incident',
+        externalId: 'issue-1',
+        metadata: {
+          sentry_org_slug: 'acme',
+          sentry_project_slug: 'web',
+          sentry_issue_id: 'issue-1',
+          webhook_action: 'triggered',
+        },
+      },
     });
     expect(normalized?.syncTasks).toEqual([
       {

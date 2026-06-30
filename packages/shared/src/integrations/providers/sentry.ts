@@ -827,6 +827,8 @@ export const sentryProvider: IntegrationProvider = {
             status: action === 'resolved' ? 'done' : 'open',
             ...(webUrl ? { url: webUrl } : {}),
             metadata: {
+              sentry_org_slug: orgProject.orgSlug,
+              sentry_project_slug: orgProject.projectSlug,
               sentry_issue_id: issueId,
               webhook_action: action || null,
             },

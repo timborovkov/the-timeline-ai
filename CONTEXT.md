@@ -230,9 +230,9 @@ co-mentions treated as weak evidence. When a duplicate object candidate is
 accepted, the survivor becomes the single object page for both sets of connected
 work, while former names remain visible as aliases or evidence labels where
 they explain the source wording. Provider-owned objects require hard
-provider-native identity before cleanup proposes a merge. Similar titles or
-shared provider context between distinct provider records should create
-relationships, not duplicate object candidates.
+provider-native identity before cleanup proposes a merge. Shared URLs or
+matching titles inside explicit provider context can create relationships
+between distinct provider records, but loose title-only similarity should not.
 _Avoid_: Duplicate when referring to an unaccepted guess
 
 **Object Memory**:

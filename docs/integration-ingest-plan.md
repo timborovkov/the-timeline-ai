@@ -206,10 +206,10 @@ Provider-owned objects need hard identity before they can be merged. Native
 adapters should populate object metadata with the provider id, provider-native
 external id, source URL, and useful context such as board, repository, project,
 organization, or account. Cleanup may merge two provider-owned objects only
-when that hard identity proves they are the same external record. Similar names,
-matching titles, shared URLs across providers, or common source context can
-suggest an object relationship, but should not collapse distinct provider
-records into one canonical object.
+when that hard identity proves they are the same external record. Shared URLs
+or matching titles inside an explicit provider context, such as a Sentry
+project or Monday board, can suggest an object relationship, but should not
+collapse distinct provider records into one canonical object.
 
 ## Generic Ingest Webhooks
 
