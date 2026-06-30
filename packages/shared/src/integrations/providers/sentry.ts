@@ -330,6 +330,15 @@ function issueEvent(orgSlug: string, projectSlug: string, issue: SentryIssue): I
       ...(priority ? { priority } : {}),
       ...(permalink ? { url: permalink } : {}),
       aliases: issue.shortId ? [issue.shortId] : [],
+      metadata: {
+        sentry_org_slug: orgSlug,
+        sentry_project_slug: projectSlug,
+        sentry_issue_id: issue.id,
+        sentry_short_id: issue.shortId ?? null,
+        level: issue.level ?? null,
+        status: issue.status ?? null,
+        metadata: issue.metadata ?? null,
+      },
     },
   };
 }
@@ -387,6 +396,16 @@ function issueWebhookEvent(input: {
       ...(priority ? { priority } : {}),
       ...(permalink ? { url: permalink } : {}),
       aliases: input.issue.shortId ? [input.issue.shortId] : [],
+      metadata: {
+        sentry_org_slug: input.orgSlug,
+        sentry_project_slug: input.projectSlug,
+        sentry_issue_id: input.issue.id,
+        sentry_short_id: input.issue.shortId ?? null,
+        webhook_action: input.action || null,
+        level: input.issue.level ?? null,
+        status: input.issue.status ?? null,
+        metadata: input.issue.metadata ?? null,
+      },
     },
   };
 }
@@ -807,6 +826,12 @@ export const sentryProvider: IntegrationProvider = {
             externalId: issueId,
             status: action === 'resolved' ? 'done' : 'open',
             ...(webUrl ? { url: webUrl } : {}),
+            metadata: {
+              sentry_org_slug: orgProject.orgSlug,
+              sentry_project_slug: orgProject.projectSlug,
+              sentry_issue_id: issueId,
+              webhook_action: action || null,
+            },
           },
         },
       ],
