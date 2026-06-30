@@ -50,7 +50,29 @@ describe('deterministic reconciliation evals', () => {
 
       const surface = manifest.ingestionSurfaces[0];
       expect(surface).toBe(manifest.name);
-      for (const testCase of casesNamed(manifest.caseNames)) {
+      const cases = casesNamed(manifest.caseNames);
+      expect(manifest.expectedOutputKinds).toEqual(
+        uniqueSorted(cases.flatMap((testCase) => Object.keys(testCase.expected.outputKindCounts))),
+      );
+      expect(manifest.expectedAssociationRoles).toEqual(
+        uniqueSorted(
+          cases.flatMap((testCase) => Object.keys(testCase.expected.associationRoleCounts ?? {})),
+        ),
+      );
+      expect(manifest.expectedArtifactClusterKinds).toEqual(
+        uniqueSorted(
+          cases.flatMap((testCase) => testCase.expected.requiredArtifactClusterKinds ?? []),
+        ),
+      );
+      expect(manifest.requiredSourcePayloadSurfaces).toEqual(
+        uniqueSorted(
+          cases.flatMap((testCase) => testCase.expected.requiredSourcePayloadSurfaces ?? []),
+        ),
+      );
+      expect(manifest.forbiddenOutputKinds).toEqual(
+        uniqueSorted(cases.flatMap((testCase) => testCase.expected.forbiddenOutputKinds ?? [])),
+      );
+      for (const testCase of cases) {
         expect(testCase.ingestionSurfaces).toContain(surface);
       }
     }
@@ -70,6 +92,27 @@ describe('deterministic reconciliation evals', () => {
       const cases = casesNamed(manifest.caseNames);
       expect(manifest.ingestionSurfaces).toEqual(
         [...new Set(cases.flatMap((testCase) => testCase.ingestionSurfaces))].sort(),
+      );
+      expect(manifest.expectedOutputKinds).toEqual(
+        uniqueSorted(cases.flatMap((testCase) => Object.keys(testCase.expected.outputKindCounts))),
+      );
+      expect(manifest.expectedAssociationRoles).toEqual(
+        uniqueSorted(
+          cases.flatMap((testCase) => Object.keys(testCase.expected.associationRoleCounts ?? {})),
+        ),
+      );
+      expect(manifest.expectedArtifactClusterKinds).toEqual(
+        uniqueSorted(
+          cases.flatMap((testCase) => testCase.expected.requiredArtifactClusterKinds ?? []),
+        ),
+      );
+      expect(manifest.requiredSourcePayloadSurfaces).toEqual(
+        uniqueSorted(
+          cases.flatMap((testCase) => testCase.expected.requiredSourcePayloadSurfaces ?? []),
+        ),
+      );
+      expect(manifest.forbiddenOutputKinds).toEqual(
+        uniqueSorted(cases.flatMap((testCase) => testCase.expected.forbiddenOutputKinds ?? [])),
       );
       for (const testCase of cases) {
         expect(testCase.scenarioFamily).toBe(manifest.scenarioFamily);
@@ -115,6 +158,67 @@ describe('deterministic reconciliation evals', () => {
       'private-email-leak:leaky-association: association visibility exceeds visibility floor',
     ]);
   });
+
+  it('fails fixtures that omit required artifact cluster kinds', () => {
+    const result = scoreDeterministicReconciliationCase({
+      name: 'missing-provider-record-kind',
+      ingestionSurfaces: ['sentry'],
+      outputs: [
+        {
+          id: 'sentry-release-link',
+          outputKind: 'observed_association',
+          targetKind: 'cluster_identity',
+          operation: 'link',
+          artifactClusterKind: 'incident',
+          visibility: TEAM_VISIBILITY,
+          visibilityFloor: TEAM_VISIBILITY,
+          sourceRefs: [{ source: 'sentry', rawEventId: 'raw-release' }],
+        },
+      ],
+      expected: {
+        ingestionSurfaces: ['sentry'],
+        outputKindCounts: { observed_association: 1 },
+        requireValidSourceRefs: true,
+        requireVisibilityFloors: true,
+        requiredArtifactClusterKinds: ['provider_record'],
+      },
+    });
+
+    expect(result.passed).toBe(false);
+    expect(result.failures).toEqual([
+      'missing-provider-record-kind: missing artifact cluster kind provider_record',
+    ]);
+  });
+
+  it('fails fixtures that emit forbidden output kinds', () => {
+    const result = scoreDeterministicReconciliationCase({
+      name: 'forbidden-private-direct-write',
+      ingestionSurfaces: ['calendar'],
+      outputs: [
+        {
+          id: 'private-calendar-direct-write',
+          outputKind: 'direct_write',
+          targetKind: 'task',
+          operation: 'create',
+          visibility: PRIVATE_OWNER,
+          visibilityFloor: PRIVATE_OWNER,
+          sourceRefs: [{ source: 'calendar', rawEventId: 'raw-private-calendar' }],
+        },
+      ],
+      expected: {
+        ingestionSurfaces: ['calendar'],
+        outputKindCounts: { direct_write: 1 },
+        forbiddenOutputKinds: ['direct_write'],
+        requireValidSourceRefs: true,
+        requireVisibilityFloors: true,
+      },
+    });
+
+    expect(result.passed).toBe(false);
+    expect(result.failures).toEqual([
+      'forbidden-private-direct-write: forbidden output kind direct_write appeared 1 time(s)',
+    ]);
+  });
 });
 
 function casesNamed(caseNames: string[]): typeof RECONCILIATION_DETERMINISTIC_EVAL_CASES {
@@ -125,4 +229,8 @@ function casesNamed(caseNames: string[]): typeof RECONCILIATION_DETERMINISTIC_EV
     if (!testCase) throw new Error(`Unknown reconciliation eval case: ${caseName}`);
     return testCase;
   });
+}
+
+function uniqueSorted(values: string[]): string[] {
+  return [...new Set(values)].sort();
 }

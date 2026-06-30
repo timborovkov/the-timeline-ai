@@ -120,6 +120,12 @@ describe('suggestion reconciliation projection', () => {
       reconciliation_output_id: itemOutputId,
       reconciliation_projection_version: 'approval-projection-2026-06',
     });
+    expect(bundle.evidence[0]?.metadata).toMatchObject({
+      reconciliation_source_ref: {
+        source: 'telegram',
+        rawEventId: TEAM_RAW_EVENT_ID,
+      },
+    });
 
     const outputs = await db.select().from(reconciliationOutputs);
     expect(outputs).toHaveLength(1);
@@ -304,6 +310,20 @@ describe('suggestion reconciliation projection', () => {
       [...outputIds].sort(),
     );
     expect(repaired?.evidence.map((evidence) => evidence.rawEventId)).toEqual([TEAM_RAW_EVENT_ID]);
+    const repairedEvidenceMetadata = repaired?.evidence[0]?.metadata ?? {};
+    expect(repairedEvidenceMetadata).toMatchObject({
+      projection: 'agent_suggestions',
+      reconciliation_source_ref: {
+        source: 'telegram',
+        rawEventId: TEAM_RAW_EVENT_ID,
+      },
+    });
+    const repairedFromOutputs = Array.isArray(repairedEvidenceMetadata.repaired_from_outputs)
+      ? repairedEvidenceMetadata.repaired_from_outputs.filter(
+          (value): value is string => typeof value === 'string',
+        )
+      : [];
+    expect(repairedFromOutputs.sort()).toEqual([...outputIds].sort());
 
     const outboxRows = await db
       .select()

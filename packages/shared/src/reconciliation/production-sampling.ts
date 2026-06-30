@@ -58,6 +58,7 @@ export interface ProductionSamplingBucket {
   passRate: number | null;
   requiredObjectsMissed: number;
   requiredSuggestionsMissed: number;
+  requiredArtifactKindsMissed: number;
   extraDangerousSuggestions: number;
   citationFailures: number;
   visibilityFailures: number;
@@ -77,7 +78,7 @@ export interface ProductionSamplingFixtureCandidate {
 }
 
 export interface ProductionSamplingEvalReport {
-  schemaVersion: 1;
+  schemaVersion: 2;
   runKind: ProductionSamplingRunKind;
   generatedAt: string;
   manifestCount: number;
@@ -98,6 +99,7 @@ interface ClassifiedSample {
   reasonCodes: string[];
   requiredObjectsMissed: boolean;
   requiredSuggestionsMissed: boolean;
+  requiredArtifactKindsMissed: boolean;
   extraDangerousSuggestions: boolean;
   citationFailure: boolean;
   visibilityFailure: boolean;
@@ -137,7 +139,7 @@ export function buildProductionSamplingEvalReport(
   });
 
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     runKind: input.runKind ?? 'manual',
     generatedAt: input.generatedAt,
     manifestCount: input.manifests.length,
@@ -247,6 +249,9 @@ function classifySample(input: {
       (reasonCodes.includes('missing_required_output') ||
         reasonCodes.includes('approval_policy_wrong') ||
         artifact.failures.some((failure) => failure.includes('approvalRequired'))),
+    requiredArtifactKindsMissed:
+      reasonCodes.includes('artifact_kind_mismatch') ||
+      artifact.failures.some((failure) => failure.includes('artifact cluster kind')),
     extraDangerousSuggestions:
       reasonCodes.includes('irrelevant_output') ||
       artifact.failures.some((failure) => failure.includes('unexpected output')),
@@ -460,7 +465,7 @@ function isLiveEvalArtifact(value: unknown): value is LiveEvalArtifact {
   const actual = asRecord(record?.actual);
   return (
     !!record &&
-    record.schemaVersion === 1 &&
+    record.schemaVersion === 2 &&
     typeof record.caseName === 'string' &&
     (typeof record.scenarioFamily === 'string' || record.scenarioFamily === null) &&
     Array.isArray(record.ingestionSurfaces) &&
@@ -478,11 +483,18 @@ function isLiveEvalArtifact(value: unknown): value is LiveEvalArtifact {
     Array.isArray(expected.ingestionSurfaces) &&
     isStringNumberRecord(expected.outputKindCounts) &&
     isStringNumberRecord(expected.associationRoleCounts) &&
+    Array.isArray(expected.requiredArtifactClusterKinds) &&
+    expected.requiredArtifactClusterKinds.every((kind) => typeof kind === 'string') &&
     Array.isArray(expected.requiredSourcePayloadSurfaces) &&
+    expected.requiredSourcePayloadSurfaces.every((surface) => typeof surface === 'string') &&
+    Array.isArray(expected.forbiddenOutputKinds) &&
+    expected.forbiddenOutputKinds.every((kind) => typeof kind === 'string') &&
     !!actual &&
     Array.isArray(actual.ingestionSurfaces) &&
     Array.isArray(actual.outputKinds) &&
     Array.isArray(actual.directWriteSurfaces) &&
+    Array.isArray(actual.artifactClusterKinds) &&
+    actual.artifactClusterKinds.every((kind) => typeof kind === 'string') &&
     typeof actual.approvalRequired === 'boolean' &&
     typeof actual.privacyRisk === 'boolean' &&
     Array.isArray(actual.sourceRefs)
@@ -514,6 +526,9 @@ function failureReasonCodes(failure: string): string[] {
   }
   if (text.includes('source ref') || text.includes('citation')) {
     codes.push('source_ref_mismatch');
+  }
+  if (text.includes('artifact cluster kind')) {
+    codes.push('artifact_kind_mismatch');
   }
   if (text.includes('privacy') || text.includes('visibility')) {
     codes.push('privacy_leak');
@@ -556,6 +571,8 @@ function bucketFor(name: string, samples: ClassifiedSample[]): ProductionSamplin
     passRate: passRate(samples),
     requiredObjectsMissed: samples.filter((sample) => sample.requiredObjectsMissed).length,
     requiredSuggestionsMissed: samples.filter((sample) => sample.requiredSuggestionsMissed).length,
+    requiredArtifactKindsMissed: samples.filter((sample) => sample.requiredArtifactKindsMissed)
+      .length,
     extraDangerousSuggestions: samples.filter((sample) => sample.extraDangerousSuggestions).length,
     citationFailures: samples.filter((sample) => sample.citationFailure).length,
     visibilityFailures: samples.filter((sample) => sample.visibilityFailure).length,

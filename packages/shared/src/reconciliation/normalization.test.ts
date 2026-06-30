@@ -72,6 +72,7 @@ describe('reconciliation source normalization', () => {
             source_payload_ref: '',
             payload_digest: '',
             source_snapshot_kind: 'stale-adapter-value',
+            external_url: 'https://sentry.example/issues/no-payload',
           },
         },
       ],
@@ -118,10 +119,24 @@ describe('reconciliation source normalization', () => {
       replayState: 'full',
       sourcePayloadRef: metadata.source_payload_ref,
       payloadDigest: metadata.payload_digest,
+      sourceUrl: 'https://sentry.example/issues/no-payload',
     });
     expect(evidence?.metadata).toMatchObject({
       replay_degraded_reason: null,
     });
+    const anchors = await db
+      .select()
+      .from(reconciliationEvidenceAnchors)
+      .where(eq(reconciliationEvidenceAnchors.evidenceId, evidence?.id ?? ''));
+    expect(anchors).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          anchorType: 'url',
+          anchorValue: 'https://sentry.example/issues/no-payload',
+          strength: 'hard',
+        }),
+      ]),
+    );
   });
 
   it('normalizes non-integration raw events across conversational and webhook surfaces', async () => {

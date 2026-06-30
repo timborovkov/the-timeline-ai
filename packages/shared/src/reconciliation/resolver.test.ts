@@ -124,6 +124,9 @@ describe('reconciliation evidence resolver', () => {
         sourcePayloadRef: 's3://timeline-test/reconciliation/customer-portal/acme.json',
       },
     ]);
+    expect(associations[0]?.metadata).toMatchObject({
+      artifact_cluster_kind: 'customer_project',
+    });
 
     const runs = await db.select().from(reconciliationRuns);
     expect(runs).toHaveLength(1);
@@ -154,6 +157,7 @@ describe('reconciliation evidence resolver', () => {
       evidence_id: evidenceId,
       association_id: result.associated[0]?.associationId,
       association_role: 'blocker',
+      artifact_cluster_kind: 'customer_project',
       created_cluster: true,
     });
     expect(outputs[0]?.sourceRefs).toEqual([
@@ -203,6 +207,93 @@ describe('reconciliation evidence resolver', () => {
     expect(retry.associated[0]?.createdCluster).toBe(false);
     expect(await db.select().from(artifactEvidenceAssociations)).toHaveLength(1);
     expect(await db.select().from(reconciliationOutputs)).toHaveLength(1);
+  });
+
+  it('carries artifact kind from an existing matched cluster into resolver outputs', async () => {
+    const [cluster] = await db
+      .insert(artifactClusters)
+      .values({
+        teamId: TEAM_ID,
+        artifactClusterKind: 'provider_record',
+        artifactType: 'other',
+        canonicalName: 'Sentry release 2026.06.30',
+      })
+      .returning({ id: artifactClusters.id });
+    if (!cluster) throw new Error('cluster insert failed');
+
+    await db.insert(artifactClusterAnchors).values({
+      teamId: TEAM_ID,
+      clusterId: cluster.id,
+      anchorType: 'url',
+      anchorValue: 'https://sentry.example.test/releases/2026.06.30',
+      strength: 'hard',
+    });
+
+    const [raw] = await db
+      .insert(rawEvents)
+      .values({
+        teamId: TEAM_ID,
+        authorUserId: USER_ID,
+        source: 'integration',
+        contentText: 'Sentry release 2026.06.30 links to release notes.',
+        occurredAt: new Date('2026-06-30T12:00:00Z'),
+        visibility: 'team',
+        sourceMetadata: {
+          provider: 'sentry',
+          external_object_id: 'acme/web/release/2026.06.30',
+          event_type: 'release.created',
+          url: 'https://sentry.example.test/releases/2026.06.30',
+          source_payload_ref: 's3://timeline-test/reconciliation/sentry/release-2026.06.30',
+        },
+      })
+      .returning({ id: rawEvents.id });
+    if (!raw) throw new Error('raw event insert failed');
+
+    const [evidenceId] = await normalizeRawEventsToEvidence({
+      db: db as never,
+      teamId: TEAM_ID,
+      rawEventIds: [raw.id],
+    });
+    if (!evidenceId) throw new Error('evidence insert failed');
+
+    const result = await resolveEvidenceAssociations({
+      db: db as never,
+      teamId: TEAM_ID,
+      evidenceIds: [evidenceId],
+      role: 'evidence_only',
+    });
+
+    expect(result.skipped).toEqual([]);
+    expect(result.associated).toHaveLength(1);
+    expect(result.associated[0]).toMatchObject({
+      clusterId: cluster.id,
+      createdCluster: false,
+    });
+
+    const [association] = await db.select().from(artifactEvidenceAssociations);
+    expect(association).toMatchObject({
+      clusterId: cluster.id,
+      role: 'evidence_only',
+      associationSource: 'hard_anchor',
+    });
+    expect(association?.metadata).toMatchObject({
+      artifact_cluster_kind: 'provider_record',
+    });
+
+    const [output] = await db.select().from(reconciliationOutputs);
+    expect(output).toMatchObject({
+      clusterId: cluster.id,
+      outputKind: 'observed_association',
+      status: 'applied',
+    });
+    expect(output?.payload).toMatchObject({
+      artifact_cluster_kind: 'provider_record',
+      association_role: 'evidence_only',
+      created_cluster: false,
+    });
+    expect(output?.sourcePayloadRefs).toEqual([
+      's3://timeline-test/reconciliation/sentry/release-2026.06.30',
+    ]);
   });
 
   it('refuses ambiguous anchor matches instead of silently merging clusters', async () => {

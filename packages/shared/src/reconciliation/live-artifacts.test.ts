@@ -25,6 +25,7 @@ const RESULT: LiveEvalModelResult = {
   ingestionSurfaces: ['email', 'monday', 'sentry'],
   outputKinds: ['observed_association', 'direct_write', 'approval_bundle', 'conflict'],
   directWriteSurfaces: ['monday', 'sentry'],
+  artifactClusterKinds: ['customer_project', 'provider_record', 'incident'],
   approvalRequired: true,
   sourceRefs: [
     { surface: 'email', rawEventId: 'raw-email-1' },
@@ -87,6 +88,17 @@ describe('live reconciliation eval artifacts', () => {
 
     expect(artifact.packetFingerprint).toMatch(/^sha256:[a-f0-9]{64}$/);
     expect(artifact.promptFingerprint).toMatch(/^sha256:[a-f0-9]{64}$/);
+    expect(artifact.expected.forbiddenOutputKinds).toEqual(
+      TEST_CASE.expected.forbiddenOutputKinds ?? [],
+    );
+    expect(artifact.expected.requiredArtifactClusterKinds).toEqual(
+      TEST_CASE.expected.requiredArtifactClusterKinds ?? [],
+    );
+    expect(artifact.actual.artifactClusterKinds).toEqual([
+      'customer_project',
+      'provider_record',
+      'incident',
+    ]);
     expect(artifact.actual.sourceRefs).toHaveLength(2);
     expect(artifact.actual.sourceRefs.map((ref) => ref.surface)).toEqual(['email', 'monday']);
     expect(artifact.judge).toMatchObject({
@@ -128,7 +140,7 @@ describe('live reconciliation eval artifacts', () => {
 
       const raw = await readFile(artifactPath, 'utf8');
       expect(artifactPath).toMatch(/customer-project-email-monday-sentry\.json$/);
-      expect(raw).toContain('"schemaVersion": 1');
+      expect(raw).toContain('"schemaVersion": 2');
       expect(raw).toContain('"missing observed_association"');
       expect(raw).toContain('"failureCodes": [');
       expect(raw).toContain('"missing_required_output"');

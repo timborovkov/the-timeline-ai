@@ -68,6 +68,7 @@ const liveReconciliationJudgeSchema = z.object({
       'unsupported_direct_write',
       'approval_policy_wrong',
       'source_ref_mismatch',
+      'artifact_kind_mismatch',
       'conflict_handling_wrong',
       'privacy_leak',
       'irrelevant_output',
@@ -208,6 +209,7 @@ function failedLiveEvalResult(testCase: DeterministicEvalCase): LiveEvalModelRes
     ingestionSurfaces: [],
     outputKinds: [],
     directWriteSurfaces: [],
+    artifactClusterKinds: [],
     approvalRequired: false,
     sourceRefs: [],
     privacyRisk: true,
@@ -275,6 +277,7 @@ function liveEvalPlannerInput(testCase: DeterministicEvalCase): ReconciliationPl
       isKnownOutputKind,
     ),
     policyDerivedDirectWriteSurfaces: expectedDirectWriteSurfaces(testCase),
+    policyDerivedArtifactClusterKinds: [...(testCase.expected.requiredArtifactClusterKinds ?? [])],
   };
 }
 
@@ -300,6 +303,17 @@ function liveEvalFailures(testCase: DeterministicEvalCase, result: LiveEvalModel
   for (const outputKind of Object.keys(testCase.expected.outputKindCounts)) {
     if (!result.outputKinds.includes(outputKind)) {
       failures.push(`missing output kind ${outputKind}`);
+    }
+  }
+  for (const outputKind of testCase.expected.forbiddenOutputKinds ?? []) {
+    if (result.outputKinds.includes(outputKind)) {
+      failures.push(`forbidden output kind ${outputKind}`);
+    }
+  }
+
+  for (const kind of testCase.expected.requiredArtifactClusterKinds ?? []) {
+    if (!result.artifactClusterKinds.includes(kind)) {
+      failures.push(`missing artifact cluster kind ${kind}`);
     }
   }
 
@@ -343,6 +357,8 @@ Case: ${testCase.name}
 Expected scenario family: ${testCase.scenarioFamily}
 Expected ingestion surfaces: ${testCase.expected.ingestionSurfaces.join(', ')}
 Expected output kinds: ${Object.keys(testCase.expected.outputKindCounts).join(', ')}
+Forbidden output kinds: ${(testCase.expected.forbiddenOutputKinds ?? []).join(', ') || 'none'}
+Expected artifact cluster kinds: ${(testCase.expected.requiredArtifactClusterKinds ?? []).join(', ') || 'none'}
 Expected source refs:
 ${uniqueRawRefs(testCase)
   .map((ref) => `- ${ref.surface}: ${ref.rawEventId}`)
@@ -358,7 +374,7 @@ Deterministic failures:
 ${deterministicFailures.length > 0 ? deterministicFailures.map((failure) => `- ${failure}`).join('\n') : '- none'}
 
 Score from 0 to 1. A score of 0.9 or higher means the output is useful enough for a live smoke gate.
-Set passed to true only if the scenario, surfaces, output policy, source refs, and visibility/privacy policy are all acceptable.
+Set passed to true only if the scenario, surfaces, output policy, artifact cluster kinds, source refs, and visibility/privacy policy are all acceptable.
 Set privacyConcern to true if the actual result would broaden private or specific-user evidence, or if privacyRisk is true without a supported reason.
 Use failureCodes and strengthCodes only from the allowed enums. Do not include raw source content, names, emails, URLs, ids, or free-text rationale.
 `;

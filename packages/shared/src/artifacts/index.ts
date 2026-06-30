@@ -17,6 +17,7 @@ import { buildAssociationDedupeKey, type SourceRef } from '#src/reconciliation/i
 import { normalizeRawEventsToEvidence } from '#src/reconciliation/normalization.js';
 
 export type ArtifactType = (typeof artifactClusters.$inferSelect)['artifactType'];
+export type ArtifactClusterKind = (typeof artifactClusters.$inferSelect)['artifactClusterKind'];
 export type ArtifactStatus = (typeof artifactClusters.$inferSelect)['status'];
 export type EvidenceRole = (typeof artifactClusterMembers.$inferSelect)['role'];
 export type EvidenceStrength = (typeof artifactClusterMembers.$inferSelect)['strength'];
@@ -37,6 +38,7 @@ export interface ArtifactAnchorInput {
 
 export interface ArtifactEvidenceInput {
   teamId: string;
+  artifactClusterKind?: ArtifactClusterKind;
   artifactType: ArtifactType;
   canonicalName: string;
   status?: ArtifactStatus;
@@ -143,6 +145,7 @@ async function createCluster(
     .insert(artifactClusters)
     .values({
       teamId: input.teamId,
+      artifactClusterKind: input.artifactClusterKind ?? 'other',
       artifactType: input.artifactType,
       canonicalName: input.canonicalName,
       status: input.status ?? 'open',
@@ -502,6 +505,25 @@ async function moveClaimedAnchorsToWinningCluster(
     );
 }
 
+async function updateClusterKindFromEvidence(
+  db: Db,
+  input: ArtifactEvidenceInput,
+  clusterId: string,
+): Promise<void> {
+  const artifactClusterKind = input.artifactClusterKind;
+  if (!artifactClusterKind || artifactClusterKind === 'other') return;
+  await db
+    .update(artifactClusters)
+    .set({ artifactClusterKind, updatedAt: new Date() })
+    .where(
+      and(
+        eq(artifactClusters.teamId, input.teamId),
+        eq(artifactClusters.id, clusterId),
+        eq(artifactClusters.artifactClusterKind, 'other'),
+      ),
+    );
+}
+
 export async function reconcileArtifactEvidence(
   db: Db,
   input: ArtifactEvidenceInput,
@@ -524,6 +546,7 @@ export async function reconcileArtifactEvidence(
   const result = clusterId ? { clusterId, created: false } : await createCluster(db, input);
   const claimedClusterId = await claimAnchors(db, input, result.clusterId, anchors);
   await moveClaimedAnchorsToWinningCluster(db, input, result.clusterId, claimedClusterId, anchors);
+  await updateClusterKindFromEvidence(db, input, claimedClusterId);
 
   await attachEvidenceAssociation(db, input, claimedClusterId);
   await updateClusterIdentityFromAuthoritativeEvidence(db, input, claimedClusterId);

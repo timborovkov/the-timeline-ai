@@ -47,6 +47,7 @@ interface SerializableSuggestionBundle {
     quote: string | null;
     source: string | null;
     occurredAt: string | null;
+    metadata: Record<string, unknown>;
   }[];
 }
 
@@ -70,6 +71,7 @@ export function serializeSuggestionBundle(bundle: SuggestionBundle): Serializabl
       quote: ev.quote,
       source: ev.source,
       occurredAt: ev.occurredAt?.toISOString() ?? null,
+      metadata: ev.metadata,
     })),
   };
 }

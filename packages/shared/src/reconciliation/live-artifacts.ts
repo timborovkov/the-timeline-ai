@@ -2,13 +2,14 @@ import { createHash } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
-import type { DeterministicEvalCase } from '#src/reconciliation/index.js';
+import type { ArtifactClusterKind, DeterministicEvalCase } from '#src/reconciliation/index.js';
 
 export interface LiveEvalModelResult {
   scenarioFamily: string;
   ingestionSurfaces: string[];
   outputKinds: string[];
   directWriteSurfaces: string[];
+  artifactClusterKinds: ArtifactClusterKind[];
   approvalRequired: boolean;
   sourceRefs: { surface: string; rawEventId: string }[];
   privacyRisk: boolean;
@@ -38,7 +39,7 @@ export interface LiveEvalArtifactInput {
 }
 
 export interface LiveEvalArtifact {
-  schemaVersion: 1;
+  schemaVersion: 2;
   caseName: string;
   scenarioFamily: string | null;
   ingestionSurfaces: string[];
@@ -54,7 +55,9 @@ export interface LiveEvalArtifact {
     ingestionSurfaces: string[];
     outputKindCounts: Record<string, number>;
     associationRoleCounts: Record<string, number>;
+    requiredArtifactClusterKinds: string[];
     requiredSourcePayloadSurfaces: string[];
+    forbiddenOutputKinds: string[];
   };
   actual: Omit<LiveEvalModelResult, 'sourceRefs'> & {
     sourceRefs: { surface: string; rawEventHash: string }[];
@@ -114,7 +117,7 @@ export interface LiveEvalRunManifest {
 
 export function buildLiveEvalArtifact(input: LiveEvalArtifactInput): LiveEvalArtifact {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     caseName: input.testCase.name,
     scenarioFamily: input.testCase.scenarioFamily ?? null,
     ingestionSurfaces: [...input.testCase.ingestionSurfaces],
@@ -137,15 +140,20 @@ export function buildLiveEvalArtifact(input: LiveEvalArtifactInput): LiveEvalArt
       ingestionSurfaces: [...input.testCase.expected.ingestionSurfaces],
       outputKindCounts: { ...input.testCase.expected.outputKindCounts },
       associationRoleCounts: { ...(input.testCase.expected.associationRoleCounts ?? {}) },
+      requiredArtifactClusterKinds: [
+        ...(input.testCase.expected.requiredArtifactClusterKinds ?? []),
+      ],
       requiredSourcePayloadSurfaces: [
         ...(input.testCase.expected.requiredSourcePayloadSurfaces ?? []),
       ],
+      forbiddenOutputKinds: [...(input.testCase.expected.forbiddenOutputKinds ?? [])],
     },
     actual: {
       scenarioFamily: input.result.scenarioFamily,
       ingestionSurfaces: [...input.result.ingestionSurfaces],
       outputKinds: [...input.result.outputKinds],
       directWriteSurfaces: [...input.result.directWriteSurfaces],
+      artifactClusterKinds: [...input.result.artifactClusterKinds],
       approvalRequired: input.result.approvalRequired,
       privacyRisk: input.result.privacyRisk,
       sourceRefs: input.result.sourceRefs.map((ref) => ({

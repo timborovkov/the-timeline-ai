@@ -239,10 +239,11 @@ dedupe key, so a deleted projection row cannot cause the worker to re-offer the
 same rejected cleanup. Phase 7 now has a reusable eval matrix that covers every
 active ingestion surface across customer-project, incident, decision,
 calendar-project, and generic-webhook scenarios. Deterministic evals score the
-matrix for output kinds, association roles, source refs, source payload refs,
-and visibility floors; the opt-in live eval command runs the same matrix through
-the real `llm.chatStructured()` path and can emit redacted case artifacts plus a
-run manifest for replay/debugging. Typed surface and scenario manifests now make
+matrix for output kinds, forbidden output kinds, association roles,
+artifact-cluster kinds, source refs, source payload refs, and visibility floors;
+the opt-in live eval command runs the same matrix through the real
+`llm.chatStructured()` path and can emit redacted case artifacts plus a run
+manifest for replay/debugging. Typed surface and scenario manifests now make
 coverage rows explicit for scheduled eval/reporting runners.
 
 ## Application Scenario Coverage
@@ -963,20 +964,30 @@ normalization, coverage/backfill, and anchor resolution. These cases assert
 coverage across web, email, Slack, Telegram, meeting, document, calendar,
 ingest-webhook, GitHub, Linear, Google Drive, Monday, and Sentry evidence;
 source-ref validity; source payload refs; output kind counts; association
-roles; visibility floors; private-evidence leak failures; replay coverage;
-resolver outputs; and idempotency. Typed manifests in
+roles; forbidden-output policy; artifact-cluster kind coverage; visibility
+floors; private-evidence leak failures; replay coverage; resolver outputs; and
+idempotency. Typed manifests in
 `packages/shared/src/reconciliation/eval-manifests.ts` name each current surface
 and scenario row, the fixture cases that prove it, expected output/association
-kinds, payload-ref surfaces, prompt versions, and minimum pass scores. The
+kinds, artifact-cluster kinds, payload-ref surfaces, prompt versions, and
+forbidden-output kinds, and minimum pass scores. Live eval artifacts use schema
+v2 and carry required/actual artifact-cluster kinds plus forbidden-output
+expectations for production-sampling/replay ingestion.
+Resolver PGlite tests now assert artifact-cluster kind metadata in association
+rows and observed-association output payloads. Approval projection tests assert
+source-ref metadata survives on suggestion evidence for both fresh projections
+and repaired projections, giving citation/debug surfaces the same provenance as
+reconciliation outputs. The
 target replay harness adds fixture packets under
 `packages/shared/src/reconciliation/evals/fixtures`, saved structured model
 outputs, and fuller DB-state assertions for approval bundles, citations, and
 visibility.
 The production-sampling report builder consumes redacted live-eval artifacts and
 manifests and emits per-surface/per-scenario pass rates, required-output misses,
-citation failures, visibility failures, authority-policy violations,
-prompt/model regression signals, time-to-reconciled-output metrics, and
-deterministic fixture-candidate names without storing raw customer content.
+required artifact-kind misses, citation failures, visibility failures,
+authority-policy violations, prompt/model regression signals,
+time-to-reconciled-output metrics, and deterministic fixture-candidate names
+without storing raw customer content.
 
 Required surface fixture families:
 
@@ -1063,7 +1074,7 @@ Phase 1 behavior:
   `RECONCILIATION_LIVE_ENV_FILE` pointing at the local project `.env`, passed
   5/5 live cases and 5/5 AI-judge checks with average judge score 1.0. The
   redacted run manifest was written to
-  `/tmp/timeline-reconciliation-live-eval/2026-06-30T15-31-23-768Z/manifest.json`.
+  `/tmp/timeline-reconciliation-live-eval/2026-06-30T22-35-53-726Z/manifest.json`.
 - Calls the real `llm.chatStructured()` path when
   `RECONCILIATION_LIVE_EVAL=1` is set.
 - Can load a local env file before the live call with
@@ -1085,8 +1096,8 @@ Phase 1 behavior:
   Provider errors and timeouts become explicit case failures and still write
   redacted artifacts when artifact output is enabled.
 - Scores the structured result with deterministic assertions for scenario
-  family, ingestion surfaces, output kinds, source refs, approval/direct-write
-  policy shape, and visibility/privacy risk.
+  family, ingestion surfaces, output kinds, artifact-cluster kinds, source refs,
+  approval/direct-write policy shape, and visibility/privacy risk.
 - Runs a second structured `llm.chatStructured()` judge call for each live case.
   The judge returns a 0-1 usefulness/safety score, pass/fail, privacy concern,
   and bounded enum codes only. The live smoke gate requires each judged case to
@@ -1160,6 +1171,7 @@ Production eval dashboards should show:
 - pass rate by scenario family
 - required objects missed
 - required suggestions missed
+- required artifact kinds missed
 - extra dangerous suggestions
 - citation failures
 - visibility failures
@@ -1454,6 +1466,8 @@ Exit criteria:
      events emit `observed_association` outputs with source refs, payload refs,
      dedupe keys, authority decisions, and visibility floors. Existing
      provider-linked `entities` rows are read only as compatibility links.
+     Provider-record artifact tests cover Sentry release URLs and Monday item
+     URLs as hard artifact anchors.
 5. Convert conversation suggestion worker to call reconciliation planner for
    proposal batches.
    - Proposal-generating conversation reviews and raw-event batches now call the
@@ -1575,8 +1589,9 @@ Exit criteria:
    - Initial report builder is exported as
      `@timeline/shared/reconciliation/production-sampling`; it aggregates
      redacted live artifacts into a JSON release report with the metric fields
-     above and deterministic fixture-candidate names. Dashboard ingestion and
-     confirmed-failure promotion are later operator/release workflows.
+     above, including required artifact-kind misses, and deterministic
+     fixture-candidate names. Dashboard ingestion and confirmed-failure
+     promotion are later operator/release workflows.
    - Operators can now run
      `pnpm --filter @timeline/worker reconciliation-production-sampling --
      --input=/tmp/eval-run --out=/tmp/reconciliation-production-sampling.json

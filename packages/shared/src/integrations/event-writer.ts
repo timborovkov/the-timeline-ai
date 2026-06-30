@@ -18,6 +18,7 @@ import type { IntegrationEvent, IntegrationRow, ObjectMapping } from '#src/integ
 import {
   reconcileArtifactEvidence,
   type ArtifactAnchorInput,
+  type ArtifactClusterKind,
   type ArtifactStatus,
   type EvidenceRole,
   type EvidenceStrength,
@@ -385,6 +386,7 @@ async function reconcileIntegrationArtifacts(deps: {
     const authoritative = integrationEventIsAuthoritative(event);
     const result = await reconcileArtifactEvidence(deps.db, {
       teamId: deps.integration.teamId,
+      artifactClusterKind: artifactClusterKindForIntegrationEvent(event),
       artifactType: event.objectMap.type,
       canonicalName: event.objectMap.displayTitle ?? event.objectMap.canonicalName,
       status: clusterStatusFromObjectStatus(event.objectMap.status),
@@ -401,6 +403,7 @@ async function reconcileIntegrationArtifacts(deps: {
         provider: event.provider,
         event_type: event.eventType,
         integration_id: deps.integration.id,
+        artifact_cluster_kind: artifactClusterKindForIntegrationEvent(event),
       },
     });
     await attachReconciliationAssociationForIntegrationEvent(deps.db, {
@@ -779,6 +782,40 @@ function clusterStatusFromObjectStatus(status: ObjectMapping['status']): Artifac
   if (status === 'cancelled') return 'cancelled';
   if (status === 'in_progress') return 'active';
   return 'open';
+}
+
+function artifactClusterKindForIntegrationEvent(
+  event: IntegrationEvent & { objectMap: ObjectMapping },
+): ArtifactClusterKind {
+  const artifactKey = metadataString(event.objectMap.metadata, 'artifact_key');
+  if (artifactKey?.startsWith('customer:')) return 'customer_project';
+  if (metadataString(event.objectMap.metadata, 'sentry_record_kind')) return 'provider_record';
+  if (metadataString(event.objectMap.metadata, 'monday_record_kind') === 'activity-record')
+    return 'provider_record';
+
+  switch (event.objectMap.type) {
+    case 'company':
+      return 'account';
+    case 'project':
+      return 'customer_project';
+    case 'incident':
+      return 'incident';
+    case 'deal':
+      return 'deal';
+    case 'document':
+      return 'document';
+    case 'decision':
+      return 'decision';
+    case 'task':
+    case 'follow_up':
+      return 'task';
+    case 'person':
+      return 'person_context';
+    case 'topic':
+      return 'topic';
+    default:
+      return 'provider_record';
+  }
 }
 
 function evidenceStrengthForIntegrationEvent(event: IntegrationEvent): EvidenceStrength {

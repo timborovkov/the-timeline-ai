@@ -20,6 +20,7 @@ export interface ReconciliationEvalManifest {
   caseNames: string[];
   expectedOutputKinds: string[];
   expectedAssociationRoles: string[];
+  expectedArtifactClusterKinds: string[];
   requiredSourcePayloadSurfaces: ReconciliationEvalIngestionSurface[];
   forbiddenOutputKinds: string[];
   visibilityAssertions: string[];
@@ -100,10 +101,15 @@ function buildManifest(input: {
     expectedAssociationRoles: uniqueSorted(
       input.cases.flatMap((testCase) => Object.keys(testCase.expected.associationRoleCounts ?? {})),
     ),
+    expectedArtifactClusterKinds: uniqueSorted(
+      input.cases.flatMap((testCase) => testCase.expected.requiredArtifactClusterKinds ?? []),
+    ),
     requiredSourcePayloadSurfaces: uniqueSorted(
       input.cases.flatMap((testCase) => testCase.expected.requiredSourcePayloadSurfaces ?? []),
     ) as ReconciliationEvalIngestionSurface[],
-    forbiddenOutputKinds: [],
+    forbiddenOutputKinds: uniqueSorted(
+      input.cases.flatMap((testCase) => testCase.expected.forbiddenOutputKinds ?? []),
+    ),
     visibilityAssertions: uniqueSorted(
       input.cases.flatMap((testCase) =>
         testCase.expected.requireVisibilityFloors ? ['visibility_floor'] : [],

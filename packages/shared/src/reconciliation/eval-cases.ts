@@ -32,6 +32,7 @@ export const RECONCILIATION_DETERMINISTIC_EVAL_CASES: DeterministicEvalCase[] = 
       {
         id: 'email-discussion-association-row',
         role: 'discussion',
+        artifactClusterKind: 'customer_project',
         visibility: TEAM_VISIBILITY,
         visibilityFloor: TEAM_VISIBILITY,
         sourceRefs: [
@@ -46,6 +47,22 @@ export const RECONCILIATION_DETERMINISTIC_EVAL_CASES: DeterministicEvalCase[] = 
       {
         id: 'monday-lifecycle-association-row',
         role: 'lifecycle_update',
+        artifactClusterKind: 'customer_project',
+        visibility: TEAM_VISIBILITY,
+        visibilityFloor: TEAM_VISIBILITY,
+        sourceRefs: [
+          {
+            source: 'monday',
+            rawEventId: 'raw-monday-1',
+            evidenceId: 'evidence-monday-1',
+            sourcePayloadRef: 's3://eval/reconciliation/monday/item-456',
+          },
+        ],
+      },
+      {
+        id: 'monday-provider-record-association-row',
+        role: 'related_context',
+        artifactClusterKind: 'provider_record',
         visibility: TEAM_VISIBILITY,
         visibilityFloor: TEAM_VISIBILITY,
         sourceRefs: [
@@ -64,6 +81,7 @@ export const RECONCILIATION_DETERMINISTIC_EVAL_CASES: DeterministicEvalCase[] = 
         outputKind: 'observed_association',
         targetKind: 'cluster_identity',
         operation: 'link',
+        artifactClusterKind: 'customer_project',
         visibility: TEAM_VISIBILITY,
         visibilityFloor: TEAM_VISIBILITY,
         sourceRefs: [
@@ -80,6 +98,7 @@ export const RECONCILIATION_DETERMINISTIC_EVAL_CASES: DeterministicEvalCase[] = 
         outputKind: 'direct_write',
         targetKind: 'cluster_lifecycle',
         operation: 'update',
+        artifactClusterKind: 'incident',
         visibility: TEAM_VISIBILITY,
         visibilityFloor: TEAM_VISIBILITY,
         sourceRefs: [
@@ -96,6 +115,24 @@ export const RECONCILIATION_DETERMINISTIC_EVAL_CASES: DeterministicEvalCase[] = 
         outputKind: 'direct_write',
         targetKind: 'board_item_update',
         operation: 'update',
+        artifactClusterKind: 'customer_project',
+        visibility: TEAM_VISIBILITY,
+        visibilityFloor: TEAM_VISIBILITY,
+        sourceRefs: [
+          {
+            source: 'monday',
+            rawEventId: 'raw-monday-1',
+            evidenceId: 'evidence-monday-1',
+            sourcePayloadRef: 's3://eval/reconciliation/monday/item-456',
+          },
+        ],
+      },
+      {
+        id: 'monday-provider-record-linked',
+        outputKind: 'observed_association',
+        targetKind: 'cluster_identity',
+        operation: 'link',
+        artifactClusterKind: 'provider_record',
         visibility: TEAM_VISIBILITY,
         visibilityFloor: TEAM_VISIBILITY,
         sourceRefs: [
@@ -112,6 +149,7 @@ export const RECONCILIATION_DETERMINISTIC_EVAL_CASES: DeterministicEvalCase[] = 
         outputKind: 'approval_bundle',
         targetKind: 'object_relationship',
         operation: 'create',
+        artifactClusterKind: 'customer_project',
         visibility: TEAM_VISIBILITY,
         visibilityFloor: TEAM_VISIBILITY,
         sourceRefs: [
@@ -140,6 +178,7 @@ export const RECONCILIATION_DETERMINISTIC_EVAL_CASES: DeterministicEvalCase[] = 
         outputKind: 'conflict',
         targetKind: 'cluster_identity',
         operation: 'link',
+        artifactClusterKind: 'customer_project',
         visibility: TEAM_VISIBILITY,
         visibilityFloor: TEAM_VISIBILITY,
         sourceRefs: [
@@ -157,9 +196,10 @@ export const RECONCILIATION_DETERMINISTIC_EVAL_CASES: DeterministicEvalCase[] = 
       associationRoleCounts: {
         discussion: 1,
         lifecycle_update: 1,
+        related_context: 1,
       },
       outputKindCounts: {
-        observed_association: 1,
+        observed_association: 2,
         direct_write: 2,
         approval_bundle: 1,
         conflict: 1,
@@ -167,6 +207,7 @@ export const RECONCILIATION_DETERMINISTIC_EVAL_CASES: DeterministicEvalCase[] = 
       requireValidSourceRefs: true,
       requireVisibilityFloors: true,
       requiredSourcePayloadSurfaces: ['email', 'monday', 'sentry'],
+      requiredArtifactClusterKinds: ['customer_project', 'provider_record', 'incident'],
     },
   },
   {
@@ -177,6 +218,7 @@ export const RECONCILIATION_DETERMINISTIC_EVAL_CASES: DeterministicEvalCase[] = 
       {
         id: 'slack-war-room',
         role: 'discussion',
+        artifactClusterKind: 'incident',
         visibility: TEAM_VISIBILITY,
         visibilityFloor: TEAM_VISIBILITY,
         sourceRefs: [
@@ -191,6 +233,7 @@ export const RECONCILIATION_DETERMINISTIC_EVAL_CASES: DeterministicEvalCase[] = 
       {
         id: 'email-customer-impact',
         role: 'related_context',
+        artifactClusterKind: 'account',
         visibility: TEAM_VISIBILITY,
         visibilityFloor: TEAM_VISIBILITY,
         sourceRefs: [
@@ -202,6 +245,21 @@ export const RECONCILIATION_DETERMINISTIC_EVAL_CASES: DeterministicEvalCase[] = 
           },
         ],
       },
+      {
+        id: 'sentry-release-provider-record',
+        role: 'release',
+        artifactClusterKind: 'provider_record',
+        visibility: TEAM_VISIBILITY,
+        visibilityFloor: TEAM_VISIBILITY,
+        sourceRefs: [
+          {
+            source: 'sentry',
+            rawEventId: 'raw-sentry-release',
+            evidenceId: 'evidence-sentry-release',
+            sourcePayloadRef: 's3://eval/reconciliation/sentry/release-2026-06-30',
+          },
+        ],
+      },
     ],
     outputs: [
       {
@@ -209,6 +267,7 @@ export const RECONCILIATION_DETERMINISTIC_EVAL_CASES: DeterministicEvalCase[] = 
         outputKind: 'direct_write',
         targetKind: 'cluster_lifecycle',
         operation: 'update',
+        artifactClusterKind: 'incident',
         visibility: TEAM_VISIBILITY,
         visibilityFloor: TEAM_VISIBILITY,
         sourceRefs: [
@@ -225,6 +284,7 @@ export const RECONCILIATION_DETERMINISTIC_EVAL_CASES: DeterministicEvalCase[] = 
         outputKind: 'observed_association',
         targetKind: 'cluster_identity',
         operation: 'link',
+        artifactClusterKind: 'task',
         visibility: TEAM_VISIBILITY,
         visibilityFloor: TEAM_VISIBILITY,
         sourceRefs: [
@@ -237,10 +297,28 @@ export const RECONCILIATION_DETERMINISTIC_EVAL_CASES: DeterministicEvalCase[] = 
         ],
       },
       {
+        id: 'sentry-release-linked',
+        outputKind: 'observed_association',
+        targetKind: 'cluster_identity',
+        operation: 'link',
+        artifactClusterKind: 'provider_record',
+        visibility: TEAM_VISIBILITY,
+        visibilityFloor: TEAM_VISIBILITY,
+        sourceRefs: [
+          {
+            source: 'sentry',
+            rawEventId: 'raw-sentry-release',
+            evidenceId: 'evidence-sentry-release',
+            sourcePayloadRef: 's3://eval/reconciliation/sentry/release-2026-06-30',
+          },
+        ],
+      },
+      {
         id: 'customer-impact-approval',
         outputKind: 'approval_bundle',
         targetKind: 'object_note',
         operation: 'create',
+        artifactClusterKind: 'account',
         visibility: TEAM_VISIBILITY,
         visibilityFloor: TEAM_VISIBILITY,
         sourceRefs: [
@@ -264,15 +342,17 @@ export const RECONCILIATION_DETERMINISTIC_EVAL_CASES: DeterministicEvalCase[] = 
       associationRoleCounts: {
         discussion: 1,
         related_context: 1,
+        release: 1,
       },
       outputKindCounts: {
         direct_write: 1,
-        observed_association: 1,
+        observed_association: 2,
         approval_bundle: 1,
       },
       requireValidSourceRefs: true,
       requireVisibilityFloors: true,
       requiredSourcePayloadSurfaces: ['sentry', 'github', 'slack', 'email'],
+      requiredArtifactClusterKinds: ['incident', 'task', 'provider_record', 'account'],
     },
   },
   {
@@ -283,6 +363,7 @@ export const RECONCILIATION_DETERMINISTIC_EVAL_CASES: DeterministicEvalCase[] = 
       {
         id: 'meeting-decision-thread',
         role: 'decision',
+        artifactClusterKind: 'decision',
         visibility: TEAM_VISIBILITY,
         visibilityFloor: TEAM_VISIBILITY,
         sourceRefs: [
@@ -301,6 +382,7 @@ export const RECONCILIATION_DETERMINISTIC_EVAL_CASES: DeterministicEvalCase[] = 
         outputKind: 'approval_bundle',
         targetKind: 'object',
         operation: 'create',
+        artifactClusterKind: 'decision',
         visibility: TEAM_VISIBILITY,
         visibilityFloor: TEAM_VISIBILITY,
         sourceRefs: [
@@ -329,6 +411,7 @@ export const RECONCILIATION_DETERMINISTIC_EVAL_CASES: DeterministicEvalCase[] = 
         outputKind: 'observed_association',
         targetKind: 'cluster_identity',
         operation: 'link',
+        artifactClusterKind: 'document',
         visibility: TEAM_VISIBILITY,
         visibilityFloor: TEAM_VISIBILITY,
         sourceRefs: [
@@ -350,9 +433,11 @@ export const RECONCILIATION_DETERMINISTIC_EVAL_CASES: DeterministicEvalCase[] = 
         approval_bundle: 1,
         observed_association: 1,
       },
+      forbiddenOutputKinds: ['direct_write'],
       requireValidSourceRefs: true,
       requireVisibilityFloors: true,
       requiredSourcePayloadSurfaces: ['meeting', 'telegram', 'document'],
+      requiredArtifactClusterKinds: ['decision', 'document'],
     },
   },
   {
@@ -363,6 +448,7 @@ export const RECONCILIATION_DETERMINISTIC_EVAL_CASES: DeterministicEvalCase[] = 
       {
         id: 'private-calendar-project-context',
         role: 'related_context',
+        artifactClusterKind: 'calendar_event',
         visibility: PRIVATE_OWNER,
         visibilityFloor: PRIVATE_OWNER,
         sourceRefs: [
@@ -381,6 +467,7 @@ export const RECONCILIATION_DETERMINISTIC_EVAL_CASES: DeterministicEvalCase[] = 
         outputKind: 'approval_bundle',
         targetKind: 'task',
         operation: 'create',
+        artifactClusterKind: 'task',
         visibility: PRIVATE_OWNER,
         visibilityFloor: PRIVATE_OWNER,
         sourceRefs: [
@@ -401,9 +488,11 @@ export const RECONCILIATION_DETERMINISTIC_EVAL_CASES: DeterministicEvalCase[] = 
       outputKindCounts: {
         approval_bundle: 1,
       },
+      forbiddenOutputKinds: ['direct_write'],
       requireValidSourceRefs: true,
       requireVisibilityFloors: true,
       requiredSourcePayloadSurfaces: ['calendar'],
+      requiredArtifactClusterKinds: ['calendar_event', 'task'],
     },
   },
   {
@@ -414,6 +503,7 @@ export const RECONCILIATION_DETERMINISTIC_EVAL_CASES: DeterministicEvalCase[] = 
       {
         id: 'web-note-context',
         role: 'related_context',
+        artifactClusterKind: 'topic',
         visibility: TEAM_VISIBILITY,
         visibilityFloor: TEAM_VISIBILITY,
         sourceRefs: [
@@ -432,6 +522,7 @@ export const RECONCILIATION_DETERMINISTIC_EVAL_CASES: DeterministicEvalCase[] = 
         outputKind: 'observed_association',
         targetKind: 'cluster_identity',
         operation: 'link',
+        artifactClusterKind: 'customer_project',
         visibility: TEAM_VISIBILITY,
         visibilityFloor: TEAM_VISIBILITY,
         sourceRefs: [
@@ -466,6 +557,7 @@ export const RECONCILIATION_DETERMINISTIC_EVAL_CASES: DeterministicEvalCase[] = 
         outputKind: 'approval_bundle',
         targetKind: 'object_note',
         operation: 'create',
+        artifactClusterKind: 'account',
         visibility: TEAM_VISIBILITY,
         visibilityFloor: TEAM_VISIBILITY,
         sourceRefs: [
@@ -490,6 +582,7 @@ export const RECONCILIATION_DETERMINISTIC_EVAL_CASES: DeterministicEvalCase[] = 
       requireValidSourceRefs: true,
       requireVisibilityFloors: true,
       requiredSourcePayloadSurfaces: ['ingest_webhook', 'web', 'linear', 'google_drive'],
+      requiredArtifactClusterKinds: ['topic', 'customer_project', 'account'],
     },
   },
 ];

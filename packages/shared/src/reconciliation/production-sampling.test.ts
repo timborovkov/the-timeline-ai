@@ -37,6 +37,7 @@ const BASE_CASE: DeterministicEvalCase = {
       outputKind: 'direct_write',
       targetKind: 'task',
       operation: 'update',
+      artifactClusterKind: 'incident',
       visibility: { visibility: 'team' },
       visibilityFloor: { visibility: 'team' },
       sourceRefs: [{ source: 'sentry', rawEventId: 'raw-sentry-1' }],
@@ -46,6 +47,7 @@ const BASE_CASE: DeterministicEvalCase = {
       outputKind: 'approval_bundle',
       targetKind: 'object',
       operation: 'create',
+      artifactClusterKind: 'customer_project',
       visibility: { visibility: 'team' },
       visibilityFloor: { visibility: 'team' },
       sourceRefs: [{ source: 'email', rawEventId: 'raw-email-1' }],
@@ -58,6 +60,7 @@ const BASE_CASE: DeterministicEvalCase = {
     requireValidSourceRefs: true,
     requireVisibilityFloors: true,
     requiredSourcePayloadSurfaces: ['email', 'monday', 'sentry'],
+    requiredArtifactClusterKinds: ['customer_project', 'incident'],
   },
 };
 
@@ -66,6 +69,7 @@ const PASS_RESULT: LiveEvalModelResult = {
   ingestionSurfaces: ['email', 'monday', 'sentry'],
   outputKinds: ['direct_write', 'approval_bundle'],
   directWriteSurfaces: ['sentry'],
+  artifactClusterKinds: ['customer_project', 'incident'],
   approvalRequired: true,
   sourceRefs: [
     { surface: 'email', rawEventId: 'raw-email-1' },
@@ -107,6 +111,7 @@ describe('production reconciliation sampling report', () => {
         ...PASS_RESULT,
         outputKinds: ['approval_bundle'],
         directWriteSurfaces: [],
+        artifactClusterKinds: ['customer_project'],
         privacyRisk: true,
       },
       judge: {
@@ -118,6 +123,7 @@ describe('production reconciliation sampling report', () => {
         privacyConcern: true,
         failureCodes: [
           'missing_required_output',
+          'artifact_kind_mismatch',
           'source_ref_mismatch',
           'unsupported_direct_write',
           'privacy_leak',
@@ -127,6 +133,7 @@ describe('production reconciliation sampling report', () => {
       passed: false,
       failures: [
         'missing output kind direct_write',
+        'missing artifact cluster kind incident',
         'missing source ref sentry:raw-sentry-1',
         'privacyRisk should be false',
       ],
@@ -167,7 +174,7 @@ describe('production reconciliation sampling report', () => {
     });
 
     expect(report).toMatchObject({
-      schemaVersion: 1,
+      schemaVersion: 2,
       runKind: 'closed_beta',
       manifestCount: 1,
       sampleCount: 2,
@@ -183,6 +190,7 @@ describe('production reconciliation sampling report', () => {
         passRate: 0.5,
         requiredObjectsMissed: 1,
         requiredSuggestionsMissed: 1,
+        requiredArtifactKindsMissed: 1,
         extraDangerousSuggestions: 1,
         citationFailures: 1,
         visibilityFailures: 1,
@@ -209,6 +217,7 @@ describe('production reconciliation sampling report', () => {
       }),
     ]);
     expect(report.fixtureCandidates[0]?.reasonCodes).toEqual([
+      'artifact_kind_mismatch',
       'irrelevant_output',
       'missing_required_output',
       'privacy_leak',
@@ -243,6 +252,17 @@ describe('production reconciliation sampling report', () => {
       await writeFile(
         path.join(dir, 'not-an-artifact.json'),
         `${JSON.stringify({ schemaVersion: 1, prompt: 'raw customer text' })}\n`,
+        'utf8',
+      );
+      const legacyArtifact = JSON.parse(JSON.stringify(artifact)) as {
+        expected?: { requiredArtifactClusterKinds?: unknown };
+        actual?: { artifactClusterKinds?: unknown };
+      };
+      delete legacyArtifact.expected?.requiredArtifactClusterKinds;
+      delete legacyArtifact.actual?.artifactClusterKinds;
+      await writeFile(
+        path.join(dir, 'legacy-live-artifact.json'),
+        `${JSON.stringify(legacyArtifact, null, 2)}\n`,
         'utf8',
       );
       await writeFile(path.join(dir, 'broken.json'), '{', 'utf8');
@@ -293,6 +313,14 @@ describe('production reconciliation sampling report', () => {
       expect(loaded.manifests).toHaveLength(1);
       expect(loaded.artifacts).toHaveLength(1);
       expect(loaded.artifacts[0]?.caseName).toBe('customer-project-email-monday-sentry');
+      expect(loaded.artifacts[0]?.expected.requiredArtifactClusterKinds).toEqual([
+        'customer_project',
+        'incident',
+      ]);
+      expect(loaded.artifacts[0]?.actual.artifactClusterKinds).toEqual([
+        'customer_project',
+        'incident',
+      ]);
       expect(
         loaded.ignoredFiles.some(
           (file) =>
@@ -310,6 +338,13 @@ describe('production reconciliation sampling report', () => {
         loaded.ignoredFiles.some(
           (file) =>
             file.path === path.join(dir, 'not-an-artifact.json') &&
+            file.reason === 'not a reconciliation live artifact',
+        ),
+      ).toBe(true);
+      expect(
+        loaded.ignoredFiles.some(
+          (file) =>
+            file.path === path.join(dir, 'legacy-live-artifact.json') &&
             file.reason === 'not a reconciliation live artifact',
         ),
       ).toBe(true);
@@ -363,7 +398,7 @@ describe('production reconciliation sampling report', () => {
 
       expect(written.path).toBe(outputPath);
       expect(written.report).toMatchObject({
-        schemaVersion: 1,
+        schemaVersion: 2,
         runKind: 'closed_beta',
         manifestCount: 1,
         sampleCount: 1,

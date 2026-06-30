@@ -207,6 +207,7 @@ export async function resolveEvidenceAssociations(
       createdCluster = true;
       await claimClusterAnchors(input.db, input.teamId, clusterId, evidence.rawEventId, anchors);
     }
+    const cluster = await loadClusterSnapshot(input.db, input.teamId, clusterId);
 
     const role = input.role ?? 'evidence_only';
     const associationSource =
@@ -251,6 +252,7 @@ export async function resolveEvidenceAssociations(
           resolver: 'anchor-resolution',
           event_type: evidence.eventType,
           anchor_count: anchors.length,
+          artifact_cluster_kind: cluster.artifactClusterKind,
         },
         dedupeKey,
       })
@@ -275,6 +277,7 @@ export async function resolveEvidenceAssociations(
         evidence,
         anchors,
         clusterId,
+        artifactClusterKind: cluster.artifactClusterKind,
         associationId: association.id,
         role,
         associationSource,
@@ -353,6 +356,7 @@ async function emitObservedAssociationOutput(
     evidence: EvidenceRow;
     anchors: AnchorRow[];
     clusterId: string;
+    artifactClusterKind: ArtifactClusterKind;
     associationId: string;
     role: EvidenceAssociationRole;
     associationSource: EvidenceAssociationSource;
@@ -379,6 +383,7 @@ async function emitObservedAssociationOutput(
         association_id: input.associationId,
         association_role: input.role,
         association_source: input.associationSource,
+        artifact_cluster_kind: input.artifactClusterKind,
         created_cluster: input.createdCluster,
         anchors: outputAnchors(input.anchors),
       },
@@ -559,6 +564,20 @@ async function createClusterFromEvidence(
     })
     .returning({ clusterId: artifactClusters.id });
   if (!cluster) throw new Error('reconciliation_cluster_create_failed');
+  return cluster;
+}
+
+async function loadClusterSnapshot(
+  db: DbOrTx,
+  teamId: string,
+  clusterId: string,
+): Promise<{ artifactClusterKind: ArtifactClusterKind }> {
+  const [cluster] = await db
+    .select({ artifactClusterKind: artifactClusters.artifactClusterKind })
+    .from(artifactClusters)
+    .where(and(eq(artifactClusters.teamId, teamId), eq(artifactClusters.id, clusterId)))
+    .limit(1);
+  if (!cluster) throw new Error('reconciliation_cluster_not_found');
   return cluster;
 }
 

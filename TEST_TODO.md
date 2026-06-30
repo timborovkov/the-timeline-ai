@@ -12,11 +12,18 @@ and React Doctor pass. React Doctor reported "No issues found" with a 100/100
 score. Manual live reconciliation eval with real `llm.chatStructured()` calls
 also passed 5/5 cases with AI judge 5/5, average judge score 1.0, and redacted
 artifacts in
-`/tmp/timeline-reconciliation-live-eval/2026-06-30T15-31-23-768Z/manifest.json`.
+`/tmp/timeline-reconciliation-live-eval/2026-06-30T22-35-53-726Z/manifest.json`.
+Production-sampling over that live run accepted schema-v2 artifacts with
+artifact-kind expectations/results and reported 5/5 passed with no ignored
+files; the schema-v2 report now exposes required artifact-kind miss counts for
+closed-beta regression dashboards at
+`/tmp/timeline-reconciliation-live-eval/2026-06-30T22-35-53-726Z/production-sampling-report.json`.
 The suite includes reconciliation schema contracts, fixture-backed
 surface/scenario evals, source-ref and visibility-floor evals, source-payload
-replay coverage, projection-outbox status mirroring and repair, authority-policy
-checks, conversation-review planner metadata and no-action reconciliation outputs,
+replay coverage, forbidden-output eval policy checks, projection-outbox status
+mirroring and repair, authority-policy checks, approval evidence source-ref
+citation metadata for projection repair,
+conversation-review planner metadata and no-action reconciliation outputs,
 queue-backed reconciliation evidence audit/backfill worker coverage,
 admin reconciliation dashboard snapshot coverage and queue-action contracts,
 production-sampling eval report aggregation over redacted live artifacts,
@@ -55,20 +62,24 @@ and board/search UI regressions. Current suite shape:
 
 - DB Vitest: 2 files / 13 tests, package-level PGlite schema contract suite now
   runs under root `pnpm test`.
-- Shared Vitest: 94 passing files plus 1 skipped / 1,068 passing tests plus 7
+- Shared Vitest: 94 passing files plus 1 skipped / 1,072 passing tests plus 7
   skipped, including PGlite artifact reconciliation, reconciliation
   normalization/backfill/resolution, authority policy, planner prompt/schema,
-  event writer, Sentry release link artifact capture, calendar, timeline, MCP,
+  artifact-kind and forbidden-output eval contracts, live artifact-kind eval
+  artifacts, production-sampling artifact-kind miss reporting, event writer,
+  Sentry release and Monday item link artifact capture, resolver DB-state
+  artifact-kind assertions, calendar, timeline, MCP,
   integration/provider-connection,
   meeting, document, object, assistant, Slack, recovery, connection-attention,
   and onboarding coverage.
   The shared package runner executes unit tests once and PGlite integration
   tests in isolated chunks so long-lived PGlite state cannot starve later hooks
   during root `pnpm test`.
-- Web Vitest: 149 files / 859 tests, including route/action/component coverage
+- Web Vitest: 150 files / 860 tests, including route/action/component coverage
   for search, timeline, core recovery, onboarding, object sections, board
   add-item interactions, provider-connection routes/UI, app dialog flows, and
-  other high-value UI states.
+  approval evidence source-ref metadata serialization, and other high-value UI
+  states.
 - Worker Vitest: 18 files / 232 tests, including extract, transcribe,
   document-extract, meeting-finalize, meeting-scheduler, integration-sync
   attention behavior, overdue-scan, embedding, cleanup, reconciliation
@@ -755,7 +766,8 @@ Once the suite is mature, split commands by layer:
 - `pnpm test:eval`: fast deterministic agent evals.
 - `pnpm test:reconciliation-eval`: deterministic reconciliation eval matrix,
   replay coverage, reconciliation dashboard snapshot contracts, and
-  production-sampling artifact loading/report aggregation.
+  production-sampling artifact loading/report aggregation, including
+  artifact-kind miss reporting.
 - `pnpm test:dist-imports`: compiled-package import smoke.
 - `pnpm validate`: format, typecheck, lint, and knip.
 - CI PR gate: validate, reconciliation evals, and compiled-package import smoke,

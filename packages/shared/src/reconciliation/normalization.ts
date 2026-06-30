@@ -98,7 +98,11 @@ export async function normalizeIntegrationEventsToEvidence(
         }),
         title: integrationEvidenceTitle(event),
         summary: raw.contentText,
-        sourceUrl: metadataString(event.extra, 'url') ?? event.objectMap?.url ?? null,
+        sourceUrl:
+          metadataString(event.extra, 'url') ??
+          metadataString(event.extra, 'external_url') ??
+          event.objectMap?.url ??
+          null,
         metadata: {
           provider: event.provider,
           integration_event_type: event.eventType,
@@ -343,6 +347,16 @@ function anchorsForIntegrationEvent(event: IntegrationEvent): NormalizedAnchor[]
         strength: 'hard',
       });
     }
+  }
+
+  const sourceUrl =
+    metadataString(event.extra, 'url') ?? metadataString(event.extra, 'external_url');
+  if (sourceUrl) {
+    anchors.push({
+      anchorType: 'url',
+      anchorValue: normalizeUrlAnchor(sourceUrl),
+      strength: 'hard',
+    });
   }
 
   const repo =

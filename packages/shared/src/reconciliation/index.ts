@@ -81,6 +81,7 @@ export interface DeterministicEvalOutput {
   outputKind: string;
   targetKind: string;
   operation: string;
+  artifactClusterKind?: ArtifactClusterKind;
   visibility: VisibilityEnvelope;
   visibilityFloor: VisibilityEnvelope;
   sourceRefs: SourceRef[];
@@ -89,6 +90,7 @@ export interface DeterministicEvalOutput {
 export interface DeterministicEvalAssociation {
   id: string;
   role: string;
+  artifactClusterKind?: ArtifactClusterKind;
   visibility: VisibilityEnvelope;
   visibilityFloor: VisibilityEnvelope;
   sourceRefs: SourceRef[];
@@ -104,9 +106,11 @@ export interface DeterministicEvalCase {
     ingestionSurfaces: string[];
     associationRoleCounts?: Record<string, number>;
     outputKindCounts: Record<string, number>;
+    forbiddenOutputKinds?: string[];
     requireValidSourceRefs: boolean;
     requireVisibilityFloors: boolean;
     requiredSourcePayloadSurfaces?: string[];
+    requiredArtifactClusterKinds?: ArtifactClusterKind[];
   };
 }
 
@@ -275,6 +279,12 @@ export function scoreDeterministicReconciliationCase(
       );
     }
   }
+  for (const kind of input.expected.forbiddenOutputKinds ?? []) {
+    const actualCount = actualCounts[kind] ?? 0;
+    if (actualCount > 0) {
+      failures.push(`${input.name}: forbidden output kind ${kind} appeared ${actualCount} time(s)`);
+    }
+  }
 
   const actualAssociationCounts = (input.associations ?? []).reduce<Record<string, number>>(
     (counts, association) => {
@@ -329,6 +339,18 @@ export function scoreDeterministicReconciliationCase(
     );
     if (!hasPayloadRef) {
       failures.push(`${input.name}: missing source payload ref for ${surface}`);
+    }
+  }
+
+  const artifactClusterKinds = new Set(
+    [
+      ...input.outputs.map((output) => output.artifactClusterKind),
+      ...(input.associations ?? []).map((association) => association.artifactClusterKind),
+    ].filter((kind): kind is ArtifactClusterKind => Boolean(kind)),
+  );
+  for (const kind of input.expected.requiredArtifactClusterKinds ?? []) {
+    if (!artifactClusterKinds.has(kind)) {
+      failures.push(`${input.name}: missing artifact cluster kind ${kind}`);
     }
   }
 

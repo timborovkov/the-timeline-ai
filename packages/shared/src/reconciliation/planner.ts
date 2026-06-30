@@ -3,8 +3,10 @@ import { z } from 'zod';
 import { chatStructured as defaultChatStructured } from '#src/llm/chat.js';
 import { TIMELINE_MODELS } from '#src/llm/models.js';
 import {
+  artifactClusterKinds,
   reconciliationEvalIngestionSurfaces,
   reconciliationEvalScenarioFamilies,
+  type ArtifactClusterKind,
   type ReconciliationEvalIngestionSurface,
   type ReconciliationEvalScenarioFamily,
 } from '#src/reconciliation/index.js';
@@ -36,6 +38,7 @@ export interface ReconciliationPlannerInput {
   policyDerivedScenarioFamily?: ReconciliationEvalScenarioFamily | null;
   policyDerivedOutputKinds?: readonly ReconciliationPlannerOutputKind[];
   policyDerivedDirectWriteSurfaces?: readonly ReconciliationEvalIngestionSurface[];
+  policyDerivedArtifactClusterKinds?: readonly ArtifactClusterKind[];
   model?: string;
   abortSignal?: AbortSignal;
 }
@@ -45,6 +48,7 @@ export interface ReconciliationPlannerResult {
   ingestionSurfaces: ReconciliationEvalIngestionSurface[];
   outputKinds: ReconciliationPlannerOutputKind[];
   directWriteSurfaces: ReconciliationEvalIngestionSurface[];
+  artifactClusterKinds: ArtifactClusterKind[];
   approvalRequired: boolean;
   sourceRefs: ReconciliationPlannerSourceRef[];
   privacyRisk: boolean;
@@ -59,6 +63,7 @@ export const reconciliationPlannerResultSchema = z.object({
   ingestionSurfaces: z.array(z.enum(reconciliationEvalIngestionSurfaces)),
   outputKinds: z.array(z.enum(reconciliationPlannerOutputKinds)),
   directWriteSurfaces: z.array(z.enum(reconciliationEvalIngestionSurfaces)),
+  artifactClusterKinds: z.array(z.enum(artifactClusterKinds)),
   approvalRequired: z.boolean(),
   sourceRefs: z.array(
     z.object({
@@ -98,6 +103,7 @@ Ingestion surface candidates: ${ingestionSurfaceCandidates.join(', ')}
 Policy-derived scenario family for this packet: ${input.policyDerivedScenarioFamily ?? 'unknown'}
 Policy-derived output kind set for this packet: ${(input.policyDerivedOutputKinds ?? []).join(', ')}
 Policy-derived direct-write surfaces for this packet: ${(input.policyDerivedDirectWriteSurfaces ?? []).join(', ')}
+Policy-derived artifact cluster kinds for this packet: ${(input.policyDerivedArtifactClusterKinds ?? []).join(', ')}
 
 Observed surfaces:
 ${input.observedSurfaces.map((surface) => `- ${surface}`).join('\n')}
@@ -120,6 +126,9 @@ Mixed packets can require both direct_write for provider-owned state and approva
 If outputKinds includes direct_write, directWriteSurfaces must list every observed surface whose evidence directly owns provider state for this packet.
 Use the policy-derived direct-write surfaces as hints for directWriteSurfaces; do not leave directWriteSurfaces empty when those hints are present.
 If outputKinds does not include direct_write, directWriteSurfaces must be empty.
+Return artifactClusterKinds as the unique set of work-artifact cluster kinds needed by the packet.
+Use the policy-derived artifact cluster kinds as required minimum categories unless the planner context explicitly says one is unsafe or impossible.
+Do not collapse provider_record into customer_project, account, incident, or task. Provider records are work artifacts that preserve external Monday, Sentry, Linear, GitHub, Drive, or webhook records separately from durable Timeline memory.
 Use approval_bundle for Timeline-owned company, person, project, task, note, decision, relationship, or customer-memory changes.
 Do not omit approval_bundle just because the same packet also includes direct_write or observed_association.
 Set approvalRequired to true exactly when outputKinds includes approval_bundle; otherwise set it to false.

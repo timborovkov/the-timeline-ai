@@ -80,6 +80,7 @@ interface SuggestionBundle {
     quote: string | null;
     occurredAt: string | null;
     source: string | null;
+    metadata?: Record<string, unknown>;
   }[];
 }
 

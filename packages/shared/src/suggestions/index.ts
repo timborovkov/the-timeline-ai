@@ -214,6 +214,26 @@ function sourceRefsFromUnknown(value: unknown): SourceRef[] {
   });
 }
 
+function sourceRefMetadataForRawEvent(sourceRefs: SourceRef[], rawEventId: string) {
+  const ref = sourceRefs.find((candidate) => candidate.rawEventId === rawEventId);
+  if (!ref) return {};
+  return {
+    reconciliation_source_ref: ref,
+    ...(ref.sourcePayloadRef ? { reconciliation_source_payload_ref: ref.sourcePayloadRef } : {}),
+  };
+}
+
+function suggestionEvidenceMetadata(
+  metadata: Record<string, unknown> | undefined,
+  sourceRefs: SourceRef[],
+  rawEventId: string,
+): Record<string, unknown> {
+  return {
+    ...(metadata ?? {}),
+    ...sourceRefMetadataForRawEvent(sourceRefs, rawEventId),
+  };
+}
+
 function isEntityCanonicalNameDuplicate(err: unknown): boolean {
   if (!err || typeof err !== 'object') return false;
   if (
@@ -372,6 +392,7 @@ export interface SuggestionEvidence {
   quote: string | null;
   occurredAt: Date | null;
   source: string | null;
+  metadata: Record<string, unknown>;
 }
 
 export interface DuplicatePendingApprovalPair {
@@ -1808,6 +1829,10 @@ function toBundle(
       quote: ev.quote,
       occurredAt: ev.occurredAt ?? null,
       source: ev.source ?? null,
+      metadata:
+        ev.metadata && typeof ev.metadata === 'object'
+          ? (ev.metadata as Record<string, unknown>)
+          : {},
     })),
   };
 }
@@ -4260,6 +4285,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
               metadata: {
                 projection: 'agent_suggestions',
                 repaired_from_outputs: outputIds,
+                ...sourceRefMetadataForRawEvent(sourceRefs, rawEventId),
               },
             })),
           )
@@ -4663,7 +4689,11 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
                 teamId,
                 rawEventId: ev.rawEventId,
                 quote: ev.quote ?? null,
-                metadata: ev.metadata ?? {},
+                metadata: suggestionEvidenceMetadata(
+                  ev.metadata,
+                  projectionContext.sourceRefs,
+                  ev.rawEventId,
+                ),
               })),
             )
             .onConflictDoNothing();

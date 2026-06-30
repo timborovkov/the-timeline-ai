@@ -27,6 +27,7 @@ describe('reconciliation planner', () => {
       policyDerivedScenarioFamily: 'customer_project',
       policyDerivedOutputKinds: ['observed_association', 'direct_write', 'approval_bundle'],
       policyDerivedDirectWriteSurfaces: ['monday', 'sentry'],
+      policyDerivedArtifactClusterKinds: ['customer_project', 'provider_record', 'incident'],
     });
 
     expect(RECONCILIATION_PLANNER_PROMPT_VERSION).toBe(
@@ -38,11 +39,15 @@ describe('reconciliation planner', () => {
     expect(prompt).toContain(
       'Policy-derived direct-write surfaces for this packet: monday, sentry',
     );
+    expect(prompt).toContain(
+      'Policy-derived artifact cluster kinds for this packet: customer_project, provider_record, incident',
+    );
     expect(prompt).toContain('ingestionSurfaces result must be a subset of Observed surfaces');
     expect(prompt).toContain('Use direct_write only when the planner context explicitly says');
     expect(prompt).toContain('policy-derived output kind set as required minimum categories');
     expect(prompt).toContain('provider direct writes do not replace human approval');
     expect(prompt).toContain('directWriteSurfaces must list every observed surface');
+    expect(prompt).toContain('Do not collapse provider_record into customer_project');
     expect(prompt).toContain('Never use direct_write for Timeline-owned company');
     expect(prompt).toContain('Do not omit approval_bundle');
     expect(prompt).toContain('Privacy risk means visibility broadening');
@@ -57,6 +62,7 @@ describe('reconciliation planner', () => {
       ingestionSurfaces: ['sentry', 'github', 'slack', 'email'],
       outputKinds: ['direct_write', 'observed_association', 'approval_bundle'],
       directWriteSurfaces: ['sentry'],
+      artifactClusterKinds: ['incident', 'task', 'account'],
       approvalRequired: true,
       sourceRefs: [
         { surface: 'sentry', rawEventId: 'raw-sentry-resolved' },

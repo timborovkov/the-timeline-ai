@@ -322,6 +322,17 @@ describe('writeIntegrationEvents visibility', () => {
       ]),
     );
 
+    const clusters = await db.select().from(artifactClusters);
+    expect(clusters).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          artifactClusterKind: 'customer_project',
+          artifactType: 'task',
+          canonicalName: 'Acme implementation',
+        }),
+      ]),
+    );
+
     const associations = await db.select().from(artifactEvidenceAssociations);
     expect(associations).toHaveLength(2);
     const lifecycleAssociation = associations.find((row) => row.role === 'lifecycle_update');
@@ -697,6 +708,7 @@ describe('writeIntegrationEvents visibility', () => {
     const clusters = await db.select().from(artifactClusters);
     expect(clusters).toHaveLength(1);
     expect(clusters[0]).toMatchObject({
+      artifactClusterKind: 'task',
       artifactType: 'task',
       canonicalName: 'the-timeline-ai: Add cursor pagination',
       status: 'resolved',
@@ -891,6 +903,7 @@ describe('writeIntegrationEvents visibility', () => {
 
     const clusters = await db.select().from(artifactClusters);
     expect(clusters).toHaveLength(1);
+    expect(clusters[0]?.artifactClusterKind).toBe('incident');
     expect(clusters[0]?.artifactType).toBe('incident');
     expect(clusters[0]?.status).toBe('resolved');
 
@@ -988,6 +1001,7 @@ describe('writeIntegrationEvents visibility', () => {
 
     const [cluster] = await db.select().from(artifactClusters);
     expect(cluster).toMatchObject({
+      artifactClusterKind: 'provider_record',
       artifactType: 'other',
       canonicalName: 'Release web@1.2.3',
       status: 'resolved',
@@ -1034,6 +1048,117 @@ describe('writeIntegrationEvents visibility', () => {
       decision: 'observed_association',
       reason: 'context_attached_without_canonical_state_change',
       provider: 'sentry',
+    });
+  });
+
+  it('stores Monday item links as provider-record artifact evidence', async () => {
+    const [integration] = await db
+      .insert(integrations)
+      .values({
+        teamId: TEAM_ID,
+        connectedByUserId: USER_ID,
+        provider: 'monday',
+        displayName: 'Monday',
+        externalAccountId: 'monday-acct',
+        visibilityDefault: 'team',
+      })
+      .returning();
+    if (!integration) throw new Error('integration insert failed');
+
+    const [rawEventId] = await writeIntegrationEvents({
+      db: db as never,
+      integration,
+      events: [
+        {
+          dedupKey: 'monday:item:board-1:item-456:2026-06-20T11:00:00.000Z',
+          provider: 'monday',
+          externalObjectId: 'item-456',
+          eventType: 'item.updated',
+          occurredAt: new Date('2026-06-20T11:00:00Z'),
+          contentText: 'Monday item updated: Acme rollout\nStage: Working on it',
+          extra: {
+            monday_board_id: 'board-1',
+            monday_board_name: 'Customer Projects',
+            monday_item_id: 'item-456',
+            external_url: 'https://monday.com/boards/1/pulses/456',
+            columns: [{ id: 'status', title: 'Stage', type: 'status', text: 'Working on it' }],
+          },
+          objectMap: {
+            type: 'other',
+            canonicalName: 'Monday item item-456: Acme rollout',
+            displayTitle: 'Acme rollout',
+            externalId: 'item-456',
+            status: 'in_progress',
+            url: 'https://monday.com/boards/1/pulses/456',
+            metadata: {
+              monday_record_kind: 'item',
+              monday_board_id: 'board-1',
+              monday_board_name: 'Customer Projects',
+              monday_item_id: 'item-456',
+              monday_item_name: 'Acme rollout',
+            },
+          },
+        },
+      ],
+    });
+    if (!rawEventId) throw new Error('raw event insert failed');
+
+    const [evidence] = await db
+      .select()
+      .from(reconciliationEvidence)
+      .where(eq(reconciliationEvidence.rawEventId, rawEventId));
+    expect(evidence).toMatchObject({
+      provider: 'monday',
+      externalObjectId: 'item-456',
+      eventType: 'item.updated',
+      sourceUrl: 'https://monday.com/boards/1/pulses/456',
+    });
+
+    const [cluster] = await db.select().from(artifactClusters);
+    expect(cluster).toMatchObject({
+      artifactClusterKind: 'provider_record',
+      artifactType: 'other',
+      canonicalName: 'Acme rollout',
+      status: 'active',
+    });
+
+    const anchors = await db.select().from(artifactClusterAnchors);
+    expect(anchors).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          anchorType: 'provider_object',
+          anchorValue: 'monday:item-456',
+        }),
+        expect.objectContaining({
+          anchorType: 'provider_external:monday',
+          anchorValue: 'item-456',
+        }),
+        expect.objectContaining({
+          anchorType: 'url',
+          anchorValue: 'https://monday.com/boards/1/pulses/456',
+        }),
+      ]),
+    );
+
+    const [association] = await db.select().from(artifactEvidenceAssociations);
+    expect(association).toMatchObject({
+      role: 'related_context',
+      associationSource: 'hard_anchor',
+      rawEventId,
+    });
+
+    const [output] = await db.select().from(reconciliationOutputs);
+    expect(output).toMatchObject({
+      outputKind: 'observed_association',
+      targetKind: 'cluster_identity',
+      operation: 'link',
+      status: 'applied',
+      clusterId: cluster?.id,
+    });
+    expect(output?.authorityDecision).toMatchObject({
+      decision: 'observed_association',
+      reason: 'context_attached_without_canonical_state_change',
+      provider: 'monday',
     });
   });
 
@@ -1257,6 +1382,7 @@ describe('writeIntegrationEvents visibility', () => {
 
     const clusters = await db.select().from(artifactClusters);
     expect(clusters).toHaveLength(1);
+    expect(clusters[0]?.artifactClusterKind).toBe('task');
     expect(clusters[0]?.status).toBe('resolved');
 
     const associations = await db.select().from(artifactEvidenceAssociations);
@@ -1328,6 +1454,7 @@ describe('writeIntegrationEvents visibility', () => {
 
     const clusters = await db.select().from(artifactClusters);
     expect(clusters).toHaveLength(1);
+    expect(clusters[0]?.artifactClusterKind).toBe('document');
     expect(clusters[0]?.artifactType).toBe('document');
 
     const associations = await db.select().from(artifactEvidenceAssociations);
