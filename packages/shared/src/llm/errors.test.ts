@@ -22,14 +22,22 @@ describe('TimelineAiError', () => {
       causeName: 'Error',
       causeMessage: 'provider unavailable',
     });
-    await expect(
-      wrapAiFailure(
+    try {
+      await wrapAiFailure(
         { operation: 'llm.chatStructured', model: TIMELINE_MODELS.extraction.id },
         () => {
           throw cause;
         },
-      ),
-    ).rejects.not.toHaveProperty('cause');
+      );
+      throw new Error('expected wrapAiFailure to throw');
+    } catch (err) {
+      expect(err).toHaveProperty('cause');
+      expect((err as { cause?: unknown }).cause).not.toBe(cause);
+      expect((err as { cause?: Error }).cause).toMatchObject({
+        name: 'Error',
+        message: 'provider unavailable',
+      });
+    }
   });
 
   it('does not double-wrap existing AI failures', async () => {
@@ -55,6 +63,80 @@ describe('TimelineAiError', () => {
       ),
     ).rejects.toMatchObject({
       causeMessage: 'OpenRouter 400 response body: [redacted]',
+    });
+  });
+
+  it('attaches only a sanitized cause with safe provider metadata', async () => {
+    const cause = Object.assign(
+      new Error('OpenRouter 400 response body: {"messages":[{"content":"private"}]}'),
+      {
+        name: 'AI_APICallError',
+        statusCode: 400,
+        isRetryable: false,
+      },
+    );
+
+    try {
+      await wrapAiFailure(
+        { operation: 'llm.embedMany', model: TIMELINE_MODELS.embedding.id },
+        () => {
+          return Promise.reject(cause);
+        },
+      );
+      throw new Error('expected wrapAiFailure to throw');
+    } catch (err) {
+      const wrappedCause = (
+        err as { cause?: Error & { isRetryable?: boolean; statusCode?: number } }
+      ).cause;
+      expect(wrappedCause).not.toBe(cause);
+      expect(wrappedCause).toMatchObject({
+        name: 'AI_APICallError',
+        message: 'OpenRouter 400 response body: [redacted]',
+        statusCode: 400,
+        isRetryable: false,
+      });
+    }
+  });
+
+  it('does not attach raw thrown objects as causes', async () => {
+    const cause = {
+      name: 'AI_APICallError',
+      prompt: 'private prompt',
+      statusCode: 400,
+    };
+
+    try {
+      await wrapAiFailure(
+        { operation: 'llm.embedMany', model: TIMELINE_MODELS.embedding.id },
+        () => {
+          // Simulates non-Error provider throws so the wrapper cannot leak raw objects.
+          // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors
+          return Promise.reject(cause);
+        },
+      );
+      throw new Error('expected wrapAiFailure to throw');
+    } catch (err) {
+      const wrappedCause = (err as { cause?: Error & { statusCode?: number } }).cause;
+      expect(wrappedCause).not.toBe(cause);
+      expect(wrappedCause).toMatchObject({
+        name: 'AI_APICallError',
+        message: '[object Object]',
+        statusCode: 400,
+      });
+    }
+  });
+
+  it('sanitizes primitive string causes before attaching them', async () => {
+    await expect(
+      wrapAiFailure({ operation: 'llm.embedMany', model: TIMELINE_MODELS.embedding.id }, () => {
+        // Simulates non-Error provider rejections so raw strings cannot leak through Error.cause.
+        // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors
+        return Promise.reject('OpenRouter 400 response body: {"prompt":"private"}');
+      }),
+    ).rejects.toMatchObject({
+      cause: {
+        message: 'OpenRouter 400 response body: [redacted]',
+      },
     });
   });
 

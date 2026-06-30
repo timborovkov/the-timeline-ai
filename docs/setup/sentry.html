@@ -10,7 +10,7 @@
     <a class="skip" href="#main">Skip to content</a>
     <main id="main">
       <h1>Sentry setup</h1>
-      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-06-28</span></div>
+      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-06-30</span></div>
       <blockquote><p>Optional locally. Strongly recommended before production.</p></blockquote>
       <p class="tldr">
         Hook the web and worker services into Sentry for error tracking. Timeline can also connect
@@ -77,8 +77,8 @@ SENTRY_PROFILES_SAMPLE_RATE=0
         <code>tool_failed</code> or a graceful reconnect shape to the model. Shared LLM wrapper
         failures are tagged with <code>aiOperation</code>, <code>aiModel</code>, and the safe cause
         type so worker and web captures can be filtered without attaching prompt, transcript, file,
-        document content, or provider error bodies. The wrapper records the sanitized bounded cause
-        message as context, not the provider's original exception chain.
+        document content, or provider error bodies. The wrapper records sanitized bounded cause
+        messages and sanitized retry metadata, not the provider's original exception chain.
       </p>
       <p>
         Keep <code>sendDefaultPii</code> disabled. Do not attach cookies, auth headers, prompts,
