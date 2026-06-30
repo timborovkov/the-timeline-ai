@@ -3,7 +3,10 @@
 import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { IntegrationsPageView } from '@/app/app/team/integrations/page';
+import {
+  IntegrationsPageView,
+  visibleConnectionAttentionStats,
+} from '@/app/app/team/integrations/page';
 
 vi.mock('next/navigation', () => ({
   redirect: vi.fn(),
@@ -106,6 +109,31 @@ function model(): Parameters<typeof IntegrationsPageView>[0]['model'] {
 }
 
 describe('IntegrationsPageView', () => {
+  it('counts only attention attached to visible integrations for the page banners', () => {
+    const connectedRows = model().connectedRows;
+    const firstConnectedRow = connectedRows[0];
+    if (!firstConnectedRow) throw new Error('Expected connected row fixture');
+    firstConnectedRow.attention.push({
+      id: 'attention-2',
+      category: 'webhook_degraded',
+      summary: 'Webhook provisioning degraded.',
+      lastSeenAt: '2026-06-29T10:05:00.000Z',
+    });
+
+    expect(visibleConnectionAttentionStats(connectedRows)).toEqual({
+      blockingAttentionCount: 1,
+      webhookDegradedCount: 1,
+    });
+    expect(
+      visibleConnectionAttentionStats([
+        {
+          ...firstConnectedRow,
+          attention: [],
+        },
+      ]),
+    ).toEqual({ blockingAttentionCount: 0, webhookDegradedCount: 0 });
+  });
+
   it('orders integration management by recovery, active sync, available sources, connect, then advanced tools', () => {
     render(<IntegrationsPageView params={{}} active={{ teamName: 'Acme' }} model={model()} />);
 
