@@ -631,3 +631,14 @@ test('starts native provider OAuth from the integrations catalog', async ({ page
   expect(url.searchParams.get('scope')).toContain('repo');
   expect(url.searchParams.get('state')).toMatch(/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/);
 });
+
+test('renders native provider OAuth callback denial in the browser', async ({ page }) => {
+  await signIn(page, e2eUsers.owner.email);
+
+  await page.goto('/api/integrations/github/callback?error=access_denied');
+
+  await expect(page).toHaveURL(/\/app\/team\/integrations\?error=access_denied$/);
+  await expect(page.getByRole('heading', { name: 'Team integrations', level: 1 })).toBeVisible();
+  await expect(page.getByText('access_denied', { exact: true })).toBeVisible();
+  await expect(page.getByText('GitHub', { exact: true }).first()).toBeVisible();
+});
