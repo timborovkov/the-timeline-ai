@@ -198,6 +198,8 @@ pnpm dev                  # Next.js app + worker in watch mode
 pnpm validate             # format check, typecheck, lint, knip
 pnpm test                 # unit and integration tests (package suites run sequentially)
 pnpm test:eval            # fast deterministic agent and retrieval evals
+AGENT_LIVE_ENV_FILE=/path/.env pnpm test:agent-eval:live
+                          # opt-in live LLM askAgent durable-state eval
 pnpm test:reconciliation-eval       # deterministic reconciliation domain/eval matrix
 pnpm test:reconciliation-eval:live  # opt-in live LLM planner+judge matrix; set RECONCILIATION_LIVE_ENV_FILE=/path/.env when needed
 # optional: set RECONCILIATION_LIVE_ARTIFACT_DIR=/tmp/eval-run for one exact output dir,

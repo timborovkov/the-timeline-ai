@@ -8,17 +8,23 @@ contracts, not private implementation structure.
 
 Last checked in this branch: full `pnpm validate`, `pnpm test:eval`,
 `pnpm test:reconciliation-eval`, `pnpm test:dist-imports`, root `pnpm test`,
-and React Doctor pass. React Doctor reported "No issues found" with a 100/100
-score when the score endpoint was available. Manual live reconciliation eval
-with real `llm.chatStructured()` calls also passed 5/5 cases across fourteen
-ingestion surfaces, including system events, with AI judge 5/5, average judge
-score 1.0, and redacted artifacts in
+React Doctor, and `pnpm test:agent-eval:live` pass. React Doctor reported
+"No issues found" with a 100/100 score when the score endpoint was available.
+The live agent eval used the real `askAgent` OpenRouter path against seeded
+durable task/calendar state. Manual live reconciliation eval with real
+`llm.chatStructured()` calls also passed 5/5 cases across fourteen ingestion
+surfaces, including system events, with AI judge 5/5, average judge score 1.0,
+and redacted artifacts in
 `/tmp/timeline-reconciliation-live-eval/2026-06-30T23-00-19-939Z/manifest.json`.
 Production-sampling over that live run accepted schema-v2 artifacts with
 artifact-kind expectations/results and reported 5/5 passed with no ignored
 files; the schema-v2 report exposes required artifact-kind miss counts for
 closed-beta regression dashboards at
 `/tmp/timeline-reconciliation-live-eval/2026-06-30T23-00-19-939Z/production-sampling-report.json`.
+The live integration canary reached OpenRouter successfully with the provided
+env; GitHub/Monday/Slack/Sentry OAuth or webhook credentials that are present
+validated structurally, while the Sentry API token returned a 403 for the
+configured org/project and several optional provider credentials remain unset.
 The suite includes reconciliation schema contracts, fixture-backed
 surface/scenario evals, source-ref and visibility-floor evals, source-payload
 replay coverage, forbidden-output eval policy checks, projection-outbox status
@@ -127,6 +133,9 @@ Legend:
   timeline moment presentation prompt/schema can produce a concrete
   non-provider title and source-event preview IDs through the real structured
   LLM boundary;
+  `pnpm test:agent-eval:live` now runs an opt-in real-model `askAgent` eval
+  against seeded durable task/calendar state through the same non-browser bot
+  entrypoint used by Slack and Telegram;
   shared moment projection tests now include persisted live-adapter metadata
   shapes for current provider writers, including nested Linear metadata,
   Monday.com content-derived labels, and Sentry release versions;
@@ -138,11 +147,12 @@ Legend:
   sits in
   future handoff/update DTO design, future provider-adapter payload breadth, and
   broader E2E flows.
-- Biggest remaining product-risk gaps: live-model chat eval coverage, broader
-  document/provider-backed source-capture contracts, E2E browser flows for
-  document search/extraction and integration OAuth/share/activate flows, richer
-  calendar, MCP settings, onboarding, and job recovery; worker coverage for MCP
-  health/team export; and deeper component interaction states.
+- Biggest remaining product-risk gaps: broader live-model chat/provider-backed
+  retrieval coverage, broader document/provider-backed source-capture
+  contracts, E2E browser flows for document search/extraction and integration
+  OAuth/share/activate flows, richer calendar, MCP settings, onboarding, and
+  job recovery; worker coverage for MCP health/team export; and deeper
+  component interaction states.
 
 ## Current Test Surface
 
@@ -153,6 +163,10 @@ Legend:
 - `pnpm --filter @timeline/db test` runs DB/PGlite schema contract tests.
 - `pnpm test:eval` runs the fast deterministic shared agent/retrieval eval
   slice.
+- `pnpm test:agent-eval:live` runs an opt-in live OpenRouter `askAgent` eval
+  against seeded durable workspace state. Set
+  `AGENT_LIVE_ENV_FILE=/path/to/.env` when the current shell has not already
+  loaded the live LLM env.
 - `pnpm test:reconciliation-eval` runs deterministic reconciliation schema,
   surface/scenario matrix, source-ref, visibility-floor, authority-policy,
   planner prompt/schema, normalization, backfill, and resolver evals.
@@ -778,6 +792,7 @@ Once the suite is mature, split commands by layer:
 - `pnpm e2e`: local core Playwright E2E.
 - `pnpm e2e:prod-smoke`: production-ish smoke.
 - `pnpm test:eval`: fast deterministic agent evals.
+- `pnpm test:agent-eval:live`: opt-in live `askAgent` durable-state eval.
 - `pnpm test:reconciliation-eval`: deterministic reconciliation eval matrix,
   replay coverage, reconciliation dashboard snapshot contracts, and
   production-sampling artifact loading/report aggregation, including

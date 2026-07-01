@@ -148,6 +148,8 @@ pnpm dev:seed               # optional demo team, users, events, objects, integr
 pnpm validate                         # format, typecheck, lint, knip
 pnpm test                             # unit + integration tests (package suites run sequentially)
 pnpm test:eval                        # fast deterministic agent and retrieval evals
+AGENT_LIVE_ENV_FILE=/path/.env pnpm test:agent-eval:live
+                                      # opt-in live LLM askAgent durable-state eval
 pnpm test:reconciliation-eval         # deterministic reconciliation domain/eval checks
 RECONCILIATION_LIVE_ENV_FILE=/path/.env pnpm test:reconciliation-eval:live
                                       # opt-in live LLM planner + judge matrix
