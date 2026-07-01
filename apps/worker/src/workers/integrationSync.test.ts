@@ -465,6 +465,71 @@ describe('runOneIntegration attention classification', () => {
     expect(fakes.adminResetTransientSyncFailures).not.toHaveBeenCalled();
   });
 
+  it('classifies mixed provider partial failures independently after preserving sync progress', async () => {
+    const combinedSummary =
+      'acme/app:prs:open (Pull requests read permission required; update GitHub App repository permissions and reconnect); acme/app:releases:page-2 (GitHub releases page temporarily overloaded)';
+    const authSummary =
+      'acme/app:prs:open (Pull requests read permission required; update GitHub App repository permissions and reconnect)';
+    const transientSummary =
+      'acme/app:releases:page-2 (GitHub releases page temporarily overloaded)';
+    fakes.incrementalSync.mockResolvedValueOnce({
+      partialFailures: [
+        {
+          resource: 'acme/app',
+          surface: 'prs',
+          area: 'open',
+          error:
+            'Pull requests read permission required; update GitHub App repository permissions and reconnect',
+        },
+        {
+          resource: 'acme/app',
+          surface: 'releases',
+          area: 'page-2',
+          error: 'GitHub releases page temporarily overloaded',
+        },
+      ],
+    });
+    fakes.adminRecordTransientSyncFailure.mockResolvedValueOnce({
+      count: 3,
+      shouldCreateAttention: true,
+    });
+
+    await runOneIntegration({} as never, INTEGRATION_ID, 'incremental');
+
+    expect(fakes.adminMarkSynced).toHaveBeenCalledWith(expect.anything(), INTEGRATION_ID);
+    expect(fakes.adminRecordError).toHaveBeenCalledWith(
+      expect.anything(),
+      INTEGRATION_ID,
+      combinedSummary,
+    );
+    expect(fakes.adminRecordTransientSyncFailure).toHaveBeenCalledWith(
+      expect.anything(),
+      INTEGRATION_ID,
+      transientSummary,
+    );
+    expect(fakes.adminRecordConnectionAttention).toHaveBeenCalledWith(expect.anything(), TEAM_ID, {
+      providerConnectionId: CONNECTION_ID,
+      integrationId: INTEGRATION_ID,
+      category: 'needs_reconnect',
+      summary: authSummary,
+    });
+    expect(fakes.adminRecordConnectionAttention).toHaveBeenCalledWith(expect.anything(), TEAM_ID, {
+      providerConnectionId: CONNECTION_ID,
+      integrationId: INTEGRATION_ID,
+      category: 'sync_error',
+      summary: transientSummary,
+    });
+    expect(fakes.adminResetTransientSyncFailures).not.toHaveBeenCalled();
+    expect(fakes.adminResolveConnectionAttention).not.toHaveBeenCalled();
+    expect(fakes.adminRecordAudit).toHaveBeenCalledWith(
+      expect.anything(),
+      TEAM_ID,
+      'sync_finished:incremental',
+      { provider: 'github' },
+      { integrationId: INTEGRATION_ID },
+    );
+  });
+
   it('keeps non-auth partial syncs visible without reconnect attention', async () => {
     const errorMessage = 'acme/app:prs:reviews:42 (GitHub temporarily overloaded)';
     fakes.incrementalSync.mockResolvedValueOnce({

@@ -155,6 +155,10 @@ function summarizeSyncPartialFailures(failures: integrationsLib.SyncPartialFailu
     .slice(0, 500);
 }
 
+function isAuthOrAccessPartialFailure(failure: integrationsLib.SyncPartialFailure): boolean {
+  return isAuthOrAccessFailure(summarizeSyncPartialFailures([failure]));
+}
+
 function providerRateLimitPause(err: unknown): {
   retryAt: Date;
   message: string;
@@ -508,26 +512,37 @@ export async function runOneIntegration(
         partialFailures.length > 0 ? summarizeSyncPartialFailures(partialFailures) : null;
       await integrationsLib.adminMarkSynced(db, integrationId);
       if (partialSummary) {
+        const authPartialFailures = partialFailures.filter(isAuthOrAccessPartialFailure);
+        const transientPartialFailures = partialFailures.filter(
+          (failure) => !isAuthOrAccessPartialFailure(failure),
+        );
+        const authSummary =
+          authPartialFailures.length > 0 ? summarizeSyncPartialFailures(authPartialFailures) : null;
+        const transientSummary =
+          transientPartialFailures.length > 0
+            ? summarizeSyncPartialFailures(transientPartialFailures)
+            : null;
         await integrationsLib.adminRecordError(db, integrationId, partialSummary);
-        if (isAuthOrAccessFailure(partialSummary)) {
+        if (authSummary) {
           await integrationsLib.adminRecordConnectionAttention(db, integration.teamId, {
             providerConnectionId: integration.providerConnectionId,
             integrationId,
             category: 'needs_reconnect',
-            summary: partialSummary,
+            summary: authSummary,
           });
-        } else {
+        }
+        if (transientSummary) {
           const transient = await integrationsLib.adminRecordTransientSyncFailure(
             db,
             integrationId,
-            partialSummary,
+            transientSummary,
           );
           if (transient.shouldCreateAttention) {
             await integrationsLib.adminRecordConnectionAttention(db, integration.teamId, {
               providerConnectionId: integration.providerConnectionId,
               integrationId,
               category: 'sync_error',
-              summary: partialSummary,
+              summary: transientSummary,
             });
           }
         }
