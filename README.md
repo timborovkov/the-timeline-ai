@@ -221,7 +221,7 @@ pnpm --filter @timeline/worker reconciliation-production-sampling -- --input=/tm
 # scope_reconcile runs from the same dashboard.
 pnpm e2e                  # Playwright core journey tests
 pnpm run doctor           # React Doctor scan for React/Next health regressions
-pnpm canary:integrations  # secret-safe live provider/LLM credential canary
+pnpm canary:integrations  # secret-safe live provider/LLM/Postmark credential canary
 pnpm dev:seed             # seed local demo data with disabled fake integrations
 pnpm --filter @timeline/worker timeline-moment-presentations -- \
   --team=<uuid> [--since=YYYY-MM-DD] [--until=YYYY-MM-DD] \

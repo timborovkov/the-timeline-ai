@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from 'node:fs';
 
 import {
   formatLiveIntegrationCanaryReport,
+  redactLiveIntegrationCanaryText,
   type LiveIntegrationCanaryResult,
 } from '@timeline/shared/integrations';
 import { chatStructured } from '@timeline/shared/llm';
@@ -53,10 +54,26 @@ function configStatus(
   return { name, status: ok ? 'ok' : 'skip', detail, ...input };
 }
 
+function secretEnvValues(): string[] {
+  return Object.entries(process.env)
+    .filter(([key, value]) => {
+      if (!value || value.length < 8) return false;
+      return /(?:TOKEN|SECRET|KEY|PASSWORD|PRIVATE|DSN|WEBHOOK)/u.test(key);
+    })
+    .map(([, value]) => value)
+    .filter((value): value is string => Boolean(value));
+}
+
+function safeCanaryDetail(input: string): string {
+  return redactLiveIntegrationCanaryText(input, secretEnvValues())
+    .replace(/\s+/gu, ' ')
+    .slice(0, 140);
+}
+
 function shortProviderError(status: number, body: unknown, text: string): string {
   const record = body && typeof body === 'object' ? (body as Record<string, unknown>) : {};
   const message = record.detail ?? record.message ?? record.error ?? text;
-  return `status ${String(status)}: ${String(message).replace(/\s+/gu, ' ').slice(0, 140)}`;
+  return `status ${String(status)}: ${safeCanaryDetail(String(message))}`;
 }
 
 async function readJson(response: Response): Promise<{ body: unknown; text: string }> {
@@ -94,7 +111,7 @@ async function checkOpenRouter(): Promise<LiveIntegrationCanaryResult> {
     return {
       name: 'OpenRouter',
       status: 'warn',
-      detail: err instanceof Error ? err.message.slice(0, 160) : String(err).slice(0, 160),
+      detail: safeCanaryDetail(err instanceof Error ? err.message : String(err)),
       action: 'verify the OpenRouter key and model access',
       docs: 'docs/setup/openrouter.html',
     };
@@ -198,6 +215,35 @@ async function checkSentry(): Promise<LiveIntegrationCanaryResult> {
     };
   }
   return { name: 'Sentry API', status: 'ok', detail: 'project lookup succeeded' };
+}
+
+async function checkPostmark(): Promise<LiveIntegrationCanaryResult> {
+  if (!configured('POSTMARK_SERVER_TOKEN')) {
+    return {
+      name: 'Postmark API',
+      status: 'skip',
+      detail: 'POSTMARK_SERVER_TOKEN missing',
+      envKeys: ['POSTMARK_SERVER_TOKEN'],
+      docs: 'docs/setup/postmark.html',
+    };
+  }
+  const response = await fetch('https://api.postmarkapp.com/server', {
+    headers: {
+      accept: 'application/json',
+      'x-postmark-server-token': process.env.POSTMARK_SERVER_TOKEN ?? '',
+    },
+  });
+  const { body, text } = await readJson(response);
+  if (!response.ok) {
+    return {
+      name: 'Postmark API',
+      status: 'warn',
+      detail: shortProviderError(response.status, body, text),
+      action: 'verify the Postmark server token and server-level API access',
+      docs: 'docs/setup/postmark.html',
+    };
+  }
+  return { name: 'Postmark API', status: 'ok', detail: 'server lookup succeeded' };
 }
 
 function checkOAuthConfig(): LiveIntegrationCanaryResult[] {
@@ -331,18 +377,29 @@ function checkWebhookConfig(): LiveIntegrationCanaryResult[] {
         docs: 'docs/setup/slack.html',
       },
     ),
+    secretStatus(
+      'Postmark inbound webhook secret',
+      configured('POSTMARK_WEBHOOK_SECRET'),
+      configured('POSTMARK_WEBHOOK_SECRET') ? 'configured' : 'POSTMARK_WEBHOOK_SECRET missing',
+      {
+        envKeys: ['POSTMARK_WEBHOOK_SECRET'],
+        docs: 'docs/setup/postmark.html',
+      },
+    ),
   ];
 }
 
 loadEnvFile(envFile);
 
 const results: LiveIntegrationCanaryResult[] = [
-  ...(await Promise.all([checkOpenRouter(), checkGithubApp(), checkSentry()])),
+  ...(await Promise.all([checkOpenRouter(), checkGithubApp(), checkSentry(), checkPostmark()])),
   ...checkOAuthConfig(),
   ...checkWebhookConfig(),
 ];
 
-console.log(formatLiveIntegrationCanaryReport({ envFile, strict, results }));
+console.log(
+  formatLiveIntegrationCanaryReport({ envFile, strict, results, redactions: secretEnvValues() }),
+);
 
 if (strict && results.some((result) => result.status !== 'ok')) {
   process.exitCode = 1;

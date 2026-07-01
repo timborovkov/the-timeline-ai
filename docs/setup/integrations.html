@@ -641,12 +641,14 @@ codex mcp add timeline --url "&lt;copied MCP endpoint URL&gt;" --bearer-token-en
           Run
           <code>pnpm canary:integrations -- --env-file=/path/to/.env</code>. The canary prints only
           <code>OK</code>, <code>WARN</code>, or <code>SKIP</code> rows for OpenRouter, GitHub App
-          auth, Sentry API access, native OAuth app credentials, and native webhook/signing secrets,
-          followed by secret-safe next steps for any non-OK row. Use
+          auth, Sentry API access, Postmark API access, native OAuth app credentials, and native
+          webhook/signing secrets, followed by secret-safe next steps for any non-OK row. Use
           <code>pnpm canary:integrations:strict -- --env-file=/path/to/.env</code> when every row
           must be <code>OK</code>. The Sentry API row uses <code>SENTRY_AUTH_TOKEN</code>,
           <code>SENTRY_ORG</code>, and <code>SENTRY_PROJECT</code>; the Sentry webhook-signature row
-          uses <code>SENTRY_INTEGRATION_CLIENT_SECRET</code>.
+          uses <code>SENTRY_INTEGRATION_CLIENT_SECRET</code>. The Postmark API row uses
+          <code>POSTMARK_SERVER_TOKEN</code> for a read-only server lookup; the inbound webhook row
+          checks <code>POSTMARK_WEBHOOK_SECRET</code>.
         </dd>
         <dt>Webhook returns <code>bad_signature</code></dt>
         <dd>
