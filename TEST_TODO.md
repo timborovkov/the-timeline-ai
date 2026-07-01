@@ -63,7 +63,7 @@ and board/search UI regressions. Current suite shape:
   document-extract, meeting-finalize, meeting-scheduler, integration-sync
   attention behavior, overdue-scan, embedding, cleanup, reconciliation
   audit/backfill, advisory-locked manual scoped run recording, webhook
-  delivery, timeline moment presentation, and janitor behavior.
+  delivery, team export, timeline moment presentation, and janitor behavior.
 - Playwright: 17 local core E2E journeys plus 1 production-ish smoke journey.
 - E2E CI is still manual and `continue-on-error: true`; it is not a merge
   gate yet.
@@ -98,7 +98,7 @@ Legend:
 | Onboarding | Missing E2E checklist/dismissal | Strong checklist route coverage | Strong onboarding action coverage | Strong PGlite checklist inference, dismiss/reopen, manual completion, and team isolation | Missing | Partial checklist static states | Checklist E2E and richer interaction states |
 | Suggestions and background agent actions | Partial: capture-to-suggestion-to-acceptance creates durable task/calendar state, and object-update approval updates an existing object without duplication | Missing route coverage if surfaced later | Strong suggestions action boundary tests | Strong PGlite suggestions scope, dedupe, accept/reject, task/object/calendar/decision durability, and cross-team failure behavior | Partial: deterministic suggestion worker processor tests | Partial: object cleanup suggestions review/fallback/pagination | Remaining P1: richer suggestions UI states and live-model evals |
 | Embeddings and retrieval quality | Missing E2E semantic retrieval flow | Strong search/chat route contracts with mocked boundaries | N/A | Strong deterministic retrieval ranking, PGlite hydration, visibility/team filtering, embedding source planning, Qdrant point IDs, raw-event rendering, and LLM wrapper behavior | Partial: embed worker text/payload/skip/stale-source coverage | Missing retrieval UI assertions | Remaining: source rendering breadth for more providers and browser semantic retrieval assertions |
-| Support and team exports | Missing E2E | Missing direct routes if exposed | Missing support and team-export actions | Strong team-export archive integration | Team-export worker implementation exists; direct worker failure cleanup coverage missing | Missing UI | Support validation/email failure, export enqueue/idempotency, worker failure cleanup |
+| Support and team exports | Missing E2E | Missing direct routes if exposed | Missing support and team-export actions | Strong team-export archive integration | Strong team-export worker coverage for ready-state audit rows, terminal-job skips, and partial archive cleanup on failure | Missing UI | Support validation/email failure, export enqueue/idempotency, and UI |
 | Platform contracts: DB, queue, S3, env, rate limits | N/A | Rate-limit behavior covered through routes and token bucket | Queue degradation covered in some actions | Partial: env, crypto, rate limit, Qdrant, pagination, DB schema contracts, queue wrappers, Sentry scrubbing, and S3 wrappers covered | Queue/S3 wrapper behavior covered in shared tests | N/A | Deeper DB migration-compat history, queue/S3 live-emulator canaries |
 | Frontend components and UI states | Partial only where E2E crosses real pages | N/A | N/A | N/A | N/A | Partial: nav, job recovery list, capture composer, approvals, chat pane, document drive, object detail, board add-item flow, onboarding checklist, timeline controls/page helpers, timeline moment rows/feed dedupe, hub/status/error helpers | Document detail/search, boards, team settings, integrations, MCP, richer empty/error/loading states |
 
@@ -151,8 +151,7 @@ Legend:
   retrieval coverage, broader document/provider-backed source-capture
   contracts, E2E browser flows for document search/extraction and integration
   OAuth/share/activate flows, richer calendar, MCP settings, onboarding, and
-  job recovery; worker coverage for team export; and deeper component
-  interaction states.
+  job recovery and deeper component interaction states.
 
 ## Current Test Surface
 
@@ -363,7 +362,7 @@ Important uncovered shared/package areas:
 
 - Focused `packages/db` schema and migration assertions.
 - Queue wrappers and job option/dedupe behavior.
-- S3 wrapper env/bucket/presigned URL/object-size behavior.
+- Live S3/RustFS emulator canaries beyond the mocked wrapper contract tests.
 - Live-model agent evals and provider-backed MCP behavior.
 
 ### Worker Processors
@@ -388,8 +387,7 @@ Covered worker areas include:
 
 Important uncovered worker processors:
 
-- `mcpHealth`
-- `teamExport` direct worker failure cleanup
+- Integration sync still needs broader provider-pagination and partial-failure breadth.
 
 ### Frontend Components and UI Logic
 
@@ -718,8 +716,10 @@ contracts and unit tests for pure branching.
   encrypted credential usage, and partial failures.
 - MCP health: covered for production SSRF URL validation, cache invalidation,
   disabled-server skips, failed server status, and team/user overlay behavior.
-- Team export: permission assumptions, private/team visibility limits, signed
-  URL generation, and failure cleanup.
+- Team export: covered for archive permission assumptions, private/team
+  visibility limits, and signed URL generation in shared archive tests; covered
+  for worker ready-state audit rows, terminal-job skips, and partial archive
+  cleanup on failure in worker tests.
 - Keep PGlite tests for database semantics and injected fakes for external
   providers, queues, S3, and LLM calls.
 
@@ -742,6 +742,7 @@ Goal: protect low-level invariants that application tests rely on.
   - Bucket/env validation.
   - Presigned upload/download URL behavior.
   - Size/content-type failure paths.
+  - Delete command-shape behavior for cleanup callers.
 
 ### Phase 7: Agent And Eval Coverage
 
@@ -819,6 +820,6 @@ Once the suite is mature, split commands by layer:
    `boards.ts`, and `calendar.ts`.
 4. Add remaining route suites for integrations, Slack command/OAuth,
    onboarding, object sections, cron reconcile, and jobs dashboard flows.
-5. Finish worker processor coverage for integration sync and team export.
+5. Finish worker processor coverage for integration sync.
 6. Add database, queue, and S3 contract tests.
 7. Add component tests for high-value UI states.

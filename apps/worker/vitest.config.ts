@@ -23,6 +23,7 @@ const integrationTests = [
   'src/workers/overdue.test.ts',
   'src/workers/reconciliation.test.ts',
   'src/workers/suggestions.test.ts',
+  'src/workers/teamExport.test.ts',
 ];
 
 export default defineConfig({

@@ -1,4 +1,5 @@
 import {
+  DeleteObjectCommand,
   GetObjectCommand,
   HeadObjectCommand,
   PutObjectCommand,
@@ -43,6 +44,10 @@ export async function putObject(client: S3Client, input: PutObjectInput): Promis
       ContentType: input.contentType,
     }),
   );
+}
+
+export async function deleteObject(client: S3Client, bucket: string, key: string): Promise<void> {
+  await client.send(new DeleteObjectCommand({ Bucket: bucket, Key: key }));
 }
 
 /**
