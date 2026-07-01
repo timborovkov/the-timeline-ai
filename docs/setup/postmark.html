@@ -231,6 +231,17 @@ SUPPORT_EMAIL=contact@thetimeline.cc
         <code>POSTMARK_WEBHOOK_SECRET</code> is configured, without printing either secret.
       </p>
       <p>
+        To exercise the live inbound route without opening the Postmark dashboard, configure
+        <code>POSTMARK_INBOUND_CANARY_TO</code> to a canary team's inbound address and
+        <code>POSTMARK_INBOUND_CANARY_FROM</code> to a sender allowed by that team's inbound
+        whitelist. Also set <code>POSTMARK_INBOUND_CANARY_ALLOWED_ORIGIN</code> to the exact trusted
+        app origin, such as <code>https://thetimeline.cc</code>. The same canary command then posts
+        a synthetic Postmark-shaped payload to <code>/api/email/inbound</code> and expects the app
+        to report one inserted raw event. The script only sends the Basic-auth webhook secret when
+        <code>AUTH_URL</code> matches that allowed HTTPS origin, except for localhost HTTP during
+        development.
+      </p>
+      <p>
         Postmark dashboard has a test inbound email feature. Send a test message; the app should
         write a <code>raw_events</code> row with <code>source='email'</code>. The timeline UI shows
         the subject + from header; the entity profile pages link the new event. If the body includes

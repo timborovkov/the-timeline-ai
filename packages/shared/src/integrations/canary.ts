@@ -16,6 +16,17 @@ export interface LiveIntegrationCanaryReportInput {
   redactions?: readonly string[];
 }
 
+export interface PostmarkInboundCaptureCanaryPayloadInput {
+  messageId: string;
+  to: string;
+  from: string;
+  date: Date;
+}
+
+export type PostmarkInboundCaptureCanaryUrlValidation =
+  | { ok: true; url: URL }
+  | { ok: false; reason: string };
+
 function statusLabel(status: LiveIntegrationCanaryStatus): string {
   return status.toUpperCase().padEnd(4);
 }
@@ -37,7 +48,7 @@ export function redactLiveIntegrationCanaryText(
       '[redacted]',
     );
   }
-  output = output.replace(/\b(Bearer|Token)\s+[A-Za-z0-9._~+/=-]{12,}/giu, '$1 [redacted]');
+  output = output.replace(/\b(Basic|Bearer|Token)\s+[A-Za-z0-9._~+/=-]{12,}/giu, '$1 [redacted]');
   output = output.replace(
     /\b(x-postmark-server-token|authorization)(["'\s:=]+)[^"',\s]+/giu,
     '$1$2[redacted]',
@@ -88,4 +99,84 @@ export function formatLiveIntegrationCanaryReport(input: LiveIntegrationCanaryRe
   }
 
   return lines.join('\n');
+}
+
+export function buildPostmarkInboundCaptureCanaryPayload(
+  input: PostmarkInboundCaptureCanaryPayloadInput,
+): Record<string, unknown> {
+  const subject = `Timeline inbound canary ${input.date.toISOString()}`;
+  return {
+    MessageID: input.messageId,
+    Date: input.date.toISOString(),
+    Subject: subject,
+    From: `Timeline Canary <${input.from}>`,
+    FromName: 'Timeline Canary',
+    FromFull: { Email: input.from, Name: 'Timeline Canary', MailboxHash: '' },
+    To: input.to,
+    ToFull: [{ Email: input.to, Name: 'Timeline Canary Team', MailboxHash: '' }],
+    Cc: '',
+    CcFull: [],
+    Bcc: '',
+    BccFull: [],
+    OriginalRecipient: input.to,
+    ReplyTo: input.from,
+    MailboxHash: '',
+    TextBody: [
+      'Timeline inbound canary.',
+      `Message: ${input.messageId}`,
+      'This synthetic Postmark-shaped payload verifies capture into raw_events.',
+    ].join('\n'),
+    HtmlBody: '',
+    StrippedTextReply: '',
+    Tag: 'timeline-canary',
+    Headers: [{ Name: 'Message-ID', Value: `<${input.messageId}>` }],
+    Attachments: [],
+  };
+}
+
+function isLoopbackHostname(hostname: string): boolean {
+  const normalized = hostname.toLowerCase();
+  return normalized === 'localhost' || normalized === '127.0.0.1' || normalized === '[::1]';
+}
+
+export function validatePostmarkInboundCaptureCanaryUrl(
+  baseUrl: string | undefined,
+  allowedOrigin: string | undefined,
+): PostmarkInboundCaptureCanaryUrlValidation {
+  if (!baseUrl?.trim()) return { ok: false, reason: 'AUTH_URL missing' };
+  let url: URL;
+  try {
+    url = new URL('/api/email/inbound', baseUrl);
+  } catch {
+    return { ok: false, reason: 'AUTH_URL is not a valid URL' };
+  }
+  if (url.protocol === 'http:' && isLoopbackHostname(url.hostname)) return { ok: true, url };
+  if (url.protocol === 'https:') {
+    if (!allowedOrigin?.trim()) {
+      return {
+        ok: false,
+        reason: 'POSTMARK_INBOUND_CANARY_ALLOWED_ORIGIN must match AUTH_URL origin',
+      };
+    }
+    let expected: URL;
+    try {
+      expected = new URL(allowedOrigin);
+    } catch {
+      return {
+        ok: false,
+        reason: 'POSTMARK_INBOUND_CANARY_ALLOWED_ORIGIN is not a valid URL',
+      };
+    }
+    if (expected.origin !== url.origin) {
+      return {
+        ok: false,
+        reason: 'POSTMARK_INBOUND_CANARY_ALLOWED_ORIGIN does not match AUTH_URL origin',
+      };
+    }
+    return { ok: true, url };
+  }
+  return {
+    ok: false,
+    reason: 'AUTH_URL must be HTTPS, except localhost HTTP for development',
+  };
 }

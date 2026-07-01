@@ -21,11 +21,14 @@ artifact-kind expectations/results and reported 5/5 passed with no ignored
 files; the schema-v2 report exposes required artifact-kind miss counts for
 closed-beta regression dashboards at
 `/tmp/timeline-reconciliation-live-eval/2026-06-30T23-00-19-939Z/production-sampling-report.json`.
-The live integration canary reached OpenRouter and Postmark successfully with
-the provided env; GitHub/Monday/Slack/Sentry OAuth or webhook credentials that
-are present validated structurally, while the Sentry API token returned a 403
-for the configured org/project and several optional provider credentials remain
-unset.
+The live integration canary reached OpenRouter and the Postmark API
+successfully with the provided env; GitHub/Monday/Slack/Sentry OAuth or webhook
+credentials that are present validated structurally, while the Sentry API token
+returned a 403 for the configured org/project and several optional provider
+credentials remain unset. The Postmark inbound capture canary is now wired but
+skips until `POSTMARK_INBOUND_CANARY_TO`, `POSTMARK_INBOUND_CANARY_FROM`, and
+`POSTMARK_INBOUND_CANARY_ALLOWED_ORIGIN` identify a canary team address,
+allowlisted sender, and trusted app origin.
 The suite includes reconciliation schema contracts, fixture-backed
 surface/scenario evals, source-ref and visibility-floor evals, source-payload
 replay coverage, forbidden-output eval policy checks, projection-outbox status
@@ -94,7 +97,7 @@ Legend:
 | Slack | Missing Slack settings E2E | Strong events webhook plus signed command, install OAuth, and user-link OAuth route coverage | Missing Slack action tests | Strong dispatcher/API/security/source-capture coverage, including text/file capture, linked attribution, visibility defaults, downstream queues, idempotent edits, `/timeline join` Saved Meeting aliases, and raw URL confirmation buttons | Missing provider-specific worker coverage | Missing Slack settings UI | Settings UI, provider-backed canary coverage |
 | Telegram | Partial: browser verifies deterministic Telegram voice transcript approval acceptance | Partial: webhook covered, including media env wiring | Missing Telegram action tests | Strong API/dispatcher coverage, including DM text, voice/audio, caption/photo, document routing, duplicate delivery, media skip behavior, `/join` Saved Meeting aliases, raw URL inline-button confirmation, direct-reply confirmation, passive-text non-trigger behavior, link artifacts, and normalized reconciliation evidence | Partial: transcribe processor handoff from audio transcript to normalized reconciliation evidence, extract/embed, and suggestions is covered | Missing Telegram settings UI | Bind/unbind/settings actions and UI, provider-backed Telegram/OpenRouter canary, richer image/OCR-to-approval behavior |
 | MCP inbound/outbound | Missing MCP settings/key E2E | Strong MCP OAuth/server/key/server/tool route contracts, including outbound moment retrieval and team-visible evidence filtering | Missing MCP-specific actions if/when added | Strong auth/OAuth state/tool namespace/server handler, tool namespace, and deterministic untrusted-output/failure/reauth evals | Strong MCP health worker coverage for SSRF-safe production URL validation, cache invalidation, disabled-server skips, and persisted success/failure state | Missing MCP UI | Private-vs-team E2E, UI management states, provider-backed MCP behavior |
-| Email inbound/outbound | Missing E2E inbound email journey | Partial: inbound webhook covered, including Redis queue wiring | Whitelist action covered; invite/support email action gaps remain | Strong parser/dispatcher/outbound/IP allowlist/source-capture coverage, including sender auth, sender whitelist filtering, visibility defaults, attachment/audio routing, downstream queues, and duplicate delivery recovery | Missing extract processor coverage for email attachments | Missing UI | Support action, sender whitelist UI component/E2E, inbound attachment extraction E2E/integration, actual Postmark inbound capture canary beyond the credential canary |
+| Email inbound/outbound | Missing E2E inbound email journey | Partial: inbound webhook covered, including Redis queue wiring | Whitelist action covered; invite/support email action gaps remain | Strong parser/dispatcher/outbound/IP allowlist/source-capture coverage, including sender auth, sender whitelist filtering, visibility defaults, attachment/audio routing, downstream queues, and duplicate delivery recovery | Missing extract processor coverage for email attachments | Missing UI | Support action, sender whitelist UI component/E2E, inbound attachment extraction E2E/integration, scheduled/configured Postmark inbound capture canary run |
 | Meeting bots and meetings | Missing E2E scheduling/finalization | Strong Recall status/transcript webhook coverage for lifecycle, no-show, failure, and finalize handoff contracts | Thin meetings action coverage | Strong meetings scope, Saved Meeting alias/schedule/materialization/confirmation/failure-counter behavior, Recall/Svix/url helpers | Strong meeting-finalize and meeting-scheduler workers | Missing meeting UI states | Browser E2E for saved-meeting setup/auto-join and richer meeting UI states |
 | Job recovery and failed work | Missing dashboard E2E | Strong retry/dismiss/dashboard route coverage plus integration cooldown exclusion, cron reconcile auth/failure behavior, and direct finished archive route coverage | N/A | Strong job-recovery PGlite coverage, including provider cooldown exclusion and retained finished-job archive pagination | Janitor worker covered | Partial job recovery list component with retry status and finished archive states | Retry/dismiss E2E flow |
 | Onboarding | Missing E2E checklist/dismissal | Strong checklist route coverage | Strong onboarding action coverage | Strong PGlite checklist inference, dismiss/reopen, manual completion, and team isolation | Missing | Partial checklist static states | Checklist E2E and richer interaction states |
@@ -803,7 +806,8 @@ Once the suite is mature, split commands by layer:
 - `pnpm test:dist-imports`: compiled-package import smoke.
 - `pnpm validate`: format, typecheck, lint, and knip.
 - `pnpm canary:integrations`: manual secret-safe live OpenRouter, GitHub App,
-  Sentry, Postmark, native OAuth credential, and webhook-secret canary.
+  Sentry, Postmark, optional Postmark inbound capture, native OAuth
+  credential, and webhook-secret canary.
 - `pnpm canary:integrations:strict`: same canary, failing unless every row is
   `OK`.
 - CI PR gate: validate, reconciliation evals, and compiled-package import

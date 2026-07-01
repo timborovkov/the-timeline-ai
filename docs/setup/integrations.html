@@ -648,7 +648,11 @@ codex mcp add timeline --url "&lt;copied MCP endpoint URL&gt;" --bearer-token-en
           <code>SENTRY_ORG</code>, and <code>SENTRY_PROJECT</code>; the Sentry webhook-signature row
           uses <code>SENTRY_INTEGRATION_CLIENT_SECRET</code>. The Postmark API row uses
           <code>POSTMARK_SERVER_TOKEN</code> for a read-only server lookup; the inbound webhook row
-          checks <code>POSTMARK_WEBHOOK_SECRET</code>.
+          checks <code>POSTMARK_WEBHOOK_SECRET</code>. When
+          <code>POSTMARK_INBOUND_CANARY_TO</code> and <code>POSTMARK_INBOUND_CANARY_FROM</code> are
+          also configured, along with <code>POSTMARK_INBOUND_CANARY_ALLOWED_ORIGIN</code> matching
+          the app origin, the canary posts a synthetic Postmark-shaped payload to
+          <code>/api/email/inbound</code> and expects one raw event insert.
         </dd>
         <dt>Webhook returns <code>bad_signature</code></dt>
         <dd>

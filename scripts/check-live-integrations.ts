@@ -1,10 +1,13 @@
 import { createSign } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 
 import {
+  buildPostmarkInboundCaptureCanaryPayload,
   formatLiveIntegrationCanaryReport,
   redactLiveIntegrationCanaryText,
   type LiveIntegrationCanaryResult,
+  validatePostmarkInboundCaptureCanaryUrl,
 } from '@timeline/shared/integrations';
 import { chatStructured } from '@timeline/shared/llm';
 import { z } from 'zod';
@@ -246,6 +249,83 @@ async function checkPostmark(): Promise<LiveIntegrationCanaryResult> {
   return { name: 'Postmark API', status: 'ok', detail: 'server lookup succeeded' };
 }
 
+async function checkPostmarkInboundCapture(): Promise<LiveIntegrationCanaryResult> {
+  const envKeys = [
+    'AUTH_URL',
+    'POSTMARK_WEBHOOK_SECRET',
+    'POSTMARK_INBOUND_CANARY_TO',
+    'POSTMARK_INBOUND_CANARY_FROM',
+    'POSTMARK_INBOUND_CANARY_ALLOWED_ORIGIN',
+  ];
+  if (!configured(...envKeys)) {
+    return {
+      name: 'Postmark inbound capture',
+      status: 'skip',
+      detail: 'Postmark inbound capture canary env missing',
+      envKeys,
+      action:
+        'configure a canary team address and allowlisted sender before running capture canaries',
+      docs: 'docs/setup/postmark.html#smoke-test',
+    };
+  }
+
+  const messageId = `timeline-canary-${Date.now()}-${randomUUID()}@thetimeline.local`;
+  const canaryUrl = validatePostmarkInboundCaptureCanaryUrl(
+    process.env.AUTH_URL,
+    process.env.POSTMARK_INBOUND_CANARY_ALLOWED_ORIGIN,
+  );
+  if (!canaryUrl.ok) {
+    return {
+      name: 'Postmark inbound capture',
+      status: 'warn',
+      detail: canaryUrl.reason,
+      action:
+        'set AUTH_URL and POSTMARK_INBOUND_CANARY_ALLOWED_ORIGIN to the same trusted app origin before running capture canaries',
+      docs: 'docs/setup/postmark.html#smoke-test',
+    };
+  }
+  const response = await fetch(canaryUrl.url, {
+    method: 'POST',
+    headers: {
+      authorization: `Basic ${Buffer.from(
+        `postmark:${process.env.POSTMARK_WEBHOOK_SECRET ?? ''}`,
+      ).toString('base64')}`,
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify(
+      buildPostmarkInboundCaptureCanaryPayload({
+        messageId,
+        to: process.env.POSTMARK_INBOUND_CANARY_TO ?? '',
+        from: process.env.POSTMARK_INBOUND_CANARY_FROM ?? '',
+        date: new Date(),
+      }),
+    ),
+  });
+  const { body, text } = await readJson(response);
+  const record = body && typeof body === 'object' ? (body as Record<string, unknown>) : {};
+  const inserted = Number(record.inserted ?? 0);
+  if (response.ok && inserted > 0) {
+    return {
+      name: 'Postmark inbound capture',
+      status: 'ok',
+      detail: 'synthetic inbound payload inserted a raw event',
+    };
+  }
+  const reason =
+    typeof record.reason === 'string'
+      ? record.reason
+      : shortProviderError(response.status, body, text);
+  return {
+    name: 'Postmark inbound capture',
+    status: 'warn',
+    detail: response.ok
+      ? `accepted but inserted 0: ${safeCanaryDetail(reason)}`
+      : shortProviderError(response.status, body, text),
+    action: 'verify canary recipient maps to a team and canary sender passes the inbound whitelist',
+    docs: 'docs/setup/postmark.html#smoke-test',
+  };
+}
+
 function checkOAuthConfig(): LiveIntegrationCanaryResult[] {
   return [
     configStatus(
@@ -392,7 +472,13 @@ function checkWebhookConfig(): LiveIntegrationCanaryResult[] {
 loadEnvFile(envFile);
 
 const results: LiveIntegrationCanaryResult[] = [
-  ...(await Promise.all([checkOpenRouter(), checkGithubApp(), checkSentry(), checkPostmark()])),
+  ...(await Promise.all([
+    checkOpenRouter(),
+    checkGithubApp(),
+    checkSentry(),
+    checkPostmark(),
+    checkPostmarkInboundCapture(),
+  ])),
   ...checkOAuthConfig(),
   ...checkWebhookConfig(),
 ];
