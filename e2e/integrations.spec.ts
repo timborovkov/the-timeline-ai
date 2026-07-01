@@ -10,6 +10,8 @@ const SEED_PREFIX = `${E2E_PREFIX} integration health`;
 const EXTERNAL_PREFIX = `${E2E_PREFIX}-integration-health`;
 const MANAGE_PREFIX = `${E2E_PREFIX} integration manage`;
 const MANAGE_EXTERNAL_PREFIX = `${E2E_PREFIX}-integration-manage`;
+const SOURCE_LISTING_PREFIX = `${E2E_PREFIX} source listing`;
+const SOURCE_LISTING_EXTERNAL_PREFIX = `${E2E_PREFIX}-source-listing`;
 
 async function cleanupIntegrationHealthSeed(): Promise<void> {
   const sql = getDbClient();
@@ -213,6 +215,53 @@ async function cleanupIntegrationManageSeed(): Promise<void> {
     WHERE owner_user_id = ${e2eUsers.owner.id}
       AND external_account_id LIKE ${`${MANAGE_EXTERNAL_PREFIX}%`}
   `;
+}
+
+async function cleanupSourceListingSeed(): Promise<void> {
+  const sql = getDbClient();
+  await sql`
+    DELETE FROM team_provider_resource_shares
+    WHERE team_id = ${e2eTeam.id}
+      AND external_label LIKE ${`${SOURCE_LISTING_PREFIX}%`}
+  `;
+  await sql`
+    DELETE FROM provider_connections
+    WHERE owner_user_id = ${e2eUsers.owner.id}
+      AND external_account_id LIKE ${`${SOURCE_LISTING_EXTERNAL_PREFIX}%`}
+  `;
+}
+
+async function seedSourceListingState(): Promise<{ connectionId: string }> {
+  const sql = getDbClient();
+  await cleanupSourceListingSeed();
+
+  const connectionId = randomUUID();
+  await sql`
+    INSERT INTO provider_connections (
+      id,
+      owner_user_id,
+      provider,
+      display_name,
+      external_account_id,
+      scopes,
+      auth_secret_ciphertext,
+      auth_secret_iv,
+      auth_secret_tag
+    )
+    VALUES (
+      ${connectionId},
+      ${e2eUsers.owner.id},
+      'github',
+      ${`${SOURCE_LISTING_PREFIX} GitHub account`},
+      ${`${SOURCE_LISTING_EXTERNAL_PREFIX}-github-account`},
+      ARRAY['repo'],
+      ${Buffer.from('ciphertext')},
+      ${Buffer.from('iv')},
+      ${Buffer.from('tag')}
+    )
+  `;
+
+  return { connectionId };
 }
 
 async function seedIntegrationManageState(): Promise<{
@@ -445,6 +494,108 @@ test.describe.serial('integrations source management', () => {
     await expect(secondCard.getByRole('button', { name: 'Save team sync' })).toBeVisible();
     await expect(firstCard.getByRole('button', { name: 'Activate team sync' })).toBeVisible();
     await expect.poll(() => activeIntegrationConnectionIdForManageRepo()).toBe(secondConnectionId);
+  });
+});
+
+test.describe.serial('provider-backed source listing', () => {
+  test.afterAll(async () => {
+    await cleanupSourceListingSeed();
+  });
+
+  test('lists live provider resources and saves selected shares from the browser', async ({
+    page,
+  }) => {
+    const { connectionId } = await seedSourceListingState();
+    const sourceLabel = `${SOURCE_LISTING_PREFIX} repository`;
+    let savedResources: unknown[] | null = null;
+    let getCount = 0;
+
+    await page.route(`**/api/connections/${connectionId}/resources`, async (route) => {
+      if (route.request().method() === 'PUT') {
+        const body = route.request().postDataJSON() as { resources?: unknown[] };
+        savedResources = body.resources ?? [];
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ ok: true }),
+        });
+        return;
+      }
+
+      getCount += 1;
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          connection: {
+            id: connectionId,
+            provider: 'github',
+            displayName: `${SOURCE_LISTING_PREFIX} GitHub account`,
+          },
+          resources: [
+            {
+              kind: 'github.org',
+              externalId: 'timeline-e2e',
+              label: `${SOURCE_LISTING_PREFIX} organization`,
+            },
+            {
+              kind: 'github.repo',
+              externalId: 'timeline-e2e/source-listing',
+              label: sourceLabel,
+              searchText: 'provider backed source listing repository',
+            },
+          ],
+          shares:
+            savedResources === null
+              ? []
+              : [
+                  {
+                    id: 'e2e-saved-share',
+                    providerConnectionId: connectionId,
+                    resourceKind: 'github.repo',
+                    externalId: 'timeline-e2e/source-listing',
+                    externalLabel: sourceLabel,
+                    revokedAt: null,
+                  },
+                ],
+        }),
+      });
+    });
+
+    await signIn(page, e2eUsers.owner.email);
+    await page.goto('/app/me/connections');
+
+    const accountCard = page
+      .locator('section.rounded-md')
+      .filter({ hasText: `${SOURCE_LISTING_PREFIX} GitHub account` })
+      .first();
+    await expect(accountCard.getByText('Choose individual repositories')).toBeVisible();
+    await expect(accountCard.getByText(`${SOURCE_LISTING_PREFIX} organization`)).toBeVisible();
+    await expect(accountCard.getByText(sourceLabel)).toBeVisible();
+
+    await accountCard.getByRole('textbox', { name: 'Search provider sources' }).fill('repository');
+    await expect(accountCard.getByText(sourceLabel)).toBeVisible();
+    await expect(accountCard.getByText(`${SOURCE_LISTING_PREFIX} organization`)).toHaveCount(0);
+
+    await clickSourceCheckbox(accountCard, sourceLabel);
+    await expect(accountCard.getByText('1 source shared to this team')).toBeVisible();
+    await Promise.all([
+      page.waitForResponse(
+        (response) =>
+          response.url().includes(`/api/connections/${connectionId}/resources`) &&
+          response.request().method() === 'PUT',
+      ),
+      accountCard.getByRole('button', { name: 'Save sharing' }).click(),
+    ]);
+
+    expect(savedResources).toEqual([
+      {
+        kind: 'github.repo',
+        externalId: 'timeline-e2e/source-listing',
+        label: sourceLabel,
+      },
+    ]);
+    await expect.poll(() => getCount).toBeGreaterThanOrEqual(2);
   });
 });
 
