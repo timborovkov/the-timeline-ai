@@ -36,10 +36,15 @@ function insertConflict() {
 
 function makeEventBrief(index: number) {
   return {
+    id: `event-${String(index).padStart(4, '0')}`,
+    teamId: 'team-1',
+    authorUserId: null,
     source: 'slack',
     occurredAt: new Date(`2026-06-14T10:${String(index % 60).padStart(2, '0')}:00Z`),
-    sourceMetadata: { slack_channel_name: 'general' },
+    createdAt: new Date(`2026-06-14T10:${String(index % 60).padStart(2, '0')}:00Z`),
+    sourceMetadata: { slack_channel_name: `general-${index}` },
     contentText: `Event ${index} content text here.`,
+    contentAudioUrl: null,
   };
 }
 
@@ -49,6 +54,7 @@ function makeScope(events: unknown[]) {
     timeline: {
       team: vi.fn().mockResolvedValue({ name: 'TestTeam' }),
       listAllEventsInWindow: vi.fn().mockResolvedValue(events),
+      listMomentPresentations: vi.fn().mockResolvedValue({}),
     },
     suggestions: { countPendingSuggestions: vi.fn().mockResolvedValue(0) },
     objects: { listObjects: vi.fn().mockResolvedValue([]) },
@@ -109,6 +115,52 @@ describe('digest map-reduce summarization', () => {
     expect(fakes.chatStructured).toHaveBeenCalledTimes(1);
     expect(result.payload.summary).toBe('Single batch summary.');
     expect(result.payload.eventCount).toBe(10);
+    expect(result.payload.momentCount).toBe(10);
+  });
+
+  it('summarizes bundled moments instead of raw event rows', async () => {
+    const events = Array.from({ length: 10 }, (_, i) => ({
+      ...makeEventBrief(i),
+      sourceMetadata: {
+        slack_channel_name: 'general',
+        slack_channel_id: 'C-general',
+        slack_thread_ts: '1780000000.000000',
+      },
+    }));
+    fakes.withTeam.mockReturnValue(makeScope(events));
+    fakes.chatStructured.mockResolvedValue(makeDigestResult('Bundled conversation summary.'));
+
+    const db = makeDb([
+      chainResult([{ dailyDigestEnabled: true, dailyDigestHour: 12, timezone: 'UTC' }]),
+      chainResult([]),
+      chainResult([{ name: 'Tim', email: 'tim@example.test' }]),
+      chainResult([]),
+    ]);
+
+    const result = await generateDailyDigest({
+      db: db as never,
+      teamId: 'team-1',
+      userId: 'user-1',
+      windowStart: new Date('2026-06-13T11:00:00Z'),
+      windowEnd: new Date('2026-06-14T12:00:00Z'),
+      now: new Date('2026-06-14T12:05:00Z'),
+    });
+
+    expect(result.payload.eventCount).toBe(10);
+    expect(result.payload.momentCount).toBe(1);
+    const calls = fakes.chatStructured.mock.calls as unknown as [{ prompt: string }, unknown][];
+    const prompt = calls[0]?.[0]?.prompt;
+    expect(prompt).toBeDefined();
+    const packet = JSON.parse(prompt ?? '{}') as {
+      metrics?: { eventCount?: number; momentCount?: number };
+      visibleEvents?: unknown;
+      visibleMoments?: { rawEventCount: number; rawEventIds: string[]; title: string }[];
+    };
+    expect(packet.metrics).toMatchObject({ eventCount: 10, momentCount: 1 });
+    expect(packet.visibleEvents).toBeUndefined();
+    expect(packet.visibleMoments).toHaveLength(1);
+    expect(packet.visibleMoments?.[0]).toMatchObject({ rawEventCount: 10 });
+    expect(packet.visibleMoments?.[0]?.rawEventIds).toHaveLength(10);
   });
 
   it('splits into batches and reduces when events exceed the batch size', async () => {
@@ -214,7 +266,7 @@ describe('digest map-reduce summarization', () => {
       now: new Date('2026-06-14T12:05:00Z'),
     });
 
-    expect(result.payload.summary).toMatch(/timeline event/);
+    expect(result.payload.summary).toMatch(/work moments from 60 source events/);
     expect(result.payload.eventCount).toBe(60);
     expect(result.payload.sections).toEqual([]);
   });
@@ -299,7 +351,7 @@ describe('digest map-reduce summarization', () => {
     });
 
     expect(fakes.chatStructured).toHaveBeenCalledTimes(1);
-    expect(result.payload.summary).toMatch(/timeline event/);
+    expect(result.payload.summary).toMatch(/work moments from 5 source events/);
     expect(result.payload.eventCount).toBe(5);
     expect(result.payload.sections).toEqual([]);
   });

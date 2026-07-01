@@ -1,5 +1,6 @@
 import { type Db, facts as factsTable, factEntities, rawEvents } from '@timeline/db';
 import { childLogger, embedding, extract, getEnv, llm, queue } from '@timeline/shared';
+import { reconcileLinkArtifactsForRawEvent } from '@timeline/shared/conversational/link-artifacts';
 import {
   currentExtractionModelVersions,
   makeExtractionModelVersion,
@@ -100,6 +101,19 @@ export async function processExtractJobForTests(
   if (!text) {
     throw new UnrecoverableError(`raw event ${rawEventId} has no content_text; nothing to extract`);
   }
+  await reconcileLinkArtifactsForRawEvent(deps.db, {
+    teamId,
+    rawEventId,
+    text,
+    occurredAt: row.occurredAt,
+  }).catch((err: unknown) => {
+    log.error({ err, rawEventId }, 'link artifact reconciliation failed during extract');
+    captureWorkerException(err, {
+      component: 'worker_link_artifacts',
+      queueName: queue.QUEUE_NAMES.extract,
+      operation: 'reconcile_link_artifacts_after_extract_load',
+    });
+  });
 
   if (row.visibility !== 'team') {
     const skipPatch = JSON.stringify({

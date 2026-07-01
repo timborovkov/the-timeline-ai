@@ -63,6 +63,10 @@ export function IntegrationsCatalog({ catalog }: { catalog: CatalogEntry[] }) {
             </CardHeader>
             <CardContent className="flex flex-1 flex-col">
               <p className="text-sm text-fg-muted">{c.description}</p>
+              <p className="mt-2 text-xs text-fg-muted">
+                Creates a personal provider account first. Team sync is activated after sources are
+                shared.
+              </p>
               {error?.id === c.id ? (
                 <InlineError
                   message={error.message}
@@ -80,7 +84,7 @@ export function IntegrationsCatalog({ catalog }: { catalog: CatalogEntry[] }) {
                     void startConnect(c.id);
                   }}
                 >
-                  {pending === c.id ? 'Redirecting…' : 'Connect'}
+                  {pending === c.id ? 'Redirecting…' : 'Connect account'}
                 </Button>
               </div>
             </CardContent>

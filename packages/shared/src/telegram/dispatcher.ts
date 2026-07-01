@@ -20,6 +20,12 @@ import {
   CONVERSATIONAL_ATTACHMENT_LIMITS,
   extensionOf,
 } from '#src/conversational/attachments.js';
+import { contactMetadata, extractContactsFromText } from '#src/conversational/contact-artifacts.js';
+import {
+  extractLinksFromText,
+  linkMetadata,
+  reconcileLinkArtifactsForRawEvent,
+} from '#src/conversational/link-artifacts.js';
 import { buildDocumentObjectKey } from '#src/documents/object-key.js';
 import { childLogger } from '#src/logger.js';
 import {
@@ -1706,6 +1712,10 @@ async function insertEvent(
   if (input.audio) {
     Object.assign(metadata, input.audio.extra);
   }
+  const links = extractLinksFromText(input.text);
+  if (links.length > 0) metadata.links = linkMetadata(links);
+  const contacts = extractContactsFromText(input.text);
+  if (contacts.length > 0) metadata.contacts = contactMetadata(contacts);
 
   let teamId: string | null = input.fallbackTeamId;
   if (input.isEdit) {
@@ -1849,6 +1859,20 @@ async function insertEvent(
     : await insertRawEvent(db);
 
   if (row) await normalizeRawEventEvidence(db, row);
+
+  const linkTarget =
+    links.length > 0 ? (row ?? (await findEventByUpdateId(db, input.updateId))) : null;
+  if (linkTarget) {
+    await reconcileLinkArtifactsForRawEvent(db, {
+      teamId: linkTarget.teamId,
+      rawEventId: linkTarget.id,
+      text: input.text,
+      occurredAt: eventValues.occurredAt,
+    }).catch((err: unknown) => {
+      log.warn({ err, rawEventId: linkTarget.id }, 'telegram link artifact reconciliation failed');
+    });
+  }
+
   return row;
 }
 

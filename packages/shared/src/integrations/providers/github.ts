@@ -1,14 +1,16 @@
-import type {
-  IntegrationEvent,
-  IntegrationProvider,
-  OAuthCallbackInput,
-  OAuthStartInput,
-  ProviderResource,
-  SyncPartialFailure,
-  SyncContext,
-} from '#src/integrations/types.js';
+import { createSign } from 'node:crypto';
 
 import { getEnv } from '#src/env.js';
+import {
+  type IntegrationEvent,
+  type IntegrationProvider,
+  type OAuthCallbackInput,
+  type OAuthStartInput,
+  ProviderRateLimitError,
+  type ProviderResource,
+  type SyncContext,
+  type SyncPartialFailure,
+} from '#src/integrations/types.js';
 import { childLogger } from '#src/logger.js';
 
 // Phase 11 — GitHub provider.
@@ -38,11 +40,9 @@ const GITHUB_ORG_REPO_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 
 type GithubRateLimitKind = 'primary' | 'secondary' | 'unknown';
 
-export class GithubRateLimitError extends Error {
-  readonly code = GITHUB_RATE_LIMIT_CODE;
-  readonly provider = 'github';
-  readonly retryAt: Date;
-  readonly retryAfterSeconds: number;
+export class GithubRateLimitError extends ProviderRateLimitError {
+  override readonly code = GITHUB_RATE_LIMIT_CODE;
+  override readonly provider = 'github';
   readonly rateLimitKind: GithubRateLimitKind;
   readonly path: string;
 
@@ -51,14 +51,19 @@ export class GithubRateLimitError extends Error {
     retryAt: Date;
     retryAfterSeconds: number;
     rateLimitKind: GithubRateLimitKind;
+    externalAccountId?: string;
   }) {
-    super(
-      `github_rate_limited: GitHub API rate limit reached; retry after ${input.retryAt.toISOString()}`,
-    );
+    super({
+      provider: 'github',
+      retryAt: input.retryAt,
+      retryAfterSeconds: input.retryAfterSeconds,
+      scope: input.rateLimitKind,
+      reason: GITHUB_RATE_LIMIT_CODE,
+      message: `github_rate_limited: GitHub API rate limit reached; retry after ${input.retryAt.toISOString()}`,
+      ...(input.externalAccountId ? { externalAccountId: input.externalAccountId } : {}),
+    });
     this.name = 'GithubRateLimitError';
     this.path = input.path;
-    this.retryAt = input.retryAt;
-    this.retryAfterSeconds = input.retryAfterSeconds;
     this.rateLimitKind = input.rateLimitKind;
   }
 }
@@ -70,12 +75,37 @@ interface GithubTokens {
   scope?: string;
   token_type?: string;
   expires_at?: number;
+  github_app_installations?: GithubInstallationSummary[];
+  github_app_installation_tokens?: Record<string, GithubInstallationAccessToken>;
+  github_installation_id?: string;
+  github_installation_access_token?: string;
 }
 
 interface GithubRequestBudget {
   remaining?: number;
   resetAt?: Date;
   limitedPath?: string;
+  externalAccountId?: string;
+}
+
+interface GithubConditionalValidator {
+  etag?: string;
+  lastModified?: string;
+}
+
+type GithubConditionalResult<T> =
+  | { status: 'ok'; data: T; validator?: GithubConditionalValidator }
+  | { status: 'not_modified'; validator?: GithubConditionalValidator };
+
+interface GithubInstallationSummary {
+  id: string;
+  account_login?: string;
+  account_type?: string;
+}
+
+interface GithubInstallationAccessToken {
+  token: string;
+  expires_at: number;
 }
 
 interface GithubOrgRepoCursor {
@@ -147,33 +177,270 @@ async function postJson(
   return parsed as Record<string, unknown>;
 }
 
+type GithubAuthMode = 'api' | 'user';
+
+function githubAuthorizationToken(tokens: GithubTokens, authMode: GithubAuthMode): string {
+  if (authMode === 'user') return tokens.access_token;
+  return tokens.github_installation_access_token ?? tokens.access_token;
+}
+
+function persistableGithubTokens(tokens: GithubTokens): GithubTokens {
+  // Installation access tokens are one-hour bearer credentials used only for
+  // the in-flight repo sync. Persist the cache, but not the active bearer copy.
+  const persistable = { ...tokens };
+  delete persistable.github_installation_access_token;
+  delete persistable.github_installation_id;
+  return persistable;
+}
+
+function githubTokensChangedForPersistence(before: GithubTokens, after: GithubTokens): boolean {
+  return (
+    JSON.stringify(persistableGithubTokens(before)) !==
+    JSON.stringify(persistableGithubTokens(after))
+  );
+}
+
+function base64UrlJson(value: unknown): string {
+  return Buffer.from(JSON.stringify(value)).toString('base64url');
+}
+
+function githubAppPrivateKey(): string | null {
+  const env = getEnv();
+  if (!env.GITHUB_APP_ID || !env.GITHUB_APP_PRIVATE_KEY) return null;
+  return env.GITHUB_APP_PRIVATE_KEY.replaceAll('\\n', '\n');
+}
+
+function createGithubAppJwt(): string | null {
+  const env = getEnv();
+  const privateKey = githubAppPrivateKey();
+  if (!env.GITHUB_APP_ID || !privateKey) return null;
+  const nowSeconds = Math.floor(Date.now() / 1000);
+  const signingInput = `${base64UrlJson({ alg: 'RS256', typ: 'JWT' })}.${base64UrlJson({
+    iss: env.GITHUB_APP_ID,
+    iat: nowSeconds - 60,
+    exp: nowSeconds + 9 * 60,
+  })}`;
+  const signer = createSign('RSA-SHA256');
+  signer.update(signingInput);
+  signer.end();
+  const signature = signer.sign(privateKey).toString('base64url');
+  return `${signingInput}.${signature}`;
+}
+
+async function createGithubInstallationAccessToken(
+  installationId: string,
+): Promise<GithubInstallationAccessToken> {
+  const jwt = createGithubAppJwt();
+  if (!jwt) throw new Error('GITHUB_APP_ID / GITHUB_APP_PRIVATE_KEY not configured');
+  const res = await fetch(`${API_BASE}/app/installations/${installationId}/access_tokens`, {
+    method: 'POST',
+    headers: {
+      accept: 'application/vnd.github+json',
+      authorization: `Bearer ${jwt}`,
+      'content-type': 'application/json',
+      'x-github-api-version': '2022-11-28',
+    },
+    body: '{}',
+  });
+  const text = await res.text();
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    parsed = text;
+  }
+  if (!res.ok) {
+    throw new Error(
+      `GitHub POST /app/installations/${installationId}/access_tokens failed with status ${String(res.status)}: ${
+        typeof parsed === 'string' ? parsed : JSON.stringify(parsed)
+      }`,
+    );
+  }
+  const record = recordValue(parsed);
+  const token = stringValue(record?.token);
+  const expiresAt = stringValue(record?.expires_at);
+  const expiresAtMs = expiresAt ? Date.parse(expiresAt) : Number.NaN;
+  if (!token || Number.isNaN(expiresAtMs)) {
+    throw new Error('GitHub installation token response was missing token or expires_at');
+  }
+  return { token, expires_at: expiresAtMs };
+}
+
+function normalizeGithubInstallations(body: unknown): GithubInstallationSummary[] {
+  const record = recordValue(body);
+  const installations = Array.isArray(record?.installations) ? record.installations : [];
+  const normalized: GithubInstallationSummary[] = [];
+  for (const installation of installations) {
+    const installationRecord = recordValue(installation);
+    const idValue = installationRecord?.id;
+    const account = recordValue(installationRecord?.account);
+    const id =
+      typeof idValue === 'number' && Number.isFinite(idValue)
+        ? String(idValue)
+        : stringValue(idValue);
+    if (!id) continue;
+    const login = stringValue(account?.login);
+    const accountType = stringValue(account?.type);
+    normalized.push({
+      id,
+      ...(login ? { account_login: login } : {}),
+      ...(accountType ? { account_type: accountType } : {}),
+    });
+  }
+  return normalized;
+}
+
+async function loadGithubAppInstallations(
+  tokens: GithubTokens,
+): Promise<GithubInstallationSummary[]> {
+  const body = await ghGet<unknown>(tokens, '/user/installations?per_page=100', undefined, 'user');
+  return normalizeGithubInstallations(body);
+}
+
+function installationIdForRepo(tokens: GithubTokens, repo: string): string | null {
+  const owner = repo.split('/')[0]?.toLowerCase();
+  const installations = tokens.github_app_installations ?? [];
+  if (owner) {
+    const match = installations.find(
+      (installation) => installation.account_login?.toLowerCase() === owner,
+    );
+    if (match) return match.id;
+  }
+  if (installations.length === 1) return installations[0]?.id ?? null;
+  return null;
+}
+
+async function ensureGithubInstallationAccessToken(
+  tokens: GithubTokens,
+  repo: string,
+): Promise<GithubTokens> {
+  const env = getEnv();
+  if (!env.GITHUB_APP_ID || !env.GITHUB_APP_PRIVATE_KEY) return tokens;
+  const installationId = installationIdForRepo(tokens, repo);
+  if (!installationId) return tokens;
+  const cached = tokens.github_app_installation_tokens?.[installationId];
+  if (cached && cached.expires_at > Date.now() + 60_000) {
+    return {
+      ...tokens,
+      github_installation_id: installationId,
+      github_installation_access_token: cached.token,
+    };
+  }
+  const created = await createGithubInstallationAccessToken(installationId);
+  return {
+    ...tokens,
+    github_installation_id: installationId,
+    github_installation_access_token: created.token,
+    github_app_installation_tokens: {
+      ...(tokens.github_app_installation_tokens ?? {}),
+      [installationId]: created,
+    },
+  };
+}
+
+async function persistUpdatedGithubTokens(
+  ctx: SyncContext,
+  before: GithubTokens,
+  after: GithubTokens,
+): Promise<GithubTokens> {
+  if (!githubTokensChangedForPersistence(before, after)) return after;
+  const persistable = persistableGithubTokens(after);
+  await ctx.persistTokens(persistable as unknown as Record<string, unknown>);
+  return persistable;
+}
+
 async function ghGet<T>(
   tokens: GithubTokens,
   path: string,
   budget?: GithubRequestBudget,
+  authMode: GithubAuthMode = 'api',
 ): Promise<T> {
   throwIfQuotaReserveReached(budget, path);
-  const res = await fetch(`${API_BASE}${path}`, {
-    headers: {
-      accept: 'application/vnd.github+json',
-      authorization: `Bearer ${tokens.access_token}`,
-      'x-github-api-version': '2022-11-28',
-    },
-  });
-  const text = await res.text();
-  updateQuotaBudget(budget, path, res);
+  const { res, text } = await ghFetch(tokens, path, authMode);
+  handleGithubResponseStatus(tokens, path, res, text, budget);
+  return JSON.parse(text) as T;
+}
+
+async function ghGetConditional<T>(
+  tokens: GithubTokens,
+  path: string,
+  validator: GithubConditionalValidator | undefined,
+  budget?: GithubRequestBudget,
+  authMode: GithubAuthMode = 'api',
+): Promise<GithubConditionalResult<T>> {
+  throwIfQuotaReserveReached(budget, path);
+  const { res, text } = await ghFetch(tokens, path, authMode, validator);
+  updateQuotaBudget(budget, path, res, tokens);
+  const responseValidator = githubConditionalValidatorFromResponse(res, validator);
+  if (res.status === 304) {
+    return {
+      status: 'not_modified',
+      ...(responseValidator ? { validator: responseValidator } : {}),
+    };
+  }
   if (!res.ok) {
-    const rateLimit = githubRateLimitError(path, res, text);
+    const rateLimit = githubRateLimitError(path, res, text, tokens);
     if (rateLimit) throw rateLimit;
     throw new Error(githubErrorMessage(path, res.status, text));
   }
-  return JSON.parse(text) as T;
+  return {
+    status: 'ok',
+    data: JSON.parse(text) as T,
+    ...(responseValidator ? { validator: responseValidator } : {}),
+  };
+}
+
+async function ghFetch(
+  tokens: GithubTokens,
+  path: string,
+  authMode: GithubAuthMode,
+  validator?: GithubConditionalValidator,
+): Promise<{ res: Response; text: string }> {
+  const headers: Record<string, string> = {
+    accept: 'application/vnd.github+json',
+    authorization: `Bearer ${githubAuthorizationToken(tokens, authMode)}`,
+    'x-github-api-version': '2022-11-28',
+  };
+  if (validator?.etag) headers['if-none-match'] = validator.etag;
+  if (validator?.lastModified) headers['if-modified-since'] = validator.lastModified;
+  const res = await fetch(`${API_BASE}${path}`, { headers });
+  const text = res.status === 304 ? '' : await res.text();
+  return { res, text };
+}
+
+function handleGithubResponseStatus(
+  tokens: GithubTokens,
+  path: string,
+  res: Response,
+  text: string,
+  budget?: GithubRequestBudget,
+): void {
+  updateQuotaBudget(budget, path, res, tokens);
+  if (!res.ok) {
+    const rateLimit = githubRateLimitError(path, res, text, tokens);
+    if (rateLimit) throw rateLimit;
+    throw new Error(githubErrorMessage(path, res.status, text));
+  }
+}
+
+function githubConditionalValidatorFromResponse(
+  res: Response,
+  fallback?: GithubConditionalValidator,
+): GithubConditionalValidator | undefined {
+  const etag = res.headers.get('etag') ?? fallback?.etag;
+  const lastModified = res.headers.get('last-modified') ?? fallback?.lastModified;
+  if (!etag && !lastModified) return undefined;
+  return {
+    ...(etag ? { etag } : {}),
+    ...(lastModified ? { lastModified } : {}),
+  };
 }
 
 function updateQuotaBudget(
   budget: GithubRequestBudget | undefined,
   path: string,
   res: Response,
+  tokens: GithubTokens,
 ): void {
   if (!budget) return;
   const remaining = parseNonNegativeInt(res.headers.get('x-ratelimit-remaining'));
@@ -181,9 +448,21 @@ function updateQuotaBudget(
   if (remaining === null || resetEpoch === null) return;
   budget.remaining = remaining;
   budget.resetAt = new Date(resetEpoch * 1000);
+  const externalAccountId = githubBudgetExternalAccountId(tokens);
+  if (externalAccountId) {
+    budget.externalAccountId = externalAccountId;
+  } else {
+    delete budget.externalAccountId;
+  }
   if (remaining <= GITHUB_QUOTA_RESERVE && budget.resetAt.getTime() > Date.now()) {
     budget.limitedPath = path;
   }
+}
+
+function githubBudgetExternalAccountId(tokens: GithubTokens): string | undefined {
+  return tokens.github_installation_id
+    ? `installation:${tokens.github_installation_id}`
+    : undefined;
 }
 
 function throwIfQuotaReserveReached(budget: GithubRequestBudget | undefined, path: string): void {
@@ -200,6 +479,7 @@ function throwIfQuotaReserveReached(budget: GithubRequestBudget | undefined, pat
     retryAt: budget.resetAt,
     retryAfterSeconds: Math.max(1, Math.ceil((budget.resetAt.getTime() - Date.now()) / 1000)),
     rateLimitKind: 'primary',
+    ...(budget.externalAccountId ? { externalAccountId: budget.externalAccountId } : {}),
   });
 }
 
@@ -207,6 +487,7 @@ function githubRateLimitError(
   path: string,
   res: Response,
   body: string,
+  tokens: GithubTokens,
 ): GithubRateLimitError | null {
   if (res.status !== 403 && res.status !== 429) return null;
   const retryAfter = parsePositiveInt(res.headers.get('retry-after'));
@@ -224,11 +505,13 @@ function githubRateLimitError(
       : resetMs && resetMs > now
         ? resetMs
         : now + 60_000;
+  const externalAccountId = githubBudgetExternalAccountId(tokens);
   return new GithubRateLimitError({
     path,
     retryAt: new Date(retryAtMs),
     retryAfterSeconds: Math.max(1, Math.ceil((retryAtMs - now) / 1000)),
     rateLimitKind: primary ? 'primary' : secondary ? 'secondary' : 'unknown',
+    ...(externalAccountId ? { externalAccountId } : {}),
   });
 }
 
@@ -389,6 +672,8 @@ interface RepoCursor {
   last_release_id?: number;
   /** Last time this surface was polled, used to slow down lower-value surfaces. */
   last_polled_at?: string;
+  /** Conditional GET validators by stable request key. */
+  github_conditional?: Record<string, GithubConditionalValidator>;
 }
 
 const MAX_SYNC_PAGES = 20;
@@ -473,6 +758,33 @@ function surfaceCursor(
 
 function markPolled(cursor: RepoCursor): RepoCursor {
   return { ...cursor, last_polled_at: new Date().toISOString() };
+}
+
+function githubConditionalRequestKey(surface: GithubRepoSurface, part = 'first'): string {
+  return `${surface}:${part}`;
+}
+
+function githubConditionalPathKey(surface: GithubRepoSurface, path: string): string {
+  return `${surface}:${path}`;
+}
+
+function githubConditionalValidator(
+  cursor: RepoCursor,
+  key: string,
+): GithubConditionalValidator | undefined {
+  return cursor.github_conditional?.[key];
+}
+
+function rememberGithubConditionalValidator(
+  cursor: RepoCursor,
+  key: string,
+  validator: GithubConditionalValidator | undefined,
+): void {
+  if (!validator) return;
+  cursor.github_conditional = {
+    ...(cursor.github_conditional ?? {}),
+    [key]: validator,
+  };
 }
 
 function surfaceDue(cursor: RepoCursor, intervalMs: number): boolean {
@@ -718,6 +1030,227 @@ function workflowRunToEvent(repo: string, run: GhWorkflowRun): IntegrationEvent 
   };
 }
 
+function recordValue(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function stringValue(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() ? value : null;
+}
+
+function numberValue(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return null;
+}
+
+function boolValue(value: unknown): boolean | null {
+  return typeof value === 'boolean' ? value : null;
+}
+
+function userValue(value: unknown): { login: string } | null {
+  const record = recordValue(value);
+  const login = stringValue(record?.login);
+  return login ? { login } : null;
+}
+
+function repoFromWebhookPayload(payload: Record<string, unknown>): string | null {
+  return stringValue(recordValue(payload.repository)?.full_name);
+}
+
+function ghPrFromWebhook(record: Record<string, unknown>): GhPullRequest | null {
+  const number = numberValue(record.number);
+  const id = numberValue(record.id);
+  const title = stringValue(record.title);
+  const htmlUrl = stringValue(record.html_url);
+  const updatedAt = stringValue(record.updated_at);
+  const state = stringValue(record.state);
+  if (!number || !id || !title || !htmlUrl || !updatedAt) return null;
+  const base = recordValue(record.base);
+  const head = recordValue(record.head);
+  const mergedAt =
+    stringValue(record.merged_at) ??
+    (boolValue(record.merged) ? (stringValue(record.closed_at) ?? updatedAt) : null);
+  return {
+    id,
+    number,
+    title,
+    body: stringValue(record.body),
+    html_url: htmlUrl,
+    state: state === 'closed' ? 'closed' : 'open',
+    merged_at: mergedAt,
+    updated_at: updatedAt,
+    user: userValue(record.user),
+    base: { ref: stringValue(base?.ref) ?? '' },
+    head: { ref: stringValue(head?.ref) ?? '' },
+  };
+}
+
+function ghIssueFromWebhook(record: Record<string, unknown>): GhIssue | null {
+  const number = numberValue(record.number);
+  const id = numberValue(record.id);
+  const title = stringValue(record.title);
+  const htmlUrl = stringValue(record.html_url);
+  const updatedAt = stringValue(record.updated_at);
+  const state = stringValue(record.state);
+  if (!number || !id || !title || !htmlUrl || !updatedAt) return null;
+  return {
+    id,
+    number,
+    title,
+    body: stringValue(record.body),
+    html_url: htmlUrl,
+    state: state === 'closed' ? 'closed' : 'open',
+    updated_at: updatedAt,
+    user: userValue(record.user),
+    ...(record.pull_request ? { pull_request: { html_url: htmlUrl } } : {}),
+  };
+}
+
+function ghReviewFromWebhook(record: Record<string, unknown>): GhReview | null {
+  const id = numberValue(record.id);
+  const state = stringValue(record.state);
+  const htmlUrl = stringValue(record.html_url);
+  if (!id || !state || !htmlUrl) return null;
+  return {
+    id,
+    body: stringValue(record.body),
+    state,
+    submitted_at: stringValue(record.submitted_at),
+    user: userValue(record.user),
+    html_url: htmlUrl,
+  };
+}
+
+function ghReleaseFromWebhook(record: Record<string, unknown>): GhRelease | null {
+  const id = numberValue(record.id);
+  const tagName = stringValue(record.tag_name);
+  const htmlUrl = stringValue(record.html_url);
+  const createdAt = stringValue(record.created_at);
+  if (!id || !tagName || !htmlUrl || !createdAt) return null;
+  return {
+    id,
+    tag_name: tagName,
+    name: stringValue(record.name),
+    body: stringValue(record.body),
+    html_url: htmlUrl,
+    draft: boolValue(record.draft) ?? false,
+    prerelease: boolValue(record.prerelease) ?? false,
+    published_at: stringValue(record.published_at),
+    created_at: createdAt,
+    author: userValue(record.author),
+  };
+}
+
+function ghWorkflowRunFromWebhook(record: Record<string, unknown>): GhWorkflowRun | null {
+  const id = numberValue(record.id);
+  const workflowId = numberValue(record.workflow_id);
+  const runNumber = numberValue(record.run_number);
+  const htmlUrl = stringValue(record.html_url);
+  const updatedAt = stringValue(record.updated_at);
+  const headSha = stringValue(record.head_sha);
+  if (!id || !workflowId || !runNumber || !htmlUrl || !updatedAt || !headSha) return null;
+  return {
+    id,
+    name: stringValue(record.name),
+    head_branch: stringValue(record.head_branch),
+    head_sha: headSha,
+    status: stringValue(record.status),
+    conclusion: stringValue(record.conclusion),
+    workflow_id: workflowId,
+    html_url: htmlUrl,
+    run_number: runNumber,
+    event: stringValue(record.event) ?? 'unknown',
+    created_at: stringValue(record.created_at) ?? updatedAt,
+    updated_at: updatedAt,
+    actor: userValue(record.actor),
+  };
+}
+
+function ghCommitIdentityFromWebhook(
+  record: Record<string, unknown> | null,
+  timestamp: string | null,
+): { name?: string; email?: string; date?: string } | null {
+  if (!record) return null;
+  const name = stringValue(record.name);
+  const email = stringValue(record.email);
+  return {
+    ...(name ? { name } : {}),
+    ...(email ? { email } : {}),
+    ...(timestamp ? { date: timestamp } : {}),
+  };
+}
+
+function ghCommitFromWebhook(record: Record<string, unknown>): GhCommit | null {
+  const sha = stringValue(record.id) ?? stringValue(record.sha);
+  const message = stringValue(record.message);
+  const htmlUrl = stringValue(record.url) ?? stringValue(record.html_url);
+  const timestamp = stringValue(record.timestamp);
+  if (!sha || !message || !htmlUrl) return null;
+  const author = recordValue(record.author);
+  const committer = recordValue(record.committer);
+  return {
+    sha,
+    html_url: htmlUrl,
+    commit: {
+      author: ghCommitIdentityFromWebhook(author, timestamp),
+      committer: ghCommitIdentityFromWebhook(committer, timestamp),
+      message,
+    },
+    author: userValue(record.author),
+  };
+}
+
+function githubWebhookEvents(payload: unknown): IntegrationEvent[] {
+  const record = recordValue(payload);
+  if (!record) return [];
+  const repo = repoFromWebhookPayload(record);
+  if (!repo) return [];
+  const events: IntegrationEvent[] = [];
+  const pr = recordValue(record.pull_request);
+  const issue = recordValue(record.issue);
+  const review = recordValue(record.review);
+  const release = recordValue(record.release);
+  const workflowRun = recordValue(record.workflow_run);
+  if (pr) {
+    const event = ghPrFromWebhook(pr);
+    if (event) events.push(prToEvent(repo, event));
+  }
+  if (issue) {
+    const event = ghIssueFromWebhook(issue);
+    const normalized = event ? issueToEvent(repo, event) : null;
+    if (normalized) events.push(normalized);
+  }
+  if (review && pr) {
+    const prNumber = numberValue(pr.number);
+    const event = ghReviewFromWebhook(review);
+    if (prNumber && event) {
+      const normalized = reviewToEvent(repo, prNumber, event);
+      if (normalized) events.push(normalized);
+    }
+  }
+  if (release) {
+    const event = ghReleaseFromWebhook(release);
+    if (event) events.push(releaseToEvent(repo, event));
+  }
+  if (workflowRun) {
+    const event = ghWorkflowRunFromWebhook(workflowRun);
+    if (event) events.push(workflowRunToEvent(repo, event));
+  }
+  const commits = Array.isArray(record.commits) ? record.commits : [];
+  for (const commit of commits) {
+    const commitRecord = recordValue(commit);
+    const event = commitRecord ? ghCommitFromWebhook(commitRecord) : null;
+    if (event) events.push(commitToEvent(repo, event));
+  }
+  return events;
+}
+
 async function syncRepo(
   tokens: GithubTokens,
   repo: string,
@@ -754,11 +1287,28 @@ async function syncPullRequestsSurface(
   for (const state of ['open', 'closed'] as const) {
     try {
       for (let page = 1; page <= MAX_SYNC_PAGES; page++) {
-        const prs = await ghGet<GhPullRequest[]>(
-          tokens,
-          `/repos/${repo}/pulls?state=${state}&sort=updated&direction=desc&per_page=100&page=${String(page)}`,
-          budget,
-        );
+        const path = `/repos/${repo}/pulls?state=${state}&sort=updated&direction=desc&per_page=100&page=${String(page)}`;
+        const conditionalKey = githubConditionalPathKey('prs', path);
+        const conditional =
+          page === 1
+            ? await ghGetConditional<GhPullRequest[]>(
+                tokens,
+                path,
+                githubConditionalValidator(cursor, conditionalKey),
+                budget,
+              )
+            : null;
+        if (conditional?.status === 'not_modified') {
+          rememberGithubConditionalValidator(next, conditionalKey, conditional.validator);
+          break;
+        }
+        if (conditional?.status === 'ok') {
+          rememberGithubConditionalValidator(next, conditionalKey, conditional.validator);
+        }
+        const prs =
+          conditional?.status === 'ok'
+            ? conditional.data
+            : await ghGet<GhPullRequest[]>(tokens, path, budget);
         if (prs.length === 0) break;
         const filtered = prs.filter((p) => p.updated_at > prsSince);
         if (filtered.length > 0) {
@@ -846,11 +1396,28 @@ async function syncIssuesSurface(
   const failures: GithubSurfaceFailure[] = [];
   try {
     for (let page = 1; page <= MAX_SYNC_PAGES; page++) {
-      const issues = await ghGet<GhIssue[]>(
-        tokens,
-        `/repos/${repo}/issues?state=all&since=${encodeURIComponent(issuesSince)}&sort=updated&direction=desc&per_page=100&page=${String(page)}`,
-        budget,
-      );
+      const path = `/repos/${repo}/issues?state=all&since=${encodeURIComponent(issuesSince)}&sort=updated&direction=desc&per_page=100&page=${String(page)}`;
+      const conditionalKey = githubConditionalPathKey('issues', path);
+      const conditional =
+        page === 1
+          ? await ghGetConditional<GhIssue[]>(
+              tokens,
+              path,
+              githubConditionalValidator(cursor, conditionalKey),
+              budget,
+            )
+          : null;
+      if (conditional?.status === 'not_modified') {
+        rememberGithubConditionalValidator(next, conditionalKey, conditional.validator);
+        break;
+      }
+      if (conditional?.status === 'ok') {
+        rememberGithubConditionalValidator(next, conditionalKey, conditional.validator);
+      }
+      const issues =
+        conditional?.status === 'ok'
+          ? conditional.data
+          : await ghGet<GhIssue[]>(tokens, path, budget);
       if (issues.length === 0) break;
       const issueEvents = issues
         .map((i) => issueToEvent(repo, i))
@@ -906,12 +1473,29 @@ async function syncReleasesSurface(
   try {
     const hasReleaseSince = Boolean(cursor.releases_since);
     const legacyLastReleaseId = cursor.last_release_id ?? 0;
+    const conditionalKey = githubConditionalRequestKey('releases');
     for (let page = 1; page <= MAX_SYNC_PAGES; page++) {
-      const releases = await ghGet<GhRelease[]>(
-        tokens,
-        `/repos/${repo}/releases?per_page=100&page=${String(page)}`,
-        budget,
-      );
+      const path = `/repos/${repo}/releases?per_page=100&page=${String(page)}`;
+      const conditional =
+        mode === 'incremental' && page === 1
+          ? await ghGetConditional<GhRelease[]>(
+              tokens,
+              path,
+              githubConditionalValidator(cursor, conditionalKey),
+              budget,
+            )
+          : null;
+      if (conditional?.status === 'not_modified') {
+        rememberGithubConditionalValidator(next, conditionalKey, conditional.validator);
+        break;
+      }
+      if (conditional?.status === 'ok') {
+        rememberGithubConditionalValidator(next, conditionalKey, conditional.validator);
+      }
+      const releases =
+        conditional?.status === 'ok'
+          ? conditional.data
+          : await ghGet<GhRelease[]>(tokens, path, budget);
       if (releases.length === 0) break;
       const newReleases = releases.filter((r) => {
         const releaseTs = r.published_at ?? r.created_at;
@@ -984,12 +1568,30 @@ async function syncCommitsSurface(
     const untilParam = cursor.commit_gap_until
       ? `&until=${encodeURIComponent(cursor.commit_gap_until)}`
       : '';
+    const canUseConditionalCommits = !cursor.commit_gap_target_sha && !cursor.commit_gap_until;
     for (let page = 1; page <= MAX_SYNC_PAGES; page++) {
-      const commits = await ghGet<GhCommit[]>(
-        tokens,
-        `/repos/${repo}/commits?sha=${encodeURIComponent(meta.default_branch)}&per_page=100&page=${String(page)}${untilParam}`,
-        budget,
-      );
+      const path = `/repos/${repo}/commits?sha=${encodeURIComponent(meta.default_branch)}&per_page=100&page=${String(page)}${untilParam}`;
+      const conditionalKey = githubConditionalPathKey('commits', path);
+      const conditional =
+        canUseConditionalCommits && page === 1
+          ? await ghGetConditional<GhCommit[]>(
+              tokens,
+              path,
+              githubConditionalValidator(cursor, conditionalKey),
+              budget,
+            )
+          : null;
+      if (conditional?.status === 'not_modified') {
+        rememberGithubConditionalValidator(next, conditionalKey, conditional.validator);
+        break;
+      }
+      if (conditional?.status === 'ok') {
+        rememberGithubConditionalValidator(next, conditionalKey, conditional.validator);
+      }
+      const commits =
+        conditional?.status === 'ok'
+          ? conditional.data
+          : await ghGet<GhCommit[]>(tokens, path, budget);
       if (commits.length === 0) {
         reachedCommitEnd = true;
         break;
@@ -1081,12 +1683,29 @@ async function syncWorkflowRunsSurface(
   const workflowRunsSince = cursor.workflow_runs_since ?? legacySince;
   const failures: GithubSurfaceFailure[] = [];
   try {
+    const conditionalKey = githubConditionalRequestKey('workflow_runs');
     for (let page = 1; page <= MAX_SYNC_PAGES; page++) {
-      const runs = await ghGet<{ workflow_runs: GhWorkflowRun[] }>(
-        tokens,
-        `/repos/${repo}/actions/runs?per_page=100&page=${String(page)}`,
-        budget,
-      );
+      const path = `/repos/${repo}/actions/runs?per_page=100&page=${String(page)}`;
+      const conditional =
+        mode === 'incremental' && page === 1
+          ? await ghGetConditional<{ workflow_runs: GhWorkflowRun[] }>(
+              tokens,
+              path,
+              githubConditionalValidator(cursor, conditionalKey),
+              budget,
+            )
+          : null;
+      if (conditional?.status === 'not_modified') {
+        rememberGithubConditionalValidator(next, conditionalKey, conditional.validator);
+        break;
+      }
+      if (conditional?.status === 'ok') {
+        rememberGithubConditionalValidator(next, conditionalKey, conditional.validator);
+      }
+      const runs =
+        conditional?.status === 'ok'
+          ? conditional.data
+          : await ghGet<{ workflow_runs: GhWorkflowRun[] }>(tokens, path, budget);
       const workflowRuns = runs.workflow_runs;
       if (workflowRuns.length === 0) break;
       const filtered = workflowRuns.filter((r) => r.updated_at > workflowRunsSince);
@@ -1149,6 +1768,7 @@ async function listOrgRepos(
       tokens,
       `/orgs/${encodeURIComponent(org)}/repos?type=all&sort=updated&direction=desc&per_page=100&page=${String(page)}`,
       budget,
+      'user',
     );
     if (!Array.isArray(batch) || batch.length === 0) break;
     repos.push(...batch.map((repo) => repo.full_name));
@@ -1238,7 +1858,7 @@ export const githubProvider: IntegrationProvider = {
     let login: string;
     let sub: string;
     try {
-      const me = await ghGet<{ id: number; login: string }>(tokens, '/user');
+      const me = await ghGet<{ id: number; login: string }>(tokens, '/user', undefined, 'user');
       login = me.login;
       sub = String(me.id);
     } catch (err) {
@@ -1246,6 +1866,12 @@ export const githubProvider: IntegrationProvider = {
       throw new Error(
         'github_user_lookup_failed: could not resolve the authenticated user id from /user — reconnect and try again',
       );
+    }
+    try {
+      const installations = await loadGithubAppInstallations(tokens);
+      if (installations.length > 0) tokens.github_app_installations = installations;
+    } catch (err) {
+      log.warn({ err }, 'failed to fetch GitHub App installations for OAuth user');
     }
     return {
       externalAccountId: sub,
@@ -1269,6 +1895,8 @@ export const githubProvider: IntegrationProvider = {
         const batch = await ghGet<GhOrg[]>(
           ghTokens,
           `/user/orgs?per_page=100&page=${String(page)}`,
+          undefined,
+          'user',
         );
         if (!Array.isArray(batch) || batch.length === 0) break;
         orgs.push(...batch);
@@ -1288,7 +1916,7 @@ export const githubProvider: IntegrationProvider = {
     const all: GhRepo[] = [];
     for (let page = 1; page <= 20; page++) {
       const path = `/user/repos?sort=updated&direction=desc&per_page=100&page=${String(page)}`;
-      const batch = await ghGet<GhRepo[]>(ghTokens, path);
+      const batch = await ghGet<GhRepo[]>(ghTokens, path, undefined, 'user');
       if (!Array.isArray(batch) || batch.length === 0) break;
       all.push(...batch);
       if (batch.length < 100) break;
@@ -1305,15 +1933,15 @@ export const githubProvider: IntegrationProvider = {
 
   async backfill({ tokens, selections, ctx }) {
     const input = tokens as GithubTokens;
-    const fresh = await ensureGithubAccessToken(input);
-    if (fresh.access_token !== input.access_token) {
-      await ctx.persistTokens(fresh as unknown as Record<string, unknown>);
-    }
+    let fresh = await ensureGithubAccessToken(input);
+    fresh = await persistUpdatedGithubTokens(ctx, input, fresh);
     const budget: GithubRequestBudget = {};
     const repos = await expandGithubSelections(fresh, selections, ctx, budget);
     const failures: GithubSurfaceFailure[] = [];
     for (const repo of repos) {
-      failures.push(...(await syncRepo(fresh, repo, ctx, { mode: 'backfill' }, budget)));
+      const repoTokens = await ensureGithubInstallationAccessToken(fresh, repo);
+      fresh = await persistUpdatedGithubTokens(ctx, fresh, repoTokens);
+      failures.push(...(await syncRepo(repoTokens, repo, ctx, { mode: 'backfill' }, budget)));
     }
     if (failures.length > 0) {
       await ctx.recordAudit('github_backfill_partial', summarizeIntegrationFailures(failures));
@@ -1323,23 +1951,45 @@ export const githubProvider: IntegrationProvider = {
 
   async incrementalSync({ tokens, selections, ctx }) {
     const input = tokens as GithubTokens;
-    const fresh = await ensureGithubAccessToken(input);
-    if (fresh.access_token !== input.access_token) {
-      await ctx.persistTokens(fresh as unknown as Record<string, unknown>);
-    }
+    let fresh = await ensureGithubAccessToken(input);
+    fresh = await persistUpdatedGithubTokens(ctx, input, fresh);
     const budget: GithubRequestBudget = {};
     const repos = await expandGithubSelections(fresh, selections, ctx, budget);
     const failures: GithubSurfaceFailure[] = [];
     for (const repo of repos) {
       const legacyCursor = (await ctx.loadCursor(`github.repo:${repo}`)) as RepoCursor;
+      const repoTokens = await ensureGithubInstallationAccessToken(fresh, repo);
+      fresh = await persistUpdatedGithubTokens(ctx, fresh, repoTokens);
       failures.push(
-        ...(await syncRepo(fresh, repo, ctx, { mode: 'incremental', legacyCursor }, budget)),
+        ...(await syncRepo(repoTokens, repo, ctx, { mode: 'incremental', legacyCursor }, budget)),
       );
     }
     if (failures.length > 0) {
       await ctx.recordAudit('github_incremental_partial', summarizeIntegrationFailures(failures));
       return { partialFailures: toSyncPartialFailures(failures) };
     }
+  },
+
+  // eslint-disable-next-line @typescript-eslint/require-await
+  async handleWebhook({ integration, payload }) {
+    const events = githubWebhookEvents(payload);
+    const record = recordValue(payload);
+    const repo = record ? repoFromWebhookPayload(record) : null;
+    return {
+      events,
+      syncTasks: repo
+        ? [
+            {
+              integrationId: integration.id,
+              teamId: integration.teamId,
+              triggeredBy: 'webhook' as const,
+              resourceType: 'github.repo',
+              externalId: repo,
+              reason: 'github_repo_webhook',
+            },
+          ]
+        : [],
+    };
   },
 };
 

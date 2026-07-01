@@ -1002,6 +1002,8 @@ describe('processSuggestionJobForTests', () => {
     expect(Array.from(new Set(Object.values(relationshipItem?.proposedPayload ?? {})))).toEqual(
       expect.arrayContaining([company.id, person.id]),
     );
+    expect(relationshipItem?.proposedPayload).not.toHaveProperty('fromName');
+    expect(relationshipItem?.proposedPayload).not.toHaveProperty('toName');
 
     const relationshipItemId = relationshipItem?.id;
     if (!relationshipItemId) throw new Error('expected relationship repair item id');
@@ -1274,6 +1276,8 @@ describe('processSuggestionJobForTests', () => {
     expect(Array.from(new Set(Object.values(relationshipItem?.proposedPayload ?? {})))).toEqual(
       expect.arrayContaining([company.id, task.id]),
     );
+    expect(relationshipItem?.proposedPayload).not.toHaveProperty('fromName');
+    expect(relationshipItem?.proposedPayload).not.toHaveProperty('toName');
 
     await expect(scope.suggestions.rejectSuggestionItem(relationshipItem?.id ?? '')).resolves.toBe(
       true,
@@ -1434,6 +1438,8 @@ describe('processSuggestionJobForTests', () => {
         kind: 'related',
       },
     });
+    expect(relationshipItem?.proposedPayload).not.toHaveProperty('fromName');
+    expect(relationshipItem?.proposedPayload).not.toHaveProperty('toName');
 
     await expect(scope.suggestions.rejectSuggestionItem(relationshipItem?.id ?? '')).resolves.toBe(
       true,
@@ -1587,6 +1593,263 @@ describe('processSuggestionJobForTests', () => {
       { teamId: TEAM_ID, type: 'person', canonicalName: 'Timothy' },
       { teamId: TEAM_ID, type: 'person', canonicalName: 'timbo1' },
       { teamId: TEAM_ID, type: 'person', canonicalName: 'timbo2' },
+    ]);
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { scope: 'object_cleanup', teamId: TEAM_ID, triggeredBy: 'manual' },
+    );
+
+    await expect(
+      withTeam(db as never, TEAM_ID, OWNER_ID).suggestions.listPendingSuggestions(),
+    ).resolves.toEqual([]);
+  });
+
+  it('does not merge provider-owned Sentry incidents from neighboring short ids', async () => {
+    await db.insert(entities).values([
+      {
+        teamId: TEAM_ID,
+        type: 'incident',
+        canonicalName: 'AUDIT-AI-C: Error: Failed query',
+        aliases: ['AUDIT-AI-C'],
+        metadata: {
+          integration_provider: 'sentry',
+          integration_external_id: 'issue-c',
+          display_title: 'Error: Failed query',
+          sentry_org_slug: 'auditai',
+          sentry_project_slug: 'api',
+          sentry_issue_id: 'issue-c',
+          sentry_short_id: 'AUDIT-AI-C',
+        },
+      },
+      {
+        teamId: TEAM_ID,
+        type: 'incident',
+        canonicalName: 'AUDIT-AI-B: Error: Failed query update',
+        aliases: ['AUDIT-AI-B'],
+        metadata: {
+          integration_provider: 'sentry',
+          integration_external_id: 'issue-b',
+          display_title: 'Error: Failed query update',
+          sentry_org_slug: 'auditai',
+          sentry_project_slug: 'api',
+          sentry_issue_id: 'issue-b',
+          sentry_short_id: 'AUDIT-AI-B',
+        },
+      },
+    ]);
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { scope: 'object_cleanup', teamId: TEAM_ID, triggeredBy: 'manual' },
+    );
+
+    await expect(
+      withTeam(db as never, TEAM_ID, OWNER_ID).suggestions.listPendingSuggestions(),
+    ).resolves.toEqual([]);
+  });
+
+  it('links same-title Sentry incidents instead of merging distinct provider records', async () => {
+    const inserted = await db
+      .insert(entities)
+      .values([
+        {
+          teamId: TEAM_ID,
+          type: 'incident',
+          canonicalName: 'AUDIT-AI-C: Error: Failed query',
+          aliases: ['AUDIT-AI-C'],
+          metadata: {
+            integration_provider: 'sentry',
+            integration_external_id: 'issue-c',
+            display_title: 'Error: Failed query',
+            sentry_org_slug: 'auditai',
+            sentry_project_slug: 'api',
+            sentry_issue_id: 'issue-c',
+            sentry_short_id: 'AUDIT-AI-C',
+          },
+        },
+        {
+          teamId: TEAM_ID,
+          type: 'incident',
+          canonicalName: 'AUDIT-AI-B: Error: Failed query',
+          aliases: ['AUDIT-AI-B'],
+          metadata: {
+            integration_provider: 'sentry',
+            integration_external_id: 'issue-b',
+            display_title: 'Error: Failed query',
+            sentry_org_slug: 'auditai',
+            sentry_project_slug: 'api',
+            sentry_issue_id: 'issue-b',
+            sentry_short_id: 'AUDIT-AI-B',
+          },
+        },
+      ])
+      .returning({ id: entities.id });
+    if (inserted.length !== 2) throw new Error('expected Sentry incident fixtures');
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { scope: 'object_cleanup', teamId: TEAM_ID, triggeredBy: 'manual' },
+    );
+
+    const bundles = await withTeam(
+      db as never,
+      TEAM_ID,
+      OWNER_ID,
+    ).suggestions.listPendingSuggestions();
+    expect(bundles).toHaveLength(1);
+    expect(bundles[0]?.title).toContain('Link related records');
+    expect(bundles[0]?.metadata).toMatchObject({
+      cleanup_kind: 'related',
+      relationship_signal: 'same_provider_title',
+    });
+    expect(bundles.flatMap((bundle) => bundle.items).map((item) => item.targetKind)).toEqual([
+      'object_relationship',
+    ]);
+    expect(new Set(Object.values(bundles[0]?.items[0]?.proposedPayload ?? {}))).toEqual(
+      new Set([inserted[0]?.id, inserted[1]?.id, 'related']),
+    );
+  });
+
+  it('links same-board Monday items by strong provider context without archive noise', async () => {
+    const inserted = await db
+      .insert(entities)
+      .values([
+        {
+          teamId: TEAM_ID,
+          type: 'other',
+          canonicalName: 'Monday item 100: Renew AuditAI contract',
+          metadata: {
+            integration_provider: 'monday',
+            integration_external_id: '100',
+            display_title: 'Renew AuditAI contract',
+            monday_board_id: 'board-1',
+            monday_board_name: 'Sales',
+          },
+        },
+        {
+          teamId: TEAM_ID,
+          type: 'other',
+          canonicalName: 'Monday item 200: Renew AuditAI contract',
+          metadata: {
+            integration_provider: 'monday',
+            integration_external_id: '200',
+            display_title: 'Renew AuditAI contract',
+            monday_board_id: 'board-1',
+            monday_board_name: 'Sales',
+          },
+        },
+      ])
+      .returning({ id: entities.id });
+    if (inserted.length !== 2) throw new Error('expected Monday item fixtures');
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { scope: 'object_cleanup', teamId: TEAM_ID, triggeredBy: 'manual' },
+    );
+
+    const bundles = await withTeam(
+      db as never,
+      TEAM_ID,
+      OWNER_ID,
+    ).suggestions.listPendingSuggestions();
+    expect(bundles).toHaveLength(1);
+    expect(bundles[0]).toMatchObject({
+      metadata: { cleanup_kind: 'related', relationship_signal: 'same_provider_title' },
+    });
+    expect(bundles.flatMap((bundle) => bundle.items).map((item) => item.targetKind)).toEqual([
+      'object_relationship',
+    ]);
+  });
+
+  it('does not link same-provider records by title when provider context is missing', async () => {
+    await db.insert(entities).values([
+      {
+        teamId: TEAM_ID,
+        type: 'task',
+        canonicalName: 'Linear issue ENG-1: Fix checkout failure',
+        metadata: {
+          integration_provider: 'linear',
+          integration_external_id: 'issue-1',
+          display_title: 'Fix checkout failure',
+        },
+      },
+      {
+        teamId: TEAM_ID,
+        type: 'task',
+        canonicalName: 'Linear issue ENG-2: Fix checkout failure',
+        metadata: {
+          integration_provider: 'linear',
+          integration_external_id: 'issue-2',
+          display_title: 'Fix checkout failure',
+        },
+      },
+    ]);
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { scope: 'object_cleanup', teamId: TEAM_ID, triggeredBy: 'manual' },
+    );
+
+    await expect(
+      withTeam(db as never, TEAM_ID, OWNER_ID).suggestions.listPendingSuggestions(),
+    ).resolves.toEqual([]);
+  });
+
+  it('does not merge provider objects with manual objects when URL paths differ by case', async () => {
+    await db.insert(entities).values([
+      {
+        teamId: TEAM_ID,
+        type: 'incident',
+        canonicalName: 'Provider incident',
+        metadata: {
+          integration_provider: 'sentry',
+          integration_external_id: 'issue-1',
+          url: 'https://example.com/issues/Issue-1',
+        },
+      },
+      {
+        teamId: TEAM_ID,
+        type: 'incident',
+        canonicalName: 'Manual incident',
+        metadata: {
+          url: 'https://example.com/issues/issue-1',
+        },
+      },
+    ]);
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { scope: 'object_cleanup', teamId: TEAM_ID, triggeredBy: 'manual' },
+    );
+
+    await expect(
+      withTeam(db as never, TEAM_ID, OWNER_ID).suggestions.listPendingSuggestions(),
+    ).resolves.toEqual([]);
+  });
+
+  it('does not link cross-provider records by title alone', async () => {
+    await db.insert(entities).values([
+      {
+        teamId: TEAM_ID,
+        type: 'task',
+        canonicalName: 'Linear issue ENG-1: Fix checkout failure',
+        metadata: {
+          integration_provider: 'linear',
+          integration_external_id: 'linear-issue-1',
+          display_title: 'Fix checkout failure',
+        },
+      },
+      {
+        teamId: TEAM_ID,
+        type: 'task',
+        canonicalName: 'GitHub issue auditai/app#12: Fix checkout failure',
+        metadata: {
+          integration_provider: 'github',
+          integration_external_id: 'auditai/app#issue:12',
+          display_title: 'Fix checkout failure',
+        },
+      },
     ]);
 
     await processSuggestionJobForTests(
@@ -2019,6 +2282,7 @@ describe('processSuggestionJobForTests', () => {
     const item = await scope.boards.addBoardItem(board.id, {
       entityId: company.id,
       laneId: board.lanes[0]?.id ?? null,
+      responsibleUserId: OWNER_ID,
       actor: { kind: 'user', userId: OWNER_ID },
     });
     const rawEventId = '10000000-0000-0000-0000-0000000000b0';
@@ -2042,6 +2306,7 @@ describe('processSuggestionJobForTests', () => {
     expect(call?.prompt).toContain('# Existing boards');
     expect(call?.prompt).toContain(`board ${board.id}: "Pilot pipeline"`);
     expect(call?.prompt).toContain(`item ${item.id}: object=${company.id} company "Revigo"`);
+    expect(call?.prompt).toContain(`responsible=${OWNER_ID} responsible_name=Owner`);
     expect(call?.prompt).toContain('targetKind=board_membership');
     expect(call?.prompt).toContain('Evidence is carried by the approval source refs');
     expect(call?.prompt).not.toContain('sourceEventId?');
@@ -2222,7 +2487,7 @@ describe('processSuggestionJobForTests', () => {
     expect(relationshipItems).toHaveLength(1);
   });
 
-  it('suppresses model-backed relationship proposals when the existing endpoint edge is already present', async () => {
+  it('suppresses name-only model-backed relationship proposals when the edge already exists', async () => {
     const rawEventId = '10000000-0000-0000-0000-0000000000a2';
     const [john, acme] = await db
       .insert(entities)
@@ -2270,8 +2535,8 @@ describe('processSuggestionJobForTests', () => {
                 targetKind: 'object_relationship',
                 title: 'Relate John Doe and Acme Corporation',
                 proposedPayload: {
-                  fromEntityId: john.id,
-                  toEntityId: acme.id,
+                  fromName: 'John Doe',
+                  toName: 'Acme Corporation',
                   kind: 'related',
                 },
               },
@@ -2326,7 +2591,7 @@ describe('processSuggestionJobForTests', () => {
       },
       occurredAt: new Date('2026-05-27T10:02:00.000Z'),
     });
-    const relationshipBundle = {
+    const relationshipBundle = (payload: Record<string, unknown>) => ({
       title: 'Relate John Doe and Acme Corporation',
       summary: 'John Doe is related to Acme Corporation.',
       reason: 'The source says John Doe is from Acme Corporation.',
@@ -2337,18 +2602,36 @@ describe('processSuggestionJobForTests', () => {
           operation: 'create' as const,
           targetKind: 'object_relationship' as const,
           title: 'Relate John Doe and Acme Corporation',
-          proposedPayload: {
-            fromEntityId: john.id,
-            toEntityId: acme.id,
-            kind: 'related',
-          },
+          proposedPayload: payload,
         },
       ],
-    };
-    const chat = vi.fn().mockResolvedValue({
-      model: MODEL_ID,
-      object: { bundles: [relationshipBundle] },
     });
+    const chat = vi
+      .fn()
+      .mockResolvedValueOnce({
+        model: MODEL_ID,
+        object: {
+          bundles: [
+            relationshipBundle({
+              fromName: 'John Doe',
+              toName: 'Acme Corporation',
+              kind: 'related',
+            }),
+          ],
+        },
+      })
+      .mockResolvedValueOnce({
+        model: MODEL_ID,
+        object: {
+          bundles: [
+            relationshipBundle({
+              fromName: 'John Doe',
+              toName: 'Acme Corporation',
+              kind: 'related',
+            }),
+          ],
+        },
+      });
 
     await processSuggestionJobForTests(
       { db: db as never },
@@ -2419,6 +2702,7 @@ describe('processSuggestionJobForTests', () => {
                   type: 'person',
                   canonicalName: 'Tim',
                   aliases: ['timbo0'],
+                  ownerName: 'Member',
                 },
               },
             ],
@@ -2449,6 +2733,7 @@ describe('processSuggestionJobForTests', () => {
       ? item.proposedPayload.aliases
       : [];
     expect(aliases).toEqual(expect.arrayContaining(['Tim', 'timbo0']));
+    expect(item?.proposedPayload.ownerName).toBe('Member');
   });
 
   it('does not rewrite person creates from first-name prefixes or numbered handle variants', async () => {

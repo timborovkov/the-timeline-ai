@@ -10,7 +10,7 @@ export interface GlobalSearchRequest {
   query: string;
   mode: GlobalSearchMode;
   kinds?: GlobalSearchKind[];
-  source?: string | null;
+  source?: string | string[] | null;
   from?: string | null;
   to?: string | null;
   limit?: number;

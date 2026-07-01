@@ -101,6 +101,21 @@ function summarize(name: string, input: unknown, output: unknown, state: string)
       ? `Searched timeline for "${q}"`
       : `Searched timeline for "${q}" — ${String(count)} result${count === 1 ? '' : 's'}`;
   }
+  if (name === 'search_timeline_moments') {
+    const q = typeof inp.query === 'string' ? inp.query : '';
+    const out = output as { count?: number } | undefined;
+    const count = out?.count;
+    return count === undefined
+      ? `Searched timeline moments for "${q}"`
+      : `Searched timeline moments for "${q}" — ${String(count)} moment${count === 1 ? '' : 's'}`;
+  }
+  if (name === 'get_timeline_moment') {
+    const out = output as { found?: boolean; moment?: { title?: string } } | undefined;
+    if (out?.found === false) return 'Expanded timeline moment — not found';
+    return out?.moment?.title
+      ? `Expanded timeline moment "${out.moment.title}"`
+      : 'Expanded timeline moment evidence';
+  }
   if (name === 'get_entity') {
     const idOrName = typeof inp.idOrName === 'string' ? inp.idOrName : '';
     const out = output as { found?: boolean } | undefined;

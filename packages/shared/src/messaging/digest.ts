@@ -12,12 +12,19 @@ import { and, count, desc, eq, gte, inArray, isNull, lt } from 'drizzle-orm';
 import { z } from 'zod';
 
 import type { DailyDigestPayload } from '#src/messaging/types.js';
+import type { TeamScope } from '#src/team-scope.js';
 
 import { chatStructured } from '#src/llm/chat.js';
 import { childLogger } from '#src/logger.js';
 import { displayObjectTitle } from '#src/objects/index.js';
 import { withTeam } from '#src/team-scope.js';
 import { assertValidTimezone, dateFromInstant, zonedDateTimeFromDate } from '#src/time/index.js';
+import { buildTimelineMoments, type TimelineMoment } from '#src/timeline-moments/index.js';
+import {
+  applyTimelineMomentPresentationCache,
+  buildTimelineMomentPresentationCacheFingerprint,
+  buildTimelineMomentPresentationCacheKey,
+} from '#src/timeline-moments/presentation.js';
 
 const log = childLogger('digest');
 const DEFAULT_WORKSPACE_TIMEZONE = 'Europe/Helsinki';
@@ -50,11 +57,18 @@ interface DigestText {
   sections: NonNullable<DailyDigestPayload['sections']>;
 }
 
-interface EventBrief {
+interface MomentBrief {
   occurredAt: string;
-  source: string;
-  context: string | null;
-  text: string;
+  timeRange: string;
+  kind: string;
+  title: string;
+  summary: string | null;
+  preview: string | null;
+  sourceLabels: string[];
+  actorLabels: string[];
+  contextLabels: string[];
+  rawEventCount: number;
+  rawEventIds: string[];
 }
 
 interface DigestPromptContext {
@@ -63,6 +77,7 @@ interface DigestPromptContext {
   window: { start: string; end: string };
   metrics: {
     eventCount: number;
+    momentCount: number;
     pendingApprovals: number;
     sourceDistribution: Record<string, number>;
     objectChangesByType: Record<string, number>;
@@ -88,7 +103,7 @@ const SUMMARIZE_SYSTEM_PROMPT = [
 
 function buildDigestPrompt(
   ctx: DigestPromptContext,
-  briefs: EventBrief[],
+  briefs: MomentBrief[],
   batchInfo?: { index: number; total: number },
 ): string {
   return JSON.stringify(
@@ -115,7 +130,7 @@ function buildDigestPrompt(
       tasks: ctx.tasks,
       upcomingCalendar: ctx.upcomingCalendar,
       newTeamMembers: ctx.newTeamMembers,
-      visibleEvents: briefs,
+      visibleMoments: briefs,
     },
     null,
     2,
@@ -167,9 +182,9 @@ async function callStructuredDigest(prompt: string, systemPrompt: string): Promi
   return result.object;
 }
 
-async function summarizeEventBriefs(
+async function summarizeMomentBriefs(
   ctx: DigestPromptContext,
-  briefs: EventBrief[],
+  briefs: MomentBrief[],
   fallback: string,
   summarize?: (prompt: string) => Promise<string>,
 ): Promise<DigestText> {
@@ -183,7 +198,7 @@ async function summarizeEventBriefs(
       return await callStructuredDigest(buildDigestPrompt(ctx, briefs), SUMMARIZE_SYSTEM_PROMPT);
     } catch (err) {
       log.warn(
-        { err, eventCount: briefs.length, promptLength: buildDigestPrompt(ctx, briefs).length },
+        { err, momentCount: briefs.length, promptLength: buildDigestPrompt(ctx, briefs).length },
         'digest summarizer failed; returning fallback summary',
       );
       return { summary: fallback, sections: fallbackSections() };
@@ -192,8 +207,8 @@ async function summarizeEventBriefs(
 
   const batches = chunk(briefs, SUMMARIZE_BATCH_SIZE);
   log.info(
-    { eventCount: briefs.length, batchCount: batches.length },
-    'digest summarizer using map-reduce for large event volume',
+    { momentCount: briefs.length, batchCount: batches.length },
+    'digest summarizer using map-reduce for large moment volume',
   );
 
   const batchResults = await Promise.allSettled(
@@ -329,12 +344,13 @@ function addDays(date: Date, days: number): Date {
 
 function fallbackSummary(input: {
   eventCount: number;
+  momentCount: number;
   pendingApprovals: number;
   taskCount: number;
   calendarCount: number;
 }): string {
   const parts = [
-    `${input.eventCount} timeline event${input.eventCount === 1 ? '' : 's'} landed`,
+    `${input.momentCount} work moment${input.momentCount === 1 ? '' : 's'} from ${input.eventCount} source event${input.eventCount === 1 ? '' : 's'}`,
     `${input.pendingApprovals} approval${input.pendingApprovals === 1 ? '' : 's'} pending`,
     `${input.taskCount} active task${input.taskCount === 1 ? '' : 's'}`,
     `${input.calendarCount} upcoming calendar item${input.calendarCount === 1 ? '' : 's'}`,
@@ -346,46 +362,51 @@ function fallbackSections(): NonNullable<DailyDigestPayload['sections']> {
   return [];
 }
 
-function metadataObject(value: unknown): Record<string, unknown> {
-  return value && typeof value === 'object' && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
-}
-
-function metadataString(meta: Record<string, unknown>, key: string): string | null {
-  const value = meta[key];
-  return typeof value === 'string' && value.trim() ? value.trim() : null;
-}
-
-function eventContext(event: { source: string; sourceMetadata: unknown }): string | null {
-  const meta = metadataObject(event.sourceMetadata);
-  if (event.source === 'telegram') {
-    return metadataString(meta, 'tg_chat_title') ?? metadataString(meta, 'tg_chat_type');
-  }
-  if (event.source === 'slack') {
-    return metadataString(meta, 'slack_channel_name') ?? metadataString(meta, 'slack_channel_id');
-  }
-  if (event.source === 'email') {
-    return metadataString(meta, 'subject') ?? metadataString(meta, 'from');
-  }
-  if (event.source === 'document') {
-    return metadataString(meta, 'document_name') ?? metadataString(meta, 'name');
-  }
-  if (event.source === 'meeting' || event.source === 'calendar') {
-    return metadataString(meta, 'title');
-  }
-  if (event.source === 'integration') {
-    const provider = metadataString(meta, 'provider');
-    const eventType = metadataString(meta, 'event_type');
-    return [provider, eventType].filter(Boolean).join(' · ') || null;
-  }
-  return null;
-}
-
 function truncateForPrompt(value: string | null | undefined, max = 700): string {
   const text = value?.replace(/\s+/g, ' ').trim();
   if (!text) return '';
   return text.length > max ? `${text.slice(0, max - 1)}…` : text;
+}
+
+async function applyCachedDigestMomentPresentations(input: {
+  teamId: string;
+  moments: TimelineMoment[];
+  listMomentPresentations: TeamScope['timeline']['listMomentPresentations'];
+}): Promise<TimelineMoment[]> {
+  if (input.moments.length === 0) return [];
+  const cacheKeys = input.moments.map((moment) =>
+    buildTimelineMomentPresentationCacheKey({ teamId: input.teamId, moment }),
+  );
+  const presentations = await input.listMomentPresentations(cacheKeys);
+  return input.moments.map((moment, index) => {
+    const cacheKey = cacheKeys[index];
+    if (!cacheKey) return moment;
+    return applyTimelineMomentPresentationCache(
+      moment,
+      presentations[buildTimelineMomentPresentationCacheFingerprint(cacheKey)],
+      { teamId: input.teamId },
+    );
+  });
+}
+
+function momentBrief(moment: TimelineMoment): MomentBrief {
+  const firstEvent = moment.rawEvents[0];
+  return {
+    occurredAt:
+      firstEvent?.occurredAt instanceof Date
+        ? firstEvent.occurredAt.toISOString()
+        : (firstEvent?.occurredAt ?? ''),
+    timeRange: moment.evidenceSummary.timeRange,
+    kind: moment.kind,
+    title: truncateForPrompt(moment.title, 180),
+    summary: truncateForPrompt(moment.summary, 700) || null,
+    preview: truncateForPrompt(moment.preview, 700) || null,
+    sourceLabels: moment.evidenceSummary.sourceLabels,
+    actorLabels: moment.evidenceSummary.actorLabels,
+    contextLabels: moment.evidenceSummary.contextLabels,
+    rawEventCount: moment.rawEvents.length,
+    rawEventIds: moment.rawEvents.map((event) => event.id),
+  };
 }
 
 export async function getDigestPreference(input: {
@@ -601,18 +622,23 @@ export async function generateDailyDigest(
 
   const teamName = team?.name ?? 'your team';
   const user = userRows[0] ?? null;
+  const builtMoments = buildTimelineMoments(events, new Map(), {
+    timezone: preference.timezone,
+    groupingMode: 'moments',
+  });
+  const moments = await applyCachedDigestMomentPresentations({
+    teamId: input.teamId,
+    moments: builtMoments,
+    listMomentPresentations: scope.timeline.listMomentPresentations,
+  });
   const fallback = fallbackSummary({
     eventCount: events.length,
+    momentCount: moments.length,
     pendingApprovals,
     taskCount: taskRows.length,
     calendarCount: calendarRows.length,
   });
-  const eventBriefs: EventBrief[] = events.map((event) => ({
-    occurredAt: event.occurredAt.toISOString(),
-    source: event.source,
-    context: eventContext(event),
-    text: truncateForPrompt(event.contentText),
-  }));
+  const momentBriefs = moments.map(momentBrief);
   const ctx: DigestPromptContext = {
     team: teamName,
     recipient: user?.name ?? user?.email ?? input.userId,
@@ -622,6 +648,7 @@ export async function generateDailyDigest(
     },
     metrics: {
       eventCount: events.length,
+      momentCount: moments.length,
       pendingApprovals,
       sourceDistribution,
       objectChangesByType,
@@ -641,7 +668,7 @@ export async function generateDailyDigest(
       createdAt: member.createdAt.toISOString(),
     })),
   };
-  const digestText = await summarizeEventBriefs(ctx, eventBriefs, fallback, input.summarize);
+  const digestText = await summarizeMomentBriefs(ctx, momentBriefs, fallback, input.summarize);
 
   const payload: DailyDigestPayload = {
     teamName,
@@ -653,6 +680,7 @@ export async function generateDailyDigest(
     sections: digestText.sections,
     pendingApprovals,
     eventCount: events.length,
+    momentCount: moments.length,
     sourceDistribution,
     objectChangesByType,
     newTeamMembers: newMembers.map((member) => ({

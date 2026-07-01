@@ -18,6 +18,17 @@ import {
   resolveTimePhrase,
   workspaceTimeContext,
 } from '#src/time/index.js';
+import {
+  buildTimelineMoments,
+  timelineMomentLookupPlan,
+  type TimelineMoment,
+  type TimelineMomentEvent,
+} from '#src/timeline-moments/index.js';
+import {
+  applyTimelineMomentPresentationCache,
+  buildTimelineMomentPresentationCacheFingerprint,
+  buildTimelineMomentPresentationCacheKey,
+} from '#src/timeline-moments/presentation.js';
 
 const log = childLogger('agent:tools');
 
@@ -78,6 +89,18 @@ const searchTimelineInput = z.object({
   limit: z.number().int().min(1).max(20).optional(),
 });
 
+type TimelineSearchInput = z.infer<typeof searchTimelineInput>;
+
+interface SearchHitForMoment {
+  eventId: string;
+  factIds: string[];
+  score: number;
+  occurredAt: string;
+  source: string;
+  entityIds: string[];
+  snippet: string;
+}
+
 const searchObjectNotesInput = z.object({
   query: z.string().trim().min(1).max(500),
   objectId: z.string().regex(UUID_RE).optional(),
@@ -109,10 +132,45 @@ const suggestTaskInput = z.object({
   dueAt: z.iso.datetime().optional(),
   ownerUserId: z.string().regex(UUID_RE).optional(),
   assigneeUserId: z.string().regex(UUID_RE).optional(),
+  ownerName: z.string().trim().min(1).max(200).optional(),
+  assigneeName: z.string().trim().min(1).max(200).optional(),
   priority: z.number().int().min(1).max(4).optional(),
   note: z.string().trim().max(1000).optional(),
   parentObjectId: z.string().regex(UUID_RE).optional(),
 });
+
+const relationshipMemoryItemSchema = z
+  .object({
+    kind: z.literal('add_relationship'),
+    fromEntityId: z.string().regex(UUID_RE).optional(),
+    toEntityId: z.string().regex(UUID_RE).optional(),
+    fromName: z.string().trim().min(1).max(200).optional(),
+    toName: z.string().trim().min(1).max(200).optional(),
+    relationshipKind: z.enum([
+      'parent',
+      'child',
+      'related',
+      'blocks',
+      'blocked_by',
+      'duplicate_of',
+    ]),
+  })
+  .superRefine((item, ctx) => {
+    if ([item.fromEntityId, item.fromName].filter(Boolean).length !== 1) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['fromEntityId'],
+        message: 'Provide exactly one relationship source endpoint',
+      });
+    }
+    if ([item.toEntityId, item.toName].filter(Boolean).length !== 1) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['toEntityId'],
+        message: 'Provide exactly one relationship target endpoint',
+      });
+    }
+  });
 
 const objectMemoryItemSchema = z.discriminatedUnion('kind', [
   z.object({
@@ -125,6 +183,8 @@ const objectMemoryItemSchema = z.discriminatedUnion('kind', [
     priority: z.number().int().min(1).max(4).nullable().optional(),
     ownerUserId: z.string().regex(UUID_RE).nullable().optional(),
     assigneeUserId: z.string().regex(UUID_RE).nullable().optional(),
+    ownerName: z.string().trim().min(1).max(200).optional(),
+    assigneeName: z.string().trim().min(1).max(200).optional(),
     dueAt: z.iso.datetime().nullable().optional(),
   }),
   z.object({
@@ -137,6 +197,8 @@ const objectMemoryItemSchema = z.discriminatedUnion('kind', [
     priority: z.number().int().min(1).max(4).nullable().optional(),
     ownerUserId: z.string().regex(UUID_RE).nullable().optional(),
     assigneeUserId: z.string().regex(UUID_RE).nullable().optional(),
+    ownerName: z.string().trim().min(1).max(200).optional(),
+    assigneeName: z.string().trim().min(1).max(200).optional(),
     dueAt: z.iso.datetime().nullable().optional(),
   }),
   z.object({
@@ -154,19 +216,7 @@ const objectMemoryItemSchema = z.discriminatedUnion('kind', [
     entityId: z.string().regex(UUID_RE),
     body: z.string().trim().min(1).max(5000),
   }),
-  z.object({
-    kind: z.literal('add_relationship'),
-    fromEntityId: z.string().regex(UUID_RE),
-    toEntityId: z.string().regex(UUID_RE),
-    relationshipKind: z.enum([
-      'parent',
-      'child',
-      'related',
-      'blocks',
-      'blocked_by',
-      'duplicate_of',
-    ]),
-  }),
+  relationshipMemoryItemSchema,
 ]);
 
 const suggestObjectMemoryInput = z.object({
@@ -188,6 +238,11 @@ const suggestObjectMemoryInput = z.object({
 
 const getEventInput = z.object({
   id: z.string().regex(UUID_RE),
+});
+
+const getTimelineMomentInput = z.object({
+  momentId: z.string().trim().min(1).max(500).optional(),
+  rawEventIds: z.array(z.string().regex(UUID_RE)).min(1).max(50).optional(),
 });
 
 const searchDocumentsInput = z.object({
@@ -476,6 +531,16 @@ function fenceExternalContent(
   return `<external_content source="${source}" event_id="${eventId}">${sanitized}</external_content>`;
 }
 
+function fenceTimelineMomentText(
+  text: string | null | undefined,
+  moment: TimelineMoment,
+): string | null {
+  return fenceExternalContent(text, {
+    source: 'timeline_moment',
+    eventId: moment.anchorId,
+  });
+}
+
 function textMatches(value: string | null | undefined, query: string | undefined): boolean {
   if (!query) return true;
   return (value ?? '').toLowerCase().includes(query.toLowerCase());
@@ -507,6 +572,146 @@ function serializeObjectRow(row: objects.ObjectRow): Record<string, unknown> {
     archived: row.archivedAt !== null,
     aliases: row.aliases.slice(0, 20),
   };
+}
+
+function searchArgsFromTimelineInput(
+  input: TimelineSearchInput,
+): Parameters<TeamScope['timeline']['searchEvents']>[0] {
+  const args: Parameters<TeamScope['timeline']['searchEvents']>[0] = { query: input.query };
+  if (input.from) args.from = new Date(input.from);
+  if (input.to) args.to = new Date(input.to);
+  if (input.source) args.source = input.source;
+  if (input.entityIds) args.entityIds = input.entityIds;
+  if (input.sourceKind) args.sourceKind = input.sourceKind;
+  if (input.personObjectId) args.personObjectId = input.personObjectId;
+  if (input.senderHandle) args.senderHandle = input.senderHandle;
+  if (input.senderSource) args.senderSource = input.senderSource;
+  if (input.limit) args.limit = input.limit;
+  return args;
+}
+
+function timelineMomentEventFromScopeRow(event: {
+  id: string;
+  teamId: string;
+  source: TimelineMomentEvent['source'];
+  authorUserId: string | null;
+  contentText: string | null;
+  contentAudioUrl: string | null;
+  occurredAt: Date;
+  createdAt: Date;
+  visibility: string;
+  visibilityUserIds: string[] | null;
+  visibilityOwnerUserId: string | null;
+  sourceMetadata: unknown;
+}): TimelineMomentEvent {
+  return {
+    id: event.id,
+    teamId: event.teamId,
+    source: event.source,
+    authorUserId: event.authorUserId,
+    contentText: event.contentText,
+    contentAudioUrl: event.contentAudioUrl,
+    occurredAt: event.occurredAt,
+    createdAt: event.createdAt,
+    visibility: event.visibility,
+    visibilityUserIds: event.visibilityUserIds,
+    visibilityOwnerUserId: event.visibilityOwnerUserId,
+    sourceMetadata: event.sourceMetadata,
+  };
+}
+
+async function hydrateCompleteMomentEvents(
+  scope: TeamScope,
+  events: TimelineMomentEvent[],
+): Promise<TimelineMomentEvent[]> {
+  const eventsById = new Map(events.map((event) => [event.id, event]));
+  const seedMoments = buildTimelineMoments(events, new Map(), { groupingMode: 'moments' });
+  const seenMomentIds = new Set<string>();
+
+  await Promise.all(
+    seedMoments.map(async (moment) => {
+      if (seenMomentIds.has(moment.id)) return;
+      seenMomentIds.add(moment.id);
+      const plan = timelineMomentLookupPlan(moment.id);
+      if (!plan) return;
+      const related = await scope.timeline.listEventsForMomentLookup(plan);
+      for (const event of related) {
+        eventsById.set(event.id, timelineMomentEventFromScopeRow(event));
+      }
+    }),
+  );
+
+  return [...eventsById.values()];
+}
+
+async function buildAgentTimelineMoments(
+  scope: TeamScope,
+  hits: SearchHitForMoment[],
+  events: TimelineMomentEvent[],
+) {
+  const hitByEventId = new Map(hits.map((hit) => [hit.eventId, hit]));
+  const builtMoments = buildTimelineMoments(events, new Map(), { groupingMode: 'moments' });
+  const cacheKeys = builtMoments.map((moment) =>
+    buildTimelineMomentPresentationCacheKey({ teamId: scope.teamId, moment }),
+  );
+  const presentations = await scope.timeline.listMomentPresentations(cacheKeys);
+  return builtMoments
+    .map((moment, index) => {
+      const cacheKey = cacheKeys[index];
+      if (!cacheKey) return moment;
+      return applyTimelineMomentPresentationCache(
+        moment,
+        presentations[buildTimelineMomentPresentationCacheFingerprint(cacheKey)],
+        { teamId: scope.teamId },
+      );
+    })
+    .map((moment) => {
+      const sorted = moment.rawEvents;
+      const topScore = Math.max(...sorted.map((event) => hitByEventId.get(event.id)?.score ?? 0));
+      const entityIds = [
+        ...new Set(sorted.flatMap((event) => hitByEventId.get(event.id)?.entityIds ?? [])),
+      ];
+      const factIds = [
+        ...new Set(sorted.flatMap((event) => hitByEventId.get(event.id)?.factIds ?? [])),
+      ];
+      return {
+        moment_id: moment.id,
+        version: moment.version,
+        anchor_id: moment.anchorId,
+        kind: moment.kind,
+        title: fenceTimelineMomentText(moment.title, moment),
+        subtitle: fenceTimelineMomentText(moment.subtitle, moment),
+        preview: fenceTimelineMomentText(moment.preview, moment),
+        occurred_at:
+          sorted[0]?.occurredAt instanceof Date
+            ? sorted[0].occurredAt.toISOString()
+            : (sorted[0]?.occurredAt ?? null),
+        source_families: moment.grouping.sourceFamilies,
+        evidence_count: sorted.length,
+        raw_event_ids: sorted.map((event) => event.id),
+        citations: sorted.map((event) =>
+          artifactRefCitation({ kind: 'timeline_event', id: event.id }),
+        ),
+        score: topScore,
+        entity_ids: entityIds,
+        fact_ids: factIds,
+        evidence: sorted.map((event) => ({
+          event_id: event.id,
+          citation: artifactRefCitation({ kind: 'timeline_event', id: event.id }),
+          source: event.source,
+          occurred_at:
+            event.occurredAt instanceof Date ? event.occurredAt.toISOString() : event.occurredAt,
+          snippet:
+            fenceExternalContent(hitByEventId.get(event.id)?.snippet ?? event.contentText, {
+              source: event.source,
+              eventId: event.id,
+            }) ?? '',
+        })),
+      };
+    })
+    .sort(
+      (a, b) => b.score - a.score || String(b.occurred_at).localeCompare(String(a.occurred_at)),
+    );
 }
 
 function serializeBoardRow(row: boards.BoardRow): Record<string, unknown> {
@@ -903,6 +1108,25 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
   const runSafe = <T>(label: string, fn: () => Promise<T>): Promise<T | { error: string }> =>
     safe(label, fn, options.onToolError);
   const tools: ToolSet = {
+    list_team_members: tool({
+      description:
+        'List active team members and their user IDs. Use before assigning ownerUserId, assigneeUserId, responsibleUserId, visibilityUserIds, or filtering work by a teammate name.',
+      inputSchema: z.object({}),
+      execute: async () =>
+        runSafe('list_team_members', async () => {
+          const members = await scope.timeline.listMembers();
+          return {
+            count: members.length,
+            members: members.map((member) => ({
+              user_id: member.userId,
+              role: member.role,
+              name: member.name,
+              email: member.email,
+            })),
+          };
+        }),
+    }),
+
     execute_object_create: tool({
       description:
         'Approval-required dashboard action. Directly create a canonical object/task after the user approves in chat. Use only for explicit commands like "create a project called X" or "add a task to follow up with Y". This writes canonical state through createObject and does NOT create a background approval queue item.',
@@ -1293,16 +1517,7 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
       execute: async (raw) =>
         runSafe('search_timeline', async () => {
           const input = searchTimelineInput.parse(raw);
-          const args: Parameters<typeof scope.timeline.searchEvents>[0] = { query: input.query };
-          if (input.from) args.from = new Date(input.from);
-          if (input.to) args.to = new Date(input.to);
-          if (input.source) args.source = input.source;
-          if (input.entityIds) args.entityIds = input.entityIds;
-          if (input.sourceKind) args.sourceKind = input.sourceKind;
-          if (input.personObjectId) args.personObjectId = input.personObjectId;
-          if (input.senderHandle) args.senderHandle = input.senderHandle;
-          if (input.senderSource) args.senderSource = input.senderSource;
-          if (input.limit) args.limit = input.limit;
+          const args = searchArgsFromTimelineInput(input);
           const results = await scope.timeline.searchEvents(args);
           // Fence the snippet so a malicious search hit cannot smuggle a
           // prompt-injection past the Rule 8 framing.
@@ -1313,6 +1528,81 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
               fenceExternalContent(r.snippet, { source: r.source, eventId: r.eventId }) ?? '',
           }));
           return { count: fenced.length, results: fenced };
+        }),
+    }),
+
+    search_timeline_moments: tool({
+      description:
+        "Semantic search across the team's timeline, returned as bundled moments with raw event citations. Use this first for normal 'what happened', integration-heavy, meeting/chat recap, and timeline-summary questions; use search_timeline or get_event only when you need raw event-level detail.",
+      inputSchema: searchTimelineInput,
+      execute: async (raw) =>
+        runSafe('search_timeline_moments', async () => {
+          const input = searchTimelineInput.parse(raw);
+          const hits = await scope.timeline.searchEvents(searchArgsFromTimelineInput(input));
+          const eventIds = hits.map((hit) => hit.eventId);
+          const rows = await scope.timeline.getEventsByIds(eventIds);
+          const events = await hydrateCompleteMomentEvents(
+            scope,
+            rows.map(timelineMomentEventFromScopeRow),
+          );
+          const moments = await buildAgentTimelineMoments(scope, hits, events);
+          return { count: moments.length, moments };
+        }),
+    }),
+
+    get_timeline_moment: tool({
+      description:
+        'Expand a timeline moment returned by search_timeline_moments. Prefer passing raw_event_ids from that result; supported deterministic moment_id values can also be expanded directly through a bounded visible-event lookup. Returns moment metadata plus fenced source evidence.',
+      inputSchema: getTimelineMomentInput,
+      execute: async (raw) =>
+        runSafe('get_timeline_moment', async () => {
+          const input = getTimelineMomentInput.parse(raw);
+          let events = (
+            input.rawEventIds && input.rawEventIds.length > 0
+              ? await scope.timeline.getEventsByIds(input.rawEventIds)
+              : []
+          ).map(timelineMomentEventFromScopeRow);
+          if (events.length === 0 && input.momentId) {
+            const plan = timelineMomentLookupPlan(input.momentId);
+            if (!plan) {
+              return {
+                found: false,
+                reason: 'raw_event_ids_required',
+                visible_raw_event_count: 0,
+              };
+            }
+            events = (await scope.timeline.listEventsForMomentLookup(plan)).map(
+              timelineMomentEventFromScopeRow,
+            );
+          } else if (events.length > 0) {
+            events = await hydrateCompleteMomentEvents(scope, events);
+          }
+          const hits = events.map((event) => ({
+            eventId: event.id,
+            factIds: [],
+            score: 1,
+            occurredAt:
+              event.occurredAt instanceof Date ? event.occurredAt.toISOString() : event.occurredAt,
+            source: event.source,
+            entityIds: [],
+            snippet: event.contentText ?? '',
+          }));
+          const moments = await buildAgentTimelineMoments(scope, hits, events);
+          const expanded = input.momentId
+            ? moments.find((moment) => moment.moment_id === input.momentId)
+            : moments[0];
+          if (!expanded) {
+            return {
+              found: false,
+              reason: input.momentId ? 'moment_id_not_visible' : 'no_visible_events',
+              visible_raw_event_count: events.length,
+            };
+          }
+          return {
+            found: true,
+            moment: expanded,
+            related_moments: moments.filter((moment) => moment.moment_id !== expanded.moment_id),
+          };
         }),
     }),
 
@@ -1799,6 +2089,8 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
             dueAt: input.dueAt ?? null,
             ownerUserId: input.ownerUserId ?? null,
             assigneeUserId: input.assigneeUserId ?? null,
+            ownerName: input.ownerName ?? null,
+            assigneeName: input.assigneeName ?? null,
             priority: input.priority ?? null,
             parentObjectId: input.parentObjectId ?? null,
           });
@@ -1821,6 +2113,8 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
                   dueAt: input.dueAt ?? null,
                   ownerUserId: input.ownerUserId ?? null,
                   assigneeUserId: input.assigneeUserId ?? null,
+                  ownerName: input.ownerName ?? null,
+                  assigneeName: input.assigneeName ?? null,
                   priority: input.priority ?? null,
                   parentObjectId: input.parentObjectId ?? null,
                   metadata: input.note ? { agent_note: input.note } : {},
@@ -1913,6 +2207,8 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
                   priority: item.priority,
                   ownerUserId: item.ownerUserId,
                   assigneeUserId: item.assigneeUserId,
+                  ownerName: item.ownerName,
+                  assigneeName: item.assigneeName,
                   dueAt: item.dueAt,
                   metadata: { object_memory: true },
                 },
@@ -1933,6 +2229,8 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
                   priority: item.priority,
                   ownerUserId: item.ownerUserId,
                   assigneeUserId: item.assigneeUserId,
+                  ownerName: item.ownerName,
+                  assigneeName: item.assigneeName,
                   dueAt: item.dueAt,
                 },
               };
@@ -1979,18 +2277,20 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
             return {
               operation: 'create' as const,
               targetKind: 'object_relationship' as const,
-              targetId: item.fromEntityId,
+              targetId: item.fromEntityId ?? null,
               title: `Add ${item.relationshipKind} relationship`,
               dedupeKey: suggestionDedupeKey([
                 'object-memory',
                 item.kind,
-                item.fromEntityId,
-                item.toEntityId,
+                item.fromEntityId ?? item.fromName,
+                item.toEntityId ?? item.toName,
                 item.relationshipKind,
               ]),
               proposedPayload: {
                 fromEntityId: item.fromEntityId,
                 toEntityId: item.toEntityId,
+                fromName: item.fromName,
+                toName: item.toName,
                 kind: item.relationshipKind,
               },
             };

@@ -416,6 +416,146 @@ describe('handleUpdate telegram edit visibility', () => {
     expect(all[0]?.content_text).toBe('one delivery');
   });
 
+  it('captures shared links as metadata and timeline artifact evidence', async () => {
+    await handleUpdate(
+      { db: db as never, tg: fakeTg },
+      {
+        update_id: 203,
+        message: {
+          message_id: 23,
+          date: 1700000000,
+          chat: { id: 42, type: 'private' },
+          from: { id: TG_USER_ID, username: 'alice' },
+          text: 'Review https://example.com/deck?utm_source=tg&token=secret&a=1. Call +1 213-373-4253.',
+        },
+      },
+    );
+
+    const rows = await activeTelegramRows(pg);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.source_metadata).toMatchObject({
+      links: [
+        {
+          canonical_url: 'https://example.com/deck?a=1',
+          display_url: 'example.com/deck',
+          domain: 'example.com',
+          provider: null,
+          provider_object_id: null,
+        },
+      ],
+      contacts: {
+        emails: [],
+        phones: [expect.objectContaining({ normalized_value: '+12133734253' })],
+        addresses: [],
+      },
+    });
+
+    const artifacts = await pg.query<{
+      artifact_type: string;
+      canonical_name: string;
+      raw_event_id: string;
+      role: string;
+      strength: string;
+      anchor_type: string;
+      anchor_value: string;
+    }>(`
+      SELECT ac.artifact_type, ac.canonical_name, acm.raw_event_id, acm.role, acm.strength,
+             aca.anchor_type, aca.anchor_value
+      FROM artifact_clusters ac
+      JOIN artifact_cluster_members acm ON acm.cluster_id = ac.id
+      JOIN artifact_cluster_anchors aca ON aca.cluster_id = ac.id
+      WHERE ac.team_id = '${TEAM_ID}'
+      ORDER BY aca.anchor_type
+    `);
+    expect(artifacts.rows).toEqual([
+      {
+        artifact_type: 'link',
+        canonical_name: 'example.com/deck',
+        raw_event_id: rows[0]?.id,
+        role: 'related_context',
+        strength: 'semantic',
+        anchor_type: 'url:canonical',
+        anchor_value: 'https://example.com/deck?a=1',
+      },
+      {
+        artifact_type: 'link',
+        canonical_name: 'example.com/deck',
+        raw_event_id: rows[0]?.id,
+        role: 'related_context',
+        strength: 'semantic',
+        anchor_type: 'url:display',
+        anchor_value: 'example.com/deck',
+      },
+    ]);
+  });
+
+  it('keeps links with the same display path but different meaningful query params separate', async () => {
+    await handleUpdate(
+      { db: db as never, tg: fakeTg },
+      {
+        update_id: 204,
+        message: {
+          message_id: 24,
+          date: 1700000000,
+          chat: { id: 42, type: 'private' },
+          from: { id: TG_USER_ID, username: 'alice' },
+          text: 'Deck https://example.com/deck?a=1',
+        },
+      },
+    );
+    await handleUpdate(
+      { db: db as never, tg: fakeTg },
+      {
+        update_id: 205,
+        message: {
+          message_id: 25,
+          date: 1700000060,
+          chat: { id: 42, type: 'private' },
+          from: { id: TG_USER_ID, username: 'alice' },
+          text: 'Deck https://example.com/deck?a=2',
+        },
+      },
+    );
+
+    const clusters = await pg.query<{ count: string }>(`
+      SELECT COUNT(*)::text AS count
+      FROM artifact_clusters
+      WHERE team_id = '${TEAM_ID}'
+        AND artifact_type = 'link'
+    `);
+    expect(clusters.rows[0]?.count).toBe('2');
+  });
+
+  it('repairs missing link artifacts when Telegram retries an already-inserted update', async () => {
+    const payload = {
+      update_id: 206,
+      message: {
+        message_id: 26,
+        date: 1700000000,
+        chat: { id: 42, type: 'private' },
+        from: { id: TG_USER_ID, username: 'alice' },
+        text: 'Spec https://example.com/spec',
+      },
+    };
+
+    await handleUpdate({ db: db as never, tg: fakeTg }, payload);
+    await pg.exec(`
+      DELETE FROM artifact_cluster_members;
+      DELETE FROM artifact_cluster_anchors;
+      DELETE FROM artifact_clusters;
+    `);
+    await handleUpdate({ db: db as never, tg: fakeTg }, payload);
+
+    const all = await allTelegramRows(pg);
+    expect(all).toHaveLength(1);
+    const artifacts = await pg.query<{ count: string }>(`
+      SELECT COUNT(*)::text AS count
+      FROM artifact_cluster_members
+      WHERE raw_event_id = (SELECT id FROM raw_events WHERE source = 'telegram')
+    `);
+    expect(artifacts.rows[0]?.count).toBe('1');
+  });
+
   it('enqueues extraction, embedding, and approval suggestions for captured DM text', async () => {
     const enqueueExtract = vi.fn().mockResolvedValue(undefined);
     const enqueueEmbed = vi.fn().mockResolvedValue(undefined);

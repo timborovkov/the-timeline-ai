@@ -76,7 +76,10 @@ describe('FloatingAgentChat', () => {
     const user = userEvent.setup();
     render(<FloatingAgentChat teamId="team-1" teamName="AuditAI" />);
 
-    await user.click(screen.getByRole('button', { name: 'Open floating agent chat' }));
+    const trigger = screen.getByRole('button', { name: 'Open floating agent chat' });
+    expect(trigger.className).toContain('hidden');
+    expect(trigger.className).toContain('sm:inline-flex');
+    await user.click(trigger);
 
     expect(await screen.findByRole('heading', { name: 'Ask AuditAI' })).toBeTruthy();
     const body = fakes.transports.at(-1)?.options.body?.() as {

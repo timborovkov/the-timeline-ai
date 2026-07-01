@@ -10,12 +10,19 @@ import type * as RateLimitModule from '@timeline/shared/rate-limit';
 const ENV_BACKUP = { ...process.env };
 
 const fakes = vi.hoisted(() => ({
-  integrationRows: [] as { id: string; teamId: string; externalAccountId: string }[],
+  integrationRows: [] as {
+    id: string;
+    teamId: string;
+    externalAccountId: string;
+    providerConnectionId: string | null;
+  }[],
   selectionRows: [] as { integrationId: string; externalId: string }[],
   handleWebhook: vi.fn(),
   writeIntegrationEvents: vi.fn(),
+  recordWebhookDeliveryTargets: vi.fn(),
   requireRedisQueue: vi.fn(),
   enqueueIntegrationSyncJob: vi.fn(),
+  enqueueWebhookDeliveryJob: vi.fn(),
 }));
 
 vi.mock('@/lib/db', () => ({
@@ -50,6 +57,7 @@ vi.mock('@timeline/shared/integrations', async () => {
     ...actual,
     getProvider: () => ({ handleWebhook: fakes.handleWebhook }),
     writeIntegrationEvents: fakes.writeIntegrationEvents,
+    recordWebhookDeliveryTargets: fakes.recordWebhookDeliveryTargets,
   };
 });
 
@@ -68,11 +76,23 @@ function signedRequest(payload: unknown, signature = true): Request {
 beforeEach(() => {
   process.env.LINEAR_WEBHOOK_SECRET = 'linear-secret';
   resetEnvForTests();
-  fakes.integrationRows = [{ id: 'integration-1', teamId: 'team-1', externalAccountId: 'org-1' }];
+  fakes.integrationRows = [
+    {
+      id: 'integration-1',
+      teamId: 'team-1',
+      externalAccountId: 'org-1',
+      providerConnectionId: 'connection-1',
+    },
+  ];
   fakes.selectionRows = [{ integrationId: 'integration-1', externalId: 'team-linear-1' }];
   fakes.handleWebhook.mockResolvedValue([{ dedupKey: 'event-1' }]);
+  fakes.recordWebhookDeliveryTargets.mockResolvedValue({
+    deliveryId: 'delivery-row-1',
+    targetIds: ['target-row-1'],
+  });
   fakes.requireRedisQueue.mockResolvedValue({
     enqueueIntegrationSyncJob: fakes.enqueueIntegrationSyncJob,
+    enqueueWebhookDeliveryJob: fakes.enqueueWebhookDeliveryJob,
   });
   vi.clearAllMocks();
 });
@@ -89,6 +109,7 @@ describe('POST /api/webhooks/linear', () => {
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject({ reason: 'bad_signature' });
     expect(fakes.handleWebhook).not.toHaveBeenCalled();
+    expect(fakes.recordWebhookDeliveryTargets).not.toHaveBeenCalled();
   });
 
   it('routes selected team webhooks to the matched integration', async () => {
@@ -102,21 +123,31 @@ describe('POST /api/webhooks/linear', () => {
 
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject({ ok: true });
-    expect(fakes.handleWebhook).toHaveBeenCalledWith({
-      integration: { id: 'integration-1', teamId: 'team-1', externalAccountId: 'org-1' },
-      payload: {
-        organizationId: 'org-1',
-        type: 'Issue',
-        data: { team: { id: 'team-linear-1' } },
-      },
-    });
-    expect(fakes.writeIntegrationEvents).toHaveBeenCalled();
-    expect(fakes.enqueueIntegrationSyncJob).toHaveBeenCalledWith(
-      expect.objectContaining({ integrationId: 'integration-1', triggeredBy: 'webhook' }),
+    expect(fakes.handleWebhook).not.toHaveBeenCalled();
+    expect(fakes.recordWebhookDeliveryTargets).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        provider: 'linear',
+        externalAccountId: 'org-1',
+        resourceKind: 'linear.team',
+        externalResourceId: 'team-linear-1',
+        eventType: 'Issue',
+        dedupKey: expect.stringMatching(/^linear:body:/) as unknown as string,
+        targets: [
+          {
+            teamId: 'team-1',
+            integrationId: 'integration-1',
+            providerConnectionId: 'connection-1',
+          },
+        ],
+      }),
     );
+    expect(fakes.writeIntegrationEvents).not.toHaveBeenCalled();
+    expect(fakes.enqueueIntegrationSyncJob).not.toHaveBeenCalled();
+    expect(fakes.enqueueWebhookDeliveryJob).toHaveBeenCalledWith({ deliveryId: 'delivery-row-1' });
   });
 
-  it('writes matching webhook events even when Redis queue acquisition fails', async () => {
+  it('keeps persisted webhook deliveries when Redis queue acquisition fails', async () => {
     fakes.requireRedisQueue.mockRejectedValue(new Error('redis down'));
 
     const response = await POST(
@@ -129,13 +160,27 @@ describe('POST /api/webhooks/linear', () => {
 
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject({ ok: true });
-    expect(fakes.handleWebhook).toHaveBeenCalled();
-    expect(fakes.writeIntegrationEvents).toHaveBeenCalledWith(
-      expect.objectContaining({
-        integration: { id: 'integration-1', teamId: 'team-1', externalAccountId: 'org-1' },
-        events: [{ dedupKey: 'event-1' }],
+    expect(fakes.handleWebhook).not.toHaveBeenCalled();
+    expect(fakes.writeIntegrationEvents).not.toHaveBeenCalled();
+    expect(fakes.recordWebhookDeliveryTargets).toHaveBeenCalled();
+    expect(fakes.enqueueIntegrationSyncJob).not.toHaveBeenCalled();
+    expect(fakes.enqueueWebhookDeliveryJob).not.toHaveBeenCalled();
+  });
+
+  it('asks the provider to retry when delivery persistence fails', async () => {
+    fakes.recordWebhookDeliveryTargets.mockRejectedValue(new Error('database down'));
+
+    const response = await POST(
+      signedRequest({
+        organizationId: 'org-1',
+        type: 'Issue',
+        data: { teamId: 'team-linear-1' },
       }),
     );
-    expect(fakes.enqueueIntegrationSyncJob).not.toHaveBeenCalled();
+
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toMatchObject({ reason: 'delivery_persist_failed' });
+    expect(fakes.requireRedisQueue).not.toHaveBeenCalled();
+    expect(fakes.enqueueWebhookDeliveryJob).not.toHaveBeenCalled();
   });
 });

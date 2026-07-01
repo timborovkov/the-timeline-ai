@@ -1,5 +1,7 @@
 import { PGlite } from '@electric-sql/pglite';
 import {
+  artifactClusterMembers,
+  artifactClusters,
   ingestWebhookCredentials,
   ingestWebhooks,
   rawEvents,
@@ -240,6 +242,46 @@ describe('/api/webhooks/ingest', () => {
     expect(fakes.enqueueExtractJob).toHaveBeenCalledTimes(2);
     expect(fakes.enqueueEmbedJob).toHaveBeenCalledTimes(2);
     expect(fakes.enqueueSuggestionJob).toHaveBeenCalledTimes(2);
+  });
+
+  it('creates and repairs link artifacts from webhook text payloads', async () => {
+    const body = '{"event":"deal.updated","url":"https://example.com/deals/42?utm_source=crm"}';
+    const first = await POST(request(body, { 'content-type': 'application/json' }));
+    expect(first.status).toBe(202);
+    const firstPayload = (await first.json()) as { rawEventId: string };
+
+    const [event] = await db.select().from(rawEvents);
+    expect(event?.sourceMetadata).toMatchObject({
+      links: [
+        expect.objectContaining({
+          canonical_url: 'https://example.com/deals/42',
+          display_url: 'example.com/deals/42',
+        }),
+      ],
+    });
+    await expect(db.select().from(artifactClusters)).resolves.toEqual([
+      expect.objectContaining({
+        artifactType: 'link',
+        canonicalName: 'example.com/deals/42',
+      }),
+    ]);
+
+    await db.delete(artifactClusters);
+    await expect(db.select().from(artifactClusterMembers)).resolves.toHaveLength(0);
+
+    const duplicate = await POST(request(body, { 'content-type': 'application/json' }));
+    expect(duplicate.status).toBe(200);
+    const duplicatePayload = (await duplicate.json()) as { rawEventId: string | null };
+    expect(duplicatePayload.rawEventId).toBe(firstPayload.rawEventId);
+    await expect(db.select().from(artifactClusters)).resolves.toEqual([
+      expect.objectContaining({
+        artifactType: 'link',
+        canonicalName: 'example.com/deals/42',
+      }),
+    ]);
+    await expect(db.select().from(artifactClusterMembers)).resolves.toEqual([
+      expect.objectContaining({ rawEventId: firstPayload.rawEventId }),
+    ]);
   });
 
   it('rejects missing credentials, oversized bodies, and unsupported media types', async () => {

@@ -26,6 +26,49 @@ async function resolveScope(userId: string) {
   return { scope: withTeam(db, active.teamId, userId), active };
 }
 
+async function reconcileWebhooksBestEffort(
+  scope: ReturnType<typeof withTeam>,
+  integration: { id: string; provider: string; providerConnectionId?: string | null },
+) {
+  try {
+    const result = await integrationsLib.adminReconcileIntegrationWebhookSubscriptions(
+      db,
+      integration.id,
+    );
+    if (!result.skipped) {
+      await Promise.all([
+        scope.integrations.recordAudit(
+          'webhooks_reconciled',
+          {
+            provider: integration.provider,
+            active: result.active,
+            deprovisioned: result.deprovisioned,
+          },
+          integration.id,
+        ),
+        scope.integrations.resolveConnectionAttention({
+          providerConnectionId: integration.providerConnectionId ?? null,
+          integrationId: integration.id,
+          categories: ['webhook_degraded'],
+        }),
+      ]);
+    }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    await scope.integrations.recordAudit(
+      'webhook_provision_failed',
+      { provider: integration.provider, error: message.slice(0, 500) },
+      integration.id,
+    );
+    await scope.integrations.recordConnectionAttention({
+      providerConnectionId: integration.providerConnectionId ?? null,
+      integrationId: integration.id,
+      category: 'webhook_degraded',
+      summary: `Webhook provisioning failed for ${integration.provider}: ${message.slice(0, 300)}`,
+    });
+  }
+}
+
 export async function GET(
   _req: Request,
   ctx: { params: Promise<{ id: string }> },
@@ -137,10 +180,13 @@ export async function PUT(
     );
   }
   await scope.integrations.setSelections(id, parsed.data.selections);
-  await scope.integrations.recordAudit(
-    'selections_updated',
-    { count: parsed.data.selections.length },
-    id,
-  );
+  await Promise.all([
+    scope.integrations.recordAudit(
+      'selections_updated',
+      { count: parsed.data.selections.length },
+      id,
+    ),
+    reconcileWebhooksBestEffort(scope, integration),
+  ]);
   return NextResponse.json({ ok: true });
 }

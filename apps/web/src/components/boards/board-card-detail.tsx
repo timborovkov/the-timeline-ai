@@ -11,9 +11,11 @@ import type {
 } from '@/components/boards/board-detail-client';
 import type { BoardLayout } from '@/lib/board-links';
 import type * as boards from '@timeline/shared/boards';
+import type * as objects from '@timeline/shared/objects/types';
 import type { ReactNode } from 'react';
 
 import { RemoveBoardItemButton } from '@/components/boards/remove-board-item-button';
+import { ObjectRelatedContext } from '@/components/objects/object-related-context';
 import {
   Dialog,
   DialogContent,
@@ -32,6 +34,7 @@ interface Props {
   boardId: string;
   view: BoardLayout;
   item: boards.BoardItemRow | null;
+  connectedWork?: objects.ObjectDetail['connectedWork'] | null;
   history: boards.BoardItemChangeRow[];
   lanes?: boards.BoardLaneRow[];
   members?: BoardMemberOption[];
@@ -89,6 +92,7 @@ export function BoardCardDetail({
   boardId,
   view,
   item,
+  connectedWork = null,
   history,
   lanes = EMPTY_LANES,
   members = EMPTY_MEMBERS,
@@ -161,6 +165,7 @@ export function BoardCardDetail({
         onBlur={saveNextStep}
       />
       <BoardObjectDetails item={item} lane={lane} blocked={blocked} />
+      <ObjectRelatedContext connectedWork={connectedWork} compact />
       <BoardNotesSection
         item={item}
         editing={currentDraftState.editingNotes}

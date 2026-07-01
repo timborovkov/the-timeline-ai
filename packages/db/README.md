@@ -4,7 +4,7 @@ Drizzle ORM schema, migrations, and the `migrate` script for the Timeline Postgr
 
 ## Why it exists
 
-One canonical schema definition shared by `apps/web`, `apps/worker`, and any future workspace consumer. The migrate entry point runs as a pre-deploy command on Railway and from the web start wrapper under an advisory lock, so schema changes land before traffic and freshly reset dev environments converge on boot.
+One canonical schema definition shared by `apps/web`, `apps/worker`, and any future workspace consumer. The migrate entry point runs as a pre-deploy command on Railway and from web/worker startup under an advisory lock, so schema changes land before traffic and service-only redeploys converge before app code starts using the database.
 
 ## How to use
 

@@ -171,6 +171,152 @@ describe('queue wrappers', () => {
     });
   });
 
+  it('dedupes webhook delivery processing by delivery id', async () => {
+    const queues = await importQueues();
+
+    await queues.enqueueWebhookDeliveryJob({
+      deliveryId: '11111111-1111-4111-8111-111111111111',
+    });
+
+    expect(fakes.queues[0]?.name).toBe('webhook-delivery');
+    expect(fakes.queues[0]?.options).toMatchObject({
+      defaultJobOptions: {
+        attempts: 5,
+        backoff: { type: 'exponential', delay: 2000 },
+        removeOnComplete: { age: 3600, count: 1000 },
+        removeOnFail: { age: 86400 },
+      },
+    });
+    expect(fakes.queues[0]?.addCalls[0]).toMatchObject({
+      name: 'webhook-delivery',
+      data: { deliveryId: '11111111-1111-4111-8111-111111111111' },
+      opts: { jobId: 'webhook-delivery|11111111-1111-4111-8111-111111111111' },
+    });
+  });
+
+  it('coalesces targeted integration sync bursts by resource while leaving broad syncs undeduped', async () => {
+    const queues = await importQueues();
+    const targeted = {
+      kind: 'targeted' as const,
+      integrationId: '11111111-1111-4111-8111-111111111111',
+      teamId: '22222222-2222-4222-8222-222222222222',
+      triggeredBy: 'webhook',
+      resourceType: 'github.repo',
+      externalId: 'acme/app',
+      reason: 'github_repo_webhook',
+    };
+
+    await queues.enqueueIntegrationSyncJob(targeted);
+    await queues.enqueueIntegrationSyncJob({ ...targeted, reason: 'duplicate_delivery' });
+    await queues.enqueueIntegrationSyncJob({
+      kind: 'incremental',
+      integrationId: '11111111-1111-4111-8111-111111111111',
+      teamId: '22222222-2222-4222-8222-222222222222',
+      triggeredBy: 'tick',
+    });
+    await queues.enqueueIntegrationSyncJob({
+      kind: 'incremental',
+      integrationId: '11111111-1111-4111-8111-111111111111',
+      teamId: '22222222-2222-4222-8222-222222222222',
+      triggeredBy: 'tick',
+    });
+
+    expect(fakes.queues[0]?.name).toBe('integration-sync');
+    expect(fakes.queues[0]?.addCalls).toHaveLength(3);
+    expect(fakes.queues[0]?.addCalls[0]).toMatchObject({
+      name: 'integration-sync',
+      data: targeted,
+      opts: {
+        jobId:
+          'integration-targeted|11111111-1111-4111-8111-111111111111|github.repo|acme%2Fapp|all',
+      },
+    });
+    expect(fakes.queues[0]?.addCalls[1]).toMatchObject({
+      name: 'integration-sync',
+    });
+    expect(fakes.queues[0]?.addCalls[1]?.data).toMatchObject({ kind: 'incremental' });
+    expect(fakes.queues[0]?.addCalls[1]?.opts).toBeUndefined();
+    expect(fakes.queues[0]?.addCalls[2]).toMatchObject({
+      name: 'integration-sync',
+    });
+    expect(fakes.queues[0]?.addCalls[2]?.data).toMatchObject({ kind: 'incremental' });
+    expect(fakes.queues[0]?.addCalls[2]?.opts).toBeUndefined();
+  });
+
+  it('coalesces provider-policy reconciliation while a matching job is pending', async () => {
+    const queues = await importQueues();
+    const reconcile = {
+      kind: 'incremental' as const,
+      integrationId: '11111111-1111-4111-8111-111111111111',
+      teamId: '22222222-2222-4222-8222-222222222222',
+      triggeredBy: 'reconcile',
+    };
+
+    await queues.enqueueIntegrationSyncJob(reconcile);
+    await queues.enqueueIntegrationSyncJob(reconcile);
+
+    expect(fakes.queues[0]?.addCalls).toHaveLength(1);
+    expect(fakes.queues[0]?.addCalls[0]).toMatchObject({
+      name: 'integration-sync',
+      data: reconcile,
+      opts: {
+        jobId: 'integration-reconcile|11111111-1111-4111-8111-111111111111',
+      },
+    });
+  });
+
+  it('allows later provider-policy reconciliation after a retained completed job is removed', async () => {
+    const queues = await importQueues();
+    const reconcile = {
+      kind: 'incremental' as const,
+      integrationId: '11111111-1111-4111-8111-111111111111',
+      teamId: '22222222-2222-4222-8222-222222222222',
+      triggeredBy: 'reconcile',
+    };
+
+    await queues.enqueueIntegrationSyncJob(reconcile);
+    const jobId = (
+      fakes.queues[0]?.addCalls[0]?.opts as {
+        jobId: string;
+      }
+    ).jobId;
+    fakes.queues[0]?.jobStates.set(jobId, 'completed');
+    await queues.enqueueIntegrationSyncJob(reconcile);
+
+    expect(fakes.queues[0]?.addCalls).toHaveLength(2);
+    expect(fakes.queues[0]?.addCalls[1]).toMatchObject({
+      opts: { jobId },
+    });
+  });
+
+  it('allows a later targeted integration sync after a retained completed job is removed', async () => {
+    const queues = await importQueues();
+    const targeted = {
+      kind: 'targeted' as const,
+      integrationId: '11111111-1111-4111-8111-111111111111',
+      teamId: '22222222-2222-4222-8222-222222222222',
+      triggeredBy: 'webhook',
+      resourceType: 'monday.board',
+      externalId: '123456789',
+      surface: 'items',
+    };
+
+    await queues.enqueueIntegrationSyncJob(targeted);
+    const jobId = (
+      fakes.queues[0]?.addCalls[0]?.opts as {
+        jobId: string;
+      }
+    ).jobId;
+    fakes.queues[0]?.jobStates.set(jobId, 'completed');
+    await queues.enqueueIntegrationSyncJob({ ...targeted, triggeredBy: 'reconcile' });
+
+    expect(fakes.queues[0]?.addCalls).toHaveLength(2);
+    expect(fakes.queues[0]?.addCalls[1]).toMatchObject({
+      opts: { jobId },
+    });
+    expect(fakes.queues[0]?.addCalls[1]?.data).toMatchObject({ triggeredBy: 'reconcile' });
+  });
+
   it('dedupes delayed conversation review suggestion jobs by review id and suffix', async () => {
     const queues = await importQueues();
 
@@ -519,6 +665,45 @@ describe('queue wrappers', () => {
       data: manualData,
       opts: { jobId: followup.jobId },
     });
+  });
+
+  it('dedupes timeline moment presentation jobs by cache provenance', async () => {
+    const queues = await importQueues();
+    const data = {
+      teamId: '22222222-2222-4222-8222-222222222222',
+      userId: '55555555-5555-4555-8555-555555555555',
+      rawEventIds: ['aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'],
+      cacheKey: {
+        teamId: '22222222-2222-4222-8222-222222222222',
+        momentKey: 'moment:telegram:chat-a:2026-06-27:18:00',
+        visibilityScopeHash: 'visibility-hash',
+        visibleSourceEventIdsHash: 'ids-hash',
+        visibleSourceContentHash: 'content-hash',
+        impactHydrationHash: 'impact-hash',
+        artifactClusterHash: 'artifact-hash',
+        promptVersion: 'timeline_moment_presentation.v1',
+        model: 'test/model',
+      },
+    };
+
+    const first = await queues.enqueueTimelineMomentPresentationJob(data, { delayMs: 30_000 });
+    const duplicate = await queues.enqueueTimelineMomentPresentationJob(data, { delayMs: 30_000 });
+
+    expect(fakes.queues[0]?.name).toBe('timeline-moment-presentation');
+    expect(fakes.queues[0]?.addCalls[0]).toMatchObject({
+      name: 'timeline-moment-presentation',
+      data,
+      opts: {
+        delay: 30_000,
+        jobId:
+          'timeline-moment-presentation|22222222-2222-4222-8222-222222222222|moment%3Atelegram%3Achat-a%3A2026-06-27%3A18%3A00|ids-hash|content-hash|visibility-hash|timeline_moment_presentation.v1|test%2Fmodel',
+      },
+    });
+    expect(first).toMatchObject({ enqueued: true });
+    expect(duplicate).toMatchObject({ enqueued: false, jobId: first.jobId });
+
+    await queues.closeTimelineMomentPresentationQueue();
+    expect(fakes.queues[0]?.close).toHaveBeenCalledTimes(1);
   });
 
   it('registers repeatable jobs with stable job ids and closes singleton queues', async () => {

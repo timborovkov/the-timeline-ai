@@ -1,0 +1,349 @@
+import { createSign } from 'node:crypto';
+import { existsSync, readFileSync } from 'node:fs';
+
+import {
+  formatLiveIntegrationCanaryReport,
+  type LiveIntegrationCanaryResult,
+} from '@timeline/shared/integrations';
+import { chatStructured } from '@timeline/shared/llm';
+import { z } from 'zod';
+
+const args = process.argv.slice(2);
+const strict = args.includes('--strict');
+const envFileArg = args.find((arg) => arg.startsWith('--env-file='));
+const envFile = envFileArg?.slice('--env-file='.length) ?? process.env.LIVE_ENV_FILE ?? '.env';
+
+function loadEnvFile(path: string): void {
+  if (!existsSync(path)) return;
+  const text = readFileSync(path, 'utf8');
+  for (const line of text.split(/\r?\n/u)) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    const equals = trimmed.indexOf('=');
+    if (equals === -1) continue;
+    const key = trimmed.slice(0, equals).trim();
+    const raw = trimmed.slice(equals + 1).trim();
+    const value =
+      (raw.startsWith('"') && raw.endsWith('"')) || (raw.startsWith("'") && raw.endsWith("'"))
+        ? raw.slice(1, -1)
+        : raw;
+    process.env[key] = value;
+  }
+}
+
+function configured(...keys: string[]): boolean {
+  return keys.every((key) => Boolean(process.env[key]?.trim()));
+}
+
+function secretStatus(
+  name: string,
+  ok: boolean,
+  detail: string,
+  input: Pick<LiveIntegrationCanaryResult, 'action' | 'docs' | 'envKeys'>,
+): LiveIntegrationCanaryResult {
+  return { name, status: ok ? 'ok' : 'skip', detail, ...input };
+}
+
+function configStatus(
+  name: string,
+  ok: boolean,
+  detail: string,
+  input: Pick<LiveIntegrationCanaryResult, 'action' | 'docs' | 'envKeys'>,
+): LiveIntegrationCanaryResult {
+  return { name, status: ok ? 'ok' : 'skip', detail, ...input };
+}
+
+function shortProviderError(status: number, body: unknown, text: string): string {
+  const record = body && typeof body === 'object' ? (body as Record<string, unknown>) : {};
+  const message = record.detail ?? record.message ?? record.error ?? text;
+  return `status ${String(status)}: ${String(message).replace(/\s+/gu, ' ').slice(0, 140)}`;
+}
+
+async function readJson(response: Response): Promise<{ body: unknown; text: string }> {
+  const text = await response.text();
+  try {
+    return { body: JSON.parse(text) as unknown, text };
+  } catch {
+    return { body: null, text };
+  }
+}
+
+async function checkOpenRouter(): Promise<LiveIntegrationCanaryResult> {
+  if (!configured('OPENROUTER_API_KEY')) {
+    return {
+      name: 'OpenRouter',
+      status: 'skip',
+      detail: 'OPENROUTER_API_KEY missing',
+      envKeys: ['OPENROUTER_API_KEY'],
+      docs: 'docs/setup/openrouter.html',
+    };
+  }
+  try {
+    const result = await chatStructured({
+      schema: z.object({
+        status: z.literal('ok'),
+        surface: z.literal('openrouter'),
+      }),
+      system: 'Return only the requested structured object.',
+      prompt: 'Run a Timeline live integration canary.',
+    });
+    if (result.object.status === 'ok' && result.object.surface === 'openrouter') {
+      return { name: 'OpenRouter', status: 'ok', detail: 'shared structured LLM path succeeded' };
+    }
+  } catch (err) {
+    return {
+      name: 'OpenRouter',
+      status: 'warn',
+      detail: err instanceof Error ? err.message.slice(0, 160) : String(err).slice(0, 160),
+      action: 'verify the OpenRouter key and model access',
+      docs: 'docs/setup/openrouter.html',
+    };
+  }
+  return {
+    name: 'OpenRouter',
+    status: 'warn',
+    detail: 'structured response failed validation',
+    action: 'verify the configured model returns structured responses',
+    docs: 'docs/setup/openrouter.html',
+  };
+}
+
+function base64Url(value: Buffer | string): string {
+  return Buffer.from(value).toString('base64url');
+}
+
+function githubAppJwt(): string {
+  const privateKey = process.env.GITHUB_APP_PRIVATE_KEY?.replace(/\\n/gu, '\n');
+  if (!privateKey) throw new Error('GITHUB_APP_PRIVATE_KEY missing');
+  const now = Math.floor(Date.now() / 1000);
+  const header = base64Url(JSON.stringify({ alg: 'RS256', typ: 'JWT' }));
+  const payload = base64Url(
+    JSON.stringify({
+      iat: now - 60,
+      exp: now + 540,
+      iss: process.env.GITHUB_APP_ID,
+    }),
+  );
+  const sign = createSign('RSA-SHA256');
+  sign.update(`${header}.${payload}`);
+  sign.end();
+  return `${header}.${payload}.${sign.sign(privateKey).toString('base64url')}`;
+}
+
+async function checkGithubApp(): Promise<LiveIntegrationCanaryResult> {
+  if (!configured('GITHUB_APP_ID', 'GITHUB_APP_PRIVATE_KEY')) {
+    return {
+      name: 'GitHub App',
+      status: 'skip',
+      detail: 'GITHUB_APP_ID or GITHUB_APP_PRIVATE_KEY missing',
+      envKeys: ['GITHUB_APP_ID', 'GITHUB_APP_PRIVATE_KEY'],
+      action:
+        'configure GitHub App installation-token credentials for production webhook-first sync',
+      docs: 'docs/setup/integrations.html#github',
+    };
+  }
+  const response = await fetch('https://api.github.com/app', {
+    headers: {
+      accept: 'application/vnd.github+json',
+      authorization: `Bearer ${githubAppJwt()}`,
+      'x-github-api-version': '2022-11-28',
+    },
+  });
+  const { body, text } = await readJson(response);
+  if (!response.ok) {
+    return {
+      name: 'GitHub App',
+      status: 'warn',
+      detail: shortProviderError(response.status, body, text),
+      action: 'verify the GitHub App id/private key pair and app permissions',
+      docs: 'docs/setup/integrations.html#github',
+    };
+  }
+  return { name: 'GitHub App', status: 'ok', detail: 'app JWT authenticated' };
+}
+
+async function checkSentry(): Promise<LiveIntegrationCanaryResult> {
+  if (!configured('SENTRY_AUTH_TOKEN')) {
+    return {
+      name: 'Sentry API',
+      status: 'skip',
+      detail: 'SENTRY_AUTH_TOKEN missing',
+      envKeys: ['SENTRY_AUTH_TOKEN'],
+      docs: 'docs/setup/sentry.html',
+    };
+  }
+  if (!configured('SENTRY_ORG', 'SENTRY_PROJECT')) {
+    return {
+      name: 'Sentry API',
+      status: 'skip',
+      detail: 'SENTRY_ORG or SENTRY_PROJECT missing',
+      envKeys: ['SENTRY_ORG', 'SENTRY_PROJECT'],
+      docs: 'docs/setup/sentry.html',
+    };
+  }
+  const org = encodeURIComponent(process.env.SENTRY_ORG ?? '');
+  const project = encodeURIComponent(process.env.SENTRY_PROJECT ?? '');
+  const response = await fetch(`https://sentry.io/api/0/projects/${org}/${project}/`, {
+    headers: { authorization: `Bearer ${process.env.SENTRY_AUTH_TOKEN}` },
+  });
+  const { body, text } = await readJson(response);
+  if (!response.ok) {
+    return {
+      name: 'Sentry API',
+      status: 'warn',
+      detail: shortProviderError(response.status, body, text),
+      action:
+        'grant the Sentry token access to the configured org/project or update SENTRY_ORG/SENTRY_PROJECT',
+      docs: 'docs/setup/sentry.html',
+    };
+  }
+  return { name: 'Sentry API', status: 'ok', detail: 'project lookup succeeded' };
+}
+
+function checkOAuthConfig(): LiveIntegrationCanaryResult[] {
+  return [
+    configStatus(
+      'Google Drive OAuth app',
+      configured('GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET'),
+      configured('GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET')
+        ? 'configured'
+        : 'GOOGLE_CLIENT_ID or GOOGLE_CLIENT_SECRET missing',
+      {
+        envKeys: ['GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET'],
+        docs: 'docs/setup/integrations.html#google-drive',
+      },
+    ),
+    configStatus(
+      'Linear OAuth app',
+      configured('LINEAR_CLIENT_ID', 'LINEAR_CLIENT_SECRET'),
+      configured('LINEAR_CLIENT_ID', 'LINEAR_CLIENT_SECRET')
+        ? 'configured'
+        : 'LINEAR_CLIENT_ID or LINEAR_CLIENT_SECRET missing',
+      {
+        envKeys: ['LINEAR_CLIENT_ID', 'LINEAR_CLIENT_SECRET'],
+        docs: 'docs/setup/integrations.html#linear',
+      },
+    ),
+    configStatus(
+      'GitHub OAuth app',
+      configured('GITHUB_APP_CLIENT_ID', 'GITHUB_APP_CLIENT_SECRET'),
+      configured('GITHUB_APP_CLIENT_ID', 'GITHUB_APP_CLIENT_SECRET')
+        ? 'configured'
+        : 'GITHUB_APP_CLIENT_ID or GITHUB_APP_CLIENT_SECRET missing',
+      {
+        envKeys: ['GITHUB_APP_CLIENT_ID', 'GITHUB_APP_CLIENT_SECRET'],
+        docs: 'docs/setup/integrations.html#github',
+      },
+    ),
+    configStatus(
+      'Monday OAuth app',
+      configured('MONDAY_CLIENT_ID', 'MONDAY_CLIENT_SECRET'),
+      configured('MONDAY_CLIENT_ID', 'MONDAY_CLIENT_SECRET')
+        ? 'configured'
+        : 'MONDAY_CLIENT_ID or MONDAY_CLIENT_SECRET missing',
+      {
+        envKeys: ['MONDAY_CLIENT_ID', 'MONDAY_CLIENT_SECRET'],
+        docs: 'docs/setup/integrations.html#monday',
+      },
+    ),
+    configStatus(
+      'Slack app credentials',
+      configured('SLACK_CLIENT_ID', 'SLACK_CLIENT_SECRET'),
+      configured('SLACK_CLIENT_ID', 'SLACK_CLIENT_SECRET')
+        ? 'configured'
+        : 'SLACK_CLIENT_ID or SLACK_CLIENT_SECRET missing',
+      {
+        envKeys: ['SLACK_CLIENT_ID', 'SLACK_CLIENT_SECRET'],
+        docs: 'docs/setup/slack.html',
+      },
+    ),
+    configStatus(
+      'Sentry OAuth app',
+      configured('SENTRY_INTEGRATION_CLIENT_ID', 'SENTRY_INTEGRATION_CLIENT_SECRET'),
+      configured('SENTRY_INTEGRATION_CLIENT_ID', 'SENTRY_INTEGRATION_CLIENT_SECRET')
+        ? 'configured'
+        : 'SENTRY_INTEGRATION_CLIENT_ID or SENTRY_INTEGRATION_CLIENT_SECRET missing',
+      {
+        envKeys: ['SENTRY_INTEGRATION_CLIENT_ID', 'SENTRY_INTEGRATION_CLIENT_SECRET'],
+        docs: 'docs/setup/integrations.html#sentry-native',
+      },
+    ),
+  ];
+}
+
+function checkWebhookConfig(): LiveIntegrationCanaryResult[] {
+  return [
+    secretStatus(
+      'GitHub webhook secret',
+      configured('GITHUB_WEBHOOK_SECRET'),
+      configured('GITHUB_WEBHOOK_SECRET') ? 'configured' : 'GITHUB_WEBHOOK_SECRET missing',
+      {
+        envKeys: ['GITHUB_WEBHOOK_SECRET'],
+        docs: 'docs/setup/integrations.html#github',
+      },
+    ),
+    secretStatus(
+      'Monday webhook secret',
+      configured('MONDAY_WEBHOOK_SECRET'),
+      configured('MONDAY_WEBHOOK_SECRET') ? 'configured' : 'MONDAY_WEBHOOK_SECRET missing',
+      {
+        envKeys: ['MONDAY_WEBHOOK_SECRET'],
+        docs: 'docs/setup/integrations.html#monday',
+      },
+    ),
+    secretStatus(
+      'Sentry OAuth webhook secret',
+      configured('SENTRY_INTEGRATION_CLIENT_SECRET'),
+      configured('SENTRY_INTEGRATION_CLIENT_SECRET')
+        ? 'configured through SENTRY_INTEGRATION_CLIENT_SECRET'
+        : 'SENTRY_INTEGRATION_CLIENT_SECRET missing',
+      {
+        envKeys: ['SENTRY_INTEGRATION_CLIENT_SECRET'],
+        docs: 'docs/setup/integrations.html#sentry-native',
+      },
+    ),
+    secretStatus(
+      'Google Drive webhook secret',
+      configured('GOOGLE_DRIVE_WEBHOOK_SECRET'),
+      configured('GOOGLE_DRIVE_WEBHOOK_SECRET')
+        ? 'configured'
+        : 'GOOGLE_DRIVE_WEBHOOK_SECRET missing',
+      {
+        envKeys: ['GOOGLE_DRIVE_WEBHOOK_SECRET'],
+        docs: 'docs/setup/integrations.html#google-drive',
+      },
+    ),
+    secretStatus(
+      'Linear webhook secret',
+      configured('LINEAR_WEBHOOK_SECRET'),
+      configured('LINEAR_WEBHOOK_SECRET') ? 'configured' : 'LINEAR_WEBHOOK_SECRET missing',
+      {
+        envKeys: ['LINEAR_WEBHOOK_SECRET'],
+        docs: 'docs/setup/integrations.html#linear',
+      },
+    ),
+    secretStatus(
+      'Slack signing secret',
+      configured('SLACK_SIGNING_SECRET'),
+      configured('SLACK_SIGNING_SECRET') ? 'configured' : 'SLACK_SIGNING_SECRET missing',
+      {
+        envKeys: ['SLACK_SIGNING_SECRET'],
+        docs: 'docs/setup/slack.html',
+      },
+    ),
+  ];
+}
+
+loadEnvFile(envFile);
+
+const results: LiveIntegrationCanaryResult[] = [
+  ...(await Promise.all([checkOpenRouter(), checkGithubApp(), checkSentry()])),
+  ...checkOAuthConfig(),
+  ...checkWebhookConfig(),
+];
+
+console.log(formatLiveIntegrationCanaryReport({ envFile, strict, results }));
+
+if (strict && results.some((result) => result.status !== 'ok')) {
+  process.exitCode = 1;
+}

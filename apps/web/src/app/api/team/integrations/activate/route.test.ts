@@ -11,6 +11,11 @@ const fakes = vi.hoisted(() => ({
   resolveActiveTeam: vi.fn(),
   requireMembership: vi.fn(),
   activateSharedResources: vi.fn(),
+  recordAudit: vi.fn(),
+  recordConnectionAttention: vi.fn(),
+  resolveConnectionAttention: vi.fn(),
+  adminReconcileIntegrationWebhookSubscriptions: vi.fn(),
+  missingRequiredProviderScopes: vi.fn(),
   safeMarkOnboardingStep: vi.fn(),
   trackProductEventBestEffort: vi.fn(),
 }));
@@ -22,11 +27,19 @@ vi.mock('@/lib/analytics', () => ({
 }));
 vi.mock('@/lib/db', () => ({ db: {} }));
 vi.mock('@/lib/onboarding', () => ({ safeMarkOnboardingStep: fakes.safeMarkOnboardingStep }));
+vi.mock('@timeline/shared/integrations', () => ({
+  adminReconcileIntegrationWebhookSubscriptions:
+    fakes.adminReconcileIntegrationWebhookSubscriptions,
+  missingRequiredProviderScopes: fakes.missingRequiredProviderScopes,
+}));
 vi.mock('@timeline/shared/team-scope', () => ({
   withTeam: () => ({
     requireMembership: fakes.requireMembership,
     integrations: {
       activateSharedResources: fakes.activateSharedResources,
+      recordAudit: fakes.recordAudit,
+      recordConnectionAttention: fakes.recordConnectionAttention,
+      resolveConnectionAttention: fakes.resolveConnectionAttention,
     },
   }),
 }));
@@ -54,7 +67,17 @@ beforeEach(() => {
   fakes.activateSharedResources.mockResolvedValue({
     id: INTEGRATION_ID,
     provider: 'github',
+    providerConnectionId: CONNECTION_ID,
   });
+  fakes.recordAudit.mockResolvedValue(undefined);
+  fakes.recordConnectionAttention.mockResolvedValue(undefined);
+  fakes.resolveConnectionAttention.mockResolvedValue(undefined);
+  fakes.adminReconcileIntegrationWebhookSubscriptions.mockResolvedValue({
+    active: 0,
+    deprovisioned: 0,
+    skipped: true,
+  });
+  fakes.missingRequiredProviderScopes.mockReturnValue([]);
   fakes.safeMarkOnboardingStep.mockResolvedValue(true);
 });
 
@@ -87,6 +110,10 @@ describe('POST /api/team/integrations/activate', () => {
       providerConnectionId: CONNECTION_ID,
       resourceShareIds: [SHARE_ID],
     });
+    expect(fakes.adminReconcileIntegrationWebhookSubscriptions).toHaveBeenCalledWith(
+      {},
+      INTEGRATION_ID,
+    );
     expect(fakes.safeMarkOnboardingStep).toHaveBeenCalledWith(
       expect.any(Object),
       'first_integration',
@@ -105,5 +132,102 @@ describe('POST /api/team/integrations/activate', () => {
       'onboarding_step_completed',
       expect.objectContaining({ step: 'first_integration', source: 'automatic' }),
     );
+  });
+
+  it('keeps activation successful when webhook provisioning degrades and records attention', async () => {
+    fakes.activateSharedResources.mockResolvedValueOnce({
+      id: INTEGRATION_ID,
+      provider: 'monday',
+      providerConnectionId: CONNECTION_ID,
+    });
+    fakes.adminReconcileIntegrationWebhookSubscriptions.mockRejectedValueOnce(
+      new Error('MONDAY_WEBHOOK_SECRET not configured'),
+    );
+
+    const response = await POST(
+      request({ providerConnectionId: CONNECTION_ID, resourceShareIds: [SHARE_ID] }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(fakes.recordAudit).toHaveBeenCalledWith(
+      'webhook_provision_failed',
+      expect.objectContaining({
+        provider: 'monday',
+        error: 'MONDAY_WEBHOOK_SECRET not configured',
+      }),
+      INTEGRATION_ID,
+    );
+    expect(fakes.recordConnectionAttention).toHaveBeenCalledTimes(1);
+    const attentionInput = fakes.recordConnectionAttention.mock.calls[0]?.[0] as
+      | Record<string, unknown>
+      | undefined;
+    expect(attentionInput).toMatchObject({
+      providerConnectionId: CONNECTION_ID,
+      integrationId: INTEGRATION_ID,
+      category: 'webhook_degraded',
+    });
+    expect(attentionInput?.summary).toEqual(
+      expect.stringContaining('Webhook provisioning failed for monday'),
+    );
+  });
+
+  it('skips Monday webhook provisioning and records reconnect attention when legacy scopes are missing', async () => {
+    fakes.activateSharedResources.mockResolvedValueOnce({
+      id: INTEGRATION_ID,
+      provider: 'monday',
+      providerConnectionId: CONNECTION_ID,
+      scopes: ['boards:read', 'users:read', 'updates:read', 'docs:read'],
+    });
+    fakes.missingRequiredProviderScopes.mockReturnValueOnce([
+      'account:read',
+      'webhooks:read',
+      'webhooks:write',
+    ]);
+
+    const response = await POST(
+      request({ providerConnectionId: CONNECTION_ID, resourceShareIds: [SHARE_ID] }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(fakes.adminReconcileIntegrationWebhookSubscriptions).not.toHaveBeenCalled();
+    expect(fakes.recordAudit).toHaveBeenCalledWith(
+      'webhook_provision_skipped_missing_scopes',
+      {
+        provider: 'monday',
+        missingScopes: ['account:read', 'webhooks:read', 'webhooks:write'],
+      },
+      INTEGRATION_ID,
+    );
+    expect(fakes.recordConnectionAttention).toHaveBeenCalledWith({
+      providerConnectionId: CONNECTION_ID,
+      integrationId: INTEGRATION_ID,
+      category: 'needs_reconnect',
+      summary:
+        'monday connection is missing required OAuth scopes (account:read, webhooks:read, webhooks:write); reconnect to enable webhook provisioning and account-scoped provider budgets.',
+    });
+  });
+
+  it('resolves webhook degraded attention when provisioning succeeds', async () => {
+    fakes.activateSharedResources.mockResolvedValueOnce({
+      id: INTEGRATION_ID,
+      provider: 'monday',
+      providerConnectionId: CONNECTION_ID,
+    });
+    fakes.adminReconcileIntegrationWebhookSubscriptions.mockResolvedValueOnce({
+      active: 2,
+      deprovisioned: 1,
+      skipped: false,
+    });
+
+    const response = await POST(
+      request({ providerConnectionId: CONNECTION_ID, resourceShareIds: [SHARE_ID] }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(fakes.resolveConnectionAttention).toHaveBeenCalledWith({
+      providerConnectionId: CONNECTION_ID,
+      integrationId: INTEGRATION_ID,
+      categories: ['webhook_degraded'],
+    });
   });
 });

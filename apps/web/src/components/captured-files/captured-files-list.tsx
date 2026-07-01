@@ -11,8 +11,10 @@ import type { ReactNode } from 'react';
 import { promoteCapturedFileAction } from '@/app/actions/documents';
 import { DocumentPreview } from '@/components/documents/document-preview';
 import { EvidenceLink } from '@/components/evidence-link';
+import { FilterMultiSelect } from '@/components/filter-multi-select';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { selectedValues } from '@/lib/filter-values';
 
 interface CapturedFileItem {
   id: string;
@@ -84,12 +86,13 @@ type CapturedFilesUiAction =
   | { type: 'fileType'; value: string }
   | { type: 'status'; value: string }
   | { type: 'date'; value: string }
+  | { type: 'clear_filters' }
   | { type: 'promote'; file: CapturedFileItem | null };
 
 const capturedFilesUiInitialState: CapturedFilesUiState = {
-  sourceFilter: ALL,
-  typeFilter: ALL,
-  statusFilter: ALL,
+  sourceFilter: '',
+  typeFilter: '',
+  statusFilter: '',
   dateFilter: ALL,
   promoting: null,
 };
@@ -107,10 +110,19 @@ function capturedFilesUiReducer(
       return { ...state, statusFilter: action.value };
     case 'date':
       return { ...state, dateFilter: action.value };
+    case 'clear_filters':
+      return { ...state, sourceFilter: '', typeFilter: '', statusFilter: '', dateFilter: ALL };
     case 'promote':
       return { ...state, promoting: action.file };
   }
 }
+
+const FILE_TYPE_OPTIONS = [
+  { value: 'image', label: 'Images' },
+  { value: 'pdf', label: 'PDFs' },
+  { value: 'audio', label: 'Audio' },
+  { value: 'file', label: 'Other files' },
+] as const;
 
 interface PaginationState {
   inputFiles: CapturedFileItem[];
@@ -193,14 +205,28 @@ export function CapturedFilesList({ files, nextCursor = null, folders, members }
       ).sort(),
     [loadedFiles],
   );
+  const sourceOptions = useMemo(
+    () => sources.map((source) => ({ value: source, label: source })),
+    [sources],
+  );
+  const statusOptions = useMemo(
+    () => statuses.map((status) => ({ value: status, label: status })),
+    [statuses],
+  );
+  const typeOptions = useMemo(() => [...FILE_TYPE_OPTIONS], []);
+  const activeFilterCount =
+    selectedValues(uiState.sourceFilter, sourceOptions).length +
+    selectedValues(uiState.typeFilter, typeOptions).length +
+    selectedValues(uiState.statusFilter, statusOptions).length +
+    (uiState.dateFilter !== ALL ? 1 : 0);
   const visibleFiles = loadedFiles.filter((file) => {
     const kind = fileKind(file.currentVersion?.contentType ?? null);
     const status = file.currentVersion?.processingStatus ?? 'pending';
-    if (uiState.sourceFilter !== ALL && file.provenance.source !== uiState.sourceFilter) {
+    if (!matchesMultiFilter(file.provenance.source, uiState.sourceFilter, sourceOptions)) {
       return false;
     }
-    if (uiState.typeFilter !== ALL && kind !== uiState.typeFilter) return false;
-    if (uiState.statusFilter !== ALL && status !== uiState.statusFilter) return false;
+    if (!matchesMultiFilter(kind, uiState.typeFilter, typeOptions)) return false;
+    if (!matchesMultiFilter(status, uiState.statusFilter, statusOptions)) return false;
     if (uiState.dateFilter !== ALL && !matchesDateFilter(file.updatedAt, uiState.dateFilter)) {
       return false;
     }
@@ -236,59 +262,69 @@ export function CapturedFilesList({ files, nextCursor = null, folders, members }
 
   return (
     <section className="space-y-3">
-      <div className="grid gap-2 rounded-sm border border-border bg-card p-3 md:grid-cols-4">
-        <FilterSelect
-          label="Source"
-          value={uiState.sourceFilter}
-          onChange={(value) => {
-            dispatchUi({ type: 'source', value });
-          }}
-        >
-          <option value={ALL}>All sources</option>
-          {sources.map((source) => (
-            <option key={source} value={source}>
-              {source}
-            </option>
-          ))}
-        </FilterSelect>
-        <FilterSelect
-          label="Type"
-          value={uiState.typeFilter}
-          onChange={(value) => {
-            dispatchUi({ type: 'fileType', value });
-          }}
-        >
-          <option value={ALL}>All types</option>
-          <option value="image">Images</option>
-          <option value="pdf">PDFs</option>
-          <option value="audio">Audio</option>
-          <option value="file">Other files</option>
-        </FilterSelect>
-        <FilterSelect
-          label="Status"
-          value={uiState.statusFilter}
-          onChange={(value) => {
-            dispatchUi({ type: 'status', value });
-          }}
-        >
-          <option value={ALL}>All statuses</option>
-          {statuses.map((status) => (
-            <option key={status} value={status}>
-              {status}
-            </option>
-          ))}
-        </FilterSelect>
-        <FilterSelect
-          label="Date"
-          value={uiState.dateFilter}
-          onChange={(value) => {
-            dispatchUi({ type: 'date', value });
-          }}
-        >
-          <option value={ALL}>Any time</option>
-          <option value="7d">Last 7 days</option>
-          <option value="30d">Last 30 days</option>
-        </FilterSelect>
+      <div className="grid gap-3 rounded-sm border border-border bg-card p-3 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-start">
+        <div className="flex min-w-0 flex-wrap items-end gap-2">
+          <FilterMultiSelect
+            label="Source"
+            value={uiState.sourceFilter}
+            onValueChange={(value) => {
+              dispatchUi({ type: 'source', value });
+            }}
+            placeholder="All sources"
+            options={sourceOptions}
+          />
+          <FilterMultiSelect
+            label="Type"
+            value={uiState.typeFilter}
+            onValueChange={(value) => {
+              dispatchUi({ type: 'fileType', value });
+            }}
+            placeholder="All types"
+            options={typeOptions}
+          />
+          <FilterMultiSelect
+            label="Status"
+            value={uiState.statusFilter}
+            onValueChange={(value) => {
+              dispatchUi({ type: 'status', value });
+            }}
+            placeholder="All statuses"
+            options={statusOptions}
+          />
+          <FilterSelect
+            label="Date"
+            value={uiState.dateFilter}
+            onChange={(value) => {
+              dispatchUi({ type: 'date', value });
+            }}
+          >
+            <option value={ALL}>Any time</option>
+            <option value="7d">Last 7 days</option>
+            <option value="30d">Last 30 days</option>
+          </FilterSelect>
+        </div>
+        <div className="flex flex-wrap items-center gap-2 xl:justify-end xl:pt-[1.125rem]">
+          <output
+            className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim"
+            aria-live="polite"
+          >
+            {activeFilterCount > 0
+              ? `${String(visibleFiles.length)} / ${String(loadedFiles.length)}`
+              : `${String(loadedFiles.length)} visible`}
+          </output>
+          {activeFilterCount > 0 ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                dispatchUi({ type: 'clear_filters' });
+              }}
+            >
+              Clear
+            </Button>
+          ) : null}
+        </div>
       </div>
 
       <ul className="space-y-2">
@@ -355,6 +391,15 @@ function FilterSelect({
       </select>
     </label>
   );
+}
+
+function matchesMultiFilter(
+  value: string,
+  filter: string,
+  options: readonly { value: string }[],
+): boolean {
+  const selected = selectedValues(filter, options);
+  return selected.length === 0 || selected.includes(value);
 }
 
 function CapturedFileRow({ file, onPromote }: { file: CapturedFileItem; onPromote: () => void }) {

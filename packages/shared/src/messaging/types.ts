@@ -85,6 +85,7 @@ export interface DailyDigestPayload {
   sections?: DailyDigestSection[];
   pendingApprovals: number;
   eventCount: number;
+  momentCount?: number;
   sourceDistribution: Record<string, number>;
   objectChangesByType: Record<string, number>;
   newTeamMembers: { userId: string; label: string; createdAt: string }[];

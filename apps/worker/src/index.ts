@@ -1,4 +1,4 @@
-import { closeDb, getDb } from '@timeline/db';
+import { closeDb, getDb, migrateDatabase } from '@timeline/db';
 import { waitForMigrations } from '@timeline/db/wait-for-migrations';
 import { childLogger, queue } from '@timeline/shared';
 import { shutdownPostHogNodeClients } from '@timeline/shared/analytics/posthog-node';
@@ -19,18 +19,21 @@ import { startOverdueWorker } from '#src/workers/overdue.js';
 import { startReconciliationWorker } from '#src/workers/reconciliation.js';
 import { startSuggestionWorker } from '#src/workers/suggestions.js';
 import { startTeamExportWorker } from '#src/workers/teamExport.js';
+import { startTimelineMomentPresentationWorker } from '#src/workers/timelineMomentPresentation.js';
 import { startTranscribeWorker } from '#src/workers/transcribe.js';
+import { startWebhookDeliveryWorker } from '#src/workers/webhookDelivery.js';
 
 const log = childLogger('worker');
 
 initWorkerSentry();
 
 async function main(): Promise<void> {
-  // On Railway, the web service runs migrations in preDeploy and again from
-  // its start wrapper. Worker services deploy in parallel and can race that.
-  // Block here until the DB has at least as many migrations applied as the
-  // journal bundled with this image expects, so we don't crash-loop on every
-  // deploy that ships schema changes.
+  // Railway can deploy/restart the worker independently from web, so the
+  // worker must be able to advance migrations too. The shared advisory lock
+  // keeps concurrent web/worker migrators serialized and no-op once current.
+  await migrateDatabase({ withAdvisoryLock: true });
+  // Keep the explicit readiness check so a mismatched image or skipped
+  // migrator still fails before queues start consuming jobs.
   await waitForMigrations();
 
   const db = getDb();
@@ -45,9 +48,11 @@ async function main(): Promise<void> {
   const meetingSchedulerWorker = startMeetingSchedulerWorker({ db });
   const objectSummaryWorker = startObjectSummaryWorker({ db });
   const janitorWorker = startJanitorWorker({ db });
+  const webhookDeliveryWorker = startWebhookDeliveryWorker({ db });
   const integrationSyncWorker = startIntegrationSyncWorker({ db });
   const mcpHealthWorker = startMcpHealthWorker({ db });
   const teamExportWorker = startTeamExportWorker({ db });
+  const timelineMomentPresentationWorker = startTimelineMomentPresentationWorker({ db });
   const dailyDigestWorker = startDailyDigestWorker({ db });
   const reconciliationWorker = startReconciliationWorker({ db });
   // Register the hourly repeatables. BullMQ keys by jobId so a
@@ -64,7 +69,7 @@ async function main(): Promise<void> {
   await queue.scheduleMeetingSchedulerTick();
   await queue.scheduleDailyDigest();
   log.info(
-    'transcribe + extract + suggestions + embed + overdue + calendar-recurrence + document-extract + meeting-finalize + meeting-scheduler + object-summary + janitor + integration-sync + mcp-health + team-export + daily-digest + reconciliation workers started',
+    'transcribe + extract + suggestions + embed + overdue + calendar-recurrence + document-extract + meeting-finalize + meeting-scheduler + object-summary + janitor + webhook-delivery + integration-sync + mcp-health + team-export + timeline-moment-presentation + daily-digest + reconciliation workers started',
   );
 
   const shutdown = async (signal: string): Promise<void> => {
@@ -82,9 +87,11 @@ async function main(): Promise<void> {
         meetingSchedulerWorker.close(),
         objectSummaryWorker.close(),
         janitorWorker.close(),
+        webhookDeliveryWorker.close(),
         integrationSyncWorker.close(),
         mcpHealthWorker.close(),
         teamExportWorker.close(),
+        timelineMomentPresentationWorker.close(),
         dailyDigestWorker.close(),
         reconciliationWorker.close(),
       ]);
@@ -99,9 +106,11 @@ async function main(): Promise<void> {
       await queue.closeMeetingSchedulerQueue();
       await queue.closeObjectSummaryQueue();
       await queue.closeJanitorQueue();
+      await queue.closeWebhookDeliveryQueue();
       await queue.closeIntegrationSyncQueue();
       await queue.closeMcpHealthQueue();
       await queue.closeTeamExportQueue();
+      await queue.closeTimelineMomentPresentationQueue();
       await queue.closeDailyDigestQueue();
       await queue.closeReconciliationQueue();
       await queue.closeRedisConnection();

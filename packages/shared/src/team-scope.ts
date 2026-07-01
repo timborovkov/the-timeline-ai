@@ -26,16 +26,20 @@ import {
   teamVisibilityDefaults,
   teams,
   teamRole,
+  timelineMomentPresentations,
   users,
   visibilityDefaultSource,
 } from '@timeline/db';
 import { and, asc, desc, eq, gte, inArray, isNull, lt, ne, or, sql } from 'drizzle-orm';
 
 import type { chatStructured } from '#src/llm/chat.js';
+import type { TimelineMomentLookupPlan } from '#src/timeline-moments/index.js';
 
 import { createAuditScope } from '#src/audit/scope.js';
 import { createBoardScope } from '#src/boards/index.js';
 import { createCalendarScope } from '#src/calendar/scope.js';
+import { sourceMetadataWithConversationArtifacts } from '#src/conversational/contact-artifacts.js';
+import { reconcileLinkArtifactsForRawEvent } from '#src/conversational/link-artifacts.js';
 import { documentPresentation } from '#src/documents/presentation.js';
 import { createDocumentScope } from '#src/documents/scope.js';
 import { createIntegrationScope } from '#src/integrations/scope.js';
@@ -59,6 +63,14 @@ import { buildPointId } from '#src/qdrant/point-id.js';
 import { normalizeRawEventsToEvidence } from '#src/reconciliation/normalization.js';
 import { createReconciliationScope } from '#src/reconciliation/scope.js';
 import { createSuggestionScope } from '#src/suggestions/index.js';
+import {
+  buildTimelineMomentPresentationCacheFingerprint,
+  timelineMomentPresentationCacheKeyMatches,
+  timelineMomentPresentationSuggestionSchema,
+  type TimelineMomentPresentationCacheKey,
+  type TimelineMomentPresentationCacheRecord,
+  type TimelineMomentPresentationSuggestion,
+} from '#src/timeline-moments/presentation.js';
 import { normalizeVisibilityUserIds, rawEventVisibleToUser } from '#src/visibility.js';
 
 // Note: `teamRole` value is referenced at runtime by drizzle elsewhere; keeping
@@ -121,7 +133,7 @@ async function normalizeRawEventEvidence(input: {
 }
 
 export interface EventListFilters {
-  authorUserId?: string;
+  authorUserId?: string | string[];
   personObjectId?: string;
   senderHandle?: string;
   senderSource?: 'telegram' | 'slack' | 'email';
@@ -290,6 +302,12 @@ export interface SearchObjectNoteResult {
   evidence: SearchObjectNoteEvidence[];
 }
 
+export interface UpsertTimelineMomentPresentationInput {
+  cacheKey: TimelineMomentPresentationCacheKey;
+  suggestion: TimelineMomentPresentationSuggestion;
+  generatedAt?: Date | undefined;
+}
+
 export interface SenderContext {
   source: EventSource;
   displayName: string | null;
@@ -325,20 +343,7 @@ export interface CoOccurringEntity {
 export interface EntityProfile {
   entity: {
     id: string;
-    type:
-      | 'person'
-      | 'company'
-      | 'project'
-      | 'topic'
-      | 'other'
-      | 'deal'
-      | 'vendor'
-      | 'incident'
-      | 'document'
-      | 'decision'
-      | 'hiring_loop'
-      | 'task'
-      | 'follow_up';
+    type: EntityType;
     canonicalName: string;
     aliases: string[];
     metadata: Record<string, unknown>;
@@ -1401,8 +1406,11 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
   ): Promise<(typeof rawEvents.$inferSelect)[]> {
     await ensureMember();
     const conditions = [eq(rawEvents.teamId, teamId), visibilityFilter, activeRawEventFilter];
-    if (filters.authorUserId) {
-      conditions.push(eq(rawEvents.authorUserId, filters.authorUserId));
+    const authorUserId = filters.authorUserId;
+    if (Array.isArray(authorUserId) && authorUserId.length > 0) {
+      conditions.push(inArray(rawEvents.authorUserId, authorUserId));
+    } else if (typeof authorUserId === 'string') {
+      conditions.push(eq(rawEvents.authorUserId, authorUserId));
     }
     const senderCondition = await senderFilterCondition(filters);
     if (senderCondition) conditions.push(senderCondition);
@@ -1434,6 +1442,213 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
       .where(and(...conditions))
       .orderBy(desc(rawEvents.occurredAt), desc(rawEvents.id))
       .limit(filters.limit ?? 200);
+  }
+
+  function metadataPredicateCondition(
+    predicate: NonNullable<TimelineMomentLookupPlan['metadataPredicates']>[number],
+  ) {
+    const value = predicate.equals;
+    switch (predicate.path.join('.')) {
+      case 'provider':
+        return sql`${rawEvents.sourceMetadata} ->> 'provider' = ${value}`;
+      case 'event_type':
+        return sql`${rawEvents.sourceMetadata} ->> 'event_type' = ${value}`;
+      case 'external_object_id':
+        return sql`${rawEvents.sourceMetadata} ->> 'external_object_id' = ${value}`;
+      case 'external_event_id':
+        return sql`${rawEvents.sourceMetadata} ->> 'external_event_id' = ${value}`;
+      case 'meeting_id':
+        return sql`${rawEvents.sourceMetadata} ->> 'meeting_id' = ${value}`;
+      case 'thread_root_id':
+        return sql`${rawEvents.sourceMetadata} ->> 'thread_root_id' = ${value}`;
+      case 'calendar_event_id':
+        return sql`${rawEvents.sourceMetadata} ->> 'calendar_event_id' = ${value}`;
+      case 'document_id':
+        return sql`COALESCE(${rawEvents.sourceMetadata} ->> 'document_id', ${rawEvents.sourceMetadata} ->> 'documentId') = ${value}`;
+      case 'action':
+        return sql`${rawEvents.sourceMetadata} ->> 'action' = ${value}`;
+      case 'tg_chat_id':
+        return sql`${rawEvents.sourceMetadata} ->> 'tg_chat_id' = ${value}`;
+      case 'tg_chat_title':
+        return sql`${rawEvents.sourceMetadata} ->> 'tg_chat_title' = ${value}`;
+      case 'ingest_webhook_id':
+        return sql`${rawEvents.sourceMetadata} ->> 'ingest_webhook_id' = ${value}`;
+      case 'slack_channel_id':
+        return sql`${rawEvents.sourceMetadata} ->> 'slack_channel_id' = ${value}`;
+      case 'slack_channel_name':
+        return sql`${rawEvents.sourceMetadata} ->> 'slack_channel_name' = ${value}`;
+      case 'slack_thread_ts':
+        return sql`${rawEvents.sourceMetadata} ->> 'slack_thread_ts' = ${value}`;
+      case 'slack_message_ts':
+        return sql`${rawEvents.sourceMetadata} ->> 'slack_message_ts' = ${value}`;
+      case 'workflow_name':
+        return sql`${rawEvents.sourceMetadata} ->> 'workflow_name' = ${value}`;
+      case 'content.github_workflow_name':
+        return sql`POSITION(${`GitHub workflow "${value}"`} IN COALESCE(${rawEvents.contentText}, '')) > 0`;
+      case 'github.type':
+        return sql`${rawEvents.sourceMetadata} #>> '{github,type}' = ${value}`;
+      case 'github.repo':
+        return sql`${rawEvents.sourceMetadata} #>> '{github,repo}' = ${value}`;
+      case 'github.head_branch':
+        return sql`${rawEvents.sourceMetadata} #>> '{github,head_branch}' = ${value}`;
+      case 'github.workflow_name':
+        return sql`${rawEvents.sourceMetadata} #>> '{github,workflow_name}' = ${value}`;
+      case 'github.pr_number':
+        return sql`COALESCE(${rawEvents.sourceMetadata} #>> '{github,pr_number}', ${rawEvents.sourceMetadata} #>> '{github,number}') = ${value}`;
+      case 'github.number':
+        return sql`COALESCE(${rawEvents.sourceMetadata} #>> '{github,number}', ${rawEvents.sourceMetadata} #>> '{github,pr_number}') = ${value}`;
+      case 'github.sha':
+        return sql`COALESCE(${rawEvents.sourceMetadata} #>> '{github,sha}', ${rawEvents.sourceMetadata} #>> '{github,head_sha}') = ${value}`;
+      case 'github.head_sha':
+        return sql`COALESCE(${rawEvents.sourceMetadata} #>> '{github,head_sha}', ${rawEvents.sourceMetadata} #>> '{github,sha}') = ${value}`;
+      case 'github.tag':
+        return sql`${rawEvents.sourceMetadata} #>> '{github,tag}' = ${value}`;
+      default:
+        throw new Error(
+          `Unsupported timeline moment metadata predicate: ${predicate.path.join('.')}`,
+        );
+    }
+  }
+
+  async function listEventsForMomentLookup(
+    plan: TimelineMomentLookupPlan,
+  ): Promise<(typeof rawEvents.$inferSelect)[]> {
+    await ensureMember();
+    const conditions = [
+      eq(rawEvents.teamId, teamId),
+      visibilityFilter,
+      activeRawEventFilter,
+      eq(rawEvents.source, plan.source),
+    ];
+    if (plan.from) conditions.push(gte(rawEvents.occurredAt, plan.from));
+    if (plan.to) conditions.push(lt(rawEvents.occurredAt, plan.to));
+    for (const predicate of plan.metadataPredicates ?? []) {
+      conditions.push(metadataPredicateCondition(predicate));
+    }
+    for (const group of plan.metadataPredicateGroups ?? []) {
+      const groupConditions = group.map(metadataPredicateCondition);
+      if (groupConditions.length === 1) {
+        conditions.push(groupConditions[0]);
+      } else if (groupConditions.length > 1) {
+        conditions.push(or(...groupConditions));
+      }
+    }
+    return db
+      .select()
+      .from(rawEvents)
+      .where(and(...conditions))
+      .orderBy(desc(rawEvents.occurredAt), desc(rawEvents.id))
+      .limit(plan.limit);
+  }
+
+  function timelineMomentPresentationCacheKeyFromRow(
+    row: typeof timelineMomentPresentations.$inferSelect,
+  ): TimelineMomentPresentationCacheKey {
+    return {
+      teamId: row.teamId,
+      momentKey: row.momentKey,
+      visibilityScopeHash: row.visibilityScopeHash,
+      visibleSourceEventIdsHash: row.visibleSourceEventIdsHash,
+      visibleSourceContentHash: row.visibleSourceContentHash,
+      impactHydrationHash: row.impactHydrationHash,
+      artifactClusterHash: row.artifactClusterHash,
+      promptVersion: row.promptVersion,
+      model: row.model,
+    };
+  }
+
+  async function listTimelineMomentPresentations(
+    cacheKeys: TimelineMomentPresentationCacheKey[],
+  ): Promise<Record<string, TimelineMomentPresentationCacheRecord>> {
+    await ensureMember();
+    if (cacheKeys.length === 0) return {};
+    const expectedByFingerprint = new Map(
+      cacheKeys.map((cacheKey) => [
+        buildTimelineMomentPresentationCacheFingerprint(cacheKey),
+        cacheKey,
+      ]),
+    );
+    const rows = await db
+      .select()
+      .from(timelineMomentPresentations)
+      .where(
+        and(
+          eq(timelineMomentPresentations.teamId, teamId),
+          inArray(timelineMomentPresentations.cacheFingerprint, [...expectedByFingerprint.keys()]),
+        ),
+      );
+    const result: Record<string, TimelineMomentPresentationCacheRecord> = {};
+    for (const row of rows) {
+      const expected = expectedByFingerprint.get(row.cacheFingerprint);
+      if (!expected) continue;
+      const cacheKey = timelineMomentPresentationCacheKeyFromRow(row);
+      if (!timelineMomentPresentationCacheKeyMatches(expected, cacheKey)) continue;
+      const parsed = timelineMomentPresentationSuggestionSchema.safeParse(row.suggestion);
+      if (!parsed.success) continue;
+      result[row.cacheFingerprint] = {
+        cacheKey,
+        cacheFingerprint: row.cacheFingerprint,
+        suggestion: parsed.data,
+        generatedAt: row.generatedAt,
+      };
+    }
+    return result;
+  }
+
+  async function upsertTimelineMomentPresentation(
+    input: UpsertTimelineMomentPresentationInput,
+  ): Promise<TimelineMomentPresentationCacheRecord> {
+    await ensureMember();
+    if (input.cacheKey.teamId !== teamId) {
+      throw new Error('Timeline moment presentation cache key belongs to another team');
+    }
+    const suggestion = timelineMomentPresentationSuggestionSchema.parse(input.suggestion);
+    const cacheFingerprint = buildTimelineMomentPresentationCacheFingerprint(input.cacheKey);
+    const generatedAt = input.generatedAt ?? new Date();
+    const rows = await db
+      .insert(timelineMomentPresentations)
+      .values({
+        teamId,
+        momentKey: input.cacheKey.momentKey,
+        cacheFingerprint,
+        visibilityScopeHash: input.cacheKey.visibilityScopeHash,
+        visibleSourceEventIdsHash: input.cacheKey.visibleSourceEventIdsHash,
+        visibleSourceContentHash: input.cacheKey.visibleSourceContentHash,
+        impactHydrationHash: input.cacheKey.impactHydrationHash,
+        artifactClusterHash: input.cacheKey.artifactClusterHash,
+        promptVersion: input.cacheKey.promptVersion,
+        model: input.cacheKey.model,
+        suggestion,
+        generatedAt,
+        updatedAt: new Date(),
+      })
+      .onConflictDoUpdate({
+        target: [timelineMomentPresentations.teamId, timelineMomentPresentations.cacheFingerprint],
+        set: {
+          momentKey: input.cacheKey.momentKey,
+          visibilityScopeHash: input.cacheKey.visibilityScopeHash,
+          visibleSourceEventIdsHash: input.cacheKey.visibleSourceEventIdsHash,
+          visibleSourceContentHash: input.cacheKey.visibleSourceContentHash,
+          impactHydrationHash: input.cacheKey.impactHydrationHash,
+          artifactClusterHash: input.cacheKey.artifactClusterHash,
+          promptVersion: input.cacheKey.promptVersion,
+          model: input.cacheKey.model,
+          suggestion,
+          generatedAt,
+          updatedAt: new Date(),
+        },
+      })
+      .returning();
+    const row = rows[0];
+    if (!row) {
+      throw new Error('Failed to persist timeline moment presentation');
+    }
+    return {
+      cacheKey: timelineMomentPresentationCacheKeyFromRow(row),
+      cacheFingerprint: row.cacheFingerprint,
+      suggestion,
+      generatedAt: row.generatedAt,
+    };
   }
 
   function pushTimelineImpact(
@@ -2024,6 +2239,12 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
 
       listArtifactClusters: listTimelineArtifactClusters,
 
+      listEventsForMomentLookup,
+
+      listMomentPresentations: listTimelineMomentPresentations,
+
+      upsertMomentPresentation: upsertTimelineMomentPresentation,
+
       async listEventsPage(
         filters: EventListFilters = {},
       ): Promise<PaginatedResult<typeof rawEvents.$inferSelect>> {
@@ -2184,6 +2405,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
 
       async createEvent(input: CreateEventInput) {
         await ensureMember();
+        const contentText = input.contentText ?? null;
         const visibilityUserIds = await validateVisibilityPatch(
           {
             visibility: input.visibility ?? 'team',
@@ -2197,18 +2419,27 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
             teamId,
             authorUserId: input.authorUserId,
             source: input.source,
-            contentText: input.contentText ?? null,
+            contentText,
             contentAudioUrl: input.contentAudioUrl ?? null,
             occurredAt: input.occurredAt ?? new Date(),
             visibility: input.visibility ?? 'team',
             visibilityUserIds,
             visibilityOwnerUserId: input.visibilityOwnerUserId ?? input.authorUserId,
-            sourceMetadata: input.sourceMetadata ?? {},
+            sourceMetadata: sourceMetadataWithConversationArtifacts(
+              input.sourceMetadata ?? {},
+              contentText,
+            ),
           })
           .returning();
         const row = rows[0];
         if (!row) throw new Error('Failed to create event');
         await normalizeRawEventEvidence({ db, teamId, rawEventId: row.id });
+        await reconcileLinkArtifactsForRawEvent(db, {
+          teamId,
+          rawEventId: row.id,
+          text: contentText,
+          occurredAt: row.occurredAt,
+        });
         return row;
       },
 
@@ -2335,7 +2566,10 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
               visibility,
               visibilityUserIds: null,
               visibilityOwnerUserId: input.visibilityOwnerUserId ?? input.authorUserId,
-              sourceMetadata: composedMetadata,
+              sourceMetadata: sourceMetadataWithConversationArtifacts(
+                composedMetadata,
+                input.contentText,
+              ),
             })
             .onConflictDoNothing()
             .returning({ id: rawEvents.id, teamId: rawEvents.teamId });
@@ -2382,8 +2616,14 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
           }
           return { id: row.id, teamId: row.teamId, threadRootId: rootId, deduplicated: false };
         });
-        if (result && !result.deduplicated) {
+        if (result) {
           await normalizeRawEventEvidence({ db, teamId, rawEventId: result.id });
+          await reconcileLinkArtifactsForRawEvent(db, {
+            teamId,
+            rawEventId: result.id,
+            text: input.contentText,
+            occurredAt: input.occurredAt,
+          });
         }
         return result;
       },
@@ -2394,9 +2634,12 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
           .select({
             userId: teamMembers.userId,
             role: teamMembers.role,
+            name: users.name,
+            email: users.email,
             createdAt: teamMembers.createdAt,
           })
           .from(teamMembers)
+          .innerJoin(users, eq(users.id, teamMembers.userId))
           .where(and(eq(teamMembers.teamId, teamId), isNull(teamMembers.removedAt)))
           .orderBy(asc(teamMembers.createdAt));
       },

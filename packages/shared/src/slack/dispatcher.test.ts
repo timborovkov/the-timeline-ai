@@ -493,6 +493,122 @@ describe('Slack dispatcher routing', () => {
     });
   });
 
+  it('captures Slack shared links as metadata and provider-matchable artifact evidence', async () => {
+    await seedBoundSlackUser(db);
+
+    await handleSlackEnvelope(
+      { db: db as never },
+      slackEnvelope('EvChannelLink', {
+        type: 'message',
+        channel: 'C_DOCS',
+        channel_type: 'channel',
+        user: 'U_SLACK',
+        text: 'Discuss <https://github.com/timborovkov/the-timeline-ai/pull/202?utm_source=slack|PR 202> with ada@example.com',
+        ts: '1700000000.000550',
+      }),
+    );
+
+    const rows = await db.select().from(rawEvents).where(eq(rawEvents.source, 'slack'));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.sourceMetadata).toMatchObject({
+      links: [
+        {
+          canonical_url: 'https://github.com/timborovkov/the-timeline-ai/pull/202',
+          display_url: 'github.com/timborovkov/the-timeline-ai/pull/202',
+          domain: 'github.com',
+          label: 'PR 202',
+          provider: 'github',
+          provider_object_id: 'timborovkov/the-timeline-ai#202',
+        },
+      ],
+      contacts: {
+        emails: [expect.objectContaining({ normalized_value: 'ada@example.com' })],
+        phones: [],
+        addresses: [],
+      },
+    });
+
+    const artifacts = await pg.query<{
+      artifact_type: string;
+      canonical_name: string;
+      raw_event_id: string;
+      provider: string | null;
+      external_object_id: string | null;
+      strength: string;
+      anchor_type: string;
+      anchor_value: string;
+    }>(`
+      SELECT ac.artifact_type, ac.canonical_name, acm.raw_event_id, acm.provider,
+             acm.external_object_id, acm.strength, aca.anchor_type, aca.anchor_value
+      FROM artifact_clusters ac
+      JOIN artifact_cluster_members acm ON acm.cluster_id = ac.id
+      JOIN artifact_cluster_anchors aca ON aca.cluster_id = ac.id
+      WHERE ac.team_id = '${TEAM_A}'
+      ORDER BY aca.anchor_type
+    `);
+    expect(artifacts.rows).toEqual([
+      {
+        artifact_type: 'link',
+        canonical_name: 'PR 202 (github.com/timborovkov/the-timeline-ai/pull/202)',
+        raw_event_id: rows[0]?.id,
+        provider: 'github',
+        external_object_id: 'timborovkov/the-timeline-ai#202',
+        strength: 'structured',
+        anchor_type: 'provider_external:github',
+        anchor_value: 'timborovkov/the-timeline-ai#202',
+      },
+      {
+        artifact_type: 'link',
+        canonical_name: 'PR 202 (github.com/timborovkov/the-timeline-ai/pull/202)',
+        raw_event_id: rows[0]?.id,
+        provider: 'github',
+        external_object_id: 'timborovkov/the-timeline-ai#202',
+        strength: 'structured',
+        anchor_type: 'url:canonical',
+        anchor_value: 'https://github.com/timborovkov/the-timeline-ai/pull/202',
+      },
+      {
+        artifact_type: 'link',
+        canonical_name: 'PR 202 (github.com/timborovkov/the-timeline-ai/pull/202)',
+        raw_event_id: rows[0]?.id,
+        provider: 'github',
+        external_object_id: 'timborovkov/the-timeline-ai#202',
+        strength: 'structured',
+        anchor_type: 'url:display',
+        anchor_value: 'github.com/timborovkov/the-timeline-ai/pull/202',
+      },
+    ]);
+  });
+
+  it('repairs missing link artifacts when Slack retries an already-inserted event', async () => {
+    await seedBoundSlackUser(db);
+    const envelope = slackEnvelope('EvChannelLinkRetry', {
+      type: 'message',
+      channel: 'C_DOCS',
+      channel_type: 'channel',
+      user: 'U_SLACK',
+      text: 'Spec https://example.com/spec',
+      ts: '1700000000.000560',
+    });
+
+    await handleSlackEnvelope({ db: db as never }, envelope);
+    await pg.exec(`
+      DELETE FROM artifact_cluster_members;
+      DELETE FROM artifact_cluster_anchors;
+      DELETE FROM artifact_clusters;
+    `);
+    await handleSlackEnvelope({ db: db as never }, envelope);
+
+    const rows = await db.select().from(rawEvents).where(eq(rawEvents.source, 'slack'));
+    expect(rows).toHaveLength(1);
+    const artifacts = await pg.query<{ count: string }>(`
+      SELECT COUNT(*)::text AS count
+      FROM artifact_cluster_members
+      WHERE raw_event_id = (SELECT id FROM raw_events WHERE source = 'slack')
+    `);
+    expect(artifacts.rows[0]?.count).toBe('1');
+  });
+
   it('captures linked Slack DM text and enqueues text work', async () => {
     await seedWorkspace(db, TEAM_A);
     await db.insert(slackUsers).values({

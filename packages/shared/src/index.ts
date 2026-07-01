@@ -4,6 +4,7 @@ export * from '#src/passwords.js';
 export * from '#src/slug.js';
 export * from '#src/sql-like.js';
 export * from '#src/team-scope.js';
+export * as timelineMoments from '#src/timeline-moments/index.js';
 export * from '#src/team-roles.js';
 export * as telegram from '#src/telegram/index.js';
 export * as slack from '#src/slack/index.js';

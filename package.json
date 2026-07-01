@@ -19,6 +19,8 @@
     "e2e": "tsx scripts/run-e2e-strict.ts",
     "e2e:ui": "env -u NO_COLOR DATABASE_URL=${DATABASE_URL:-postgres://timeline:timeline_dev@localhost:5432/timeline} AUTH_SECRET=${AUTH_SECRET:-e2e-auth-secret-at-least-sixteen-characters} NODE_OPTIONS=--conditions=development playwright test --ui",
     "e2e:prod-smoke": "tsx scripts/run-e2e-prod-smoke.ts",
+    "canary:integrations": "NODE_OPTIONS=--conditions=development tsx scripts/check-live-integrations.ts",
+    "canary:integrations:strict": "NODE_OPTIONS=--conditions=development tsx scripts/check-live-integrations.ts --strict",
     "e2e:setup": "env -u NO_COLOR DATABASE_URL=${DATABASE_URL:-postgres://timeline:timeline_dev@localhost:5432/timeline} NODE_OPTIONS=--conditions=development tsx e2e/setup.ts",
     "e2e:cleanup": "env -u NO_COLOR DATABASE_URL=${DATABASE_URL:-postgres://timeline:timeline_dev@localhost:5432/timeline} NODE_OPTIONS=--conditions=development tsx e2e/cleanup.ts",
     "knip": "DATABASE_URL=${DATABASE_URL:-postgres://placeholder@localhost:5432/placeholder} knip",
@@ -30,7 +32,7 @@
     "db:migrate": "pnpm --filter @timeline/db migrate",
     "db:generate": "pnpm --filter @timeline/db generate",
     "db:studio": "pnpm --filter @timeline/db studio",
-    "doctor": "react-doctor"
+    "doctor": "node scripts/run-react-doctor.mjs"
   },
   "devDependencies": {
     "@playwright/test": "^1.61.0",
@@ -49,7 +51,8 @@
     "tsx": "^4.22.4",
     "turbo": "^2.9.18",
     "typescript": "^6.0.3",
-    "typescript-eslint": "^8.61.1"
+    "typescript-eslint": "^8.61.1",
+    "zod": "^4.4.3"
   },
   "engines": {
     "node": ">=24.0.0",

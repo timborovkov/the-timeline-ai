@@ -1,12 +1,12 @@
 import { users } from '@timeline/db';
-import { OBJECT_TYPES } from '@timeline/shared/objects';
+import { OBJECT_TYPES } from '@timeline/shared/objects/types';
 import { decodeCursor, encodeCursor } from '@timeline/shared/pagination';
 import { withTeam } from '@timeline/shared/team-scope';
 import { inArray } from 'drizzle-orm';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
-import type * as objects from '@timeline/shared/objects';
+import type * as objects from '@timeline/shared/objects/types';
 import type { Metadata } from 'next';
 
 import { EmptyAction } from '@/components/empty-action';
@@ -37,9 +37,11 @@ export const metadata: Metadata = {
 const OBJECTS_PAGE_SIZE = 48;
 const OBJECTS_SECTION_PREVIEW_SIZE = 8;
 
+type ObjectCountFilter = Omit<objects.ObjectListFilter, 'cursor' | 'limit' | 'offset'>;
+
 interface ObjectListScope {
   listObjects(filter: objects.ObjectListFilter): Promise<objects.ObjectRow[]>;
-  countObjects(filter: objects.ObjectCountFilter): Promise<number>;
+  countObjects(filter: ObjectCountFilter): Promise<number>;
 }
 
 function objectIdsForMergeSuggestion(item: { proposedPayload: unknown }): string[] {
@@ -72,13 +74,16 @@ export default async function ObjectsIndexPage({
     archived: false,
   } satisfies objects.ObjectListFilter;
 
-  const type = filters.type || undefined;
+  const selectedTypes = filters.type.split(',').filter(Boolean);
+  const singleType = selectedTypes.length === 1 ? selectedTypes[0] : undefined;
+  const hasTypeFilter = selectedTypes.length > 0;
+  const filterBarHiddenParams = filters.type ? { type: filters.type } : undefined;
   const cursor = parseCursorParam(firstParam(params.cursor));
   const activeFilters = hasActiveWorkFilters(filters);
 
   const [objectWindow, suggestionBundles, members] = await Promise.all([
-    type
-      ? loadTypedObjectPage(scope.objects, { filter: { ...objectFilter, type }, cursor })
+    hasTypeFilter
+      ? loadTypedObjectPage(scope.objects, { filter: objectFilter, cursor })
       : loadObjectSectionPreviews(scope.objects, { filter: objectFilter, filterParams }),
     scope.suggestions.listPendingSuggestions(),
     scope.timeline.listMembers(),
@@ -101,7 +106,7 @@ export default async function ObjectsIndexPage({
   });
   const rows = objectWindow.rows;
   const nextHref =
-    type && objectWindow.nextCursor
+    hasTypeFilter && objectWindow.nextCursor
       ? objectsPageHref({
           filters: filterParams,
           cursor: objectWindow.nextCursor,
@@ -148,17 +153,27 @@ export default async function ObjectsIndexPage({
     <div className="mx-auto max-w-5xl space-y-6">
       <IndexStrip
         srLabel={
-          type
-            ? `Objects · ${rows.length} shown · filtered to ${OBJECT_TYPE_LABELS[type] ?? type}`
-            : `Objects · previews · ${rows.length} shown`
+          singleType
+            ? `Objects · ${rows.length} shown · filtered to ${OBJECT_TYPE_LABELS[singleType] ?? singleType}`
+            : hasTypeFilter
+              ? `Objects · ${rows.length} shown · filtered to ${selectedTypes.length} types`
+              : `Objects · previews · ${rows.length} shown`
         }
         segments={[
           { value: 'OBJECTS' },
-          ...(type ? ([{ value: 'PAGE' }] as const) : ([{ value: 'PREVIEWS' }] as const)),
+          ...(hasTypeFilter ? ([{ value: 'PAGE' }] as const) : ([{ value: 'PREVIEWS' }] as const)),
           { label: 'shown', value: rows.length },
-          ...(type
-            ? ([{ label: 'type', value: OBJECT_TYPE_LABELS[type] ?? type, signal: true }] as const)
-            : ([] as const)),
+          ...(singleType
+            ? ([
+                {
+                  label: 'type',
+                  value: OBJECT_TYPE_LABELS[singleType] ?? singleType,
+                  signal: true,
+                },
+              ] as const)
+            : hasTypeFilter
+              ? ([{ label: 'types', value: selectedTypes.length, signal: true }] as const)
+              : ([] as const)),
         ]}
         leading={WORK_BACK_LINK}
       >
@@ -176,8 +191,8 @@ export default async function ObjectsIndexPage({
       >
         <Link
           href={objectsTypeHref(null, params)}
-          aria-current={!type ? 'page' : undefined}
-          className={`rounded-sm border px-2.5 py-1 transition-colors ${!type ? 'border-signal/40 bg-signal-soft text-signal' : 'border-border text-fg-muted hover:bg-surface-2 hover:text-fg'}`}
+          aria-current={!hasTypeFilter ? 'page' : undefined}
+          className={`rounded-sm border px-2.5 py-1 transition-colors ${!hasTypeFilter ? 'border-signal/40 bg-signal-soft text-signal' : 'border-border text-fg-muted hover:bg-surface-2 hover:text-fg'}`}
         >
           All
         </Link>
@@ -185,8 +200,8 @@ export default async function ObjectsIndexPage({
           <Link
             key={key}
             href={objectsTypeHref(key, params)}
-            aria-current={type === key ? 'page' : undefined}
-            className={`rounded-sm border px-2.5 py-1 transition-colors ${type === key ? 'border-signal/40 bg-signal-soft text-signal' : 'border-border text-fg-muted hover:bg-surface-2 hover:text-fg'}`}
+            aria-current={singleType === key ? 'page' : undefined}
+            className={`rounded-sm border px-2.5 py-1 transition-colors ${selectedTypes.includes(key) ? 'border-signal/40 bg-signal-soft text-signal' : 'border-border text-fg-muted hover:bg-surface-2 hover:text-fg'}`}
           >
             {label}
           </Link>
@@ -200,7 +215,7 @@ export default async function ObjectsIndexPage({
         active={hasActiveWorkFilters(filters)}
         resultCount={rows.length}
         totalCount={objectWindow.totalCount}
-        hiddenParams={type ? { type } : undefined}
+        hiddenParams={filterBarHiddenParams}
         members={memberOptions}
         typeLabels={OBJECT_TYPE_LABELS}
       />
@@ -213,26 +228,26 @@ export default async function ObjectsIndexPage({
       {rows.length === 0 ? (
         <EmptyAction
           title={
-            type && cursor
+            hasTypeFilter && cursor
               ? 'No objects on this page'
               : activeFilters
                 ? 'No objects match this filter'
                 : 'No objects yet'
           }
           body={
-            type && cursor
+            hasTypeFilter && cursor
               ? 'This page is empty. Earlier pages may still have objects.'
               : 'Objects are extracted from captured work. You can also create one manually when you already know what should be tracked.'
           }
           href={
-            type && cursor
+            hasTypeFilter && cursor
               ? objectsPageHref({ filters: filterParams })
               : activeFilters
                 ? '/app/objects'
                 : '/app#capture'
           }
           action={
-            type && cursor
+            hasTypeFilter && cursor
               ? 'Open first page'
               : activeFilters
                 ? 'Clear filter'
@@ -244,7 +259,7 @@ export default async function ObjectsIndexPage({
           rows={rows}
           typeLabels={OBJECT_TYPE_LABELS}
           pageInfo={
-            type
+            hasTypeFilter
               ? {
                   shownCount: rows.length,
                   nextHref,

@@ -825,6 +825,8 @@ function ObjectDetailView(props: Props) {
         </main>
 
         <aside className="min-w-0 space-y-4 xl:sticky xl:top-6">
+          <ObjectContactSection detail={view.viewDetail} />
+
           <ObjectPanel title="Fields" eyebrow="editable">
             <ObjectEditableFields
               detail={view.localDetail}
@@ -872,6 +874,38 @@ function ObjectDetailView(props: Props) {
         </aside>
       </div>
     </div>
+  );
+}
+
+function ObjectContactSection({ detail }: { detail: ObjectDetail }) {
+  const contacts = detail.identityFacets.filter(
+    (facet) => facet.kind === 'email' || facet.kind === 'phone',
+  );
+  if (detail.type !== 'person' || contacts.length === 0) return null;
+
+  return (
+    <ObjectPanel title="Contact" eyebrow={`${contacts.length} saved`}>
+      <div className="space-y-2">
+        {contacts.map((facet) => {
+          const href =
+            facet.kind === 'email'
+              ? `mailto:${facet.normalizedValue}`
+              : `tel:${facet.normalizedValue}`;
+          return (
+            <a
+              key={facet.id}
+              href={href}
+              className="flex min-w-0 items-center justify-between gap-3 border border-border px-3 py-2 text-sm transition hover:border-signal/60 hover:bg-signal-soft/20"
+            >
+              <span className="min-w-0 truncate">{facet.value}</span>
+              <span className="shrink-0 font-mono text-[10px] uppercase tracking-[0.14em] text-fg-dim">
+                {facet.kind}
+              </span>
+            </a>
+          );
+        })}
+      </div>
+    </ObjectPanel>
   );
 }
 
@@ -1548,7 +1582,9 @@ function ObjectConnectedWorkSection({
     connectedWork.objects.length > 0 ||
     connectedWork.boards.length > 0 ||
     connectedWork.pendingApprovals.length > 0 ||
-    connectedWork.documents.length > 0;
+    connectedWork.documents.length > 0 ||
+    connectedWork.links.length > 0 ||
+    connectedWork.capturedFiles.length > 0;
   return (
     <ObjectPanel title="Connected work" eyebrow="live context">
       {!hasWork ? (
@@ -1570,6 +1606,8 @@ function ObjectConnectedWorkSection({
             empty="No completed tasks found."
             tasks={connectedWork.recentTasks}
           />
+          <ConnectedLinkList links={connectedWork.links} />
+          <ConnectedCapturedFileList files={connectedWork.capturedFiles} />
           <ConnectedTimelineEventList events={connectedWork.timelineEvents} />
           <ConnectedDocumentList documents={connectedWork.documents} />
         </div>
@@ -1812,6 +1850,73 @@ function ConnectedDocumentList({
               </a>
               <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">
                 {document.fileKind} · updated {formatDisplayDateTime(document.updatedAt)}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </ConnectedWorkSection>
+  );
+}
+
+function ConnectedLinkList({ links }: { links: ObjectDetail['connectedWork']['links'] }) {
+  return (
+    <ConnectedWorkSection title="Links">
+      {links.length === 0 ? (
+        <p className="text-sm text-muted-foreground">No related links found.</p>
+      ) : (
+        <ul className="space-y-2">
+          {links.map((link) => (
+            <li
+              key={link.id}
+              className="grid gap-1 rounded-sm border border-border bg-surface px-3 py-2 text-sm"
+            >
+              {link.canonicalUrl ? (
+                <a
+                  href={link.canonicalUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="font-medium hover:underline"
+                >
+                  {displayText(link.displayUrl ?? link.canonicalName)}
+                </a>
+              ) : (
+                <span className="font-medium">{displayText(link.canonicalName)}</span>
+              )}
+              <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">
+                {link.provider ?? link.domain ?? 'shared link'} · updated{' '}
+                {formatDisplayDateTime(link.updatedAt)}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </ConnectedWorkSection>
+  );
+}
+
+function ConnectedCapturedFileList({
+  files,
+}: {
+  files: ObjectDetail['connectedWork']['capturedFiles'];
+}) {
+  return (
+    <ConnectedWorkSection title="Files">
+      {files.length === 0 ? (
+        <p className="text-sm text-muted-foreground">No related files found.</p>
+      ) : (
+        <ul className="space-y-2">
+          {files.map((file) => (
+            <li
+              key={file.id}
+              className="grid gap-1 rounded-sm border border-border bg-surface px-3 py-2 text-sm"
+            >
+              <Link href="/app/documents/captured" className="font-medium hover:underline">
+                {displayText(truncateFilenameMiddle(file.name))}
+              </Link>
+              <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">
+                {file.contentType ?? 'captured file'} · updated{' '}
+                {formatDisplayDateTime(file.updatedAt)}
               </span>
             </li>
           ))}

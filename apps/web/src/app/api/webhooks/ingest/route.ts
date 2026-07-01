@@ -1,6 +1,8 @@
 import { createHash } from 'node:crypto';
 
 import { rawEvents } from '@timeline/db';
+import { sourceMetadataWithConversationArtifacts } from '@timeline/shared/conversational/contact-artifacts';
+import { reconcileLinkArtifactsForRawEvent } from '@timeline/shared/conversational/link-artifacts';
 import * as ingestWebhooks from '@timeline/shared/ingest-webhooks';
 import { childLogger } from '@timeline/shared/logger';
 import * as rateLimit from '@timeline/shared/rate-limit';
@@ -100,18 +102,21 @@ export async function handlePost(req: Request, pathToken?: string): Promise<Resp
     contentType,
     body,
   });
-  const sourceMetadata = {
-    ingest_webhook_id: resolved.webhookId,
-    ingest_webhook_credential_id: resolved.credentialId,
-    ingest_webhook_name: resolved.name,
-    ingest_webhook_body_sha256: bodyHash,
-    ingest_webhook_dedup_key: dedupKey,
-    content_type: contentType,
-    method: 'POST',
-    received_at: receivedAt.toISOString(),
-    request_headers: redactedHeaders(req.headers),
-    proposal_generation_enabled: resolved.proposalGenerationEnabled,
-  };
+  const sourceMetadata = sourceMetadataWithConversationArtifacts(
+    {
+      ingest_webhook_id: resolved.webhookId,
+      ingest_webhook_credential_id: resolved.credentialId,
+      ingest_webhook_name: resolved.name,
+      ingest_webhook_body_sha256: bodyHash,
+      ingest_webhook_dedup_key: dedupKey,
+      content_type: contentType,
+      method: 'POST',
+      received_at: receivedAt.toISOString(),
+      request_headers: redactedHeaders(req.headers),
+      proposal_generation_enabled: resolved.proposalGenerationEnabled,
+    },
+    contentText,
+  );
   const visibility = ingestVisibilityFor(resolved.visibilityDefault, resolved.ownerUserId);
 
   const rows = await db
@@ -132,6 +137,8 @@ export async function handlePost(req: Request, pathToken?: string): Promise<Resp
   if (!event) {
     const duplicate = await findDedupedEvent(resolved.teamId, dedupKey);
     if (duplicate) {
+      await normalizeRawEventEvidence(duplicate);
+      await reconcileIngestWebhookLinks(duplicate, contentText, receivedAt);
       await enqueueProcessing(duplicate, resolved.proposalGenerationEnabled);
     }
     return Response.json(
@@ -141,6 +148,7 @@ export async function handlePost(req: Request, pathToken?: string): Promise<Resp
   }
 
   await normalizeRawEventEvidence(event);
+  await reconcileIngestWebhookLinks(event, contentText, receivedAt);
   await enqueueProcessing(event, resolved.proposalGenerationEnabled);
   return Response.json({ ok: true, status: 'accepted', rawEventId: event.id }, { status: 202 });
 }
@@ -154,6 +162,25 @@ async function normalizeRawEventEvidence(event: { id: string; teamId: string }):
       'ingest webhook reconciliation evidence normalization failed',
     );
   }
+}
+
+async function reconcileIngestWebhookLinks(
+  event: { id: string; teamId: string },
+  contentText: string,
+  occurredAt: Date,
+): Promise<void> {
+  await reconcileLinkArtifactsForRawEvent(db, {
+    teamId: event.teamId,
+    rawEventId: event.id,
+    text: contentText,
+    occurredAt,
+  }).catch((err: unknown) => {
+    log.error({ err, rawEventId: event.id }, 'ingest webhook link artifact reconciliation failed');
+    reportCaughtError(err, {
+      surface: 'api',
+      operation: 'ingest_webhook_link_artifact_reconcile',
+    });
+  });
 }
 
 async function findDedupedEvent(

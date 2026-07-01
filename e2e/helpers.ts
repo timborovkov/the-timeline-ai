@@ -15,10 +15,21 @@ export async function signInFromCurrentPage(
   email: string,
   expectedUrl: RegExp,
 ): Promise<void> {
-  await page.getByLabel('Email').fill(email);
-  await page.getByLabel('Password').fill(E2E_PASSWORD);
-  await page.getByRole('button', { name: 'Sign in' }).click();
-  await expect(page).toHaveURL(expectedUrl);
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    await page.getByLabel('Email').fill(email);
+    await page.getByLabel('Password').fill(E2E_PASSWORD);
+    await page.getByRole('button', { name: 'Sign in' }).click();
+    try {
+      await expect(page).toHaveURL(expectedUrl);
+      return;
+    } catch (error) {
+      const canRetry =
+        attempt === 0 &&
+        (await page.getByText('Invalid email or password.', { exact: true }).isVisible());
+      if (!canRetry) throw error;
+      await page.reload();
+    }
+  }
 }
 
 type E2eUserKey = keyof typeof e2eUsers;

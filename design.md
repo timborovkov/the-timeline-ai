@@ -38,8 +38,8 @@ Use language that makes the evidence-derived operating model concrete:
   history.
 - **Artifact clusters** — the real-world work artifacts that collect related
   evidence across surfaces, such as a Telegram report, Sentry issue, GitHub PR,
-  contract signature, deal approval, or event-planning thread, while keeping
-  source authority separate from evidence association.
+  shared link, contract signature, deal approval, or event-planning thread,
+  while keeping source authority separate from evidence association.
 - **Approval-backed state** — durable object, task, calendar, relationship, and
   memory changes that came from evidence and passed a human review path.
 
@@ -217,7 +217,7 @@ not.
 | Surface kind | Pages | Header treatment |
 | ------------ | ----- | ----------------- |
 | Operational | Timeline, Approvals, Jobs, Audit, Objects list, Boards, Tasks, Work, Inbox | `<IndexStrip>` + mono eyebrows. Dense, terminal-grade. |
-| Standard | Home, Connections, Documents, Team, Integrations, Slack, Telegram, MCP share, Personal connections, Personal MCP, Calendar, Meetings | `<PageHeader title subtitle>` + `<SectionHeading>`. Mono reserved for data. |
+| Standard | Home, Connections, Documents, Team, Team integrations, Slack, Telegram, MCP share, Provider accounts, Personal MCP, Calendar, Meetings | `<PageHeader title subtitle>` + `<SectionHeading>`. Mono reserved for data. |
 
 If a screen disagrees with its kind, fix the screen — or reclassify the
 surface here in the same PR.
@@ -243,6 +243,10 @@ surface here in the same PR.
 - **Main column** fills available width. **No `max-w-3xl` artificial
   column** except long-form prose surfaces (single document view, single
   note view) — those wrap in a `<ProseContainer>` that sets `max-w-prose`.
+- **Floating chat trigger** appears only at tablet/desktop widths where it
+  does not cover operational rows. On mobile, Ask remains available through
+  the primary navigation sheet; fixed chrome must not obscure timeline
+  evidence, board rows, or inspector content.
 - **Right inspector pane** (`w-96` = 384px, collapsible to 0): shows
   citation source, summarized raw event evidence, related objects, and audit
   trail. Long ids truncate visually with full values available on hover. Large
@@ -250,7 +254,9 @@ surface here in the same PR.
   opens when the user clicks a citation chip, an object reference, or the
   inspector toggle. Raw event evidence links use a quick-view dialog first, with
   a direct link to the full timeline row inside. This inspect-before-navigation
-  pattern is the structural expression of "every claim is cited."
+  pattern is the structural expression of "every claim is cited." Below the
+  desktop inspector breakpoint, the same content opens as a dismissible bottom
+  sheet with a scrim and focused close control.
 - **Global search palette** persistent across the top of the main column.
   Cmd+K focuses. The palette is navigational: it previews grouped results for
   pages, work records, timeline events, documents, and calendar items, while
@@ -372,8 +378,9 @@ visible change.
   markers and hairline separators. Avoid floating cards; use hierarchy, icons,
   spacing, and rail structure to create the visual timeline shape.
 - **Scan fields.** Every moment exposes when, source, actor/speaker, place or
-  source context, substance, transcription state, source count, and the first
-  impact signals without opening the inspector.
+  source context, a plain-language title, subtitle, preview, transcription
+  state, evidence count, and the first impact signals without opening the
+  inspector.
 - **Impact strip.** Show workspace consequences in a dedicated strip when
   present: tasks, boards, objects, calendar events, documents, decisions,
   follow-ups, and approvals. Hydrate from existing source evidence, suggestion
@@ -399,10 +406,19 @@ visible change.
   source owner, visibility owner, event controls, and curated source metadata
   live in the inspector.
 - **Compact row + inspector.** The row handles quick comprehension: title,
-  source truth, impact chips, transcription state, and source count. The right
-  inspector handles raw source evidence, full impact context, exact timestamps, citations,
-  visibility controls, audit trail, and source metadata without turning
-  high-volume groups into raw log dumps.
+  subtitle, preview, impact chips, transcription state, and evidence count. The
+  right inspector handles raw source evidence, full impact context, exact
+  timestamps, citations, visibility controls, audit trail, and source metadata
+  without turning high-volume groups into raw log dumps.
+- **Audit trail naming.** The raw source-event escape hatch uses the technical
+  route state `mode=events`, but user-facing controls label it `Audit trail`.
+  Keep `Source events` for implementation docs and audit/debug language, not as
+  the primary tab label.
+- **Agent parity.** Chat and automation tools should retrieve timeline moments
+  for narrative questions and expand to raw source events for citations. The UI
+  may add audio URLs, previews, and inspector controls, but moment titles,
+  grouping, evidence counts, and raw-event citation rules should not diverge
+  into a second history.
 - **Hover/selection** uses `bg-surface`, no border change, and visually connects
   the selected moment to the inspector.
 - Skeletons match the compact row shape: mono timestamp, source/title/body
@@ -680,7 +696,11 @@ key/value pairs.
 
 - Connected Work sits above Evidence as live context, not accepted memory. It
   uses compact grouped lists for open tasks, calendar, people/objects, boards,
-  pending approvals, recent history, timeline moments, and documents.
+  pending approvals, recent history, timeline moments, documents, shared links,
+  and captured files.
+- Person object sidebars show saved email and phone identity facets in a compact
+  Contact panel. These are accepted object memory, not Related Context cards;
+  shared links remain the artifact-style related context.
 - Repair Memory is a quiet header action. It queues focused object cleanup,
   fact-backed relationship proposals, and conservative missing-person bundles.
   It should not imply that rejected duplicate pairs or rejected relationship

@@ -1,5 +1,7 @@
 import { PGlite } from '@electric-sql/pglite';
 import {
+  artifactClusterMembers,
+  artifactClusters,
   calendarEventEntities,
   calendarEvents,
   entities,
@@ -133,6 +135,62 @@ describe('calendar scope', () => {
       (row) => row.rawEventId === event.startAtRawEventId,
     );
     expect(occurrenceEvidence?.summary).toBe(occurrence?.contentText);
+  });
+
+  it('refreshes link metadata and artifacts when occurrence timeline text changes', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+
+    const event = await scope.calendar.createCalendarEvent({
+      title: 'Launch review',
+      description: 'Initial agenda',
+      startAt: new Date('2026-05-27T09:00:00Z'),
+      endAt: new Date('2026-05-27T10:00:00Z'),
+      timezone: 'Europe/Tallinn',
+      visibility: 'team',
+    });
+    const startRawEventId = event.startAtRawEventId;
+    if (!startRawEventId) throw new Error('expected start raw event');
+
+    await scope.calendar.updateCalendarEvent(event.id, {
+      description: 'Agenda https://example.com/launch?utm_source=calendar&topic=readiness',
+    });
+
+    let rows = await db.select().from(rawEvents).where(eq(rawEvents.id, startRawEventId));
+    expect(rows[0]?.sourceMetadata).toMatchObject({
+      links: [
+        expect.objectContaining({
+          canonical_url: 'https://example.com/launch?topic=readiness',
+        }),
+      ],
+    });
+
+    await scope.calendar.updateCalendarEvent(event.id, {
+      description: 'Agenda https://example.com/followup?promo_code=summer',
+    });
+
+    rows = await db.select().from(rawEvents).where(eq(rawEvents.id, startRawEventId));
+    expect(rows[0]?.sourceMetadata).toMatchObject({
+      links: [
+        expect.objectContaining({
+          canonical_url: 'https://example.com/followup?promo_code=summer',
+        }),
+      ],
+    });
+
+    const linkMembers = await db
+      .select({
+        canonicalName: artifactClusters.canonicalName,
+        rawEventId: artifactClusterMembers.rawEventId,
+      })
+      .from(artifactClusterMembers)
+      .innerJoin(artifactClusters, eq(artifactClusters.id, artifactClusterMembers.clusterId))
+      .where(eq(artifactClusterMembers.rawEventId, startRawEventId));
+    expect(linkMembers).toEqual([
+      expect.objectContaining({
+        canonicalName: 'example.com/followup',
+        rawEventId: startRawEventId,
+      }),
+    ]);
   });
 
   it('persists team-visible creates and updates when embedding enqueue is unavailable', async () => {

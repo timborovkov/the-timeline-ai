@@ -286,6 +286,10 @@ function renderDailyDigest(input: DailyDigestMessageInput): RenderedMessage {
   const windowEnd = formatDigestDate(p.windowEnd, timezone);
   const summaryParagraphs = digestSummaryParagraphs(p.summary);
   const sections = digestContentSections(p);
+  const activityCountLine =
+    typeof p.momentCount === 'number'
+      ? `${p.momentCount} work moment${p.momentCount === 1 ? '' : 's'} from ${p.eventCount} source event${p.eventCount === 1 ? '' : 's'}`
+      : `${p.eventCount} new timeline events`;
   const sourceLines = Object.entries(p.sourceDistribution).map(
     ([source, count]) => `${source}: ${count}`,
   );
@@ -303,7 +307,7 @@ function renderDailyDigest(input: DailyDigestMessageInput): RenderedMessage {
     ]),
     '',
     `${p.pendingApprovals} pending approvals`,
-    `${p.eventCount} new timeline events`,
+    activityCountLine,
     sourceLines.length ? `Sources: ${sourceLines.join(', ')}` : 'Sources: none',
     objectLines.length ? `Objects changed: ${objectLines.join(', ')}` : 'Objects changed: none',
     '',
@@ -331,7 +335,7 @@ function renderDailyDigest(input: DailyDigestMessageInput): RenderedMessage {
         snapshotList: htmlList([
           `Digest date: ${windowEnd}`,
           `${p.pendingApprovals} pending approvals`,
-          `${p.eventCount} new timeline events`,
+          activityCountLine,
           sourceLines.length ? `Sources: ${sourceLines.join(', ')}` : 'No new sources',
           objectLines.length ? `Objects changed: ${objectLines.join(', ')}` : 'No object changes',
         ]),

@@ -4,6 +4,7 @@ import type { IntegrationEvent } from '#src/integrations/types.js';
 
 import { resetEnvForTests } from '#src/env.js';
 import { mondayProvider } from '#src/integrations/providers/monday.js';
+import { ProviderRateLimitError } from '#src/integrations/types.js';
 
 const ENV_BACKUP = { ...process.env };
 
@@ -39,6 +40,7 @@ describe('mondayProvider', () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     process.env = { ...ENV_BACKUP };
     resetEnvForTests();
     vi.unstubAllGlobals();
@@ -58,7 +60,9 @@ describe('mondayProvider', () => {
     expect(url.searchParams.get('redirect_uri')).toBe(
       'https://timeline.test/api/integrations/monday/callback',
     );
-    expect(url.searchParams.get('scope')).toBe('boards:read users:read updates:read docs:read');
+    expect(url.searchParams.get('scope')).toBe(
+      'boards:read users:read updates:read docs:read account:read webhooks:read webhooks:write',
+    );
     expect(url.searchParams.get('state')).toBe('signed-state');
   });
 
@@ -81,6 +85,15 @@ describe('mondayProvider', () => {
       }
 
       const body = requestPayload(init);
+      if (body.query === 'query { account { id slug } }') {
+        return Promise.resolve(
+          jsonResponse({
+            data: {
+              account: { id: 'account-1', slug: 'acme' },
+            },
+          }),
+        );
+      }
       expect(body.query).toBe('query { me { id name } }');
       return Promise.resolve(
         jsonResponse({
@@ -98,9 +111,17 @@ describe('mondayProvider', () => {
     });
 
     expect(result).toMatchObject({
-      externalAccountId: 'user-1',
-      displayName: 'Monday.com — Ada Lovelace',
-      scopes: ['boards:read', 'users:read', 'updates:read', 'docs:read'],
+      externalAccountId: 'account-1',
+      displayName: 'Monday.com — acme',
+      scopes: [
+        'boards:read',
+        'users:read',
+        'updates:read',
+        'docs:read',
+        'account:read',
+        'webhooks:read',
+        'webhooks:write',
+      ],
     });
     expect(result.tokens).toMatchObject({
       access_token: 'token',
@@ -120,6 +141,11 @@ describe('mondayProvider', () => {
       }
 
       const body = requestPayload(init);
+      if (body.query === 'query { account { id slug } }') {
+        return Promise.resolve(
+          jsonResponse({ errors: [{ message: 'Unauthorized field or type' }] }),
+        );
+      }
       expect(body.query).toBe('query { me { id name } }');
       return Promise.resolve(jsonResponse({ errors: [{ message: 'Unauthorized field or type' }] }));
     });
@@ -187,6 +213,250 @@ describe('mondayProvider', () => {
       kind: 'monday.doc',
     });
     expect(resources[1]?.searchText).toContain('workdocs');
+  });
+
+  it('surfaces monday.com daily quota exhaustion with provider retry metadata', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-06-25T02:00:00.000Z'));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof globalThis.fetch>(() =>
+        Promise.resolve(
+          new Response(
+            JSON.stringify({
+              errors: [
+                {
+                  message: 'Daily limit exceeded',
+                  extensions: {
+                    code: 'DAILY_LIMIT_EXCEEDED',
+                    retry_in_seconds: 120,
+                  },
+                },
+              ],
+            }),
+            {
+              status: 429,
+              headers: { 'content-type': 'application/json' },
+            },
+          ),
+        ),
+      ),
+    );
+
+    await expect(
+      mondayProvider.listSyncableResources({} as never, {
+        access_token: 'token',
+      }),
+    ).rejects.toMatchObject({
+      provider: 'monday',
+      retryAt: new Date('2026-06-25T02:02:00.000Z'),
+      retryAfterSeconds: 120,
+      scope: 'daily',
+      reason: 'daily_limit_exceeded',
+    });
+    await expect(
+      mondayProvider.listSyncableResources({} as never, {
+        access_token: 'token',
+      }),
+    ).rejects.toBeInstanceOf(ProviderRateLimitError);
+  });
+
+  it('normalizes monday.com board webhook payloads into lightweight events', async () => {
+    const result = await mondayProvider.handleWebhook?.({
+      integration: { id: 'integration-1', teamId: 'team-1' } as never,
+      payload: {
+        event: {
+          userId: 9603417,
+          boardId: 1771812698,
+          pulseId: 1771812728,
+          pulseName: 'Launch checklist',
+          columnId: 'status',
+          columnType: 'color',
+          columnTitle: 'Status',
+          value: { label: 'Done' },
+          previousValue: { label: 'Working on it' },
+          type: 'update_column_value',
+          triggerTime: '2026-06-25T09:15:03.429Z',
+          subscriptionId: 73760484,
+          triggerUuid: '645fc8d8709d35718f1ae00ceded91e9',
+        },
+      },
+    });
+    const normalized = Array.isArray(result) ? { events: result, syncTasks: [] } : result;
+
+    expect(normalized?.events[0]).toMatchObject({
+      dedupKey: 'monday:webhook:645fc8d8709d35718f1ae00ceded91e9',
+      eventType: 'column.changed',
+      externalObjectId: '1771812728',
+      objectMap: {
+        type: 'other',
+        externalId: '1771812728',
+        status: 'done',
+      },
+      extra: {
+        monday_board_id: '1771812698',
+        monday_item_id: '1771812728',
+        monday_subscription_id: '73760484',
+      },
+    });
+    expect(normalized?.events[0]?.contentText).toContain('Column: Status');
+    expect(normalized?.syncTasks).toEqual([
+      {
+        integrationId: 'integration-1',
+        teamId: 'team-1',
+        triggeredBy: 'webhook',
+        resourceType: 'monday.item',
+        externalId: '1771812698:1771812728',
+        surface: 'column.changed',
+        reason: 'monday_item_webhook',
+      },
+    ]);
+  });
+
+  it('provisions monday.com board webhooks for selected boards', async () => {
+    process.env.AUTH_URL = 'https://timeline.test';
+    process.env.MONDAY_WEBHOOK_SECRET = 'webhook-secret';
+    resetEnvForTests();
+    const fetch = vi.fn<typeof globalThis.fetch>((_input, init) => {
+      const body = requestPayload(init);
+      expect(body.query).toContain('create_webhook');
+      const variables = body.variables ?? {};
+      expect(variables.boardId).toBe('board-1');
+      expect(variables.url).toBe('https://timeline.test/api/webhooks/monday?token=webhook-secret');
+      return Promise.resolve(
+        jsonResponse({
+          data: {
+            create_webhook: {
+              id: `hook-${String(variables.event)}`,
+              board_id: 'board-1',
+            },
+          },
+        }),
+      );
+    });
+    vi.stubGlobal('fetch', fetch);
+
+    const active = await mondayProvider.provisionWebhooks?.({
+      integration: { id: 'integration-1', teamId: 'team-1' } as never,
+      tokens: { access_token: 'token' },
+      selections: [{ kind: 'monday.board', externalId: 'board-1' }],
+      existingSubscriptions: [
+        {
+          externalSubscriptionId: 'existing-create-item-hook',
+          resourceKind: 'monday.board',
+          externalResourceId: 'board-1',
+          eventType: 'create_item',
+          expiresAt: null,
+        },
+      ],
+    });
+
+    expect(active).toHaveLength(12);
+    expect(active).toContainEqual({
+      externalSubscriptionId: 'existing-create-item-hook',
+      resourceKind: 'monday.board',
+      externalResourceId: 'board-1',
+      eventType: 'create_item',
+    });
+    expect(active).toContainEqual({
+      externalSubscriptionId: 'hook-change_column_value',
+      resourceKind: 'monday.board',
+      externalResourceId: 'board-1',
+      eventType: 'change_column_value',
+      expiresAt: null,
+    });
+    expect(fetch).toHaveBeenCalledTimes(11);
+  });
+
+  it('persists each created monday.com webhook before creating the next one', async () => {
+    process.env.AUTH_URL = 'https://timeline.test';
+    process.env.MONDAY_WEBHOOK_SECRET = 'webhook-secret';
+    resetEnvForTests();
+    const persisted: unknown[] = [];
+    const fetch = vi.fn<typeof globalThis.fetch>((_input, init) => {
+      const body = requestPayload(init);
+      expect(body.query).toContain('create_webhook');
+      const variables = body.variables ?? {};
+      if (variables.event === 'change_column_value') {
+        return Promise.resolve(
+          jsonResponse({
+            errors: [
+              {
+                message: 'Daily limit exceeded',
+                extensions: { code: 'DAILY_LIMIT_EXCEEDED', retry_in_seconds: 60 },
+              },
+            ],
+          }),
+        );
+      }
+      return Promise.resolve(
+        jsonResponse({
+          data: {
+            create_webhook: {
+              id: `hook-${String(variables.event)}`,
+              board_id: 'board-1',
+            },
+          },
+        }),
+      );
+    });
+    vi.stubGlobal('fetch', fetch);
+
+    await expect(
+      mondayProvider.provisionWebhooks?.({
+        integration: { id: 'integration-1', teamId: 'team-1' } as never,
+        tokens: { access_token: 'token' },
+        selections: [{ kind: 'monday.board', externalId: 'board-1' }],
+        existingSubscriptions: [],
+        ctx: {
+          persistTokens: vi.fn(),
+          persistWebhookSubscription: (subscription) => {
+            persisted.push(subscription);
+            return Promise.resolve();
+          },
+        },
+      }),
+    ).rejects.toBeInstanceOf(ProviderRateLimitError);
+
+    expect(persisted).toEqual([
+      {
+        externalSubscriptionId: 'hook-create_item',
+        resourceKind: 'monday.board',
+        externalResourceId: 'board-1',
+        eventType: 'create_item',
+        expiresAt: null,
+      },
+    ]);
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it('deprovisions stale monday.com webhooks', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>((_input, init) => {
+      const body = requestPayload(init);
+      expect(body.query).toContain('delete_webhook');
+      expect(body.variables).toEqual({ id: 'hook-1' });
+      return Promise.resolve(
+        jsonResponse({
+          data: {
+            delete_webhook: { id: 'hook-1', board_id: 'board-1' },
+          },
+        }),
+      );
+    });
+    vi.stubGlobal('fetch', fetch);
+
+    await mondayProvider.deprovisionWebhook?.({
+      integration: { id: 'integration-1', teamId: 'team-1' } as never,
+      tokens: { access_token: 'token' },
+      subscription: {
+        externalSubscriptionId: 'hook-1',
+        resourceKind: 'monday.board',
+        externalResourceId: 'board-1',
+        eventType: 'create_item',
+      },
+    });
+
+    expect(fetch).toHaveBeenCalledTimes(1);
   });
 
   it('hides monday.com subitem boards from source sharing', async () => {
@@ -745,6 +1015,90 @@ describe('mondayProvider', () => {
     );
   });
 
+  it('hydrates a single monday.com item for targeted webhook syncs', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>((_input, init) => {
+      const body = requestPayload(init);
+      if (body.query.includes('items(ids: $itemIds)')) {
+        expect(body.variables).toEqual({ itemIds: ['item-1'] });
+        return Promise.resolve(
+          jsonResponse({
+            data: {
+              items: [
+                {
+                  id: 'item-1',
+                  name: 'Acme renewal',
+                  updated_at: '2026-06-20T10:00:00Z',
+                  url: 'https://monday.com/items/item-1',
+                  board: {
+                    id: 'board-1',
+                    name: 'Pipeline',
+                    updated_at: '2026-06-20T09:00:00Z',
+                    workspace: { id: 'workspace-1', name: 'Sales' },
+                    columns: [
+                      { id: 'status', title: 'Stage', type: 'status' },
+                      { id: 'deal_value', title: 'Deal value', type: 'numbers' },
+                    ],
+                  },
+                  creator: { id: 'user-1', name: 'Ada' },
+                  column_values: [
+                    { id: 'status', text: 'Won', type: 'status', value: null },
+                    { id: 'deal_value', text: '$42,000', type: 'numbers', value: '42000' },
+                  ],
+                  updates: [
+                    {
+                      id: 'update-1',
+                      body: 'Legal approved the renewal',
+                      created_at: '2026-06-20T10:05:00Z',
+                      updated_at: '2026-06-20T10:05:00Z',
+                      creator: { id: 'user-2', name: 'Grace' },
+                    },
+                  ],
+                  subitems: [],
+                },
+              ],
+            },
+          }),
+        );
+      }
+      throw new Error(`unexpected query: ${body.query}`);
+    });
+    vi.stubGlobal('fetch', fetch);
+    const ctx = {
+      loadCursor: vi.fn().mockResolvedValue({}),
+      saveCursor: vi.fn().mockResolvedValue(undefined),
+      writeEvents: vi.fn().mockResolvedValue([]),
+      persistTokens: vi.fn(),
+      recordAudit: vi.fn(),
+    };
+
+    await mondayProvider.incrementalSync({
+      integration: { id: 'integration-1' } as never,
+      tokens: { access_token: 'token' },
+      selections: [{ kind: 'monday.board', externalId: 'board-1' }],
+      target: {
+        resourceType: 'monday.item',
+        externalId: 'board-1:item-1',
+        triggeredBy: 'webhook',
+        reason: 'monday_item_webhook',
+      },
+      ctx,
+    });
+
+    const events = (ctx.writeEvents.mock.calls[0]?.[0] ?? []) as IntegrationEvent[];
+    expect(events.map((event) => event.eventType)).toEqual(['item.updated', 'update.created']);
+    expect(events[0]?.objectMap).toMatchObject({
+      displayTitle: 'Acme renewal',
+      status: 'done',
+      metadata: {
+        monday_board_id: 'board-1',
+      },
+    });
+    expect(ctx.saveCursor).toHaveBeenCalledWith('monday.item:board-1:item-1', {
+      item_since: '2026-06-20T10:05:00.000Z',
+    });
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
   it('uses the item cursor to filter monday.com records during incremental sync', async () => {
     const fetch = vi.fn<typeof globalThis.fetch>((_input, init) => {
       const body = requestPayload(init);
@@ -768,10 +1122,15 @@ describe('mondayProvider', () => {
         return Promise.resolve(jsonResponse({ data: { boards: [{ activity_logs: [] }] } }));
       }
       if (body.query.includes('items_page')) {
+        expect(body.query).toContain('$updatedSinceCompareValue: CompareValue!');
+        expect(body.query).toContain('compare_value: $updatedSinceCompareValue');
+        expect(body.query).not.toContain('$updatedSinceDay: String!');
         expect(body.query).toContain('column_id: "__last_updated__"');
         expect(body.query).toContain('compare_attribute: "UPDATED_AT"');
         expect(body.query).toContain('operator: greater_than_or_equals');
-        expect(body.variables).toMatchObject({ updatedSinceDay: '2026-06-19' });
+        expect(body.variables).toMatchObject({
+          updatedSinceCompareValue: ['EXACT', '2026-06-19'],
+        });
         return Promise.resolve(
           jsonResponse({
             data: {
@@ -1083,9 +1442,113 @@ describe('mondayProvider', () => {
     const harvested = ctx.harvestDocument.mock.calls[0]?.[0] as { body: Buffer };
     expect(harvested.body.toString('utf8')).toContain('# Launch notes');
     expect(harvested.body.toString('utf8')).toContain('Launch moved to Friday.');
-    expect(ctx.saveCursor).toHaveBeenCalledWith('monday.doc:doc-1', {
-      doc_since: '2026-06-20T14:00:00.000Z',
+    const savedCursor = ctx.saveCursor.mock.calls[0]?.[1] as
+      | { doc_since?: string; doc_last_polled_at?: unknown }
+      | undefined;
+    expect(ctx.saveCursor).toHaveBeenCalledWith('monday.doc:doc-1', savedCursor);
+    expect(savedCursor).toMatchObject({ doc_since: '2026-06-20T14:00:00.000Z' });
+    expect(typeof savedCursor?.doc_last_polled_at).toBe('string');
+  });
+
+  it('skips selected WorkDocs during hourly incremental sync until their doc cursor is due', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-06-21T14:00:00.000Z'));
+    const fetch = vi.fn<typeof globalThis.fetch>(() => {
+      throw new Error('WorkDoc should not be fetched before its reconciliation interval');
     });
+    vi.stubGlobal('fetch', fetch);
+    const ctx = {
+      loadCursor: vi.fn().mockResolvedValue({
+        doc_since: '2026-06-20T14:00:00.000Z',
+        doc_last_polled_at: '2026-06-21T13:00:00.000Z',
+      }),
+      saveCursor: vi.fn().mockResolvedValue(undefined),
+      writeEvents: vi.fn().mockResolvedValue([]),
+      harvestDocument: vi.fn().mockResolvedValue({ documentId: 'doc-id', versionId: 'version-id' }),
+      persistTokens: vi.fn(),
+      recordAudit: vi.fn(),
+    };
+
+    await mondayProvider.incrementalSync({
+      integration: { id: 'integration-1' } as never,
+      tokens: { access_token: 'token' },
+      selections: [{ kind: 'monday.doc', externalId: 'doc-1' }],
+      ctx,
+    });
+
+    expect(fetch).not.toHaveBeenCalled();
+    expect(ctx.writeEvents).not.toHaveBeenCalled();
+    expect(ctx.harvestDocument).not.toHaveBeenCalled();
+    expect(ctx.saveCursor).not.toHaveBeenCalled();
+  });
+
+  it('reconciles selected WorkDocs after their daily doc cursor interval elapses', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-06-21T14:00:00.000Z'));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof globalThis.fetch>((_input, init) => {
+        const body = requestPayload(init);
+        if (body.query.includes('blocks(limit: $blockLimit')) {
+          return Promise.resolve(
+            jsonResponse({
+              data: {
+                docs: [
+                  {
+                    id: 'doc-1',
+                    object_id: 'object-1',
+                    name: 'Launch notes',
+                    created_at: '2026-06-18T09:00:00Z',
+                    updated_at: '2026-06-21T13:55:00Z',
+                    url: 'https://monday.com/docs/doc-1',
+                    workspace_id: 'workspace-1',
+                    workspace: { id: 'workspace-1', name: 'Product' },
+                    created_by: { id: 'user-1', name: 'Ada' },
+                    blocks: [{ id: 'block-1', type: 'normal_text', content: 'Daily update.' }],
+                  },
+                ],
+              },
+            }),
+          );
+        }
+        throw new Error(`unexpected query: ${body.query}`);
+      }),
+    );
+    const ctx = {
+      loadCursor: vi.fn().mockResolvedValue({
+        doc_since: '2026-06-20T14:00:00.000Z',
+        doc_last_polled_at: '2026-06-20T13:59:59.000Z',
+      }),
+      saveCursor: vi.fn().mockResolvedValue(undefined),
+      writeEvents: vi.fn().mockResolvedValue([]),
+      harvestDocument: vi.fn().mockResolvedValue({ documentId: 'doc-id', versionId: 'version-id' }),
+      persistTokens: vi.fn(),
+      recordAudit: vi.fn(),
+    };
+
+    await mondayProvider.incrementalSync({
+      integration: { id: 'integration-1' } as never,
+      tokens: { access_token: 'token' },
+      selections: [{ kind: 'monday.doc', externalId: 'doc-1' }],
+      ctx,
+    });
+
+    expect(ctx.writeEvents).toHaveBeenCalledWith([
+      expect.objectContaining({
+        externalObjectId: 'doc-1',
+        eventType: 'doc.updated',
+      }),
+    ]);
+    expect(ctx.harvestDocument).toHaveBeenCalledWith(
+      expect.objectContaining({ externalId: 'monday.doc:doc-1' }),
+    );
+    expect(ctx.saveCursor).toHaveBeenCalledWith(
+      'monday.doc:doc-1',
+      expect.objectContaining({
+        doc_since: '2026-06-21T13:55:00.000Z',
+        doc_last_polled_at: '2026-06-21T14:00:00.000Z',
+      }),
+    );
   });
 
   it('continues WorkDoc block pagination until the current page is short', async () => {

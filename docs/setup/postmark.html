@@ -10,7 +10,7 @@
     <a class="skip" href="#main">Skip to content</a>
     <main id="main">
       <h1>Postmark email setup</h1>
-      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-06-14</span></div>
+      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-06-28</span></div>
       <p class="tldr">Postmark powers inbound timeline capture and outbound product emails.</p>
 
       <p>
@@ -211,6 +211,11 @@ SUPPORT_EMAIL=contact@thetimeline.cc
           Attachment-only deliveries wait for transcription or document extraction before any
           approval suggestion is created.
         </li>
+        <li>
+          Records emails, phone numbers, and conservative labeled addresses from the accepted email
+          text on <code>source_metadata.contacts</code>. Accepted email/phone memory becomes person
+          identity facets through reviewable object-memory paths.
+        </li>
       </ol>
       <p>
         Idempotency: a partial unique index on
@@ -222,7 +227,9 @@ SUPPORT_EMAIL=contact@thetimeline.cc
       <p>
         Postmark dashboard has a test inbound email feature. Send a test message; the app should
         write a <code>raw_events</code> row with <code>source='email'</code>. The timeline UI shows
-        the subject + from header; the entity profile pages link the new event.
+        the subject + from header; the entity profile pages link the new event. If the body includes
+        a valid email address or phone number, the raw event metadata should include the extracted
+        contact value without creating a standalone artifact.
       </p>
     </main>
   </body>

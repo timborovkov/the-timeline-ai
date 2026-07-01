@@ -42,6 +42,10 @@ export const QUEUE_NAMES = {
   // issues, GitHub PRs/issues), writes integration events into
   // raw_events, and updates the per-resource cursor.
   integrationSync: 'integration-sync',
+  // Native integration webhook delivery processing. Routes persist inbound
+  // provider deliveries, then this worker normalizes per-target events and
+  // schedules targeted sync work without making providers wait on that work.
+  webhookDelivery: 'webhook-delivery',
   // Phase 11: 5-minute MCP server health ping. Sends a cheap initialize
   // request to every enabled MCP server, updates last_connected_at /
   // last_error so the settings UI can surface degraded servers without
@@ -62,6 +66,10 @@ export const QUEUE_NAMES = {
   // Reconciliation replay/audit work. This makes evidence coverage repair a
   // first-class worker path instead of only an operator CLI.
   reconciliation: 'reconciliation',
+  // AI-assisted presentation for timeline moments. Produced by timeline reads
+  // when an eligible moment has no matching presentation cache; consumed by
+  // the timeline-moment-presentation worker.
+  timelineMomentPresentation: 'timeline-moment-presentation',
 } as const;
 
 export type QueueName = (typeof QUEUE_NAMES)[keyof typeof QUEUE_NAMES];
@@ -759,7 +767,46 @@ export type IntegrationSyncJobData =
       integrationId: string;
       teamId: string;
       triggeredBy?: string;
+    }
+  | {
+      kind: 'targeted';
+      integrationId: string;
+      teamId: string;
+      triggeredBy?: string;
+      resourceType: string;
+      externalId: string;
+      surface?: string;
+      reason?: string;
     };
+
+export interface WebhookDeliveryJobData {
+  deliveryId: string;
+}
+
+let _webhookDeliveryQueue: TimelineQueue<WebhookDeliveryJobData> | undefined;
+
+export function getWebhookDeliveryQueue(): TimelineQueue<WebhookDeliveryJobData> {
+  if (_webhookDeliveryQueue) return _webhookDeliveryQueue;
+  _webhookDeliveryQueue = createTimelineQueue<WebhookDeliveryJobData>(QUEUE_NAMES.webhookDelivery, {
+    attempts: 5,
+    backoff: { type: 'exponential', delay: 2000 },
+    removeOnComplete: { age: 3600, count: 1000 },
+    removeOnFail: { age: 24 * 3600 },
+  });
+  return _webhookDeliveryQueue;
+}
+
+export async function enqueueWebhookDeliveryJob(data: WebhookDeliveryJobData): Promise<void> {
+  await getWebhookDeliveryQueue().add('webhook-delivery', data, {
+    jobId: bullmqCustomJobId(['webhook-delivery', data.deliveryId]),
+  });
+}
+
+export async function closeWebhookDeliveryQueue(): Promise<void> {
+  await closeQueue(_webhookDeliveryQueue, () => {
+    _webhookDeliveryQueue = undefined;
+  });
+}
 
 let _integrationSyncQueue: TimelineQueue<IntegrationSyncJobData> | undefined;
 
@@ -774,18 +821,66 @@ export function getIntegrationSyncQueue(): TimelineQueue<IntegrationSyncJobData>
   return _integrationSyncQueue;
 }
 
+const INTEGRATION_SYNC_JOB_DEDUPE_STATES = new Set([
+  'active',
+  'delayed',
+  'paused',
+  'prioritized',
+  'waiting',
+  'waiting-children',
+]);
+
+const INTEGRATION_SYNC_JOB_REPLACEABLE_STATES = new Set(['completed', 'failed']);
+
+function integrationSyncJobId(data: IntegrationSyncJobData): string | undefined {
+  if (data.kind === 'incremental' && data.triggeredBy === 'reconcile') {
+    return bullmqCustomJobId(['integration-reconcile', data.integrationId]);
+  }
+  if (data.kind !== 'targeted') return undefined;
+  return bullmqCustomJobId([
+    'integration-targeted',
+    data.integrationId,
+    data.resourceType,
+    data.externalId,
+    data.surface ?? 'all',
+  ]);
+}
+
 export async function enqueueIntegrationSyncJob(data: IntegrationSyncJobData): Promise<void> {
-  // No jobId-based dedup: idempotency lives in the raw_events
-  // dedup_key partial unique index and the per-resource cursor in
-  // integration_sync_state. A duplicate enqueue costs one extra API
-  // page fetch + a no-op DB upsert.
-  await getIntegrationSyncQueue().add('integration-sync', data);
+  // Backfill and broad incremental jobs intentionally avoid jobId dedupe:
+  // idempotency lives in raw_event dedup keys, per-resource cursors, and the
+  // worker's advisory lock. Provider-policy reconciliation and targeted webhook
+  // hydration are different: due broad reconciliation should not stack while a
+  // prior run is pending, and a burst of provider deliveries for the same
+  // repo/board/project should collapse while a job is waiting or running. A
+  // later delivery/reconciliation must be able to enqueue once the retained
+  // completed/failed BullMQ job is removed.
+  const q = getIntegrationSyncQueue();
+  const jobId = integrationSyncJobId(data);
+  if (jobId) {
+    const existing = (await q.getJob(jobId)) as ExistingJobLike | null;
+    if (existing) {
+      const state = await existing.getState?.().catch(() => null);
+      if (!state || INTEGRATION_SYNC_JOB_DEDUPE_STATES.has(state)) return;
+      if (INTEGRATION_SYNC_JOB_REPLACEABLE_STATES.has(state)) {
+        if (!existing.remove) return;
+        const removed = await existing.remove().then(
+          () => true,
+          () => false,
+        );
+        if (!removed) return;
+      } else {
+        return;
+      }
+    }
+  }
+  await q.add('integration-sync', data, jobId ? { jobId } : undefined);
 }
 
 /**
- * Register the 5-minute repeatable that fans out incremental syncs to
- * every enabled integration. Cheap when no integrations are configured;
- * one synthetic job is enqueued per tick whose worker fans out.
+ * Register the 5-minute reconciliation heartbeat. Cheap when no integrations
+ * are configured; one synthetic job is enqueued per tick whose worker consults
+ * provider policies and budgets before fanning out due reconciliation work.
  */
 export async function scheduleIntegrationIncrementalSync(): Promise<void> {
   await getIntegrationSyncQueue().add(
@@ -1106,5 +1201,78 @@ export async function enqueueReconciliationJob(data: ReconciliationJobData): Pro
 export async function closeReconciliationQueue(): Promise<void> {
   await closeQueue(_reconciliationQueue, () => {
     _reconciliationQueue = undefined;
+  });
+}
+
+export interface TimelineMomentPresentationJobData {
+  teamId: string;
+  userId: string;
+  rawEventIds: string[];
+  cacheKey: {
+    teamId: string;
+    momentKey: string;
+    visibilityScopeHash: string;
+    visibleSourceEventIdsHash: string;
+    visibleSourceContentHash: string;
+    impactHydrationHash: string;
+    artifactClusterHash: string;
+    promptVersion: string;
+    model: string;
+  };
+}
+
+let _timelineMomentPresentationQueue: TimelineQueue<TimelineMomentPresentationJobData> | undefined;
+
+export function getTimelineMomentPresentationQueue(): TimelineQueue<TimelineMomentPresentationJobData> {
+  if (_timelineMomentPresentationQueue) return _timelineMomentPresentationQueue;
+  _timelineMomentPresentationQueue = createTimelineQueue<TimelineMomentPresentationJobData>(
+    QUEUE_NAMES.timelineMomentPresentation,
+    {
+      attempts: 3,
+      backoff: { type: 'exponential', delay: 5000 },
+      removeOnComplete: { age: 3600, count: 1000 },
+      removeOnFail: { age: 24 * 3600 },
+    },
+  );
+  return _timelineMomentPresentationQueue;
+}
+
+export async function enqueueTimelineMomentPresentationJob(
+  data: TimelineMomentPresentationJobData,
+  opts: { delayMs?: number } = {},
+): Promise<{ enqueued: boolean; jobId: string }> {
+  const jobId = bullmqCustomJobId([
+    'timeline-moment-presentation',
+    data.teamId,
+    data.cacheKey.momentKey,
+    data.cacheKey.visibleSourceEventIdsHash,
+    data.cacheKey.visibleSourceContentHash,
+    data.cacheKey.visibilityScopeHash,
+    data.cacheKey.promptVersion,
+    data.cacheKey.model,
+  ]);
+  const q = getTimelineMomentPresentationQueue();
+  const existing = (await q.getJob(jobId)) as ExistingJobLike | null;
+  if (existing) {
+    const state = await existing.getState?.().catch(() => null);
+    if (!state || SUGGESTION_JOB_DEDUPE_STATES.has(state)) {
+      return { enqueued: false, jobId };
+    }
+    if (SUGGESTION_JOB_REPLACEABLE_STATES.has(state) && existing.remove) {
+      await existing.remove().catch(() => undefined);
+    } else {
+      return { enqueued: false, jobId };
+    }
+  }
+  await q.add('timeline-moment-presentation', data, {
+    jobId,
+    ...(opts.delayMs ? { delay: opts.delayMs } : {}),
+  });
+  return { enqueued: true, jobId };
+}
+
+export async function closeTimelineMomentPresentationQueue(): Promise<void> {
+  await closeQueue(_timelineMomentPresentationQueue, () => {
+    _timelineMomentPresentationQueue = undefined;
   });
 }

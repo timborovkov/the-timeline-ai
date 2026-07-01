@@ -139,6 +139,293 @@ export interface SyncResult {
   partialFailures?: SyncPartialFailure[];
 }
 
+export interface SyncTarget {
+  resourceType: string;
+  externalId: string;
+  surface?: string;
+  reason?: string;
+  triggeredBy?: string;
+}
+
+export type NativeProviderId = IntegrationProvider['id'];
+
+export const NATIVE_PROVIDER_IDS = [
+  'google_drive',
+  'linear',
+  'github',
+  'monday',
+  'slack',
+  'sentry',
+] as const satisfies readonly NativeProviderId[];
+
+export function isNativeProviderId(provider: string): provider is NativeProviderId {
+  return (NATIVE_PROVIDER_IDS as readonly string[]).includes(provider);
+}
+
+const MINUTE_MS = 60 * 1000;
+const HOUR_MS = 60 * MINUTE_MS;
+
+export interface ProviderSyncPolicy {
+  reconciliationIntervalMs: number;
+  ingestionPosture: 'webhook_first' | 'webhook_wakeup' | 'reconciliation_first';
+  budgetScopes: readonly string[];
+  supportsWebhookIngress: boolean;
+  supportsTargetedSync: boolean;
+  provisioningModel: 'app_level' | 'provider_managed' | 'manual' | 'none';
+}
+
+export const PROVIDER_SYNC_POLICIES: Record<NativeProviderId, ProviderSyncPolicy> = {
+  google_drive: {
+    reconciliationIntervalMs: 15 * MINUTE_MS,
+    ingestionPosture: 'webhook_wakeup',
+    budgetScopes: ['requests'],
+    supportsWebhookIngress: true,
+    supportsTargetedSync: false,
+    provisioningModel: 'manual',
+  },
+  linear: {
+    reconciliationIntervalMs: 6 * HOUR_MS,
+    ingestionPosture: 'webhook_first',
+    budgetScopes: ['requests'],
+    supportsWebhookIngress: true,
+    supportsTargetedSync: false,
+    provisioningModel: 'manual',
+  },
+  github: {
+    reconciliationIntervalMs: 6 * HOUR_MS,
+    ingestionPosture: 'webhook_first',
+    budgetScopes: ['requests', 'primary', 'secondary'],
+    supportsWebhookIngress: true,
+    supportsTargetedSync: true,
+    provisioningModel: 'app_level',
+  },
+  monday: {
+    reconciliationIntervalMs: HOUR_MS,
+    ingestionPosture: 'webhook_first',
+    budgetScopes: ['requests', 'daily', 'minute', 'complexity', 'concurrency'],
+    supportsWebhookIngress: true,
+    supportsTargetedSync: true,
+    provisioningModel: 'provider_managed',
+  },
+  slack: {
+    reconciliationIntervalMs: HOUR_MS,
+    ingestionPosture: 'reconciliation_first',
+    budgetScopes: ['requests', 'web_api'],
+    supportsWebhookIngress: false,
+    supportsTargetedSync: false,
+    provisioningModel: 'none',
+  },
+  sentry: {
+    reconciliationIntervalMs: 24 * HOUR_MS,
+    ingestionPosture: 'webhook_first',
+    budgetScopes: ['requests'],
+    supportsWebhookIngress: true,
+    supportsTargetedSync: true,
+    provisioningModel: 'manual',
+  },
+};
+
+export function providerSyncPolicy(provider: NativeProviderId): ProviderSyncPolicy {
+  return PROVIDER_SYNC_POLICIES[provider];
+}
+
+const REQUIRED_PROVIDER_SCOPES: Partial<Record<NativeProviderId, readonly string[]>> = {
+  monday: ['account:read', 'webhooks:read', 'webhooks:write'],
+};
+
+export function missingRequiredProviderScopes(
+  provider: NativeProviderId,
+  scopes: readonly string[] | null | undefined,
+): string[] {
+  const required = REQUIRED_PROVIDER_SCOPES[provider] ?? [];
+  if (required.length === 0) return [];
+  const granted = new Set(scopes ?? []);
+  return required.filter((scope) => !granted.has(scope));
+}
+
+export const PROVIDER_RATE_LIMIT_CODE = 'provider_rate_limited';
+
+export class ProviderRateLimitError extends Error {
+  readonly code: string = PROVIDER_RATE_LIMIT_CODE;
+  readonly provider: NativeProviderId;
+  readonly retryAt: Date;
+  readonly retryAfterSeconds: number;
+  readonly scope: string;
+  readonly reason: string;
+  readonly externalAccountId?: string;
+
+  constructor(input: {
+    provider: NativeProviderId;
+    retryAt: Date;
+    retryAfterSeconds: number;
+    scope: string;
+    reason: string;
+    message?: string;
+    externalAccountId?: string;
+  }) {
+    super(
+      input.message ??
+        `${PROVIDER_RATE_LIMIT_CODE}: ${input.provider} ${input.scope} limited; retry after ${input.retryAt.toISOString()}`,
+    );
+    this.name = 'ProviderRateLimitError';
+    this.provider = input.provider;
+    this.retryAt = input.retryAt;
+    this.retryAfterSeconds = input.retryAfterSeconds;
+    this.scope = input.scope;
+    this.reason = input.reason;
+    if (input.externalAccountId) this.externalAccountId = input.externalAccountId;
+  }
+}
+
+export function isProviderRateLimitError(err: unknown): err is ProviderRateLimitError {
+  if (err instanceof ProviderRateLimitError) return true;
+  if (typeof err !== 'object' || err === null) return false;
+  const record = err as {
+    provider?: unknown;
+    retryAt?: unknown;
+    retryAfterSeconds?: unknown;
+    scope?: unknown;
+    reason?: unknown;
+  };
+  return (
+    typeof record.provider === 'string' &&
+    (record.retryAt instanceof Date || typeof record.retryAt === 'string') &&
+    typeof record.retryAfterSeconds === 'number' &&
+    typeof record.scope === 'string' &&
+    typeof record.reason === 'string'
+  );
+}
+
+export function isProviderCooldownErrorMessage(error: string | null | undefined): boolean {
+  if (!error) return false;
+  const normalized = error.toLowerCase();
+  return (
+    normalized.includes('provider_rate_limited') ||
+    normalized.includes('github_rate_limited') ||
+    normalized.includes('monday_rate_limited') ||
+    normalized.includes('slack_rate_limited') ||
+    normalized.includes('daily_limit_exceeded') ||
+    normalized.includes('api rate limit exceeded') ||
+    normalized.includes('secondary rate limit') ||
+    normalized.includes('retry after')
+  );
+}
+
+export interface TargetedSyncTask {
+  integrationId: string;
+  teamId: string;
+  triggeredBy: 'webhook' | 'reconcile' | 'manual';
+  resourceType: string;
+  externalId: string;
+  surface?: string;
+  reason?: string;
+}
+
+export interface WebhookVerifyInput {
+  provider: NativeProviderId;
+  headers: Headers;
+  rawBody: string;
+}
+
+export type WebhookVerifyResult =
+  | {
+      ok: true;
+      externalDeliveryId?: string | null;
+      externalAccountId?: string | null;
+      resourceKind?: string | null;
+      externalResourceId?: string | null;
+      eventType: string;
+      action?: string | null;
+      payload: unknown;
+      dedupKey: string;
+    }
+  | {
+      ok: false;
+      reason: string;
+      responseStatus?: number;
+    };
+
+export interface WebhookTargetInput {
+  provider: NativeProviderId;
+  verified: Extract<WebhookVerifyResult, { ok: true }>;
+}
+
+export interface WebhookTargetHint {
+  externalAccountId?: string;
+  resourceKind?: string;
+  externalResourceId?: string;
+  providerConnectionId?: string;
+  integrationId?: string;
+}
+
+export interface WebhookNormalizeInput {
+  deliveryId: string;
+  targetId: string;
+  integration: IntegrationRow;
+  payload: unknown;
+}
+
+export interface WebhookNormalizeResult {
+  events: IntegrationEvent[];
+  syncTasks: TargetedSyncTask[];
+  ignoredReason?: string;
+}
+
+export type WebhookHandleResult = IntegrationEvent[] | WebhookNormalizeResult;
+
+export interface WebhookProvisionInput {
+  integration: IntegrationRow;
+  tokens: unknown;
+  selections: { kind: string; externalId: string }[];
+  existingSubscriptions?: WebhookSubscription[];
+  ctx?: WebhookProvisionContext;
+}
+
+export interface WebhookDeprovisionInput {
+  integration: IntegrationRow;
+  tokens: unknown;
+  subscription: WebhookSubscription;
+  ctx?: ListSyncableResourcesContext;
+}
+
+export interface WebhookSubscription {
+  externalSubscriptionId?: string | null;
+  resourceKind: string;
+  externalResourceId: string;
+  eventType: string;
+  expiresAt?: Date | null;
+}
+
+export interface WebhookProvisionContext extends ListSyncableResourcesContext {
+  /**
+   * Persist a provider-side hook immediately after it is created. Provider
+   * provisioning is not transactional with our database, so callers should use
+   * this before creating the next hook to avoid leaking duplicate provider hooks
+   * when a later create call fails.
+   */
+  persistWebhookSubscription(subscription: WebhookSubscription): Promise<void>;
+}
+
+export interface ReconcilePolicyInput {
+  integration: IntegrationRow;
+}
+
+export interface ReconcilePolicy {
+  intervalMs: number;
+  staleAfterMs?: number;
+  mode: 'webhook_first' | 'wake_up_first' | 'reconciliation_first';
+}
+
+export interface NativeWebhookAdapter {
+  provider: NativeProviderId;
+  verify(input: WebhookVerifyInput): Promise<WebhookVerifyResult>;
+  resolveTargets(input: WebhookTargetInput): Promise<WebhookTargetHint[]>;
+  normalize(input: WebhookNormalizeInput): Promise<WebhookNormalizeResult>;
+  provision?(input: WebhookProvisionInput): Promise<WebhookSubscription[]>;
+  deprovision?(input: WebhookDeprovisionInput): Promise<void>;
+  reconcilePolicy(input: ReconcilePolicyInput): ReconcilePolicy;
+}
+
 export interface ProviderResource {
   /** External id (Drive folder id, Linear project id, GitHub repo full_name). */
   externalId: string;
@@ -230,6 +517,7 @@ export interface IntegrationProvider {
     tokens: unknown;
     selections: { kind: string; externalId: string }[];
     ctx: SyncContext;
+    target?: SyncTarget;
   }): Promise<SyncResult | undefined>;
   /**
    * Normalize a verified webhook payload into IntegrationEvents. The
@@ -239,5 +527,13 @@ export interface IntegrationProvider {
   handleWebhook?(input: {
     integration: IntegrationRow;
     payload: unknown;
-  }): Promise<IntegrationEvent[]>;
+  }): Promise<WebhookHandleResult>;
+  /**
+   * Optional native webhook subscription management. Providers return the
+   * active desired subscriptions after creating any missing provider-side
+   * hooks. Shared scope code persists the returned rows and deprovisions stale
+   * rows through `deprovisionWebhook`.
+   */
+  provisionWebhooks?(input: WebhookProvisionInput): Promise<WebhookSubscription[]>;
+  deprovisionWebhook?(input: WebhookDeprovisionInput): Promise<void>;
 }

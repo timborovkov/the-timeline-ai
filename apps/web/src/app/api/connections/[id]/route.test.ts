@@ -9,11 +9,17 @@ const fakes = vi.hoisted(() => ({
   auth: vi.fn(),
   resolveActiveTeam: vi.fn(),
   deleteOwnedProviderConnection: vi.fn(),
+  loggerWarn: vi.fn(),
+  reportCaughtError: vi.fn(),
 }));
 
 vi.mock('@/lib/auth', () => ({ auth: fakes.auth }));
 vi.mock('@/lib/active-team', () => ({ resolveActiveTeam: fakes.resolveActiveTeam }));
 vi.mock('@/lib/db', () => ({ db: {} }));
+vi.mock('@/lib/sentry-report', () => ({ reportCaughtError: fakes.reportCaughtError }));
+vi.mock('@timeline/shared/logger', () => ({
+  childLogger: () => ({ warn: fakes.loggerWarn, error: vi.fn(), info: vi.fn() }),
+}));
 vi.mock('@timeline/shared/team-scope', () => ({
   withTeam: () => ({
     integrations: {
@@ -69,5 +75,25 @@ describe('DELETE /api/connections/[id]', () => {
 
     expect(response.status).toBe(404);
     await expect(response.json()).resolves.toEqual({ error: 'not_found' });
+  });
+
+  it('returns a JSON error when provider connection deletion fails', async () => {
+    const error = new Error('database unavailable');
+    fakes.deleteOwnedProviderConnection.mockRejectedValueOnce(error);
+
+    const response = await DELETE(new Request('https://timeline.test'), {
+      params: Promise.resolve({ id: CONNECTION_ID }),
+    });
+
+    expect(response.status).toBe(500);
+    await expect(response.json()).resolves.toEqual({ error: 'disconnect_failed' });
+    expect(fakes.loggerWarn).toHaveBeenCalledWith(
+      { err: error, connectionId: CONNECTION_ID },
+      'provider connection delete failed',
+    );
+    expect(fakes.reportCaughtError).toHaveBeenCalledWith(error, {
+      surface: 'api',
+      operation: 'provider_connection_delete',
+    });
   });
 });

@@ -25,13 +25,22 @@ const TEAM_EVENT = '00000000-0000-0000-0000-000000000401';
 const PRIVATE_EVENT = '00000000-0000-0000-0000-000000000402';
 const SPECIFIC_EVENT = '00000000-0000-0000-0000-000000000403';
 const OTHER_TEAM_EVENT = '00000000-0000-0000-0000-000000000404';
+const CI_EVENT_A = '00000000-0000-0000-0000-000000000405';
+const CI_EVENT_B = '00000000-0000-0000-0000-000000000406';
 const FACT_ID = '10000000-0000-0000-0000-000000000401';
 const TASK_ID = '20000000-0000-0000-0000-000000000401';
 const OBJECT_ID = '20000000-0000-0000-0000-000000000402';
+const PERSON_ID = '20000000-0000-0000-0000-000000000403';
 const CALENDAR_ID = '30000000-0000-0000-0000-000000000401';
 
 type Db = ReturnType<typeof drizzle>;
-type ToolName = 'search_timeline' | 'list_tasks' | 'list_objects' | 'list_calendar_events';
+type ToolName =
+  | 'search_timeline'
+  | 'search_timeline_moments'
+  | 'list_tasks'
+  | 'list_objects'
+  | 'list_calendar_events'
+  | 'list_team_members';
 
 async function seed(pg: PGlite): Promise<void> {
   await pg.exec(`
@@ -58,7 +67,9 @@ async function seed(pg: PGlite): Promise<void> {
       ('${TEAM_EVENT}', '${TEAM_A}', '${OWNER}', '${OWNER}', 'web', 'Acme renewal needs a pricing proposal by Friday.', '2026-06-01T09:00:00Z', 'team', NULL, '{}'::jsonb),
       ('${PRIVATE_EVENT}', '${TEAM_A}', '${OWNER}', '${OWNER}', 'web', 'Owner private Acme compensation detail.', '2026-06-01T10:00:00Z', 'private', NULL, '{}'::jsonb),
       ('${SPECIFIC_EVENT}', '${TEAM_A}', '${OWNER}', '${OWNER}', 'slack', 'Member-only Acme escalation.', '2026-06-01T11:00:00Z', 'specific_users', ARRAY['${MEMBER}'::uuid], '{}'::jsonb),
-      ('${OTHER_TEAM_EVENT}', '${TEAM_B}', '${OTHER_USER}', '${OTHER_USER}', 'web', 'Other-team Acme secret.', '2026-06-01T12:00:00Z', 'team', NULL, '{}'::jsonb);
+      ('${OTHER_TEAM_EVENT}', '${TEAM_B}', '${OTHER_USER}', '${OTHER_USER}', 'web', 'Other-team Acme secret.', '2026-06-01T12:00:00Z', 'team', NULL, '{}'::jsonb),
+      ('${CI_EVENT_A}', '${TEAM_A}', '${OWNER}', '${OWNER}', 'integration', 'GitHub workflow "CI" #1603 on timborovkov/audit-ai success', '2026-06-27T18:32:00Z', 'team', NULL, '{"provider":"github","event_type":"workflow_run.success","github":{"type":"workflow_run","repo":"timborovkov/audit-ai","head_branch":"main"}}'::jsonb),
+      ('${CI_EVENT_B}', '${TEAM_A}', '${OWNER}', '${OWNER}', 'integration', 'GitHub workflow "CI" #1602 on timborovkov/audit-ai success', '2026-06-27T18:08:00Z', 'team', NULL, '{"provider":"github","event_type":"workflow_run.success","github":{"type":"workflow_run","repo":"timborovkov/audit-ai","head_branch":"main"}}'::jsonb);
 
     INSERT INTO facts (id, team_id, raw_event_id, statement, confidence, model_version)
     VALUES ('${FACT_ID}', '${TEAM_A}', '${TEAM_EVENT}', 'Acme renewal needs pricing by Friday.', 0.96, 'eval-model');
@@ -113,6 +124,24 @@ function answerFromTimeline(result: unknown): string {
   return rows.map((row) => `${row.snippet} [event:${row.eventId}]`).join('\n');
 }
 
+function answerFromMoments(result: unknown): string {
+  const rows =
+    (
+      result as {
+        moments?: { title: string; raw_event_ids: string[]; evidence_count: number }[];
+      }
+    ).moments ?? [];
+  if (rows.length === 0) return "I couldn't verify that from accessible timeline moments.";
+  return rows
+    .map(
+      (row) =>
+        `${row.title} (${String(row.evidence_count)} events) ${row.raw_event_ids
+          .map((id) => `[event:${id}]`)
+          .join(' ')}`,
+    )
+    .join('\n');
+}
+
 async function runToolEval(
   db: Db,
   userId: string,
@@ -133,7 +162,16 @@ async function runToolEval(
   const exec = tools[name]?.execute as (raw: unknown, opts: unknown) => Promise<unknown>;
   const output = await exec(input, {});
   trace.push({ tool: name, input, output });
-  return { output, trace, answer: name === 'search_timeline' ? answerFromTimeline(output) : '' };
+  return {
+    output,
+    trace,
+    answer:
+      name === 'search_timeline'
+        ? answerFromTimeline(output)
+        : name === 'search_timeline_moments'
+          ? answerFromMoments(output)
+          : '',
+  };
 }
 
 describe('agent tool evals', () => {
@@ -160,6 +198,13 @@ describe('agent tool evals', () => {
       teamId: TEAM_A,
       type: 'company',
       canonicalName: 'Acme',
+      status: 'active',
+    });
+    await db.insert(entities).values({
+      id: PERSON_ID,
+      teamId: TEAM_A,
+      type: 'person',
+      canonicalName: 'Ada Lovelace',
       status: 'active',
     });
     await db.insert(calendarEvents).values({
@@ -193,6 +238,38 @@ describe('agent tool evals', () => {
     expect(evalRun.answer).toContain(`[event:${TEAM_EVENT}]`);
   });
 
+  it('bundles integration-heavy timeline answers into cited moments', async () => {
+    // Product behavior: chat should not read a burst of workflow webhooks as
+    // separate user-facing facts when provider metadata shows one work moment.
+    const evalRun = await runToolEval(
+      db,
+      OWNER,
+      'search_timeline_moments',
+      { query: 'CI audit-ai', source: 'integration' },
+      [
+        hit(CI_EVENT_A, 0.95, {
+          source: 'integration',
+          occurred_at: '2026-06-27T18:32:00.000Z',
+        }),
+        hit(CI_EVENT_B, 0.89, {
+          source: 'integration',
+          occurred_at: '2026-06-27T18:08:00.000Z',
+        }),
+      ],
+    );
+
+    expect(evalRun.trace).toEqual([
+      expect.objectContaining({
+        tool: 'search_timeline_moments',
+        input: { query: 'CI audit-ai', source: 'integration' },
+      }),
+    ]);
+    expect(evalRun.answer).toContain('CI passed on timborovkov/audit-ai');
+    expect(evalRun.answer).toContain('(2 events)');
+    expect(evalRun.answer).toContain(`[event:${CI_EVENT_A}]`);
+    expect(evalRun.answer).toContain(`[event:${CI_EVENT_B}]`);
+  });
+
   it('surfaces accepted task and calendar state through durable workspace tools', async () => {
     // Product behavior: once a human accepts an agent suggestion, chat should
     // see canonical task/calendar rows rather than only approval metadata.
@@ -214,6 +291,191 @@ describe('agent tool evals', () => {
     expect(calendarEval.output).toMatchObject({
       events: [expect.objectContaining({ id: CALENDAR_ID, title: 'Acme renewal review' })],
     });
+  });
+
+  it('lists active team members with ids for assignment references', async () => {
+    // Product behavior: agents should not have to guess user UUIDs when a
+    // teammate asks to assign work by a person's name.
+    const evalRun = await runToolEval(db, OWNER, 'list_team_members', {}, []);
+
+    expect(evalRun.output).toEqual({
+      count: 2,
+      members: [
+        {
+          user_id: OWNER,
+          role: 'owner',
+          name: 'Eval Owner',
+          email: 'eval-owner@example.com',
+        },
+        {
+          user_id: MEMBER,
+          role: 'member',
+          name: 'Eval Member',
+          email: 'eval-member@example.com',
+        },
+      ],
+    });
+  });
+
+  it('queues contact memory as identity facet approvals rather than mutating directly', async () => {
+    // Product behavior: emails and phone numbers extracted from chat are
+    // proposed as person identity memory, keeping contact details reviewable.
+    const scope = withTeam(db as never, TEAM_A, OWNER);
+    const tools = buildAgentTools(scope);
+    const exec = tools.suggest_object_memory?.execute as (
+      raw: unknown,
+      opts: unknown,
+    ) => Promise<unknown>;
+
+    const output = await exec(
+      {
+        title: 'Remember Ada contact details',
+        reason: 'Ada shared durable contact details in chat.',
+        confidence: 'high',
+        items: [
+          {
+            kind: 'add_identity_facet',
+            entityId: PERSON_ID,
+            facetKind: 'email',
+            value: 'Ada@Example.com',
+            normalizedValue: 'ada@example.com',
+          },
+          {
+            kind: 'add_identity_facet',
+            entityId: PERSON_ID,
+            facetKind: 'phone',
+            value: '+1 213 373 4253',
+            normalizedValue: '+12133734253',
+          },
+        ],
+      },
+      {},
+    );
+
+    expect(output).toMatchObject({ ok: true });
+    await expect(scope.objects.listIdentityFacets(PERSON_ID)).resolves.toEqual([]);
+    const pendingSuggestions = await scope.suggestions.listPendingSuggestions();
+    expect(pendingSuggestions).toHaveLength(1);
+    expect(pendingSuggestions[0]?.source).toBe('chat');
+    const suggestionItems = pendingSuggestions[0]?.items ?? [];
+    const emailItem = suggestionItems.find(
+      (item) => item.targetKind === 'identity_facet' && item.proposedPayload.kind === 'email',
+    );
+    const phoneItem = suggestionItems.find(
+      (item) => item.targetKind === 'identity_facet' && item.proposedPayload.kind === 'phone',
+    );
+    expect(emailItem?.proposedPayload).toMatchObject({
+      entityId: PERSON_ID,
+      kind: 'email',
+      normalizedValue: 'ada@example.com',
+    });
+    expect(phoneItem?.proposedPayload).toMatchObject({
+      entityId: PERSON_ID,
+      kind: 'phone',
+      normalizedValue: '+12133734253',
+    });
+  });
+
+  it('queues and accepts object relationship memory using object names as references', async () => {
+    // Product behavior: relationship proposals may come from natural language
+    // with object names but no UUIDs. Acceptance should resolve only clear
+    // active objects, preserving review while avoiding ID-only model traps.
+    const scope = withTeam(db as never, TEAM_A, OWNER);
+    const tools = buildAgentTools(scope);
+    const exec = tools.suggest_object_memory?.execute as (
+      raw: unknown,
+      opts: unknown,
+    ) => Promise<unknown>;
+
+    const output = await exec(
+      {
+        title: 'Remember Ada and Acme are related',
+        reason: 'The conversation explicitly linked Ada with Acme.',
+        confidence: 'high',
+        items: [
+          {
+            kind: 'add_relationship',
+            fromName: 'Ada Lovelace',
+            toName: 'Acme',
+            relationshipKind: 'related',
+          },
+        ],
+      },
+      {},
+    );
+
+    expect(output).toMatchObject({ ok: true });
+    const pendingSuggestions = await scope.suggestions.listPendingSuggestions();
+    const relationshipItem = pendingSuggestions
+      .flatMap((suggestion) => suggestion.items)
+      .find((item) => item.targetKind === 'object_relationship');
+    expect(relationshipItem?.proposedPayload).toMatchObject({
+      fromName: 'Ada Lovelace',
+      toName: 'Acme',
+      kind: 'related',
+    });
+
+    await expect(scope.suggestions.acceptSuggestionItem(relationshipItem?.id ?? '')).resolves.toBe(
+      true,
+    );
+    const acme = await scope.objects.getObject(OBJECT_ID);
+    expect(acme?.relationships).toEqual([
+      expect.objectContaining({
+        kind: 'related',
+        otherId: PERSON_ID,
+        otherName: 'Ada Lovelace',
+      }),
+    ]);
+  });
+
+  it('queues and accepts board item responsibility using teammate names as references', async () => {
+    // Product behavior: board suggestions can assign responsibility from a
+    // natural-language teammate mention without requiring the model to invent
+    // or already know a user UUID.
+    const scope = withTeam(db as never, TEAM_A, OWNER);
+    const board = await scope.boards.createBoard({
+      name: 'Acme launch board',
+      templateKind: 'task_board',
+      lanes: [{ name: 'Todo', kind: 'active' }],
+    });
+    const boardItem = await scope.boards.addBoardItem(board.id, {
+      entityId: TASK_ID,
+      laneId: board.lanes[0]?.id ?? null,
+      actor: { kind: 'user', userId: OWNER },
+    });
+
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Assign Acme proposal',
+      dedupeKey: 'eval-board-item-responsible-name',
+      items: [
+        {
+          operation: 'update',
+          targetKind: 'board_item_update',
+          targetId: boardItem.id,
+          title: 'Assign Send Acme pricing proposal',
+          dedupeKey: 'eval-board-item-responsible-name:item',
+          proposedPayload: {
+            boardItemId: boardItem.id,
+            field: 'responsibleUserId',
+            newValue: null,
+            responsibleName: 'Eval Member',
+          },
+        },
+      ],
+    });
+
+    const suggestionItem = bundle.items[0];
+    expect(suggestionItem?.proposedPayload).toMatchObject({
+      responsibleName: 'Eval Member',
+      newValue: MEMBER,
+    });
+
+    await expect(scope.suggestions.acceptSuggestionItem(suggestionItem?.id ?? '')).resolves.toBe(
+      true,
+    );
+    const updated = await scope.boards.getBoard(board.id, { itemLimit: 'all' });
+    expect(updated?.items.find((item) => item.id === boardItem.id)?.responsibleUserId).toBe(MEMBER);
   });
 
   it('does not leak owner-private evidence to a member', async () => {

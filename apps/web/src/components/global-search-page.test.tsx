@@ -25,11 +25,11 @@ function jsonResponse(body: unknown, init: ResponseInit = {}): Response {
   });
 }
 
-function formControlValue(element: HTMLElement): string {
-  if (element instanceof HTMLInputElement || element instanceof HTMLSelectElement) {
+function inputValue(element: HTMLElement): string {
+  if (element instanceof HTMLInputElement) {
     return element.value;
   }
-  throw new Error('Expected an input or select element.');
+  throw new Error('Expected an input element.');
 }
 
 beforeEach(() => {
@@ -63,12 +63,14 @@ describe('GlobalSearchPage', () => {
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalled();
     });
-    await user.click(screen.getByRole('button', { name: 'Documents' }));
+    await user.click(screen.getByRole('button', { name: 'Result types' }));
+    await user.click(screen.getByRole('menuitemcheckbox', { name: 'Documents' }));
+    await user.click(screen.getByRole('menuitemcheckbox', { name: 'Tasks' }));
 
     await waitFor(() => {
       const lastCall = fetchMock.mock.calls.at(-1);
       const init = lastCall?.[1];
-      expect(init?.body).toContain('"kinds":["document_chunk"]');
+      expect(init?.body).toContain('"kinds":["document_chunk","task"]');
     });
   });
 
@@ -91,8 +93,12 @@ describe('GlobalSearchPage', () => {
 
     render(<GlobalSearchPage initialQuery="launch" />);
 
-    await user.click(screen.getByRole('button', { name: 'Documents' }));
-    await user.selectOptions(screen.getByRole('combobox'), 'slack');
+    await user.click(screen.getByRole('button', { name: 'Result types' }));
+    await user.click(screen.getByRole('menuitemcheckbox', { name: 'Documents' }));
+    await user.keyboard('{Escape}');
+    await user.click(screen.getByRole('button', { name: 'Source' }));
+    await user.click(screen.getByRole('menuitemcheckbox', { name: 'Slack' }));
+    await user.keyboard('{Escape}');
     await user.type(screen.getByLabelText('From'), '2026-06-01');
     await user.type(screen.getByLabelText('To'), '2026-06-30');
 
@@ -112,7 +118,9 @@ describe('GlobalSearchPage', () => {
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalled();
     });
-    await user.selectOptions(screen.getByRole('combobox'), 'slack');
+    await user.click(screen.getByRole('button', { name: 'Source' }));
+    await user.click(screen.getByRole('menuitemcheckbox', { name: 'Slack' }));
+    await user.keyboard('{Escape}');
     await user.type(screen.getByLabelText('From'), '2026-06-01');
     await user.type(screen.getByLabelText('To'), '2026-06-30');
 
@@ -120,13 +128,33 @@ describe('GlobalSearchPage', () => {
       const lastBody = fetchMock.mock.calls.at(-1)?.[1]?.body;
       expect(typeof lastBody).toBe('string');
       const parsed = JSON.parse(lastBody as string) as {
-        source?: string;
+        source?: string[];
         from?: string;
         to?: string;
       };
-      expect(parsed.source).toBe('slack');
+      expect(parsed.source).toEqual(['slack']);
       expect(parsed.from).toBe('2026-06-01T00:00:00.000Z');
       expect(parsed.to).toBe('2026-07-01T00:00:00.000Z');
+    });
+  });
+
+  it('keeps ingest webhook as a selectable source filter', async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.mocked(fetch);
+
+    render(<GlobalSearchPage initialQuery="launch" />);
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalled();
+    });
+    await user.click(screen.getByRole('button', { name: 'Source' }));
+    await user.click(screen.getByRole('menuitemcheckbox', { name: 'Ingest webhook' }));
+
+    await waitFor(() => {
+      const lastBody = fetchMock.mock.calls.at(-1)?.[1]?.body;
+      expect(typeof lastBody).toBe('string');
+      const parsed = JSON.parse(lastBody as string) as { source?: string[] };
+      expect(parsed.source).toEqual(['ingest_webhook']);
     });
   });
 
@@ -148,19 +176,19 @@ describe('GlobalSearchPage', () => {
       expect(typeof lastBody).toBe('string');
       const parsed = JSON.parse(lastBody as string) as {
         query?: string;
-        source?: string;
+        source?: string[];
         from?: string;
         to?: string;
       };
       expect(parsed.query).toBe('launch');
-      expect(parsed.source).toBe('slack');
+      expect(parsed.source).toEqual(['slack']);
       expect(parsed.from).toBe('2026-06-01T00:00:00.000Z');
       expect(parsed.to).toBe('2026-07-01T00:00:00.000Z');
     });
-    expect(formControlValue(screen.getByRole('combobox'))).toBe('slack');
-    expect(formControlValue(screen.getByLabelText('From'))).toBe('2026-06-01');
-    expect(formControlValue(screen.getByLabelText('To'))).toBe('2026-06-30');
-    expect(screen.getByRole('button', { name: 'Documents' }).className).toContain('text-signal');
+    expect(screen.getByRole('button', { name: 'Source' }).textContent).toContain('Slack');
+    expect(inputValue(screen.getByLabelText('From'))).toBe('2026-06-01');
+    expect(inputValue(screen.getByLabelText('To'))).toBe('2026-06-30');
+    expect(screen.getByRole('button', { name: 'Result types' }).textContent).toContain('Documents');
   });
 
   it('syncs the search query when URL props change', async () => {
@@ -180,7 +208,7 @@ describe('GlobalSearchPage', () => {
       const parsed = JSON.parse(lastBody as string) as { query?: string };
       expect(parsed.query).toBe('github docs');
     });
-    expect(formControlValue(screen.getByRole('searchbox', { name: 'Search everything' }))).toBe(
+    expect(inputValue(screen.getByRole('searchbox', { name: 'Search everything' }))).toBe(
       'github docs',
     );
   });

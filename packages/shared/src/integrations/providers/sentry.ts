@@ -4,6 +4,7 @@ import type {
   ObjectMapping,
   OAuthCallbackInput,
   ProviderResource,
+  TargetedSyncTask,
 } from '#src/integrations/types.js';
 
 import { getEnv } from '#src/env.js';
@@ -54,6 +55,7 @@ interface SentryRelease {
   version: string;
   dateCreated?: string;
   dateReleased?: string | null;
+  dateAdded?: string | null;
   newGroups?: number;
   url?: string;
 }
@@ -144,6 +146,27 @@ function stringValue(value: unknown): string | null {
   return typeof value === 'string' && value.trim() ? value : null;
 }
 
+function recordValue(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function nestedRecord(
+  record: Record<string, unknown> | null,
+  key: string,
+): Record<string, unknown> | null {
+  return recordValue(record?.[key]);
+}
+
+function firstString(values: unknown[]): string | null {
+  for (const value of values) {
+    const text = stringValue(value);
+    if (text) return text;
+  }
+  return null;
+}
+
 function numberValue(value: unknown): number | null {
   if (typeof value === 'number' && Number.isFinite(value)) return value;
   if (typeof value === 'string' && value.trim()) {
@@ -229,11 +252,50 @@ function statusFromIssue(status?: string): NonNullable<ObjectMapping['status']> 
   return status === 'resolved' ? 'done' : status === 'ignored' ? 'cancelled' : 'open';
 }
 
+function statusFromWebhookIssue(
+  action: string,
+  status?: string,
+): NonNullable<ObjectMapping['status']> {
+  if (action === 'resolved') return 'done';
+  if (action === 'ignored') return 'cancelled';
+  return statusFromIssue(status);
+}
+
+function issueWebhookEventType(action: string, status?: string): string {
+  if (action === 'created') return 'issue.created';
+  if (action === 'resolved') return 'issue.resolved';
+  if (action === 'ignored') return 'issue.ignored';
+  if (action === 'assigned') return 'issue.assigned';
+  if (action === 'unresolved') return 'issue.unresolved';
+  if (status === 'resolved') return 'issue.resolved';
+  return 'issue.updated';
+}
+
+function issuePermalink(issue: SentryIssue): string | null {
+  return stringValue(issue.permalink);
+}
+
+function actorFromRecord(
+  record: Record<string, unknown> | null,
+): { externalId?: string; name?: string; email?: string } | null {
+  if (!record) return null;
+  const externalId = stringValue(record.id);
+  const name = stringValue(record.name);
+  const email = stringValue(record.email);
+  if (!externalId && !name && !email) return null;
+  return {
+    ...(externalId ? { externalId } : {}),
+    ...(name ? { name } : {}),
+    ...(email ? { email } : {}),
+  };
+}
+
 function issueEvent(orgSlug: string, projectSlug: string, issue: SentryIssue): IntegrationEvent {
   const occurredAt = dateValue(issue.lastSeen ?? issue.firstSeen);
   const title = issue.title ?? issue.culprit ?? issue.shortId ?? `Sentry issue ${issue.id}`;
   const shortId = issue.shortId ?? issue.id;
   const priority = priorityFromLevel(issue.level);
+  const permalink = issuePermalink(issue);
   return {
     dedupKey: `sentry:issue:${issue.id}:${occurredAt.toISOString()}:${issue.status ?? ''}`,
     provider: 'sentry',
@@ -254,7 +316,7 @@ function issueEvent(orgSlug: string, projectSlug: string, issue: SentryIssue): I
       sentry_project_slug: projectSlug,
       sentry_issue_id: issue.id,
       sentry_short_id: issue.shortId ?? null,
-      external_url: issue.permalink ?? null,
+      external_url: permalink,
       level: issue.level ?? null,
       status: issue.status ?? null,
       metadata: issue.metadata ?? null,
@@ -266,8 +328,84 @@ function issueEvent(orgSlug: string, projectSlug: string, issue: SentryIssue): I
       externalId: issue.id,
       status: statusFromIssue(issue.status),
       ...(priority ? { priority } : {}),
-      ...(issue.permalink ? { url: issue.permalink } : {}),
+      ...(permalink ? { url: permalink } : {}),
       aliases: issue.shortId ? [issue.shortId] : [],
+      metadata: {
+        sentry_org_slug: orgSlug,
+        sentry_project_slug: projectSlug,
+        sentry_issue_id: issue.id,
+        sentry_short_id: issue.shortId ?? null,
+        level: issue.level ?? null,
+        status: issue.status ?? null,
+        metadata: issue.metadata ?? null,
+      },
+    },
+  };
+}
+
+function issueWebhookEvent(input: {
+  orgSlug: string | null;
+  projectSlug: string | null;
+  issue: SentryIssue;
+  action: string;
+  actor: Record<string, unknown> | null;
+}): IntegrationEvent {
+  const occurredAt = dateValue(input.issue.lastSeen ?? input.issue.firstSeen);
+  const title =
+    input.issue.title ??
+    input.issue.culprit ??
+    input.issue.shortId ??
+    `Sentry issue ${input.issue.id}`;
+  const shortId = input.issue.shortId ?? input.issue.id;
+  const priority = priorityFromLevel(input.issue.level);
+  const permalink = issuePermalink(input.issue);
+  const eventType = issueWebhookEventType(input.action, input.issue.status);
+  return {
+    dedupKey: `sentry:webhook:${input.issue.id}:${occurredAt.toISOString()}:${input.action}`,
+    provider: 'sentry',
+    externalObjectId: input.issue.id,
+    eventType,
+    occurredAt,
+    actor: actorFromRecord(input.actor),
+    contentText: [
+      `Sentry issue ${input.action || 'updated'}: ${shortId}: ${title}`,
+      input.issue.level ? `Level: ${input.issue.level}` : null,
+      input.issue.status ? `Status: ${input.issue.status}` : null,
+      input.issue.count !== undefined ? `Events: ${String(input.issue.count)}` : null,
+      input.issue.userCount !== undefined ? `Users: ${String(input.issue.userCount)}` : null,
+    ]
+      .filter(Boolean)
+      .join('\n'),
+    extra: {
+      sentry_org_slug: input.orgSlug,
+      sentry_project_slug: input.projectSlug,
+      sentry_issue_id: input.issue.id,
+      sentry_short_id: input.issue.shortId ?? null,
+      webhook_action: input.action || null,
+      external_url: permalink,
+      level: input.issue.level ?? null,
+      status: input.issue.status ?? null,
+      metadata: input.issue.metadata ?? null,
+    },
+    objectMap: {
+      type: 'incident',
+      canonicalName: `${shortId}: ${title}`,
+      displayTitle: title,
+      externalId: input.issue.id,
+      status: statusFromWebhookIssue(input.action, input.issue.status),
+      ...(priority ? { priority } : {}),
+      ...(permalink ? { url: permalink } : {}),
+      aliases: input.issue.shortId ? [input.issue.shortId] : [],
+      metadata: {
+        sentry_org_slug: input.orgSlug,
+        sentry_project_slug: input.projectSlug,
+        sentry_issue_id: input.issue.id,
+        sentry_short_id: input.issue.shortId ?? null,
+        webhook_action: input.action || null,
+        level: input.issue.level ?? null,
+        status: input.issue.status ?? null,
+        metadata: input.issue.metadata ?? null,
+      },
     },
   };
 }
@@ -276,19 +414,21 @@ function releaseEvent(
   orgSlug: string,
   projectSlug: string,
   release: SentryRelease,
+  action = 'created',
 ): IntegrationEvent {
-  const occurredAt = dateValue(release.dateReleased ?? release.dateCreated);
+  const occurredAt = dateValue(release.dateReleased ?? release.dateCreated ?? release.dateAdded);
   return {
-    dedupKey: `sentry:release:${orgSlug}:${projectSlug}:${release.version}:${occurredAt.toISOString()}`,
+    dedupKey: `sentry:release:${orgSlug}:${projectSlug}:${release.version}:${occurredAt.toISOString()}:${action}`,
     provider: 'sentry',
     externalObjectId: `${orgSlug}/${projectSlug}/release/${release.version}`,
-    eventType: 'release.created',
+    eventType: action === 'deployed' ? 'release.deployed' : 'release.created',
     occurredAt,
     contentText: `Sentry release ${release.version} for ${projectSlug}`,
     extra: {
       sentry_org_slug: orgSlug,
       sentry_project_slug: projectSlug,
       release_version: release.version,
+      webhook_action: action,
       new_groups: release.newGroups ?? null,
       external_url: release.url ?? null,
     },
@@ -308,6 +448,167 @@ function releaseEvent(
       },
     },
   };
+}
+
+function sentryOrgSlugFromUrl(value: unknown): string | null {
+  const text = stringValue(value);
+  if (!text) return null;
+  try {
+    const url = new URL(text);
+    const pathMatch = /\/organizations\/([^/]+)\//.exec(url.pathname);
+    if (pathMatch?.[1]) return decodeURIComponent(pathMatch[1]);
+    if (url.hostname.endsWith('.sentry.io')) {
+      const [subdomain] = url.hostname.split('.');
+      if (subdomain && subdomain !== 'sentry') return subdomain;
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+function sentryProjectSlugFromUrl(value: unknown): string | null {
+  const text = stringValue(value);
+  if (!text) return null;
+  try {
+    const url = new URL(text);
+    const projectMatch = /\/projects\/[^/]+\/([^/]+)\//.exec(url.pathname);
+    if (projectMatch?.[1]) return decodeURIComponent(projectMatch[1]);
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+function sentryIssueFromRecord(issue: Record<string, unknown> | null): SentryIssue | null {
+  if (!issue) return null;
+  const id = firstString([issue.id, issue.issue_id]);
+  if (!id) return null;
+  const project = recordValue(issue.project);
+  const metadata = recordValue(issue.metadata);
+  const shortId = firstString([issue.shortId, issue.short_id]);
+  const title = firstString([issue.title, issue.culprit, issue.message]);
+  const culprit = stringValue(issue.culprit);
+  const permalink = firstString([issue.permalink, issue.web_url, issue.url]);
+  const status = stringValue(issue.status);
+  const level = stringValue(issue.level);
+  const firstSeen = firstString([issue.firstSeen, issue.first_seen]);
+  const lastSeen = firstString([issue.lastSeen, issue.last_seen, issue.datetime]);
+  const userCount = numberValue(issue.userCount ?? issue.user_count);
+  const projectSlug = stringValue(project?.slug);
+  return {
+    id,
+    ...(shortId ? { shortId } : {}),
+    ...(title ? { title } : {}),
+    ...(culprit ? { culprit } : {}),
+    ...(permalink ? { permalink } : {}),
+    ...(status ? { status } : {}),
+    ...(level ? { level } : {}),
+    ...(firstSeen ? { firstSeen } : {}),
+    ...(lastSeen ? { lastSeen } : {}),
+    ...(issue.count !== undefined ? { count: issue.count as string | number } : {}),
+    ...(userCount !== null ? { userCount } : {}),
+    ...(projectSlug ? { project: { slug: projectSlug } } : {}),
+    ...(metadata ? { metadata } : {}),
+  };
+}
+
+function sentryReleaseFromRecord(release: Record<string, unknown> | null): SentryRelease | null {
+  if (!release) return null;
+  const version = firstString([release.version, release.shortVersion, release.short_version]);
+  if (!version) return null;
+  const dateCreated = firstString([release.dateCreated, release.date_created]);
+  const dateReleased = firstString([release.dateReleased, release.date_released]);
+  const dateAdded = firstString([release.dateAdded, release.date_added]);
+  const newGroups = numberValue(release.newGroups ?? release.new_groups);
+  const url = stringValue(release.url);
+  return {
+    version,
+    ...(dateCreated ? { dateCreated } : {}),
+    ...(dateReleased ? { dateReleased } : {}),
+    ...(dateAdded ? { dateAdded } : {}),
+    ...(newGroups !== null ? { newGroups } : {}),
+    ...(url ? { url } : {}),
+  };
+}
+
+function releaseProjectSlug(release: Record<string, unknown> | null): string | null {
+  const project = nestedRecord(release, 'project');
+  const projects = release?.projects;
+  if (Array.isArray(projects)) {
+    for (const item of projects) {
+      const itemRecord = recordValue(item);
+      const slug = itemRecord
+        ? (stringValue(itemRecord.slug) ?? stringValue(itemRecord.name))
+        : null;
+      if (slug) return slug;
+      const text = stringValue(item);
+      if (text) return text;
+    }
+  }
+  return firstString([project?.slug, project?.name, sentryProjectSlugFromUrl(release?.url)]);
+}
+
+function sentryWebhookProject(payload: unknown): string | null {
+  const record = recordValue(payload);
+  if (!record) return null;
+  const dataRecord = nestedRecord(record, 'data') ?? {};
+  const event = nestedRecord(dataRecord, 'event');
+  const issue = nestedRecord(dataRecord, 'issue');
+  const release = nestedRecord(dataRecord, 'release');
+  const issueProject = nestedRecord(issue, 'project');
+  const project = nestedRecord(record, 'project') ?? nestedRecord(dataRecord, 'project');
+  const organization =
+    nestedRecord(record, 'organization') ?? nestedRecord(dataRecord, 'organization');
+  const orgSlug = firstString([
+    organization?.slug,
+    sentryOrgSlugFromUrl(dataRecord.web_url),
+    sentryOrgSlugFromUrl(event?.web_url),
+    sentryOrgSlugFromUrl(event?.issue_url),
+    sentryOrgSlugFromUrl(issue?.permalink),
+    sentryOrgSlugFromUrl(issue?.web_url),
+    sentryOrgSlugFromUrl(issue?.url),
+    sentryOrgSlugFromUrl(release?.url),
+  ]);
+  const projectSlug = firstString([
+    project?.slug,
+    event?.project_slug,
+    typeof event?.project === 'string' ? event.project : null,
+    issueProject?.slug,
+    sentryProjectSlugFromUrl(issue?.permalink),
+    sentryProjectSlugFromUrl(issue?.web_url),
+    releaseProjectSlug(release),
+  ]);
+  return orgSlug && projectSlug ? `${orgSlug}/${projectSlug}` : null;
+}
+
+function sentryWebhookOrgProject(payload: unknown): {
+  orgSlug: string | null;
+  projectSlug: string | null;
+} {
+  const project = sentryWebhookProject(payload);
+  if (!project) return { orgSlug: null, projectSlug: null };
+  const [orgSlug, projectSlug] = project.split('/');
+  return { orgSlug: orgSlug ?? null, projectSlug: projectSlug ?? null };
+}
+
+function projectSyncTask(input: {
+  integrationId: string;
+  teamId: string;
+  project: string | null;
+}): TargetedSyncTask[] {
+  return input.project
+    ? [
+        {
+          integrationId: input.integrationId,
+          teamId: input.teamId,
+          triggeredBy: 'webhook' as const,
+          resourceType: 'sentry.project',
+          externalId: input.project,
+          reason: 'sentry_project_webhook',
+        },
+      ]
+    : [];
 }
 
 async function syncProject(
@@ -465,49 +766,95 @@ export const sentryProvider: IntegrationProvider = {
   },
 
   // eslint-disable-next-line @typescript-eslint/require-await
-  async handleWebhook({ payload }) {
-    if (!payload || typeof payload !== 'object') return [];
-    const record = payload as Record<string, unknown>;
-    const data = record.data && typeof record.data === 'object' ? record.data : {};
-    const event = (data as Record<string, unknown>).event as Record<string, unknown> | undefined;
+  async handleWebhook({ integration, payload }) {
+    const record = recordValue(payload);
+    if (!record) return [];
+    const data = nestedRecord(record, 'data') ?? {};
+    const event = nestedRecord(data, 'event');
+    const action = stringValue(record.action) ?? '';
+    const actor = recordValue(record.actor);
+    const project = sentryWebhookProject(payload);
+    const orgProject = sentryWebhookOrgProject(payload);
+    const issue = sentryIssueFromRecord(nestedRecord(data, 'issue'));
+    if (issue) {
+      return {
+        events: [
+          issueWebhookEvent({
+            orgSlug: orgProject.orgSlug,
+            projectSlug: orgProject.projectSlug ?? issue.project?.slug ?? null,
+            issue,
+            action,
+            actor,
+          }),
+        ],
+        syncTasks: projectSyncTask({
+          integrationId: integration.id,
+          teamId: integration.teamId,
+          project,
+        }),
+      };
+    }
+
+    const release = sentryReleaseFromRecord(nestedRecord(data, 'release'));
+    if (release && orgProject.orgSlug && orgProject.projectSlug) {
+      return {
+        events: [releaseEvent(orgProject.orgSlug, orgProject.projectSlug, release, action)],
+        syncTasks: projectSyncTask({
+          integrationId: integration.id,
+          teamId: integration.teamId,
+          project,
+        }),
+      };
+    }
+
     const issueId =
-      stringValue(event?.issue_id) ?? stringValue((data as Record<string, unknown>).issue_id);
-    if (!issueId) return [];
-    const occurredAt = dateValue(event?.datetime ?? (data as Record<string, unknown>).timestamp);
+      stringValue(event?.issue_id) ?? stringValue(data.issue_id) ?? stringValue(record.issue_id);
+    if (!issueId) {
+      return {
+        events: [],
+        syncTasks: projectSyncTask({
+          integrationId: integration.id,
+          teamId: integration.teamId,
+          project,
+        }),
+      };
+    }
+    const occurredAt = dateValue(event?.datetime ?? data.timestamp);
     const title =
       stringValue(event?.title) ?? stringValue(event?.message) ?? `Sentry issue ${issueId}`;
-    const action = stringValue(record.action) ?? '';
-    const actorRecord =
-      record.actor && typeof record.actor === 'object'
-        ? (record.actor as Record<string, unknown>)
-        : null;
-    const actorId = stringValue(actorRecord?.id);
-    const actorName = stringValue(actorRecord?.name);
     const webUrl = stringValue(event?.web_url);
-    return [
-      {
-        dedupKey: `sentry:webhook:${issueId}:${occurredAt.toISOString()}:${action}`,
-        provider: 'sentry',
-        externalObjectId: issueId,
-        eventType: action === 'resolved' ? 'issue.resolved' : 'alert.triggered',
-        occurredAt,
-        actor: actorRecord
-          ? {
-              ...(actorId ? { externalId: actorId } : {}),
-              ...(actorName ? { name: actorName } : {}),
-            }
-          : null,
-        contentText: `Sentry alert: ${title}`,
-        extra: { sentry_issue_id: issueId, webhook_action: action || null },
-        objectMap: {
-          type: 'incident',
-          canonicalName: title,
-          displayTitle: title,
-          externalId: issueId,
-          status: action === 'resolved' ? 'done' : 'open',
-          ...(webUrl ? { url: webUrl } : {}),
+    return {
+      events: [
+        {
+          dedupKey: `sentry:webhook:${issueId}:${occurredAt.toISOString()}:${action}`,
+          provider: 'sentry',
+          externalObjectId: issueId,
+          eventType: action === 'resolved' ? 'issue.resolved' : 'alert.triggered',
+          occurredAt,
+          actor: actorFromRecord(actor),
+          contentText: `Sentry alert: ${title}`,
+          extra: { sentry_issue_id: issueId, webhook_action: action || null },
+          objectMap: {
+            type: 'incident',
+            canonicalName: title,
+            displayTitle: title,
+            externalId: issueId,
+            status: action === 'resolved' ? 'done' : 'open',
+            ...(webUrl ? { url: webUrl } : {}),
+            metadata: {
+              sentry_org_slug: orgProject.orgSlug,
+              sentry_project_slug: orgProject.projectSlug,
+              sentry_issue_id: issueId,
+              webhook_action: action || null,
+            },
+          },
         },
-      },
-    ];
+      ],
+      syncTasks: projectSyncTask({
+        integrationId: integration.id,
+        teamId: integration.teamId,
+        project,
+      }),
+    };
   },
 };

@@ -1,5 +1,14 @@
 import { PGlite } from '@electric-sql/pglite';
-import { entities, facts, factEntities, objectSummaries, rawEvents, type Db } from '@timeline/db';
+import {
+  artifactClusterMembers,
+  artifactClusters,
+  entities,
+  facts,
+  factEntities,
+  objectSummaries,
+  rawEvents,
+  type Db,
+} from '@timeline/db';
 import { type queue } from '@timeline/shared';
 import {
   currentExtractionModelVersions,
@@ -150,6 +159,34 @@ describe('processExtractJobForTests', () => {
     for (const entity of linkedEntities) {
       expect(testIO.enqueueObjectSummaryRefresh).toHaveBeenCalledWith(entity.id);
     }
+  });
+
+  it('reconciles link artifacts for any extracted raw event text', async () => {
+    const rawEventId = '33333333-3333-4333-8333-333333333336';
+    await seedEvent(db, {
+      id: rawEventId,
+      text: 'Captured from a future source: https://example.com/future?utm_source=test&id=7',
+    });
+
+    await expect(
+      processExtractJobForTests({ db }, { rawEventId, teamId: TEAM_ID }, io()),
+    ).resolves.toMatchObject({ rawEventId, factsInserted: 0, modelVersion: MODEL_VERSION });
+
+    const clusters = await db.select().from(artifactClusters);
+    expect(clusters).toHaveLength(1);
+    expect(clusters[0]).toMatchObject({
+      teamId: TEAM_ID,
+      artifactType: 'link',
+      canonicalName: 'example.com/future',
+    });
+    await expect(db.select().from(artifactClusterMembers)).resolves.toEqual([
+      expect.objectContaining({
+        rawEventId,
+        role: 'related_context',
+        strength: 'semantic',
+        authoritative: false,
+      }),
+    ]);
   });
 
   it('creates pending object summary rows for automatic refreshes after extraction', async () => {

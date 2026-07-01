@@ -5,7 +5,6 @@ import { useActionState, useState } from 'react';
 
 import { setIntegrationVisibilityDefaultAction } from '@/app/actions/visibility';
 import { InlineError } from '@/components/inline-error';
-import { useAppDialog } from '@/components/ui/app-dialog';
 import { Button } from '@/components/ui/button';
 import { providerLabel } from '@/lib/resource-labels';
 import { connectionErrorMessage } from '@/lib/ux-errors';
@@ -17,8 +16,22 @@ interface ConnectedRow {
   enabled: boolean;
   lastSyncedAt: string | null;
   lastError: string | null;
+  syncPause: { retryAt: string; reason: string; scope: string | null } | null;
+  attention: ConnectedAttention[];
   visibilityDefault: 'team' | 'private' | 'specific_users';
   visibilityDefaultUserIds: string[] | null;
+}
+
+interface ConnectedAttention {
+  id: string;
+  category:
+    | 'needs_reconnect'
+    | 'needs_new_owner'
+    | 'access_changed'
+    | 'sync_error'
+    | 'webhook_degraded';
+  summary: string;
+  lastSeenAt: string;
 }
 
 interface MemberOption {
@@ -33,6 +46,98 @@ const DATE_FORMAT = new Intl.DateTimeFormat('en-US', {
   timeZone: 'UTC',
 });
 
+interface ConnectionRequestError {
+  id: string;
+  message: string | undefined;
+  status: number;
+  details?: string;
+}
+
+async function readConnectionRequestError(
+  res: Response,
+): Promise<Omit<ConnectionRequestError, 'id'>> {
+  const text = await res.text();
+  if (!text) return { message: undefined, status: res.status };
+  try {
+    const data = JSON.parse(text) as { error?: unknown };
+    if (typeof data.error === 'string' && data.error.length > 0) {
+      return { message: data.error, status: res.status, details: text };
+    }
+  } catch {
+    // Non-JSON error bodies still carry useful operational details.
+  }
+  return { message: text, status: res.status, details: text };
+}
+
+function syncPauseText(syncPause: ConnectedRow['syncPause']): string | null {
+  if (!syncPause) return null;
+  const retryAt = new Date(syncPause.retryAt);
+  const formattedRetryAt = Number.isNaN(retryAt.getTime())
+    ? syncPause.retryAt
+    : DATE_FORMAT.format(retryAt);
+  const scope = syncPause.scope ? ` (${syncPause.scope})` : '';
+  return `Provider quota cooldown${scope}. Sync resumes at ${formattedRetryAt}.`;
+}
+
+function attentionTitle(category: ConnectedAttention['category']): string {
+  switch (category) {
+    case 'needs_reconnect':
+      return 'Reconnect required';
+    case 'needs_new_owner':
+      return 'Connection owner needed';
+    case 'access_changed':
+      return 'Source access changed';
+    case 'sync_error':
+      return 'Sync needs attention';
+    case 'webhook_degraded':
+      return 'Webhook delivery degraded';
+  }
+}
+
+function hasBlockingAttention(attention: ConnectedAttention[]): boolean {
+  return attention.some(
+    (item) =>
+      item.category === 'needs_reconnect' ||
+      item.category === 'needs_new_owner' ||
+      item.category === 'access_changed',
+  );
+}
+
+function hasOnlyWebhookDegradedAttention(attention: ConnectedAttention[]): boolean {
+  return attention.length > 0 && attention.every((item) => item.category === 'webhook_degraded');
+}
+
+function blockingAttentionAction(
+  attention: ConnectedAttention[],
+): { href: string; label: string } | null {
+  if (attention.some((item) => item.category === 'needs_reconnect')) {
+    return { href: '/app/me/connections', label: 'Reconnect account' };
+  }
+  if (attention.some((item) => item.category === 'needs_new_owner')) {
+    return { href: '#available-shared-sources', label: 'Choose replacement' };
+  }
+  if (attention.some((item) => item.category === 'access_changed')) {
+    return { href: '#available-shared-sources', label: 'Review sources' };
+  }
+  return null;
+}
+
+function needsReplacementFromLastError(lastError: string | null): boolean {
+  return lastError?.includes('Provider connection deleted') ?? false;
+}
+
+function dedupeAttention(attention: ConnectedAttention[]): ConnectedAttention[] {
+  const seen = new Set<string>();
+  const deduped: ConnectedAttention[] = [];
+  for (const item of attention) {
+    const key = `${item.category}\x00${item.summary}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    deduped.push(item);
+  }
+  return deduped;
+}
+
 export function ConnectedIntegrations({
   connected,
   members = EMPTY_MEMBERS,
@@ -41,11 +146,15 @@ export function ConnectedIntegrations({
   members?: MemberOption[];
 }) {
   const router = useRouter();
-  const dialog = useAppDialog();
   const [busy, setBusy] = useState<string | null>(null);
-  const [retryError, setRetryError] = useState<{ id: string; message: string } | null>(null);
+  const [retryError, setRetryError] = useState<ConnectionRequestError | null>(null);
+  const [confirmDisconnectId, setConfirmDisconnectId] = useState<string | null>(null);
+  const [locallyDisconnectedIds, setLocallyDisconnectedIds] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const visibleConnected = connected.filter((row) => !locallyDisconnectedIds.has(row.id));
 
-  if (connected.length === 0) {
+  if (visibleConnected.length === 0) {
     return <p className="text-sm text-fg-muted">No integrations connected yet.</p>;
   }
 
@@ -55,13 +164,24 @@ export function ConnectedIntegrations({
     try {
       const res = await fetch(`/api/integrations/manage/${id}/${method}`, { method: 'POST' });
       if (!res.ok) {
-        const text = await res.text();
-        setRetryError({ id, message: text });
+        setRetryError({ id, ...(await readConnectionRequestError(res)) });
         return;
+      }
+      if (method === 'disconnect') {
+        setConfirmDisconnectId((current) => (current === id ? null : current));
+        setLocallyDisconnectedIds((current) => {
+          const next = new Set(current);
+          next.add(id);
+          return next;
+        });
       }
       router.refresh();
     } catch (err) {
-      setRetryError({ id, message: err instanceof Error ? err.message : 'Request failed' });
+      setRetryError({
+        id,
+        message: err instanceof Error ? err.message : 'request_failed',
+        status: 0,
+      });
     } finally {
       setBusy(null);
     }
@@ -70,76 +190,194 @@ export function ConnectedIntegrations({
   return (
     <>
       <ul className="divide-y divide-border rounded-md border border-border bg-surface">
-        {connected.map((c) => (
-          <li key={c.id} className="flex items-center gap-3 px-3 py-2">
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2">
-                <span className="text-sm font-medium">{providerLabel(c.provider)}</span>
-                <span className="truncate text-sm text-fg-muted">{c.displayName}</span>
-                {!c.enabled ? (
-                  <span className="rounded-sm border border-border px-1 text-[10px] uppercase text-fg-muted">
-                    Disabled
-                  </span>
+        {visibleConnected.map((c) => {
+          const pauseText = syncPauseText(c.syncPause);
+          const attention = dedupeAttention(c.attention);
+          const needsReplacement =
+            attention.length === 0 && needsReplacementFromLastError(c.lastError);
+          const blockingAction =
+            blockingAttentionAction(attention) ??
+            (needsReplacement
+              ? { href: '#available-shared-sources', label: 'Choose replacement' }
+              : null);
+          const syncDisabled =
+            busy !== null ||
+            !c.enabled ||
+            Boolean(c.syncPause) ||
+            hasBlockingAttention(attention) ||
+            needsReplacement;
+          return (
+            <li key={c.id} className="flex flex-col gap-3 px-3 py-2 sm:flex-row sm:items-center">
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium">{providerLabel(c.provider)}</span>
+                  <span className="truncate text-sm text-fg-muted">{c.displayName}</span>
+                  {!c.enabled ? (
+                    <span className="rounded-sm border border-border px-1 text-[10px] uppercase text-fg-muted">
+                      Disabled
+                    </span>
+                  ) : null}
+                </div>
+                <div className="text-xs text-fg-muted">
+                  {c.lastSyncedAt
+                    ? `Last synced ${DATE_FORMAT.format(new Date(c.lastSyncedAt))}`
+                    : 'Never synced'}
+                </div>
+                {attention.length > 0 ? (
+                  <IntegrationAttentionPanel attention={attention} details={c.lastError} />
                 ) : null}
+                {pauseText ? (
+                  <output className="mt-2 block rounded-sm border border-border bg-surface-2 px-3 py-2 text-sm text-fg-muted">
+                    {pauseText}
+                  </output>
+                ) : null}
+                {retryError?.id === c.id ? (
+                  <InlineError
+                    message={connectionErrorMessage(retryError.message, retryError.status)}
+                    details={retryError.details ?? retryError.message}
+                    onRetry={() => {
+                      setRetryError(null);
+                    }}
+                    retryLabel="Dismiss"
+                    className="mt-2"
+                  />
+                ) : c.lastError && !pauseText && c.attention.length === 0 ? (
+                  <InlineError
+                    message={connectionErrorMessage(c.lastError)}
+                    details={c.lastError}
+                    onRetry={needsReplacement ? undefined : () => void call('sync', c.id)}
+                    retrying={busy === `sync:${c.id}`}
+                    retryLabel="Retry sync"
+                    className="mt-2"
+                  />
+                ) : null}
+                {confirmDisconnectId === c.id ? (
+                  <div className="mt-2 flex flex-wrap items-center gap-2 rounded-sm border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm">
+                    <span className="min-w-0 flex-1 text-destructive">
+                      Future sync stops, but existing timeline events remain available.
+                    </span>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={busy !== null}
+                      onClick={() => {
+                        setConfirmDisconnectId(null);
+                      }}
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="destructive"
+                      disabled={busy !== null}
+                      onClick={() => {
+                        void call('disconnect', c.id);
+                      }}
+                    >
+                      {busy === `disconnect:${c.id}` ? 'Disconnecting' : 'Confirm disconnect'}
+                    </Button>
+                  </div>
+                ) : null}
+                <IntegrationVisibilityForm integration={c} members={members} />
               </div>
-              <div className="text-xs text-fg-muted">
-                {c.lastSyncedAt
-                  ? `Last synced ${DATE_FORMAT.format(new Date(c.lastSyncedAt))}`
-                  : 'Never synced'}
+              <div className="flex w-full flex-wrap gap-2 sm:w-auto sm:flex-nowrap sm:justify-end">
+                {blockingAction ? (
+                  <Button asChild size="sm" variant="secondary" className="flex-1 sm:flex-none">
+                    <a href={blockingAction.href}>{blockingAction.label}</a>
+                  </Button>
+                ) : (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="secondary"
+                    className="flex-1 sm:flex-none"
+                    disabled={syncDisabled}
+                    onClick={() => {
+                      void call('sync', c.id);
+                    }}
+                  >
+                    {busy === `sync:${c.id}`
+                      ? 'Syncing…'
+                      : !c.enabled
+                        ? 'Disabled'
+                        : c.syncPause
+                          ? 'Paused'
+                          : 'Sync now'}
+                  </Button>
+                )}
+                {confirmDisconnectId === c.id ? null : (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    className="flex-1 sm:flex-none"
+                    disabled={busy !== null}
+                    onClick={() => {
+                      setConfirmDisconnectId(c.id);
+                    }}
+                  >
+                    Disconnect
+                  </Button>
+                )}
               </div>
-              {retryError?.id === c.id ? (
-                <InlineError
-                  message={connectionErrorMessage(retryError.message)}
-                  details={retryError.message}
-                  onRetry={() => {
-                    setRetryError(null);
-                  }}
-                  retryLabel="Dismiss"
-                  className="mt-2"
-                />
-              ) : c.lastError ? (
-                <InlineError
-                  message={connectionErrorMessage(c.lastError)}
-                  details={c.lastError}
-                  onRetry={() => void call('sync', c.id)}
-                  retrying={busy === `sync:${c.id}`}
-                  retryLabel="Retry sync"
-                  className="mt-2"
-                />
-              ) : null}
-              <IntegrationVisibilityForm integration={c} members={members} />
-            </div>
-            <Button
-              size="sm"
-              variant="secondary"
-              disabled={busy !== null || !c.enabled}
-              onClick={() => {
-                void call('sync', c.id);
-              }}
-            >
-              {busy === `sync:${c.id}` ? 'Syncing…' : c.enabled ? 'Sync now' : 'Disabled'}
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              disabled={busy !== null}
-              onClick={async () => {
-                const confirmed = await dialog.confirm({
-                  title: 'Disconnect integration?',
-                  description: 'Future sync stops, but existing timeline events remain available.',
-                  confirmLabel: 'Disconnect',
-                  destructive: true,
-                });
-                if (confirmed) void call('disconnect', c.id);
-              }}
-            >
-              Disconnect
-            </Button>
+            </li>
+          );
+        })}
+      </ul>
+    </>
+  );
+}
+
+function IntegrationAttentionPanel({
+  attention,
+  details,
+}: {
+  attention: ConnectedAttention[];
+  details: string | null;
+}) {
+  const [showDetails, setShowDetails] = useState(false);
+  const sorted = [...attention].sort((a, b) => a.category.localeCompare(b.category));
+  const softStatus = hasOnlyWebhookDegradedAttention(sorted);
+  return (
+    <div
+      className={
+        softStatus
+          ? 'mt-2 rounded-sm border border-signal/30 bg-signal/10 px-3 py-2 text-sm text-fg'
+          : 'mt-2 rounded-sm border border-danger/40 bg-danger/10 px-3 py-2 text-sm text-danger'
+      }
+    >
+      <ul className="space-y-1.5">
+        {sorted.map((item) => (
+          <li key={item.id}>
+            <span className={softStatus ? 'font-medium text-signal' : 'font-medium'}>
+              {attentionTitle(item.category)}:
+            </span>{' '}
+            <span>{item.summary}</span>
           </li>
         ))}
       </ul>
-      {dialog.node}
-    </>
+      {details ? (
+        <div className="mt-2">
+          <button
+            type="button"
+            onClick={() => {
+              setShowDetails((v) => !v);
+            }}
+            className="text-xs text-fg-muted transition-colors hover:text-fg"
+            aria-expanded={showDetails}
+          >
+            {showDetails ? 'Hide details' : 'Details'}
+          </button>
+          {showDetails ? (
+            <pre className="mt-1 overflow-auto rounded-sm bg-bg/60 p-2 font-mono text-[11px] text-fg-muted">
+              {details}
+            </pre>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
   );
 }
 

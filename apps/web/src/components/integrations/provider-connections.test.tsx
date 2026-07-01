@@ -16,6 +16,7 @@ vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
   cleanup();
 });
 
@@ -86,7 +87,8 @@ describe('TeamSourcesUi', () => {
       />,
     );
 
-    expect(await screen.findByText('2. Share to this team')).toBeTruthy();
+    expect(await screen.findByText('2. Shared sources')).toBeTruthy();
+    expect(screen.getByText(/Need a second Monday\.com account/i)).toBeTruthy();
     expect(screen.getByText(/choose a GitHub organization/i)).toBeTruthy();
     expect(screen.getByRole('link', { name: /GitHub access/i })).toBeTruthy();
   });
@@ -385,6 +387,40 @@ describe('TeamSourcesUi', () => {
     ).toBeTruthy();
   });
 
+  it('maps provider account delete JSON errors to readable copy', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(globalThis, 'fetch').mockImplementation((_input, init) => {
+      if (init?.method === 'DELETE') {
+        return Promise.resolve(
+          new Response(JSON.stringify({ error: 'disconnect_failed' }), { status: 500 }),
+        );
+      }
+      return Promise.resolve(
+        new Response(JSON.stringify({ resources: [], shares: [] }), { status: 200 }),
+      );
+    });
+
+    renderWithQueryClient(
+      <PersonalConnectionsUi
+        connections={[
+          {
+            id: 'github',
+            provider: 'github',
+            displayName: 'GitHub — Tim',
+            lastError: null,
+            lastConnectedAt: '2026-06-01T00:00:00.000Z',
+          },
+        ]}
+      />,
+    );
+
+    await screen.findByText('GitHub — Tim');
+    await user.click(screen.getByRole('button', { name: 'Delete account' }));
+    await user.click(screen.getByRole('button', { name: 'Delete provider account' }));
+
+    expect(await screen.findByText(/Could not disconnect this connection/i)).toBeTruthy();
+  });
+
   it('explains that admins activate shared team sources', () => {
     render(
       <TeamSourcesUi
@@ -394,8 +430,8 @@ describe('TeamSourcesUi', () => {
       />,
     );
 
-    expect(screen.getByText(/shared by connection owners/i)).toBeTruthy();
-    expect(screen.getByText(/Select what this Timeline team should sync/i)).toBeTruthy();
+    expect(screen.getByText(/Shared sources are not syncing yet/i)).toBeTruthy();
+    expect(screen.getByText(/Select the sources this team should import/i)).toBeTruthy();
   });
 
   it('does not tell non-admins to select and save shared team sources', () => {
@@ -408,10 +444,10 @@ describe('TeamSourcesUi', () => {
     );
 
     expect(
-      screen.getByText(/Team admins choose what this Timeline team should sync/i),
+      screen.getByText(/A team admin chooses which shared sources this team imports/i),
     ).toBeTruthy();
-    expect(screen.queryByText(/then save/i)).toBeNull();
-    expect(screen.queryByRole('button', { name: /Activate sources|Save sources/i })).toBeNull();
+    expect(screen.queryByText(/then activate team sync/i)).toBeNull();
+    expect(screen.queryByRole('button', { name: /Activate team sync|Save team sync/i })).toBeNull();
   });
 
   it('shows owner labels and replacement action for another active source owner', async () => {
@@ -427,18 +463,18 @@ describe('TeamSourcesUi', () => {
       />,
     );
 
-    expect(screen.getByText('Owner: Tim')).toBeTruthy();
-    expect(screen.getByText('Owner: Ada')).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Save sources' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Activate sources' })).toBeTruthy();
-    expect(screen.getAllByText('Available, no sources syncing')).toHaveLength(1);
+    expect(screen.getByText('Provider account owner: Tim')).toBeTruthy();
+    expect(screen.getByText('Provider account owner: Ada')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Save team sync' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Activate team sync' })).toBeTruthy();
+    expect(screen.getAllByText('Shared, not syncing')).toHaveLength(1);
 
     const checkboxes = screen.getAllByRole('checkbox');
     const replacementCheckbox = checkboxes[1];
     if (!replacementCheckbox) throw new Error('Expected replacement checkbox');
     await user.click(replacementCheckbox);
 
-    expect(screen.getByRole('button', { name: 'Replace connection' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Replace active import' })).toBeTruthy();
   });
 
   it('updates selected sources when refreshed active shares change', () => {

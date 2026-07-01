@@ -10,7 +10,7 @@
     <a class="skip" href="#main">Skip to content</a>
     <main id="main">
       <h1>Telegram bot setup</h1>
-      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-06-16</span></div>
+      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-06-28</span></div>
       <blockquote>
         <p>
           Telegram is a first-party conversational Capture Surface. Text, voice/audio, and supported
@@ -152,6 +152,16 @@ curl -F "url=https://&lt;ngrok-id&gt;.ngrok-free.app/api/telegram/webhook" \
           notes. DM captures are acknowledged with a <code>👀</code> reaction so it's obvious they
           landed; group captures stay quiet to avoid channel noise. Rate-limited per Telegram user
           (10/min) because each <code>/ask</code> runs the agent against OpenRouter.
+        </li>
+        <li>
+          Shared URLs in captured text are normalized into non-authoritative artifact evidence. The
+          canonical URL groups timeline context for the same link, while display-only URL text does
+          not merge separate resources that differ by meaningful query parameters.
+        </li>
+        <li>
+          Emails, phone numbers, and conservative labeled addresses in captured text are stored on
+          <code>source_metadata.contacts</code>. Accepted email/phone memory becomes person identity
+          facets rather than link-like artifact rows.
         </li>
       </ol>
       <p>

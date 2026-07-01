@@ -1,9 +1,23 @@
 'use client';
 
 import { truncateFilenameMiddle } from '@timeline/shared/documents/presentation';
-import { ExternalLink, Trash2 } from 'lucide-react';
+import {
+  Activity,
+  CalendarDays,
+  ExternalLink,
+  FileText,
+  GitPullRequest,
+  Mail,
+  MessageSquareText,
+  Mic,
+  NotebookText,
+  Radio,
+  Trash2,
+  Webhook,
+  type LucideIcon,
+} from 'lucide-react';
 import Link from 'next/link';
-import { useMemo } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import type { TimelineCapturedFile } from '@/lib/timeline-captured-files';
 import type { TimelineArtifactCluster, TimelineEvent } from '@/lib/use-paginated-queries';
@@ -14,6 +28,13 @@ import { EmptyAction } from '@/components/empty-action';
 import { EventVisibilityForm } from '@/components/event-visibility-form';
 import { useInspector } from '@/components/inspector-context';
 import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { displayText, formatDisplayDateTime } from '@/lib/display-dates';
 import {
   buildTimelineMoments,
@@ -40,6 +61,7 @@ interface Props {
   members?: { id: string; label: string }[];
   compact?: boolean;
   maxMoments?: number;
+  serverMoments?: TimelineMoment[];
   emptyLabel?: string;
   emptyAction?: { href: string; label: string; body: string };
   impactFilter?: TimelineImpactFilter;
@@ -47,7 +69,9 @@ interface Props {
   artifactClustersByEventId?: Record<string, TimelineArtifactCluster>;
   capturedFilesByEventId?: Record<string, TimelineCapturedFile[]>;
   focusEventId?: string | null;
+  focusMomentId?: string | null;
   timezone?: string;
+  mode?: 'moments' | 'events';
 }
 
 const EMPTY_MEMBERS: NonNullable<Props['members']> = [];
@@ -65,6 +89,23 @@ const IMPACT_LABEL: Record<ImpactItem['kind'], string> = {
 };
 
 const INSPECTOR_RAW_EVENT_LIMIT = 8;
+const SOURCE_EVIDENCE_BODY_CHARACTER_LIMIT = 420;
+const SOURCE_EVIDENCE_BODY_LINE_LIMIT = 6;
+
+const MOMENT_KIND_ICON: Record<TimelineMoment['kind'], LucideIcon> = {
+  conversation: MessageSquareText,
+  meeting: Mic,
+  email_thread: Mail,
+  calendar: CalendarDays,
+  document: FileText,
+  code_review: GitPullRequest,
+  ci_deploy: Activity,
+  incident: Radio,
+  integration_activity: Activity,
+  webhook: Webhook,
+  system: Activity,
+  note: NotebookText,
+};
 
 function eventDate(input: Date | string): Date {
   if (input instanceof Date) return input;
@@ -121,6 +162,10 @@ function formatVisibilitySummary(events: TimelineEvent[]): string {
     .join(' · ');
 }
 
+function formatSourceLabel(value: string): string {
+  return titleCase(value);
+}
+
 function titleCase(value: string): string {
   return value
     .replace(/_/g, ' ')
@@ -143,15 +188,17 @@ function evidenceCountLabel(count: number): string {
   return `${count} signal${count === 1 ? '' : 's'}`;
 }
 
+function shouldCapSourceEvidenceBody(body: string): boolean {
+  if (body.length > SOURCE_EVIDENCE_BODY_CHARACTER_LIMIT) return true;
+  return body.split(/\r\n|\r|\n/).length > SOURCE_EVIDENCE_BODY_LINE_LIMIT;
+}
+
 function uniqueLabels(labels: (string | null | undefined)[]): string[] {
   return [...new Set(labels.filter((label): label is string => Boolean(label)))];
 }
 
 function inspectorTitle(moment: TimelineMoment): string {
-  const contexts = uniqueLabels(moment.rawEvents.map(rawEventContextLabel));
-  const context = contexts[0];
-  if (context) return `${moment.sourceLabel} · ${context}`;
-  return moment.sourceLabel;
+  return moment.title;
 }
 
 function sourceTruthSummary(moment: TimelineMoment): { title: string; body: string | null } {
@@ -162,17 +209,21 @@ function sourceTruthSummary(moment: TimelineMoment): { title: string; body: stri
   const contexts = uniqueLabels(moment.rawEvents.map(rawEventContextLabel));
   const parts = [
     moment.rawEvents.length === 1
-      ? '1 source event'
-      : `${String(moment.rawEvents.length)} source events`,
+      ? '1 evidence item'
+      : `${String(moment.rawEvents.length)} evidence items`,
     contexts.length === 1
       ? contexts[0]
       : contexts.length > 1
         ? `${String(contexts.length)} places`
         : null,
-    actors.length === 1 ? actors[0] : actors.length > 1 ? `${String(actors.length)} senders` : null,
+    actors.length === 1
+      ? actors[0]
+      : actors.length > 1
+        ? `${String(actors.length)} contributors`
+        : null,
   ].filter((part): part is string => Boolean(part));
   return {
-    title: inspectorTitle(moment),
+    title: moment.title,
     body: parts.length > 0 ? parts.join(' · ') : null,
   };
 }
@@ -392,7 +443,6 @@ function InspectorBody({
   capturedFilesByEventId: Record<string, TimelineCapturedFile[]>;
   timezone?: string;
 }) {
-  const metadata = inspectorSourceDetailEntries(moment, timezone);
   const summary = sourceTruthSummary(moment);
   const visibleRawEvents = moment.rawEvents.slice(0, INSPECTOR_RAW_EVENT_LIMIT);
   const hiddenRawEventCount = moment.rawEvents.length - visibleRawEvents.length;
@@ -401,13 +451,14 @@ function InspectorBody({
   return (
     <div className="space-y-5">
       <section>
-        <h3 className="mb-2 font-mono text-[11px] uppercase tracking-[0.14em] text-fg">
-          Why this row exists
-        </h3>
-        <p className="break-words text-sm font-medium leading-6 text-fg">{moment.summary}</p>
+        <h3 className="mb-2 font-mono text-[11px] uppercase tracking-[0.14em] text-fg">Moment</h3>
+        <p className="break-words text-sm font-medium leading-6 text-fg">{moment.title}</p>
+        {moment.preview ? (
+          <p className="mt-1 break-words text-sm leading-6 text-fg-muted">{moment.preview}</p>
+        ) : null}
         {summary.body ? (
           <p className="mt-1 break-words text-sm leading-6 text-fg-muted">
-            Source truth · {summary.body}
+            Evidence summary · {summary.body}
           </p>
         ) : null}
         <p className="mt-2 font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
@@ -416,9 +467,7 @@ function InspectorBody({
       </section>
       {moment.impactItems.length > 0 ? (
         <section>
-          <h3 className="mb-2 font-mono text-[11px] uppercase tracking-[0.14em] text-fg">
-            Impact context
-          </h3>
+          <h3 className="mb-2 font-mono text-[11px] uppercase tracking-[0.14em] text-fg">Impact</h3>
           <ul className="space-y-1.5">
             {moment.impactItems.map((item, index) => (
               <li
@@ -446,18 +495,6 @@ function InspectorBody({
           </ul>
         </section>
       ) : null}
-      {moment.artifactClusters.length > 0 ? (
-        <section>
-          <h3 className="mb-2 font-mono text-[11px] uppercase tracking-[0.14em] text-fg">
-            Related evidence
-          </h3>
-          <div className="space-y-3">
-            {moment.artifactClusters.map((cluster) => (
-              <ArtifactEvidenceBundle key={cluster.id} cluster={cluster} timezone={timezone} />
-            ))}
-          </div>
-        </section>
-      ) : null}
       <section>
         <h3 className="mb-2 font-mono text-[11px] uppercase tracking-[0.14em] text-fg">
           Source evidence
@@ -475,28 +512,54 @@ function InspectorBody({
         </ol>
         {hiddenRawEventCount > 0 ? (
           <p className="mt-2 rounded-sm border border-border bg-surface-2 px-2 py-1.5 text-fg-dim">
-            + {hiddenRawEventCount} older source{hiddenRawEventCount === 1 ? '' : 's'}
+            + {hiddenRawEventCount} older evidence item
+            {hiddenRawEventCount === 1 ? '' : 's'}
           </p>
         ) : null}
       </section>
-      {metadata.length > 0 ? (
+      {moment.artifactClusters.length > 0 ? (
         <section>
           <h3 className="mb-2 font-mono text-[11px] uppercase tracking-[0.14em] text-fg">
-            Source details
+            Related evidence
           </h3>
-          <dl className="space-y-1.5">
-            {metadata.map(([key, value]) => (
-              <div key={key} className="grid grid-cols-[6.5rem_minmax(0,1fr)] gap-2">
-                <dt className="truncate text-fg-dim">{key}</dt>
-                <dd className="min-w-0 truncate text-fg-muted" title={value}>
-                  {value}
-                </dd>
-              </div>
+          <div className="space-y-3">
+            {moment.artifactClusters.map((cluster) => (
+              <ArtifactEvidenceBundle key={cluster.id} cluster={cluster} timezone={timezone} />
             ))}
-          </dl>
+          </div>
         </section>
       ) : null}
     </div>
+  );
+}
+
+function InspectorTechnicalDetails({
+  moment,
+  timezone,
+}: {
+  moment: TimelineMoment;
+  timezone?: string;
+}) {
+  const metadata = inspectorSourceDetailEntries(moment, timezone);
+  if (metadata.length === 0) return null;
+  return (
+    <section>
+      <details className="group" open={false}>
+        <summary className="mb-2 cursor-pointer list-none font-mono text-[11px] uppercase tracking-[0.14em] text-fg">
+          Technical details
+        </summary>
+        <dl className="space-y-1.5">
+          {metadata.map(([key, value]) => (
+            <div key={key} className="grid grid-cols-[6.5rem_minmax(0,1fr)] gap-2">
+              <dt className="truncate text-fg-dim">{key}</dt>
+              <dd className="min-w-0 truncate text-fg-muted" title={value}>
+                {value}
+              </dd>
+            </div>
+          ))}
+        </dl>
+      </details>
+    </section>
   );
 }
 
@@ -598,15 +661,25 @@ function SourceEvidenceCard({
   capturedFiles: TimelineCapturedFile[];
   timezone?: string;
 }) {
+  const [quickViewOpen, setQuickViewOpen] = useState(false);
   const documentLink = rawEventDocumentLink(event);
   const context = rawEventContextLabel(event);
   const transcriptionStatus = transcriptionStatusMessage(event);
   const body = rawEventBody(event, timezone);
+  const capBody = shouldCapSourceEvidenceBody(body);
+  const metaLine = [
+    actorLabel,
+    formatSourceLabel(event.source),
+    context,
+    formatTimestamp(event.occurredAt, timezone),
+  ]
+    .filter((part): part is string => Boolean(part))
+    .join(' · ');
   return (
     <li className="min-w-0 overflow-hidden rounded-sm border border-border bg-bg px-2.5 py-2">
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-[11px] uppercase tracking-[0.1em] text-fg-dim">
         <span className="text-fg-muted">{actorLabel}</span>
-        <span>{event.source}</span>
+        <span>{formatSourceLabel(event.source)}</span>
         {context ? <span>{context}</span> : null}
         <time dateTime={event.occurredAt}>{formatTimestamp(event.occurredAt, timezone)}</time>
         {event.visibility === 'private' ? <span>Private</span> : null}
@@ -641,9 +714,38 @@ function SourceEvidenceCard({
           ))}
         </div>
       ) : null}
-      <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-relaxed text-fg-muted">
+      <p
+        className={cn(
+          'mt-2 whitespace-pre-wrap break-words text-sm leading-relaxed text-fg-muted',
+          capBody ? 'max-h-32 overflow-hidden' : null,
+        )}
+      >
         {body}
       </p>
+      {capBody ? (
+        <>
+          <button
+            type="button"
+            onClick={() => {
+              setQuickViewOpen(true);
+            }}
+            className="mt-2 inline-flex min-h-7 items-center rounded-sm border border-border bg-surface px-2 py-1 font-mono text-[11px] uppercase tracking-[0.1em] text-fg-muted transition-colors hover:border-border-strong hover:text-signal focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/30"
+          >
+            View full evidence
+          </button>
+          <Dialog open={quickViewOpen} onOpenChange={setQuickViewOpen}>
+            <DialogContent className="max-h-[min(720px,calc(100vh-2rem))] overflow-y-auto border-border bg-bg sm:max-w-2xl">
+              <DialogHeader>
+                <DialogTitle>Source evidence</DialogTitle>
+                <DialogDescription>{metaLine}</DialogDescription>
+              </DialogHeader>
+              <pre className="max-h-[min(520px,calc(100vh-14rem))] overflow-auto whitespace-pre-wrap break-words rounded-sm border border-border bg-surface p-3 font-sans text-sm leading-6 text-fg-muted">
+                {body}
+              </pre>
+            </DialogContent>
+          </Dialog>
+        </>
+      ) : null}
       {transcriptionStatus && body !== transcriptionStatus ? (
         <p className="mt-2 text-sm italic text-fg-dim">{transcriptionStatus}</p>
       ) : null}
@@ -720,9 +822,7 @@ function InspectorActions({
   }
   return (
     <section>
-      <h3 className="mb-2 font-mono text-[11px] uppercase tracking-[0.14em] text-fg">
-        Event controls
-      </h3>
+      <h3 className="mb-2 font-mono text-[11px] uppercase tracking-[0.14em] text-fg">Controls</h3>
       <div className="space-y-3">
         {audioEvents.map((event) =>
           audioUrlMap?.get(event.id) ? (
@@ -782,7 +882,7 @@ function ImpactStrip({ items, timezone }: { items: ImpactItem[]; timezone?: stri
   if (items.length === 0) return null;
   return (
     <div
-      className="flex min-w-0 flex-wrap justify-start gap-x-2 gap-y-1 md:justify-end"
+      className="flex min-w-0 flex-wrap justify-start gap-x-2 gap-y-1"
       aria-label="Impact context"
     >
       {items.slice(0, 2).map((item, index) => {
@@ -815,6 +915,48 @@ function momentTranscriptionStatus(moment: TimelineMoment): string | null {
   return null;
 }
 
+function momentInspectorContent({
+  moment,
+  audioUrlMap,
+  currentUserId,
+  isAdmin,
+  members,
+  capturedFilesByEventId,
+  timezone,
+}: {
+  moment: TimelineMoment;
+  audioUrlMap?: Map<string, string>;
+  currentUserId: string;
+  isAdmin: boolean;
+  members: { id: string; label: string }[];
+  capturedFilesByEventId: Record<string, TimelineCapturedFile[]>;
+  timezone?: string;
+}) {
+  return {
+    id: moment.id,
+    kind: moment.sourceLabel,
+    title: inspectorTitle(moment),
+    render: () => (
+      <div className="space-y-5">
+        <InspectorBody
+          moment={moment}
+          capturedFilesByEventId={capturedFilesByEventId}
+          timezone={timezone}
+        />
+        <InspectorActions
+          moment={moment}
+          audioUrlMap={audioUrlMap}
+          currentUserId={currentUserId}
+          isAdmin={isAdmin}
+          members={members}
+          timezone={timezone}
+        />
+        <InspectorTechnicalDetails moment={moment} timezone={timezone} />
+      </div>
+    ),
+  };
+}
+
 function TimelineMomentRow({
   moment,
   audioUrlMap,
@@ -840,12 +982,24 @@ function TimelineMomentRow({
   const selected = focused || (inspector.open && inspector.content?.id === moment.id);
   const meetingHref = meetingDetailHrefForMoment(moment);
   const transcriptionStatus = momentTranscriptionStatus(moment);
+  const KindIcon = MOMENT_KIND_ICON[moment.kind];
+  const sourceTruth = sourceTruthSummary(moment);
+  const previewText = moment.preview ?? sourceTruth.body ?? 'Evidence available';
+  const sourceCountLabel =
+    moment.rawEvents.length === 1 ? '1 signal' : `${moment.rawEvents.length} signals`;
+  const hasSupportingContext =
+    moment.impactItems.length > 0 ||
+    moment.artifactClusters.length > 0 ||
+    transcriptionStatus !== null;
   return (
     <li
+      id={moment.anchorId}
+      aria-current={selected ? 'true' : undefined}
       className={cn(
-        'relative -mx-3 grid scroll-mt-24 grid-cols-1 border-b border-border px-3 transition-colors hover:bg-surface md:grid-cols-[6.75rem_minmax(0,1fr)_minmax(10rem,34rem)]',
-        selected && 'bg-surface shadow-[inset_2px_0_0_var(--signal)]',
+        'group relative -mx-3 grid scroll-mt-24 grid-cols-1 border-b border-border px-3 transition-colors hover:bg-surface md:grid-cols-[6.75rem_minmax(0,1fr)]',
+        selected && 'bg-surface shadow-[inset_3px_0_0_var(--signal)]',
       )}
+      data-moment-id={moment.id}
     >
       {moment.rawEvents.map((event) => (
         <span
@@ -855,7 +1009,7 @@ function TimelineMomentRow({
           className="absolute -top-16 left-0 size-px scroll-mt-24 overflow-hidden target:h-full target:w-0.5 target:bg-signal"
         />
       ))}
-      <div className="relative px-0 pt-3 font-mono text-xs text-fg-dim md:px-0 md:py-3 md:pr-4">
+      <div className="relative px-0 pt-4 font-mono text-xs text-fg-dim md:px-0 md:py-4 md:pr-4">
         <span>{moment.timeLabel}</span>
         <span
           aria-hidden="true"
@@ -863,53 +1017,67 @@ function TimelineMomentRow({
         />
         <span
           aria-hidden="true"
-          className="absolute right-[-5px] top-4 hidden size-2.5 border border-border-strong bg-bg md:block"
-        />
+          className={cn(
+            'absolute right-[-7px] top-5 hidden size-3.5 items-center justify-center border border-border-strong bg-bg text-fg-dim transition-colors md:flex',
+            selected && 'border-signal text-signal',
+          )}
+        >
+          <KindIcon aria-hidden="true" className="size-2.5" />
+        </span>
       </div>
-      <div className="min-w-0 py-2 md:py-3 md:pl-4">
+      <div className="min-w-0 py-3 md:py-4 md:pl-4 md:pr-2">
         <button
           type="button"
+          aria-label={[moment.title, previewText, moment.timeLabel].filter(Boolean).join(' · ')}
           onClick={() => {
-            inspector.show({
-              id: moment.id,
-              kind: moment.sourceLabel.toUpperCase(),
-              title: inspectorTitle(moment),
-              render: () => (
-                <div className="space-y-5">
-                  <InspectorBody
-                    moment={moment}
-                    capturedFilesByEventId={capturedFilesByEventId}
-                    timezone={timezone}
-                  />
-                  <InspectorActions
-                    moment={moment}
-                    audioUrlMap={audioUrlMap}
-                    currentUserId={currentUserId}
-                    isAdmin={isAdmin}
-                    members={members}
-                    timezone={timezone}
-                  />
-                </div>
-              ),
-            });
+            inspector.show(
+              momentInspectorContent({
+                moment,
+                audioUrlMap,
+                currentUserId,
+                isAdmin,
+                members,
+                capturedFilesByEventId,
+                timezone,
+              }),
+            );
           }}
-          className="block w-full text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong"
+          className="block w-full rounded-sm text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong"
         >
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">
-            <span className="text-fg">{moment.sourceLabel}</span>
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-fg-dim">
+            <span className="inline-flex items-center gap-1 font-medium text-fg-muted">
+              <KindIcon aria-hidden="true" className="size-3.5" />
+              {moment.sourceLabel}
+            </span>
             <span>{moment.actorLabel}</span>
-            <span>{moment.contextLabel}</span>
+            {moment.contextLabel !== moment.sourceLabel ? <span>{moment.contextLabel}</span> : null}
+            <span className="font-mono text-[10px] uppercase tracking-[0.12em]">
+              {sourceCountLabel}
+            </span>
           </div>
-          <p className="mt-1 truncate text-sm font-medium leading-5 text-fg">{moment.summary}</p>
+          <p className="mt-1.5 line-clamp-2 break-words text-base font-medium leading-6 text-fg md:max-w-[88ch] md:text-[15px]">
+            {moment.title}
+          </p>
           <p
             className={cn(
-              'mt-0.5 truncate text-sm leading-5 text-fg-muted',
-              !compact && 'md:max-w-[72ch]',
+              'mt-1 line-clamp-2 break-words text-sm leading-5 text-fg-dim',
+              !compact && 'md:max-w-[84ch]',
             )}
           >
-            {sourceTruthSummary(moment).body ?? 'Source evidence available'}
+            {previewText}
           </p>
         </button>
+        {hasSupportingContext ? (
+          <div className="mt-3 flex min-w-0 flex-wrap items-center gap-2">
+            <ImpactStrip items={moment.impactItems} timezone={timezone} />
+            <RelatedEvidenceStrip clusters={moment.artifactClusters} />
+            {transcriptionStatus ? (
+              <span className="inline-flex min-h-6 max-w-full min-w-0 items-center rounded-sm border border-border bg-surface px-2 py-1 font-mono text-[10px] uppercase tracking-[0.12em] text-fg-muted">
+                {transcriptionStatus}
+              </span>
+            ) : null}
+          </div>
+        ) : null}
         {meetingHref ? (
           <Link
             href={meetingHref}
@@ -919,18 +1087,6 @@ function TimelineMomentRow({
             Open transcript
           </Link>
         ) : null}
-      </div>
-      <div className="flex min-w-0 items-start justify-start gap-2 pb-3 md:justify-end md:py-3">
-        <ImpactStrip items={moment.impactItems} timezone={timezone} />
-        <RelatedEvidenceStrip clusters={moment.artifactClusters} />
-        {transcriptionStatus ? (
-          <span className="inline-flex min-h-6 max-w-full min-w-0 items-center rounded-sm border border-border bg-surface px-2 py-1 font-mono text-[10px] uppercase tracking-[0.12em] text-fg-muted">
-            {transcriptionStatus}
-          </span>
-        ) : null}
-        <span className="whitespace-nowrap font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">
-          {moment.rawEvents.length} source{moment.rawEvents.length === 1 ? '' : 's'}
-        </span>
       </div>
     </li>
   );
@@ -945,6 +1101,7 @@ export function TimelineList({
   members = EMPTY_MEMBERS,
   compact = false,
   maxMoments,
+  serverMoments,
   emptyLabel = 'NO EVENTS YET',
   emptyAction,
   impactFilter = 'all',
@@ -952,23 +1109,32 @@ export function TimelineList({
   artifactClustersByEventId = EMPTY_ARTIFACT_CLUSTERS_BY_EVENT_ID,
   capturedFilesByEventId = EMPTY_CAPTURED_FILES_BY_EVENT_ID,
   focusEventId = null,
+  focusMomentId = null,
   timezone,
+  mode = 'moments',
 }: Props) {
-  const moments = useMemo(
+  const inspector = useInspector();
+  const autoOpenedFocusRef = useRef<string | null>(null);
+  const localMoments = useMemo(
     () =>
       buildTimelineMoments(
         events,
         authorMap,
         impactItemsByEventId === undefined
-          ? { artifactClustersByEventId, timezone }
-          : { impactItemsByEventId, artifactClustersByEventId, timezone },
+          ? { artifactClustersByEventId, timezone, groupingMode: mode }
+          : { impactItemsByEventId, artifactClustersByEventId, timezone, groupingMode: mode },
       ),
-    [events, authorMap, impactItemsByEventId, artifactClustersByEventId, timezone],
+    [events, authorMap, impactItemsByEventId, artifactClustersByEventId, timezone, mode],
   );
+  const moments = serverMoments ?? localMoments;
   const focusedMoments =
-    focusEventId === null
+    focusEventId === null && focusMomentId === null
       ? []
-      : moments.filter((moment) => moment.rawEvents.some((event) => event.id === focusEventId));
+      : moments.filter(
+          (moment) =>
+            moment.id === focusMomentId ||
+            moment.rawEvents.some((event) => event.id === focusEventId),
+        );
   const filteredMoments = mergeTimelineMoments(
     filterTimelineMomentsByImpact(moments, impactFilter),
     focusedMoments,
@@ -976,6 +1142,43 @@ export function TimelineList({
   const visibleMoments =
     typeof maxMoments === 'number' ? filteredMoments.slice(0, maxMoments) : filteredMoments;
   const dateGroups = groupedByDate(visibleMoments);
+  const focusKey = focusMomentId ?? focusEventId;
+  const focusedMoment =
+    focusKey === null
+      ? null
+      : (visibleMoments.find(
+          (moment) =>
+            moment.id === focusMomentId ||
+            moment.rawEvents.some((event) => event.id === focusEventId),
+        ) ?? null);
+
+  useEffect(() => {
+    if (!focusKey || !focusedMoment) return;
+    const openKey = `${focusKey}:${focusedMoment.id}`;
+    if (autoOpenedFocusRef.current === openKey) return;
+    autoOpenedFocusRef.current = openKey;
+    inspector.show(
+      momentInspectorContent({
+        moment: focusedMoment,
+        audioUrlMap,
+        currentUserId,
+        isAdmin,
+        members,
+        capturedFilesByEventId,
+        timezone,
+      }),
+    );
+  }, [
+    audioUrlMap,
+    capturedFilesByEventId,
+    currentUserId,
+    focusKey,
+    focusedMoment,
+    inspector,
+    isAdmin,
+    members,
+    timezone,
+  ]);
 
   if (visibleMoments.length === 0) {
     if (emptyAction) {
@@ -1016,7 +1219,10 @@ export function TimelineList({
                 isAdmin={isAdmin}
                 members={members}
                 capturedFilesByEventId={capturedFilesByEventId}
-                focused={moment.rawEvents.some((event) => event.id === focusEventId)}
+                focused={
+                  moment.id === focusMomentId ||
+                  moment.rawEvents.some((event) => event.id === focusEventId)
+                }
                 compact={compact}
                 timezone={timezone}
               />

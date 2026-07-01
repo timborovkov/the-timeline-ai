@@ -656,6 +656,46 @@ describe('job recovery scope', () => {
     await expect(scope.listRecoverableJobs()).resolves.toEqual([]);
   });
 
+  it('does not surface provider cooldowns as recoverable integration failures', async () => {
+    await pg.exec(`
+      INSERT INTO integrations (
+        id,
+        team_id,
+        provider,
+        display_name,
+        external_account_id,
+        last_error,
+        updated_at
+      )
+      VALUES (
+        '${INTEGRATION_ID}',
+        '${TEAM_ID}',
+        'monday',
+        'Monday.com',
+        'monday-account-1',
+        'monday_rate_limited: Monday API DAILY_LIMIT_EXCEEDED; retry after 2026-06-28T12:00:00.000Z',
+        now()
+      );
+      INSERT INTO integration_sync_state (
+        integration_id,
+        resource_type,
+        last_status,
+        last_error,
+        updated_at
+      )
+      VALUES (
+        '${INTEGRATION_ID}',
+        'integration.run',
+        'rate_limited',
+        'monday_rate_limited: Monday API DAILY_LIMIT_EXCEEDED; retry after 2026-06-28T12:00:00.000Z',
+        now()
+      );
+    `);
+    const scope = scopeFor(ADMIN_ID, 'admin');
+
+    await expect(scope.listRecoverableJobs()).resolves.toEqual([]);
+  });
+
   it('lists retained finished jobs for the active team with offset pagination', async () => {
     const now = Date.now();
     const scope = scopeFor(ADMIN_ID, 'admin', {

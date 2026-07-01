@@ -22,6 +22,7 @@ describe('product analytics contract', () => {
         'onboarding_step_completed',
         'team_created',
         'team_export_requested',
+        'timeline_moments_viewed',
       ].sort(),
     );
   });

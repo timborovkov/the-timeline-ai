@@ -23,6 +23,11 @@ import {
   type EvidenceRole,
   type EvidenceStrength,
 } from '#src/artifacts/index.js';
+import { sourceMetadataWithConversationArtifacts } from '#src/conversational/contact-artifacts.js';
+import {
+  reconcileLinkArtifactsForRawEvent,
+  textHasLinks,
+} from '#src/conversational/link-artifacts.js';
 import { enqueueEmbedJob } from '#src/queue/queues.js';
 import {
   AUTHORITY_POLICY_VERSION,
@@ -135,19 +140,22 @@ export async function writeIntegrationEvents(deps: {
       occurredAt: evt.occurredAt,
       visibility: resolvedVisibility,
       visibilityUserIds: resolvedVisibility === 'specific_users' ? requestedUserIds : null,
-      sourceMetadata: {
-        ...(evt.extra ?? {}),
-        provider: evt.provider,
-        integration_id: deps.integration.id,
-        external_object_id: evt.externalObjectId,
-        external_event_id: evt.externalEventId ?? null,
-        event_type: evt.eventType,
-        actor: evt.actor ?? null,
-        dedup_key: evt.dedupKey,
-        sync_at: new Date().toISOString(),
-        source_kind: 'integration_event',
-        ...sourcePayloadMetadata,
-      },
+      sourceMetadata: sourceMetadataWithConversationArtifacts(
+        {
+          provider: evt.provider,
+          integration_id: deps.integration.id,
+          external_object_id: evt.externalObjectId,
+          external_event_id: evt.externalEventId ?? null,
+          event_type: evt.eventType,
+          actor: evt.actor ?? null,
+          dedup_key: evt.dedupKey,
+          sync_at: new Date().toISOString(),
+          source_kind: 'integration_event',
+          ...(evt.extra ?? {}),
+          ...sourcePayloadMetadata,
+        },
+        evt.contentText,
+      ),
     };
   });
 
@@ -185,6 +193,19 @@ export async function writeIntegrationEvents(deps: {
 
   const artifactEvents = writableEvents.filter(
     (evt): evt is IntegrationEvent & { objectMap: ObjectMapping } => Boolean(evt.objectMap),
+  );
+  const linkEvents = writableEvents.filter((evt) => textHasLinks(evt.contentText));
+  await Promise.all(
+    linkEvents.map((evt) => {
+      const rawEventId = rawEventIdsByDedupKey.get(evt.dedupKey);
+      if (!rawEventId) return Promise.resolve();
+      return reconcileLinkArtifactsForRawEvent(deps.db, {
+        teamId,
+        rawEventId,
+        text: evt.contentText,
+        occurredAt: evt.occurredAt,
+      });
+    }),
   );
   const byExternal = new Map<string, IntegrationEvent & { objectMap: ObjectMapping }>();
   // Iterate `writableEvents` (the dedup-winning list) instead of `deps.events`

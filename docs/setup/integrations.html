@@ -12,15 +12,14 @@
       <h1>Native integrations &amp; custom MCPs</h1>
       <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-06-30</span></div>
       <p class="tldr">
-        Connect native GitHub, Linear, Google Drive, Monday.com, Slack, and Sentry provider accounts
-        from
-        <code>/app/me/connections</code>, activate shared team sources from
-        <code>/app/team/integrations</code>, or plug arbitrary custom MCP servers in at
-        <code>/app/team/mcp-servers</code>. Native providers sync external activity into the
-        timeline as <code>source='integration'</code>. MCP servers give the agent live tool access;
-        they do not automatically create timeline events unless paired with a native sync adapter or
-        custom ingestion layer. For tools that only need to push arbitrary evidence into Timeline,
-        admins can also create named ingest webhooks from <code>/app/team/integrations</code>.
+        Connect native GitHub, Linear, Google Drive, Monday.com, Slack, and Sentry as personal
+        provider accounts from <code>/app/me/connections</code>, share the sources a team may use,
+        then activate team sync from <code>/app/team/integrations</code>. Native providers sync
+        external activity into the timeline as <code>source='integration'</code>. MCP servers at
+        <code>/app/team/mcp-servers</code> give the agent live tool access; they do not
+        automatically create timeline events unless paired with a native sync adapter or custom
+        ingestion layer. For tools that only need to push arbitrary evidence into Timeline, admins
+        can also create named ingest webhooks from <code>/app/team/integrations</code>.
       </p>
 
       <h2 id="secrets">Encryption key (required first)</h2>
@@ -34,6 +33,27 @@
       <p>
         The first <code>encryptSecret()</code> call throws with a clear message if the key is
         missing or the wrong length, so worker boot fails fast instead of writing plaintext.
+      </p>
+
+      <h2 id="native-ui-model">Native integration UI model</h2>
+      <p>
+        Native integrations have three separate layers. <strong>Provider account</strong> is the
+        OAuth grant owned by the member who connected it. <strong>Shared sources</strong> are the
+        boards, repositories, projects, drives, or channels that owner allows the current Timeline
+        team to use. <strong>Team sync</strong> is the admin-selected import path that turns shared
+        sources into timeline evidence.
+      </p>
+      <p>
+        A member can connect more than one provider account when the provider returns a different
+        external account id. For providers that reuse the currently signed-in account, such as
+        Monday.com in many browsers, start <em>Connect account</em> again and choose another account
+        in the provider's OAuth account picker, or sign out/switch accounts in the provider before
+        approving Timeline.
+      </p>
+      <p>
+        Disconnecting an active import stops that team's sync path. Deleting a provider account
+        removes the member-owned OAuth grant and leaves affected teams with connection attention so
+        an admin can reconnect, replace the source path, or pause the import intentionally.
       </p>
 
       <h2 id="google-drive">Google Drive</h2>
@@ -87,7 +107,10 @@ GOOGLE_DRIVE_WEBHOOK_SECRET=...</code></pre>
             >&lt;integration_id&gt;.&lt;HMAC-SHA256(GOOGLE_DRIVE_WEBHOOK_SECRET,
             integration_id)&gt;</code
           >; route hits <code>/api/webhooks/google-drive</code>. The handler refuses inbound
-          notifications when the secret is unset, and rejects bad signatures.
+          notifications when the secret is unset, and rejects bad signatures. Timeline records
+          channel expirations in <code>integration_webhook_subscriptions</code>; when a manual Drive
+          channel expires, the integration tick marks it <code>webhook_degraded</code> while
+          changes-cursor reconciliation continues.
         </li>
       </ol>
 
@@ -139,10 +162,13 @@ LINEAR_WEBHOOK_SECRET=...</code></pre>
       </p>
       <ol>
         <li>
-          Create an OAuth App at
-          <a href="https://github.com/settings/developers">github.com/settings/developers</a>. For
-          an organization-owned app, use the organization's
-          <strong>Settings → Developer settings</strong> page instead.
+          Create a GitHub App at
+          <a href="https://github.com/settings/apps">github.com/settings/apps</a>. For an
+          organization-owned app, use the organization's
+          <strong>Settings → Developer settings</strong> page instead. Timeline still uses the app's
+          OAuth web flow for the connecting user, then mints installation access tokens for
+          repository syncs when <code>GITHUB_APP_ID</code> and
+          <code>GITHUB_APP_PRIVATE_KEY</code> are configured.
         </li>
         <li>
           Callback URL:
@@ -150,25 +176,42 @@ LINEAR_WEBHOOK_SECRET=...</code></pre>
         </li>
         <li>
           Timeline requests scopes in the OAuth authorize URL, so there is no separate scope picker
-          on the GitHub OAuth App page. The requested scopes are <code>repo</code> and
+          in GitHub's app settings. The requested scopes are <code>repo</code> and
           <code>read:org</code>.
         </li>
         <li>
-          If you configure Timeline with a GitHub App client, grant repository read permissions for
-          Contents, Issues, Pull requests, Actions, and Metadata. Missing Pull requests read access
-          records a PR-surface partial sync on the <code>/pulls</code> endpoint while commits,
-          issues, releases, and workflow runs continue to sync when readable. Timeline keeps the
-          connection attention visible until that partial failure clears, so admins can reconnect or
-          re-grant access without losing the other GitHub surfaces.
+          Grant repository read permissions for Contents, Issues, Pull requests, Actions, and
+          Metadata. Missing Pull requests read access records a PR-surface partial sync on the
+          <code>/pulls</code> endpoint while commits, issues, releases, and workflow runs continue
+          to sync when readable. Timeline keeps the connection attention visible until that partial
+          failure clears, so admins can reconnect or re-grant access without losing the other GitHub
+          surfaces.
         </li>
         <li>
-          Copy the OAuth app <strong>Client ID</strong> and generate/copy a
-          <strong>Client secret</strong>.
+          Copy the app <strong>Client ID</strong>, generate/copy a <strong>Client secret</strong>,
+          copy the numeric <strong>App ID</strong>, and generate a private key. Store the PEM as a
+          multiline secret or with literal <code>\n</code> escapes.
         </li>
         <li>
           Set:
           <pre><code>GITHUB_APP_CLIENT_ID=...
-GITHUB_APP_CLIENT_SECRET=...</code></pre>
+GITHUB_APP_CLIENT_SECRET=...
+GITHUB_APP_ID=...
+GITHUB_APP_PRIVATE_KEY=...
+GITHUB_WEBHOOK_SECRET=...</code></pre>
+        </li>
+        <li>
+          Configure the GitHub webhook URL as
+          <code>https://thetimeline.cc/api/webhooks/github</code> and use the same
+          <code>GITHUB_WEBHOOK_SECRET</code> as the webhook secret. Timeline verifies
+          <code>X-Hub-Signature-256</code>, stores <code>X-GitHub-Delivery</code>, and routes
+          selected repo/org deliveries through <code>webhook-delivery</code>.
+        </li>
+        <li>
+          Subscribe the GitHub App webhook to <code>push</code>, <code>pull_request</code>,
+          <code>pull_request_review</code>, <code>issues</code>, <code>release</code>, and
+          <code>workflow_run</code>. Timeline still reconciles selected repos slowly, but these
+          events carry normal day-to-day activity without waiting for the reconciliation tick.
         </li>
         <li>
           Any team member can connect GitHub from <code>/app/me/connections</code> or the native
@@ -181,18 +224,20 @@ GITHUB_APP_CLIENT_SECRET=...</code></pre>
           future repos; choose individual repos instead for a fixed list.
         </li>
         <li>
-          Selected GitHub sources are synced by the integration worker poller; no repo/org webhook
-          setup is required. After a successful sync, GitHub background polling runs on a slower
-          cadence than the global integration tick to protect the connection owner's GitHub API
-          quota.
+          Selected GitHub sources still use slow reconciliation through the integration worker, but
+          normal PR, issue, release, workflow, and push activity can arrive through signed webhooks
+          first. When installation-token config is present, repo hydration uses the GitHub App
+          installation quota instead of spending the connecting user's OAuth token quota.
         </li>
       </ol>
 
       <h2 id="monday">Monday.com</h2>
       <p>
         Timeline uses monday.com's OAuth app flow, not a marketplace-only integration recipe. The
-        app needs read scopes for boards, users, updates, and WorkDocs so selected boards and docs
-        can become cited Timeline evidence.
+        app needs read scopes for boards, users, updates, WorkDocs, and account metadata so selected
+        boards and docs can become cited Timeline evidence and provider budgets can be keyed by the
+        monday account instead of the connecting user. It also needs webhook read/write access so
+        Timeline can provision selected board webhooks automatically.
       </p>
       <ol>
         <li>
@@ -206,7 +251,8 @@ GITHUB_APP_CLIENT_SECRET=...</code></pre>
         </li>
         <li>
           Add these OAuth scopes exactly: <code>boards:read</code>, <code>users:read</code>,
-          <code>updates:read</code>, and <code>docs:read</code>. Timeline also sends the same
+          <code>updates:read</code>, <code>docs:read</code>, <code>account:read</code>,
+          <code>webhooks:read</code>, and <code>webhooks:write</code>. Timeline also sends the same
           space-separated scope list in the OAuth authorize URL.
         </li>
         <li>
@@ -216,7 +262,18 @@ GITHUB_APP_CLIENT_SECRET=...</code></pre>
         <li>
           Set:
           <pre><code>MONDAY_CLIENT_ID=...
-MONDAY_CLIENT_SECRET=...</code></pre>
+MONDAY_CLIENT_SECRET=...
+MONDAY_WEBHOOK_SECRET=...</code></pre>
+        </li>
+        <li>
+          Timeline provisions board webhooks automatically for activated board sources using
+          <code>https://thetimeline.cc/api/webhooks/monday?token=&lt;MONDAY_WEBHOOK_SECRET&gt;</code
+          >. The route verifies the token, echoes monday.com's <code>challenge</code> body during
+          URL verification, persists board deliveries, and lets
+          <code>webhook-delivery</code> process selected board targets. If the app lacks
+          <code>account:read</code>, <code>webhooks:read</code>, or <code>webhooks:write</code>,
+          Timeline skips provider-side webhook provisioning, keeps selected-resource reconciliation
+          running, and raises reconnect attention for the connection owner after you add the scopes.
         </li>
         <li>
           Any team member can connect Monday.com from the native catalog. The member chooses which
@@ -228,6 +285,10 @@ MONDAY_CLIENT_SECRET=...</code></pre>
           A team admin activates shared sources from <code>/app/team/integrations</code>. The
           integration worker imports board schema, generic records, subitems, record updates, status
           changes, owners, column changes, and selected WorkDocs into cited timeline events.
+          Activating or changing selected board sources creates and removes provider webhooks.
+          Webhooks provide fast item-level hydration when monday includes an item id and fall back
+          to board wake-ups otherwise; slow reconciliation remains responsible for missed
+          deliveries, while selected WorkDocs reconcile through their own daily cursor.
         </li>
       </ol>
 
@@ -237,7 +298,8 @@ MONDAY_CLIENT_SECRET=...</code></pre>
         DMs, bound-channel capture, <code>/ask</code>, and <code>/timeline join</code>. Native
         workspace ingestion uses the same Slack app credentials but syncs selected channels as a
         passive integration with <code>source='integration'</code> and
-        <code>provider='slack'</code>.
+        <code>provider='slack'</code>. Native Slack workspace ingestion is reconciliation-first for
+        v1; the <code>/api/slack/events</code> route remains dedicated to conversational capture.
       </p>
       <ol>
         <li>
@@ -262,7 +324,9 @@ MONDAY_CLIENT_SECRET=...</code></pre>
           Connect Slack from the native catalog, share selected channels from
           <code>/app/me/connections</code>, then activate them from
           <code>/app/team/integrations</code>. Private channels require the bot to be present before
-          Slack will expose history.
+          Slack will expose history. The worker reconciles selected channels hourly and honors Slack
+          Web API <code>Retry-After</code> responses as shared provider budget pauses instead of
+          retrying per Timeline team.
         </li>
       </ol>
 
@@ -310,6 +374,14 @@ SENTRY_INTEGRATION_CLIENT_SECRET=...</code></pre>
           <code>/app/team/integrations</code>. Timeline imports issue updates, resolved issues, and
           releases as cited events; Sentry issues map to cited incident evidence.
         </li>
+        <li>
+          For Sentry issue alert, issue lifecycle, and release webhooks, point the Sentry
+          integration webhook URL at
+          <code>https://thetimeline.cc/api/webhooks/sentry</code>. Timeline verifies
+          <code>Sentry-Hook-Signature</code> with <code>SENTRY_INTEGRATION_CLIENT_SECRET</code>,
+          persists the delivery, and lets <code>webhook-delivery</code> process direct events or
+          targeted reconciliation for the selected organization/project targets.
+        </li>
       </ol>
 
       <h2 id="native-ownership">Native provider ownership</h2>
@@ -321,11 +393,17 @@ SENTRY_INTEGRATION_CLIENT_SECRET=...</code></pre>
       </p>
       <p>
         If a connection owner leaves the team, deletes a connection, or GitHub, Drive, Linear,
-        Monday.com, Slack, or Sentry requires reconnecting, Timeline creates connection attention.
-        The team integrations page shows an attention banner and the affected provider groups so
-        admins can ask the owner to reconnect, replace a connection with another shared source, or
-        narrow shared sources; the worker pauses only the affected sync path and keeps previously
-        captured raw events.
+        Monday.com, Slack, or Sentry requires reconnecting, Timeline creates blocking connection
+        attention. The team integrations page shows a <em>Needs attention</em> section and row-level
+        actions so admins can ask the owner to reconnect, replace a connection with another shared
+        source, or narrow shared sources; the worker pauses only the affected sync path and keeps
+        previously captured raw events.
+      </p>
+      <p>
+        Webhook provisioning failures use <code>webhook_degraded</code> attention instead of a
+        blocking reconnect state. The integrations page shows it as a degraded webhook status rather
+        than a red reconnect banner; selected-resource reconciliation remains active and admins can
+        still run manual sync while the webhook issue is fixed.
       </p>
 
       <h2 id="ingest-webhooks">Ingest webhooks</h2>
@@ -361,7 +439,11 @@ SENTRY_INTEGRATION_CLIENT_SECRET=...</code></pre>
         The public endpoint rate-limits both authentication attempts and accepted deliveries, dedups
         identical same-day deliveries per webhook, redacts sensitive request headers from metadata,
         enforces the payload size cap while reading the request body, and rejects binary/multipart
-        uploads for now. Payload text is fenced as external content before extraction and proposal
+        uploads for now. URLs in accepted payload text are normalized into non-authoritative link
+        artifact evidence, and emails, phone numbers, and conservative labeled addresses are stored
+        on <code>source_metadata.contacts</code>. Duplicate delivery replay repairs missing link
+        evidence for the existing raw event; contact metadata is captured when the raw event is
+        first accepted. Payload text is fenced as external content before extraction and proposal
         prompts, so sender-authored instructions remain evidence instead of agent instructions.
         Documents and rich files should still go through the document drive until binary webhook
         ingestion is intentionally designed.
@@ -459,6 +541,14 @@ codex mcp add timeline --url "&lt;copied MCP endpoint URL&gt;" --bearer-token-en
         </li>
         <li><code>timeline.search_events</code> — semantic search across raw events</li>
         <li>
+          <code>timeline.search_moments</code>, <code>timeline.list_moments</code>,
+          <code>timeline.get_moment</code> — retrieve bundled timeline moments first, then expand to
+          cited raw event evidence for audit; results include the versioned moment shape and stable
+          row anchor IDs. <code>timeline.get_moment</code> should prefer returned raw event IDs, but
+          supported deterministic moment IDs can be expanded directly through bounded or exact
+          source-metadata lookup.
+        </li>
+        <li>
           <code>timeline.get_event</code> / <code>timeline.list_events</code> — fetch + paginate
         </li>
         <li><code>timeline.get_entity</code> — lookup person / company / project / topic</li>
@@ -488,7 +578,9 @@ codex mcp add timeline --url "&lt;copied MCP endpoint URL&gt;" --bearer-token-en
         queries with a pseudo-zero-UUID actor so events with <code>visibility=private</code> or
         <code>specific_users</code> stay invisible to outbound clients — only
         <code>visibility=team</code> events flow out. Keys are stored as SHA-256 hashes (plaintext
-        shown once at creation). Revoke from the same page; revocation is immediate.
+        shown once at creation). Moment tools are built from that same visible event set and fence
+        raw snippets as external content before returning them. Revoke from the same page;
+        revocation is immediate.
       </p>
       <p>
         Wildcard CORS is set so browser-based agents work; Authorization-header auth means cookies
@@ -501,12 +593,22 @@ codex mcp add timeline --url "&lt;copied MCP endpoint URL&gt;" --bearer-token-en
         A BullMQ repeatable enqueues an <code>integration-sync</code> tick every 5 minutes. The
         worker fans out to enabled native team scopes that are due and runs
         <code>incrementalSync()</code> through the owning provider connection, using the
-        per-resource cursor in <code>integration_sync_state</code>. Providers with inbound webhooks,
-        such as Google Drive, can enqueue an extra one-shot incremental; GitHub selected repos and
-        organization scopes are covered by the poller only. GitHub background sync skips active
-        provider rate-limit pauses, waits at least an hour after the previous successful sync, and
-        caches organization repo expansion for a short window so org-wide selections do not re-list
-        every repository on every tick. GitHub repo cursors are also split by surface — PRs, issues,
+        per-resource cursor in <code>integration_sync_state</code>. Providers with inbound webhooks
+        persist native deliveries first, then the <code>webhook-delivery</code> worker normalizes
+        the matching team targets and enqueues either targeted sync work or a bounded catch-up
+        fallback. Google Drive can still use webhooks as wake-up signals; GitHub, Linear,
+        Monday.com, and Sentry now route protected deliveries through the shared delivery worker.
+        GitHub repo deliveries, Monday item/board deliveries, and Sentry project deliveries hydrate
+        only the affected selected resource. Sentry issue alert, issue lifecycle, and release
+        payloads can also write direct events before the reconciliation pass. Provider rate-limit
+        responses also create account/app budget pauses in
+        <code>integration_provider_budgets</code>; the scheduler skips every matching integration
+        until the provider retry time rather than retrying per Timeline team. GitHub selected repos
+        and organization scopes can accept signed webhook deliveries, while slow reconciliation
+        still covers missed events and backfill. GitHub background sync skips active provider
+        rate-limit pauses, waits at least an hour after the previous successful sync, and caches
+        organization repo expansion for a short window so org-wide selections do not re-list every
+        repository on every tick. GitHub repo cursors are also split by surface — PRs, issues,
         commits, releases, and workflow runs — so one failing or noisy surface does not block cursor
         advancement for the others. Releases and workflow runs poll less often than high-signal PR,
         issue, and commit surfaces. MCP servers are monitored by the MCP health worker, but that
@@ -534,6 +636,18 @@ codex mcp add timeline --url "&lt;copied MCP endpoint URL&gt;" --bearer-token-en
 
       <h2 id="troubleshooting">Troubleshooting</h2>
       <dl>
+        <dt>Need to verify live provider credentials without leaking secrets</dt>
+        <dd>
+          Run
+          <code>pnpm canary:integrations -- --env-file=/path/to/.env</code>. The canary prints only
+          <code>OK</code>, <code>WARN</code>, or <code>SKIP</code> rows for OpenRouter, GitHub App
+          auth, Sentry API access, native OAuth app credentials, and native webhook/signing secrets,
+          followed by secret-safe next steps for any non-OK row. Use
+          <code>pnpm canary:integrations:strict -- --env-file=/path/to/.env</code> when every row
+          must be <code>OK</code>. The Sentry API row uses <code>SENTRY_AUTH_TOKEN</code>,
+          <code>SENTRY_ORG</code>, and <code>SENTRY_PROJECT</code>; the Sentry webhook-signature row
+          uses <code>SENTRY_INTEGRATION_CLIENT_SECRET</code>.
+        </dd>
         <dt>Webhook returns <code>bad_signature</code></dt>
         <dd>
           Check the secret env var matches what the provider's webhook UI shows. The signing

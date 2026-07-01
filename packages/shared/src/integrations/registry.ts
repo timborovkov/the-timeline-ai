@@ -1,4 +1,4 @@
-import type { IntegrationProvider } from '#src/integrations/types.js';
+import type { IntegrationProvider, NativeProviderId } from '#src/integrations/types.js';
 
 import { getEnv } from '#src/env.js';
 import { githubProvider } from '#src/integrations/providers/github.js';
@@ -35,7 +35,7 @@ import { slackProvider } from '#src/integrations/providers/slack.js';
 // be queryable through MCP today while its first-party timeline ingestion
 // adapter is still on the roadmap.
 
-const _registry: Record<string, IntegrationProvider> = {
+const _registry: Record<NativeProviderId, IntegrationProvider> = {
   google_drive: googleDriveProvider,
   linear: linearProvider,
   github: githubProvider,
@@ -45,9 +45,16 @@ const _registry: Record<string, IntegrationProvider> = {
 };
 
 export function getProvider(id: string): IntegrationProvider {
-  const p = _registry[id];
-  if (!p) throw new Error(`Unknown integration provider: ${id}`);
-  return p;
+  if (!isRegistryProviderId(id)) throw new Error(`Unknown integration provider: ${id}`);
+  return _registry[id];
+}
+
+function isRegistryProviderId(id: string): id is NativeProviderId {
+  return Object.hasOwn(_registry, id);
+}
+
+export function listRegisteredNativeProviderIds(): NativeProviderId[] {
+  return (Object.keys(_registry) as NativeProviderId[]).sort();
 }
 
 export type IntegrationCategory =

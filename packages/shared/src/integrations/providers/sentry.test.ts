@@ -414,11 +414,13 @@ describe('sentryProvider', () => {
   });
 
   it('normalizes issue alert webhooks', async () => {
-    const events = await sentryProvider.handleWebhook?.({
-      integration: { id: 'integration-1' } as never,
+    const result = await sentryProvider.handleWebhook?.({
+      integration: { id: 'integration-1', teamId: 'team-1' } as never,
       payload: {
         action: 'triggered',
         actor: { id: 'sentry', name: 'Sentry' },
+        organization: { slug: 'acme' },
+        project: { slug: 'web' },
         data: {
           event: {
             issue_id: 'issue-1',
@@ -429,11 +431,131 @@ describe('sentryProvider', () => {
         },
       },
     });
+    const normalized = Array.isArray(result) ? { events: result, syncTasks: [] } : result;
 
-    expect(events?.[0]).toMatchObject({
+    expect(normalized?.events[0]).toMatchObject({
       dedupKey: 'sentry:webhook:issue-1:2026-06-20T10:00:00.000Z:triggered',
       eventType: 'alert.triggered',
-      objectMap: { type: 'incident', externalId: 'issue-1' },
+      objectMap: {
+        type: 'incident',
+        externalId: 'issue-1',
+        metadata: {
+          sentry_org_slug: 'acme',
+          sentry_project_slug: 'web',
+          sentry_issue_id: 'issue-1',
+          webhook_action: 'triggered',
+        },
+      },
     });
+    expect(normalized?.syncTasks).toEqual([
+      {
+        integrationId: 'integration-1',
+        teamId: 'team-1',
+        triggeredBy: 'webhook',
+        resourceType: 'sentry.project',
+        externalId: 'acme/web',
+        reason: 'sentry_project_webhook',
+      },
+    ]);
+  });
+
+  it('normalizes issue lifecycle webhooks from Sentry issue payloads', async () => {
+    const result = await sentryProvider.handleWebhook?.({
+      integration: { id: 'integration-1', teamId: 'team-1' } as never,
+      payload: {
+        action: 'resolved',
+        actor: { id: 'user-1', name: 'Ada Lovelace', email: 'ada@example.com' },
+        organization: { slug: 'acme' },
+        data: {
+          issue: {
+            id: 'issue-1',
+            shortId: 'WEB-1',
+            title: 'Checkout failed',
+            status: 'resolved',
+            level: 'error',
+            count: '7',
+            userCount: 3,
+            lastSeen: '2026-06-20T10:00:00Z',
+            permalink: 'https://sentry.io/organizations/acme/issues/issue-1/',
+            project: { slug: 'web' },
+            metadata: { type: 'Error', value: 'Checkout failed' },
+          },
+        },
+      },
+    });
+    const normalized = Array.isArray(result) ? { events: result, syncTasks: [] } : result;
+
+    expect(normalized?.events[0]).toMatchObject({
+      dedupKey: 'sentry:webhook:issue-1:2026-06-20T10:00:00.000Z:resolved',
+      eventType: 'issue.resolved',
+      actor: { externalId: 'user-1', name: 'Ada Lovelace', email: 'ada@example.com' },
+      extra: {
+        sentry_org_slug: 'acme',
+        sentry_project_slug: 'web',
+        sentry_short_id: 'WEB-1',
+        webhook_action: 'resolved',
+      },
+      objectMap: {
+        type: 'incident',
+        externalId: 'issue-1',
+        status: 'done',
+        priority: 'high',
+        aliases: ['WEB-1'],
+      },
+    });
+    expect(normalized?.events[0]?.contentText).toContain('Sentry issue resolved: WEB-1');
+    expect(normalized?.syncTasks).toEqual([
+      {
+        integrationId: 'integration-1',
+        teamId: 'team-1',
+        triggeredBy: 'webhook',
+        resourceType: 'sentry.project',
+        externalId: 'acme/web',
+        reason: 'sentry_project_webhook',
+      },
+    ]);
+  });
+
+  it('normalizes release webhooks from Sentry release payloads', async () => {
+    const result = await sentryProvider.handleWebhook?.({
+      integration: { id: 'integration-1', teamId: 'team-1' } as never,
+      payload: {
+        action: 'deployed',
+        organization: { slug: 'acme' },
+        data: {
+          release: {
+            version: 'web@1.2.4',
+            dateReleased: '2026-06-20T12:00:00Z',
+            newGroups: 2,
+            url: 'https://sentry.io/organizations/acme/projects/web/releases/web@1.2.4/',
+            projects: [{ slug: 'web' }],
+          },
+        },
+      },
+    });
+    const normalized = Array.isArray(result) ? { events: result, syncTasks: [] } : result;
+
+    expect(normalized?.events[0]).toMatchObject({
+      dedupKey: 'sentry:release:acme:web:web@1.2.4:2026-06-20T12:00:00.000Z:deployed',
+      eventType: 'release.deployed',
+      externalObjectId: 'acme/web/release/web@1.2.4',
+      extra: {
+        sentry_org_slug: 'acme',
+        sentry_project_slug: 'web',
+        release_version: 'web@1.2.4',
+        webhook_action: 'deployed',
+        new_groups: 2,
+      },
+    });
+    expect(normalized?.syncTasks).toEqual([
+      {
+        integrationId: 'integration-1',
+        teamId: 'team-1',
+        triggeredBy: 'webhook',
+        resourceType: 'sentry.project',
+        externalId: 'acme/web',
+        reason: 'sentry_project_webhook',
+      },
+    ]);
   });
 });

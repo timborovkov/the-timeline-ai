@@ -11,6 +11,7 @@ import { randomUUID } from 'node:crypto';
 
 import {
   type Db,
+  artifactClusterMembers,
   agentSuggestionEvidence,
   agentSuggestionItems,
   agentSuggestions,
@@ -25,6 +26,7 @@ import {
   chatMessages,
   chatSessions,
   documentChunks,
+  documentVersions,
   documents,
   entities,
   entityRelationships,
@@ -73,6 +75,7 @@ import {
   tombstoneObjectDueDateCalendarEventsForEntities,
   type DueDateCalendarSyncResult,
 } from '#src/calendar/due-dates.js';
+import { reconcileLinkArtifactsForRawEvent } from '#src/conversational/link-artifacts.js';
 import { TIMELINE_MODELS } from '#src/llm/models.js';
 import { childLogger } from '#src/logger.js';
 import {
@@ -108,6 +111,8 @@ const NOTIFICATION_QUERY_LIMIT_MAX = 50_000;
 const OBJECT_DIRECT_WRITE_RUN_VERSION = 'object-direct-write-2026-06';
 const OBJECT_DIRECT_WRITE_PLANNER_VERSION = 'object-direct-write-planner-2026-06';
 const SYSTEM_DIRECT_WRITE_SOURCE_SNAPSHOT_VERSION = 'system-direct-write-source-snapshot-2026-06';
+const EMAIL_IDENTITY_RE = /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i;
+const PHONE_IDENTITY_RE = /^(?:\+[1-9]\d{6,14}|\d{7,15})$/;
 type DbTx = Parameters<Parameters<Db['transaction']>[0]>[0];
 type DbOrTx = Db | DbTx;
 
@@ -129,6 +134,18 @@ function systemDirectWriteSourceMetadata(input: {
       ...input.snapshot,
     },
   };
+}
+
+async function reconcileObjectAuditLinks(
+  tx: DbOrTx,
+  args: { teamId: string; rawEventId: string | null; text: string },
+): Promise<void> {
+  if (!args.rawEventId) return;
+  await reconcileLinkArtifactsForRawEvent(tx, {
+    teamId: args.teamId,
+    rawEventId: args.rawEventId,
+    text: args.text,
+  });
 }
 
 /**
@@ -978,6 +995,15 @@ export function normalizeIdentityFacet(kind: IdentityFacetKind, value: string): 
   return trimmed.toLowerCase();
 }
 
+function validateIdentityFacetValue(kind: IdentityFacetKind, normalizedValue: string): void {
+  if (kind === 'email' && !EMAIL_IDENTITY_RE.test(normalizedValue)) {
+    throw new Error('Identity facet email must be a valid email address');
+  }
+  if (kind === 'phone' && !PHONE_IDENTITY_RE.test(normalizedValue)) {
+    throw new Error('Identity facet phone must be a valid phone number');
+  }
+}
+
 /**
  * Order-stable JSON serialization. Used by `updateObject` to decide whether
  * a patch actually changes a jsonb column — without sorted keys, a form
@@ -998,13 +1024,13 @@ function stableStringify(value: unknown): string {
   });
 }
 
-// Derive from the drizzle enum so adding a new type only requires touching
-// the schema + migration. The previous shape duplicated the union here, in
-// `team-scope.ts`, and in the server action — three places to forget.
+// Derive from the drizzle enum so DB-backed rows keep the full vocabulary.
 export type ObjectType = (typeof entityType.enumValues)[number];
 
-/** The exhaustive runtime list of object types (mirrors the Postgres enum). */
-export const OBJECT_TYPES = entityType.enumValues;
+/** The exhaustive runtime list of user-facing workspace object types. */
+export const OBJECT_TYPES = entityType.enumValues.filter(
+  (type): type is ObjectType => type !== 'link',
+);
 
 export type ActorKind = 'user' | 'agent' | 'system';
 
@@ -1017,8 +1043,8 @@ export interface ObjectListFilter {
   stage?: string | string[];
   priority?: number | number[];
   priorityNull?: boolean;
-  ownerUserId?: string | null;
-  assigneeUserId?: string | null;
+  ownerUserId?: string | null | (string | null)[];
+  assigneeUserId?: string | null | (string | null)[];
   dueBefore?: Date;
   dueAfter?: Date;
   dueNull?: boolean;
@@ -1133,6 +1159,22 @@ function toArray<T>(v: T | T[] | undefined): T[] | undefined {
   return Array.isArray(v) ? v : [v];
 }
 
+function nullableUuidCondition(
+  column: unknown,
+  value: string | null | (string | null)[] | undefined,
+): SQL | undefined {
+  if (value === undefined) return undefined;
+  if (value === null) return isNull(column as never);
+  const values = toArray(value) ?? [];
+  const uuidValues = values.filter(
+    (candidate): candidate is string => typeof candidate === 'string' && UUID_RE.test(candidate),
+  );
+  const includesNull = values.some((candidate) => candidate === null);
+  if (uuidValues.length === 0) return includesNull ? isNull(column as never) : sql`false`;
+  const uuidCondition = inArray(column as never, uuidValues);
+  return includesNull ? or(isNull(column as never), uuidCondition) : uuidCondition;
+}
+
 function objectSearchTokens(query: string): string[] {
   return query
     .toLowerCase()
@@ -1222,11 +1264,11 @@ function objectListConditions(scope: TeamScopeCore, filter: ObjectCountFilter = 
   if (filter.priorityNull) conds.push(isNull(entities.priority));
   else if (priorities && priorities.length > 0) conds.push(inArray(entities.priority, priorities));
 
-  if (filter.ownerUserId === null) conds.push(isNull(entities.ownerUserId));
-  else if (filter.ownerUserId) conds.push(eq(entities.ownerUserId, filter.ownerUserId));
+  const ownerCondition = nullableUuidCondition(entities.ownerUserId, filter.ownerUserId);
+  if (ownerCondition) conds.push(ownerCondition);
 
-  if (filter.assigneeUserId === null) conds.push(isNull(entities.assigneeUserId));
-  else if (filter.assigneeUserId) conds.push(eq(entities.assigneeUserId, filter.assigneeUserId));
+  const assigneeCondition = nullableUuidCondition(entities.assigneeUserId, filter.assigneeUserId);
+  if (assigneeCondition) conds.push(assigneeCondition);
 
   if (filter.dueNull) conds.push(isNull(entities.dueAt));
   if (filter.dueBefore) conds.push(lt(entities.dueAt, filter.dueBefore));
@@ -1307,11 +1349,11 @@ export async function searchObjects(
   const stages = toArray(filter.stage);
   if (stages && stages.length > 0) conds.push(inArray(entities.stage, stages));
 
-  if (filter.ownerUserId === null) conds.push(isNull(entities.ownerUserId));
-  else if (filter.ownerUserId) conds.push(eq(entities.ownerUserId, filter.ownerUserId));
+  const ownerCondition = nullableUuidCondition(entities.ownerUserId, filter.ownerUserId);
+  if (ownerCondition) conds.push(ownerCondition);
 
-  if (filter.assigneeUserId === null) conds.push(isNull(entities.assigneeUserId));
-  else if (filter.assigneeUserId) conds.push(eq(entities.assigneeUserId, filter.assigneeUserId));
+  const assigneeCondition = nullableUuidCondition(entities.assigneeUserId, filter.assigneeUserId);
+  if (assigneeCondition) conds.push(assigneeCondition);
 
   if (filter.dueBefore) conds.push(lt(entities.dueAt, filter.dueBefore));
   if (filter.dueAfter) conds.push(gte(entities.dueAt, filter.dueAfter));
@@ -1371,6 +1413,7 @@ export interface ObjectDetail extends ObjectRow {
     note: string | null;
     changedAt: Date;
   }[];
+  identityFacets: IdentityFacetRow[];
   openTasks: ObjectRow[];
   connectedWork: {
     openTasks: ObjectRow[];
@@ -1415,6 +1458,22 @@ export interface ObjectDetail extends ObjectRow {
       id: string;
       name: string;
       fileKind: string;
+      updatedAt: Date;
+    }[];
+    links: {
+      id: string;
+      canonicalName: string;
+      canonicalUrl: string | null;
+      displayUrl: string | null;
+      domain: string | null;
+      provider: string | null;
+      updatedAt: Date;
+    }[];
+    capturedFiles: {
+      id: string;
+      name: string;
+      contentType: string | null;
+      sourceRawEventId: string | null;
       updatedAt: Date;
     }[];
   };
@@ -2171,6 +2230,7 @@ async function getConnectedWork(
     pendingApprovalRows,
     pendingReconciliationOutputRows,
     documentRows,
+    noteRawEventRows,
   ] = await Promise.all([
     db
       .select({ taskId: entityRelationships.fromEntityId })
@@ -2387,6 +2447,7 @@ async function getConnectedWork(
           .where(
             and(
               eq(documents.teamId, scope.teamId),
+              eq(documents.fileKind, 'document'),
               isNull(documents.deletedAt),
               documentVisibleToScope(scope),
               or(
@@ -2399,7 +2460,46 @@ async function getConnectedWork(
           .orderBy(desc(documents.updatedAt), desc(documents.id))
           .limit(40)
       : Promise.resolve([]),
+    db
+      .select({
+        id: rawEvents.id,
+        noteId: sql<string>`${rawEvents.sourceMetadata} ->> 'note_id'`,
+      })
+      .from(rawEvents)
+      .innerJoin(
+        objectNotes,
+        and(
+          eq(objectNotes.teamId, scope.teamId),
+          eq(objectNotes.entityId, object.id),
+          isNull(objectNotes.deletedAt),
+          sql`${objectNotes.id}::text = ${rawEvents.sourceMetadata} ->> 'note_id'`,
+        ),
+      )
+      .where(
+        and(
+          eq(rawEvents.teamId, scope.teamId),
+          eq(rawEvents.source, 'system'),
+          rawEventVisibility(scope),
+          sql`COALESCE(${rawEvents.sourceMetadata} ->> 'deleted', 'false') <> 'true'`,
+          sql`${rawEvents.sourceMetadata} ->> 'entity_id' = ${object.id}`,
+          inArray(sql`${rawEvents.sourceMetadata} ->> 'kind'`, [
+            'object_note_create',
+            'object_note_update',
+          ]),
+        ),
+      )
+      .orderBy(desc(rawEvents.occurredAt), desc(rawEvents.id))
+      .limit(100),
   ]);
+
+  const currentNoteRawEventRows = Array.from(
+    noteRawEventRows
+      .reduce((rowsByNoteId, row) => {
+        if (!rowsByNoteId.has(row.noteId)) rowsByNoteId.set(row.noteId, { id: row.id });
+        return rowsByNoteId;
+      }, new Map<string, { id: string }>())
+      .values(),
+  );
 
   const taskIds = new Set<string>();
   for (const row of relationshipTaskRows) taskIds.add(row.taskId);
@@ -2591,6 +2691,84 @@ async function getConnectedWork(
         ]),
     ).values(),
   ).slice(0, 8);
+  const relatedRawEventIds = Array.from(
+    new Set([
+      ...factRawEventIds,
+      ...filteredTimelineRows.map((row) => row.id),
+      ...currentNoteRawEventRows.map((row) => row.id),
+    ]),
+  );
+  const [linkRows, capturedFileRows] =
+    relatedRawEventIds.length > 0
+      ? await Promise.all([
+          db
+            .select({
+              id: artifactClusters.id,
+              canonicalName: artifactClusters.canonicalName,
+              metadata: artifactClusterMembers.metadata,
+              provider: artifactClusterMembers.provider,
+              updatedAt: artifactClusters.updatedAt,
+            })
+            .from(artifactClusterMembers)
+            .innerJoin(
+              artifactClusters,
+              and(
+                eq(artifactClusters.id, artifactClusterMembers.clusterId),
+                eq(artifactClusters.teamId, scope.teamId),
+              ),
+            )
+            .where(
+              and(
+                eq(artifactClusterMembers.teamId, scope.teamId),
+                inArray(artifactClusterMembers.rawEventId, relatedRawEventIds),
+                eq(artifactClusters.artifactType, 'link'),
+                isNull(artifactClusters.archivedAt),
+              ),
+            )
+            .orderBy(desc(artifactClusters.updatedAt), desc(artifactClusters.id))
+            .limit(20),
+          db
+            .select({
+              id: documents.id,
+              name: documents.name,
+              contentType: documentVersions.contentType,
+              sourceRawEventId: documents.sourceRawEventId,
+              updatedAt: documents.updatedAt,
+            })
+            .from(documents)
+            .leftJoin(documentVersions, eq(documentVersions.id, documents.currentVersionId))
+            .where(
+              and(
+                eq(documents.teamId, scope.teamId),
+                eq(documents.fileKind, 'captured'),
+                inArray(documents.sourceRawEventId, relatedRawEventIds),
+                isNull(documents.deletedAt),
+                documentVisibleToScope(scope),
+              ),
+            )
+            .orderBy(desc(documents.updatedAt), desc(documents.id))
+            .limit(12),
+        ])
+      : [[], []];
+  const filteredLinkRows = Array.from(
+    new Map(
+      linkRows.map((row) => {
+        const metadata = recordFromUnknown(row.metadata);
+        return [
+          row.id,
+          {
+            id: row.id,
+            canonicalName: row.canonicalName,
+            canonicalUrl: metadataString(metadata, 'canonical_url'),
+            displayUrl: metadataString(metadata, 'display_url'),
+            domain: metadataString(metadata, 'domain'),
+            provider: row.provider ?? metadataString(metadata, 'provider'),
+            updatedAt: row.updatedAt,
+          },
+        ];
+      }),
+    ).values(),
+  ).slice(0, 8);
 
   return {
     openTasks,
@@ -2606,6 +2784,8 @@ async function getConnectedWork(
       8,
     ),
     documents: filteredDocumentRows,
+    links: filteredLinkRows,
+    capturedFiles: capturedFileRows,
   };
 }
 
@@ -2654,6 +2834,7 @@ export async function getObject(
     outRows,
     inRows,
     changeRows,
+    identityFacetRows,
     viewRows,
     factCountRows,
     summaryNoteCountRows,
@@ -2741,6 +2922,26 @@ export async function getObject(
       .where(and(eq(objectChanges.teamId, scope.teamId), eq(objectChanges.entityId, entityRow.id)))
       .orderBy(desc(objectChanges.changedAt), desc(objectChanges.id))
       .limit(20),
+    db
+      .select({
+        id: objectIdentityFacets.id,
+        entityId: objectIdentityFacets.entityId,
+        kind: objectIdentityFacets.kind,
+        value: objectIdentityFacets.value,
+        normalizedValue: objectIdentityFacets.normalizedValue,
+        provider: objectIdentityFacets.provider,
+        externalId: objectIdentityFacets.externalId,
+        linkedUserId: objectIdentityFacets.linkedUserId,
+      })
+      .from(objectIdentityFacets)
+      .where(
+        and(
+          eq(objectIdentityFacets.teamId, scope.teamId),
+          eq(objectIdentityFacets.entityId, entityRow.id),
+          eq(objectIdentityFacets.status, 'approved'),
+        ),
+      )
+      .orderBy(objectIdentityFacets.kind, objectIdentityFacets.value),
     db
       .select({ lastVisitedAt: objectViews.lastVisitedAt })
       .from(objectViews)
@@ -2958,6 +3159,7 @@ export async function getObject(
     notes: noteRows,
     relationships,
     recentChanges: changeRows,
+    identityFacets: identityFacetRows,
     openTasks: connectedWork.openTasks,
     connectedWork,
     provenance,
@@ -3335,6 +3537,7 @@ export async function createObject(
     // Audit event for the create itself. One row per object, field='__create__'
     // so the UI can group create/edit/archive consistently.
     const rawEventId = randomUUID();
+    const eventText = `${input.actor.kind === 'agent' ? 'Agent created' : 'Created'} ${input.type}: ${name}`;
     const eventInsert = await tx
       .insert(rawEvents)
       .values({
@@ -3342,7 +3545,7 @@ export async function createObject(
         teamId: scope.teamId,
         authorUserId: input.actor.kind === 'user' ? (input.actor.userId ?? null) : null,
         source: 'system',
-        contentText: `${input.actor.kind === 'agent' ? 'Agent created' : 'Created'} ${input.type}: ${name}`,
+        contentText: eventText,
         occurredAt: new Date(),
         visibility: 'team',
         sourceMetadata: systemDirectWriteSourceMetadata({
@@ -3375,6 +3578,11 @@ export async function createObject(
       db: tx,
       teamId: scope.teamId,
       rawEventId: sourceEventId,
+    });
+    await reconcileObjectAuditLinks(tx, {
+      teamId: scope.teamId,
+      rawEventId: sourceEventId,
+      text: eventText,
     });
 
     await tx.insert(objectChanges).values({
@@ -3574,6 +3782,7 @@ export async function updateObject(
       .map((c) => `${c.field}: ${JSON.stringify(c.previousValue)} → ${JSON.stringify(c.newValue)}`)
       .join('; ');
     const rawEventId = randomUUID();
+    const eventText = `${actor.kind === 'agent' ? 'Agent applied' : 'Updated'} ${updated.type}: ${updated.canonicalName} — ${summary}`;
     const eventInsert = await tx
       .insert(rawEvents)
       .values({
@@ -3581,7 +3790,7 @@ export async function updateObject(
         teamId: scope.teamId,
         authorUserId: actor.kind === 'user' ? actor.userId : null,
         source: 'system',
-        contentText: `${actor.kind === 'agent' ? 'Agent applied' : 'Updated'} ${updated.type}: ${updated.canonicalName} — ${summary}`,
+        contentText: eventText,
         occurredAt: new Date(),
         visibility: 'team',
         sourceMetadata: systemDirectWriteSourceMetadata({
@@ -3608,6 +3817,11 @@ export async function updateObject(
       db: tx,
       teamId: scope.teamId,
       rawEventId: sourceEventId,
+    });
+    await reconcileObjectAuditLinks(tx, {
+      teamId: scope.teamId,
+      rawEventId: sourceEventId,
+      text: eventText,
     });
 
     const changeRows = await tx
@@ -4112,6 +4326,7 @@ export async function mergeObjects(
     }
 
     const rawEventId = randomUUID();
+    const eventText = `Merged ${losers.map((row) => row.canonicalName).join(', ')} into ${survivor.canonicalName}`;
     const eventInsert = await tx
       .insert(rawEvents)
       .values({
@@ -4119,7 +4334,7 @@ export async function mergeObjects(
         teamId: scope.teamId,
         authorUserId: input.actor.kind === 'user' ? input.actor.userId : null,
         source: 'system',
-        contentText: `Merged ${losers.map((row) => row.canonicalName).join(', ')} into ${survivor.canonicalName}`,
+        contentText: eventText,
         occurredAt: new Date(),
         visibility: 'team',
         sourceMetadata: systemDirectWriteSourceMetadata({
@@ -4152,6 +4367,11 @@ export async function mergeObjects(
       db: tx,
       teamId: scope.teamId,
       rawEventId: sourceEventId,
+    });
+    await reconcileObjectAuditLinks(tx, {
+      teamId: scope.teamId,
+      rawEventId: sourceEventId,
+      text: eventText,
     });
 
     await tx
@@ -4379,6 +4599,11 @@ export async function addRelationship(
       teamId: scope.teamId,
       rawEventId: sourceEventId,
     });
+    await reconcileObjectAuditLinks(tx, {
+      teamId: scope.teamId,
+      rawEventId: sourceEventId,
+      text: summary,
+    });
 
     // Write one object_change row per endpoint so both object pages surface
     // the link in their "Recent changes" pane. Newer-first sorts naturally.
@@ -4467,6 +4692,7 @@ export async function removeRelationship(
     await tx.delete(entityRelationships).where(eq(entityRelationships.id, relationshipId));
 
     const rawEventId = randomUUID();
+    const eventText = `Removed link (${rel.kind})`;
     const ev = await tx
       .insert(rawEvents)
       .values({
@@ -4474,7 +4700,7 @@ export async function removeRelationship(
         teamId: scope.teamId,
         authorUserId: actor.userId,
         source: 'system',
-        contentText: `Removed link (${rel.kind})`,
+        contentText: eventText,
         occurredAt: new Date(),
         visibility: 'team',
         sourceMetadata: systemDirectWriteSourceMetadata({
@@ -4502,6 +4728,11 @@ export async function removeRelationship(
       db: tx,
       teamId: scope.teamId,
       rawEventId: sourceEventId,
+    });
+    await reconcileObjectAuditLinks(tx, {
+      teamId: scope.teamId,
+      rawEventId: sourceEventId,
+      text: eventText,
     });
 
     await tx.insert(objectChanges).values([
@@ -4599,6 +4830,7 @@ export async function createNote(
     if (!noteId) throw new Error('Failed to insert note');
 
     const rawEventId = randomUUID();
+    const eventText = `Note on ${ent[0].type} "${ent[0].canonicalName}": ${body}`;
     const ev = await tx
       .insert(rawEvents)
       .values({
@@ -4606,7 +4838,7 @@ export async function createNote(
         teamId: scope.teamId,
         authorUserId: input.authorUserId,
         source: 'system',
-        contentText: `Note on ${ent[0].type} "${ent[0].canonicalName}": ${body}`,
+        contentText: eventText,
         occurredAt: new Date(),
         visibility: 'team',
         sourceMetadata: systemDirectWriteSourceMetadata({
@@ -4632,6 +4864,11 @@ export async function createNote(
       db: tx,
       teamId: scope.teamId,
       rawEventId: sourceEventId,
+    });
+    await reconcileObjectAuditLinks(tx, {
+      teamId: scope.teamId,
+      rawEventId: sourceEventId,
+      text: eventText,
     });
     await tx.insert(objectChanges).values({
       teamId: scope.teamId,
@@ -4747,10 +4984,14 @@ export async function createIdentityFacet(
   if (!value) throw new Error('Identity facet value cannot be empty');
   const normalizedInput = input.normalizedValue?.trim();
   const normalizedValue =
-    normalizedInput === undefined || normalizedInput === ''
+    input.kind === 'email' ||
+    input.kind === 'phone' ||
+    normalizedInput === undefined ||
+    normalizedInput === ''
       ? normalizeIdentityFacet(input.kind, value)
       : normalizedInput;
   if (!normalizedValue) throw new Error('Identity facet normalized value cannot be empty');
+  validateIdentityFacetValue(input.kind, normalizedValue);
   if (input.linkedUserId) await scope.requireTeamMember(input.linkedUserId);
 
   const result = await db.transaction(async (tx) => {
@@ -4888,6 +5129,11 @@ export async function createIdentityFacet(
         teamId: scope.teamId,
         rawEventId: sourceEventId,
       });
+      await reconcileObjectAuditLinks(tx, {
+        teamId: scope.teamId,
+        rawEventId: sourceEventId,
+        text: summary,
+      });
       await tx.insert(objectChanges).values({
         teamId: scope.teamId,
         entityId: input.entityId,
@@ -4994,6 +5240,11 @@ export async function createIdentityFacet(
       db: tx,
       teamId: scope.teamId,
       rawEventId: sourceEventId,
+    });
+    await reconcileObjectAuditLinks(tx, {
+      teamId: scope.teamId,
+      rawEventId: sourceEventId,
+      text: summary,
     });
 
     await tx.insert(objectChanges).values({
@@ -5132,6 +5383,11 @@ export async function updateNote(
       teamId: scope.teamId,
       rawEventId: sourceEventId,
     });
+    await reconcileObjectAuditLinks(tx, {
+      teamId: scope.teamId,
+      rawEventId: sourceEventId,
+      text: `Note edited: ${body}`,
+    });
     await tx.insert(objectChanges).values({
       teamId: scope.teamId,
       entityId: note.entityId,
@@ -5238,6 +5494,11 @@ export async function deleteNote(
       db: tx,
       teamId: scope.teamId,
       rawEventId: sourceEventId,
+    });
+    await reconcileObjectAuditLinks(tx, {
+      teamId: scope.teamId,
+      rawEventId: sourceEventId,
+      text: 'Note deleted',
     });
     await tx.insert(objectChanges).values({
       teamId: scope.teamId,

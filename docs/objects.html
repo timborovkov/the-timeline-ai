@@ -415,16 +415,19 @@
         <a href="../packages/shared/src/agent/tools.ts"
           ><code>packages/shared/src/agent/tools.ts</code></a
         >. Read-side tools <code>get_object</code>, <code>list_objects</code>,
-        <code>list_tasks</code>, <code>recent_changes</code>, and
+        <code>list_tasks</code>, <code>list_team_members</code>, <code>recent_changes</code>, and
         <code>search_object_notes</code> sit alongside the existing <code>get_entity</code> /
         <code>search_timeline</code> / <code>list_events</code>. Proposal-side tools
         <code>suggest_task</code> and <code>suggest_object_memory</code> record reviewable
-        suggestions, while approval-required dashboard action tools such as
-        <code>execute_object_create</code>, <code>execute_object_update</code>,
+        suggestions; those proposals can use <code>ownerName</code>, <code>assigneeName</code>,
+        <code>fromName</code>, and <code>toName</code> when a clear person or object is known but
+        the UUID is unavailable. Acceptance resolves only unique active team-member or object-name
+        matches and fails safe when names are ambiguous. Approval-required dashboard action tools
+        such as <code>execute_object_create</code>, <code>execute_object_update</code>,
         <code>execute_object_archive</code>, <code>execute_object_merge</code>, and the board-card
         tools <code>execute_board_add_item</code>, <code>execute_board_update_item</code>, and
         <code>execute_board_remove_item</code> mutate canonical state only after explicit in-chat
-        approval. The system prompt is at <code>agent-v8-2026-06</code>.
+        approval. The system prompt is at <code>agent-v14-2026-06</code>.
       </p>
       <p>
         Background conversation review also proposes approval-backed lifecycle updates for
@@ -457,10 +460,11 @@
             <td>
               Sectioned index over active objects. The unfiltered page shows a small preview per
               type with "View all" links for larger sections; typed views paginate 48 rows at a time
-              with cursor-based "Next" links that preserve <code>type</code> and
-              <code>status</code> filters. Type-filter chips along the top, "New object" CTA, and
-              select mode for bulk archive or merge cleanup, plus a collapsed cleanup suggestions
-              panel with a pending count and manual "Find suggestions" enqueue.
+              with cursor-based "Next" links that preserve the current filter state. The shared Work
+              filter bar supports multi-select type, status, owner, and assignee filters with
+              right-aligned Apply/Clear controls. Type-filter chips along the top, a "New object"
+              CTA, and select mode for bulk archive or merge cleanup sit above a collapsed cleanup
+              suggestions panel with a pending count and manual "Find suggestions" enqueue.
             </td>
           </tr>
           <tr>

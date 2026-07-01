@@ -4,9 +4,12 @@ import {
   connectionAttention,
   entities,
   integrationAuditLog,
+  integrationProviderBudgets,
   integrationProvider,
   integrationSelections,
   integrationSyncState,
+  integrationWebhookDeliveryTargets,
+  integrationWebhookSubscriptions,
   integrations as integrationsTable,
   notifications,
   providerConnections,
@@ -16,11 +19,18 @@ import {
   teams,
   users,
 } from '@timeline/db';
-import { and, desc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNotNull, isNull, lte, or, sql } from 'drizzle-orm';
 
-import type { IntegrationRow, ProviderConnectionRow } from '#src/integrations/types.js';
+import type {
+  IntegrationRow,
+  ProviderConnectionRow,
+  WebhookSubscription,
+} from '#src/integrations/types.js';
 
 import { decryptJson, encryptJson } from '#src/crypto/secrets.js';
+import { getEnv } from '#src/env.js';
+import { getProvider } from '#src/integrations/registry.js';
+import { childLogger } from '#src/logger.js';
 import { sendMessage } from '#src/messaging/delivery.js';
 import { rawEventVisibleToUser, validateVisibilityUserIds } from '#src/visibility.js';
 
@@ -54,7 +64,12 @@ export interface ConnectionAttentionInput {
   providerConnectionId?: string | null;
   integrationId?: string | null;
   resourceShareId?: string | null;
-  category: 'needs_reconnect' | 'needs_new_owner' | 'access_changed' | 'sync_error';
+  category:
+    | 'needs_reconnect'
+    | 'needs_new_owner'
+    | 'access_changed'
+    | 'sync_error'
+    | 'webhook_degraded';
   summary: string;
 }
 
@@ -65,15 +80,34 @@ export interface ResolveConnectionAttentionInput {
   categories?: ConnectionAttentionInput['category'][];
 }
 
+export interface ProviderBudgetKey {
+  provider: Exclude<IntegrationProviderName, 'mcp'>;
+  appKey: string;
+  externalAccountId: string;
+  scope: string;
+}
+
+type NativeProviderName = Exclude<IntegrationProviderName, 'mcp'>;
+
 const transientSyncResourceType = 'integration.run';
 const transientSyncAttentionThreshold = 3;
 const githubRateLimitedUntilKey = 'github_rate_limited_until';
+const log = childLogger('integrations:scope');
 const connectionAttentionCategoryValues: ConnectionAttentionInput['category'][] = [
   'needs_reconnect',
   'needs_new_owner',
   'access_changed',
   'sync_error',
+  'webhook_degraded',
 ];
+
+function webhookSubscriptionKey(subscription: {
+  resourceKind: string;
+  externalResourceId: string;
+  eventType: string;
+}): string {
+  return `${subscription.resourceKind}\x00${subscription.externalResourceId}\x00${subscription.eventType}`;
+}
 
 export function createIntegrationScope(deps: {
   db: Db;
@@ -194,7 +228,21 @@ export function createIntegrationScope(deps: {
       .returning();
     const row = rows[0];
     if (!row) throw new Error('Failed to create provider connection');
-    await adminResolveProviderConnectionAttention(db, row.id, ['needs_reconnect', 'sync_error']);
+    await db
+      .update(integrationsTable)
+      .set({
+        displayName: input.displayName,
+        externalAccountId: input.externalAccountId,
+        scopes: input.scopes ?? [],
+        lastError: null,
+        updatedAt: new Date(),
+      })
+      .where(eq(integrationsTable.providerConnectionId, row.id));
+    await adminResolveProviderConnectionAttention(db, row.id, [
+      'needs_reconnect',
+      'sync_error',
+      'webhook_degraded',
+    ]);
     return row;
   }
 
@@ -202,30 +250,101 @@ export function createIntegrationScope(deps: {
     await ensureMember();
     const connection = await getOwnedProviderConnection(id);
     if (!connection) return false;
-    const affected = await db
-      .select({ teamId: integrationsTable.teamId, integrationId: integrationsTable.id })
-      .from(integrationsTable)
-      .where(eq(integrationsTable.providerConnectionId, id));
+    const pendingNotifications: {
+      teamId: string;
+      input: ConnectionAttentionInput;
+      attentionId: string;
+    }[] = [];
     await db.transaction(async (tx) => {
-      await tx
+      const affected = await tx
         .update(integrationsTable)
         .set({
           enabled: false,
           lastError: 'Provider connection deleted — replacement required',
           updatedAt: new Date(),
         })
-        .where(eq(integrationsTable.providerConnectionId, id));
+        .where(eq(integrationsTable.providerConnectionId, id))
+        .returning({ teamId: integrationsTable.teamId, integrationId: integrationsTable.id });
       await tx.delete(providerConnections).where(eq(providerConnections.id, id));
-    });
-    await Promise.all(
-      affected.map((row) =>
-        adminRecordConnectionAttention(db, row.teamId, {
+      const attentionRecordedAt = new Date();
+      for (const row of affected) {
+        const input: ConnectionAttentionInput = {
           integrationId: row.integrationId,
           category: 'needs_new_owner',
           summary: `${connection.displayName} was deleted; choose a replacement connection.`,
-        }),
-      ),
-    );
+        };
+        const targetConditions = attentionTargetConditions(
+          { integrationId: row.integrationId },
+          { exact: true },
+        );
+        const conditions = [
+          eq(connectionAttention.teamId, row.teamId),
+          eq(connectionAttention.category, 'needs_new_owner'),
+          isNull(connectionAttention.resolvedAt),
+          ...targetConditions,
+        ];
+        await tx
+          .update(connectionAttention)
+          .set({ resolvedAt: attentionRecordedAt, lastSeenAt: attentionRecordedAt })
+          .where(
+            and(
+              eq(connectionAttention.teamId, row.teamId),
+              inArray(
+                connectionAttention.category,
+                connectionAttentionCategoryValues.filter(
+                  (category) => category !== 'needs_new_owner',
+                ),
+              ),
+              isNull(connectionAttention.resolvedAt),
+              ...targetConditions,
+            ),
+          );
+        const inserted = await tx
+          .insert(connectionAttention)
+          .values({
+            teamId: row.teamId,
+            providerConnectionId: null,
+            integrationId: row.integrationId,
+            resourceShareId: null,
+            category: input.category,
+            summary: input.summary,
+            firstSeenAt: attentionRecordedAt,
+            lastSeenAt: attentionRecordedAt,
+          })
+          .onConflictDoNothing()
+          .returning({ id: connectionAttention.id });
+        const attentionId = inserted[0]?.id ?? null;
+        if (attentionId) {
+          pendingNotifications.push({ teamId: row.teamId, input, attentionId });
+        } else {
+          await tx
+            .update(connectionAttention)
+            .set({ summary: input.summary, lastSeenAt: attentionRecordedAt })
+            .where(and(...conditions));
+        }
+      }
+    });
+    for (const notification of pendingNotifications) {
+      try {
+        const shouldEmail = await shouldEmailConnectionAttention(
+          db,
+          notification.teamId,
+          notification.input,
+        );
+        await notifyConnectionAttentionActors(
+          db,
+          notification.teamId,
+          notification.input,
+          notification.attentionId,
+          shouldEmail,
+        );
+      } catch (err) {
+        log.warn(
+          { err, providerConnectionId: id, integrationId: notification.input.integrationId },
+          'failed to notify provider connection deletion attention',
+        );
+      }
+    }
     return true;
   }
 
@@ -395,6 +514,25 @@ export function createIntegrationScope(deps: {
         .limit(1);
       const existing = existingRows[0];
       if (!existing) return;
+      await tx
+        .delete(connectionAttention)
+        .where(
+          and(eq(connectionAttention.teamId, teamId), eq(connectionAttention.integrationId, id)),
+        );
+      await tx
+        .delete(integrationWebhookDeliveryTargets)
+        .where(
+          and(
+            eq(integrationWebhookDeliveryTargets.teamId, teamId),
+            eq(integrationWebhookDeliveryTargets.integrationId, id),
+          ),
+        );
+      await tx
+        .delete(integrationWebhookSubscriptions)
+        .where(eq(integrationWebhookSubscriptions.integrationId, id));
+      await tx.delete(integrationSelections).where(eq(integrationSelections.integrationId, id));
+      await tx.delete(integrationSyncState).where(eq(integrationSyncState.integrationId, id));
+      await tx.delete(integrationAuditLog).where(eq(integrationAuditLog.integrationId, id));
       await tx
         .delete(integrationsTable)
         .where(and(eq(integrationsTable.id, id), eq(integrationsTable.teamId, teamId)));
@@ -1019,6 +1157,94 @@ export function createIntegrationScope(deps: {
   };
 }
 
+export function providerBudgetAppKey(provider: NativeProviderName): string {
+  const env = getEnv();
+  switch (provider) {
+    case 'github':
+      return env.GITHUB_APP_ID ?? env.GITHUB_APP_CLIENT_ID ?? 'github';
+    case 'monday':
+      return env.MONDAY_CLIENT_ID ?? 'monday';
+    case 'google_drive':
+      return env.GOOGLE_CLIENT_ID ?? 'google_drive';
+    case 'linear':
+      return env.LINEAR_CLIENT_ID ?? 'linear';
+    case 'slack':
+      return env.SLACK_CLIENT_ID ?? 'slack';
+    case 'sentry':
+      return env.SENTRY_INTEGRATION_CLIENT_ID ?? 'sentry';
+  }
+}
+
+export function providerBudgetKeyForIntegration(
+  integration: Pick<IntegrationRow, 'provider' | 'externalAccountId'>,
+  scope = 'requests',
+  externalAccountId = integration.externalAccountId,
+): ProviderBudgetKey | null {
+  if (integration.provider === 'mcp' || !externalAccountId) return null;
+  return {
+    provider: integration.provider,
+    appKey: providerBudgetAppKey(integration.provider),
+    externalAccountId,
+    scope,
+  };
+}
+
+function githubInstallationBudgetAccountId(installationId: string): string {
+  return `installation:${installationId}`;
+}
+
+function githubInstallationIdsFromTokens(tokens: Record<string, unknown> | null): string[] {
+  if (!tokens) return [];
+  const ids = new Set<string>();
+  const currentInstallationId = tokens.github_installation_id;
+  if (typeof currentInstallationId === 'string' && currentInstallationId.length > 0) {
+    ids.add(currentInstallationId);
+  }
+  const installations = tokens.github_app_installations;
+  if (Array.isArray(installations)) {
+    for (const installation of installations) {
+      if (!installation || typeof installation !== 'object' || Array.isArray(installation))
+        continue;
+      const id = (installation as { id?: unknown }).id;
+      if (typeof id === 'string' && id.length > 0) ids.add(id);
+      if (typeof id === 'number' && Number.isFinite(id)) ids.add(String(id));
+    }
+  }
+  const cachedTokens = tokens.github_app_installation_tokens;
+  if (cachedTokens && typeof cachedTokens === 'object' && !Array.isArray(cachedTokens)) {
+    for (const id of Object.keys(cachedTokens)) {
+      if (id.length > 0) ids.add(id);
+    }
+  }
+  return [...ids].sort();
+}
+
+export function providerBudgetKeysForIntegration(
+  integration: Pick<IntegrationRow, 'provider' | 'externalAccountId'>,
+  scope = 'requests',
+  tokens?: Record<string, unknown> | null,
+): ProviderBudgetKey[] {
+  const keys: ProviderBudgetKey[] = [];
+  const base = providerBudgetKeyForIntegration(integration, scope);
+  if (base) keys.push(base);
+  if (integration.provider !== 'github') return keys;
+  for (const installationId of githubInstallationIdsFromTokens(tokens ?? null)) {
+    const key = providerBudgetKeyForIntegration(
+      integration,
+      scope,
+      githubInstallationBudgetAccountId(installationId),
+    );
+    if (key) keys.push(key);
+  }
+  const seen = new Set<string>();
+  return keys.filter((key) => {
+    const identity = `${key.provider}\x00${key.appKey}\x00${key.externalAccountId}\x00${key.scope}`;
+    if (seen.has(identity)) return false;
+    seen.add(identity);
+    return true;
+  });
+}
+
 export type IntegrationScope = ReturnType<typeof createIntegrationScope>;
 
 // Lightweight admin helper used by the worker (no withTeam scope yet at
@@ -1340,6 +1566,81 @@ export async function adminRecordIntegrationSyncPause(
   );
 }
 
+export async function adminLoadProviderBudgetPause(
+  db: Db,
+  input: Omit<ProviderBudgetKey, 'scope'>,
+): Promise<{ retryAt: Date; reason: string; scope: string } | null> {
+  const rows = await db
+    .select({
+      pausedUntil: integrationProviderBudgets.pausedUntil,
+      reason: integrationProviderBudgets.reason,
+      scope: integrationProviderBudgets.scope,
+    })
+    .from(integrationProviderBudgets)
+    .where(
+      and(
+        eq(integrationProviderBudgets.provider, input.provider),
+        eq(integrationProviderBudgets.appKey, input.appKey),
+        eq(integrationProviderBudgets.externalAccountId, input.externalAccountId),
+        sql`${integrationProviderBudgets.pausedUntil} > now()`,
+      ),
+    )
+    .orderBy(desc(integrationProviderBudgets.pausedUntil))
+    .limit(1);
+  const row = rows[0];
+  if (!row?.pausedUntil) return null;
+  return {
+    retryAt: row.pausedUntil,
+    reason: row.reason ?? 'provider_budget_paused',
+    scope: row.scope,
+  };
+}
+
+export async function adminRecordProviderBudgetPause(
+  db: Db,
+  key: ProviderBudgetKey,
+  input: {
+    pausedUntil: Date;
+    reason: string;
+    remaining?: number | null;
+    limit?: number | null;
+    resetAt?: Date | null;
+  },
+): Promise<void> {
+  await db
+    .insert(integrationProviderBudgets)
+    .values({
+      provider: key.provider,
+      appKey: key.appKey,
+      externalAccountId: key.externalAccountId,
+      scope: key.scope,
+      remaining: input.remaining ?? null,
+      limit: input.limit ?? null,
+      resetAt: input.resetAt ?? input.pausedUntil,
+      pausedUntil: input.pausedUntil,
+      reason: input.reason,
+      lastObservedAt: new Date(),
+      updatedAt: new Date(),
+    })
+    .onConflictDoUpdate({
+      target: [
+        integrationProviderBudgets.provider,
+        integrationProviderBudgets.appKey,
+        integrationProviderBudgets.externalAccountId,
+        integrationProviderBudgets.scope,
+      ],
+      set: {
+        remaining: input.remaining ?? null,
+        limit: input.limit ?? null,
+        resetAt: input.resetAt ?? input.pausedUntil,
+        pausedUntil: input.pausedUntil,
+        reason: input.reason,
+        lastObservedAt: new Date(),
+        updatedAt: new Date(),
+      },
+    });
+}
+
 export async function adminRecordTransientSyncFailure(
   db: Db,
   integrationId: string,
@@ -1409,9 +1710,17 @@ export async function adminRecordConnectionAttention(
         category: input.category,
         summary: input.summary,
       })
+      .onConflictDoNothing()
       .returning({ id: connectionAttention.id });
     const attentionId = inserted[0]?.id ?? null;
-    await notifyConnectionAttentionActors(db, teamId, input, attentionId, shouldEmail);
+    if (attentionId) {
+      await notifyConnectionAttentionActors(db, teamId, input, attentionId, shouldEmail);
+    } else {
+      await db
+        .update(connectionAttention)
+        .set({ summary: input.summary, lastSeenAt: new Date() })
+        .where(and(...conditions));
+    }
   }
 }
 
@@ -1430,7 +1739,11 @@ async function notifyConnectionAttentionActors(
     const connection = await adminLoadProviderConnection(db, input.providerConnectionId);
     if (connection) recipients.add(connection.ownerUserId);
   }
-  if (input.category === 'needs_new_owner' || input.category === 'sync_error') {
+  if (
+    input.category === 'needs_new_owner' ||
+    input.category === 'sync_error' ||
+    input.category === 'webhook_degraded'
+  ) {
     const admins = await db
       .select({ userId: teamMembers.userId })
       .from(teamMembers)
@@ -1556,4 +1869,303 @@ export async function adminListSelections(
     externalId: r.externalId,
     label: r.externalLabel,
   }));
+}
+
+function rowToWebhookSubscription(
+  row: typeof integrationWebhookSubscriptions.$inferSelect,
+): WebhookSubscription {
+  return {
+    externalSubscriptionId: row.externalSubscriptionId,
+    resourceKind: row.resourceKind,
+    externalResourceId: row.externalResourceId,
+    eventType: row.eventType,
+    expiresAt: row.expiresAt,
+  };
+}
+
+async function upsertIntegrationWebhookSubscriptions(
+  db: Db,
+  integration: IntegrationRow,
+  subscriptions: WebhookSubscription[],
+): Promise<void> {
+  if (subscriptions.length === 0) return;
+  await db
+    .insert(integrationWebhookSubscriptions)
+    .values(
+      subscriptions.map((subscription) => ({
+        integrationId: integration.id,
+        providerConnectionId: integration.providerConnectionId,
+        provider: integration.provider,
+        externalSubscriptionId: subscription.externalSubscriptionId ?? null,
+        resourceKind: subscription.resourceKind,
+        externalResourceId: subscription.externalResourceId,
+        eventType: subscription.eventType,
+        expiresAt: subscription.expiresAt ?? null,
+        status: 'active',
+        lastVerifiedAt: new Date(),
+        lastError: null,
+        updatedAt: new Date(),
+      })),
+    )
+    .onConflictDoUpdate({
+      target: [
+        integrationWebhookSubscriptions.provider,
+        integrationWebhookSubscriptions.integrationId,
+        integrationWebhookSubscriptions.resourceKind,
+        integrationWebhookSubscriptions.externalResourceId,
+        integrationWebhookSubscriptions.eventType,
+      ],
+      targetWhere: sql`${integrationWebhookSubscriptions.integrationId} IS NOT NULL`,
+      set: {
+        externalSubscriptionId: sql`excluded.external_subscription_id`,
+        providerConnectionId: sql`excluded.provider_connection_id`,
+        expiresAt: sql`excluded.expires_at`,
+        status: 'active',
+        lastVerifiedAt: new Date(),
+        lastError: null,
+        updatedAt: new Date(),
+      },
+    });
+}
+
+export async function adminReconcileIntegrationWebhookSubscriptions(
+  db: Db,
+  integrationId: string,
+): Promise<{ active: number; deprovisioned: number; skipped: boolean }> {
+  const integration = await adminLoadIntegration(db, integrationId);
+  if (!integration || integration.provider === 'mcp') {
+    return { active: 0, deprovisioned: 0, skipped: true };
+  }
+  const provider = getProvider(integration.provider);
+  if (!provider.provisionWebhooks) {
+    return { active: 0, deprovisioned: 0, skipped: true };
+  }
+  const tokens = await adminDecryptIntegrationTokens(db, integration);
+  if (!tokens) throw new Error('No tokens — reconnect required');
+  const selections = await adminListSelections(db, integration.id);
+  const existingRows = await db
+    .select()
+    .from(integrationWebhookSubscriptions)
+    .where(
+      and(
+        eq(integrationWebhookSubscriptions.integrationId, integration.id),
+        eq(integrationWebhookSubscriptions.provider, integration.provider),
+      ),
+    );
+  const activeSubscriptions = await provider.provisionWebhooks({
+    integration,
+    tokens,
+    selections,
+    existingSubscriptions: existingRows
+      .filter((row) => row.status === 'active')
+      .map(rowToWebhookSubscription),
+    ctx: {
+      persistTokens: (fresh) => adminPersistTokens(db, integration.id, fresh),
+      persistWebhookSubscription: (subscription) =>
+        upsertIntegrationWebhookSubscriptions(db, integration, [subscription]),
+    },
+  });
+  await upsertIntegrationWebhookSubscriptions(db, integration, activeSubscriptions);
+
+  const activeKeys = new Set(activeSubscriptions.map(webhookSubscriptionKey));
+  let deprovisioned = 0;
+  for (const row of existingRows) {
+    if (row.status !== 'active') continue;
+    if (activeKeys.has(webhookSubscriptionKey(row))) continue;
+    const subscription = rowToWebhookSubscription(row);
+    if (provider.deprovisionWebhook) {
+      await provider.deprovisionWebhook({
+        integration,
+        tokens,
+        subscription,
+        ctx: {
+          persistTokens: (fresh) => adminPersistTokens(db, integration.id, fresh),
+        },
+      });
+    }
+    await db
+      .update(integrationWebhookSubscriptions)
+      .set({
+        status: 'deleted',
+        lastVerifiedAt: new Date(),
+        lastError: null,
+        updatedAt: new Date(),
+      })
+      .where(eq(integrationWebhookSubscriptions.id, row.id));
+    deprovisioned += 1;
+  }
+
+  return { active: activeSubscriptions.length, deprovisioned, skipped: false };
+}
+
+export async function adminDeprovisionIntegrationWebhookSubscriptions(
+  db: Db,
+  integrationId: string,
+): Promise<{ deprovisioned: number; skipped: boolean }> {
+  const integration = await adminLoadIntegration(db, integrationId);
+  if (!integration || integration.provider === 'mcp') {
+    return { deprovisioned: 0, skipped: true };
+  }
+  const provider = getProvider(integration.provider);
+  if (!provider.deprovisionWebhook) {
+    return { deprovisioned: 0, skipped: true };
+  }
+  const tokens = await adminDecryptIntegrationTokens(db, integration);
+  if (!tokens) throw new Error('No tokens — reconnect required');
+  const rows = await db
+    .select()
+    .from(integrationWebhookSubscriptions)
+    .where(
+      and(
+        eq(integrationWebhookSubscriptions.integrationId, integration.id),
+        eq(integrationWebhookSubscriptions.provider, integration.provider),
+        eq(integrationWebhookSubscriptions.status, 'active'),
+      ),
+    );
+  for (const row of rows) {
+    await provider.deprovisionWebhook({
+      integration,
+      tokens,
+      subscription: rowToWebhookSubscription(row),
+      ctx: {
+        persistTokens: (fresh) => adminPersistTokens(db, integration.id, fresh),
+      },
+    });
+    await db
+      .update(integrationWebhookSubscriptions)
+      .set({
+        status: 'deleted',
+        lastVerifiedAt: new Date(),
+        lastError: null,
+        updatedAt: new Date(),
+      })
+      .where(eq(integrationWebhookSubscriptions.id, row.id));
+  }
+  return { deprovisioned: rows.length, skipped: false };
+}
+
+export async function adminReconcileExpiringWebhookSubscriptions(
+  db: Db,
+  options: { now?: Date; renewWithinMs?: number } = {},
+): Promise<{ checked: number; renewed: number; degraded: number; skipped: number }> {
+  const now = options.now ?? new Date();
+  const threshold = new Date(now.getTime() + (options.renewWithinMs ?? 24 * 60 * 60 * 1000));
+  const rows = await db
+    .select({
+      subscription: integrationWebhookSubscriptions,
+      integration: integrationsTable,
+    })
+    .from(integrationWebhookSubscriptions)
+    .leftJoin(
+      integrationsTable,
+      eq(integrationWebhookSubscriptions.integrationId, integrationsTable.id),
+    )
+    .where(
+      and(
+        eq(integrationWebhookSubscriptions.status, 'active'),
+        isNotNull(integrationWebhookSubscriptions.expiresAt),
+        lte(integrationWebhookSubscriptions.expiresAt, threshold),
+      ),
+    );
+
+  const byIntegration = new Map<
+    string,
+    {
+      integration: IntegrationRow;
+      subscriptions: (typeof integrationWebhookSubscriptions.$inferSelect)[];
+    }
+  >();
+  let degraded = 0;
+  let skipped = 0;
+  for (const row of rows) {
+    const integration = row.integration;
+    if (!integration) {
+      await db
+        .update(integrationWebhookSubscriptions)
+        .set({
+          status: 'failed',
+          lastError: 'integration_missing',
+          updatedAt: new Date(),
+        })
+        .where(eq(integrationWebhookSubscriptions.id, row.subscription.id));
+      degraded += 1;
+      continue;
+    }
+    if (integration.provider === 'mcp') {
+      skipped += 1;
+      continue;
+    }
+    const current = byIntegration.get(integration.id) ?? {
+      integration,
+      subscriptions: [],
+    };
+    current.subscriptions.push(row.subscription);
+    byIntegration.set(integration.id, current);
+  }
+
+  let renewed = 0;
+  for (const { integration, subscriptions } of byIntegration.values()) {
+    const provider = getProvider(integration.provider);
+    if (!provider.provisionWebhooks) {
+      for (const subscription of subscriptions) {
+        const expired = subscription.expiresAt ? subscription.expiresAt <= now : false;
+        const reason = expired ? 'webhook_subscription_expired' : 'webhook_subscription_expiring';
+        await db
+          .update(integrationWebhookSubscriptions)
+          .set({
+            status: 'failed',
+            lastError: reason,
+            updatedAt: new Date(),
+          })
+          .where(eq(integrationWebhookSubscriptions.id, subscription.id));
+        await adminRecordConnectionAttention(db, integration.teamId, {
+          providerConnectionId: integration.providerConnectionId,
+          integrationId: integration.id,
+          category: 'webhook_degraded',
+          summary: `${integration.provider} webhook subscription for ${subscription.resourceKind} ${subscription.externalResourceId} ${expired ? 'expired' : 'expires soon'} and cannot be renewed automatically. Reconciliation remains active while webhook delivery is repaired.`,
+        });
+        degraded += 1;
+      }
+      continue;
+    }
+
+    try {
+      const result = await adminReconcileIntegrationWebhookSubscriptions(db, integration.id);
+      renewed += result.active;
+      await adminResolveConnectionAttention(db, integration.teamId, {
+        providerConnectionId: integration.providerConnectionId,
+        integrationId: integration.id,
+        categories: ['webhook_degraded'],
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      await db
+        .update(integrationWebhookSubscriptions)
+        .set({
+          status: 'failed',
+          lastError: message.slice(0, 500),
+          updatedAt: new Date(),
+        })
+        .where(
+          inArray(
+            integrationWebhookSubscriptions.id,
+            subscriptions.map((subscription) => subscription.id),
+          ),
+        );
+      await adminRecordConnectionAttention(db, integration.teamId, {
+        providerConnectionId: integration.providerConnectionId,
+        integrationId: integration.id,
+        category: 'webhook_degraded',
+        summary: `${integration.provider} webhook subscription renewal failed: ${message.slice(0, 400)}. Reconciliation remains active while webhook delivery is repaired.`,
+      });
+      degraded += subscriptions.length;
+    }
+  }
+
+  return {
+    checked: rows.length,
+    renewed,
+    degraded,
+    skipped,
+  };
 }
