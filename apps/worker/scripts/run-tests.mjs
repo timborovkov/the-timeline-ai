@@ -7,6 +7,7 @@ const integrationTests = [
   'src/workers/documentExtract.test.ts',
   'src/workers/embed.test.ts',
   'src/workers/extract.test.ts',
+  'src/workers/integrationSyncHarvest.test.ts',
   'src/workers/janitor.test.ts',
   'src/workers/meetingFinalize.test.ts',
   'src/workers/meetingScheduler.test.ts',

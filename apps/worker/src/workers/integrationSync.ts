@@ -29,6 +29,95 @@ interface IntegrationSyncDeps {
   db: Db;
 }
 
+export interface IntegrationDocumentHarvestIO {
+  getDocumentsBucket: () => string;
+  putDocumentObject: (input: {
+    bucket: string;
+    key: string;
+    body: Buffer;
+    contentType: string;
+  }) => Promise<void>;
+  enqueueDocumentExtractJob: (data: queue.DocumentExtractJobData) => Promise<void>;
+}
+
+const defaultDocumentHarvestIO: IntegrationDocumentHarvestIO = {
+  getDocumentsBucket,
+  async putDocumentObject(input) {
+    await putObject(getS3Client(), input);
+  },
+  enqueueDocumentExtractJob: queue.enqueueDocumentExtractJob,
+};
+
+export async function harvestIntegrationDocument(input: {
+  db: Db;
+  integration: Pick<integrationsLib.IntegrationRow, 'id' | 'teamId' | 'provider'>;
+  harvestUserId: string;
+  document: integrationsLib.HarvestDocumentInput;
+  io?: IntegrationDocumentHarvestIO;
+}): Promise<{ documentId: string; versionId: string }> {
+  const io = input.io ?? defaultDocumentHarvestIO;
+  const scope = withTeam(input.db, input.integration.teamId, input.harvestUserId);
+  const existing = await input.db
+    .select()
+    .from(documentsTable)
+    .where(
+      and(
+        eq(documentsTable.teamId, input.integration.teamId),
+        sql`(${documentsTable.metadata} ->> 'integration_external_id') = ${input.document.externalId}`,
+        sql`(${documentsTable.metadata} ->> 'integration_provider') = ${input.integration.provider}`,
+      ),
+    )
+    .limit(1);
+  let documentId: string;
+  let versionId: string;
+  let objectKey: string;
+  let contentType: string;
+  if (existing.length > 0 && existing[0]) {
+    const doc = existing[0];
+    const version = await scope.documents.addDocumentVersion({
+      documentId: doc.id,
+      filename: input.document.filename,
+      contentType: input.document.contentType,
+    });
+    documentId = doc.id;
+    versionId = version.id;
+    objectKey = version.objectKey;
+    contentType = version.contentType ?? input.document.contentType;
+  } else {
+    const created = await scope.documents.createDocument({
+      name: input.document.filename,
+      filename: input.document.filename,
+      contentType: input.document.contentType,
+      metadata: {
+        ...(input.document.metadata ?? {}),
+        integration_id: input.integration.id,
+        integration_provider: input.integration.provider,
+        integration_external_id: input.document.externalId,
+      },
+    });
+    documentId = created.document.id;
+    versionId = created.version.id;
+    objectKey = created.version.objectKey;
+    contentType = created.version.contentType ?? input.document.contentType;
+  }
+  await io.putDocumentObject({
+    bucket: io.getDocumentsBucket(),
+    key: objectKey,
+    body: input.document.body,
+    contentType,
+  });
+  await scope.documents.finalizeDocumentVersion({
+    versionId,
+    contentType,
+    byteSize: input.document.body.byteLength,
+  });
+  await io.enqueueDocumentExtractJob({
+    documentVersionId: versionId,
+    teamId: input.integration.teamId,
+  });
+  return { documentId, versionId };
+}
+
 function isNativeSyncProvider(
   provider: integrationsLib.IntegrationProviderName,
 ): provider is NativeSyncProvider {
@@ -374,72 +463,12 @@ export async function runOneIntegration(
       ...(harvestEnabled && harvestableUserId
         ? {
             async harvestDocument(input) {
-              const scope = withTeam(db, integration.teamId, harvestableUserId);
-              // Idempotency: look up an existing document via the
-              // `metadata->>'external_id'` jsonb path keyed on this
-              // provider. If we've harvested this Drive file before, add a
-              // new version; otherwise create a fresh document.
-              const existing = await db
-                .select()
-                .from(documentsTable)
-                .where(
-                  and(
-                    eq(documentsTable.teamId, integration.teamId),
-                    sql`(${documentsTable.metadata} ->> 'integration_external_id') = ${input.externalId}`,
-                    sql`(${documentsTable.metadata} ->> 'integration_provider') = ${integration.provider}`,
-                  ),
-                )
-                .limit(1);
-              let documentId: string;
-              let versionId: string;
-              let objectKey: string;
-              let contentType: string;
-              if (existing.length > 0 && existing[0]) {
-                const doc = existing[0];
-                const version = await scope.documents.addDocumentVersion({
-                  documentId: doc.id,
-                  filename: input.filename,
-                  contentType: input.contentType,
-                });
-                documentId = doc.id;
-                versionId = version.id;
-                objectKey = version.objectKey;
-                contentType = version.contentType ?? input.contentType;
-              } else {
-                const created = await scope.documents.createDocument({
-                  name: input.filename,
-                  filename: input.filename,
-                  contentType: input.contentType,
-                  metadata: {
-                    ...(input.metadata ?? {}),
-                    integration_id: integration.id,
-                    integration_provider: integration.provider,
-                    integration_external_id: input.externalId,
-                  },
-                });
-                documentId = created.document.id;
-                versionId = created.version.id;
-                objectKey = created.version.objectKey;
-                contentType = created.version.contentType ?? input.contentType;
-              }
-              // Upload bytes to S3.
-              await putObject(getS3Client(), {
-                bucket: getDocumentsBucket(),
-                key: objectKey,
-                body: input.body,
-                contentType,
+              return harvestIntegrationDocument({
+                db,
+                integration,
+                harvestUserId: harvestableUserId,
+                document: input,
               });
-              // Finalize the version and enqueue extraction.
-              await scope.documents.finalizeDocumentVersion({
-                versionId,
-                contentType,
-                byteSize: input.body.byteLength,
-              });
-              await queue.enqueueDocumentExtractJob({
-                documentVersionId: versionId,
-                teamId: integration.teamId,
-              });
-              return { documentId, versionId };
             },
           }
         : {}),
