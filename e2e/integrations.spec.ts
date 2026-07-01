@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHmac, randomUUID } from 'node:crypto';
 
 import { expect, type Locator, test } from '@playwright/test';
 import { getDbClient } from '@timeline/db';
@@ -12,6 +12,7 @@ const MANAGE_PREFIX = `${E2E_PREFIX} integration manage`;
 const MANAGE_EXTERNAL_PREFIX = `${E2E_PREFIX}-integration-manage`;
 const SOURCE_LISTING_PREFIX = `${E2E_PREFIX} source listing`;
 const SOURCE_LISTING_EXTERNAL_PREFIX = `${E2E_PREFIX}-source-listing`;
+const OAUTH_CALLBACK_EXTERNAL_ACCOUNT_ID = 'e2e-github-user-42';
 
 async function cleanupIntegrationHealthSeed(): Promise<void> {
   const sql = getDbClient();
@@ -229,6 +230,30 @@ async function cleanupSourceListingSeed(): Promise<void> {
     WHERE owner_user_id = ${e2eUsers.owner.id}
       AND external_account_id LIKE ${`${SOURCE_LISTING_EXTERNAL_PREFIX}%`}
   `;
+}
+
+async function cleanupOAuthCallbackSeed(): Promise<void> {
+  const sql = getDbClient();
+  await sql`
+    DELETE FROM provider_connections
+    WHERE owner_user_id = ${e2eUsers.owner.id}
+      AND provider = 'github'
+      AND external_account_id = ${OAUTH_CALLBACK_EXTERNAL_ACCOUNT_ID}
+  `;
+}
+
+function signProviderOAuthState(): string {
+  const payload = {
+    teamId: e2eTeam.id,
+    userId: e2eUsers.owner.id,
+    provider: 'github',
+    nonce: 'e2e-oauth-callback-success',
+    iat: Date.now(),
+  };
+  const payloadB64 = Buffer.from(JSON.stringify(payload)).toString('base64url');
+  const secret = process.env.AUTH_SECRET ?? 'e2e-auth-secret-at-least-sixteen-characters';
+  const sig = createHmac('sha256', secret).update(payloadB64).digest('base64url');
+  return `${payloadB64}.${sig}`;
 }
 
 async function seedSourceListingState(): Promise<{ connectionId: string }> {
@@ -641,4 +666,47 @@ test('renders native provider OAuth callback denial in the browser', async ({ pa
   await expect(page.getByRole('heading', { name: 'Team integrations', level: 1 })).toBeVisible();
   await expect(page.getByText('access_denied', { exact: true }).first()).toBeVisible();
   await expect(page.getByText('GitHub', { exact: true }).first()).toBeVisible();
+});
+
+test.describe.serial('provider OAuth callback success', () => {
+  test.afterAll(async () => {
+    await cleanupOAuthCallbackSeed();
+  });
+
+  test('creates a provider account and lands on source sharing', async ({ page }) => {
+    await cleanupOAuthCallbackSeed();
+    await page.route('**/api/connections/*/resources', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          resources: [],
+          shares: [],
+        }),
+      });
+    });
+
+    await signIn(page, e2eUsers.owner.email);
+
+    const state = signProviderOAuthState();
+    await page.goto(
+      `/api/integrations/github/callback?code=e2e-github-oauth-success&state=${encodeURIComponent(
+        state,
+      )}`,
+    );
+
+    await expect(page).toHaveURL(
+      /\/app\/me\/connections\?connected=github&providerConnectionId=[0-9a-f-]+$/,
+    );
+    await expect(page.getByRole('heading', { name: 'Provider accounts', level: 1 })).toBeVisible();
+    await expect(
+      page.getByText('Connected github. Choose which sources this team may use.'),
+    ).toBeVisible();
+    const accountCard = page
+      .locator('section.rounded-md')
+      .filter({ hasText: 'GitHub - Timeline E2E' })
+      .first();
+    await expect(accountCard.getByText('GitHub - Timeline E2E')).toBeVisible();
+    await expect(accountCard.getByText('Personal provider account')).toBeVisible();
+  });
 });

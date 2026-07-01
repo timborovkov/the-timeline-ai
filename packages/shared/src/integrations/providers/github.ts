@@ -5,6 +5,7 @@ import {
   type IntegrationEvent,
   type IntegrationProvider,
   type OAuthCallbackInput,
+  type OAuthCallbackOutput,
   type OAuthStartInput,
   ProviderRateLimitError,
   type ProviderResource,
@@ -35,6 +36,7 @@ const API_BASE = 'https://api.github.com';
 
 const SCOPES = ['repo', 'read:org'];
 export const GITHUB_RATE_LIMIT_CODE = 'github_rate_limited';
+const E2E_GITHUB_OAUTH_CODE = 'e2e-github-oauth-success';
 const GITHUB_QUOTA_RESERVE = 250;
 const GITHUB_ORG_REPO_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 
@@ -182,6 +184,22 @@ type GithubAuthMode = 'api' | 'user';
 function githubAuthorizationToken(tokens: GithubTokens, authMode: GithubAuthMode): string {
   if (authMode === 'user') return tokens.access_token;
   return tokens.github_installation_access_token ?? tokens.access_token;
+}
+
+function deterministicGithubOAuthCallback(input: OAuthCallbackInput): OAuthCallbackOutput | null {
+  if (process.env.NODE_ENV === 'production') return null;
+  if (process.env.E2E_DETERMINISTIC_GITHUB_OAUTH !== '1') return null;
+  if (input.code !== E2E_GITHUB_OAUTH_CODE) return null;
+  return {
+    externalAccountId: 'e2e-github-user-42',
+    displayName: 'GitHub - Timeline E2E',
+    scopes: SCOPES,
+    tokens: {
+      access_token: 'e2e-github-access-token',
+      token_type: 'Bearer',
+      scope: SCOPES.join(' '),
+    },
+  };
 }
 
 function persistableGithubTokens(tokens: GithubTokens): GithubTokens {
@@ -1822,6 +1840,9 @@ export const githubProvider: IntegrationProvider = {
   },
 
   async handleOAuthCallback(input: OAuthCallbackInput) {
+    const deterministic = deterministicGithubOAuthCallback(input);
+    if (deterministic) return deterministic;
+
     const env = getEnv();
     if (!env.GITHUB_APP_CLIENT_ID || !env.GITHUB_APP_CLIENT_SECRET) {
       throw new Error('GITHUB_APP_CLIENT_ID / GITHUB_APP_CLIENT_SECRET not configured');

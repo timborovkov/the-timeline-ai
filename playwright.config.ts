@@ -44,6 +44,7 @@ export default defineConfig({
       S3_BUCKET_AUDIO: process.env.S3_BUCKET_AUDIO ?? 'timeline-audio',
       S3_BUCKET_DOCUMENTS: process.env.S3_BUCKET_DOCUMENTS ?? 'timeline-documents',
       E2E_DETERMINISTIC_CHAT: process.env.E2E_DETERMINISTIC_CHAT ?? '1',
+      E2E_DETERMINISTIC_GITHUB_OAUTH: process.env.E2E_DETERMINISTIC_GITHUB_OAUTH ?? '1',
       OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY ?? 'e2e-deterministic-chat',
       GITHUB_APP_CLIENT_ID: process.env.GITHUB_APP_CLIENT_ID ?? 'e2e-github-client-id',
       GITHUB_APP_CLIENT_SECRET: process.env.GITHUB_APP_CLIENT_SECRET ?? 'e2e-github-client-secret',
