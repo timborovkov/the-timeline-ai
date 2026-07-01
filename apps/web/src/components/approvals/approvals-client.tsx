@@ -21,6 +21,7 @@ import {
   acceptSuggestionItemAction,
   acceptVisibleSuggestionsAction,
   rejectSuggestionItemAction,
+  rejectVisibleSuggestionsAction,
 } from '@/app/actions/suggestions';
 import { EmptyAction } from '@/components/empty-action';
 import { EvidenceLink } from '@/components/evidence-link';
@@ -92,6 +93,7 @@ type ApprovalAction = (
 interface Props {
   suggestions: SuggestionBundle[];
   allowBulkAccept?: boolean;
+  allowBulkReject?: boolean;
   timezone?: string;
   folded?: {
     title: string;
@@ -328,7 +330,13 @@ function foldedSummaryText(
   return `${count} ${count === 1 ? summary.singular : summary.plural}`;
 }
 
-export function ApprovalsClient({ suggestions, allowBulkAccept = true, timezone, folded }: Props) {
+export function ApprovalsClient({
+  suggestions,
+  allowBulkAccept = true,
+  allowBulkReject = true,
+  timezone,
+  folded,
+}: Props) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -375,12 +383,20 @@ export function ApprovalsClient({ suggestions, allowBulkAccept = true, timezone,
     (sum, suggestion) => sum + suggestion.itemIds.length,
     0,
   );
+  const bulkRejectSuggestions = visibleSuggestions.flatMap((bundle) => {
+    const itemIds = bundle.items.reduce<string[]>((ids, item) => {
+      if (isActionableSuggestionStatus(item.status)) ids.push(item.id);
+      return ids;
+    }, []);
+    return itemIds.length > 0 ? [{ suggestionId: bundle.id, itemIds }] : [];
+  });
+  const bulkRejectItemCount = bulkRejectSuggestions.reduce(
+    (sum, suggestion) => sum + suggestion.itemIds.length,
+    0,
+  );
   const visiblePendingItemCount = visibleSuggestions.reduce(
     (sum, bundle) =>
-      sum +
-      bundle.items.filter(
-        (item) => isActionableSuggestionStatus(item.status) && item.targetKind !== 'object_merge',
-      ).length,
+      sum + bundle.items.filter((item) => isActionableSuggestionStatus(item.status)).length,
     0,
   );
 
@@ -462,8 +478,11 @@ export function ApprovalsClient({ suggestions, allowBulkAccept = true, timezone,
   const body = (
     <ApprovalListBody
       allowBulkAccept={allowBulkAccept}
+      allowBulkReject={allowBulkReject}
       bulkAcceptItemCount={bulkAcceptItemCount}
       bulkAcceptSuggestions={bulkAcceptSuggestions}
+      bulkRejectItemCount={bulkRejectItemCount}
+      bulkRejectSuggestions={bulkRejectSuggestions}
       busyItemIds={busyItemIds}
       error={error}
       pending={pending}
@@ -508,8 +527,11 @@ export function ApprovalsClient({ suggestions, allowBulkAccept = true, timezone,
 
 function ApprovalListBody({
   allowBulkAccept,
+  allowBulkReject,
   bulkAcceptItemCount,
   bulkAcceptSuggestions,
+  bulkRejectItemCount,
+  bulkRejectSuggestions,
   busyItemIds,
   error,
   pending,
@@ -518,8 +540,11 @@ function ApprovalListBody({
   visibleSuggestions,
 }: {
   allowBulkAccept: boolean;
+  allowBulkReject: boolean;
   bulkAcceptItemCount: number;
   bulkAcceptSuggestions: { suggestionId: string; itemIds: string[] }[];
+  bulkRejectItemCount: number;
+  bulkRejectSuggestions: { suggestionId: string; itemIds: string[] }[];
   busyItemIds: Set<string>;
   error: string | null;
   pending: boolean;
@@ -530,9 +555,13 @@ function ApprovalListBody({
   return (
     <div className="space-y-3">
       {error ? <ApprovalError message={error} /> : null}
-      {allowBulkAccept && bulkAcceptItemCount > 1 ? (
-        <PageBulkAccept
+      {(allowBulkAccept && bulkAcceptItemCount > 1) ||
+      (allowBulkReject && bulkRejectItemCount > 1) ? (
+        <PageBulkActions
           bulkAcceptSuggestions={bulkAcceptSuggestions}
+          bulkRejectSuggestions={bulkRejectSuggestions}
+          canAccept={allowBulkAccept && bulkAcceptItemCount > 1}
+          canReject={allowBulkReject && bulkRejectItemCount > 1}
           disabled={pending}
           run={run}
         />
@@ -560,31 +589,56 @@ function ApprovalError({ message }: { message: string }) {
   );
 }
 
-function PageBulkAccept({
+function PageBulkActions({
   bulkAcceptSuggestions,
+  bulkRejectSuggestions,
+  canAccept,
+  canReject,
   disabled,
   run,
 }: {
   bulkAcceptSuggestions: { suggestionId: string; itemIds: string[] }[];
+  bulkRejectSuggestions: { suggestionId: string; itemIds: string[] }[];
+  canAccept: boolean;
+  canReject: boolean;
   disabled: boolean;
   run: ApprovalAction;
 }) {
   return (
-    <div className="flex justify-end">
-      <Button
-        type="button"
-        size="sm"
-        disabled={disabled}
-        onClick={() => {
-          run(
-            () => acceptVisibleSuggestionsAction({ suggestions: bulkAcceptSuggestions }),
-            bulkAcceptSuggestions.flatMap((suggestion) => suggestion.itemIds),
-          );
-        }}
-      >
-        <CheckCheck className="size-4" />
-        Accept all visible
-      </Button>
+    <div className="flex flex-wrap justify-end gap-2">
+      {canReject ? (
+        <Button
+          type="button"
+          size="sm"
+          variant="destructive"
+          disabled={disabled}
+          onClick={() => {
+            run(
+              () => rejectVisibleSuggestionsAction({ suggestions: bulkRejectSuggestions }),
+              bulkRejectSuggestions.flatMap((suggestion) => suggestion.itemIds),
+            );
+          }}
+        >
+          <X className="size-4" />
+          Reject all visible
+        </Button>
+      ) : null}
+      {canAccept ? (
+        <Button
+          type="button"
+          size="sm"
+          disabled={disabled}
+          onClick={() => {
+            run(
+              () => acceptVisibleSuggestionsAction({ suggestions: bulkAcceptSuggestions }),
+              bulkAcceptSuggestions.flatMap((suggestion) => suggestion.itemIds),
+            );
+          }}
+        >
+          <CheckCheck className="size-4" />
+          Accept all visible
+        </Button>
+      ) : null}
     </div>
   );
 }

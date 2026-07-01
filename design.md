@@ -690,7 +690,9 @@ key/value pairs.
   object detail, and object cleanup suggestions should expose the review path
   without pushing the main page content below a stack of approval rows.
 - The dedicated Approvals page remains expanded and optimized for scanning,
-  filtering, bulk action, and row-level review.
+  filtering, bulk accept, and row-level review. Embedded approval panels may
+  expose bulk reject when multiple visible proposals need cleanup, but avoid
+  bulk accept paths that can apply state from a narrow context.
 
 ### Object detail
 
