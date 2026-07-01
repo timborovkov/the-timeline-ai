@@ -5,6 +5,8 @@ import { existsSync, readFileSync } from 'node:fs';
 import {
   buildPostmarkInboundCaptureCanaryPayload,
   formatLiveIntegrationCanaryReport,
+  getProvider,
+  type NativeProviderId,
   redactLiveIntegrationCanaryText,
   type LiveIntegrationCanaryResult,
   validatePostmarkInboundCaptureCanaryUrl,
@@ -48,13 +50,8 @@ function secretStatus(
   return { name, status: ok ? 'ok' : 'skip', detail, ...input };
 }
 
-function configStatus(
-  name: string,
-  ok: boolean,
-  detail: string,
-  input: Pick<LiveIntegrationCanaryResult, 'action' | 'docs' | 'envKeys'>,
-): LiveIntegrationCanaryResult {
-  return { name, status: ok ? 'ok' : 'skip', detail, ...input };
+function configuredStatusDetail(keys: readonly string[]): string {
+  return keys.every((key) => configured(key)) ? 'configured' : `${keys.join(' or ')} missing`;
 }
 
 function secretEnvValues(): string[] {
@@ -326,75 +323,99 @@ async function checkPostmarkInboundCapture(): Promise<LiveIntegrationCanaryResul
   };
 }
 
-function checkOAuthConfig(): LiveIntegrationCanaryResult[] {
-  return [
-    configStatus(
-      'Google Drive OAuth app',
-      configured('GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET'),
-      configured('GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET')
-        ? 'configured'
-        : 'GOOGLE_CLIENT_ID or GOOGLE_CLIENT_SECRET missing',
-      {
-        envKeys: ['GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET'],
-        docs: 'docs/setup/integrations.html#google-drive',
-      },
-    ),
-    configStatus(
-      'Linear OAuth app',
-      configured('LINEAR_CLIENT_ID', 'LINEAR_CLIENT_SECRET'),
-      configured('LINEAR_CLIENT_ID', 'LINEAR_CLIENT_SECRET')
-        ? 'configured'
-        : 'LINEAR_CLIENT_ID or LINEAR_CLIENT_SECRET missing',
-      {
-        envKeys: ['LINEAR_CLIENT_ID', 'LINEAR_CLIENT_SECRET'],
-        docs: 'docs/setup/integrations.html#linear',
-      },
-    ),
-    configStatus(
-      'GitHub OAuth app',
-      configured('GITHUB_APP_CLIENT_ID', 'GITHUB_APP_CLIENT_SECRET'),
-      configured('GITHUB_APP_CLIENT_ID', 'GITHUB_APP_CLIENT_SECRET')
-        ? 'configured'
-        : 'GITHUB_APP_CLIENT_ID or GITHUB_APP_CLIENT_SECRET missing',
-      {
-        envKeys: ['GITHUB_APP_CLIENT_ID', 'GITHUB_APP_CLIENT_SECRET'],
-        docs: 'docs/setup/integrations.html#github',
-      },
-    ),
-    configStatus(
-      'Monday OAuth app',
-      configured('MONDAY_CLIENT_ID', 'MONDAY_CLIENT_SECRET'),
-      configured('MONDAY_CLIENT_ID', 'MONDAY_CLIENT_SECRET')
-        ? 'configured'
-        : 'MONDAY_CLIENT_ID or MONDAY_CLIENT_SECRET missing',
-      {
-        envKeys: ['MONDAY_CLIENT_ID', 'MONDAY_CLIENT_SECRET'],
-        docs: 'docs/setup/integrations.html#monday',
-      },
-    ),
-    configStatus(
-      'Slack app credentials',
-      configured('SLACK_CLIENT_ID', 'SLACK_CLIENT_SECRET'),
-      configured('SLACK_CLIENT_ID', 'SLACK_CLIENT_SECRET')
-        ? 'configured'
-        : 'SLACK_CLIENT_ID or SLACK_CLIENT_SECRET missing',
-      {
-        envKeys: ['SLACK_CLIENT_ID', 'SLACK_CLIENT_SECRET'],
-        docs: 'docs/setup/slack.html',
-      },
-    ),
-    configStatus(
-      'Sentry OAuth app',
-      configured('SENTRY_INTEGRATION_CLIENT_ID', 'SENTRY_INTEGRATION_CLIENT_SECRET'),
-      configured('SENTRY_INTEGRATION_CLIENT_ID', 'SENTRY_INTEGRATION_CLIENT_SECRET')
-        ? 'configured'
-        : 'SENTRY_INTEGRATION_CLIENT_ID or SENTRY_INTEGRATION_CLIENT_SECRET missing',
-      {
-        envKeys: ['SENTRY_INTEGRATION_CLIENT_ID', 'SENTRY_INTEGRATION_CLIENT_SECRET'],
-        docs: 'docs/setup/integrations.html#sentry-native',
-      },
-    ),
-  ];
+interface OAuthAuthorizeCanary {
+  name: string;
+  provider: NativeProviderId;
+  envKeys: readonly string[];
+  docs: string;
+}
+
+const oauthAuthorizeCanaries = [
+  {
+    name: 'Google Drive OAuth authorize',
+    provider: 'google_drive',
+    envKeys: ['GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET'],
+    docs: 'docs/setup/integrations.html#google-drive',
+  },
+  {
+    name: 'Linear OAuth authorize',
+    provider: 'linear',
+    envKeys: ['LINEAR_CLIENT_ID', 'LINEAR_CLIENT_SECRET'],
+    docs: 'docs/setup/integrations.html#linear',
+  },
+  {
+    name: 'GitHub OAuth authorize',
+    provider: 'github',
+    envKeys: ['GITHUB_APP_CLIENT_ID', 'GITHUB_APP_CLIENT_SECRET'],
+    docs: 'docs/setup/integrations.html#github',
+  },
+  {
+    name: 'Monday OAuth authorize',
+    provider: 'monday',
+    envKeys: ['MONDAY_CLIENT_ID', 'MONDAY_CLIENT_SECRET'],
+    docs: 'docs/setup/integrations.html#monday',
+  },
+  {
+    name: 'Slack OAuth authorize',
+    provider: 'slack',
+    envKeys: ['SLACK_CLIENT_ID', 'SLACK_CLIENT_SECRET'],
+    docs: 'docs/setup/slack.html',
+  },
+  {
+    name: 'Sentry OAuth authorize',
+    provider: 'sentry',
+    envKeys: ['SENTRY_INTEGRATION_CLIENT_ID', 'SENTRY_INTEGRATION_CLIENT_SECRET'],
+    docs: 'docs/setup/integrations.html#sentry-native',
+  },
+] as const satisfies readonly OAuthAuthorizeCanary[];
+
+async function checkOAuthAuthorizeEndpoint(
+  canary: OAuthAuthorizeCanary,
+): Promise<LiveIntegrationCanaryResult> {
+  if (!configured(...canary.envKeys)) {
+    return {
+      name: canary.name,
+      status: 'skip',
+      detail: configuredStatusDetail(canary.envKeys),
+      envKeys: [...canary.envKeys],
+      docs: canary.docs,
+    };
+  }
+  try {
+    const provider = getProvider(canary.provider);
+    const { authorizeUrl } = await provider.startOAuth({
+      teamId: 'live-canary-team',
+      userId: 'live-canary-user',
+      redirectUri: 'https://example.invalid/api/integrations/callback',
+      state: `live-canary-${canary.provider}`,
+    });
+    const response = await fetch(authorizeUrl, {
+      redirect: 'manual',
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (response.status >= 500) {
+      return {
+        name: canary.name,
+        status: 'warn',
+        detail: `provider returned ${String(response.status)}`,
+        action: 'verify the provider OAuth app and provider availability',
+        docs: canary.docs,
+      };
+    }
+    return {
+      name: canary.name,
+      status: 'ok',
+      detail: `authorize endpoint responded ${String(response.status)}`,
+    };
+  } catch (err) {
+    return {
+      name: canary.name,
+      status: 'warn',
+      detail: safeCanaryDetail(err instanceof Error ? err.message : String(err)),
+      action: 'verify the provider OAuth app and authorize URL configuration',
+      docs: canary.docs,
+    };
+  }
 }
 
 function checkWebhookConfig(): LiveIntegrationCanaryResult[] {
@@ -478,8 +499,8 @@ const results: LiveIntegrationCanaryResult[] = [
     checkSentry(),
     checkPostmark(),
     checkPostmarkInboundCapture(),
+    ...oauthAuthorizeCanaries.map((canary) => checkOAuthAuthorizeEndpoint(canary)),
   ])),
-  ...checkOAuthConfig(),
   ...checkWebhookConfig(),
 ];
 
