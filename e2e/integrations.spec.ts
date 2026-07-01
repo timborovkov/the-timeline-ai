@@ -639,6 +639,6 @@ test('renders native provider OAuth callback denial in the browser', async ({ pa
 
   await expect(page).toHaveURL(/\/app\/team\/integrations\?error=access_denied$/);
   await expect(page.getByRole('heading', { name: 'Team integrations', level: 1 })).toBeVisible();
-  await expect(page.getByText('access_denied', { exact: true })).toBeVisible();
+  await expect(page.getByText('access_denied', { exact: true }).first()).toBeVisible();
   await expect(page.getByText('GitHub', { exact: true }).first()).toBeVisible();
 });
