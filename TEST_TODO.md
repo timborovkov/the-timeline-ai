@@ -221,8 +221,8 @@ Covered action files:
   create/update/delete, visibility payloads, not-found behavior, dependency
   failures, and revalidation behavior.
 - `suggestions.test.ts`: validation, scope failure, accept/reject item,
-  accept-all success and partial failure, no-longer-pending behavior, error
-  mapping, and approval-surface revalidation behavior.
+  accept-all/reject-visible success and partial failure, no-longer-pending
+  behavior, error mapping, and approval-surface revalidation behavior.
 - `onboarding.test.ts`: checklist dismissal/reopen/step-open behavior,
   redirect handling, scope failures, and revalidation behavior.
 
@@ -428,9 +428,9 @@ tests and evals carry the branch coverage and model/tool behavior.
   - Suggestion worker processor seam with deterministic PGlite coverage for
     fallback task/calendar suggestions, model-backed object update suggestions,
     private/specific-user visibility, skip stamping, and idempotent reruns.
-  - Suggestion action tests for accept/reject/accept-all validation, scope
-    failures, no-longer-pending behavior, partial failures, errors, and
-    revalidation paths.
+  - Suggestion action tests for accept/reject/accept-all/reject-visible
+    validation, scope failures, no-longer-pending behavior, partial failures,
+    errors, and revalidation paths.
   - Shared suggestion durability tests for task metadata, object update
     isolation, calendar cancellation, rejection no-op behavior, and duplicate
     acceptance safety.

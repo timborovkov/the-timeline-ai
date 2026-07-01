@@ -6,6 +6,7 @@ import {
   acceptSuggestionItemAction,
   acceptVisibleSuggestionsAction,
   rejectSuggestionItemAction,
+  rejectVisibleSuggestionsAction,
 } from '@/app/actions/suggestions';
 
 /**
@@ -81,6 +82,28 @@ describe('suggestion action validation and scope', () => {
     await expect(
       acceptVisibleSuggestionsAction({
         suggestions: [{ suggestionId: SUGGESTION_ID, itemIds: ['bad'] }],
+      }),
+    ).resolves.toEqual({
+      error: 'Invalid suggestion items',
+    });
+    await expect(
+      rejectVisibleSuggestionsAction({
+        suggestions: [{ suggestionId: SUGGESTION_ID, itemIds: ['bad'] }],
+      }),
+    ).resolves.toEqual({
+      error: 'Invalid suggestion items',
+    });
+    await expect(
+      rejectVisibleSuggestionsAction({
+        suggestions: [
+          {
+            suggestionId: SUGGESTION_ID,
+            itemIds: Array.from(
+              { length: 501 },
+              (_, index) => `00000000-0000-4000-8000-${String(index).padStart(12, '0')}`,
+            ),
+          },
+        ],
       }),
     ).resolves.toEqual({
       error: 'Invalid suggestion items',
@@ -305,6 +328,90 @@ describe('accept-visible suggestions action', () => {
     expect(fakes.fakeSuggestions.acceptSelected).toHaveBeenNthCalledWith(2, {
       suggestionId: secondSuggestionId,
       itemIds: ['66666666-6666-4666-8666-666666666666'],
+    });
+    expectSuggestionSurfacesRevalidated();
+  });
+});
+
+describe('reject-visible suggestions action', () => {
+  it('rejects visible suggestion groups and revalidates every approval-dependent surface', async () => {
+    const secondItemId = '44444444-4444-4444-8444-444444444444';
+
+    await expect(
+      rejectVisibleSuggestionsAction({
+        suggestions: [{ suggestionId: SUGGESTION_ID, itemIds: [ITEM_ID, secondItemId] }],
+      }),
+    ).resolves.toEqual({ ok: true });
+
+    expect(fakes.fakeSuggestions.rejectSuggestionItem).toHaveBeenCalledWith(ITEM_ID);
+    expect(fakes.fakeSuggestions.rejectSuggestionItem).toHaveBeenCalledWith(secondItemId);
+    expect(fakes.fakeSuggestions.acceptSuggestionItem).not.toHaveBeenCalled();
+    expect(fakes.fakeSuggestions.acceptAll).not.toHaveBeenCalled();
+    expect(fakes.fakeSuggestions.acceptSelected).not.toHaveBeenCalled();
+    expectSuggestionSurfacesRevalidated();
+  });
+
+  it('surfaces total reject failures after revalidation', async () => {
+    fakes.fakeSuggestions.rejectSuggestionItem.mockResolvedValueOnce(true).mockResolvedValue(false);
+
+    await expect(
+      rejectVisibleSuggestionsAction({
+        suggestions: [
+          {
+            suggestionId: SUGGESTION_ID,
+            itemIds: [ITEM_ID, '44444444-4444-4444-8444-444444444444'],
+          },
+          {
+            suggestionId: '55555555-5555-4555-8555-555555555555',
+            itemIds: ['66666666-6666-4666-8666-666666666666'],
+          },
+        ],
+      }),
+    ).resolves.toEqual({
+      error: '2 item(s) failed to reject',
+    });
+    expectSuggestionSurfacesRevalidated();
+  });
+
+  it('rejects visible items in order before revalidating', async () => {
+    const secondItemId = '44444444-4444-4444-8444-444444444444';
+    let resolveFirst!: (result: boolean) => void;
+    const firstRejection = new Promise<boolean>((resolve) => {
+      resolveFirst = resolve;
+    });
+    fakes.fakeSuggestions.rejectSuggestionItem
+      .mockReturnValueOnce(firstRejection)
+      .mockResolvedValueOnce(true);
+
+    const action = rejectVisibleSuggestionsAction({
+      suggestions: [{ suggestionId: SUGGESTION_ID, itemIds: [ITEM_ID, secondItemId] }],
+    });
+
+    await vi.waitFor(() => {
+      expect(fakes.fakeSuggestions.rejectSuggestionItem).toHaveBeenCalledTimes(1);
+    });
+    expect(fakes.fakeRevalidatePath).not.toHaveBeenCalled();
+
+    resolveFirst(true);
+    await expect(action).resolves.toEqual({ ok: true });
+
+    expect(fakes.fakeSuggestions.rejectSuggestionItem).toHaveBeenNthCalledWith(2, secondItemId);
+    expectSuggestionSurfacesRevalidated();
+  });
+
+  it('maps reject-visible failures and refreshes stale approval surfaces', async () => {
+    fakes.fakeSuggestions.rejectSuggestionItem.mockRejectedValue(new Error('reject failed'));
+
+    await expect(
+      rejectVisibleSuggestionsAction({
+        suggestions: [{ suggestionId: SUGGESTION_ID, itemIds: [ITEM_ID] }],
+      }),
+    ).resolves.toEqual({
+      error: 'reject failed',
+    });
+    expect(fakes.fakeReportCaughtError).toHaveBeenCalledWith(expect.any(Error), {
+      surface: 'server_action',
+      operation: 'reject_visible_suggestions',
     });
     expectSuggestionSurfacesRevalidated();
   });

@@ -12,6 +12,7 @@ const fakes = vi.hoisted(() => ({
   acceptSuggestionItemAction: vi.fn(),
   acceptVisibleSuggestionsAction: vi.fn(),
   rejectSuggestionItemAction: vi.fn(),
+  rejectVisibleSuggestionsAction: vi.fn(),
 }));
 
 vi.mock('next/navigation', () => ({ useRouter: () => fakes }));
@@ -20,6 +21,7 @@ vi.mock('@/app/actions/suggestions', () => ({
   acceptSuggestionItemAction: fakes.acceptSuggestionItemAction,
   acceptVisibleSuggestionsAction: fakes.acceptVisibleSuggestionsAction,
   rejectSuggestionItemAction: fakes.rejectSuggestionItemAction,
+  rejectVisibleSuggestionsAction: fakes.rejectVisibleSuggestionsAction,
 }));
 
 const { ApprovalsClient } = await import('./approvals-client.js');
@@ -32,6 +34,7 @@ beforeEach(() => {
   fakes.acceptSuggestionItemAction.mockResolvedValue({ ok: true });
   fakes.acceptVisibleSuggestionsAction.mockResolvedValue({ ok: true });
   fakes.rejectSuggestionItemAction.mockResolvedValue({ ok: true });
+  fakes.rejectVisibleSuggestionsAction.mockResolvedValue({ ok: true });
 });
 
 afterEach(() => {
@@ -244,7 +247,7 @@ describe('ApprovalsClient', () => {
     expect(fullPage.getAttribute('href')).toBe(`/app/timeline?event=${EVENT_ID}#ev-${EVENT_ID}`);
   });
 
-  it('can hide bundle-level accept all for filtered approval surfaces', () => {
+  it('can hide bulk accept while keeping bulk reject for filtered approval surfaces', () => {
     const html = renderToStaticMarkup(
       createElement(ApprovalsClient, {
         allowBulkAccept: false,
@@ -289,8 +292,57 @@ describe('ApprovalsClient', () => {
     );
 
     expect(html).not.toContain('Accept all');
+    expect(html).toContain('Reject all visible');
     expect(html).toContain('Send proposal');
     expect(html).toContain('Book review');
+  });
+
+  it('can hide page-level reject all when bulk reject is disabled', () => {
+    const html = renderToStaticMarkup(
+      createElement(ApprovalsClient, {
+        allowBulkReject: false,
+        suggestions: [
+          {
+            id: 'bundle-1',
+            source: 'background',
+            status: 'pending',
+            title: 'Follow up with Acme',
+            summary: null,
+            reason: null,
+            confidence: 'high',
+            createdAt: '2026-06-01T10:00:00.000Z',
+            evidence: [],
+            items: [
+              {
+                id: 'item-1',
+                status: 'pending',
+                operation: 'create',
+                targetKind: 'task',
+                targetId: null,
+                title: 'Send proposal',
+                description: null,
+                proposedPayload: { canonicalName: 'Send proposal' },
+                failureReason: null,
+              },
+              {
+                id: 'item-2',
+                status: 'pending',
+                operation: 'create',
+                targetKind: 'task',
+                targetId: null,
+                title: 'Book review',
+                description: null,
+                proposedPayload: { canonicalName: 'Book review' },
+                failureReason: null,
+              },
+            ],
+          },
+        ],
+      }),
+    );
+
+    expect(html).not.toContain('Reject all visible');
+    expect(html).toContain('Accept all');
   });
 
   it('renders a page-level accept all for multiple visible actionable bundles', () => {
@@ -594,6 +646,91 @@ describe('ApprovalsClient', () => {
 
     expect(html).not.toContain('Accept all visible');
     expect(html).toContain('Review merge');
+  });
+
+  it('renders page-level reject all for merge-only visible bundles', async () => {
+    const user = userEvent.setup();
+
+    render(
+      createElement(ApprovalsClient, {
+        suggestions: [
+          {
+            id: 'bundle-1',
+            source: 'background',
+            status: 'pending',
+            title: 'Merge duplicate Acme objects',
+            summary: null,
+            reason: null,
+            confidence: 'high',
+            createdAt: '2026-06-01T10:00:00.000Z',
+            evidence: [],
+            items: [
+              {
+                id: '11111111-1111-4111-8111-111111111111',
+                status: 'pending',
+                operation: 'merge',
+                targetKind: 'object_merge',
+                targetId: null,
+                title: 'Merge Acme duplicates',
+                description: null,
+                proposedPayload: {
+                  objectIds: [
+                    '33333333-3333-4333-8333-333333333333',
+                    '44444444-4444-4444-8444-444444444444',
+                  ],
+                },
+                failureReason: null,
+              },
+            ],
+          },
+          {
+            id: 'bundle-2',
+            source: 'background',
+            status: 'pending',
+            title: 'Merge duplicate Globex objects',
+            summary: null,
+            reason: null,
+            confidence: 'medium',
+            createdAt: '2026-06-01T10:05:00.000Z',
+            evidence: [],
+            items: [
+              {
+                id: '22222222-2222-4222-8222-222222222222',
+                status: 'failed',
+                operation: 'merge',
+                targetKind: 'object_merge',
+                targetId: null,
+                title: 'Merge Globex duplicates',
+                description: null,
+                proposedPayload: {
+                  objectIds: [
+                    '55555555-5555-4555-8555-555555555555',
+                    '66666666-6666-4666-8666-666666666666',
+                  ],
+                },
+                failureReason: 'Merge preview failed',
+              },
+            ],
+          },
+        ],
+      }),
+    );
+
+    await user.click(screen.getByRole('button', { name: /Reject all visible/ }));
+
+    expect(fakes.rejectVisibleSuggestionsAction).toHaveBeenCalledWith({
+      suggestions: [
+        {
+          suggestionId: 'bundle-1',
+          itemIds: ['11111111-1111-4111-8111-111111111111'],
+        },
+        {
+          suggestionId: 'bundle-2',
+          itemIds: ['22222222-2222-4222-8222-222222222222'],
+        },
+      ],
+    });
+    expect(fakes.acceptVisibleSuggestionsAction).not.toHaveBeenCalled();
   });
 
   it('renders relationship bundle local refs as sibling object names', () => {
