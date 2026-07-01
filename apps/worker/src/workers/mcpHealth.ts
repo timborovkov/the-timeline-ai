@@ -9,6 +9,7 @@ const log = childLogger('worker:mcp-health');
 
 interface HealthDeps {
   db: Db;
+  manager?: Pick<ReturnType<typeof mcp.getMcpManager>, 'discoverTools' | 'invalidate'>;
 }
 
 interface HealthResult {
@@ -19,32 +20,58 @@ interface HealthResult {
 
 const PING_TIMEOUT_MS = 10_000;
 
-async function pingServer(db: Db, serverId: string): Promise<{ ok: boolean; error?: string }> {
+export async function pingMcpServer(
+  db: Db,
+  serverId: string,
+  manager: Pick<
+    ReturnType<typeof mcp.getMcpManager>,
+    'discoverTools' | 'invalidate'
+  > = mcp.getMcpManager(),
+): Promise<{ ok: boolean; error?: string }> {
   // Reuse the existing manager's discoverTools handshake — it already does
-  // the initialize + tools/list round trip and updates lastConnectedAt /
-  // lastError as a side effect. We invalidate by team after fetching the
-  // row so the next chat turn picks up fresh tool state instead of
+  // the initialize + tools/list round trip. We invalidate by team after
+  // fetching the row so the next chat turn picks up fresh tool state instead of
   // serving a stale 5-min-cached list. (The manager keys its cache on
   // teamId or teamId:userId — never on serverId.)
-  const mgr = mcp.getMcpManager();
   const rows = await db.select().from(mcpServers).where(eq(mcpServers.id, serverId)).limit(1);
   const row = rows[0];
   if (!row) return { ok: false, error: 'not_found' };
-  mgr.invalidate(row.teamId);
-  if (row.userId) mgr.invalidate(`${row.teamId}:${row.userId}`);
+  manager.invalidate(row.teamId);
+  if (row.userId) manager.invalidate(`${row.teamId}:${row.userId}`);
+  const urlError = mcp.validateMcpUrl(row.url);
+  if (urlError) {
+    await db
+      .update(mcpServers)
+      .set({ lastError: urlError, updatedAt: new Date() })
+      .where(eq(mcpServers.id, serverId));
+    return { ok: false, error: urlError };
+  }
   let timer: NodeJS.Timeout | undefined;
   try {
     await Promise.race([
-      mgr.discoverTools(db, row),
+      manager.discoverTools(db, row),
       new Promise<never>((_, reject) => {
         timer = setTimeout(() => {
           reject(new Error('mcp_health_timeout'));
         }, PING_TIMEOUT_MS);
       }),
     ]);
+    await db
+      .update(mcpServers)
+      .set({
+        lastConnectedAt: new Date(),
+        lastError: null,
+        updatedAt: new Date(),
+      })
+      .where(eq(mcpServers.id, serverId));
     return { ok: true };
   } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    const error = err instanceof Error ? err.message : String(err);
+    await db
+      .update(mcpServers)
+      .set({ lastError: error, updatedAt: new Date() })
+      .where(eq(mcpServers.id, serverId));
+    return { ok: false, error };
   } finally {
     // Always clear the timer so a fast ping doesn't leave it pending for
     // the full 10s — adds up to thousands of dangling Timeout handles
@@ -53,15 +80,16 @@ async function pingServer(db: Db, serverId: string): Promise<{ ok: boolean; erro
   }
 }
 
-async function processMcpHealthTick(deps: HealthDeps): Promise<HealthResult> {
+export async function processMcpHealthTick(deps: HealthDeps): Promise<HealthResult> {
   const rows = await deps.db
     .select({ id: mcpServers.id })
     .from(mcpServers)
     .where(eq(mcpServers.enabled, true));
   let healthy = 0;
   let failed = 0;
+  const manager = deps.manager ?? mcp.getMcpManager();
   for (const r of rows) {
-    const res = await pingServer(deps.db, r.id);
+    const res = await pingMcpServer(deps.db, r.id, manager);
     if (res.ok) healthy++;
     else failed++;
   }
