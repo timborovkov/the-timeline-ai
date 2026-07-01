@@ -1,8 +1,8 @@
 import { PGlite } from '@electric-sql/pglite';
 import {
   auditLog,
-  artifactClusterMembers,
   artifactClusters,
+  artifactEvidenceAssociations,
   calendarEvents,
   connectionAttention,
   documents,
@@ -357,13 +357,13 @@ describe('withTeam namespaced port', () => {
       artifactType: 'link',
       canonicalName: 'example.com/specs/phase-14',
     });
-    const members = await db.select().from(artifactClusterMembers);
-    expect(members).toEqual([
+    const associations = await db.select().from(artifactEvidenceAssociations);
+    expect(associations).toEqual([
       expect.objectContaining({
         rawEventId: event.id,
         role: 'related_context',
         strength: 'semantic',
-        authoritative: false,
+        visibilityFloor: 'team',
       }),
     ]);
   });
@@ -380,7 +380,7 @@ describe('withTeam namespaced port', () => {
     if (!first) throw new Error('expected initial email event');
 
     await db.delete(artifactClusters);
-    await expect(db.select().from(artifactClusterMembers)).resolves.toHaveLength(0);
+    await expect(db.select().from(artifactEvidenceAssociations)).resolves.toHaveLength(0);
 
     const retry = await scope.timeline.createEmailEvent({
       authorUserId: USER_A,
@@ -397,8 +397,8 @@ describe('withTeam namespaced port', () => {
       artifactType: 'link',
       canonicalName: 'docs.example.com/runbook',
     });
-    const members = await db.select().from(artifactClusterMembers);
-    expect(members).toEqual([expect.objectContaining({ rawEventId: first.id })]);
+    const associations = await db.select().from(artifactEvidenceAssociations);
+    expect(associations).toEqual([expect.objectContaining({ rawEventId: first.id })]);
   });
 
   it('materializes all visibility defaults from one settings fetch', async () => {

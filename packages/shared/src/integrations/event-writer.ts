@@ -142,6 +142,7 @@ export async function writeIntegrationEvents(deps: {
       visibilityUserIds: resolvedVisibility === 'specific_users' ? requestedUserIds : null,
       sourceMetadata: sourceMetadataWithConversationArtifacts(
         {
+          ...(evt.extra ?? {}),
           provider: evt.provider,
           integration_id: deps.integration.id,
           external_object_id: evt.externalObjectId,
@@ -151,7 +152,6 @@ export async function writeIntegrationEvents(deps: {
           dedup_key: evt.dedupKey,
           sync_at: new Date().toISOString(),
           source_kind: 'integration_event',
-          ...(evt.extra ?? {}),
           ...sourcePayloadMetadata,
         },
         evt.contentText,

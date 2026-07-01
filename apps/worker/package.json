@@ -28,7 +28,7 @@
     "integration-resync": "NODE_OPTIONS=--conditions=development tsx src/scripts/integration-resync.ts",
     "timeline-moment-presentations": "NODE_OPTIONS=--conditions=development tsx src/scripts/timeline-moment-presentations.ts",
     "lint": "eslint src",
-    "test": "NODE_OPTIONS=--conditions=development vitest run",
+    "test": "NODE_OPTIONS=--conditions=development node scripts/run-tests.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {

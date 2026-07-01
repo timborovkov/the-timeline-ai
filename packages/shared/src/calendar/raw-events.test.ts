@@ -1,8 +1,8 @@
 import { PGlite } from '@electric-sql/pglite';
-import { artifactClusterMembers, artifactClusters, rawEvents } from '@timeline/db';
+import { artifactClusters, artifactEvidenceAssociations, rawEvents } from '@timeline/db';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { insertCalendarRawEvents, updateCalendarRawEvents } from '#src/calendar/raw-events.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
@@ -28,6 +28,10 @@ describe('calendar raw events', () => {
     await applyDbMigrations(pg);
     await seed(pg);
     db = drizzle(pg);
+  });
+
+  afterEach(async () => {
+    await pg.close();
   });
 
   it('refreshes extracted metadata and link evidence when raw calendar text changes', async () => {
@@ -72,11 +76,11 @@ describe('calendar raw events', () => {
     const linkMembers = await db
       .select({
         canonicalName: artifactClusters.canonicalName,
-        rawEventId: artifactClusterMembers.rawEventId,
+        rawEventId: artifactEvidenceAssociations.rawEventId,
       })
-      .from(artifactClusterMembers)
-      .innerJoin(artifactClusters, eq(artifactClusters.id, artifactClusterMembers.clusterId))
-      .where(eq(artifactClusterMembers.rawEventId, startAtRawEventId));
+      .from(artifactEvidenceAssociations)
+      .innerJoin(artifactClusters, eq(artifactClusters.id, artifactEvidenceAssociations.clusterId))
+      .where(eq(artifactEvidenceAssociations.rawEventId, startAtRawEventId));
     expect(linkMembers).toEqual([
       expect.objectContaining({
         canonicalName: 'new.example/followup',

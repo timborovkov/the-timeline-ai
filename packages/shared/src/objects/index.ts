@@ -2698,7 +2698,7 @@ async function getConnectedWork(
       ...currentNoteRawEventRows.map((row) => row.id),
     ]),
   );
-  const [linkRows, capturedFileRows] =
+  const [linkMemberRows, linkAssociationRows, capturedFileRows] =
     relatedRawEventIds.length > 0
       ? await Promise.all([
           db
@@ -2729,6 +2729,33 @@ async function getConnectedWork(
             .limit(20),
           db
             .select({
+              id: artifactClusters.id,
+              canonicalName: artifactClusters.canonicalName,
+              metadata: artifactEvidenceAssociations.metadata,
+              provider: sql<string | null>`${artifactEvidenceAssociations.metadata} ->> 'provider'`,
+              updatedAt: artifactClusters.updatedAt,
+            })
+            .from(artifactEvidenceAssociations)
+            .innerJoin(
+              artifactClusters,
+              and(
+                eq(artifactClusters.id, artifactEvidenceAssociations.clusterId),
+                eq(artifactClusters.teamId, scope.teamId),
+              ),
+            )
+            .where(
+              and(
+                eq(artifactEvidenceAssociations.teamId, scope.teamId),
+                inArray(artifactEvidenceAssociations.rawEventId, relatedRawEventIds),
+                eq(artifactClusters.artifactType, 'link'),
+                isNull(artifactClusters.archivedAt),
+                artifactAssociationVisibleToScope(scope),
+              ),
+            )
+            .orderBy(desc(artifactEvidenceAssociations.createdAt), desc(artifactClusters.id))
+            .limit(20),
+          db
+            .select({
               id: documents.id,
               name: documents.name,
               contentType: documentVersions.contentType,
@@ -2749,10 +2776,10 @@ async function getConnectedWork(
             .orderBy(desc(documents.updatedAt), desc(documents.id))
             .limit(12),
         ])
-      : [[], []];
+      : [[], [], []];
   const filteredLinkRows = Array.from(
     new Map(
-      linkRows.map((row) => {
+      [...linkMemberRows, ...linkAssociationRows].map((row) => {
         const metadata = recordFromUnknown(row.metadata);
         return [
           row.id,

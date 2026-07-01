@@ -1,7 +1,7 @@
 import { PGlite } from '@electric-sql/pglite';
 import {
-  artifactClusterMembers,
   artifactClusters,
+  artifactEvidenceAssociations,
   calendarEventEntities,
   calendarEvents,
   entities,
@@ -180,11 +180,11 @@ describe('calendar scope', () => {
     const linkMembers = await db
       .select({
         canonicalName: artifactClusters.canonicalName,
-        rawEventId: artifactClusterMembers.rawEventId,
+        rawEventId: artifactEvidenceAssociations.rawEventId,
       })
-      .from(artifactClusterMembers)
-      .innerJoin(artifactClusters, eq(artifactClusters.id, artifactClusterMembers.clusterId))
-      .where(eq(artifactClusterMembers.rawEventId, startRawEventId));
+      .from(artifactEvidenceAssociations)
+      .innerJoin(artifactClusters, eq(artifactClusters.id, artifactEvidenceAssociations.clusterId))
+      .where(eq(artifactEvidenceAssociations.rawEventId, startRawEventId));
     expect(linkMembers).toEqual([
       expect.objectContaining({
         canonicalName: 'example.com/followup',

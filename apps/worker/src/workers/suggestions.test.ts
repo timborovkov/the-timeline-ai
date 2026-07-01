@@ -18,7 +18,7 @@ import {
 import { withTeam } from '@timeline/shared/team-scope';
 import { eq, sql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { applyDbMigrations } from '#src/test/pglite.js';
 import { fallbackBundles, processSuggestionJobForTests } from '#src/workers/suggestions.js';
@@ -280,6 +280,10 @@ describe('processSuggestionJobForTests', () => {
     await applyDbMigrations(pg);
     await seed(pg);
     db = drizzle(pg);
+  });
+
+  afterEach(async () => {
+    await pg.close();
   });
 
   it('skips queued ingest webhook proposals when the source setting is disabled before processing', async () => {

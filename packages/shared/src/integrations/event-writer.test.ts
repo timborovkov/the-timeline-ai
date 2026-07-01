@@ -3,7 +3,6 @@ import { Buffer } from 'node:buffer';
 import { PGlite } from '@electric-sql/pglite';
 import {
   artifactClusterAnchors,
-  artifactClusterMembers,
   artifactClusters,
   artifactEvidenceAssociations,
   entities,
@@ -1263,7 +1262,7 @@ describe('writeIntegrationEvents visibility', () => {
     expect(insertedIds).toHaveLength(1);
 
     await db.delete(artifactClusters);
-    expect(await db.select().from(artifactClusterMembers)).toHaveLength(0);
+    expect(await db.select().from(artifactEvidenceAssociations)).toHaveLength(0);
 
     const replayedIds = await writeIntegrationEvents({
       db: db as never,
@@ -1278,13 +1277,11 @@ describe('writeIntegrationEvents visibility', () => {
       artifactType: 'link',
       canonicalName: 'github.com/acme/app/pull/42',
     });
-    const members = await db.select().from(artifactClusterMembers);
-    expect(members).toEqual([
+    const associations = await db.select().from(artifactEvidenceAssociations);
+    expect(associations).toEqual([
       expect.objectContaining({
         rawEventId: insertedIds[0],
-        provider: 'github',
-        externalObjectId: 'acme/app#42',
-        authoritative: false,
+        associationSource: 'structured_anchor',
       }),
     ]);
   });

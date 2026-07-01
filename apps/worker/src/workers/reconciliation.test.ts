@@ -9,7 +9,7 @@ import {
 } from '@timeline/db';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { applyDbMigrations } from '#src/test/pglite.js';
 import {
@@ -32,6 +32,10 @@ beforeEach(async () => {
     INSERT INTO users (id, email) VALUES ('${USER_ID}', 'owner@example.com');
     INSERT INTO team_members (team_id, user_id, role) VALUES ('${TEAM_ID}', '${USER_ID}', 'owner');
   `);
+});
+
+afterEach(async () => {
+  await pg.close();
 });
 
 async function seedEmailRawEvent(): Promise<string> {

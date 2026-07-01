@@ -1,4 +1,9 @@
-import { artifactClusterMembers, artifactClusters, type Db } from '@timeline/db';
+import {
+  artifactClusterMembers,
+  artifactClusters,
+  artifactEvidenceAssociations,
+  type Db,
+} from '@timeline/db';
 import { and, eq, inArray } from 'drizzle-orm';
 
 import { reconcileArtifactEvidence, type ArtifactAnchorInput } from '#src/artifacts/index.js';
@@ -293,23 +298,29 @@ export async function refreshLinkArtifactsForRawEvent(
   db: DbOrTx,
   input: Parameters<typeof reconcileLinkArtifactsForRawEvent>[1],
 ): Promise<void> {
-  await db.delete(artifactClusterMembers).where(
-    and(
-      eq(artifactClusterMembers.teamId, input.teamId),
-      eq(artifactClusterMembers.rawEventId, input.rawEventId),
-      inArray(
-        artifactClusterMembers.clusterId,
-        db
-          .select({ id: artifactClusters.id })
-          .from(artifactClusters)
-          .where(
-            and(
-              eq(artifactClusters.teamId, input.teamId),
-              eq(artifactClusters.artifactType, 'link'),
-            ),
-          ),
+  const linkClusterIds = db
+    .select({ id: artifactClusters.id })
+    .from(artifactClusters)
+    .where(
+      and(eq(artifactClusters.teamId, input.teamId), eq(artifactClusters.artifactType, 'link')),
+    );
+  await db
+    .delete(artifactEvidenceAssociations)
+    .where(
+      and(
+        eq(artifactEvidenceAssociations.teamId, input.teamId),
+        eq(artifactEvidenceAssociations.rawEventId, input.rawEventId),
+        inArray(artifactEvidenceAssociations.clusterId, linkClusterIds),
       ),
-    ),
-  );
+    );
+  await db
+    .delete(artifactClusterMembers)
+    .where(
+      and(
+        eq(artifactClusterMembers.teamId, input.teamId),
+        eq(artifactClusterMembers.rawEventId, input.rawEventId),
+        inArray(artifactClusterMembers.clusterId, linkClusterIds),
+      ),
+    );
   await reconcileLinkArtifactsForRawEvent(db, input);
 }

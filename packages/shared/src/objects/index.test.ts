@@ -1155,13 +1155,13 @@ describe('object scope — notes and suggestions', () => {
     await expect(
       db
         .select()
-        .from(artifactClusterMembers)
-        .where(eq(artifactClusterMembers.clusterId, linkCluster.id)),
+        .from(artifactEvidenceAssociations)
+        .where(eq(artifactEvidenceAssociations.clusterId, linkCluster.id)),
     ).resolves.toEqual([
       expect.objectContaining({
         role: 'related_context',
         strength: 'semantic',
-        authoritative: false,
+        associationSource: 'model_candidate',
       }),
     ]);
 

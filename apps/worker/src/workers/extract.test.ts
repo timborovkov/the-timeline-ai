@@ -1,7 +1,7 @@
 import { PGlite } from '@electric-sql/pglite';
 import {
-  artifactClusterMembers,
   artifactClusters,
+  artifactEvidenceAssociations,
   entities,
   facts,
   factEntities,
@@ -179,12 +179,12 @@ describe('processExtractJobForTests', () => {
       artifactType: 'link',
       canonicalName: 'example.com/future',
     });
-    await expect(db.select().from(artifactClusterMembers)).resolves.toEqual([
+    await expect(db.select().from(artifactEvidenceAssociations)).resolves.toEqual([
       expect.objectContaining({
         rawEventId,
         role: 'related_context',
         strength: 'semantic',
-        authoritative: false,
+        visibilityFloor: 'team',
       }),
     ]);
   });

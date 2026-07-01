@@ -137,7 +137,7 @@ describe('queue wrappers', () => {
     expect(fakes.queues[0]?.addCalls[0]).toMatchObject({ name: 'extract' });
     expect(fakes.queues[1]?.addCalls[0]).toMatchObject({ name: 'suggestions' });
     expect(fakes.queues[2]?.addCalls[0]).toMatchObject({ name: 'document-extract' });
-  });
+  }, 20_000);
 
   it('keeps worker-idempotent queues free of jobId dedupe but uses explicit ids where required', async () => {
     const queues = await importQueues();

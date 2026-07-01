@@ -1,7 +1,7 @@
 import { PGlite } from '@electric-sql/pglite';
 import {
-  artifactClusterMembers,
   artifactClusters,
+  artifactEvidenceAssociations,
   ingestWebhookCredentials,
   ingestWebhooks,
   rawEvents,
@@ -267,7 +267,7 @@ describe('/api/webhooks/ingest', () => {
     ]);
 
     await db.delete(artifactClusters);
-    await expect(db.select().from(artifactClusterMembers)).resolves.toHaveLength(0);
+    await expect(db.select().from(artifactEvidenceAssociations)).resolves.toHaveLength(0);
 
     const duplicate = await POST(request(body, { 'content-type': 'application/json' }));
     expect(duplicate.status).toBe(200);
@@ -279,7 +279,7 @@ describe('/api/webhooks/ingest', () => {
         canonicalName: 'example.com/deals/42',
       }),
     ]);
-    await expect(db.select().from(artifactClusterMembers)).resolves.toEqual([
+    await expect(db.select().from(artifactEvidenceAssociations)).resolves.toEqual([
       expect.objectContaining({ rawEventId: firstPayload.rawEventId }),
     ]);
   });

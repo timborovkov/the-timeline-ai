@@ -459,10 +459,10 @@ describe('handleUpdate telegram edit visibility', () => {
       anchor_type: string;
       anchor_value: string;
     }>(`
-      SELECT ac.artifact_type, ac.canonical_name, acm.raw_event_id, acm.role, acm.strength,
+      SELECT ac.artifact_type, ac.canonical_name, aea.raw_event_id, aea.role, aea.strength,
              aca.anchor_type, aca.anchor_value
       FROM artifact_clusters ac
-      JOIN artifact_cluster_members acm ON acm.cluster_id = ac.id
+      JOIN artifact_evidence_associations aea ON aea.cluster_id = ac.id
       JOIN artifact_cluster_anchors aca ON aca.cluster_id = ac.id
       WHERE ac.team_id = '${TEAM_ID}'
       ORDER BY aca.anchor_type
@@ -540,6 +540,7 @@ describe('handleUpdate telegram edit visibility', () => {
 
     await handleUpdate({ db: db as never, tg: fakeTg }, payload);
     await pg.exec(`
+      DELETE FROM artifact_evidence_associations;
       DELETE FROM artifact_cluster_members;
       DELETE FROM artifact_cluster_anchors;
       DELETE FROM artifact_clusters;
@@ -550,7 +551,7 @@ describe('handleUpdate telegram edit visibility', () => {
     expect(all).toHaveLength(1);
     const artifacts = await pg.query<{ count: string }>(`
       SELECT COUNT(*)::text AS count
-      FROM artifact_cluster_members
+      FROM artifact_evidence_associations
       WHERE raw_event_id = (SELECT id FROM raw_events WHERE source = 'telegram')
     `);
     expect(artifacts.rows[0]?.count).toBe('1');

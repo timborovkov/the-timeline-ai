@@ -12,7 +12,7 @@ import {
 import { TimelineAiError } from '@timeline/shared/llm';
 import { eq, inArray } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { applyDbMigrations } from '#src/test/pglite.js';
 import { processMeetingFinalizeJob } from '#src/workers/meetingFinalize.js';
@@ -117,6 +117,10 @@ beforeEach(async () => {
   await applyDbMigrations(pg);
   await seed(pg);
   db = drizzle(pg);
+});
+
+afterEach(async () => {
+  await pg.close();
 });
 
 describe('processMeetingFinalizeJob', () => {
@@ -244,8 +248,9 @@ describe('processMeetingFinalizeJob', () => {
           ),
         ),
       );
-    expect(evidenceRows).toHaveLength(3);
+    expect(evidenceRows).toHaveLength(4);
     expect(evidenceRows.map((row) => row.source).sort()).toEqual([
+      'calendar',
       'calendar',
       'calendar',
       'meeting',

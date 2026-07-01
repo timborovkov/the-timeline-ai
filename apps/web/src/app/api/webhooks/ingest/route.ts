@@ -137,9 +137,11 @@ export async function handlePost(req: Request, pathToken?: string): Promise<Resp
   if (!event) {
     const duplicate = await findDedupedEvent(resolved.teamId, dedupKey);
     if (duplicate) {
-      await normalizeRawEventEvidence(duplicate);
-      await reconcileIngestWebhookLinks(duplicate, contentText, receivedAt);
-      await enqueueProcessing(duplicate, resolved.proposalGenerationEnabled);
+      await Promise.all([
+        normalizeRawEventEvidence(duplicate),
+        reconcileIngestWebhookLinks(duplicate, contentText, receivedAt),
+        enqueueProcessing(duplicate, resolved.proposalGenerationEnabled),
+      ]);
     }
     return Response.json(
       { ok: true, status: 'duplicate', rawEventId: duplicate?.id ?? null },
@@ -147,9 +149,11 @@ export async function handlePost(req: Request, pathToken?: string): Promise<Resp
     );
   }
 
-  await normalizeRawEventEvidence(event);
-  await reconcileIngestWebhookLinks(event, contentText, receivedAt);
-  await enqueueProcessing(event, resolved.proposalGenerationEnabled);
+  await Promise.all([
+    normalizeRawEventEvidence(event),
+    reconcileIngestWebhookLinks(event, contentText, receivedAt),
+    enqueueProcessing(event, resolved.proposalGenerationEnabled),
+  ]);
   return Response.json({ ok: true, status: 'accepted', rawEventId: event.id }, { status: 202 });
 }
 

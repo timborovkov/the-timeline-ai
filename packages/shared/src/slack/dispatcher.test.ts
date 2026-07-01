@@ -538,10 +538,12 @@ describe('Slack dispatcher routing', () => {
       anchor_type: string;
       anchor_value: string;
     }>(`
-      SELECT ac.artifact_type, ac.canonical_name, acm.raw_event_id, acm.provider,
-             acm.external_object_id, acm.strength, aca.anchor_type, aca.anchor_value
+      SELECT ac.artifact_type, ac.canonical_name, aea.raw_event_id,
+             aea.metadata ->> 'provider' AS provider,
+             aea.metadata ->> 'external_object_id' AS external_object_id,
+             aea.strength, aca.anchor_type, aca.anchor_value
       FROM artifact_clusters ac
-      JOIN artifact_cluster_members acm ON acm.cluster_id = ac.id
+      JOIN artifact_evidence_associations aea ON aea.cluster_id = ac.id
       JOIN artifact_cluster_anchors aca ON aca.cluster_id = ac.id
       WHERE ac.team_id = '${TEAM_A}'
       ORDER BY aca.anchor_type
@@ -593,6 +595,7 @@ describe('Slack dispatcher routing', () => {
 
     await handleSlackEnvelope({ db: db as never }, envelope);
     await pg.exec(`
+      DELETE FROM artifact_evidence_associations;
       DELETE FROM artifact_cluster_members;
       DELETE FROM artifact_cluster_anchors;
       DELETE FROM artifact_clusters;
@@ -603,7 +606,7 @@ describe('Slack dispatcher routing', () => {
     expect(rows).toHaveLength(1);
     const artifacts = await pg.query<{ count: string }>(`
       SELECT COUNT(*)::text AS count
-      FROM artifact_cluster_members
+      FROM artifact_evidence_associations
       WHERE raw_event_id = (SELECT id FROM raw_events WHERE source = 'slack')
     `);
     expect(artifacts.rows[0]?.count).toBe('1');
