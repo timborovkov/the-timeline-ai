@@ -8,6 +8,7 @@ import { runSentryServerAction } from '@/lib/sentry-action';
 import { reportCaughtError } from '@/lib/sentry-report';
 
 const EXPECTED_SUGGESTION_APPLY_FAILURE_CODE = 'TIMELINE_EXPECTED_SUGGESTION_APPLY_FAILURE';
+const MAX_VISIBLE_REJECT_ITEMS = 500;
 
 function revalidateSuggestionSurfaces() {
   revalidatePath('/app');
@@ -73,6 +74,55 @@ export async function rejectSuggestionItemAction(input: unknown): Promise<Action
     } catch (err) {
       reportCaughtError(err, { surface: 'server_action', operation: 'reject_suggestion_item' });
       return { error: err instanceof Error ? err.message : 'Failed to reject suggestion' };
+    }
+  });
+}
+
+export async function rejectVisibleSuggestionsAction(input: unknown): Promise<ActionState> {
+  return runSentryServerAction('reject_visible_suggestions', async () => {
+    const parsed = z
+      .object({
+        suggestions: z
+          .array(
+            z.object({
+              suggestionId: uuidSchema,
+              itemIds: z.array(uuidSchema).min(1).max(MAX_VISIBLE_REJECT_ITEMS),
+            }),
+          )
+          .min(1)
+          .max(200),
+      })
+      .refine(
+        (data) =>
+          data.suggestions.reduce((sum, suggestion) => sum + suggestion.itemIds.length, 0) <=
+          MAX_VISIBLE_REJECT_ITEMS,
+      )
+      .safeParse(input);
+    if (!parsed.success) return { error: 'Invalid suggestion items' };
+    const r = await resolveScope();
+    if (!r.ok) return { error: r.error };
+    try {
+      const itemIds = [
+        ...new Set(parsed.data.suggestions.flatMap((suggestion) => suggestion.itemIds)),
+      ];
+      const results: boolean[] = [];
+      await itemIds.reduce<Promise<void>>(
+        (previousResults, itemId) =>
+          previousResults.then((settledResults) =>
+            r.scope.suggestions.rejectSuggestionItem(itemId).then((result) => {
+              results.push(result);
+              return settledResults;
+            }),
+          ),
+        Promise.resolve(),
+      );
+      const failed = results.filter((ok) => !ok).length;
+      revalidateSuggestionSurfaces();
+      return failed > 0 ? { error: `${failed} item(s) failed to reject` } : { ok: true };
+    } catch (err) {
+      reportCaughtError(err, { surface: 'server_action', operation: 'reject_visible_suggestions' });
+      revalidateSuggestionSurfaces();
+      return { error: err instanceof Error ? err.message : 'Failed to reject suggestions' };
     }
   });
 }
