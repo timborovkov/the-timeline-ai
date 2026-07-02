@@ -160,6 +160,43 @@ describe('mondayProvider', () => {
     expect(result.displayName).toBe('Monday.com — account-1');
   });
 
+  it('does not ignore non-workspace monday.com missing-scope errors during OAuth', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>((input, init) => {
+      if (requestUrl(input) === 'https://auth.monday.com/oauth2/token') {
+        return Promise.resolve(
+          jsonResponse({
+            access_token: 'token',
+            account_id: 'account-1',
+          }),
+        );
+      }
+
+      const body = requestPayload(init);
+      if (body.query === 'query { account { id slug } }') {
+        return Promise.resolve(
+          jsonResponse({
+            errors: [
+              {
+                message:
+                  "Unauthorized to load field 'Query.account', Reason: missing required scopes.",
+              },
+            ],
+          }),
+        );
+      }
+      expect(body.query).toBe('query { me { id name } }');
+      return Promise.resolve(jsonResponse({ data: { me: { id: 'user-1', name: 'Ada' } } }));
+    });
+    vi.stubGlobal('fetch', fetch);
+
+    await expect(
+      mondayProvider.handleOAuthCallback({
+        code: 'oauth-code',
+        redirectUri: 'https://timeline.test/api/integrations/monday/callback',
+      }),
+    ).rejects.toThrow(/Query\.account/);
+  });
+
   it('lists boards and WorkDocs as syncable resources', async () => {
     vi.stubGlobal(
       'fetch',
@@ -617,7 +654,14 @@ describe('mondayProvider', () => {
       const body = requestPayload(init);
       if (body.query.includes('workspace { id name }')) {
         return Promise.resolve(
-          jsonResponse({ errors: [{ message: 'Unauthorized field or type' }] }),
+          jsonResponse({
+            errors: [
+              {
+                message:
+                  "Unauthorized to load field 'Query.boards.workspace', Reason: missing required scopes.",
+              },
+            ],
+          }),
         );
       }
       if (body.query.includes('boards(limit: $limit')) {
@@ -772,7 +816,14 @@ describe('mondayProvider', () => {
       const body = requestPayload(init);
       if (body.query.includes('workspace { id name }')) {
         return Promise.resolve(
-          jsonResponse({ errors: [{ message: 'Unauthorized field or type' }] }),
+          jsonResponse({
+            errors: [
+              {
+                message:
+                  "Unauthorized to load field 'Query.boards.workspace', Reason: missing required scopes.",
+              },
+            ],
+          }),
         );
       }
       if (body.query.includes('columns { id title type }')) {

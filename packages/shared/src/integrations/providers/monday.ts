@@ -324,7 +324,13 @@ function mondayLimitScope(code: string, message = ''): string {
 }
 
 function isMondayUnauthorizedFieldError(error: unknown): boolean {
-  return error instanceof Error && /Unauthorized field or type/i.test(error.message);
+  if (!(error instanceof Error)) return false;
+  return (
+    /Unauthorized field or type/i.test(error.message) ||
+    /Unauthorized to load field ['"]?Query\.boards\.workspace['"]?.*missing required scopes/i.test(
+      error.message,
+    )
+  );
 }
 
 async function fetchViewerIdentity(tokens: MondayTokens): Promise<MondayIdentity | null> {
