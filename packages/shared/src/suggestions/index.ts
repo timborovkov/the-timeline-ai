@@ -756,6 +756,19 @@ function normalizeLifecycleStatus(value: unknown, type: LifecycleStatusType): un
   return normalized;
 }
 
+function normalizeLifecyclePriority(value: unknown): unknown {
+  if (value === null || typeof value === 'number') return value;
+  if (typeof value !== 'string') return value;
+  const normalized = value.trim().toLowerCase().replace(/\s+/g, ' ');
+  if (!normalized) return value;
+  if (normalized === 'urgent' || normalized === 'critical' || normalized === 'p1') return 1;
+  if (normalized === 'high' || normalized === 'p2') return 2;
+  if (normalized === 'medium' || normalized === 'normal' || normalized === 'p3') return 3;
+  if (normalized === 'low' || normalized === 'p4') return 4;
+  const numeric = /^p?([1-4])$/.exec(normalized);
+  return numeric ? Number(numeric[1]) : value;
+}
+
 function normalizeLifecyclePayload(
   item: Pick<
     typeof agentSuggestionItems.$inferSelect,
@@ -785,6 +798,9 @@ function normalizeLifecyclePayload(
   const lifecycleType = lifecycleStatusTypeForPayload(item, payload, item.objectType);
   if (lifecycleType && Object.hasOwn(payload, 'status')) {
     payload.status = normalizeLifecycleStatus(payload.status, lifecycleType);
+  }
+  if (lifecycleType && Object.hasOwn(payload, 'priority')) {
+    payload.priority = normalizeLifecyclePriority(payload.priority);
   }
   if (
     item.targetKind === 'object_relationship' &&
