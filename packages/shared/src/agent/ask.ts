@@ -1,8 +1,14 @@
 import { type Db } from '@timeline/db';
 import { type ModelMessage } from 'ai';
 
+import {
+  instrumentAgentTools,
+  summarizeAgentToolObservations,
+  type AgentToolObservation,
+  type AgentTurnObservability,
+} from '#src/agent/observability.js';
 import { AGENT_PROMPT_VERSION, buildSystemPrompt } from '#src/agent/system-prompt.js';
-import { buildAgentTools, type AgentToolErrorReporter } from '#src/agent/tools.js';
+import { buildAgentTools, buildMcpTools, type AgentToolErrorReporter } from '#src/agent/tools.js';
 import { parseCitations } from '#src/citation.js';
 import { getEnv } from '#src/env.js';
 import {
@@ -13,7 +19,7 @@ import {
   type StreamChatModelAttribution,
 } from '#src/llm/chat.js';
 import { childLogger } from '#src/logger.js';
-import { withTeam } from '#src/team-scope.js';
+import { withTeam, type TeamScopeDeps } from '#src/team-scope.js';
 import { workspaceTimeContext } from '#src/time/index.js';
 
 const log = childLogger('agent:ask');
@@ -43,6 +49,11 @@ export type AskAgentResult =
 export interface AskAgentDeps extends ChatDeps {
   onToolError?: AgentToolErrorReporter | undefined;
   onAgentError?: ((err: unknown) => void) | undefined;
+  onTurnObservability?: ((observability: AgentTurnObservability) => void) | undefined;
+  /** Test/eval seam for retrieval dependencies; production uses live services. */
+  teamScopeDeps?: Pick<TeamScopeDeps, 'embed' | 'qdrantSearch'> | undefined;
+  /** Test/eval seam for forcing custom MCP tool discovery on or off. */
+  includeMcpTools?: boolean | undefined;
 }
 
 function stripMarkdownEmphasis(text: string): string {
@@ -97,12 +108,10 @@ export async function askAgent(
     return { ok: false, error: 'unconfigured' };
   }
 
-  const scope = withTeam(
-    input.db,
-    input.teamId,
-    input.userId,
-    input.trustedTeamActor ? { skipMembershipCheck: true } : {},
-  );
+  const scope = withTeam(input.db, input.teamId, input.userId, {
+    ...(deps.teamScopeDeps ?? {}),
+    ...(input.trustedTeamActor ? { skipMembershipCheck: true } : {}),
+  });
   try {
     await scope.requireMembership();
   } catch {
@@ -122,9 +131,23 @@ export async function askAgent(
     currentDate,
     workspaceTime: workspaceTimeContext(calendarSettings.defaultTimezone, currentDate),
   });
-  const tools = buildAgentTools(scope, {
+  const nativeTools = buildAgentTools(scope, {
     onToolError: deps.onToolError,
     readOnly: input.trustedTeamActor,
+  });
+  const includeMcpTools = deps.includeMcpTools ?? shouldIncludeMcpTools(input.question);
+  const mcpTools = includeMcpTools
+    ? await buildMcpTools(scope, { db: input.db, onToolError: deps.onToolError }).catch(
+        (err: unknown) => {
+          log.warn({ err, teamId: input.teamId }, 'askAgent MCP tool discovery failed');
+          deps.onToolError?.(err, { tool: 'mcp_discovery' });
+          return {};
+        },
+      )
+    : {};
+  const toolObservations: AgentToolObservation[] = [];
+  const tools = instrumentAgentTools({ ...nativeTools, ...mcpTools }, (observation) => {
+    toolObservations.push(observation);
   });
 
   const messages: ModelMessage[] = [{ role: 'user', content: input.question }];
@@ -147,6 +170,8 @@ export async function askAgent(
     // intentionally do NOT need the streamed chunks because Telegram can't
     // render them progressively.
     const text = await result.text;
+    const observability = summarizeAgentToolObservations({ observations: toolObservations });
+    deps.onTurnObservability?.(observability);
     log.info(
       {
         promptVersion: AGENT_PROMPT_VERSION,
@@ -154,6 +179,10 @@ export async function askAgent(
         userId: input.userId,
         ...modelAttribution,
         chars: text.length,
+        toolObservations: observability.toolObservations,
+        totalToolResultCount: observability.totalResultCount,
+        topArtifactRefs: observability.topArtifactRefs,
+        warningCodes: observability.warningCodes,
       },
       'ask completion',
     );
@@ -179,4 +208,10 @@ export async function askAgent(
     deps.onAgentError?.(err);
     return { ok: false, error: 'failed' };
   }
+}
+
+function shouldIncludeMcpTools(question: string): boolean {
+  return /\b(mcp|custom tool|connected tool|external tool|integration|github|linear|monday|sentry|jira|asana|notion|figma|salesforce|zendesk|hubspot|datadog)\b/i.test(
+    question,
+  );
 }

@@ -8,6 +8,7 @@ import { runSentryServerAction } from '@/lib/sentry-action';
 import { reportCaughtError } from '@/lib/sentry-report';
 
 const EXPECTED_SUGGESTION_APPLY_FAILURE_CODE = 'TIMELINE_EXPECTED_SUGGESTION_APPLY_FAILURE';
+const MAX_VISIBLE_ACCEPT_ITEMS = 500;
 const MAX_VISIBLE_REJECT_ITEMS = 500;
 
 function revalidateSuggestionSurfaces() {
@@ -54,7 +55,6 @@ export async function acceptSuggestionItemAction(input: unknown): Promise<Action
       if (!isExpectedSuggestionApplyFailure(err)) {
         reportCaughtError(err, { surface: 'server_action', operation: 'accept_suggestion_item' });
       }
-      revalidateSuggestionSurfaces();
       return { error: errorMessage(err, 'Failed to accept suggestion') };
     }
   });
@@ -116,12 +116,14 @@ export async function rejectVisibleSuggestionsAction(input: unknown): Promise<Ac
           ),
         Promise.resolve(),
       );
-      const failed = results.filter((ok) => !ok).length;
-      revalidateSuggestionSurfaces();
-      return failed > 0 ? { error: `${failed} item(s) failed to reject` } : { ok: true };
+      const failedItemIds = itemIds.filter((_, index) => results[index] === false);
+      const failed = failedItemIds.length;
+      if (failed === 0) revalidateSuggestionSurfaces();
+      return failed > 0
+        ? { error: `${failed} item(s) failed to reject`, failedItemIds }
+        : { ok: true };
     } catch (err) {
       reportCaughtError(err, { surface: 'server_action', operation: 'reject_visible_suggestions' });
-      revalidateSuggestionSurfaces();
       return { error: err instanceof Error ? err.message : 'Failed to reject suggestions' };
     }
   });
@@ -129,19 +131,28 @@ export async function rejectVisibleSuggestionsAction(input: unknown): Promise<Ac
 
 export async function acceptAllSuggestionAction(input: unknown): Promise<ActionState> {
   return runSentryServerAction('accept_all_suggestion', async () => {
-    const parsed = z.object({ suggestionId: uuidSchema }).safeParse(input);
+    const parsed = z
+      .object({
+        suggestionId: uuidSchema,
+        itemIds: z.array(uuidSchema).min(1).max(MAX_VISIBLE_ACCEPT_ITEMS).optional(),
+      })
+      .safeParse(input);
     if (!parsed.success) return { error: 'Invalid suggestion id' };
     const r = await resolveScope();
     if (!r.ok) return { error: r.error };
     try {
-      const result = await r.scope.suggestions.acceptAll(parsed.data.suggestionId);
-      revalidateSuggestionSurfaces();
+      const result = parsed.data.itemIds
+        ? await r.scope.suggestions.acceptSelected({
+            suggestionId: parsed.data.suggestionId,
+            itemIds: parsed.data.itemIds,
+          })
+        : await r.scope.suggestions.acceptAll(parsed.data.suggestionId);
+      if (result.failed === 0) revalidateSuggestionSurfaces();
       return result.failed > 0
-        ? { error: `${result.failed} item(s) failed to apply` }
+        ? { error: `${result.failed} item(s) failed to apply`, failedItemIds: result.failedItemIds }
         : { ok: true };
     } catch (err) {
       reportCaughtError(err, { surface: 'server_action', operation: 'accept_all_suggestions' });
-      revalidateSuggestionSurfaces();
       return { error: err instanceof Error ? err.message : 'Failed to accept suggestion' };
     }
   });
@@ -155,19 +166,24 @@ export async function acceptVisibleSuggestionsAction(input: unknown): Promise<Ac
           .array(
             z.object({
               suggestionId: uuidSchema,
-              itemIds: z.array(uuidSchema).min(1),
+              itemIds: z.array(uuidSchema).min(1).max(MAX_VISIBLE_ACCEPT_ITEMS),
             }),
           )
           .min(1)
           .max(200),
       })
+      .refine(
+        (data) =>
+          data.suggestions.reduce((sum, suggestion) => sum + suggestion.itemIds.length, 0) <=
+          MAX_VISIBLE_ACCEPT_ITEMS,
+      )
       .safeParse(input);
     if (!parsed.success) return { error: 'Invalid suggestion items' };
     const r = await resolveScope();
     if (!r.ok) return { error: r.error };
     try {
       const results = await parsed.data.suggestions.reduce<
-        Promise<{ accepted: number; failed: number }[]>
+        Promise<{ accepted: number; failed: number; failedItemIds?: string[] }[]>
       >(
         (previousResults, suggestion) =>
           previousResults.then((settledResults) =>
@@ -178,11 +194,13 @@ export async function acceptVisibleSuggestionsAction(input: unknown): Promise<Ac
         Promise.resolve([]),
       );
       const failed = results.reduce((sum, result) => sum + result.failed, 0);
-      revalidateSuggestionSurfaces();
-      return failed > 0 ? { error: `${failed} item(s) failed to apply` } : { ok: true };
+      const failedItemIds = [...new Set(results.flatMap((result) => result.failedItemIds ?? []))];
+      if (failed === 0) revalidateSuggestionSurfaces();
+      return failed > 0
+        ? { error: `${failed} item(s) failed to apply`, failedItemIds }
+        : { ok: true };
     } catch (err) {
       reportCaughtError(err, { surface: 'server_action', operation: 'accept_visible_suggestions' });
-      revalidateSuggestionSurfaces();
       return { error: err instanceof Error ? err.message : 'Failed to accept suggestions' };
     }
   });

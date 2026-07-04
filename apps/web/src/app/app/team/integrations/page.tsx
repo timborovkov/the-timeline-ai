@@ -540,8 +540,9 @@ function McpCatalogSection({
     <section className="space-y-3 border-t border-border pt-4 first:border-t-0 first:pt-0">
       <h3 className="text-sm font-medium text-fg">MCP servers</h3>
       <p className="text-sm text-fg-muted">
-        MCP servers give the agent live tool access. They do not create timeline events unless
-        paired with native sync or custom ingestion.
+        MCP servers give the agent live tool access. Successful tool results are captured as private
+        evidence for reconciliation; passive provider activity still needs native sync or custom
+        ingestion.
       </p>
       <McpCatalog
         entries={catalog.map((c) => ({

@@ -1673,7 +1673,20 @@ async function rejectedApprovalOutputExists(
       ),
     )
     .limit(1);
-  return rows.length > 0;
+  if (rows.length > 0) return true;
+
+  const legacyRows = await db
+    .select({ id: agentSuggestions.id })
+    .from(agentSuggestions)
+    .where(
+      and(
+        eq(agentSuggestions.teamId, teamId),
+        eq(agentSuggestions.dedupeKey, dedupeKey),
+        eq(agentSuggestions.status, 'rejected'),
+      ),
+    )
+    .limit(1);
+  return legacyRows.length > 0;
 }
 
 async function processObjectCleanupJob(

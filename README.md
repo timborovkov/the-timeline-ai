@@ -53,8 +53,8 @@ back to the source material instead of hiding behind black-box summaries.
   flowing into cited timeline evidence.
 - Generic ingest webhooks for arbitrary external evidence that should land in
   Timeline without becoming authoritative provider state.
-- Custom MCP servers that give the agent live access to long-tail tools without
-  automatically ingesting those tools into the event store.
+- Custom MCP servers that give the agent live access to long-tail tools; successful
+  tool results are captured as private integration evidence for reconciliation.
 - An outbound MCP server so tools like Claude Desktop and Cursor can query
   team-level workspace context across bundled timeline moments, raw events,
   objects, tasks, boards, calendar, documents, and integrations.
@@ -112,16 +112,21 @@ and integration-event normalizers used by the capture surfaces. The
 evidence-to-cluster association resolver. The
 `@timeline/shared/reconciliation/backfill` subpath exports the historical
 evidence coverage audit and backfill helpers used by the worker
-`reconciliation-evidence` command and the queue-backed reconciliation worker.
+`reconciliation-evidence` command and the queue-backed reconciliation worker;
+audit reports include a `releaseGate` that can fail release runs on missing
+evidence or non-allowlisted degraded replay rows.
 The `@timeline/shared/reconciliation/dashboard` subpath exports the admin
 dashboard snapshot used by Team → Reconciliation to inspect evidence coverage,
 run logs, output status, projection outbox health, association counts, conflict
 attention, provider/source diagnostics, approval acceptance health, and
-visibility-filtered cluster drilldowns.
+viewer-visibility-filtered dashboard counts plus cluster drilldowns.
 The `@timeline/shared/reconciliation/production-sampling` subpath exports the
 redacted production-sampling artifact loader and report writer used to
 aggregate live artifacts into pass-rate, miss, visibility, authority, and
-fixture-candidate metrics.
+fixture-candidate metrics; artifact writing and loading reject malformed or
+empty redacted source refs, malformed or inconsistent manifest summaries,
+malformed judge metadata, malformed expected-count maps, and manifest paths
+outside the run directory before they contribute to release metrics.
 
 ## Quick Start
 
@@ -156,6 +161,8 @@ migrations, or run `pnpm dev:wipe && pnpm dev:seed` when you want a fresh local
 database with the seed data. If reserved demo emails, slugs, or UUIDs already
 belong to different local rows, the seed exits with a clear conflict instead of
 rewiring the graph.
+Seeded objects now keep canonical `source_event_id` empty and carry demo
+provenance through reconciliation evidence, associations, and applied outputs.
 
 Seeded account credentials:
 
@@ -197,32 +204,50 @@ For the full walkthrough, see
 pnpm dev                  # Next.js app + worker in watch mode
 pnpm validate             # format check, typecheck, lint, knip
 pnpm test                 # unit and integration tests (package suites run sequentially)
-pnpm test:eval            # fast deterministic agent and retrieval evals
+pnpm test:e2e-env         # deterministic E2E env/port contract check
+pnpm test:eval            # fast deterministic agent, retrieval, and background proposal evals
 AGENT_LIVE_ENV_FILE=/path/.env pnpm test:agent-eval:live
-                          # opt-in live LLM askAgent durable-state eval
+                          # opt-in live LLM askAgent durable-state + provider/document/meeting/MCP synthesis eval
+SUGGESTIONS_LIVE_ENV_FILE=/path/.env pnpm test:suggestions-eval:live
+                          # opt-in live LLM suggestion worker extraction/projection eval
+TRANSCRIBE_LIVE_ENV_FILE=/path/.env pnpm test:transcribe-eval:live
+                          # opt-in live OpenRouter speech transcription worker finalization eval
 pnpm test:reconciliation-eval       # deterministic reconciliation domain/eval matrix
 pnpm test:reconciliation-eval:live  # opt-in live LLM planner+judge matrix; set RECONCILIATION_LIVE_ENV_FILE=/path/.env when needed
 # optional: set RECONCILIATION_LIVE_ARTIFACT_DIR=/tmp/eval-run for one exact output dir,
 # or RECONCILIATION_LIVE_ARTIFACT_ROOT_DIR=eval-runs/reconciliation for timestamped run folders
 # optional: set RECONCILIATION_LIVE_CALL_TIMEOUT_MS=90000 to tune each live planner/judge call timeout
-# optional: set RECONCILIATION_LIVE_MAX_ATTEMPTS=3 to retry transient planner/judge failures
+# optional: set RECONCILIATION_LIVE_MAX_ATTEMPTS=3 to retry transient planner,
+# judge, and judge-consistency failures
 pnpm test:dist-imports    # build db/shared and import compiled runtime modules with Node
 pnpm --filter @timeline/worker reconciliation-evidence -- --team=<uuid> --mode=audit
+pnpm --filter @timeline/worker reconciliation-evidence -- --team=<uuid> --mode=audit --fail-on-release-gate
+# optional: repeat --allow-degraded-source=<event_source> for known historical degraded replay rows
 pnpm --filter @timeline/worker reconciliation-evidence -- --team=<uuid> --mode=backfill --dry-run --page-size=500
-pnpm --filter @timeline/worker reconciliation-production-sampling -- --input=/tmp/eval-run --out=/tmp/reconciliation-production-sampling.json --run-kind=closed_beta
+pnpm --filter @timeline/worker reconciliation-production-sampling -- --input=/tmp/eval-run --out=/tmp/reconciliation-production-sampling.json --team=<uuid> --run-kind=closed_beta --fail-on-failures
 # production sampling accepts repeated --input paths; --run-kind defaults to manual
-# and may be manual, closed_beta, or post_deploy.
-# The worker process also starts a reconciliation queue consumer for the same
-# evidence_audit/evidence_backfill jobs when they are enqueued by product or
-# operator code. Queue payloads support optional source, limit, pageSize, dryRun,
-# and missingOnly controls.
-# Admins can enqueue the same source-scoped audit/backfill work from
-# /app/team/reconciliation in the web app, and can record manual team/object/cluster
-# scope_reconcile runs from the same dashboard.
+# and may be manual, closed_beta, or post_deploy. Use --fail-on-failures for
+# release gates that should stop on any failed sample. Repeat
+# --confirm-fixture=<caseName>:<packetFingerprint> for reviewed failed samples
+# that should become deterministic fixtures; reports include confirmed and
+# unconfirmed fixture-candidate counts for release review. Add --team=<uuid>
+# to persist the report as a Team → Reconciliation eval run.
+# The worker process also starts a reconciliation queue consumer for
+# evidence_audit/evidence_backfill/scope_reconcile jobs when they are enqueued
+# by product or operator code. Queue payloads support optional source, limit,
+# pageSize, dryRun, missingOnly, and scoped repair controls. Completed
+# audit/backfill jobs persist reconciliation_runs metrics, including
+# release-gate failures for audit runs.
+# Admins can run missing-only source-scoped backfill dry-runs from
+# /app/team/reconciliation in the web app, and can repair scoped
+# team/object/cluster evidence, association graph rows, observed association outputs,
+# and approval projections from the same dashboard.
 pnpm e2e                  # Playwright core journey tests
 pnpm run doctor           # React Doctor scan for React/Next health regressions
-pnpm canary:integrations  # secret-safe live provider OAuth/LLM/Postmark + optional capture canary
-pnpm dev:seed             # seed local demo data with disabled fake integrations
+pnpm canary:integrations  # secret-safe live provider OAuth/LLM+transcription/Postmark/Telegram/Slack/Recall + optional signed capture canaries
+pnpm canary:integrations:strict
+                           # fail on any skipped or warning live provider canary
+pnpm dev:seed             # seed local demo data with disabled fake integrations and reconciliation provenance
 pnpm --filter @timeline/worker timeline-moment-presentations -- \
   --team=<uuid> [--since=YYYY-MM-DD] [--until=YYYY-MM-DD] \
   [--source=all|telegram|slack|integration|email|meeting|calendar|document|ingest_webhook|system] \
@@ -235,7 +260,7 @@ pnpm check:web-bundle     # inspect built Next server chunks
 
 `pnpm validate` is the main static pre-merge gate. Run tests separately with the
 smallest command that proves the behavior you changed: `pnpm test`, a
-package-filtered Vitest command, `pnpm test:eval`,
+package-filtered Vitest command, `pnpm test:e2e-env`, `pnpm test:eval`,
 `pnpm test:reconciliation-eval`, `pnpm test:dist-imports`, or an e2e command.
 GitHub PR CI intentionally does not run `pnpm build` or `pnpm check:web-bundle`;
 TypeScript compilation, linting, formatting, Knip, reconciliation evals, and
@@ -260,9 +285,6 @@ server/client import boundaries.
   document semantics, processing rules, and follow-up implementation bar.
 - [`docs/work-system-plan.md`](./docs/work-system-plan.md) — priority plan for
   turning Work into the daily operating surface.
-- [`docs/object-summaries-plan.md`](./docs/object-summaries-plan.md) —
-  implementation plan for grounded generated object briefs across object pages,
-  search, embeddings, and chat.
 - [`docs/reconciliation-engine-plan.md`](./docs/reconciliation-engine-plan.md) —
   replacement architecture for unifying source evidence, artifact clustering,
   approval-backed memory, provider authority, and live reconciliation evals.

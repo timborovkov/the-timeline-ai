@@ -8,6 +8,7 @@ import {
 import { and, asc, eq, gt, inArray, or, sql, type SQL } from 'drizzle-orm';
 
 import { normalizeRawEventsToEvidence } from '#src/reconciliation/normalization.js';
+import { rawEventVisibleToUser } from '#src/visibility.js';
 
 type DbTx = Parameters<Parameters<Db['transaction']>[0]>[0];
 type DbOrTx = Db | DbTx;
@@ -28,19 +29,23 @@ export interface ReconciliationEvidenceCoverageReport extends ReconciliationEvid
   teamId: string;
   source: ReconciliationEvidenceSource | 'all';
   bySource: Record<ReconciliationEvidenceSource, ReconciliationEvidenceCoverageBucket>;
+  releaseGate: ReconciliationEvidenceCoverageGate;
 }
 
 export interface AuditReconciliationEvidenceCoverageInput {
   db: DbOrTx;
   teamId: string;
+  viewerUserId?: string;
   source?: ReconciliationEvidenceSource;
   limit?: number;
   pageSize?: number;
+  allowedDegradedReplaySources?: ReconciliationEvidenceSource[];
 }
 
 export interface BackfillReconciliationEvidenceInput {
   db: DbOrTx;
   teamId: string;
+  viewerUserId?: string;
   source?: ReconciliationEvidenceSource;
   limit?: number;
   pageSize?: number;
@@ -74,6 +79,19 @@ interface EvidenceCoverageRow {
   replayState: ReconciliationEvidenceReplayState;
 }
 
+export interface ReconciliationEvidenceCoverageGate {
+  passed: boolean;
+  failureCount: number;
+  failures: ReconciliationEvidenceCoverageFailure[];
+}
+
+export interface ReconciliationEvidenceCoverageFailure {
+  source: ReconciliationEvidenceSource;
+  code: 'missing_evidence' | 'degraded_replay';
+  rawEventCount: number;
+  message: string;
+}
+
 const DEFAULT_PAGE_SIZE = 500;
 
 export function isReconciliationEvidenceSource(
@@ -95,6 +113,7 @@ export async function auditReconciliationEvidenceCoverage(
     fullReplayEvidence: 0,
     degradedReplayEvidence: 0,
     bySource,
+    releaseGate: { passed: true, failureCount: 0, failures: [] },
   };
 
   await walkRawEvents(input, async (page) => {
@@ -123,7 +142,45 @@ export async function auditReconciliationEvidenceCoverage(
     }
   });
 
+  report.releaseGate = evaluateReconciliationEvidenceCoverage(report, {
+    allowedDegradedReplaySources: input.allowedDegradedReplaySources ?? [],
+  });
+
   return report;
+}
+
+export function evaluateReconciliationEvidenceCoverage(
+  report: Pick<ReconciliationEvidenceCoverageReport, 'bySource'>,
+  options: { allowedDegradedReplaySources?: ReconciliationEvidenceSource[] } = {},
+): ReconciliationEvidenceCoverageGate {
+  const allowedDegradedReplaySources = new Set(options.allowedDegradedReplaySources ?? []);
+  const failures: ReconciliationEvidenceCoverageFailure[] = [];
+
+  for (const source of eventSource.enumValues) {
+    const bucket = report.bySource[source];
+    if (bucket.missingRawEvents > 0) {
+      failures.push({
+        source,
+        code: 'missing_evidence',
+        rawEventCount: bucket.missingRawEvents,
+        message: `${source} has ${bucket.missingRawEvents} raw event(s) without reconciliation evidence`,
+      });
+    }
+    if (bucket.degradedReplayEvidence > 0 && !allowedDegradedReplaySources.has(source)) {
+      failures.push({
+        source,
+        code: 'degraded_replay',
+        rawEventCount: bucket.degradedReplayEvidence,
+        message: `${source} has ${bucket.degradedReplayEvidence} normalized raw event(s) without full replay evidence`,
+      });
+    }
+  }
+
+  return {
+    passed: failures.length === 0,
+    failureCount: failures.length,
+    failures,
+  };
 }
 
 export async function backfillReconciliationEvidence(
@@ -144,6 +201,7 @@ export async function backfillReconciliationEvidence(
     db: input.db,
     teamId: input.teamId,
   };
+  if (input.viewerUserId !== undefined) walkInput.viewerUserId = input.viewerUserId;
   if (input.source) walkInput.source = input.source;
   if (input.pageSize !== undefined) walkInput.pageSize = input.pageSize;
 
@@ -191,6 +249,7 @@ async function walkRawEvents(
     const pageInput: LoadRawEventPageInput = {
       db: input.db,
       teamId: input.teamId,
+      ...(input.viewerUserId === undefined ? {} : { viewerUserId: input.viewerUserId }),
       cursor,
       pageSize: Math.min(pageSize, remaining),
     };
@@ -212,6 +271,7 @@ async function walkRawEvents(
 interface LoadRawEventPageInput {
   db: DbOrTx;
   teamId: string;
+  viewerUserId?: string;
   source?: ReconciliationEvidenceSource;
   cursor: RawEventCursor | null;
   pageSize: number;
@@ -219,6 +279,10 @@ interface LoadRawEventPageInput {
 
 async function loadRawEventPage(input: LoadRawEventPageInput): Promise<RawEventPageRow[]> {
   const conditions: SQL[] = [eq(rawEvents.teamId, input.teamId)];
+  if (input.viewerUserId) {
+    const visibilityPredicate = rawEventVisibleToUser(input.viewerUserId);
+    if (visibilityPredicate) conditions.push(visibilityPredicate);
+  }
   if (input.source) conditions.push(eq(rawEvents.source, input.source));
   if (input.cursor) {
     const cursorClause = or(

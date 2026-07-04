@@ -300,6 +300,8 @@ function changeToEvent(_integration: IntegrationRow, change: DriveChange): Integ
         name: file.name,
         mime_type: file.mimeType,
         web_view_link: file.webViewLink ?? null,
+        modified_time: file.modifiedTime ?? null,
+        drive_id: file.driveId ?? null,
         parents: file.parents ?? [],
       },
     },

@@ -1,5 +1,3 @@
-import { createHash } from 'node:crypto';
-
 import {
   type Db,
   rawEvents,
@@ -11,9 +9,39 @@ import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { IntegrationEvent } from '#src/integrations/types.js';
 
 import { buildEvidenceDedupeKey, reconciliationDedupeKey } from '#src/reconciliation/index.js';
+import { stableSha256Digest } from '#src/reconciliation/stable-digest.js';
 
 const INTEGRATION_NORMALIZER_VERSION = 'integration-normalize-2026-06';
 const RAW_EVENT_NORMALIZER_VERSION = 'raw-event-normalize-2026-06';
+const MCP_PROVIDER_ANCHOR_PROVIDERS = new Set([
+  'asana',
+  'attio',
+  'basecamp',
+  'bitbucket',
+  'close',
+  'confluence',
+  'datadog',
+  'discord',
+  'drive',
+  'figma',
+  'github',
+  'gitlab',
+  'google_drive',
+  'hubspot',
+  'intercom',
+  'jira',
+  'linear',
+  'monday',
+  'notion',
+  'pipedrive',
+  'salesforce',
+  'sentry',
+  'stripe',
+  'trello',
+  'zendesk',
+]);
+const MAX_MCP_PROVIDER_SNAPSHOT_RECORDS = 60;
+const MAX_MCP_PROVIDER_SNAPSHOT_DEPTH = 6;
 type DbTx = Parameters<Parameters<Db['transaction']>[0]>[0];
 type DbOrTx = Db | DbTx;
 
@@ -425,7 +453,9 @@ function rawExternalObjectId(source: string, metadata: Record<string, unknown>):
   if (source === 'meeting') return metadataString(metadata, 'meeting_chunk_provider_id');
   if (source === 'document') {
     return (
-      metadataString(metadata, 'document_version_id') ?? metadataString(metadata, 'document_id')
+      metadataString(metadata, 'document_version_id') ??
+      metadataString(metadata, 'document_id') ??
+      metadataString(metadata, 'folder_id')
     );
   }
   if (source === 'calendar') return metadataString(metadata, 'calendar_event_id');
@@ -579,6 +609,7 @@ function anchorsForRawEvent(
     'provider',
   );
   addAnchor(anchors, 'document', metadataString(metadata, 'document_id'), 'provider');
+  addAnchor(anchors, 'document_folder', metadataString(metadata, 'folder_id'), 'provider');
   addAnchor(
     anchors,
     'document_version',
@@ -590,9 +621,130 @@ function anchorsForRawEvent(
   addAnchor(anchors, 'relationship', metadataString(metadata, 'relationship_id'), 'structured');
   addAnchor(anchors, 'object_note', metadataString(metadata, 'note_id'), 'structured');
   addAnchor(anchors, 'identity_facet', metadataString(metadata, 'identity_facet_id'), 'structured');
+  addAnchor(anchors, 'mcp_server', metadataString(metadata, 'mcp_server_id'), 'provider');
+  addAnchor(anchors, 'mcp_tool', metadataString(metadata, 'mcp_namespaced_tool_name'), 'provider');
+  addAnchor(anchors, 'mcp_call', metadataString(metadata, 'mcp_call_id'), 'hard');
+  if (metadataString(metadata, 'provider') === 'mcp') {
+    anchors.push(...providerAnchorsFromMcpSnapshot(metadata));
+  }
   const url = rawSourceUrl(metadata);
   addAnchor(anchors, 'url', url ? normalizeUrlAnchor(url) : null, 'hard');
   return uniqueNormalizedAnchors(anchors);
+}
+
+function providerAnchorsFromMcpSnapshot(metadata: Record<string, unknown>): NormalizedAnchor[] {
+  const snapshot = recordField(metadata, 'source_snapshot');
+  if (!snapshot) return [];
+  const anchors: NormalizedAnchor[] = [];
+  const records = nestedRecords(snapshot.result, {
+    maxDepth: MAX_MCP_PROVIDER_SNAPSHOT_DEPTH,
+    maxRecords: MAX_MCP_PROVIDER_SNAPSHOT_RECORDS,
+  });
+  for (const record of records) {
+    const provider = providerName(record);
+    if (!provider) continue;
+    const externalObjectId = firstMetadataString(record, [
+      'external_object_id',
+      'externalObjectId',
+      'object_id',
+      'objectId',
+      'issue_id',
+      'issueId',
+      'sentry_issue_id',
+      'sentryIssueId',
+      'monday_item_id',
+      'mondayItemId',
+      'linear_issue_id',
+      'linearIssueId',
+      'github_pr_id',
+      'githubPrId',
+    ]);
+    if (externalObjectId) {
+      anchors.push({
+        anchorType: 'provider_object',
+        anchorValue: `${provider}:${externalObjectId}`,
+        strength: 'provider',
+      });
+      anchors.push({
+        anchorType: `provider_external:${provider}`,
+        anchorValue: externalObjectId,
+        strength: 'hard',
+      });
+    }
+
+    const externalEventId = firstMetadataString(record, [
+      'external_event_id',
+      'externalEventId',
+      'event_id',
+      'eventId',
+      'delivery_id',
+      'deliveryId',
+    ]);
+    if (externalEventId) {
+      anchors.push({
+        anchorType: 'provider_event',
+        anchorValue: `${provider}:${externalEventId}`,
+        strength: 'provider',
+      });
+    }
+
+    const url = firstMetadataString(record, [
+      'external_url',
+      'externalUrl',
+      'web_url',
+      'webUrl',
+      'url',
+    ]);
+    if (url) {
+      anchors.push({
+        anchorType: 'url',
+        anchorValue: normalizeUrlAnchor(url),
+        strength: 'hard',
+      });
+    }
+  }
+  return uniqueNormalizedAnchors(anchors);
+}
+
+function providerName(record: Record<string, unknown>): string | null {
+  const provider = firstMetadataString(record, ['provider', 'source_provider', 'sourceProvider']);
+  if (!provider) return null;
+  const normalized = provider
+    .trim()
+    .toLowerCase()
+    .replace(/[\s.-]+/g, '_');
+  return MCP_PROVIDER_ANCHOR_PROVIDERS.has(normalized) ? normalized : null;
+}
+
+function nestedRecords(
+  value: unknown,
+  opts: { maxDepth: number; maxRecords: number },
+): Record<string, unknown>[] {
+  const out: Record<string, unknown>[] = [];
+  const seen = new Set<unknown>();
+  const visit = (candidate: unknown, depth: number) => {
+    if (out.length >= opts.maxRecords || depth > opts.maxDepth) return;
+    if (!candidate || typeof candidate !== 'object') return;
+    if (seen.has(candidate)) return;
+    seen.add(candidate);
+    if (Array.isArray(candidate)) {
+      for (const item of candidate) visit(item, depth + 1);
+      return;
+    }
+    const record = candidate as Record<string, unknown>;
+    out.push(record);
+    for (const item of Object.values(record)) visit(item, depth + 1);
+  };
+  visit(value, 0);
+  return out;
+}
+
+function firstMetadataString(value: unknown, keys: string[]): string | null {
+  for (const key of keys) {
+    const found = metadataString(value, key);
+    if (found) return found;
+  }
+  return null;
 }
 
 function addAnchor(
@@ -632,7 +784,7 @@ function contentDigest(input: {
   contentAudioUrl?: string | null;
   sourceMetadata: unknown;
 }): string {
-  return `sha256:${createHash('sha256').update(stableJson(input)).digest('hex')}`;
+  return stableSha256Digest(input);
 }
 
 function metadataString(value: unknown, key: string): string | null {
@@ -731,15 +883,4 @@ async function upsertEvidenceValues(
         replayState: sql`excluded.replay_state`,
       },
     });
-}
-
-function stableJson(value: unknown): string {
-  if (value === null || typeof value !== 'object') return JSON.stringify(value);
-  if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`;
-  const record = value as Record<string, unknown>;
-  return `{${Object.keys(record)
-    .filter((key) => record[key] !== undefined)
-    .sort()
-    .map((key) => `${JSON.stringify(key)}:${stableJson(record[key])}`)
-    .join(',')}}`;
 }

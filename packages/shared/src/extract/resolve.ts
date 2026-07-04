@@ -27,6 +27,11 @@ export interface ResolveEntityInput {
   aliases?: string[];
   /** Fact statement used as disambiguation context when ambiguous. */
   factStatement?: string;
+  /**
+   * Explicit opt-in for legacy/carefully reviewed callers that may create a
+   * canonical object. Extraction workers leave this false so raw mentions do
+   * not become workspace memory without reconciliation/approval.
+   */
   createIfMissing?: boolean;
   updateAliases?: boolean;
 }
@@ -153,7 +158,7 @@ async function insertEntityRow(tx: DbOrTx, input: ResolveEntityInput): Promise<s
 }
 
 /**
- * Resolve an entity mention to a stable entity id, creating one if no match.
+ * Resolve an entity mention to a stable entity id.
  *
  * Strategy (deterministic-first, LLM only as tiebreaker):
  *   1. Exact case-insensitive match on canonical_name OR membership in aliases.
@@ -162,7 +167,8 @@ async function insertEntityRow(tx: DbOrTx, input: ResolveEntityInput): Promise<s
  *      are different real-world things. Phase 4 takes the conservative path
  *      to prevent prompt-injected mention names from polluting entities of
  *      other types.
- *   3. Zero matches → insert new entity (race-safe via ON CONFLICT).
+ *   3. Zero matches → return null unless the caller explicitly opted into
+ *      legacy creation.
  *   4. One match → return; merge any new aliases into the row.
  *   5. Multi-match → ask the LLM to pick one, or create new.
  *
@@ -205,7 +211,7 @@ export async function resolveEntity(
   const candidates = matches.filter((m) => m.type === input.type);
 
   if (candidates.length === 0) {
-    if (input.createIfMissing === false) return null;
+    if (input.createIfMissing !== true) return null;
     return insertEntityRow(tx, input);
   }
 
@@ -215,8 +221,8 @@ export async function resolveEntity(
   } else {
     chosen = await disambiguate(candidates, input, llmDeps);
     if (!chosen) {
-      // LLM said "none of these" — create a new entity (race-safe).
-      if (input.createIfMissing === false) return null;
+      // LLM said "none of these" — create only for explicit legacy callers.
+      if (input.createIfMissing !== true) return null;
       return insertEntityRow(tx, input);
     }
   }
@@ -273,7 +279,7 @@ export async function resolveMentions(
           type: m.type,
           ...(m.aliases ? { aliases: m.aliases } : {}),
           factStatement,
-          ...(opts.createIfMissing === undefined ? {} : { createIfMissing: opts.createIfMissing }),
+          createIfMissing: opts.createIfMissing === true,
           ...(opts.updateAliases === undefined ? {} : { updateAliases: opts.updateAliases }),
         },
         llmDeps,

@@ -10,5 +10,7 @@ test('production build lets a seeded owner load app and timeline', async ({ page
   await expect(page.getByRole('heading', { name: /timeline/i })).toBeVisible();
 
   await page.goto('/app/timeline');
-  await expect(page.getByPlaceholder('What happened?')).toBeVisible();
+  await expect(page.getByRole('heading', { name: /Timeline · .* loaded/i })).toBeVisible();
+  await expect(page.getByRole('navigation', { name: 'Timeline presets' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'End of timeline' })).toBeVisible();
 });

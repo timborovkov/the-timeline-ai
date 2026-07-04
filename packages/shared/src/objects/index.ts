@@ -7,7 +7,7 @@
  * scope. That's the chokepoint that keeps a typo in a caller from leaking
  * across teams.
  */
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 
 import {
   type Db,
@@ -115,6 +115,19 @@ const EMAIL_IDENTITY_RE = /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i;
 const PHONE_IDENTITY_RE = /^(?:\+[1-9]\d{6,14}|\d{7,15})$/;
 type DbTx = Parameters<Parameters<Db['transaction']>[0]>[0];
 type DbOrTx = Db | DbTx;
+type DirectWriteVisibility = 'private' | 'team' | 'specific_users';
+
+interface DirectWriteSourceContext {
+  sourceRefs: {
+    source: string;
+    rawEventId: string;
+    sourcePayloadRef?: string;
+  }[];
+  sourcePayloadRefs: string[];
+  visibility: DirectWriteVisibility;
+  visibilityOwnerUserId: string | null;
+  visibilityUserIds: string[] | null;
+}
 
 function systemDirectWriteSourceMetadata(input: {
   rawEventId: string;
@@ -122,17 +135,20 @@ function systemDirectWriteSourceMetadata(input: {
   metadata: Record<string, unknown>;
   snapshot: Record<string, unknown>;
 }): Record<string, unknown> {
+  const sourceSnapshot = {
+    event_kind: input.kind,
+    raw_event_id: input.rawEventId,
+    ...input.snapshot,
+  };
+  const digest = `sha256:${createHash('sha256').update(stableStringify(sourceSnapshot)).digest('hex')}`;
   return {
     ...input.metadata,
     kind: input.kind,
     source_payload_ref: `inline://timeline/system/${input.kind}/${input.rawEventId}`,
+    payload_digest: digest,
     source_snapshot_kind: 'system_direct_write_event',
     source_snapshot_version: SYSTEM_DIRECT_WRITE_SOURCE_SNAPSHOT_VERSION,
-    source_snapshot: {
-      event_kind: input.kind,
-      raw_event_id: input.rawEventId,
-      ...input.snapshot,
-    },
+    source_snapshot: sourceSnapshot,
   };
 }
 
@@ -182,6 +198,72 @@ async function normalizeSystemRawEventEvidence(input: {
   }
 }
 
+function sourcePayloadRefFromMetadata(metadata: unknown): string | null {
+  const sourcePayloadRef = recordFromUnknown(metadata).source_payload_ref;
+  return typeof sourcePayloadRef === 'string' && sourcePayloadRef.trim().length > 0
+    ? sourcePayloadRef
+    : null;
+}
+
+export async function buildObjectDirectWriteSourceContext(input: {
+  db: DbOrTx;
+  teamId: string;
+  sourceEventId: string;
+}): Promise<DirectWriteSourceContext> {
+  const [raw] = await input.db
+    .select({
+      source: rawEvents.source,
+      sourceMetadata: rawEvents.sourceMetadata,
+      visibility: rawEvents.visibility,
+      visibilityOwnerUserId: rawEvents.visibilityOwnerUserId,
+      visibilityUserIds: rawEvents.visibilityUserIds,
+    })
+    .from(rawEvents)
+    .where(and(eq(rawEvents.teamId, input.teamId), eq(rawEvents.id, input.sourceEventId)))
+    .limit(1);
+  const [evidence] = await input.db
+    .select({
+      id: reconciliationEvidence.id,
+      sourcePayloadRef: reconciliationEvidence.sourcePayloadRef,
+      visibility: reconciliationEvidence.visibility,
+      visibilityOwnerUserId: reconciliationEvidence.visibilityOwnerUserId,
+      visibilityUserIds: reconciliationEvidence.visibilityUserIds,
+    })
+    .from(reconciliationEvidence)
+    .where(
+      and(
+        eq(reconciliationEvidence.teamId, input.teamId),
+        eq(reconciliationEvidence.rawEventId, input.sourceEventId),
+      ),
+    )
+    .orderBy(desc(reconciliationEvidence.createdAt), desc(reconciliationEvidence.id))
+    .limit(1);
+  const sourcePayloadRef =
+    sourcePayloadRefFromMetadata(raw?.sourceMetadata) ?? evidence?.sourcePayloadRef ?? null;
+  const sourcePayloadRefs = [
+    ...new Set(
+      [evidence?.sourcePayloadRef, sourcePayloadRef].filter((ref): ref is string => !!ref),
+    ),
+  ];
+  const visibility = evidence?.visibility ?? raw?.visibility ?? 'team';
+  const visibilityOwnerUserId =
+    evidence?.visibilityOwnerUserId ?? raw?.visibilityOwnerUserId ?? null;
+  const visibilityUserIds = evidence?.visibilityUserIds ?? raw?.visibilityUserIds ?? null;
+  return {
+    sourceRefs: [
+      {
+        source: raw?.source ?? 'system',
+        rawEventId: input.sourceEventId,
+        ...(sourcePayloadRef ? { sourcePayloadRef } : {}),
+      },
+    ],
+    sourcePayloadRefs,
+    visibility,
+    visibilityOwnerUserId,
+    visibilityUserIds,
+  };
+}
+
 async function emitObjectDirectWriteOutput(input: {
   db: DbTx;
   teamId: string;
@@ -201,27 +283,11 @@ async function emitObjectDirectWriteOutput(input: {
   };
 }): Promise<void> {
   if (!input.sourceEventId) return;
-  const [evidence] = await input.db
-    .select({
-      id: reconciliationEvidence.id,
-      sourcePayloadRef: reconciliationEvidence.sourcePayloadRef,
-    })
-    .from(reconciliationEvidence)
-    .where(
-      and(
-        eq(reconciliationEvidence.teamId, input.teamId),
-        eq(reconciliationEvidence.rawEventId, input.sourceEventId),
-      ),
-    )
-    .limit(1);
-  const sourceRefs = [
-    {
-      source: 'system',
-      rawEventId: input.sourceEventId,
-      ...(evidence?.id ? { evidenceId: evidence.id } : {}),
-      ...(evidence?.sourcePayloadRef ? { sourcePayloadRef: evidence.sourcePayloadRef } : {}),
-    },
-  ];
+  const sourceContext = await buildObjectDirectWriteSourceContext({
+    db: input.db,
+    teamId: input.teamId,
+    sourceEventId: input.sourceEventId,
+  });
   const [run] = await input.db
     .insert(reconciliationRuns)
     .values({
@@ -315,20 +381,20 @@ async function emitObjectDirectWriteOutput(input: {
       },
       confidence: 'high',
       requiresApproval: false,
-      sourceRefs,
-      sourcePayloadRefs: evidence?.sourcePayloadRef ? [evidence.sourcePayloadRef] : [],
-      visibility: 'team',
-      visibilityOwnerUserId: null,
-      visibilityUserIds: null,
-      visibilityFloor: 'team',
-      visibilityFloorOwnerUserId: null,
-      visibilityFloorUserIds: null,
+      sourceRefs: sourceContext.sourceRefs,
+      sourcePayloadRefs: sourceContext.sourcePayloadRefs,
+      visibility: sourceContext.visibility,
+      visibilityOwnerUserId: sourceContext.visibilityOwnerUserId,
+      visibilityUserIds: sourceContext.visibilityUserIds,
+      visibilityFloor: sourceContext.visibility,
+      visibilityFloorOwnerUserId: sourceContext.visibilityOwnerUserId,
+      visibilityFloorUserIds: sourceContext.visibilityUserIds,
       dedupeKey: buildOutputDedupeKey({
         teamId: input.teamId,
         targetKind: 'object',
         operation: input.operation,
         targetId: input.entityId,
-        sourceRefs,
+        sourceRefs: sourceContext.sourceRefs,
         authorityPolicyVersion: AUTHORITY_POLICY_VERSION,
         plannerVersion: OBJECT_DIRECT_WRITE_PLANNER_VERSION,
       }),
@@ -357,27 +423,11 @@ async function emitRelationshipDirectWriteOutput(input: {
   systemEventKind: 'relationship_create' | 'relationship_delete';
 }): Promise<void> {
   if (!input.sourceEventId) return;
-  const [evidence] = await input.db
-    .select({
-      id: reconciliationEvidence.id,
-      sourcePayloadRef: reconciliationEvidence.sourcePayloadRef,
-    })
-    .from(reconciliationEvidence)
-    .where(
-      and(
-        eq(reconciliationEvidence.teamId, input.teamId),
-        eq(reconciliationEvidence.rawEventId, input.sourceEventId),
-      ),
-    )
-    .limit(1);
-  const sourceRefs = [
-    {
-      source: 'system',
-      rawEventId: input.sourceEventId,
-      ...(evidence?.id ? { evidenceId: evidence.id } : {}),
-      ...(evidence?.sourcePayloadRef ? { sourcePayloadRef: evidence.sourcePayloadRef } : {}),
-    },
-  ];
+  const sourceContext = await buildObjectDirectWriteSourceContext({
+    db: input.db,
+    teamId: input.teamId,
+    sourceEventId: input.sourceEventId,
+  });
   const [run] = await input.db
     .insert(reconciliationRuns)
     .values({
@@ -453,20 +503,20 @@ async function emitRelationshipDirectWriteOutput(input: {
       },
       confidence: 'high',
       requiresApproval: false,
-      sourceRefs,
-      sourcePayloadRefs: evidence?.sourcePayloadRef ? [evidence.sourcePayloadRef] : [],
-      visibility: 'team',
-      visibilityOwnerUserId: null,
-      visibilityUserIds: null,
-      visibilityFloor: 'team',
-      visibilityFloorOwnerUserId: null,
-      visibilityFloorUserIds: null,
+      sourceRefs: sourceContext.sourceRefs,
+      sourcePayloadRefs: sourceContext.sourcePayloadRefs,
+      visibility: sourceContext.visibility,
+      visibilityOwnerUserId: sourceContext.visibilityOwnerUserId,
+      visibilityUserIds: sourceContext.visibilityUserIds,
+      visibilityFloor: sourceContext.visibility,
+      visibilityFloorOwnerUserId: sourceContext.visibilityOwnerUserId,
+      visibilityFloorUserIds: sourceContext.visibilityUserIds,
       dedupeKey: buildOutputDedupeKey({
         teamId: input.teamId,
         targetKind: 'object_relationship',
         operation: input.operation,
         targetId: input.relationshipId,
-        sourceRefs,
+        sourceRefs: sourceContext.sourceRefs,
         authorityPolicyVersion: AUTHORITY_POLICY_VERSION,
         plannerVersion: OBJECT_DIRECT_WRITE_PLANNER_VERSION,
       }),
@@ -495,27 +545,11 @@ async function emitNoteDirectWriteOutput(input: {
   previousBody?: string | null;
 }): Promise<void> {
   if (!input.sourceEventId) return;
-  const [evidence] = await input.db
-    .select({
-      id: reconciliationEvidence.id,
-      sourcePayloadRef: reconciliationEvidence.sourcePayloadRef,
-    })
-    .from(reconciliationEvidence)
-    .where(
-      and(
-        eq(reconciliationEvidence.teamId, input.teamId),
-        eq(reconciliationEvidence.rawEventId, input.sourceEventId),
-      ),
-    )
-    .limit(1);
-  const sourceRefs = [
-    {
-      source: 'system',
-      rawEventId: input.sourceEventId,
-      ...(evidence?.id ? { evidenceId: evidence.id } : {}),
-      ...(evidence?.sourcePayloadRef ? { sourcePayloadRef: evidence.sourcePayloadRef } : {}),
-    },
-  ];
+  const sourceContext = await buildObjectDirectWriteSourceContext({
+    db: input.db,
+    teamId: input.teamId,
+    sourceEventId: input.sourceEventId,
+  });
   const [run] = await input.db
     .insert(reconciliationRuns)
     .values({
@@ -595,20 +629,20 @@ async function emitNoteDirectWriteOutput(input: {
       },
       confidence: 'high',
       requiresApproval: false,
-      sourceRefs,
-      sourcePayloadRefs: evidence?.sourcePayloadRef ? [evidence.sourcePayloadRef] : [],
-      visibility: 'team',
-      visibilityOwnerUserId: null,
-      visibilityUserIds: null,
-      visibilityFloor: 'team',
-      visibilityFloorOwnerUserId: null,
-      visibilityFloorUserIds: null,
+      sourceRefs: sourceContext.sourceRefs,
+      sourcePayloadRefs: sourceContext.sourcePayloadRefs,
+      visibility: sourceContext.visibility,
+      visibilityOwnerUserId: sourceContext.visibilityOwnerUserId,
+      visibilityUserIds: sourceContext.visibilityUserIds,
+      visibilityFloor: sourceContext.visibility,
+      visibilityFloorOwnerUserId: sourceContext.visibilityOwnerUserId,
+      visibilityFloorUserIds: sourceContext.visibilityUserIds,
       dedupeKey: buildOutputDedupeKey({
         teamId: input.teamId,
         targetKind: 'object_note',
         operation: input.operation,
         targetId: input.noteId,
-        sourceRefs,
+        sourceRefs: sourceContext.sourceRefs,
         authorityPolicyVersion: AUTHORITY_POLICY_VERSION,
         plannerVersion: OBJECT_DIRECT_WRITE_PLANNER_VERSION,
       }),
@@ -648,27 +682,11 @@ async function emitIdentityFacetDirectWriteOutput(input: {
   };
 }): Promise<void> {
   if (!input.sourceEventId) return;
-  const [evidence] = await input.db
-    .select({
-      id: reconciliationEvidence.id,
-      sourcePayloadRef: reconciliationEvidence.sourcePayloadRef,
-    })
-    .from(reconciliationEvidence)
-    .where(
-      and(
-        eq(reconciliationEvidence.teamId, input.teamId),
-        eq(reconciliationEvidence.rawEventId, input.sourceEventId),
-      ),
-    )
-    .limit(1);
-  const sourceRefs = [
-    {
-      source: 'system',
-      rawEventId: input.sourceEventId,
-      ...(evidence?.id ? { evidenceId: evidence.id } : {}),
-      ...(evidence?.sourcePayloadRef ? { sourcePayloadRef: evidence.sourcePayloadRef } : {}),
-    },
-  ];
+  const sourceContext = await buildObjectDirectWriteSourceContext({
+    db: input.db,
+    teamId: input.teamId,
+    sourceEventId: input.sourceEventId,
+  });
   const [run] = await input.db
     .insert(reconciliationRuns)
     .values({
@@ -760,20 +778,20 @@ async function emitIdentityFacetDirectWriteOutput(input: {
       },
       confidence: 'high',
       requiresApproval: false,
-      sourceRefs,
-      sourcePayloadRefs: evidence?.sourcePayloadRef ? [evidence.sourcePayloadRef] : [],
-      visibility: 'team',
-      visibilityOwnerUserId: null,
-      visibilityUserIds: null,
-      visibilityFloor: 'team',
-      visibilityFloorOwnerUserId: null,
-      visibilityFloorUserIds: null,
+      sourceRefs: sourceContext.sourceRefs,
+      sourcePayloadRefs: sourceContext.sourcePayloadRefs,
+      visibility: sourceContext.visibility,
+      visibilityOwnerUserId: sourceContext.visibilityOwnerUserId,
+      visibilityUserIds: sourceContext.visibilityUserIds,
+      visibilityFloor: sourceContext.visibility,
+      visibilityFloorOwnerUserId: sourceContext.visibilityOwnerUserId,
+      visibilityFloorUserIds: sourceContext.visibilityUserIds,
       dedupeKey: buildOutputDedupeKey({
         teamId: input.teamId,
         targetKind: 'identity_facet',
         operation: input.operation,
         targetId: input.identityFacetId,
-        sourceRefs,
+        sourceRefs: sourceContext.sourceRefs,
         authorityPolicyVersion: AUTHORITY_POLICY_VERSION,
         plannerVersion: OBJECT_DIRECT_WRITE_PLANNER_VERSION,
       }),
@@ -1094,11 +1112,6 @@ function recordFromUnknown(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : {};
-}
-
-function sourceEventIdFromPayload(value: unknown): string | null {
-  const sourceEventId = recordFromUnknown(value).sourceEventId;
-  return typeof sourceEventId === 'string' && UUID_RE.test(sourceEventId) ? sourceEventId : null;
 }
 
 export function displayObjectTitle(row: Pick<ObjectRow, 'canonicalName' | 'metadata'>): string {
@@ -1904,7 +1917,7 @@ async function sourceRefRawEventIdsBySuggestionItem(
 }
 
 function relevantSuggestionEvidenceRows<
-  T extends { rawEventId: string; bundleEvidenceCount: number; proposedPayload: unknown },
+  T extends { rawEventId: string; bundleEvidenceCount: number },
 >(itemRows: T[], outputRawEventIds: Set<string> | undefined): T[] {
   if (outputRawEventIds !== undefined) {
     if (outputRawEventIds.size === 0) return [];
@@ -1915,12 +1928,7 @@ function relevantSuggestionEvidenceRows<
       : [];
   }
 
-  const sourceEventId = sourceEventIdFromPayload(itemRows[0]?.proposedPayload);
-  return sourceEventId
-    ? itemRows.filter((row) => row.rawEventId === sourceEventId)
-    : itemRows[0]?.bundleEvidenceCount === 1 && itemRows.length === 1
-      ? itemRows
-      : [];
+  return itemRows[0]?.bundleEvidenceCount === 1 && itemRows.length === 1 ? itemRows : [];
 }
 
 function reconciliationOutputIdsFromMetadata(metadata: unknown): string[] {
@@ -1949,6 +1957,18 @@ function sourceRefRawEventIds(value: unknown): string[] {
       }),
     ),
   ];
+}
+
+function reconciliationOutputCitesAnyRawEventId(rawEventIds: string[]): SQL {
+  const sourceRefIdList = sql.join(
+    rawEventIds.map((id) => sql`${id}`),
+    sql`, `,
+  );
+  return sql`EXISTS (
+    SELECT 1
+    FROM jsonb_array_elements(${reconciliationOutputs.sourceRefs}) AS source_ref
+    WHERE source_ref ->> 'rawEventId' IN (${sourceRefIdList})
+  )`;
 }
 
 function cursorCondition(
@@ -2545,6 +2565,38 @@ async function getConnectedWork(
   const artifactRawEventIds = Array.from(
     new Set(artifactAssociationRows.map((row) => row.rawEventId).filter(Boolean)),
   );
+  const sourceRefLinkedPendingReconciliationOutputRows =
+    artifactRawEventIds.length > 0
+      ? await db
+          .select({
+            outputId: reconciliationOutputs.id,
+            title: sql<string | null>`${reconciliationOutputs.payload} ->> 'title'`,
+            operation: reconciliationOutputs.operation,
+            targetKind: reconciliationOutputs.targetKind,
+            targetId: reconciliationOutputs.targetId,
+            payload: reconciliationOutputs.payload,
+            createdAt: reconciliationOutputs.createdAt,
+          })
+          .from(reconciliationOutputs)
+          .where(
+            and(
+              eq(reconciliationOutputs.teamId, scope.teamId),
+              eq(reconciliationOutputs.status, 'pending'),
+              eq(reconciliationOutputs.requiresApproval, true),
+              reconciliationOutputVisibleToScope(scope),
+              reconciliationOutputCitesAnyRawEventId(artifactRawEventIds),
+            ),
+          )
+          .orderBy(desc(reconciliationOutputs.createdAt), desc(reconciliationOutputs.id))
+          .limit(16)
+      : [];
+  const allPendingReconciliationOutputRows = Array.from(
+    new Map(
+      [...pendingReconciliationOutputRows, ...sourceRefLinkedPendingReconciliationOutputRows].map(
+        (row) => [row.outputId, row],
+      ),
+    ).values(),
+  );
   if (artifactRawEventIds.length > 0) {
     timelineConditions.push(inArray(rawEvents.id, artifactRawEventIds));
   }
@@ -2653,7 +2705,7 @@ async function getConnectedWork(
       ),
     ),
   );
-  const pendingReconciliationApprovals = pendingReconciliationOutputRows
+  const pendingReconciliationApprovals = allPendingReconciliationOutputRows
     .filter((row) => {
       const key = [
         row.operation,
@@ -2737,6 +2789,13 @@ async function getConnectedWork(
             })
             .from(artifactEvidenceAssociations)
             .innerJoin(
+              reconciliationEvidence,
+              and(
+                eq(reconciliationEvidence.id, artifactEvidenceAssociations.evidenceId),
+                eq(reconciliationEvidence.teamId, scope.teamId),
+              ),
+            )
+            .innerJoin(
               artifactClusters,
               and(
                 eq(artifactClusters.id, artifactEvidenceAssociations.clusterId),
@@ -2746,7 +2805,10 @@ async function getConnectedWork(
             .where(
               and(
                 eq(artifactEvidenceAssociations.teamId, scope.teamId),
-                inArray(artifactEvidenceAssociations.rawEventId, relatedRawEventIds),
+                inArray(
+                  sql<string>`COALESCE(${artifactEvidenceAssociations.rawEventId}, ${reconciliationEvidence.rawEventId})`,
+                  relatedRawEventIds,
+                ),
                 eq(artifactClusters.artifactType, 'link'),
                 isNull(artifactClusters.archivedAt),
                 artifactAssociationVisibleToScope(scope),
@@ -3621,7 +3683,7 @@ export async function createObject(
       field: '__create__',
       previousValue: null,
       newValue: { type: input.type, canonicalName: name, status: row.status },
-      sourceEventId,
+      sourceEventId: null,
     });
     await emitObjectDirectWriteOutput({
       db: tx,
@@ -3863,7 +3925,7 @@ export async function updateObject(
           field: c.field,
           previousValue: c.previousValue as never,
           newValue: c.newValue as never,
-          sourceEventId,
+          sourceEventId: null,
         })),
       )
       .returning({ id: objectChanges.id });
@@ -4430,7 +4492,7 @@ export async function mergeObjects(
           merged_entity_ids: loserIds,
           aliases: nextAliases,
         },
-        sourceEventId,
+        sourceEventId: null,
       },
       ...losers.map((loser) => ({
         teamId: scope.teamId,
@@ -4441,7 +4503,7 @@ export async function mergeObjects(
         field: '__merged_from__',
         previousValue: { id: loser.id, canonicalName: loser.canonicalName, type: loser.type },
         newValue: { mergedIntoId: survivor.id },
-        sourceEventId,
+        sourceEventId: null,
       })),
     ]);
     await emitObjectDirectWriteOutput({
@@ -4644,7 +4706,7 @@ export async function addRelationship(
         field: '__relationship_create__',
         previousValue: null,
         newValue: { relationship_id: row.id, to: endpoints.toEntityId, kind: input.kind },
-        sourceEventId,
+        sourceEventId: null,
       },
       {
         teamId: scope.teamId,
@@ -4655,7 +4717,7 @@ export async function addRelationship(
         field: '__relationship_create__',
         previousValue: null,
         newValue: { relationship_id: row.id, from: endpoints.fromEntityId, kind: input.kind },
-        sourceEventId,
+        sourceEventId: null,
       },
     ]);
     await emitRelationshipDirectWriteOutput({
@@ -4772,7 +4834,7 @@ export async function removeRelationship(
         field: '__relationship_delete__',
         previousValue: { relationship_id: rel.id, to: rel.toEntityId, kind: rel.kind },
         newValue: null,
-        sourceEventId,
+        sourceEventId: null,
       },
       {
         teamId: scope.teamId,
@@ -4783,7 +4845,7 @@ export async function removeRelationship(
         field: '__relationship_delete__',
         previousValue: { relationship_id: rel.id, from: rel.fromEntityId, kind: rel.kind },
         newValue: null,
-        sourceEventId,
+        sourceEventId: null,
       },
     ]);
     await emitRelationshipDirectWriteOutput({
@@ -4906,7 +4968,7 @@ export async function createNote(
       field: '__note_create__',
       previousValue: null,
       newValue: { note_id: noteId, body },
-      sourceEventId,
+      sourceEventId: null,
     });
     await emitNoteDirectWriteOutput({
       db: tx,
@@ -5179,7 +5241,7 @@ export async function createIdentityFacet(
           linkedUserId:
             input.linkedUserId !== undefined ? input.linkedUserId : existing[0].linkedUserId,
         },
-        sourceEventId,
+        sourceEventId: null,
       });
       await emitIdentityFacetDirectWriteOutput({
         db: tx,
@@ -5291,7 +5353,7 @@ export async function createIdentityFacet(
         externalId: input.externalId ?? null,
         linkedUserId: input.linkedUserId ?? null,
       },
-      sourceEventId,
+      sourceEventId: null,
     });
     await emitIdentityFacetDirectWriteOutput({
       db: tx,
@@ -5424,7 +5486,7 @@ export async function updateNote(
       field: '__note_update__',
       previousValue: { note_id: note.id, body: note.body },
       newValue: { note_id: note.id, body },
-      sourceEventId,
+      sourceEventId: null,
     });
     await emitNoteDirectWriteOutput({
       db: tx,
@@ -5536,7 +5598,7 @@ export async function deleteNote(
       field: '__note_delete__',
       previousValue: { note_id: note.id, body: note.body },
       newValue: null,
-      sourceEventId,
+      sourceEventId: null,
     });
     await emitNoteDirectWriteOutput({
       db: tx,

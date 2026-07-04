@@ -30,6 +30,30 @@ describe('reconciliation authority policy', () => {
     });
   });
 
+  it('allows GitHub issue open and reopen lifecycle updates as direct writes', () => {
+    for (const eventType of ['issue.opened', 'issue.reopened']) {
+      expect(
+        evaluateAuthorityPolicy({
+          source: 'integration',
+          provider: 'github',
+          eventType,
+          clusterKind: 'incident',
+          targetKind: 'cluster_lifecycle',
+          targetField: 'status',
+          externalObjectId: 'ORG/REPO#1',
+          visibility: 'team',
+          confidence: 'high',
+          currentOwner: { provider: 'github', externalObjectId: 'ORG/REPO#1' },
+        }),
+      ).toMatchObject({
+        decision: 'direct',
+        outputKind: 'direct_write',
+        requiresApproval: false,
+        reason: 'provider_owns_external_object_state',
+      });
+    }
+  });
+
   it('keeps provider identity context observed-only when it does not own target state', () => {
     const result = evaluateAuthorityPolicy({
       source: 'integration',

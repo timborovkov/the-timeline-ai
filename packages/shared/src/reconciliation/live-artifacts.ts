@@ -1,8 +1,9 @@
-import { createHash } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 import type { ArtifactClusterKind, DeterministicEvalCase } from '#src/reconciliation/index.js';
+
+import { stableSha256Digest } from '#src/reconciliation/stable-digest.js';
 
 export interface LiveEvalModelResult {
   scenarioFamily: string;
@@ -116,6 +117,9 @@ export interface LiveEvalRunManifest {
 }
 
 export function buildLiveEvalArtifact(input: LiveEvalArtifactInput): LiveEvalArtifact {
+  assertValidLiveEvalSourceRefs(input);
+  assertValidLiveEvalJudge(input);
+  assertValidLiveEvalExpectedCounts(input);
   return {
     schemaVersion: 2,
     caseName: input.testCase.name,
@@ -175,6 +179,51 @@ export function buildLiveEvalArtifact(input: LiveEvalArtifactInput): LiveEvalArt
   };
 }
 
+function assertValidLiveEvalSourceRefs(input: LiveEvalArtifactInput): void {
+  const invalidRefs = input.result.sourceRefs
+    .map((ref, index) => ({
+      index,
+      surface: ref.surface,
+      rawEventId: ref.rawEventId,
+    }))
+    .filter((ref) => !isNonEmptyString(ref.surface) || !isNonEmptyString(ref.rawEventId));
+  if (invalidRefs.length === 0) return;
+  throw new Error(
+    `Cannot write reconciliation live eval artifact for ${input.testCase.name}: invalid source refs at indexes ${invalidRefs
+      .map((ref) => ref.index)
+      .join(', ')}`,
+  );
+}
+
+function assertValidLiveEvalJudge(input: LiveEvalArtifactInput): void {
+  if (!input.judge || Number.isFinite(input.judge.score)) return;
+  throw new Error(
+    `Cannot write reconciliation live eval artifact for ${input.testCase.name}: invalid judge score`,
+  );
+}
+
+function assertValidLiveEvalExpectedCounts(input: LiveEvalArtifactInput): void {
+  const invalidPaths = [
+    ...invalidCountMapPaths('expected.outputKindCounts', input.testCase.expected.outputKindCounts),
+    ...invalidCountMapPaths(
+      'expected.associationRoleCounts',
+      input.testCase.expected.associationRoleCounts ?? {},
+    ),
+  ];
+  if (invalidPaths.length === 0) return;
+  throw new Error(
+    `Cannot write reconciliation live eval artifact for ${input.testCase.name}: invalid expected counts at ${invalidPaths.join(
+      ', ',
+    )}`,
+  );
+}
+
+function invalidCountMapPaths(prefix: string, counts: Record<string, number>): string[] {
+  return Object.entries(counts)
+    .filter(([, value]) => !Number.isInteger(value) || value < 0)
+    .map(([key]) => `${prefix}.${key}`);
+}
+
 export async function writeLiveEvalArtifact(
   outputDir: string,
   input: LiveEvalArtifactInput,
@@ -203,7 +252,7 @@ export function buildLiveEvalRunManifest(
   const cases = input.artifacts
     .map(({ artifact, path: artifactPath }) => ({
       caseName: artifact.caseName,
-      artifactPath: path.relative(outputDir, artifactPath),
+      artifactPath: safeManifestArtifactPath(outputDir, artifactPath, artifact.caseName),
       scenarioFamily: artifact.scenarioFamily,
       ingestionSurfaces: [...artifact.ingestionSurfaces],
       passed: artifact.passed,
@@ -264,20 +313,32 @@ function timestampFileSegment(value: string): string {
   return value.replace(/[^0-9A-Za-z]+/g, '-').replace(/^-+|-+$/g, '');
 }
 
+function safeManifestArtifactPath(
+  outputDir: string,
+  artifactPath: string,
+  caseName: string,
+): string {
+  const resolvedBase = path.resolve(outputDir);
+  const resolvedArtifact = path.resolve(artifactPath);
+  if (
+    resolvedArtifact === resolvedBase ||
+    !resolvedArtifact.startsWith(`${resolvedBase}${path.sep}`)
+  ) {
+    throw new Error(
+      `Cannot write reconciliation live eval manifest for ${caseName}: artifact path escapes output directory`,
+    );
+  }
+  return path.relative(resolvedBase, resolvedArtifact);
+}
+
 function digestStable(value: unknown): string {
-  return `sha256:${createHash('sha256').update(stableJson(value)).digest('hex')}`;
+  return stableSha256Digest(value);
 }
 
 function uniqueSorted(values: string[]): string[] {
   return [...new Set(values)].sort();
 }
 
-function stableJson(value: unknown): string {
-  if (value === null || typeof value !== 'object') return JSON.stringify(value);
-  if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`;
-  const record = value as Record<string, unknown>;
-  return `{${Object.keys(record)
-    .sort()
-    .map((key) => `${JSON.stringify(key)}:${stableJson(record[key])}`)
-    .join(',')}}`;
+function isNonEmptyString(value: string): boolean {
+  return value.trim().length > 0;
 }

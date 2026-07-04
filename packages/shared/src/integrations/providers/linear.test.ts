@@ -119,6 +119,12 @@ describe('linearProvider.handleWebhook', () => {
       displayTitle: 'Wire Phase 11',
       externalId: 'LIN-1',
       aliases: ['ENG-42'],
+      metadata: {
+        linear_record_kind: 'issue',
+        linear_identifier: 'ENG-42',
+        linear_team_id: 't1',
+        linear_team_key: 'ENG',
+      },
     });
   });
 
@@ -314,6 +320,15 @@ describe('linearProvider.incrementalSync', () => {
       'project-1',
       'project-2',
     ]);
+    expect(events.find((event) => event.externalObjectId === 'project-1')?.objectMap).toMatchObject(
+      {
+        type: 'project',
+        metadata: {
+          linear_record_kind: 'project',
+          linear_state: 'started',
+        },
+      },
+    );
     expect(ctx.saveCursor).toHaveBeenCalledWith('linear.issues', {
       updated_after: '2026-06-20T11:00:00.000Z',
     });

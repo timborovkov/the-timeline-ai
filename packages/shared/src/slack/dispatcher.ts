@@ -12,7 +12,7 @@ import {
 } from '@timeline/db';
 import { and, asc, desc, eq, isNull, ne, sql } from 'drizzle-orm';
 
-import { askAgent, TEAM_BOT_ACTOR_USER_ID } from '#src/agent/ask.js';
+import { askAgent, TEAM_BOT_ACTOR_USER_ID, type AskAgentDeps } from '#src/agent/ask.js';
 import { type AgentToolErrorReporter } from '#src/agent/tools.js';
 import {
   classifyConversationalAttachment,
@@ -36,6 +36,7 @@ import {
 import { detectMeetingPlatform } from '#src/meetings/scope.js';
 import { getRedisConnection } from '#src/queue/connection.js';
 import { normalizeRawEventsToEvidence } from '#src/reconciliation/normalization.js';
+import { inlineSourceSnapshotMetadata } from '#src/reconciliation/source-snapshot.js';
 import { SlackApi, type SlackConversation, type SlackOAuthAccessResponse } from '#src/slack/api.js';
 import {
   slackEnvelopeSchema,
@@ -46,6 +47,7 @@ import {
 import { withTeam } from '#src/team-scope.js';
 
 const log = childLogger('slack');
+const SLACK_SOURCE_SNAPSHOT_VERSION = 'slack-source-snapshot-2026-07';
 
 type DbTx = Parameters<Parameters<Db['transaction']>[0]>[0];
 type DbOrTx = Db | DbTx;
@@ -54,6 +56,7 @@ export interface SlackIngestDeps {
   db: Db;
   onAgentToolError?: AgentToolErrorReporter | undefined;
   onAgentError?: ((err: unknown) => void) | undefined;
+  agentDeps?: Omit<AskAgentDeps, 'onToolError' | 'onAgentError'> | undefined;
   audio?: {
     upload(input: { key: string; body: Buffer; contentType: string }): Promise<void>;
     enqueueTranscribe(input: {
@@ -142,6 +145,7 @@ export async function handleSlackSlashCommand(
     db: Db;
     onAgentToolError?: AgentToolErrorReporter | undefined;
     onAgentError?: ((err: unknown) => void) | undefined;
+    agentDeps?: Omit<AskAgentDeps, 'onToolError' | 'onAgentError'> | undefined;
   },
   input: SlackSlashCommandInput,
 ): Promise<void> {
@@ -170,6 +174,7 @@ async function handleSlackAskCommand(
     db: Db;
     onAgentToolError?: AgentToolErrorReporter | undefined;
     onAgentError?: ((err: unknown) => void) | undefined;
+    agentDeps?: Omit<AskAgentDeps, 'onToolError' | 'onAgentError'> | undefined;
   },
   api: SlackApi,
   workspaceId: string,
@@ -228,7 +233,11 @@ async function handleSlackAskCommand(
         trustedTeamActor: route.trustedTeamActor,
         question,
       },
-      { onToolError: deps.onAgentToolError, onAgentError: deps.onAgentError },
+      {
+        ...deps.agentDeps,
+        onToolError: deps.onAgentToolError,
+        onAgentError: deps.onAgentError,
+      },
     );
     await api.postMessage({
       channel: input.channel_id,
@@ -610,7 +619,11 @@ async function handleAppMention(
         trustedTeamActor: !route.linkedUserId && !route.isDm,
         question,
       },
-      { onToolError: deps.onAgentToolError, onAgentError: deps.onAgentError },
+      {
+        ...deps.agentDeps,
+        onToolError: deps.onAgentToolError,
+        onAgentError: deps.onAgentError,
+      },
     );
     await api.postMessage({
       channel: event.channel,
@@ -689,6 +702,18 @@ async function handleMessageEvent(
     source_owner_user_id: route.sourceOwnerUserId,
     source_unverified: !route.linkedUserId,
     attachments: files.map(fileSummary),
+    ...slackSourcePayloadMetadata({
+      workspace,
+      slackEventId,
+      event,
+      message,
+      senderDisplayName,
+      eventTs,
+      ts,
+      threadTs,
+      route,
+      files,
+    }),
   };
   const links = extractLinksFromText(text);
   if (links.length > 0) metadata.links = linkMetadata(links);
@@ -755,6 +780,48 @@ async function handleMessageEvent(
         log.warn({ err }, 'slack reaction failed');
       });
   }
+}
+
+function slackSourcePayloadMetadata(input: {
+  workspace: SlackWorkspaceRecord;
+  slackEventId: string;
+  event: SlackMessageEvent;
+  message: SlackMessageEvent['message'] | SlackMessageEvent;
+  senderDisplayName: string;
+  eventTs: string;
+  ts: string;
+  threadTs: string | undefined;
+  route: {
+    conversationType: string;
+    conversationTitle: string | null;
+    linkedUserId: string | null;
+  };
+  files: SlackFile[];
+}): Record<string, unknown> {
+  const snapshot = {
+    provider: 'slack',
+    slack_event_id: input.slackEventId,
+    workspace_id: input.workspace.id,
+    slack_team_id: input.workspace.slackTeamId,
+    channel_id: input.event.channel,
+    channel_type: input.event.channel_type ?? input.route.conversationType,
+    channel_title: input.route.conversationTitle,
+    message_ts: input.ts,
+    event_ts: input.eventTs,
+    thread_ts: input.threadTs ?? null,
+    subtype: input.event.subtype ?? null,
+    sender_id: input.message?.user ?? input.event.user ?? null,
+    sender_name: input.senderDisplayName,
+    linked_user_id: input.route.linkedUserId,
+    text: input.message?.text ?? input.event.text ?? null,
+    files: input.files.map(fileSummary),
+  };
+  return inlineSourceSnapshotMetadata({
+    snapshot,
+    kind: 'slack_message_event',
+    version: SLACK_SOURCE_SNAPSHOT_VERSION,
+    ref: () => `inline://timeline/slack/${input.workspace.id}/${input.slackEventId}`,
+  });
 }
 
 async function insertSlackEvent(
@@ -967,16 +1034,13 @@ async function processSlackAttachments(
           contentAudioUrl: key,
           visibility: input.visibility,
           visibilityOwnerUserId: input.parentAuthorUserId ?? input.sourceOwnerUserId,
-          sourceMetadata: {
-            slack_attachment_kind: 'audio',
-            slack_file_id: file.id,
-            slack_file_name: filename,
-            slack_parent_raw_event_id: input.parentRawEventId,
-            slack_workspace_id: input.workspace.id,
-            slack_channel_id: input.channelId,
-            slack_message_ts: input.messageTs,
-            source_owner_user_id: input.sourceOwnerUserId,
-          },
+          sourceMetadata: slackAudioAttachmentSourceMetadata({
+            input,
+            file,
+            filename,
+            contentType,
+            audioKey: key,
+          }),
         })
         .returning({ id: rawEvents.id, teamId: rawEvents.teamId });
       const row = rows[0];
@@ -1008,6 +1072,51 @@ async function processSlackAttachments(
       })
       .where(eq(rawEvents.id, input.parentRawEventId));
   }
+}
+
+function slackAudioAttachmentSourceMetadata(args: {
+  input: {
+    parentRawEventId: string;
+    workspace: SlackWorkspaceRecord;
+    channelId: string;
+    messageTs: string;
+    sourceOwnerUserId: string | null;
+  };
+  file: SlackFile;
+  filename: string;
+  contentType: string;
+  audioKey: string;
+}): Record<string, unknown> {
+  const snapshot = {
+    provider: 'slack',
+    capture_kind: 'audio_attachment',
+    workspace_id: args.input.workspace.id,
+    slack_team_id: args.input.workspace.slackTeamId,
+    channel_id: args.input.channelId,
+    message_ts: args.input.messageTs,
+    parent_raw_event_id: args.input.parentRawEventId,
+    source_owner_user_id: args.input.sourceOwnerUserId,
+    audio_key: args.audioKey,
+    content_type: args.contentType,
+    file: fileSummary(args.file),
+  };
+  return {
+    slack_attachment_kind: 'audio',
+    slack_file_id: args.file.id,
+    slack_file_name: args.filename,
+    slack_parent_raw_event_id: args.input.parentRawEventId,
+    slack_workspace_id: args.input.workspace.id,
+    slack_channel_id: args.input.channelId,
+    slack_message_ts: args.input.messageTs,
+    source_owner_user_id: args.input.sourceOwnerUserId,
+    ...inlineSourceSnapshotMetadata({
+      snapshot,
+      kind: 'slack_audio_attachment',
+      version: SLACK_SOURCE_SNAPSHOT_VERSION,
+      ref: () =>
+        `inline://timeline/slack/${args.input.workspace.id}/${args.input.channelId}/${args.input.messageTs}/attachment/${args.file.id}`,
+    }),
+  };
 }
 
 async function slackAttachmentAlreadyProcessed(

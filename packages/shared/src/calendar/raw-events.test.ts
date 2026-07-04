@@ -1,6 +1,11 @@
 import { PGlite } from '@electric-sql/pglite';
-import { artifactClusters, artifactEvidenceAssociations, rawEvents } from '@timeline/db';
-import { eq } from 'drizzle-orm';
+import {
+  artifactClusters,
+  artifactEvidenceAssociations,
+  rawEvents,
+  reconciliationEvidence,
+} from '@timeline/db';
+import { and, eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
@@ -53,6 +58,7 @@ describe('calendar raw events', () => {
       scheduledRawEventId,
       startAtRawEventId,
       teamId: TEAM_ID,
+      calendarEventId: CALENDAR_EVENT_ID,
       title: 'Launch review',
       description: 'Ask new@example.com to read https://new.example/followup',
       startAt: new Date('2026-05-27T09:30:00Z'),
@@ -64,14 +70,63 @@ describe('calendar raw events', () => {
     });
 
     const [rawEvent] = await db.select().from(rawEvents).where(eq(rawEvents.id, startAtRawEventId));
+    const metadata = rawEvent?.sourceMetadata as Record<string, unknown> | undefined;
     expect(rawEvent?.sourceMetadata).toMatchObject({
+      source_payload_ref: `inline://timeline/calendar/${CALENDAR_EVENT_ID}/event`,
+      source_snapshot_kind: 'calendar_event_mirror',
+      source_snapshot_version: 'calendar-source-snapshot-2026-07',
+      source_snapshot: {
+        provider: 'calendar',
+        calendar_event_id: CALENDAR_EVENT_ID,
+        action: 'event',
+        title: 'Launch review',
+        description: 'Ask new@example.com to read https://new.example/followup',
+        location: null,
+        start_at: '2026-05-27T09:30:00.000Z',
+        end_at: '2026-05-27T10:30:00.000Z',
+        timezone: 'UTC',
+      },
       contacts: {
         emails: [expect.objectContaining({ normalized_value: 'new@example.com' })],
       },
       links: [expect.objectContaining({ canonical_url: 'https://new.example/followup' })],
     });
+    expect(metadata?.payload_digest).toEqual(expect.stringMatching(/^sha256:[0-9a-f]{64}$/));
     expect(JSON.stringify(rawEvent?.sourceMetadata)).not.toContain('old@example.com');
     expect(JSON.stringify(rawEvent?.sourceMetadata)).not.toContain('old.example');
+
+    const [evidence] = await db
+      .select()
+      .from(reconciliationEvidence)
+      .where(
+        and(
+          eq(reconciliationEvidence.rawEventId, startAtRawEventId),
+          eq(
+            reconciliationEvidence.sourcePayloadRef,
+            `inline://timeline/calendar/${CALENDAR_EVENT_ID}/event`,
+          ),
+          eq(reconciliationEvidence.payloadDigest, String(metadata?.payload_digest)),
+        ),
+      );
+    expect(evidence).toMatchObject({
+      source: 'calendar',
+      provider: 'calendar',
+      externalObjectId: CALENDAR_EVENT_ID,
+      eventType: 'calendar.event',
+      replayState: 'full',
+      visibility: 'team',
+      visibilityOwnerUserId: USER_ID,
+    });
+
+    const [scheduled] = await db
+      .select()
+      .from(rawEvents)
+      .where(eq(rawEvents.id, scheduledRawEventId));
+    expect(scheduled?.sourceMetadata).toMatchObject({
+      action: 'scheduled',
+      source_payload_ref: `inline://timeline/calendar/${CALENDAR_EVENT_ID}/scheduled`,
+      source_snapshot_kind: 'calendar_event_mirror',
+    });
 
     const linkMembers = await db
       .select({

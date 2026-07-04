@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type * as TimelineDb from '@timeline/db';
 import type * as TimelineShared from '@timeline/shared';
@@ -25,6 +25,9 @@ const fakes = vi.hoisted(() => {
     adminDecryptIntegrationTokens: vi.fn(),
     adminListSelections: vi.fn(),
     adminRecordAudit: vi.fn(),
+    adminLoadCursor: vi.fn(),
+    adminSaveCursor: vi.fn(),
+    adminPersistTokens: vi.fn(),
     adminMarkSynced: vi.fn(),
     adminResetTransientSyncFailures: vi.fn(),
     adminLoadIntegrationSyncPause: vi.fn(),
@@ -34,6 +37,7 @@ const fakes = vi.hoisted(() => {
     adminReconcileExpiringWebhookSubscriptions: vi.fn(),
     adminResolveConnectionAttention: vi.fn(),
     adminRecordTransientSyncFailure: vi.fn(),
+    writeIntegrationEvents: vi.fn(),
     getProvider: vi.fn(),
     incrementalSync: vi.fn(),
     enqueueIntegrationSyncJob: vi.fn(),
@@ -60,6 +64,9 @@ vi.mock('@timeline/shared', async (importOriginal) => {
       adminDecryptIntegrationTokens: fakes.adminDecryptIntegrationTokens,
       adminListSelections: fakes.adminListSelections,
       adminRecordAudit: fakes.adminRecordAudit,
+      adminLoadCursor: fakes.adminLoadCursor,
+      adminSaveCursor: fakes.adminSaveCursor,
+      adminPersistTokens: fakes.adminPersistTokens,
       adminMarkSynced: fakes.adminMarkSynced,
       adminResetTransientSyncFailures: fakes.adminResetTransientSyncFailures,
       adminLoadIntegrationSyncPause: fakes.adminLoadIntegrationSyncPause,
@@ -69,6 +76,7 @@ vi.mock('@timeline/shared', async (importOriginal) => {
       adminReconcileExpiringWebhookSubscriptions: fakes.adminReconcileExpiringWebhookSubscriptions,
       adminResolveConnectionAttention: fakes.adminResolveConnectionAttention,
       adminRecordTransientSyncFailure: fakes.adminRecordTransientSyncFailure,
+      writeIntegrationEvents: fakes.writeIntegrationEvents,
       getProvider: fakes.getProvider,
     },
     queue: {
@@ -79,11 +87,27 @@ vi.mock('@timeline/shared', async (importOriginal) => {
 });
 
 const { handleTick, runOneIntegration } = await import('./integrationSync.js');
+const { integrations } = await import('@timeline/shared');
 
 const TEAM_ID = '11111111-1111-4111-8111-111111111111';
 const USER_ID = '22222222-2222-4222-8222-222222222222';
 const INTEGRATION_ID = '33333333-3333-4333-8333-333333333333';
 const CONNECTION_ID = '44444444-4444-4444-8444-444444444444';
+
+interface TestIntegrationEvent {
+  dedupKey: string;
+  provider: string;
+  eventType: string;
+  externalObjectId: string;
+  contentText: string;
+  extra?: Record<string, unknown>;
+}
+
+interface TestWriteIntegrationEventsInput {
+  db: unknown;
+  integration: Record<string, unknown>;
+  events: TestIntegrationEvent[];
+}
 
 const integration = {
   id: INTEGRATION_ID,
@@ -105,6 +129,10 @@ beforeEach(() => {
   fakes.adminDecryptIntegrationTokens.mockResolvedValue({ access_token: 'token' });
   fakes.adminListSelections.mockResolvedValue([]);
   fakes.adminRecordAudit.mockResolvedValue(undefined);
+  fakes.adminLoadCursor.mockResolvedValue({});
+  fakes.adminSaveCursor.mockResolvedValue(undefined);
+  fakes.adminPersistTokens.mockResolvedValue(undefined);
+  fakes.writeIntegrationEvents.mockResolvedValue(['raw-slack-1']);
   fakes.adminRecordError.mockResolvedValue(undefined);
   fakes.adminRecordConnectionAttention.mockResolvedValue(undefined);
   fakes.adminMarkSynced.mockResolvedValue(undefined);
@@ -127,6 +155,10 @@ beforeEach(() => {
   fakes.incrementalSync.mockResolvedValue(undefined);
   fakes.getProvider.mockReturnValue({ incrementalSync: fakes.incrementalSync });
   fakes.enqueueIntegrationSyncJob.mockResolvedValue(undefined);
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
 });
 
 describe('handleTick provider reconciliation cadence', () => {
@@ -688,6 +720,97 @@ describe('runOneIntegration attention classification', () => {
       }),
     );
     expect(fakes.adminRecordTransientSyncFailure).not.toHaveBeenCalled();
+  });
+
+  it('runs native Slack sync through the worker context and writes selected-channel events', async () => {
+    fakes.adminLoadIntegration.mockResolvedValueOnce({
+      ...integration,
+      provider: 'slack',
+      externalAccountId: 'T123',
+    });
+    fakes.adminDecryptIntegrationTokens.mockResolvedValueOnce({
+      access_token: 'xoxb-token',
+      team: { id: 'T123', name: 'Acme' },
+    });
+    fakes.adminListSelections.mockResolvedValueOnce([
+      { kind: 'slack.channel', externalId: 'C123', label: '#leadership' },
+    ]);
+    fakes.adminLoadCursor.mockResolvedValueOnce({ latest_ts: '1781999999.000000' });
+    fakes.getProvider.mockReturnValueOnce(integrations.slackProvider);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof globalThis.fetch>((input, init) => {
+        if (typeof input !== 'string') throw new Error('expected Slack URL string');
+        if (!input.endsWith('/conversations.history')) {
+          return Promise.resolve(
+            new Response(JSON.stringify({ ok: true, messages: [] }), {
+              headers: { 'content-type': 'application/json' },
+            }),
+          );
+        }
+        const body = init?.body;
+        if (typeof body !== 'string') throw new Error('expected Slack form body');
+        const params = new URLSearchParams(body);
+        expect(params.get('channel')).toBe('C123');
+        expect(params.get('oldest')).toBe('1780790399.000000');
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              ok: true,
+              messages: [
+                {
+                  type: 'message',
+                  user: 'U123',
+                  username: 'Ada',
+                  text: 'Slack-native worker sync captured the customer handoff',
+                  ts: '1782000000.000100',
+                },
+              ],
+              response_metadata: {},
+            }),
+            { headers: { 'content-type': 'application/json' } },
+          ),
+        );
+      }),
+    );
+
+    await runOneIntegration({} as never, INTEGRATION_ID, 'incremental');
+
+    const writeCall = fakes.writeIntegrationEvents.mock.calls[0] as
+      | [TestWriteIntegrationEventsInput]
+      | undefined;
+    const writeInput = writeCall?.[0];
+    expect(writeInput?.db).toBeDefined();
+    expect(writeInput?.integration).toMatchObject({
+      provider: 'slack',
+      externalAccountId: 'T123',
+    });
+    expect(writeInput?.events).toHaveLength(1);
+    const event = writeInput?.events[0];
+    expect(event).toMatchObject({
+      dedupKey: 'slack:message:T123:C123:1782000000.000100:',
+      provider: 'slack',
+      eventType: 'message.created',
+      externalObjectId: 'C123:1782000000.000100',
+      contentText: 'Slack-native worker sync captured the customer handoff',
+    });
+    expect(event?.extra).toMatchObject({
+      slack_team_id: 'T123',
+      slack_channel_id: 'C123',
+      external_url: 'https://slack.com/archives/C123/p1782000000000100',
+    });
+    expect(fakes.adminSaveCursor).toHaveBeenCalledWith(
+      expect.anything(),
+      INTEGRATION_ID,
+      'slack.channel:C123',
+      { latest_ts: '1782000000.000100' },
+      undefined,
+    );
+    expect(fakes.adminMarkSynced).toHaveBeenCalledWith(expect.anything(), INTEGRATION_ID);
+    expect(fakes.adminResetTransientSyncFailures).toHaveBeenCalledWith(
+      expect.anything(),
+      INTEGRATION_ID,
+    );
   });
 
   it('records GitHub installation rate limits against the installation budget owner', async () => {

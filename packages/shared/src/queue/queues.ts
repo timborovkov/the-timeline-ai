@@ -1195,7 +1195,24 @@ function reconciliationJobId(data: ReconciliationJobData): string {
 }
 
 export async function enqueueReconciliationJob(data: ReconciliationJobData): Promise<void> {
-  await getReconciliationQueue().add('reconciliation', data, { jobId: reconciliationJobId(data) });
+  const q = getReconciliationQueue();
+  const jobId = reconciliationJobId(data);
+  const existing = (await q.getJob(jobId)) as ExistingJobLike | null;
+  if (existing) {
+    const state = await existing.getState?.().catch(() => null);
+    if (!state || SUGGESTION_JOB_DEDUPE_STATES.has(state)) return;
+    if (SUGGESTION_JOB_REPLACEABLE_STATES.has(state)) {
+      if (!existing.remove) return;
+      const removed = await existing.remove().then(
+        () => true,
+        () => false,
+      );
+      if (!removed) return;
+    } else {
+      return;
+    }
+  }
+  await q.add('reconciliation', data, { jobId });
 }
 
 export async function closeReconciliationQueue(): Promise<void> {

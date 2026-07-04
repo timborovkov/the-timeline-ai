@@ -1,6 +1,6 @@
 import { eventSource } from '@timeline/db';
 import { withTeam } from '@timeline/shared/team-scope';
-import { DatabaseZap, ListRestart, Play } from 'lucide-react';
+import { CheckCircle2, DatabaseZap, ListRestart, Play, TriangleAlert } from 'lucide-react';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
@@ -8,6 +8,7 @@ import type {
   ReconciliationDashboardCluster,
   ReconciliationDashboardOutput,
   ReconciliationDashboardRun,
+  ReconciliationDashboardRunHistory,
 } from '@timeline/shared/reconciliation';
 import type { Metadata } from 'next';
 
@@ -40,12 +41,13 @@ export default async function ReconciliationDashboardPage({
   if (!active) redirect('/sign-in');
   const params = (await searchParams) ?? {};
   const notice = reconciliationNotice(params);
+  const runHistoryInput = runHistoryInputFromParams(params);
 
   const scope = withTeam(db, active.teamId, session.user.id);
   let dashboard: Awaited<ReturnType<typeof scope.reconciliation.getDashboardSnapshot>> | null =
     null;
   try {
-    dashboard = await scope.reconciliation.getDashboardSnapshot();
+    dashboard = await scope.reconciliation.getDashboardSnapshot({ runHistory: runHistoryInput });
   } catch {
     dashboard = null;
   }
@@ -179,6 +181,8 @@ export default async function ReconciliationDashboardPage({
         </section>
       </section>
 
+      <ReleaseGatePanel gate={coverage.releaseGate} />
+
       <section className="space-y-3">
         <SectionTitle label="Evidence coverage by source" />
         <div className="overflow-x-auto rounded-sm border border-border bg-surface">
@@ -225,10 +229,75 @@ export default async function ReconciliationDashboardPage({
       </section>
 
       <section className="grid gap-4 xl:grid-cols-2">
-        <RecentRuns rows={dashboard.runs.recent} />
+        <RecentRuns
+          rows={dashboard.runs.recent}
+          history={dashboard.runs.history}
+          statusOptions={dashboard.runs.byStatus.map((row) => row.key)}
+          triggerOptions={dashboard.runs.byTrigger.map((row) => row.key)}
+        />
         <RecentOutputs rows={dashboard.outputs.recent} />
       </section>
     </div>
+  );
+}
+
+function ReleaseGatePanel({
+  gate,
+}: {
+  gate: {
+    passed: boolean;
+    failureCount: number;
+    failures: {
+      source: string;
+      code: string;
+      rawEventCount: number;
+      message: string;
+    }[];
+  };
+}) {
+  const Icon = gate.passed ? CheckCircle2 : TriangleAlert;
+  return (
+    <section
+      className={`space-y-3 rounded-sm border p-4 ${
+        gate.passed
+          ? 'border-emerald-200 bg-emerald-50/70'
+          : 'border-destructive/30 bg-destructive/10'
+      }`}
+    >
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <Icon className={`size-4 ${gate.passed ? 'text-emerald-700' : 'text-destructive'}`} />
+          <SectionTitle label="Release gate" />
+        </div>
+        <Badge variant={gate.passed ? 'outline' : 'destructive'} className="rounded-sm">
+          {gate.passed
+            ? 'passed'
+            : `${gate.failureCount} failure${gate.failureCount === 1 ? '' : 's'}`}
+        </Badge>
+      </div>
+      {gate.passed ? (
+        <p className="text-sm text-emerald-900">
+          Evidence coverage is release-ready for the scanned window.
+        </p>
+      ) : (
+        <ul className="divide-y divide-border text-sm">
+          {gate.failures.map((failure) => (
+            <li
+              key={`${failure.source}:${failure.code}`}
+              className="grid gap-2 py-2 sm:grid-cols-[140px_1fr_auto]"
+            >
+              <span className="font-medium">{sourceLabel(failure.source)}</span>
+              <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
+                {failure.code}
+              </span>
+              <span className="tabular-nums text-fg-muted">
+                {failure.rawEventCount.toLocaleString()} raw
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }
 
@@ -329,13 +398,68 @@ function StatusPanel({ title, rows }: { title: string; rows: { key: string; coun
   );
 }
 
-function RecentRuns({ rows }: { rows: ReconciliationDashboardRun[] }) {
+function RecentRuns({
+  rows,
+  history,
+  statusOptions,
+  triggerOptions,
+}: {
+  rows: ReconciliationDashboardRun[];
+  history: ReconciliationDashboardRunHistory;
+  statusOptions: string[];
+  triggerOptions: string[];
+}) {
+  const statusValues = uniqueOptions(statusOptions, history.status);
+  const triggerValues = uniqueOptions(triggerOptions, history.trigger);
   return (
     <section className="space-y-3">
-      <SectionTitle label="Recent runs" />
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <SectionTitle label="Run history" />
+          <p className="mt-1 text-xs text-fg-dim">
+            Showing page {history.page.toLocaleString()} of {history.totalPages.toLocaleString()} ·{' '}
+            {history.total.toLocaleString()} run{history.total === 1 ? '' : 's'}
+          </p>
+        </div>
+        <form method="get" className="flex flex-wrap items-end gap-2">
+          <label className="grid gap-1 text-[11px] font-medium uppercase tracking-[0.12em] text-fg-muted">
+            Status
+            <select
+              name="runStatus"
+              defaultValue={history.status ?? ''}
+              className="h-9 rounded-sm border border-border bg-background px-2 text-sm normal-case tracking-normal text-fg"
+            >
+              <option value="">All</option>
+              {statusValues.map((status) => (
+                <option key={status} value={status}>
+                  {status}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="grid gap-1 text-[11px] font-medium uppercase tracking-[0.12em] text-fg-muted">
+            Trigger
+            <select
+              name="runTrigger"
+              defaultValue={history.trigger ?? ''}
+              className="h-9 rounded-sm border border-border bg-background px-2 text-sm normal-case tracking-normal text-fg"
+            >
+              <option value="">All</option>
+              {triggerValues.map((trigger) => (
+                <option key={trigger} value={trigger}>
+                  {trigger}
+                </option>
+              ))}
+            </select>
+          </label>
+          <Button type="submit" variant="outline" size="sm">
+            Filter
+          </Button>
+        </form>
+      </div>
       <ul className="divide-y divide-border rounded-sm border border-border bg-surface text-sm">
         {rows.length === 0 ? (
-          <li className="px-3 py-2 text-fg-muted">No reconciliation runs yet.</li>
+          <li className="px-3 py-2 text-fg-muted">No reconciliation runs match these filters.</li>
         ) : (
           rows.map((row) => (
             <li key={row.id} className="grid gap-2 p-3 sm:grid-cols-[1fr_auto]">
@@ -349,6 +473,7 @@ function RecentRuns({ rows }: { rows: ReconciliationDashboardRun[] }) {
                   </span>
                 </div>
                 <div className="mt-1 truncate font-medium">{row.scope}</div>
+                <RunMetricSummary metrics={row.metrics} />
                 <div className="font-mono text-xs text-fg-dim">{row.engineVersion}</div>
               </div>
               <time className="text-xs text-fg-muted sm:text-right">
@@ -358,7 +483,105 @@ function RecentRuns({ rows }: { rows: ReconciliationDashboardRun[] }) {
           ))
         )}
       </ul>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        {history.hasPreviousPage ? (
+          <Button asChild variant="outline" size="sm">
+            <Link href={runHistoryHref(history, history.page - 1)}>Previous</Link>
+          </Button>
+        ) : (
+          <Button variant="outline" size="sm" disabled>
+            Previous
+          </Button>
+        )}
+        {history.hasNextPage ? (
+          <Button asChild variant="outline" size="sm">
+            <Link href={runHistoryHref(history, history.page + 1)}>Next</Link>
+          </Button>
+        ) : (
+          <Button variant="outline" size="sm" disabled>
+            Next
+          </Button>
+        )}
+      </div>
     </section>
+  );
+}
+
+function RunMetricSummary({ metrics }: { metrics: unknown }) {
+  const record = jsonRecord(metrics);
+  if (!record) return null;
+  const mode = stringMetric(record.mode);
+  if (mode === 'audit') {
+    const passed = booleanMetric(record.release_gate_passed);
+    const label = passed === false ? 'failed' : passed === true ? 'passed' : 'unknown';
+    return (
+      <div className="mt-2 flex flex-wrap gap-2">
+        <Badge variant={passed === false ? 'destructive' : 'outline'} className="rounded-sm">
+          release {label}
+        </Badge>
+        <RunMetricBadge label="missing" value={numberMetric(record.missing_raw_events)} />
+        <RunMetricBadge
+          label="gate failures"
+          value={numberMetric(record.release_gate_failure_count)}
+        />
+      </div>
+    );
+  }
+  if (mode === 'backfill') {
+    return (
+      <div className="mt-2 flex flex-wrap gap-2">
+        <RunMetricBadge label="candidates" value={numberMetric(record.candidate_raw_events)} />
+        <RunMetricBadge label="normalized" value={numberMetric(record.normalized_evidence)} />
+      </div>
+    );
+  }
+  if (mode === 'production_sampling') {
+    const failedCount = numberMetric(record.failed_count);
+    return (
+      <div className="mt-2 flex flex-wrap gap-2">
+        <RunMetricBadge label="samples" value={numberMetric(record.sample_count)} />
+        <Badge
+          variant={failedCount && failedCount > 0 ? 'destructive' : 'outline'}
+          className="gap-1 rounded-sm font-mono"
+        >
+          <span>failed</span>
+          <span className="tabular-nums">{(failedCount ?? 0).toLocaleString()}</span>
+        </Badge>
+        <RunMetricBadge
+          label="unconfirmed fixtures"
+          value={numberMetric(record.unconfirmed_fixture_candidate_count)}
+        />
+      </div>
+    );
+  }
+  if (
+    mode === 'manual_repair' ||
+    record.evidence_backfilled !== undefined ||
+    record.association_repair_count !== undefined ||
+    record.projection_repair_count !== undefined
+  ) {
+    return (
+      <div className="mt-2 flex flex-wrap gap-2">
+        <RunMetricBadge label="evidence" value={numberMetric(record.evidence_backfilled)} />
+        <RunMetricBadge
+          label="associations"
+          value={numberMetric(record.association_repair_count)}
+        />
+        <RunMetricBadge label="projections" value={numberMetric(record.projection_repair_count)} />
+        <RunMetricBadge label="outputs" value={numberMetric(record.output_count)} />
+      </div>
+    );
+  }
+  return null;
+}
+
+function RunMetricBadge({ label, value }: { label: string; value: number | null }) {
+  if (value === null) return null;
+  return (
+    <Badge variant="outline" className="gap-1 rounded-sm font-mono">
+      <span>{label}</span>
+      <span className="tabular-nums">{value.toLocaleString()}</span>
+    </Badge>
   );
 }
 
@@ -467,6 +690,23 @@ function sourceLabel(source: string): string {
     .join(' ');
 }
 
+function jsonRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
+
+function stringMetric(value: unknown): string | null {
+  return typeof value === 'string' ? value : null;
+}
+
+function numberMetric(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function booleanMetric(value: unknown): boolean | null {
+  return typeof value === 'boolean' ? value : null;
+}
+
 function reconciliationNotice(params: PageSearchParams): {
   tone: 'success' | 'error';
   message: string;
@@ -483,4 +723,32 @@ function reconciliationNotice(params: PageSearchParams): {
 function scalarParam(value: string | string[] | undefined): string | null {
   if (Array.isArray(value)) return value[0] ?? null;
   return value ?? null;
+}
+
+function runHistoryInputFromParams(params: PageSearchParams) {
+  return {
+    status: scalarParam(params.runStatus) ?? undefined,
+    trigger: scalarParam(params.runTrigger) ?? undefined,
+    page: positiveIntParam(params.runPage),
+  };
+}
+
+function positiveIntParam(value: string | string[] | undefined): number | undefined {
+  const raw = scalarParam(value);
+  if (!raw) return undefined;
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined;
+}
+
+function uniqueOptions(values: string[], selected: string | null): string[] {
+  return [...new Set([...(selected ? [selected] : []), ...values])];
+}
+
+function runHistoryHref(history: ReconciliationDashboardRunHistory, page: number): string {
+  const params = new URLSearchParams();
+  if (history.status) params.set('runStatus', history.status);
+  if (history.trigger) params.set('runTrigger', history.trigger);
+  if (page > 1) params.set('runPage', String(page));
+  const query = params.toString();
+  return query ? `/app/team/reconciliation?${query}` : '/app/team/reconciliation';
 }

@@ -230,7 +230,7 @@ export const APP_GUIDE_ROUTES: readonly AppGuideRoute[] = [
       'ingest webhooks',
     ],
     guide:
-      'Use Team Integrations to connect native sources, activate shared provider resources, manage ingest webhooks, and add MCP tools. Monday.com board selection captures items, updates, columns, and subitems from the parent board; choose WorkDocs separately when docs should become cited evidence. Provider connections are person-owned, admins activate shared team sources, and MCP provides live tool/context access rather than passive ingestion by default.',
+      'Use Team Integrations to connect native sources, activate shared provider resources, manage ingest webhooks, and add MCP tools. Monday.com board selection captures items, updates, columns, and subitems from the parent board; choose WorkDocs separately when docs should become cited evidence. Provider connections are person-owned, admins activate shared team sources, and MCP provides live tool/context access with private evidence capture for successful tool calls.',
     relatedRouteIds: ['help/integrations', 'team'],
   },
   {

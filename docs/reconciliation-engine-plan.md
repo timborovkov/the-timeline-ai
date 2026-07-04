@@ -1,6 +1,6 @@
 # Reconciliation Engine Architecture Plan
 
-Generated on 2026-06-30.
+Generated on 2026-07-03.
 
 ## Goal
 
@@ -38,7 +38,8 @@ The repo already has strong primitives:
   `agent_suggestion_items`, and `agent_suggestion_evidence`.
 - Object relationships, Connected Work, object summaries, and tiered
   provenance views.
-- Fast deterministic agent evals under `pnpm test:eval`.
+- Fast deterministic agent, retrieval, and background proposal evals under
+  `pnpm test:eval`.
 
 The problem is that these primitives are not governed by one pipeline:
 
@@ -51,8 +52,8 @@ The problem is that these primitives are not governed by one pipeline:
 - Artifact clusters can attach provider evidence but do not own the full
   proposed-state lifecycle.
 - Agent evals test retrieval and safety. The reconciliation eval gate now covers
-  the first source-ref, visibility-floor, evidence association, output, and
-  replay contracts; broader object/cluster/proposal fixture coverage remains
+  source-ref, source-payload, visibility-floor, evidence association, output,
+  and replay contracts; broader object/cluster/proposal fixture coverage remains
   part of the target harness below.
 
 ## Target Architecture
@@ -122,7 +123,7 @@ shape, but it does not get its own proposal engine or object-writing shortcut.
 | Documents | Uploaded files, Drive-harvested files, document versions, OCR/media text, chunks. | Document/version/chunk IDs, folder, file URL, version timestamp, title, extracted text refs, owner, visibility. |
 | Native integrations | Google Drive, Linear, GitHub, Monday.com, Slack workspace, Sentry, and future Jira/Confluence/Notion/Figma/GitLab/HubSpot/Asana/Salesforce/Zendesk/Intercom/Datadog/Stripe/Trello/Basecamp/Bitbucket/Discord/Pipedrive/Attio/Close. | Provider, integration ID, selected resource, external object ID, external event ID, event type, actor, URL, provider lifecycle fields, provider payload ref, provider authority hints. |
 | Ingest webhooks | Named customer/project webhooks, signed generic events, third-party tools without native adapters. | Webhook ID, credential/version, declared source name, dedupe key, optional artifact key, declared field authority, payload ref, visibility default. |
-| MCP-derived evidence | Future explicit captures from custom MCP tool results. | Server/tool identity, call ID, fenced output ref, external source labels, user/team that invoked it, visibility, declared trust level. |
+| MCP-derived evidence | Private captures from successful custom MCP tool results. | Server/tool identity, call ID, fenced output ref, external source labels, user/team that invoked it, visibility, declared trust level. |
 | System events | Object changes, approval application, board item changes, job recovery, reconciliation runs. | Actor, target object, target artifact, changed fields, source output ID, source refs, reason, audit metadata. |
 
 Coverage rules:
@@ -148,21 +149,77 @@ payload digest, and transcript snapshot before normalizing evidence. Integration
 writes now preserve replay payload identity: adapter-supplied
 `source_payload_ref` and `payload_digest` win, and events that omit them get a
 compact inline normalized source snapshot, stable `source_payload_ref`, and
-digest in `raw_events`.
+digest in `raw_events`. Newly inserted integration raw events also enqueue
+extraction and embedding, while duplicate sync replays repair reconciliation
+state without duplicating the queue handoff. Queue add failures are stamped on
+the raw event and do not block evidence normalization or artifact repair.
+Web text captures now stamp an inline `source_payload_ref`, payload digest, and
+compact `web_text_capture` snapshot before contact/link artifact extraction and
+evidence normalization.
+Generic ingest webhooks now stamp the signed textual payload as an inline
+`source_payload_ref`, body digest, and compact redacted
+`ingest_webhook_payload` snapshot before link extraction and evidence
+normalization. Duplicate webhook deliveries reuse the original raw event and
+stable full-replay evidence row while repairing downstream link artifacts and
+queue handoff.
+Inbound Postmark email now stamps each parent email raw event with an inline
+`source_payload_ref`, payload digest, and compact `postmark_inbound_email`
+snapshot that preserves the stripped provider payload, message body, and
+attachment descriptors before threading and evidence normalization.
+Slack and Telegram conversational captures stamp each inbound provider
+event/update with an inline `source_payload_ref`, payload digest, and compact
+source snapshot before evidence normalization, so text captures are full replay
+sources. Slack and Telegram audio attachment child rows now also stamp
+attachment-level inline source refs, digests, and source snapshots before
+transcription, while legacy rows without snapshots remain explicitly
+replay-degraded.
+Calendar scheduled/event/update/cancelled mirrors now stamp the same replay
+envelope and refresh it when mutable calendar rows change, so current calendar
+evidence can be rebuilt from the raw-event mirror.
+Meeting finalization now stamps the consolidated transcript raw event with an
+inline meeting `source_payload_ref`, transcript digest, and compact finalized
+meeting snapshot, and generated meeting-calendar mirror rows reuse the calendar
+replay envelope before evidence normalization.
+Provider-harvested documents also stamp the document upload raw event with
+provider identity, a durable document-body `source_payload_ref`, a digest, and a
+compact `integration_harvest_document` snapshot before extraction/chunking is
+queued.
+Ordinary document uploads now stamp the upload raw event with the durable
+document object-key `source_payload_ref`, optional checksum digest, and compact
+`document_upload` snapshot before normalizing evidence, so replay is full when
+the stored body remains available. Document and folder lifecycle rows such as
+rename, move, delete, restore, and visibility changes stamp inline
+`source_payload_ref`, payload digest, and compact `document_lifecycle_event`
+snapshots before normalizing evidence; folder-only events use `folder_id` as a
+provider anchor.
 Integration events that still carry `objectMap` write associations, direct-write
 outputs, and observed-association outputs without creating or rewriting
-workspace objects. Existing provider-linked `entities` rows are resolved only
-as compatibility links for cluster hydration. Phase 2 now also includes a shared
-coverage/backfill module and the worker command
+workspace objects. Those outputs cite raw-event plus source-payload refs instead
+of evidence-row UUIDs, so later normalizer passes do not change output dedupe
+keys. Existing provider-linked `entities` rows are resolved only as
+compatibility links for cluster hydration. Successful custom MCP tool calls now
+record private, replayable `integration` raw events with `provider="mcp"`,
+server/tool/call metadata, inline source snapshots when the result fits the
+safe payload cap, standard raw-event embed jobs for retrieval, and normalized
+reconciliation evidence with MCP-specific anchors plus provider-object,
+provider-event, and URL anchors extracted from structured provider-shaped MCP
+snapshots. Phase 2 now also includes a shared coverage/backfill module and the
+worker command
 `pnpm --filter @timeline/worker reconciliation-evidence -- --team=<uuid>
 --mode=audit|backfill`, so historical rebuildability can be measured before it
-is claimed. The worker process now also starts a `reconciliation` queue consumer
-for evidence audit/backfill jobs with stable idempotent job keys, so replay work
+is claimed. Audit reports now include a machine-checkable `releaseGate` that
+fails on missing evidence and degraded replay rows unless a known historical
+source is explicitly allowlisted, and the CLI can exit non-zero with
+`--fail-on-release-gate` for release/CI usage. The worker process now also starts
+a `reconciliation` queue consumer for evidence audit/backfill jobs with stable
+idempotent job keys and durable `reconciliation_runs` metrics, so replay work
 can run through the same BullMQ worker surface as the rest of the product
-pipeline instead of only through an operator script. The Team → Reconciliation
-admin surface now reads the same scoped dashboard snapshot to show evidence
-coverage, run logs, output status, projection outbox health, cluster/association
-counts, and source-scoped audit/backfill queue controls. Phase 3 has started with an
+pipeline instead of only through an operator script. The Team → Reconciliation admin surface now reads the same scoped
+dashboard snapshot to show evidence coverage, run logs, output status,
+projection outbox health, cluster/association counts, and source-scoped
+audit/backfill queue controls while filtering coverage, run logs, projection
+outbox health, outputs, associations, and cluster detail through the admin
+viewer's visibility envelope. Phase 3 has started with an
 anchor-based resolver that consumes
 normalized evidence anchors, writes `artifact_evidence_associations`, claims
 cluster anchors, carries the full visibility-floor envelope, and refuses
@@ -214,10 +271,13 @@ merges, relationship link/unlink writes, note create/update/delete writes,
 identity facet create/update writes, and manual board item/membership writes
 now emit applied `direct_write` reconciliation outputs in the same transaction
 as the system raw event and audit change, with inline source-payload snapshot
-refs, source refs, an authority decision, output dedupe, changed-field/archive
-payloads for updates, merge payloads for losers/aliases, relationship endpoint
-payloads, note/identity payloads, manual board item add/update/remove payloads, and
-a team visibility floor;
+refs, payload digests, source refs, an authority decision, output dedupe,
+changed-field/archive payloads for updates, merge payloads for losers/aliases,
+relationship endpoint payloads, note/identity payloads, manual board item
+add/update/remove payloads, and source-derived visibility floors, with team
+floors only for team-visible system writes;
+new direct object-change audit rows keep `object_changes.source_event_id=NULL`
+and rely on those reconciliation outputs for canonical provenance;
 legacy suggested `__create__` rows remain acceptance-compatible only for
 migration. Board membership/item approvals no longer stamp
 `board_item_changes.source_event_id` for new suggested rows; board history
@@ -236,15 +296,35 @@ when they cite source evidence, so repair provenance is modeled as scoped replay
 rather than a source-event-only suggestion path. Cleanup replay suppression now
 consults rejected `approval_bundle` reconciliation outputs by suggestion/item
 dedupe key, so a deleted projection row cannot cause the worker to re-offer the
-same rejected cleanup. Phase 7 now has a reusable eval matrix that covers every
-active ingestion surface across customer-project, incident, decision,
-calendar-project, and generic-webhook scenarios. Deterministic evals score the
-matrix for output kinds, forbidden output kinds, association roles,
-artifact-cluster kinds, source refs, source payload refs, and visibility floors;
+same rejected cleanup; during the migration it also treats legacy rejected
+`agent_suggestions` rows with the same cleanup dedupe key as suppression records
+for rows created before projection outputs existed. The extraction resolver is
+also fail-closed for unmatched mentions by default: extraction can attach facts
+to existing objects, but raw mentions do not create canonical workspace objects
+unless a reviewed caller explicitly opts into legacy creation. Generic artifact
+evidence also gates cluster lifecycle and identity mutation through the shared
+field-scoped authority policy; non-provider authoritative hints attach evidence
+without directly rewriting cluster state. Phase 7 now has a reusable
+eval matrix that covers every active ingestion surface across customer-project,
+incident, decision, calendar-project, and generic-webhook scenarios.
+Deterministic evals score the matrix for output kinds, forbidden output kinds,
+association roles, artifact-cluster kinds, source refs, source payload refs, and
+visibility floors; a fixture cannot claim an ingestion surface unless at least
+one association or output cites a source ref from that surface, every source ref
+from a required payload surface must carry a source-payload ref, and source refs
+cannot cite surfaces outside the fixture's expected ingestion set;
 the opt-in live eval command runs the same matrix through the real
 `llm.chatStructured()` path and can emit redacted case artifacts plus a run
-manifest for replay/debugging. Typed surface and scenario manifests now make
-coverage rows explicit for scheduled eval/reporting runners.
+manifest for replay/debugging. The live gate also rejects missing, duplicate, or
+unexpected returned source refs and requires every returned ingestion surface to
+have a matching returned source ref. Typed surface and scenario manifests now
+make coverage rows explicit for scheduled eval/reporting runners, and production
+sampling artifact writing and loading reject malformed or empty redacted source
+refs, malformed judge metadata, malformed or inconsistent manifest summaries,
+malformed expected-count maps, and manifest paths outside the run directory
+before recomputing effective pass/fail from artifact consistency, so a stale
+`passed: true` artifact with missing or unexpected source refs is counted as
+failed.
 
 ## Application Scenario Coverage
 
@@ -341,7 +421,9 @@ integration object snapshot, document version/chunk, transcript chunk, fenced
 MCP output, redacted S3/object-store payload, or an inline JSON snapshot when
 the retained normalized payload is intentionally small enough to store on
 `raw_events.source_metadata`. Integration event writes use that inline snapshot
-fallback whenever an adapter has not provided an external snapshot ref.
+fallback whenever an adapter has not provided an external snapshot ref. Provider
+document-harvest writes use the stored document object as the payload ref and
+keep the provider/document identity snapshot on the upload event.
 
 Constraints:
 
@@ -648,7 +730,9 @@ Migration rules:
 
 ### 1. Normalize Every Source
 
-Every source writes `raw_events` first, then enqueues `reconcile_evidence`.
+Every source writes `raw_events` first, then normalizes to reconciliation
+evidence synchronously or through the shipped `reconciliation` queue jobs
+(`evidence_audit`, `evidence_backfill`, and `scope_reconcile`).
 
 Affected paths:
 
@@ -914,15 +998,15 @@ Suggested prompt versions:
 - `reconcile-normalize-2026-06`
 - `reconcile-anchor-2026-06`
 - `reconcile-cluster-rank-2026-06`
-- `reconcile-plan-2026-06`
+- `reconciliation-planner-2026-07-source-ref-allowlist`
 - `reconcile-validate-2026-06`
-- `reconcile-eval-judge-2026-06`
+- `reconciliation-live-judge-2026-07`
 
 ## Live AI Eval Harness
 
 Add `pnpm test:reconciliation-eval` and include it in the relevant task gate
-when reconciliation code changes. Keep `pnpm test:eval` for chat/retrieval
-safety.
+when reconciliation code changes. Keep `pnpm test:eval` for chat/retrieval and
+background proposal safety.
 
 The harness is not a single golden-path test. It is a product-quality suite that
 proves the engine creates the right clusters, objects, relationships,
@@ -964,8 +1048,8 @@ normalization, coverage/backfill, and anchor resolution. These cases assert
 coverage across web, email, Slack, Telegram, meeting, document, calendar,
 system, ingest-webhook, GitHub, Linear, Google Drive, Monday, and Sentry
 evidence;
-source-ref validity; source payload refs; output kind counts; association
-roles; forbidden-output policy; artifact-cluster kind coverage; visibility
+source-ref validity; source payload refs on every required-surface ref; output
+kind counts; association roles; forbidden-output policy; artifact-cluster kind coverage; visibility
 floors; private-evidence leak failures; replay coverage; resolver outputs; and
 idempotency. Typed manifests in
 `packages/shared/src/reconciliation/eval-manifests.ts` name each current surface
@@ -987,8 +1071,9 @@ The production-sampling report builder consumes redacted live-eval artifacts and
 manifests and emits per-surface/per-scenario pass rates, required-output misses,
 required artifact-kind misses, citation failures, visibility failures,
 authority-policy violations, prompt/model regression signals,
-time-to-reconciled-output metrics, and deterministic fixture-candidate names
-without storing raw customer content.
+time-to-reconciled-output metrics, deterministic fixture-candidate names, and
+confirmed/unconfirmed fixture-candidate counts without storing raw customer
+content.
 
 Required surface fixture families:
 
@@ -1071,11 +1156,20 @@ Phase 1 behavior:
 - Uses the shared fixture matrix from
   `packages/shared/src/reconciliation/eval-cases.ts` in
   `packages/shared/src/reconciliation/live-eval.test.ts`.
-- Current branch live check, run on June 30, 2026 with
+- Current branch live check, rerun on July 3, 2026 UTC with
   `RECONCILIATION_LIVE_ENV_FILE` pointing at the local project `.env`, passed
-  5/5 live cases across the current fourteen-surface matrix and 5/5 AI-judge
-  checks with average judge score 1.0. The redacted run manifest was written to
-  `/tmp/timeline-reconciliation-live-eval/2026-06-30T23-00-19-939Z/manifest.json`.
+  11/11 Vitest checks through the real `llm.chatStructured()` path with the
+  source-ref allowlist planner prompt, including 7/7 live planner cases across
+  the current fifteen-surface matrix and six scenario families, MCP-derived
+  evidence, and sales-success renewal risk. AI judge checks passed 7/7 with
+  average judge score 1.0. The redacted artifact run manifest was
+  written to
+  `/tmp/timeline-reconciliation-live-eval/2026-07-03T13-46-10-source-ref-allowlist-retry3/manifest.json`;
+  production sampling over that run wrote
+  `/tmp/timeline-reconciliation-live-eval/2026-07-03T13-46-10-source-ref-allowlist-retry3/production-sampling-report.json`
+  with 7/7 passed, pass rate 1.0, and zero required-object, suggestion,
+  artifact-kind, citation, visibility, authority-policy, or fixture-candidate
+  triage misses.
 - Calls the real `llm.chatStructured()` path when
   `RECONCILIATION_LIVE_EVAL=1` is set.
 - Can load a local env file before the live call with
@@ -1093,9 +1187,11 @@ Phase 1 behavior:
   rationale.
 - Bounds each live planner and judge request with
   `RECONCILIATION_LIVE_CALL_TIMEOUT_MS` (default 90 seconds) and retries
-  transient failures with `RECONCILIATION_LIVE_MAX_ATTEMPTS` (default 2).
-  Provider errors and timeouts become explicit case failures and still write
-  redacted artifacts when artifact output is enabled.
+  transient failures with `RECONCILIATION_LIVE_MAX_ATTEMPTS` (default 3). The
+  same retry path handles judge responses that contradict deterministic checks,
+  such as reporting `missing_required_output` when every expected output kind is
+  present. Provider errors and timeouts become explicit case failures and still
+  write redacted artifacts when artifact output is enabled.
 - Scores the structured result with deterministic assertions for scenario
   family, ingestion surfaces, output kinds, artifact-cluster kinds, source refs,
   approval/direct-write policy shape, and visibility/privacy risk.
@@ -1238,6 +1334,7 @@ Approval cards should show:
 - artifact cluster
 - proposed canonical change
 - source refs
+- reconciliation output IDs and cluster links back to work artifact context
 - authority rationale
 - why approval is required
 - dependencies inside the bundle
@@ -1365,8 +1462,13 @@ Exit criteria:
 3. Replace `objectMap` direct object upsert with evidence hints.
 4. Normalize email, Slack, Telegram, meetings, documents, calendar, and ingest
    webhooks.
-5. Normalize web notes, voice/audio transcripts, MCP-derived evidence, and
-   system object/approval events.
+5. Normalize web notes, voice/audio transcripts, custom-MCP-derived integration
+   raw events, and system object/approval events. Successful custom MCP tool
+   calls now emit private `integration` raw events with `provider="mcp"`,
+   fenced-output replay metadata, raw-event embed jobs, server/tool/call
+   anchors, and provider-object/provider-event/URL anchors from structured
+   provider-shaped snapshots until an explicit MCP reconciliation source enum
+   ships.
    - Voice/audio transcript success now normalizes the updated raw event and
      records an audio payload ref, digest, and transcript snapshot for replay.
 6. Add backfill scripts to build reconciliation evidence for existing raw
@@ -1380,7 +1482,10 @@ Exit criteria:
    snapshots. The current entrypoint is
    `pnpm --filter @timeline/worker reconciliation-evidence -- --team=<uuid>
    --mode=audit [--source=<event_source>] [--limit=N] [--page-size=N]`; it
-   reports missing, full-replay, and replay-degraded rows by source.
+   reports missing, full-replay, and replay-degraded rows by source. Release
+   runs should add `--fail-on-release-gate`; known historical degraded sources
+   can be declared with repeated `--allow-degraded-source=<event_source>`, but
+   missing evidence always fails the gate.
 
 Exit criteria:
 
@@ -1398,7 +1503,8 @@ Exit criteria:
   their visibility envelopes, and reports degraded historical rows separately.
 - Coverage audit is a release artifact: if any surface has missing evidence or
   unexpected degraded replay rows, the migration is not considered fully
-  rebuildable.
+  rebuildable. The audit JSON's `releaseGate` records `passed`, `failureCount`,
+  and bounded source/code/count failure rows for release dashboards.
 
 ### Phase 3: Artifact Resolution Engine
 
@@ -1457,8 +1563,9 @@ Exit criteria:
      `direct_write` outputs with inline source-payload snapshot refs, source
      refs to the system raw event, authority decisions, dedupe keys,
      changed-field/archive/merge/relationship/note/identity/board payloads, and
-     team visibility floors while keeping canonical object and board-history
-     legacy provenance empty for new writes.
+     source-derived visibility floors, with team floors only for team-visible
+     system writes, while keeping canonical object and board-history legacy
+     provenance empty for new writes.
 4. Convert integration direct object updates into authoritative outputs only
    where policy allows.
    - Provider `objectMap` sync now treats object maps as artifact evidence
@@ -1467,8 +1574,8 @@ Exit criteria:
      events emit `observed_association` outputs with source refs, payload refs,
      dedupe keys, authority decisions, and visibility floors. Existing
      provider-linked `entities` rows are read only as compatibility links.
-     Provider-record artifact tests cover Sentry release URLs and Monday item
-     URLs as hard artifact anchors.
+     Provider-record artifact tests cover Sentry issue/release URLs, Monday item
+     URLs, and Linear project records as hard artifact anchors.
 5. Convert conversation suggestion worker to call reconciliation planner for
    proposal batches.
    - Proposal-generating conversation reviews and raw-event batches now call the
@@ -1506,8 +1613,14 @@ Exit criteria:
 5. Remove legacy suggestion dedupe keys that are not output-based.
 6. Add suppression rules to reconciliation outputs, not worker-specific logic.
    - Cleanup replay suppression now reads rejected `approval_bundle`
-     reconciliation outputs by suggestion/item dedupe key instead of requiring a
-     rejected `agent_suggestions` projection row to still exist.
+     reconciliation outputs by suggestion/item dedupe key and keeps a migration
+     fallback for legacy rejected `agent_suggestions` rows that predate
+     projection outputs.
+   - Approval projection creation suppresses exact replays whose matching
+     reconciliation output is already terminal. If the projection row was
+     deleted, replay can rebuild only a resolved, non-actionable projection row
+     with `mark_rejected`/terminal outbox metadata instead of reopening a
+     pending approval.
 7. Refresh object summaries, embeddings, board context, and notifications from
    accepted outputs.
 
@@ -1547,21 +1660,57 @@ Exit criteria:
      partial provenance for that item.
 4. Add reconciliation dashboard and run logs.
    - Initial Team → Reconciliation page is admin-only and shows evidence
-     coverage, degraded replay rows, run/output status, projection outbox state,
-     cluster/association counts, and recent run/output logs.
+     coverage, release-gate pass/fail status, degraded replay rows, run/output
+     status, projection outbox state, cluster/association counts, and recent
+     run/output logs.
+   - Run-log visibility shows runs with visible outputs plus outputless
+     audit/backfill runs, while runs whose only outputs are hidden from the
+     viewer stay hidden. Recent run rows surface persisted audit/backfill
+     metrics such as release-gate status, missing evidence, gate failures,
+     candidates, and normalized evidence counts.
    - Admins can enqueue source-scoped evidence audit and dry-run missing-only
      backfill jobs through the same `reconciliation` queue used by the worker.
+     Completed audit/backfill jobs persist outputless `reconciliation_runs`
+     rows with mode, source, coverage/backfill counts, and release-gate failure
+     metrics so run history remains diagnosable after queue results expire.
+   - Run history supports trigger/status filtering and paginated database-backed
+     pages, so operators can inspect older eval, backfill, audit, and manual
+     repair runs without relying on the first recent slice.
    - The dashboard now derives operator diagnostics from
      `reconciliation_outputs`: open conflicts, direct writes by source,
      approval acceptance/rejection/open counts, top no-action reasons, and
      ambiguity by source.
 5. Add manual "Reconcile" action for cluster/object/team scopes.
-   - Admins can now queue manual team/object/cluster scoped run-recording jobs
-     from Team → Reconciliation. The worker validates object and cluster targets
-     against the active team, records an idempotent completed `manual_repair`
-     `reconciliation_runs` row with current output/association/cluster counts,
-     and acquires a per-team/object/cluster advisory lock while recording the
-     run so duplicate worker processes converge on the same run record.
+   - Admins can now queue manual team/object/cluster scoped repair jobs from
+     Team → Reconciliation. The worker validates object and cluster targets
+     against the active team, acquires a per-team/object/cluster advisory lock,
+     backfills missing reconciliation evidence for raw events in scope, repairs
+     missing evidence-to-cluster associations and observed-association outputs
+     through anchor resolution, repairs missing approval projections from
+     repairable approval outputs, and records an idempotent completed
+     `manual_repair` `reconciliation_runs` row with post-repair
+     output/association/cluster counts plus evidence/association/projection
+     repair counts.
+     Object-scoped repair also sweeps raw events linked to the object through
+     `source_metadata.entity_id`, so object evidence can be backfilled before
+     any reconciliation association or output exists.
+   - Approval projection source refs are raw-event stable: one cited raw event
+     contributes one dedupe-driving source ref, while source payload refs stay
+     on `source_payload_refs` and evidence metadata for replay/debugging.
+   - Integration `objectMap` projection source refs follow the same
+     raw-event/source-payload rule and reuse existing raw-event associations on
+     replay when a later normalizer creates another evidence row.
+   - Object and board direct-write outputs also keep dedupe-driving source refs
+     raw-event/source-payload stable, while their raw-event snapshots carry
+     payload digests for replay and eval fixture generation; evidence IDs stay
+     in evidence lineage and payload-ref metadata, not the output source-ref key.
+   - Anchor-resolution observed/conflict outputs use stable raw-event or
+     source-payload identities for output dedupe, so replaying a later evidence
+     row can attach lineage without duplicating the output.
+   - Approval queue cards now render reconciliation output IDs, cluster links,
+     acceptance-effect text, review-required rationale, and local-ref dependency
+     hints so reviewers can understand what accepting will change before they
+     leave the queue.
 
 Exit criteria:
 
@@ -1591,15 +1740,27 @@ Exit criteria:
      `@timeline/shared/reconciliation/production-sampling`; it aggregates
      redacted live artifacts into a JSON release report with the metric fields
      above, including required artifact-kind misses, and deterministic
-     fixture-candidate names. Dashboard ingestion and confirmed-failure
-     promotion are later operator/release workflows.
+     fixture-candidate names. The artifact writer and loader validate non-empty
+     redacted source refs, judge metadata, internally consistent manifest
+     summaries, non-negative expected-count maps, and run-local manifest paths
+     before accepting artifacts. Confirmed failure promotion has started at the
+     release artifact layer: operators can mark reviewed failed samples with
+     `--confirm-fixture=<caseName>:<packetFingerprint>`, and the report records
+     those fixture candidates as confirmed plus top-level confirmed/unconfirmed
+     fixture-candidate counts. Adding `--team=<uuid>` also persists the
+     redacted report as an idempotent dashboard-visible `eval`
+     `reconciliation_runs` row.
    - Operators can now run
      `pnpm --filter @timeline/worker reconciliation-production-sampling --
      --input=/tmp/eval-run --out=/tmp/reconciliation-production-sampling.json
-     --run-kind=closed_beta` to load redacted live-eval artifact directories or
-     report files, ignore invalid or unsafe files, and write a release artifact
-     report. Repeat `--input` for multiple artifact roots; `--run-kind` defaults
-     to `manual` and also accepts `post_deploy`.
+     --run-kind=closed_beta --fail-on-failures` to load redacted live-eval
+     artifact directories or report files, ignore invalid or unsafe files, write
+     a release artifact report, optionally persist it for Team → Reconciliation
+     with `--team=<uuid>`, and fail the command if any sample fails. Repeat
+     `--input` for multiple artifact roots; `--run-kind` defaults to `manual`
+     and also accepts `post_deploy`. Repeat
+     `--confirm-fixture=<caseName>:<packetFingerprint>` for reviewed failed
+     samples that should become deterministic fixtures.
 8. Delete old write paths:
    - provider `objectMap` upsert path: retired for new writes; existing
      provider-linked entities are read as compatibility links only
@@ -1795,7 +1956,7 @@ The architecture is complete only when all of these are true:
 - The old writer code is deleted after migration, not left as compatibility
   handling.
 
-## Open Decisions
+## Future Product Decisions
 
 1. Whether the shipped Team -> Reconciliation cluster detail route should later
    graduate into a primary `/app/work/[clusterId]` surface or remain an admin
@@ -1805,29 +1966,38 @@ The architecture is complete only when all of these are true:
 3. Whether ingest webhooks can declare field-level authority in v1 or should
    start approval-only until real usage proves safe patterns.
 
-## First Implementation Slice
+## First Implementation Slice Status
 
-Build the vertical slice that proves the customer-project problem:
+The first customer-project slice is implemented in this branch and covered by
+the deterministic reconciliation eval matrix, the opt-in live reconciliation
+eval, integration event-writer tests, scoped repair tests, dashboard/read-path
+tests, and object/board provenance tests.
 
-1. Normalize forwarded email, Monday, and Sentry events into reconciliation
+Shipped scope:
+
+1. Forwarded email, Monday, and Sentry events normalize into reconciliation
    evidence.
-2. Resolve one customer project cluster from:
+2. Customer project clusters resolve from:
    - email thread IDs
    - customer domains
    - Monday board IDs
    - Sentry project and issue IDs
-3. Emit observed associations for all relevant evidence.
-4. Let Sentry directly update only Sentry-owned incident lifecycle.
-5. Let Monday directly update only Monday-owned board item state.
-6. Generate approval bundles for:
+3. Relevant evidence emits observed associations through
+   `artifact_evidence_associations`.
+4. Sentry can directly update only Sentry-owned incident lifecycle.
+5. Monday can directly update only Monday-owned board item state.
+6. Approval bundles cover:
    - missing company object
    - missing person object
    - person-company relationship
    - customer-project relationship
    - decision object from email
-7. Show the cluster on object detail Connected Work.
-8. Add deterministic and live evals for this exact slice.
+7. Object detail Connected Work reads accepted associations and pending
+   reconciliation outputs.
+8. Deterministic and live evals cover the slice and reject missing,
+   duplicate, or unexpected source refs.
 
 This slice proves the architecture without preserving the old split-brain
-behavior. After it works, migrate the remaining sources through the same
-normalizer, resolver, planner, and eval harness.
+behavior. Future ingestion surfaces should continue to enter through the same
+normalizer, resolver, planner, and eval harness rather than adding
+provider-specific memory pipelines.

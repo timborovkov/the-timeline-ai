@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { resetEnvForTests } from '#src/env.js';
-import { createRecallProvider } from '#src/meeting-bots/recall.js';
+import { createRecallProvider, listRecallBotsForCanary } from '#src/meeting-bots/recall.js';
 
 const ENV_BACKUP = { ...process.env };
 
@@ -31,6 +31,40 @@ function makeFetcher(responder: (input: { url: string; init: RequestInit }) => R
 }
 
 describe('createRecallProvider', () => {
+  it('listRecallBotsForCanary calls the future bot list endpoint without creating a bot', async () => {
+    const { fetcher, calls } = makeFetcher(() => Response.json({ results: [{ id: 'bot-1' }] }));
+
+    await expect(
+      listRecallBotsForCanary({
+        fetcher,
+        joinAtAfter: new Date('2026-07-02T12:00:00.000Z'),
+      }),
+    ).resolves.toEqual({ returnedCount: 1 });
+
+    expect(calls).toHaveLength(1);
+    const call = calls[0];
+    if (!call) throw new Error('no call');
+    expect(call.url).toBe(
+      'https://api.recall.test/v1/bot/?join_at_after=2026-07-02T12%3A00%3A00.000Z&limit=1',
+    );
+    expect(call.init.method).toBe('GET');
+    expect(call.init.body).toBeUndefined();
+    expect(call.init.headers).toMatchObject({
+      Authorization: 'Token test-token',
+      accept: 'application/json',
+    });
+  });
+
+  it('listRecallBotsForCanary throws provider errors with status context', async () => {
+    const { fetcher } = makeFetcher(() =>
+      Response.json({ error: 'invalid token' }, { status: 401 }),
+    );
+
+    await expect(listRecallBotsForCanary({ fetcher })).rejects.toThrow(
+      'Recall GET /bot/ failed: 401',
+    );
+  });
+
   it('joinMeeting posts to /bot with Token auth, metadata round-trip, minimal retention, and silent config', async () => {
     const { fetcher, calls } = makeFetcher(() => Response.json({ id: 'bot-123' }));
     const provider = createRecallProvider({ fetcher });

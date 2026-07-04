@@ -106,6 +106,17 @@ describe('calendar scope', () => {
     expect(occurrence?.contentText).toBe(
       'Launch review | Final launch readiness pass | at Room 3 | 2026-05-27T09:00:00.000Z to 2026-05-27T10:00:00.000Z | (Europe/Tallinn)',
     );
+    const initialOccurrenceMetadata = occurrence?.sourceMetadata as
+      | Record<string, unknown>
+      | undefined;
+    expect(initialOccurrenceMetadata).toMatchObject({
+      source_payload_ref: `inline://timeline/calendar/${event.id}/event`,
+      source_snapshot_kind: 'calendar_event_mirror',
+      source_snapshot_version: 'calendar-source-snapshot-2026-07',
+    });
+    expect(initialOccurrenceMetadata?.payload_digest).toEqual(
+      expect.stringMatching(/^sha256:[0-9a-f]{64}$/),
+    );
     const rawIds = [event.scheduledRawEventId, event.startAtRawEventId].filter((id): id is string =>
       Boolean(id),
     );
@@ -115,6 +126,7 @@ describe('calendar scope', () => {
       .where(inArray(reconciliationEvidence.rawEventId, rawIds));
     expect(evidenceRows).toHaveLength(2);
     expect(evidenceRows.every((row) => row.source === 'calendar')).toBe(true);
+    expect(evidenceRows.every((row) => row.replayState === 'full')).toBe(true);
 
     await scope.calendar.updateCalendarEvent(event.id, {
       description: 'Updated readiness pass',
@@ -127,14 +139,45 @@ describe('calendar scope', () => {
     expect(occurrence?.contentText).toBe(
       'Launch review | Updated readiness pass | at Room 4 | 2026-05-27T09:00:00.000Z to 2026-05-27T10:30:00.000Z | (Europe/Tallinn)',
     );
+    const updatedOccurrenceMetadata = occurrence?.sourceMetadata as
+      | Record<string, unknown>
+      | undefined;
+    expect(updatedOccurrenceMetadata).toMatchObject({
+      source_payload_ref: `inline://timeline/calendar/${event.id}/event`,
+      source_snapshot: {
+        provider: 'calendar',
+        calendar_event_id: event.id,
+        action: 'event',
+        title: 'Launch review',
+        description: 'Updated readiness pass',
+        location: 'Room 4',
+        start_at: '2026-05-27T09:00:00.000Z',
+        end_at: '2026-05-27T10:30:00.000Z',
+        timezone: 'Europe/Tallinn',
+      },
+    });
+    expect(updatedOccurrenceMetadata?.payload_digest).toEqual(
+      expect.stringMatching(/^sha256:[0-9a-f]{64}$/),
+    );
     evidenceRows = await db
       .select()
       .from(reconciliationEvidence)
       .where(inArray(reconciliationEvidence.rawEventId, rawIds));
     const occurrenceEvidence = evidenceRows.find(
-      (row) => row.rawEventId === event.startAtRawEventId,
+      (row) =>
+        row.rawEventId === event.startAtRawEventId &&
+        row.payloadDigest === updatedOccurrenceMetadata?.payload_digest,
     );
     expect(occurrenceEvidence?.summary).toBe(occurrence?.contentText);
+    expect(occurrenceEvidence?.replayState).toBe('full');
+
+    const updatedRawEvent = rows.find((row) => row.contentText === 'Updated: Launch review');
+    const updatedMetadata = updatedRawEvent?.sourceMetadata as Record<string, unknown> | undefined;
+    expect(updatedMetadata).toMatchObject({
+      action: 'updated',
+      source_payload_ref: `inline://timeline/calendar/${event.id}/updated`,
+      source_snapshot_kind: 'calendar_event_mirror',
+    });
   });
 
   it('refreshes link metadata and artifacts when occurrence timeline text changes', async () => {
@@ -1046,6 +1089,7 @@ describe('calendar scope', () => {
     const timelineRows = await scope.timeline.listEvents({ source: 'calendar' });
     expect(timelineRows).toHaveLength(1);
     expect(timelineRows[0]?.contentText).toBe('Cancelled: Launch review');
+    const cancelledId = timelineRows[0]?.id ?? '00000000-0000-0000-0000-000000000000';
 
     const linkedRows = await db.select().from(rawEvents).where(eq(rawEvents.teamId, TEAM_ID));
     const linkedMetadata = new Map(
@@ -1060,6 +1104,33 @@ describe('calendar scope', () => {
       calendar_event_id: CALENDAR_EVENT_ID,
       action: 'event',
       deleted: true,
+    });
+    const cancelledMetadata = linkedMetadata.get(cancelledId);
+    expect(cancelledMetadata).toMatchObject({
+      calendar_event_id: CALENDAR_EVENT_ID,
+      action: 'cancelled',
+      source_payload_ref: `inline://timeline/calendar/${CALENDAR_EVENT_ID}/cancelled`,
+      source_snapshot_kind: 'calendar_event_mirror',
+      source_snapshot_version: 'calendar-source-snapshot-2026-07',
+      source_snapshot: {
+        calendar_event_id: CALENDAR_EVENT_ID,
+        action: 'cancelled',
+        title: 'Launch review',
+      },
+    });
+    expect(cancelledMetadata?.payload_digest).toEqual(
+      expect.stringMatching(/^sha256:[0-9a-f]{64}$/),
+    );
+    const [evidence] = await db
+      .select()
+      .from(reconciliationEvidence)
+      .where(eq(reconciliationEvidence.rawEventId, cancelledId));
+    expect(evidence).toMatchObject({
+      source: 'calendar',
+      provider: 'calendar',
+      replayState: 'full',
+      sourcePayloadRef: `inline://timeline/calendar/${CALENDAR_EVENT_ID}/cancelled`,
+      payloadDigest: cancelledMetadata?.payload_digest,
     });
   });
 

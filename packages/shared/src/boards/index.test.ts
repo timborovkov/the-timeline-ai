@@ -16,7 +16,7 @@ import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { defaultBoardLanes } from '#src/boards/index.js';
+import { buildBoardDirectWriteSourceContext, defaultBoardLanes } from '#src/boards/index.js';
 import { withTeam } from '#src/team-scope.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
 
@@ -109,6 +109,136 @@ describe('board scope', () => {
       'Won',
       'Lost',
     ]);
+  });
+
+  it('builds direct-write source context from private board evidence visibility', async () => {
+    const [raw] = await db
+      .insert(rawEvents)
+      .values({
+        teamId: TEAM_A,
+        authorUserId: USER_OWNER,
+        source: 'integration',
+        contentText: 'Private board status change from Sentry incident.',
+        occurredAt: new Date('2026-07-01T11:00:00.000Z'),
+        visibility: 'private',
+        visibilityOwnerUserId: USER_OWNER,
+        sourceMetadata: {
+          provider: 'sentry',
+          source_payload_ref: 'sentry://issue/board-raw-1',
+        },
+      })
+      .returning({ id: rawEvents.id });
+    if (!raw) throw new Error('expected raw event');
+
+    const [evidence] = await db
+      .insert(reconciliationEvidence)
+      .values({
+        teamId: TEAM_A,
+        rawEventId: raw.id,
+        sourcePayloadRef: 'sentry://issue/board-evidence-1',
+        source: 'integration',
+        provider: 'sentry',
+        externalObjectId: 'ISSUE-1',
+        externalEventId: 'ISSUE-1:update',
+        eventType: 'sentry.issue',
+        occurredAt: new Date('2026-07-01T11:00:00.000Z'),
+        visibility: 'private',
+        visibilityOwnerUserId: USER_OWNER,
+        actor: {},
+        contentDigest: 'board-private-digest',
+        normalizerVersion: 'test-normalizer',
+        replayState: 'full',
+        dedupeKey: 'board-private-dedupe',
+      })
+      .returning({ id: reconciliationEvidence.id });
+    if (!evidence) throw new Error('expected evidence');
+
+    const firstContext = await buildBoardDirectWriteSourceContext({
+      db,
+      teamId: TEAM_A,
+      sourceEventId: raw.id,
+    });
+    expect(firstContext).toEqual({
+      sourceRefs: [
+        {
+          source: 'integration',
+          rawEventId: raw.id,
+          sourcePayloadRef: 'sentry://issue/board-raw-1',
+        },
+      ],
+      sourcePayloadRefs: ['sentry://issue/board-evidence-1', 'sentry://issue/board-raw-1'],
+      visibility: 'private',
+      visibilityOwnerUserId: USER_OWNER,
+      visibilityUserIds: null,
+    });
+    expect(firstContext.sourceRefs[0]).not.toHaveProperty('evidenceId');
+
+    await db.insert(reconciliationEvidence).values({
+      teamId: TEAM_A,
+      rawEventId: raw.id,
+      sourcePayloadRef: 'sentry://issue/board-evidence-2',
+      source: 'integration',
+      provider: 'sentry',
+      externalObjectId: 'ISSUE-1',
+      externalEventId: 'ISSUE-1:update:v2',
+      eventType: 'sentry.issue',
+      occurredAt: new Date('2026-07-01T11:00:00.000Z'),
+      visibility: 'private',
+      visibilityOwnerUserId: USER_OWNER,
+      actor: {},
+      contentDigest: 'board-private-digest-v2',
+      normalizerVersion: 'test-normalizer-v2',
+      replayState: 'full',
+      dedupeKey: 'board-private-dedupe-v2',
+    });
+
+    const secondContext = await buildBoardDirectWriteSourceContext({
+      db,
+      teamId: TEAM_A,
+      sourceEventId: raw.id,
+    });
+    expect(secondContext.sourceRefs).toEqual(firstContext.sourceRefs);
+    expect(secondContext.sourceRefs[0]).not.toHaveProperty('evidenceId');
+  });
+
+  it('falls back to raw-event visibility for board direct writes without evidence', async () => {
+    const [raw] = await db
+      .insert(rawEvents)
+      .values({
+        teamId: TEAM_A,
+        authorUserId: USER_OWNER,
+        source: 'integration',
+        contentText: 'Monday board item moved for selected viewers.',
+        occurredAt: new Date('2026-07-01T11:05:00.000Z'),
+        visibility: 'specific_users',
+        visibilityUserIds: [USER_OWNER, USER_MEMBER],
+        sourceMetadata: {
+          provider: 'monday',
+          source_payload_ref: 'monday://board/42/item/99',
+        },
+      })
+      .returning({ id: rawEvents.id });
+    if (!raw) throw new Error('expected raw event');
+
+    await expect(
+      buildBoardDirectWriteSourceContext({
+        db,
+        teamId: TEAM_A,
+        sourceEventId: raw.id,
+      }),
+    ).resolves.toEqual({
+      sourceRefs: [
+        {
+          source: 'integration',
+          rawEventId: raw.id,
+          sourcePayloadRef: 'monday://board/42/item/99',
+        },
+      ],
+      sourcePayloadRefs: ['monday://board/42/item/99'],
+      visibility: 'specific_users',
+      visibilityOwnerUserId: null,
+      visibilityUserIds: [USER_OWNER, USER_MEMBER],
+    });
   });
 
   it('keeps board items team-scoped and rejects objects from other teams', async () => {
@@ -218,7 +348,7 @@ describe('board scope', () => {
         | null
     )?.[0];
     expect(updateSourceRef?.rawEventId).toEqual(expect.any(String));
-    expect(updateSourceRef?.evidenceId).toEqual(expect.any(String));
+    expect(updateSourceRef?.evidenceId).toBeUndefined();
     expect(updateSourceRef?.sourcePayloadRef).toEqual(
       expect.stringMatching(/^inline:\/\/timeline\/system\/board_item_update\//),
     );
@@ -228,7 +358,7 @@ describe('board scope', () => {
     const [evidence] = await db
       .select()
       .from(reconciliationEvidence)
-      .where(eq(reconciliationEvidence.id, updateSourceRef?.evidenceId ?? ''));
+      .where(eq(reconciliationEvidence.rawEventId, updateSourceRef?.rawEventId ?? ''));
     expect(evidence).toMatchObject({
       rawEventId: updateSourceRef?.rawEventId,
       source: 'system',
@@ -236,11 +366,14 @@ describe('board scope', () => {
       visibility: 'team',
     });
     expect(evidence?.sourcePayloadRef).toMatch(/^inline:\/\/timeline\/system\/board_item_update\//);
+    expect(evidence?.payloadDigest).toEqual(expect.stringMatching(/^sha256:[0-9a-f]{64}$/));
     const [sourceRawEvent] = await db
       .select()
       .from(rawEvents)
       .where(eq(rawEvents.id, updateSourceRef?.rawEventId ?? ''));
-    expect(sourceRawEvent?.sourceMetadata).toMatchObject({
+    const sourceMetadata = sourceRawEvent?.sourceMetadata as Record<string, unknown> | undefined;
+    expect(sourceMetadata?.payload_digest).toEqual(expect.stringMatching(/^sha256:[0-9a-f]{64}$/));
+    expect(sourceMetadata).toMatchObject({
       kind: 'board_item_update',
       source_snapshot: {
         board_item_id: item.id,
@@ -875,7 +1008,7 @@ describe('board scope', () => {
         | null
     )?.[0];
     expect(removeSourceRef?.rawEventId).toEqual(expect.any(String));
-    expect(removeSourceRef?.evidenceId).toEqual(expect.any(String));
+    expect(removeSourceRef?.evidenceId).toBeUndefined();
     expect(removeSourceRef?.sourcePayloadRef).toEqual(
       expect.stringMatching(/^inline:\/\/timeline\/system\/board_item_remove\//),
     );

@@ -219,6 +219,139 @@ describe('deterministic reconciliation evals', () => {
       'forbidden-private-direct-write: forbidden output kind direct_write appeared 1 time(s)',
     ]);
   });
+
+  it('fails fixtures that claim a surface without source refs from that surface', () => {
+    const result = scoreDeterministicReconciliationCase({
+      name: 'claimed-surface-without-source-ref',
+      ingestionSurfaces: ['email', 'monday'],
+      outputs: [
+        {
+          id: 'email-only-approval',
+          outputKind: 'approval_bundle',
+          targetKind: 'object',
+          operation: 'create',
+          visibility: TEAM_VISIBILITY,
+          visibilityFloor: TEAM_VISIBILITY,
+          sourceRefs: [{ source: 'email', rawEventId: 'raw-email' }],
+        },
+      ],
+      expected: {
+        ingestionSurfaces: ['email', 'monday'],
+        outputKindCounts: { approval_bundle: 1 },
+        requireValidSourceRefs: true,
+        requireVisibilityFloors: true,
+      },
+    });
+
+    expect(result.passed).toBe(false);
+    expect(result.failures).toEqual([
+      'claimed-surface-without-source-ref: missing source refs for ingestion surface monday',
+    ]);
+  });
+
+  it('fails fixtures when any required source-payload surface ref omits its payload ref', () => {
+    const result = scoreDeterministicReconciliationCase({
+      name: 'partial-source-payload-coverage',
+      ingestionSurfaces: ['email', 'monday'],
+      associations: [
+        {
+          id: 'monday-provider-row',
+          role: 'related_context',
+          visibility: TEAM_VISIBILITY,
+          visibilityFloor: TEAM_VISIBILITY,
+          sourceRefs: [
+            {
+              source: 'monday',
+              rawEventId: 'raw-monday-associated',
+            },
+          ],
+        },
+      ],
+      outputs: [
+        {
+          id: 'email-approval',
+          outputKind: 'approval_bundle',
+          targetKind: 'object',
+          operation: 'create',
+          visibility: TEAM_VISIBILITY,
+          visibilityFloor: TEAM_VISIBILITY,
+          sourceRefs: [
+            {
+              source: 'email',
+              rawEventId: 'raw-email',
+              sourcePayloadRef: 's3://eval/reconciliation/email/raw-email',
+            },
+            {
+              source: 'monday',
+              rawEventId: 'raw-monday',
+              sourcePayloadRef: 's3://eval/reconciliation/monday/item',
+            },
+          ],
+        },
+        {
+          id: 'email-follow-up',
+          outputKind: 'observed_association',
+          targetKind: 'cluster_identity',
+          operation: 'link',
+          visibility: TEAM_VISIBILITY,
+          visibilityFloor: TEAM_VISIBILITY,
+          sourceRefs: [
+            {
+              source: 'email',
+              rawEventId: 'raw-email-follow-up',
+            },
+          ],
+        },
+      ],
+      expected: {
+        ingestionSurfaces: ['email', 'monday'],
+        associationRoleCounts: { related_context: 1 },
+        outputKindCounts: { approval_bundle: 1, observed_association: 1 },
+        requireValidSourceRefs: true,
+        requireVisibilityFloors: true,
+        requiredSourcePayloadSurfaces: ['email', 'monday'],
+      },
+    });
+
+    expect(result.passed).toBe(false);
+    expect(result.failures).toEqual([
+      'partial-source-payload-coverage:email-follow-up: source_refs[0] missing source payload ref for email',
+      'partial-source-payload-coverage:monday-provider-row: source_refs[0] missing source payload ref for monday',
+    ]);
+  });
+
+  it('fails fixtures that inflate coverage with unexpected surfaces', () => {
+    const result = scoreDeterministicReconciliationCase({
+      name: 'unexpected-surface-coverage',
+      ingestionSurfaces: ['email', 'monday'],
+      outputs: [
+        {
+          id: 'email-approval',
+          outputKind: 'approval_bundle',
+          targetKind: 'object',
+          operation: 'create',
+          visibility: TEAM_VISIBILITY,
+          visibilityFloor: TEAM_VISIBILITY,
+          sourceRefs: [
+            { source: 'email', rawEventId: 'raw-email' },
+            { source: 'monday', rawEventId: 'raw-monday' },
+          ],
+        },
+      ],
+      expected: {
+        ingestionSurfaces: ['email'],
+        outputKindCounts: { approval_bundle: 1 },
+        requireValidSourceRefs: true,
+        requireVisibilityFloors: true,
+      },
+    });
+
+    expect(result.passed).toBe(false);
+    expect(result.failures).toEqual([
+      'unexpected-surface-coverage: unexpected ingestion surface monday',
+      'unexpected-surface-coverage: source refs cite unexpected ingestion surface monday',
+    ]);
+  });
 });
 
 function casesNamed(caseNames: string[]): typeof RECONCILIATION_DETERMINISTIC_EVAL_CASES {

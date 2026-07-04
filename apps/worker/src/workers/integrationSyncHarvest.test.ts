@@ -1,5 +1,11 @@
 import { PGlite } from '@electric-sql/pglite';
-import { type Db, documentVersions, documents, rawEvents } from '@timeline/db';
+import {
+  type Db,
+  documentVersions,
+  documents,
+  rawEvents,
+  reconciliationEvidence,
+} from '@timeline/db';
 import { asc, eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -46,6 +52,13 @@ async function loadVersions(db: TestDb) {
     .select()
     .from(documentVersions)
     .orderBy(asc(documentVersions.version), asc(documentVersions.id));
+}
+
+function asRecord(value: unknown, label: string): Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error(`${label} is not an object`);
+  }
+  return value as Record<string, unknown>;
 }
 
 async function harvest(
@@ -109,39 +122,77 @@ describe('integration document harvest', () => {
     });
 
     const [version] = await loadVersions(db);
+    if (!version || !document) throw new Error('harvest did not create document/version rows');
     expect(version).toMatchObject({
-      documentId: document?.id,
+      documentId: document.id,
       version: 1,
       byteSize: Buffer.byteLength('%PDF roadmap v1'),
       contentType: 'application/pdf',
       processingStatus: 'pending',
       uploadedByUserId: USER_ID,
     });
-    expect(version?.sourceEventId).toEqual(expect.any(String));
-    expect(document?.currentVersionId).toBe(version?.id);
-    expect(result.versionId).toBe(version?.id);
+    expect(version.checksumSha256).toMatch(/^[0-9a-f]{64}$/);
+    expect(version.sourceEventId).toEqual(expect.any(String));
+    expect(document.currentVersionId).toBe(version.id);
+    expect(result.versionId).toBe(version.id);
 
     expect(io.putDocumentObject).toHaveBeenCalledWith({
       bucket: 'documents',
-      key: version?.objectKey,
+      key: version.objectKey,
       body: Buffer.from('%PDF roadmap v1'),
       contentType: 'application/pdf',
     });
     expect(io.enqueueDocumentExtractJob).toHaveBeenCalledWith({
-      documentVersionId: version?.id,
+      documentVersionId: version.id,
       teamId: TEAM_ID,
     });
 
-    const sourceEventId = version?.sourceEventId;
-    expect(sourceEventId).toEqual(expect.any(String));
+    const sourceEventId = version.sourceEventId;
     if (!sourceEventId) throw new Error('missing source event id');
     const eventRows = await db.select().from(rawEvents).where(eq(rawEvents.id, sourceEventId));
-    expect(eventRows[0]).toMatchObject({
+    const event = eventRows[0];
+    if (!event) throw new Error('missing document upload event');
+    expect(event).toMatchObject({
       teamId: TEAM_ID,
       authorUserId: USER_ID,
       source: 'document',
       visibility: 'team',
       contentText: 'Uploaded Roadmap.pdf',
+    });
+    const metadata = asRecord(event.sourceMetadata, 'source metadata');
+    expect(metadata.action).toBe('upload');
+    expect(metadata.document_id).toBe(document.id);
+    expect(metadata.document_version_id).toBe(version.id);
+    expect(metadata.integration_id).toBe(INTEGRATION_ID);
+    expect(metadata.integration_provider).toBe('monday');
+    expect(metadata.integration_external_id).toBe('monday-doc-1');
+    expect(metadata.source_payload_ref).toBe(`s3://documents/${version.objectKey}`);
+    expect(metadata.payload_digest).toBe(`sha256:${version.checksumSha256}`);
+    expect(metadata).not.toHaveProperty('source_payload_digest');
+    expect(metadata.source_snapshot_kind).toBe('integration_harvest_document');
+    expect(metadata.source_snapshot_version).toBe('integration-document-source-snapshot-2026-07');
+    expect(asRecord(metadata.source_snapshot, 'source snapshot')).toMatchObject({
+      provider: 'monday',
+      integrationId: INTEGRATION_ID,
+      externalObjectId: 'monday-doc-1',
+      filename: 'Roadmap.pdf',
+      contentType: 'application/pdf',
+      byteSize: Buffer.byteLength('%PDF roadmap v1'),
+      checksumSha256: version.checksumSha256,
+      objectKey: version.objectKey,
+      metadata: { board_id: 'board-1' },
+    });
+    const [evidence] = await db
+      .select()
+      .from(reconciliationEvidence)
+      .where(eq(reconciliationEvidence.rawEventId, sourceEventId));
+    expect(evidence).toMatchObject({
+      rawEventId: sourceEventId,
+      source: 'document',
+      provider: 'document',
+      sourcePayloadRef: `s3://documents/${version.objectKey}`,
+      payloadDigest: `sha256:${version.checksumSha256}`,
+      replayState: 'full',
     });
   });
 

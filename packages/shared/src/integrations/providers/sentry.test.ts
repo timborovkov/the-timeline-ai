@@ -162,10 +162,22 @@ describe('sentryProvider', () => {
 
     const events = (ctx.writeEvents.mock.calls[0]?.[0] ?? []) as IntegrationEvent[];
     expect(events.map((event) => event.eventType)).toEqual(['issue.updated', 'release.created']);
+    expect(events[0]?.extra).toMatchObject({
+      level: 'error',
+      status: 'unresolved',
+      count: '3',
+      user_count: 2,
+    });
     expect(events[0]?.objectMap).toMatchObject({
       type: 'incident',
       externalId: 'issue-1',
       priority: 'high',
+      metadata: {
+        level: 'error',
+        status: 'unresolved',
+        count: '3',
+        user_count: 2,
+      },
     });
     expect(events[1]?.objectMap).toMatchObject({
       type: 'other',
@@ -494,6 +506,10 @@ describe('sentryProvider', () => {
         sentry_project_slug: 'web',
         sentry_short_id: 'WEB-1',
         webhook_action: 'resolved',
+        level: 'error',
+        status: 'resolved',
+        count: '7',
+        user_count: 3,
       },
       objectMap: {
         type: 'incident',
@@ -501,6 +517,12 @@ describe('sentryProvider', () => {
         status: 'done',
         priority: 'high',
         aliases: ['WEB-1'],
+        metadata: {
+          level: 'error',
+          status: 'resolved',
+          count: '7',
+          user_count: 3,
+        },
       },
     });
     expect(normalized?.events[0]?.contentText).toContain('Sentry issue resolved: WEB-1');

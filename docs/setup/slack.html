@@ -10,7 +10,7 @@
     <a class="skip" href="#main">Skip to content</a>
     <main id="main">
       <h1>Slack conversational capture setup</h1>
-      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-06-28</span></div>
+      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-07-03</span></div>
       <p class="tldr">
         Slack is a first-party Capture Surface like Telegram: install the app with OAuth, link Slack
         users with OAuth, bind channels from Timeline, and let DMs route through the user's active
@@ -25,6 +25,7 @@
           <li><a href="#urls">2. Configure URLs</a></li>
           <li><a href="#scopes">3. Add scopes and events</a></li>
           <li><a href="#install">4. Install and bind conversations</a></li>
+          <li><a href="#live-canary">5. Live canary</a></li>
           <li><a href="#model">Mental model</a></li>
         </ul>
       </nav>
@@ -131,6 +132,38 @@ app_mention
       <p>
         The bot must be present in a private channel before Slack will deliver history/events for
         it. DMs need no channel binding; they route through the linked Slack user's active team.
+      </p>
+
+      <h2 id="live-canary">5. Live canary</h2>
+      <p>
+        <code>pnpm canary:integrations</code> already checks the Slack OAuth authorize endpoint and
+        signing-secret configuration. To also prove provider-backed Slack Web API access, set one or
+        both optional canary tokens:
+      </p>
+      <pre><code>SLACK_CANARY_BOT_TOKEN=xoxb-...
+SLACK_CANARY_USER_TOKEN=xoxp-...
+</code></pre>
+      <p>
+        The canary only calls Slack's read-only <code>auth.test</code> endpoint and redacts tokens
+        from output. These env vars are not used by the product runtime; real installed workspace
+        bot and user tokens remain encrypted in the database through the normal OAuth flow.
+      </p>
+      <p>
+        To prove end-to-end capture for an installed workspace without posting into Slack, configure
+        the signed event capture canary:
+      </p>
+      <pre><code>SLACK_CAPTURE_CANARY_TEAM_ID=T...
+SLACK_CAPTURE_CANARY_CHANNEL_ID=C...
+SLACK_CAPTURE_CANARY_USER_ID=U...
+SLACK_CAPTURE_CANARY_ALLOWED_ORIGIN=https://thetimeline.cc
+</code></pre>
+      <p>
+        The canary signs a synthetic Slack <code>event_callback</code> message with
+        <code>SLACK_SIGNING_SECRET</code>, posts it to <code>AUTH_URL/api/slack/events</code>, then
+        polls the configured <code>DATABASE_URL</code> for a matching
+        <code>raw_events.source='slack'</code> row. The Slack team must already be installed in the
+        same database, the channel must be bound to a Timeline team, and the user ID must be valid
+        for that Slack workspace so the normal <code>users.info</code> path succeeds.
       </p>
 
       <h2 id="native-ingestion">Native workspace ingestion</h2>

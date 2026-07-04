@@ -211,6 +211,153 @@ export const RECONCILIATION_DETERMINISTIC_EVAL_CASES: DeterministicEvalCase[] = 
     },
   },
   {
+    name: 'sales-success-renewal-risk-email-slack-meeting-drive',
+    scenarioFamily: 'sales_success',
+    ingestionSurfaces: ['email', 'slack', 'meeting', 'google_drive'],
+    associations: [
+      {
+        id: 'renewal-email-risk',
+        role: 'customer_signal',
+        artifactClusterKind: 'account',
+        visibility: TEAM_VISIBILITY,
+        visibilityFloor: TEAM_VISIBILITY,
+        sourceRefs: [
+          {
+            source: 'email',
+            rawEventId: 'raw-email-renewal-risk',
+            evidenceId: 'evidence-email-renewal-risk',
+            sourcePayloadRef: 's3://eval/reconciliation/email/renewal-risk',
+          },
+        ],
+      },
+      {
+        id: 'renewal-meeting-commitment',
+        role: 'commitment',
+        artifactClusterKind: 'meeting',
+        visibility: TEAM_VISIBILITY,
+        visibilityFloor: TEAM_VISIBILITY,
+        sourceRefs: [
+          {
+            source: 'meeting',
+            rawEventId: 'raw-meeting-renewal-review',
+            evidenceId: 'evidence-meeting-renewal-review',
+            sourcePayloadRef: 's3://eval/reconciliation/meeting/renewal-review-transcript',
+          },
+        ],
+      },
+    ],
+    outputs: [
+      {
+        id: 'renewal-account-health-context',
+        outputKind: 'observed_association',
+        targetKind: 'cluster_identity',
+        operation: 'link',
+        artifactClusterKind: 'account',
+        visibility: TEAM_VISIBILITY,
+        visibilityFloor: TEAM_VISIBILITY,
+        sourceRefs: [
+          {
+            source: 'email',
+            rawEventId: 'raw-email-renewal-risk',
+            evidenceId: 'evidence-email-renewal-risk',
+            sourcePayloadRef: 's3://eval/reconciliation/email/renewal-risk',
+          },
+          {
+            source: 'slack',
+            rawEventId: 'raw-slack-renewal-escalation',
+            evidenceId: 'evidence-slack-renewal-escalation',
+            sourcePayloadRef: 's3://eval/reconciliation/slack/renewal-escalation-thread',
+          },
+        ],
+      },
+      {
+        id: 'renewal-deal-document-context',
+        outputKind: 'observed_association',
+        targetKind: 'cluster_identity',
+        operation: 'link',
+        artifactClusterKind: 'document',
+        visibility: TEAM_VISIBILITY,
+        visibilityFloor: TEAM_VISIBILITY,
+        sourceRefs: [
+          {
+            source: 'google_drive',
+            rawEventId: 'raw-drive-renewal-plan',
+            evidenceId: 'evidence-drive-renewal-plan',
+            sourcePayloadRef: 's3://eval/reconciliation/drive/renewal-plan',
+          },
+        ],
+      },
+      {
+        id: 'renewal-deal-memory-approval',
+        outputKind: 'approval_bundle',
+        targetKind: 'object_relationship',
+        operation: 'create',
+        artifactClusterKind: 'deal',
+        visibility: TEAM_VISIBILITY,
+        visibilityFloor: TEAM_VISIBILITY,
+        sourceRefs: [
+          {
+            source: 'email',
+            rawEventId: 'raw-email-renewal-risk',
+            evidenceId: 'evidence-email-renewal-risk',
+            sourcePayloadRef: 's3://eval/reconciliation/email/renewal-risk',
+          },
+          {
+            source: 'slack',
+            rawEventId: 'raw-slack-renewal-escalation',
+            evidenceId: 'evidence-slack-renewal-escalation',
+            sourcePayloadRef: 's3://eval/reconciliation/slack/renewal-escalation-thread',
+          },
+          {
+            source: 'meeting',
+            rawEventId: 'raw-meeting-renewal-review',
+            evidenceId: 'evidence-meeting-renewal-review',
+            sourcePayloadRef: 's3://eval/reconciliation/meeting/renewal-review-transcript',
+          },
+          {
+            source: 'google_drive',
+            rawEventId: 'raw-drive-renewal-plan',
+            evidenceId: 'evidence-drive-renewal-plan',
+            sourcePayloadRef: 's3://eval/reconciliation/drive/renewal-plan',
+          },
+        ],
+      },
+      {
+        id: 'renewal-follow-up-task-approval',
+        outputKind: 'approval_bundle',
+        targetKind: 'task',
+        operation: 'create',
+        artifactClusterKind: 'task',
+        visibility: TEAM_VISIBILITY,
+        visibilityFloor: TEAM_VISIBILITY,
+        sourceRefs: [
+          {
+            source: 'meeting',
+            rawEventId: 'raw-meeting-renewal-review',
+            evidenceId: 'evidence-meeting-renewal-review',
+            sourcePayloadRef: 's3://eval/reconciliation/meeting/renewal-review-transcript',
+          },
+        ],
+      },
+    ],
+    expected: {
+      ingestionSurfaces: ['email', 'slack', 'meeting', 'google_drive'],
+      associationRoleCounts: {
+        customer_signal: 1,
+        commitment: 1,
+      },
+      outputKindCounts: {
+        observed_association: 2,
+        approval_bundle: 2,
+      },
+      forbiddenOutputKinds: ['direct_write'],
+      requireValidSourceRefs: true,
+      requireVisibilityFloors: true,
+      requiredSourcePayloadSurfaces: ['email', 'slack', 'meeting', 'google_drive'],
+      requiredArtifactClusterKinds: ['account', 'meeting', 'document', 'deal', 'task'],
+    },
+  },
+  {
     name: 'incident-response-sentry-github-slack-email',
     scenarioFamily: 'incident_response',
     ingestionSurfaces: ['sentry', 'github', 'slack', 'email'],
@@ -441,6 +588,79 @@ export const RECONCILIATION_DETERMINISTIC_EVAL_CASES: DeterministicEvalCase[] = 
     },
   },
   {
+    name: 'mcp-research-decision-context',
+    scenarioFamily: 'decision_memory',
+    ingestionSurfaces: ['mcp'],
+    associations: [
+      {
+        id: 'mcp-research-context',
+        role: 'related_context',
+        artifactClusterKind: 'provider_record',
+        visibility: PRIVATE_OWNER,
+        visibilityFloor: PRIVATE_OWNER,
+        sourceRefs: [
+          {
+            source: 'mcp',
+            rawEventId: 'raw-mcp-research',
+            evidenceId: 'evidence-mcp-research',
+            sourcePayloadRef: 'inline://timeline/mcp/research-server/tool-call-1',
+          },
+        ],
+      },
+    ],
+    outputs: [
+      {
+        id: 'mcp-research-associated',
+        outputKind: 'observed_association',
+        targetKind: 'cluster_identity',
+        operation: 'link',
+        artifactClusterKind: 'provider_record',
+        visibility: PRIVATE_OWNER,
+        visibilityFloor: PRIVATE_OWNER,
+        sourceRefs: [
+          {
+            source: 'mcp',
+            rawEventId: 'raw-mcp-research',
+            evidenceId: 'evidence-mcp-research',
+            sourcePayloadRef: 'inline://timeline/mcp/research-server/tool-call-1',
+          },
+        ],
+      },
+      {
+        id: 'mcp-research-note-approval',
+        outputKind: 'approval_bundle',
+        targetKind: 'object_note',
+        operation: 'create',
+        artifactClusterKind: 'topic',
+        visibility: PRIVATE_OWNER,
+        visibilityFloor: PRIVATE_OWNER,
+        sourceRefs: [
+          {
+            source: 'mcp',
+            rawEventId: 'raw-mcp-research',
+            evidenceId: 'evidence-mcp-research',
+            sourcePayloadRef: 'inline://timeline/mcp/research-server/tool-call-1',
+          },
+        ],
+      },
+    ],
+    expected: {
+      ingestionSurfaces: ['mcp'],
+      associationRoleCounts: {
+        related_context: 1,
+      },
+      outputKindCounts: {
+        observed_association: 1,
+        approval_bundle: 1,
+      },
+      forbiddenOutputKinds: ['direct_write'],
+      requireValidSourceRefs: true,
+      requireVisibilityFloors: true,
+      requiredSourcePayloadSurfaces: ['mcp'],
+      requiredArtifactClusterKinds: ['provider_record', 'topic'],
+    },
+  },
+  {
     name: 'calendar-project-private-visibility',
     scenarioFamily: 'calendar_project',
     ingestionSurfaces: ['calendar'],
@@ -530,6 +750,21 @@ export const RECONCILIATION_DETERMINISTIC_EVAL_CASES: DeterministicEvalCase[] = 
           },
         ],
       },
+      {
+        id: 'linear-provider-record-context',
+        role: 'related_context',
+        artifactClusterKind: 'provider_record',
+        visibility: TEAM_VISIBILITY,
+        visibilityFloor: TEAM_VISIBILITY,
+        sourceRefs: [
+          {
+            source: 'linear',
+            rawEventId: 'raw-linear-risk',
+            evidenceId: 'evidence-linear-risk',
+            sourcePayloadRef: 's3://eval/reconciliation/linear/issue-risk',
+          },
+        ],
+      },
     ],
     outputs: [
       {
@@ -574,6 +809,23 @@ export const RECONCILIATION_DETERMINISTIC_EVAL_CASES: DeterministicEvalCase[] = 
         ],
       },
       {
+        id: 'linear-provider-record-linked',
+        outputKind: 'observed_association',
+        targetKind: 'cluster_identity',
+        operation: 'link',
+        artifactClusterKind: 'provider_record',
+        visibility: TEAM_VISIBILITY,
+        visibilityFloor: TEAM_VISIBILITY,
+        sourceRefs: [
+          {
+            source: 'linear',
+            rawEventId: 'raw-linear-risk',
+            evidenceId: 'evidence-linear-risk',
+            sourcePayloadRef: 's3://eval/reconciliation/linear/issue-risk',
+          },
+        ],
+      },
+      {
         id: 'webhook-memory-approval',
         outputKind: 'approval_bundle',
         targetKind: 'object_note',
@@ -594,17 +846,23 @@ export const RECONCILIATION_DETERMINISTIC_EVAL_CASES: DeterministicEvalCase[] = 
     expected: {
       ingestionSurfaces: ['ingest_webhook', 'web', 'linear', 'google_drive', 'system'],
       associationRoleCounts: {
-        related_context: 1,
+        related_context: 2,
         audit_trail: 1,
       },
       outputKindCounts: {
-        observed_association: 1,
+        observed_association: 2,
         approval_bundle: 1,
       },
       requireValidSourceRefs: true,
       requireVisibilityFloors: true,
       requiredSourcePayloadSurfaces: ['ingest_webhook', 'web', 'linear', 'google_drive', 'system'],
-      requiredArtifactClusterKinds: ['topic', 'customer_project', 'account', 'system_workflow'],
+      requiredArtifactClusterKinds: [
+        'topic',
+        'customer_project',
+        'account',
+        'provider_record',
+        'system_workflow',
+      ],
     },
   },
 ];

@@ -36,25 +36,40 @@ const DETERMINISTIC_PROMPT_VERSION = 'reconciliation-deterministic-matrix-2026-0
 
 const SURFACE_CASE_NAMES = {
   web: ['generic-webhook-web-linear-drive'],
-  email: ['customer-project-email-monday-sentry', 'incident-response-sentry-github-slack-email'],
-  slack: ['incident-response-sentry-github-slack-email'],
+  email: [
+    'customer-project-email-monday-sentry',
+    'sales-success-renewal-risk-email-slack-meeting-drive',
+    'incident-response-sentry-github-slack-email',
+  ],
+  slack: [
+    'sales-success-renewal-risk-email-slack-meeting-drive',
+    'incident-response-sentry-github-slack-email',
+  ],
   telegram: ['decision-memory-meeting-telegram-document'],
-  meeting: ['decision-memory-meeting-telegram-document'],
+  meeting: [
+    'sales-success-renewal-risk-email-slack-meeting-drive',
+    'decision-memory-meeting-telegram-document',
+  ],
   document: ['decision-memory-meeting-telegram-document'],
   calendar: ['calendar-project-private-visibility'],
   system: ['generic-webhook-web-linear-drive'],
   ingest_webhook: ['generic-webhook-web-linear-drive'],
   github: ['incident-response-sentry-github-slack-email'],
   linear: ['generic-webhook-web-linear-drive'],
-  google_drive: ['generic-webhook-web-linear-drive'],
+  google_drive: [
+    'sales-success-renewal-risk-email-slack-meeting-drive',
+    'generic-webhook-web-linear-drive',
+  ],
   monday: ['customer-project-email-monday-sentry'],
   sentry: ['customer-project-email-monday-sentry', 'incident-response-sentry-github-slack-email'],
+  mcp: ['mcp-research-decision-context'],
 } satisfies Record<ReconciliationEvalIngestionSurface, string[]>;
 
 const SCENARIO_CASE_NAMES = {
   customer_project: ['customer-project-email-monday-sentry'],
   incident_response: ['incident-response-sentry-github-slack-email'],
-  decision_memory: ['decision-memory-meeting-telegram-document'],
+  sales_success: ['sales-success-renewal-risk-email-slack-meeting-drive'],
+  decision_memory: ['decision-memory-meeting-telegram-document', 'mcp-research-decision-context'],
   calendar_project: ['calendar-project-private-visibility'],
   generic_webhook: ['generic-webhook-web-linear-drive'],
 } satisfies Record<ReconciliationEvalScenarioFamily, string[]>;

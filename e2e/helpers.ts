@@ -1,9 +1,29 @@
 import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
 
-import { expect, type Browser, type BrowserContext, type Page } from '@playwright/test';
+import {
+  expect,
+  type Browser,
+  type BrowserContext,
+  type Page,
+  type Response,
+} from '@playwright/test';
 
-import { E2E_PASSWORD, E2E_RUN_ID, e2eUsers } from './test-data.js';
+import { E2E_PASSWORD, E2E_RUN_ID, e2eTeam, e2eUsers } from './test-data.js';
+
+const ACTIVE_TEAM_COOKIE = 'tl_active_team';
+
+async function pinPrimaryTeam(page: Page): Promise<void> {
+  await page.context().addCookies([
+    {
+      name: ACTIVE_TEAM_COOKIE,
+      value: e2eTeam.id,
+      url: new URL('/', page.url()).toString(),
+      httpOnly: true,
+      sameSite: 'Lax',
+    },
+  ]);
+}
 
 export async function signIn(page: Page, email: string): Promise<void> {
   await page.goto('/sign-in');
@@ -21,6 +41,7 @@ export async function signInFromCurrentPage(
     await page.getByRole('button', { name: 'Sign in' }).click();
     try {
       await expect(page).toHaveURL(expectedUrl);
+      await pinPrimaryTeam(page);
       return;
     } catch (error) {
       const canRetry =
@@ -60,4 +81,17 @@ export async function newSignedInContext(
 export async function newSignedInPage(browser: Browser, user: E2eUserKey): Promise<Page> {
   const context = await newSignedInContext(browser, user);
   return context.newPage();
+}
+
+export async function waitForPost(
+  page: Page,
+  path: string,
+  action: () => Promise<void>,
+  ok: (response: Response) => boolean = () => true,
+): Promise<void> {
+  const response = page.waitForResponse(
+    (res) => res.url().includes(path) && res.request().method() === 'POST' && ok(res),
+  );
+  await action();
+  await response;
 }

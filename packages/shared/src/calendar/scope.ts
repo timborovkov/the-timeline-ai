@@ -9,6 +9,7 @@ import {
 import { and, asc, desc, eq, gt, gte, inArray, isNull, lt, sql } from 'drizzle-orm';
 
 import {
+  buildCalendarSourcePayloadMetadata,
   buildCalendarTimelineText,
   insertCalendarRawEvents,
   normalizeCalendarRawEventIds,
@@ -53,8 +54,9 @@ function recordFromUnknown(value: unknown): Record<string, unknown> {
 function sourceMetadataReplacingLinks(
   metadata: unknown,
   text: string | null | undefined,
+  patch: Record<string, unknown> = {},
 ): Record<string, unknown> {
-  const base = recordFromUnknown(metadata);
+  const base = { ...recordFromUnknown(metadata), ...patch };
   delete base.links;
   delete base.contacts;
   return sourceMetadataWithConversationArtifacts(base, text);
@@ -67,6 +69,7 @@ async function updateCalendarRawEventContent(
     rawEventId: string;
     contentText: string;
     occurredAt?: Date;
+    sourceMetadataPatch?: Record<string, unknown>;
   },
 ): Promise<void> {
   const [existing] = await tx
@@ -80,7 +83,11 @@ async function updateCalendarRawEventContent(
     .set({
       contentText: args.contentText,
       ...(args.occurredAt ? { occurredAt: args.occurredAt } : {}),
-      sourceMetadata: sourceMetadataReplacingLinks(existing.sourceMetadata, args.contentText),
+      sourceMetadata: sourceMetadataReplacingLinks(
+        existing.sourceMetadata,
+        args.contentText,
+        args.sourceMetadataPatch,
+      ),
     })
     .where(eq(rawEvents.id, args.rawEventId));
   await refreshLinkArtifactsForRawEvent(tx, {
@@ -279,6 +286,20 @@ function showAsOrDefault(showAs: string | null | undefined): CalendarShowAs {
 
 function eventMetadata(row: Pick<CalendarEventRow, 'metadata'>): Record<string, unknown> {
   return row.metadata;
+}
+
+function calendarPayloadInputFromRow(
+  row: CalendarEventRow,
+): Parameters<typeof buildCalendarSourcePayloadMetadata>[0] {
+  return {
+    calendarEventId: row.id,
+    title: row.title,
+    description: row.description,
+    startAt: row.startAt,
+    endAt: row.endAt,
+    timezone: row.timezone,
+    location: row.location,
+  };
 }
 
 function mergeMetadata(
@@ -1087,6 +1108,15 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
         if (!updated) return null;
 
         const newTitle = effectivePatch.title ?? row.title;
+        const calendarPayloadInput = {
+          calendarEventId: targetId,
+          title: newTitle,
+          description: effectivePatch.description ?? row.description,
+          startAt: effectiveStart,
+          endAt: effectiveEnd,
+          timezone: effectivePatch.timezone ?? row.timezone,
+          location: effectivePatch.location ?? row.location,
+        };
         const timelineFields: (keyof UpdateCalendarEventInput)[] = [
           'title',
           'description',
@@ -1147,23 +1177,28 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
             teamId,
             rawEventId: row.startAtRawEventId,
             contentText: buildCalendarTimelineText({
-              title: newTitle,
-              description: effectivePatch.description ?? row.description,
-              startAt: effectiveStart,
-              endAt: effectiveEnd,
-              timezone: effectivePatch.timezone ?? row.timezone,
-              location: effectivePatch.location ?? row.location,
+              title: calendarPayloadInput.title,
+              description: calendarPayloadInput.description,
+              startAt: calendarPayloadInput.startAt,
+              endAt: calendarPayloadInput.endAt,
+              timezone: calendarPayloadInput.timezone,
+              location: calendarPayloadInput.location,
             }),
             ...(effectivePatch.startAt ? { occurredAt: effectivePatch.startAt } : {}),
+            sourceMetadataPatch: buildCalendarSourcePayloadMetadata(calendarPayloadInput, 'event'),
           });
           changedRawEventIds.add(row.startAtRawEventId);
         }
 
-        if (effectivePatch.title && row.scheduledRawEventId) {
+        if (hasOccurrenceContentChange && row.scheduledRawEventId) {
           await updateCalendarRawEventContent(tx, {
             teamId,
             rawEventId: row.scheduledRawEventId,
-            contentText: `Scheduled: ${effectivePatch.title}`,
+            contentText: `Scheduled: ${newTitle}`,
+            sourceMetadataPatch: buildCalendarSourcePayloadMetadata(
+              calendarPayloadInput,
+              'scheduled',
+            ),
           });
           changedRawEventIds.add(row.scheduledRawEventId);
         }
@@ -1185,6 +1220,7 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
                 {
                   calendar_event_id: targetId,
                   action: 'updated',
+                  ...buildCalendarSourcePayloadMetadata(calendarPayloadInput, 'updated'),
                 },
                 updateText,
               ),
@@ -1410,6 +1446,10 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
                   calendar_event_id: parentId,
                   action: 'cancelled',
                   recurrence_edit_mode: recurrenceMode,
+                  ...buildCalendarSourcePayloadMetadata(
+                    calendarPayloadInputFromRow(parentRow),
+                    'cancelled',
+                  ),
                   ...(recurrenceMode === 'this_and_future'
                     ? { original_start_at: splitAt.toISOString() }
                     : {}),
@@ -1497,6 +1537,10 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
               {
                 calendar_event_id: id,
                 action: 'cancelled',
+                ...buildCalendarSourcePayloadMetadata(
+                  calendarPayloadInputFromRow(row as CalendarEventRow),
+                  'cancelled',
+                ),
               },
               cancelledText,
             ),

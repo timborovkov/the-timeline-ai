@@ -35,12 +35,19 @@ interface TranscribeWorkerDeps {
   db: Db;
 }
 
+interface TranscribeFailureContext {
+  attemptsMade: number;
+  maxAttempts: number;
+  err: Error;
+}
+
 export interface TranscribeWorkerIO {
   headObject(input: { audioKey: string }): Promise<{ contentLength?: number | undefined }>;
   getObjectBuffer(input: { audioKey: string; maxBytes: number }): Promise<{ body: Buffer }>;
   transcribeAudio(input: {
     audio: Buffer;
     format?: llm.AudioFormat;
+    language?: string;
   }): Promise<{ text: string; model: string }>;
   splitAudio(input: { audioKey: string; audio: Buffer }): Promise<Buffer[]>;
   enqueueExtract(input: queue.ExtractJobData): Promise<void>;
@@ -76,6 +83,10 @@ function defaultIO(): TranscribeWorkerIO {
   };
 }
 
+function shouldMarkPermanentTranscribeFailure(input: TranscribeFailureContext): boolean {
+  return input.err instanceof UnrecoverableError || input.attemptsMade >= input.maxAttempts;
+}
+
 export async function processTranscribeJobForTests(
   deps: TranscribeWorkerDeps,
   data: queue.TranscribeJobData,
@@ -100,17 +111,6 @@ export async function processTranscribeJobForTests(
       : [body];
   const format =
     body.byteLength > MAX_TRANSCRIPTION_CHUNK_BYTES ? 'mp3' : audioFormatFromAudioKey(audioKey);
-  const transcriptions = [];
-  for (const audio of audioChunks) {
-    transcriptions.push(await io.transcribeAudio({ audio, ...(format ? { format } : {}) }));
-  }
-  const result = {
-    text: transcriptions
-      .map((r) => r.text.trim())
-      .filter(Boolean)
-      .join('\n\n'),
-    model: Array.from(new Set(transcriptions.map((r) => r.model))).join('+'),
-  };
   const current = await deps.db
     .select({ sourceMetadata: rawEvents.sourceMetadata })
     .from(rawEvents)
@@ -124,6 +124,24 @@ export async function processTranscribeJobForTests(
       : {};
   const noteText =
     typeof sourceMetadata.audio_note_text === 'string' ? sourceMetadata.audio_note_text.trim() : '';
+  const languageHint = transcriptionLanguageHint(sourceMetadata);
+  const transcriptions = [];
+  for (const audio of audioChunks) {
+    transcriptions.push(
+      await io.transcribeAudio({
+        audio,
+        ...(format ? { format } : {}),
+        ...(languageHint ? { language: languageHint } : {}),
+      }),
+    );
+  }
+  const result = {
+    text: transcriptions
+      .map((r) => r.text.trim())
+      .filter(Boolean)
+      .join('\n\n'),
+    model: Array.from(new Set(transcriptions.map((r) => r.model))).join('+'),
+  };
   const contentText = [noteText, result.text].filter(Boolean).join('\n\n');
   const existingPayloadRef =
     typeof sourceMetadata.source_payload_ref === 'string' &&
@@ -131,19 +149,20 @@ export async function processTranscribeJobForTests(
       ? sourceMetadata.source_payload_ref.trim()
       : null;
   const sourcePayloadRef = existingPayloadRef ?? `s3://timeline-audio/${audioKey}`;
-  const sourcePayloadDigest = `sha256:${createHash('sha256').update(body).digest('hex')}`;
+  const payloadDigest = `sha256:${createHash('sha256').update(body).digest('hex')}`;
 
   const patch = JSON.stringify({
     transcription_model: result.model,
     transcribed_at: new Date().toISOString(),
     source_payload_ref: sourcePayloadRef,
-    source_payload_digest: sourcePayloadDigest,
+    payload_digest: payloadDigest,
     source_snapshot_kind: 'transcribed_audio_event',
     source_snapshot_version: TRANSCRIBE_SOURCE_SNAPSHOT_VERSION,
     source_snapshot: {
       audio_key: audioKey,
       transcription_model: result.model,
       transcript_text: result.text,
+      transcription_language: languageHint,
       note_text: noteText || null,
     },
   });
@@ -288,6 +307,13 @@ function audioKeyExtension(audioKey: string): string {
   return ext.length > 1 && ext.length <= 8 ? ext : '.audio';
 }
 
+function transcriptionLanguageHint(sourceMetadata: Record<string, unknown>): string | undefined {
+  const value = sourceMetadata.transcription_language;
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim().toLowerCase();
+  return /^[a-z]{2}(?:-[a-z0-9]{2,8})?$/u.test(trimmed) ? trimmed : undefined;
+}
+
 function audioFormatFromAudioKey(audioKey: string): llm.AudioFormat | undefined {
   const ext = path.extname(audioKey).toLowerCase().replace(/^\./u, '');
   if (ext === 'mp3') return 'mp3';
@@ -419,8 +445,15 @@ export function startTranscribeWorker(deps: TranscribeWorkerDeps): Worker<queue.
     // be just as oversize next time). Otherwise transient errors (a brief
     // OpenRouter blip) would surface to the user as a hard failure.
     const maxAttempts = job.opts.attempts ?? 1;
-    const unrecoverable = err instanceof UnrecoverableError;
-    if (!unrecoverable && job.attemptsMade < maxAttempts) return;
+    if (
+      !shouldMarkPermanentTranscribeFailure({
+        err,
+        attemptsMade: job.attemptsMade,
+        maxAttempts,
+      })
+    ) {
+      return;
+    }
     void markTranscribeFailureForTests(deps, job.data, err).catch((updateErr: unknown) => {
       log.error({ err: updateErr }, 'failed to mark row failure');
       captureWorkerException(updateErr, {
@@ -435,3 +468,7 @@ export function startTranscribeWorker(deps: TranscribeWorkerDeps): Worker<queue.
 
   return worker;
 }
+
+export const transcribeWorkerInternals = {
+  shouldMarkPermanentTranscribeFailure,
+};

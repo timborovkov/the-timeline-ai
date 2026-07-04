@@ -20,6 +20,7 @@ export const uuidSchema = z.string().regex(UUID_RE, 'Invalid id');
 
 export interface ActionState {
   error?: string;
+  failedItemIds?: string[];
   ok?: boolean;
   id?: string;
   message?: string;

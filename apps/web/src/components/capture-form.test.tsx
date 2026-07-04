@@ -113,6 +113,46 @@ describe('CaptureForm', () => {
     expect(html).toContain('Private (only me)');
   });
 
+  it('validates empty submits before calling capture actions', async () => {
+    const user = userEvent.setup();
+    render(
+      createElement(CaptureForm, {
+        currentUser: { id: 'user-1', name: 'Ada', email: 'ada@example.test' },
+      }),
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Post' }));
+
+    expect(
+      screen.getByText('Write something, record a voice note, or attach a file.'),
+    ).toBeTruthy();
+    expect(fakes.createTextEventAction).not.toHaveBeenCalled();
+    expect(fakes.createAudioEventAction).not.toHaveBeenCalled();
+    expect(fakes.requestDocumentUploadAction).not.toHaveBeenCalled();
+  });
+
+  it('surfaces durable queue warnings after text capture succeeds', async () => {
+    const user = userEvent.setup();
+    fakes.createTextEventAction.mockResolvedValue({
+      ok: true,
+      warning: 'Saved, but search indexing queue is unreachable.',
+    });
+    render(
+      createElement(CaptureForm, {
+        currentUser: { id: 'user-1', name: 'Ada', email: 'ada@example.test' },
+      }),
+    );
+
+    await user.type(screen.getByPlaceholderText('What happened?'), 'Customer approved launch');
+    await user.click(screen.getByRole('button', { name: 'Post' }));
+
+    expect((await screen.findByRole('status')).textContent).toBe(
+      'Saved, but search indexing queue is unreachable.',
+    );
+    expect(fakes.createTextEventAction).toHaveBeenCalledOnce();
+    expect(fakes.refresh).toHaveBeenCalledOnce();
+  });
+
   it('posts selected audio through transcription and document files through document upload', async () => {
     const user = userEvent.setup();
     render(

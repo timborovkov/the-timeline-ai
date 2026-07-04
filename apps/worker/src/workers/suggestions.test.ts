@@ -15,6 +15,7 @@ import {
   reconciliationRuns,
   type Db,
 } from '@timeline/db';
+import { suggestions } from '@timeline/shared';
 import { withTeam } from '@timeline/shared/team-scope';
 import { eq, sql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
@@ -557,6 +558,63 @@ describe('processSuggestionJobForTests', () => {
 
     await expect(scope.suggestions.listPendingSuggestions()).resolves.toEqual([]);
     await expect(scope.suggestions.listSuggestions({ status: 'resolved' })).resolves.toEqual([]);
+  });
+
+  it('does not re-offer legacy rejected cleanup suggestions without projection outputs', async () => {
+    const objectRows = await db
+      .insert(entities)
+      .values([
+        { teamId: TEAM_ID, type: 'company', canonicalName: 'KPMG' },
+        { teamId: TEAM_ID, type: 'vendor', canonicalName: 'K P M G' },
+      ])
+      .returning({ id: entities.id });
+    const objectIds = objectRows.map((row) => row.id).sort();
+    const dedupeKey = suggestions.suggestionDedupeKey({
+      kind: 'object_cleanup_merge',
+      teamId: TEAM_ID,
+      objectIds,
+    });
+    const [legacySuggestion] = await db
+      .insert(agentSuggestions)
+      .values({
+        teamId: TEAM_ID,
+        source: 'background',
+        status: 'rejected',
+        title: 'Merge duplicate objects: KPMG / K P M G',
+        summary: 'Two objects look like they may represent the same thing.',
+        reason: 'Legacy rejected cleanup fixture.',
+        confidence: 'high',
+        dedupeKey,
+        visibility: 'team',
+        resolvedAt: new Date('2026-06-20T10:00:00Z'),
+        resolvedByUserId: OWNER_ID,
+        metadata: { kind: 'object_cleanup', cleanup_kind: 'merge' },
+      })
+      .returning({ id: agentSuggestions.id });
+    if (!legacySuggestion) throw new Error('expected legacy suggestion');
+    await db.insert(agentSuggestionItems).values({
+      suggestionId: legacySuggestion.id,
+      teamId: TEAM_ID,
+      status: 'rejected',
+      operation: 'merge',
+      targetKind: 'object_merge',
+      targetId: objectIds[0],
+      title: 'Review merge for KPMG',
+      description: 'Legacy rejected cleanup fixture.',
+      dedupeKey,
+      proposedPayload: { objectIds, survivorId: objectIds[0] },
+      resolvedAt: new Date('2026-06-20T10:00:00Z'),
+      resolvedByUserId: OWNER_ID,
+    });
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { scope: 'object_cleanup', teamId: TEAM_ID, triggeredBy: 'daily' },
+    );
+
+    const scope = withTeam(db as never, TEAM_ID, OWNER_ID);
+    await expect(scope.suggestions.listPendingSuggestions()).resolves.toEqual([]);
+    await expect(db.select().from(reconciliationOutputs)).resolves.toEqual([]);
   });
 
   it('requires supporting evidence for short company duplicate candidates and suppresses rejected pairs', async () => {

@@ -1,4 +1,5 @@
-import { createHash } from 'node:crypto';
+import { stableSha256Digest } from '#src/reconciliation/stable-digest.js';
+import { stableJson } from '#src/reconciliation/stable-json.js';
 
 export type {
   ReconciliationClusterDetail,
@@ -9,6 +10,8 @@ export type {
   ReconciliationDashboardInput,
   ReconciliationDashboardOutput,
   ReconciliationDashboardRun,
+  ReconciliationDashboardRunHistory,
+  ReconciliationDashboardRunHistoryInput,
   ReconciliationDashboardSnapshot,
 } from '#src/reconciliation/dashboard.js';
 export {
@@ -22,8 +25,13 @@ export type {
   ProductionSamplingFixtureCandidate,
   ProductionSamplingLatency,
   ProductionSamplingRunKind,
+  RecordProductionSamplingEvalReportInput,
 } from '#src/reconciliation/production-sampling.js';
-export { buildProductionSamplingEvalReport } from '#src/reconciliation/production-sampling.js';
+export {
+  buildProductionSamplingEvalReport,
+  recordProductionSamplingEvalReport,
+} from '#src/reconciliation/production-sampling.js';
+export { inlineSourceSnapshotMetadata } from '#src/reconciliation/source-snapshot.js';
 
 export type Visibility = 'team' | 'private' | 'specific_users';
 
@@ -139,11 +147,13 @@ export const reconciliationEvalIngestionSurfaces = [
   'google_drive',
   'monday',
   'sentry',
+  'mcp',
 ] as const;
 
 export const reconciliationEvalScenarioFamilies = [
   'customer_project',
   'incident_response',
+  'sales_success',
   'decision_memory',
   'calendar_project',
   'generic_webhook',
@@ -266,6 +276,23 @@ export function scoreDeterministicReconciliationCase(
       failures.push(`${input.name}: missing ingestion surface ${surface}`);
     }
   }
+  for (const surface of input.ingestionSurfaces) {
+    if (!input.expected.ingestionSurfaces.includes(surface)) {
+      failures.push(`${input.name}: unexpected ingestion surface ${surface}`);
+    }
+  }
+
+  const sourceRefSurfaces = new Set(allEvalSourceRefs(input).map((ref) => ref.source));
+  for (const surface of input.expected.ingestionSurfaces) {
+    if (!sourceRefSurfaces.has(surface)) {
+      failures.push(`${input.name}: missing source refs for ingestion surface ${surface}`);
+    }
+  }
+  for (const surface of sourceRefSurfaces) {
+    if (!input.expected.ingestionSurfaces.includes(surface)) {
+      failures.push(`${input.name}: source refs cite unexpected ingestion surface ${surface}`);
+    }
+  }
 
   const actualCounts = input.outputs.reduce<Record<string, number>>((counts, output) => {
     counts[output.outputKind] = (counts[output.outputKind] ?? 0) + 1;
@@ -334,13 +361,26 @@ export function scoreDeterministicReconciliationCase(
     }
   }
 
-  for (const surface of input.expected.requiredSourcePayloadSurfaces ?? []) {
-    const hasPayloadRef = allEvalSourceRefs(input).some(
-      (ref) => ref.source === surface && Boolean(ref.sourcePayloadRef),
+  const sourcePayloadSurfaces = new Set(input.expected.requiredSourcePayloadSurfaces ?? []);
+  for (const output of input.outputs) {
+    failures.push(
+      ...missingSourcePayloadRefFailures(
+        input.name,
+        output.id,
+        output.sourceRefs,
+        sourcePayloadSurfaces,
+      ),
     );
-    if (!hasPayloadRef) {
-      failures.push(`${input.name}: missing source payload ref for ${surface}`);
-    }
+  }
+  for (const association of input.associations ?? []) {
+    failures.push(
+      ...missingSourcePayloadRefFailures(
+        input.name,
+        association.id,
+        association.sourceRefs,
+        sourcePayloadSurfaces,
+      ),
+    );
   }
 
   const artifactClusterKinds = new Set(
@@ -391,7 +431,7 @@ export function scoreReconciliationEvalSuite(
 }
 
 export function reconciliationDedupeKey(kind: string, payload: unknown): string {
-  const digest = createHash('sha256').update(stableJson(payload)).digest('hex').slice(0, 32);
+  const digest = stableSha256Digest(payload).slice('sha256:'.length).slice(0, 32);
   return `reconcile:${kind}:${digest}`;
 }
 
@@ -402,12 +442,27 @@ function allEvalSourceRefs(input: DeterministicEvalCase): SourceRef[] {
   ];
 }
 
+function missingSourcePayloadRefFailures(
+  caseName: string,
+  id: string,
+  sourceRefs: SourceRef[],
+  requiredSurfaces: Set<string>,
+): string[] {
+  if (requiredSurfaces.size === 0) return [];
+  return sourceRefs.flatMap((ref, index) =>
+    requiredSurfaces.has(ref.source) && !ref.sourcePayloadRef
+      ? [`${caseName}:${id}: source_refs[${index}] missing source payload ref for ${ref.source}`]
+      : [],
+  );
+}
+
 function canonicalizeSourceRef(ref: SourceRef): SourceRef {
+  const hasStableSourceHandle = Boolean(ref.rawEventId ?? ref.sourcePayloadRef);
   return {
     source: ref.source,
     rawEventId: ref.rawEventId ?? null,
-    evidenceId: ref.evidenceId ?? null,
-    associationId: ref.associationId ?? null,
+    evidenceId: hasStableSourceHandle ? null : (ref.evidenceId ?? null),
+    associationId: hasStableSourceHandle ? null : (ref.associationId ?? null),
     outputId: ref.outputId ?? null,
     sourcePayloadRef: ref.sourcePayloadRef ?? null,
   };
@@ -424,16 +479,4 @@ function isSubset(candidate: string[], floor: string[]): boolean {
 
 function compareStableJson(left: unknown, right: unknown): number {
   return stableJson(left).localeCompare(stableJson(right));
-}
-
-function stableJson(value: unknown): string {
-  if (value === null || typeof value !== 'object') return JSON.stringify(value);
-  if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`;
-
-  const record = value as Record<string, unknown>;
-  const entries = Object.keys(record)
-    .filter((key) => record[key] !== undefined)
-    .sort()
-    .map((key) => `${JSON.stringify(key)}:${stableJson(record[key])}`);
-  return `{${entries.join(',')}}`;
 }

@@ -174,6 +174,7 @@ describe('googleDriveProvider', () => {
                     modifiedTime: '2026-06-20T10:00:00.000Z',
                     webViewLink: 'https://drive.google.com/file/d/file-1',
                     parents: ['folder-1'],
+                    driveId: 'shared-drive-1',
                     owners: [{ displayName: 'Ada', emailAddress: 'ada@example.com' }],
                   },
                 },
@@ -236,6 +237,14 @@ describe('googleDriveProvider', () => {
       provider: 'google_drive',
       eventType: 'file.changed',
       contentText: 'Drive file "Roadmap" (text/plain) was modified',
+      actor: { name: 'Ada', email: 'ada@example.com' },
+      extra: {
+        drive: {
+          modified_time: '2026-06-20T10:00:00.000Z',
+          drive_id: 'shared-drive-1',
+          parents: ['folder-1'],
+        },
+      },
     });
     expect(ctx.saveCursor).toHaveBeenCalledWith('drive.changes', { page_token: 'page-3' });
     expect(ctx.recordAudit).not.toHaveBeenCalledWith('drive_page_cap_hit', expect.anything());

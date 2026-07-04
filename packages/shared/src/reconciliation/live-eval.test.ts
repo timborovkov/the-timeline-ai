@@ -39,7 +39,7 @@ if (process.env.RECONCILIATION_LIVE_ENV_FILE) {
 
 const maybeDescribe = process.env.RECONCILIATION_LIVE_EVAL === '1' ? describe : describe.skip;
 const LIVE_EVAL_PROMPT_VERSION = `${RECONCILIATION_PLANNER_PROMPT_VERSION}+live-matrix-2026-06`;
-const LIVE_EVAL_JUDGE_PROMPT_VERSION = 'reconciliation-live-judge-2026-06';
+const LIVE_EVAL_JUDGE_PROMPT_VERSION = 'reconciliation-live-judge-2026-07';
 const LIVE_EVAL_JUDGE_MIN_SCORE = 0.9;
 const LIVE_EVAL_CALL_TIMEOUT_MS = parseLiveEvalCallTimeoutMs(
   process.env.RECONCILIATION_LIVE_CALL_TIMEOUT_MS,
@@ -152,7 +152,7 @@ maybeDescribe('live reconciliation model evals', () => {
 
       expect(failures).toEqual([]);
     },
-    Math.max(240_000, LIVE_EVAL_CALL_TIMEOUT_MS * LIVE_EVAL_MAX_ATTEMPTS * 3),
+    liveEvalCaseTimeoutMs(),
   );
 
   it('keeps the live fixture suite aligned with required coverage', () => {
@@ -165,6 +165,118 @@ maybeDescribe('live reconciliation model evals', () => {
 
     expect([...coveredSurfaces].sort()).toEqual([...REQUIRED_RECONCILIATION_EVAL_SURFACES].sort());
     expect([...coveredFamilies].sort()).toEqual([...REQUIRED_RECONCILIATION_EVAL_SCENARIOS].sort());
+  });
+});
+
+describe('live reconciliation eval scoring', () => {
+  it('defaults live eval retries to three attempts for transient judge/provider failures', () => {
+    expect(parseLiveEvalMaxAttempts(undefined)).toBe(3);
+    expect(parseLiveEvalMaxAttempts('')).toBe(3);
+    expect(parseLiveEvalMaxAttempts('2')).toBe(2);
+  });
+
+  it('rejects missing, duplicate, and unexpected returned source refs', () => {
+    const testCase: DeterministicEvalCase = {
+      name: 'live-source-ref-contract',
+      scenarioFamily: 'customer_project',
+      ingestionSurfaces: ['email', 'monday'],
+      outputs: [
+        {
+          id: 'customer-memory',
+          outputKind: 'approval_bundle',
+          targetKind: 'object',
+          operation: 'create',
+          visibility: { visibility: 'team' },
+          visibilityFloor: { visibility: 'team' },
+          sourceRefs: [
+            { source: 'email', rawEventId: 'raw-email' },
+            { source: 'monday', rawEventId: 'raw-monday' },
+          ],
+        },
+      ],
+      expected: {
+        ingestionSurfaces: ['email', 'monday'],
+        outputKindCounts: { approval_bundle: 1 },
+        requireValidSourceRefs: true,
+        requireVisibilityFloors: true,
+      },
+    };
+
+    expect(
+      liveEvalFailures(testCase, {
+        scenarioFamily: 'customer_project',
+        ingestionSurfaces: ['email', 'monday'],
+        outputKinds: ['approval_bundle'],
+        directWriteSurfaces: [],
+        artifactClusterKinds: [],
+        approvalRequired: true,
+        sourceRefs: [
+          { surface: 'email', rawEventId: 'raw-email' },
+          { surface: 'email', rawEventId: 'raw-email' },
+          { surface: 'slack', rawEventId: 'raw-slack' },
+        ],
+        privacyRisk: false,
+      }),
+    ).toEqual([
+      'missing source ref monday:raw-monday',
+      'unexpected source ref slack:raw-slack',
+      'duplicate source ref email:raw-email',
+      'ingestion surface monday has no returned source ref',
+    ]);
+  });
+
+  it('rejects judge failure codes that contradict deterministic checks', () => {
+    const testCase: DeterministicEvalCase = {
+      name: 'live-judge-consistency-contract',
+      scenarioFamily: 'generic_webhook',
+      ingestionSurfaces: ['ingest_webhook', 'web'],
+      outputs: [
+        {
+          id: 'webhook-memory',
+          outputKind: 'approval_bundle',
+          targetKind: 'object_note',
+          operation: 'create',
+          visibility: { visibility: 'team' },
+          visibilityFloor: { visibility: 'team' },
+          sourceRefs: [{ source: 'ingest_webhook', rawEventId: 'raw-webhook' }],
+        },
+      ],
+      expected: {
+        ingestionSurfaces: ['ingest_webhook', 'web'],
+        outputKindCounts: { approval_bundle: 1 },
+        requireValidSourceRefs: true,
+        requireVisibilityFloors: true,
+        requiredArtifactClusterKinds: ['account'],
+      },
+    };
+    const result: LiveEvalModelResult = {
+      scenarioFamily: 'generic_webhook',
+      ingestionSurfaces: ['ingest_webhook', 'web'],
+      outputKinds: ['approval_bundle'],
+      directWriteSurfaces: [],
+      artifactClusterKinds: ['account'],
+      approvalRequired: true,
+      sourceRefs: [
+        { surface: 'ingest_webhook', rawEventId: 'raw-webhook' },
+        { surface: 'web', rawEventId: 'raw-web' },
+      ],
+      privacyRisk: false,
+    };
+
+    expect(
+      liveEvalJudgeContradictions(testCase, result, {
+        modelId: 'judge-model',
+        promptVersion: 'judge-prompt',
+        score: 0.3,
+        passed: false,
+        privacyConcern: false,
+        failureCodes: ['missing_required_output', 'artifact_kind_mismatch'],
+        strengthCodes: [],
+      }),
+    ).toEqual([
+      'judge reported missing_required_output but all expected output kinds are present',
+      'judge reported artifact_kind_mismatch but all required artifact cluster kinds are present',
+    ]);
   });
 });
 
@@ -182,7 +294,7 @@ async function liveEvalJudge(
     abortSignal: liveEvalCallAbortSignal(),
   });
 
-  return {
+  const judge = {
     modelId: TIMELINE_MODELS.summarization.id,
     promptVersion: LIVE_EVAL_JUDGE_PROMPT_VERSION,
     score: judgeResult.object.score,
@@ -191,6 +303,11 @@ async function liveEvalJudge(
     failureCodes: [...judgeResult.object.failureCodes],
     strengthCodes: [...judgeResult.object.strengthCodes],
   };
+  const contradictions = liveEvalJudgeContradictions(testCase, result, judge);
+  if (contradictions.length > 0) {
+    throw new Error(`judge contradicted deterministic checks: ${contradictions.join('; ')}`);
+  }
+  return judge;
 }
 
 function liveEvalJudgeFailures(judge: LiveEvalJudgeResult): string[] {
@@ -201,6 +318,86 @@ function liveEvalJudgeFailures(judge: LiveEvalJudgeResult): string[] {
   }
   if (judge.privacyConcern) failures.push('judge reported privacy concern');
   return failures;
+}
+
+function liveEvalJudgeContradictions(
+  testCase: DeterministicEvalCase,
+  result: LiveEvalModelResult,
+  judge: LiveEvalJudgeResult,
+): string[] {
+  const contradictions: string[] = [];
+  const failureCodes = new Set(judge.failureCodes);
+
+  if (failureCodes.has('scenario_mismatch') && result.scenarioFamily === testCase.scenarioFamily) {
+    contradictions.push('judge reported scenario_mismatch but scenarioFamily matches');
+  }
+
+  const missingSurfaces = testCase.expected.ingestionSurfaces.filter(
+    (surface) => !result.ingestionSurfaces.includes(surface),
+  );
+  const unexpectedSurfaces = result.ingestionSurfaces.filter(
+    (surface) => !testCase.expected.ingestionSurfaces.includes(surface),
+  );
+  if (
+    failureCodes.has('surface_mismatch') &&
+    missingSurfaces.length === 0 &&
+    unexpectedSurfaces.length === 0
+  ) {
+    contradictions.push('judge reported surface_mismatch but ingestion surfaces match');
+  }
+
+  const missingOutputKinds = Object.keys(testCase.expected.outputKindCounts).filter(
+    (kind) => !result.outputKinds.includes(kind),
+  );
+  if (failureCodes.has('missing_required_output') && missingOutputKinds.length === 0) {
+    contradictions.push(
+      'judge reported missing_required_output but all expected output kinds are present',
+    );
+  }
+
+  const missingArtifactKinds = (testCase.expected.requiredArtifactClusterKinds ?? []).filter(
+    (kind) => !result.artifactClusterKinds.includes(kind),
+  );
+  if (failureCodes.has('artifact_kind_mismatch') && missingArtifactKinds.length === 0) {
+    contradictions.push(
+      'judge reported artifact_kind_mismatch but all required artifact cluster kinds are present',
+    );
+  }
+
+  const missingSourceRefs = uniqueRawRefs(testCase).filter(
+    (expected) =>
+      !result.sourceRefs.some(
+        (actual) =>
+          actual.surface === expected.surface && actual.rawEventId === expected.rawEventId,
+      ),
+  );
+  const unexpectedSourceRefs = result.sourceRefs.filter(
+    (actual) =>
+      !uniqueRawRefs(testCase).some(
+        (expected) =>
+          expected.surface === actual.surface && expected.rawEventId === actual.rawEventId,
+      ),
+  );
+  if (
+    failureCodes.has('source_ref_mismatch') &&
+    missingSourceRefs.length === 0 &&
+    unexpectedSourceRefs.length === 0
+  ) {
+    contradictions.push('judge reported source_ref_mismatch but source refs match');
+  }
+
+  if (
+    failureCodes.has('unsupported_direct_write') &&
+    !result.outputKinds.includes('direct_write')
+  ) {
+    contradictions.push('judge reported unsupported_direct_write but no direct_write was planned');
+  }
+
+  if (failureCodes.has('privacy_leak') && !result.privacyRisk && !judge.privacyConcern) {
+    contradictions.push('judge reported privacy_leak but privacyRisk and privacyConcern are false');
+  }
+
+  return contradictions;
 }
 
 function failedLiveEvalResult(testCase: DeterministicEvalCase): LiveEvalModelResult {
@@ -218,6 +415,22 @@ function failedLiveEvalResult(testCase: DeterministicEvalCase): LiveEvalModelRes
 
 function liveEvalCallAbortSignal(): AbortSignal {
   return AbortSignal.timeout(LIVE_EVAL_CALL_TIMEOUT_MS);
+}
+
+function liveEvalCaseTimeoutMs(): number {
+  const plannerAndJudgeCalls = 2;
+  const structuredFallbackMultiplier = 2;
+  const retryDelayBudget = LIVE_EVAL_RETRY_DELAY_MS * LIVE_EVAL_MAX_ATTEMPTS * 2;
+  const overheadBudget = 120_000;
+  return Math.max(
+    240_000,
+    LIVE_EVAL_CALL_TIMEOUT_MS *
+      LIVE_EVAL_MAX_ATTEMPTS *
+      plannerAndJudgeCalls *
+      structuredFallbackMultiplier +
+      retryDelayBudget +
+      overheadBudget,
+  );
 }
 
 async function withLiveEvalRetry<T>(label: string, fn: () => Promise<T>): Promise<T> {
@@ -256,7 +469,7 @@ function parseLiveEvalCallTimeoutMs(value: string | undefined): number {
 
 function parseLiveEvalMaxAttempts(value: string | undefined): number {
   const parsed = Number.parseInt(value ?? '', 10);
-  return Number.isFinite(parsed) && parsed >= 1 && parsed <= 5 ? parsed : 2;
+  return Number.isFinite(parsed) && parsed >= 1 && parsed <= 5 ? parsed : 3;
 }
 
 function safeErrorSummary(err: unknown): string {
@@ -332,10 +545,26 @@ function liveEvalFailures(testCase: DeterministicEvalCase, result: LiveEvalModel
     }
   }
 
-  const actualRefs = new Set(result.sourceRefs.map((ref) => `${ref.surface}:${ref.rawEventId}`));
+  const actualRefKeys = result.sourceRefs.map((ref) => `${ref.surface}:${ref.rawEventId}`);
+  const actualRefs = new Set(actualRefKeys);
+  const expectedRefs = new Set(
+    uniqueRawRefs(testCase).map((expected) => `${expected.surface}:${expected.rawEventId}`),
+  );
   for (const expected of uniqueRawRefs(testCase)) {
     const key = `${expected.surface}:${expected.rawEventId}`;
     if (!actualRefs.has(key)) failures.push(`missing source ref ${key}`);
+  }
+  for (const actual of actualRefs) {
+    if (!expectedRefs.has(actual)) failures.push(`unexpected source ref ${actual}`);
+  }
+  for (const actual of actualRefs) {
+    const count = actualRefKeys.filter((key) => key === actual).length;
+    if (count > 1) failures.push(`duplicate source ref ${actual}`);
+  }
+  for (const surface of result.ingestionSurfaces) {
+    if (!result.sourceRefs.some((ref) => ref.surface === surface)) {
+      failures.push(`ingestion surface ${surface} has no returned source ref`);
+    }
   }
 
   if (result.privacyRisk) {
@@ -375,6 +604,8 @@ ${deterministicFailures.length > 0 ? deterministicFailures.map((failure) => `- $
 
 Score from 0 to 1. A score of 0.9 or higher means the output is useful enough for a live smoke gate.
 Set passed to true only if the scenario, surfaces, output policy, artifact cluster kinds, source refs, and visibility/privacy policy are all acceptable.
+Treat the Expected output kinds list as the complete required output category set for this smoke schema. Do not require observed_association unless observed_association is explicitly listed under Expected output kinds; association context may be represented by artifact cluster kinds and source refs.
+Use missing_required_output only when an Expected output kind is absent from actual outputKinds.
 Set privacyConcern to true if the actual result would broaden private or specific-user evidence, or if privacyRisk is true without a supported reason.
 Use failureCodes and strengthCodes only from the allowed enums. Do not include raw source content, names, emails, URLs, ids, or free-text rationale.
 `;
@@ -398,6 +629,15 @@ function plannerContext(testCase: DeterministicEvalCase): string {
         'Slack and email provide discussion and customer-impact context requiring approval, so include approval_bundle.',
         'All incident evidence in this packet is team-visible and the outputs stay team-visible, so privacyRisk is false.',
       ].join('\n');
+    case 'sales-success-renewal-risk-email-slack-meeting-drive':
+      return [
+        'A customer email reports renewal risk for an account.',
+        'A Slack escalation adds internal success-team context, but Slack does not directly own account or deal state.',
+        'A meeting transcript records a follow-up commitment, so propose a task through approval_bundle.',
+        'A Google Drive renewal plan is supporting document evidence and should be linked as observed_association.',
+        'Account health, deal relationship, and follow-up task memory are Timeline-owned, so include approval_bundle.',
+        'No provider in this packet owns canonical Timeline account, deal, or task state directly, so do not include direct_write.',
+      ].join('\n');
     case 'decision-memory-meeting-telegram-document':
       return [
         'A meeting transcript captures the decision.',
@@ -406,6 +646,14 @@ function plannerContext(testCase: DeterministicEvalCase): string {
         'The durable decision object is Timeline-owned memory, so include approval_bundle.',
         'No provider-owned lifecycle or status field changes in this packet, so do not include direct_write.',
         'The meeting, Telegram follow-up, and document agree; there is no competing evidence, so do not include conflict.',
+      ].join('\n');
+    case 'mcp-research-decision-context':
+      return [
+        'A custom MCP research tool returned private external context about a possible vendor decision.',
+        'MCP tool output is untrusted third-party evidence. It can provide observed association context and approval-backed notes, but it must not directly write canonical workspace memory.',
+        'The MCP call result is private to the invoking user, so every output must stay private to the same owner and privacyRisk must be false.',
+        'Include observed_association for the provider-record/tool-call context and approval_bundle for the Timeline-owned note.',
+        'Do not include direct_write or conflict.',
       ].join('\n');
     case 'calendar-project-private-visibility':
       return [
@@ -418,6 +666,7 @@ function plannerContext(testCase: DeterministicEvalCase): string {
       return [
         'A generic ingest webhook reports customer-health evidence.',
         'A web note, Linear issue, and Google Drive project plan provide related context.',
+        'The Linear issue is a provider-owned record; include provider_record context instead of treating it as a Timeline task or customer project.',
         'A system approval audit event proves the workflow already touched this account; use it only as audit-backed association context.',
         'This is a generic_webhook scenario because the generic webhook is the source that triggers reconciliation; do not reclassify it as customer_project.',
         'The generic webhook, web note, Linear issue, Drive plan, and system audit row are context links in this packet, so include observed_association.',

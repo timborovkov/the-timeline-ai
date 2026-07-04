@@ -2,11 +2,13 @@ import {
   type Db,
   artifactClusters,
   artifactEvidenceAssociations,
+  reconciliationRunStatus,
+  reconciliationRunTrigger,
   reconciliationOutputs,
   reconciliationProjectionOutbox,
   reconciliationRuns,
 } from '@timeline/db';
-import { and, count, desc, eq, isNull, or, sql } from 'drizzle-orm';
+import { and, count, desc, eq, inArray, isNull, or, sql, type SQL } from 'drizzle-orm';
 
 import { listArtifactClusterEvidence } from '#src/artifacts/index.js';
 import {
@@ -20,7 +22,9 @@ type DbOrTx = Db | DbTx;
 export interface ReconciliationDashboardInput {
   db: DbOrTx;
   teamId: string;
+  viewerUserId: string;
   rawEventLimit?: number;
+  runHistory?: ReconciliationDashboardRunHistoryInput;
 }
 
 export interface ReconciliationDashboardCount {
@@ -34,10 +38,29 @@ export interface ReconciliationDashboardRun {
   scope: string;
   status: string;
   engineVersion: string;
+  metrics: unknown;
   createdAt: Date;
   startedAt: Date | null;
   completedAt: Date | null;
   errorCode: string | null;
+}
+
+export interface ReconciliationDashboardRunHistoryInput {
+  status?: string;
+  trigger?: string;
+  page?: number;
+  pageSize?: number;
+}
+
+export interface ReconciliationDashboardRunHistory {
+  status: string | null;
+  trigger: string | null;
+  page: number;
+  pageSize: number;
+  total: number;
+  totalPages: number;
+  hasPreviousPage: boolean;
+  hasNextPage: boolean;
 }
 
 export interface ReconciliationDashboardOutput {
@@ -79,6 +102,7 @@ export interface ReconciliationDashboardSnapshot {
     byStatus: ReconciliationDashboardCount[];
     byTrigger: ReconciliationDashboardCount[];
     recent: ReconciliationDashboardRun[];
+    history: ReconciliationDashboardRunHistory;
   };
   outputs: {
     byStatus: ReconciliationDashboardCount[];
@@ -137,15 +161,32 @@ export interface ReconciliationClusterDetail {
 
 const DEFAULT_COVERAGE_LIMIT = 5_000;
 const RECENT_LIMIT = 12;
+const MAX_RUN_HISTORY_PAGE_SIZE = 50;
+type ReconciliationRunStatusValue = (typeof reconciliationRunStatus.enumValues)[number];
+type ReconciliationRunTriggerValue = (typeof reconciliationRunTrigger.enumValues)[number];
 
 export async function getReconciliationDashboardSnapshot(
   input: ReconciliationDashboardInput,
 ): Promise<ReconciliationDashboardSnapshot> {
   const coverageLimit = Math.max(1, input.rawEventLimit ?? DEFAULT_COVERAGE_LIMIT);
+  const outputVisibility = reconciliationOutputVisibleToUser(input.viewerUserId);
+  const visibleRunFilter = visibleReconciliationRunFilter(input.teamId, input.viewerUserId);
+  const runHistory = normalizeRunHistoryInput(input.runHistory);
+  const filteredRunFilter = and(
+    eq(reconciliationRuns.teamId, input.teamId),
+    visibleRunFilter,
+    ...(runHistory.status ? [eq(reconciliationRuns.status, runHistory.status)] : []),
+    ...(runHistory.trigger ? [eq(reconciliationRuns.trigger, runHistory.trigger)] : []),
+  );
+  const associationVisibility = associationVisibleToUser(input.viewerUserId);
+  const visibleClusterIds = await loadVisibleReconciliationClusterIds(input);
+  const visibleClusterFilter =
+    visibleClusterIds.length > 0 ? inArray(artifactClusters.id, visibleClusterIds) : sql`false`;
   const [
     evidenceCoverage,
     runsByStatus,
     runsByTrigger,
+    filteredRunCount,
     recentRuns,
     outputsByStatus,
     outputsByKind,
@@ -161,18 +202,20 @@ export async function getReconciliationDashboardSnapshot(
     auditReconciliationEvidenceCoverage({
       db: input.db,
       teamId: input.teamId,
+      viewerUserId: input.viewerUserId,
       limit: coverageLimit,
     }),
     input.db
       .select({ key: reconciliationRuns.status, count: count() })
       .from(reconciliationRuns)
-      .where(eq(reconciliationRuns.teamId, input.teamId))
+      .where(and(eq(reconciliationRuns.teamId, input.teamId), visibleRunFilter))
       .groupBy(reconciliationRuns.status),
     input.db
       .select({ key: reconciliationRuns.trigger, count: count() })
       .from(reconciliationRuns)
-      .where(eq(reconciliationRuns.teamId, input.teamId))
+      .where(and(eq(reconciliationRuns.teamId, input.teamId), visibleRunFilter))
       .groupBy(reconciliationRuns.trigger),
+    input.db.select({ count: count() }).from(reconciliationRuns).where(filteredRunFilter),
     input.db
       .select({
         id: reconciliationRuns.id,
@@ -180,24 +223,26 @@ export async function getReconciliationDashboardSnapshot(
         scope: reconciliationRuns.scope,
         status: reconciliationRuns.status,
         engineVersion: reconciliationRuns.engineVersion,
+        metrics: reconciliationRuns.metrics,
         createdAt: reconciliationRuns.createdAt,
         startedAt: reconciliationRuns.startedAt,
         completedAt: reconciliationRuns.completedAt,
         errorCode: reconciliationRuns.errorCode,
       })
       .from(reconciliationRuns)
-      .where(eq(reconciliationRuns.teamId, input.teamId))
+      .where(filteredRunFilter)
       .orderBy(desc(reconciliationRuns.createdAt))
-      .limit(RECENT_LIMIT),
+      .limit(runHistory.pageSize)
+      .offset((runHistory.page - 1) * runHistory.pageSize),
     input.db
       .select({ key: reconciliationOutputs.status, count: count() })
       .from(reconciliationOutputs)
-      .where(eq(reconciliationOutputs.teamId, input.teamId))
+      .where(and(eq(reconciliationOutputs.teamId, input.teamId), outputVisibility))
       .groupBy(reconciliationOutputs.status),
     input.db
       .select({ key: reconciliationOutputs.outputKind, count: count() })
       .from(reconciliationOutputs)
-      .where(eq(reconciliationOutputs.teamId, input.teamId))
+      .where(and(eq(reconciliationOutputs.teamId, input.teamId), outputVisibility))
       .groupBy(reconciliationOutputs.outputKind),
     input.db
       .select({
@@ -213,27 +258,27 @@ export async function getReconciliationDashboardSnapshot(
         updatedAt: reconciliationOutputs.updatedAt,
       })
       .from(reconciliationOutputs)
-      .where(eq(reconciliationOutputs.teamId, input.teamId))
+      .where(and(eq(reconciliationOutputs.teamId, input.teamId), outputVisibility))
       .orderBy(desc(reconciliationOutputs.createdAt))
       .limit(RECENT_LIMIT),
     input.db
       .select({ key: artifactEvidenceAssociations.role, count: count() })
       .from(artifactEvidenceAssociations)
-      .where(eq(artifactEvidenceAssociations.teamId, input.teamId))
+      .where(and(eq(artifactEvidenceAssociations.teamId, input.teamId), associationVisibility))
       .groupBy(artifactEvidenceAssociations.role),
     input.db
       .select({ count: count() })
       .from(artifactEvidenceAssociations)
-      .where(eq(artifactEvidenceAssociations.teamId, input.teamId)),
+      .where(and(eq(artifactEvidenceAssociations.teamId, input.teamId), associationVisibility)),
     input.db
       .select({ key: artifactClusters.artifactClusterKind, count: count() })
       .from(artifactClusters)
-      .where(eq(artifactClusters.teamId, input.teamId))
+      .where(and(eq(artifactClusters.teamId, input.teamId), visibleClusterFilter))
       .groupBy(artifactClusters.artifactClusterKind),
     input.db
       .select({ count: count() })
       .from(artifactClusters)
-      .where(eq(artifactClusters.teamId, input.teamId)),
+      .where(and(eq(artifactClusters.teamId, input.teamId), visibleClusterFilter)),
     input.db
       .select({
         id: artifactClusters.id,
@@ -245,13 +290,26 @@ export async function getReconciliationDashboardSnapshot(
         updatedAt: artifactClusters.updatedAt,
       })
       .from(artifactClusters)
-      .where(and(eq(artifactClusters.teamId, input.teamId), isNull(artifactClusters.archivedAt)))
+      .where(
+        and(
+          eq(artifactClusters.teamId, input.teamId),
+          isNull(artifactClusters.archivedAt),
+          visibleClusterFilter,
+        ),
+      )
       .orderBy(desc(artifactClusters.updatedAt))
       .limit(RECENT_LIMIT),
     input.db
       .select({ key: reconciliationProjectionOutbox.status, count: count() })
       .from(reconciliationProjectionOutbox)
-      .where(eq(reconciliationProjectionOutbox.teamId, input.teamId))
+      .innerJoin(
+        reconciliationOutputs,
+        and(
+          eq(reconciliationOutputs.id, reconciliationProjectionOutbox.outputId),
+          eq(reconciliationOutputs.teamId, input.teamId),
+        ),
+      )
+      .where(and(eq(reconciliationProjectionOutbox.teamId, input.teamId), outputVisibility))
       .groupBy(reconciliationProjectionOutbox.status),
     input.db
       .select({
@@ -262,9 +320,11 @@ export async function getReconciliationDashboardSnapshot(
         payload: reconciliationOutputs.payload,
       })
       .from(reconciliationOutputs)
-      .where(eq(reconciliationOutputs.teamId, input.teamId)),
+      .where(and(eq(reconciliationOutputs.teamId, input.teamId), outputVisibility)),
   ]);
   const diagnostics = dashboardDiagnosticsFromOutputs(diagnosticOutputs);
+  const runTotal = filteredRunCount[0]?.count ?? 0;
+  const totalPages = Math.max(1, Math.ceil(runTotal / runHistory.pageSize));
 
   return {
     generatedAt: new Date(),
@@ -274,6 +334,16 @@ export async function getReconciliationDashboardSnapshot(
       byStatus: normalizeCountRows(runsByStatus),
       byTrigger: normalizeCountRows(runsByTrigger),
       recent: recentRuns,
+      history: {
+        status: runHistory.status,
+        trigger: runHistory.trigger,
+        page: runHistory.page,
+        pageSize: runHistory.pageSize,
+        total: runTotal,
+        totalPages,
+        hasPreviousPage: runHistory.page > 1,
+        hasNextPage: runHistory.page < totalPages,
+      },
     },
     outputs: {
       byStatus: normalizeCountRows(outputsByStatus),
@@ -294,6 +364,40 @@ export async function getReconciliationDashboardSnapshot(
     },
     diagnostics,
   };
+}
+
+function normalizeRunHistoryInput(
+  input: ReconciliationDashboardRunHistoryInput | undefined,
+): Required<Pick<ReconciliationDashboardRunHistoryInput, 'page' | 'pageSize'>> & {
+  status: ReconciliationRunStatusValue | null;
+  trigger: ReconciliationRunTriggerValue | null;
+} {
+  const pageSize = clampInteger(input?.pageSize, RECENT_LIMIT, 1, MAX_RUN_HISTORY_PAGE_SIZE);
+  return {
+    status: cleanEnumFilter(input?.status, reconciliationRunStatus.enumValues),
+    trigger: cleanEnumFilter(input?.trigger, reconciliationRunTrigger.enumValues),
+    page: clampInteger(input?.page, 1, 1, 10_000),
+    pageSize,
+  };
+}
+
+function cleanEnumFilter<const T extends readonly string[]>(
+  value: string | undefined,
+  allowedValues: T,
+): T[number] | null {
+  const trimmed = value?.trim();
+  if (!trimmed) return null;
+  return allowedValues.includes(trimmed) ? trimmed : null;
+}
+
+function clampInteger(
+  value: number | undefined,
+  fallback: number,
+  min: number,
+  max: number,
+): number {
+  if (typeof value !== 'number' || !Number.isInteger(value)) return fallback;
+  return Math.min(max, Math.max(min, value));
 }
 
 export async function getReconciliationClusterDetail(input: {
@@ -371,6 +475,7 @@ export async function getReconciliationClusterDetail(input: {
       ),
     )
     .orderBy(desc(reconciliationOutputs.createdAt), desc(reconciliationOutputs.id));
+  if (evidence.length === 0 && outputs.length === 0) return null;
 
   return { cluster, evidence, outputs };
 }
@@ -470,17 +575,120 @@ function countRowsFromMap(counts: Map<string, number>): ReconciliationDashboardC
   return normalizeCountRows([...counts].map(([key, countValue]) => ({ key, count: countValue })));
 }
 
+function visibleReconciliationRunFilter(teamId: string, userId: string): SQL {
+  return sql`(
+    EXISTS (
+      SELECT 1
+      FROM ${reconciliationOutputs}
+      WHERE ${reconciliationOutputs.teamId} = ${teamId}
+        AND ${reconciliationOutputs.runId} = ${reconciliationRuns.id}
+        AND ${reconciliationOutputVisibleToUser(userId)}
+    )
+    OR NOT EXISTS (
+      SELECT 1
+      FROM ${reconciliationOutputs}
+      WHERE ${reconciliationOutputs.teamId} = ${teamId}
+        AND ${reconciliationOutputs.runId} = ${reconciliationRuns.id}
+    )
+  )`;
+}
+
+async function loadVisibleReconciliationClusterIds(
+  input: ReconciliationDashboardInput,
+): Promise<string[]> {
+  const outputRows = await input.db
+    .select({ clusterId: reconciliationOutputs.clusterId })
+    .from(reconciliationOutputs)
+    .where(
+      and(
+        eq(reconciliationOutputs.teamId, input.teamId),
+        sql`${reconciliationOutputs.clusterId} IS NOT NULL`,
+        reconciliationOutputVisibleToUser(input.viewerUserId),
+      ),
+    );
+  const associationRows = await input.db
+    .select({ clusterId: artifactEvidenceAssociations.clusterId })
+    .from(artifactEvidenceAssociations)
+    .where(
+      and(
+        eq(artifactEvidenceAssociations.teamId, input.teamId),
+        associationVisibleToUser(input.viewerUserId),
+      ),
+    );
+
+  return [
+    ...new Set(
+      [
+        ...outputRows.map((row) => row.clusterId),
+        ...associationRows.map((row) => row.clusterId),
+      ].filter((id): id is string => typeof id === 'string' && id.length > 0),
+    ),
+  ];
+}
+
+function reconciliationOutputVisibleToUser(userId: string): SQL {
+  const predicate = and(
+    visibilityEnvelopeVisibleToUser(
+      {
+        visibility: reconciliationOutputs.visibility,
+        visibilityOwnerUserId: reconciliationOutputs.visibilityOwnerUserId,
+        visibilityUserIds: reconciliationOutputs.visibilityUserIds,
+      },
+      userId,
+    ),
+    visibilityEnvelopeVisibleToUser(
+      {
+        visibility: reconciliationOutputs.visibilityFloor,
+        visibilityOwnerUserId: reconciliationOutputs.visibilityFloorOwnerUserId,
+        visibilityUserIds: reconciliationOutputs.visibilityFloorUserIds,
+      },
+      userId,
+    ),
+  );
+  if (!predicate) throw new Error('Expected reconciliation output visibility predicate');
+  return predicate;
+}
+
+function associationVisibleToUser(userId: string): SQL {
+  const predicate = and(
+    visibilityEnvelopeVisibleToUser(
+      {
+        visibility: artifactEvidenceAssociations.visibility,
+        visibilityOwnerUserId: artifactEvidenceAssociations.visibilityOwnerUserId,
+        visibilityUserIds: artifactEvidenceAssociations.visibilityUserIds,
+      },
+      userId,
+    ),
+    visibilityEnvelopeVisibleToUser(
+      {
+        visibility: artifactEvidenceAssociations.visibilityFloor,
+        visibilityOwnerUserId: artifactEvidenceAssociations.visibilityFloorOwnerUserId,
+        visibilityUserIds: artifactEvidenceAssociations.visibilityFloorUserIds,
+      },
+      userId,
+    ),
+  );
+  if (!predicate) throw new Error('Expected association visibility predicate');
+  return predicate;
+}
+
 function visibilityEnvelopeVisibleToUser(
   row: {
     visibility:
       | typeof reconciliationOutputs.visibility
-      | typeof reconciliationOutputs.visibilityFloor;
+      | typeof reconciliationOutputs.visibilityFloor
+      | typeof artifactEvidenceAssociations.visibility
+      | typeof artifactEvidenceAssociations.visibilityFloor;
     visibilityOwnerUserId:
       | typeof reconciliationOutputs.visibilityOwnerUserId
-      | typeof reconciliationOutputs.visibilityFloorOwnerUserId;
+      | typeof reconciliationOutputs.visibilityFloorOwnerUserId
+      | typeof artifactEvidenceAssociations.visibilityOwnerUserId
+      | typeof artifactEvidenceAssociations.visibilityFloorOwnerUserId;
     visibilityUserIds:
       | typeof reconciliationOutputs.visibilityUserIds
-      | typeof reconciliationOutputs.visibilityFloorUserIds;
+      | typeof reconciliationOutputs.visibilityFloorUserIds
+      | typeof artifactEvidenceAssociations.visibilityUserIds
+      | typeof artifactEvidenceAssociations.visibilityFloorUserIds;
   },
   userId: string,
 ) {

@@ -184,7 +184,9 @@ function providerOwnsLifecycleEvent(provider: string, eventType: string): boolea
   const type = normalized(eventType);
   if (provider === 'github') {
     return [
+      'issue.opened',
       'issue.closed',
+      'issue.reopened',
       'issue.updated',
       'pr.merged',
       'pr.closed',

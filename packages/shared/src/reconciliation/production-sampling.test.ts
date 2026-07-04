@@ -2,6 +2,10 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
+import { PGlite } from '@electric-sql/pglite';
+import { reconciliationRuns } from '@timeline/db';
+import { eq } from 'drizzle-orm';
+import { drizzle } from 'drizzle-orm/pglite';
 import { describe, expect, it } from 'vitest';
 
 import type { DeterministicEvalCase } from '#src/reconciliation/index.js';
@@ -17,7 +21,9 @@ import {
   loadProductionSamplingEvalArtifacts,
   writeProductionSamplingEvalReport,
 } from '#src/reconciliation/production-sampling.js';
+import { applyDbMigrations } from '#src/test/pglite.js';
 
+const TEAM_ID = '11111111-1111-4111-8111-111111111111';
 const BASE_CASE: DeterministicEvalCase = {
   name: 'customer-project-email-monday-sentry',
   scenarioFamily: 'customer_project',
@@ -28,7 +34,10 @@ const BASE_CASE: DeterministicEvalCase = {
       role: 'discussion',
       visibility: { visibility: 'team' },
       visibilityFloor: { visibility: 'team' },
-      sourceRefs: [{ source: 'email', rawEventId: 'raw-email-1' }],
+      sourceRefs: [
+        { source: 'email', rawEventId: 'raw-email-1' },
+        { source: 'monday', rawEventId: 'raw-monday-1' },
+      ],
     },
   ],
   outputs: [
@@ -73,6 +82,7 @@ const PASS_RESULT: LiveEvalModelResult = {
   approvalRequired: true,
   sourceRefs: [
     { surface: 'email', rawEventId: 'raw-email-1' },
+    { surface: 'monday', rawEventId: 'raw-monday-1' },
     { surface: 'sentry', rawEventId: 'raw-sentry-1' },
   ],
   privacyRisk: false,
@@ -181,6 +191,9 @@ describe('production reconciliation sampling report', () => {
       passedCount: 1,
       failedCount: 1,
       passRate: 0.5,
+      fixtureCandidateCount: 1,
+      confirmedFixtureCandidateCount: 1,
+      unconfirmedFixtureCandidateCount: 0,
       modelVersions: ['planner-v1', 'planner-v2'],
       promptVersions: ['judge-v1', 'judge-v2', 'prompt-v1', 'prompt-v2'],
       totals: {
@@ -232,6 +245,56 @@ describe('production reconciliation sampling report', () => {
     expect(JSON.stringify(report)).not.toContain('raw-sentry-1');
   });
 
+  it('downgrades stale passed artifacts when source-ref consistency fails', () => {
+    const stalePassed = buildLiveEvalArtifact({
+      testCase: BASE_CASE,
+      modelId: 'planner-v1',
+      promptVersion: 'prompt-v1',
+      prompt: 'private production packet text',
+      result: {
+        ...PASS_RESULT,
+        sourceRefs: [
+          { surface: 'email', rawEventId: 'raw-email-1' },
+          { surface: 'sentry', rawEventId: 'raw-sentry-1' },
+        ],
+      },
+      judge: PASS_JUDGE,
+      passed: true,
+      failures: [],
+      startedAt: '2026-06-29T10:00:00.000Z',
+      completedAt: '2026-06-29T10:00:01.000Z',
+    });
+
+    const report = buildProductionSamplingEvalReport({
+      runKind: 'closed_beta',
+      generatedAt: '2026-06-29T10:06:00.000Z',
+      manifests: [],
+      artifacts: [stalePassed],
+    });
+
+    expect(report).toMatchObject({
+      sampleCount: 1,
+      passedCount: 0,
+      failedCount: 1,
+      passRate: 0,
+      fixtureCandidateCount: 1,
+      confirmedFixtureCandidateCount: 0,
+      unconfirmedFixtureCandidateCount: 1,
+      totals: {
+        sampleCount: 1,
+        passedCount: 0,
+        failedCount: 1,
+        citationFailures: 1,
+      },
+    });
+    expect(report.fixtureCandidates).toEqual([
+      expect.objectContaining({
+        caseName: stalePassed.caseName,
+        reasonCodes: ['source_ref_mismatch'],
+      }),
+    ]);
+  });
+
   it('loads redacted live artifacts from manifests and ignores unsafe files', async () => {
     const dir = await mkdtemp(path.join(tmpdir(), 'timeline-production-sampling-'));
     try {
@@ -263,6 +326,42 @@ describe('production reconciliation sampling report', () => {
       await writeFile(
         path.join(dir, 'legacy-live-artifact.json'),
         `${JSON.stringify(legacyArtifact, null, 2)}\n`,
+        'utf8',
+      );
+      const malformedSourceRefArtifact = JSON.parse(JSON.stringify(artifact)) as {
+        actual: { sourceRefs: unknown };
+      };
+      malformedSourceRefArtifact.actual.sourceRefs = [{ surface: 'email' }];
+      await writeFile(
+        path.join(dir, 'malformed-source-ref-artifact.json'),
+        `${JSON.stringify(malformedSourceRefArtifact, null, 2)}\n`,
+        'utf8',
+      );
+      const emptySourceRefArtifact = JSON.parse(JSON.stringify(artifact)) as {
+        actual: { sourceRefs: unknown };
+      };
+      emptySourceRefArtifact.actual.sourceRefs = [{ surface: 'email', rawEventHash: '' }];
+      await writeFile(
+        path.join(dir, 'empty-source-ref-artifact.json'),
+        `${JSON.stringify(emptySourceRefArtifact, null, 2)}\n`,
+        'utf8',
+      );
+      const malformedJudgeArtifact = JSON.parse(JSON.stringify(artifact)) as {
+        judge: unknown;
+      };
+      malformedJudgeArtifact.judge = { passed: true };
+      await writeFile(
+        path.join(dir, 'malformed-judge-artifact.json'),
+        `${JSON.stringify(malformedJudgeArtifact, null, 2)}\n`,
+        'utf8',
+      );
+      const malformedExpectedCountsArtifact = JSON.parse(JSON.stringify(artifact)) as {
+        expected: { outputKindCounts: Record<string, unknown> };
+      };
+      malformedExpectedCountsArtifact.expected.outputKindCounts.direct_write = -1;
+      await writeFile(
+        path.join(dir, 'malformed-expected-counts-artifact.json'),
+        `${JSON.stringify(malformedExpectedCountsArtifact, null, 2)}\n`,
         'utf8',
       );
       await writeFile(path.join(dir, 'broken.json'), '{', 'utf8');
@@ -306,6 +405,9 @@ describe('production reconciliation sampling report', () => {
           },
         ],
       };
+      manifest.caseCount = 2;
+      manifest.passedCount = 1;
+      manifest.failedCount = 1;
       await writeFile(path.join(dir, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`);
 
       const loaded = await loadProductionSamplingEvalArtifacts({ inputPaths: [dir] });
@@ -338,18 +440,171 @@ describe('production reconciliation sampling report', () => {
         loaded.ignoredFiles.some(
           (file) =>
             file.path === path.join(dir, 'not-an-artifact.json') &&
-            file.reason === 'not a reconciliation live artifact',
+            file.reason === 'not a reconciliation live artifact or production sampling report',
         ),
       ).toBe(true);
       expect(
         loaded.ignoredFiles.some(
           (file) =>
             file.path === path.join(dir, 'legacy-live-artifact.json') &&
-            file.reason === 'not a reconciliation live artifact',
+            file.reason === 'not a reconciliation live artifact or production sampling report',
+        ),
+      ).toBe(true);
+      expect(
+        loaded.ignoredFiles.some(
+          (file) =>
+            file.path === path.join(dir, 'malformed-source-ref-artifact.json') &&
+            file.reason === 'not a reconciliation live artifact or production sampling report',
+        ),
+      ).toBe(true);
+      expect(
+        loaded.ignoredFiles.some(
+          (file) =>
+            file.path === path.join(dir, 'empty-source-ref-artifact.json') &&
+            file.reason === 'not a reconciliation live artifact or production sampling report',
+        ),
+      ).toBe(true);
+      expect(
+        loaded.ignoredFiles.some(
+          (file) =>
+            file.path === path.join(dir, 'malformed-judge-artifact.json') &&
+            file.reason === 'not a reconciliation live artifact or production sampling report',
+        ),
+      ).toBe(true);
+      expect(
+        loaded.ignoredFiles.some(
+          (file) =>
+            file.path === path.join(dir, 'malformed-expected-counts-artifact.json') &&
+            file.reason === 'not a reconciliation live artifact or production sampling report',
         ),
       ).toBe(true);
       expect(JSON.stringify(loaded)).not.toContain('private production packet text');
       expect(JSON.stringify(loaded)).not.toContain('raw-email-1');
+    } finally {
+      await rm(dir, { force: true, recursive: true });
+    }
+  });
+
+  it('ignores malformed live eval manifests with inconsistent summaries', async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), 'timeline-production-sampling-'));
+    try {
+      const artifact = buildLiveEvalArtifact({
+        testCase: BASE_CASE,
+        modelId: 'planner-v1',
+        promptVersion: 'prompt-v1',
+        prompt: 'private production packet text',
+        result: PASS_RESULT,
+        judge: PASS_JUDGE,
+        passed: true,
+        failures: [],
+        startedAt: '2026-06-29T10:00:00.000Z',
+        completedAt: '2026-06-29T10:00:01.000Z',
+      });
+      const manifest = buildLiveEvalRunManifest(dir, {
+        modelId: 'planner-v1',
+        promptVersion: 'prompt-v1',
+        startedAt: '2026-06-29T10:00:00.000Z',
+        completedAt: '2026-06-29T10:00:02.000Z',
+        artifacts: [
+          { path: path.join(dir, 'customer-project-email-monday-sentry.json'), artifact },
+        ],
+      });
+      manifest.passedCount = 0;
+      await writeFile(path.join(dir, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`);
+
+      const loaded = await loadProductionSamplingEvalArtifacts({ inputPaths: [dir] });
+
+      expect(loaded.manifests).toHaveLength(0);
+      expect(loaded.artifacts).toHaveLength(0);
+      expect(loaded.ignoredFiles).toEqual([
+        {
+          path: path.join(dir, 'manifest.json'),
+          reason: 'not a reconciliation live manifest',
+        },
+      ]);
+    } finally {
+      await rm(dir, { force: true, recursive: true });
+    }
+  });
+
+  it('loads existing production sampling report files and merges them into a new report', async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), 'timeline-production-sampling-'));
+    try {
+      const failed = buildLiveEvalArtifact({
+        testCase: BASE_CASE,
+        modelId: 'planner-v1',
+        promptVersion: 'prompt-v1',
+        prompt: 'private production packet text',
+        result: {
+          ...PASS_RESULT,
+          outputKinds: ['approval_bundle'],
+          directWriteSurfaces: [],
+        },
+        judge: {
+          ...PASS_JUDGE,
+          passed: false,
+          failureCodes: ['missing_required_output'],
+        },
+        passed: false,
+        failures: ['missing output kind direct_write'],
+        startedAt: '2026-06-29T10:00:00.000Z',
+        completedAt: '2026-06-29T10:00:02.000Z',
+      });
+      const previousReport = buildProductionSamplingEvalReport({
+        runKind: 'closed_beta',
+        generatedAt: '2026-06-29T10:06:00.000Z',
+        manifests: [],
+        artifacts: [failed],
+      });
+      const reportPath = path.join(dir, 'previous-report.json');
+      await writeFile(reportPath, `${JSON.stringify(previousReport, null, 2)}\n`, 'utf8');
+      await writeFile(
+        path.join(dir, 'malformed-report.json'),
+        `${JSON.stringify({ ...previousReport, failedCount: 0 }, null, 2)}\n`,
+        'utf8',
+      );
+
+      const loaded = await loadProductionSamplingEvalArtifacts({
+        inputPaths: [reportPath, reportPath, path.join(dir, 'malformed-report.json')],
+      });
+
+      expect(loaded.reports).toHaveLength(1);
+      expect(loaded.artifacts).toHaveLength(0);
+      expect(loaded.ignoredFiles).toEqual([
+        {
+          path: path.join(dir, 'malformed-report.json'),
+          reason: 'not a reconciliation live artifact or production sampling report',
+        },
+      ]);
+
+      const outputPath = path.join(dir, 'merged-report.json');
+      const written = await writeProductionSamplingEvalReport({
+        inputPaths: [reportPath],
+        outputPath,
+        generatedAt: '2026-06-29T11:00:00.000Z',
+        runKind: 'post_deploy',
+        confirmedFixtureCandidates: [
+          { caseName: failed.caseName, packetFingerprint: failed.packetFingerprint },
+        ],
+      });
+
+      expect(written.loaded.reports).toHaveLength(1);
+      expect(written.report).toMatchObject({
+        runKind: 'post_deploy',
+        generatedAt: '2026-06-29T11:00:00.000Z',
+        sampleCount: 1,
+        passedCount: 0,
+        failedCount: 1,
+        passRate: 0,
+        fixtureCandidateCount: 1,
+        confirmedFixtureCandidateCount: 1,
+        unconfirmedFixtureCandidateCount: 0,
+      });
+      expect(written.report.fixtureCandidates[0]).toMatchObject({
+        caseName: failed.caseName,
+        confirmed: true,
+      });
+      expect(JSON.stringify(written.report)).not.toContain('private production packet text');
     } finally {
       await rm(dir, { force: true, recursive: true });
     }
@@ -405,6 +660,9 @@ describe('production reconciliation sampling report', () => {
         passedCount: 1,
         failedCount: 0,
         passRate: 1,
+        fixtureCandidateCount: 0,
+        confirmedFixtureCandidateCount: 0,
+        unconfirmedFixtureCandidateCount: 0,
       });
       const raw = await readFile(outputPath, 'utf8');
       expect(raw).toContain('"runKind": "closed_beta"');
@@ -412,6 +670,104 @@ describe('production reconciliation sampling report', () => {
       expect(raw).not.toContain('raw-email-1');
     } finally {
       await rm(dir, { force: true, recursive: true });
+    }
+  });
+
+  it('can persist a redacted production sampling report as a dashboard eval run', async () => {
+    const pg = new PGlite();
+    const db = drizzle(pg);
+    const dir = await mkdtemp(path.join(tmpdir(), 'timeline-production-sampling-'));
+    try {
+      await applyDbMigrations(pg);
+      await pg.exec(`
+        INSERT INTO teams (id, slug, name)
+        VALUES ('${TEAM_ID}', 'production-sampling-ingest', 'Production Sampling Ingest');
+      `);
+      const failed = buildLiveEvalArtifact({
+        testCase: BASE_CASE,
+        modelId: 'planner-v1',
+        promptVersion: 'prompt-v1',
+        prompt: 'private production packet text',
+        result: {
+          ...PASS_RESULT,
+          outputKinds: ['approval_bundle'],
+          directWriteSurfaces: [],
+        },
+        judge: {
+          ...PASS_JUDGE,
+          passed: false,
+          failureCodes: ['missing_required_output'],
+        },
+        passed: false,
+        failures: ['missing output kind direct_write'],
+        startedAt: '2026-06-29T10:00:00.000Z',
+        completedAt: '2026-06-29T10:00:02.000Z',
+      });
+      const artifactPath = path.join(dir, 'customer-project-email-monday-sentry.json');
+      await writeFile(artifactPath, `${JSON.stringify(failed, null, 2)}\n`, 'utf8');
+      await writeFile(
+        path.join(dir, 'manifest.json'),
+        `${JSON.stringify(
+          buildLiveEvalRunManifest(dir, {
+            modelId: 'planner-v1',
+            promptVersion: 'prompt-v1',
+            startedAt: '2026-06-29T10:00:00.000Z',
+            completedAt: '2026-06-29T10:00:02.000Z',
+            artifacts: [{ path: artifactPath, artifact: failed }],
+          }),
+          null,
+          2,
+        )}\n`,
+        'utf8',
+      );
+      await writeFile(path.join(dir, 'ignored.json'), '{"schemaVersion":1}\n', 'utf8');
+
+      const outputPath = path.join(dir, 'reports', 'production-sampling-report.json');
+      const written = await writeProductionSamplingEvalReport({
+        inputPaths: [dir],
+        outputPath,
+        generatedAt: '2026-06-29T10:06:00.000Z',
+        runKind: 'closed_beta',
+        db: db as never,
+        teamId: TEAM_ID,
+      });
+      const secondWrite = await writeProductionSamplingEvalReport({
+        inputPaths: [dir],
+        outputPath,
+        generatedAt: '2026-06-29T10:06:00.000Z',
+        runKind: 'closed_beta',
+        db: db as never,
+        teamId: TEAM_ID,
+      });
+
+      expect(secondWrite.runId).toBe(written.runId);
+      const runs = await db
+        .select()
+        .from(reconciliationRuns)
+        .where(eq(reconciliationRuns.teamId, TEAM_ID));
+      expect(runs).toHaveLength(1);
+      expect(runs[0]).toMatchObject({
+        id: written.runId,
+        trigger: 'eval',
+        scope: 'production_sampling:closed_beta',
+        status: 'completed',
+        engineVersion: 'production-sampling-report-v2',
+      });
+      expect(runs[0]?.metrics).toMatchObject({
+        mode: 'production_sampling',
+        run_kind: 'closed_beta',
+        output_path: outputPath,
+        sample_count: 1,
+        failed_count: 1,
+        fixture_candidate_count: 1,
+        confirmed_fixture_candidate_count: 0,
+        unconfirmed_fixture_candidate_count: 1,
+        ignored_file_count: 1,
+      });
+      expect(JSON.stringify(runs[0]?.metrics)).not.toContain('private production packet text');
+    } finally {
+      await rm(dir, { force: true, recursive: true });
+      await pg.close();
     }
   });
 });

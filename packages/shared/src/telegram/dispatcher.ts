@@ -13,7 +13,7 @@ import {
 } from '@timeline/db';
 import { and, asc, desc, eq, isNull, ne, sql } from 'drizzle-orm';
 
-import { askAgent, TEAM_BOT_ACTOR_USER_ID } from '#src/agent/ask.js';
+import { askAgent, TEAM_BOT_ACTOR_USER_ID, type AskAgentDeps } from '#src/agent/ask.js';
 import { type AgentToolErrorReporter } from '#src/agent/tools.js';
 import {
   classifyConversationalAttachment,
@@ -37,6 +37,7 @@ import { detectMeetingPlatform } from '#src/meetings/scope.js';
 import { getRedisConnection } from '#src/queue/connection.js';
 import { checkRateLimit, rateLimitKey, RATE_LIMITS } from '#src/rate-limit/index.js';
 import { normalizeRawEventsToEvidence } from '#src/reconciliation/normalization.js';
+import { inlineSourceSnapshotMetadata } from '#src/reconciliation/source-snapshot.js';
 import { withTeam } from '#src/team-scope.js';
 import { type TelegramApi } from '#src/telegram/api.js';
 import {
@@ -50,6 +51,7 @@ import {
 } from '#src/telegram/types.js';
 
 const log = childLogger('telegram');
+const TELEGRAM_SOURCE_SNAPSHOT_VERSION = 'telegram-source-snapshot-2026-07';
 
 type DbTx = Parameters<Parameters<Db['transaction']>[0]>[0];
 type DbOrTx = Db | DbTx;
@@ -113,6 +115,7 @@ interface DispatcherDeps {
   tg: TelegramApi;
   onAgentToolError?: AgentToolErrorReporter | undefined;
   onAgentError?: ((err: unknown) => void) | undefined;
+  agentDeps?: Omit<AskAgentDeps, 'onToolError' | 'onAgentError'> | undefined;
   audio?: AudioIngestDeps;
   documents?: DocumentAttachmentDeps;
   extract?: ExtractEnqueueDeps;
@@ -699,6 +702,7 @@ async function cmdAskDm(ctx: DmContext, arg: string): Promise<void> {
     question: arg,
     onAgentToolError: ctx.onAgentToolError,
     onAgentError: ctx.onAgentError,
+    agentDeps: ctx.agentDeps,
   });
 }
 
@@ -735,6 +739,7 @@ interface RunAskInput {
   question: string;
   onAgentToolError?: AgentToolErrorReporter | undefined;
   onAgentError?: ((err: unknown) => void) | undefined;
+  agentDeps?: Omit<AskAgentDeps, 'onToolError' | 'onAgentError'> | undefined;
 }
 
 async function runAsk(input: RunAskInput): Promise<void> {
@@ -858,7 +863,11 @@ async function runAskInner(input: RunAskInput): Promise<void> {
       trustedTeamActor: input.trustedTeamActor,
       question,
     },
-    { onToolError: input.onAgentToolError, onAgentError: input.onAgentError },
+    {
+      ...input.agentDeps,
+      onToolError: input.onAgentToolError,
+      onAgentError: input.onAgentError,
+    },
   );
   if (!result.ok) {
     const text =
@@ -1275,6 +1284,7 @@ async function dispatchGroupCommand(
         question: command.arg,
         onAgentToolError: ctx.onAgentToolError,
         onAgentError: ctx.onAgentError,
+        agentDeps: ctx.agentDeps,
       });
       return;
     case '/join':
@@ -1701,6 +1711,7 @@ async function insertEvent(
     tg_chat_type: input.message.chat.type,
     tg_message_id: input.message.message_id,
     tg_update_id: input.updateId,
+    ...telegramSourcePayloadMetadata(input),
   };
   if (input.message.chat.title) metadata.tg_chat_title = input.message.chat.title;
   if (input.message.from) {
@@ -1874,6 +1885,54 @@ async function insertEvent(
   }
 
   return row;
+}
+
+function telegramSourcePayloadMetadata(input: InsertEventInput): Record<string, unknown> {
+  const snapshot = {
+    provider: 'telegram',
+    update_id: input.updateId,
+    chat_id: input.message.chat.id,
+    chat_type: input.message.chat.type,
+    chat_title: input.message.chat.title ?? null,
+    message_id: input.message.message_id,
+    date: input.message.date,
+    edit_date: input.message.edit_date ?? null,
+    sender_id: input.message.from?.id ?? null,
+    sender_name: input.message.from ? telegramSenderName(input.message.from) : null,
+    username: input.message.from?.username ?? null,
+    text: input.message.text ?? null,
+    caption: input.message.caption ?? null,
+    entities: input.message.entities ?? [],
+    audio: input.message.audio ? telegramAudioSnapshot(input.message.audio) : null,
+    voice: input.message.voice ? telegramAudioSnapshot(input.message.voice) : null,
+    document: input.message.document
+      ? {
+          file_id: input.message.document.file_id,
+          file_unique_id: input.message.document.file_unique_id ?? null,
+          file_name: input.message.document.file_name ?? null,
+          mime_type: input.message.document.mime_type ?? null,
+          file_size: input.message.document.file_size ?? null,
+        }
+      : null,
+    photo: input.message.photo ?? [],
+  };
+  return inlineSourceSnapshotMetadata({
+    snapshot,
+    kind: 'telegram_message_update',
+    version: TELEGRAM_SOURCE_SNAPSHOT_VERSION,
+    ref: () =>
+      `inline://timeline/telegram/${input.message.chat.id}/${input.message.message_id}/${input.updateId}`,
+  });
+}
+
+function telegramAudioSnapshot(audio: TgAudioPayload): Record<string, unknown> {
+  return {
+    file_id: audio.file_id,
+    file_unique_id: audio.file_unique_id ?? null,
+    duration: audio.duration ?? null,
+    mime_type: audio.mime_type ?? null,
+    file_size: audio.file_size ?? null,
+  };
 }
 
 async function normalizeRawEventEvidence(
@@ -2360,13 +2419,11 @@ async function ingestTelegramDocumentAudioAttachment(
       contentText: null,
       contentAudioUrl: key,
       visibility: 'team',
-      sourceMetadata: telegramAttachmentMetadata(ctx.message, {
-        tg_attachment_kind: 'audio',
-        tg_file_id: attachment.payload.file_id,
-        tg_file_name: attachment.filename,
-        tg_parent_raw_event_id: parent.id,
-        audio_mime_type: contentType,
-        audio_file_size: attachment.payload.file_size ?? null,
+      sourceMetadata: telegramAudioAttachmentMetadata(ctx.message, {
+        attachment,
+        parentRawEventId: parent.id,
+        contentType,
+        audioKey: key,
       }),
     })
     .returning({ id: rawEvents.id, teamId: rawEvents.teamId });
@@ -2423,6 +2480,60 @@ function telegramAttachmentMetadata(
   }
   if (message.caption) metadata.tg_caption = message.caption;
   return metadata;
+}
+
+function telegramAudioAttachmentMetadata(
+  message: TgMessage,
+  input: {
+    attachment: TelegramDocumentAttachment;
+    parentRawEventId: string;
+    contentType: string;
+    audioKey: string;
+  },
+): Record<string, unknown> {
+  const snapshot = {
+    provider: 'telegram',
+    capture_kind: 'audio_attachment',
+    chat_id: message.chat.id,
+    chat_type: message.chat.type,
+    chat_title: message.chat.title ?? null,
+    message_id: message.message_id,
+    date: message.date,
+    sender_id: message.from?.id ?? null,
+    sender_name: message.from ? telegramSenderName(message.from) : null,
+    username: message.from?.username ?? null,
+    caption: message.caption ?? null,
+    parent_raw_event_id: input.parentRawEventId,
+    audio_key: input.audioKey,
+    content_type: input.contentType,
+    file: {
+      file_id: input.attachment.payload.file_id,
+      file_unique_id: input.attachment.payload.file_unique_id ?? null,
+      file_name: input.attachment.filename,
+      mime_type:
+        'mime_type' in input.attachment.payload
+          ? (input.attachment.payload.mime_type ?? null)
+          : null,
+      file_size: input.attachment.payload.file_size ?? null,
+    },
+  };
+  return {
+    ...telegramAttachmentMetadata(message, {
+      tg_attachment_kind: 'audio',
+      tg_file_id: input.attachment.payload.file_id,
+      tg_file_name: input.attachment.filename,
+      tg_parent_raw_event_id: input.parentRawEventId,
+      audio_mime_type: input.contentType,
+      audio_file_size: input.attachment.payload.file_size ?? null,
+    }),
+    ...inlineSourceSnapshotMetadata({
+      snapshot,
+      kind: 'telegram_audio_attachment',
+      version: TELEGRAM_SOURCE_SNAPSHOT_VERSION,
+      ref: () =>
+        `inline://timeline/telegram/${message.chat.id}/${message.message_id}/attachment/${input.attachment.payload.file_id}`,
+    }),
+  };
 }
 
 async function recordTelegramAttachmentSkip(

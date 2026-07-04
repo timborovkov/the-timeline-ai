@@ -117,6 +117,78 @@ describe('live reconciliation eval artifacts', () => {
     expect(JSON.stringify(artifact)).not.toContain('s3://eval/reconciliation');
   });
 
+  it('rejects empty source refs before writing redacted artifacts', () => {
+    expect(() =>
+      buildLiveEvalArtifact({
+        testCase: TEST_CASE,
+        modelId: 'test-model',
+        promptVersion: 'test-prompt-v1',
+        prompt: 'Private customer packet should not be persisted verbatim',
+        result: {
+          ...RESULT,
+          sourceRefs: [
+            { surface: 'email', rawEventId: 'raw-email-1' },
+            { surface: 'monday', rawEventId: '' },
+          ],
+        },
+        judge: JUDGE,
+        passed: false,
+        failures: ['missing source ref monday:raw-monday-1'],
+        startedAt: '2026-06-28T12:00:00.000Z',
+        completedAt: '2026-06-28T12:00:01.000Z',
+      }),
+    ).toThrow(
+      'Cannot write reconciliation live eval artifact for customer-project-email-monday-sentry: invalid source refs at indexes 1',
+    );
+  });
+
+  it('rejects non-finite judge scores before writing redacted artifacts', () => {
+    expect(() =>
+      buildLiveEvalArtifact({
+        testCase: TEST_CASE,
+        modelId: 'test-model',
+        promptVersion: 'test-prompt-v1',
+        prompt: 'Private customer packet should not be persisted verbatim',
+        result: RESULT,
+        judge: { ...JUDGE, score: Number.NaN },
+        passed: false,
+        failures: ['judge score was not finite'],
+        startedAt: '2026-06-28T12:00:00.000Z',
+        completedAt: '2026-06-28T12:00:01.000Z',
+      }),
+    ).toThrow(
+      'Cannot write reconciliation live eval artifact for customer-project-email-monday-sentry: invalid judge score',
+    );
+  });
+
+  it('rejects invalid expected count maps before writing redacted artifacts', () => {
+    expect(() =>
+      buildLiveEvalArtifact({
+        testCase: {
+          ...TEST_CASE,
+          expected: {
+            ...TEST_CASE.expected,
+            outputKindCounts: {
+              ...TEST_CASE.expected.outputKindCounts,
+              direct_write: -1,
+            },
+          },
+        },
+        modelId: 'test-model',
+        promptVersion: 'test-prompt-v1',
+        prompt: 'Private customer packet should not be persisted verbatim',
+        result: RESULT,
+        judge: JUDGE,
+        passed: false,
+        failures: ['fixture expected count was invalid'],
+        startedAt: '2026-06-28T12:00:00.000Z',
+        completedAt: '2026-06-28T12:00:01.000Z',
+      }),
+    ).toThrow(
+      'Cannot write reconciliation live eval artifact for customer-project-email-monday-sentry: invalid expected counts at expected.outputKindCounts.direct_write',
+    );
+  });
+
   it('writes one redacted JSON artifact per case', async () => {
     const dir = await mkdtemp(path.join(tmpdir(), 'timeline-live-eval-'));
     try {
@@ -207,6 +279,33 @@ describe('live reconciliation eval artifacts', () => {
     expect(JSON.stringify(manifest)).not.toContain('Private customer packet');
     expect(JSON.stringify(manifest)).not.toContain('raw-email-1');
     expect(JSON.stringify(manifest)).not.toContain('s3://eval/reconciliation');
+  });
+
+  it('rejects manifest artifact paths outside the output directory', () => {
+    const artifact = buildLiveEvalArtifact({
+      testCase: TEST_CASE,
+      modelId: 'test-model',
+      promptVersion: 'test-prompt-v1',
+      prompt: 'Private customer packet should not be persisted verbatim',
+      result: RESULT,
+      judge: JUDGE,
+      passed: true,
+      failures: [],
+      startedAt: '2026-06-28T12:00:00.000Z',
+      completedAt: '2026-06-28T12:00:01.000Z',
+    });
+
+    expect(() =>
+      buildLiveEvalRunManifest('/tmp/eval-run', {
+        modelId: 'test-model',
+        promptVersion: 'test-prompt-v1',
+        startedAt: '2026-06-28T12:00:00.000Z',
+        completedAt: '2026-06-28T12:00:02.000Z',
+        artifacts: [{ path: '/tmp/escape.json', artifact }],
+      }),
+    ).toThrow(
+      'Cannot write reconciliation live eval manifest for customer-project-email-monday-sentry: artifact path escapes output directory',
+    );
   });
 
   it('writes a manifest next to per-case artifacts', async () => {

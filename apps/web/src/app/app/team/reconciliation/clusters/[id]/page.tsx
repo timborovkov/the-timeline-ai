@@ -182,6 +182,11 @@ function OutputList({ rows }: { rows: ReconciliationClusterDetailOutput[] }) {
               <div className="text-xs text-fg-muted">
                 {row.confidence} confidence · {row.createdAt.toLocaleString()}
               </div>
+              <div className="space-y-1 rounded-sm border border-border bg-background p-2 font-mono text-[11px] text-fg-dim">
+                <div>output {row.id}</div>
+                <div>source refs {jsonPreview(row.sourceRefs)}</div>
+                <div>payload refs {jsonPreview(row.sourcePayloadRefs)}</div>
+              </div>
               <pre className="max-h-44 overflow-auto rounded-sm border border-border bg-background p-2 text-xs text-fg-muted">
                 {jsonPreview(row.payload)}
               </pre>

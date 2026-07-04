@@ -31,11 +31,12 @@ describe('reconciliation planner', () => {
     });
 
     expect(RECONCILIATION_PLANNER_PROMPT_VERSION).toBe(
-      'reconciliation-planner-2026-06-privacy-floor',
+      'reconciliation-planner-2026-07-source-ref-allowlist',
     );
     expect(prompt).toContain('Evidence packet: customer-project-email-monday-sentry');
     expect(prompt).toContain('- email');
     expect(prompt).toContain('- monday: raw-monday-1');
+    expect(prompt).toContain('"rawEventId": "raw-monday-1"');
     expect(prompt).toContain(
       'Policy-derived direct-write surfaces for this packet: monday, sentry',
     );
@@ -52,6 +53,8 @@ describe('reconciliation planner', () => {
     expect(prompt).toContain('Do not omit approval_bundle');
     expect(prompt).toContain('Privacy risk means visibility broadening');
     expect(prompt).toContain('Return every listed raw source ref exactly once');
+    expect(prompt).toContain('Copy sourceRefs only from the Raw source refs JSON allowlist');
+    expect(prompt).toContain('Preserve every rawEventId character exactly');
   });
 
   it('calls structured chat with the planner schema and returns the model result', async () => {
@@ -106,5 +109,42 @@ describe('reconciliation planner', () => {
       abortSignal: controller.signal,
     });
     expect(calls[0]?.prompt).toContain('Sentry owns the incident lifecycle signal.');
+  });
+
+  it('deduplicates source refs returned by the model', async () => {
+    const object: ReconciliationPlannerResult = {
+      scenarioFamily: 'calendar_project',
+      ingestionSurfaces: ['calendar'],
+      outputKinds: ['approval_bundle'],
+      directWriteSurfaces: [],
+      artifactClusterKinds: ['calendar_event'],
+      approvalRequired: true,
+      sourceRefs: [
+        { surface: 'calendar', rawEventId: 'raw-calendar-private' },
+        { surface: 'calendar', rawEventId: 'raw-calendar-private' },
+      ],
+      privacyRisk: false,
+    };
+    const chatStructured = <TSchema extends z.ZodType>(
+      input: ChatStructuredInput<TSchema>,
+    ): Promise<ChatStructuredResult<TSchema>> =>
+      Promise.resolve({
+        object: input.schema.parse(object),
+        model: input.model ?? 'test-model',
+      });
+
+    await expect(
+      planReconciliation(
+        {
+          packetName: 'calendar-project-private-visibility',
+          observedSurfaces: ['calendar'],
+          sourceRefs: [{ surface: 'calendar', rawEventId: 'raw-calendar-private' }],
+          plannerContext: 'Private calendar evidence remains private.',
+        },
+        { chatStructured },
+      ),
+    ).resolves.toMatchObject({
+      sourceRefs: [{ surface: 'calendar', rawEventId: 'raw-calendar-private' }],
+    });
   });
 });

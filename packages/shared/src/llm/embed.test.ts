@@ -140,8 +140,25 @@ describe('llm.embed', () => {
     });
   });
 
+  it('uses deterministic embeddings in non-production E2E mode without a provider key', async () => {
+    delete process.env.OPENROUTER_API_KEY;
+    process.env.E2E_DETERMINISTIC_EMBEDDINGS = 'true';
+    resetEnvForTests();
+
+    const first = await embed({ text: 'launch notes' });
+    const second = await embed({ text: 'launch notes' });
+    const batch = await embedMany({ texts: ['launch notes', 'renewal notes'] });
+
+    expect(first).toEqual(second);
+    expect(first.model).toBe(TIMELINE_MODELS.embedding.id);
+    expect(first.vector).toHaveLength(TIMELINE_MODELS.embedding.embeddingDimensions);
+    expect(batch.vectors[0]).toEqual(first.vector);
+    expect(batch.vectors[1]).not.toEqual(first.vector);
+  });
+
   it('throws when OPENROUTER_API_KEY is missing AND no model is injected', async () => {
     delete process.env.OPENROUTER_API_KEY;
+    delete process.env.E2E_DETERMINISTIC_EMBEDDINGS;
     resetEnvForTests();
     await expect(embed({ text: 'hello' })).rejects.toMatchObject({
       name: 'TimelineAiError',

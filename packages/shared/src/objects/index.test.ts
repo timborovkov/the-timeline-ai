@@ -36,6 +36,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ChatStructuredInput, ChatStructuredResult } from '#src/llm/chat.js';
 import type { z } from 'zod';
 
+import { buildObjectDirectWriteSourceContext } from '#src/objects/index.js';
 import { generateAndStoreObjectSummary } from '#src/objects/summaries.js';
 import { encodeCursor } from '#src/pagination.js';
 import * as queue from '#src/queue/queues.js';
@@ -131,6 +132,136 @@ async function upsertObjectSummary(values: typeof objectSummaries.$inferInsert):
 }
 
 describe('object scope — team ownership and audit behavior', () => {
+  it('builds direct-write source context from private evidence visibility', async () => {
+    const [raw] = await db
+      .insert(rawEvents)
+      .values({
+        teamId: TEAM_A,
+        authorUserId: USER_OWNER,
+        source: 'integration',
+        contentText: 'Private Sentry incident context',
+        occurredAt: new Date('2026-07-01T10:00:00.000Z'),
+        visibility: 'private',
+        visibilityOwnerUserId: USER_OWNER,
+        sourceMetadata: {
+          provider: 'sentry',
+          source_payload_ref: 'sentry://incident/raw-1',
+        },
+      })
+      .returning({ id: rawEvents.id });
+    if (!raw) throw new Error('expected raw event');
+
+    const [evidence] = await db
+      .insert(reconciliationEvidence)
+      .values({
+        teamId: TEAM_A,
+        rawEventId: raw.id,
+        sourcePayloadRef: 'sentry://incident/evidence-1',
+        source: 'integration',
+        provider: 'sentry',
+        externalObjectId: 'INC-1',
+        externalEventId: 'INC-1:update',
+        eventType: 'sentry.issue',
+        occurredAt: new Date('2026-07-01T10:00:00.000Z'),
+        visibility: 'private',
+        visibilityOwnerUserId: USER_OWNER,
+        actor: {},
+        contentDigest: 'sentry-private-digest',
+        normalizerVersion: 'test-normalizer',
+        replayState: 'full',
+        dedupeKey: 'sentry-private-dedupe',
+      })
+      .returning({ id: reconciliationEvidence.id });
+    if (!evidence) throw new Error('expected evidence');
+
+    const firstContext = await buildObjectDirectWriteSourceContext({
+      db,
+      teamId: TEAM_A,
+      sourceEventId: raw.id,
+    });
+    expect(firstContext).toEqual({
+      sourceRefs: [
+        {
+          source: 'integration',
+          rawEventId: raw.id,
+          sourcePayloadRef: 'sentry://incident/raw-1',
+        },
+      ],
+      sourcePayloadRefs: ['sentry://incident/evidence-1', 'sentry://incident/raw-1'],
+      visibility: 'private',
+      visibilityOwnerUserId: USER_OWNER,
+      visibilityUserIds: null,
+    });
+    expect(firstContext.sourceRefs[0]).not.toHaveProperty('evidenceId');
+
+    await db.insert(reconciliationEvidence).values({
+      teamId: TEAM_A,
+      rawEventId: raw.id,
+      sourcePayloadRef: 'sentry://incident/evidence-2',
+      source: 'integration',
+      provider: 'sentry',
+      externalObjectId: 'INC-1',
+      externalEventId: 'INC-1:update:v2',
+      eventType: 'sentry.issue',
+      occurredAt: new Date('2026-07-01T10:00:00.000Z'),
+      visibility: 'private',
+      visibilityOwnerUserId: USER_OWNER,
+      actor: {},
+      contentDigest: 'sentry-private-digest-v2',
+      normalizerVersion: 'test-normalizer-v2',
+      replayState: 'full',
+      dedupeKey: 'sentry-private-dedupe-v2',
+    });
+
+    const secondContext = await buildObjectDirectWriteSourceContext({
+      db,
+      teamId: TEAM_A,
+      sourceEventId: raw.id,
+    });
+    expect(secondContext.sourceRefs).toEqual(firstContext.sourceRefs);
+    expect(secondContext.sourceRefs[0]).not.toHaveProperty('evidenceId');
+  });
+
+  it('falls back to raw-event visibility when direct-write evidence is absent', async () => {
+    const [raw] = await db
+      .insert(rawEvents)
+      .values({
+        teamId: TEAM_A,
+        authorUserId: USER_OWNER,
+        source: 'integration',
+        contentText: 'Monday item assigned to selected users',
+        occurredAt: new Date('2026-07-01T10:05:00.000Z'),
+        visibility: 'specific_users',
+        visibilityUserIds: [USER_OWNER, USER_MEMBER],
+        sourceMetadata: {
+          provider: 'monday',
+          source_payload_ref: 'monday://board/42/item/7',
+        },
+      })
+      .returning({ id: rawEvents.id });
+    if (!raw) throw new Error('expected raw event');
+
+    await expect(
+      buildObjectDirectWriteSourceContext({
+        db,
+        teamId: TEAM_A,
+        sourceEventId: raw.id,
+      }),
+    ).resolves.toEqual({
+      sourceRefs: [
+        {
+          source: 'integration',
+          rawEventId: raw.id,
+          sourcePayloadRef: 'monday://board/42/item/7',
+        },
+      ],
+      sourcePayloadRefs: ['monday://board/42/item/7'],
+      visibility: 'specific_users',
+      visibilityOwnerUserId: null,
+      visibilityUserIds: [USER_OWNER, USER_MEMBER],
+    });
+  });
+
   it('rejects owner and assignee values that are not members of the scoped team', async () => {
     const scope = withTeam(db, TEAM_A, USER_OWNER).objects;
 
@@ -176,20 +307,12 @@ describe('object scope — team ownership and audit behavior', () => {
       .where(eq(entities.id, object.id));
     expect(entityRow?.sourceEventId).toBeNull();
 
-    const rows = await db
-      .select({
-        rawEventId: rawEvents.id,
-        changeStatus: objectChanges.status,
-        eventText: rawEvents.contentText,
-      })
-      .from(objectChanges)
-      .innerJoin(rawEvents, eq(rawEvents.id, objectChanges.sourceEventId))
-      .where(eq(objectChanges.entityId, object.id));
+    const rows = await db.select().from(objectChanges).where(eq(objectChanges.entityId, object.id));
 
     expect(rows).toEqual([
       expect.objectContaining({
-        changeStatus: 'applied',
-        eventText: 'Agent created task: Follow up on approved chat command',
+        status: 'applied',
+        sourceEventId: null,
       }),
     ]);
 
@@ -207,16 +330,12 @@ describe('object scope — team ownership and audit behavior', () => {
       visibility: 'team',
       visibilityFloor: 'team',
     });
-    expect(outputs[0]?.sourceRefs).toEqual([
-      expect.objectContaining({
-        source: 'system',
-        rawEventId: rows[0]?.rawEventId,
-      }),
-    ]);
     const createSourceRefs = outputs[0]?.sourceRefs as
-      | { sourcePayloadRef?: string | null }[]
+      | { source?: string; rawEventId?: string; sourcePayloadRef?: string | null }[]
       | undefined;
     const createSourceRef = createSourceRefs?.[0];
+    expect(createSourceRef?.source).toBe('system');
+    expect(typeof createSourceRef?.rawEventId).toBe('string');
     expect(createSourceRef?.sourcePayloadRef).toMatch(
       /^inline:\/\/timeline\/system\/object_create\//,
     );
@@ -325,7 +444,10 @@ describe('object scope — team ownership and audit behavior', () => {
     ]);
     expect(evidence[0]?.sourcePayloadRef).toMatch(/^inline:\/\/timeline\/system\/object_create\//);
     expect(evidence[1]?.sourcePayloadRef).toMatch(/^inline:\/\/timeline\/system\/object_update\//);
+    expect(evidence[0]?.payloadDigest).toEqual(expect.stringMatching(/^sha256:[0-9a-f]{64}$/));
+    expect(evidence[1]?.payloadDigest).toEqual(expect.stringMatching(/^sha256:[0-9a-f]{64}$/));
     const updateMetadata = updateEvent?.sourceMetadata as Record<string, unknown> | undefined;
+    expect(updateMetadata?.payload_digest).toEqual(expect.stringMatching(/^sha256:[0-9a-f]{64}$/));
     expect(updateMetadata).toMatchObject({
       source_snapshot_kind: 'system_direct_write_event',
       source_snapshot_version: 'system-direct-write-source-snapshot-2026-06',
@@ -924,6 +1046,13 @@ describe('object scope — identity facets', () => {
     expect(changes.map((change) => change.field)).toEqual(
       expect.arrayContaining(['__identity_facet_create__', '__identity_facet_update__']),
     );
+    expect(
+      changes
+        .filter((change) =>
+          ['__identity_facet_create__', '__identity_facet_update__'].includes(change.field),
+        )
+        .every((change) => change.sourceEventId === null),
+    ).toBe(true);
 
     const outputs = await db
       .select()
@@ -948,7 +1077,7 @@ describe('object scope — identity facets', () => {
         sourceRef && typeof sourceRef === 'object' ? (sourceRef as Record<string, unknown>) : {};
       expect(sourceRefRecord.source).toBe('system');
       expect(typeof sourceRefRecord.rawEventId).toBe('string');
-      expect(typeof sourceRefRecord.evidenceId).toBe('string');
+      expect(sourceRefRecord.evidenceId).toBeUndefined();
       expect(sourceRefRecord.sourcePayloadRef).toEqual(
         expect.stringMatching(/^inline:\/\/timeline\/system\/identity_facet_/),
       );
@@ -1068,6 +1197,13 @@ describe('object scope — notes and suggestions', () => {
     expect(changes.map((change) => change.field)).toEqual(
       expect.arrayContaining(['__note_create__', '__note_update__', '__note_delete__']),
     );
+    expect(
+      changes
+        .filter((change) =>
+          ['__note_create__', '__note_update__', '__note_delete__'].includes(change.field),
+        )
+        .every((change) => change.sourceEventId === null),
+    ).toBe(true);
 
     const noteOutputs = await db
       .select()
@@ -1096,7 +1232,7 @@ describe('object scope — notes and suggestions', () => {
         sourceRef && typeof sourceRef === 'object' ? (sourceRef as Record<string, unknown>) : {};
       expect(sourceRefRecord.source).toBe('system');
       expect(typeof sourceRefRecord.rawEventId).toBe('string');
-      expect(typeof sourceRefRecord.evidenceId).toBe('string');
+      expect(sourceRefRecord.evidenceId).toBeUndefined();
       expect(sourceRefRecord.sourcePayloadRef).toEqual(
         expect.stringMatching(/^inline:\/\/timeline\/system\/object_note_/),
       );
@@ -1164,6 +1300,10 @@ describe('object scope — notes and suggestions', () => {
         associationSource: 'model_candidate',
       }),
     ]);
+    await db
+      .update(artifactEvidenceAssociations)
+      .set({ rawEventId: null })
+      .where(eq(artifactEvidenceAssociations.clusterId, linkCluster.id));
 
     const detail = await scope.getObject(object.id);
     expect(detail?.connectedWork.links).toEqual([
@@ -1614,11 +1754,11 @@ describe('object scope — notes and suggestions', () => {
       outputKind: 'approval_bundle',
       targetKind: 'object',
       operation: 'update',
-      targetId: company.id,
-      payload: { title: 'Attach incident impact to DFK', status: 'blocked' },
+      targetId: null,
+      payload: { title: 'Review customer-impact incident', status: 'blocked' },
       authorityDecision: { decision: 'approval_required', policy_version: 'test-v1' },
       requiresApproval: true,
-      sourceRefs: [],
+      sourceRefs: [{ source: 'sentry', rawEventId: artifactRaw?.id }],
       visibility: 'team',
       visibilityFloor: 'team',
       dedupeKey: 'output:connected-work-artifact',
@@ -1665,7 +1805,7 @@ describe('object scope — notes and suggestions', () => {
     expect(detail?.connectedWork.pendingApprovals).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ title: 'Merge DFK Finland Oy into DFK' }),
-        expect.objectContaining({ title: 'Attach incident impact to DFK' }),
+        expect.objectContaining({ title: 'Review customer-impact incident' }),
       ]),
     );
     expect(detail?.connectedWork.pendingApprovals).not.toContainEqual(
@@ -1961,6 +2101,15 @@ describe('object scope — archive visibility', () => {
     expect(first.changedFields).toEqual(['archivedAt']);
     expect(second.changedFields).toEqual([]);
     expect(second.archivedAt?.getTime()).toBe(first.archivedAt?.getTime());
+    const changeRows = await db
+      .select()
+      .from(objectChanges)
+      .where(eq(objectChanges.entityId, object.id));
+    expect(
+      changeRows
+        .filter((change) => change.field === 'archivedAt' || change.field === '__create__')
+        .every((change) => change.sourceEventId === null),
+    ).toBe(true);
 
     const outputs = await db
       .select()
@@ -2261,6 +2410,17 @@ describe('object scope — relationships', () => {
     await expect(
       scope.removeRelationship(relationshipId, { kind: 'user', userId: USER_OWNER }),
     ).resolves.toBe(true);
+    const relationshipChangeRows = await db
+      .select()
+      .from(objectChanges)
+      .where(eq(objectChanges.teamId, TEAM_A));
+    expect(
+      relationshipChangeRows
+        .filter((change) =>
+          ['__relationship_create__', '__relationship_delete__'].includes(change.field),
+        )
+        .every((change) => change.sourceEventId === null),
+    ).toBe(true);
     const unlinkEventRows = await db.select().from(rawEvents).where(eq(rawEvents.teamId, TEAM_A));
     const unlinkEvent = unlinkEventRows.find(
       (row) => (row.sourceMetadata as { kind?: string } | null)?.kind === 'relationship_delete',
@@ -2779,6 +2939,11 @@ describe('object scope — merge cleanup', () => {
     expect(changeRows.map((row) => row.field)).toEqual(
       expect.arrayContaining(['__merge__', '__merged_from__', '__note_create__']),
     );
+    expect(
+      changeRows
+        .filter((row) => ['__merge__', '__merged_from__'].includes(row.field))
+        .every((row) => row.sourceEventId === null),
+    ).toBe(true);
     const mergeEventRows = await db.select().from(rawEvents).where(eq(rawEvents.teamId, TEAM_A));
     const mergeEvent = mergeEventRows.find(
       (row) => (row.sourceMetadata as { kind?: string } | null)?.kind === 'object_merge',

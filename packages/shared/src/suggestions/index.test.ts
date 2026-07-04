@@ -284,6 +284,65 @@ describe('suggestion scope', () => {
     });
   });
 
+  it('keeps selected bulk accept from applying merge-preview suggestions', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const first = await scope.objects.createObject({
+      type: 'company',
+      canonicalName: 'Bulk AuditAI',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const second = await scope.objects.createObject({
+      type: 'vendor',
+      canonicalName: 'Bulk Audit AI',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Merge duplicate objects from bulk action',
+      dedupeKey: 'merge-preview-only-selected-accept',
+      items: [
+        {
+          operation: 'merge',
+          targetKind: 'object_merge',
+          targetId: first.id,
+          title: 'Review merge from bulk action',
+          dedupeKey: 'merge-preview-only-selected-accept:item',
+          proposedPayload: {
+            objectIds: [first.id, second.id],
+            survivorId: first.id,
+            reason: 'Names are close.',
+          },
+        },
+      ],
+    });
+    const itemId = bundle.items[0]?.id ?? '';
+
+    await expect(
+      scope.suggestions.acceptSelected({ suggestionId: bundle.id, itemIds: [itemId] }),
+    ).resolves.toEqual({ accepted: 0, failed: 1, failedItemIds: [itemId] });
+
+    const [item] = await db
+      .select()
+      .from(agentSuggestionItems)
+      .where(eq(agentSuggestionItems.id, itemId));
+    expect(item).toMatchObject({
+      status: 'pending',
+      resolvedAt: null,
+      resultId: null,
+    });
+    const outputId = bundle.items[0]?.metadata.reconciliation_output_id;
+    if (typeof outputId !== 'string') throw new Error('expected reconciliation output id');
+    const [output] = await db
+      .select()
+      .from(reconciliationOutputs)
+      .where(eq(reconciliationOutputs.id, outputId));
+    expect(output).toMatchObject({ status: 'approval_created' });
+    await expect(scope.objects.getObject(second.id)).resolves.toMatchObject({
+      id: second.id,
+    });
+    await expect(scope.objects.getMergedObjectTarget(second.id)).resolves.toBeNull();
+  });
+
   it('supersedes merge suggestions when a participant was archived', async () => {
     const scope = withTeam(db as never, TEAM_ID, USER_ID);
     const first = await scope.objects.createObject({
@@ -2338,7 +2397,7 @@ describe('suggestion scope', () => {
     expect(loaded?.items.map((item) => item.status).sort()).toEqual(['pending', 'superseded']);
 
     const accepted = await scope.suggestions.acceptAll(oldBundle.id);
-    expect(accepted).toEqual({ accepted: 1, failed: 0 });
+    expect(accepted).toEqual({ accepted: 1, failed: 0, failedItemIds: [] });
     const after = await scope.suggestions.getSuggestion(oldBundle.id);
     expect(after?.status).toBe('partially_resolved');
     expect(after?.items.map((item) => item.status).sort()).toEqual(['accepted', 'superseded']);
@@ -4318,6 +4377,7 @@ describe('suggestion scope', () => {
     await expect(scope.suggestions.acceptAll(bundle.id)).resolves.toEqual({
       accepted: 2,
       failed: 0,
+      failedItemIds: [],
     });
 
     const result = await pg.query<{ body: string }>(
@@ -4369,11 +4429,13 @@ describe('suggestion scope', () => {
       ],
     });
     const topicItemId = bundle.items.find((item) => item.targetKind === 'object')?.id;
-    expect(topicItemId).toBeDefined();
+    const noteItemId = bundle.items.find((item) => item.targetKind === 'object_note')?.id;
+    if (!topicItemId || !noteItemId) throw new Error('expected topic and note items');
 
     await expect(scope.suggestions.acceptAll(bundle.id)).resolves.toEqual({
       accepted: 0,
       failed: 2,
+      failedItemIds: [topicItemId, noteItemId],
     });
 
     const result = await pg.query<{ note_count: string; entity_id: string }>(
@@ -4440,12 +4502,11 @@ describe('suggestion scope', () => {
       body: string;
       actor_kind: string;
       actor_user_id: string | null;
-      source_metadata: Record<string, unknown>;
+      source_event_id: string | null;
     }>(
-      `SELECT n.body, oc.actor_kind, oc.actor_user_id, re.source_metadata
+      `SELECT n.body, oc.actor_kind, oc.actor_user_id, oc.source_event_id
        FROM object_notes n
        JOIN object_changes oc ON oc.entity_id = n.entity_id
-       LEFT JOIN raw_events re ON re.id = oc.source_event_id
        WHERE n.id = $1 AND oc.field = '__note_update__'
        ORDER BY oc.changed_at DESC
        LIMIT 1`,
@@ -4455,11 +4516,41 @@ describe('suggestion scope', () => {
     expect(result.rows[0]).toMatchObject({
       actor_kind: 'agent',
       actor_user_id: null,
-      source_metadata: {
-        kind: 'object_note_update',
+      source_event_id: null,
+    });
+
+    const outputs = await pg.query<{
+      payload: Record<string, unknown>;
+      source_refs: { rawEventId?: string }[];
+    }>(
+      `SELECT payload, source_refs
+       FROM reconciliation_outputs
+       WHERE team_id = $1
+         AND target_kind = 'object_note'
+         AND operation = 'update'
+         AND target_id = $2
+       ORDER BY created_at DESC
+       LIMIT 1`,
+      [TEAM_ID, note.id],
+    );
+    const sourceRef = outputs.rows[0]?.source_refs[0];
+    expect(outputs.rows[0]?.payload).toEqual(
+      expect.objectContaining({
+        system_event_kind: 'object_note_update',
         note_id: note.id,
-        agent_suggestion_item_id: itemId,
-      },
+        actor_kind: 'agent',
+      }),
+    );
+    expect(sourceRef?.rawEventId).toBeDefined();
+
+    const event = await pg.query<{ source_metadata: Record<string, unknown> }>(
+      `SELECT source_metadata FROM raw_events WHERE id = $1`,
+      [sourceRef?.rawEventId],
+    );
+    expect(event.rows[0]?.source_metadata).toMatchObject({
+      kind: 'object_note_update',
+      note_id: note.id,
+      agent_suggestion_item_id: itemId,
     });
   });
 
@@ -4693,6 +4784,7 @@ describe('suggestion scope', () => {
     await expect(scope.suggestions.acceptAll(bundle.id)).resolves.toEqual({
       accepted: 3,
       failed: 0,
+      failedItemIds: [],
     });
 
     const itemRows = await db
@@ -4771,6 +4863,7 @@ describe('suggestion scope', () => {
     await expect(scope.suggestions.acceptAll(bundle.id)).resolves.toEqual({
       accepted: 2,
       failed: 0,
+      failedItemIds: [],
     });
 
     const detail = await scope.objects.getObject(company.id);
@@ -6815,6 +6908,7 @@ describe('suggestion scope', () => {
         contentText: 'Private note: refine the FSLI scoping process.',
         occurredAt: new Date('2026-06-25T13:08:00.000Z'),
         visibility: 'private',
+        visibilityOwnerUserId: REVIEWER_ID,
       },
     ]);
 

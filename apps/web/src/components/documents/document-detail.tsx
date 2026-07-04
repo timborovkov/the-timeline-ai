@@ -443,10 +443,38 @@ function CurrentVersionPanel({
                 </p>
               ) : null}
             </InfoBlock>
+            {chunks.length > 0 ? (
+              <InfoBlock title="Extracted chunks" contentClassName="space-y-2">
+                <ChunkCitationList chunks={chunks} />
+              </InfoBlock>
+            ) : null}
           </aside>
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+function ChunkCitationList({ chunks }: { chunks: Props['activeVersionChunks'] }) {
+  return (
+    <ol className="max-h-72 space-y-2 overflow-y-auto pr-1">
+      {chunks.map((chunk, index) => (
+        <li
+          key={chunk.id}
+          id={`chunk-${chunk.id}`}
+          className="scroll-mt-24 rounded-sm border border-border bg-surface px-2.5 py-2 text-xs"
+        >
+          <div className="flex flex-wrap items-center gap-2 text-[10px] uppercase tracking-[0.12em] text-fg-dim">
+            <span>Chunk {String(index + 1)}</span>
+            <span>{chunk.representationKind.replace(/_/g, ' ')}</span>
+            {chunk.pageNumber !== null ? <span>Page {String(chunk.pageNumber)}</span> : null}
+          </div>
+          <p className="mt-1 line-clamp-3 break-words leading-5 text-fg-muted">
+            {chunk.summary ?? chunk.text}
+          </p>
+        </li>
+      ))}
+    </ol>
   );
 }
 

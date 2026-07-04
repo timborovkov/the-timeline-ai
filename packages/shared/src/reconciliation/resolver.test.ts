@@ -6,6 +6,7 @@ import {
   artifactEvidenceAssociations,
   rawEvents,
   reconciliationEvidence,
+  reconciliationEvidenceAnchors,
   reconciliationOutputs,
   reconciliationRuns,
 } from '@timeline/db';
@@ -207,6 +208,57 @@ describe('reconciliation evidence resolver', () => {
     expect(retry.associated[0]?.createdCluster).toBe(false);
     expect(await db.select().from(artifactEvidenceAssociations)).toHaveLength(1);
     expect(await db.select().from(reconciliationOutputs)).toHaveLength(1);
+
+    const [secondEvidence] = await db
+      .insert(reconciliationEvidence)
+      .values({
+        teamId: TEAM_ID,
+        rawEventId: raw.id,
+        sourcePayloadRef: 's3://timeline-test/reconciliation/customer-portal/acme.json',
+        source: 'ingest_webhook',
+        provider: 'ingest_webhook',
+        externalObjectId: 'customer:acme:rollout',
+        externalEventId: raw.id,
+        eventType: 'ingest_webhook.event',
+        occurredAt: new Date('2026-06-22T09:00:00Z'),
+        visibility: 'private',
+        visibilityOwnerUserId: USER_ID,
+        actor: {},
+        contentDigest: 'customer-portal-acme-rollout-v2',
+        normalizerVersion: 'reconcile-normalize-2026-06-v2',
+        replayState: 'full',
+        dedupeKey: 'resolver-raw-event-replay-evidence-v2',
+      })
+      .returning({ id: reconciliationEvidence.id });
+    if (!secondEvidence) throw new Error('second evidence insert failed');
+    await db.insert(reconciliationEvidenceAnchors).values([
+      {
+        teamId: TEAM_ID,
+        evidenceId: secondEvidence.id,
+        anchorType: 'artifact_key',
+        anchorValue: 'customer:acme:rollout',
+        strength: 'hard',
+        source: 'adapter',
+        dedupeKey: 'resolver-raw-event-replay-anchor-v2',
+      },
+    ]);
+
+    const replayWithNewEvidence = await resolveEvidenceAssociations({
+      db: db as never,
+      teamId: TEAM_ID,
+      evidenceIds: [secondEvidence.id],
+      clusterDefaults: {
+        artifactClusterKind: 'customer_project',
+        artifactType: 'project',
+        canonicalName: 'Acme rollout',
+      },
+      role: 'blocker',
+    });
+    expect(replayWithNewEvidence.skipped).toEqual([]);
+    expect(replayWithNewEvidence.associated).toHaveLength(1);
+    expect(replayWithNewEvidence.associated[0]?.createdCluster).toBe(false);
+    expect(await db.select().from(artifactEvidenceAssociations)).toHaveLength(2);
+    expect(await db.select().from(reconciliationOutputs)).toHaveLength(1);
   });
 
   it('carries artifact kind from an existing matched cluster into resolver outputs', async () => {
@@ -294,6 +346,88 @@ describe('reconciliation evidence resolver', () => {
     expect(output?.sourcePayloadRefs).toEqual([
       's3://timeline-test/reconciliation/sentry/release-2026.06.30',
     ]);
+  });
+
+  it('classifies associations from the cluster anchor that actually matched', async () => {
+    const objectId = '22222222-2222-4222-8222-222222222222';
+    const [cluster] = await db
+      .insert(artifactClusters)
+      .values({
+        teamId: TEAM_ID,
+        artifactClusterKind: 'customer_project',
+        artifactType: 'project',
+        canonicalName: 'Acme rollout',
+      })
+      .returning({ id: artifactClusters.id });
+    if (!cluster) throw new Error('cluster insert failed');
+
+    await db.insert(artifactClusterAnchors).values({
+      teamId: TEAM_ID,
+      clusterId: cluster.id,
+      anchorType: 'object',
+      anchorValue: objectId,
+      strength: 'structured',
+    });
+
+    const [raw] = await db
+      .insert(rawEvents)
+      .values({
+        teamId: TEAM_ID,
+        authorUserId: USER_ID,
+        source: 'email',
+        contentText: 'Customer email: Acme asked to move launch risk review to Monday.',
+        occurredAt: new Date('2026-06-30T13:00:00Z'),
+        visibility: 'team',
+        sourceMetadata: {
+          entity_id: objectId,
+          message_id: 'msg-acme-rollout-risk-review',
+          source_payload_ref: 's3://timeline-test/email/msg-acme-rollout-risk-review.eml',
+        },
+      })
+      .returning({ id: rawEvents.id });
+    if (!raw) throw new Error('raw event insert failed');
+
+    const [evidenceId] = await normalizeRawEventsToEvidence({
+      db: db as never,
+      teamId: TEAM_ID,
+      rawEventIds: [raw.id],
+    });
+    if (!evidenceId) throw new Error('evidence insert failed');
+
+    const result = await resolveEvidenceAssociations({
+      db: db as never,
+      teamId: TEAM_ID,
+      evidenceIds: [evidenceId],
+      role: 'evidence_only',
+    });
+
+    expect(result.skipped).toEqual([]);
+    expect(result.associated).toHaveLength(1);
+    const [association] = await db.select().from(artifactEvidenceAssociations);
+    expect(association).toMatchObject({
+      clusterId: cluster.id,
+      evidenceId,
+      rawEventId: raw.id,
+      role: 'evidence_only',
+      strength: 'structured',
+      associationSource: 'structured_anchor',
+    });
+    expect(association?.metadata).toMatchObject({
+      anchor_count: 1,
+      artifact_cluster_kind: 'customer_project',
+    });
+
+    const [output] = await db.select().from(reconciliationOutputs);
+    expect(output?.payload).toMatchObject({
+      association_source: 'structured_anchor',
+      anchors: [
+        {
+          anchorType: 'object',
+          anchorValue: objectId,
+          strength: 'structured',
+        },
+      ],
+    });
   });
 
   it('refuses ambiguous anchor matches instead of silently merging clusters', async () => {

@@ -42,7 +42,7 @@ export default async function ApprovalsPage({ searchParams }: PageProps) {
   ]);
   const visibleSuggestions = suggestions.flatMap((bundle) => {
     const items = bundle.items.filter((item) => {
-      if (status === 'pending') return isActionableSuggestionStatus(item.status);
+      if (status === 'pending') return item.status === 'pending';
       if (status === 'failed') return item.status === 'failed';
       if (status === 'resolved') return !isActionableSuggestionStatus(item.status);
       return true;

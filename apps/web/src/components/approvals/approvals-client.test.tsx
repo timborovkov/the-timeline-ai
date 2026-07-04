@@ -62,6 +62,10 @@ describe('ApprovalsClient', () => {
             summary: 'A commitment was found.',
             reason: 'Timeline source evidence',
             confidence: 'high',
+            metadata: {
+              reconciliation_output_ids: ['99999999-9999-4999-8999-999999999999'],
+              reconciliation_cluster_ids: ['22222222-2222-4222-8222-222222222222'],
+            },
             createdAt: '2026-06-01T10:00:00.000Z',
             evidence: [
               {
@@ -81,6 +85,10 @@ describe('ApprovalsClient', () => {
                 title: 'Send proposal',
                 description: 'Send Acme the proposal.',
                 proposedPayload: { canonicalName: 'Send proposal' },
+                metadata: {
+                  reconciliation_output_id: '99999999-9999-4999-8999-999999999999',
+                  reconciliation_cluster_id: '22222222-2222-4222-8222-222222222222',
+                },
                 failureReason: null,
               },
               {
@@ -92,6 +100,7 @@ describe('ApprovalsClient', () => {
                 title: 'Proposal meeting',
                 description: null,
                 proposedPayload: { title: 'Proposal meeting' },
+                metadata: {},
                 failureReason: 'Calendar conflict',
               },
             ],
@@ -107,6 +116,15 @@ describe('ApprovalsClient', () => {
     expect(html).toContain('I will send the proposal');
     expect(html).toContain('Timeline evidence · slack · 11111111');
     expect(html).toContain('create task');
+    expect(html).toContain('Accept will create a task.');
+    expect(html).toContain(
+      'Review required before Timeline writes workspace memory from captured evidence.',
+    );
+    expect(html).toContain('Reconciliation output 99999999');
+    expect(html).toContain('Cluster 22222222');
+    expect(html).toContain(
+      'href="/app/team/reconciliation/clusters/22222222-2222-4222-8222-222222222222"',
+    );
   });
 
   it('renders missing-person relationship bundles with readable endpoints', () => {
@@ -171,6 +189,7 @@ describe('ApprovalsClient', () => {
 
     expect(html).toContain('create person');
     expect(html).toContain('Jonne Granqvist ↔ DFK · related');
+    expect(html).toContain('Depends on Jonne Granqvist in this bundle.');
     expect(html).toContain('Jonne Granqvist from DFK discussed the pilot scope.');
   });
 
@@ -648,6 +667,288 @@ describe('ApprovalsClient', () => {
     expect(html).toContain('Review merge');
   });
 
+  it('labels mixed bulk accept as a partial visible action when merge rows need review', async () => {
+    const user = userEvent.setup();
+
+    render(
+      createElement(ApprovalsClient, {
+        suggestions: [
+          {
+            id: 'bundle-actions',
+            source: 'background',
+            status: 'pending',
+            title: 'Customer actions',
+            summary: null,
+            reason: null,
+            confidence: 'high',
+            createdAt: '2026-06-01T10:00:00.000Z',
+            evidence: [],
+            items: [
+              {
+                id: 'item-task',
+                status: 'pending',
+                operation: 'create',
+                targetKind: 'task',
+                targetId: null,
+                title: 'Send renewal packet',
+                description: null,
+                proposedPayload: { canonicalName: 'Send renewal packet' },
+                failureReason: null,
+              },
+              {
+                id: 'item-calendar',
+                status: 'pending',
+                operation: 'create',
+                targetKind: 'calendar_event',
+                targetId: null,
+                title: 'Book renewal call',
+                description: null,
+                proposedPayload: { title: 'Book renewal call' },
+                failureReason: null,
+              },
+            ],
+          },
+          {
+            id: 'bundle-merge',
+            source: 'background',
+            status: 'pending',
+            title: 'Merge duplicate Acme objects',
+            summary: null,
+            reason: null,
+            confidence: 'medium',
+            createdAt: '2026-06-01T10:05:00.000Z',
+            evidence: [],
+            items: [
+              {
+                id: 'item-merge',
+                status: 'pending',
+                operation: 'merge',
+                targetKind: 'object_merge',
+                targetId: null,
+                title: 'Merge Acme duplicates',
+                description: null,
+                proposedPayload: {
+                  objectIds: [
+                    '33333333-3333-4333-8333-333333333333',
+                    '44444444-4444-4444-8444-444444444444',
+                  ],
+                },
+                failureReason: null,
+              },
+            ],
+          },
+        ],
+      }),
+    );
+
+    expect(screen.queryByRole('button', { name: 'Accept all visible' })).toBeNull();
+    expect(screen.getByText('1 merge proposal needs review')).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: 'Accept 2 visible' }));
+
+    expect(fakes.acceptVisibleSuggestionsAction).toHaveBeenCalledTimes(1);
+    expect(fakes.acceptVisibleSuggestionsAction).toHaveBeenCalledWith({
+      suggestions: [
+        {
+          suggestionId: 'bundle-actions',
+          itemIds: ['item-task', 'item-calendar'],
+        },
+      ],
+    });
+  });
+
+  it('restores only failed rows after a partial visible bulk accept failure', async () => {
+    const user = userEvent.setup();
+    fakes.acceptVisibleSuggestionsAction.mockResolvedValue({
+      error: '1 item(s) failed to apply',
+      failedItemIds: ['item-calendar'],
+    });
+
+    render(
+      createElement(ApprovalsClient, {
+        suggestions: [
+          {
+            id: 'bundle-actions',
+            source: 'background',
+            status: 'pending',
+            title: 'Customer actions',
+            summary: null,
+            reason: null,
+            confidence: 'high',
+            createdAt: '2026-06-01T10:00:00.000Z',
+            evidence: [],
+            items: [
+              {
+                id: 'item-task',
+                status: 'pending',
+                operation: 'create',
+                targetKind: 'task',
+                targetId: null,
+                title: 'Send renewal packet',
+                description: null,
+                proposedPayload: { canonicalName: 'Send renewal packet' },
+                failureReason: null,
+              },
+              {
+                id: 'item-calendar',
+                status: 'pending',
+                operation: 'create',
+                targetKind: 'calendar_event',
+                targetId: null,
+                title: 'Book renewal call',
+                description: null,
+                proposedPayload: { title: 'Book renewal call' },
+                failureReason: null,
+              },
+            ],
+          },
+        ],
+      }),
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Accept all visible' }));
+
+    await waitFor(() => {
+      expect(screen.queryByText('Send renewal packet')).toBeNull();
+      expect(screen.getByText('Book renewal call')).toBeTruthy();
+      expect(screen.getByText('1 item(s) failed to apply')).toBeTruthy();
+      expect(screen.getByText('Action failed. Review and try again.')).toBeTruthy();
+      expect(
+        screen.getByText(
+          'Calendar proposal is missing a start or end time. Reject it or revise the source details before accepting.',
+        ),
+      ).toBeTruthy();
+    });
+    expect(fakes.refresh).not.toHaveBeenCalled();
+  });
+
+  it('restores only failed rows after a stale bundle-level accept-all failure', async () => {
+    const user = userEvent.setup();
+    fakes.acceptAllSuggestionAction.mockResolvedValue({
+      error: '1 item(s) failed to apply',
+      failedItemIds: ['item-calendar'],
+    });
+
+    render(
+      createElement(ApprovalsClient, {
+        suggestions: [
+          {
+            id: 'bundle-actions',
+            source: 'background',
+            status: 'pending',
+            title: 'Customer actions',
+            summary: null,
+            reason: null,
+            confidence: 'high',
+            createdAt: '2026-06-01T10:00:00.000Z',
+            evidence: [],
+            items: [
+              {
+                id: 'item-task',
+                status: 'pending',
+                operation: 'create',
+                targetKind: 'task',
+                targetId: null,
+                title: 'Send renewal packet',
+                description: null,
+                proposedPayload: { canonicalName: 'Send renewal packet' },
+                failureReason: null,
+              },
+              {
+                id: 'item-calendar',
+                status: 'pending',
+                operation: 'create',
+                targetKind: 'calendar_event',
+                targetId: null,
+                title: 'Book renewal call',
+                description: null,
+                proposedPayload: { title: 'Book renewal call' },
+                failureReason: null,
+              },
+            ],
+          },
+        ],
+      }),
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Accept all' }));
+
+    await waitFor(() => {
+      expect(fakes.acceptAllSuggestionAction).toHaveBeenCalledWith({
+        suggestionId: 'bundle-actions',
+        itemIds: ['item-task', 'item-calendar'],
+      });
+      expect(screen.queryByText('Send renewal packet')).toBeNull();
+      expect(screen.getByText('Book renewal call')).toBeTruthy();
+      expect(screen.getByText('1 item(s) failed to apply')).toBeTruthy();
+      expect(screen.getByText('Action failed. Review and try again.')).toBeTruthy();
+    });
+    expect(fakes.refresh).not.toHaveBeenCalled();
+  });
+
+  it('labels mixed bundle accept as partial when a merge row must be reviewed separately', () => {
+    render(
+      createElement(ApprovalsClient, {
+        suggestions: [
+          {
+            id: 'bundle-1',
+            source: 'background',
+            status: 'pending',
+            title: 'Resolve Acme records',
+            summary: null,
+            reason: null,
+            confidence: 'high',
+            createdAt: '2026-06-01T10:00:00.000Z',
+            evidence: [],
+            items: [
+              {
+                id: 'item-task',
+                status: 'pending',
+                operation: 'create',
+                targetKind: 'task',
+                targetId: null,
+                title: 'Send renewal packet',
+                description: null,
+                proposedPayload: { canonicalName: 'Send renewal packet' },
+                failureReason: null,
+              },
+              {
+                id: 'item-calendar',
+                status: 'pending',
+                operation: 'create',
+                targetKind: 'calendar_event',
+                targetId: null,
+                title: 'Book renewal call',
+                description: null,
+                proposedPayload: { title: 'Book renewal call' },
+                failureReason: null,
+              },
+              {
+                id: 'item-merge',
+                status: 'pending',
+                operation: 'merge',
+                targetKind: 'object_merge',
+                targetId: null,
+                title: 'Merge Acme duplicates',
+                description: null,
+                proposedPayload: {
+                  objectIds: [
+                    '33333333-3333-4333-8333-333333333333',
+                    '44444444-4444-4444-8444-444444444444',
+                  ],
+                },
+                failureReason: null,
+              },
+            ],
+          },
+        ],
+      }),
+    );
+
+    expect(screen.getByRole('button', { name: 'Accept 2' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: /Review merge/ })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Accept all' })).toBeNull();
+  });
+
   it('renders page-level reject all for merge-only visible bundles', async () => {
     const user = userEvent.setup();
 
@@ -1067,6 +1368,92 @@ describe('ApprovalsClient', () => {
       expect(getByText('1 waiting')).toBeTruthy();
     });
     expect(getByRole('button', { name: /^Accept$/ })).toBeTruthy();
+  });
+
+  it('shows an updating state when optimistic approval removes the last visible row', async () => {
+    fakes.acceptSuggestionItemAction.mockReturnValue(new Promise(() => undefined));
+
+    const { getByRole } = render(
+      createElement(ApprovalsClient, {
+        suggestions: [
+          {
+            id: 'bundle-1',
+            source: 'background',
+            status: 'pending',
+            title: 'Schedule follow-up',
+            summary: null,
+            reason: null,
+            confidence: 'high',
+            createdAt: '2026-06-01T10:00:00.000Z',
+            evidence: [],
+            items: [
+              {
+                id: 'item-1',
+                status: 'pending',
+                operation: 'create',
+                targetKind: 'calendar_event',
+                targetId: null,
+                title: 'Customer follow-up',
+                description: null,
+                proposedPayload: { title: 'Customer follow-up' },
+                failureReason: null,
+              },
+            ],
+          },
+        ],
+      }),
+    );
+
+    fireEvent.click(getByRole('button', { name: /^Accept$/ }));
+
+    await waitFor(() => {
+      expect(getByRole('status').textContent).toContain('Updating approvals');
+    });
+    expect(fakes.acceptSuggestionItemAction).toHaveBeenCalledWith({ itemId: 'item-1' });
+  });
+
+  it('restores failed optimistic actions with row-level retry feedback', async () => {
+    const user = userEvent.setup();
+    fakes.acceptSuggestionItemAction.mockResolvedValue({ error: 'Calendar write failed' });
+
+    const { getByRole, getByText } = render(
+      createElement(ApprovalsClient, {
+        suggestions: [
+          {
+            id: 'bundle-1',
+            source: 'background',
+            status: 'pending',
+            title: 'Schedule follow-up',
+            summary: null,
+            reason: null,
+            confidence: 'high',
+            createdAt: '2026-06-01T10:00:00.000Z',
+            evidence: [],
+            items: [
+              {
+                id: 'item-1',
+                status: 'pending',
+                operation: 'create',
+                targetKind: 'calendar_event',
+                targetId: null,
+                title: 'Customer follow-up',
+                description: null,
+                proposedPayload: { title: 'Customer follow-up' },
+                failureReason: null,
+              },
+            ],
+          },
+        ],
+      }),
+    );
+
+    await user.click(getByRole('button', { name: /^Accept$/ }));
+
+    await waitFor(() => {
+      expect(getByText('Customer follow-up')).toBeTruthy();
+      expect(getByText('Calendar write failed')).toBeTruthy();
+      expect(getByText('Action failed. Review and try again.')).toBeTruthy();
+    });
   });
 
   it('guards per-item actions against same-tick duplicate clicks', () => {

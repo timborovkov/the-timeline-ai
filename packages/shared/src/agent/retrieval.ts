@@ -1,8 +1,8 @@
 import type { TeamScope } from '#src/team-scope.js';
 
 import { searchAppGuide } from '#src/app-guide.js';
-import { artifactRefCitation } from '#src/citation.js';
-import { sourceRefCitation } from '#src/objects/summaries.js';
+import { artifactRefCitation, parseCitations } from '#src/citation.js';
+import { type ObjectSummarySourceRef, sourceRefCitation } from '#src/objects/summaries.js';
 
 export type RetrievalRecipe =
   | 'auto'
@@ -90,6 +90,18 @@ export async function retrieveWorkspaceContext(
         : [],
     ]);
 
+  const objectDetailSummary = objectDetail?.summary?.summary
+    ? {
+        overview: objectDetail.summary.summary.overview,
+        current_state: objectDetail.summary.summary.currentState.map((item) => ({
+          label: item.label,
+          text: item.text,
+          citations: item.sourceRefs.flatMap(summarySourceRefCitationForChat),
+        })),
+        source_citations: objectDetail.summary.sourceRefs.flatMap(summarySourceRefCitationForChat),
+        updated_at: objectDetail.summary.generatedAt?.toISOString() ?? null,
+      }
+    : null;
   const objects = [
     ...objectCandidates.map((object) => ({
       id: object.id,
@@ -99,6 +111,7 @@ export async function retrieveWorkspaceContext(
       status: object.status,
       stage: object.stage,
       due_at: object.dueAt?.toISOString() ?? null,
+      ...(objectDetail?.id === object.id ? { summary: objectDetailSummary } : {}),
     })),
     ...(objectDetail && !objectCandidates.some((object) => object.id === objectDetail.id)
       ? [
@@ -110,18 +123,7 @@ export async function retrieveWorkspaceContext(
             status: objectDetail.status,
             stage: objectDetail.stage,
             due_at: objectDetail.dueAt?.toISOString() ?? null,
-            summary: objectDetail.summary?.summary
-              ? {
-                  overview: objectDetail.summary.summary.overview,
-                  current_state: objectDetail.summary.summary.currentState.map((item) => ({
-                    label: item.label,
-                    text: item.text,
-                    citations: item.sourceRefs.map(sourceRefCitation),
-                  })),
-                  source_citations: objectDetail.summary.sourceRefs.map(sourceRefCitation),
-                  updated_at: objectDetail.summary.generatedAt?.toISOString() ?? null,
-                }
-              : null,
+            summary: objectDetailSummary,
           },
         ]
       : []),
@@ -281,7 +283,7 @@ function collectRefs(result: Omit<WorkspaceContextResult, 'refs'>): string[] {
 
 function collectRefsFromValue(value: unknown, refs: Set<string>): void {
   if (typeof value === 'string') {
-    if (/^\[(?:ev|ent|note|doc|cal|board|board-item|task|route):/.test(value)) refs.add(value);
+    if (isExactSupportedCitation(value)) refs.add(value);
     return;
   }
   if (Array.isArray(value)) {
@@ -290,4 +292,13 @@ function collectRefsFromValue(value: unknown, refs: Set<string>): void {
   }
   if (!value || typeof value !== 'object') return;
   for (const nested of Object.values(value)) collectRefsFromValue(nested, refs);
+}
+
+function summarySourceRefCitationForChat(ref: ObjectSummarySourceRef): string[] {
+  return ref.kind === 'field' ? [] : [sourceRefCitation(ref)];
+}
+
+function isExactSupportedCitation(value: string): boolean {
+  const parts = parseCitations(value);
+  return parts.length === 1 && parts[0]?.type !== 'text';
 }

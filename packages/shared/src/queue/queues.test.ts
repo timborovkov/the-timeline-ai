@@ -563,6 +563,53 @@ describe('queue wrappers', () => {
     ]);
   });
 
+  it('coalesces reconciliation jobs while a matching job is pending', async () => {
+    const queues = await importQueues();
+    const audit = {
+      kind: 'evidence_audit' as const,
+      teamId: '22222222-2222-4222-8222-222222222222',
+      source: 'email' as const,
+      limit: 500,
+      triggeredBy: 'manual',
+    };
+
+    await queues.enqueueReconciliationJob(audit);
+    await queues.enqueueReconciliationJob(audit);
+
+    expect(fakes.queues[0]?.addCalls).toHaveLength(1);
+    expect(fakes.queues[0]?.addCalls[0]).toMatchObject({
+      name: 'reconciliation',
+      data: audit,
+    });
+  });
+
+  it('allows later reconciliation after a retained completed job is removed', async () => {
+    const queues = await importQueues();
+    const audit = {
+      kind: 'evidence_audit' as const,
+      teamId: '22222222-2222-4222-8222-222222222222',
+      source: 'email' as const,
+      limit: 500,
+      triggeredBy: 'manual',
+    };
+
+    await queues.enqueueReconciliationJob(audit);
+    const jobId = (
+      fakes.queues[0]?.addCalls[0]?.opts as {
+        jobId: string;
+      }
+    ).jobId;
+    fakes.queues[0]?.jobStates.set(jobId, 'completed');
+    await queues.enqueueReconciliationJob(audit);
+
+    expect(fakes.queues[0]?.addCalls).toHaveLength(2);
+    expect(fakes.queues[0]?.addCalls[1]).toMatchObject({
+      name: 'reconciliation',
+      data: audit,
+      opts: { jobId },
+    });
+  });
+
   it('dedupes object summary jobs by team and object id', async () => {
     const queues = await importQueues();
     const data = {

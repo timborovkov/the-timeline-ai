@@ -14,6 +14,7 @@ const env = {
 const pgliteTests = [
   'src/agent/ask.test.ts',
   'src/agent/evals.test.ts',
+  'src/agent/surface-evals.test.ts',
   'src/artifacts/index.test.ts',
   'src/boards/index.test.ts',
   'src/calendar/raw-events.test.ts',
@@ -34,6 +35,7 @@ const pgliteTests = [
   'src/objects/index.test.ts',
   'src/reconciliation/backfill.test.ts',
   'src/reconciliation/dashboard.test.ts',
+  'src/reconciliation/mcp-capture.test.ts',
   'src/reconciliation/normalization.test.ts',
   'src/reconciliation/resolver.test.ts',
   'src/slack/dispatcher.test.ts',

@@ -208,10 +208,14 @@ export async function resolveEvidenceAssociations(
       await claimClusterAnchors(input.db, input.teamId, clusterId, evidence.rawEventId, anchors);
     }
     const cluster = await loadClusterSnapshot(input.db, input.teamId, clusterId);
+    const associationAnchors = createdCluster
+      ? anchors
+      : await anchorsMatchingCluster(input.db, input.teamId, clusterId, anchors);
 
     const role = input.role ?? 'evidence_only';
     const associationSource =
-      input.associationSource ?? defaultAssociationSource(anchors.map((anchor) => anchor.strength));
+      input.associationSource ??
+      defaultAssociationSource(associationAnchors.map((anchor) => anchor.strength));
     const dedupeKey = buildAssociationDedupeKey({
       teamId: input.teamId,
       clusterId,
@@ -230,10 +234,10 @@ export async function resolveEvidenceAssociations(
         evidenceId,
         rawEventId: evidence.rawEventId,
         role,
-        strength: strongestAnchorStrength(anchors.map((anchor) => anchor.strength)),
+        strength: strongestAnchorStrength(associationAnchors.map((anchor) => anchor.strength)),
         confidence: 'high',
         associationSource,
-        rationale: rationaleForAssociation(evidence, anchors),
+        rationale: rationaleForAssociation(evidence, associationAnchors),
         sourceRefs: [
           {
             source: evidence.provider ?? evidence.source,
@@ -251,7 +255,7 @@ export async function resolveEvidenceAssociations(
         metadata: {
           resolver: 'anchor-resolution',
           event_type: evidence.eventType,
-          anchor_count: anchors.length,
+          anchor_count: associationAnchors.length,
           artifact_cluster_kind: cluster.artifactClusterKind,
         },
         dedupeKey,
@@ -275,7 +279,7 @@ export async function resolveEvidenceAssociations(
         teamId: input.teamId,
         runId: await getRunId(),
         evidence,
-        anchors,
+        anchors: associationAnchors,
         clusterId,
         artifactClusterKind: cluster.artifactClusterKind,
         associationId: association.id,
@@ -408,7 +412,7 @@ async function emitObservedAssociationOutput(
         targetKind: 'cluster_identity',
         operation: 'link',
         targetId: null,
-        targetIdentity: `${input.clusterId}:${input.evidence.id}:${input.role}:${input.associationSource}`,
+        targetIdentity: `${input.clusterId}:${stableEvidenceSourceIdentity(input.evidence)}:${input.role}:${input.associationSource}`,
         sourceRefs: input.sourceRefs,
         authorityPolicyVersion: input.associationPolicyVersion,
         plannerVersion: RESOLVER_PLANNER_VERSION,
@@ -480,7 +484,7 @@ async function emitConflictOutput(
         targetKind: 'cluster_identity',
         operation: 'link',
         targetId: null,
-        targetIdentity: `ambiguous:${input.evidence.id}:${clusterIds.join(':')}`,
+        targetIdentity: `ambiguous:${stableEvidenceSourceIdentity(input.evidence)}:${clusterIds.join(':')}`,
         sourceRefs,
         authorityPolicyVersion: input.associationPolicyVersion,
         plannerVersion: RESOLVER_PLANNER_VERSION,
@@ -536,6 +540,30 @@ async function findMatchingClusterIds(
     .from(artifactClusterAnchors)
     .where(and(eq(artifactClusterAnchors.teamId, teamId), sql.join(clauses, sql.raw(' OR '))));
   return [...new Set(rows.map((row) => row.clusterId))].sort();
+}
+
+async function anchorsMatchingCluster(
+  db: DbOrTx,
+  teamId: string,
+  clusterId: string,
+  anchors: AnchorRow[],
+): Promise<AnchorRow[]> {
+  const clusterAnchors = await db
+    .select({
+      anchorType: artifactClusterAnchors.anchorType,
+      anchorValue: artifactClusterAnchors.anchorValue,
+    })
+    .from(artifactClusterAnchors)
+    .where(
+      and(
+        eq(artifactClusterAnchors.teamId, teamId),
+        eq(artifactClusterAnchors.clusterId, clusterId),
+      ),
+    );
+  const matched = new Set(
+    clusterAnchors.map((anchor) => `${anchor.anchorType}\0${anchor.anchorValue}`),
+  );
+  return anchors.filter((anchor) => matched.has(`${anchor.anchorType}\0${anchor.anchorValue}`));
 }
 
 async function createClusterFromEvidence(
@@ -636,6 +664,10 @@ function sourceRefsForEvidence(evidence: EvidenceRow, associationId?: string): S
       sourcePayloadRef: evidence.sourcePayloadRef,
     },
   ];
+}
+
+function stableEvidenceSourceIdentity(evidence: EvidenceRow): string {
+  return evidence.rawEventId;
 }
 
 function outputAnchors(anchors: AnchorRow[]): {

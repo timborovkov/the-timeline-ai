@@ -52,6 +52,9 @@ jobs:
           DATABASE_URL: postgres://placeholder@localhost:5432/placeholder
         run: pnpm test:reconciliation-eval
 
+      - name: E2E environment contract
+        run: pnpm test:e2e-env
+
       - name: Dist import smoke test
         env:
           AUTH_SECRET: ci_dummy_secret_at_least_16_chars

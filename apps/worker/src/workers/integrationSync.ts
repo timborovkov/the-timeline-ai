@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import { type Db, documents as documentsTable, getDbClient } from '@timeline/db';
 import {
   childLogger,
@@ -24,6 +26,7 @@ import { captureWorkerException, captureWorkerJobFailure } from '#src/monitoring
 
 const log = childLogger('worker:integration-sync');
 type NativeSyncProvider = integrationsLib.NativeProviderId;
+const HARVESTED_DOCUMENT_SOURCE_SNAPSHOT_VERSION = 'integration-document-source-snapshot-2026-07';
 
 interface IntegrationSyncDeps {
   db: Db;
@@ -57,6 +60,12 @@ export async function harvestIntegrationDocument(input: {
 }): Promise<{ documentId: string; versionId: string }> {
   const io = input.io ?? defaultDocumentHarvestIO;
   const scope = withTeam(input.db, input.integration.teamId, input.harvestUserId);
+  const documentMetadata = {
+    ...(input.document.metadata ?? {}),
+    integration_id: input.integration.id,
+    integration_provider: input.integration.provider,
+    integration_external_id: input.document.externalId,
+  };
   const existing = await input.db
     .select()
     .from(documentsTable)
@@ -88,20 +97,17 @@ export async function harvestIntegrationDocument(input: {
       name: input.document.filename,
       filename: input.document.filename,
       contentType: input.document.contentType,
-      metadata: {
-        ...(input.document.metadata ?? {}),
-        integration_id: input.integration.id,
-        integration_provider: input.integration.provider,
-        integration_external_id: input.document.externalId,
-      },
+      metadata: documentMetadata,
     });
     documentId = created.document.id;
     versionId = created.version.id;
     objectKey = created.version.objectKey;
     contentType = created.version.contentType ?? input.document.contentType;
   }
+  const bucket = io.getDocumentsBucket();
+  const checksumSha256 = createHash('sha256').update(input.document.body).digest('hex');
   await io.putDocumentObject({
-    bucket: io.getDocumentsBucket(),
+    bucket,
     key: objectKey,
     body: input.document.body,
     contentType,
@@ -110,12 +116,66 @@ export async function harvestIntegrationDocument(input: {
     versionId,
     contentType,
     byteSize: input.document.body.byteLength,
+    checksumSha256,
+    sourceMetadata: harvestedDocumentSourceMetadata({
+      bucket,
+      checksumSha256,
+      contentType,
+      document: input.document,
+      documentMetadata,
+      integration: input.integration,
+      objectKey,
+    }),
   });
   await io.enqueueDocumentExtractJob({
     documentVersionId: versionId,
     teamId: input.integration.teamId,
   });
   return { documentId, versionId };
+}
+
+function harvestedDocumentSourceMetadata(input: {
+  bucket: string;
+  checksumSha256: string;
+  contentType: string;
+  document: integrationsLib.HarvestDocumentInput;
+  documentMetadata: Record<string, unknown>;
+  integration: Pick<integrationsLib.IntegrationRow, 'id' | 'provider'>;
+  objectKey: string;
+}): Record<string, unknown> {
+  const payloadRef =
+    metadataString(input.document.metadata, 'source_payload_ref') ??
+    metadataString(input.document.metadata, 'payload_ref') ??
+    metadataString(input.document.metadata, 'raw_payload_ref') ??
+    `s3://${input.bucket}/${input.objectKey}`;
+  const digest =
+    metadataString(input.document.metadata, 'source_payload_digest') ??
+    metadataString(input.document.metadata, 'payload_digest') ??
+    metadataString(input.document.metadata, 'raw_payload_digest') ??
+    `sha256:${input.checksumSha256}`;
+  return {
+    ...input.documentMetadata,
+    source_payload_ref: payloadRef,
+    payload_digest: digest,
+    source_snapshot_kind: 'integration_harvest_document',
+    source_snapshot_version: HARVESTED_DOCUMENT_SOURCE_SNAPSHOT_VERSION,
+    source_snapshot: {
+      provider: input.integration.provider,
+      integrationId: input.integration.id,
+      externalObjectId: input.document.externalId,
+      filename: input.document.filename,
+      contentType: input.contentType,
+      byteSize: input.document.body.byteLength,
+      checksumSha256: input.checksumSha256,
+      objectKey: input.objectKey,
+      metadata: input.document.metadata ?? {},
+    },
+  };
+}
+
+function metadataString(metadata: Record<string, unknown> | undefined, key: string): string | null {
+  const value = metadata?.[key];
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
 }
 
 function isNativeSyncProvider(

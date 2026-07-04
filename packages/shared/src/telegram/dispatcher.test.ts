@@ -344,7 +344,56 @@ describe('handleUpdate telegram edit visibility', () => {
         },
       },
     );
-    expect(await activeTelegramRows(pg)).toMatchObject([{ content_text: 'hello' }]);
+    const [initial] = await activeTelegramRows(pg);
+    expect(initial).toMatchObject({
+      content_text: 'hello',
+      source_metadata: {
+        source_payload_ref: 'inline://timeline/telegram/42/10/100',
+        source_snapshot_kind: 'telegram_message_update',
+        source_snapshot_version: 'telegram-source-snapshot-2026-07',
+        source_snapshot: {
+          update_id: 100,
+          chat_id: 42,
+          chat_title: null,
+          chat_type: 'private',
+          date: 1700000000,
+          edit_date: null,
+          message_id: 10,
+          provider: 'telegram',
+          sender_id: TG_USER_ID,
+          sender_name: '@alice',
+          text: 'hello',
+          username: 'alice',
+          audio: null,
+          caption: null,
+          document: null,
+          entities: [],
+          photo: [],
+          voice: null,
+        },
+      },
+    });
+    expect(initial?.source_metadata.payload_digest).toEqual(
+      expect.stringMatching(/^sha256:[0-9a-f]{64}$/),
+    );
+    const [evidence] = await db
+      .select()
+      .from(reconciliationEvidence)
+      .where(
+        eq(
+          reconciliationEvidence.rawEventId,
+          initial?.id ?? '00000000-0000-0000-0000-000000000000',
+        ),
+      );
+    expect(evidence).toMatchObject({
+      source: 'telegram',
+      provider: 'telegram',
+      externalObjectId: '42:10',
+      externalEventId: '100',
+      replayState: 'full',
+      sourcePayloadRef: 'inline://timeline/telegram/42/10/100',
+    });
+    expect(evidence?.payloadDigest).toEqual(expect.stringMatching(/^sha256:[0-9a-f]{64}$/));
 
     await handleUpdate(
       { db: db as never, tg: fakeTg },
@@ -598,9 +647,11 @@ describe('handleUpdate telegram edit visibility', () => {
       externalObjectId: '42:24',
       externalEventId: '204',
       eventType: 'telegram.message',
-      replayState: 'degraded',
+      replayState: 'full',
+      sourcePayloadRef: 'inline://timeline/telegram/42/24/204',
       visibility: 'team',
     });
+    expect(evidence?.payloadDigest).toEqual(expect.stringMatching(/^sha256:[0-9a-f]{64}$/));
     expect(enqueueExtract).toHaveBeenCalledWith({ rawEventId, teamId: TEAM_ID });
     expect(enqueueEmbed).toHaveBeenCalledWith({ rawEventId, teamId: TEAM_ID });
     expect(enqueueSuggestion).toHaveBeenCalledWith({ rawEventId, teamId: TEAM_ID });
@@ -1346,10 +1397,11 @@ describe('handleUpdate telegram edit visibility', () => {
     expect(upload).toHaveBeenCalledOnce();
     expect(enqueueTranscribe).toHaveBeenCalledOnce();
     const rows = await pg.query<{
+      id: string;
       content_audio_url: string | null;
       metadata: Record<string, unknown>;
     }>(
-      `SELECT content_audio_url, source_metadata AS metadata
+      `SELECT id, content_audio_url, source_metadata AS metadata
        FROM raw_events
        WHERE content_audio_url IS NOT NULL`,
     );
@@ -1358,7 +1410,34 @@ describe('handleUpdate telegram edit visibility', () => {
     expect(rows.rows[0]?.metadata).toMatchObject({
       tg_attachment_kind: 'audio',
       tg_file_id: 'song-file',
+      source_payload_ref: 'inline://timeline/telegram/42/24/attachment/song-file',
+      source_snapshot_kind: 'telegram_audio_attachment',
+      source_snapshot_version: 'telegram-source-snapshot-2026-07',
+      source_snapshot: {
+        provider: 'telegram',
+        capture_kind: 'audio_attachment',
+        file: { file_id: 'song-file', file_name: 'song.mp3', mime_type: 'audio/mpeg' },
+      },
     });
+    expect(rows.rows[0]?.metadata.payload_digest).toEqual(
+      expect.stringMatching(/^sha256:[0-9a-f]{64}$/),
+    );
+    const [evidence] = await db
+      .select()
+      .from(reconciliationEvidence)
+      .where(
+        eq(
+          reconciliationEvidence.rawEventId,
+          rows.rows[0]?.id ?? '00000000-0000-0000-0000-000000000000',
+        ),
+      );
+    expect(evidence).toMatchObject({
+      source: 'telegram',
+      provider: 'telegram',
+      replayState: 'full',
+      sourcePayloadRef: 'inline://timeline/telegram/42/24/attachment/song-file',
+    });
+    expect(evidence?.payloadDigest).toEqual(expect.stringMatching(/^sha256:[0-9a-f]{64}$/));
   });
 
   it('keeps Telegram m4a document-picker audio visible and marks transcribe enqueue failures', async () => {
@@ -1405,6 +1484,8 @@ describe('handleUpdate telegram edit visibility', () => {
     const child = rows.find((row) => row.source_metadata.tg_attachment_kind === 'audio');
     expect(child?.source_metadata).toMatchObject({
       audio_mime_type: 'audio/x-m4a',
+      source_payload_ref: 'inline://timeline/telegram/42/36/attachment/meeting-recording',
+      source_snapshot_kind: 'telegram_audio_attachment',
       transcription_error: 'enqueue failed: redis down',
     });
   });

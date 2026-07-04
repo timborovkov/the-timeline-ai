@@ -12,6 +12,7 @@ import { processSuggestionJobForTests } from '#src/workers/suggestions.js';
 import {
   markTranscribeFailureForTests,
   processTranscribeJobForTests,
+  transcribeWorkerInternals,
   type TranscribeWorkerIO,
 } from '#src/workers/transcribe.js';
 
@@ -138,8 +139,9 @@ describe('processTranscribeJobForTests', () => {
         note_text: null,
       },
     });
-    expect(metadata).toHaveProperty('source_payload_digest');
-    expect(String(metadata?.source_payload_digest)).toMatch(/^sha256:[0-9a-f]{64}$/);
+    expect(metadata).toHaveProperty('payload_digest');
+    expect(String(metadata?.payload_digest)).toMatch(/^sha256:[0-9a-f]{64}$/);
+    expect(metadata).not.toHaveProperty('source_payload_digest');
     expect(metadata).toHaveProperty('transcribed_at');
     expect(metadata).not.toHaveProperty('transcription_failed_at');
     expect(metadata).not.toHaveProperty('transcription_error');
@@ -190,6 +192,34 @@ describe('processTranscribeJobForTests', () => {
     expect(row?.sourceMetadata).toMatchObject({
       audio_note_text: "Today's Nexia meetings voice recording",
       transcription_model: 'test-whisper',
+    });
+  });
+
+  it('passes a valid source metadata language hint to transcription', async () => {
+    await seedAudioEvent(db as never, RAW_EVENT_ID, {
+      transcription_language: 'EN',
+    });
+    const transcribeAudio = vi.fn<TranscribeWorkerIO['transcribeAudio']>().mockResolvedValue({
+      text: 'Timeline Canary task',
+      model: 'test-whisper',
+    });
+
+    await processTranscribeJobForTests(
+      { db: db as never },
+      { rawEventId: RAW_EVENT_ID, teamId: TEAM_ID, audioKey: AUDIO_KEY },
+      makeIO({ transcribeAudio }),
+    );
+
+    expect(transcribeAudio).toHaveBeenCalledWith({
+      audio: Buffer.from('audio-bytes'),
+      format: 'ogg',
+      language: 'en',
+    });
+    const row = (await db.select().from(rawEvents).where(eq(rawEvents.id, RAW_EVENT_ID)))[0];
+    expect(row?.sourceMetadata).toMatchObject({
+      source_snapshot: {
+        transcription_language: 'en',
+      },
     });
   });
 
@@ -310,6 +340,30 @@ describe('processTranscribeJobForTests', () => {
     const meta = row?.sourceMetadata as Record<string, unknown>;
     expect(meta.transcription_failed_at).toEqual(expect.any(String));
     expect(String(meta.transcription_error)).toHaveLength(500);
+  });
+
+  it('marks transcription failures only after retry exhaustion or unrecoverable errors', () => {
+    expect(
+      transcribeWorkerInternals.shouldMarkPermanentTranscribeFailure({
+        err: new Error('OpenRouter 503 temporarily unavailable'),
+        attemptsMade: 1,
+        maxAttempts: 3,
+      }),
+    ).toBe(false);
+    expect(
+      transcribeWorkerInternals.shouldMarkPermanentTranscribeFailure({
+        err: new Error('OpenRouter 503 temporarily unavailable'),
+        attemptsMade: 3,
+        maxAttempts: 3,
+      }),
+    ).toBe(true);
+    expect(
+      transcribeWorkerInternals.shouldMarkPermanentTranscribeFailure({
+        err: new UnrecoverableError('audio object is too large'),
+        attemptsMade: 1,
+        maxAttempts: 3,
+      }),
+    ).toBe(true);
   });
 
   it('turns a Telegram voice memo into a transcript-backed approval suggestion', async () => {

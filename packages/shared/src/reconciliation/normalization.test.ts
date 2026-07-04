@@ -1,5 +1,6 @@
 import { PGlite } from '@electric-sql/pglite';
 import {
+  eventSource,
   integrations,
   rawEvents,
   reconciliationEvidence,
@@ -14,6 +15,7 @@ import { normalizeRawEventsToEvidence } from '#src/reconciliation/normalization.
 import { applyDbMigrations } from '#src/test/pglite.js';
 
 vi.mock('#src/queue/queues.js', () => ({
+  enqueueExtractJob: vi.fn().mockResolvedValue(undefined),
   enqueueEmbedJob: vi.fn().mockResolvedValue(undefined),
   enqueueObjectEmbedJob: vi.fn().mockResolvedValue(undefined),
   enqueueObjectSummaryJob: vi.fn().mockResolvedValue({ enqueued: true, jobId: 'summary-job' }),
@@ -310,6 +312,181 @@ describe('reconciliation source normalization', () => {
           anchorValue: OBJECT_ID,
         }),
       ]),
+    );
+  });
+
+  it('normalizes every raw event source enum into evidence', async () => {
+    const inserted = await db
+      .insert(rawEvents)
+      .values([
+        {
+          teamId: TEAM_ID,
+          authorUserId: USER_ID,
+          source: 'web',
+          contentText: 'Manual web note about Acme rollout risk.',
+          occurredAt: new Date('2026-06-23T09:00:00Z'),
+          visibility: 'team',
+          visibilityOwnerUserId: USER_ID,
+          sourceMetadata: {
+            title: 'Acme rollout risk',
+            source_object_id: 'web-note-acme-rollout',
+            source_payload_ref: 'inline://timeline/web/web-note-acme-rollout',
+          },
+        },
+        {
+          teamId: TEAM_ID,
+          authorUserId: USER_ID,
+          source: 'telegram',
+          contentText: 'Telegram update about the Acme rollout.',
+          occurredAt: new Date('2026-06-23T09:01:00Z'),
+          visibility: 'team',
+          visibilityOwnerUserId: USER_ID,
+          sourceMetadata: {
+            tg_chat_id: 12345,
+            tg_message_id: 1001,
+            tg_update_id: 9001,
+            tg_user_id: 555,
+            tg_username: 'nora_acme',
+            source_payload_ref: 'inline://timeline/telegram/12345/1001',
+          },
+        },
+        {
+          teamId: TEAM_ID,
+          authorUserId: USER_ID,
+          source: 'email',
+          contentText: 'Forwarded Acme rollout email.',
+          occurredAt: new Date('2026-06-23T09:02:00Z'),
+          visibility: 'team',
+          visibilityOwnerUserId: USER_ID,
+          sourceMetadata: {
+            message_id: '<all-sources-acme@example.test>',
+            from_email: 'nora@acme.example',
+            subject: 'Acme rollout',
+            source_payload_ref: 's3://timeline-test/email/all-sources-acme.eml',
+          },
+        },
+        {
+          teamId: TEAM_ID,
+          authorUserId: USER_ID,
+          source: 'system',
+          contentText: 'Created object Acme rollout.',
+          occurredAt: new Date('2026-06-23T09:03:00Z'),
+          visibility: 'team',
+          visibilityOwnerUserId: USER_ID,
+          sourceMetadata: {
+            kind: 'object_create',
+            entity_id: OBJECT_ID,
+            source_payload_ref: `inline://timeline/system/object_create/${OBJECT_ID}`,
+          },
+        },
+        {
+          teamId: TEAM_ID,
+          authorUserId: USER_ID,
+          source: 'document',
+          contentText: 'Document activity for Acme rollout plan.',
+          occurredAt: new Date('2026-06-23T09:04:00Z'),
+          visibility: 'team',
+          visibilityOwnerUserId: USER_ID,
+          sourceMetadata: {
+            document_id: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+            document_version_id: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+            document_title: 'Acme rollout plan',
+            source_payload_ref: 's3://timeline-test/documents/acme-rollout-v1.pdf',
+          },
+        },
+        {
+          teamId: TEAM_ID,
+          authorUserId: USER_ID,
+          source: 'meeting',
+          contentText: 'Meeting summary: Acme rollout stays on track.',
+          occurredAt: new Date('2026-06-23T09:05:00Z'),
+          visibility: 'team',
+          visibilityOwnerUserId: USER_ID,
+          sourceMetadata: {
+            meeting_chunk_provider_id: 'recall-acme-rollout-001',
+            meeting_title: 'Acme rollout sync',
+            source_payload_ref: 's3://timeline-test/meetings/acme-rollout-transcript.txt',
+          },
+        },
+        {
+          teamId: TEAM_ID,
+          authorUserId: USER_ID,
+          source: 'integration',
+          contentText: 'GitHub PR linked to Acme rollout.',
+          occurredAt: new Date('2026-06-23T09:06:00Z'),
+          visibility: 'team',
+          visibilityOwnerUserId: USER_ID,
+          sourceMetadata: {
+            provider: 'github',
+            event_type: 'pull_request.updated',
+            external_object_id: 'timeline/acme#42',
+            dedup_key: 'github:timeline/acme:pr:42:updated',
+            source_payload_ref: 's3://timeline-test/github/pr-42.json',
+          },
+        },
+        {
+          teamId: TEAM_ID,
+          authorUserId: USER_ID,
+          source: 'calendar',
+          contentText: 'Acme rollout review on the calendar.',
+          occurredAt: new Date('2026-06-23T09:07:00Z'),
+          visibility: 'team',
+          visibilityOwnerUserId: USER_ID,
+          sourceMetadata: {
+            calendar_event_id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+            action: 'event',
+            calendar_title: 'Acme rollout review',
+            source_payload_ref: 'inline://timeline/calendar/acme-rollout-review',
+          },
+        },
+        {
+          teamId: TEAM_ID,
+          authorUserId: USER_ID,
+          source: 'slack',
+          contentText: 'Slack thread about Acme rollout.',
+          occurredAt: new Date('2026-06-23T09:08:00Z'),
+          visibility: 'team',
+          visibilityOwnerUserId: USER_ID,
+          sourceMetadata: {
+            slack_workspace_id: 'T_ALL_SOURCES',
+            slack_channel_id: 'C_ACME',
+            slack_message_ts: '1810000000.000100',
+            slack_thread_ts: '1810000000.000000',
+            slack_user_id: 'U_NORA',
+            source_payload_ref: 's3://timeline-test/slack/acme-rollout-thread.json',
+          },
+        },
+        {
+          teamId: TEAM_ID,
+          authorUserId: null,
+          source: 'ingest_webhook',
+          contentText: 'Customer portal webhook for Acme rollout.',
+          occurredAt: new Date('2026-06-23T09:09:00Z'),
+          visibility: 'team',
+          sourceMetadata: {
+            ingest_webhook_id: 'webhook-all-sources',
+            ingest_webhook_name: 'Customer Portal',
+            ingest_webhook_body_sha256: 'sha256-all-sources-webhook',
+            ingest_webhook_dedup_key: 'webhook-all-sources:2026-06-23',
+            artifact_key: 'customer:acme:rollout',
+          },
+        },
+      ])
+      .returning({ id: rawEvents.id });
+
+    const evidenceIds = await normalizeRawEventsToEvidence({
+      db: db as never,
+      teamId: TEAM_ID,
+      rawEventIds: inserted.map((row) => row.id),
+    });
+    expect(evidenceIds).toHaveLength(eventSource.enumValues.length);
+
+    const evidence = await db.select().from(reconciliationEvidence);
+    expect(evidence.map((row) => row.source).sort()).toEqual([...eventSource.enumValues].sort());
+    expect(evidence.every((row) => row.replayState === 'full')).toBe(true);
+    expect(evidence.every((row) => row.dedupeKey.startsWith('reconcile:evidence:'))).toBe(true);
+    expect(evidence.map((row) => row.rawEventId).sort()).toEqual(
+      inserted.map((row) => row.id).sort(),
     );
   });
 });

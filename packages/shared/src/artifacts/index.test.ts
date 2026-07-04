@@ -63,7 +63,7 @@ describe('artifact reconciliation', () => {
     return row;
   }
 
-  it('clusters a contract across conversation and signature evidence while preserving authority', async () => {
+  it('clusters a contract across conversation and signature evidence without direct memory writes', async () => {
     const report = await rawEvent('Acme said the MSA is approved pending signature.');
     const signature = await rawEvent('Signed PDF uploaded for Acme MSA.', '2026-06-20T12:00:00Z');
 
@@ -100,7 +100,7 @@ describe('artifact reconciliation', () => {
     expect(associations).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ role: 'discussion', associationSource: 'human' }),
-        expect.objectContaining({ role: 'update', associationSource: 'authoritative_provider' }),
+        expect.objectContaining({ role: 'update', associationSource: 'structured_anchor' }),
       ]),
     );
     expect(await db.select().from(artifactClusterMembers)).toHaveLength(0);
@@ -108,7 +108,7 @@ describe('artifact reconciliation', () => {
       .select()
       .from(artifactClusters)
       .where(eq(artifactClusters.id, first.clusterId));
-    expect(cluster?.status).toBe('resolved');
+    expect(cluster?.status).toBe('open');
   });
 
   it('keeps multiple raw-event evidence rows for the same mapped entity', async () => {
@@ -138,6 +138,9 @@ describe('artifact reconciliation', () => {
       strength: 'provider',
       authoritative: true,
       occurredAt: opened.occurredAt,
+      provider: 'github',
+      externalObjectId: 'github/repo#17',
+      metadata: { event_type: 'issue.opened' },
     });
     const second = await reconcileArtifactEvidence(db as never, {
       teamId: TEAM_ID,
@@ -150,6 +153,9 @@ describe('artifact reconciliation', () => {
       strength: 'provider',
       authoritative: true,
       occurredAt: closed.occurredAt,
+      provider: 'github',
+      externalObjectId: 'github/repo#17',
+      metadata: { event_type: 'issue.closed' },
     });
 
     expect(second.clusterId).toBe(first.clusterId);
@@ -326,7 +332,7 @@ describe('artifact reconciliation', () => {
     );
   });
 
-  it('promotes artifact identity when authoritative source evidence arrives after implementation evidence', async () => {
+  it('keeps provider identity context observed while preserving direct lifecycle status', async () => {
     const pr = await rawEvent('GitHub PR merged. Fixes TIMELINE-AI-100.', '2026-06-20T12:00:00Z');
     const sentry = await rawEvent(
       'Sentry issue TIMELINE-AI-100: Login fails on mobile.',
@@ -345,6 +351,7 @@ describe('artifact reconciliation', () => {
       occurredAt: pr.occurredAt,
       provider: 'github',
       externalObjectId: 'github/repo#77',
+      metadata: { event_type: 'pr.merged' },
       anchors: [{ type: 'sentry_short_id', value: 'TIMELINE-AI-100', strength: 'structured' }],
     });
     const second = await reconcileArtifactEvidence(db as never, {
@@ -359,6 +366,7 @@ describe('artifact reconciliation', () => {
       occurredAt: sentry.occurredAt,
       provider: 'sentry',
       externalObjectId: '100',
+      metadata: { event_type: 'issue.created' },
       anchors: [{ type: 'sentry_short_id', value: 'TIMELINE-AI-100', strength: 'structured' }],
     });
 
@@ -368,8 +376,8 @@ describe('artifact reconciliation', () => {
       .from(artifactClusters)
       .where(eq(artifactClusters.id, first.clusterId));
     expect(cluster).toMatchObject({
-      artifactType: 'incident',
-      canonicalName: 'Login fails on mobile',
+      artifactType: 'task',
+      canonicalName: 'github/repo#77: Fix mobile login crash',
       status: 'resolved',
     });
   });
@@ -393,6 +401,7 @@ describe('artifact reconciliation', () => {
       occurredAt: merged.occurredAt,
       provider: 'github',
       externalObjectId: 'github/repo#91',
+      metadata: { event_type: 'pr.merged' },
       anchors: [{ type: 'github_pr', value: 'github/repo#91', strength: 'hard' }],
     });
     const second = await reconcileArtifactEvidence(db as never, {
@@ -407,6 +416,7 @@ describe('artifact reconciliation', () => {
       occurredAt: updated.occurredAt,
       provider: 'github',
       externalObjectId: 'github/repo#91',
+      metadata: { event_type: 'pr.updated' },
       anchors: [{ type: 'github_pr', value: 'github/repo#91', strength: 'hard' }],
     });
 
@@ -437,6 +447,7 @@ describe('artifact reconciliation', () => {
       occurredAt: closed.occurredAt,
       provider: 'github',
       externalObjectId: 'github/repo#92',
+      metadata: { event_type: 'issue.closed' },
       anchors: [{ type: 'github_issue', value: 'github/repo#92', strength: 'hard' }],
     });
     const second = await reconcileArtifactEvidence(db as never, {
@@ -451,6 +462,7 @@ describe('artifact reconciliation', () => {
       occurredAt: reopened.occurredAt,
       provider: 'github',
       externalObjectId: 'github/repo#92',
+      metadata: { event_type: 'issue.reopened' },
       anchors: [{ type: 'github_issue', value: 'github/repo#92', strength: 'hard' }],
     });
 

@@ -11,7 +11,8 @@ import {
   type ReconciliationEvalScenarioFamily,
 } from '#src/reconciliation/index.js';
 
-export const RECONCILIATION_PLANNER_PROMPT_VERSION = 'reconciliation-planner-2026-06-privacy-floor';
+export const RECONCILIATION_PLANNER_PROMPT_VERSION =
+  'reconciliation-planner-2026-07-source-ref-allowlist';
 
 export const reconciliationPlannerOutputKinds = [
   'observed_association',
@@ -87,7 +88,21 @@ export async function planReconciliation(
     prompt: buildReconciliationPlannerPrompt(input),
     ...(input.abortSignal ? { abortSignal: input.abortSignal } : {}),
   });
-  return result.object;
+  return canonicalizePlannerResult(result.object);
+}
+
+function canonicalizePlannerResult(
+  result: ReconciliationPlannerResult,
+): ReconciliationPlannerResult {
+  const sourceRefs: ReconciliationPlannerSourceRef[] = [];
+  const seenSourceRefs = new Set<string>();
+  for (const ref of result.sourceRefs) {
+    const key = `${ref.surface}:${ref.rawEventId}`;
+    if (seenSourceRefs.has(key)) continue;
+    seenSourceRefs.add(key);
+    sourceRefs.push(ref);
+  }
+  return { ...result, sourceRefs };
 }
 
 export function buildReconciliationPlannerPrompt(input: ReconciliationPlannerInput): string {
@@ -95,6 +110,7 @@ export function buildReconciliationPlannerPrompt(input: ReconciliationPlannerInp
     input.scenarioFamilyCandidates ?? reconciliationEvalScenarioFamilies;
   const ingestionSurfaceCandidates =
     input.ingestionSurfaceCandidates ?? reconciliationEvalIngestionSurfaces;
+  const sourceRefJson = JSON.stringify(input.sourceRefs, null, 2);
 
   return `
 Evidence packet: ${input.packetName}
@@ -110,6 +126,9 @@ ${input.observedSurfaces.map((surface) => `- ${surface}`).join('\n')}
 
 Raw source refs:
 ${input.sourceRefs.map((ref) => `- ${ref.surface}: ${ref.rawEventId}`).join('\n')}
+
+Raw source refs JSON allowlist:
+${sourceRefJson}
 
 Planner context:
 ${input.plannerContext}
@@ -133,6 +152,9 @@ Use approval_bundle for Timeline-owned company, person, project, task, note, dec
 Do not omit approval_bundle just because the same packet also includes direct_write or observed_association.
 Set approvalRequired to true exactly when outputKinds includes approval_bundle; otherwise set it to false.
 Return every listed raw source ref exactly once in sourceRefs.
+Copy sourceRefs only from the Raw source refs JSON allowlist. Preserve every rawEventId character exactly, including hyphens, underscores, and digits.
+Every ingestionSurfaces entry must have at least one returned sourceRefs entry with the same surface.
+Do not return sourceRefs that are not listed under Raw source refs.
 Set privacyRisk to true only if the planned output would expose private or specific-user evidence to a broader audience. The expected planner keeps each output at or below its visibility floor.
 Set privacyRisk to false when private or specific-user evidence remains private or specific-user for the same audience. Privacy risk means visibility broadening, not the mere presence of private evidence.
 All evidence is team-visible unless the planner context explicitly says it is private. Sensitive subject matter alone is not a privacy risk.

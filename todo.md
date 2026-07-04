@@ -155,12 +155,19 @@ Direction: soften the surface. Keep the forensic mono treatment for data
 
 ## Agent Reliability
 
-- [ ] Add richer per-tool observability for chat/retrieval turns: selected tool
+- [x] Add richer per-tool observability for chat/retrieval turns: selected tool
       groups, omitted groups, retrieval recipe, result counts, top artifact refs,
-      tool latency, and tool errors.
+      tool latency, and tool errors. Web chat now persists `tool_observability`
+      on assistant turns with web-specific selection context, and non-browser
+      `askAgent` callers can consume the same per-tool summary callback.
 - [ ] Add a reusable agent eval harness with retrieval, dashboard chat,
       Slack/Telegram ask, background proposal, summary, and action/HITL suites
-      over a compact seeded workspace.
+      over a compact seeded workspace. Current shared harness covers deterministic
+      retrieval/tool traces, `SearchHit` fixtures, answer synthesis, non-browser
+      `askAgent` model scripts, ask turn-observability capture, and dispatcher-level
+      Slack/Telegram `/ask` surface evals that run the real `askAgent` pipeline,
+      plus a worker-level background proposal eval for visibility-safe
+      conversation reviews.
 - [ ] Finish advanced in-chat HITL follow-ups after dogfooding: persisted
       prepared action IDs for multi-step/high-risk actions, task-specific direct
       mutations, and remaining board-level operations such as board create,

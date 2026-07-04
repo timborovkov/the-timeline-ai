@@ -3,7 +3,9 @@ import {
   agentSuggestionEvidence,
   agentSuggestionItems,
   agentSuggestions,
+  artifactClusters,
   rawEvents,
+  reconciliationEvidence,
   reconciliationOutputs,
   reconciliationProjectionOutbox,
   reconciliationRuns,
@@ -32,6 +34,7 @@ vi.mock('#src/queue/queues.js', async (importOriginal) => {
 
 const TEAM_ID = '11111111-1111-1111-1111-111111111111';
 const USER_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+const CLUSTER_ID = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
 const REVIEWER_ID = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
 const TEAM_RAW_EVENT_ID = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee';
 
@@ -74,6 +77,9 @@ describe('suggestion reconciliation projection', () => {
       occurredAt: new Date('2026-06-20T10:00:00Z'),
       visibility: 'specific_users',
       visibilityUserIds: [REVIEWER_ID],
+      sourceMetadata: {
+        source_payload_ref: 's3://timeline-test/raw/telegram/acme-implementation-task',
+      },
     });
     const scope = withTeam(db as never, TEAM_ID, REVIEWER_ID);
 
@@ -124,7 +130,9 @@ describe('suggestion reconciliation projection', () => {
       reconciliation_source_ref: {
         source: 'telegram',
         rawEventId: TEAM_RAW_EVENT_ID,
+        sourcePayloadRef: 's3://timeline-test/raw/telegram/acme-implementation-task',
       },
+      reconciliation_source_payload_ref: 's3://timeline-test/raw/telegram/acme-implementation-task',
     });
 
     const outputs = await db.select().from(reconciliationOutputs);
@@ -145,7 +153,11 @@ describe('suggestion reconciliation projection', () => {
       expect.objectContaining({
         source: 'telegram',
         rawEventId: TEAM_RAW_EVENT_ID,
+        sourcePayloadRef: 's3://timeline-test/raw/telegram/acme-implementation-task',
       }),
+    ]);
+    expect(outputs[0]?.sourcePayloadRefs).toEqual([
+      's3://timeline-test/raw/telegram/acme-implementation-task',
     ]);
     expect(outputs[0]?.payload).toMatchObject({
       projection_metadata: {
@@ -174,6 +186,287 @@ describe('suggestion reconciliation projection', () => {
       item_dedupe_key: 'reconciliation-projection-task:item',
     });
     expect(outboxRows[0]?.processedAt).toEqual(expect.any(Date));
+  });
+
+  it('repairs missing outbox rows when the approval projection already exists', async () => {
+    await db.insert(rawEvents).values({
+      id: TEAM_RAW_EVENT_ID,
+      teamId: TEAM_ID,
+      authorUserId: USER_ID,
+      source: 'telegram',
+      contentText: 'Create the Acme implementation follow-up.',
+      occurredAt: new Date('2026-06-20T10:00:00Z'),
+      visibility: 'team',
+    });
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Create Acme implementation follow-up',
+      dedupeKey: 'reconciliation-projection-existing-outbox-repair',
+      evidence: [{ rawEventId: TEAM_RAW_EVENT_ID }],
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Create Acme implementation follow-up',
+          dedupeKey: 'reconciliation-projection-existing-outbox-repair:item',
+          proposedPayload: { canonicalName: 'Create Acme implementation follow-up' },
+        },
+      ],
+    });
+    const outputId = bundle.items[0]?.metadata.reconciliation_output_id;
+    if (typeof outputId !== 'string') throw new Error('expected reconciliation output id');
+    await db.delete(reconciliationProjectionOutbox);
+
+    const repaired = await scope.suggestions.repairApprovalProjectionForOutput(outputId);
+
+    expect(repaired?.id).toBe(bundle.id);
+    expect(await db.select().from(agentSuggestions)).toHaveLength(1);
+    const outboxRows = await db.select().from(reconciliationProjectionOutbox);
+    expect(outboxRows).toHaveLength(1);
+    expect(outboxRows[0]).toMatchObject({
+      outputId,
+      suggestionId: bundle.id,
+      suggestionItemId: bundle.items[0]?.id,
+      action: 'repair_projection',
+      status: 'processed',
+    });
+    expect(outboxRows[0]?.payload).toMatchObject({
+      projection: 'agent_suggestions',
+      suggestion_dedupe_key: 'reconciliation-projection-existing-outbox-repair',
+      item_dedupe_key: 'reconciliation-projection-existing-outbox-repair:item',
+      repaired_from_output_id: outputId,
+    });
+  });
+
+  it('lets the visibility owner project private evidence even when they are not the author', async () => {
+    await db.insert(rawEvents).values({
+      id: TEAM_RAW_EVENT_ID,
+      teamId: TEAM_ID,
+      authorUserId: null,
+      visibilityOwnerUserId: REVIEWER_ID,
+      source: 'email',
+      contentText: 'Private customer email asks for an Acme follow-up.',
+      occurredAt: new Date('2026-06-20T10:00:00Z'),
+      visibility: 'private',
+      sourceMetadata: {
+        source_payload_ref: 's3://timeline-test/raw/email/private-owner.eml',
+      },
+    });
+
+    await expect(
+      withTeam(db as never, TEAM_ID, USER_ID).suggestions.createOrMergeSuggestionBundle({
+        source: 'background',
+        title: 'Create private Acme follow-up',
+        dedupeKey: 'reconciliation-projection-private-owner-blocked',
+        evidence: [{ rawEventId: TEAM_RAW_EVENT_ID }],
+        items: [
+          {
+            operation: 'create',
+            targetKind: 'task',
+            title: 'Create private Acme follow-up',
+            dedupeKey: 'reconciliation-projection-private-owner:item',
+            proposedPayload: { canonicalName: 'Create private Acme follow-up' },
+          },
+        ],
+      }),
+    ).rejects.toThrow('Suggestion evidence must reference visible events in this team');
+
+    const bundle = await withTeam(
+      db as never,
+      TEAM_ID,
+      REVIEWER_ID,
+    ).suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Create private Acme follow-up',
+      dedupeKey: 'reconciliation-projection-private-owner',
+      evidence: [{ rawEventId: TEAM_RAW_EVENT_ID }],
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Create private Acme follow-up',
+          dedupeKey: 'reconciliation-projection-private-owner:item',
+          proposedPayload: { canonicalName: 'Create private Acme follow-up' },
+        },
+      ],
+    });
+
+    expect(bundle.visibility).toBe('private');
+    expect(bundle.visibilityOwnerUserId).toBe(REVIEWER_ID);
+    const outputs = await db.select().from(reconciliationOutputs);
+    expect(outputs[0]).toMatchObject({
+      visibility: 'private',
+      visibilityOwnerUserId: REVIEWER_ID,
+      visibilityFloor: 'private',
+      visibilityFloorOwnerUserId: REVIEWER_ID,
+    });
+  });
+
+  it('enforces output visibility floors when repairing approval projections', async () => {
+    await db.insert(rawEvents).values({
+      id: TEAM_RAW_EVENT_ID,
+      teamId: TEAM_ID,
+      authorUserId: REVIEWER_ID,
+      visibilityOwnerUserId: REVIEWER_ID,
+      source: 'email',
+      contentText: 'Private Acme rollout note should only be reviewed by its owner.',
+      occurredAt: new Date('2026-06-20T10:00:00Z'),
+      visibility: 'private',
+    });
+    const [run] = await db
+      .insert(reconciliationRuns)
+      .values({
+        teamId: TEAM_ID,
+        trigger: 'manual_repair',
+        scope: 'approval_projection',
+        status: 'completed',
+        inputFingerprint: 'private-floor-repair-run',
+        engineVersion: 'approval-projection-2026-06',
+        completedAt: new Date('2026-06-20T10:00:00Z'),
+      })
+      .returning();
+    if (!run) throw new Error('expected reconciliation run');
+    const [output] = await db
+      .insert(reconciliationOutputs)
+      .values({
+        teamId: TEAM_ID,
+        runId: run.id,
+        outputKind: 'approval_bundle',
+        targetKind: 'task',
+        operation: 'create',
+        payload: {
+          projection: 'agent_suggestions',
+          suggestion_dedupe_key: 'private-floor-repair',
+          suggestion_source: 'background',
+          suggestion_title: 'Create private Acme task',
+          item_dedupe_key: 'private-floor-repair:item',
+          title: 'Create private Acme task',
+          proposed_payload: { canonicalName: 'Create private Acme task' },
+        },
+        authorityDecision: {
+          decision: 'requires_approval',
+          reason: 'private_floor_test',
+          policy_version: 'timeline-owned-approval-2026-06',
+        },
+        requiresApproval: true,
+        sourceRefs: [{ source: 'email', rawEventId: TEAM_RAW_EVENT_ID }],
+        visibility: 'team',
+        visibilityFloor: 'private',
+        visibilityFloorOwnerUserId: REVIEWER_ID,
+        dedupeKey: 'private-floor-repair-output',
+        status: 'pending',
+      })
+      .returning();
+    if (!output) throw new Error('expected reconciliation output');
+
+    await expect(
+      withTeam(db as never, TEAM_ID, USER_ID).suggestions.repairApprovalProjectionForOutput(
+        output.id,
+      ),
+    ).resolves.toBeNull();
+    await expect(
+      withTeam(db as never, TEAM_ID, REVIEWER_ID).suggestions.repairApprovalProjectionForOutput(
+        output.id,
+      ),
+    ).resolves.toMatchObject({
+      title: 'Create private Acme task',
+      visibility: 'private',
+      visibilityOwnerUserId: REVIEWER_ID,
+    });
+  });
+
+  it('keeps one stable approval source ref when a raw event has multiple evidence rows', async () => {
+    await db.insert(rawEvents).values({
+      id: TEAM_RAW_EVENT_ID,
+      teamId: TEAM_ID,
+      authorUserId: USER_ID,
+      source: 'email',
+      contentText: 'Customer approved the Acme implementation task.',
+      occurredAt: new Date('2026-06-20T10:00:00Z'),
+      visibility: 'team',
+      sourceMetadata: {
+        source_payload_ref: 's3://timeline-test/raw/email/acme-implementation-task.eml',
+      },
+    });
+    await db.insert(reconciliationEvidence).values([
+      {
+        teamId: TEAM_ID,
+        rawEventId: TEAM_RAW_EVENT_ID,
+        sourcePayloadRef: 's3://timeline-test/evidence/email/acme-implementation-task-v1.json',
+        source: 'email',
+        provider: 'email',
+        eventType: 'email.received',
+        occurredAt: new Date('2026-06-20T10:00:00Z'),
+        visibility: 'team',
+        actor: {},
+        contentDigest: 'sha256:projection-stable-v1',
+        normalizerVersion: 'projection-stable-v1',
+        replayState: 'full',
+        dedupeKey: 'projection-stable-v1',
+      },
+      {
+        teamId: TEAM_ID,
+        rawEventId: TEAM_RAW_EVENT_ID,
+        sourcePayloadRef: 's3://timeline-test/evidence/email/acme-implementation-task-v2.json',
+        source: 'email',
+        provider: 'email',
+        eventType: 'email.received',
+        occurredAt: new Date('2026-06-20T10:00:00Z'),
+        visibility: 'team',
+        actor: {},
+        contentDigest: 'sha256:projection-stable-v2',
+        normalizerVersion: 'projection-stable-v2',
+        replayState: 'full',
+        dedupeKey: 'projection-stable-v2',
+      },
+    ]);
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Create Acme implementation task',
+      dedupeKey: 'reconciliation-projection-stable-source-ref',
+      visibility: 'team',
+      evidence: [{ rawEventId: TEAM_RAW_EVENT_ID }],
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Create Acme implementation task',
+          dedupeKey: 'reconciliation-projection-stable-source-ref:item',
+          proposedPayload: { canonicalName: 'Create Acme implementation task' },
+        },
+      ],
+    });
+
+    expect(bundle.metadata).toMatchObject({
+      reconciliation_source_ref_validation: {
+        ok: true,
+        source_ref_count: 1,
+      },
+    });
+    expect(bundle.evidence[0]?.metadata).toMatchObject({
+      reconciliation_source_ref: {
+        source: 'email',
+        rawEventId: TEAM_RAW_EVENT_ID,
+        sourcePayloadRef: 's3://timeline-test/raw/email/acme-implementation-task.eml',
+      },
+    });
+
+    const outputs = await db.select().from(reconciliationOutputs);
+    expect(outputs).toHaveLength(1);
+    expect(outputs[0]?.sourceRefs).toEqual([
+      {
+        source: 'email',
+        rawEventId: TEAM_RAW_EVENT_ID,
+        sourcePayloadRef: 's3://timeline-test/raw/email/acme-implementation-task.eml',
+      },
+    ]);
+    expect(outputs[0]?.sourcePayloadRefs).toEqual([
+      's3://timeline-test/evidence/email/acme-implementation-task-v1.json',
+    ]);
   });
 
   it('mirrors projection rejection status back to reconciliation outputs', async () => {
@@ -226,6 +519,10 @@ describe('suggestion reconciliation projection', () => {
       suggestionItemId: bundle.items[0]?.id,
       status: 'processed',
     });
+    expect(outboxRows[1]?.payload).toMatchObject({
+      projection_status: 'rejected',
+      suggestion_item_status: 'rejected',
+    });
   });
 
   it('repairs deleted approval projection rows from reconciliation outputs', async () => {
@@ -273,6 +570,17 @@ describe('suggestion reconciliation projection', () => {
       .map((item) => item.metadata.reconciliation_output_id)
       .filter((value): value is string => typeof value === 'string');
     expect(outputIds).toHaveLength(2);
+    await db.insert(artifactClusters).values({
+      id: CLUSTER_ID,
+      teamId: TEAM_ID,
+      artifactClusterKind: 'customer_project',
+      artifactType: 'project',
+      canonicalName: 'Acme rollout',
+    });
+    await db
+      .update(reconciliationOutputs)
+      .set({ clusterId: CLUSTER_ID })
+      .where(eq(reconciliationOutputs.teamId, TEAM_ID));
 
     await db.delete(agentSuggestions).where(eq(agentSuggestions.id, bundle.id));
     expect(await db.select().from(agentSuggestionItems)).toHaveLength(0);
@@ -302,6 +610,7 @@ describe('suggestion reconciliation projection', () => {
         )
       : [];
     expect(repairedOutputIds.sort()).toEqual([...outputIds].sort());
+    expect(repairedMetadata.reconciliation_cluster_ids).toEqual([CLUSTER_ID]);
     expect(repaired?.items.map((item) => item.title).sort()).toEqual([
       'Create Acme rollout task',
       'Schedule Acme kickoff',
@@ -309,6 +618,10 @@ describe('suggestion reconciliation projection', () => {
     expect(repaired?.items.map((item) => item.metadata.reconciliation_output_id).sort()).toEqual(
       [...outputIds].sort(),
     );
+    expect(repaired?.items.map((item) => item.metadata.reconciliation_cluster_id)).toStrictEqual([
+      CLUSTER_ID,
+      CLUSTER_ID,
+    ]);
     expect(repaired?.evidence.map((evidence) => evidence.rawEventId)).toEqual([TEAM_RAW_EVENT_ID]);
     const repairedEvidenceMetadata = repaired?.evidence[0]?.metadata ?? {};
     expect(repairedEvidenceMetadata).toMatchObject({
@@ -378,6 +691,57 @@ describe('suggestion reconciliation projection', () => {
     expect(await db.select().from(agentSuggestions)).toHaveLength(0);
     const outputs = await db.select().from(reconciliationOutputs);
     expect(outputs).toHaveLength(1);
+    expect(outputs[0]?.status).toBe('rejected');
+  });
+
+  it('suppresses exact rejected output replays at projection creation time', async () => {
+    await db.insert(rawEvents).values({
+      id: TEAM_RAW_EVENT_ID,
+      teamId: TEAM_ID,
+      authorUserId: USER_ID,
+      source: 'telegram',
+      contentText: 'Maybe create the speculative Acme task.',
+      occurredAt: new Date('2026-06-20T10:00:00Z'),
+      visibility: 'team',
+    });
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const input = {
+      source: 'background' as const,
+      title: 'Create speculative Acme task',
+      dedupeKey: 'reconciliation-projection-replay-rejected',
+      evidence: [{ rawEventId: TEAM_RAW_EVENT_ID }],
+      items: [
+        {
+          operation: 'create' as const,
+          targetKind: 'task' as const,
+          title: 'Create speculative Acme task',
+          dedupeKey: 'reconciliation-projection-replay-rejected:item',
+          proposedPayload: { canonicalName: 'Create speculative Acme task' },
+        },
+      ],
+    };
+
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle(input);
+    const outputId = bundle.items[0]?.metadata.reconciliation_output_id;
+    if (typeof outputId !== 'string') throw new Error('expected reconciliation output id');
+    await expect(scope.suggestions.rejectSuggestionItem(bundle.items[0]?.id ?? '')).resolves.toBe(
+      true,
+    );
+    await db.delete(agentSuggestions).where(eq(agentSuggestions.id, bundle.id));
+
+    const replayed = await scope.suggestions.createOrMergeSuggestionBundle(input);
+
+    expect(replayed.status).toBe('rejected');
+    expect(replayed.items).toHaveLength(1);
+    expect(replayed.items[0]?.status).toBe('rejected');
+    expect(replayed.items[0]?.metadata).toMatchObject({
+      reconciliation_output_id: outputId,
+      reconciliation_projection_suppressed: true,
+    });
+    await expect(scope.suggestions.listPendingSuggestions()).resolves.toEqual([]);
+    const outputs = await db.select().from(reconciliationOutputs);
+    expect(outputs).toHaveLength(1);
+    expect(outputs[0]?.id).toBe(outputId);
     expect(outputs[0]?.status).toBe('rejected');
   });
 
@@ -504,7 +868,165 @@ describe('suggestion reconciliation projection', () => {
     expect(outboxRows[1]?.payload).toMatchObject({
       projection: 'agent_suggestions',
       projection_status: 'applied',
+      suggestion_item_status: 'accepted',
       projection_result_id: acceptedItem?.resultId,
+    });
+  });
+
+  it('mirrors failed projection status back to reconciliation outputs', async () => {
+    await db.insert(rawEvents).values({
+      id: TEAM_RAW_EVENT_ID,
+      teamId: TEAM_ID,
+      authorUserId: USER_ID,
+      source: 'telegram',
+      contentText: 'Create an Acme kickoff calendar event, but the source omitted times.',
+      occurredAt: new Date('2026-06-20T10:00:00Z'),
+      visibility: 'team',
+    });
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Create Acme kickoff hold',
+      dedupeKey: 'reconciliation-projection-failed-calendar',
+      evidence: [{ rawEventId: TEAM_RAW_EVENT_ID }],
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'calendar_event',
+          title: 'Create Acme kickoff hold',
+          dedupeKey: 'reconciliation-projection-failed-calendar:item',
+          proposedPayload: {
+            title: 'Acme kickoff hold',
+          },
+        },
+      ],
+    });
+
+    await expect(
+      scope.suggestions.acceptSuggestionItem(bundle.items[0]?.id ?? ''),
+    ).rejects.toMatchObject({
+      name: 'ExpectedSuggestionApplyFailure',
+      code: 'TIMELINE_EXPECTED_SUGGESTION_APPLY_FAILURE',
+    });
+
+    const outputs = await db.select().from(reconciliationOutputs);
+    expect(outputs).toHaveLength(1);
+    expect(outputs[0]).toMatchObject({
+      id: bundle.items[0]?.metadata.reconciliation_output_id,
+      status: 'failed',
+    });
+    expect(outputs[0]?.payload).toMatchObject({
+      projection_failure_reason:
+        'Calendar proposal is missing a start or end time. Reject it or revise the source details before accepting.',
+    });
+
+    const outboxRows = await db
+      .select()
+      .from(reconciliationProjectionOutbox)
+      .orderBy(asc(reconciliationProjectionOutbox.createdAt));
+    expect(outboxRows.map((row) => row.action)).toEqual(['create_projection', 'mark_failed']);
+    expect(outboxRows[1]?.payload).toMatchObject({
+      projection: 'agent_suggestions',
+      projection_status: 'failed',
+      suggestion_item_status: 'failed',
+      projection_failure_reason:
+        'Calendar proposal is missing a start or end time. Reject it or revise the source details before accepting.',
+    });
+  });
+
+  it('mirrors superseded dependent projection status back to reconciliation outputs', async () => {
+    await db.insert(rawEvents).values({
+      id: TEAM_RAW_EVENT_ID,
+      teamId: TEAM_ID,
+      authorUserId: USER_ID,
+      source: 'telegram',
+      contentText: 'Create Maybe Person, Maybe Company, and relate them.',
+      occurredAt: new Date('2026-06-20T10:00:00Z'),
+      visibility: 'team',
+    });
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Create rejected dependency bundle',
+      dedupeKey: 'reconciliation-projection-superseded-dependent',
+      evidence: [{ rawEventId: TEAM_RAW_EVENT_ID }],
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'object',
+          title: 'Create Maybe Person',
+          dedupeKey: 'reconciliation-projection-superseded-dependent:person',
+          proposedPayload: {
+            type: 'person',
+            canonicalName: 'Maybe Person',
+            localRef: 'Maybe-Person',
+          },
+        },
+        {
+          operation: 'create',
+          targetKind: 'object',
+          title: 'Create Maybe Company',
+          dedupeKey: 'reconciliation-projection-superseded-dependent:company',
+          proposedPayload: {
+            type: 'company',
+            canonicalName: 'Maybe Company',
+            localRef: 'maybe-company',
+          },
+        },
+        {
+          operation: 'create',
+          targetKind: 'object_relationship',
+          title: 'Relate Maybe Person and Maybe Company',
+          dedupeKey: 'reconciliation-projection-superseded-dependent:relationship',
+          proposedPayload: {
+            fromRef: 'maybe-person',
+            toRef: 'maybe-company',
+            kind: 'related',
+          },
+        },
+      ],
+    });
+    const personItem = bundle.items.find((item) => item.title === 'Create Maybe Person');
+    const relationshipItem = bundle.items.find(
+      (item) => item.title === 'Relate Maybe Person and Maybe Company',
+    );
+    if (!personItem || !relationshipItem) throw new Error('expected dependency items');
+
+    await expect(scope.suggestions.rejectSuggestionItem(personItem.id)).resolves.toBe(true);
+
+    const outputs = await db.select().from(reconciliationOutputs);
+    const relationshipOutput = outputs.find(
+      (output) => output.id === relationshipItem.metadata.reconciliation_output_id,
+    );
+    expect(relationshipOutput).toMatchObject({
+      status: 'superseded',
+    });
+
+    const outboxRows = await db
+      .select()
+      .from(reconciliationProjectionOutbox)
+      .orderBy(asc(reconciliationProjectionOutbox.createdAt));
+    expect(outboxRows.map((row) => row.action)).toEqual([
+      'create_projection',
+      'create_projection',
+      'create_projection',
+      'mark_rejected',
+      'mark_superseded',
+    ]);
+    expect(outboxRows[4]).toMatchObject({
+      outputId: relationshipOutput?.id,
+      suggestionId: bundle.id,
+      suggestionItemId: relationshipItem.id,
+      status: 'processed',
+    });
+    expect(outboxRows[4]?.payload).toMatchObject({
+      projection: 'agent_suggestions',
+      projection_status: 'superseded',
+      suggestion_item_status: 'superseded',
+      projection_superseded_reason:
+        'Relationship endpoint "Maybe-Person" was rejected or superseded.',
     });
   });
 });

@@ -27,6 +27,8 @@ const fakes = vi.hoisted(() => ({
   fakeBuildSystemPrompt: vi.fn(),
   fakeBuildAgentTools: vi.fn(),
   fakeBuildMcpTools: vi.fn(),
+  fakeInstrumentAgentTools: vi.fn(),
+  fakeSummarizeAgentToolObservations: vi.fn(),
   fakeWorkspaceTimeContext: vi.fn(),
   fakeSafeValidateUIMessages: vi.fn(),
   fakeConvertToModelMessages: vi.fn(),
@@ -83,6 +85,8 @@ vi.mock('@timeline/shared/agent', () => ({
   buildSystemPrompt: fakes.fakeBuildSystemPrompt,
   buildAgentTools: fakes.fakeBuildAgentTools,
   buildMcpTools: fakes.fakeBuildMcpTools,
+  instrumentAgentTools: fakes.fakeInstrumentAgentTools,
+  summarizeAgentToolObservations: fakes.fakeSummarizeAgentToolObservations,
 }));
 vi.mock('@timeline/shared/time', () => ({
   workspaceTimeContext: fakes.fakeWorkspaceTimeContext,
@@ -241,6 +245,16 @@ beforeEach(() => {
   fakes.fakeBuildSystemPrompt.mockReturnValue('system prompt');
   fakes.fakeBuildAgentTools.mockReturnValue({ search_timeline: { type: 'native' } });
   fakes.fakeBuildMcpTools.mockResolvedValue({ external_tool: { type: 'mcp' } });
+  fakes.fakeInstrumentAgentTools.mockImplementation((tools: unknown) => tools);
+  fakes.fakeSummarizeAgentToolObservations.mockImplementation(
+    (input: { observations: unknown[]; selection?: unknown }) => ({
+      toolObservations: input.observations,
+      selection: input.selection ?? null,
+      totalResultCount: 0,
+      topArtifactRefs: [],
+      warningCodes: [],
+    }),
+  );
   fakes.fakeSafeValidateUIMessages.mockResolvedValue({
     success: true,
     data: [userMessage],
@@ -832,6 +846,41 @@ describe('POST /api/chat', () => {
 
   it('persists latest user turn and assistant turn on finish, logging append failures without changing response', async () => {
     fakes.fakeAppendChatMessages.mockRejectedValue(new Error('append failed'));
+    const expectedObservability = {
+      toolObservations: [
+        {
+          tool: 'search_timeline',
+          group: 'timeline',
+          ok: true,
+          durationMs: 3,
+          inputKeys: ['query'],
+          retrievalRecipe: { hasQuery: true, filters: [], limit: null, lookupKind: null },
+          resultCount: 1,
+          topArtifactRefs: [{ kind: 'timeline_event', id: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee' }],
+          warningCodes: [],
+        },
+      ],
+      selection: {
+        selectedToolGroups: ['core', 'guide'],
+        omittedToolGroups: [
+          'objects',
+          'boards',
+          'documents',
+          'calendar',
+          'approvals',
+          'actions',
+          'integrations',
+        ],
+        selectedNativeToolCount: 1,
+        omittedNativeToolCount: 0,
+        mcpToolCount: 0,
+        mcpDiscoverySkipped: true,
+      },
+      totalResultCount: 1,
+      topArtifactRefs: [{ kind: 'timeline_event', id: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee' }],
+      warningCodes: [],
+    };
+    fakes.fakeSummarizeAgentToolObservations.mockReturnValueOnce(expectedObservability);
     const response = await POST(request(validBody({ sessionId: SESSION_ID })));
 
     expect(response.status).toBe(200);
@@ -853,6 +902,7 @@ describe('POST /api/chat', () => {
         content: {
           text: 'Answer',
           tool_calls: [{ toolName: 'search_timeline' }],
+          tool_observability: expectedObservability,
           finish_reason: 'stop',
           usage: { inputTokens: 10, outputTokens: 5 },
           prompt_version: 'test-prompt-v1',

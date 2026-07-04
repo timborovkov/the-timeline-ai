@@ -21,6 +21,50 @@ async function createTestDb(): Promise<{ pg: PGlite; db: Db }> {
 }
 
 describe('resolveMentions', () => {
+  it('does not create canonical objects for unmatched mentions by default', async () => {
+    const { pg, db } = await createTestDb();
+    try {
+      await expect(
+        resolveMentions(
+          db,
+          TEAM_ID,
+          [{ name: 'Newco', type: 'company', role: 'subject' }],
+          'Newco was mentioned.',
+        ),
+      ).resolves.toEqual([null]);
+
+      await expect(db.select().from(entities)).resolves.toEqual([]);
+    } finally {
+      await pg.close();
+    }
+  }, 60_000);
+
+  it('requires explicit opt-in to create canonical objects from mentions', async () => {
+    const { pg, db } = await createTestDb();
+    try {
+      const [entityId] = await resolveMentions(
+        db,
+        TEAM_ID,
+        [{ name: 'Newco', type: 'company', role: 'subject' }],
+        'Newco was mentioned.',
+        {},
+        { createIfMissing: true },
+      );
+
+      expect(entityId).toBeTypeOf('string');
+      await expect(db.select().from(entities)).resolves.toEqual([
+        expect.objectContaining({
+          id: entityId,
+          teamId: TEAM_ID,
+          type: 'company',
+          canonicalName: 'Newco',
+        }),
+      ]);
+    } finally {
+      await pg.close();
+    }
+  }, 60_000);
+
   it('caches unresolved mentions within one fact', async () => {
     const { pg, db } = await createTestDb();
     try {

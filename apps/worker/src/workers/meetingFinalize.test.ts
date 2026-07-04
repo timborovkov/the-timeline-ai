@@ -178,6 +178,28 @@ describe('processMeetingFinalizeJob', () => {
     expect(eventMeta.summary).toBe('Meeting summary here.');
     expect(eventMeta.speakers).toEqual(['Alice', 'Bob']);
     expect(eventMeta.duration_minutes).toBe(30);
+    expect(eventMeta).toMatchObject({
+      source_payload_ref: `inline://timeline/meeting/${MEETING_ID}/finalized`,
+      source_snapshot_kind: 'meeting_finalized_transcript',
+      source_snapshot_version: 'meeting-finalized-source-snapshot-2026-07',
+      source_snapshot: {
+        provider: 'meeting_bot',
+        meeting_id: MEETING_ID,
+        platform: 'meet',
+        meeting_url: 'https://meet.google.com/test',
+        title: 'Weekly planning',
+        duration_minutes: 30,
+        chunk_count: 2,
+        speakers: ['Alice', 'Bob'],
+        summary: 'Meeting summary here.',
+        action_items: [
+          { text: 'Bob owns the migration', owner: 'Bob' },
+          { text: 'Schedule design review', owner: null },
+        ],
+        dedup_key: `meeting-finalized:${MEETING_ID}`,
+      },
+    });
+    expect(eventMeta.payload_digest).toEqual(expect.stringMatching(/^sha256:[0-9a-f]{64}$/));
     expect(enqueueExtractJob).toHaveBeenCalledWith({ rawEventId: events[0]?.id, teamId: TEAM_ID });
 
     const calendarRows = await db
@@ -212,11 +234,15 @@ describe('processMeetingFinalizeJob', () => {
           calendar_event_id: calendarRow?.id,
           action: 'scheduled',
           meeting_id: MEETING_ID,
+          source_payload_ref: `inline://timeline/calendar/${calendarRow?.id}/scheduled`,
+          source_snapshot_kind: 'calendar_event_mirror',
         }),
         expect.objectContaining({
           calendar_event_id: calendarRow?.id,
           action: 'event',
           meeting_id: MEETING_ID,
+          source_payload_ref: `inline://timeline/calendar/${calendarRow?.id}/event`,
+          source_snapshot_kind: 'calendar_event_mirror',
         }),
       ]),
     );
@@ -233,6 +259,7 @@ describe('processMeetingFinalizeJob', () => {
       expect(meta.extraction_skipped_at).toBeTypeOf('string');
       expect(meta.extraction_skipped_reason).toBe('generated_from_meeting_bot');
       expect(meta.extraction_model_version).toBeTypeOf('string');
+      expect(meta.payload_digest).toEqual(expect.stringMatching(/^sha256:[0-9a-f]{64}$/));
     }
     expect(startEvent?.contentText).toContain('Participants: Alice, Bob');
     expect(startEvent?.contentText).not.toContain('Summary: Meeting summary here.');
@@ -255,8 +282,20 @@ describe('processMeetingFinalizeJob', () => {
       'calendar',
       'meeting',
     ]);
-    expect(evidenceRows.find((row) => row.source === 'meeting')?.externalObjectId).toBe(
-      `meeting-finalized:${MEETING_ID}`,
+    const meetingEvidence = evidenceRows.find((row) => row.source === 'meeting');
+    expect(meetingEvidence).toMatchObject({
+      externalObjectId: `meeting-finalized:${MEETING_ID}`,
+      replayState: 'full',
+      sourcePayloadRef: `inline://timeline/meeting/${MEETING_ID}/finalized`,
+      payloadDigest: eventMeta.payload_digest,
+    });
+    const calendarEvidenceRows = evidenceRows.filter((row) => row.source === 'calendar');
+    expect(calendarEvidenceRows.every((row) => row.replayState === 'full')).toBe(true);
+    expect(calendarEvidenceRows.map((row) => row.sourcePayloadRef).sort()).toEqual(
+      expect.arrayContaining([
+        `inline://timeline/calendar/${calendarRow?.id}/event`,
+        `inline://timeline/calendar/${calendarRow?.id}/scheduled`,
+      ]),
     );
 
     const chunks = await db

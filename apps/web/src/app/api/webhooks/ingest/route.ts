@@ -6,6 +6,7 @@ import { reconcileLinkArtifactsForRawEvent } from '@timeline/shared/conversation
 import * as ingestWebhooks from '@timeline/shared/ingest-webhooks';
 import { childLogger } from '@timeline/shared/logger';
 import * as rateLimit from '@timeline/shared/rate-limit';
+import { inlineSourceSnapshotMetadata } from '@timeline/shared/reconciliation';
 import { normalizeRawEventsToEvidence } from '@timeline/shared/reconciliation/normalization';
 import { and, eq, sql } from 'drizzle-orm';
 
@@ -18,6 +19,7 @@ export const dynamic = 'force-dynamic';
 
 const MAX_TEXT_BYTES = 1024 * 1024;
 const log = childLogger('web:api:ingest-webhook');
+const INGEST_WEBHOOK_SOURCE_SNAPSHOT_VERSION = 'ingest-webhook-source-snapshot-2026-07';
 
 const SENSITIVE_HEADER_RE = /authorization|cookie|secret|signature|token|key/i;
 const TEXTUAL_CONTENT_TYPES = [
@@ -102,6 +104,7 @@ export async function handlePost(req: Request, pathToken?: string): Promise<Resp
     contentType,
     body,
   });
+  const requestHeaders = redactedHeaders(req.headers);
   const sourceMetadata = sourceMetadataWithConversationArtifacts(
     {
       ingest_webhook_id: resolved.webhookId,
@@ -112,8 +115,21 @@ export async function handlePost(req: Request, pathToken?: string): Promise<Resp
       content_type: contentType,
       method: 'POST',
       received_at: receivedAt.toISOString(),
-      request_headers: redactedHeaders(req.headers),
+      request_headers: requestHeaders,
       proposal_generation_enabled: resolved.proposalGenerationEnabled,
+      ...ingestWebhookSourcePayloadMetadata({
+        webhookId: resolved.webhookId,
+        credentialId: resolved.credentialId,
+        webhookName: resolved.name,
+        contentType,
+        method: 'POST',
+        receivedAt,
+        body,
+        bodyHash,
+        dedupKey,
+        requestHeaders,
+        proposalGenerationEnabled: resolved.proposalGenerationEnabled,
+      }),
     },
     contentText,
   );
@@ -155,6 +171,41 @@ export async function handlePost(req: Request, pathToken?: string): Promise<Resp
     enqueueProcessing(event, resolved.proposalGenerationEnabled),
   ]);
   return Response.json({ ok: true, status: 'accepted', rawEventId: event.id }, { status: 202 });
+}
+
+function ingestWebhookSourcePayloadMetadata(input: {
+  webhookId: string;
+  credentialId: string;
+  webhookName: string;
+  contentType: string;
+  method: string;
+  receivedAt: Date;
+  body: string;
+  bodyHash: string;
+  dedupKey: string;
+  requestHeaders: Record<string, string>;
+  proposalGenerationEnabled: boolean;
+}): Record<string, unknown> {
+  const snapshot = {
+    provider: 'ingest_webhook',
+    webhook_id: input.webhookId,
+    credential_id: input.credentialId,
+    webhook_name: input.webhookName,
+    content_type: input.contentType,
+    method: input.method,
+    received_at: input.receivedAt.toISOString(),
+    body_sha256: input.bodyHash,
+    body: input.body,
+    dedup_key: input.dedupKey,
+    request_headers: input.requestHeaders,
+    proposal_generation_enabled: input.proposalGenerationEnabled,
+  };
+  return inlineSourceSnapshotMetadata({
+    snapshot,
+    kind: 'ingest_webhook_payload',
+    version: INGEST_WEBHOOK_SOURCE_SNAPSHOT_VERSION,
+    ref: () => `inline://timeline/ingest-webhook/${input.webhookId}/${input.bodyHash}`,
+  });
 }
 
 async function normalizeRawEventEvidence(event: { id: string; teamId: string }): Promise<void> {

@@ -230,7 +230,7 @@ const FAQ_ITEMS = [
   },
   {
     q: 'How is capture done?',
-    a: 'Work surfaces feed one pipeline. Telegram and Slack bots capture chat, voice, files, /ask, and @Timeline context. Meeting bots join Google Meet, Zoom, and Microsoft Teams calls to take notes and transcribe discussions. Email, documents, calendar events, web notes, project tools, code systems, support queues, account systems, and internal tools can become part of the same evidence model through capture surfaces, integrations, and ingest webhooks. GitHub, Linear, Google Drive, Monday.com, Slack workspace history, and Sentry sync as native integrations. MCP servers extend the agent into long-tail systems for live access, but they do not create timeline events unless paired with native sync or custom ingestion.',
+    a: 'Work surfaces feed one pipeline. Telegram and Slack bots capture chat, voice, files, /ask, and @Timeline context. Meeting bots join Google Meet, Zoom, and Microsoft Teams calls to take notes and transcribe discussions. Email, documents, calendar events, web notes, project tools, code systems, support queues, account systems, and internal tools can become part of the same evidence model through capture surfaces, integrations, and ingest webhooks. GitHub, Linear, Google Drive, Monday.com, Slack workspace history, and Sentry sync as native integrations. MCP servers extend the agent into long-tail systems for live access, and successful tool results are captured as private evidence for later reconciliation.',
   },
   {
     q: 'What models power the agent?',
@@ -1105,7 +1105,7 @@ const TRUST_DEFAULTS = [
   'Every claim links back to the raw event, transcript, message, email, or document.',
   'Raw events are immutable; derived facts can be reprocessed without changing the source.',
   'Team isolation and per-event visibility are enforced below the UI.',
-  'Custom MCP servers provide live reach without turning every tool into source-of-truth data.',
+  'Custom MCP servers provide live reach while keeping captured tool results private by default.',
 ] as const;
 
 function Footer({ isSignedIn }: { isSignedIn: boolean }) {

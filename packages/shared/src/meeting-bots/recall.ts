@@ -42,6 +42,10 @@ interface RecallBotResponse {
   meeting_url?: { meeting_id?: string };
 }
 
+export interface RecallListBotsCanaryResult {
+  returnedCount: number | null;
+}
+
 type RecallRetentionConfig = { type: 'timed'; hours: number } | { type: 'forever' };
 
 function resolveRetention(value: string | undefined): RecallRetentionConfig {
@@ -79,6 +83,44 @@ function mapStatus(code: string | undefined): MeetingBotStatus['status'] {
     default:
       return 'active';
   }
+}
+
+export async function listRecallBotsForCanary(
+  opts: RecallProviderOptions & { joinAtAfter?: Date } = {},
+): Promise<RecallListBotsCanaryResult> {
+  const env = getEnv();
+  const apiKey = opts.apiKey ?? env.RECALL_API_KEY;
+  if (!apiKey) {
+    throw new Error('RECALL_API_KEY is required to run the Recall canary');
+  }
+  const baseUrl = (opts.baseUrl ?? env.RECALL_BASE_URL).replace(/\/$/, '');
+  const url = new URL(`${baseUrl}/bot/`);
+  url.searchParams.set('join_at_after', (opts.joinAtAfter ?? new Date()).toISOString());
+  url.searchParams.set('limit', '1');
+  const fetcher = opts.fetcher ?? fetch;
+  const res = await fetcher(url, {
+    method: 'GET',
+    headers: {
+      Authorization: `Token ${apiKey}`,
+      accept: 'application/json',
+    },
+  });
+  const text = await res.text();
+  let data: unknown = null;
+  if (text) {
+    try {
+      data = JSON.parse(text);
+    } catch {
+      data = text;
+    }
+  }
+  if (!res.ok) {
+    const detail = typeof data === 'string' ? data : JSON.stringify(data);
+    throw new Error(`Recall GET /bot/ failed: ${String(res.status)} ${detail}`);
+  }
+  const record = data && typeof data === 'object' ? (data as Record<string, unknown>) : {};
+  const results = Array.isArray(record.results) ? record.results : null;
+  return { returnedCount: results?.length ?? null };
 }
 
 export function createRecallProvider(opts: RecallProviderOptions = {}): MeetingBotProvider {

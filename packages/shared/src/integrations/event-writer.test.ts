@@ -20,10 +20,12 @@ import { drizzle } from 'drizzle-orm/pglite';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { writeIntegrationEvents } from '#src/integrations/event-writer.js';
+import { enqueueEmbedJob, enqueueExtractJob } from '#src/queue/queues.js';
 import { AUTHORITY_POLICY_VERSION } from '#src/reconciliation/authority.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
 
 vi.mock('#src/queue/queues.js', () => ({
+  enqueueExtractJob: vi.fn().mockResolvedValue(undefined),
   enqueueEmbedJob: vi.fn().mockResolvedValue(undefined),
   enqueueObjectEmbedJob: vi.fn().mockResolvedValue(undefined),
   enqueueObjectSummaryJob: vi.fn().mockResolvedValue({ enqueued: true, jobId: 'summary-job' }),
@@ -39,6 +41,7 @@ describe('writeIntegrationEvents visibility', () => {
   let db: ReturnType<typeof drizzle>;
 
   beforeEach(async () => {
+    vi.clearAllMocks();
     pg = new PGlite();
     await applyDbMigrations(pg);
     db = drizzle(pg);
@@ -246,6 +249,16 @@ describe('writeIntegrationEvents visibility', () => {
       events,
     });
     expect(insertedIds).toHaveLength(3);
+    for (const rawEventId of insertedIds) {
+      expect(enqueueExtractJob).toHaveBeenCalledWith({ teamId: TEAM_ID, rawEventId });
+      expect(enqueueEmbedJob).toHaveBeenCalledWith({
+        scope: 'raw_event',
+        teamId: TEAM_ID,
+        rawEventId,
+      });
+    }
+    expect(enqueueExtractJob).toHaveBeenCalledTimes(3);
+    expect(enqueueEmbedJob).toHaveBeenCalledTimes(3);
 
     const retryIds = await writeIntegrationEvents({
       db: db as never,
@@ -253,6 +266,8 @@ describe('writeIntegrationEvents visibility', () => {
       events,
     });
     expect(retryIds).toEqual([]);
+    expect(enqueueExtractJob).toHaveBeenCalledTimes(3);
+    expect(enqueueEmbedJob).toHaveBeenCalledTimes(3);
 
     const evidenceRows = await db
       .select()
@@ -350,7 +365,6 @@ describe('writeIntegrationEvents visibility', () => {
       expect.objectContaining({
         source: 'monday',
         rawEventId: lifecycleAssociation?.rawEventId,
-        evidenceId: evidenceRows.find((row) => row.eventType === 'item.status_changed')?.id,
         sourcePayloadRef: 's3://timeline-test/reconciliation/monday/item-456.json',
       }),
     ]);
@@ -426,7 +440,6 @@ describe('writeIntegrationEvents visibility', () => {
       expect.objectContaining({
         source: 'monday',
         rawEventId: lifecycleAssociation?.rawEventId,
-        evidenceId: evidenceRows.find((row) => row.eventType === 'item.status_changed')?.id,
         sourcePayloadRef: 's3://timeline-test/reconciliation/monday/item-456.json',
       }),
     ]);
@@ -468,13 +481,129 @@ describe('writeIntegrationEvents visibility', () => {
       expect.objectContaining({
         source: 'monday',
         rawEventId: contextAssociation?.rawEventId,
-        evidenceId: evidenceRows.find((row) => row.eventType === 'comment.created')?.id,
         sourcePayloadRef: 's3://timeline-test/reconciliation/monday/item-999-comment.json',
       }),
     ]);
     expect(observedOutput?.sourcePayloadRefs).toEqual([
       's3://timeline-test/reconciliation/monday/item-999-comment.json',
     ]);
+  });
+
+  it('canonicalizes legacy payload identity aliases on raw event metadata', async () => {
+    const [integration] = await db
+      .insert(integrations)
+      .values({
+        teamId: TEAM_ID,
+        connectedByUserId: USER_ID,
+        provider: 'monday',
+        displayName: 'Monday',
+        externalAccountId: 'acct-legacy-payload-aliases',
+        visibilityDefault: 'team',
+      })
+      .returning();
+    if (!integration) throw new Error('integration insert failed');
+
+    const [eventId] = await writeIntegrationEvents({
+      db: db as never,
+      integration,
+      events: [
+        {
+          dedupKey: 'monday:item:legacy-aliases',
+          provider: 'monday',
+          externalObjectId: 'board-123:item-legacy',
+          eventType: 'item.updated',
+          occurredAt: new Date('2026-06-20T09:30:00Z'),
+          contentText: 'Monday item Acme implementation changed owner',
+          extra: {
+            source_snapshot_ref: 's3://timeline-test/reconciliation/monday/item-legacy.json',
+            source_payload_digest: 'sha256:legacy-digest',
+            monday_board_id: 'board-123',
+          },
+        },
+      ],
+    });
+    if (!eventId) throw new Error('event insert failed');
+
+    const [row] = await db.select().from(rawEvents).where(eq(rawEvents.id, eventId));
+    const metadata = row?.sourceMetadata as Record<string, unknown> | undefined;
+    expect(metadata).toMatchObject({
+      source_payload_ref: 's3://timeline-test/reconciliation/monday/item-legacy.json',
+      payload_digest: 'sha256:legacy-digest',
+      monday_board_id: 'board-123',
+    });
+    expect(metadata).not.toHaveProperty('source_snapshot_ref');
+    expect(metadata).not.toHaveProperty('source_payload_digest');
+
+    const [evidence] = await db
+      .select()
+      .from(reconciliationEvidence)
+      .where(eq(reconciliationEvidence.rawEventId, eventId));
+    expect(evidence).toMatchObject({
+      replayState: 'full',
+      sourcePayloadRef: 's3://timeline-test/reconciliation/monday/item-legacy.json',
+      payloadDigest: 'sha256:legacy-digest',
+    });
+  });
+
+  it('keeps reconciliation evidence when integration queue handoff fails', async () => {
+    vi.mocked(enqueueExtractJob).mockRejectedValueOnce(new Error('redis unavailable'));
+    const [integration] = await db
+      .insert(integrations)
+      .values({
+        teamId: TEAM_ID,
+        connectedByUserId: USER_ID,
+        provider: 'github',
+        displayName: 'GitHub',
+        externalAccountId: 'acct-queue-failure',
+        visibilityDefault: 'team',
+      })
+      .returning();
+    if (!integration) throw new Error('integration insert failed');
+
+    const [eventId] = await writeIntegrationEvents({
+      db: db as never,
+      integration,
+      events: [
+        {
+          dedupKey: 'github:repo:queue-failure',
+          provider: 'github',
+          externalObjectId: 'timeline/repo#101',
+          eventType: 'pull_request.updated',
+          occurredAt: new Date('2026-06-20T09:40:00Z'),
+          contentText: 'GitHub PR updated for Acme rollout',
+          extra: {
+            source_payload_ref: 's3://timeline-test/github/pr-101.json',
+            payload_digest: 'sha256:github-pr-101',
+          },
+        },
+      ],
+    });
+    if (!eventId) throw new Error('event insert failed');
+
+    expect(enqueueExtractJob).toHaveBeenCalledWith({ teamId: TEAM_ID, rawEventId: eventId });
+    expect(enqueueEmbedJob).toHaveBeenCalledWith({
+      scope: 'raw_event',
+      teamId: TEAM_ID,
+      rawEventId: eventId,
+    });
+
+    const [row] = await db.select().from(rawEvents).where(eq(rawEvents.id, eventId));
+    const metadata = row?.sourceMetadata as Record<string, unknown> | undefined;
+    expect(metadata?.extraction_error).toBe('enqueue failed: redis unavailable');
+    expect(metadata?.extraction_failed_at).toEqual(expect.any(String));
+    expect(metadata).not.toHaveProperty('embedding_failed_at');
+
+    const [evidence] = await db
+      .select()
+      .from(reconciliationEvidence)
+      .where(eq(reconciliationEvidence.rawEventId, eventId));
+    expect(evidence).toMatchObject({
+      source: 'integration',
+      provider: 'github',
+      replayState: 'full',
+      sourcePayloadRef: 's3://timeline-test/github/pr-101.json',
+      payloadDigest: 'sha256:github-pr-101',
+    });
   });
 
   it('skips native Slack message rows for conversationally bound channels', async () => {
@@ -733,6 +862,99 @@ describe('writeIntegrationEvents visibility', () => {
         status: 'applied',
       }),
     ]);
+  });
+
+  it('keeps integration output source refs stable when a raw event has multiple evidence rows', async () => {
+    const [integration] = await db
+      .insert(integrations)
+      .values({
+        teamId: TEAM_ID,
+        connectedByUserId: USER_ID,
+        provider: 'monday',
+        displayName: 'Monday',
+        externalAccountId: 'acct-monday-multi-evidence',
+        visibilityDefault: 'team',
+      })
+      .returning();
+    if (!integration) throw new Error('integration insert failed');
+
+    const event = {
+      dedupKey: 'monday:item:456:multi-evidence',
+      provider: 'monday' as const,
+      externalObjectId: 'item-456',
+      eventType: 'item.updated',
+      occurredAt: new Date('2026-06-17T11:00:00Z'),
+      contentText: 'Monday item Acme rollout moved to working on it.',
+      extra: {
+        source_payload_ref: 's3://timeline-test/reconciliation/monday/item-456.json',
+        payload_digest: 'sha256:monday-item-456',
+      },
+      objectMap: {
+        type: 'project' as const,
+        canonicalName: 'Acme rollout',
+        displayTitle: 'Acme rollout',
+        externalId: 'item-456',
+        status: 'in_progress' as const,
+        url: 'https://monday.com/boards/1/pulses/456',
+        metadata: {
+          monday_record_kind: 'item',
+          monday_board_id: 'board-1',
+          monday_item_id: 'item-456',
+        },
+      },
+    };
+
+    const [rawEventId] = await writeIntegrationEvents({
+      db: db as never,
+      integration,
+      events: [event],
+    });
+    if (!rawEventId) throw new Error('raw event insert failed');
+
+    await db.insert(reconciliationEvidence).values({
+      teamId: TEAM_ID,
+      rawEventId,
+      source: 'integration',
+      provider: 'monday',
+      externalObjectId: 'item-456',
+      eventType: 'item.updated',
+      occurredAt: event.occurredAt,
+      visibility: 'team',
+      actor: {},
+      contentDigest: 'digest:monday-item-456-v2',
+      sourcePayloadRef: 's3://timeline-test/reconciliation/monday/item-456.json',
+      payloadDigest: 'sha256:monday-item-456',
+      normalizerVersion: 'test-normalizer-v2',
+      dedupeKey: `evidence:${TEAM_ID}:${rawEventId}:test-normalizer-v2`,
+    });
+
+    await writeIntegrationEvents({
+      db: db as never,
+      integration,
+      events: [event],
+    });
+
+    const associations = await db.select().from(artifactEvidenceAssociations);
+    expect(associations).toHaveLength(1);
+
+    const runs = await db.select().from(reconciliationRuns);
+    expect(runs).toHaveLength(1);
+
+    const outputs = await db.select().from(reconciliationOutputs);
+    expect(outputs).toHaveLength(1);
+    expect(outputs[0]).toMatchObject({
+      outputKind: 'observed_association',
+      targetKind: 'cluster_identity',
+      status: 'applied',
+      sourceRefs: [
+        {
+          source: 'monday',
+          rawEventId,
+          sourcePayloadRef: 's3://timeline-test/reconciliation/monday/item-456.json',
+        },
+      ],
+      sourcePayloadRefs: ['s3://timeline-test/reconciliation/monday/item-456.json'],
+    });
   });
 
   it('links legacy provider-mapped entities to clusters without rewriting the object row', async () => {
@@ -1051,6 +1273,121 @@ describe('writeIntegrationEvents visibility', () => {
     });
   });
 
+  it('stores Sentry issue links as provider-record artifacts owned by Sentry', async () => {
+    const [integration] = await db
+      .insert(integrations)
+      .values({
+        teamId: TEAM_ID,
+        connectedByUserId: USER_ID,
+        provider: 'sentry',
+        displayName: 'Sentry',
+        externalAccountId: 'sentry-acct-issue-provider-record',
+        visibilityDefault: 'team',
+      })
+      .returning();
+    if (!integration) throw new Error('integration insert failed');
+
+    const [rawEventId] = await writeIntegrationEvents({
+      db: db as never,
+      integration,
+      events: [
+        {
+          dedupKey: 'sentry:issue:timeline-ai-123:linked',
+          provider: 'sentry',
+          externalObjectId: 'issue-123',
+          eventType: 'issue.updated',
+          occurredAt: new Date('2026-06-20T11:15:00Z'),
+          contentText: 'Related Sentry issue TIMELINE-AI-123 is linked to Acme rollout.',
+          extra: {
+            sentry_issue_id: 'issue-123',
+            sentry_short_id: 'TIMELINE-AI-123',
+            external_url: 'https://sentry.io/organizations/acme/issues/123/',
+          },
+          objectMap: {
+            type: 'other',
+            canonicalName: 'Sentry issue TIMELINE-AI-123',
+            displayTitle: 'TIMELINE-AI-123',
+            externalId: 'issue-123',
+            status: 'open',
+            url: 'https://sentry.io/organizations/acme/issues/123/',
+            aliases: ['TIMELINE-AI-123'],
+            metadata: {
+              sentry_record_kind: 'issue',
+              sentry_issue_id: 'issue-123',
+              sentry_short_id: 'TIMELINE-AI-123',
+            },
+          },
+        },
+      ],
+    });
+    if (!rawEventId) throw new Error('raw event insert failed');
+
+    const [evidence] = await db
+      .select()
+      .from(reconciliationEvidence)
+      .where(eq(reconciliationEvidence.rawEventId, rawEventId));
+    expect(evidence).toMatchObject({
+      provider: 'sentry',
+      externalObjectId: 'issue-123',
+      eventType: 'issue.updated',
+      sourceUrl: 'https://sentry.io/organizations/acme/issues/123/',
+    });
+
+    const [cluster] = await db.select().from(artifactClusters);
+    expect(cluster).toMatchObject({
+      artifactClusterKind: 'provider_record',
+      artifactType: 'other',
+      canonicalName: 'TIMELINE-AI-123',
+      canonicalEntityId: null,
+      status: 'open',
+    });
+    expect(await db.select().from(entities)).toHaveLength(0);
+
+    const anchors = await db.select().from(artifactClusterAnchors);
+    expect(anchors).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          anchorType: 'provider_object',
+          anchorValue: 'sentry:issue-123',
+        }),
+        expect.objectContaining({
+          anchorType: 'provider_external:sentry',
+          anchorValue: 'issue-123',
+        }),
+        expect.objectContaining({
+          anchorType: 'alias:other',
+          anchorValue: 'timeline-ai-123',
+        }),
+        expect.objectContaining({
+          anchorType: 'url',
+          anchorValue: 'https://sentry.io/organizations/acme/issues/123',
+        }),
+      ]),
+    );
+
+    const [association] = await db.select().from(artifactEvidenceAssociations);
+    expect(association).toMatchObject({
+      role: 'blocker',
+      associationSource: 'authoritative_provider',
+      rawEventId,
+      clusterId: cluster?.id,
+    });
+
+    const [output] = await db.select().from(reconciliationOutputs);
+    expect(output).toMatchObject({
+      outputKind: 'direct_write',
+      targetKind: 'cluster_lifecycle',
+      operation: 'update',
+      status: 'applied',
+      clusterId: cluster?.id,
+    });
+    expect(output?.authorityDecision).toMatchObject({
+      decision: 'direct_write',
+      reason: 'provider_owns_external_object_state',
+      provider: 'sentry',
+    });
+  });
+
   it('stores Monday item links as provider-record artifact evidence', async () => {
     const [integration] = await db
       .insert(integrations)
@@ -1159,6 +1496,189 @@ describe('writeIntegrationEvents visibility', () => {
       decision: 'observed_association',
       reason: 'context_attached_without_canonical_state_change',
       provider: 'monday',
+    });
+  });
+
+  it('keeps Monday item provider records separate from customer-project clusters', async () => {
+    const [integration] = await db
+      .insert(integrations)
+      .values({
+        teamId: TEAM_ID,
+        connectedByUserId: USER_ID,
+        provider: 'monday',
+        displayName: 'Monday',
+        externalAccountId: 'monday-acct-project-shaped-item',
+        visibilityDefault: 'team',
+      })
+      .returning();
+    if (!integration) throw new Error('integration insert failed');
+
+    const [rawEventId] = await writeIntegrationEvents({
+      db: db as never,
+      integration,
+      events: [
+        {
+          dedupKey: 'monday:item:board-2:item-777:2026-06-20T12:00:00.000Z',
+          provider: 'monday',
+          externalObjectId: 'item-777',
+          eventType: 'item.updated',
+          occurredAt: new Date('2026-06-20T12:00:00Z'),
+          contentText: 'Monday customer-project shaped item updated: Northstar rollout',
+          extra: {
+            monday_board_id: 'board-2',
+            monday_board_name: 'Customer Projects',
+            monday_item_id: 'item-777',
+            external_url: 'https://monday.com/boards/2/pulses/777',
+          },
+          objectMap: {
+            type: 'project',
+            canonicalName: 'Northstar rollout',
+            displayTitle: 'Northstar rollout',
+            externalId: 'item-777',
+            status: 'in_progress',
+            url: 'https://monday.com/boards/2/pulses/777',
+            metadata: {
+              monday_record_kind: 'item',
+              monday_board_id: 'board-2',
+              monday_board_name: 'Customer Projects',
+              monday_item_id: 'item-777',
+              monday_item_name: 'Northstar rollout',
+            },
+          },
+        },
+      ],
+    });
+    if (!rawEventId) throw new Error('raw event insert failed');
+
+    const [cluster] = await db.select().from(artifactClusters);
+    expect(cluster).toMatchObject({
+      artifactClusterKind: 'provider_record',
+      artifactType: 'project',
+      canonicalName: 'Northstar rollout',
+      canonicalEntityId: null,
+    });
+
+    const anchors = await db.select().from(artifactClusterAnchors);
+    expect(anchors).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          anchorType: 'provider_object',
+          anchorValue: 'monday:item-777',
+        }),
+        expect.objectContaining({
+          anchorType: 'provider_external:monday',
+          anchorValue: 'item-777',
+        }),
+      ]),
+    );
+
+    const [association] = await db.select().from(artifactEvidenceAssociations);
+    expect(association).toMatchObject({
+      rawEventId,
+      role: 'related_context',
+      associationSource: 'hard_anchor',
+    });
+
+    const [output] = await db.select().from(reconciliationOutputs);
+    expect(output).toMatchObject({
+      outputKind: 'observed_association',
+      targetKind: 'cluster_identity',
+      operation: 'link',
+      status: 'applied',
+      clusterId: cluster?.id,
+    });
+  });
+
+  it('keeps Linear projects as provider records instead of Timeline customer projects', async () => {
+    const [integration] = await db
+      .insert(integrations)
+      .values({
+        teamId: TEAM_ID,
+        connectedByUserId: USER_ID,
+        provider: 'linear',
+        displayName: 'Linear',
+        externalAccountId: 'linear-acct-project-shaped-record',
+        visibilityDefault: 'team',
+      })
+      .returning();
+    if (!integration) throw new Error('integration insert failed');
+
+    const [rawEventId] = await writeIntegrationEvents({
+      db: db as never,
+      integration,
+      events: [
+        {
+          dedupKey: 'linear:project:project-42:2026-06-20T12:30:00.000Z',
+          provider: 'linear',
+          externalObjectId: 'project-42',
+          eventType: 'project.started',
+          occurredAt: new Date('2026-06-20T12:30:00Z'),
+          contentText: 'Linear project "Northstar rollout" started',
+          extra: {
+            linear: {
+              kind: 'project',
+              url: 'https://linear.app/acme/project/project-42',
+              state: 'started',
+            },
+          },
+          objectMap: {
+            type: 'project',
+            canonicalName: 'Northstar rollout',
+            displayTitle: 'Northstar rollout',
+            externalId: 'project-42',
+            status: 'in_progress',
+            url: 'https://linear.app/acme/project/project-42',
+            metadata: {
+              linear_record_kind: 'project',
+              linear_state: 'started',
+            },
+          },
+        },
+      ],
+    });
+    if (!rawEventId) throw new Error('raw event insert failed');
+
+    const [cluster] = await db.select().from(artifactClusters);
+    expect(cluster).toMatchObject({
+      artifactClusterKind: 'provider_record',
+      artifactType: 'project',
+      canonicalName: 'Northstar rollout',
+      canonicalEntityId: null,
+    });
+
+    const anchors = await db.select().from(artifactClusterAnchors);
+    expect(anchors).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          anchorType: 'provider_object',
+          anchorValue: 'linear:project-42',
+        }),
+        expect.objectContaining({
+          anchorType: 'provider_external:linear',
+          anchorValue: 'project-42',
+        }),
+      ]),
+    );
+
+    const [association] = await db.select().from(artifactEvidenceAssociations);
+    expect(association).toMatchObject({
+      rawEventId,
+      role: 'related_context',
+      associationSource: 'hard_anchor',
+    });
+
+    const [output] = await db.select().from(reconciliationOutputs);
+    expect(output).toMatchObject({
+      outputKind: 'observed_association',
+      targetKind: 'cluster_identity',
+      operation: 'link',
+      status: 'applied',
+      clusterId: cluster?.id,
+    });
+    expect(output?.authorityDecision).toMatchObject({
+      decision: 'observed_association',
+      reason: 'context_attached_without_canonical_state_change',
+      provider: 'linear',
     });
   });
 

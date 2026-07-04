@@ -309,6 +309,93 @@ describe('reconciliation dashboard snapshot', () => {
         status: 'pending',
       },
     ]);
+    const [privateOnlyCluster] = await db
+      .insert(artifactClusters)
+      .values({
+        teamId: TEAM_ID,
+        artifactClusterKind: 'customer_project',
+        artifactType: 'project',
+        canonicalName: 'Hidden private rollout',
+      })
+      .returning();
+    if (!privateOnlyCluster) throw new Error('expected private-only cluster');
+    await db.insert(artifactEvidenceAssociations).values({
+      teamId: TEAM_ID,
+      clusterId: privateOnlyCluster.id,
+      evidenceId: privateEvidence.id,
+      rawEventId: privateRaw.id,
+      role: 'decision',
+      strength: 'hard',
+      associationSource: 'human',
+      sourceRefs: [{ source: 'email', rawEventId: privateRaw.id, evidenceId: privateEvidence.id }],
+      visibility: 'private',
+      visibilityOwnerUserId: MEMBER_ID,
+      visibilityFloor: 'private',
+      visibilityFloorOwnerUserId: MEMBER_ID,
+      dedupeKey: buildAssociationDedupeKey({
+        teamId: TEAM_ID,
+        clusterId: privateOnlyCluster.id,
+        evidenceId: privateEvidence.id,
+        role: 'decision',
+        associationSource: 'human',
+        associationPolicyVersion: 'dashboard-private-only-test',
+      }),
+    });
+    const [privateOnlyRun] = await db
+      .insert(reconciliationRuns)
+      .values({
+        teamId: TEAM_ID,
+        trigger: 'manual_repair',
+        scope: 'cluster:hidden-private-rollout',
+        status: 'completed',
+        inputFingerprint: 'dashboard-private-run-1',
+        engineVersion: 'dashboard-test-engine',
+        startedAt: new Date('2026-06-27T09:17:00Z'),
+        completedAt: new Date('2026-06-27T09:18:00Z'),
+      })
+      .returning();
+    if (!privateOnlyRun) throw new Error('expected private-only run');
+    const [privateOnlyOutput] = await db
+      .insert(reconciliationOutputs)
+      .values({
+        teamId: TEAM_ID,
+        runId: privateOnlyRun.id,
+        clusterId: privateOnlyCluster.id,
+        outputKind: 'approval_bundle',
+        targetKind: 'object',
+        operation: 'update',
+        requiresApproval: true,
+        sourceRefs: [{ source: 'email', rawEventId: privateRaw.id }],
+        dedupeKey: 'dashboard-private-only-output',
+        visibility: 'private',
+        visibilityOwnerUserId: MEMBER_ID,
+        visibilityFloor: 'private',
+        visibilityFloorOwnerUserId: MEMBER_ID,
+        status: 'pending',
+      })
+      .returning();
+    if (!privateOnlyOutput) throw new Error('expected private-only output');
+    const [outputlessBackfillRun] = await db
+      .insert(reconciliationRuns)
+      .values({
+        teamId: TEAM_ID,
+        trigger: 'backfill',
+        scope: 'source:email',
+        status: 'completed',
+        inputFingerprint: 'dashboard-outputless-backfill-run-1',
+        engineVersion: 'dashboard-test-engine',
+        startedAt: new Date('2026-06-27T09:19:00Z'),
+        completedAt: new Date('2026-06-27T09:20:00Z'),
+        metrics: {
+          mode: 'audit',
+          source: 'email',
+          missing_raw_events: 1,
+          release_gate_passed: false,
+          release_gate_failure_count: 1,
+        },
+      })
+      .returning();
+    if (!outputlessBackfillRun) throw new Error('expected outputless backfill run');
 
     await db.insert(reconciliationProjectionOutbox).values({
       teamId: TEAM_ID,
@@ -316,6 +403,13 @@ describe('reconciliation dashboard snapshot', () => {
       action: 'create_projection',
       status: 'pending',
       dedupeKey: `dashboard-outbox:${output.id}`,
+    });
+    await db.insert(reconciliationProjectionOutbox).values({
+      teamId: TEAM_ID,
+      outputId: privateOnlyOutput.id,
+      action: 'create_projection',
+      status: 'pending',
+      dedupeKey: `dashboard-private-outbox:${privateOnlyOutput.id}`,
     });
 
     const snapshot = await withTeam(
@@ -325,29 +419,55 @@ describe('reconciliation dashboard snapshot', () => {
     ).reconciliation.getDashboardSnapshot();
 
     expect(snapshot.evidenceCoverage).toMatchObject({
-      totalRawEvents: 4,
-      normalizedRawEvents: 3,
+      totalRawEvents: 3,
+      normalizedRawEvents: 2,
       missingRawEvents: 1,
-      fullReplayEvidence: 2,
+      fullReplayEvidence: 1,
       degradedReplayEvidence: 1,
+      releaseGate: {
+        passed: false,
+        failureCount: 2,
+        failures: [
+          {
+            source: 'web',
+            code: 'missing_evidence',
+            rawEventCount: 1,
+          },
+          {
+            source: 'slack',
+            code: 'degraded_replay',
+            rawEventCount: 1,
+          },
+        ],
+      },
     });
     expect(snapshot.evidenceCoverage.bySource.web.missingRawEvents).toBe(1);
-    expect(snapshot.runs.byStatus).toContainEqual({ key: 'completed', count: 1 });
+    expect(snapshot.runs.byStatus).toContainEqual({ key: 'completed', count: 2 });
     expect(snapshot.runs.byTrigger).toContainEqual({ key: 'manual_repair', count: 1 });
+    expect(snapshot.runs.byTrigger).toContainEqual({ key: 'backfill', count: 1 });
+    expect(snapshot.runs.recent).toContainEqual(
+      expect.objectContaining({
+        id: outputlessBackfillRun.id,
+        trigger: 'backfill',
+        scope: 'source:email',
+        metrics: expect.objectContaining({
+          mode: 'audit',
+          release_gate_passed: false,
+          release_gate_failure_count: 1,
+        }) as unknown,
+      }),
+    );
     expect(snapshot.outputs.byStatus).toContainEqual({ key: 'approval_created', count: 1 });
     expect(snapshot.outputs.byStatus).toContainEqual({ key: 'applied', count: 3 });
-    expect(snapshot.outputs.byStatus).toContainEqual({ key: 'pending', count: 2 });
+    expect(snapshot.outputs.byStatus).toContainEqual({ key: 'pending', count: 1 });
     expect(snapshot.outputs.byStatus).toContainEqual({ key: 'rejected', count: 1 });
-    expect(snapshot.outputs.byKind).toContainEqual({ key: 'approval_bundle', count: 4 });
+    expect(snapshot.outputs.byKind).toContainEqual({ key: 'approval_bundle', count: 3 });
     expect(snapshot.outputs.byKind).toContainEqual({ key: 'conflict', count: 1 });
     expect(snapshot.outputs.byKind).toContainEqual({ key: 'direct_write', count: 1 });
     expect(snapshot.outputs.byKind).toContainEqual({ key: 'no_action', count: 1 });
     expect(snapshot.associations).toMatchObject({
-      total: 2,
-      byRole: [
-        { key: 'decision', count: 1 },
-        { key: 'related_context', count: 1 },
-      ],
+      total: 1,
+      byRole: [{ key: 'decision', count: 1 }],
     });
     expect(snapshot.clusters).toMatchObject({
       total: 1,
@@ -360,12 +480,54 @@ describe('reconciliation dashboard snapshot', () => {
         canonicalName: 'Acme rollout',
       }),
     ]);
+    expect(snapshot.clusters.recent).not.toContainEqual(
+      expect.objectContaining({ id: privateOnlyCluster.id }),
+    );
     expect(snapshot.projectionOutbox.byStatus).toContainEqual({ key: 'pending', count: 1 });
-    expect(snapshot.runs.recent[0]).toMatchObject({
-      id: run.id,
-      trigger: 'manual_repair',
-      scope: 'cluster:acme-rollout',
+    expect(snapshot.runs.recent).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: run.id,
+          trigger: 'manual_repair',
+          scope: 'cluster:acme-rollout',
+        }),
+        expect.objectContaining({
+          id: outputlessBackfillRun.id,
+          trigger: 'backfill',
+          scope: 'source:email',
+        }),
+      ]),
+    );
+    expect(snapshot.runs.recent).not.toContainEqual(
+      expect.objectContaining({
+        id: privateOnlyRun.id,
+        scope: 'cluster:hidden-private-rollout',
+      }),
+    );
+    const pagedRunHistory = await withTeam(
+      db as never,
+      TEAM_ID,
+      ADMIN_ID,
+    ).reconciliation.getDashboardSnapshot({
+      runHistory: { trigger: 'backfill', status: 'completed', page: 1, pageSize: 1 },
     });
+    expect(pagedRunHistory.runs.history).toMatchObject({
+      trigger: 'backfill',
+      status: 'completed',
+      page: 1,
+      pageSize: 1,
+      total: 1,
+      totalPages: 1,
+      hasPreviousPage: false,
+      hasNextPage: false,
+    });
+    expect(pagedRunHistory.runs.recent).toEqual([
+      expect.objectContaining({
+        id: outputlessBackfillRun.id,
+        trigger: 'backfill',
+        status: 'completed',
+      }),
+    ]);
     expect(snapshot.outputs.recent).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -381,7 +543,7 @@ describe('reconciliation dashboard snapshot', () => {
       approvalStats: {
         accepted: 1,
         rejected: 1,
-        open: 3,
+        open: 2,
         totalDecided: 2,
         acceptanceRate: 0.5,
       },
@@ -402,6 +564,11 @@ describe('reconciliation dashboard snapshot', () => {
     expect(detail?.evidence.map((row) => row.rawEventId)).toContain(emailEvidence.rawEventId);
     expect(detail?.evidence.map((row) => row.rawEventId)).not.toContain(privateRaw.id);
     expect(detail?.outputs.map((row) => row.id)).toContain(output.id);
+    await expect(
+      withTeam(db as never, TEAM_ID, ADMIN_ID).reconciliation.getClusterDetail({
+        clusterId: privateOnlyCluster.id,
+      }),
+    ).resolves.toBeNull();
     const visibleOutputSourceRefs: unknown[] = [];
     for (const row of detail?.outputs ?? []) {
       if (!Array.isArray(row.sourceRefs)) continue;

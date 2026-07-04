@@ -13,6 +13,7 @@ import { and, eq, isNull, or, sql } from 'drizzle-orm';
 import type { SQL } from 'drizzle-orm';
 import type { AnyPgColumn } from 'drizzle-orm/pg-core';
 
+import { evaluateAuthorityPolicy } from '#src/reconciliation/authority.js';
 import { buildAssociationDedupeKey, type SourceRef } from '#src/reconciliation/index.js';
 import { normalizeRawEventsToEvidence } from '#src/reconciliation/normalization.js';
 
@@ -276,7 +277,7 @@ function associationRoleForEvidence(role: EvidenceRole): AssociationRole {
 }
 
 function associationSourceForEvidence(input: ArtifactEvidenceInput): AssociationSource {
-  if (input.authoritative) return 'authoritative_provider';
+  if (input.authoritative && input.provider) return 'authoritative_provider';
   if (input.strength === 'hard') return 'hard_anchor';
   if (input.strength === 'human') return 'human';
   if (input.strength === 'semantic') return 'model_candidate';
@@ -397,6 +398,37 @@ function identityAuthorityRank(input: ArtifactEvidenceInput): number {
   return roleRank === 0 ? 0 : roleRank * 100 + evidenceStrengthRank(input);
 }
 
+function authorityEventType(input: ArtifactEvidenceInput): string {
+  const metadataEventType = input.metadata?.event_type;
+  if (typeof metadataEventType === 'string' && metadataEventType.trim()) {
+    return metadataEventType.trim();
+  }
+  return input.role;
+}
+
+function hasDirectClusterAuthority(
+  input: ArtifactEvidenceInput,
+  target: { targetKind: 'cluster_lifecycle' | 'cluster_identity'; targetField: string | null },
+): boolean {
+  return (
+    evaluateAuthorityPolicy({
+      source: input.provider ? 'integration' : 'artifact',
+      provider: input.provider ?? null,
+      eventType: authorityEventType(input),
+      clusterKind: input.artifactClusterKind ?? null,
+      targetKind: target.targetKind,
+      targetField: target.targetField,
+      externalObjectId: input.externalObjectId ?? null,
+      visibility: 'team',
+      confidence: confidenceForEvidence(input) as 'low' | 'medium' | 'high',
+      currentOwner:
+        input.provider && input.externalObjectId
+          ? { provider: input.provider, externalObjectId: input.externalObjectId }
+          : null,
+    }).decision === 'direct'
+  );
+}
+
 function statusAuthorityAt(input: ArtifactEvidenceInput): string {
   const value = input.occurredAt;
   const date = value instanceof Date ? value : value ? new Date(value) : new Date();
@@ -409,6 +441,14 @@ async function updateClusterStatusFromAuthoritativeEvidence(
   clusterId: string,
 ): Promise<void> {
   if (!input.authoritative || !input.status) return;
+  if (
+    !hasDirectClusterAuthority(input, {
+      targetKind: 'cluster_lifecycle',
+      targetField: 'status',
+    })
+  ) {
+    return;
+  }
   const rank = statusAuthorityRank(input);
   const authorityAt = statusAuthorityAt(input);
   const sourceCanRefresh = canRefreshStatusFromSameSource(input);
@@ -450,6 +490,14 @@ async function updateClusterIdentityFromAuthoritativeEvidence(
   input: ArtifactEvidenceInput,
   clusterId: string,
 ): Promise<void> {
+  if (
+    !hasDirectClusterAuthority(input, {
+      targetKind: 'cluster_identity',
+      targetField: 'identity',
+    })
+  ) {
+    return;
+  }
   const rank = identityAuthorityRank(input);
   if (rank === 0) return;
   const authorityAt = statusAuthorityAt(input);

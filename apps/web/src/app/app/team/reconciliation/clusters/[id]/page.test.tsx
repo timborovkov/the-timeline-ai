@@ -55,6 +55,10 @@ describe('ReconciliationClusterPage', () => {
     expect(html).toContain('monday');
     expect(html).toContain('Launch pilot in July');
     expect(html).toContain('agent_suggestion_projection');
+    expect(html).toContain('output output-1');
+    expect(html).toContain('raw-event-1');
+    expect(html).toContain('evidence-1');
+    expect(html).toContain('inline://monday/pulse-123');
     expect(html).toContain('workspace object');
     expect(html).toContain(`name="targetId" value="${CLUSTER_ID}"`);
   });
@@ -119,6 +123,16 @@ function sampleDetail() {
         operation: 'update',
         confidence: 'high',
         createdAt: now,
+        updatedAt: now,
+        sourceRefs: [
+          {
+            source: 'integration',
+            rawEventId: 'raw-event-1',
+            evidenceId: 'evidence-1',
+            sourcePayloadRef: 'inline://monday/pulse-123',
+          },
+        ],
+        sourcePayloadRefs: ['inline://monday/pulse-123'],
         payload: {
           canonicalName: 'Lumen onboarding pilot',
         },

@@ -22,6 +22,8 @@ import {
   objectNotes,
   rawEvents,
   reconciliationEvidence,
+  reconciliationOutputs,
+  meetingTranscriptChunks,
   teamMembers,
   teamVisibilityDefaults,
   teams,
@@ -62,6 +64,7 @@ import {
 import { buildPointId } from '#src/qdrant/point-id.js';
 import { normalizeRawEventsToEvidence } from '#src/reconciliation/normalization.js';
 import { createReconciliationScope } from '#src/reconciliation/scope.js';
+import { inlineSourceSnapshotMetadata } from '#src/reconciliation/source-snapshot.js';
 import { createSuggestionScope } from '#src/suggestions/index.js';
 import {
   buildTimelineMomentPresentationCacheFingerprint,
@@ -107,6 +110,41 @@ const SPECIFIC_USERS_DEFAULT_SOURCES = new Set<VisibilityDefaultSource>([
 ]);
 const DEFAULT_SENDER_SEARCH_EVENT_ID_BATCH_SIZE = 1000;
 const log = childLogger('team-scope');
+const WEB_TEXT_SOURCE_SNAPSHOT_VERSION = 'web-text-source-snapshot-2026-07';
+
+function sourceMetadataString(metadata: Record<string, unknown>, key: string): string | null {
+  const value = metadata[key];
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
+}
+
+function webTextSourceMetadata(input: {
+  teamId: string;
+  authorUserId: string | null;
+  visibilityOwnerUserId: string | null;
+  contentText: string;
+  occurredAt: Date;
+  visibility: EventVisibility;
+  visibilityUserIds: string[] | null;
+}): Record<string, unknown> {
+  const snapshot = {
+    provider: 'timeline_web',
+    source: 'web',
+    capture_kind: 'text_note',
+    team_id: input.teamId,
+    author_user_id: input.authorUserId,
+    visibility_owner_user_id: input.visibilityOwnerUserId,
+    visibility: input.visibility,
+    visibility_user_ids: input.visibilityUserIds,
+    occurred_at: input.occurredAt.toISOString(),
+    content_text: input.contentText,
+  };
+  return inlineSourceSnapshotMetadata({
+    snapshot,
+    kind: 'web_text_capture',
+    version: WEB_TEXT_SOURCE_SNAPSHOT_VERSION,
+    ref: (digest) => `inline://timeline/web/${digest.slice('sha256:'.length)}`,
+  });
+}
 
 async function enqueueRawEventEmbed(input: { teamId: string; rawEventId: string }): Promise<void> {
   const { enqueueEmbedJob } = await import(/* webpackIgnore: true */ '#src/queue/queues.js');
@@ -835,6 +873,50 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
     if (typeof value === 'string' && value.trim()) return value.trim();
     if (typeof value === 'number') return String(value);
     return null;
+  }
+
+  function sourceRefRawEventIds(value: unknown): string[] {
+    if (!Array.isArray(value)) return [];
+    return [
+      ...new Set(
+        value.flatMap((item) => {
+          const ref = metadataObject(item);
+          const rawEventId = ref.rawEventId;
+          return typeof rawEventId === 'string' && UUID_RE.test(rawEventId) ? [rawEventId] : [];
+        }),
+      ),
+    ];
+  }
+
+  function directOutputImpactKind(targetKind: string, payload: Record<string, unknown>) {
+    if (targetKind === 'board_membership' || targetKind === 'board_item_update') return 'board';
+    const objectType = metadataString(payload, 'object_type');
+    if (objectType === 'task' || objectType === 'follow_up') return 'task';
+    return 'object';
+  }
+
+  function directOutputImpactHref(
+    targetKind: string,
+    targetId: string | null,
+    payload: Record<string, unknown>,
+  ): string {
+    if (targetKind === 'board_membership' || targetKind === 'board_item_update') {
+      const boardId = metadataString(payload, 'board_id');
+      const boardItemId = metadataString(payload, 'board_item_id') ?? targetId;
+      return boardId
+        ? `/app/boards/${boardId}${boardItemId ? `?item=${boardItemId}` : ''}`
+        : '/app/boards';
+    }
+    if (targetKind === 'object_note' || targetKind === 'identity_facet') {
+      const entityId = metadataString(payload, 'entity_id');
+      return entityId ? `/app/objects/${entityId}` : '/app/objects';
+    }
+    if (targetKind === 'object_relationship') {
+      const entityId =
+        metadataString(payload, 'from_entity_id') ?? metadataString(payload, 'to_entity_id');
+      return entityId ? `/app/objects/${entityId}` : '/app/objects';
+    }
+    return targetId ? `/app/objects/${targetId}` : '/app/objects';
   }
 
   function emailFromMetadata(meta: Record<string, unknown>): string | null {
@@ -1729,8 +1811,41 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
         sql`${userId}::uuid = ANY(${calendarEvents.visibilityUserIds})`,
       ),
     );
+    const outputVisibility = and(
+      or(
+        eq(reconciliationOutputs.visibility, 'team'),
+        and(
+          eq(reconciliationOutputs.visibility, 'private'),
+          eq(reconciliationOutputs.visibilityOwnerUserId, userId),
+        ),
+        and(
+          eq(reconciliationOutputs.visibility, 'specific_users'),
+          sql`${userId}::uuid = ANY(${reconciliationOutputs.visibilityUserIds})`,
+        ),
+      ),
+      or(
+        eq(reconciliationOutputs.visibilityFloor, 'team'),
+        and(
+          eq(reconciliationOutputs.visibilityFloor, 'private'),
+          eq(reconciliationOutputs.visibilityFloorOwnerUserId, userId),
+        ),
+        and(
+          eq(reconciliationOutputs.visibilityFloor, 'specific_users'),
+          sql`${userId}::uuid = ANY(${reconciliationOutputs.visibilityFloorUserIds})`,
+        ),
+      ),
+    );
+    const sourceRefIdList = sql.join(
+      ids.map((id) => sql`${id}`),
+      sql`, `,
+    );
+    const outputCitesRequestedRawEvent = sql`EXISTS (
+      SELECT 1
+      FROM jsonb_array_elements(${reconciliationOutputs.sourceRefs}) AS source_ref
+      WHERE source_ref ->> 'rawEventId' IN (${sourceRefIdList})
+    )`;
 
-    const [suggestionRows, objectChangeRows, entityRows, documentRows, calendarRows] =
+    const [suggestionRows, objectChangeRows, entityRows, documentRows, calendarRows, outputRows] =
       await Promise.all([
         db
           .select({
@@ -1840,6 +1955,26 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
                 inArray(calendarEvents.startAtRawEventId, ids),
               ),
               calendarVisibility,
+            ),
+          ),
+        db
+          .select({
+            outputId: reconciliationOutputs.id,
+            targetKind: reconciliationOutputs.targetKind,
+            operation: reconciliationOutputs.operation,
+            targetId: reconciliationOutputs.targetId,
+            status: reconciliationOutputs.status,
+            payload: reconciliationOutputs.payload,
+            sourceRefs: reconciliationOutputs.sourceRefs,
+          })
+          .from(reconciliationOutputs)
+          .where(
+            and(
+              eq(reconciliationOutputs.teamId, teamId),
+              eq(reconciliationOutputs.outputKind, 'direct_write'),
+              eq(reconciliationOutputs.status, 'applied'),
+              outputVisibility,
+              outputCitesRequestedRawEvent,
             ),
           ),
       ]);
@@ -1958,6 +2093,26 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
         href,
         status: 'event',
       });
+    }
+
+    for (const row of outputRows) {
+      const payload = metadataObject(row.payload);
+      const label =
+        metadataString(payload, 'canonical_name') ??
+        metadataString(payload, 'title') ??
+        metadataString(payload, 'system_event_kind') ??
+        row.targetKind;
+      const kind = directOutputImpactKind(row.targetKind, payload);
+      const href = directOutputImpactHref(row.targetKind, row.targetId, payload);
+      for (const rawEventId of sourceRefRawEventIds(row.sourceRefs)) {
+        if (!ids.includes(rawEventId)) continue;
+        pushTimelineImpact(impact, rawEventId, {
+          kind,
+          label,
+          href,
+          status: row.operation,
+        });
+      }
     }
 
     return Object.fromEntries(impact);
@@ -2406,6 +2561,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
       async createEvent(input: CreateEventInput) {
         await ensureMember();
         const contentText = input.contentText ?? null;
+        const occurredAt = input.occurredAt ?? new Date();
         const visibilityUserIds = await validateVisibilityPatch(
           {
             visibility: input.visibility ?? 'team',
@@ -2413,6 +2569,25 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
           },
           { allowSpecificUsers: true },
         );
+        const visibility = input.visibility ?? 'team';
+        const visibilityOwnerUserId = input.visibilityOwnerUserId ?? input.authorUserId;
+        const sourceMetadata = input.sourceMetadata ?? {};
+        const replayMetadata =
+          input.source === 'web' &&
+          !input.contentAudioUrl &&
+          contentText &&
+          !sourceMetadataString(sourceMetadata, 'source_payload_ref') &&
+          !sourceMetadataString(sourceMetadata, 'sourcePayloadRef')
+            ? webTextSourceMetadata({
+                teamId,
+                authorUserId: input.authorUserId,
+                visibilityOwnerUserId,
+                contentText,
+                occurredAt,
+                visibility,
+                visibilityUserIds,
+              })
+            : {};
         const rows = await db
           .insert(rawEvents)
           .values({
@@ -2421,12 +2596,15 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
             source: input.source,
             contentText,
             contentAudioUrl: input.contentAudioUrl ?? null,
-            occurredAt: input.occurredAt ?? new Date(),
-            visibility: input.visibility ?? 'team',
+            occurredAt,
+            visibility,
             visibilityUserIds,
-            visibilityOwnerUserId: input.visibilityOwnerUserId ?? input.authorUserId,
+            visibilityOwnerUserId,
             sourceMetadata: sourceMetadataWithConversationArtifacts(
-              input.sourceMetadata ?? {},
+              {
+                ...sourceMetadata,
+                ...replayMetadata,
+              },
               contentText,
             ),
           })
@@ -2939,7 +3117,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
         if (input.sourceKind) {
           searchOpts.sourceKind = input.sourceKind;
         } else {
-          searchOpts.sourceKind = ['raw_event', 'fact', 'doc_chunk'];
+          searchOpts.sourceKind = ['raw_event', 'fact', 'doc_chunk', 'meeting_chunk'];
           searchOpts.fileKinds = ['captured'];
         }
 
@@ -2954,6 +3132,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
         // entity_ids across event-level + fact-level points on the same event.
         const dedup = new Map<string, SearchEventResult>();
         const docChunkIdsByEvent = new Map<string, string[]>();
+        const meetingChunkIdsByEvent = new Map<string, string[]>();
         for (const hit of hits) {
           // Defense in depth: Qdrant's wrapper already filters team_id, but
           // verify here so a misconfigured payload can't leak across teams.
@@ -2971,6 +3150,8 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
           const factId = hit.payload.fact_id ?? null;
           const docChunkId =
             hit.payload.source_kind === 'doc_chunk' ? hit.payload.document_chunk_id : null;
+          const meetingChunkId =
+            hit.payload.source_kind === 'meeting_chunk' ? hit.payload.meeting_chunk_id : null;
           const existing = dedup.get(hit.payload.event_id);
           if (existing) {
             if (hit.score > existing.score) existing.score = hit.score;
@@ -2980,6 +3161,13 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
               if (!chunkIds.includes(docChunkId)) {
                 chunkIds.push(docChunkId);
                 docChunkIdsByEvent.set(hit.payload.event_id, chunkIds);
+              }
+            }
+            if (meetingChunkId) {
+              const chunkIds = meetingChunkIdsByEvent.get(hit.payload.event_id) ?? [];
+              if (!chunkIds.includes(meetingChunkId)) {
+                chunkIds.push(meetingChunkId);
+                meetingChunkIdsByEvent.set(hit.payload.event_id, chunkIds);
               }
             }
             for (const entId of entityIds) {
@@ -3001,6 +3189,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
             senderResolutionStatus: 'unresolved',
           });
           if (docChunkId) docChunkIdsByEvent.set(hit.payload.event_id, [docChunkId]);
+          if (meetingChunkId) meetingChunkIdsByEvent.set(hit.payload.event_id, [meetingChunkId]);
         }
 
         const orderedEventIds = Array.from(dedup.values())
@@ -3061,6 +3250,25 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
                 )
             : [];
         const docChunkMap = new Map(docChunkRows.map((chunk) => [chunk.id, chunk]));
+        const allMeetingChunkIds = Array.from(meetingChunkIdsByEvent.values()).flat();
+        const meetingChunkRows =
+          allMeetingChunkIds.length > 0
+            ? await db
+                .select({
+                  id: meetingTranscriptChunks.id,
+                  text: meetingTranscriptChunks.text,
+                  speaker: meetingTranscriptChunks.speaker,
+                  teamId: meetingTranscriptChunks.teamId,
+                })
+                .from(meetingTranscriptChunks)
+                .where(
+                  and(
+                    inArray(meetingTranscriptChunks.id, allMeetingChunkIds),
+                    eq(meetingTranscriptChunks.teamId, teamId),
+                  ),
+                )
+            : [];
+        const meetingChunkMap = new Map(meetingChunkRows.map((chunk) => [chunk.id, chunk]));
 
         const results: SearchEventResult[] = [];
         for (const eventId of orderedEventIds) {
@@ -3095,8 +3303,14 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
             .filter((chunk): chunk is NonNullable<typeof chunk> => Boolean(chunk))
             .map((chunk) => `${chunk.representationKind.replace(/_/g, ' ')}: ${chunk.text}`)
             .join(' · ');
+          const meetingSnippet = (meetingChunkIdsByEvent.get(eventId) ?? [])
+            .map((id) => meetingChunkMap.get(id))
+            .filter((chunk): chunk is NonNullable<typeof chunk> => Boolean(chunk))
+            .map((chunk) => (chunk.speaker ? `${chunk.speaker}: ${chunk.text}` : chunk.text))
+            .join(' · ');
           const snippet =
             factSnippet ||
+            (meetingSnippet ? meetingSnippet.slice(0, 240) : '') ||
             (docSnippet ? docSnippet.slice(0, 240) : '') ||
             (ev.contentText ? ev.contentText.slice(0, 240) : '[audio event — no transcript]');
           results.push({

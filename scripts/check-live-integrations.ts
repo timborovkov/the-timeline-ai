@@ -2,16 +2,26 @@ import { createSign } from 'node:crypto';
 import { randomUUID } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 
+import { closeDb, getDbClient } from '@timeline/db';
 import {
+  buildSpeechTranscriptionCanaryMp3,
   buildPostmarkInboundCaptureCanaryPayload,
+  buildSlackEventCaptureCanaryPayload,
+  buildTelegramCaptureCanaryPayload,
   formatLiveIntegrationCanaryReport,
   getProvider,
+  isExpectedSpeechTranscriptionCanaryText,
   type NativeProviderId,
   redactLiveIntegrationCanaryText,
+  signSlackCanaryRequest,
   type LiveIntegrationCanaryResult,
   validatePostmarkInboundCaptureCanaryUrl,
+  validateSlackEventCaptureCanaryUrl,
+  validateTelegramCaptureCanaryUrl,
 } from '@timeline/shared/integrations';
-import { chatStructured } from '@timeline/shared/llm';
+import { chatStructured, transcribeAudio } from '@timeline/shared/llm';
+import { listRecallBotsForCanary } from '@timeline/shared/meeting-bots';
+import { SlackApi } from '@timeline/shared/slack';
 import { z } from 'zod';
 
 const args = process.argv.slice(2);
@@ -125,6 +135,49 @@ async function checkOpenRouter(): Promise<LiveIntegrationCanaryResult> {
   };
 }
 
+async function checkOpenRouterTranscription(): Promise<LiveIntegrationCanaryResult> {
+  if (!configured('OPENROUTER_API_KEY')) {
+    return {
+      name: 'OpenRouter transcription',
+      status: 'skip',
+      detail: 'OPENROUTER_API_KEY missing',
+      envKeys: ['OPENROUTER_API_KEY'],
+      docs: 'docs/setup/openrouter.html#phase-3',
+    };
+  }
+  try {
+    const result = await transcribeAudio({
+      audio: buildSpeechTranscriptionCanaryMp3(),
+      format: 'mp3',
+      language: 'en',
+    });
+    if (isExpectedSpeechTranscriptionCanaryText(result.text)) {
+      return {
+        name: 'OpenRouter transcription',
+        status: 'ok',
+        detail: `speech transcription returned canary words with ${result.model}`,
+      };
+    }
+    return {
+      name: 'OpenRouter transcription',
+      status: 'warn',
+      detail: `speech transcription response missed the expected canary words: ${safeCanaryDetail(
+        result.text,
+      )}`,
+      action: 'verify the configured transcription model can decode the pinned speech fixture',
+      docs: 'docs/setup/openrouter.html#phase-3',
+    };
+  } catch (err) {
+    return {
+      name: 'OpenRouter transcription',
+      status: 'warn',
+      detail: safeCanaryDetail(err instanceof Error ? err.message : String(err)),
+      action: 'verify the OpenRouter key can access the pinned transcription model',
+      docs: 'docs/setup/openrouter.html#phase-3',
+    };
+  }
+}
+
 function base64Url(value: Buffer | string): string {
   return Buffer.from(value).toString('base64url');
 }
@@ -210,7 +263,7 @@ async function checkSentry(): Promise<LiveIntegrationCanaryResult> {
       status: 'warn',
       detail: shortProviderError(response.status, body, text),
       action:
-        'grant the Sentry token access to the configured org/project or update SENTRY_ORG/SENTRY_PROJECT',
+        'grant the Sentry token project:read access to the configured org/project or update SENTRY_ORG/SENTRY_PROJECT',
       docs: 'docs/setup/sentry.html',
     };
   }
@@ -246,9 +299,400 @@ async function checkPostmark(): Promise<LiveIntegrationCanaryResult> {
   return { name: 'Postmark API', status: 'ok', detail: 'server lookup succeeded' };
 }
 
+async function checkRecallApi(): Promise<LiveIntegrationCanaryResult> {
+  if (!configured('RECALL_API_KEY')) {
+    return {
+      name: 'Recall API',
+      status: 'skip',
+      detail: 'RECALL_API_KEY missing',
+      envKeys: ['RECALL_API_KEY'],
+      docs: 'docs/setup/meeting-bots.html',
+    };
+  }
+  try {
+    const result = await listRecallBotsForCanary();
+    const count =
+      result.returnedCount === null
+        ? 'provider response parsed'
+        : `${String(result.returnedCount)} future bot row(s) returned`;
+    return {
+      name: 'Recall API',
+      status: 'ok',
+      detail: `future bot list probe succeeded: ${count}`,
+    };
+  } catch (err) {
+    return {
+      name: 'Recall API',
+      status: 'warn',
+      detail: safeCanaryDetail(err instanceof Error ? err.message : String(err)),
+      action: 'verify the Recall API key, base URL region, and workspace access',
+      docs: 'docs/setup/meeting-bots.html',
+    };
+  }
+}
+
+async function checkSlackApiAuth(input: {
+  envKey: 'SLACK_CANARY_BOT_TOKEN' | 'SLACK_CANARY_USER_TOKEN';
+  name: string;
+  expectedPrefix: string;
+}): Promise<LiveIntegrationCanaryResult> {
+  const token = process.env[input.envKey]?.trim();
+  if (!token) {
+    return {
+      name: input.name,
+      status: 'skip',
+      detail: `${input.envKey} missing`,
+      envKeys: [input.envKey],
+      action: 'configure an optional read-only Slack canary token for auth.test',
+      docs: 'docs/setup/slack.html#live-canary',
+    };
+  }
+  if (!token.startsWith(input.expectedPrefix)) {
+    return {
+      name: input.name,
+      status: 'warn',
+      detail: `${input.envKey} does not look like a ${input.expectedPrefix} token`,
+      action: 'set the matching Slack token type or leave the canary env unset',
+      docs: 'docs/setup/slack.html#live-canary',
+    };
+  }
+  try {
+    const result = await new SlackApi(token).authTest();
+    const actor = result.bot_id ? 'bot' : 'user';
+    return {
+      name: input.name,
+      status: 'ok',
+      detail: `auth.test succeeded for team ${result.team_id} as ${actor} ${result.user_id}`,
+    };
+  } catch (err) {
+    return {
+      name: input.name,
+      status: 'warn',
+      detail: safeCanaryDetail(err instanceof Error ? err.message : String(err)),
+      action: 'verify the Slack canary token is active and has not been revoked',
+      docs: 'docs/setup/slack.html#live-canary',
+    };
+  }
+}
+
+async function checkTelegramBotApi(): Promise<LiveIntegrationCanaryResult> {
+  if (!configured('TELEGRAM_BOT_TOKEN')) {
+    return {
+      name: 'Telegram Bot API',
+      status: 'skip',
+      detail: 'TELEGRAM_BOT_TOKEN missing',
+      envKeys: ['TELEGRAM_BOT_TOKEN'],
+      docs: 'docs/setup/telegram.html',
+    };
+  }
+  try {
+    const response = await fetch(
+      `https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN ?? ''}/getMe`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: '{}',
+      },
+    );
+    const { body, text } = await readJson(response);
+    const record = body && typeof body === 'object' ? (body as Record<string, unknown>) : {};
+    if (response.ok && record.ok === true) {
+      const result =
+        record.result && typeof record.result === 'object'
+          ? (record.result as Record<string, unknown>)
+          : {};
+      const username = typeof result.username === 'string' ? result.username : 'bot';
+      return { name: 'Telegram Bot API', status: 'ok', detail: `getMe succeeded for ${username}` };
+    }
+    return {
+      name: 'Telegram Bot API',
+      status: 'warn',
+      detail: shortProviderError(response.status, body, text),
+      action: 'verify TELEGRAM_BOT_TOKEN is active and belongs to the configured bot',
+      docs: 'docs/setup/telegram.html',
+    };
+  } catch (err) {
+    return {
+      name: 'Telegram Bot API',
+      status: 'warn',
+      detail: safeCanaryDetail(err instanceof Error ? err.message : String(err)),
+      action: 'verify Telegram Bot API reachability and TELEGRAM_BOT_TOKEN',
+      docs: 'docs/setup/telegram.html',
+    };
+  }
+}
+
+function slackTimestamp(date: Date): string {
+  const millis = date.getTime();
+  const seconds = Math.floor(millis / 1000);
+  const micros = String((millis % 1000) * 1000).padStart(6, '0');
+  return `${String(seconds)}.${micros}`;
+}
+
+async function waitForTelegramCaptureRawEvent(input: {
+  text: string;
+  updateId: number;
+}): Promise<string | null> {
+  const sql = getDbClient();
+  const deadline = Date.now() + 10_000;
+  while (Date.now() < deadline) {
+    const rows = await sql<{ id: string }[]>`
+      SELECT id
+      FROM raw_events
+      WHERE source = 'telegram'
+        AND content_text = ${input.text}
+        AND source_metadata ->> 'tg_update_id' = ${String(input.updateId)}
+      ORDER BY created_at DESC
+      LIMIT 1
+    `;
+    const id = rows[0]?.id;
+    if (id) return id;
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  return null;
+}
+
+async function checkTelegramCapture(): Promise<LiveIntegrationCanaryResult> {
+  const envKeys = [
+    'AUTH_URL',
+    'TELEGRAM_WEBHOOK_SECRET',
+    'TELEGRAM_BOT_TOKEN',
+    'TELEGRAM_CAPTURE_CANARY_USER_ID',
+    'DATABASE_URL',
+  ];
+  if (!configured(...envKeys)) {
+    return {
+      name: 'Telegram capture',
+      status: 'skip',
+      detail: 'Telegram capture canary env missing',
+      envKeys,
+      action: 'configure a linked Telegram user canary before running capture canaries',
+      docs: 'docs/setup/telegram.html#live-canary',
+    };
+  }
+
+  const rawUserId = process.env.TELEGRAM_CAPTURE_CANARY_USER_ID?.trim() ?? '';
+  const userId = Number(rawUserId);
+  if (!Number.isSafeInteger(userId) || userId <= 0) {
+    return {
+      name: 'Telegram capture',
+      status: 'warn',
+      detail: 'TELEGRAM_CAPTURE_CANARY_USER_ID must be a positive integer',
+      action:
+        'set TELEGRAM_CAPTURE_CANARY_USER_ID to the numeric Telegram user id linked in Timeline',
+      docs: 'docs/setup/telegram.html#live-canary',
+    };
+  }
+
+  const canaryUrl = validateTelegramCaptureCanaryUrl(
+    process.env.AUTH_URL,
+    process.env.TELEGRAM_CAPTURE_CANARY_ALLOWED_ORIGIN,
+  );
+  if (!canaryUrl.ok) {
+    return {
+      name: 'Telegram capture',
+      status: 'warn',
+      detail: canaryUrl.reason,
+      action:
+        'set AUTH_URL and TELEGRAM_CAPTURE_CANARY_ALLOWED_ORIGIN to the same trusted app origin before running capture canaries',
+      docs: 'docs/setup/telegram.html#live-canary',
+    };
+  }
+
+  try {
+    const now = new Date();
+    const updateId = Number(String(now.getTime()).slice(-9));
+    const messageId = updateId % 1_000_000;
+    const messageIdSuffix = `timeline-telegram-canary-${now.getTime()}-${randomUUID()}`;
+    const text = `Timeline Telegram capture canary ${messageIdSuffix}`;
+    const body = JSON.stringify(
+      buildTelegramCaptureCanaryPayload({
+        updateId,
+        messageId,
+        userId,
+        username: process.env.TELEGRAM_CAPTURE_CANARY_USERNAME?.trim() || undefined,
+        firstName: process.env.TELEGRAM_CAPTURE_CANARY_FIRST_NAME?.trim() || 'Timeline',
+        text,
+        date: Math.floor(now.getTime() / 1000),
+      }),
+    );
+    const response = await fetch(canaryUrl.url, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-telegram-bot-api-secret-token': process.env.TELEGRAM_WEBHOOK_SECRET ?? '',
+      },
+      body,
+    });
+    const { body: responseBody, text: responseText } = await readJson(response);
+    if (!response.ok) {
+      return {
+        name: 'Telegram capture',
+        status: 'warn',
+        detail: shortProviderError(response.status, responseBody, responseText),
+        action: 'verify Telegram webhook secret, app route reachability, and rate limits',
+        docs: 'docs/setup/telegram.html#live-canary',
+      };
+    }
+    const rawEventId = await waitForTelegramCaptureRawEvent({ text, updateId });
+    if (rawEventId) {
+      return {
+        name: 'Telegram capture',
+        status: 'ok',
+        detail: 'secret-protected webhook payload inserted a Telegram raw event',
+      };
+    }
+    return {
+      name: 'Telegram capture',
+      status: 'warn',
+      detail: 'webhook accepted but no matching Telegram raw event was found',
+      action:
+        'verify the canary Telegram user is linked to an active Timeline team in the same database as AUTH_URL',
+      docs: 'docs/setup/telegram.html#live-canary',
+    };
+  } catch (err) {
+    return {
+      name: 'Telegram capture',
+      status: 'warn',
+      detail: safeCanaryDetail(err instanceof Error ? err.message : String(err)),
+      action:
+        'verify DATABASE_URL points at the same database as AUTH_URL and Telegram canary routing is linked',
+      docs: 'docs/setup/telegram.html#live-canary',
+    };
+  }
+}
+
+async function waitForSlackCaptureRawEvent(input: {
+  eventId: string;
+  text: string;
+}): Promise<string | null> {
+  const sql = getDbClient();
+  const deadline = Date.now() + 10_000;
+  while (Date.now() < deadline) {
+    const rows = await sql<{ id: string }[]>`
+      SELECT id
+      FROM raw_events
+      WHERE source = 'slack'
+        AND content_text = ${input.text}
+        AND source_metadata ->> 'slack_event_id' = ${input.eventId}
+      ORDER BY created_at DESC
+      LIMIT 1
+    `;
+    const id = rows[0]?.id;
+    if (id) return id;
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  return null;
+}
+
+async function checkSlackEventCapture(): Promise<LiveIntegrationCanaryResult> {
+  const envKeys = [
+    'AUTH_URL',
+    'SLACK_SIGNING_SECRET',
+    'SLACK_CAPTURE_CANARY_TEAM_ID',
+    'SLACK_CAPTURE_CANARY_CHANNEL_ID',
+    'SLACK_CAPTURE_CANARY_USER_ID',
+    'DATABASE_URL',
+  ];
+  if (!configured(...envKeys)) {
+    return {
+      name: 'Slack event capture',
+      status: 'skip',
+      detail: 'Slack event capture canary env missing',
+      envKeys,
+      action:
+        'configure a real installed Slack team/channel/user canary before running capture canaries',
+      docs: 'docs/setup/slack.html#live-canary',
+    };
+  }
+
+  const canaryUrl = validateSlackEventCaptureCanaryUrl(
+    process.env.AUTH_URL,
+    process.env.SLACK_CAPTURE_CANARY_ALLOWED_ORIGIN,
+  );
+  if (!canaryUrl.ok) {
+    return {
+      name: 'Slack event capture',
+      status: 'warn',
+      detail: canaryUrl.reason,
+      action:
+        'set AUTH_URL and SLACK_CAPTURE_CANARY_ALLOWED_ORIGIN to the same trusted app origin before running capture canaries',
+      docs: 'docs/setup/slack.html#live-canary',
+    };
+  }
+
+  try {
+    const now = new Date();
+    const eventId = `EvTimelineCanary${randomUUID().replace(/-/gu, '')}`;
+    const messageId = `timeline-slack-canary-${now.getTime()}-${randomUUID()}`;
+    const text = `Timeline Slack capture canary ${messageId}`;
+    const body = JSON.stringify(
+      buildSlackEventCaptureCanaryPayload({
+        eventId,
+        teamId: process.env.SLACK_CAPTURE_CANARY_TEAM_ID ?? '',
+        channelId: process.env.SLACK_CAPTURE_CANARY_CHANNEL_ID ?? '',
+        userId: process.env.SLACK_CAPTURE_CANARY_USER_ID ?? '',
+        text,
+        messageTs: slackTimestamp(now),
+        eventTime: Math.floor(now.getTime() / 1000),
+      }),
+    );
+    const timestamp = String(Math.floor(Date.now() / 1000));
+    const response = await fetch(canaryUrl.url, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-slack-request-timestamp': timestamp,
+        'x-slack-signature': signSlackCanaryRequest({
+          signingSecret: process.env.SLACK_SIGNING_SECRET ?? '',
+          timestamp,
+          body,
+        }),
+      },
+      body,
+    });
+    const { body: responseBody, text: responseText } = await readJson(response);
+    if (!response.ok) {
+      return {
+        name: 'Slack event capture',
+        status: 'warn',
+        detail: shortProviderError(response.status, responseBody, responseText),
+        action: 'verify Slack signing secret, app route reachability, and rate limits',
+        docs: 'docs/setup/slack.html#live-canary',
+      };
+    }
+    const rawEventId = await waitForSlackCaptureRawEvent({ eventId, text });
+    if (rawEventId) {
+      return {
+        name: 'Slack event capture',
+        status: 'ok',
+        detail: 'signed event payload inserted a Slack raw event',
+      };
+    }
+    return {
+      name: 'Slack event capture',
+      status: 'warn',
+      detail: 'webhook accepted but no matching Slack raw event was found',
+      action:
+        'verify the canary Slack team is installed, the channel is bound, the user is valid, and the app worker can reach Slack users.info',
+      docs: 'docs/setup/slack.html#live-canary',
+    };
+  } catch (err) {
+    return {
+      name: 'Slack event capture',
+      status: 'warn',
+      detail: safeCanaryDetail(err instanceof Error ? err.message : String(err)),
+      action:
+        'verify DATABASE_URL points at the same database as AUTH_URL and the canary workspace is installed',
+      docs: 'docs/setup/slack.html#live-canary',
+    };
+  }
+}
+
 async function checkPostmarkInboundCapture(): Promise<LiveIntegrationCanaryResult> {
   const envKeys = [
     'AUTH_URL',
+    'DATABASE_URL',
     'POSTMARK_WEBHOOK_SECRET',
     'POSTMARK_INBOUND_CANARY_TO',
     'POSTMARK_INBOUND_CANARY_FROM',
@@ -267,6 +711,7 @@ async function checkPostmarkInboundCapture(): Promise<LiveIntegrationCanaryResul
   }
 
   const messageId = `timeline-canary-${Date.now()}-${randomUUID()}@thetimeline.local`;
+  const textNeedle = `Message: ${messageId}`;
   const canaryUrl = validatePostmarkInboundCaptureCanaryUrl(
     process.env.AUTH_URL,
     process.env.POSTMARK_INBOUND_CANARY_ALLOWED_ORIGIN,
@@ -302,10 +747,20 @@ async function checkPostmarkInboundCapture(): Promise<LiveIntegrationCanaryResul
   const record = body && typeof body === 'object' ? (body as Record<string, unknown>) : {};
   const inserted = Number(record.inserted ?? 0);
   if (response.ok && inserted > 0) {
+    const rawEventId = await waitForPostmarkInboundCaptureRawEvent({ messageId, textNeedle });
+    if (rawEventId) {
+      return {
+        name: 'Postmark inbound capture',
+        status: 'ok',
+        detail: 'synthetic inbound payload inserted a raw event',
+      };
+    }
     return {
       name: 'Postmark inbound capture',
-      status: 'ok',
-      detail: 'synthetic inbound payload inserted a raw event',
+      status: 'warn',
+      detail: 'webhook reported an insert but no matching email raw event was found',
+      action: 'verify DATABASE_URL points at the same database as AUTH_URL',
+      docs: 'docs/setup/postmark.html#smoke-test',
     };
   }
   const reason =
@@ -321,6 +776,29 @@ async function checkPostmarkInboundCapture(): Promise<LiveIntegrationCanaryResul
     action: 'verify canary recipient maps to a team and canary sender passes the inbound whitelist',
     docs: 'docs/setup/postmark.html#smoke-test',
   };
+}
+
+async function waitForPostmarkInboundCaptureRawEvent(input: {
+  messageId: string;
+  textNeedle: string;
+}): Promise<string | null> {
+  const sql = getDbClient();
+  const deadline = Date.now() + 10_000;
+  while (Date.now() < deadline) {
+    const rows = await sql<{ id: string }[]>`
+      SELECT id
+      FROM raw_events
+      WHERE source = 'email'
+        AND source_metadata ->> 'message_id' = ${input.messageId}
+        AND content_text LIKE ${`%${input.textNeedle}%`}
+      ORDER BY created_at DESC
+      LIMIT 1
+    `;
+    const id = rows[0]?.id;
+    if (id) return id;
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  return null;
 }
 
 interface OAuthAuthorizeCanary {
@@ -495,9 +973,24 @@ loadEnvFile(envFile);
 const results: LiveIntegrationCanaryResult[] = [
   ...(await Promise.all([
     checkOpenRouter(),
+    checkOpenRouterTranscription(),
     checkGithubApp(),
     checkSentry(),
     checkPostmark(),
+    checkRecallApi(),
+    checkTelegramBotApi(),
+    checkTelegramCapture(),
+    checkSlackApiAuth({
+      name: 'Slack Web API bot auth',
+      envKey: 'SLACK_CANARY_BOT_TOKEN',
+      expectedPrefix: 'xoxb-',
+    }),
+    checkSlackApiAuth({
+      name: 'Slack Web API user auth',
+      envKey: 'SLACK_CANARY_USER_TOKEN',
+      expectedPrefix: 'xoxp-',
+    }),
+    checkSlackEventCapture(),
     checkPostmarkInboundCapture(),
     ...oauthAuthorizeCanaries.map((canary) => checkOAuthAuthorizeEndpoint(canary)),
   ])),
@@ -507,6 +1000,8 @@ const results: LiveIntegrationCanaryResult[] = [
 console.log(
   formatLiveIntegrationCanaryReport({ envFile, strict, results, redactions: secretEnvValues() }),
 );
+
+await closeDb().catch(() => undefined);
 
 if (strict && results.some((result) => result.status !== 'ok')) {
   process.exitCode = 1;

@@ -123,6 +123,47 @@ describe('reconciliation domain helpers', () => {
     );
   });
 
+  it('keeps output dedupe keys stable when evidence lineage rows change', () => {
+    const base = {
+      teamId: 'team-1',
+      clusterId: 'cluster-1',
+      targetKind: 'cluster_identity',
+      operation: 'link',
+      targetId: null,
+      targetIdentity: 'cluster-1:raw-1:blocker:hard_anchor',
+      authorityPolicyVersion: 'authority-1',
+      plannerVersion: 'planner-1',
+    };
+
+    expect(
+      buildOutputDedupeKey({
+        ...base,
+        sourceRefs: [
+          {
+            source: 'email',
+            rawEventId: 'raw-1',
+            evidenceId: 'evidence-v1',
+            associationId: 'association-v1',
+            sourcePayloadRef: 's3://payloads/email/raw-1',
+          },
+        ],
+      }),
+    ).toBe(
+      buildOutputDedupeKey({
+        ...base,
+        sourceRefs: [
+          {
+            source: 'email',
+            rawEventId: 'raw-1',
+            evidenceId: 'evidence-v2',
+            associationId: 'association-v2',
+            sourcePayloadRef: 's3://payloads/email/raw-1',
+          },
+        ],
+      }),
+    );
+  });
+
   it('includes target identity in output dedupe keys', () => {
     const base = {
       teamId: 'team-1',

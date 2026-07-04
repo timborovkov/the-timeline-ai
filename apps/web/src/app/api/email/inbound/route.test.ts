@@ -10,6 +10,7 @@ const fakes = vi.hoisted(() => ({
   handleInbound: vi.fn(),
   queue: {
     enqueueExtractJob: vi.fn(),
+    enqueueDocumentExtractJob: vi.fn(),
     enqueueEmbedJob: vi.fn(),
     enqueueSuggestionJob: vi.fn(),
     enqueueTranscribeJob: vi.fn(),
@@ -66,6 +67,7 @@ beforeEach(() => {
   resetEnvForTests();
   fakes.handleInbound.mockResolvedValue({ ok: true, inserted: 1 });
   fakes.queue.enqueueExtractJob.mockResolvedValue(undefined);
+  fakes.queue.enqueueDocumentExtractJob.mockResolvedValue(undefined);
   fakes.queue.enqueueEmbedJob.mockResolvedValue(undefined);
   fakes.queue.enqueueSuggestionJob.mockResolvedValue(undefined);
   fakes.queue.enqueueTranscribeJob.mockResolvedValue(undefined);
@@ -148,5 +150,30 @@ describe('POST /api/email/inbound', () => {
 
     expect(response.status).toBe(200);
     expect(fakes.handleInbound).toHaveBeenCalledOnce();
+  });
+
+  it('passes document attachment deps when document S3 and Redis are configured', async () => {
+    process.env.S3_ENDPOINT = 'http://localhost:9000';
+    process.env.S3_REGION = 'us-east-1';
+    process.env.S3_ACCESS_KEY_ID = 'timeline';
+    process.env.S3_SECRET_ACCESS_KEY = 'secret';
+    process.env.S3_BUCKET_ATTACHMENTS = 'attachments';
+    process.env.S3_BUCKET_AUDIO = 'audio';
+    process.env.S3_BUCKET_DOCUMENTS = 'documents';
+    process.env.REDIS_URL = 'redis://localhost:6379';
+    resetEnvForTests();
+    fakes.handleInbound.mockImplementationOnce(async (deps: EmailModule.DispatcherDeps) => {
+      expect(deps.documents).toBeDefined();
+      await deps.documents?.enqueueExtract({ documentVersionId: 'version-1', teamId: 'team-1' });
+      return { ok: true, inserted: 1 };
+    });
+
+    const response = await POST(inboundRequest());
+
+    expect(response.status).toBe(200);
+    expect(fakes.queue.enqueueDocumentExtractJob).toHaveBeenCalledWith({
+      documentVersionId: 'version-1',
+      teamId: 'team-1',
+    });
   });
 });

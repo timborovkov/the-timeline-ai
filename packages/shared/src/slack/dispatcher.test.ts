@@ -454,13 +454,24 @@ describe('Slack dispatcher routing', () => {
       contentText: 'Slack capture should become approval work',
       visibility: 'team',
     });
-    expect(rows[0]?.sourceMetadata).toMatchObject({
+    const metadata = rows[0]?.sourceMetadata as Record<string, unknown> | undefined;
+    expect(metadata).toMatchObject({
       slack_event_id: 'EvChannelText',
       slack_channel_id: 'C_DOCS',
       slack_sender_id: 'U_SLACK',
       slack_sender_name: 'Alice Slack',
       slack_sender_timeline_user_id: USER_A,
+      source_payload_ref: `inline://timeline/slack/${WORKSPACE_ID}/EvChannelText`,
+      source_snapshot_kind: 'slack_message_event',
+      source_snapshot_version: 'slack-source-snapshot-2026-07',
       source_unverified: false,
+    });
+    expect(metadata?.payload_digest).toEqual(expect.stringMatching(/^sha256:[0-9a-f]{64}$/));
+    expect(metadata?.source_snapshot).toMatchObject({
+      slack_event_id: 'EvChannelText',
+      channel_id: 'C_DOCS',
+      message_ts: '1700000000.000500',
+      text: 'Slack capture should become approval work',
     });
     const [evidence] = await db
       .select()
@@ -476,9 +487,11 @@ describe('Slack dispatcher routing', () => {
       provider: 'slack',
       externalObjectId: `${WORKSPACE_ID}:C_DOCS:1700000000.000500`,
       eventType: 'slack.message',
-      replayState: 'degraded',
+      replayState: 'full',
+      sourcePayloadRef: `inline://timeline/slack/${WORKSPACE_ID}/EvChannelText`,
       visibility: 'team',
     });
+    expect(evidence?.payloadDigest).toEqual(expect.stringMatching(/^sha256:[0-9a-f]{64}$/));
     expect(queues.extract.enqueueExtract).toHaveBeenCalledWith({
       rawEventId: rows[0]?.id,
       teamId: TEAM_A,
@@ -928,6 +941,79 @@ describe('Slack dispatcher routing', () => {
       rawEventId: slackRows[0]?.id,
       teamId: TEAM_A,
     });
+  });
+
+  it('stores Slack audio attachments with full replay source refs', async () => {
+    await seedBoundSlackUser(db);
+    const upload = vi.fn().mockResolvedValue(undefined);
+    const enqueueTranscribe = vi.fn().mockResolvedValue(undefined);
+
+    await handleSlackEnvelope(
+      {
+        db: db as never,
+        audio: {
+          upload,
+          enqueueTranscribe,
+          buildAudioKey: ({ teamId, conversationId, messageTs, fileId, extension }) =>
+            `teams/${teamId}/slack/${conversationId}/${messageTs}-${fileId}.${extension}`,
+        },
+      },
+      slackEnvelope('EvAudioFile', {
+        type: 'message',
+        subtype: 'file_share',
+        channel: 'C_DOCS',
+        channel_type: 'channel',
+        user: 'U_SLACK',
+        text: 'Audio note from Slack',
+        ts: '1700000002.000300',
+        files: [
+          {
+            id: 'F_AUDIO',
+            name: 'standup-note.mp3',
+            mimetype: 'audio/mpeg',
+            size: 12,
+            url_private_download: 'https://files.example/standup-note.mp3',
+          },
+        ],
+      }),
+    );
+
+    expect(upload).toHaveBeenCalledWith(expect.objectContaining({ contentType: 'audio/mpeg' }));
+    expect(enqueueTranscribe).toHaveBeenCalledOnce();
+    const slackRows = await db.select().from(rawEvents).where(eq(rawEvents.source, 'slack'));
+    expect(slackRows).toHaveLength(2);
+    const child = slackRows.find((row) => row.contentAudioUrl);
+    expect(child?.contentAudioUrl).toContain('F_AUDIO.mp3');
+    const metadata = child?.sourceMetadata as Record<string, unknown> | undefined;
+    expect(metadata).toMatchObject({
+      slack_attachment_kind: 'audio',
+      slack_file_id: 'F_AUDIO',
+      slack_file_name: 'standup-note.mp3',
+      slack_channel_id: 'C_DOCS',
+      slack_message_ts: '1700000002.000300',
+      source_payload_ref: `inline://timeline/slack/${WORKSPACE_ID}/C_DOCS/1700000002.000300/attachment/F_AUDIO`,
+      source_snapshot_kind: 'slack_audio_attachment',
+      source_snapshot_version: 'slack-source-snapshot-2026-07',
+    });
+    expect(metadata?.payload_digest).toEqual(expect.stringMatching(/^sha256:[0-9a-f]{64}$/));
+    expect(metadata?.source_snapshot).toMatchObject({
+      provider: 'slack',
+      capture_kind: 'audio_attachment',
+      file: { id: 'F_AUDIO', name: 'standup-note.mp3', mimetype: 'audio/mpeg' },
+    });
+    const [evidence] = await db
+      .select()
+      .from(reconciliationEvidence)
+      .where(
+        eq(reconciliationEvidence.rawEventId, child?.id ?? '00000000-0000-0000-0000-000000000000'),
+      );
+    expect(evidence).toMatchObject({
+      source: 'slack',
+      provider: 'slack',
+      replayState: 'full',
+      sourcePayloadRef: `inline://timeline/slack/${WORKSPACE_ID}/C_DOCS/1700000002.000300/attachment/F_AUDIO`,
+    });
+    expect(evidence?.payloadDigest).toEqual(expect.stringMatching(/^sha256:[0-9a-f]{64}$/));
   });
 
   it('does not duplicate Slack attachments when a message with files is edited', async () => {
