@@ -1208,6 +1208,61 @@ describe('object scope — notes and suggestions', () => {
     expect(detail?.connectedWork.objects).toEqual([]);
     expect(detail?.connectedWork.timelineEvents).toEqual([]);
   });
+
+  it('surfaces paraphrased timeline evidence for long task titles', async () => {
+    const scope = withTeam(db, TEAM_A, USER_OWNER).objects;
+    const task = await scope.createObject({
+      type: 'task',
+      canonicalName: 'Replace FSLI scoping logic with risk-informed approach',
+      aliases: ['fsli-scoping-logic-overhaul'],
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    const weakEventInputs = Array.from({ length: 25 }, (_, index) => ({
+      teamId: TEAM_A,
+      authorUserId: USER_OWNER,
+      source: 'telegram' as const,
+      contentText: `The team discussed a general risk approach for audit planning update ${index}.`,
+      occurredAt: new Date(`2026-06-29T12:${String(index).padStart(2, '0')}:00.000Z`),
+      visibility: 'team' as const,
+    }));
+    const [sourceEvent, ...weakEvents] = await db
+      .insert(rawEvents)
+      .values([
+        {
+          teamId: TEAM_A,
+          authorUserId: USER_OWNER,
+          source: 'telegram',
+          contentText:
+            'Mikael asked to replace the current FSLI scoping logic in AuditAI with a risk-informed approach based on ISA 320 and ISA 315.',
+          occurredAt: new Date('2026-06-29T11:00:00.000Z'),
+          visibility: 'team',
+        },
+        ...weakEventInputs,
+      ])
+      .returning({ id: rawEvents.id });
+
+    const detail = await scope.getObject(task.id);
+    const eventsPage = await scope.getObjectSectionPage(task.id, 'events');
+
+    expect(detail?.connectedWork.timelineEvents).toEqual([
+      expect.objectContaining({
+        id: sourceEvent?.id,
+        contentText:
+          'Mikael asked to replace the current FSLI scoping logic in AuditAI with a risk-informed approach based on ISA 320 and ISA 315.',
+      }),
+    ]);
+    expect(detail?.provenance.relatedEvidence).toEqual([
+      expect.objectContaining({
+        evidence: [expect.objectContaining({ rawEventId: sourceEvent?.id })],
+      }),
+    ]);
+    expect(eventsPage?.items).toEqual([
+      expect.objectContaining({ id: sourceEvent?.id, source: 'telegram' }),
+    ]);
+    expect(detail?.connectedWork.timelineEvents).not.toContainEqual(
+      expect.objectContaining({ id: weakEvents[0]?.id }),
+    );
+  });
 });
 
 describe('object scope — chat session isolation', () => {
