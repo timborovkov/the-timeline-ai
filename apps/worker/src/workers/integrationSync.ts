@@ -10,6 +10,10 @@ import {
   queue,
   withTeam,
 } from '@timeline/shared';
+import {
+  payloadDigestFromMetadata,
+  sourcePayloadRefFromMetadata,
+} from '@timeline/shared/reconciliation';
 import { Worker, type Job } from 'bullmq';
 import { and, eq, sql } from 'drizzle-orm';
 
@@ -144,17 +148,12 @@ function harvestedDocumentSourceMetadata(input: {
   objectKey: string;
 }): Record<string, unknown> {
   const payloadRef =
-    metadataString(input.document.metadata, 'source_payload_ref') ??
-    metadataString(input.document.metadata, 'payload_ref') ??
-    metadataString(input.document.metadata, 'raw_payload_ref') ??
+    sourcePayloadRefFromMetadata(input.document.metadata) ??
     `s3://${input.bucket}/${input.objectKey}`;
   const digest =
-    metadataString(input.document.metadata, 'source_payload_digest') ??
-    metadataString(input.document.metadata, 'payload_digest') ??
-    metadataString(input.document.metadata, 'raw_payload_digest') ??
-    `sha256:${input.checksumSha256}`;
+    payloadDigestFromMetadata(input.document.metadata) ?? `sha256:${input.checksumSha256}`;
   return {
-    ...input.documentMetadata,
+    ...withoutReplayMetadataAliases(input.documentMetadata),
     source_payload_ref: payloadRef,
     payload_digest: digest,
     source_snapshot_kind: 'integration_harvest_document',
@@ -173,9 +172,17 @@ function harvestedDocumentSourceMetadata(input: {
   };
 }
 
-function metadataString(metadata: Record<string, unknown> | undefined, key: string): string | null {
-  const value = metadata?.[key];
-  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
+function withoutReplayMetadataAliases(metadata: Record<string, unknown>): Record<string, unknown> {
+  const result = { ...metadata };
+  delete result.source_payload_ref;
+  delete result.sourcePayloadRef;
+  delete result.payload_ref;
+  delete result.raw_payload_ref;
+  delete result.source_snapshot_ref;
+  delete result.payload_digest;
+  delete result.source_payload_digest;
+  delete result.raw_payload_digest;
+  return result;
 }
 
 function isNativeSyncProvider(

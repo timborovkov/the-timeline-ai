@@ -78,7 +78,7 @@ describe('suggestion reconciliation projection', () => {
       visibility: 'specific_users',
       visibilityUserIds: [REVIEWER_ID],
       sourceMetadata: {
-        source_payload_ref: 's3://timeline-test/raw/telegram/acme-implementation-task',
+        source_payload_ref: '  s3://timeline-test/raw/telegram/acme-implementation-task  ',
       },
     });
     const scope = withTeam(db as never, TEAM_ID, REVIEWER_ID);

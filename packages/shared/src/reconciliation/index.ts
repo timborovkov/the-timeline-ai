@@ -31,7 +31,11 @@ export {
   buildProductionSamplingEvalReport,
   recordProductionSamplingEvalReport,
 } from '#src/reconciliation/production-sampling.js';
-export { inlineSourceSnapshotMetadata } from '#src/reconciliation/source-snapshot.js';
+export {
+  inlineSourceSnapshotMetadata,
+  payloadDigestFromMetadata,
+  sourcePayloadRefFromMetadata,
+} from '#src/reconciliation/source-snapshot.js';
 
 export type Visibility = 'team' | 'private' | 'specific_users';
 

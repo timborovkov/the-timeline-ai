@@ -39,7 +39,11 @@ import {
   reconciliationDedupeKey,
 } from '#src/reconciliation/index.js';
 import { normalizeIntegrationEventsToEvidence } from '#src/reconciliation/normalization.js';
-import { inlineSourceSnapshotMetadata } from '#src/reconciliation/source-snapshot.js';
+import {
+  inlineSourceSnapshotMetadata,
+  payloadDigestFromMetadata,
+  sourcePayloadRefFromMetadata,
+} from '#src/reconciliation/source-snapshot.js';
 
 // Phase 11 — Persist normalized integration events into raw_events with
 // source='integration' + dedup_key. The partial unique index
@@ -309,15 +313,8 @@ function rawMetadataExtra(extra: IntegrationEvent['extra']): Record<string, unkn
 }
 
 function sourcePayloadMetadataForEvent(event: IntegrationEvent): Record<string, unknown> {
-  const existingRef =
-    metadataString(event.extra, 'source_payload_ref') ??
-    metadataString(event.extra, 'payload_ref') ??
-    metadataString(event.extra, 'raw_payload_ref') ??
-    metadataString(event.extra, 'source_snapshot_ref');
-  const existingDigest =
-    metadataString(event.extra, 'payload_digest') ??
-    metadataString(event.extra, 'source_payload_digest') ??
-    metadataString(event.extra, 'raw_payload_digest');
+  const existingRef = sourcePayloadRefFromMetadata(event.extra);
+  const existingDigest = payloadDigestFromMetadata(event.extra);
   if (existingRef) {
     return {
       source_payload_ref: existingRef,

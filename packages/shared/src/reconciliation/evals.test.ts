@@ -1,3 +1,5 @@
+import path from 'node:path';
+
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -13,6 +15,10 @@ import {
   scoreDeterministicReconciliationCase,
   scoreReconciliationEvalSuite,
 } from '#src/reconciliation/index.js';
+import {
+  buildProductionSamplingEvalReport,
+  loadProductionSamplingEvalArtifacts,
+} from '#src/reconciliation/production-sampling.js';
 
 const TEAM_VISIBILITY = { visibility: 'team' as const };
 const PRIVATE_OWNER = {
@@ -118,6 +124,37 @@ describe('deterministic reconciliation evals', () => {
         expect(testCase.scenarioFamily).toBe(manifest.scenarioFamily);
       }
     }
+  });
+
+  it('replays committed redacted live fixtures through the production-sampling gate', async () => {
+    const fixtureDir = path.resolve(
+      process.cwd(),
+      '..',
+      '..',
+      'evals',
+      'reconciliation',
+      'live-cases',
+    );
+    const loaded = await loadProductionSamplingEvalArtifacts({ inputPaths: [fixtureDir] });
+
+    expect(loaded.ignoredFiles).toEqual([]);
+    expect(loaded.manifests.length).toBeGreaterThan(0);
+    expect(loaded.artifacts.length).toBeGreaterThan(0);
+
+    const report = buildProductionSamplingEvalReport({
+      manifests: loaded.manifests,
+      artifacts: loaded.artifacts,
+      generatedAt: '2026-07-05T00:00:00.000Z',
+      runKind: 'manual',
+    });
+
+    expect(report.sampleCount).toBe(loaded.artifacts.length);
+    expect(report.failedCount).toBe(0);
+    expect(report.passRate).toBe(1);
+    expect(report.unconfirmedFixtureCandidateCount).toBe(0);
+    expect(report.byIngestionSurface.map((bucket) => bucket.name)).toEqual(
+      expect.arrayContaining(['email', 'monday', 'sentry']),
+    );
   });
 
   it('fails fixtures that promote private evidence into team-visible outputs', () => {

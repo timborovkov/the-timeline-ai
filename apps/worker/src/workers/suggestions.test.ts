@@ -4477,7 +4477,7 @@ describe('processSuggestionJobForTests', () => {
       sourceMetadata: {
         tg_chat_id: '456',
         tg_message_id: '1',
-        source_payload_ref: 'telegram://chat/456/message/1',
+        source_payload_ref: '  telegram://chat/456/message/1  ',
       },
     });
     await seedRawEvent(db as never, {
@@ -4488,7 +4488,7 @@ describe('processSuggestionJobForTests', () => {
       sourceMetadata: {
         tg_chat_id: '456',
         tg_message_id: '2',
-        source_payload_ref: 'telegram://chat/456/message/2',
+        sourcePayloadRef: '  telegram://chat/456/message/2  ',
       },
     });
     await seedConversationReview(db as never, {

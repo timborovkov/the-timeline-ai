@@ -517,6 +517,124 @@ describe('POST /api/chat', () => {
     });
   });
 
+  it('records dashboard action/HITL tool selection without inventing an action result', async () => {
+    const completionMessage = {
+      id: 'm-complete',
+      role: 'user',
+      parts: [{ type: 'text', text: 'Mark this done' }],
+    };
+    fakes.fakeSafeValidateUIMessages.mockResolvedValue({
+      success: true,
+      data: [completionMessage],
+    });
+    fakes.fakeBuildAgentTools.mockReturnValue({
+      retrieve_workspace_context: { type: 'native' },
+      search_timeline: { type: 'native' },
+      search_app_guide: { type: 'native' },
+      get_app_route: { type: 'native' },
+      get_object: { type: 'native' },
+      search_objects: { type: 'native' },
+      list_objects: { type: 'native' },
+      list_tasks: { type: 'native' },
+      execute_object_update: { type: 'native' },
+      execute_object_archive: { type: 'native' },
+      suggest_task: { type: 'native' },
+    });
+    fakes.fakeSummarizeAgentToolObservations.mockImplementationOnce(
+      (input: { observations: unknown[]; selection?: unknown }) => ({
+        toolObservations: input.observations,
+        selection: input.selection,
+        totalResultCount: 0,
+        topArtifactRefs: [],
+        warningCodes: [],
+      }),
+    );
+
+    const response = await POST(
+      request(
+        validBody({
+          messages: [completionMessage],
+          sessionId: SESSION_ID,
+          dashboardContext: {
+            pathname: '/app/objects/44444444-4444-4444-8444-444444444444',
+            routeKind: 'objects',
+            objectId: '44444444-4444-4444-8444-444444444444',
+          },
+        }),
+      ),
+    );
+
+    expect(response.status).toBe(200);
+    const streamCall = fakes.fakeStreamChat.mock.calls.at(-1) as unknown as
+      | [{ system?: string; tools?: Record<string, unknown> }]
+      | undefined;
+    expect(streamCall?.[0].system).toEqual(expect.stringContaining('DASHBOARD CONTEXT:'));
+    expect(streamCall?.[0].tools).toMatchObject({
+      get_object: { type: 'native' },
+      execute_object_update: { type: 'native' },
+      suggest_task: { type: 'native' },
+    });
+
+    capturedOnFinish?.({
+      text: 'I can update this once you confirm the exact status.',
+      toolCalls: [],
+      finishReason: 'stop',
+      usage: { inputTokens: 14, outputTokens: 9 },
+    });
+    await Promise.resolve();
+
+    const summarizeCall = fakes.fakeSummarizeAgentToolObservations.mock.calls.at(-1) as
+      | [
+          {
+            selection?: {
+              selectedToolGroups?: string[];
+              omittedToolGroups?: string[];
+              selectedNativeToolCount?: number;
+              mcpDiscoverySkipped?: boolean;
+            };
+          },
+        ]
+      | undefined;
+    expect(summarizeCall?.[0].selection).toMatchObject({
+      selectedToolGroups: ['core', 'guide', 'objects', 'actions'],
+      omittedToolGroups: ['boards', 'documents', 'calendar', 'approvals', 'integrations'],
+      selectedNativeToolCount: 11,
+      mcpDiscoverySkipped: true,
+    });
+
+    const appendCall = fakes.fakeAppendChatMessages.mock.calls.at(-1) as unknown as
+      | [
+          unknown,
+          unknown,
+          string,
+          [
+            { role: string; authorUserId?: string; content: unknown },
+            {
+              role: string;
+              content: {
+                text?: string | null;
+                tool_calls?: unknown[];
+                tool_observability?: { selection?: unknown };
+              };
+            },
+          ],
+        ]
+      | undefined;
+    expect(appendCall?.[2]).toBe(SESSION_ID);
+    expect(appendCall?.[3][0]).toEqual({
+      role: 'user',
+      authorUserId: USER_ID,
+      content: { ui_message: completionMessage },
+    });
+    expect(appendCall?.[3][1].content).toMatchObject({
+      text: 'I can update this once you confirm the exact status.',
+      tool_calls: [],
+    });
+    expect(appendCall?.[3][1].content.tool_observability?.selection).toMatchObject({
+      selectedToolGroups: ['core', 'guide', 'objects', 'actions'],
+    });
+  });
+
   it('discovers MCP tools only for connected-source turns', async () => {
     const sourceMessage = {
       id: 'm-source',

@@ -2,14 +2,17 @@ import { defineConfig } from 'vitest/config';
 
 import { filterExpectedTestConsole } from '../../scripts/vitest-console';
 
-const env = {
+const baseEnv = {
   LOG_LEVEL: 'silent',
+  DATABASE_URL: 'postgres://placeholder@localhost:5432/placeholder',
+  AUTH_SECRET: 'test-secret-at-least-sixteen-characters',
+};
+const env = {
+  ...baseEnv,
   // Bypass the OPENROUTER_API_KEY env gate in handlers that call
   // `requireEnv()` with the default IO. Tests inject their own IO
   // so the real env is never read, but the gate runs first.
   OPENROUTER_API_KEY: 'test-key',
-  DATABASE_URL: 'postgres://placeholder@localhost:5432/placeholder',
-  AUTH_SECRET: 'test-secret-at-least-sixteen-characters',
 };
 
 const integrationTests = [
@@ -64,11 +67,7 @@ export default defineConfig({
           fileParallelism: false,
           testTimeout: 240_000,
           hookTimeout: 60_000,
-          env: {
-            LOG_LEVEL: 'silent',
-            DATABASE_URL: 'postgres://placeholder@localhost:5432/placeholder',
-            AUTH_SECRET: 'test-secret-at-least-sixteen-characters',
-          },
+          env: baseEnv,
           onConsoleLog: filterExpectedTestConsole,
         },
       },

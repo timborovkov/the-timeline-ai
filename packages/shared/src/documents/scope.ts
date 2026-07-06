@@ -20,6 +20,10 @@ import { childLogger } from '#src/logger.js';
 import { decodeCursor, pageWindow } from '#src/pagination.js';
 import { getQdrantClient, type SearchHit, type SearchOpts } from '#src/qdrant/client.js';
 import { normalizeRawEventsToEvidence } from '#src/reconciliation/normalization.js';
+import {
+  payloadDigestFromMetadata,
+  sourcePayloadRefFromMetadata,
+} from '#src/reconciliation/source-snapshot.js';
 import { stableSha256Digest } from '#src/reconciliation/stable-digest.js';
 import { rawEventVisibleToUser, validateVisibilityUserIds } from '#src/visibility.js';
 
@@ -436,7 +440,7 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
     if (args.documentVersionId) meta.document_version_id = args.documentVersionId;
     if (args.folderId !== undefined) meta.folder_id = args.folderId;
     if (args.previous) meta.previous = args.previous;
-    if (!metadataString(meta, 'source_payload_ref')) {
+    if (!sourcePayloadRefFromMetadata(meta)) {
       Object.assign(
         meta,
         documentLifecycleSourceMetadata({
@@ -530,11 +534,6 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
       : {};
   }
 
-  function metadataString(metadata: Record<string, unknown>, key: string): string | null {
-    const value = metadata[key];
-    return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
-  }
-
   function normalizeDocumentRow(row: typeof documents.$inferSelect): DocumentRow {
     return { ...row, metadata: metadataRecord(row.metadata) };
   }
@@ -549,17 +548,24 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
     sourceMetadata: Record<string, unknown> | undefined;
   }): Record<string, unknown> {
     const digest = input.checksumSha256?.trim();
-    const payloadDigest = digest
+    const checksumDigest = digest
       ? digest.startsWith('sha256:')
         ? digest
         : `sha256:${digest}`
       : null;
+    const sourceMetadata = withoutReplayMetadataAliases(input.sourceMetadata ?? {});
+    const sourcePayloadRef =
+      sourcePayloadRefFromMetadata(input.sourceMetadata) ??
+      `s3://documents/${input.version.objectKey}`;
+    const payloadDigest = payloadDigestFromMetadata(input.sourceMetadata) ?? checksumDigest;
     return {
-      source_payload_ref: `s3://documents/${input.version.objectKey}`,
+      ...sourceMetadata,
+      source_payload_ref: sourcePayloadRef,
       ...(payloadDigest ? { payload_digest: payloadDigest } : {}),
-      source_snapshot_kind: 'document_upload',
-      source_snapshot_version: DOCUMENT_UPLOAD_SOURCE_SNAPSHOT_VERSION,
-      source_snapshot: {
+      source_snapshot_kind: sourceMetadata.source_snapshot_kind ?? 'document_upload',
+      source_snapshot_version:
+        sourceMetadata.source_snapshot_version ?? DOCUMENT_UPLOAD_SOURCE_SNAPSHOT_VERSION,
+      source_snapshot: sourceMetadata.source_snapshot ?? {
         action: input.action,
         document_id: input.document.id,
         document_version_id: input.version.id,
@@ -567,8 +573,22 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
         byte_size: input.byteSize,
         content_type: input.contentType,
       },
-      ...(input.sourceMetadata ?? {}),
     };
+  }
+
+  function withoutReplayMetadataAliases(
+    metadata: Record<string, unknown>,
+  ): Record<string, unknown> {
+    const result = { ...metadata };
+    delete result.source_payload_ref;
+    delete result.sourcePayloadRef;
+    delete result.payload_ref;
+    delete result.raw_payload_ref;
+    delete result.source_snapshot_ref;
+    delete result.payload_digest;
+    delete result.source_payload_digest;
+    delete result.raw_payload_digest;
+    return result;
   }
 
   function documentLifecycleSourceMetadata(input: {

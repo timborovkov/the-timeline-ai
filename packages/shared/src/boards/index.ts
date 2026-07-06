@@ -52,6 +52,7 @@ import { childLogger } from '#src/logger.js';
 import { AUTHORITY_POLICY_VERSION } from '#src/reconciliation/authority.js';
 import { buildOutputDedupeKey, reconciliationDedupeKey } from '#src/reconciliation/index.js';
 import { normalizeRawEventsToEvidence } from '#src/reconciliation/normalization.js';
+import { sourcePayloadRefFromMetadata } from '#src/reconciliation/source-snapshot.js';
 import { stableSha256Digest } from '#src/reconciliation/stable-digest.js';
 import { likePattern } from '#src/sql-like.js';
 import { rawEventVisibleToUser } from '#src/visibility.js';
@@ -671,14 +672,6 @@ async function normalizeBoardSystemRawEventEvidence(input: {
   }
 }
 
-function sourcePayloadRefFromMetadata(metadata: unknown): string | null {
-  const sourcePayloadRef =
-    jsonObject(metadata).source_payload_ref ?? jsonObject(metadata).sourcePayloadRef;
-  return typeof sourcePayloadRef === 'string' && sourcePayloadRef.trim().length > 0
-    ? sourcePayloadRef
-    : null;
-}
-
 export async function buildBoardDirectWriteSourceContext(input: {
   db: DbOrTx;
   teamId: string;
@@ -695,6 +688,8 @@ export async function buildBoardDirectWriteSourceContext(input: {
     .from(rawEvents)
     .where(and(eq(rawEvents.teamId, input.teamId), eq(rawEvents.id, input.sourceEventId)))
     .limit(1);
+  if (!raw) throw new Error('Source raw event not found for team');
+
   const [evidence] = await input.db
     .select({
       id: reconciliationEvidence.id,
@@ -713,20 +708,19 @@ export async function buildBoardDirectWriteSourceContext(input: {
     .orderBy(desc(reconciliationEvidence.createdAt), desc(reconciliationEvidence.id))
     .limit(1);
   const sourcePayloadRef =
-    sourcePayloadRefFromMetadata(raw?.sourceMetadata) ?? evidence?.sourcePayloadRef ?? null;
+    sourcePayloadRefFromMetadata(raw.sourceMetadata) ?? evidence?.sourcePayloadRef ?? null;
   const sourcePayloadRefs = [
     ...new Set(
       [evidence?.sourcePayloadRef, sourcePayloadRef].filter((ref): ref is string => !!ref),
     ),
   ];
-  const visibility = evidence?.visibility ?? raw?.visibility ?? 'team';
-  const visibilityOwnerUserId =
-    evidence?.visibilityOwnerUserId ?? raw?.visibilityOwnerUserId ?? null;
-  const visibilityUserIds = evidence?.visibilityUserIds ?? raw?.visibilityUserIds ?? null;
+  const visibility = evidence?.visibility ?? raw.visibility;
+  const visibilityOwnerUserId = evidence?.visibilityOwnerUserId ?? raw.visibilityOwnerUserId;
+  const visibilityUserIds = evidence?.visibilityUserIds ?? raw.visibilityUserIds;
   return {
     sourceRefs: [
       {
-        source: raw?.source ?? 'system',
+        source: raw.source,
         rawEventId: input.sourceEventId,
         ...(sourcePayloadRef ? { sourcePayloadRef } : {}),
       },

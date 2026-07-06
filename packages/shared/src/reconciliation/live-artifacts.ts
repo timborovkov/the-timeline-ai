@@ -3,6 +3,7 @@ import path from 'node:path';
 
 import type { ArtifactClusterKind, DeterministicEvalCase } from '#src/reconciliation/index.js';
 
+import { summarizeLiveEvalManifestCases } from '#src/reconciliation/live-artifact-manifest-summary.js';
 import { stableSha256Digest } from '#src/reconciliation/stable-digest.js';
 
 export interface LiveEvalModelResult {
@@ -266,7 +267,7 @@ export function buildLiveEvalRunManifest(
     }))
     .sort((left, right) => left.caseName.localeCompare(right.caseName));
 
-  const judgedCases = cases.filter((entry) => entry.judgeScore !== null);
+  const summary = summarizeLiveEvalManifestCases(cases);
 
   return {
     schemaVersion: 1,
@@ -275,17 +276,7 @@ export function buildLiveEvalRunManifest(
     promptVersion: input.promptVersion,
     startedAt: input.startedAt,
     completedAt: input.completedAt,
-    caseCount: cases.length,
-    passedCount: cases.filter((entry) => entry.passed).length,
-    failedCount: cases.filter((entry) => !entry.passed).length,
-    judgeAverageScore:
-      judgedCases.length > 0
-        ? judgedCases.reduce((sum, entry) => sum + (entry.judgeScore ?? 0), 0) / judgedCases.length
-        : null,
-    judgePassedCount: cases.filter((entry) => entry.judgePassed === true).length,
-    judgeFailedCount: cases.filter((entry) => entry.judgePassed === false).length,
-    scenarioFamilies: uniqueSorted(cases.flatMap((entry) => entry.scenarioFamily ?? [])),
-    ingestionSurfaces: uniqueSorted(cases.flatMap((entry) => entry.ingestionSurfaces)),
+    ...summary,
     cases,
   };
 }
@@ -333,10 +324,6 @@ function safeManifestArtifactPath(
 
 function digestStable(value: unknown): string {
   return stableSha256Digest(value);
-}
-
-function uniqueSorted(values: string[]): string[] {
-  return [...new Set(values)].sort();
 }
 
 function isNonEmptyString(value: string): boolean {

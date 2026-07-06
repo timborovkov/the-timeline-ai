@@ -9,6 +9,10 @@ import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { IntegrationEvent } from '#src/integrations/types.js';
 
 import { buildEvidenceDedupeKey, reconciliationDedupeKey } from '#src/reconciliation/index.js';
+import {
+  payloadDigestFromMetadata,
+  sourcePayloadRefFromMetadata,
+} from '#src/reconciliation/source-snapshot.js';
 import { stableSha256Digest } from '#src/reconciliation/stable-digest.js';
 
 const INTEGRATION_NORMALIZER_VERSION = 'integration-normalize-2026-06';
@@ -97,13 +101,9 @@ export async function normalizeIntegrationEventsToEvidence(
     if (!rawEventId || !raw) return [];
     const rawMetadata = recordField(raw.sourceMetadata) ?? {};
     const sourcePayloadRef =
-      metadataString(event.extra, 'source_payload_ref') ??
-      metadataString(event.extra, 'payload_ref') ??
-      sourcePayloadRefForMetadata(rawMetadata);
+      sourcePayloadRefFromMetadata(event.extra) ?? sourcePayloadRefForMetadata(rawMetadata);
     const payloadDigest =
-      metadataString(event.extra, 'payload_digest') ??
-      metadataString(event.extra, 'source_payload_digest') ??
-      payloadDigestForMetadata(rawMetadata);
+      payloadDigestFromMetadata(event.extra) ?? payloadDigestForMetadata(rawMetadata);
     return [
       {
         teamId: input.teamId,
@@ -541,20 +541,12 @@ function rawSourceUrl(metadata: Record<string, unknown>): string | null {
 }
 
 function sourcePayloadRefForMetadata(metadata: Record<string, unknown>): string | null {
-  return (
-    metadataString(metadata, 'source_payload_ref') ??
-    metadataString(metadata, 'payload_ref') ??
-    metadataString(metadata, 'raw_payload_ref') ??
-    metadataString(metadata, 'source_snapshot_ref')
-  );
+  return sourcePayloadRefFromMetadata(metadata);
 }
 
 function payloadDigestForMetadata(metadata: Record<string, unknown>): string | null {
   return (
-    metadataString(metadata, 'payload_digest') ??
-    metadataString(metadata, 'source_payload_digest') ??
-    metadataString(metadata, 'raw_payload_digest') ??
-    metadataString(metadata, 'ingest_webhook_body_sha256')
+    payloadDigestFromMetadata(metadata) ?? metadataString(metadata, 'ingest_webhook_body_sha256')
   );
 }
 

@@ -295,6 +295,49 @@ describe('production reconciliation sampling report', () => {
     ]);
   });
 
+  it('downgrades stale passed artifacts with duplicate redacted source refs', () => {
+    const stalePassed = buildLiveEvalArtifact({
+      testCase: BASE_CASE,
+      modelId: 'planner-v1',
+      promptVersion: 'prompt-v1',
+      prompt: 'private production packet text',
+      result: {
+        ...PASS_RESULT,
+        sourceRefs: [
+          { surface: 'email', rawEventId: 'raw-email-1' },
+          { surface: 'email', rawEventId: 'raw-email-1' },
+          { surface: 'monday', rawEventId: 'raw-monday-1' },
+          { surface: 'sentry', rawEventId: 'raw-sentry-1' },
+        ],
+      },
+      judge: PASS_JUDGE,
+      passed: true,
+      failures: [],
+      startedAt: '2026-06-29T10:00:00.000Z',
+      completedAt: '2026-06-29T10:00:01.000Z',
+    });
+
+    const report = buildProductionSamplingEvalReport({
+      runKind: 'closed_beta',
+      generatedAt: '2026-06-29T10:06:00.000Z',
+      manifests: [],
+      artifacts: [stalePassed],
+    });
+
+    expect(report).toMatchObject({
+      sampleCount: 1,
+      passedCount: 0,
+      failedCount: 1,
+      totals: { citationFailures: 1 },
+    });
+    expect(report.fixtureCandidates).toEqual([
+      expect.objectContaining({
+        caseName: stalePassed.caseName,
+        reasonCodes: ['source_ref_mismatch'],
+      }),
+    ]);
+  });
+
   it('loads redacted live artifacts from manifests and ignores unsafe files', async () => {
     const dir = await mkdtemp(path.join(tmpdir(), 'timeline-production-sampling-'));
     try {

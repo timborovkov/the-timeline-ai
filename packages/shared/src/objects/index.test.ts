@@ -235,7 +235,7 @@ describe('object scope — team ownership and audit behavior', () => {
         visibilityUserIds: [USER_OWNER, USER_MEMBER],
         sourceMetadata: {
           provider: 'monday',
-          source_payload_ref: 'monday://board/42/item/7',
+          sourcePayloadRef: 'monday://board/42/item/7',
         },
       })
       .returning({ id: rawEvents.id });
@@ -260,6 +260,41 @@ describe('object scope — team ownership and audit behavior', () => {
       visibilityOwnerUserId: null,
       visibilityUserIds: [USER_OWNER, USER_MEMBER],
     });
+  });
+
+  it('rejects direct-write source refs that are missing from the scoped team', async () => {
+    const [otherTeamRaw] = await db
+      .insert(rawEvents)
+      .values({
+        teamId: TEAM_B,
+        authorUserId: USER_OTHER_TEAM,
+        source: 'integration',
+        contentText: 'Other team source event',
+        occurredAt: new Date('2026-07-01T10:10:00.000Z'),
+        visibility: 'team',
+        sourceMetadata: {
+          provider: 'sentry',
+          source_payload_ref: 'sentry://other-team/incident',
+        },
+      })
+      .returning({ id: rawEvents.id });
+    if (!otherTeamRaw) throw new Error('expected raw event');
+
+    await expect(
+      buildObjectDirectWriteSourceContext({
+        db,
+        teamId: TEAM_A,
+        sourceEventId: otherTeamRaw.id,
+      }),
+    ).rejects.toThrow('Source raw event not found for team');
+
+    await expect(
+      buildObjectDirectWriteSourceContext({
+        db,
+        teamId: TEAM_A,
+        sourceEventId: '99999999-9999-4999-8999-999999999999',
+      }),
+    ).rejects.toThrow('Source raw event not found for team');
   });
 
   it('rejects owner and assignee values that are not members of the scoped team', async () => {
@@ -1910,6 +1945,146 @@ describe('object scope — notes and suggestions', () => {
 
     expect(detail?.connectedWork.objects).toEqual([]);
     expect(detail?.connectedWork.timelineEvents).toEqual([]);
+  });
+
+  it('does not surface pending reconciliation outputs hidden from the viewer', async () => {
+    const workspace = withTeam(db, TEAM_A, USER_OWNER);
+    const company = await workspace.objects.createObject({
+      type: 'company',
+      canonicalName: 'DFK',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    const [raw] = await db
+      .insert(rawEvents)
+      .values({
+        teamId: TEAM_A,
+        authorUserId: USER_OWNER,
+        source: 'integration',
+        contentText: 'Sentry incident INC-99 affects DFK onboarding.',
+        occurredAt: new Date('2026-06-17T10:00:00.000Z'),
+        visibility: 'team',
+      })
+      .returning({ id: rawEvents.id });
+    const [cluster] = await db
+      .insert(artifactClusters)
+      .values({
+        teamId: TEAM_A,
+        artifactClusterKind: 'incident',
+        artifactType: 'incident',
+        canonicalName: 'INC-99',
+        canonicalEntityId: company.id,
+      })
+      .returning({ id: artifactClusters.id });
+    const [evidence] = await db
+      .insert(reconciliationEvidence)
+      .values({
+        teamId: TEAM_A,
+        rawEventId: raw?.id ?? '',
+        source: 'integration',
+        provider: 'sentry',
+        externalObjectId: 'INC-99',
+        eventType: 'issue.updated',
+        occurredAt: new Date('2026-06-17T10:00:00.000Z'),
+        visibility: 'team',
+        actor: {},
+        contentDigest: 'digest:hidden-output-evidence',
+        normalizerVersion: 'test-v1',
+        dedupeKey: 'evidence:hidden-output-evidence',
+      })
+      .returning({ id: reconciliationEvidence.id });
+    await db.insert(artifactEvidenceAssociations).values({
+      teamId: TEAM_A,
+      clusterId: cluster?.id ?? '',
+      evidenceId: evidence?.id ?? '',
+      rawEventId: raw?.id ?? '',
+      role: 'lifecycle_update',
+      strength: 'provider',
+      associationSource: 'authoritative_provider',
+      sourceRefs: [],
+      visibility: 'team',
+      visibilityFloor: 'team',
+      dedupeKey: 'association:hidden-output-evidence',
+    });
+    const [run] = await db
+      .insert(reconciliationRuns)
+      .values({
+        teamId: TEAM_A,
+        trigger: 'eval',
+        scope: 'connected-work-hidden-output',
+        status: 'completed',
+        inputFingerprint: 'connected-work-hidden-output',
+        engineVersion: 'test-v1',
+      })
+      .returning({ id: reconciliationRuns.id });
+    await db.insert(reconciliationOutputs).values([
+      {
+        teamId: TEAM_A,
+        runId: run?.id ?? '',
+        clusterId: cluster?.id ?? null,
+        outputKind: 'approval_bundle',
+        targetKind: 'object',
+        operation: 'update',
+        targetId: company.id,
+        payload: { title: 'Visible DFK incident review' },
+        authorityDecision: { decision: 'approval_required', policy_version: 'test-v1' },
+        requiresApproval: true,
+        sourceRefs: [{ source: 'sentry', rawEventId: raw?.id }],
+        visibility: 'team',
+        visibilityFloor: 'team',
+        dedupeKey: 'output:visible-dfk-incident-review',
+        status: 'pending',
+      },
+      {
+        teamId: TEAM_A,
+        runId: run?.id ?? '',
+        clusterId: cluster?.id ?? null,
+        outputKind: 'approval_bundle',
+        targetKind: 'object',
+        operation: 'update',
+        targetId: company.id,
+        payload: { title: 'Hidden direct DFK approval' },
+        authorityDecision: { decision: 'approval_required', policy_version: 'test-v1' },
+        requiresApproval: true,
+        sourceRefs: [{ source: 'sentry', rawEventId: raw?.id }],
+        visibility: 'private',
+        visibilityOwnerUserId: USER_MEMBER,
+        visibilityFloor: 'private',
+        visibilityFloorOwnerUserId: USER_MEMBER,
+        dedupeKey: 'output:hidden-direct-dfk-approval',
+        status: 'pending',
+      },
+      {
+        teamId: TEAM_A,
+        runId: run?.id ?? '',
+        clusterId: cluster?.id ?? null,
+        outputKind: 'approval_bundle',
+        targetKind: 'object',
+        operation: 'update',
+        targetId: null,
+        payload: { title: 'Hidden source-ref DFK approval' },
+        authorityDecision: { decision: 'approval_required', policy_version: 'test-v1' },
+        requiresApproval: true,
+        sourceRefs: [{ source: 'sentry', rawEventId: raw?.id }],
+        visibility: 'private',
+        visibilityOwnerUserId: USER_MEMBER,
+        visibilityFloor: 'private',
+        visibilityFloorOwnerUserId: USER_MEMBER,
+        dedupeKey: 'output:hidden-source-ref-dfk-approval',
+        status: 'pending',
+      },
+    ]);
+
+    const detail = await workspace.objects.getObject(company.id);
+
+    expect(detail?.connectedWork.pendingApprovals).toEqual([
+      expect.objectContaining({ title: 'Visible DFK incident review' }),
+    ]);
+    expect(detail?.connectedWork.pendingApprovals).not.toContainEqual(
+      expect.objectContaining({ title: 'Hidden direct DFK approval' }),
+    );
+    expect(detail?.connectedWork.pendingApprovals).not.toContainEqual(
+      expect.objectContaining({ title: 'Hidden source-ref DFK approval' }),
+    );
   });
 });
 
@@ -3643,6 +3818,8 @@ describe('object scope — merge cleanup', () => {
       body: 'DFK summary note with enough human-authored context for generation.',
     });
 
+    const enqueueObjectEmbedJob = vi.fn().mockResolvedValue(undefined);
+
     await expect(
       generateAndStoreObjectSummary(
         db,
@@ -3669,7 +3846,7 @@ describe('object scope — merge cleanup', () => {
                 conflicts: [],
               }),
             }),
-          enqueueObjectEmbedJob: vi.fn().mockResolvedValue(undefined),
+          enqueueObjectEmbedJob,
         },
       ),
     ).resolves.toEqual({ status: 'ready' });
@@ -3681,6 +3858,92 @@ describe('object scope — merge cleanup', () => {
     expect(rows[0]?.status).toBe('ready');
     expect(rows[0]?.model).toBe('test-summary-model');
     expect(rows[0]?.plainText).toContain('confirmed June 30');
+  });
+
+  it('fails summary generation instead of storing hallucinated source refs', async () => {
+    const scope = withTeam(db, TEAM_A, USER_OWNER);
+    const object = await scope.objects.createObject({
+      type: 'company',
+      canonicalName: 'Invalid Ref Co',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    const [event] = await db
+      .insert(rawEvents)
+      .values({
+        teamId: TEAM_A,
+        authorUserId: USER_OWNER,
+        source: 'web',
+        contentText: 'Invalid Ref Co team-visible planning.',
+        occurredAt: new Date('2026-06-02T10:00:00.000Z'),
+        visibility: 'team',
+      })
+      .returning({ id: rawEvents.id });
+    if (!event) throw new Error('failed to insert event');
+    const [fact] = await db
+      .insert(facts)
+      .values({
+        teamId: TEAM_A,
+        rawEventId: event.id,
+        statement: 'Invalid Ref Co has enough source-backed planning context.',
+        confidence: 1,
+        modelVersion: 'test',
+      })
+      .returning({ id: facts.id });
+    if (!fact) throw new Error('failed to insert fact');
+    await db.insert(factEntities).values({
+      factId: fact.id,
+      entityId: object.id,
+      role: 'subject',
+    });
+    await scope.objects.createNote({
+      entityId: object.id,
+      authorUserId: USER_OWNER,
+      body: 'Invalid Ref Co summary note with enough human-authored context for generation.',
+    });
+    const enqueueObjectEmbedJob = vi.fn().mockResolvedValue(undefined);
+
+    await expect(
+      generateAndStoreObjectSummary(
+        db,
+        scope,
+        object.id,
+        { trigger: 'manual' },
+        {
+          chatStructured: <TSchema extends z.ZodType>(
+            input: ChatStructuredInput<TSchema>,
+          ): Promise<ChatStructuredResult<TSchema>> =>
+            Promise.resolve({
+              model: 'test-summary-model',
+              object: input.schema.parse({
+                overview: 'Invalid Ref Co has source-backed planning context.',
+                overviewSourceRefs: [
+                  { kind: 'timeline_event', id: '99999999-9999-4999-8999-999999999999' },
+                ],
+                currentState: [],
+                openQuestions: [],
+                conflicts: [],
+              }),
+            }),
+          enqueueObjectEmbedJob,
+        },
+      ),
+    ).resolves.toEqual({
+      status: 'failed',
+      reason: 'invalid_source_ref:timeline_event:99999999-9999-4999-8999-999999999999',
+      retryable: false,
+    });
+
+    const [summary] = await db
+      .select()
+      .from(objectSummaries)
+      .where(eq(objectSummaries.entityId, object.id));
+    expect(summary?.status).toBe('failed');
+    expect(summary?.plainText).toBe('');
+    expect(summary?.sourceRefs).toEqual([]);
+    expect(summary?.lastErrorCode).toBe(
+      'invalid_source_ref:timeline_event:99999999-9999-4999-8999-999999999999',
+    );
+    expect(enqueueObjectEmbedJob).not.toHaveBeenCalled();
   });
 
   it('lets generated summaries cite reconciliation association evidence', async () => {

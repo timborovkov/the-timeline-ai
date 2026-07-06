@@ -1,4 +1,7 @@
 import assert from 'node:assert/strict';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 
 import { buildE2eEnv } from './e2e-env.js';
 
@@ -119,6 +122,29 @@ function lookupPort(container: string, port: number): string | null {
       QDRANT_API_KEY: 'dev_qdrant_key',
     },
   );
+}
+
+{
+  const dir = mkdtempSync(path.join(tmpdir(), 'timeline-e2e-env-'));
+  const originalPath = process.env.PATH;
+  try {
+    const dockerPath = path.join(dir, 'docker');
+    writeFileSync(dockerPath, '#!/bin/sh\nsleep 2\n', { mode: 0o755 });
+    process.env.PATH = `${dir}${path.delimiter}${originalPath ?? ''}`;
+
+    const started = Date.now();
+    const env = buildE2eEnv({}, { dockerInspectTimeoutMs: 25 });
+
+    assert(Date.now() - started < 1_000, 'slow docker inspect should time out quickly');
+    assert.equal(env.DATABASE_URL, 'postgres://timeline:timeline_dev@localhost:5432/timeline');
+    assert.equal(env.REDIS_URL, 'redis://localhost:6379');
+    assert.equal(env.S3_ENDPOINT, 'http://localhost:9000');
+    assert.equal(env.QDRANT_URL, 'http://qdrant.e2e.invalid');
+  } finally {
+    if (originalPath === undefined) delete process.env.PATH;
+    else process.env.PATH = originalPath;
+    rmSync(dir, { recursive: true, force: true });
+  }
 }
 
 console.log('e2e-env tests passed');

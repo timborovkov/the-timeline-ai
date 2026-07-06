@@ -38,8 +38,8 @@ The repo already has strong primitives:
   `agent_suggestion_items`, and `agent_suggestion_evidence`.
 - Object relationships, Connected Work, object summaries, and tiered
   provenance views.
-- Fast deterministic agent, retrieval, and background proposal evals under
-  `pnpm test:eval`.
+- Fast deterministic agent, dashboard chat, retrieval, object-summary
+  source-ref/visibility, and background proposal evals under `pnpm test:eval`.
 
 The problem is that these primitives are not governed by one pipeline:
 
@@ -183,11 +183,15 @@ replay envelope before evidence normalization.
 Provider-harvested documents also stamp the document upload raw event with
 provider identity, a durable document-body `source_payload_ref`, a digest, and a
 compact `integration_harvest_document` snapshot before extraction/chunking is
-queued.
+queued. Provider-supplied payload-ref and digest aliases such as
+`sourcePayloadRef`, `payload_ref`, `raw_payload_ref`, `source_payload_digest`,
+and `raw_payload_digest` are canonicalized while the original provider metadata
+remains in the replay snapshot.
 Ordinary document uploads now stamp the upload raw event with the durable
 document object-key `source_payload_ref`, optional checksum digest, and compact
 `document_upload` snapshot before normalizing evidence, so replay is full when
-the stored body remains available. Document and folder lifecycle rows such as
+the stored body remains available; caller-supplied replay ref/digest aliases are
+canonicalized before the raw event and evidence row are written. Document and folder lifecycle rows such as
 rename, move, delete, restore, and visibility changes stamp inline
 `source_payload_ref`, payload digest, and compact `document_lifecycle_event`
 snapshots before normalizing evidence; folder-only events use `folder_id` as a
@@ -1005,7 +1009,8 @@ Suggested prompt versions:
 ## Live AI Eval Harness
 
 Add `pnpm test:reconciliation-eval` and include it in the relevant task gate
-when reconciliation code changes. Keep `pnpm test:eval` for chat/retrieval and
+when reconciliation code changes. Keep `pnpm test:eval` for chat/retrieval,
+dashboard action/HITL selection, object-summary source-ref visibility, and
 background proposal safety.
 
 The harness is not a single golden-path test. It is a product-quality suite that
@@ -1062,11 +1067,12 @@ Resolver PGlite tests now assert artifact-cluster kind metadata in association
 rows and observed-association output payloads. Approval projection tests assert
 source-ref metadata survives on suggestion evidence for both fresh projections
 and repaired projections, giving citation/debug surfaces the same provenance as
-reconciliation outputs. The
-target replay harness adds fixture packets under
-`packages/shared/src/reconciliation/evals/fixtures`, saved structured model
-outputs, and fuller DB-state assertions for approval bundles, citations, and
-visibility.
+reconciliation outputs. Redacted live fixture packets under
+`evals/reconciliation/live-cases` are loaded through the production-sampling
+artifact validator during `pnpm test:reconciliation-eval`, so promoted live
+misses become deterministic release-gate inputs without storing raw customer
+content. Later replay slices add saved structured model outputs and fuller
+DB-state assertions for approval bundles, citations, and visibility.
 The production-sampling report builder consumes redacted live-eval artifacts and
 manifests and emits per-surface/per-scenario pass rates, required-output misses,
 required artifact-kind misses, citation failures, visibility failures,
@@ -1202,7 +1208,8 @@ Phase 1 behavior:
 
 Target behavior:
 
-- Loads redacted fixture packets from `evals/reconciliation/live-cases`.
+- Loads redacted fixture packets from `evals/reconciliation/live-cases`
+  through the deterministic reconciliation eval gate.
 - Calls the real `llm.chatStructured()` pipeline.
 - Promotes timestamped artifact roots into the scheduled CI/live-eval workflow.
 - Promotes the current structured judge into scheduled reporting and production
@@ -1428,10 +1435,11 @@ This plan intentionally removes legacy half-paths.
 4. Add source-ref validation.
    - Phase 1 validation is shared by reconciliation scoring/tests and the
      exported reconciliation package.
-   - Suggestions now validate source refs during approval projection creation
-     and repair; later phases wire the same validation into summaries, chat, and
-     other source-ref consumers instead of accepting legacy single-event
-     provenance.
+   - Suggestions validate source refs during approval projection creation and
+     repair. Object summaries validate generated refs against their source
+     packet, and chat consumes those summary refs as citations; later phases keep
+     extending the same validation pattern to other source-ref consumers instead
+     of accepting legacy single-event provenance.
 5. Add replay-safe dedupe keys and unique constraints for evidence, anchors,
    associations, runs, and outputs.
 6. Add payload snapshot storage/ref support for provider/webhook/email/MCP
@@ -1724,6 +1732,9 @@ Exit criteria:
 1. Add deterministic reconciliation evals.
 2. Add live model eval command.
 3. Add redacted live fixture format and artifact output.
+   - Phase 1 writes redacted live artifacts/manifests and replays committed
+     fixture packets from `evals/reconciliation/live-cases` through the
+     production-sampling classifier during `pnpm test:reconciliation-eval`.
 4. Add surface and scenario manifests for every coverage-matrix row.
    - Phase 1 has typed manifests exported from
      `@timeline/shared/reconciliation/eval-manifests`; later phases can move
@@ -1756,7 +1767,9 @@ Exit criteria:
      --run-kind=closed_beta --fail-on-failures` to load redacted live-eval
      artifact directories or report files, ignore invalid or unsafe files, write
      a release artifact report, optionally persist it for Team → Reconciliation
-     with `--team=<uuid>`, and fail the command if any sample fails. Repeat
+     with `--team=<uuid>`, and fail the command if any sample fails. The
+     operator CLI failure-gate contract is part of `pnpm test:reconciliation-eval`
+     so it cannot drift from the shared report builder. Repeat
      `--input` for multiple artifact roots; `--run-kind` defaults to `manual`
      and also accepts `post_deploy`. Repeat
      `--confirm-fixture=<caseName>:<packetFingerprint>` for reviewed failed

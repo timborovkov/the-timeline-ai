@@ -64,7 +64,7 @@ function asRecord(value: unknown, label: string): Record<string, unknown> {
 async function harvest(
   db: TestDb,
   io: IntegrationDocumentHarvestIO,
-  input: { filename?: string; body?: Buffer } = {},
+  input: { filename?: string; body?: Buffer; metadata?: Record<string, unknown> } = {},
 ) {
   return harvestIntegrationDocument({
     db: db as never as Db,
@@ -79,7 +79,7 @@ async function harvest(
       contentType: 'application/pdf',
       body: input.body ?? Buffer.from('%PDF roadmap v1'),
       externalId: 'monday-doc-1',
-      metadata: { board_id: 'board-1' },
+      metadata: { board_id: 'board-1', ...input.metadata },
     },
     io,
   });
@@ -237,5 +237,39 @@ describe('integration document harvest', () => {
       'Uploaded Roadmap.pdf',
       'Uploaded new version (v2) of Roadmap.pdf',
     ]);
+  });
+
+  it('preserves provider-supplied source payload aliases for harvested documents', async () => {
+    const io = fakeIO();
+
+    const result = await harvest(db, io, {
+      metadata: {
+        sourcePayloadRef: '  s3://timeline-test/monday/workdoc-original.json  ',
+        source_payload_digest: 'sha256:monday-workdoc-original',
+      },
+    });
+
+    const [version] = await db
+      .select()
+      .from(documentVersions)
+      .where(eq(documentVersions.id, result.versionId));
+    const sourceEventId = version?.sourceEventId;
+    if (!sourceEventId) throw new Error('missing source event id');
+
+    const [event] = await db.select().from(rawEvents).where(eq(rawEvents.id, sourceEventId));
+    const metadata = asRecord(event?.sourceMetadata, 'source metadata');
+    expect(metadata.source_payload_ref).toBe('s3://timeline-test/monday/workdoc-original.json');
+    expect(metadata.payload_digest).toBe('sha256:monday-workdoc-original');
+    expect(metadata).not.toHaveProperty('sourcePayloadRef');
+
+    const [evidence] = await db
+      .select()
+      .from(reconciliationEvidence)
+      .where(eq(reconciliationEvidence.rawEventId, sourceEventId));
+    expect(evidence).toMatchObject({
+      sourcePayloadRef: 's3://timeline-test/monday/workdoc-original.json',
+      payloadDigest: 'sha256:monday-workdoc-original',
+      replayState: 'full',
+    });
   });
 });

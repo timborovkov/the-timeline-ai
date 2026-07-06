@@ -3,11 +3,18 @@ import { spawnSync } from 'node:child_process';
 type Env = NodeJS.ProcessEnv;
 type PublishedPortLookup = (container: string, containerPort: number) => string | null;
 
+const DEFAULT_DOCKER_INSPECT_TIMEOUT_MS = 1_000;
+
 interface BuildE2eEnvOptions {
   publishedPort?: PublishedPortLookup;
+  dockerInspectTimeoutMs?: number;
 }
 
-function publishedPort(container: string, containerPort: number): string | null {
+function publishedPort(
+  container: string,
+  containerPort: number,
+  timeoutMs = DEFAULT_DOCKER_INSPECT_TIMEOUT_MS,
+): string | null {
   const result = spawnSync(
     'docker',
     [
@@ -16,11 +23,16 @@ function publishedPort(container: string, containerPort: number): string | null 
       '--format',
       `{{(index (index .NetworkSettings.Ports "${containerPort}/tcp") 0).HostPort}}`,
     ],
-    { encoding: 'utf8' },
+    { encoding: 'utf8', timeout: normalizeTimeoutMs(timeoutMs) },
   );
   if (result.status !== 0) return null;
   const port = result.stdout.trim();
   return /^\d+$/.test(port) ? port : null;
+}
+
+function normalizeTimeoutMs(value: number): number {
+  if (!Number.isFinite(value) || value <= 0) return DEFAULT_DOCKER_INSPECT_TIMEOUT_MS;
+  return Math.trunc(value);
 }
 
 function localUrl(port: string, protocol = 'http'): string {
@@ -38,7 +50,9 @@ export function buildE2eEnv(input: Env = process.env, options: BuildE2eEnvOption
   delete env.NO_COLOR;
 
   const useDockerPorts = env.E2E_USE_DOCKER_PORTS !== '0';
-  const lookupPort = options.publishedPort ?? publishedPort;
+  const lookupPort =
+    options.publishedPort ??
+    ((container, port) => publishedPort(container, port, options.dockerInspectTimeoutMs));
   const postgresPort = useDockerPorts ? lookupPort('timeline-e2e-postgres-1', 5432) : null;
   const redisPort = useDockerPorts ? lookupPort('timeline-e2e-redis-1', 6379) : null;
   const rustfsPort = useDockerPorts ? lookupPort('timeline-e2e-rustfs-1', 9000) : null;

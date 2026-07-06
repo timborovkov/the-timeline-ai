@@ -3055,7 +3055,7 @@ function conversationWindowSourceRef(
     source,
     rawEventId: event.id,
   };
-  const sourcePayloadRef = sourcePayloadRefFromMetadata(event.sourceMetadata);
+  const sourcePayloadRef = reconciliation.sourcePayloadRefFromMetadata(event.sourceMetadata);
   if (sourcePayloadRef) sourceRef.sourcePayloadRef = sourcePayloadRef;
   return sourceRef;
 }
@@ -3108,13 +3108,7 @@ function uniqueSourceRefs(sourceRefs: reconciliation.SourceRef[]): reconciliatio
 }
 
 function sourcePayloadRefFromRawEvent(row: typeof rawEvents.$inferSelect): string | null {
-  return sourcePayloadRefFromMetadata(row.sourceMetadata);
-}
-
-function sourcePayloadRefFromMetadata(value: unknown): string | null {
-  const metadata = recordFromUnknown(value);
-  const ref = metadata.source_payload_ref ?? metadata.sourcePayloadRef;
-  return typeof ref === 'string' && ref.trim().length > 0 ? ref.trim() : null;
+  return reconciliation.sourcePayloadRefFromMetadata(row.sourceMetadata);
 }
 
 function recordFromUnknown(value: unknown): Record<string, unknown> {

@@ -521,6 +521,8 @@ describe('embedding source plans', () => {
           folder_id: 'folder-customers',
           integration_provider: 'google_drive',
           integration_external_id: 'drive-file-99',
+          sourcePayloadRef: 's3://timeline-test/documents/acme-renewal-plan.pdf',
+          source_payload_digest: 'sha256:acme-renewal-plan',
         },
       },
       {
@@ -616,6 +618,10 @@ describe('embedding source plans', () => {
     expect(documentPlan?.text).toContain('title Acme Renewal Plan');
     expect(documentPlan?.text).toContain('provider google_drive');
     expect(documentPlan?.text).toContain('external object drive-file-99');
+    expect(documentPlan?.text).toContain(
+      'source ref s3://timeline-test/documents/acme-renewal-plan.pdf',
+    );
+    expect(documentPlan?.text).toContain('payload digest sha256:acme-renewal-plan');
     expect(calendarPlan?.text).toContain('Source context: Calendar | title Acme renewal review');
     expect(calendarPlan?.text).toContain('action scheduled');
     expect(calendarPlan?.text).toContain('source meeting_bot');

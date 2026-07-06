@@ -14,6 +14,7 @@ import {
   llm,
   queue,
 } from '@timeline/shared';
+import { sourcePayloadRefFromMetadata } from '@timeline/shared/reconciliation';
 import { normalizeRawEventsToEvidence } from '@timeline/shared/reconciliation/normalization';
 import { UnrecoverableError, Worker, type Job } from 'bullmq';
 import { eq, sql } from 'drizzle-orm';
@@ -143,11 +144,7 @@ export async function processTranscribeJobForTests(
     model: Array.from(new Set(transcriptions.map((r) => r.model))).join('+'),
   };
   const contentText = [noteText, result.text].filter(Boolean).join('\n\n');
-  const existingPayloadRef =
-    typeof sourceMetadata.source_payload_ref === 'string' &&
-    sourceMetadata.source_payload_ref.trim()
-      ? sourceMetadata.source_payload_ref.trim()
-      : null;
+  const existingPayloadRef = sourcePayloadRefFromMetadata(sourceMetadata);
   const sourcePayloadRef = existingPayloadRef ?? `s3://timeline-audio/${audioKey}`;
   const payloadDigest = `sha256:${createHash('sha256').update(body).digest('hex')}`;
 

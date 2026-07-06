@@ -69,6 +69,22 @@ const checks = [
         throw new Error(`Expected source ref validation to pass: ${validation.errors.join(', ')}`);
       }
 
+      if (
+        reconciliation.sourcePayloadRefFromMetadata({
+          sourcePayloadRef: '  s3://timeline-test/raw-message.eml  ',
+        }) !== 's3://timeline-test/raw-message.eml'
+      ) {
+        throw new Error('sourcePayloadRefFromMetadata export did not trim camelCase metadata');
+      }
+
+      if (
+        reconciliation.payloadDigestFromMetadata({
+          source_payload_digest: '  sha256:timeline-test-raw-message  ',
+        }) !== 'sha256:timeline-test-raw-message'
+      ) {
+        throw new Error('payloadDigestFromMetadata export did not trim digest metadata');
+      }
+
       if (typeof normalization.normalizeRawEventsToEvidence !== 'function') {
         throw new Error('normalizeRawEventsToEvidence export is missing');
       }

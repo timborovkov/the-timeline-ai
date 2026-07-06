@@ -1,3 +1,8 @@
+import {
+  payloadDigestFromMetadata,
+  sourcePayloadRefFromMetadata,
+} from '#src/reconciliation/source-snapshot.js';
+
 type Metadata = Record<string, unknown>;
 
 export interface RawEventForAiInput {
@@ -280,7 +285,6 @@ function renderSystemContext(meta: Metadata): string | null {
   pushPart(parts, 'relationship', metadataString(meta, 'relationship_id'));
   pushPart(parts, 'note', metadataString(meta, 'note_id'));
   pushPart(parts, 'identity facet', metadataString(meta, 'identity_facet_id'));
-  pushPart(parts, 'source ref', metadataString(meta, 'source_payload_ref', 160));
   return parts.length > 1 ? parts.join(' | ') : null;
 }
 
@@ -390,6 +394,23 @@ function renderIntegrationContext(meta: Metadata): string | null {
   return parts.length > 1 ? parts.join(' | ') : null;
 }
 
+function renderReplayContext(meta: Metadata): string | null {
+  const parts: string[] = [];
+  pushPart(parts, 'source ref', truncateMetadataValue(sourcePayloadRefFromMetadata(meta), 160));
+  pushPart(parts, 'payload digest', truncateMetadataValue(payloadDigestFromMetadata(meta), 120));
+  return parts.length > 0 ? parts.join(' | ') : null;
+}
+
+function appendContext(context: string | null, extra: string | null): string | null {
+  if (!context) return extra;
+  if (!extra) return context;
+  return `${context} | ${extra}`;
+}
+
+function truncateMetadataValue(value: string | null, max: number): string | null {
+  return value ? metadataString({ value }, 'value', max) : null;
+}
+
 /**
  * Render source metadata that changes the meaning of a raw event into the text
  * sent to extraction and embedding. `content_text` remains the exact captured
@@ -435,6 +456,7 @@ export function renderRawEventForAi(input: RawEventForAiInput): string | null {
     default:
       context = null;
   }
+  context = appendContext(context, renderReplayContext(meta));
   if (!context) return body;
 
   return `Source context: ${context}\n\nMessage:\n${body}`;

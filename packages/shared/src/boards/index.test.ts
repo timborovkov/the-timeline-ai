@@ -241,6 +241,41 @@ describe('board scope', () => {
     });
   });
 
+  it('rejects board direct-write source refs that are missing from the scoped team', async () => {
+    const [otherTeamRaw] = await db
+      .insert(rawEvents)
+      .values({
+        teamId: TEAM_B,
+        authorUserId: USER_OTHER_TEAM,
+        source: 'integration',
+        contentText: 'Other team board source event.',
+        occurredAt: new Date('2026-07-01T11:10:00.000Z'),
+        visibility: 'team',
+        sourceMetadata: {
+          provider: 'monday',
+          source_payload_ref: 'monday://other-team/board/1/item/2',
+        },
+      })
+      .returning({ id: rawEvents.id });
+    if (!otherTeamRaw) throw new Error('expected raw event');
+
+    await expect(
+      buildBoardDirectWriteSourceContext({
+        db,
+        teamId: TEAM_A,
+        sourceEventId: otherTeamRaw.id,
+      }),
+    ).rejects.toThrow('Source raw event not found for team');
+
+    await expect(
+      buildBoardDirectWriteSourceContext({
+        db,
+        teamId: TEAM_A,
+        sourceEventId: '99999999-9999-4999-8999-999999999999',
+      }),
+    ).rejects.toThrow('Source raw event not found for team');
+  });
+
   it('keeps board items team-scoped and rejects objects from other teams', async () => {
     const owner = withTeam(db, TEAM_A, USER_OWNER);
     const other = withTeam(db, TEAM_B, USER_OTHER_TEAM);

@@ -64,7 +64,10 @@ import {
 import { buildPointId } from '#src/qdrant/point-id.js';
 import { normalizeRawEventsToEvidence } from '#src/reconciliation/normalization.js';
 import { createReconciliationScope } from '#src/reconciliation/scope.js';
-import { inlineSourceSnapshotMetadata } from '#src/reconciliation/source-snapshot.js';
+import {
+  inlineSourceSnapshotMetadata,
+  sourcePayloadRefFromMetadata,
+} from '#src/reconciliation/source-snapshot.js';
 import { createSuggestionScope } from '#src/suggestions/index.js';
 import {
   buildTimelineMomentPresentationCacheFingerprint,
@@ -111,11 +114,6 @@ const SPECIFIC_USERS_DEFAULT_SOURCES = new Set<VisibilityDefaultSource>([
 const DEFAULT_SENDER_SEARCH_EVENT_ID_BATCH_SIZE = 1000;
 const log = childLogger('team-scope');
 const WEB_TEXT_SOURCE_SNAPSHOT_VERSION = 'web-text-source-snapshot-2026-07';
-
-function sourceMetadataString(metadata: Record<string, unknown>, key: string): string | null {
-  const value = metadata[key];
-  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
-}
 
 function webTextSourceMetadata(input: {
   teamId: string;
@@ -2576,8 +2574,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
           input.source === 'web' &&
           !input.contentAudioUrl &&
           contentText &&
-          !sourceMetadataString(sourceMetadata, 'source_payload_ref') &&
-          !sourceMetadataString(sourceMetadata, 'sourcePayloadRef')
+          !sourcePayloadRefFromMetadata(sourceMetadata)
             ? webTextSourceMetadata({
                 teamId,
                 authorUserId: input.authorUserId,

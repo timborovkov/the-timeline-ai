@@ -5,6 +5,7 @@ import { type Db, reconciliationRuns } from '@timeline/db';
 
 import type { LiveEvalArtifact, LiveEvalRunManifest } from '#src/reconciliation/live-artifacts.js';
 
+import { summarizeLiveEvalManifestCases } from '#src/reconciliation/live-artifact-manifest-summary.js';
 import { stableSha256Digest } from '#src/reconciliation/stable-digest.js';
 
 export type ProductionSamplingRunKind = 'closed_beta' | 'post_deploy' | 'manual';
@@ -815,27 +816,16 @@ function isLiveEvalRunManifest(value: unknown): value is LiveEvalRunManifest {
 }
 
 function hasConsistentLiveEvalManifestSummary(manifest: LiveEvalRunManifest): boolean {
-  const cases = manifest.cases;
-  const judgedCases = cases.filter((entry) => entry.judgeScore !== null);
-  const expectedJudgeAverageScore =
-    judgedCases.length > 0
-      ? judgedCases.reduce((sum, entry) => sum + (entry.judgeScore ?? 0), 0) / judgedCases.length
-      : null;
+  const summary = summarizeLiveEvalManifestCases(manifest.cases);
   return (
-    manifest.caseCount === cases.length &&
-    manifest.passedCount === cases.filter((entry) => entry.passed).length &&
-    manifest.failedCount === cases.filter((entry) => !entry.passed).length &&
-    sameStringArray(
-      manifest.scenarioFamilies,
-      uniqueSorted(cases.flatMap((entry) => entry.scenarioFamily ?? [])),
-    ) &&
-    sameStringArray(
-      manifest.ingestionSurfaces,
-      uniqueSorted(cases.flatMap((entry) => entry.ingestionSurfaces)),
-    ) &&
-    manifest.judgePassedCount === cases.filter((entry) => entry.judgePassed === true).length &&
-    manifest.judgeFailedCount === cases.filter((entry) => entry.judgePassed === false).length &&
-    sameNullableNumber(manifest.judgeAverageScore, expectedJudgeAverageScore)
+    manifest.caseCount === summary.caseCount &&
+    manifest.passedCount === summary.passedCount &&
+    manifest.failedCount === summary.failedCount &&
+    manifest.judgePassedCount === summary.judgePassedCount &&
+    manifest.judgeFailedCount === summary.judgeFailedCount &&
+    sameStringArray(manifest.scenarioFamilies, summary.scenarioFamilies) &&
+    sameStringArray(manifest.ingestionSurfaces, summary.ingestionSurfaces) &&
+    sameNullableNumber(manifest.judgeAverageScore, summary.judgeAverageScore)
   );
 }
 
@@ -1037,10 +1027,15 @@ function artifactConsistencyReasonCodes(artifact: LiveEvalArtifact): string[] {
   const reasonCodes: string[] = [];
   const expectedSurfaces = new Set(artifact.expected.ingestionSurfaces);
   const actualSurfaces = new Set(artifact.actual.ingestionSurfaces);
-  const sourceRefKeys = artifact.actual.sourceRefs.map(
-    (ref) => `${ref.surface}:${ref.rawEventHash}`,
-  );
-  const sourceRefSurfaces = new Set(artifact.actual.sourceRefs.map((ref) => ref.surface));
+  const sourceRefSurfaces = new Set<string>();
+  const sourceRefKeys = new Set<string>();
+  let duplicateSourceRef = false;
+  for (const ref of artifact.actual.sourceRefs) {
+    sourceRefSurfaces.add(ref.surface);
+    const key = `${ref.surface}:${ref.rawEventHash}`;
+    if (sourceRefKeys.has(key)) duplicateSourceRef = true;
+    sourceRefKeys.add(key);
+  }
 
   for (const surface of expectedSurfaces) {
     if (!actualSurfaces.has(surface)) reasonCodes.push('surface_mismatch');
@@ -1053,11 +1048,7 @@ function artifactConsistencyReasonCodes(artifact: LiveEvalArtifact): string[] {
   for (const surface of sourceRefSurfaces) {
     if (!expectedSurfaces.has(surface)) reasonCodes.push('source_ref_mismatch');
   }
-  for (const key of new Set(sourceRefKeys)) {
-    if (sourceRefKeys.filter((candidate) => candidate === key).length > 1) {
-      reasonCodes.push('source_ref_mismatch');
-    }
-  }
+  if (duplicateSourceRef) reasonCodes.push('source_ref_mismatch');
 
   return reasonCodes;
 }

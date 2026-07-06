@@ -53,6 +53,7 @@ import {
   validateSourceRefs,
   type SourceRef,
 } from '#src/reconciliation/index.js';
+import { sourcePayloadRefFromMetadata } from '#src/reconciliation/source-snapshot.js';
 import { localDateFromInstant, localDateSpanToUtcRange } from '#src/time/index.js';
 
 type Visibility = 'private' | 'team' | 'specific_users';
@@ -1154,14 +1155,6 @@ function normalizedPrimaryApprovalName(item: typeof agentSuggestionItems.$inferS
 function stringPayloadValue(payload: Record<string, unknown>, key: string): string | null {
   const value = payload[key];
   return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
-}
-
-function sourcePayloadRefFromMetadata(value: unknown): string | null {
-  const metadata = recordFromUnknown(value);
-  return (
-    stringPayloadValue(metadata, 'source_payload_ref') ??
-    stringPayloadValue(metadata, 'sourcePayloadRef')
-  );
 }
 
 function normalizedObjectCreateType(item: typeof agentSuggestionItems.$inferSelect): string {

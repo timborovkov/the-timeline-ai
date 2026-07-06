@@ -205,7 +205,7 @@ pnpm dev                  # Next.js app + worker in watch mode
 pnpm validate             # format check, typecheck, lint, knip
 pnpm test                 # unit and integration tests (package suites run sequentially)
 pnpm test:e2e-env         # deterministic E2E env/port contract check
-pnpm test:eval            # fast deterministic agent, retrieval, and background proposal evals
+pnpm test:eval            # fast deterministic agent, dashboard chat, retrieval, summary, and proposal evals
 AGENT_LIVE_ENV_FILE=/path/.env pnpm test:agent-eval:live
                           # opt-in live LLM askAgent durable-state + provider/document/meeting/MCP synthesis eval
 SUGGESTIONS_LIVE_ENV_FILE=/path/.env pnpm test:suggestions-eval:live

@@ -126,6 +126,52 @@ describe('document scope — finalizeDocumentVersion idempotency (P1 fix)', () =
     expect(evidence[0]?.replayState).toBe('full');
   });
 
+  it('finalize canonicalizes caller-supplied replay ref and digest aliases', async () => {
+    const scope = withTeam(db, TEAM_ID, USER_A).documents;
+    const created = await scope.createDocument({
+      name: 'aliased-upload.txt',
+      folderId: null,
+      filename: 'aliased-upload.txt',
+      contentType: 'text/plain',
+    });
+
+    const finalized = await scope.finalizeDocumentVersion({
+      versionId: created.version.id,
+      byteSize: 64,
+      contentType: 'text/plain',
+      checksumSha256: 'checksum-should-not-win',
+      sourceMetadata: {
+        sourcePayloadRef: '  s3://timeline-test/documents/original-provider-body.txt  ',
+        source_payload_digest: '  sha256:original-provider-body  ',
+        provider_note: 'kept',
+      },
+    });
+
+    const sourceEvents = await pg.query<{ source_metadata: Record<string, unknown> }>(
+      `SELECT source_metadata FROM raw_events WHERE id = $1`,
+      [finalized.eventId],
+    );
+    const metadata = sourceEvents.rows[0]?.source_metadata;
+    expect(metadata).toMatchObject({
+      source_payload_ref: 's3://timeline-test/documents/original-provider-body.txt',
+      payload_digest: 'sha256:original-provider-body',
+      provider_note: 'kept',
+      source_snapshot_kind: 'document_upload',
+    });
+    expect(metadata).not.toHaveProperty('sourcePayloadRef');
+    expect(metadata).not.toHaveProperty('source_payload_digest');
+
+    const evidence = await db
+      .select()
+      .from(reconciliationEvidence)
+      .where(eq(reconciliationEvidence.rawEventId, finalized.eventId));
+    expect(evidence[0]).toMatchObject({
+      sourcePayloadRef: 's3://timeline-test/documents/original-provider-body.txt',
+      payloadDigest: 'sha256:original-provider-body',
+      replayState: 'full',
+    });
+  });
+
   it('finalize is idempotent across separate scope instances (replay across requests)', async () => {
     // Server actions are stateless — a retried action creates a fresh
     // withTeam call. The idempotency check lives in SQL, not in scope

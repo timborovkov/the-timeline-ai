@@ -410,6 +410,42 @@ describe('withTeam namespaced port', () => {
     ]);
   });
 
+  it('does not replace existing replay payload refs when creating web events', async () => {
+    const scope = withTeam(db as never, TEAM_A, USER_A);
+    const event = await scope.timeline.createEvent({
+      authorUserId: USER_A,
+      source: 'web',
+      contentText: 'Imported web note with an existing replay payload.',
+      visibility: 'team',
+      occurredAt: new Date('2026-06-20T10:05:00Z'),
+      sourceMetadata: {
+        raw_payload_ref: '  s3://timeline-test/web/imported-note.json  ',
+        payload_digest: 'sha256:imported-note',
+      },
+    });
+
+    const [row] = await db
+      .select({ sourceMetadata: rawEvents.sourceMetadata })
+      .from(rawEvents)
+      .where(eq(rawEvents.id, event.id));
+    expect(row?.sourceMetadata).toMatchObject({
+      raw_payload_ref: '  s3://timeline-test/web/imported-note.json  ',
+      payload_digest: 'sha256:imported-note',
+    });
+    expect(row?.sourceMetadata).not.toHaveProperty('source_payload_ref');
+    expect(row?.sourceMetadata).not.toHaveProperty('source_snapshot_kind');
+
+    const [evidence] = await db
+      .select()
+      .from(reconciliationEvidence)
+      .where(eq(reconciliationEvidence.rawEventId, event.id));
+    expect(evidence).toMatchObject({
+      replayState: 'full',
+      sourcePayloadRef: 's3://timeline-test/web/imported-note.json',
+      payloadDigest: 'sha256:imported-note',
+    });
+  });
+
   it('repairs link artifacts when email delivery retries an existing raw event', async () => {
     const scope = withTeam(db as never, TEAM_A, USER_A);
     const first = await scope.timeline.createEmailEvent({

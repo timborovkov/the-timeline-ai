@@ -195,6 +195,28 @@ describe('processTranscribeJobForTests', () => {
     });
   });
 
+  it('preserves existing camelCase source payload refs when transcription backfills the row', async () => {
+    await seedAudioEvent(db as never, RAW_EVENT_ID, {
+      sourcePayloadRef: 's3://timeline-audio/existing/camel-case-ref.ogg',
+    });
+
+    await processTranscribeJobForTests(
+      { db: db as never },
+      { rawEventId: RAW_EVENT_ID, teamId: TEAM_ID, audioKey: AUDIO_KEY },
+      makeIO(),
+    );
+
+    const row = (await db.select().from(rawEvents).where(eq(rawEvents.id, RAW_EVENT_ID)))[0];
+    expect(row?.sourceMetadata).toMatchObject({
+      source_payload_ref: 's3://timeline-audio/existing/camel-case-ref.ogg',
+    });
+    const [evidence] = await db
+      .select()
+      .from(reconciliationEvidence)
+      .where(eq(reconciliationEvidence.rawEventId, RAW_EVENT_ID));
+    expect(evidence?.sourcePayloadRef).toBe('s3://timeline-audio/existing/camel-case-ref.ogg');
+  });
+
   it('passes a valid source metadata language hint to transcription', async () => {
     await seedAudioEvent(db as never, RAW_EVENT_ID, {
       transcription_language: 'EN',

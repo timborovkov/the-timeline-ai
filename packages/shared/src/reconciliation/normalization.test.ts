@@ -141,6 +141,48 @@ describe('reconciliation source normalization', () => {
     );
   });
 
+  it('normalizes camelCase source payload refs as full replay evidence', async () => {
+    const [rawEvent] = await db
+      .insert(rawEvents)
+      .values({
+        teamId: TEAM_ID,
+        authorUserId: USER_ID,
+        source: 'email',
+        contentText: 'Forwarded Acme thread: preserve the original message payload.',
+        occurredAt: new Date('2026-06-22T08:00:00Z'),
+        visibility: 'team',
+        visibilityOwnerUserId: USER_ID,
+        sourceMetadata: {
+          message_id: '<camel-ref@example.test>',
+          subject: 'Acme payload ref',
+          sourcePayloadRef: '  s3://timeline-test/email/camel-ref.eml  ',
+          source_payload_digest: '  sha256:camel-ref  ',
+        },
+      })
+      .returning({ id: rawEvents.id });
+    if (!rawEvent) throw new Error('raw event insert failed');
+
+    await normalizeRawEventsToEvidence({
+      db: db as never,
+      teamId: TEAM_ID,
+      rawEventIds: [rawEvent.id],
+    });
+
+    const [evidence] = await db
+      .select()
+      .from(reconciliationEvidence)
+      .where(eq(reconciliationEvidence.rawEventId, rawEvent.id));
+    expect(evidence).toMatchObject({
+      rawEventId: rawEvent.id,
+      source: 'email',
+      provider: 'email',
+      sourcePayloadRef: 's3://timeline-test/email/camel-ref.eml',
+      payloadDigest: 'sha256:camel-ref',
+      replayState: 'full',
+    });
+    expect(evidence?.metadata).toMatchObject({ replay_degraded_reason: null });
+  });
+
   it('normalizes non-integration raw events across conversational and webhook surfaces', async () => {
     const inserted = await db
       .insert(rawEvents)

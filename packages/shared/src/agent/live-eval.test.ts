@@ -236,8 +236,8 @@ maybeDescribe('live agent chat evals', () => {
       teamId: TEAM_ID,
       createdByUserId: USER_ID,
       title: 'Northstar launch review',
-      startAt: new Date('2026-07-03T15:00:00Z'),
-      endAt: new Date('2026-07-03T15:30:00Z'),
+      startAt: new Date('2026-07-09T15:00:00Z'),
+      endAt: new Date('2026-07-09T15:30:00Z'),
       timezone: 'UTC',
       visibility: 'team',
     });
@@ -661,6 +661,14 @@ maybeDescribe('live agent chat evals', () => {
       },
       {
         includeMcpTools: true,
+        teamScopeDeps: {
+          embed: () =>
+            Promise.resolve({
+              vector: [0.1, 0.1, 0.1],
+              model: 'live-mcp-eval-embed',
+            }),
+          qdrantSearch: () => Promise.resolve([]),
+        },
         onToolError: (_err, context) => {
           toolErrors.push(context.tool);
         },
