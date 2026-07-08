@@ -469,6 +469,68 @@ describe('suggestion reconciliation projection', () => {
     ]);
   });
 
+  it('refreshes projection output visibility when evidence visibility tightens on replay', async () => {
+    await db.insert(rawEvents).values({
+      id: TEAM_RAW_EVENT_ID,
+      teamId: TEAM_ID,
+      authorUserId: USER_ID,
+      source: 'email',
+      contentText: 'Customer approved the Acme implementation task.',
+      occurredAt: new Date('2026-06-20T10:00:00Z'),
+      visibility: 'team',
+      sourceMetadata: {
+        source_payload_ref: 's3://timeline-test/raw/email/acme-implementation-task.eml',
+      },
+    });
+    const firstScope = withTeam(db as never, TEAM_ID, USER_ID);
+    const input = {
+      source: 'background' as const,
+      title: 'Create Acme implementation task',
+      dedupeKey: 'reconciliation-projection-visibility-replay',
+      visibility: 'team' as const,
+      evidence: [{ rawEventId: TEAM_RAW_EVENT_ID }],
+      items: [
+        {
+          operation: 'create' as const,
+          targetKind: 'task' as const,
+          title: 'Create Acme implementation task',
+          dedupeKey: 'reconciliation-projection-visibility-replay:item',
+          proposedPayload: { canonicalName: 'Create Acme implementation task' },
+        },
+      ],
+    };
+
+    await firstScope.suggestions.createOrMergeSuggestionBundle(input);
+    let [output] = await db.select().from(reconciliationOutputs);
+    expect(output).toMatchObject({ visibility: 'team', visibilityFloor: 'team' });
+
+    await db
+      .update(rawEvents)
+      .set({
+        visibility: 'private',
+        visibilityOwnerUserId: REVIEWER_ID,
+      })
+      .where(eq(rawEvents.id, TEAM_RAW_EVENT_ID));
+
+    await withTeam(db as never, TEAM_ID, REVIEWER_ID).suggestions.createOrMergeSuggestionBundle(
+      input,
+    );
+    const outputs = await db.select().from(reconciliationOutputs);
+    expect(outputs).toHaveLength(1);
+    [output] = outputs;
+    expect(output).toMatchObject({
+      visibility: 'private',
+      visibilityOwnerUserId: REVIEWER_ID,
+      visibilityFloor: 'private',
+      visibilityFloorOwnerUserId: REVIEWER_ID,
+    });
+    const [suggestion] = await db.select().from(agentSuggestions);
+    expect(suggestion).toMatchObject({
+      visibility: 'private',
+      visibilityOwnerUserId: REVIEWER_ID,
+    });
+  });
+
   it('mirrors projection rejection status back to reconciliation outputs', async () => {
     await db.insert(rawEvents).values({
       id: TEAM_RAW_EVENT_ID,

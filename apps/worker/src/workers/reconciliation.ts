@@ -6,11 +6,17 @@ import {
   entities,
   rawEvents,
   reconciliationEvidence,
+  reconciliationEvidenceAnchors,
   reconciliationOutputs,
   reconciliationRuns,
 } from '@timeline/db';
 import { childLogger, queue, withTeam } from '@timeline/shared';
-import { reconciliationDedupeKey } from '@timeline/shared/reconciliation';
+import {
+  buildAssociationDedupeKey,
+  buildOutputDedupeKey,
+  reconciliationDedupeKey,
+  type SourceRef,
+} from '@timeline/shared/reconciliation';
 import {
   auditReconciliationEvidenceCoverage,
   backfillReconciliationEvidence,
@@ -20,7 +26,7 @@ import {
 import { normalizeRawEventsToEvidence } from '@timeline/shared/reconciliation/normalization';
 import { resolveEvidenceAssociations } from '@timeline/shared/reconciliation/resolver';
 import { Worker, type Job } from 'bullmq';
-import { and, count, desc, eq, gte, inArray, lte, or, sql } from 'drizzle-orm';
+import { and, count, desc, eq, gte, inArray, lte, or, sql, type SQL } from 'drizzle-orm';
 
 import { captureWorkerJobFailure } from '#src/monitoring.js';
 
@@ -65,6 +71,10 @@ const MANUAL_SCOPE_RECONCILIATION_VERSION = 'manual-scope-reconcile-2026-06';
 const EVIDENCE_AUDIT_RUN_VERSION = 'reconciliation-evidence-audit-2026-07';
 const EVIDENCE_BACKFILL_RUN_VERSION = 'reconciliation-evidence-backfill-2026-07';
 const DEFAULT_TEAM_PLANNER_REPLAY_LIMIT = 100;
+const SCOPED_RAW_EVENT_CANDIDATE_LIMIT = 500;
+const SCOPED_CONTEXT_ASSOCIATION_POLICY_VERSION = 'manual-scope-context-2026-07';
+const SCOPED_CONTEXT_PLANNER_VERSION = 'manual-scope-context-planner-2026-07';
+const SCOPED_CONTEXT_RUN_VERSION = 'manual-scope-context-run-2026-07';
 
 interface PlannerReplayFilters {
   limit?: number;
@@ -356,6 +366,11 @@ async function repairScopedReconciliation(
     };
   }
 
+  await ensureScopedObjectAnchors(db, {
+    teamId: data.teamId,
+    scope: data.scope,
+    targetId,
+  });
   const rawEventIds = await scopedRawEventIds(db, {
     teamId: data.teamId,
     scope: data.scope,
@@ -592,8 +607,19 @@ async function scopedRawEventIds(
     targetId: input.targetId,
     clusterIds,
   });
+  const mentionNames = await scopedRawEventMentionNames(db, {
+    teamId: input.teamId,
+    clusterIds,
+    entityIds,
+  });
 
-  const [associationRows, outputRows, entityRawEventRows] = await Promise.all([
+  const [
+    associationRows,
+    outputRows,
+    entityRawEventRows,
+    anchorMatchedRawEventRows,
+    mentionedRawEventRows,
+  ] = await Promise.all([
     clusterIds.length === 0
       ? Promise.resolve([])
       : db
@@ -636,6 +662,42 @@ async function scopedRawEventIds(
               inArray(sql`${rawEvents.sourceMetadata} ->> 'entity_id'`, entityIds),
             ),
           ),
+    clusterIds.length === 0
+      ? Promise.resolve([])
+      : db
+          .select({ rawEventId: reconciliationEvidence.rawEventId })
+          .from(artifactClusterAnchors)
+          .innerJoin(
+            reconciliationEvidenceAnchors,
+            and(
+              eq(reconciliationEvidenceAnchors.teamId, input.teamId),
+              eq(reconciliationEvidenceAnchors.anchorType, artifactClusterAnchors.anchorType),
+              eq(reconciliationEvidenceAnchors.anchorValue, artifactClusterAnchors.anchorValue),
+            ),
+          )
+          .innerJoin(
+            reconciliationEvidence,
+            and(
+              eq(reconciliationEvidence.teamId, input.teamId),
+              eq(reconciliationEvidence.id, reconciliationEvidenceAnchors.evidenceId),
+            ),
+          )
+          .where(
+            and(
+              eq(artifactClusterAnchors.teamId, input.teamId),
+              inArray(artifactClusterAnchors.clusterId, clusterIds),
+            ),
+          ),
+    mentionNames.length === 0
+      ? Promise.resolve([])
+      : db
+          .select({ rawEventId: rawEvents.id })
+          .from(rawEvents)
+          .where(
+            and(eq(rawEvents.teamId, input.teamId), scopedRawEventMentionPredicate(mentionNames)),
+          )
+          .orderBy(desc(rawEvents.occurredAt), desc(rawEvents.id))
+          .limit(SCOPED_RAW_EVENT_CANDIDATE_LIMIT),
   ]);
 
   const rawEventIds = [
@@ -645,6 +707,8 @@ async function scopedRawEventIds(
         .filter((id): id is string => typeof id === 'string' && id.length > 0),
       ...outputRows.flatMap((row) => rawEventIdsFromSourceRefs(row.sourceRefs)),
       ...entityRawEventRows.map((row) => row.rawEventId),
+      ...anchorMatchedRawEventRows.map((row) => row.rawEventId),
+      ...mentionedRawEventRows.map((row) => row.rawEventId),
     ]),
   ].sort();
   return filterVisibleRawEventIds(db, {
@@ -652,6 +716,73 @@ async function scopedRawEventIds(
     rawEventIds,
     ...(input.viewerUserId === undefined ? {} : { viewerUserId: input.viewerUserId }),
   });
+}
+
+async function scopedRawEventMentionNames(
+  db: DbOrTx,
+  input: {
+    teamId: string;
+    clusterIds: string[];
+    entityIds: string[];
+  },
+): Promise<string[]> {
+  const [entityRows, clusterRows] = await Promise.all([
+    input.entityIds.length === 0
+      ? Promise.resolve([])
+      : db
+          .select({ canonicalName: entities.canonicalName, aliases: entities.aliases })
+          .from(entities)
+          .where(and(eq(entities.teamId, input.teamId), inArray(entities.id, input.entityIds))),
+    input.clusterIds.length === 0
+      ? Promise.resolve([])
+      : db
+          .select({ canonicalName: artifactClusters.canonicalName })
+          .from(artifactClusters)
+          .where(
+            and(
+              eq(artifactClusters.teamId, input.teamId),
+              inArray(artifactClusters.id, input.clusterIds),
+            ),
+          ),
+  ]);
+
+  return [
+    ...new Set(
+      [
+        ...entityRows.flatMap((row) => [row.canonicalName, ...stringArrayFromUnknown(row.aliases)]),
+        ...clusterRows.map((row) => row.canonicalName),
+      ]
+        .map((value) => value.trim())
+        .filter((value): value is string => Boolean(value && value.length >= 3)),
+    ),
+  ].sort();
+}
+
+function scopedRawEventMentionPredicate(names: readonly string[]): SQL {
+  const contentConditions = mentionConditions(sql`${rawEvents.contentText}`, names);
+  const metadataConditions = mentionConditions(sql`${rawEvents.sourceMetadata}::text`, names);
+  const conditions = [...contentConditions, ...metadataConditions];
+  const [firstCondition, ...remainingConditions] = conditions;
+  if (!firstCondition) return sql`FALSE`;
+  return remainingConditions.reduce<SQL>(
+    (predicate, condition) => or(predicate, condition) ?? predicate,
+    firstCondition,
+  );
+}
+
+function mentionConditions(column: SQL, names: readonly string[]): SQL[] {
+  return names.map(
+    (name) => sql`lower(${column}) LIKE ${likePattern(name.toLowerCase())} ESCAPE '\\'`,
+  );
+}
+
+function likePattern(value: string): string {
+  return `%${value.replace(/[\\%_]/g, (match) => `\\${match}`)}%`;
+}
+
+function stringArrayFromUnknown(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0);
 }
 
 async function filterVisibleRawEventIds(
@@ -710,10 +841,315 @@ async function repairScopedEvidenceGraph(
     teamId: data.teamId,
     evidenceIds,
   });
+  const fallback =
+    data.scope === 'team'
+      ? { associationRepairCount: 0, outputRepairCount: 0 }
+      : await repairScopedContextAssociations(db, {
+          teamId: data.teamId,
+          scope: data.scope,
+          targetId,
+          evidenceIds: result.skipped.map((skip) => skip.evidenceId),
+        });
   return {
-    associationRepairCount: result.associated.filter((write) => write.associationCreated).length,
-    outputRepairCount: repairedOutputIds(result).length,
+    associationRepairCount:
+      result.associated.filter((write) => write.associationCreated).length +
+      fallback.associationRepairCount,
+    outputRepairCount: repairedOutputIds(result).length + fallback.outputRepairCount,
   };
+}
+
+async function repairScopedContextAssociations(
+  db: DbOrTx,
+  input: {
+    teamId: string;
+    scope: 'object' | 'cluster';
+    targetId: string | null;
+    evidenceIds: string[];
+  },
+): Promise<Pick<ScopeReconciliationResult, 'associationRepairCount' | 'outputRepairCount'>> {
+  const evidenceIds = [...new Set(input.evidenceIds)].filter((id) => id.length > 0);
+  if (evidenceIds.length === 0) return { associationRepairCount: 0, outputRepairCount: 0 };
+  const clusterIds = await scopedClusterIds(db, {
+    teamId: input.teamId,
+    scope: input.scope,
+    targetId: input.targetId,
+  });
+  const [clusterId] = clusterIds.sort();
+  if (!clusterId) return { associationRepairCount: 0, outputRepairCount: 0 };
+
+  const evidenceRows = await db
+    .select({
+      id: reconciliationEvidence.id,
+      rawEventId: reconciliationEvidence.rawEventId,
+      sourcePayloadRef: reconciliationEvidence.sourcePayloadRef,
+      source: reconciliationEvidence.source,
+      provider: reconciliationEvidence.provider,
+      eventType: reconciliationEvidence.eventType,
+      visibility: reconciliationEvidence.visibility,
+      visibilityOwnerUserId: reconciliationEvidence.visibilityOwnerUserId,
+      visibilityUserIds: reconciliationEvidence.visibilityUserIds,
+    })
+    .from(reconciliationEvidence)
+    .where(
+      and(
+        eq(reconciliationEvidence.teamId, input.teamId),
+        inArray(reconciliationEvidence.id, evidenceIds),
+      ),
+    );
+  const outputRows = await db
+    .select({ sourceRefs: reconciliationOutputs.sourceRefs })
+    .from(reconciliationOutputs)
+    .where(
+      and(
+        eq(reconciliationOutputs.teamId, input.teamId),
+        eq(reconciliationOutputs.clusterId, clusterId),
+      ),
+    );
+  const outputRawEventIds = new Set(
+    outputRows.flatMap((row) => rawEventIdsFromSourceRefs(row.sourceRefs)),
+  );
+  const fallbackEvidenceRows = evidenceRows.filter((row) => !outputRawEventIds.has(row.rawEventId));
+  if (fallbackEvidenceRows.length === 0) return { associationRepairCount: 0, outputRepairCount: 0 };
+
+  const runId = await ensureScopedContextRun(db, {
+    teamId: input.teamId,
+    clusterId,
+    evidenceIds: fallbackEvidenceRows.map((row) => row.id),
+  });
+  let associationRepairCount = 0;
+  let outputRepairCount = 0;
+  for (const evidence of fallbackEvidenceRows) {
+    const role = 'related_context' as const;
+    const associationSource = 'model_candidate' as const;
+    const associationDedupeKey = buildAssociationDedupeKey({
+      teamId: input.teamId,
+      clusterId,
+      evidenceId: evidence.id,
+      role,
+      associationSource,
+      associationPolicyVersion: SCOPED_CONTEXT_ASSOCIATION_POLICY_VERSION,
+    });
+    const [insertedAssociation] = await db
+      .insert(artifactEvidenceAssociations)
+      .values({
+        teamId: input.teamId,
+        clusterId,
+        evidenceId: evidence.id,
+        rawEventId: evidence.rawEventId,
+        role,
+        strength: 'semantic',
+        confidence: 'medium',
+        associationSource,
+        rationale: `${evidence.provider ?? evidence.source} ${evidence.eventType} mentioned scoped reconciliation target`,
+        sourceRefs: scopedContextSourceRefs(evidence),
+        visibility: evidence.visibility,
+        visibilityOwnerUserId: evidence.visibilityOwnerUserId,
+        visibilityUserIds: evidence.visibilityUserIds,
+        visibilityFloor: evidence.visibility,
+        visibilityFloorOwnerUserId: evidence.visibilityOwnerUserId,
+        visibilityFloorUserIds: evidence.visibilityUserIds,
+        metadata: {
+          source: 'manual_scope_reconcile',
+          policy_version: SCOPED_CONTEXT_ASSOCIATION_POLICY_VERSION,
+        },
+        dedupeKey: associationDedupeKey,
+      })
+      .onConflictDoNothing()
+      .returning({ id: artifactEvidenceAssociations.id });
+    if (insertedAssociation) associationRepairCount += 1;
+    const association =
+      insertedAssociation ??
+      (
+        await db
+          .select({ id: artifactEvidenceAssociations.id })
+          .from(artifactEvidenceAssociations)
+          .where(
+            and(
+              eq(artifactEvidenceAssociations.teamId, input.teamId),
+              eq(artifactEvidenceAssociations.dedupeKey, associationDedupeKey),
+            ),
+          )
+          .limit(1)
+      )[0];
+    if (!association) continue;
+    const repaired = await emitScopedContextOutput(db, {
+      teamId: input.teamId,
+      runId,
+      clusterId,
+      associationId: association.id,
+      evidence,
+      role,
+      associationSource,
+    });
+    if (repaired) outputRepairCount += 1;
+  }
+  return { associationRepairCount, outputRepairCount };
+}
+
+async function ensureScopedContextRun(
+  db: DbOrTx,
+  input: { teamId: string; clusterId: string; evidenceIds: string[] },
+): Promise<string> {
+  const inputFingerprint = reconciliationDedupeKey('manual-scope-context-run', {
+    teamId: input.teamId,
+    clusterId: input.clusterId,
+    evidenceIds: [...input.evidenceIds].sort(),
+    policyVersion: SCOPED_CONTEXT_ASSOCIATION_POLICY_VERSION,
+  });
+  const [run] = await db
+    .insert(reconciliationRuns)
+    .values({
+      teamId: input.teamId,
+      trigger: 'manual_repair',
+      scope: 'manual_scope_context',
+      status: 'completed',
+      inputFingerprint,
+      engineVersion: SCOPED_CONTEXT_RUN_VERSION,
+      completedAt: new Date(),
+      metrics: {
+        cluster_id: input.clusterId,
+        evidence_count: input.evidenceIds.length,
+      },
+    })
+    .onConflictDoUpdate({
+      target: [
+        reconciliationRuns.teamId,
+        reconciliationRuns.inputFingerprint,
+        reconciliationRuns.engineVersion,
+      ],
+      set: {
+        status: 'completed',
+        completedAt: new Date(),
+        metrics: {
+          cluster_id: input.clusterId,
+          evidence_count: input.evidenceIds.length,
+        },
+      },
+    })
+    .returning({ id: reconciliationRuns.id });
+  if (!run) throw new Error('Failed to record scoped context reconciliation run');
+  return run.id;
+}
+
+async function emitScopedContextOutput(
+  db: DbOrTx,
+  input: {
+    teamId: string;
+    runId: string;
+    clusterId: string;
+    associationId: string;
+    evidence: {
+      id: string;
+      rawEventId: string;
+      sourcePayloadRef: string | null;
+      source: string;
+      provider: string | null;
+      eventType: string;
+      visibility: 'team' | 'private' | 'specific_users';
+      visibilityOwnerUserId: string | null;
+      visibilityUserIds: string[] | null;
+    };
+    role: string;
+    associationSource: string;
+  },
+): Promise<boolean> {
+  const sourceRefs = scopedContextSourceRefs(input.evidence, input.associationId);
+  const sourcePayloadRefs = input.evidence.sourcePayloadRef
+    ? [input.evidence.sourcePayloadRef]
+    : [];
+  const dedupeKey = buildOutputDedupeKey({
+    teamId: input.teamId,
+    clusterId: input.clusterId,
+    targetKind: 'cluster_identity',
+    operation: 'link',
+    targetId: null,
+    targetIdentity: `${input.clusterId}:${input.evidence.rawEventId}:${input.role}:${input.associationSource}`,
+    sourceRefs,
+    authorityPolicyVersion: SCOPED_CONTEXT_ASSOCIATION_POLICY_VERSION,
+    plannerVersion: SCOPED_CONTEXT_PLANNER_VERSION,
+  });
+  const [existing] = await db
+    .select({ id: reconciliationOutputs.id, status: reconciliationOutputs.status })
+    .from(reconciliationOutputs)
+    .where(
+      and(
+        eq(reconciliationOutputs.teamId, input.teamId),
+        eq(reconciliationOutputs.dedupeKey, dedupeKey),
+      ),
+    )
+    .limit(1);
+  await db
+    .insert(reconciliationOutputs)
+    .values({
+      teamId: input.teamId,
+      runId: input.runId,
+      clusterId: input.clusterId,
+      outputKind: 'observed_association',
+      targetKind: 'cluster_identity',
+      operation: 'link',
+      payload: {
+        resolver: 'manual_scope_context',
+        evidence_id: input.evidence.id,
+        association_id: input.associationId,
+        association_role: input.role,
+        association_source: input.associationSource,
+      },
+      authorityDecision: {
+        decision: 'observed_association',
+        reason: 'manual_scope_reconcile_context_match',
+        policy_version: SCOPED_CONTEXT_ASSOCIATION_POLICY_VERSION,
+      },
+      confidence: 'medium',
+      requiresApproval: false,
+      sourceRefs,
+      sourcePayloadRefs,
+      visibility: input.evidence.visibility,
+      visibilityOwnerUserId: input.evidence.visibilityOwnerUserId,
+      visibilityUserIds: input.evidence.visibilityUserIds,
+      visibilityFloor: input.evidence.visibility,
+      visibilityFloorOwnerUserId: input.evidence.visibilityOwnerUserId,
+      visibilityFloorUserIds: input.evidence.visibilityUserIds,
+      dedupeKey,
+      status: 'applied',
+    })
+    .onConflictDoUpdate({
+      target: [reconciliationOutputs.teamId, reconciliationOutputs.dedupeKey],
+      set: {
+        runId: input.runId,
+        sourceRefs,
+        sourcePayloadRefs,
+        visibility: input.evidence.visibility,
+        visibilityOwnerUserId: input.evidence.visibilityOwnerUserId,
+        visibilityUserIds: input.evidence.visibilityUserIds,
+        visibilityFloor: input.evidence.visibility,
+        visibilityFloorOwnerUserId: input.evidence.visibilityOwnerUserId,
+        visibilityFloorUserIds: input.evidence.visibilityUserIds,
+        status: 'applied',
+        updatedAt: new Date(),
+      },
+    });
+  return existing?.status !== 'applied';
+}
+
+function scopedContextSourceRefs(
+  evidence: {
+    id: string;
+    rawEventId: string;
+    sourcePayloadRef: string | null;
+    source: string;
+    provider: string | null;
+  },
+  associationId?: string,
+): SourceRef[] {
+  return [
+    {
+      source: evidence.provider ?? evidence.source,
+      rawEventId: evidence.rawEventId,
+      evidenceId: evidence.id,
+      ...(associationId ? { associationId } : {}),
+      sourcePayloadRef: evidence.sourcePayloadRef,
+    },
+  ];
 }
 
 function repairedOutputIds(

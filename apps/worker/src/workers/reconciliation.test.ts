@@ -56,6 +56,7 @@ async function seedEmailRawEvent(
     source?: 'email' | 'slack' | 'integration';
     messageId?: string;
     occurredAt?: Date;
+    contentText?: string;
   } = {},
 ): Promise<string> {
   const [event] = await (db as never as Db)
@@ -64,7 +65,8 @@ async function seedEmailRawEvent(
       teamId: TEAM_ID,
       authorUserId: input.authorUserId ?? USER_ID,
       source: input.source ?? 'email',
-      contentText: 'Customer email: Acme asked to move launch risk review to Monday.',
+      contentText:
+        input.contentText ?? 'Customer email: Acme asked to move launch risk review to Monday.',
       occurredAt: input.occurredAt,
       visibility: input.visibility ?? 'team',
       visibilityOwnerUserId: input.visibilityOwnerUserId,
@@ -709,6 +711,53 @@ describe('processReconciliationJob', () => {
       output_repair_count: 0,
       projection_repair_count: 0,
       planner_replay_enqueued: 0,
+    });
+  });
+
+  it('backfills visible unlinked raw events that mention the object target', async () => {
+    const { objectId } = await seedObjectAndCluster();
+    const rawEventId = await seedEmailRawEvent({
+      messageId: 'mentioned-object-message',
+      contentText:
+        'Forwarded customer email: Acme rollout needs the Sentry incident review attached.',
+    });
+    const replay = suggestionReplayRecorder();
+
+    const result = expectScopedResult(
+      await processReconciliationJob(
+        db as never,
+        {
+          kind: 'scope_reconcile',
+          teamId: TEAM_ID,
+          scope: 'object',
+          targetId: objectId,
+          triggeredBy: USER_ID,
+          reason: 'admin_dashboard',
+        },
+        { enqueueSuggestionJob: replay.enqueueSuggestionJob },
+      ),
+    );
+
+    expect(result).toMatchObject({
+      evidenceBackfilled: 1,
+      associationRepairCount: 1,
+      outputRepairCount: 1,
+      plannerReplayEnqueued: 1,
+    });
+    expect(replay.calls.map((call) => call.data.rawEventId)).toEqual([rawEventId]);
+    const [association] = await db.select().from(artifactEvidenceAssociations);
+    expect(association).toMatchObject({
+      rawEventId,
+      role: 'related_context',
+      strength: 'semantic',
+      associationSource: 'model_candidate',
+    });
+    const [output] = await db.select().from(reconciliationOutputs);
+    expect(output).toMatchObject({
+      outputKind: 'observed_association',
+      status: 'applied',
+      visibility: 'team',
+      visibilityFloor: 'team',
     });
   });
 
