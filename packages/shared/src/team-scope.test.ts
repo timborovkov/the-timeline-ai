@@ -7,6 +7,7 @@ import {
   connectionAttention,
   documents,
   documentVersions,
+  entities,
   integrations,
   integrationSelections,
   integrationSyncState,
@@ -1334,6 +1335,40 @@ describe('withTeam namespaced port', () => {
         }),
       ],
     });
+  });
+
+  it('does not hydrate object impact from legacy source_event_id pointers', async () => {
+    const scope = withTeam(db as never, TEAM_A, USER_A);
+    const legacyEvent = await scope.timeline.createEvent({
+      authorUserId: USER_A,
+      source: 'telegram',
+      contentText: 'Legacy object provenance pointer without reconciliation output.',
+      visibility: 'team',
+    });
+    const object = await scope.objects.createObject({
+      type: 'company',
+      canonicalName: 'Legacy Impact Co',
+      actor: { kind: 'user', userId: USER_A },
+    });
+
+    await db
+      .update(entities)
+      .set({ sourceEventId: legacyEvent.id })
+      .where(eq(entities.id, object.id));
+    await db.insert(objectChanges).values({
+      teamId: TEAM_A,
+      entityId: object.id,
+      actorKind: 'agent',
+      actorUserId: null,
+      status: 'applied',
+      field: 'stage',
+      previousValue: null,
+      newValue: 'pilot',
+      sourceEventId: legacyEvent.id,
+      note: 'Legacy pointer should not become timeline impact.',
+    });
+
+    await expect(scope.timeline.listImpactItems([legacyEvent.id])).resolves.toEqual({});
   });
 
   it('links accepted object-memory suggestion impact to the object, not the created note', async () => {

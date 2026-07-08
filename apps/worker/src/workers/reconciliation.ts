@@ -20,7 +20,7 @@ import {
 import { normalizeRawEventsToEvidence } from '@timeline/shared/reconciliation/normalization';
 import { resolveEvidenceAssociations } from '@timeline/shared/reconciliation/resolver';
 import { Worker, type Job } from 'bullmq';
-import { and, count, eq, inArray, or, sql } from 'drizzle-orm';
+import { and, count, desc, eq, gte, inArray, lte, or, sql } from 'drizzle-orm';
 
 import { captureWorkerJobFailure } from '#src/monitoring.js';
 
@@ -34,6 +34,10 @@ export type ReconciliationWorkerResult =
   | Awaited<ReturnType<typeof backfillReconciliationEvidence>>
   | ScopeReconciliationResult;
 
+export interface ReconciliationWorkerIO {
+  enqueueSuggestionJob?: typeof queue.enqueueSuggestionJob;
+}
+
 interface ScopeReconciliationResult {
   teamId: string;
   scope: 'team' | 'object' | 'cluster';
@@ -45,19 +49,38 @@ interface ScopeReconciliationResult {
   clusterCount: number;
   evidenceBackfilled: number;
   associationRepairCount: number;
+  outputRepairCount: number;
   projectionRepairCount: number;
+  plannerReplayEnqueued: number;
+}
+
+interface ScopeReconciliationRepairResult extends Pick<
+  ScopeReconciliationResult,
+  'evidenceBackfilled' | 'associationRepairCount' | 'projectionRepairCount' | 'outputRepairCount'
+> {
+  plannerReplayRawEventIds: string[];
 }
 
 const MANUAL_SCOPE_RECONCILIATION_VERSION = 'manual-scope-reconcile-2026-06';
 const EVIDENCE_AUDIT_RUN_VERSION = 'reconciliation-evidence-audit-2026-07';
 const EVIDENCE_BACKFILL_RUN_VERSION = 'reconciliation-evidence-backfill-2026-07';
+const DEFAULT_TEAM_PLANNER_REPLAY_LIMIT = 100;
+
+interface PlannerReplayFilters {
+  limit?: number;
+  mode?: 'missing' | 'all';
+  source?: ReconciliationEvidenceSource;
+  occurredAfter?: Date;
+  occurredBefore?: Date;
+}
 
 export async function processReconciliationJob(
   db: Db,
   data: queue.ReconciliationJobData,
+  io: ReconciliationWorkerIO = {},
 ): Promise<ReconciliationWorkerResult> {
   if (data.kind === 'scope_reconcile') {
-    return recordScopedReconciliationRun(db, data);
+    return recordScopedReconciliationRun(db, data, io);
   }
 
   const source = sourceFromJob(data.source);
@@ -205,6 +228,7 @@ async function recordCompletedOperatorRun(
 async function recordScopedReconciliationRun(
   db: Db,
   data: Extract<queue.ReconciliationJobData, { kind: 'scope_reconcile' }>,
+  io: ReconciliationWorkerIO,
 ): Promise<ScopeReconciliationResult> {
   const targetId = data.scope === 'team' ? null : requireTargetId(data);
   const inputFingerprint = reconciliationDedupeKey('manual-scope-reconcile-run', {
@@ -215,7 +239,7 @@ async function recordScopedReconciliationRun(
     reason: data.reason ?? 'manual',
   });
 
-  return db.transaction(async (tx) => {
+  const repaired = await db.transaction(async (tx) => {
     const lockKey = scopedReconciliationLockKey(data.teamId, data.scope, targetId);
     await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))`);
 
@@ -238,7 +262,9 @@ async function recordScopedReconciliationRun(
       cluster_count: metrics.clusterCount,
       evidence_backfilled: repair.evidenceBackfilled,
       association_repair_count: repair.associationRepairCount,
+      output_repair_count: repair.outputRepairCount,
       projection_repair_count: repair.projectionRepairCount,
+      planner_replay_enqueued: 0,
       lock_key: lockKey,
     };
     const [run] = await tx
@@ -271,28 +297,42 @@ async function recordScopedReconciliationRun(
       .returning({ id: reconciliationRuns.id });
     if (!run) throw new Error('Failed to record scoped reconciliation run');
 
-    return {
-      teamId: data.teamId,
-      scope: data.scope,
-      targetId,
-      runId: run.id,
-      status: 'completed',
-      ...repair,
-      ...metrics,
-    };
+    return { repair, metrics, runMetrics, runId: run.id };
   });
+
+  const plannerReplayEnqueued = await enqueueScopedPlannerReplay(io, {
+    teamId: data.teamId,
+    scope: data.scope,
+    targetId,
+    rawEventIds: repaired.repair.plannerReplayRawEventIds,
+    reason: data.reason ?? 'manual',
+  });
+  const runMetrics = { ...repaired.runMetrics, planner_replay_enqueued: plannerReplayEnqueued };
+  await db
+    .update(reconciliationRuns)
+    .set({ metrics: runMetrics })
+    .where(eq(reconciliationRuns.id, repaired.runId));
+
+  return {
+    teamId: data.teamId,
+    scope: data.scope,
+    targetId,
+    runId: repaired.runId,
+    status: 'completed',
+    ...repaired.metrics,
+    evidenceBackfilled: repaired.repair.evidenceBackfilled,
+    associationRepairCount: repaired.repair.associationRepairCount,
+    outputRepairCount: repaired.repair.outputRepairCount,
+    projectionRepairCount: repaired.repair.projectionRepairCount,
+    plannerReplayEnqueued,
+  };
 }
 
 async function repairScopedReconciliation(
   db: DbOrTx,
   data: Extract<queue.ReconciliationJobData, { kind: 'scope_reconcile' }>,
   targetId: string | null,
-): Promise<
-  Pick<
-    ScopeReconciliationResult,
-    'evidenceBackfilled' | 'associationRepairCount' | 'projectionRepairCount'
-  >
-> {
+): Promise<ScopeReconciliationRepairResult> {
   if (data.scope === 'team') {
     const result = await backfillReconciliationEvidence({
       db,
@@ -300,12 +340,19 @@ async function repairScopedReconciliation(
       missingOnly: true,
       ...(data.triggeredBy === undefined ? {} : { viewerUserId: data.triggeredBy }),
     });
-    const associationRepairCount = await repairScopedEvidenceGraph(db, data, targetId);
+    const evidenceGraphRepair = await repairScopedEvidenceGraph(db, data, targetId);
     const projectionRepairCount = await repairScopedApprovalProjections(db, data, targetId);
+    const plannerReplayRawEventIds = await teamPlannerReplayRawEventIds(db, {
+      teamId: data.teamId,
+      ...plannerReplayFiltersFromJob(data),
+      ...(data.triggeredBy === undefined ? {} : { viewerUserId: data.triggeredBy }),
+    });
     return {
       evidenceBackfilled: result.normalizedEvidence,
-      associationRepairCount,
+      associationRepairCount: evidenceGraphRepair.associationRepairCount,
+      outputRepairCount: evidenceGraphRepair.outputRepairCount,
       projectionRepairCount,
+      plannerReplayRawEventIds,
     };
   }
 
@@ -315,19 +362,169 @@ async function repairScopedReconciliation(
     targetId,
     ...(data.triggeredBy === undefined ? {} : { viewerUserId: data.triggeredBy }),
   });
-  const evidenceBackfilled =
-    rawEventIds.length === 0
-      ? 0
-      : (
-          await normalizeRawEventsToEvidence({
-            db,
-            teamId: data.teamId,
-            rawEventIds,
-          })
-        ).length;
-  const associationRepairCount = await repairScopedEvidenceGraph(db, data, targetId, rawEventIds);
+  const evidenceBefore = await evidenceCountForRawEvents(db, data.teamId, rawEventIds);
+  if (rawEventIds.length > 0) {
+    await normalizeRawEventsToEvidence({
+      db,
+      teamId: data.teamId,
+      rawEventIds,
+    });
+  }
+  const evidenceAfter = await evidenceCountForRawEvents(db, data.teamId, rawEventIds);
+  const evidenceBackfilled = Math.max(0, evidenceAfter - evidenceBefore);
+  const evidenceGraphRepair = await repairScopedEvidenceGraph(db, data, targetId, rawEventIds);
   const projectionRepairCount = await repairScopedApprovalProjections(db, data, targetId);
-  return { evidenceBackfilled, associationRepairCount, projectionRepairCount };
+  const plannerReplayRawEventIds = await filterPlannerReplayRawEventIds(db, {
+    teamId: data.teamId,
+    rawEventIds,
+    ...plannerReplayFiltersFromJob(data),
+  });
+  return {
+    evidenceBackfilled,
+    associationRepairCount: evidenceGraphRepair.associationRepairCount,
+    outputRepairCount: evidenceGraphRepair.outputRepairCount,
+    projectionRepairCount,
+    plannerReplayRawEventIds,
+  };
+}
+
+async function teamPlannerReplayRawEventIds(
+  db: DbOrTx,
+  input: { teamId: string; viewerUserId?: string } & PlannerReplayFilters,
+): Promise<string[]> {
+  const limit = plannerReplayLimit(input.limit);
+  if (limit === 0) return [];
+  const rows = await db
+    .select({ id: rawEvents.id })
+    .from(rawEvents)
+    .where(
+      and(
+        eq(rawEvents.teamId, input.teamId),
+        sql`${rawEvents.contentText} IS NOT NULL`,
+        sql`length(trim(${rawEvents.contentText})) > 0`,
+        ...plannerReplayWhereFilters(input),
+        ...(input.viewerUserId === undefined
+          ? []
+          : [rawEventVisibleToUserPredicate(input.viewerUserId)]),
+      ),
+    )
+    .orderBy(desc(rawEvents.occurredAt), desc(rawEvents.id))
+    .limit(limit);
+  return rows.map((row) => row.id);
+}
+
+async function filterPlannerReplayRawEventIds(
+  db: DbOrTx,
+  input: { teamId: string; rawEventIds: string[] } & PlannerReplayFilters,
+): Promise<string[]> {
+  const limit = plannerReplayLimit(input.limit);
+  if (limit === 0 || input.rawEventIds.length === 0) return [];
+  const rows = await db
+    .select({ id: rawEvents.id })
+    .from(rawEvents)
+    .where(
+      and(
+        eq(rawEvents.teamId, input.teamId),
+        inArray(rawEvents.id, input.rawEventIds),
+        sql`${rawEvents.contentText} IS NOT NULL`,
+        sql`length(trim(${rawEvents.contentText})) > 0`,
+        ...plannerReplayWhereFilters(input),
+      ),
+    )
+    .orderBy(desc(rawEvents.occurredAt), desc(rawEvents.id))
+    .limit(limit);
+  return rows.map((row) => row.id);
+}
+
+function plannerReplayWhereFilters(input: PlannerReplayFilters) {
+  return [
+    ...(input.mode === 'all'
+      ? []
+      : [
+          sql`${rawEvents.sourceMetadata} ->> 'suggestion_model_version' IS NULL`,
+          sql`${rawEvents.sourceMetadata} ->> 'suggestion_pre_extract_model_version' IS NULL`,
+        ]),
+    ...(input.source === undefined ? [] : [eq(rawEvents.source, input.source)]),
+    ...(input.occurredAfter === undefined ? [] : [gte(rawEvents.occurredAt, input.occurredAfter)]),
+    ...(input.occurredBefore === undefined
+      ? []
+      : [lte(rawEvents.occurredAt, input.occurredBefore)]),
+  ];
+}
+
+function plannerReplayFiltersFromJob(
+  data: Extract<queue.ReconciliationJobData, { kind: 'scope_reconcile' }>,
+): PlannerReplayFilters {
+  const filters: PlannerReplayFilters = {
+    limit: data.plannerReplayLimit ?? DEFAULT_TEAM_PLANNER_REPLAY_LIMIT,
+    mode: data.plannerReplayMode ?? 'missing',
+  };
+  if (data.plannerReplaySource !== undefined) {
+    const source = sourceFromJob(data.plannerReplaySource);
+    if (source !== undefined) filters.source = source;
+  }
+  if (data.plannerReplayOccurredAfter !== undefined) {
+    filters.occurredAfter = plannerReplayDate(data.plannerReplayOccurredAfter);
+  }
+  if (data.plannerReplayOccurredBefore !== undefined) {
+    filters.occurredBefore = plannerReplayDate(data.plannerReplayOccurredBefore);
+  }
+  return filters;
+}
+
+function plannerReplayLimit(limit: number | undefined): number {
+  return Math.max(0, Math.min(limit ?? DEFAULT_TEAM_PLANNER_REPLAY_LIMIT, 1000));
+}
+
+function plannerReplayDate(value: string): Date {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) throw new Error(`Invalid planner replay date filter: ${value}`);
+  return date;
+}
+
+async function enqueueScopedPlannerReplay(
+  io: ReconciliationWorkerIO,
+  input: {
+    teamId: string;
+    scope: 'team' | 'object' | 'cluster';
+    targetId: string | null;
+    rawEventIds: string[];
+    reason: string;
+  },
+): Promise<number> {
+  const enqueueSuggestionJob = io.enqueueSuggestionJob ?? queue.enqueueSuggestionJob;
+  const jobIdSuffix = `manual-reconcile:${input.scope}:${input.targetId ?? 'team'}:${input.reason}`;
+  let enqueued = 0;
+  for (const rawEventId of input.rawEventIds) {
+    const result = await enqueueSuggestionJob(
+      {
+        rawEventId,
+        teamId: input.teamId,
+      },
+      { jobIdSuffix },
+    );
+    if (result.enqueued) enqueued += 1;
+  }
+  return enqueued;
+}
+
+async function evidenceCountForRawEvents(
+  db: DbOrTx,
+  teamId: string,
+  rawEventIds: string[],
+): Promise<number> {
+  if (rawEventIds.length === 0) return 0;
+  return countRows(
+    db
+      .select({ count: count() })
+      .from(reconciliationEvidence)
+      .where(
+        and(
+          eq(reconciliationEvidence.teamId, teamId),
+          inArray(reconciliationEvidence.rawEventId, rawEventIds),
+        ),
+      ),
+  );
 }
 
 function scopedReconciliationLockKey(
@@ -492,7 +689,7 @@ async function repairScopedEvidenceGraph(
   data: Extract<queue.ReconciliationJobData, { kind: 'scope_reconcile' }>,
   targetId: string | null,
   rawEventIds?: string[],
-): Promise<number> {
+): Promise<Pick<ScopeReconciliationResult, 'associationRepairCount' | 'outputRepairCount'>> {
   await ensureScopedObjectAnchors(db, {
     teamId: data.teamId,
     scope: data.scope,
@@ -504,14 +701,30 @@ async function repairScopedEvidenceGraph(
     targetId,
     ...(rawEventIds === undefined ? {} : { rawEventIds }),
   });
-  if (evidenceIds.length === 0) return 0;
+  if (evidenceIds.length === 0) {
+    return { associationRepairCount: 0, outputRepairCount: 0 };
+  }
 
   const result = await resolveEvidenceAssociations({
     db,
     teamId: data.teamId,
     evidenceIds,
   });
-  return result.associated.length;
+  return {
+    associationRepairCount: result.associated.filter((write) => write.associationCreated).length,
+    outputRepairCount: repairedOutputIds(result).length,
+  };
+}
+
+function repairedOutputIds(
+  result: Awaited<ReturnType<typeof resolveEvidenceAssociations>>,
+): string[] {
+  return [
+    ...new Set([
+      ...result.associated.map((write) => (write.outputRepaired ? write.outputId : null)),
+      ...result.skipped.map((skip) => (skip.outputRepaired ? (skip.outputId ?? null) : null)),
+    ]),
+  ].filter((id): id is string => typeof id === 'string' && id.length > 0);
 }
 
 async function ensureScopedObjectAnchors(

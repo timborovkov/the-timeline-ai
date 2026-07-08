@@ -267,7 +267,7 @@ describe('withTeam timeline semantic search', () => {
     ]);
   });
 
-  it('hydrates artifact cluster context for search hits without leaking private related evidence', async () => {
+  it('does not hydrate artifact context from legacy artifact_cluster_members', async () => {
     await pg.exec(`
       INSERT INTO artifact_clusters
         (id, team_id, artifact_type, canonical_name, status)
@@ -288,44 +288,13 @@ describe('withTeam timeline semantic search', () => {
       query: 'Acme renewal',
       limit: 5,
     });
-    expect(memberResults[0]?.artifactCluster).toMatchObject({
-      id: ARTIFACT_CLUSTER,
-      artifactType: 'deal',
-      canonicalName: 'GitHub Acme implementation',
-      status: 'active',
-    });
-    const memberEvidence = memberResults[0]?.artifactCluster?.relatedEvidence ?? [];
-    expect(memberEvidence.find((evidence) => evidence.rawEventId === TEAM_EVENT)).toMatchObject({
-      provider: 'telegram',
-      role: 'report',
-      authoritative: false,
-    });
-    expect(memberEvidence.find((evidence) => evidence.rawEventId === RELATED_EVENT)).toMatchObject({
-      provider: 'github',
-      role: 'lifecycle_update',
-      authoritative: true,
-    });
-    expect(
-      memberResults[0]?.artifactCluster?.relatedEvidence.map((evidence) => evidence.rawEventId),
-    ).not.toContain(RELATED_PRIVATE_EVENT);
-    expect(
-      memberResults[0]?.artifactCluster?.relatedEvidence.map((evidence) => evidence.rawEventId),
-    ).not.toContain(OTHER_TEAM_EVENT);
+    expect(memberResults[0]?.artifactCluster).toBeNull();
 
     const ownerResults = await scopeFor(OWNER).timeline.searchEvents({
       query: 'Acme renewal',
       limit: 5,
     });
-    expect(ownerResults[0]?.artifactCluster).toMatchObject({
-      canonicalName: 'Owner-only Acme acquisition',
-      status: 'resolved',
-    });
-    expect(
-      ownerResults[0]?.artifactCluster?.relatedEvidence.map((evidence) => evidence.rawEventId),
-    ).toContain(RELATED_PRIVATE_EVENT);
-    expect(
-      ownerResults[0]?.artifactCluster?.relatedEvidence.map((evidence) => evidence.rawEventId),
-    ).not.toContain(OTHER_TEAM_EVENT);
+    expect(ownerResults[0]?.artifactCluster).toBeNull();
   });
 
   it('does not hydrate a cluster whose joined cluster row belongs to another team', async () => {

@@ -2,6 +2,10 @@ import { PGlite } from '@electric-sql/pglite';
 import {
   artifactClusters,
   artifactEvidenceAssociations,
+  boardItemChanges,
+  boards,
+  entities,
+  objectChanges,
   rawEvents,
   reconciliationEvidence,
   reconciliationOutputs,
@@ -397,6 +401,62 @@ describe('reconciliation dashboard snapshot', () => {
       .returning();
     if (!outputlessBackfillRun) throw new Error('expected outputless backfill run');
 
+    await pg.exec(`
+      ALTER TABLE entities DROP CONSTRAINT entities_legacy_source_event_id_null_chk;
+      ALTER TABLE entities DROP CONSTRAINT entities_legacy_agent_suggested_false_chk;
+      ALTER TABLE object_changes DROP CONSTRAINT object_changes_legacy_source_event_id_null_chk;
+      ALTER TABLE board_item_changes DROP CONSTRAINT board_item_changes_legacy_source_event_id_null_chk;
+    `);
+    try {
+      const [legacyObject] = await db
+        .insert(entities)
+        .values({
+          teamId: TEAM_ID,
+          type: 'project',
+          canonicalName: 'Legacy provenance object',
+          sourceEventId: emailEvidence.rawEventId,
+          agentSuggested: true,
+        })
+        .returning({ id: entities.id });
+      if (!legacyObject) throw new Error('expected legacy object');
+      await db.insert(objectChanges).values({
+        teamId: TEAM_ID,
+        entityId: legacyObject.id,
+        actorKind: 'agent',
+        field: 'status',
+        previousValue: 'open',
+        newValue: 'active',
+        sourceEventId: emailEvidence.rawEventId,
+      });
+      const [legacyBoard] = await db
+        .insert(boards)
+        .values({
+          teamId: TEAM_ID,
+          createdBy: ADMIN_ID,
+          name: 'Legacy board',
+          templateKind: 'custom',
+        })
+        .returning({ id: boards.id });
+      if (!legacyBoard) throw new Error('expected legacy board');
+      await db.insert(boardItemChanges).values({
+        teamId: TEAM_ID,
+        boardId: legacyBoard.id,
+        entityId: legacyObject.id,
+        actorKind: 'agent',
+        field: 'lane',
+        previousValue: 'backlog',
+        newValue: 'active',
+        sourceEventId: emailEvidence.rawEventId,
+      });
+    } finally {
+      await pg.exec(`
+        ALTER TABLE entities ADD CONSTRAINT entities_legacy_source_event_id_null_chk CHECK (source_event_id IS NULL) NOT VALID;
+        ALTER TABLE entities ADD CONSTRAINT entities_legacy_agent_suggested_false_chk CHECK (agent_suggested = false) NOT VALID;
+        ALTER TABLE object_changes ADD CONSTRAINT object_changes_legacy_source_event_id_null_chk CHECK (source_event_id IS NULL) NOT VALID;
+        ALTER TABLE board_item_changes ADD CONSTRAINT board_item_changes_legacy_source_event_id_null_chk CHECK (source_event_id IS NULL) NOT VALID;
+      `);
+    }
+
     await db.insert(reconciliationProjectionOutbox).values({
       teamId: TEAM_ID,
       outputId: output.id,
@@ -548,6 +608,13 @@ describe('reconciliation dashboard snapshot', () => {
         acceptanceRate: 0.5,
       },
       topNoActionReasons: [{ key: 'ambiguous_customer_request', count: 1 }],
+      legacyProvenance: {
+        objectSourceEventRows: 1,
+        objectAgentSuggestedRows: 1,
+        objectChangeSourceEventRows: 1,
+        boardHistorySourceEventRows: 1,
+        totalRows: 4,
+      },
     });
     expect(snapshot.diagnostics.ambiguityBySource).toEqual([
       { key: 'sentry', count: 1 },

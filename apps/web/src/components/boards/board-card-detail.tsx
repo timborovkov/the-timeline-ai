@@ -108,7 +108,7 @@ export function BoardCardDetail({
 
   if (!item) return null;
   const provenanceChanges = history.filter(
-    (change) => change.status === 'applied' && (change.evidence.length > 0 || change.sourceEventId),
+    (change) => change.status === 'applied' && change.evidence.length > 0,
   );
   const lane = lanes.find((candidate) => candidate.id === item.laneId) ?? null;
   const blocked = lane?.kind === 'blocked';
@@ -496,20 +496,6 @@ function BoardEvidence({
       ) : (
         <ul className="space-y-3">
           {changes.slice(0, 5).map((change) => {
-            const evidence =
-              change.evidence.length > 0
-                ? change.evidence
-                : change.sourceEventId
-                  ? [
-                      {
-                        rawEventId: change.sourceEventId,
-                        source: 'source',
-                        contentText: null,
-                        quote: null,
-                        occurredAt: change.changedAt,
-                      } satisfies boards.BoardItemEvidence,
-                    ]
-                  : [];
             return (
               <li key={change.id} className="rounded-sm border border-border bg-surface p-3">
                 <p className="text-xs font-medium text-fg">
@@ -521,7 +507,7 @@ function BoardEvidence({
                   </p>
                 ) : null}
                 <div className="mt-2 space-y-1">
-                  {evidence.slice(0, 3).map((source) => (
+                  {change.evidence.slice(0, 3).map((source) => (
                     <Link
                       key={source.rawEventId}
                       href={`/app/timeline?event=${source.rawEventId}#ev-${source.rawEventId}`}
@@ -573,14 +559,6 @@ function BoardActivity({
               </p>
               <div className="mt-2 flex flex-wrap items-center gap-2 text-fg-dim">
                 <span>{formatDisplayDateTime(change.changedAt)}</span>
-                {change.sourceEventId ? (
-                  <Link
-                    href={`/app/timeline?event=${change.sourceEventId}#ev-${change.sourceEventId}`}
-                    className="underline-offset-2 hover:text-fg hover:underline"
-                  >
-                    Source event
-                  </Link>
-                ) : null}
               </div>
               {change.note ? <p className="mt-2 text-fg">{displayText(change.note)}</p> : null}
             </li>

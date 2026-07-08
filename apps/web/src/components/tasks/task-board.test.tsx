@@ -137,8 +137,15 @@ describe('TaskBoard', () => {
 
     expect(link.getAttribute('href')).toBe('/app/tasks?task=task-1');
     expect(screen.getByText('Ada Lovelace')).toBeTruthy();
-    expect(screen.getByText('Due 2026-07-04')).toBeTruthy();
+    expect(screen.getByText(/2026-07-04/)).toBeTruthy();
     expect(screen.getByText('P2')).toBeTruthy();
+  });
+
+  it('does not render legacy agentSuggested badges on task rows', () => {
+    renderBoard(null, [task({ status: 'suggested', agentSuggested: true })]);
+
+    expect(screen.getByRole('link', { name: 'Send proposal' })).toBeTruthy();
+    expect(screen.queryByText('Suggested')).toBeNull();
   });
 
   it('prefers source-tracked integration display titles over provider identity canonical names', () => {

@@ -393,6 +393,13 @@
       "when": 1795653660000,
       "tag": "0055_reconciliation_foundation",
       "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": "7",
+      "when": 1795653720000,
+      "tag": "0056_legacy_provenance_cutover_guards",
+      "breakpoints": true
     }
   ]
 }

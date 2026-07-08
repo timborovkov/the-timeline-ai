@@ -175,7 +175,6 @@ describe('agent tool evals', () => {
       canonicalName: 'Send Acme pricing proposal',
       status: 'todo',
       dueAt: new Date('2026-06-05T17:00:00Z'),
-      sourceEventId: TEAM_EVENT,
     });
     await db.insert(entities).values({
       id: OBJECT_ID,

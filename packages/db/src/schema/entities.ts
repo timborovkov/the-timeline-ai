@@ -63,15 +63,21 @@ export const entities = pgTable(
     // Phase 8 — workspace-object fields. All nullable / safely-defaulted so
     // existing rows keep working with no backfill. Status vocabularies are
     // validated in the app layer because they differ by type (deal vs task
-    // vs decision). `suggested` is reserved for agent-created rows pending
-    // human approval.
+    // vs decision). Pending agent proposals now live in agent_suggestions rows
+    // projected from reconciliation outputs; sourceEventId/agentSuggested below
+    // remain legacy compatibility columns until the cutover migration drops or
+    // formally archives them.
     status: text('status').notNull().default('open'),
     stage: text('stage'),
     priority: smallint('priority'),
     ownerUserId: uuid('owner_user_id').references(() => users.id, { onDelete: 'set null' }),
     assigneeUserId: uuid('assignee_user_id').references(() => users.id, { onDelete: 'set null' }),
     dueAt: timestamp('due_at', { withTimezone: true }),
+    // Legacy provenance pointer. New canonical object writes keep this NULL and
+    // cite reconciliation output source refs instead.
     sourceEventId: uuid('source_event_id').references(() => rawEvents.id, { onDelete: 'set null' }),
+    // Legacy proposal flag. New proposal state is projection-owned; shared read
+    // models suppress stored true values so UI does not promote this column.
     agentSuggested: boolean('agent_suggested').notNull().default(false),
     archivedAt: timestamp('archived_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),

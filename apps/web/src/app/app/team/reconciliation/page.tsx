@@ -57,6 +57,7 @@ export default async function ReconciliationDashboardPage({
   const diagnostics = dashboard.diagnostics;
   const outputAttention = countKeys(dashboard.outputs.byStatus, ['pending', 'failed']);
   const outboxAttention = countKeys(dashboard.projectionOutbox.byStatus, ['pending', 'failed']);
+  const legacyProvenanceRows = diagnostics.legacyProvenance.totalRows;
   const approvalRate = formatRate(diagnostics.approvalStats.acceptanceRate);
 
   return (
@@ -100,6 +101,11 @@ export default async function ReconciliationDashboardPage({
           />
           <Metric label="clusters" value={dashboard.clusters.total} />
           <Metric label="associations" value={dashboard.associations.total} />
+          <Metric
+            label="legacy provenance"
+            value={legacyProvenanceRows}
+            tone={legacyProvenanceRows > 0 ? 'warn' : 'ok'}
+          />
           <Metric label="approval rate" value={approvalRate} />
         </div>
 
@@ -173,6 +179,61 @@ export default async function ReconciliationDashboardPage({
                 placeholder="Object or cluster UUID"
               />
             </label>
+            <label className="grid gap-1 text-xs font-medium uppercase tracking-[0.12em] text-fg-muted">
+              Planner replay cap
+              <input
+                name="plannerReplayLimit"
+                type="number"
+                min="0"
+                max="1000"
+                defaultValue="100"
+                className="h-10 rounded-sm border border-border bg-background px-3 font-mono text-sm normal-case tracking-normal text-fg"
+              />
+            </label>
+            <label className="grid gap-1 text-xs font-medium uppercase tracking-[0.12em] text-fg-muted">
+              Planner replay mode
+              <select
+                name="plannerReplayMode"
+                defaultValue="missing"
+                className="h-10 rounded-sm border border-border bg-background px-3 text-sm normal-case tracking-normal text-fg"
+              >
+                <option value="missing">Missing only</option>
+                <option value="all">All visible</option>
+              </select>
+            </label>
+            <label className="grid gap-1 text-xs font-medium uppercase tracking-[0.12em] text-fg-muted">
+              Planner replay source
+              <select
+                name="plannerReplaySource"
+                className="h-10 rounded-sm border border-border bg-background px-3 text-sm normal-case tracking-normal text-fg"
+                defaultValue=""
+              >
+                <option value="">All sources</option>
+                {eventSource.enumValues.map((source) => (
+                  <option key={source} value={source}>
+                    {sourceLabel(source)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="grid gap-1 text-xs font-medium uppercase tracking-[0.12em] text-fg-muted">
+                Planner replay from
+                <input
+                  name="plannerReplayOccurredAfter"
+                  type="datetime-local"
+                  className="h-10 rounded-sm border border-border bg-background px-3 font-mono text-sm normal-case tracking-normal text-fg"
+                />
+              </label>
+              <label className="grid gap-1 text-xs font-medium uppercase tracking-[0.12em] text-fg-muted">
+                Planner replay until
+                <input
+                  name="plannerReplayOccurredBefore"
+                  type="datetime-local"
+                  className="h-10 rounded-sm border border-border bg-background px-3 font-mono text-sm normal-case tracking-normal text-fg"
+                />
+              </label>
+            </div>
             <Button type="submit" variant="outline">
               <Play className="size-4" />
               Reconcile
@@ -223,6 +284,27 @@ export default async function ReconciliationDashboardPage({
         <StatusPanel title="Output kinds" rows={dashboard.outputs.byKind} />
         <StatusPanel title="Projection outbox" rows={dashboard.projectionOutbox.byStatus} />
         <StatusPanel title="Direct writes by source" rows={diagnostics.directWritesBySource} />
+        <StatusPanel
+          title="Legacy provenance"
+          rows={[
+            {
+              key: 'object source_event_id',
+              count: diagnostics.legacyProvenance.objectSourceEventRows,
+            },
+            {
+              key: 'object agent_suggested',
+              count: diagnostics.legacyProvenance.objectAgentSuggestedRows,
+            },
+            {
+              key: 'object_change source_event_id',
+              count: diagnostics.legacyProvenance.objectChangeSourceEventRows,
+            },
+            {
+              key: 'board_history source_event_id',
+              count: diagnostics.legacyProvenance.boardHistorySourceEventRows,
+            },
+          ]}
+        />
         <StatusPanel title="Ambiguity by source" rows={diagnostics.ambiguityBySource} />
         <StatusPanel title="Top no-action reasons" rows={diagnostics.topNoActionReasons} />
         <ApprovalPanel stats={diagnostics.approvalStats} />
@@ -558,7 +640,9 @@ function RunMetricSummary({ metrics }: { metrics: unknown }) {
     mode === 'manual_repair' ||
     record.evidence_backfilled !== undefined ||
     record.association_repair_count !== undefined ||
-    record.projection_repair_count !== undefined
+    record.output_repair_count !== undefined ||
+    record.projection_repair_count !== undefined ||
+    record.planner_replay_enqueued !== undefined
   ) {
     return (
       <div className="mt-2 flex flex-wrap gap-2">
@@ -567,7 +651,12 @@ function RunMetricSummary({ metrics }: { metrics: unknown }) {
           label="associations"
           value={numberMetric(record.association_repair_count)}
         />
+        <RunMetricBadge label="output repairs" value={numberMetric(record.output_repair_count)} />
         <RunMetricBadge label="projections" value={numberMetric(record.projection_repair_count)} />
+        <RunMetricBadge
+          label="planner replay"
+          value={numberMetric(record.planner_replay_enqueued)}
+        />
         <RunMetricBadge label="outputs" value={numberMetric(record.output_count)} />
       </div>
     );

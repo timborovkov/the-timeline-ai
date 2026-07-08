@@ -1,9 +1,4 @@
-import {
-  artifactClusterMembers,
-  artifactClusters,
-  artifactEvidenceAssociations,
-  type Db,
-} from '@timeline/db';
+import { artifactClusters, artifactEvidenceAssociations, type Db } from '@timeline/db';
 import { and, eq, inArray } from 'drizzle-orm';
 
 import { reconcileArtifactEvidence, type ArtifactAnchorInput } from '#src/artifacts/index.js';
@@ -311,15 +306,6 @@ export async function refreshLinkArtifactsForRawEvent(
         eq(artifactEvidenceAssociations.teamId, input.teamId),
         eq(artifactEvidenceAssociations.rawEventId, input.rawEventId),
         inArray(artifactEvidenceAssociations.clusterId, linkClusterIds),
-      ),
-    );
-  await db
-    .delete(artifactClusterMembers)
-    .where(
-      and(
-        eq(artifactClusterMembers.teamId, input.teamId),
-        eq(artifactClusterMembers.rawEventId, input.rawEventId),
-        inArray(artifactClusterMembers.clusterId, linkClusterIds),
       ),
     );
   await reconcileLinkArtifactsForRawEvent(db, input);

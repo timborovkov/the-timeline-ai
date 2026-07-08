@@ -341,7 +341,9 @@ function toObjectRow(row: EntitySelect): ObjectRow {
     ownerUserId: row.ownerUserId,
     assigneeUserId: row.assigneeUserId,
     dueAt: row.dueAt,
-    agentSuggested: row.agentSuggested,
+    // `entities.agent_suggested` is legacy single-row provenance. Board
+    // surfaces should rely on approval projections, not this column.
+    agentSuggested: false,
     archivedAt: row.archivedAt,
     aliases: Array.isArray(row.aliases)
       ? row.aliases.filter((v): v is string => typeof v === 'string')
@@ -423,7 +425,7 @@ function toBoardItemChangeRow(row: BoardItemChangeSelect): BoardItemChangeRow {
     field: row.field as BoardItemField,
     previousValue: row.previousValue,
     newValue: row.newValue,
-    sourceEventId: row.sourceEventId,
+    sourceEventId: null,
     suggestionItemId: row.suggestionItemId,
     evidence: [],
     note: row.note,
@@ -441,7 +443,6 @@ async function enrichBoardItemHistoryEvidence(
   const evidenceByChangeId = new Map<string, BoardItemEvidence[]>();
   const changeBySuggestionItemId = new Map<string, BoardItemChangeRow[]>();
   const suggestionItemIds = new Set<string>();
-  const sourceEventIds = new Set<string>();
   for (const change of changes) {
     if (change.suggestionItemId) {
       suggestionItemIds.add(change.suggestionItemId);
@@ -449,7 +450,6 @@ async function enrichBoardItemHistoryEvidence(
       list.push(change);
       changeBySuggestionItemId.set(change.suggestionItemId, list);
     }
-    if (change.sourceEventId) sourceEventIds.add(change.sourceEventId);
   }
 
   if (suggestionItemIds.size > 0) {
@@ -515,42 +515,6 @@ async function enrichBoardItemHistoryEvidence(
           evidenceByChangeId.set(change.id, list);
         }
       }
-    }
-  }
-
-  if (sourceEventIds.size > 0) {
-    const rows = await db
-      .select({
-        rawEventId: rawEvents.id,
-        source: rawEvents.source,
-        contentText: rawEvents.contentText,
-        occurredAt: rawEvents.occurredAt,
-      })
-      .from(rawEvents)
-      .where(
-        and(
-          eq(rawEvents.teamId, scope.teamId),
-          inArray(rawEvents.id, [...sourceEventIds]),
-          rawEventVisibleToUser(scope.userId),
-          sql`COALESCE(${rawEvents.sourceMetadata} ->> 'deleted', 'false') <> 'true'`,
-        ),
-      );
-    const directById = new Map(rows.map((row) => [row.rawEventId, row]));
-    for (const change of changes) {
-      if (!change.sourceEventId) continue;
-      const row = directById.get(change.sourceEventId);
-      if (!row) continue;
-      const list = evidenceByChangeId.get(change.id) ?? [];
-      if (!list.some((evidence) => evidence.rawEventId === row.rawEventId)) {
-        list.push({
-          rawEventId: row.rawEventId,
-          source: row.source,
-          contentText: row.contentText,
-          quote: null,
-          occurredAt: row.occurredAt,
-        });
-      }
-      evidenceByChangeId.set(change.id, list);
     }
   }
 
@@ -675,7 +639,7 @@ async function normalizeBoardSystemRawEventEvidence(input: {
 export async function buildBoardDirectWriteSourceContext(input: {
   db: DbOrTx;
   teamId: string;
-  sourceEventId: string;
+  sourceRawEventId: string;
 }): Promise<BoardDirectWriteSourceContext> {
   const [raw] = await input.db
     .select({
@@ -686,7 +650,7 @@ export async function buildBoardDirectWriteSourceContext(input: {
       visibilityUserIds: rawEvents.visibilityUserIds,
     })
     .from(rawEvents)
-    .where(and(eq(rawEvents.teamId, input.teamId), eq(rawEvents.id, input.sourceEventId)))
+    .where(and(eq(rawEvents.teamId, input.teamId), eq(rawEvents.id, input.sourceRawEventId)))
     .limit(1);
   if (!raw) throw new Error('Source raw event not found for team');
 
@@ -702,13 +666,16 @@ export async function buildBoardDirectWriteSourceContext(input: {
     .where(
       and(
         eq(reconciliationEvidence.teamId, input.teamId),
-        eq(reconciliationEvidence.rawEventId, input.sourceEventId),
+        eq(reconciliationEvidence.rawEventId, input.sourceRawEventId),
       ),
     )
     .orderBy(desc(reconciliationEvidence.createdAt), desc(reconciliationEvidence.id))
     .limit(1);
   const sourcePayloadRef =
     sourcePayloadRefFromMetadata(raw.sourceMetadata) ?? evidence?.sourcePayloadRef ?? null;
+  if (!sourcePayloadRef) {
+    throw new Error('Source raw event is missing a replay payload ref');
+  }
   const sourcePayloadRefs = [
     ...new Set(
       [evidence?.sourcePayloadRef, sourcePayloadRef].filter((ref): ref is string => !!ref),
@@ -721,7 +688,7 @@ export async function buildBoardDirectWriteSourceContext(input: {
     sourceRefs: [
       {
         source: raw.source,
-        rawEventId: input.sourceEventId,
+        rawEventId: input.sourceRawEventId,
         ...(sourcePayloadRef ? { sourcePayloadRef } : {}),
       },
     ],
@@ -813,7 +780,7 @@ async function emitBoardDirectWriteOutput(input: {
   const sourceContext = await buildBoardDirectWriteSourceContext({
     db: input.db,
     teamId: input.teamId,
-    sourceEventId: input.sourceEventId,
+    sourceRawEventId: input.sourceEventId,
   });
   const [run] = await input.db
     .insert(reconciliationRuns)

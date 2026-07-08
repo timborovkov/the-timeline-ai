@@ -406,6 +406,37 @@ describe('buildAgentTools — team isolation', () => {
     });
   });
 
+  it('get_object does not expose legacy agentSuggested provenance', async () => {
+    const scope = makeFakeScope();
+    scope.objects.getObject.mockResolvedValue({
+      id: OBJECT_ID,
+      type: 'project',
+      canonicalName: 'AuditAI pilot',
+      status: 'suggested',
+      stage: null,
+      priority: null,
+      ownerUserId: null,
+      assigneeUserId: null,
+      dueAt: null,
+      agentSuggested: true,
+      archivedAt: null,
+      notes: [],
+      recentChanges: [],
+      openTasks: [],
+    });
+    const tools = buildAgentTools(scope as unknown as TeamScope);
+    const exec = tools.get_object?.execute as (input: unknown, opts: unknown) => Promise<unknown>;
+
+    const result = await exec({ idOrName: OBJECT_ID }, {});
+
+    expect(result).toMatchObject({
+      found: true,
+      id: OBJECT_ID,
+      status: 'suggested',
+    });
+    expect(result).not.toHaveProperty('agent_suggested');
+  });
+
   it('execute_object_update requires approval and applies a direct object update', async () => {
     const scope = makeFakeScope();
     scope.objects.getObject.mockResolvedValue({

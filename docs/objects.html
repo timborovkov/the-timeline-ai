@@ -11,7 +11,7 @@
     <main id="main">
       <h1>Workspace objects</h1>
       <div class="meta">
-        <span class="kind">Architecture</span><span>Last updated 2026-07-03</span>
+        <span class="kind">Architecture</span><span>Last updated 2026-07-08</span>
       </div>
       <p class="tldr">
         Phase 8 turned <code>entities</code> from an extraction artifact into the workspace's
@@ -278,20 +278,20 @@
         Every manual object change — to an object's fields, identity facets, notes, or relationships
         — writes rows in one transaction: a system-source <code>raw_events</code> row (so the change
         appears on the team timeline), one structured history row per modified field where
-        applicable, and an applied reconciliation output with source refs to the raw event and, when
-        normalization succeeds, the normalized evidence row. Manual board item add/update/remove
-        writes follow the same provenance rule while keeping
-        <code>board_item_changes.source_event_id=NULL</code> for new history rows. During the
-        migration, legacy rows may still thread the <code>raw_events.id</code> through
+        applicable, and an applied reconciliation output with source refs to the raw event and
+        payload snapshot. Normalized evidence stays in evidence lineage rather than output source
+        refs. Manual board item add/update/remove writes follow the same provenance rule while
+        keeping <code>board_item_changes.source_event_id=NULL</code> for new history rows. During
+        the migration, legacy rows may still thread the <code>raw_events.id</code> through
         <code>source_event_id</code>; new reconciliation-backed provenance should instead cite
         source refs, output ids, and evidence associations.
       </p>
       <p>
         Object provenance and board item history read accepted suggestion evidence from the
-        referenced reconciliation output's source refs first. Legacy payload or direct
-        <code>source_event_id</code> hints are compatibility fallbacks only, and multi-source
-        outputs are hidden from the provenance view unless the current viewer can see every cited
-        raw event.
+        referenced reconciliation output's source refs. Legacy board-history
+        <code>source_event_id</code> hints are not promoted into provenance evidence, and
+        multi-source outputs are hidden from the provenance view unless the current viewer can see
+        every cited raw event.
       </p>
       <div class="callout">
         <b>Why two writes per change.</b> The timeline view treats events as the unit; the object

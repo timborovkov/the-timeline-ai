@@ -128,6 +128,51 @@ describe('queueReconciliationJobAction', () => {
     expect(fakes.revalidatePath).toHaveBeenCalledWith('/app/team/reconciliation');
   });
 
+  it('passes planner replay controls for manual team reconciliation', async () => {
+    const result = await queueReconciliationJobAction(
+      {},
+      form({
+        mode: 'scope',
+        scope: 'team',
+        plannerReplayLimit: '25',
+        plannerReplayMode: 'all',
+        plannerReplaySource: 'email',
+        plannerReplayOccurredAfter: '2026-06-20T10:00:00.000Z',
+        plannerReplayOccurredBefore: '2026-06-21T10:00:00.000Z',
+      }),
+    );
+
+    expect(result).toMatchObject({ ok: true });
+    expect(fakes.enqueueReconciliationJob).toHaveBeenCalledWith({
+      kind: 'scope_reconcile',
+      teamId: TEAM_ID,
+      scope: 'team',
+      triggeredBy: USER_ID,
+      reason: 'admin_dashboard',
+      plannerReplayLimit: 25,
+      plannerReplayMode: 'all',
+      plannerReplaySource: 'email',
+      plannerReplayOccurredAfter: '2026-06-20T10:00:00.000Z',
+      plannerReplayOccurredBefore: '2026-06-21T10:00:00.000Z',
+    });
+  });
+
+  it('rejects inverted planner replay time windows', async () => {
+    await expect(
+      queueReconciliationJobAction(
+        {},
+        form({
+          mode: 'scope',
+          scope: 'team',
+          plannerReplayOccurredAfter: '2026-06-21T10:00:00.000Z',
+          plannerReplayOccurredBefore: '2026-06-20T10:00:00.000Z',
+        }),
+      ),
+    ).resolves.toEqual({ error: 'Invalid reconciliation job request' });
+
+    expect(fakes.enqueueReconciliationJob).not.toHaveBeenCalled();
+  });
+
   it('requires target ids for object and cluster scoped reconciliation', async () => {
     await expect(
       queueReconciliationJobAction({}, form({ mode: 'scope', scope: 'cluster' })),

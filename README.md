@@ -119,7 +119,9 @@ The `@timeline/shared/reconciliation/dashboard` subpath exports the admin
 dashboard snapshot used by Team → Reconciliation to inspect evidence coverage,
 run logs, output status, projection outbox health, association counts, conflict
 attention, provider/source diagnostics, approval acceptance health, and
-viewer-visibility-filtered dashboard counts plus cluster drilldowns.
+viewer-visibility-filtered dashboard counts plus cluster drilldowns. It also
+exports the legacy-provenance cutover audit used by the worker
+`reconciliation-legacy-provenance` command.
 The `@timeline/shared/reconciliation/production-sampling` subpath exports the
 redacted production-sampling artifact loader and report writer used to
 aggregate live artifacts into pass-rate, miss, visibility, authority, and
@@ -224,7 +226,8 @@ pnpm --filter @timeline/worker reconciliation-evidence -- --team=<uuid> --mode=a
 pnpm --filter @timeline/worker reconciliation-evidence -- --team=<uuid> --mode=audit --fail-on-release-gate
 # optional: repeat --allow-degraded-source=<event_source> for known historical degraded replay rows
 pnpm --filter @timeline/worker reconciliation-evidence -- --team=<uuid> --mode=backfill --dry-run --page-size=500
-pnpm --filter @timeline/worker reconciliation-production-sampling -- --input=/tmp/eval-run --out=/tmp/reconciliation-production-sampling.json --team=<uuid> --run-kind=closed_beta --fail-on-failures
+TIMELINE_ENV_FILE=/path/to/.env pnpm --filter @timeline/worker reconciliation-legacy-provenance -- --team=<uuid> --fail-on-legacy
+TIMELINE_ENV_FILE=/path/to/.env pnpm --filter @timeline/worker reconciliation-production-sampling -- --input=/tmp/eval-run --out=/tmp/reconciliation-production-sampling.json --team=<uuid> --run-kind=closed_beta --fail-on-failures
 # production sampling accepts repeated --input paths; --run-kind defaults to manual
 # and may be manual, closed_beta, or post_deploy. Use --fail-on-failures for
 # release gates that should stop on any failed sample. Repeat

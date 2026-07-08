@@ -2,6 +2,9 @@ import {
   type Db,
   artifactClusters,
   artifactEvidenceAssociations,
+  boardItemChanges,
+  entities,
+  objectChanges,
   reconciliationRunStatus,
   reconciliationRunTrigger,
   reconciliationOutputs,
@@ -94,6 +97,14 @@ export interface ReconciliationDashboardApprovalStats {
   acceptanceRate: number | null;
 }
 
+export interface ReconciliationDashboardLegacyProvenanceStats {
+  objectSourceEventRows: number;
+  objectAgentSuggestedRows: number;
+  objectChangeSourceEventRows: number;
+  boardHistorySourceEventRows: number;
+  totalRows: number;
+}
+
 export interface ReconciliationDashboardSnapshot {
   generatedAt: Date;
   coverageLimit: number;
@@ -127,6 +138,7 @@ export interface ReconciliationDashboardSnapshot {
     approvalStats: ReconciliationDashboardApprovalStats;
     topNoActionReasons: ReconciliationDashboardCount[];
     ambiguityBySource: ReconciliationDashboardCount[];
+    legacyProvenance: ReconciliationDashboardLegacyProvenanceStats;
   };
 }
 
@@ -198,6 +210,7 @@ export async function getReconciliationDashboardSnapshot(
     recentClusters,
     projectionOutboxByStatus,
     diagnosticOutputs,
+    legacyProvenanceAudit,
   ] = await Promise.all([
     auditReconciliationEvidenceCoverage({
       db: input.db,
@@ -321,8 +334,13 @@ export async function getReconciliationDashboardSnapshot(
       })
       .from(reconciliationOutputs)
       .where(and(eq(reconciliationOutputs.teamId, input.teamId), outputVisibility)),
+    auditLegacyProvenanceCutover({
+      db: input.db,
+      teamId: input.teamId,
+    }),
   ]);
-  const diagnostics = dashboardDiagnosticsFromOutputs(diagnosticOutputs);
+  const legacyProvenance = legacyProvenanceStats(legacyProvenanceAudit);
+  const diagnostics = dashboardDiagnosticsFromOutputs(diagnosticOutputs, legacyProvenance);
   const runTotal = filteredRunCount[0]?.count ?? 0;
   const totalPages = Math.max(1, Math.ceil(runTotal / runHistory.pageSize));
 
@@ -364,6 +382,51 @@ export async function getReconciliationDashboardSnapshot(
     },
     diagnostics,
   };
+}
+
+export async function auditLegacyProvenanceCutover(input: {
+  db: DbOrTx;
+  teamId: string;
+}): Promise<ReconciliationDashboardLegacyProvenanceStats> {
+  const [
+    legacyObjectSourceEventRows,
+    legacyObjectAgentSuggestedRows,
+    legacyObjectChangeSourceEventRows,
+    legacyBoardHistorySourceEventRows,
+  ] = await Promise.all([
+    input.db
+      .select({ count: count() })
+      .from(entities)
+      .where(and(eq(entities.teamId, input.teamId), sql`${entities.sourceEventId} IS NOT NULL`)),
+    input.db
+      .select({ count: count() })
+      .from(entities)
+      .where(and(eq(entities.teamId, input.teamId), eq(entities.agentSuggested, true))),
+    input.db
+      .select({ count: count() })
+      .from(objectChanges)
+      .where(
+        and(
+          eq(objectChanges.teamId, input.teamId),
+          sql`${objectChanges.sourceEventId} IS NOT NULL`,
+        ),
+      ),
+    input.db
+      .select({ count: count() })
+      .from(boardItemChanges)
+      .where(
+        and(
+          eq(boardItemChanges.teamId, input.teamId),
+          sql`${boardItemChanges.sourceEventId} IS NOT NULL`,
+        ),
+      ),
+  ]);
+  return legacyProvenanceStats({
+    objectSourceEventRows: legacyObjectSourceEventRows[0]?.count ?? 0,
+    objectAgentSuggestedRows: legacyObjectAgentSuggestedRows[0]?.count ?? 0,
+    objectChangeSourceEventRows: legacyObjectChangeSourceEventRows[0]?.count ?? 0,
+    boardHistorySourceEventRows: legacyBoardHistorySourceEventRows[0]?.count ?? 0,
+  });
 }
 
 function normalizeRunHistoryInput(
@@ -496,6 +559,7 @@ function dashboardDiagnosticsFromOutputs(
     sourceRefs: unknown;
     payload: unknown;
   }[],
+  legacyProvenance: ReconciliationDashboardLegacyProvenanceStats,
 ): ReconciliationDashboardSnapshot['diagnostics'] {
   const directWritesBySource = new Map<string, number>();
   const noActionReasons = new Map<string, number>();
@@ -543,6 +607,23 @@ function dashboardDiagnosticsFromOutputs(
     },
     topNoActionReasons: countRowsFromMap(noActionReasons).slice(0, 8),
     ambiguityBySource: countRowsFromMap(ambiguityBySource),
+    legacyProvenance,
+  };
+}
+
+function legacyProvenanceStats(input: {
+  objectSourceEventRows: number;
+  objectAgentSuggestedRows: number;
+  objectChangeSourceEventRows: number;
+  boardHistorySourceEventRows: number;
+}): ReconciliationDashboardLegacyProvenanceStats {
+  return {
+    ...input,
+    totalRows:
+      input.objectSourceEventRows +
+      input.objectAgentSuggestedRows +
+      input.objectChangeSourceEventRows +
+      input.boardHistorySourceEventRows,
   };
 }
 

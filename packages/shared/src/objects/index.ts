@@ -11,7 +11,6 @@ import { createHash, randomUUID } from 'node:crypto';
 
 import {
   type Db,
-  artifactClusterMembers,
   agentSuggestionEvidence,
   agentSuggestionItems,
   agentSuggestions,
@@ -202,7 +201,7 @@ async function normalizeSystemRawEventEvidence(input: {
 export async function buildObjectDirectWriteSourceContext(input: {
   db: DbOrTx;
   teamId: string;
-  sourceEventId: string;
+  sourceRawEventId: string;
 }): Promise<DirectWriteSourceContext> {
   const [raw] = await input.db
     .select({
@@ -213,7 +212,7 @@ export async function buildObjectDirectWriteSourceContext(input: {
       visibilityUserIds: rawEvents.visibilityUserIds,
     })
     .from(rawEvents)
-    .where(and(eq(rawEvents.teamId, input.teamId), eq(rawEvents.id, input.sourceEventId)))
+    .where(and(eq(rawEvents.teamId, input.teamId), eq(rawEvents.id, input.sourceRawEventId)))
     .limit(1);
   if (!raw) throw new Error('Source raw event not found for team');
 
@@ -229,13 +228,16 @@ export async function buildObjectDirectWriteSourceContext(input: {
     .where(
       and(
         eq(reconciliationEvidence.teamId, input.teamId),
-        eq(reconciliationEvidence.rawEventId, input.sourceEventId),
+        eq(reconciliationEvidence.rawEventId, input.sourceRawEventId),
       ),
     )
     .orderBy(desc(reconciliationEvidence.createdAt), desc(reconciliationEvidence.id))
     .limit(1);
   const sourcePayloadRef =
     sourcePayloadRefFromMetadata(raw.sourceMetadata) ?? evidence?.sourcePayloadRef ?? null;
+  if (!sourcePayloadRef) {
+    throw new Error('Source raw event is missing a replay payload ref');
+  }
   const sourcePayloadRefs = [
     ...new Set(
       [evidence?.sourcePayloadRef, sourcePayloadRef].filter((ref): ref is string => !!ref),
@@ -248,7 +250,7 @@ export async function buildObjectDirectWriteSourceContext(input: {
     sourceRefs: [
       {
         source: raw.source,
-        rawEventId: input.sourceEventId,
+        rawEventId: input.sourceRawEventId,
         ...(sourcePayloadRef ? { sourcePayloadRef } : {}),
       },
     ],
@@ -281,7 +283,7 @@ async function emitObjectDirectWriteOutput(input: {
   const sourceContext = await buildObjectDirectWriteSourceContext({
     db: input.db,
     teamId: input.teamId,
-    sourceEventId: input.sourceEventId,
+    sourceRawEventId: input.sourceEventId,
   });
   const [run] = await input.db
     .insert(reconciliationRuns)
@@ -421,7 +423,7 @@ async function emitRelationshipDirectWriteOutput(input: {
   const sourceContext = await buildObjectDirectWriteSourceContext({
     db: input.db,
     teamId: input.teamId,
-    sourceEventId: input.sourceEventId,
+    sourceRawEventId: input.sourceEventId,
   });
   const [run] = await input.db
     .insert(reconciliationRuns)
@@ -543,7 +545,7 @@ async function emitNoteDirectWriteOutput(input: {
   const sourceContext = await buildObjectDirectWriteSourceContext({
     db: input.db,
     teamId: input.teamId,
-    sourceEventId: input.sourceEventId,
+    sourceRawEventId: input.sourceEventId,
   });
   const [run] = await input.db
     .insert(reconciliationRuns)
@@ -680,7 +682,7 @@ async function emitIdentityFacetDirectWriteOutput(input: {
   const sourceContext = await buildObjectDirectWriteSourceContext({
     db: input.db,
     teamId: input.teamId,
-    sourceEventId: input.sourceEventId,
+    sourceRawEventId: input.sourceEventId,
   });
   const [run] = await input.db
     .insert(reconciliationRuns)
@@ -1153,7 +1155,9 @@ function toObjectRow(row: EntityRow): ObjectRow {
     ownerUserId: row.ownerUserId,
     assigneeUserId: row.assigneeUserId,
     dueAt: row.dueAt,
-    agentSuggested: row.agentSuggested,
+    // `entities.agent_suggested` is legacy single-row provenance. Approval
+    // state now lives in agent_suggestions projected from reconciliation outputs.
+    agentSuggested: false,
     archivedAt: row.archivedAt,
     aliases,
     metadata,
@@ -2745,35 +2749,9 @@ async function getConnectedWork(
       ...currentNoteRawEventRows.map((row) => row.id),
     ]),
   );
-  const [linkMemberRows, linkAssociationRows, capturedFileRows] =
+  const [linkAssociationRows, capturedFileRows] =
     relatedRawEventIds.length > 0
       ? await Promise.all([
-          db
-            .select({
-              id: artifactClusters.id,
-              canonicalName: artifactClusters.canonicalName,
-              metadata: artifactClusterMembers.metadata,
-              provider: artifactClusterMembers.provider,
-              updatedAt: artifactClusters.updatedAt,
-            })
-            .from(artifactClusterMembers)
-            .innerJoin(
-              artifactClusters,
-              and(
-                eq(artifactClusters.id, artifactClusterMembers.clusterId),
-                eq(artifactClusters.teamId, scope.teamId),
-              ),
-            )
-            .where(
-              and(
-                eq(artifactClusterMembers.teamId, scope.teamId),
-                inArray(artifactClusterMembers.rawEventId, relatedRawEventIds),
-                eq(artifactClusters.artifactType, 'link'),
-                isNull(artifactClusters.archivedAt),
-              ),
-            )
-            .orderBy(desc(artifactClusters.updatedAt), desc(artifactClusters.id))
-            .limit(20),
           db
             .select({
               id: artifactClusters.id,
@@ -2833,10 +2811,10 @@ async function getConnectedWork(
             .orderBy(desc(documents.updatedAt), desc(documents.id))
             .limit(12),
         ])
-      : [[], [], []];
+      : [[], []];
   const filteredLinkRows = Array.from(
     new Map(
-      [...linkMemberRows, ...linkAssociationRows].map((row) => {
+      linkAssociationRows.map((row) => {
         const metadata = recordFromUnknown(row.metadata);
         return [
           row.id,
@@ -3162,19 +3140,11 @@ export async function getObject(
         db
           .select({ id: objectChanges.id })
           .from(objectChanges)
-          .leftJoin(rawEvents, eq(rawEvents.id, objectChanges.sourceEventId))
           .where(
             and(
               eq(objectChanges.teamId, scope.teamId),
               eq(objectChanges.entityId, entityRow.id),
-              or(
-                isNull(objectChanges.sourceEventId),
-                and(
-                  eq(rawEvents.teamId, scope.teamId),
-                  eq(rawEvents.visibility, 'team'),
-                  sql`COALESCE(${rawEvents.sourceMetadata} ->> 'deleted', 'false') <> 'true'`,
-                ),
-              ),
+              isNull(objectChanges.sourceEventId),
             ),
           )
           .orderBy(desc(objectChanges.changedAt), desc(objectChanges.id))

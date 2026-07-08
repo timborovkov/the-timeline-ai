@@ -93,6 +93,8 @@ describe('reconciliation evidence resolver', () => {
       evidenceId,
       rawEventId: raw.id,
       createdCluster: true,
+      associationCreated: true,
+      outputRepaired: true,
     });
 
     const [cluster] = await db.select().from(artifactClusters);
@@ -206,6 +208,8 @@ describe('reconciliation evidence resolver', () => {
     expect(retry.skipped).toEqual([]);
     expect(retry.associated).toHaveLength(1);
     expect(retry.associated[0]?.createdCluster).toBe(false);
+    expect(retry.associated[0]?.associationCreated).toBe(false);
+    expect(retry.associated[0]?.outputRepaired).toBe(false);
     expect(await db.select().from(artifactEvidenceAssociations)).toHaveLength(1);
     expect(await db.select().from(reconciliationOutputs)).toHaveLength(1);
 

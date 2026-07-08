@@ -136,7 +136,7 @@ Direction: soften the surface. Keep the forensic mono treatment for data
 
 ## Workspace Reconciliation
 
-- [ ] Build the replacement reconciliation engine architecture in
+- [x] Build the replacement reconciliation engine architecture in
       [docs/reconciliation-engine-plan.md](docs/reconciliation-engine-plan.md):
       normalized evidence, artifact resolution, authority policy,
       output-backed approvals, and deterministic/live reconciliation evals.

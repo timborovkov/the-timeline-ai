@@ -525,6 +525,38 @@ describe('artifact reconciliation', () => {
     ).resolves.toEqual([]);
   });
 
+  it('does not list legacy artifact_cluster_members as provenance evidence', async () => {
+    const source = await rawEvent('Legacy cluster member should not display as evidence.');
+    const [cluster] = await db
+      .insert(artifactClusters)
+      .values({
+        teamId: TEAM_ID,
+        artifactClusterKind: 'incident',
+        artifactType: 'incident',
+        canonicalName: 'Legacy checkout incident',
+        status: 'active',
+      })
+      .returning();
+    if (!cluster) throw new Error('artifact cluster insert failed');
+    await db.insert(artifactClusterMembers).values({
+      teamId: TEAM_ID,
+      clusterId: cluster.id,
+      rawEventId: source.id,
+      role: 'lifecycle_update',
+      strength: 'provider',
+      authoritative: true,
+      metadata: { canonical_name: 'Legacy checkout incident' },
+    });
+
+    await expect(
+      listArtifactClusterEvidence(db as never, {
+        teamId: TEAM_ID,
+        clusterId: cluster.id,
+        viewerUserId: USER_ID,
+      }),
+    ).resolves.toEqual([]);
+  });
+
   it('lists evidence from the reconciliation association graph without legacy members', async () => {
     const source = await rawEvent('Sentry issue affected Acme checkout.');
     const [cluster] = await db

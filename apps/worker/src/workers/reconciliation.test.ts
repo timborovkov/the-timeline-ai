@@ -11,6 +11,7 @@ import {
   reconciliationOutputs,
   reconciliationRuns,
 } from '@timeline/db';
+import { type queue } from '@timeline/shared';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -52,7 +53,9 @@ async function seedEmailRawEvent(
     visibility?: 'team' | 'private' | 'specific_users';
     visibilityOwnerUserId?: string | null;
     visibilityUserIds?: string[] | null;
+    source?: 'email' | 'slack' | 'integration';
     messageId?: string;
+    occurredAt?: Date;
   } = {},
 ): Promise<string> {
   const [event] = await (db as never as Db)
@@ -60,8 +63,9 @@ async function seedEmailRawEvent(
     .values({
       teamId: TEAM_ID,
       authorUserId: input.authorUserId ?? USER_ID,
-      source: 'email',
+      source: input.source ?? 'email',
       contentText: 'Customer email: Acme asked to move launch risk review to Monday.',
+      occurredAt: input.occurredAt,
       visibility: input.visibility ?? 'team',
       visibilityOwnerUserId: input.visibilityOwnerUserId,
       visibilityUserIds: input.visibilityUserIds,
@@ -116,6 +120,29 @@ function jsonRecord(value: unknown): Record<string, unknown> {
     throw new Error('expected JSON record');
   }
   return value as Record<string, unknown>;
+}
+
+function suggestionReplayRecorder() {
+  const calls: {
+    data: { rawEventId: string; teamId: string };
+    opts: { delayMs?: number; jobIdSuffix?: string };
+  }[] = [];
+  const queued = new Set<string>();
+  return {
+    calls,
+    enqueueSuggestionJob: (
+      data: queue.SuggestionJobData,
+      opts: { delayMs?: number; jobIdSuffix?: string } = {},
+    ) => {
+      if ('scope' in data) throw new Error(`unexpected scoped suggestion replay: ${data.scope}`);
+      const rawData = { rawEventId: data.rawEventId, teamId: data.teamId };
+      calls.push({ data: rawData, opts });
+      const key = `${rawData.teamId}:${rawData.rawEventId}:${opts.jobIdSuffix ?? ''}`;
+      const enqueued = !queued.has(key);
+      queued.add(key);
+      return Promise.resolve({ enqueued, jobId: opts.jobIdSuffix ? `test:${key}` : null });
+    },
+  };
 }
 
 describe('processReconciliationJob', () => {
@@ -298,45 +325,62 @@ describe('processReconciliationJob', () => {
 
   it('records manual team, object, and cluster scoped reconciliation runs', async () => {
     const { objectId, clusterId } = await seedObjectAndCluster();
+    const replay = suggestionReplayRecorder();
 
     const teamRun = expectScopedResult(
-      await processReconciliationJob(db as never, {
-        kind: 'scope_reconcile',
-        teamId: TEAM_ID,
-        scope: 'team',
-        triggeredBy: USER_ID,
-        reason: 'admin_dashboard',
-      }),
+      await processReconciliationJob(
+        db as never,
+        {
+          kind: 'scope_reconcile',
+          teamId: TEAM_ID,
+          scope: 'team',
+          triggeredBy: USER_ID,
+          reason: 'admin_dashboard',
+        },
+        { enqueueSuggestionJob: replay.enqueueSuggestionJob },
+      ),
     );
     const objectRun = expectScopedResult(
-      await processReconciliationJob(db as never, {
-        kind: 'scope_reconcile',
-        teamId: TEAM_ID,
-        scope: 'object',
-        targetId: objectId,
-        triggeredBy: USER_ID,
-        reason: 'admin_dashboard',
-      }),
+      await processReconciliationJob(
+        db as never,
+        {
+          kind: 'scope_reconcile',
+          teamId: TEAM_ID,
+          scope: 'object',
+          targetId: objectId,
+          triggeredBy: USER_ID,
+          reason: 'admin_dashboard',
+        },
+        { enqueueSuggestionJob: replay.enqueueSuggestionJob },
+      ),
     );
     const duplicateObjectRun = expectScopedResult(
-      await processReconciliationJob(db as never, {
-        kind: 'scope_reconcile',
-        teamId: TEAM_ID,
-        scope: 'object',
-        targetId: objectId,
-        triggeredBy: USER_ID,
-        reason: 'admin_dashboard',
-      }),
+      await processReconciliationJob(
+        db as never,
+        {
+          kind: 'scope_reconcile',
+          teamId: TEAM_ID,
+          scope: 'object',
+          targetId: objectId,
+          triggeredBy: USER_ID,
+          reason: 'admin_dashboard',
+        },
+        { enqueueSuggestionJob: replay.enqueueSuggestionJob },
+      ),
     );
     const clusterRun = expectScopedResult(
-      await processReconciliationJob(db as never, {
-        kind: 'scope_reconcile',
-        teamId: TEAM_ID,
-        scope: 'cluster',
-        targetId: clusterId,
-        triggeredBy: USER_ID,
-        reason: 'admin_dashboard',
-      }),
+      await processReconciliationJob(
+        db as never,
+        {
+          kind: 'scope_reconcile',
+          teamId: TEAM_ID,
+          scope: 'cluster',
+          targetId: clusterId,
+          triggeredBy: USER_ID,
+          reason: 'admin_dashboard',
+        },
+        { enqueueSuggestionJob: replay.enqueueSuggestionJob },
+      ),
     );
 
     expect(teamRun).toMatchObject({
@@ -347,7 +391,9 @@ describe('processReconciliationJob', () => {
       clusterCount: 1,
       evidenceBackfilled: 0,
       associationRepairCount: 0,
+      outputRepairCount: 0,
       projectionRepairCount: 0,
+      plannerReplayEnqueued: 0,
     });
     expect(objectRun).toMatchObject({
       teamId: TEAM_ID,
@@ -357,7 +403,9 @@ describe('processReconciliationJob', () => {
       clusterCount: 1,
       evidenceBackfilled: 0,
       associationRepairCount: 0,
+      outputRepairCount: 0,
       projectionRepairCount: 0,
+      plannerReplayEnqueued: 0,
     });
     expect(duplicateObjectRun.runId).toBe(objectRun.runId);
     expect(clusterRun).toMatchObject({
@@ -368,7 +416,9 @@ describe('processReconciliationJob', () => {
       clusterCount: 1,
       evidenceBackfilled: 0,
       associationRepairCount: 0,
+      outputRepairCount: 0,
       projectionRepairCount: 0,
+      plannerReplayEnqueued: 0,
     });
 
     const runs = await db.select().from(reconciliationRuns);
@@ -387,9 +437,115 @@ describe('processReconciliationJob', () => {
       cluster_count: 1,
       evidence_backfilled: 0,
       association_repair_count: 0,
+      output_repair_count: 0,
       projection_repair_count: 0,
+      planner_replay_enqueued: 0,
       lock_key: `reconciliation:${TEAM_ID}:object:${objectId}`,
     });
+  });
+
+  it('queues bounded team-scope planner replay for visible text raw events', async () => {
+    const olderVisible = await seedEmailRawEvent({
+      messageId: 'team-visible-older',
+      occurredAt: new Date('2026-06-20T10:00:00Z'),
+    });
+    const newerVisible = await seedEmailRawEvent({
+      messageId: 'team-visible-newer',
+      occurredAt: new Date('2026-06-20T11:00:00Z'),
+    });
+    const otherSourceVisible = await seedEmailRawEvent({
+      source: 'slack',
+      messageId: 'team-visible-slack',
+      occurredAt: new Date('2026-06-20T11:30:00Z'),
+    });
+    const alreadyProcessed = await seedEmailRawEvent({
+      messageId: 'team-visible-processed',
+      occurredAt: new Date('2026-06-20T12:00:00Z'),
+    });
+    await (db as never as Db)
+      .update(rawEvents)
+      .set({
+        sourceMetadata: {
+          message_id: 'team-visible-processed',
+          source_payload_ref: 's3://timeline-test/email/team-visible-processed.eml',
+          payload_digest: 'sha256:team-visible-processed',
+          suggestion_model_version: 'test-model@2026-06-a',
+          suggestions_extracted_at: '2026-06-20T12:01:00.000Z',
+        },
+      })
+      .where(eq(rawEvents.id, alreadyProcessed));
+    await seedEmailRawEvent({
+      authorUserId: OTHER_USER_ID,
+      visibility: 'private',
+      visibilityOwnerUserId: OTHER_USER_ID,
+      messageId: 'team-hidden-private',
+    });
+    await (db as never as Db).insert(rawEvents).values({
+      teamId: TEAM_ID,
+      authorUserId: USER_ID,
+      source: 'email',
+      contentText: '',
+      visibility: 'team',
+      sourceMetadata: {
+        message_id: 'team-empty-text',
+        source_payload_ref: 's3://timeline-test/email/team-empty-text.eml',
+        payload_digest: 'sha256:team-empty-text',
+      },
+    });
+    const replay = suggestionReplayRecorder();
+
+    const result = expectScopedResult(
+      await processReconciliationJob(
+        db as never,
+        {
+          kind: 'scope_reconcile',
+          teamId: TEAM_ID,
+          scope: 'team',
+          triggeredBy: USER_ID,
+          reason: 'admin_dashboard',
+          plannerReplayLimit: 1,
+          plannerReplaySource: 'email',
+          plannerReplayOccurredAfter: '2026-06-20T10:30:00.000Z',
+          plannerReplayOccurredBefore: '2026-06-20T11:30:00.000Z',
+        },
+        { enqueueSuggestionJob: replay.enqueueSuggestionJob },
+      ),
+    );
+
+    expect(result).toMatchObject({
+      scope: 'team',
+      plannerReplayEnqueued: 1,
+    });
+    expect(replay.calls).toEqual([
+      {
+        data: { rawEventId: newerVisible, teamId: TEAM_ID },
+        opts: { jobIdSuffix: 'manual-reconcile:team:team:admin_dashboard' },
+      },
+    ]);
+    expect(replay.calls.map((call) => call.data.rawEventId)).not.toContain(olderVisible);
+    expect(replay.calls.map((call) => call.data.rawEventId)).not.toContain(otherSourceVisible);
+    expect(replay.calls.map((call) => call.data.rawEventId)).not.toContain(alreadyProcessed);
+    const run = (await db.select().from(reconciliationRuns)).find((row) => row.id === result.runId);
+    expect(run?.metrics).toMatchObject({ planner_replay_enqueued: 1 });
+
+    const allReplay = suggestionReplayRecorder();
+    const allResult = expectScopedResult(
+      await processReconciliationJob(
+        db as never,
+        {
+          kind: 'scope_reconcile',
+          teamId: TEAM_ID,
+          scope: 'team',
+          triggeredBy: USER_ID,
+          reason: 'admin_dashboard_all',
+          plannerReplayLimit: 1,
+          plannerReplayMode: 'all',
+        },
+        { enqueueSuggestionJob: allReplay.enqueueSuggestionJob },
+      ),
+    );
+    expect(allResult).toMatchObject({ plannerReplayEnqueued: 1 });
+    expect(allReplay.calls.map((call) => call.data.rawEventId)).toEqual([alreadyProcessed]);
   });
 
   it('does not double-count object-scoped outputs that also belong to the object cluster', async () => {
@@ -450,25 +606,38 @@ describe('processReconciliationJob', () => {
   it('backfills object-linked raw events without existing associations or outputs', async () => {
     const { objectId } = await seedObjectAndCluster();
     const rawEventId = await seedEmailRawEvent({ entityId: objectId });
+    const replay = suggestionReplayRecorder();
 
     const result = expectScopedResult(
-      await processReconciliationJob(db as never, {
-        kind: 'scope_reconcile',
-        teamId: TEAM_ID,
-        scope: 'object',
-        targetId: objectId,
-        triggeredBy: USER_ID,
-        reason: 'admin_dashboard',
-      }),
+      await processReconciliationJob(
+        db as never,
+        {
+          kind: 'scope_reconcile',
+          teamId: TEAM_ID,
+          scope: 'object',
+          targetId: objectId,
+          triggeredBy: USER_ID,
+          reason: 'admin_dashboard',
+        },
+        { enqueueSuggestionJob: replay.enqueueSuggestionJob },
+      ),
     );
 
     expect(result).toMatchObject({
       evidenceBackfilled: 1,
       associationRepairCount: 1,
+      outputRepairCount: 1,
       projectionRepairCount: 0,
+      plannerReplayEnqueued: 1,
       outputCount: 1,
       associationCount: 1,
     });
+    expect(replay.calls).toEqual([
+      {
+        data: { rawEventId, teamId: TEAM_ID },
+        opts: { jobIdSuffix: `manual-reconcile:object:${objectId}:admin_dashboard` },
+      },
+    ]);
     const evidenceRows = await db
       .select()
       .from(reconciliationEvidence)
@@ -496,6 +665,51 @@ describe('processReconciliationJob', () => {
       visibility: 'team',
       visibilityFloor: 'team',
     });
+    const repairRun = (await db.select().from(reconciliationRuns)).find(
+      (run) => run.id === result.runId,
+    );
+    expect(repairRun?.metrics).toMatchObject({
+      evidence_backfilled: 1,
+      association_repair_count: 1,
+      output_repair_count: 1,
+      projection_repair_count: 0,
+      planner_replay_enqueued: 1,
+    });
+
+    const replayResult = expectScopedResult(
+      await processReconciliationJob(
+        db as never,
+        {
+          kind: 'scope_reconcile',
+          teamId: TEAM_ID,
+          scope: 'object',
+          targetId: objectId,
+          triggeredBy: USER_ID,
+          reason: 'admin_dashboard',
+        },
+        { enqueueSuggestionJob: replay.enqueueSuggestionJob },
+      ),
+    );
+
+    expect(replayResult).toMatchObject({
+      evidenceBackfilled: 0,
+      associationRepairCount: 0,
+      outputRepairCount: 0,
+      projectionRepairCount: 0,
+      plannerReplayEnqueued: 0,
+      outputCount: 1,
+      associationCount: 1,
+    });
+    const replayRun = (await db.select().from(reconciliationRuns)).find(
+      (run) => run.id === replayResult.runId,
+    );
+    expect(replayRun?.metrics).toMatchObject({
+      evidence_backfilled: 0,
+      association_repair_count: 0,
+      output_repair_count: 0,
+      projection_repair_count: 0,
+      planner_replay_enqueued: 0,
+    });
   });
 
   it('does not backfill scoped raw events hidden from the triggering user', async () => {
@@ -511,19 +725,25 @@ describe('processReconciliationJob', () => {
       visibilityOwnerUserId: OTHER_USER_ID,
       messageId: 'hidden-object-message',
     });
+    const replay = suggestionReplayRecorder();
 
     const result = expectScopedResult(
-      await processReconciliationJob(db as never, {
-        kind: 'scope_reconcile',
-        teamId: TEAM_ID,
-        scope: 'object',
-        targetId: objectId,
-        triggeredBy: USER_ID,
-        reason: 'admin_dashboard',
-      }),
+      await processReconciliationJob(
+        db as never,
+        {
+          kind: 'scope_reconcile',
+          teamId: TEAM_ID,
+          scope: 'object',
+          targetId: objectId,
+          triggeredBy: USER_ID,
+          reason: 'admin_dashboard',
+        },
+        { enqueueSuggestionJob: replay.enqueueSuggestionJob },
+      ),
     );
 
-    expect(result).toMatchObject({ evidenceBackfilled: 1 });
+    expect(result).toMatchObject({ evidenceBackfilled: 1, plannerReplayEnqueued: 1 });
+    expect(replay.calls.map((call) => call.data.rawEventId)).toEqual([visibleRawEventId]);
     await expect(
       db
         .select()
@@ -572,19 +792,24 @@ describe('processReconciliationJob', () => {
       visibilityFloor: 'team',
       dedupeKey: 'legacy-null-association',
     });
+    const replay = suggestionReplayRecorder();
 
     const result = expectScopedResult(
-      await processReconciliationJob(db as never, {
-        kind: 'scope_reconcile',
-        teamId: TEAM_ID,
-        scope: 'cluster',
-        targetId: clusterId,
-        triggeredBy: USER_ID,
-        reason: 'admin_dashboard',
-      }),
+      await processReconciliationJob(
+        db as never,
+        {
+          kind: 'scope_reconcile',
+          teamId: TEAM_ID,
+          scope: 'cluster',
+          targetId: clusterId,
+          triggeredBy: USER_ID,
+          reason: 'admin_dashboard',
+        },
+        { enqueueSuggestionJob: replay.enqueueSuggestionJob },
+      ),
     );
 
-    expect(result).toMatchObject({ evidenceBackfilled: 1 });
+    expect(result).toMatchObject({ evidenceBackfilled: 1, plannerReplayEnqueued: 1 });
     const evidenceRows = await db
       .select()
       .from(reconciliationEvidence)
@@ -641,21 +866,28 @@ describe('processReconciliationJob', () => {
       dedupeKey: 'scope-repair-approval-output',
       status: 'pending',
     });
+    const replay = suggestionReplayRecorder();
 
     const result = expectScopedResult(
-      await processReconciliationJob(db as never, {
-        kind: 'scope_reconcile',
-        teamId: TEAM_ID,
-        scope: 'object',
-        targetId: objectId,
-        triggeredBy: USER_ID,
-        reason: 'admin_dashboard',
-      }),
+      await processReconciliationJob(
+        db as never,
+        {
+          kind: 'scope_reconcile',
+          teamId: TEAM_ID,
+          scope: 'object',
+          targetId: objectId,
+          triggeredBy: USER_ID,
+          reason: 'admin_dashboard',
+        },
+        { enqueueSuggestionJob: replay.enqueueSuggestionJob },
+      ),
     );
 
     expect(result).toMatchObject({
       evidenceBackfilled: 1,
+      outputRepairCount: 0,
       projectionRepairCount: 1,
+      plannerReplayEnqueued: 1,
       outputCount: 1,
     });
     const evidenceRows = await db

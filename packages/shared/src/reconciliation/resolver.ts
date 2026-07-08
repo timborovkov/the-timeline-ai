@@ -52,6 +52,8 @@ export interface ResolveEvidenceAssociationWrite {
   associationId: string;
   outputId: string | null;
   createdCluster: boolean;
+  associationCreated: boolean;
+  outputRepaired: boolean;
 }
 
 export interface ResolveEvidenceAssociationSkip {
@@ -63,6 +65,7 @@ export interface ResolveEvidenceAssociationSkip {
     | 'ambiguous_anchor_match';
   clusterIds?: string[];
   outputId?: string | null;
+  outputRepaired?: boolean;
 }
 
 export interface ResolveEvidenceAssociationsResult {
@@ -172,7 +175,7 @@ export async function resolveEvidenceAssociations(
 
     const matchedClusterIds = await findMatchingClusterIds(input.db, input.teamId, anchors);
     if (matchedClusterIds.length > 1) {
-      const outputId = await emitConflictOutput(input.db, {
+      const output = await emitConflictOutput(input.db, {
         teamId: input.teamId,
         runId: await getRunId(),
         evidence,
@@ -185,7 +188,8 @@ export async function resolveEvidenceAssociations(
         evidenceId,
         reason: 'ambiguous_anchor_match',
         clusterIds: matchedClusterIds,
-        outputId,
+        outputId: output?.id ?? null,
+        outputRepaired: output?.repaired ?? false,
       });
       continue;
     }
@@ -226,7 +230,7 @@ export async function resolveEvidenceAssociations(
         input.associationPolicyVersion ?? DEFAULT_ASSOCIATION_POLICY_VERSION,
     });
 
-    await input.db
+    const [insertedAssociation] = await input.db
       .insert(artifactEvidenceAssociations)
       .values({
         teamId: input.teamId,
@@ -260,22 +264,27 @@ export async function resolveEvidenceAssociations(
         },
         dedupeKey,
       })
-      .onConflictDoNothing();
+      .onConflictDoNothing()
+      .returning({ id: artifactEvidenceAssociations.id });
 
-    const [association] = await input.db
-      .select({ id: artifactEvidenceAssociations.id })
-      .from(artifactEvidenceAssociations)
-      .where(
-        and(
-          eq(artifactEvidenceAssociations.teamId, input.teamId),
-          eq(artifactEvidenceAssociations.dedupeKey, dedupeKey),
-        ),
-      )
-      .limit(1);
+    const association =
+      insertedAssociation ??
+      (
+        await input.db
+          .select({ id: artifactEvidenceAssociations.id })
+          .from(artifactEvidenceAssociations)
+          .where(
+            and(
+              eq(artifactEvidenceAssociations.teamId, input.teamId),
+              eq(artifactEvidenceAssociations.dedupeKey, dedupeKey),
+            ),
+          )
+          .limit(1)
+      )[0];
 
     if (association) {
       const sourceRefs = sourceRefsForEvidence(evidence, association.id);
-      const outputId = await emitObservedAssociationOutput(input.db, {
+      const output = await emitObservedAssociationOutput(input.db, {
         teamId: input.teamId,
         runId: await getRunId(),
         evidence,
@@ -295,8 +304,10 @@ export async function resolveEvidenceAssociations(
         rawEventId: evidence.rawEventId,
         clusterId,
         associationId: association.id,
-        outputId,
+        outputId: output?.id ?? null,
         createdCluster,
+        associationCreated: Boolean(insertedAssociation),
+        outputRepaired: output?.repaired ?? false,
       });
     }
   }
@@ -368,10 +379,31 @@ async function emitObservedAssociationOutput(
     createdCluster: boolean;
     associationPolicyVersion: string;
   },
-): Promise<string | null> {
+): Promise<{ id: string; repaired: boolean } | null> {
   const sourcePayloadRefs = input.evidence.sourcePayloadRef
     ? [input.evidence.sourcePayloadRef]
     : [];
+  const dedupeKey = buildOutputDedupeKey({
+    teamId: input.teamId,
+    clusterId: input.clusterId,
+    targetKind: 'cluster_identity',
+    operation: 'link',
+    targetId: null,
+    targetIdentity: `${input.clusterId}:${stableEvidenceSourceIdentity(input.evidence)}:${input.role}:${input.associationSource}`,
+    sourceRefs: input.sourceRefs,
+    authorityPolicyVersion: input.associationPolicyVersion,
+    plannerVersion: RESOLVER_PLANNER_VERSION,
+  });
+  const [existing] = await db
+    .select({ id: reconciliationOutputs.id, status: reconciliationOutputs.status })
+    .from(reconciliationOutputs)
+    .where(
+      and(
+        eq(reconciliationOutputs.teamId, input.teamId),
+        eq(reconciliationOutputs.dedupeKey, dedupeKey),
+      ),
+    )
+    .limit(1);
   const [output] = await db
     .insert(reconciliationOutputs)
     .values({
@@ -406,17 +438,7 @@ async function emitObservedAssociationOutput(
       visibilityFloor: input.evidence.visibility,
       visibilityFloorOwnerUserId: input.evidence.visibilityOwnerUserId,
       visibilityFloorUserIds: input.evidence.visibilityUserIds,
-      dedupeKey: buildOutputDedupeKey({
-        teamId: input.teamId,
-        clusterId: input.clusterId,
-        targetKind: 'cluster_identity',
-        operation: 'link',
-        targetId: null,
-        targetIdentity: `${input.clusterId}:${stableEvidenceSourceIdentity(input.evidence)}:${input.role}:${input.associationSource}`,
-        sourceRefs: input.sourceRefs,
-        authorityPolicyVersion: input.associationPolicyVersion,
-        plannerVersion: RESOLVER_PLANNER_VERSION,
-      }),
+      dedupeKey,
       status: 'applied',
     })
     .onConflictDoUpdate({
@@ -428,7 +450,7 @@ async function emitObservedAssociationOutput(
       },
     })
     .returning({ id: reconciliationOutputs.id });
-  return output?.id ?? null;
+  return output ? { id: output.id, repaired: existing?.status !== 'applied' } : null;
 }
 
 async function emitConflictOutput(
@@ -441,12 +463,33 @@ async function emitConflictOutput(
     clusterIds: string[];
     associationPolicyVersion: string;
   },
-): Promise<string | null> {
+): Promise<{ id: string; repaired: boolean } | null> {
   const sourceRefs = sourceRefsForEvidence(input.evidence);
   const sourcePayloadRefs = input.evidence.sourcePayloadRef
     ? [input.evidence.sourcePayloadRef]
     : [];
   const clusterIds = [...input.clusterIds].sort();
+  const dedupeKey = buildOutputDedupeKey({
+    teamId: input.teamId,
+    clusterId: null,
+    targetKind: 'cluster_identity',
+    operation: 'link',
+    targetId: null,
+    targetIdentity: `ambiguous:${stableEvidenceSourceIdentity(input.evidence)}:${clusterIds.join(':')}`,
+    sourceRefs,
+    authorityPolicyVersion: input.associationPolicyVersion,
+    plannerVersion: RESOLVER_PLANNER_VERSION,
+  });
+  const [existing] = await db
+    .select({ id: reconciliationOutputs.id, status: reconciliationOutputs.status })
+    .from(reconciliationOutputs)
+    .where(
+      and(
+        eq(reconciliationOutputs.teamId, input.teamId),
+        eq(reconciliationOutputs.dedupeKey, dedupeKey),
+      ),
+    )
+    .limit(1);
   const [output] = await db
     .insert(reconciliationOutputs)
     .values({
@@ -478,17 +521,7 @@ async function emitConflictOutput(
       visibilityFloor: input.evidence.visibility,
       visibilityFloorOwnerUserId: input.evidence.visibilityOwnerUserId,
       visibilityFloorUserIds: input.evidence.visibilityUserIds,
-      dedupeKey: buildOutputDedupeKey({
-        teamId: input.teamId,
-        clusterId: null,
-        targetKind: 'cluster_identity',
-        operation: 'link',
-        targetId: null,
-        targetIdentity: `ambiguous:${stableEvidenceSourceIdentity(input.evidence)}:${clusterIds.join(':')}`,
-        sourceRefs,
-        authorityPolicyVersion: input.associationPolicyVersion,
-        plannerVersion: RESOLVER_PLANNER_VERSION,
-      }),
+      dedupeKey,
       status: 'pending',
     })
     .onConflictDoUpdate({
@@ -500,7 +533,7 @@ async function emitConflictOutput(
       },
     })
     .returning({ id: reconciliationOutputs.id });
-  return output?.id ?? null;
+  return output ? { id: output.id, repaired: existing?.status !== 'pending' } : null;
 }
 
 function groupAnchorsByEvidenceId(rows: AnchorRow[]): Map<string, AnchorRow[]> {

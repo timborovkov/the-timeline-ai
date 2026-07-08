@@ -272,11 +272,6 @@ export function ObjectCleanupList({ rows, typeLabels, pageInfo, sectionMoreHrefs
                                 · {object.dueAt.toLocaleDateString('en-CA')}
                               </span>
                             ) : null}
-                            {object.agentSuggested && object.status === 'suggested' ? (
-                              <span className="rounded-sm border border-signal/40 bg-signal-soft px-1.5 py-0.5 text-signal">
-                                suggested
-                              </span>
-                            ) : null}
                           </span>
                         </div>
                       </li>

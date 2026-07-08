@@ -58,6 +58,7 @@ export interface ObjectRow {
   ownerUserId: string | null;
   assigneeUserId: string | null;
   dueAt: Date | null;
+  /** Legacy compatibility field; shared read models suppress stored true values. */
   agentSuggested: boolean;
   archivedAt: Date | null;
   aliases: string[];

@@ -1769,7 +1769,6 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
             owner_user_id: result.ownerUserId,
             assignee_user_id: result.assigneeUserId,
             due_at: result.dueAt?.toISOString() ?? null,
-            agent_suggested: result.agentSuggested,
             archived: result.archivedAt !== null,
             notes: result.notes.slice(0, 10).map((n) => ({
               id: n.id,

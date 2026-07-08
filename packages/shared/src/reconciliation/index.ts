@@ -13,8 +13,10 @@ export type {
   ReconciliationDashboardRunHistory,
   ReconciliationDashboardRunHistoryInput,
   ReconciliationDashboardSnapshot,
+  ReconciliationDashboardLegacyProvenanceStats,
 } from '#src/reconciliation/dashboard.js';
 export {
+  auditLegacyProvenanceCutover,
   getReconciliationClusterDetail,
   getReconciliationDashboardSnapshot,
 } from '#src/reconciliation/dashboard.js';

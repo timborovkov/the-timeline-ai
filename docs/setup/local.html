@@ -10,7 +10,7 @@
     <a class="skip" href="#main">Skip to content</a>
     <main id="main">
       <h1>Local development</h1>
-      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-07-03</span></div>
+      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-07-08</span></div>
       <p class="tldr">
         Bring up the full Timeline stack on your machine with Docker Compose for infra and
         <code>pnpm dev</code> for app + worker hot reload.
@@ -168,7 +168,8 @@ pnpm --filter @timeline/worker reconciliation-evidence -- --team=&lt;uuid&gt; --
 pnpm --filter @timeline/worker reconciliation-evidence -- --team=&lt;uuid&gt; --mode=audit --fail-on-release-gate
 # optional: repeat --allow-degraded-source=&lt;event_source&gt; for known historical degraded replay rows
 pnpm --filter @timeline/worker reconciliation-evidence -- --team=&lt;uuid&gt; --mode=backfill --dry-run --page-size=500
-pnpm --filter @timeline/worker reconciliation-production-sampling -- --input=/tmp/eval-run --out=/tmp/reconciliation-production-sampling.json --run-kind=closed_beta --fail-on-failures
+TIMELINE_ENV_FILE=/path/to/.env pnpm --filter @timeline/worker reconciliation-legacy-provenance -- --team=&lt;uuid&gt; --fail-on-legacy
+TIMELINE_ENV_FILE=/path/to/.env pnpm --filter @timeline/worker reconciliation-production-sampling -- --input=/tmp/eval-run --out=/tmp/reconciliation-production-sampling.json --team=&lt;uuid&gt; --run-kind=closed_beta --fail-on-failures
 # production sampling accepts repeated --input paths; --run-kind defaults to manual
 # and may be manual, closed_beta, or post_deploy. Use --fail-on-failures for
 # release gates that should stop on any failed sample. Repeat

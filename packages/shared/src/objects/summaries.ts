@@ -14,8 +14,9 @@ import {
   objectSummaryRuns,
   rawEvents,
   reconciliationEvidence,
+  reconciliationOutputs,
 } from '@timeline/db';
-import { and, desc, eq, inArray, isNull, ne, or, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
 import { z } from 'zod';
 
 import type { TeamScopeCore } from '#src/team-scope.js';
@@ -420,19 +421,11 @@ async function buildObjectSummaryPacket(
         changedAt: objectChanges.changedAt,
       })
       .from(objectChanges)
-      .leftJoin(rawEvents, eq(rawEvents.id, objectChanges.sourceEventId))
       .where(
         and(
           eq(objectChanges.teamId, scope.teamId),
           eq(objectChanges.entityId, entityId),
-          or(
-            isNull(objectChanges.sourceEventId),
-            and(
-              eq(rawEvents.teamId, scope.teamId),
-              eq(rawEvents.visibility, 'team'),
-              sql`COALESCE(${rawEvents.sourceMetadata} ->> 'deleted', 'false') <> 'true'`,
-            ),
-          ),
+          isNull(objectChanges.sourceEventId),
         ),
       )
       .orderBy(desc(objectChanges.changedAt), desc(objectChanges.id))
@@ -817,18 +810,35 @@ async function objectIdsTouchedByRawEvent(
   teamId: string,
   rawEventId: string,
 ): Promise<string[]> {
-  const [factRows, changeRows] = await Promise.all([
+  const [factRows, outputRows] = await Promise.all([
     db
       .select({ entityId: factEntities.entityId })
       .from(factEntities)
       .innerJoin(facts, eq(facts.id, factEntities.factId))
       .where(and(eq(facts.teamId, teamId), eq(facts.rawEventId, rawEventId))),
     db
-      .select({ entityId: objectChanges.entityId })
-      .from(objectChanges)
-      .where(and(eq(objectChanges.teamId, teamId), eq(objectChanges.sourceEventId, rawEventId))),
+      .select({ entityId: entities.id })
+      .from(reconciliationOutputs)
+      .innerJoin(
+        entities,
+        and(eq(entities.id, reconciliationOutputs.targetId), eq(entities.teamId, teamId)),
+      )
+      .where(
+        and(
+          eq(reconciliationOutputs.teamId, teamId),
+          eq(reconciliationOutputs.status, 'applied'),
+          inArray(reconciliationOutputs.targetKind, ['object', 'task']),
+          isNull(entities.archivedAt),
+          isNull(entities.mergedIntoId),
+          sql`EXISTS (
+            SELECT 1
+            FROM jsonb_array_elements(${reconciliationOutputs.sourceRefs}) AS source_ref
+            WHERE source_ref ->> 'rawEventId' = ${rawEventId}
+          )`,
+        ),
+      ),
   ]);
-  return [...new Set([...factRows, ...changeRows].map((row) => row.entityId))];
+  return [...new Set([...factRows, ...outputRows].map((row) => row.entityId))];
 }
 
 export async function invalidateObjectSummariesForRawEvent(

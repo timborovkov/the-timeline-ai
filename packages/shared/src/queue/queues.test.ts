@@ -557,7 +557,7 @@ describe('queue wrappers', () => {
         name: 'reconciliation',
         opts: {
           jobId:
-            'scope_reconcile|22222222-2222-4222-8222-222222222222|object|33333333-3333-4333-8333-333333333333|manual|admin_dashboard',
+            'scope_reconcile|22222222-2222-4222-8222-222222222222|object|33333333-3333-4333-8333-333333333333|manual|admin_dashboard|default-planner-replay|missing|all-sources|unbounded-start|unbounded-end',
         },
       }),
     ]);

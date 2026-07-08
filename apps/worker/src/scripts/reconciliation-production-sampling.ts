@@ -3,6 +3,7 @@
  *
  * Usage:
  *   pnpm --filter @timeline/worker reconciliation-production-sampling -- --input=/tmp/eval-run --out=/tmp/report.json
+ *   TIMELINE_ENV_FILE=/path/to/.env pnpm --filter @timeline/worker reconciliation-production-sampling -- --input=/tmp/eval-run --out=/tmp/report.json --team=<uuid>
  *
  * Optional:
  *   --input=/path     Repeatable. Accepts live-eval run directories or JSON files.
@@ -11,6 +12,7 @@
  *   --fail-on-failures    Exit 1 when the report contains any failed sample.
  *   --confirm-fixture=<caseName>:<packetFingerprint>   Repeatable confirmed fixture candidate.
  */
+import { loadEnvFile } from 'node:process';
 import { pathToFileURL } from 'node:url';
 
 import { closeDb, getDb, type Db } from '@timeline/db';
@@ -163,6 +165,7 @@ export async function runReconciliationProductionSamplingCli(
 }
 
 async function main(): Promise<void> {
+  loadOptionalEnvFile();
   let args: Args;
   try {
     args = parseArgs();
@@ -186,6 +189,12 @@ async function main(): Promise<void> {
   } finally {
     await closeDb();
   }
+}
+
+function loadOptionalEnvFile(): void {
+  const envFile =
+    process.env.TIMELINE_ENV_FILE ?? process.env.RECONCILIATION_PRODUCTION_SAMPLING_ENV_FILE;
+  if (envFile?.trim()) loadEnvFile(envFile);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

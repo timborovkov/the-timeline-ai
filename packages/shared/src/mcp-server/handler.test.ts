@@ -576,13 +576,13 @@ describe('handleMcpRequest', () => {
       count: 1,
       tasks: [expect.objectContaining({ id: task.id, name: 'Ship expanded outbound MCP' })],
     });
-    await expect(
-      callTool(db, 'timeline.get_object', { idOrName: 'Acme Corp' }),
-    ).resolves.toMatchObject({
+    const objectResult = await callTool(db, 'timeline.get_object', { idOrName: 'Acme Corp' });
+    expect(objectResult).toMatchObject({
       found: true,
       name: 'Acme Corp',
       type: 'company',
     });
+    expect(objectResult).not.toHaveProperty('agent_suggested');
   });
 
   it('exposes team-level calendar retrieval through bearer auth', async () => {

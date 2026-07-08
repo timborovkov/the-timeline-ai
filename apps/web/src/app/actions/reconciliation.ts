@@ -24,19 +24,56 @@ const sourceSchema = z
   .optional()
   .or(z.literal('').transform(() => undefined));
 
-const queueReconciliationSchema = z.object({
-  mode: z.enum(['audit', 'backfill', 'scope']),
-  source: sourceSchema,
-  dryRun: z
-    .enum(['true', 'false'])
-    .optional()
-    .transform((value) => value !== 'false'),
-  scope: z.enum(['team', 'object', 'cluster']).optional(),
-  targetId: z.preprocess(
-    (value) => (typeof value === 'string' && value.trim() === '' ? undefined : value),
-    z.uuid().optional(),
-  ),
-});
+const optionalDateTimeSchema = z.preprocess(
+  (value) => {
+    if (typeof value !== 'string') return undefined;
+    const trimmed = value.trim();
+    if (trimmed.length === 0) return undefined;
+    const date = new Date(trimmed);
+    return Number.isNaN(date.getTime()) ? value : date.toISOString();
+  },
+  z
+    .custom<string>(
+      (value) => typeof value === 'string' && !Number.isNaN(new Date(value).getTime()),
+    )
+    .optional(),
+);
+
+const queueReconciliationSchema = z
+  .object({
+    mode: z.enum(['audit', 'backfill', 'scope']),
+    source: sourceSchema,
+    dryRun: z
+      .enum(['true', 'false'])
+      .optional()
+      .transform((value) => value !== 'false'),
+    scope: z.enum(['team', 'object', 'cluster']).optional(),
+    targetId: z.preprocess(
+      (value) => (typeof value === 'string' && value.trim() === '' ? undefined : value),
+      z.uuid().optional(),
+    ),
+    plannerReplayLimit: z.preprocess(
+      (value) => (typeof value === 'string' && value.trim() === '' ? undefined : Number(value)),
+      z.number().int().min(0).max(1000).optional(),
+    ),
+    plannerReplayMode: z.enum(['missing', 'all']).optional(),
+    plannerReplaySource: sourceSchema,
+    plannerReplayOccurredAfter: optionalDateTimeSchema,
+    plannerReplayOccurredBefore: optionalDateTimeSchema,
+  })
+  .superRefine((value, ctx) => {
+    if (
+      value.plannerReplayOccurredAfter &&
+      value.plannerReplayOccurredBefore &&
+      new Date(value.plannerReplayOccurredAfter) > new Date(value.plannerReplayOccurredBefore)
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['plannerReplayOccurredBefore'],
+        message: 'Planner replay end must be after the start',
+      });
+    }
+  });
 
 export async function queueReconciliationJobAction(
   _prev: QueueReconciliationState,
@@ -54,6 +91,11 @@ export async function queueReconciliationJobAction(
       dryRun: formData.get('dryRun') ?? 'true',
       scope: formData.get('scope') ?? undefined,
       targetId: formData.get('targetId') ?? '',
+      plannerReplayLimit: formData.get('plannerReplayLimit') ?? '',
+      plannerReplayMode: formData.get('plannerReplayMode') ?? undefined,
+      plannerReplaySource: formData.get('plannerReplaySource') ?? '',
+      plannerReplayOccurredAfter: formData.get('plannerReplayOccurredAfter') ?? '',
+      plannerReplayOccurredBefore: formData.get('plannerReplayOccurredBefore') ?? '',
     });
     if (!parsed.success) return { error: 'Invalid reconciliation job request' };
     const reconcileScopeKind = parsed.data.mode === 'scope' ? (parsed.data.scope ?? 'team') : null;
@@ -72,6 +114,21 @@ export async function queueReconciliationJobAction(
           ...(parsed.data.targetId === undefined ? {} : { targetId: parsed.data.targetId }),
           triggeredBy: session.user.id,
           reason: 'admin_dashboard',
+          ...(parsed.data.plannerReplayLimit === undefined
+            ? {}
+            : { plannerReplayLimit: parsed.data.plannerReplayLimit }),
+          ...(parsed.data.plannerReplayMode === undefined
+            ? {}
+            : { plannerReplayMode: parsed.data.plannerReplayMode }),
+          ...(parsed.data.plannerReplaySource === undefined
+            ? {}
+            : { plannerReplaySource: parsed.data.plannerReplaySource }),
+          ...(parsed.data.plannerReplayOccurredAfter === undefined
+            ? {}
+            : { plannerReplayOccurredAfter: parsed.data.plannerReplayOccurredAfter }),
+          ...(parsed.data.plannerReplayOccurredBefore === undefined
+            ? {}
+            : { plannerReplayOccurredBefore: parsed.data.plannerReplayOccurredBefore }),
         });
         revalidatePath('/app/team/reconciliation');
         return {

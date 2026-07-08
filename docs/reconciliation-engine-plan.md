@@ -1,6 +1,6 @@
 # Reconciliation Engine Architecture Plan
 
-Generated on 2026-07-03.
+Generated on 2026-07-03. Last updated 2026-07-08.
 
 ## Goal
 
@@ -207,8 +207,13 @@ server/tool/call metadata, inline source snapshots when the result fits the
 safe payload cap, standard raw-event embed jobs for retrieval, and normalized
 reconciliation evidence with MCP-specific anchors plus provider-object,
 provider-event, and URL anchors extracted from structured provider-shaped MCP
-snapshots. Phase 2 now also includes a shared coverage/backfill module and the
-worker command
+snapshots. Phase 2 now also includes a shared coverage/backfill module, static
+cutover contracts that fail when a production `raw_events` writer is added
+without reconciliation evidence and replay-payload snapshot paths, require
+explicit replay, dedupe, source-payload, and visibility fields on every
+evidence writer, require explicit visibility envelopes on every
+association/output writer, require output writers to carry replay payload refs
+alongside source refs, and the worker command
 `pnpm --filter @timeline/worker reconciliation-evidence -- --team=<uuid>
 --mode=audit|backfill`, so historical rebuildability can be measured before it
 is claimed. Audit reports now include a machine-checkable `releaseGate` that
@@ -220,8 +225,8 @@ idempotent job keys and durable `reconciliation_runs` metrics, so replay work
 can run through the same BullMQ worker surface as the rest of the product
 pipeline instead of only through an operator script. The Team → Reconciliation admin surface now reads the same scoped
 dashboard snapshot to show evidence coverage, run logs, output status,
-projection outbox health, cluster/association counts, and source-scoped
-audit/backfill queue controls while filtering coverage, run logs, projection
+projection outbox health, cluster/association counts, legacy provenance cutover
+counts, and source-scoped audit/backfill queue controls while filtering coverage, run logs, projection
 outbox health, outputs, associations, and cluster detail through the admin
 viewer's visibility envelope. Phase 3 has started with an
 anchor-based resolver that consumes
@@ -252,14 +257,17 @@ helper so new generic artifact attachments write `artifact_evidence_associations
 with source refs, reused or normalized evidence rows, and visibility floors
 instead of creating fresh `artifact_cluster_members` rows. Integration sync keeps
 its richer association/output projection writer for provider-owned object maps,
-while the legacy member table is now read/backfill compatibility only. Phase 6
+while the legacy member table is now historical backfill compatibility only. Phase 6
 has started with read compatibility for the new association graph: artifact
 evidence listing, timeline semantic search, and object Connected Work hydrate
-from `artifact_evidence_associations` as well as legacy members, pending
-reconciliation outputs can appear as related approval work, and association
-visibility floors are enforced before evidence reaches artifact evidence
-listings, search results, object detail context, or the Team → Reconciliation
-cluster detail drilldown. Phase 8 has started by cutting accepted object/task suggestion
+from `artifact_evidence_associations`, pending reconciliation outputs can appear
+as related approval work, and association visibility floors are enforced before
+evidence reaches artifact evidence listings, search results, object detail
+context, or the Team → Reconciliation cluster detail drilldown. Legacy member
+rows are retained for historical backfill cleanup but are no longer promoted
+into artifact evidence listings, timeline search artifact context, or object
+Connected Work links; normal shared application modules no longer import the
+legacy member table outside schema/tests. Phase 8 has started by cutting accepted object/task suggestion
 creates off the canonical `entities.source_event_id` write path and shared
 approval projection now strips legacy `sourceEventId` payload hints instead of
 copying or fallback-normalizing them into proposal payloads. The projection
@@ -280,14 +288,23 @@ changed-field/archive payloads for updates, merge payloads for losers/aliases,
 relationship endpoint payloads, note/identity payloads, manual board item
 add/update/remove payloads, and source-derived visibility floors, with team
 floors only for team-visible system writes;
+exported object/board direct-write source-context builders now take
+`sourceRawEventId` rather than `sourceEventId`, so source raw-event evidence
+cannot be mistaken for a legacy canonical provenance pointer;
 new direct object-change audit rows keep `object_changes.source_event_id=NULL`
 and rely on those reconciliation outputs for canonical provenance;
+shared object and board read models also suppress stored legacy
+`entities.agent_suggested=true` values so canonical object/task/board UI does
+not promote the old proposal flag, and task/object cleanup components no longer
+render legacy suggested badges from that field;
 legacy suggested `__create__` rows remain acceptance-compatible only for
 migration. Board membership/item approvals no longer stamp
 `board_item_changes.source_event_id` for new suggested rows; board history
 hydrates accepted approval evidence from reconciliation output source refs via
-the suggestion projection, with legacy direct pointers remaining readable only
-for older rows. Object provenance follows the same source-ref-first rule for
+the suggestion projection, while legacy direct pointers are no longer promoted
+into board provenance evidence. Static cutover contracts now also fail any
+canonical object, object-change, or board-history write that reintroduces a
+non-null legacy provenance pointer or `agentSuggested` object flag. Object provenance follows the same source-ref-first rule for
 accepted object/task suggestions and fails closed instead of showing partial
 evidence when a viewer cannot see every raw event cited by the output. Manual
 board add/update/remove history rows keep `source_event_id=NULL`; the canonical
@@ -561,8 +578,8 @@ Replace ad hoc `artifact_cluster_members` usage with a richer association model.
 
 Current `artifact_cluster_members` can be migrated into this shape and removed
 from application code. New application writes now target
-`artifact_evidence_associations`; legacy member rows remain only for read
-compatibility and historical backfill until the migration retires the table.
+`artifact_evidence_associations`; legacy member rows remain only for historical
+backfill until the migration retires the table.
 
 Constraints:
 
@@ -728,7 +745,19 @@ Migration rules:
   only for backward compatibility, but shared projection must strip them before
   storage and they must not be the authoritative provenance system.
 - Definition of Done requires removing legacy write paths and dropping or
-  deprecating the legacy columns after backfill verification.
+  deprecating the legacy columns after backfill verification. The Team →
+  Reconciliation dashboard now exposes that verification as counts of remaining
+  `entities.source_event_id`, `entities.agent_suggested=true`,
+  `object_changes.source_event_id`, and `board_item_changes.source_event_id`
+  rows, and operators can run
+  `TIMELINE_ENV_FILE=/path/to/.env pnpm --filter @timeline/worker
+  reconciliation-legacy-provenance -- --team=<uuid> --fail-on-legacy` to make
+  those counts a release-blocking cutover gate. Migration
+  `0056_legacy_provenance_cutover_guards.sql` formally deprecates the legacy
+  columns with `NOT VALID` check constraints: historical rows remain auditable,
+  but new writes cannot reintroduce object `source_event_id`, object
+  `agent_suggested=true`, object-change `source_event_id`, or board-history
+  `source_event_id` provenance.
 
 ## Engine Pipeline
 
@@ -1176,6 +1205,21 @@ Phase 1 behavior:
   with 7/7 passed, pass rate 1.0, and zero required-object, suggestion,
   artifact-kind, citation, visibility, authority-policy, or fixture-candidate
   triage misses.
+- Latest branch live check, rerun on July 8, 2026 UTC with
+  `RECONCILIATION_LIVE_ENV_FILE=/Users/timborovkov/Desktop/Projects/the-timeline-ai/.env`,
+  passed 11/11 Vitest checks through the real `llm.chatStructured()` path. The
+  manifest at
+  `/tmp/timeline-reconciliation-live-eval/2026-07-08T10-18-13-811Z/manifest.json`
+  records 7/7 planner cases passed, 0 failed, and average judge score 1.0.
+  Closed-beta production sampling over the same artifact directory wrote
+  `/tmp/timeline-reconciliation-live-eval/2026-07-08T10-18-13-811Z/production-sampling-report.json`
+  with 7/7 samples passed, pass rate 1.0, and no fixture candidates.
+  The same artifact directory was also persisted as a dashboard-visible
+  closed-beta production-sampling reconciliation run on the migrated and seeded
+  local Timeline database at `localhost:55432`; the persisted report is
+  `/tmp/timeline-reconciliation-live-eval/2026-07-08T10-18-13-811Z/production-sampling-report-persisted.json`
+  with run ID `a0e91444-91cf-44c2-a561-9fe63014b3aa`, 7/7 samples passed, pass
+  rate 1.0, and no fixture candidates.
 - Calls the real `llm.chatStructured()` path when
   `RECONCILIATION_LIVE_EVAL=1` is set.
 - Can load a local env file before the live call with
@@ -1573,7 +1617,11 @@ Exit criteria:
      changed-field/archive/merge/relationship/note/identity/board payloads, and
      source-derived visibility floors, with team floors only for team-visible
      system writes, while keeping canonical object and board-history legacy
-     provenance empty for new writes.
+     provenance empty for new writes. Direct-write source contexts fail closed
+     when the cited raw event is missing, cross-team, or lacks a replay payload
+     ref; their exported object/board builder inputs use `sourceRawEventId`
+     terminology so legacy single-event pointers cannot become canonical output
+     provenance.
 4. Convert integration direct object updates into authoritative outputs only
    where policy allows.
    - Provider `objectMap` sync now treats object maps as artifact evidence
@@ -1652,20 +1700,37 @@ Exit criteria:
      `artifact_evidence_associations` when the associated cluster is tied to the
      object, and surfaces pending approval-required `reconciliation_outputs`
      that target or cite the object.
+   - Link artifacts in Connected Work also read
+     `artifact_evidence_associations`; legacy `artifact_cluster_members` rows no
+     longer create visible link context.
    - Association/output visibility and `visibility_floor` are enforced before
      rows can appear on the object detail surface.
 3. Update provenance views to read the new association model.
    - Artifact evidence listing and timeline search now read
      `artifact_evidence_associations` without requiring legacy
-     `artifact_cluster_members` rows.
+     `artifact_cluster_members` rows. Artifact evidence listing suppresses
+     legacy member-only rows instead of treating them as current provenance, and
+     timeline search suppresses legacy member-only artifact clusters instead of
+     hydrating them as related work.
    - Association visibility and `visibility_floor` are enforced during artifact
      evidence listing and search hydration so private/specific-user evidence
      cannot leak through a team-visible source event.
    - Object detail provenance and board item history now hydrate accepted
      suggestion evidence from the referenced reconciliation output
-     `source_refs` before consulting legacy payload/direct pointers. If an
-     output cites raw events hidden from the current viewer, these views show no
+     `source_refs`; board history suppresses legacy direct `source_event_id`
+     pointers instead of promoting them into provenance evidence. If an output
+     cites raw events hidden from the current viewer, these views show no
      partial provenance for that item.
+   - Timeline impact hydration now maps object/task impact from applied
+     reconciliation output source refs and approval evidence, not legacy
+     `entities.source_event_id` or `object_changes.source_event_id` pointers.
+   - Object summary source windows and raw-event invalidation now use
+     sourceEventId-null object history plus applied reconciliation output
+     `source_refs`; legacy `object_changes.source_event_id` pointers no longer
+     feed summary context or decide which summaries refresh.
+   - Artifact preview for object changes links to the object record and requires
+     sourceEventId-null object history; it no longer promotes legacy object
+     change source pointers into timeline citations.
 4. Add reconciliation dashboard and run logs.
    - Initial Team → Reconciliation page is admin-only and shows evidence
      coverage, release-gate pass/fail status, degraded replay rows, run/output
@@ -1687,7 +1752,12 @@ Exit criteria:
    - The dashboard now derives operator diagnostics from
      `reconciliation_outputs`: open conflicts, direct writes by source,
      approval acceptance/rejection/open counts, top no-action reasons, and
-     ambiguity by source.
+     ambiguity by source. It also reports legacy provenance cutover counts for
+     object source pointers, object `agent_suggested` flags, object-change
+     source pointers, and board-history source pointers so the column
+     drop/deprecation gate is measurable. The same query powers the
+     `reconciliation-legacy-provenance` worker CLI, whose `--fail-on-legacy`
+     flag exits non-zero while any legacy rows remain.
 5. Add manual "Reconcile" action for cluster/object/team scopes.
    - Admins can now queue manual team/object/cluster scoped repair jobs from
      Team → Reconciliation. The worker validates object and cluster targets
@@ -1697,11 +1767,27 @@ Exit criteria:
      through anchor resolution, repairs missing approval projections from
      repairable approval outputs, and records an idempotent completed
      `manual_repair` `reconciliation_runs` row with post-repair
-     output/association/cluster counts plus evidence/association/projection
-     repair counts.
+     output/association/cluster counts plus evidence, association,
+     resolver-output, and projection repair counts. Repair metrics count only
+     rows that were newly backfilled, created, or moved from an unhealthy status;
+     idempotent replays that merely revalidate existing evidence graph rows
+     report zero repairs while still reporting the post-repair totals.
      Object-scoped repair also sweeps raw events linked to the object through
      `source_metadata.entity_id`, so object evidence can be backfilled before
      any reconciliation association or output exists.
+   - Team, object, and cluster scoped repair now also queues raw-event
+     suggestion replays for visible text raw events through the existing
+     suggestions worker, using a deterministic manual-reconcile job suffix.
+     Team-scope replay defaults to `plannerReplayMode="missing"`, which skips
+     raw events already stamped with suggestion planner metadata, and is bounded
+     by `plannerReplayLimit` with a conservative default cap so operators can
+     repair missed planner work without queueing the entire historical corpus.
+     Operators can intentionally choose `plannerReplayMode="all"` for a bounded
+     rerun, filter planner replay by raw-event source, and bound replay to an
+     occurred-at time window. The `planner_replay_enqueued` metric reports how many
+     planner/extraction jobs were newly queued, while the suggestion worker
+     remains the single place that calls the LLM planner and writes approval
+     outputs.
    - Approval projection source refs are raw-event stable: one cited raw event
      contributes one dedupe-driving source ref, while source payload refs stay
      on `source_payload_refs` and evidence metadata for replay/debugging.
@@ -1712,6 +1798,8 @@ Exit criteria:
      raw-event/source-payload stable, while their raw-event snapshots carry
      payload digests for replay and eval fixture generation; evidence IDs stay
      in evidence lineage and payload-ref metadata, not the output source-ref key.
+     Replay-degraded legacy raw events without payload refs are rejected before
+     direct-write output emission.
    - Anchor-resolution observed/conflict outputs use stable raw-event or
      source-payload identities for output dedupe, so replaying a later evidence
      row can attach lineage without duplicating the output.
@@ -1743,9 +1831,16 @@ Exit criteria:
 6. Run historical replay against seeded/demo data.
    - Evidence audit/backfill now has both a CLI entrypoint and a queue-backed
      reconciliation worker path. The first worker slice covers replaying raw
-     event evidence rows and manual scoped run records; scoped manual runs now
-     hold per-team/object/cluster advisory locks. Later slices expand the
-     worker to planner and output replay under the same lock boundary.
+     event evidence rows, resolver-emitted observed/conflict outputs, approval
+     projection repair, and manual scoped run records; scoped manual runs now
+     hold per-team/object/cluster advisory locks and persist separate evidence,
+     association, resolver-output, and projection repair counts. Those counts
+     are idempotent repair deltas, not replay-visited row counts. Scoped runs
+     also queue visible raw-event planner replay through the existing suggestion
+     worker and record `planner_replay_enqueued`; team-scope replay defaults to
+     missing-only selection and is bounded by `plannerReplayLimit`. Team,
+     object, and cluster scoped planner replay can also be filtered by raw-event
+     source and occurred-at time window under the same lock boundary.
 7. Run production-sampling evals during closed beta before broad rollout.
    - Initial report builder is exported as
      `@timeline/shared/reconciliation/production-sampling`; it aggregates
@@ -1792,6 +1887,21 @@ Exit criteria:
    remove dead code.
 10. Drop or formally deprecate legacy provenance columns once output/source-ref
     backfill verification passes.
+    - Operators can now run
+      `TIMELINE_ENV_FILE=/path/to/.env pnpm --filter @timeline/worker
+      reconciliation-legacy-provenance -- --team=<uuid> --fail-on-legacy` to
+      fail the cutover while any `entities.source_event_id`,
+      `entities.agent_suggested=true`, `object_changes.source_event_id`, or
+      `board_item_changes.source_event_id` rows remain.
+    - Migration `0056_legacy_provenance_cutover_guards.sql` adds
+      `NOT VALID` check constraints for those columns so the database rejects
+      new legacy provenance writes without blocking existing historical rows
+      that still need audit/backfill.
+    - The July 8, 2026 live local cutover audit ran against the migrated and
+      seeded Timeline Postgres on `localhost:55432` for team
+      `20000000-0000-4000-8000-000000000001` and returned zero legacy rows for
+      object source pointers, object `agent_suggested=true`, object-change
+      source pointers, and board-history source pointers.
 
 Exit criteria:
 
@@ -1812,8 +1922,11 @@ Engineering requirements:
   authority decisions, output application, replay, and eval fixtures.
 - A dedicated reconciliation worker and queue with idempotent job keys,
   retries, evidence replay controls, and per-team/object/cluster locks for
-  manual scoped runs. Broader planner/output replay controls remain later
-  worker slices.
+  manual scoped runs. Scoped runs now report separate evidence, association,
+  resolver-output, and projection repair counts that stay zero on healthy
+  idempotent replays, plus planner replay enqueue counts for scoped raw-event
+  suggestion jobs. Scoped planner replay has bounded `plannerReplayLimit` and
+  `plannerReplayMode` controls plus source and occurred-at time-window filters.
 - Source adapters that emit evidence hints instead of directly creating objects
   or suggestions.
 - A migration from `artifact_cluster_members` to
@@ -1965,7 +2078,9 @@ The architecture is complete only when all of these are true:
   or unauthorized memory changes.
 - Legacy `sourceEventId`/`source_event_id` and `agentSuggested` provenance write
   paths are removed or read-only compatibility projections pending column
-  removal.
+  removal. Database-level `NOT VALID` cutover guards now reject new legacy
+  object/object-change/board-history provenance writes while preserving
+  historical rows for the cutover audit.
 - The old writer code is deleted after migration, not left as compatibility
   handling.
 

@@ -1155,6 +1155,11 @@ export type ReconciliationJobData =
       targetId?: string;
       triggeredBy?: string;
       reason?: string;
+      plannerReplayLimit?: number;
+      plannerReplayMode?: 'missing' | 'all';
+      plannerReplaySource?: string;
+      plannerReplayOccurredAfter?: string;
+      plannerReplayOccurredBefore?: string;
     };
 
 let _reconciliationQueue: TimelineQueue<ReconciliationJobData> | undefined;
@@ -1179,6 +1184,13 @@ function reconciliationJobId(data: ReconciliationJobData): string {
       data.targetId ?? 'team',
       data.triggeredBy ?? 'manual',
       data.reason ?? 'manual',
+      data.plannerReplayLimit === undefined
+        ? 'default-planner-replay'
+        : String(data.plannerReplayLimit),
+      data.plannerReplayMode ?? 'missing',
+      data.plannerReplaySource ?? 'all-sources',
+      data.plannerReplayOccurredAfter ?? 'unbounded-start',
+      data.plannerReplayOccurredBefore ?? 'unbounded-end',
     ]);
   }
 

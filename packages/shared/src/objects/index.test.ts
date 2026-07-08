@@ -37,7 +37,10 @@ import type { ChatStructuredInput, ChatStructuredResult } from '#src/llm/chat.js
 import type { z } from 'zod';
 
 import { buildObjectDirectWriteSourceContext } from '#src/objects/index.js';
-import { generateAndStoreObjectSummary } from '#src/objects/summaries.js';
+import {
+  generateAndStoreObjectSummary,
+  invalidateObjectSummariesForRawEvent,
+} from '#src/objects/summaries.js';
 import { encodeCursor } from '#src/pagination.js';
 import * as queue from '#src/queue/queues.js';
 import { withTeam } from '#src/team-scope.js';
@@ -177,7 +180,7 @@ describe('object scope — team ownership and audit behavior', () => {
     const firstContext = await buildObjectDirectWriteSourceContext({
       db,
       teamId: TEAM_A,
-      sourceEventId: raw.id,
+      sourceRawEventId: raw.id,
     });
     expect(firstContext).toEqual({
       sourceRefs: [
@@ -216,7 +219,7 @@ describe('object scope — team ownership and audit behavior', () => {
     const secondContext = await buildObjectDirectWriteSourceContext({
       db,
       teamId: TEAM_A,
-      sourceEventId: raw.id,
+      sourceRawEventId: raw.id,
     });
     expect(secondContext.sourceRefs).toEqual(firstContext.sourceRefs);
     expect(secondContext.sourceRefs[0]).not.toHaveProperty('evidenceId');
@@ -245,7 +248,7 @@ describe('object scope — team ownership and audit behavior', () => {
       buildObjectDirectWriteSourceContext({
         db,
         teamId: TEAM_A,
-        sourceEventId: raw.id,
+        sourceRawEventId: raw.id,
       }),
     ).resolves.toEqual({
       sourceRefs: [
@@ -284,7 +287,7 @@ describe('object scope — team ownership and audit behavior', () => {
       buildObjectDirectWriteSourceContext({
         db,
         teamId: TEAM_A,
-        sourceEventId: otherTeamRaw.id,
+        sourceRawEventId: otherTeamRaw.id,
       }),
     ).rejects.toThrow('Source raw event not found for team');
 
@@ -292,9 +295,33 @@ describe('object scope — team ownership and audit behavior', () => {
       buildObjectDirectWriteSourceContext({
         db,
         teamId: TEAM_A,
-        sourceEventId: '99999999-9999-4999-8999-999999999999',
+        sourceRawEventId: '99999999-9999-4999-8999-999999999999',
       }),
     ).rejects.toThrow('Source raw event not found for team');
+  });
+
+  it('rejects direct-write source refs without a replay payload ref', async () => {
+    const [raw] = await db
+      .insert(rawEvents)
+      .values({
+        teamId: TEAM_A,
+        authorUserId: USER_OWNER,
+        source: 'integration',
+        contentText: 'Legacy source event without replay metadata',
+        occurredAt: new Date('2026-07-01T10:20:00.000Z'),
+        visibility: 'team',
+        sourceMetadata: { provider: 'legacy' },
+      })
+      .returning({ id: rawEvents.id });
+    if (!raw) throw new Error('expected raw event');
+
+    await expect(
+      buildObjectDirectWriteSourceContext({
+        db,
+        teamId: TEAM_A,
+        sourceRawEventId: raw.id,
+      }),
+    ).rejects.toThrow('Source raw event is missing a replay payload ref');
   });
 
   it('rejects owner and assignee values that are not members of the scoped team', async () => {
@@ -405,6 +432,33 @@ describe('object scope — team ownership and audit behavior', () => {
       scope: 'object_direct_write',
       status: 'completed',
     });
+  });
+
+  it('does not expose legacy agentSuggested flags on object read models', async () => {
+    const scope = withTeam(db, TEAM_A, USER_OWNER).objects;
+    const object = await scope.createObject({
+      type: 'task',
+      canonicalName: 'Legacy suggested canonical row',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+
+    await db
+      .update(entities)
+      .set({ agentSuggested: true, status: 'suggested' })
+      .where(eq(entities.id, object.id));
+
+    await expect(scope.getObject(object.id)).resolves.toMatchObject({
+      id: object.id,
+      status: 'suggested',
+      agentSuggested: false,
+    });
+    await expect(scope.listObjects({ id: object.id })).resolves.toEqual([
+      expect.objectContaining({
+        id: object.id,
+        status: 'suggested',
+        agentSuggested: false,
+      }),
+    ]);
   });
 
   it('writes one timeline event and one object change for a real update, but none for a no-op', async () => {
@@ -1323,18 +1377,30 @@ describe('object scope — notes and suggestions', () => {
         cluster.canonicalName === 'example.com/checklists/launch',
     );
     if (!linkCluster) throw new Error('expected link cluster');
-    await expect(
-      db
-        .select()
-        .from(artifactEvidenceAssociations)
-        .where(eq(artifactEvidenceAssociations.clusterId, linkCluster.id)),
-    ).resolves.toEqual([
+    const initialAssociationRows = await db
+      .select()
+      .from(artifactEvidenceAssociations)
+      .where(eq(artifactEvidenceAssociations.clusterId, linkCluster.id));
+    expect(initialAssociationRows).toEqual([
       expect.objectContaining({
         role: 'related_context',
         strength: 'semantic',
         associationSource: 'model_candidate',
       }),
     ]);
+    await db.insert(artifactClusterMembers).values({
+      teamId: TEAM_A,
+      clusterId: linkCluster.id,
+      rawEventId: initialAssociationRows[0]?.rawEventId ?? null,
+      role: 'related_context',
+      strength: 'semantic',
+      metadata: {
+        canonical_name: 'legacy.example.com/stale-checklist',
+        canonical_url: 'https://legacy.example.com/stale-checklist',
+        display_url: 'legacy.example.com/stale-checklist',
+        domain: 'legacy.example.com',
+      },
+    });
     await db
       .update(artifactEvidenceAssociations)
       .set({ rawEventId: null })
@@ -1362,6 +1428,12 @@ describe('object scope — notes and suggestions', () => {
         displayUrl: 'example.com/checklists/final',
       }),
     ]);
+    await expect(
+      db
+        .select()
+        .from(artifactClusterMembers)
+        .where(eq(artifactClusterMembers.clusterId, linkCluster.id)),
+    ).resolves.toHaveLength(1);
 
     await expect(
       scope.updateNote({
@@ -1668,18 +1740,39 @@ describe('object scope — notes and suggestions', () => {
         },
       })
       .returning({ id: artifactClusters.id });
-    await db.insert(artifactClusterMembers).values({
+    const [linkEvidence] = await db
+      .insert(reconciliationEvidence)
+      .values({
+        teamId: TEAM_A,
+        rawEventId: raw?.id ?? '',
+        source: 'web',
+        eventType: 'link.detected',
+        occurredAt: new Date('2026-06-16T10:00:00.000Z'),
+        visibility: 'team',
+        actor: {},
+        contentDigest: 'digest:connected-work-link',
+        normalizerVersion: 'test-v1',
+        dedupeKey: 'evidence:connected-work-link',
+      })
+      .returning({ id: reconciliationEvidence.id });
+    await db.insert(artifactEvidenceAssociations).values({
       teamId: TEAM_A,
       clusterId: linkCluster?.id ?? '',
+      evidenceId: linkEvidence?.id ?? '',
       rawEventId: raw?.id ?? '',
       role: 'related_context',
       strength: 'semantic',
+      associationSource: 'model_candidate',
+      sourceRefs: [],
+      visibility: 'team',
+      visibilityFloor: 'team',
       metadata: {
         canonical_name: 'example.com/dfk-pilot',
         canonical_url: 'https://example.com/dfk-pilot',
         display_url: 'example.com/dfk-pilot',
         domain: 'example.com',
       },
+      dedupeKey: 'association:connected-work-link',
     });
     const [suggestion, substringSuggestion] = await db
       .insert(agentSuggestions)
@@ -1861,6 +1954,75 @@ describe('object scope — notes and suggestions', () => {
     expect(detail?.connectedWork.capturedFiles).toEqual([
       expect.objectContaining({ name: 'dfk-whiteboard.png', contentType: 'image/png' }),
     ]);
+  });
+
+  it('does not surface connected work links from legacy artifact_cluster_members', async () => {
+    const workspace = withTeam(db, TEAM_A, USER_OWNER);
+    const scope = workspace.objects;
+    const company = await scope.createObject({
+      type: 'company',
+      canonicalName: 'DFK',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    const [raw] = await db
+      .insert(rawEvents)
+      .values({
+        teamId: TEAM_A,
+        authorUserId: USER_OWNER,
+        source: 'web',
+        contentText: 'DFK shared https://legacy.example.com/dfk-pilot.',
+        occurredAt: new Date('2026-06-16T10:00:00.000Z'),
+        visibility: 'team',
+      })
+      .returning({ id: rawEvents.id });
+    const [fact] = await db
+      .insert(facts)
+      .values({
+        teamId: TEAM_A,
+        rawEventId: raw?.id ?? '',
+        statement: 'DFK shared a legacy pilot link.',
+        confidence: 0.9,
+        modelVersion: 'test',
+      })
+      .returning({ id: facts.id });
+    await db.insert(factEntities).values({
+      factId: fact?.id ?? '',
+      entityId: company.id,
+      role: 'subject',
+    });
+    const [linkCluster] = await db
+      .insert(artifactClusters)
+      .values({
+        teamId: TEAM_A,
+        artifactType: 'link',
+        canonicalName: 'legacy.example.com/dfk-pilot',
+        metadata: {
+          canonical_url: 'https://legacy.example.com/dfk-pilot',
+          display_url: 'legacy.example.com/dfk-pilot',
+          domain: 'legacy.example.com',
+        },
+      })
+      .returning({ id: artifactClusters.id });
+    await db.insert(artifactClusterMembers).values({
+      teamId: TEAM_A,
+      clusterId: linkCluster?.id ?? '',
+      rawEventId: raw?.id ?? '',
+      role: 'related_context',
+      strength: 'semantic',
+      metadata: {
+        canonical_name: 'legacy.example.com/dfk-pilot',
+        canonical_url: 'https://legacy.example.com/dfk-pilot',
+        display_url: 'legacy.example.com/dfk-pilot',
+        domain: 'legacy.example.com',
+      },
+    });
+
+    const detail = await scope.getObject(company.id);
+
+    expect(detail?.connectedWork.timelineEvents).toEqual([
+      expect.objectContaining({ id: raw?.id }),
+    ]);
+    expect(detail?.connectedWork.links).toEqual([]);
   });
 
   it('does not surface fact-backed connected work from raw events hidden from the viewer', async () => {
@@ -3655,6 +3817,191 @@ describe('object scope — merge cleanup', () => {
     expect(detail?.notes).toHaveLength(9);
     expect(detail?.summary?.canGenerate).toBe(false);
     expect(detail?.summary?.cannotGenerateReason).toBe('not_enough_object_memory');
+  });
+
+  it('does not count legacy object-change source_event_id rows as summary change sources', async () => {
+    const workspace = withTeam(db, TEAM_A, USER_OWNER);
+    const object = await workspace.objects.createObject({
+      type: 'company',
+      canonicalName: 'Legacy Summary Co',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    const legacyEvent = await workspace.timeline.createEvent({
+      authorUserId: USER_OWNER,
+      source: 'telegram',
+      contentText: 'Legacy object change source pointer.',
+      visibility: 'team',
+    });
+
+    await db.insert(objectChanges).values({
+      teamId: TEAM_A,
+      entityId: object.id,
+      actorKind: 'agent',
+      actorUserId: null,
+      status: 'applied',
+      field: 'stage',
+      previousValue: null,
+      newValue: 'pilot',
+      sourceEventId: legacyEvent.id,
+      note: 'Legacy pointer should not feed summary context.',
+    });
+
+    const detail = await workspace.objects.getObject(object.id);
+
+    expect(detail?.summary?.sourceCounts.changes).toBe(0);
+  });
+
+  it('invalidates object summaries from output source refs, not legacy object-change pointers', async () => {
+    const workspace = withTeam(db, TEAM_A, USER_OWNER);
+    const object = await workspace.objects.createObject({
+      type: 'company',
+      canonicalName: 'Output Summary Co',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    const task = await workspace.objects.createObject({
+      type: 'task',
+      canonicalName: 'Refresh output-backed summary',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    const legacyEvent = await workspace.timeline.createEvent({
+      authorUserId: USER_OWNER,
+      source: 'telegram',
+      contentText: 'Legacy object summary pointer.',
+      visibility: 'team',
+    });
+    await upsertObjectSummary({
+      teamId: TEAM_A,
+      entityId: object.id,
+      status: 'ready',
+      summary: {
+        overview: 'Output Summary Co is ready.',
+        overviewSourceRefs: [{ kind: 'field', id: 'status' }],
+        currentState: [],
+        openQuestions: [],
+        conflicts: [],
+      },
+      plainText: 'Output Summary Co is ready.',
+      sourceRefs: [{ kind: 'field', id: 'status' }],
+      sourceCounts: {
+        fields: 1,
+        facts: 0,
+        events: 0,
+        notes: 0,
+        relationships: 0,
+        tasks: 0,
+        changes: 0,
+      },
+      inputFingerprint: 'legacy-pointer-summary',
+      generatedAt: new Date('2026-06-02T10:05:00.000Z'),
+    });
+    await upsertObjectSummary({
+      teamId: TEAM_A,
+      entityId: task.id,
+      status: 'ready',
+      summary: {
+        overview: 'Refresh output-backed summary is queued.',
+        overviewSourceRefs: [{ kind: 'field', id: 'status' }],
+        currentState: [],
+        openQuestions: [],
+        conflicts: [],
+      },
+      plainText: 'Refresh output-backed summary is queued.',
+      sourceRefs: [{ kind: 'field', id: 'status' }],
+      sourceCounts: {
+        fields: 1,
+        facts: 0,
+        events: 0,
+        notes: 0,
+        relationships: 0,
+        tasks: 0,
+        changes: 0,
+      },
+      inputFingerprint: 'task-output-summary',
+      generatedAt: new Date('2026-06-02T10:05:00.000Z'),
+    });
+    await db.insert(objectChanges).values({
+      teamId: TEAM_A,
+      entityId: object.id,
+      actorKind: 'agent',
+      actorUserId: null,
+      status: 'applied',
+      field: 'stage',
+      previousValue: null,
+      newValue: 'pilot',
+      sourceEventId: legacyEvent.id,
+      note: 'Legacy pointer should not invalidate summaries.',
+    });
+
+    await expect(
+      invalidateObjectSummariesForRawEvent(db, workspace, legacyEvent.id),
+    ).resolves.toEqual([]);
+    await expect(
+      db.select().from(objectSummaries).where(eq(objectSummaries.entityId, object.id)),
+    ).resolves.toHaveLength(1);
+
+    const [run] = await db
+      .insert(reconciliationRuns)
+      .values({
+        teamId: TEAM_A,
+        trigger: 'manual_repair',
+        scope: 'object-summary-output-source-ref',
+        status: 'completed',
+        inputFingerprint: 'object-summary-output-source-ref',
+        engineVersion: 'test-v1',
+      })
+      .returning({ id: reconciliationRuns.id });
+    await db.insert(reconciliationOutputs).values([
+      {
+        teamId: TEAM_A,
+        runId: run?.id ?? '',
+        outputKind: 'direct_write',
+        targetKind: 'object',
+        operation: 'update',
+        targetId: object.id,
+        payload: { canonical_name: object.canonicalName, status: 'pilot' },
+        authorityDecision: { decision: 'authoritative', policy_version: 'test-v1' },
+        requiresApproval: false,
+        sourceRefs: [{ source: 'telegram', rawEventId: legacyEvent.id }],
+        visibility: 'team',
+        visibilityFloor: 'team',
+        dedupeKey: 'object-summary-output-source-ref',
+        status: 'applied',
+      },
+      {
+        teamId: TEAM_A,
+        runId: run?.id ?? '',
+        outputKind: 'direct_write',
+        targetKind: 'task',
+        operation: 'update',
+        targetId: task.id,
+        payload: { canonical_name: task.canonicalName, status: 'open' },
+        authorityDecision: { decision: 'authoritative', policy_version: 'test-v1' },
+        requiresApproval: false,
+        sourceRefs: [{ source: 'telegram', rawEventId: legacyEvent.id }],
+        visibility: 'team',
+        visibilityFloor: 'team',
+        dedupeKey: 'task-summary-output-source-ref',
+        status: 'applied',
+      },
+    ]);
+
+    await expect(
+      invalidateObjectSummariesForRawEvent(db, workspace, legacyEvent.id),
+    ).resolves.toEqual(expect.arrayContaining([object.id, task.id]));
+    await expect(
+      db.select().from(objectSummaries).where(eq(objectSummaries.entityId, object.id)),
+    ).resolves.toHaveLength(0);
+    await expect(
+      db.select().from(objectSummaries).where(eq(objectSummaries.entityId, task.id)),
+    ).resolves.toHaveLength(0);
+    expect(queue.enqueueObjectSummaryJob).toHaveBeenCalledWith(
+      { teamId: TEAM_A, objectId: object.id, trigger: 'auto' },
+      { delayMs: 120_000 },
+    );
+    expect(queue.enqueueObjectSummaryJob).toHaveBeenCalledWith(
+      { teamId: TEAM_A, objectId: task.id, trigger: 'auto' },
+      { delayMs: 120_000 },
+    );
   });
 
   it('creates a pending summary row when an automatic refresh starts without an existing summary', async () => {

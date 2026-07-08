@@ -67,11 +67,21 @@ describe('ReconciliationDashboardPage', () => {
     expect(html).toContain('evidence_audit:integration');
     expect(html).toContain('gate failures');
     expect(html).toContain('object:object-1');
+    expect(html).toContain('output repairs');
+    expect(html).toContain('planner replay');
     expect(html).toContain('projections');
+    expect(html).toContain('legacy provenance');
+    expect(html).toContain('object source_event_id');
     expect(html).toContain('production_sampling:closed_beta');
     expect(html).toContain('unconfirmed fixtures');
     expect(html).toContain('Run history');
     expect(html).toContain('Showing page 1 of 1');
+    expect(html).toContain('Planner replay cap');
+    expect(html).toContain('Planner replay mode');
+    expect(html).toContain('Missing only');
+    expect(html).toContain('Planner replay source');
+    expect(html).toContain('Planner replay from');
+    expect(html).toContain('Planner replay until');
     expect(html).toContain('Recent clusters');
     expect(html).toContain('Lumen onboarding pilot');
     expect(html).toContain('href="/app/team/reconciliation/clusters/cluster-1"');
@@ -210,7 +220,9 @@ function sampleDashboard(input: { runHistory?: RunHistoryFixture } = {}) {
             mode: 'manual_repair',
             evidence_backfilled: 2,
             association_repair_count: 3,
+            output_repair_count: 5,
             projection_repair_count: 1,
+            planner_replay_enqueued: 2,
             output_count: 4,
           },
           createdAt: generatedAt,
@@ -273,6 +285,13 @@ function sampleDashboard(input: { runHistory?: RunHistoryFixture } = {}) {
       directWritesBySource: [{ key: 'legacy_object_source_event', count: 0 }],
       ambiguityBySource: [],
       topNoActionReasons: [],
+      legacyProvenance: {
+        objectSourceEventRows: 1,
+        objectAgentSuggestedRows: 0,
+        objectChangeSourceEventRows: 0,
+        boardHistorySourceEventRows: 0,
+        totalRows: 1,
+      },
       approvalStats: {
         accepted: 1,
         rejected: 0,

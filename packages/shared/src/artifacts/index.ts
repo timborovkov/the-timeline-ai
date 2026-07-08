@@ -1,15 +1,14 @@
 import {
   artifactEvidenceAssociations,
   artifactClusterAnchors,
-  artifactClusterMembers,
   artifactClusters,
-  entities,
   rawEvents,
   reconciliationEvidence,
   type Db,
 } from '@timeline/db';
 import { and, eq, isNull, or, sql } from 'drizzle-orm';
 
+import type { artifactEvidenceRole } from '@timeline/db';
 import type { SQL } from 'drizzle-orm';
 import type { AnyPgColumn } from 'drizzle-orm/pg-core';
 
@@ -20,8 +19,8 @@ import { normalizeRawEventsToEvidence } from '#src/reconciliation/normalization.
 export type ArtifactType = (typeof artifactClusters.$inferSelect)['artifactType'];
 export type ArtifactClusterKind = (typeof artifactClusters.$inferSelect)['artifactClusterKind'];
 export type ArtifactStatus = (typeof artifactClusters.$inferSelect)['status'];
-export type EvidenceRole = (typeof artifactClusterMembers.$inferSelect)['role'];
-export type EvidenceStrength = (typeof artifactClusterMembers.$inferSelect)['strength'];
+export type EvidenceRole = (typeof artifactEvidenceRole.enumValues)[number];
+export type EvidenceStrength = (typeof artifactEvidenceAssociations.$inferSelect)['strength'];
 type AssociationRole = (typeof artifactEvidenceAssociations.$inferInsert)['role'];
 type AssociationSource = (typeof artifactEvidenceAssociations.$inferInsert)['associationSource'];
 interface VisibilityColumns {
@@ -610,14 +609,6 @@ export async function listArtifactClusterEvidence(
   db: Db,
   input: { teamId: string; clusterId: string; viewerUserId: string },
 ) {
-  const rawEventVisibility = visibilityVisibleToUser(
-    {
-      visibility: rawEvents.visibility,
-      visibilityOwnerUserId: rawEvents.visibilityOwnerUserId,
-      visibilityUserIds: rawEvents.visibilityUserIds,
-    },
-    input.viewerUserId,
-  );
   const associationVisibility = and(
     visibilityVisibleToUser(
       {
@@ -636,46 +627,6 @@ export async function listArtifactClusterEvidence(
       input.viewerUserId,
     ),
   );
-
-  const legacyRows = await db
-    .select({
-      clusterId: artifactClusters.id,
-      artifactType: artifactClusters.artifactType,
-      canonicalName: artifactClusters.canonicalName,
-      status: artifactClusters.status,
-      rawEventId: artifactClusterMembers.rawEventId,
-      entityId: artifactClusterMembers.entityId,
-      provider: artifactClusterMembers.provider,
-      externalObjectId: artifactClusterMembers.externalObjectId,
-      role: artifactClusterMembers.role,
-      strength: artifactClusterMembers.strength,
-      authoritative: artifactClusterMembers.authoritative,
-      contentText: rawEvents.contentText,
-      objectName: entities.canonicalName,
-    })
-    .from(artifactClusters)
-    .innerJoin(
-      artifactClusterMembers,
-      and(
-        eq(artifactClusterMembers.clusterId, artifactClusters.id),
-        eq(artifactClusterMembers.teamId, input.teamId),
-      ),
-    )
-    .leftJoin(
-      rawEvents,
-      and(eq(rawEvents.id, artifactClusterMembers.rawEventId), eq(rawEvents.teamId, input.teamId)),
-    )
-    .leftJoin(
-      entities,
-      and(eq(entities.id, artifactClusterMembers.entityId), eq(entities.teamId, input.teamId)),
-    )
-    .where(
-      and(
-        eq(artifactClusters.teamId, input.teamId),
-        eq(artifactClusters.id, input.clusterId),
-        or(isNull(artifactClusterMembers.rawEventId), rawEventVisibility),
-      ),
-    );
 
   const associationRows = await db
     .select({
@@ -726,9 +677,8 @@ export async function listArtifactClusterEvidence(
       ),
     );
 
-  const rows = [...associationRows, ...legacyRows];
   const seen = new Set<string>();
-  return rows.filter((row) => {
+  return associationRows.filter((row) => {
     const key = [
       row.clusterId,
       row.rawEventId ?? '',

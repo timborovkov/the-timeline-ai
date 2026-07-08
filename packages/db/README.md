@@ -24,6 +24,16 @@ pnpm db:migrate    # apply pending migrations
 pnpm db:studio     # local schema browser
 ```
 
+## Schema guardrails
+
+Reconciliation provenance now lives in source refs, source payload refs, and
+reconciliation outputs. Migration `0056_legacy_provenance_cutover_guards.sql`
+formally deprecates the old object `source_event_id`, object
+`agent_suggested=true`, object-change `source_event_id`, and board-history
+`source_event_id` provenance columns with `NOT VALID` check constraints. That
+keeps historical rows available for cutover audit/backfill while rejecting new
+legacy provenance writes at the database boundary.
+
 ## Connection guardrails
 
 Runtime Postgres clients should come from `createPgClient()` or `getDb()`, not a

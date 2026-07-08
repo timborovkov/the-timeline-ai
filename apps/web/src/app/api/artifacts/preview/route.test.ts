@@ -31,11 +31,12 @@ const fakes = vi.hoisted(() => ({
   getS3PresignClient: vi.fn(),
   getAudioBucket: vi.fn(),
   getSignedGetObjectUrl: vi.fn(),
+  db: { select: vi.fn() },
 }));
 
 vi.mock('@/lib/auth', () => ({ auth: fakes.auth }));
 vi.mock('@/lib/active-team', () => ({ resolveActiveTeam: fakes.resolveActiveTeam }));
-vi.mock('@/lib/db', () => ({ db: {} }));
+vi.mock('@/lib/db', () => ({ db: fakes.db }));
 vi.mock('@timeline/shared/s3', () => ({
   getAudioBucket: fakes.getAudioBucket,
   getS3PresignClient: fakes.getS3PresignClient,
@@ -249,6 +250,46 @@ describe('POST /api/artifacts/preview', () => {
 
     fakes.getObject.mockResolvedValueOnce(object({ type: 'person' }));
     expect((await POST(request({ ref: { kind: 'task', id: IDS.task } }))).status).toBe(404);
+  });
+
+  it('does not promote legacy object-change source events into preview timeline links', async () => {
+    const changeId = '98989898-9898-4989-8989-989898989898';
+    const chain = {
+      from: vi.fn(() => chain),
+      innerJoin: vi.fn(() => chain),
+      leftJoin: vi.fn(() => chain),
+      where: vi.fn(() => chain),
+      limit: vi.fn(() =>
+        Promise.resolve([
+          {
+            change: {
+              id: changeId,
+              entityId: IDS.object,
+              field: 'status',
+              previousValue: 'open',
+              newValue: 'active',
+              status: 'applied',
+              note: 'Status moved to active.',
+              changedAt: new Date('2026-06-14T10:00:00.000Z'),
+            },
+            objectName: 'Otto Silventola',
+            objectType: 'person',
+          },
+        ]),
+      ),
+    };
+    fakes.db.select.mockReturnValueOnce(chain);
+
+    const response = await POST(request({ ref: { kind: 'object_change', id: changeId } }));
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      preview: {
+        title: 'Object Change',
+        href: `/app/objects/${IDS.object}`,
+      },
+    });
+    expect(chain.leftJoin).not.toHaveBeenCalled();
   });
 
   it('preserves document detail-read auditing by using getDocument default options', async () => {

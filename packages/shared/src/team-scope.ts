@@ -2,7 +2,6 @@ import {
   type Db,
   auditLog,
   artifactEvidenceAssociations,
-  artifactClusterMembers,
   artifactClusters,
   agentSuggestionEvidence,
   agentSuggestionItems,
@@ -18,7 +17,6 @@ import {
   factEntities,
   facts as factsTable,
   objectIdentityFacets,
-  objectChanges,
   objectNotes,
   rawEvents,
   reconciliationEvidence,
@@ -616,26 +614,6 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
       }),
     );
 
-    const legacyEventClusterRows = await db
-      .select({
-        rawEventId: artifactClusterMembers.rawEventId,
-        clusterId: artifactClusters.id,
-      })
-      .from(artifactClusterMembers)
-      .innerJoin(
-        artifactClusters,
-        and(
-          eq(artifactClusters.id, artifactClusterMembers.clusterId),
-          eq(artifactClusters.teamId, teamId),
-        ),
-      )
-      .where(
-        and(
-          eq(artifactClusterMembers.teamId, teamId),
-          inArray(artifactClusterMembers.rawEventId, accessibleEventIds),
-          isNull(artifactClusters.archivedAt),
-        ),
-      );
     const associationEventClusterRows = await db
       .select({
         rawEventId: associationRawEventId,
@@ -664,51 +642,9 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
           isNull(artifactClusters.archivedAt),
         ),
       );
-    const eventClusterRows = [...legacyEventClusterRows, ...associationEventClusterRows];
-    const clusterIds = [...new Set(eventClusterRows.map((row) => row.clusterId))];
+    const clusterIds = [...new Set(associationEventClusterRows.map((row) => row.clusterId))];
     if (clusterIds.length === 0) return new Map();
 
-    const legacyClusterMemberRows = await db
-      .select({
-        clusterId: artifactClusters.id,
-        artifactType: artifactClusters.artifactType,
-        rawEventId: artifactClusterMembers.rawEventId,
-        source: rawEvents.source,
-        provider: artifactClusterMembers.provider,
-        externalObjectId: artifactClusterMembers.externalObjectId,
-        role: artifactClusterMembers.role,
-        strength: artifactClusterMembers.strength,
-        authoritative: artifactClusterMembers.authoritative,
-        memberMetadata: artifactClusterMembers.metadata,
-        occurredAt: rawEvents.occurredAt,
-        contentText: rawEvents.contentText,
-        objectName: entities.canonicalName,
-      })
-      .from(artifactClusterMembers)
-      .innerJoin(
-        artifactClusters,
-        and(
-          eq(artifactClusters.id, artifactClusterMembers.clusterId),
-          eq(artifactClusters.teamId, teamId),
-        ),
-      )
-      .leftJoin(
-        rawEvents,
-        and(eq(rawEvents.id, artifactClusterMembers.rawEventId), eq(rawEvents.teamId, teamId)),
-      )
-      .leftJoin(
-        entities,
-        and(eq(entities.id, artifactClusterMembers.entityId), eq(entities.teamId, teamId)),
-      )
-      .where(
-        and(
-          eq(artifactClusterMembers.teamId, teamId),
-          inArray(artifactClusterMembers.clusterId, clusterIds),
-          isNull(artifactClusters.archivedAt),
-          visibilityFilter,
-        ),
-      )
-      .orderBy(desc(artifactClusterMembers.authoritative), desc(rawEvents.occurredAt));
     const associationClusterMemberRows = await db
       .select({
         clusterId: artifactClusters.id,
@@ -760,11 +696,10 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
         ),
         desc(rawEvents.occurredAt),
       );
-    const clusterMemberRows = [...associationClusterMemberRows, ...legacyClusterMemberRows];
 
     const clusterById = new Map<string, SearchEventArtifactCluster>();
     const evidenceSeenByCluster = new Map<string, Set<string>>();
-    for (const row of clusterMemberRows) {
+    for (const row of associationClusterMemberRows) {
       const existing = clusterById.get(row.clusterId);
       const cluster =
         existing ??
@@ -802,7 +737,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
     }
 
     const clusterByEventId = new Map<string, SearchEventArtifactCluster>();
-    for (const row of eventClusterRows) {
+    for (const row of associationEventClusterRows) {
       if (!row.rawEventId) continue;
       const cluster = clusterById.get(row.clusterId);
       if (cluster) clusterByEventId.set(row.rawEventId, cluster);
@@ -1843,139 +1778,102 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
       WHERE source_ref ->> 'rawEventId' IN (${sourceRefIdList})
     )`;
 
-    const [suggestionRows, objectChangeRows, entityRows, documentRows, calendarRows, outputRows] =
-      await Promise.all([
-        db
-          .select({
-            rawEventId: agentSuggestionEvidence.rawEventId,
-            suggestionId: agentSuggestions.id,
-            itemId: agentSuggestionItems.id,
-            suggestionStatus: agentSuggestions.status,
-            itemStatus: agentSuggestionItems.status,
-            targetKind: agentSuggestionItems.targetKind,
-            targetId: agentSuggestionItems.targetId,
-            resultId: agentSuggestionItems.resultId,
-            title: agentSuggestionItems.title,
-            proposedPayload: agentSuggestionItems.proposedPayload,
-            boardItemBoardId: boardItems.boardId,
-          })
-          .from(agentSuggestionEvidence)
-          .innerJoin(
-            agentSuggestions,
-            eq(agentSuggestionEvidence.suggestionId, agentSuggestions.id),
-          )
-          .innerJoin(
-            agentSuggestionItems,
-            eq(agentSuggestionItems.suggestionId, agentSuggestions.id),
-          )
-          .leftJoin(
-            boardItems,
-            and(
-              eq(boardItems.teamId, teamId),
-              or(
-                eq(boardItems.id, agentSuggestionItems.targetId),
-                eq(boardItems.id, agentSuggestionItems.resultId),
-              ),
-            ),
-          )
-          .where(
-            and(
-              eq(agentSuggestionEvidence.teamId, teamId),
-              inArray(agentSuggestionEvidence.rawEventId, ids),
-              suggestionVisibility,
+    const [suggestionRows, documentRows, calendarRows, outputRows] = await Promise.all([
+      db
+        .select({
+          rawEventId: agentSuggestionEvidence.rawEventId,
+          suggestionId: agentSuggestions.id,
+          itemId: agentSuggestionItems.id,
+          suggestionStatus: agentSuggestions.status,
+          itemStatus: agentSuggestionItems.status,
+          targetKind: agentSuggestionItems.targetKind,
+          targetId: agentSuggestionItems.targetId,
+          resultId: agentSuggestionItems.resultId,
+          title: agentSuggestionItems.title,
+          proposedPayload: agentSuggestionItems.proposedPayload,
+          boardItemBoardId: boardItems.boardId,
+        })
+        .from(agentSuggestionEvidence)
+        .innerJoin(agentSuggestions, eq(agentSuggestionEvidence.suggestionId, agentSuggestions.id))
+        .innerJoin(agentSuggestionItems, eq(agentSuggestionItems.suggestionId, agentSuggestions.id))
+        .leftJoin(
+          boardItems,
+          and(
+            eq(boardItems.teamId, teamId),
+            or(
+              eq(boardItems.id, agentSuggestionItems.targetId),
+              eq(boardItems.id, agentSuggestionItems.resultId),
             ),
           ),
-        db
-          .select({
-            rawEventId: objectChanges.sourceEventId,
-            entityId: objectChanges.entityId,
-            entityName: entities.canonicalName,
-            entityType: entities.type,
-            field: objectChanges.field,
-            status: objectChanges.status,
-            note: objectChanges.note,
-          })
-          .from(objectChanges)
-          .innerJoin(entities, eq(objectChanges.entityId, entities.id))
-          .where(and(eq(objectChanges.teamId, teamId), inArray(objectChanges.sourceEventId, ids))),
-        db
-          .select({
-            rawEventId: entities.sourceEventId,
-            entityId: entities.id,
-            entityName: entities.canonicalName,
-            entityType: entities.type,
-            status: entities.status,
-          })
-          .from(entities)
-          .where(
-            and(
-              eq(entities.teamId, teamId),
-              inArray(entities.sourceEventId, ids),
-              isNull(entities.archivedAt),
-              isNull(entities.mergedIntoId),
-            ),
+        )
+        .where(
+          and(
+            eq(agentSuggestionEvidence.teamId, teamId),
+            inArray(agentSuggestionEvidence.rawEventId, ids),
+            suggestionVisibility,
           ),
-        db
-          .select({
-            rawEventId: documentVersions.sourceEventId,
-            documentId: documents.id,
-            documentName: documents.name,
-            documentMetadata: documents.metadata,
-            fileKind: documents.fileKind,
-            contentType: documentVersions.contentType,
-            status: documentVersions.processingStatus,
-          })
-          .from(documentVersions)
-          .innerJoin(documents, eq(documentVersions.documentId, documents.id))
-          .where(
-            and(
-              eq(documentVersions.teamId, teamId),
-              inArray(documentVersions.sourceEventId, ids),
-              isNull(documents.deletedAt),
-              documentVisibility,
-            ),
+        ),
+      db
+        .select({
+          rawEventId: documentVersions.sourceEventId,
+          documentId: documents.id,
+          documentName: documents.name,
+          documentMetadata: documents.metadata,
+          fileKind: documents.fileKind,
+          contentType: documentVersions.contentType,
+          status: documentVersions.processingStatus,
+        })
+        .from(documentVersions)
+        .innerJoin(documents, eq(documentVersions.documentId, documents.id))
+        .where(
+          and(
+            eq(documentVersions.teamId, teamId),
+            inArray(documentVersions.sourceEventId, ids),
+            isNull(documents.deletedAt),
+            documentVisibility,
           ),
-        db
-          .select({
-            id: calendarEvents.id,
-            title: calendarEvents.title,
-            startAt: calendarEvents.startAt,
-            scheduledRawEventId: calendarEvents.scheduledRawEventId,
-            startAtRawEventId: calendarEvents.startAtRawEventId,
-          })
-          .from(calendarEvents)
-          .where(
-            and(
-              eq(calendarEvents.teamId, teamId),
-              isNull(calendarEvents.deletedAt),
-              or(
-                inArray(calendarEvents.scheduledRawEventId, ids),
-                inArray(calendarEvents.startAtRawEventId, ids),
-              ),
-              calendarVisibility,
+        ),
+      db
+        .select({
+          id: calendarEvents.id,
+          title: calendarEvents.title,
+          startAt: calendarEvents.startAt,
+          scheduledRawEventId: calendarEvents.scheduledRawEventId,
+          startAtRawEventId: calendarEvents.startAtRawEventId,
+        })
+        .from(calendarEvents)
+        .where(
+          and(
+            eq(calendarEvents.teamId, teamId),
+            isNull(calendarEvents.deletedAt),
+            or(
+              inArray(calendarEvents.scheduledRawEventId, ids),
+              inArray(calendarEvents.startAtRawEventId, ids),
             ),
+            calendarVisibility,
           ),
-        db
-          .select({
-            outputId: reconciliationOutputs.id,
-            targetKind: reconciliationOutputs.targetKind,
-            operation: reconciliationOutputs.operation,
-            targetId: reconciliationOutputs.targetId,
-            status: reconciliationOutputs.status,
-            payload: reconciliationOutputs.payload,
-            sourceRefs: reconciliationOutputs.sourceRefs,
-          })
-          .from(reconciliationOutputs)
-          .where(
-            and(
-              eq(reconciliationOutputs.teamId, teamId),
-              eq(reconciliationOutputs.outputKind, 'direct_write'),
-              eq(reconciliationOutputs.status, 'applied'),
-              outputVisibility,
-              outputCitesRequestedRawEvent,
-            ),
+        ),
+      db
+        .select({
+          outputId: reconciliationOutputs.id,
+          targetKind: reconciliationOutputs.targetKind,
+          operation: reconciliationOutputs.operation,
+          targetId: reconciliationOutputs.targetId,
+          status: reconciliationOutputs.status,
+          payload: reconciliationOutputs.payload,
+          sourceRefs: reconciliationOutputs.sourceRefs,
+        })
+        .from(reconciliationOutputs)
+        .where(
+          and(
+            eq(reconciliationOutputs.teamId, teamId),
+            eq(reconciliationOutputs.outputKind, 'direct_write'),
+            eq(reconciliationOutputs.status, 'applied'),
+            outputVisibility,
+            outputCitesRequestedRawEvent,
           ),
-      ]);
+        ),
+    ]);
 
     for (const row of suggestionRows) {
       const kind: TimelineImpactKind =
@@ -2037,26 +1935,6 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
           status: 'pending',
         });
       }
-    }
-
-    for (const row of objectChangeRows) {
-      const kind = row.entityType === 'task' || row.entityType === 'follow_up' ? 'task' : 'object';
-      pushTimelineImpact(impact, row.rawEventId, {
-        kind,
-        label: row.note ?? `${row.entityName} · ${row.field}`,
-        href: `/app/objects/${row.entityId}`,
-        status: row.status,
-      });
-    }
-
-    for (const row of entityRows) {
-      const kind = row.entityType === 'task' || row.entityType === 'follow_up' ? 'task' : 'object';
-      pushTimelineImpact(impact, row.rawEventId, {
-        kind,
-        label: row.entityName,
-        href: `/app/objects/${row.entityId}`,
-        status: row.status,
-      });
     }
 
     for (const row of documentRows) {

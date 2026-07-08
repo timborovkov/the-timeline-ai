@@ -6,8 +6,10 @@ contracts, not private implementation structure.
 
 ## Test Status Overview
 
-Last checked in this branch: on 2026-07-03, full `pnpm validate`, `pnpm e2e`,
-and React Doctor pass. The 2026-07-02 verification also passed
+Last checked in this branch: on 2026-07-08, `pnpm validate`,
+`pnpm run doctor`, `pnpm test:eval`, `pnpm test:reconciliation-eval`,
+`pnpm test:dist-imports`, and the full strict local Playwright suite pass.
+The 2026-07-02 verification also passed
 `pnpm test:eval`, `pnpm test:reconciliation-eval`, `pnpm test:dist-imports`,
 root `pnpm test`, `pnpm test:agent-eval:live`,
 `pnpm test:suggestions-eval:live`, `pnpm test:transcribe-eval:live`, and
@@ -25,6 +27,31 @@ cross-linking, approval accept/reject button effects against durable task state,
 partial bulk approval failure recovery, invalid manual-reconcile operator errors,
 and private/specific-user cluster visibility filtering across the dashboard and
 direct cluster URLs.
+On 2026-07-07, the focused legacy-provenance cutover pass also reran
+`pnpm validate`, `pnpm run doctor`, `pnpm test:eval`,
+`pnpm test:reconciliation-eval`, `pnpm test:reconciliation-eval:live`,
+`pnpm test:dist-imports`, and `git diff --check`. React Doctor again reported
+"No issues found" with a 100/100 score.
+On 2026-07-08, the DB schema contract added and verified migration
+`0056_legacy_provenance_cutover_guards.sql`, which preserves historical legacy
+provenance rows under `NOT VALID` constraints while rejecting new writes to the
+legacy object/object-change/board-history provenance columns.
+The full strict local Playwright suite also passed on July 8 with 50/50 tests,
+including the reconciliation dashboard, worker-backed manual repair, approval
+projection, visibility-filtering, and mobile no-overflow flows.
+The July 8 reconciliation live eval also passed 11/11 checks through the real
+LLM path, writing
+`/tmp/timeline-reconciliation-live-eval/2026-07-08T10-18-13-811Z/manifest.json`;
+closed-beta production sampling over that run passed 7/7 samples with pass rate
+1.0 and no fixture candidates at
+`/tmp/timeline-reconciliation-live-eval/2026-07-08T10-18-13-811Z/production-sampling-report.json`.
+The same run was persisted to the migrated and seeded local Timeline Postgres
+on `localhost:55432` as reconciliation run
+`a0e91444-91cf-44c2-a561-9fe63014b3aa` via
+`/tmp/timeline-reconciliation-live-eval/2026-07-08T10-18-13-811Z/production-sampling-report-persisted.json`.
+The July 8 live legacy-provenance audit against team
+`20000000-0000-4000-8000-000000000001` returned zero rows for all four cutover
+counts.
 A targeted Playwright MCP run also passed the Timeline-as-MCP bearer-key page,
 one-time key minting, JSON-RPC `timeline.list_events`, and private/specific-user
 visibility exclusion. A targeted Playwright inbound-email run also passed a
@@ -81,14 +108,45 @@ provider-object anchor extraction, non-browser `askAgent` MCP tool-loop
 coverage, unexpected-surface rejection,
 forbidden-output eval policy checks, projection-outbox status
 mirroring/repair/action coverage, authority-policy checks, direct-write source refs
-including missing/cross-team fail-closed checks, provider `objectMap` artifact coverage,
+including missing/cross-team/replay-payload fail-closed checks, provider `objectMap` artifact coverage,
 legacy `sourceEventId` stripping,
 legacy `sourceEventId` payload-fallback removal, scoped manual reconciliation
 evidence/association/output/projection repair, viewer-scoped reconciliation audit/backfill,
+idempotent scoped repair reruns that keep evidence/association/resolver-output
+repair metrics at zero when the graph is already healthy,
+object/cluster scoped manual repair enqueueing raw-event planner replay through
+the suggestion worker while filtering hidden raw events,
+bounded team-scope manual repair planner replay with missing-only/default vs
+all-visible text-event selection, source/time-window filters, and stable queue identity,
 dev-seed reconciliation provenance cutover, approval projection writer-boundary
 guards, exact rejected output replay
-suppression, direct object-change legacy pointer retirement, output source-ref
+suppression, direct object-change legacy pointer retirement, timeline impact
+hydration from output source refs instead of legacy object pointers, output source-ref
 stability across multi-evidence raw events for integration projections,
+object-summary source windows and invalidation from output source refs instead
+of legacy object-change pointers,
+board-history legacy `source_event_id` provenance suppression,
+artifact evidence listing suppression for legacy `artifact_cluster_members` plus
+timeline search/object Connected Work suppression of legacy member-only artifact
+context, association-only link refresh behavior, removal of normal shared-code
+imports of the legacy member table, source-contract regression coverage against
+reintroducing those imports or adding raw-event writers without reconciliation
+evidence normalization and replay-payload snapshots, object-facing agent/MCP omission of legacy
+`agent_suggested`, object and board shared read-model suppression of stored
+legacy `agent_suggested`, task/object cleanup UI suppression of legacy suggested
+badges, canonical object/object-change/board-history write guards against
+legacy provenance pointers, association/output writer guards requiring explicit
+visibility envelopes, evidence writer guards requiring explicit source-payload
+refs, payload digests, replay state, dedupe keys, and visibility fields,
+output writer guards requiring source payload refs alongside source refs,
+direct-write source-context builder guards requiring `sourceRawEventId` input
+terminology,
+dashboard legacy-provenance cutover counts for object pointers, object-change
+pointers, board-history pointers, and `agent_suggested` flags,
+legacy-provenance cutover CLI `--fail-on-legacy` gate coverage,
+DB-level `NOT VALID` cutover guards that reject new legacy provenance writes
+while preserving historical rows for audit/backfill,
+object-change preview legacy source-pointer suppression,
 sales-success renewal-risk eval coverage,
 object connected-work approval hydration through output source refs,
 chat retrieval preservation and exact collection of object-summary source refs,
@@ -167,7 +225,7 @@ Legend:
 | MCP inbound/outbound | Partial: browser verifies outbound bearer-key minting plus JSON-RPC `timeline.list_events` only exposes team-visible events, excluding private and specific-user rows | Strong MCP OAuth/server/key/server/tool route contracts, including outbound moment retrieval and team-visible evidence filtering | Missing MCP-specific actions if/when added | Strong auth/OAuth state/tool namespace/server handler, tool namespace, custom tool-output reconciliation capture, oversized replay-degraded fallback, provider-object anchors from structured MCP snapshots, non-browser `askAgent` provider-backed MCP tool loop, live-model custom MCP tool use with evidence capture, and deterministic untrusted-output/failure/reauth evals | Strong MCP health worker coverage for SSRF-safe production URL validation, cache invalidation, disabled-server skips, and persisted success/failure state | Partial: MCP server add/OAuth-start/enable/remove/test-call management states, reconnect-specific test-call failures, generic tool-call failure dialogs, plus outbound key mint/revoke and client setup snippets | Real external custom-server behavior and richer browser/chat reconnect states |
 | Email inbound/outbound | Partial: browser posts a Postmark-shaped webhook payload, verifies the team-scoped email raw event, sees it render in the signed-in timeline, and checks sender-whitelist block/allow behavior through Team settings | Partial: inbound webhook covered, including Redis queue wiring and document attachment deps | Whitelist action covered; invite/support email action gaps remain | Strong parser/dispatcher/outbound/IP allowlist/source-capture coverage, including sender auth, sender whitelist filtering, visibility defaults, attachment/audio routing, captured-document handoff, downstream queues, duplicate delivery recovery, and optional DB-polled Postmark inbound capture canary coverage | Partial: worker-backed inbound attachment extraction from email-captured documents covered | Partial: inbound sender whitelist configured/unconfigured/success/error/pending states | Scheduled Postmark inbound capture canary credentials |
 | Meeting bots and meetings | Partial: browser saved-meeting setup creates an auto-join schedule, scheduled captures render, finalized transcript detail shows summary/chunks, and the timeline shows the meeting summary card | Strong Recall status/transcript webhook coverage for lifecycle, no-show, failure, and finalize handoff contracts | Thin meetings action coverage | Strong meetings scope, Saved Meeting alias/schedule/materialization/confirmation/failure-counter behavior, Recall/Svix/url helpers, and live read-only Recall API list canary | Strong meeting-finalize and meeting-scheduler workers | Partial: saved-meeting form reset plus meeting detail transcript/summary/export/cancel states | Provider-backed scheduling/finalization capture canary and richer meeting list/form edge states |
-| Reconciliation and work artifacts | Partial: browser covers Team -> Reconciliation with persisted evidence, clusters, outputs, failed output state, worker-backed manual repair result metrics and cluster evidence, cluster drilldown, source audit and dry-run backfill queue submissions plus completed worker-run metrics, team and cluster manual-reconcile queue submissions, run-history filtering/pagination, approval-to-reconciliation cluster cross-linking, approval acceptance-effect/authority text, approval accept/reject durable-state effects, partial bulk approval failure recovery, invalid manual-reconcile operator errors, private/specific-user cluster visibility filtering, direct cluster URL denial, and mobile no-overflow layout | Covered through team reconciliation page/action route contracts | Strong reconciliation queue action boundary tests | Strong reconciliation schema, normalization, backfill, resolver, dashboard snapshot, source-ref, visibility-floor, authority, planner, production-sampling, MCP capture, and live artifact eval coverage | Strong reconciliation worker audit/backfill/scoped repair coverage | Partial: dashboard and cluster pages render snapshot/drilldown states, output IDs/source refs, and approval rows expose reconciliation source-ref metadata plus acceptance-effect/authority text and stale/partial bulk recovery states | Richer browser coverage for stale approval cross-state edge cases |
+| Reconciliation and work artifacts | Partial: browser covers Team -> Reconciliation with persisted evidence, clusters, outputs, failed output state, worker-backed manual repair result metrics and cluster evidence, cluster drilldown, source audit and dry-run backfill queue submissions plus completed worker-run metrics, team and cluster manual-reconcile queue submissions, run-history filtering/pagination, approval-to-reconciliation cluster cross-linking, approval acceptance-effect/authority text, approval accept/reject durable-state effects, partial bulk approval failure recovery, invalid manual-reconcile operator errors, private/specific-user cluster visibility filtering, direct cluster URL denial, and mobile no-overflow layout | Covered through team reconciliation page/action route contracts | Strong reconciliation queue action boundary tests | Strong reconciliation schema, normalization, backfill, resolver, dashboard snapshot, source-ref, visibility-floor, authority, planner, production-sampling, MCP capture, and live artifact eval coverage | Strong reconciliation worker audit/backfill/scoped repair coverage, including separate evidence, association, resolver-output, and projection repair metrics | Partial: dashboard and cluster pages render snapshot/drilldown states, output IDs/source refs, and approval rows expose reconciliation source-ref metadata plus acceptance-effect/authority text and stale/partial bulk recovery states | Richer browser coverage for stale approval cross-state edge cases |
 | Job recovery and failed work | Partial: admin dashboard retry/dismiss flow covers failed embedding work, retry metadata clearing, and dismissal persistence | Strong retry/dismiss/dashboard route coverage plus integration cooldown exclusion, cron reconcile auth/failure behavior, and direct finished archive route coverage | N/A | Strong job-recovery PGlite coverage, including provider cooldown exclusion and retained finished-job archive pagination | Janitor worker covered | Partial job recovery list component with filters, single retry/dismiss, bulk retry/dismiss, confirmation, retry status, and finished archive states | Richer dashboard edge states and worker-finished archive transitions |
 | Onboarding | Partial: checklist renders on the dashboard, manual completion mutates through the API, dismissal persists across reload, and reopening restores the checklist | Strong checklist route coverage | Strong onboarding action coverage | Strong PGlite checklist inference, dismiss/reopen, manual completion, and team isolation | Missing | Partial checklist static, dismissed/reopen, dismiss, pending-disabled, step-link, and manual-completion states | Broader app-page checklist interaction breadth |
 | Suggestions and background agent actions | Partial: capture-to-suggestion-to-acceptance creates durable task/calendar state, object-update approval updates an existing object without duplication, failed approval filter/retry state, mixed bulk-accept/merge-review separation, and bulk approval failure recovery are browser-covered | Missing route coverage if surfaced later | Strong suggestions action boundary tests, including bounded bulk accept/reject payloads | Strong PGlite suggestions scope, dedupe, accept/reject, task/object/calendar/decision durability, selected bulk-accept merge-review exclusion, and cross-team failure behavior | Partial: deterministic suggestion worker processor tests, deterministic background proposal eval for visibility-safe conversation reviews, plus opt-in live-model extraction/projection eval | Partial: approvals pending/error interaction states, mixed bulk accept/reject with merge-review separation, stale bundle-level accept recovery, and object cleanup suggestions review/fallback/pagination | Broader browser coverage for calendar edge states |
@@ -739,9 +797,10 @@ tests and evals carry the branch coverage and model/tool behavior.
     snapshots when mutable calendar rows change, and normalize current evidence
     to full replay.
   - Object and board direct-write raw events stamp inline source refs, payload
-    digests, and compact system snapshots; invalid or cross-team source events
-    fail closed instead of synthesizing source refs, and their reconciliation
-    evidence preserves the digest for replay-safe fixture generation.
+    digests, and compact system snapshots; invalid, cross-team, or replay-ref
+    missing source events fail closed instead of synthesizing source refs, and
+    their reconciliation evidence preserves the digest for replay-safe fixture
+    generation.
   - Meeting finalization stamps the consolidated transcript raw event with an
     inline meeting payload ref/digest/snapshot, reuses the calendar replay
     envelope for generated meeting-calendar mirrors, and normalizes meeting plus
@@ -1051,7 +1110,8 @@ Once the suite is mature, split commands by layer:
   production-sampling artifact loading/report aggregation, including
   committed redacted live-case fixture replay, artifact-kind miss reporting,
   duplicate source-ref stale-pass downgrades, operator CLI failure-gate
-  coverage, and per-ref source-payload enforcement.
+  coverage, legacy-provenance cutover CLI gating, and per-ref source-payload
+  enforcement.
 - `pnpm test:e2e-env`: E2E environment and isolated Docker-port contract smoke.
 - `pnpm test:dist-imports`: compiled-package import smoke.
 - `pnpm validate`: format, typecheck, lint, and knip.
