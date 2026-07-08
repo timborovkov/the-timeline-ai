@@ -37,7 +37,7 @@ function task(input: Partial<objects.ObjectRow> = {}): objects.ObjectRow {
     priority: 2,
     ownerUserId: null,
     assigneeUserId: 'user-1',
-    dueAt: new Date('2026-07-04T00:00:00.000Z'),
+    dueAt: new Date('2099-07-04T00:00:00.000Z'),
     agentSuggested: false,
     archivedAt: null,
     aliases: [],
@@ -137,7 +137,7 @@ describe('TaskBoard', () => {
 
     expect(link.getAttribute('href')).toBe('/app/tasks?task=task-1');
     expect(screen.getByText('Ada Lovelace')).toBeTruthy();
-    expect(screen.getByText(/2026-07-04/)).toBeTruthy();
+    expect(screen.getByText('Due 2099-07-04')).toBeTruthy();
     expect(screen.getByText('P2')).toBeTruthy();
   });
 

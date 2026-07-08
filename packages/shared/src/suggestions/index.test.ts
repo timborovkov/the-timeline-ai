@@ -3328,6 +3328,43 @@ describe('suggestion scope', () => {
     expect(result.rows[0]?.status).toBe('todo');
   });
 
+  it('normalizes string priority labels when accepting a create task suggestion', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Create high priority task',
+      dedupeKey: 'create-high-priority-task',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Adjust form navigation buttons',
+          dedupeKey: 'create-high-priority-task:item',
+          proposedPayload: {
+            canonicalName: 'Adjust form navigation buttons',
+            status: 'todo',
+            priority: 'high',
+          },
+        },
+      ],
+    });
+    const itemId = bundle.items[0]?.id;
+    expect(itemId).toBeDefined();
+    expect(bundle.items[0]?.proposedPayload).toMatchObject({ priority: 2 });
+
+    await db
+      .update(agentSuggestionItems)
+      .set({ proposedPayload: { ...bundle.items[0]?.proposedPayload, priority: 'low' } })
+      .where(eq(agentSuggestionItems.id, itemId ?? ''));
+
+    await expect(scope.suggestions.acceptSuggestionItem(itemId ?? '')).resolves.toBe(true);
+
+    const result = await pg.query<{ priority: number }>(
+      `SELECT priority FROM entities WHERE team_id = '${TEAM_ID}' AND canonical_name = 'Adjust form navigation buttons'`,
+    );
+    expect(result.rows[0]?.priority).toBe(4);
+  });
+
   it('falls back to the proposal title when a create object payload omits canonicalName', async () => {
     const scope = withTeam(db as never, TEAM_ID, USER_ID);
     const bundle = await scope.suggestions.createOrMergeSuggestionBundle({

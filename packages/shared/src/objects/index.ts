@@ -1137,10 +1137,14 @@ export interface ObjectPatch {
 
 type EntityRow = typeof entities.$inferSelect;
 
-function toObjectRow(row: EntityRow): ObjectRow {
-  const aliases = Array.isArray(row.aliases)
-    ? (row.aliases as unknown[]).filter((v): v is string => typeof v === 'string')
+function stringArrayFromUnknown(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === 'string')
     : [];
+}
+
+function toObjectRow(row: EntityRow): ObjectRow {
+  const aliases = stringArrayFromUnknown(row.aliases);
   const metadata =
     row.metadata && typeof row.metadata === 'object'
       ? (row.metadata as Record<string, unknown>)
@@ -1614,6 +1618,92 @@ function objectNamesForMatching(object: Pick<ObjectRow, 'canonicalName' | 'alias
     .slice(0, 8);
 }
 
+const OBJECT_SEARCH_STOP_WORDS = new Set([
+  'about',
+  'after',
+  'before',
+  'board',
+  'done',
+  'follow',
+  'from',
+  'meeting',
+  'object',
+  'project',
+  'status',
+  'task',
+  'that',
+  'this',
+  'todo',
+  'with',
+  'work',
+]);
+
+function objectEvidenceTokens(object: Pick<ObjectRow, 'canonicalName' | 'aliases'>): string[] {
+  const tokens = new Set<string>();
+  for (const value of [object.canonicalName, ...object.aliases]) {
+    for (const token of value.toLowerCase().split(/[^a-z0-9]+/)) {
+      if (token.length < 4) continue;
+      if (/^\d+$/.test(token)) continue;
+      if (OBJECT_SEARCH_STOP_WORDS.has(token)) continue;
+      tokens.add(token);
+    }
+  }
+  return [...tokens].slice(0, 10);
+}
+
+function objectContentMatchCondition(
+  column: unknown,
+  names: readonly string[],
+  tokens: readonly string[],
+): SQL | undefined {
+  const exactMatch = likeMentionCondition(column, names);
+  const tokenGroupMatches: SQL[] = [];
+  for (let left = 0; left < tokens.length; left += 1) {
+    const leftToken = tokens[left];
+    if (!leftToken) continue;
+    for (let middle = left + 1; middle < tokens.length; middle += 1) {
+      const middleToken = tokens[middle];
+      if (!middleToken) continue;
+      for (let right = middle + 1; right < tokens.length; right += 1) {
+        const rightToken = tokens[right];
+        if (!rightToken) continue;
+        const groupMatch = and(
+          sql`lower(${column as never}) LIKE ${likePattern(leftToken)} ESCAPE '\\'`,
+          sql`lower(${column as never}) LIKE ${likePattern(middleToken)} ESCAPE '\\'`,
+          sql`lower(${column as never}) LIKE ${likePattern(rightToken)} ESCAPE '\\'`,
+        );
+        if (groupMatch) tokenGroupMatches.push(groupMatch);
+      }
+    }
+  }
+  if (exactMatch && tokenGroupMatches.length > 0) return or(exactMatch, ...tokenGroupMatches);
+  if (exactMatch) return exactMatch;
+  return tokenGroupMatches.length > 0 ? or(...tokenGroupMatches) : undefined;
+}
+
+function escapeRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function textMentionsToken(text: string, token: string): boolean {
+  return new RegExp(`(^|[^a-z0-9])${escapeRegex(token)}([^a-z0-9]|$)`, 'i').test(text);
+}
+
+function textMatchesObjectSearch(
+  text: string,
+  names: readonly string[],
+  tokens: readonly string[],
+): boolean {
+  if (textMentionsAnyValue(text, names)) return true;
+  let matches = 0;
+  for (const token of tokens) {
+    if (!textMentionsToken(text, token)) continue;
+    matches += 1;
+    if (matches >= 3) return true;
+  }
+  return false;
+}
+
 function jsonishText(value: unknown): string {
   if (value === null || value === undefined) return '';
   if (typeof value === 'string') return value;
@@ -1995,7 +2085,7 @@ export async function getObjectSectionPage(
   await scope.requireMembership();
   if (!UUID_RE.test(entityId)) return null;
   const exists = await db
-    .select({ id: entities.id })
+    .select({ id: entities.id, canonicalName: entities.canonicalName, aliases: entities.aliases })
     .from(entities)
     .where(
       and(
@@ -2195,9 +2285,50 @@ export async function getObjectSectionPage(
     return pageWindow(rows, limit, (row) => ({ at: row.occurredAt.toISOString(), id: row.id }));
   }
 
+  const objectForMatching = exists[0];
+  const names = objectNamesForMatching({
+    canonicalName: objectForMatching.canonicalName,
+    aliases: stringArrayFromUnknown(objectForMatching.aliases),
+  });
+  const tokens = objectEvidenceTokens({
+    canonicalName: objectForMatching.canonicalName,
+    aliases: stringArrayFromUnknown(objectForMatching.aliases),
+  });
+  const factRawEventRows = await db
+    .select({ rawEventId: factsTable.rawEventId })
+    .from(factEntities)
+    .innerJoin(factsTable, eq(factsTable.id, factEntities.factId))
+    .innerJoin(rawEvents, eq(rawEvents.id, factsTable.rawEventId))
+    .where(
+      and(
+        eq(factEntities.entityId, entityId),
+        eq(factsTable.teamId, scope.teamId),
+        eq(rawEvents.teamId, scope.teamId),
+        rawEventVisibility(scope),
+      ),
+    )
+    .limit(300);
+  const factRawEventIds = Array.from(new Set(factRawEventRows.map((row) => row.rawEventId)));
+  const eventConditions: SQL[] = [sql`${rawEvents.sourceMetadata} ->> 'entity_id' = ${entityId}`];
+  if (factRawEventIds.length > 0) eventConditions.push(inArray(rawEvents.id, factRawEventIds));
+  const eventContentMatch = objectContentMatchCondition(rawEvents.contentText, names, tokens);
+  if (eventContentMatch) eventConditions.push(eventContentMatch);
   const cursorSql = cursorCondition(args.cursor, rawEvents.occurredAt, rawEvents.id);
   const rows = await db
-    .select()
+    .select({
+      id: rawEvents.id,
+      teamId: rawEvents.teamId,
+      source: rawEvents.source,
+      authorUserId: rawEvents.authorUserId,
+      contentText: rawEvents.contentText,
+      contentAudioUrl: rawEvents.contentAudioUrl,
+      sourceMetadata: rawEvents.sourceMetadata,
+      visibility: rawEvents.visibility,
+      visibilityUserIds: rawEvents.visibilityUserIds,
+      occurredAt: rawEvents.occurredAt,
+      createdAt: rawEvents.createdAt,
+      sourceEntityId: sql<string | null>`${rawEvents.sourceMetadata} ->> 'entity_id'`,
+    })
     .from(rawEvents)
     .where(
       and(
@@ -2205,13 +2336,21 @@ export async function getObjectSectionPage(
         ne(rawEvents.source, 'system'),
         rawEventVisibility(scope),
         sql`COALESCE(${rawEvents.sourceMetadata} ->> 'deleted', 'false') <> 'true'`,
-        sql`${rawEvents.sourceMetadata} ->> 'entity_id' = ${entityId}`,
+        or(...eventConditions),
         ...(cursorSql ? [cursorSql] : []),
       ),
     )
     .orderBy(desc(rawEvents.occurredAt), desc(rawEvents.id))
     .limit(limit + 1);
-  return pageWindow(rows, limit, (row) => ({ at: row.occurredAt.toISOString(), id: row.id }));
+  const factRawEventIdSet = new Set(factRawEventIds);
+  const filteredRows = rows.filter((row) => {
+    if (row.sourceEntityId === entityId || factRawEventIdSet.has(row.id)) return true;
+    return textMatchesObjectSearch(row.contentText ?? '', names, tokens);
+  });
+  return pageWindow(filteredRows, limit, (row) => ({
+    at: row.occurredAt.toISOString(),
+    id: row.id,
+  }));
 }
 
 async function getConnectedWork(
@@ -2220,6 +2359,7 @@ async function getConnectedWork(
   object: ObjectRow,
 ): Promise<ObjectDetail['connectedWork']> {
   const names = objectNamesForMatching(object);
+  const tokens = objectEvidenceTokens(object);
   const nameMatch = likeMentionCondition(entities.canonicalName, names);
 
   const factIdRows = await db
@@ -2599,7 +2739,7 @@ async function getConnectedWork(
   if (artifactRawEventIds.length > 0) {
     timelineConditions.push(inArray(rawEvents.id, artifactRawEventIds));
   }
-  const eventContentMatch = likeMentionCondition(rawEvents.contentText, names);
+  const eventContentMatch = objectContentMatchCondition(rawEvents.contentText, names, tokens);
   if (eventContentMatch) timelineConditions.push(eventContentMatch);
   const timelineRows =
     timelineConditions.length > 0
@@ -2635,7 +2775,7 @@ async function getConnectedWork(
       ) {
         return true;
       }
-      return textMentionsAnyValue(row.contentText ?? '', names);
+      return textMatchesObjectSearch(row.contentText ?? '', names, tokens);
     })
     .slice(0, 12);
 

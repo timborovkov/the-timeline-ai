@@ -446,6 +446,9 @@ describe('POST /api/chat', () => {
       get_app_route: { type: 'native' },
       get_object: { type: 'native' },
       search_objects: { type: 'native' },
+      list_pending_approvals: { type: 'native' },
+      suggest_object_memory: { type: 'native' },
+      execute_object_update: { type: 'native' },
     });
 
     const response = await POST(
@@ -471,7 +474,50 @@ describe('POST /api/chat', () => {
       get_app_route: { type: 'native' },
       get_object: { type: 'native' },
       search_objects: { type: 'native' },
+      list_pending_approvals: { type: 'native' },
+      suggest_object_memory: { type: 'native' },
     });
+    expect(streamCall?.[0].tools).not.toHaveProperty('execute_object_update');
+  });
+
+  it('adds object-memory proposal tools for durable memory turns', async () => {
+    const memoryMessage = {
+      id: 'm-memory',
+      role: 'user',
+      parts: [{ type: 'text', text: 'Remember that AuditAL is an alias for AuditAI' }],
+    };
+    fakes.fakeSafeValidateUIMessages.mockResolvedValue({
+      success: true,
+      data: [memoryMessage],
+    });
+    fakes.fakeBuildAgentTools.mockReturnValue({
+      retrieve_workspace_context: { type: 'native' },
+      search_timeline: { type: 'native' },
+      search_app_guide: { type: 'native' },
+      get_app_route: { type: 'native' },
+      get_object: { type: 'native' },
+      search_objects: { type: 'native' },
+      list_pending_approvals: { type: 'native' },
+      suggest_task: { type: 'native' },
+      suggest_object_memory: { type: 'native' },
+      execute_object_update: { type: 'native' },
+    });
+
+    const response = await POST(request(validBody({ messages: [memoryMessage] })));
+
+    expect(response.status).toBe(200);
+    const streamCall = fakes.fakeStreamChat.mock.calls.at(-1) as unknown as
+      | [{ tools?: Record<string, unknown> }]
+      | undefined;
+    expect(streamCall?.[0].tools).toMatchObject({
+      search_objects: { type: 'native' },
+      list_pending_approvals: { type: 'native' },
+      suggest_object_memory: { type: 'native' },
+    });
+    expect(streamCall?.[0].tools).toMatchObject({
+      suggest_task: { type: 'native' },
+    });
+    expect(streamCall?.[0].tools).not.toHaveProperty('execute_object_update');
   });
 
   it('adds action tools for completion-style commands on object context', async () => {
@@ -596,8 +642,15 @@ describe('POST /api/chat', () => {
         ]
       | undefined;
     expect(summarizeCall?.[0].selection).toMatchObject({
-      selectedToolGroups: ['core', 'guide', 'objects', 'actions'],
-      omittedToolGroups: ['boards', 'documents', 'calendar', 'approvals', 'integrations'],
+      selectedToolGroups: ['core', 'guide', 'objects', 'objectMemory', 'actions'],
+      omittedToolGroups: [
+        'suggestions',
+        'boards',
+        'documents',
+        'calendar',
+        'approvals',
+        'integrations',
+      ],
       selectedNativeToolCount: 11,
       mcpDiscoverySkipped: true,
     });
@@ -631,7 +684,7 @@ describe('POST /api/chat', () => {
       tool_calls: [],
     });
     expect(appendCall?.[3][1].content.tool_observability?.selection).toMatchObject({
-      selectedToolGroups: ['core', 'guide', 'objects', 'actions'],
+      selectedToolGroups: ['core', 'guide', 'objects', 'objectMemory', 'actions'],
     });
   });
 

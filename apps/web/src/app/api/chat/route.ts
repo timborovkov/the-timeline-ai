@@ -184,6 +184,14 @@ const nativeToolGroups = {
   ],
   guide: ['search_app_guide', 'get_app_route'],
   objects: ['search_objects', 'get_object', 'list_objects', 'list_tasks', 'recent_changes'],
+  objectMemory: ['list_pending_approvals', 'suggest_object_memory'],
+  suggestions: [
+    'list_pending_approvals',
+    'suggest_task',
+    'suggest_object_memory',
+    'suggest_calendar_event',
+    'propose_calendar_update',
+  ],
   boards: ['search_boards'],
   documents: [
     'search_documents_structured',
@@ -237,6 +245,10 @@ function selectAgentToolGroups(input: {
     input.dashboardContext?.taskId ??
     input.dashboardContext?.boardItemId,
   );
+  const hasObjectMemoryIntent = matchesAny(text, [
+    /\b(remember|memory|note|alias|aka|also known as|typo|rename|relationship|related|owner|owns|assignee|responsible|status|stage|priority|due)\b/,
+    /\b(calls? this|known as|same as|belongs to|works? with|reports? to)\b/,
+  ]);
 
   if (
     input.dashboardContext?.objectId ||
@@ -246,6 +258,11 @@ function selectAgentToolGroups(input: {
     ])
   ) {
     groups.add('objects');
+  }
+
+  if (hasObjectContext || hasObjectMemoryIntent) {
+    groups.add('objects');
+    groups.add('objectMemory');
   }
 
   if (
@@ -279,11 +296,12 @@ function selectAgentToolGroups(input: {
 
   if (
     matchesAny(text, [
-      /\b(create|add|update|change|edit|set|move|cancel|delete|remove|archive|merge|remember|schedule|reschedule|approve|do it|mark|done|complete|finish|close)\b/,
+      /\b(create|add|update|change|edit|set|move|cancel|delete|remove|archive|merge|schedule|reschedule|approve|do it|mark|done|complete|finish|close)\b/,
     ])
   ) {
     groups.add('actions');
     groups.add('objects');
+    if (hasObjectMemoryIntent) groups.add('objectMemory');
     if (
       input.dashboardContext?.boardId ||
       input.dashboardContext?.boardItemId ||
@@ -291,6 +309,13 @@ function selectAgentToolGroups(input: {
     ) {
       groups.add('boards');
     }
+  }
+
+  if (
+    hasObjectMemoryIntent ||
+    matchesAny(text, [/\b(remember|suggest|propose|proposal|queue|track|follow[- ]?up)\b/])
+  ) {
+    groups.add('suggestions');
   }
 
   if (hasObjectContext && matchesAny(text, [/\b(mark|done|complete|close|finish)\b/])) {

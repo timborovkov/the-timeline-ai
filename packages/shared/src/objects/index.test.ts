@@ -134,6 +134,21 @@ async function upsertObjectSummary(values: typeof objectSummaries.$inferInsert):
     });
 }
 
+async function withHistoricalLegacyObjectProvenance<T>(fn: () => Promise<T>): Promise<T> {
+  await pg.exec(`
+    ALTER TABLE entities DROP CONSTRAINT entities_legacy_agent_suggested_false_chk;
+    ALTER TABLE object_changes DROP CONSTRAINT object_changes_legacy_source_event_id_null_chk;
+  `);
+  try {
+    return await fn();
+  } finally {
+    await pg.exec(`
+      ALTER TABLE entities ADD CONSTRAINT entities_legacy_agent_suggested_false_chk CHECK (agent_suggested = false) NOT VALID;
+      ALTER TABLE object_changes ADD CONSTRAINT object_changes_legacy_source_event_id_null_chk CHECK (source_event_id IS NULL) NOT VALID;
+    `);
+  }
+}
+
 describe('object scope — team ownership and audit behavior', () => {
   it('builds direct-write source context from private evidence visibility', async () => {
     const [raw] = await db
@@ -442,10 +457,12 @@ describe('object scope — team ownership and audit behavior', () => {
       actor: { kind: 'user', userId: USER_OWNER },
     });
 
-    await db
-      .update(entities)
-      .set({ agentSuggested: true, status: 'suggested' })
-      .where(eq(entities.id, object.id));
+    await withHistoricalLegacyObjectProvenance(async () => {
+      await db
+        .update(entities)
+        .set({ agentSuggested: true, status: 'suggested' })
+        .where(eq(entities.id, object.id));
+    });
 
     await expect(scope.getObject(object.id)).resolves.toMatchObject({
       id: object.id,
@@ -2248,6 +2265,61 @@ describe('object scope — notes and suggestions', () => {
       expect.objectContaining({ title: 'Hidden source-ref DFK approval' }),
     );
   });
+
+  it('surfaces paraphrased timeline evidence for long task titles', async () => {
+    const scope = withTeam(db, TEAM_A, USER_OWNER).objects;
+    const task = await scope.createObject({
+      type: 'task',
+      canonicalName: 'Replace FSLI scoping logic with risk-informed approach',
+      aliases: ['fsli-scoping-logic-overhaul'],
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    const weakEventInputs = Array.from({ length: 25 }, (_, index) => ({
+      teamId: TEAM_A,
+      authorUserId: USER_OWNER,
+      source: 'telegram' as const,
+      contentText: `The team discussed a general risk approach for audit planning update ${index}.`,
+      occurredAt: new Date(`2026-06-29T12:${String(index).padStart(2, '0')}:00.000Z`),
+      visibility: 'team' as const,
+    }));
+    const [sourceEvent, ...weakEvents] = await db
+      .insert(rawEvents)
+      .values([
+        {
+          teamId: TEAM_A,
+          authorUserId: USER_OWNER,
+          source: 'telegram',
+          contentText:
+            'Mikael asked to replace the current FSLI scoping logic in AuditAI with a risk-informed approach based on ISA 320 and ISA 315.',
+          occurredAt: new Date('2026-06-29T11:00:00.000Z'),
+          visibility: 'team',
+        },
+        ...weakEventInputs,
+      ])
+      .returning({ id: rawEvents.id });
+
+    const detail = await scope.getObject(task.id);
+    const eventsPage = await scope.getObjectSectionPage(task.id, 'events');
+
+    expect(detail?.connectedWork.timelineEvents).toEqual([
+      expect.objectContaining({
+        id: sourceEvent?.id,
+        contentText:
+          'Mikael asked to replace the current FSLI scoping logic in AuditAI with a risk-informed approach based on ISA 320 and ISA 315.',
+      }),
+    ]);
+    expect(detail?.provenance.relatedEvidence).toEqual([
+      expect.objectContaining({
+        evidence: [expect.objectContaining({ rawEventId: sourceEvent?.id })],
+      }),
+    ]);
+    expect(eventsPage?.items).toEqual([
+      expect.objectContaining({ id: sourceEvent?.id, source: 'telegram' }),
+    ]);
+    expect(detail?.connectedWork.timelineEvents).not.toContainEqual(
+      expect.objectContaining({ id: weakEvents[0]?.id }),
+    );
+  });
 });
 
 describe('object scope — chat session isolation', () => {
@@ -3833,17 +3905,19 @@ describe('object scope — merge cleanup', () => {
       visibility: 'team',
     });
 
-    await db.insert(objectChanges).values({
-      teamId: TEAM_A,
-      entityId: object.id,
-      actorKind: 'agent',
-      actorUserId: null,
-      status: 'applied',
-      field: 'stage',
-      previousValue: null,
-      newValue: 'pilot',
-      sourceEventId: legacyEvent.id,
-      note: 'Legacy pointer should not feed summary context.',
+    await withHistoricalLegacyObjectProvenance(async () => {
+      await db.insert(objectChanges).values({
+        teamId: TEAM_A,
+        entityId: object.id,
+        actorKind: 'agent',
+        actorUserId: null,
+        status: 'applied',
+        field: 'stage',
+        previousValue: null,
+        newValue: 'pilot',
+        sourceEventId: legacyEvent.id,
+        note: 'Legacy pointer should not feed summary context.',
+      });
     });
 
     const detail = await workspace.objects.getObject(object.id);
@@ -3919,17 +3993,19 @@ describe('object scope — merge cleanup', () => {
       inputFingerprint: 'task-output-summary',
       generatedAt: new Date('2026-06-02T10:05:00.000Z'),
     });
-    await db.insert(objectChanges).values({
-      teamId: TEAM_A,
-      entityId: object.id,
-      actorKind: 'agent',
-      actorUserId: null,
-      status: 'applied',
-      field: 'stage',
-      previousValue: null,
-      newValue: 'pilot',
-      sourceEventId: legacyEvent.id,
-      note: 'Legacy pointer should not invalidate summaries.',
+    await withHistoricalLegacyObjectProvenance(async () => {
+      await db.insert(objectChanges).values({
+        teamId: TEAM_A,
+        entityId: object.id,
+        actorKind: 'agent',
+        actorUserId: null,
+        status: 'applied',
+        field: 'stage',
+        previousValue: null,
+        newValue: 'pilot',
+        sourceEventId: legacyEvent.id,
+        note: 'Legacy pointer should not invalidate summaries.',
+      });
     });
 
     await expect(
