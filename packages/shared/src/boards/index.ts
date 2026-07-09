@@ -73,6 +73,19 @@ interface BoardDirectWriteSourceContext {
   visibilityUserIds: string[] | null;
 }
 
+function boardDirectWriteSourceEnvelope(sourceContext: BoardDirectWriteSourceContext) {
+  return {
+    sourceRefs: sourceContext.sourceRefs,
+    sourcePayloadRefs: sourceContext.sourcePayloadRefs,
+    visibility: sourceContext.visibility,
+    visibilityOwnerUserId: sourceContext.visibilityOwnerUserId,
+    visibilityUserIds: sourceContext.visibilityUserIds,
+    visibilityFloor: sourceContext.visibility,
+    visibilityFloorOwnerUserId: sourceContext.visibilityOwnerUserId,
+    visibilityFloorUserIds: sourceContext.visibilityUserIds,
+  };
+}
+
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const BOARD_TEMPLATES = ['pipeline', 'task_board', 'catalog', 'custom'] as const;
 const BOARD_ITEM_QUERY_LIMIT_MAX = 50_000;
@@ -782,6 +795,12 @@ async function emitBoardDirectWriteOutput(input: {
     teamId: input.teamId,
     sourceRawEventId: input.sourceEventId,
   });
+  const metrics = {
+    target_kind: input.targetKind,
+    operation: input.operation,
+    actor_kind: input.actor.kind,
+    ...(input.changedFields ? { changed_fields: input.changedFields } : {}),
+  };
   const [run] = await input.db
     .insert(reconciliationRuns)
     .values({
@@ -800,12 +819,7 @@ async function emitBoardDirectWriteOutput(input: {
       }),
       engineVersion: BOARD_DIRECT_WRITE_RUN_VERSION,
       completedAt: new Date(),
-      metrics: {
-        target_kind: input.targetKind,
-        operation: input.operation,
-        actor_kind: input.actor.kind,
-        ...(input.changedFields ? { changed_fields: input.changedFields } : {}),
-      },
+      metrics,
     })
     .onConflictDoUpdate({
       target: [
@@ -816,12 +830,7 @@ async function emitBoardDirectWriteOutput(input: {
       set: {
         status: 'completed',
         completedAt: new Date(),
-        metrics: {
-          target_kind: input.targetKind,
-          operation: input.operation,
-          actor_kind: input.actor.kind,
-          ...(input.changedFields ? { changed_fields: input.changedFields } : {}),
-        },
+        metrics,
       },
     })
     .returning({ id: reconciliationRuns.id });
@@ -866,14 +875,7 @@ async function emitBoardDirectWriteOutput(input: {
       },
       confidence: 'high',
       requiresApproval: false,
-      sourceRefs: sourceContext.sourceRefs,
-      sourcePayloadRefs: sourceContext.sourcePayloadRefs,
-      visibility: sourceContext.visibility,
-      visibilityOwnerUserId: sourceContext.visibilityOwnerUserId,
-      visibilityUserIds: sourceContext.visibilityUserIds,
-      visibilityFloor: sourceContext.visibility,
-      visibilityFloorOwnerUserId: sourceContext.visibilityOwnerUserId,
-      visibilityFloorUserIds: sourceContext.visibilityUserIds,
+      ...boardDirectWriteSourceEnvelope(sourceContext),
       dedupeKey: buildOutputDedupeKey({
         teamId: input.teamId,
         targetKind: input.targetKind,
@@ -889,14 +891,7 @@ async function emitBoardDirectWriteOutput(input: {
       target: [reconciliationOutputs.teamId, reconciliationOutputs.dedupeKey],
       set: {
         runId: run.id,
-        sourceRefs: sourceContext.sourceRefs,
-        sourcePayloadRefs: sourceContext.sourcePayloadRefs,
-        visibility: sourceContext.visibility,
-        visibilityOwnerUserId: sourceContext.visibilityOwnerUserId,
-        visibilityUserIds: sourceContext.visibilityUserIds,
-        visibilityFloor: sourceContext.visibility,
-        visibilityFloorOwnerUserId: sourceContext.visibilityOwnerUserId,
-        visibilityFloorUserIds: sourceContext.visibilityUserIds,
+        ...boardDirectWriteSourceEnvelope(sourceContext),
         status: 'applied',
         updatedAt: new Date(),
       },

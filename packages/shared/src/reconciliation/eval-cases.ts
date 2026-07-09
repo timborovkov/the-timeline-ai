@@ -14,6 +14,11 @@ const PRIVATE_OWNER = {
   visibility: 'private' as const,
   visibilityOwnerUserId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
 };
+const TEAM_VISIBLE = { visibility: TEAM_VISIBILITY, visibilityFloor: TEAM_VISIBILITY };
+const PRIVATE_OWNER_VISIBLE = {
+  visibility: PRIVATE_OWNER,
+  visibilityFloor: PRIVATE_OWNER,
+};
 
 export const REQUIRED_RECONCILIATION_EVAL_SURFACES: ReconciliationEvalIngestionSurface[] = [
   ...reconciliationEvalIngestionSurfaces,
@@ -33,8 +38,7 @@ export const RECONCILIATION_DETERMINISTIC_EVAL_CASES: DeterministicEvalCase[] = 
         id: 'email-discussion-association-row',
         role: 'discussion',
         artifactClusterKind: 'customer_project',
-        visibility: TEAM_VISIBILITY,
-        visibilityFloor: TEAM_VISIBILITY,
+        ...TEAM_VISIBLE,
         sourceRefs: [
           {
             source: 'email',
@@ -48,8 +52,7 @@ export const RECONCILIATION_DETERMINISTIC_EVAL_CASES: DeterministicEvalCase[] = 
         id: 'monday-lifecycle-association-row',
         role: 'lifecycle_update',
         artifactClusterKind: 'customer_project',
-        visibility: TEAM_VISIBILITY,
-        visibilityFloor: TEAM_VISIBILITY,
+        ...TEAM_VISIBLE,
         sourceRefs: [
           {
             source: 'monday',
@@ -63,8 +66,7 @@ export const RECONCILIATION_DETERMINISTIC_EVAL_CASES: DeterministicEvalCase[] = 
         id: 'monday-provider-record-association-row',
         role: 'related_context',
         artifactClusterKind: 'provider_record',
-        visibility: TEAM_VISIBILITY,
-        visibilityFloor: TEAM_VISIBILITY,
+        ...TEAM_VISIBLE,
         sourceRefs: [
           {
             source: 'monday',
@@ -82,8 +84,7 @@ export const RECONCILIATION_DETERMINISTIC_EVAL_CASES: DeterministicEvalCase[] = 
         targetKind: 'cluster_identity',
         operation: 'link',
         artifactClusterKind: 'customer_project',
-        visibility: TEAM_VISIBILITY,
-        visibilityFloor: TEAM_VISIBILITY,
+        ...TEAM_VISIBLE,
         sourceRefs: [
           {
             source: 'email',
@@ -99,8 +100,7 @@ export const RECONCILIATION_DETERMINISTIC_EVAL_CASES: DeterministicEvalCase[] = 
         targetKind: 'cluster_lifecycle',
         operation: 'update',
         artifactClusterKind: 'incident',
-        visibility: TEAM_VISIBILITY,
-        visibilityFloor: TEAM_VISIBILITY,
+        ...TEAM_VISIBLE,
         sourceRefs: [
           {
             source: 'sentry',
@@ -116,8 +116,7 @@ export const RECONCILIATION_DETERMINISTIC_EVAL_CASES: DeterministicEvalCase[] = 
         targetKind: 'board_item_update',
         operation: 'update',
         artifactClusterKind: 'customer_project',
-        visibility: TEAM_VISIBILITY,
-        visibilityFloor: TEAM_VISIBILITY,
+        ...TEAM_VISIBLE,
         sourceRefs: [
           {
             source: 'monday',
@@ -133,8 +132,7 @@ export const RECONCILIATION_DETERMINISTIC_EVAL_CASES: DeterministicEvalCase[] = 
         targetKind: 'cluster_identity',
         operation: 'link',
         artifactClusterKind: 'provider_record',
-        visibility: TEAM_VISIBILITY,
-        visibilityFloor: TEAM_VISIBILITY,
+        ...TEAM_VISIBLE,
         sourceRefs: [
           {
             source: 'monday',
@@ -150,8 +148,7 @@ export const RECONCILIATION_DETERMINISTIC_EVAL_CASES: DeterministicEvalCase[] = 
         targetKind: 'object_relationship',
         operation: 'create',
         artifactClusterKind: 'customer_project',
-        visibility: TEAM_VISIBILITY,
-        visibilityFloor: TEAM_VISIBILITY,
+        ...TEAM_VISIBLE,
         sourceRefs: [
           {
             source: 'email',
@@ -179,8 +176,7 @@ export const RECONCILIATION_DETERMINISTIC_EVAL_CASES: DeterministicEvalCase[] = 
         targetKind: 'cluster_identity',
         operation: 'link',
         artifactClusterKind: 'customer_project',
-        visibility: TEAM_VISIBILITY,
-        visibilityFloor: TEAM_VISIBILITY,
+        ...TEAM_VISIBLE,
         sourceRefs: [
           {
             source: 'monday',
@@ -219,8 +215,7 @@ export const RECONCILIATION_DETERMINISTIC_EVAL_CASES: DeterministicEvalCase[] = 
         id: 'renewal-email-risk',
         role: 'customer_signal',
         artifactClusterKind: 'account',
-        visibility: TEAM_VISIBILITY,
-        visibilityFloor: TEAM_VISIBILITY,
+        ...TEAM_VISIBLE,
         sourceRefs: [
           {
             source: 'email',
@@ -234,8 +229,7 @@ export const RECONCILIATION_DETERMINISTIC_EVAL_CASES: DeterministicEvalCase[] = 
         id: 'renewal-meeting-commitment',
         role: 'commitment',
         artifactClusterKind: 'meeting',
-        visibility: TEAM_VISIBILITY,
-        visibilityFloor: TEAM_VISIBILITY,
+        ...TEAM_VISIBLE,
         sourceRefs: [
           {
             source: 'meeting',
@@ -253,8 +247,7 @@ export const RECONCILIATION_DETERMINISTIC_EVAL_CASES: DeterministicEvalCase[] = 
         targetKind: 'cluster_identity',
         operation: 'link',
         artifactClusterKind: 'account',
-        visibility: TEAM_VISIBILITY,
-        visibilityFloor: TEAM_VISIBILITY,
+        ...TEAM_VISIBLE,
         sourceRefs: [
           {
             source: 'email',
@@ -276,8 +269,7 @@ export const RECONCILIATION_DETERMINISTIC_EVAL_CASES: DeterministicEvalCase[] = 
         targetKind: 'cluster_identity',
         operation: 'link',
         artifactClusterKind: 'document',
-        visibility: TEAM_VISIBILITY,
-        visibilityFloor: TEAM_VISIBILITY,
+        ...TEAM_VISIBLE,
         sourceRefs: [
           {
             source: 'google_drive',
@@ -293,8 +285,7 @@ export const RECONCILIATION_DETERMINISTIC_EVAL_CASES: DeterministicEvalCase[] = 
         targetKind: 'object_relationship',
         operation: 'create',
         artifactClusterKind: 'deal',
-        visibility: TEAM_VISIBILITY,
-        visibilityFloor: TEAM_VISIBILITY,
+        ...TEAM_VISIBLE,
         sourceRefs: [
           {
             source: 'email',
@@ -328,8 +319,7 @@ export const RECONCILIATION_DETERMINISTIC_EVAL_CASES: DeterministicEvalCase[] = 
         targetKind: 'task',
         operation: 'create',
         artifactClusterKind: 'task',
-        visibility: TEAM_VISIBILITY,
-        visibilityFloor: TEAM_VISIBILITY,
+        ...TEAM_VISIBLE,
         sourceRefs: [
           {
             source: 'meeting',
@@ -366,8 +356,7 @@ export const RECONCILIATION_DETERMINISTIC_EVAL_CASES: DeterministicEvalCase[] = 
         id: 'slack-war-room',
         role: 'discussion',
         artifactClusterKind: 'incident',
-        visibility: TEAM_VISIBILITY,
-        visibilityFloor: TEAM_VISIBILITY,
+        ...TEAM_VISIBLE,
         sourceRefs: [
           {
             source: 'slack',
@@ -381,8 +370,7 @@ export const RECONCILIATION_DETERMINISTIC_EVAL_CASES: DeterministicEvalCase[] = 
         id: 'email-customer-impact',
         role: 'related_context',
         artifactClusterKind: 'account',
-        visibility: TEAM_VISIBILITY,
-        visibilityFloor: TEAM_VISIBILITY,
+        ...TEAM_VISIBLE,
         sourceRefs: [
           {
             source: 'email',
@@ -396,8 +384,7 @@ export const RECONCILIATION_DETERMINISTIC_EVAL_CASES: DeterministicEvalCase[] = 
         id: 'sentry-release-provider-record',
         role: 'release',
         artifactClusterKind: 'provider_record',
-        visibility: TEAM_VISIBILITY,
-        visibilityFloor: TEAM_VISIBILITY,
+        ...TEAM_VISIBLE,
         sourceRefs: [
           {
             source: 'sentry',
@@ -415,8 +402,7 @@ export const RECONCILIATION_DETERMINISTIC_EVAL_CASES: DeterministicEvalCase[] = 
         targetKind: 'cluster_lifecycle',
         operation: 'update',
         artifactClusterKind: 'incident',
-        visibility: TEAM_VISIBILITY,
-        visibilityFloor: TEAM_VISIBILITY,
+        ...TEAM_VISIBLE,
         sourceRefs: [
           {
             source: 'sentry',
@@ -432,8 +418,7 @@ export const RECONCILIATION_DETERMINISTIC_EVAL_CASES: DeterministicEvalCase[] = 
         targetKind: 'cluster_identity',
         operation: 'link',
         artifactClusterKind: 'task',
-        visibility: TEAM_VISIBILITY,
-        visibilityFloor: TEAM_VISIBILITY,
+        ...TEAM_VISIBLE,
         sourceRefs: [
           {
             source: 'github',
@@ -449,8 +434,7 @@ export const RECONCILIATION_DETERMINISTIC_EVAL_CASES: DeterministicEvalCase[] = 
         targetKind: 'cluster_identity',
         operation: 'link',
         artifactClusterKind: 'provider_record',
-        visibility: TEAM_VISIBILITY,
-        visibilityFloor: TEAM_VISIBILITY,
+        ...TEAM_VISIBLE,
         sourceRefs: [
           {
             source: 'sentry',
@@ -466,8 +450,7 @@ export const RECONCILIATION_DETERMINISTIC_EVAL_CASES: DeterministicEvalCase[] = 
         targetKind: 'object_note',
         operation: 'create',
         artifactClusterKind: 'account',
-        visibility: TEAM_VISIBILITY,
-        visibilityFloor: TEAM_VISIBILITY,
+        ...TEAM_VISIBLE,
         sourceRefs: [
           {
             source: 'email',
@@ -511,8 +494,7 @@ export const RECONCILIATION_DETERMINISTIC_EVAL_CASES: DeterministicEvalCase[] = 
         id: 'meeting-decision-thread',
         role: 'decision',
         artifactClusterKind: 'decision',
-        visibility: TEAM_VISIBILITY,
-        visibilityFloor: TEAM_VISIBILITY,
+        ...TEAM_VISIBLE,
         sourceRefs: [
           {
             source: 'meeting',
@@ -530,8 +512,7 @@ export const RECONCILIATION_DETERMINISTIC_EVAL_CASES: DeterministicEvalCase[] = 
         targetKind: 'object',
         operation: 'create',
         artifactClusterKind: 'decision',
-        visibility: TEAM_VISIBILITY,
-        visibilityFloor: TEAM_VISIBILITY,
+        ...TEAM_VISIBLE,
         sourceRefs: [
           {
             source: 'meeting',
@@ -559,8 +540,7 @@ export const RECONCILIATION_DETERMINISTIC_EVAL_CASES: DeterministicEvalCase[] = 
         targetKind: 'cluster_identity',
         operation: 'link',
         artifactClusterKind: 'document',
-        visibility: TEAM_VISIBILITY,
-        visibilityFloor: TEAM_VISIBILITY,
+        ...TEAM_VISIBLE,
         sourceRefs: [
           {
             source: 'document',
@@ -596,8 +576,7 @@ export const RECONCILIATION_DETERMINISTIC_EVAL_CASES: DeterministicEvalCase[] = 
         id: 'mcp-research-context',
         role: 'related_context',
         artifactClusterKind: 'provider_record',
-        visibility: PRIVATE_OWNER,
-        visibilityFloor: PRIVATE_OWNER,
+        ...PRIVATE_OWNER_VISIBLE,
         sourceRefs: [
           {
             source: 'mcp',
@@ -615,8 +594,7 @@ export const RECONCILIATION_DETERMINISTIC_EVAL_CASES: DeterministicEvalCase[] = 
         targetKind: 'cluster_identity',
         operation: 'link',
         artifactClusterKind: 'provider_record',
-        visibility: PRIVATE_OWNER,
-        visibilityFloor: PRIVATE_OWNER,
+        ...PRIVATE_OWNER_VISIBLE,
         sourceRefs: [
           {
             source: 'mcp',
@@ -632,8 +610,7 @@ export const RECONCILIATION_DETERMINISTIC_EVAL_CASES: DeterministicEvalCase[] = 
         targetKind: 'object_note',
         operation: 'create',
         artifactClusterKind: 'topic',
-        visibility: PRIVATE_OWNER,
-        visibilityFloor: PRIVATE_OWNER,
+        ...PRIVATE_OWNER_VISIBLE,
         sourceRefs: [
           {
             source: 'mcp',
@@ -669,8 +646,7 @@ export const RECONCILIATION_DETERMINISTIC_EVAL_CASES: DeterministicEvalCase[] = 
         id: 'private-calendar-project-context',
         role: 'related_context',
         artifactClusterKind: 'calendar_event',
-        visibility: PRIVATE_OWNER,
-        visibilityFloor: PRIVATE_OWNER,
+        ...PRIVATE_OWNER_VISIBLE,
         sourceRefs: [
           {
             source: 'calendar',
@@ -688,8 +664,7 @@ export const RECONCILIATION_DETERMINISTIC_EVAL_CASES: DeterministicEvalCase[] = 
         targetKind: 'task',
         operation: 'create',
         artifactClusterKind: 'task',
-        visibility: PRIVATE_OWNER,
-        visibilityFloor: PRIVATE_OWNER,
+        ...PRIVATE_OWNER_VISIBLE,
         sourceRefs: [
           {
             source: 'calendar',
@@ -724,8 +699,7 @@ export const RECONCILIATION_DETERMINISTIC_EVAL_CASES: DeterministicEvalCase[] = 
         id: 'web-note-context',
         role: 'related_context',
         artifactClusterKind: 'topic',
-        visibility: TEAM_VISIBILITY,
-        visibilityFloor: TEAM_VISIBILITY,
+        ...TEAM_VISIBLE,
         sourceRefs: [
           {
             source: 'web',
@@ -739,8 +713,7 @@ export const RECONCILIATION_DETERMINISTIC_EVAL_CASES: DeterministicEvalCase[] = 
         id: 'system-approval-audit-context',
         role: 'audit_trail',
         artifactClusterKind: 'system_workflow',
-        visibility: TEAM_VISIBILITY,
-        visibilityFloor: TEAM_VISIBILITY,
+        ...TEAM_VISIBLE,
         sourceRefs: [
           {
             source: 'system',
@@ -754,8 +727,7 @@ export const RECONCILIATION_DETERMINISTIC_EVAL_CASES: DeterministicEvalCase[] = 
         id: 'linear-provider-record-context',
         role: 'related_context',
         artifactClusterKind: 'provider_record',
-        visibility: TEAM_VISIBILITY,
-        visibilityFloor: TEAM_VISIBILITY,
+        ...TEAM_VISIBLE,
         sourceRefs: [
           {
             source: 'linear',
@@ -773,8 +745,7 @@ export const RECONCILIATION_DETERMINISTIC_EVAL_CASES: DeterministicEvalCase[] = 
         targetKind: 'cluster_identity',
         operation: 'link',
         artifactClusterKind: 'customer_project',
-        visibility: TEAM_VISIBILITY,
-        visibilityFloor: TEAM_VISIBILITY,
+        ...TEAM_VISIBLE,
         sourceRefs: [
           {
             source: 'ingest_webhook',
@@ -814,8 +785,7 @@ export const RECONCILIATION_DETERMINISTIC_EVAL_CASES: DeterministicEvalCase[] = 
         targetKind: 'cluster_identity',
         operation: 'link',
         artifactClusterKind: 'provider_record',
-        visibility: TEAM_VISIBILITY,
-        visibilityFloor: TEAM_VISIBILITY,
+        ...TEAM_VISIBLE,
         sourceRefs: [
           {
             source: 'linear',
@@ -831,8 +801,7 @@ export const RECONCILIATION_DETERMINISTIC_EVAL_CASES: DeterministicEvalCase[] = 
         targetKind: 'object_note',
         operation: 'create',
         artifactClusterKind: 'account',
-        visibility: TEAM_VISIBILITY,
-        visibilityFloor: TEAM_VISIBILITY,
+        ...TEAM_VISIBLE,
         sourceRefs: [
           {
             source: 'ingest_webhook',

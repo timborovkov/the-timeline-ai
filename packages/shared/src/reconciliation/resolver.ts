@@ -100,6 +100,29 @@ const DEFAULT_ASSOCIATION_POLICY_VERSION = 'anchor-resolution-2026-06';
 const RESOLVER_RUN_VERSION = 'anchor-resolution-run-2026-06';
 const RESOLVER_PLANNER_VERSION = 'anchor-resolution-planner-2026-06';
 
+function sourcePayloadRefsForEvidence(evidence: Pick<EvidenceRow, 'sourcePayloadRef'>): string[] {
+  return evidence.sourcePayloadRef ? [evidence.sourcePayloadRef] : [];
+}
+
+function evidenceOutputEnvelope(
+  evidence: Pick<
+    EvidenceRow,
+    'sourcePayloadRef' | 'visibility' | 'visibilityOwnerUserId' | 'visibilityUserIds'
+  >,
+  sourceRefs: SourceRef[],
+) {
+  return {
+    sourceRefs,
+    sourcePayloadRefs: sourcePayloadRefsForEvidence(evidence),
+    visibility: evidence.visibility,
+    visibilityOwnerUserId: evidence.visibilityOwnerUserId,
+    visibilityUserIds: evidence.visibilityUserIds,
+    visibilityFloor: evidence.visibility,
+    visibilityFloorOwnerUserId: evidence.visibilityOwnerUserId,
+    visibilityFloorUserIds: evidence.visibilityUserIds,
+  };
+}
+
 export async function resolveEvidenceAssociations(
   input: ResolveEvidenceAssociationsInput,
 ): Promise<ResolveEvidenceAssociationsResult> {
@@ -380,9 +403,7 @@ async function emitObservedAssociationOutput(
     associationPolicyVersion: string;
   },
 ): Promise<{ id: string; repaired: boolean } | null> {
-  const sourcePayloadRefs = input.evidence.sourcePayloadRef
-    ? [input.evidence.sourcePayloadRef]
-    : [];
+  const sourceEnvelope = evidenceOutputEnvelope(input.evidence, input.sourceRefs);
   const dedupeKey = buildOutputDedupeKey({
     teamId: input.teamId,
     clusterId: input.clusterId,
@@ -430,14 +451,7 @@ async function emitObservedAssociationOutput(
       },
       confidence: 'high',
       requiresApproval: false,
-      sourceRefs: input.sourceRefs,
-      sourcePayloadRefs,
-      visibility: input.evidence.visibility,
-      visibilityOwnerUserId: input.evidence.visibilityOwnerUserId,
-      visibilityUserIds: input.evidence.visibilityUserIds,
-      visibilityFloor: input.evidence.visibility,
-      visibilityFloorOwnerUserId: input.evidence.visibilityOwnerUserId,
-      visibilityFloorUserIds: input.evidence.visibilityUserIds,
+      ...sourceEnvelope,
       dedupeKey,
       status: 'applied',
     })
@@ -445,14 +459,7 @@ async function emitObservedAssociationOutput(
       target: [reconciliationOutputs.teamId, reconciliationOutputs.dedupeKey],
       set: {
         runId: input.runId,
-        sourceRefs: input.sourceRefs,
-        sourcePayloadRefs,
-        visibility: input.evidence.visibility,
-        visibilityOwnerUserId: input.evidence.visibilityOwnerUserId,
-        visibilityUserIds: input.evidence.visibilityUserIds,
-        visibilityFloor: input.evidence.visibility,
-        visibilityFloorOwnerUserId: input.evidence.visibilityOwnerUserId,
-        visibilityFloorUserIds: input.evidence.visibilityUserIds,
+        ...sourceEnvelope,
         status: 'applied',
         updatedAt: new Date(),
       },
@@ -473,9 +480,7 @@ async function emitConflictOutput(
   },
 ): Promise<{ id: string; repaired: boolean } | null> {
   const sourceRefs = sourceRefsForEvidence(input.evidence);
-  const sourcePayloadRefs = input.evidence.sourcePayloadRef
-    ? [input.evidence.sourcePayloadRef]
-    : [];
+  const sourceEnvelope = evidenceOutputEnvelope(input.evidence, sourceRefs);
   const clusterIds = [...input.clusterIds].sort();
   const dedupeKey = buildOutputDedupeKey({
     teamId: input.teamId,
@@ -521,14 +526,7 @@ async function emitConflictOutput(
       },
       confidence: 'high',
       requiresApproval: true,
-      sourceRefs,
-      sourcePayloadRefs,
-      visibility: input.evidence.visibility,
-      visibilityOwnerUserId: input.evidence.visibilityOwnerUserId,
-      visibilityUserIds: input.evidence.visibilityUserIds,
-      visibilityFloor: input.evidence.visibility,
-      visibilityFloorOwnerUserId: input.evidence.visibilityOwnerUserId,
-      visibilityFloorUserIds: input.evidence.visibilityUserIds,
+      ...sourceEnvelope,
       dedupeKey,
       status: 'pending',
     })
@@ -536,14 +534,7 @@ async function emitConflictOutput(
       target: [reconciliationOutputs.teamId, reconciliationOutputs.dedupeKey],
       set: {
         runId: input.runId,
-        sourceRefs,
-        sourcePayloadRefs,
-        visibility: input.evidence.visibility,
-        visibilityOwnerUserId: input.evidence.visibilityOwnerUserId,
-        visibilityUserIds: input.evidence.visibilityUserIds,
-        visibilityFloor: input.evidence.visibility,
-        visibilityFloorOwnerUserId: input.evidence.visibilityOwnerUserId,
-        visibilityFloorUserIds: input.evidence.visibilityUserIds,
+        ...sourceEnvelope,
         status: 'pending',
         updatedAt: new Date(),
       },

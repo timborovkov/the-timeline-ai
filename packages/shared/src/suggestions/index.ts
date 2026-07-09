@@ -55,6 +55,7 @@ import {
 } from '#src/reconciliation/index.js';
 import { sourcePayloadRefFromMetadata } from '#src/reconciliation/source-snapshot.js';
 import { localDateFromInstant, localDateSpanToUtcRange } from '#src/time/index.js';
+import { rawEventVisibleToUser } from '#src/visibility.js';
 
 type Visibility = 'private' | 'team' | 'specific_users';
 type SuggestionStatus = 'pending' | 'partially_resolved' | 'accepted' | 'rejected' | 'superseded';
@@ -1609,17 +1610,7 @@ function shouldSupersedePendingItem(args: {
 }
 
 function rawEventVisibilityPredicate(teamId: string, userId: string) {
-  return and(
-    eq(rawEvents.teamId, teamId),
-    or(
-      eq(rawEvents.visibility, 'team'),
-      and(eq(rawEvents.visibility, 'private'), eq(rawEvents.visibilityOwnerUserId, userId)),
-      and(
-        eq(rawEvents.visibility, 'specific_users'),
-        sql`${userId}::uuid = ANY(${rawEvents.visibilityUserIds})`,
-      ),
-    ),
-  );
+  return and(eq(rawEvents.teamId, teamId), rawEventVisibleToUser(userId));
 }
 
 function reconciliationOutputVisibilityPredicate(teamId: string, userId: string) {
@@ -2093,6 +2084,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
             .select({
               rawEventId: rawEvents.id,
               source: rawEvents.source,
+              authorUserId: rawEvents.authorUserId,
               visibility: rawEvents.visibility,
               visibilityOwnerUserId: rawEvents.visibilityOwnerUserId,
               visibilityUserIds: rawEvents.visibilityUserIds,
@@ -2119,7 +2111,8 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       },
       ...evidenceRefs.map((row) => ({
         visibility: row.visibility,
-        visibilityOwnerUserId: row.visibilityOwnerUserId,
+        visibilityOwnerUserId:
+          row.visibilityOwnerUserId ?? (row.visibility === 'private' ? row.authorUserId : null),
         visibilityUserIds: row.visibilityUserIds,
       })),
     ]);
@@ -4496,6 +4489,73 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       .onConflictDoNothing();
   }
 
+  async function upsertRepairProjectionItems(
+    tx: DbOrTx,
+    input: {
+      itemValues: {
+        output: typeof reconciliationOutputs.$inferSelect;
+        targetKind: TargetKind;
+        operation: Operation;
+        itemDedupeKey: string;
+        title: string;
+        description: string | null;
+        proposedPayload: Record<string, unknown>;
+        payload: Record<string, unknown>;
+      }[];
+      suggestionId: string;
+      now: Date;
+    },
+  ): Promise<void> {
+    await tx
+      .insert(agentSuggestionItems)
+      .values(
+        input.itemValues.map(
+          ({
+            output,
+            payload,
+            targetKind,
+            operation,
+            itemDedupeKey,
+            title,
+            description,
+            proposedPayload,
+          }) => ({
+            suggestionId: input.suggestionId,
+            teamId,
+            status: itemStatusForRepairedOutput(output.status),
+            operation,
+            targetKind,
+            targetId: output.targetId,
+            title,
+            description,
+            dedupeKey: itemDedupeKey,
+            proposedPayload,
+            failureReason: stringPayloadValue(payload, 'projection_failure_reason'),
+            metadata: {
+              reconciliation_run_id: output.runId,
+              reconciliation_output_id: output.id,
+              ...(output.clusterId ? { reconciliation_cluster_id: output.clusterId } : {}),
+              reconciliation_projection_version: RECONCILIATION_APPROVAL_PROJECTION_VERSION,
+              reconciliation_projection_repaired_at: input.now.toISOString(),
+            },
+            updatedAt: input.now,
+          }),
+        ),
+      )
+      .onConflictDoUpdate({
+        target: [agentSuggestionItems.suggestionId, agentSuggestionItems.dedupeKey],
+        set: {
+          title: sql`CASE WHEN ${agentSuggestionItems.status} IN ('pending', 'failed') THEN excluded.title ELSE ${agentSuggestionItems.title} END`,
+          description: sql`CASE WHEN ${agentSuggestionItems.status} IN ('pending', 'failed') THEN excluded.description ELSE ${agentSuggestionItems.description} END`,
+          targetId: sql`CASE WHEN ${agentSuggestionItems.status} IN ('pending', 'failed') THEN excluded.target_id ELSE ${agentSuggestionItems.targetId} END`,
+          proposedPayload: sql`CASE WHEN ${agentSuggestionItems.status} IN ('pending', 'failed') THEN excluded.proposed_payload ELSE ${agentSuggestionItems.proposedPayload} END`,
+          failureReason: sql`CASE WHEN ${agentSuggestionItems.status} = 'failed' THEN excluded.failure_reason ELSE ${agentSuggestionItems.failureReason} END`,
+          metadata: sql`${agentSuggestionItems.metadata} || excluded.metadata`,
+          updatedAt: input.now,
+        },
+      });
+  }
+
   async function repairApprovalProjectionForOutput(
     outputId: string,
   ): Promise<SuggestionBundle | null> {
@@ -4590,13 +4650,14 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     const existingSuggestion = existing[0];
     if (existingSuggestion) {
       await db.transaction(async (tx) => {
+        const now = new Date();
         await tx
           .update(agentSuggestions)
           .set({
             visibility: repairedVisibility.visibility,
             visibilityOwnerUserId: repairedVisibility.visibilityOwnerUserId,
             visibilityUserIds: repairedVisibility.visibilityUserIds,
-            updatedAt: new Date(),
+            updatedAt: now,
           })
           .where(
             and(
@@ -4604,12 +4665,17 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
               eq(agentSuggestions.id, existingSuggestion.id),
             ),
           );
+        await upsertRepairProjectionItems(tx, {
+          itemValues,
+          suggestionId: existingSuggestion.id,
+          now,
+        });
         await writeRepairProjectionOutboxRows(tx, {
           itemValues,
           suggestionId: existingSuggestion.id,
           suggestionDedupeKey,
           repairedFromOutputId: seedOutput.id,
-          now: new Date(),
+          now,
         });
       });
       return loadBundle(existingSuggestion.id);
@@ -4700,43 +4766,11 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
           .onConflictDoNothing();
       }
 
-      await tx
-        .insert(agentSuggestionItems)
-        .values(
-          itemValues.map(
-            ({
-              output,
-              payload,
-              targetKind,
-              operation,
-              itemDedupeKey,
-              title,
-              description,
-              proposedPayload,
-            }) => ({
-              suggestionId: projectedSuggestion.id,
-              teamId,
-              status: itemStatusForRepairedOutput(output.status),
-              operation,
-              targetKind,
-              targetId: output.targetId,
-              title,
-              description,
-              dedupeKey: itemDedupeKey,
-              proposedPayload,
-              failureReason: stringPayloadValue(payload, 'projection_failure_reason'),
-              metadata: {
-                reconciliation_run_id: output.runId,
-                reconciliation_output_id: output.id,
-                ...(output.clusterId ? { reconciliation_cluster_id: output.clusterId } : {}),
-                reconciliation_projection_version: RECONCILIATION_APPROVAL_PROJECTION_VERSION,
-                reconciliation_projection_repaired_at: now.toISOString(),
-              },
-              updatedAt: now,
-            }),
-          ),
-        )
-        .onConflictDoNothing();
+      await upsertRepairProjectionItems(tx, {
+        itemValues,
+        suggestionId: projectedSuggestion.id,
+        now,
+      });
 
       await writeRepairProjectionOutboxRows(tx, {
         itemValues,
@@ -4794,6 +4828,16 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         visibilityUserIds: input.visibilityUserIds ?? null,
         evidenceIds,
       });
+      const projectionOutputEnvelope = {
+        sourceRefs: projectionContext.sourceRefs,
+        sourcePayloadRefs: projectionContext.sourcePayloadRefs,
+        visibility: projectionContext.visibility.visibility,
+        visibilityOwnerUserId: projectionContext.visibility.visibilityOwnerUserId,
+        visibilityUserIds: projectionContext.visibility.visibilityUserIds,
+        visibilityFloor: projectionContext.visibility.visibility,
+        visibilityFloorOwnerUserId: projectionContext.visibility.visibilityOwnerUserId,
+        visibilityFloorUserIds: projectionContext.visibility.visibilityUserIds,
+      };
       const sourceRefValidation = sourceRefValidationMetadata(projectionContext.sourceRefs);
       const metadata = {
         ...(input.metadata ?? {}),
@@ -4913,14 +4957,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
               },
               confidence: input.confidence ?? 'medium',
               requiresApproval: true,
-              sourceRefs: projectionContext.sourceRefs,
-              sourcePayloadRefs: projectionContext.sourcePayloadRefs,
-              visibility: projectionContext.visibility.visibility,
-              visibilityOwnerUserId: projectionContext.visibility.visibilityOwnerUserId,
-              visibilityUserIds: projectionContext.visibility.visibilityUserIds,
-              visibilityFloor: projectionContext.visibility.visibility,
-              visibilityFloorOwnerUserId: projectionContext.visibility.visibilityOwnerUserId,
-              visibilityFloorUserIds: projectionContext.visibility.visibilityUserIds,
+              ...projectionOutputEnvelope,
               dedupeKey: outputDedupeKey,
               status: 'approval_created',
             })
@@ -4935,14 +4972,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
                   policy_version: RECONCILIATION_APPROVAL_POLICY_VERSION,
                 },
                 confidence: input.confidence ?? 'medium',
-                sourceRefs: projectionContext.sourceRefs,
-                sourcePayloadRefs: projectionContext.sourcePayloadRefs,
-                visibility: projectionContext.visibility.visibility,
-                visibilityOwnerUserId: projectionContext.visibility.visibilityOwnerUserId,
-                visibilityUserIds: projectionContext.visibility.visibilityUserIds,
-                visibilityFloor: projectionContext.visibility.visibility,
-                visibilityFloorOwnerUserId: projectionContext.visibility.visibilityOwnerUserId,
-                visibilityFloorUserIds: projectionContext.visibility.visibilityUserIds,
+                ...projectionOutputEnvelope,
                 updatedAt: new Date(),
               },
               where: sql`${reconciliationOutputs.status} NOT IN ('applied', 'rejected', 'superseded')`,

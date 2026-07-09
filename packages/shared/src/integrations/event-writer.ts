@@ -73,6 +73,28 @@ interface IntegrationProjectionEvidence {
   visibilityUserIds: string[] | null;
 }
 
+function sourcePayloadRefsForEvidence(
+  evidence: Pick<IntegrationProjectionEvidence, 'sourcePayloadRef'>,
+): string[] {
+  return evidence.sourcePayloadRef ? [evidence.sourcePayloadRef] : [];
+}
+
+function integrationProjectionSourceEnvelope(
+  evidence: IntegrationProjectionEvidence,
+  sourceRefs: { source: string; rawEventId: string; sourcePayloadRef: string | null }[],
+) {
+  return {
+    sourceRefs,
+    sourcePayloadRefs: sourcePayloadRefsForEvidence(evidence),
+    visibility: evidence.visibility,
+    visibilityOwnerUserId: evidence.visibilityOwnerUserId,
+    visibilityUserIds: evidence.visibilityUserIds,
+    visibilityFloor: evidence.visibility,
+    visibilityFloorOwnerUserId: evidence.visibilityOwnerUserId,
+    visibilityFloorUserIds: evidence.visibilityUserIds,
+  };
+}
+
 interface IntegrationProjectionOutputInput {
   teamId: string;
   integrationId: string;
@@ -702,6 +724,7 @@ async function emitIntegrationProjectionOutput(
       sourcePayloadRef: input.evidence.sourcePayloadRef,
     },
   ];
+  const sourceEnvelope = integrationProjectionSourceEnvelope(input.evidence, sourceRefs);
   const runFingerprint = reconciliationDedupeKey(config.runDedupeKind, {
     teamId: input.teamId,
     clusterId: input.clusterId,
@@ -763,14 +786,7 @@ async function emitIntegrationProjectionOutput(
       },
       confidence: 'high',
       requiresApproval: false,
-      sourceRefs,
-      sourcePayloadRefs: input.evidence.sourcePayloadRef ? [input.evidence.sourcePayloadRef] : [],
-      visibility: input.evidence.visibility,
-      visibilityOwnerUserId: input.evidence.visibilityOwnerUserId,
-      visibilityUserIds: input.evidence.visibilityUserIds,
-      visibilityFloor: input.evidence.visibility,
-      visibilityFloorOwnerUserId: input.evidence.visibilityOwnerUserId,
-      visibilityFloorUserIds: input.evidence.visibilityUserIds,
+      ...sourceEnvelope,
       dedupeKey: buildOutputDedupeKey({
         teamId: input.teamId,
         clusterId: input.clusterId,
@@ -788,14 +804,7 @@ async function emitIntegrationProjectionOutput(
       target: [reconciliationOutputs.teamId, reconciliationOutputs.dedupeKey],
       set: {
         runId: run.id,
-        sourceRefs,
-        sourcePayloadRefs: input.evidence.sourcePayloadRef ? [input.evidence.sourcePayloadRef] : [],
-        visibility: input.evidence.visibility,
-        visibilityOwnerUserId: input.evidence.visibilityOwnerUserId,
-        visibilityUserIds: input.evidence.visibilityUserIds,
-        visibilityFloor: input.evidence.visibility,
-        visibilityFloorOwnerUserId: input.evidence.visibilityOwnerUserId,
-        visibilityFloorUserIds: input.evidence.visibilityUserIds,
+        ...sourceEnvelope,
         status: 'applied',
         updatedAt: new Date(),
       },

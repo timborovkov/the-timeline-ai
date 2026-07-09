@@ -218,11 +218,19 @@ describe('suggestion reconciliation projection', () => {
     const outputId = bundle.items[0]?.metadata.reconciliation_output_id;
     if (typeof outputId !== 'string') throw new Error('expected reconciliation output id');
     await db.delete(reconciliationProjectionOutbox);
+    await db
+      .update(agentSuggestionItems)
+      .set({ metadata: {} })
+      .where(eq(agentSuggestionItems.id, bundle.items[0]?.id ?? ''));
 
     const repaired = await scope.suggestions.repairApprovalProjectionForOutput(outputId);
 
     expect(repaired?.id).toBe(bundle.id);
     expect(await db.select().from(agentSuggestions)).toHaveLength(1);
+    expect(repaired?.items[0]?.metadata).toMatchObject({
+      reconciliation_output_id: outputId,
+      reconciliation_projection_version: 'approval-projection-2026-06',
+    });
     const outboxRows = await db.select().from(reconciliationProjectionOutbox);
     expect(outboxRows).toHaveLength(1);
     expect(outboxRows[0]).toMatchObject({
@@ -301,6 +309,52 @@ describe('suggestion reconciliation projection', () => {
       visibilityOwnerUserId: REVIEWER_ID,
       visibilityFloor: 'private',
       visibilityFloorOwnerUserId: REVIEWER_ID,
+    });
+  });
+
+  it('lets the author project legacy private evidence without a visibility owner', async () => {
+    await db.insert(rawEvents).values({
+      id: TEAM_RAW_EVENT_ID,
+      teamId: TEAM_ID,
+      authorUserId: USER_ID,
+      visibilityOwnerUserId: null,
+      source: 'email',
+      contentText: 'Private legacy email asks for an Acme follow-up.',
+      occurredAt: new Date('2026-06-20T10:00:00Z'),
+      visibility: 'private',
+      sourceMetadata: {
+        source_payload_ref: 's3://timeline-test/raw/email/legacy-author.eml',
+      },
+    });
+
+    const bundle = await withTeam(
+      db as never,
+      TEAM_ID,
+      USER_ID,
+    ).suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Create legacy private Acme follow-up',
+      dedupeKey: 'reconciliation-projection-private-author',
+      evidence: [{ rawEventId: TEAM_RAW_EVENT_ID }],
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Create legacy private Acme follow-up',
+          dedupeKey: 'reconciliation-projection-private-author:item',
+          proposedPayload: { canonicalName: 'Create legacy private Acme follow-up' },
+        },
+      ],
+    });
+
+    expect(bundle.visibility).toBe('private');
+    expect(bundle.visibilityOwnerUserId).toBe(USER_ID);
+    const outputs = await db.select().from(reconciliationOutputs);
+    expect(outputs[0]).toMatchObject({
+      visibility: 'private',
+      visibilityOwnerUserId: USER_ID,
+      visibilityFloor: 'private',
+      visibilityFloorOwnerUserId: USER_ID,
     });
   });
 

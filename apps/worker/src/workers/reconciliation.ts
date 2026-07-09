@@ -67,6 +67,23 @@ interface ScopeReconciliationRepairResult extends Pick<
   plannerReplayRawEventIds: string[];
 }
 
+type ScopedContextRepairCount = Pick<
+  ScopeReconciliationResult,
+  'associationRepairCount' | 'outputRepairCount'
+>;
+
+interface ScopedContextEvidence {
+  id: string;
+  rawEventId: string;
+  sourcePayloadRef: string | null;
+  source: string;
+  provider: string | null;
+  eventType: string;
+  visibility: 'team' | 'private' | 'specific_users';
+  visibilityOwnerUserId: string | null;
+  visibilityUserIds: string[] | null;
+}
+
 const MANUAL_SCOPE_RECONCILIATION_VERSION = 'manual-scope-reconcile-2026-06';
 const EVIDENCE_AUDIT_RUN_VERSION = 'reconciliation-evidence-audit-2026-07';
 const EVIDENCE_BACKFILL_RUN_VERSION = 'reconciliation-evidence-backfill-2026-07';
@@ -75,6 +92,10 @@ const SCOPED_RAW_EVENT_CANDIDATE_LIMIT = 500;
 const SCOPED_CONTEXT_ASSOCIATION_POLICY_VERSION = 'manual-scope-context-2026-07';
 const SCOPED_CONTEXT_PLANNER_VERSION = 'manual-scope-context-planner-2026-07';
 const SCOPED_CONTEXT_RUN_VERSION = 'manual-scope-context-run-2026-07';
+const EMPTY_SCOPED_CONTEXT_REPAIR: ScopedContextRepairCount = {
+  associationRepairCount: 0,
+  outputRepairCount: 0,
+};
 
 interface PlannerReplayFilters {
   limit?: number;
@@ -833,7 +854,7 @@ async function repairScopedEvidenceGraph(
     ...(rawEventIds === undefined ? {} : { rawEventIds }),
   });
   if (evidenceIds.length === 0) {
-    return { associationRepairCount: 0, outputRepairCount: 0 };
+    return EMPTY_SCOPED_CONTEXT_REPAIR;
   }
 
   const result = await resolveEvidenceAssociations({
@@ -843,7 +864,7 @@ async function repairScopedEvidenceGraph(
   });
   const fallback =
     data.scope === 'team'
-      ? { associationRepairCount: 0, outputRepairCount: 0 }
+      ? EMPTY_SCOPED_CONTEXT_REPAIR
       : await repairScopedContextAssociations(db, {
           teamId: data.teamId,
           scope: data.scope,
@@ -866,16 +887,16 @@ async function repairScopedContextAssociations(
     targetId: string | null;
     evidenceIds: string[];
   },
-): Promise<Pick<ScopeReconciliationResult, 'associationRepairCount' | 'outputRepairCount'>> {
+): Promise<ScopedContextRepairCount> {
   const evidenceIds = [...new Set(input.evidenceIds)].filter((id) => id.length > 0);
-  if (evidenceIds.length === 0) return { associationRepairCount: 0, outputRepairCount: 0 };
+  if (evidenceIds.length === 0) return EMPTY_SCOPED_CONTEXT_REPAIR;
   const clusterIds = await scopedClusterIds(db, {
     teamId: input.teamId,
     scope: input.scope,
     targetId: input.targetId,
   });
   const [clusterId] = clusterIds.sort();
-  if (!clusterId) return { associationRepairCount: 0, outputRepairCount: 0 };
+  if (!clusterId) return EMPTY_SCOPED_CONTEXT_REPAIR;
 
   const evidenceRows = await db
     .select({
@@ -909,7 +930,7 @@ async function repairScopedContextAssociations(
     outputRows.flatMap((row) => rawEventIdsFromSourceRefs(row.sourceRefs)),
   );
   const fallbackEvidenceRows = evidenceRows.filter((row) => !outputRawEventIds.has(row.rawEventId));
-  if (fallbackEvidenceRows.length === 0) return { associationRepairCount: 0, outputRepairCount: 0 };
+  if (fallbackEvidenceRows.length === 0) return EMPTY_SCOPED_CONTEXT_REPAIR;
 
   const runId = await ensureScopedContextRun(db, {
     teamId: input.teamId,
@@ -990,6 +1011,10 @@ async function ensureScopedContextRun(
   db: DbOrTx,
   input: { teamId: string; clusterId: string; evidenceIds: string[] },
 ): Promise<string> {
+  const metrics = {
+    cluster_id: input.clusterId,
+    evidence_count: input.evidenceIds.length,
+  };
   const inputFingerprint = reconciliationDedupeKey('manual-scope-context-run', {
     teamId: input.teamId,
     clusterId: input.clusterId,
@@ -1006,10 +1031,7 @@ async function ensureScopedContextRun(
       inputFingerprint,
       engineVersion: SCOPED_CONTEXT_RUN_VERSION,
       completedAt: new Date(),
-      metrics: {
-        cluster_id: input.clusterId,
-        evidence_count: input.evidenceIds.length,
-      },
+      metrics,
     })
     .onConflictDoUpdate({
       target: [
@@ -1020,10 +1042,7 @@ async function ensureScopedContextRun(
       set: {
         status: 'completed',
         completedAt: new Date(),
-        metrics: {
-          cluster_id: input.clusterId,
-          evidence_count: input.evidenceIds.length,
-        },
+        metrics,
       },
     })
     .returning({ id: reconciliationRuns.id });
@@ -1038,25 +1057,13 @@ async function emitScopedContextOutput(
     runId: string;
     clusterId: string;
     associationId: string;
-    evidence: {
-      id: string;
-      rawEventId: string;
-      sourcePayloadRef: string | null;
-      source: string;
-      provider: string | null;
-      eventType: string;
-      visibility: 'team' | 'private' | 'specific_users';
-      visibilityOwnerUserId: string | null;
-      visibilityUserIds: string[] | null;
-    };
+    evidence: ScopedContextEvidence;
     role: string;
     associationSource: string;
   },
 ): Promise<boolean> {
   const sourceRefs = scopedContextSourceRefs(input.evidence, input.associationId);
-  const sourcePayloadRefs = input.evidence.sourcePayloadRef
-    ? [input.evidence.sourcePayloadRef]
-    : [];
+  const sourceEnvelope = scopedContextOutputEnvelope(input.evidence, sourceRefs);
   const dedupeKey = buildOutputDedupeKey({
     teamId: input.teamId,
     clusterId: input.clusterId,
@@ -1101,14 +1108,7 @@ async function emitScopedContextOutput(
       },
       confidence: 'medium',
       requiresApproval: false,
-      sourceRefs,
-      sourcePayloadRefs,
-      visibility: input.evidence.visibility,
-      visibilityOwnerUserId: input.evidence.visibilityOwnerUserId,
-      visibilityUserIds: input.evidence.visibilityUserIds,
-      visibilityFloor: input.evidence.visibility,
-      visibilityFloorOwnerUserId: input.evidence.visibilityOwnerUserId,
-      visibilityFloorUserIds: input.evidence.visibilityUserIds,
+      ...sourceEnvelope,
       dedupeKey,
       status: 'applied',
     })
@@ -1116,14 +1116,7 @@ async function emitScopedContextOutput(
       target: [reconciliationOutputs.teamId, reconciliationOutputs.dedupeKey],
       set: {
         runId: input.runId,
-        sourceRefs,
-        sourcePayloadRefs,
-        visibility: input.evidence.visibility,
-        visibilityOwnerUserId: input.evidence.visibilityOwnerUserId,
-        visibilityUserIds: input.evidence.visibilityUserIds,
-        visibilityFloor: input.evidence.visibility,
-        visibilityFloorOwnerUserId: input.evidence.visibilityOwnerUserId,
-        visibilityFloorUserIds: input.evidence.visibilityUserIds,
+        ...sourceEnvelope,
         status: 'applied',
         updatedAt: new Date(),
       },
@@ -1132,13 +1125,7 @@ async function emitScopedContextOutput(
 }
 
 function scopedContextSourceRefs(
-  evidence: {
-    id: string;
-    rawEventId: string;
-    sourcePayloadRef: string | null;
-    source: string;
-    provider: string | null;
-  },
+  evidence: ScopedContextEvidence,
   associationId?: string,
 ): SourceRef[] {
   return [
@@ -1150,6 +1137,23 @@ function scopedContextSourceRefs(
       sourcePayloadRef: evidence.sourcePayloadRef,
     },
   ];
+}
+
+function scopedContextOutputEnvelope(evidence: ScopedContextEvidence, sourceRefs: SourceRef[]) {
+  return {
+    sourceRefs,
+    sourcePayloadRefs: sourcePayloadRefsForEvidence(evidence),
+    visibility: evidence.visibility,
+    visibilityOwnerUserId: evidence.visibilityOwnerUserId,
+    visibilityUserIds: evidence.visibilityUserIds,
+    visibilityFloor: evidence.visibility,
+    visibilityFloorOwnerUserId: evidence.visibilityOwnerUserId,
+    visibilityFloorUserIds: evidence.visibilityUserIds,
+  };
+}
+
+function sourcePayloadRefsForEvidence(evidence: Pick<ScopedContextEvidence, 'sourcePayloadRef'>) {
+  return evidence.sourcePayloadRef ? [evidence.sourcePayloadRef] : [];
 }
 
 function repairedOutputIds(

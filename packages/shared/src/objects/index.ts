@@ -129,6 +129,19 @@ interface DirectWriteSourceContext {
   visibilityUserIds: string[] | null;
 }
 
+function directWriteSourceEnvelope(sourceContext: DirectWriteSourceContext) {
+  return {
+    sourceRefs: sourceContext.sourceRefs,
+    sourcePayloadRefs: sourceContext.sourcePayloadRefs,
+    visibility: sourceContext.visibility,
+    visibilityOwnerUserId: sourceContext.visibilityOwnerUserId,
+    visibilityUserIds: sourceContext.visibilityUserIds,
+    visibilityFloor: sourceContext.visibility,
+    visibilityFloorOwnerUserId: sourceContext.visibilityOwnerUserId,
+    visibilityFloorUserIds: sourceContext.visibilityUserIds,
+  };
+}
+
 function systemDirectWriteSourceMetadata(input: {
   rawEventId: string;
   kind: string;
@@ -285,6 +298,14 @@ async function emitObjectDirectWriteOutput(input: {
     teamId: input.teamId,
     sourceRawEventId: input.sourceEventId,
   });
+  const metrics = {
+    target_kind: 'object',
+    operation: input.operation,
+    object_type: input.objectType,
+    actor_kind: input.actor.kind,
+    ...(input.changedFields ? { changed_fields: input.changedFields } : {}),
+    ...(input.merge ? { merged_entity_count: input.merge.mergedEntityIds.length } : {}),
+  };
   const [run] = await input.db
     .insert(reconciliationRuns)
     .values({
@@ -301,14 +322,7 @@ async function emitObjectDirectWriteOutput(input: {
       }),
       engineVersion: OBJECT_DIRECT_WRITE_RUN_VERSION,
       completedAt: new Date(),
-      metrics: {
-        target_kind: 'object',
-        operation: input.operation,
-        object_type: input.objectType,
-        actor_kind: input.actor.kind,
-        ...(input.changedFields ? { changed_fields: input.changedFields } : {}),
-        ...(input.merge ? { merged_entity_count: input.merge.mergedEntityIds.length } : {}),
-      },
+      metrics,
     })
     .onConflictDoUpdate({
       target: [
@@ -319,14 +333,7 @@ async function emitObjectDirectWriteOutput(input: {
       set: {
         status: 'completed',
         completedAt: new Date(),
-        metrics: {
-          target_kind: 'object',
-          operation: input.operation,
-          object_type: input.objectType,
-          actor_kind: input.actor.kind,
-          ...(input.changedFields ? { changed_fields: input.changedFields } : {}),
-          ...(input.merge ? { merged_entity_count: input.merge.mergedEntityIds.length } : {}),
-        },
+        metrics,
       },
     })
     .returning({ id: reconciliationRuns.id });
@@ -378,14 +385,7 @@ async function emitObjectDirectWriteOutput(input: {
       },
       confidence: 'high',
       requiresApproval: false,
-      sourceRefs: sourceContext.sourceRefs,
-      sourcePayloadRefs: sourceContext.sourcePayloadRefs,
-      visibility: sourceContext.visibility,
-      visibilityOwnerUserId: sourceContext.visibilityOwnerUserId,
-      visibilityUserIds: sourceContext.visibilityUserIds,
-      visibilityFloor: sourceContext.visibility,
-      visibilityFloorOwnerUserId: sourceContext.visibilityOwnerUserId,
-      visibilityFloorUserIds: sourceContext.visibilityUserIds,
+      ...directWriteSourceEnvelope(sourceContext),
       dedupeKey: buildOutputDedupeKey({
         teamId: input.teamId,
         targetKind: 'object',
@@ -401,14 +401,7 @@ async function emitObjectDirectWriteOutput(input: {
       target: [reconciliationOutputs.teamId, reconciliationOutputs.dedupeKey],
       set: {
         runId: run.id,
-        sourceRefs: sourceContext.sourceRefs,
-        sourcePayloadRefs: sourceContext.sourcePayloadRefs,
-        visibility: sourceContext.visibility,
-        visibilityOwnerUserId: sourceContext.visibilityOwnerUserId,
-        visibilityUserIds: sourceContext.visibilityUserIds,
-        visibilityFloor: sourceContext.visibility,
-        visibilityFloorOwnerUserId: sourceContext.visibilityOwnerUserId,
-        visibilityFloorUserIds: sourceContext.visibilityUserIds,
+        ...directWriteSourceEnvelope(sourceContext),
         status: 'applied',
         updatedAt: new Date(),
       },
@@ -433,6 +426,12 @@ async function emitRelationshipDirectWriteOutput(input: {
     teamId: input.teamId,
     sourceRawEventId: input.sourceEventId,
   });
+  const metrics = {
+    target_kind: 'object_relationship',
+    operation: input.operation,
+    relationship_kind: input.relationshipKind,
+    actor_kind: input.actor.kind,
+  };
   const [run] = await input.db
     .insert(reconciliationRuns)
     .values({
@@ -449,12 +448,7 @@ async function emitRelationshipDirectWriteOutput(input: {
       }),
       engineVersion: OBJECT_DIRECT_WRITE_RUN_VERSION,
       completedAt: new Date(),
-      metrics: {
-        target_kind: 'object_relationship',
-        operation: input.operation,
-        relationship_kind: input.relationshipKind,
-        actor_kind: input.actor.kind,
-      },
+      metrics,
     })
     .onConflictDoUpdate({
       target: [
@@ -465,12 +459,7 @@ async function emitRelationshipDirectWriteOutput(input: {
       set: {
         status: 'completed',
         completedAt: new Date(),
-        metrics: {
-          target_kind: 'object_relationship',
-          operation: input.operation,
-          relationship_kind: input.relationshipKind,
-          actor_kind: input.actor.kind,
-        },
+        metrics,
       },
     })
     .returning({ id: reconciliationRuns.id });
@@ -508,14 +497,7 @@ async function emitRelationshipDirectWriteOutput(input: {
       },
       confidence: 'high',
       requiresApproval: false,
-      sourceRefs: sourceContext.sourceRefs,
-      sourcePayloadRefs: sourceContext.sourcePayloadRefs,
-      visibility: sourceContext.visibility,
-      visibilityOwnerUserId: sourceContext.visibilityOwnerUserId,
-      visibilityUserIds: sourceContext.visibilityUserIds,
-      visibilityFloor: sourceContext.visibility,
-      visibilityFloorOwnerUserId: sourceContext.visibilityOwnerUserId,
-      visibilityFloorUserIds: sourceContext.visibilityUserIds,
+      ...directWriteSourceEnvelope(sourceContext),
       dedupeKey: buildOutputDedupeKey({
         teamId: input.teamId,
         targetKind: 'object_relationship',
@@ -531,14 +513,7 @@ async function emitRelationshipDirectWriteOutput(input: {
       target: [reconciliationOutputs.teamId, reconciliationOutputs.dedupeKey],
       set: {
         runId: run.id,
-        sourceRefs: sourceContext.sourceRefs,
-        sourcePayloadRefs: sourceContext.sourcePayloadRefs,
-        visibility: sourceContext.visibility,
-        visibilityOwnerUserId: sourceContext.visibilityOwnerUserId,
-        visibilityUserIds: sourceContext.visibilityUserIds,
-        visibilityFloor: sourceContext.visibility,
-        visibilityFloorOwnerUserId: sourceContext.visibilityOwnerUserId,
-        visibilityFloorUserIds: sourceContext.visibilityUserIds,
+        ...directWriteSourceEnvelope(sourceContext),
         status: 'applied',
         updatedAt: new Date(),
       },
@@ -563,6 +538,11 @@ async function emitNoteDirectWriteOutput(input: {
     teamId: input.teamId,
     sourceRawEventId: input.sourceEventId,
   });
+  const metrics = {
+    target_kind: 'object_note',
+    operation: input.operation,
+    actor_kind: input.actor.kind,
+  };
   const [run] = await input.db
     .insert(reconciliationRuns)
     .values({
@@ -579,11 +559,7 @@ async function emitNoteDirectWriteOutput(input: {
       }),
       engineVersion: OBJECT_DIRECT_WRITE_RUN_VERSION,
       completedAt: new Date(),
-      metrics: {
-        target_kind: 'object_note',
-        operation: input.operation,
-        actor_kind: input.actor.kind,
-      },
+      metrics,
     })
     .onConflictDoUpdate({
       target: [
@@ -594,11 +570,7 @@ async function emitNoteDirectWriteOutput(input: {
       set: {
         status: 'completed',
         completedAt: new Date(),
-        metrics: {
-          target_kind: 'object_note',
-          operation: input.operation,
-          actor_kind: input.actor.kind,
-        },
+        metrics,
       },
     })
     .returning({ id: reconciliationRuns.id });
@@ -642,14 +614,7 @@ async function emitNoteDirectWriteOutput(input: {
       },
       confidence: 'high',
       requiresApproval: false,
-      sourceRefs: sourceContext.sourceRefs,
-      sourcePayloadRefs: sourceContext.sourcePayloadRefs,
-      visibility: sourceContext.visibility,
-      visibilityOwnerUserId: sourceContext.visibilityOwnerUserId,
-      visibilityUserIds: sourceContext.visibilityUserIds,
-      visibilityFloor: sourceContext.visibility,
-      visibilityFloorOwnerUserId: sourceContext.visibilityOwnerUserId,
-      visibilityFloorUserIds: sourceContext.visibilityUserIds,
+      ...directWriteSourceEnvelope(sourceContext),
       dedupeKey: buildOutputDedupeKey({
         teamId: input.teamId,
         targetKind: 'object_note',
@@ -665,14 +630,7 @@ async function emitNoteDirectWriteOutput(input: {
       target: [reconciliationOutputs.teamId, reconciliationOutputs.dedupeKey],
       set: {
         runId: run.id,
-        sourceRefs: sourceContext.sourceRefs,
-        sourcePayloadRefs: sourceContext.sourcePayloadRefs,
-        visibility: sourceContext.visibility,
-        visibilityOwnerUserId: sourceContext.visibilityOwnerUserId,
-        visibilityUserIds: sourceContext.visibilityUserIds,
-        visibilityFloor: sourceContext.visibility,
-        visibilityFloorOwnerUserId: sourceContext.visibilityOwnerUserId,
-        visibilityFloorUserIds: sourceContext.visibilityUserIds,
+        ...directWriteSourceEnvelope(sourceContext),
         status: 'applied',
         updatedAt: new Date(),
       },
@@ -708,6 +666,12 @@ async function emitIdentityFacetDirectWriteOutput(input: {
     teamId: input.teamId,
     sourceRawEventId: input.sourceEventId,
   });
+  const metrics = {
+    target_kind: 'identity_facet',
+    operation: input.operation,
+    identity_facet_kind: input.identityFacetKind,
+    actor_kind: input.actor.kind,
+  };
   const [run] = await input.db
     .insert(reconciliationRuns)
     .values({
@@ -724,12 +688,7 @@ async function emitIdentityFacetDirectWriteOutput(input: {
       }),
       engineVersion: OBJECT_DIRECT_WRITE_RUN_VERSION,
       completedAt: new Date(),
-      metrics: {
-        target_kind: 'identity_facet',
-        operation: input.operation,
-        identity_facet_kind: input.identityFacetKind,
-        actor_kind: input.actor.kind,
-      },
+      metrics,
     })
     .onConflictDoUpdate({
       target: [
@@ -740,12 +699,7 @@ async function emitIdentityFacetDirectWriteOutput(input: {
       set: {
         status: 'completed',
         completedAt: new Date(),
-        metrics: {
-          target_kind: 'identity_facet',
-          operation: input.operation,
-          identity_facet_kind: input.identityFacetKind,
-          actor_kind: input.actor.kind,
-        },
+        metrics,
       },
     })
     .returning({ id: reconciliationRuns.id });
@@ -799,14 +753,7 @@ async function emitIdentityFacetDirectWriteOutput(input: {
       },
       confidence: 'high',
       requiresApproval: false,
-      sourceRefs: sourceContext.sourceRefs,
-      sourcePayloadRefs: sourceContext.sourcePayloadRefs,
-      visibility: sourceContext.visibility,
-      visibilityOwnerUserId: sourceContext.visibilityOwnerUserId,
-      visibilityUserIds: sourceContext.visibilityUserIds,
-      visibilityFloor: sourceContext.visibility,
-      visibilityFloorOwnerUserId: sourceContext.visibilityOwnerUserId,
-      visibilityFloorUserIds: sourceContext.visibilityUserIds,
+      ...directWriteSourceEnvelope(sourceContext),
       dedupeKey: buildOutputDedupeKey({
         teamId: input.teamId,
         targetKind: 'identity_facet',
@@ -822,14 +769,7 @@ async function emitIdentityFacetDirectWriteOutput(input: {
       target: [reconciliationOutputs.teamId, reconciliationOutputs.dedupeKey],
       set: {
         runId: run.id,
-        sourceRefs: sourceContext.sourceRefs,
-        sourcePayloadRefs: sourceContext.sourcePayloadRefs,
-        visibility: sourceContext.visibility,
-        visibilityOwnerUserId: sourceContext.visibilityOwnerUserId,
-        visibilityUserIds: sourceContext.visibilityUserIds,
-        visibilityFloor: sourceContext.visibility,
-        visibilityFloorOwnerUserId: sourceContext.visibilityOwnerUserId,
-        visibilityFloorUserIds: sourceContext.visibilityUserIds,
+        ...directWriteSourceEnvelope(sourceContext),
         status: 'applied',
         updatedAt: new Date(),
       },

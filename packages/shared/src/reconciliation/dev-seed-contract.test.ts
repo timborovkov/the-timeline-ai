@@ -70,6 +70,123 @@ function statementSlices(source: string, marker: string): string[] {
   return slices;
 }
 
+function declarationSlice(source: string, name: string): string | null {
+  const constStart = source.indexOf(`const ${name} =`);
+  const functionStart = source.indexOf(`function ${name}`);
+  const starts = [constStart, functionStart].filter((index) => index >= 0).sort((a, b) => a - b);
+  const start = starts[0];
+  if (start === undefined) return null;
+  if (start === constStart) {
+    const assignment = source.indexOf('=', start);
+    const end = assignment < 0 ? -1 : statementEnd(source, assignment + 1);
+    return source.slice(start, end < 0 ? undefined : end);
+  }
+
+  const bodyStart = functionBodyStart(source, start);
+  const end = bodyStart < 0 ? -1 : balancedEnd(source, bodyStart);
+  return source.slice(start, end < 0 ? undefined : end);
+}
+
+function functionBodyStart(source: string, start: number): number {
+  const paramsStart = source.indexOf('(', start);
+  if (paramsStart < 0) return -1;
+  return scanUntil(source, paramsStart, (state, index, char) => {
+    if (index === paramsStart) return false;
+    return char === '{' && state.depth === 0;
+  });
+}
+
+function statementEnd(source: string, start: number): number {
+  const end = scanUntil(source, start, (state, _index, char) => char === ';' && state.depth === 0);
+  return end < 0 ? -1 : end + 1;
+}
+
+function balancedEnd(source: string, openIndex: number): number {
+  const close = scanUntil(source, openIndex, (state, index, char) => {
+    if (index === openIndex) return false;
+    return char === '}' && state.depth === 1;
+  });
+  return close < 0 ? -1 : close + 1;
+}
+
+function scanUntil(
+  source: string,
+  start: number,
+  predicate: (state: { depth: number }, index: number, char: string) => boolean,
+): number {
+  const state = { depth: 0 };
+  let quote: '"' | "'" | '`' | null = null;
+  let lineComment = false;
+  let blockComment = false;
+  for (let index = start; index < source.length; index += 1) {
+    const char = source[index] ?? '';
+    const next = source[index + 1] ?? '';
+    const prev = source[index - 1] ?? '';
+
+    if (lineComment) {
+      if (char === '\n') lineComment = false;
+      continue;
+    }
+    if (blockComment) {
+      if (char === '*' && next === '/') {
+        blockComment = false;
+        index += 1;
+      }
+      continue;
+    }
+    if (quote) {
+      if (char === quote && prev !== '\\') quote = null;
+      continue;
+    }
+    if (char === '/' && next === '/') {
+      lineComment = true;
+      index += 1;
+      continue;
+    }
+    if (char === '/' && next === '*') {
+      blockComment = true;
+      index += 1;
+      continue;
+    }
+    if (char === '"' || char === "'" || char === '`') {
+      quote = char;
+      continue;
+    }
+    if (predicate(state, index, char)) return index;
+    if (char === '{' || char === '[' || char === '(') state.depth += 1;
+    else if (char === '}' || char === ']' || char === ')')
+      state.depth = Math.max(0, state.depth - 1);
+  }
+  return -1;
+}
+
+function spreadNames(statement: string): string[] {
+  return [...statement.matchAll(/\.\.\.(\w+)/g)].map((match) => match[1] ?? '');
+}
+
+function declarationCarriesField(
+  source: string,
+  name: string,
+  field: string,
+  seen = new Set<string>(),
+): boolean {
+  if (seen.has(name)) return false;
+  seen.add(name);
+  const declaration = declarationSlice(source, name);
+  if (!declaration) return false;
+  if (declaration.includes(field)) return true;
+  return [...declaration.matchAll(/\b(\w+)\(/g)].some((match) =>
+    declarationCarriesField(source, match[1] ?? '', field, seen),
+  );
+}
+
+function statementCarriesField(source: string, statement: string, field: string): boolean {
+  return (
+    statement.includes(field) ||
+    spreadNames(statement).some((name) => declarationCarriesField(source, name, field))
+  );
+}
+
 function functionSignature(source: string, name: string): string {
   const start = source.indexOf(`export async function ${name}`);
   if (start < 0) throw new Error(`missing function ${name}`);
@@ -222,31 +339,51 @@ describe('reconciliation cutover contracts', () => {
     ];
 
     const missingVisibilityFields = repoSourceFiles(APPLICATION_SOURCE_ROOTS)
-      .flatMap((path) =>
-        [
-          ...statementSlices(readFileSync(path, 'utf8'), '.insert(artifactEvidenceAssociations)'),
-          ...statementSlices(readFileSync(path, 'utf8'), '.insert(reconciliationOutputs)'),
-        ].map((statement) => ({ path: relativeRepoPath(path), statement })),
-      )
-      .flatMap(({ path, statement }) =>
+      .flatMap((path) => {
+        const source = readFileSync(path, 'utf8');
+        return [
+          ...statementSlices(source, '.insert(artifactEvidenceAssociations)'),
+          ...statementSlices(source, '.insert(reconciliationOutputs)'),
+        ].map((statement) => ({ path: relativeRepoPath(path), source, statement }));
+      })
+      .flatMap(({ path, source, statement }) =>
         requiredVisibilityFields
-          .filter((field) => !statement.includes(field))
+          .filter((field) => !statementCarriesField(source, statement, field))
           .map((field) => `${path}: missing ${field}`),
       );
 
     expect(missingVisibilityFields).toEqual([]);
   });
 
+  it('keeps spread declaration contract checks scoped to the declaration', () => {
+    const source = `
+      const incompleteEnvelope = {
+        sourceRefs: refs,
+      };
+      const unrelatedLaterObject = {
+        sourcePayloadRefs: refs,
+        visibilityFloor: 'team',
+      };
+    `;
+
+    expect(declarationCarriesField(source, 'incompleteEnvelope', 'sourcePayloadRefs')).toBe(false);
+    expect(declarationCarriesField(source, 'incompleteEnvelope', 'visibilityFloor')).toBe(false);
+  });
+
   it('requires output writers to carry replay payload refs alongside source refs', () => {
     const missingOutputPayloadRefs = repoSourceFiles(APPLICATION_SOURCE_ROOTS)
-      .flatMap((path) =>
-        statementSlices(readFileSync(path, 'utf8'), '.insert(reconciliationOutputs)').map(
-          (statement) => ({ path: relativeRepoPath(path), statement }),
-        ),
-      )
+      .flatMap((path) => {
+        const source = readFileSync(path, 'utf8');
+        return statementSlices(source, '.insert(reconciliationOutputs)').map((statement) => ({
+          path: relativeRepoPath(path),
+          source,
+          statement,
+        }));
+      })
       .filter(
-        ({ statement }) =>
-          statement.includes('sourceRefs') && !statement.includes('sourcePayloadRefs'),
+        ({ source, statement }) =>
+          statementCarriesField(source, statement, 'sourceRefs') &&
+          !statementCarriesField(source, statement, 'sourcePayloadRefs'),
       )
       .map(({ path, statement }) => `${path}: ${statement.split('\n')[0]?.trim() ?? ''}`);
 
@@ -266,7 +403,7 @@ describe('reconciliation cutover contracts', () => {
 
     const missingEvidenceFields = repoSourceFiles(APPLICATION_SOURCE_ROOTS)
       .flatMap((path) =>
-        statementSlices(readFileSync(path, 'utf8'), '.insert(reconciliationEvidence)').map(
+        [...statementSlices(readFileSync(path, 'utf8'), '.insert(reconciliationEvidence)')].map(
           (statement) => ({ path: relativeRepoPath(path), statement }),
         ),
       )
