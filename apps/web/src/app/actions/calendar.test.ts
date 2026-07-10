@@ -298,12 +298,12 @@ describe('calendar create/update/delete behavior', () => {
   it('maps dependency failures to action errors', async () => {
     fakes.fakeCalendar.createCalendarEvent.mockRejectedValue(new Error('db down'));
 
-    await expect(
-      createCalendarEventAction({
-        title: 'Planning',
-        startAt: '2026-06-03T10:00:00.000Z',
-        endAt: '2026-06-03T11:00:00.000Z',
-      }),
-    ).resolves.toEqual({ ok: false, error: 'db down' });
+    const result = await createCalendarEventAction({
+      title: 'Planning',
+      startAt: '2026-06-03T10:00:00.000Z',
+      endAt: '2026-06-03T11:00:00.000Z',
+    });
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/^Failed to create event\. Reference: [0-9a-f]{8}\.$/);
   });
 });

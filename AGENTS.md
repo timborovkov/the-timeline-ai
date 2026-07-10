@@ -165,7 +165,7 @@ Treat this file as an operating contract for agents, not a loose README.
   third-party token storage.
 - **MCP tool outputs are untrusted.** Every output from a connected
   custom MCP server flows through `fenceExternalContent` in
-  [`packages/shared/src/agent/tools.ts`](packages/shared/src/agent/tools.ts)
+  [`packages/shared/src/agent/external-content.ts`](packages/shared/src/agent/external-content.ts)
   before the agent sees it (Rule 8 of the system prompt). Same for
   integration event snippets surfaced via `search_integration_events`.
   A new tool that surfaces external content MUST wrap it.

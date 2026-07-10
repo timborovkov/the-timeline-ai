@@ -171,8 +171,10 @@ describe('/api/team/mcp-servers', () => {
 
     fakes.addServer.mockRejectedValueOnce(new Error('duplicate_server'));
     const failed = await POST(request({ catalogId: 'slack', bearerToken: 'secret' }));
-    expect(failed.status).toBe(400);
-    await expect(failed.json()).resolves.toEqual({ error: 'duplicate_server' });
+    expect(failed.status).toBe(500);
+    const failedPayload = (await failed.json()) as { error: string; reference: string };
+    expect(failedPayload).toMatchObject({ error: 'add_failed' });
+    expect(failedPayload.reference).toMatch(/^[0-9a-f]{8}$/);
   });
 
   it('creates custom servers, validates bad bodies, and skips onboarding for personal ownership', async () => {

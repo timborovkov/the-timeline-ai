@@ -9,6 +9,11 @@ import { NextResponse } from 'next/server';
 
 import { db } from '@/lib/db';
 import { requireRedisQueue } from '@/lib/queue';
+import {
+  payloadTooLargeResponse,
+  readCappedTextBody,
+  REQUEST_BODY_LIMITS,
+} from '@/lib/request-body';
 import { reportCaughtError, reportHandledEvent } from '@/lib/sentry-report';
 
 // Pull the Linear team id out of a webhook payload. The schema varies by
@@ -64,7 +69,9 @@ export async function POST(req: Request): Promise<Response> {
     }
   }
   const sig = req.headers.get('linear-signature');
-  const body = await req.text();
+  const bodyResult = await readCappedTextBody(req, REQUEST_BODY_LIMITS.integrationWebhook);
+  if (bodyResult.tooLarge) return payloadTooLargeResponse();
+  const body = bodyResult.text;
   if (!integrationsLib.verifyLinearSignature(body, sig)) {
     reportHandledEvent({
       message: 'linear_webhook_bad_signature',

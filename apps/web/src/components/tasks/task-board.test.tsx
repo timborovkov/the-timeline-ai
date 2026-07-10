@@ -18,10 +18,10 @@ vi.mock('@/app/actions/objects', () => ({
   loadTaskRowsAction: fakes.loadTaskRowsAction,
 }));
 vi.mock('@/lib/task-board-config', () => ({
+  TASK_BOARD_COLUMN_RENDER_LIMIT: 3,
+  TASK_BOARD_LIST_RENDER_LIMIT: 5,
   TASK_BOARD_PAGE_SIZE: 500,
   TASK_BOARD_TOTAL_LIMIT: 50_000,
-  TASK_BOARD_COLUMN_RENDER_LIMIT: 5,
-  TASK_BOARD_LIST_RENDER_LIMIT: 20,
   TASK_OPEN_STATUSES_EXCLUDED: ['done', 'cancelled'],
 }));
 
@@ -382,29 +382,29 @@ describe('TaskBoard', () => {
     expect(screen.queryByRole('button', { name: 'Load older tasks' })).toBeNull();
   });
 
-  it('bounds large kanban columns and reports hidden loaded tasks', () => {
+  it('bounds rendered kanban cards while reporting loaded tasks outside the window', () => {
     const rows = Array.from({ length: 7 }, (_, index) =>
       task({ id: `task-${index}`, canonicalName: `Task ${index}`, status: 'done' }),
     );
 
     renderBoard(null, rows);
 
-    expect(screen.getByRole('link', { name: 'Task 4' })).toBeTruthy();
-    expect(screen.queryByRole('link', { name: 'Task 5' })).toBeNull();
-    expect(screen.getByText('2 more loaded. Narrow filter.')).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Task 2' })).toBeTruthy();
+    expect(screen.queryByRole('link', { name: 'Task 3' })).toBeNull();
+    expect(screen.getByText('4 loaded tasks hidden. Narrow filter.')).toBeTruthy();
   });
 
-  it('bounds large list views and reports hidden loaded tasks', () => {
+  it('bounds rendered list rows while reporting loaded tasks outside the window', () => {
     const rows = Array.from({ length: 22 }, (_, index) =>
       task({ id: `task-${index}`, canonicalName: `Task ${index}` }),
     );
 
     renderBoard(null, rows, 'list');
 
-    expect(screen.getByText('Task 19')).toBeTruthy();
-    expect(screen.queryByText('Task 20')).toBeNull();
+    expect(screen.getByRole('link', { name: 'Task 4' })).toBeTruthy();
+    expect(screen.queryByRole('link', { name: 'Task 5' })).toBeNull();
     expect(
-      screen.getByText('2 loaded tasks hidden. Narrow the filter to inspect them.'),
+      screen.getByText('17 loaded tasks hidden. Narrow the filter to inspect them.'),
     ).toBeTruthy();
   });
 

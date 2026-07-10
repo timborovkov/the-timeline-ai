@@ -9,6 +9,7 @@ import { z } from 'zod';
 import { type ActionState, resolveScope, uuidSchema } from '@/lib/action-scope';
 import { trackProductEventBestEffort } from '@/lib/analytics';
 import { db } from '@/lib/db';
+import { publicActionError } from '@/lib/public-error';
 import { runSentryServerAction } from '@/lib/sentry-action';
 import { reportCaughtError } from '@/lib/sentry-report';
 import { loadTaskRowsPage } from '@/lib/task-page';
@@ -195,11 +196,10 @@ function friendlyError(err: unknown, fallback: string): string {
     if (code === '23503') return 'Linked record no longer exists.';
     if (code === '23514') return 'Value violates a constraint.';
   }
-  reportCaughtError(err, {
-    surface: 'server_action',
+  return publicActionError(err, {
     operation: fallback.toLowerCase().replace(/\s+/g, '_'),
+    fallback,
   });
-  return err instanceof Error ? err.message : fallback;
 }
 
 const createObjectSchema = z.object({
@@ -697,8 +697,12 @@ export async function acceptObjectChangeAction(input: unknown): Promise<ActionSt
       bestEffortRevalidatePath('/app/tasks', 'revalidate_object_change_accept');
       return { ok: true };
     } catch (err) {
-      reportCaughtError(err, { surface: 'server_action', operation: 'accept_object_change' });
-      return { error: err instanceof Error ? err.message : 'Failed to accept' };
+      return {
+        error: publicActionError(err, {
+          operation: 'accept_object_change',
+          fallback: 'Failed to accept object change.',
+        }),
+      };
     }
   });
 }
@@ -716,8 +720,12 @@ export async function rejectObjectChangeAction(input: unknown): Promise<ActionSt
       bestEffortRevalidatePath('/app/inbox', 'revalidate_object_change_reject');
       return { ok: true };
     } catch (err) {
-      reportCaughtError(err, { surface: 'server_action', operation: 'reject_object_change' });
-      return { error: err instanceof Error ? err.message : 'Failed to reject' };
+      return {
+        error: publicActionError(err, {
+          operation: 'reject_object_change',
+          fallback: 'Failed to reject object change.',
+        }),
+      };
     }
   });
 }

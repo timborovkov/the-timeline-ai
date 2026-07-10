@@ -5,6 +5,7 @@ import type { McpServerRow } from '#src/mcp/auth.js';
 import type { discoverOAuth } from '#src/mcp/oauth-provider.js';
 
 import { decryptJson, encryptJson } from '#src/crypto/secrets.js';
+import { externalFetch } from '#src/http/external-fetch.js';
 import { childLogger } from '#src/logger.js';
 import { buildAuth } from '#src/mcp/auth.js';
 import { refreshToken as oauthRefreshToken } from '#src/mcp/oauth-provider.js';
@@ -74,6 +75,7 @@ async function rpc(
   headers: Record<string, string>,
   method: string,
   params: unknown,
+  requestOptions: { signal?: AbortSignal; timeoutMs?: number } = {},
 ): Promise<unknown> {
   const id = Date.now() + Math.floor(Math.random() * 1000);
   const body: JsonRpcRequest = { jsonrpc: '2.0', id, method, params };
@@ -81,16 +83,25 @@ async function rpc(
   // us to a link-local / private target the guard would have rejected
   // on the original hostname. The MCP spec requires direct JSON-RPC
   // responses, so any 3xx here is misbehavior.
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: {
-      accept: 'application/json, text/event-stream',
-      'content-type': 'application/json',
-      ...headers,
+  const res = await externalFetch(
+    url,
+    {
+      method: 'POST',
+      headers: {
+        accept: 'application/json, text/event-stream',
+        'content-type': 'application/json',
+        ...headers,
+      },
+      body: JSON.stringify(body),
+      redirect: 'manual',
+      ...(requestOptions.signal ? { signal: requestOptions.signal } : {}),
     },
-    body: JSON.stringify(body),
-    redirect: 'manual',
-  });
+    {
+      allowPrivateNetworkInDevelopment: true,
+      maxResponseBytes: 2 * 1024 * 1024,
+      timeoutMs: requestOptions.timeoutMs ?? 30_000,
+    },
+  );
   if (res.status >= 300 && res.status < 400) {
     throw new Error(`MCP ${method}: server attempted redirect (${String(res.status)})`);
   }
@@ -369,7 +380,11 @@ export class McpClientManager {
     return entry;
   }
 
-  async discoverTools(db: Db, server: McpServerRow): Promise<McpTool[]> {
+  async discoverTools(
+    db: Db,
+    server: McpServerRow,
+    requestOptions: { signal?: AbortSignal; timeoutMs?: number } = {},
+  ): Promise<McpTool[]> {
     const oauth =
       server.authType === 'oauth'
         ? await loadOauthAccessToken(db, server.teamId, server.id, server.url)
@@ -381,15 +396,23 @@ export class McpClientManager {
     // Initialize handshake — required by spec but many servers tolerate
     // a missing initialize and answer tools/list directly. Try-and-fall-back.
     try {
-      await rpc(url, headers, 'initialize', {
-        protocolVersion: '2024-11-05',
-        capabilities: {},
-        clientInfo: { name: 'timeline', version: '0.1.0' },
-      });
+      await rpc(
+        url,
+        headers,
+        'initialize',
+        {
+          protocolVersion: '2024-11-05',
+          capabilities: {},
+          clientInfo: { name: 'timeline', version: '0.1.0' },
+        },
+        requestOptions,
+      );
     } catch (err) {
       log.debug({ err }, 'initialize failed (non-fatal)');
     }
-    const result = (await rpc(url, headers, 'tools/list', {})) as { tools?: McpTool[] };
+    const result = (await rpc(url, headers, 'tools/list', {}, requestOptions)) as {
+      tools?: McpTool[];
+    };
     return (result.tools ?? []).filter((t) => !disabled.has(t.name));
   }
 

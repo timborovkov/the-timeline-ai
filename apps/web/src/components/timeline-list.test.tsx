@@ -597,7 +597,7 @@ describe('TimelineList audio transcription status', () => {
     ]);
 
     expect(html).toContain('Today&#x27;s Nexia meetings voice recording');
-    expect(html).toContain('Transcribing...');
+    expect(html).toContain('Transcribing…');
   });
 
   it('shows failed transcription status even when an audio event has typed note text', () => {
@@ -635,7 +635,7 @@ describe('TimelineList audio transcription status', () => {
     ]);
 
     expect(html).toContain('Transcript text.');
-    expect(html).not.toContain('Transcribing...');
+    expect(html).not.toContain('Transcribing…');
     expect(html).not.toContain('Transcription failed');
   });
 });

@@ -1,6 +1,6 @@
 'use client';
 
-import { useActionState } from 'react';
+import { useActionState, useSyncExternalStore } from 'react';
 
 import { submitSupportRequestAction, type SupportFormState } from '@/app/actions/support';
 import { TurnstileWidget } from '@/components/turnstile-widget';
@@ -17,6 +17,7 @@ interface SupportFormProps {
 }
 
 const initialState: SupportFormState = {};
+const subscribeToPageUrl = () => () => undefined;
 
 export function SupportForm({
   defaultName,
@@ -25,11 +26,15 @@ export function SupportForm({
   requiresTurnstile,
 }: SupportFormProps) {
   const [state, action, pending] = useActionState(submitSupportRequestAction, initialState);
-  const currentPage = typeof window === 'undefined' ? '' : window.location.href;
+  const currentPage = useSyncExternalStore(
+    subscribeToPageUrl,
+    () => window.location.href,
+    () => '',
+  );
 
   return (
     <form action={action} className="space-y-5">
-      <input type="hidden" name="currentPage" value={currentPage} />
+      <input type="hidden" name="currentPage" value={currentPage} readOnly />
       <div className="hidden" aria-hidden="true">
         <Label htmlFor="support-company">Company website</Label>
         <Input
@@ -47,6 +52,7 @@ export function SupportForm({
           <Input
             id="support-name"
             name="name"
+            autoComplete="name"
             defaultValue={defaultName}
             required
             maxLength={120}
@@ -58,6 +64,8 @@ export function SupportForm({
             id="support-email"
             name="email"
             type="email"
+            autoComplete="email"
+            spellCheck={false}
             defaultValue={defaultEmail}
             required
             maxLength={240}
@@ -100,15 +108,24 @@ export function SupportForm({
         <p className="text-sm text-danger">Support form protection is not configured.</p>
       ) : null}
 
-      {state.error ? <p className="text-sm text-danger">{state.error}</p> : null}
-      {state.ok ? (
-        <p className="rounded-sm border border-signal/30 bg-signal-soft px-3 py-2 text-sm text-fg">
-          We received your request.
-        </p>
-      ) : null}
+      <div aria-live="polite" aria-atomic="true">
+        {state.error ? (
+          <p className="text-sm text-danger" role="alert">
+            {state.error}
+          </p>
+        ) : null}
+        {state.ok ? (
+          <p
+            className="rounded-sm border border-signal/30 bg-signal-soft px-3 py-2 text-sm text-fg"
+            role="status"
+          >
+            We received your request.
+          </p>
+        ) : null}
+      </div>
 
       <Button type="submit" disabled={pending || (requiresTurnstile && !turnstileSiteKey)}>
-        {pending ? 'Sending...' : 'Send request'}
+        {pending ? 'Sending…' : 'Send request'}
       </Button>
     </form>
   );

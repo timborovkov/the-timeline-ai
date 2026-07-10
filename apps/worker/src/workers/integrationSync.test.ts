@@ -119,6 +119,7 @@ const integration = {
 };
 
 beforeEach(() => {
+  integrations.setSlackProviderFetchForTests((input, init) => globalThis.fetch(input, init));
   vi.clearAllMocks();
   fakes.reserved.mockClear();
   fakes.reserved.release.mockClear();
@@ -158,6 +159,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  integrations.setSlackProviderFetchForTests();
   vi.unstubAllGlobals();
 });
 

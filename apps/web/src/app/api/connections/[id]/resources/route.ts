@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { publicApiErrorResponse } from '@/lib/public-error';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -45,7 +46,7 @@ function serializeConnection(connection: {
     displayName: connection.displayName,
     externalAccountId: connection.externalAccountId,
     scopes: connection.scopes,
-    lastError: connection.lastError,
+    lastError: connection.lastError ? 'connection_attention_required' : null,
     lastConnectedAt: connection.lastConnectedAt,
     createdAt: connection.createdAt,
     updatedAt: connection.updatedAt,
@@ -97,8 +98,11 @@ export async function GET(
       },
     );
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'list_resources_failed';
-    return NextResponse.json({ error: message }, { status: 502 });
+    return publicApiErrorResponse(err, {
+      operation: 'list_owned_connection_resources',
+      fallbackCode: 'list_resources_failed',
+      fallbackStatus: 502,
+    });
   }
   let shares;
   try {

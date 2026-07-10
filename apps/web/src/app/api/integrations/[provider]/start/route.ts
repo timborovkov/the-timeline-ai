@@ -8,7 +8,7 @@ import { z } from 'zod';
 
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
-import { reportCaughtError } from '@/lib/sentry-report';
+import { publicApiErrorResponse } from '@/lib/public-error';
 import { appUrl } from '@/lib/site-url';
 
 export const runtime = 'nodejs';
@@ -70,13 +70,10 @@ export async function POST(
     });
     return NextResponse.json({ url: authorizeUrl });
   } catch (err) {
-    const msg = err instanceof Error ? err.message : 'oauth_start_failed';
     log.warn({ err, provider }, 'oauth start failed');
-    reportCaughtError(err, {
-      surface: 'api',
+    return publicApiErrorResponse(err, {
       operation: 'integration_oauth_start',
-      tags: { provider },
+      fallbackCode: 'oauth_start_failed',
     });
-    return NextResponse.json({ error: msg }, { status: 500 });
   }
 }

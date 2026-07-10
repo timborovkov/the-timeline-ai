@@ -39,10 +39,10 @@ records:
 
 ## Beta Readiness
 
-- [ ] Audit the remaining security-relevant actions that landed after the
-      generic `audit_log`: team export creation/download, job retry, and job
-      dismissal should use the existing `team.export_create`, `job.retry`, and
-      `job.dismiss` audit action names.
+- [x] Audit security-relevant team export creation/download and job recovery
+      mutations through `team.export_create`, `team.export_download`,
+      `job.retry`, and `job.dismiss`, including rejected attempts and mode,
+      target, recovery-kind, and outcome metadata.
 - [ ] Add per-team monthly vision-spend caps and a dashboard. Vision OCR is much
       more expensive than text extraction; teams need a clear budget guardrail
       before heavy PDF/image dogfooding.

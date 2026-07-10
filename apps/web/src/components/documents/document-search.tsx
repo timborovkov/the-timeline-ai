@@ -28,7 +28,7 @@ export function DocumentSearch() {
             setQuery(draft.trim());
           }}
           placeholder="Search document chunks"
-          className="h-10 w-full rounded-sm border border-border bg-surface pl-9 pr-24 text-sm focus:border-border-strong focus:outline-none"
+          className="h-10 w-full rounded-sm border border-border bg-surface pl-9 pr-24 text-sm focus-visible:border-border-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/40 focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
         />
         <button
           type="button"

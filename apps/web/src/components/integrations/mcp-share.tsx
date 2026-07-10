@@ -1,7 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useEffect, useReducer } from 'react';
+import { useEffect, useId, useReducer, useRef, useState } from 'react';
 
 import { CopyButton } from '@/components/copy-button';
 import { useAppDialog } from '@/components/ui/app-dialog';
@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { networkActionError, readPublicApiError } from '@/lib/client-api-error';
 
 interface KeyRow {
   id: string;
@@ -69,29 +70,9 @@ interface McpShareState {
   mintedKey: MintedKey | null;
   mcpUrl: string;
 }
-type McpShareAction =
-  | { type: 'showCreate'; showCreate: boolean }
-  | { type: 'name'; name: string }
-  | { type: 'busy'; busy: boolean }
-  | { type: 'mintedKey'; mintedKey: MintedKey | null }
-  | { type: 'mcpUrl'; mcpUrl: string }
-  | { type: 'created'; mintedKey: MintedKey };
 
-function mcpShareReducer(state: McpShareState, action: McpShareAction): McpShareState {
-  switch (action.type) {
-    case 'showCreate':
-      return { ...state, showCreate: action.showCreate };
-    case 'name':
-      return { ...state, name: action.name };
-    case 'busy':
-      return { ...state, busy: action.busy };
-    case 'mintedKey':
-      return { ...state, mintedKey: action.mintedKey };
-    case 'mcpUrl':
-      return { ...state, mcpUrl: action.mcpUrl };
-    case 'created':
-      return { ...state, mintedKey: action.mintedKey, name: '', showCreate: false };
-  }
+function patchMcpShareState(state: McpShareState, patch: Partial<McpShareState>): McpShareState {
+  return { ...state, ...patch };
 }
 
 function McpStatusGrid() {
@@ -299,21 +280,34 @@ function McpClientGuides({ mcpUrl, mintedKey }: { mcpUrl: string; mintedKey: Min
 export function McpShareUi({ keys, mcpUrl: initialMcpUrl }: { keys: KeyRow[]; mcpUrl: string }) {
   const router = useRouter();
   const dialog = useAppDialog();
-  const [{ showCreate, name, busy, mintedKey, mcpUrl }, dispatch] = useReducer(mcpShareReducer, {
-    showCreate: false,
-    name: '',
-    busy: false,
-    mintedKey: null,
-    mcpUrl: initialMcpUrl,
-  });
+  const keyNameId = useId();
+  const busyKeyIds = useRef<Set<string> | null>(null);
+  const [keyMutations, setKeyMutations] = useState<
+    Record<string, { busy: boolean; error: string | null }>
+  >({});
+
+  function activeBusyKeyIds(): Set<string> {
+    busyKeyIds.current ??= new Set();
+    return busyKeyIds.current;
+  }
+  const [{ showCreate, name, busy, mintedKey, mcpUrl }, patchState] = useReducer(
+    patchMcpShareState,
+    {
+      showCreate: false,
+      name: '',
+      busy: false,
+      mintedKey: null,
+      mcpUrl: initialMcpUrl,
+    },
+  );
 
   useEffect(() => {
     if (initialMcpUrl) return;
-    dispatch({ type: 'mcpUrl', mcpUrl: `${window.location.origin}/api/mcp/server` });
+    patchState({ mcpUrl: `${window.location.origin}/api/mcp/server` });
   }, [initialMcpUrl]);
 
   async function create() {
-    dispatch({ type: 'busy', busy: true });
+    patchState({ busy: true });
     try {
       const res = await fetch('/api/team/mcp-keys', {
         method: 'POST',
@@ -325,14 +319,19 @@ export function McpShareUi({ keys, mcpUrl: initialMcpUrl }: { keys: KeyRow[]; mc
         return;
       }
       const data = (await res.json()) as { name: string; plaintext: string };
-      dispatch({ type: 'created', mintedKey: { name: data.name, plaintext: data.plaintext } });
+      patchState({
+        mintedKey: { name: data.name, plaintext: data.plaintext },
+        name: '',
+        showCreate: false,
+      });
       router.refresh();
     } finally {
-      dispatch({ type: 'busy', busy: false });
+      patchState({ busy: false });
     }
   }
 
   async function revoke(id: string, label: string) {
+    if (activeBusyKeyIds().has(id)) return;
     const confirmed = await dialog.confirm({
       title: 'Revoke key?',
       description: `"${label}" will stop working for any agent using it.`,
@@ -340,8 +339,32 @@ export function McpShareUi({ keys, mcpUrl: initialMcpUrl }: { keys: KeyRow[]; mc
       destructive: true,
     });
     if (!confirmed) return;
-    await fetch(`/api/team/mcp-keys/${id}`, { method: 'DELETE' });
-    router.refresh();
+    if (activeBusyKeyIds().has(id)) return;
+    activeBusyKeyIds().add(id);
+    setKeyMutations((current) => ({ ...current, [id]: { busy: true, error: null } }));
+    try {
+      const response = await fetch(`/api/team/mcp-keys/${id}`, { method: 'DELETE' });
+      if (!response.ok) {
+        const error = await readPublicApiError(
+          response,
+          'The key could not be revoked. Try again.',
+        );
+        setKeyMutations((current) => ({ ...current, [id]: { busy: false, error } }));
+        return;
+      }
+      router.refresh();
+    } catch {
+      setKeyMutations((current) => ({
+        ...current,
+        [id]: { busy: false, error: networkActionError('revoke this key') },
+      }));
+    } finally {
+      activeBusyKeyIds().delete(id);
+      setKeyMutations((current) => ({
+        ...current,
+        [id]: { busy: false, error: current[id]?.error ?? null },
+      }));
+    }
   }
 
   return (
@@ -380,7 +403,7 @@ export function McpShareUi({ keys, mcpUrl: initialMcpUrl }: { keys: KeyRow[]; mc
               size="sm"
               variant="ghost"
               onClick={() => {
-                dispatch({ type: 'mintedKey', mintedKey: null });
+                patchState({ mintedKey: null });
               }}
             >
               I&apos;ve copied it, dismiss
@@ -396,7 +419,7 @@ export function McpShareUi({ keys, mcpUrl: initialMcpUrl }: { keys: KeyRow[]; mc
         <Button
           size="sm"
           onClick={() => {
-            dispatch({ type: 'showCreate', showCreate: !showCreate });
+            patchState({ showCreate: !showCreate });
           }}
         >
           {showCreate ? 'Cancel' : 'New key'}
@@ -407,11 +430,14 @@ export function McpShareUi({ keys, mcpUrl: initialMcpUrl }: { keys: KeyRow[]; mc
         <Card>
           <CardContent className="space-y-3 pt-4">
             <div className="space-y-1">
-              <Label>Label</Label>
+              <Label htmlFor={keyNameId}>Label</Label>
               <Input
+                id={keyNameId}
+                name="mcp-key-label"
+                autoComplete="off"
                 value={name}
                 onChange={(e) => {
-                  dispatch({ type: 'name', name: e.target.value });
+                  patchState({ name: e.target.value });
                 }}
                 placeholder="Claude Desktop · personal mac"
               />
@@ -429,28 +455,37 @@ export function McpShareUi({ keys, mcpUrl: initialMcpUrl }: { keys: KeyRow[]; mc
         </p>
       ) : (
         <ul className="divide-y divide-border rounded-md border border-border bg-surface">
-          {keys.map((k) => (
-            <li key={k.id} className="flex items-center gap-3 px-3 py-2.5">
-              <div className="min-w-0 flex-1">
-                <div className="text-sm font-medium">{k.name}</div>
-                <div className="font-mono text-xs text-fg-muted">
-                  {k.prefix}… · created {new Date(k.createdAt).toLocaleDateString()}
-                  {k.lastUsedAt
-                    ? ` · last used ${new Date(k.lastUsedAt).toLocaleString()}`
-                    : ' · never used'}
+          {keys.map((k) => {
+            const mutation = keyMutations[k.id] ?? { busy: false, error: null };
+            return (
+              <li key={k.id} className="flex items-center gap-3 px-3 py-2.5">
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm font-medium">{k.name}</div>
+                  <div className="font-mono text-xs text-fg-muted">
+                    {k.prefix}… · created {new Date(k.createdAt).toLocaleDateString()}
+                    {k.lastUsedAt
+                      ? ` · last used ${new Date(k.lastUsedAt).toLocaleString()}`
+                      : ' · never used'}
+                  </div>
+                  {mutation.error ? (
+                    <p className="mt-1 text-xs text-destructive" role="alert">
+                      {mutation.error}
+                    </p>
+                  ) : null}
                 </div>
-              </div>
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => {
-                  void revoke(k.id, k.name);
-                }}
-              >
-                Revoke
-              </Button>
-            </li>
-          ))}
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={mutation.busy}
+                  onClick={() => {
+                    void revoke(k.id, k.name);
+                  }}
+                >
+                  {mutation.busy ? 'Revoking…' : 'Revoke'}
+                </Button>
+              </li>
+            );
+          })}
         </ul>
       )}
       {dialog.node}

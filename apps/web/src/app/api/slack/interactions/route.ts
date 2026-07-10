@@ -5,6 +5,11 @@ import * as rateLimit from '@timeline/shared/rate-limit';
 import * as slack from '@timeline/shared/slack';
 
 import { db } from '@/lib/db';
+import {
+  payloadTooLargeResponse,
+  readCappedTextBody,
+  REQUEST_BODY_LIMITS,
+} from '@/lib/request-body';
 import { reportCaughtError } from '@/lib/sentry-report';
 
 export const runtime = 'nodejs';
@@ -27,7 +32,9 @@ export async function POST(req: Request): Promise<Response> {
     return Response.json({ response_type: 'ephemeral', text: 'Timeline is busy. Try again soon.' });
   }
 
-  const body = await req.text();
+  const bodyResult = await readCappedTextBody(req, REQUEST_BODY_LIMITS.slackCommand);
+  if (bodyResult.tooLarge) return payloadTooLargeResponse();
+  const body = bodyResult.text;
   const verified = slack.verifySlackSignature({
     signingSecret: env.SLACK_SIGNING_SECRET,
     timestamp: req.headers.get('x-slack-request-timestamp'),
@@ -50,5 +57,5 @@ export async function POST(req: Request): Promise<Response> {
     log.error({ err }, 'slack interaction handler failed');
     reportCaughtError(err, { surface: 'background', operation: 'slack_interaction' });
   });
-  return Response.json({ response_type: 'ephemeral', text: 'Working on it...' }, { status: 200 });
+  return Response.json({ response_type: 'ephemeral', text: 'Working on it…' }, { status: 200 });
 }

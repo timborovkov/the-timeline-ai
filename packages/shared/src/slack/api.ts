@@ -1,5 +1,15 @@
 import type { SlackFile } from '#src/slack/types.js';
 
+import { externalFetch } from '#src/http/external-fetch.js';
+
+function slackFetch(
+  input: string | URL,
+  init?: RequestInit,
+  maxResponseBytes = 8 * 1024 * 1024,
+): Promise<Response> {
+  return externalFetch(input, init, { maxResponseBytes, timeoutMs: 30_000 });
+}
+
 export interface SlackConversation {
   id: string;
   name?: string;
@@ -92,7 +102,7 @@ export class SlackApi {
     const deterministic = deterministicSlackApiResponse(method);
     if (deterministic) return deterministic as T;
 
-    const res = await fetch(`https://slack.com/api/${method}`, {
+    const res = await slackFetch(`https://slack.com/api/${method}`, {
       method: 'POST',
       headers: {
         ...(this.token ? { authorization: `Bearer ${this.token}` } : {}),
@@ -174,7 +184,7 @@ export class SlackApi {
     blocks?: unknown[];
   }): Promise<void> {
     if (input.response_url) {
-      await fetch(input.response_url, {
+      await slackFetch(input.response_url, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
@@ -206,7 +216,11 @@ export class SlackApi {
   async downloadFile(file: SlackFile, maxBytes?: number): Promise<Buffer> {
     const url = file.url_private_download ?? file.url_private;
     if (!url) throw new Error('Slack file has no private download URL');
-    const res = await fetch(url, { headers: { authorization: `Bearer ${this.token}` } });
+    const res = await slackFetch(
+      url,
+      { headers: { authorization: `Bearer ${this.token}` } },
+      maxBytes,
+    );
     if (!res.ok) throw new Error(`Slack file download failed: ${res.status}`);
     return responseBufferWithLimit(res, maxBytes);
   }

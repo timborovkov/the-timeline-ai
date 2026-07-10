@@ -9,6 +9,7 @@ import type {
 } from '#src/integrations/types.js';
 
 import { getEnv } from '#src/env.js';
+import { externalFetch as fetch } from '#src/http/external-fetch.js';
 import { childLogger } from '#src/logger.js';
 
 // Phase 11 — Google Drive provider.
@@ -145,9 +146,21 @@ async function downloadFileBody(
   } else {
     url = `${DRIVE_BASE}/files/${fileId}?alt=media`;
   }
-  const res = await fetch(url, {
-    headers: { authorization: `Bearer ${tokens.access_token}` },
-  });
+  let res: Response;
+  try {
+    res = await fetch(
+      url,
+      {
+        headers: { authorization: `Bearer ${tokens.access_token}` },
+      },
+      { maxResponseBytes: MAX_HARVEST_BYTES },
+    );
+  } catch (err) {
+    if (err && typeof err === 'object' && 'code' in err && err.code === 'response_too_large') {
+      return null;
+    }
+    throw err;
+  }
   if (!res.ok) {
     throw new Error(`Drive download ${fileId} ${String(res.status)}`);
   }

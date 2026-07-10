@@ -1,11 +1,12 @@
 'use server';
 
-import { auditLog, teamExports } from '@timeline/db';
+import { teamExports } from '@timeline/db';
 import { getExportsBucket, getS3PresignClient, getSignedGetObjectUrl } from '@timeline/shared/s3';
 import { withTeam } from '@timeline/shared/team-scope';
 import { and, eq, lt } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
+import { z } from 'zod';
 
 import { resolveActiveTeam } from '@/lib/active-team';
 import { trackProductEventBestEffort } from '@/lib/analytics';
@@ -18,6 +19,28 @@ import { reportCaughtError } from '@/lib/sentry-report';
 export interface CreateTeamExportState {
   error?: string;
   ok?: boolean;
+}
+
+type TeamScope = ReturnType<typeof withTeam>;
+
+async function recordRejectedExportDownload(
+  scope: TeamScope,
+  targetId: string,
+  reason: 'expired' | 'forbidden' | 'not_ready_or_missing',
+): Promise<void> {
+  try {
+    await scope.audit.record({
+      action: 'team.export_download',
+      targetType: 'team_export',
+      targetId,
+      metadata: { mode: 'single', outcome: 'rejected', reason },
+    });
+  } catch (err) {
+    reportCaughtError(err, {
+      surface: 'server_action',
+      operation: 'download_team_export_rejection_audit',
+    });
+  }
 }
 
 export async function createTeamExportAction(
@@ -35,6 +58,11 @@ export async function createTeamExportAction(
       await scope.requireMembership('admin');
     } catch (err) {
       reportCaughtError(err, { surface: 'server_action', operation: 'create_team_export_auth' });
+      await scope.audit.record({
+        action: 'team.export_create',
+        targetType: 'team_export',
+        metadata: { mode: 'single', outcome: 'rejected', reason: 'forbidden' },
+      });
       return { error: 'Only owners and admins can export team data' };
     }
 
@@ -50,15 +78,6 @@ export async function createTeamExportAction(
       .returning({ id: teamExports.id });
     const id = inserted[0]?.id;
     if (!id) return { error: 'Failed to create export' };
-
-    await db.insert(auditLog).values({
-      teamId: active.teamId,
-      actorUserId: session.user.id,
-      action: 'team_export.created',
-      targetType: 'team_export',
-      targetId: id,
-      metadata: {},
-    });
 
     try {
       const queue = await requireRedisQueue();
@@ -80,9 +99,22 @@ export async function createTeamExportAction(
           completedAt: new Date(),
         })
         .where(eq(teamExports.id, id));
+      await scope.audit.record({
+        action: 'team.export_create',
+        targetType: 'team_export',
+        targetId: id,
+        metadata: { mode: 'single', outcome: 'enqueue_failed' },
+      });
       revalidatePath('/app/team');
       return { error: 'Export was created but could not be queued' };
     }
+
+    await scope.audit.record({
+      action: 'team.export_create',
+      targetType: 'team_export',
+      targetId: id,
+      metadata: { mode: 'single', outcome: 'queued' },
+    });
 
     trackProductEventBestEffort(session.user.id, 'team_export_requested', {
       teamId: active.teamId,
@@ -102,8 +134,9 @@ export async function downloadTeamExportAction(formData: FormData): Promise<void
     const { active } = await resolveActiveTeam(session.user.id);
     if (!active) redirect('/sign-in');
 
-    const exportId = formData.get('exportId');
-    if (typeof exportId !== 'string') redirect('/app/team');
+    const parsedExportId = z.uuid().safeParse(formData.get('exportId'));
+    if (!parsedExportId.success) redirect('/app/team');
+    const exportId = parsedExportId.data;
 
     const scope = withTeam(db, active.teamId, session.user.id);
     let hasAdminAccess = true;
@@ -113,7 +146,10 @@ export async function downloadTeamExportAction(formData: FormData): Promise<void
       reportCaughtError(err, { surface: 'server_action', operation: 'download_team_export_auth' });
       hasAdminAccess = false;
     }
-    if (!hasAdminAccess) redirect('/app/team');
+    if (!hasAdminAccess) {
+      await recordRejectedExportDownload(scope, exportId, 'forbidden');
+      redirect('/app/team');
+    }
 
     await db
       .update(teamExports)
@@ -138,7 +174,10 @@ export async function downloadTeamExportAction(formData: FormData): Promise<void
       )
       .limit(1);
     const row = rows[0];
-    if (row?.status !== 'ready' || !row.objectKey || !row.expiresAt) redirect('/app/team');
+    if (row?.status !== 'ready' || !row.objectKey || !row.expiresAt) {
+      await recordRejectedExportDownload(scope, exportId, 'not_ready_or_missing');
+      redirect('/app/team');
+    }
 
     const now = Date.now();
     const ttlSec = Math.max(
@@ -147,6 +186,7 @@ export async function downloadTeamExportAction(formData: FormData): Promise<void
     );
     if (ttlSec <= 1) {
       await db.update(teamExports).set({ status: 'expired' }).where(eq(teamExports.id, row.id));
+      await recordRejectedExportDownload(scope, row.id, 'expired');
       redirect('/app/team');
     }
 
@@ -156,13 +196,13 @@ export async function downloadTeamExportAction(formData: FormData): Promise<void
       row.objectKey,
       ttlSec,
     );
-    await db.insert(auditLog).values({
-      teamId: active.teamId,
-      actorUserId: session.user.id,
-      action: 'team_export.archive_url_signed',
+    await scope.audit.record({
+      action: 'team.export_download',
       targetType: 'team_export',
       targetId: row.id,
       metadata: {
+        mode: 'single',
+        outcome: 'signed',
         expires_at: row.expiresAt.toISOString(),
       },
     });

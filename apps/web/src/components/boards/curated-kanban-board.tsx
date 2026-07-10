@@ -32,7 +32,7 @@ import {
   type CuratedKanbanSaveState,
 } from '@/components/boards/curated-kanban-state';
 import { boardViewHref } from '@/lib/board-links';
-import { displayText } from '@/lib/display-dates';
+import { displayText, formatDisplayDate } from '@/lib/display-dates';
 import { displayObjectTitle } from '@/lib/object-title';
 import { cn, errorMessage } from '@/lib/utils';
 
@@ -202,7 +202,7 @@ export function CuratedKanbanBoard({
         </div>
         {saveState !== 'idle' ? (
           <output className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
-            {saveState === 'saving' ? 'Saving...' : 'Saved'}
+            {saveState === 'saving' ? 'Saving…' : 'Saved'}
           </output>
         ) : null}
       </div>
@@ -376,7 +376,7 @@ function ownerLabel(userId: string | null, members: BoardMemberOption[]): string
 }
 
 function dateLabel(value: Date): string {
-  return new Date(value).toLocaleDateString('en-CA');
+  return formatDisplayDate(value);
 }
 
 function dueState(value: Date | null): { label: string; tone: 'danger' | 'neutral' } {

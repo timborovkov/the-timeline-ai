@@ -122,7 +122,7 @@ describe('GET /api/integrations/[provider]/callback', () => {
 
     expect(response.status).toBe(307);
     expect(response.headers.get('location')).toBe(
-      `${PUBLIC_ORIGIN}/app/team/integrations?error=access_denied`,
+      `${PUBLIC_ORIGIN}/app/team/integrations?error=oauth_denied`,
     );
   });
 

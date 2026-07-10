@@ -4,8 +4,8 @@ import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 
 import { type ActionState, resolveScope, uuidSchema } from '@/lib/action-scope';
+import { publicActionError } from '@/lib/public-error';
 import { runSentryServerAction } from '@/lib/sentry-action';
-import { reportCaughtError } from '@/lib/sentry-report';
 
 const EXPECTED_SUGGESTION_APPLY_FAILURE_CODE = 'TIMELINE_EXPECTED_SUGGESTION_APPLY_FAILURE';
 const MAX_VISIBLE_ACCEPT_ITEMS = 500;
@@ -52,10 +52,14 @@ export async function acceptSuggestionItemAction(input: unknown): Promise<Action
       revalidateSuggestionSurfaces();
       return { ok: true };
     } catch (err) {
-      if (!isExpectedSuggestionApplyFailure(err)) {
-        reportCaughtError(err, { surface: 'server_action', operation: 'accept_suggestion_item' });
-      }
-      return { error: errorMessage(err, 'Failed to accept suggestion') };
+      return {
+        error: isExpectedSuggestionApplyFailure(err)
+          ? errorMessage(err, 'Failed to accept suggestion')
+          : publicActionError(err, {
+              operation: 'accept_suggestion_item',
+              fallback: 'Failed to accept suggestion.',
+            }),
+      };
     }
   });
 }
@@ -72,8 +76,12 @@ export async function rejectSuggestionItemAction(input: unknown): Promise<Action
       revalidateSuggestionSurfaces();
       return { ok: true };
     } catch (err) {
-      reportCaughtError(err, { surface: 'server_action', operation: 'reject_suggestion_item' });
-      return { error: err instanceof Error ? err.message : 'Failed to reject suggestion' };
+      return {
+        error: publicActionError(err, {
+          operation: 'reject_suggestion_item',
+          fallback: 'Failed to reject suggestion.',
+        }),
+      };
     }
   });
 }
@@ -123,8 +131,12 @@ export async function rejectVisibleSuggestionsAction(input: unknown): Promise<Ac
         ? { error: `${failed} item(s) failed to reject`, failedItemIds }
         : { ok: true };
     } catch (err) {
-      reportCaughtError(err, { surface: 'server_action', operation: 'reject_visible_suggestions' });
-      return { error: err instanceof Error ? err.message : 'Failed to reject suggestions' };
+      return {
+        error: publicActionError(err, {
+          operation: 'reject_visible_suggestions',
+          fallback: 'Failed to reject suggestions.',
+        }),
+      };
     }
   });
 }
@@ -152,8 +164,12 @@ export async function acceptAllSuggestionAction(input: unknown): Promise<ActionS
         ? { error: `${result.failed} item(s) failed to apply`, failedItemIds: result.failedItemIds }
         : { ok: true };
     } catch (err) {
-      reportCaughtError(err, { surface: 'server_action', operation: 'accept_all_suggestions' });
-      return { error: err instanceof Error ? err.message : 'Failed to accept suggestion' };
+      return {
+        error: publicActionError(err, {
+          operation: 'accept_all_suggestions',
+          fallback: 'Failed to accept suggestion.',
+        }),
+      };
     }
   });
 }
@@ -200,8 +216,12 @@ export async function acceptVisibleSuggestionsAction(input: unknown): Promise<Ac
         ? { error: `${failed} item(s) failed to apply`, failedItemIds }
         : { ok: true };
     } catch (err) {
-      reportCaughtError(err, { surface: 'server_action', operation: 'accept_visible_suggestions' });
-      return { error: err instanceof Error ? err.message : 'Failed to accept suggestions' };
+      return {
+        error: publicActionError(err, {
+          operation: 'accept_visible_suggestions',
+          fallback: 'Failed to accept suggestions.',
+        }),
+      };
     }
   });
 }

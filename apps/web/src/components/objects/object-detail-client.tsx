@@ -1025,7 +1025,7 @@ function ObjectSummaryPanel({ detail }: { detail: ObjectDetail }) {
             disabled={pending}
             onClick={requestSummary}
           >
-            {pending ? 'Generating...' : actionLabel}
+            {pending ? 'Generating…' : actionLabel}
           </button>
         ) : null}
       </div>
@@ -1355,7 +1355,7 @@ function ObjectDetailHeader({
             {detail.archivedAt
               ? 'Repair unavailable'
               : repairPending
-                ? 'Repairing...'
+                ? 'Repairing…'
                 : 'Repair memory'}
           </button>
         </div>

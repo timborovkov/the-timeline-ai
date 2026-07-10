@@ -178,8 +178,8 @@ function ExistingObjectPicker({
             onChange={(e) => {
               dispatch({ type: 'query', query: e.target.value });
             }}
-            placeholder="Search existing objects..."
-            className="h-9 w-full rounded-sm border border-border bg-bg py-2 pl-8 pr-8 text-sm focus:border-border-strong focus:outline-none"
+            placeholder="Search existing objects…"
+            className="h-9 w-full rounded-sm border border-border bg-bg py-2 pl-8 pr-8 text-sm focus-visible:border-border-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/40 focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
           />
           {query.trim() ? (
             <button
@@ -347,7 +347,7 @@ function NewObjectFields({
             objectType: e.target.value as objects.ObjectType,
           });
         }}
-        className="rounded-sm border border-border bg-bg px-3 py-2 text-sm focus:border-border-strong focus:outline-none"
+        className="rounded-sm border border-border bg-bg px-3 py-2 text-sm focus-visible:border-border-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/40 focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
       >
         {OBJECT_TYPES.map((option) => (
           <option key={option} value={option}>
@@ -365,7 +365,7 @@ function NewObjectFields({
           dispatch({ type: 'canonicalName', canonicalName: e.target.value });
         }}
         placeholder="Object name"
-        className="rounded-sm border border-border bg-bg px-3 py-2 text-sm focus:border-border-strong focus:outline-none"
+        className="rounded-sm border border-border bg-bg px-3 py-2 text-sm focus-visible:border-border-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/40 focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
       />
     </div>
   );
@@ -527,7 +527,7 @@ export function BoardAddItemForm({
             className="mt-3 inline-flex items-center gap-2 rounded-sm bg-signal px-3 py-1.5 text-sm font-medium text-signal-fg hover:opacity-90 disabled:opacity-40"
           >
             <Plus className="size-3.5" aria-hidden="true" />
-            {pending ? 'Adding...' : 'Add to board'}
+            {pending ? 'Adding…' : 'Add to board'}
           </button>
         </div>
       ) : null}

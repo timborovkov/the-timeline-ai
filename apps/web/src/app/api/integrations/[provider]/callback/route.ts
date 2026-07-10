@@ -10,7 +10,7 @@ import { z } from 'zod';
 import { trackProductEventBestEffort } from '@/lib/analytics';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
-import { reportCaughtError } from '@/lib/sentry-report';
+import { publicApiError } from '@/lib/public-error';
 import { appUrl } from '@/lib/site-url';
 
 export const runtime = 'nodejs';
@@ -70,9 +70,7 @@ export async function GET(
   const state = url.searchParams.get('state');
   const oauthError = url.searchParams.get('error');
   if (oauthError) {
-    return NextResponse.redirect(
-      appUrl(`/app/team/integrations?error=${encodeURIComponent(oauthError)}`),
-    );
+    return NextResponse.redirect(appUrl('/app/team/integrations?error=oauth_denied'));
   }
   if (!code || !state) {
     return new Response('missing_code_or_state', { status: 400 });
@@ -114,13 +112,15 @@ export async function GET(
       appUrl(`/app/me/connections?connected=${provider}&providerConnectionId=${created.id}`),
     );
   } catch (err) {
-    const msg = err instanceof Error ? err.message : 'oauth_callback_failed';
     log.warn({ err, provider }, 'oauth callback failed');
-    reportCaughtError(err, {
-      surface: 'api',
+    const failure = publicApiError(err, {
       operation: 'integration_oauth_callback',
-      tags: { provider },
+      fallbackCode: 'oauth_callback_failed',
     });
-    return NextResponse.redirect(appUrl(`/app/team/integrations?error=${encodeURIComponent(msg)}`));
+    return NextResponse.redirect(
+      appUrl(
+        `/app/team/integrations?error=${failure.error}${failure.reference ? `&reference=${failure.reference}` : ''}`,
+      ),
+    );
   }
 }

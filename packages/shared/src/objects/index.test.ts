@@ -1,4 +1,3 @@
-import { PGlite } from '@electric-sql/pglite';
 import {
   type Db,
   agentSuggestionItems,
@@ -31,9 +30,10 @@ import {
 } from '@timeline/db';
 import { eq, inArray } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { ChatStructuredInput, ChatStructuredResult } from '#src/llm/chat.js';
+import type { PGlite } from '@electric-sql/pglite';
 import type { z } from 'zod';
 
 import { buildObjectDirectWriteSourceContext } from '#src/objects/index.js';
@@ -44,7 +44,7 @@ import {
 import { encodeCursor } from '#src/pagination.js';
 import * as queue from '#src/queue/queues.js';
 import { withTeam } from '#src/team-scope.js';
-import { applyDbMigrations } from '#src/test/pglite.js';
+import { createResettablePGliteTestDb, type ResettablePGliteTestDb } from '#src/test/pglite.js';
 
 /**
  * Real-DB integration tests for workspace objects. This module owns a large
@@ -81,13 +81,14 @@ const USER_OTHER_TEAM = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
 
 let pg: PGlite;
 let db: AnyDb;
+let testDb: ResettablePGliteTestDb;
 
 async function flushBackgroundWork(): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, 0));
 }
 
-async function seedWorkspace(): Promise<void> {
-  await pg.exec(`
+async function seedWorkspace(target: PGlite): Promise<void> {
+  await target.exec(`
     INSERT INTO teams (id, slug, name)
     VALUES
       ('${TEAM_A}', 'team-a', 'Team A'),
@@ -107,21 +108,27 @@ async function seedWorkspace(): Promise<void> {
   `);
 }
 
+beforeAll(async () => {
+  testDb = await createResettablePGliteTestDb(seedWorkspace);
+  pg = testDb.pg;
+  db = drizzle(pg) as unknown as AnyDb;
+}, 60_000);
+
 beforeEach(async () => {
   vi.clearAllMocks();
   qdrantFakes.getQdrantClient.mockReturnValue({
     deletePoints: qdrantFakes.deletePoints,
     deletePointsForSource: qdrantFakes.deletePointsForSource,
   });
-  pg = new PGlite();
-  await applyDbMigrations(pg);
-  await seedWorkspace();
-  db = drizzle(pg) as unknown as AnyDb;
-}, 60_000);
+  await testDb.reset();
+});
 
 afterEach(async () => {
   await flushBackgroundWork();
-  await pg.close();
+});
+
+afterAll(async () => {
+  await testDb.close();
 });
 
 async function upsertObjectSummary(values: typeof objectSummaries.$inferInsert): Promise<void> {

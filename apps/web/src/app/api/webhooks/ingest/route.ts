@@ -12,6 +12,7 @@ import { and, eq, sql } from 'drizzle-orm';
 
 import { db } from '@/lib/db';
 import { requireRedisQueue } from '@/lib/queue';
+import { readCappedTextBody } from '@/lib/request-body';
 import { reportCaughtError } from '@/lib/sentry-report';
 
 export const runtime = 'nodejs';
@@ -302,38 +303,6 @@ function renderWebhookContent(input: {
     '',
     input.body.length > 0 ? input.body : '[empty payload]',
   ].join('\n');
-}
-
-async function readCappedTextBody(
-  req: Request,
-  maxBytes: number,
-): Promise<{ tooLarge: false; text: string } | { tooLarge: true }> {
-  if (!req.body) return { tooLarge: false, text: '' };
-
-  const reader = req.body.getReader();
-  const chunks: Uint8Array[] = [];
-  async function readNext(total: number): Promise<number | null> {
-    const { done, value } = await reader.read();
-    if (done) return total;
-    const nextTotal = total + value.byteLength;
-    if (nextTotal > maxBytes) {
-      await reader.cancel().catch(() => undefined);
-      return null;
-    }
-    chunks.push(value);
-    return readNext(nextTotal);
-  }
-
-  const total = await readNext(0);
-  if (total === null) return { tooLarge: true };
-
-  const body = new Uint8Array(total);
-  let offset = 0;
-  for (const chunk of chunks) {
-    body.set(chunk, offset);
-    offset += chunk.byteLength;
-  }
-  return { tooLarge: false, text: new TextDecoder().decode(body) };
 }
 
 function dedupKeyFor(webhookId: string, bodyHash: string, receivedAt: Date): string {

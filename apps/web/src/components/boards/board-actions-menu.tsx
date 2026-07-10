@@ -207,7 +207,7 @@ function BoardSettingsDialog({
               onChange={(event) => {
                 dispatchDraft({ type: 'name', name: event.target.value });
               }}
-              className="w-full rounded-sm border border-border bg-bg px-3 py-2 text-sm focus:border-border-strong focus:outline-none disabled:opacity-60"
+              className="w-full rounded-sm border border-border bg-bg px-3 py-2 text-sm focus-visible:border-border-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/40 focus-visible:ring-offset-2 focus-visible:ring-offset-bg disabled:opacity-60"
             />
           </label>
           <label className="block">
@@ -222,7 +222,7 @@ function BoardSettingsDialog({
               }}
               rows={3}
               placeholder="What this board is for"
-              className="w-full resize-none rounded-sm border border-border bg-bg px-3 py-2 text-sm focus:border-border-strong focus:outline-none disabled:opacity-60"
+              className="w-full resize-none rounded-sm border border-border bg-bg px-3 py-2 text-sm focus-visible:border-border-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/40 focus-visible:ring-offset-2 focus-visible:ring-offset-bg disabled:opacity-60"
             />
           </label>
           <BoardStageEditor
@@ -240,7 +240,7 @@ function BoardSettingsDialog({
               className="inline-flex items-center gap-2 rounded-sm bg-signal px-3 py-1.5 text-sm font-medium text-signal-fg hover:opacity-90 disabled:opacity-40"
             >
               <Save className="size-3.5" aria-hidden="true" />
-              {pending ? 'Saving...' : 'Save settings'}
+              {pending ? 'Saving…' : 'Save settings'}
             </button>
           </div>
         </div>

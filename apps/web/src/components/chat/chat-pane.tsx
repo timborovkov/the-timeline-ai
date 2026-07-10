@@ -470,7 +470,7 @@ function ChatComposer({
 }) {
   return (
     <div className="shrink-0">
-      <div className="relative rounded-sm border border-border bg-surface focus-within:border-border-strong">
+      <div className="relative rounded-sm border border-border bg-surface focus-within:border-border-strong focus-within:ring-2 focus-within:ring-signal/40 focus-within:ring-offset-2 focus-within:ring-offset-bg">
         <label htmlFor="chat-composer" className="sr-only">
           Ask the timeline
         </label>
@@ -495,7 +495,7 @@ function ChatComposer({
           }}
           disabled={isStreaming || !input.trim()}
           aria-label="Send"
-          className="absolute right-1.5 top-1/2 grid size-9 -translate-y-1/2 place-items-center rounded-sm bg-signal text-signal-fg transition-opacity hover:opacity-90 disabled:opacity-30"
+          className="absolute right-1.5 top-1/2 grid size-9 -translate-y-1/2 place-items-center rounded-sm bg-signal text-signal-fg transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-offset-2 disabled:opacity-30"
         >
           <Send className="size-4" />
         </button>

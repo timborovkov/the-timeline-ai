@@ -443,7 +443,7 @@ describe('finalizeDocumentVersionAction', () => {
     const r = await finalizeDocumentVersionAction({ versionId: VERSION_ID });
 
     expect(r.ok).toBe(false);
-    expect(r.error).toBe('redis down');
+    expect(r.error).toMatch(/^Failed to finalize document\. Reference: [0-9a-f]{8}\.$/);
     expect(fakeEnqueueDocExtract).toHaveBeenCalledWith({
       documentVersionId: VERSION_ID,
       teamId: TEAM_ID,

@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -13,6 +13,20 @@ vi.mock('next/navigation', () => ({
 }));
 
 const MCP_URL = 'https://timeline.test/api/mcp/server';
+const ACTIVE_KEY = {
+  id: 'key-1',
+  name: 'CI agent',
+  prefix: 'tl_mcp_abcd',
+  createdAt: '2026-07-02T10:00:00.000Z',
+  lastUsedAt: null,
+};
+
+async function confirmRevoke(user: ReturnType<typeof userEvent.setup>): Promise<void> {
+  await user.click(within(screen.getByRole('listitem')).getByRole('button', { name: 'Revoke' }));
+  const confirmButton = screen.getAllByRole('button', { name: 'Revoke' }).at(-1);
+  if (!confirmButton) throw new Error('expected revoke confirmation button');
+  await user.click(confirmButton);
+}
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -74,20 +88,7 @@ describe('McpShareUi', () => {
     const fetchMock = vi.fn(() => Promise.resolve(new Response(null, { status: 204 })));
     vi.stubGlobal('fetch', fetchMock);
 
-    render(
-      <McpShareUi
-        keys={[
-          {
-            id: 'key-1',
-            name: 'CI agent',
-            prefix: 'tl_mcp_abcd',
-            createdAt: '2026-07-02T10:00:00.000Z',
-            lastUsedAt: null,
-          },
-        ]}
-        mcpUrl={MCP_URL}
-      />,
-    );
+    render(<McpShareUi keys={[ACTIVE_KEY]} mcpUrl={MCP_URL} />);
 
     const row = screen.getByRole('listitem');
     expect(within(row).getByText('CI agent')).toBeTruthy();
@@ -109,5 +110,77 @@ describe('McpShareUi', () => {
       expect(fetchMock).toHaveBeenCalledWith('/api/team/mcp-keys/key-1', { method: 'DELETE' });
     });
     expect(routerRefresh).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    [403, { error: 'forbidden' }, 'You do not have permission to make this change.'],
+    [
+      500,
+      { error: 'revoke_failed', reference: 'deadbeef' },
+      'The key could not be revoked. Try again. Reference: deadbeef.',
+    ],
+  ])('keeps keys visible after a %s revoke response', async (status, payload, expectedMessage) => {
+    const user = userEvent.setup();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() =>
+        Promise.resolve(
+          new Response(JSON.stringify(payload), {
+            status,
+            headers: { 'content-type': 'application/json' },
+          }),
+        ),
+      ),
+    );
+
+    render(<McpShareUi keys={[ACTIVE_KEY]} mcpUrl={MCP_URL} />);
+    await confirmRevoke(user);
+
+    expect(await screen.findByText(expectedMessage)).toBeTruthy();
+    expect(screen.getByText('CI agent')).toBeTruthy();
+    expect(routerRefresh).not.toHaveBeenCalled();
+  });
+
+  it('explains offline revocation failures and keeps the key visible', async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.reject(new TypeError('offline'))),
+    );
+
+    render(<McpShareUi keys={[ACTIVE_KEY]} mcpUrl={MCP_URL} />);
+    await confirmRevoke(user);
+
+    expect(
+      await screen.findByText(
+        'Could not revoke this key because the network request failed. Check your connection and try again.',
+      ),
+    ).toBeTruthy();
+    expect(screen.getByText('CI agent')).toBeTruthy();
+    expect(routerRefresh).not.toHaveBeenCalled();
+  });
+
+  it('blocks rapid repeated revoke requests while the first request is pending', async () => {
+    const user = userEvent.setup();
+    let resolveRequest: ((response: Response) => void) | undefined;
+    const fetchMock = vi.fn(
+      () =>
+        new Promise<Response>((resolve) => {
+          resolveRequest = resolve;
+        }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<McpShareUi keys={[ACTIVE_KEY]} mcpUrl={MCP_URL} />);
+    await confirmRevoke(user);
+    const busyButton = await screen.findByRole<HTMLButtonElement>('button', { name: 'Revoking…' });
+    fireEvent.click(busyButton);
+
+    expect(busyButton.disabled).toBe(true);
+    expect(fetchMock).toHaveBeenCalledOnce();
+    resolveRequest?.(new Response(null, { status: 204 }));
+    await waitFor(() => {
+      expect(routerRefresh).toHaveBeenCalledOnce();
+    });
   });
 });

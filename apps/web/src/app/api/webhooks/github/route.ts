@@ -10,6 +10,11 @@ import { NextResponse } from 'next/server';
 
 import { db } from '@/lib/db';
 import { requireRedisQueue } from '@/lib/queue';
+import {
+  payloadTooLargeResponse,
+  readCappedTextBody,
+  REQUEST_BODY_LIMITS,
+} from '@/lib/request-body';
 import { reportCaughtError, reportHandledEvent } from '@/lib/sentry-report';
 
 export const runtime = 'nodejs';
@@ -91,7 +96,9 @@ export async function POST(req: Request): Promise<Response> {
     }
   }
 
-  const body = await req.text();
+  const bodyResult = await readCappedTextBody(req, REQUEST_BODY_LIMITS.integrationWebhook);
+  if (bodyResult.tooLarge) return payloadTooLargeResponse();
+  const body = bodyResult.text;
   const secret = getEnv().GITHUB_WEBHOOK_SECRET;
   if (!secret) {
     reportHandledEvent({

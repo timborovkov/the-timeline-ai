@@ -58,4 +58,31 @@ describe('MobileNav', () => {
     });
     expect(document.body.style.overflow).toBe('');
   });
+
+  it('opens as a modal, focuses its close control, handles Escape, and restores focus', async () => {
+    const user = userEvent.setup();
+    render(
+      createElement(MobileNav, {
+        active,
+        memberships: [active],
+        recipientInvites: [],
+      }),
+    );
+
+    const opener = screen.getByRole<HTMLButtonElement>('button', { name: 'Open navigation' });
+    await user.click(opener);
+    const dialog = screen.getByRole<HTMLDialogElement>('dialog', { name: 'Navigation' });
+    expect(dialog.open).toBe(true);
+    const closeControls = screen.getAllByRole<HTMLButtonElement>('button', {
+      name: 'Close navigation',
+    });
+    expect(document.activeElement).toBe(closeControls.at(-1));
+
+    dialog.dispatchEvent(new Event('cancel', { bubbles: false, cancelable: true }));
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog', { name: 'Navigation' })).toBeNull();
+    });
+    expect(document.activeElement).toBe(opener);
+    expect(document.body.style.overflow).toBe('');
+  });
 });

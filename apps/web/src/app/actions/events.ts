@@ -80,12 +80,25 @@ export async function createTextEventAction(
 
     const scope = withTeam(db, active.teamId, session.user.id);
     await scope.requireMembership();
+    const skippedAt = new Date().toISOString();
+    const privateSkipMetadata =
+      parsed.data.visibility === 'private'
+        ? {
+            extraction_skipped_at: skippedAt,
+            extraction_skipped_reason: 'visibility=private',
+            embedding_skipped_at: skippedAt,
+            embedding_skipped_reason: 'visibility=private',
+            suggestions_skipped_at: skippedAt,
+            suggestions_skipped_reason: 'visibility=private',
+          }
+        : undefined;
     const event = await scope.timeline.createEvent({
       authorUserId: session.user.id,
       visibilityOwnerUserId: session.user.id,
       source: 'web',
       contentText: parsed.data.text,
       visibility: parsed.data.visibility,
+      ...(privateSkipMetadata ? { sourceMetadata: privateSkipMetadata } : {}),
     });
     const completedFirstNote = await safeMarkOnboardingStep(scope, 'first_note');
     await deleteCacheKey(cacheKey(['onboarding', active.teamId, session.user.id]));
@@ -103,6 +116,12 @@ export async function createTextEventAction(
         step: 'first_note',
         source: 'automatic',
       });
+    }
+
+    if (parsed.data.visibility === 'private') {
+      revalidatePath('/app');
+      revalidatePath('/app/timeline');
+      return { ok: true, at: Date.now() };
     }
 
     const processingWarnings: string[] = [];

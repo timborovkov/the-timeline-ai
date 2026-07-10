@@ -224,19 +224,19 @@ function weekGrid(anchor: Temporal.PlainDate): Temporal.PlainDate[] {
 
 function titleFor(mode: CalendarViewMode, anchor: Temporal.PlainDate): string {
   if (mode === 'day') {
-    return anchor.toLocaleString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+    return anchor.toLocaleString(undefined, { month: 'long', day: 'numeric', year: 'numeric' });
   }
   if (mode === 'week') return `Week ${String(anchor.weekOfYear)}, ${String(isoWeekYear(anchor))}`;
-  return anchor.toLocaleString('en-US', { month: 'long', year: 'numeric' });
+  return anchor.toLocaleString(undefined, { month: 'long', year: 'numeric' });
 }
 
 function formatTime(event: CalendarEvent, timezone: string): string {
   const start = Temporal.Instant.from(event.startAt).toZonedDateTimeISO(timezone);
-  return start.toLocaleString('en-US', { hour: '2-digit', minute: '2-digit' });
+  return start.toLocaleString(undefined, { hour: '2-digit', minute: '2-digit' });
 }
 
 function formatEventDateTime(value: string, timezone: string): string {
-  return Temporal.Instant.from(value).toZonedDateTimeISO(timezone).toLocaleString('en-US', {
+  return Temporal.Instant.from(value).toZonedDateTimeISO(timezone).toLocaleString(undefined, {
     month: 'short',
     day: 'numeric',
     hour: '2-digit',
@@ -254,8 +254,8 @@ function formatEventRange(event: CalendarEvent, timezone: string): string {
       .toPlainDate()
       .subtract({ days: 1 });
     return Temporal.PlainDate.compare(start, end) === 0
-      ? start.toLocaleString('en-US', { month: 'short', day: 'numeric' })
-      : `${start.toLocaleString('en-US', { month: 'short', day: 'numeric' })} - ${end.toLocaleString('en-US', { month: 'short', day: 'numeric' })}`;
+      ? start.toLocaleString(undefined, { month: 'short', day: 'numeric' })
+      : `${start.toLocaleString(undefined, { month: 'short', day: 'numeric' })} - ${end.toLocaleString(undefined, { month: 'short', day: 'numeric' })}`;
   }
   return `${formatEventDateTime(event.startAt, timezone)} - ${formatEventDateTime(event.endAt, timezone)}`;
 }
@@ -1027,7 +1027,7 @@ function CalendarSaveStatus({
         surfaceError ? 'text-danger' : 'text-fg-dim'
       }`}
     >
-      {surfaceError ?? (saveState === 'saving' ? 'Saving...' : 'Saved')}
+      {surfaceError ?? (saveState === 'saving' ? 'Saving…' : 'Saved')}
     </div>
   );
 }
@@ -1159,7 +1159,7 @@ function CalendarEventDialog({
           </div>
           <Button type="button" onClick={onSave} disabled={pending}>
             <Check className="mr-1 size-4" />
-            {pending ? 'Saving...' : 'Save'}
+            {pending ? 'Saving…' : 'Save'}
           </Button>
         </DialogFooter>
       </DialogContent>

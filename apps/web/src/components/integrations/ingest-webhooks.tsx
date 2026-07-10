@@ -285,7 +285,7 @@ export function IngestWebhooksUi({ webhooks }: { webhooks: IngestWebhookRow[] })
               </label>
             </div>
             <Button size="sm" disabled={busy || !name.trim()} onClick={() => void create()}>
-              {busy ? 'Creating...' : 'Create webhook'}
+              {busy ? 'Creating…' : 'Create webhook'}
             </Button>
           </CardContent>
         </Card>

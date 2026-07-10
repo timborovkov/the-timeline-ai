@@ -76,7 +76,7 @@ export function BoardStageEditor({ stages, onChange, disabled = false, className
                 onChange(replaceAt(rows, index, { ...stage, name: event.target.value }));
               }}
               aria-label={`Stage ${index + 1} name`}
-              className="min-w-0 flex-1 rounded-sm border border-border bg-bg px-2 py-1.5 text-sm focus:border-border-strong focus:outline-none disabled:opacity-60"
+              className="min-w-0 flex-1 rounded-sm border border-border bg-bg px-2 py-1.5 text-sm focus-visible:border-border-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/40 focus-visible:ring-offset-2 focus-visible:ring-offset-bg disabled:opacity-60"
             />
             <button
               type="button"

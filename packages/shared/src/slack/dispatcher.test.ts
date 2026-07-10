@@ -33,6 +33,10 @@ import { textQueueDeps } from '#src/test/queue-deps.js';
 
 const askAgentMock = vi.hoisted(() => vi.fn());
 
+vi.mock('#src/http/external-fetch.js', () => ({
+  externalFetch: (input: string | URL, init?: RequestInit) => globalThis.fetch(input, init),
+}));
+
 vi.mock('#src/agent/ask.js', () => ({
   askAgent: askAgentMock,
   TEAM_BOT_ACTOR_USER_ID: '00000000-0000-0000-0000-000000000000',

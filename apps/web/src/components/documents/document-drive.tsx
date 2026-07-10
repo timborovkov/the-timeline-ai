@@ -784,7 +784,7 @@ function DocumentList({
             void query.fetchNextPage();
           }}
         >
-          {query.isFetchingNextPage ? 'Loading...' : 'Load more'}
+          {query.isFetchingNextPage ? 'Loading…' : 'Load more'}
         </Button>
       ) : null}
     </section>

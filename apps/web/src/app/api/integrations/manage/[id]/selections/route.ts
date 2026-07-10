@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { publicApiErrorResponse } from '@/lib/public-error';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -111,8 +112,15 @@ export async function GET(
     });
     return NextResponse.json({ resources, selections });
   } catch (err) {
-    const msg = err instanceof Error ? err.message : 'list_resources_failed';
-    return NextResponse.json({ resources: [], selections, error: msg }, { status: 200 });
+    return publicApiErrorResponse(
+      err,
+      {
+        operation: 'list_integration_resources',
+        fallbackCode: 'list_resources_failed',
+        fallbackStatus: 502,
+      },
+      { resources: [], selections },
+    );
   }
 }
 
@@ -163,8 +171,11 @@ export async function PUT(
       persistTokens: (fresh) => integrationsLib.adminPersistTokens(db, integration.id, fresh),
     });
   } catch (err) {
-    const msg = err instanceof Error ? err.message : 'list_resources_failed';
-    return NextResponse.json({ error: msg }, { status: 502 });
+    return publicApiErrorResponse(err, {
+      operation: 'validate_integration_selections',
+      fallbackCode: 'list_resources_failed',
+      fallbackStatus: 502,
+    });
   }
   const allowed = new Set(resources.map((r) => `${r.kind}\x00${r.externalId}`));
   const invalid = parsed.data.selections.filter(

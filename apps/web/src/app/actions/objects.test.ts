@@ -20,6 +20,7 @@ import {
   updateNoteAction,
   updateObjectAction,
 } from '@/app/actions/objects';
+import { expectPublicActionErrorReport } from '@/test/public-error';
 
 /**
  * Server-action tests for object actions. The shared object scope owns the
@@ -338,15 +339,9 @@ describe('object CRUD actions', () => {
     const err = new Error('database down');
     fakes.fakeObjects.createObject.mockRejectedValue(err);
 
-    await expect(createObjectAction({ type: 'task', canonicalName: 'Follow up' })).resolves.toEqual(
-      {
-        error: 'database down',
-      },
-    );
-    expect(fakes.fakeReportCaughtError).toHaveBeenCalledWith(err, {
-      surface: 'server_action',
-      operation: 'failed_to_create_object',
-    });
+    const result = await createObjectAction({ type: 'task', canonicalName: 'Follow up' });
+    expect(result.error).toMatch(/^Failed to create object Reference: [0-9a-f]{8}\.$/);
+    expectPublicActionErrorReport(fakes.fakeReportCaughtError, err, 'failed_to_create_object');
   });
 
   it('updates object fields and revalidates object, board, and task surfaces', async () => {
@@ -557,9 +552,8 @@ describe('object CRUD actions', () => {
     const err = new Error('archive failed');
     fakes.fakeTransactionObjects.archiveObject.mockRejectedValueOnce(err);
 
-    await expect(bulkArchiveObjectsAction({ ids: [OBJECT_ID, OTHER_OBJECT_ID] })).resolves.toEqual({
-      error: 'archive failed',
-    });
+    const result = await bulkArchiveObjectsAction({ ids: [OBJECT_ID, OTHER_OBJECT_ID] });
+    expect(result.error).toMatch(/^Failed to archive selected objects Reference: [0-9a-f]{8}\.$/);
 
     expect(fakes.fakeTransaction).toHaveBeenCalledTimes(1);
     expect(fakes.fakeRevalidatePath).not.toHaveBeenCalledWith('/app/objects');

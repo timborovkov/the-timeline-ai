@@ -225,7 +225,7 @@ function BoardCreateForm({ showHeading = true }: BoardCreateFormProps) {
             onChange={(e) => {
               dispatch({ type: 'name', name: e.target.value });
             }}
-            className="w-full rounded-sm border border-border bg-bg px-3 py-2 text-sm focus:border-border-strong focus:outline-none"
+            className="w-full rounded-sm border border-border bg-bg px-3 py-2 text-sm focus-visible:border-border-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/40 focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
           />
         </label>
         <label className="block">
@@ -238,7 +238,7 @@ function BoardCreateForm({ showHeading = true }: BoardCreateFormProps) {
               dispatch({ type: 'purpose', purpose: e.target.value });
             }}
             placeholder="What this board is for"
-            className="w-full rounded-sm border border-border bg-bg px-3 py-2 text-sm focus:border-border-strong focus:outline-none"
+            className="w-full rounded-sm border border-border bg-bg px-3 py-2 text-sm focus-visible:border-border-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/40 focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
           />
         </label>
       </div>
@@ -264,7 +264,7 @@ function BoardCreateForm({ showHeading = true }: BoardCreateFormProps) {
         disabled={pending || !name.trim()}
         className="mt-4 rounded-sm bg-signal px-3 py-1.5 text-sm font-medium text-signal-fg hover:opacity-90 disabled:opacity-40"
       >
-        {pending ? 'Creating...' : 'Create board'}
+        {pending ? 'Creating…' : 'Create board'}
       </button>
     </div>
   );

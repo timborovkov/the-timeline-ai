@@ -143,12 +143,18 @@ describe('/api/team/mcp-servers/[id]/tools', () => {
     expect(fakes.callTool).toHaveBeenCalledWith('mcp__server__search', { q: 'launch' });
   });
 
-  it('keeps failed tool calls as 200 test-call responses with ok false', async () => {
+  it('returns failed tool calls as bounded public errors', async () => {
     fakes.callTool.mockRejectedValueOnce(new Error('remote unavailable'));
 
     const response = await POST(postRequest({ tool: 'mcp__server__search', args: {} }), ctx());
 
-    expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toEqual({ ok: false, error: 'remote unavailable' });
+    expect(response.status).toBe(500);
+    const payload = (await response.json()) as {
+      ok: false;
+      error: string;
+      reference: string;
+    };
+    expect(payload).toMatchObject({ ok: false, error: 'call_failed' });
+    expect(payload.reference).toMatch(/^[0-9a-f]{8}$/);
   });
 });

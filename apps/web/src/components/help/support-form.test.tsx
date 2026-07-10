@@ -89,16 +89,14 @@ describe('SupportForm', () => {
     fakes.useActionState.mockReturnValue([{ ok: true }, fakes.action, true]);
     render(<SupportForm requiresTurnstile={false} />);
 
-    expect(screen.getByText('We received your request.')).toBeTruthy();
-    expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Sending...' }).disabled).toBe(
-      true,
-    );
+    expect(screen.getByRole('status').textContent).toBe('We received your request.');
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Sending…' }).disabled).toBe(true);
 
     cleanup();
     fakes.useActionState.mockReturnValue([{ error: 'Verification failed.' }, fakes.action, false]);
     render(<SupportForm requiresTurnstile={false} />);
 
-    expect(screen.getByText('Verification failed.')).toBeTruthy();
+    expect(screen.getByRole('alert').textContent).toBe('Verification failed.');
     expect(screen.queryByText('We received your request.')).toBeNull();
     expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Send request' }).disabled).toBe(
       false,

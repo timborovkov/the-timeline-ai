@@ -525,3 +525,17 @@ describe('POST /api/webhooks/recall/status — Redis-down retry path', () => {
     expect(fakes.fakeUpdateStatus).toHaveBeenCalledWith('meeting-1', 'joining', expect.any(Object));
   });
 });
+
+describe('payload size limit', () => {
+  it('rejects an oversized body before signature verification', async () => {
+    const response = await POST(
+      new Request('http://test/webhook', {
+        method: 'POST',
+        headers: { 'content-length': String(1024 * 1024 + 1) },
+        body: '{}',
+      }),
+    );
+    expect(response.status).toBe(413);
+    await expect(response.json()).resolves.toMatchObject({ reason: 'payload_too_large' });
+  });
+});

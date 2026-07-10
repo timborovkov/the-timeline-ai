@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { publicApiErrorResponse } from '@/lib/public-error';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -86,7 +87,13 @@ export async function POST(
     const result = await scope.mcp.callTool(parsed.data.tool, parsed.data.args);
     return NextResponse.json({ ok: true, result });
   } catch (err) {
-    const msg = err instanceof Error ? err.message : 'call_failed';
-    return NextResponse.json({ ok: false, error: msg }, { status: 200 });
+    return publicApiErrorResponse(
+      err,
+      {
+        operation: 'call_mcp_tool',
+        fallbackCode: 'call_failed',
+      },
+      { ok: false },
+    );
   }
 }

@@ -5,6 +5,7 @@ const fakes = vi.hoisted(() => ({
   fakeResolveActiveTeam: vi.fn(),
   fakeDismiss: vi.fn(),
   fakeRequireMembership: vi.fn(),
+  fakeAuditRecord: vi.fn(),
 }));
 
 vi.mock('@/lib/auth', () => ({ auth: fakes.fakeAuth }));
@@ -14,6 +15,7 @@ vi.mock('@timeline/shared/team-scope', () => ({
   withTeam: () => ({
     requireMembership: fakes.fakeRequireMembership,
     jobRecovery: { dismissRecoverableJob: fakes.fakeDismiss },
+    audit: { record: fakes.fakeAuditRecord },
   }),
 }));
 
@@ -37,6 +39,16 @@ describe('job recovery dismiss route', () => {
 
     expect(res.status).toBe(403);
     expect(fakes.fakeDismiss).not.toHaveBeenCalled();
+    expect(fakes.fakeAuditRecord).toHaveBeenCalledWith({
+      action: 'job.dismiss',
+      targetType: 'job_recovery',
+      metadata: {
+        mode: 'single',
+        outcome: 'rejected',
+        recovery_kind: 'unknown',
+        reason: 'forbidden',
+      },
+    });
   });
 
   it('dispatches the dismissal through the team-scoped recovery scope', async () => {
@@ -47,5 +59,33 @@ describe('job recovery dismiss route', () => {
     expect(res.status).toBe(200);
     expect(fakes.fakeRequireMembership).toHaveBeenCalledWith('admin');
     expect(fakes.fakeDismiss).toHaveBeenCalledWith('abc');
+    expect(fakes.fakeAuditRecord).toHaveBeenCalledWith({
+      action: 'job.dismiss',
+      targetType: 'job_recovery',
+      metadata: { mode: 'single', outcome: 'succeeded', recovery_kind: 'unknown' },
+    });
+  });
+
+  it('sanitizes unexpected dismissal failures and audits the rejected operation', async () => {
+    fakes.fakeDismiss.mockRejectedValue(new Error('postgres://internal-token'));
+
+    const res = await POST(new Request('http://test'), {
+      params: Promise.resolve({ id: 'abc' }),
+    });
+    const body = (await res.json()) as { error?: unknown; reference?: unknown };
+
+    expect(res.status).toBe(500);
+    expect(body.error).toBe('dismiss_failed');
+    expect(body.reference).toMatch(/^[0-9a-f]{8}$/);
+    expect(fakes.fakeAuditRecord).toHaveBeenCalledWith({
+      action: 'job.dismiss',
+      targetType: 'job_recovery',
+      metadata: {
+        mode: 'single',
+        outcome: 'rejected',
+        recovery_kind: 'unknown',
+        reason: 'operation_failed',
+      },
+    });
   });
 });

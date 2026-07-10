@@ -5,6 +5,7 @@ const fakes = vi.hoisted(() => ({
   fakeResolveActiveTeam: vi.fn(),
   fakeRetry: vi.fn(),
   fakeRequireMembership: vi.fn(),
+  fakeAuditRecord: vi.fn(),
 }));
 
 vi.mock('@/lib/auth', () => ({ auth: fakes.fakeAuth }));
@@ -14,6 +15,7 @@ vi.mock('@timeline/shared/team-scope', () => ({
   withTeam: () => ({
     requireMembership: fakes.fakeRequireMembership,
     jobRecovery: { retryRecoverableJob: fakes.fakeRetry },
+    audit: { record: fakes.fakeAuditRecord },
   }),
 }));
 
@@ -25,6 +27,7 @@ beforeEach(() => {
   fakes.fakeResolveActiveTeam.mockResolvedValue({ active: { teamId: 'team-1' } });
   fakes.fakeRequireMembership.mockResolvedValue('admin');
   fakes.fakeRetry.mockResolvedValue(undefined);
+  fakes.fakeAuditRecord.mockResolvedValue(undefined);
 });
 
 describe('job recovery retry route', () => {
@@ -48,6 +51,16 @@ describe('job recovery retry route', () => {
 
     expect(res.status).toBe(403);
     expect(fakes.fakeRetry).not.toHaveBeenCalled();
+    expect(fakes.fakeAuditRecord).toHaveBeenCalledWith({
+      action: 'job.retry',
+      targetType: 'job_recovery',
+      metadata: {
+        mode: 'single',
+        outcome: 'rejected',
+        recovery_kind: 'unknown',
+        reason: 'forbidden',
+      },
+    });
   });
 
   it('dispatches the retry through the team-scoped recovery scope', async () => {
@@ -58,5 +71,45 @@ describe('job recovery retry route', () => {
     expect(res.status).toBe(200);
     expect(fakes.fakeRequireMembership).toHaveBeenCalledWith('admin');
     expect(fakes.fakeRetry).toHaveBeenCalledWith('abc');
+    expect(fakes.fakeAuditRecord).toHaveBeenCalledWith({
+      action: 'job.retry',
+      targetType: 'job_recovery',
+      metadata: { mode: 'single', outcome: 'succeeded', recovery_kind: 'unknown' },
+    });
+  });
+
+  it('keeps a successful retry successful when audit persistence fails', async () => {
+    fakes.fakeAuditRecord.mockRejectedValue(new Error('audit unavailable'));
+
+    const res = await POST(new Request('http://test'), {
+      params: Promise.resolve({ id: 'abc' }),
+    });
+
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toEqual({ ok: true });
+    expect(fakes.fakeRetry).toHaveBeenCalledOnce();
+  });
+
+  it('maps expected retry failures and audits the rejected operation', async () => {
+    fakes.fakeRetry.mockRejectedValue(
+      Object.assign(new Error('invalid recovery id'), { code: 'invalid_recovery_id' }),
+    );
+
+    const res = await POST(new Request('http://test'), {
+      params: Promise.resolve({ id: 'abc' }),
+    });
+
+    expect(res.status).toBe(404);
+    await expect(res.json()).resolves.toEqual({ error: 'invalid_recovery_id' });
+    expect(fakes.fakeAuditRecord).toHaveBeenCalledWith({
+      action: 'job.retry',
+      targetType: 'job_recovery',
+      metadata: {
+        mode: 'single',
+        outcome: 'rejected',
+        recovery_kind: 'unknown',
+        reason: 'operation_failed',
+      },
+    });
   });
 });

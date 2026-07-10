@@ -318,7 +318,7 @@ export function DocumentDetail({
                       disabled={downloading.includes(v.id)}
                     >
                       <Download className="mr-1 size-3.5" />
-                      {downloading.includes(v.id) ? 'Opening...' : 'Download'}
+                      {downloading.includes(v.id) ? 'Opening…' : 'Download'}
                     </Button>
                   </div>
                 </li>

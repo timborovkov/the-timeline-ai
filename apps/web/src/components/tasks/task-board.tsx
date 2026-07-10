@@ -742,7 +742,7 @@ function TaskBoardView({
                 disabled={loadingMore}
                 className="h-8 rounded-sm border border-border bg-bg px-3 text-xs font-medium hover:bg-signal-soft disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {loadingMore ? 'Loading...' : 'Load older tasks'}
+                {loadingMore ? 'Loading…' : 'Load older tasks'}
               </button>
             ) : null}
             {loadError ? (
@@ -936,6 +936,7 @@ function TaskListRow({
 
   return (
     <tr
+      style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 52px' }}
       className={cn(
         'border-t border-border transition-colors hover:bg-bg',
         highlighted && 'bg-signal-soft',
@@ -964,7 +965,7 @@ function TaskListRow({
         </div>
         {saving || error ? (
           <div className="mt-1 font-mono text-[10px] uppercase tracking-[0.1em]">
-            {saving ? <span className="text-fg-dim">Saving {saving}...</span> : null}
+            {saving ? <span className="text-fg-dim">Saving {saving}…</span> : null}
             {error ? <span className="text-danger">{error}</span> : null}
           </div>
         ) : null}
@@ -1184,7 +1185,7 @@ function TaskBulkToolbar({
         onClick={applyBulk}
         className="h-8 rounded-sm border border-border bg-bg px-3 text-xs font-medium hover:bg-signal-soft disabled:cursor-not-allowed disabled:opacity-50"
       >
-        {pending ? 'Applying...' : 'Apply'}
+        {pending ? 'Applying…' : 'Apply'}
       </button>
       {selectedCount > 0 ? (
         <button
@@ -1272,7 +1273,7 @@ function TaskColumn({
         ))}
         {hiddenRows > 0 ? (
           <li className="rounded-sm border border-dashed border-border bg-bg px-3 py-2 text-center font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">
-            {hiddenRows} more loaded. Narrow filter.
+            {hiddenRows} loaded tasks hidden. Narrow filter.
           </li>
         ) : null}
       </ul>
@@ -1308,7 +1309,7 @@ function TaskCard({
   return (
     <li
       ref={setNodeRef}
-      style={style}
+      style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 112px', ...style }}
       {...attributes}
       {...listeners}
       className={cn(
@@ -1479,7 +1480,7 @@ function TaskDetailPanel({
       </div>
       {saving || error ? (
         <div className="border-b border-border px-4 py-3 font-mono text-[11px] uppercase tracking-[0.1em]">
-          {saving ? <span className="text-fg-dim">Saving {saving}...</span> : null}
+          {saving ? <span className="text-fg-dim">Saving {saving}…</span> : null}
           {error ? <span className="text-danger">{error}</span> : null}
         </div>
       ) : null}

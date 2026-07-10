@@ -91,7 +91,7 @@ export function FilterMultiSelect({
             type="button"
             aria-label={label}
             className={cn(
-              'flex h-9 w-full items-center justify-between gap-2 rounded-sm border border-border bg-surface px-2 text-left text-xs text-fg outline-none transition-colors hover:border-border-strong focus:border-signal/60',
+              'flex h-9 w-full items-center justify-between gap-2 rounded-sm border border-border bg-surface px-2 text-left text-xs text-fg outline-none transition-colors hover:border-border-strong focus-visible:border-signal/60 focus-visible:ring-2 focus-visible:ring-signal/40 focus-visible:ring-offset-2 focus-visible:ring-offset-bg',
               selectedList.length === 0 && 'text-fg-muted',
               triggerClassName,
             )}

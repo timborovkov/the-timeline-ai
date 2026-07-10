@@ -1,6 +1,7 @@
 import { Buffer } from 'node:buffer';
 
 import { getEnv } from '#src/env.js';
+import { externalFetch as fetch } from '#src/http/external-fetch.js';
 import {
   type IntegrationEvent,
   type IntegrationProvider,

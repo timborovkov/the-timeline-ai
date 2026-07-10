@@ -40,7 +40,7 @@ function dateSearchValues(value: unknown): string[] {
   if (!raw) return [];
   const date = value instanceof Date ? value : new Date(raw);
   if (Number.isNaN(date.getTime())) return [raw];
-  const formatted = date.toLocaleDateString('en-CA');
+  const formatted = date.toISOString().slice(0, 10);
   return raw === formatted ? [formatted] : [raw, formatted];
 }
 

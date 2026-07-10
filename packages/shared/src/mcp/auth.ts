@@ -1,3 +1,5 @@
+import ipaddr from 'ipaddr.js';
+
 import type { mcpServers as mcpServersTable } from '@timeline/db';
 
 import { decryptJson } from '#src/crypto/secrets.js';
@@ -149,6 +151,25 @@ function normalizeNumericIpv4(host: string): string | null {
   ].join('.');
 }
 
+function rangeLabel(range: string): string {
+  const label = range.replace(/([a-z])([A-Z])/g, '$1-$2').toLowerCase();
+  return `${label.charAt(0).toUpperCase()}${label.slice(1)}`;
+}
+
+/**
+ * Returns an error for any address that is not globally routable unicast.
+ * `ipaddr.process` normalizes IPv4-mapped IPv6 before classification so
+ * `::ffff:127.0.0.1` cannot bypass the IPv4 loopback guard.
+ */
+export function validatePublicIpAddress(rawAddress: string): string | null {
+  const address =
+    rawAddress.startsWith('[') && rawAddress.endsWith(']') ? rawAddress.slice(1, -1) : rawAddress;
+  if (!ipaddr.isValid(address)) return 'Invalid IP address';
+  const parsed = ipaddr.process(address);
+  const range = parsed.range();
+  return range === 'unicast' ? null : `${rangeLabel(range)} address is not a public unicast target`;
+}
+
 export function validateMcpUrl(rawUrl: string): string | null {
   let parsed: URL;
   try {
@@ -166,33 +187,12 @@ export function validateMcpUrl(rawUrl: string): string | null {
   const host = normalizeNumericIpv4(rawHost) ?? rawHost;
   if (process.env.NODE_ENV === 'production') {
     if (parsed.protocol === 'http:') return 'http:// not allowed in production (use https)';
-    if (host === 'localhost' || host === '127.0.0.1' || host === '::1') {
-      return 'Loopback hosts not allowed';
-    }
     if (host.endsWith('.local') || host.endsWith('.internal')) {
       return 'Internal hosts not allowed';
     }
-    // Block obvious private ranges. Full IP-range checking is left to the
-    // upstream firewall; this catches the easy cases.
-    if (
-      host.startsWith('10.') ||
-      host.startsWith('192.168.') ||
-      /^172\.(1[6-9]|2\d|3[0-1])\./.test(host)
-    ) {
-      return 'Private IP ranges not allowed';
-    }
-    // RFC 3927 link-local (169.254.0.0/16) — same range as AWS / GCP /
-    // Azure metadata (169.254.169.254). Without this block, a team
-    // admin could register the cloud metadata endpoint as an MCP URL
-    // and later OAuth/RPC fetches would credential-leak through it.
-    if (host.startsWith('169.254.')) {
-      return 'Link-local addresses not allowed';
-    }
-    // IPv6 link-local (fe80::/10) and unique-local (fc00::/7). URL host
-    // strips outer brackets so we match on the leading bytes.
-    if (host.startsWith('fe80:') || host.startsWith('fc') || host.startsWith('fd')) {
-      return 'IPv6 link-local / unique-local addresses not allowed';
-    }
+    if (host === 'localhost') return 'Loopback host is not a public target';
+    const address = host.startsWith('[') && host.endsWith(']') ? host.slice(1, -1) : host;
+    if (ipaddr.isValid(address)) return validatePublicIpAddress(address);
   }
   return null;
 }

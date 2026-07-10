@@ -1,4 +1,3 @@
-import { PGlite } from '@electric-sql/pglite';
 import {
   boardItemChanges,
   boardItems,
@@ -14,11 +13,13 @@ import {
 } from '@timeline/db';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import type { PGlite } from '@electric-sql/pglite';
 
 import { buildBoardDirectWriteSourceContext, defaultBoardLanes } from '#src/boards/index.js';
 import { withTeam } from '#src/team-scope.js';
-import { applyDbMigrations } from '#src/test/pglite.js';
+import { createResettablePGliteTestDb, type ResettablePGliteTestDb } from '#src/test/pglite.js';
 
 const qdrantFakes = vi.hoisted(() => ({
   deletePoints: vi.fn().mockResolvedValue(undefined),
@@ -46,9 +47,10 @@ const USER_OTHER_TEAM = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
 
 let pg: PGlite;
 let db: Db;
+let testDb: ResettablePGliteTestDb;
 
-async function seedWorkspace(): Promise<void> {
-  await pg.exec(`
+async function seedWorkspace(target: PGlite): Promise<void> {
+  await target.exec(`
     INSERT INTO teams (id, slug, name)
     VALUES
       ('${TEAM_A}', 'team-a', 'Team A'),
@@ -80,6 +82,12 @@ async function boardUpdatedAt(boardId: string): Promise<Date> {
   if (!row) throw new Error('Board not found');
   return row.updatedAt;
 }
+
+beforeAll(async () => {
+  testDb = await createResettablePGliteTestDb(seedWorkspace);
+  pg = testDb.pg;
+  db = drizzle(pg) as unknown as Db;
+}, 60_000);
 
 async function withHistoricalLegacyObjectProvenance<T>(run: () => Promise<T>): Promise<T> {
   await pg.exec(`
@@ -113,14 +121,11 @@ beforeEach(async () => {
     deletePoints: qdrantFakes.deletePoints,
     deletePointsForSource: qdrantFakes.deletePointsForSource,
   });
-  pg = new PGlite();
-  await applyDbMigrations(pg);
-  await seedWorkspace();
-  db = drizzle(pg) as unknown as Db;
-}, 60_000);
+  await testDb.reset();
+});
 
-afterEach(async () => {
-  await pg.close();
+afterAll(async () => {
+  await testDb.close();
 });
 
 describe('board scope', () => {

@@ -5,6 +5,7 @@ const fakes = vi.hoisted(() => ({
   fakeResolveActiveTeam: vi.fn(),
   fakeRetryFailed: vi.fn(),
   fakeRequireMembership: vi.fn(),
+  fakeAuditRecord: vi.fn(),
 }));
 
 vi.mock('@/lib/auth', () => ({ auth: fakes.fakeAuth }));
@@ -14,6 +15,7 @@ vi.mock('@timeline/shared/team-scope', () => ({
   withTeam: () => ({
     requireMembership: fakes.fakeRequireMembership,
     jobRecovery: { retryFailedRecoverableJobs: fakes.fakeRetryFailed },
+    audit: { record: fakes.fakeAuditRecord },
   }),
 }));
 
@@ -25,6 +27,7 @@ beforeEach(() => {
   fakes.fakeResolveActiveTeam.mockResolvedValue({ active: { teamId: 'team-1' } });
   fakes.fakeRequireMembership.mockResolvedValue('admin');
   fakes.fakeRetryFailed.mockResolvedValue({ retried: 3, failed: 0, failedIds: [] });
+  fakes.fakeAuditRecord.mockResolvedValue(undefined);
 });
 
 describe('job recovery retry failed route', () => {
@@ -35,6 +38,18 @@ describe('job recovery retry failed route', () => {
 
     expect(res.status).toBe(403);
     expect(fakes.fakeRetryFailed).not.toHaveBeenCalled();
+    expect(fakes.fakeAuditRecord).toHaveBeenCalledWith({
+      action: 'job.retry',
+      targetType: 'job_recovery_batch',
+      metadata: {
+        mode: 'bulk',
+        outcome: 'rejected',
+        recovery_kind: 'mixed',
+        target_ids: [],
+        target_count: 0,
+        reason: 'forbidden',
+      },
+    });
   });
 
   it('bulk retries failed jobs through the team-scoped recovery scope', async () => {
@@ -70,6 +85,41 @@ describe('job recovery retry failed route', () => {
       ],
       expectedCount: 3,
     });
+    expect(fakes.fakeAuditRecord).toHaveBeenCalledWith({
+      action: 'job.retry',
+      targetType: 'job_recovery_batch',
+      metadata: {
+        mode: 'bulk',
+        outcome: 'succeeded',
+        recovery_kind: 'embedding',
+        target_ids: ['job-1', 'job-2', 'job-3'],
+        target_count: 3,
+      },
+    });
+  });
+
+  it('keeps successful bulk recovery successful when audit persistence fails', async () => {
+    fakes.fakeAuditRecord.mockRejectedValue(new Error('audit unavailable'));
+
+    const res = await POST(
+      new Request('http://test', {
+        method: 'POST',
+        body: JSON.stringify({
+          kind: 'embedding',
+          items: [{ id: 'job-1', detectedAt: '2026-05-27T10:00:00.000Z' }],
+          expectedCount: 1,
+        }),
+      }),
+    );
+
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toEqual({
+      ok: true,
+      retried: 3,
+      failed: 0,
+      failedIds: [],
+    });
+    expect(fakes.fakeRetryFailed).toHaveBeenCalledOnce();
   });
 
   it('rejects malformed or empty JSON instead of retrying everything', async () => {
