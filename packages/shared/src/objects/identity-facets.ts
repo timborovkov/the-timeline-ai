@@ -46,10 +46,7 @@ export function normalizeIdentityFacet(kind: IdentityFacetKind, value: string): 
   return trimmed.toLowerCase();
 }
 
-export function validateIdentityFacetValue(
-  kind: IdentityFacetKind,
-  normalizedValue: string,
-): void {
+export function validateIdentityFacetValue(kind: IdentityFacetKind, normalizedValue: string): void {
   if (kind === 'email' && !EMAIL_IDENTITY_RE.test(normalizedValue)) {
     throw new Error('Identity facet email must be a valid email address');
   }

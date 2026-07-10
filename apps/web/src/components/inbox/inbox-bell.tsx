@@ -12,8 +12,8 @@ import {
   DropdownMenuContent,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { cn } from '@/lib/utils';
 import { formatDisplayDate } from '@/lib/display-dates';
+import { cn } from '@/lib/utils';
 
 export interface InboxBellNotification {
   id: string;

@@ -16,7 +16,8 @@ export async function readCappedTextBody(req: Request, maxBytes: number): Promis
   const chunks: Uint8Array[] = [];
   let total = 0;
   try {
-    while (true) {
+    for (;;) {
+      // react-doctor-disable-next-line react-doctor/async-await-in-loop -- Stream chunks are ordered and must be bounded before the next chunk is retained.
       const { done, value } = await reader.read();
       if (done) break;
       total += value.byteLength;

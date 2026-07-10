@@ -35,9 +35,7 @@ import { displayText } from '@/lib/display-dates';
 import { filterObjectsByText } from '@/lib/object-filter';
 import { objectDetailHref } from '@/lib/object-links';
 import { displayObjectTitle } from '@/lib/object-title';
-import {
-  TASK_BOARD_TOTAL_LIMIT,
-} from '@/lib/task-board-config';
+import { TASK_BOARD_TOTAL_LIMIT } from '@/lib/task-board-config';
 import { cn, errorMessage } from '@/lib/utils';
 
 interface TaskMemberOption {

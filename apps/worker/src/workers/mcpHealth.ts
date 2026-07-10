@@ -47,12 +47,11 @@ export async function pingMcpServer(
     return { ok: false, error: urlError };
   }
   let timer: NodeJS.Timeout | undefined;
-  let timedOut = false;
   const controller = new AbortController();
+  const timeoutError = new Error('mcp_health_timeout');
   try {
     timer = setTimeout(() => {
-      timedOut = true;
-      controller.abort();
+      controller.abort(timeoutError);
     }, PING_TIMEOUT_MS);
     await manager.discoverTools(db, row, {
       signal: controller.signal,
@@ -68,7 +67,12 @@ export async function pingMcpServer(
       .where(eq(mcpServers.id, serverId));
     return { ok: true };
   } catch (err) {
-    const error = timedOut ? 'mcp_health_timeout' : err instanceof Error ? err.message : String(err);
+    const error =
+      controller.signal.reason === timeoutError
+        ? timeoutError.message
+        : err instanceof Error
+          ? err.message
+          : String(err);
     await db
       .update(mcpServers)
       .set({ lastError: error, updatedAt: new Date() })

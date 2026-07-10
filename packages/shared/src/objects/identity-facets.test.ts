@@ -13,8 +13,14 @@ describe('identity facets', () => {
   });
 
   it('rejects malformed typed identities', () => {
-    expect(() => validateIdentityFacetValue('email', 'not-email')).toThrow('valid email');
-    expect(() => validateIdentityFacetValue('phone', '12')).toThrow('valid phone');
-    expect(() => validateIdentityFacetValue('slack', 'U123')).not.toThrow();
+    expect(() => {
+      validateIdentityFacetValue('email', 'not-email');
+    }).toThrow('valid email');
+    expect(() => {
+      validateIdentityFacetValue('phone', '12');
+    }).toThrow('valid phone');
+    expect(() => {
+      validateIdentityFacetValue('slack', 'U123');
+    }).not.toThrow();
   });
 });

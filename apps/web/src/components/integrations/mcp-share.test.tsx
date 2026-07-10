@@ -88,12 +88,7 @@ describe('McpShareUi', () => {
     const fetchMock = vi.fn(() => Promise.resolve(new Response(null, { status: 204 })));
     vi.stubGlobal('fetch', fetchMock);
 
-    render(
-      <McpShareUi
-        keys={[ACTIVE_KEY]}
-        mcpUrl={MCP_URL}
-      />,
-    );
+    render(<McpShareUi keys={[ACTIVE_KEY]} mcpUrl={MCP_URL} />);
 
     const row = screen.getByRole('listitem');
     expect(within(row).getByText('CI agent')).toBeTruthy();
@@ -148,7 +143,10 @@ describe('McpShareUi', () => {
 
   it('explains offline revocation failures and keeps the key visible', async () => {
     const user = userEvent.setup();
-    vi.stubGlobal('fetch', vi.fn(() => Promise.reject(new TypeError('offline'))));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.reject(new TypeError('offline'))),
+    );
 
     render(<McpShareUi keys={[ACTIVE_KEY]} mcpUrl={MCP_URL} />);
     await confirmRevoke(user);
@@ -181,6 +179,8 @@ describe('McpShareUi', () => {
     expect(busyButton.disabled).toBe(true);
     expect(fetchMock).toHaveBeenCalledOnce();
     resolveRequest?.(new Response(null, { status: 204 }));
-    await waitFor(() => expect(routerRefresh).toHaveBeenCalledOnce());
+    await waitFor(() => {
+      expect(routerRefresh).toHaveBeenCalledOnce();
+    });
   });
 });

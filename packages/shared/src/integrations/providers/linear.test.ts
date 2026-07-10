@@ -6,7 +6,6 @@ vi.mock('#src/http/external-fetch.js', () => ({
   externalFetch: (input: string | URL, init?: RequestInit) => globalThis.fetch(input, init),
 }));
 
-
 import type { IntegrationEvent, SyncContext } from '#src/integrations/types.js';
 
 import { resetEnvForTests } from '#src/env.js';

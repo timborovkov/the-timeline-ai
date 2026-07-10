@@ -1,4 +1,3 @@
-import { PGlite } from '@electric-sql/pglite';
 import {
   boardItemChanges,
   boardItems,
@@ -16,12 +15,11 @@ import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { PGlite } from '@electric-sql/pglite';
+
 import { buildBoardDirectWriteSourceContext, defaultBoardLanes } from '#src/boards/index.js';
 import { withTeam } from '#src/team-scope.js';
-import {
-  createResettablePGliteTestDb,
-  type ResettablePGliteTestDb,
-} from '#src/test/pglite.js';
+import { createResettablePGliteTestDb, type ResettablePGliteTestDb } from '#src/test/pglite.js';
 
 const qdrantFakes = vi.hoisted(() => ({
   deletePoints: vi.fn().mockResolvedValue(undefined),

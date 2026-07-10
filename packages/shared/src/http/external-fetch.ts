@@ -1,7 +1,8 @@
 import { lookup as dnsLookup } from 'node:dns/promises';
-import type { LookupFunction } from 'node:net';
 
 import { Agent, fetch as undiciFetch } from 'undici';
+
+import type { LookupFunction } from 'node:net';
 
 import { validateMcpUrl, validatePublicIpAddress } from '#src/mcp/auth.js';
 
@@ -34,7 +35,7 @@ export interface ResolvedAddress {
   family: 4 | 6;
 }
 
-export type ExternalLookup = (hostname: string) => Promise<ResolvedAddress[]>;
+type ExternalLookup = (hostname: string) => Promise<ResolvedAddress[]>;
 
 export interface ExternalFetchOptions {
   timeoutMs?: number;
@@ -60,9 +61,8 @@ export async function resolveExternalAddresses(
   hostname: string,
   options: Pick<ExternalFetchOptions, 'allowPrivateNetworkInDevelopment' | 'lookup'> = {},
 ): Promise<ResolvedAddress[]> {
-  const normalized = hostname.startsWith('[') && hostname.endsWith(']')
-    ? hostname.slice(1, -1)
-    : hostname;
+  const normalized =
+    hostname.startsWith('[') && hostname.endsWith(']') ? hostname.slice(1, -1) : hostname;
   let addresses: ResolvedAddress[];
   try {
     const directError = validatePublicIpAddress(normalized);
@@ -80,7 +80,10 @@ export async function resolveExternalAddresses(
     throw new ExternalHttpError('dns_failure', `DNS lookup failed for ${normalized}`, { cause });
   }
   if (addresses.length === 0) {
-    throw new ExternalHttpError('dns_failure', `DNS lookup returned no addresses for ${normalized}`);
+    throw new ExternalHttpError(
+      'dns_failure',
+      `DNS lookup returned no addresses for ${normalized}`,
+    );
   }
   if (!allowPrivateNetwork(options)) {
     for (const row of addresses) {
@@ -114,7 +117,10 @@ function pinnedLookup(addresses: ResolvedAddress[]): LookupFunction {
     const selected = addresses[nextIndex % addresses.length];
     nextIndex += 1;
     if (!selected) {
-      callback(Object.assign(new Error('No validated address available'), { code: 'ENOTFOUND' }), '');
+      callback(
+        Object.assign(new Error('No validated address available'), { code: 'ENOTFOUND' }),
+        '',
+      );
       return;
     }
     callback(null, selected.address, selected.family);
@@ -135,13 +141,22 @@ async function readBoundedBody(
     );
   }
   if (!response.body) return new Uint8Array();
-  const reader = response.body.getReader();
+  const bodyStream = response.body as unknown as {
+    getReader(): {
+      read(): Promise<{ done: boolean; value?: Uint8Array }>;
+      cancel(): Promise<void>;
+      releaseLock(): void;
+    };
+  };
+  const reader = bodyStream.getReader();
   const chunks: Uint8Array[] = [];
   let total = 0;
   try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
+    for (;;) {
+      const result = await reader.read();
+      if (result.done) break;
+      const { value } = result;
+      if (!value) continue;
       total += value.byteLength;
       if (total > maxBytes) {
         abort();
@@ -180,10 +195,9 @@ async function externalFetchAttempt(
   const controller = new AbortController();
   const timeoutMs = Math.max(1, options.timeoutMs ?? DEFAULT_TIMEOUT_MS);
   const maxBytes = Math.max(1, options.maxResponseBytes ?? DEFAULT_MAX_RESPONSE_BYTES);
-  let timedOut = false;
+  const timeoutError = new Error('external_fetch_timeout');
   const timeout = setTimeout(() => {
-    timedOut = true;
-    controller.abort();
+    controller.abort(timeoutError);
   }, timeoutMs);
   const callerSignal = init.signal;
   const abortFromCaller = () => {
@@ -202,9 +216,8 @@ async function externalFetchAttempt(
     const body = await readBoundedBody(response, maxBytes, () => {
       controller.abort();
     });
-    const responseBody = response.status === 204 || response.status === 304
-      ? null
-      : Uint8Array.from(body).buffer;
+    const responseBody =
+      response.status === 204 || response.status === 304 ? null : Uint8Array.from(body).buffer;
     return new Response(responseBody, {
       headers: [...response.headers.entries()],
       status: response.status,
@@ -212,10 +225,14 @@ async function externalFetchAttempt(
     });
   } catch (cause) {
     if (cause instanceof ExternalHttpError) throw cause;
-    if (timedOut) {
-      throw new ExternalHttpError('timeout', `External request timed out after ${String(timeoutMs)}ms`, {
-        cause,
-      });
+    if (controller.signal.reason === timeoutError) {
+      throw new ExternalHttpError(
+        'timeout',
+        `External request timed out after ${String(timeoutMs)}ms`,
+        {
+          cause,
+        },
+      );
     }
     if (callerSignal?.aborted) {
       throw new ExternalHttpError('aborted', 'External request was aborted', { cause });

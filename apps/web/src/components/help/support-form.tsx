@@ -1,6 +1,6 @@
 'use client';
 
-import { useActionState, useEffect, useState } from 'react';
+import { useActionState, useSyncExternalStore } from 'react';
 
 import { submitSupportRequestAction, type SupportFormState } from '@/app/actions/support';
 import { TurnstileWidget } from '@/components/turnstile-widget';
@@ -17,6 +17,7 @@ interface SupportFormProps {
 }
 
 const initialState: SupportFormState = {};
+const subscribeToPageUrl = () => () => undefined;
 
 export function SupportForm({
   defaultName,
@@ -25,11 +26,11 @@ export function SupportForm({
   requiresTurnstile,
 }: SupportFormProps) {
   const [state, action, pending] = useActionState(submitSupportRequestAction, initialState);
-  const [currentPage, setCurrentPage] = useState('');
-
-  useEffect(() => {
-    setCurrentPage(window.location.href);
-  }, []);
+  const currentPage = useSyncExternalStore(
+    subscribeToPageUrl,
+    () => window.location.href,
+    () => '',
+  );
 
   return (
     <form action={action} className="space-y-5">

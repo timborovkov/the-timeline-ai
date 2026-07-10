@@ -1351,22 +1351,37 @@ describe('withTeam namespaced port', () => {
       actor: { kind: 'user', userId: USER_A },
     });
 
-    await db
-      .update(entities)
-      .set({ sourceEventId: legacyEvent.id })
-      .where(eq(entities.id, object.id));
-    await db.insert(objectChanges).values({
-      teamId: TEAM_A,
-      entityId: object.id,
-      actorKind: 'agent',
-      actorUserId: null,
-      status: 'applied',
-      field: 'stage',
-      previousValue: null,
-      newValue: 'pilot',
-      sourceEventId: legacyEvent.id,
-      note: 'Legacy pointer should not become timeline impact.',
-    });
+    // Recreate a pre-migration row. Current writes intentionally cannot add
+    // legacy provenance, but existing production rows may still contain it.
+    await pg.exec(`
+      ALTER TABLE entities DISABLE TRIGGER entities_legacy_provenance_write_guard;
+      ALTER TABLE object_changes DROP CONSTRAINT object_changes_legacy_source_event_id_null_chk;
+    `);
+    try {
+      await db
+        .update(entities)
+        .set({ sourceEventId: legacyEvent.id })
+        .where(eq(entities.id, object.id));
+      await db.insert(objectChanges).values({
+        teamId: TEAM_A,
+        entityId: object.id,
+        actorKind: 'agent',
+        actorUserId: null,
+        status: 'applied',
+        field: 'stage',
+        previousValue: null,
+        newValue: 'pilot',
+        sourceEventId: legacyEvent.id,
+        note: 'Legacy pointer should not become timeline impact.',
+      });
+    } finally {
+      await pg.exec(`
+        ALTER TABLE object_changes
+          ADD CONSTRAINT object_changes_legacy_source_event_id_null_chk
+          CHECK (source_event_id IS NULL) NOT VALID;
+        ALTER TABLE entities ENABLE TRIGGER entities_legacy_provenance_write_guard;
+      `);
+    }
 
     await expect(scope.timeline.listImpactItems([legacyEvent.id])).resolves.toEqual({});
   });

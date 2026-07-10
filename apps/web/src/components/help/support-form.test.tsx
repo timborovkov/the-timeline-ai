@@ -90,9 +90,7 @@ describe('SupportForm', () => {
     render(<SupportForm requiresTurnstile={false} />);
 
     expect(screen.getByRole('status').textContent).toBe('We received your request.');
-    expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Sending…' }).disabled).toBe(
-      true,
-    );
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Sending…' }).disabled).toBe(true);
 
     cleanup();
     fakes.useActionState.mockReturnValue([{ error: 'Verification failed.' }, fakes.action, false]);

@@ -79,7 +79,9 @@ describe('MobileNav', () => {
     expect(document.activeElement).toBe(closeControls.at(-1));
 
     dialog.dispatchEvent(new Event('cancel', { bubbles: false, cancelable: true }));
-    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Navigation' })).toBeNull());
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog', { name: 'Navigation' })).toBeNull();
+    });
     expect(document.activeElement).toBe(opener);
     expect(document.body.style.overflow).toBe('');
   });

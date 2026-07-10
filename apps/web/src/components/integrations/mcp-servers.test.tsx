@@ -191,9 +191,7 @@ describe('McpServersUi', () => {
     render(<McpServersUi servers={[serverRow({ enabled: false, authType: 'none' })]} />);
     await user.click(screen.getByRole('button', { name: 'Enable' }));
 
-    expect(
-      await screen.findByText('You do not have permission to make this change.'),
-    ).toBeTruthy();
+    expect(await screen.findByText('You do not have permission to make this change.')).toBeTruthy();
     expect(screen.getByText('Disabled')).toBeTruthy();
     expect(routerRefresh).not.toHaveBeenCalled();
   });
@@ -246,10 +244,13 @@ describe('McpServersUi', () => {
     fireEvent.click(enable);
 
     expect(fetchMock).toHaveBeenCalledOnce();
-    expect((await screen.findByRole<HTMLButtonElement>('button', { name: 'Enabling…' })).disabled)
-      .toBe(true);
+    expect(
+      (await screen.findByRole<HTMLButtonElement>('button', { name: 'Enabling…' })).disabled,
+    ).toBe(true);
     resolveRequest?.(new Response(JSON.stringify({ ok: true }), { status: 200 }));
-    await waitFor(() => expect(routerRefresh).toHaveBeenCalledOnce());
+    await waitFor(() => {
+      expect(routerRefresh).toHaveBeenCalledOnce();
+    });
   });
 
   it('validates test-call JSON before posting tool arguments', async () => {

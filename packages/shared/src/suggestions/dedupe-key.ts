@@ -5,8 +5,9 @@ export function stableStringify(value: unknown): string {
   if (value && typeof value === 'object') {
     return `{${Object.keys(value)
       .sort()
-      .map((key) =>
-        `${JSON.stringify(key)}:${stableStringify((value as Record<string, unknown>)[key])}`,
+      .map(
+        (key) =>
+          `${JSON.stringify(key)}:${stableStringify((value as Record<string, unknown>)[key])}`,
       )
       .join(',')}}`;
   }

@@ -96,9 +96,7 @@ export function createBulkFailedJobRecoveryRoute(options: {
         })),
         expectedCount: parsed.data.expectedCount,
       });
-      await scope.audit.record(
-        bulkRecoveryAuditRecord({ ...auditInput, outcome: 'succeeded' }),
-      );
+      await scope.audit.record(bulkRecoveryAuditRecord({ ...auditInput, outcome: 'succeeded' }));
       return NextResponse.json({ ok: true, ...result });
     } catch (err) {
       await scope.audit.record(

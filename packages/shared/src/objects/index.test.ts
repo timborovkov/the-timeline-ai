@@ -1,4 +1,3 @@
-import { PGlite } from '@electric-sql/pglite';
 import {
   type Db,
   agentSuggestionItems,
@@ -34,6 +33,7 @@ import { drizzle } from 'drizzle-orm/pglite';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { ChatStructuredInput, ChatStructuredResult } from '#src/llm/chat.js';
+import type { PGlite } from '@electric-sql/pglite';
 import type { z } from 'zod';
 
 import { buildObjectDirectWriteSourceContext } from '#src/objects/index.js';
@@ -44,10 +44,7 @@ import {
 import { encodeCursor } from '#src/pagination.js';
 import * as queue from '#src/queue/queues.js';
 import { withTeam } from '#src/team-scope.js';
-import {
-  createResettablePGliteTestDb,
-  type ResettablePGliteTestDb,
-} from '#src/test/pglite.js';
+import { createResettablePGliteTestDb, type ResettablePGliteTestDb } from '#src/test/pglite.js';
 
 /**
  * Real-DB integration tests for workspace objects. This module owns a large

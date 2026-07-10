@@ -368,7 +368,12 @@ export function McpServersUi({
   const [rowMutations, setRowMutations] = useState<
     Record<string, { busy: 'toggle' | 'remove' | null; error: string | null }>
   >({});
-  const busyIds = useRef(new Set<string>());
+  const busyIds = useRef<Set<string> | null>(null);
+
+  function activeBusyIds(): Set<string> {
+    busyIds.current ??= new Set();
+    return busyIds.current;
+  }
 
   function setRowMutation(
     id: string,
@@ -381,8 +386,8 @@ export function McpServersUi({
   }
 
   async function toggleEnabled(server: McpServerRow) {
-    if (busyIds.current.has(server.id)) return;
-    busyIds.current.add(server.id);
+    if (activeBusyIds().has(server.id)) return;
+    activeBusyIds().add(server.id);
     setRowMutation(server.id, { busy: 'toggle', error: null });
     try {
       const response = await fetch(`/api/team/mcp-servers/${server.id}`, {
@@ -402,13 +407,13 @@ export function McpServersUi({
         error: networkActionError(server.enabled ? 'disable this server' : 'enable this server'),
       });
     } finally {
-      busyIds.current.delete(server.id);
+      activeBusyIds().delete(server.id);
       setRowMutation(server.id, { busy: null });
     }
   }
 
   async function remove(server: McpServerRow) {
-    if (busyIds.current.has(server.id)) return;
+    if (activeBusyIds().has(server.id)) return;
     const confirmed = await dialog.confirm({
       title: 'Remove MCP server?',
       description: `${server.name} will be disconnected from this team.`,
@@ -416,8 +421,8 @@ export function McpServersUi({
       destructive: true,
     });
     if (!confirmed) return;
-    if (busyIds.current.has(server.id)) return;
-    busyIds.current.add(server.id);
+    if (activeBusyIds().has(server.id)) return;
+    activeBusyIds().add(server.id);
     setRowMutation(server.id, { busy: 'remove', error: null });
     try {
       const response = await fetch(`/api/team/mcp-servers/${server.id}`, { method: 'DELETE' });
@@ -431,7 +436,7 @@ export function McpServersUi({
     } catch {
       setRowMutation(server.id, { error: networkActionError('remove this server') });
     } finally {
-      busyIds.current.delete(server.id);
+      activeBusyIds().delete(server.id);
       setRowMutation(server.id, { busy: null });
     }
   }
@@ -470,97 +475,100 @@ export function McpServersUi({
           {servers.map((s) => {
             const mutation = rowMutations[s.id] ?? { busy: null, error: null };
             return (
-            <li key={s.id} className="space-y-2 p-3">
-              <div className="flex items-center gap-2">
-                <span className="text-sm font-medium">{s.name}</span>
-                <span className="font-mono text-xs uppercase tracking-[0.14em] text-fg-muted">
-                  {s.authType}
-                </span>
-                {!s.enabled ? (
-                  <span className="rounded-sm border border-border px-1 text-[10px] uppercase text-fg-muted">
-                    Disabled
+              <li key={s.id} className="space-y-2 p-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium">{s.name}</span>
+                  <span className="font-mono text-xs uppercase tracking-[0.14em] text-fg-muted">
+                    {s.authType}
                   </span>
-                ) : null}
-                <div className="ml-auto flex gap-2">
-                  {s.authType === 'oauth' ? (
+                  {!s.enabled ? (
+                    <span className="rounded-sm border border-border px-1 text-[10px] uppercase text-fg-muted">
+                      Disabled
+                    </span>
+                  ) : null}
+                  <div className="ml-auto flex gap-2">
+                    {s.authType === 'oauth' ? (
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        onClick={() => {
+                          void startOAuth(s, dialog);
+                        }}
+                      >
+                        Connect
+                      </Button>
+                    ) : null}
                     <Button
                       size="sm"
-                      variant="secondary"
+                      variant="ghost"
+                      disabled={mutation.busy !== null}
                       onClick={() => {
-                        void startOAuth(s, dialog);
+                        void toggleEnabled(s);
                       }}
                     >
-                      Connect
+                      {mutation.busy === 'toggle'
+                        ? s.enabled
+                          ? 'Disabling…'
+                          : 'Enabling…'
+                        : s.enabled
+                          ? 'Disable'
+                          : 'Enable'}
                     </Button>
-                  ) : null}
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    disabled={mutation.busy !== null}
-                    onClick={() => {
-                      void toggleEnabled(s);
-                    }}
-                  >
-                    {mutation.busy === 'toggle'
-                      ? s.enabled
-                        ? 'Disabling…'
-                        : 'Enabling…'
-                      : s.enabled
-                        ? 'Disable'
-                        : 'Enable'}
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    disabled={mutation.busy !== null}
-                    onClick={() => {
-                      void remove(s);
-                    }}
-                  >
-                    {mutation.busy === 'remove' ? 'Removing…' : 'Remove'}
-                  </Button>
-                </div>
-              </div>
-              <div className="break-all text-xs text-fg-muted">{s.url}</div>
-              {s.lastError ? (
-                <div className="text-xs text-destructive">Error: {s.lastError}</div>
-              ) : null}
-              {mutation.error ? (
-                <p className="text-xs text-destructive" role="alert">
-                  {mutation.error}
-                </p>
-              ) : null}
-              {s.cachedTools.length > 0 ? (
-                <div className="space-y-1">
-                  <div className="font-mono text-xs uppercase tracking-[0.14em] text-fg-muted">
-                    Tools ({s.cachedTools.length})
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      disabled={mutation.busy !== null}
+                      onClick={() => {
+                        void remove(s);
+                      }}
+                    >
+                      {mutation.busy === 'remove' ? 'Removing…' : 'Remove'}
+                    </Button>
                   </div>
-                  <ul className="space-y-1">
-                    {s.cachedTools.map((t) => (
-                      <li key={t.name} className="flex items-center justify-between gap-2 text-xs">
-                        <div>
-                          <span className="font-mono">{t.name}</span>
-                          {t.description ? (
-                            <span className="ml-2 text-fg-muted">: {t.description}</span>
-                          ) : null}
-                        </div>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => {
-                            void testCall(s, t.name, dialog);
-                          }}
-                        >
-                          Test call
-                        </Button>
-                      </li>
-                    ))}
-                  </ul>
                 </div>
-              ) : (
-                <div className="text-xs text-fg-muted">No tools cached yet.</div>
-              )}
-            </li>
+                <div className="break-all text-xs text-fg-muted">{s.url}</div>
+                {s.lastError ? (
+                  <div className="text-xs text-destructive">Error: {s.lastError}</div>
+                ) : null}
+                {mutation.error ? (
+                  <p className="text-xs text-destructive" role="alert">
+                    {mutation.error}
+                  </p>
+                ) : null}
+                {s.cachedTools.length > 0 ? (
+                  <div className="space-y-1">
+                    <div className="font-mono text-xs uppercase tracking-[0.14em] text-fg-muted">
+                      Tools ({s.cachedTools.length})
+                    </div>
+                    <ul className="space-y-1">
+                      {s.cachedTools.map((t) => (
+                        <li
+                          key={t.name}
+                          className="flex items-center justify-between gap-2 text-xs"
+                        >
+                          <div>
+                            <span className="font-mono">{t.name}</span>
+                            {t.description ? (
+                              <span className="ml-2 text-fg-muted">: {t.description}</span>
+                            ) : null}
+                          </div>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => {
+                              void testCall(s, t.name, dialog);
+                            }}
+                          >
+                            Test call
+                          </Button>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : (
+                  <div className="text-xs text-fg-muted">No tools cached yet.</div>
+                )}
+              </li>
             );
           })}
         </ul>

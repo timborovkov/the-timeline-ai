@@ -37,12 +37,18 @@ describe('job recovery retry failed route', () => {
 
     expect(res.status).toBe(403);
     expect(fakes.fakeRetryFailed).not.toHaveBeenCalled();
-    expect(fakes.fakeAuditRecord).toHaveBeenCalledWith(
-      expect.objectContaining({
-        action: 'job.retry',
-        metadata: expect.objectContaining({ mode: 'bulk', outcome: 'rejected' }),
-      }),
-    );
+    expect(fakes.fakeAuditRecord).toHaveBeenCalledWith({
+      action: 'job.retry',
+      targetType: 'job_recovery_batch',
+      metadata: {
+        mode: 'bulk',
+        outcome: 'rejected',
+        recovery_kind: 'mixed',
+        target_ids: [],
+        target_count: 0,
+        reason: 'forbidden',
+      },
+    });
   });
 
   it('bulk retries failed jobs through the team-scoped recovery scope', async () => {
@@ -78,17 +84,17 @@ describe('job recovery retry failed route', () => {
       ],
       expectedCount: 3,
     });
-    expect(fakes.fakeAuditRecord).toHaveBeenCalledWith(
-      expect.objectContaining({
-        action: 'job.retry',
-        metadata: expect.objectContaining({
-          mode: 'bulk',
-          outcome: 'succeeded',
-          recovery_kind: 'embedding',
-          target_ids: ['job-1', 'job-2', 'job-3'],
-        }),
-      }),
-    );
+    expect(fakes.fakeAuditRecord).toHaveBeenCalledWith({
+      action: 'job.retry',
+      targetType: 'job_recovery_batch',
+      metadata: {
+        mode: 'bulk',
+        outcome: 'succeeded',
+        recovery_kind: 'embedding',
+        target_ids: ['job-1', 'job-2', 'job-3'],
+        target_count: 3,
+      },
+    });
   });
 
   it('rejects malformed or empty JSON instead of retrying everything', async () => {

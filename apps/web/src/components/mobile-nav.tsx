@@ -50,10 +50,11 @@ export function MobileNav({ active, memberships, recipientInvites, badges = EMPT
     if (typeof dialog.showModal === 'function') dialog.showModal();
     else dialog.setAttribute('open', '');
     closeRef.current?.focus();
+    const opener = openerRef.current;
 
     return () => {
       if (dialog.open && typeof dialog.close === 'function') dialog.close();
-      openerRef.current?.focus();
+      opener?.focus();
     };
   }, [open]);
 

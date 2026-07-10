@@ -1,5 +1,6 @@
-import type { mcpServers as mcpServersTable } from '@timeline/db';
 import ipaddr from 'ipaddr.js';
+
+import type { mcpServers as mcpServersTable } from '@timeline/db';
 
 import { decryptJson } from '#src/crypto/secrets.js';
 
@@ -161,15 +162,12 @@ function rangeLabel(range: string): string {
  * `::ffff:127.0.0.1` cannot bypass the IPv4 loopback guard.
  */
 export function validatePublicIpAddress(rawAddress: string): string | null {
-  const address = rawAddress.startsWith('[') && rawAddress.endsWith(']')
-    ? rawAddress.slice(1, -1)
-    : rawAddress;
+  const address =
+    rawAddress.startsWith('[') && rawAddress.endsWith(']') ? rawAddress.slice(1, -1) : rawAddress;
   if (!ipaddr.isValid(address)) return 'Invalid IP address';
   const parsed = ipaddr.process(address);
   const range = parsed.range();
-  return range === 'unicast'
-    ? null
-    : `${rangeLabel(range)} address is not a public unicast target`;
+  return range === 'unicast' ? null : `${rangeLabel(range)} address is not a public unicast target`;
 }
 
 export function validateMcpUrl(rawUrl: string): string | null {

@@ -1,6 +1,5 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-
 import { resetEnvForTests } from '@timeline/shared/env';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const ENV_BACKUP = { ...process.env };
 

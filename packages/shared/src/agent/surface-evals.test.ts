@@ -22,6 +22,10 @@ import { handleUpdate } from '#src/telegram/dispatcher.js';
 import { buildSearchHit, makeAskAgentToolRoundModel } from '#src/test/agent-eval-harness.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
 
+vi.mock('#src/http/external-fetch.js', () => ({
+  externalFetch: (input: string | URL, init?: RequestInit) => fetch(input, init),
+}));
+
 // Surface evals keep Slack and Telegram `/ask` wired to the real non-browser
 // agent path. Success means a dispatcher can route identity/team context into
 // askAgent, run a tool-backed answer, deliver plain bot text, and expose the

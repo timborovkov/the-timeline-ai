@@ -1,7 +1,4 @@
-import {
-  decodeJobRecoveryTarget,
-  type JobRecoveryKind,
-} from '@timeline/shared/job-recovery';
+import { decodeJobRecoveryTarget, type JobRecoveryKind } from '@timeline/shared/job-recovery';
 
 type RecoveryAuditAction = 'job.retry' | 'job.dismiss';
 type RecoveryAuditOutcome = 'succeeded' | 'rejected';

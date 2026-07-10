@@ -2,11 +2,9 @@ import { createServer, type RequestListener, type Server } from 'node:http';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
-import {
-  ExternalHttpError,
-  externalFetch,
-  resolveExternalAddresses,
-} from '#src/http/external-fetch.js';
+import type { ExternalHttpError } from '#src/http/external-fetch.js';
+
+import { externalFetch, resolveExternalAddresses } from '#src/http/external-fetch.js';
 
 /**
  * The outbound HTTP boundary must reject private DNS results, pin the address
@@ -99,9 +97,7 @@ describe('external HTTP boundary', () => {
         {},
         { allowPrivateNetworkInDevelopment: true, timeoutMs: 25 },
       ),
-    ).rejects.toEqual(
-      expect.objectContaining<Partial<ExternalHttpError>>({ code: 'timeout' }),
-    );
+    ).rejects.toEqual(expect.objectContaining<Partial<ExternalHttpError>>({ code: 'timeout' }));
   });
 
   it('does not retry unsafe methods', async () => {

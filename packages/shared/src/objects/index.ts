@@ -78,6 +78,14 @@ import { reconcileLinkArtifactsForRawEvent } from '#src/conversational/link-arti
 import { TIMELINE_MODELS } from '#src/llm/models.js';
 import { childLogger } from '#src/logger.js';
 import {
+  normalizeIdentityFacet,
+  validateIdentityFacetValue,
+  type ActorKind,
+  type IdentityFacetInput,
+  type IdentityFacetKind,
+  type IdentityFacetRow,
+} from '#src/objects/identity-facets.js';
+import {
   enqueueObjectSummaryRefresh,
   fireAndForgetObjectSummaryRefresh,
   getObjectSummary,
@@ -93,14 +101,6 @@ import { AUTHORITY_POLICY_VERSION } from '#src/reconciliation/authority.js';
 import { buildOutputDedupeKey, reconciliationDedupeKey } from '#src/reconciliation/index.js';
 import { normalizeRawEventsToEvidence } from '#src/reconciliation/normalization.js';
 import { sourcePayloadRefFromMetadata } from '#src/reconciliation/source-snapshot.js';
-import {
-  normalizeIdentityFacet,
-  validateIdentityFacetValue,
-  type ActorKind,
-  type IdentityFacetInput,
-  type IdentityFacetKind,
-  type IdentityFacetRow,
-} from '#src/objects/identity-facets.js';
 import { likeMentionCondition, likePattern, textMentionsAnyValue } from '#src/sql-like.js';
 import { rawEventVisibleToUser } from '#src/visibility.js';
 
@@ -978,7 +978,6 @@ export type ObjectType = (typeof entityType.enumValues)[number];
 export const OBJECT_TYPES = entityType.enumValues.filter(
   (type): type is ObjectType => type !== 'link',
 );
-
 
 export interface ObjectListFilter {
   id?: string | string[];

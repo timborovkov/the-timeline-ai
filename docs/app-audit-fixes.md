@@ -5,6 +5,21 @@ Prioritized implementation backlog from the repository audit performed on
 performance, and maintainability findings. It does not replace the product
 roadmap in [`todo.md`](../todo.md).
 
+## Implementation Status
+
+All 15 findings were implemented on 2026-07-10. The changes include:
+
+- DNS-pinned SSRF protection and bounded outbound/inbound HTTP.
+- Public error correlation references and canonical security audit actions.
+- Failure-aware MCP controls, connected labels, native modal navigation,
+  visible focus, and live support-form status.
+- Offscreen task containment, cohesive security/domain helper modules, and a
+  resettable PGlite test database.
+- Queue-free private text capture stage stamping and locale-aware display copy.
+
+The sections below remain as the evidence and acceptance record for regression
+review.
+
 ## Audit Baseline
 
 - `pnpm validate` passed.

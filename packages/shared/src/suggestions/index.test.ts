@@ -1,4 +1,3 @@
-import { PGlite } from '@electric-sql/pglite';
 import {
   artifactClusterAnchors,
   artifactClusters,
@@ -17,13 +16,11 @@ import { drizzle } from 'drizzle-orm/pglite';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type * as QueueModule from '#src/queue/queues.js';
+import type { PGlite } from '@electric-sql/pglite';
 
 import { suggestionDedupeKey } from '#src/suggestions/index.js';
 import { withTeam } from '#src/team-scope.js';
-import {
-  createResettablePGliteTestDb,
-  type ResettablePGliteTestDb,
-} from '#src/test/pglite.js';
+import { createResettablePGliteTestDb, type ResettablePGliteTestDb } from '#src/test/pglite.js';
 
 vi.mock('#src/queue/queues.js', async (importOriginal) => {
   const actual = await importOriginal<typeof QueueModule>();

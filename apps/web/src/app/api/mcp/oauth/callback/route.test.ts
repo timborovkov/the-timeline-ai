@@ -222,7 +222,9 @@ describe('GET /api/mcp/oauth/callback', () => {
     expect(response.status).toBe(307);
     const location = response.headers.get('location') ?? '';
     expect(location).toMatch(
-      new RegExp(`^${PUBLIC_ORIGIN}/app/team/integrations\\?error=mcp_oauth_callback_failed&reference=[0-9a-f]{8}$`),
+      new RegExp(
+        `^${PUBLIC_ORIGIN}/app/team/integrations\\?error=mcp_oauth_callback_failed&reference=[0-9a-f]{8}$`,
+      ),
     );
     expect(location).not.toContain('token_down');
     expect(fakes.loggerWarn).toHaveBeenCalledWith(

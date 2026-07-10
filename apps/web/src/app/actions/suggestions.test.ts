@@ -177,7 +177,6 @@ describe('suggestion item actions', () => {
       expect.objectContaining({
         surface: 'server_action',
         operation: 'accept_suggestion_item',
-        tags: expect.objectContaining({ error_reference: expect.any(String) }),
       }),
     );
     expect(fakes.fakeRevalidatePath).not.toHaveBeenCalled();

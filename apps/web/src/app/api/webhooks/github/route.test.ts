@@ -207,7 +207,6 @@ describe('POST /api/webhooks/github', () => {
   });
 });
 
-
 describe('payload size limit', () => {
   it('rejects an oversized body before authentication or parsing', async () => {
     const response = await POST(

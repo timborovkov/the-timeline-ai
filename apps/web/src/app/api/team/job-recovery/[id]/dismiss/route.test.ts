@@ -39,13 +39,17 @@ describe('job recovery dismiss route', () => {
 
     expect(res.status).toBe(403);
     expect(fakes.fakeDismiss).not.toHaveBeenCalled();
-    expect(fakes.fakeAuditRecord).toHaveBeenCalledWith(
-      expect.objectContaining({
-        action: 'job.dismiss',
-        targetId: 'abc',
-        metadata: expect.objectContaining({ mode: 'single', outcome: 'rejected' }),
-      }),
-    );
+    expect(fakes.fakeAuditRecord).toHaveBeenCalledWith({
+      action: 'job.dismiss',
+      targetType: 'job_recovery',
+      targetId: 'abc',
+      metadata: {
+        mode: 'single',
+        outcome: 'rejected',
+        recovery_kind: 'unknown',
+        reason: 'forbidden',
+      },
+    });
   });
 
   it('dispatches the dismissal through the team-scoped recovery scope', async () => {
@@ -56,12 +60,11 @@ describe('job recovery dismiss route', () => {
     expect(res.status).toBe(200);
     expect(fakes.fakeRequireMembership).toHaveBeenCalledWith('admin');
     expect(fakes.fakeDismiss).toHaveBeenCalledWith('abc');
-    expect(fakes.fakeAuditRecord).toHaveBeenCalledWith(
-      expect.objectContaining({
-        action: 'job.dismiss',
-        targetId: 'abc',
-        metadata: expect.objectContaining({ mode: 'single', outcome: 'succeeded' }),
-      }),
-    );
+    expect(fakes.fakeAuditRecord).toHaveBeenCalledWith({
+      action: 'job.dismiss',
+      targetType: 'job_recovery',
+      targetId: 'abc',
+      metadata: { mode: 'single', outcome: 'succeeded', recovery_kind: 'unknown' },
+    });
   });
 });
