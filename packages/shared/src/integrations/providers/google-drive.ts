@@ -146,13 +146,21 @@ async function downloadFileBody(
   } else {
     url = `${DRIVE_BASE}/files/${fileId}?alt=media`;
   }
-  const res = await fetch(
-    url,
-    {
-      headers: { authorization: `Bearer ${tokens.access_token}` },
-    },
-    { maxResponseBytes: MAX_HARVEST_BYTES },
-  );
+  let res: Response;
+  try {
+    res = await fetch(
+      url,
+      {
+        headers: { authorization: `Bearer ${tokens.access_token}` },
+      },
+      { maxResponseBytes: MAX_HARVEST_BYTES },
+    );
+  } catch (err) {
+    if (err && typeof err === 'object' && 'code' in err && err.code === 'response_too_large') {
+      return null;
+    }
+    throw err;
+  }
   if (!res.ok) {
     throw new Error(`Drive download ${fileId} ${String(res.status)}`);
   }

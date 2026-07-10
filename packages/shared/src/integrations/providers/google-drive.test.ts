@@ -40,7 +40,8 @@ function requestUrl(input: Parameters<typeof fetch>[0]): URL {
 
 describe('googleDriveProvider', () => {
   beforeEach(() => {
-    externalFetchMock.mockClear();
+    externalFetchMock.mockReset();
+    externalFetchMock.mockImplementation((input, init) => globalThis.fetch(input, init));
     process.env.GOOGLE_CLIENT_ID = 'google-client';
     process.env.GOOGLE_CLIENT_SECRET = 'google-secret';
     resetEnvForTests();
@@ -323,6 +324,66 @@ describe('googleDriveProvider', () => {
       ([input]) => requestUrl(input).searchParams.get('alt') === 'media',
     );
     expect(downloadCall?.[2]).toEqual({ maxResponseBytes: 20 * 1024 * 1024 });
+  });
+
+  it('audits Drive bodies that exceed the harvest cap as skipped instead of failed', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>((input) => {
+      const url = requestUrl(input);
+      if (url.pathname.endsWith('/changes')) {
+        return Promise.resolve(
+          jsonResponse({
+            changes: [
+              {
+                changeType: 'file',
+                time: '2026-06-20T10:00:00.000Z',
+                fileId: 'file-1',
+                file: {
+                  id: 'file-1',
+                  name: 'Oversized notes',
+                  mimeType: 'text/plain',
+                  parents: ['root'],
+                },
+              },
+            ],
+            newStartPageToken: 'page-2',
+          }),
+        );
+      }
+      return Promise.resolve(jsonResponse({ message: 'unexpected' }, { status: 404 }));
+    });
+    vi.stubGlobal('fetch', fetch);
+    externalFetchMock.mockImplementation((input, init) => {
+      if (requestUrl(input).searchParams.get('alt') === 'media') {
+        return Promise.reject(
+          Object.assign(new Error('External response exceeded 20971520 bytes'), {
+            code: 'response_too_large',
+          }),
+        );
+      }
+      return globalThis.fetch(input, init);
+    });
+    const ctx = {
+      loadCursor: vi.fn().mockResolvedValue({ page_token: 'page-1' }),
+      saveCursor: vi.fn().mockResolvedValue(undefined),
+      writeEvents: vi.fn<SyncContext['writeEvents']>().mockResolvedValue([]),
+      persistTokens: vi.fn(),
+      recordAudit: vi.fn().mockResolvedValue(undefined),
+      harvestDocument: vi.fn<NonNullable<SyncContext['harvestDocument']>>(),
+    };
+
+    await googleDriveProvider.incrementalSync({
+      integration: { id: 'integration-1' } as never,
+      tokens: { access_token: 'access-token', expires_at: Date.now() + 600_000 },
+      selections: [{ kind: 'drive.folder', externalId: 'root' }],
+      ctx,
+    });
+
+    expect(ctx.harvestDocument).not.toHaveBeenCalled();
+    expect(ctx.recordAudit).toHaveBeenCalledWith(
+      'harvest_skipped',
+      expect.objectContaining({ file_id: 'file-1', reason: 'too_large_or_unsupported' }),
+    );
+    expect(ctx.recordAudit).not.toHaveBeenCalledWith('harvest_failed', expect.anything());
   });
 
   it('persists a Drive changes resume token when the page safety cap is hit', async () => {

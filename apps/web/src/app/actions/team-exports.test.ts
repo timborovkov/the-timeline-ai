@@ -238,6 +238,12 @@ describe('team export actions', () => {
       surface: 'server_action',
       operation: 'download_team_export_auth',
     });
+    expect(fakes.auditRecord).toHaveBeenCalledWith({
+      action: 'team.export_download',
+      targetType: 'team_export',
+      targetId: EXPORT_ID,
+      metadata: { mode: 'single', outcome: 'rejected', reason: 'forbidden' },
+    });
   });
 
   it('redirects when the export is not ready and expires rows with near-zero TTL', async () => {
@@ -246,6 +252,12 @@ describe('team export actions', () => {
       'NEXT_REDIRECT:/app/team',
     );
     expect(fakes.getSignedGetObjectUrl).not.toHaveBeenCalled();
+    expect(fakes.auditRecord).toHaveBeenCalledWith({
+      action: 'team.export_download',
+      targetType: 'team_export',
+      targetId: EXPORT_ID,
+      metadata: { mode: 'single', outcome: 'rejected', reason: 'not_ready_or_missing' },
+    });
 
     const updates: unknown[] = [];
     installDbMocks({
@@ -264,6 +276,12 @@ describe('team export actions', () => {
     );
     expect(updates.at(-1)).toMatchObject({ status: 'expired' });
     expect(fakes.getSignedGetObjectUrl).not.toHaveBeenCalled();
+    expect(fakes.auditRecord).toHaveBeenCalledWith({
+      action: 'team.export_download',
+      targetType: 'team_export',
+      targetId: EXPORT_ID,
+      metadata: { mode: 'single', outcome: 'rejected', reason: 'expired' },
+    });
   });
 
   it('signs ready exports, writes an audit row, and redirects to the signed URL', async () => {

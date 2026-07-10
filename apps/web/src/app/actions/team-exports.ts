@@ -6,6 +6,7 @@ import { withTeam } from '@timeline/shared/team-scope';
 import { and, eq, lt } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
+import { z } from 'zod';
 
 import { resolveActiveTeam } from '@/lib/active-team';
 import { trackProductEventBestEffort } from '@/lib/analytics';
@@ -18,6 +19,28 @@ import { reportCaughtError } from '@/lib/sentry-report';
 export interface CreateTeamExportState {
   error?: string;
   ok?: boolean;
+}
+
+type TeamScope = ReturnType<typeof withTeam>;
+
+async function recordRejectedExportDownload(
+  scope: TeamScope,
+  targetId: string,
+  reason: 'expired' | 'forbidden' | 'not_ready_or_missing',
+): Promise<void> {
+  try {
+    await scope.audit.record({
+      action: 'team.export_download',
+      targetType: 'team_export',
+      targetId,
+      metadata: { mode: 'single', outcome: 'rejected', reason },
+    });
+  } catch (err) {
+    reportCaughtError(err, {
+      surface: 'server_action',
+      operation: 'download_team_export_rejection_audit',
+    });
+  }
 }
 
 export async function createTeamExportAction(
@@ -111,8 +134,9 @@ export async function downloadTeamExportAction(formData: FormData): Promise<void
     const { active } = await resolveActiveTeam(session.user.id);
     if (!active) redirect('/sign-in');
 
-    const exportId = formData.get('exportId');
-    if (typeof exportId !== 'string') redirect('/app/team');
+    const parsedExportId = z.uuid().safeParse(formData.get('exportId'));
+    if (!parsedExportId.success) redirect('/app/team');
+    const exportId = parsedExportId.data;
 
     const scope = withTeam(db, active.teamId, session.user.id);
     let hasAdminAccess = true;
@@ -122,7 +146,10 @@ export async function downloadTeamExportAction(formData: FormData): Promise<void
       reportCaughtError(err, { surface: 'server_action', operation: 'download_team_export_auth' });
       hasAdminAccess = false;
     }
-    if (!hasAdminAccess) redirect('/app/team');
+    if (!hasAdminAccess) {
+      await recordRejectedExportDownload(scope, exportId, 'forbidden');
+      redirect('/app/team');
+    }
 
     await db
       .update(teamExports)
@@ -147,7 +174,10 @@ export async function downloadTeamExportAction(formData: FormData): Promise<void
       )
       .limit(1);
     const row = rows[0];
-    if (row?.status !== 'ready' || !row.objectKey || !row.expiresAt) redirect('/app/team');
+    if (row?.status !== 'ready' || !row.objectKey || !row.expiresAt) {
+      await recordRejectedExportDownload(scope, exportId, 'not_ready_or_missing');
+      redirect('/app/team');
+    }
 
     const now = Date.now();
     const ttlSec = Math.max(
@@ -156,6 +186,7 @@ export async function downloadTeamExportAction(formData: FormData): Promise<void
     );
     if (ttlSec <= 1) {
       await db.update(teamExports).set({ status: 'expired' }).where(eq(teamExports.id, row.id));
+      await recordRejectedExportDownload(scope, row.id, 'expired');
       redirect('/app/team');
     }
 

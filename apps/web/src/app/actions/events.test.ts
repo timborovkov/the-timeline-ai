@@ -77,13 +77,6 @@ function form(values: Record<string, string | string[]>): FormData {
   return fd;
 }
 
-function stringLeaves(value: unknown, seen = new WeakSet()): string[] {
-  if (typeof value === 'string') return [value];
-  if (value === null || typeof value !== 'object' || seen.has(value)) return [];
-  seen.add(value);
-  return Object.values(value).flatMap((child) => stringLeaves(child, seen));
-}
-
 function mockDbUpdateSuccess(): void {
   fakes.fakeDbUpdate.mockReturnValue({
     set: fakes.fakeDbSet.mockImplementation(() => ({
@@ -132,23 +125,22 @@ describe('createTextEventAction', () => {
     );
 
     expect(result.ok).toBe(true);
-    expect(fakes.fakeCreateEvent).toHaveBeenCalledWith(
-      expect.objectContaining({
-        contentText: 'Private note',
-        visibility: 'private',
-        visibilityOwnerUserId: USER_ID,
-      }),
-    );
+    const createInput = fakes.fakeCreateEvent.mock.calls[0]?.[0] as unknown;
+    expect(createInput).toMatchObject({
+      contentText: 'Private note',
+      visibility: 'private',
+      visibilityOwnerUserId: USER_ID,
+      sourceMetadata: {
+        extraction_skipped_reason: 'visibility=private',
+        embedding_skipped_reason: 'visibility=private',
+        suggestions_skipped_reason: 'visibility=private',
+      },
+    });
     expect(result.warning).toBeUndefined();
     expect(fakes.fakeEnqueueExtractJob).not.toHaveBeenCalled();
     expect(fakes.fakeEnqueueEmbedJob).not.toHaveBeenCalled();
     expect(fakes.fakeEnqueueSuggestionJob).not.toHaveBeenCalled();
-    expect(fakes.fakeDbUpdate).toHaveBeenCalledOnce();
-    const metadataSql = (fakes.fakeDbSet.mock.calls[0]?.[0] as { sourceMetadata?: unknown })
-      .sourceMetadata;
-    const metadataSqlText = stringLeaves(metadataSql).join(' ');
-    expect(metadataSqlText).toContain('suggestions_skipped_reason');
-    expect(metadataSqlText).toContain('visibility=private');
+    expect(fakes.fakeDbUpdate).not.toHaveBeenCalled();
     expect(fakes.fakeSafeMarkOnboardingStep).toHaveBeenCalledWith(expect.anything(), 'first_note');
     expect(fakes.fakeDeleteCacheKey).toHaveBeenCalledWith(`onboarding:${TEAM_ID}:${USER_ID}`);
   });
