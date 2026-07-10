@@ -554,9 +554,10 @@ describe('ObjectDetailClient', () => {
     const longBody = `GitHub evidence ${'multi-kilobyte payload '.repeat(180)}`;
     const provenanceEntry = (
       id: string,
-      source: string,
+      sources: string[],
       operation: string,
       title = `${id} title`,
+      minute = 0,
     ) => ({
       id,
       title,
@@ -564,27 +565,37 @@ describe('ObjectDetailClient', () => {
       operation,
       targetKind: operation === 'observed' ? 'raw_event' : 'task',
       createdAt: new Date('2026-07-10T10:00:00.000Z'),
-      evidence: [
-        {
-          rawEventId: `event-${id}`,
-          source,
-          contentText: longBody,
-          quote: null,
-          occurredAt: new Date('2026-07-10T09:00:00.000Z'),
-        },
-      ],
+      evidence: sources.map((source, index) => ({
+        rawEventId: `event-${id}-${index}`,
+        source,
+        contentText: longBody,
+        quote: null,
+        occurredAt: new Date(`2026-07-10T09:${String(minute + index).padStart(2, '0')}:00.000Z`),
+      })),
     });
     render(
       objectDetailElement({
         detail: {
           ...detail,
           provenance: {
-            whyThisExists: [provenanceEntry('creation', 'creation', 'create')],
+            whyThisExists: [provenanceEntry('creation', ['creation', 'creation'], 'create')],
             whatChangedIt: Array.from({ length: 4 }, (_, index) =>
-              provenanceEntry(`change-${index}`, `change-${index}`, 'update'),
+              provenanceEntry(
+                `change-${index}`,
+                Array.from({ length: index < 2 ? 1 : 2 }, () => 'change'),
+                'update',
+                undefined,
+                10 + index * 3,
+              ),
             ),
             relatedEvidence: Array.from({ length: 8 }, (_, index) =>
-              provenanceEntry(`related-${index}`, `related-${index}`, 'observed', longBody),
+              provenanceEntry(
+                `related-${index}`,
+                ['integration'],
+                'observed',
+                longBody,
+                30 + index,
+              ),
             ),
           },
         },
@@ -593,25 +604,26 @@ describe('ObjectDetailClient', () => {
       }),
     );
 
-    expect(screen.getByRole('link', { name: 'Open creation source' })).toBeTruthy();
-    expect(screen.getByRole('link', { name: 'Open change-0 source' })).toBeTruthy();
-    expect(screen.getByRole('link', { name: 'Open change-1 source' })).toBeTruthy();
+    expect(screen.getAllByText('2 sources')).toHaveLength(1);
+    expect(screen.getAllByText('6 sources')).toHaveLength(1);
+    expect(screen.getAllByText('8 sources')).toHaveLength(1);
+    expect(screen.getAllByRole('link', { name: /^creation ·/ })).toHaveLength(2);
 
-    const changesDisclosure = screen.getByText('Review 2 more change sources');
+    const changesDisclosure = screen.getByText('Review 4 more change sources');
     const relatedDisclosure = screen.getByText('Review 8 related sources');
     expect(changesDisclosure.closest('details')?.open).toBe(false);
     expect(relatedDisclosure.closest('details')?.open).toBe(false);
-    expect(screen.getByRole('link', { name: 'Open change-2 source' }).closest('details')).toBe(
+    expect(screen.getAllByRole('link', { name: /^change ·/ })[2]?.closest('details')).toBe(
       changesDisclosure.closest('details'),
     );
-    expect(screen.getByRole('link', { name: 'Open related-0 source' }).closest('details')).toBe(
-      relatedDisclosure.closest('details'),
-    );
+    const relatedLinks = screen.getAllByRole('link', { name: /^integration ·/ });
+    expect(relatedLinks[0]?.closest('details')).toBe(relatedDisclosure.closest('details'));
+    expect(new Set(relatedLinks.map((link) => link.textContent.trim())).size).toBe(8);
 
     await user.click(relatedDisclosure);
 
     expect(relatedDisclosure.closest('details')?.open).toBe(true);
-    expect(screen.getByRole('link', { name: 'Open related-0 source' })).toBeTruthy();
+    expect(screen.getAllByRole('link', { name: /^integration ·/ })).toHaveLength(8);
     expect(screen.queryByText(longBody)).toBeNull();
     expect(
       screen.getAllByText(/GitHub evidence multi-kilobyte payload/)[0]?.textContent.length,

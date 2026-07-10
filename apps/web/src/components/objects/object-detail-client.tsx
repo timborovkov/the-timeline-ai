@@ -1134,10 +1134,12 @@ function ProvenanceGroup({
 }) {
   const previewEntries = entries.slice(0, previewCount);
   const remainingEntries = entries.slice(previewCount);
-  const sourceCount = `${entries.length} source${entries.length === 1 ? '' : 's'}`;
-  const reviewLabel = `Review ${remainingEntries.length}${
+  const sourceCountValue = provenanceEvidenceCount(entries);
+  const remainingSourceCount = provenanceEvidenceCount(remainingEntries);
+  const sourceCount = `${sourceCountValue} source${sourceCountValue === 1 ? '' : 's'}`;
+  const reviewLabel = `Review ${remainingSourceCount}${
     previewCount > 0 ? ' more' : ''
-  } ${sourceKind} source${remainingEntries.length === 1 ? '' : 's'}`;
+  } ${sourceKind} source${remainingSourceCount === 1 ? '' : 's'}`;
   return (
     <section className="grid min-w-0 gap-3 py-4 first:pt-0 last:pb-0 sm:grid-cols-[10rem_minmax(0,1fr)]">
       <div>
@@ -1175,6 +1177,10 @@ function ProvenanceGroup({
       )}
     </section>
   );
+}
+
+function provenanceEvidenceCount(entries: ObjectDetail['provenance']['whyThisExists']): number {
+  return entries.reduce((count, entry) => count + entry.evidence.length, 0);
 }
 
 function ProvenanceEntryList({
@@ -1246,7 +1252,6 @@ function ProvenanceSourceLink({
   return (
     <Link
       href={`/app/timeline?event=${source.rawEventId}#ev-${source.rawEventId}`}
-      aria-label={`Open ${displayText(source.source)} source`}
       className="block break-words text-xs text-fg-muted underline-offset-2 hover:text-fg hover:underline"
     >
       {displayText(source.source)} · {formatDisplayDateTime(source.occurredAt)}
