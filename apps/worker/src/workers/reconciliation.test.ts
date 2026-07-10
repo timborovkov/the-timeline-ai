@@ -807,6 +807,42 @@ describe('processReconciliationJob', () => {
     ).resolves.toHaveLength(0);
   });
 
+  it('backfills legacy private scoped raw events authored by the triggering user', async () => {
+    const { objectId } = await seedObjectAndCluster();
+    const rawEventId = await seedEmailRawEvent({
+      entityId: objectId,
+      authorUserId: USER_ID,
+      visibility: 'private',
+      visibilityOwnerUserId: null,
+      messageId: 'legacy-author-private-object-message',
+    });
+    const replay = suggestionReplayRecorder();
+
+    const result = expectScopedResult(
+      await processReconciliationJob(
+        db as never,
+        {
+          kind: 'scope_reconcile',
+          teamId: TEAM_ID,
+          scope: 'object',
+          targetId: objectId,
+          triggeredBy: USER_ID,
+          reason: 'admin_dashboard',
+        },
+        { enqueueSuggestionJob: replay.enqueueSuggestionJob },
+      ),
+    );
+
+    expect(result).toMatchObject({ evidenceBackfilled: 1, plannerReplayEnqueued: 1 });
+    expect(replay.calls.map((call) => call.data.rawEventId)).toEqual([rawEventId]);
+    await expect(
+      db
+        .select()
+        .from(reconciliationEvidence)
+        .where(eq(reconciliationEvidence.rawEventId, rawEventId)),
+    ).resolves.toHaveLength(1);
+  });
+
   it('backfills cluster-scoped raw events when association raw event ids are legacy-null', async () => {
     const rawEventId = await seedEmailRawEvent();
     const { clusterId } = await seedObjectAndCluster();

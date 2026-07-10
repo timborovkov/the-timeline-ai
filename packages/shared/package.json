@@ -131,6 +131,12 @@
       "import": "./dist/team-scope.js",
       "default": "./dist/team-scope.js"
     },
+    "./visibility": {
+      "types": "./src/visibility.ts",
+      "development": "./src/visibility.ts",
+      "import": "./dist/visibility.js",
+      "default": "./dist/visibility.js"
+    },
     "./timeline-moments": {
       "types": "./src/timeline-moments/index.ts",
       "development": "./src/timeline-moments/index.ts",

@@ -25,6 +25,7 @@ import {
 } from '@timeline/shared/reconciliation/backfill';
 import { normalizeRawEventsToEvidence } from '@timeline/shared/reconciliation/normalization';
 import { resolveEvidenceAssociations } from '@timeline/shared/reconciliation/resolver';
+import { rawEventVisibleToUser } from '@timeline/shared/visibility';
 import { Worker, type Job } from 'bullmq';
 import { and, count, desc, eq, gte, inArray, lte, or, sql, type SQL } from 'drizzle-orm';
 
@@ -439,9 +440,7 @@ async function teamPlannerReplayRawEventIds(
         sql`${rawEvents.contentText} IS NOT NULL`,
         sql`length(trim(${rawEvents.contentText})) > 0`,
         ...plannerReplayWhereFilters(input),
-        ...(input.viewerUserId === undefined
-          ? []
-          : [rawEventVisibleToUserPredicate(input.viewerUserId)]),
+        ...(input.viewerUserId === undefined ? [] : [rawEventVisibleToUser(input.viewerUserId)]),
       ),
     )
     .orderBy(desc(rawEvents.occurredAt), desc(rawEvents.id))
@@ -818,22 +817,11 @@ async function filterVisibleRawEventIds(
       and(
         eq(rawEvents.teamId, input.teamId),
         inArray(rawEvents.id, input.rawEventIds),
-        rawEventVisibleToUserPredicate(input.viewerUserId),
+        rawEventVisibleToUser(input.viewerUserId),
       ),
     );
   const visible = new Set(rows.map((row) => row.id));
   return input.rawEventIds.filter((id) => visible.has(id));
-}
-
-function rawEventVisibleToUserPredicate(userId: string) {
-  return or(
-    eq(rawEvents.visibility, 'team'),
-    and(eq(rawEvents.visibility, 'private'), eq(rawEvents.visibilityOwnerUserId, userId)),
-    and(
-      eq(rawEvents.visibility, 'specific_users'),
-      sql`${userId}::uuid = ANY(${rawEvents.visibilityUserIds})`,
-    ),
-  );
 }
 
 async function repairScopedEvidenceGraph(
