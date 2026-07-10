@@ -16,6 +16,7 @@ import {
   type Db,
 } from '@timeline/db';
 import { suggestions } from '@timeline/shared';
+import { RECONCILIATION_PLANNER_PROMPT_VERSION } from '@timeline/shared/reconciliation/planner';
 import { withTeam } from '@timeline/shared/team-scope';
 import { eq, sql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
@@ -2105,6 +2106,43 @@ describe('processSuggestionJobForTests', () => {
         status: 'accepted',
       },
     });
+  });
+
+  it('rejects model calendar updates that omit the target id', async () => {
+    const rawEventId = '10000000-0000-0000-0000-000000000002';
+    await seedRawEvent(db as never, {
+      id: rawEventId,
+      text: 'Move the planning call to noon.',
+    });
+    const modelObject = {
+      bundles: [
+        {
+          title: 'Move the planning call',
+          items: [
+            {
+              operation: 'update',
+              targetKind: 'calendar_event',
+              title: 'Move the planning call',
+              proposedPayload: { startAt: '2026-06-02T12:00:00.000Z' },
+            },
+          ],
+        },
+      ],
+    };
+    const chat = vi
+      .fn()
+      .mockImplementation(({ schema }: { schema: { parse: (value: unknown) => unknown } }) =>
+        Promise.resolve({ object: schema.parse(modelObject), model: MODEL_ID }),
+      );
+
+    await expect(
+      processSuggestionJobForTests(
+        { db: db as never },
+        { rawEventId, teamId: TEAM_ID },
+        { getEnv: env, chatStructured: chat, modelId: MODEL_ID },
+      ),
+    ).rejects.toThrow(/targetId/i);
+    await expect(suggestionCounts(pg)).resolves.toEqual({ suggestions: 0, items: 0 });
   });
 
   it('stores model-backed recurring calendar suggestions', async () => {
@@ -4859,7 +4897,7 @@ describe('processSuggestionJobForTests', () => {
     );
     const [suggestion] = await db.select().from(agentSuggestions);
     expect(suggestion?.metadata).toMatchObject({
-      reconciliation_planner_version: 'reconciliation-planner-2026-06-privacy-floor',
+      reconciliation_planner_version: RECONCILIATION_PLANNER_PROMPT_VERSION,
       reconciliation_planner_status: 'completed',
       reconciliation_planner_result: {
         ingestionSurfaces: ['telegram'],

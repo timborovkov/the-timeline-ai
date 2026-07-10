@@ -334,6 +334,17 @@ export interface SuggestionItemInput {
   proposedPayload: Record<string, unknown>;
 }
 
+function missingRequiredTargetReason(
+  item: Pick<SuggestionItemInput, 'operation' | 'targetKind' | 'targetId'>,
+): string | null {
+  if (item.operation === 'create' || item.targetId) return null;
+  if (item.targetKind === 'calendar_event') return 'The target calendar event is missing.';
+  if (item.targetKind === 'object' || item.targetKind === 'task') {
+    return 'The target workspace object is missing.';
+  }
+  return null;
+}
+
 export interface SuggestionEvidenceInput {
   rawEventId: string;
   quote?: string | null;
@@ -2885,6 +2896,8 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     item: typeof agentSuggestionItems.$inferSelect,
   ): Promise<string | null> {
     if (item.status !== 'pending' && item.status !== 'failed') return null;
+    const missingTargetReason = missingRequiredTargetReason(item);
+    if (missingTargetReason) return missingTargetReason;
     if (item.targetKind === 'object' || item.targetKind === 'task') {
       if (item.operation === 'create') return null;
       return staleObjectTargetReason(item.targetId);
@@ -4815,6 +4828,10 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     async createOrMergeSuggestionBundle(input: CreateSuggestionInput): Promise<SuggestionBundle> {
       await ensureMember();
       if (input.items.length === 0) throw new Error('Suggestion requires at least one item');
+      for (const item of input.items) {
+        const missingTargetReason = missingRequiredTargetReason(item);
+        if (missingTargetReason) throw new Error(missingTargetReason);
+      }
       const visibility = input.visibility ?? 'team';
       const visibilityOwnerUserId =
         input.visibilityOwnerUserId === undefined
