@@ -167,36 +167,46 @@ function errorMessageIncludes(err: unknown, value: string): boolean {
 }
 
 function mostRestrictiveProjectionVisibility(envelopes: VisibilityEnvelope[]): VisibilityEnvelope {
-  const privateEnvelope = envelopes.find(
-    (envelope) => envelope.visibility === 'private' && envelope.visibilityOwnerUserId,
-  );
-  if (privateEnvelope) {
+  let allowedUserIds: string[] | null = null;
+  let includesPrivateEnvelope = false;
+
+  for (const envelope of envelopes) {
+    if (envelope.visibility === 'team') continue;
+    let envelopeUserIds: string[];
+    if (envelope.visibility === 'private') {
+      includesPrivateEnvelope = true;
+      if (!envelope.visibilityOwnerUserId) {
+        throw new Error('Approval projection has private evidence without a visible owner');
+      }
+      envelopeUserIds = [envelope.visibilityOwnerUserId];
+    } else {
+      envelopeUserIds = normalizedStringSet(envelope.visibilityUserIds ?? []);
+    }
+
+    allowedUserIds =
+      allowedUserIds === null
+        ? envelopeUserIds
+        : allowedUserIds.filter((id) => envelopeUserIds.includes(id));
+  }
+
+  if (allowedUserIds === null) {
+    return { visibility: 'team', visibilityOwnerUserId: null, visibilityUserIds: null };
+  }
+  if (allowedUserIds.length === 0) {
+    throw new Error('Approval projection evidence has no common visible audience');
+  }
+  if (includesPrivateEnvelope && allowedUserIds.length === 1) {
     return {
       visibility: 'private',
-      visibilityOwnerUserId: privateEnvelope.visibilityOwnerUserId,
+      visibilityOwnerUserId: allowedUserIds[0] ?? null,
       visibilityUserIds: null,
     };
   }
-
-  const specificUserEnvelopes = envelopes.filter(
-    (envelope) => envelope.visibility === 'specific_users',
-  );
-  if (specificUserEnvelopes.length > 0) {
-    const [first, ...rest] = specificUserEnvelopes.map((envelope) =>
-      normalizedStringSet(envelope.visibilityUserIds ?? []),
-    );
-    const allowed = rest.reduce<string[]>(
-      (current, next) => current.filter((id) => next.includes(id)),
-      first ?? [],
-    );
-    return {
-      visibility: 'specific_users',
-      visibilityOwnerUserId: null,
-      visibilityUserIds: allowed,
-    };
-  }
-
-  return { visibility: 'team', visibilityOwnerUserId: null, visibilityUserIds: null };
+  return {
+    visibility: 'specific_users',
+    visibilityOwnerUserId: null,
+    visibilityUserIds: allowedUserIds,
+  };
 }
 
 function reconciliationOutputIdsFromItem(item: typeof agentSuggestionItems.$inferSelect): string[] {

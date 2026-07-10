@@ -136,14 +136,14 @@ async function upsertObjectSummary(values: typeof objectSummaries.$inferInsert):
 
 async function withHistoricalLegacyObjectProvenance<T>(fn: () => Promise<T>): Promise<T> {
   await pg.exec(`
-    ALTER TABLE entities DROP CONSTRAINT entities_legacy_agent_suggested_false_chk;
+    ALTER TABLE entities DISABLE TRIGGER entities_legacy_provenance_write_guard;
     ALTER TABLE object_changes DROP CONSTRAINT object_changes_legacy_source_event_id_null_chk;
   `);
   try {
     return await fn();
   } finally {
     await pg.exec(`
-      ALTER TABLE entities ADD CONSTRAINT entities_legacy_agent_suggested_false_chk CHECK (agent_suggested = false) NOT VALID;
+      ALTER TABLE entities ENABLE TRIGGER entities_legacy_provenance_write_guard;
       ALTER TABLE object_changes ADD CONSTRAINT object_changes_legacy_source_event_id_null_chk CHECK (source_event_id IS NULL) NOT VALID;
     `);
   }

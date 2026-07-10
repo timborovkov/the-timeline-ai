@@ -30,9 +30,12 @@ Reconciliation provenance now lives in source refs, source payload refs, and
 reconciliation outputs. Migration `0056_legacy_provenance_cutover_guards.sql`
 formally deprecates the old object `source_event_id`, object
 `agent_suggested=true`, object-change `source_event_id`, and board-history
-`source_event_id` provenance columns with `NOT VALID` check constraints. That
-keeps historical rows available for cutover audit/backfill while rejecting new
-legacy provenance writes at the database boundary.
+`source_event_id` provenance columns. Migration
+`0057_legacy_provenance_editability.sql` keeps `NOT VALID` checks on the
+append-only history tables and replaces the mutable entity checks with a
+transition-aware trigger. Historical entity rows therefore remain editable for
+unrelated fields and can clear legacy values, while inserts and updates still
+cannot introduce new legacy provenance.
 
 ## Connection guardrails
 

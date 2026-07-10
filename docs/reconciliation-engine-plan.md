@@ -713,6 +713,11 @@ Rules:
 - A derived association, output, approval projection, summary, search document,
   chat citation, or outbound MCP result cannot be more visible than the most
   restrictive supporting source.
+- A row derived from multiple restricted sources uses the intersection of their
+  visible audiences. Projection fails closed when no user can see every source;
+  it never selects the first private owner as a proxy for the bundle audience.
+- Legacy private raw events without `visibility_owner_user_id` use their author
+  as the owner when normalization or projection constructs the envelope.
 - Team-visible cluster identity and lifecycle state are computed only from
   team-visible associations or explicit team-visible provider authority.
 - Private/specific-user evidence can create private/specific-user outputs, but
@@ -754,10 +759,12 @@ Migration rules:
   reconciliation-legacy-provenance -- --team=<uuid> --fail-on-legacy` to make
   those counts a release-blocking cutover gate. Migration
   `0056_legacy_provenance_cutover_guards.sql` formally deprecates the legacy
-  columns with `NOT VALID` check constraints: historical rows remain auditable,
-  but new writes cannot reintroduce object `source_event_id`, object
-  `agent_suggested=true`, object-change `source_event_id`, or board-history
-  `source_event_id` provenance.
+  columns. Follow-up migration `0057_legacy_provenance_editability.sql` keeps
+  `NOT VALID` constraints on append-only object-change and board-history rows,
+  while a transition-aware trigger lets historical entities receive unrelated
+  edits or clear legacy values. Inserts and updates still cannot introduce
+  object `source_event_id`, object `agent_suggested=true`, object-change
+  `source_event_id`, or board-history `source_event_id` provenance.
 
 ## Engine Pipeline
 
@@ -1893,10 +1900,11 @@ Exit criteria:
       fail the cutover while any `entities.source_event_id`,
       `entities.agent_suggested=true`, `object_changes.source_event_id`, or
       `board_item_changes.source_event_id` rows remain.
-    - Migration `0056_legacy_provenance_cutover_guards.sql` adds
-      `NOT VALID` check constraints for those columns so the database rejects
-      new legacy provenance writes without blocking existing historical rows
-      that still need audit/backfill.
+    - Migration `0056_legacy_provenance_cutover_guards.sql`, followed by
+      `0057_legacy_provenance_editability.sql`, keeps `NOT VALID` checks on the
+      append-only history columns and uses a transition-aware entity trigger.
+      The database rejects newly introduced legacy provenance without blocking
+      unrelated edits to historical entities that still need audit/backfill.
     - The July 8, 2026 live local cutover audit ran against the migrated and
       seeded Timeline Postgres on `localhost:55432` for team
       `20000000-0000-4000-8000-000000000001` and returned zero legacy rows for
@@ -2078,9 +2086,9 @@ The architecture is complete only when all of these are true:
   or unauthorized memory changes.
 - Legacy `sourceEventId`/`source_event_id` and `agentSuggested` provenance write
   paths are removed or read-only compatibility projections pending column
-  removal. Database-level `NOT VALID` cutover guards now reject new legacy
-  object/object-change/board-history provenance writes while preserving
-  historical rows for the cutover audit.
+  removal. Database-level history checks and the transition-aware entity guard
+  now reject new legacy object/object-change/board-history provenance while
+  preserving historical rows for the cutover audit.
 - The old writer code is deleted after migration, not left as compatibility
   handling.
 

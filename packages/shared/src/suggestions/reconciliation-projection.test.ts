@@ -37,6 +37,7 @@ const USER_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 const CLUSTER_ID = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
 const REVIEWER_ID = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
 const TEAM_RAW_EVENT_ID = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee';
+const SECOND_RAW_EVENT_ID = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
 
 async function seed(pg: PGlite): Promise<void> {
   await pg.exec(`
@@ -356,6 +357,51 @@ describe('suggestion reconciliation projection', () => {
       visibilityFloor: 'private',
       visibilityFloorOwnerUserId: USER_ID,
     });
+  });
+
+  it('rejects approval bundles whose private evidence has no common audience', async () => {
+    await db.insert(rawEvents).values([
+      {
+        id: TEAM_RAW_EVENT_ID,
+        teamId: TEAM_ID,
+        authorUserId: USER_ID,
+        visibilityOwnerUserId: USER_ID,
+        source: 'email',
+        contentText: 'Private Acme note owned by the author.',
+        occurredAt: new Date('2026-06-20T10:00:00Z'),
+        visibility: 'private',
+      },
+      {
+        id: SECOND_RAW_EVENT_ID,
+        teamId: TEAM_ID,
+        authorUserId: USER_ID,
+        visibilityOwnerUserId: REVIEWER_ID,
+        source: 'email',
+        contentText: 'Private Acme note owned by another reviewer.',
+        occurredAt: new Date('2026-06-20T10:05:00Z'),
+        visibility: 'private',
+      },
+    ]);
+
+    await expect(
+      withTeam(db as never, TEAM_ID, USER_ID).suggestions.createOrMergeSuggestionBundle({
+        source: 'background',
+        title: 'Create mixed-audience Acme task',
+        dedupeKey: 'reconciliation-projection-mixed-private-audience',
+        evidence: [{ rawEventId: TEAM_RAW_EVENT_ID }, { rawEventId: SECOND_RAW_EVENT_ID }],
+        items: [
+          {
+            operation: 'create',
+            targetKind: 'task',
+            title: 'Create mixed-audience Acme task',
+            dedupeKey: 'reconciliation-projection-mixed-private-audience:item',
+            proposedPayload: { canonicalName: 'Create mixed-audience Acme task' },
+          },
+        ],
+      }),
+    ).rejects.toThrow('Approval projection evidence has no common visible audience');
+    expect(await db.select().from(reconciliationOutputs)).toHaveLength(0);
+    expect(await db.select().from(agentSuggestions)).toHaveLength(0);
   });
 
   it('enforces output visibility floors when repairing approval projections', async () => {
