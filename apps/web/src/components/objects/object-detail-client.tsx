@@ -1088,21 +1088,27 @@ function ObjectProvenancePanel({ provenance }: { provenance: ObjectDetail['prove
       {!hasProvenance ? (
         <p className="text-sm text-fg-muted">No source provenance linked yet.</p>
       ) : (
-        <div className="grid gap-5 lg:grid-cols-3">
+        <div className="divide-y divide-border">
           <ProvenanceGroup
             title="Why this exists"
             empty="No accepted creation evidence yet."
             entries={provenance.whyThisExists}
+            previewCount={1}
+            sourceKind="creation"
           />
           <ProvenanceGroup
             title="What changed it"
             empty="No accepted update evidence yet."
             entries={provenance.whatChangedIt}
+            previewCount={2}
+            sourceKind="change"
           />
           <ProvenanceGroup
             title="Related evidence"
             empty="No observed related evidence yet."
             entries={provenance.relatedEvidence}
+            previewCount={0}
+            sourceKind="related"
             muted
           />
         </div>
@@ -1115,52 +1121,141 @@ function ProvenanceGroup({
   title,
   empty,
   entries,
+  previewCount,
+  sourceKind,
   muted = false,
 }: {
   title: string;
   empty: string;
   entries: ObjectDetail['provenance']['whyThisExists'];
+  previewCount: number;
+  sourceKind: 'creation' | 'change' | 'related';
   muted?: boolean;
 }) {
+  const previewEntries = entries.slice(0, previewCount);
+  const remainingEntries = entries.slice(previewCount);
+  const sourceCountValue = provenanceEvidenceCount(entries);
+  const remainingSourceCount = provenanceEvidenceCount(remainingEntries);
+  const sourceCount = `${sourceCountValue} source${sourceCountValue === 1 ? '' : 's'}`;
+  const reviewLabel = `Review ${remainingSourceCount}${
+    previewCount > 0 ? ' more' : ''
+  } ${sourceKind} source${remainingSourceCount === 1 ? '' : 's'}`;
   return (
-    <section className="min-w-0">
-      <h3 className="mb-2 font-mono text-[11px] uppercase tracking-[0.12em] text-fg-muted">
-        {title}
-      </h3>
+    <section className="grid min-w-0 gap-3 py-4 first:pt-0 last:pb-0 sm:grid-cols-[10rem_minmax(0,1fr)]">
+      <div>
+        <h3 className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-muted">{title}</h3>
+        <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">
+          {sourceCount}
+        </p>
+      </div>
       {entries.length === 0 ? (
         <p className="text-sm text-fg-muted">{empty}</p>
       ) : (
-        <ul className="space-y-3">
-          {entries.map((entry) => (
-            <li
-              key={`${entry.targetKind}:${entry.operation}:${entry.id}`}
-              className={cn(
-                'rounded-sm border border-border bg-surface p-3 text-sm',
-                muted && 'bg-bg text-fg-muted',
-              )}
+        <div className="min-w-0">
+          {previewEntries.length > 0 ? (
+            <ProvenanceEntryList entries={previewEntries} muted={muted} />
+          ) : null}
+          {remainingEntries.length > 0 ? (
+            <details
+              className={cn('group border border-border', previewEntries.length > 0 && 'mt-3')}
             >
-              <p className="font-medium leading-5 text-fg">{displayText(entry.title)}</p>
-              {entry.reason ? (
-                <p className="mt-1 line-clamp-3 text-xs leading-5 text-fg-muted">
-                  {displayText(entry.reason)}
-                </p>
-              ) : null}
-              <div className="mt-3 space-y-1">
-                {entry.evidence.slice(0, 3).map((evidence) => (
-                  <Link
-                    key={evidence.rawEventId}
-                    href={`/app/timeline?event=${evidence.rawEventId}#ev-${evidence.rawEventId}`}
-                    className="block text-xs text-fg-muted underline-offset-2 hover:text-fg hover:underline"
-                  >
-                    {displayText(evidence.source)} · {formatDisplayDateTime(evidence.occurredAt)}
-                  </Link>
-                ))}
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-3 bg-surface px-3 py-2 font-mono text-[11px] uppercase tracking-[0.12em] text-fg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal focus-visible:ring-offset-2 focus-visible:ring-offset-bg">
+                <span>{reviewLabel}</span>
+                <span aria-hidden="true" className="text-fg-dim group-open:hidden">
+                  +
+                </span>
+                <span aria-hidden="true" className="hidden text-fg-dim group-open:inline">
+                  −
+                </span>
+              </summary>
+              <div className="max-h-80 overflow-y-auto overscroll-contain border-t border-border p-3">
+                <ProvenanceEntryList entries={remainingEntries} muted={muted} />
               </div>
-            </li>
-          ))}
-        </ul>
+            </details>
+          ) : null}
+        </div>
       )}
     </section>
+  );
+}
+
+function provenanceEvidenceCount(entries: ObjectDetail['provenance']['whyThisExists']): number {
+  return entries.reduce((count, entry) => count + entry.evidence.length, 0);
+}
+
+function ProvenanceEntryList({
+  entries,
+  muted,
+}: {
+  entries: ObjectDetail['provenance']['whyThisExists'];
+  muted: boolean;
+}) {
+  return (
+    <ul className="space-y-3">
+      {entries.map((entry) => (
+        <li
+          key={`${entry.targetKind}:${entry.operation}:${entry.id}`}
+          className={cn(
+            'min-w-0 border-l-2 border-signal/50 bg-surface px-3 py-2 text-sm',
+            muted && 'border-border bg-bg text-fg-muted',
+          )}
+        >
+          <p className="line-clamp-2 break-words font-medium leading-5 text-fg">
+            {timelinePreview(entry.title)}
+          </p>
+          {entry.reason ? (
+            <p className="mt-1 line-clamp-2 break-words text-xs leading-5 text-fg-muted">
+              {displayText(entry.reason)}
+            </p>
+          ) : null}
+          <ProvenanceSourceLinks evidence={entry.evidence} />
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function ProvenanceSourceLinks({
+  evidence,
+}: {
+  evidence: ObjectDetail['provenance']['whyThisExists'][number]['evidence'];
+}) {
+  const visibleEvidence = evidence.slice(0, 3);
+  const remainingEvidence = evidence.slice(3);
+  return (
+    <div className="mt-2 space-y-1">
+      {visibleEvidence.map((source) => (
+        <ProvenanceSourceLink key={source.rawEventId} source={source} />
+      ))}
+      {remainingEvidence.length > 0 ? (
+        <details className="pt-1">
+          <summary className="cursor-pointer list-none font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim hover:text-fg">
+            Review {remainingEvidence.length} more source
+            {remainingEvidence.length === 1 ? '' : 's'}
+          </summary>
+          <div className="mt-2 max-h-40 space-y-1 overflow-y-auto overscroll-contain border-l border-border pl-2">
+            {remainingEvidence.map((source) => (
+              <ProvenanceSourceLink key={source.rawEventId} source={source} />
+            ))}
+          </div>
+        </details>
+      ) : null}
+    </div>
+  );
+}
+
+function ProvenanceSourceLink({
+  source,
+}: {
+  source: ObjectDetail['provenance']['whyThisExists'][number]['evidence'][number];
+}) {
+  return (
+    <Link
+      href={`/app/timeline?event=${source.rawEventId}#ev-${source.rawEventId}`}
+      className="block break-words text-xs text-fg-muted underline-offset-2 hover:text-fg hover:underline"
+    >
+      {displayText(source.source)} · {formatDisplayDateTime(source.occurredAt)}
+    </Link>
   );
 }
 
