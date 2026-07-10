@@ -6,10 +6,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { WorkFilterState } from '@/lib/work-filters';
 
-const push = vi.hoisted(() => vi.fn());
+const replace = vi.hoisted(() => vi.fn());
 
 vi.mock('next/navigation', () => ({
-  useRouter: () => ({ push }),
+  useRouter: () => ({ replace }),
 }));
 
 const { WorkFilterBar } = await import('./work-filter-bar.js');
@@ -36,10 +36,10 @@ const EMPTY_FILTERS: WorkFilterState = {
 describe('WorkFilterBar', () => {
   afterEach(() => {
     cleanup();
-    push.mockReset();
+    replace.mockReset();
   });
 
-  it('preserves hidden params on apply unless an empty form control clears them', async () => {
+  it('debounces search changes and preserves hidden params unless a control clears them', async () => {
     const user = userEvent.setup();
     render(
       <WorkFilterBar
@@ -55,15 +55,19 @@ describe('WorkFilterBar', () => {
     );
 
     await user.type(screen.getByLabelText('Search'), 'proposal');
-    await user.click(screen.getByRole('button', { name: 'Apply' }));
-
-    expect(push).toHaveBeenCalledWith('/app/objects?type=task&q=proposal');
+    expect(replace).not.toHaveBeenCalled();
+    await waitFor(() => {
+      expect(replace).toHaveBeenCalledWith('/app/objects?type=task&q=proposal', {
+        scroll: false,
+      });
+    });
 
     await user.click(screen.getByRole('button', { name: 'Type' }));
     await user.click(screen.getByRole('menuitem', { name: 'Any type' }));
-    await user.click(screen.getByRole('button', { name: 'Apply' }));
-
-    expect(push).toHaveBeenLastCalledWith('/app/objects?q=proposal');
+    await waitFor(() => {
+      expect(replace).toHaveBeenLastCalledWith('/app/objects?q=proposal', { scroll: false });
+    });
+    expect(screen.queryByRole('button', { name: 'Apply' })).toBeNull();
   });
 
   it('submits multiple dropdown values as comma-separated filters', async () => {
@@ -84,9 +88,9 @@ describe('WorkFilterBar', () => {
     await user.click(screen.getByRole('menuitemcheckbox', { name: 'todo' }));
     await user.click(screen.getByRole('menuitemcheckbox', { name: 'doing' }));
     await user.keyboard('{Escape}');
-    await user.click(screen.getByRole('button', { name: 'Apply' }));
-
-    expect(push).toHaveBeenCalledWith('/app/tasks?status=todo%2Cdoing');
+    await waitFor(() => {
+      expect(replace).toHaveBeenCalledWith('/app/tasks?status=todo%2Cdoing', { scroll: false });
+    });
   });
 
   it('renders only the canonical cancelled status when both spellings are provided', async () => {
@@ -109,9 +113,6 @@ describe('WorkFilterBar', () => {
     expect(screen.queryByRole('menuitemcheckbox', { name: 'canceled' })).toBeNull();
 
     await user.keyboard('{Escape}');
-    await user.click(screen.getByRole('button', { name: 'Apply' }));
-
-    expect(push).toHaveBeenCalledWith('/app/objects?status=cancelled');
   });
 
   it('keeps date range controls collapsed until toggled, unless a range is active', async () => {
@@ -219,9 +220,13 @@ describe('WorkFilterBar', () => {
     );
 
     await user.click(screen.getByRole('button', { name: 'Date ranges' }));
-    await user.click(screen.getByRole('button', { name: 'Apply' }));
-
-    expect(push).toHaveBeenCalledWith('/app/tasks?due=range&dueFrom=2026-08-01&dueTo=2026-08-05');
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Priority' }), '1');
+    await waitFor(() => {
+      expect(replace).toHaveBeenCalledWith(
+        '/app/tasks?priority=1&due=range&dueFrom=2026-08-01&dueTo=2026-08-05',
+        { scroll: false },
+      );
+    });
   });
 
   it('reopens active date range controls when filter props change after a manual collapse', async () => {
@@ -274,8 +279,11 @@ describe('WorkFilterBar', () => {
       'true',
     );
 
-    await user.click(screen.getByRole('button', { name: 'Apply' }));
-
-    expect(push).toHaveBeenCalledWith('/app/tasks?dueFrom=2026-08-02');
+    await user.type(screen.getByLabelText('Due to'), '2026-08-03');
+    await waitFor(() => {
+      expect(replace).toHaveBeenCalledWith('/app/tasks?dueFrom=2026-08-02&dueTo=2026-08-03', {
+        scroll: false,
+      });
+    });
   });
 });

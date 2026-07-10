@@ -100,6 +100,7 @@ interface MoveUiState {
 interface TaskPaginationState {
   inputRows: objects.ObjectRow[];
   inputCursor: string | null;
+  inputFilterKey: string;
   loadedRows: objects.ObjectRow[];
   cursor: string | null;
 }
@@ -124,9 +125,14 @@ type MoveUiAction =
   | { type: 'saved-timeout' };
 
 type TaskBoardAction =
-  | { type: 'props'; rows: objects.ObjectRow[]; nextCursor: string | null }
-  | { type: 'load-error'; message: string | null }
-  | { type: 'append-page'; rows: objects.ObjectRow[]; nextCursor: string | null }
+  | { type: 'props'; rows: objects.ObjectRow[]; nextCursor: string | null; filterKey: string }
+  | { type: 'load-error'; message: string | null; filterKey: string }
+  | {
+      type: 'append-page';
+      rows: objects.ObjectRow[];
+      nextCursor: string | null;
+      filterKey: string;
+    }
   | { type: 'filter'; query: string }
   | { type: 'selected'; next: SetStateAction<ReadonlySet<string>> }
   | { type: 'patches'; next: SetStateAction<Record<string, TaskPatchOverlay>> };
@@ -142,10 +148,12 @@ const EMPTY_FILTER_PARAMS: Record<string, string> = {};
 function taskPaginationStateForProps(
   rows: objects.ObjectRow[],
   nextCursor: string | null,
+  filterKey: string,
 ): TaskPaginationState {
   return {
     inputRows: rows,
     inputCursor: nextCursor,
+    inputFilterKey: filterKey,
     loadedRows: rows,
     cursor: nextCursor,
   };
@@ -154,9 +162,10 @@ function taskPaginationStateForProps(
 function taskBoardStateForProps(
   rows: objects.ObjectRow[],
   nextCursor: string | null,
+  filterKey: string,
 ): TaskBoardState {
   return {
-    pagination: taskPaginationStateForProps(rows, nextCursor),
+    pagination: taskPaginationStateForProps(rows, nextCursor, filterKey),
     loadError: null,
     filterQuery: '',
     selectedIds: new Set(),
@@ -172,25 +181,33 @@ function taskBoardReducer(state: TaskBoardState, action: TaskBoardAction): TaskB
   switch (action.type) {
     case 'props':
       const refreshedRows = new Map(action.rows.map((row) => [row.id, row]));
+      const filtersChanged = action.filterKey !== state.pagination.inputFilterKey;
       return {
         ...state,
         pagination: {
           inputRows: action.rows,
           inputCursor: action.nextCursor,
-          loadedRows: [
-            ...action.rows,
-            ...state.pagination.loadedRows.filter((row) => !refreshedRows.has(row.id)),
-          ],
-          cursor:
-            state.pagination.loadedRows.length > action.rows.length
+          inputFilterKey: action.filterKey,
+          loadedRows: filtersChanged
+            ? action.rows
+            : [
+                ...action.rows,
+                ...state.pagination.loadedRows.filter((row) => !refreshedRows.has(row.id)),
+              ],
+          cursor: filtersChanged
+            ? action.nextCursor
+            : state.pagination.loadedRows.length > action.rows.length
               ? state.pagination.cursor
               : action.nextCursor,
         },
         loadError: null,
+        selectedIds: filtersChanged ? new Set() : state.selectedIds,
       };
     case 'load-error':
+      if (action.filterKey !== state.pagination.inputFilterKey) return state;
       return { ...state, loadError: action.message };
     case 'append-page': {
+      if (action.filterKey !== state.pagination.inputFilterKey) return state;
       const seen = new Set(state.pagination.loadedRows.map((row) => row.id));
       return {
         ...state,
@@ -238,6 +255,12 @@ function taskViewHref(
 function hrefWithParams(basePath: string, params: Record<string, string>): string {
   const qs = new URLSearchParams(params).toString();
   return qs ? `${basePath}?${qs}` : basePath;
+}
+
+function filterParamsKey(params: Record<string, string>): string {
+  return new URLSearchParams(
+    Object.entries(params).sort(([left], [right]) => left.localeCompare(right)),
+  ).toString();
 }
 
 function patchTaskRow(
@@ -385,13 +408,20 @@ function useTaskBoardController({
   const dndContextId = useId();
   const router = useRouter();
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
-  const [boardState, dispatchBoard] = useReducer(taskBoardReducer, { rows, nextCursor }, (input) =>
-    taskBoardStateForProps(input.rows, input.nextCursor),
+  const filterKey = filterParamsKey(filterParams);
+  const [boardState, dispatchBoard] = useReducer(
+    taskBoardReducer,
+    { rows, nextCursor, filterKey },
+    (input) => taskBoardStateForProps(input.rows, input.nextCursor, input.filterKey),
   );
   const [loadingMore, startLoadMore] = useTransition();
   const pagination = boardState.pagination;
-  if (pagination.inputRows !== rows || pagination.inputCursor !== nextCursor) {
-    dispatchBoard({ type: 'props', rows, nextCursor });
+  if (
+    pagination.inputRows !== rows ||
+    pagination.inputCursor !== nextCursor ||
+    pagination.inputFilterKey !== filterKey
+  ) {
+    dispatchBoard({ type: 'props', rows, nextCursor, filterKey });
   }
   const { loadedRows, cursor } = pagination;
   const [optimisticRows, applyMove] = useOptimistic(
@@ -570,17 +600,22 @@ function useTaskBoardController({
 
   function loadMoreTasks(): void {
     if (!cursor || loadingMore) return;
-    dispatchBoard({ type: 'load-error', message: null });
+    dispatchBoard({ type: 'load-error', message: null, filterKey });
     startLoadMore(async () => {
       const page = await loadTaskRowsAction({
         cursor,
         ...(Object.keys(filterParams).length > 0 ? { filters: filterParams } : {}),
       });
       if (page.error) {
-        dispatchBoard({ type: 'load-error', message: page.error });
+        dispatchBoard({ type: 'load-error', message: page.error, filterKey });
         return;
       }
-      dispatchBoard({ type: 'append-page', rows: page.rows, nextCursor: page.nextCursor });
+      dispatchBoard({
+        type: 'append-page',
+        rows: page.rows,
+        nextCursor: page.nextCursor,
+        filterKey,
+      });
     });
   }
 

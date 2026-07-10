@@ -11,7 +11,7 @@
     <main id="main">
       <h1>Workspace objects</h1>
       <div class="meta">
-        <span class="kind">Architecture</span><span>Last updated 2026-07-08</span>
+        <span class="kind">Architecture</span><span>Last updated 2026-07-10</span>
       </div>
       <p class="tldr">
         Phase 8 turned <code>entities</code> from an extraction artifact into the workspace's
@@ -462,9 +462,10 @@
               type with "View all" links for larger sections; typed views paginate 48 rows at a time
               with cursor-based "Next" links that preserve the current filter state. The shared Work
               filter bar supports multi-select type, status, owner, and assignee filters with
-              right-aligned Apply/Clear controls. Type-filter chips along the top, a "New object"
-              CTA, and select mode for bulk archive or merge cleanup sit above a collapsed cleanup
-              suggestions panel with a pending count and manual "Find suggestions" enqueue.
+              debounced URL updates as controls change and a right-aligned Clear control when any
+              filter is active. Type-filter chips along the top, a "New object" CTA, and select mode
+              for bulk archive or merge cleanup sit above a collapsed cleanup suggestions panel with
+              a pending count and manual "Find suggestions" enqueue.
             </td>
           </tr>
           <tr>

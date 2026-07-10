@@ -1,7 +1,7 @@
 'use client';
 
 import { ChevronDown } from 'lucide-react';
-import { useMemo, useReducer } from 'react';
+import { useMemo, useReducer, useRef } from 'react';
 
 import {
   DropdownMenu,
@@ -44,6 +44,7 @@ export function FilterMultiSelect({
   triggerClassName,
   onValueChange,
 }: FilterMultiSelectProps) {
+  const inputRef = useRef<HTMLInputElement>(null);
   const selectedSource = value ?? defaultValue;
   const normalizedOptions = useMemo(
     () => optionsWithSelectedValues(options, selectedSource),
@@ -77,6 +78,7 @@ export function FilterMultiSelect({
     const next = selectedReducer(selected, action);
     if (!controlled) dispatchInternalSelected(action);
     onValueChange?.(next);
+    inputRef.current?.dispatchEvent(new Event('input', { bubbles: true }));
   }
 
   return (
@@ -84,7 +86,7 @@ export function FilterMultiSelect({
       <span className="mb-1 block font-mono text-[10px] uppercase tracking-[0.14em] text-fg-dim">
         {label}
       </span>
-      {name ? <input type="hidden" name={name} value={selected} /> : null}
+      {name ? <input ref={inputRef} type="hidden" name={name} value={selected} /> : null}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <button
