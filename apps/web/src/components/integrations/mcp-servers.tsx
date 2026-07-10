@@ -129,13 +129,6 @@ function parseToolResponse(text: string): Record<string, unknown> | null {
   }
 }
 
-/**
- * Standalone add-server form. Mounted by either:
- *   - <McpServersUi> on the personal MCP page (toggle button just above
- *     the connected list), or
- *   - the team /integrations page action bar (the "+ Add custom MCP
- *     server" affordance — see <AddCustomMcpServerLauncher>).
- */
 function AddCustomMcpServerForm({
   ownership,
   onDone,
@@ -170,10 +163,7 @@ function AddCustomMcpServerForm({
         await dialog.alert({ title: 'Add failed', description: text });
         return;
       }
-      // If the server was created as OAuth, immediately bounce into the
-      // authorize roundtrip — otherwise the row sits disabled until the
-      // user finds the Connect button in the connected list. Mirrors
-      // the catalog connect flow.
+      // Start authorization immediately so a new OAuth server is not left disabled.
       const data = (await res.json().catch(() => ({}))) as {
         id?: string;
         needsOauth?: boolean;
@@ -319,10 +309,6 @@ function AddCustomMcpServerForm({
   );
 }
 
-/**
- * Self-contained "+ Add custom MCP server" button + collapsible form.
- * Used in the integrations action bar on /app/team/integrations.
- */
 export function AddCustomMcpServerLauncher({ ownership }: { ownership: 'team' | 'personal' }) {
   const [open, setOpen] = useState(false);
   return (
