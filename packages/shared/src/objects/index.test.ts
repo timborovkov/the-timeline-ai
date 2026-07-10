@@ -5,6 +5,7 @@ import {
   agentSuggestions,
   artifactClusterMembers,
   artifactClusters,
+  artifactEvidenceAssociations,
   boardItemChanges,
   boardItems,
   calendarEventEntities,
@@ -18,10 +19,15 @@ import {
   factEntities,
   facts,
   objectChanges,
+  objectIdentityFacets,
   objectNotes,
   objectSummaries,
   notifications,
   rawEvents,
+  reconciliationEvidence,
+  reconciliationEvidenceAnchors,
+  reconciliationOutputs,
+  reconciliationRuns,
 } from '@timeline/db';
 import { eq, inArray } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
@@ -30,7 +36,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ChatStructuredInput, ChatStructuredResult } from '#src/llm/chat.js';
 import type { z } from 'zod';
 
-import { generateAndStoreObjectSummary } from '#src/objects/summaries.js';
+import { buildObjectDirectWriteSourceContext } from '#src/objects/index.js';
+import {
+  generateAndStoreObjectSummary,
+  invalidateObjectSummariesForRawEvent,
+} from '#src/objects/summaries.js';
 import { encodeCursor } from '#src/pagination.js';
 import * as queue from '#src/queue/queues.js';
 import { withTeam } from '#src/team-scope.js';
@@ -124,7 +134,211 @@ async function upsertObjectSummary(values: typeof objectSummaries.$inferInsert):
     });
 }
 
+async function withHistoricalLegacyObjectProvenance<T>(fn: () => Promise<T>): Promise<T> {
+  await pg.exec(`
+    ALTER TABLE entities DROP CONSTRAINT entities_legacy_agent_suggested_false_chk;
+    ALTER TABLE object_changes DROP CONSTRAINT object_changes_legacy_source_event_id_null_chk;
+  `);
+  try {
+    return await fn();
+  } finally {
+    await pg.exec(`
+      ALTER TABLE entities ADD CONSTRAINT entities_legacy_agent_suggested_false_chk CHECK (agent_suggested = false) NOT VALID;
+      ALTER TABLE object_changes ADD CONSTRAINT object_changes_legacy_source_event_id_null_chk CHECK (source_event_id IS NULL) NOT VALID;
+    `);
+  }
+}
+
 describe('object scope — team ownership and audit behavior', () => {
+  it('builds direct-write source context from private evidence visibility', async () => {
+    const [raw] = await db
+      .insert(rawEvents)
+      .values({
+        teamId: TEAM_A,
+        authorUserId: USER_OWNER,
+        source: 'integration',
+        contentText: 'Private Sentry incident context',
+        occurredAt: new Date('2026-07-01T10:00:00.000Z'),
+        visibility: 'private',
+        visibilityOwnerUserId: USER_OWNER,
+        sourceMetadata: {
+          provider: 'sentry',
+          source_payload_ref: 'sentry://incident/raw-1',
+        },
+      })
+      .returning({ id: rawEvents.id });
+    if (!raw) throw new Error('expected raw event');
+
+    const [evidence] = await db
+      .insert(reconciliationEvidence)
+      .values({
+        teamId: TEAM_A,
+        rawEventId: raw.id,
+        sourcePayloadRef: 'sentry://incident/evidence-1',
+        source: 'integration',
+        provider: 'sentry',
+        externalObjectId: 'INC-1',
+        externalEventId: 'INC-1:update',
+        eventType: 'sentry.issue',
+        occurredAt: new Date('2026-07-01T10:00:00.000Z'),
+        visibility: 'private',
+        visibilityOwnerUserId: USER_OWNER,
+        actor: {},
+        contentDigest: 'sentry-private-digest',
+        normalizerVersion: 'test-normalizer',
+        replayState: 'full',
+        dedupeKey: 'sentry-private-dedupe',
+      })
+      .returning({ id: reconciliationEvidence.id });
+    if (!evidence) throw new Error('expected evidence');
+
+    const firstContext = await buildObjectDirectWriteSourceContext({
+      db,
+      teamId: TEAM_A,
+      sourceRawEventId: raw.id,
+    });
+    expect(firstContext).toEqual({
+      sourceRefs: [
+        {
+          source: 'integration',
+          rawEventId: raw.id,
+          sourcePayloadRef: 'sentry://incident/raw-1',
+        },
+      ],
+      sourcePayloadRefs: ['sentry://incident/evidence-1', 'sentry://incident/raw-1'],
+      visibility: 'private',
+      visibilityOwnerUserId: USER_OWNER,
+      visibilityUserIds: null,
+    });
+    expect(firstContext.sourceRefs[0]).not.toHaveProperty('evidenceId');
+
+    await db.insert(reconciliationEvidence).values({
+      teamId: TEAM_A,
+      rawEventId: raw.id,
+      sourcePayloadRef: 'sentry://incident/evidence-2',
+      source: 'integration',
+      provider: 'sentry',
+      externalObjectId: 'INC-1',
+      externalEventId: 'INC-1:update:v2',
+      eventType: 'sentry.issue',
+      occurredAt: new Date('2026-07-01T10:00:00.000Z'),
+      visibility: 'private',
+      visibilityOwnerUserId: USER_OWNER,
+      actor: {},
+      contentDigest: 'sentry-private-digest-v2',
+      normalizerVersion: 'test-normalizer-v2',
+      replayState: 'full',
+      dedupeKey: 'sentry-private-dedupe-v2',
+    });
+
+    const secondContext = await buildObjectDirectWriteSourceContext({
+      db,
+      teamId: TEAM_A,
+      sourceRawEventId: raw.id,
+    });
+    expect(secondContext.sourceRefs).toEqual(firstContext.sourceRefs);
+    expect(secondContext.sourceRefs[0]).not.toHaveProperty('evidenceId');
+  });
+
+  it('falls back to raw-event visibility when direct-write evidence is absent', async () => {
+    const [raw] = await db
+      .insert(rawEvents)
+      .values({
+        teamId: TEAM_A,
+        authorUserId: USER_OWNER,
+        source: 'integration',
+        contentText: 'Monday item assigned to selected users',
+        occurredAt: new Date('2026-07-01T10:05:00.000Z'),
+        visibility: 'specific_users',
+        visibilityUserIds: [USER_OWNER, USER_MEMBER],
+        sourceMetadata: {
+          provider: 'monday',
+          sourcePayloadRef: 'monday://board/42/item/7',
+        },
+      })
+      .returning({ id: rawEvents.id });
+    if (!raw) throw new Error('expected raw event');
+
+    await expect(
+      buildObjectDirectWriteSourceContext({
+        db,
+        teamId: TEAM_A,
+        sourceRawEventId: raw.id,
+      }),
+    ).resolves.toEqual({
+      sourceRefs: [
+        {
+          source: 'integration',
+          rawEventId: raw.id,
+          sourcePayloadRef: 'monday://board/42/item/7',
+        },
+      ],
+      sourcePayloadRefs: ['monday://board/42/item/7'],
+      visibility: 'specific_users',
+      visibilityOwnerUserId: null,
+      visibilityUserIds: [USER_OWNER, USER_MEMBER],
+    });
+  });
+
+  it('rejects direct-write source refs that are missing from the scoped team', async () => {
+    const [otherTeamRaw] = await db
+      .insert(rawEvents)
+      .values({
+        teamId: TEAM_B,
+        authorUserId: USER_OTHER_TEAM,
+        source: 'integration',
+        contentText: 'Other team source event',
+        occurredAt: new Date('2026-07-01T10:10:00.000Z'),
+        visibility: 'team',
+        sourceMetadata: {
+          provider: 'sentry',
+          source_payload_ref: 'sentry://other-team/incident',
+        },
+      })
+      .returning({ id: rawEvents.id });
+    if (!otherTeamRaw) throw new Error('expected raw event');
+
+    await expect(
+      buildObjectDirectWriteSourceContext({
+        db,
+        teamId: TEAM_A,
+        sourceRawEventId: otherTeamRaw.id,
+      }),
+    ).rejects.toThrow('Source raw event not found for team');
+
+    await expect(
+      buildObjectDirectWriteSourceContext({
+        db,
+        teamId: TEAM_A,
+        sourceRawEventId: '99999999-9999-4999-8999-999999999999',
+      }),
+    ).rejects.toThrow('Source raw event not found for team');
+  });
+
+  it('rejects direct-write source refs without a replay payload ref', async () => {
+    const [raw] = await db
+      .insert(rawEvents)
+      .values({
+        teamId: TEAM_A,
+        authorUserId: USER_OWNER,
+        source: 'integration',
+        contentText: 'Legacy source event without replay metadata',
+        occurredAt: new Date('2026-07-01T10:20:00.000Z'),
+        visibility: 'team',
+        sourceMetadata: { provider: 'legacy' },
+      })
+      .returning({ id: rawEvents.id });
+    if (!raw) throw new Error('expected raw event');
+
+    await expect(
+      buildObjectDirectWriteSourceContext({
+        db,
+        teamId: TEAM_A,
+        sourceRawEventId: raw.id,
+      }),
+    ).rejects.toThrow('Source raw event is missing a replay payload ref');
+  });
+
   it('rejects owner and assignee values that are not members of the scoped team', async () => {
     const scope = withTeam(db, TEAM_A, USER_OWNER).objects;
 
@@ -152,6 +366,118 @@ describe('object scope — team ownership and audit behavior', () => {
     ).rejects.toThrow('Referenced user is not a member of this team');
   });
 
+  it('creates agent actor objects without canonical legacy provenance fields', async () => {
+    const scope = withTeam(db, TEAM_A, USER_OWNER).objects;
+
+    const object = await scope.createObject({
+      type: 'task',
+      canonicalName: 'Follow up on approved chat command',
+      actor: { kind: 'agent', userId: USER_OWNER },
+    });
+
+    expect(object.status).toBe('open');
+    expect(object.agentSuggested).toBe(false);
+
+    const [entityRow] = await db
+      .select({ sourceEventId: entities.sourceEventId })
+      .from(entities)
+      .where(eq(entities.id, object.id));
+    expect(entityRow?.sourceEventId).toBeNull();
+
+    const rows = await db.select().from(objectChanges).where(eq(objectChanges.entityId, object.id));
+
+    expect(rows).toEqual([
+      expect.objectContaining({
+        status: 'applied',
+        sourceEventId: null,
+      }),
+    ]);
+
+    const outputs = await db
+      .select()
+      .from(reconciliationOutputs)
+      .where(eq(reconciliationOutputs.targetId, object.id));
+    expect(outputs).toHaveLength(1);
+    expect(outputs[0]).toMatchObject({
+      outputKind: 'direct_write',
+      targetKind: 'object',
+      operation: 'create',
+      status: 'applied',
+      requiresApproval: false,
+      visibility: 'team',
+      visibilityFloor: 'team',
+    });
+    const createSourceRefs = outputs[0]?.sourceRefs as
+      | { source?: string; rawEventId?: string; sourcePayloadRef?: string | null }[]
+      | undefined;
+    const createSourceRef = createSourceRefs?.[0];
+    expect(createSourceRef?.source).toBe('system');
+    expect(typeof createSourceRef?.rawEventId).toBe('string');
+    expect(createSourceRef?.sourcePayloadRef).toMatch(
+      /^inline:\/\/timeline\/system\/object_create\//,
+    );
+    expect(outputs[0]?.sourcePayloadRefs).toEqual([
+      expect.stringMatching(/^inline:\/\/timeline\/system\/object_create\//),
+    ]);
+    expect(outputs[0]?.payload).toMatchObject({
+      source: 'system',
+      system_event_kind: 'object_create',
+      object_type: 'task',
+      canonical_name: 'Follow up on approved chat command',
+      actor_kind: 'agent',
+      actor_user_id: USER_OWNER,
+    });
+    expect(outputs[0]?.authorityDecision).toMatchObject({
+      decision: 'direct_write',
+      authority_decision: 'direct',
+      source: 'system',
+      target_kind: 'object',
+      target_field: '__create__',
+    });
+
+    const output = outputs[0];
+    if (!output) throw new Error('Expected object create reconciliation output');
+    const runs = await db
+      .select()
+      .from(reconciliationRuns)
+      .where(eq(reconciliationRuns.id, output.runId));
+    expect(runs).toHaveLength(1);
+    expect(runs[0]).toMatchObject({
+      trigger: 'raw_event',
+      scope: 'object_direct_write',
+      status: 'completed',
+    });
+  });
+
+  it('does not expose legacy agentSuggested flags on object read models', async () => {
+    const scope = withTeam(db, TEAM_A, USER_OWNER).objects;
+    const object = await scope.createObject({
+      type: 'task',
+      canonicalName: 'Legacy suggested canonical row',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+
+    await withHistoricalLegacyObjectProvenance(async () => {
+      await db
+        .update(entities)
+        .set({ agentSuggested: true, status: 'suggested' })
+        .where(eq(entities.id, object.id));
+    });
+
+    await expect(scope.getObject(object.id)).resolves.toMatchObject({
+      id: object.id,
+      status: 'suggested',
+      agentSuggested: false,
+    });
+    await expect(scope.listObjects({ id: object.id })).resolves.toEqual([
+      expect.objectContaining({
+        id: object.id,
+        status: 'suggested',
+        agentSuggested: false,
+      }),
+    ]);
+  });
+
   it('writes one timeline event and one object change for a real update, but none for a no-op', async () => {
     const scope = withTeam(db, TEAM_A, USER_OWNER).objects;
     const object = await scope.createObject({
@@ -167,6 +493,12 @@ describe('object scope — team ownership and audit behavior', () => {
       { kind: 'user', userId: USER_OWNER },
     );
     expect(noOp.changedFields).toEqual([]);
+    const outputsAfterNoOp = await db
+      .select()
+      .from(reconciliationOutputs)
+      .where(eq(reconciliationOutputs.targetId, object.id));
+    expect(outputsAfterNoOp).toHaveLength(1);
+    expect(outputsAfterNoOp[0]?.operation).toBe('create');
 
     const update = await scope.updateObject(
       object.id,
@@ -185,12 +517,136 @@ describe('object scope — team ownership and audit behavior', () => {
     );
     expect(eventKinds.filter((kind) => kind === 'object_create')).toHaveLength(1);
     expect(eventKinds.filter((kind) => kind === 'object_update')).toHaveLength(1);
+    const updateEvent = events.find(
+      (event) => (event.sourceMetadata as { kind?: string } | null)?.kind === 'object_update',
+    );
+    expect(updateEvent?.id).toEqual(expect.any(String));
+
+    const evidence = await db
+      .select()
+      .from(reconciliationEvidence)
+      .where(
+        inArray(
+          reconciliationEvidence.rawEventId,
+          events.map((event) => event.id),
+        ),
+      )
+      .orderBy(reconciliationEvidence.eventType);
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        source: 'system',
+        provider: 'system',
+        externalObjectId: object.id,
+        eventType: 'system.object_create',
+        replayState: 'full',
+      }),
+      expect.objectContaining({
+        source: 'system',
+        provider: 'system',
+        externalObjectId: object.id,
+        eventType: 'system.object_update',
+        replayState: 'full',
+      }),
+    ]);
+    expect(evidence[0]?.sourcePayloadRef).toMatch(/^inline:\/\/timeline\/system\/object_create\//);
+    expect(evidence[1]?.sourcePayloadRef).toMatch(/^inline:\/\/timeline\/system\/object_update\//);
+    expect(evidence[0]?.payloadDigest).toEqual(expect.stringMatching(/^sha256:[0-9a-f]{64}$/));
+    expect(evidence[1]?.payloadDigest).toEqual(expect.stringMatching(/^sha256:[0-9a-f]{64}$/));
+    const updateMetadata = updateEvent?.sourceMetadata as Record<string, unknown> | undefined;
+    expect(updateMetadata?.payload_digest).toEqual(expect.stringMatching(/^sha256:[0-9a-f]{64}$/));
+    expect(updateMetadata).toMatchObject({
+      source_snapshot_kind: 'system_direct_write_event',
+      source_snapshot_version: 'system-direct-write-source-snapshot-2026-06',
+      changed_fields: ['status'],
+      source_snapshot: {
+        event_kind: 'object_update',
+        entity_id: object.id,
+        changes: [
+          expect.objectContaining({
+            field: 'status',
+            previousValue: 'todo',
+            newValue: 'done',
+          }),
+        ],
+      },
+    });
+
+    const anchors = await db
+      .select()
+      .from(reconciliationEvidenceAnchors)
+      .where(
+        inArray(
+          reconciliationEvidenceAnchors.evidenceId,
+          evidence.map((row) => row.id),
+        ),
+      );
+    expect(anchors).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          anchorType: 'object',
+          anchorValue: object.id,
+        }),
+        expect.objectContaining({
+          anchorType: 'source_object:system',
+          anchorValue: object.id,
+        }),
+      ]),
+    );
 
     const changes = await db
       .select()
       .from(objectChanges)
       .where(eq(objectChanges.entityId, object.id));
     expect(changes.map((change) => change.field).sort()).toEqual(['__create__', 'status']);
+
+    const directWriteOutputs = await db
+      .select()
+      .from(reconciliationOutputs)
+      .where(eq(reconciliationOutputs.targetId, object.id));
+    expect(directWriteOutputs.map((output) => output.operation).sort()).toEqual([
+      'create',
+      'update',
+    ]);
+    const updateOutput = directWriteOutputs.find((output) => output.operation === 'update');
+    expect(updateOutput).toMatchObject({
+      outputKind: 'direct_write',
+      targetKind: 'object',
+      operation: 'update',
+      status: 'applied',
+      requiresApproval: false,
+      visibility: 'team',
+      visibilityFloor: 'team',
+    });
+    expect(updateOutput?.sourceRefs).toEqual([
+      expect.objectContaining({
+        source: 'system',
+        rawEventId: updateEvent?.id,
+      }),
+    ]);
+    expect(updateOutput?.payload).toMatchObject({
+      source: 'system',
+      system_event_kind: 'object_update',
+      object_type: 'task',
+      canonical_name: 'Prepare launch review',
+      actor_kind: 'user',
+      actor_user_id: USER_OWNER,
+      changed_fields: ['status'],
+      changes: [
+        expect.objectContaining({
+          field: 'status',
+          previousValue: 'todo',
+          newValue: 'done',
+        }),
+      ],
+    });
+    expect(updateOutput?.authorityDecision).toMatchObject({
+      decision: 'direct_write',
+      authority_decision: 'direct',
+      source: 'system',
+      target_kind: 'object',
+      target_field: '__update__',
+      changed_fields: ['status'],
+    });
   });
 
   it('notifies the responsible user and mirrors task due dates to the team calendar', async () => {
@@ -370,7 +826,7 @@ describe('object scope — team ownership and audit behavior', () => {
     ).resolves.toEqual([]);
   });
 
-  it('does not mirror suggested task due dates before human acceptance', async () => {
+  it('does not mirror legacy suggested task due dates before human acceptance', async () => {
     const scope = withTeam(db, TEAM_A, USER_OWNER).objects;
 
     const task = await scope.createObject({
@@ -378,26 +834,35 @@ describe('object scope — team ownership and audit behavior', () => {
       canonicalName: 'Review agent-suggested deadline',
       assigneeUserId: USER_MEMBER,
       dueAt: new Date('2026-07-11T09:00:00.000Z'),
-      agentSuggested: true,
+      status: 'suggested',
       actor: { kind: 'agent', userId: null },
     });
+    const [legacySuggestion] = await db
+      .insert(objectChanges)
+      .values({
+        teamId: TEAM_A,
+        entityId: task.id,
+        actorKind: 'agent',
+        status: 'suggested',
+        field: '__create__',
+        previousValue: null,
+        newValue: { type: 'task', canonicalName: task.canonicalName, status: 'suggested' },
+      })
+      .returning({ id: objectChanges.id });
 
     const inboxRows = await db
       .select()
       .from(notifications)
       .where(eq(notifications.entityId, task.id));
-    expect(inboxRows).toEqual([
-      expect.objectContaining({
-        userId: USER_MEMBER,
-        kind: 'agent_suggestion',
-      }),
-    ]);
+    expect(inboxRows).toEqual([]);
     expect(inboxRows.some((row) => row.kind === 'task_due')).toBe(false);
     await expect(
       db.select().from(calendarEvents).where(eq(calendarEvents.teamId, TEAM_A)),
     ).resolves.toEqual([]);
 
-    await scope.updateObject(task.id, { status: 'open' }, { kind: 'user', userId: USER_OWNER });
+    await expect(
+      scope.acceptObjectChange(legacySuggestion?.id ?? '', { kind: 'user', userId: USER_OWNER }),
+    ).resolves.toBe(true);
 
     const acceptedInboxRows = await db
       .select()
@@ -643,6 +1108,123 @@ describe('object scope — team ownership and audit behavior', () => {
   });
 });
 
+describe('object scope — identity facets', () => {
+  it('emits direct-write outputs when identity facets are created and updated', async () => {
+    const scope = withTeam(db, TEAM_A, USER_OWNER).objects;
+    const person = await scope.createObject({
+      type: 'person',
+      canonicalName: 'Nora Acme',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+
+    const facet = await scope.createIdentityFacet({
+      entityId: person.id,
+      kind: 'email',
+      value: 'Nora@Acme.com',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    const updatedFacet = await scope.createIdentityFacet({
+      entityId: person.id,
+      kind: 'email',
+      value: 'nora@acme.com',
+      metadata: { verified: true },
+      actor: { kind: 'agent', userId: USER_OWNER },
+    });
+    expect(updatedFacet.id).toBe(facet.id);
+
+    const facetRows = await db
+      .select()
+      .from(objectIdentityFacets)
+      .where(eq(objectIdentityFacets.id, facet.id));
+    expect(facetRows[0]).toEqual(
+      expect.objectContaining({
+        entityId: person.id,
+        kind: 'email',
+        value: 'nora@acme.com',
+        normalizedValue: 'nora@acme.com',
+      }),
+    );
+
+    const changes = await db
+      .select()
+      .from(objectChanges)
+      .where(eq(objectChanges.entityId, person.id));
+    expect(changes.map((change) => change.field)).toEqual(
+      expect.arrayContaining(['__identity_facet_create__', '__identity_facet_update__']),
+    );
+    expect(
+      changes
+        .filter((change) =>
+          ['__identity_facet_create__', '__identity_facet_update__'].includes(change.field),
+        )
+        .every((change) => change.sourceEventId === null),
+    ).toBe(true);
+
+    const outputs = await db
+      .select()
+      .from(reconciliationOutputs)
+      .where(eq(reconciliationOutputs.targetId, facet.id));
+    expect(outputs.map((output) => output.operation).sort()).toEqual(['create', 'update']);
+    for (const output of outputs) {
+      expect(output).toEqual(
+        expect.objectContaining({
+          outputKind: 'direct_write',
+          targetKind: 'identity_facet',
+          targetId: facet.id,
+          status: 'applied',
+          requiresApproval: false,
+          visibility: 'team',
+          visibilityFloor: 'team',
+        }),
+      );
+      expect(Array.isArray(output.sourceRefs)).toBe(true);
+      const [sourceRef] = output.sourceRefs as unknown[];
+      const sourceRefRecord =
+        sourceRef && typeof sourceRef === 'object' ? (sourceRef as Record<string, unknown>) : {};
+      expect(sourceRefRecord.source).toBe('system');
+      expect(typeof sourceRefRecord.rawEventId).toBe('string');
+      expect(sourceRefRecord.evidenceId).toBeUndefined();
+      expect(sourceRefRecord.sourcePayloadRef).toEqual(
+        expect.stringMatching(/^inline:\/\/timeline\/system\/identity_facet_/),
+      );
+      expect(output.sourcePayloadRefs).toEqual([
+        expect.stringMatching(/^inline:\/\/timeline\/system\/identity_facet_/),
+      ]);
+    }
+
+    const createOutput = outputs.find((output) => output.operation === 'create');
+    expect(createOutput?.payload).toEqual(
+      expect.objectContaining({
+        system_event_kind: 'identity_facet_create',
+        entity_id: person.id,
+        identity_facet_id: facet.id,
+        identity_facet_kind: 'email',
+        value: 'Nora@Acme.com',
+        normalized_value: 'nora@acme.com',
+        actor_kind: 'user',
+        actor_user_id: USER_OWNER,
+      }),
+    );
+    const updateOutput = outputs.find((output) => output.operation === 'update');
+    expect(updateOutput?.payload).toEqual(
+      expect.objectContaining({
+        system_event_kind: 'identity_facet_update',
+        entity_id: person.id,
+        identity_facet_id: facet.id,
+        identity_facet_kind: 'email',
+        value: 'nora@acme.com',
+        normalized_value: 'nora@acme.com',
+        actor_kind: 'agent',
+        actor_user_id: USER_OWNER,
+        previous: expect.objectContaining({
+          value: 'Nora@Acme.com',
+          normalized_value: 'nora@acme.com',
+        }) as unknown,
+      }),
+    );
+  });
+});
+
 describe('object scope — notes and suggestions', () => {
   it('keeps note edits and deletes author-only, including direct action-style calls', async () => {
     const ownerScope = withTeam(db, TEAM_A, USER_OWNER).objects;
@@ -657,6 +1239,31 @@ describe('object scope — notes and suggestions', () => {
       body: 'Original rollout note',
       authorUserId: USER_OWNER,
     });
+    const noteOutputsAfterCreate = await db
+      .select()
+      .from(reconciliationOutputs)
+      .where(eq(reconciliationOutputs.targetId, note.id));
+    expect(noteOutputsAfterCreate).toHaveLength(1);
+    expect(noteOutputsAfterCreate[0]).toEqual(
+      expect.objectContaining({
+        outputKind: 'direct_write',
+        targetKind: 'object_note',
+        operation: 'create',
+        status: 'applied',
+        requiresApproval: false,
+        visibility: 'team',
+        visibilityFloor: 'team',
+      }),
+    );
+    expect(noteOutputsAfterCreate[0]?.payload).toEqual(
+      expect.objectContaining({
+        source: 'system',
+        system_event_kind: 'object_note_create',
+        entity_id: object.id,
+        note_id: note.id,
+        body: 'Original rollout note',
+      }),
+    );
 
     await expect(
       memberScope.updateNote({
@@ -668,6 +1275,11 @@ describe('object scope — notes and suggestions', () => {
     await expect(
       memberScope.deleteNote({ noteId: note.id, actorUserId: USER_MEMBER }),
     ).resolves.toBe(false);
+    const noteOutputsAfterUnauthorizedAttempts = await db
+      .select()
+      .from(reconciliationOutputs)
+      .where(eq(reconciliationOutputs.targetId, note.id));
+    expect(noteOutputsAfterUnauthorizedAttempts).toHaveLength(1);
 
     await expect(
       ownerScope.updateNote({
@@ -690,6 +1302,68 @@ describe('object scope — notes and suggestions', () => {
       .where(eq(objectChanges.entityId, object.id));
     expect(changes.map((change) => change.field)).toEqual(
       expect.arrayContaining(['__note_create__', '__note_update__', '__note_delete__']),
+    );
+    expect(
+      changes
+        .filter((change) =>
+          ['__note_create__', '__note_update__', '__note_delete__'].includes(change.field),
+        )
+        .every((change) => change.sourceEventId === null),
+    ).toBe(true);
+
+    const noteOutputs = await db
+      .select()
+      .from(reconciliationOutputs)
+      .where(eq(reconciliationOutputs.targetId, note.id));
+    expect(noteOutputs.map((output) => output.operation).sort()).toEqual([
+      'archive_or_cancel',
+      'create',
+      'update',
+    ]);
+    for (const output of noteOutputs) {
+      expect(output).toEqual(
+        expect.objectContaining({
+          outputKind: 'direct_write',
+          targetKind: 'object_note',
+          targetId: note.id,
+          status: 'applied',
+          requiresApproval: false,
+          visibility: 'team',
+          visibilityFloor: 'team',
+        }),
+      );
+      expect(Array.isArray(output.sourceRefs)).toBe(true);
+      const [sourceRef] = output.sourceRefs as unknown[];
+      const sourceRefRecord =
+        sourceRef && typeof sourceRef === 'object' ? (sourceRef as Record<string, unknown>) : {};
+      expect(sourceRefRecord.source).toBe('system');
+      expect(typeof sourceRefRecord.rawEventId).toBe('string');
+      expect(sourceRefRecord.evidenceId).toBeUndefined();
+      expect(sourceRefRecord.sourcePayloadRef).toEqual(
+        expect.stringMatching(/^inline:\/\/timeline\/system\/object_note_/),
+      );
+      expect(output.sourcePayloadRefs).toEqual([
+        expect.stringMatching(/^inline:\/\/timeline\/system\/object_note_/),
+      ]);
+    }
+    const updateOutput = noteOutputs.find((output) => output.operation === 'update');
+    expect(updateOutput?.payload).toEqual(
+      expect.objectContaining({
+        system_event_kind: 'object_note_update',
+        entity_id: object.id,
+        note_id: note.id,
+        body: 'Updated rollout note',
+        previous_body: 'Original rollout note',
+      }),
+    );
+    const deleteOutput = noteOutputs.find((output) => output.operation === 'archive_or_cancel');
+    expect(deleteOutput?.payload).toEqual(
+      expect.objectContaining({
+        system_event_kind: 'object_note_delete',
+        entity_id: object.id,
+        note_id: note.id,
+        previous_body: 'Updated rollout note',
+      }),
     );
   });
 
@@ -720,18 +1394,34 @@ describe('object scope — notes and suggestions', () => {
         cluster.canonicalName === 'example.com/checklists/launch',
     );
     if (!linkCluster) throw new Error('expected link cluster');
-    await expect(
-      db
-        .select()
-        .from(artifactClusterMembers)
-        .where(eq(artifactClusterMembers.clusterId, linkCluster.id)),
-    ).resolves.toEqual([
+    const initialAssociationRows = await db
+      .select()
+      .from(artifactEvidenceAssociations)
+      .where(eq(artifactEvidenceAssociations.clusterId, linkCluster.id));
+    expect(initialAssociationRows).toEqual([
       expect.objectContaining({
         role: 'related_context',
         strength: 'semantic',
-        authoritative: false,
+        associationSource: 'model_candidate',
       }),
     ]);
+    await db.insert(artifactClusterMembers).values({
+      teamId: TEAM_A,
+      clusterId: linkCluster.id,
+      rawEventId: initialAssociationRows[0]?.rawEventId ?? null,
+      role: 'related_context',
+      strength: 'semantic',
+      metadata: {
+        canonical_name: 'legacy.example.com/stale-checklist',
+        canonical_url: 'https://legacy.example.com/stale-checklist',
+        display_url: 'legacy.example.com/stale-checklist',
+        domain: 'legacy.example.com',
+      },
+    });
+    await db
+      .update(artifactEvidenceAssociations)
+      .set({ rawEventId: null })
+      .where(eq(artifactEvidenceAssociations.clusterId, linkCluster.id));
 
     const detail = await scope.getObject(object.id);
     expect(detail?.connectedWork.links).toEqual([
@@ -755,6 +1445,12 @@ describe('object scope — notes and suggestions', () => {
         displayUrl: 'example.com/checklists/final',
       }),
     ]);
+    await expect(
+      db
+        .select()
+        .from(artifactClusterMembers)
+        .where(eq(artifactClusterMembers.clusterId, linkCluster.id)),
+    ).resolves.toHaveLength(1);
 
     await expect(
       scope.updateNote({
@@ -1061,18 +1757,39 @@ describe('object scope — notes and suggestions', () => {
         },
       })
       .returning({ id: artifactClusters.id });
-    await db.insert(artifactClusterMembers).values({
+    const [linkEvidence] = await db
+      .insert(reconciliationEvidence)
+      .values({
+        teamId: TEAM_A,
+        rawEventId: raw?.id ?? '',
+        source: 'web',
+        eventType: 'link.detected',
+        occurredAt: new Date('2026-06-16T10:00:00.000Z'),
+        visibility: 'team',
+        actor: {},
+        contentDigest: 'digest:connected-work-link',
+        normalizerVersion: 'test-v1',
+        dedupeKey: 'evidence:connected-work-link',
+      })
+      .returning({ id: reconciliationEvidence.id });
+    await db.insert(artifactEvidenceAssociations).values({
       teamId: TEAM_A,
       clusterId: linkCluster?.id ?? '',
+      evidenceId: linkEvidence?.id ?? '',
       rawEventId: raw?.id ?? '',
       role: 'related_context',
       strength: 'semantic',
+      associationSource: 'model_candidate',
+      sourceRefs: [],
+      visibility: 'team',
+      visibilityFloor: 'team',
       metadata: {
         canonical_name: 'example.com/dfk-pilot',
         canonical_url: 'https://example.com/dfk-pilot',
         display_url: 'example.com/dfk-pilot',
         domain: 'example.com',
       },
+      dedupeKey: 'association:connected-work-link',
     });
     const [suggestion, substringSuggestion] = await db
       .insert(agentSuggestions)
@@ -1113,6 +1830,85 @@ describe('object scope — notes and suggestions', () => {
         proposedPayload: { canonicalName: 'ADFK parser settings' },
       },
     ]);
+    const [artifactRaw] = await db
+      .insert(rawEvents)
+      .values({
+        teamId: TEAM_A,
+        authorUserId: USER_OWNER,
+        source: 'integration',
+        contentText: 'Sentry incident INC-42 moved to active customer impact.',
+        occurredAt: new Date('2026-06-19T10:00:00.000Z'),
+        visibility: 'team',
+      })
+      .returning({ id: rawEvents.id, occurredAt: rawEvents.occurredAt });
+    const [cluster] = await db
+      .insert(artifactClusters)
+      .values({
+        teamId: TEAM_A,
+        artifactClusterKind: 'incident',
+        artifactType: 'incident',
+        canonicalName: 'Checkout incident INC-42',
+        status: 'active',
+        canonicalEntityId: company.id,
+      })
+      .returning({ id: artifactClusters.id });
+    const [artifactEvidence] = await db
+      .insert(reconciliationEvidence)
+      .values({
+        teamId: TEAM_A,
+        rawEventId: artifactRaw?.id ?? '',
+        source: 'integration',
+        provider: 'sentry',
+        externalObjectId: 'INC-42',
+        eventType: 'issue.updated',
+        occurredAt: artifactRaw?.occurredAt ?? new Date('2026-06-19T10:00:00.000Z'),
+        visibility: 'team',
+        actor: {},
+        contentDigest: 'digest:connected-work-artifact',
+        normalizerVersion: 'test-v1',
+        dedupeKey: 'evidence:connected-work-artifact',
+      })
+      .returning({ id: reconciliationEvidence.id });
+    await db.insert(artifactEvidenceAssociations).values({
+      teamId: TEAM_A,
+      clusterId: cluster?.id ?? '',
+      evidenceId: artifactEvidence?.id ?? '',
+      role: 'lifecycle_update',
+      strength: 'provider',
+      associationSource: 'authoritative_provider',
+      sourceRefs: [],
+      visibility: 'team',
+      visibilityFloor: 'team',
+      dedupeKey: 'association:connected-work-artifact',
+    });
+    const [run] = await db
+      .insert(reconciliationRuns)
+      .values({
+        teamId: TEAM_A,
+        trigger: 'eval',
+        scope: 'connected-work-test',
+        status: 'completed',
+        inputFingerprint: 'connected-work-output',
+        engineVersion: 'test-v1',
+      })
+      .returning({ id: reconciliationRuns.id });
+    await db.insert(reconciliationOutputs).values({
+      teamId: TEAM_A,
+      runId: run?.id ?? '',
+      clusterId: cluster?.id ?? null,
+      outputKind: 'approval_bundle',
+      targetKind: 'object',
+      operation: 'update',
+      targetId: null,
+      payload: { title: 'Review customer-impact incident', status: 'blocked' },
+      authorityDecision: { decision: 'approval_required', policy_version: 'test-v1' },
+      requiresApproval: true,
+      sourceRefs: [{ source: 'sentry', rawEventId: artifactRaw?.id }],
+      visibility: 'team',
+      visibilityFloor: 'team',
+      dedupeKey: 'output:connected-work-artifact',
+      status: 'pending',
+    });
 
     const detail = await scope.getObject(company.id);
 
@@ -1130,9 +1926,18 @@ describe('object scope — notes and suggestions', () => {
     expect(detail?.connectedWork.calendarEvents).not.toContainEqual(
       expect.objectContaining({ title: 'ADFK parser planning' }),
     );
-    expect(detail?.connectedWork.timelineEvents).toEqual([
-      expect.objectContaining({ id: raw?.id, contentText: 'Jonne from DFK discussed the pilot.' }),
-    ]);
+    expect(detail?.connectedWork.timelineEvents).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: raw?.id,
+          contentText: 'Jonne from DFK discussed the pilot.',
+        }),
+        expect.objectContaining({
+          id: artifactRaw?.id,
+          contentText: 'Sentry incident INC-42 moved to active customer impact.',
+        }),
+      ]),
+    );
     expect(detail?.connectedWork.timelineEvents).not.toContainEqual(
       expect.objectContaining({ id: substringRaw?.id }),
     );
@@ -1142,9 +1947,12 @@ describe('object scope — notes and suggestions', () => {
     expect(detail?.connectedWork.boards).toEqual([
       expect.objectContaining({ boardName: 'Pilot pipeline', nextStep: 'Agree pilot scope' }),
     ]);
-    expect(detail?.connectedWork.pendingApprovals).toEqual([
-      expect.objectContaining({ title: 'Merge DFK Finland Oy into DFK' }),
-    ]);
+    expect(detail?.connectedWork.pendingApprovals).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ title: 'Merge DFK Finland Oy into DFK' }),
+        expect.objectContaining({ title: 'Review customer-impact incident' }),
+      ]),
+    );
     expect(detail?.connectedWork.pendingApprovals).not.toContainEqual(
       expect.objectContaining({ title: 'Review ADFK parser settings' }),
     );
@@ -1163,6 +1971,75 @@ describe('object scope — notes and suggestions', () => {
     expect(detail?.connectedWork.capturedFiles).toEqual([
       expect.objectContaining({ name: 'dfk-whiteboard.png', contentType: 'image/png' }),
     ]);
+  });
+
+  it('does not surface connected work links from legacy artifact_cluster_members', async () => {
+    const workspace = withTeam(db, TEAM_A, USER_OWNER);
+    const scope = workspace.objects;
+    const company = await scope.createObject({
+      type: 'company',
+      canonicalName: 'DFK',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    const [raw] = await db
+      .insert(rawEvents)
+      .values({
+        teamId: TEAM_A,
+        authorUserId: USER_OWNER,
+        source: 'web',
+        contentText: 'DFK shared https://legacy.example.com/dfk-pilot.',
+        occurredAt: new Date('2026-06-16T10:00:00.000Z'),
+        visibility: 'team',
+      })
+      .returning({ id: rawEvents.id });
+    const [fact] = await db
+      .insert(facts)
+      .values({
+        teamId: TEAM_A,
+        rawEventId: raw?.id ?? '',
+        statement: 'DFK shared a legacy pilot link.',
+        confidence: 0.9,
+        modelVersion: 'test',
+      })
+      .returning({ id: facts.id });
+    await db.insert(factEntities).values({
+      factId: fact?.id ?? '',
+      entityId: company.id,
+      role: 'subject',
+    });
+    const [linkCluster] = await db
+      .insert(artifactClusters)
+      .values({
+        teamId: TEAM_A,
+        artifactType: 'link',
+        canonicalName: 'legacy.example.com/dfk-pilot',
+        metadata: {
+          canonical_url: 'https://legacy.example.com/dfk-pilot',
+          display_url: 'legacy.example.com/dfk-pilot',
+          domain: 'legacy.example.com',
+        },
+      })
+      .returning({ id: artifactClusters.id });
+    await db.insert(artifactClusterMembers).values({
+      teamId: TEAM_A,
+      clusterId: linkCluster?.id ?? '',
+      rawEventId: raw?.id ?? '',
+      role: 'related_context',
+      strength: 'semantic',
+      metadata: {
+        canonical_name: 'legacy.example.com/dfk-pilot',
+        canonical_url: 'https://legacy.example.com/dfk-pilot',
+        display_url: 'legacy.example.com/dfk-pilot',
+        domain: 'legacy.example.com',
+      },
+    });
+
+    const detail = await scope.getObject(company.id);
+
+    expect(detail?.connectedWork.timelineEvents).toEqual([
+      expect.objectContaining({ id: raw?.id }),
+    ]);
+    expect(detail?.connectedWork.links).toEqual([]);
   });
 
   it('does not surface fact-backed connected work from raw events hidden from the viewer', async () => {
@@ -1202,11 +2079,191 @@ describe('object scope — notes and suggestions', () => {
       { factId: fact?.id ?? '', entityId: company.id, role: 'subject' },
       { factId: fact?.id ?? '', entityId: hiddenPerson.id, role: 'object' },
     ]);
+    const [cluster] = await db
+      .insert(artifactClusters)
+      .values({
+        teamId: TEAM_A,
+        artifactClusterKind: 'customer_project',
+        artifactType: 'project',
+        canonicalName: 'Private DFK terms',
+        canonicalEntityId: company.id,
+      })
+      .returning({ id: artifactClusters.id });
+    const [evidence] = await db
+      .insert(reconciliationEvidence)
+      .values({
+        teamId: TEAM_A,
+        rawEventId: raw?.id ?? '',
+        source: 'web',
+        eventType: 'private.note',
+        occurredAt: new Date('2026-06-16T10:00:00.000Z'),
+        visibility: 'private',
+        visibilityOwnerUserId: USER_MEMBER,
+        actor: {},
+        contentDigest: 'digest:hidden-connected-work',
+        normalizerVersion: 'test-v1',
+        dedupeKey: 'evidence:hidden-connected-work',
+      })
+      .returning({ id: reconciliationEvidence.id });
+    await db.insert(artifactEvidenceAssociations).values({
+      teamId: TEAM_A,
+      clusterId: cluster?.id ?? '',
+      evidenceId: evidence?.id ?? '',
+      role: 'evidence_only',
+      strength: 'human',
+      associationSource: 'human',
+      sourceRefs: [],
+      visibility: 'private',
+      visibilityOwnerUserId: USER_MEMBER,
+      visibilityFloor: 'private',
+      visibilityFloorOwnerUserId: USER_MEMBER,
+      dedupeKey: 'association:hidden-connected-work',
+    });
 
     const detail = await workspace.objects.getObject(company.id);
 
     expect(detail?.connectedWork.objects).toEqual([]);
     expect(detail?.connectedWork.timelineEvents).toEqual([]);
+  });
+
+  it('does not surface pending reconciliation outputs hidden from the viewer', async () => {
+    const workspace = withTeam(db, TEAM_A, USER_OWNER);
+    const company = await workspace.objects.createObject({
+      type: 'company',
+      canonicalName: 'DFK',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    const [raw] = await db
+      .insert(rawEvents)
+      .values({
+        teamId: TEAM_A,
+        authorUserId: USER_OWNER,
+        source: 'integration',
+        contentText: 'Sentry incident INC-99 affects DFK onboarding.',
+        occurredAt: new Date('2026-06-17T10:00:00.000Z'),
+        visibility: 'team',
+      })
+      .returning({ id: rawEvents.id });
+    const [cluster] = await db
+      .insert(artifactClusters)
+      .values({
+        teamId: TEAM_A,
+        artifactClusterKind: 'incident',
+        artifactType: 'incident',
+        canonicalName: 'INC-99',
+        canonicalEntityId: company.id,
+      })
+      .returning({ id: artifactClusters.id });
+    const [evidence] = await db
+      .insert(reconciliationEvidence)
+      .values({
+        teamId: TEAM_A,
+        rawEventId: raw?.id ?? '',
+        source: 'integration',
+        provider: 'sentry',
+        externalObjectId: 'INC-99',
+        eventType: 'issue.updated',
+        occurredAt: new Date('2026-06-17T10:00:00.000Z'),
+        visibility: 'team',
+        actor: {},
+        contentDigest: 'digest:hidden-output-evidence',
+        normalizerVersion: 'test-v1',
+        dedupeKey: 'evidence:hidden-output-evidence',
+      })
+      .returning({ id: reconciliationEvidence.id });
+    await db.insert(artifactEvidenceAssociations).values({
+      teamId: TEAM_A,
+      clusterId: cluster?.id ?? '',
+      evidenceId: evidence?.id ?? '',
+      rawEventId: raw?.id ?? '',
+      role: 'lifecycle_update',
+      strength: 'provider',
+      associationSource: 'authoritative_provider',
+      sourceRefs: [],
+      visibility: 'team',
+      visibilityFloor: 'team',
+      dedupeKey: 'association:hidden-output-evidence',
+    });
+    const [run] = await db
+      .insert(reconciliationRuns)
+      .values({
+        teamId: TEAM_A,
+        trigger: 'eval',
+        scope: 'connected-work-hidden-output',
+        status: 'completed',
+        inputFingerprint: 'connected-work-hidden-output',
+        engineVersion: 'test-v1',
+      })
+      .returning({ id: reconciliationRuns.id });
+    await db.insert(reconciliationOutputs).values([
+      {
+        teamId: TEAM_A,
+        runId: run?.id ?? '',
+        clusterId: cluster?.id ?? null,
+        outputKind: 'approval_bundle',
+        targetKind: 'object',
+        operation: 'update',
+        targetId: company.id,
+        payload: { title: 'Visible DFK incident review' },
+        authorityDecision: { decision: 'approval_required', policy_version: 'test-v1' },
+        requiresApproval: true,
+        sourceRefs: [{ source: 'sentry', rawEventId: raw?.id }],
+        visibility: 'team',
+        visibilityFloor: 'team',
+        dedupeKey: 'output:visible-dfk-incident-review',
+        status: 'pending',
+      },
+      {
+        teamId: TEAM_A,
+        runId: run?.id ?? '',
+        clusterId: cluster?.id ?? null,
+        outputKind: 'approval_bundle',
+        targetKind: 'object',
+        operation: 'update',
+        targetId: company.id,
+        payload: { title: 'Hidden direct DFK approval' },
+        authorityDecision: { decision: 'approval_required', policy_version: 'test-v1' },
+        requiresApproval: true,
+        sourceRefs: [{ source: 'sentry', rawEventId: raw?.id }],
+        visibility: 'private',
+        visibilityOwnerUserId: USER_MEMBER,
+        visibilityFloor: 'private',
+        visibilityFloorOwnerUserId: USER_MEMBER,
+        dedupeKey: 'output:hidden-direct-dfk-approval',
+        status: 'pending',
+      },
+      {
+        teamId: TEAM_A,
+        runId: run?.id ?? '',
+        clusterId: cluster?.id ?? null,
+        outputKind: 'approval_bundle',
+        targetKind: 'object',
+        operation: 'update',
+        targetId: null,
+        payload: { title: 'Hidden source-ref DFK approval' },
+        authorityDecision: { decision: 'approval_required', policy_version: 'test-v1' },
+        requiresApproval: true,
+        sourceRefs: [{ source: 'sentry', rawEventId: raw?.id }],
+        visibility: 'private',
+        visibilityOwnerUserId: USER_MEMBER,
+        visibilityFloor: 'private',
+        visibilityFloorOwnerUserId: USER_MEMBER,
+        dedupeKey: 'output:hidden-source-ref-dfk-approval',
+        status: 'pending',
+      },
+    ]);
+
+    const detail = await workspace.objects.getObject(company.id);
+
+    expect(detail?.connectedWork.pendingApprovals).toEqual([
+      expect.objectContaining({ title: 'Visible DFK incident review' }),
+    ]);
+    expect(detail?.connectedWork.pendingApprovals).not.toContainEqual(
+      expect.objectContaining({ title: 'Hidden direct DFK approval' }),
+    );
+    expect(detail?.connectedWork.pendingApprovals).not.toContainEqual(
+      expect.objectContaining({ title: 'Hidden source-ref DFK approval' }),
+    );
   });
 
   it('surfaces paraphrased timeline evidence for long task titles', async () => {
@@ -1453,6 +2510,47 @@ describe('object scope — archive visibility', () => {
     expect(first.changedFields).toEqual(['archivedAt']);
     expect(second.changedFields).toEqual([]);
     expect(second.archivedAt?.getTime()).toBe(first.archivedAt?.getTime());
+    const changeRows = await db
+      .select()
+      .from(objectChanges)
+      .where(eq(objectChanges.entityId, object.id));
+    expect(
+      changeRows
+        .filter((change) => change.field === 'archivedAt' || change.field === '__create__')
+        .every((change) => change.sourceEventId === null),
+    ).toBe(true);
+
+    const outputs = await db
+      .select()
+      .from(reconciliationOutputs)
+      .where(eq(reconciliationOutputs.targetId, object.id));
+    expect(outputs.map((output) => output.operation).sort()).toEqual([
+      'archive_or_cancel',
+      'create',
+    ]);
+    const archiveOutput = outputs.find((output) => output.operation === 'archive_or_cancel');
+    expect(archiveOutput).toEqual(
+      expect.objectContaining({
+        outputKind: 'direct_write',
+        targetKind: 'object',
+        status: 'applied',
+        requiresApproval: false,
+        visibility: 'team',
+        visibilityFloor: 'team',
+      }),
+    );
+    expect(archiveOutput?.payload).toEqual(
+      expect.objectContaining({
+        system_event_kind: 'object_update',
+        changed_fields: ['archivedAt'],
+      }),
+    );
+    expect(archiveOutput?.authorityDecision).toEqual(
+      expect.objectContaining({
+        target_kind: 'object',
+        target_field: '__archive__',
+      }),
+    );
   });
 
   it('searches exact object names outside the recent list window', async () => {
@@ -1623,7 +2721,7 @@ describe('object scope — archive visibility', () => {
 });
 
 describe('object scope — relationships', () => {
-  it('stores related relationships in canonical endpoint order and dedupes reverse inserts', async () => {
+  it('stores related relationships in canonical endpoint order, dedupes reverse inserts, and emits direct-write outputs', async () => {
     const scope = withTeam(db, TEAM_A, USER_OWNER).objects;
     const first = await scope.createObject({
       type: 'person',
@@ -1651,6 +2749,8 @@ describe('object scope — relationships', () => {
     });
 
     expect(duplicate?.id).toBe(created?.id);
+    const relationshipId = created?.id;
+    if (!relationshipId) throw new Error('expected relationship id');
     const relationships = await db
       .select()
       .from(entityRelationships)
@@ -1662,6 +2762,128 @@ describe('object scope — relationships', () => {
         kind: 'related',
       }),
     ]);
+
+    const linkEventRows = await db.select().from(rawEvents).where(eq(rawEvents.teamId, TEAM_A));
+    const linkEvent = linkEventRows.find(
+      (row) => (row.sourceMetadata as { kind?: string } | null)?.kind === 'relationship_create',
+    );
+    expect(linkEvent?.id).toEqual(expect.any(String));
+    const linkOutputs = await db
+      .select()
+      .from(reconciliationOutputs)
+      .where(eq(reconciliationOutputs.targetId, relationshipId));
+    expect(linkOutputs).toHaveLength(1);
+    expect(linkOutputs[0]).toMatchObject({
+      outputKind: 'direct_write',
+      targetKind: 'object_relationship',
+      operation: 'link',
+      status: 'applied',
+      requiresApproval: false,
+      visibility: 'team',
+      visibilityFloor: 'team',
+    });
+    expect(linkOutputs[0]?.sourceRefs).toEqual([
+      expect.objectContaining({
+        source: 'system',
+        rawEventId: linkEvent?.id,
+      }),
+    ]);
+    const linkSourceRefs = linkOutputs[0]?.sourceRefs as
+      | { sourcePayloadRef?: string | null }[]
+      | undefined;
+    const linkSourceRef = linkSourceRefs?.[0];
+    expect(linkSourceRef?.sourcePayloadRef).toMatch(
+      /^inline:\/\/timeline\/system\/relationship_create\//,
+    );
+    expect(linkOutputs[0]?.sourcePayloadRefs).toEqual([
+      expect.stringMatching(/^inline:\/\/timeline\/system\/relationship_create\//),
+    ]);
+    expect(linkOutputs[0]?.payload).toMatchObject({
+      source: 'system',
+      system_event_kind: 'relationship_create',
+      relationship_id: relationshipId,
+      from_entity_id: expectedFrom,
+      to_entity_id: expectedTo,
+      relationship_kind: 'related',
+      actor_kind: 'user',
+      actor_user_id: USER_OWNER,
+    });
+    expect(linkOutputs[0]?.authorityDecision).toMatchObject({
+      decision: 'direct_write',
+      authority_decision: 'direct',
+      source: 'system',
+      target_kind: 'object_relationship',
+      target_field: '__relationship_create__',
+    });
+
+    await expect(
+      scope.removeRelationship(relationshipId, { kind: 'user', userId: USER_OWNER }),
+    ).resolves.toBe(true);
+    const relationshipChangeRows = await db
+      .select()
+      .from(objectChanges)
+      .where(eq(objectChanges.teamId, TEAM_A));
+    expect(
+      relationshipChangeRows
+        .filter((change) =>
+          ['__relationship_create__', '__relationship_delete__'].includes(change.field),
+        )
+        .every((change) => change.sourceEventId === null),
+    ).toBe(true);
+    const unlinkEventRows = await db.select().from(rawEvents).where(eq(rawEvents.teamId, TEAM_A));
+    const unlinkEvent = unlinkEventRows.find(
+      (row) => (row.sourceMetadata as { kind?: string } | null)?.kind === 'relationship_delete',
+    );
+    expect(unlinkEvent?.id).toEqual(expect.any(String));
+    const relationshipOutputs = await db
+      .select()
+      .from(reconciliationOutputs)
+      .where(eq(reconciliationOutputs.targetId, relationshipId));
+    expect(relationshipOutputs.map((output) => output.operation).sort()).toEqual([
+      'link',
+      'unlink',
+    ]);
+    const unlinkOutput = relationshipOutputs.find((output) => output.operation === 'unlink');
+    expect(unlinkOutput).toMatchObject({
+      outputKind: 'direct_write',
+      targetKind: 'object_relationship',
+      operation: 'unlink',
+      status: 'applied',
+      requiresApproval: false,
+      visibility: 'team',
+      visibilityFloor: 'team',
+    });
+    expect(unlinkOutput?.sourceRefs).toEqual([
+      expect.objectContaining({
+        source: 'system',
+        rawEventId: unlinkEvent?.id,
+      }),
+    ]);
+    const unlinkSourceRefs = unlinkOutput?.sourceRefs as
+      | { sourcePayloadRef?: string | null }[]
+      | undefined;
+    const unlinkSourceRef = unlinkSourceRefs?.[0];
+    expect(unlinkSourceRef?.sourcePayloadRef).toMatch(
+      /^inline:\/\/timeline\/system\/relationship_delete\//,
+    );
+    expect(unlinkOutput?.sourcePayloadRefs).toEqual([
+      expect.stringMatching(/^inline:\/\/timeline\/system\/relationship_delete\//),
+    ]);
+    expect(unlinkOutput?.payload).toMatchObject({
+      source: 'system',
+      system_event_kind: 'relationship_delete',
+      relationship_id: relationshipId,
+      from_entity_id: expectedFrom,
+      to_entity_id: expectedTo,
+      relationship_kind: 'related',
+    });
+    expect(unlinkOutput?.authorityDecision).toMatchObject({
+      decision: 'direct_write',
+      authority_decision: 'direct',
+      source: 'system',
+      target_kind: 'object_relationship',
+      target_field: '__relationship_delete__',
+    });
   });
 
   it('collapses reverse related duplicates when transferring relationships during merge', async () => {
@@ -2126,6 +3348,66 @@ describe('object scope — merge cleanup', () => {
     expect(changeRows.map((row) => row.field)).toEqual(
       expect.arrayContaining(['__merge__', '__merged_from__', '__note_create__']),
     );
+    expect(
+      changeRows
+        .filter((row) => ['__merge__', '__merged_from__'].includes(row.field))
+        .every((row) => row.sourceEventId === null),
+    ).toBe(true);
+    const mergeEventRows = await db.select().from(rawEvents).where(eq(rawEvents.teamId, TEAM_A));
+    const mergeEvent = mergeEventRows.find(
+      (row) => (row.sourceMetadata as { kind?: string } | null)?.kind === 'object_merge',
+    );
+    expect(mergeEvent?.id).toEqual(expect.any(String));
+    const mergeOutputs = await db
+      .select()
+      .from(reconciliationOutputs)
+      .where(eq(reconciliationOutputs.targetId, survivor.id));
+    const mergeOutput = mergeOutputs.find((output) => output.operation === 'merge');
+    expect(mergeOutput).toMatchObject({
+      outputKind: 'direct_write',
+      targetKind: 'object',
+      operation: 'merge',
+      status: 'applied',
+      requiresApproval: false,
+      visibility: 'team',
+      visibilityFloor: 'team',
+    });
+    expect(mergeOutput?.sourceRefs).toEqual([
+      expect.objectContaining({
+        source: 'system',
+        rawEventId: mergeEvent?.id,
+      }),
+    ]);
+    const mergeSourceRefs = mergeOutput?.sourceRefs as
+      | { sourcePayloadRef?: string | null }[]
+      | undefined;
+    const mergeSourceRef = mergeSourceRefs?.[0];
+    expect(mergeSourceRef?.sourcePayloadRef).toMatch(
+      /^inline:\/\/timeline\/system\/object_merge\//,
+    );
+    expect(mergeOutput?.sourcePayloadRefs).toEqual([
+      expect.stringMatching(/^inline:\/\/timeline\/system\/object_merge\//),
+    ]);
+    expect(mergeOutput?.payload).toMatchObject({
+      source: 'system',
+      system_event_kind: 'object_merge',
+      object_type: 'company',
+      canonical_name: 'PwC',
+      actor_kind: 'user',
+      actor_user_id: USER_OWNER,
+      merged_entity_ids: [typo.id, vendor.id],
+      merged_objects: [
+        expect.objectContaining({ id: typo.id, canonicalName: 'PVC', type: 'company' }),
+        expect.objectContaining({ id: vendor.id, canonicalName: 'PwC Finland', type: 'vendor' }),
+      ],
+    });
+    expect(mergeOutput?.authorityDecision).toMatchObject({
+      decision: 'direct_write',
+      authority_decision: 'direct',
+      source: 'system',
+      target_kind: 'object',
+      target_field: '__merge__',
+    });
     const cardRows = await db.select().from(boardItems).where(eq(boardItems.boardId, board.id));
     expect(cardRows.filter((row) => !row.archivedAt)).toEqual([
       expect.objectContaining({ id: survivorCard.id, entityId: survivor.id }),
@@ -2609,6 +3891,195 @@ describe('object scope — merge cleanup', () => {
     expect(detail?.summary?.cannotGenerateReason).toBe('not_enough_object_memory');
   });
 
+  it('does not count legacy object-change source_event_id rows as summary change sources', async () => {
+    const workspace = withTeam(db, TEAM_A, USER_OWNER);
+    const object = await workspace.objects.createObject({
+      type: 'company',
+      canonicalName: 'Legacy Summary Co',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    const legacyEvent = await workspace.timeline.createEvent({
+      authorUserId: USER_OWNER,
+      source: 'telegram',
+      contentText: 'Legacy object change source pointer.',
+      visibility: 'team',
+    });
+
+    await withHistoricalLegacyObjectProvenance(async () => {
+      await db.insert(objectChanges).values({
+        teamId: TEAM_A,
+        entityId: object.id,
+        actorKind: 'agent',
+        actorUserId: null,
+        status: 'applied',
+        field: 'stage',
+        previousValue: null,
+        newValue: 'pilot',
+        sourceEventId: legacyEvent.id,
+        note: 'Legacy pointer should not feed summary context.',
+      });
+    });
+
+    const detail = await workspace.objects.getObject(object.id);
+
+    expect(detail?.summary?.sourceCounts.changes).toBe(0);
+  });
+
+  it('invalidates object summaries from output source refs, not legacy object-change pointers', async () => {
+    const workspace = withTeam(db, TEAM_A, USER_OWNER);
+    const object = await workspace.objects.createObject({
+      type: 'company',
+      canonicalName: 'Output Summary Co',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    const task = await workspace.objects.createObject({
+      type: 'task',
+      canonicalName: 'Refresh output-backed summary',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    const legacyEvent = await workspace.timeline.createEvent({
+      authorUserId: USER_OWNER,
+      source: 'telegram',
+      contentText: 'Legacy object summary pointer.',
+      visibility: 'team',
+    });
+    await upsertObjectSummary({
+      teamId: TEAM_A,
+      entityId: object.id,
+      status: 'ready',
+      summary: {
+        overview: 'Output Summary Co is ready.',
+        overviewSourceRefs: [{ kind: 'field', id: 'status' }],
+        currentState: [],
+        openQuestions: [],
+        conflicts: [],
+      },
+      plainText: 'Output Summary Co is ready.',
+      sourceRefs: [{ kind: 'field', id: 'status' }],
+      sourceCounts: {
+        fields: 1,
+        facts: 0,
+        events: 0,
+        notes: 0,
+        relationships: 0,
+        tasks: 0,
+        changes: 0,
+      },
+      inputFingerprint: 'legacy-pointer-summary',
+      generatedAt: new Date('2026-06-02T10:05:00.000Z'),
+    });
+    await upsertObjectSummary({
+      teamId: TEAM_A,
+      entityId: task.id,
+      status: 'ready',
+      summary: {
+        overview: 'Refresh output-backed summary is queued.',
+        overviewSourceRefs: [{ kind: 'field', id: 'status' }],
+        currentState: [],
+        openQuestions: [],
+        conflicts: [],
+      },
+      plainText: 'Refresh output-backed summary is queued.',
+      sourceRefs: [{ kind: 'field', id: 'status' }],
+      sourceCounts: {
+        fields: 1,
+        facts: 0,
+        events: 0,
+        notes: 0,
+        relationships: 0,
+        tasks: 0,
+        changes: 0,
+      },
+      inputFingerprint: 'task-output-summary',
+      generatedAt: new Date('2026-06-02T10:05:00.000Z'),
+    });
+    await withHistoricalLegacyObjectProvenance(async () => {
+      await db.insert(objectChanges).values({
+        teamId: TEAM_A,
+        entityId: object.id,
+        actorKind: 'agent',
+        actorUserId: null,
+        status: 'applied',
+        field: 'stage',
+        previousValue: null,
+        newValue: 'pilot',
+        sourceEventId: legacyEvent.id,
+        note: 'Legacy pointer should not invalidate summaries.',
+      });
+    });
+
+    await expect(
+      invalidateObjectSummariesForRawEvent(db, workspace, legacyEvent.id),
+    ).resolves.toEqual([]);
+    await expect(
+      db.select().from(objectSummaries).where(eq(objectSummaries.entityId, object.id)),
+    ).resolves.toHaveLength(1);
+
+    const [run] = await db
+      .insert(reconciliationRuns)
+      .values({
+        teamId: TEAM_A,
+        trigger: 'manual_repair',
+        scope: 'object-summary-output-source-ref',
+        status: 'completed',
+        inputFingerprint: 'object-summary-output-source-ref',
+        engineVersion: 'test-v1',
+      })
+      .returning({ id: reconciliationRuns.id });
+    await db.insert(reconciliationOutputs).values([
+      {
+        teamId: TEAM_A,
+        runId: run?.id ?? '',
+        outputKind: 'direct_write',
+        targetKind: 'object',
+        operation: 'update',
+        targetId: object.id,
+        payload: { canonical_name: object.canonicalName, status: 'pilot' },
+        authorityDecision: { decision: 'authoritative', policy_version: 'test-v1' },
+        requiresApproval: false,
+        sourceRefs: [{ source: 'telegram', rawEventId: legacyEvent.id }],
+        visibility: 'team',
+        visibilityFloor: 'team',
+        dedupeKey: 'object-summary-output-source-ref',
+        status: 'applied',
+      },
+      {
+        teamId: TEAM_A,
+        runId: run?.id ?? '',
+        outputKind: 'direct_write',
+        targetKind: 'task',
+        operation: 'update',
+        targetId: task.id,
+        payload: { canonical_name: task.canonicalName, status: 'open' },
+        authorityDecision: { decision: 'authoritative', policy_version: 'test-v1' },
+        requiresApproval: false,
+        sourceRefs: [{ source: 'telegram', rawEventId: legacyEvent.id }],
+        visibility: 'team',
+        visibilityFloor: 'team',
+        dedupeKey: 'task-summary-output-source-ref',
+        status: 'applied',
+      },
+    ]);
+
+    await expect(
+      invalidateObjectSummariesForRawEvent(db, workspace, legacyEvent.id),
+    ).resolves.toEqual(expect.arrayContaining([object.id, task.id]));
+    await expect(
+      db.select().from(objectSummaries).where(eq(objectSummaries.entityId, object.id)),
+    ).resolves.toHaveLength(0);
+    await expect(
+      db.select().from(objectSummaries).where(eq(objectSummaries.entityId, task.id)),
+    ).resolves.toHaveLength(0);
+    expect(queue.enqueueObjectSummaryJob).toHaveBeenCalledWith(
+      { teamId: TEAM_A, objectId: object.id, trigger: 'auto' },
+      { delayMs: 120_000 },
+    );
+    expect(queue.enqueueObjectSummaryJob).toHaveBeenCalledWith(
+      { teamId: TEAM_A, objectId: task.id, trigger: 'auto' },
+      { delayMs: 120_000 },
+    );
+  });
+
   it('creates a pending summary row when an automatic refresh starts without an existing summary', async () => {
     const scope = withTeam(db, TEAM_A, USER_OWNER).objects;
     const object = await scope.createObject({
@@ -2770,6 +4241,8 @@ describe('object scope — merge cleanup', () => {
       body: 'DFK summary note with enough human-authored context for generation.',
     });
 
+    const enqueueObjectEmbedJob = vi.fn().mockResolvedValue(undefined);
+
     await expect(
       generateAndStoreObjectSummary(
         db,
@@ -2796,7 +4269,7 @@ describe('object scope — merge cleanup', () => {
                 conflicts: [],
               }),
             }),
-          enqueueObjectEmbedJob: vi.fn().mockResolvedValue(undefined),
+          enqueueObjectEmbedJob,
         },
       ),
     ).resolves.toEqual({ status: 'ready' });
@@ -2808,6 +4281,206 @@ describe('object scope — merge cleanup', () => {
     expect(rows[0]?.status).toBe('ready');
     expect(rows[0]?.model).toBe('test-summary-model');
     expect(rows[0]?.plainText).toContain('confirmed June 30');
+  });
+
+  it('fails summary generation instead of storing hallucinated source refs', async () => {
+    const scope = withTeam(db, TEAM_A, USER_OWNER);
+    const object = await scope.objects.createObject({
+      type: 'company',
+      canonicalName: 'Invalid Ref Co',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    const [event] = await db
+      .insert(rawEvents)
+      .values({
+        teamId: TEAM_A,
+        authorUserId: USER_OWNER,
+        source: 'web',
+        contentText: 'Invalid Ref Co team-visible planning.',
+        occurredAt: new Date('2026-06-02T10:00:00.000Z'),
+        visibility: 'team',
+      })
+      .returning({ id: rawEvents.id });
+    if (!event) throw new Error('failed to insert event');
+    const [fact] = await db
+      .insert(facts)
+      .values({
+        teamId: TEAM_A,
+        rawEventId: event.id,
+        statement: 'Invalid Ref Co has enough source-backed planning context.',
+        confidence: 1,
+        modelVersion: 'test',
+      })
+      .returning({ id: facts.id });
+    if (!fact) throw new Error('failed to insert fact');
+    await db.insert(factEntities).values({
+      factId: fact.id,
+      entityId: object.id,
+      role: 'subject',
+    });
+    await scope.objects.createNote({
+      entityId: object.id,
+      authorUserId: USER_OWNER,
+      body: 'Invalid Ref Co summary note with enough human-authored context for generation.',
+    });
+    const enqueueObjectEmbedJob = vi.fn().mockResolvedValue(undefined);
+
+    await expect(
+      generateAndStoreObjectSummary(
+        db,
+        scope,
+        object.id,
+        { trigger: 'manual' },
+        {
+          chatStructured: <TSchema extends z.ZodType>(
+            input: ChatStructuredInput<TSchema>,
+          ): Promise<ChatStructuredResult<TSchema>> =>
+            Promise.resolve({
+              model: 'test-summary-model',
+              object: input.schema.parse({
+                overview: 'Invalid Ref Co has source-backed planning context.',
+                overviewSourceRefs: [
+                  { kind: 'timeline_event', id: '99999999-9999-4999-8999-999999999999' },
+                ],
+                currentState: [],
+                openQuestions: [],
+                conflicts: [],
+              }),
+            }),
+          enqueueObjectEmbedJob,
+        },
+      ),
+    ).resolves.toEqual({
+      status: 'failed',
+      reason: 'invalid_source_ref:timeline_event:99999999-9999-4999-8999-999999999999',
+      retryable: false,
+    });
+
+    const [summary] = await db
+      .select()
+      .from(objectSummaries)
+      .where(eq(objectSummaries.entityId, object.id));
+    expect(summary?.status).toBe('failed');
+    expect(summary?.plainText).toBe('');
+    expect(summary?.sourceRefs).toEqual([]);
+    expect(summary?.lastErrorCode).toBe(
+      'invalid_source_ref:timeline_event:99999999-9999-4999-8999-999999999999',
+    );
+    expect(enqueueObjectEmbedJob).not.toHaveBeenCalled();
+  });
+
+  it('lets generated summaries cite reconciliation association evidence', async () => {
+    const scope = withTeam(db, TEAM_A, USER_OWNER);
+    const object = await scope.objects.createObject({
+      type: 'project',
+      canonicalName: 'Acme rollout',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    await db.update(entities).set({ stage: 'implementation' }).where(eq(entities.id, object.id));
+    const [event] = await db
+      .insert(rawEvents)
+      .values({
+        teamId: TEAM_A,
+        authorUserId: USER_OWNER,
+        source: 'email',
+        contentText: 'Forwarded email: Acme approved rollout implementation.',
+        occurredAt: new Date('2026-06-02T10:00:00.000Z'),
+        visibility: 'team',
+        sourceMetadata: {
+          source_payload_ref: 'inline://test/acme-rollout-email',
+          payload_digest: 'sha256:acme-rollout-email',
+        },
+      })
+      .returning({ id: rawEvents.id });
+    if (!event) throw new Error('failed to insert event');
+    const [cluster] = await db
+      .insert(artifactClusters)
+      .values({
+        teamId: TEAM_A,
+        artifactClusterKind: 'customer_project',
+        artifactType: 'project',
+        canonicalName: 'Acme rollout',
+        canonicalEntityId: object.id,
+      })
+      .returning({ id: artifactClusters.id });
+    if (!cluster) throw new Error('failed to insert cluster');
+    const [evidence] = await db
+      .insert(reconciliationEvidence)
+      .values({
+        teamId: TEAM_A,
+        rawEventId: event.id,
+        sourcePayloadRef: 'inline://test/acme-rollout-email',
+        payloadDigest: 'sha256:acme-rollout-email',
+        source: 'email',
+        provider: 'email',
+        eventType: 'customer_project_update',
+        occurredAt: new Date('2026-06-02T10:00:00.000Z'),
+        visibility: 'team',
+        actor: { kind: 'customer' },
+        contentDigest: 'sha256:acme-rollout-content',
+        title: 'Acme approved rollout implementation',
+        summary: 'Acme approved the rollout implementation plan.',
+        metadata: {},
+        normalizerVersion: 'summary-test',
+        replayState: 'full',
+        dedupeKey: 'summary-test-evidence',
+      })
+      .returning({ id: reconciliationEvidence.id });
+    if (!evidence) throw new Error('failed to insert evidence');
+    await db.insert(artifactEvidenceAssociations).values({
+      teamId: TEAM_A,
+      clusterId: cluster.id,
+      evidenceId: evidence.id,
+      rawEventId: event.id,
+      role: 'decision',
+      strength: 'hard',
+      associationSource: 'hard_anchor',
+      sourceRefs: [{ source: 'email', rawEventId: event.id, evidenceId: evidence.id }],
+      dedupeKey: 'summary-test-association',
+    });
+    let prompt = '';
+
+    await expect(
+      generateAndStoreObjectSummary(
+        db,
+        scope,
+        object.id,
+        { trigger: 'manual' },
+        {
+          chatStructured: <TSchema extends z.ZodType>(
+            input: ChatStructuredInput<TSchema>,
+          ): Promise<ChatStructuredResult<TSchema>> => {
+            prompt = input.prompt;
+            return Promise.resolve({
+              model: 'test-summary-model',
+              object: input.schema.parse({
+                overview: 'Acme rollout is in implementation after customer approval.',
+                overviewSourceRefs: [{ kind: 'timeline_event', id: event.id }],
+                currentState: [
+                  {
+                    label: 'Customer approval',
+                    text: 'Acme approved the implementation plan.',
+                    sourceRefs: [{ kind: 'timeline_event', id: event.id }],
+                  },
+                ],
+                openQuestions: [],
+                conflicts: [],
+              }),
+            });
+          },
+          enqueueObjectEmbedJob: vi.fn().mockResolvedValue(undefined),
+        },
+      ),
+    ).resolves.toEqual({ status: 'ready' });
+
+    expect(prompt).toContain('Reconciliation decision');
+    expect(prompt).toContain('Acme approved the rollout implementation plan.');
+    const [summary] = await db
+      .select()
+      .from(objectSummaries)
+      .where(eq(objectSummaries.entityId, object.id));
+    expect(summary?.sourceRefs).toEqual([{ kind: 'timeline_event', id: event.id }]);
+    expect(summary?.sourceCounts).toMatchObject({ events: 1, facts: 0 });
   });
 
   it('does not store a generated summary when the object changed during generation', async () => {

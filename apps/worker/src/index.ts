@@ -16,6 +16,7 @@ import { startMeetingFinalizeWorker } from '#src/workers/meetingFinalize.js';
 import { startMeetingSchedulerWorker } from '#src/workers/meetingScheduler.js';
 import { startObjectSummaryWorker } from '#src/workers/objectSummary.js';
 import { startOverdueWorker } from '#src/workers/overdue.js';
+import { startReconciliationWorker } from '#src/workers/reconciliation.js';
 import { startSuggestionWorker } from '#src/workers/suggestions.js';
 import { startTeamExportWorker } from '#src/workers/teamExport.js';
 import { startTimelineMomentPresentationWorker } from '#src/workers/timelineMomentPresentation.js';
@@ -53,6 +54,7 @@ async function main(): Promise<void> {
   const teamExportWorker = startTeamExportWorker({ db });
   const timelineMomentPresentationWorker = startTimelineMomentPresentationWorker({ db });
   const dailyDigestWorker = startDailyDigestWorker({ db });
+  const reconciliationWorker = startReconciliationWorker({ db });
   // Register the hourly repeatables. BullMQ keys by jobId so a
   // duplicate call on the next deploy is a no-op.
   await queue.scheduleOverdueScan();
@@ -67,7 +69,7 @@ async function main(): Promise<void> {
   await queue.scheduleMeetingSchedulerTick();
   await queue.scheduleDailyDigest();
   log.info(
-    'transcribe + extract + suggestions + embed + overdue + calendar-recurrence + document-extract + meeting-finalize + meeting-scheduler + object-summary + janitor + webhook-delivery + integration-sync + mcp-health + team-export + timeline-moment-presentation + daily-digest workers started',
+    'transcribe + extract + suggestions + embed + overdue + calendar-recurrence + document-extract + meeting-finalize + meeting-scheduler + object-summary + janitor + webhook-delivery + integration-sync + mcp-health + team-export + timeline-moment-presentation + daily-digest + reconciliation workers started',
   );
 
   const shutdown = async (signal: string): Promise<void> => {
@@ -91,6 +93,7 @@ async function main(): Promise<void> {
         teamExportWorker.close(),
         timelineMomentPresentationWorker.close(),
         dailyDigestWorker.close(),
+        reconciliationWorker.close(),
       ]);
       await queue.closeTranscribeQueue();
       await queue.closeExtractQueue();
@@ -109,6 +112,7 @@ async function main(): Promise<void> {
       await queue.closeTeamExportQueue();
       await queue.closeTimelineMomentPresentationQueue();
       await queue.closeDailyDigestQueue();
+      await queue.closeReconciliationQueue();
       await queue.closeRedisConnection();
     } catch (err: unknown) {
       log.error({ err }, 'shutdown error');

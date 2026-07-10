@@ -29,6 +29,19 @@ import { Button } from '@/components/ui/button';
 import { displayText, formatDisplayDate, formatDisplayDateTime } from '@/lib/display-dates';
 import { isActionableSuggestionStatus } from '@/lib/suggestion-status';
 
+function stableJson(value: unknown): string {
+  if (value instanceof Date) return JSON.stringify(value.toISOString());
+  if (value === null || typeof value !== 'object') return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`;
+
+  const record = value as Record<string, unknown>;
+  return `{${Object.keys(record)
+    .filter((key) => record[key] !== undefined)
+    .sort()
+    .map((key) => `${JSON.stringify(key)}:${stableJson(record[key])}`)
+    .join(',')}}`;
+}
+
 interface SuggestionItem {
   id: string;
   status: string;
@@ -38,6 +51,7 @@ interface SuggestionItem {
   title: string;
   description: string | null;
   proposedPayload: Record<string, unknown>;
+  metadata?: Record<string, unknown>;
   failureReason: string | null;
   supersededByItemId?: string | null;
   supersededReason?: string | null;
@@ -74,6 +88,7 @@ interface SuggestionBundle {
   summary: string | null;
   reason: string | null;
   confidence: string;
+  metadata?: Record<string, unknown>;
   createdAt: string;
   items: SuggestionItem[];
   evidence: {
@@ -81,11 +96,12 @@ interface SuggestionBundle {
     quote: string | null;
     occurredAt: string | null;
     source: string | null;
+    metadata?: Record<string, unknown>;
   }[];
 }
 
 type ApprovalAction = (
-  action: () => Promise<{ ok?: boolean; error?: string }>,
+  action: () => Promise<{ ok?: boolean; error?: string; failedItemIds?: string[] }>,
   optimisticItemIds: string[],
 ) => void;
 
@@ -107,18 +123,6 @@ interface Props {
     countClassName?: string;
     openLabelClassName?: string;
   };
-}
-
-function stableJson(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`;
-  if (value && typeof value === 'object') {
-    const record = value as Record<string, unknown>;
-    return `{${Object.keys(record)
-      .sort()
-      .map((key) => `${JSON.stringify(key)}:${stableJson(record[key])}`)
-      .join(',')}}`;
-  }
-  return JSON.stringify(value);
 }
 
 function suggestionItemSignature(item: SuggestionItem): string {
@@ -199,6 +203,65 @@ function payloadString(payload: Record<string, unknown>, key: string): string | 
 function payloadBoolean(payload: Record<string, unknown>, key: string): boolean | null {
   const value = payload[key];
   return typeof value === 'boolean' ? value : null;
+}
+
+function localActionFailureReason(item: SuggestionItem): string | null {
+  if (
+    item.targetKind === 'calendar_event' &&
+    item.operation === 'create' &&
+    (!payloadString(item.proposedPayload, 'startAt') ||
+      !payloadString(item.proposedPayload, 'endAt'))
+  ) {
+    return 'Calendar proposal is missing a start or end time. Reject it or revise the source details before accepting.';
+  }
+  return null;
+}
+
+function metadataString(metadata: Record<string, unknown>, key: string): string | null {
+  const value = metadata[key];
+  return typeof value === 'string' && value.trim() ? value : null;
+}
+
+function metadataStringArray(metadata: Record<string, unknown>, key: string): string[] {
+  const value = metadata[key];
+  if (!Array.isArray(value)) return [];
+  return value.filter((entry): entry is string => typeof entry === 'string' && entry.trim() !== '');
+}
+
+function uniqueStrings(values: string[]): string[] {
+  return [...new Set(values)];
+}
+
+function shortId(id: string): string {
+  return id.slice(0, 8);
+}
+
+function itemReconciliationOutputId(item: SuggestionItem): string | null {
+  return metadataString(item.metadata ?? {}, 'reconciliation_output_id');
+}
+
+function itemReconciliationClusterId(item: SuggestionItem): string | null {
+  return metadataString(item.metadata ?? {}, 'reconciliation_cluster_id');
+}
+
+function bundleReconciliationOutputIds(bundle: SuggestionBundle): string[] {
+  return uniqueStrings([
+    ...metadataStringArray(bundle.metadata ?? {}, 'reconciliation_output_ids'),
+    ...bundle.items.flatMap((item) => {
+      const outputId = itemReconciliationOutputId(item);
+      return outputId ? [outputId] : [];
+    }),
+  ]);
+}
+
+function bundleReconciliationClusterIds(bundle: SuggestionBundle): string[] {
+  return uniqueStrings([
+    ...metadataStringArray(bundle.metadata ?? {}, 'reconciliation_cluster_ids'),
+    ...bundle.items.flatMap((item) => {
+      const clusterId = itemReconciliationClusterId(item);
+      return clusterId ? [clusterId] : [];
+    }),
+  ]);
 }
 
 function calendarRangeLabel(input: {
@@ -322,6 +385,53 @@ function relationshipPayloadSummary(item: SuggestionItem, bundle: SuggestionBund
   return displayText(`${from} ↔ ${to} · ${kind}`);
 }
 
+function approvalEffectText(item: SuggestionItem): string {
+  const action = item.operation.replace(/_/g, ' ');
+  const kind = itemKindLabel(item.targetKind);
+  if (item.operation === 'create') return `Accept will create ${articleFor(kind)} ${kind}.`;
+  if (item.operation === 'update') {
+    return item.targetId ? `Accept will update this ${kind}.` : `Accept will update ${kind}.`;
+  }
+  if (item.operation === 'archive_or_cancel') {
+    return `Accept will archive or cancel this ${kind}.`;
+  }
+  if (item.operation === 'merge') return `Accept will merge these ${kind}.`;
+  if (item.operation === 'link') return `Accept will link this ${kind}.`;
+  if (item.operation === 'unlink') return `Accept will unlink this ${kind}.`;
+  return `Accept will ${action} ${kind}.`;
+}
+
+function approvalAuthorityText(item: SuggestionItem): string {
+  const source = metadataString(item.metadata ?? {}, 'reconciliation_authority_reason');
+  if (source) return displayText(source);
+  if (item.targetKind === 'calendar_event') {
+    return 'Review required before Timeline changes calendar state from captured evidence.';
+  }
+  if (item.targetKind === 'board_membership' || item.targetKind === 'board_item_update') {
+    return 'Review required before Timeline changes board state from captured evidence.';
+  }
+  return 'Review required before Timeline writes workspace memory from captured evidence.';
+}
+
+function approvalDependencyText(item: SuggestionItem, bundle: SuggestionBundle): string | null {
+  const refs = [
+    typeof item.proposedPayload.fromRef === 'string' ? item.proposedPayload.fromRef : null,
+    typeof item.proposedPayload.toRef === 'string' ? item.proposedPayload.toRef : null,
+    typeof item.proposedPayload.localRef === 'string' ? item.proposedPayload.localRef : null,
+  ].filter((ref): ref is string => !!ref && ref.trim().length > 0);
+  const dependencyLabels: string[] = [];
+  for (const ref of refs) {
+    if (ref !== item.proposedPayload.localRef) dependencyLabels.push(localRefLabel(bundle, ref));
+  }
+  const uniqueDependencyLabels = uniqueStrings(dependencyLabels);
+  if (uniqueDependencyLabels.length === 0) return null;
+  return `Depends on ${uniqueDependencyLabels.join(' and ')} in this bundle.`;
+}
+
+function articleFor(value: string): string {
+  return /^[aeiou]/i.test(value) ? 'an' : 'a';
+}
+
 function foldedSummaryText(
   count: number,
   summary: NonNullable<Props['folded']>['summary'],
@@ -343,6 +453,7 @@ export function ApprovalsClient({
     () => new Map(),
   );
   const [busyItemIds, setBusyItemIds] = useState<Set<string>>(() => new Set());
+  const [actionFailedItemIds, setActionFailedItemIds] = useState<Set<string>>(() => new Set());
   const inFlightItemIdsRef = useRef<Set<string> | null>(null);
   inFlightItemIdsRef.current ??= new Set();
   const serverItemSignatures = useMemo(
@@ -380,6 +491,14 @@ export function ApprovalsClient({
   });
   const bulkAcceptItemCount = bulkAcceptSuggestions.reduce(
     (sum, suggestion) => sum + suggestion.itemIds.length,
+    0,
+  );
+  const mergeReviewItemCount = visibleSuggestions.reduce(
+    (sum, bundle) =>
+      sum +
+      bundle.items.filter(
+        (item) => isActionableSuggestionStatus(item.status) && item.targetKind === 'object_merge',
+      ).length,
     0,
   );
   const bulkRejectSuggestions = visibleSuggestions.flatMap((bundle) => {
@@ -434,8 +553,22 @@ export function ApprovalsClient({
     });
   }
 
+  function clearActionFailures(itemIds: string[]) {
+    if (itemIds.length === 0) return;
+    setActionFailedItemIds((previous) => {
+      const next = new Set(previous);
+      for (const id of itemIds) next.delete(id);
+      return next;
+    });
+  }
+
+  function markActionFailures(itemIds: string[]) {
+    if (itemIds.length === 0) return;
+    setActionFailedItemIds((previous) => new Set([...previous, ...itemIds]));
+  }
+
   function run(
-    action: () => Promise<{ ok?: boolean; error?: string }>,
+    action: () => Promise<{ ok?: boolean; error?: string; failedItemIds?: string[] }>,
     optimisticItemIds: string[],
   ) {
     const inFlightItemIds = inFlightItemIdsRef.current;
@@ -443,22 +576,31 @@ export function ApprovalsClient({
     if (optimisticItemIds.some((id) => inFlightItemIds.has(id))) return;
     for (const id of optimisticItemIds) inFlightItemIds.add(id);
     setError(null);
+    clearActionFailures(optimisticItemIds);
     resolveItems(optimisticItemIds);
     markBusy(optimisticItemIds);
     startTransition(async () => {
+      let shouldRefresh = true;
       try {
         const result = await action();
         if (result.error) {
-          restoreItems(optimisticItemIds);
+          shouldRefresh = false;
+          const failedItemIds =
+            result.failedItemIds?.filter((id) => optimisticItemIds.includes(id)) ?? [];
+          const restoreItemIds = failedItemIds.length > 0 ? failedItemIds : optimisticItemIds;
+          restoreItems(restoreItemIds);
+          markActionFailures(restoreItemIds);
           setError(result.error);
         }
       } catch (err) {
+        shouldRefresh = false;
         restoreItems(optimisticItemIds);
+        markActionFailures(optimisticItemIds);
         setError(err instanceof Error ? err.message : 'Approval action failed');
       } finally {
         for (const id of optimisticItemIds) inFlightItemIdsRef.current?.delete(id);
         clearBusy(optimisticItemIds);
-        router.refresh();
+        if (shouldRefresh) router.refresh();
       }
     });
   }
@@ -480,8 +622,10 @@ export function ApprovalsClient({
       allowBulkReject={allowBulkReject}
       bulkAcceptItemCount={bulkAcceptItemCount}
       bulkAcceptSuggestions={bulkAcceptSuggestions}
+      mergeReviewItemCount={mergeReviewItemCount}
       bulkRejectItemCount={bulkRejectItemCount}
       bulkRejectSuggestions={bulkRejectSuggestions}
+      actionFailedItemIds={actionFailedItemIds}
       busyItemIds={busyItemIds}
       error={error}
       pending={pending}
@@ -529,8 +673,10 @@ function ApprovalListBody({
   allowBulkReject,
   bulkAcceptItemCount,
   bulkAcceptSuggestions,
+  mergeReviewItemCount,
   bulkRejectItemCount,
   bulkRejectSuggestions,
+  actionFailedItemIds,
   busyItemIds,
   error,
   pending,
@@ -542,8 +688,10 @@ function ApprovalListBody({
   allowBulkReject: boolean;
   bulkAcceptItemCount: number;
   bulkAcceptSuggestions: { suggestionId: string; itemIds: string[] }[];
+  mergeReviewItemCount: number;
   bulkRejectItemCount: number;
   bulkRejectSuggestions: { suggestionId: string; itemIds: string[] }[];
+  actionFailedItemIds: Set<string>;
   busyItemIds: Set<string>;
   error: string | null;
   pending: boolean;
@@ -562,12 +710,15 @@ function ApprovalListBody({
           canAccept={allowBulkAccept && bulkAcceptItemCount > 1}
           canReject={allowBulkReject && bulkRejectItemCount > 1}
           disabled={pending}
+          mergeReviewItemCount={mergeReviewItemCount}
           run={run}
         />
       ) : null}
+      {pending && visibleSuggestions.length === 0 ? <ApprovalUpdatingState /> : null}
       {visibleSuggestions.map((bundle) => (
         <ApprovalBundleRow
           allowBulkAccept={allowBulkAccept}
+          actionFailedItemIds={actionFailedItemIds}
           bundle={bundle}
           busyItemIds={busyItemIds}
           key={bundle.id}
@@ -577,6 +728,14 @@ function ApprovalListBody({
         />
       ))}
     </div>
+  );
+}
+
+function ApprovalUpdatingState() {
+  return (
+    <output className="border border-border bg-muted/30 px-3 py-2 font-mono text-xs uppercase tracking-[0.12em] text-fg-dim">
+      Updating approvals...
+    </output>
   );
 }
 
@@ -594,6 +753,7 @@ function PageBulkActions({
   canAccept,
   canReject,
   disabled,
+  mergeReviewItemCount,
   run,
 }: {
   bulkAcceptSuggestions: { suggestionId: string; itemIds: string[] }[];
@@ -601,10 +761,21 @@ function PageBulkActions({
   canAccept: boolean;
   canReject: boolean;
   disabled: boolean;
+  mergeReviewItemCount: number;
   run: ApprovalAction;
 }) {
+  const bulkAcceptItemCount = bulkAcceptSuggestions.reduce(
+    (sum, suggestion) => sum + suggestion.itemIds.length,
+    0,
+  );
   return (
-    <div className="flex flex-wrap justify-end gap-2">
+    <div className="flex flex-wrap items-center justify-end gap-2">
+      {canAccept && mergeReviewItemCount > 0 ? (
+        <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
+          {mergeReviewItemCount} merge{' '}
+          {mergeReviewItemCount === 1 ? 'proposal needs' : 'proposals need'} review
+        </span>
+      ) : null}
       {canReject ? (
         <Button
           type="button"
@@ -635,7 +806,9 @@ function PageBulkActions({
           }}
         >
           <CheckCheck className="size-4" />
-          Accept all visible
+          {mergeReviewItemCount > 0
+            ? `Accept ${bulkAcceptItemCount} visible`
+            : 'Accept all visible'}
         </Button>
       ) : null}
     </div>
@@ -644,6 +817,7 @@ function PageBulkActions({
 
 function ApprovalBundleRow({
   allowBulkAccept,
+  actionFailedItemIds,
   bundle,
   busyItemIds,
   pending,
@@ -651,6 +825,7 @@ function ApprovalBundleRow({
   timezone,
 }: {
   allowBulkAccept: boolean;
+  actionFailedItemIds: Set<string>;
   bundle: SuggestionBundle;
   busyItemIds: Set<string>;
   pending: boolean;
@@ -659,6 +834,7 @@ function ApprovalBundleRow({
 }) {
   const pendingItems = bundle.items.filter((item) => isActionableSuggestionStatus(item.status));
   const bulkAcceptItems = pendingItems.filter((item) => item.targetKind !== 'object_merge');
+  const mergeReviewCount = pendingItems.length - bulkAcceptItems.length;
   return (
     <article className="border-t border-border py-3">
       <div className="flex flex-wrap items-center gap-3">
@@ -670,13 +846,17 @@ function ApprovalBundleRow({
             disabled={pending}
             onClick={() => {
               run(
-                () => acceptAllSuggestionAction({ suggestionId: bundle.id }),
+                () =>
+                  acceptAllSuggestionAction({
+                    suggestionId: bundle.id,
+                    itemIds: bulkAcceptItems.map((item) => item.id),
+                  }),
                 bulkAcceptItems.map((item) => item.id),
               );
             }}
           >
             <CheckCheck className="size-4" />
-            Accept all
+            {mergeReviewCount > 0 ? `Accept ${bulkAcceptItems.length}` : 'Accept all'}
           </Button>
         ) : null}
       </div>
@@ -684,6 +864,7 @@ function ApprovalBundleRow({
         {bundle.items.map((item) => (
           <ApprovalItemRow
             bundle={bundle}
+            actionFailed={actionFailedItemIds.has(item.id)}
             busy={busyItemIds.has(item.id)}
             item={item}
             key={item.id}
@@ -693,6 +874,7 @@ function ApprovalBundleRow({
           />
         ))}
       </ul>
+      <ApprovalReconciliationContext bundle={bundle} />
       <ApprovalEvidence bundle={bundle} />
     </article>
   );
@@ -725,6 +907,7 @@ function ApprovalBundleHeader({
 }
 
 function ApprovalItemRow({
+  actionFailed,
   bundle,
   busy,
   item,
@@ -732,6 +915,7 @@ function ApprovalItemRow({
   run,
   timezone,
 }: {
+  actionFailed: boolean;
   bundle: SuggestionBundle;
   busy: boolean;
   item: SuggestionItem;
@@ -741,7 +925,7 @@ function ApprovalItemRow({
 }) {
   return (
     <li className="grid gap-3 p-3 md:grid-cols-[minmax(0,1.3fr)_minmax(10rem,0.8fr)_minmax(9rem,auto)]">
-      <ApprovalItemMain item={item} />
+      <ApprovalItemMain actionFailed={actionFailed} item={item} />
       <ApprovalItemPayload bundle={bundle} item={item} timezone={timezone} />
       {isActionableSuggestionStatus(item.status) ? (
         <ApprovalItemActions busy={busy} item={item} pending={pending} run={run} />
@@ -750,7 +934,8 @@ function ApprovalItemRow({
   );
 }
 
-function ApprovalItemMain({ item }: { item: SuggestionItem }) {
+function ApprovalItemMain({ actionFailed, item }: { actionFailed: boolean; item: SuggestionItem }) {
+  const actionFailureReason = actionFailed ? localActionFailureReason(item) : null;
   return (
     <div className="min-w-0 self-center">
       <div className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
@@ -760,7 +945,32 @@ function ApprovalItemMain({ item }: { item: SuggestionItem }) {
       {item.description ? (
         <p className="mt-1 text-sm text-fg-muted">{displayText(item.description)}</p>
       ) : null}
+      {actionFailed ? (
+        <p className="mt-1 text-xs text-danger">Action failed. Review and try again.</p>
+      ) : null}
+      {actionFailureReason ? (
+        <p className="mt-1 text-xs text-danger">{actionFailureReason}</p>
+      ) : null}
+      <ApprovalItemReconciliationLink item={item} />
     </div>
+  );
+}
+
+function ApprovalItemReconciliationLink({ item }: { item: SuggestionItem }) {
+  const outputId = itemReconciliationOutputId(item);
+  if (!outputId) return null;
+  const clusterId = itemReconciliationClusterId(item);
+  const href = clusterId
+    ? `/app/team/reconciliation/clusters/${clusterId}`
+    : '/app/team/reconciliation';
+  return (
+    <Link
+      href={href}
+      className="mt-1 inline-flex items-center gap-1 font-mono text-[11px] uppercase tracking-[0.1em] text-fg-dim hover:text-signal"
+    >
+      <ExternalLink className="size-3" />
+      Reconciliation output {shortId(outputId)}
+    </Link>
   );
 }
 
@@ -788,6 +998,18 @@ function ApprovalItemPayload({
       {item.failureReason ? (
         <p className="mt-1 text-xs text-danger">{displayText(item.failureReason)}</p>
       ) : null}
+      <ApprovalItemEffect item={item} bundle={bundle} />
+    </div>
+  );
+}
+
+function ApprovalItemEffect({ item, bundle }: { item: SuggestionItem; bundle: SuggestionBundle }) {
+  const dependency = approvalDependencyText(item, bundle);
+  return (
+    <div className="mt-2 space-y-1 border-l border-border pl-2 text-xs text-fg-dim">
+      <p>{approvalEffectText(item)}</p>
+      <p>{approvalAuthorityText(item)}</p>
+      {dependency ? <p>{dependency}</p> : null}
     </div>
   );
 }
@@ -963,5 +1185,40 @@ function ApprovalEvidence({ bundle }: { bundle: SuggestionBundle }) {
         </EvidenceLink>
       ))}
     </details>
+  );
+}
+
+function ApprovalReconciliationContext({ bundle }: { bundle: SuggestionBundle }) {
+  const outputIds = bundleReconciliationOutputIds(bundle);
+  const clusterIds = bundleReconciliationClusterIds(bundle);
+  if (outputIds.length === 0 && clusterIds.length === 0) return null;
+  const primaryClusterId = clusterIds[0] ?? null;
+  return (
+    <div className="mt-2 flex flex-wrap items-center gap-2 border-l border-border pl-3 text-xs text-fg-dim">
+      <span className="font-mono uppercase tracking-[0.1em]">Reconciliation</span>
+      {primaryClusterId ? (
+        <Link
+          href={`/app/team/reconciliation/clusters/${primaryClusterId}`}
+          className="inline-flex items-center gap-1 font-mono uppercase tracking-[0.1em] hover:text-signal"
+        >
+          <ExternalLink className="size-3" />
+          Cluster {shortId(primaryClusterId)}
+        </Link>
+      ) : (
+        <Link
+          href="/app/team/reconciliation"
+          className="inline-flex items-center gap-1 font-mono uppercase tracking-[0.1em] hover:text-signal"
+        >
+          <ExternalLink className="size-3" />
+          Dashboard
+        </Link>
+      )}
+      {outputIds.length > 0 ? (
+        <span className="font-mono">
+          outputs {outputIds.slice(0, 3).map(shortId).join(', ')}
+          {outputIds.length > 3 ? ` +${outputIds.length - 3}` : ''}
+        </span>
+      ) : null}
+    </div>
   );
 }

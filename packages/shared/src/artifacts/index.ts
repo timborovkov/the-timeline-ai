@@ -1,17 +1,33 @@
 import {
+  artifactEvidenceAssociations,
   artifactClusterAnchors,
-  artifactClusterMembers,
   artifactClusters,
-  entities,
   rawEvents,
+  reconciliationEvidence,
   type Db,
 } from '@timeline/db';
 import { and, eq, isNull, or, sql } from 'drizzle-orm';
 
+import type { artifactEvidenceRole } from '@timeline/db';
+import type { SQL } from 'drizzle-orm';
+import type { AnyPgColumn } from 'drizzle-orm/pg-core';
+
+import { evaluateAuthorityPolicy } from '#src/reconciliation/authority.js';
+import { buildAssociationDedupeKey, type SourceRef } from '#src/reconciliation/index.js';
+import { normalizeRawEventsToEvidence } from '#src/reconciliation/normalization.js';
+
 export type ArtifactType = (typeof artifactClusters.$inferSelect)['artifactType'];
+export type ArtifactClusterKind = (typeof artifactClusters.$inferSelect)['artifactClusterKind'];
 export type ArtifactStatus = (typeof artifactClusters.$inferSelect)['status'];
-export type EvidenceRole = (typeof artifactClusterMembers.$inferSelect)['role'];
-export type EvidenceStrength = (typeof artifactClusterMembers.$inferSelect)['strength'];
+export type EvidenceRole = (typeof artifactEvidenceRole.enumValues)[number];
+export type EvidenceStrength = (typeof artifactEvidenceAssociations.$inferSelect)['strength'];
+type AssociationRole = (typeof artifactEvidenceAssociations.$inferInsert)['role'];
+type AssociationSource = (typeof artifactEvidenceAssociations.$inferInsert)['associationSource'];
+interface VisibilityColumns {
+  visibility: AnyPgColumn;
+  visibilityOwnerUserId: AnyPgColumn;
+  visibilityUserIds: AnyPgColumn;
+}
 
 export interface ArtifactAnchorInput {
   type: string;
@@ -22,6 +38,7 @@ export interface ArtifactAnchorInput {
 
 export interface ArtifactEvidenceInput {
   teamId: string;
+  artifactClusterKind?: ArtifactClusterKind;
   artifactType: ArtifactType;
   canonicalName: string;
   status?: ArtifactStatus;
@@ -44,6 +61,8 @@ export interface ArtifactReconcileResult {
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const ARTIFACT_HELPER_NORMALIZER_VERSION = 'artifact-helper-raw-event-2026-06';
+const ARTIFACT_HELPER_ASSOCIATION_POLICY_VERSION = 'artifact-helper-association-2026-06';
 
 function normalizeAnchor(input: ArtifactAnchorInput): ArtifactAnchorInput | null {
   const type = input.type
@@ -126,6 +145,7 @@ async function createCluster(
     .insert(artifactClusters)
     .values({
       teamId: input.teamId,
+      artifactClusterKind: input.artifactClusterKind ?? 'other',
       artifactType: input.artifactType,
       canonicalName: input.canonicalName,
       status: input.status ?? 'open',
@@ -142,31 +162,143 @@ async function createCluster(
   throw new Error('artifact_cluster_create_failed');
 }
 
-async function attachMember(
+async function attachEvidenceAssociation(
   db: Db,
   input: ArtifactEvidenceInput,
   clusterId: string,
 ): Promise<void> {
+  if (!input.rawEventId || hasIntegrationProjection(input)) return;
+
+  const evidence = await loadOrCreateEvidenceForRawEvent(db, input.teamId, input.rawEventId);
+  if (!evidence) throw new Error('artifact_evidence_raw_event_not_found');
+
+  const role = associationRoleForEvidence(input.role);
+  const associationSource = associationSourceForEvidence(input);
+  const sourceRef: SourceRef = {
+    source: input.provider ?? evidence.provider ?? evidence.source,
+    rawEventId: input.rawEventId,
+    evidenceId: evidence.id,
+    sourcePayloadRef: evidence.sourcePayloadRef,
+  };
+
   await db
-    .insert(artifactClusterMembers)
+    .insert(artifactEvidenceAssociations)
     .values({
       teamId: input.teamId,
       clusterId,
-      rawEventId: input.rawEventId ?? null,
-      entityId: input.canonicalEntityId ?? null,
-      suggestionId: input.suggestionId ?? null,
-      provider: input.provider ?? null,
-      externalObjectId: input.externalObjectId ?? null,
-      role: input.role,
+      evidenceId: evidence.id,
+      rawEventId: input.rawEventId,
+      role,
       strength: input.strength,
-      authoritative: input.authoritative ?? false,
+      confidence: confidenceForEvidence(input),
+      associationSource,
+      rationale: `${input.role} evidence attached to ${input.artifactType} artifact`,
+      sourceRefs: [sourceRef],
+      visibility: evidence.visibility,
+      visibilityOwnerUserId: evidence.visibilityOwnerUserId,
+      visibilityUserIds: evidence.visibilityUserIds,
+      visibilityFloor: evidence.visibility,
+      visibilityFloorOwnerUserId: evidence.visibilityOwnerUserId,
+      visibilityFloorUserIds: evidence.visibilityUserIds,
       metadata: {
         ...(input.metadata ?? {}),
         canonical_name: input.canonicalName,
+        original_evidence_role: input.role,
+        artifact_type: input.artifactType,
+        canonical_entity_id: input.canonicalEntityId ?? null,
+        suggestion_id: input.suggestionId ?? null,
+        provider: input.provider ?? evidence.provider ?? null,
+        external_object_id: input.externalObjectId ?? evidence.externalObjectId ?? null,
         ...(input.status ? { status: input.status } : {}),
       },
+      dedupeKey: buildAssociationDedupeKey({
+        teamId: input.teamId,
+        clusterId,
+        evidenceId: evidence.id,
+        role,
+        associationSource,
+        associationPolicyVersion: ARTIFACT_HELPER_ASSOCIATION_POLICY_VERSION,
+      }),
     })
     .onConflictDoNothing();
+}
+
+async function loadOrCreateEvidenceForRawEvent(db: Db, teamId: string, rawEventId: string) {
+  const existing = await selectEvidenceForRawEvent(db, teamId, rawEventId);
+  if (existing) return existing;
+
+  await normalizeRawEventsToEvidence({
+    db,
+    teamId,
+    rawEventIds: [rawEventId],
+    normalizerVersion: ARTIFACT_HELPER_NORMALIZER_VERSION,
+  });
+
+  return selectEvidenceForRawEvent(db, teamId, rawEventId);
+}
+
+async function selectEvidenceForRawEvent(db: Db, teamId: string, rawEventId: string) {
+  const rows = await db
+    .select({
+      id: reconciliationEvidence.id,
+      source: reconciliationEvidence.source,
+      provider: reconciliationEvidence.provider,
+      externalObjectId: reconciliationEvidence.externalObjectId,
+      sourcePayloadRef: reconciliationEvidence.sourcePayloadRef,
+      visibility: reconciliationEvidence.visibility,
+      visibilityOwnerUserId: reconciliationEvidence.visibilityOwnerUserId,
+      visibilityUserIds: reconciliationEvidence.visibilityUserIds,
+    })
+    .from(reconciliationEvidence)
+    .where(
+      and(
+        eq(reconciliationEvidence.teamId, teamId),
+        eq(reconciliationEvidence.rawEventId, rawEventId),
+      ),
+    )
+    .limit(1);
+  return rows[0] ?? null;
+}
+
+function hasIntegrationProjection(input: ArtifactEvidenceInput): boolean {
+  return typeof input.metadata?.integration_id === 'string';
+}
+
+function associationRoleForEvidence(role: EvidenceRole): AssociationRole {
+  if (role === 'lifecycle_update') return 'lifecycle_update';
+  if (role === 'decision') return 'decision';
+  if (role === 'discussion') return 'discussion';
+  if (role === 'error' || role === 'issue') return 'blocker';
+  if (role === 'related_context') return 'related_context';
+  if (role === 'review' || role === 'report') return 'discussion';
+  if (role === 'document') return 'evidence_only';
+  return 'update';
+}
+
+function associationSourceForEvidence(input: ArtifactEvidenceInput): AssociationSource {
+  if (input.authoritative && input.provider) return 'authoritative_provider';
+  if (input.strength === 'hard') return 'hard_anchor';
+  if (input.strength === 'human') return 'human';
+  if (input.strength === 'semantic') return 'model_candidate';
+  return 'structured_anchor';
+}
+
+function confidenceForEvidence(input: ArtifactEvidenceInput): string {
+  if (input.authoritative || input.strength === 'hard' || input.strength === 'provider')
+    return 'high';
+  if (input.strength === 'semantic') return 'low';
+  return 'medium';
+}
+
+function visibilityVisibleToUser(row: VisibilityColumns, userId: string): SQL {
+  return sql`(
+    ${row.visibility} = 'team'
+    OR (${row.visibility} = 'private' AND ${row.visibilityOwnerUserId} = ${userId})
+    OR (
+      ${row.visibility} = 'specific_users'
+      AND COALESCE(${userId}::uuid = ANY(${row.visibilityUserIds}), false)
+    )
+  )`;
 }
 
 async function claimAnchors(
@@ -265,6 +397,37 @@ function identityAuthorityRank(input: ArtifactEvidenceInput): number {
   return roleRank === 0 ? 0 : roleRank * 100 + evidenceStrengthRank(input);
 }
 
+function authorityEventType(input: ArtifactEvidenceInput): string {
+  const metadataEventType = input.metadata?.event_type;
+  if (typeof metadataEventType === 'string' && metadataEventType.trim()) {
+    return metadataEventType.trim();
+  }
+  return input.role;
+}
+
+function hasDirectClusterAuthority(
+  input: ArtifactEvidenceInput,
+  target: { targetKind: 'cluster_lifecycle' | 'cluster_identity'; targetField: string | null },
+): boolean {
+  return (
+    evaluateAuthorityPolicy({
+      source: input.provider ? 'integration' : 'artifact',
+      provider: input.provider ?? null,
+      eventType: authorityEventType(input),
+      clusterKind: input.artifactClusterKind ?? null,
+      targetKind: target.targetKind,
+      targetField: target.targetField,
+      externalObjectId: input.externalObjectId ?? null,
+      visibility: 'team',
+      confidence: confidenceForEvidence(input) as 'low' | 'medium' | 'high',
+      currentOwner:
+        input.provider && input.externalObjectId
+          ? { provider: input.provider, externalObjectId: input.externalObjectId }
+          : null,
+    }).decision === 'direct'
+  );
+}
+
 function statusAuthorityAt(input: ArtifactEvidenceInput): string {
   const value = input.occurredAt;
   const date = value instanceof Date ? value : value ? new Date(value) : new Date();
@@ -277,6 +440,14 @@ async function updateClusterStatusFromAuthoritativeEvidence(
   clusterId: string,
 ): Promise<void> {
   if (!input.authoritative || !input.status) return;
+  if (
+    !hasDirectClusterAuthority(input, {
+      targetKind: 'cluster_lifecycle',
+      targetField: 'status',
+    })
+  ) {
+    return;
+  }
   const rank = statusAuthorityRank(input);
   const authorityAt = statusAuthorityAt(input);
   const sourceCanRefresh = canRefreshStatusFromSameSource(input);
@@ -318,6 +489,14 @@ async function updateClusterIdentityFromAuthoritativeEvidence(
   input: ArtifactEvidenceInput,
   clusterId: string,
 ): Promise<void> {
+  if (
+    !hasDirectClusterAuthority(input, {
+      targetKind: 'cluster_identity',
+      targetField: 'identity',
+    })
+  ) {
+    return;
+  }
   const rank = identityAuthorityRank(input);
   if (rank === 0) return;
   const authorityAt = statusAuthorityAt(input);
@@ -373,6 +552,25 @@ async function moveClaimedAnchorsToWinningCluster(
     );
 }
 
+async function updateClusterKindFromEvidence(
+  db: Db,
+  input: ArtifactEvidenceInput,
+  clusterId: string,
+): Promise<void> {
+  const artifactClusterKind = input.artifactClusterKind;
+  if (!artifactClusterKind || artifactClusterKind === 'other') return;
+  await db
+    .update(artifactClusters)
+    .set({ artifactClusterKind, updatedAt: new Date() })
+    .where(
+      and(
+        eq(artifactClusters.teamId, input.teamId),
+        eq(artifactClusters.id, clusterId),
+        eq(artifactClusters.artifactClusterKind, 'other'),
+      ),
+    );
+}
+
 export async function reconcileArtifactEvidence(
   db: Db,
   input: ArtifactEvidenceInput,
@@ -395,8 +593,9 @@ export async function reconcileArtifactEvidence(
   const result = clusterId ? { clusterId, created: false } : await createCluster(db, input);
   const claimedClusterId = await claimAnchors(db, input, result.clusterId, anchors);
   await moveClaimedAnchorsToWinningCluster(db, input, result.clusterId, claimedClusterId, anchors);
+  await updateClusterKindFromEvidence(db, input, claimedClusterId);
 
-  await attachMember(db, input, claimedClusterId);
+  await attachEvidenceAssociation(db, input, claimedClusterId);
   await updateClusterIdentityFromAuthoritativeEvidence(db, input, claimedClusterId);
   await updateClusterStatusFromAuthoritativeEvidence(db, input, claimedClusterId);
 
@@ -408,43 +607,90 @@ export async function reconcileArtifactEvidence(
 
 export async function listArtifactClusterEvidence(
   db: Db,
-  input: { teamId: string; clusterId: string },
+  input: { teamId: string; clusterId: string; viewerUserId: string },
 ) {
-  return db
+  const associationVisibility = and(
+    visibilityVisibleToUser(
+      {
+        visibility: artifactEvidenceAssociations.visibility,
+        visibilityOwnerUserId: artifactEvidenceAssociations.visibilityOwnerUserId,
+        visibilityUserIds: artifactEvidenceAssociations.visibilityUserIds,
+      },
+      input.viewerUserId,
+    ),
+    visibilityVisibleToUser(
+      {
+        visibility: artifactEvidenceAssociations.visibilityFloor,
+        visibilityOwnerUserId: artifactEvidenceAssociations.visibilityFloorOwnerUserId,
+        visibilityUserIds: artifactEvidenceAssociations.visibilityFloorUserIds,
+      },
+      input.viewerUserId,
+    ),
+  );
+
+  const associationRows = await db
     .select({
       clusterId: artifactClusters.id,
       artifactType: artifactClusters.artifactType,
       canonicalName: artifactClusters.canonicalName,
       status: artifactClusters.status,
-      rawEventId: artifactClusterMembers.rawEventId,
-      entityId: artifactClusterMembers.entityId,
-      provider: artifactClusterMembers.provider,
-      externalObjectId: artifactClusterMembers.externalObjectId,
-      role: artifactClusterMembers.role,
-      strength: artifactClusterMembers.strength,
-      authoritative: artifactClusterMembers.authoritative,
+      rawEventId: rawEvents.id,
+      entityId: sql<string | null>`NULL`,
+      provider: reconciliationEvidence.provider,
+      externalObjectId: reconciliationEvidence.externalObjectId,
+      role: artifactEvidenceAssociations.role,
+      strength: artifactEvidenceAssociations.strength,
+      authoritative: sql<boolean>`${artifactEvidenceAssociations.associationSource} = 'authoritative_provider'`,
       contentText: rawEvents.contentText,
-      objectName: entities.canonicalName,
+      objectName: sql<string | null>`NULL`,
     })
     .from(artifactClusters)
     .innerJoin(
-      artifactClusterMembers,
+      artifactEvidenceAssociations,
       and(
-        eq(artifactClusterMembers.clusterId, artifactClusters.id),
-        eq(artifactClusterMembers.teamId, input.teamId),
+        eq(artifactEvidenceAssociations.clusterId, artifactClusters.id),
+        eq(artifactEvidenceAssociations.teamId, input.teamId),
+      ),
+    )
+    .innerJoin(
+      reconciliationEvidence,
+      and(
+        eq(reconciliationEvidence.id, artifactEvidenceAssociations.evidenceId),
+        eq(reconciliationEvidence.teamId, input.teamId),
       ),
     )
     .leftJoin(
       rawEvents,
-      and(eq(rawEvents.id, artifactClusterMembers.rawEventId), eq(rawEvents.teamId, input.teamId)),
-    )
-    .leftJoin(
-      entities,
-      and(eq(entities.id, artifactClusterMembers.entityId), eq(entities.teamId, input.teamId)),
+      and(
+        eq(
+          rawEvents.id,
+          sql`COALESCE(${artifactEvidenceAssociations.rawEventId}, ${reconciliationEvidence.rawEventId})`,
+        ),
+        eq(rawEvents.teamId, input.teamId),
+      ),
     )
     .where(
-      and(eq(artifactClusters.teamId, input.teamId), eq(artifactClusters.id, input.clusterId)),
+      and(
+        eq(artifactClusters.teamId, input.teamId),
+        eq(artifactClusters.id, input.clusterId),
+        associationVisibility,
+      ),
     );
+
+  const seen = new Set<string>();
+  return associationRows.filter((row) => {
+    const key = [
+      row.clusterId,
+      row.rawEventId ?? '',
+      row.provider ?? '',
+      row.externalObjectId ?? '',
+      row.role,
+      row.strength,
+    ].join('\0');
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 export async function findArtifactClustersByAnchors(

@@ -1,13 +1,26 @@
 import { PGlite } from '@electric-sql/pglite';
-import { calendarEvents, entities } from '@timeline/db';
+import {
+  calendarEvents,
+  documentChunks,
+  documents,
+  documentVersions,
+  entities,
+} from '@timeline/db';
 import { drizzle } from 'drizzle-orm/pglite';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import type { EmbedResult } from '#src/llm/embed.js';
 import type { SearchHit } from '#src/qdrant/client.js';
 
 import { buildAgentTools } from '#src/agent/tools.js';
 import { withTeam } from '#src/team-scope.js';
+import {
+  type AgentEvalToolName,
+  answerFromToolResult,
+  buildDocumentSearchHit,
+  buildMeetingSearchHit,
+  buildSearchHit,
+  runAgentToolEval,
+} from '#src/test/agent-eval-harness.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
 
 // Fast agent evals: these run the real Timeline agent tools against seeded
@@ -27,20 +40,19 @@ const SPECIFIC_EVENT = '00000000-0000-0000-0000-000000000403';
 const OTHER_TEAM_EVENT = '00000000-0000-0000-0000-000000000404';
 const CI_EVENT_A = '00000000-0000-0000-0000-000000000405';
 const CI_EVENT_B = '00000000-0000-0000-0000-000000000406';
+const MEETING_EVENT_ID = '00000000-0000-0000-0000-000000000407';
 const FACT_ID = '10000000-0000-0000-0000-000000000401';
 const TASK_ID = '20000000-0000-0000-0000-000000000401';
 const OBJECT_ID = '20000000-0000-0000-0000-000000000402';
 const PERSON_ID = '20000000-0000-0000-0000-000000000403';
 const CALENDAR_ID = '30000000-0000-0000-0000-000000000401';
+const DOCUMENT_ID = '40000000-0000-0000-0000-000000000401';
+const DOCUMENT_VERSION_ID = '40000000-0000-0000-0000-000000000402';
+const DOCUMENT_CHUNK_ID = '40000000-0000-0000-0000-000000000403';
+const MEETING_ID = '50000000-0000-0000-0000-000000000401';
+const MEETING_CHUNK_ID = '50000000-0000-0000-0000-000000000402';
 
 type Db = ReturnType<typeof drizzle>;
-type ToolName =
-  | 'search_timeline'
-  | 'search_timeline_moments'
-  | 'list_tasks'
-  | 'list_objects'
-  | 'list_calendar_events'
-  | 'list_team_members';
 
 async function seed(pg: PGlite): Promise<void> {
   await pg.exec(`
@@ -69,10 +81,21 @@ async function seed(pg: PGlite): Promise<void> {
       ('${SPECIFIC_EVENT}', '${TEAM_A}', '${OWNER}', '${OWNER}', 'slack', 'Member-only Acme escalation.', '2026-06-01T11:00:00Z', 'specific_users', ARRAY['${MEMBER}'::uuid], '{}'::jsonb),
       ('${OTHER_TEAM_EVENT}', '${TEAM_B}', '${OTHER_USER}', '${OTHER_USER}', 'web', 'Other-team Acme secret.', '2026-06-01T12:00:00Z', 'team', NULL, '{}'::jsonb),
       ('${CI_EVENT_A}', '${TEAM_A}', '${OWNER}', '${OWNER}', 'integration', 'GitHub workflow "CI" #1603 on timborovkov/audit-ai success', '2026-06-27T18:32:00Z', 'team', NULL, '{"provider":"github","event_type":"workflow_run.success","github":{"type":"workflow_run","repo":"timborovkov/audit-ai","head_branch":"main"}}'::jsonb),
-      ('${CI_EVENT_B}', '${TEAM_A}', '${OWNER}', '${OWNER}', 'integration', 'GitHub workflow "CI" #1602 on timborovkov/audit-ai success', '2026-06-27T18:08:00Z', 'team', NULL, '{"provider":"github","event_type":"workflow_run.success","github":{"type":"workflow_run","repo":"timborovkov/audit-ai","head_branch":"main"}}'::jsonb);
+      ('${CI_EVENT_B}', '${TEAM_A}', '${OWNER}', '${OWNER}', 'integration', 'GitHub workflow "CI" #1602 on timborovkov/audit-ai success', '2026-06-27T18:08:00Z', 'team', NULL, '{"provider":"github","event_type":"workflow_run.success","github":{"type":"workflow_run","repo":"timborovkov/audit-ai","head_branch":"main"}}'::jsonb),
+      ('${MEETING_EVENT_ID}', '${TEAM_A}', '${OWNER}', '${OWNER}', 'meeting', 'Acme renewal meeting transcript fallback summary.', '2026-06-02T14:00:00Z', 'team', NULL, '{"meeting_id":"${MEETING_ID}"}'::jsonb);
 
     INSERT INTO facts (id, team_id, raw_event_id, statement, confidence, model_version)
     VALUES ('${FACT_ID}', '${TEAM_A}', '${TEAM_EVENT}', 'Acme renewal needs pricing by Friday.', 0.96, 'eval-model');
+
+    INSERT INTO meetings
+      (id, team_id, created_by_user_id, platform, meeting_url, title, status, default_visibility, started_at, ended_at)
+    VALUES
+      ('${MEETING_ID}', '${TEAM_A}', '${OWNER}', 'meet', 'https://meet.example.test/acme-renewal', 'Acme renewal review', 'completed', 'team', '2026-06-02T14:00:00Z', '2026-06-02T14:30:00Z');
+
+    INSERT INTO meeting_transcript_chunks
+      (id, meeting_id, team_id, speaker, text, start_ms, end_ms, raw_event_id)
+    VALUES
+      ('${MEETING_CHUNK_ID}', '${MEETING_ID}', '${TEAM_A}', 'Maya', 'Acme renewal action: Sam owns migration date approval before July 6.', 12000, 18000, '${MEETING_EVENT_ID}');
   `);
 }
 
@@ -81,97 +104,58 @@ function hit(
   score: number,
   overrides: Partial<SearchHit['payload']> = {},
 ): SearchHit {
-  return {
-    id: eventId,
+  return buildSearchHit({
+    teamId: TEAM_A,
+    eventId,
     score,
-    payload: {
-      team_id: TEAM_A,
-      source_kind: 'raw_event',
-      event_id: eventId,
-      fact_id: eventId === TEAM_EVENT ? FACT_ID : null,
-      object_id: null,
-      note_id: null,
-      change_id: null,
-      entity_id: null,
-      entity_ids: [],
-      source: eventId === SPECIFIC_EVENT ? 'slack' : 'web',
-      occurred_at: '2026-06-01T09:00:00.000Z',
-      author_user_id: OWNER,
-      visibility: 'team',
-      visibility_user_ids: null,
-      visibility_owner_user_id: OWNER,
-      embedding_model: 'eval-embedding-model',
-      source_scope: 'event',
-      source_id: eventId,
-      chunk_index: 0,
-      document_id: null,
-      document_version_id: null,
-      document_chunk_id: null,
-      folder_id: null,
-      owner_user_id: null,
-      updated_at: null,
-      meeting_id: null,
-      meeting_chunk_id: null,
-      speaker: null,
-      ...overrides,
-    },
-  };
+    authorUserId: OWNER,
+    visibilityOwnerUserId: OWNER,
+    factId: eventId === TEAM_EVENT ? FACT_ID : null,
+    source: eventId === SPECIFIC_EVENT ? 'slack' : 'web',
+    overrides,
+  });
 }
 
-function answerFromTimeline(result: unknown): string {
-  const rows = (result as { results?: { eventId: string; snippet: string }[] }).results ?? [];
-  if (rows.length === 0) return "I couldn't verify that from the accessible timeline.";
-  return rows.map((row) => `${row.snippet} [event:${row.eventId}]`).join('\n');
+function docHit(score: number): SearchHit {
+  return buildDocumentSearchHit({
+    teamId: TEAM_A,
+    chunkId: DOCUMENT_CHUNK_ID,
+    documentId: DOCUMENT_ID,
+    documentVersionId: DOCUMENT_VERSION_ID,
+    score,
+    authorUserId: OWNER,
+    visibilityOwnerUserId: OWNER,
+  });
 }
 
-function answerFromMoments(result: unknown): string {
-  const rows =
-    (
-      result as {
-        moments?: { title: string; raw_event_ids: string[]; evidence_count: number }[];
-      }
-    ).moments ?? [];
-  if (rows.length === 0) return "I couldn't verify that from accessible timeline moments.";
-  return rows
-    .map(
-      (row) =>
-        `${row.title} (${String(row.evidence_count)} events) ${row.raw_event_ids
-          .map((id) => `[event:${id}]`)
-          .join(' ')}`,
-    )
-    .join('\n');
+function meetingHit(score: number): SearchHit {
+  return buildMeetingSearchHit({
+    teamId: TEAM_A,
+    eventId: MEETING_EVENT_ID,
+    meetingId: MEETING_ID,
+    meetingChunkId: MEETING_CHUNK_ID,
+    score,
+    authorUserId: OWNER,
+    visibilityOwnerUserId: OWNER,
+    speaker: 'Maya',
+  });
 }
 
 async function runToolEval(
   db: Db,
   userId: string,
-  name: ToolName,
+  name: AgentEvalToolName,
   input: unknown,
-  hits: SearchHit[],
+  hits: SearchHit[] = [],
 ) {
-  const trace: { tool: ToolName; input: unknown; output: unknown }[] = [];
-  const scope = withTeam(db as never, TEAM_A, userId, {
-    embed: ({ text }): Promise<EmbedResult> =>
-      Promise.resolve({
-        vector: text.includes('Acme') ? [0.9, 0.1, 0.1] : [0.1, 0.1, 0.1],
-        model: 'eval-embed',
-      }),
-    qdrantSearch: () => Promise.resolve(hits),
+  return runAgentToolEval({
+    db: db as never,
+    teamId: TEAM_A,
+    userId,
+    toolName: name,
+    toolInput: input,
+    hits,
   });
-  const tools = buildAgentTools(scope);
-  const exec = tools[name]?.execute as (raw: unknown, opts: unknown) => Promise<unknown>;
-  const output = await exec(input, {});
-  trace.push({ tool: name, input, output });
-  return {
-    output,
-    trace,
-    answer:
-      name === 'search_timeline'
-        ? answerFromTimeline(output)
-        : name === 'search_timeline_moments'
-          ? answerFromMoments(output)
-          : '',
-  };
 }
 
 describe('agent tool evals', () => {
@@ -191,7 +175,6 @@ describe('agent tool evals', () => {
       canonicalName: 'Send Acme pricing proposal',
       status: 'todo',
       dueAt: new Date('2026-06-05T17:00:00Z'),
-      sourceEventId: TEAM_EVENT,
     });
     await db.insert(entities).values({
       id: OBJECT_ID,
@@ -218,7 +201,40 @@ describe('agent tool evals', () => {
       visibility: 'team',
       agentSuggested: true,
     });
+    await db.insert(documents).values({
+      id: DOCUMENT_ID,
+      teamId: TEAM_A,
+      name: 'Acme rollout notes.txt',
+      ownerUserId: OWNER,
+      visibility: 'team',
+    });
+    await db.insert(documentVersions).values({
+      id: DOCUMENT_VERSION_ID,
+      teamId: TEAM_A,
+      documentId: DOCUMENT_ID,
+      version: 1,
+      objectKey: 'team-a/documents/acme-rollout-notes/v1.txt',
+      byteSize: 512,
+      contentType: 'text/plain',
+      uploadedByUserId: OWNER,
+      processingStatus: 'embedded',
+    });
+    await db.insert(documentChunks).values({
+      id: DOCUMENT_CHUNK_ID,
+      teamId: TEAM_A,
+      documentId: DOCUMENT_ID,
+      documentVersionId: DOCUMENT_VERSION_ID,
+      chunkIndex: 0,
+      representationKind: 'source_text',
+      text: 'Acme rollout launch criterion: the security review must be signed off before go-live.',
+      tokenCount: 14,
+      summary: 'Acme rollout requires security signoff before go-live.',
+    });
   }, 60_000);
+
+  afterEach(async () => {
+    await pg.close();
+  });
 
   it('answers a timeline question with cited evidence from accessible events', async () => {
     // Product behavior: chat should ground factual timeline answers in source
@@ -264,6 +280,110 @@ describe('agent tool evals', () => {
     expect(evalRun.answer).toContain('(2 events)');
     expect(evalRun.answer).toContain(`[event:${CI_EVENT_A}]`);
     expect(evalRun.answer).toContain(`[event:${CI_EVENT_B}]`);
+  });
+
+  it('searches provider-backed integration events with fenced snippets', async () => {
+    // Product behavior: when the user asks about a third-party system, the
+    // agent should use provider-scoped integration retrieval and treat synced
+    // content as untrusted external data.
+    const evalRun = await runToolEval(
+      db,
+      OWNER,
+      'search_integration_events',
+      { query: 'CI audit-ai', provider: 'github', limit: 5 },
+      [
+        hit(CI_EVENT_A, 0.95, {
+          source: 'integration',
+          occurred_at: '2026-06-27T18:32:00.000Z',
+        }),
+        hit(CI_EVENT_B, 0.89, {
+          source: 'integration',
+          occurred_at: '2026-06-27T18:08:00.000Z',
+        }),
+      ],
+    );
+
+    expect(evalRun.trace).toEqual([
+      expect.objectContaining({
+        tool: 'search_integration_events',
+        input: { query: 'CI audit-ai', provider: 'github', limit: 5 },
+      }),
+    ]);
+    const output = evalRun.output as {
+      count: number;
+      results: { event_id: string; snippet: string }[];
+    };
+    expect(output.count).toBe(2);
+    expect(output.results.map((row) => row.event_id)).toEqual([CI_EVENT_A, CI_EVENT_B]);
+    expect(output.results[0]?.snippet).toContain('<external_content source="integration"');
+    expect(output.results[1]?.snippet).toContain('<external_content source="integration"');
+    expect(evalRun.answer).toContain(`[event:${CI_EVENT_A}]`);
+    expect(evalRun.answer).toContain(`[event:${CI_EVENT_B}]`);
+  });
+
+  it('answers document questions with cited chunk evidence', async () => {
+    // Product behavior: uploaded docs should become cited answer evidence
+    // without first being promoted into canonical workspace objects.
+    const evalRun = await runToolEval(
+      db,
+      OWNER,
+      'search_documents',
+      { query: 'Acme rollout security signoff', limit: 3 },
+      [docHit(0.97)],
+    );
+
+    expect(evalRun.trace).toEqual([
+      expect.objectContaining({
+        tool: 'search_documents',
+        input: { query: 'Acme rollout security signoff', limit: 3 },
+      }),
+    ]);
+    const output = evalRun.output as {
+      count: number;
+      results: {
+        document_id: string;
+        document_version_id: string;
+        document_chunk_id: string;
+        citation: string;
+        snippet: string;
+      }[];
+    };
+    expect(output.count).toBe(1);
+    expect(output.results[0]).toMatchObject({
+      document_id: DOCUMENT_ID,
+      document_version_id: DOCUMENT_VERSION_ID,
+      document_chunk_id: DOCUMENT_CHUNK_ID,
+      citation: `[doc:${DOCUMENT_ID}#v1:chunk:${DOCUMENT_CHUNK_ID}]`,
+    });
+    expect(output.results[0]?.snippet).toContain('<external_content source="document"');
+    expect(evalRun.answer).toContain('security signoff');
+    expect(evalRun.answer).toContain(`[doc:${DOCUMENT_ID}#v1:chunk:${DOCUMENT_CHUNK_ID}]`);
+  });
+
+  it('answers meeting recap questions with transcript chunk evidence', async () => {
+    const evalRun = await runToolEval(
+      db,
+      OWNER,
+      'search_timeline',
+      {
+        query: 'What did the Acme renewal meeting decide about migration approval?',
+        source: 'meeting',
+      },
+      [meetingHit(0.98)],
+    );
+
+    expect(evalRun.trace).toHaveLength(1);
+    expect(evalRun.trace[0]?.tool).toBe('search_timeline');
+    expect(evalRun.trace[0]?.input).toEqual(
+      expect.objectContaining({
+        source: 'meeting',
+      }),
+    );
+    expect(evalRun.answer).toContain('Sam owns migration date approval before July 6.');
+    expect(evalRun.answer).toContain(`[event:${MEETING_EVENT_ID}]`);
+    const output = evalRun.output as { results: { snippet: string }[] };
+    expect(output.results[0]?.snippet).toContain('Maya: Acme renewal action');
+    expect(output.results[0]?.snippet).not.toContain('fallback summary');
   });
 
   it('surfaces accepted task and calendar state through durable workspace tools', async () => {
@@ -544,7 +664,7 @@ describe('agent tool evals', () => {
     const answer =
       'error' in (output as Record<string, unknown>)
         ? "I couldn't verify that because timeline search failed."
-        : answerFromTimeline(output);
+        : answerFromToolResult('search_timeline', output);
     expect(output).toEqual({ error: 'tool_failed' });
     expect(answer).toContain("couldn't verify");
     expect(answer).not.toContain('[event:');

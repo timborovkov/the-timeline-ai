@@ -1,26 +1,32 @@
 import { PGlite } from '@electric-sql/pglite';
 import {
   auditLog,
-  artifactClusterMembers,
   artifactClusters,
+  artifactEvidenceAssociations,
   calendarEvents,
   connectionAttention,
   documents,
   documentVersions,
+  entities,
   integrations,
   integrationSelections,
   integrationSyncState,
+  meetingTranscriptChunks,
+  meetings,
   notifications,
+  objectChanges,
   objectIdentityFacets,
   objectNotes,
   providerConnections,
   rawEvents,
+  reconciliationEvidence,
+  reconciliationOutputs,
   teamProviderResourceShares,
   teamVisibilityDefaults,
 } from '@timeline/db';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { SearchHit, SearchOpts } from '#src/qdrant/client.js';
 
@@ -138,6 +144,10 @@ describe('withTeam namespaced port', () => {
     await applyDbMigrations(pg);
     await seed(pg);
     db = drizzle(pg);
+  });
+
+  afterEach(async () => {
+    await pg.close();
   });
 
   it('exposes timeline and documents through modules, not flat methods', () => {
@@ -334,7 +344,32 @@ describe('withTeam namespaced port', () => {
       .select({ sourceMetadata: rawEvents.sourceMetadata })
       .from(rawEvents)
       .where(eq(rawEvents.id, event.id));
+    const metadata = row?.sourceMetadata as Record<string, unknown>;
+    const sourcePayloadRef = metadata.source_payload_ref;
+    const payloadDigest = metadata.payload_digest;
+    expect(typeof sourcePayloadRef).toBe('string');
+    expect(typeof payloadDigest).toBe('string');
+    if (typeof sourcePayloadRef !== 'string' || typeof payloadDigest !== 'string') {
+      throw new Error('expected web replay metadata');
+    }
+    expect(sourcePayloadRef).toMatch(/^inline:\/\/timeline\/web\/[0-9a-f]{64}$/);
+    expect(payloadDigest).toMatch(/^sha256:[0-9a-f]{64}$/);
     expect(row?.sourceMetadata).toMatchObject({
+      source_snapshot_kind: 'web_text_capture',
+      source_snapshot_version: 'web-text-source-snapshot-2026-07',
+      source_snapshot: {
+        provider: 'timeline_web',
+        source: 'web',
+        capture_kind: 'text_note',
+        team_id: TEAM_A,
+        author_user_id: USER_A,
+        visibility_owner_user_id: USER_A,
+        visibility: 'team',
+        visibility_user_ids: null,
+        occurred_at: '2026-06-20T10:00:00.000Z',
+        content_text:
+          'Review https://example.com/specs/phase-14?utm_source=chat&ticket=42 and ping ada@example.com',
+      },
       links: [
         expect.objectContaining({
           canonical_url: 'https://example.com/specs/phase-14?ticket=42',
@@ -345,6 +380,18 @@ describe('withTeam namespaced port', () => {
         emails: [expect.objectContaining({ normalized_value: 'ada@example.com' })],
       },
     });
+    const evidenceRows = await db
+      .select()
+      .from(reconciliationEvidence)
+      .where(eq(reconciliationEvidence.rawEventId, event.id));
+    expect(evidenceRows).toHaveLength(1);
+    expect(evidenceRows[0]).toMatchObject({
+      source: 'web',
+      replayState: 'full',
+      sourcePayloadRef,
+      payloadDigest,
+      visibility: 'team',
+    });
 
     const clusters = await db.select().from(artifactClusters);
     expect(clusters).toHaveLength(1);
@@ -353,15 +400,51 @@ describe('withTeam namespaced port', () => {
       artifactType: 'link',
       canonicalName: 'example.com/specs/phase-14',
     });
-    const members = await db.select().from(artifactClusterMembers);
-    expect(members).toEqual([
+    const associations = await db.select().from(artifactEvidenceAssociations);
+    expect(associations).toEqual([
       expect.objectContaining({
         rawEventId: event.id,
         role: 'related_context',
         strength: 'semantic',
-        authoritative: false,
+        visibilityFloor: 'team',
       }),
     ]);
+  });
+
+  it('does not replace existing replay payload refs when creating web events', async () => {
+    const scope = withTeam(db as never, TEAM_A, USER_A);
+    const event = await scope.timeline.createEvent({
+      authorUserId: USER_A,
+      source: 'web',
+      contentText: 'Imported web note with an existing replay payload.',
+      visibility: 'team',
+      occurredAt: new Date('2026-06-20T10:05:00Z'),
+      sourceMetadata: {
+        raw_payload_ref: '  s3://timeline-test/web/imported-note.json  ',
+        payload_digest: 'sha256:imported-note',
+      },
+    });
+
+    const [row] = await db
+      .select({ sourceMetadata: rawEvents.sourceMetadata })
+      .from(rawEvents)
+      .where(eq(rawEvents.id, event.id));
+    expect(row?.sourceMetadata).toMatchObject({
+      raw_payload_ref: '  s3://timeline-test/web/imported-note.json  ',
+      payload_digest: 'sha256:imported-note',
+    });
+    expect(row?.sourceMetadata).not.toHaveProperty('source_payload_ref');
+    expect(row?.sourceMetadata).not.toHaveProperty('source_snapshot_kind');
+
+    const [evidence] = await db
+      .select()
+      .from(reconciliationEvidence)
+      .where(eq(reconciliationEvidence.rawEventId, event.id));
+    expect(evidence).toMatchObject({
+      replayState: 'full',
+      sourcePayloadRef: 's3://timeline-test/web/imported-note.json',
+      payloadDigest: 'sha256:imported-note',
+    });
   });
 
   it('repairs link artifacts when email delivery retries an existing raw event', async () => {
@@ -376,7 +459,7 @@ describe('withTeam namespaced port', () => {
     if (!first) throw new Error('expected initial email event');
 
     await db.delete(artifactClusters);
-    await expect(db.select().from(artifactClusterMembers)).resolves.toHaveLength(0);
+    await expect(db.select().from(artifactEvidenceAssociations)).resolves.toHaveLength(0);
 
     const retry = await scope.timeline.createEmailEvent({
       authorUserId: USER_A,
@@ -393,8 +476,8 @@ describe('withTeam namespaced port', () => {
       artifactType: 'link',
       canonicalName: 'docs.example.com/runbook',
     });
-    const members = await db.select().from(artifactClusterMembers);
-    expect(members).toEqual([expect.objectContaining({ rawEventId: first.id })]);
+    const associations = await db.select().from(artifactEvidenceAssociations);
+    expect(associations).toEqual([expect.objectContaining({ rawEventId: first.id })]);
   });
 
   it('materializes all visibility defaults from one settings fetch', async () => {
@@ -838,6 +921,103 @@ describe('withTeam namespaced port', () => {
     expect(qdrantSearch.mock.calls[0]?.[3]).not.toHaveProperty('eventIds');
   });
 
+  it('includes meeting transcript chunks in timeline search and hydrates transcript snippets', async () => {
+    const rawEventId = '00000000-0000-0000-0000-000000000114';
+    const meetingId = '00000000-0000-0000-0000-000000000115';
+    const meetingChunkId = '00000000-0000-0000-0000-000000000116';
+    await db.insert(rawEvents).values({
+      id: rawEventId,
+      teamId: TEAM_A,
+      authorUserId: USER_A,
+      visibilityOwnerUserId: USER_A,
+      source: 'meeting',
+      contentText: 'Meeting transcript summary fallback.',
+      occurredAt: new Date('2026-06-02T14:00:00Z'),
+      visibility: 'team',
+      sourceMetadata: { meeting_id: meetingId },
+    });
+    await db.insert(meetings).values({
+      id: meetingId,
+      teamId: TEAM_A,
+      createdByUserId: USER_A,
+      platform: 'meet',
+      meetingUrl: 'https://meet.example.test/northstar-renewal',
+      title: 'Northstar renewal review',
+      status: 'completed',
+      defaultVisibility: 'team',
+      startedAt: new Date('2026-06-02T14:00:00Z'),
+      endedAt: new Date('2026-06-02T14:30:00Z'),
+    });
+    await db.insert(meetingTranscriptChunks).values({
+      id: meetingChunkId,
+      teamId: TEAM_A,
+      meetingId,
+      speaker: 'Maya',
+      text: 'Northstar renewal follow-up: Sam owns the migration date approval before July 6.',
+      startMs: 12_000,
+      endMs: 18_000,
+      rawEventId,
+    });
+
+    const qdrantSearch = vi.fn().mockResolvedValue([
+      {
+        id: `point-${meetingChunkId}`,
+        score: 0.97,
+        payload: {
+          team_id: TEAM_A,
+          source_kind: 'meeting_chunk',
+          event_id: rawEventId,
+          fact_id: null,
+          object_id: null,
+          note_id: null,
+          change_id: null,
+          entity_id: null,
+          entity_ids: [],
+          occurred_at: '2026-06-02T14:00:00.000Z',
+          author_user_id: USER_A,
+          visibility_owner_user_id: USER_A,
+          source: 'meeting',
+          visibility: 'team',
+          visibility_user_ids: null,
+          embedding_model: 'test',
+          source_scope: 'meeting_chunk',
+          source_id: meetingChunkId,
+          chunk_index: 0,
+          document_id: null,
+          document_version_id: null,
+          document_chunk_id: null,
+          folder_id: null,
+          owner_user_id: null,
+          updated_at: null,
+          meeting_id: meetingId,
+          meeting_chunk_id: meetingChunkId,
+          speaker: 'Maya',
+        },
+      } satisfies SearchHit,
+    ]);
+    const scope = withTeam(db as never, TEAM_A, USER_A, {
+      embed: () => Promise.resolve({ vector: [0.4], model: 'test' }),
+      qdrantSearch,
+    });
+
+    const results = await scope.timeline.searchEvents({
+      query: 'Northstar renewal migration approval',
+      limit: 3,
+    });
+
+    expect(qdrantSearch.mock.calls[0]?.[3]).toMatchObject({
+      sourceKind: ['raw_event', 'fact', 'doc_chunk', 'meeting_chunk'],
+    });
+    expect(results).toHaveLength(1);
+    expect(results[0]).toMatchObject({
+      eventId: rawEventId,
+      source: 'meeting',
+      snippet:
+        'Maya: Northstar renewal follow-up: Sam owns the migration date approval before July 6.',
+    });
+    expect(results[0]?.snippet).not.toContain('summary fallback');
+  });
+
   it('does not hydrate entity facts whose source event has been tombstoned', async () => {
     const deletedId = '00000000-0000-0000-0000-000000000103';
     const entityId = '00000000-0000-0000-0000-000000000104';
@@ -1119,6 +1299,76 @@ describe('withTeam namespaced port', () => {
         }),
       ],
     });
+  });
+
+  it('hydrates direct object-write impact from reconciliation output source refs', async () => {
+    const scope = withTeam(db as never, TEAM_A, USER_A);
+
+    const object = await scope.objects.createObject({
+      type: 'task',
+      canonicalName: 'Ship source-ref impact chips',
+      actor: { kind: 'user', userId: USER_A },
+    });
+
+    const changes = await db
+      .select()
+      .from(objectChanges)
+      .where(eq(objectChanges.entityId, object.id));
+    expect(changes).toHaveLength(1);
+    expect(changes[0]?.sourceEventId).toBeNull();
+
+    const [output] = await db
+      .select()
+      .from(reconciliationOutputs)
+      .where(eq(reconciliationOutputs.targetId, object.id));
+    const sourceRefs = output?.sourceRefs as { rawEventId?: unknown }[] | undefined;
+    const rawEventId = sourceRefs?.find((ref) => typeof ref.rawEventId === 'string')?.rawEventId;
+    if (typeof rawEventId !== 'string') throw new Error('expected direct-write source ref');
+
+    await expect(scope.timeline.listImpactItems([rawEventId])).resolves.toMatchObject({
+      [rawEventId]: [
+        expect.objectContaining({
+          kind: 'task',
+          label: 'Ship source-ref impact chips',
+          href: `/app/objects/${object.id}`,
+          status: 'create',
+        }),
+      ],
+    });
+  });
+
+  it('does not hydrate object impact from legacy source_event_id pointers', async () => {
+    const scope = withTeam(db as never, TEAM_A, USER_A);
+    const legacyEvent = await scope.timeline.createEvent({
+      authorUserId: USER_A,
+      source: 'telegram',
+      contentText: 'Legacy object provenance pointer without reconciliation output.',
+      visibility: 'team',
+    });
+    const object = await scope.objects.createObject({
+      type: 'company',
+      canonicalName: 'Legacy Impact Co',
+      actor: { kind: 'user', userId: USER_A },
+    });
+
+    await db
+      .update(entities)
+      .set({ sourceEventId: legacyEvent.id })
+      .where(eq(entities.id, object.id));
+    await db.insert(objectChanges).values({
+      teamId: TEAM_A,
+      entityId: object.id,
+      actorKind: 'agent',
+      actorUserId: null,
+      status: 'applied',
+      field: 'stage',
+      previousValue: null,
+      newValue: 'pilot',
+      sourceEventId: legacyEvent.id,
+      note: 'Legacy pointer should not become timeline impact.',
+    });
+
+    await expect(scope.timeline.listImpactItems([legacyEvent.id])).resolves.toEqual({});
   });
 
   it('links accepted object-memory suggestion impact to the object, not the created note', async () => {

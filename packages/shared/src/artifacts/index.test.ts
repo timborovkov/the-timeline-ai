@@ -1,14 +1,16 @@
 import { PGlite } from '@electric-sql/pglite';
 import {
+  artifactEvidenceAssociations,
   artifactClusterAnchors,
   artifactClusterMembers,
   artifactClusters,
   entities,
   rawEvents,
+  reconciliationEvidence,
 } from '@timeline/db';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import {
   findArtifactClustersByAnchors,
@@ -20,6 +22,7 @@ import { applyDbMigrations } from '#src/test/pglite.js';
 const TEAM_ID = '11111111-1111-1111-1111-111111111111';
 const TEAM_B_ID = '22222222-2222-2222-2222-222222222222';
 const USER_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+const OTHER_USER_ID = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
 
 describe('artifact reconciliation', () => {
   let pg: PGlite;
@@ -32,9 +35,15 @@ describe('artifact reconciliation', () => {
     await pg.exec(`
       INSERT INTO teams (id, slug, name)
       VALUES ('${TEAM_ID}', 'team-a', 'Team A'), ('${TEAM_B_ID}', 'team-b', 'Team B');
-      INSERT INTO users (id, email) VALUES ('${USER_ID}', 'owner@example.com');
-      INSERT INTO team_members (team_id, user_id, role) VALUES ('${TEAM_ID}', '${USER_ID}', 'owner');
+      INSERT INTO users (id, email)
+      VALUES ('${USER_ID}', 'owner@example.com'), ('${OTHER_USER_ID}', 'member@example.com');
+      INSERT INTO team_members (team_id, user_id, role)
+      VALUES ('${TEAM_ID}', '${USER_ID}', 'owner'), ('${TEAM_ID}', '${OTHER_USER_ID}', 'member');
     `);
+  });
+
+  afterEach(async () => {
+    await pg.close();
   });
 
   async function rawEvent(contentText: string, occurredAt = '2026-06-20T10:00:00Z') {
@@ -54,7 +63,7 @@ describe('artifact reconciliation', () => {
     return row;
   }
 
-  it('clusters a contract across conversation and signature evidence while preserving authority', async () => {
+  it('clusters a contract across conversation and signature evidence without direct memory writes', async () => {
     const report = await rawEvent('Acme said the MSA is approved pending signature.');
     const signature = await rawEvent('Signed PDF uploaded for Acme MSA.', '2026-06-20T12:00:00Z');
 
@@ -84,21 +93,22 @@ describe('artifact reconciliation', () => {
     });
 
     expect(second.clusterId).toBe(first.clusterId);
-    const members = await db
+    const associations = await db
       .select()
-      .from(artifactClusterMembers)
-      .where(eq(artifactClusterMembers.clusterId, first.clusterId));
-    expect(members).toEqual(
+      .from(artifactEvidenceAssociations)
+      .where(eq(artifactEvidenceAssociations.clusterId, first.clusterId));
+    expect(associations).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ role: 'discussion', authoritative: false }),
-        expect.objectContaining({ role: 'signature', authoritative: true }),
+        expect.objectContaining({ role: 'discussion', associationSource: 'human' }),
+        expect.objectContaining({ role: 'update', associationSource: 'structured_anchor' }),
       ]),
     );
+    expect(await db.select().from(artifactClusterMembers)).toHaveLength(0);
     const [cluster] = await db
       .select()
       .from(artifactClusters)
       .where(eq(artifactClusters.id, first.clusterId));
-    expect(cluster?.status).toBe('resolved');
+    expect(cluster?.status).toBe('open');
   });
 
   it('keeps multiple raw-event evidence rows for the same mapped entity', async () => {
@@ -128,6 +138,9 @@ describe('artifact reconciliation', () => {
       strength: 'provider',
       authoritative: true,
       occurredAt: opened.occurredAt,
+      provider: 'github',
+      externalObjectId: 'github/repo#17',
+      metadata: { event_type: 'issue.opened' },
     });
     const second = await reconcileArtifactEvidence(db as never, {
       teamId: TEAM_ID,
@@ -140,16 +153,20 @@ describe('artifact reconciliation', () => {
       strength: 'provider',
       authoritative: true,
       occurredAt: closed.occurredAt,
+      provider: 'github',
+      externalObjectId: 'github/repo#17',
+      metadata: { event_type: 'issue.closed' },
     });
 
     expect(second.clusterId).toBe(first.clusterId);
-    const members = await db
+    const associations = await db
       .select()
-      .from(artifactClusterMembers)
-      .where(eq(artifactClusterMembers.clusterId, first.clusterId));
-    expect(members.map((member) => member.rawEventId).sort()).toEqual(
+      .from(artifactEvidenceAssociations)
+      .where(eq(artifactEvidenceAssociations.clusterId, first.clusterId));
+    expect(associations.map((association) => association.rawEventId).sort()).toEqual(
       [closed.id, opened.id].sort(),
     );
+    expect(await db.select().from(artifactClusterMembers)).toHaveLength(0);
     const [cluster] = await db
       .select()
       .from(artifactClusters)
@@ -315,7 +332,7 @@ describe('artifact reconciliation', () => {
     );
   });
 
-  it('promotes artifact identity when authoritative source evidence arrives after implementation evidence', async () => {
+  it('keeps provider identity context observed while preserving direct lifecycle status', async () => {
     const pr = await rawEvent('GitHub PR merged. Fixes TIMELINE-AI-100.', '2026-06-20T12:00:00Z');
     const sentry = await rawEvent(
       'Sentry issue TIMELINE-AI-100: Login fails on mobile.',
@@ -334,6 +351,7 @@ describe('artifact reconciliation', () => {
       occurredAt: pr.occurredAt,
       provider: 'github',
       externalObjectId: 'github/repo#77',
+      metadata: { event_type: 'pr.merged' },
       anchors: [{ type: 'sentry_short_id', value: 'TIMELINE-AI-100', strength: 'structured' }],
     });
     const second = await reconcileArtifactEvidence(db as never, {
@@ -348,6 +366,7 @@ describe('artifact reconciliation', () => {
       occurredAt: sentry.occurredAt,
       provider: 'sentry',
       externalObjectId: '100',
+      metadata: { event_type: 'issue.created' },
       anchors: [{ type: 'sentry_short_id', value: 'TIMELINE-AI-100', strength: 'structured' }],
     });
 
@@ -357,8 +376,8 @@ describe('artifact reconciliation', () => {
       .from(artifactClusters)
       .where(eq(artifactClusters.id, first.clusterId));
     expect(cluster).toMatchObject({
-      artifactType: 'incident',
-      canonicalName: 'Login fails on mobile',
+      artifactType: 'task',
+      canonicalName: 'github/repo#77: Fix mobile login crash',
       status: 'resolved',
     });
   });
@@ -382,6 +401,7 @@ describe('artifact reconciliation', () => {
       occurredAt: merged.occurredAt,
       provider: 'github',
       externalObjectId: 'github/repo#91',
+      metadata: { event_type: 'pr.merged' },
       anchors: [{ type: 'github_pr', value: 'github/repo#91', strength: 'hard' }],
     });
     const second = await reconcileArtifactEvidence(db as never, {
@@ -396,6 +416,7 @@ describe('artifact reconciliation', () => {
       occurredAt: updated.occurredAt,
       provider: 'github',
       externalObjectId: 'github/repo#91',
+      metadata: { event_type: 'pr.updated' },
       anchors: [{ type: 'github_pr', value: 'github/repo#91', strength: 'hard' }],
     });
 
@@ -426,6 +447,7 @@ describe('artifact reconciliation', () => {
       occurredAt: closed.occurredAt,
       provider: 'github',
       externalObjectId: 'github/repo#92',
+      metadata: { event_type: 'issue.closed' },
       anchors: [{ type: 'github_issue', value: 'github/repo#92', strength: 'hard' }],
     });
     const second = await reconcileArtifactEvidence(db as never, {
@@ -440,6 +462,7 @@ describe('artifact reconciliation', () => {
       occurredAt: reopened.occurredAt,
       provider: 'github',
       externalObjectId: 'github/repo#92',
+      metadata: { event_type: 'issue.reopened' },
       anchors: [{ type: 'github_issue', value: 'github/repo#92', strength: 'hard' }],
     });
 
@@ -490,6 +513,7 @@ describe('artifact reconciliation', () => {
     const evidence = await listArtifactClusterEvidence(db as never, {
       teamId: TEAM_ID,
       clusterId: cluster.clusterId,
+      viewerUserId: USER_ID,
     });
     expect(evidence.map((row) => row.rawEventId)).toEqual([source.id]);
 
@@ -499,5 +523,179 @@ describe('artifact reconciliation', () => {
         anchors: [{ type: 'contract_id', value: 'cross-team-contract', strength: 'hard' }],
       }),
     ).resolves.toEqual([]);
+  });
+
+  it('does not list legacy artifact_cluster_members as provenance evidence', async () => {
+    const source = await rawEvent('Legacy cluster member should not display as evidence.');
+    const [cluster] = await db
+      .insert(artifactClusters)
+      .values({
+        teamId: TEAM_ID,
+        artifactClusterKind: 'incident',
+        artifactType: 'incident',
+        canonicalName: 'Legacy checkout incident',
+        status: 'active',
+      })
+      .returning();
+    if (!cluster) throw new Error('artifact cluster insert failed');
+    await db.insert(artifactClusterMembers).values({
+      teamId: TEAM_ID,
+      clusterId: cluster.id,
+      rawEventId: source.id,
+      role: 'lifecycle_update',
+      strength: 'provider',
+      authoritative: true,
+      metadata: { canonical_name: 'Legacy checkout incident' },
+    });
+
+    await expect(
+      listArtifactClusterEvidence(db as never, {
+        teamId: TEAM_ID,
+        clusterId: cluster.id,
+        viewerUserId: USER_ID,
+      }),
+    ).resolves.toEqual([]);
+  });
+
+  it('lists evidence from the reconciliation association graph without legacy members', async () => {
+    const source = await rawEvent('Sentry issue affected Acme checkout.');
+    const [cluster] = await db
+      .insert(artifactClusters)
+      .values({
+        teamId: TEAM_ID,
+        artifactClusterKind: 'incident',
+        artifactType: 'incident',
+        canonicalName: 'Acme checkout outage',
+        status: 'active',
+      })
+      .returning();
+    if (!cluster) throw new Error('artifact cluster insert failed');
+    const [evidence] = await db
+      .insert(reconciliationEvidence)
+      .values({
+        teamId: TEAM_ID,
+        rawEventId: source.id,
+        source: 'telegram',
+        provider: 'sentry',
+        externalObjectId: 'SENTRY-123',
+        eventType: 'issue.updated',
+        occurredAt: source.occurredAt,
+        visibility: 'team',
+        actor: {},
+        contentDigest: 'digest:sentry-acme-checkout',
+        normalizerVersion: 'test-v1',
+        dedupeKey: 'evidence:sentry-acme-checkout',
+      })
+      .returning();
+    if (!evidence) throw new Error('reconciliation evidence insert failed');
+    await db.insert(artifactEvidenceAssociations).values({
+      teamId: TEAM_ID,
+      clusterId: cluster.id,
+      evidenceId: evidence.id,
+      role: 'lifecycle_update',
+      strength: 'provider',
+      associationSource: 'authoritative_provider',
+      sourceRefs: [],
+      visibility: 'team',
+      visibilityFloor: 'team',
+      metadata: { canonical_name: 'Acme checkout outage', status: 'active' },
+      dedupeKey: 'association:sentry-acme-checkout',
+    });
+
+    const evidenceRows = await listArtifactClusterEvidence(db as never, {
+      teamId: TEAM_ID,
+      clusterId: cluster.id,
+      viewerUserId: USER_ID,
+    });
+
+    expect(evidenceRows).toEqual([
+      expect.objectContaining({
+        clusterId: cluster.id,
+        rawEventId: source.id,
+        provider: 'sentry',
+        externalObjectId: 'SENTRY-123',
+        role: 'lifecycle_update',
+        strength: 'provider',
+        authoritative: true,
+      }),
+    ]);
+  });
+
+  it('enforces association visibility floors when listing cluster evidence', async () => {
+    const source = await rawEvent('Private Sentry incident notes for Acme checkout.');
+    const [cluster] = await db
+      .insert(artifactClusters)
+      .values({
+        teamId: TEAM_ID,
+        artifactClusterKind: 'incident',
+        artifactType: 'incident',
+        canonicalName: 'Private checkout incident',
+        status: 'active',
+      })
+      .returning();
+    if (!cluster) throw new Error('artifact cluster insert failed');
+    const [evidence] = await db
+      .insert(reconciliationEvidence)
+      .values({
+        teamId: TEAM_ID,
+        rawEventId: source.id,
+        source: 'telegram',
+        provider: 'sentry',
+        externalObjectId: 'SENTRY-PRIVATE',
+        eventType: 'issue.private_note',
+        occurredAt: source.occurredAt,
+        visibility: 'private',
+        visibilityOwnerUserId: USER_ID,
+        actor: {},
+        contentDigest: 'digest:sentry-private-checkout',
+        normalizerVersion: 'test-v1',
+        dedupeKey: 'evidence:sentry-private-checkout',
+      })
+      .returning();
+    if (!evidence) throw new Error('reconciliation evidence insert failed');
+    await db.insert(artifactEvidenceAssociations).values({
+      teamId: TEAM_ID,
+      clusterId: cluster.id,
+      evidenceId: evidence.id,
+      rawEventId: source.id,
+      role: 'discussion',
+      strength: 'human',
+      associationSource: 'human',
+      sourceRefs: [
+        {
+          source: 'telegram',
+          rawEventId: source.id,
+          evidenceId: evidence.id,
+        },
+      ],
+      visibility: 'private',
+      visibilityOwnerUserId: USER_ID,
+      visibilityFloor: 'private',
+      visibilityFloorOwnerUserId: USER_ID,
+      metadata: { canonical_name: 'Private checkout incident' },
+      dedupeKey: 'association:sentry-private-checkout',
+    });
+
+    await expect(
+      listArtifactClusterEvidence(db as never, {
+        teamId: TEAM_ID,
+        clusterId: cluster.id,
+        viewerUserId: OTHER_USER_ID,
+      }),
+    ).resolves.toEqual([]);
+
+    await expect(
+      listArtifactClusterEvidence(db as never, {
+        teamId: TEAM_ID,
+        clusterId: cluster.id,
+        viewerUserId: USER_ID,
+      }),
+    ).resolves.toEqual([
+      expect.objectContaining({
+        clusterId: cluster.id,
+        rawEventId: source.id,
+        role: 'discussion',
+      }),
+    ]);
   });
 });

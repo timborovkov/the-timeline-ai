@@ -2,24 +2,37 @@ import { defineConfig } from 'vitest/config';
 
 import { filterExpectedTestConsole } from '../../scripts/vitest-console';
 
-const env = {
+const baseEnv = {
   LOG_LEVEL: 'silent',
+  DATABASE_URL: 'postgres://placeholder@localhost:5432/placeholder',
+  AUTH_SECRET: 'test-secret-at-least-sixteen-characters',
+};
+const env = {
+  ...baseEnv,
   // Bypass the OPENROUTER_API_KEY env gate in handlers that call
   // `requireEnv()` with the default IO. Tests inject their own IO
   // so the real env is never read, but the gate runs first.
   OPENROUTER_API_KEY: 'test-key',
-  DATABASE_URL: 'postgres://placeholder@localhost:5432/placeholder',
-  AUTH_SECRET: 'test-secret-at-least-sixteen-characters',
 };
 
 const integrationTests = [
   'src/workers/documentExtract.test.ts',
   'src/workers/embed.test.ts',
   'src/workers/extract.test.ts',
+  'src/workers/integrationSyncHarvest.test.ts',
   'src/workers/janitor.test.ts',
   'src/workers/meetingFinalize.test.ts',
   'src/workers/meetingScheduler.test.ts',
+  'src/workers/mcpHealth.test.ts',
   'src/workers/overdue.test.ts',
+  'src/workers/reconciliation.test.ts',
+  'src/workers/suggestions.evals.test.ts',
+  'src/workers/suggestions.test.ts',
+  'src/workers/teamExport.test.ts',
+];
+const liveTests = [
+  'src/workers/suggestions.live-eval.test.ts',
+  'src/workers/transcribe.live-eval.test.ts',
 ];
 
 export default defineConfig({
@@ -29,7 +42,7 @@ export default defineConfig({
         test: {
           name: 'unit',
           include: ['src/**/*.test.ts'],
-          exclude: integrationTests,
+          exclude: [...integrationTests, ...liveTests],
           environment: 'node',
           env,
         },
@@ -43,6 +56,18 @@ export default defineConfig({
           testTimeout: 15_000,
           hookTimeout: 60_000,
           env,
+          onConsoleLog: filterExpectedTestConsole,
+        },
+      },
+      {
+        test: {
+          name: 'live',
+          include: liveTests,
+          environment: 'node',
+          fileParallelism: false,
+          testTimeout: 240_000,
+          hookTimeout: 60_000,
+          env: baseEnv,
           onConsoleLog: filterExpectedTestConsole,
         },
       },

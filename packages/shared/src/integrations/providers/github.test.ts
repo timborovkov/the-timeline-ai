@@ -82,6 +82,56 @@ describe('githubProvider.handleOAuthCallback', () => {
     vi.restoreAllMocks();
   });
 
+  it('uses the deterministic E2E callback fixture without calling GitHub', async () => {
+    const fetchMock = vi.fn<typeof fetch>();
+    globalThis.fetch = fetchMock;
+    process.env.E2E_DETERMINISTIC_GITHUB_OAUTH = '1';
+    resetEnvForTests();
+
+    const result = await githubProvider.handleOAuthCallback({
+      code: 'e2e-github-oauth-success',
+      redirectUri: 'https://timeline.test/api/integrations/github/callback',
+    });
+
+    expect(result).toEqual({
+      externalAccountId: 'e2e-github-user-42',
+      displayName: 'GitHub - Timeline E2E',
+      scopes: ['repo', 'read:org'],
+      tokens: {
+        access_token: 'e2e-github-access-token',
+        token_type: 'Bearer',
+        scope: 'repo read:org',
+      },
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('does not use the deterministic E2E callback fixture in production', async () => {
+    const fetchMock = vi.fn<typeof fetch>(() =>
+      Promise.resolve(
+        new Response(JSON.stringify({ message: 'production path' }), {
+          status: 400,
+          headers: { 'content-type': 'application/json' },
+        }),
+      ),
+    );
+    globalThis.fetch = fetchMock;
+    process.env.NODE_ENV = 'production';
+    process.env.E2E_DETERMINISTIC_GITHUB_OAUTH = '1';
+    process.env.AUTH_SECRET = 'test-auth-secret-at-least-sixteen-characters';
+    process.env.AUTH_URL = 'https://timeline.test';
+    process.env.DATABASE_URL = 'postgres://test:test@localhost:5432/test';
+    resetEnvForTests();
+
+    await expect(
+      githubProvider.handleOAuthCallback({
+        code: 'e2e-github-oauth-success',
+        redirectUri: 'https://timeline.test/api/integrations/github/callback',
+      }),
+    ).rejects.toThrow('GitHub 400');
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
   it('stores GitHub App installation metadata for later installation-token sync', async () => {
     const fetchMock = vi.fn<typeof fetch>((input) => {
       const requestUrl =

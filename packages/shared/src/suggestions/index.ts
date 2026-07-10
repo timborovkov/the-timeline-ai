@@ -10,6 +10,10 @@ import {
   objectNotes,
   notifications,
   rawEvents,
+  reconciliationEvidence,
+  reconciliationOutputs,
+  reconciliationProjectionOutbox,
+  reconciliationRuns,
   teamMembers,
   users,
   type Db,
@@ -43,7 +47,15 @@ import {
 import { chatStructured as defaultChatStructured } from '#src/llm/chat.js';
 import { childLogger } from '#src/logger.js';
 import { OBJECT_TYPES } from '#src/objects/index.js';
+import {
+  buildOutputDedupeKey,
+  reconciliationDedupeKey,
+  validateSourceRefs,
+  type SourceRef,
+} from '#src/reconciliation/index.js';
+import { sourcePayloadRefFromMetadata } from '#src/reconciliation/source-snapshot.js';
 import { localDateFromInstant, localDateSpanToUtcRange } from '#src/time/index.js';
+import { rawEventVisibleToUser } from '#src/visibility.js';
 
 type Visibility = 'private' | 'team' | 'specific_users';
 type SuggestionStatus = 'pending' | 'partially_resolved' | 'accepted' | 'rejected' | 'superseded';
@@ -59,9 +71,75 @@ type TargetKind =
   | 'object_merge'
   | 'board_membership'
   | 'board_item_update';
+type DbTx = Parameters<Parameters<Db['transaction']>[0]>[0];
+type DbOrTx = Db | DbTx;
+type ProjectionOutputTerminalStatus = 'applied' | 'rejected' | 'superseded' | 'failed';
 
 const EXPECTED_SUGGESTION_APPLY_FAILURE_CODE = 'TIMELINE_EXPECTED_SUGGESTION_APPLY_FAILURE';
 const ENTITY_CANONICAL_NAME_UNIQUE_CONSTRAINT = 'entities_team_type_canonical_name_unq';
+const RECONCILIATION_APPROVAL_PROJECTION_VERSION = 'approval-projection-2026-06';
+const RECONCILIATION_APPROVAL_POLICY_VERSION = 'timeline-owned-approval-2026-06';
+const RECONCILIATION_APPROVAL_PLANNER_VERSION = 'legacy-suggestion-projection-2026-06';
+const REPAIRABLE_PROJECTION_OUTPUT_STATUSES = ['pending', 'approval_created', 'failed'] as const;
+const PROJECTABLE_OUTPUT_OPERATIONS: readonly Operation[] = [
+  'create',
+  'update',
+  'archive_or_cancel',
+  'merge',
+];
+const PROJECTABLE_OUTPUT_TARGET_KINDS: readonly TargetKind[] = [
+  'object',
+  'task',
+  'calendar_event',
+  'identity_facet',
+  'object_note',
+  'object_relationship',
+  'object_merge',
+  'board_membership',
+  'board_item_update',
+];
+
+interface VisibilityEnvelope {
+  visibility: Visibility;
+  visibilityOwnerUserId: string | null;
+  visibilityUserIds: string[] | null;
+}
+
+interface ApprovalProjectionContext {
+  sourceRefs: SourceRef[];
+  sourcePayloadRefs: string[];
+  visibility: VisibilityEnvelope;
+}
+
+interface ProjectionOutputRow {
+  id: string;
+  itemDedupeKey: string;
+  clusterId: string | null;
+}
+
+interface SuppressedProjectionOutputRow extends ProjectionOutputRow {
+  status: 'applied' | 'rejected' | 'superseded';
+}
+
+function reconciliationClusterIdsFromOutputRows(rows: { clusterId: string | null }[]): string[] {
+  return normalizedStringSet(
+    rows
+      .map((row) => row.clusterId)
+      .filter((value): value is string => typeof value === 'string' && value.length > 0),
+  );
+}
+
+type ProjectionOutboxAction =
+  | 'create_projection'
+  | 'mark_applied'
+  | 'mark_rejected'
+  | 'mark_failed'
+  | 'mark_superseded';
+
+interface SourceRefValidationMetadata {
+  ok: true;
+  source_ref_count: number;
+}
 
 class ExpectedSuggestionApplyFailure extends Error {
   readonly code = EXPECTED_SUGGESTION_APPLY_FAILURE_CODE;
@@ -86,6 +164,93 @@ function errorCause(err: unknown): unknown {
 
 function errorMessageIncludes(err: unknown, value: string): boolean {
   return err instanceof Error && err.message.includes(value);
+}
+
+function mostRestrictiveProjectionVisibility(envelopes: VisibilityEnvelope[]): VisibilityEnvelope {
+  const privateEnvelope = envelopes.find(
+    (envelope) => envelope.visibility === 'private' && envelope.visibilityOwnerUserId,
+  );
+  if (privateEnvelope) {
+    return {
+      visibility: 'private',
+      visibilityOwnerUserId: privateEnvelope.visibilityOwnerUserId,
+      visibilityUserIds: null,
+    };
+  }
+
+  const specificUserEnvelopes = envelopes.filter(
+    (envelope) => envelope.visibility === 'specific_users',
+  );
+  if (specificUserEnvelopes.length > 0) {
+    const [first, ...rest] = specificUserEnvelopes.map((envelope) =>
+      normalizedStringSet(envelope.visibilityUserIds ?? []),
+    );
+    const allowed = rest.reduce<string[]>(
+      (current, next) => current.filter((id) => next.includes(id)),
+      first ?? [],
+    );
+    return {
+      visibility: 'specific_users',
+      visibilityOwnerUserId: null,
+      visibilityUserIds: allowed,
+    };
+  }
+
+  return { visibility: 'team', visibilityOwnerUserId: null, visibilityUserIds: null };
+}
+
+function reconciliationOutputIdsFromItem(item: typeof agentSuggestionItems.$inferSelect): string[] {
+  const metadata = recordFromUnknown(item.metadata);
+  const outputIds = Array.isArray(metadata.reconciliation_output_ids)
+    ? metadata.reconciliation_output_ids.filter(
+        (value): value is string => typeof value === 'string',
+      )
+    : [];
+  const ids = [metadata.reconciliation_output_id, ...outputIds];
+  return normalizedStringSet(ids.filter((value): value is string => typeof value === 'string'));
+}
+
+function normalizedStringSet(values: readonly string[]): string[] {
+  return [...new Set(values)].sort();
+}
+
+function sourceRefsFromUnknown(value: unknown): SourceRef[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    const ref = recordFromUnknown(item);
+    const source = stringPayloadValue(ref, 'source');
+    if (!source) return [];
+    return [
+      {
+        source,
+        rawEventId: stringPayloadValue(ref, 'rawEventId'),
+        evidenceId: stringPayloadValue(ref, 'evidenceId'),
+        associationId: stringPayloadValue(ref, 'associationId'),
+        outputId: stringPayloadValue(ref, 'outputId'),
+        sourcePayloadRef: stringPayloadValue(ref, 'sourcePayloadRef'),
+      },
+    ];
+  });
+}
+
+function sourceRefMetadataForRawEvent(sourceRefs: SourceRef[], rawEventId: string) {
+  const ref = sourceRefs.find((candidate) => candidate.rawEventId === rawEventId);
+  if (!ref) return {};
+  return {
+    reconciliation_source_ref: ref,
+    ...(ref.sourcePayloadRef ? { reconciliation_source_payload_ref: ref.sourcePayloadRef } : {}),
+  };
+}
+
+function suggestionEvidenceMetadata(
+  metadata: Record<string, unknown> | undefined,
+  sourceRefs: SourceRef[],
+  rawEventId: string,
+): Record<string, unknown> {
+  return {
+    ...(metadata ?? {}),
+    ...sourceRefMetadataForRawEvent(sourceRefs, rawEventId),
+  };
 }
 
 function isEntityCanonicalNameDuplicate(err: unknown): boolean {
@@ -177,6 +342,7 @@ export interface CreateSuggestionInput {
   visibilityUserIds?: string[] | null;
   metadata?: Record<string, unknown>;
   evidence?: SuggestionEvidenceInput[];
+  reconciliationTrigger?: 'raw_event' | 'manual_repair';
   items: SuggestionItemInput[];
 }
 
@@ -210,6 +376,7 @@ export interface SuggestionItem {
   title: string;
   description: string | null;
   proposedPayload: Record<string, unknown>;
+  metadata: Record<string, unknown>;
   failureReason: string | null;
   supersededByItemId: string | null;
   supersededReason: string | null;
@@ -244,6 +411,7 @@ export interface SuggestionEvidence {
   quote: string | null;
   occurredAt: Date | null;
   source: string | null;
+  metadata: Record<string, unknown>;
 }
 
 export interface DuplicatePendingApprovalPair {
@@ -323,7 +491,6 @@ const objectCreatePayload = z.object({
   type: z.string().optional(),
   canonicalName: z.string().trim().max(200).optional(),
   parentObjectId: blankStringAsNull(uuid.nullable()).optional(),
-  sourceEventId: blankStringAsNull(uuid.nullable()).optional(),
 });
 
 const objectUpdatePayload = z.object({
@@ -393,7 +560,6 @@ const boardMembershipPayload = z.object({
   boardId: uuid,
   entityId: uuid,
   laneId: uuid.nullable().optional(),
-  sourceEventId: uuid.nullable().optional(),
   note: z.string().trim().max(1000).nullable().optional(),
 });
 
@@ -411,7 +577,6 @@ const boardItemUpdatePayload = z.object({
   ]),
   newValue: z.unknown(),
   responsibleName: z.string().trim().min(1).max(200).optional(),
-  sourceEventId: uuid.nullable().optional(),
   note: z.string().trim().max(1000).nullable().optional(),
 });
 
@@ -817,31 +982,10 @@ function normalizeLifecyclePayload(
 
 function normalizeSuggestionSourceEventPayload(
   payload: Record<string, unknown>,
-  opts: {
-    fallbackSourceEventId?: string | null;
-    allowedSourceEventIds?: ReadonlySet<string>;
-  } = {},
 ): Record<string, unknown> {
   if (!Object.hasOwn(payload, 'sourceEventId')) return payload;
-
-  const sourceEventId = payload.sourceEventId;
-  if (sourceEventId === null || sourceEventId === undefined) return payload;
-
-  if (typeof sourceEventId === 'string') {
-    const trimmed = sourceEventId.trim();
-    if (trimmed !== '' && UUID_RE.test(trimmed)) {
-      if (!opts.allowedSourceEventIds || opts.allowedSourceEventIds.has(trimmed)) {
-        return { ...payload, sourceEventId: trimmed };
-      }
-    }
-  }
-
   const normalized = { ...payload };
-  if (opts.fallbackSourceEventId) {
-    normalized.sourceEventId = opts.fallbackSourceEventId;
-  } else {
-    delete normalized.sourceEventId;
-  }
+  delete normalized.sourceEventId;
   return normalized;
 }
 
@@ -867,6 +1011,14 @@ function stringArrayFromUnknown(value: unknown): string[] {
   return Array.isArray(value)
     ? value.filter((item): item is string => typeof item === 'string')
     : [];
+}
+
+function sourceRefValidationMetadata(sourceRefs: SourceRef[]): SourceRefValidationMetadata {
+  const validation = validateSourceRefs(sourceRefs);
+  if (!validation.ok) {
+    throw new Error(`Invalid suggestion source refs: ${validation.errors.join('; ')}`);
+  }
+  return { ok: true, source_ref_count: sourceRefs.length };
 }
 
 function mergeAliases(existing: string[], proposed: string[]): string[] {
@@ -1458,17 +1610,33 @@ function shouldSupersedePendingItem(args: {
 }
 
 function rawEventVisibilityPredicate(teamId: string, userId: string) {
-  return and(
-    eq(rawEvents.teamId, teamId),
-    or(
-      eq(rawEvents.visibility, 'team'),
-      and(eq(rawEvents.visibility, 'private'), eq(rawEvents.authorUserId, userId)),
-      and(
-        eq(rawEvents.visibility, 'specific_users'),
-        sql`${userId}::uuid = ANY(${rawEvents.visibilityUserIds})`,
-      ),
+  return and(eq(rawEvents.teamId, teamId), rawEventVisibleToUser(userId));
+}
+
+function reconciliationOutputVisibilityPredicate(teamId: string, userId: string) {
+  const visibleEnvelope = or(
+    eq(reconciliationOutputs.visibility, 'team'),
+    and(
+      eq(reconciliationOutputs.visibility, 'private'),
+      eq(reconciliationOutputs.visibilityOwnerUserId, userId),
+    ),
+    and(
+      eq(reconciliationOutputs.visibility, 'specific_users'),
+      sql`${userId}::uuid = ANY(${reconciliationOutputs.visibilityUserIds})`,
     ),
   );
+  const visibleFloor = or(
+    eq(reconciliationOutputs.visibilityFloor, 'team'),
+    and(
+      eq(reconciliationOutputs.visibilityFloor, 'private'),
+      eq(reconciliationOutputs.visibilityFloorOwnerUserId, userId),
+    ),
+    and(
+      eq(reconciliationOutputs.visibilityFloor, 'specific_users'),
+      sql`${userId}::uuid = ANY(${reconciliationOutputs.visibilityFloorUserIds})`,
+    ),
+  );
+  return and(eq(reconciliationOutputs.teamId, teamId), visibleEnvelope, visibleFloor);
 }
 
 function oneDayAfter(date: string): string {
@@ -1702,6 +1870,10 @@ function toBundle(
       title: item.title,
       description: item.description,
       proposedPayload: item.proposedPayload as Record<string, unknown>,
+      metadata:
+        item.metadata && typeof item.metadata === 'object'
+          ? (item.metadata as Record<string, unknown>)
+          : {},
       failureReason: item.failureReason,
       supersededByItemId: item.supersededByItemId,
       supersededReason: item.supersededReason,
@@ -1712,6 +1884,10 @@ function toBundle(
       quote: ev.quote,
       occurredAt: ev.occurredAt ?? null,
       source: ev.source ?? null,
+      metadata:
+        ev.metadata && typeof ev.metadata === 'object'
+          ? (ev.metadata as Record<string, unknown>)
+          : {},
     })),
   };
 }
@@ -1813,10 +1989,6 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
   async function normalizeSuggestionItemForStorage(
     item: SuggestionItemInput,
     objectTypeByTargetId: ReadonlyMap<string, ObjectType>,
-    sourceEventFallback: {
-      allowedSourceEventIds?: ReadonlySet<string>;
-      fallbackSourceEventId?: string | null;
-    },
   ): Promise<SuggestionItemInput> {
     const proposedPayload = normalizeSuggestionSourceEventPayload(
       await resolveBoardItemMemberRefs(
@@ -1834,7 +2006,6 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         ),
         { requireUnique: false },
       ),
-      sourceEventFallback,
     );
     return { ...item, proposedPayload };
   }
@@ -1865,6 +2036,209 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       if (currentId && !resolved.includes(currentId)) resolved.push(currentId);
     }
     return resolved;
+  }
+
+  function canonicalProjectionEvidenceRefs<
+    T extends {
+      rawEventId: string;
+      sourcePayloadRef: string | null;
+      evidenceId: string | null;
+    },
+  >(rows: T[]): T[] {
+    const bestByRawEventId = new Map<string, T>();
+    for (const row of rows) {
+      const existing = bestByRawEventId.get(row.rawEventId);
+      if (!existing || compareProjectionEvidenceRef(row, existing) < 0) {
+        bestByRawEventId.set(row.rawEventId, row);
+      }
+    }
+    return [...bestByRawEventId.values()].sort((a, b) => a.rawEventId.localeCompare(b.rawEventId));
+  }
+
+  function compareProjectionEvidenceRef(
+    left: { sourcePayloadRef: string | null; evidenceId: string | null },
+    right: { sourcePayloadRef: string | null; evidenceId: string | null },
+  ): number {
+    const leftHasPayload = left.sourcePayloadRef ? 0 : 1;
+    const rightHasPayload = right.sourcePayloadRef ? 0 : 1;
+    if (leftHasPayload !== rightHasPayload) return leftHasPayload - rightHasPayload;
+    const payloadCompare = (left.sourcePayloadRef ?? '').localeCompare(
+      right.sourcePayloadRef ?? '',
+    );
+    if (payloadCompare !== 0) return payloadCompare;
+    return (left.evidenceId ?? '').localeCompare(right.evidenceId ?? '');
+  }
+
+  async function buildApprovalProjectionContext(input: {
+    source: CreateSuggestionInput['source'];
+    dedupeKey: string;
+    visibility: Visibility;
+    visibilityOwnerUserId: string | null;
+    visibilityUserIds?: string[] | null;
+    evidenceIds: string[];
+  }): Promise<ApprovalProjectionContext> {
+    const evidenceRows =
+      input.evidenceIds.length === 0
+        ? []
+        : await db
+            .select({
+              rawEventId: rawEvents.id,
+              source: rawEvents.source,
+              authorUserId: rawEvents.authorUserId,
+              visibility: rawEvents.visibility,
+              visibilityOwnerUserId: rawEvents.visibilityOwnerUserId,
+              visibilityUserIds: rawEvents.visibilityUserIds,
+              sourceMetadata: rawEvents.sourceMetadata,
+              evidenceId: reconciliationEvidence.id,
+              sourcePayloadRef: reconciliationEvidence.sourcePayloadRef,
+            })
+            .from(rawEvents)
+            .leftJoin(
+              reconciliationEvidence,
+              and(
+                eq(reconciliationEvidence.teamId, teamId),
+                eq(reconciliationEvidence.rawEventId, rawEvents.id),
+              ),
+            )
+            .where(and(eq(rawEvents.teamId, teamId), inArray(rawEvents.id, input.evidenceIds)));
+    const evidenceRefs = canonicalProjectionEvidenceRefs(evidenceRows);
+
+    const projectionVisibility = mostRestrictiveProjectionVisibility([
+      {
+        visibility: input.visibility,
+        visibilityOwnerUserId: input.visibilityOwnerUserId,
+        visibilityUserIds: input.visibilityUserIds ?? null,
+      },
+      ...evidenceRefs.map((row) => ({
+        visibility: row.visibility,
+        visibilityOwnerUserId:
+          row.visibilityOwnerUserId ?? (row.visibility === 'private' ? row.authorUserId : null),
+        visibilityUserIds: row.visibilityUserIds,
+      })),
+    ]);
+    const sourceRefs: SourceRef[] =
+      evidenceRefs.length > 0
+        ? evidenceRefs.map((row) => ({
+            source: row.source,
+            rawEventId: row.rawEventId,
+            sourcePayloadRef: sourcePayloadRefFromMetadata(row.sourceMetadata),
+          }))
+        : [
+            {
+              source: input.source,
+              sourcePayloadRef: `projection-request:${teamId}:${input.dedupeKey}`,
+            },
+          ];
+    sourceRefValidationMetadata(sourceRefs);
+
+    return {
+      sourceRefs,
+      sourcePayloadRefs: [
+        ...new Set(
+          evidenceRefs
+            .map((row) => row.sourcePayloadRef ?? sourcePayloadRefFromMetadata(row.sourceMetadata))
+            .filter((value): value is string => Boolean(value)),
+        ),
+      ],
+      visibility: projectionVisibility,
+    };
+  }
+
+  async function writeProjectedOutputStatusForItem(
+    tx: DbOrTx,
+    item: typeof agentSuggestionItems.$inferSelect,
+    status: ProjectionOutputTerminalStatus,
+    extraPayload: Record<string, unknown> = {},
+    suggestionItemStatus = suggestionItemStatusForProjectedOutputStatus(status),
+  ): Promise<void> {
+    const outputIds = reconciliationOutputIdsFromItem(item);
+    if (outputIds.length === 0) return;
+    const action = projectionOutboxActionForStatus(status);
+    const patch =
+      Object.keys(extraPayload).length > 0
+        ? {
+            status,
+            payload: sql`${reconciliationOutputs.payload} || ${JSON.stringify(extraPayload)}::jsonb`,
+            updatedAt: new Date(),
+          }
+        : { status, updatedAt: new Date() };
+    const updatedOutputs = await tx
+      .update(reconciliationOutputs)
+      .set(patch)
+      .where(
+        and(eq(reconciliationOutputs.teamId, teamId), inArray(reconciliationOutputs.id, outputIds)),
+      )
+      .returning({ id: reconciliationOutputs.id });
+    if (updatedOutputs.length === 0) return;
+
+    const now = new Date();
+    await tx
+      .insert(reconciliationProjectionOutbox)
+      .values(
+        updatedOutputs.map((output) => ({
+          teamId,
+          outputId: output.id,
+          suggestionId: item.suggestionId,
+          suggestionItemId: item.id,
+          action,
+          status: 'processed' as const,
+          payload: {
+            projection: 'agent_suggestions',
+            projection_status: status,
+            suggestion_item_status: suggestionItemStatus,
+            ...extraPayload,
+          },
+          dedupeKey: reconciliationDedupeKey('approval-projection-outbox', {
+            teamId,
+            outputId: output.id,
+            suggestionId: item.suggestionId,
+            suggestionItemId: item.id,
+            action,
+            status,
+            payload: extraPayload,
+          }),
+          processedAt: now,
+          updatedAt: now,
+        })),
+      )
+      .onConflictDoNothing();
+  }
+
+  function projectionOutboxActionForStatus(
+    status: ProjectionOutputTerminalStatus,
+  ): ProjectionOutboxAction {
+    if (status === 'applied') return 'mark_applied';
+    if (status === 'rejected') return 'mark_rejected';
+    if (status === 'failed') return 'mark_failed';
+    return 'mark_superseded';
+  }
+
+  function suggestionItemStatusForProjectedOutputStatus(
+    status: ProjectionOutputTerminalStatus,
+  ): ItemStatus {
+    return status === 'applied' ? 'accepted' : status;
+  }
+
+  function suppressedProjectionStatus(
+    status: typeof reconciliationOutputs.$inferSelect.status,
+  ): SuppressedProjectionOutputRow['status'] | null {
+    if (status === 'applied' || status === 'rejected' || status === 'superseded') return status;
+    return null;
+  }
+
+  function suggestionStatusForSuppressedProjection(
+    outputs: SuppressedProjectionOutputRow[],
+  ): SuggestionStatus {
+    const itemStatuses = outputs.map((output) =>
+      suggestionItemStatusForProjectedOutputStatus(output.status),
+    );
+    const accepted = itemStatuses.filter((status) => status === 'accepted').length;
+    const rejected = itemStatuses.filter((status) => status === 'rejected').length;
+    const superseded = itemStatuses.filter((status) => status === 'superseded').length;
+    if (accepted > 0 && rejected === 0 && superseded === 0) return 'accepted';
+    if (rejected > 0 && accepted === 0 && superseded === 0) return 'rejected';
+    if (superseded > 0 && accepted === 0 && rejected === 0) return 'superseded';
+    return 'partially_resolved';
   }
 
   async function loadBundle(id: string): Promise<SuggestionBundle | null> {
@@ -1967,24 +2341,38 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     supersededByItemId: string | null,
     reason: string,
   ): Promise<boolean> {
-    const [row] = await db
-      .update(agentSuggestionItems)
-      .set({
-        status: 'superseded',
-        supersededByItemId,
-        supersededReason: reason,
-        resolvedAt: new Date(),
-        resolvedByUserId: null,
-        updatedAt: new Date(),
-        failureReason: null,
-      })
-      .where(
-        and(
-          eq(agentSuggestionItems.id, itemId),
-          inArray(agentSuggestionItems.status, ACTIONABLE_ITEM_STATUSES),
-        ),
-      )
-      .returning();
+    const row = await db.transaction(async (tx) => {
+      const [updated] = await tx
+        .update(agentSuggestionItems)
+        .set({
+          status: 'superseded',
+          supersededByItemId,
+          supersededReason: reason,
+          resolvedAt: new Date(),
+          resolvedByUserId: null,
+          updatedAt: new Date(),
+          failureReason: null,
+        })
+        .where(
+          and(
+            eq(agentSuggestionItems.id, itemId),
+            inArray(agentSuggestionItems.status, ACTIONABLE_ITEM_STATUSES),
+          ),
+        )
+        .returning();
+      if (!updated) return null;
+      await writeProjectedOutputStatusForItem(
+        tx,
+        updated,
+        'superseded',
+        {
+          projection_superseded_reason: reason,
+          superseded_by_item_id: supersededByItemId,
+        },
+        'superseded',
+      );
+      return updated;
+    });
     if (!row) return false;
     await supersedeRelationshipDependents(row);
     await refreshBundleStatus(row.suggestionId);
@@ -3067,10 +3455,9 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     payload: Record<string, unknown>,
   ): Promise<string> {
     const parsed = objectCreatePayload.parse(
-      await resolvePayloadMemberRefs(
-        await normalizeObjectCreatePayloadForAcceptance(item, payload),
-        { requireUnique: true },
-      ),
+      await resolvePayloadMemberRefs(normalizeSuggestionSourceEventPayload(payload), {
+        requireUnique: true,
+      }),
     );
     const canonicalName =
       parsed.canonicalName !== undefined && parsed.canonicalName.length > 0
@@ -3091,10 +3478,6 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     if (parsed.assigneeUserId !== undefined) input.assigneeUserId = parsed.assigneeUserId;
     if (parsed.dueAt !== undefined) input.dueAt = parsed.dueAt ? new Date(parsed.dueAt) : null;
     if (parsed.parentObjectId !== undefined) input.parentObjectId = parsed.parentObjectId;
-    if (parsed.sourceEventId !== undefined) {
-      if (parsed.sourceEventId) await validateEvidenceVisible([parsed.sourceEventId]);
-      input.sourceEventId = parsed.sourceEventId;
-    }
     input.metadata = {
       ...(parsed.metadata ?? {}),
       agent_suggestion_item_id: item.id,
@@ -3140,33 +3523,6 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     };
     await objects.updateObject(existing.id, patch, { kind: 'agent', userId: null });
     return existing.id;
-  }
-
-  async function normalizeObjectCreatePayloadForAcceptance(
-    item: typeof agentSuggestionItems.$inferSelect,
-    payload: Record<string, unknown>,
-  ): Promise<Record<string, unknown>> {
-    if (!Object.hasOwn(payload, 'sourceEventId')) return payload;
-
-    const evidence = await db
-      .select({ rawEventId: agentSuggestionEvidence.rawEventId })
-      .from(agentSuggestionEvidence)
-      .where(
-        and(
-          eq(agentSuggestionEvidence.teamId, teamId),
-          eq(agentSuggestionEvidence.suggestionId, item.suggestionId),
-        ),
-      )
-      .orderBy(asc(agentSuggestionEvidence.createdAt));
-    const evidenceIds = evidence.map((ev) => ev.rawEventId);
-    const opts: {
-      allowedSourceEventIds?: ReadonlySet<string>;
-      fallbackSourceEventId?: string | null;
-    } = { fallbackSourceEventId: evidenceIds.length === 1 ? (evidenceIds[0] ?? null) : null };
-    if (evidenceIds.length > 0) {
-      opts.allowedSourceEventIds = new Set(evidenceIds);
-    }
-    return normalizeSuggestionSourceEventPayload(payload, opts);
   }
 
   function acceptancePriority(item: SuggestionItem): number {
@@ -3484,12 +3840,10 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       if (item.operation !== 'create')
         throw new Error('Board membership suggestions only support create');
       const parsed = boardMembershipPayload.parse(payload);
-      if (parsed.sourceEventId) await validateEvidenceVisible([parsed.sourceEventId]);
       const change = await boards.proposeBoardMembership({
         boardId: parsed.boardId,
         entityId: parsed.entityId,
         laneId: parsed.laneId ?? null,
-        sourceEventId: parsed.sourceEventId ?? null,
         suggestionItemId: item.id,
         note: parsed.note ?? item.description,
       });
@@ -3504,12 +3858,10 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       if (item.operation !== 'update')
         throw new Error('Board item suggestions only support update');
       const parsed = boardItemUpdatePayload.parse(payload);
-      if (parsed.sourceEventId) await validateEvidenceVisible([parsed.sourceEventId]);
       const change = await boards.proposeBoardItemUpdate({
         boardItemId: parsed.boardItemId,
         field: parsed.field,
         newValue: parsed.newValue,
-        sourceEventId: parsed.sourceEventId ?? null,
         suggestionItemId: item.id,
         note: parsed.note ?? item.description,
       });
@@ -3652,16 +4004,21 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       resultId = await applyItem(row.item);
     } catch (err) {
       const failureReason = suggestionApplyFailureReason(err);
-      await db
-        .update(agentSuggestionItems)
-        .set({
-          status: 'failed',
-          failureReason,
-          resolvedAt: null,
-          resolvedByUserId: null,
-          updatedAt: new Date(),
-        })
-        .where(eq(agentSuggestionItems.id, itemId));
+      await db.transaction(async (tx) => {
+        await tx
+          .update(agentSuggestionItems)
+          .set({
+            status: 'failed',
+            failureReason,
+            resolvedAt: null,
+            resolvedByUserId: null,
+            updatedAt: new Date(),
+          })
+          .where(eq(agentSuggestionItems.id, itemId));
+        await writeProjectedOutputStatusForItem(tx, row.item, 'failed', {
+          projection_failure_reason: failureReason,
+        });
+      });
       await refreshBundleStatus(row.suggestion.id, userId);
       const staleReason = await staleActionableItemReason(row.item);
       if (staleReason && (await supersedeItem(itemId, null, staleReason))) {
@@ -3682,14 +4039,19 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       }
       throw err;
     }
-    await db
-      .update(agentSuggestionItems)
-      .set({
-        resultId,
-        updatedAt: new Date(),
-        failureReason: null,
-      })
-      .where(eq(agentSuggestionItems.id, itemId));
+    await db.transaction(async (tx) => {
+      await tx
+        .update(agentSuggestionItems)
+        .set({
+          resultId,
+          updatedAt: new Date(),
+          failureReason: null,
+        })
+        .where(eq(agentSuggestionItems.id, itemId));
+      await writeProjectedOutputStatusForItem(tx, row.item, 'applied', {
+        projection_result_id: resultId,
+      });
+    });
     await refreshBundleStatus(row.suggestion.id, userId);
     await reconcileAcceptedItemBestEffort({ ...row.item, resultId });
     await reconcileStaleActionableItemsBestEffort({
@@ -3802,27 +4164,38 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       });
       survivorId = result.survivor.id;
     } catch (err) {
-      await db
-        .update(agentSuggestionItems)
-        .set({
-          status: 'failed',
-          failureReason: err instanceof Error ? err.message : 'Failed to apply merge suggestion',
-          resolvedAt: null,
-          resolvedByUserId: null,
-          updatedAt: new Date(),
-        })
-        .where(eq(agentSuggestionItems.id, input.itemId));
+      const failureReason = err instanceof Error ? err.message : 'Failed to apply merge suggestion';
+      await db.transaction(async (tx) => {
+        await tx
+          .update(agentSuggestionItems)
+          .set({
+            status: 'failed',
+            failureReason,
+            resolvedAt: null,
+            resolvedByUserId: null,
+            updatedAt: new Date(),
+          })
+          .where(eq(agentSuggestionItems.id, input.itemId));
+        await writeProjectedOutputStatusForItem(tx, row.item, 'failed', {
+          projection_failure_reason: failureReason,
+        });
+      });
       await refreshBundleStatus(row.suggestion.id, userId);
       throw err;
     }
-    await db
-      .update(agentSuggestionItems)
-      .set({
-        resultId: survivorId,
-        updatedAt: new Date(),
-        failureReason: null,
-      })
-      .where(eq(agentSuggestionItems.id, input.itemId));
+    await db.transaction(async (tx) => {
+      await tx
+        .update(agentSuggestionItems)
+        .set({
+          resultId: survivorId,
+          updatedAt: new Date(),
+          failureReason: null,
+        })
+        .where(eq(agentSuggestionItems.id, input.itemId));
+      await writeProjectedOutputStatusForItem(tx, row.item, 'applied', {
+        projection_result_id: survivorId,
+      });
+    });
     await refreshBundleStatus(row.suggestion.id, userId);
     await reconcileObjectMerge({
       survivorId,
@@ -4032,6 +4405,387 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     return anchors;
   }
 
+  function projectableTargetKind(value: string): TargetKind | null {
+    return PROJECTABLE_OUTPUT_TARGET_KINDS.includes(value as TargetKind)
+      ? (value as TargetKind)
+      : null;
+  }
+
+  function projectableOperation(value: string): Operation | null {
+    return PROJECTABLE_OUTPUT_OPERATIONS.includes(value as Operation) ? (value as Operation) : null;
+  }
+
+  function itemStatusForRepairedOutput(
+    status: typeof reconciliationOutputs.$inferSelect.status,
+  ): ItemStatus {
+    return status === 'failed' ? 'failed' : 'pending';
+  }
+
+  function projectionVisibilityForOutputs(
+    outputs: (typeof reconciliationOutputs.$inferSelect)[],
+  ): VisibilityEnvelope {
+    return mostRestrictiveProjectionVisibility(
+      outputs.flatMap((output) => [
+        {
+          visibility: output.visibility,
+          visibilityOwnerUserId: output.visibilityOwnerUserId,
+          visibilityUserIds: output.visibilityUserIds,
+        },
+        {
+          visibility: output.visibilityFloor,
+          visibilityOwnerUserId: output.visibilityFloorOwnerUserId,
+          visibilityUserIds: output.visibilityFloorUserIds,
+        },
+      ]),
+    );
+  }
+
+  async function writeRepairProjectionOutboxRows(
+    tx: DbOrTx,
+    input: {
+      itemValues: { output: typeof reconciliationOutputs.$inferSelect; itemDedupeKey: string }[];
+      suggestionId: string;
+      suggestionDedupeKey: string;
+      repairedFromOutputId: string;
+      now: Date;
+    },
+  ): Promise<void> {
+    const projectedItems = await tx
+      .select({ id: agentSuggestionItems.id, dedupeKey: agentSuggestionItems.dedupeKey })
+      .from(agentSuggestionItems)
+      .where(eq(agentSuggestionItems.suggestionId, input.suggestionId));
+    const itemIdByDedupeKey = new Map(
+      projectedItems.map((item) => [item.dedupeKey, item.id] as const),
+    );
+    await tx
+      .insert(reconciliationProjectionOutbox)
+      .values(
+        input.itemValues.map(({ output, itemDedupeKey }) => ({
+          teamId,
+          outputId: output.id,
+          suggestionId: input.suggestionId,
+          suggestionItemId: itemIdByDedupeKey.get(itemDedupeKey) ?? null,
+          action: 'repair_projection' as const,
+          status: 'processed' as const,
+          payload: {
+            projection: 'agent_suggestions',
+            projection_version: RECONCILIATION_APPROVAL_PROJECTION_VERSION,
+            suggestion_dedupe_key: input.suggestionDedupeKey,
+            item_dedupe_key: itemDedupeKey,
+            repaired_from_output_id: input.repairedFromOutputId,
+          },
+          dedupeKey: reconciliationDedupeKey('approval-projection-outbox', {
+            teamId,
+            outputId: output.id,
+            suggestionId: input.suggestionId,
+            suggestionItemId: itemIdByDedupeKey.get(itemDedupeKey) ?? null,
+            action: 'repair_projection',
+            projectionVersion: RECONCILIATION_APPROVAL_PROJECTION_VERSION,
+          }),
+          processedAt: input.now,
+          updatedAt: input.now,
+        })),
+      )
+      .onConflictDoNothing();
+  }
+
+  async function upsertRepairProjectionItems(
+    tx: DbOrTx,
+    input: {
+      itemValues: {
+        output: typeof reconciliationOutputs.$inferSelect;
+        targetKind: TargetKind;
+        operation: Operation;
+        itemDedupeKey: string;
+        title: string;
+        description: string | null;
+        proposedPayload: Record<string, unknown>;
+        payload: Record<string, unknown>;
+      }[];
+      suggestionId: string;
+      now: Date;
+    },
+  ): Promise<void> {
+    await tx
+      .insert(agentSuggestionItems)
+      .values(
+        input.itemValues.map(
+          ({
+            output,
+            payload,
+            targetKind,
+            operation,
+            itemDedupeKey,
+            title,
+            description,
+            proposedPayload,
+          }) => ({
+            suggestionId: input.suggestionId,
+            teamId,
+            status: itemStatusForRepairedOutput(output.status),
+            operation,
+            targetKind,
+            targetId: output.targetId,
+            title,
+            description,
+            dedupeKey: itemDedupeKey,
+            proposedPayload,
+            failureReason: stringPayloadValue(payload, 'projection_failure_reason'),
+            metadata: {
+              reconciliation_run_id: output.runId,
+              reconciliation_output_id: output.id,
+              ...(output.clusterId ? { reconciliation_cluster_id: output.clusterId } : {}),
+              reconciliation_projection_version: RECONCILIATION_APPROVAL_PROJECTION_VERSION,
+              reconciliation_projection_repaired_at: input.now.toISOString(),
+            },
+            updatedAt: input.now,
+          }),
+        ),
+      )
+      .onConflictDoUpdate({
+        target: [agentSuggestionItems.suggestionId, agentSuggestionItems.dedupeKey],
+        set: {
+          title: sql`CASE WHEN ${agentSuggestionItems.status} IN ('pending', 'failed') THEN excluded.title ELSE ${agentSuggestionItems.title} END`,
+          description: sql`CASE WHEN ${agentSuggestionItems.status} IN ('pending', 'failed') THEN excluded.description ELSE ${agentSuggestionItems.description} END`,
+          targetId: sql`CASE WHEN ${agentSuggestionItems.status} IN ('pending', 'failed') THEN excluded.target_id ELSE ${agentSuggestionItems.targetId} END`,
+          proposedPayload: sql`CASE WHEN ${agentSuggestionItems.status} IN ('pending', 'failed') THEN excluded.proposed_payload ELSE ${agentSuggestionItems.proposedPayload} END`,
+          failureReason: sql`CASE WHEN ${agentSuggestionItems.status} = 'failed' THEN excluded.failure_reason ELSE ${agentSuggestionItems.failureReason} END`,
+          metadata: sql`${agentSuggestionItems.metadata} || excluded.metadata`,
+          updatedAt: input.now,
+        },
+      });
+  }
+
+  async function repairApprovalProjectionForOutput(
+    outputId: string,
+  ): Promise<SuggestionBundle | null> {
+    await ensureMember();
+    const [seedOutput] = await db
+      .select()
+      .from(reconciliationOutputs)
+      .where(
+        and(
+          eq(reconciliationOutputs.id, outputId),
+          reconciliationOutputVisibilityPredicate(teamId, userId),
+          eq(reconciliationOutputs.outputKind, 'approval_bundle'),
+          eq(reconciliationOutputs.requiresApproval, true),
+          inArray(reconciliationOutputs.status, REPAIRABLE_PROJECTION_OUTPUT_STATUSES),
+        ),
+      )
+      .limit(1);
+    if (!seedOutput) return null;
+    let seedSourceRefValidation: SourceRefValidationMetadata;
+    try {
+      seedSourceRefValidation = sourceRefValidationMetadata(
+        sourceRefsFromUnknown(seedOutput.sourceRefs),
+      );
+    } catch {
+      return null;
+    }
+
+    const seedPayload = recordFromUnknown(seedOutput.payload);
+    const suggestionDedupeKey = stringPayloadValue(seedPayload, 'suggestion_dedupe_key');
+    if (!suggestionDedupeKey) return null;
+
+    const existing = await db
+      .select({ id: agentSuggestions.id })
+      .from(agentSuggestions)
+      .where(
+        and(
+          eq(agentSuggestions.teamId, teamId),
+          eq(agentSuggestions.dedupeKey, suggestionDedupeKey),
+          suggestionVisibilityPredicate(teamId, userId),
+        ),
+      )
+      .limit(1);
+
+    const siblingOutputs = await db
+      .select()
+      .from(reconciliationOutputs)
+      .where(
+        and(
+          reconciliationOutputVisibilityPredicate(teamId, userId),
+          eq(reconciliationOutputs.runId, seedOutput.runId),
+          eq(reconciliationOutputs.outputKind, 'approval_bundle'),
+          eq(reconciliationOutputs.requiresApproval, true),
+          inArray(reconciliationOutputs.status, REPAIRABLE_PROJECTION_OUTPUT_STATUSES),
+          sql`${reconciliationOutputs.payload} ->> 'suggestion_dedupe_key' = ${suggestionDedupeKey}`,
+        ),
+      )
+      .orderBy(asc(reconciliationOutputs.createdAt), asc(reconciliationOutputs.id));
+
+    const itemValues = siblingOutputs.flatMap((output) => {
+      const payload = recordFromUnknown(output.payload);
+      const targetKind = projectableTargetKind(output.targetKind);
+      const operation = projectableOperation(output.operation);
+      const itemDedupeKey = stringPayloadValue(payload, 'item_dedupe_key');
+      const title = stringPayloadValue(payload, 'title');
+      if (!targetKind || !operation || !itemDedupeKey || !title) return [];
+      try {
+        sourceRefValidationMetadata(sourceRefsFromUnknown(output.sourceRefs));
+      } catch {
+        return [];
+      }
+      return [
+        {
+          output,
+          payload,
+          targetKind,
+          operation,
+          itemDedupeKey,
+          title,
+          description: stringPayloadValue(payload, 'description'),
+          proposedPayload: recordFromUnknown(payload.proposed_payload),
+        },
+      ];
+    });
+    if (itemValues.length === 0) return null;
+
+    const firstItem = itemValues[0];
+    if (!firstItem) return null;
+    const repairedVisibility = projectionVisibilityForOutputs(
+      itemValues.map(({ output }) => output),
+    );
+
+    const existingSuggestion = existing[0];
+    if (existingSuggestion) {
+      await db.transaction(async (tx) => {
+        const now = new Date();
+        await tx
+          .update(agentSuggestions)
+          .set({
+            visibility: repairedVisibility.visibility,
+            visibilityOwnerUserId: repairedVisibility.visibilityOwnerUserId,
+            visibilityUserIds: repairedVisibility.visibilityUserIds,
+            updatedAt: now,
+          })
+          .where(
+            and(
+              eq(agentSuggestions.teamId, teamId),
+              eq(agentSuggestions.id, existingSuggestion.id),
+            ),
+          );
+        await upsertRepairProjectionItems(tx, {
+          itemValues,
+          suggestionId: existingSuggestion.id,
+          now,
+        });
+        await writeRepairProjectionOutboxRows(tx, {
+          itemValues,
+          suggestionId: existingSuggestion.id,
+          suggestionDedupeKey,
+          repairedFromOutputId: seedOutput.id,
+          now,
+        });
+      });
+      return loadBundle(existingSuggestion.id);
+    }
+
+    const repairedBundle = await db.transaction(async (tx) => {
+      const now = new Date();
+      const outputIds = itemValues.map(({ output }) => output.id);
+      const clusterIds = reconciliationClusterIdsFromOutputRows(
+        itemValues.map(({ output }) => output),
+      );
+      const projectionMetadata = {
+        ...recordFromUnknown(seedPayload.projection_metadata),
+        reconciliation_run_id: seedOutput.runId,
+        reconciliation_output_ids: outputIds,
+        ...(clusterIds.length > 0 ? { reconciliation_cluster_ids: clusterIds } : {}),
+        reconciliation_projection_version: RECONCILIATION_APPROVAL_PROJECTION_VERSION,
+        reconciliation_projection_repaired_at: now.toISOString(),
+        reconciliation_repaired_from_output_id: seedOutput.id,
+        reconciliation_source_ref_validation: seedSourceRefValidation,
+      };
+      const [suggestion] = await tx
+        .insert(agentSuggestions)
+        .values({
+          teamId,
+          source:
+            stringPayloadValue(seedPayload, 'suggestion_source') === 'chat' ? 'chat' : 'background',
+          status: 'pending',
+          title:
+            stringPayloadValue(seedPayload, 'suggestion_title') ??
+            stringPayloadValue(seedPayload, 'title') ??
+            firstItem.title,
+          summary: stringPayloadValue(seedPayload, 'suggestion_summary'),
+          reason: stringPayloadValue(seedPayload, 'suggestion_reason'),
+          confidence:
+            seedOutput.confidence === 'low' || seedOutput.confidence === 'high'
+              ? seedOutput.confidence
+              : 'medium',
+          dedupeKey: suggestionDedupeKey,
+          visibility: repairedVisibility.visibility,
+          visibilityOwnerUserId: repairedVisibility.visibilityOwnerUserId,
+          visibilityUserIds: repairedVisibility.visibilityUserIds,
+          metadata: projectionMetadata,
+          updatedAt: now,
+        })
+        .onConflictDoNothing()
+        .returning();
+
+      const projectedSuggestion =
+        suggestion ??
+        (
+          await tx
+            .select()
+            .from(agentSuggestions)
+            .where(
+              and(
+                eq(agentSuggestions.teamId, teamId),
+                eq(agentSuggestions.dedupeKey, suggestionDedupeKey),
+              ),
+            )
+            .limit(1)
+        )[0];
+      if (!projectedSuggestion) return null;
+
+      const sourceRefs = itemValues.flatMap(({ output }) =>
+        sourceRefsFromUnknown(output.sourceRefs),
+      );
+      const rawEventIds = normalizedStringSet(
+        sourceRefs
+          .map((ref) => ref.rawEventId)
+          .filter((value): value is string => typeof value === 'string' && value.length > 0),
+      );
+      if (rawEventIds.length > 0) {
+        await tx
+          .insert(agentSuggestionEvidence)
+          .values(
+            rawEventIds.map((rawEventId) => ({
+              suggestionId: projectedSuggestion.id,
+              teamId,
+              rawEventId,
+              metadata: {
+                projection: 'agent_suggestions',
+                repaired_from_outputs: outputIds,
+                ...sourceRefMetadataForRawEvent(sourceRefs, rawEventId),
+              },
+            })),
+          )
+          .onConflictDoNothing();
+      }
+
+      await upsertRepairProjectionItems(tx, {
+        itemValues,
+        suggestionId: projectedSuggestion.id,
+        now,
+      });
+
+      await writeRepairProjectionOutboxRows(tx, {
+        itemValues,
+        suggestionId: projectedSuggestion.id,
+        suggestionDedupeKey,
+        repairedFromOutputId: seedOutput.id,
+        now,
+      });
+
+      return projectedSuggestion;
+    });
+    if (!repairedBundle) return null;
+    return loadBundle(repairedBundle.id);
+  }
+
   function normalizeArtifactUrlAnchor(value: string): string {
     try {
       const url = new URL(value);
@@ -4060,22 +4814,36 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
           : input.visibilityOwnerUserId;
       if (visibilityOwnerUserId) await deps.requireTeamMember(visibilityOwnerUserId);
       for (const uid of input.visibilityUserIds ?? []) await deps.requireTeamMember(uid);
-      const metadata = input.metadata ?? {};
       await validateEvidenceVisible((input.evidence ?? []).map((ev) => ev.rawEventId));
       const objectTypeByTargetId = await objectTypesForItems(input.items);
       const evidenceIds = Array.from(new Set((input.evidence ?? []).map((ev) => ev.rawEventId)));
-      const sourceEventFallback: {
-        allowedSourceEventIds?: ReadonlySet<string>;
-        fallbackSourceEventId?: string | null;
-      } = { fallbackSourceEventId: evidenceIds.length === 1 ? (evidenceIds[0] ?? null) : null };
-      if (evidenceIds.length > 0) {
-        sourceEventFallback.allowedSourceEventIds = new Set(evidenceIds);
-      }
       const normalizedItems = await Promise.all(
-        input.items.map((item) =>
-          normalizeSuggestionItemForStorage(item, objectTypeByTargetId, sourceEventFallback),
-        ),
+        input.items.map((item) => normalizeSuggestionItemForStorage(item, objectTypeByTargetId)),
       );
+      const projectionContext = await buildApprovalProjectionContext({
+        source: input.source,
+        dedupeKey: input.dedupeKey,
+        visibility,
+        visibilityOwnerUserId,
+        visibilityUserIds: input.visibilityUserIds ?? null,
+        evidenceIds,
+      });
+      const projectionOutputEnvelope = {
+        sourceRefs: projectionContext.sourceRefs,
+        sourcePayloadRefs: projectionContext.sourcePayloadRefs,
+        visibility: projectionContext.visibility.visibility,
+        visibilityOwnerUserId: projectionContext.visibility.visibilityOwnerUserId,
+        visibilityUserIds: projectionContext.visibility.visibilityUserIds,
+        visibilityFloor: projectionContext.visibility.visibility,
+        visibilityFloorOwnerUserId: projectionContext.visibility.visibilityOwnerUserId,
+        visibilityFloorUserIds: projectionContext.visibility.visibilityUserIds,
+      };
+      const sourceRefValidation = sourceRefValidationMetadata(projectionContext.sourceRefs);
+      const metadata = {
+        ...(input.metadata ?? {}),
+        reconciliation_projection_version: RECONCILIATION_APPROVAL_PROJECTION_VERSION,
+        reconciliation_source_ref_validation: sourceRefValidation,
+      };
       const correctionDedupeKey = `${input.dedupeKey}:correction:${suggestionDedupeKey({
         title: input.title,
         summary: input.summary ?? null,
@@ -4111,6 +4879,163 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
           : input.dedupeKey;
 
       const result = await db.transaction(async (tx) => {
+        const [run] = await tx
+          .insert(reconciliationRuns)
+          .values({
+            teamId,
+            trigger:
+              input.reconciliationTrigger ??
+              (evidenceIds.length > 0 ? 'raw_event' : 'manual_repair'),
+            scope: 'approval_projection',
+            status: 'completed',
+            inputFingerprint: reconciliationDedupeKey('approval-projection-run', {
+              teamId,
+              dedupeKey,
+              itemDedupeKeys: normalizedItems.map((item) => item.dedupeKey).sort(),
+              sourceRefs: projectionContext.sourceRefs,
+            }),
+            engineVersion: RECONCILIATION_APPROVAL_PROJECTION_VERSION,
+            completedAt: new Date(),
+            metrics: { item_count: normalizedItems.length, evidence_count: evidenceIds.length },
+          })
+          .onConflictDoUpdate({
+            target: [
+              reconciliationRuns.teamId,
+              reconciliationRuns.inputFingerprint,
+              reconciliationRuns.engineVersion,
+            ],
+            set: {
+              status: 'completed',
+              completedAt: new Date(),
+              metrics: { item_count: normalizedItems.length, evidence_count: evidenceIds.length },
+            },
+          })
+          .returning();
+        if (!run) throw new Error('Failed to create reconciliation run');
+
+        const outputRows: ProjectionOutputRow[] = [];
+        const suppressedOutputRows: SuppressedProjectionOutputRow[] = [];
+        for (const item of normalizedItems) {
+          const outputPayload = {
+            projection: 'agent_suggestions',
+            suggestion_dedupe_key: dedupeKey,
+            suggestion_source: input.source,
+            suggestion_title: input.title,
+            suggestion_summary: input.summary ?? null,
+            suggestion_reason: input.reason ?? null,
+            projection_metadata: metadata,
+            item_dedupe_key: item.dedupeKey,
+            title: item.title,
+            description: item.description ?? null,
+            proposed_payload: item.proposedPayload,
+          };
+          const outputDedupeKey = buildOutputDedupeKey({
+            teamId,
+            clusterId: null,
+            targetKind: item.targetKind,
+            operation: item.operation,
+            targetId: item.targetId ?? null,
+            targetIdentity: item.dedupeKey,
+            sourceRefs: projectionContext.sourceRefs,
+            authorityPolicyVersion: RECONCILIATION_APPROVAL_POLICY_VERSION,
+            plannerVersion: RECONCILIATION_APPROVAL_PLANNER_VERSION,
+          });
+          const [output] = await tx
+            .insert(reconciliationOutputs)
+            .values({
+              teamId,
+              runId: run.id,
+              outputKind: 'approval_bundle',
+              targetKind: item.targetKind,
+              operation: item.operation,
+              targetId: item.targetId ?? null,
+              payload: outputPayload,
+              authorityDecision: {
+                decision: 'requires_approval',
+                reason: 'timeline_owned_projection',
+                policy_version: RECONCILIATION_APPROVAL_POLICY_VERSION,
+              },
+              confidence: input.confidence ?? 'medium',
+              requiresApproval: true,
+              ...projectionOutputEnvelope,
+              dedupeKey: outputDedupeKey,
+              status: 'approval_created',
+            })
+            .onConflictDoUpdate({
+              target: [reconciliationOutputs.teamId, reconciliationOutputs.dedupeKey],
+              set: {
+                runId: run.id,
+                payload: outputPayload,
+                authorityDecision: {
+                  decision: 'requires_approval',
+                  reason: 'timeline_owned_projection',
+                  policy_version: RECONCILIATION_APPROVAL_POLICY_VERSION,
+                },
+                confidence: input.confidence ?? 'medium',
+                ...projectionOutputEnvelope,
+                updatedAt: new Date(),
+              },
+              where: sql`${reconciliationOutputs.status} NOT IN ('applied', 'rejected', 'superseded')`,
+            })
+            .returning({
+              id: reconciliationOutputs.id,
+              clusterId: reconciliationOutputs.clusterId,
+            });
+          if (output) {
+            outputRows.push({
+              id: output.id,
+              itemDedupeKey: item.dedupeKey,
+              clusterId: output.clusterId,
+            });
+            continue;
+          }
+          const [existingOutput] = await tx
+            .select({
+              id: reconciliationOutputs.id,
+              status: reconciliationOutputs.status,
+              clusterId: reconciliationOutputs.clusterId,
+            })
+            .from(reconciliationOutputs)
+            .where(
+              and(
+                eq(reconciliationOutputs.teamId, teamId),
+                eq(reconciliationOutputs.dedupeKey, outputDedupeKey),
+              ),
+            )
+            .limit(1);
+          if (!existingOutput) throw new Error('Failed to create reconciliation output');
+          const suppressedStatus = suppressedProjectionStatus(existingOutput.status);
+          if (suppressedStatus) {
+            suppressedOutputRows.push({
+              id: existingOutput.id,
+              itemDedupeKey: item.dedupeKey,
+              clusterId: existingOutput.clusterId,
+              status: suppressedStatus,
+            });
+            continue;
+          }
+          outputRows.push({
+            id: existingOutput.id,
+            itemDedupeKey: item.dedupeKey,
+            clusterId: existingOutput.clusterId,
+          });
+        }
+        const outputIdByItemDedupeKey = new Map(
+          outputRows.map((row) => [row.itemDedupeKey, row.id] as const),
+        );
+        const outputRowByItemDedupeKey = new Map(
+          outputRows.map((row) => [row.itemDedupeKey, row] as const),
+        );
+        const activeItems = normalizedItems.filter((item) =>
+          outputIdByItemDedupeKey.has(item.dedupeKey),
+        );
+        const clusterIds = reconciliationClusterIdsFromOutputRows(outputRows);
+        const projectionMetadata = {
+          ...metadata,
+          reconciliation_run_id: run.id,
+          reconciliation_output_ids: outputRows.map((row) => row.id),
+          ...(clusterIds.length > 0 ? { reconciliation_cluster_ids: clusterIds } : {}),
+        };
         const suggestionValues = {
           teamId,
           source: input.source,
@@ -4119,11 +5044,168 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
           reason: input.reason ?? null,
           confidence: input.confidence ?? 'medium',
           dedupeKey,
-          visibility,
-          visibilityOwnerUserId,
-          visibilityUserIds: input.visibilityUserIds ?? null,
-          metadata,
+          visibility: projectionContext.visibility.visibility,
+          visibilityOwnerUserId: projectionContext.visibility.visibilityOwnerUserId,
+          visibilityUserIds: projectionContext.visibility.visibilityUserIds,
+          metadata: projectionMetadata,
         };
+        if (activeItems.length === 0 && suppressedOutputRows.length > 0) {
+          const now = new Date();
+          const suppressedStatus = suggestionStatusForSuppressedProjection(suppressedOutputRows);
+          const suppressedMetadata = {
+            ...projectionMetadata,
+            reconciliation_output_ids: suppressedOutputRows.map((row) => row.id),
+            ...(reconciliationClusterIdsFromOutputRows(suppressedOutputRows).length > 0
+              ? {
+                  reconciliation_cluster_ids:
+                    reconciliationClusterIdsFromOutputRows(suppressedOutputRows),
+                }
+              : {}),
+            reconciliation_projection_suppressed: true,
+          };
+          const [existingSuppressedSuggestion] = await tx
+            .select()
+            .from(agentSuggestions)
+            .where(
+              and(eq(agentSuggestions.teamId, teamId), eq(agentSuggestions.dedupeKey, dedupeKey)),
+            )
+            .limit(1);
+          const [suppressedSuggestion] = existingSuppressedSuggestion
+            ? await tx
+                .update(agentSuggestions)
+                .set({
+                  status: suppressedStatus,
+                  visibility: suggestionValues.visibility,
+                  visibilityOwnerUserId: suggestionValues.visibilityOwnerUserId,
+                  visibilityUserIds: suggestionValues.visibilityUserIds,
+                  resolvedAt: existingSuppressedSuggestion.resolvedAt ?? now,
+                  resolvedByUserId: existingSuppressedSuggestion.resolvedByUserId ?? userId,
+                  metadata: sql`${agentSuggestions.metadata} || ${JSON.stringify(suppressedMetadata)}::jsonb`,
+                  updatedAt: now,
+                })
+                .where(eq(agentSuggestions.id, existingSuppressedSuggestion.id))
+                .returning()
+            : await tx
+                .insert(agentSuggestions)
+                .values({
+                  ...suggestionValues,
+                  status: suppressedStatus,
+                  resolvedAt: now,
+                  resolvedByUserId: userId,
+                  metadata: suppressedMetadata,
+                })
+                .onConflictDoNothing()
+                .returning();
+          const resolvedSuggestion = suppressedSuggestion;
+          if (!resolvedSuggestion) throw new Error('Failed to suppress terminal approval output');
+
+          if (input.evidence?.length) {
+            await tx
+              .insert(agentSuggestionEvidence)
+              .values(
+                input.evidence.map((ev) => ({
+                  suggestionId: resolvedSuggestion.id,
+                  teamId,
+                  rawEventId: ev.rawEventId,
+                  quote: ev.quote ?? null,
+                  metadata: suggestionEvidenceMetadata(
+                    ev.metadata,
+                    projectionContext.sourceRefs,
+                    ev.rawEventId,
+                  ),
+                })),
+              )
+              .onConflictDoNothing();
+          }
+
+          await tx
+            .insert(agentSuggestionItems)
+            .values(
+              normalizedItems.map((item) => {
+                const suppressedOutput = suppressedOutputRows.find(
+                  (output) => output.itemDedupeKey === item.dedupeKey,
+                );
+                const itemStatus = suppressedOutput
+                  ? suggestionItemStatusForProjectedOutputStatus(suppressedOutput.status)
+                  : 'superseded';
+                return {
+                  suggestionId: resolvedSuggestion.id,
+                  teamId,
+                  status: itemStatus,
+                  operation: item.operation,
+                  targetKind: item.targetKind,
+                  targetId: item.targetId ?? null,
+                  title: item.title,
+                  description: item.description ?? null,
+                  dedupeKey: item.dedupeKey,
+                  proposedPayload: item.proposedPayload,
+                  resolvedAt: now,
+                  resolvedByUserId: userId,
+                  metadata: {
+                    reconciliation_run_id: run.id,
+                    reconciliation_output_id: suppressedOutput?.id ?? null,
+                    ...(suppressedOutput?.clusterId
+                      ? { reconciliation_cluster_id: suppressedOutput.clusterId }
+                      : {}),
+                    reconciliation_projection_version: RECONCILIATION_APPROVAL_PROJECTION_VERSION,
+                    reconciliation_projection_suppressed: true,
+                  },
+                };
+              }),
+            )
+            .onConflictDoUpdate({
+              target: [agentSuggestionItems.suggestionId, agentSuggestionItems.dedupeKey],
+              set: {
+                status: sql`excluded.status`,
+                resolvedAt: sql`COALESCE(${agentSuggestionItems.resolvedAt}, excluded.resolved_at)`,
+                resolvedByUserId: sql`COALESCE(${agentSuggestionItems.resolvedByUserId}, excluded.resolved_by_user_id)`,
+                metadata: sql`${agentSuggestionItems.metadata} || excluded.metadata`,
+                updatedAt: now,
+              },
+            });
+
+          const projectedItems = await tx
+            .select({ id: agentSuggestionItems.id, dedupeKey: agentSuggestionItems.dedupeKey })
+            .from(agentSuggestionItems)
+            .where(eq(agentSuggestionItems.suggestionId, resolvedSuggestion.id));
+          const itemIdByDedupeKey = new Map(
+            projectedItems.map((item) => [item.dedupeKey, item.id] as const),
+          );
+          await tx
+            .insert(reconciliationProjectionOutbox)
+            .values(
+              suppressedOutputRows.map((output) => ({
+                teamId,
+                outputId: output.id,
+                suggestionId: resolvedSuggestion.id,
+                suggestionItemId: itemIdByDedupeKey.get(output.itemDedupeKey) ?? null,
+                action: projectionOutboxActionForStatus(output.status),
+                status: 'processed' as const,
+                payload: {
+                  projection: 'agent_suggestions',
+                  projection_status: output.status,
+                  suggestion_item_status: suggestionItemStatusForProjectedOutputStatus(
+                    output.status,
+                  ),
+                  replay_suppressed: true,
+                },
+                dedupeKey: reconciliationDedupeKey('approval-projection-outbox', {
+                  teamId,
+                  outputId: output.id,
+                  suggestionId: resolvedSuggestion.id,
+                  suggestionItemId: itemIdByDedupeKey.get(output.itemDedupeKey) ?? null,
+                  action: projectionOutboxActionForStatus(output.status),
+                  status: output.status,
+                  replaySuppressed: true,
+                }),
+                processedAt: now,
+                updatedAt: now,
+              })),
+            )
+            .onConflictDoNothing();
+
+          return { row: resolvedSuggestion, changed: false };
+        }
         const insertSuggestion = async (candidateDedupeKey: string) => {
           const [row] = await tx
             .insert(agentSuggestions)
@@ -4138,7 +5220,10 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
                 summary: input.summary ?? null,
                 reason: input.reason ?? null,
                 confidence: input.confidence ?? 'medium',
-                metadata: sql`${agentSuggestions.metadata} || ${JSON.stringify(metadata)}::jsonb`,
+                visibility: suggestionValues.visibility,
+                visibilityOwnerUserId: suggestionValues.visibilityOwnerUserId,
+                visibilityUserIds: suggestionValues.visibilityUserIds,
+                metadata: sql`${agentSuggestions.metadata} || ${JSON.stringify(suggestionValues.metadata)}::jsonb`,
                 updatedAt: new Date(),
               },
               where: sql`${agentSuggestions.status} NOT IN ('accepted', 'rejected', 'superseded')`,
@@ -4201,7 +5286,11 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
                 teamId,
                 rawEventId: ev.rawEventId,
                 quote: ev.quote ?? null,
-                metadata: ev.metadata ?? {},
+                metadata: suggestionEvidenceMetadata(
+                  ev.metadata,
+                  projectionContext.sourceRefs,
+                  ev.rawEventId,
+                ),
               })),
             )
             .onConflictDoNothing();
@@ -4210,7 +5299,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         await tx
           .insert(agentSuggestionItems)
           .values(
-            normalizedItems.map((item) => {
+            activeItems.map((item) => {
               return {
                 suggestionId: inserted.id,
                 teamId,
@@ -4222,6 +5311,17 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
                 description: item.description ?? null,
                 dedupeKey: item.dedupeKey,
                 proposedPayload: item.proposedPayload,
+                metadata: {
+                  reconciliation_run_id: run.id,
+                  reconciliation_output_id: outputIdByItemDedupeKey.get(item.dedupeKey) ?? null,
+                  ...(outputRowByItemDedupeKey.get(item.dedupeKey)?.clusterId
+                    ? {
+                        reconciliation_cluster_id: outputRowByItemDedupeKey.get(item.dedupeKey)
+                          ?.clusterId,
+                      }
+                    : {}),
+                  reconciliation_projection_version: RECONCILIATION_APPROVAL_PROJECTION_VERSION,
+                },
               };
             }),
           )
@@ -4232,9 +5332,56 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
               description: sql`CASE WHEN ${agentSuggestionItems.status} = 'pending' THEN excluded.description ELSE ${agentSuggestionItems.description} END`,
               targetId: sql`CASE WHEN ${agentSuggestionItems.status} = 'pending' THEN excluded.target_id ELSE ${agentSuggestionItems.targetId} END`,
               proposedPayload: sql`CASE WHEN ${agentSuggestionItems.status} = 'pending' THEN excluded.proposed_payload ELSE ${agentSuggestionItems.proposedPayload} END`,
+              metadata: sql`CASE WHEN ${agentSuggestionItems.status} = 'pending' THEN ${agentSuggestionItems.metadata} || excluded.metadata ELSE ${agentSuggestionItems.metadata} END`,
               updatedAt: new Date(),
             },
           });
+
+        const projectedItems = await tx
+          .select({ id: agentSuggestionItems.id, dedupeKey: agentSuggestionItems.dedupeKey })
+          .from(agentSuggestionItems)
+          .where(
+            and(
+              eq(agentSuggestionItems.suggestionId, inserted.id),
+              inArray(
+                agentSuggestionItems.dedupeKey,
+                activeItems.map((item) => item.dedupeKey),
+              ),
+            ),
+          );
+        const itemIdByDedupeKey = new Map(
+          projectedItems.map((item) => [item.dedupeKey, item.id] as const),
+        );
+        const now = new Date();
+        await tx
+          .insert(reconciliationProjectionOutbox)
+          .values(
+            outputRows.map((output) => ({
+              teamId,
+              outputId: output.id,
+              suggestionId: inserted.id,
+              suggestionItemId: itemIdByDedupeKey.get(output.itemDedupeKey) ?? null,
+              action: 'create_projection' as const,
+              status: 'processed' as const,
+              payload: {
+                projection: 'agent_suggestions',
+                projection_version: RECONCILIATION_APPROVAL_PROJECTION_VERSION,
+                suggestion_dedupe_key: dedupeKey,
+                item_dedupe_key: output.itemDedupeKey,
+              },
+              dedupeKey: reconciliationDedupeKey('approval-projection-outbox', {
+                teamId,
+                outputId: output.id,
+                suggestionId: inserted.id,
+                suggestionItemId: itemIdByDedupeKey.get(output.itemDedupeKey) ?? null,
+                action: 'create_projection',
+                projectionVersion: RECONCILIATION_APPROVAL_PROJECTION_VERSION,
+              }),
+              processedAt: now,
+              updatedAt: now,
+            })),
+          )
+          .onConflictDoNothing();
 
         return { row: inserted, changed: true };
       });
@@ -4257,6 +5404,8 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     withCalendarResolutionHints,
 
     getSuggestion: loadBundle,
+
+    repairApprovalProjectionForOutput,
 
     async countPendingSuggestions(): Promise<number> {
       await ensureMember();
@@ -4299,22 +5448,27 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         .limit(1);
       const row = rows[0];
       if (!row) return false;
-      const [rejected] = await db
-        .update(agentSuggestionItems)
-        .set({
-          status: 'rejected',
-          resolvedAt: new Date(),
-          resolvedByUserId: userId,
-          updatedAt: new Date(),
-        })
-        .where(
-          and(
-            eq(agentSuggestionItems.id, itemId),
-            isNull(agentSuggestionItems.resolvedAt),
-            inArray(agentSuggestionItems.status, ['pending', 'failed']),
-          ),
-        )
-        .returning({ id: agentSuggestionItems.id });
+      const rejected = await db.transaction(async (tx) => {
+        const [updated] = await tx
+          .update(agentSuggestionItems)
+          .set({
+            status: 'rejected',
+            resolvedAt: new Date(),
+            resolvedByUserId: userId,
+            updatedAt: new Date(),
+          })
+          .where(
+            and(
+              eq(agentSuggestionItems.id, itemId),
+              isNull(agentSuggestionItems.resolvedAt),
+              inArray(agentSuggestionItems.status, ['pending', 'failed']),
+            ),
+          )
+          .returning({ id: agentSuggestionItems.id });
+        if (!updated) return null;
+        await writeProjectedOutputStatusForItem(tx, row.item, 'rejected');
+        return updated;
+      });
       if (!rejected) return false;
       await supersedeRelationshipDependents(row.item);
       await refreshBundleStatus(row.suggestion.id, userId);
@@ -4326,11 +5480,13 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       return true;
     },
 
-    async acceptAll(suggestionId: string): Promise<{ accepted: number; failed: number }> {
+    async acceptAll(
+      suggestionId: string,
+    ): Promise<{ accepted: number; failed: number; failedItemIds: string[] }> {
       const bundle = await loadBundle(suggestionId);
-      if (!bundle) return { accepted: 0, failed: 0 };
+      if (!bundle) return { accepted: 0, failed: 0, failedItemIds: [] };
       let accepted = 0;
-      let failed = 0;
+      const failedItemIds: string[] = [];
       for (const item of orderSuggestionItemsForAcceptance(
         bundle.items.filter(
           (i) =>
@@ -4339,23 +5495,25 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       )) {
         try {
           if (await acceptSuggestionItem(item.id)) accepted += 1;
+          else failedItemIds.push(item.id);
         } catch {
-          failed += 1;
+          failedItemIds.push(item.id);
         }
       }
-      return { accepted, failed };
+      return { accepted, failed: failedItemIds.length, failedItemIds };
     },
 
     async acceptSelected(input: {
       suggestionId: string;
       itemIds: string[];
-    }): Promise<{ accepted: number; failed: number }> {
+    }): Promise<{ accepted: number; failed: number; failedItemIds: string[] }> {
       const itemIds = [...new Set(input.itemIds)];
       const bundle = await loadBundle(input.suggestionId);
-      if (!bundle) return { accepted: 0, failed: itemIds.length };
+      if (!bundle) return { accepted: 0, failed: itemIds.length, failedItemIds: itemIds };
       const selectedIds = new Set(itemIds);
       let accepted = 0;
-      let failed = 0;
+      const processedItemIds = new Set<string>();
+      const failedItemIds: string[] = [];
       for (const item of orderSuggestionItemsForAcceptance(
         bundle.items.filter(
           (i) =>
@@ -4364,15 +5522,18 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
             i.targetKind !== 'object_merge',
         ),
       )) {
+        processedItemIds.add(item.id);
         try {
           if (await acceptSuggestionItem(item.id)) accepted += 1;
-          else failed += 1;
+          else failedItemIds.push(item.id);
         } catch {
-          failed += 1;
+          failedItemIds.push(item.id);
         }
       }
-      failed += itemIds.length - accepted - failed;
-      return { accepted, failed };
+      for (const itemId of itemIds) {
+        if (!processedItemIds.has(itemId)) failedItemIds.push(itemId);
+      }
+      return { accepted, failed: failedItemIds.length, failedItemIds };
     },
   };
 }

@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -14,6 +14,8 @@ import {
   llm,
   queue,
 } from '@timeline/shared';
+import { sourcePayloadRefFromMetadata } from '@timeline/shared/reconciliation';
+import { normalizeRawEventsToEvidence } from '@timeline/shared/reconciliation/normalization';
 import { UnrecoverableError, Worker, type Job } from 'bullmq';
 import { eq, sql } from 'drizzle-orm';
 import ffmpegPath from 'ffmpeg-static';
@@ -28,9 +30,16 @@ const log = childLogger('worker:transcribe');
 const MAX_TRANSCRIPTION_CHUNK_BYTES = 24_000_000;
 const MAX_SOURCE_AUDIO_BYTES = 200 * 1024 * 1024;
 const LARGE_AUDIO_SEGMENT_SECONDS = 10 * 60;
+const TRANSCRIBE_SOURCE_SNAPSHOT_VERSION = 'transcribe-source-snapshot-2026-06';
 
 interface TranscribeWorkerDeps {
   db: Db;
+}
+
+interface TranscribeFailureContext {
+  attemptsMade: number;
+  maxAttempts: number;
+  err: Error;
 }
 
 export interface TranscribeWorkerIO {
@@ -39,6 +48,7 @@ export interface TranscribeWorkerIO {
   transcribeAudio(input: {
     audio: Buffer;
     format?: llm.AudioFormat;
+    language?: string;
   }): Promise<{ text: string; model: string }>;
   splitAudio(input: { audioKey: string; audio: Buffer }): Promise<Buffer[]>;
   enqueueExtract(input: queue.ExtractJobData): Promise<void>;
@@ -74,6 +84,10 @@ function defaultIO(): TranscribeWorkerIO {
   };
 }
 
+function shouldMarkPermanentTranscribeFailure(input: TranscribeFailureContext): boolean {
+  return input.err instanceof UnrecoverableError || input.attemptsMade >= input.maxAttempts;
+}
+
 export async function processTranscribeJobForTests(
   deps: TranscribeWorkerDeps,
   data: queue.TranscribeJobData,
@@ -98,17 +112,6 @@ export async function processTranscribeJobForTests(
       : [body];
   const format =
     body.byteLength > MAX_TRANSCRIPTION_CHUNK_BYTES ? 'mp3' : audioFormatFromAudioKey(audioKey);
-  const transcriptions = [];
-  for (const audio of audioChunks) {
-    transcriptions.push(await io.transcribeAudio({ audio, ...(format ? { format } : {}) }));
-  }
-  const result = {
-    text: transcriptions
-      .map((r) => r.text.trim())
-      .filter(Boolean)
-      .join('\n\n'),
-    model: Array.from(new Set(transcriptions.map((r) => r.model))).join('+'),
-  };
   const current = await deps.db
     .select({ sourceMetadata: rawEvents.sourceMetadata })
     .from(rawEvents)
@@ -122,11 +125,43 @@ export async function processTranscribeJobForTests(
       : {};
   const noteText =
     typeof sourceMetadata.audio_note_text === 'string' ? sourceMetadata.audio_note_text.trim() : '';
+  const languageHint = transcriptionLanguageHint(sourceMetadata);
+  const transcriptions = [];
+  for (const audio of audioChunks) {
+    transcriptions.push(
+      await io.transcribeAudio({
+        audio,
+        ...(format ? { format } : {}),
+        ...(languageHint ? { language: languageHint } : {}),
+      }),
+    );
+  }
+  const result = {
+    text: transcriptions
+      .map((r) => r.text.trim())
+      .filter(Boolean)
+      .join('\n\n'),
+    model: Array.from(new Set(transcriptions.map((r) => r.model))).join('+'),
+  };
   const contentText = [noteText, result.text].filter(Boolean).join('\n\n');
+  const existingPayloadRef = sourcePayloadRefFromMetadata(sourceMetadata);
+  const sourcePayloadRef = existingPayloadRef ?? `s3://timeline-audio/${audioKey}`;
+  const payloadDigest = `sha256:${createHash('sha256').update(body).digest('hex')}`;
 
   const patch = JSON.stringify({
     transcription_model: result.model,
     transcribed_at: new Date().toISOString(),
+    source_payload_ref: sourcePayloadRef,
+    payload_digest: payloadDigest,
+    source_snapshot_kind: 'transcribed_audio_event',
+    source_snapshot_version: TRANSCRIBE_SOURCE_SNAPSHOT_VERSION,
+    source_snapshot: {
+      audio_key: audioKey,
+      transcription_model: result.model,
+      transcript_text: result.text,
+      transcription_language: languageHint,
+      note_text: noteText || null,
+    },
   });
   // Clear stale failure markers on success. A row that previously failed
   // (Redis outage, enqueue-failed) then succeeds via retry must not
@@ -142,6 +177,22 @@ export async function processTranscribeJobForTests(
   if (update.length === 0) {
     log.warn({ rawEventId }, 'raw event not found at update');
     return { rawEventId, model: result.model };
+  }
+
+  try {
+    const row = update[0];
+    if (row) {
+      await normalizeRawEventsToEvidence({
+        db: deps.db,
+        teamId: row.teamId,
+        rawEventIds: [row.id],
+      });
+    }
+  } catch (normalizationErr) {
+    log.warn(
+      { err: normalizationErr, rawEventId },
+      'transcribed raw event reconciliation evidence normalization failed',
+    );
   }
 
   try {
@@ -251,6 +302,13 @@ function audioKeyExtension(audioKey: string): string {
     .toLowerCase()
     .replace(/[^a-z0-9.]/g, '');
   return ext.length > 1 && ext.length <= 8 ? ext : '.audio';
+}
+
+function transcriptionLanguageHint(sourceMetadata: Record<string, unknown>): string | undefined {
+  const value = sourceMetadata.transcription_language;
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim().toLowerCase();
+  return /^[a-z]{2}(?:-[a-z0-9]{2,8})?$/u.test(trimmed) ? trimmed : undefined;
 }
 
 function audioFormatFromAudioKey(audioKey: string): llm.AudioFormat | undefined {
@@ -384,8 +442,15 @@ export function startTranscribeWorker(deps: TranscribeWorkerDeps): Worker<queue.
     // be just as oversize next time). Otherwise transient errors (a brief
     // OpenRouter blip) would surface to the user as a hard failure.
     const maxAttempts = job.opts.attempts ?? 1;
-    const unrecoverable = err instanceof UnrecoverableError;
-    if (!unrecoverable && job.attemptsMade < maxAttempts) return;
+    if (
+      !shouldMarkPermanentTranscribeFailure({
+        err,
+        attemptsMade: job.attemptsMade,
+        maxAttempts,
+      })
+    ) {
+      return;
+    }
     void markTranscribeFailureForTests(deps, job.data, err).catch((updateErr: unknown) => {
       log.error({ err: updateErr }, 'failed to mark row failure');
       captureWorkerException(updateErr, {
@@ -400,3 +465,7 @@ export function startTranscribeWorker(deps: TranscribeWorkerDeps): Worker<queue.
 
   return worker;
 }
+
+export const transcribeWorkerInternals = {
+  shouldMarkPermanentTranscribeFailure,
+};

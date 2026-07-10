@@ -1,0 +1,69 @@
+{
+  "schemaVersion": 2,
+  "caseName": "customer-project-email-monday-sentry",
+  "scenarioFamily": "customer_project",
+  "ingestionSurfaces": ["email", "monday", "sentry"],
+  "modelId": "reconciliation-live-fixture",
+  "promptVersion": "reconciliation-live-matrix-2026-06",
+  "startedAt": "2026-07-05T00:00:00.000Z",
+  "completedAt": "2026-07-05T00:00:02.000Z",
+  "passed": true,
+  "failures": [],
+  "packetFingerprint": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+  "promptFingerprint": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+  "expected": {
+    "ingestionSurfaces": ["email", "monday", "sentry"],
+    "outputKindCounts": {
+      "observed_association": 2,
+      "direct_write": 2,
+      "approval_bundle": 1,
+      "conflict": 1
+    },
+    "associationRoleCounts": {
+      "discussion": 1,
+      "lifecycle_update": 1,
+      "related_context": 1
+    },
+    "requiredArtifactClusterKinds": ["customer_project", "provider_record", "incident"],
+    "requiredSourcePayloadSurfaces": ["email", "monday", "sentry"],
+    "forbiddenOutputKinds": []
+  },
+  "actual": {
+    "scenarioFamily": "customer_project",
+    "ingestionSurfaces": ["email", "monday", "sentry"],
+    "outputKinds": ["observed_association", "direct_write", "approval_bundle", "conflict"],
+    "directWriteSurfaces": ["monday", "sentry"],
+    "artifactClusterKinds": ["customer_project", "provider_record", "incident"],
+    "approvalRequired": true,
+    "privacyRisk": false,
+    "sourceRefs": [
+      {
+        "surface": "email",
+        "rawEventHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      {
+        "surface": "monday",
+        "rawEventHash": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      },
+      {
+        "surface": "sentry",
+        "rawEventHash": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+      }
+    ]
+  },
+  "judge": {
+    "modelId": "reconciliation-live-fixture-judge",
+    "promptVersion": "reconciliation-live-judge-2026-06",
+    "score": 1,
+    "passed": true,
+    "privacyConcern": false,
+    "failureCodes": [],
+    "strengthCodes": [
+      "correct_scenario",
+      "correct_surfaces",
+      "correct_outputs",
+      "source_refs_complete",
+      "visibility_safe"
+    ]
+  }
+}

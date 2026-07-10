@@ -9,6 +9,8 @@ import {
   ingestWebhooks,
   objectNotes,
   rawEvents,
+  reconciliationOutputs,
+  reconciliationRuns,
   teamMembers,
   users,
   type Db,
@@ -20,10 +22,16 @@ import {
   llm,
   objects,
   queue,
+  reconciliation,
   suggestions,
   time,
   withTeam,
 } from '@timeline/shared';
+import {
+  RECONCILIATION_PLANNER_PROMPT_VERSION,
+  planReconciliation,
+  type ReconciliationPlannerResult,
+} from '@timeline/shared/reconciliation/planner';
 import { likeMentionCondition, textMentionsAnyValue } from '@timeline/shared/sql-like';
 import { UnrecoverableError, Worker, type Job } from 'bullmq';
 import { and, count, desc, eq, inArray, isNull, lt, ne, or, sql } from 'drizzle-orm';
@@ -34,6 +42,7 @@ import { captureWorkerJobFailure } from '#src/monitoring.js';
 
 const PSEUDO_USER = '00000000-0000-0000-0000-000000000000';
 const SUGGESTION_CODE_VERSION = '2026-06-a';
+const CONVERSATION_NO_ACTION_RECONCILIATION_VERSION = 'conversation-no-action-2026-06';
 const RECENT_CONTEXT_LIMIT = 5;
 const OBJECT_PROMPT_LIMIT = 40;
 const OBJECT_MATCHING_LIMIT = 500;
@@ -55,6 +64,7 @@ interface SuggestionWorkerDeps {
 interface SuggestionWorkerIO {
   getEnv?: typeof getEnv;
   chatStructured?: typeof llm.chatStructured;
+  planReconciliation?: typeof planReconciliation;
   modelId?: string;
   enqueueSuggestionJob?: typeof queue.enqueueSuggestionJob;
 }
@@ -94,6 +104,14 @@ type RawEventRow = typeof rawEvents.$inferSelect;
 type SuggestionBundleOutput = z.infer<typeof suggestionBundleSchema>;
 type SuggestionItemOutput = z.infer<typeof suggestionItemSchema>;
 type EntityType = (typeof entities.$inferSelect)['type'];
+type PlannerSurface = Parameters<typeof planReconciliation>[0]['observedSurfaces'][number];
+
+interface ProposalPlannerMetadata {
+  reconciliation_planner_version: typeof RECONCILIATION_PLANNER_PROMPT_VERSION;
+  reconciliation_planner_status: 'completed' | 'failed' | 'skipped';
+  reconciliation_planner_result?: ReconciliationPlannerResult;
+  reconciliation_planner_failure?: string;
+}
 
 function tokenizeEvidence(text: string): string[] {
   return text
@@ -1635,12 +1653,29 @@ function pickCleanupSurvivor(rows: CleanupObjectRow[]): CleanupObjectRow {
   return survivor;
 }
 
-async function rejectedSuggestionExists(
+async function rejectedApprovalOutputExists(
   db: Db,
   teamId: string,
   dedupeKey: string,
 ): Promise<boolean> {
   const rows = await db
+    .select({ id: reconciliationOutputs.id })
+    .from(reconciliationOutputs)
+    .where(
+      and(
+        eq(reconciliationOutputs.teamId, teamId),
+        eq(reconciliationOutputs.outputKind, 'approval_bundle'),
+        eq(reconciliationOutputs.status, 'rejected'),
+        or(
+          sql`${reconciliationOutputs.payload} ->> 'suggestion_dedupe_key' = ${dedupeKey}`,
+          sql`${reconciliationOutputs.payload} ->> 'item_dedupe_key' = ${dedupeKey}`,
+        ),
+      ),
+    )
+    .limit(1);
+  if (rows.length > 0) return true;
+
+  const legacyRows = await db
     .select({ id: agentSuggestions.id })
     .from(agentSuggestions)
     .where(
@@ -1651,7 +1686,7 @@ async function rejectedSuggestionExists(
       ),
     )
     .limit(1);
-  return rows.length > 0;
+  return legacyRows.length > 0;
 }
 
 async function processObjectCleanupJob(
@@ -1817,7 +1852,7 @@ async function createObjectCleanupSuggestionsForTeam(
         teamId,
         objectIds,
       });
-      if (await rejectedSuggestionExists(db, teamId, dedupeKey)) continue;
+      if (await rejectedApprovalOutputExists(db, teamId, dedupeKey)) continue;
       await scope.suggestions.createOrMergeSuggestionBundle({
         source: 'background',
         title: `Merge duplicate objects: ${left.canonicalName} / ${right.canonicalName}`,
@@ -1832,6 +1867,7 @@ async function createObjectCleanupSuggestionsForTeam(
           object_ids: objectIds,
           ...(repairObjectId ? { repair_object_id: repairObjectId } : {}),
         },
+        reconciliationTrigger: 'manual_repair',
         items: [
           {
             operation: 'merge',
@@ -1900,7 +1936,7 @@ async function createObjectCleanupSuggestionsForTeam(
       objectId: row.id,
       evidenceHash: normalized,
     });
-    if (await rejectedSuggestionExists(db, teamId, dedupeKey)) continue;
+    if (await rejectedApprovalOutputExists(db, teamId, dedupeKey)) continue;
     await scope.suggestions.createOrMergeSuggestionBundle({
       source: 'background',
       title: `Archive low-signal object: ${row.canonicalName}`,
@@ -1916,6 +1952,7 @@ async function createObjectCleanupSuggestionsForTeam(
         object_id: row.id,
         ...(repairObjectId ? { repair_object_id: repairObjectId } : {}),
       },
+      reconciliationTrigger: 'manual_repair',
       items: [
         {
           operation: 'archive_or_cancel',
@@ -1983,6 +2020,7 @@ async function createObjectCleanupSuggestionsForTeam(
             fact_count: candidate.factCount,
             source: candidate.source,
           },
+          reconciliationTrigger: 'manual_repair',
           items: [
             {
               operation: 'create',
@@ -2035,6 +2073,7 @@ async function createObjectCleanupSuggestionsForTeam(
             person_name: candidate.canonicalName,
             fact_count: candidate.factCount,
           },
+          reconciliationTrigger: 'manual_repair',
           items: [
             {
               operation: 'create',
@@ -2367,6 +2406,21 @@ async function runSuggestionExtraction(
             authorUserId: activeAuthorUserId,
           });
   const objectTypeById = new Map(entityRows.map((entity) => [entity.id, entity.type]));
+  const proposalSourceRefs = uniqueSourceRefs(
+    args.conversation
+      ? args.conversation.window.map((event) => conversationWindowSourceRef(row.source, event))
+      : [rawEventSourceRef(row)],
+  );
+  const proposalPlannerMetadata = bundles.some((bundle) => bundle.items.length > 0)
+    ? await proposalPlannerMetadataFor({
+        io,
+        row,
+        sourceRefs: proposalSourceRefs,
+        bundles,
+        text,
+        conversationKey: args.conversation?.key ?? null,
+      })
+    : null;
 
   let proposalsCreated = 0;
   for (const bundle of bundles) {
@@ -2402,6 +2456,7 @@ async function runSuggestionExtraction(
       evidence,
       metadata: {
         suggestion_model_version: modelVersion,
+        ...(proposalPlannerMetadata ?? {}),
         ...(args.conversation
           ? {
               conversation_review_id: args.conversation.reviewId,
@@ -2639,6 +2694,11 @@ async function processConversationReviewJob(
     review.id,
     last,
     proposalsCreated > 0 ? 'proposal' : 'no_action',
+    proposalsCreated > 0
+      ? undefined
+      : {
+          sourceRefs: window.map((event) => conversationWindowSourceRef(identity.source, event)),
+        },
   );
 }
 
@@ -2730,26 +2790,331 @@ async function markReviewComplete(
   reviewId: string,
   last: typeof rawEvents.$inferSelect,
   outcome = 'no_action',
+  opts: { sourceRefs?: reconciliation.SourceRef[] } = {},
 ): Promise<void> {
-  await db
-    .update(conversationReviews)
-    .set({
+  const reviewedAt = new Date();
+  await db.transaction(async (tx) => {
+    const [updated] = await tx
+      .update(conversationReviews)
+      .set({
+        status: 'completed',
+        reviewedThroughRawEventId: last.id,
+        reviewedThroughOccurredAt: last.occurredAt,
+        metadata: sql`${conversationReviews.metadata} || ${JSON.stringify({
+          review_outcome: outcome,
+          reviewed_at: reviewedAt.toISOString(),
+        })}::jsonb`,
+        updatedAt: reviewedAt,
+      })
+      .where(
+        and(
+          eq(conversationReviews.id, reviewId),
+          eq(conversationReviews.status, 'pending'),
+          eq(conversationReviews.lastRawEventId, last.id),
+        ),
+      )
+      .returning({
+        id: conversationReviews.id,
+        teamId: conversationReviews.teamId,
+        conversationKey: conversationReviews.conversationKey,
+      });
+
+    if (!updated || outcome !== 'no_action') return;
+    await writeConversationNoActionOutput(tx, updated, last, reviewedAt, opts.sourceRefs);
+  });
+}
+
+async function writeConversationNoActionOutput(
+  tx: Parameters<Parameters<Db['transaction']>[0]>[0],
+  review: { id: string; teamId: string; conversationKey: string },
+  last: typeof rawEvents.$inferSelect,
+  now: Date,
+  sourceRefsOverride?: reconciliation.SourceRef[],
+): Promise<void> {
+  const fallbackSourceRef = rawEventSourceRef(last);
+  const sourceRefs =
+    sourceRefsOverride && sourceRefsOverride.length > 0
+      ? uniqueSourceRefs(sourceRefsOverride)
+      : [fallbackSourceRef];
+  const sourcePayloadRefs = sourceRefs
+    .map((ref) => ref.sourcePayloadRef)
+    .filter((value): value is string => typeof value === 'string' && value.length > 0);
+  const [run] = await tx
+    .insert(reconciliationRuns)
+    .values({
+      teamId: review.teamId,
+      trigger: 'raw_event',
+      scope: 'conversation_review:no_action',
       status: 'completed',
-      reviewedThroughRawEventId: last.id,
-      reviewedThroughOccurredAt: last.occurredAt,
-      metadata: sql`${conversationReviews.metadata} || ${JSON.stringify({
-        review_outcome: outcome,
-        reviewed_at: new Date().toISOString(),
-      })}::jsonb`,
-      updatedAt: new Date(),
+      inputFingerprint: reconciliation.reconciliationDedupeKey('conversation-no-action-run', {
+        teamId: review.teamId,
+        reviewId: review.id,
+        conversationKey: review.conversationKey,
+        rawEventId: last.id,
+        sourceRefs,
+      }),
+      engineVersion: CONVERSATION_NO_ACTION_RECONCILIATION_VERSION,
+      completedAt: now,
+      metrics: { no_action_count: 1, source_ref_count: sourceRefs.length },
     })
-    .where(
-      and(
-        eq(conversationReviews.id, reviewId),
-        eq(conversationReviews.status, 'pending'),
-        eq(conversationReviews.lastRawEventId, last.id),
-      ),
+    .onConflictDoUpdate({
+      target: [
+        reconciliationRuns.teamId,
+        reconciliationRuns.inputFingerprint,
+        reconciliationRuns.engineVersion,
+      ],
+      set: {
+        status: 'completed',
+        completedAt: now,
+        metrics: { no_action_count: 1, source_ref_count: sourceRefs.length },
+      },
+    })
+    .returning({ id: reconciliationRuns.id });
+  if (!run) throw new Error('Failed to create conversation no-action reconciliation run');
+
+  const dedupeKey = reconciliation.buildOutputDedupeKey({
+    teamId: review.teamId,
+    clusterId: null,
+    targetKind: 'cluster_identity',
+    operation: 'noop',
+    targetId: null,
+    targetIdentity: review.conversationKey,
+    sourceRefs,
+    authorityPolicyVersion: CONVERSATION_NO_ACTION_RECONCILIATION_VERSION,
+    plannerVersion: CONVERSATION_NO_ACTION_RECONCILIATION_VERSION,
+  });
+
+  await tx
+    .insert(reconciliationOutputs)
+    .values({
+      teamId: review.teamId,
+      runId: run.id,
+      outputKind: 'no_action',
+      targetKind: 'cluster_identity',
+      operation: 'noop',
+      targetId: null,
+      payload: {
+        planner: 'conversation_review',
+        review_id: review.id,
+        conversation_key: review.conversationKey,
+        raw_event_id: last.id,
+        outcome: 'no_action',
+        reason: 'conversation_review_completed_without_proposals',
+      },
+      authorityDecision: {
+        decision: 'blocked',
+        reason: 'no_action',
+        policy_version: CONVERSATION_NO_ACTION_RECONCILIATION_VERSION,
+      },
+      confidence: 'medium',
+      requiresApproval: false,
+      sourceRefs,
+      sourcePayloadRefs,
+      visibility: last.visibility,
+      visibilityOwnerUserId: last.visibilityOwnerUserId,
+      visibilityUserIds: last.visibilityUserIds,
+      visibilityFloor: last.visibility,
+      visibilityFloorOwnerUserId: last.visibilityOwnerUserId,
+      visibilityFloorUserIds: last.visibilityUserIds,
+      dedupeKey,
+      status: 'applied',
+    })
+    .onConflictDoUpdate({
+      target: [reconciliationOutputs.teamId, reconciliationOutputs.dedupeKey],
+      set: {
+        runId: run.id,
+        payload: {
+          planner: 'conversation_review',
+          review_id: review.id,
+          conversation_key: review.conversationKey,
+          raw_event_id: last.id,
+          outcome: 'no_action',
+          reason: 'conversation_review_completed_without_proposals',
+        },
+        authorityDecision: {
+          decision: 'blocked',
+          reason: 'no_action',
+          policy_version: CONVERSATION_NO_ACTION_RECONCILIATION_VERSION,
+        },
+        sourceRefs,
+        sourcePayloadRefs,
+        visibility: last.visibility,
+        visibilityOwnerUserId: last.visibilityOwnerUserId,
+        visibilityUserIds: last.visibilityUserIds,
+        visibilityFloor: last.visibility,
+        visibilityFloorOwnerUserId: last.visibilityOwnerUserId,
+        visibilityFloorUserIds: last.visibilityUserIds,
+        status: 'applied',
+        updatedAt: now,
+      },
+    });
+}
+
+async function proposalPlannerMetadataFor(args: {
+  io: SuggestionWorkerIO;
+  row: typeof rawEvents.$inferSelect;
+  sourceRefs: reconciliation.SourceRef[];
+  bundles: SuggestionBundleOutput[];
+  text: string;
+  conversationKey: string | null;
+}): Promise<ProposalPlannerMetadata | null> {
+  const planner =
+    args.io.planReconciliation ?? (args.io.chatStructured ? null : planReconciliation);
+  if (!planner) return null;
+  const anchorMetadata = recordFromUnknown(args.row.sourceMetadata);
+  const defaultSurface = plannerSurfaceForSource(args.row.source, anchorMetadata);
+  const plannerSourceRefs = plannerSourceRefsFor(args.sourceRefs, defaultSurface);
+  if (plannerSourceRefs.length === 0) return null;
+  const observedSurfaces = Array.from(new Set(plannerSourceRefs.map((ref) => ref.surface)));
+  try {
+    const result = await planner(
+      {
+        packetName: args.conversationKey
+          ? `conversation-review:${args.conversationKey}:${args.row.id}`
+          : `raw-event:${args.row.id}`,
+        observedSurfaces,
+        sourceRefs: plannerSourceRefs,
+        plannerContext: proposalPlannerContext(args),
+        policyDerivedOutputKinds: ['approval_bundle'],
+        policyDerivedDirectWriteSurfaces: [],
+        ...(args.io.modelId ? { model: args.io.modelId } : {}),
+      },
+      args.io.chatStructured ? { chatStructured: args.io.chatStructured } : {},
     );
+    return {
+      reconciliation_planner_version: RECONCILIATION_PLANNER_PROMPT_VERSION,
+      reconciliation_planner_status: 'completed',
+      reconciliation_planner_result: result,
+    };
+  } catch (err) {
+    return {
+      reconciliation_planner_version: RECONCILIATION_PLANNER_PROMPT_VERSION,
+      reconciliation_planner_status: 'failed',
+      reconciliation_planner_failure: truncate(safeErrorMessage(err), 300),
+    };
+  }
+}
+
+function proposalPlannerContext(args: {
+  row: typeof rawEvents.$inferSelect;
+  bundles: SuggestionBundleOutput[];
+  text: string;
+  conversationKey: string | null;
+}): string {
+  const proposals = args.bundles
+    .filter((bundle) => bundle.items.length > 0)
+    .map((bundle) => {
+      const items = bundle.items
+        .map(
+          (item) =>
+            `  - ${item.operation} ${item.targetKind}${item.targetId ? ` ${item.targetId}` : ''}: ${item.title}`,
+        )
+        .join('\n');
+      return `- ${bundle.title}\n${items}`;
+    })
+    .join('\n');
+  return [
+    `Source: ${args.row.source}`,
+    `Visibility: ${args.row.visibility}`,
+    args.conversationKey ? `Conversation: ${args.conversationKey}` : null,
+    'The extraction worker produced approval-queue proposals. These proposals are not applied state; Timeline-owned memory changes require human approval.',
+    `Evidence excerpt: ${truncate(args.text, 1200)}`,
+    `Proposals:\n${proposals}`,
+  ]
+    .filter((line): line is string => Boolean(line))
+    .join('\n');
+}
+
+function plannerSourceRefsFor(
+  sourceRefs: reconciliation.SourceRef[],
+  defaultSurface: PlannerSurface | null,
+): { surface: PlannerSurface; rawEventId: string }[] {
+  const seen = new Set<string>();
+  const refs: { surface: PlannerSurface; rawEventId: string }[] = [];
+  for (const ref of sourceRefs) {
+    if (!ref.rawEventId) continue;
+    const surface = plannerSurfaceForSource(ref.source) ?? defaultSurface;
+    if (!surface) continue;
+    const key = `${surface}:${ref.rawEventId}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    refs.push({ surface, rawEventId: ref.rawEventId });
+  }
+  return refs;
+}
+
+function safeErrorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
+function conversationWindowSourceRef(
+  source: string,
+  event: conversationReview.ConversationEvidenceEvent,
+): reconciliation.SourceRef {
+  const sourceRef: reconciliation.SourceRef = {
+    source,
+    rawEventId: event.id,
+  };
+  const sourcePayloadRef = reconciliation.sourcePayloadRefFromMetadata(event.sourceMetadata);
+  if (sourcePayloadRef) sourceRef.sourcePayloadRef = sourcePayloadRef;
+  return sourceRef;
+}
+
+function plannerSurfaceForSource(
+  source: string,
+  metadata: Record<string, unknown> = {},
+): PlannerSurface | null {
+  if (
+    source === 'web' ||
+    source === 'email' ||
+    source === 'slack' ||
+    source === 'telegram' ||
+    source === 'meeting' ||
+    source === 'document' ||
+    source === 'calendar' ||
+    source === 'ingest_webhook'
+  ) {
+    return source;
+  }
+  if (source !== 'integration') return null;
+  const provider = metadata.provider;
+  return provider === 'github' ||
+    provider === 'linear' ||
+    provider === 'google_drive' ||
+    provider === 'monday' ||
+    provider === 'sentry'
+    ? provider
+    : null;
+}
+
+function rawEventSourceRef(row: typeof rawEvents.$inferSelect): reconciliation.SourceRef {
+  const sourceRef: reconciliation.SourceRef = {
+    source: row.source,
+    rawEventId: row.id,
+  };
+  const sourcePayloadRef = sourcePayloadRefFromRawEvent(row);
+  if (sourcePayloadRef) sourceRef.sourcePayloadRef = sourcePayloadRef;
+  return sourceRef;
+}
+
+function uniqueSourceRefs(sourceRefs: reconciliation.SourceRef[]): reconciliation.SourceRef[] {
+  const seen = new Set<string>();
+  return sourceRefs.filter((ref) => {
+    const key = `${ref.source}:${ref.rawEventId ?? ''}:${ref.sourcePayloadRef ?? ''}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function sourcePayloadRefFromRawEvent(row: typeof rawEvents.$inferSelect): string | null {
+  return reconciliation.sourcePayloadRefFromMetadata(row.sourceMetadata);
+}
+
+function recordFromUnknown(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
 }
 
 function buildPrompt(args: {
@@ -2865,8 +3230,8 @@ function buildPrompt(args: {
     ),
     '',
     '# Existing boards',
-    'Use board_membership only when evidence clearly says an existing object belongs on a listed board. operation=create, targetKind=board_membership, proposedPayload={ boardId, entityId, laneId?, sourceEventId?, note? }.',
-    'Use board_item_update only when evidence clearly changes one listed board item. operation=update, targetKind=board_item_update, targetId=<board item id>, proposedPayload={ boardItemId, field, newValue, sourceEventId?, note? }. Allowed fields: laneId, position, responsibleUserId, dueAt, priority, nextStep, notes, customFields. For field=responsibleUserId, use a listed member UUID as newValue when known; otherwise set responsibleName to the clear member name/email and leave newValue null.',
+    'Use board_membership only when evidence clearly says an existing object belongs on a listed board. operation=create, targetKind=board_membership, proposedPayload={ boardId, entityId, laneId?, note? }. Evidence is carried by the approval source refs, not by sourceEventId payload fields.',
+    'Use board_item_update only when evidence clearly changes one listed board item. operation=update, targetKind=board_item_update, targetId=<board item id>, proposedPayload={ boardItemId, field, newValue, note? }. Evidence is carried by the approval source refs. Allowed fields: laneId, position, responsibleUserId, dueAt, priority, nextStep, notes, customFields. For field=responsibleUserId, use a listed member UUID as newValue when known; otherwise set responsibleName to the clear member name/email and leave newValue null.',
     ...args.boards.flatMap((board) => [
       `- board ${board.id}: "${board.name}" template=${board.templateKind} purpose=${
         board.purpose ?? 'none'

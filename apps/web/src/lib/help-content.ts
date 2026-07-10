@@ -164,15 +164,15 @@ export const HELP_PAGES: HelpPage[] = [
     sections: [
       {
         title: 'Connected sources',
-        body: 'First-party integrations and ingest paths can create durable evidence. MCP servers give the agent live reach into approved tools; they are not passive ingestion by default.',
+        body: 'First-party integrations and ingest paths can create durable evidence. MCP servers give the agent live reach into approved tools; successful tool results are captured privately, but MCP is not passive provider sync.',
         items: [
           'Google Drive syncs selected folders and files into the document drive.',
           'GitHub and Linear bring engineering and project activity into the operational record.',
           'Monday.com syncs selected boards, generic records, subitems, updates, columns, and WorkDocs.',
           'Slack workspace ingestion syncs selected channels, threads, files, reactions, and edits.',
-          'Sentry syncs issue updates, resolved issues, and releases into cited events and incident objects.',
+          'Sentry syncs issue updates, resolved issues, and releases into cited events, evidence clusters, and customer/project associations.',
           'Slack, Telegram, email, and meeting bots are capture surfaces for conversations and calls.',
-          'Custom MCP servers expose approved live tools and context to the agent; they do not create durable timeline events unless paired with native sync or custom ingestion.',
+          'Custom MCP servers expose approved live tools and context to the agent; successful tool results are captured as private evidence for later reconciliation while passive provider activity still needs native sync or custom ingestion.',
         ],
         appLink: { href: '/app/team/integrations', label: 'Open integrations' },
       },

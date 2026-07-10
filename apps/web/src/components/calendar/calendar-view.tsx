@@ -103,7 +103,13 @@ const RECURRENCE_PRESETS = [
 ] as const;
 
 function recurrencePresetValue(rrule: string): string {
-  return RECURRENCE_PRESETS.find((preset) => preset.rrule === rrule.trim())?.value ?? 'custom';
+  const normalized = rrule
+    .trim()
+    .split(/\r?\n/)
+    .find((line) => /^(RRULE:)?FREQ=/i.test(line.trim()))
+    ?.trim()
+    .replace(/^RRULE:/i, '');
+  return RECURRENCE_PRESETS.find((preset) => preset.rrule === normalized)?.value ?? 'custom';
 }
 
 interface CalendarUiState {
@@ -1483,7 +1489,11 @@ function DayCell({
                   R
                 </span>
               ) : null}
-              {event.allDay ? event.title : `${formatTime(event, timezone)} ${event.title}`}
+              {event.allDay
+                ? event.redacted
+                  ? 'Busy'
+                  : event.title
+                : `${formatTime(event, timezone)} ${event.redacted ? 'Busy' : event.title}`}
               {!event.redacted ? <Pencil className="size-3 opacity-50" /> : null}
             </span>
           </button>

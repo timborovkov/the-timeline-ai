@@ -21,8 +21,10 @@ class FakeCommand {
 class GetObjectCommand extends FakeCommand {}
 class HeadObjectCommand extends FakeCommand {}
 class PutObjectCommand extends FakeCommand {}
+class DeleteObjectCommand extends FakeCommand {}
 
 vi.mock('@aws-sdk/client-s3', () => ({
+  DeleteObjectCommand,
   GetObjectCommand,
   HeadObjectCommand,
   PutObjectCommand,
@@ -57,7 +59,7 @@ beforeEach(() => {
 
 describe('S3 object helpers', () => {
   it('heads objects with content metadata and uploads with content type', async () => {
-    const { headObject, putObject } = await import('./objects.js');
+    const { deleteObject, headObject, putObject } = await import('./objects.js');
     const sent: SentCommand[] = [];
     const client = makeClient((command) => {
       sent.push(command);
@@ -86,6 +88,10 @@ describe('S3 object helpers', () => {
       Key: 'key.txt',
       ContentType: 'text/plain',
     });
+
+    await deleteObject(client as never, 'bucket', 'key.txt');
+    expect(sent[2]).toBeInstanceOf(DeleteObjectCommand);
+    expect(sent[2]?.input).toEqual({ Bucket: 'bucket', Key: 'key.txt' });
   });
 
   it('reads object bodies, preserves content type, and rejects empty or oversize bodies', async () => {

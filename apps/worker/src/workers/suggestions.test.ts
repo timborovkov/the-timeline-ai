@@ -10,12 +10,16 @@ import {
   ingestWebhooks,
   objectNotes,
   rawEvents,
+  reconciliationOutputs,
+  reconciliationProjectionOutbox,
+  reconciliationRuns,
   type Db,
 } from '@timeline/db';
+import { suggestions } from '@timeline/shared';
 import { withTeam } from '@timeline/shared/team-scope';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { applyDbMigrations } from '#src/test/pglite.js';
 import { fallbackBundles, processSuggestionJobForTests } from '#src/workers/suggestions.js';
@@ -279,6 +283,10 @@ describe('processSuggestionJobForTests', () => {
     db = drizzle(pg);
   });
 
+  afterEach(async () => {
+    await pg.close();
+  });
+
   it('skips queued ingest webhook proposals when the source setting is disabled before processing', async () => {
     const webhookId = '99999999-1111-4111-8111-111111111111';
     const rawEventId = '99999999-2222-4222-8222-222222222222';
@@ -530,6 +538,18 @@ describe('processSuggestionJobForTests', () => {
     const [bundle] = await scope.suggestions.listPendingSuggestions();
     const itemId = bundle?.items[0]?.id ?? '';
     await expect(scope.suggestions.rejectSuggestionItem(itemId)).resolves.toBe(true);
+    const outputId = bundle?.items[0]?.metadata.reconciliation_output_id;
+    if (typeof outputId !== 'string') throw new Error('expected projection output id');
+    await db.delete(agentSuggestions).where(eq(agentSuggestions.id, bundle?.id ?? ''));
+    const [output] = await db
+      .select({
+        status: reconciliationOutputs.status,
+        suggestionDedupeKey: sql<string>`${reconciliationOutputs.payload} ->> 'suggestion_dedupe_key'`,
+      })
+      .from(reconciliationOutputs)
+      .where(eq(reconciliationOutputs.id, outputId));
+    expect(output?.status).toBe('rejected');
+    expect(output?.suggestionDedupeKey).toEqual(expect.any(String));
 
     await processSuggestionJobForTests(
       { db: db as never },
@@ -537,9 +557,64 @@ describe('processSuggestionJobForTests', () => {
     );
 
     await expect(scope.suggestions.listPendingSuggestions()).resolves.toEqual([]);
-    await expect(scope.suggestions.listSuggestions({ status: 'resolved' })).resolves.toHaveLength(
-      1,
+    await expect(scope.suggestions.listSuggestions({ status: 'resolved' })).resolves.toEqual([]);
+  });
+
+  it('does not re-offer legacy rejected cleanup suggestions without projection outputs', async () => {
+    const objectRows = await db
+      .insert(entities)
+      .values([
+        { teamId: TEAM_ID, type: 'company', canonicalName: 'KPMG' },
+        { teamId: TEAM_ID, type: 'vendor', canonicalName: 'K P M G' },
+      ])
+      .returning({ id: entities.id });
+    const objectIds = objectRows.map((row) => row.id).sort();
+    const dedupeKey = suggestions.suggestionDedupeKey({
+      kind: 'object_cleanup_merge',
+      teamId: TEAM_ID,
+      objectIds,
+    });
+    const [legacySuggestion] = await db
+      .insert(agentSuggestions)
+      .values({
+        teamId: TEAM_ID,
+        source: 'background',
+        status: 'rejected',
+        title: 'Merge duplicate objects: KPMG / K P M G',
+        summary: 'Two objects look like they may represent the same thing.',
+        reason: 'Legacy rejected cleanup fixture.',
+        confidence: 'high',
+        dedupeKey,
+        visibility: 'team',
+        resolvedAt: new Date('2026-06-20T10:00:00Z'),
+        resolvedByUserId: OWNER_ID,
+        metadata: { kind: 'object_cleanup', cleanup_kind: 'merge' },
+      })
+      .returning({ id: agentSuggestions.id });
+    if (!legacySuggestion) throw new Error('expected legacy suggestion');
+    await db.insert(agentSuggestionItems).values({
+      suggestionId: legacySuggestion.id,
+      teamId: TEAM_ID,
+      status: 'rejected',
+      operation: 'merge',
+      targetKind: 'object_merge',
+      targetId: objectIds[0],
+      title: 'Review merge for KPMG',
+      description: 'Legacy rejected cleanup fixture.',
+      dedupeKey,
+      proposedPayload: { objectIds, survivorId: objectIds[0] },
+      resolvedAt: new Date('2026-06-20T10:00:00Z'),
+      resolvedByUserId: OWNER_ID,
+    });
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { scope: 'object_cleanup', teamId: TEAM_ID, triggeredBy: 'daily' },
     );
+
+    const scope = withTeam(db as never, TEAM_ID, OWNER_ID);
+    await expect(scope.suggestions.listPendingSuggestions()).resolves.toEqual([]);
+    await expect(db.select().from(reconciliationOutputs)).resolves.toEqual([]);
   });
 
   it('requires supporting evidence for short company duplicate candidates and suppresses rejected pairs', async () => {
@@ -992,9 +1067,88 @@ describe('processSuggestionJobForTests', () => {
     expect(relationshipItem?.proposedPayload).not.toHaveProperty('fromName');
     expect(relationshipItem?.proposedPayload).not.toHaveProperty('toName');
 
-    await expect(scope.suggestions.rejectSuggestionItem(relationshipItem?.id ?? '')).resolves.toBe(
-      true,
-    );
+    const relationshipItemId = relationshipItem?.id;
+    if (!relationshipItemId) throw new Error('expected relationship repair item id');
+    const [itemRow] = await db
+      .select({
+        id: agentSuggestionItems.id,
+        suggestionId: agentSuggestionItems.suggestionId,
+        dedupeKey: agentSuggestionItems.dedupeKey,
+      })
+      .from(agentSuggestionItems)
+      .where(eq(agentSuggestionItems.id, relationshipItemId));
+    if (!itemRow) throw new Error('expected projected relationship item row');
+    const [suggestionRow] = await db
+      .select({ id: agentSuggestions.id, dedupeKey: agentSuggestions.dedupeKey })
+      .from(agentSuggestions)
+      .where(eq(agentSuggestions.id, itemRow.suggestionId));
+    if (!suggestionRow) throw new Error('expected projected suggestion row');
+
+    const outputId = relationshipItem.metadata.reconciliation_output_id;
+    if (typeof outputId !== 'string') throw new Error('expected projected output id');
+    const outputs = await db
+      .select()
+      .from(reconciliationOutputs)
+      .where(eq(reconciliationOutputs.id, outputId));
+    expect(outputs).toHaveLength(1);
+    const output = outputs[0];
+    if (!output) throw new Error('expected reconciliation output row');
+    expect(output).toMatchObject({
+      teamId: TEAM_ID,
+      outputKind: 'approval_bundle',
+      targetKind: 'object_relationship',
+      operation: 'create',
+      status: 'approval_created',
+      requiresApproval: true,
+      visibility: 'team',
+      visibilityFloor: 'team',
+    });
+    expect(output.sourceRefs).toEqual([
+      expect.objectContaining({
+        source: 'web',
+        rawEventId: newerRaw.id,
+      }),
+    ]);
+    const outputPayload = output.payload as {
+      projection?: unknown;
+      suggestion_dedupe_key?: unknown;
+      item_dedupe_key?: unknown;
+      proposed_payload?: unknown;
+    };
+    expect(outputPayload.projection).toBe('agent_suggestions');
+    expect(outputPayload.suggestion_dedupe_key).toBe(suggestionRow.dedupeKey);
+    expect(outputPayload.item_dedupe_key).toBe(itemRow.dedupeKey);
+    expect(outputPayload.proposed_payload).toMatchObject({ kind: 'related' });
+    const [run] = await db
+      .select()
+      .from(reconciliationRuns)
+      .where(eq(reconciliationRuns.id, output.runId));
+    expect(run).toMatchObject({
+      teamId: TEAM_ID,
+      trigger: 'manual_repair',
+      scope: 'approval_projection',
+      status: 'completed',
+      engineVersion: 'approval-projection-2026-06',
+    });
+    expect(run?.metrics).toMatchObject({
+      item_count: 1,
+      evidence_count: 1,
+    });
+
+    const projectionOutboxRows = await db
+      .select()
+      .from(reconciliationProjectionOutbox)
+      .where(eq(reconciliationProjectionOutbox.outputId, outputId));
+    expect(projectionOutboxRows).toHaveLength(1);
+    expect(projectionOutboxRows[0]).toMatchObject({
+      teamId: TEAM_ID,
+      suggestionId: suggestionRow.id,
+      suggestionItemId: itemRow.id,
+      action: 'create_projection',
+      status: 'processed',
+    });
+
+    await expect(scope.suggestions.rejectSuggestionItem(relationshipItemId)).resolves.toBe(true);
     await processSuggestionJobForTests(
       { db: db as never },
       {
@@ -2216,6 +2370,8 @@ describe('processSuggestionJobForTests', () => {
     expect(call?.prompt).toContain(`item ${item.id}: object=${company.id} company "Revigo"`);
     expect(call?.prompt).toContain(`responsible=${OWNER_ID} responsible_name=Owner`);
     expect(call?.prompt).toContain('targetKind=board_membership');
+    expect(call?.prompt).toContain('Evidence is carried by the approval source refs');
+    expect(call?.prompt).not.toContain('sourceEventId?');
     expect(call?.prompt).toContain('Allowed fields: laneId, position, responsibleUserId');
     expect(call?.system).toContain('board_membership or board_item_update');
   });
@@ -4318,14 +4474,22 @@ describe('processSuggestionJobForTests', () => {
       source: 'telegram',
       text: 'Sarah can send the Acme deck Friday.',
       occurredAt: new Date('2026-05-27T10:00:00.000Z'),
-      sourceMetadata: { tg_chat_id: '456', tg_message_id: '1' },
+      sourceMetadata: {
+        tg_chat_id: '456',
+        tg_message_id: '1',
+        source_payload_ref: '  telegram://chat/456/message/1  ',
+      },
     });
     await seedRawEvent(db as never, {
       id: lastId,
       source: 'telegram',
       text: 'Actually wait for legal before sending anything.',
       occurredAt: new Date('2026-05-27T10:02:00.000Z'),
-      sourceMetadata: { tg_chat_id: '456', tg_message_id: '2' },
+      sourceMetadata: {
+        tg_chat_id: '456',
+        tg_message_id: '2',
+        sourcePayloadRef: '  telegram://chat/456/message/2  ',
+      },
     });
     await seedConversationReview(db as never, {
       id: reviewId,
@@ -4352,6 +4516,69 @@ describe('processSuggestionJobForTests', () => {
     expect(review?.status).toBe('completed');
     expect(review?.reviewedThroughRawEventId).toBe(lastId);
     expect(review?.metadata).toMatchObject({ review_outcome: 'no_action' });
+
+    const runs = await db.select().from(reconciliationRuns);
+    expect(runs).toHaveLength(1);
+    expect(runs[0]).toMatchObject({
+      teamId: TEAM_ID,
+      trigger: 'raw_event',
+      scope: 'conversation_review:no_action',
+      status: 'completed',
+      engineVersion: 'conversation-no-action-2026-06',
+    });
+    const outputs = await db.select().from(reconciliationOutputs);
+    expect(outputs).toHaveLength(1);
+    expect(outputs[0]).toMatchObject({
+      teamId: TEAM_ID,
+      runId: runs[0]?.id,
+      outputKind: 'no_action',
+      targetKind: 'cluster_identity',
+      operation: 'noop',
+      status: 'applied',
+      requiresApproval: false,
+      visibility: 'team',
+      visibilityFloor: 'team',
+    });
+    expect(outputs[0]?.sourceRefs).toEqual([
+      {
+        source: 'telegram',
+        rawEventId: firstId,
+        sourcePayloadRef: 'telegram://chat/456/message/1',
+      },
+      {
+        source: 'telegram',
+        rawEventId: lastId,
+        sourcePayloadRef: 'telegram://chat/456/message/2',
+      },
+    ]);
+    expect(outputs[0]?.sourcePayloadRefs).toEqual([
+      'telegram://chat/456/message/1',
+      'telegram://chat/456/message/2',
+    ]);
+    expect(outputs[0]?.payload).toMatchObject({
+      planner: 'conversation_review',
+      review_id: reviewId,
+      conversation_key: conversationKey,
+      raw_event_id: lastId,
+      outcome: 'no_action',
+    });
+
+    await db
+      .update(conversationReviews)
+      .set({
+        status: 'pending',
+        reviewedThroughRawEventId: null,
+        reviewedThroughOccurredAt: null,
+        quietUntil: new Date('2026-05-27T09:00:00.000Z'),
+      })
+      .where(eq(conversationReviews.id, reviewId));
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { scope: 'conversation_review', conversationReviewId: reviewId, teamId: TEAM_ID },
+      { getEnv: env, chatStructured: chat, modelId: MODEL_ID },
+    );
+    expect(await db.select().from(reconciliationRuns)).toHaveLength(1);
+    expect(await db.select().from(reconciliationOutputs)).toHaveLength(1);
   });
 
   it('revises a pending conversation proposal when a follow-up changes the owner', async () => {
@@ -4594,6 +4821,15 @@ describe('processSuggestionJobForTests', () => {
         ],
       },
     });
+    const planReconciliation = vi.fn().mockResolvedValue({
+      scenarioFamily: 'decision_memory',
+      ingestionSurfaces: ['telegram'],
+      outputKinds: ['approval_bundle'],
+      directWriteSurfaces: [],
+      approvalRequired: true,
+      sourceRefs: [{ surface: 'telegram', rawEventId }],
+      privacyRisk: false,
+    });
 
     await processSuggestionJobForTests(
       { db: db as never },
@@ -4602,7 +4838,7 @@ describe('processSuggestionJobForTests', () => {
         conversationReviewId: reviewId,
         teamId: TEAM_ID,
       },
-      { getEnv: env, chatStructured: chat, modelId: MODEL_ID },
+      { getEnv: env, chatStructured: chat, planReconciliation, modelId: MODEL_ID },
     );
 
     const [item] = await db.select().from(agentSuggestionItems);
@@ -4613,6 +4849,34 @@ describe('processSuggestionJobForTests', () => {
       status: 'pending',
     });
     expect(item?.proposedPayload).toMatchObject({ status: 'done' });
+    expect(planReconciliation).toHaveBeenCalledWith(
+      expect.objectContaining({
+        observedSurfaces: ['telegram'],
+        sourceRefs: [{ surface: 'telegram', rawEventId }],
+        policyDerivedOutputKinds: ['approval_bundle'],
+      }),
+      expect.any(Object),
+    );
+    const [suggestion] = await db.select().from(agentSuggestions);
+    expect(suggestion?.metadata).toMatchObject({
+      reconciliation_planner_version: 'reconciliation-planner-2026-06-privacy-floor',
+      reconciliation_planner_status: 'completed',
+      reconciliation_planner_result: {
+        ingestionSurfaces: ['telegram'],
+        outputKinds: ['approval_bundle'],
+        approvalRequired: true,
+        privacyRisk: false,
+      },
+    });
+    const [output] = await db.select().from(reconciliationOutputs);
+    expect(output?.payload).toMatchObject({
+      projection_metadata: {
+        reconciliation_planner_status: 'completed',
+        reconciliation_planner_result: {
+          sourceRefs: [{ surface: 'telegram', rawEventId }],
+        },
+      },
+    });
     const [task] = await db.select().from(entities).where(eq(entities.id, OBJECT_ID));
     expect(task?.status).toBe('open');
   });

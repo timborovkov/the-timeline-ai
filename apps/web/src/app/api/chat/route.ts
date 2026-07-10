@@ -351,6 +351,13 @@ function selectedNativeToolNames(groups: NativeToolGroup[]): string[] {
   return [...new Set(groups.flatMap((group) => nativeToolGroups[group]))];
 }
 
+function omittedNativeToolGroups(groups: NativeToolGroup[]): NativeToolGroup[] {
+  const selected = new Set(groups);
+  return (Object.keys(nativeToolGroups) as NativeToolGroup[]).filter(
+    (group) => !selected.has(group),
+  );
+}
+
 async function generateChatTitle(input: {
   scope: ReturnType<typeof withTeam>;
   question: string;
@@ -819,7 +826,7 @@ export async function POST(req: Request): Promise<Response> {
   // Phase 11 — custom MCP tools can be numerous and provider-shaped, so only
   // discover/include them when the turn asks for connected/external sources.
   // Failures here (discovery failed, OAuth expired, server down) MUST NOT crash
-  // the chat, but we log them so they show up in observability.
+  // the chat, but we log/report them so operators can inspect the degraded turn.
   const mcpTools = toolSelection.includeMcp
     ? await agent
         .buildMcpTools(scope, { onToolError: reportChatAgentToolError })
@@ -836,6 +843,10 @@ export async function POST(req: Request): Promise<Response> {
     ...selectedNativeTools,
     ...mcpTools,
   };
+  const toolObservations: agent.AgentToolObservation[] = [];
+  const observedTools = agent.instrumentAgentTools(tools, (observation) => {
+    toolObservations.push(observation);
+  });
 
   const messages = await convertToModelMessages(uiMessages);
   const modelId = llm.resolveAgentModelId();
@@ -890,7 +901,7 @@ export async function POST(req: Request): Promise<Response> {
   const result = llm.streamChat({
     system,
     messages: memory.messages,
-    tools,
+    tools: observedTools,
     model: modelId,
     maxSteps: llm.DEFAULT_AGENT_MAX_STEPS,
     // Propagate client disconnects to OpenRouter so we stop paying for
@@ -912,6 +923,17 @@ export async function POST(req: Request): Promise<Response> {
     },
     onFinish: (e) => {
       const modelAttribution = llm.streamChatModelAttribution(e, modelId);
+      const toolObservability = agent.summarizeAgentToolObservations({
+        observations: toolObservations,
+        selection: {
+          selectedToolGroups: toolSelection.groups,
+          omittedToolGroups: omittedNativeToolGroups(toolSelection.groups),
+          selectedNativeToolCount: Object.keys(selectedNativeTools).length,
+          omittedNativeToolCount,
+          mcpToolCount: Object.keys(mcpTools).length,
+          mcpDiscoverySkipped: !toolSelection.includeMcp,
+        },
+      });
       log.info(
         {
           promptVersion: agent.AGENT_PROMPT_VERSION,
@@ -920,6 +942,7 @@ export async function POST(req: Request): Promise<Response> {
           sessionId: sessionId ?? null,
           ...modelAttribution,
           usage: e.usage,
+          toolObservability,
         },
         'chat completion',
       );
@@ -953,6 +976,7 @@ export async function POST(req: Request): Promise<Response> {
         content: {
           text: 'text' in e && typeof e.text === 'string' ? e.text : null,
           tool_calls: 'toolCalls' in e ? e.toolCalls : undefined,
+          tool_observability: toolObservability,
           finish_reason: 'finishReason' in e ? e.finishReason : undefined,
           usage: e.usage,
           prompt_version: agent.AGENT_PROMPT_VERSION,

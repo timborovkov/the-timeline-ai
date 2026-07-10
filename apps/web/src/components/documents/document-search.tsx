@@ -55,6 +55,11 @@ export function DocumentSearch() {
                   score {hit.score.toFixed(3)}
                 </span>
               </div>
+              <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">
+                v{String(hit.version)} · {hit.fileKind} ·{' '}
+                {hit.representationKind.replace(/_/g, ' ')}
+                {hit.pageNumber !== null ? ` · page ${String(hit.pageNumber)}` : ''}
+              </p>
               <p className="mt-1 line-clamp-3 text-fg-muted">{hit.summary ?? hit.text}</p>
             </Link>
           ))}

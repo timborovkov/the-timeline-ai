@@ -11,7 +11,7 @@
     <main id="main">
       <h1>Workspace objects</h1>
       <div class="meta">
-        <span class="kind">Architecture</span><span>Last updated 2026-06-28</span>
+        <span class="kind">Architecture</span><span>Last updated 2026-07-08</span>
       </div>
       <p class="tldr">
         Phase 8 turned <code>entities</code> from an extraction artifact into the workspace's
@@ -47,7 +47,7 @@
         the same model holds projects, vendors, incidents, hiring loops, decisions, and tasks.
       </p>
       <div class="stat-grid">
-        <div class="stat"><b>13</b><span>object types in the enum</span></div>
+        <div class="stat"><b>14</b><span>object types in the enum</span></div>
         <div class="stat"><b>8</b><span>new tables</span></div>
         <div class="stat"><b>1</b><span>shared module (<code>objects</code>)</span></div>
         <div class="stat"><b>2</b><span>object index migrations</span></div>
@@ -63,7 +63,17 @@
         <code>entities</code> was widened in place. Existing rows default safely
         (<code>status='open'</code>, <code>agent_suggested=false</code>,
         <code>archived_at=NULL</code>), and the resolver keeps using the same canonical-name lookup
-        it always has.
+        it always has. <code>source_event_id</code> and <code>agent_suggested</code> are legacy
+        compatibility fields during the reconciliation migration. New reconciliation-backed writes
+        are moving durable provenance to source refs, reconciliation outputs, and evidence
+        associations, and the public object-create path now forces
+        <code>source_event_id=NULL</code> and <code>agent_suggested=false</code>. Older object rows
+        and suggested create changes remain read-compatible until cutover finishes. Direct object
+        creates, updates, archives, merges, relationship link/unlink writes, note
+        create/update/delete writes, identity facet create/update writes, and manual board item
+        add/update/remove writes also write applied reconciliation <code>direct_write</code> outputs
+        with inline source-payload snapshot refs and source refs to their system audit events, so
+        the audit tables remain useful without being the canonical provenance graph.
       </p>
       <p>
         Extraction filters low-signal <code>topic</code> and <code>other</code> mentions before
@@ -89,8 +99,9 @@
             <td>Workspace objects of any kind.</td>
             <td>
               <code>status</code>, <code>stage</code>, <code>priority</code>,
-              <code>owner_user_id</code>, <code>assignee_user_id</code>, <code>due_at</code>,
-              <code>source_event_id</code>, <code>agent_suggested</code>, <code>archived_at</code>
+              <code>owner_user_id</code>, <code>assignee_user_id</code>, <code>due_at</code>, legacy
+              <code>source_event_id</code>, legacy <code>agent_suggested</code>,
+              <code>archived_at</code>
             </td>
           </tr>
           <tr>
@@ -108,8 +119,7 @@
             <td>
               <code>actor_kind</code> (user/agent/system),
               <code>status</code> (applied/suggested/rejected), <code>previous_value</code>,
-              <code>new_value</code>,
-              <code>source_event_id</code>
+              <code>new_value</code>, legacy <code>source_event_id</code>
             </td>
           </tr>
           <tr>
@@ -265,11 +275,23 @@
 
       <h2 id="audit-trail">Audit trail</h2>
       <p>
-        Every manual change — to an object's fields, to its notes, to its relationships — writes two
-        rows in one transaction: a system-source <code>raw_events</code> row (so the change appears
-        on the team timeline) and one <code>object_changes</code> row per modified field (so the
-        object page's "Recent changes" pane has structured data). The
-        <code>raw_events.id</code> threads through both as <code>source_event_id</code>.
+        Every manual object change — to an object's fields, identity facets, notes, or relationships
+        — writes rows in one transaction: a system-source <code>raw_events</code> row (so the change
+        appears on the team timeline), one structured history row per modified field where
+        applicable, and an applied reconciliation output with source refs to the raw event and
+        payload snapshot. Normalized evidence stays in evidence lineage rather than output source
+        refs. Manual board item add/update/remove writes follow the same provenance rule while
+        keeping <code>board_item_changes.source_event_id=NULL</code> for new history rows. During
+        the migration, legacy rows may still thread the <code>raw_events.id</code> through
+        <code>source_event_id</code>; new reconciliation-backed provenance should instead cite
+        source refs, output ids, and evidence associations.
+      </p>
+      <p>
+        Object provenance and board item history read accepted suggestion evidence from the
+        referenced reconciliation output's source refs. Legacy board-history
+        <code>source_event_id</code> hints are not promoted into provenance evidence, and
+        multi-source outputs are hidden from the provenance view unless the current viewer can see
+        every cited raw event.
       </p>
       <div class="callout">
         <b>Why two writes per change.</b> The timeline view treats events as the unit; the object
@@ -278,8 +300,10 @@
         the new body.
       </div>
       <p>
-        Agent-proposed changes land as <code>object_changes.status = 'suggested'</code>. A human
-        accepts (flips to <code>applied</code> and runs the update) or rejects (terminal). The
+        Field-scoped <code>propose_object_change</code> proposals still land as
+        <code>object_changes.status = 'suggested'</code>. Broader agent proposals such as
+        <code>suggest_task</code> and <code>suggest_object_memory</code> use approval bundles and
+        reconciliation projection rows instead. A human accepts or rejects either shape, and the
         rejected rows stay visible so agent quality is measurable over time.
       </p>
 
@@ -403,7 +427,7 @@
         <code>execute_object_archive</code>, <code>execute_object_merge</code>, and the board-card
         tools <code>execute_board_add_item</code>, <code>execute_board_update_item</code>, and
         <code>execute_board_remove_item</code> mutate canonical state only after explicit in-chat
-        approval. The system prompt is at <code>agent-v14-2026-06</code>.
+        approval. The system prompt is at <code>agent-v15-2026-07</code>.
       </p>
       <p>
         Background conversation review also proposes approval-backed lifecycle updates for

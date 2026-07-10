@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+
 import {
   type Db,
   auditLog,
@@ -14,8 +16,15 @@ import { reconcileLinkArtifactsForRawEvent } from '#src/conversational/link-arti
 import { buildDocumentObjectKey } from '#src/documents/object-key.js';
 import { documentPresentation } from '#src/documents/presentation.js';
 import { embed as defaultEmbed, type EmbedResult } from '#src/llm/embed.js';
+import { childLogger } from '#src/logger.js';
 import { decodeCursor, pageWindow } from '#src/pagination.js';
 import { getQdrantClient, type SearchHit, type SearchOpts } from '#src/qdrant/client.js';
+import { normalizeRawEventsToEvidence } from '#src/reconciliation/normalization.js';
+import {
+  payloadDigestFromMetadata,
+  sourcePayloadRefFromMetadata,
+} from '#src/reconciliation/source-snapshot.js';
+import { stableSha256Digest } from '#src/reconciliation/stable-digest.js';
 import { rawEventVisibleToUser, validateVisibilityUserIds } from '#src/visibility.js';
 
 // drizzle's transaction callback gives a PgTransaction that has the same
@@ -45,6 +54,9 @@ type DbOrTx = Db | DbTx;
 type Visibility = 'private' | 'team' | 'specific_users';
 type FileKind = 'captured' | 'document';
 type RepresentationKind = 'source_text' | 'transcript' | 'visual_description' | 'metadata_preview';
+const log = childLogger('documents:scope');
+const DOCUMENT_UPLOAD_SOURCE_SNAPSHOT_VERSION = 'document-upload-source-snapshot-2026-07';
+const DOCUMENT_LIFECYCLE_SOURCE_SNAPSHOT_VERSION = 'document-lifecycle-source-snapshot-2026-07';
 
 export interface DocumentScopeDeps {
   db: Db;
@@ -208,6 +220,7 @@ export interface FinalizeVersionInput {
   byteSize: number;
   contentType: string;
   checksumSha256?: string | null;
+  sourceMetadata?: Record<string, unknown>;
 }
 
 export interface SetVisibilityInput {
@@ -409,24 +422,44 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
     args: {
       action: DocumentAction;
       summary: string;
-      documentId: string;
+      documentId: string | null;
       documentVersionId?: string | null;
       folderId?: string | null;
       visibility: Visibility;
       visibilityUserIds: string[] | null;
       previous?: Record<string, unknown>;
+      sourceMetadata?: Record<string, unknown>;
     },
   ): Promise<string> {
+    const rawEventId = randomUUID();
     const meta: Record<string, unknown> = {
+      ...(args.sourceMetadata ?? {}),
       action: args.action,
-      document_id: args.documentId,
     };
+    if (args.documentId) meta.document_id = args.documentId;
     if (args.documentVersionId) meta.document_version_id = args.documentVersionId;
     if (args.folderId !== undefined) meta.folder_id = args.folderId;
     if (args.previous) meta.previous = args.previous;
+    if (!sourcePayloadRefFromMetadata(meta)) {
+      Object.assign(
+        meta,
+        documentLifecycleSourceMetadata({
+          rawEventId,
+          action: args.action,
+          summary: args.summary,
+          documentId: args.documentId,
+          documentVersionId: args.documentVersionId ?? null,
+          folderId: args.folderId ?? null,
+          visibility: args.visibility,
+          visibilityUserIds: args.visibilityUserIds,
+          previous: args.previous ?? null,
+        }),
+      );
+    }
     const inserted = await tx
       .insert(rawEvents)
       .values({
+        id: rawEventId,
         teamId,
         authorUserId: userId,
         source: 'document',
@@ -440,6 +473,14 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
       .returning({ id: rawEvents.id });
     const row = inserted[0];
     if (!row) throw new Error('Failed to write document timeline event');
+    try {
+      await normalizeRawEventsToEvidence({ db: tx, teamId, rawEventIds: [row.id] });
+    } catch (err) {
+      log.warn(
+        { err, teamId, rawEventId: row.id, documentId: args.documentId },
+        'document reconciliation evidence normalization failed',
+      );
+    }
     await reconcileLinkArtifactsForRawEvent(tx, {
       teamId,
       rawEventId: row.id,
@@ -495,6 +536,95 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
 
   function normalizeDocumentRow(row: typeof documents.$inferSelect): DocumentRow {
     return { ...row, metadata: metadataRecord(row.metadata) };
+  }
+
+  function documentUploadSourceMetadata(input: {
+    action: 'upload' | 'new_version';
+    document: DocumentRow;
+    version: DocumentVersionRow;
+    byteSize: number;
+    contentType: string;
+    checksumSha256: string | null | undefined;
+    sourceMetadata: Record<string, unknown> | undefined;
+  }): Record<string, unknown> {
+    const digest = input.checksumSha256?.trim();
+    const checksumDigest = digest
+      ? digest.startsWith('sha256:')
+        ? digest
+        : `sha256:${digest}`
+      : null;
+    const sourceMetadata = withoutReplayMetadataAliases(input.sourceMetadata ?? {});
+    const sourcePayloadRef =
+      sourcePayloadRefFromMetadata(input.sourceMetadata) ??
+      `s3://documents/${input.version.objectKey}`;
+    const payloadDigest = payloadDigestFromMetadata(input.sourceMetadata) ?? checksumDigest;
+    return {
+      ...sourceMetadata,
+      source_payload_ref: sourcePayloadRef,
+      ...(payloadDigest ? { payload_digest: payloadDigest } : {}),
+      source_snapshot_kind: sourceMetadata.source_snapshot_kind ?? 'document_upload',
+      source_snapshot_version:
+        sourceMetadata.source_snapshot_version ?? DOCUMENT_UPLOAD_SOURCE_SNAPSHOT_VERSION,
+      source_snapshot: sourceMetadata.source_snapshot ?? {
+        action: input.action,
+        document_id: input.document.id,
+        document_version_id: input.version.id,
+        object_key: input.version.objectKey,
+        byte_size: input.byteSize,
+        content_type: input.contentType,
+      },
+    };
+  }
+
+  function withoutReplayMetadataAliases(
+    metadata: Record<string, unknown>,
+  ): Record<string, unknown> {
+    const result = { ...metadata };
+    delete result.source_payload_ref;
+    delete result.sourcePayloadRef;
+    delete result.payload_ref;
+    delete result.raw_payload_ref;
+    delete result.source_snapshot_ref;
+    delete result.payload_digest;
+    delete result.source_payload_digest;
+    delete result.raw_payload_digest;
+    return result;
+  }
+
+  function documentLifecycleSourceMetadata(input: {
+    rawEventId: string;
+    action: DocumentAction;
+    summary: string;
+    documentId: string | null;
+    documentVersionId: string | null;
+    folderId: string | null;
+    visibility: Visibility;
+    visibilityUserIds: string[] | null;
+    previous: Record<string, unknown> | null;
+  }): Record<string, unknown> {
+    const snapshot = {
+      provider: 'document',
+      action: input.action,
+      raw_event_id: input.rawEventId,
+      document_id: input.documentId,
+      document_version_id: input.documentVersionId,
+      folder_id: input.folderId,
+      visibility: input.visibility,
+      visibility_user_ids: input.visibilityUserIds,
+      previous: input.previous,
+      summary: input.summary,
+    };
+    const digest = stableSha256Digest(snapshot);
+    const sourceTarget = input.documentId
+      ? `document/${input.documentId}`
+      : `folder/${input.folderId ?? input.rawEventId}`;
+    return {
+      source_payload_ref: `inline://timeline/${sourceTarget}/${input.action}/${input.rawEventId}`,
+      payload_digest: digest,
+      source_snapshot_kind: 'document_lifecycle_event',
+      source_snapshot_version: DOCUMENT_LIFECYCLE_SOURCE_SNAPSHOT_VERSION,
+      source_snapshot: snapshot,
+    };
   }
 
   async function listDocumentsWithProvenance(
@@ -901,14 +1031,26 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
       await ensureMember();
       const existing = await getFolderRaw(args.id);
       if (!existing) throw new Error('Folder not found');
-      const rows = await db
-        .update(folders)
-        .set({ name: args.name.trim(), updatedAt: new Date() })
-        .where(and(eq(folders.id, args.id), eq(folders.teamId, teamId)))
-        .returning();
-      const row = rows[0];
-      if (!row) throw new Error('Failed to rename folder');
-      return row;
+      const newName = args.name.trim();
+      return db.transaction(async (tx) => {
+        const rows = await tx
+          .update(folders)
+          .set({ name: newName, updatedAt: new Date() })
+          .where(and(eq(folders.id, args.id), eq(folders.teamId, teamId)))
+          .returning();
+        const row = rows[0];
+        if (!row) throw new Error('Failed to rename folder');
+        await writeDocumentEvent(tx, {
+          action: 'rename',
+          summary: `Renamed folder ${existing.name} → ${newName}`,
+          documentId: null,
+          folderId: row.id,
+          visibility: row.visibility,
+          visibilityUserIds: row.visibilityUserIds,
+          previous: { name: existing.name },
+        });
+        return row;
+      });
     },
 
     async moveFolder(args: { id: string; parentFolderId: string | null }): Promise<FolderRow> {
@@ -919,14 +1061,25 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
         await assertFolderInTeam(args.parentFolderId);
         await assertNotDescendant(args.parentFolderId, args.id);
       }
-      const rows = await db
-        .update(folders)
-        .set({ parentFolderId: args.parentFolderId, updatedAt: new Date() })
-        .where(and(eq(folders.id, args.id), eq(folders.teamId, teamId)))
-        .returning();
-      const row = rows[0];
-      if (!row) throw new Error('Failed to move folder');
-      return row;
+      return db.transaction(async (tx) => {
+        const rows = await tx
+          .update(folders)
+          .set({ parentFolderId: args.parentFolderId, updatedAt: new Date() })
+          .where(and(eq(folders.id, args.id), eq(folders.teamId, teamId)))
+          .returning();
+        const row = rows[0];
+        if (!row) throw new Error('Failed to move folder');
+        await writeDocumentEvent(tx, {
+          action: 'move',
+          summary: `Moved folder ${row.name}`,
+          documentId: null,
+          folderId: row.id,
+          visibility: row.visibility,
+          visibilityUserIds: row.visibilityUserIds,
+          previous: { parentFolderId: existing.parentFolderId },
+        });
+        return row;
+      });
     },
 
     async softDeleteFolder(id: string): Promise<void> {
@@ -937,18 +1090,45 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
       // into descendants — a restore should rebuild the tree as it was.
       // The folder tree UI hides folders whose nearest non-deleted ancestor
       // is missing; the search API filters by deletedAt directly per row.
-      await db
-        .update(folders)
-        .set({ deletedAt: new Date(), updatedAt: new Date() })
-        .where(and(eq(folders.id, id), eq(folders.teamId, teamId)));
+      await db.transaction(async (tx) => {
+        await tx
+          .update(folders)
+          .set({ deletedAt: new Date(), updatedAt: new Date() })
+          .where(and(eq(folders.id, id), eq(folders.teamId, teamId)));
+        await writeDocumentEvent(tx, {
+          action: 'delete',
+          summary: `Deleted folder ${existing.name}`,
+          documentId: null,
+          folderId: existing.id,
+          visibility: existing.visibility,
+          visibilityUserIds: existing.visibilityUserIds,
+        });
+      });
     },
 
     async restoreFolder(id: string): Promise<void> {
       await ensureMember();
-      await db
-        .update(folders)
-        .set({ deletedAt: null, updatedAt: new Date() })
-        .where(and(eq(folders.id, id), eq(folders.teamId, teamId)));
+      const existing = await db
+        .select()
+        .from(folders)
+        .where(and(eq(folders.id, id), eq(folders.teamId, teamId)))
+        .limit(1);
+      const folder = existing[0] as FolderRow | undefined;
+      if (!folder) throw new Error('Folder not found');
+      await db.transaction(async (tx) => {
+        await tx
+          .update(folders)
+          .set({ deletedAt: null, updatedAt: new Date() })
+          .where(and(eq(folders.id, id), eq(folders.teamId, teamId)));
+        await writeDocumentEvent(tx, {
+          action: 'restore',
+          summary: `Restored folder ${folder.name}`,
+          documentId: null,
+          folderId: folder.id,
+          visibility: folder.visibility,
+          visibilityUserIds: folder.visibilityUserIds,
+        });
+      });
     },
 
     listDocuments,
@@ -1333,6 +1513,15 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
           folderId: document.folderId,
           visibility: document.visibility,
           visibilityUserIds: document.visibilityUserIds,
+          sourceMetadata: documentUploadSourceMetadata({
+            action,
+            document,
+            version,
+            byteSize: input.byteSize,
+            contentType: input.contentType,
+            checksumSha256: input.checksumSha256,
+            sourceMetadata: input.sourceMetadata,
+          }),
         });
 
         const vUpdated = await tx

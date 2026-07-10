@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import {
   calendarEvents,
   type Db,
@@ -8,10 +10,13 @@ import {
   savedMeetings,
 } from '@timeline/db';
 import { childLogger, formatMeetingTranscript, getEnv, llm, queue } from '@timeline/shared';
+import { buildCalendarSourcePayloadMetadata } from '@timeline/shared/calendar';
 import { sourceMetadataWithConversationArtifacts } from '@timeline/shared/conversational/contact-artifacts';
 import { reconcileLinkArtifactsForRawEvent } from '@timeline/shared/conversational/link-artifacts';
 import { currentExtractionModelVersion } from '@timeline/shared/extraction-model-version';
 import { participantNames } from '@timeline/shared/meetings';
+import { inlineSourceSnapshotMetadata } from '@timeline/shared/reconciliation';
+import { normalizeRawEventsToEvidence } from '@timeline/shared/reconciliation/normalization';
 import { UnrecoverableError, Worker, type Job } from 'bullmq';
 import { and, asc, eq, sql } from 'drizzle-orm';
 import { z } from 'zod';
@@ -20,6 +25,9 @@ import { trackProductEventBestEffort } from '#src/analytics.js';
 import { captureWorkerJobFailure } from '#src/monitoring.js';
 
 const log = childLogger('worker:meeting-finalize');
+const MEETING_SOURCE_SNAPSHOT_VERSION = 'meeting-finalized-source-snapshot-2026-07';
+type DbTx = Parameters<Parameters<Db['transaction']>[0]>[0];
+type DbOrTx = Db | DbTx;
 
 interface MeetingFinalizeDeps {
   db: Db;
@@ -78,7 +86,7 @@ interface MeetingSummaryFailure {
   model: string;
 }
 
-async function loadMeetingChunks(db: Db, meetingId: string, teamId: string) {
+async function loadMeetingChunks(db: DbOrTx, meetingId: string, teamId: string) {
   return db
     .select()
     .from(meetingTranscriptChunks)
@@ -95,7 +103,7 @@ function meetingDedupKey(meetingId: string): string {
   return `meeting-finalized:${meetingId}`;
 }
 
-async function findFinalizedRawEventId(db: Db, meetingId: string, teamId: string) {
+async function findFinalizedRawEventId(db: DbOrTx, meetingId: string, teamId: string) {
   const dedupKey = meetingDedupKey(meetingId);
   const existing = await db
     .select({ id: rawEvents.id })
@@ -110,7 +118,23 @@ async function findFinalizedRawEventId(db: Db, meetingId: string, teamId: string
   return existing[0]?.id;
 }
 
-async function findMeetingCalendarEventId(db: Db, meetingId: string, teamId: string) {
+async function normalizeMeetingRawEventEvidence(
+  db: DbOrTx,
+  args: { teamId: string; rawEventIds: string[] },
+): Promise<void> {
+  const rawEventIds = [...new Set(args.rawEventIds.filter((id) => id.length > 0))];
+  if (rawEventIds.length === 0) return;
+  try {
+    await normalizeRawEventsToEvidence({ db, teamId: args.teamId, rawEventIds });
+  } catch (err) {
+    log.warn(
+      { err, teamId: args.teamId, rawEventIds },
+      'meeting reconciliation evidence normalization failed',
+    );
+  }
+}
+
+async function findMeetingCalendarEventId(db: DbOrTx, meetingId: string, teamId: string) {
   const existing = await db
     .select({ id: calendarEvents.id })
     .from(calendarEvents)
@@ -247,6 +271,42 @@ function buildMeetingCalendarRawText(args: {
   return parts.join(' | ');
 }
 
+function meetingFinalizedSourcePayloadMetadata(args: {
+  meeting: MeetingRow;
+  title: string | null;
+  contentText: string;
+  speakers: string[];
+  minutes: number;
+  chunkCount: number;
+  summary: string | null;
+  actionItems: { text: string; owner: string | null }[];
+  dedupKey: string;
+}): Record<string, unknown> {
+  const transcriptDigest = `sha256:${createHash('sha256').update(args.contentText).digest('hex')}`;
+  const snapshot = {
+    provider: 'meeting_bot',
+    meeting_id: args.meeting.id,
+    platform: args.meeting.platform,
+    meeting_url: args.meeting.meetingUrl,
+    title: args.title,
+    started_at: args.meeting.startedAt?.toISOString() ?? null,
+    ended_at: args.meeting.endedAt?.toISOString() ?? null,
+    duration_minutes: args.minutes,
+    chunk_count: args.chunkCount,
+    speakers: args.speakers,
+    transcript_digest: transcriptDigest,
+    summary: args.summary,
+    action_items: args.actionItems,
+    dedup_key: args.dedupKey,
+  };
+  return inlineSourceSnapshotMetadata({
+    snapshot,
+    kind: 'meeting_finalized_transcript',
+    version: MEETING_SOURCE_SNAPSHOT_VERSION,
+    ref: () => `inline://timeline/meeting/${args.meeting.id}/finalized`,
+  });
+}
+
 function generatedCalendarExtractionSkipMetadata() {
   const now = new Date().toISOString();
   return {
@@ -312,7 +372,7 @@ function retryableSummaryMessage(message: string): boolean {
 }
 
 async function createMeetingCalendarEvent(
-  tx: Db,
+  tx: DbOrTx,
   args: {
     meeting: MeetingRow;
     teamId: string;
@@ -408,6 +468,15 @@ async function createMeetingCalendarEvent(
     startAt: args.startAt,
     endAt: args.endAt,
   });
+  const calendarPayloadInput = {
+    calendarEventId: row.id,
+    title,
+    description,
+    startAt: args.startAt,
+    endAt: args.endAt,
+    timezone: 'UTC',
+    location: args.meeting.meetingUrl,
+  };
 
   const [scheduledRow] = await tx
     .insert(rawEvents)
@@ -426,6 +495,7 @@ async function createMeetingCalendarEvent(
           action: 'scheduled',
           meeting_id: args.meeting.id,
           source: 'meeting_bot',
+          ...buildCalendarSourcePayloadMetadata(calendarPayloadInput, 'scheduled'),
           ...generatedCalendarExtractionSkipMetadata(),
         },
         scheduledText,
@@ -450,6 +520,7 @@ async function createMeetingCalendarEvent(
           action: 'event',
           meeting_id: args.meeting.id,
           source: 'meeting_bot',
+          ...buildCalendarSourcePayloadMetadata(calendarPayloadInput, 'event'),
           ...generatedCalendarExtractionSkipMetadata(),
         },
         startText,
@@ -481,6 +552,11 @@ async function createMeetingCalendarEvent(
       startAtRawEventId: startAtRow?.id ?? null,
     })
     .where(eq(calendarEvents.id, row.id));
+
+  await normalizeMeetingRawEventEvidence(tx, {
+    teamId: args.teamId,
+    rawEventIds: [scheduledRow?.id, startAtRow?.id].filter((id): id is string => Boolean(id)),
+  });
 
   return row.id;
 }
@@ -609,7 +685,7 @@ export async function processMeetingFinalizeJob(
       const dedupKey = meetingDedupKey(meetingId);
       const finalized = await deps.db.transaction(async (tx) => {
         await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${meetingId}, 0))`);
-        const finalChunks = await loadMeetingChunks(tx as never, meetingId, teamId);
+        const finalChunks = await loadMeetingChunks(tx, meetingId, teamId);
         const fullTranscript = finalChunks.length > 0 ? formatMeetingTranscript(finalChunks) : null;
         if ((fullTranscript ?? '') !== summarized.transcriptText) {
           return { retryChunks: finalChunks };
@@ -661,7 +737,13 @@ export async function processMeetingFinalizeJob(
         // single timeline entry. contentText is the full speaker-attributed
         // transcript (the raw source); the LLM summary lives in sourceMetadata
         // so it's clearly tagged as derived.
-        const speakers = [...new Set(finalChunks.map((c) => c.speaker).filter(Boolean))];
+        const speakers = [
+          ...new Set(
+            finalChunks
+              .map((c) => c.speaker)
+              .filter((speaker): speaker is string => Boolean(speaker)),
+          ),
+        ];
         const contentText = fullTranscript ?? 'Meeting (no transcript)';
         const sourceMetadata: Record<string, unknown> = {
           meeting_id: meetingId,
@@ -687,6 +769,20 @@ export async function processMeetingFinalizeJob(
         if (summarized.actionItems.length > 0) {
           sourceMetadata.action_items = summarized.actionItems;
         }
+        Object.assign(
+          sourceMetadata,
+          meetingFinalizedSourcePayloadMetadata({
+            meeting,
+            title: finalTitle,
+            contentText,
+            speakers,
+            minutes,
+            chunkCount: finalChunks.length,
+            summary: summarized.summary,
+            actionItems: summarized.actionItems,
+            dedupKey,
+          }),
+        );
 
         const eventInsert = await tx
           .insert(rawEvents)
@@ -708,7 +804,7 @@ export async function processMeetingFinalizeJob(
 
         // On dedup conflict (prior run inserted but crashed before completing),
         // look up the existing row so backfill + enqueue still run.
-        rawEventId ??= await findFinalizedRawEventId(tx as never, meetingId, teamId);
+        rawEventId ??= await findFinalizedRawEventId(tx, meetingId, teamId);
 
         if (rawEventId) {
           await reconcileLinkArtifactsForRawEvent(tx, {
@@ -747,7 +843,7 @@ export async function processMeetingFinalizeJob(
         if (calendarEndAt <= calendarStartAt) {
           calendarEndAt = new Date(calendarStartAt.getTime() + 60_000);
         }
-        const calendarEventId = await createMeetingCalendarEvent(tx as never, {
+        const calendarEventId = await createMeetingCalendarEvent(tx, {
           meeting,
           teamId,
           startAt: calendarStartAt,
@@ -792,6 +888,10 @@ export async function processMeetingFinalizeJob(
       }
 
       if (finalized.rawEventId) {
+        await normalizeMeetingRawEventEvidence(deps.db, {
+          teamId,
+          rawEventIds: [finalized.rawEventId],
+        });
         await Promise.all([
           enqueueRawEventPipeline(env, io, finalized.rawEventId, teamId),
           enqueueMeetingChunkEmbeds(env, io, finalized.meetingChunkIds, teamId),

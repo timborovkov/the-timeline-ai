@@ -1,5 +1,14 @@
 import { PGlite } from '@electric-sql/pglite';
-import { rawEvents, teamMembers, teams, teamVisibilityDefaults, users } from '@timeline/db';
+import {
+  documentVersions,
+  documents,
+  rawEvents,
+  reconciliationEvidence,
+  teamMembers,
+  teams,
+  teamVisibilityDefaults,
+  users,
+} from '@timeline/db';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -65,6 +74,13 @@ function attachmentDeps() {
   };
 }
 
+function documentDeps() {
+  return {
+    upload: vi.fn().mockResolvedValue(undefined),
+    enqueueExtract: vi.fn().mockResolvedValue(undefined),
+  };
+}
+
 describe('email dispatcher', () => {
   let pg: PGlite;
   let db: ReturnType<typeof drizzle>;
@@ -117,6 +133,45 @@ describe('email dispatcher', () => {
       message_id: 'vendor-note@example.net',
       auth_verdict: 'absent',
       sender_unverified: true,
+      source_snapshot_kind: 'postmark_inbound_email',
+      source_snapshot_version: 'email-source-snapshot-2026-07',
+    });
+    const metadata = row?.sourceMetadata as Record<string, unknown>;
+    const sourcePayloadRef = metadata.source_payload_ref;
+    const payloadDigest = metadata.payload_digest;
+    expect(typeof sourcePayloadRef).toBe('string');
+    expect(typeof payloadDigest).toBe('string');
+    if (typeof sourcePayloadRef !== 'string' || typeof payloadDigest !== 'string') {
+      throw new Error('expected email replay metadata');
+    }
+    expect(sourcePayloadRef).toMatch(/^inline:\/\/timeline\/email\/[0-9a-f]{64}$/);
+    expect(payloadDigest).toMatch(/^sha256:[0-9a-f]{64}$/);
+    expect(metadata.source_snapshot).toMatchObject({
+      provider: 'postmark',
+      source: 'email',
+      message_id: 'vendor-note@example.net',
+      subject: 'Vendor note',
+      content_text: 'Please review this.',
+      raw_postmark: {
+        MessageID: 'postmark-vendor-note',
+        Subject: 'Vendor note',
+      },
+    });
+    const [evidence] = await db
+      .select()
+      .from(reconciliationEvidence)
+      .where(
+        eq(reconciliationEvidence.rawEventId, row?.id ?? '00000000-0000-0000-0000-000000000000'),
+      );
+    expect(evidence).toMatchObject({
+      source: 'email',
+      provider: 'email',
+      externalObjectId: 'vendor-note@example.net',
+      eventType: 'email.received',
+      sourcePayloadRef,
+      payloadDigest,
+      replayState: 'full',
+      visibility: 'team',
     });
     expect(queues.extract.enqueueExtract).toHaveBeenCalledWith({
       rawEventId: row?.id,
@@ -382,6 +437,143 @@ describe('email dispatcher', () => {
           filename: 'proposal.pdf',
           content_type: 'application/pdf',
           bucket: 'attachments',
+        }),
+      ],
+    });
+  });
+
+  it('promotes non-audio attachments into captured documents and extraction work', async () => {
+    const queues = textQueueDeps();
+    const attachments = attachmentDeps();
+    const document = documentDeps();
+    const payload = inboundPayload('customer-doc');
+    payload.TextBody = 'Customer forwarded the signed rollout plan.';
+    payload.Attachments = [attachment('rollout-plan.pdf', 'application/pdf', '%PDF-1.7')];
+
+    await expect(
+      handleInbound(
+        {
+          db: db as never,
+          inboundDomain: 'inbound.test',
+          attachments,
+          documents: document,
+          ...queues,
+        },
+        payload,
+      ),
+    ).resolves.toMatchObject({ ok: true, inserted: 1 });
+
+    const [parent] = await db.select().from(rawEvents).where(eq(rawEvents.source, 'email'));
+    expect(parent?.contentText).toBe('Customer forwarded the signed rollout plan.');
+    const [captured] = await db.select().from(documents).where(eq(documents.teamId, TEAM_ID));
+    expect(captured).toMatchObject({
+      fileKind: 'captured',
+      name: 'rollout-plan.pdf',
+      ownerUserId: null,
+      visibility: 'team',
+      sourceRawEventId: parent?.id,
+    });
+    expect(captured?.metadata).toMatchObject({
+      source: 'email',
+      email_message_id: 'customer-doc@example.net',
+      parent_raw_event_id: parent?.id,
+    });
+    const [version] = await db
+      .select()
+      .from(documentVersions)
+      .where(
+        eq(documentVersions.documentId, captured?.id ?? '00000000-0000-0000-0000-000000000000'),
+      );
+    expect(version).toMatchObject({
+      teamId: TEAM_ID,
+      documentId: captured?.id,
+      version: 1,
+      contentType: 'application/pdf',
+      sourceEventId: parent?.id,
+      processingStatus: 'pending',
+    });
+    expect(document.upload).toHaveBeenCalledWith({
+      key: version?.objectKey,
+      body: Buffer.from('%PDF-1.7'),
+      contentType: 'application/pdf',
+    });
+    expect(document.enqueueExtract).toHaveBeenCalledWith({
+      documentVersionId: version?.id,
+      teamId: TEAM_ID,
+    });
+    expect(parent?.sourceMetadata).toMatchObject({
+      attachments: [
+        expect.objectContaining({
+          filename: 'rollout-plan.pdf',
+          bucket: 'attachments',
+          document_id: captured?.id,
+          document_version_id: version?.id,
+        }),
+      ],
+    });
+    expect(queues.extract.enqueueExtract).toHaveBeenCalledWith({
+      rawEventId: parent?.id,
+      teamId: TEAM_ID,
+    });
+    expect(queues.suggestions.enqueueSuggestion).toHaveBeenCalledWith({
+      rawEventId: parent?.id,
+      teamId: TEAM_ID,
+    });
+  });
+
+  it('repairs missing captured documents on duplicate email delivery replay', async () => {
+    const queues = textQueueDeps();
+    const attachments = attachmentDeps();
+    const document = documentDeps();
+    const payload = inboundPayload('customer-doc-replay');
+    payload.TextBody = 'Customer forwarded the implementation notes.';
+    payload.Attachments = [attachment('implementation-notes.pdf', 'application/pdf', '%PDF-1.7')];
+
+    await handleInbound(
+      { db: db as never, inboundDomain: 'inbound.test', attachments, ...queues },
+      payload,
+    );
+    await expect(
+      handleInbound(
+        {
+          db: db as never,
+          inboundDomain: 'inbound.test',
+          attachments,
+          documents: document,
+          ...queues,
+        },
+        payload,
+      ),
+    ).resolves.toMatchObject({ ok: true, inserted: 0 });
+
+    const parentRows = await db.select().from(rawEvents).where(eq(rawEvents.source, 'email'));
+    expect(parentRows).toHaveLength(1);
+    const [parent] = parentRows;
+    const capturedRows = await db.select().from(documents).where(eq(documents.teamId, TEAM_ID));
+    expect(capturedRows).toHaveLength(1);
+    const [captured] = capturedRows;
+    const [version] = await db
+      .select()
+      .from(documentVersions)
+      .where(
+        eq(documentVersions.documentId, captured?.id ?? '00000000-0000-0000-0000-000000000000'),
+      );
+    expect(captured).toMatchObject({
+      fileKind: 'captured',
+      name: 'implementation-notes.pdf',
+      sourceRawEventId: parent?.id,
+    });
+    expect(version?.sourceEventId).toBe(parent?.id);
+    expect(document.enqueueExtract).toHaveBeenCalledWith({
+      documentVersionId: version?.id,
+      teamId: TEAM_ID,
+    });
+    expect(parent?.sourceMetadata).toMatchObject({
+      attachments: [
+        expect.objectContaining({
+          filename: 'implementation-notes.pdf',
+          document_id: captured?.id,
+          document_version_id: version?.id,
         }),
       ],
     });

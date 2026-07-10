@@ -9,7 +9,7 @@ import {
 import { getAudioBucket, getS3PresignClient, getSignedGetObjectUrl } from '@timeline/shared/s3';
 import { withTeam } from '@timeline/shared/team-scope';
 import { localDateFromInstant } from '@timeline/shared/time';
-import { and, eq, inArray, isNull, or, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { z } from 'zod';
 
 import type {
@@ -354,24 +354,15 @@ async function objectChangePreview(
       change: objectChanges,
       objectName: entities.canonicalName,
       objectType: entities.type,
-      rawEventId: rawEvents.id,
     })
     .from(objectChanges)
     .innerJoin(entities, eq(entities.id, objectChanges.entityId))
-    .leftJoin(rawEvents, eq(rawEvents.id, objectChanges.sourceEventId))
     .where(
       and(
         eq(objectChanges.id, ref.id),
         eq(objectChanges.teamId, teamId),
         eq(entities.teamId, teamId),
-        or(
-          isNull(objectChanges.sourceEventId),
-          and(
-            eq(rawEvents.teamId, teamId),
-            eq(rawEvents.visibility, 'team'),
-            sql`COALESCE(${rawEvents.sourceMetadata} ->> 'deleted', 'false') <> 'true'`,
-          ),
-        ),
+        isNull(objectChanges.sourceEventId),
       ),
     )
     .limit(1);
@@ -388,9 +379,7 @@ async function objectChangePreview(
     subtitle: `${row.objectName} · ${dateLabel(row.change.changedAt) ?? 'change'}`,
     body,
     badges: badges(['change', row.objectType, row.change.status]),
-    href: row.rawEventId
-      ? `/app/timeline?event=${row.rawEventId}#ev-${row.rawEventId}`
-      : `/app/objects/${row.change.entityId}`,
+    href: `/app/objects/${row.change.entityId}`,
     sections: [
       {
         title: 'Change',

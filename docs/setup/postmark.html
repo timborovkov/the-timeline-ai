@@ -10,7 +10,7 @@
     <a class="skip" href="#main">Skip to content</a>
     <main id="main">
       <h1>Postmark email setup</h1>
-      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-06-28</span></div>
+      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-07-03</span></div>
       <p class="tldr">Postmark powers inbound timeline capture and outbound product emails.</p>
 
       <p>
@@ -201,8 +201,10 @@ SUPPORT_EMAIL=contact@thetimeline.cc
               transcribe job.
             </li>
             <li>
-              Everything else → <code>timeline-attachments</code> bucket; recorded on the parent
-              event's <code>source_metadata.attachments[]</code>.
+              Everything else → <code>timeline-attachments</code> bucket for raw attachment export
+              and, when <code>S3_BUCKET_DOCUMENTS</code> plus <code>REDIS_URL</code> are configured,
+              a captured document/version linked to the parent email raw event and queued for
+              document extraction.
             </li>
           </ul>
         </li>
@@ -224,6 +226,24 @@ SUPPORT_EMAIL=contact@thetimeline.cc
       </p>
 
       <h2 id="smoke-test">8. Smoke test</h2>
+      <p>
+        Before sending a test email, run
+        <code>pnpm canary:integrations -- --env-file=/path/to/.env</code>. The Postmark rows perform
+        a read-only server lookup with <code>POSTMARK_SERVER_TOKEN</code> and verify that
+        <code>POSTMARK_WEBHOOK_SECRET</code> is configured, without printing either secret.
+      </p>
+      <p>
+        To exercise the live inbound route without opening the Postmark dashboard, configure
+        <code>POSTMARK_INBOUND_CANARY_TO</code> to a canary team's inbound address and
+        <code>POSTMARK_INBOUND_CANARY_FROM</code> to a sender allowed by that team's inbound
+        whitelist. Also set <code>POSTMARK_INBOUND_CANARY_ALLOWED_ORIGIN</code> to the exact trusted
+        app origin, such as <code>https://thetimeline.cc</code>. The same canary command then posts
+        a synthetic Postmark-shaped payload to <code>/api/email/inbound</code>, requires the app to
+        report one inserted raw event, and polls <code>DATABASE_URL</code> for that exact
+        <code>raw_events.source='email'</code> row. The script only sends the Basic-auth webhook
+        secret when <code>AUTH_URL</code> matches that allowed HTTPS origin, except for localhost
+        HTTP during development.
+      </p>
       <p>
         Postmark dashboard has a test inbound email feature. Send a test message; the app should
         write a <code>raw_events</code> row with <code>source='email'</code>. The timeline UI shows

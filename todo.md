@@ -136,6 +136,10 @@ Direction: soften the surface. Keep the forensic mono treatment for data
 
 ## Workspace Reconciliation
 
+- [x] Build the replacement reconciliation engine architecture in
+      [docs/reconciliation-engine-plan.md](docs/reconciliation-engine-plan.md):
+      normalized evidence, artifact resolution, authority policy,
+      output-backed approvals, and deterministic/live reconciliation evals.
 - [ ] Wire workspace reconciliation into future authoritative external sync
       paths when calendar/provider imports directly update artifacts they own.
 - [ ] Design cross-source evidence reviews for generic ingest webhook events so
@@ -151,12 +155,20 @@ Direction: soften the surface. Keep the forensic mono treatment for data
 
 ## Agent Reliability
 
-- [ ] Add richer per-tool observability for chat/retrieval turns: selected tool
+- [x] Add richer per-tool observability for chat/retrieval turns: selected tool
       groups, omitted groups, retrieval recipe, result counts, top artifact refs,
-      tool latency, and tool errors.
+      tool latency, and tool errors. Web chat now persists `tool_observability`
+      on assistant turns with web-specific selection context, and non-browser
+      `askAgent` callers can consume the same per-tool summary callback.
 - [ ] Add a reusable agent eval harness with retrieval, dashboard chat,
       Slack/Telegram ask, background proposal, summary, and action/HITL suites
-      over a compact seeded workspace.
+      over a compact seeded workspace. Current shared harness covers deterministic
+      retrieval/tool traces, `SearchHit` fixtures, answer synthesis, non-browser
+      `askAgent` model scripts, ask turn-observability capture, and dispatcher-level
+      Slack/Telegram `/ask` surface evals that run the real `askAgent` pipeline,
+      dashboard chat route action/HITL tool-selection and persisted-observability
+      evals, object-summary source-ref/visibility checks, plus a worker-level
+      background proposal eval for visibility-safe conversation reviews.
 - [ ] Finish advanced in-chat HITL follow-ups after dogfooding: persisted
       prepared action IDs for multi-step/high-risk actions, task-specific direct
       mutations, and remaining board-level operations such as board create,

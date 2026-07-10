@@ -15,9 +15,10 @@ export type ProviderConnectionRow = typeof providerConnectionsTable.$inferSelect
 
 /**
  * Workspace object mapping hint. When a provider sets this on an
- * IntegrationEvent, the event-writer upserts a corresponding entities
- * row (idempotent by metadata->>'integration_external_id') so the
- * external object shows up on /app/objects with full timeline history.
+ * IntegrationEvent, the event-writer treats it as reconciliation evidence:
+ * artifact anchors, source refs, association/output payloads, and optional
+ * links to preexisting provider-mapped entities. It does not create or rewrite
+ * workspace object rows.
  */
 export interface ObjectMapping {
   type:
@@ -35,7 +36,7 @@ export interface ObjectMapping {
     | 'task'
     | 'follow_up';
   canonicalName: string;
-  /** Provider-scoped stable id used as the dedup key for the entity row. */
+  /** Provider-scoped stable id used for artifact anchors and compatibility links. */
   externalId: string;
   /**
    * Human-facing title for UI surfaces when canonicalName carries provider identity.
@@ -48,7 +49,7 @@ export interface ObjectMapping {
   url?: string;
   /** Optional aliases (e.g. ENG-42 for a Linear issue). */
   aliases?: string[];
-  /** Optional provider metadata to merge onto the mapped entity row. */
+  /** Optional provider metadata to include in evidence/output payloads. */
   metadata?: Record<string, unknown>;
 }
 
@@ -69,7 +70,13 @@ export interface IntegrationEvent {
   contentText: string;
   visibility?: 'team' | 'private' | 'specific_users';
   visibilityUserIds?: string[] | null;
-  /** Extra provider-specific fields merged into source_metadata. */
+  /**
+   * Extra provider-specific fields merged into source_metadata. Providers should
+   * pass `source_payload_ref` and `payload_digest` when they persisted a raw
+   * provider payload elsewhere. If omitted, the event-writer stores a compact
+   * inline snapshot of this normalized IntegrationEvent so reconciliation replay
+   * still has a stable source payload ref.
+   */
   extra?: Record<string, unknown>;
   /** Phase 11: optional workspace object mapping. */
   objectMap?: ObjectMapping;

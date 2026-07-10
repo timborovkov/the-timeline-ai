@@ -10,7 +10,7 @@
     <a class="skip" href="#main">Skip to content</a>
     <main id="main">
       <h1>Local development</h1>
-      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-06-01</span></div>
+      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-07-08</span></div>
       <p class="tldr">
         Bring up the full Timeline stack on your machine with Docker Compose for infra and
         <code>pnpm dev</code> for app + worker hot reload.
@@ -66,7 +66,7 @@ docker compose ps           # all services should be "healthy"
       <pre><code>pnpm install
 pnpm db:generate            # only if you changed schema
 pnpm db:migrate
-pnpm dev:seed               # optional demo team, users, events, objects, integrations
+pnpm dev:seed               # optional demo team, users, events, objects, integrations, reconciliation provenance
 </code></pre>
       <p>
         <code>pnpm dev:seed</code> only runs against local database hosts unless you set an explicit
@@ -75,6 +75,8 @@ pnpm dev:seed               # optional demo team, users, events, objects, integr
         <code>member@timeline.dev</code> with password <code>timeline-dev</code>. The seeded GitHub
         and Linear credentials are fake, encrypted, and disabled for sync. Daily digest email is
         disabled for the demo users so the worker can run without outbound email configuration.
+        Seeded canonical objects leave legacy <code>source_event_id</code> empty and expose demo
+        provenance through reconciliation evidence, associations, and applied outputs.
       </p>
 
       <p>Run the app:</p>
@@ -147,13 +149,43 @@ pnpm dev:seed               # optional demo team, users, events, objects, integr
       <pre><code>pnpm dev                              # next + worker, watch mode
 pnpm validate                         # format, typecheck, lint, knip
 pnpm test                             # unit + integration tests (package suites run sequentially)
-pnpm test:eval                        # fast deterministic agent and retrieval evals
+pnpm test:eval                        # fast deterministic agent/dashboard/retrieval/summary/proposal evals
+AGENT_LIVE_ENV_FILE=/path/.env pnpm test:agent-eval:live
+                                      # opt-in live LLM askAgent durable-state + provider/document retrieval eval
+SUGGESTIONS_LIVE_ENV_FILE=/path/.env pnpm test:suggestions-eval:live
+                                      # opt-in live LLM suggestion extraction/projection eval
+pnpm test:reconciliation-eval         # deterministic reconciliation domain/eval checks + sampling CLI gate
+RECONCILIATION_LIVE_ENV_FILE=/path/.env pnpm test:reconciliation-eval:live
+                                      # opt-in live LLM planner + judge matrix
+# optional: RECONCILIATION_LIVE_ARTIFACT_DIR=/tmp/eval-run writes one exact output dir
+# optional: RECONCILIATION_LIVE_ARTIFACT_ROOT_DIR=eval-runs/reconciliation writes timestamped runs
+# optional: RECONCILIATION_LIVE_CALL_TIMEOUT_MS=90000 tunes each live planner/judge call
+# optional: RECONCILIATION_LIVE_MAX_ATTEMPTS=3 retries transient planner,
+# judge, and judge-consistency failures
+pnpm test:e2e-env                     # deterministic E2E env/port contract check
 pnpm test:dist-imports                # build db/shared and import compiled runtime modules with Node
+pnpm --filter @timeline/worker reconciliation-evidence -- --team=&lt;uuid&gt; --mode=audit
+pnpm --filter @timeline/worker reconciliation-evidence -- --team=&lt;uuid&gt; --mode=audit --fail-on-release-gate
+# optional: repeat --allow-degraded-source=&lt;event_source&gt; for known historical degraded replay rows
+pnpm --filter @timeline/worker reconciliation-evidence -- --team=&lt;uuid&gt; --mode=backfill --dry-run --page-size=500
+TIMELINE_ENV_FILE=/path/to/.env pnpm --filter @timeline/worker reconciliation-legacy-provenance -- --team=&lt;uuid&gt; --fail-on-legacy
+TIMELINE_ENV_FILE=/path/to/.env pnpm --filter @timeline/worker reconciliation-production-sampling -- --input=/tmp/eval-run --out=/tmp/reconciliation-production-sampling.json --team=&lt;uuid&gt; --run-kind=closed_beta --fail-on-failures
+# production sampling accepts repeated --input paths; --run-kind defaults to manual
+# and may be manual, closed_beta, or post_deploy. Use --fail-on-failures for
+# release gates that should stop on any failed sample. Repeat
+# --confirm-fixture=&lt;caseName&gt;:&lt;packetFingerprint&gt; for reviewed failed samples
+# that should become deterministic fixtures.
+# pnpm dev also starts the reconciliation queue consumer for enqueued
+# evidence_audit/evidence_backfill/scope_reconcile jobs. Admins can enqueue
+# source-scoped audit/backfill and repair scoped team/object/cluster evidence
+# plus approval projections from /app/team/reconciliation. Completed
+# audit/backfill jobs persist reconciliation_runs metrics, including
+# release-gate failures for audit runs.
 pnpm check:web-bundle                 # scan built Next server chunks after a web build
 pnpm e2e                              # Playwright core journeys; requires compose infra + migrations
 pnpm e2e:prod-smoke                   # build + standalone-server smoke; requires compose infra + migrations
 pnpm e2e:setup / pnpm e2e:cleanup     # seed/remove deterministic e2e users and team
-pnpm dev:seed                         # seed local demo data with disabled fake integrations
+pnpm dev:seed                         # seed local demo data with disabled fake integrations and reconciliation provenance
 pnpm lint &amp;&amp; pnpm typecheck           # quick static checks
 pnpm knip                             # dead code / unused deps
 pnpm format                           # prettier write
@@ -162,12 +194,21 @@ docker compose logs -f postgres       # tail a service
 docker compose down -v                # nuke local data
 </code></pre>
       <p>
+        Local E2E commands auto-detect published ports from a running
+        <code>timeline-e2e-*</code> isolated Docker stack before falling back to the standard
+        <code>localhost:5432</code>, <code>6379</code>, <code>9000</code>, and
+        <code>6333</code> ports. Set <code>DATABASE_URL</code>, <code>REDIS_URL</code>,
+        <code>S3_ENDPOINT</code>, or <code>QDRANT_URL</code> explicitly to override this, or set
+        <code>E2E_USE_DOCKER_PORTS=0</code> to force the fallback defaults.
+      </p>
+      <p>
         GitHub PR CI intentionally skips <code>pnpm build</code> and
         <code>pnpm check:web-bundle</code>. The required CI proof is formatting, TypeScript
-        compilation, linting, Knip, and the compiled-package import smoke check. Run broader
-        relevant test commands separately, including <code>pnpm test:eval</code> for agent or
-        retrieval changes, and run the production build and bundle hygiene checks manually when
-        changing deploy output, bundling, or server/client import boundaries.
+        compilation, linting, Knip, deterministic reconciliation evals, and the compiled-package
+        import smoke check. Run broader relevant test commands separately, including
+        <code>pnpm test:eval</code> for agent, retrieval, summary, dashboard chat, or proposal
+        changes, and run the production build and bundle hygiene checks manually when changing
+        deploy output, bundling, or server/client import boundaries.
       </p>
 
       <h2 id="resetting-local-data">Resetting local data</h2>

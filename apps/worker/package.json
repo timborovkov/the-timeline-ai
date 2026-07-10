@@ -21,12 +21,15 @@
     "dedupe-approvals": "NODE_OPTIONS=--conditions=development tsx src/scripts/dedupe-approvals.ts",
     "dedupe-calendar-events": "NODE_OPTIONS=--conditions=development tsx src/scripts/dedupe-calendar-events.ts",
     "embed-coverage": "NODE_OPTIONS=--conditions=development tsx src/scripts/embed-coverage.ts",
+    "reconciliation-evidence": "NODE_OPTIONS=--conditions=development tsx src/scripts/reconciliation-evidence.ts",
+    "reconciliation-legacy-provenance": "NODE_OPTIONS=--conditions=development tsx src/scripts/reconciliation-legacy-provenance.ts",
+    "reconciliation-production-sampling": "NODE_OPTIONS=--conditions=development tsx src/scripts/reconciliation-production-sampling.ts",
     "redocument-extract": "NODE_OPTIONS=--conditions=development tsx src/scripts/redocument-extract.ts",
     "redocument-embed": "NODE_OPTIONS=--conditions=development tsx src/scripts/redocument-embed.ts",
     "integration-resync": "NODE_OPTIONS=--conditions=development tsx src/scripts/integration-resync.ts",
     "timeline-moment-presentations": "NODE_OPTIONS=--conditions=development tsx src/scripts/timeline-moment-presentations.ts",
     "lint": "eslint src",
-    "test": "NODE_OPTIONS=--conditions=development vitest run",
+    "test": "NODE_OPTIONS=--conditions=development node scripts/run-tests.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {

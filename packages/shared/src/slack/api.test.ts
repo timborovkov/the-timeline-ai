@@ -7,6 +7,34 @@ describe('SlackApi message posting', () => {
     vi.unstubAllGlobals();
   });
 
+  it('calls auth.test with the configured bearer token', async () => {
+    const fetchMock = vi.fn(() =>
+      Promise.resolve(
+        Response.json({
+          ok: true,
+          team_id: 'T123',
+          user_id: 'U123',
+          bot_id: 'B123',
+        }),
+      ),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(new SlackApi('xoxb-test').authTest()).resolves.toMatchObject({
+      team_id: 'T123',
+      user_id: 'U123',
+      bot_id: 'B123',
+    });
+
+    expect(fetchMock).toHaveBeenCalledOnce();
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe('https://slack.com/api/auth.test');
+    expect(init.headers).toMatchObject({
+      authorization: 'Bearer xoxb-test',
+      'content-type': 'application/x-www-form-urlencoded',
+    });
+  });
+
   it('disables Slack mrkdwn for chat.postMessage text', async () => {
     const fetchMock = vi.fn(() => Promise.resolve(Response.json({ ok: true })));
     vi.stubGlobal('fetch', fetchMock);
@@ -43,6 +71,31 @@ describe('SlackApi message posting', () => {
       mrkdwn: false,
       response_type: 'ephemeral',
     });
+  });
+});
+
+describe('SlackApi deterministic E2E seam', () => {
+  afterEach(() => {
+    delete process.env.E2E_DETERMINISTIC_SLACK_API;
+    vi.unstubAllGlobals();
+  });
+
+  it('serves seeded conversation fixtures without calling Slack', async () => {
+    process.env.E2E_DETERMINISTIC_SLACK_API = '1';
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+
+    const conversations = await new SlackApi('xoxb-test').conversationsList();
+    const supportInfo = await new SlackApi('xoxb-test').conversationsInfo('C_E2E_SUPPORT');
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(conversations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'C_E2E_SUPPORT', name: 'support' }),
+        expect.objectContaining({ id: 'C_E2E_PRIVATE', name: 'private-plans' }),
+      ]),
+    );
+    expect(supportInfo).toEqual(expect.objectContaining({ id: 'C_E2E_SUPPORT', name: 'support' }));
   });
 });
 

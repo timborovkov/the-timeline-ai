@@ -2,7 +2,7 @@ import { PGlite } from '@electric-sql/pglite';
 import { type Db, documentVersions, meetings as meetingsTable } from '@timeline/db';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { applyDbMigrations } from '#src/test/pglite.js';
 import { processJanitorTick } from '#src/workers/janitor.js';
@@ -85,6 +85,10 @@ beforeEach(async () => {
   await applyDbMigrations(pg);
   await seed(pg);
   db = drizzle(pg);
+});
+
+afterEach(async () => {
+  await pg.close();
 });
 
 describe('processJanitorTick — document_versions sweep', () => {

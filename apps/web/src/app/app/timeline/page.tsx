@@ -556,6 +556,7 @@ function TimelineFilterPanel({
           method="get"
           className="mt-3 grid gap-3 rounded-sm border border-border bg-surface p-3 text-sm xl:grid-cols-[minmax(0,1fr)_auto] xl:items-start"
         >
+          {baseParams.mode ? <input type="hidden" name="mode" value={baseParams.mode} /> : null}
           <div className="flex min-w-0 flex-wrap items-end gap-2">
             <FilterMultiSelect
               key={`timeline-source:${sourceFilterValue}`}

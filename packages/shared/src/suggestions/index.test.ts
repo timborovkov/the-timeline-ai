@@ -1,13 +1,16 @@
 import { PGlite } from '@electric-sql/pglite';
 import {
   artifactClusterAnchors,
-  artifactClusterMembers,
   artifactClusters,
+  artifactEvidenceAssociations,
   agentSuggestionEvidence,
   agentSuggestionItems,
   agentSuggestions,
+  boardItemChanges,
   entities,
   rawEvents,
+  reconciliationEvidence,
+  reconciliationOutputs,
 } from '@timeline/db';
 import { asc, eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
@@ -184,15 +187,34 @@ describe('suggestion scope', () => {
       canonicalName: 'Mobile login failure',
     });
 
-    const members = await db.select().from(artifactClusterMembers);
-    expect(members).toEqual([
+    const associations = await db.select().from(artifactEvidenceAssociations);
+    const evidenceRows = await db.select().from(reconciliationEvidence);
+    expect(evidenceRows).toEqual([
+      expect.objectContaining({
+        rawEventId: TEAM_RAW_EVENT_ID,
+        source: 'telegram',
+        visibility: 'team',
+      }),
+    ]);
+    expect(associations).toEqual([
       expect.objectContaining({
         clusterId: clusters[0]?.id,
         rawEventId: TEAM_RAW_EVENT_ID,
-        suggestionId: bundle.id,
-        role: 'report',
+        evidenceId: evidenceRows[0]?.id,
+        role: 'discussion',
         strength: 'structured',
-        authoritative: false,
+        associationSource: 'structured_anchor',
+      }),
+    ]);
+    expect(associations[0]?.metadata).toMatchObject({
+      suggestion_id: bundle.id,
+      original_evidence_role: 'report',
+    });
+    expect(associations[0]?.sourceRefs).toEqual([
+      expect.objectContaining({
+        source: 'telegram',
+        rawEventId: TEAM_RAW_EVENT_ID,
+        evidenceId: evidenceRows[0]?.id,
       }),
     ]);
 
@@ -260,6 +282,65 @@ describe('suggestion scope', () => {
     await expect(scope.objects.getMergedObjectTarget(second.id)).resolves.toMatchObject({
       id: first.id,
     });
+  });
+
+  it('keeps selected bulk accept from applying merge-preview suggestions', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const first = await scope.objects.createObject({
+      type: 'company',
+      canonicalName: 'Bulk AuditAI',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const second = await scope.objects.createObject({
+      type: 'vendor',
+      canonicalName: 'Bulk Audit AI',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Merge duplicate objects from bulk action',
+      dedupeKey: 'merge-preview-only-selected-accept',
+      items: [
+        {
+          operation: 'merge',
+          targetKind: 'object_merge',
+          targetId: first.id,
+          title: 'Review merge from bulk action',
+          dedupeKey: 'merge-preview-only-selected-accept:item',
+          proposedPayload: {
+            objectIds: [first.id, second.id],
+            survivorId: first.id,
+            reason: 'Names are close.',
+          },
+        },
+      ],
+    });
+    const itemId = bundle.items[0]?.id ?? '';
+
+    await expect(
+      scope.suggestions.acceptSelected({ suggestionId: bundle.id, itemIds: [itemId] }),
+    ).resolves.toEqual({ accepted: 0, failed: 1, failedItemIds: [itemId] });
+
+    const [item] = await db
+      .select()
+      .from(agentSuggestionItems)
+      .where(eq(agentSuggestionItems.id, itemId));
+    expect(item).toMatchObject({
+      status: 'pending',
+      resolvedAt: null,
+      resultId: null,
+    });
+    const outputId = bundle.items[0]?.metadata.reconciliation_output_id;
+    if (typeof outputId !== 'string') throw new Error('expected reconciliation output id');
+    const [output] = await db
+      .select()
+      .from(reconciliationOutputs)
+      .where(eq(reconciliationOutputs.id, outputId));
+    expect(output).toMatchObject({ status: 'approval_created' });
+    await expect(scope.objects.getObject(second.id)).resolves.toMatchObject({
+      id: second.id,
+    });
+    await expect(scope.objects.getMergedObjectTarget(second.id)).resolves.toBeNull();
   });
 
   it('supersedes merge suggestions when a participant was archived', async () => {
@@ -606,6 +687,17 @@ describe('suggestion scope', () => {
 
     expect(bundle.visibilityOwnerUserId).toBeNull();
     expect(bundle.visibilityUserIds).toEqual([REVIEWER_ID]);
+
+    const outputs = await db.select().from(reconciliationOutputs);
+    expect(outputs).toHaveLength(1);
+    expect(outputs[0]).toMatchObject({
+      visibility: 'specific_users',
+      visibilityOwnerUserId: null,
+      visibilityUserIds: [REVIEWER_ID],
+      visibilityFloor: 'specific_users',
+      visibilityFloorOwnerUserId: null,
+      visibilityFloorUserIds: [REVIEWER_ID],
+    });
   });
 
   it('does not duplicate notifications when a suggestion bundle is merged', async () => {
@@ -2305,7 +2397,7 @@ describe('suggestion scope', () => {
     expect(loaded?.items.map((item) => item.status).sort()).toEqual(['pending', 'superseded']);
 
     const accepted = await scope.suggestions.acceptAll(oldBundle.id);
-    expect(accepted).toEqual({ accepted: 1, failed: 0 });
+    expect(accepted).toEqual({ accepted: 1, failed: 0, failedItemIds: [] });
     const after = await scope.suggestions.getSuggestion(oldBundle.id);
     expect(after?.status).toBe('partially_resolved');
     expect(after?.items.map((item) => item.status).sort()).toEqual(['accepted', 'superseded']);
@@ -4322,6 +4414,7 @@ describe('suggestion scope', () => {
     await expect(scope.suggestions.acceptAll(bundle.id)).resolves.toEqual({
       accepted: 2,
       failed: 0,
+      failedItemIds: [],
     });
 
     const result = await pg.query<{ body: string }>(
@@ -4373,11 +4466,13 @@ describe('suggestion scope', () => {
       ],
     });
     const topicItemId = bundle.items.find((item) => item.targetKind === 'object')?.id;
-    expect(topicItemId).toBeDefined();
+    const noteItemId = bundle.items.find((item) => item.targetKind === 'object_note')?.id;
+    if (!topicItemId || !noteItemId) throw new Error('expected topic and note items');
 
     await expect(scope.suggestions.acceptAll(bundle.id)).resolves.toEqual({
       accepted: 0,
       failed: 2,
+      failedItemIds: [topicItemId, noteItemId],
     });
 
     const result = await pg.query<{ note_count: string; entity_id: string }>(
@@ -4444,12 +4539,11 @@ describe('suggestion scope', () => {
       body: string;
       actor_kind: string;
       actor_user_id: string | null;
-      source_metadata: Record<string, unknown>;
+      source_event_id: string | null;
     }>(
-      `SELECT n.body, oc.actor_kind, oc.actor_user_id, re.source_metadata
+      `SELECT n.body, oc.actor_kind, oc.actor_user_id, oc.source_event_id
        FROM object_notes n
        JOIN object_changes oc ON oc.entity_id = n.entity_id
-       LEFT JOIN raw_events re ON re.id = oc.source_event_id
        WHERE n.id = $1 AND oc.field = '__note_update__'
        ORDER BY oc.changed_at DESC
        LIMIT 1`,
@@ -4459,11 +4553,41 @@ describe('suggestion scope', () => {
     expect(result.rows[0]).toMatchObject({
       actor_kind: 'agent',
       actor_user_id: null,
-      source_metadata: {
-        kind: 'object_note_update',
+      source_event_id: null,
+    });
+
+    const outputs = await pg.query<{
+      payload: Record<string, unknown>;
+      source_refs: { rawEventId?: string }[];
+    }>(
+      `SELECT payload, source_refs
+       FROM reconciliation_outputs
+       WHERE team_id = $1
+         AND target_kind = 'object_note'
+         AND operation = 'update'
+         AND target_id = $2
+       ORDER BY created_at DESC
+       LIMIT 1`,
+      [TEAM_ID, note.id],
+    );
+    const sourceRef = outputs.rows[0]?.source_refs[0];
+    expect(outputs.rows[0]?.payload).toEqual(
+      expect.objectContaining({
+        system_event_kind: 'object_note_update',
         note_id: note.id,
-        agent_suggestion_item_id: itemId,
-      },
+        actor_kind: 'agent',
+      }),
+    );
+    expect(sourceRef?.rawEventId).toBeDefined();
+
+    const event = await pg.query<{ source_metadata: Record<string, unknown> }>(
+      `SELECT source_metadata FROM raw_events WHERE id = $1`,
+      [sourceRef?.rawEventId],
+    );
+    expect(event.rows[0]?.source_metadata).toMatchObject({
+      kind: 'object_note_update',
+      note_id: note.id,
+      agent_suggestion_item_id: itemId,
     });
   });
 
@@ -4697,6 +4821,7 @@ describe('suggestion scope', () => {
     await expect(scope.suggestions.acceptAll(bundle.id)).resolves.toEqual({
       accepted: 3,
       failed: 0,
+      failedItemIds: [],
     });
 
     const itemRows = await db
@@ -4775,6 +4900,7 @@ describe('suggestion scope', () => {
     await expect(scope.suggestions.acceptAll(bundle.id)).resolves.toEqual({
       accepted: 2,
       failed: 0,
+      failedItemIds: [],
     });
 
     const detail = await scope.objects.getObject(company.id);
@@ -6668,7 +6794,17 @@ describe('suggestion scope', () => {
     });
     const itemId = bundle.items[0]?.id;
     expect(itemId).toBeDefined();
-    expect(bundle.items[0]?.proposedPayload.sourceEventId).toBe(sourceRawEventId);
+    expect(bundle.items[0]?.proposedPayload).not.toHaveProperty('sourceEventId');
+    const outputId = bundle.items[0]?.metadata.reconciliation_output_id;
+    if (typeof outputId !== 'string') throw new Error('expected projection output id');
+    const [output] = await db
+      .select({ payload: reconciliationOutputs.payload })
+      .from(reconciliationOutputs)
+      .where(eq(reconciliationOutputs.id, outputId));
+    const outputPayload = output?.payload as
+      | { proposed_payload?: Record<string, unknown> }
+      | undefined;
+    expect(outputPayload?.proposed_payload).not.toHaveProperty('sourceEventId');
 
     await expect(scope.suggestions.acceptSuggestionItem(itemId ?? '')).resolves.toBe(true);
 
@@ -6678,7 +6814,7 @@ describe('suggestion scope', () => {
        WHERE team_id = '${TEAM_ID}'
          AND canonical_name = 'Investigate agent memory usage for pulling wrong numbers'`,
     );
-    expect(result.rows[0]?.source_event_id).toBe(sourceRawEventId);
+    expect(result.rows[0]?.source_event_id).toBeNull();
 
     const detail = await scope.objects.getObject(result.rows[0]?.id ?? '');
     expect(detail?.provenance.whyThisExists).toEqual([
@@ -6743,6 +6879,16 @@ describe('suggestion scope', () => {
     const itemId = bundle.items[0]?.id;
     expect(itemId).toBeDefined();
     expect(bundle.items[0]?.proposedPayload).not.toHaveProperty('sourceEventId');
+    const outputId = bundle.items[0]?.metadata.reconciliation_output_id;
+    if (typeof outputId !== 'string') throw new Error('expected projection output id');
+    const [output] = await db
+      .select({ payload: reconciliationOutputs.payload })
+      .from(reconciliationOutputs)
+      .where(eq(reconciliationOutputs.id, outputId));
+    const outputPayload = output?.payload as
+      | { proposed_payload?: Record<string, unknown> }
+      | undefined;
+    expect(outputPayload?.proposed_payload).not.toHaveProperty('sourceEventId');
 
     await expect(scope.suggestions.acceptSuggestionItem(itemId ?? '')).resolves.toBe(true);
 
@@ -6755,7 +6901,27 @@ describe('suggestion scope', () => {
     expect(result.rows[0]?.source_event_id).toBeNull();
 
     const detail = await scope.objects.getObject(result.rows[0]?.id ?? '');
-    expect(detail?.provenance.whyThisExists).toEqual([]);
+    expect(detail?.provenance.whyThisExists).toEqual([
+      expect.objectContaining({
+        id: itemId,
+        title: 'Scope in all over-PM FSLIs even when netting below PM',
+      }),
+    ]);
+    expect(detail?.provenance.whyThisExists[0]?.evidence).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          rawEventId: firstRawEventId,
+          source: 'web',
+          contentText: 'Daily meeting: investigate agent memory usage.',
+        }),
+        expect.objectContaining({
+          rawEventId: secondRawEventId,
+          source: 'web',
+          contentText: 'Daily meeting: refine the FSLI scoping process.',
+        }),
+      ]),
+    );
+    expect(detail?.provenance.whyThisExists[0]?.evidence).toHaveLength(2);
   });
 
   it('does not treat one visible event from a multi-event bundle as unambiguous object provenance', async () => {
@@ -6779,6 +6945,7 @@ describe('suggestion scope', () => {
         contentText: 'Private note: refine the FSLI scoping process.',
         occurredAt: new Date('2026-06-25T13:08:00.000Z'),
         visibility: 'private',
+        visibilityOwnerUserId: REVIEWER_ID,
       },
     ]);
 
@@ -6817,7 +6984,7 @@ describe('suggestion scope', () => {
     expect(detail?.provenance.whyThisExists).toEqual([]);
   });
 
-  it('preserves valid task create source event ids beyond the first two evidence events', async () => {
+  it('strips valid task create source event ids from proposal payloads', async () => {
     const firstRawEventId = '99999999-9999-4999-8999-999999999993';
     const secondRawEventId = '99999999-9999-4999-8999-999999999992';
     const thirdRawEventId = '99999999-9999-4999-8999-999999999991';
@@ -6877,7 +7044,7 @@ describe('suggestion scope', () => {
     });
     const itemId = bundle.items[0]?.id;
     expect(itemId).toBeDefined();
-    expect(bundle.items[0]?.proposedPayload.sourceEventId).toBe(thirdRawEventId);
+    expect(bundle.items[0]?.proposedPayload).not.toHaveProperty('sourceEventId');
 
     await expect(scope.suggestions.acceptSuggestionItem(itemId ?? '')).resolves.toBe(true);
 
@@ -6887,10 +7054,85 @@ describe('suggestion scope', () => {
        WHERE team_id = '${TEAM_ID}'
          AND canonical_name = 'Preserve source event from third evidence row'`,
     );
-    expect(result.rows[0]?.source_event_id).toBe(thirdRawEventId);
+    expect(result.rows[0]?.source_event_id).toBeNull();
+
+    const object = await pg.query<{ id: string }>(
+      `SELECT id
+       FROM entities
+       WHERE team_id = '${TEAM_ID}'
+         AND canonical_name = 'Preserve source event from third evidence row'`,
+    );
+    const detail = await scope.objects.getObject(object.rows[0]?.id ?? '');
+    expect(detail?.provenance.whyThisExists[0]?.evidence).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ rawEventId: firstRawEventId }),
+        expect.objectContaining({ rawEventId: secondRawEventId }),
+        expect.objectContaining({ rawEventId: thirdRawEventId }),
+      ]),
+    );
+    expect(detail?.provenance.whyThisExists[0]?.evidence).toHaveLength(3);
   });
 
-  it('falls back to suggestion evidence when accepting a legacy task payload with an invalid source event id', async () => {
+  it('strips board suggestion source event ids without stamping board history', async () => {
+    const sourceRawEventId = '99999999-9999-4999-8999-999999999990';
+    await db.insert(rawEvents).values({
+      id: sourceRawEventId,
+      teamId: TEAM_ID,
+      authorUserId: USER_ID,
+      source: 'web',
+      contentText: 'Customer email: add Digital Audit Company to the pilot board.',
+      occurredAt: new Date('2026-06-25T13:10:00.000Z'),
+      visibility: 'team',
+    });
+
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const board = await scope.boards.createBoard({
+      name: 'Pilot pipeline',
+      templateKind: 'pipeline',
+      lanes: [{ name: 'Discovery', kind: 'active' }],
+    });
+    const company = await scope.objects.createObject({
+      type: 'company',
+      canonicalName: 'Digital Audit Company',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Board update from customer email',
+      dedupeKey: 'board-membership-source-event-id-strip',
+      evidence: [{ rawEventId: sourceRawEventId }],
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'board_membership',
+          title: 'Add Digital Audit Company to Pilot pipeline',
+          dedupeKey: 'board-membership-source-event-id-strip:item',
+          proposedPayload: {
+            boardId: board.id,
+            entityId: company.id,
+            laneId: board.lanes[0]?.id,
+            sourceEventId: sourceRawEventId,
+          },
+        },
+      ],
+    });
+    const itemId = bundle.items[0]?.id;
+    expect(itemId).toBeDefined();
+    expect(bundle.items[0]?.proposedPayload).not.toHaveProperty('sourceEventId');
+
+    await expect(scope.suggestions.acceptSuggestionItem(itemId ?? '')).resolves.toBe(true);
+
+    const changes = await db.select().from(boardItemChanges);
+    expect(changes).toEqual([
+      expect.objectContaining({
+        field: '__add__',
+        sourceEventId: null,
+      }),
+    ]);
+  });
+
+  it('accepts legacy task payload source evidence without stamping canonical objects', async () => {
     const sourceRawEventId = '99999999-9999-4999-8999-999999999998';
     await db.insert(rawEvents).values({
       id: sourceRawEventId,
@@ -6943,7 +7185,7 @@ describe('suggestion scope', () => {
        WHERE team_id = '${TEAM_ID}'
          AND canonical_name = 'Refine FSLI scoping process'`,
     );
-    expect(result.rows[0]?.source_event_id).toBe(sourceRawEventId);
+    expect(result.rows[0]?.source_event_id).toBeNull();
   });
 
   it('drops invalid legacy task source event ids when bundle evidence is ambiguous', async () => {

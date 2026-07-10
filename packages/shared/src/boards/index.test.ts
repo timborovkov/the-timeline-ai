@@ -8,13 +8,15 @@ import {
   entities,
   notifications,
   rawEvents,
+  reconciliationEvidence,
+  reconciliationOutputs,
   type Db,
 } from '@timeline/db';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { defaultBoardLanes } from '#src/boards/index.js';
+import { buildBoardDirectWriteSourceContext, defaultBoardLanes } from '#src/boards/index.js';
 import { withTeam } from '#src/team-scope.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
 
@@ -109,6 +111,195 @@ describe('board scope', () => {
     ]);
   });
 
+  it('builds direct-write source context from private board evidence visibility', async () => {
+    const [raw] = await db
+      .insert(rawEvents)
+      .values({
+        teamId: TEAM_A,
+        authorUserId: USER_OWNER,
+        source: 'integration',
+        contentText: 'Private board status change from Sentry incident.',
+        occurredAt: new Date('2026-07-01T11:00:00.000Z'),
+        visibility: 'private',
+        visibilityOwnerUserId: USER_OWNER,
+        sourceMetadata: {
+          provider: 'sentry',
+          source_payload_ref: 'sentry://issue/board-raw-1',
+        },
+      })
+      .returning({ id: rawEvents.id });
+    if (!raw) throw new Error('expected raw event');
+
+    const [evidence] = await db
+      .insert(reconciliationEvidence)
+      .values({
+        teamId: TEAM_A,
+        rawEventId: raw.id,
+        sourcePayloadRef: 'sentry://issue/board-evidence-1',
+        source: 'integration',
+        provider: 'sentry',
+        externalObjectId: 'ISSUE-1',
+        externalEventId: 'ISSUE-1:update',
+        eventType: 'sentry.issue',
+        occurredAt: new Date('2026-07-01T11:00:00.000Z'),
+        visibility: 'private',
+        visibilityOwnerUserId: USER_OWNER,
+        actor: {},
+        contentDigest: 'board-private-digest',
+        normalizerVersion: 'test-normalizer',
+        replayState: 'full',
+        dedupeKey: 'board-private-dedupe',
+      })
+      .returning({ id: reconciliationEvidence.id });
+    if (!evidence) throw new Error('expected evidence');
+
+    const firstContext = await buildBoardDirectWriteSourceContext({
+      db,
+      teamId: TEAM_A,
+      sourceRawEventId: raw.id,
+    });
+    expect(firstContext).toEqual({
+      sourceRefs: [
+        {
+          source: 'integration',
+          rawEventId: raw.id,
+          sourcePayloadRef: 'sentry://issue/board-raw-1',
+        },
+      ],
+      sourcePayloadRefs: ['sentry://issue/board-evidence-1', 'sentry://issue/board-raw-1'],
+      visibility: 'private',
+      visibilityOwnerUserId: USER_OWNER,
+      visibilityUserIds: null,
+    });
+    expect(firstContext.sourceRefs[0]).not.toHaveProperty('evidenceId');
+
+    await db.insert(reconciliationEvidence).values({
+      teamId: TEAM_A,
+      rawEventId: raw.id,
+      sourcePayloadRef: 'sentry://issue/board-evidence-2',
+      source: 'integration',
+      provider: 'sentry',
+      externalObjectId: 'ISSUE-1',
+      externalEventId: 'ISSUE-1:update:v2',
+      eventType: 'sentry.issue',
+      occurredAt: new Date('2026-07-01T11:00:00.000Z'),
+      visibility: 'private',
+      visibilityOwnerUserId: USER_OWNER,
+      actor: {},
+      contentDigest: 'board-private-digest-v2',
+      normalizerVersion: 'test-normalizer-v2',
+      replayState: 'full',
+      dedupeKey: 'board-private-dedupe-v2',
+    });
+
+    const secondContext = await buildBoardDirectWriteSourceContext({
+      db,
+      teamId: TEAM_A,
+      sourceRawEventId: raw.id,
+    });
+    expect(secondContext.sourceRefs).toEqual(firstContext.sourceRefs);
+    expect(secondContext.sourceRefs[0]).not.toHaveProperty('evidenceId');
+  });
+
+  it('falls back to raw-event visibility for board direct writes without evidence', async () => {
+    const [raw] = await db
+      .insert(rawEvents)
+      .values({
+        teamId: TEAM_A,
+        authorUserId: USER_OWNER,
+        source: 'integration',
+        contentText: 'Monday board item moved for selected viewers.',
+        occurredAt: new Date('2026-07-01T11:05:00.000Z'),
+        visibility: 'specific_users',
+        visibilityUserIds: [USER_OWNER, USER_MEMBER],
+        sourceMetadata: {
+          provider: 'monday',
+          source_payload_ref: 'monday://board/42/item/99',
+        },
+      })
+      .returning({ id: rawEvents.id });
+    if (!raw) throw new Error('expected raw event');
+
+    await expect(
+      buildBoardDirectWriteSourceContext({
+        db,
+        teamId: TEAM_A,
+        sourceRawEventId: raw.id,
+      }),
+    ).resolves.toEqual({
+      sourceRefs: [
+        {
+          source: 'integration',
+          rawEventId: raw.id,
+          sourcePayloadRef: 'monday://board/42/item/99',
+        },
+      ],
+      sourcePayloadRefs: ['monday://board/42/item/99'],
+      visibility: 'specific_users',
+      visibilityOwnerUserId: null,
+      visibilityUserIds: [USER_OWNER, USER_MEMBER],
+    });
+  });
+
+  it('rejects board direct-write source refs that are missing from the scoped team', async () => {
+    const [otherTeamRaw] = await db
+      .insert(rawEvents)
+      .values({
+        teamId: TEAM_B,
+        authorUserId: USER_OTHER_TEAM,
+        source: 'integration',
+        contentText: 'Other team board source event.',
+        occurredAt: new Date('2026-07-01T11:10:00.000Z'),
+        visibility: 'team',
+        sourceMetadata: {
+          provider: 'monday',
+          source_payload_ref: 'monday://other-team/board/1/item/2',
+        },
+      })
+      .returning({ id: rawEvents.id });
+    if (!otherTeamRaw) throw new Error('expected raw event');
+
+    await expect(
+      buildBoardDirectWriteSourceContext({
+        db,
+        teamId: TEAM_A,
+        sourceRawEventId: otherTeamRaw.id,
+      }),
+    ).rejects.toThrow('Source raw event not found for team');
+
+    await expect(
+      buildBoardDirectWriteSourceContext({
+        db,
+        teamId: TEAM_A,
+        sourceRawEventId: '99999999-9999-4999-8999-999999999999',
+      }),
+    ).rejects.toThrow('Source raw event not found for team');
+  });
+
+  it('rejects board direct-write source refs without a replay payload ref', async () => {
+    const [raw] = await db
+      .insert(rawEvents)
+      .values({
+        teamId: TEAM_A,
+        authorUserId: USER_OWNER,
+        source: 'integration',
+        contentText: 'Legacy board source event without replay metadata.',
+        occurredAt: new Date('2026-07-01T11:20:00.000Z'),
+        visibility: 'team',
+        sourceMetadata: { provider: 'legacy' },
+      })
+      .returning({ id: rawEvents.id });
+    if (!raw) throw new Error('expected raw event');
+
+    await expect(
+      buildBoardDirectWriteSourceContext({
+        db,
+        teamId: TEAM_A,
+        sourceRawEventId: raw.id,
+      }),
+    ).rejects.toThrow('Source raw event is missing a replay payload ref');
+  });
+
   it('keeps board items team-scoped and rejects objects from other teams', async () => {
     const owner = withTeam(db, TEAM_A, USER_OWNER);
     const other = withTeam(db, TEAM_B, USER_OTHER_TEAM);
@@ -171,8 +362,116 @@ describe('board scope', () => {
       .from(boardItemChanges)
       .where(eq(boardItemChanges.boardItemId, item.id));
     expect(changes.map((change) => change.field).sort()).toEqual(['__add__', 'laneId', 'priority']);
+    expect(changes.every((change) => change.sourceEventId === null)).toBe(true);
+
+    const outputs = await db
+      .select()
+      .from(reconciliationOutputs)
+      .where(eq(reconciliationOutputs.targetId, item.id));
+    expect(outputs).toHaveLength(2);
+
+    const membershipOutput = outputs.find(
+      (output) => output.targetKind === 'board_membership' && output.operation === 'create',
+    );
+    const updateOutput = outputs.find(
+      (output) => output.targetKind === 'board_item_update' && output.operation === 'update',
+    );
+    expect(membershipOutput).toMatchObject({
+      outputKind: 'direct_write',
+      status: 'applied',
+      requiresApproval: false,
+      visibility: 'team',
+      visibilityFloor: 'team',
+    });
+    expect(updateOutput).toMatchObject({
+      outputKind: 'direct_write',
+      status: 'applied',
+      requiresApproval: false,
+      visibility: 'team',
+      visibilityFloor: 'team',
+    });
+    expect(updateOutput?.payload).toMatchObject({
+      system_event_kind: 'board_item_update',
+      changed_fields: ['laneId', 'priority'],
+    });
+    expect(updateOutput?.authorityDecision).toMatchObject({
+      authority_decision: 'direct',
+      target_kind: 'board_item_update',
+      target_field: '__update__',
+      changed_fields: ['laneId', 'priority'],
+    });
+
+    const updateSourceRef = (
+      updateOutput?.sourceRefs as
+        | { rawEventId?: string; evidenceId?: string; sourcePayloadRef?: string }[]
+        | null
+    )?.[0];
+    expect(updateSourceRef?.rawEventId).toEqual(expect.any(String));
+    expect(updateSourceRef?.evidenceId).toBeUndefined();
+    expect(updateSourceRef?.sourcePayloadRef).toEqual(
+      expect.stringMatching(/^inline:\/\/timeline\/system\/board_item_update\//),
+    );
+    expect(updateOutput?.sourcePayloadRefs).toEqual([
+      expect.stringMatching(/^inline:\/\/timeline\/system\/board_item_update\//),
+    ]);
+    const [evidence] = await db
+      .select()
+      .from(reconciliationEvidence)
+      .where(eq(reconciliationEvidence.rawEventId, updateSourceRef?.rawEventId ?? ''));
+    expect(evidence).toMatchObject({
+      rawEventId: updateSourceRef?.rawEventId,
+      source: 'system',
+      replayState: 'full',
+      visibility: 'team',
+    });
+    expect(evidence?.sourcePayloadRef).toMatch(/^inline:\/\/timeline\/system\/board_item_update\//);
+    expect(evidence?.payloadDigest).toEqual(expect.stringMatching(/^sha256:[0-9a-f]{64}$/));
+    const [sourceRawEvent] = await db
+      .select()
+      .from(rawEvents)
+      .where(eq(rawEvents.id, updateSourceRef?.rawEventId ?? ''));
+    const sourceMetadata = sourceRawEvent?.sourceMetadata as Record<string, unknown> | undefined;
+    expect(sourceMetadata?.payload_digest).toEqual(expect.stringMatching(/^sha256:[0-9a-f]{64}$/));
+    expect(sourceMetadata).toMatchObject({
+      kind: 'board_item_update',
+      source_snapshot: {
+        board_item_id: item.id,
+        changed_fields: ['laneId', 'priority'],
+      },
+    });
     await expect(scope.boards.getBoard(board.id, { itemLimit: 'all' })).resolves.toMatchObject({
       items: [expect.objectContaining({ id: item.id, laneId: board.lanes[1]?.id })],
+    });
+  });
+
+  it('does not expose legacy object agentSuggested flags through board items', async () => {
+    const scope = withTeam(db, TEAM_A, USER_OWNER);
+    const board = await scope.boards.createBoard({
+      name: 'Legacy suggested board',
+      templateKind: 'task_board',
+      lanes: [{ name: 'Todo', kind: 'active' }],
+    });
+    const task = await scope.objects.createObject({
+      type: 'task',
+      canonicalName: 'Legacy suggested board task',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    await db
+      .update(entities)
+      .set({ agentSuggested: true, status: 'suggested' })
+      .where(eq(entities.id, task.id));
+    const item = await scope.boards.addBoardItem(board.id, {
+      entityId: task.id,
+      laneId: board.lanes[0]?.id ?? null,
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+
+    const detail = await scope.boards.getBoard(board.id);
+
+    expect(detail?.items.find((row) => row.id === item.id)?.object).toMatchObject({
+      id: task.id,
+      status: 'suggested',
+      agentSuggested: false,
     });
   });
 
@@ -636,6 +935,89 @@ describe('board scope', () => {
     ).rejects.toThrow('Invalid priority');
   });
 
+  it('does not stamp sourceEventId on new suggested board history rows', async () => {
+    const scope = withTeam(db, TEAM_A, USER_OWNER);
+    const event = await scope.timeline.createEvent({
+      authorUserId: USER_OWNER,
+      source: 'telegram',
+      contentText: 'Add Revigo to the pipeline.',
+      visibility: 'team',
+    });
+    const board = await scope.boards.createBoard({
+      name: 'Pilot pipeline',
+      templateKind: 'pipeline',
+      lanes: [{ name: 'Negotiation', kind: 'active' }],
+    });
+    const company = await scope.objects.createObject({
+      type: 'company',
+      canonicalName: 'Revigo',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+
+    const change = await scope.boards.proposeBoardMembership({
+      boardId: board.id,
+      entityId: company.id,
+      laneId: board.lanes[0]?.id ?? null,
+      sourceEventId: event.id,
+      note: 'Legacy callers may still pass this pointer.',
+    });
+
+    expect(change.sourceEventId).toBeNull();
+  });
+
+  it('does not expose legacy board source_event_id as hydrated provenance evidence', async () => {
+    const scope = withTeam(db, TEAM_A, USER_OWNER);
+    const event = await scope.timeline.createEvent({
+      authorUserId: USER_OWNER,
+      source: 'telegram',
+      contentText: 'Legacy board history source pointer.',
+      visibility: 'team',
+    });
+    const board = await scope.boards.createBoard({
+      name: 'Legacy board',
+      templateKind: 'pipeline',
+      lanes: [{ name: 'Tracked', kind: 'active' }],
+    });
+    const company = await scope.objects.createObject({
+      type: 'company',
+      canonicalName: 'Legacy Co',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    const item = await scope.boards.addBoardItem(board.id, {
+      entityId: company.id,
+      laneId: board.lanes[0]?.id ?? null,
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+
+    await db.insert(boardItemChanges).values({
+      teamId: TEAM_A,
+      boardId: board.id,
+      boardItemId: item.id,
+      entityId: company.id,
+      actorKind: 'agent',
+      actorUserId: null,
+      status: 'applied',
+      field: 'laneId',
+      previousValue: null,
+      newValue: board.lanes[0]?.id ?? null,
+      sourceEventId: event.id,
+      suggestionItemId: null,
+      note: 'Legacy pointer should not become provenance evidence.',
+      changedAt: new Date('2026-07-02T10:00:00.000Z'),
+    });
+
+    const history = await scope.boards.listBoardItemHistory(item.id);
+    const legacyChange = history.find((change) => change.field === 'laneId');
+
+    expect(legacyChange).toEqual(
+      expect.objectContaining({
+        field: 'laneId',
+        sourceEventId: null,
+        evidence: [],
+      }),
+    );
+  });
+
   it('does not leave a board behind when lane creation input is invalid', async () => {
     const scope = withTeam(db, TEAM_A, USER_OWNER);
 
@@ -742,6 +1124,40 @@ describe('board scope', () => {
       .from(boardItemChanges)
       .where(eq(boardItemChanges.id, suggestion.id));
     expect(change?.status).toBe('suggested');
+
+    const outputs = await db
+      .select()
+      .from(reconciliationOutputs)
+      .where(eq(reconciliationOutputs.targetId, item.id));
+    const removeOutput = outputs.find(
+      (output) =>
+        output.targetKind === 'board_membership' && output.operation === 'archive_or_cancel',
+    );
+    expect(removeOutput).toMatchObject({
+      outputKind: 'direct_write',
+      status: 'applied',
+      requiresApproval: false,
+      visibility: 'team',
+      visibilityFloor: 'team',
+      payload: {
+        system_event_kind: 'board_item_remove',
+        board_item_id: item.id,
+        previous_lane_id: board.lanes[0]?.id ?? null,
+      },
+    });
+    const removeSourceRef = (
+      removeOutput?.sourceRefs as
+        | { rawEventId?: string; evidenceId?: string; sourcePayloadRef?: string }[]
+        | null
+    )?.[0];
+    expect(removeSourceRef?.rawEventId).toEqual(expect.any(String));
+    expect(removeSourceRef?.evidenceId).toBeUndefined();
+    expect(removeSourceRef?.sourcePayloadRef).toEqual(
+      expect.stringMatching(/^inline:\/\/timeline\/system\/board_item_remove\//),
+    );
+    expect(removeOutput?.sourcePayloadRefs).toEqual([
+      expect.stringMatching(/^inline:\/\/timeline\/system\/board_item_remove\//),
+    ]);
   });
 
   it('accepts board membership suggestions idempotently when the item was already added', async () => {
@@ -852,6 +1268,7 @@ describe('board scope', () => {
             boardId: board.id,
             entityId: company.id,
             laneId: board.lanes[0]?.id ?? null,
+            sourceEventId: event.id,
           },
         },
       ],
@@ -870,6 +1287,7 @@ describe('board scope', () => {
       expect.objectContaining({
         field: '__add__',
         suggestionItemId: bundle.items[0]?.id,
+        sourceEventId: null,
         evidence: [
           expect.objectContaining({
             rawEventId: event.id,
@@ -882,7 +1300,7 @@ describe('board scope', () => {
     );
   });
 
-  it('does not hydrate ambiguous bundle evidence into board item history', async () => {
+  it('hydrates multi-source output refs into board item history', async () => {
     const scope = withTeam(db, TEAM_A, USER_OWNER);
     const firstEvent = await scope.timeline.createEvent({
       authorUserId: USER_OWNER,
@@ -940,9 +1358,25 @@ describe('board scope', () => {
         field: '__add__',
         suggestionItemId: bundle.items[0]?.id,
         sourceEventId: null,
-        evidence: [],
       }),
     );
+    expect(history[0]?.evidence).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          rawEventId: firstEvent.id,
+          source: 'telegram',
+          quote: 'Add Revigo',
+          contentText: 'Add Revigo to the pilot pipeline.',
+        }),
+        expect.objectContaining({
+          rawEventId: secondEvent.id,
+          source: 'telegram',
+          quote: 'Add DFK',
+          contentText: 'Add DFK to the pilot pipeline.',
+        }),
+      ]),
+    );
+    expect(history[0]?.evidence).toHaveLength(2);
   });
 
   it('does not treat one visible event from a multi-event bundle as unambiguous evidence', async () => {

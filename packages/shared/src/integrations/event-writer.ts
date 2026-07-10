@@ -1,7 +1,11 @@
 import {
+  artifactEvidenceAssociations,
   type Db,
   entities,
   rawEvents,
+  reconciliationEvidence,
+  reconciliationOutputs,
+  reconciliationRuns,
   slackConversationBindings,
   slackWorkspaces,
 } from '@timeline/db';
@@ -12,6 +16,7 @@ import type { IntegrationEvent, IntegrationRow, ObjectMapping } from '#src/integ
 import {
   reconcileArtifactEvidence,
   type ArtifactAnchorInput,
+  type ArtifactClusterKind,
   type ArtifactStatus,
   type EvidenceRole,
   type EvidenceStrength,
@@ -21,7 +26,24 @@ import {
   reconcileLinkArtifactsForRawEvent,
   textHasLinks,
 } from '#src/conversational/link-artifacts.js';
-import { enqueueEmbedJob, enqueueObjectEmbedJob } from '#src/queue/queues.js';
+import { enqueueEmbedJob, enqueueExtractJob } from '#src/queue/queues.js';
+import {
+  AUTHORITY_POLICY_VERSION,
+  authorityDecisionPayload,
+  evaluateAuthorityPolicy,
+  type AuthorityPolicyInput,
+} from '#src/reconciliation/authority.js';
+import {
+  buildAssociationDedupeKey,
+  buildOutputDedupeKey,
+  reconciliationDedupeKey,
+} from '#src/reconciliation/index.js';
+import { normalizeIntegrationEventsToEvidence } from '#src/reconciliation/normalization.js';
+import {
+  inlineSourceSnapshotMetadata,
+  payloadDigestFromMetadata,
+  sourcePayloadRefFromMetadata,
+} from '#src/reconciliation/source-snapshot.js';
 
 // Phase 11 — Persist normalized integration events into raw_events with
 // source='integration' + dedup_key. The partial unique index
@@ -31,20 +53,72 @@ import { enqueueEmbedJob, enqueueObjectEmbedJob } from '#src/queue/queues.js';
 // raw_event embed job. The worker stamps `source_kind='integration_event'`
 // onto the Qdrant payload so the agent can narrow searches.
 //
-// Workspace object mapping (Phase 11): events that carry `objectMap`
-// upsert an entities row keyed on
-// `(team_id, metadata->>'integration_provider', metadata->>'integration_external_id')`.
-// A backfill of 50 Linear issues used to issue 50× (SELECT + INSERT-or-
-// UPDATE) round-trips. The current path collapses that to three:
-// one bulk SELECT to learn which externalIds already exist,
-// one bulk INSERT for the new ones,
-// one bulk UPDATE for the existing ones via `UPDATE ... FROM (VALUES …)`.
-//
-// We can't use ON CONFLICT against our partial expression index because
-// drizzle's typed `target` can't express it. Three queries is the
-// simplest path that's both correct (the canonical-name unique
-// `entities_team_type_canonical_name_unq` would collapse distinct
-// external objects sharing a name) and bulk-friendly.
+// Workspace object mapping: events that carry `objectMap` now feed artifact
+// reconciliation instead of upserting workspace objects. Existing provider-
+// linked entities are still resolved as compatibility links so old object pages
+// can hydrate connected work, but new provider records are represented by
+// clusters, associations, source refs, and reconciliation outputs.
+
+const INTEGRATION_DIRECT_WRITE_RUN_VERSION = 'integration-direct-write-2026-06';
+const INTEGRATION_DIRECT_WRITE_PLANNER_VERSION = 'integration-object-map-2026-06';
+const INTEGRATION_OBSERVED_ASSOCIATION_RUN_VERSION = 'integration-observed-association-2026-06';
+const INTEGRATION_OBSERVED_ASSOCIATION_PLANNER_VERSION = 'integration-association-2026-06';
+const INTEGRATION_SOURCE_SNAPSHOT_VERSION = 'integration-source-snapshot-2026-06';
+
+interface IntegrationProjectionEvidence {
+  id: string;
+  sourcePayloadRef: string | null;
+  visibility: 'team' | 'private' | 'specific_users';
+  visibilityOwnerUserId: string | null;
+  visibilityUserIds: string[] | null;
+}
+
+function sourcePayloadRefsForEvidence(
+  evidence: Pick<IntegrationProjectionEvidence, 'sourcePayloadRef'>,
+): string[] {
+  return evidence.sourcePayloadRef ? [evidence.sourcePayloadRef] : [];
+}
+
+function integrationProjectionSourceEnvelope(
+  evidence: IntegrationProjectionEvidence,
+  sourceRefs: { source: string; rawEventId: string; sourcePayloadRef: string | null }[],
+) {
+  return {
+    sourceRefs,
+    sourcePayloadRefs: sourcePayloadRefsForEvidence(evidence),
+    visibility: evidence.visibility,
+    visibilityOwnerUserId: evidence.visibilityOwnerUserId,
+    visibilityUserIds: evidence.visibilityUserIds,
+    visibilityFloor: evidence.visibility,
+    visibilityFloorOwnerUserId: evidence.visibilityOwnerUserId,
+    visibilityFloorUserIds: evidence.visibilityUserIds,
+  };
+}
+
+interface IntegrationProjectionOutputInput {
+  teamId: string;
+  integrationId: string;
+  clusterId: string;
+  rawEventId: string;
+  event: IntegrationEvent & { objectMap: ObjectMapping };
+  role: (typeof artifactEvidenceAssociations.$inferInsert)['role'];
+  strength: EvidenceStrength;
+  associationSource: (typeof artifactEvidenceAssociations.$inferInsert)['associationSource'];
+  evidence: IntegrationProjectionEvidence;
+}
+
+interface IntegrationProjectionOutputConfig {
+  runScope: string;
+  runVersion: string;
+  runDedupeKind: string;
+  outputKind: 'direct_write' | 'observed_association';
+  targetKind: 'cluster_lifecycle' | 'cluster_identity';
+  targetField: string | null;
+  operation: 'update' | 'link';
+  targetIdentity: string;
+  plannerVersion: string;
+  payload: Record<string, unknown>;
+}
 
 function resolveEventVisibility(args: {
   requestedVisibility: 'team' | 'private' | 'specific_users';
@@ -100,6 +174,7 @@ export async function writeIntegrationEvents(deps: {
 
   const values = writableEvents.map((evt) => {
     const visibilityOwnerUserId = deps.integration.connectedByUserId ?? null;
+    const sourcePayloadMetadata = sourcePayloadMetadataForEvent(evt);
     const requestedVisibility = evt.visibility ?? visibility;
     const requestedUserIds =
       requestedVisibility === 'specific_users'
@@ -125,6 +200,7 @@ export async function writeIntegrationEvents(deps: {
       visibilityUserIds: resolvedVisibility === 'specific_users' ? requestedUserIds : null,
       sourceMetadata: sourceMetadataWithConversationArtifacts(
         {
+          ...rawMetadataExtra(evt.extra),
           provider: evt.provider,
           integration_id: deps.integration.id,
           external_object_id: evt.externalObjectId,
@@ -134,7 +210,7 @@ export async function writeIntegrationEvents(deps: {
           dedup_key: evt.dedupKey,
           sync_at: new Date().toISOString(),
           source_kind: 'integration_event',
-          ...(evt.extra ?? {}),
+          ...sourcePayloadMetadata,
         },
         evt.contentText,
       ),
@@ -151,25 +227,35 @@ export async function writeIntegrationEvents(deps: {
     .onConflictDoNothing();
 
   await Promise.all(
-    inserted.map((row) => enqueueEmbedJob({ scope: 'raw_event', teamId, rawEventId: row.id })),
+    inserted.flatMap((row) => [
+      enqueueIntegrationProcessingJob(deps.db, row.id, 'extraction', () =>
+        enqueueExtractJob({ teamId, rawEventId: row.id }),
+      ),
+      enqueueIntegrationProcessingJob(deps.db, row.id, 'embedding', () =>
+        enqueueEmbedJob({ scope: 'raw_event', teamId, rawEventId: row.id }),
+      ),
+    ]),
   );
 
-  // Workspace-object upsert and artifact reconciliation are deliberately
-  // repairable from existing raw_events. If a previous run inserted the raw
-  // event and then failed while attaching artifact evidence, a replay with the
-  // same dedup_key must fill the missing cluster/member rows.
-  // Dedupe workspace-object upserts by externalId, but reconcile every raw
-  // event as evidence. Multiple lifecycle events for the same object in one
-  // batch should remain distinct cluster members.
+  // Normalization and artifact reconciliation are repairable from existing
+  // raw_events. Replays with the same dedup_key must fill missing evidence,
+  // links, clusters, associations, and outputs.
+  const rawEventIdsByDedupKey = await loadRawEventIdsByDedupKey(
+    deps.db,
+    teamId,
+    writableEvents.map((event) => event.dedupKey),
+  );
+  await normalizeIntegrationEventsToEvidence({
+    db: deps.db,
+    teamId,
+    events: writableEvents,
+    rawEventIdsByDedupKey,
+  });
+
   const artifactEvents = writableEvents.filter(
     (evt): evt is IntegrationEvent & { objectMap: ObjectMapping } => Boolean(evt.objectMap),
   );
   const linkEvents = writableEvents.filter((evt) => textHasLinks(evt.contentText));
-  const rawEventIdsByDedupKey = await loadRawEventIdsByDedupKey(
-    deps.db,
-    teamId,
-    [...artifactEvents, ...linkEvents].map((event) => event.dedupKey),
-  );
   await Promise.all(
     linkEvents.map((evt) => {
       const rawEventId = rawEventIdsByDedupKey.get(evt.dedupKey);
@@ -194,8 +280,8 @@ export async function writeIntegrationEvents(deps: {
   const repairableArtifactEvents = artifactEvents.filter((evt) =>
     rawEventIdsByDedupKey.has(evt.dedupKey),
   );
-  if (byExternal.size > 0) {
-    const entityByExternalId = await upsertWorkspaceObjects(deps.db, deps.integration, [
+  if (repairableArtifactEvents.length > 0) {
+    const entityByExternalId = await loadExistingWorkspaceObjectLinks(deps.db, deps.integration, [
       ...byExternal.values(),
     ]);
     await reconcileIntegrationArtifacts({
@@ -208,6 +294,81 @@ export async function writeIntegrationEvents(deps: {
   }
 
   return inserted.map((r) => r.id);
+}
+
+async function enqueueIntegrationProcessingJob(
+  db: Db,
+  rawEventId: string,
+  stage: 'extraction' | 'embedding',
+  enqueue: () => Promise<unknown>,
+): Promise<void> {
+  try {
+    await enqueue();
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    const patch = JSON.stringify({
+      [`${stage}_failed_at`]: new Date().toISOString(),
+      [`${stage}_error`]: `enqueue failed: ${message.slice(0, 480)}`,
+    });
+    await db
+      .update(rawEvents)
+      .set({
+        sourceMetadata: sql`COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) || ${patch}::jsonb`,
+      })
+      .where(eq(rawEvents.id, rawEventId));
+  }
+}
+
+function rawMetadataExtra(extra: IntegrationEvent['extra']): Record<string, unknown> {
+  if (!extra || typeof extra !== 'object' || Array.isArray(extra)) return {};
+  const {
+    source_payload_ref: _sourcePayloadRef,
+    payload_digest: _payloadDigest,
+    payload_ref: _payloadRef,
+    raw_payload_ref: _rawPayloadRef,
+    source_snapshot_ref: _sourceSnapshotRef,
+    source_payload_digest: _sourcePayloadDigest,
+    raw_payload_digest: _rawPayloadDigest,
+    ...rest
+  } = extra;
+  return rest;
+}
+
+function sourcePayloadMetadataForEvent(event: IntegrationEvent): Record<string, unknown> {
+  const existingRef = sourcePayloadRefFromMetadata(event.extra);
+  const existingDigest = payloadDigestFromMetadata(event.extra);
+  if (existingRef) {
+    return {
+      source_payload_ref: existingRef,
+      ...(existingDigest ? { payload_digest: existingDigest } : {}),
+    };
+  }
+
+  const snapshot = normalizedIntegrationSourceSnapshot(event);
+  return inlineSourceSnapshotMetadata({
+    snapshot,
+    kind: 'normalized_integration_event',
+    version: INTEGRATION_SOURCE_SNAPSHOT_VERSION,
+    ref: (digest) =>
+      `inline://timeline/integration/${event.provider}/${digest.slice('sha256:'.length)}`,
+  });
+}
+
+function normalizedIntegrationSourceSnapshot(event: IntegrationEvent): Record<string, unknown> {
+  return {
+    dedupKey: event.dedupKey,
+    provider: event.provider,
+    externalObjectId: event.externalObjectId,
+    externalEventId: event.externalEventId ?? null,
+    eventType: event.eventType,
+    occurredAt: event.occurredAt.toISOString(),
+    actor: event.actor ?? null,
+    contentText: event.contentText,
+    visibility: event.visibility ?? null,
+    visibilityUserIds: event.visibilityUserIds ?? null,
+    extra: event.extra ?? {},
+    objectMap: event.objectMap ?? null,
+  };
 }
 
 async function loadRawEventIdsByDedupKey(
@@ -295,34 +456,18 @@ function slackBindingKeyParts(slackTeamId: string, channelId: string): string {
   return `${slackTeamId}:${channelId}`;
 }
 
-/**
- * Batched upsert. Three queries regardless of N:
- *
- *   1. SELECT `id, metadata->>integration_external_id` for every
- *      externalId in the batch — split into existing vs new.
- *   2. INSERT new rows in one statement.
- *   3. UPDATE existing rows via `UPDATE entities SET … FROM (VALUES …)
- *      WHERE entities.id = v.id`.
- *
- * The bulk UPDATE merges the incoming metadata into the existing jsonb
- * (`entities.metadata || incoming.metadata`) so per-event additions
- * (last_event_at, last_event_type) win without clobbering anything else
- * a previous sync stamped.
- */
-async function upsertWorkspaceObjects(
+async function loadExistingWorkspaceObjectLinks(
   db: Db,
   integration: IntegrationRow,
   evts: (IntegrationEvent & { objectMap: ObjectMapping })[],
 ): Promise<Map<string, string>> {
-  const externalIds = evts.map((e) => e.objectMap.externalId);
+  const externalIds = [...new Set(evts.map((e) => e.objectMap.externalId))];
+  if (externalIds.length === 0) return new Map();
 
-  // 1) Bulk-fetch existing entity rows for this provider × externalId.
-  const existingRows = await db
+  const rows = await db
     .select({
       id: entities.id,
-      canonicalName: entities.canonicalName,
       externalId: sql<string>`${entities.metadata} ->> 'integration_external_id'`,
-      metadata: sql<Record<string, unknown>>`${entities.metadata}`,
     })
     .from(entities)
     .where(
@@ -332,187 +477,8 @@ async function upsertWorkspaceObjects(
         inArray(sql`(${entities.metadata} ->> 'integration_external_id')`, [...externalIds]),
       ),
     );
-  const existingByExternal = new Map<string, (typeof existingRows)[number]>();
-  for (const r of existingRows) existingByExternal.set(r.externalId, r);
-
-  const toInsert: (typeof entities.$inferInsert)[] = [];
-  const toUpdate: {
-    id: string;
-    externalId: string;
-    type: ObjectMapping['type'];
-    canonicalName: string;
-    status: NonNullable<ObjectMapping['status']>;
-    priority: number | null;
-    aliases: string[];
-    metadata: Record<string, unknown>;
-  }[] = [];
-
-  for (const evt of evts) {
-    const map = evt.objectMap;
-    const existing = existingByExternal.get(map.externalId);
-    const preserveCanonicalName = existing
-      ? shouldPreserveExistingCanonicalName(existing, map)
-      : false;
-    const hasDisplayTitleSource = existing
-      ? metadataString(existing.metadata, 'display_title_canonical_name') !== null
-      : false;
-    const shouldWriteDisplayTitle = Boolean(
-      map.displayTitle && (!preserveCanonicalName || hasDisplayTitleSource),
-    );
-    const metadata: Record<string, unknown> = {
-      ...(map.metadata ?? {}),
-      integration_id: integration.id,
-      integration_provider: integration.provider,
-      integration_external_id: map.externalId,
-      ...(shouldWriteDisplayTitle
-        ? { display_title: map.displayTitle, display_title_canonical_name: map.canonicalName }
-        : {}),
-      ...(map.url ? { url: map.url } : {}),
-      last_event_at: evt.occurredAt.toISOString(),
-      last_event_type: evt.eventType,
-    };
-    if (existing) {
-      const canonicalName = preserveCanonicalName ? existing.canonicalName : map.canonicalName;
-      toUpdate.push({
-        id: existing.id,
-        externalId: map.externalId,
-        type: map.type,
-        canonicalName,
-        status: map.status ?? 'open',
-        priority: mapPriorityLabel(map.priority) ?? null,
-        aliases: map.aliases ?? [],
-        metadata,
-      });
-    } else {
-      toInsert.push({
-        teamId: integration.teamId,
-        type: map.type,
-        canonicalName: map.canonicalName,
-        status: map.status ?? 'open',
-        priority: mapPriorityLabel(map.priority) ?? null,
-        aliases: map.aliases ?? [],
-        metadata,
-      });
-    }
-  }
-
-  const affectedIds: string[] = [];
   const entityByExternalId = new Map<string, string>();
-
-  // 2) Bulk INSERT new rows. `onConflictDoNothing()` catches collisions on
-  //    the existing partial canonical-name unique
-  //    (entities_team_type_canonical_name_unq) — a user who already
-  //    created `"acme/repo#7: Add feature"` by hand before connecting
-  //    GitHub doesn't have their row clobbered, and the sync doesn't
-  //    23505 out the whole batch. The integration_event for that PR
-  //    still lands in raw_events; only the workspace-object mapping is
-  //    skipped for that one row.
-  if (toInsert.length > 0) {
-    // Dedupe within the batch by `(type, canonical_name)` — the partial
-    // unique that `onConflictDoNothing` is meant to catch is a
-    // row-vs-existing predicate, so two new rows in the same VALUES list
-    // sharing the index expression still 23505 the whole batch. Real
-    // payloads can carry duplicates (two Linear projects sharing a
-    // title; two GitHub issues with the same number across forks). First
-    // occurrence wins; the second event's `objectMap` is dropped from
-    // mapping (its raw_event still lands).
-    const seenKey = new Set<string>();
-    const dedupedInsert = toInsert.filter((r) => {
-      const key = `${r.type}\x00${r.canonicalName}`;
-      if (seenKey.has(key)) return false;
-      seenKey.add(key);
-      return true;
-    });
-    const inserted = await db
-      .insert(entities)
-      .values(dedupedInsert)
-      .onConflictDoNothing()
-      .returning({ id: entities.id, metadata: entities.metadata });
-    for (const r of inserted) {
-      affectedIds.push(r.id);
-      const externalId = metadataString(
-        r.metadata as Record<string, unknown>,
-        'integration_external_id',
-      );
-      if (externalId) entityByExternalId.set(externalId, r.id);
-    }
-  }
-
-  // 3) Bulk UPDATE existing rows. One statement with a VALUES list joined
-  //    on entities.id. drizzle doesn't have a typed `update FROM`
-  //    builder, so we drop to a parameterised raw query with sql.join.
-  if (toUpdate.length > 0) {
-    const rows = toUpdate.map(
-      (u) =>
-        sql`(${u.id}::uuid, ${u.type}::entity_type, ${u.canonicalName}::text, ${u.status}::text, ${u.priority}::smallint, ${JSON.stringify(u.aliases)}::jsonb, ${JSON.stringify(u.metadata)}::jsonb)`,
-    );
-    // Defense-in-depth: the WHERE clause also pins team_id. The ids in
-    // toUpdate came from a team-scoped SELECT, but stamping the team
-    // here closes the door on a future bug accidentally crossing teams.
-    //
-    // Aliases merge instead of overwrite — a manually-added alias on a
-    // Linear-mapped entity (e.g. "EngOnDeck" added by hand) survives
-    // the next sync alongside the provider's own ones (e.g. "ENG-42").
-    await db.execute(sql`
-      WITH incoming(id, type, canonical_name, status, priority, aliases, metadata) AS (
-        VALUES ${sql.join(rows, sql.raw(', '))}
-      ),
-      resolved AS (
-        SELECT
-          e.id,
-          incoming.type,
-          incoming.canonical_name,
-          incoming.status,
-          incoming.priority,
-          incoming.aliases,
-          incoming.metadata,
-          EXISTS (
-            SELECT 1
-            FROM ${entities} AS other
-            WHERE other.team_id = e.team_id
-              AND other.type = incoming.type
-              AND lower(other.canonical_name) = lower(incoming.canonical_name)
-              AND other.merged_into_id IS NULL
-              AND other.id <> e.id
-          ) AS canonical_collision
-        FROM ${entities} AS e
-        JOIN incoming ON incoming.id = e.id
-        WHERE e.team_id = ${integration.teamId}
-      )
-      UPDATE ${entities} AS e
-      SET
-        canonical_name = CASE
-          WHEN resolved.canonical_collision THEN e.canonical_name
-          ELSE resolved.canonical_name
-        END,
-        status = resolved.status,
-        priority = COALESCE(resolved.priority, e.priority),
-        aliases = (
-          SELECT COALESCE(jsonb_agg(DISTINCT a), '[]'::jsonb)
-          FROM jsonb_array_elements(COALESCE(e.aliases, '[]'::jsonb) || resolved.aliases) AS t(a)
-        ),
-        metadata = (e.metadata - 'display_title_canonical_name_collision') || CASE
-          WHEN resolved.canonical_collision
-            AND resolved.metadata ? 'display_title_canonical_name'
-          THEN (resolved.metadata - 'display_title_canonical_name')
-            || jsonb_build_object(
-              'display_title_canonical_name',
-              e.canonical_name,
-              'display_title_canonical_name_collision',
-              resolved.canonical_name
-            )
-          ELSE resolved.metadata - 'display_title_canonical_name_collision'
-        END,
-        updated_at = NOW()
-      FROM resolved
-      WHERE e.id = resolved.id
-        AND e.team_id = ${integration.teamId}
-    `);
-    for (const u of toUpdate) affectedIds.push(u.id);
-    for (const u of toUpdate) entityByExternalId.set(u.externalId, u.id);
-  }
-
-  await Promise.all(affectedIds.map((id) => enqueueObjectEmbedJob(integration.teamId, id)));
+  for (const row of rows) entityByExternalId.set(row.externalId, row.id);
   return entityByExternalId;
 }
 
@@ -527,8 +493,12 @@ async function reconcileIntegrationArtifacts(deps: {
     const rawEventId = deps.rawEventIdsByDedupKey.get(event.dedupKey);
     const entityId = deps.entityByExternalId.get(event.objectMap.externalId);
     if (!rawEventId) continue;
-    await reconcileArtifactEvidence(deps.db, {
+    const role = evidenceRoleForIntegrationEvent(event);
+    const strength = evidenceStrengthForIntegrationEvent(event);
+    const authoritative = integrationEventIsAuthoritative(event);
+    const result = await reconcileArtifactEvidence(deps.db, {
       teamId: deps.integration.teamId,
+      artifactClusterKind: artifactClusterKindForIntegrationEvent(event),
       artifactType: event.objectMap.type,
       canonicalName: event.objectMap.displayTitle ?? event.objectMap.canonicalName,
       status: clusterStatusFromObjectStatus(event.objectMap.status),
@@ -537,17 +507,308 @@ async function reconcileIntegrationArtifacts(deps: {
       occurredAt: event.occurredAt,
       provider: event.provider,
       externalObjectId: event.externalObjectId,
-      role: evidenceRoleForIntegrationEvent(event),
-      strength: evidenceStrengthForIntegrationEvent(event),
-      authoritative: integrationEventIsAuthoritative(event),
+      role,
+      strength,
+      authoritative,
       anchors: artifactAnchorsForIntegrationEvent(event),
       metadata: {
         provider: event.provider,
         event_type: event.eventType,
         integration_id: deps.integration.id,
+        artifact_cluster_kind: artifactClusterKindForIntegrationEvent(event),
       },
     });
+    await attachReconciliationAssociationForIntegrationEvent(deps.db, {
+      teamId: deps.integration.teamId,
+      integrationId: deps.integration.id,
+      clusterId: result.clusterId,
+      rawEventId,
+      event,
+      role,
+      strength,
+      authoritative,
+    });
   }
+}
+
+async function attachReconciliationAssociationForIntegrationEvent(
+  db: Db,
+  input: {
+    teamId: string;
+    integrationId: string;
+    clusterId: string;
+    rawEventId: string;
+    event: IntegrationEvent & { objectMap: ObjectMapping };
+    role: EvidenceRole;
+    strength: EvidenceStrength;
+    authoritative: boolean;
+  },
+): Promise<void> {
+  const evidence = await loadCanonicalIntegrationEvidence(db, input.teamId, input.rawEventId);
+  if (!evidence) return;
+
+  const role = associationRoleForIntegrationEvidence(input.role);
+  const associationSource = input.authoritative ? 'authoritative_provider' : 'hard_anchor';
+  const existingAssociation = await db
+    .select({ id: artifactEvidenceAssociations.id })
+    .from(artifactEvidenceAssociations)
+    .where(
+      and(
+        eq(artifactEvidenceAssociations.teamId, input.teamId),
+        eq(artifactEvidenceAssociations.clusterId, input.clusterId),
+        eq(artifactEvidenceAssociations.rawEventId, input.rawEventId),
+        eq(artifactEvidenceAssociations.role, role),
+        eq(artifactEvidenceAssociations.associationSource, associationSource),
+      ),
+    )
+    .limit(1);
+  if (existingAssociation.length === 0) {
+    await db
+      .insert(artifactEvidenceAssociations)
+      .values({
+        teamId: input.teamId,
+        clusterId: input.clusterId,
+        evidenceId: evidence.id,
+        rawEventId: input.rawEventId,
+        role,
+        strength: input.strength,
+        confidence: 'high',
+        associationSource,
+        rationale: `${input.event.provider} ${input.event.eventType} matched ${input.event.objectMap.externalId}`,
+        sourceRefs: [
+          {
+            source: input.event.provider,
+            rawEventId: input.rawEventId,
+            evidenceId: evidence.id,
+            sourcePayloadRef: evidence.sourcePayloadRef,
+          },
+        ],
+        visibility: evidence.visibility,
+        visibilityOwnerUserId: evidence.visibilityOwnerUserId,
+        visibilityUserIds: evidence.visibilityUserIds,
+        visibilityFloor: evidence.visibility,
+        visibilityFloorOwnerUserId: evidence.visibilityOwnerUserId,
+        visibilityFloorUserIds: evidence.visibilityUserIds,
+        metadata: {
+          provider: input.event.provider,
+          event_type: input.event.eventType,
+          integration_id: input.integrationId,
+          external_object_id: input.event.externalObjectId,
+        },
+        dedupeKey: buildAssociationDedupeKey({
+          teamId: input.teamId,
+          clusterId: input.clusterId,
+          evidenceId: evidence.id,
+          role,
+          associationSource,
+          associationPolicyVersion: 'integration-association-2026-06',
+        }),
+      })
+      .onConflictDoNothing();
+  }
+
+  if (input.authoritative) {
+    await emitIntegrationDirectWriteOutput(db, {
+      ...input,
+      evidence,
+      role,
+      associationSource,
+    });
+  } else {
+    await emitIntegrationObservedAssociationOutput(db, {
+      ...input,
+      evidence,
+      role,
+      associationSource,
+    });
+  }
+}
+
+async function loadCanonicalIntegrationEvidence(
+  db: Db,
+  teamId: string,
+  rawEventId: string,
+): Promise<IntegrationProjectionEvidence | null> {
+  const [evidence] = await db
+    .select({
+      id: reconciliationEvidence.id,
+      sourcePayloadRef: reconciliationEvidence.sourcePayloadRef,
+      visibility: reconciliationEvidence.visibility,
+      visibilityOwnerUserId: reconciliationEvidence.visibilityOwnerUserId,
+      visibilityUserIds: reconciliationEvidence.visibilityUserIds,
+    })
+    .from(reconciliationEvidence)
+    .where(
+      and(
+        eq(reconciliationEvidence.teamId, teamId),
+        eq(reconciliationEvidence.rawEventId, rawEventId),
+      ),
+    )
+    .orderBy(
+      sql`CASE WHEN ${reconciliationEvidence.sourcePayloadRef} IS NULL THEN 1 ELSE 0 END`,
+      reconciliationEvidence.sourcePayloadRef,
+      reconciliationEvidence.id,
+    )
+    .limit(1);
+  return evidence ?? null;
+}
+
+async function emitIntegrationDirectWriteOutput(
+  db: Db,
+  input: IntegrationProjectionOutputInput,
+): Promise<void> {
+  const targetId = input.event.objectMap.externalId;
+  await emitIntegrationProjectionOutput(db, input, {
+    runScope: 'integration_direct_write',
+    runVersion: INTEGRATION_DIRECT_WRITE_RUN_VERSION,
+    runDedupeKind: 'integration-direct-write-run',
+    outputKind: 'direct_write',
+    targetKind: 'cluster_lifecycle',
+    targetField: 'status',
+    operation: 'update',
+    targetIdentity: `${input.event.provider}:${targetId}:${input.event.eventType}`,
+    plannerVersion: INTEGRATION_DIRECT_WRITE_PLANNER_VERSION,
+    payload: {
+      provider: input.event.provider,
+      event_type: input.event.eventType,
+      integration_id: input.integrationId,
+      external_object_id: input.event.externalObjectId,
+      object_map_external_id: input.event.objectMap.externalId,
+      object_map_type: input.event.objectMap.type,
+      object_map_status: input.event.objectMap.status ?? 'open',
+      cluster_status: clusterStatusFromObjectStatus(input.event.objectMap.status),
+      association_role: input.role,
+      association_source: input.associationSource,
+      evidence_strength: input.strength,
+    },
+  });
+}
+
+async function emitIntegrationObservedAssociationOutput(
+  db: Db,
+  input: IntegrationProjectionOutputInput,
+): Promise<void> {
+  await emitIntegrationProjectionOutput(db, input, {
+    runScope: 'integration_observed_association',
+    runVersion: INTEGRATION_OBSERVED_ASSOCIATION_RUN_VERSION,
+    runDedupeKind: 'integration-observed-association-run',
+    outputKind: 'observed_association',
+    targetKind: 'cluster_identity',
+    targetField: null,
+    operation: 'link',
+    targetIdentity: `${input.event.provider}:${input.event.objectMap.externalId}:${input.event.eventType}`,
+    plannerVersion: INTEGRATION_OBSERVED_ASSOCIATION_PLANNER_VERSION,
+    payload: {
+      provider: input.event.provider,
+      event_type: input.event.eventType,
+      integration_id: input.integrationId,
+      external_object_id: input.event.externalObjectId,
+      object_map_external_id: input.event.objectMap.externalId,
+      object_map_type: input.event.objectMap.type,
+      association_role: input.role,
+      association_source: input.associationSource,
+      evidence_strength: input.strength,
+    },
+  });
+}
+
+async function emitIntegrationProjectionOutput(
+  db: Db,
+  input: IntegrationProjectionOutputInput,
+  config: IntegrationProjectionOutputConfig,
+): Promise<void> {
+  const sourceRefs = [
+    {
+      source: input.event.provider,
+      rawEventId: input.rawEventId,
+      sourcePayloadRef: input.evidence.sourcePayloadRef,
+    },
+  ];
+  const sourceEnvelope = integrationProjectionSourceEnvelope(input.evidence, sourceRefs);
+  const runFingerprint = reconciliationDedupeKey(config.runDedupeKind, {
+    teamId: input.teamId,
+    clusterId: input.clusterId,
+    rawEventId: input.rawEventId,
+    sourcePayloadRef: input.evidence.sourcePayloadRef,
+    eventType: input.event.eventType,
+    policyVersion: AUTHORITY_POLICY_VERSION,
+  });
+  const now = new Date();
+  const metrics = {
+    provider: input.event.provider,
+    event_type: input.event.eventType,
+  };
+  const [run] = await db
+    .insert(reconciliationRuns)
+    .values({
+      teamId: input.teamId,
+      trigger: 'raw_event',
+      scope: config.runScope,
+      status: 'completed',
+      inputFingerprint: runFingerprint,
+      engineVersion: config.runVersion,
+      completedAt: now,
+      metrics,
+    })
+    .onConflictDoUpdate({
+      target: [
+        reconciliationRuns.teamId,
+        reconciliationRuns.inputFingerprint,
+        reconciliationRuns.engineVersion,
+      ],
+      set: {
+        status: 'completed',
+        completedAt: now,
+        metrics,
+      },
+    })
+    .returning({ id: reconciliationRuns.id });
+  if (!run) return;
+
+  const authorityInput = authorityPolicyInputForIntegrationEvent(input.event, {
+    targetKind: config.targetKind,
+    targetField: config.targetField,
+  });
+  const authority = evaluateAuthorityPolicy(authorityInput);
+  await db
+    .insert(reconciliationOutputs)
+    .values({
+      teamId: input.teamId,
+      runId: run.id,
+      clusterId: input.clusterId,
+      outputKind: config.outputKind,
+      targetKind: config.targetKind,
+      operation: config.operation,
+      payload: config.payload,
+      authorityDecision: {
+        ...authorityDecisionPayload(authority, authorityInput),
+        provider: input.event.provider,
+      },
+      confidence: 'high',
+      requiresApproval: false,
+      ...sourceEnvelope,
+      dedupeKey: buildOutputDedupeKey({
+        teamId: input.teamId,
+        clusterId: input.clusterId,
+        targetKind: config.targetKind,
+        operation: config.operation,
+        targetId: null,
+        targetIdentity: config.targetIdentity,
+        sourceRefs,
+        authorityPolicyVersion: AUTHORITY_POLICY_VERSION,
+        plannerVersion: config.plannerVersion,
+      }),
+      status: 'applied',
+    })
+    .onConflictDoUpdate({
+      target: [reconciliationOutputs.teamId, reconciliationOutputs.dedupeKey],
+      set: {
+        runId: run.id,
+        ...sourceEnvelope,
+        status: 'applied',
+        updatedAt: new Date(),
+      },
+    });
 }
 
 function clusterStatusFromObjectStatus(status: ObjectMapping['status']): ArtifactStatus {
@@ -555,6 +816,41 @@ function clusterStatusFromObjectStatus(status: ObjectMapping['status']): Artifac
   if (status === 'cancelled') return 'cancelled';
   if (status === 'in_progress') return 'active';
   return 'open';
+}
+
+function artifactClusterKindForIntegrationEvent(
+  event: IntegrationEvent & { objectMap: ObjectMapping },
+): ArtifactClusterKind {
+  const artifactKey = metadataString(event.objectMap.metadata, 'artifact_key');
+  if (artifactKey?.startsWith('customer:')) return 'customer_project';
+  if (metadataString(event.objectMap.metadata, 'sentry_record_kind')) return 'provider_record';
+  if (metadataString(event.objectMap.metadata, 'linear_record_kind')) return 'provider_record';
+  const mondayRecordKind = metadataString(event.objectMap.metadata, 'monday_record_kind');
+  if (mondayRecordKind && mondayRecordKind !== 'doc') return 'provider_record';
+
+  switch (event.objectMap.type) {
+    case 'company':
+      return 'account';
+    case 'project':
+      return 'customer_project';
+    case 'incident':
+      return 'incident';
+    case 'deal':
+      return 'deal';
+    case 'document':
+      return 'document';
+    case 'decision':
+      return 'decision';
+    case 'task':
+    case 'follow_up':
+      return 'task';
+    case 'person':
+      return 'person_context';
+    case 'topic':
+      return 'topic';
+    default:
+      return 'provider_record';
+  }
 }
 
 function evidenceStrengthForIntegrationEvent(event: IntegrationEvent): EvidenceStrength {
@@ -565,6 +861,7 @@ function evidenceStrengthForIntegrationEvent(event: IntegrationEvent): EvidenceS
 function evidenceRoleForIntegrationEvent(event: IntegrationEvent): EvidenceRole {
   const github = recordField(event.extra, 'github');
   const githubType = metadataString(github, 'type');
+  if (event.eventType.includes('release')) return 'release';
   if (event.provider === 'sentry') {
     return event.eventType === 'issue.resolved' ? 'lifecycle_update' : 'error';
   }
@@ -580,7 +877,6 @@ function evidenceRoleForIntegrationEvent(event: IntegrationEvent): EvidenceRole 
     if (githubType === 'release') return 'release';
     if (githubType === 'commit') return 'implementation';
   }
-  if (event.eventType.includes('release')) return 'release';
   if (event.objectMap?.type === 'document') return 'document';
   if (event.objectMap?.type === 'decision') return 'decision';
   return event.eventType.includes('status') || event.eventType.includes('completed')
@@ -588,22 +884,50 @@ function evidenceRoleForIntegrationEvent(event: IntegrationEvent): EvidenceRole 
     : 'related_context';
 }
 
-function integrationEventIsAuthoritative(event: IntegrationEvent): boolean {
-  if (!event.objectMap) return false;
-  if (event.provider === 'github') {
-    return [
-      'issue.closed',
-      'issue.updated',
-      'pr.merged',
-      'pr.closed',
-      'pr.updated',
-      'release.published',
-    ].includes(event.eventType);
-  }
-  if (event.provider === 'sentry') return event.eventType.startsWith('issue.');
-  if (event.provider === 'linear') return event.eventType.startsWith('issue.');
-  if (event.provider === 'monday') return event.eventType.includes('status');
-  return false;
+function associationRoleForIntegrationEvidence(
+  role: EvidenceRole,
+): (typeof artifactEvidenceAssociations.$inferInsert)['role'] {
+  if (role === 'lifecycle_update') return 'lifecycle_update';
+  if (role === 'decision') return 'decision';
+  if (role === 'discussion') return 'discussion';
+  if (role === 'error' || role === 'issue') return 'blocker';
+  if (role === 'related_context') return 'related_context';
+  if (role === 'review' || role === 'report') return 'discussion';
+  if (role === 'document') return 'evidence_only';
+  return 'update';
+}
+
+function integrationEventIsAuthoritative(
+  event: IntegrationEvent & { objectMap: ObjectMapping },
+): boolean {
+  return (
+    evaluateAuthorityPolicy(
+      authorityPolicyInputForIntegrationEvent(event, {
+        targetKind: 'cluster_lifecycle',
+        targetField: 'status',
+      }),
+    ).decision === 'direct'
+  );
+}
+
+function authorityPolicyInputForIntegrationEvent(
+  event: IntegrationEvent & { objectMap: ObjectMapping },
+  target: { targetKind: string; targetField: string | null },
+): AuthorityPolicyInput {
+  return {
+    source: 'integration',
+    provider: event.provider,
+    eventType: event.eventType,
+    targetKind: target.targetKind,
+    targetField: target.targetField,
+    externalObjectId: event.objectMap.externalId,
+    visibility: event.visibility ?? 'team',
+    confidence: 'high',
+    currentOwner: {
+      provider: event.provider,
+      externalObjectId: event.objectMap.externalId,
+    },
+  };
 }
 
 function artifactAnchorsForIntegrationEvent(event: IntegrationEvent): ArtifactAnchorInput[] {
@@ -726,33 +1050,4 @@ function metadataString(metadata: Record<string, unknown> | undefined, key: stri
   if (typeof value !== 'string' && typeof value !== 'number') return null;
   const text = String(value).trim();
   return text || null;
-}
-
-function shouldPreserveExistingCanonicalName(
-  existing: { canonicalName: string; metadata: Record<string, unknown> },
-  map: ObjectMapping,
-): boolean {
-  const previousProviderName = metadataString(existing.metadata, 'display_title_canonical_name');
-  if (previousProviderName) return existing.canonicalName !== previousProviderName;
-  return existing.canonicalName !== map.canonicalName;
-}
-
-/**
- * Translate a string priority label from a provider into the small-int
- * scale entities.priority uses: 1=urgent, 2=high, 3=medium, 4=low (mirrors
- * Linear's own scale). null means "leave priority alone".
- */
-function mapPriorityLabel(label: ObjectMapping['priority']): number | null | undefined {
-  if (label === undefined) return undefined;
-  if (label === null) return null;
-  switch (label) {
-    case 'urgent':
-      return 1;
-    case 'high':
-      return 2;
-    case 'medium':
-      return 3;
-    case 'low':
-      return 4;
-  }
 }

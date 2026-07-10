@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+
 import {
   type Db,
   agentSuggestionEvidence,
@@ -9,6 +11,9 @@ import {
   boards,
   entities,
   rawEvents,
+  reconciliationEvidence,
+  reconciliationOutputs,
+  reconciliationRuns,
 } from '@timeline/db';
 import {
   type SQL,
@@ -43,15 +48,51 @@ import {
   syncBoardItemDueDateCalendarEvent,
   type DueDateCalendarSyncResult,
 } from '#src/calendar/due-dates.js';
+import { childLogger } from '#src/logger.js';
+import { AUTHORITY_POLICY_VERSION } from '#src/reconciliation/authority.js';
+import { buildOutputDedupeKey, reconciliationDedupeKey } from '#src/reconciliation/index.js';
+import { normalizeRawEventsToEvidence } from '#src/reconciliation/normalization.js';
+import { sourcePayloadRefFromMetadata } from '#src/reconciliation/source-snapshot.js';
+import { stableSha256Digest } from '#src/reconciliation/stable-digest.js';
 import { likePattern } from '#src/sql-like.js';
 import { rawEventVisibleToUser } from '#src/visibility.js';
 
 type DbTx = Parameters<Parameters<Db['transaction']>[0]>[0];
 type DbOrTx = Db | DbTx;
+type BoardDirectWriteVisibility = 'private' | 'team' | 'specific_users';
+
+interface BoardDirectWriteSourceContext {
+  sourceRefs: {
+    source: string;
+    rawEventId: string;
+    sourcePayloadRef?: string;
+  }[];
+  sourcePayloadRefs: string[];
+  visibility: BoardDirectWriteVisibility;
+  visibilityOwnerUserId: string | null;
+  visibilityUserIds: string[] | null;
+}
+
+function boardDirectWriteSourceEnvelope(sourceContext: BoardDirectWriteSourceContext) {
+  return {
+    sourceRefs: sourceContext.sourceRefs,
+    sourcePayloadRefs: sourceContext.sourcePayloadRefs,
+    visibility: sourceContext.visibility,
+    visibilityOwnerUserId: sourceContext.visibilityOwnerUserId,
+    visibilityUserIds: sourceContext.visibilityUserIds,
+    visibilityFloor: sourceContext.visibility,
+    visibilityFloorOwnerUserId: sourceContext.visibilityOwnerUserId,
+    visibilityFloorUserIds: sourceContext.visibilityUserIds,
+  };
+}
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const BOARD_TEMPLATES = ['pipeline', 'task_board', 'catalog', 'custom'] as const;
 const BOARD_ITEM_QUERY_LIMIT_MAX = 50_000;
+const BOARD_DIRECT_WRITE_RUN_VERSION = 'board-direct-write-2026-06';
+const BOARD_DIRECT_WRITE_PLANNER_VERSION = 'board-direct-write-planner-2026-06';
+const BOARD_DIRECT_WRITE_SOURCE_SNAPSHOT_VERSION = 'board-direct-write-source-snapshot-2026-06';
+const reconciliationLog = childLogger('boards:reconciliation');
 
 export type BoardTemplateKind = (typeof BOARD_TEMPLATES)[number];
 export type BoardLaneKind = 'active' | 'done' | 'terminal' | 'lost' | 'blocked';
@@ -266,9 +307,31 @@ function jsonObject(value: unknown): Record<string, unknown> {
     : {};
 }
 
-function sourceEventIdFromPayload(value: unknown): string | null {
-  const sourceEventId = jsonObject(value).sourceEventId;
-  return typeof sourceEventId === 'string' && UUID_RE.test(sourceEventId) ? sourceEventId : null;
+function reconciliationOutputVisibleToScope(scope: TeamScopeCore): SQL {
+  return sql`(
+    (
+      ${reconciliationOutputs.visibility} = 'team'
+      OR (
+        ${reconciliationOutputs.visibility} = 'private'
+        AND ${reconciliationOutputs.visibilityOwnerUserId} = ${scope.userId}
+      )
+      OR (
+        ${reconciliationOutputs.visibility} = 'specific_users'
+        AND ${scope.userId} = ANY(${reconciliationOutputs.visibilityUserIds})
+      )
+    )
+    AND (
+      ${reconciliationOutputs.visibilityFloor} = 'team'
+      OR (
+        ${reconciliationOutputs.visibilityFloor} = 'private'
+        AND ${reconciliationOutputs.visibilityFloorOwnerUserId} = ${scope.userId}
+      )
+      OR (
+        ${reconciliationOutputs.visibilityFloor} = 'specific_users'
+        AND ${scope.userId} = ANY(${reconciliationOutputs.visibilityFloorUserIds})
+      )
+    )
+  )`;
 }
 
 function jsonStringArray(value: unknown): ObjectType[] {
@@ -291,7 +354,9 @@ function toObjectRow(row: EntitySelect): ObjectRow {
     ownerUserId: row.ownerUserId,
     assigneeUserId: row.assigneeUserId,
     dueAt: row.dueAt,
-    agentSuggested: row.agentSuggested,
+    // `entities.agent_suggested` is legacy single-row provenance. Board
+    // surfaces should rely on approval projections, not this column.
+    agentSuggested: false,
     archivedAt: row.archivedAt,
     aliases: Array.isArray(row.aliases)
       ? row.aliases.filter((v): v is string => typeof v === 'string')
@@ -373,7 +438,7 @@ function toBoardItemChangeRow(row: BoardItemChangeSelect): BoardItemChangeRow {
     field: row.field as BoardItemField,
     previousValue: row.previousValue,
     newValue: row.newValue,
-    sourceEventId: row.sourceEventId,
+    sourceEventId: null,
     suggestionItemId: row.suggestionItemId,
     evidence: [],
     note: row.note,
@@ -391,7 +456,6 @@ async function enrichBoardItemHistoryEvidence(
   const evidenceByChangeId = new Map<string, BoardItemEvidence[]>();
   const changeBySuggestionItemId = new Map<string, BoardItemChangeRow[]>();
   const suggestionItemIds = new Set<string>();
-  const sourceEventIds = new Set<string>();
   for (const change of changes) {
     if (change.suggestionItemId) {
       suggestionItemIds.add(change.suggestionItemId);
@@ -399,13 +463,13 @@ async function enrichBoardItemHistoryEvidence(
       list.push(change);
       changeBySuggestionItemId.set(change.suggestionItemId, list);
     }
-    if (change.sourceEventId) sourceEventIds.add(change.sourceEventId);
   }
 
   if (suggestionItemIds.size > 0) {
     const rows = await db
       .select({
         itemId: agentSuggestionItems.id,
+        itemMetadata: agentSuggestionItems.metadata,
         proposedPayload: agentSuggestionItems.proposedPayload,
         bundleEvidenceCount: sql<number>`(
           SELECT COUNT(*)::int
@@ -441,13 +505,13 @@ async function enrichBoardItemHistoryEvidence(
     for (const row of rows) {
       rowsByItemId.set(row.itemId, [...(rowsByItemId.get(row.itemId) ?? []), row]);
     }
+    const outputRawEventIdsByItemId = await sourceRefRawEventIdsBySuggestionItem(db, scope, rows);
     for (const itemRows of rowsByItemId.values()) {
-      const sourceEventId = sourceEventIdFromPayload(itemRows[0]?.proposedPayload);
-      const relevantRows = sourceEventId
-        ? itemRows.filter((row) => row.rawEventId === sourceEventId)
-        : itemRows[0]?.bundleEvidenceCount === 1 && itemRows.length === 1
-          ? itemRows
-          : [];
+      const firstRow = itemRows[0];
+      const outputRawEventIds = firstRow
+        ? outputRawEventIdsByItemId.get(firstRow.itemId)
+        : undefined;
+      const relevantRows = relevantSuggestionEvidenceRows(itemRows, outputRawEventIds);
       for (const row of relevantRows) {
         const relatedChanges = changeBySuggestionItemId.get(row.itemId) ?? [];
         for (const change of relatedChanges) {
@@ -467,46 +531,88 @@ async function enrichBoardItemHistoryEvidence(
     }
   }
 
-  if (sourceEventIds.size > 0) {
-    const rows = await db
-      .select({
-        rawEventId: rawEvents.id,
-        source: rawEvents.source,
-        contentText: rawEvents.contentText,
-        occurredAt: rawEvents.occurredAt,
-      })
-      .from(rawEvents)
-      .where(
-        and(
-          eq(rawEvents.teamId, scope.teamId),
-          inArray(rawEvents.id, [...sourceEventIds]),
-          rawEventVisibleToUser(scope.userId),
-          sql`COALESCE(${rawEvents.sourceMetadata} ->> 'deleted', 'false') <> 'true'`,
-        ),
-      );
-    const directById = new Map(rows.map((row) => [row.rawEventId, row]));
-    for (const change of changes) {
-      if (!change.sourceEventId) continue;
-      const row = directById.get(change.sourceEventId);
-      if (!row) continue;
-      const list = evidenceByChangeId.get(change.id) ?? [];
-      if (!list.some((evidence) => evidence.rawEventId === row.rawEventId)) {
-        list.push({
-          rawEventId: row.rawEventId,
-          source: row.source,
-          contentText: row.contentText,
-          quote: null,
-          occurredAt: row.occurredAt,
-        });
-      }
-      evidenceByChangeId.set(change.id, list);
-    }
-  }
-
   return changes.map((change) => ({
     ...change,
     evidence: evidenceByChangeId.get(change.id) ?? [],
   }));
+}
+
+async function sourceRefRawEventIdsBySuggestionItem(
+  db: DbOrTx,
+  scope: TeamScopeCore,
+  rows: { itemId: string; itemMetadata: unknown }[],
+): Promise<Map<string, Set<string>>> {
+  const outputIdsByItemId = new Map<string, string[]>();
+  for (const row of rows) {
+    const outputIds = reconciliationOutputIdsFromMetadata(row.itemMetadata);
+    if (outputIds.length === 0) continue;
+    outputIdsByItemId.set(row.itemId, outputIds);
+  }
+  const outputIds = [...new Set([...outputIdsByItemId.values()].flat())];
+  if (outputIds.length === 0) return new Map();
+
+  const outputRows = await db
+    .select({ id: reconciliationOutputs.id, sourceRefs: reconciliationOutputs.sourceRefs })
+    .from(reconciliationOutputs)
+    .where(
+      and(
+        eq(reconciliationOutputs.teamId, scope.teamId),
+        inArray(reconciliationOutputs.id, outputIds),
+        reconciliationOutputVisibleToScope(scope),
+      ),
+    );
+  const rawIdsByOutputId = new Map(
+    outputRows.map((row) => [row.id, sourceRefRawEventIds(row.sourceRefs)] as const),
+  );
+  const result = new Map<string, Set<string>>();
+  for (const [itemId, ids] of outputIdsByItemId) {
+    const rawEventIds = ids.flatMap((id) => rawIdsByOutputId.get(id) ?? []);
+    result.set(itemId, new Set(rawEventIds));
+  }
+  return result;
+}
+
+function relevantSuggestionEvidenceRows<
+  T extends { rawEventId: string; bundleEvidenceCount: number },
+>(itemRows: T[], outputRawEventIds: Set<string> | undefined): T[] {
+  if (outputRawEventIds !== undefined) {
+    if (outputRawEventIds.size === 0) return [];
+    const visibleRawEventIds = new Set(itemRows.map((row) => row.rawEventId));
+    const allOutputRefsVisible = [...outputRawEventIds].every((id) => visibleRawEventIds.has(id));
+    return allOutputRefsVisible
+      ? itemRows.filter((row) => outputRawEventIds.has(row.rawEventId))
+      : [];
+  }
+
+  return itemRows[0]?.bundleEvidenceCount === 1 && itemRows.length === 1 ? itemRows : [];
+}
+
+function reconciliationOutputIdsFromMetadata(metadata: unknown): string[] {
+  const record = jsonObject(metadata);
+  const outputIds = Array.isArray(record.reconciliation_output_ids)
+    ? record.reconciliation_output_ids.filter(
+        (value): value is string => typeof value === 'string' && UUID_RE.test(value),
+      )
+    : [];
+  const single =
+    typeof record.reconciliation_output_id === 'string' &&
+    UUID_RE.test(record.reconciliation_output_id)
+      ? [record.reconciliation_output_id]
+      : [];
+  return [...new Set([...single, ...outputIds])];
+}
+
+function sourceRefRawEventIds(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return [
+    ...new Set(
+      value.flatMap((item) => {
+        const ref = jsonObject(item);
+        const rawEventId = ref.rawEventId;
+        return typeof rawEventId === 'string' && UUID_RE.test(rawEventId) ? [rawEventId] : [];
+      }),
+    ),
+  ];
 }
 
 function stableEqual(a: unknown, b: unknown): boolean {
@@ -521,6 +627,275 @@ async function afterDueDateCalendarSync(
     enqueueDueDateCalendarEventEmbeddings(teamId, result.embedEventIds),
     deleteDueDateCalendarEventEmbeddings(teamId, result.deleteEventIds),
   ]);
+}
+
+async function normalizeBoardSystemRawEventEvidence(input: {
+  db: DbOrTx;
+  teamId: string;
+  rawEventId: string | null | undefined;
+}): Promise<void> {
+  if (!input.rawEventId) return;
+  try {
+    await normalizeRawEventsToEvidence({
+      db: input.db,
+      teamId: input.teamId,
+      rawEventIds: [input.rawEventId],
+    });
+  } catch (err) {
+    reconciliationLog.warn(
+      { err, teamId: input.teamId, rawEventId: input.rawEventId },
+      'board system raw event reconciliation evidence normalization failed',
+    );
+  }
+}
+
+export async function buildBoardDirectWriteSourceContext(input: {
+  db: DbOrTx;
+  teamId: string;
+  sourceRawEventId: string;
+}): Promise<BoardDirectWriteSourceContext> {
+  const [raw] = await input.db
+    .select({
+      source: rawEvents.source,
+      sourceMetadata: rawEvents.sourceMetadata,
+      visibility: rawEvents.visibility,
+      visibilityOwnerUserId: rawEvents.visibilityOwnerUserId,
+      visibilityUserIds: rawEvents.visibilityUserIds,
+    })
+    .from(rawEvents)
+    .where(and(eq(rawEvents.teamId, input.teamId), eq(rawEvents.id, input.sourceRawEventId)))
+    .limit(1);
+  if (!raw) throw new Error('Source raw event not found for team');
+
+  const [evidence] = await input.db
+    .select({
+      id: reconciliationEvidence.id,
+      sourcePayloadRef: reconciliationEvidence.sourcePayloadRef,
+      visibility: reconciliationEvidence.visibility,
+      visibilityOwnerUserId: reconciliationEvidence.visibilityOwnerUserId,
+      visibilityUserIds: reconciliationEvidence.visibilityUserIds,
+    })
+    .from(reconciliationEvidence)
+    .where(
+      and(
+        eq(reconciliationEvidence.teamId, input.teamId),
+        eq(reconciliationEvidence.rawEventId, input.sourceRawEventId),
+      ),
+    )
+    .orderBy(desc(reconciliationEvidence.createdAt), desc(reconciliationEvidence.id))
+    .limit(1);
+  const sourcePayloadRef =
+    sourcePayloadRefFromMetadata(raw.sourceMetadata) ?? evidence?.sourcePayloadRef ?? null;
+  if (!sourcePayloadRef) {
+    throw new Error('Source raw event is missing a replay payload ref');
+  }
+  const sourcePayloadRefs = [
+    ...new Set(
+      [evidence?.sourcePayloadRef, sourcePayloadRef].filter((ref): ref is string => !!ref),
+    ),
+  ];
+  const visibility = evidence?.visibility ?? raw.visibility;
+  const visibilityOwnerUserId = evidence?.visibilityOwnerUserId ?? raw.visibilityOwnerUserId;
+  const visibilityUserIds = evidence?.visibilityUserIds ?? raw.visibilityUserIds;
+  return {
+    sourceRefs: [
+      {
+        source: raw.source,
+        rawEventId: input.sourceRawEventId,
+        ...(sourcePayloadRef ? { sourcePayloadRef } : {}),
+      },
+    ],
+    sourcePayloadRefs,
+    visibility,
+    visibilityOwnerUserId,
+    visibilityUserIds,
+  };
+}
+
+async function createBoardSystemRawEvent(input: {
+  db: DbTx;
+  teamId: string;
+  actor: { kind: ActorKind; userId?: string | null };
+  boardId: string;
+  boardName: string;
+  boardItemId: string;
+  entityId: string;
+  entityName: string;
+  eventKind: 'board_item_add' | 'board_item_update' | 'board_item_remove';
+  contentText: string;
+  metadata?: Record<string, unknown>;
+}): Promise<string | null> {
+  const sourceSnapshot = {
+    event_kind: input.eventKind,
+    board_id: input.boardId,
+    board_name: input.boardName,
+    board_item_id: input.boardItemId,
+    entity_id: input.entityId,
+    entity_name: input.entityName,
+    actor_kind: input.actor.kind,
+    actor_user_id: input.actor.userId ?? null,
+    ...(input.metadata ?? {}),
+  };
+  const digest = stableSha256Digest(sourceSnapshot);
+  const rawEventId = randomUUID();
+  const [rawEvent] = await input.db
+    .insert(rawEvents)
+    .values({
+      id: rawEventId,
+      teamId: input.teamId,
+      authorUserId: input.actor.kind === 'user' ? (input.actor.userId ?? null) : null,
+      source: 'system',
+      contentText: input.contentText,
+      visibility: 'team',
+      sourceMetadata: {
+        kind: input.eventKind,
+        event_type: input.eventKind,
+        source_payload_ref: `inline://timeline/system/${input.eventKind}/${rawEventId}`,
+        payload_digest: digest,
+        source_snapshot_kind: 'board_direct_write_event',
+        source_snapshot_version: BOARD_DIRECT_WRITE_SOURCE_SNAPSHOT_VERSION,
+        board_id: input.boardId,
+        board_item_id: input.boardItemId,
+        entity_id: input.entityId,
+        actor: {
+          kind: input.actor.kind,
+          user_id: input.actor.userId ?? null,
+        },
+        source_snapshot: sourceSnapshot,
+      },
+    })
+    .returning({ id: rawEvents.id });
+  if (!rawEvent) return null;
+  await normalizeBoardSystemRawEventEvidence({
+    db: input.db,
+    teamId: input.teamId,
+    rawEventId: rawEvent.id,
+  });
+  return rawEvent.id;
+}
+
+async function emitBoardDirectWriteOutput(input: {
+  db: DbTx;
+  teamId: string;
+  boardId: string;
+  boardItemId: string;
+  entityId: string;
+  actor: { kind: ActorKind; userId?: string | null };
+  sourceEventId: string | null;
+  targetKind: 'board_membership' | 'board_item_update';
+  operation: 'create' | 'update' | 'archive_or_cancel';
+  systemEventKind: 'board_item_add' | 'board_item_update' | 'board_item_remove';
+  changedFields?: string[];
+  changes?: { field: string; previousValue: unknown; newValue: unknown }[];
+  payload?: Record<string, unknown>;
+}): Promise<void> {
+  if (!input.sourceEventId) return;
+  const sourceContext = await buildBoardDirectWriteSourceContext({
+    db: input.db,
+    teamId: input.teamId,
+    sourceRawEventId: input.sourceEventId,
+  });
+  const metrics = {
+    target_kind: input.targetKind,
+    operation: input.operation,
+    actor_kind: input.actor.kind,
+    ...(input.changedFields ? { changed_fields: input.changedFields } : {}),
+  };
+  const [run] = await input.db
+    .insert(reconciliationRuns)
+    .values({
+      teamId: input.teamId,
+      trigger: 'raw_event',
+      scope: 'board_direct_write',
+      status: 'completed',
+      inputFingerprint: reconciliationDedupeKey('board-direct-write-run', {
+        teamId: input.teamId,
+        boardId: input.boardId,
+        boardItemId: input.boardItemId,
+        rawEventId: input.sourceEventId,
+        targetKind: input.targetKind,
+        operation: input.operation,
+        policyVersion: AUTHORITY_POLICY_VERSION,
+      }),
+      engineVersion: BOARD_DIRECT_WRITE_RUN_VERSION,
+      completedAt: new Date(),
+      metrics,
+    })
+    .onConflictDoUpdate({
+      target: [
+        reconciliationRuns.teamId,
+        reconciliationRuns.inputFingerprint,
+        reconciliationRuns.engineVersion,
+      ],
+      set: {
+        status: 'completed',
+        completedAt: new Date(),
+        metrics,
+      },
+    })
+    .returning({ id: reconciliationRuns.id });
+  if (!run) return;
+
+  await input.db
+    .insert(reconciliationOutputs)
+    .values({
+      teamId: input.teamId,
+      runId: run.id,
+      outputKind: 'direct_write',
+      targetKind: input.targetKind,
+      operation: input.operation,
+      targetId: input.boardItemId,
+      payload: {
+        source: 'system',
+        system_event_kind: input.systemEventKind,
+        board_id: input.boardId,
+        board_item_id: input.boardItemId,
+        entity_id: input.entityId,
+        actor_kind: input.actor.kind,
+        actor_user_id: input.actor.userId ?? null,
+        ...(input.changedFields ? { changed_fields: input.changedFields } : {}),
+        ...(input.changes ? { changes: input.changes } : {}),
+        ...(input.payload ?? {}),
+      },
+      authorityDecision: {
+        decision: 'direct_write',
+        authority_decision: 'direct',
+        reason: 'user_or_agent_confirmed_workspace_write',
+        source: 'system',
+        provider: null,
+        target_kind: input.targetKind,
+        target_field:
+          input.operation === 'create'
+            ? '__add__'
+            : input.operation === 'archive_or_cancel'
+              ? '__remove__'
+              : '__update__',
+        ...(input.changedFields ? { changed_fields: input.changedFields } : {}),
+        policy_version: AUTHORITY_POLICY_VERSION,
+      },
+      confidence: 'high',
+      requiresApproval: false,
+      ...boardDirectWriteSourceEnvelope(sourceContext),
+      dedupeKey: buildOutputDedupeKey({
+        teamId: input.teamId,
+        targetKind: input.targetKind,
+        operation: input.operation,
+        targetId: input.boardItemId,
+        sourceRefs: sourceContext.sourceRefs,
+        authorityPolicyVersion: AUTHORITY_POLICY_VERSION,
+        plannerVersion: BOARD_DIRECT_WRITE_PLANNER_VERSION,
+      }),
+      status: 'applied',
+    })
+    .onConflictDoUpdate({
+      target: [reconciliationOutputs.teamId, reconciliationOutputs.dedupeKey],
+      set: {
+        runId: run.id,
+        ...boardDirectWriteSourceEnvelope(sourceContext),
+        status: 'applied',
+        updatedAt: new Date(),
+      },
+    });
 }
 
 function normalizeName(name: string, label: string): string {
@@ -705,7 +1080,6 @@ export function createBoardScope({
     field: BoardItemField;
     previousValue?: unknown;
     newValue?: unknown;
-    sourceEventId?: string | null;
     suggestionItemId?: string | null;
     note?: string | null;
   }): Promise<BoardItemChangeRow> {
@@ -723,7 +1097,7 @@ export function createBoardScope({
         field: input.field,
         previousValue: input.previousValue ?? null,
         newValue: input.newValue ?? null,
-        sourceEventId: input.sourceEventId ?? null,
+        sourceEventId: null,
         suggestionItemId: input.suggestionItemId ?? null,
         note: input.note ?? null,
       })
@@ -1270,6 +1644,47 @@ export function createBoardScope({
           field: '__add__',
           newValue: { boardId, entityId: item.entityId, laneId: item.laneId },
         });
+        const sourceEventId = await createBoardSystemRawEvent({
+          db: tx,
+          teamId: scope.teamId,
+          actor: input.actor,
+          boardId,
+          boardName: board.name,
+          boardItemId: item.id,
+          entityId: item.entityId,
+          entityName: object.canonicalName,
+          eventKind: 'board_item_add',
+          contentText: `Added ${object.canonicalName} to board ${board.name}`,
+          metadata: {
+            lane_id: item.laneId,
+            position: item.position,
+            responsible_user_id: item.responsibleUserId,
+            due_at: item.dueAt?.toISOString() ?? null,
+            priority: item.priority,
+            next_step: item.nextStep,
+            notes: item.notes,
+            custom_fields: item.customFields,
+          },
+        });
+        await emitBoardDirectWriteOutput({
+          db: tx,
+          teamId: scope.teamId,
+          boardId,
+          boardItemId: item.id,
+          entityId: item.entityId,
+          actor: input.actor,
+          sourceEventId,
+          targetKind: 'board_membership',
+          operation: 'create',
+          systemEventKind: 'board_item_add',
+          payload: {
+            lane_id: item.laneId,
+            position: item.position,
+            responsible_user_id: item.responsibleUserId,
+            due_at: item.dueAt?.toISOString() ?? null,
+            priority: item.priority,
+          },
+        });
         await touchBoard(boardId, tx);
         const dueDateCalendarSync = await syncBoardItemDueDateCalendarEvent(
           tx,
@@ -1364,6 +1779,42 @@ export function createBoardScope({
             }),
           ),
         );
+        const boardChanges = changed.map(([field, value]) => ({
+          field,
+          previousValue: current[field],
+          newValue: value,
+        }));
+        const changedFields = boardChanges.map((change) => change.field);
+        const sourceEventId = await createBoardSystemRawEvent({
+          db: tx,
+          teamId: scope.teamId,
+          actor,
+          boardId: current.boardId,
+          boardName: board.name,
+          boardItemId: current.id,
+          entityId: current.entityId,
+          entityName: current.object.canonicalName,
+          eventKind: 'board_item_update',
+          contentText: `Updated ${current.object.canonicalName} on board ${board.name}: ${changedFields.join(', ')}`,
+          metadata: {
+            changed_fields: changedFields,
+            changes: boardChanges,
+          },
+        });
+        await emitBoardDirectWriteOutput({
+          db: tx,
+          teamId: scope.teamId,
+          boardId: current.boardId,
+          boardItemId: current.id,
+          entityId: current.entityId,
+          actor,
+          sourceEventId,
+          targetKind: 'board_item_update',
+          operation: 'update',
+          systemEventKind: 'board_item_update',
+          changedFields,
+          changes: boardChanges,
+        });
         await touchBoard(current.boardId, tx, now);
         const result = await syncBoardItemDueDateCalendarEvent(tx, updated, current.object, board);
         if (changed.some(([field]) => field === 'dueAt' || field === 'responsibleUserId')) {
@@ -1405,6 +1856,38 @@ export function createBoardScope({
           actor,
           field: '__remove__',
           previousValue: { boardId: current.boardId, laneId: current.laneId },
+        });
+        const sourceEventId = await createBoardSystemRawEvent({
+          db: tx,
+          teamId: scope.teamId,
+          actor,
+          boardId: current.boardId,
+          boardName: board.name,
+          boardItemId: current.id,
+          entityId: current.entityId,
+          entityName: current.object.canonicalName,
+          eventKind: 'board_item_remove',
+          contentText: `Removed ${current.object.canonicalName} from board ${board.name}`,
+          metadata: {
+            previous_lane_id: current.laneId,
+            archived_at: now.toISOString(),
+          },
+        });
+        await emitBoardDirectWriteOutput({
+          db: tx,
+          teamId: scope.teamId,
+          boardId: current.boardId,
+          boardItemId: current.id,
+          entityId: current.entityId,
+          actor,
+          sourceEventId,
+          targetKind: 'board_membership',
+          operation: 'archive_or_cancel',
+          systemEventKind: 'board_item_remove',
+          payload: {
+            previous_lane_id: current.laneId,
+            archived_at: now.toISOString(),
+          },
         });
         await touchBoard(current.boardId, tx, now);
         return syncBoardItemDueDateCalendarEvent(
@@ -1644,6 +2127,7 @@ export function createBoardScope({
       boardId: string;
       entityId: string;
       laneId?: string | null;
+      /** Legacy disambiguation hint. New suggested board history cites suggestion evidence instead. */
       sourceEventId?: string | null;
       suggestionItemId?: string | null;
       note?: string | null;
@@ -1662,7 +2146,6 @@ export function createBoardScope({
           entityId: input.entityId,
           laneId: input.laneId ?? null,
         },
-        sourceEventId: input.sourceEventId ?? null,
         suggestionItemId: input.suggestionItemId ?? null,
         note: input.note ?? null,
       });
@@ -1672,6 +2155,7 @@ export function createBoardScope({
       boardItemId: string;
       field: Exclude<BoardItemField, '__add__' | '__remove__'>;
       newValue: unknown;
+      /** Legacy disambiguation hint. New suggested board history cites suggestion evidence instead. */
       sourceEventId?: string | null;
       suggestionItemId?: string | null;
       note?: string | null;
@@ -1688,7 +2172,6 @@ export function createBoardScope({
         field: input.field,
         previousValue: item[input.field],
         newValue: input.newValue,
-        sourceEventId: input.sourceEventId ?? null,
         suggestionItemId: input.suggestionItemId ?? null,
         note: input.note ?? null,
       });

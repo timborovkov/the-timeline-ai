@@ -13,6 +13,7 @@ export * from '#src/schema/object-summaries.js';
 export * from '#src/schema/object-identity-facets.js';
 export * from '#src/schema/object-views.js';
 export * from '#src/schema/artifact-clusters.js';
+export * from '#src/schema/reconciliation.js';
 export * from '#src/schema/boards.js';
 export * from '#src/schema/notifications.js';
 export * from '#src/schema/chat-sessions.js';

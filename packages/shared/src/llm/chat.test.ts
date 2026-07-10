@@ -104,6 +104,45 @@ describe('chatStructured', () => {
     expect(result.model).toBe(TIMELINE_MODELS.extraction.id);
   });
 
+  it('passes abortSignal through to provider fetches', async () => {
+    const controller = new AbortController();
+    const seenSignals: unknown[] = [];
+    const fetchStub: typeof fetch = (_url, init) => {
+      seenSignals.push(init?.signal);
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            id: 'chatcmpl-test-abort-signal',
+            object: 'chat.completion',
+            created: 0,
+            model: TIMELINE_MODELS.extraction.id,
+            choices: [
+              {
+                index: 0,
+                message: { role: 'assistant', content: JSON.stringify({ ok: true }) },
+                finish_reason: 'stop',
+              },
+            ],
+            usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      );
+    };
+
+    const result = await chatStructured(
+      {
+        schema: z.object({ ok: z.boolean() }),
+        prompt: 'p',
+        abortSignal: controller.signal,
+      },
+      { fetch: fetchStub },
+    );
+
+    expect(result.object).toEqual({ ok: true });
+    expect(seenSignals).toEqual([controller.signal]);
+  });
+
   it('repairs known legacy extraction field aliases', async () => {
     const result = await chatStructured(
       {

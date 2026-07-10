@@ -81,7 +81,11 @@ export function UserMenu({ user }: Props) {
         <DropdownMenuItem asChild>
           <button
             type="button"
-            onClick={() => void signOut({ redirectTo: '/sign-in' })}
+            onClick={() => {
+              void signOut({ redirect: false, redirectTo: '/sign-in' }).then(() => {
+                window.location.assign('/sign-in');
+              });
+            }}
             className="flex w-full items-center gap-2"
           >
             <LogOut className="size-4" />

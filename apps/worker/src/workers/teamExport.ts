@@ -1,8 +1,11 @@
 import { auditLog, teamExports, type Db } from '@timeline/db';
 import {
+  type BuildTeamExportArchiveInput,
+  type BuildTeamExportArchiveResult,
   buildTeamExportArchive,
   buildTeamExportObjectKey,
   childLogger,
+  deleteObject,
   getAttachmentsBucket,
   getAudioBucket,
   getDocumentsBucket,
@@ -22,12 +25,50 @@ const log = childLogger('worker:team-export');
 
 interface TeamExportWorkerDeps {
   db: Db;
+  io?: TeamExportWorkerIO;
 }
 
-async function processTeamExportJob(
+export interface TeamExportWorkerIO {
+  buildArchive: (input: BuildTeamExportArchiveInput) => Promise<BuildTeamExportArchiveResult>;
+  putArchive: (input: {
+    bucket: string;
+    key: string;
+    body: Buffer;
+    contentType: string;
+  }) => Promise<void>;
+  deleteArchive: (input: { bucket: string; key: string }) => Promise<void>;
+  getBuckets: () => { attachments: string; audio: string; documents: string; exports: string };
+  signFileUrl: (input: { bucket: string; key: string; ttlSec: number }) => Promise<string>;
+}
+
+function defaultTeamExportIO(): TeamExportWorkerIO {
+  return {
+    buildArchive: buildTeamExportArchive,
+    async putArchive(input) {
+      await putObject(getS3Client(), input);
+    },
+    async deleteArchive(input) {
+      await deleteObject(getS3Client(), input.bucket, input.key);
+    },
+    getBuckets() {
+      return {
+        attachments: getAttachmentsBucket(),
+        audio: getAudioBucket(),
+        documents: getDocumentsBucket(),
+        exports: getExportsBucket(),
+      };
+    },
+    signFileUrl(input) {
+      return getSignedGetObjectUrl(getS3PresignClient(), input.bucket, input.key, input.ttlSec);
+    },
+  };
+}
+
+export async function processTeamExportJob(
   deps: TeamExportWorkerDeps,
   data: queue.TeamExportJobData,
 ): Promise<void> {
+  const io = deps.io ?? defaultTeamExportIO();
   const rows = await deps.db
     .select()
     .from(teamExports)
@@ -41,28 +82,29 @@ async function processTeamExportJob(
     .set({ status: 'running', startedAt: new Date(), error: null })
     .where(eq(teamExports.id, data.teamExportId));
 
+  const buckets = io.getBuckets();
+  const objectKey = buildTeamExportObjectKey(data.teamId, data.teamExportId);
+  let shouldDeleteArchive = false;
   try {
-    const built = await buildTeamExportArchive({
+    const built = await io.buildArchive({
       db: deps.db,
       teamExportId: data.teamExportId,
       teamId: data.teamId,
       requestedByUserId: data.requestedByUserId,
       buckets: {
-        attachments: getAttachmentsBucket(),
-        audio: getAudioBucket(),
-        documents: getDocumentsBucket(),
+        attachments: buckets.attachments,
+        audio: buckets.audio,
+        documents: buckets.documents,
       },
-      async signFileUrl(input) {
-        return getSignedGetObjectUrl(getS3PresignClient(), input.bucket, input.key, input.ttlSec);
-      },
+      signFileUrl: io.signFileUrl,
     });
-    const objectKey = buildTeamExportObjectKey(data.teamId, data.teamExportId);
-    await putObject(getS3Client(), {
-      bucket: getExportsBucket(),
+    await io.putArchive({
+      bucket: buckets.exports,
       key: objectKey,
       body: built.archive,
       contentType: 'application/zip',
     });
+    shouldDeleteArchive = true;
 
     const completedAt = new Date();
     const expiresAt = new Date(built.manifest.expires_at);
@@ -103,9 +145,20 @@ async function processTeamExportJob(
         },
       });
     });
+    shouldDeleteArchive = false;
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'unknown export error';
     log.error({ err, teamExportId: data.teamExportId }, 'team export failed');
+    if (shouldDeleteArchive) {
+      try {
+        await io.deleteArchive({ bucket: buckets.exports, key: objectKey });
+      } catch (deleteErr) {
+        log.error(
+          { err: deleteErr, teamExportId: data.teamExportId, objectKey },
+          'failed to delete partial team export archive',
+        );
+      }
+    }
     await deps.db
       .update(teamExports)
       .set({ status: 'failed', error: message.slice(0, 1000), completedAt: new Date() })

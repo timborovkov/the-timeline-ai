@@ -1,5 +1,6 @@
 import { PGlite } from '@electric-sql/pglite';
-import { type Db } from '@timeline/db';
+import { type Db, reconciliationEvidence, reconciliationEvidenceAnchors } from '@timeline/db';
+import { eq, inArray } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
@@ -80,6 +81,7 @@ describe('document scope — finalizeDocumentVersion idempotency (P1 fix)', () =
       versionId: created.version.id,
       byteSize: 1024,
       contentType: 'application/pdf',
+      checksumSha256: 'document-upload-digest',
     });
     const second = await scope.finalizeDocumentVersion({
       versionId: created.version.id,
@@ -93,6 +95,81 @@ describe('document scope — finalizeDocumentVersion idempotency (P1 fix)', () =
       [created.document.id],
     );
     expect(events.rows[0]?.count).toBe('1');
+    const sourceEvents = await pg.query<{ source_metadata: Record<string, unknown> }>(
+      `SELECT source_metadata FROM raw_events WHERE id = $1`,
+      [first.eventId],
+    );
+    const metadata = sourceEvents.rows[0]?.source_metadata;
+    expect(metadata).toMatchObject({
+      source_payload_ref: `s3://documents/${created.version.objectKey}`,
+      payload_digest: 'sha256:document-upload-digest',
+      source_snapshot_kind: 'document_upload',
+      source_snapshot_version: 'document-upload-source-snapshot-2026-07',
+      source_snapshot: {
+        action: 'upload',
+        document_id: created.document.id,
+        document_version_id: created.version.id,
+        object_key: created.version.objectKey,
+        byte_size: 1024,
+        content_type: 'application/pdf',
+      },
+    });
+    const evidence = await db
+      .select()
+      .from(reconciliationEvidence)
+      .where(eq(reconciliationEvidence.rawEventId, first.eventId));
+    expect(evidence).toHaveLength(1);
+    expect(evidence[0]?.source).toBe('document');
+    expect(evidence[0]?.externalObjectId).toBe(created.version.id);
+    expect(evidence[0]?.sourcePayloadRef).toBe(`s3://documents/${created.version.objectKey}`);
+    expect(evidence[0]?.payloadDigest).toBe('sha256:document-upload-digest');
+    expect(evidence[0]?.replayState).toBe('full');
+  });
+
+  it('finalize canonicalizes caller-supplied replay ref and digest aliases', async () => {
+    const scope = withTeam(db, TEAM_ID, USER_A).documents;
+    const created = await scope.createDocument({
+      name: 'aliased-upload.txt',
+      folderId: null,
+      filename: 'aliased-upload.txt',
+      contentType: 'text/plain',
+    });
+
+    const finalized = await scope.finalizeDocumentVersion({
+      versionId: created.version.id,
+      byteSize: 64,
+      contentType: 'text/plain',
+      checksumSha256: 'checksum-should-not-win',
+      sourceMetadata: {
+        sourcePayloadRef: '  s3://timeline-test/documents/original-provider-body.txt  ',
+        source_payload_digest: '  sha256:original-provider-body  ',
+        provider_note: 'kept',
+      },
+    });
+
+    const sourceEvents = await pg.query<{ source_metadata: Record<string, unknown> }>(
+      `SELECT source_metadata FROM raw_events WHERE id = $1`,
+      [finalized.eventId],
+    );
+    const metadata = sourceEvents.rows[0]?.source_metadata;
+    expect(metadata).toMatchObject({
+      source_payload_ref: 's3://timeline-test/documents/original-provider-body.txt',
+      payload_digest: 'sha256:original-provider-body',
+      provider_note: 'kept',
+      source_snapshot_kind: 'document_upload',
+    });
+    expect(metadata).not.toHaveProperty('sourcePayloadRef');
+    expect(metadata).not.toHaveProperty('source_payload_digest');
+
+    const evidence = await db
+      .select()
+      .from(reconciliationEvidence)
+      .where(eq(reconciliationEvidence.rawEventId, finalized.eventId));
+    expect(evidence[0]).toMatchObject({
+      sourcePayloadRef: 's3://timeline-test/documents/original-provider-body.txt',
+      payloadDigest: 'sha256:original-provider-body',
+      replayState: 'full',
+    });
   });
 
   it('finalize is idempotent across separate scope instances (replay across requests)', async () => {
@@ -893,7 +970,7 @@ describe('document scope — transactional invariant', () => {
     expect(events.rows[1]?.summary).toContain('third.txt');
   });
 
-  it('previous values are captured in the rename audit row', async () => {
+  it('previous values and replay metadata are captured in the rename audit row', async () => {
     const scope = withTeam(db, TEAM_ID, USER_A).documents;
     const created = await scope.createDocument({
       name: 'before.txt',
@@ -902,9 +979,158 @@ describe('document scope — transactional invariant', () => {
       contentType: 'text/plain',
     });
     await scope.renameDocument({ id: created.document.id, name: 'after.txt' });
-    const events = await pg.query<{ previous: string | null }>(
-      `SELECT source_metadata->'previous'->>'name' AS previous FROM raw_events WHERE source_metadata->>'action' = 'rename'`,
+    const events = await pg.query<{
+      id: string;
+      previous: string | null;
+      source_metadata: Record<string, unknown>;
+    }>(
+      `SELECT id, source_metadata->'previous'->>'name' AS previous, source_metadata FROM raw_events WHERE source_metadata->>'action' = 'rename'`,
     );
+    const event = events.rows[0];
+    expect(event).toBeDefined();
+    if (!event) throw new Error('Expected rename raw event');
     expect(events.rows[0]?.previous).toBe('before.txt');
+    const metadata = event.source_metadata;
+    const sourcePayloadRef = metadata.source_payload_ref;
+    const payloadDigest = metadata.payload_digest;
+    expect(typeof sourcePayloadRef).toBe('string');
+    expect(typeof payloadDigest).toBe('string');
+    if (typeof sourcePayloadRef !== 'string') throw new Error('Expected source payload ref');
+    if (typeof payloadDigest !== 'string') throw new Error('Expected payload digest');
+    expect(sourcePayloadRef).toMatch(
+      new RegExp(`^inline://timeline/document/${created.document.id}/rename/`),
+    );
+    expect(payloadDigest).toMatch(/^sha256:[0-9a-f]{64}$/);
+    expect(metadata).toMatchObject({
+      source_snapshot_kind: 'document_lifecycle_event',
+      source_snapshot_version: 'document-lifecycle-source-snapshot-2026-07',
+      source_snapshot: {
+        provider: 'document',
+        action: 'rename',
+        document_id: created.document.id,
+        document_version_id: null,
+        folder_id: null,
+        visibility: 'team',
+        visibility_user_ids: null,
+        previous: { name: 'before.txt' },
+      },
+    });
+    const snapshot = metadata.source_snapshot;
+    expect(snapshot).toBeTruthy();
+    if (!snapshot || typeof snapshot !== 'object' || Array.isArray(snapshot)) {
+      throw new Error('Expected document lifecycle source snapshot');
+    }
+    const snapshotRecord = snapshot as Record<string, unknown>;
+    expect(snapshotRecord.raw_event_id).toBe(event.id);
+    expect(snapshotRecord.summary).toContain('Renamed before.txt');
+
+    const evidence = await db
+      .select()
+      .from(reconciliationEvidence)
+      .where(eq(reconciliationEvidence.rawEventId, event.id));
+    expect(evidence).toHaveLength(1);
+    expect(evidence[0]?.source).toBe('document');
+    expect(evidence[0]?.provider).toBe('document');
+    expect(evidence[0]?.sourcePayloadRef).toBe(sourcePayloadRef);
+    expect(evidence[0]?.payloadDigest).toBe(payloadDigest);
+    expect(evidence[0]?.replayState).toBe('full');
+  });
+
+  it('folder lifecycle changes write replayable evidence and folder anchors', async () => {
+    const scope = withTeam(db, TEAM_ID, USER_A).documents;
+    const parent = await scope.createFolder({ name: 'Parent', parentFolderId: null });
+    const folder = await scope.createFolder({ name: 'Drafts', parentFolderId: parent.id });
+
+    await scope.renameFolder({ id: folder.id, name: 'Customer drafts' });
+    await scope.moveFolder({ id: folder.id, parentFolderId: null });
+    await scope.softDeleteFolder(folder.id);
+    await scope.restoreFolder(folder.id);
+
+    const events = await pg.query<{
+      id: string;
+      action: string;
+      source_metadata: Record<string, unknown>;
+    }>(
+      `SELECT id, source_metadata->>'action' AS action, source_metadata
+	       FROM raw_events
+	       WHERE source = 'document' AND source_metadata->>'folder_id' = $1
+	       ORDER BY occurred_at, id`,
+      [folder.id],
+    );
+    expect(events.rows.map((row) => row.action).sort()).toEqual([
+      'delete',
+      'move',
+      'rename',
+      'restore',
+    ]);
+
+    for (const event of events.rows) {
+      const metadata = event.source_metadata;
+      expect(metadata.document_id).toBeUndefined();
+      expect(metadata.folder_id).toBe(folder.id);
+      expect(metadata.source_payload_ref).toEqual(
+        expect.stringMatching(
+          new RegExp(`^inline://timeline/folder/${folder.id}/${event.action}/`),
+        ),
+      );
+      expect(metadata.payload_digest).toEqual(expect.stringMatching(/^sha256:[0-9a-f]{64}$/));
+      expect(metadata.source_snapshot_kind).toBe('document_lifecycle_event');
+      expect(metadata.source_snapshot_version).toBe('document-lifecycle-source-snapshot-2026-07');
+      expect(metadata.source_snapshot).toMatchObject({
+        provider: 'document',
+        action: event.action,
+        raw_event_id: event.id,
+        document_id: null,
+        folder_id: folder.id,
+        visibility: 'team',
+      });
+    }
+
+    const evidence = await db
+      .select()
+      .from(reconciliationEvidence)
+      .where(
+        inArray(
+          reconciliationEvidence.rawEventId,
+          events.rows.map((row) => row.id),
+        ),
+      );
+    expect(evidence).toHaveLength(4);
+    const eventMetadataById = new Map(
+      events.rows.map((event) => [event.id, event.source_metadata]),
+    );
+    for (const row of evidence) {
+      const metadata = eventMetadataById.get(row.rawEventId);
+      expect(metadata).toBeDefined();
+      expect(row).toMatchObject({
+        provider: 'document',
+        externalObjectId: folder.id,
+        sourcePayloadRef: metadata?.source_payload_ref,
+        payloadDigest: metadata?.payload_digest,
+        replayState: 'full',
+      });
+    }
+
+    const anchors = await db
+      .select()
+      .from(reconciliationEvidenceAnchors)
+      .where(
+        inArray(
+          reconciliationEvidenceAnchors.evidenceId,
+          evidence.map((row) => row.id),
+        ),
+      );
+    for (const row of evidence) {
+      expect(anchors).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            evidenceId: row.id,
+            anchorType: 'document_folder',
+            anchorValue: folder.id,
+            strength: 'provider',
+          }),
+        ]),
+      );
+    }
   });
 });

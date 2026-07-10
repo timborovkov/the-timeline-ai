@@ -6,7 +6,11 @@ import { getEnv } from '#src/env.js';
 import { createRecallProvider } from '#src/meeting-bots/recall.js';
 
 export * from '#src/meeting-bots/types.js';
-export { createRecallProvider, recallMapStatus } from '#src/meeting-bots/recall.js';
+export {
+  createRecallProvider,
+  listRecallBotsForCanary,
+  recallMapStatus,
+} from '#src/meeting-bots/recall.js';
 export { verifySvixSignature, type SvixVerifyResult } from '#src/meeting-bots/svix.js';
 
 let _cached: MeetingBotProvider | undefined;

@@ -319,6 +319,8 @@ function issueEvent(orgSlug: string, projectSlug: string, issue: SentryIssue): I
       external_url: permalink,
       level: issue.level ?? null,
       status: issue.status ?? null,
+      count: issue.count ?? null,
+      user_count: issue.userCount ?? null,
       metadata: issue.metadata ?? null,
     },
     objectMap: {
@@ -337,6 +339,8 @@ function issueEvent(orgSlug: string, projectSlug: string, issue: SentryIssue): I
         sentry_short_id: issue.shortId ?? null,
         level: issue.level ?? null,
         status: issue.status ?? null,
+        count: issue.count ?? null,
+        user_count: issue.userCount ?? null,
         metadata: issue.metadata ?? null,
       },
     },
@@ -385,6 +389,8 @@ function issueWebhookEvent(input: {
       external_url: permalink,
       level: input.issue.level ?? null,
       status: input.issue.status ?? null,
+      count: input.issue.count ?? null,
+      user_count: input.issue.userCount ?? null,
       metadata: input.issue.metadata ?? null,
     },
     objectMap: {
@@ -404,6 +410,8 @@ function issueWebhookEvent(input: {
         webhook_action: input.action || null,
         level: input.issue.level ?? null,
         status: input.issue.status ?? null,
+        count: input.issue.count ?? null,
+        user_count: input.issue.userCount ?? null,
         metadata: input.issue.metadata ?? null,
       },
     },
@@ -431,6 +439,21 @@ function releaseEvent(
       webhook_action: action,
       new_groups: release.newGroups ?? null,
       external_url: release.url ?? null,
+    },
+    objectMap: {
+      type: 'other',
+      canonicalName: `Sentry release ${release.version}`,
+      displayTitle: `Release ${release.version}`,
+      externalId: `${orgSlug}/${projectSlug}/release/${release.version}`,
+      status: 'done',
+      ...(release.url ? { url: release.url } : {}),
+      aliases: [release.version],
+      metadata: {
+        sentry_record_kind: 'release',
+        sentry_org_slug: orgSlug,
+        sentry_project_slug: projectSlug,
+        release_version: release.version,
+      },
     },
   };
 }

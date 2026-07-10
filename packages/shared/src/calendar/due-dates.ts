@@ -284,6 +284,8 @@ async function ensureDueDateRawEvents(
     await updateCalendarRawEvents(db, {
       scheduledRawEventId: event.scheduledRawEventId,
       startAtRawEventId: event.startAtRawEventId,
+      teamId: target.teamId,
+      calendarEventId: event.id,
       title,
       description: description || null,
       startAt: target.dueAt,

@@ -2,7 +2,13 @@ import * as email from '@timeline/shared/email';
 import { getEnv } from '@timeline/shared/env';
 import { childLogger } from '@timeline/shared/logger';
 import * as rateLimit from '@timeline/shared/rate-limit';
-import { getAttachmentsBucket, getAudioBucket, getS3Client, putObject } from '@timeline/shared/s3';
+import {
+  getAttachmentsBucket,
+  getAudioBucket,
+  getDocumentsBucket,
+  getS3Client,
+  putObject,
+} from '@timeline/shared/s3';
 
 import { db } from '@/lib/db';
 import { requireRedisQueue } from '@/lib/queue';
@@ -176,6 +182,24 @@ export async function POST(req: Request): Promise<Response> {
       }
     : undefined;
 
+  const documentDeps: email.EmailDocumentDeps | undefined =
+    attachmentsReady && env.S3_BUCKET_DOCUMENTS && env.REDIS_URL
+      ? {
+          async upload(input) {
+            await putObject(getS3Client(), {
+              bucket: getDocumentsBucket(),
+              key: input.key,
+              body: input.body,
+              contentType: input.contentType,
+            });
+          },
+          async enqueueExtract(input) {
+            const queue = await requireRedisQueue();
+            await queue.enqueueDocumentExtractJob(input);
+          },
+        }
+      : undefined;
+
   try {
     const deps: email.DispatcherDeps = { db };
     if (env.INBOUND_EMAIL_DOMAIN) deps.inboundDomain = env.INBOUND_EMAIL_DOMAIN;
@@ -186,6 +210,7 @@ export async function POST(req: Request): Promise<Response> {
         .filter((s) => s.length > 0);
     }
     if (attachmentsDeps) deps.attachments = attachmentsDeps;
+    if (documentDeps) deps.documents = documentDeps;
     if (extractDeps) deps.extract = extractDeps;
     if (embedDeps) deps.embed = embedDeps;
     if (suggestionDeps) deps.suggestions = suggestionDeps;

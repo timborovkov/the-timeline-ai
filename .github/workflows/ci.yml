@@ -27,7 +27,7 @@ jobs:
       - name: Enable pnpm via corepack
         run: |
           corepack enable
-          corepack prepare pnpm@9.12.0 --activate
+          corepack prepare pnpm@11.8.0 --activate
 
       - name: Configure pnpm store cache
         uses: actions/cache@v4
@@ -45,6 +45,15 @@ jobs:
           AUTH_SECRET: ci_dummy_secret_at_least_16_chars
           DATABASE_URL: postgres://placeholder@localhost:5432/placeholder
         run: pnpm validate
+
+      - name: Reconciliation evals
+        env:
+          AUTH_SECRET: ci_dummy_secret_at_least_16_chars
+          DATABASE_URL: postgres://placeholder@localhost:5432/placeholder
+        run: pnpm test:reconciliation-eval
+
+      - name: E2E environment contract
+        run: pnpm test:e2e-env
 
       - name: Dist import smoke test
         env:

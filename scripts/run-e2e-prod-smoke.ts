@@ -1,5 +1,7 @@
 import { spawn } from 'node:child_process';
 
+import { buildE2eEnv } from './e2e-env.js';
+
 function run(command: string, args: string[], env: NodeJS.ProcessEnv): Promise<void> {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, { env, stdio: 'inherit' });
@@ -11,11 +13,7 @@ function run(command: string, args: string[], env: NodeJS.ProcessEnv): Promise<v
   });
 }
 
-const env = { ...process.env };
-delete env.NO_COLOR;
-env.DATABASE_URL ??= 'postgres://timeline:timeline_dev@localhost:5432/timeline';
-env.AUTH_SECRET ??= 'e2e-auth-secret-at-least-sixteen-characters';
-env.NODE_OPTIONS = [env.NODE_OPTIONS, '--conditions=development'].filter(Boolean).join(' ');
+const env = buildE2eEnv();
 
 await run('pnpm', ['--filter', '@timeline/web', 'build'], env);
 

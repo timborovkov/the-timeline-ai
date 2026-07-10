@@ -141,6 +141,13 @@ describe('TaskBoard', () => {
     expect(screen.getByText('P2')).toBeTruthy();
   });
 
+  it('does not render legacy agentSuggested badges on task rows', () => {
+    renderBoard(null, [task({ status: 'suggested', agentSuggested: true })]);
+
+    expect(screen.getByRole('link', { name: 'Send proposal' })).toBeTruthy();
+    expect(screen.queryByText('Suggested')).toBeNull();
+  });
+
   it('prefers source-tracked integration display titles over provider identity canonical names', () => {
     render(
       <TaskBoard

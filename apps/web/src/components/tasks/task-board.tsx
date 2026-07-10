@@ -961,9 +961,6 @@ function TaskListRow({
         </Link>
         <div className="mt-1 font-mono text-[10px] uppercase tracking-[0.1em] text-fg-dim">
           Task
-          {row.agentSuggested && row.status === 'suggested' ? (
-            <span className="text-signal"> · Suggested</span>
-          ) : null}
         </div>
         {saving || error ? (
           <div className="mt-1 font-mono text-[10px] uppercase tracking-[0.1em]">
@@ -1330,9 +1327,6 @@ function TaskCard({
       </Link>
       <div className="mt-1.5 flex flex-wrap items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.1em] text-fg-dim">
         <span>Task</span>
-        {row.agentSuggested && row.status === 'suggested' ? (
-          <span className="text-signal">Suggested</span>
-        ) : null}
       </div>
       <div className="mt-2 grid grid-cols-3 gap-px overflow-hidden rounded-sm border border-border bg-border font-mono text-[10px] uppercase tracking-[0.08em]">
         <CardMeta value={memberLabel(row.assigneeUserId, members)} missing={!row.assigneeUserId} />

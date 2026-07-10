@@ -289,6 +289,13 @@ function issueToEvent(node: LinearIssueNode): IntegrationEvent {
       priority,
       url: node.url,
       aliases: [node.identifier],
+      metadata: {
+        linear_record_kind: 'issue',
+        linear_identifier: node.identifier,
+        linear_team_id: node.team.id,
+        linear_team_key: node.team.key,
+        linear_project_id: node.project?.id ?? null,
+      },
     },
   };
 }
@@ -349,6 +356,12 @@ function projectToEvent(node: LinearProjectNode): IntegrationEvent {
       status:
         node.state === 'completed' ? 'done' : node.state === 'canceled' ? 'cancelled' : 'open',
       url: node.url,
+      metadata: {
+        linear_record_kind: 'project',
+        linear_state: node.state,
+        linear_start_date: node.startDate ?? null,
+        linear_target_date: node.targetDate ?? null,
+      },
     },
   };
 }

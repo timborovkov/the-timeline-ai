@@ -3,7 +3,7 @@ import { calendarEvents, rawEvents } from '@timeline/db';
 import { llm, qdrant, type queue } from '@timeline/shared';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { applyDbMigrations } from '#src/test/pglite.js';
 import {
@@ -37,6 +37,10 @@ describe('embed worker calendar plan', () => {
     await applyDbMigrations(pg);
     await seed(pg);
     db = drizzle(pg);
+  });
+
+  afterEach(async () => {
+    await pg.close();
   });
 
   it('anchors calendar_event embeddings to the occurrence raw event', async () => {
@@ -208,6 +212,97 @@ describe('processEmbedJobForTests', () => {
     expect(row?.sourceMetadata).toMatchObject({ embedding_model: 'test-embed-model' });
     expect(row?.sourceMetadata).toHaveProperty('embedded_at');
     expect(row?.sourceMetadata).toMatchObject({ embedding_chunks: 1 });
+  });
+
+  it('sends rendered email and integration context to the embedding provider', async () => {
+    const emailRawEventId = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeee1';
+    const integrationRawEventId = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeee2';
+    await db.insert(rawEvents).values([
+      {
+        id: emailRawEventId,
+        teamId: TEAM_ID,
+        authorUserId: USER_ID,
+        source: 'email',
+        contentText: 'The customer approved the launch checklist.',
+        occurredAt: new Date('2026-05-27T12:00:00Z'),
+        visibility: 'team',
+        sourceMetadata: {
+          subject: 'Fwd: Launch checklist',
+          from: { email: 'ops@example.net', name: 'Ops Vendor' },
+          forwarded_from: { from: { email: 'ada@acme.example', name: 'Ada Lovelace' } },
+          attachments: [{ filename: 'rollout-plan.pdf' }],
+        },
+      },
+      {
+        id: integrationRawEventId,
+        teamId: TEAM_ID,
+        authorUserId: USER_ID,
+        source: 'integration',
+        contentText: 'Monday item Acme rollout moved to Shipped.',
+        occurredAt: new Date('2026-05-27T12:05:00Z'),
+        visibility: 'team',
+        sourceMetadata: {
+          provider: 'monday',
+          event_type: 'item.updated',
+          external_object_id: 'item-456',
+          external_event_id: 'update-99',
+          actor: { externalId: 'user-1' },
+          external_url: 'https://monday.example/boards/board-1/pulses/item-456',
+          monday_board_name: 'Customer Projects',
+          monday_item_name: 'Acme rollout',
+        },
+      },
+    ]);
+    const embed = vi.fn<(input: { text: string }) => Promise<{ vector: number[]; model: string }>>(
+      () =>
+        Promise.resolve({
+          vector: [0.1, 0.2, 0.3, 0.4],
+          model: 'test-embed-model',
+        }),
+    );
+    const upsertVector = vi.fn().mockResolvedValue(undefined);
+    const deletePointsForSourceFromChunk = vi
+      .fn<DeletePointsForSourceFromChunk>()
+      .mockResolvedValue(undefined);
+    const io = {
+      getEnv: () => ({ OPENROUTER_API_KEY: 'test-key', QDRANT_URL: 'http://qdrant.test' }) as never,
+      embed,
+      getQdrantClient: vi.fn(
+        () =>
+          ({
+            deletePointsForSource: vi.fn(),
+            deletePointsForSourceFromChunk,
+            upsertVector,
+          }) as never,
+      ),
+    };
+
+    await processEmbedJobForTests(
+      { db: db as never },
+      { scope: 'raw_event', teamId: TEAM_ID, rawEventId: emailRawEventId },
+      io,
+    );
+    await processEmbedJobForTests(
+      { db: db as never },
+      { scope: 'raw_event', teamId: TEAM_ID, rawEventId: integrationRawEventId },
+      io,
+    );
+
+    const texts = embed.mock.calls.map((call) => call[0].text);
+    expect(texts[0]).toContain(
+      'Source context: Email | subject Fwd: Launch checklist | from Ops Vendor <ops@example.net>',
+    );
+    expect(texts[0]).toContain('forwarded from Ada Lovelace <ada@acme.example>');
+    expect(texts[0]).toContain('attachments rollout-plan.pdf');
+    expect(texts[1]).toContain(
+      'Source context: Monday.com | event item.updated | external object item-456',
+    );
+    expect(texts[1]).toContain('external event update-99');
+    expect(texts[1]).toContain('url https://monday.example/boards/board-1/pulses/item-456');
+    expect(texts[1]).toContain('Monday board Customer Projects');
+    expect(texts[1]).toContain('Monday item Acme rollout');
+    expect(upsertVector).toHaveBeenCalledTimes(2);
+    expect(deletePointsForSourceFromChunk).toHaveBeenCalledTimes(2);
   });
 
   it('splits oversized source text into bounded continuation jobs', async () => {

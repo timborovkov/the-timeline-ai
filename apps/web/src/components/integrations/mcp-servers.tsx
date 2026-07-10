@@ -94,7 +94,38 @@ async function testCall(
     body: JSON.stringify({ tool: namespaced, args }),
   });
   const text = await res.text();
+  const parsed = parseToolResponse(text);
+  if (parsed?.error === 'needs_reauth') {
+    const serverName =
+      typeof parsed.mcp_server_name === 'string' && parsed.mcp_server_name.trim()
+        ? parsed.mcp_server_name
+        : server.name;
+    await dialog.alert({
+      title: 'Reconnect required',
+      description: `${serverName} needs to be reconnected before this tool can run.`,
+    });
+    return;
+  }
+  if (!res.ok || parsed?.ok === false) {
+    const error = typeof parsed?.error === 'string' && parsed.error.trim() ? parsed.error : text;
+    await dialog.alert({
+      title: 'Tool call failed',
+      description: error,
+    });
+    return;
+  }
   await dialog.alert({ title: 'Tool response', description: text });
+}
+
+function parseToolResponse(text: string): Record<string, unknown> | null {
+  try {
+    const parsed = JSON.parse(text) as unknown;
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : null;
+  } catch {
+    return null;
+  }
 }
 
 /**

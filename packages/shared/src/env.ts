@@ -75,6 +75,7 @@ const baseSchema = z.object({
   // OpenRouter (Phase 3+)
   OPENROUTER_API_KEY: z.string().optional(),
   OPENROUTER_BASE_URL: z.url().optional(),
+  E2E_DETERMINISTIC_EMBEDDINGS: z.preprocess(booleanString, z.boolean().default(false)),
 
   // LangSmith LLM observability (optional)
   LANGSMITH_TRACING: z.preprocess(booleanString, z.boolean().default(false)),

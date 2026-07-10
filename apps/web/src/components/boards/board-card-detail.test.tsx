@@ -218,7 +218,7 @@ describe('BoardCardDetail', () => {
     expect(screen.getByRole('link', { name: /Discussed pilot materials/ })).toBeTruthy();
   });
 
-  it('links source evidence to the focused timeline event', () => {
+  it('does not link legacy source events without hydrated evidence', () => {
     const sourceEventId = '11111111-1111-4111-8111-111111111111';
     const item = boardItem({
       id: 'item-1',
@@ -255,7 +255,9 @@ describe('BoardCardDetail', () => {
       }),
     );
 
-    expect(html).toContain(`/app/timeline?event=${sourceEventId}#ev-${sourceEventId}`);
+    expect(html).not.toContain(`/app/timeline?event=${sourceEventId}#ev-${sourceEventId}`);
+    expect(html).not.toContain('Source event');
+    expect(html).toContain('No source evidence linked to board changes yet.');
     expect(html).toContain('Lane');
     expect(html).toContain('Doing');
   });

@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "runKind": "reconciliation_live_eval",
+  "modelId": "reconciliation-live-fixture",
+  "promptVersion": "reconciliation-live-matrix-2026-06",
+  "startedAt": "2026-07-05T00:00:00.000Z",
+  "completedAt": "2026-07-05T00:00:02.000Z",
+  "caseCount": 1,
+  "passedCount": 1,
+  "failedCount": 0,
+  "judgeAverageScore": 1,
+  "judgePassedCount": 1,
+  "judgeFailedCount": 0,
+  "scenarioFamilies": ["customer_project"],
+  "ingestionSurfaces": ["email", "monday", "sentry"],
+  "cases": [
+    {
+      "caseName": "customer-project-email-monday-sentry",
+      "artifactPath": "customer-project-email-monday-sentry.json",
+      "scenarioFamily": "customer_project",
+      "ingestionSurfaces": ["email", "monday", "sentry"],
+      "passed": true,
+      "failureCount": 0,
+      "failures": [],
+      "judgeScore": 1,
+      "judgePassed": true,
+      "judgeFailureCodes": [],
+      "packetFingerprint": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+      "promptFingerprint": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+    }
+  ]
+}

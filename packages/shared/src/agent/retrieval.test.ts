@@ -9,6 +9,9 @@ const EVENT_ID = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 const NOTE_ID = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
 const BOARD_ID = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
 const BOARD_ITEM_ID = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
+const FACT_ID = '99999999-9999-4999-8999-999999999999';
+const RELATIONSHIP_ID = '88888888-8888-4888-8888-888888888888';
+const CHANGE_ID = '77777777-7777-4777-8777-777777777777';
 
 function makeScope() {
   return {
@@ -30,6 +33,32 @@ function makeScope() {
         status: 'active',
         stage: null,
         dueAt: null,
+        summary: {
+          summary: {
+            overview: 'Otto is part of the AuditAI pilot plan.',
+            overviewSourceRefs: [{ kind: 'timeline_event', id: EVENT_ID }],
+            currentState: [
+              {
+                label: 'Pilot',
+                text: 'Otto is connected to AuditAI pilot planning.',
+                sourceRefs: [
+                  { kind: 'timeline_event', id: EVENT_ID },
+                  { kind: 'field', id: 'status' },
+                ],
+              },
+            ],
+            openQuestions: [],
+            conflicts: [],
+          },
+          sourceRefs: [
+            { kind: 'timeline_event', id: EVENT_ID },
+            { kind: 'fact', id: FACT_ID },
+            { kind: 'relationship', id: RELATIONSHIP_ID },
+            { kind: 'object_change', id: CHANGE_ID },
+            { kind: 'field', id: 'canonicalName' },
+          ],
+          generatedAt: new Date('2026-06-14T10:00:00.000Z'),
+        },
         openTasks: [
           {
             id: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
@@ -113,6 +142,23 @@ describe('retrieveWorkspaceContext', () => {
       id: OBJECT_ID,
       citation: `[ent:${OBJECT_ID}]`,
       name: 'Otto Silventola',
+      summary: {
+        overview: 'Otto is part of the AuditAI pilot plan.',
+        current_state: [
+          {
+            label: 'Pilot',
+            text: 'Otto is connected to AuditAI pilot planning.',
+            citations: [`[ev:${EVENT_ID}]`],
+          },
+        ],
+        source_citations: [
+          `[ev:${EVENT_ID}]`,
+          `[fact:${FACT_ID}]`,
+          `[rel:${RELATIONSHIP_ID}]`,
+          `[chg:${CHANGE_ID}]`,
+        ],
+        updated_at: '2026-06-14T10:00:00.000Z',
+      },
     });
     expect(result.notes[0]).toMatchObject({
       citation: `[note:${NOTE_ID}]`,
@@ -130,6 +176,11 @@ describe('retrieveWorkspaceContext', () => {
     });
     expect(result.refs).toContain(`[ent:${OBJECT_ID}]`);
     expect(result.refs).toContain(`[ev:${EVENT_ID}]`);
+    expect(result.refs).toContain(`[fact:${FACT_ID}]`);
+    expect(result.refs).toContain(`[rel:${RELATIONSHIP_ID}]`);
+    expect(result.refs).toContain(`[chg:${CHANGE_ID}]`);
+    expect(result.refs).not.toContain('[field:canonicalName]');
+    expect(result.refs).not.toContain('[field:status]');
   });
 
   it('classifies product guide questions and returns route refs', async () => {

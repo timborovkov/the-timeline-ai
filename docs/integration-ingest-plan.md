@@ -6,7 +6,9 @@ Timeline should support the core places where work happens with real first-party
 ingestion, not only live MCP tool access. A proper integration connects an
 account, lets a team select resources, backfills durable history, keeps a cursor
 or webhook subscription fresh, writes cited `source='integration'` raw events,
-and maps provider objects into Timeline objects where useful.
+and maps provider objects into reconciliation evidence, artifact clusters, and
+workspace objects only when a teammate or later reconciliation flow promotes
+durable memory.
 
 MCP remains useful for long-tail live queries. It is not the product bar for
 systems that teams rely on every day.
@@ -49,8 +51,8 @@ Every first-party integration must ship the same baseline:
 | Resource selection | Team-safe resource picker using provider connections and team resource shares. |
 | Backfill | Bounded historical import with provider cursors and dedupe keys. |
 | Incremental sync | Polling, webhooks, or both; failures land in job recovery and audit logs. |
-| Event model | Provider activity normalized into immutable raw events with cited external URLs; URL text becomes non-authoritative link artifact evidence and duplicate sync replays repair missing link evidence. |
-| Object mapping | External work items map into Timeline objects/tasks/deals/incidents when stable enough. |
+| Event model | Provider activity normalized into immutable raw events with cited external URLs and source payload refs; URL text becomes non-authoritative link artifact evidence and duplicate sync replays repair missing link evidence. Adapters can provide external snapshot refs; otherwise the writer stores a compact inline normalized snapshot. |
+| Object mapping | External work items produce provider-backed artifact evidence, source refs, and display-title metadata first. Stable workspace objects are linked or promoted deliberately through approval/direct-write policy rather than being upserted just because a provider item exists. |
 | Visibility | Team isolation through `withTeam`; no provider resource exposed unless shared. |
 | Replay | Safe resync from zero without duplicating raw events. |
 | Agent use | `search_integration_events` and object retrieval expose synced evidence with citations. |
@@ -128,7 +130,7 @@ integration-worker foundation:
 | --- | --- |
 | Monday.com | Boards, generic records, subitems, updates, columns, status changes, owners, and WorkDocs. |
 | Slack | Workspace-wide channel/thread/file/reaction ingestion beyond the current conversational capture model. |
-| Sentry | Issue updates, resolved issues, and releases, mapped into cited events and incident objects. |
+| Sentry | Issue updates, resolved issues, and releases, mapped into cited events and incident evidence. |
 
 Exit criteria for every new wave remains the same: each provider can backfill
 selected resources, run incremental sync, recover cleanly when credentials need
@@ -196,7 +198,7 @@ Use provider-native objects as evidence, not as Timeline's source of truth:
 | Engineering | Task/incident/release objects, code-review and deploy events. |
 | Observability | Incident objects, alert/recovery events, service/topic entities. |
 | CRM | Company/person/deal objects, stage changes, notes and activities. |
-| Support | Company/person/ticket objects, pain themes, SLA and assignment events. |
+| Support | Company/person/task evidence, pain themes, SLA and assignment events. |
 | Communication | Person/topic/project evidence, decisions, attachments, thread summaries. |
 
 Raw provider data remains immutable once written. Derived objects can be
@@ -264,7 +266,8 @@ not in the event-local webhook proposal path.
 8. Add webhook route only when provider webhooks are reliable and signed.
 9. Persist accepted webhook deliveries before asynchronous processing.
 10. Normalize events through `writeIntegrationEvents`.
-11. Add object mapping hints and display-title metadata.
+11. Add object/evidence mapping hints, display-title metadata, artifact anchors,
+    and source refs.
 12. Parse provider rate-limit metadata into provider budget pauses.
 13. Add provider contract tests and targeted worker/API tests.
 14. Add or update a live canary probe when it can run without exposing secrets
@@ -294,6 +297,6 @@ visible: `status: 'mcp_available'` and `ingestStatus: 'coming_soon'`.
 1. Whether Jira and Confluence should share one Atlassian OAuth connection while
    appearing as separate catalog/provider resources.
 2. Whether support systems should create Timeline task objects by default or
-   only link evidence to company/person/ticket objects.
+   only link evidence to company/person/task/ticket artifacts.
 3. How much historical backfill is safe by default for chat-heavy systems like
    Slack and Discord.

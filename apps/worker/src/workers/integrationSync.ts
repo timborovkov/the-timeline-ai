@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import { type Db, documents as documentsTable, getDbClient } from '@timeline/db';
 import {
   childLogger,
@@ -8,6 +10,10 @@ import {
   queue,
   withTeam,
 } from '@timeline/shared';
+import {
+  payloadDigestFromMetadata,
+  sourcePayloadRefFromMetadata,
+} from '@timeline/shared/reconciliation';
 import { Worker, type Job } from 'bullmq';
 import { and, eq, sql } from 'drizzle-orm';
 
@@ -24,9 +30,159 @@ import { captureWorkerException, captureWorkerJobFailure } from '#src/monitoring
 
 const log = childLogger('worker:integration-sync');
 type NativeSyncProvider = integrationsLib.NativeProviderId;
+const HARVESTED_DOCUMENT_SOURCE_SNAPSHOT_VERSION = 'integration-document-source-snapshot-2026-07';
 
 interface IntegrationSyncDeps {
   db: Db;
+}
+
+export interface IntegrationDocumentHarvestIO {
+  getDocumentsBucket: () => string;
+  putDocumentObject: (input: {
+    bucket: string;
+    key: string;
+    body: Buffer;
+    contentType: string;
+  }) => Promise<void>;
+  enqueueDocumentExtractJob: (data: queue.DocumentExtractJobData) => Promise<void>;
+}
+
+const defaultDocumentHarvestIO: IntegrationDocumentHarvestIO = {
+  getDocumentsBucket,
+  async putDocumentObject(input) {
+    await putObject(getS3Client(), input);
+  },
+  enqueueDocumentExtractJob: queue.enqueueDocumentExtractJob,
+};
+
+export async function harvestIntegrationDocument(input: {
+  db: Db;
+  integration: Pick<integrationsLib.IntegrationRow, 'id' | 'teamId' | 'provider'>;
+  harvestUserId: string;
+  document: integrationsLib.HarvestDocumentInput;
+  io?: IntegrationDocumentHarvestIO;
+}): Promise<{ documentId: string; versionId: string }> {
+  const io = input.io ?? defaultDocumentHarvestIO;
+  const scope = withTeam(input.db, input.integration.teamId, input.harvestUserId);
+  const documentMetadata = {
+    ...(input.document.metadata ?? {}),
+    integration_id: input.integration.id,
+    integration_provider: input.integration.provider,
+    integration_external_id: input.document.externalId,
+  };
+  const existing = await input.db
+    .select()
+    .from(documentsTable)
+    .where(
+      and(
+        eq(documentsTable.teamId, input.integration.teamId),
+        sql`(${documentsTable.metadata} ->> 'integration_external_id') = ${input.document.externalId}`,
+        sql`(${documentsTable.metadata} ->> 'integration_provider') = ${input.integration.provider}`,
+      ),
+    )
+    .limit(1);
+  let documentId: string;
+  let versionId: string;
+  let objectKey: string;
+  let contentType: string;
+  if (existing.length > 0 && existing[0]) {
+    const doc = existing[0];
+    const version = await scope.documents.addDocumentVersion({
+      documentId: doc.id,
+      filename: input.document.filename,
+      contentType: input.document.contentType,
+    });
+    documentId = doc.id;
+    versionId = version.id;
+    objectKey = version.objectKey;
+    contentType = version.contentType ?? input.document.contentType;
+  } else {
+    const created = await scope.documents.createDocument({
+      name: input.document.filename,
+      filename: input.document.filename,
+      contentType: input.document.contentType,
+      metadata: documentMetadata,
+    });
+    documentId = created.document.id;
+    versionId = created.version.id;
+    objectKey = created.version.objectKey;
+    contentType = created.version.contentType ?? input.document.contentType;
+  }
+  const bucket = io.getDocumentsBucket();
+  const checksumSha256 = createHash('sha256').update(input.document.body).digest('hex');
+  await io.putDocumentObject({
+    bucket,
+    key: objectKey,
+    body: input.document.body,
+    contentType,
+  });
+  await scope.documents.finalizeDocumentVersion({
+    versionId,
+    contentType,
+    byteSize: input.document.body.byteLength,
+    checksumSha256,
+    sourceMetadata: harvestedDocumentSourceMetadata({
+      bucket,
+      checksumSha256,
+      contentType,
+      document: input.document,
+      documentMetadata,
+      integration: input.integration,
+      objectKey,
+    }),
+  });
+  await io.enqueueDocumentExtractJob({
+    documentVersionId: versionId,
+    teamId: input.integration.teamId,
+  });
+  return { documentId, versionId };
+}
+
+function harvestedDocumentSourceMetadata(input: {
+  bucket: string;
+  checksumSha256: string;
+  contentType: string;
+  document: integrationsLib.HarvestDocumentInput;
+  documentMetadata: Record<string, unknown>;
+  integration: Pick<integrationsLib.IntegrationRow, 'id' | 'provider'>;
+  objectKey: string;
+}): Record<string, unknown> {
+  const payloadRef =
+    sourcePayloadRefFromMetadata(input.document.metadata) ??
+    `s3://${input.bucket}/${input.objectKey}`;
+  const digest =
+    payloadDigestFromMetadata(input.document.metadata) ?? `sha256:${input.checksumSha256}`;
+  return {
+    ...withoutReplayMetadataAliases(input.documentMetadata),
+    source_payload_ref: payloadRef,
+    payload_digest: digest,
+    source_snapshot_kind: 'integration_harvest_document',
+    source_snapshot_version: HARVESTED_DOCUMENT_SOURCE_SNAPSHOT_VERSION,
+    source_snapshot: {
+      provider: input.integration.provider,
+      integrationId: input.integration.id,
+      externalObjectId: input.document.externalId,
+      filename: input.document.filename,
+      contentType: input.contentType,
+      byteSize: input.document.body.byteLength,
+      checksumSha256: input.checksumSha256,
+      objectKey: input.objectKey,
+      metadata: input.document.metadata ?? {},
+    },
+  };
+}
+
+function withoutReplayMetadataAliases(metadata: Record<string, unknown>): Record<string, unknown> {
+  const result = { ...metadata };
+  delete result.source_payload_ref;
+  delete result.sourcePayloadRef;
+  delete result.payload_ref;
+  delete result.raw_payload_ref;
+  delete result.source_snapshot_ref;
+  delete result.payload_digest;
+  delete result.source_payload_digest;
+  delete result.raw_payload_digest;
+  return result;
 }
 
 function isNativeSyncProvider(
@@ -64,6 +220,10 @@ function summarizeSyncPartialFailures(failures: integrationsLib.SyncPartialFailu
     })
     .join('; ')
     .slice(0, 500);
+}
+
+function isAuthOrAccessPartialFailure(failure: integrationsLib.SyncPartialFailure): boolean {
+  return isAuthOrAccessFailure(summarizeSyncPartialFailures([failure]));
 }
 
 function providerRateLimitPause(err: unknown): {
@@ -374,72 +534,12 @@ export async function runOneIntegration(
       ...(harvestEnabled && harvestableUserId
         ? {
             async harvestDocument(input) {
-              const scope = withTeam(db, integration.teamId, harvestableUserId);
-              // Idempotency: look up an existing document via the
-              // `metadata->>'external_id'` jsonb path keyed on this
-              // provider. If we've harvested this Drive file before, add a
-              // new version; otherwise create a fresh document.
-              const existing = await db
-                .select()
-                .from(documentsTable)
-                .where(
-                  and(
-                    eq(documentsTable.teamId, integration.teamId),
-                    sql`(${documentsTable.metadata} ->> 'integration_external_id') = ${input.externalId}`,
-                    sql`(${documentsTable.metadata} ->> 'integration_provider') = ${integration.provider}`,
-                  ),
-                )
-                .limit(1);
-              let documentId: string;
-              let versionId: string;
-              let objectKey: string;
-              let contentType: string;
-              if (existing.length > 0 && existing[0]) {
-                const doc = existing[0];
-                const version = await scope.documents.addDocumentVersion({
-                  documentId: doc.id,
-                  filename: input.filename,
-                  contentType: input.contentType,
-                });
-                documentId = doc.id;
-                versionId = version.id;
-                objectKey = version.objectKey;
-                contentType = version.contentType ?? input.contentType;
-              } else {
-                const created = await scope.documents.createDocument({
-                  name: input.filename,
-                  filename: input.filename,
-                  contentType: input.contentType,
-                  metadata: {
-                    ...(input.metadata ?? {}),
-                    integration_id: integration.id,
-                    integration_provider: integration.provider,
-                    integration_external_id: input.externalId,
-                  },
-                });
-                documentId = created.document.id;
-                versionId = created.version.id;
-                objectKey = created.version.objectKey;
-                contentType = created.version.contentType ?? input.contentType;
-              }
-              // Upload bytes to S3.
-              await putObject(getS3Client(), {
-                bucket: getDocumentsBucket(),
-                key: objectKey,
-                body: input.body,
-                contentType,
+              return harvestIntegrationDocument({
+                db,
+                integration,
+                harvestUserId: harvestableUserId,
+                document: input,
               });
-              // Finalize the version and enqueue extraction.
-              await scope.documents.finalizeDocumentVersion({
-                versionId,
-                contentType,
-                byteSize: input.body.byteLength,
-              });
-              await queue.enqueueDocumentExtractJob({
-                documentVersionId: versionId,
-                teamId: integration.teamId,
-              });
-              return { documentId, versionId };
             },
           }
         : {}),
@@ -479,26 +579,37 @@ export async function runOneIntegration(
         partialFailures.length > 0 ? summarizeSyncPartialFailures(partialFailures) : null;
       await integrationsLib.adminMarkSynced(db, integrationId);
       if (partialSummary) {
+        const authPartialFailures = partialFailures.filter(isAuthOrAccessPartialFailure);
+        const transientPartialFailures = partialFailures.filter(
+          (failure) => !isAuthOrAccessPartialFailure(failure),
+        );
+        const authSummary =
+          authPartialFailures.length > 0 ? summarizeSyncPartialFailures(authPartialFailures) : null;
+        const transientSummary =
+          transientPartialFailures.length > 0
+            ? summarizeSyncPartialFailures(transientPartialFailures)
+            : null;
         await integrationsLib.adminRecordError(db, integrationId, partialSummary);
-        if (isAuthOrAccessFailure(partialSummary)) {
+        if (authSummary) {
           await integrationsLib.adminRecordConnectionAttention(db, integration.teamId, {
             providerConnectionId: integration.providerConnectionId,
             integrationId,
             category: 'needs_reconnect',
-            summary: partialSummary,
+            summary: authSummary,
           });
-        } else {
+        }
+        if (transientSummary) {
           const transient = await integrationsLib.adminRecordTransientSyncFailure(
             db,
             integrationId,
-            partialSummary,
+            transientSummary,
           );
           if (transient.shouldCreateAttention) {
             await integrationsLib.adminRecordConnectionAttention(db, integration.teamId, {
               providerConnectionId: integration.providerConnectionId,
               integrationId,
               category: 'sync_error',
-              summary: partialSummary,
+              summary: transientSummary,
             });
           }
         }

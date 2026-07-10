@@ -7,13 +7,15 @@
  * scope. That's the chokepoint that keeps a typo in a caller from leaking
  * across teams.
  */
+import { createHash, randomUUID } from 'node:crypto';
+
 import {
   type Db,
-  artifactClusterMembers,
-  artifactClusters,
   agentSuggestionEvidence,
   agentSuggestionItems,
   agentSuggestions,
+  artifactClusters,
+  artifactEvidenceAssociations,
   boardLanes,
   boardItemChanges,
   boardItems,
@@ -38,6 +40,9 @@ import {
   objectViews,
   rawEvents,
   relationshipKind,
+  reconciliationEvidence,
+  reconciliationOutputs,
+  reconciliationRuns,
 } from '@timeline/db';
 import {
   type SQL,
@@ -84,6 +89,10 @@ import { decodeCursor, pageWindow } from '#src/pagination.js';
 import { getQdrantClient } from '#src/qdrant/client.js';
 import { buildPointId } from '#src/qdrant/point-id.js';
 import * as embedQueue from '#src/queue/queues.js';
+import { AUTHORITY_POLICY_VERSION } from '#src/reconciliation/authority.js';
+import { buildOutputDedupeKey, reconciliationDedupeKey } from '#src/reconciliation/index.js';
+import { normalizeRawEventsToEvidence } from '#src/reconciliation/normalization.js';
+import { sourcePayloadRefFromMetadata } from '#src/reconciliation/source-snapshot.js';
 import { likeMentionCondition, likePattern, textMentionsAnyValue } from '#src/sql-like.js';
 import { rawEventVisibleToUser } from '#src/visibility.js';
 
@@ -96,12 +105,65 @@ export type { ObjectSummarySourceRef } from '#src/objects/summaries.js';
 
 const embedLog = childLogger('objects:embed');
 const summaryRefreshLog = childLogger('objects:summary-refresh');
+const reconciliationLog = childLogger('objects:reconciliation');
 const OBJECT_QUERY_LIMIT_MAX = 50_000;
 const NOTIFICATION_QUERY_LIMIT_MAX = 50_000;
+const OBJECT_DIRECT_WRITE_RUN_VERSION = 'object-direct-write-2026-06';
+const OBJECT_DIRECT_WRITE_PLANNER_VERSION = 'object-direct-write-planner-2026-06';
+const SYSTEM_DIRECT_WRITE_SOURCE_SNAPSHOT_VERSION = 'system-direct-write-source-snapshot-2026-06';
 const EMAIL_IDENTITY_RE = /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i;
 const PHONE_IDENTITY_RE = /^(?:\+[1-9]\d{6,14}|\d{7,15})$/;
 type DbTx = Parameters<Parameters<Db['transaction']>[0]>[0];
 type DbOrTx = Db | DbTx;
+type DirectWriteVisibility = 'private' | 'team' | 'specific_users';
+
+interface DirectWriteSourceContext {
+  sourceRefs: {
+    source: string;
+    rawEventId: string;
+    sourcePayloadRef?: string;
+  }[];
+  sourcePayloadRefs: string[];
+  visibility: DirectWriteVisibility;
+  visibilityOwnerUserId: string | null;
+  visibilityUserIds: string[] | null;
+}
+
+function directWriteSourceEnvelope(sourceContext: DirectWriteSourceContext) {
+  return {
+    sourceRefs: sourceContext.sourceRefs,
+    sourcePayloadRefs: sourceContext.sourcePayloadRefs,
+    visibility: sourceContext.visibility,
+    visibilityOwnerUserId: sourceContext.visibilityOwnerUserId,
+    visibilityUserIds: sourceContext.visibilityUserIds,
+    visibilityFloor: sourceContext.visibility,
+    visibilityFloorOwnerUserId: sourceContext.visibilityOwnerUserId,
+    visibilityFloorUserIds: sourceContext.visibilityUserIds,
+  };
+}
+
+function systemDirectWriteSourceMetadata(input: {
+  rawEventId: string;
+  kind: string;
+  metadata: Record<string, unknown>;
+  snapshot: Record<string, unknown>;
+}): Record<string, unknown> {
+  const sourceSnapshot = {
+    event_kind: input.kind,
+    raw_event_id: input.rawEventId,
+    ...input.snapshot,
+  };
+  const digest = `sha256:${createHash('sha256').update(stableStringify(sourceSnapshot)).digest('hex')}`;
+  return {
+    ...input.metadata,
+    kind: input.kind,
+    source_payload_ref: `inline://timeline/system/${input.kind}/${input.rawEventId}`,
+    payload_digest: digest,
+    source_snapshot_kind: 'system_direct_write_event',
+    source_snapshot_version: SYSTEM_DIRECT_WRITE_SOURCE_SNAPSHOT_VERSION,
+    source_snapshot: sourceSnapshot,
+  };
+}
 
 async function reconcileObjectAuditLinks(
   tx: DbOrTx,
@@ -127,6 +189,591 @@ function fireAndForgetEmbed(fn: () => Promise<void>, context: Record<string, unk
   void fn().catch((err: unknown) => {
     embedLog.error({ err, ...context }, 'failed to enqueue embed job');
   });
+}
+
+async function normalizeSystemRawEventEvidence(input: {
+  db: DbOrTx;
+  teamId: string;
+  rawEventId: string | null | undefined;
+}): Promise<void> {
+  if (!input.rawEventId) return;
+  try {
+    await normalizeRawEventsToEvidence({
+      db: input.db,
+      teamId: input.teamId,
+      rawEventIds: [input.rawEventId],
+    });
+  } catch (err) {
+    reconciliationLog.warn(
+      { err, teamId: input.teamId, rawEventId: input.rawEventId },
+      'system raw event reconciliation evidence normalization failed',
+    );
+  }
+}
+
+export async function buildObjectDirectWriteSourceContext(input: {
+  db: DbOrTx;
+  teamId: string;
+  sourceRawEventId: string;
+}): Promise<DirectWriteSourceContext> {
+  const [raw] = await input.db
+    .select({
+      source: rawEvents.source,
+      sourceMetadata: rawEvents.sourceMetadata,
+      visibility: rawEvents.visibility,
+      visibilityOwnerUserId: rawEvents.visibilityOwnerUserId,
+      visibilityUserIds: rawEvents.visibilityUserIds,
+    })
+    .from(rawEvents)
+    .where(and(eq(rawEvents.teamId, input.teamId), eq(rawEvents.id, input.sourceRawEventId)))
+    .limit(1);
+  if (!raw) throw new Error('Source raw event not found for team');
+
+  const [evidence] = await input.db
+    .select({
+      id: reconciliationEvidence.id,
+      sourcePayloadRef: reconciliationEvidence.sourcePayloadRef,
+      visibility: reconciliationEvidence.visibility,
+      visibilityOwnerUserId: reconciliationEvidence.visibilityOwnerUserId,
+      visibilityUserIds: reconciliationEvidence.visibilityUserIds,
+    })
+    .from(reconciliationEvidence)
+    .where(
+      and(
+        eq(reconciliationEvidence.teamId, input.teamId),
+        eq(reconciliationEvidence.rawEventId, input.sourceRawEventId),
+      ),
+    )
+    .orderBy(desc(reconciliationEvidence.createdAt), desc(reconciliationEvidence.id))
+    .limit(1);
+  const sourcePayloadRef =
+    sourcePayloadRefFromMetadata(raw.sourceMetadata) ?? evidence?.sourcePayloadRef ?? null;
+  if (!sourcePayloadRef) {
+    throw new Error('Source raw event is missing a replay payload ref');
+  }
+  const sourcePayloadRefs = [
+    ...new Set(
+      [evidence?.sourcePayloadRef, sourcePayloadRef].filter((ref): ref is string => !!ref),
+    ),
+  ];
+  const visibility = evidence?.visibility ?? raw.visibility;
+  const visibilityOwnerUserId = evidence?.visibilityOwnerUserId ?? raw.visibilityOwnerUserId;
+  const visibilityUserIds = evidence?.visibilityUserIds ?? raw.visibilityUserIds;
+  return {
+    sourceRefs: [
+      {
+        source: raw.source,
+        rawEventId: input.sourceRawEventId,
+        ...(sourcePayloadRef ? { sourcePayloadRef } : {}),
+      },
+    ],
+    sourcePayloadRefs,
+    visibility,
+    visibilityOwnerUserId,
+    visibilityUserIds,
+  };
+}
+
+async function emitObjectDirectWriteOutput(input: {
+  db: DbTx;
+  teamId: string;
+  entityId: string;
+  objectType: ObjectType;
+  canonicalName: string;
+  actor: { kind: ActorKind; userId?: string | null };
+  sourceEventId: string | null;
+  operation: 'create' | 'update' | 'archive_or_cancel' | 'merge';
+  systemEventKind: 'object_create' | 'object_update' | 'object_merge';
+  changedFields?: string[];
+  changes?: { field: string; previousValue: unknown; newValue: unknown }[];
+  merge?: {
+    mergedEntityIds: string[];
+    mergedObjects: { id: string; canonicalName: string; type: ObjectType }[];
+    aliases: string[];
+  };
+}): Promise<void> {
+  if (!input.sourceEventId) return;
+  const sourceContext = await buildObjectDirectWriteSourceContext({
+    db: input.db,
+    teamId: input.teamId,
+    sourceRawEventId: input.sourceEventId,
+  });
+  const metrics = {
+    target_kind: 'object',
+    operation: input.operation,
+    object_type: input.objectType,
+    actor_kind: input.actor.kind,
+    ...(input.changedFields ? { changed_fields: input.changedFields } : {}),
+    ...(input.merge ? { merged_entity_count: input.merge.mergedEntityIds.length } : {}),
+  };
+  const [run] = await input.db
+    .insert(reconciliationRuns)
+    .values({
+      teamId: input.teamId,
+      trigger: 'raw_event',
+      scope: 'object_direct_write',
+      status: 'completed',
+      inputFingerprint: reconciliationDedupeKey('object-direct-write-run', {
+        teamId: input.teamId,
+        entityId: input.entityId,
+        rawEventId: input.sourceEventId,
+        operation: input.operation,
+        policyVersion: AUTHORITY_POLICY_VERSION,
+      }),
+      engineVersion: OBJECT_DIRECT_WRITE_RUN_VERSION,
+      completedAt: new Date(),
+      metrics,
+    })
+    .onConflictDoUpdate({
+      target: [
+        reconciliationRuns.teamId,
+        reconciliationRuns.inputFingerprint,
+        reconciliationRuns.engineVersion,
+      ],
+      set: {
+        status: 'completed',
+        completedAt: new Date(),
+        metrics,
+      },
+    })
+    .returning({ id: reconciliationRuns.id });
+  if (!run) return;
+
+  await input.db
+    .insert(reconciliationOutputs)
+    .values({
+      teamId: input.teamId,
+      runId: run.id,
+      outputKind: 'direct_write',
+      targetKind: 'object',
+      operation: input.operation,
+      targetId: input.entityId,
+      payload: {
+        source: 'system',
+        system_event_kind: input.systemEventKind,
+        object_type: input.objectType,
+        canonical_name: input.canonicalName,
+        actor_kind: input.actor.kind,
+        actor_user_id: input.actor.userId ?? null,
+        ...(input.changedFields ? { changed_fields: input.changedFields } : {}),
+        ...(input.changes ? { changes: input.changes } : {}),
+        ...(input.merge
+          ? {
+              merged_entity_ids: input.merge.mergedEntityIds,
+              merged_objects: input.merge.mergedObjects,
+              aliases: input.merge.aliases,
+            }
+          : {}),
+      },
+      authorityDecision: {
+        decision: 'direct_write',
+        authority_decision: 'direct',
+        reason: 'user_or_agent_confirmed_workspace_write',
+        source: 'system',
+        provider: null,
+        target_kind: 'object',
+        target_field:
+          input.operation === 'create'
+            ? '__create__'
+            : input.operation === 'merge'
+              ? '__merge__'
+              : input.operation === 'archive_or_cancel'
+                ? '__archive__'
+                : '__update__',
+        ...(input.changedFields ? { changed_fields: input.changedFields } : {}),
+        policy_version: AUTHORITY_POLICY_VERSION,
+      },
+      confidence: 'high',
+      requiresApproval: false,
+      ...directWriteSourceEnvelope(sourceContext),
+      dedupeKey: buildOutputDedupeKey({
+        teamId: input.teamId,
+        targetKind: 'object',
+        operation: input.operation,
+        targetId: input.entityId,
+        sourceRefs: sourceContext.sourceRefs,
+        authorityPolicyVersion: AUTHORITY_POLICY_VERSION,
+        plannerVersion: OBJECT_DIRECT_WRITE_PLANNER_VERSION,
+      }),
+      status: 'applied',
+    })
+    .onConflictDoUpdate({
+      target: [reconciliationOutputs.teamId, reconciliationOutputs.dedupeKey],
+      set: {
+        runId: run.id,
+        ...directWriteSourceEnvelope(sourceContext),
+        status: 'applied',
+        updatedAt: new Date(),
+      },
+    });
+}
+
+async function emitRelationshipDirectWriteOutput(input: {
+  db: DbTx;
+  teamId: string;
+  relationshipId: string;
+  fromEntityId: string;
+  toEntityId: string;
+  relationshipKind: RelationshipKind;
+  actor: { kind: ActorKind; userId?: string | null };
+  sourceEventId: string | null;
+  operation: 'link' | 'unlink';
+  systemEventKind: 'relationship_create' | 'relationship_delete';
+}): Promise<void> {
+  if (!input.sourceEventId) return;
+  const sourceContext = await buildObjectDirectWriteSourceContext({
+    db: input.db,
+    teamId: input.teamId,
+    sourceRawEventId: input.sourceEventId,
+  });
+  const metrics = {
+    target_kind: 'object_relationship',
+    operation: input.operation,
+    relationship_kind: input.relationshipKind,
+    actor_kind: input.actor.kind,
+  };
+  const [run] = await input.db
+    .insert(reconciliationRuns)
+    .values({
+      teamId: input.teamId,
+      trigger: 'raw_event',
+      scope: 'relationship_direct_write',
+      status: 'completed',
+      inputFingerprint: reconciliationDedupeKey('relationship-direct-write-run', {
+        teamId: input.teamId,
+        relationshipId: input.relationshipId,
+        rawEventId: input.sourceEventId,
+        operation: input.operation,
+        policyVersion: AUTHORITY_POLICY_VERSION,
+      }),
+      engineVersion: OBJECT_DIRECT_WRITE_RUN_VERSION,
+      completedAt: new Date(),
+      metrics,
+    })
+    .onConflictDoUpdate({
+      target: [
+        reconciliationRuns.teamId,
+        reconciliationRuns.inputFingerprint,
+        reconciliationRuns.engineVersion,
+      ],
+      set: {
+        status: 'completed',
+        completedAt: new Date(),
+        metrics,
+      },
+    })
+    .returning({ id: reconciliationRuns.id });
+  if (!run) return;
+
+  await input.db
+    .insert(reconciliationOutputs)
+    .values({
+      teamId: input.teamId,
+      runId: run.id,
+      outputKind: 'direct_write',
+      targetKind: 'object_relationship',
+      operation: input.operation,
+      targetId: input.relationshipId,
+      payload: {
+        source: 'system',
+        system_event_kind: input.systemEventKind,
+        relationship_id: input.relationshipId,
+        from_entity_id: input.fromEntityId,
+        to_entity_id: input.toEntityId,
+        relationship_kind: input.relationshipKind,
+        actor_kind: input.actor.kind,
+        actor_user_id: input.actor.userId ?? null,
+      },
+      authorityDecision: {
+        decision: 'direct_write',
+        authority_decision: 'direct',
+        reason: 'user_or_agent_confirmed_workspace_write',
+        source: 'system',
+        provider: null,
+        target_kind: 'object_relationship',
+        target_field:
+          input.operation === 'link' ? '__relationship_create__' : '__relationship_delete__',
+        policy_version: AUTHORITY_POLICY_VERSION,
+      },
+      confidence: 'high',
+      requiresApproval: false,
+      ...directWriteSourceEnvelope(sourceContext),
+      dedupeKey: buildOutputDedupeKey({
+        teamId: input.teamId,
+        targetKind: 'object_relationship',
+        operation: input.operation,
+        targetId: input.relationshipId,
+        sourceRefs: sourceContext.sourceRefs,
+        authorityPolicyVersion: AUTHORITY_POLICY_VERSION,
+        plannerVersion: OBJECT_DIRECT_WRITE_PLANNER_VERSION,
+      }),
+      status: 'applied',
+    })
+    .onConflictDoUpdate({
+      target: [reconciliationOutputs.teamId, reconciliationOutputs.dedupeKey],
+      set: {
+        runId: run.id,
+        ...directWriteSourceEnvelope(sourceContext),
+        status: 'applied',
+        updatedAt: new Date(),
+      },
+    });
+}
+
+async function emitNoteDirectWriteOutput(input: {
+  db: DbTx;
+  teamId: string;
+  entityId: string;
+  noteId: string;
+  actor: { kind: ActorKind; userId?: string | null };
+  sourceEventId: string | null;
+  operation: 'create' | 'update' | 'archive_or_cancel';
+  systemEventKind: 'object_note_create' | 'object_note_update' | 'object_note_delete';
+  body?: string | null;
+  previousBody?: string | null;
+}): Promise<void> {
+  if (!input.sourceEventId) return;
+  const sourceContext = await buildObjectDirectWriteSourceContext({
+    db: input.db,
+    teamId: input.teamId,
+    sourceRawEventId: input.sourceEventId,
+  });
+  const metrics = {
+    target_kind: 'object_note',
+    operation: input.operation,
+    actor_kind: input.actor.kind,
+  };
+  const [run] = await input.db
+    .insert(reconciliationRuns)
+    .values({
+      teamId: input.teamId,
+      trigger: 'raw_event',
+      scope: 'note_direct_write',
+      status: 'completed',
+      inputFingerprint: reconciliationDedupeKey('note-direct-write-run', {
+        teamId: input.teamId,
+        noteId: input.noteId,
+        rawEventId: input.sourceEventId,
+        operation: input.operation,
+        policyVersion: AUTHORITY_POLICY_VERSION,
+      }),
+      engineVersion: OBJECT_DIRECT_WRITE_RUN_VERSION,
+      completedAt: new Date(),
+      metrics,
+    })
+    .onConflictDoUpdate({
+      target: [
+        reconciliationRuns.teamId,
+        reconciliationRuns.inputFingerprint,
+        reconciliationRuns.engineVersion,
+      ],
+      set: {
+        status: 'completed',
+        completedAt: new Date(),
+        metrics,
+      },
+    })
+    .returning({ id: reconciliationRuns.id });
+  if (!run) return;
+
+  const targetField =
+    input.operation === 'create'
+      ? '__note_create__'
+      : input.operation === 'update'
+        ? '__note_update__'
+        : '__note_delete__';
+
+  await input.db
+    .insert(reconciliationOutputs)
+    .values({
+      teamId: input.teamId,
+      runId: run.id,
+      outputKind: 'direct_write',
+      targetKind: 'object_note',
+      operation: input.operation,
+      targetId: input.noteId,
+      payload: {
+        source: 'system',
+        system_event_kind: input.systemEventKind,
+        entity_id: input.entityId,
+        note_id: input.noteId,
+        actor_kind: input.actor.kind,
+        actor_user_id: input.actor.userId ?? null,
+        ...(input.body !== undefined ? { body: input.body } : {}),
+        ...(input.previousBody !== undefined ? { previous_body: input.previousBody } : {}),
+      },
+      authorityDecision: {
+        decision: 'direct_write',
+        authority_decision: 'direct',
+        reason: 'user_or_agent_confirmed_workspace_write',
+        source: 'system',
+        provider: null,
+        target_kind: 'object_note',
+        target_field: targetField,
+        policy_version: AUTHORITY_POLICY_VERSION,
+      },
+      confidence: 'high',
+      requiresApproval: false,
+      ...directWriteSourceEnvelope(sourceContext),
+      dedupeKey: buildOutputDedupeKey({
+        teamId: input.teamId,
+        targetKind: 'object_note',
+        operation: input.operation,
+        targetId: input.noteId,
+        sourceRefs: sourceContext.sourceRefs,
+        authorityPolicyVersion: AUTHORITY_POLICY_VERSION,
+        plannerVersion: OBJECT_DIRECT_WRITE_PLANNER_VERSION,
+      }),
+      status: 'applied',
+    })
+    .onConflictDoUpdate({
+      target: [reconciliationOutputs.teamId, reconciliationOutputs.dedupeKey],
+      set: {
+        runId: run.id,
+        ...directWriteSourceEnvelope(sourceContext),
+        status: 'applied',
+        updatedAt: new Date(),
+      },
+    });
+}
+
+async function emitIdentityFacetDirectWriteOutput(input: {
+  db: DbTx;
+  teamId: string;
+  entityId: string;
+  identityFacetId: string;
+  identityFacetKind: IdentityFacetKind;
+  actor: { kind: ActorKind; userId?: string | null };
+  sourceEventId: string | null;
+  operation: 'create' | 'update';
+  systemEventKind: 'identity_facet_create' | 'identity_facet_update';
+  value: string;
+  normalizedValue: string;
+  provider: string | null;
+  externalId: string | null;
+  linkedUserId: string | null;
+  previous?: {
+    value: string;
+    normalizedValue: string;
+    provider: string | null;
+    externalId: string | null;
+    linkedUserId: string | null;
+  };
+}): Promise<void> {
+  if (!input.sourceEventId) return;
+  const sourceContext = await buildObjectDirectWriteSourceContext({
+    db: input.db,
+    teamId: input.teamId,
+    sourceRawEventId: input.sourceEventId,
+  });
+  const metrics = {
+    target_kind: 'identity_facet',
+    operation: input.operation,
+    identity_facet_kind: input.identityFacetKind,
+    actor_kind: input.actor.kind,
+  };
+  const [run] = await input.db
+    .insert(reconciliationRuns)
+    .values({
+      teamId: input.teamId,
+      trigger: 'raw_event',
+      scope: 'identity_facet_direct_write',
+      status: 'completed',
+      inputFingerprint: reconciliationDedupeKey('identity-facet-direct-write-run', {
+        teamId: input.teamId,
+        identityFacetId: input.identityFacetId,
+        rawEventId: input.sourceEventId,
+        operation: input.operation,
+        policyVersion: AUTHORITY_POLICY_VERSION,
+      }),
+      engineVersion: OBJECT_DIRECT_WRITE_RUN_VERSION,
+      completedAt: new Date(),
+      metrics,
+    })
+    .onConflictDoUpdate({
+      target: [
+        reconciliationRuns.teamId,
+        reconciliationRuns.inputFingerprint,
+        reconciliationRuns.engineVersion,
+      ],
+      set: {
+        status: 'completed',
+        completedAt: new Date(),
+        metrics,
+      },
+    })
+    .returning({ id: reconciliationRuns.id });
+  if (!run) return;
+
+  const targetField =
+    input.operation === 'create' ? '__identity_facet_create__' : '__identity_facet_update__';
+  await input.db
+    .insert(reconciliationOutputs)
+    .values({
+      teamId: input.teamId,
+      runId: run.id,
+      outputKind: 'direct_write',
+      targetKind: 'identity_facet',
+      operation: input.operation,
+      targetId: input.identityFacetId,
+      payload: {
+        source: 'system',
+        system_event_kind: input.systemEventKind,
+        entity_id: input.entityId,
+        identity_facet_id: input.identityFacetId,
+        identity_facet_kind: input.identityFacetKind,
+        value: input.value,
+        normalized_value: input.normalizedValue,
+        provider: input.provider,
+        external_id: input.externalId,
+        linked_user_id: input.linkedUserId,
+        actor_kind: input.actor.kind,
+        actor_user_id: input.actor.userId ?? null,
+        ...(input.previous
+          ? {
+              previous: {
+                value: input.previous.value,
+                normalized_value: input.previous.normalizedValue,
+                provider: input.previous.provider,
+                external_id: input.previous.externalId,
+                linked_user_id: input.previous.linkedUserId,
+              },
+            }
+          : {}),
+      },
+      authorityDecision: {
+        decision: 'direct_write',
+        authority_decision: 'direct',
+        reason: 'user_or_agent_confirmed_workspace_write',
+        source: 'system',
+        provider: null,
+        target_kind: 'identity_facet',
+        target_field: targetField,
+        policy_version: AUTHORITY_POLICY_VERSION,
+      },
+      confidence: 'high',
+      requiresApproval: false,
+      ...directWriteSourceEnvelope(sourceContext),
+      dedupeKey: buildOutputDedupeKey({
+        teamId: input.teamId,
+        targetKind: 'identity_facet',
+        operation: input.operation,
+        targetId: input.identityFacetId,
+        sourceRefs: sourceContext.sourceRefs,
+        authorityPolicyVersion: AUTHORITY_POLICY_VERSION,
+        plannerVersion: OBJECT_DIRECT_WRITE_PLANNER_VERSION,
+      }),
+      status: 'applied',
+    })
+    .onConflictDoUpdate({
+      target: [reconciliationOutputs.teamId, reconciliationOutputs.dedupeKey],
+      set: {
+        runId: run.id,
+        ...directWriteSourceEnvelope(sourceContext),
+        status: 'applied',
+        updatedAt: new Date(),
+      },
+    });
 }
 
 async function objectSummaryRefreshTargetsForObject(
@@ -436,11 +1083,6 @@ function recordFromUnknown(value: unknown): Record<string, unknown> {
     : {};
 }
 
-function sourceEventIdFromPayload(value: unknown): string | null {
-  const sourceEventId = recordFromUnknown(value).sourceEventId;
-  return typeof sourceEventId === 'string' && UUID_RE.test(sourceEventId) ? sourceEventId : null;
-}
-
 export function displayObjectTitle(row: Pick<ObjectRow, 'canonicalName' | 'metadata'>): string {
   const explicit = metadataString(row.metadata, 'display_title');
   const explicitSource = metadataString(row.metadata, 'display_title_canonical_name');
@@ -489,7 +1131,9 @@ function toObjectRow(row: EntityRow): ObjectRow {
     ownerUserId: row.ownerUserId,
     assigneeUserId: row.assigneeUserId,
     dueAt: row.dueAt,
-    agentSuggested: row.agentSuggested,
+    // `entities.agent_suggested` is legacy single-row provenance. Approval
+    // state now lives in agent_suggestions projected from reconciliation outputs.
+    agentSuggested: false,
     archivedAt: row.archivedAt,
     aliases,
     metadata,
@@ -1079,6 +1723,60 @@ function suggestionVisibleToScope(scope: TeamScopeCore): SQL {
   )`;
 }
 
+function artifactAssociationVisibleToScope(scope: TeamScopeCore): SQL {
+  return sql`(
+    (
+      ${artifactEvidenceAssociations.visibility} = 'team'
+      OR (
+        ${artifactEvidenceAssociations.visibility} = 'private'
+        AND ${artifactEvidenceAssociations.visibilityOwnerUserId} = ${scope.userId}
+      )
+      OR (
+        ${artifactEvidenceAssociations.visibility} = 'specific_users'
+        AND ${scope.userId} = ANY(${artifactEvidenceAssociations.visibilityUserIds})
+      )
+    )
+    AND (
+      ${artifactEvidenceAssociations.visibilityFloor} = 'team'
+      OR (
+        ${artifactEvidenceAssociations.visibilityFloor} = 'private'
+        AND ${artifactEvidenceAssociations.visibilityFloorOwnerUserId} = ${scope.userId}
+      )
+      OR (
+        ${artifactEvidenceAssociations.visibilityFloor} = 'specific_users'
+        AND ${scope.userId} = ANY(${artifactEvidenceAssociations.visibilityFloorUserIds})
+      )
+    )
+  )`;
+}
+
+function reconciliationOutputVisibleToScope(scope: TeamScopeCore): SQL {
+  return sql`(
+    (
+      ${reconciliationOutputs.visibility} = 'team'
+      OR (
+        ${reconciliationOutputs.visibility} = 'private'
+        AND ${reconciliationOutputs.visibilityOwnerUserId} = ${scope.userId}
+      )
+      OR (
+        ${reconciliationOutputs.visibility} = 'specific_users'
+        AND ${scope.userId} = ANY(${reconciliationOutputs.visibilityUserIds})
+      )
+    )
+    AND (
+      ${reconciliationOutputs.visibilityFloor} = 'team'
+      OR (
+        ${reconciliationOutputs.visibilityFloor} = 'private'
+        AND ${reconciliationOutputs.visibilityFloorOwnerUserId} = ${scope.userId}
+      )
+      OR (
+        ${reconciliationOutputs.visibilityFloor} = 'specific_users'
+        AND ${scope.userId} = ANY(${reconciliationOutputs.visibilityFloorUserIds})
+      )
+    )
+  )`;
+}
+
 function emptyObjectProvenance(): ObjectDetail['provenance'] {
   return { whyThisExists: [], whatChangedIt: [], relatedEvidence: [] };
 }
@@ -1117,6 +1815,7 @@ async function getObjectProvenance(
       targetId: agentSuggestionItems.targetId,
       resultId: agentSuggestionItems.resultId,
       itemTitle: agentSuggestionItems.title,
+      itemMetadata: agentSuggestionItems.metadata,
       proposedPayload: agentSuggestionItems.proposedPayload,
       bundleEvidenceCount: sql<number>`(
         SELECT COUNT(*)::int
@@ -1158,13 +1857,11 @@ async function getObjectProvenance(
   for (const row of rows) {
     rowsByItemId.set(row.itemId, [...(rowsByItemId.get(row.itemId) ?? []), row]);
   }
+  const outputRawEventIdsByItemId = await sourceRefRawEventIdsBySuggestionItem(db, scope, rows);
   for (const itemRows of rowsByItemId.values()) {
-    const sourceEventId = sourceEventIdFromPayload(itemRows[0]?.proposedPayload);
-    const relevantRows = sourceEventId
-      ? itemRows.filter((row) => row.rawEventId === sourceEventId)
-      : itemRows[0]?.bundleEvidenceCount === 1 && itemRows.length === 1
-        ? itemRows
-        : [];
+    const firstRow = itemRows[0];
+    const outputRawEventIds = firstRow ? outputRawEventIdsByItemId.get(firstRow.itemId) : undefined;
+    const relevantRows = relevantSuggestionEvidenceRows(itemRows, outputRawEventIds);
     for (const row of relevantRows) {
       const id = row.itemId;
       const existing =
@@ -1243,6 +1940,96 @@ async function getObjectProvenance(
     whatChangedIt: sortEntries(provenance.whatChangedIt),
     relatedEvidence: sortEntries(provenance.relatedEvidence).slice(0, 8),
   };
+}
+
+async function sourceRefRawEventIdsBySuggestionItem(
+  db: Db,
+  scope: TeamScopeCore,
+  rows: { itemId: string; itemMetadata: unknown }[],
+): Promise<Map<string, Set<string>>> {
+  const outputIdsByItemId = new Map<string, string[]>();
+  for (const row of rows) {
+    const outputIds = reconciliationOutputIdsFromMetadata(row.itemMetadata);
+    if (outputIds.length === 0) continue;
+    outputIdsByItemId.set(row.itemId, outputIds);
+  }
+  const outputIds = [...new Set([...outputIdsByItemId.values()].flat())];
+  if (outputIds.length === 0) return new Map();
+
+  const outputRows = await db
+    .select({ id: reconciliationOutputs.id, sourceRefs: reconciliationOutputs.sourceRefs })
+    .from(reconciliationOutputs)
+    .where(
+      and(
+        eq(reconciliationOutputs.teamId, scope.teamId),
+        inArray(reconciliationOutputs.id, outputIds),
+        reconciliationOutputVisibleToScope(scope),
+      ),
+    );
+  const rawIdsByOutputId = new Map(
+    outputRows.map((row) => [row.id, sourceRefRawEventIds(row.sourceRefs)] as const),
+  );
+  const result = new Map<string, Set<string>>();
+  for (const [itemId, ids] of outputIdsByItemId) {
+    const rawEventIds = ids.flatMap((id) => rawIdsByOutputId.get(id) ?? []);
+    result.set(itemId, new Set(rawEventIds));
+  }
+  return result;
+}
+
+function relevantSuggestionEvidenceRows<
+  T extends { rawEventId: string; bundleEvidenceCount: number },
+>(itemRows: T[], outputRawEventIds: Set<string> | undefined): T[] {
+  if (outputRawEventIds !== undefined) {
+    if (outputRawEventIds.size === 0) return [];
+    const visibleRawEventIds = new Set(itemRows.map((row) => row.rawEventId));
+    const allOutputRefsVisible = [...outputRawEventIds].every((id) => visibleRawEventIds.has(id));
+    return allOutputRefsVisible
+      ? itemRows.filter((row) => outputRawEventIds.has(row.rawEventId))
+      : [];
+  }
+
+  return itemRows[0]?.bundleEvidenceCount === 1 && itemRows.length === 1 ? itemRows : [];
+}
+
+function reconciliationOutputIdsFromMetadata(metadata: unknown): string[] {
+  const record = recordFromUnknown(metadata);
+  const outputIds = Array.isArray(record.reconciliation_output_ids)
+    ? record.reconciliation_output_ids.filter(
+        (value): value is string => typeof value === 'string' && UUID_RE.test(value),
+      )
+    : [];
+  const single =
+    typeof record.reconciliation_output_id === 'string' &&
+    UUID_RE.test(record.reconciliation_output_id)
+      ? [record.reconciliation_output_id]
+      : [];
+  return [...new Set([...single, ...outputIds])];
+}
+
+function sourceRefRawEventIds(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return [
+    ...new Set(
+      value.flatMap((item) => {
+        const ref = recordFromUnknown(item);
+        const rawEventId = ref.rawEventId;
+        return typeof rawEventId === 'string' && UUID_RE.test(rawEventId) ? [rawEventId] : [];
+      }),
+    ),
+  ];
+}
+
+function reconciliationOutputCitesAnyRawEventId(rawEventIds: string[]): SQL {
+  const sourceRefIdList = sql.join(
+    rawEventIds.map((id) => sql`${id}`),
+    sql`, `,
+  );
+  return sql`EXISTS (
+    SELECT 1
+    FROM jsonb_array_elements(${reconciliationOutputs.sourceRefs}) AS source_ref
+    WHERE source_ref ->> 'rawEventId' IN (${sourceRefIdList})
+  )`;
 }
 
 function cursorCondition(
@@ -1569,8 +2356,10 @@ async function getConnectedWork(
     sharedObjectRows,
     titleTaskRows,
     linkedCalendarRows,
+    artifactAssociationRows,
     boardRows,
     pendingApprovalRows,
+    pendingReconciliationOutputRows,
     documentRows,
     noteRawEventRows,
   ] = await Promise.all([
@@ -1637,6 +2426,35 @@ async function getConnectedWork(
           eq(calendarEventEntities.entityId, object.id),
         ),
       )
+      .limit(100),
+    db
+      .select({
+        rawEventId: sql<string>`COALESCE(${artifactEvidenceAssociations.rawEventId}, ${reconciliationEvidence.rawEventId})`,
+      })
+      .from(artifactEvidenceAssociations)
+      .innerJoin(
+        artifactClusters,
+        and(
+          eq(artifactClusters.id, artifactEvidenceAssociations.clusterId),
+          eq(artifactClusters.teamId, scope.teamId),
+        ),
+      )
+      .innerJoin(
+        reconciliationEvidence,
+        and(
+          eq(reconciliationEvidence.id, artifactEvidenceAssociations.evidenceId),
+          eq(reconciliationEvidence.teamId, scope.teamId),
+        ),
+      )
+      .where(
+        and(
+          eq(artifactEvidenceAssociations.teamId, scope.teamId),
+          eq(artifactClusters.canonicalEntityId, object.id),
+          isNull(artifactClusters.archivedAt),
+          artifactAssociationVisibleToScope(scope),
+        ),
+      )
+      .orderBy(desc(artifactEvidenceAssociations.createdAt), desc(artifactEvidenceAssociations.id))
       .limit(100),
     db
       .select({
@@ -1708,6 +2526,36 @@ async function getConnectedWork(
         ),
       )
       .orderBy(desc(agentSuggestions.createdAt), desc(agentSuggestionItems.id))
+      .limit(16),
+    db
+      .select({
+        outputId: reconciliationOutputs.id,
+        title: sql<string | null>`${reconciliationOutputs.payload} ->> 'title'`,
+        operation: reconciliationOutputs.operation,
+        targetKind: reconciliationOutputs.targetKind,
+        targetId: reconciliationOutputs.targetId,
+        payload: reconciliationOutputs.payload,
+        createdAt: reconciliationOutputs.createdAt,
+      })
+      .from(reconciliationOutputs)
+      .where(
+        and(
+          eq(reconciliationOutputs.teamId, scope.teamId),
+          eq(reconciliationOutputs.status, 'pending'),
+          eq(reconciliationOutputs.requiresApproval, true),
+          reconciliationOutputVisibleToScope(scope),
+          or(
+            eq(reconciliationOutputs.targetId, object.id),
+            sql`${reconciliationOutputs.payload}::text LIKE ${likePattern(object.id)}`,
+            ...(names.length > 0
+              ? [likeMentionCondition(sql`${reconciliationOutputs.payload}::text`, names)].filter(
+                  (condition): condition is SQL => Boolean(condition),
+                )
+              : []),
+          ),
+        ),
+      )
+      .orderBy(desc(reconciliationOutputs.createdAt), desc(reconciliationOutputs.id))
       .limit(16),
     names.length > 0
       ? db
@@ -1825,6 +2673,44 @@ async function getConnectedWork(
   if (factRawEventIds.length > 0) {
     timelineConditions.push(inArray(rawEvents.id, factRawEventIds));
   }
+  const artifactRawEventIds = Array.from(
+    new Set(artifactAssociationRows.map((row) => row.rawEventId).filter(Boolean)),
+  );
+  const sourceRefLinkedPendingReconciliationOutputRows =
+    artifactRawEventIds.length > 0
+      ? await db
+          .select({
+            outputId: reconciliationOutputs.id,
+            title: sql<string | null>`${reconciliationOutputs.payload} ->> 'title'`,
+            operation: reconciliationOutputs.operation,
+            targetKind: reconciliationOutputs.targetKind,
+            targetId: reconciliationOutputs.targetId,
+            payload: reconciliationOutputs.payload,
+            createdAt: reconciliationOutputs.createdAt,
+          })
+          .from(reconciliationOutputs)
+          .where(
+            and(
+              eq(reconciliationOutputs.teamId, scope.teamId),
+              eq(reconciliationOutputs.status, 'pending'),
+              eq(reconciliationOutputs.requiresApproval, true),
+              reconciliationOutputVisibleToScope(scope),
+              reconciliationOutputCitesAnyRawEventId(artifactRawEventIds),
+            ),
+          )
+          .orderBy(desc(reconciliationOutputs.createdAt), desc(reconciliationOutputs.id))
+          .limit(16)
+      : [];
+  const allPendingReconciliationOutputRows = Array.from(
+    new Map(
+      [...pendingReconciliationOutputRows, ...sourceRefLinkedPendingReconciliationOutputRows].map(
+        (row) => [row.outputId, row],
+      ),
+    ).values(),
+  );
+  if (artifactRawEventIds.length > 0) {
+    timelineConditions.push(inArray(rawEvents.id, artifactRawEventIds));
+  }
   const eventContentMatch = objectContentMatchCondition(rawEvents.contentText, names, tokens);
   if (eventContentMatch) timelineConditions.push(eventContentMatch);
   const timelineRows =
@@ -1851,9 +2737,16 @@ async function getConnectedWork(
           .limit(24)
       : [];
   const factRawEventIdSet = new Set(factRawEventIds);
+  const artifactRawEventIdSet = new Set(artifactRawEventIds);
   const filteredTimelineRows = timelineRows
     .filter((row) => {
-      if (row.sourceEntityId === object.id || factRawEventIdSet.has(row.id)) return true;
+      if (
+        row.sourceEntityId === object.id ||
+        factRawEventIdSet.has(row.id) ||
+        artifactRawEventIdSet.has(row.id)
+      ) {
+        return true;
+      }
       return textMatchesObjectSearch(row.contentText ?? '', names, tokens);
     })
     .slice(0, 12);
@@ -1916,6 +2809,31 @@ async function getConnectedWork(
       );
     })
     .slice(0, 8);
+  const projectedApprovalKeys = new Set(
+    filteredPendingApprovalRows.map((row) =>
+      [row.operation, row.targetKind, row.targetId ?? '', jsonishText(row.proposedPayload)].join(
+        '\0',
+      ),
+    ),
+  );
+  const pendingReconciliationApprovals = allPendingReconciliationOutputRows
+    .filter((row) => {
+      const key = [
+        row.operation,
+        row.targetKind,
+        row.targetId ?? '',
+        jsonishText(row.payload),
+      ].join('\0');
+      return !projectedApprovalKeys.has(key);
+    })
+    .map((row) => ({
+      suggestionId: row.outputId,
+      itemId: row.outputId,
+      title: row.title ?? 'Review reconciliation output',
+      operation: row.operation,
+      targetKind: row.targetKind,
+      createdAt: row.createdAt,
+    }));
   const filteredDocumentRows = Array.from(
     new Map(
       documentRows
@@ -1943,34 +2861,45 @@ async function getConnectedWork(
       ...currentNoteRawEventRows.map((row) => row.id),
     ]),
   );
-  const [linkRows, capturedFileRows] =
+  const [linkAssociationRows, capturedFileRows] =
     relatedRawEventIds.length > 0
       ? await Promise.all([
           db
             .select({
               id: artifactClusters.id,
               canonicalName: artifactClusters.canonicalName,
-              metadata: artifactClusterMembers.metadata,
-              provider: artifactClusterMembers.provider,
+              metadata: artifactEvidenceAssociations.metadata,
+              provider: sql<string | null>`${artifactEvidenceAssociations.metadata} ->> 'provider'`,
               updatedAt: artifactClusters.updatedAt,
             })
-            .from(artifactClusterMembers)
+            .from(artifactEvidenceAssociations)
+            .innerJoin(
+              reconciliationEvidence,
+              and(
+                eq(reconciliationEvidence.id, artifactEvidenceAssociations.evidenceId),
+                eq(reconciliationEvidence.teamId, scope.teamId),
+              ),
+            )
             .innerJoin(
               artifactClusters,
               and(
-                eq(artifactClusters.id, artifactClusterMembers.clusterId),
+                eq(artifactClusters.id, artifactEvidenceAssociations.clusterId),
                 eq(artifactClusters.teamId, scope.teamId),
               ),
             )
             .where(
               and(
-                eq(artifactClusterMembers.teamId, scope.teamId),
-                inArray(artifactClusterMembers.rawEventId, relatedRawEventIds),
+                eq(artifactEvidenceAssociations.teamId, scope.teamId),
+                inArray(
+                  sql<string>`COALESCE(${artifactEvidenceAssociations.rawEventId}, ${reconciliationEvidence.rawEventId})`,
+                  relatedRawEventIds,
+                ),
                 eq(artifactClusters.artifactType, 'link'),
                 isNull(artifactClusters.archivedAt),
+                artifactAssociationVisibleToScope(scope),
               ),
             )
-            .orderBy(desc(artifactClusters.updatedAt), desc(artifactClusters.id))
+            .orderBy(desc(artifactEvidenceAssociations.createdAt), desc(artifactClusters.id))
             .limit(20),
           db
             .select({
@@ -1997,7 +2926,7 @@ async function getConnectedWork(
       : [[], []];
   const filteredLinkRows = Array.from(
     new Map(
-      linkRows.map((row) => {
+      linkAssociationRows.map((row) => {
         const metadata = recordFromUnknown(row.metadata);
         return [
           row.id,
@@ -2024,7 +2953,10 @@ async function getConnectedWork(
       .filter((row) => row.type !== 'task' && row.type !== 'follow_up')
       .slice(0, 12),
     boards: boardRows,
-    pendingApprovals: filteredPendingApprovalRows,
+    pendingApprovals: [...filteredPendingApprovalRows, ...pendingReconciliationApprovals].slice(
+      0,
+      8,
+    ),
     documents: filteredDocumentRows,
     links: filteredLinkRows,
     capturedFiles: capturedFileRows,
@@ -2320,19 +3252,11 @@ export async function getObject(
         db
           .select({ id: objectChanges.id })
           .from(objectChanges)
-          .leftJoin(rawEvents, eq(rawEvents.id, objectChanges.sourceEventId))
           .where(
             and(
               eq(objectChanges.teamId, scope.teamId),
               eq(objectChanges.entityId, entityRow.id),
-              or(
-                isNull(objectChanges.sourceEventId),
-                and(
-                  eq(rawEvents.teamId, scope.teamId),
-                  eq(rawEvents.visibility, 'team'),
-                  sql`COALESCE(${rawEvents.sourceMetadata} ->> 'deleted', 'false') <> 'true'`,
-                ),
-              ),
+              isNull(objectChanges.sourceEventId),
             ),
           )
           .orderBy(desc(objectChanges.changedAt), desc(objectChanges.id))
@@ -2729,8 +3653,6 @@ export interface CreateObjectInput {
   dueAt?: Date | null;
   aliases?: string[];
   metadata?: Record<string, unknown>;
-  sourceEventId?: string | null;
-  agentSuggested?: boolean;
   parentObjectId?: string | null;
   /** Who/what created this. Users go through server actions; agents through
    *  `propose_object_change`/`suggest_task` tools. */
@@ -2763,7 +3685,7 @@ export async function createObject(
         teamId: scope.teamId,
         type: input.type,
         canonicalName: name,
-        status: input.status ?? (input.agentSuggested ? 'suggested' : 'open'),
+        status: input.status ?? 'open',
         stage: input.stage ?? null,
         priority: input.priority ?? null,
         ownerUserId: input.ownerUserId ?? null,
@@ -2771,8 +3693,8 @@ export async function createObject(
         dueAt: input.dueAt ?? null,
         aliases: input.aliases ?? [],
         metadata: input.metadata ?? {},
-        sourceEventId: input.sourceEventId ?? null,
-        agentSuggested: input.agentSuggested ?? false,
+        sourceEventId: null,
+        agentSuggested: false,
       })
       .returning();
     const row = insertRows[0];
@@ -2780,73 +3702,77 @@ export async function createObject(
 
     // Audit event for the create itself. One row per object, field='__create__'
     // so the UI can group create/edit/archive consistently.
-    const eventText = `${input.actor.kind === 'agent' ? 'Agent suggested' : 'Created'} ${input.type}: ${name}`;
+    const rawEventId = randomUUID();
+    const eventText = `${input.actor.kind === 'agent' ? 'Agent created' : 'Created'} ${input.type}: ${name}`;
     const eventInsert = await tx
       .insert(rawEvents)
       .values({
+        id: rawEventId,
         teamId: scope.teamId,
         authorUserId: input.actor.kind === 'user' ? (input.actor.userId ?? null) : null,
         source: 'system',
         contentText: eventText,
         occurredAt: new Date(),
         visibility: 'team',
-        sourceMetadata: {
+        sourceMetadata: systemDirectWriteSourceMetadata({
+          rawEventId,
           kind: 'object_create',
-          entity_id: row.id,
-          actor_kind: input.actor.kind,
-        },
+          metadata: {
+            entity_id: row.id,
+            actor_kind: input.actor.kind,
+          },
+          snapshot: {
+            entity_id: row.id,
+            object_type: input.type,
+            canonical_name: name,
+            status: row.status,
+            stage: row.stage,
+            priority: row.priority,
+            owner_user_id: row.ownerUserId,
+            assignee_user_id: row.assigneeUserId,
+            due_at: row.dueAt?.toISOString() ?? null,
+            aliases: row.aliases,
+            metadata: row.metadata,
+            actor_kind: input.actor.kind,
+            actor_user_id: input.actor.userId ?? null,
+          },
+        }),
       })
       .returning({ id: rawEvents.id });
     const sourceEventId = eventInsert[0]?.id ?? null;
+    await normalizeSystemRawEventEvidence({
+      db: tx,
+      teamId: scope.teamId,
+      rawEventId: sourceEventId,
+    });
     await reconcileObjectAuditLinks(tx, {
       teamId: scope.teamId,
       rawEventId: sourceEventId,
       text: eventText,
     });
 
-    const changeInsert = await tx
-      .insert(objectChanges)
-      .values({
-        teamId: scope.teamId,
-        entityId: row.id,
-        actorUserId: input.actor.userId ?? null,
-        actorKind: input.actor.kind,
-        status: input.agentSuggested ? 'suggested' : 'applied',
-        field: '__create__',
-        previousValue: null,
-        newValue: { type: input.type, canonicalName: name, status: row.status },
-        sourceEventId,
-      })
-      .returning({ id: objectChanges.id });
-    const changeId = changeInsert[0]?.id ?? null;
-
-    // Agent-suggested creates need an inbox entry — otherwise the user
-    // never sees that the agent dropped a task into their workspace.
-    // Mirrors the fan-out shape in `proposeObjectChange`. Skip when the
-    // create came from a human (UI) since they already know.
-    if (input.agentSuggested && changeId) {
-      const recipients = new Set<string>();
-      if (input.ownerUserId) recipients.add(input.ownerUserId);
-      if (input.assigneeUserId) recipients.add(input.assigneeUserId);
-      if (recipients.size > 0) {
-        const summary = `Agent suggested ${input.type}: ${name}`;
-        await tx.insert(notifications).values(
-          Array.from(recipients).map((uid) => ({
-            teamId: scope.teamId,
-            userId: uid,
-            kind: 'agent_suggestion' as const,
-            entityId: row.id,
-            objectChangeId: changeId,
-            summary,
-            payload: {
-              entity_id: row.id,
-              type: input.type,
-              canonical_name: name,
-            },
-          })),
-        );
-      }
-    }
+    await tx.insert(objectChanges).values({
+      teamId: scope.teamId,
+      entityId: row.id,
+      actorUserId: input.actor.userId ?? null,
+      actorKind: input.actor.kind,
+      status: 'applied',
+      field: '__create__',
+      previousValue: null,
+      newValue: { type: input.type, canonicalName: name, status: row.status },
+      sourceEventId: null,
+    });
+    await emitObjectDirectWriteOutput({
+      db: tx,
+      teamId: scope.teamId,
+      entityId: row.id,
+      objectType: input.type,
+      canonicalName: name,
+      actor: input.actor,
+      sourceEventId,
+      operation: 'create',
+      systemEventKind: 'object_create',
+    });
 
     if (input.parentObjectId && UUID_RE.test(input.parentObjectId)) {
       // Verify the parent belongs to this team before linking — otherwise a
@@ -3021,25 +3947,43 @@ export async function updateObject(
     const summary = changes
       .map((c) => `${c.field}: ${JSON.stringify(c.previousValue)} → ${JSON.stringify(c.newValue)}`)
       .join('; ');
+    const rawEventId = randomUUID();
     const eventText = `${actor.kind === 'agent' ? 'Agent applied' : 'Updated'} ${updated.type}: ${updated.canonicalName} — ${summary}`;
     const eventInsert = await tx
       .insert(rawEvents)
       .values({
+        id: rawEventId,
         teamId: scope.teamId,
         authorUserId: actor.kind === 'user' ? actor.userId : null,
         source: 'system',
         contentText: eventText,
         occurredAt: new Date(),
         visibility: 'team',
-        sourceMetadata: {
+        sourceMetadata: systemDirectWriteSourceMetadata({
+          rawEventId,
           kind: 'object_update',
-          entity_id: entityId,
-          actor_kind: actor.kind,
-          changed_fields: changes.map((c) => c.field),
-        },
+          metadata: {
+            entity_id: entityId,
+            actor_kind: actor.kind,
+            changed_fields: changes.map((c) => c.field),
+          },
+          snapshot: {
+            entity_id: entityId,
+            object_type: updated.type,
+            canonical_name: updated.canonicalName,
+            actor_kind: actor.kind,
+            actor_user_id: actor.userId ?? null,
+            changes,
+          },
+        }),
       })
       .returning({ id: rawEvents.id });
     const sourceEventId = eventInsert[0]?.id ?? null;
+    await normalizeSystemRawEventEvidence({
+      db: tx,
+      teamId: scope.teamId,
+      rawEventId: sourceEventId,
+    });
     await reconcileObjectAuditLinks(tx, {
       teamId: scope.teamId,
       rawEventId: sourceEventId,
@@ -3058,10 +4002,27 @@ export async function updateObject(
           field: c.field,
           previousValue: c.previousValue as never,
           newValue: c.newValue as never,
-          sourceEventId,
+          sourceEventId: null,
         })),
       )
       .returning({ id: objectChanges.id });
+    const reconciliationOperation =
+      changes.length === 1 && changes[0]?.field === 'archivedAt' && updated.archivedAt !== null
+        ? 'archive_or_cancel'
+        : 'update';
+    await emitObjectDirectWriteOutput({
+      db: tx,
+      teamId: scope.teamId,
+      entityId,
+      objectType: updated.type,
+      canonicalName: updated.canonicalName,
+      actor,
+      sourceEventId,
+      operation: reconciliationOperation,
+      systemEventKind: 'object_update',
+      changedFields: changes.map((c) => c.field),
+      changes,
+    });
 
     // Fan out to owner + assignee. The actor shouldn't notify themselves on
     // their own change, so we filter actor.userId out. Dedup by recipient so
@@ -3530,25 +4491,49 @@ export async function mergeObjects(
       }
     }
 
+    const rawEventId = randomUUID();
     const eventText = `Merged ${losers.map((row) => row.canonicalName).join(', ')} into ${survivor.canonicalName}`;
     const eventInsert = await tx
       .insert(rawEvents)
       .values({
+        id: rawEventId,
         teamId: scope.teamId,
         authorUserId: input.actor.kind === 'user' ? input.actor.userId : null,
         source: 'system',
         contentText: eventText,
         occurredAt: new Date(),
         visibility: 'team',
-        sourceMetadata: {
+        sourceMetadata: systemDirectWriteSourceMetadata({
+          rawEventId,
           kind: 'object_merge',
-          entity_id: survivor.id,
-          merged_entity_ids: loserIds,
-          actor_kind: input.actor.kind,
-        },
+          metadata: {
+            entity_id: survivor.id,
+            merged_entity_ids: loserIds,
+            actor_kind: input.actor.kind,
+          },
+          snapshot: {
+            entity_id: survivor.id,
+            object_type: survivor.type,
+            canonical_name: survivor.canonicalName,
+            merged_entity_ids: loserIds,
+            merged_objects: losers.map((loser) => ({
+              id: loser.id,
+              canonicalName: loser.canonicalName,
+              type: loser.type,
+            })),
+            aliases: nextAliases,
+            actor_kind: input.actor.kind,
+            actor_user_id: input.actor.userId ?? null,
+          },
+        }),
       })
       .returning({ id: rawEvents.id });
     const sourceEventId = eventInsert[0]?.id ?? null;
+    await normalizeSystemRawEventEvidence({
+      db: tx,
+      teamId: scope.teamId,
+      rawEventId: sourceEventId,
+    });
     await reconcileObjectAuditLinks(tx, {
       teamId: scope.teamId,
       rawEventId: sourceEventId,
@@ -3584,7 +4569,7 @@ export async function mergeObjects(
           merged_entity_ids: loserIds,
           aliases: nextAliases,
         },
-        sourceEventId,
+        sourceEventId: null,
       },
       ...losers.map((loser) => ({
         teamId: scope.teamId,
@@ -3595,9 +4580,29 @@ export async function mergeObjects(
         field: '__merged_from__',
         previousValue: { id: loser.id, canonicalName: loser.canonicalName, type: loser.type },
         newValue: { mergedIntoId: survivor.id },
-        sourceEventId,
+        sourceEventId: null,
       })),
     ]);
+    await emitObjectDirectWriteOutput({
+      db: tx,
+      teamId: scope.teamId,
+      entityId: survivor.id,
+      objectType: survivor.type,
+      canonicalName: survivor.canonicalName,
+      actor: input.actor,
+      sourceEventId,
+      operation: 'merge',
+      systemEventKind: 'object_merge',
+      merge: {
+        mergedEntityIds: loserIds,
+        mergedObjects: losers.map((loser) => ({
+          id: loser.id,
+          canonicalName: loser.canonicalName,
+          type: loser.type,
+        })),
+        aliases: nextAliases,
+      },
+    });
 
     const updatedRows = await tx
       .select()
@@ -3720,28 +4725,49 @@ export async function addRelationship(
     const toEnt = ends.find((e) => e.id === endpoints.toEntityId);
     const summary = `Linked ${fromEnt?.canonicalName ?? endpoints.fromEntityId} → ${toEnt?.canonicalName ?? endpoints.toEntityId} (${input.kind})`;
 
+    const rawEventId = randomUUID();
     const ev = await tx
       .insert(rawEvents)
       .values({
+        id: rawEventId,
         teamId: scope.teamId,
         authorUserId: input.actorUserId,
         source: 'system',
         contentText: summary,
         occurredAt: new Date(),
         visibility: 'team',
-        sourceMetadata: {
-          ...(input.metadata ?? {}),
+        sourceMetadata: systemDirectWriteSourceMetadata({
+          rawEventId,
           kind: 'relationship_create',
-          relationship_id: row.id,
-          from_entity_id: endpoints.fromEntityId,
-          to_entity_id: endpoints.toEntityId,
-          relationship_kind: input.kind,
-        },
+          metadata: {
+            ...(input.metadata ?? {}),
+            relationship_id: row.id,
+            from_entity_id: endpoints.fromEntityId,
+            to_entity_id: endpoints.toEntityId,
+            relationship_kind: input.kind,
+          },
+          snapshot: {
+            relationship_id: row.id,
+            from_entity_id: endpoints.fromEntityId,
+            from_canonical_name: fromEnt?.canonicalName ?? null,
+            to_entity_id: endpoints.toEntityId,
+            to_canonical_name: toEnt?.canonicalName ?? null,
+            relationship_kind: input.kind,
+            actor_kind: input.actor?.kind ?? 'user',
+            actor_user_id: input.actor?.userId ?? input.actorUserId,
+          },
+        }),
       })
       .returning({ id: rawEvents.id });
+    const sourceEventId = ev[0]?.id ?? null;
+    await normalizeSystemRawEventEvidence({
+      db: tx,
+      teamId: scope.teamId,
+      rawEventId: sourceEventId,
+    });
     await reconcileObjectAuditLinks(tx, {
       teamId: scope.teamId,
-      rawEventId: ev[0]?.id ?? null,
+      rawEventId: sourceEventId,
       text: summary,
     });
 
@@ -3757,7 +4783,7 @@ export async function addRelationship(
         field: '__relationship_create__',
         previousValue: null,
         newValue: { relationship_id: row.id, to: endpoints.toEntityId, kind: input.kind },
-        sourceEventId: ev[0]?.id ?? null,
+        sourceEventId: null,
       },
       {
         teamId: scope.teamId,
@@ -3768,9 +4794,24 @@ export async function addRelationship(
         field: '__relationship_create__',
         previousValue: null,
         newValue: { relationship_id: row.id, from: endpoints.fromEntityId, kind: input.kind },
-        sourceEventId: ev[0]?.id ?? null,
+        sourceEventId: null,
       },
     ]);
+    await emitRelationshipDirectWriteOutput({
+      db: tx,
+      teamId: scope.teamId,
+      relationshipId: row.id,
+      fromEntityId: endpoints.fromEntityId,
+      toEntityId: endpoints.toEntityId,
+      relationshipKind: input.kind,
+      actor: {
+        kind: input.actor?.kind ?? 'user',
+        userId: input.actor?.userId ?? input.actorUserId,
+      },
+      sourceEventId,
+      operation: 'link',
+      systemEventKind: 'relationship_create',
+    });
 
     return row;
   });
@@ -3816,28 +4857,47 @@ export async function removeRelationship(
 
     await tx.delete(entityRelationships).where(eq(entityRelationships.id, relationshipId));
 
+    const rawEventId = randomUUID();
     const eventText = `Removed link (${rel.kind})`;
     const ev = await tx
       .insert(rawEvents)
       .values({
+        id: rawEventId,
         teamId: scope.teamId,
         authorUserId: actor.userId,
         source: 'system',
         contentText: eventText,
         occurredAt: new Date(),
         visibility: 'team',
-        sourceMetadata: {
+        sourceMetadata: systemDirectWriteSourceMetadata({
+          rawEventId,
           kind: 'relationship_delete',
-          relationship_id: rel.id,
-          from_entity_id: rel.fromEntityId,
-          to_entity_id: rel.toEntityId,
-          relationship_kind: rel.kind,
-        },
+          metadata: {
+            relationship_id: rel.id,
+            from_entity_id: rel.fromEntityId,
+            to_entity_id: rel.toEntityId,
+            relationship_kind: rel.kind,
+          },
+          snapshot: {
+            relationship_id: rel.id,
+            from_entity_id: rel.fromEntityId,
+            to_entity_id: rel.toEntityId,
+            relationship_kind: rel.kind,
+            actor_kind: actor.kind,
+            actor_user_id: actor.userId ?? null,
+          },
+        }),
       })
       .returning({ id: rawEvents.id });
+    const sourceEventId = ev[0]?.id ?? null;
+    await normalizeSystemRawEventEvidence({
+      db: tx,
+      teamId: scope.teamId,
+      rawEventId: sourceEventId,
+    });
     await reconcileObjectAuditLinks(tx, {
       teamId: scope.teamId,
-      rawEventId: ev[0]?.id ?? null,
+      rawEventId: sourceEventId,
       text: eventText,
     });
 
@@ -3851,7 +4911,7 @@ export async function removeRelationship(
         field: '__relationship_delete__',
         previousValue: { relationship_id: rel.id, to: rel.toEntityId, kind: rel.kind },
         newValue: null,
-        sourceEventId: ev[0]?.id ?? null,
+        sourceEventId: null,
       },
       {
         teamId: scope.teamId,
@@ -3862,9 +4922,21 @@ export async function removeRelationship(
         field: '__relationship_delete__',
         previousValue: { relationship_id: rel.id, from: rel.fromEntityId, kind: rel.kind },
         newValue: null,
-        sourceEventId: ev[0]?.id ?? null,
+        sourceEventId: null,
       },
     ]);
+    await emitRelationshipDirectWriteOutput({
+      db: tx,
+      teamId: scope.teamId,
+      relationshipId: rel.id,
+      fromEntityId: rel.fromEntityId,
+      toEntityId: rel.toEntityId,
+      relationshipKind: rel.kind,
+      actor,
+      sourceEventId,
+      operation: 'unlink',
+      systemEventKind: 'relationship_delete',
+    });
     return { fromEntityId: rel.fromEntityId, toEntityId: rel.toEntityId };
   });
   if (!result) return false;
@@ -3923,27 +4995,45 @@ export async function createNote(
     const noteId = noteRows[0]?.id;
     if (!noteId) throw new Error('Failed to insert note');
 
+    const rawEventId = randomUUID();
     const eventText = `Note on ${ent[0].type} "${ent[0].canonicalName}": ${body}`;
     const ev = await tx
       .insert(rawEvents)
       .values({
+        id: rawEventId,
         teamId: scope.teamId,
         authorUserId: input.authorUserId,
         source: 'system',
         contentText: eventText,
         occurredAt: new Date(),
         visibility: 'team',
-        sourceMetadata: {
-          ...(input.metadata ?? {}),
+        sourceMetadata: systemDirectWriteSourceMetadata({
+          rawEventId,
           kind: 'object_note_create',
-          entity_id: input.entityId,
-          note_id: noteId,
-        },
+          metadata: {
+            ...(input.metadata ?? {}),
+            entity_id: input.entityId,
+            note_id: noteId,
+          },
+          snapshot: {
+            entity_id: input.entityId,
+            note_id: noteId,
+            body,
+            actor_kind: input.actor?.kind ?? 'user',
+            actor_user_id: input.actor ? (input.actor.userId ?? null) : input.authorUserId,
+          },
+        }),
       })
       .returning({ id: rawEvents.id });
+    const sourceEventId = ev[0]?.id ?? null;
+    await normalizeSystemRawEventEvidence({
+      db: tx,
+      teamId: scope.teamId,
+      rawEventId: sourceEventId,
+    });
     await reconcileObjectAuditLinks(tx, {
       teamId: scope.teamId,
-      rawEventId: ev[0]?.id ?? null,
+      rawEventId: sourceEventId,
       text: eventText,
     });
     await tx.insert(objectChanges).values({
@@ -3955,7 +5045,21 @@ export async function createNote(
       field: '__note_create__',
       previousValue: null,
       newValue: { note_id: noteId, body },
-      sourceEventId: ev[0]?.id ?? null,
+      sourceEventId: null,
+    });
+    await emitNoteDirectWriteOutput({
+      db: tx,
+      teamId: scope.teamId,
+      entityId: input.entityId,
+      noteId,
+      actor: {
+        kind: input.actor?.kind ?? 'user',
+        userId: input.actor ? (input.actor.userId ?? null) : input.authorUserId,
+      },
+      sourceEventId,
+      operation: 'create',
+      systemEventKind: 'object_note_create',
+      body,
     });
 
     return { id: noteId };
@@ -4101,6 +5205,8 @@ export async function createIdentityFacet(
       .select({
         id: objectIdentityFacets.id,
         entityId: objectIdentityFacets.entityId,
+        value: objectIdentityFacets.value,
+        normalizedValue: objectIdentityFacets.normalizedValue,
         provider: objectIdentityFacets.provider,
         externalId: objectIdentityFacets.externalId,
         linkedUserId: objectIdentityFacets.linkedUserId,
@@ -4140,26 +5246,58 @@ export async function createIdentityFacet(
         })
         .where(eq(objectIdentityFacets.id, existing[0].id));
       const summary = `Updated ${input.kind} identity for ${ent[0].canonicalName}: ${value}`;
+      const rawEventId = randomUUID();
       const ev = await tx
         .insert(rawEvents)
         .values({
+          id: rawEventId,
           teamId: scope.teamId,
           authorUserId: input.actor.userId ?? null,
           source: 'system',
           contentText: summary,
           occurredAt: new Date(),
           visibility: 'team',
-          sourceMetadata: {
+          sourceMetadata: systemDirectWriteSourceMetadata({
+            rawEventId,
             kind: 'identity_facet_update',
-            entity_id: input.entityId,
-            identity_facet_id: existing[0].id,
-            identity_facet_kind: input.kind,
-          },
+            metadata: {
+              entity_id: input.entityId,
+              identity_facet_id: existing[0].id,
+              identity_facet_kind: input.kind,
+            },
+            snapshot: {
+              entity_id: input.entityId,
+              identity_facet_id: existing[0].id,
+              identity_facet_kind: input.kind,
+              value,
+              normalized_value: normalizedValue,
+              provider: input.provider !== undefined ? input.provider : existing[0].provider,
+              external_id:
+                input.externalId !== undefined ? input.externalId : existing[0].externalId,
+              linked_user_id:
+                input.linkedUserId !== undefined ? input.linkedUserId : existing[0].linkedUserId,
+              previous: {
+                value: existing[0].value,
+                normalized_value: existing[0].normalizedValue,
+                provider: existing[0].provider,
+                external_id: existing[0].externalId,
+                linked_user_id: existing[0].linkedUserId,
+              },
+              actor_kind: input.actor.kind,
+              actor_user_id: input.actor.userId ?? null,
+            },
+          }),
         })
         .returning({ id: rawEvents.id });
+      const sourceEventId = ev[0]?.id ?? null;
+      await normalizeSystemRawEventEvidence({
+        db: tx,
+        teamId: scope.teamId,
+        rawEventId: sourceEventId,
+      });
       await reconcileObjectAuditLinks(tx, {
         teamId: scope.teamId,
-        rawEventId: ev[0]?.id ?? null,
+        rawEventId: sourceEventId,
         text: summary,
       });
       await tx.insert(objectChanges).values({
@@ -4180,7 +5318,31 @@ export async function createIdentityFacet(
           linkedUserId:
             input.linkedUserId !== undefined ? input.linkedUserId : existing[0].linkedUserId,
         },
-        sourceEventId: ev[0]?.id ?? null,
+        sourceEventId: null,
+      });
+      await emitIdentityFacetDirectWriteOutput({
+        db: tx,
+        teamId: scope.teamId,
+        entityId: input.entityId,
+        identityFacetId: existing[0].id,
+        identityFacetKind: input.kind,
+        actor: input.actor,
+        sourceEventId,
+        operation: 'update',
+        systemEventKind: 'identity_facet_update',
+        value,
+        normalizedValue,
+        provider: input.provider !== undefined ? input.provider : existing[0].provider,
+        externalId: input.externalId !== undefined ? input.externalId : existing[0].externalId,
+        linkedUserId:
+          input.linkedUserId !== undefined ? input.linkedUserId : existing[0].linkedUserId,
+        previous: {
+          value: existing[0].value,
+          normalizedValue: existing[0].normalizedValue,
+          provider: existing[0].provider,
+          externalId: existing[0].externalId,
+          linkedUserId: existing[0].linkedUserId,
+        },
       });
       return { id: existing[0].id };
     }
@@ -4205,26 +5367,49 @@ export async function createIdentityFacet(
     if (!row) throw new Error('Failed to create identity facet');
 
     const summary = `Added ${input.kind} identity for ${ent[0].canonicalName}: ${value}`;
+    const rawEventId = randomUUID();
     const ev = await tx
       .insert(rawEvents)
       .values({
+        id: rawEventId,
         teamId: scope.teamId,
         authorUserId: input.actor.userId ?? null,
         source: 'system',
         contentText: summary,
         occurredAt: new Date(),
         visibility: 'team',
-        sourceMetadata: {
+        sourceMetadata: systemDirectWriteSourceMetadata({
+          rawEventId,
           kind: 'identity_facet_create',
-          entity_id: input.entityId,
-          identity_facet_id: row.id,
-          identity_facet_kind: input.kind,
-        },
+          metadata: {
+            entity_id: input.entityId,
+            identity_facet_id: row.id,
+            identity_facet_kind: input.kind,
+          },
+          snapshot: {
+            entity_id: input.entityId,
+            identity_facet_id: row.id,
+            identity_facet_kind: input.kind,
+            value,
+            normalized_value: normalizedValue,
+            provider: input.provider ?? null,
+            external_id: input.externalId ?? null,
+            linked_user_id: input.linkedUserId ?? null,
+            actor_kind: input.actor.kind,
+            actor_user_id: input.actor.userId ?? null,
+          },
+        }),
       })
       .returning({ id: rawEvents.id });
+    const sourceEventId = ev[0]?.id ?? null;
+    await normalizeSystemRawEventEvidence({
+      db: tx,
+      teamId: scope.teamId,
+      rawEventId: sourceEventId,
+    });
     await reconcileObjectAuditLinks(tx, {
       teamId: scope.teamId,
-      rawEventId: ev[0]?.id ?? null,
+      rawEventId: sourceEventId,
       text: summary,
     });
 
@@ -4245,7 +5430,23 @@ export async function createIdentityFacet(
         externalId: input.externalId ?? null,
         linkedUserId: input.linkedUserId ?? null,
       },
-      sourceEventId: ev[0]?.id ?? null,
+      sourceEventId: null,
+    });
+    await emitIdentityFacetDirectWriteOutput({
+      db: tx,
+      teamId: scope.teamId,
+      entityId: input.entityId,
+      identityFacetId: row.id,
+      identityFacetKind: input.kind,
+      actor: input.actor,
+      sourceEventId,
+      operation: 'create',
+      systemEventKind: 'identity_facet_create',
+      value,
+      normalizedValue,
+      provider: input.provider ?? null,
+      externalId: input.externalId ?? null,
+      linkedUserId: input.linkedUserId ?? null,
     });
 
     return row;
@@ -4312,26 +5513,45 @@ export async function updateNote(
       .set({ body, updatedAt: new Date() })
       .where(eq(objectNotes.id, input.noteId));
 
+    const rawEventId = randomUUID();
     const ev = await tx
       .insert(rawEvents)
       .values({
+        id: rawEventId,
         teamId: scope.teamId,
         authorUserId: input.actorUserId,
         source: 'system',
         contentText: `Note edited: ${body}`,
         occurredAt: new Date(),
         visibility: 'team',
-        sourceMetadata: {
-          ...(input.metadata ?? {}),
+        sourceMetadata: systemDirectWriteSourceMetadata({
+          rawEventId,
           kind: 'object_note_update',
-          entity_id: note.entityId,
-          note_id: note.id,
-        },
+          metadata: {
+            ...(input.metadata ?? {}),
+            entity_id: note.entityId,
+            note_id: note.id,
+          },
+          snapshot: {
+            entity_id: note.entityId,
+            note_id: note.id,
+            body,
+            previous_body: note.body,
+            actor_kind: actor.kind,
+            actor_user_id: actor.userId ?? null,
+          },
+        }),
       })
       .returning({ id: rawEvents.id });
+    const sourceEventId = ev[0]?.id ?? null;
+    await normalizeSystemRawEventEvidence({
+      db: tx,
+      teamId: scope.teamId,
+      rawEventId: sourceEventId,
+    });
     await reconcileObjectAuditLinks(tx, {
       teamId: scope.teamId,
-      rawEventId: ev[0]?.id ?? null,
+      rawEventId: sourceEventId,
       text: `Note edited: ${body}`,
     });
     await tx.insert(objectChanges).values({
@@ -4343,7 +5563,19 @@ export async function updateNote(
       field: '__note_update__',
       previousValue: { note_id: note.id, body: note.body },
       newValue: { note_id: note.id, body },
-      sourceEventId: ev[0]?.id ?? null,
+      sourceEventId: null,
+    });
+    await emitNoteDirectWriteOutput({
+      db: tx,
+      teamId: scope.teamId,
+      entityId: note.entityId,
+      noteId: note.id,
+      actor,
+      sourceEventId,
+      operation: 'update',
+      systemEventKind: 'object_note_update',
+      body,
+      previousBody: note.body,
     });
     return { changed: true, entityId: note.entityId };
   });
@@ -4395,25 +5627,43 @@ export async function deleteNote(
       .set({ deletedAt: new Date() })
       .where(eq(objectNotes.id, input.noteId));
 
+    const rawEventId = randomUUID();
     const ev = await tx
       .insert(rawEvents)
       .values({
+        id: rawEventId,
         teamId: scope.teamId,
         authorUserId: input.actorUserId,
         source: 'system',
         contentText: `Note deleted`,
         occurredAt: new Date(),
         visibility: 'team',
-        sourceMetadata: {
+        sourceMetadata: systemDirectWriteSourceMetadata({
+          rawEventId,
           kind: 'object_note_delete',
-          entity_id: note.entityId,
-          note_id: note.id,
-        },
+          metadata: {
+            entity_id: note.entityId,
+            note_id: note.id,
+          },
+          snapshot: {
+            entity_id: note.entityId,
+            note_id: note.id,
+            previous_body: note.body,
+            actor_kind: 'user',
+            actor_user_id: input.actorUserId,
+          },
+        }),
       })
       .returning({ id: rawEvents.id });
+    const sourceEventId = ev[0]?.id ?? null;
+    await normalizeSystemRawEventEvidence({
+      db: tx,
+      teamId: scope.teamId,
+      rawEventId: sourceEventId,
+    });
     await reconcileObjectAuditLinks(tx, {
       teamId: scope.teamId,
-      rawEventId: ev[0]?.id ?? null,
+      rawEventId: sourceEventId,
       text: 'Note deleted',
     });
     await tx.insert(objectChanges).values({
@@ -4425,7 +5675,18 @@ export async function deleteNote(
       field: '__note_delete__',
       previousValue: { note_id: note.id, body: note.body },
       newValue: null,
-      sourceEventId: ev[0]?.id ?? null,
+      sourceEventId: null,
+    });
+    await emitNoteDirectWriteOutput({
+      db: tx,
+      teamId: scope.teamId,
+      entityId: note.entityId,
+      noteId: note.id,
+      actor: { kind: 'user', userId: input.actorUserId },
+      sourceEventId,
+      operation: 'archive_or_cancel',
+      systemEventKind: 'object_note_delete',
+      previousBody: note.body,
     });
     return { entityId: note.entityId };
   });
@@ -5244,12 +6505,12 @@ export async function acceptObjectChange(
 
   // Build a patch object keyed by the suggestion's field. Two cases:
   //
-  // 1. `__create__` — accepting an agent-suggested object (from
-  //    `suggest_task` and friends). The entity already exists with
-  //    `status='suggested'`; accepting flips it to a working status so
-  //    the object leaves the "needs review" state. We pick the default
-  //    by type so a suggested task lands in 'todo' (matches the task
-  //    status vocabulary) and other types land in 'open'.
+  // 1. Legacy `__create__` suggestions. New object creation approvals are
+  //    represented by reconciliation outputs and suggestion projection rows,
+  //    but older rows may still point at an entity with `status='suggested'`.
+  //    Accepting flips it to a working status so the object leaves the
+  //    "needs review" state. We pick the default by type so a suggested task
+  //    lands in 'todo' and other types land in 'open'.
   //
   // 2. A field-scoped suggestion (`status`/`stage`/...) from
   //    `proposeObjectChange`. Restrict to the exact set the proposer

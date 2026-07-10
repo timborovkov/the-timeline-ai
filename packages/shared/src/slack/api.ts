@@ -28,6 +28,29 @@ interface SlackResponse {
   response_metadata?: { next_cursor?: string };
 }
 
+function deterministicSlackApiResponse(method: string): SlackResponse | undefined {
+  if (process.env.NODE_ENV === 'production' || process.env.E2E_DETERMINISTIC_SLACK_API !== '1') {
+    return undefined;
+  }
+  if (method === 'conversations.list') {
+    return {
+      ok: true,
+      channels: [
+        { id: 'C_E2E_LAUNCH', name: 'launch', is_channel: true, is_member: true },
+        { id: 'C_E2E_SUPPORT', name: 'support', is_channel: true, is_member: true },
+        { id: 'C_E2E_PRIVATE', name: 'private-plans', is_group: true, is_member: false },
+      ],
+    } as SlackResponse;
+  }
+  if (method === 'conversations.info') {
+    return {
+      ok: true,
+      channel: { id: 'C_E2E_SUPPORT', name: 'support', is_channel: true, is_member: true },
+    } as SlackResponse;
+  }
+  return undefined;
+}
+
 async function responseBufferWithLimit(res: Response, maxBytes?: number): Promise<Buffer> {
   if (maxBytes !== undefined) {
     const len = res.headers.get('content-length');
@@ -66,6 +89,9 @@ export class SlackApi {
     method: string,
     body: Record<string, string | number | boolean | undefined>,
   ): Promise<T> {
+    const deterministic = deterministicSlackApiResponse(method);
+    if (deterministic) return deterministic as T;
+
     const res = await fetch(`https://slack.com/api/${method}`, {
       method: 'POST',
       headers: {

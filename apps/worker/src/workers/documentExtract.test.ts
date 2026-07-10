@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto';
 
 import { PGlite } from '@electric-sql/pglite';
-import { type Db, documentChunks, documents, documentVersions } from '@timeline/db';
-import { withTeam, type queue as queueNS } from '@timeline/shared';
+import { type Db, documentChunks, documents, documentVersions, rawEvents } from '@timeline/db';
+import { email, withTeam, type queue as queueNS } from '@timeline/shared';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -164,6 +164,40 @@ async function createFinalisedCapturedFile(
     documentId,
   ]);
   return { documentId, versionId, sourceEventId };
+}
+
+function inboundEmailPayload(messageId: string) {
+  return {
+    MessageID: `postmark-${messageId}`,
+    Date: '2026-05-27T09:00:00Z',
+    Subject: 'Customer attachment',
+    From: 'customer@example.net',
+    FromName: 'Customer',
+    FromFull: { Email: 'customer@example.net', Name: 'Customer', MailboxHash: '' },
+    To: 't@inbound.test',
+    ToFull: [{ Email: 't@inbound.test', Name: 'Test Team', MailboxHash: '' }],
+    Cc: '',
+    CcFull: [],
+    Bcc: '',
+    BccFull: [],
+    OriginalRecipient: '',
+    ReplyTo: '',
+    MailboxHash: 't',
+    TextBody: 'Please review the attached implementation notes.',
+    HtmlBody: '',
+    StrippedTextReply: '',
+    Tag: '',
+    Headers: [{ Name: 'Message-ID', Value: `<${messageId}@example.net>` }],
+    Attachments: [
+      {
+        Name: 'implementation-notes.pdf',
+        Content: Buffer.from('%PDF-1.7 customer notes').toString('base64'),
+        ContentType: 'application/pdf',
+        ContentLength: Buffer.byteLength('%PDF-1.7 customer notes'),
+        ContentID: '',
+      },
+    ],
+  };
 }
 
 // `h` is assigned at the top of every `it`. We declare it as `Harness`
@@ -365,6 +399,90 @@ describe('processDocumentExtractJob — privacy payloads', () => {
 });
 
 describe('processDocumentExtractJob — content-type routing', () => {
+  it('extracts Postmark email attachments from captured documents with email provenance', async () => {
+    h = await makeHarness('%PDF-1.7 customer notes', {
+      visionResponse: 'Implementation notes: Acme rollout owner is Ada.',
+    });
+    const attachmentUpload = vi.fn().mockResolvedValue(undefined);
+    const documentUpload = vi.fn().mockResolvedValue(undefined);
+    const documentEnqueue = vi.fn().mockResolvedValue(undefined);
+
+    await email.handleInbound(
+      {
+        db: h.db,
+        inboundDomain: 'inbound.test',
+        attachments: {
+          uploadAttachment: attachmentUpload,
+          uploadAudio: vi.fn().mockResolvedValue(undefined),
+          enqueueTranscribe: vi.fn().mockResolvedValue(undefined),
+          buildAttachmentKey: ({ teamId, messageId, filename }) =>
+            `attachments/${teamId}/${messageId}/${filename}`,
+          buildAudioKey: ({ teamId, messageId, filename }) =>
+            `audio/${teamId}/${messageId}/${filename}`,
+        },
+        documents: {
+          upload: documentUpload,
+          enqueueExtract: documentEnqueue,
+        },
+      },
+      inboundEmailPayload('email-attachment-doc'),
+    );
+
+    const [parent] = await h.db.select().from(rawEvents).where(eq(rawEvents.source, 'email'));
+    const [document] = await h.db.select().from(documents).where(eq(documents.teamId, TEAM_ID));
+    if (!document) throw new Error('captured document not created');
+    const [version] = await h.db
+      .select()
+      .from(documentVersions)
+      .where(eq(documentVersions.documentId, document.id));
+    if (!version) throw new Error('captured document version not created');
+    expect(parent?.contentText).toBe('Please review the attached implementation notes.');
+    expect(document).toMatchObject({
+      fileKind: 'captured',
+      name: 'implementation-notes.pdf',
+      sourceRawEventId: parent?.id,
+    });
+    expect(document.metadata).toMatchObject({
+      source: 'email',
+      email_message_id: 'email-attachment-doc@example.net',
+      parent_raw_event_id: parent?.id,
+    });
+    expect(version.sourceEventId).toBe(parent?.id);
+    expect(documentUpload).toHaveBeenCalledWith({
+      key: version.objectKey,
+      body: Buffer.from('%PDF-1.7 customer notes'),
+      contentType: 'application/pdf',
+    });
+    expect(documentEnqueue).toHaveBeenCalledWith({
+      documentVersionId: version.id,
+      teamId: TEAM_ID,
+    });
+
+    const result = await processDocumentExtractJob(
+      { db: h.db },
+      { documentVersionId: version.id, teamId: TEAM_ID },
+      h.io,
+    );
+
+    expect(result.chunkCount).toBeGreaterThanOrEqual(1);
+    expect(h.fetchBlob).toHaveBeenCalledWith(version.objectKey, expect.any(Number));
+    expect(h.extractFromMedia).toHaveBeenCalledWith({
+      body: Buffer.from('%PDF-1.7 customer notes'),
+      mediaType: 'application/pdf',
+      filename: 'implementation-notes.pdf',
+    });
+    const chunks = await h.db
+      .select()
+      .from(documentChunks)
+      .where(eq(documentChunks.documentVersionId, version.id));
+    expect(chunks[0]?.text).toContain('Acme rollout owner is Ada');
+    expect(h.enqueueEmbed).toHaveBeenCalledWith({
+      scope: 'doc_chunk',
+      teamId: TEAM_ID,
+      documentChunkId: chunks[0]?.id,
+    });
+  });
+
   it('routes application/pdf through the vision extractor (LLM OCR)', async () => {
     h = await makeHarness('%PDF-1.4 fake pdf bytes', {
       visionResponse: '# Contract\n\nParties: Acme and Beta.\n\nTerms: ...',

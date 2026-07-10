@@ -140,7 +140,7 @@ const CATALOG_SEEDS: CatalogSeed[] = [
     id: 'linear',
     label: 'Linear',
     description:
-      'Issues, comments, status / assignee / priority changes, and projects sync as workspace objects.',
+      'Issues, comments, status / assignee / priority changes, and projects sync as cited events and work-artifact evidence.',
     logo: '/connectors/linear.svg',
     category: 'project-management',
     kind: 'native',
@@ -208,7 +208,7 @@ const CATALOG_SEEDS: CatalogSeed[] = [
     id: 'sentry',
     label: 'Sentry',
     description:
-      'Native issue sync: issue updates, resolved issues, and releases become cited events and incident objects.',
+      'Native issue sync: issue updates, resolved issues, and releases become cited events and incident evidence.',
     logo: '/connectors/sentry.svg',
     category: 'dev-tools',
     kind: 'native',

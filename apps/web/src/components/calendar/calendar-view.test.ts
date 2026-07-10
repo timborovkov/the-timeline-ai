@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { act, createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -228,6 +228,27 @@ describe('CalendarView recurrence and tentative UI', () => {
     expect(fakes.refresh).toHaveBeenCalled();
   });
 
+  it('keeps normalized stored rrules mapped to their recurrence preset', async () => {
+    const user = userEvent.setup();
+    render(
+      createElement(CalendarView, {
+        events: [
+          {
+            ...event('event-1', 'Weekly sync'),
+            rrule: 'RRULE:FREQ=WEEKLY',
+          },
+        ],
+        eventListEvents: [],
+        timezone: 'UTC',
+      }),
+    );
+
+    await user.click(screen.getByRole('button', { name: /Weekly sync/ }));
+
+    expect(screen.getByLabelText('Repeats')).toHaveProperty('value', 'weekly');
+    expect(screen.getByLabelText('RRULE')).toHaveProperty('value', 'RRULE:FREQ=WEEKLY');
+  });
+
   it('forwards the selected recurrence scope when deleting from the edit dialog', async () => {
     const user = userEvent.setup();
     render(
@@ -296,6 +317,48 @@ describe('CalendarView recurrence and tentative UI', () => {
       },
       { timeout: 1000 },
     );
+  });
+
+  it('renders server-filtered event list results and empty states for search/scope params', () => {
+    fakes.searchParams = 'view=month&date=2026-06-03&eventQ=budget&eventScope=all';
+    const budget = { ...event('event-1', 'Budget review'), location: 'Finance room' };
+    const roadmap = event('event-2', 'Roadmap review');
+    const { rerender } = render(
+      createElement(CalendarView, {
+        events: [],
+        eventListEvents: [budget],
+        eventListTotal: 1,
+        eventListPage: 0,
+        eventListQuery: 'budget',
+        eventListScope: 'all',
+        timezone: 'UTC',
+      }),
+    );
+
+    const eventList = screen.getByText('Calendar events').closest('section');
+    if (!eventList) throw new Error('Calendar events section not found');
+
+    expect(screen.getByPlaceholderText('Search events')).toHaveProperty('value', 'budget');
+    expect(within(eventList).getByText('1 all event')).toBeTruthy();
+    expect(within(eventList).getByRole('button', { name: /Budget review/ })).toBeTruthy();
+    expect(within(eventList).getByText('Finance room')).toBeTruthy();
+    expect(within(eventList).queryByRole('button', { name: /Roadmap review/ })).toBeNull();
+
+    rerender(
+      createElement(CalendarView, {
+        events: [roadmap],
+        eventListEvents: [],
+        eventListTotal: 0,
+        eventListPage: 0,
+        eventListQuery: 'budget',
+        eventListScope: 'all',
+        timezone: 'UTC',
+      }),
+    );
+
+    expect(within(eventList).getByText('0 all events')).toBeTruthy();
+    expect(within(eventList).getByText('No calendar events match these filters.')).toBeTruthy();
+    expect(within(eventList).queryByRole('button', { name: /Roadmap review/ })).toBeNull();
   });
 
   it('keeps search text typed while committed query props catch up', () => {
@@ -376,5 +439,94 @@ describe('CalendarView recurrence and tentative UI', () => {
     expect(screen.getByText('1 upcoming event')).toBeTruthy();
     expect(screen.getByRole('button', { name: /Roadmap review/ })).toBeTruthy();
     expect(screen.queryByRole('button', { name: /^Jun 3.*New sales sync/s })).toBeNull();
+  });
+
+  it('validates create title and sends specific-user visibility selections', async () => {
+    const user = userEvent.setup();
+    render(
+      createElement(CalendarView, {
+        events: [],
+        eventListEvents: [],
+        timezone: 'UTC',
+        defaultVisibility: 'specific_users',
+        defaultVisibilityUserIds: ['member-1'],
+        members: [
+          { id: 'member-1', label: 'Ada Lovelace' },
+          { id: 'member-2', label: 'Grace Hopper' },
+        ],
+      }),
+    );
+
+    await user.click(screen.getByRole('button', { name: /New/ }));
+    expect(screen.getByLabelText<HTMLSelectElement>('Visibility').value).toBe('specific_users');
+    expect(screen.getByLabelText<HTMLInputElement>('Ada Lovelace').checked).toBe(true);
+    expect(screen.getByLabelText<HTMLInputElement>('Grace Hopper').checked).toBe(false);
+
+    await user.click(screen.getByRole('button', { name: /^Save$/ }));
+    expect(screen.getByText('Title is required.')).toBeTruthy();
+    expect(fakes.createCalendarEventAction).not.toHaveBeenCalled();
+
+    await user.type(screen.getByLabelText('Title'), 'Private launch review');
+    await user.click(screen.getByLabelText('Ada Lovelace'));
+    await user.click(screen.getByLabelText('Grace Hopper'));
+    await user.selectOptions(screen.getByLabelText('Show as'), 'tentative');
+    await user.click(screen.getByRole('button', { name: /^Save$/ }));
+
+    await waitFor(() => {
+      expect(fakes.createCalendarEventAction).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: 'Private launch review',
+          visibility: 'specific_users',
+          visibilityUserIds: ['member-2'],
+          showAs: 'tentative',
+          allDay: true,
+        }),
+      );
+    });
+    expect(fakes.refresh).toHaveBeenCalled();
+  });
+
+  it('reopens the create dialog and discards optimistic UI when save fails', async () => {
+    const user = userEvent.setup();
+    fakes.createCalendarEventAction.mockResolvedValueOnce({
+      ok: false,
+      error: 'Calendar write denied',
+    });
+
+    render(
+      createElement(CalendarView, {
+        events: [],
+        eventListEvents: [],
+        timezone: 'UTC',
+      }),
+    );
+
+    await user.click(screen.getByRole('button', { name: /New/ }));
+    await user.type(screen.getByLabelText('Title'), 'Denied customer sync');
+    await user.click(screen.getByRole('button', { name: /^Save$/ }));
+
+    await waitFor(() => {
+      expect(screen.getAllByText('Calendar write denied')).toHaveLength(2);
+    });
+    expect(screen.getByRole('dialog', { name: 'New event' })).toBeTruthy();
+    expect(screen.getByLabelText<HTMLInputElement>('Title').value).toBe('Denied customer sync');
+    expect(screen.queryByRole('button', { name: /Denied customer sync/ })).toBeNull();
+    expect(fakes.refresh).toHaveBeenCalled();
+  });
+
+  it('renders redacted events as busy and does not open the edit dialog', async () => {
+    const user = userEvent.setup();
+    render(
+      createElement(CalendarView, {
+        events: [{ ...event('event-1', 'Sensitive customer call'), redacted: true }],
+        eventListEvents: [],
+        timezone: 'UTC',
+      }),
+    );
+
+    await user.click(screen.getByRole('button', { name: /09:00 AM Busy/ }));
+
+    expect(screen.queryByRole('dialog', { name: 'Edit event' })).toBeNull();
+    expect(screen.queryByText('Sensitive customer call')).toBeNull();
   });
 });

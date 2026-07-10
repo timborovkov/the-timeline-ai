@@ -406,6 +406,37 @@ describe('buildAgentTools — team isolation', () => {
     });
   });
 
+  it('get_object does not expose legacy agentSuggested provenance', async () => {
+    const scope = makeFakeScope();
+    scope.objects.getObject.mockResolvedValue({
+      id: OBJECT_ID,
+      type: 'project',
+      canonicalName: 'AuditAI pilot',
+      status: 'suggested',
+      stage: null,
+      priority: null,
+      ownerUserId: null,
+      assigneeUserId: null,
+      dueAt: null,
+      agentSuggested: true,
+      archivedAt: null,
+      notes: [],
+      recentChanges: [],
+      openTasks: [],
+    });
+    const tools = buildAgentTools(scope as unknown as TeamScope);
+    const exec = tools.get_object?.execute as (input: unknown, opts: unknown) => Promise<unknown>;
+
+    const result = await exec({ idOrName: OBJECT_ID }, {});
+
+    expect(result).toMatchObject({
+      found: true,
+      id: OBJECT_ID,
+      status: 'suggested',
+    });
+    expect(result).not.toHaveProperty('agent_suggested');
+  });
+
   it('execute_object_update requires approval and applies a direct object update', async () => {
     const scope = makeFakeScope();
     scope.objects.getObject.mockResolvedValue({
@@ -2123,6 +2154,7 @@ describe('buildAgentTools — team isolation', () => {
             priority: 2,
             assigneeUserId: '11111111-1111-4111-8111-111111111111',
             dueAt: '2026-07-04T00:00:00.000Z',
+            sourceEventId: '33333333-3333-4333-8333-333333333333',
           },
           {
             kind: 'update_object',
@@ -2153,6 +2185,7 @@ describe('buildAgentTools — team isolation', () => {
         dueAt: '2026-07-04T00:00:00.000Z',
       },
     });
+    expect(input.items[0]?.proposedPayload).not.toHaveProperty('sourceEventId');
     expect(input.items[1]).toMatchObject({
       targetKind: 'object',
       proposedPayload: {
@@ -2175,16 +2208,19 @@ describe('buildAgentTools — team isolation', () => {
         ownerUserId: '11111111-1111-4111-8111-111111111111',
         assigneeUserId: '22222222-2222-4222-8222-222222222222',
         priority: 1,
+        sourceEventId: '33333333-3333-4333-8333-333333333333',
       },
       {},
     );
 
     const input = scope.suggestions.createOrMergeSuggestionBundle.mock.calls[0]?.[0] as {
+      evidence: { rawEventId: string }[];
       items: {
         targetKind: string;
         proposedPayload: Record<string, unknown>;
       }[];
     };
+    expect(input.evidence).toEqual([]);
     expect(input.items[0]).toMatchObject({
       targetKind: 'task',
       proposedPayload: {
@@ -2195,6 +2231,7 @@ describe('buildAgentTools — team isolation', () => {
         priority: 1,
       },
     });
+    expect(input.items[0]?.proposedPayload).not.toHaveProperty('sourceEventId');
   });
 
   it('suggest_object_memory targets relationship proposals at the source object', async () => {

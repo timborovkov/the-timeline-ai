@@ -1,10 +1,11 @@
 import { PGlite } from '@electric-sql/pglite';
 import {
-  artifactClusterMembers,
   artifactClusters,
+  artifactEvidenceAssociations,
   ingestWebhookCredentials,
   ingestWebhooks,
   rawEvents,
+  reconciliationEvidence,
 } from '@timeline/db';
 import { hashCredential } from '@timeline/shared/ingest-webhooks';
 import * as rateLimit from '@timeline/shared/rate-limit';
@@ -155,9 +156,41 @@ describe('/api/webhooks/ingest', () => {
     expect(metadata.ingest_webhook_name).toBe('Pipedrive webhook');
     expect(metadata.content_type).toBe('application/json');
     expect(metadata.proposal_generation_enabled).toBe(true);
+    expect(metadata.source_payload_ref).toEqual(
+      expect.stringMatching(/^inline:\/\/timeline\/ingest-webhook\/.+\/[0-9a-f]{64}$/),
+    );
+    expect(metadata.payload_digest).toEqual(expect.stringMatching(/^sha256:[0-9a-f]{64}$/));
+    expect(metadata.source_snapshot_kind).toBe('ingest_webhook_payload');
+    expect(metadata.source_snapshot_version).toBe('ingest-webhook-source-snapshot-2026-07');
+    expect(metadata.source_snapshot).toMatchObject({
+      provider: 'ingest_webhook',
+      webhook_name: 'Pipedrive webhook',
+      content_type: 'application/json',
+      method: 'POST',
+      body: '{"event":"deal.updated","actor":"Maya"}',
+      body_sha256: metadata.ingest_webhook_body_sha256,
+      request_headers: {
+        'x-hook-secret': '[redacted]',
+        'x-pipedrive-delivery': 'delivery-1',
+      },
+      proposal_generation_enabled: true,
+    });
     const requestHeaders = metadata.request_headers as Record<string, unknown>;
     expect(requestHeaders['x-hook-secret']).toBe('[redacted]');
     expect(requestHeaders['x-pipedrive-delivery']).toBe('delivery-1');
+    const [evidence] = await db
+      .select()
+      .from(reconciliationEvidence)
+      .where(eq(reconciliationEvidence.rawEventId, payload.rawEventId));
+    expect(evidence).toMatchObject({
+      source: 'ingest_webhook',
+      provider: 'ingest_webhook',
+      eventType: 'ingest_webhook.received',
+      sourcePayloadRef: metadata.source_payload_ref,
+      payloadDigest: metadata.payload_digest,
+      replayState: 'full',
+      visibility: 'team',
+    });
     expect(fakes.enqueueExtractJob).toHaveBeenCalledWith({
       rawEventId: payload.rawEventId,
       teamId: TEAM_ID,
@@ -216,6 +249,15 @@ describe('/api/webhooks/ingest', () => {
 
   it('deduplicates identical deliveries from the same webhook day and re-enqueues processing', async () => {
     expect((await POST(request())).status).toBe(202);
+    const [firstEvent] = await db.select().from(rawEvents);
+    if (!firstEvent) throw new Error('first raw event insert failed');
+    const firstMetadata = firstEvent.sourceMetadata as Record<string, unknown>;
+    const firstEvidence = await db
+      .select()
+      .from(reconciliationEvidence)
+      .where(eq(reconciliationEvidence.rawEventId, firstEvent.id));
+    expect(firstEvidence).toHaveLength(1);
+
     const duplicate = await POST(request());
     expect(duplicate.status).toBe(200);
     const duplicateBody = (await duplicate.json()) as {
@@ -224,8 +266,19 @@ describe('/api/webhooks/ingest', () => {
       rawEventId: string | null;
     };
     expect(duplicateBody).toMatchObject({ ok: true, status: 'duplicate' });
-    expect(typeof duplicateBody.rawEventId).toBe('string');
+    expect(duplicateBody.rawEventId).toBe(firstEvent.id);
     await expect(db.select().from(rawEvents)).resolves.toHaveLength(1);
+    const evidenceAfterDuplicate = await db
+      .select()
+      .from(reconciliationEvidence)
+      .where(eq(reconciliationEvidence.rawEventId, firstEvent.id));
+    expect(evidenceAfterDuplicate).toHaveLength(1);
+    expect(evidenceAfterDuplicate[0]).toMatchObject({
+      id: firstEvidence[0]?.id,
+      sourcePayloadRef: firstMetadata.source_payload_ref,
+      payloadDigest: firstMetadata.payload_digest,
+      replayState: 'full',
+    });
     expect(fakes.enqueueExtractJob).toHaveBeenCalledTimes(2);
     expect(fakes.enqueueEmbedJob).toHaveBeenCalledTimes(2);
     expect(fakes.enqueueSuggestionJob).toHaveBeenCalledTimes(2);
@@ -254,7 +307,7 @@ describe('/api/webhooks/ingest', () => {
     ]);
 
     await db.delete(artifactClusters);
-    await expect(db.select().from(artifactClusterMembers)).resolves.toHaveLength(0);
+    await expect(db.select().from(artifactEvidenceAssociations)).resolves.toHaveLength(0);
 
     const duplicate = await POST(request(body, { 'content-type': 'application/json' }));
     expect(duplicate.status).toBe(200);
@@ -266,7 +319,7 @@ describe('/api/webhooks/ingest', () => {
         canonicalName: 'example.com/deals/42',
       }),
     ]);
-    await expect(db.select().from(artifactClusterMembers)).resolves.toEqual([
+    await expect(db.select().from(artifactEvidenceAssociations)).resolves.toEqual([
       expect.objectContaining({ rawEventId: firstPayload.rawEventId }),
     ]);
   });

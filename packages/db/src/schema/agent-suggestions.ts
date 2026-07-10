@@ -108,6 +108,7 @@ export const agentSuggestionItems = pgTable(
     description: text('description'),
     dedupeKey: text('dedupe_key').notNull(),
     proposedPayload: jsonb('proposed_payload').notNull(),
+    metadata: jsonb('metadata').notNull().default({}),
     failureReason: text('failure_reason'),
     supersededByItemId: uuid('superseded_by_item_id').references(
       (): AnyPgColumn => agentSuggestionItems.id,

@@ -10,7 +10,7 @@
     <a class="skip" href="#main">Skip to content</a>
     <main id="main">
       <h1>Sentry setup</h1>
-      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-06-30</span></div>
+      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-07-03</span></div>
       <blockquote><p>Optional locally. Strongly recommended before production.</p></blockquote>
       <p class="tldr">
         Hook the web and worker services into Sentry for error tracking. Timeline can also connect
@@ -105,7 +105,9 @@ SENTRY_RELEASE=
         <code>SENTRY_RELEASE</code> is optional because injected debug IDs are enough for source-map
         matching, but setting it to the deployed git SHA makes Sentry releases easier to audit.
         Without the first three values, the worker upload script logs a skip and local builds still
-        succeed.
+        succeed. The live integration canary also uses these values for a read-only project lookup;
+        if it reports <code>403</code>, grant the token project read access to the configured
+        org/project or update <code>SENTRY_ORG</code> and <code>SENTRY_PROJECT</code>.
       </p>
       <p>
         Docker app-profile builds pass the same four source-map variables as build args. The web

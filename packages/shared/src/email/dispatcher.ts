@@ -1,6 +1,15 @@
-import { type Db, rawEvents, teamMembers, teams, users } from '@timeline/db';
+import {
+  type Db,
+  documentVersions,
+  documents,
+  rawEvents,
+  teamMembers,
+  teams,
+  users,
+} from '@timeline/db';
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 
+import { buildDocumentObjectKey } from '#src/documents/object-key.js';
 import {
   chooseContentText,
   getHeader,
@@ -22,9 +31,11 @@ import {
   type PostmarkInbound,
 } from '#src/email/postmark-schema.js';
 import { childLogger } from '#src/logger.js';
+import { inlineSourceSnapshotMetadata } from '#src/reconciliation/source-snapshot.js';
 import { withTeam } from '#src/team-scope.js';
 
 const log = childLogger('email');
+const EMAIL_SOURCE_SNAPSHOT_VERSION = 'email-source-snapshot-2026-07';
 
 /**
  * Shape of an attachment upload dependency, mirroring `AudioIngestDeps` from
@@ -43,6 +54,11 @@ export interface EmailAttachmentDeps {
   enqueueTranscribe(input: { rawEventId: string; teamId: string; audioKey: string }): Promise<void>;
   buildAttachmentKey(input: { teamId: string; messageId: string; filename: string }): string;
   buildAudioKey(input: { teamId: string; messageId: string; filename: string }): string;
+}
+
+export interface EmailDocumentDeps {
+  upload(input: { key: string; body: Buffer; contentType: string }): Promise<void>;
+  enqueueExtract(input: { documentVersionId: string; teamId: string }): Promise<void>;
 }
 
 export interface ExtractEnqueueDeps {
@@ -78,6 +94,7 @@ export interface DispatcherDeps {
    *  behavior). */
   trustedAuthservIds?: string[];
   attachments?: EmailAttachmentDeps;
+  documents?: EmailDocumentDeps;
   extract?: ExtractEnqueueDeps;
   embed?: EmbedEnqueueDeps;
   suggestions?: SuggestionEnqueueDeps;
@@ -513,9 +530,13 @@ async function ingestForTeam(
     bucket: 'attachments' | 'audio';
     key: string;
     audio_event_id?: string;
+    document_id?: string;
+    document_version_id?: string;
     upload_failed?: boolean;
+    document_failed?: boolean;
   }
   const attachmentsRecords: AttachmentRecord[] = [];
+  const documentCandidates: { attachment: DecodedAttachment; record: AttachmentRecord }[] = [];
   const audioAttachments: DecodedAttachment[] = [];
   const nonAudio: DecodedAttachment[] = [];
   for (const att of attachments) {
@@ -555,6 +576,8 @@ async function ingestForTeam(
           bucket: 'attachments',
           key,
         });
+        const record = attachmentsRecords[attachmentsRecords.length - 1];
+        if (record) documentCandidates.push({ attachment: att, record });
       } catch (err) {
         log.error({ teamId: team.id, key, err }, 'attachment upload failed');
         attachmentsRecords.push({
@@ -565,6 +588,8 @@ async function ingestForTeam(
           key,
           upload_failed: true,
         });
+        const record = attachmentsRecords[attachmentsRecords.length - 1];
+        if (record) documentCandidates.push({ attachment: att, record });
       }
     }
   } else if (nonAudio.length > 0) {
@@ -572,6 +597,18 @@ async function ingestForTeam(
       { teamId: team.id, count: nonAudio.length },
       'dropping non-audio attachments — no upload deps wired',
     );
+    for (const att of nonAudio) {
+      const record: AttachmentRecord = {
+        filename: att.filename,
+        content_type: att.contentType,
+        size_bytes: att.size,
+        bucket: 'attachments',
+        key: '',
+        upload_failed: true,
+      };
+      attachmentsRecords.push(record);
+      documentCandidates.push({ attachment: att, record });
+    }
   }
 
   // Build the email event's source_metadata. Thread fields are added by
@@ -595,6 +632,16 @@ async function ingestForTeam(
     attachments: attachmentsRecords,
     raw_postmark: stripRawForStorage(payload),
   };
+  Object.assign(
+    baseMetadata,
+    emailSourcePayloadMetadata({
+      payload,
+      messageId,
+      postmarkMessageId,
+      contentText,
+      attachments: attachmentsRecords,
+    }),
+  );
   if (forwardedFrom) baseMetadata.forwarded_from = forwardedFrom;
   if (forwardedChain.length > 0) baseMetadata.forwarded_chain = forwardedChain;
   if (senderUnverified) baseMetadata.sender_unverified = true;
@@ -648,10 +695,34 @@ async function ingestForTeam(
     await maybeEnqueueExtract(deps, createResult.id, team.id);
     await maybeEnqueueEmbed(deps, createResult.id, team.id);
     if (contentText.trim()) await maybeEnqueueSuggestion(deps, createResult.id, team.id);
+    if (
+      await processEmailDocumentCandidates(deps, {
+        teamId: team.id,
+        parentRawEventId: createResult.id,
+        parentAuthorUserId: authorUserId,
+        visibility: resolvedEmailVisibility,
+        visibilityOwnerUserId,
+        messageId,
+        candidates: documentCandidates,
+      })
+    ) {
+      await patchEmailParentAttachments(deps.db, createResult.id, attachmentsRecords);
+    }
     return false;
   }
 
   const parentEventId = createResult.id;
+  let parentAttachmentsDirty = false;
+
+  parentAttachmentsDirty = await processEmailDocumentCandidates(deps, {
+    teamId: team.id,
+    parentRawEventId: parentEventId,
+    parentAuthorUserId: authorUserId,
+    visibility: resolvedEmailVisibility,
+    visibilityOwnerUserId,
+    messageId,
+    candidates: documentCandidates,
+  });
 
   // Promote each audio attachment to its own raw_event + transcribe job.
   // These are created via createEvent (not createEmailEvent) because the
@@ -704,6 +775,7 @@ async function ingestForTeam(
         key,
         audio_event_id: child.id,
       });
+      parentAttachmentsDirty = true;
 
       try {
         await deps.attachments.enqueueTranscribe({
@@ -733,6 +805,7 @@ async function ingestForTeam(
     // Persist the updated attachments[] back onto the parent (the original
     // insert wrote `attachmentsRecords` before audio children existed; now
     // we know their event ids).
+    parentAttachmentsDirty = false;
     const patch = JSON.stringify({ attachments: attachmentsRecords });
     await deps.db
       .update(rawEvents)
@@ -749,6 +822,9 @@ async function ingestForTeam(
       'dropping audio attachments — no upload deps wired',
     );
   }
+  if (parentAttachmentsDirty) {
+    await patchEmailParentAttachments(deps.db, parentEventId, attachmentsRecords);
+  }
 
   // Enqueue extract + embed for the parent email event. Audio children's
   // extract/embed runs after the transcribe worker completes (Phase 3
@@ -758,6 +834,226 @@ async function ingestForTeam(
   if (contentText.trim()) await maybeEnqueueSuggestion(deps, parentEventId, team.id);
 
   return true;
+}
+
+async function processEmailDocumentCandidates(
+  deps: DispatcherDeps,
+  input: {
+    teamId: string;
+    parentRawEventId: string;
+    parentAuthorUserId: string | null;
+    visibility: 'private' | 'team';
+    visibilityOwnerUserId: string | null;
+    messageId: string;
+    candidates: { attachment: DecodedAttachment; record: AttachmentRecordForDocument }[];
+  },
+): Promise<boolean> {
+  const documentDeps = deps.documents;
+  if (!documentDeps || input.candidates.length === 0) return false;
+  let dirty = false;
+  for (const candidate of input.candidates) {
+    try {
+      const created = await createEmailDocumentAttachment(deps, documentDeps, {
+        teamId: input.teamId,
+        parentRawEventId: input.parentRawEventId,
+        parentAuthorUserId: input.parentAuthorUserId,
+        visibility: input.visibility,
+        visibilityOwnerUserId: input.visibilityOwnerUserId,
+        messageId: input.messageId,
+        attachment: candidate.attachment,
+      });
+      candidate.record.document_id = created.documentId;
+      candidate.record.document_version_id = created.versionId;
+      dirty = true;
+    } catch (err) {
+      log.error(
+        { teamId: input.teamId, parentRawEventId: input.parentRawEventId, err },
+        'email document attachment failed',
+      );
+      candidate.record.document_failed = true;
+      dirty = true;
+    }
+  }
+  return dirty;
+}
+
+interface AttachmentRecordForDocument {
+  filename: string;
+  content_type: string;
+  size_bytes: number;
+  bucket: 'attachments' | 'audio';
+  key: string;
+  audio_event_id?: string;
+  document_id?: string;
+  document_version_id?: string;
+  upload_failed?: boolean;
+  document_failed?: boolean;
+}
+
+async function createEmailDocumentAttachment(
+  deps: DispatcherDeps,
+  documentDeps: EmailDocumentDeps,
+  input: {
+    teamId: string;
+    parentRawEventId: string;
+    parentAuthorUserId: string | null;
+    visibility: 'private' | 'team';
+    visibilityOwnerUserId: string | null;
+    messageId: string;
+    attachment: DecodedAttachment;
+  },
+): Promise<{ documentId: string; versionId: string }> {
+  const existing = await deps.db
+    .select({ documentId: documents.id, versionId: documents.currentVersionId })
+    .from(documents)
+    .where(
+      and(
+        eq(documents.teamId, input.teamId),
+        eq(documents.sourceRawEventId, input.parentRawEventId),
+        sql`${documents.metadata} ->> 'email_message_id' = ${input.messageId}`,
+        sql`${documents.metadata} ->> 'filename' = ${input.attachment.filename}`,
+      ),
+    )
+    .limit(1);
+  if (existing[0]?.versionId) {
+    return { documentId: existing[0].documentId, versionId: existing[0].versionId };
+  }
+
+  const created = await deps.db.transaction(async (tx) => {
+    const docRows = await tx
+      .insert(documents)
+      .values({
+        teamId: input.teamId,
+        fileKind: 'captured',
+        name: input.attachment.filename,
+        ownerUserId: input.parentAuthorUserId ?? input.visibilityOwnerUserId,
+        visibility: input.visibility,
+        sourceRawEventId: input.parentRawEventId,
+        metadata: {
+          source: 'email',
+          email_message_id: input.messageId,
+          filename: input.attachment.filename,
+          parent_raw_event_id: input.parentRawEventId,
+        },
+      })
+      .returning({ id: documents.id });
+    const doc = docRows[0];
+    if (!doc) throw new Error('email_document_insert_failed');
+    const key = buildDocumentObjectKey({
+      teamId: input.teamId,
+      documentId: doc.id,
+      version: 1,
+      filename: input.attachment.filename,
+    });
+    const versionRows = await tx
+      .insert(documentVersions)
+      .values({
+        teamId: input.teamId,
+        documentId: doc.id,
+        version: 1,
+        objectKey: key,
+        byteSize: input.attachment.body.length,
+        contentType: input.attachment.contentType,
+        uploadedByUserId: input.parentAuthorUserId,
+        sourceEventId: input.parentRawEventId,
+        processingStatus: 'pending',
+      })
+      .returning({ id: documentVersions.id, objectKey: documentVersions.objectKey });
+    const version = versionRows[0];
+    if (!version) throw new Error('email_document_version_insert_failed');
+    await tx
+      .update(documents)
+      .set({ currentVersionId: version.id })
+      .where(eq(documents.id, doc.id));
+    return { documentId: doc.id, key, versionId: version.id };
+  });
+  await documentDeps.upload({
+    key: created.key,
+    body: input.attachment.body,
+    contentType: input.attachment.contentType,
+  });
+  await documentDeps.enqueueExtract({
+    documentVersionId: created.versionId,
+    teamId: input.teamId,
+  });
+  return { documentId: created.documentId, versionId: created.versionId };
+}
+
+async function patchEmailParentAttachments(
+  db: Db,
+  parentRawEventId: string,
+  records: AttachmentRecordForDocument[],
+): Promise<void> {
+  const current = await db
+    .select({ sourceMetadata: rawEvents.sourceMetadata })
+    .from(rawEvents)
+    .where(eq(rawEvents.id, parentRawEventId))
+    .limit(1);
+  const metadata = current[0]?.sourceMetadata;
+  const existing =
+    metadata &&
+    typeof metadata === 'object' &&
+    !Array.isArray(metadata) &&
+    Array.isArray((metadata as Record<string, unknown>).attachments)
+      ? ((metadata as Record<string, unknown>).attachments as unknown[])
+      : [];
+  const merged = mergeAttachmentRecords(existing, records);
+  const patch = JSON.stringify({ attachments: merged });
+  await db
+    .update(rawEvents)
+    .set({
+      sourceMetadata: sql`COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) || ${patch}::jsonb`,
+    })
+    .where(eq(rawEvents.id, parentRawEventId))
+    .catch((err: unknown) => {
+      log.error({ err }, 'failed to update parent document attachments[]');
+    });
+}
+
+function mergeAttachmentRecords(
+  existing: unknown[],
+  updates: AttachmentRecordForDocument[],
+): unknown[] {
+  const merged = [...existing];
+  for (const update of updates) {
+    const index = merged.findIndex(
+      (candidate) => attachmentRecordKey(candidate) === attachmentKey(update),
+    );
+    if (index === -1) {
+      merged.push(update);
+      continue;
+    }
+    const current = merged[index];
+    merged[index] =
+      current && typeof current === 'object' && !Array.isArray(current)
+        ? { ...current, ...update }
+        : update;
+  }
+  return merged;
+}
+
+function attachmentRecordKey(value: unknown): string | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  if (typeof record.filename !== 'string') return null;
+  if (typeof record.content_type !== 'string') return null;
+  if (typeof record.bucket !== 'string') return null;
+  const key = typeof record.key === 'string' ? record.key : '';
+  return attachmentKey({
+    filename: record.filename,
+    content_type: record.content_type,
+    bucket: record.bucket === 'audio' ? 'audio' : 'attachments',
+    key,
+  });
+}
+
+function attachmentKey(input: {
+  filename: string;
+  content_type: string;
+  bucket: 'attachments' | 'audio';
+  key: string;
+}): string {
+  return `${input.bucket}\0${input.key}\0${input.filename}\0${input.content_type}`;
 }
 
 function bareFrom(payload: PostmarkInbound): ParsedAddress | null {
@@ -771,6 +1067,38 @@ function parseDateHeader(s: string | undefined): Date | null {
   if (!s) return null;
   const d = new Date(s);
   return Number.isFinite(d.getTime()) ? d : null;
+}
+
+function emailSourcePayloadMetadata(input: {
+  payload: PostmarkInbound;
+  messageId: string;
+  postmarkMessageId: string | null;
+  contentText: string;
+  attachments: AttachmentRecordForDocument[];
+}): Record<string, unknown> {
+  const snapshot = {
+    provider: 'postmark',
+    source: 'email',
+    message_id: input.messageId,
+    postmark_message_id: input.postmarkMessageId,
+    subject: input.payload.Subject,
+    from: input.payload.FromFull,
+    to: input.payload.ToFull,
+    cc: input.payload.CcFull,
+    bcc: input.payload.BccFull,
+    date: input.payload.Date,
+    text_body: input.payload.TextBody,
+    html_body: input.payload.HtmlBody || null,
+    content_text: input.contentText,
+    raw_postmark: stripRawForStorage(input.payload),
+    attachments: input.attachments,
+  };
+  return inlineSourceSnapshotMetadata({
+    snapshot,
+    kind: 'postmark_inbound_email',
+    version: EMAIL_SOURCE_SNAPSHOT_VERSION,
+    ref: (digest) => `inline://timeline/email/${digest.slice('sha256:'.length)}`,
+  });
 }
 
 /**

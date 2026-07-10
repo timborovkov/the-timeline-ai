@@ -30,6 +30,46 @@ export const metadata: Metadata = {
   description: 'Configure Slack capture and bindings.',
 };
 
+interface SlackSettingsInstall {
+  name: string | null;
+  slackTeamId: string;
+  enabled: boolean;
+}
+
+interface SlackSettingsBinding {
+  id: string;
+  slackConversationId: string;
+  title: string | null;
+  conversationType: string;
+  visibilityDefault: string;
+}
+
+interface SlackSettingsLinkedUser {
+  id: string;
+  slackUserId: string;
+  name: string | null;
+  realName: string | null;
+  email: string | null;
+  isActive: boolean;
+  appUser: { name: string | null; email: string | null } | null;
+}
+
+interface SlackSettingsConversation {
+  id: string;
+  name?: string | null;
+  is_member?: boolean;
+}
+
+interface SlackSettingsViewModel {
+  configured: boolean;
+  isAdmin: boolean;
+  teamName: string;
+  install: SlackSettingsInstall | null;
+  bindings: SlackSettingsBinding[];
+  linkedSlackUsers: SlackSettingsLinkedUser[];
+  unboundConversations: SlackSettingsConversation[];
+}
+
 export default async function SlackSettingsPage() {
   const session = await auth();
   if (!session?.user) redirect('/sign-in');
@@ -97,20 +137,41 @@ export default async function SlackSettingsPage() {
   const boundIds = new Set(bindings.map((b) => b.slackConversationId));
 
   return (
+    <SlackSettingsPageView
+      model={{
+        configured,
+        isAdmin,
+        teamName: active.teamName,
+        install,
+        bindings,
+        linkedSlackUsers: linkedSlackUsers.map((user) => ({
+          ...user,
+          appUser: userMap.get(user.userId) ?? null,
+        })),
+        unboundConversations: conversations.filter(
+          (conversation) => !boundIds.has(conversation.id),
+        ),
+      }}
+    />
+  );
+}
+
+export function SlackSettingsPageView({ model }: { model: SlackSettingsViewModel }) {
+  return (
     <div className="mx-auto max-w-3xl space-y-6">
       <HistoryBackLink fallbackHref="/app/team" label="Back" />
       <PageHeader
         title="Slack"
         subtitle="Capture DMs, channel messages, slash-command answers, and linked sender context."
-        srLabel={`Slack capture for ${active.teamName} · ${bindings.length} bound conversations · ${linkedSlackUsers.length} linked users`}
+        srLabel={`Slack capture for ${model.teamName} · ${model.bindings.length} bound conversations · ${model.linkedSlackUsers.length} linked users`}
         metadata={[
-          { label: 'team', value: active.teamName, signal: true },
-          { label: 'channels', value: bindings.length },
-          { label: 'users', value: linkedSlackUsers.length },
+          { label: 'team', value: model.teamName, signal: true },
+          { label: 'channels', value: model.bindings.length },
+          { label: 'users', value: model.linkedSlackUsers.length },
         ]}
       />
 
-      {!configured ? (
+      {!model.configured ? (
         <Card>
           <CardContent className="py-4 text-sm text-muted-foreground">
             Set <code className="font-mono">SLACK_CLIENT_ID</code>,{' '}
@@ -125,15 +186,18 @@ export default async function SlackSettingsPage() {
           <CardTitle>Workspace install</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
-          {install ? (
+          {model.install ? (
             <div className="flex items-center justify-between gap-3">
               <div>
-                <p className="text-sm font-medium">{install.name ?? install.slackTeamId}</p>
+                <p className="text-sm font-medium">
+                  {model.install.name ?? model.install.slackTeamId}
+                </p>
                 <p className="text-xs text-muted-foreground">
-                  workspace {install.slackTeamId} · {install.enabled ? 'enabled' : 'disabled'}
+                  workspace {model.install.slackTeamId} ·{' '}
+                  {model.install.enabled ? 'enabled' : 'disabled'}
                 </p>
               </div>
-              {isAdmin ? (
+              {model.isAdmin ? (
                 <Button asChild variant="outline" size="sm">
                   <Link href="/api/slack/install/start">Reconnect</Link>
                 </Button>
@@ -144,7 +208,7 @@ export default async function SlackSettingsPage() {
               <p className="text-sm text-muted-foreground">
                 Install the Slack app before binding channels or private channels.
               </p>
-              {isAdmin ? (
+              {model.isAdmin ? (
                 <Button asChild size="sm">
                   <Link href="/api/slack/install/start">Install Slack</Link>
                 </Button>
@@ -168,7 +232,7 @@ export default async function SlackSettingsPage() {
         </CardContent>
       </Card>
 
-      {isAdmin && install ? (
+      {model.isAdmin && model.install ? (
         <Card>
           <CardHeader>
             <CardTitle>Bind a conversation</CardTitle>
@@ -183,16 +247,12 @@ export default async function SlackSettingsPage() {
                 <option value="" disabled>
                   Choose a channel
                 </option>
-                {conversations.flatMap((c) =>
-                  boundIds.has(c.id)
-                    ? []
-                    : [
-                        <option key={c.id} value={c.id}>
-                          #{c.name ?? c.id}
-                          {c.is_member === false ? ' (invite bot first)' : ''}
-                        </option>,
-                      ],
-                )}
+                {model.unboundConversations.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    #{c.name ?? c.id}
+                    {c.is_member === false ? ' (invite bot first)' : ''}
+                  </option>
+                ))}
               </select>
               <Button type="submit">Bind</Button>
             </form>
@@ -209,11 +269,11 @@ export default async function SlackSettingsPage() {
           <CardTitle>Bound conversations</CardTitle>
         </CardHeader>
         <CardContent>
-          {bindings.length === 0 ? (
+          {model.bindings.length === 0 ? (
             <p className="text-sm text-muted-foreground">No Slack conversations bound yet.</p>
           ) : (
             <ul className="divide-y">
-              {bindings.map((b) => (
+              {model.bindings.map((b) => (
                 <li key={b.id} className="flex items-center justify-between py-3">
                   <div>
                     <p className="text-sm font-medium">{b.title ?? b.slackConversationId}</p>
@@ -221,7 +281,7 @@ export default async function SlackSettingsPage() {
                       {b.conversationType} · default visibility {b.visibilityDefault}
                     </p>
                   </div>
-                  {isAdmin ? (
+                  {model.isAdmin ? (
                     <form action={unbindSlackConversationAction}>
                       <input type="hidden" name="id" value={b.id} />
                       <Button type="submit" variant="ghost" size="sm">
@@ -241,17 +301,16 @@ export default async function SlackSettingsPage() {
           <CardTitle>Linked Slack users</CardTitle>
         </CardHeader>
         <CardContent>
-          {linkedSlackUsers.length === 0 ? (
+          {model.linkedSlackUsers.length === 0 ? (
             <p className="text-sm text-muted-foreground">No Slack identities linked yet.</p>
           ) : (
             <ul className="divide-y">
-              {linkedSlackUsers.map((u) => {
-                const appUser = userMap.get(u.userId);
+              {model.linkedSlackUsers.map((u) => {
                 return (
                   <li key={u.id} className="flex items-center justify-between py-3">
                     <div>
                       <p className="text-sm font-medium">
-                        {appUser?.name ?? appUser?.email ?? 'Timeline user'}
+                        {u.appUser?.name ?? u.appUser?.email ?? 'Timeline user'}
                       </p>
                       <p className="text-xs text-muted-foreground">
                         Slack {u.realName ?? u.name ?? u.slackUserId}

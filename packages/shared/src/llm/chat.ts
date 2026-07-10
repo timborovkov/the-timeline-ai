@@ -39,6 +39,8 @@ export interface ChatStructuredInput<TSchema extends z.ZodType> {
   system?: string;
   /** Override the configured extraction model for this call. */
   model?: string;
+  /** AbortSignal wired to the request lifecycle for bounded evals/workers. */
+  abortSignal?: AbortSignal;
 }
 
 export interface ChatDeps {
@@ -281,6 +283,7 @@ async function generateStructuredObject<TSchema extends z.ZodType>({
   model,
   modelId,
   operation,
+  abortSignal,
 }: {
   schema: TSchema;
   prompt: string;
@@ -288,6 +291,7 @@ async function generateStructuredObject<TSchema extends z.ZodType>({
   model: LanguageModel;
   modelId: string;
   operation: 'chat_structured' | 'chat_structured_json_object_fallback';
+  abortSignal?: AbortSignal;
 }) {
   // generateObject is the right primitive for structured-output extraction;
   // the "use generateText with output" deprecation guidance applies to chat
@@ -300,6 +304,7 @@ async function generateStructuredObject<TSchema extends z.ZodType>({
     system,
     maxOutputTokens: DEFAULT_STRUCTURED_MAX_OUTPUT_TOKENS,
     maxRetries: 0,
+    ...(abortSignal ? { abortSignal } : {}),
     experimental_repairText: repairKnownStructuredOutput(schema),
     providerOptions: withLangSmithProviderOptions(openRouterRequireParametersOptions(), {
       name: 'llm.chatStructured',
@@ -317,12 +322,14 @@ async function generateJsonObjectFallback<TSchema extends z.ZodType>({
   system,
   model,
   modelId,
+  abortSignal,
 }: {
   schema: TSchema;
   prompt: string;
   system: string;
   model: LanguageModel;
   modelId: string;
+  abortSignal?: AbortSignal;
 }) {
   const result = await generateText({
     model,
@@ -330,6 +337,7 @@ async function generateJsonObjectFallback<TSchema extends z.ZodType>({
     system,
     maxOutputTokens: DEFAULT_STRUCTURED_MAX_OUTPUT_TOKENS,
     maxRetries: 0,
+    ...(abortSignal ? { abortSignal } : {}),
     providerOptions: withLangSmithProviderOptions(openRouterJsonObjectOptions(), {
       name: 'llm.chatStructured',
       model: modelId,
@@ -379,6 +387,7 @@ export async function chatStructured<TSchema extends z.ZodType>(
           model,
           modelId: candidateModelId,
           operation: 'chat_structured',
+          ...(input.abortSignal ? { abortSignal: input.abortSignal } : {}),
         });
         const object: z.infer<TSchema> = input.schema.parse(result.object);
         return { object, model: candidateModelId };
@@ -393,6 +402,7 @@ export async function chatStructured<TSchema extends z.ZodType>(
           system: structuredOutputFallbackSystem(input.schema, input.system),
           model: fallbackModel,
           modelId: candidateModelId,
+          ...(input.abortSignal ? { abortSignal: input.abortSignal } : {}),
         }).catch((fallbackErr: unknown) => {
           throw new AggregateError(
             [err, fallbackErr],

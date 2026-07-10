@@ -1,5 +1,5 @@
 import { PGlite } from '@electric-sql/pglite';
-import { conversationReviews, rawEvents, type Db } from '@timeline/db';
+import { conversationReviews, rawEvents, reconciliationEvidence, type Db } from '@timeline/db';
 import { withTeam } from '@timeline/shared/team-scope';
 import { handleUpdate, type TelegramApi } from '@timeline/shared/telegram';
 import { UnrecoverableError } from 'bullmq';
@@ -12,6 +12,7 @@ import { processSuggestionJobForTests } from '#src/workers/suggestions.js';
 import {
   markTranscribeFailureForTests,
   processTranscribeJobForTests,
+  transcribeWorkerInternals,
   type TranscribeWorkerIO,
 } from '#src/workers/transcribe.js';
 
@@ -44,6 +45,7 @@ async function seedAudioEvent(
   db: Db,
   id = RAW_EVENT_ID,
   sourceMetadata: Record<string, unknown> = {
+    tg_attachment_kind: 'voice',
     transcription_failed_at: '2026-05-27T10:01:00.000Z',
     transcription_error: 'old failure',
   },
@@ -97,7 +99,7 @@ describe('processTranscribeJobForTests', () => {
     await applyDbMigrations(pg);
     await seed(pg);
     db = drizzle(pg);
-  });
+  }, 20_000);
 
   afterEach(async () => {
     await pg.close();
@@ -124,10 +126,40 @@ describe('processTranscribeJobForTests', () => {
     });
     const row = (await db.select().from(rawEvents).where(eq(rawEvents.id, RAW_EVENT_ID)))[0];
     expect(row?.contentText).toBe("I'll schedule the lead meeting next Monday");
-    expect(row?.sourceMetadata).toMatchObject({ transcription_model: 'test-whisper' });
-    expect(row?.sourceMetadata).toHaveProperty('transcribed_at');
-    expect(row?.sourceMetadata).not.toHaveProperty('transcription_failed_at');
-    expect(row?.sourceMetadata).not.toHaveProperty('transcription_error');
+    const metadata = row?.sourceMetadata as Record<string, unknown> | undefined;
+    expect(metadata).toMatchObject({
+      transcription_model: 'test-whisper',
+      source_payload_ref: `s3://timeline-audio/${AUDIO_KEY}`,
+      source_snapshot_kind: 'transcribed_audio_event',
+      source_snapshot_version: 'transcribe-source-snapshot-2026-06',
+      source_snapshot: {
+        audio_key: AUDIO_KEY,
+        transcription_model: 'test-whisper',
+        transcript_text: "I'll schedule the lead meeting next Monday",
+        note_text: null,
+      },
+    });
+    expect(metadata).toHaveProperty('payload_digest');
+    expect(String(metadata?.payload_digest)).toMatch(/^sha256:[0-9a-f]{64}$/);
+    expect(metadata).not.toHaveProperty('source_payload_digest');
+    expect(metadata).toHaveProperty('transcribed_at');
+    expect(metadata).not.toHaveProperty('transcription_failed_at');
+    expect(metadata).not.toHaveProperty('transcription_error');
+    const [evidence] = await db
+      .select()
+      .from(reconciliationEvidence)
+      .where(eq(reconciliationEvidence.rawEventId, RAW_EVENT_ID));
+    expect(evidence).toMatchObject({
+      teamId: TEAM_ID,
+      rawEventId: RAW_EVENT_ID,
+      source: 'telegram',
+      provider: 'telegram',
+      eventType: 'telegram.voice',
+      replayState: 'full',
+      sourcePayloadRef: `s3://timeline-audio/${AUDIO_KEY}`,
+      visibility: 'team',
+    });
+    expect(evidence?.payloadDigest).toMatch(/^sha256:[0-9a-f]{64}$/);
     expect(enqueueExtract).toHaveBeenCalledWith({
       rawEventId: RAW_EVENT_ID,
       teamId: TEAM_ID,
@@ -160,6 +192,56 @@ describe('processTranscribeJobForTests', () => {
     expect(row?.sourceMetadata).toMatchObject({
       audio_note_text: "Today's Nexia meetings voice recording",
       transcription_model: 'test-whisper',
+    });
+  });
+
+  it('preserves existing camelCase source payload refs when transcription backfills the row', async () => {
+    await seedAudioEvent(db as never, RAW_EVENT_ID, {
+      sourcePayloadRef: 's3://timeline-audio/existing/camel-case-ref.ogg',
+    });
+
+    await processTranscribeJobForTests(
+      { db: db as never },
+      { rawEventId: RAW_EVENT_ID, teamId: TEAM_ID, audioKey: AUDIO_KEY },
+      makeIO(),
+    );
+
+    const row = (await db.select().from(rawEvents).where(eq(rawEvents.id, RAW_EVENT_ID)))[0];
+    expect(row?.sourceMetadata).toMatchObject({
+      source_payload_ref: 's3://timeline-audio/existing/camel-case-ref.ogg',
+    });
+    const [evidence] = await db
+      .select()
+      .from(reconciliationEvidence)
+      .where(eq(reconciliationEvidence.rawEventId, RAW_EVENT_ID));
+    expect(evidence?.sourcePayloadRef).toBe('s3://timeline-audio/existing/camel-case-ref.ogg');
+  });
+
+  it('passes a valid source metadata language hint to transcription', async () => {
+    await seedAudioEvent(db as never, RAW_EVENT_ID, {
+      transcription_language: 'EN',
+    });
+    const transcribeAudio = vi.fn<TranscribeWorkerIO['transcribeAudio']>().mockResolvedValue({
+      text: 'Timeline Canary task',
+      model: 'test-whisper',
+    });
+
+    await processTranscribeJobForTests(
+      { db: db as never },
+      { rawEventId: RAW_EVENT_ID, teamId: TEAM_ID, audioKey: AUDIO_KEY },
+      makeIO({ transcribeAudio }),
+    );
+
+    expect(transcribeAudio).toHaveBeenCalledWith({
+      audio: Buffer.from('audio-bytes'),
+      format: 'ogg',
+      language: 'en',
+    });
+    const row = (await db.select().from(rawEvents).where(eq(rawEvents.id, RAW_EVENT_ID)))[0];
+    expect(row?.sourceMetadata).toMatchObject({
+      source_snapshot: {
+        transcription_language: 'en',
+      },
     });
   });
 
@@ -280,6 +362,30 @@ describe('processTranscribeJobForTests', () => {
     const meta = row?.sourceMetadata as Record<string, unknown>;
     expect(meta.transcription_failed_at).toEqual(expect.any(String));
     expect(String(meta.transcription_error)).toHaveLength(500);
+  });
+
+  it('marks transcription failures only after retry exhaustion or unrecoverable errors', () => {
+    expect(
+      transcribeWorkerInternals.shouldMarkPermanentTranscribeFailure({
+        err: new Error('OpenRouter 503 temporarily unavailable'),
+        attemptsMade: 1,
+        maxAttempts: 3,
+      }),
+    ).toBe(false);
+    expect(
+      transcribeWorkerInternals.shouldMarkPermanentTranscribeFailure({
+        err: new Error('OpenRouter 503 temporarily unavailable'),
+        attemptsMade: 3,
+        maxAttempts: 3,
+      }),
+    ).toBe(true);
+    expect(
+      transcribeWorkerInternals.shouldMarkPermanentTranscribeFailure({
+        err: new UnrecoverableError('audio object is too large'),
+        attemptsMade: 1,
+        maxAttempts: 3,
+      }),
+    ).toBe(true);
   });
 
   it('turns a Telegram voice memo into a transcript-backed approval suggestion', async () => {

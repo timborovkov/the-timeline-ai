@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { IntegrationEvent, SyncContext } from '#src/integrations/types.js';
+
 import { resetEnvForTests } from '#src/env.js';
 import { googleDriveProvider } from '#src/integrations/providers/google-drive.js';
 
@@ -14,6 +16,12 @@ function jsonResponse(body: unknown, init: ResponseInit = {}): Response {
     headers: { 'content-type': 'application/json' },
     ...init,
   });
+}
+
+function requestUrl(input: Parameters<typeof fetch>[0]): URL {
+  return new URL(
+    typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url,
+  );
 }
 
 describe('googleDriveProvider', () => {
@@ -142,6 +150,146 @@ describe('googleDriveProvider', () => {
 
     expect(ctx.loadCursor).not.toHaveBeenCalled();
     expect(ctx.writeEvents).not.toHaveBeenCalled();
+  });
+
+  it('follows Drive changes pagination and saves the final start page token', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>((input) => {
+      const url = requestUrl(input);
+      if (url.pathname.endsWith('/changes')) {
+        const pageToken = url.searchParams.get('pageToken');
+        expect(url.searchParams.get('includeItemsFromAllDrives')).toBe('true');
+        expect(url.searchParams.get('supportsAllDrives')).toBe('true');
+        if (pageToken === 'page-1') {
+          return Promise.resolve(
+            jsonResponse({
+              changes: [
+                {
+                  changeType: 'file',
+                  time: '2026-06-20T10:00:00.000Z',
+                  fileId: 'file-1',
+                  file: {
+                    id: 'file-1',
+                    name: 'Roadmap',
+                    mimeType: 'text/plain',
+                    modifiedTime: '2026-06-20T10:00:00.000Z',
+                    webViewLink: 'https://drive.google.com/file/d/file-1',
+                    parents: ['folder-1'],
+                    driveId: 'shared-drive-1',
+                    owners: [{ displayName: 'Ada', emailAddress: 'ada@example.com' }],
+                  },
+                },
+              ],
+              nextPageToken: 'page-2',
+            }),
+          );
+        }
+        if (pageToken === 'page-2') {
+          return Promise.resolve(
+            jsonResponse({
+              changes: [
+                {
+                  changeType: 'file',
+                  time: '2026-06-20T10:05:00.000Z',
+                  fileId: 'file-2',
+                  file: {
+                    id: 'file-2',
+                    name: 'Incident Notes',
+                    mimeType: 'text/plain',
+                    modifiedTime: '2026-06-20T10:05:00.000Z',
+                    webViewLink: 'https://drive.google.com/file/d/file-2',
+                    parents: ['folder-1'],
+                  },
+                },
+              ],
+              newStartPageToken: 'page-3',
+            }),
+          );
+        }
+      }
+      return Promise.resolve(jsonResponse({ message: 'unexpected' }, { status: 404 }));
+    });
+    vi.stubGlobal('fetch', fetch);
+    const ctx = {
+      loadCursor: vi.fn().mockResolvedValue({ page_token: 'page-1' }),
+      saveCursor: vi.fn().mockResolvedValue(undefined),
+      writeEvents: vi.fn<SyncContext['writeEvents']>().mockResolvedValue([]),
+      persistTokens: vi.fn(),
+      recordAudit: vi.fn(),
+    };
+
+    await googleDriveProvider.incrementalSync({
+      integration: { id: 'integration-1' } as never,
+      tokens: { access_token: 'access-token', expires_at: Date.now() + 600_000 },
+      selections: [{ kind: 'drive.folder', externalId: 'root' }],
+      ctx,
+    });
+
+    const changeCalls = fetch.mock.calls
+      .map(([input]) => requestUrl(input))
+      .filter((url) => url.pathname.endsWith('/changes'));
+    expect(changeCalls.map((url) => url.searchParams.get('pageToken'))).toEqual([
+      'page-1',
+      'page-2',
+    ]);
+    const events: IntegrationEvent[] = ctx.writeEvents.mock.calls.flatMap(([batch]) => batch);
+    expect(events.map((event) => event.externalObjectId)).toEqual(['file-1', 'file-2']);
+    expect(events[0]).toMatchObject({
+      provider: 'google_drive',
+      eventType: 'file.changed',
+      contentText: 'Drive file "Roadmap" (text/plain) was modified',
+      actor: { name: 'Ada', email: 'ada@example.com' },
+      extra: {
+        drive: {
+          modified_time: '2026-06-20T10:00:00.000Z',
+          drive_id: 'shared-drive-1',
+          parents: ['folder-1'],
+        },
+      },
+    });
+    expect(ctx.saveCursor).toHaveBeenCalledWith('drive.changes', { page_token: 'page-3' });
+    expect(ctx.recordAudit).not.toHaveBeenCalledWith('drive_page_cap_hit', expect.anything());
+  });
+
+  it('persists a Drive changes resume token when the page safety cap is hit', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>((input) => {
+      const url = requestUrl(input);
+      if (url.pathname.endsWith('/changes')) {
+        const page = Number(url.searchParams.get('pageToken')?.replace('page-', '') ?? '1');
+        return Promise.resolve(
+          jsonResponse({
+            changes: [],
+            nextPageToken: `page-${String(page + 1)}`,
+          }),
+        );
+      }
+      return Promise.resolve(jsonResponse({ message: 'unexpected' }, { status: 404 }));
+    });
+    vi.stubGlobal('fetch', fetch);
+    const ctx = {
+      loadCursor: vi.fn().mockResolvedValue({ page_token: 'page-1' }),
+      saveCursor: vi.fn().mockResolvedValue(undefined),
+      writeEvents: vi.fn<SyncContext['writeEvents']>().mockResolvedValue([]),
+      persistTokens: vi.fn(),
+      recordAudit: vi.fn().mockResolvedValue(undefined),
+    };
+
+    await googleDriveProvider.incrementalSync({
+      integration: { id: 'integration-1' } as never,
+      tokens: { access_token: 'access-token', expires_at: Date.now() + 600_000 },
+      selections: [{ kind: 'drive.folder', externalId: 'root' }],
+      ctx,
+    });
+
+    const changeCalls = fetch.mock.calls
+      .map(([input]) => requestUrl(input))
+      .filter((url) => url.pathname.endsWith('/changes'));
+    expect(changeCalls).toHaveLength(50);
+    expect(ctx.writeEvents).not.toHaveBeenCalled();
+    expect(ctx.saveCursor).toHaveBeenCalledWith('drive.changes', { page_token: 'page-51' });
+    expect(ctx.recordAudit).toHaveBeenCalledWith('drive_page_cap_hit', {
+      integration_id: 'integration-1',
+      next_page_token: 'page-51',
+    });
   });
 
   it('uses Drive webhooks only as wake-up signals', async () => {

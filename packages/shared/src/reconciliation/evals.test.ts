@@ -1,0 +1,406 @@
+import path from 'node:path';
+
+import { describe, expect, it } from 'vitest';
+
+import {
+  RECONCILIATION_DETERMINISTIC_EVAL_CASES,
+  REQUIRED_RECONCILIATION_EVAL_SCENARIOS,
+  REQUIRED_RECONCILIATION_EVAL_SURFACES,
+} from '#src/reconciliation/eval-cases.js';
+import {
+  RECONCILIATION_EVAL_SCENARIO_MANIFESTS,
+  RECONCILIATION_EVAL_SURFACE_MANIFESTS,
+} from '#src/reconciliation/eval-manifests.js';
+import {
+  scoreDeterministicReconciliationCase,
+  scoreReconciliationEvalSuite,
+} from '#src/reconciliation/index.js';
+import {
+  buildProductionSamplingEvalReport,
+  loadProductionSamplingEvalArtifacts,
+} from '#src/reconciliation/production-sampling.js';
+
+const TEAM_VISIBILITY = { visibility: 'team' as const };
+const PRIVATE_OWNER = {
+  visibility: 'private' as const,
+  visibilityOwnerUserId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+};
+
+describe('deterministic reconciliation evals', () => {
+  it('covers every required ingestion surface and scenario family', () => {
+    const result = scoreReconciliationEvalSuite(RECONCILIATION_DETERMINISTIC_EVAL_CASES, {
+      ingestionSurfaces: REQUIRED_RECONCILIATION_EVAL_SURFACES,
+      scenarioFamilies: REQUIRED_RECONCILIATION_EVAL_SCENARIOS,
+    });
+    expect(result.failures).toEqual([]);
+    expect(result.passed).toBe(true);
+  });
+
+  it.each(RECONCILIATION_DETERMINISTIC_EVAL_CASES)('scores $name', (testCase) => {
+    const result = scoreDeterministicReconciliationCase(testCase);
+    expect(result.failures).toEqual([]);
+    expect(result.passed).toBe(true);
+  });
+
+  it('keeps surface manifests aligned with deterministic fixture cases', () => {
+    expect(RECONCILIATION_EVAL_SURFACE_MANIFESTS.map((manifest) => manifest.name).sort()).toEqual(
+      [...REQUIRED_RECONCILIATION_EVAL_SURFACES].sort(),
+    );
+
+    for (const manifest of RECONCILIATION_EVAL_SURFACE_MANIFESTS) {
+      expect(manifest.manifestKind).toBe('surface');
+      expect(manifest.caseNames.length).toBeGreaterThan(0);
+      expect(manifest.promptVersions).toContain('reconciliation-deterministic-matrix-2026-06');
+      expect(manifest.promptVersions).toContain('reconciliation-live-matrix-2026-06');
+      expect(manifest.minimumScore).toEqual({ deterministic: 1, live: 1 });
+
+      const surface = manifest.ingestionSurfaces[0];
+      expect(surface).toBe(manifest.name);
+      const cases = casesNamed(manifest.caseNames);
+      expect(manifest.expectedOutputKinds).toEqual(
+        uniqueSorted(cases.flatMap((testCase) => Object.keys(testCase.expected.outputKindCounts))),
+      );
+      expect(manifest.expectedAssociationRoles).toEqual(
+        uniqueSorted(
+          cases.flatMap((testCase) => Object.keys(testCase.expected.associationRoleCounts ?? {})),
+        ),
+      );
+      expect(manifest.expectedArtifactClusterKinds).toEqual(
+        uniqueSorted(
+          cases.flatMap((testCase) => testCase.expected.requiredArtifactClusterKinds ?? []),
+        ),
+      );
+      expect(manifest.requiredSourcePayloadSurfaces).toEqual(
+        uniqueSorted(
+          cases.flatMap((testCase) => testCase.expected.requiredSourcePayloadSurfaces ?? []),
+        ),
+      );
+      expect(manifest.forbiddenOutputKinds).toEqual(
+        uniqueSorted(cases.flatMap((testCase) => testCase.expected.forbiddenOutputKinds ?? [])),
+      );
+      for (const testCase of cases) {
+        expect(testCase.ingestionSurfaces).toContain(surface);
+      }
+    }
+  });
+
+  it('keeps scenario manifests aligned with deterministic fixture cases', () => {
+    expect(RECONCILIATION_EVAL_SCENARIO_MANIFESTS.map((manifest) => manifest.name).sort()).toEqual(
+      [...REQUIRED_RECONCILIATION_EVAL_SCENARIOS].sort(),
+    );
+
+    for (const manifest of RECONCILIATION_EVAL_SCENARIO_MANIFESTS) {
+      expect(manifest.manifestKind).toBe('scenario');
+      expect(manifest.scenarioFamily).toBe(manifest.name);
+      expect(manifest.caseNames.length).toBeGreaterThan(0);
+      expect(manifest.visibilityAssertions).toContain('visibility_floor');
+
+      const cases = casesNamed(manifest.caseNames);
+      expect(manifest.ingestionSurfaces).toEqual(
+        [...new Set(cases.flatMap((testCase) => testCase.ingestionSurfaces))].sort(),
+      );
+      expect(manifest.expectedOutputKinds).toEqual(
+        uniqueSorted(cases.flatMap((testCase) => Object.keys(testCase.expected.outputKindCounts))),
+      );
+      expect(manifest.expectedAssociationRoles).toEqual(
+        uniqueSorted(
+          cases.flatMap((testCase) => Object.keys(testCase.expected.associationRoleCounts ?? {})),
+        ),
+      );
+      expect(manifest.expectedArtifactClusterKinds).toEqual(
+        uniqueSorted(
+          cases.flatMap((testCase) => testCase.expected.requiredArtifactClusterKinds ?? []),
+        ),
+      );
+      expect(manifest.requiredSourcePayloadSurfaces).toEqual(
+        uniqueSorted(
+          cases.flatMap((testCase) => testCase.expected.requiredSourcePayloadSurfaces ?? []),
+        ),
+      );
+      expect(manifest.forbiddenOutputKinds).toEqual(
+        uniqueSorted(cases.flatMap((testCase) => testCase.expected.forbiddenOutputKinds ?? [])),
+      );
+      for (const testCase of cases) {
+        expect(testCase.scenarioFamily).toBe(manifest.scenarioFamily);
+      }
+    }
+  });
+
+  it('replays committed redacted live fixtures through the production-sampling gate', async () => {
+    const fixtureDir = path.resolve(
+      process.cwd(),
+      '..',
+      '..',
+      'evals',
+      'reconciliation',
+      'live-cases',
+    );
+    const loaded = await loadProductionSamplingEvalArtifacts({ inputPaths: [fixtureDir] });
+
+    expect(loaded.ignoredFiles).toEqual([]);
+    expect(loaded.manifests.length).toBeGreaterThan(0);
+    expect(loaded.artifacts.length).toBeGreaterThan(0);
+
+    const report = buildProductionSamplingEvalReport({
+      manifests: loaded.manifests,
+      artifacts: loaded.artifacts,
+      generatedAt: '2026-07-05T00:00:00.000Z',
+      runKind: 'manual',
+    });
+
+    expect(report.sampleCount).toBe(loaded.artifacts.length);
+    expect(report.failedCount).toBe(0);
+    expect(report.passRate).toBe(1);
+    expect(report.unconfirmedFixtureCandidateCount).toBe(0);
+    expect(report.byIngestionSurface.map((bucket) => bucket.name)).toEqual(
+      expect.arrayContaining(['email', 'monday', 'sentry']),
+    );
+  });
+
+  it('fails fixtures that promote private evidence into team-visible outputs', () => {
+    const result = scoreDeterministicReconciliationCase({
+      name: 'private-email-leak',
+      ingestionSurfaces: ['email'],
+      associations: [
+        {
+          id: 'leaky-association',
+          role: 'discussion',
+          visibility: TEAM_VISIBILITY,
+          visibilityFloor: PRIVATE_OWNER,
+          sourceRefs: [{ source: 'email', rawEventId: 'raw-private' }],
+        },
+      ],
+      outputs: [
+        {
+          id: 'leaky-approval',
+          outputKind: 'approval_bundle',
+          targetKind: 'object',
+          operation: 'create',
+          visibility: TEAM_VISIBILITY,
+          visibilityFloor: PRIVATE_OWNER,
+          sourceRefs: [{ source: 'email', rawEventId: 'raw-private' }],
+        },
+      ],
+      expected: {
+        ingestionSurfaces: ['email'],
+        outputKindCounts: { approval_bundle: 1 },
+        requireValidSourceRefs: true,
+        requireVisibilityFloors: true,
+      },
+    });
+
+    expect(result.passed).toBe(false);
+    expect(result.failures).toEqual([
+      'private-email-leak:leaky-approval: output visibility exceeds visibility floor',
+      'private-email-leak:leaky-association: association visibility exceeds visibility floor',
+    ]);
+  });
+
+  it('fails fixtures that omit required artifact cluster kinds', () => {
+    const result = scoreDeterministicReconciliationCase({
+      name: 'missing-provider-record-kind',
+      ingestionSurfaces: ['sentry'],
+      outputs: [
+        {
+          id: 'sentry-release-link',
+          outputKind: 'observed_association',
+          targetKind: 'cluster_identity',
+          operation: 'link',
+          artifactClusterKind: 'incident',
+          visibility: TEAM_VISIBILITY,
+          visibilityFloor: TEAM_VISIBILITY,
+          sourceRefs: [{ source: 'sentry', rawEventId: 'raw-release' }],
+        },
+      ],
+      expected: {
+        ingestionSurfaces: ['sentry'],
+        outputKindCounts: { observed_association: 1 },
+        requireValidSourceRefs: true,
+        requireVisibilityFloors: true,
+        requiredArtifactClusterKinds: ['provider_record'],
+      },
+    });
+
+    expect(result.passed).toBe(false);
+    expect(result.failures).toEqual([
+      'missing-provider-record-kind: missing artifact cluster kind provider_record',
+    ]);
+  });
+
+  it('fails fixtures that emit forbidden output kinds', () => {
+    const result = scoreDeterministicReconciliationCase({
+      name: 'forbidden-private-direct-write',
+      ingestionSurfaces: ['calendar'],
+      outputs: [
+        {
+          id: 'private-calendar-direct-write',
+          outputKind: 'direct_write',
+          targetKind: 'task',
+          operation: 'create',
+          visibility: PRIVATE_OWNER,
+          visibilityFloor: PRIVATE_OWNER,
+          sourceRefs: [{ source: 'calendar', rawEventId: 'raw-private-calendar' }],
+        },
+      ],
+      expected: {
+        ingestionSurfaces: ['calendar'],
+        outputKindCounts: { direct_write: 1 },
+        forbiddenOutputKinds: ['direct_write'],
+        requireValidSourceRefs: true,
+        requireVisibilityFloors: true,
+      },
+    });
+
+    expect(result.passed).toBe(false);
+    expect(result.failures).toEqual([
+      'forbidden-private-direct-write: forbidden output kind direct_write appeared 1 time(s)',
+    ]);
+  });
+
+  it('fails fixtures that claim a surface without source refs from that surface', () => {
+    const result = scoreDeterministicReconciliationCase({
+      name: 'claimed-surface-without-source-ref',
+      ingestionSurfaces: ['email', 'monday'],
+      outputs: [
+        {
+          id: 'email-only-approval',
+          outputKind: 'approval_bundle',
+          targetKind: 'object',
+          operation: 'create',
+          visibility: TEAM_VISIBILITY,
+          visibilityFloor: TEAM_VISIBILITY,
+          sourceRefs: [{ source: 'email', rawEventId: 'raw-email' }],
+        },
+      ],
+      expected: {
+        ingestionSurfaces: ['email', 'monday'],
+        outputKindCounts: { approval_bundle: 1 },
+        requireValidSourceRefs: true,
+        requireVisibilityFloors: true,
+      },
+    });
+
+    expect(result.passed).toBe(false);
+    expect(result.failures).toEqual([
+      'claimed-surface-without-source-ref: missing source refs for ingestion surface monday',
+    ]);
+  });
+
+  it('fails fixtures when any required source-payload surface ref omits its payload ref', () => {
+    const result = scoreDeterministicReconciliationCase({
+      name: 'partial-source-payload-coverage',
+      ingestionSurfaces: ['email', 'monday'],
+      associations: [
+        {
+          id: 'monday-provider-row',
+          role: 'related_context',
+          visibility: TEAM_VISIBILITY,
+          visibilityFloor: TEAM_VISIBILITY,
+          sourceRefs: [
+            {
+              source: 'monday',
+              rawEventId: 'raw-monday-associated',
+            },
+          ],
+        },
+      ],
+      outputs: [
+        {
+          id: 'email-approval',
+          outputKind: 'approval_bundle',
+          targetKind: 'object',
+          operation: 'create',
+          visibility: TEAM_VISIBILITY,
+          visibilityFloor: TEAM_VISIBILITY,
+          sourceRefs: [
+            {
+              source: 'email',
+              rawEventId: 'raw-email',
+              sourcePayloadRef: 's3://eval/reconciliation/email/raw-email',
+            },
+            {
+              source: 'monday',
+              rawEventId: 'raw-monday',
+              sourcePayloadRef: 's3://eval/reconciliation/monday/item',
+            },
+          ],
+        },
+        {
+          id: 'email-follow-up',
+          outputKind: 'observed_association',
+          targetKind: 'cluster_identity',
+          operation: 'link',
+          visibility: TEAM_VISIBILITY,
+          visibilityFloor: TEAM_VISIBILITY,
+          sourceRefs: [
+            {
+              source: 'email',
+              rawEventId: 'raw-email-follow-up',
+            },
+          ],
+        },
+      ],
+      expected: {
+        ingestionSurfaces: ['email', 'monday'],
+        associationRoleCounts: { related_context: 1 },
+        outputKindCounts: { approval_bundle: 1, observed_association: 1 },
+        requireValidSourceRefs: true,
+        requireVisibilityFloors: true,
+        requiredSourcePayloadSurfaces: ['email', 'monday'],
+      },
+    });
+
+    expect(result.passed).toBe(false);
+    expect(result.failures).toEqual([
+      'partial-source-payload-coverage:email-follow-up: source_refs[0] missing source payload ref for email',
+      'partial-source-payload-coverage:monday-provider-row: source_refs[0] missing source payload ref for monday',
+    ]);
+  });
+
+  it('fails fixtures that inflate coverage with unexpected surfaces', () => {
+    const result = scoreDeterministicReconciliationCase({
+      name: 'unexpected-surface-coverage',
+      ingestionSurfaces: ['email', 'monday'],
+      outputs: [
+        {
+          id: 'email-approval',
+          outputKind: 'approval_bundle',
+          targetKind: 'object',
+          operation: 'create',
+          visibility: TEAM_VISIBILITY,
+          visibilityFloor: TEAM_VISIBILITY,
+          sourceRefs: [
+            { source: 'email', rawEventId: 'raw-email' },
+            { source: 'monday', rawEventId: 'raw-monday' },
+          ],
+        },
+      ],
+      expected: {
+        ingestionSurfaces: ['email'],
+        outputKindCounts: { approval_bundle: 1 },
+        requireValidSourceRefs: true,
+        requireVisibilityFloors: true,
+      },
+    });
+
+    expect(result.passed).toBe(false);
+    expect(result.failures).toEqual([
+      'unexpected-surface-coverage: unexpected ingestion surface monday',
+      'unexpected-surface-coverage: source refs cite unexpected ingestion surface monday',
+    ]);
+  });
+});
+
+function casesNamed(caseNames: string[]): typeof RECONCILIATION_DETERMINISTIC_EVAL_CASES {
+  return caseNames.map((caseName) => {
+    const testCase = RECONCILIATION_DETERMINISTIC_EVAL_CASES.find(
+      (candidate) => candidate.name === caseName,
+    );
+    if (!testCase) throw new Error(`Unknown reconciliation eval case: ${caseName}`);
+    return testCase;
+  });
+}
+
+function uniqueSorted(values: string[]): string[] {
+  return [...new Set(values)].sort();
+}

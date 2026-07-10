@@ -10,7 +10,7 @@
     <a class="skip" href="#main">Skip to content</a>
     <main id="main">
       <h1>Meeting bot setup</h1>
-      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-06-14</span></div>
+      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-07-03</span></div>
       <p class="tldr">
         Paste a Google Meet, Microsoft Teams, or Zoom link into
         <code>/app/meetings</code>, save a reusable meeting link, or use a Slack/Telegram join
@@ -110,7 +110,16 @@ RECALL_RETENTION=
         meetings to the low-latency English path.
       </p>
 
-      <h2 id="webhooks">2. Webhook endpoints</h2>
+      <h2 id="live-canary">2. Live canary</h2>
+      <p>
+        <code>pnpm canary:integrations</code> checks <code>RECALL_API_KEY</code> and
+        <code>RECALL_BASE_URL</code> with a read-only future bot list probe. It calls Recall's
+        <code>GET /bot/</code> endpoint with a one-row limit and does not create, schedule, join, or
+        delete any bot. A green row proves the configured key, region URL, and workspace access are
+        usable before operators trust scheduled meeting capture.
+      </p>
+
+      <h2 id="webhooks">3. Webhook endpoints</h2>
       <p>
         Two webhooks. Status events are Svix-signed; transcript events are unsigned and validated by
         bot id lookup.
@@ -151,7 +160,7 @@ RECALL_TRANSCRIPT_WEBHOOK_URL=https://thetimeline.cc/api/webhooks/recall/transcr
         </li>
       </ol>
 
-      <h2 id="display-name">3. Bot display name</h2>
+      <h2 id="display-name">4. Bot display name</h2>
       <p>
         The bot still appears as a participant in silent mode. Timeline now sends a team-specific
         display name, such as <code>Acme's thetimeline.cc bot</code>, so another team on the same
