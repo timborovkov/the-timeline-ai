@@ -81,6 +81,32 @@ async function boardUpdatedAt(boardId: string): Promise<Date> {
   return row.updatedAt;
 }
 
+async function withHistoricalLegacyObjectProvenance<T>(run: () => Promise<T>): Promise<T> {
+  await pg.exec(`
+    ALTER TABLE entities DISABLE TRIGGER entities_legacy_provenance_write_guard;
+  `);
+  try {
+    return await run();
+  } finally {
+    await pg.exec(`
+      ALTER TABLE entities ENABLE TRIGGER entities_legacy_provenance_write_guard;
+    `);
+  }
+}
+
+async function withHistoricalLegacyBoardProvenance<T>(run: () => Promise<T>): Promise<T> {
+  await pg.exec(`
+    ALTER TABLE board_item_changes DROP CONSTRAINT board_item_changes_legacy_source_event_id_null_chk;
+  `);
+  try {
+    return await run();
+  } finally {
+    await pg.exec(`
+      ALTER TABLE board_item_changes ADD CONSTRAINT board_item_changes_legacy_source_event_id_null_chk CHECK (source_event_id IS NULL) NOT VALID;
+    `);
+  }
+}
+
 beforeEach(async () => {
   vi.clearAllMocks();
   qdrantFakes.getQdrantClient.mockReturnValue({
@@ -456,10 +482,12 @@ describe('board scope', () => {
       canonicalName: 'Legacy suggested board task',
       actor: { kind: 'user', userId: USER_OWNER },
     });
-    await db
-      .update(entities)
-      .set({ agentSuggested: true, status: 'suggested' })
-      .where(eq(entities.id, task.id));
+    await withHistoricalLegacyObjectProvenance(async () => {
+      await db
+        .update(entities)
+        .set({ agentSuggested: true, status: 'suggested' })
+        .where(eq(entities.id, task.id));
+    });
     const item = await scope.boards.addBoardItem(board.id, {
       entityId: task.id,
       laneId: board.lanes[0]?.id ?? null,
@@ -989,21 +1017,23 @@ describe('board scope', () => {
       actor: { kind: 'user', userId: USER_OWNER },
     });
 
-    await db.insert(boardItemChanges).values({
-      teamId: TEAM_A,
-      boardId: board.id,
-      boardItemId: item.id,
-      entityId: company.id,
-      actorKind: 'agent',
-      actorUserId: null,
-      status: 'applied',
-      field: 'laneId',
-      previousValue: null,
-      newValue: board.lanes[0]?.id ?? null,
-      sourceEventId: event.id,
-      suggestionItemId: null,
-      note: 'Legacy pointer should not become provenance evidence.',
-      changedAt: new Date('2026-07-02T10:00:00.000Z'),
+    await withHistoricalLegacyBoardProvenance(async () => {
+      await db.insert(boardItemChanges).values({
+        teamId: TEAM_A,
+        boardId: board.id,
+        boardItemId: item.id,
+        entityId: company.id,
+        actorKind: 'agent',
+        actorUserId: null,
+        status: 'applied',
+        field: 'laneId',
+        previousValue: null,
+        newValue: board.lanes[0]?.id ?? null,
+        sourceEventId: event.id,
+        suggestionItemId: null,
+        note: 'Legacy pointer should not become provenance evidence.',
+        changedAt: new Date('2026-07-02T10:00:00.000Z'),
+      });
     });
 
     const history = await scope.boards.listBoardItemHistory(item.id);
