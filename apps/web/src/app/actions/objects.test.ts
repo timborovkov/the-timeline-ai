@@ -20,6 +20,7 @@ import {
   updateNoteAction,
   updateObjectAction,
 } from '@/app/actions/objects';
+import { expectPublicActionErrorReport } from '@/test/public-error';
 
 /**
  * Server-action tests for object actions. The shared object scope owns the
@@ -95,13 +96,6 @@ const CHANGE_ID = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
 
 function expectCanonicalReconciliation(input: Record<string, unknown>): void {
   expect(fakes.fakeSuggestions.reconcileCanonicalChange).toHaveBeenCalledWith(input);
-}
-
-function errorReferenceFrom(context: unknown): unknown {
-  if (!context || typeof context !== 'object') return undefined;
-  const tags = (context as { tags?: unknown }).tags;
-  if (!tags || typeof tags !== 'object') return undefined;
-  return (tags as { error_reference?: unknown }).error_reference;
 }
 
 function expectApprovalsRevalidated(): void {
@@ -347,13 +341,7 @@ describe('object CRUD actions', () => {
 
     const result = await createObjectAction({ type: 'task', canonicalName: 'Follow up' });
     expect(result.error).toMatch(/^Failed to create object Reference: [0-9a-f]{8}\.$/);
-    expect(fakes.fakeReportCaughtError.mock.calls[0]?.[0]).toBe(err);
-    const reportContext: unknown = fakes.fakeReportCaughtError.mock.calls[0]?.[1];
-    expect(reportContext).toMatchObject({
-      surface: 'server_action',
-      operation: 'failed_to_create_object',
-    });
-    expect(errorReferenceFrom(reportContext)).toMatch(/^[0-9a-f]{8}$/);
+    expectPublicActionErrorReport(fakes.fakeReportCaughtError, err, 'failed_to_create_object');
   });
 
   it('updates object fields and revalidates object, board, and task surfaces', async () => {

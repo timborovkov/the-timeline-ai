@@ -8,7 +8,7 @@ import { z } from 'zod';
 
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
-import { publicApiError } from '@/lib/public-error';
+import { publicApiErrorResponse } from '@/lib/public-error';
 import { appUrl } from '@/lib/site-url';
 
 export const runtime = 'nodejs';
@@ -71,13 +71,9 @@ export async function POST(
     return NextResponse.json({ url: authorizeUrl });
   } catch (err) {
     log.warn({ err, provider }, 'oauth start failed');
-    const failure = publicApiError(err, {
+    return publicApiErrorResponse(err, {
       operation: 'integration_oauth_start',
       fallbackCode: 'oauth_start_failed',
     });
-    return NextResponse.json(
-      { error: failure.error, ...(failure.reference ? { reference: failure.reference } : {}) },
-      { status: failure.status },
-    );
   }
 }

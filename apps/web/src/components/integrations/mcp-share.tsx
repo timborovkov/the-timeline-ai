@@ -70,29 +70,9 @@ interface McpShareState {
   mintedKey: MintedKey | null;
   mcpUrl: string;
 }
-type McpShareAction =
-  | { type: 'showCreate'; showCreate: boolean }
-  | { type: 'name'; name: string }
-  | { type: 'busy'; busy: boolean }
-  | { type: 'mintedKey'; mintedKey: MintedKey | null }
-  | { type: 'mcpUrl'; mcpUrl: string }
-  | { type: 'created'; mintedKey: MintedKey };
 
-function mcpShareReducer(state: McpShareState, action: McpShareAction): McpShareState {
-  switch (action.type) {
-    case 'showCreate':
-      return { ...state, showCreate: action.showCreate };
-    case 'name':
-      return { ...state, name: action.name };
-    case 'busy':
-      return { ...state, busy: action.busy };
-    case 'mintedKey':
-      return { ...state, mintedKey: action.mintedKey };
-    case 'mcpUrl':
-      return { ...state, mcpUrl: action.mcpUrl };
-    case 'created':
-      return { ...state, mintedKey: action.mintedKey, name: '', showCreate: false };
-  }
+function patchMcpShareState(state: McpShareState, patch: Partial<McpShareState>): McpShareState {
+  return { ...state, ...patch };
 }
 
 function McpStatusGrid() {
@@ -310,21 +290,24 @@ export function McpShareUi({ keys, mcpUrl: initialMcpUrl }: { keys: KeyRow[]; mc
     busyKeyIds.current ??= new Set();
     return busyKeyIds.current;
   }
-  const [{ showCreate, name, busy, mintedKey, mcpUrl }, dispatch] = useReducer(mcpShareReducer, {
-    showCreate: false,
-    name: '',
-    busy: false,
-    mintedKey: null,
-    mcpUrl: initialMcpUrl,
-  });
+  const [{ showCreate, name, busy, mintedKey, mcpUrl }, patchState] = useReducer(
+    patchMcpShareState,
+    {
+      showCreate: false,
+      name: '',
+      busy: false,
+      mintedKey: null,
+      mcpUrl: initialMcpUrl,
+    },
+  );
 
   useEffect(() => {
     if (initialMcpUrl) return;
-    dispatch({ type: 'mcpUrl', mcpUrl: `${window.location.origin}/api/mcp/server` });
+    patchState({ mcpUrl: `${window.location.origin}/api/mcp/server` });
   }, [initialMcpUrl]);
 
   async function create() {
-    dispatch({ type: 'busy', busy: true });
+    patchState({ busy: true });
     try {
       const res = await fetch('/api/team/mcp-keys', {
         method: 'POST',
@@ -336,10 +319,14 @@ export function McpShareUi({ keys, mcpUrl: initialMcpUrl }: { keys: KeyRow[]; mc
         return;
       }
       const data = (await res.json()) as { name: string; plaintext: string };
-      dispatch({ type: 'created', mintedKey: { name: data.name, plaintext: data.plaintext } });
+      patchState({
+        mintedKey: { name: data.name, plaintext: data.plaintext },
+        name: '',
+        showCreate: false,
+      });
       router.refresh();
     } finally {
-      dispatch({ type: 'busy', busy: false });
+      patchState({ busy: false });
     }
   }
 
@@ -416,7 +403,7 @@ export function McpShareUi({ keys, mcpUrl: initialMcpUrl }: { keys: KeyRow[]; mc
               size="sm"
               variant="ghost"
               onClick={() => {
-                dispatch({ type: 'mintedKey', mintedKey: null });
+                patchState({ mintedKey: null });
               }}
             >
               I&apos;ve copied it, dismiss
@@ -432,7 +419,7 @@ export function McpShareUi({ keys, mcpUrl: initialMcpUrl }: { keys: KeyRow[]; mc
         <Button
           size="sm"
           onClick={() => {
-            dispatch({ type: 'showCreate', showCreate: !showCreate });
+            patchState({ showCreate: !showCreate });
           }}
         >
           {showCreate ? 'Cancel' : 'New key'}
@@ -450,7 +437,7 @@ export function McpShareUi({ keys, mcpUrl: initialMcpUrl }: { keys: KeyRow[]; mc
                 autoComplete="off"
                 value={name}
                 onChange={(e) => {
-                  dispatch({ type: 'name', name: e.target.value });
+                  patchState({ name: e.target.value });
                 }}
                 placeholder="Claude Desktop · personal mac"
               />

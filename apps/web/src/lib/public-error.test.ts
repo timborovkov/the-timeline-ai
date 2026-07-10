@@ -3,7 +3,8 @@ import { describe, expect, it, vi } from 'vitest';
 const fakes = vi.hoisted(() => ({ reportCaughtError: vi.fn() }));
 vi.mock('@/lib/sentry-report', () => ({ reportCaughtError: fakes.reportCaughtError }));
 
-const { publicActionError, publicApiError } = await import('@/lib/public-error');
+const { publicActionError, publicApiError, publicApiErrorResponse } =
+  await import('@/lib/public-error');
 
 /** Unexpected internals stay server-side while known domain errors remain actionable. */
 describe('public errors', () => {
@@ -42,5 +43,23 @@ describe('public errors', () => {
     });
     expect(message).toMatch(/^Failed to create board\. Reference: [0-9a-f]{8}\.$/);
     expect(message).not.toContain('postgres');
+  });
+
+  it('serializes sanitized API failures with status, reference, and route context', async () => {
+    const response = publicApiErrorResponse(
+      new Error('postgres://internal'),
+      { operation: 'call_tool', fallbackCode: 'call_failed', fallbackStatus: 502 },
+      { ok: false },
+    );
+    const body = (await response.json()) as {
+      ok?: unknown;
+      error?: unknown;
+      reference?: unknown;
+    };
+
+    expect(response.status).toBe(502);
+    expect(body).toMatchObject({ ok: false, error: 'call_failed' });
+    expect(body.reference).toMatch(/^[0-9a-f]{8}$/);
+    expect(JSON.stringify(body)).not.toContain('postgres');
   });
 });

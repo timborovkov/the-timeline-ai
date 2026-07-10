@@ -6,7 +6,7 @@ import { z } from 'zod';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
-import { publicApiError } from '@/lib/public-error';
+import { publicApiErrorResponse } from '@/lib/public-error';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -98,15 +98,11 @@ export async function GET(
       },
     );
   } catch (err) {
-    const failure = publicApiError(err, {
+    return publicApiErrorResponse(err, {
       operation: 'list_owned_connection_resources',
       fallbackCode: 'list_resources_failed',
       fallbackStatus: 502,
     });
-    return NextResponse.json(
-      { error: failure.error, ...(failure.reference ? { reference: failure.reference } : {}) },
-      { status: failure.status },
-    );
   }
   let shares;
   try {

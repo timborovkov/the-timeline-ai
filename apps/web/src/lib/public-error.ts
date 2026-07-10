@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
+import { NextResponse } from 'next/server';
+
 import { reportCaughtError } from '@/lib/sentry-report';
 
 type ErrorSurface = 'api' | 'server_action';
@@ -69,4 +71,20 @@ export function publicApiError(
     status: options.fallbackStatus ?? 500,
     reference: result.reference,
   };
+}
+
+export function publicApiErrorResponse(
+  err: unknown,
+  options: Parameters<typeof publicApiError>[1],
+  extraBody: Record<string, unknown> = {},
+): Response {
+  const failure = publicApiError(err, options);
+  return NextResponse.json(
+    {
+      ...extraBody,
+      error: failure.error,
+      ...(failure.reference ? { reference: failure.reference } : {}),
+    },
+    { status: failure.status },
+  );
 }

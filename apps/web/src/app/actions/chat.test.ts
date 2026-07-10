@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { expectPublicActionErrorReport } from '@/test/public-error';
+
 const fakes = vi.hoisted(() => ({
   archiveChatSession: vi.fn(),
   getChatSession: vi.fn(),
@@ -44,13 +46,6 @@ function okScope() {
     teamId: '22222222-2222-4222-8222-222222222222',
     userId: '33333333-3333-4333-8333-333333333333',
   };
-}
-
-function errorReferenceFrom(context: unknown): unknown {
-  if (!context || typeof context !== 'object') return undefined;
-  const tags = (context as { tags?: unknown }).tags;
-  if (!tags || typeof tags !== 'object') return undefined;
-  return (tags as { error_reference?: unknown }).error_reference;
 }
 
 beforeEach(() => {
@@ -103,26 +98,14 @@ describe('chat actions', () => {
 
     const archiveResult = await archiveChatSessionAction({ sessionId: SESSION_ID });
     expect(archiveResult.error).toMatch(/^Failed to archive session\. Reference: [0-9a-f]{8}\.$/);
-    expect(fakes.reportCaughtError.mock.calls[0]?.[0]).toBe(archiveErr);
-    const archiveContext: unknown = fakes.reportCaughtError.mock.calls[0]?.[1];
-    expect(archiveContext).toMatchObject({
-      surface: 'server_action',
-      operation: 'archive_chat_session',
-    });
-    expect(errorReferenceFrom(archiveContext)).toMatch(/^[0-9a-f]{8}$/);
+    expectPublicActionErrorReport(fakes.reportCaughtError, archiveErr, 'archive_chat_session');
 
     const unpinErr = new Error('cross-team object');
     fakes.linkChatSessionToObject.mockRejectedValueOnce(unpinErr);
 
     const unpinResult = await unpinChatSessionAction({ sessionId: SESSION_ID });
     expect(unpinResult.error).toMatch(/^Failed to unpin chat session\. Reference: [0-9a-f]{8}\.$/);
-    expect(fakes.reportCaughtError.mock.calls[1]?.[0]).toBe(unpinErr);
-    const unpinContext: unknown = fakes.reportCaughtError.mock.calls[1]?.[1];
-    expect(unpinContext).toMatchObject({
-      surface: 'server_action',
-      operation: 'unpin_chat_session',
-    });
-    expect(errorReferenceFrom(unpinContext)).toMatch(/^[0-9a-f]{8}$/);
+    expectPublicActionErrorReport(fakes.reportCaughtError, unpinErr, 'unpin_chat_session', 1);
     expect(fakes.revalidatePath).not.toHaveBeenCalled();
   });
 
@@ -145,12 +128,6 @@ describe('chat actions', () => {
     const loadResult = await loadChatSessionAction({ sessionId: SESSION_ID });
     expect(loadResult).toMatchObject({ ok: false });
     expect(loadResult.error).toMatch(/^Failed to load chat session\. Reference: [0-9a-f]{8}\.$/);
-    expect(fakes.reportCaughtError.mock.calls[0]?.[0]).toBe(err);
-    const loadContext: unknown = fakes.reportCaughtError.mock.calls[0]?.[1];
-    expect(loadContext).toMatchObject({
-      surface: 'server_action',
-      operation: 'load_chat_session_messages',
-    });
-    expect(errorReferenceFrom(loadContext)).toMatch(/^[0-9a-f]{8}$/);
+    expectPublicActionErrorReport(fakes.reportCaughtError, err, 'load_chat_session_messages');
   });
 });

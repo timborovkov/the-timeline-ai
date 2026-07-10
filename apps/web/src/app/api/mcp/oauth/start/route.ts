@@ -7,7 +7,7 @@ import { z } from 'zod';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
-import { publicApiError } from '@/lib/public-error';
+import { publicApiErrorResponse } from '@/lib/public-error';
 import { appUrl } from '@/lib/site-url';
 
 export const runtime = 'nodejs';
@@ -136,13 +136,9 @@ export async function POST(req: Request): Promise<Response> {
     return NextResponse.json({ url: authorizeUrl });
   } catch (err) {
     log.warn({ err, mcpServerId: parsed.data.mcpServerId }, 'mcp oauth start failed');
-    const failure = publicApiError(err, {
+    return publicApiErrorResponse(err, {
       operation: 'mcp_oauth_start',
       fallbackCode: 'mcp_oauth_start_failed',
     });
-    return NextResponse.json(
-      { error: failure.error, ...(failure.reference ? { reference: failure.reference } : {}) },
-      { status: failure.status },
-    );
   }
 }

@@ -8,7 +8,7 @@ import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { bulkRecoveryAuditRecord } from '@/lib/job-recovery-audit';
-import { publicApiError } from '@/lib/public-error';
+import { publicApiErrorResponse } from '@/lib/public-error';
 
 const JOB_KINDS = [
   'transcription',
@@ -106,7 +106,7 @@ export function createBulkFailedJobRecoveryRoute(options: {
           reason: 'operation_failed',
         }),
       );
-      const failure = publicApiError(err, {
+      return publicApiErrorResponse(err, {
         operation: options.fallbackError,
         fallbackCode: options.fallbackError,
         expected: {
@@ -114,10 +114,6 @@ export function createBulkFailedJobRecoveryRoute(options: {
           stale_recovery_set: { message: 'stale_recovery_set', status: 409 },
         },
       });
-      return NextResponse.json(
-        { error: failure.error, ...(failure.reference ? { reference: failure.reference } : {}) },
-        { status: failure.status },
-      );
     }
   };
 }

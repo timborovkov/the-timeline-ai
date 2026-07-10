@@ -78,4 +78,28 @@ describe('job recovery retry route', () => {
       metadata: { mode: 'single', outcome: 'succeeded', recovery_kind: 'unknown' },
     });
   });
+
+  it('maps expected retry failures and audits the rejected operation', async () => {
+    fakes.fakeRetry.mockRejectedValue(
+      Object.assign(new Error('invalid recovery id'), { code: 'invalid_recovery_id' }),
+    );
+
+    const res = await POST(new Request('http://test'), {
+      params: Promise.resolve({ id: 'abc' }),
+    });
+
+    expect(res.status).toBe(404);
+    await expect(res.json()).resolves.toEqual({ error: 'invalid_recovery_id' });
+    expect(fakes.fakeAuditRecord).toHaveBeenCalledWith({
+      action: 'job.retry',
+      targetType: 'job_recovery',
+      targetId: 'abc',
+      metadata: {
+        mode: 'single',
+        outcome: 'rejected',
+        recovery_kind: 'unknown',
+        reason: 'operation_failed',
+      },
+    });
+  });
 });

@@ -8,7 +8,7 @@ import { trackProductEventBestEffort } from '@/lib/analytics';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { safeMarkOnboardingStep } from '@/lib/onboarding';
-import { publicApiError } from '@/lib/public-error';
+import { publicApiErrorResponse } from '@/lib/public-error';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -129,14 +129,10 @@ export async function POST(req: Request): Promise<Response> {
         needsOauth: entry.mcpAuthType === 'oauth',
       });
     } catch (err) {
-      const failure = publicApiError(err, {
+      return publicApiErrorResponse(err, {
         operation: 'add_catalog_mcp_server',
         fallbackCode: 'add_failed',
       });
-      return NextResponse.json(
-        { error: failure.error, ...(failure.reference ? { reference: failure.reference } : {}) },
-        { status: failure.status },
-      );
     }
   }
 
@@ -176,13 +172,9 @@ export async function POST(req: Request): Promise<Response> {
     }
     return NextResponse.json({ id: server.id, needsOauth: custom.data.authType === 'oauth' });
   } catch (err) {
-    const failure = publicApiError(err, {
+    return publicApiErrorResponse(err, {
       operation: 'add_custom_mcp_server',
       fallbackCode: 'add_failed',
     });
-    return NextResponse.json(
-      { error: failure.error, ...(failure.reference ? { reference: failure.reference } : {}) },
-      { status: failure.status },
-    );
   }
 }
