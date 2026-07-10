@@ -183,6 +183,42 @@ describe('reconciliation source normalization', () => {
     expect(evidence?.metadata).toMatchObject({ replay_degraded_reason: null });
   });
 
+  it('preserves author access when legacy private events have no visibility owner', async () => {
+    const [rawEvent] = await db
+      .insert(rawEvents)
+      .values({
+        teamId: TEAM_ID,
+        authorUserId: USER_ID,
+        source: 'email',
+        contentText: 'Legacy private customer context authored before visibility owners existed.',
+        occurredAt: new Date('2026-06-22T08:30:00Z'),
+        visibility: 'private',
+        visibilityOwnerUserId: null,
+        sourceMetadata: {
+          message_id: '<legacy-private-author@example.test>',
+          source_payload_ref: 's3://timeline-test/email/legacy-private-author.eml',
+        },
+      })
+      .returning({ id: rawEvents.id });
+    if (!rawEvent) throw new Error('raw event insert failed');
+
+    await normalizeRawEventsToEvidence({
+      db: db as never,
+      teamId: TEAM_ID,
+      rawEventIds: [rawEvent.id],
+    });
+
+    const [evidence] = await db
+      .select()
+      .from(reconciliationEvidence)
+      .where(eq(reconciliationEvidence.rawEventId, rawEvent.id));
+    expect(evidence).toMatchObject({
+      visibility: 'private',
+      visibilityOwnerUserId: USER_ID,
+      visibilityUserIds: null,
+    });
+  });
+
   it('normalizes non-integration raw events across conversational and webhook surfaces', async () => {
     const inserted = await db
       .insert(rawEvents)

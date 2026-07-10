@@ -33,9 +33,12 @@ On 2026-07-07, the focused legacy-provenance cutover pass also reran
 `pnpm test:dist-imports`, and `git diff --check`. React Doctor again reported
 "No issues found" with a 100/100 score.
 On 2026-07-08, the DB schema contract added and verified migration
-`0056_legacy_provenance_cutover_guards.sql`, which preserves historical legacy
-provenance rows under `NOT VALID` constraints while rejecting new writes to the
-legacy object/object-change/board-history provenance columns.
+`0056_legacy_provenance_cutover_guards.sql`. On 2026-07-10, follow-up migration
+`0057_legacy_provenance_editability.sql` kept append-only history rows under
+`NOT VALID` constraints and replaced the mutable entity checks with a
+transition-aware trigger. Tests verify that historical entities remain editable
+without changing their legacy values, while inserts and updates cannot
+introduce new legacy provenance.
 The full strict local Playwright suite also passed on July 8 with 50/50 tests,
 including the reconciliation dashboard, worker-backed manual repair, approval
 projection, visibility-filtering, and mobile no-overflow flows.
@@ -144,8 +147,12 @@ terminology,
 dashboard legacy-provenance cutover counts for object pointers, object-change
 pointers, board-history pointers, and `agent_suggested` flags,
 legacy-provenance cutover CLI `--fail-on-legacy` gate coverage,
-DB-level `NOT VALID` cutover guards that reject new legacy provenance writes
-while preserving historical rows for audit/backfill,
+DB-level history checks plus a transition-aware entity trigger that reject new
+legacy provenance writes while preserving historical rows for audit/backfill
+and unrelated entity edits,
+legacy private-event normalization that preserves author access when the stored
+visibility owner is absent,
+approval-projection audience intersection across mixed private evidence owners,
 object-change preview legacy source-pointer suppression,
 sales-success renewal-risk eval coverage,
 object connected-work approval hydration through output source refs,
