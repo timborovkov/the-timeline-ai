@@ -97,6 +97,13 @@ function expectCanonicalReconciliation(input: Record<string, unknown>): void {
   expect(fakes.fakeSuggestions.reconcileCanonicalChange).toHaveBeenCalledWith(input);
 }
 
+function errorReferenceFrom(context: unknown): unknown {
+  if (!context || typeof context !== 'object') return undefined;
+  const tags = (context as { tags?: unknown }).tags;
+  if (!tags || typeof tags !== 'object') return undefined;
+  return (tags as { error_reference?: unknown }).error_reference;
+}
+
 function expectApprovalsRevalidated(): void {
   expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/approvals');
 }
@@ -338,15 +345,15 @@ describe('object CRUD actions', () => {
     const err = new Error('database down');
     fakes.fakeObjects.createObject.mockRejectedValue(err);
 
-    await expect(createObjectAction({ type: 'task', canonicalName: 'Follow up' })).resolves.toEqual(
-      {
-        error: 'database down',
-      },
-    );
-    expect(fakes.fakeReportCaughtError).toHaveBeenCalledWith(err, {
+    const result = await createObjectAction({ type: 'task', canonicalName: 'Follow up' });
+    expect(result.error).toMatch(/^Failed to create object Reference: [0-9a-f]{8}\.$/);
+    expect(fakes.fakeReportCaughtError.mock.calls[0]?.[0]).toBe(err);
+    const reportContext: unknown = fakes.fakeReportCaughtError.mock.calls[0]?.[1];
+    expect(reportContext).toMatchObject({
       surface: 'server_action',
       operation: 'failed_to_create_object',
     });
+    expect(errorReferenceFrom(reportContext)).toMatch(/^[0-9a-f]{8}$/);
   });
 
   it('updates object fields and revalidates object, board, and task surfaces', async () => {
@@ -557,9 +564,8 @@ describe('object CRUD actions', () => {
     const err = new Error('archive failed');
     fakes.fakeTransactionObjects.archiveObject.mockRejectedValueOnce(err);
 
-    await expect(bulkArchiveObjectsAction({ ids: [OBJECT_ID, OTHER_OBJECT_ID] })).resolves.toEqual({
-      error: 'archive failed',
-    });
+    const result = await bulkArchiveObjectsAction({ ids: [OBJECT_ID, OTHER_OBJECT_ID] });
+    expect(result.error).toMatch(/^Failed to archive selected objects Reference: [0-9a-f]{8}\.$/);
 
     expect(fakes.fakeTransaction).toHaveBeenCalledTimes(1);
     expect(fakes.fakeRevalidatePath).not.toHaveBeenCalledWith('/app/objects');

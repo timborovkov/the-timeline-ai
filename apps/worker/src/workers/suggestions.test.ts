@@ -16,6 +16,7 @@ import {
   type Db,
 } from '@timeline/db';
 import { suggestions } from '@timeline/shared';
+import { RECONCILIATION_PLANNER_PROMPT_VERSION } from '@timeline/shared/reconciliation/planner';
 import { withTeam } from '@timeline/shared/team-scope';
 import { eq, sql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
@@ -4859,7 +4860,7 @@ describe('processSuggestionJobForTests', () => {
     );
     const [suggestion] = await db.select().from(agentSuggestions);
     expect(suggestion?.metadata).toMatchObject({
-      reconciliation_planner_version: 'reconciliation-planner-2026-06-privacy-floor',
+      reconciliation_planner_version: RECONCILIATION_PLANNER_PROMPT_VERSION,
       reconciliation_planner_status: 'completed',
       reconciliation_planner_result: {
         ingestionSurfaces: ['telegram'],

@@ -7,9 +7,18 @@ import type {
 } from '#src/integrations/types.js';
 
 import { getEnv } from '#src/env.js';
-import { externalFetch as fetch } from '#src/http/external-fetch.js';
+import { externalFetch } from '#src/http/external-fetch.js';
 import { ProviderRateLimitError as ProviderRateLimit } from '#src/integrations/types.js';
 import { SlackApi } from '#src/slack/api.js';
+
+let fetch: typeof externalFetch = externalFetch;
+
+export function setSlackProviderFetchForTests(transport?: typeof externalFetch): void {
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('Slack provider test transport is unavailable in production');
+  }
+  fetch = transport ?? externalFetch;
+}
 
 const AUTH_URL = 'https://slack.com/oauth/v2/authorize';
 const SCOPES = [

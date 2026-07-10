@@ -77,6 +77,13 @@ function form(values: Record<string, string | string[]>): FormData {
   return fd;
 }
 
+function stringLeaves(value: unknown, seen = new WeakSet()): string[] {
+  if (typeof value === 'string') return [value];
+  if (value === null || typeof value !== 'object' || seen.has(value)) return [];
+  seen.add(value);
+  return Object.values(value).flatMap((child) => stringLeaves(child, seen));
+}
+
 function mockDbUpdateSuccess(): void {
   fakes.fakeDbUpdate.mockReturnValue({
     set: fakes.fakeDbSet.mockImplementation(() => ({
@@ -137,10 +144,11 @@ describe('createTextEventAction', () => {
     expect(fakes.fakeEnqueueEmbedJob).not.toHaveBeenCalled();
     expect(fakes.fakeEnqueueSuggestionJob).not.toHaveBeenCalled();
     expect(fakes.fakeDbUpdate).toHaveBeenCalledOnce();
-    expect(JSON.stringify(fakes.fakeDbSet.mock.calls[0]?.[0])).toContain(
-      'suggestions_skipped_reason',
-    );
-    expect(JSON.stringify(fakes.fakeDbSet.mock.calls[0]?.[0])).toContain('visibility=private');
+    const metadataSql = (fakes.fakeDbSet.mock.calls[0]?.[0] as { sourceMetadata?: unknown })
+      .sourceMetadata;
+    const metadataSqlText = stringLeaves(metadataSql).join(' ');
+    expect(metadataSqlText).toContain('suggestions_skipped_reason');
+    expect(metadataSqlText).toContain('visibility=private');
     expect(fakes.fakeSafeMarkOnboardingStep).toHaveBeenCalledWith(expect.anything(), 'first_note');
     expect(fakes.fakeDeleteCacheKey).toHaveBeenCalledWith(`onboarding:${TEAM_ID}:${USER_ID}`);
   });

@@ -13,4 +13,4 @@ export {
 } from '#src/integrations/providers/github.js';
 export { mondayProvider } from '#src/integrations/providers/monday.js';
 export { sentryProvider } from '#src/integrations/providers/sentry.js';
-export { slackProvider } from '#src/integrations/providers/slack.js';
+export { setSlackProviderFetchForTests, slackProvider } from '#src/integrations/providers/slack.js';
