@@ -205,9 +205,9 @@ Direction: soften the surface. Keep the forensic mono treatment for data
 - [x] Expand Connected Work beyond the first slice with boards, pending
       approvals, documents, links, and captured files ordered by object-page
       usefulness.
-- [x] Add timeline moments to Connected Work so source-backed event context
-      appears after active work and before document context, then surface the
-      same related context inside selected board cards and task side panels.
+- [x] Surface source-backed timeline context inside selected board cards and
+      task side panels, while keeping the object detail page's event-level
+      source browser consolidated under Evidence.
 - [x] Add object-centered Memory Repair entry point on object detail pages that
       queues duplicate and low-signal archive cleanup focused on the selected
       object while preserving rejected-pair suppression.

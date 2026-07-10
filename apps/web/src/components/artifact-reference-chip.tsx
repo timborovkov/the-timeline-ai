@@ -173,13 +173,13 @@ function ArtifactPreviewDialog({
   const description = preview?.subtitle ?? refLabel;
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[min(760px,calc(100vh-2rem))] overflow-y-auto border-border bg-bg sm:max-w-2xl">
-        <DialogHeader>
-          <DialogTitle>{preview?.title ?? 'Reference'}</DialogTitle>
+      <DialogContent className="grid h-[calc(100dvh-1rem)] max-h-[860px] grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden border-border bg-bg p-4 sm:h-[min(860px,calc(100dvh-2rem))] sm:max-w-3xl sm:p-6">
+        <DialogHeader className="border-b border-border pb-4 pr-8">
+          <DialogTitle className="text-balance">{preview?.title ?? 'Reference'}</DialogTitle>
           <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4">
+        <div className="min-h-0 space-y-4 overflow-y-auto overscroll-contain py-4 pr-1 sm:pr-2">
           {loading ? (
             <div className="rounded-sm border border-border bg-surface p-4 text-sm text-muted-foreground">
               Loading reference…
@@ -262,10 +262,10 @@ function ArtifactPreviewDialog({
         </div>
 
         {preview?.href ? (
-          <DialogFooter>
+          <DialogFooter className="border-t border-border pt-4">
             <Link
               href={preview.href}
-              className="inline-flex h-9 items-center justify-center gap-2 rounded-sm border border-border bg-background px-3 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground"
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-sm border border-border bg-background pl-4 pr-3.5 text-sm font-medium transition-[background-color,color,scale] duration-150 ease-out hover:bg-accent hover:text-accent-foreground active:scale-[0.96]"
             >
               <ExternalLink className="size-4" />
               Open full page

@@ -28,7 +28,7 @@ export function ObjectSectionFeed({ objectId, section, title, showTitle = true }
           {items.map((item) => (
             <li
               key={String((item as { id?: unknown }).id)}
-              className="rounded-sm border border-border bg-surface px-4 py-2"
+              className="rounded-sm border border-border bg-surface px-4 py-3"
             >
               <ObjectSectionItem section={section} item={item} />
             </li>
@@ -101,23 +101,25 @@ function ObjectSectionItem({ section, item }: { section: Props['section']; item:
     const occurredAt = text(row.occurredAt);
     const source = text(row.source);
     return (
-      <div className="space-y-2">
-        <div className="flex items-start gap-3">
-          <p className="min-w-0 flex-1 whitespace-pre-wrap">{contentText}</p>
+      <div className="grid gap-3">
+        <div className="flex min-w-0 items-start gap-4">
+          <p className="line-clamp-5 min-w-0 flex-1 whitespace-pre-wrap text-pretty leading-6">
+            {contentText}
+          </p>
           {eventId ? (
             <EvidenceLink
               eventId={eventId}
               previewText={previewText}
               source={source}
               occurredAt={occurredAt}
-              className="inline-flex shrink-0 items-center gap-1 rounded-sm border border-border px-2 py-1 font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground transition-colors hover:border-border-strong hover:text-foreground"
+              className="inline-flex h-10 shrink-0 items-center gap-1.5 rounded-sm border border-border px-3 font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground transition-[border-color,color,background-color,scale] duration-150 ease-out hover:border-border-strong hover:bg-background hover:text-foreground active:scale-[0.96]"
             >
               <ExternalLink className="size-3" />
-              View
+              View evidence
             </EvidenceLink>
           ) : null}
         </div>
-        <p className="text-[11px] text-muted-foreground">
+        <p className="font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">
           {formatDisplayDateTime(occurredAt)} · {source}
         </p>
       </div>

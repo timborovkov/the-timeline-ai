@@ -372,7 +372,8 @@ describe('ObjectDetailClient', () => {
 
     expect(html).toContain('Send message to DFK with proposed meeting times');
     expect(html).toContain('Meeting with DFK Finland Oy');
-    expect(html).toContain('Jonne from DFK discussed the pilot scope.');
+    expect(html).not.toContain('Jonne from DFK discussed the pilot scope.');
+    expect(html).not.toContain('Timeline moments');
     expect(html).toContain('Jonne Granqvist');
     expect(html).toContain('Pilot pipeline');
     expect(html).toContain('Merge DFK Finland Oy into DFK');

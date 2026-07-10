@@ -1918,6 +1918,7 @@ describe('object scope — notes and suggestions', () => {
     });
 
     const detail = await scope.getObject(company.id);
+    const eventsPage = await scope.getObjectSectionPage(company.id, 'events');
 
     expect(detail?.connectedWork.openTasks).toEqual([expect.objectContaining({ id: openTask.id })]);
     expect(detail?.openTasks).toEqual([expect.objectContaining({ id: openTask.id })]);
@@ -1948,6 +1949,13 @@ describe('object scope — notes and suggestions', () => {
     expect(detail?.connectedWork.timelineEvents).not.toContainEqual(
       expect.objectContaining({ id: substringRaw?.id }),
     );
+    expect(eventsPage?.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: raw?.id }),
+        expect.objectContaining({ id: artifactRaw?.id }),
+      ]),
+    );
+    expect(eventsPage?.items).not.toContainEqual(expect.objectContaining({ id: substringRaw?.id }));
     expect(detail?.connectedWork.objects).toEqual([
       expect.objectContaining({ id: person.id, canonicalName: 'Jonne Granqvist', factCount: 1 }),
     ]);
