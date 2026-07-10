@@ -27,6 +27,7 @@ beforeEach(() => {
   fakes.fakeResolveActiveTeam.mockResolvedValue({ active: { teamId: 'team-1' } });
   fakes.fakeRequireMembership.mockResolvedValue('admin');
   fakes.fakeRetryFailed.mockResolvedValue({ retried: 3, failed: 0, failedIds: [] });
+  fakes.fakeAuditRecord.mockResolvedValue(undefined);
 });
 
 describe('job recovery retry failed route', () => {
@@ -95,6 +96,30 @@ describe('job recovery retry failed route', () => {
         target_count: 3,
       },
     });
+  });
+
+  it('keeps successful bulk recovery successful when audit persistence fails', async () => {
+    fakes.fakeAuditRecord.mockRejectedValue(new Error('audit unavailable'));
+
+    const res = await POST(
+      new Request('http://test', {
+        method: 'POST',
+        body: JSON.stringify({
+          kind: 'embedding',
+          items: [{ id: 'job-1', detectedAt: '2026-05-27T10:00:00.000Z' }],
+          expectedCount: 1,
+        }),
+      }),
+    );
+
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toEqual({
+      ok: true,
+      retried: 3,
+      failed: 0,
+      failedIds: [],
+    });
+    expect(fakes.fakeRetryFailed).toHaveBeenCalledOnce();
   });
 
   it('rejects malformed or empty JSON instead of retrying everything', async () => {

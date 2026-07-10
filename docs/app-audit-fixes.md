@@ -13,8 +13,8 @@ All 15 findings were implemented on 2026-07-10. The changes include:
 - Public error correlation references and canonical security audit actions.
 - Failure-aware MCP controls, connected labels, native modal navigation,
   visible focus, and live support-form status.
-- Offscreen task containment, cohesive security/domain helper modules, and a
-  resettable PGlite test database.
+- Bounded task rendering with offscreen containment, cohesive security/domain
+  helper modules, and a resettable PGlite test database.
 - Queue-free private text capture stage stamping and locale-aware display copy.
 
 The sections below remain as the evidence and acceptance record for regression
@@ -23,7 +23,7 @@ review.
 ## Final Verification
 
 - `pnpm test` passed all six workspace tasks across the database, shared, web,
-  and worker packages. The web package passed 1,098 tests across 182 files;
+  and worker packages. The web package passed 1,106 tests across 183 files;
   shared unit and PGlite integration suites and all worker unit/integration
   suites also passed.
 - `pnpm test:dist-imports` and `pnpm test:eval` passed.

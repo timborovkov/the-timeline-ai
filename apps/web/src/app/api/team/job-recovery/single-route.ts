@@ -4,7 +4,7 @@ import { NextResponse } from 'next/server';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
-import { singleRecoveryAuditRecord } from '@/lib/job-recovery-audit';
+import { recordRecoveryAuditBestEffort, singleRecoveryAuditRecord } from '@/lib/job-recovery-audit';
 import { publicApiErrorResponse } from '@/lib/public-error';
 
 type TeamScope = ReturnType<typeof withTeam>;
@@ -28,30 +28,42 @@ export function createSingleFailedJobRecoveryRoute(options: {
     try {
       await scope.requireMembership('admin');
     } catch {
-      await scope.audit.record(
-        singleRecoveryAuditRecord({
-          action: options.action,
-          id,
-          outcome: 'rejected',
-          reason: 'forbidden',
-        }),
+      await recordRecoveryAuditBestEffort(
+        () =>
+          scope.audit.record(
+            singleRecoveryAuditRecord({
+              action: options.action,
+              id,
+              outcome: 'rejected',
+              reason: 'forbidden',
+            }),
+          ),
+        options.operation,
       );
       return NextResponse.json({ error: 'forbidden' }, { status: 403 });
     }
     try {
       await options.run(scope, id);
-      await scope.audit.record(
-        singleRecoveryAuditRecord({ action: options.action, id, outcome: 'succeeded' }),
+      await recordRecoveryAuditBestEffort(
+        () =>
+          scope.audit.record(
+            singleRecoveryAuditRecord({ action: options.action, id, outcome: 'succeeded' }),
+          ),
+        options.operation,
       );
       return NextResponse.json({ ok: true });
     } catch (err) {
-      await scope.audit.record(
-        singleRecoveryAuditRecord({
-          action: options.action,
-          id,
-          outcome: 'rejected',
-          reason: 'operation_failed',
-        }),
+      await recordRecoveryAuditBestEffort(
+        () =>
+          scope.audit.record(
+            singleRecoveryAuditRecord({
+              action: options.action,
+              id,
+              outcome: 'rejected',
+              reason: 'operation_failed',
+            }),
+          ),
+        options.operation,
       );
       return publicApiErrorResponse(err, {
         operation: options.operation,

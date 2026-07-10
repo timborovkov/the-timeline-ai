@@ -40,9 +40,10 @@ interface MemberOption {
 }
 
 const EMPTY_MEMBERS: MemberOption[] = [];
-const DATE_FORMAT = new Intl.DateTimeFormat(undefined, {
+const DATE_FORMAT = new Intl.DateTimeFormat('en-US', {
   dateStyle: 'medium',
   timeStyle: 'short',
+  timeZone: 'UTC',
 });
 
 interface ConnectionRequestError {

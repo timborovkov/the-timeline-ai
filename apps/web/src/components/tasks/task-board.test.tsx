@@ -18,6 +18,8 @@ vi.mock('@/app/actions/objects', () => ({
   loadTaskRowsAction: fakes.loadTaskRowsAction,
 }));
 vi.mock('@/lib/task-board-config', () => ({
+  TASK_BOARD_COLUMN_RENDER_LIMIT: 3,
+  TASK_BOARD_LIST_RENDER_LIMIT: 5,
   TASK_BOARD_PAGE_SIZE: 500,
   TASK_BOARD_TOTAL_LIMIT: 50_000,
   TASK_OPEN_STATUSES_EXCLUDED: ['done', 'cancelled'],
@@ -380,30 +382,30 @@ describe('TaskBoard', () => {
     expect(screen.queryByRole('button', { name: 'Load older tasks' })).toBeNull();
   });
 
-  it('keeps every loaded kanban task accessible with content-visibility containment', () => {
+  it('bounds rendered kanban cards while reporting loaded tasks outside the window', () => {
     const rows = Array.from({ length: 7 }, (_, index) =>
       task({ id: `task-${index}`, canonicalName: `Task ${index}`, status: 'done' }),
     );
 
     renderBoard(null, rows);
 
-    const finalCard = screen.getByRole('link', { name: 'Task 6' }).closest('li');
-    expect(finalCard).toBeTruthy();
-    expect(finalCard?.style.contentVisibility).toBe('auto');
-    expect(finalCard?.style.containIntrinsicSize).toBe('auto 112px');
+    expect(screen.getByRole('link', { name: 'Task 2' })).toBeTruthy();
+    expect(screen.queryByRole('link', { name: 'Task 3' })).toBeNull();
+    expect(screen.getByText('4 loaded tasks hidden. Narrow filter.')).toBeTruthy();
   });
 
-  it('keeps every loaded list task accessible with content-visibility containment', () => {
+  it('bounds rendered list rows while reporting loaded tasks outside the window', () => {
     const rows = Array.from({ length: 22 }, (_, index) =>
       task({ id: `task-${index}`, canonicalName: `Task ${index}` }),
     );
 
     renderBoard(null, rows, 'list');
 
-    const finalRow = screen.getByRole('link', { name: 'Task 21' }).closest('tr');
-    expect(finalRow).toBeTruthy();
-    expect(finalRow?.style.contentVisibility).toBe('auto');
-    expect(finalRow?.style.containIntrinsicSize).toBe('auto 52px');
+    expect(screen.getByRole('link', { name: 'Task 4' })).toBeTruthy();
+    expect(screen.queryByRole('link', { name: 'Task 5' })).toBeNull();
+    expect(
+      screen.getByText('17 loaded tasks hidden. Narrow the filter to inspect them.'),
+    ).toBeTruthy();
   });
 
   it('bulk assigns selected tasks from list view', async () => {

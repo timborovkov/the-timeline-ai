@@ -27,6 +27,7 @@ beforeEach(() => {
   fakes.fakeResolveActiveTeam.mockResolvedValue({ active: { teamId: 'team-1' } });
   fakes.fakeRequireMembership.mockResolvedValue('admin');
   fakes.fakeRetry.mockResolvedValue(undefined);
+  fakes.fakeAuditRecord.mockResolvedValue(undefined);
 });
 
 describe('job recovery retry route', () => {
@@ -75,6 +76,18 @@ describe('job recovery retry route', () => {
       targetType: 'job_recovery',
       metadata: { mode: 'single', outcome: 'succeeded', recovery_kind: 'unknown' },
     });
+  });
+
+  it('keeps a successful retry successful when audit persistence fails', async () => {
+    fakes.fakeAuditRecord.mockRejectedValue(new Error('audit unavailable'));
+
+    const res = await POST(new Request('http://test'), {
+      params: Promise.resolve({ id: 'abc' }),
+    });
+
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toEqual({ ok: true });
+    expect(fakes.fakeRetry).toHaveBeenCalledOnce();
   });
 
   it('maps expected retry failures and audits the rejected operation', async () => {

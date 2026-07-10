@@ -37,6 +37,16 @@ function connectedRow(
 }
 
 describe('ConnectedIntegrations', () => {
+  it('formats server-rendered timestamps with the stable app locale and timezone', () => {
+    render(
+      <ConnectedIntegrations
+        connected={[connectedRow({ lastSyncedAt: '2026-06-28T23:30:00.000Z' })]}
+      />,
+    );
+
+    expect(screen.getByText('Last synced Jun 28, 2026, 11:30 PM')).toBeTruthy();
+  });
+
   it('shows provider budget cooldowns without offering retry sync', () => {
     render(
       <ConnectedIntegrations

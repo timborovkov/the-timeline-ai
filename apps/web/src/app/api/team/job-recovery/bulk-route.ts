@@ -7,7 +7,7 @@ import type * as jobRecovery from '@timeline/shared/job-recovery';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
-import { bulkRecoveryAuditRecord } from '@/lib/job-recovery-audit';
+import { bulkRecoveryAuditRecord, recordRecoveryAuditBestEffort } from '@/lib/job-recovery-audit';
 import { publicApiErrorResponse } from '@/lib/public-error';
 
 const JOB_KINDS = [
@@ -56,13 +56,17 @@ export function createBulkFailedJobRecoveryRoute(options: {
     try {
       await scope.requireMembership('admin');
     } catch {
-      await scope.audit.record(
-        bulkRecoveryAuditRecord({
-          action: options.action,
-          ids: [],
-          outcome: 'rejected',
-          reason: 'forbidden',
-        }),
+      await recordRecoveryAuditBestEffort(
+        () =>
+          scope.audit.record(
+            bulkRecoveryAuditRecord({
+              action: options.action,
+              ids: [],
+              outcome: 'rejected',
+              reason: 'forbidden',
+            }),
+          ),
+        options.fallbackError,
       );
       return NextResponse.json({ error: 'forbidden' }, { status: 403 });
     }
@@ -70,13 +74,17 @@ export function createBulkFailedJobRecoveryRoute(options: {
     const body: unknown = await req.json().catch(() => null);
     const parsed = schema.safeParse(body);
     if (!parsed.success) {
-      await scope.audit.record(
-        bulkRecoveryAuditRecord({
-          action: options.action,
-          ids: [],
-          outcome: 'rejected',
-          reason: 'invalid_input',
-        }),
+      await recordRecoveryAuditBestEffort(
+        () =>
+          scope.audit.record(
+            bulkRecoveryAuditRecord({
+              action: options.action,
+              ids: [],
+              outcome: 'rejected',
+              reason: 'invalid_input',
+            }),
+          ),
+        options.fallbackError,
       );
       return NextResponse.json({ error: 'invalid_input' }, { status: 400 });
     }
@@ -96,15 +104,22 @@ export function createBulkFailedJobRecoveryRoute(options: {
         })),
         expectedCount: parsed.data.expectedCount,
       });
-      await scope.audit.record(bulkRecoveryAuditRecord({ ...auditInput, outcome: 'succeeded' }));
+      await recordRecoveryAuditBestEffort(
+        () => scope.audit.record(bulkRecoveryAuditRecord({ ...auditInput, outcome: 'succeeded' })),
+        options.fallbackError,
+      );
       return NextResponse.json({ ok: true, ...result });
     } catch (err) {
-      await scope.audit.record(
-        bulkRecoveryAuditRecord({
-          ...auditInput,
-          outcome: 'rejected',
-          reason: 'operation_failed',
-        }),
+      await recordRecoveryAuditBestEffort(
+        () =>
+          scope.audit.record(
+            bulkRecoveryAuditRecord({
+              ...auditInput,
+              outcome: 'rejected',
+              reason: 'operation_failed',
+            }),
+          ),
+        options.fallbackError,
       );
       return publicApiErrorResponse(err, {
         operation: options.fallbackError,
