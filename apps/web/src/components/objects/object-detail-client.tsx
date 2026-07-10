@@ -1183,6 +1183,14 @@ function provenanceEvidenceCount(entries: ObjectDetail['provenance']['whyThisExi
   return entries.reduce((count, entry) => count + entry.evidence.length, 0);
 }
 
+function timelinePreview(contentText: string | null): string {
+  const cleaned = displayText(contentText ?? 'Timeline event')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (cleaned.length <= 160) return cleaned;
+  return `${cleaned.slice(0, 157)}...`;
+}
+
 function ProvenanceEntryList({
   entries,
   muted,
@@ -1673,7 +1681,6 @@ function ObjectConnectedWorkSection({
     connectedWork.openTasks.length > 0 ||
     connectedWork.recentTasks.length > 0 ||
     connectedWork.calendarEvents.length > 0 ||
-    connectedWork.timelineEvents.length > 0 ||
     connectedWork.objects.length > 0 ||
     connectedWork.boards.length > 0 ||
     connectedWork.pendingApprovals.length > 0 ||
@@ -1703,7 +1710,6 @@ function ObjectConnectedWorkSection({
           />
           <ConnectedLinkList links={connectedWork.links} />
           <ConnectedCapturedFileList files={connectedWork.capturedFiles} />
-          <ConnectedTimelineEventList events={connectedWork.timelineEvents} />
           <ConnectedDocumentList documents={connectedWork.documents} />
         </div>
       )}
@@ -1870,47 +1876,6 @@ function ConnectedApprovalList({
               </Link>
               <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">
                 {approval.operation} · {approval.targetKind}
-              </span>
-            </li>
-          ))}
-        </ul>
-      )}
-    </ConnectedWorkSection>
-  );
-}
-
-function timelinePreview(contentText: string | null): string {
-  const cleaned = displayText(contentText ?? 'Timeline event')
-    .replace(/\s+/g, ' ')
-    .trim();
-  if (cleaned.length <= 160) return cleaned;
-  return `${cleaned.slice(0, 157)}...`;
-}
-
-function ConnectedTimelineEventList({
-  events,
-}: {
-  events: ObjectDetail['connectedWork']['timelineEvents'];
-}) {
-  return (
-    <ConnectedWorkSection title="Timeline moments">
-      {events.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No timeline moments found.</p>
-      ) : (
-        <ul className="space-y-2">
-          {events.map((event) => (
-            <li
-              key={event.id}
-              className="grid gap-1 rounded-sm border border-border bg-surface px-3 py-2 text-sm"
-            >
-              <Link
-                href={`/app/timeline?event=${event.id}#ev-${event.id}`}
-                className="font-medium hover:underline"
-              >
-                {timelinePreview(event.contentText)}
-              </Link>
-              <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">
-                {event.source} · {formatDisplayDateTime(event.occurredAt)}
               </span>
             </li>
           ))}

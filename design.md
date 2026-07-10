@@ -698,16 +698,19 @@ key/value pairs.
 
 - Connected Work sits above Evidence as live context, not accepted memory. It
   uses compact grouped lists for open tasks, calendar, people/objects, boards,
-  pending approvals, recent history, timeline moments, documents, shared links,
-  and captured files.
+  pending approvals, recent history, documents, shared links, and captured
+  files. Do not repeat related raw events here; the Evidence panel is the
+  object page's canonical event-level source browser.
 - Provenance is a compact vertical disclosure, not a three-column evidence
   dump. Show one creation source and at most two accepted changes initially;
   keep related evidence collapsed. Every group shows its source count, and
   expanded remainders use a bounded scroll region with links to the Timeline.
 - Raw event bodies never become unbounded provenance headings. Use the same
-  whitespace-normalized 160-character preview as Connected Work, keep complete
-  source content in the Timeline inspector/Evidence surface, and avoid
-  serializing a second full copy into object provenance.
+  whitespace-normalized 160-character preview as other compact references,
+  keep complete source content in the Timeline inspector/Evidence surface, and
+  avoid serializing a second full copy into object provenance. Object Evidence
+  cards cap source text at five lines and open the shared evidence quick-view;
+  its content scrolls independently so the full-page action remains visible.
 - Person object sidebars show saved email and phone identity facets in a compact
   Contact panel. These are accepted object memory, not Related Context cards;
   shared links remain the artifact-style related context.

@@ -1918,6 +1918,7 @@ describe('object scope — notes and suggestions', () => {
     });
 
     const detail = await scope.getObject(company.id);
+    const eventsPage = await scope.getObjectSectionPage(company.id, 'events');
 
     expect(detail?.connectedWork.openTasks).toEqual([expect.objectContaining({ id: openTask.id })]);
     expect(detail?.openTasks).toEqual([expect.objectContaining({ id: openTask.id })]);
@@ -1948,6 +1949,13 @@ describe('object scope — notes and suggestions', () => {
     expect(detail?.connectedWork.timelineEvents).not.toContainEqual(
       expect.objectContaining({ id: substringRaw?.id }),
     );
+    expect(eventsPage?.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: raw?.id }),
+        expect.objectContaining({ id: artifactRaw?.id }),
+      ]),
+    );
+    expect(eventsPage?.items).not.toContainEqual(expect.objectContaining({ id: substringRaw?.id }));
     expect(detail?.connectedWork.objects).toEqual([
       expect.objectContaining({ id: person.id, canonicalName: 'Jonne Granqvist', factCount: 1 }),
     ]);
@@ -1978,6 +1986,90 @@ describe('object scope — notes and suggestions', () => {
     expect(detail?.connectedWork.capturedFiles).toEqual([
       expect.objectContaining({ name: 'dfk-whiteboard.png', contentType: 'image/png' }),
     ]);
+  });
+
+  it('paginates beyond 100 artifact-associated evidence events', async () => {
+    const scope = withTeam(db, TEAM_A, USER_OWNER).objects;
+    const object = await scope.createObject({
+      type: 'project',
+      canonicalName: 'Atlas migration',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    const [cluster] = await db
+      .insert(artifactClusters)
+      .values({
+        teamId: TEAM_A,
+        artifactClusterKind: 'customer_project',
+        artifactType: 'project',
+        canonicalName: 'Provider project AP-42',
+        canonicalEntityId: object.id,
+      })
+      .returning({ id: artifactClusters.id });
+    const baseTime = new Date('2026-07-01T10:00:00.000Z').getTime();
+    const rawEventRows = await db
+      .insert(rawEvents)
+      .values(
+        Array.from({ length: 101 }, (_, index) => ({
+          teamId: TEAM_A,
+          authorUserId: USER_OWNER,
+          source: 'integration' as const,
+          contentText: `Provider lifecycle update AP-42 sequence ${String(index)}`,
+          occurredAt: new Date(baseTime + index * 60_000),
+          visibility: 'team' as const,
+        })),
+      )
+      .returning({ id: rawEvents.id, occurredAt: rawEvents.occurredAt });
+    const evidenceRows = await db
+      .insert(reconciliationEvidence)
+      .values(
+        rawEventRows.map((event, index) => ({
+          teamId: TEAM_A,
+          rawEventId: event.id,
+          source: 'integration' as const,
+          provider: 'test-provider',
+          externalObjectId: 'AP-42',
+          eventType: 'project.updated',
+          occurredAt: event.occurredAt,
+          visibility: 'team' as const,
+          actor: {},
+          contentDigest: `digest:artifact-pagination:${String(index)}`,
+          normalizerVersion: 'test-v1',
+          dedupeKey: `evidence:artifact-pagination:${String(index)}`,
+        })),
+      )
+      .returning({ id: reconciliationEvidence.id, rawEventId: reconciliationEvidence.rawEventId });
+    const evidenceIdByRawEventId = new Map(
+      evidenceRows.map((evidence) => [evidence.rawEventId, evidence.id]),
+    );
+    await db.insert(artifactEvidenceAssociations).values(
+      rawEventRows.map((event, index) => ({
+        teamId: TEAM_A,
+        clusterId: cluster?.id ?? '',
+        evidenceId: evidenceIdByRawEventId.get(event.id) ?? '',
+        rawEventId: event.id,
+        role: 'lifecycle_update' as const,
+        strength: 'provider' as const,
+        associationSource: 'authoritative_provider' as const,
+        sourceRefs: [],
+        visibility: 'team' as const,
+        visibilityFloor: 'team' as const,
+        dedupeKey: `association:artifact-pagination:${String(index)}`,
+        createdAt: new Date(baseTime + index * 60_000),
+      })),
+    );
+
+    const firstPage = await scope.getObjectSectionPage(object.id, 'events', { limit: 100 });
+    expect(firstPage?.items).toHaveLength(100);
+    const nextCursor = firstPage?.nextCursor ?? null;
+    expect(nextCursor).not.toBeNull();
+    if (!nextCursor) throw new Error('Expected a second artifact evidence page');
+
+    const secondPage = await scope.getObjectSectionPage(object.id, 'events', {
+      limit: 100,
+      cursor: nextCursor,
+    });
+    expect(secondPage?.items).toEqual([expect.objectContaining({ id: rawEventRows[0]?.id })]);
+    expect(secondPage?.nextCursor).toBeNull();
   });
 
   it('does not surface connected work links from legacy artifact_cluster_members', async () => {

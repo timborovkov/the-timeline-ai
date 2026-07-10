@@ -50,6 +50,7 @@ import {
   asc,
   desc,
   eq,
+  exists,
   gte,
   inArray,
   isNotNull,
@@ -1708,6 +1709,74 @@ function artifactAssociationVisibleToScope(scope: TeamScopeCore): SQL {
   )`;
 }
 
+async function artifactAssociatedRawEventIds(
+  db: Db,
+  scope: TeamScopeCore,
+  entityId: string,
+): Promise<string[]> {
+  const rows = await db
+    .select({
+      rawEventId: sql<string>`COALESCE(${artifactEvidenceAssociations.rawEventId}, ${reconciliationEvidence.rawEventId})`,
+    })
+    .from(artifactEvidenceAssociations)
+    .innerJoin(
+      artifactClusters,
+      and(
+        eq(artifactClusters.id, artifactEvidenceAssociations.clusterId),
+        eq(artifactClusters.teamId, scope.teamId),
+      ),
+    )
+    .innerJoin(
+      reconciliationEvidence,
+      and(
+        eq(reconciliationEvidence.id, artifactEvidenceAssociations.evidenceId),
+        eq(reconciliationEvidence.teamId, scope.teamId),
+      ),
+    )
+    .where(
+      and(
+        eq(artifactEvidenceAssociations.teamId, scope.teamId),
+        eq(artifactClusters.canonicalEntityId, entityId),
+        isNull(artifactClusters.archivedAt),
+        artifactAssociationVisibleToScope(scope),
+      ),
+    )
+    .orderBy(desc(artifactEvidenceAssociations.createdAt), desc(artifactEvidenceAssociations.id))
+    .limit(100);
+  return Array.from(new Set(rows.map((row) => row.rawEventId).filter(Boolean)));
+}
+
+function artifactAssociatedRawEventCondition(db: Db, scope: TeamScopeCore, entityId: string): SQL {
+  return exists(
+    db
+      .select({ id: artifactEvidenceAssociations.id })
+      .from(artifactEvidenceAssociations)
+      .innerJoin(
+        artifactClusters,
+        and(
+          eq(artifactClusters.id, artifactEvidenceAssociations.clusterId),
+          eq(artifactClusters.teamId, scope.teamId),
+        ),
+      )
+      .innerJoin(
+        reconciliationEvidence,
+        and(
+          eq(reconciliationEvidence.id, artifactEvidenceAssociations.evidenceId),
+          eq(reconciliationEvidence.teamId, scope.teamId),
+        ),
+      )
+      .where(
+        and(
+          eq(artifactEvidenceAssociations.teamId, scope.teamId),
+          eq(artifactClusters.canonicalEntityId, entityId),
+          isNull(artifactClusters.archivedAt),
+          artifactAssociationVisibleToScope(scope),
+          sql`COALESCE(${artifactEvidenceAssociations.rawEventId}, ${reconciliationEvidence.rawEventId}) = ${rawEvents.id}`,
+        ),
+      ),
+  );
+}
+
 function reconciliationOutputVisibleToScope(scope: TeamScopeCore): SQL {
   return sql`(
     (
@@ -2245,8 +2314,10 @@ export async function getObjectSectionPage(
     )
     .limit(300);
   const factRawEventIds = Array.from(new Set(factRawEventRows.map((row) => row.rawEventId)));
+  const artifactEventMatch = artifactAssociatedRawEventCondition(db, scope, entityId);
   const eventConditions: SQL[] = [sql`${rawEvents.sourceMetadata} ->> 'entity_id' = ${entityId}`];
   if (factRawEventIds.length > 0) eventConditions.push(inArray(rawEvents.id, factRawEventIds));
+  eventConditions.push(artifactEventMatch);
   const eventContentMatch = objectContentMatchCondition(rawEvents.contentText, names, tokens);
   if (eventContentMatch) eventConditions.push(eventContentMatch);
   const cursorSql = cursorCondition(args.cursor, rawEvents.occurredAt, rawEvents.id);
@@ -2264,6 +2335,7 @@ export async function getObjectSectionPage(
       occurredAt: rawEvents.occurredAt,
       createdAt: rawEvents.createdAt,
       sourceEntityId: sql<string | null>`${rawEvents.sourceMetadata} ->> 'entity_id'`,
+      artifactAssociated: artifactEventMatch,
     })
     .from(rawEvents)
     .where(
@@ -2280,7 +2352,13 @@ export async function getObjectSectionPage(
     .limit(limit + 1);
   const factRawEventIdSet = new Set(factRawEventIds);
   const filteredRows = rows.filter((row) => {
-    if (row.sourceEntityId === entityId || factRawEventIdSet.has(row.id)) return true;
+    if (
+      row.sourceEntityId === entityId ||
+      factRawEventIdSet.has(row.id) ||
+      row.artifactAssociated
+    ) {
+      return true;
+    }
     return textMatchesObjectSearch(row.contentText ?? '', names, tokens);
   });
   return pageWindow(filteredRows, limit, (row) => ({
@@ -2320,7 +2398,7 @@ async function getConnectedWork(
     sharedObjectRows,
     titleTaskRows,
     linkedCalendarRows,
-    artifactAssociationRows,
+    artifactRawEventIds,
     boardRows,
     pendingApprovalRows,
     pendingReconciliationOutputRows,
@@ -2391,35 +2469,7 @@ async function getConnectedWork(
         ),
       )
       .limit(100),
-    db
-      .select({
-        rawEventId: sql<string>`COALESCE(${artifactEvidenceAssociations.rawEventId}, ${reconciliationEvidence.rawEventId})`,
-      })
-      .from(artifactEvidenceAssociations)
-      .innerJoin(
-        artifactClusters,
-        and(
-          eq(artifactClusters.id, artifactEvidenceAssociations.clusterId),
-          eq(artifactClusters.teamId, scope.teamId),
-        ),
-      )
-      .innerJoin(
-        reconciliationEvidence,
-        and(
-          eq(reconciliationEvidence.id, artifactEvidenceAssociations.evidenceId),
-          eq(reconciliationEvidence.teamId, scope.teamId),
-        ),
-      )
-      .where(
-        and(
-          eq(artifactEvidenceAssociations.teamId, scope.teamId),
-          eq(artifactClusters.canonicalEntityId, object.id),
-          isNull(artifactClusters.archivedAt),
-          artifactAssociationVisibleToScope(scope),
-        ),
-      )
-      .orderBy(desc(artifactEvidenceAssociations.createdAt), desc(artifactEvidenceAssociations.id))
-      .limit(100),
+    artifactAssociatedRawEventIds(db, scope, object.id),
     db
       .select({
         boardId: boards.id,
@@ -2637,9 +2687,6 @@ async function getConnectedWork(
   if (factRawEventIds.length > 0) {
     timelineConditions.push(inArray(rawEvents.id, factRawEventIds));
   }
-  const artifactRawEventIds = Array.from(
-    new Set(artifactAssociationRows.map((row) => row.rawEventId).filter(Boolean)),
-  );
   const sourceRefLinkedPendingReconciliationOutputRows =
     artifactRawEventIds.length > 0
       ? await db

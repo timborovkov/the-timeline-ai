@@ -246,7 +246,8 @@ describe('ObjectSectionFeed', () => {
     );
 
     expect(screen.getByText('[empty event]')).toBeTruthy();
-    await userEvent.click(screen.getByRole('button', { name: 'View' }));
+    expect(screen.getByText('[empty event]').className).toContain('line-clamp-5');
+    await userEvent.click(screen.getByRole('button', { name: 'View evidence' }));
 
     expect(await screen.findByText('This reference has no text preview.')).toBeTruthy();
   });
