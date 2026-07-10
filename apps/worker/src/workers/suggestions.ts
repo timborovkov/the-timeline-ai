@@ -69,22 +69,38 @@ interface SuggestionWorkerIO {
   enqueueSuggestionJob?: typeof queue.enqueueSuggestionJob;
 }
 
-const suggestionItemSchema = z.object({
-  operation: z.enum(['create', 'update', 'archive_or_cancel']),
-  targetKind: z.enum([
-    'task',
-    'object',
-    'calendar_event',
-    'object_note',
-    'board_membership',
-    'board_item_update',
-    'object_relationship',
-  ]),
-  targetId: z.uuid().nullable().optional(),
-  title: z.string().min(1).max(200),
-  description: z.string().max(500).nullable().optional(),
-  proposedPayload: z.record(z.string(), z.unknown()),
-});
+const suggestionItemSchema = z
+  .object({
+    operation: z.enum(['create', 'update', 'archive_or_cancel']),
+    targetKind: z.enum([
+      'task',
+      'object',
+      'calendar_event',
+      'object_note',
+      'board_membership',
+      'board_item_update',
+      'object_relationship',
+    ]),
+    targetId: z.uuid().nullable().optional(),
+    title: z.string().min(1).max(200),
+    description: z.string().max(500).nullable().optional(),
+    proposedPayload: z.record(z.string(), z.unknown()),
+  })
+  .superRefine((item, ctx) => {
+    if (
+      item.operation !== 'create' &&
+      (item.targetKind === 'task' ||
+        item.targetKind === 'object' ||
+        item.targetKind === 'calendar_event') &&
+      !item.targetId
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['targetId'],
+        message: 'targetId is required for updates and cancellations',
+      });
+    }
+  });
 
 const suggestionBundleSchema = z.object({
   title: z.string().min(1).max(200),

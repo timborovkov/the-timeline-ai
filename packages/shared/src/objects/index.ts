@@ -1865,10 +1865,9 @@ async function getObjectProvenance(
 
   for (const event of connectedWork.timelineEvents) {
     if (usedRelated.has(event.id)) continue;
-    const title = event.contentText?.trim();
     provenance.relatedEvidence.push({
       id: `observed:${event.id}`,
-      title: title && title.length > 0 ? title : 'Related source event',
+      title: objectProvenancePreview(event.contentText),
       reason: 'Observed through connected work and concrete object evidence.',
       operation: 'observed',
       targetKind: 'raw_event',
@@ -1878,7 +1877,7 @@ async function getObjectProvenance(
           rawEventId: event.id,
           quote: null,
           source: event.source,
-          contentText: event.contentText,
+          contentText: null,
           occurredAt: event.occurredAt,
         },
       ],
@@ -1898,6 +1897,13 @@ async function getObjectProvenance(
     whatChangedIt: sortEntries(provenance.whatChangedIt),
     relatedEvidence: sortEntries(provenance.relatedEvidence).slice(0, 8),
   };
+}
+
+function objectProvenancePreview(contentText: string | null): string {
+  const cleaned = (contentText ?? 'Related source event').replace(/\s+/g, ' ').trim();
+  if (cleaned.length === 0) return 'Related source event';
+  if (cleaned.length <= 160) return cleaned;
+  return `${cleaned.slice(0, 157)}...`;
 }
 
 async function sourceRefRawEventIdsBySuggestionItem(

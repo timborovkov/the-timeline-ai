@@ -2327,6 +2327,39 @@ describe('object scope — notes and suggestions', () => {
       expect.objectContaining({ id: weakEvents[0]?.id }),
     );
   });
+
+  it('keeps multi-kilobyte related evidence compact without duplicating raw content', async () => {
+    const scope = withTeam(db, TEAM_A, USER_OWNER).objects;
+    const task = await scope.createObject({
+      type: 'task',
+      canonicalName: 'Repair FSLI rollup calculations',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    const longSuffix = ' multi-kilobyte audit evidence'.repeat(80);
+    await db.insert(rawEvents).values(
+      Array.from({ length: 10 }, (_, index) => ({
+        teamId: TEAM_A,
+        authorUserId: USER_OWNER,
+        source: 'integration' as const,
+        contentText: `Repair FSLI rollup calculations event ${index}.${longSuffix}`,
+        occurredAt: new Date(`2026-07-10T10:${String(index).padStart(2, '0')}:00.000Z`),
+        visibility: 'team' as const,
+        sourceMetadata: { provider: 'github' },
+      })),
+    );
+
+    const detail = await scope.getObject(task.id);
+
+    expect(detail?.connectedWork.timelineEvents).toHaveLength(10);
+    expect(detail?.provenance.relatedEvidence).toHaveLength(8);
+    for (const entry of detail?.provenance.relatedEvidence ?? []) {
+      expect(entry.title).toHaveLength(160);
+      expect(entry.title.endsWith('...')).toBe(true);
+      expect(entry.evidence).toHaveLength(1);
+      expect(entry.evidence[0]?.contentText).toBeNull();
+      expect(typeof entry.evidence[0]?.rawEventId).toBe('string');
+    }
+  });
 });
 
 describe('object scope — chat session isolation', () => {

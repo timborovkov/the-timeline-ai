@@ -7300,6 +7300,76 @@ describe('suggestion scope', () => {
     expect(result.rows[0]?.deleted_at).toBeInstanceOf(Date);
   });
 
+  it('supersedes a legacy calendar update whose target id is missing', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const event = await scope.calendar.createCalendarEvent({
+      title: 'Legacy target',
+      startAt: new Date('2026-06-02T10:00:00.000Z'),
+      endAt: new Date('2026-06-02T11:00:00.000Z'),
+      timezone: 'UTC',
+      allDay: false,
+      visibility: 'team',
+    });
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Move legacy calendar event',
+      dedupeKey: 'calendar-update-missing-target',
+      items: [
+        {
+          operation: 'update',
+          targetKind: 'calendar_event',
+          targetId: event.id,
+          title: 'Move legacy calendar event',
+          dedupeKey: 'calendar-update-missing-target:item',
+          proposedPayload: { startAt: '2026-06-02T12:00:00.000Z' },
+        },
+      ],
+    });
+    const itemId = bundle.items[0]?.id ?? '';
+    await db
+      .update(agentSuggestionItems)
+      .set({ targetId: null })
+      .where(eq(agentSuggestionItems.id, itemId));
+
+    await expect(scope.suggestions.acceptSuggestionItem(itemId)).resolves.toBe(true);
+
+    const [item] = await db
+      .select({
+        status: agentSuggestionItems.status,
+        supersededReason: agentSuggestionItems.supersededReason,
+      })
+      .from(agentSuggestionItems)
+      .where(eq(agentSuggestionItems.id, itemId));
+    expect(item).toEqual({
+      status: 'superseded',
+      supersededReason: 'The target calendar event is missing.',
+    });
+  });
+
+  it('rejects new calendar updates whose target id is missing', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+
+    await expect(
+      scope.suggestions.createOrMergeSuggestionBundle({
+        source: 'background',
+        title: 'Move unknown calendar event',
+        dedupeKey: 'calendar-update-without-target',
+        items: [
+          {
+            operation: 'update',
+            targetKind: 'calendar_event',
+            title: 'Move unknown calendar event',
+            dedupeKey: 'calendar-update-without-target:item',
+            proposedPayload: { startAt: '2026-06-02T12:00:00.000Z' },
+          },
+        ],
+      }),
+    ).rejects.toThrow('The target calendar event is missing.');
+
+    await expect(db.select().from(agentSuggestions)).resolves.toHaveLength(0);
+    await expect(db.select().from(agentSuggestionItems)).resolves.toHaveLength(0);
+  });
+
   it('lists resolved suggestions when requested', async () => {
     const scope = withTeam(db as never, TEAM_ID, USER_ID);
     const bundle = await scope.suggestions.createOrMergeSuggestionBundle({

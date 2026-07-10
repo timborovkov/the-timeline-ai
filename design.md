@@ -700,6 +700,14 @@ key/value pairs.
   uses compact grouped lists for open tasks, calendar, people/objects, boards,
   pending approvals, recent history, timeline moments, documents, shared links,
   and captured files.
+- Provenance is a compact vertical disclosure, not a three-column evidence
+  dump. Show one creation source and at most two accepted changes initially;
+  keep related evidence collapsed. Every group shows its source count, and
+  expanded remainders use a bounded scroll region with links to the Timeline.
+- Raw event bodies never become unbounded provenance headings. Use the same
+  whitespace-normalized 160-character preview as Connected Work, keep complete
+  source content in the Timeline inspector/Evidence surface, and avoid
+  serializing a second full copy into object provenance.
 - Person object sidebars show saved email and phone identity facets in a compact
   Contact panel. These are accepted object memory, not Related Context cards;
   shared links remain the artifact-style related context.

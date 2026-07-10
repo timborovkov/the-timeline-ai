@@ -2108,6 +2108,43 @@ describe('processSuggestionJobForTests', () => {
     });
   });
 
+  it('rejects model calendar updates that omit the target id', async () => {
+    const rawEventId = '10000000-0000-0000-0000-000000000002';
+    await seedRawEvent(db as never, {
+      id: rawEventId,
+      text: 'Move the planning call to noon.',
+    });
+    const modelObject = {
+      bundles: [
+        {
+          title: 'Move the planning call',
+          items: [
+            {
+              operation: 'update',
+              targetKind: 'calendar_event',
+              title: 'Move the planning call',
+              proposedPayload: { startAt: '2026-06-02T12:00:00.000Z' },
+            },
+          ],
+        },
+      ],
+    };
+    const chat = vi
+      .fn()
+      .mockImplementation(({ schema }: { schema: { parse: (value: unknown) => unknown } }) =>
+        Promise.resolve({ object: schema.parse(modelObject), model: MODEL_ID }),
+      );
+
+    await expect(
+      processSuggestionJobForTests(
+        { db: db as never },
+        { rawEventId, teamId: TEAM_ID },
+        { getEnv: env, chatStructured: chat, modelId: MODEL_ID },
+      ),
+    ).rejects.toThrow(/targetId/i);
+    await expect(suggestionCounts(pg)).resolves.toEqual({ suggestions: 0, items: 0 });
+  });
+
   it('stores model-backed recurring calendar suggestions', async () => {
     const rawEventId = '10000000-0000-0000-0000-0000000000f1';
     await seedRawEvent(db as never, {

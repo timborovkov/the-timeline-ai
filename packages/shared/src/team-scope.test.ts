@@ -150,6 +150,21 @@ describe('withTeam namespaced port', () => {
     await pg.close();
   });
 
+  async function withHistoricalLegacyObjectProvenance<T>(run: () => Promise<T>): Promise<T> {
+    await pg.exec(`
+      ALTER TABLE entities DISABLE TRIGGER entities_legacy_provenance_write_guard;
+      ALTER TABLE object_changes DROP CONSTRAINT object_changes_legacy_source_event_id_null_chk;
+    `);
+    try {
+      return await run();
+    } finally {
+      await pg.exec(`
+        ALTER TABLE entities ENABLE TRIGGER entities_legacy_provenance_write_guard;
+        ALTER TABLE object_changes ADD CONSTRAINT object_changes_legacy_source_event_id_null_chk CHECK (source_event_id IS NULL) NOT VALID;
+      `);
+    }
+  }
+
   it('exposes timeline and documents through modules, not flat methods', () => {
     const scope = withTeam(db as never, TEAM_A, USER_A) as unknown as Record<string, unknown>;
 
@@ -1351,13 +1366,7 @@ describe('withTeam namespaced port', () => {
       actor: { kind: 'user', userId: USER_A },
     });
 
-    // Recreate a pre-migration row. Current writes intentionally cannot add
-    // legacy provenance, but existing production rows may still contain it.
-    await pg.exec(`
-      ALTER TABLE entities DISABLE TRIGGER entities_legacy_provenance_write_guard;
-      ALTER TABLE object_changes DROP CONSTRAINT object_changes_legacy_source_event_id_null_chk;
-    `);
-    try {
+    await withHistoricalLegacyObjectProvenance(async () => {
       await db
         .update(entities)
         .set({ sourceEventId: legacyEvent.id })
@@ -1374,14 +1383,7 @@ describe('withTeam namespaced port', () => {
         sourceEventId: legacyEvent.id,
         note: 'Legacy pointer should not become timeline impact.',
       });
-    } finally {
-      await pg.exec(`
-        ALTER TABLE object_changes
-          ADD CONSTRAINT object_changes_legacy_source_event_id_null_chk
-          CHECK (source_event_id IS NULL) NOT VALID;
-        ALTER TABLE entities ENABLE TRIGGER entities_legacy_provenance_write_guard;
-      `);
-    }
+    });
 
     await expect(scope.timeline.listImpactItems([legacyEvent.id])).resolves.toEqual({});
   });
