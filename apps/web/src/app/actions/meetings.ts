@@ -11,6 +11,7 @@ import { resolveActiveTeam } from '@/lib/active-team';
 import { trackProductEventBestEffort } from '@/lib/analytics';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { publicActionError } from '@/lib/public-error';
 import { requireRedisQueue } from '@/lib/queue';
 import { runSentryServerAction } from '@/lib/sentry-action';
 import { reportCaughtError } from '@/lib/sentry-report';
@@ -141,14 +142,19 @@ async function startMeetingBot(input: {
     return { ok: true, meetingId: claimed.id };
   } catch (err) {
     log.error({ err, meetingId: claimed.id }, 'recall_join_failed');
-    reportCaughtError(err, { surface: 'server_action', operation: 'recall_join_meeting' });
     await input.scope.meetings.updateMeetingStatus(claimed.id, 'failed', {
       metadata: {
         join_failed_at: new Date().toISOString(),
         join_error: err instanceof Error ? err.message.slice(0, 500) : 'unknown',
       },
     });
-    return { ok: false, error: err instanceof Error ? err.message : 'Failed to invite notetaker' };
+    return {
+      ok: false,
+      error: publicActionError(err, {
+        operation: 'recall_join_meeting',
+        fallback: 'Failed to invite notetaker.',
+      }),
+    };
   }
 }
 
@@ -264,8 +270,13 @@ export async function createSavedMeetingAction(
       return { ok: true, savedMeetingId: saved.id };
     } catch (err) {
       log.error({ err }, 'create_saved_meeting_failed');
-      reportCaughtError(err, { surface: 'server_action', operation: 'create_saved_meeting' });
-      return { ok: false, error: err instanceof Error ? err.message : 'Failed to save meeting' };
+      return {
+        ok: false,
+        error: publicActionError(err, {
+          operation: 'create_saved_meeting',
+          fallback: 'Failed to save meeting.',
+        }),
+      };
     }
   });
 }
@@ -298,8 +309,13 @@ export async function updateSavedMeetingAction(
       return { ok: true, savedMeetingId: saved.id };
     } catch (err) {
       log.error({ err }, 'update_saved_meeting_failed');
-      reportCaughtError(err, { surface: 'server_action', operation: 'update_saved_meeting' });
-      return { ok: false, error: err instanceof Error ? err.message : 'Failed to update meeting' };
+      return {
+        ok: false,
+        error: publicActionError(err, {
+          operation: 'update_saved_meeting',
+          fallback: 'Failed to update meeting.',
+        }),
+      };
     }
   });
 }

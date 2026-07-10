@@ -19,6 +19,7 @@ export type AuditAction =
   | 'document.signed_url'
   | 'document.visibility_change'
   | 'team.export_create'
+  | 'team.export_download'
   | 'job.retry'
   | 'job.dismiss'
   | 'settings.change'

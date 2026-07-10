@@ -4,6 +4,7 @@ const fakes = vi.hoisted(() => ({
   auth: vi.fn(),
   resolveActiveTeam: vi.fn(),
   requireMembership: vi.fn(),
+  auditRecord: vi.fn(),
   dbInsert: vi.fn(),
   dbUpdate: vi.fn(),
   dbSelect: vi.fn(),
@@ -38,7 +39,10 @@ vi.mock('@/lib/sentry-report', () => ({ reportCaughtError: fakes.reportCaughtErr
 vi.mock('next/cache', () => ({ revalidatePath: fakes.revalidatePath }));
 vi.mock('next/navigation', () => ({ redirect: fakes.redirect }));
 vi.mock('@timeline/shared/team-scope', () => ({
-  withTeam: () => ({ requireMembership: fakes.requireMembership }),
+  withTeam: () => ({
+    requireMembership: fakes.requireMembership,
+    audit: { record: fakes.auditRecord },
+  }),
 }));
 vi.mock('@timeline/shared/s3', () => ({
   getExportsBucket: () => 'exports',
@@ -162,13 +166,11 @@ describe('team export actions', () => {
       manifest: {},
       omissions: {},
     });
-    expect(inserts[1]).toMatchObject({
-      teamId: TEAM_ID,
-      actorUserId: USER_ID,
-      action: 'team_export.created',
+    expect(fakes.auditRecord).toHaveBeenCalledWith({
+      action: 'team.export_create',
       targetType: 'team_export',
       targetId: EXPORT_ID,
-      metadata: {},
+      metadata: { mode: 'single', outcome: 'queued' },
     });
     expect(fakes.enqueueTeamExportJob).toHaveBeenCalledWith({
       teamExportId: EXPORT_ID,
@@ -202,6 +204,12 @@ describe('team export actions', () => {
       error: 'redis unavailable',
     });
     expect(updates[0]).toHaveProperty('completedAt');
+    expect(fakes.auditRecord).toHaveBeenCalledWith({
+      action: 'team.export_create',
+      targetType: 'team_export',
+      targetId: EXPORT_ID,
+      metadata: { mode: 'single', outcome: 'enqueue_failed' },
+    });
     expect(fakes.trackProductEventBestEffort).not.toHaveBeenCalled();
     expect(fakes.revalidatePath).toHaveBeenCalledWith('/app/team');
   });
@@ -283,13 +291,15 @@ describe('team export actions', () => {
       'teams/acme/export.zip',
       3600,
     );
-    expect(inserts[0]).toMatchObject({
-      teamId: TEAM_ID,
-      actorUserId: USER_ID,
-      action: 'team_export.archive_url_signed',
+    expect(fakes.auditRecord).toHaveBeenCalledWith({
+      action: 'team.export_download',
       targetType: 'team_export',
       targetId: EXPORT_ID,
-      metadata: { expires_at: expiresAt.toISOString() },
+      metadata: {
+        mode: 'single',
+        outcome: 'signed',
+        expires_at: expiresAt.toISOString(),
+      },
     });
   });
 });

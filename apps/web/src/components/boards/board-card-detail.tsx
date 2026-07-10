@@ -25,7 +25,7 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { boardViewHref } from '@/lib/board-links';
-import { displayText, formatDisplayDateTime } from '@/lib/display-dates';
+import { displayText, formatDisplayDate, formatDisplayDateTime } from '@/lib/display-dates';
 import { objectDetailHref } from '@/lib/object-links';
 import { displayObjectTitle } from '@/lib/object-title';
 import { cn } from '@/lib/utils';
@@ -346,7 +346,7 @@ function NextStepSection({
             onChange(event.currentTarget.value);
           }}
           onBlur={onBlur}
-          className="h-9 w-full rounded-sm border border-border bg-bg px-3 text-sm text-fg focus:border-border-strong focus:outline-none disabled:opacity-50"
+          className="h-9 w-full rounded-sm border border-border bg-bg px-3 text-sm text-fg focus-visible:border-border-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/40 focus-visible:ring-offset-2 focus-visible:ring-offset-bg disabled:opacity-50"
           placeholder="Add the next concrete action"
         />
       </label>
@@ -418,7 +418,7 @@ function BoardNotesSection({
             onChange(event.target.value);
           }}
           rows={4}
-          className="w-full resize-none rounded-sm border border-border bg-bg px-3 py-2 text-sm focus:border-border-strong focus:outline-none"
+          className="w-full resize-none rounded-sm border border-border bg-bg px-3 py-2 text-sm focus-visible:border-border-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/40 focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
         />
       ) : (
         <p
@@ -656,7 +656,7 @@ function FieldSelect({
         onChange={(event) => {
           onChange(event.target.value);
         }}
-        className="h-8 w-full rounded-sm border border-border bg-bg px-2 text-sm text-fg focus:border-border-strong focus:outline-none disabled:opacity-50"
+        className="h-8 w-full rounded-sm border border-border bg-bg px-2 text-sm text-fg focus-visible:border-border-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/40 focus-visible:ring-offset-2 focus-visible:ring-offset-bg disabled:opacity-50"
       >
         {children}
       </select>
@@ -692,7 +692,7 @@ function FieldInput({
         onChange={(event) => {
           onChange(event.target.value);
         }}
-        className="h-8 w-full rounded-sm border border-border bg-bg px-2 text-sm text-fg focus:border-border-strong focus:outline-none disabled:opacity-50"
+        className="h-8 w-full rounded-sm border border-border bg-bg px-2 text-sm text-fg focus-visible:border-border-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/40 focus-visible:ring-offset-2 focus-visible:ring-offset-bg disabled:opacity-50"
       />
     </label>
   );
@@ -720,7 +720,7 @@ function dateInputValue(value: Date): string {
 }
 
 function dateLabel(value: Date): string {
-  return new Date(value).toLocaleDateString('en-CA');
+  return formatDisplayDate(value);
 }
 
 function fieldLabel(field: boards.BoardItemField): string {

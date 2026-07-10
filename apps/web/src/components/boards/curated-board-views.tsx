@@ -8,7 +8,7 @@ import type * as boards from '@timeline/shared/boards';
 import type { Dispatch, SetStateAction } from 'react';
 
 import { boardViewHref, type BoardLayout } from '@/lib/board-links';
-import { displayText } from '@/lib/display-dates';
+import { displayText, formatDisplayDate } from '@/lib/display-dates';
 import { displayObjectTitle } from '@/lib/object-title';
 
 export interface BoardMemberOption {
@@ -462,7 +462,7 @@ function BoardBulkToolbar({
         onClick={applyBulk}
         className="h-8 rounded-sm border border-border bg-bg px-3 text-xs font-medium hover:bg-signal-soft disabled:cursor-not-allowed disabled:opacity-50"
       >
-        {pending ? 'Applying...' : 'Apply'}
+        {pending ? 'Applying…' : 'Apply'}
       </button>
       {selectedCount > 0 ? (
         <button
@@ -607,7 +607,7 @@ export function CuratedBoardList({
               </span>
               <span className="font-mono text-[11px] uppercase tracking-[0.1em] text-fg-dim">
                 {item.object.type}
-                {item.dueAt ? ` · ${new Date(item.dueAt).toLocaleDateString('en-CA')}` : ''}
+                {item.dueAt ? ` · ${formatDisplayDate(item.dueAt)}` : ''}
               </span>
             </>
           );

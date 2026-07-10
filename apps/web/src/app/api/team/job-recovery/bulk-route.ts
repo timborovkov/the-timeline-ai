@@ -7,6 +7,8 @@ import type * as jobRecovery from '@timeline/shared/job-recovery';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { bulkRecoveryAuditRecord } from '@/lib/job-recovery-audit';
+import { publicApiError } from '@/lib/public-error';
 
 const JOB_KINDS = [
   'transcription',
@@ -40,6 +42,7 @@ interface BulkInput {
 type TeamScope = ReturnType<typeof withTeam>;
 
 export function createBulkFailedJobRecoveryRoute(options: {
+  action: 'job.retry' | 'job.dismiss';
   fallbackError: string;
   run: (scope: TeamScope, input: BulkInput) => Promise<object>;
 }) {
@@ -53,12 +56,36 @@ export function createBulkFailedJobRecoveryRoute(options: {
     try {
       await scope.requireMembership('admin');
     } catch {
+      await scope.audit.record(
+        bulkRecoveryAuditRecord({
+          action: options.action,
+          ids: [],
+          outcome: 'rejected',
+          reason: 'forbidden',
+        }),
+      );
       return NextResponse.json({ error: 'forbidden' }, { status: 403 });
     }
 
     const body: unknown = await req.json().catch(() => null);
     const parsed = schema.safeParse(body);
-    if (!parsed.success) return NextResponse.json({ error: 'invalid_input' }, { status: 400 });
+    if (!parsed.success) {
+      await scope.audit.record(
+        bulkRecoveryAuditRecord({
+          action: options.action,
+          ids: [],
+          outcome: 'rejected',
+          reason: 'invalid_input',
+        }),
+      );
+      return NextResponse.json({ error: 'invalid_input' }, { status: 400 });
+    }
+
+    const auditInput = {
+      action: options.action,
+      ids: parsed.data.items.map((item) => item.id),
+      ...(parsed.data.kind ? { kind: parsed.data.kind } : {}),
+    } as const;
 
     try {
       const result = await options.run(scope, {
@@ -69,12 +96,30 @@ export function createBulkFailedJobRecoveryRoute(options: {
         })),
         expectedCount: parsed.data.expectedCount,
       });
+      await scope.audit.record(
+        bulkRecoveryAuditRecord({ ...auditInput, outcome: 'succeeded' }),
+      );
       return NextResponse.json({ ok: true, ...result });
     } catch (err) {
-      const message = err instanceof Error ? err.message : options.fallbackError;
-      const status =
-        message === 'stale_recovery_set' || message === 'invalid_recovery_ids' ? 409 : 400;
-      return NextResponse.json({ error: message }, { status });
+      await scope.audit.record(
+        bulkRecoveryAuditRecord({
+          ...auditInput,
+          outcome: 'rejected',
+          reason: 'operation_failed',
+        }),
+      );
+      const failure = publicApiError(err, {
+        operation: options.fallbackError,
+        fallbackCode: options.fallbackError,
+        expected: {
+          invalid_recovery_ids: { message: 'invalid_recovery_ids', status: 409 },
+          stale_recovery_set: { message: 'stale_recovery_set', status: 409 },
+        },
+      });
+      return NextResponse.json(
+        { error: failure.error, ...(failure.reference ? { reference: failure.reference } : {}) },
+        { status: failure.status },
+      );
     }
   };
 }

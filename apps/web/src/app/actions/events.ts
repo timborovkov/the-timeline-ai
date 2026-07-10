@@ -105,6 +105,27 @@ export async function createTextEventAction(
       });
     }
 
+    if (parsed.data.visibility === 'private') {
+      const skippedAt = new Date().toISOString();
+      const skipPatch = JSON.stringify({
+        extraction_skipped_at: skippedAt,
+        extraction_skipped_reason: 'visibility=private',
+        embedding_skipped_at: skippedAt,
+        embedding_skipped_reason: 'visibility=private',
+        suggestions_skipped_at: skippedAt,
+        suggestions_skipped_reason: 'visibility=private',
+      });
+      await db
+        .update(rawEvents)
+        .set({
+          sourceMetadata: sql`(COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) - 'extraction_failed_at' - 'extraction_error' - 'embedding_failed_at' - 'embedding_error' - 'suggestions_failed_at' - 'suggestions_error') || ${skipPatch}::jsonb`,
+        })
+        .where(eq(rawEvents.id, event.id));
+      revalidatePath('/app');
+      revalidatePath('/app/timeline');
+      return { ok: true, at: Date.now() };
+    }
+
     const processingWarnings: string[] = [];
     try {
       const queue = await requireRedisQueue();

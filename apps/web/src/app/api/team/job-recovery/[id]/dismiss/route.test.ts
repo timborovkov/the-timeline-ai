@@ -5,6 +5,7 @@ const fakes = vi.hoisted(() => ({
   fakeResolveActiveTeam: vi.fn(),
   fakeDismiss: vi.fn(),
   fakeRequireMembership: vi.fn(),
+  fakeAuditRecord: vi.fn(),
 }));
 
 vi.mock('@/lib/auth', () => ({ auth: fakes.fakeAuth }));
@@ -14,6 +15,7 @@ vi.mock('@timeline/shared/team-scope', () => ({
   withTeam: () => ({
     requireMembership: fakes.fakeRequireMembership,
     jobRecovery: { dismissRecoverableJob: fakes.fakeDismiss },
+    audit: { record: fakes.fakeAuditRecord },
   }),
 }));
 
@@ -37,6 +39,13 @@ describe('job recovery dismiss route', () => {
 
     expect(res.status).toBe(403);
     expect(fakes.fakeDismiss).not.toHaveBeenCalled();
+    expect(fakes.fakeAuditRecord).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'job.dismiss',
+        targetId: 'abc',
+        metadata: expect.objectContaining({ mode: 'single', outcome: 'rejected' }),
+      }),
+    );
   });
 
   it('dispatches the dismissal through the team-scoped recovery scope', async () => {
@@ -47,5 +56,12 @@ describe('job recovery dismiss route', () => {
     expect(res.status).toBe(200);
     expect(fakes.fakeRequireMembership).toHaveBeenCalledWith('admin');
     expect(fakes.fakeDismiss).toHaveBeenCalledWith('abc');
+    expect(fakes.fakeAuditRecord).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'job.dismiss',
+        targetId: 'abc',
+        metadata: expect.objectContaining({ mode: 'single', outcome: 'succeeded' }),
+      }),
+    );
   });
 });

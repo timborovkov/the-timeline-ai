@@ -27,6 +27,7 @@ const fakes = vi.hoisted(() => ({
   fakeEnqueueSuggestionJob: vi.fn(),
   fakeEnqueueTranscribeJob: vi.fn(),
   fakeDbUpdate: vi.fn(),
+  fakeDbSet: vi.fn(),
 }));
 
 vi.mock('@/lib/auth', () => ({ auth: fakes.fakeAuth }));
@@ -78,7 +79,7 @@ function form(values: Record<string, string | string[]>): FormData {
 
 function mockDbUpdateSuccess(): void {
   fakes.fakeDbUpdate.mockReturnValue({
-    set: vi.fn(() => ({
+    set: fakes.fakeDbSet.mockImplementation(() => ({
       where: vi.fn(() => Promise.resolve()),
     })),
   });
@@ -117,7 +118,7 @@ describe('createTextEventAction', () => {
     expect(fakes.fakeCreateEvent).not.toHaveBeenCalled();
   });
 
-  it('takes the last visibility form value so the checkbox can override the hidden default', async () => {
+  it('takes the last visibility value and stamps private AI stages without queue churn', async () => {
     const result = await createTextEventAction(
       {},
       form({ text: 'Private note', visibility: ['team', 'private'] }),
@@ -131,18 +132,15 @@ describe('createTextEventAction', () => {
         visibilityOwnerUserId: USER_ID,
       }),
     );
-    expect(fakes.fakeEnqueueExtractJob).toHaveBeenCalledWith({
-      rawEventId: RAW_EVENT_ID,
-      teamId: TEAM_ID,
-    });
-    expect(fakes.fakeEnqueueEmbedJob).toHaveBeenCalledWith({
-      rawEventId: RAW_EVENT_ID,
-      teamId: TEAM_ID,
-    });
-    expect(fakes.fakeEnqueueSuggestionJob).toHaveBeenCalledWith({
-      rawEventId: RAW_EVENT_ID,
-      teamId: TEAM_ID,
-    });
+    expect(result.warning).toBeUndefined();
+    expect(fakes.fakeEnqueueExtractJob).not.toHaveBeenCalled();
+    expect(fakes.fakeEnqueueEmbedJob).not.toHaveBeenCalled();
+    expect(fakes.fakeEnqueueSuggestionJob).not.toHaveBeenCalled();
+    expect(fakes.fakeDbUpdate).toHaveBeenCalledOnce();
+    expect(JSON.stringify(fakes.fakeDbSet.mock.calls[0]?.[0])).toContain(
+      'suggestions_skipped_reason',
+    );
+    expect(JSON.stringify(fakes.fakeDbSet.mock.calls[0]?.[0])).toContain('visibility=private');
     expect(fakes.fakeSafeMarkOnboardingStep).toHaveBeenCalledWith(expect.anything(), 'first_note');
     expect(fakes.fakeDeleteCacheKey).toHaveBeenCalledWith(`onboarding:${TEAM_ID}:${USER_ID}`);
   });

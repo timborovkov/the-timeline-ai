@@ -3,6 +3,8 @@ import Link from 'next/link';
 
 import type * as boards from '@timeline/shared/boards';
 
+import { formatDisplayDate } from '@/lib/display-dates';
+
 export function PinnedBoards({ boards: rows }: { boards: boards.BoardRow[] }) {
   if (rows.length === 0) return null;
   return (
@@ -43,7 +45,7 @@ export function PinnedBoards({ boards: rows }: { boards: boards.BoardRow[] }) {
               {board.dueSoonCount > 0 ? (
                 <span className="text-signal">· {board.dueSoonCount} due soon</span>
               ) : null}
-              <span>· {board.updatedAt.toLocaleDateString('en-CA')}</span>
+              <span>· {formatDisplayDate(board.updatedAt)}</span>
             </span>
           </Link>
         ))}

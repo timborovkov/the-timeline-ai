@@ -13,6 +13,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
+import { formatDisplayDate } from '@/lib/display-dates';
 
 export interface InboxBellNotification {
   id: string;
@@ -30,8 +31,7 @@ interface InboxBellProps {
 }
 
 function formatPreviewTime(ts: string): string {
-  const d = new Date(ts);
-  return d.toLocaleDateString('en-CA', { month: '2-digit', day: '2-digit' });
+  return formatDisplayDate(ts);
 }
 
 function notificationHref(notification: InboxBellNotification): string {

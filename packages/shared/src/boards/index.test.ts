@@ -14,11 +14,14 @@ import {
 } from '@timeline/db';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { buildBoardDirectWriteSourceContext, defaultBoardLanes } from '#src/boards/index.js';
 import { withTeam } from '#src/team-scope.js';
-import { applyDbMigrations } from '#src/test/pglite.js';
+import {
+  createResettablePGliteTestDb,
+  type ResettablePGliteTestDb,
+} from '#src/test/pglite.js';
 
 const qdrantFakes = vi.hoisted(() => ({
   deletePoints: vi.fn().mockResolvedValue(undefined),
@@ -46,9 +49,10 @@ const USER_OTHER_TEAM = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
 
 let pg: PGlite;
 let db: Db;
+let testDb: ResettablePGliteTestDb;
 
-async function seedWorkspace(): Promise<void> {
-  await pg.exec(`
+async function seedWorkspace(target: PGlite): Promise<void> {
+  await target.exec(`
     INSERT INTO teams (id, slug, name)
     VALUES
       ('${TEAM_A}', 'team-a', 'Team A'),
@@ -81,20 +85,23 @@ async function boardUpdatedAt(boardId: string): Promise<Date> {
   return row.updatedAt;
 }
 
+beforeAll(async () => {
+  testDb = await createResettablePGliteTestDb(seedWorkspace);
+  pg = testDb.pg;
+  db = drizzle(pg) as unknown as Db;
+}, 60_000);
+
 beforeEach(async () => {
   vi.clearAllMocks();
   qdrantFakes.getQdrantClient.mockReturnValue({
     deletePoints: qdrantFakes.deletePoints,
     deletePointsForSource: qdrantFakes.deletePointsForSource,
   });
-  pg = new PGlite();
-  await applyDbMigrations(pg);
-  await seedWorkspace();
-  db = drizzle(pg) as unknown as Db;
-}, 60_000);
+  await testDb.reset();
+});
 
-afterEach(async () => {
-  await pg.close();
+afterAll(async () => {
+  await testDb.close();
 });
 
 describe('board scope', () => {
@@ -456,10 +463,15 @@ describe('board scope', () => {
       canonicalName: 'Legacy suggested board task',
       actor: { kind: 'user', userId: USER_OWNER },
     });
-    await db
-      .update(entities)
-      .set({ agentSuggested: true, status: 'suggested' })
-      .where(eq(entities.id, task.id));
+    await pg.exec('ALTER TABLE entities DISABLE TRIGGER entities_legacy_provenance_write_guard;');
+    try {
+      await db
+        .update(entities)
+        .set({ agentSuggested: true, status: 'suggested' })
+        .where(eq(entities.id, task.id));
+    } finally {
+      await pg.exec('ALTER TABLE entities ENABLE TRIGGER entities_legacy_provenance_write_guard;');
+    }
     const item = await scope.boards.addBoardItem(board.id, {
       entityId: task.id,
       laneId: board.lanes[0]?.id ?? null,
@@ -989,25 +1001,34 @@ describe('board scope', () => {
       actor: { kind: 'user', userId: USER_OWNER },
     });
 
-    await db.insert(boardItemChanges).values({
-      teamId: TEAM_A,
-      boardId: board.id,
-      boardItemId: item.id,
-      entityId: company.id,
-      actorKind: 'agent',
-      actorUserId: null,
-      status: 'applied',
-      field: 'laneId',
-      previousValue: null,
-      newValue: board.lanes[0]?.id ?? null,
-      sourceEventId: event.id,
-      suggestionItemId: null,
-      note: 'Legacy pointer should not become provenance evidence.',
-      changedAt: new Date('2026-07-02T10:00:00.000Z'),
-    });
-
-    const history = await scope.boards.listBoardItemHistory(item.id);
-    const legacyChange = history.find((change) => change.field === 'laneId');
+    await pg.exec(
+      'ALTER TABLE board_item_changes DROP CONSTRAINT board_item_changes_legacy_source_event_id_null_chk;',
+    );
+    let legacyChange: unknown;
+    try {
+      await db.insert(boardItemChanges).values({
+        teamId: TEAM_A,
+        boardId: board.id,
+        boardItemId: item.id,
+        entityId: company.id,
+        actorKind: 'agent',
+        actorUserId: null,
+        status: 'applied',
+        field: 'laneId',
+        previousValue: null,
+        newValue: board.lanes[0]?.id ?? null,
+        sourceEventId: event.id,
+        suggestionItemId: null,
+        note: 'Legacy pointer should not become provenance evidence.',
+        changedAt: new Date('2026-07-02T10:00:00.000Z'),
+      });
+      const history = await scope.boards.listBoardItemHistory(item.id);
+      legacyChange = history.find((change) => change.field === 'laneId');
+    } finally {
+      await pg.exec(
+        'ALTER TABLE board_item_changes ADD CONSTRAINT board_item_changes_legacy_source_event_id_null_chk CHECK (source_event_id IS NULL) NOT VALID;',
+      );
+    }
 
     expect(legacyChange).toEqual(
       expect.objectContaining({

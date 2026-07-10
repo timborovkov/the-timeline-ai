@@ -101,7 +101,7 @@ describe('GET /api/mcp/oauth/callback', () => {
     const providerError = await GET(request('?error=access_denied'));
     expect(providerError.status).toBe(307);
     expect(providerError.headers.get('location')).toBe(
-      `${PUBLIC_ORIGIN}/app/team/integrations?error=access_denied`,
+      `${PUBLIC_ORIGIN}/app/team/integrations?error=oauth_denied`,
     );
   });
 
@@ -220,9 +220,11 @@ describe('GET /api/mcp/oauth/callback', () => {
     const response = await GET(request('?code=c&state=s'));
 
     expect(response.status).toBe(307);
-    expect(response.headers.get('location')).toBe(
-      `${PUBLIC_ORIGIN}/app/team/integrations?error=token_down`,
+    const location = response.headers.get('location') ?? '';
+    expect(location).toMatch(
+      new RegExp(`^${PUBLIC_ORIGIN}/app/team/integrations\\?error=mcp_oauth_callback_failed&reference=[0-9a-f]{8}$`),
     );
+    expect(location).not.toContain('token_down');
     expect(fakes.loggerWarn).toHaveBeenCalledWith(
       expect.objectContaining({ mcpServerId: SERVER_ID }),
       'mcp oauth callback failed',

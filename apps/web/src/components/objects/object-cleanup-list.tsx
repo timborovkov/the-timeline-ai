@@ -9,7 +9,7 @@ import type * as objects from '@timeline/shared/objects/types';
 
 import { bulkArchiveObjectsAction } from '@/app/actions/objects';
 import { useAppDialog } from '@/components/ui/app-dialog';
-import { displayText } from '@/lib/display-dates';
+import { displayText, formatDisplayDate } from '@/lib/display-dates';
 import { MAX_OBJECT_MERGE_SELECTION, objectMergeHref } from '@/lib/object-merge';
 
 interface Props {
@@ -269,7 +269,7 @@ export function ObjectCleanupList({ rows, typeLabels, pageInfo, sectionMoreHrefs
                             <span>{object.status}</span>
                             {object.dueAt ? (
                               <span title={object.dueAt.toISOString()}>
-                                · {object.dueAt.toLocaleDateString('en-CA')}
+                                · {formatDisplayDate(object.dueAt)}
                               </span>
                             ) : null}
                           </span>

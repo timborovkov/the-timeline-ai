@@ -13,6 +13,7 @@ import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { visibleBoardDescription } from '@/lib/board-description';
 import { db } from '@/lib/db';
+import { formatDisplayDate } from '@/lib/display-dates';
 
 export const metadata: Metadata = {
   title: 'Boards',
@@ -63,7 +64,7 @@ export default async function BoardsIndexPage() {
                     <span className="mt-2 flex flex-wrap items-center gap-2 font-mono text-[11px] uppercase tracking-[0.1em] text-fg-dim">
                       <span>{b.templateKind.replaceAll('_', ' ')}</span>
                       <span aria-hidden="true">·</span>
-                      <span>{b.updatedAt.toLocaleDateString('en-CA')}</span>
+                      <span>{formatDisplayDate(b.updatedAt)}</span>
                     </span>
                   </Link>
                   <div className="flex shrink-0 items-center justify-between gap-3 sm:justify-start">

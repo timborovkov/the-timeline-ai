@@ -12,7 +12,7 @@ function SubmitButton() {
   const { pending } = useFormStatus();
   return (
     <Button type="submit" disabled={pending} className="w-full sm:w-auto">
-      {pending ? 'Saving...' : 'Accept and continue'}
+      {pending ? 'Saving…' : 'Accept and continue'}
     </Button>
   );
 }

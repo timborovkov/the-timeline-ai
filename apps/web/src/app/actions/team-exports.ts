@@ -1,6 +1,6 @@
 'use server';
 
-import { auditLog, teamExports } from '@timeline/db';
+import { teamExports } from '@timeline/db';
 import { getExportsBucket, getS3PresignClient, getSignedGetObjectUrl } from '@timeline/shared/s3';
 import { withTeam } from '@timeline/shared/team-scope';
 import { and, eq, lt } from 'drizzle-orm';
@@ -35,6 +35,11 @@ export async function createTeamExportAction(
       await scope.requireMembership('admin');
     } catch (err) {
       reportCaughtError(err, { surface: 'server_action', operation: 'create_team_export_auth' });
+      await scope.audit.record({
+        action: 'team.export_create',
+        targetType: 'team_export',
+        metadata: { mode: 'single', outcome: 'rejected', reason: 'forbidden' },
+      });
       return { error: 'Only owners and admins can export team data' };
     }
 
@@ -50,15 +55,6 @@ export async function createTeamExportAction(
       .returning({ id: teamExports.id });
     const id = inserted[0]?.id;
     if (!id) return { error: 'Failed to create export' };
-
-    await db.insert(auditLog).values({
-      teamId: active.teamId,
-      actorUserId: session.user.id,
-      action: 'team_export.created',
-      targetType: 'team_export',
-      targetId: id,
-      metadata: {},
-    });
 
     try {
       const queue = await requireRedisQueue();
@@ -80,9 +76,22 @@ export async function createTeamExportAction(
           completedAt: new Date(),
         })
         .where(eq(teamExports.id, id));
+      await scope.audit.record({
+        action: 'team.export_create',
+        targetType: 'team_export',
+        targetId: id,
+        metadata: { mode: 'single', outcome: 'enqueue_failed' },
+      });
       revalidatePath('/app/team');
       return { error: 'Export was created but could not be queued' };
     }
+
+    await scope.audit.record({
+      action: 'team.export_create',
+      targetType: 'team_export',
+      targetId: id,
+      metadata: { mode: 'single', outcome: 'queued' },
+    });
 
     trackProductEventBestEffort(session.user.id, 'team_export_requested', {
       teamId: active.teamId,
@@ -156,13 +165,13 @@ export async function downloadTeamExportAction(formData: FormData): Promise<void
       row.objectKey,
       ttlSec,
     );
-    await db.insert(auditLog).values({
-      teamId: active.teamId,
-      actorUserId: session.user.id,
-      action: 'team_export.archive_url_signed',
+    await scope.audit.record({
+      action: 'team.export_download',
       targetType: 'team_export',
       targetId: row.id,
       metadata: {
+        mode: 'single',
+        outcome: 'signed',
         expires_at: row.expiresAt.toISOString(),
       },
     });

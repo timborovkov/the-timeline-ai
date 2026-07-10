@@ -5,7 +5,7 @@ import { NextResponse } from 'next/server';
 
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
-import { reportCaughtError } from '@/lib/sentry-report';
+import { publicApiError } from '@/lib/public-error';
 import { appUrl } from '@/lib/site-url';
 
 export const runtime = 'nodejs';
@@ -31,9 +31,7 @@ export async function GET(req: Request): Promise<Response> {
   const state = url.searchParams.get('state');
   const oauthError = url.searchParams.get('error');
   if (oauthError) {
-    return NextResponse.redirect(
-      appUrl(`/app/team/integrations?error=${encodeURIComponent(oauthError)}`),
-    );
+    return NextResponse.redirect(appUrl('/app/team/integrations?error=oauth_denied'));
   }
   if (!code || !state) {
     return new Response('missing_code_or_state', { status: 400 });
@@ -129,9 +127,15 @@ export async function GET(req: Request): Promise<Response> {
       appUrl(`/app/team/integrations?connected=${verified.mcpServerId}`),
     );
   } catch (err) {
-    const msg = err instanceof Error ? err.message : 'mcp_oauth_callback_failed';
     log.warn({ err, mcpServerId: verified.mcpServerId }, 'mcp oauth callback failed');
-    reportCaughtError(err, { surface: 'api', operation: 'mcp_oauth_callback' });
-    return NextResponse.redirect(appUrl(`/app/team/integrations?error=${encodeURIComponent(msg)}`));
+    const failure = publicApiError(err, {
+      operation: 'mcp_oauth_callback',
+      fallbackCode: 'mcp_oauth_callback_failed',
+    });
+    return NextResponse.redirect(
+      appUrl(
+        `/app/team/integrations?error=${failure.error}${failure.reference ? `&reference=${failure.reference}` : ''}`,
+      ),
+    );
   }
 }

@@ -1,13 +1,14 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useReducer, useState } from 'react';
+import { useId, useReducer, useRef, useState } from 'react';
 
 import { useAppDialog } from '@/components/ui/app-dialog';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { networkActionError, readPublicApiError } from '@/lib/client-api-error';
 
 interface McpServerRow {
   id: string;
@@ -146,6 +147,7 @@ function AddCustomMcpServerForm({
 }) {
   const router = useRouter();
   const dialog = useAppDialog();
+  const formId = useId();
   const [{ name, url, authType, token, headerName, headerValue, busy }, setFormState] = useReducer(
     patchAddServerState,
     INITIAL_ADD_SERVER_STATE,
@@ -213,8 +215,11 @@ function AddCustomMcpServerForm({
       <CardContent className="space-y-3">
         <div className="grid gap-3 md:grid-cols-2">
           <div className="space-y-1">
-            <Label>Display name</Label>
+            <Label htmlFor={`${formId}-name`}>Display name</Label>
             <Input
+              id={`${formId}-name`}
+              name="mcp-server-name"
+              autoComplete="off"
               value={name}
               onChange={(e) => {
                 setFormState({ name: e.target.value });
@@ -223,8 +228,12 @@ function AddCustomMcpServerForm({
             />
           </div>
           <div className="space-y-1">
-            <Label>URL</Label>
+            <Label htmlFor={`${formId}-url`}>URL</Label>
             <Input
+              id={`${formId}-url`}
+              name="mcp-server-url"
+              type="url"
+              autoComplete="off"
               value={url}
               onChange={(e) => {
                 setFormState({ url: e.target.value });
@@ -233,9 +242,11 @@ function AddCustomMcpServerForm({
             />
           </div>
           <div className="space-y-1">
-            <Label>Auth type</Label>
+            <Label htmlFor={`${formId}-auth-type`}>Auth type</Label>
             <select
-              className="h-9 w-full rounded-sm border border-border bg-surface px-2 text-sm"
+              id={`${formId}-auth-type`}
+              name="mcp-auth-type"
+              className="h-9 w-full rounded-sm border border-border bg-surface px-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
               value={authType}
               onChange={(e) => {
                 setFormState({ authType: e.target.value as AuthType });
@@ -244,13 +255,16 @@ function AddCustomMcpServerForm({
               <option value="none">None</option>
               <option value="bearer">Bearer token</option>
               <option value="header">Custom header</option>
-              <option value="oauth">OAuth (coming soon)</option>
+              <option value="oauth">OAuth</option>
             </select>
           </div>
           {authType === 'bearer' ? (
             <div className="space-y-1">
-              <Label>Token</Label>
+              <Label htmlFor={`${formId}-token`}>Token</Label>
               <Input
+                id={`${formId}-token`}
+                name="mcp-bearer-token"
+                autoComplete="off"
                 type="password"
                 value={token}
                 onChange={(e) => {
@@ -262,8 +276,11 @@ function AddCustomMcpServerForm({
           {authType === 'header' ? (
             <>
               <div className="space-y-1">
-                <Label>Header name</Label>
+                <Label htmlFor={`${formId}-header-name`}>Header name</Label>
                 <Input
+                  id={`${formId}-header-name`}
+                  name="mcp-header-name"
+                  autoComplete="off"
                   value={headerName}
                   onChange={(e) => {
                     setFormState({ headerName: e.target.value });
@@ -271,8 +288,11 @@ function AddCustomMcpServerForm({
                 />
               </div>
               <div className="space-y-1">
-                <Label>Header value</Label>
+                <Label htmlFor={`${formId}-header-value`}>Header value</Label>
                 <Input
+                  id={`${formId}-header-value`}
+                  name="mcp-header-value"
+                  autoComplete="off"
                   type="password"
                   value={headerValue}
                   onChange={(e) => {
@@ -345,17 +365,50 @@ export function McpServersUi({
   const router = useRouter();
   const dialog = useAppDialog();
   const [showAdd, setShowAdd] = useState(false);
+  const [rowMutations, setRowMutations] = useState<
+    Record<string, { busy: 'toggle' | 'remove' | null; error: string | null }>
+  >({});
+  const busyIds = useRef(new Set<string>());
+
+  function setRowMutation(
+    id: string,
+    patch: Partial<{ busy: 'toggle' | 'remove' | null; error: string | null }>,
+  ) {
+    setRowMutations((current) => ({
+      ...current,
+      [id]: { busy: null, error: null, ...current[id], ...patch },
+    }));
+  }
 
   async function toggleEnabled(server: McpServerRow) {
-    await fetch(`/api/team/mcp-servers/${server.id}`, {
-      method: 'PATCH',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ enabled: !server.enabled }),
-    });
-    router.refresh();
+    if (busyIds.current.has(server.id)) return;
+    busyIds.current.add(server.id);
+    setRowMutation(server.id, { busy: 'toggle', error: null });
+    try {
+      const response = await fetch(`/api/team/mcp-servers/${server.id}`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ enabled: !server.enabled }),
+      });
+      if (!response.ok) {
+        setRowMutation(server.id, {
+          error: await readPublicApiError(response, 'The server could not be updated. Try again.'),
+        });
+        return;
+      }
+      router.refresh();
+    } catch {
+      setRowMutation(server.id, {
+        error: networkActionError(server.enabled ? 'disable this server' : 'enable this server'),
+      });
+    } finally {
+      busyIds.current.delete(server.id);
+      setRowMutation(server.id, { busy: null });
+    }
   }
 
   async function remove(server: McpServerRow) {
+    if (busyIds.current.has(server.id)) return;
     const confirmed = await dialog.confirm({
       title: 'Remove MCP server?',
       description: `${server.name} will be disconnected from this team.`,
@@ -363,8 +416,24 @@ export function McpServersUi({
       destructive: true,
     });
     if (!confirmed) return;
-    await fetch(`/api/team/mcp-servers/${server.id}`, { method: 'DELETE' });
-    router.refresh();
+    if (busyIds.current.has(server.id)) return;
+    busyIds.current.add(server.id);
+    setRowMutation(server.id, { busy: 'remove', error: null });
+    try {
+      const response = await fetch(`/api/team/mcp-servers/${server.id}`, { method: 'DELETE' });
+      if (!response.ok) {
+        setRowMutation(server.id, {
+          error: await readPublicApiError(response, 'The server could not be removed. Try again.'),
+        });
+        return;
+      }
+      router.refresh();
+    } catch {
+      setRowMutation(server.id, { error: networkActionError('remove this server') });
+    } finally {
+      busyIds.current.delete(server.id);
+      setRowMutation(server.id, { busy: null });
+    }
   }
 
   return (
@@ -398,7 +467,9 @@ export function McpServersUi({
         <p className="text-sm text-fg-muted">No custom MCP servers connected.</p>
       ) : (
         <ul className="divide-y divide-border rounded-sm border border-border bg-surface">
-          {servers.map((s) => (
+          {servers.map((s) => {
+            const mutation = rowMutations[s.id] ?? { busy: null, error: null };
+            return (
             <li key={s.id} className="space-y-2 p-3">
               <div className="flex items-center gap-2">
                 <span className="text-sm font-medium">{s.name}</span>
@@ -425,26 +496,39 @@ export function McpServersUi({
                   <Button
                     size="sm"
                     variant="ghost"
+                    disabled={mutation.busy !== null}
                     onClick={() => {
                       void toggleEnabled(s);
                     }}
                   >
-                    {s.enabled ? 'Disable' : 'Enable'}
+                    {mutation.busy === 'toggle'
+                      ? s.enabled
+                        ? 'Disabling…'
+                        : 'Enabling…'
+                      : s.enabled
+                        ? 'Disable'
+                        : 'Enable'}
                   </Button>
                   <Button
                     size="sm"
                     variant="ghost"
+                    disabled={mutation.busy !== null}
                     onClick={() => {
                       void remove(s);
                     }}
                   >
-                    Remove
+                    {mutation.busy === 'remove' ? 'Removing…' : 'Remove'}
                   </Button>
                 </div>
               </div>
               <div className="break-all text-xs text-fg-muted">{s.url}</div>
               {s.lastError ? (
                 <div className="text-xs text-destructive">Error: {s.lastError}</div>
+              ) : null}
+              {mutation.error ? (
+                <p className="text-xs text-destructive" role="alert">
+                  {mutation.error}
+                </p>
               ) : null}
               {s.cachedTools.length > 0 ? (
                 <div className="space-y-1">
@@ -477,7 +561,8 @@ export function McpServersUi({
                 <div className="text-xs text-fg-muted">No tools cached yet.</div>
               )}
             </li>
-          ))}
+            );
+          })}
         </ul>
       )}
       {dialog.node}

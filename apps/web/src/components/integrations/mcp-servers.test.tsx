@@ -176,6 +176,82 @@ describe('McpServersUi', () => {
     expect(routerRefresh).toHaveBeenCalledTimes(2);
   });
 
+  it('keeps the server row unchanged and explains forbidden enable failures', async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.fn(() =>
+      Promise.resolve(
+        new Response(JSON.stringify({ error: 'forbidden' }), {
+          status: 403,
+          headers: { 'content-type': 'application/json' },
+        }),
+      ),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<McpServersUi servers={[serverRow({ enabled: false, authType: 'none' })]} />);
+    await user.click(screen.getByRole('button', { name: 'Enable' }));
+
+    expect(
+      await screen.findByText('You do not have permission to make this change.'),
+    ).toBeTruthy();
+    expect(screen.getByText('Disabled')).toBeTruthy();
+    expect(routerRefresh).not.toHaveBeenCalled();
+  });
+
+  it('shows bounded 500 and offline errors for management mutations', async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ error: 'delete_failed', reference: 'deadbeef' }), {
+          status: 500,
+          headers: { 'content-type': 'application/json' },
+        }),
+      )
+      .mockRejectedValueOnce(new TypeError('offline'));
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<McpServersUi servers={[serverRow({ authType: 'none' })]} />);
+    await user.click(screen.getByRole('button', { name: 'Remove' }));
+    const confirmRemove = screen.getAllByRole('button', { name: 'Remove' }).at(-1);
+    if (!confirmRemove) throw new Error('expected remove confirmation button');
+    await user.click(confirmRemove);
+    expect(
+      await screen.findByText('The server could not be removed. Try again. Reference: deadbeef.'),
+    ).toBeTruthy();
+    expect(routerRefresh).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole('button', { name: 'Disable' }));
+    expect(
+      await screen.findByText(
+        'Could not disable this server because the network request failed. Check your connection and try again.',
+      ),
+    ).toBeTruthy();
+    expect(routerRefresh).not.toHaveBeenCalled();
+  });
+
+  it('blocks rapid repeated enable requests while the first request is pending', async () => {
+    let resolveRequest: ((response: Response) => void) | undefined;
+    const fetchMock = vi.fn(
+      () =>
+        new Promise<Response>((resolve) => {
+          resolveRequest = resolve;
+        }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<McpServersUi servers={[serverRow({ enabled: false, authType: 'none' })]} />);
+    const enable = screen.getByRole<HTMLButtonElement>('button', { name: 'Enable' });
+    fireEvent.click(enable);
+    fireEvent.click(enable);
+
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect((await screen.findByRole<HTMLButtonElement>('button', { name: 'Enabling…' })).disabled)
+      .toBe(true);
+    resolveRequest?.(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+    await waitFor(() => expect(routerRefresh).toHaveBeenCalledOnce());
+  });
+
   it('validates test-call JSON before posting tool arguments', async () => {
     const user = userEvent.setup();
     const fetchMock = vi.fn(() =>

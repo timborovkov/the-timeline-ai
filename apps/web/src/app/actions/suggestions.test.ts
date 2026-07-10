@@ -169,13 +169,17 @@ describe('suggestion item actions', () => {
   it('maps accept failures without revalidating away the failed row', async () => {
     fakes.fakeSuggestions.acceptSuggestionItem.mockRejectedValue(new Error('apply failed'));
 
-    await expect(acceptSuggestionItemAction({ itemId: ITEM_ID })).resolves.toEqual({
-      error: 'apply failed',
-    });
-    expect(fakes.fakeReportCaughtError).toHaveBeenCalledWith(expect.any(Error), {
-      surface: 'server_action',
-      operation: 'accept_suggestion_item',
-    });
+    const result = await acceptSuggestionItemAction({ itemId: ITEM_ID });
+    expect(result.error).toMatch(/^Failed to accept suggestion\. Reference: [0-9a-f]{8}\.$/);
+    expect(result.error).not.toContain('apply failed');
+    expect(fakes.fakeReportCaughtError).toHaveBeenCalledWith(
+      expect.any(Error),
+      expect.objectContaining({
+        surface: 'server_action',
+        operation: 'accept_suggestion_item',
+        tags: expect.objectContaining({ error_reference: expect.any(String) }),
+      }),
+    );
     expect(fakes.fakeRevalidatePath).not.toHaveBeenCalled();
   });
 
@@ -205,13 +209,13 @@ describe('suggestion item actions', () => {
     ]);
     fakes.fakeSuggestions.acceptSuggestionItem.mockRejectedValue(err);
 
-    await expect(acceptSuggestionItemAction({ itemId: ITEM_ID })).resolves.toEqual({
-      error: err.message,
-    });
-    expect(fakes.fakeReportCaughtError).toHaveBeenCalledWith(err, {
-      surface: 'server_action',
-      operation: 'accept_suggestion_item',
-    });
+    const result = await acceptSuggestionItemAction({ itemId: ITEM_ID });
+    expect(result.error).toMatch(/^Failed to accept suggestion\. Reference: [0-9a-f]{8}\.$/);
+    expect(result.error).not.toContain('startAt');
+    expect(fakes.fakeReportCaughtError).toHaveBeenCalledWith(
+      err,
+      expect.objectContaining({ operation: 'accept_suggestion_item' }),
+    );
     expect(fakes.fakeRevalidatePath).not.toHaveBeenCalled();
   });
 
@@ -221,22 +225,22 @@ describe('suggestion item actions', () => {
     });
     fakes.fakeSuggestions.acceptSuggestionItem.mockRejectedValue(err);
 
-    await expect(acceptSuggestionItemAction({ itemId: ITEM_ID })).resolves.toEqual({
-      error: err.message,
-    });
-    expect(fakes.fakeReportCaughtError).toHaveBeenCalledWith(err, {
-      surface: 'server_action',
-      operation: 'accept_suggestion_item',
-    });
+    const result = await acceptSuggestionItemAction({ itemId: ITEM_ID });
+    expect(result.error).toMatch(/^Failed to accept suggestion\. Reference: [0-9a-f]{8}\.$/);
+    expect(result.error).not.toContain('duplicate key');
+    expect(fakes.fakeReportCaughtError).toHaveBeenCalledWith(
+      err,
+      expect.objectContaining({ operation: 'accept_suggestion_item' }),
+    );
     expect(fakes.fakeRevalidatePath).not.toHaveBeenCalled();
   });
 
   it('maps reject failures without claiming success', async () => {
     fakes.fakeSuggestions.rejectSuggestionItem.mockRejectedValue(new Error('reject failed'));
 
-    await expect(rejectSuggestionItemAction({ itemId: ITEM_ID })).resolves.toEqual({
-      error: 'reject failed',
-    });
+    const result = await rejectSuggestionItemAction({ itemId: ITEM_ID });
+    expect(result.error).toMatch(/^Failed to reject suggestion\. Reference: [0-9a-f]{8}\.$/);
+    expect(result.error).not.toContain('reject failed');
   });
 });
 
@@ -294,9 +298,9 @@ describe('accept-all suggestion action', () => {
   it('maps accept-all failures without revalidating away failed rows', async () => {
     fakes.fakeSuggestions.acceptAll.mockRejectedValue(new Error('bundle failed'));
 
-    await expect(acceptAllSuggestionAction({ suggestionId: SUGGESTION_ID })).resolves.toEqual({
-      error: 'bundle failed',
-    });
+    const result = await acceptAllSuggestionAction({ suggestionId: SUGGESTION_ID });
+    expect(result.error).toMatch(/^Failed to accept suggestion\. Reference: [0-9a-f]{8}\.$/);
+    expect(result.error).not.toContain('bundle failed');
     expect(fakes.fakeRevalidatePath).not.toHaveBeenCalled();
   });
 });
@@ -465,17 +469,15 @@ describe('reject-visible suggestions action', () => {
   it('maps reject-visible failures without revalidating away failed rows', async () => {
     fakes.fakeSuggestions.rejectSuggestionItem.mockRejectedValue(new Error('reject failed'));
 
-    await expect(
-      rejectVisibleSuggestionsAction({
-        suggestions: [{ suggestionId: SUGGESTION_ID, itemIds: [ITEM_ID] }],
-      }),
-    ).resolves.toEqual({
-      error: 'reject failed',
+    const result = await rejectVisibleSuggestionsAction({
+      suggestions: [{ suggestionId: SUGGESTION_ID, itemIds: [ITEM_ID] }],
     });
-    expect(fakes.fakeReportCaughtError).toHaveBeenCalledWith(expect.any(Error), {
-      surface: 'server_action',
-      operation: 'reject_visible_suggestions',
-    });
+    expect(result.error).toMatch(/^Failed to reject suggestions\. Reference: [0-9a-f]{8}\.$/);
+    expect(result.error).not.toContain('reject failed');
+    expect(fakes.fakeReportCaughtError).toHaveBeenCalledWith(
+      expect.any(Error),
+      expect.objectContaining({ operation: 'reject_visible_suggestions' }),
+    );
     expect(fakes.fakeRevalidatePath).not.toHaveBeenCalled();
   });
 });

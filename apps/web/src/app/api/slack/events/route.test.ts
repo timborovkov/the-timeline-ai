@@ -167,3 +167,17 @@ describe('POST /api/slack/events', () => {
     expect(envelope).toEqual(expect.objectContaining({ event_id: 'EvText' }));
   });
 });
+
+describe('payload size limit', () => {
+  it('rejects an oversized event before signature verification', async () => {
+    const response = await POST(
+      new Request('http://test/webhook', {
+        method: 'POST',
+        headers: { 'content-length': String(1024 * 1024 + 1) },
+        body: '{}',
+      }),
+    );
+    expect(response.status).toBe(413);
+    await expect(response.json()).resolves.toMatchObject({ reason: 'payload_too_large' });
+  });
+});

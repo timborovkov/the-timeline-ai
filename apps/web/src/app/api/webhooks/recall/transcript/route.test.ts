@@ -310,3 +310,17 @@ describe('POST /api/webhooks/recall/transcript — happy path', () => {
     expect(fakes.fakeEnqueueCalendarEvent).not.toHaveBeenCalled();
   });
 });
+
+describe('payload size limit', () => {
+  it('rejects an oversized transcript before parsing', async () => {
+    const response = await POST(
+      new Request('http://test/webhook', {
+        method: 'POST',
+        headers: { 'content-length': String(2 * 1024 * 1024 + 1) },
+        body: '{}',
+      }),
+    );
+    expect(response.status).toBe(413);
+    await expect(response.json()).resolves.toMatchObject({ reason: 'payload_too_large' });
+  });
+});

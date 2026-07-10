@@ -5,6 +5,7 @@ const fakes = vi.hoisted(() => ({
   fakeResolveActiveTeam: vi.fn(),
   fakeRetry: vi.fn(),
   fakeRequireMembership: vi.fn(),
+  fakeAuditRecord: vi.fn(),
 }));
 
 vi.mock('@/lib/auth', () => ({ auth: fakes.fakeAuth }));
@@ -14,6 +15,7 @@ vi.mock('@timeline/shared/team-scope', () => ({
   withTeam: () => ({
     requireMembership: fakes.fakeRequireMembership,
     jobRecovery: { retryRecoverableJob: fakes.fakeRetry },
+    audit: { record: fakes.fakeAuditRecord },
   }),
 }));
 
@@ -48,6 +50,13 @@ describe('job recovery retry route', () => {
 
     expect(res.status).toBe(403);
     expect(fakes.fakeRetry).not.toHaveBeenCalled();
+    expect(fakes.fakeAuditRecord).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'job.retry',
+        targetId: 'abc',
+        metadata: expect.objectContaining({ mode: 'single', outcome: 'rejected' }),
+      }),
+    );
   });
 
   it('dispatches the retry through the team-scoped recovery scope', async () => {
@@ -58,5 +67,12 @@ describe('job recovery retry route', () => {
     expect(res.status).toBe(200);
     expect(fakes.fakeRequireMembership).toHaveBeenCalledWith('admin');
     expect(fakes.fakeRetry).toHaveBeenCalledWith('abc');
+    expect(fakes.fakeAuditRecord).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'job.retry',
+        targetId: 'abc',
+        metadata: expect.objectContaining({ mode: 'single', outcome: 'succeeded' }),
+      }),
+    );
   });
 });

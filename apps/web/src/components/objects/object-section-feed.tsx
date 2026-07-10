@@ -44,7 +44,7 @@ export function ObjectSectionFeed({ objectId, section, title, showTitle = true }
           }}
           className="mt-3 rounded-sm border border-border px-3 py-1.5 font-mono text-[11px] uppercase tracking-[0.12em] text-fg-muted hover:bg-surface disabled:opacity-40"
         >
-          {query.isFetchingNextPage ? 'Loading...' : 'Load more'}
+          {query.isFetchingNextPage ? 'Loading…' : 'Load more'}
         </button>
       ) : null}
     </section>

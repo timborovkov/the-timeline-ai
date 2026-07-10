@@ -83,16 +83,20 @@ describe('/api/team/mcp-servers/[id]', () => {
     });
   });
 
-  it('maps update and delete failures to bounded 400 responses', async () => {
+  it('maps update and delete failures to bounded public errors', async () => {
     fakes.updateServer.mockRejectedValueOnce(new Error('MCP server not found'));
     const update = await PATCH(patchRequest({ enabled: true }), ctx());
-    expect(update.status).toBe(400);
-    await expect(update.json()).resolves.toEqual({ error: 'MCP server not found' });
+    expect(update.status).toBe(500);
+    const updatePayload = (await update.json()) as { error: string; reference: string };
+    expect(updatePayload.error).toBe('update_failed');
+    expect(updatePayload.reference).toMatch(/^[0-9a-f]{8}$/);
 
     fakes.deleteServer.mockRejectedValueOnce(new Error('delete_failed'));
     const deleted = await DELETE(new Request('https://timeline.test'), ctx());
-    expect(deleted.status).toBe(400);
-    await expect(deleted.json()).resolves.toEqual({ error: 'delete_failed' });
+    expect(deleted.status).toBe(500);
+    const deletePayload = (await deleted.json()) as { error: string; reference: string };
+    expect(deletePayload.error).toBe('delete_failed');
+    expect(deletePayload.reference).toMatch(/^[0-9a-f]{8}$/);
   });
 
   it('deletes server rows through the scoped MCP module', async () => {

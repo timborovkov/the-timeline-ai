@@ -75,6 +75,21 @@ export interface RetryFailedRecoverableJobsResult {
   failedIds: string[];
 }
 
+export interface JobRecoveryTarget {
+  kind: JobRecoveryKind;
+  artifactKind: JobRecoveryArtifactKind;
+  artifactId: string;
+}
+
+export function decodeJobRecoveryTarget(id: string): JobRecoveryTarget {
+  const parsed = decodeRecoveryId(id);
+  return {
+    kind: parsed.kind,
+    artifactKind: parsed.artifactKind,
+    artifactId: parsed.artifactId,
+  };
+}
+
 export interface FinishedJobArchiveItem {
   id: string;
   queue: string;
@@ -235,11 +250,12 @@ export function createJobRecoveryScope(deps: JobRecoveryScopeDeps) {
       .sort((a, b) => b.detectedAt.getTime() - a.detectedAt.getTime());
   }
 
-  async function dismissRecoverableJob(id: string, reason?: string): Promise<void> {
+  async function dismissRecoverableJob(id: string, reason?: string): Promise<JobRecoveryTarget> {
     await requireAdmin();
     const parsed = decodeRecoveryId(id);
     await assertArtifactVisible(deps.db, deps.teamId, deps.userId, parsed);
     await insertDismissals(deps.db, deps.teamId, deps.userId, [parsed], reason);
+    return parsed;
   }
 
   async function dismissFailedRecoverableJobs(
@@ -290,13 +306,14 @@ export function createJobRecoveryScope(deps: JobRecoveryScopeDeps) {
     return { retried, failed: failedIds.length, failedIds };
   }
 
-  async function retryRecoverableJob(id: string): Promise<void> {
+  async function retryRecoverableJob(id: string): Promise<JobRecoveryTarget> {
     await requireAdmin();
     const parsed = decodeRecoveryId(id);
     await assertArtifactVisible(deps.db, deps.teamId, deps.userId, parsed);
     const retryPlan = await prepareRetryParsed(deps.db, deps.teamId, parsed, q);
     await executeRetryPlan(retryPlan);
     await clearDismissal(deps.db, deps.teamId, parsed);
+    return parsed;
   }
 
   async function listFinishedJobs(

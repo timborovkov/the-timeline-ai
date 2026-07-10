@@ -1,5 +1,3 @@
-import { createHash } from 'node:crypto';
-
 import {
   agentSuggestionEvidence,
   agentSuggestionItems,
@@ -54,8 +52,11 @@ import {
   type SourceRef,
 } from '#src/reconciliation/index.js';
 import { sourcePayloadRefFromMetadata } from '#src/reconciliation/source-snapshot.js';
+import { stableStringify, suggestionDedupeKey } from '#src/suggestions/dedupe-key.js';
 import { localDateFromInstant, localDateSpanToUtcRange } from '#src/time/index.js';
 import { rawEventVisibleToUser } from '#src/visibility.js';
+
+export { suggestionDedupeKey } from '#src/suggestions/dedupe-key.js';
 
 type Visibility = 'private' | 'team' | 'specific_users';
 type SuggestionStatus = 'pending' | 'partially_resolved' | 'accepted' | 'rejected' | 'superseded';
@@ -701,21 +702,6 @@ function normalizeCalendarPayload(
     }
   }
   return normalized;
-}
-
-function stableStringify(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(stableStringify).join(',')}]`;
-  if (value && typeof value === 'object') {
-    return `{${Object.keys(value)
-      .sort()
-      .map((k) => `${JSON.stringify(k)}:${stableStringify((value as Record<string, unknown>)[k])}`)
-      .join(',')}}`;
-  }
-  return JSON.stringify(value);
-}
-
-export function suggestionDedupeKey(parts: unknown): string {
-  return createHash('sha256').update(stableStringify(parts)).digest('hex');
 }
 
 const ACTIONABLE_ITEM_STATUSES: ItemStatus[] = ['pending', 'failed'];

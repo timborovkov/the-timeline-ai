@@ -1,5 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto';
 
+import { externalFetch } from '#src/http/external-fetch.js';
 import { validateMcpUrl } from '#src/mcp/auth.js';
 
 // Phase 11 — MCP OAuth client (per the MCP authorization spec).
@@ -43,6 +44,14 @@ export interface OAuthTokenSet {
   scope?: string;
   expires_in?: number;
   expires_at?: number;
+}
+
+function mcpFetch(input: string | URL, init?: RequestInit): Promise<Response> {
+  return externalFetch(input, init, {
+    allowPrivateNetworkInDevelopment: true,
+    maxResponseBytes: 1024 * 1024,
+    timeoutMs: 30_000,
+  });
 }
 
 /**
@@ -122,7 +131,7 @@ export async function discoverOAuth(serverUrl: string): Promise<OAuthDiscovery> 
   // validateMcpUrl check passed but the redirect destination wouldn't.
   for (const url of candidates) {
     try {
-      const res = await fetch(url, {
+      const res = await mcpFetch(url, {
         headers: { accept: 'application/json' },
         redirect: 'manual',
       });
@@ -144,7 +153,7 @@ export async function discoverOAuth(serverUrl: string): Promise<OAuthDiscovery> 
           if (ssrfErr) {
             throw new Error(`OAuth discovery rejected authorization_server URL: ${ssrfErr}`);
           }
-          const asRes = await fetch(`${asUrl}/.well-known/oauth-authorization-server`, {
+          const asRes = await mcpFetch(`${asUrl}/.well-known/oauth-authorization-server`, {
             headers: { accept: 'application/json' },
             redirect: 'manual',
           });
@@ -177,7 +186,7 @@ export async function registerClient(
   // and force this backend to POST to internal infra.
   const ssrfErr = validateMcpUrl(registrationEndpoint);
   if (ssrfErr) throw new Error(`OAuth registration_endpoint rejected: ${ssrfErr}`);
-  const res = await fetch(registrationEndpoint, {
+  const res = await mcpFetch(registrationEndpoint, {
     method: 'POST',
     headers: { 'content-type': 'application/json', accept: 'application/json' },
     body: JSON.stringify({
@@ -250,7 +259,7 @@ export async function exchangeCode(input: ExchangeCodeInput): Promise<OAuthToken
     code_verifier: input.codeVerifier,
   });
   if (input.clientSecret) body.set('client_secret', input.clientSecret);
-  const res = await fetch(input.discovery.token_endpoint, {
+  const res = await mcpFetch(input.discovery.token_endpoint, {
     method: 'POST',
     headers: {
       'content-type': 'application/x-www-form-urlencoded',
@@ -287,7 +296,7 @@ export async function refreshToken(input: RefreshTokenInput): Promise<OAuthToken
     client_id: input.clientId,
   });
   if (input.clientSecret) body.set('client_secret', input.clientSecret);
-  const res = await fetch(input.discovery.token_endpoint, {
+  const res = await mcpFetch(input.discovery.token_endpoint, {
     method: 'POST',
     headers: {
       'content-type': 'application/x-www-form-urlencoded',

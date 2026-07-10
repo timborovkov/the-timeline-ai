@@ -6,8 +6,8 @@ import { z } from 'zod';
 
 import { type ActionState, resolveScope, uuidSchema } from '@/lib/action-scope';
 import { hydrateChatSessionMessages } from '@/lib/chat-session';
+import { publicActionError } from '@/lib/public-error';
 import { runSentryServerAction } from '@/lib/sentry-action';
-import { reportCaughtError } from '@/lib/sentry-report';
 
 interface LoadChatSessionActionResult {
   ok: boolean;
@@ -26,8 +26,12 @@ export async function archiveChatSessionAction(input: unknown): Promise<ActionSt
       revalidatePath('/app/chat');
       return { ok: true };
     } catch (err) {
-      reportCaughtError(err, { surface: 'server_action', operation: 'archive_chat_session' });
-      return { error: err instanceof Error ? err.message : 'Failed to archive session' };
+      return {
+        error: publicActionError(err, {
+          operation: 'archive_chat_session',
+          fallback: 'Failed to archive session.',
+        }),
+      };
     }
   });
 }
@@ -43,8 +47,12 @@ export async function unpinChatSessionAction(input: unknown): Promise<ActionStat
       revalidatePath('/app/chat');
       return { ok: true };
     } catch (err) {
-      reportCaughtError(err, { surface: 'server_action', operation: 'unpin_chat_session' });
-      return { error: err instanceof Error ? err.message : 'Failed to unpin' };
+      return {
+        error: publicActionError(err, {
+          operation: 'unpin_chat_session',
+          fallback: 'Failed to unpin chat session.',
+        }),
+      };
     }
   });
 }
@@ -60,13 +68,12 @@ export async function loadChatSessionAction(input: unknown): Promise<LoadChatSes
       if (!loaded) return { ok: false, error: 'Session not found' };
       return { ok: true, messages: hydrateChatSessionMessages(loaded) };
     } catch (err) {
-      reportCaughtError(err, {
-        surface: 'server_action',
-        operation: 'load_chat_session_messages',
-      });
       return {
         ok: false,
-        error: err instanceof Error ? err.message : 'Failed to load chat session',
+        error: publicActionError(err, {
+          operation: 'load_chat_session_messages',
+          fallback: 'Failed to load chat session.',
+        }),
       };
     }
   });

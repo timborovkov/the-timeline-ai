@@ -4,6 +4,7 @@ import { z } from 'zod';
 
 import type * as boards from '#src/boards/index.js';
 
+import { fenceExternalContent } from '#src/agent/external-content.js';
 import { retrieveWorkspaceContext } from '#src/agent/retrieval.js';
 import { getAppGuideRoute, searchAppGuide } from '#src/app-guide.js';
 import { artifactRefCitation } from '#src/citation.js';
@@ -508,31 +509,6 @@ const listDocumentChangesInput = z.object({
  * tag and "escape" the fence. We replace the literal closing sequence
  * with a benign placeholder.
  */
-function fenceAttr(value: string): string {
-  // Escape every char that has structural meaning inside an XML/HTML-style
-  // attribute: `&` (entity start), `"` (attr terminator), `<` (rejected by
-  // strict XML attribute parsers), `>` (cosmetic — escaped for symmetry).
-  // Today `source` is an enum and `eventId` is a UUID so none of these can
-  // actually appear, but the fence is security-critical and these helpers
-  // must stay safe regardless of upstream constraint drift.
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/"/g, '&quot;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
-}
-
-function fenceExternalContent(
-  text: string | null | undefined,
-  attrs: { source: string; eventId: string },
-): string | null {
-  if (text === null || text === undefined) return null;
-  const sanitized = text.replace(/<\/?external_content[^>]*>/gi, '[fence-removed]');
-  const source = fenceAttr(attrs.source);
-  const eventId = fenceAttr(attrs.eventId);
-  return `<external_content source="${source}" event_id="${eventId}">${sanitized}</external_content>`;
-}
-
 function fenceTimelineMomentText(
   text: string | null | undefined,
   moment: TimelineMoment,

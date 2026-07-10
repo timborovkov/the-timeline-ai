@@ -63,7 +63,7 @@ export function RemoveBoardItemButton({
         className="inline-flex items-center gap-1.5 rounded-sm border border-danger/40 px-2 py-1 text-xs font-medium text-danger transition-colors hover:bg-danger/10 disabled:opacity-40"
       >
         <Trash2 className="size-3.5" aria-hidden="true" />
-        {pending ? 'Removing...' : 'Remove from board'}
+        {pending ? 'Removing…' : 'Remove from board'}
       </button>
       {error ? <span className="text-xs text-danger">{error}</span> : null}
       {dialog.node}

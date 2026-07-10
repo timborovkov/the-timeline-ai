@@ -8,6 +8,11 @@ import { z } from 'zod';
 
 import { db } from '@/lib/db';
 import { requireRedisQueue } from '@/lib/queue';
+import {
+  payloadTooLargeResponse,
+  readCappedTextBody,
+  REQUEST_BODY_LIMITS,
+} from '@/lib/request-body';
 import { reportCaughtError, reportHandledEvent } from '@/lib/sentry-report';
 
 export const runtime = 'nodejs';
@@ -141,9 +146,11 @@ export async function POST(req: Request): Promise<Response> {
     }
   }
 
+  const bodyResult = await readCappedTextBody(req, REQUEST_BODY_LIMITS.recallTranscript);
+  if (bodyResult.tooLarge) return payloadTooLargeResponse();
   let raw: unknown;
   try {
-    raw = await req.json();
+    raw = JSON.parse(bodyResult.text);
   } catch {
     reportHandledEvent({
       message: 'recall_transcript_invalid_json',

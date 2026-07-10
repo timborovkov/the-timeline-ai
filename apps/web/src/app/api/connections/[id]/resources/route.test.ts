@@ -168,9 +168,10 @@ describe('/api/connections/[id]/resources', () => {
     const response = await GET(new Request('https://timeline.test'), params());
 
     expect(response.status).toBe(502);
-    await expect(response.json()).resolves.toEqual({
-      error: 'Monday GraphQL errors: Unauthorized field or type',
-    });
+    const payload = (await response.json()) as { error: string; reference: string };
+    expect(payload.error).toBe('list_resources_failed');
+    expect(payload.reference).toMatch(/^[0-9a-f]{8}$/);
+    expect(JSON.stringify(payload)).not.toContain('Unauthorized');
   });
 
   it('keeps local share loading failures separate from provider failures', async () => {

@@ -177,7 +177,7 @@ export function GlobalSearchPalette({ hint, className }: Props) {
       <div
         className={cn(
           'flex h-10 w-full items-center gap-2 rounded-sm border border-border bg-surface px-3',
-          'focus-within:border-border-strong',
+          'focus-within:border-border-strong focus-within:ring-2 focus-within:ring-signal/40 focus-within:ring-offset-2 focus-within:ring-offset-bg',
           'transition-colors',
         )}
       >
@@ -196,7 +196,7 @@ export function GlobalSearchPalette({ hint, className }: Props) {
           ref={inputRef}
           type="search"
           value={query}
-          placeholder="Ask, jump, capture, or search..."
+          placeholder="Ask, jump, capture, or search…"
           autoComplete="off"
           className="min-w-0 flex-1 bg-transparent font-mono text-xs text-fg placeholder:text-fg-dim focus:outline-none"
           onFocus={() => {

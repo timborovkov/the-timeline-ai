@@ -7,8 +7,8 @@ import { z } from 'zod';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { publicActionError } from '@/lib/public-error';
 import { runSentryServerAction } from '@/lib/sentry-action';
-import { reportCaughtError } from '@/lib/sentry-report';
 import { visibilitySchema } from '@/lib/visibility';
 
 const log = childLogger('web:actions:visibility');
@@ -79,8 +79,12 @@ export async function setVisibilityDefaultAction(
       return { ok: true };
     } catch (err) {
       log.error({ err }, 'visibility_default_update_failed');
-      reportCaughtError(err, { surface: 'server_action', operation: 'visibility_default_update' });
-      return { error: err instanceof Error ? err.message : 'Failed to update visibility default' };
+      return {
+        error: publicActionError(err, {
+          operation: 'visibility_default_update',
+          fallback: 'Failed to update visibility default.',
+        }),
+      };
     }
   });
 }
@@ -109,8 +113,12 @@ export async function setEventVisibilityAction(
       return { ok: true };
     } catch (err) {
       log.error({ err }, 'event_visibility_update_failed');
-      reportCaughtError(err, { surface: 'server_action', operation: 'event_visibility_update' });
-      return { error: err instanceof Error ? err.message : 'Failed to update event visibility' };
+      return {
+        error: publicActionError(err, {
+          operation: 'event_visibility_update',
+          fallback: 'Failed to update event visibility.',
+        }),
+      };
     }
   });
 }
@@ -136,13 +144,11 @@ export async function setIntegrationVisibilityDefaultAction(
       return { ok: true };
     } catch (err) {
       log.error({ err }, 'integration_visibility_default_update_failed');
-      reportCaughtError(err, {
-        surface: 'server_action',
-        operation: 'integration_visibility_default_update',
-      });
       return {
-        error:
-          err instanceof Error ? err.message : 'Failed to update integration visibility default',
+        error: publicActionError(err, {
+          operation: 'integration_visibility_default_update',
+          fallback: 'Failed to update integration visibility default.',
+        }),
       };
     }
   });

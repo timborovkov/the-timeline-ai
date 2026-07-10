@@ -18,6 +18,7 @@ import { resolveActiveTeam } from '@/lib/active-team';
 import { trackProductEventBestEffort } from '@/lib/analytics';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { publicActionError } from '@/lib/public-error';
 import { safeMarkOnboardingStep } from '@/lib/onboarding';
 import { requireRedisQueue } from '@/lib/queue';
 import { runSentryServerAction } from '@/lib/sentry-action';
@@ -115,8 +116,13 @@ export async function createFolderAction(
       });
     } catch (err) {
       log.error({ err }, 'createFolder failed');
-      reportCaughtError(err, { surface: 'server_action', operation: 'create_folder' });
-      return { ok: false, error: err instanceof Error ? err.message : 'Failed' };
+      return {
+        ok: false,
+        error: publicActionError(err, {
+          operation: 'create_folder',
+          fallback: 'Failed to create folder.',
+        }),
+      };
     }
     bestEffortRevalidateDocuments();
     return { ok: true, id: folder.id };
@@ -136,8 +142,13 @@ export async function deleteFolderAction(id: string): Promise<Result> {
     try {
       await got.scope.documents.softDeleteFolder(id);
     } catch (err) {
-      reportCaughtError(err, { surface: 'server_action', operation: 'delete_folder' });
-      return { ok: false, error: err instanceof Error ? err.message : 'Failed' };
+      return {
+        ok: false,
+        error: publicActionError(err, {
+          operation: 'delete_folder',
+          fallback: 'Failed to delete folder.',
+        }),
+      };
     }
     bestEffortRevalidateDocuments();
     return { ok: true };
@@ -246,8 +257,13 @@ export async function requestDocumentUploadAction(
       };
     } catch (err) {
       log.error({ err }, 'requestDocumentUpload failed');
-      reportCaughtError(err, { surface: 'server_action', operation: 'request_document_upload' });
-      return { ok: false, error: err instanceof Error ? err.message : 'Failed' };
+      return {
+        ok: false,
+        error: publicActionError(err, {
+          operation: 'request_document_upload',
+          fallback: 'Failed to prepare document upload.',
+        }),
+      };
     }
   });
 }
@@ -334,8 +350,13 @@ export async function finalizeDocumentVersionAction(
       };
     } catch (err) {
       log.error({ err }, 'finalizeDocumentVersion failed');
-      reportCaughtError(err, { surface: 'server_action', operation: 'finalize_document_version' });
-      return { ok: false, error: err instanceof Error ? err.message : 'Failed' };
+      return {
+        ok: false,
+        error: publicActionError(err, {
+          operation: 'finalize_document_version',
+          fallback: 'Failed to finalize document.',
+        }),
+      };
     }
   });
 }
@@ -364,8 +385,13 @@ export async function renameDocumentAction(
     try {
       await got.scope.documents.renameDocument(parsed.data);
     } catch (err) {
-      reportCaughtError(err, { surface: 'server_action', operation: 'rename_document' });
-      return { ok: false, error: err instanceof Error ? err.message : 'Failed' };
+      return {
+        ok: false,
+        error: publicActionError(err, {
+          operation: 'rename_document',
+          fallback: 'Failed to rename document.',
+        }),
+      };
     }
     bestEffortRevalidateDocuments();
     bestEffortRevalidateDocumentPath(
@@ -388,8 +414,13 @@ export async function deleteDocumentAction(id: string): Promise<Result> {
     try {
       await got.scope.documents.softDeleteDocument(id);
     } catch (err) {
-      reportCaughtError(err, { surface: 'server_action', operation: 'delete_document' });
-      return { ok: false, error: err instanceof Error ? err.message : 'Failed' };
+      return {
+        ok: false,
+        error: publicActionError(err, {
+          operation: 'delete_document',
+          fallback: 'Failed to delete document.',
+        }),
+      };
     }
     bestEffortRevalidateDocuments();
     return { ok: true };
@@ -429,8 +460,13 @@ export async function promoteCapturedFileAction(
       bestEffortRevalidateDocumentPath('/app/timeline', 'revalidate_document_timeline');
       return { ok: true, documentId: document.id };
     } catch (err) {
-      reportCaughtError(err, { surface: 'server_action', operation: 'promote_captured_file' });
-      return { ok: false, error: err instanceof Error ? err.message : 'Failed' };
+      return {
+        ok: false,
+        error: publicActionError(err, {
+          operation: 'promote_captured_file',
+          fallback: 'Failed to promote captured file.',
+        }),
+      };
     }
   });
 }

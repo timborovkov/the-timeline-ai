@@ -36,8 +36,6 @@ import { filterObjectsByText } from '@/lib/object-filter';
 import { objectDetailHref } from '@/lib/object-links';
 import { displayObjectTitle } from '@/lib/object-title';
 import {
-  TASK_BOARD_COLUMN_RENDER_LIMIT,
-  TASK_BOARD_LIST_RENDER_LIMIT,
   TASK_BOARD_TOTAL_LIMIT,
 } from '@/lib/task-board-config';
 import { cn, errorMessage } from '@/lib/utils';
@@ -742,7 +740,7 @@ function TaskBoardView({
                 disabled={loadingMore}
                 className="h-8 rounded-sm border border-border bg-bg px-3 text-xs font-medium hover:bg-signal-soft disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {loadingMore ? 'Loading...' : 'Load older tasks'}
+                {loadingMore ? 'Loading…' : 'Load older tasks'}
               </button>
             ) : null}
             {loadError ? (
@@ -806,14 +804,12 @@ function TaskListView({
     );
   }
 
-  const renderedRows = rows.slice(0, TASK_BOARD_LIST_RENDER_LIMIT);
-  const hiddenRows = rows.length - renderedRows.length;
-  const allVisibleSelected = renderedRows.every((row) => selectedIds.has(row.id));
+  const allVisibleSelected = rows.every((row) => selectedIds.has(row.id));
 
   function toggleAll(checked: boolean): void {
     setSelectedIds((current) => {
       const next = new Set(current);
-      for (const row of renderedRows) {
+      for (const row of rows) {
         if (checked) next.add(row.id);
         else next.delete(row.id);
       }
@@ -862,7 +858,7 @@ function TaskListView({
             </tr>
           </thead>
           <tbody>
-            {renderedRows.map((row) => (
+            {rows.map((row) => (
               <TaskListRow
                 key={row.id}
                 row={row}
@@ -877,16 +873,6 @@ function TaskListView({
                 filterParams={filterParams}
               />
             ))}
-            {hiddenRows > 0 ? (
-              <tr>
-                <td
-                  colSpan={6}
-                  className="bg-bg px-3 py-3 text-center font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim"
-                >
-                  {hiddenRows} loaded tasks hidden. Narrow the filter to inspect them.
-                </td>
-              </tr>
-            ) : null}
           </tbody>
         </table>
       </div>
@@ -936,6 +922,7 @@ function TaskListRow({
 
   return (
     <tr
+      style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 52px' }}
       className={cn(
         'border-t border-border transition-colors hover:bg-bg',
         highlighted && 'bg-signal-soft',
@@ -964,7 +951,7 @@ function TaskListRow({
         </div>
         {saving || error ? (
           <div className="mt-1 font-mono text-[10px] uppercase tracking-[0.1em]">
-            {saving ? <span className="text-fg-dim">Saving {saving}...</span> : null}
+            {saving ? <span className="text-fg-dim">Saving {saving}…</span> : null}
             {error ? <span className="text-danger">{error}</span> : null}
           </div>
         ) : null}
@@ -1184,7 +1171,7 @@ function TaskBulkToolbar({
         onClick={applyBulk}
         className="h-8 rounded-sm border border-border bg-bg px-3 text-xs font-medium hover:bg-signal-soft disabled:cursor-not-allowed disabled:opacity-50"
       >
-        {pending ? 'Applying...' : 'Apply'}
+        {pending ? 'Applying…' : 'Apply'}
       </button>
       {selectedCount > 0 ? (
         <button
@@ -1242,8 +1229,6 @@ function TaskColumn({
   taskHref: (taskId: string) => string;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id });
-  const renderedRows = rows.slice(0, TASK_BOARD_COLUMN_RENDER_LIMIT);
-  const hiddenRows = rows.length - renderedRows.length;
   return (
     <div
       ref={setNodeRef}
@@ -1259,7 +1244,7 @@ function TaskColumn({
         </span>
       </div>
       <ul className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto">
-        {renderedRows.map((row) => (
+        {rows.map((row) => (
           <TaskCard
             key={row.id}
             row={row}
@@ -1270,11 +1255,6 @@ function TaskColumn({
             members={members}
           />
         ))}
-        {hiddenRows > 0 ? (
-          <li className="rounded-sm border border-dashed border-border bg-bg px-3 py-2 text-center font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">
-            {hiddenRows} more loaded. Narrow filter.
-          </li>
-        ) : null}
       </ul>
     </div>
   );
@@ -1308,7 +1288,7 @@ function TaskCard({
   return (
     <li
       ref={setNodeRef}
-      style={style}
+      style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 112px', ...style }}
       {...attributes}
       {...listeners}
       className={cn(
@@ -1479,7 +1459,7 @@ function TaskDetailPanel({
       </div>
       {saving || error ? (
         <div className="border-b border-border px-4 py-3 font-mono text-[11px] uppercase tracking-[0.1em]">
-          {saving ? <span className="text-fg-dim">Saving {saving}...</span> : null}
+          {saving ? <span className="text-fg-dim">Saving {saving}…</span> : null}
           {error ? <span className="text-danger">{error}</span> : null}
         </div>
       ) : null}

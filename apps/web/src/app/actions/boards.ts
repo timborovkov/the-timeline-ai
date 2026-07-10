@@ -6,6 +6,7 @@ import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 
 import { type ActionState, resolveScope, uuidSchema } from '@/lib/action-scope';
+import { publicActionError } from '@/lib/public-error';
 import { runSentryServerAction } from '@/lib/sentry-action';
 import { reportCaughtError } from '@/lib/sentry-report';
 
@@ -86,8 +87,7 @@ function friendlyError(err: unknown, fallback: string): string {
     if (code === '23505') return 'That item is already on this board.';
     if (code === '23503') return 'Linked record no longer exists.';
   }
-  reportCaughtError(err, { surface: 'server_action', operation: fallback });
-  return err instanceof Error ? err.message : 'Board action failed';
+  return publicActionError(err, { operation: fallback, fallback: 'Board action failed.' });
 }
 
 function recommendedTypesFor(templateKind: boardDomain.BoardTemplateKind): objects.ObjectType[] {

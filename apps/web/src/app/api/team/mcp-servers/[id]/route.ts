@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { publicApiError } from '@/lib/public-error';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -42,8 +43,14 @@ export async function PATCH(
     await scope.mcp.updateServer(id, parsed.data);
     return NextResponse.json({ ok: true });
   } catch (err) {
-    const msg = err instanceof Error ? err.message : 'update_failed';
-    return NextResponse.json({ error: msg }, { status: 400 });
+    const failure = publicApiError(err, {
+      operation: 'update_mcp_server',
+      fallbackCode: 'update_failed',
+    });
+    return NextResponse.json(
+      { error: failure.error, ...(failure.reference ? { reference: failure.reference } : {}) },
+      { status: failure.status },
+    );
   }
 }
 
@@ -60,7 +67,13 @@ export async function DELETE(
     await scope.mcp.deleteServer(id);
     return NextResponse.json({ ok: true });
   } catch (err) {
-    const msg = err instanceof Error ? err.message : 'delete_failed';
-    return NextResponse.json({ error: msg }, { status: 400 });
+    const failure = publicApiError(err, {
+      operation: 'delete_mcp_server',
+      fallbackCode: 'delete_failed',
+    });
+    return NextResponse.json(
+      { error: failure.error, ...(failure.reference ? { reference: failure.reference } : {}) },
+      { status: failure.status },
+    );
   }
 }

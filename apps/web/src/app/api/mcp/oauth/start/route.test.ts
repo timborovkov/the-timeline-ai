@@ -203,7 +203,10 @@ describe('POST /api/mcp/oauth/start', () => {
     const response = await POST(request({ mcpServerId: SERVER_ID }));
 
     expect(response.status).toBe(500);
-    await expect(response.json()).resolves.toEqual({ error: 'discovery_down' });
+    const payload = (await response.json()) as { error: string; reference: string };
+    expect(payload.error).toBe('mcp_oauth_start_failed');
+    expect(payload.reference).toMatch(/^[0-9a-f]{8}$/);
+    expect(JSON.stringify(payload)).not.toContain('discovery_down');
     expect(fakes.loggerWarn).toHaveBeenCalledWith(
       expect.objectContaining({ mcpServerId: SERVER_ID }),
       'mcp oauth start failed',

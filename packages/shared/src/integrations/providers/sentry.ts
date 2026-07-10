@@ -8,6 +8,7 @@ import type {
 } from '#src/integrations/types.js';
 
 import { getEnv } from '#src/env.js';
+import { externalFetch as fetch } from '#src/http/external-fetch.js';
 
 const AUTH_URL = 'https://sentry.io/oauth/authorize/';
 const TOKEN_URL = 'https://sentry.io/oauth/token/';

@@ -5,6 +5,7 @@ const fakes = vi.hoisted(() => ({
   fakeResolveActiveTeam: vi.fn(),
   fakeDismissFailed: vi.fn(),
   fakeRequireMembership: vi.fn(),
+  fakeAuditRecord: vi.fn(),
 }));
 
 vi.mock('@/lib/auth', () => ({ auth: fakes.fakeAuth }));
@@ -14,6 +15,7 @@ vi.mock('@timeline/shared/team-scope', () => ({
   withTeam: () => ({
     requireMembership: fakes.fakeRequireMembership,
     jobRecovery: { dismissFailedRecoverableJobs: fakes.fakeDismissFailed },
+    audit: { record: fakes.fakeAuditRecord },
   }),
 }));
 
@@ -35,6 +37,12 @@ describe('job recovery dismiss failed route', () => {
 
     expect(res.status).toBe(403);
     expect(fakes.fakeDismissFailed).not.toHaveBeenCalled();
+    expect(fakes.fakeAuditRecord).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'job.dismiss',
+        metadata: expect.objectContaining({ mode: 'bulk', outcome: 'rejected' }),
+      }),
+    );
   });
 
   it('bulk dismisses failed jobs through the team-scoped recovery scope', async () => {
@@ -66,6 +74,17 @@ describe('job recovery dismiss failed route', () => {
       expectedCount: 3,
       reason: 'bulk dismiss failed jobs',
     });
+    expect(fakes.fakeAuditRecord).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'job.dismiss',
+        metadata: expect.objectContaining({
+          mode: 'bulk',
+          outcome: 'succeeded',
+          recovery_kind: 'embedding',
+          target_ids: ['job-1', 'job-2', 'job-3'],
+        }),
+      }),
+    );
   });
 
   it('rejects malformed or empty JSON instead of dismissing everything', async () => {

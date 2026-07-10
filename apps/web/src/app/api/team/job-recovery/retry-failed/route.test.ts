@@ -5,6 +5,7 @@ const fakes = vi.hoisted(() => ({
   fakeResolveActiveTeam: vi.fn(),
   fakeRetryFailed: vi.fn(),
   fakeRequireMembership: vi.fn(),
+  fakeAuditRecord: vi.fn(),
 }));
 
 vi.mock('@/lib/auth', () => ({ auth: fakes.fakeAuth }));
@@ -14,6 +15,7 @@ vi.mock('@timeline/shared/team-scope', () => ({
   withTeam: () => ({
     requireMembership: fakes.fakeRequireMembership,
     jobRecovery: { retryFailedRecoverableJobs: fakes.fakeRetryFailed },
+    audit: { record: fakes.fakeAuditRecord },
   }),
 }));
 
@@ -35,6 +37,12 @@ describe('job recovery retry failed route', () => {
 
     expect(res.status).toBe(403);
     expect(fakes.fakeRetryFailed).not.toHaveBeenCalled();
+    expect(fakes.fakeAuditRecord).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'job.retry',
+        metadata: expect.objectContaining({ mode: 'bulk', outcome: 'rejected' }),
+      }),
+    );
   });
 
   it('bulk retries failed jobs through the team-scoped recovery scope', async () => {
@@ -70,6 +78,17 @@ describe('job recovery retry failed route', () => {
       ],
       expectedCount: 3,
     });
+    expect(fakes.fakeAuditRecord).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'job.retry',
+        metadata: expect.objectContaining({
+          mode: 'bulk',
+          outcome: 'succeeded',
+          recovery_kind: 'embedding',
+          target_ids: ['job-1', 'job-2', 'job-3'],
+        }),
+      }),
+    );
   });
 
   it('rejects malformed or empty JSON instead of retrying everything', async () => {

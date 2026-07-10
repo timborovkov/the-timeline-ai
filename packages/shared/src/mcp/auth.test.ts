@@ -130,12 +130,35 @@ describe('mcp/auth validateMcpUrl', () => {
     process.env.NODE_ENV = 'production';
     expect(validateMcpUrl('https://localhost:8080/mcp')).toMatch(/Loopback/);
     expect(validateMcpUrl('https://127.0.0.1/mcp')).toMatch(/Loopback/);
+    expect(validateMcpUrl('https://127.0.0.2/mcp')).toMatch(/public/i);
+    expect(validateMcpUrl('https://[::ffff:127.0.0.1]/mcp')).toMatch(/public/i);
   });
 
-  it('rejects private IP ranges in production', () => {
+  it('rejects every non-public IP range in production', () => {
     process.env.NODE_ENV = 'production';
-    expect(validateMcpUrl('https://10.0.0.1/mcp')).toMatch(/Private/);
-    expect(validateMcpUrl('https://192.168.1.1/mcp')).toMatch(/Private/);
+    for (const url of [
+      'https://0.0.0.0/mcp',
+      'https://10.0.0.1/mcp',
+      'https://100.64.0.1/mcp',
+      'https://169.254.169.254/mcp',
+      'https://172.16.0.1/mcp',
+      'https://192.168.1.1/mcp',
+      'https://224.0.0.1/mcp',
+      'https://240.0.0.1/mcp',
+      'https://[::]/mcp',
+      'https://[::1]/mcp',
+      'https://[fc00::1]/mcp',
+      'https://[fe80::1]/mcp',
+      'https://[ff00::1]/mcp',
+    ]) {
+      expect(validateMcpUrl(url), url).toMatch(/public/i);
+    }
+  });
+
+  it('accepts direct public unicast addresses in production', () => {
+    process.env.NODE_ENV = 'production';
+    expect(validateMcpUrl('https://8.8.8.8/mcp')).toBeNull();
+    expect(validateMcpUrl('https://[2606:4700:4700::1111]/mcp')).toBeNull();
   });
 
   it('allows localhost in non-production', () => {

@@ -20,8 +20,6 @@ vi.mock('@/app/actions/objects', () => ({
 vi.mock('@/lib/task-board-config', () => ({
   TASK_BOARD_PAGE_SIZE: 500,
   TASK_BOARD_TOTAL_LIMIT: 50_000,
-  TASK_BOARD_COLUMN_RENDER_LIMIT: 5,
-  TASK_BOARD_LIST_RENDER_LIMIT: 20,
   TASK_OPEN_STATUSES_EXCLUDED: ['done', 'cancelled'],
 }));
 
@@ -382,30 +380,30 @@ describe('TaskBoard', () => {
     expect(screen.queryByRole('button', { name: 'Load older tasks' })).toBeNull();
   });
 
-  it('bounds large kanban columns and reports hidden loaded tasks', () => {
+  it('keeps every loaded kanban task accessible with content-visibility containment', () => {
     const rows = Array.from({ length: 7 }, (_, index) =>
       task({ id: `task-${index}`, canonicalName: `Task ${index}`, status: 'done' }),
     );
 
     renderBoard(null, rows);
 
-    expect(screen.getByRole('link', { name: 'Task 4' })).toBeTruthy();
-    expect(screen.queryByRole('link', { name: 'Task 5' })).toBeNull();
-    expect(screen.getByText('2 more loaded. Narrow filter.')).toBeTruthy();
+    const finalCard = screen.getByRole('link', { name: 'Task 6' }).closest('li');
+    expect(finalCard).toBeTruthy();
+    expect(finalCard?.style.contentVisibility).toBe('auto');
+    expect(finalCard?.style.containIntrinsicSize).toBe('auto 112px');
   });
 
-  it('bounds large list views and reports hidden loaded tasks', () => {
+  it('keeps every loaded list task accessible with content-visibility containment', () => {
     const rows = Array.from({ length: 22 }, (_, index) =>
       task({ id: `task-${index}`, canonicalName: `Task ${index}` }),
     );
 
     renderBoard(null, rows, 'list');
 
-    expect(screen.getByText('Task 19')).toBeTruthy();
-    expect(screen.queryByText('Task 20')).toBeNull();
-    expect(
-      screen.getByText('2 loaded tasks hidden. Narrow the filter to inspect them.'),
-    ).toBeTruthy();
+    const finalRow = screen.getByRole('link', { name: 'Task 21' }).closest('tr');
+    expect(finalRow).toBeTruthy();
+    expect(finalRow?.style.contentVisibility).toBe('auto');
+    expect(finalRow?.style.containIntrinsicSize).toBe('auto 52px');
   });
 
   it('bulk assigns selected tasks from list view', async () => {

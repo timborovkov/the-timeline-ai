@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { Suspense, useEffect, useRef, useState, useTransition } from 'react';
 
 import { markNotificationReadAction } from '@/app/actions/objects';
+import { formatDisplayDateTime } from '@/lib/display-dates';
 import { cn } from '@/lib/utils';
 
 interface Props {
@@ -18,14 +19,7 @@ interface Props {
 }
 
 function formatTs(ts: string): string {
-  const d = new Date(ts);
-  const date = d.toLocaleDateString('en-CA');
-  const time = d.toLocaleTimeString(undefined, {
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  });
-  return `${date} ${time}`;
+  return formatDisplayDateTime(ts);
 }
 
 export function NotificationRow(props: Props) {

@@ -304,6 +304,9 @@ describe('calendar create/update/delete behavior', () => {
         startAt: '2026-06-03T10:00:00.000Z',
         endAt: '2026-06-03T11:00:00.000Z',
       }),
-    ).resolves.toEqual({ ok: false, error: 'db down' });
+    ).resolves.toEqual({
+      ok: false,
+      error: expect.stringMatching(/^Failed to create event\. Reference: [0-9a-f]{8}\.$/),
+    });
   });
 });

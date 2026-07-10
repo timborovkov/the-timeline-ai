@@ -1,5 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+vi.mock('#src/http/external-fetch.js', () => ({
+  externalFetch: (input: string | URL, init?: RequestInit) => globalThis.fetch(input, init),
+}));
+
 import { SlackApi } from '#src/slack/api.js';
 
 describe('SlackApi message posting', () => {

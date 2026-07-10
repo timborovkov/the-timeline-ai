@@ -14,13 +14,16 @@ import {
 } from '@timeline/db';
 import { asc, eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type * as QueueModule from '#src/queue/queues.js';
 
 import { suggestionDedupeKey } from '#src/suggestions/index.js';
 import { withTeam } from '#src/team-scope.js';
-import { applyDbMigrations } from '#src/test/pglite.js';
+import {
+  createResettablePGliteTestDb,
+  type ResettablePGliteTestDb,
+} from '#src/test/pglite.js';
 
 vi.mock('#src/queue/queues.js', async (importOriginal) => {
   const actual = await importOriginal<typeof QueueModule>();
@@ -109,12 +112,20 @@ describe('suggestionDedupeKey', () => {
 describe('suggestion scope', () => {
   let pg: PGlite;
   let db: ReturnType<typeof drizzle>;
+  let testDb: ResettablePGliteTestDb;
+
+  beforeAll(async () => {
+    testDb = await createResettablePGliteTestDb(seed);
+    pg = testDb.pg;
+    db = drizzle(pg);
+  }, 60_000);
 
   beforeEach(async () => {
-    pg = new PGlite();
-    await applyDbMigrations(pg);
-    await seed(pg);
-    db = drizzle(pg);
+    await testDb.reset();
+  });
+
+  afterAll(async () => {
+    await testDb.close();
   });
 
   it('allows background team suggestions without an author owner', async () => {

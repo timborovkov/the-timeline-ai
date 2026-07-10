@@ -7,6 +7,7 @@ import type {
 } from '#src/integrations/types.js';
 
 import { getEnv } from '#src/env.js';
+import { externalFetch as fetch } from '#src/http/external-fetch.js';
 import { ProviderRateLimitError as ProviderRateLimit } from '#src/integrations/types.js';
 import { SlackApi } from '#src/slack/api.js';
 

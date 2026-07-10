@@ -333,7 +333,7 @@ function transcriptionStatusMessage(event: TimelineEvent): string | null {
   if (!event.contentAudioUrl || transcribed(event.sourceMetadata)) return null;
   return transcribeFailed(event.sourceMetadata)
     ? 'Transcription failed; voice memo is still playable.'
-    : 'Transcribing...';
+    : 'Transcribing…';
 }
 
 function canRemoveConversational(

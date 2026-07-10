@@ -130,12 +130,12 @@ export function WorkFilterBar({
               defaultValue={filters.q}
               placeholder={
                 mode === 'board'
-                  ? 'Search board items...'
+                  ? 'Search board items…'
                   : mode === 'tasks'
-                    ? 'Search tasks...'
-                    : 'Search objects...'
+                    ? 'Search tasks…'
+                    : 'Search objects…'
               }
-              className="h-9 w-full rounded-sm border border-border bg-surface py-1 pl-8 pr-2 text-sm text-fg outline-none transition-colors placeholder:text-fg-dim focus:border-signal/60"
+              className="h-9 w-full rounded-sm border border-border bg-surface py-1 pl-8 pr-2 text-sm text-fg outline-none transition-colors placeholder:text-fg-dim focus-visible:border-signal/60 focus-visible:ring-2 focus-visible:ring-signal/40 focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
             />
           </label>
 
@@ -243,7 +243,7 @@ export function WorkFilterBar({
               );
             }}
             className={cn(
-              'inline-flex h-9 items-center gap-2 rounded-sm border border-border bg-surface px-3 font-mono text-[11px] uppercase tracking-[0.12em] text-fg-muted transition-colors hover:border-border-strong hover:text-fg focus:border-signal/60 focus:outline-none',
+              'inline-flex h-9 items-center gap-2 rounded-sm border border-border bg-surface px-3 font-mono text-[11px] uppercase tracking-[0.12em] text-fg-muted transition-colors hover:border-border-strong hover:text-fg focus-visible:border-signal/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/40 focus-visible:ring-offset-2 focus-visible:ring-offset-bg',
               (showDateRanges || hasRangeFilters) && 'border-border-strong text-fg',
             )}
           >
@@ -438,7 +438,7 @@ function FilterSelect({
         name={name}
         defaultValue={defaultValue}
         onChange={(event) => onChange?.(event.currentTarget.value)}
-        className="h-9 w-full rounded-sm border border-border bg-surface px-2 text-xs text-fg outline-none transition-colors focus:border-signal/60"
+        className="h-9 w-full rounded-sm border border-border bg-surface px-2 text-xs text-fg outline-none transition-colors focus-visible:border-signal/60 focus-visible:ring-2 focus-visible:ring-signal/40 focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
       >
         {children}
       </select>
@@ -469,7 +469,7 @@ function FilterInput({
         type={type}
         defaultValue={defaultValue}
         placeholder={placeholder}
-        className="h-9 w-full rounded-sm border border-border bg-surface px-2 text-xs text-fg outline-none transition-colors placeholder:text-fg-dim focus:border-signal/60"
+        className="h-9 w-full rounded-sm border border-border bg-surface px-2 text-xs text-fg outline-none transition-colors placeholder:text-fg-dim focus-visible:border-signal/60 focus-visible:ring-2 focus-visible:ring-signal/40 focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
       />
     </label>
   );
