@@ -146,9 +146,13 @@ async function downloadFileBody(
   } else {
     url = `${DRIVE_BASE}/files/${fileId}?alt=media`;
   }
-  const res = await fetch(url, {
-    headers: { authorization: `Bearer ${tokens.access_token}` },
-  });
+  const res = await fetch(
+    url,
+    {
+      headers: { authorization: `Bearer ${tokens.access_token}` },
+    },
+    { maxResponseBytes: MAX_HARVEST_BYTES },
+  );
   if (!res.ok) {
     throw new Error(`Drive download ${fileId} ${String(res.status)}`);
   }

@@ -1,7 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+const externalFetchMock = vi.hoisted(() =>
+  vi.fn(
+    (
+      input: string | URL,
+      init?: RequestInit,
+      _options?: { maxResponseBytes?: number },
+    ): Promise<Response> => globalThis.fetch(input, init),
+  ),
+);
+
 vi.mock('#src/http/external-fetch.js', () => ({
-  externalFetch: (input: string | URL, init?: RequestInit) => globalThis.fetch(input, init),
+  externalFetch: externalFetchMock,
 }));
 
 import type { IntegrationEvent, SyncContext } from '#src/integrations/types.js';
@@ -30,6 +40,7 @@ function requestUrl(input: Parameters<typeof fetch>[0]): URL {
 
 describe('googleDriveProvider', () => {
   beforeEach(() => {
+    externalFetchMock.mockClear();
     process.env.GOOGLE_CLIENT_ID = 'google-client';
     process.env.GOOGLE_CLIENT_SECRET = 'google-secret';
     resetEnvForTests();
@@ -252,6 +263,66 @@ describe('googleDriveProvider', () => {
     });
     expect(ctx.saveCursor).toHaveBeenCalledWith('drive.changes', { page_token: 'page-3' });
     expect(ctx.recordAudit).not.toHaveBeenCalledWith('drive_page_cap_hit', expect.anything());
+  });
+
+  it('uses the provider 20 MB cap when harvesting Drive file bodies', async () => {
+    const body = new Uint8Array(9 * 1024 * 1024);
+    const fetch = vi.fn<typeof globalThis.fetch>((input) => {
+      const url = requestUrl(input);
+      if (url.pathname.endsWith('/changes')) {
+        return Promise.resolve(
+          jsonResponse({
+            changes: [
+              {
+                changeType: 'file',
+                time: '2026-06-20T10:00:00.000Z',
+                fileId: 'file-1',
+                file: {
+                  id: 'file-1',
+                  name: 'Large notes',
+                  mimeType: 'text/plain',
+                  parents: ['root'],
+                },
+              },
+            ],
+            newStartPageToken: 'page-2',
+          }),
+        );
+      }
+      if (url.searchParams.get('alt') === 'media') {
+        return Promise.resolve(new Response(body, { status: 200 }));
+      }
+      return Promise.resolve(jsonResponse({ message: 'unexpected' }, { status: 404 }));
+    });
+    vi.stubGlobal('fetch', fetch);
+    const harvestDocument = vi
+      .fn<NonNullable<SyncContext['harvestDocument']>>()
+      .mockResolvedValue({ documentId: 'document-1', versionId: 'version-1' });
+    const ctx = {
+      loadCursor: vi.fn().mockResolvedValue({ page_token: 'page-1' }),
+      saveCursor: vi.fn().mockResolvedValue(undefined),
+      writeEvents: vi.fn<SyncContext['writeEvents']>().mockResolvedValue([]),
+      persistTokens: vi.fn(),
+      recordAudit: vi.fn().mockResolvedValue(undefined),
+      harvestDocument,
+    };
+
+    await googleDriveProvider.incrementalSync({
+      integration: { id: 'integration-1' } as never,
+      tokens: { access_token: 'access-token', expires_at: Date.now() + 600_000 },
+      selections: [{ kind: 'drive.folder', externalId: 'root' }],
+      ctx,
+    });
+
+    expect(harvestDocument).toHaveBeenCalledOnce();
+    const harvested = harvestDocument.mock.calls[0]?.[0];
+    expect(harvested?.externalId).toBe('file-1');
+    expect(harvested?.body).toBeInstanceOf(Buffer);
+    expect(harvested?.body.byteLength).toBe(body.byteLength);
+    const downloadCall = externalFetchMock.mock.calls.find(
+      ([input]) => requestUrl(input).searchParams.get('alt') === 'media',
+    );
+    expect(downloadCall?.[2]).toEqual({ maxResponseBytes: 20 * 1024 * 1024 });
   });
 
   it('persists a Drive changes resume token when the page safety cap is hit', async () => {

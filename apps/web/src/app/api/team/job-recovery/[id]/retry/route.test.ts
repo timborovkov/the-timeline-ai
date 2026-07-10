@@ -53,7 +53,6 @@ describe('job recovery retry route', () => {
     expect(fakes.fakeAuditRecord).toHaveBeenCalledWith({
       action: 'job.retry',
       targetType: 'job_recovery',
-      targetId: 'abc',
       metadata: {
         mode: 'single',
         outcome: 'rejected',
@@ -74,7 +73,6 @@ describe('job recovery retry route', () => {
     expect(fakes.fakeAuditRecord).toHaveBeenCalledWith({
       action: 'job.retry',
       targetType: 'job_recovery',
-      targetId: 'abc',
       metadata: { mode: 'single', outcome: 'succeeded', recovery_kind: 'unknown' },
     });
   });
@@ -93,7 +91,6 @@ describe('job recovery retry route', () => {
     expect(fakes.fakeAuditRecord).toHaveBeenCalledWith({
       action: 'job.retry',
       targetType: 'job_recovery',
-      targetId: 'abc',
       metadata: {
         mode: 'single',
         outcome: 'rejected',

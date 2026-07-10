@@ -42,7 +42,6 @@ describe('job recovery dismiss route', () => {
     expect(fakes.fakeAuditRecord).toHaveBeenCalledWith({
       action: 'job.dismiss',
       targetType: 'job_recovery',
-      targetId: 'abc',
       metadata: {
         mode: 'single',
         outcome: 'rejected',
@@ -63,7 +62,6 @@ describe('job recovery dismiss route', () => {
     expect(fakes.fakeAuditRecord).toHaveBeenCalledWith({
       action: 'job.dismiss',
       targetType: 'job_recovery',
-      targetId: 'abc',
       metadata: { mode: 'single', outcome: 'succeeded', recovery_kind: 'unknown' },
     });
   });
@@ -82,7 +80,6 @@ describe('job recovery dismiss route', () => {
     expect(fakes.fakeAuditRecord).toHaveBeenCalledWith({
       action: 'job.dismiss',
       targetType: 'job_recovery',
-      targetId: 'abc',
       metadata: {
         mode: 'single',
         outcome: 'rejected',

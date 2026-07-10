@@ -2,6 +2,7 @@ import { decodeJobRecoveryTarget, type JobRecoveryKind } from '@timeline/shared/
 
 type RecoveryAuditAction = 'job.retry' | 'job.dismiss';
 type RecoveryAuditOutcome = 'succeeded' | 'rejected';
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export function singleRecoveryAuditRecord(input: {
   action: RecoveryAuditAction;
@@ -11,17 +12,19 @@ export function singleRecoveryAuditRecord(input: {
 }) {
   let recoveryKind: JobRecoveryKind | 'unknown' = 'unknown';
   let artifactKind: string | undefined;
+  let targetId: string | undefined;
   try {
     const target = decodeJobRecoveryTarget(input.id);
     recoveryKind = target.kind;
     artifactKind = target.artifactKind;
+    if (UUID_RE.test(target.artifactId)) targetId = target.artifactId;
   } catch {
     // Invalid recovery IDs are still audited without echoing their contents.
   }
   return {
     action: input.action,
     targetType: 'job_recovery',
-    targetId: input.id,
+    ...(targetId ? { targetId } : {}),
     metadata: {
       mode: 'single',
       outcome: input.outcome,
