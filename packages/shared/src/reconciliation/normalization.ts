@@ -84,6 +84,7 @@ export async function normalizeIntegrationEventsToEvidence(
     .select({
       id: rawEvents.id,
       source: rawEvents.source,
+      authorUserId: rawEvents.authorUserId,
       contentText: rawEvents.contentText,
       occurredAt: rawEvents.occurredAt,
       visibility: rawEvents.visibility,
@@ -117,7 +118,8 @@ export async function normalizeIntegrationEventsToEvidence(
         eventType: event.eventType,
         occurredAt: raw.occurredAt,
         visibility: raw.visibility,
-        visibilityOwnerUserId: raw.visibilityOwnerUserId,
+        visibilityOwnerUserId:
+          raw.visibilityOwnerUserId ?? (raw.visibility === 'private' ? raw.authorUserId : null),
         visibilityUserIds: raw.visibilityUserIds,
         actor: event.actor ?? {},
         contentDigest: contentDigest({
@@ -217,6 +219,7 @@ export async function normalizeRawEventsToEvidence(
     .select({
       id: rawEvents.id,
       source: rawEvents.source,
+      authorUserId: rawEvents.authorUserId,
       contentText: rawEvents.contentText,
       contentAudioUrl: rawEvents.contentAudioUrl,
       occurredAt: rawEvents.occurredAt,
@@ -249,7 +252,8 @@ export async function normalizeRawEventsToEvidence(
       eventType,
       occurredAt: raw.occurredAt,
       visibility: raw.visibility,
-      visibilityOwnerUserId: raw.visibilityOwnerUserId,
+      visibilityOwnerUserId:
+        raw.visibilityOwnerUserId ?? (raw.visibility === 'private' ? raw.authorUserId : null),
       visibilityUserIds: raw.visibilityUserIds,
       actor: rawActor(metadata),
       contentDigest: contentDigest({

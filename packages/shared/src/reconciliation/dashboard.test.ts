@@ -402,8 +402,7 @@ describe('reconciliation dashboard snapshot', () => {
     if (!outputlessBackfillRun) throw new Error('expected outputless backfill run');
 
     await pg.exec(`
-      ALTER TABLE entities DROP CONSTRAINT entities_legacy_source_event_id_null_chk;
-      ALTER TABLE entities DROP CONSTRAINT entities_legacy_agent_suggested_false_chk;
+      ALTER TABLE entities DISABLE TRIGGER entities_legacy_provenance_write_guard;
       ALTER TABLE object_changes DROP CONSTRAINT object_changes_legacy_source_event_id_null_chk;
       ALTER TABLE board_item_changes DROP CONSTRAINT board_item_changes_legacy_source_event_id_null_chk;
     `);
@@ -450,8 +449,7 @@ describe('reconciliation dashboard snapshot', () => {
       });
     } finally {
       await pg.exec(`
-        ALTER TABLE entities ADD CONSTRAINT entities_legacy_source_event_id_null_chk CHECK (source_event_id IS NULL) NOT VALID;
-        ALTER TABLE entities ADD CONSTRAINT entities_legacy_agent_suggested_false_chk CHECK (agent_suggested = false) NOT VALID;
+        ALTER TABLE entities ENABLE TRIGGER entities_legacy_provenance_write_guard;
         ALTER TABLE object_changes ADD CONSTRAINT object_changes_legacy_source_event_id_null_chk CHECK (source_event_id IS NULL) NOT VALID;
         ALTER TABLE board_item_changes ADD CONSTRAINT board_item_changes_legacy_source_event_id_null_chk CHECK (source_event_id IS NULL) NOT VALID;
       `);

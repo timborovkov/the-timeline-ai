@@ -482,13 +482,12 @@ describe('database schema contracts', () => {
       `);
 
       await applyMigrationFile(migrationPg, '0056_legacy_provenance_cutover_guards.sql');
+      await applyMigrationFile(migrationPg, '0057_legacy_provenance_editability.sql');
 
       const constraints = await migrationPg.query<{ conname: string; convalidated: boolean }>(`
         SELECT conname, convalidated
         FROM pg_constraint
         WHERE conname IN (
-          'entities_legacy_source_event_id_null_chk',
-          'entities_legacy_agent_suggested_false_chk',
           'object_changes_legacy_source_event_id_null_chk',
           'board_item_changes_legacy_source_event_id_null_chk'
         )
@@ -496,10 +495,16 @@ describe('database schema contracts', () => {
       `);
       expect(constraints.rows).toEqual([
         { conname: 'board_item_changes_legacy_source_event_id_null_chk', convalidated: false },
-        { conname: 'entities_legacy_agent_suggested_false_chk', convalidated: false },
-        { conname: 'entities_legacy_source_event_id_null_chk', convalidated: false },
         { conname: 'object_changes_legacy_source_event_id_null_chk', convalidated: false },
       ]);
+      const triggers = await migrationPg.query<{ tgname: string }>(`
+        SELECT tgname
+        FROM pg_trigger
+        WHERE tgrelid = 'entities'::regclass
+          AND tgname = 'entities_legacy_provenance_write_guard'
+          AND NOT tgisinternal
+      `);
+      expect(triggers.rows).toEqual([{ tgname: 'entities_legacy_provenance_write_guard' }]);
 
       const legacyRows = await migrationPg.query<{
         entity_source_rows: number;
@@ -521,6 +526,26 @@ describe('database schema contracts', () => {
       });
 
       await migrationPg.exec(`
+        UPDATE entities
+        SET canonical_name = 'Edited legacy provenance task'
+        WHERE id = '${LEGACY_ENTITY_ID}'
+      `);
+      const editedLegacy = await migrationPg.query<{
+        canonical_name: string;
+        source_event_id: string | null;
+        agent_suggested: boolean;
+      }>(`
+        SELECT canonical_name, source_event_id, agent_suggested
+        FROM entities
+        WHERE id = '${LEGACY_ENTITY_ID}'
+      `);
+      expect(editedLegacy.rows[0]).toEqual({
+        canonical_name: 'Edited legacy provenance task',
+        source_event_id: LEGACY_EVENT_ID,
+        agent_suggested: true,
+      });
+
+      await migrationPg.exec(`
         INSERT INTO entities (id, team_id, type, canonical_name)
         VALUES ('99999999-9999-4999-8999-999999999994', '${TEAM_ID}', 'task', 'New source-ref task')
       `);
@@ -534,6 +559,20 @@ describe('database schema contracts', () => {
         migrationPg.exec(`
           INSERT INTO entities (team_id, type, canonical_name, agent_suggested)
           VALUES ('${TEAM_ID}', 'task', 'New legacy suggested task', true)
+        `),
+      ).rejects.toThrow();
+      await expect(
+        migrationPg.exec(`
+          UPDATE entities
+          SET source_event_id = '${LEGACY_EVENT_ID}'
+          WHERE id = '99999999-9999-4999-8999-999999999994'
+        `),
+      ).rejects.toThrow();
+      await expect(
+        migrationPg.exec(`
+          UPDATE entities
+          SET agent_suggested = true
+          WHERE id = '99999999-9999-4999-8999-999999999994'
         `),
       ).rejects.toThrow();
       await expect(

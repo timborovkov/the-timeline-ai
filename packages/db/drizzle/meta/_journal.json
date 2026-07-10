@@ -400,6 +400,13 @@
       "when": 1795653720000,
       "tag": "0056_legacy_provenance_cutover_guards",
       "breakpoints": true
+    },
+    {
+      "idx": 57,
+      "version": "7",
+      "when": 1795653780000,
+      "tag": "0057_legacy_provenance_editability",
+      "breakpoints": true
     }
   ]
 }
