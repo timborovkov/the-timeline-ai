@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -380,6 +380,92 @@ describe('TaskBoard', () => {
     expect(screen.getByRole('link', { name: 'Send proposal refreshed' })).toBeTruthy();
     expect(screen.getByRole('link', { name: 'Older task' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Load older tasks' })).toBeNull();
+  });
+
+  it('drops previously loaded tasks when server filters change', () => {
+    const { rerender } = render(
+      <TaskBoard
+        rows={[
+          task({ id: 'task-1', canonicalName: 'Assigned to Ada', assigneeUserId: 'user-1' }),
+          task({ id: 'task-2', canonicalName: 'Unassigned task', assigneeUserId: null }),
+        ]}
+        columns={['todo', 'doing', 'done', 'blocked', 'cancelled']}
+        selectedTaskId={null}
+        view="kanban"
+        members={[{ id: 'user-1', label: 'Ada Lovelace' }]}
+        totalCount={2}
+        nextCursor={null}
+      />,
+    );
+
+    rerender(
+      <TaskBoard
+        rows={[task({ id: 'task-1', canonicalName: 'Assigned to Ada', assigneeUserId: 'user-1' })]}
+        columns={['todo', 'doing', 'done', 'blocked', 'cancelled']}
+        selectedTaskId={null}
+        view="kanban"
+        members={[{ id: 'user-1', label: 'Ada Lovelace' }]}
+        totalCount={1}
+        nextCursor={null}
+        filterParams={{ assignee: 'user-1' }}
+      />,
+    );
+
+    expect(screen.getByRole('link', { name: 'Assigned to Ada' })).toBeTruthy();
+    expect(screen.queryByRole('link', { name: 'Unassigned task' })).toBeNull();
+    expect(screen.getByText('1 loaded of 1')).toBeTruthy();
+  });
+
+  it('ignores an older page that resolves after server filters change', async () => {
+    const user = userEvent.setup();
+    let resolvePage:
+      | ((page: { rows: objects.ObjectRow[]; nextCursor: string | null }) => void)
+      | undefined;
+    fakes.loadTaskRowsAction.mockReturnValue(
+      new Promise((resolve) => {
+        resolvePage = resolve;
+      }),
+    );
+    const { rerender } = render(
+      <TaskBoard
+        rows={[task({ id: 'task-1', canonicalName: 'Newest unfiltered task' })]}
+        columns={['todo', 'doing', 'done', 'blocked', 'cancelled']}
+        selectedTaskId={null}
+        view="kanban"
+        members={[{ id: 'user-1', label: 'Ada Lovelace' }]}
+        totalCount={2}
+        nextCursor="older-cursor"
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Load older tasks' }));
+    await waitFor(() => {
+      expect(fakes.loadTaskRowsAction).toHaveBeenCalledWith({ cursor: 'older-cursor' });
+    });
+
+    rerender(
+      <TaskBoard
+        rows={[task({ id: 'task-3', canonicalName: 'Assigned to Ada' })]}
+        columns={['todo', 'doing', 'done', 'blocked', 'cancelled']}
+        selectedTaskId={null}
+        view="kanban"
+        members={[{ id: 'user-1', label: 'Ada Lovelace' }]}
+        totalCount={1}
+        nextCursor={null}
+        filterParams={{ assignee: 'user-1' }}
+      />,
+    );
+
+    await act(async () => {
+      resolvePage?.({
+        rows: [task({ id: 'task-2', canonicalName: 'Stale unfiltered task' })],
+        nextCursor: null,
+      });
+      await Promise.resolve();
+    });
+
+    expect(screen.queryByRole('link', { name: 'Stale unfiltered task' })).toBeNull();
+    expect(screen.getByText('1 loaded of 1')).toBeTruthy();
   });
 
   it('bounds rendered kanban cards while reporting loaded tasks outside the window', () => {

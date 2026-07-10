@@ -14,6 +14,7 @@ import type { Metadata } from 'next';
 
 import { queueReconciliationJobFormAction } from '@/app/actions/reconciliation';
 import { Breadcrumb } from '@/components/breadcrumb';
+import { DebouncedFilterForm } from '@/components/debounced-filter-form';
 import { IndexStrip } from '@/components/index-strip';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -503,7 +504,10 @@ function RecentRuns({
             {history.total.toLocaleString()} run{history.total === 1 ? '' : 's'}
           </p>
         </div>
-        <form method="get" className="flex flex-wrap items-end gap-2">
+        <DebouncedFilterForm
+          basePath="/app/team/reconciliation"
+          className="flex flex-wrap items-end gap-2"
+        >
           <label className="grid gap-1 text-[11px] font-medium uppercase tracking-[0.12em] text-fg-muted">
             Status
             <select
@@ -534,10 +538,7 @@ function RecentRuns({
               ))}
             </select>
           </label>
-          <Button type="submit" variant="outline" size="sm">
-            Filter
-          </Button>
-        </form>
+        </DebouncedFilterForm>
       </div>
       <ul className="divide-y divide-border rounded-sm border border-border bg-surface text-sm">
         {rows.length === 0 ? (

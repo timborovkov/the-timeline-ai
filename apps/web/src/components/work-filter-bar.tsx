@@ -1,13 +1,13 @@
 'use client';
 
-import { ChevronDown, Filter, Search, X } from 'lucide-react';
-import { useRouter } from 'next/navigation';
+import { ChevronDown, Search, X } from 'lucide-react';
 import { useId, useMemo, useState } from 'react';
 
 import type { MemberFilterOption, WorkFilterState } from '@/lib/work-filters';
 import type * as boards from '@timeline/shared/boards';
-import type { ReactNode, SyntheticEvent } from 'react';
+import type { ReactNode } from 'react';
 
+import { DebouncedFilterForm } from '@/components/debounced-filter-form';
 import { FilterMultiSelect } from '@/components/filter-multi-select';
 import { displayText } from '@/lib/display-dates';
 import { cn } from '@/lib/utils';
@@ -68,7 +68,6 @@ export function WorkFilterBar({
   statusOptions = EMPTY_STATUS_OPTIONS,
   className,
 }: Props) {
-  const router = useRouter();
   const formId = useId();
   const filterKey = workFilterStateKey(filters);
   const clearHref = useMemo(() => hrefWithParams(basePath, hiddenParams), [basePath, hiddenParams]);
@@ -87,27 +86,11 @@ export function WorkFilterBar({
   const showDateRanges =
     dateRangeToggle.state === 'open' || (hasRangeFilters && !dateRangesManuallyClosed);
 
-  function onSubmit(event: SyntheticEvent<HTMLFormElement>): void {
-    event.preventDefault();
-    const params = new URLSearchParams(hiddenParams);
-    const formData = new FormData(event.currentTarget);
-    for (const [key, raw] of formData.entries()) {
-      if (key.startsWith('__')) continue;
-      const value = typeof raw === 'string' ? raw.trim() : '';
-      if (!value) {
-        params.delete(key);
-        continue;
-      }
-      params.set(key, value);
-    }
-    router.push(hrefWithParams(basePath, Object.fromEntries(params.entries())));
-  }
-
   return (
-    <form
+    <DebouncedFilterForm
       key={filterKey}
-      id={formId}
-      onSubmit={onSubmit}
+      basePath={basePath}
+      preservedParams={hiddenParams}
       className={cn(
         'border-y border-border bg-bg/80 px-4 py-3 md:px-8',
         mode === 'objects' && 'px-0 md:px-0',
@@ -312,16 +295,9 @@ export function WorkFilterBar({
               Clear
             </a>
           ) : null}
-          <button
-            type="submit"
-            className="inline-flex h-9 items-center gap-2 rounded-sm border border-signal/50 bg-signal px-3 text-xs font-medium text-signal-fg transition-colors hover:bg-signal/90"
-          >
-            <Filter className="size-3.5" aria-hidden />
-            Apply
-          </button>
         </div>
       </div>
-    </form>
+    </DebouncedFilterForm>
   );
 }
 

@@ -10,6 +10,7 @@ import type { Metadata } from 'next';
 import type { ComponentProps } from 'react';
 
 import { Coachmark } from '@/components/coachmark';
+import { DebouncedFilterForm } from '@/components/debounced-filter-form';
 import { FilterMultiSelect } from '@/components/filter-multi-select';
 import { IndexStrip } from '@/components/index-strip';
 import { TimelineFeed } from '@/components/timeline-feed';
@@ -552,8 +553,8 @@ function TimelineFilterPanel({
         <summary className="cursor-pointer list-none rounded-sm px-2 py-1 font-mono text-[11px] uppercase tracking-[0.12em] text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg">
           Filters{hasFilters ? ' · ON' : ''}
         </summary>
-        <form
-          method="get"
+        <DebouncedFilterForm
+          basePath="/app/timeline"
           className="mt-3 grid gap-3 rounded-sm border border-border bg-surface p-3 text-sm xl:grid-cols-[minmax(0,1fr)_auto] xl:items-start"
         >
           {baseParams.mode ? <input type="hidden" name="mode" value={baseParams.mode} /> : null}
@@ -606,14 +607,8 @@ function TimelineFilterPanel({
                 Clear
               </Link>
             ) : null}
-            <button
-              type="submit"
-              className="h-9 rounded-sm border border-signal/50 bg-signal px-3 text-sm font-medium text-signal-fg transition-colors hover:bg-signal/90"
-            >
-              Apply
-            </button>
           </div>
-        </form>
+        </DebouncedFilterForm>
       </details>
     </div>
   );
