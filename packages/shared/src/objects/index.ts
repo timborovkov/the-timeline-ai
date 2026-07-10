@@ -50,6 +50,7 @@ import {
   asc,
   desc,
   eq,
+  exists,
   gte,
   inArray,
   isNotNull,
@@ -1745,6 +1746,37 @@ async function artifactAssociatedRawEventIds(
   return Array.from(new Set(rows.map((row) => row.rawEventId).filter(Boolean)));
 }
 
+function artifactAssociatedRawEventCondition(db: Db, scope: TeamScopeCore, entityId: string): SQL {
+  return exists(
+    db
+      .select({ id: artifactEvidenceAssociations.id })
+      .from(artifactEvidenceAssociations)
+      .innerJoin(
+        artifactClusters,
+        and(
+          eq(artifactClusters.id, artifactEvidenceAssociations.clusterId),
+          eq(artifactClusters.teamId, scope.teamId),
+        ),
+      )
+      .innerJoin(
+        reconciliationEvidence,
+        and(
+          eq(reconciliationEvidence.id, artifactEvidenceAssociations.evidenceId),
+          eq(reconciliationEvidence.teamId, scope.teamId),
+        ),
+      )
+      .where(
+        and(
+          eq(artifactEvidenceAssociations.teamId, scope.teamId),
+          eq(artifactClusters.canonicalEntityId, entityId),
+          isNull(artifactClusters.archivedAt),
+          artifactAssociationVisibleToScope(scope),
+          sql`COALESCE(${artifactEvidenceAssociations.rawEventId}, ${reconciliationEvidence.rawEventId}) = ${rawEvents.id}`,
+        ),
+      ),
+  );
+}
+
 function reconciliationOutputVisibleToScope(scope: TeamScopeCore): SQL {
   return sql`(
     (
@@ -2282,11 +2314,10 @@ export async function getObjectSectionPage(
     )
     .limit(300);
   const factRawEventIds = Array.from(new Set(factRawEventRows.map((row) => row.rawEventId)));
-  const artifactRawEventIds = await artifactAssociatedRawEventIds(db, scope, entityId);
+  const artifactEventMatch = artifactAssociatedRawEventCondition(db, scope, entityId);
   const eventConditions: SQL[] = [sql`${rawEvents.sourceMetadata} ->> 'entity_id' = ${entityId}`];
   if (factRawEventIds.length > 0) eventConditions.push(inArray(rawEvents.id, factRawEventIds));
-  if (artifactRawEventIds.length > 0)
-    eventConditions.push(inArray(rawEvents.id, artifactRawEventIds));
+  eventConditions.push(artifactEventMatch);
   const eventContentMatch = objectContentMatchCondition(rawEvents.contentText, names, tokens);
   if (eventContentMatch) eventConditions.push(eventContentMatch);
   const cursorSql = cursorCondition(args.cursor, rawEvents.occurredAt, rawEvents.id);
@@ -2304,6 +2335,7 @@ export async function getObjectSectionPage(
       occurredAt: rawEvents.occurredAt,
       createdAt: rawEvents.createdAt,
       sourceEntityId: sql<string | null>`${rawEvents.sourceMetadata} ->> 'entity_id'`,
+      artifactAssociated: artifactEventMatch,
     })
     .from(rawEvents)
     .where(
@@ -2319,12 +2351,11 @@ export async function getObjectSectionPage(
     .orderBy(desc(rawEvents.occurredAt), desc(rawEvents.id))
     .limit(limit + 1);
   const factRawEventIdSet = new Set(factRawEventIds);
-  const artifactRawEventIdSet = new Set(artifactRawEventIds);
   const filteredRows = rows.filter((row) => {
     if (
       row.sourceEntityId === entityId ||
       factRawEventIdSet.has(row.id) ||
-      artifactRawEventIdSet.has(row.id)
+      row.artifactAssociated
     ) {
       return true;
     }
