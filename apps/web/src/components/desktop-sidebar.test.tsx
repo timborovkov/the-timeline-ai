@@ -5,8 +5,6 @@ import userEvent from '@testing-library/user-event';
 import { createElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { ReactNode } from 'react';
-
 vi.mock('@/components/rail-nav', () => ({
   RailNav: () => createElement('nav', null, 'Primary navigation'),
 }));
@@ -15,13 +13,8 @@ vi.mock('@/components/team-switcher', () => ({
   TeamSwitcher: () => createElement('div', null, 'Team switcher'),
 }));
 
-vi.mock('@/components/ui/tooltip', () => ({
-  Tooltip: ({ children }: { children: ReactNode }) => createElement('div', null, children),
-  TooltipContent: ({ children }: { children: ReactNode }) => createElement('div', null, children),
-  TooltipTrigger: ({ children }: { children: ReactNode }) => createElement('div', null, children),
-}));
-
 const { DesktopSidebar } = await import('./desktop-sidebar.js');
+const { TooltipProvider } = await import('./ui/tooltip.js');
 
 const active = {
   teamId: 'team-1',
@@ -42,7 +35,9 @@ describe('DesktopSidebar', () => {
   it('uses the canonical brand mark and wordmark in expanded and collapsed states', async () => {
     const user = userEvent.setup();
     const { container } = render(
-      <DesktopSidebar active={active} memberships={[active]} recipientInvites={[]} />,
+      <TooltipProvider delayDuration={0}>
+        <DesktopSidebar active={active} memberships={[active]} recipientInvites={[]} />
+      </TooltipProvider>,
     );
 
     expect([...screen.getByText('THE TIMELINE').classList]).toEqual(
@@ -54,7 +49,11 @@ describe('DesktopSidebar', () => {
     await user.click(screen.getByRole('button', { name: 'Collapse sidebar' }));
 
     expect(screen.queryByText('THE TIMELINE')).toBeNull();
-    expect(screen.getByRole('img', { name: 'The Timeline' })).toBeTruthy();
+    const collapsedLogo = screen.getByRole('img', { name: 'The Timeline' });
+    expect(collapsedLogo).toBeTruthy();
     expect(container.querySelectorAll('svg[viewBox="0 0 48 48"] rect')).toHaveLength(5);
+
+    await user.hover(collapsedLogo);
+    expect((await screen.findByRole('tooltip')).textContent).toBe('The Timeline');
   });
 });

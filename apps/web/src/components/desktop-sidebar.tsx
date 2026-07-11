@@ -89,7 +89,9 @@ export function DesktopSidebar({
         ) : (
           <Tooltip>
             <TooltipTrigger asChild>
-              <Logo className="size-5 text-fg" />
+              <span className="grid size-7 place-items-center">
+                <Logo className="size-5 text-fg" />
+              </span>
             </TooltipTrigger>
             <TooltipContent side="right">The Timeline</TooltipContent>
           </Tooltip>
