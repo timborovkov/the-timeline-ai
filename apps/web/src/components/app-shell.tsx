@@ -31,6 +31,7 @@ interface Props {
     unreadCount: number;
     notifications: InboxBellNotification[];
   };
+  sidebarInitiallyExpanded: boolean;
   children: ReactNode;
 }
 
@@ -51,6 +52,7 @@ export function AppShell({
   user,
   badges = EMPTY_BADGES,
   inbox = EMPTY_INBOX,
+  sidebarInitiallyExpanded,
   children,
 }: Props) {
   return (
@@ -65,6 +67,7 @@ export function AppShell({
             memberships={memberships}
             recipientInvites={recipientInvites}
             badges={badges}
+            initialExpanded={sidebarInitiallyExpanded}
           />
         </TooltipProvider>
 
