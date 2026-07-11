@@ -657,6 +657,74 @@ describe('handleUpdate telegram edit visibility', () => {
     expect(enqueueSuggestion).toHaveBeenCalledWith({ rawEventId, teamId: TEAM_ID });
   });
 
+  it('lists every supported DM command in /help', async () => {
+    const messages: string[] = [];
+
+    await handleUpdate(
+      { db: db as never, tg: recordingTg(messages) },
+      {
+        update_id: 215,
+        message: {
+          message_id: 35,
+          date: 1700000000,
+          chat: { id: 42, type: 'private' },
+          from: { id: TG_USER_ID, username: 'alice' },
+          text: '/help',
+        },
+      },
+    );
+
+    expect(messages).toHaveLength(1);
+    for (const command of [
+      '/start',
+      '/ask',
+      '/join',
+      '/link',
+      '/team',
+      '/whereami',
+      '/unlink',
+      '/help',
+    ]) {
+      expect(messages[0]).toContain(command);
+    }
+  });
+
+  it('lists every supported group command in /help', async () => {
+    await pg.exec(`
+      INSERT INTO telegram_chat_bindings (tg_chat_id, team_id, bound_by_user_id, title)
+      VALUES (-100, '${TEAM_ID}', '${USER_A}', 'Sales');
+    `);
+    const messages: string[] = [];
+
+    await handleUpdate(
+      { db: db as never, tg: recordingTg(messages) },
+      {
+        update_id: 216,
+        message: {
+          message_id: 36,
+          date: 1700000000,
+          chat: { id: -100, type: 'supergroup', title: 'Sales' },
+          from: { id: TG_USER_ID, username: 'alice' },
+          text: '/help',
+        },
+      },
+    );
+
+    expect(messages).toHaveLength(1);
+    for (const command of [
+      '/start',
+      '/ask',
+      '/join',
+      '/link',
+      '/team',
+      '/whereami',
+      '/unlink',
+      '/help',
+    ]) {
+      expect(messages[0]).toContain(command);
+    }
+  });
+
   it('joins a Saved Meeting alias immediately from /join', async () => {
     const payloads: Parameters<TelegramApi['sendMessage']>[0][] = [];
     const tg = recordingTgPayloads(payloads);

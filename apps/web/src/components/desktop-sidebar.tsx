@@ -12,6 +12,7 @@ import { Logo, Wordmark } from '@/components/brand/logo';
 import { RailNav } from '@/components/rail-nav';
 import { TeamSwitcher } from '@/components/team-switcher';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { persistSidebarExpanded, SIDEBAR_STORAGE_KEY } from '@/lib/sidebar-preference';
 import { cn } from '@/lib/utils';
 
 interface Props {
@@ -19,34 +20,19 @@ interface Props {
   memberships: TeamMembership[];
   recipientInvites: RecipientInvite[];
   badges?: NavBadgeMap;
+  initialExpanded: boolean;
 }
 
 const EMPTY_BADGES: NavBadgeMap = {};
-const SIDEBAR_STORAGE_KEY = 'timeline.sidebar.expanded';
-
-function readStoredExpanded(): boolean {
-  try {
-    return window.localStorage.getItem(SIDEBAR_STORAGE_KEY) !== 'false';
-  } catch {
-    return true;
-  }
-}
-
-function writeStoredExpanded(expanded: boolean) {
-  try {
-    window.localStorage.setItem(SIDEBAR_STORAGE_KEY, String(expanded));
-  } catch {
-    // Storage can be blocked; the in-memory toggle should still work.
-  }
-}
 
 export function DesktopSidebar({
   active,
   memberships,
   recipientInvites,
   badges = EMPTY_BADGES,
+  initialExpanded,
 }: Props) {
-  const [expanded, setExpanded] = useState(readStoredExpanded);
+  const [expanded, setExpanded] = useState(initialExpanded);
 
   useEffect(() => {
     function handleStorage(event: StorageEvent) {
@@ -64,7 +50,7 @@ export function DesktopSidebar({
   function toggleExpanded() {
     setExpanded((current) => {
       const next = !current;
-      writeStoredExpanded(next);
+      persistSidebarExpanded(next);
       return next;
     });
   }

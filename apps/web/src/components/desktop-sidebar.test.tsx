@@ -1,59 +1,97 @@
-// @vitest-environment happy-dom
+import { runInNewContext } from 'node:vm';
 
-import { cleanup, render, screen } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
-import { createElement } from 'react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { describe, expect, it, vi } from 'vitest';
+
+import type { TeamMembership } from '@/lib/active-team';
+import type { ReactNode } from 'react';
+
+import { DesktopSidebar } from '@/components/desktop-sidebar';
+import { SIDEBAR_PREFERENCE_BOOTSTRAP, sidebarExpandedFromCookie } from '@/lib/sidebar-preference';
 
 vi.mock('@/components/rail-nav', () => ({
-  RailNav: () => createElement('nav', null, 'Primary navigation'),
+  RailNav: ({ expanded }: { expanded: boolean }) => <nav data-expanded={expanded} />,
 }));
 
 vi.mock('@/components/team-switcher', () => ({
-  TeamSwitcher: () => createElement('div', null, 'Team switcher'),
+  TeamSwitcher: ({ variant }: { variant: string }) => <button type="button">{variant}</button>,
 }));
 
-const { DesktopSidebar } = await import('./desktop-sidebar.js');
-const { TooltipProvider } = await import('./ui/tooltip.js');
-
-const active = {
-  teamId: 'team-1',
-  teamName: 'AuditAI',
-  teamSlug: 'auditai',
-  role: 'admin' as const,
-};
-
-beforeEach(() => {
-  window.localStorage.clear();
-});
-
-afterEach(() => {
-  cleanup();
-});
+vi.mock('@/components/ui/tooltip', () => ({
+  Tooltip: ({ children }: { children: ReactNode }) => children,
+  TooltipContent: ({ children }: { children: ReactNode }) => <span>{children}</span>,
+  TooltipTrigger: ({ children }: { children: ReactNode }) => children,
+}));
 
 describe('DesktopSidebar', () => {
-  it('uses the canonical brand mark and wordmark in expanded and collapsed states', async () => {
-    const user = userEvent.setup();
-    const { container } = render(
-      <TooltipProvider delayDuration={0}>
-        <DesktopSidebar active={active} memberships={[active]} recipientInvites={[]} />
-      </TooltipProvider>,
+  const active: TeamMembership = {
+    teamId: 'team-1',
+    teamName: 'AuditAI',
+    teamSlug: 'auditai',
+    role: 'owner',
+  };
+
+  it('server-renders the persisted collapsed state on the first frame', () => {
+    const html = renderToStaticMarkup(
+      <DesktopSidebar
+        active={active}
+        memberships={[active]}
+        recipientInvites={[]}
+        initialExpanded={false}
+      />,
     );
 
-    expect([...screen.getByText('THE TIMELINE').classList]).toEqual(
-      expect.arrayContaining(['font-mono', 'font-bold', 'tracking-[0.18em]']),
-    );
-    expect(container.querySelectorAll('svg[viewBox="0 0 48 48"] rect')).toHaveLength(5);
-    expect(container.textContent).not.toContain('▦');
+    expect(html).toContain('data-expanded="false"');
+    expect(html).toContain('w-14 items-center px-0');
+    expect(html).toContain('>rail</button>');
+    expect(html).not.toContain('min-w-0 flex-1 truncate font-mono');
+  });
 
-    await user.click(screen.getByRole('button', { name: 'Collapse sidebar' }));
+  it('defaults to expanded unless the cookie explicitly stores false', () => {
+    expect(sidebarExpandedFromCookie(undefined)).toBe(true);
+    expect(sidebarExpandedFromCookie('true')).toBe(true);
+    expect(sidebarExpandedFromCookie('false')).toBe(false);
+  });
 
-    expect(screen.queryByText('THE TIMELINE')).toBeNull();
-    const collapsedLogo = screen.getByRole('img', { name: 'The Timeline' });
-    expect(collapsedLogo).toBeTruthy();
-    expect(container.querySelectorAll('svg[viewBox="0 0 48 48"] rect')).toHaveLength(5);
+  it('migrates the existing local preference before rendering and reloads only once', () => {
+    let cookie = '';
+    const document = Object.defineProperty({}, 'cookie', {
+      get: () => cookie,
+      set: (value: string) => {
+        cookie = value.split(';')[0] ?? '';
+      },
+    });
+    const reload = vi.fn();
+    const context = {
+      document,
+      localStorage: { getItem: () => 'false' },
+      location: { protocol: 'https:', reload },
+    };
 
-    await user.hover(collapsedLogo);
-    expect((await screen.findByRole('tooltip')).textContent).toBe('The Timeline');
+    runInNewContext(SIDEBAR_PREFERENCE_BOOTSTRAP, context);
+    runInNewContext(SIDEBAR_PREFERENCE_BOOTSTRAP, context);
+
+    expect(cookie).toBe('timeline_sidebar_expanded=false');
+    expect(reload).toHaveBeenCalledOnce();
+  });
+
+  it('keeps an existing cookie when local storage is stale', () => {
+    let cookie = 'timeline_sidebar_expanded=true';
+    const document = Object.defineProperty({}, 'cookie', {
+      get: () => cookie,
+      set: (value: string) => {
+        cookie = value.split(';')[0] ?? '';
+      },
+    });
+    const reload = vi.fn();
+
+    runInNewContext(SIDEBAR_PREFERENCE_BOOTSTRAP, {
+      document,
+      localStorage: { getItem: () => 'false' },
+      location: { protocol: 'https:', reload },
+    });
+
+    expect(cookie).toBe('timeline_sidebar_expanded=true');
+    expect(reload).not.toHaveBeenCalled();
   });
 });

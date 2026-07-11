@@ -123,7 +123,14 @@ export function DocumentPreview({
           )}
         >
           {activePreview.mediaKind === 'image' ? (
-            <div className="relative flex h-[58vh] min-h-72 max-h-[42rem] w-full items-center justify-center">
+            <div
+              className={cn(
+                'relative flex items-center justify-center',
+                compact
+                  ? 'aspect-[4/3] max-h-48 w-64 max-w-full'
+                  : 'h-[58vh] min-h-72 max-h-[42rem] w-full',
+              )}
+            >
               {/* Presigned S3/RustFS URLs include auth query params, so they load directly in the browser instead of through Next's image pipeline. */}
               <Image
                 src={activePreview.url}
@@ -139,14 +146,14 @@ export function DocumentPreview({
               data={activePreview.url}
               type="application/pdf"
               aria-label={activePreview.filename}
-              className="h-[72vh] min-h-96 w-full bg-bg"
+              className={cn('bg-bg', compact ? 'h-80 w-64 max-w-full' : 'h-[72vh] min-h-96 w-full')}
             >
               <iframe
                 src={activePreview.url}
                 title={activePreview.filename}
                 sandbox="allow-scripts"
                 referrerPolicy="no-referrer"
-                className="h-[72vh] w-full"
+                className={compact ? 'h-80 w-full' : 'h-[72vh] w-full'}
               />
             </object>
           ) : (
