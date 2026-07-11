@@ -53,6 +53,32 @@ import {
 const log = childLogger('telegram');
 const TELEGRAM_SOURCE_SNAPSHOT_VERSION = 'telegram-source-snapshot-2026-07';
 
+const TELEGRAM_DM_HELP =
+  `Plain messages here are saved to your team's timeline (👀 = received).\n` +
+  `Use /ask to query the timeline.\n\n` +
+  `Commands (DM):\n` +
+  `/start           show connection guidance\n` +
+  `/ask <question>  ask the timeline (e.g. /ask what did we ship this week?)\n` +
+  `/join <alias-or-url> [title]  capture a meeting now\n` +
+  `/link <token>    connect this DM to a team\n` +
+  `/team            list linked teams; /team N switches\n` +
+  `/whereami        show current active team\n` +
+  `/unlink          disconnect all teams\n` +
+  `/help            this message`;
+
+const TELEGRAM_GROUP_HELP =
+  `Plain messages here are saved to the bound team's timeline (👀 = received).\n` +
+  `Use /ask to query the timeline.\n\n` +
+  `Commands (group):\n` +
+  `/start           show binding guidance; /start <token> binds\n` +
+  `/ask <question>  ask the timeline\n` +
+  `/join <alias-or-url> [title]  capture a meeting now\n` +
+  `/link <token>    bind this group to a team (admin only)\n` +
+  `/team            explain how to switch teams in a DM\n` +
+  `/whereami        show the bound team\n` +
+  `/unlink          unbind (admin only)\n` +
+  `/help            this message`;
+
 type DbTx = Parameters<Parameters<Db['transaction']>[0]>[0];
 type DbOrTx = Db | DbTx;
 
@@ -676,16 +702,7 @@ async function cmdUnlinkDm(ctx: DmContext, _arg: string): Promise<void> {
 async function cmdHelpDm(ctx: DmContext): Promise<void> {
   await ctx.tg.sendMessage({
     chat_id: ctx.message.chat.id,
-    text:
-      `Plain messages here are saved to your team's timeline (👀 = received).\n` +
-      `Use /ask to query the timeline.\n\n` +
-      `Commands (DM):\n` +
-      `/ask <question>  ask the timeline (e.g. /ask what did we ship this week?)\n` +
-      `/link <token>    connect this DM to a team\n` +
-      `/team            list linked teams; /team N switches\n` +
-      `/whereami        show current active team\n` +
-      `/unlink          disconnect all teams\n` +
-      `/help            this message`,
+    text: TELEGRAM_DM_HELP,
   });
 }
 
@@ -1252,15 +1269,7 @@ async function dispatchGroupCommand(
     case '/help':
       await ctx.tg.sendMessage({
         chat_id: ctx.message.chat.id,
-        text:
-          `Plain messages here are saved to the bound team's timeline (👀 = received).\n` +
-          `Use /ask to query the timeline.\n\n` +
-          `Commands (group):\n` +
-          `/ask <question>  ask the timeline\n` +
-          `/link <token>    bind this group to a team (admin only)\n` +
-          `/whereami        show the bound team\n` +
-          `/unlink          unbind (admin only)\n` +
-          `/help            this message`,
+        text: TELEGRAM_GROUP_HELP,
       });
       return;
     case '/ask':
