@@ -98,7 +98,6 @@ tool. When in doubt, invoke the skill.
 - Bugs / unexpected behavior → `/investigate` (root-cause discipline).
 - Visual polish or design questions → `/design-review` (or
   `/plan-design-review` in plan mode).
-- Pre-merge code review → `/review`.
 - QA / "does this actually work?" → `/qa`.
 - Save / resume working context → `/context-save` and `/context-restore`.
 
