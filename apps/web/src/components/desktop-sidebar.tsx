@@ -8,6 +8,7 @@ import type { NavBadgeMap } from '@/components/nav-items';
 import type { RecipientInvite } from '@/components/team-switcher';
 import type { TeamMembership } from '@/lib/active-team';
 
+import { Logo, Wordmark } from '@/components/brand/logo';
 import { RailNav } from '@/components/rail-nav';
 import { TeamSwitcher } from '@/components/team-switcher';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -69,26 +70,18 @@ export function DesktopSidebar({
           expanded ? 'justify-between px-1' : 'flex-col',
         )}
       >
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <span
-              aria-label="The Timeline"
-              className={cn(
-                'grid size-7 shrink-0 place-items-center rounded-sm font-mono text-[11px] font-bold text-signal',
-                expanded && 'border border-border bg-bg',
-              )}
-            >
-              ▦
-            </span>
-          </TooltipTrigger>
-          <TooltipContent side="right">The Timeline</TooltipContent>
-        </Tooltip>
-
         {expanded ? (
-          <span className="min-w-0 flex-1 truncate font-mono text-xs uppercase tracking-[0.14em] text-fg">
-            The Timeline
-          </span>
-        ) : null}
+          <Wordmark compact className="min-w-0 flex-1 text-fg" />
+        ) : (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className="grid size-7 place-items-center">
+                <Logo className="size-5 text-fg" />
+              </span>
+            </TooltipTrigger>
+            <TooltipContent side="right">The Timeline</TooltipContent>
+          </Tooltip>
+        )}
 
         <Tooltip>
           <TooltipTrigger asChild>
