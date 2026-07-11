@@ -74,4 +74,24 @@ describe('DesktopSidebar', () => {
     expect(cookie).toBe('timeline_sidebar_expanded=false');
     expect(reload).toHaveBeenCalledOnce();
   });
+
+  it('keeps an existing cookie when local storage is stale', () => {
+    let cookie = 'timeline_sidebar_expanded=true';
+    const document = Object.defineProperty({}, 'cookie', {
+      get: () => cookie,
+      set: (value: string) => {
+        cookie = value.split(';')[0] ?? '';
+      },
+    });
+    const reload = vi.fn();
+
+    runInNewContext(SIDEBAR_PREFERENCE_BOOTSTRAP, {
+      document,
+      localStorage: { getItem: () => 'false' },
+      location: { protocol: 'https:', reload },
+    });
+
+    expect(cookie).toBe('timeline_sidebar_expanded=true');
+    expect(reload).not.toHaveBeenCalled();
+  });
 });
