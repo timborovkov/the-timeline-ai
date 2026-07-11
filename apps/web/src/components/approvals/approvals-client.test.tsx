@@ -13,6 +13,8 @@ const fakes = vi.hoisted(() => ({
   acceptVisibleSuggestionsAction: vi.fn(),
   rejectSuggestionItemAction: vi.fn(),
   rejectVisibleSuggestionsAction: vi.fn(),
+  reviseTaskSuggestionItemAction: vi.fn(),
+  searchObjectsAction: vi.fn(),
 }));
 
 vi.mock('next/navigation', () => ({ useRouter: () => fakes }));
@@ -22,7 +24,9 @@ vi.mock('@/app/actions/suggestions', () => ({
   acceptVisibleSuggestionsAction: fakes.acceptVisibleSuggestionsAction,
   rejectSuggestionItemAction: fakes.rejectSuggestionItemAction,
   rejectVisibleSuggestionsAction: fakes.rejectVisibleSuggestionsAction,
+  reviseTaskSuggestionItemAction: fakes.reviseTaskSuggestionItemAction,
 }));
+vi.mock('@/app/actions/objects', () => ({ searchObjectsAction: fakes.searchObjectsAction }));
 
 const { ApprovalsClient } = await import('./approvals-client.js');
 
@@ -35,6 +39,8 @@ beforeEach(() => {
   fakes.acceptVisibleSuggestionsAction.mockResolvedValue({ ok: true });
   fakes.rejectSuggestionItemAction.mockResolvedValue({ ok: true });
   fakes.rejectVisibleSuggestionsAction.mockResolvedValue({ ok: true });
+  fakes.reviseTaskSuggestionItemAction.mockResolvedValue({ ok: true });
+  fakes.searchObjectsAction.mockResolvedValue({ results: [] });
 });
 
 afterEach(() => {
@@ -84,7 +90,13 @@ describe('ApprovalsClient', () => {
                 targetId: null,
                 title: 'Send proposal',
                 description: 'Send Acme the proposal.',
-                proposedPayload: { canonicalName: 'Send proposal' },
+                proposedPayload: {
+                  canonicalName: 'Send proposal',
+                  taskCategory: 'sales',
+                  taskCategoryMode: 'automatic',
+                  projectName: 'Faba website redesign',
+                  createProjectName: 'Faba website redesign',
+                },
                 metadata: {
                   reconciliation_output_id: '99999999-9999-4999-8999-999999999999',
                   reconciliation_cluster_id: '22222222-2222-4222-8222-222222222222',
@@ -116,6 +128,8 @@ describe('ApprovalsClient', () => {
     expect(html).toContain('I will send the proposal');
     expect(html).toContain('Timeline evidence · slack · 11111111');
     expect(html).toContain('create task');
+    expect(html).toContain('Category · Sales');
+    expect(html).toContain('Project · Create Faba website redesign');
     expect(html).toContain('Accept will create a task.');
     expect(html).toContain(
       'Review required before Timeline writes workspace memory from captured evidence.',
@@ -264,6 +278,58 @@ describe('ApprovalsClient', () => {
     });
     const fullPage = await screen.findByRole('link', { name: /Open full page/ });
     expect(fullPage.getAttribute('href')).toBe(`/app/timeline?event=${EVENT_ID}#ev-${EVENT_ID}`);
+  });
+
+  it('lets a reviewer change a proposed task category before acceptance', async () => {
+    render(
+      createElement(ApprovalsClient, {
+        suggestions: [
+          {
+            id: 'bundle-edit',
+            source: 'background',
+            status: 'pending',
+            title: 'Prepare Faba wireframes',
+            summary: null,
+            reason: null,
+            confidence: 'high',
+            createdAt: '2026-06-01T10:00:00.000Z',
+            evidence: [],
+            items: [
+              {
+                id: 'item-edit',
+                status: 'pending',
+                operation: 'create',
+                targetKind: 'task',
+                targetId: null,
+                title: 'Prepare homepage wireframes',
+                description: null,
+                proposedPayload: {
+                  canonicalName: 'Prepare homepage wireframes',
+                  taskCategory: 'design',
+                  taskCategoryMode: 'automatic',
+                  projectName: 'Faba website redesign',
+                },
+                failureReason: null,
+              },
+            ],
+          },
+        ],
+      }),
+    );
+
+    await userEvent.click(screen.getByText('Edit category or project'));
+    await userEvent.selectOptions(
+      screen.getByRole('combobox', { name: 'Category for Prepare homepage wireframes' }),
+      'product',
+    );
+
+    await waitFor(() => {
+      expect(fakes.reviseTaskSuggestionItemAction).toHaveBeenCalledWith({
+        itemId: 'item-edit',
+        category: 'product',
+      });
+      expect(fakes.refresh).toHaveBeenCalled();
+    });
   });
 
   it('can hide bulk accept while keeping bulk reject for filtered approval surfaces', () => {

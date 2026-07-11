@@ -1,5 +1,5 @@
 import { PGlite } from '@electric-sql/pglite';
-import { agentSuggestions, conversationReviews, rawEvents, type Db } from '@timeline/db';
+import { agentSuggestions, conversationReviews, entities, rawEvents, type Db } from '@timeline/db';
 import { withTeam } from '@timeline/shared/team-scope';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
@@ -19,6 +19,7 @@ const VISIBLE_EVENT_ID = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
 const PRIVATE_EVENT_ID = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
 const REVIEW_ID = '99999999-9999-4999-8999-999999999999';
 const MODEL_ID = 'background-proposal-eval-model';
+const PROJECT_ID = '33333333-3333-4333-8333-333333333333';
 const CONVERSATION_KEY = `slack:${TEAM_ID}:W_SURFACE:C_PROPOSALS`;
 
 type PgliteDb = ReturnType<typeof drizzle>;
@@ -58,7 +59,8 @@ async function seed(pg: PGlite, db: PgliteDb): Promise<void> {
       teamId: TEAM_ID,
       authorUserId: USER_ID,
       source: 'slack',
-      contentText: 'Maya: I will send the Acme pricing packet by Friday.',
+      contentText:
+        'Maya: For the Northstar rollout, I will send the Acme pricing packet by Friday.',
       occurredAt: new Date('2026-06-01T09:05:00.000Z'),
       visibility: 'team',
       sourceMetadata: {
@@ -68,6 +70,13 @@ async function seed(pg: PGlite, db: PgliteDb): Promise<void> {
       },
     },
   ]);
+  await db.insert(entities).values({
+    id: PROJECT_ID,
+    teamId: TEAM_ID,
+    type: 'project',
+    canonicalName: 'Northstar rollout',
+    status: 'active',
+  });
 
   await db.insert(conversationReviews).values({
     id: REVIEW_ID,
@@ -98,7 +107,9 @@ describe('background proposal evals', () => {
 
   it('creates grounded Slack conversation proposals without private-window leakage', async () => {
     const chatStructured = vi.fn().mockImplementation((input: { prompt: string }) => {
-      expect(input.prompt).toContain('Maya: I will send the Acme pricing packet by Friday.');
+      expect(input.prompt).toContain(
+        'Maya: For the Northstar rollout, I will send the Acme pricing packet by Friday.',
+      );
       expect(input.prompt).not.toContain('discount floor');
       return Promise.resolve({
         model: MODEL_ID,
@@ -122,6 +133,7 @@ describe('background proposal evals', () => {
                     status: 'todo',
                     ownerName: 'Maya',
                     dueDate: '2026-06-05',
+                    parentObjectId: PROJECT_ID,
                   },
                 },
               ],
@@ -130,11 +142,16 @@ describe('background proposal evals', () => {
         },
       });
     });
+    const classifyTaskCategory = vi.fn().mockResolvedValue({
+      category: 'sales',
+      confidence: 0.92,
+      model: 'proposal-category-eval-model',
+    });
 
     await processSuggestionJobForTests(
       { db: db as unknown as Db },
       { scope: 'conversation_review', conversationReviewId: REVIEW_ID, teamId: TEAM_ID },
-      { getEnv: env, chatStructured, modelId: MODEL_ID },
+      { getEnv: env, chatStructured, classifyTaskCategory, modelId: MODEL_ID },
     );
 
     expect(chatStructured).toHaveBeenCalledOnce();
@@ -163,6 +180,11 @@ describe('background proposal evals', () => {
         proposedPayload: expect.objectContaining({
           canonicalName: 'Send Acme pricing packet',
           ownerName: 'Maya',
+          parentObjectId: PROJECT_ID,
+          projectName: 'Northstar rollout',
+          taskCategory: 'sales',
+          taskCategoryConfidence: 0.92,
+          taskCategoryTaxonomyVersion: 'task-categories-v1',
         }) as unknown,
       }),
     ]);
@@ -181,7 +203,7 @@ describe('background proposal evals', () => {
     expect(suggestion?.metadata).toMatchObject({
       conversation_review_id: REVIEW_ID,
       conversation_key: CONVERSATION_KEY,
-      suggestion_model_version: `${MODEL_ID}@2026-06-a`,
+      suggestion_model_version: `${MODEL_ID}@2026-07-a`,
     });
   });
 });

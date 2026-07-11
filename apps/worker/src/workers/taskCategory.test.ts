@@ -19,7 +19,7 @@ vi.mock('@timeline/shared', () => ({
 }));
 vi.mock('@timeline/shared/task-categories', () => ({ classifyTaskCategory: vi.fn() }));
 vi.mock('@timeline/shared/team-scope', () => ({ withTeam: fakes.withTeam }));
-vi.mock('bullmq', () => ({ Worker: vi.fn() }));
+vi.mock('bullmq', () => ({ Worker: vi.fn(), DelayedError: class DelayedError extends Error {} }));
 vi.mock('#src/monitoring.js', () => ({ captureWorkerJobFailure: vi.fn() }));
 
 const { processTaskCategoryJobForTests } = await import('#src/workers/taskCategory.js');
@@ -144,7 +144,7 @@ describe('task category worker', () => {
       requestedInputHash: 'hash-1',
       inputHash: 'hash-1',
     });
-    const acquireTeamPermit = vi.fn().mockResolvedValue(undefined);
+    const acquireTeamPermit = vi.fn().mockResolvedValue(null);
     const classify = vi.fn().mockResolvedValue({
       category: 'engineering',
       confidence: 0.9,
@@ -159,5 +159,22 @@ describe('task category worker', () => {
     expect(acquireTeamPermit.mock.invocationCallOrder[0]).toBeLessThan(
       classify.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY,
     );
+  });
+
+  it('defers a rate-limited team without spending a model call', async () => {
+    fakes.getInput.mockResolvedValue({
+      packet: { title: 'Build API' },
+      requestedInputHash: 'hash-1',
+      inputHash: 'hash-1',
+    });
+    const classify = vi.fn();
+
+    await expect(
+      processTaskCategoryJobForTests({ db: {} as never }, JOB, {
+        acquireTeamPermit: vi.fn().mockResolvedValue(12_345),
+        classify,
+      }),
+    ).resolves.toEqual({ status: 'rate_limited', retryAfterMs: 12_345 });
+    expect(classify).not.toHaveBeenCalled();
   });
 });

@@ -224,6 +224,15 @@ function fireAndForgetEmbed(fn: () => Promise<void>, context: Record<string, unk
   });
 }
 
+function enqueueTaskCategoryBestEffort(
+  data: embedQueue.TaskCategoryJobData,
+  context: Record<string, unknown>,
+): void {
+  void embedQueue.enqueueTaskCategoryJob(data).catch((err: unknown) => {
+    embedLog.error({ err, ...context }, 'failed to enqueue task category job');
+  });
+}
+
 async function normalizeSystemRawEventEvidence(input: {
   db: DbOrTx;
   teamId: string;
@@ -1184,7 +1193,7 @@ function primaryProjectCondition(scope: TeamScopeCore, filter: ObjectCountFilter
     projectIds.map((id) => sql`${id}::uuid`),
     sql`, `,
   );
-  return sql`EXISTS (
+  return sql`${entities.type} = 'task' AND EXISTS (
     SELECT 1
     FROM entity_relationships AS task_project_rel
     INNER JOIN entities AS primary_project
@@ -4446,27 +4455,36 @@ export async function updateObject(
     op: 'updateObjectDueDateCalendar',
   });
   if (txResult.requestedCategoryHash) {
-    await embedQueue.enqueueTaskCategoryJob({
-      teamId: scope.teamId,
-      taskId: entityId,
-      inputHash: txResult.requestedCategoryHash,
-      trigger: 'context_change',
-    });
+    enqueueTaskCategoryBestEffort(
+      {
+        teamId: scope.teamId,
+        taskId: entityId,
+        inputHash: txResult.requestedCategoryHash,
+        trigger: 'context_change',
+      },
+      { teamId: scope.teamId, taskId: entityId, op: 'updateObject:taskCategory' },
+    );
   }
   for (const job of txResult.linkedTaskCategoryJobs) {
-    await embedQueue.enqueueTaskCategoryJob({
-      teamId: scope.teamId,
-      taskId: job.taskId,
-      inputHash: job.inputHash,
-      trigger: 'project_change',
-    });
+    enqueueTaskCategoryBestEffort(
+      {
+        teamId: scope.teamId,
+        taskId: job.taskId,
+        inputHash: job.inputHash,
+        trigger: 'project_change',
+      },
+      { teamId: scope.teamId, taskId: job.taskId, op: 'updateObject:projectCategory' },
+    );
   }
   if (txResult.linkedTaskCategoryFanout) {
-    await embedQueue.enqueueTaskCategoryJob({
-      kind: 'project_fanout',
-      teamId: scope.teamId,
-      ...txResult.linkedTaskCategoryFanout,
-    });
+    enqueueTaskCategoryBestEffort(
+      {
+        kind: 'project_fanout',
+        teamId: scope.teamId,
+        ...txResult.linkedTaskCategoryFanout,
+      },
+      { teamId: scope.teamId, projectId: entityId, op: 'updateObject:projectFanout' },
+    );
   }
   return { object: txResult.object, changedFields: txResult.changedFields };
 }
@@ -5047,19 +5065,29 @@ export async function mergeObjects(
     });
   }
   for (const job of result.linkedTaskCategoryJobs) {
-    await embedQueue.enqueueTaskCategoryJob({
-      teamId: scope.teamId,
-      taskId: job.taskId,
-      inputHash: job.inputHash,
-      trigger: 'project_change',
-    });
+    enqueueTaskCategoryBestEffort(
+      {
+        teamId: scope.teamId,
+        taskId: job.taskId,
+        inputHash: job.inputHash,
+        trigger: 'project_change',
+      },
+      { teamId: scope.teamId, taskId: job.taskId, op: 'mergeObjects:projectCategory' },
+    );
   }
   if (result.linkedTaskCategoryFanout) {
-    await embedQueue.enqueueTaskCategoryJob({
-      kind: 'project_fanout',
-      teamId: scope.teamId,
-      ...result.linkedTaskCategoryFanout,
-    });
+    enqueueTaskCategoryBestEffort(
+      {
+        kind: 'project_fanout',
+        teamId: scope.teamId,
+        ...result.linkedTaskCategoryFanout,
+      },
+      {
+        teamId: scope.teamId,
+        projectId: result.survivor.id,
+        op: 'mergeObjects:projectFanout',
+      },
+    );
   }
   return result;
 }
@@ -5549,12 +5577,15 @@ export async function setTaskProject(
     });
   }
   if (result.requestedCategoryHash) {
-    await embedQueue.enqueueTaskCategoryJob({
-      teamId: scope.teamId,
-      taskId,
-      inputHash: result.requestedCategoryHash,
-      trigger: 'project_change',
-    });
+    enqueueTaskCategoryBestEffort(
+      {
+        teamId: scope.teamId,
+        taskId,
+        inputHash: result.requestedCategoryHash,
+        trigger: 'project_change',
+      },
+      { teamId: scope.teamId, taskId, op: 'setTaskProject:taskCategory' },
+    );
   }
   return { changed: result.changed, project: result.project, touchedIds: result.touchedIds };
 }
@@ -5935,6 +5966,13 @@ export async function undoTaskCategoryChange(
         taxonomyVersion: TASK_CATEGORY_TAXONOMY_VERSION,
       };
     }
+    if (
+      previous.mode === 'automatic' &&
+      previous.status === 'pending' &&
+      previous.requestedInputHash
+    ) {
+      enqueueInputHash = previous.requestedInputHash;
+    }
     const now = new Date();
     const [updated] = await tx
       .update(entities)
@@ -5976,12 +6014,15 @@ export async function undoTaskCategoryChange(
     return { row: updated, enqueueInputHash };
   });
   if (result.enqueueInputHash) {
-    await embedQueue.enqueueTaskCategoryJob({
-      teamId: scope.teamId,
-      taskId,
-      inputHash: result.enqueueInputHash,
-      trigger: 'retry',
-    });
+    enqueueTaskCategoryBestEffort(
+      {
+        teamId: scope.teamId,
+        taskId,
+        inputHash: result.enqueueInputHash,
+        trigger: 'retry',
+      },
+      { teamId: scope.teamId, taskId, op: 'undoTaskCategoryChange:taskCategory' },
+    );
   }
   return toObjectRow(result.row);
 }
@@ -6047,12 +6088,15 @@ async function transitionTaskCategoryToPending(
     }
     return { object: toObjectRow(updated), inputHash };
   });
-  await embedQueue.enqueueTaskCategoryJob({
-    teamId: scope.teamId,
-    taskId,
-    inputHash: result.inputHash,
-    trigger,
-  });
+  enqueueTaskCategoryBestEffort(
+    {
+      teamId: scope.teamId,
+      taskId,
+      inputHash: result.inputHash,
+      trigger,
+    },
+    { teamId: scope.teamId, taskId, op: 'transitionTaskCategoryToPending' },
+  );
   return result;
 }
 

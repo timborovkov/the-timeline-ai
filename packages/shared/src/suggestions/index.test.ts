@@ -7,6 +7,7 @@ import {
   agentSuggestions,
   boardItemChanges,
   entities,
+  entityRelationships,
   rawEvents,
   reconciliationEvidence,
   reconciliationOutputs,
@@ -18,7 +19,9 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 import type * as QueueModule from '#src/queue/queues.js';
 import type { PGlite } from '@electric-sql/pglite';
 
+import { TIMELINE_MODELS } from '#src/llm/models.js';
 import { suggestionDedupeKey } from '#src/suggestions/index.js';
+import { buildTaskCategoryPacket, taskCategoryInputHash } from '#src/task-categories/classifier.js';
 import { withTeam } from '#src/team-scope.js';
 import { createResettablePGliteTestDb, type ResettablePGliteTestDb } from '#src/test/pglite.js';
 
@@ -3534,6 +3537,165 @@ describe('suggestion scope', () => {
       priority: 1,
     });
     expect(updated.rows[0]?.due_at?.toISOString()).toBe('2026-08-02T12:00:00.000Z');
+  });
+
+  it('creates a proposed project, links the task, and applies a fresh proposed category', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const packet = buildTaskCategoryPacket({
+      title: 'Prepare homepage wireframes',
+      primaryProjectName: 'Faba website redesign',
+    });
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Create Faba design task',
+      dedupeKey: 'create-task-project-category',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Prepare homepage wireframes',
+          dedupeKey: 'create-task-project-category:item',
+          proposedPayload: {
+            canonicalName: 'Prepare homepage wireframes',
+            createProjectName: 'Faba website redesign',
+            projectName: 'Faba website redesign',
+            taskCategory: 'design',
+            taskCategoryConfidence: 0.97,
+            taskCategoryModel: 'test-category-model',
+            taskCategoryMode: 'automatic',
+            taskCategoryInputHash: taskCategoryInputHash(
+              packet,
+              TIMELINE_MODELS.taskCategorization.id,
+            ),
+            taskCategoryTaxonomyVersion: 'task-categories-v1',
+          },
+        },
+      ],
+    });
+
+    await expect(scope.suggestions.acceptSuggestionItem(bundle.items[0]?.id ?? '')).resolves.toBe(
+      true,
+    );
+
+    const rows = await db.select().from(entities).where(eq(entities.teamId, TEAM_ID));
+    const project = rows.find((row) => row.canonicalName === 'Faba website redesign');
+    const task = rows.find((row) => row.canonicalName === 'Prepare homepage wireframes');
+    expect(project).toMatchObject({ type: 'project', status: 'planning' });
+    expect(task).toMatchObject({
+      type: 'task',
+      taskCategory: 'design',
+      taskCategoryMode: 'automatic',
+      taskCategorySource: 'llm',
+      taskCategoryStatus: 'ready',
+    });
+    const relation = await db
+      .select()
+      .from(entityRelationships)
+      .where(eq(entityRelationships.fromEntityId, task?.id ?? ''));
+    expect(relation).toEqual([
+      expect.objectContaining({ toEntityId: project?.id, kind: 'child', teamId: TEAM_ID }),
+    ]);
+  });
+
+  it('keeps a proposed task pending when its category context hash is stale', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Create stale classified task',
+      dedupeKey: 'create-task-stale-category',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Prepare homepage wireframes',
+          dedupeKey: 'create-task-stale-category:item',
+          proposedPayload: {
+            canonicalName: 'Prepare homepage wireframes',
+            taskCategory: 'design',
+            taskCategoryConfidence: 0.97,
+            taskCategoryModel: 'test-category-model',
+            taskCategoryMode: 'automatic',
+            taskCategoryInputHash: 'a'.repeat(64),
+            taskCategoryTaxonomyVersion: 'task-categories-v1',
+          },
+        },
+      ],
+    });
+
+    await scope.suggestions.acceptSuggestionItem(bundle.items[0]?.id ?? '');
+
+    const [task] = await db
+      .select()
+      .from(entities)
+      .where(eq(entities.canonicalName, 'Prepare homepage wireframes'));
+    expect(task).toMatchObject({
+      taskCategory: null,
+      taskCategoryMode: 'automatic',
+      taskCategoryStatus: 'pending',
+    });
+  });
+
+  it('lets a reviewer replace the proposed category and project before acceptance', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const project = await scope.objects.createObject({
+      type: 'project',
+      canonicalName: 'Faba website redesign',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Create editable task',
+      dedupeKey: 'create-editable-task',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Review contract',
+          dedupeKey: 'create-editable-task:item',
+          proposedPayload: {
+            canonicalName: 'Review contract',
+            taskCategory: 'operations',
+            taskCategoryMode: 'automatic',
+            taskCategoryInputHash: 'b'.repeat(64),
+            taskCategoryConfidence: 0.6,
+            taskCategoryModel: 'old-model',
+            taskCategoryTaxonomyVersion: 'task-categories-v1',
+          },
+        },
+      ],
+    });
+    const itemId = bundle.items[0]?.id ?? '';
+
+    await expect(
+      scope.suggestions.reviseTaskSuggestionItem({
+        itemId,
+        category: 'legal_compliance',
+        project: { kind: 'existing', projectId: project.id },
+      }),
+    ).resolves.toBe(true);
+    const [revised] = await db
+      .select({ payload: agentSuggestionItems.proposedPayload })
+      .from(agentSuggestionItems)
+      .where(eq(agentSuggestionItems.id, itemId));
+    expect(revised?.payload).toMatchObject({
+      taskCategory: 'legal_compliance',
+      taskCategoryMode: 'manual',
+      parentObjectId: project.id,
+      projectName: 'Faba website redesign',
+    });
+    expect(revised?.payload).not.toHaveProperty('taskCategoryInputHash');
+
+    await scope.suggestions.acceptSuggestionItem(itemId);
+    const [task] = await db
+      .select()
+      .from(entities)
+      .where(eq(entities.canonicalName, 'Review contract'));
+    expect(task).toMatchObject({
+      taskCategory: 'legal_compliance',
+      taskCategoryMode: 'manual',
+      taskCategorySource: 'user',
+      taskCategoryStatus: 'ready',
+    });
   });
 
   it('stores a readable failure reason for calendar creates missing a time range', async () => {

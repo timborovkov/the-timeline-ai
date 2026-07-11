@@ -13,6 +13,7 @@ import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import * as queue from '#src/queue/queues.js';
 import { withTeam } from '#src/team-scope.js';
 import { createResettablePGliteTestDb, type ResettablePGliteTestDb } from '#src/test/pglite.js';
 
@@ -225,6 +226,58 @@ describe('task category and primary project state', () => {
     ).rejects.toThrow('stale');
   });
 
+  it('re-enqueues when undo restores a pending automatic snapshot', async () => {
+    const scope = withTeam(db, TEAM_A, USER_A).objects;
+    const task = await scope.createObject({
+      type: 'task',
+      canonicalName: 'Classify this later',
+      actor: { kind: 'user', userId: USER_A },
+    });
+    const pending = await scope.getTaskCategoryClassificationInput(task.id);
+    const correction = await scope.setTaskCategory(task.id, 'product', {
+      kind: 'user',
+      userId: USER_A,
+    });
+    vi.mocked(queue.enqueueTaskCategoryJob).mockClear();
+
+    await scope.undoTaskCategoryChange(task.id, correction.changeId, {
+      kind: 'user',
+      userId: USER_A,
+    });
+
+    expect(queue.enqueueTaskCategoryJob).toHaveBeenCalledWith({
+      teamId: TEAM_A,
+      taskId: task.id,
+      inputHash: pending?.requestedInputHash,
+      trigger: 'retry',
+    });
+  });
+
+  it('keeps committed category state when the Redis handoff fails', async () => {
+    const scope = withTeam(db, TEAM_A, USER_A).objects;
+    const task = await scope.createObject({
+      type: 'task',
+      canonicalName: 'Original title',
+      actor: { kind: 'user', userId: USER_A },
+    });
+    vi.mocked(queue.enqueueTaskCategoryJob).mockRejectedValueOnce(new Error('redis down'));
+
+    await expect(
+      scope.updateObject(
+        task.id,
+        { canonicalName: 'Updated title' },
+        { kind: 'user', userId: USER_A },
+      ),
+    ).resolves.toMatchObject({ object: { canonicalName: 'Updated title' } });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const [persisted] = await scope.listObjects({ id: task.id });
+    expect(persisted).toMatchObject({
+      canonicalName: 'Updated title',
+      taskCategoryMode: 'automatic',
+      taskCategoryStatus: 'pending',
+    });
+  });
+
   it('replaces only project child edges and blocks generic relationship bypasses', async () => {
     const workspace = withTeam(db, TEAM_A, USER_A);
     const first = await workspace.objects.createObject({
@@ -285,6 +338,45 @@ describe('task category and primary project state', () => {
         userId: USER_A,
       }),
     ).rejects.toThrow('Project field');
+  });
+
+  it('does not let legacy child edges make non-tasks match primary-project filters', async () => {
+    const workspace = withTeam(db, TEAM_A, USER_A);
+    const project = await workspace.objects.createObject({
+      type: 'project',
+      canonicalName: 'Faba redesign',
+      actor: { kind: 'user', userId: USER_A },
+    });
+    const company = await workspace.objects.createObject({
+      type: 'company',
+      canonicalName: 'Legacy child',
+      actor: { kind: 'user', userId: USER_A },
+    });
+    await db.insert(entityRelationships).values({
+      teamId: TEAM_A,
+      fromEntityId: company.id,
+      toEntityId: project.id,
+      kind: 'child',
+      createdBy: USER_A,
+    });
+    const board = await workspace.boards.createBoard({
+      name: 'Legacy relations',
+      templateKind: 'custom',
+      lanes: [{ name: 'Open' }],
+    });
+    await workspace.boards.addBoardItem(board.id, {
+      entityId: company.id,
+      actor: { kind: 'user', userId: USER_A },
+    });
+
+    await expect(workspace.objects.listObjects({ primaryProjectId: project.id })).resolves.toEqual(
+      [],
+    );
+    await expect(
+      workspace.boards.getBoard(board.id, {
+        itemFilter: { object: { primaryProjectId: project.id } },
+      }),
+    ).resolves.toMatchObject({ items: [] });
   });
 
   it('rejects archived, wrong-type, and cross-team project writes', async () => {

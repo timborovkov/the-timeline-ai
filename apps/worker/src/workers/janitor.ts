@@ -1,8 +1,11 @@
+import { createHash } from 'node:crypto';
+
 import { type Db, documentVersions, entities, meetings } from '@timeline/db';
 import { childLogger, queue } from '@timeline/shared';
 import { getEnv } from '@timeline/shared/env';
 import { Worker, type Job } from 'bullmq';
 import { and, asc, eq, gt, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/pg-core';
 
 import { captureWorkerException, captureWorkerJobFailure } from '#src/monitoring.js';
 
@@ -85,35 +88,79 @@ async function sweepTaskCategories(
   db: Db,
   enqueue: (data: queue.TaskCategoryJobData) => Promise<unknown>,
 ): Promise<number> {
+  const pendingTasks = alias(entities, 'pending_tasks');
   let cursor: string | null = null;
   let total = 0;
   while (total < MAX_REQUEUES_PER_KIND) {
     const rows = await db
       .select({
-        id: entities.id,
-        teamId: entities.teamId,
-        inputHash: entities.taskCategoryRequestedInputHash,
+        id: pendingTasks.id,
+        teamId: pendingTasks.teamId,
+        inputHash: pendingTasks.taskCategoryRequestedInputHash,
+        projectId: sql<string | null>`(
+          SELECT project.id::text
+          FROM entity_relationships AS relation
+          INNER JOIN entities AS project
+            ON project.id = relation.to_entity_id
+            AND project.team_id = relation.team_id
+          WHERE relation.team_id = "pending_tasks"."team_id"
+            AND relation.from_entity_id = "pending_tasks"."id"
+            AND relation.kind = 'child'
+            AND project.type = 'project'
+            AND project.merged_into_id IS NULL
+          ORDER BY project.id
+          LIMIT 1
+        )`,
+        projectName: sql<string | null>`(
+          SELECT project.canonical_name
+          FROM entity_relationships AS relation
+          INNER JOIN entities AS project
+            ON project.id = relation.to_entity_id
+            AND project.team_id = relation.team_id
+          WHERE relation.team_id = "pending_tasks"."team_id"
+            AND relation.from_entity_id = "pending_tasks"."id"
+            AND relation.kind = 'child'
+            AND project.type = 'project'
+            AND project.merged_into_id IS NULL
+          ORDER BY project.id
+          LIMIT 1
+        )`,
       })
-      .from(entities)
+      .from(pendingTasks)
       .where(
         and(
-          eq(entities.type, 'task'),
-          eq(entities.taskCategoryMode, 'automatic'),
-          eq(entities.taskCategoryStatus, 'pending'),
-          isNotNull(entities.taskCategoryRequestedInputHash),
-          isNull(entities.archivedAt),
-          isNull(entities.mergedIntoId),
-          sql`${entities.taskCategoryUpdatedAt} < now() - make_interval(secs => ${PENDING_TASK_CATEGORY_MIN_AGE_MS / 1000})`,
-          cursor ? gt(entities.id, cursor) : undefined,
+          eq(pendingTasks.type, 'task'),
+          eq(pendingTasks.taskCategoryMode, 'automatic'),
+          eq(pendingTasks.taskCategoryStatus, 'pending'),
+          isNotNull(pendingTasks.taskCategoryRequestedInputHash),
+          isNull(pendingTasks.archivedAt),
+          isNull(pendingTasks.mergedIntoId),
+          sql`${pendingTasks.taskCategoryUpdatedAt} < now() - make_interval(secs => ${PENDING_TASK_CATEGORY_MIN_AGE_MS / 1000})`,
+          cursor ? gt(pendingTasks.id, cursor) : undefined,
         ),
       )
-      .orderBy(asc(entities.id))
+      .orderBy(asc(pendingTasks.id))
       .limit(PAGE_SIZE);
     if (rows.length === 0) break;
     cursor = rows[rows.length - 1]?.id ?? null;
     for (const row of rows) {
       if (total >= MAX_REQUEUES_PER_KIND || !row.inputHash) break;
       try {
+        // A stale pending task is also a durable recovery marker for a project
+        // rename/merge fan-out whose initial Redis handoff was lost. Starting
+        // at the beginning is idempotent and lets the paged worker reach tasks
+        // beyond the first transactionally-invalidated page.
+        if (row.projectId && row.projectName) {
+          await enqueue({
+            kind: 'project_fanout',
+            teamId: row.teamId,
+            projectId: row.projectId,
+            projectVersion: createHash('sha256')
+              .update(`${row.projectId}\0${row.projectName}`)
+              .digest('hex'),
+            afterTaskId: null,
+          });
+        }
         await enqueue({
           teamId: row.teamId,
           taskId: row.id,

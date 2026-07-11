@@ -3,7 +3,7 @@ import { llm, queue } from '@timeline/shared';
 import { getEnv } from '@timeline/shared/env';
 import * as taskCategories from '@timeline/shared/task-categories';
 import { withTeam } from '@timeline/shared/team-scope';
-import { Worker, type Job } from 'bullmq';
+import { DelayedError, Worker, type Job } from 'bullmq';
 
 import { captureWorkerJobFailure } from '#src/monitoring.js';
 
@@ -17,22 +17,22 @@ export interface TaskCategoryWorkerIO {
   classify?: typeof taskCategories.classifyTaskCategory;
   now?: () => number;
   enabled?: boolean;
-  acquireTeamPermit?: (teamId: string) => Promise<void>;
+  acquireTeamPermit?: (teamId: string) => Promise<number | null>;
 }
 
 const TEAM_RATE_LIMIT_PER_MINUTE = 10;
 
-async function acquireTeamRateLimitPermit(teamId: string): Promise<void> {
+async function acquireTeamRateLimitPermit(teamId: string): Promise<number | null> {
+  const now = Date.now();
   const redis = queue.getRedisConnection();
-  const bucket = Math.floor(Date.now() / 60_000);
+  const bucket = Math.floor(now / 60_000);
   const key = `timeline:task-category:team-rate:${teamId}:${bucket}`;
   const count = await redis.incr(key);
   if (count === 1) await redis.expire(key, 70);
   if (count > TEAM_RATE_LIMIT_PER_MINUTE) {
-    const error = new Error('Task category team rate limit exceeded');
-    error.name = 'TeamRateLimitError';
-    throw error;
+    return 60_000 - (now % 60_000) + 250;
   }
+  return null;
 }
 
 function failureCode(error: unknown): string {
@@ -80,7 +80,8 @@ export async function processTaskCategoryJobForTests(
   if (input.inputHash !== data.inputHash) {
     return { status: 'skipped' as const, reason: 'stale_packet' as const };
   }
-  await io.acquireTeamPermit?.(data.teamId);
+  const retryAfterMs = await io.acquireTeamPermit?.(data.teamId);
+  if (retryAfterMs) return { status: 'rate_limited' as const, retryAfterMs };
 
   const startedAt = (io.now ?? Date.now)();
   const classify = io.classify ?? taskCategories.classifyTaskCategory;
@@ -102,13 +103,19 @@ export function startTaskCategoryWorker(
 ): Worker<queue.TaskCategoryJobData> {
   const worker = new Worker<queue.TaskCategoryJobData>(
     queue.QUEUE_NAMES.taskCategory,
-    async (job: Job<queue.TaskCategoryJobData>) => {
+    async (job: Job<queue.TaskCategoryJobData>, token?: string) => {
       const startedAt = Date.now();
       try {
-        return await processTaskCategoryJobForTests(deps, job.data, {
+        const result = await processTaskCategoryJobForTests(deps, job.data, {
           acquireTeamPermit: acquireTeamRateLimitPermit,
         });
+        if (result.status === 'rate_limited') {
+          await job.moveToDelayed(Date.now() + result.retryAfterMs, token);
+          throw new DelayedError();
+        }
+        return result;
       } catch (error) {
+        if (error instanceof DelayedError) throw error;
         const attempts = job.opts.attempts ?? 1;
         if (job.data.kind !== 'project_fanout' && job.attemptsMade + 1 >= attempts) {
           const scope = withTeam(deps.db, job.data.teamId, ZERO_UUID, {

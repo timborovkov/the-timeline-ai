@@ -1,6 +1,6 @@
 # Automatic Task Categories Plan
 
-> **Implementation status — 2026-07-11:** the v1 architecture and product flows in this plan are
+> **Implementation status — 2026-07-12:** the v1 architecture and product flows in this plan are
 > implemented. The 120-case live classifier gate passed at 90.83% exact accuracy, 90.12% macro
 > recall, and 100% prompt-injection-case accuracy with the configured production model. Static
 > validation, deterministic evals, full repository tests, React Doctor, compiled imports, query-plan
@@ -20,7 +20,8 @@ The recommended v1 is deliberately narrow:
 
 - one category per task
 - one fixed, product-owned taxonomy shared by every team
-- asynchronous automatic assignment after a task becomes canonical
+- dedicated-classifier inference during proposal generation when possible,
+  with asynchronous automatic assignment after canonical creation as fallback
 - a permanent human override until the teammate explicitly chooses
   **Use automatic category**
 - an optional canonical project relation that categorization can use as context
@@ -234,11 +235,14 @@ The prompt and eval rubric should encode these rules:
 
 ### Automatic assignment
 
-After a task is created or an accepted proposal creates a canonical task, the
-card briefly shows `Categorizing…`. The categorization worker then assigns and
-displays a category without requiring approval. This is a low-risk derived
-organizational label, not a fact, lifecycle transition, or source-authored
-business field.
+For direct task creation, the card briefly shows `Categorizing…` while the
+categorization worker assigns the category. Background task proposals are
+classified before they enter the approval queue, so the reviewer sees the
+proposed category and project together. Acceptance applies that category
+immediately only when its taxonomy version and exact task/project input hash
+still match. Missing or stale proposal inference falls back to `Categorizing…`.
+This remains a low-risk derived organizational label, not a fact, lifecycle
+transition, or source-authored business field.
 
 On later automatic reclassification, keep showing the last successful category
 while the replacement is pending. This prevents a title edit, prompt migration,
@@ -476,8 +480,10 @@ project name, not a UUID.
 ### AI-created and suggested tasks
 
 When proposing or executing a task, the agent may set `parentObjectId` only
-when exactly one listed existing project clearly owns the task. The prompt must
-distinguish ownership language from weak context:
+when exactly one listed existing project clearly owns the task. If evidence
+clearly names a new tracked initiative and no listed project matches, it may set
+`createProjectName`; the project is created only if the task is accepted. The
+prompt must distinguish ownership language from weak context:
 
 - “For the Faba website redesign, prepare homepage wireframes” may link to the
   unique `Faba website redesign` project.
@@ -485,18 +491,27 @@ distinguish ownership language from weak context:
   not establish task ownership.
 - If two project candidates plausibly match, omit `parentObjectId`; do not
   guess.
+- “Create the Faba redesign project and prepare homepage wireframes” may propose
+  **Create project: Faba redesign** alongside the task.
 
-The suggestion/approval card must show **Project: Faba website redesign** before
-acceptance. Acceptance validates that the target is still an active project in
-the same team. If the project disappeared, merged, or changed type, fail the
-project portion clearly instead of creating a cross-team or dangling edge. The
-recommended v1 behavior is to reject the acceptance and let the teammate choose
-the current project, so the resulting task cannot silently differ from the
-approved preview.
+The suggestion/approval card shows **Category: Design** and either **Project:
+Faba website redesign**, **Create project: Faba website redesign**, or **No
+project** before acceptance. Reviewers can replace the category, choose another
+existing project, propose a different new project name, or remove the relation.
+A category edit is a manual override. A project edit invalidates the automatic
+proposal category and reclassifies after acceptance unless the reviewer also
+chooses a manual category.
+
+Acceptance validates that an existing target is still an active project in the
+same team. If it disappeared, merged, or changed type, acceptance fails clearly
+instead of creating a cross-team or dangling edge. New project creation is
+idempotent by suggestion item and reuses an exact active project match, so a
+retry cannot create duplicate projects.
 
 Agent-created task relationships remain approval-backed under existing task
-creation/action rules. Background categorization is allowed to read an accepted
-project link but never create, replace, or remove it.
+creation/action rules. Proposal-time categorization may read the proposed
+project only to produce a preview and context hash. It cannot create or change
+canonical relationships before approval.
 
 ### Existing tasks and relationship repair
 
@@ -773,10 +788,11 @@ Queue on:
 - the bounded backfill command
 
 Do not queue on status, assignee, priority, or due-date changes. Do not queue
-while `task_category_mode = 'manual'`. The existing suggestions LLM may know
-that a proposal is a task, but it should not supply the canonical category in
-v1; using the dedicated classifier keeps one prompt, taxonomy, and eval path for
-manual, agent-created, and integration-created tasks.
+while `task_category_mode = 'manual'`. The broad suggestions LLM identifies the
+task and proposes project ownership; the dedicated category classifier enriches
+the proposal. Acceptance compares the same classifier packet hash before
+applying the preview, preserving one prompt, taxonomy, and eval path for direct,
+agent-created, and integration-created tasks.
 
 ### Concurrency and failure rules
 

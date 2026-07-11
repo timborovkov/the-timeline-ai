@@ -1,6 +1,11 @@
 'use client';
 
 import {
+  TASK_CATEGORY_OPTIONS,
+  taskCategoryLabel,
+  type TaskCategory,
+} from '@timeline/shared/task-categories/types';
+import {
   AlertTriangle,
   CalendarClock,
   CalendarPlus,
@@ -10,18 +15,21 @@ import {
   ExternalLink,
   GitMerge,
   MoveRight,
+  Pencil,
   X,
 } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useMemo, useRef, useState, useTransition } from 'react';
+import { useEffect, useMemo, useRef, useState, useTransition } from 'react';
 
+import { searchObjectsAction } from '@/app/actions/objects';
 import {
   acceptAllSuggestionAction,
   acceptSuggestionItemAction,
   acceptVisibleSuggestionsAction,
   rejectSuggestionItemAction,
   rejectVisibleSuggestionsAction,
+  reviseTaskSuggestionItemAction,
 } from '@/app/actions/suggestions';
 import { EmptyAction } from '@/components/empty-action';
 import { EvidenceLink } from '@/components/evidence-link';
@@ -154,6 +162,9 @@ function formatPayload(payload: Record<string, unknown>): string {
         key !== 'toRef' &&
         key !== 'fromName' &&
         key !== 'toName' &&
+        !key.startsWith('taskCategory') &&
+        key !== 'projectName' &&
+        key !== 'createProjectName' &&
         !key.toLowerCase().endsWith('id') &&
         !key.toLowerCase().endsWith('ids'),
     )
@@ -986,6 +997,9 @@ function ApprovalItemPayload({
   if (item.targetKind === 'calendar_event') {
     return <CalendarApprovalPayload item={item} timezone={timezone} />;
   }
+  if (item.targetKind === 'task' && item.operation === 'create') {
+    return <TaskApprovalPayload bundle={bundle} item={item} />;
+  }
   const summary = relationshipPayloadSummary(item, bundle) ?? formatPayload(item.proposedPayload);
   return (
     <div className="min-w-0 self-center">
@@ -997,6 +1011,171 @@ function ApprovalItemPayload({
       ) : null}
       {item.failureReason ? (
         <p className="mt-1 text-xs text-danger">{displayText(item.failureReason)}</p>
+      ) : null}
+      <ApprovalItemEffect item={item} bundle={bundle} />
+    </div>
+  );
+}
+
+function TaskApprovalPayload({ bundle, item }: { bundle: SuggestionBundle; item: SuggestionItem }) {
+  const router = useRouter();
+  const [saving, startSaving] = useTransition();
+  const [query, setQuery] = useState('');
+  const [projects, setProjects] = useState<{ id: string; label: string }[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const category = payloadString(item.proposedPayload, 'taskCategory') as TaskCategory | null;
+  const categoryMode = payloadString(item.proposedPayload, 'taskCategoryMode');
+  const projectName =
+    payloadString(item.proposedPayload, 'projectName') ??
+    payloadString(item.proposedPayload, 'createProjectName');
+  const createsProject = Boolean(payloadString(item.proposedPayload, 'createProjectName'));
+
+  useEffect(() => {
+    const normalized = query.trim();
+    if (normalized.length < 2) {
+      setProjects([]);
+      return;
+    }
+    let active = true;
+    const timer = setTimeout(() => {
+      void searchObjectsAction({ query: normalized, type: 'project' }).then((result) => {
+        if (!active) return;
+        const found: { id: string; label: string }[] = [];
+        for (const row of result.results) {
+          if (row.type === 'project') found.push({ id: row.id, label: row.canonicalName });
+        }
+        setProjects(found);
+      });
+    }, 250);
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
+  }, [query]);
+
+  function revise(input: {
+    category?: TaskCategory | 'automatic';
+    project?:
+      | { kind: 'none' }
+      | { kind: 'existing'; projectId: string }
+      | { kind: 'create'; projectName: string };
+  }): void {
+    setError(null);
+    startSaving(async () => {
+      const result = await reviseTaskSuggestionItemAction({ itemId: item.id, ...input });
+      if (result.error) setError(result.error);
+      else router.refresh();
+    });
+  }
+
+  return (
+    <div className="min-w-0 self-center space-y-2">
+      <div className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
+        {itemActionLabel(item)}
+      </div>
+      <div className="flex flex-wrap gap-1.5">
+        <span className="rounded-sm border border-border bg-muted/30 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.1em] text-fg">
+          Category · {category ? taskCategoryLabel(category) : 'Automatic after accept'}
+        </span>
+        <span className="rounded-sm border border-border bg-muted/30 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.1em] text-fg">
+          Project · {projectName ? `${createsProject ? 'Create ' : ''}${projectName}` : 'None'}
+        </span>
+      </div>
+      {category && categoryMode !== 'manual' ? (
+        <p className="text-xs text-fg-dim">
+          AI-proposed category; accepting applies it only if context still matches.
+        </p>
+      ) : null}
+      <details className="group border-l border-border pl-2">
+        <summary className="inline-flex cursor-pointer items-center gap-1 font-mono text-[10px] uppercase tracking-[0.1em] text-fg-dim hover:text-fg">
+          <Pencil className="size-3" /> Edit category or project
+        </summary>
+        <div className="mt-2 grid gap-2">
+          <label className="grid gap-1 text-xs text-fg-muted">
+            Category
+            <select
+              aria-label={`Category for ${item.title}`}
+              value={
+                categoryMode === 'manual' && category
+                  ? category
+                  : category
+                    ? 'suggested'
+                    : 'automatic'
+              }
+              disabled={saving}
+              onChange={(event) => {
+                revise({ category: event.currentTarget.value as TaskCategory | 'automatic' });
+              }}
+              className="h-8 rounded-sm border border-border bg-bg px-2 text-xs text-fg"
+            >
+              {category && categoryMode !== 'manual' ? (
+                <option value="suggested" disabled>
+                  AI suggestion — {taskCategoryLabel(category)}
+                </option>
+              ) : null}
+              <option value="automatic">Automatic after accept</option>
+              {TASK_CATEGORY_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="grid gap-1 text-xs text-fg-muted">
+            Find or name a project
+            <input
+              type="search"
+              value={query}
+              disabled={saving}
+              onChange={(event) => {
+                setQuery(event.currentTarget.value);
+              }}
+              placeholder="Search projects or type a new name"
+              className="h-8 rounded-sm border border-border bg-bg px-2 text-xs text-fg"
+            />
+          </label>
+          {query.trim() ? (
+            <div className="flex flex-wrap gap-1">
+              {projects.map((project) => (
+                <button
+                  key={project.id}
+                  type="button"
+                  disabled={saving}
+                  onClick={() => {
+                    revise({ project: { kind: 'existing', projectId: project.id } });
+                  }}
+                  className="rounded-sm border border-border px-2 py-1 text-xs text-fg hover:border-signal"
+                >
+                  Use {displayText(project.label)}
+                </button>
+              ))}
+              <button
+                type="button"
+                disabled={saving}
+                onClick={() => {
+                  revise({ project: { kind: 'create', projectName: query.trim() } });
+                }}
+                className="rounded-sm border border-border px-2 py-1 text-xs text-fg hover:border-signal"
+              >
+                Create “{displayText(query.trim())}”
+              </button>
+            </div>
+          ) : null}
+          <button
+            type="button"
+            disabled={saving}
+            onClick={() => {
+              revise({ project: { kind: 'none' } });
+            }}
+            className="w-fit font-mono text-[10px] uppercase tracking-[0.1em] text-fg-dim hover:text-danger"
+          >
+            No project
+          </button>
+        </div>
+      </details>
+      {error ? <p className="text-xs text-danger">{error}</p> : null}
+      {item.failureReason ? (
+        <p className="text-xs text-danger">{displayText(item.failureReason)}</p>
       ) : null}
       <ApprovalItemEffect item={item} bundle={bundle} />
     </div>

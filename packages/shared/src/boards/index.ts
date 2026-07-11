@@ -1223,6 +1223,7 @@ export function createBoardScope({
 
     const requestedProjectIds = toArray(filter.primaryProjectId);
     if (requestedProjectIds?.length) {
+      conds.push(eq(entities.type, 'task'));
       const projectIds = requestedProjectIds.filter((id) => UUID_RE.test(id));
       if (projectIds.length === 0) {
         conds.push(sql`false`);

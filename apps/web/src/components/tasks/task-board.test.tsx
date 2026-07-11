@@ -14,6 +14,8 @@ const fakes = vi.hoisted(() => ({
   loadTaskCategoryStatesAction: vi.fn(),
   setTaskCategoryAction: vi.fn(),
   resetTaskCategoryAction: vi.fn(),
+  searchObjectsAction: vi.fn(),
+  setTaskProjectAction: vi.fn(),
 }));
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: fakes.refresh }) }));
@@ -24,6 +26,8 @@ vi.mock('@/app/actions/objects', () => ({
   loadTaskCategoryStatesAction: fakes.loadTaskCategoryStatesAction,
   setTaskCategoryAction: fakes.setTaskCategoryAction,
   resetTaskCategoryAction: fakes.resetTaskCategoryAction,
+  searchObjectsAction: fakes.searchObjectsAction,
+  setTaskProjectAction: fakes.setTaskProjectAction,
 }));
 vi.mock('@/lib/task-board-config', () => ({
   TASK_BOARD_COLUMN_RENDER_LIMIT: 3,
@@ -143,12 +147,16 @@ describe('TaskBoard', () => {
     fakes.loadTaskCategoryStatesAction.mockReset();
     fakes.setTaskCategoryAction.mockReset();
     fakes.resetTaskCategoryAction.mockReset();
+    fakes.searchObjectsAction.mockReset();
+    fakes.setTaskProjectAction.mockReset();
     fakes.updateObjectAction.mockResolvedValue({ ok: true });
     fakes.loadTaskRowsAction.mockResolvedValue({ rows: [], nextCursor: null });
     fakes.loadTaskPrimaryProjectsAction.mockResolvedValue({ rows: [] });
     fakes.loadTaskCategoryStatesAction.mockResolvedValue({ rows: [] });
     fakes.setTaskCategoryAction.mockResolvedValue({ ok: true });
     fakes.resetTaskCategoryAction.mockResolvedValue({ ok: true });
+    fakes.searchObjectsAction.mockResolvedValue({ results: [] });
+    fakes.setTaskProjectAction.mockResolvedValue({ ok: true });
   });
 
   it('opens a task side panel route from the card instead of object detail', () => {
@@ -160,6 +168,28 @@ describe('TaskBoard', () => {
     expect(screen.getByText('Ada Lovelace')).toBeTruthy();
     expect(screen.getByText('Due 2099-07-04')).toBeTruthy();
     expect(screen.getByText('P2')).toBeTruthy();
+  });
+
+  it('removes an asynchronously-hydrated project from the task card after clearing it', async () => {
+    fakes.loadTaskPrimaryProjectsAction.mockResolvedValue({
+      rows: [
+        {
+          taskId: 'task-1',
+          projectId: 'project-1',
+          projectName: 'Faba redesign',
+          archivedAt: null,
+        },
+      ],
+    });
+    renderBoard('task-1');
+    await screen.findAllByText(/Faba redesign/);
+
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Task project' }), '');
+
+    await waitFor(() => {
+      expect(fakes.setTaskProjectAction).toHaveBeenCalledWith({ id: 'task-1', projectId: null });
+      expect(screen.queryByText('Faba redesign')).toBeNull();
+    });
   });
 
   it('does not render legacy agentSuggested badges on task rows', () => {

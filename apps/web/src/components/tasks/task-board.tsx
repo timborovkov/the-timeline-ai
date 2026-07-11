@@ -474,6 +474,9 @@ function useTaskBoardController({
   const [loadedPrimaryProjects, setLoadedPrimaryProjects] = useState<
     objects.TaskPrimaryProjectRow[]
   >([]);
+  const [primaryProjectOverrides, setPrimaryProjectOverrides] = useState<
+    Record<string, objects.TaskPrimaryProjectRow | null>
+  >({});
   const projectHydrationCheckedRef = useRef<Set<string> | null>(null);
   projectHydrationCheckedRef.current ??= new Set();
   const hydratedPrimaryProjects = useMemo(() => {
@@ -481,8 +484,12 @@ function useTaskBoardController({
       loadedPrimaryProjects.map((project) => [project.taskId, project] as const),
     );
     for (const project of primaryProjects) byTask.set(project.taskId, project);
+    for (const [taskId, project] of Object.entries(primaryProjectOverrides)) {
+      if (project) byTask.set(taskId, project);
+      else byTask.delete(taskId);
+    }
     return [...byTask.values()];
-  }, [loadedPrimaryProjects, primaryProjects]);
+  }, [loadedPrimaryProjects, primaryProjectOverrides, primaryProjects]);
   const missingProjectTaskIds = useMemo(() => {
     const hydratedIds = new Set(hydratedPrimaryProjects.map((project) => project.taskId));
     const missing: string[] = [];
@@ -514,6 +521,23 @@ function useTaskBoardController({
       cancelled = true;
     };
   }, [missingProjectTaskIds]);
+  const updatePrimaryProject = useCallback(
+    (taskId: string, project: { id: string; label: string } | null) => {
+      projectHydrationCheckedRef.current?.add(taskId);
+      setPrimaryProjectOverrides((current) => ({
+        ...current,
+        [taskId]: project
+          ? {
+              taskId,
+              projectId: project.id,
+              projectName: project.label,
+              archivedAt: null,
+            }
+          : null,
+      }));
+    },
+    [],
+  );
   const pendingCategoryIds = useMemo(() => {
     const ids: string[] = [];
     for (const row of effectiveRows) {
@@ -752,6 +776,7 @@ function useTaskBoardController({
     updateTask,
     updateTasks,
     updateTaskCategories,
+    updatePrimaryProject,
     visibleRows,
     hydratedPrimaryProjects,
   };
@@ -788,6 +813,7 @@ function TaskBoardView({
   updateTask,
   updateTasks,
   updateTaskCategories,
+  updatePrimaryProject,
   view,
   visibleRows,
   hydratedPrimaryProjects,
@@ -929,6 +955,9 @@ function TaskBoardView({
               : taskViewHref(view, selectedTask.id, filterParams),
           )}
           onUpdate={updateTask}
+          onProjectChange={(project) => {
+            updatePrimaryProject(selectedTask.id, project);
+          }}
         />
       ) : null}
     </div>
@@ -1588,6 +1617,7 @@ function TaskDetailPanel({
   closeHref,
   objectHref,
   onUpdate,
+  onProjectChange,
 }: {
   task: objects.ObjectRow;
   connectedWork?: objects.ObjectDetail['connectedWork'] | null;
@@ -1598,6 +1628,7 @@ function TaskDetailPanel({
   closeHref: string;
   objectHref: string;
   onUpdate: (id: string, patch: TaskPatch) => Promise<{ ok?: boolean; error?: string }>;
+  onProjectChange: (project: { id: string; label: string } | null) => void;
 }) {
   const [saving, setSaving] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -1648,6 +1679,7 @@ function TaskDetailPanel({
             projectId={primaryProject?.projectId ?? null}
             currentProjectLabel={primaryProject?.projectName}
             projects={projects}
+            onProjectChange={onProjectChange}
           />
         </TaskField>
         <TaskField label="Category">

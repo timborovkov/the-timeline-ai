@@ -53,6 +53,11 @@ import {
 } from '#src/reconciliation/index.js';
 import { sourcePayloadRefFromMetadata } from '#src/reconciliation/source-snapshot.js';
 import { stableStringify, suggestionDedupeKey } from '#src/suggestions/dedupe-key.js';
+import {
+  TASK_CATEGORY_TAXONOMY_VERSION,
+  taskCategorySchema,
+  type TaskCategory,
+} from '#src/task-categories/types.js';
 import { localDateFromInstant, localDateSpanToUtcRange } from '#src/time/index.js';
 import { rawEventVisibleToUser } from '#src/visibility.js';
 
@@ -513,6 +518,17 @@ const objectCreatePayload = z.object({
   type: z.string().optional(),
   canonicalName: z.string().trim().max(200).optional(),
   parentObjectId: blankStringAsNull(uuid.nullable()).optional(),
+  projectName: z.string().trim().min(1).max(200).optional(),
+  createProjectName: z.string().trim().min(1).max(200).optional(),
+  taskCategory: taskCategorySchema.optional(),
+  taskCategoryConfidence: z.number().min(0).max(1).optional(),
+  taskCategoryModel: z.string().trim().min(1).max(200).optional(),
+  taskCategoryMode: z.enum(['automatic', 'manual']).optional(),
+  taskCategoryInputHash: z
+    .string()
+    .regex(/^[a-f0-9]{64}$/)
+    .optional(),
+  taskCategoryTaxonomyVersion: z.string().trim().min(1).max(100).optional(),
 });
 
 const objectUpdatePayload = z.object({
@@ -3474,6 +3490,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         : item.title;
     const type =
       item.targetKind === 'task' ? 'task' : (objectTypeFromValue(parsed.type) ?? 'other');
+    const project = type === 'task' ? await resolveSuggestedTaskProject(item, parsed) : null;
     const input: CreateObjectInput = {
       type,
       canonicalName,
@@ -3486,7 +3503,8 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     if (parsed.ownerUserId !== undefined) input.ownerUserId = parsed.ownerUserId;
     if (parsed.assigneeUserId !== undefined) input.assigneeUserId = parsed.assigneeUserId;
     if (parsed.dueAt !== undefined) input.dueAt = parsed.dueAt ? new Date(parsed.dueAt) : null;
-    if (parsed.parentObjectId !== undefined) input.parentObjectId = parsed.parentObjectId;
+    if (project) input.parentObjectId = project.id;
+    else if (parsed.parentObjectId !== undefined) input.parentObjectId = parsed.parentObjectId;
     input.metadata = {
       ...(parsed.metadata ?? {}),
       agent_suggestion_item_id: item.id,
@@ -3509,6 +3527,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     const existing = existingRows[0];
     if (!existing) {
       const created = await objects.createObject(input);
+      if (type === 'task') await applyProposedTaskCategory(created.id, parsed);
       return created.id;
     }
 
@@ -3531,7 +3550,109 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       agent_suggestion_item_id: item.id,
     };
     await objects.updateObject(existing.id, patch, { kind: 'agent', userId: null });
+    if (type === 'task') {
+      if (project) {
+        await objects.setTaskProject(existing.id, project.id, { kind: 'agent', userId: null });
+      }
+      await applyProposedTaskCategory(existing.id, parsed);
+    }
     return existing.id;
+  }
+
+  async function resolveSuggestedTaskProject(
+    item: typeof agentSuggestionItems.$inferSelect,
+    payload: z.infer<typeof objectCreatePayload>,
+  ): Promise<{ id: string; name: string } | null> {
+    if (payload.parentObjectId) {
+      const [project] = await db
+        .select({ id: entities.id, name: entities.canonicalName })
+        .from(entities)
+        .where(
+          and(
+            eq(entities.teamId, teamId),
+            eq(entities.id, payload.parentObjectId),
+            eq(entities.type, 'project'),
+            isNull(entities.archivedAt),
+            isNull(entities.mergedIntoId),
+          ),
+        )
+        .limit(1);
+      if (!project) throw new Error('Proposed task project is no longer available');
+      return project;
+    }
+    if (!payload.createProjectName) return null;
+
+    const [createdForSuggestion] = await db
+      .select({ id: entities.id, name: entities.canonicalName })
+      .from(entities)
+      .where(
+        and(
+          eq(entities.teamId, teamId),
+          eq(entities.type, 'project'),
+          isNull(entities.archivedAt),
+          isNull(entities.mergedIntoId),
+          sql`${entities.metadata} ->> 'agent_suggestion_project_for_item_id' = ${item.id}`,
+        ),
+      )
+      .limit(1);
+    if (createdForSuggestion) return createdForSuggestion;
+
+    const exactProjects = await db
+      .select({ id: entities.id, name: entities.canonicalName })
+      .from(entities)
+      .where(
+        and(
+          eq(entities.teamId, teamId),
+          eq(entities.type, 'project'),
+          isNull(entities.archivedAt),
+          isNull(entities.mergedIntoId),
+          sql`lower(${entities.canonicalName}) = lower(${payload.createProjectName})`,
+        ),
+      )
+      .limit(2);
+    if (exactProjects.length > 1) throw new Error('Proposed project name is ambiguous');
+    if (exactProjects[0]) return exactProjects[0];
+
+    const project = await objects.createObject({
+      type: 'project',
+      canonicalName: payload.createProjectName,
+      status: 'planning',
+      metadata: { agent_suggestion_project_for_item_id: item.id },
+      actor: { kind: 'agent', userId: null },
+    });
+    return { id: project.id, name: project.canonicalName };
+  }
+
+  async function applyProposedTaskCategory(
+    taskId: string,
+    payload: z.infer<typeof objectCreatePayload>,
+  ): Promise<void> {
+    if (!payload.taskCategory) return;
+    if (payload.taskCategoryMode === 'manual') {
+      await objects.setTaskCategory(taskId, payload.taskCategory, {
+        kind: 'user',
+        userId,
+      });
+      return;
+    }
+    if (
+      payload.taskCategoryTaxonomyVersion !== TASK_CATEGORY_TAXONOMY_VERSION ||
+      !payload.taskCategoryInputHash ||
+      !payload.taskCategoryModel ||
+      payload.taskCategoryConfidence === undefined
+    ) {
+      return;
+    }
+    const input = await objects.getTaskCategoryClassificationInput(taskId);
+    if (input?.requestedInputHash !== payload.taskCategoryInputHash) return;
+    await objects.applyTaskCategoryClassification({
+      taskId,
+      inputHash: payload.taskCategoryInputHash,
+      category: payload.taskCategory,
+      confidence: payload.taskCategoryConfidence,
+      model: payload.taskCategoryModel,
+      latencyMs: 0,
+    });
   }
 
   function acceptancePriority(item: SuggestionItem): number {
@@ -5547,6 +5668,108 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         if (!processedItemIds.has(itemId)) failedItemIds.push(itemId);
       }
       return { accepted, failed: failedItemIds.length, failedItemIds };
+    },
+
+    async reviseTaskSuggestionItem(input: {
+      itemId: string;
+      category?: TaskCategory | 'automatic';
+      project?:
+        | { kind: 'none' }
+        | { kind: 'existing'; projectId: string }
+        | { kind: 'create'; projectName: string };
+    }): Promise<boolean> {
+      await ensureMember();
+      const [row] = await db
+        .select({ item: agentSuggestionItems })
+        .from(agentSuggestionItems)
+        .innerJoin(agentSuggestions, eq(agentSuggestions.id, agentSuggestionItems.suggestionId))
+        .where(
+          and(
+            eq(agentSuggestionItems.id, input.itemId),
+            eq(agentSuggestionItems.targetKind, 'task'),
+            eq(agentSuggestionItems.operation, 'create'),
+            inArray(agentSuggestionItems.status, ['pending', 'failed']),
+            isNull(agentSuggestionItems.resolvedAt),
+            suggestionVisibilityPredicate(teamId, userId),
+          ),
+        )
+        .limit(1);
+      if (!row) return false;
+      const payload = recordFromUnknown(row.item.proposedPayload);
+      let projectChanged = false;
+      if (input.project) {
+        projectChanged = true;
+        delete payload.parentObjectId;
+        delete payload.createProjectName;
+        delete payload.projectName;
+        if (input.project.kind === 'existing') {
+          const [project] = await db
+            .select({ id: entities.id, name: entities.canonicalName })
+            .from(entities)
+            .where(
+              and(
+                eq(entities.teamId, teamId),
+                eq(entities.id, input.project.projectId),
+                eq(entities.type, 'project'),
+                isNull(entities.archivedAt),
+                isNull(entities.mergedIntoId),
+              ),
+            )
+            .limit(1);
+          if (!project) throw new Error('Project not found');
+          payload.parentObjectId = project.id;
+          payload.projectName = project.name;
+        } else if (input.project.kind === 'create') {
+          const projectName = input.project.projectName.replace(/\s+/g, ' ').trim();
+          if (!projectName || projectName.length > 200) throw new Error('Invalid project name');
+          payload.createProjectName = projectName;
+          payload.projectName = projectName;
+        }
+      }
+      if (input.category) {
+        if (input.category === 'automatic') {
+          delete payload.taskCategory;
+          delete payload.taskCategoryConfidence;
+          delete payload.taskCategoryInputHash;
+          delete payload.taskCategoryModel;
+          delete payload.taskCategoryTaxonomyVersion;
+          payload.taskCategoryMode = 'automatic';
+        } else {
+          payload.taskCategory = input.category;
+          payload.taskCategoryMode = 'manual';
+          delete payload.taskCategoryConfidence;
+          delete payload.taskCategoryInputHash;
+          delete payload.taskCategoryModel;
+          payload.taskCategoryTaxonomyVersion = TASK_CATEGORY_TAXONOMY_VERSION;
+        }
+      } else if (projectChanged && payload.taskCategoryMode !== 'manual') {
+        delete payload.taskCategory;
+        delete payload.taskCategoryConfidence;
+        delete payload.taskCategoryInputHash;
+        delete payload.taskCategoryModel;
+        delete payload.taskCategoryTaxonomyVersion;
+        payload.taskCategoryMode = 'automatic';
+      }
+      const [updated] = await db
+        .update(agentSuggestionItems)
+        .set({
+          proposedPayload: payload,
+          failureReason: null,
+          metadata: sql`${agentSuggestionItems.metadata} || ${JSON.stringify({
+            proposal_edited_by_user_id: userId,
+            proposal_edited_at: new Date().toISOString(),
+          })}::jsonb`,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(agentSuggestionItems.id, input.itemId),
+            inArray(agentSuggestionItems.status, ['pending', 'failed']),
+            isNull(agentSuggestionItems.resolvedAt),
+          ),
+        )
+        .returning({ id: agentSuggestionItems.id });
+      return Boolean(updated);
     },
   };
 }

@@ -1,5 +1,11 @@
 import { PGlite } from '@electric-sql/pglite';
-import { type Db, documentVersions, entities, meetings as meetingsTable } from '@timeline/db';
+import {
+  type Db,
+  documentVersions,
+  entities,
+  entityRelationships,
+  meetings as meetingsTable,
+} from '@timeline/db';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -362,6 +368,56 @@ describe('processJanitorTick — task category sweep', () => {
       trigger: 'retry',
     });
     expect(result.taskCategoriesRequeued).toBe(1);
+  });
+
+  it('restarts a linked project fan-out before re-enqueuing a stale pending task', async () => {
+    const [project] = await db
+      .insert(entities)
+      .values({ teamId: TEAM_ID, type: 'project', canonicalName: 'Faba redesign' })
+      .returning({ id: entities.id });
+    const [task] = await db
+      .insert(entities)
+      .values({
+        teamId: TEAM_ID,
+        type: 'task',
+        canonicalName: 'Prepare wireframes',
+        taskCategoryMode: 'automatic',
+        taskCategoryStatus: 'pending',
+        taskCategoryRequestedInputHash: 'new-hash',
+        taskCategoryTaxonomyVersion: 'task-categories-v1',
+        taskCategoryUpdatedAt: new Date(Date.now() - 10 * 60 * 1000),
+      })
+      .returning({ id: entities.id });
+    await db.insert(entityRelationships).values({
+      teamId: TEAM_ID,
+      fromEntityId: task?.id ?? '',
+      toEntityId: project?.id ?? '',
+      kind: 'child',
+    });
+    const enqueue = vi.fn().mockResolvedValue({ enqueued: true });
+
+    await processJanitorTick({
+      db: db as never,
+      enqueueDocumentExtractJob: vi.fn(),
+      enqueueMeetingFinalizeJob: vi.fn(),
+      enqueueTaskCategoryJob: enqueue,
+    });
+
+    expect(enqueue).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        kind: 'project_fanout',
+        teamId: TEAM_ID,
+        projectId: project?.id,
+        afterTaskId: null,
+      }),
+    );
+    expect(enqueue).toHaveBeenNthCalledWith(2, {
+      teamId: TEAM_ID,
+      taskId: task?.id,
+      inputHash: 'new-hash',
+      trigger: 'retry',
+    });
   });
 });
 
