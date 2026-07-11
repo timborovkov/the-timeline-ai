@@ -292,14 +292,16 @@ function Section({
   id,
   children,
   className,
+  contentClassName,
 }: {
   id?: string;
   children: ReactNode;
   className?: string;
+  contentClassName?: string;
 }) {
   return (
     <section id={id} className={cn('border-t border-border px-6 py-20 sm:py-28', className)}>
-      <div className="mx-auto max-w-6xl">{children}</div>
+      <div className={cn('mx-auto max-w-6xl', contentClassName)}>{children}</div>
     </section>
   );
 }
@@ -316,18 +318,6 @@ function TopNav({ isSignedIn }: { isSignedIn: boolean }) {
           <Wordmark compact />
         </Link>
         <nav className="flex items-center gap-1 text-sm">
-          <Link
-            href="#solution"
-            className="hidden px-3 py-2 text-fg-muted transition-colors hover:text-fg sm:inline"
-          >
-            Product
-          </Link>
-          <Link
-            href="#surfaces"
-            className="hidden px-3 py-2 text-fg-muted transition-colors hover:text-fg sm:inline"
-          >
-            Surfaces
-          </Link>
           <Link
             href="/help"
             className="hidden px-3 py-2 text-fg-muted transition-colors hover:text-fg sm:inline"
@@ -1034,8 +1024,8 @@ function Faq() {
 
 function FinalCTA({ isSignedIn }: { isSignedIn: boolean }) {
   return (
-    <Section id="cta" className="bg-surface">
-      <div className="grid gap-10 lg:grid-cols-[1fr_1.1fr] lg:items-start">
+    <Section id="cta" className="bg-surface" contentClassName="max-w-7xl">
+      <div className="grid gap-10 lg:grid-cols-[0.9fr_1.25fr] lg:items-start">
         <div className="border-l-2 border-signal pl-6 sm:pl-10">
           <Mono className="text-signal">START SMALL</Mono>
           <h2 className="mt-4 max-w-3xl text-3xl font-semibold leading-tight tracking-tight sm:text-4xl">
@@ -1117,15 +1107,6 @@ function Footer({ isSignedIn }: { isSignedIn: boolean }) {
           THE TIMELINE · v1 · 2026
         </span>
         <nav className="flex flex-wrap items-center gap-5">
-          <Link href="#solution" className="hover:text-fg">
-            Product
-          </Link>
-          <Link href="#surfaces" className="hover:text-fg">
-            Surfaces
-          </Link>
-          <Link href="#faq" className="hover:text-fg">
-            FAQ
-          </Link>
           <Link href="/help" className="hover:text-fg">
             Docs
           </Link>
