@@ -363,8 +363,8 @@ writable fields.
 V1 semantics:
 
 - a task may have zero or one primary project
-- the target of the primary project edge must be an active, unmerged,
-  team-scoped object with `type = 'project'`
+- when a project is selected or an AI task is accepted, the target must be an
+  active, unmerged, team-scoped object with `type = 'project'`
 - a task may still have any number of separate `related`, `blocks`, or
   `blocked_by` relationships to deals, companies, people, documents, or other
   objects
@@ -381,6 +381,14 @@ write the existing relationship audit/direct-write provenance. Route task
 creation and project edits through this method or the same transactional
 primitive.
 
+Guard every generic relationship path as well. `addRelationship`, relationship
+suggestion acceptance, agent relationship tools, and the generic relationship
+editor must reject a task-to-project `child` write and direct callers to
+`setTaskProject()`. Otherwise those paths can bypass the row lock and create a
+second primary project. The task UI should remove `child` as a generic
+relationship choice when the target is a project; the dedicated Project field
+owns that mutation.
+
 Do not add a global unique index on every `child` relationship until existing
 non-task hierarchy semantics and data have been audited. If a database-level
 constraint is later needed, introduce an explicit primary-project relation kind
@@ -391,9 +399,9 @@ object hierarchies.
 
 A durable relation must be queryable without title matching. Add a
 `primaryProjectId`/`projectId` task filter implemented as an `EXISTS` condition
-over `entity_relationships` with team, `kind = 'child'`, project type, active,
-and unmerged checks. Expose it consistently to Tasks, structured agent tools,
-and outbound MCP. The project page continues to discover its tasks through the
+over `entity_relationships` with team, `kind = 'child'`, project type, and
+unmerged checks. Expose it consistently to Tasks, structured agent tools, and
+outbound MCP. The project page continues to discover its tasks through the
 inverse edge in Connected Work.
 
 For card/list rendering, use one bounded batch hydration method such as
@@ -404,6 +412,32 @@ id plus project id/name/type. Task detail can use its full relationship data.
 Project replacement/removal must refresh the task, old project, and new project
 surfaces, invalidate the affected project summaries/Connected Work projections,
 and enqueue category reclassification only when category mode is automatic.
+
+### Project lifecycle semantics
+
+- Archiving a project does not erase accepted task membership. Existing task
+  cards/details continue to show the project with an `Archived` state, exact-id
+  filters remain valid, and categorization may continue using its title. New
+  selections and AI task acceptances cannot choose it.
+- Renaming a project changes classifier input. Mark linked automatic tasks
+  pending and enqueue them through a bounded fan-out after the rename commits;
+  manual category overrides remain untouched.
+- Merging projects must retarget or deduplicate task `child` edges to the
+  surviving project through the existing merge transaction, then invalidate
+  automatic category packets. If the survivor is not a project, preserve the
+  old edge as legacy context and surface the task as needing project review.
+- Changing a linked project to a non-project type must not silently delete task
+  history. Reject the type change with the linked-task count until the teammate
+  reassigns/removes those project links. Legacy bad data still renders as
+  `Project needs review` and is excluded from primary-project filters and
+  classifier context.
+- Hard deletion follows existing cascade behavior and leaves affected tasks
+  standalone. Capture linked task ids before delete and invalidate their
+  automatic category packets after commit. If hard deletion is user-reachable,
+  its impact preview must count linked tasks first.
+
+Project rename/merge/type-change fan-out must be capped and recoverable rather
+than enqueueing an unbounded number of jobs inside the request transaction.
 
 ### Manual product flows
 
@@ -416,9 +450,12 @@ project name, not a UUID.
   project after creation.
 - Task detail, task side panel, and full object detail show the project with
   change/remove controls and a direct link to the project.
-- Task cards show the project name only where density allows. Category remains
-  the compact functional badge; project is contextual secondary text or a
-  hover/detail value.
+- Task kanban cards show a truncated project name in their compact context line;
+  task list/table views have a Project column; task side panel and full detail
+  show the editable selector. Mixed board cards and Work Queue rows keep their
+  existing primary context and show project in the detail/expanded view rather
+  than forcing another dense card field. Category remains the compact
+  functional badge.
 - Changing/removing the project is an ordinary explicit user relationship
   mutation with audit history, cross-surface revalidation, and undo where the
   UI already supports it.
@@ -617,9 +654,9 @@ without guessing from category nullability.
 Automatic category writes must not modify `entities.updated_at`. Otherwise a
 historical backfill would reorder every task, invalidate cursor expectations,
 and make old work look recently changed. Use `task_category_updated_at` for
-category freshness. A direct human category edit may update canonical
-`updated_at` if that matches the existing object-edit contract, but this choice
-must be explicit and tested.
+category freshness. A direct human category edit updates canonical `updated_at`
+to match the existing object-edit contract; automatic assignments,
+reclassification, failure, and retry state changes do not.
 
 ## Classification Architecture
 
@@ -704,6 +741,13 @@ canonical task create/eligible update commits
 Use a job id containing team id, task id, and input hash. This deduplicates
 identical work while allowing a title change to enqueue a new job.
 
+The enqueue helper must inspect an existing BullMQ job with that id. Active,
+waiting, or delayed jobs dedupe; completed or failed retained jobs are removed/
+replaced before an explicit retry or a new pending transition with the same
+hash. Otherwise **Retry automatic category** can report success while BullMQ
+silently refuses to add work for the unchanged packet. Cover this with the same
+state-aware queue tests used by other deduplicated workers.
+
 Queue on:
 
 - every canonical task creation, including accepted agent suggestions and agent
@@ -713,6 +757,8 @@ Queue on:
   automatic
 - primary project set/change/remove operations while category mode is
   automatic, because accepted project context is part of the packet
+- accepted project rename/merge/type changes through a bounded linked-task
+  invalidation fan-out
 - a supported object type change into `task`
 - explicit **Use automatic category**
 - explicit retry from a failed automatic state
@@ -846,8 +892,9 @@ versions before merging.
   gate, not only a unit test.
 - Analytics contain keys, states, timings, counts, model/prompt/taxonomy
   versions, and correction transitions only—never task or parent text.
-- Assignment history must be included in team export or explicitly documented
-  as internal operational metadata. Team/entity deletion cascades remove it.
+- Include task category assignment history in team export, including applied,
+  failed, and discarded outcomes without classification packet text.
+  Team/entity deletion cascades remove it.
 - Backups and restores include the new table and indexes through normal Postgres
   coverage; no new external data store is introduced.
 - Automatic assignments and human overrides appear in object change history,
@@ -866,10 +913,10 @@ private helper calls.
 | --- | --- |
 | Pure/unit | Taxonomy/key/label/version uniqueness; Zod validation; deterministic packet/hash and truncation; state transition reducer; URL parsing; OR-within/AND-between filter semantics; project + category AND semantics; `Uncategorized` sentinel; category badge/select rendering |
 | Migration/schema | Existing non-task and task rows migrate safely; checks reject impossible states; composite team/entity FK; cascading delete; audit of tasks with multiple project-child edges; type-away/type-into-task transitions; down/rollback procedure is documented even if migrations remain forward-only |
-| DB integration (PGlite) | Create/read/filter/count/search; null/pending/failed filtering; project filter by durable edge; project set/replace/remove under task row lock; zero-or-one project semantics; legacy non-project child edges excluded and preserved; wrong-type/archived/merged/cross-team project rejection; assignment/change/relationship audit; manual override; reset/retry; previous-value retention; stale success/failure and in-flight human-edit races; archive skips; duplicate idempotency |
+| DB integration (PGlite) | Create/read/filter/count/search; null/pending/failed filtering; project filter by durable edge; project set/replace/remove under task row lock; zero-or-one project semantics; generic relationship paths cannot bypass `setTaskProject`; legacy non-project child edges excluded and preserved; archived project remains readable but cannot be newly selected; rename/merge/type-change lifecycle behavior; wrong-type/merged/cross-team project rejection; assignment/change/relationship audit; manual override; reset/retry; previous-value retention; stale success/failure and in-flight human-edit races; archive skips; duplicate idempotency |
 | PostgreSQL query QA | `EXPLAIN (ANALYZE, BUFFERS)` on representative task/object/board category filters, project-edge filters, inverse Connected Work reads, and counts; partial index usage; no N+1 project hydration; no regression for unfiltered queries; category backfill does not reorder `updated_at` cursors |
-| Queue/worker | Enqueue after all canonical create paths and eligible context/type/project changes; job-id dedupe by requested hash; model failure retry; invalid output; lost-enqueue janitor recovery for retained prior values; project replacement makes the old job stale; no reclassification for ordinary status/due edits; no notifications/timeline/reconciliation spam; per-team fairness |
-| Web actions/components | Valid project create/set/replace/remove and prefilled project-page quick-add; project search permissions; approval preview; valid category update/reset/retry/undo; permission and invalid-category rejection; optimistic card update; bounded batch polling; stale poll response protection; task/object/board filter propagation; category/project on agreed task cards/rows; non-task cards without a category badge; bulk category change and bulk-auto confirmation; accessibility states |
+| Queue/worker | Enqueue after all canonical create paths and eligible context/type/project/project-name changes; job-id dedupe by requested hash; retained failed/completed same-hash job replacement on retry; model failure retry; invalid output; lost-enqueue janitor recovery for retained prior values; project replacement makes the old job stale; capped project fan-out; no reclassification for ordinary status/due edits; no notifications/timeline/reconciliation spam; per-team fairness |
+| Web actions/components | Valid project create/set/replace/remove and prefilled project-page quick-add; archived/project-needs-review presentation; generic child editor guard; project search permissions; approval preview; valid category update/reset/retry/undo; permission and invalid-category rejection; optimistic card update; bounded batch polling; stale poll response protection; task/object/board filter propagation; exact project/category display matrix; non-task cards without a category badge; bulk category change and bulk-auto confirmation; accessibility states |
 | Agent/MCP | Category and primary project serialized in results; “list Engineering tasks for Faba website redesign” applies both structured filters; unique project ownership produces `parentObjectId`; ambiguous/co-mentioned projects do not; unknown category/project rejected; pending/failed fields are not misrepresented; existing clients remain compatible with additive fields |
 | Export/operations | Team export disposition; assignment-history cascade; dry-run cost report; resumable/pauseable backfill; kill switch; metrics contain no task text |
 | E2E | Create `Faba website redesign`, quick-add a task from that project, prove the durable project link appears on both task and project, observe live automatic category without reload, filter by project and category, change category manually, prove override persists, change/remove the project, observe automatic reclassification, and exercise terminal failure/retry |
@@ -970,8 +1017,8 @@ to special-case titles in production code.
 
 Also report:
 
-- accuracy by input surface, language, title length, and whether parent context
-  is present
+- accuracy by input surface, language, title length, and whether primary project
+  context is present
 - context-ablation results comparing title-only with the full safe packet
 - repeatability across at least three calls for a small hard-case subset
 - regressions against the previous prompt/model/taxonomy version
@@ -1144,7 +1191,7 @@ the current branch before editing.
 | --- | --- |
 | Database | `packages/db/src/schema/entities.ts`, assignment schema/export, `entity-relationships.ts` audit, migration + Drizzle metadata |
 | Shared taxonomy | new `packages/shared/src/task-categories/` module and public export/subpath |
-| Object scope | `packages/shared/src/objects/index.ts`, `packages/shared/src/objects/types.ts`, singular task-project mutation, project filter/batch hydration, object tests |
+| Object scope | `packages/shared/src/objects/index.ts`, `packages/shared/src/objects/types.ts`, singular task-project mutation, generic relationship guards, project lifecycle fan-out, project filter/batch hydration, object tests |
 | Board scope | `packages/shared/src/boards/index.ts` and board filter/read tests |
 | LLM | `packages/shared/src/llm/models.ts`, classifier prompt/schema/service, deterministic/live eval manifests |
 | Queues | `packages/shared/src/queue/queues.ts`, queue exports/tests |
@@ -1170,7 +1217,9 @@ the current branch before editing.
 - Add taxonomy/constants/version/schema in a small shared task-category module.
 - Add migration, Drizzle schema, assignment table, partial index, and exports.
 - Audit existing task `child` edges, add singular team-scoped
-  `setTaskProject()`, batch project hydration, and project filter semantics.
+  `setTaskProject()`, guard generic relationship bypasses, define archived/
+  merged/type-changed project reads, add batch hydration, and project filter
+  semantics.
 - Extend category mode/source/status state, `ObjectRow`, filters, both row
   mappers, and team-scoped methods.
 - Add PGlite tests for isolation, validation, state transitions, type changes,
@@ -1182,8 +1231,11 @@ the current branch before editing.
   classifier service through `llm.chatStructured()`.
 - Add queue APIs, worker startup/shutdown, retries, dedupe, failure tags, and
   janitor recovery.
+- Make same-hash explicit retry replace retained failed/completed BullMQ jobs.
 - Enqueue from canonical task create and eligible title/alias/project/type
   changes.
+- Add capped invalidation for linked automatic tasks after project rename/merge/
+  type changes.
 - Tighten task proposal/action prompts so one uniquely owned existing project
   is previewed and persisted as `parentObjectId`, while ambiguity emits no link.
 - Add guarded stale-result/human-override integration tests.
@@ -1224,6 +1276,9 @@ the current branch before editing.
 - A task can have zero or one durable primary project; create, quick-add,
   set/change/remove, project-page Connected Work, project filter, agent/MCP
   reads, and audit all use the same `child` edge semantics.
+- Generic relationship actions cannot create a second project edge; archived
+  projects remain visible on existing tasks, and rename/merge/type-change
+  behavior preserves history while invalidating category context safely.
 - AI task creation links a project only from explicit, unique ownership context,
   shows it before approval, and never treats co-mention or category as project
   membership.
@@ -1248,6 +1303,8 @@ the current branch before editing.
   accepted exception based on reviewed evidence.
 - Automation and backfill can be stopped without removing existing categories
   or breaking manual editing/filtering.
+- A same-input explicit retry cannot be swallowed by a retained failed or
+  completed queue job.
 - Deterministic tests, live eval gates, repository validation, React Doctor,
   relevant suites, dist imports, and the focused E2E flow are green.
 
@@ -1267,10 +1324,10 @@ schema, UI, or eval design:
    failure instead of temporarily clearing it
 7. separate authority mode from displayed-value source so explicit auto-reset
    is safe during in-flight work
-8. automatic assignments do not modify canonical `entities.updated_at`; decide
-   whether direct human category edits should
-9. assignment history is included in team export or formally documented as
-   internal operational metadata
+8. automatic assignments do not modify canonical `entities.updated_at`; direct
+   human category edits do, matching other explicit object edits
+9. assignment history is included in team export without classification packet
+   text
 10. taxonomy v1 is frozen only after the representative-task labeling exercise,
     not solely from the provisional list in this document
 11. a task has zero or one primary project of object type `project`; deals,
