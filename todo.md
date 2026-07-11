@@ -153,6 +153,14 @@ Direction: soften the surface. Keep the forensic mono treatment for data
       suggestions, and expand direct board commands beyond the first
       approval-required add/update/remove card actions.
 
+## Task Categories
+
+- [ ] Add LLM-assigned, user-overridable functional categories to task objects,
+      with shared Tasks/Objects/Boards filters, category badges across work
+      surfaces, guarded background classification, backfill, tests, and live
+      evals. Full plan:
+      [docs/task-categories-plan.md](docs/task-categories-plan.md).
+
 ## Agent Reliability
 
 - [x] Add richer per-tool observability for chat/retrieval turns: selected tool
