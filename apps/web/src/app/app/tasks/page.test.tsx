@@ -407,8 +407,6 @@ describe('TasksPage', () => {
 
     const html = renderToStaticMarkup(await TasksPage());
 
-    expect(html).toContain(
-      'columns suggested, proposed, open, todo, doing, blocked, done, cancelled',
-    );
+    expect(html).toContain('columns backlog, open, doing, blocked, done, cancelled');
   });
 });

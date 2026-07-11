@@ -3,6 +3,8 @@ import { OBJECT_TYPES } from '@timeline/shared/objects/types';
 import type { BoardItemFilter } from '@timeline/shared/boards';
 import type { ObjectListFilter, ObjectType } from '@timeline/shared/objects/types';
 
+import { taskStatusFilterValues } from '@/lib/task-statuses';
+
 export const UNASSIGNED_FILTER_VALUE = 'unassigned';
 export const NONE_FILTER_VALUE = 'none';
 const DUE_PRESETS = ['overdue', 'today', 'next7', 'none', 'range'] as const;
@@ -104,8 +106,11 @@ export function taskObjectFilterFromWorkFilters(
   filters: WorkFilterState,
   now = new Date(),
 ): ObjectListFilter {
+  const base = objectListFilterFromWorkFilters({ ...filters, type: 'task' }, now);
+  const statuses = filters.status ? taskStatusFilterValues(csvValues(filters.status)) : [];
   return {
-    ...objectListFilterFromWorkFilters({ ...filters, type: 'task' }, now),
+    ...base,
+    ...(statuses.length > 0 ? { status: statuses } : {}),
     type: 'task',
     archived: false,
   };

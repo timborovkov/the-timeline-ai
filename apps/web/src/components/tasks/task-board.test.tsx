@@ -105,7 +105,7 @@ function renderBoard(
   return render(
     <TaskBoard
       rows={rows}
-      columns={['todo', 'doing', 'done', 'blocked', 'cancelled']}
+      columns={['backlog', 'open', 'doing', 'blocked', 'done', 'cancelled']}
       selectedTaskId={selectedTaskId}
       selectedTaskContext={selectedTaskContext}
       view={view}
@@ -146,6 +146,23 @@ describe('TaskBoard', () => {
 
     expect(screen.getByRole('link', { name: 'Send proposal' })).toBeTruthy();
     expect(screen.queryByText('Suggested')).toBeNull();
+  });
+
+  it('groups legacy task statuses into the simplified workflow', () => {
+    renderBoard(null, [
+      task({ id: 'suggested', canonicalName: 'Suggested task', status: 'suggested' }),
+      task({ id: 'proposed', canonicalName: 'Proposed task', status: 'proposed' }),
+      task({ id: 'open', canonicalName: 'Open task', status: 'open' }),
+      task({ id: 'todo', canonicalName: 'Todo task', status: 'todo' }),
+    ]);
+
+    expect(screen.getByRole('heading', { name: 'backlog' }).nextElementSibling?.textContent).toBe(
+      '2',
+    );
+    expect(screen.getByRole('heading', { name: 'open' }).nextElementSibling?.textContent).toBe('2');
+    expect(screen.queryByRole('heading', { name: 'suggested' })).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'proposed' })).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'todo' })).toBeNull();
   });
 
   it('prefers source-tracked integration display titles over provider identity canonical names', () => {
@@ -267,7 +284,7 @@ describe('TaskBoard', () => {
       });
     });
 
-    await user.selectOptions(screen.getByDisplayValue('todo'), 'doing');
+    await user.selectOptions(screen.getByDisplayValue('open'), 'doing');
     await waitFor(() => {
       expect(fakes.updateObjectAction).toHaveBeenCalledWith({
         id: 'task-1',
