@@ -1246,6 +1246,28 @@ describe('Slack dispatcher routing', () => {
     expect(fetchBodyContaining(fetchMock, 'answer')).not.toBeNull();
   });
 
+  it('shows every Slack command from /timeline help without requiring a user link', async () => {
+    const fetchMock = installFetchMock();
+    await seedWorkspace(db, TEAM_A);
+
+    await handleSlackSlashCommand(
+      { db: db as never },
+      {
+        command: '/timeline',
+        text: 'help',
+        user_id: 'U_UNLINKED',
+        team_id: 'T_SLACK',
+        channel_id: 'C_HELP',
+        response_url: 'https://hooks.slack.test/response',
+      },
+    );
+
+    const body = fetchBodyContaining(fetchMock, '/ask <question>');
+    expect(body).not.toBeNull();
+    expect(body).toContain('/timeline join <saved-meeting-alias-or-url> [optional title]');
+    expect(body).toContain('/timeline help');
+  });
+
   it('joins a Saved Meeting alias immediately from /timeline join', async () => {
     const fetchMock = installFetchMock();
     await seedBoundSlackUser(db);
