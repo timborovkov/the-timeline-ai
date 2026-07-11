@@ -156,9 +156,10 @@ Direction: soften the surface. Keep the forensic mono treatment for data
 ## Task Categories
 
 - [ ] Add LLM-assigned, user-overridable functional categories to task objects,
-      with shared Tasks/Objects/Boards filters, category badges across work
-      surfaces, guarded background classification, backfill, tests, and live
-      evals. Full plan:
+      plus an optional durable primary-project relation with project-page quick
+      add, manual/AI linking, and project filtering. Include shared
+      Tasks/Objects/Boards filters, category badges across work surfaces,
+      guarded background classification, backfill, tests, and live evals. Full plan:
       [docs/task-categories-plan.md](docs/task-categories-plan.md).
 
 ## Agent Reliability

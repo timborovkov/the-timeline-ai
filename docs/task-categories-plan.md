@@ -2,10 +2,11 @@
 
 ## Outcome
 
-Every workspace object whose type is `task` should receive one functional
-category selected by an LLM. Teammates can change that category, filter task and
-object views by one or more categories, and see the category anywhere a task is
-shown as a card or row.
+Every newly canonical task and every active historical task should receive one
+functional category selected by an LLM. Archived tasks are readable but are not
+backfilled in v1. Teammates can change a category, filter task and object views
+by one or more categories, and see the category anywhere a task is shown as a
+card or row.
 
 The recommended v1 is deliberately narrow:
 
@@ -14,6 +15,7 @@ The recommended v1 is deliberately narrow:
 - asynchronous automatic assignment after a task becomes canonical
 - a permanent human override until the teammate explicitly chooses
   **Use automatic category**
+- an optional canonical project relation that categorization can use as context
 - `task` objects only; `follow_up` remains unchanged in v1
 
 This gives the classifier a stable label set that can be evaluated and keeps
@@ -42,6 +44,8 @@ orientation. Automatic assignment by itself is not the product outcome.
   workflow, and no fear that the model will undo the choice.
 - Give Tasks, Objects, Boards, Work Queue, agents, and outbound MCP one category
   contract rather than surface-specific labels.
+- Preserve the tracked initiative behind a task through a durable project edge,
+  so “Design work for Faba” can be queried by both function and project.
 - Learn from corrections without sending task content to product analytics.
 
 ### Initial success measures
@@ -62,6 +66,8 @@ teams:
   signs of confusing semantics
 - no measurable regression in task creation latency, task-page load time, or
   board query latency
+- zero incorrect project links in the explicit-unique-ownership eval set, and
+  zero links emitted for ambiguous/co-mention cases
 
 These are launch hypotheses, not permanent vanity targets. Qualitative review
 should ask whether people understand the labels, trust them, and can find work
@@ -72,6 +78,8 @@ faster—not only whether the model matches an internal gold set.
 ### In scope for v1
 
 - one shared category on each canonical task object
+- one optional primary project relation per task, using the existing durable
+  object relationship graph
 - automatic LLM selection, manual override, explicit return to automatic mode
 - category filtering and display across existing task-bearing surfaces
 - versioned taxonomy, classifier evals, operational recovery, and active-task
@@ -87,6 +95,8 @@ faster—not only whether the model matches an internal gold set.
 - using category as evidence, an authoritative source field, or a replacement
   for board lanes, object type, status, priority, owner, or assignee
 - categorizing `follow_up` or non-task objects
+- treating board membership, title similarity, co-mention, or semantic
+  similarity as a canonical task-project relation
 - analytics that include task titles, descriptions, parent names, or other
   task content
 
@@ -125,6 +135,14 @@ system.
   write whose post-commit Redis enqueue was lost.
 - `pnpm test:eval` already separates deterministic eval coverage from opt-in
   live-model suites. Task categorization should follow that pattern.
+- `objects.createObject({ parentObjectId })` already writes a durable
+  `entity_relationships` edge from task to parent with `kind = 'child'`, and
+  Connected Work already reads those edges to show project tasks.
+- `suggest_task` and accepted object/task suggestion payloads already support
+  `parentObjectId`, but the general manual new-object form does not expose it,
+  the background extraction prompt does not make project linking a reliable
+  task requirement, and the relationship table currently permits multiple
+  `child` parents for one task.
 
 Do not store the current category only in `entities.metadata`. Category is a
 frequent equality filter and a first-class UI field. JSON storage would make
@@ -314,6 +332,147 @@ alone. Pending and failed states need readable text and `aria-live` only where
 the state changes while the control is open; card grids should not announce
 dozens of background updates.
 
+## Task-to-Project Relationship Contract
+
+Category and project answer different questions:
+
+- category: “What functional kind of work is this?”
+- project: “Which tracked initiative does this task belong to?”
+
+For example, `Prepare homepage wireframes` may have category `design` and
+primary project `Faba website redesign`. Category must not replace the project
+link, and the classifier must not invent a project relation as a side effect of
+choosing a category.
+
+### Canonical representation
+
+Reuse `entity_relationships`; do not add a project id column to `entities`.
+
+```text
+from_entity_id = task.id
+to_entity_id   = project.id
+kind           = child
+```
+
+Keep the existing `parentObjectId` field in task create/suggestion payloads for
+backward compatibility, but validate it as the task's primary project under
+these v1 semantics. New read/filter/UI contracts should call the concept
+`primaryProjectId` or **Project**. Do not expose both names as independently
+writable fields.
+
+V1 semantics:
+
+- a task may have zero or one primary project
+- the target of the primary project edge must be an active, unmerged,
+  team-scoped object with `type = 'project'`
+- a task may still have any number of separate `related`, `blocks`, or
+  `blocked_by` relationships to deals, companies, people, documents, or other
+  objects
+- board membership does not imply a project relation; the same task can appear
+  on several boards while retaining one primary project
+- title match, source co-mention, Connected Work, and semantic similarity are
+  evidence or proposal inputs only, never canonical project membership
+
+The current generic relationship schema allows multiple `child` edges. Enforce
+the one-primary-project rule inside a team-scoped `setTaskProject()` method:
+lock the task row, validate task/project types and team ownership, remove or
+replace the previous task-to-project `child` edge, insert the new edge, and
+write the existing relationship audit/direct-write provenance. Route task
+creation and project edits through this method or the same transactional
+primitive.
+
+Do not add a global unique index on every `child` relationship until existing
+non-task hierarchy semantics and data have been audited. If a database-level
+constraint is later needed, introduce an explicit primary-project relation kind
+or dedicated constrained projection rather than accidentally restricting all
+object hierarchies.
+
+### Read and query contract
+
+A durable relation must be queryable without title matching. Add a
+`primaryProjectId`/`projectId` task filter implemented as an `EXISTS` condition
+over `entity_relationships` with team, `kind = 'child'`, project type, active,
+and unmerged checks. Expose it consistently to Tasks, structured agent tools,
+and outbound MCP. The project page continues to discover its tasks through the
+inverse edge in Connected Work.
+
+For card/list rendering, use one bounded batch hydration method such as
+`listPrimaryProjectsForTasks(taskIds)` rather than one query per task or a
+mandatory join on every generic `ObjectRow` read. Return only team-scoped task
+id plus project id/name/type. Task detail can use its full relationship data.
+
+Project replacement/removal must refresh the task, old project, and new project
+surfaces, invalidate the affected project summaries/Connected Work projections,
+and enqueue category reclassification only when category mode is automatic.
+
+### Manual product flows
+
+Add an optional searchable **Project** selector to task creation and task
+detail. It searches active project objects in the current team and displays the
+project name, not a UUID.
+
+- Creating a task from the Tasks/New Object flow allows selecting a project.
+- **Add task** on a project page preselects that project and returns to the
+  project after creation.
+- Task detail, task side panel, and full object detail show the project with
+  change/remove controls and a direct link to the project.
+- Task cards show the project name only where density allows. Category remains
+  the compact functional badge; project is contextual secondary text or a
+  hover/detail value.
+- Changing/removing the project is an ordinary explicit user relationship
+  mutation with audit history, cross-surface revalidation, and undo where the
+  UI already supports it.
+- Project is optional. A standalone task is valid and should not show a warning
+  merely because no project is attached.
+- The Tasks filter bar supports selecting a project, and agent/MCP task lists
+  accept the same stable project object id. Category and project filters combine
+  with AND semantics.
+
+### AI-created and suggested tasks
+
+When proposing or executing a task, the agent may set `parentObjectId` only
+when exactly one listed existing project clearly owns the task. The prompt must
+distinguish ownership language from weak context:
+
+- “For the Faba website redesign, prepare homepage wireframes” may link to the
+  unique `Faba website redesign` project.
+- “Compare Faba website redesign with the Acme site” is only co-mention and does
+  not establish task ownership.
+- If two project candidates plausibly match, omit `parentObjectId`; do not
+  guess.
+
+The suggestion/approval card must show **Project: Faba website redesign** before
+acceptance. Acceptance validates that the target is still an active project in
+the same team. If the project disappeared, merged, or changed type, fail the
+project portion clearly instead of creating a cross-team or dangling edge. The
+recommended v1 behavior is to reject the acceptance and let the teammate choose
+the current project, so the resulting task cannot silently differ from the
+approved preview.
+
+Agent-created task relationships remain approval-backed under existing task
+creation/action rules. Background categorization is allowed to read an accepted
+project link but never create, replace, or remove it.
+
+### Existing tasks and relationship repair
+
+Do not infer and directly write project relations during the category backfill.
+Existing tasks with a valid single project `child` edge use it immediately.
+Tasks with no project remain valid. Tasks with multiple project `child` edges
+must be reported by a dry-run audit and resolved before enforcing singular
+write semantics.
+
+Also report task `child` edges whose target is a deal, company, person, or other
+non-project type. They are legacy contextual relationships, not primary
+projects. Preserve them during the first rollout, exclude them from project
+hydration/classification context, and migrate them to an appropriate `related`
+or other explicit kind only through a separately reviewed relationship cleanup.
+`setTaskProject()` replaces only task-to-project `child` edges and must not
+silently delete these legacy edges.
+
+A later repair workflow may propose project links from strong evidence, but it
+must show the candidate project and require approval. Category output alone is
+never evidence that a task belongs to a particular project.
+
 ## Data Model
 
 Add nullable current-state columns to `entities` in the next migration (likely
@@ -398,6 +557,7 @@ interface ObjectRow {
 interface ObjectListFilter {
   taskCategory?: TaskCategory | TaskCategory[];
   taskCategoryNull?: boolean;
+  primaryProjectId?: string | string[];
 }
 ```
 
@@ -407,6 +567,9 @@ Update both object-row mappers in `packages/shared/src/objects/index.ts` and
 
 Expose category mutations as narrow methods on `scope.objects`, for example:
 
+- `setTaskProject(taskId, projectIdOrNull, actor)` for the singular canonical
+  project edge
+- `listPrimaryProjectsForTasks(taskIds)` for batch UI/tool hydration
 - `setTaskCategory(entityId, category, actor)` for a human override
 - `resetTaskCategoryToAutomatic(entityId, actor)` for explicit opt-in to a new
   LLM assignment
@@ -421,10 +584,10 @@ The worker method must never accept an arbitrary team id without the
 | Event | Category value | Mode | Source | Status | Requested hash |
 | --- | --- | --- | --- | --- | --- |
 | New task | null | automatic | null | pending | current packet hash |
-| First LLM success | predicted | automatic | llm | ready | applied hash |
+| First LLM success | predicted | automatic | llm | ready | null |
 | Eligible task context changes | retain previous | automatic | retain previous | pending | new packet hash |
-| Later LLM success | predicted | automatic | llm | ready | applied hash |
-| LLM terminal failure | retain previous, or null if none | automatic | retain previous | failed | failed hash |
+| Later LLM success | predicted | automatic | llm | ready | null |
+| LLM terminal failure | retain previous, or null if none | automatic | retain previous | failed | null |
 | User selects category | selected | manual | user | ready | null |
 | User chooses automatic | retain selected | automatic | user until success | pending | current packet hash |
 | User retries failure | retain previous | automatic | retain previous | pending | current packet hash |
@@ -436,11 +599,13 @@ as database checks where practical:
 - non-task rows have all task-category fields null
 - manual mode always has a non-null category, `source = user`, `status = ready`,
   the current taxonomy version, and no requested hash
-- automatic ready state has a non-null category, `source = llm`, and matching
-  applied/requested classifier hashes
+- automatic ready state has a non-null category, `source = llm`, a non-null
+  applied classifier hash, and no requested hash
 - automatic pending/failed state may retain a prior category and source; a null
   category means no successful assignment has ever been applied
-- only automatic mode can have a requested classifier hash
+- only automatic pending state can have a requested classifier hash; success
+  moves it to applied and terminal failure records it in assignment history
+  before clearing it
 - every state-changing method checks the expected prior mode/requested hash so
   retries and stale clients cannot silently clobber newer state
 
@@ -496,7 +661,8 @@ repeatable:
 - at most a few sanitized, human-readable aliases when they add a real title
   variant; exclude URLs, provider ids, issue keys, and opaque identifiers
 - whitelisted human-readable object metadata such as a description, if present
-- linked parent object's title and type via the existing `child` relationship
+- accepted primary project's title via the existing task-to-project `child`
+  relationship
 - integration provider and external object type, when present
 
 Do not include board-local `nextStep`, notes, lane, or custom fields in v1. The
@@ -545,8 +711,8 @@ Queue on:
 - title/alias changes while category mode is automatic
 - changes to the small classifier metadata allow-list while category mode is
   automatic
-- parent relationship link/unlink changes while category mode is automatic,
-  because parent title/type is part of the packet
+- primary project set/change/remove operations while category mode is
+  automatic, because accepted project context is part of the packet
 - a supported object type change into `task`
 - explicit **Use automatic category**
 - explicit retry from a failed automatic state
@@ -615,11 +781,16 @@ Update every shared query path, not just the Tasks page:
    searchable, while keeping equality filters as the reliable path.
 4. Add `category` to `WORK_FILTER_PARAM_KEYS`, `WorkFilterState`, parsing,
    active-filter detection, URL preservation, and task/object/board mapping.
-5. Update cursor pagination and count tests to prove filter and count use the
+5. Add the project selector's stable UUID parameter to task filter parsing and
+   map it to the shared primary-project `EXISTS` filter; reject cross-team,
+   non-project, archived, or malformed ids.
+6. Update cursor pagination and count tests to prove filter and count use the
    same conditions.
-6. Serialize `task_category` in chat-agent and outbound MCP object/task results;
-   add validated category inputs to structured search/list tools.
-7. Include category in Work Queue DTOs and global-search task presentation.
+7. Serialize `task_category` and hydrated primary project in chat-agent and
+   outbound MCP object/task results; add validated category/project inputs to
+   structured search/list tools.
+8. Include category and project context in Work Queue DTOs and global-search
+   task presentation where density allows.
 
 All database reads remain behind `withTeam`; the new index starts with
 `team_id`. Add an explicit cross-team filter test because category must not
@@ -630,6 +801,12 @@ receive the same rows as before. Use the stable category key on the wire and the
 localized label only in UI. Unknown or retired keys are rejected on writes and
 filters; legacy stored keys remain readable until an explicit taxonomy
 migration maps them.
+
+For a retired key, deploy a compatibility union and legacy label map first,
+migrate stored automatic and reviewed manual values with the documented
+mapping, verify no rows or API consumers still use the key, and only then remove
+it from the runtime/type union in a later release. Never remove a key from
+`TaskCategory` while database rows can still contain it.
 
 Category is structured retrieval metadata. Do not automatically re-embed the
 task, invalidate generated object summaries, or make semantic search depend on
@@ -661,6 +838,8 @@ versions before merging.
 - Category reads and writes use `withTeam`; assignment history uses composite
   team/entity foreign keys so a guessed entity UUID cannot create cross-team
   history.
+- Task-project mutations lock and validate both endpoints inside the same team
+  scope; the project must be active, unmerged, and type `project` at write time.
 - Classification input is limited to team-visible canonical task/object data.
   Never enrich a shared category from private or `specific_users` raw events.
 - Task text is fenced as untrusted input. Prompt-injection cases are a release
@@ -685,15 +864,15 @@ private helper calls.
 
 | Layer | Required coverage |
 | --- | --- |
-| Pure/unit | Taxonomy/key/label/version uniqueness; Zod validation; deterministic packet/hash and truncation; state transition reducer; URL parsing; OR-within/AND-between filter semantics; `Uncategorized` sentinel; category badge/select rendering |
-| Migration/schema | Existing non-task and task rows migrate safely; checks reject impossible states; composite team/entity FK; cascading delete; type-away/type-into-task transitions; down/rollback procedure is documented even if migrations remain forward-only |
-| DB integration (PGlite) | Create/read/filter/count/search; null/pending/failed filtering; non-task rejection; team isolation; assignment/change audit; manual override; reset/retry; previous-value retention; stale success/failure and in-flight human-edit races; archive skips; duplicate idempotency |
-| PostgreSQL query QA | `EXPLAIN (ANALYZE, BUFFERS)` on representative task/object/board category filters and counts; partial index usage; no regression for unfiltered queries; category backfill does not reorder `updated_at` cursors |
-| Queue/worker | Enqueue after all canonical create paths and eligible context/type/relationship changes; job-id dedupe by requested hash; model failure retry; invalid output; lost-enqueue janitor recovery for retained prior values; no reclassification for ordinary status/due edits; no notifications/timeline/reconciliation spam; per-team fairness |
-| Web actions/components | Valid manual update/reset/retry/undo; permission and invalid-category rejection; optimistic card update; bounded batch polling; stale poll response protection; task/object/board filter propagation; category on every task card/row; non-task cards without a badge; bulk category change and bulk-auto confirmation; accessibility states |
-| Agent/MCP | Category serialized in results; “list Engineering tasks” applies the structured filter; unknown category rejected; pending/failed fields are not misrepresented; existing clients remain compatible with the additive field |
+| Pure/unit | Taxonomy/key/label/version uniqueness; Zod validation; deterministic packet/hash and truncation; state transition reducer; URL parsing; OR-within/AND-between filter semantics; project + category AND semantics; `Uncategorized` sentinel; category badge/select rendering |
+| Migration/schema | Existing non-task and task rows migrate safely; checks reject impossible states; composite team/entity FK; cascading delete; audit of tasks with multiple project-child edges; type-away/type-into-task transitions; down/rollback procedure is documented even if migrations remain forward-only |
+| DB integration (PGlite) | Create/read/filter/count/search; null/pending/failed filtering; project filter by durable edge; project set/replace/remove under task row lock; zero-or-one project semantics; legacy non-project child edges excluded and preserved; wrong-type/archived/merged/cross-team project rejection; assignment/change/relationship audit; manual override; reset/retry; previous-value retention; stale success/failure and in-flight human-edit races; archive skips; duplicate idempotency |
+| PostgreSQL query QA | `EXPLAIN (ANALYZE, BUFFERS)` on representative task/object/board category filters, project-edge filters, inverse Connected Work reads, and counts; partial index usage; no N+1 project hydration; no regression for unfiltered queries; category backfill does not reorder `updated_at` cursors |
+| Queue/worker | Enqueue after all canonical create paths and eligible context/type/project changes; job-id dedupe by requested hash; model failure retry; invalid output; lost-enqueue janitor recovery for retained prior values; project replacement makes the old job stale; no reclassification for ordinary status/due edits; no notifications/timeline/reconciliation spam; per-team fairness |
+| Web actions/components | Valid project create/set/replace/remove and prefilled project-page quick-add; project search permissions; approval preview; valid category update/reset/retry/undo; permission and invalid-category rejection; optimistic card update; bounded batch polling; stale poll response protection; task/object/board filter propagation; category/project on agreed task cards/rows; non-task cards without a category badge; bulk category change and bulk-auto confirmation; accessibility states |
+| Agent/MCP | Category and primary project serialized in results; “list Engineering tasks for Faba website redesign” applies both structured filters; unique project ownership produces `parentObjectId`; ambiguous/co-mentioned projects do not; unknown category/project rejected; pending/failed fields are not misrepresented; existing clients remain compatible with additive fields |
 | Export/operations | Team export disposition; assignment-history cascade; dry-run cost report; resumable/pauseable backfill; kill switch; metrics contain no task text |
-| E2E | Create a task, observe live automatic category without reload, filter to it, change it manually, undo or reload, edit the title, prove override persists, reset to automatic without badge disappearance, observe reclassification, and exercise terminal failure/retry |
+| E2E | Create `Faba website redesign`, quick-add a task from that project, prove the durable project link appears on both task and project, observe live automatic category without reload, filter by project and category, change category manually, prove override persists, change/remove the project, observe automatic reclassification, and exercise terminal failure/retry |
 
 New test files and major suites should begin with a short business-intent
 comment, following the repository test strategy.
@@ -733,12 +912,20 @@ backfilling production data:
   Operations/Finance, Legal/IT Security, Research/Strategy
 - short ambiguous titles such as “Review proposal” with and without parent
   context
+- project-context pairs where the same ambiguous title should classify
+  differently under different accepted projects, plus cases where project
+  context must not override a clear task deliverable
 - multilingual cases representative of actual capture languages
 - integration-shaped titles from GitHub, Linear, meetings, Slack, and manual
   task creation
 - completed/blocked wording that must not be mistaken for a category
 - prompt-injection-shaped titles and metadata
 - intentionally unmatched work expected to be `other`
+
+Keep task-project relation quality in the agent/suggestion eval suite rather
+than the category exact-label scorer: unique explicit ownership should emit the
+project UUID; ambiguous matches and co-mentions should emit no
+`parentObjectId`; acceptance should preserve the previewed edge.
 
 Maintain two views of the cases:
 
@@ -751,11 +938,13 @@ Keep a meaningful holdout unseen during prompt iteration. Use synthetic, dev
 seed, or explicitly approved/redacted examples in the checked-in manifest;
 never copy private production task text into the repository.
 
-Each case should contain the exact classification packet, expected category,
-acceptable alternatives only where product semantics truly allow them, a
-scenario family, and a brief annotator rationale. Avoid weakening the rubric by
-adding alternatives after seeing model failures; disputed cases should be
-resolved by two human reviewers and the taxonomy wording updated if necessary.
+Each release-gated case contains the exact classification packet, one canonical
+expected category, a scenario family, and a brief annotator rationale. Cases
+where two labels remain genuinely acceptable belong in a separate disputed/
+diagnostic set and do not count toward exact accuracy, macro F1, or per-category
+recall. Avoid weakening the rubric by adding alternatives after seeing model
+failures; disputed cases should be resolved by two human reviewers and the
+taxonomy wording updated when possible.
 
 ### Metrics and gates
 
@@ -821,8 +1010,11 @@ category, model, prompt version, and taxonomy version:
 Sample only appropriately redacted packets into restricted eval artifacts.
 Treat sustained human correction above 15%, any category recall regression, or
 a sharp rise in `other` as a prompt/taxonomy/model rollback signal. Correction
-rate must exclude changes made solely because the task itself changed function;
-otherwise product evolution is mislabeled as classifier error.
+rate counts a user override as model correction only when the task's current
+classifier packet hash still equals the hash of the applied LLM assignment. If
+title, project, aliases, or classifier metadata changed first, record the edit
+as task evolution/ambiguous rather than classifier error. This remains
+measurable without sending task content to analytics.
 
 ## Rollout and Backfill
 
@@ -950,18 +1142,18 @@ the current branch before editing.
 
 | Area | Likely files/modules |
 | --- | --- |
-| Database | `packages/db/src/schema/entities.ts`, new assignment schema/export, migration + Drizzle metadata |
+| Database | `packages/db/src/schema/entities.ts`, assignment schema/export, `entity-relationships.ts` audit, migration + Drizzle metadata |
 | Shared taxonomy | new `packages/shared/src/task-categories/` module and public export/subpath |
-| Object scope | `packages/shared/src/objects/index.ts`, `packages/shared/src/objects/types.ts`, object tests |
+| Object scope | `packages/shared/src/objects/index.ts`, `packages/shared/src/objects/types.ts`, singular task-project mutation, project filter/batch hydration, object tests |
 | Board scope | `packages/shared/src/boards/index.ts` and board filter/read tests |
 | LLM | `packages/shared/src/llm/models.ts`, classifier prompt/schema/service, deterministic/live eval manifests |
 | Queues | `packages/shared/src/queue/queues.ts`, queue exports/tests |
 | Worker | new task-category worker/tests, `apps/worker/src/index.ts`, janitor extension, dry-run/backfill script |
-| Web filtering | `apps/web/src/lib/work-filters.ts`, tests, `work-filter-bar.tsx`, Tasks/Objects/Boards page parameter propagation |
-| Web mutations | `apps/web/src/app/actions/objects.ts`, revalidation helper, batch category-state read |
-| Task/object UI | task board/card/list/detail, object index/detail and connected-task cards, shared badge/select components |
+| Web filtering | `apps/web/src/lib/work-filters.ts`, tests, `work-filter-bar.tsx`, category/project parameter propagation |
+| Web mutations | `apps/web/src/app/actions/objects.ts`, task-project set/remove/create actions, revalidation helper, batch category/project-state reads |
+| Task/object UI | new-task project selector, project-page quick-add, task board/card/list/detail, object index/detail and connected-task cards, shared badge/select components |
 | Board/Work/search UI | curated board kanban/table/list, board card detail, Work Queue DTO/row, global-search task result |
-| Agent and MCP | shared agent tool schemas/serializers/evals, outbound MCP schemas/serializers/tests |
+| Agent and MCP | suggestion prompt + approval preview for unique project ownership, shared agent tool schemas/serializers/evals, outbound MCP schemas/serializers/tests |
 | Operations | dev seed, team export disposition, analytics event definitions, Sentry/worker tags, package scripts and CI commands |
 | Docs | `docs/objects.html`, `design.md`, README/eval commands, `todo.md`, ADR, setup docs only if configuration changes |
 
@@ -977,6 +1169,8 @@ the current branch before editing.
 
 - Add taxonomy/constants/version/schema in a small shared task-category module.
 - Add migration, Drizzle schema, assignment table, partial index, and exports.
+- Audit existing task `child` edges, add singular team-scoped
+  `setTaskProject()`, batch project hydration, and project filter semantics.
 - Extend category mode/source/status state, `ObjectRow`, filters, both row
   mappers, and team-scoped methods.
 - Add PGlite tests for isolation, validation, state transitions, type changes,
@@ -988,17 +1182,21 @@ the current branch before editing.
   classifier service through `llm.chatStructured()`.
 - Add queue APIs, worker startup/shutdown, retries, dedupe, failure tags, and
   janitor recovery.
-- Enqueue from canonical task create and eligible title/alias/parent/type
+- Enqueue from canonical task create and eligible title/alias/project/type
   changes.
+- Tighten task proposal/action prompts so one uniquely owned existing project
+  is previewed and persisted as `parentObjectId`, while ambiguity emits no link.
 - Add guarded stale-result/human-override integration tests.
 
 ### Slice 3: Core UI and filters
 
-- Add category to shared Work filters and database/board query conditions.
+- Add category and primary-project task filters to shared Work/database query
+  conditions.
 - Add badge/select components.
-- Ship Tasks and Objects filtering, task cards/list rows, task side panel,
-  object-task rows, task object detail editing, and bounded pending-state
-  refresh.
+- Ship task-create project selector, project-page quick-add, project
+  set/change/remove controls, Tasks and Objects filtering, task cards/list rows,
+  task side panel, object-task rows, task object detail editing, and bounded
+  pending-state refresh.
 - Add bulk category editing after the single-row mutation is stable.
 
 ### Slice 4: Remaining consumers
@@ -1023,6 +1221,12 @@ the current branch before editing.
 - Every newly canonical task enters an observable automatic pending state and
   is categorized asynchronously without blocking task creation.
 - Existing active tasks can be backfilled with the same classifier.
+- A task can have zero or one durable primary project; create, quick-add,
+  set/change/remove, project-page Connected Work, project filter, agent/MCP
+  reads, and audit all use the same `child` edge semantics.
+- AI task creation links a project only from explicit, unique ownership context,
+  shows it before approval, and never treats co-mention or category as project
+  membership.
 - A teammate can change a task category and the choice survives reloads,
   unrelated edits, delayed model responses, retries, and worker restarts.
 - A teammate can undo a correction, retry a failure, and explicitly return a
@@ -1069,3 +1273,10 @@ schema, UI, or eval design:
    internal operational metadata
 10. taxonomy v1 is frozen only after the representative-task labeling exercise,
     not solely from the provisional list in this document
+11. a task has zero or one primary project of object type `project`; deals,
+    companies, and people use ordinary contextual relationships instead
+12. invalid/stale project targets reject AI task acceptance rather than silently
+    creating an unlinked task that differs from the approval preview
+13. singular task-project semantics are initially enforced under a task row lock
+    in the shared scope; a global `child` uniqueness constraint waits for an
+    audit of other object hierarchies
