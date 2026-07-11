@@ -16,7 +16,12 @@ import {
   rejectObjectChangeAction,
   removeRelationshipAction,
   repairObjectMemoryAction,
+  resetTaskCategoryAction,
+  retryTaskCategoryAction,
   searchObjectsAction,
+  setTaskCategoryAction,
+  undoTaskCategoryChangeAction,
+  setTaskProjectAction,
   updateNoteAction,
   updateObjectAction,
 } from '@/app/actions/objects';
@@ -45,6 +50,11 @@ const fakes = vi.hoisted(() => ({
     mergeObjects: vi.fn(),
     addRelationship: vi.fn(),
     removeRelationship: vi.fn(),
+    setTaskCategory: vi.fn(),
+    undoTaskCategoryChange: vi.fn(),
+    resetTaskCategoryToAutomatic: vi.fn(),
+    retryTaskCategory: vi.fn(),
+    setTaskProject: vi.fn(),
     createNote: vi.fn(),
     updateNote: vi.fn(),
     deleteNote: vi.fn(),
@@ -131,6 +141,19 @@ beforeEach(() => {
     type: 'task',
     changedFields: ['archivedAt'],
   });
+  fakes.fakeObjects.setTaskProject.mockResolvedValue({
+    changed: true,
+    project: null,
+    touchedIds: [OBJECT_ID],
+  });
+  fakes.fakeObjects.setTaskCategory.mockResolvedValue({
+    object: { id: OBJECT_ID },
+    changeId: CHANGE_ID,
+  });
+  fakes.fakeObjects.undoTaskCategoryChange.mockResolvedValue({
+    id: OBJECT_ID,
+    taskCategoryMode: 'automatic',
+  });
   fakes.fakeObjects.mergeObjects.mockResolvedValue({
     survivor: { id: OBJECT_ID },
     mergedIds: [OTHER_OBJECT_ID],
@@ -160,6 +183,11 @@ beforeEach(() => {
       assigneeUserId: null,
       dueAt: null,
       agentSuggested: false,
+      taskCategory: null,
+      taskCategoryMode: null,
+      taskCategorySource: null,
+      taskCategoryStatus: null,
+      taskCategoryUpdatedAt: null,
       archivedAt: null,
       aliases: [],
       metadata: {},
@@ -177,6 +205,11 @@ beforeEach(() => {
       assigneeUserId: null,
       dueAt: null,
       agentSuggested: false,
+      taskCategory: null,
+      taskCategoryMode: null,
+      taskCategorySource: null,
+      taskCategoryStatus: null,
+      taskCategoryUpdatedAt: null,
       archivedAt: null,
       aliases: [],
       metadata: {},
@@ -859,5 +892,49 @@ describe('object relationship, note, notification, and suggestion actions', () =
       userId: USER_ID,
     });
     expect(fakes.fakeObjects.rejectObjectChange).toHaveBeenCalledWith(CHANGE_ID);
+  });
+
+  it('validates and routes category authority and primary project mutations', async () => {
+    await expect(
+      setTaskCategoryAction({ id: OBJECT_ID, category: 'engineering' }),
+    ).resolves.toEqual({ ok: true, id: OBJECT_ID, undoChangeId: CHANGE_ID });
+    await expect(
+      undoTaskCategoryChangeAction({ id: OBJECT_ID, changeId: CHANGE_ID }),
+    ).resolves.toEqual({ ok: true, id: OBJECT_ID });
+    await expect(resetTaskCategoryAction({ id: OBJECT_ID })).resolves.toEqual({
+      ok: true,
+      id: OBJECT_ID,
+    });
+    await expect(retryTaskCategoryAction({ id: OBJECT_ID })).resolves.toEqual({
+      ok: true,
+      id: OBJECT_ID,
+    });
+    await expect(
+      setTaskProjectAction({ id: OBJECT_ID, projectId: OTHER_OBJECT_ID }),
+    ).resolves.toEqual({ ok: true, id: OBJECT_ID });
+
+    expect(fakes.fakeObjects.setTaskCategory).toHaveBeenCalledWith(OBJECT_ID, 'engineering', {
+      kind: 'user',
+      userId: USER_ID,
+    });
+    expect(fakes.fakeObjects.undoTaskCategoryChange).toHaveBeenCalledWith(OBJECT_ID, CHANGE_ID, {
+      kind: 'user',
+      userId: USER_ID,
+    });
+    expect(fakes.fakeObjects.resetTaskCategoryToAutomatic).toHaveBeenCalledWith(OBJECT_ID, {
+      kind: 'user',
+      userId: USER_ID,
+    });
+    expect(fakes.fakeObjects.retryTaskCategory).toHaveBeenCalledWith(OBJECT_ID, {
+      kind: 'user',
+      userId: USER_ID,
+    });
+    expect(fakes.fakeObjects.setTaskProject).toHaveBeenCalledWith(OBJECT_ID, OTHER_OBJECT_ID, {
+      kind: 'user',
+      userId: USER_ID,
+    });
+    await expect(setTaskCategoryAction({ id: OBJECT_ID, category: 'not-real' })).resolves.toEqual({
+      error: 'Invalid task category',
+    });
   });
 });

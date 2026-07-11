@@ -108,6 +108,33 @@ OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
         run <code>pnpm --filter @timeline/shared test -- src/llm/chat.test.ts</code>.
       </p>
 
+      <h2 id="task-categories">Task-category classifier</h2>
+      <p>
+        Canonical tasks are categorized asynchronously through the pinned
+        <code>TIMELINE_MODELS.taskCategorization</code> model. Run the live 120-case release gate
+        against the same environment with
+        <code>TASK_CATEGORY_LIVE_ENV_FILE=/path/to/.env pnpm test:task-category-eval:live</code>.
+        The report includes exact accuracy, macro accuracy, prompt-injection safety, and a confusion
+        matrix; it does not write task content to product analytics.
+      </p>
+      <p>
+        Historical work defaults to a dry run:
+        <code
+          >pnpm --filter @timeline/worker task-category-backfill -- --team-id=&lt;uuid&gt;
+          --limit=500</code
+        >. Enqueueing requires both <code>--enqueue</code> and an explicit cost ceiling such as
+        <code>--max-cost-usd=0.10</code>. Each execution is bounded; rerun it to resume. Already
+        pending, manual, archived, and ready tasks are skipped.
+      </p>
+      <p>
+        <code>TASK_CATEGORY_CLASSIFICATION_ENABLED=false</code> is the master emergency stop.
+        Independent controls are <code>TASK_CATEGORY_AUTO_ENQUEUE_ENABLED</code>,
+        <code>TASK_CATEGORY_WORKER_ENABLED</code>, <code>TASK_CATEGORY_BACKFILL_ENABLED</code>, and
+        <code>TASK_CATEGORY_UI_ENABLED</code>. Disabling any control preserves stored categories and
+        manual history. Re-enable worker and enqueue controls together after an outage; the janitor
+        repairs eligible pending rows.
+      </p>
+
       <h2 id="phase-3">Phase 3 verification (transcription)</h2>
       <p>
         <code>pnpm canary:integrations</code> sends a tiny embedded spoken MP3 fixture through

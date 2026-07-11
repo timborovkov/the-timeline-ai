@@ -1,0 +1,105 @@
+'use client';
+
+import { useRouter } from 'next/navigation';
+import { useEffect, useMemo, useState, useTransition } from 'react';
+
+import { searchObjectsAction, setTaskProjectAction } from '@/app/actions/objects';
+import { errorMessage } from '@/lib/utils';
+
+export function TaskProjectSelect({
+  taskId,
+  projectId,
+  currentProjectLabel,
+  projects,
+}: {
+  taskId: string;
+  projectId: string | null;
+  currentProjectLabel?: string | undefined;
+  projects: { id: string; label: string }[];
+}) {
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+  const [query, setQuery] = useState('');
+  const [remoteProjects, setRemoteProjects] = useState<{ id: string; label: string }[]>([]);
+  useEffect(() => {
+    const normalized = query.trim();
+    if (normalized.length < 2) {
+      setRemoteProjects([]);
+      return;
+    }
+    let active = true;
+    const timer = setTimeout(() => {
+      void searchObjectsAction({ query: normalized, type: 'project' }).then((result) => {
+        if (!active) return;
+        const found: { id: string; label: string }[] = [];
+        for (const row of result.results) {
+          if (row.type === 'project') found.push({ id: row.id, label: row.canonicalName });
+        }
+        setRemoteProjects(found);
+      });
+    }, 250);
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
+  }, [query]);
+  const visibleProjects = useMemo(() => {
+    const normalized = query.trim().toLowerCase();
+    const candidates = normalized
+      ? [
+          ...projects.filter(
+            (project) =>
+              project.id === projectId || project.label.toLowerCase().includes(normalized),
+          ),
+          ...remoteProjects,
+        ]
+      : projects;
+    return [...new Map(candidates.map((project) => [project.id, project])).values()];
+  }, [projectId, projects, query, remoteProjects]);
+  return (
+    <div className="space-y-2">
+      <input
+        type="search"
+        value={query}
+        onChange={(event) => {
+          setQuery(event.currentTarget.value);
+        }}
+        placeholder="Search projects…"
+        aria-label="Search task projects"
+        className="h-8 w-full rounded-sm border border-border bg-bg px-2 text-xs text-fg"
+      />
+      <select
+        aria-label="Task project"
+        value={projectId ?? ''}
+        disabled={pending}
+        onChange={(event) => {
+          const nextProjectId = event.currentTarget.value || null;
+          setError(null);
+          startTransition(() => {
+            void setTaskProjectAction({ id: taskId, projectId: nextProjectId })
+              .then((result) => {
+                if (result.error) setError(result.error);
+                else router.refresh();
+              })
+              .catch((cause: unknown) => {
+                setError(errorMessage(cause, 'Project update failed'));
+              });
+          });
+        }}
+        className="h-9 w-full rounded-sm border border-border bg-bg px-2 text-sm text-fg disabled:cursor-progress disabled:opacity-60"
+      >
+        <option value="">No project</option>
+        {projectId && !projects.some((project) => project.id === projectId) ? (
+          <option value={projectId}>{currentProjectLabel ?? projectId} · Archived</option>
+        ) : null}
+        {visibleProjects.map((project) => (
+          <option key={project.id} value={project.id}>
+            {project.label}
+          </option>
+        ))}
+      </select>
+      {error ? <p className="text-xs text-danger">{error}</p> : null}
+    </div>
+  );
+}

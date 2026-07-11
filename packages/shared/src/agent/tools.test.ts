@@ -66,6 +66,7 @@ interface FakeScope {
     archiveObject: ReturnType<typeof vi.fn>;
     getObjectMergePreview: ReturnType<typeof vi.fn>;
     mergeObjects: ReturnType<typeof vi.fn>;
+    listPrimaryProjectsForTasks: ReturnType<typeof vi.fn>;
   };
   boards: {
     listBoards: ReturnType<typeof vi.fn>;
@@ -124,6 +125,7 @@ function makeFakeScope(): FakeScope {
       archiveObject: vi.fn(),
       getObjectMergePreview: vi.fn(),
       mergeObjects: vi.fn(),
+      listPrimaryProjectsForTasks: vi.fn().mockResolvedValue([]),
     },
     boards: {
       listBoards: vi.fn(),
@@ -2232,6 +2234,39 @@ describe('buildAgentTools — team isolation', () => {
       },
     });
     expect(input.items[0]?.proposedPayload).not.toHaveProperty('sourceEventId');
+  });
+
+  it('previews only an active project as the task parent and includes its readable name', async () => {
+    const scope = makeFakeScope();
+    const projectId = '44444444-4444-4444-8444-444444444444';
+    scope.objects.getObject.mockResolvedValue({
+      id: projectId,
+      type: 'project',
+      canonicalName: 'Faba website redesign',
+      archivedAt: null,
+    });
+    scope.suggestions.createOrMergeSuggestionBundle.mockResolvedValue({ id: 'suggestion-1' });
+    const tools = buildAgentTools(scope as unknown as TeamScope);
+    const exec = tools.suggest_task?.execute as (input: unknown, opts: unknown) => Promise<unknown>;
+
+    await exec({ title: 'Prepare wireframes', parentObjectId: projectId }, {});
+    const suggestionInput = scope.suggestions.createOrMergeSuggestionBundle.mock.calls[0]?.[0] as {
+      items: { proposedPayload: Record<string, unknown> }[];
+    };
+    expect(suggestionInput.items[0]?.proposedPayload).toMatchObject({
+      parentObjectId: projectId,
+      parentObjectName: 'Faba website redesign',
+    });
+
+    scope.objects.getObject.mockResolvedValue({
+      id: projectId,
+      type: 'company',
+      canonicalName: 'Faba',
+      archivedAt: null,
+    });
+    await expect(
+      exec({ title: 'Prepare wireframes', parentObjectId: projectId }, {}),
+    ).resolves.toEqual({ error: 'tool_failed' });
   });
 
   it('suggest_object_memory targets relationship proposals at the source object', async () => {

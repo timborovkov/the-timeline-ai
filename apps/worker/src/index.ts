@@ -18,6 +18,7 @@ import { startObjectSummaryWorker } from '#src/workers/objectSummary.js';
 import { startOverdueWorker } from '#src/workers/overdue.js';
 import { startReconciliationWorker } from '#src/workers/reconciliation.js';
 import { startSuggestionWorker } from '#src/workers/suggestions.js';
+import { startTaskCategoryWorker } from '#src/workers/taskCategory.js';
 import { startTeamExportWorker } from '#src/workers/teamExport.js';
 import { startTimelineMomentPresentationWorker } from '#src/workers/timelineMomentPresentation.js';
 import { startTranscribeWorker } from '#src/workers/transcribe.js';
@@ -47,6 +48,7 @@ async function main(): Promise<void> {
   const meetingFinalizeWorker = startMeetingFinalizeWorker({ db });
   const meetingSchedulerWorker = startMeetingSchedulerWorker({ db });
   const objectSummaryWorker = startObjectSummaryWorker({ db });
+  const taskCategoryWorker = startTaskCategoryWorker({ db });
   const janitorWorker = startJanitorWorker({ db });
   const webhookDeliveryWorker = startWebhookDeliveryWorker({ db });
   const integrationSyncWorker = startIntegrationSyncWorker({ db });
@@ -69,7 +71,7 @@ async function main(): Promise<void> {
   await queue.scheduleMeetingSchedulerTick();
   await queue.scheduleDailyDigest();
   log.info(
-    'transcribe + extract + suggestions + embed + overdue + calendar-recurrence + document-extract + meeting-finalize + meeting-scheduler + object-summary + janitor + webhook-delivery + integration-sync + mcp-health + team-export + timeline-moment-presentation + daily-digest + reconciliation workers started',
+    'transcribe + extract + suggestions + embed + overdue + calendar-recurrence + document-extract + meeting-finalize + meeting-scheduler + object-summary + task-category + janitor + webhook-delivery + integration-sync + mcp-health + team-export + timeline-moment-presentation + daily-digest + reconciliation workers started',
   );
 
   const shutdown = async (signal: string): Promise<void> => {
@@ -86,6 +88,7 @@ async function main(): Promise<void> {
         meetingFinalizeWorker.close(),
         meetingSchedulerWorker.close(),
         objectSummaryWorker.close(),
+        taskCategoryWorker.close(),
         janitorWorker.close(),
         webhookDeliveryWorker.close(),
         integrationSyncWorker.close(),
@@ -105,6 +108,7 @@ async function main(): Promise<void> {
       await queue.closeMeetingFinalizeQueue();
       await queue.closeMeetingSchedulerQueue();
       await queue.closeObjectSummaryQueue();
+      await queue.closeTaskCategoryQueue();
       await queue.closeJanitorQueue();
       await queue.closeWebhookDeliveryQueue();
       await queue.closeIntegrationSyncQueue();

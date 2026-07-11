@@ -18,6 +18,7 @@ import {
   objectChanges,
   objectNotes,
   rawEvents,
+  taskCategoryAssignments,
   type Db,
 } from '@timeline/db';
 import { and, asc, count, eq, inArray, isNull, or, sql } from 'drizzle-orm';
@@ -323,6 +324,17 @@ export async function buildTeamExportArchive(
     .where(eq(objectChanges.teamId, input.teamId))
     .orderBy(asc(objectChanges.changedAt), asc(objectChanges.id));
   files['object_changes.jsonl'] = addJsonl(zip, 'object_changes.jsonl', changeRows);
+
+  const categoryAssignmentRows = await input.db
+    .select()
+    .from(taskCategoryAssignments)
+    .where(eq(taskCategoryAssignments.teamId, input.teamId))
+    .orderBy(asc(taskCategoryAssignments.createdAt), asc(taskCategoryAssignments.id));
+  files['task_category_assignments.jsonl'] = addJsonl(
+    zip,
+    'task_category_assignments.jsonl',
+    categoryAssignmentRows,
+  );
 
   const docRows = await visibleDocuments(input.db, input.teamId, input.requestedByUserId);
   files['documents.jsonl'] = addJsonl(zip, 'documents.jsonl', docRows);

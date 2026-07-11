@@ -8,6 +8,7 @@ import { useMemo, useReducer, useTransition } from 'react';
 import type * as objects from '@timeline/shared/objects/types';
 
 import { bulkArchiveObjectsAction } from '@/app/actions/objects';
+import { TaskCategoryBadge } from '@/components/tasks/task-category-badge';
 import { useAppDialog } from '@/components/ui/app-dialog';
 import { displayText, formatDisplayDate } from '@/lib/display-dates';
 import { MAX_OBJECT_MERGE_SELECTION, objectMergeHref } from '@/lib/object-merge';
@@ -266,6 +267,12 @@ export function ObjectCleanupList({ rows, typeLabels, pageInfo, sectionMoreHrefs
                             {displayText(object.canonicalName)}
                           </Link>
                           <span className="ml-3 flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.1em] text-fg-dim">
+                            {object.type === 'task' ? (
+                              <TaskCategoryBadge
+                                category={object.taskCategory}
+                                status={object.taskCategoryStatus}
+                              />
+                            ) : null}
                             <span>{object.status}</span>
                             {object.dueAt ? (
                               <span title={object.dueAt.toISOString()}>

@@ -1,5 +1,6 @@
 'use client';
 
+import { TASK_CATEGORY_OPTIONS } from '@timeline/shared/task-categories/types';
 import { ChevronDown, Search, X } from 'lucide-react';
 import { useId, useMemo, useState } from 'react';
 
@@ -22,6 +23,7 @@ interface Props {
   totalCount: number;
   hiddenParams?: Record<string, string>;
   members?: MemberFilterOption[];
+  projects?: MemberFilterOption[];
   lanes?: boards.BoardLaneRow[];
   typeLabels?: Record<string, string>;
   statusOptions?: readonly string[];
@@ -63,6 +65,7 @@ export function WorkFilterBar({
   totalCount,
   hiddenParams = EMPTY_PARAMS,
   members = EMPTY_MEMBERS,
+  projects = EMPTY_MEMBERS,
   lanes = EMPTY_LANES,
   typeLabels = EMPTY_LABELS,
   statusOptions = EMPTY_STATUS_OPTIONS,
@@ -146,6 +149,29 @@ export function WorkFilterBar({
           ) : null}
 
           <StatusControl defaultValue={filters.status} mode={mode} statusOptions={statusOptions} />
+
+          <div className="task-category-ui">
+            <FilterMultiSelect
+              key={`category:${filters.category}`}
+              name="category"
+              label="Category"
+              defaultValue={filters.category}
+              placeholder="Any category"
+              options={[
+                ...TASK_CATEGORY_OPTIONS,
+                { value: 'uncategorized', label: 'Uncategorized' },
+              ]}
+            />
+          </div>
+
+          <FilterMultiSelect
+            key={`project:${filters.project}`}
+            name="project"
+            label="Project"
+            defaultValue={filters.project}
+            placeholder="Any project"
+            options={projects.map((project) => ({ value: project.id, label: project.label }))}
+          />
 
           {mode === 'objects' ? (
             <FilterInput
@@ -461,6 +487,8 @@ function workFilterStateKey(filters: WorkFilterState): string {
     filters.q,
     filters.type,
     filters.status,
+    filters.category,
+    filters.project,
     filters.stage,
     filters.owner,
     filters.assignee,

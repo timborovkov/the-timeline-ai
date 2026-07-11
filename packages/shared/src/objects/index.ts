@@ -43,6 +43,7 @@ import {
   reconciliationEvidence,
   reconciliationOutputs,
   reconciliationRuns,
+  taskCategoryAssignments,
 } from '@timeline/db';
 import {
   type SQL,
@@ -62,6 +63,12 @@ import {
   sql,
 } from 'drizzle-orm';
 
+import type {
+  TaskCategory,
+  TaskCategoryMode,
+  TaskCategorySource,
+  TaskCategoryStatus,
+} from '#src/task-categories/types.js';
 import type { TeamScopeCore } from '#src/team-scope.js';
 
 import {
@@ -103,6 +110,18 @@ import { buildOutputDedupeKey, reconciliationDedupeKey } from '#src/reconciliati
 import { normalizeRawEventsToEvidence } from '#src/reconciliation/normalization.js';
 import { sourcePayloadRefFromMetadata } from '#src/reconciliation/source-snapshot.js';
 import { likeMentionCondition, likePattern, textMentionsAnyValue } from '#src/sql-like.js';
+import {
+  buildTaskCategoryPacket,
+  TASK_CATEGORY_PROMPT_VERSION,
+  taskCategoryInputHash,
+} from '#src/task-categories/classifier.js';
+import {
+  TASK_CATEGORY_TAXONOMY_VERSION,
+  taskCategoryModeSchema,
+  taskCategorySchema,
+  taskCategorySourceSchema,
+  taskCategoryStatusSchema,
+} from '#src/task-categories/types.js';
 import { rawEventVisibleToUser } from '#src/visibility.js';
 
 export {
@@ -991,6 +1010,11 @@ export interface ObjectListFilter {
   priorityNull?: boolean;
   ownerUserId?: string | null | (string | null)[];
   assigneeUserId?: string | null | (string | null)[];
+  taskCategory?: TaskCategory | TaskCategory[];
+  taskCategoryNull?: boolean;
+  /** Operator-only candidate selector; excludes manual, ready, and already-pending tasks. */
+  taskCategoryBackfillEligible?: boolean;
+  primaryProjectId?: string | string[];
   dueBefore?: Date;
   dueAfter?: Date;
   dueNull?: boolean;
@@ -1021,12 +1045,24 @@ export interface ObjectRow {
   ownerUserId: string | null;
   assigneeUserId: string | null;
   dueAt: Date | null;
+  taskCategory: TaskCategory | null;
+  taskCategoryMode: TaskCategoryMode | null;
+  taskCategorySource: TaskCategorySource | null;
+  taskCategoryStatus: TaskCategoryStatus | null;
+  taskCategoryUpdatedAt: Date | null;
   agentSuggested: boolean;
   archivedAt: Date | null;
   aliases: string[];
   metadata: Record<string, unknown>;
   updatedAt: Date;
   createdAt: Date;
+}
+
+export interface TaskPrimaryProjectRow {
+  taskId: string;
+  projectId: string;
+  projectName: string;
+  archivedAt: Date | null;
 }
 
 function metadataString(metadata: Record<string, unknown>, key: string): string | null {
@@ -1090,6 +1126,11 @@ function toObjectRow(row: EntityRow): ObjectRow {
     ownerUserId: row.ownerUserId,
     assigneeUserId: row.assigneeUserId,
     dueAt: row.dueAt,
+    taskCategory: row.taskCategory as TaskCategory | null,
+    taskCategoryMode: row.taskCategoryMode as TaskCategoryMode | null,
+    taskCategorySource: row.taskCategorySource as TaskCategorySource | null,
+    taskCategoryStatus: row.taskCategoryStatus as TaskCategoryStatus | null,
+    taskCategoryUpdatedAt: row.taskCategoryUpdatedAt,
     // `entities.agent_suggested` is legacy single-row provenance. Approval
     // state now lives in agent_suggestions projected from reconciliation outputs.
     agentSuggested: false,
@@ -1122,6 +1163,42 @@ function nullableUuidCondition(
   return includesNull ? or(isNull(column as never), uuidCondition) : uuidCondition;
 }
 
+function taskCategoryCondition(filter: ObjectCountFilter): SQL | undefined {
+  const categories = toArray(filter.taskCategory);
+  if ((!categories || categories.length === 0) && !filter.taskCategoryNull) return undefined;
+  const categoryCondition = categories?.length
+    ? inArray(entities.taskCategory, categories)
+    : undefined;
+  if (categoryCondition && filter.taskCategoryNull) {
+    return or(categoryCondition, isNull(entities.taskCategory));
+  }
+  return categoryCondition ?? isNull(entities.taskCategory);
+}
+
+function primaryProjectCondition(scope: TeamScopeCore, filter: ObjectCountFilter): SQL | undefined {
+  const requestedIds = toArray(filter.primaryProjectId);
+  if (!requestedIds || requestedIds.length === 0) return undefined;
+  const projectIds = requestedIds.filter((id) => UUID_RE.test(id));
+  if (projectIds.length === 0) return sql`false`;
+  const idList = sql.join(
+    projectIds.map((id) => sql`${id}::uuid`),
+    sql`, `,
+  );
+  return sql`EXISTS (
+    SELECT 1
+    FROM entity_relationships AS task_project_rel
+    INNER JOIN entities AS primary_project
+      ON primary_project.id = task_project_rel.to_entity_id
+      AND primary_project.team_id = task_project_rel.team_id
+    WHERE task_project_rel.team_id = ${scope.teamId}
+      AND task_project_rel.from_entity_id = ${entities.id}
+      AND task_project_rel.kind = 'child'
+      AND primary_project.type = 'project'
+      AND primary_project.merged_into_id IS NULL
+      AND primary_project.id IN (${idList})
+  )`;
+}
+
 function objectSearchTokens(query: string): string[] {
   return query
     .toLowerCase()
@@ -1144,6 +1221,7 @@ function objectTokenSearchCondition(token: string): SQL {
     OR lower(${entities.type}::text) = ${exact}
     OR lower(${entities.status}) = ${exact}
     OR lower(coalesce(${entities.stage}, '')) = ${exact}
+    OR lower(replace(coalesce(${entities.taskCategory}, ''), '_', ' ')) LIKE ${contains} ESCAPE '\\'
     OR EXISTS (
       SELECT 1
       FROM jsonb_array_elements_text(${entities.aliases}) AS alias(value)
@@ -1217,6 +1295,24 @@ function objectListConditions(scope: TeamScopeCore, filter: ObjectCountFilter = 
   const assigneeCondition = nullableUuidCondition(entities.assigneeUserId, filter.assigneeUserId);
   if (assigneeCondition) conds.push(assigneeCondition);
 
+  const categoryCondition = taskCategoryCondition(filter);
+  if (categoryCondition) {
+    conds.push(eq(entities.type, 'task'));
+    conds.push(categoryCondition);
+  }
+  if (filter.taskCategoryBackfillEligible) {
+    conds.push(eq(entities.type, 'task'));
+    conds.push(
+      sql`(${entities.taskCategoryMode} is null or ${entities.taskCategoryMode} <> 'manual')`,
+    );
+    conds.push(
+      sql`(${entities.taskCategoryStatus} is null or ${entities.taskCategoryStatus} = 'failed')`,
+    );
+  }
+
+  const projectCondition = primaryProjectCondition(scope, filter);
+  if (projectCondition) conds.push(projectCondition);
+
   if (filter.dueNull) conds.push(isNull(entities.dueAt));
   if (filter.dueBefore) conds.push(lt(entities.dueAt, filter.dueBefore));
   if (filter.dueAfter) conds.push(gte(entities.dueAt, filter.dueAfter));
@@ -1280,39 +1376,12 @@ export async function searchObjects(
   filter: ObjectSearchFilter,
 ): Promise<ObjectRow[]> {
   await scope.requireMembership();
-  const conds = [eq(entities.teamId, scope.teamId), isNull(entities.mergedIntoId)];
-
-  const types = toArray(filter.type);
-  if (types && types.length > 0) conds.push(inArray(entities.type, types));
-
-  const statuses = toArray(filter.status);
-  if (statuses && statuses.length > 0) conds.push(inArray(entities.status, statuses));
-
-  const excludedStatuses = toArray(filter.statusNot);
-  if (excludedStatuses && excludedStatuses.length > 0) {
-    conds.push(notInArray(entities.status, excludedStatuses));
-  }
-
-  const stages = toArray(filter.stage);
-  if (stages && stages.length > 0) conds.push(inArray(entities.stage, stages));
-
-  const ownerCondition = nullableUuidCondition(entities.ownerUserId, filter.ownerUserId);
-  if (ownerCondition) conds.push(ownerCondition);
-
-  const assigneeCondition = nullableUuidCondition(entities.assigneeUserId, filter.assigneeUserId);
-  if (assigneeCondition) conds.push(assigneeCondition);
-
-  if (filter.dueBefore) conds.push(lt(entities.dueAt, filter.dueBefore));
-  if (filter.dueAfter) conds.push(gte(entities.dueAt, filter.dueAfter));
-
-  if (filter.archived === true) conds.push(isNotNull(entities.archivedAt));
-  else if (filter.archived !== undefined) conds.push(isNull(entities.archivedAt));
+  const conds = objectListConditions(scope, filter);
 
   const query = filter.query.trim();
   const tokens = objectSearchTokens(query);
   if (tokens.length === 0) return [];
   const searchText = tokens.join(' ');
-  conds.push(objectSearchCondition(searchText, tokens));
 
   const limit = Math.min(Math.max(filter.limit ?? 100, 1), OBJECT_QUERY_LIMIT_MAX);
   const exact = searchText.toLowerCase();
@@ -3690,6 +3759,38 @@ export async function createObject(
   }
 
   const txResult = await db.transaction(async (tx) => {
+    let primaryProject: { id: string; canonicalName: string } | null = null;
+    if (input.parentObjectId !== undefined && input.parentObjectId !== null) {
+      if (input.type !== 'task') throw new Error('Only tasks can have a primary project');
+      if (!UUID_RE.test(input.parentObjectId)) throw new Error('Invalid project id');
+      const [project] = await tx
+        .select({ id: entities.id, canonicalName: entities.canonicalName })
+        .from(entities)
+        .where(
+          and(
+            eq(entities.id, input.parentObjectId),
+            eq(entities.teamId, scope.teamId),
+            eq(entities.type, 'project'),
+            isNull(entities.archivedAt),
+            isNull(entities.mergedIntoId),
+          ),
+        )
+        .limit(1);
+      if (!project) throw new Error('Project not found');
+      primaryProject = project;
+    }
+    const taskPacket =
+      input.type === 'task'
+        ? buildTaskCategoryPacket({
+            title: name,
+            ...(input.aliases ? { aliases: input.aliases } : {}),
+            ...(input.metadata ? { metadata: input.metadata } : {}),
+            ...(primaryProject ? { primaryProjectName: primaryProject.canonicalName } : {}),
+          })
+        : null;
+    const requestedCategoryHash = taskPacket
+      ? taskCategoryInputHash(taskPacket, TIMELINE_MODELS.taskCategorization.id)
+      : null;
     const insertRows = await tx
       .insert(entities)
       .values({
@@ -3706,6 +3807,11 @@ export async function createObject(
         metadata: input.metadata ?? {},
         sourceEventId: null,
         agentSuggested: false,
+        taskCategoryMode: taskPacket ? 'automatic' : null,
+        taskCategoryStatus: taskPacket ? 'pending' : null,
+        taskCategoryRequestedInputHash: requestedCategoryHash,
+        taskCategoryTaxonomyVersion: taskPacket ? TASK_CATEGORY_TAXONOMY_VERSION : null,
+        taskCategoryUpdatedAt: taskPacket ? new Date() : null,
       })
       .returning();
     const row = insertRows[0];
@@ -3785,43 +3891,94 @@ export async function createObject(
       systemEventKind: 'object_create',
     });
 
-    if (input.parentObjectId && UUID_RE.test(input.parentObjectId)) {
-      // Verify the parent belongs to this team before linking — otherwise a
-      // caller who knows (or guesses) a UUID from another team could write a
-      // cross-team edge, and the joined entity would leak through
-      // getObject's relationship panel. Mirrors the endpoint check in
-      // addRelationship.
-      const parentExists = await tx
-        .select({ id: entities.id })
-        .from(entities)
-        .where(
-          and(
-            eq(entities.id, input.parentObjectId),
-            eq(entities.teamId, scope.teamId),
-            isNull(entities.mergedIntoId),
-          ),
-        )
-        .limit(1);
-      if (parentExists.length === 0) {
-        throw new Error('Parent object does not belong to this team');
-      }
+    if (primaryProject) {
       // task → parent via `child` edge (the row reads "task is a child of parent")
-      await tx
+      const [relationship] = await tx
         .insert(entityRelationships)
         .values({
           teamId: scope.teamId,
           fromEntityId: row.id,
-          toEntityId: input.parentObjectId,
+          toEntityId: primaryProject.id,
           kind: 'child',
           createdBy: input.actor.userId ?? null,
         })
-        .onConflictDoNothing();
+        .onConflictDoNothing()
+        .returning({ id: entityRelationships.id });
+      if (relationship) {
+        const relationshipEventId = randomUUID();
+        const relationshipText = `Set project for task ${name}: ${primaryProject.canonicalName}`;
+        const [relationshipEvent] = await tx
+          .insert(rawEvents)
+          .values({
+            id: relationshipEventId,
+            teamId: scope.teamId,
+            authorUserId: input.actor.kind === 'user' ? (input.actor.userId ?? null) : null,
+            source: 'system',
+            contentText: relationshipText,
+            occurredAt: new Date(),
+            visibility: 'team',
+            sourceMetadata: systemDirectWriteSourceMetadata({
+              rawEventId: relationshipEventId,
+              kind: 'relationship_create',
+              metadata: {
+                relationship_id: relationship.id,
+                task_id: row.id,
+                project_id: primaryProject.id,
+              },
+              snapshot: {
+                relationship_id: relationship.id,
+                from_entity_id: row.id,
+                to_entity_id: primaryProject.id,
+                relationship_kind: 'child',
+                task_name: name,
+                project_name: primaryProject.canonicalName,
+                actor_kind: input.actor.kind,
+                actor_user_id: input.actor.userId ?? null,
+              },
+            }),
+          })
+          .returning({ id: rawEvents.id });
+        const relationshipSourceEventId = relationshipEvent?.id ?? null;
+        await normalizeSystemRawEventEvidence({
+          db: tx,
+          teamId: scope.teamId,
+          rawEventId: relationshipSourceEventId,
+        });
+        await reconcileObjectAuditLinks(tx, {
+          teamId: scope.teamId,
+          rawEventId: relationshipSourceEventId,
+          text: relationshipText,
+        });
+        await tx.insert(objectChanges).values({
+          teamId: scope.teamId,
+          entityId: row.id,
+          actorUserId: input.actor.userId ?? null,
+          actorKind: input.actor.kind,
+          status: 'applied',
+          field: 'primaryProjectId',
+          previousValue: null,
+          newValue: primaryProject.id,
+          sourceEventId: null,
+        });
+        await emitRelationshipDirectWriteOutput({
+          db: tx,
+          teamId: scope.teamId,
+          relationshipId: relationship.id,
+          fromEntityId: row.id,
+          toEntityId: primaryProject.id,
+          relationshipKind: 'child',
+          actor: { kind: input.actor.kind, userId: input.actor.userId ?? null },
+          sourceEventId: relationshipSourceEventId,
+          operation: 'link',
+          systemEventKind: 'relationship_create',
+        });
+      }
     }
 
     const dueDateCalendarSync = await syncObjectDueDateCalendarEvent(tx, row);
     await notifyObjectDueDate(tx, row, input.actor);
 
-    return { object: toObjectRow(row), dueDateCalendarSync };
+    return { object: toObjectRow(row), dueDateCalendarSync, requestedCategoryHash };
   });
 
   // Embed AFTER the transaction commits so the worker (which reads from a
@@ -3846,6 +4003,24 @@ export async function createObject(
     teamId: scope.teamId,
     op: 'createObjectDueDateCalendar',
   });
+  if (txResult.requestedCategoryHash) {
+    const inputHash = txResult.requestedCategoryHash;
+    fireAndForgetEmbed(
+      async () => {
+        await embedQueue.enqueueTaskCategoryJob({
+          teamId: scope.teamId,
+          taskId: txResult.object.id,
+          inputHash,
+          trigger: 'create',
+        });
+      },
+      {
+        teamId: scope.teamId,
+        taskId: txResult.object.id,
+        op: 'createObject:taskCategory',
+      },
+    );
+  }
   return txResult.object;
 }
 
@@ -3944,7 +4119,77 @@ export async function updateObject(
         changedFields: [],
         changeIds: [] as string[],
         dueDateCalendarSync: mergeDueDateCalendarSyncResults([]),
+        requestedCategoryHash: null as string | null,
+        linkedTaskCategoryJobs: [] as { taskId: string; inputHash: string }[],
+        linkedTaskCategoryFanout: null as {
+          projectId: string;
+          projectVersion: string;
+          afterTaskId: string;
+        } | null,
       };
+    }
+
+    let requestedCategoryHash: string | null = null;
+    const nextType = (next.type as EntityRow['type'] | undefined) ?? current.type;
+    if (current.type === 'project' && nextType !== 'project') {
+      const [linkedCount] = await tx
+        .select({ total: sql<number>`count(*)::int` })
+        .from(entityRelationships)
+        .innerJoin(
+          entities,
+          and(
+            eq(entities.teamId, entityRelationships.teamId),
+            eq(entities.id, entityRelationships.fromEntityId),
+            eq(entities.type, 'task'),
+            isNull(entities.mergedIntoId),
+          ),
+        )
+        .where(
+          and(
+            eq(entityRelationships.teamId, scope.teamId),
+            eq(entityRelationships.toEntityId, current.id),
+            eq(entityRelationships.kind, 'child'),
+          ),
+        );
+      if ((linkedCount?.total ?? 0) > 0) {
+        throw new Error(
+          `Reassign or remove ${linkedCount?.total ?? 0} linked task projects before changing this project type`,
+        );
+      }
+    }
+    if (current.type === 'task' && nextType !== 'task') {
+      Object.assign(next, {
+        taskCategory: null,
+        taskCategoryMode: null,
+        taskCategorySource: null,
+        taskCategoryStatus: null,
+        taskCategoryAppliedInputHash: null,
+        taskCategoryRequestedInputHash: null,
+        taskCategoryTaxonomyVersion: null,
+        taskCategoryUpdatedAt: null,
+      });
+    } else if (
+      nextType === 'task' &&
+      (current.type !== 'task' || current.taskCategoryMode !== 'manual') &&
+      (current.type !== 'task' ||
+        changes.some((change) =>
+          ['canonicalName', 'aliases', 'metadata', 'type'].includes(change.field),
+        ))
+    ) {
+      const packet = await taskCategoryPacketForRow(tx, scope.teamId, {
+        id: current.id,
+        canonicalName: (next.canonicalName as string | undefined) ?? current.canonicalName,
+        aliases: next.aliases ?? current.aliases,
+        metadata: next.metadata ?? current.metadata,
+      });
+      requestedCategoryHash = taskCategoryInputHash(packet, TIMELINE_MODELS.taskCategorization.id);
+      Object.assign(next, {
+        taskCategoryMode: 'automatic',
+        taskCategoryStatus: 'pending',
+        taskCategoryRequestedInputHash: requestedCategoryHash,
+        taskCategoryTaxonomyVersion: TASK_CATEGORY_TAXONOMY_VERSION,
+        taskCategoryUpdatedAt: new Date(),
+      });
     }
 
     const updatedRows = await tx
@@ -3954,6 +4199,65 @@ export async function updateObject(
       .returning();
     const updated = updatedRows[0];
     if (!updated) throw new Error('Update failed');
+
+    const linkedTaskCategoryJobs: { taskId: string; inputHash: string }[] = [];
+    if (updated.type === 'project' && changes.some((change) => change.field === 'canonicalName')) {
+      const linkedTasks = await tx
+        .select({
+          id: entities.id,
+          canonicalName: entities.canonicalName,
+          aliases: entities.aliases,
+          metadata: entities.metadata,
+        })
+        .from(entityRelationships)
+        .innerJoin(
+          entities,
+          and(
+            eq(entities.teamId, entityRelationships.teamId),
+            eq(entities.id, entityRelationships.fromEntityId),
+            eq(entities.type, 'task'),
+            eq(entities.taskCategoryMode, 'automatic'),
+            isNull(entities.archivedAt),
+            isNull(entities.mergedIntoId),
+          ),
+        )
+        .where(
+          and(
+            eq(entityRelationships.teamId, scope.teamId),
+            eq(entityRelationships.toEntityId, updated.id),
+            eq(entityRelationships.kind, 'child'),
+          ),
+        )
+        .orderBy(asc(entities.id))
+        .limit(500);
+      for (const task of linkedTasks) {
+        const packet = buildTaskCategoryPacket({
+          title: task.canonicalName,
+          aliases: stringArrayFromUnknown(task.aliases),
+          metadata: recordFromUnknown(task.metadata),
+          primaryProjectName: updated.canonicalName,
+        });
+        const inputHash = taskCategoryInputHash(packet, TIMELINE_MODELS.taskCategorization.id);
+        await tx
+          .update(entities)
+          .set({
+            taskCategoryStatus: 'pending',
+            taskCategoryRequestedInputHash: inputHash,
+            taskCategoryTaxonomyVersion: TASK_CATEGORY_TAXONOMY_VERSION,
+            taskCategoryUpdatedAt: new Date(),
+          })
+          .where(and(eq(entities.teamId, scope.teamId), eq(entities.id, task.id)));
+        linkedTaskCategoryJobs.push({ taskId: task.id, inputHash });
+      }
+    }
+    const linkedTaskCategoryFanout =
+      updated.type === 'project' && linkedTaskCategoryJobs.length === 500
+        ? {
+            projectId: updated.id,
+            projectVersion: taskProjectVersion(updated.id, updated.canonicalName),
+            afterTaskId: linkedTaskCategoryJobs.at(-1)?.taskId ?? updated.id,
+          }
+        : null;
 
     const summary = changes
       .map((c) => `${c.field}: ${JSON.stringify(c.previousValue)} → ${JSON.stringify(c.newValue)}`)
@@ -4097,6 +4401,9 @@ export async function updateObject(
       changedFields: changes.map((c) => c.field),
       changeIds: changeRows.map((r) => r.id),
       dueDateCalendarSync: mergeDueDateCalendarSyncResults(dueDateCalendarSyncResults),
+      requestedCategoryHash,
+      linkedTaskCategoryJobs,
+      linkedTaskCategoryFanout,
     };
   });
 
@@ -4138,6 +4445,29 @@ export async function updateObject(
     teamId: scope.teamId,
     op: 'updateObjectDueDateCalendar',
   });
+  if (txResult.requestedCategoryHash) {
+    await embedQueue.enqueueTaskCategoryJob({
+      teamId: scope.teamId,
+      taskId: entityId,
+      inputHash: txResult.requestedCategoryHash,
+      trigger: 'context_change',
+    });
+  }
+  for (const job of txResult.linkedTaskCategoryJobs) {
+    await embedQueue.enqueueTaskCategoryJob({
+      teamId: scope.teamId,
+      taskId: job.taskId,
+      inputHash: job.inputHash,
+      trigger: 'project_change',
+    });
+  }
+  if (txResult.linkedTaskCategoryFanout) {
+    await embedQueue.enqueueTaskCategoryJob({
+      kind: 'project_fanout',
+      teamId: scope.teamId,
+      ...txResult.linkedTaskCategoryFanout,
+    });
+  }
   return { object: txResult.object, changedFields: txResult.changedFields };
 }
 
@@ -4615,6 +4945,65 @@ export async function mergeObjects(
       },
     });
 
+    const linkedTaskCategoryJobs: { taskId: string; inputHash: string }[] = [];
+    if (survivor.type === 'project') {
+      const linkedTasks = await tx
+        .select({
+          id: entities.id,
+          canonicalName: entities.canonicalName,
+          aliases: entities.aliases,
+          metadata: entities.metadata,
+        })
+        .from(entityRelationships)
+        .innerJoin(
+          entities,
+          and(
+            eq(entities.teamId, entityRelationships.teamId),
+            eq(entities.id, entityRelationships.fromEntityId),
+            eq(entities.type, 'task'),
+            eq(entities.taskCategoryMode, 'automatic'),
+            isNull(entities.archivedAt),
+            isNull(entities.mergedIntoId),
+          ),
+        )
+        .where(
+          and(
+            eq(entityRelationships.teamId, scope.teamId),
+            eq(entityRelationships.toEntityId, survivor.id),
+            eq(entityRelationships.kind, 'child'),
+          ),
+        )
+        .orderBy(asc(entities.id))
+        .limit(500);
+      for (const task of linkedTasks) {
+        const packet = buildTaskCategoryPacket({
+          title: task.canonicalName,
+          aliases: stringArrayFromUnknown(task.aliases),
+          metadata: recordFromUnknown(task.metadata),
+          primaryProjectName: survivor.canonicalName,
+        });
+        const inputHash = taskCategoryInputHash(packet, TIMELINE_MODELS.taskCategorization.id);
+        await tx
+          .update(entities)
+          .set({
+            taskCategoryStatus: 'pending',
+            taskCategoryRequestedInputHash: inputHash,
+            taskCategoryTaxonomyVersion: TASK_CATEGORY_TAXONOMY_VERSION,
+            taskCategoryUpdatedAt: new Date(),
+          })
+          .where(and(eq(entities.teamId, scope.teamId), eq(entities.id, task.id)));
+        linkedTaskCategoryJobs.push({ taskId: task.id, inputHash });
+      }
+    }
+    const linkedTaskCategoryFanout =
+      survivor.type === 'project' && linkedTaskCategoryJobs.length === 500
+        ? {
+            projectId: survivor.id,
+            projectVersion: taskProjectVersion(survivor.id, survivor.canonicalName),
+            afterTaskId: linkedTaskCategoryJobs.at(-1)?.taskId ?? survivor.id,
+          }
+        : null;
+
     const updatedRows = await tx
       .select()
       .from(entities)
@@ -4626,6 +5015,8 @@ export async function mergeObjects(
       survivor: toObjectRow(updated),
       mergedIds: loserIds,
       dueDateCalendarSync: mergeDueDateCalendarSyncResults(dueDateCalendarSyncResults),
+      linkedTaskCategoryJobs,
+      linkedTaskCategoryFanout,
     };
   });
 
@@ -4653,6 +5044,21 @@ export async function mergeObjects(
       teamId: scope.teamId,
       entityId: mergedId,
       op: 'mergeObjects:deleteMergedEmbeddings',
+    });
+  }
+  for (const job of result.linkedTaskCategoryJobs) {
+    await embedQueue.enqueueTaskCategoryJob({
+      teamId: scope.teamId,
+      taskId: job.taskId,
+      inputHash: job.inputHash,
+      trigger: 'project_change',
+    });
+  }
+  if (result.linkedTaskCategoryFanout) {
+    await embedQueue.enqueueTaskCategoryJob({
+      kind: 'project_fanout',
+      teamId: scope.teamId,
+      ...result.linkedTaskCategoryFanout,
     });
   }
   return result;
@@ -4690,7 +5096,14 @@ export async function addRelationship(
   const result = await db.transaction(async (tx) => {
     // Both endpoints must belong to this team. Re-select to validate.
     const ends = await tx
-      .select({ id: entities.id, canonicalName: entities.canonicalName, type: entities.type })
+      .select({
+        id: entities.id,
+        canonicalName: entities.canonicalName,
+        type: entities.type,
+        aliases: entities.aliases,
+        metadata: entities.metadata,
+        taskCategoryMode: entities.taskCategoryMode,
+      })
       .from(entities)
       .where(
         and(
@@ -4700,6 +5113,15 @@ export async function addRelationship(
         ),
       );
     if (ends.length !== 2) throw new Error('Both objects must belong to this team');
+
+    const from = ends.find((row) => row.id === endpoints.fromEntityId);
+    const to = ends.find((row) => row.id === endpoints.toEntityId);
+    const isTaskProjectHierarchy =
+      (input.kind === 'child' && from?.type === 'task' && to?.type === 'project') ||
+      (input.kind === 'parent' && from?.type === 'project' && to?.type === 'task');
+    if (isTaskProjectHierarchy) {
+      throw new Error('Use the task Project field to manage a primary project');
+    }
 
     const inserted = await tx
       .insert(entityRelationships)
@@ -4839,6 +5261,967 @@ export async function addRelationship(
   return result;
 }
 
+export async function listPrimaryProjectsForTasks(
+  db: Db,
+  scope: TeamScopeCore,
+  taskIds: string[],
+): Promise<TaskPrimaryProjectRow[]> {
+  await scope.requireMembership();
+  const ids = Array.from(new Set(taskIds.filter((id) => UUID_RE.test(id)))).slice(0, 500);
+  if (ids.length === 0) return [];
+  return db
+    .select({
+      taskId: entityRelationships.fromEntityId,
+      projectId: entities.id,
+      projectName: entities.canonicalName,
+      archivedAt: entities.archivedAt,
+    })
+    .from(entityRelationships)
+    .innerJoin(
+      entities,
+      and(
+        eq(entities.teamId, entityRelationships.teamId),
+        eq(entities.id, entityRelationships.toEntityId),
+      ),
+    )
+    .where(
+      and(
+        eq(entityRelationships.teamId, scope.teamId),
+        inArray(entityRelationships.fromEntityId, ids),
+        eq(entityRelationships.kind, 'child'),
+        eq(entities.type, 'project'),
+        isNull(entities.mergedIntoId),
+      ),
+    )
+    .orderBy(asc(entityRelationships.createdAt), asc(entityRelationships.id));
+}
+
+export async function setTaskProject(
+  db: Db,
+  scope: TeamScopeCore,
+  taskId: string,
+  projectId: string | null,
+  actor: UpdateActor,
+): Promise<{ changed: boolean; project: TaskPrimaryProjectRow | null; touchedIds: string[] }> {
+  await scope.requireMembership();
+  if (!UUID_RE.test(taskId) || (projectId !== null && !UUID_RE.test(projectId))) {
+    throw new Error('Invalid entity id');
+  }
+
+  const result = await db.transaction(async (tx) => {
+    const [task] = await tx
+      .select({
+        id: entities.id,
+        canonicalName: entities.canonicalName,
+        type: entities.type,
+        aliases: entities.aliases,
+        metadata: entities.metadata,
+        taskCategoryMode: entities.taskCategoryMode,
+      })
+      .from(entities)
+      .where(
+        and(
+          eq(entities.teamId, scope.teamId),
+          eq(entities.id, taskId),
+          isNull(entities.mergedIntoId),
+          isNull(entities.archivedAt),
+        ),
+      )
+      .for('update')
+      .limit(1);
+    if (task?.type !== 'task') throw new Error('Task not found');
+
+    const project = projectId
+      ? (
+          await tx
+            .select({
+              id: entities.id,
+              canonicalName: entities.canonicalName,
+              archivedAt: entities.archivedAt,
+              type: entities.type,
+            })
+            .from(entities)
+            .where(
+              and(
+                eq(entities.teamId, scope.teamId),
+                eq(entities.id, projectId),
+                eq(entities.type, 'project'),
+                isNull(entities.mergedIntoId),
+                isNull(entities.archivedAt),
+              ),
+            )
+            .limit(1)
+        )[0]
+      : null;
+    if (projectId && !project) throw new Error('Project not found');
+
+    const existing = await tx
+      .select({
+        id: entityRelationships.id,
+        projectId: entityRelationships.toEntityId,
+        projectName: entities.canonicalName,
+      })
+      .from(entityRelationships)
+      .innerJoin(
+        entities,
+        and(
+          eq(entities.teamId, entityRelationships.teamId),
+          eq(entities.id, entityRelationships.toEntityId),
+          eq(entities.type, 'project'),
+        ),
+      )
+      .where(
+        and(
+          eq(entityRelationships.teamId, scope.teamId),
+          eq(entityRelationships.fromEntityId, taskId),
+          eq(entityRelationships.kind, 'child'),
+          isNull(entities.mergedIntoId),
+        ),
+      )
+      .for('update');
+
+    if (existing.length === 1 && existing[0]?.projectId === projectId) {
+      return {
+        changed: false,
+        project: project
+          ? {
+              taskId,
+              projectId: project.id,
+              projectName: project.canonicalName,
+              archivedAt: project.archivedAt,
+            }
+          : null,
+        touchedIds: [] as string[],
+        requestedCategoryHash: null as string | null,
+      };
+    }
+
+    if (existing.length > 0) {
+      await tx.delete(entityRelationships).where(
+        inArray(
+          entityRelationships.id,
+          existing.map((row) => row.id),
+        ),
+      );
+    }
+
+    const [created] = project
+      ? await tx
+          .insert(entityRelationships)
+          .values({
+            teamId: scope.teamId,
+            fromEntityId: taskId,
+            toEntityId: project.id,
+            kind: 'child',
+            createdBy: actor.userId,
+          })
+          .returning({ id: entityRelationships.id })
+      : [];
+
+    const previous = existing.map((row) => ({ id: row.projectId, name: row.projectName }));
+    const eventText = project
+      ? `Set project for task ${task.canonicalName}: ${project.canonicalName}`
+      : `Removed project from task ${task.canonicalName}`;
+    const rawEventId = randomUUID();
+    const [event] = await tx
+      .insert(rawEvents)
+      .values({
+        id: rawEventId,
+        teamId: scope.teamId,
+        authorUserId: actor.kind === 'user' ? actor.userId : null,
+        source: 'system',
+        contentText: eventText,
+        occurredAt: new Date(),
+        visibility: 'team',
+        sourceMetadata: systemDirectWriteSourceMetadata({
+          rawEventId,
+          kind: project ? 'relationship_create' : 'relationship_delete',
+          metadata: {
+            task_id: taskId,
+            previous_project_ids: previous.map((row) => row.id),
+            project_id: project?.id ?? null,
+          },
+          snapshot: {
+            task_id: taskId,
+            task_name: task.canonicalName,
+            previous_projects: previous,
+            project_id: project?.id ?? null,
+            project_name: project?.canonicalName ?? null,
+            actor_kind: actor.kind,
+            actor_user_id: actor.userId,
+          },
+        }),
+      })
+      .returning({ id: rawEvents.id });
+    const sourceEventId = event?.id ?? null;
+    await normalizeSystemRawEventEvidence({
+      db: tx,
+      teamId: scope.teamId,
+      rawEventId: sourceEventId,
+    });
+    await reconcileObjectAuditLinks(tx, {
+      teamId: scope.teamId,
+      rawEventId: sourceEventId,
+      text: eventText,
+    });
+
+    await tx.insert(objectChanges).values({
+      teamId: scope.teamId,
+      entityId: taskId,
+      actorUserId: actor.userId,
+      actorKind: actor.kind,
+      status: 'applied',
+      field: 'primaryProjectId',
+      previousValue: previous.length === 1 ? previous[0]?.id : previous.map((row) => row.id),
+      newValue: project?.id ?? null,
+      sourceEventId: null,
+    });
+
+    for (const old of existing) {
+      await emitRelationshipDirectWriteOutput({
+        db: tx,
+        teamId: scope.teamId,
+        relationshipId: old.id,
+        fromEntityId: taskId,
+        toEntityId: old.projectId,
+        relationshipKind: 'child',
+        actor,
+        sourceEventId,
+        operation: 'unlink',
+        systemEventKind: 'relationship_delete',
+      });
+    }
+    if (created && project) {
+      await emitRelationshipDirectWriteOutput({
+        db: tx,
+        teamId: scope.teamId,
+        relationshipId: created.id,
+        fromEntityId: taskId,
+        toEntityId: project.id,
+        relationshipKind: 'child',
+        actor,
+        sourceEventId,
+        operation: 'link',
+        systemEventKind: 'relationship_create',
+      });
+    }
+
+    let requestedCategoryHash: string | null = null;
+    if (task.taskCategoryMode === 'automatic') {
+      const packet = await taskCategoryPacketForRow(tx, scope.teamId, task);
+      requestedCategoryHash = taskCategoryInputHash(packet, TIMELINE_MODELS.taskCategorization.id);
+      await tx
+        .update(entities)
+        .set({
+          taskCategoryStatus: 'pending',
+          taskCategoryRequestedInputHash: requestedCategoryHash,
+          taskCategoryTaxonomyVersion: TASK_CATEGORY_TAXONOMY_VERSION,
+          taskCategoryUpdatedAt: new Date(),
+        })
+        .where(and(eq(entities.teamId, scope.teamId), eq(entities.id, taskId)));
+    }
+
+    return {
+      changed: true,
+      project: project
+        ? {
+            taskId,
+            projectId: project.id,
+            projectName: project.canonicalName,
+            archivedAt: project.archivedAt,
+          }
+        : null,
+      touchedIds: [
+        taskId,
+        ...existing.map((row) => row.projectId),
+        ...(project ? [project.id] : []),
+      ],
+      requestedCategoryHash,
+    };
+  });
+
+  for (const objectId of new Set(result.touchedIds)) {
+    void fireAndForgetObjectSummaryRefresh(db, scope, objectId, {
+      teamId: scope.teamId,
+      objectId,
+      taskId,
+      op: 'setTaskProject',
+    });
+  }
+  if (result.requestedCategoryHash) {
+    await embedQueue.enqueueTaskCategoryJob({
+      teamId: scope.teamId,
+      taskId,
+      inputHash: result.requestedCategoryHash,
+      trigger: 'project_change',
+    });
+  }
+  return { changed: result.changed, project: result.project, touchedIds: result.touchedIds };
+}
+
+async function taskCategoryPacketForRow(
+  tx: DbOrTx,
+  teamId: string,
+  task: Pick<EntityRow, 'id' | 'canonicalName' | 'aliases' | 'metadata'>,
+) {
+  const [project] = await tx
+    .select({ canonicalName: entities.canonicalName })
+    .from(entityRelationships)
+    .innerJoin(
+      entities,
+      and(
+        eq(entities.teamId, entityRelationships.teamId),
+        eq(entities.id, entityRelationships.toEntityId),
+        eq(entities.type, 'project'),
+        isNull(entities.mergedIntoId),
+      ),
+    )
+    .where(
+      and(
+        eq(entityRelationships.teamId, teamId),
+        eq(entityRelationships.fromEntityId, task.id),
+        eq(entityRelationships.kind, 'child'),
+      ),
+    )
+    .orderBy(asc(entityRelationships.createdAt), asc(entityRelationships.id))
+    .limit(1);
+  return buildTaskCategoryPacket({
+    title: task.canonicalName,
+    aliases: stringArrayFromUnknown(task.aliases),
+    metadata: recordFromUnknown(task.metadata),
+    primaryProjectName: project?.canonicalName ?? null,
+  });
+}
+
+export async function getTaskCategoryClassificationInput(
+  db: Db,
+  scope: TeamScopeCore,
+  taskId: string,
+): Promise<{
+  packet: ReturnType<typeof buildTaskCategoryPacket>;
+  inputHash: string;
+  requestedInputHash: string;
+} | null> {
+  await scope.requireMembership();
+  if (!UUID_RE.test(taskId)) return null;
+  const [task] = await db
+    .select()
+    .from(entities)
+    .where(
+      and(
+        eq(entities.teamId, scope.teamId),
+        eq(entities.id, taskId),
+        eq(entities.type, 'task'),
+        eq(entities.taskCategoryMode, 'automatic'),
+        eq(entities.taskCategoryStatus, 'pending'),
+        isNotNull(entities.taskCategoryRequestedInputHash),
+        isNull(entities.archivedAt),
+        isNull(entities.mergedIntoId),
+      ),
+    )
+    .limit(1);
+  if (!task?.taskCategoryRequestedInputHash) return null;
+  const packet = await taskCategoryPacketForRow(db, scope.teamId, task);
+  return {
+    packet,
+    inputHash: taskCategoryInputHash(packet, TIMELINE_MODELS.taskCategorization.id),
+    requestedInputHash: task.taskCategoryRequestedInputHash,
+  };
+}
+
+export async function setTaskCategory(
+  db: Db,
+  scope: TeamScopeCore,
+  taskId: string,
+  categoryInput: TaskCategory,
+  actor: UpdateActor,
+): Promise<{ object: ObjectRow; changeId: string }> {
+  await scope.requireMembership();
+  if (!UUID_RE.test(taskId)) throw new Error('Invalid entity id');
+  if (actor.kind !== 'user' || !actor.userId) throw new Error('A teammate must set the category');
+  const category = taskCategorySchema.parse(categoryInput);
+  const now = new Date();
+  const result = await db.transaction(async (tx) => {
+    const [current] = await tx
+      .select()
+      .from(entities)
+      .where(
+        and(
+          eq(entities.teamId, scope.teamId),
+          eq(entities.id, taskId),
+          eq(entities.type, 'task'),
+          isNull(entities.archivedAt),
+          isNull(entities.mergedIntoId),
+        ),
+      )
+      .for('update')
+      .limit(1);
+    if (!current) throw new Error('Task not found');
+    const [row] = await tx
+      .update(entities)
+      .set({
+        taskCategory: category,
+        taskCategoryMode: 'manual',
+        taskCategorySource: 'user',
+        taskCategoryStatus: 'ready',
+        taskCategoryAppliedInputHash: null,
+        taskCategoryRequestedInputHash: null,
+        taskCategoryTaxonomyVersion: TASK_CATEGORY_TAXONOMY_VERSION,
+        taskCategoryUpdatedAt: now,
+        updatedAt: now,
+      })
+      .where(and(eq(entities.teamId, scope.teamId), eq(entities.id, taskId)))
+      .returning();
+    if (!row) throw new Error('Category update failed');
+    await tx.insert(taskCategoryAssignments).values({
+      teamId: scope.teamId,
+      entityId: taskId,
+      category,
+      source: 'user',
+      mode: 'manual',
+      actorUserId: actor.userId,
+      taxonomyVersion: TASK_CATEGORY_TAXONOMY_VERSION,
+      outcome: 'applied',
+    });
+    const [change] = await tx
+      .insert(objectChanges)
+      .values({
+        teamId: scope.teamId,
+        entityId: taskId,
+        actorUserId: actor.userId,
+        actorKind: 'user',
+        status: 'applied',
+        field: 'taskCategory',
+        previousValue: taskCategoryStateSnapshot(current),
+        newValue: taskCategoryStateSnapshot(row),
+        sourceEventId: null,
+      })
+      .returning({ id: objectChanges.id });
+    if (!change) throw new Error('Category audit failed');
+    return { row, changeId: change.id };
+  });
+  return { object: toObjectRow(result.row), changeId: result.changeId };
+}
+
+interface TaskCategoryStateSnapshot {
+  category: TaskCategory | null;
+  mode: TaskCategoryMode | null;
+  source: TaskCategorySource | null;
+  status: TaskCategoryStatus | null;
+  appliedInputHash: string | null;
+  requestedInputHash: string | null;
+  taxonomyVersion: string | null;
+}
+
+function taskCategoryStateSnapshot(row: EntityRow): TaskCategoryStateSnapshot {
+  return {
+    category: row.taskCategory as TaskCategory | null,
+    mode: row.taskCategoryMode as TaskCategoryMode | null,
+    source: row.taskCategorySource as TaskCategorySource | null,
+    status: row.taskCategoryStatus as TaskCategoryStatus | null,
+    appliedInputHash: row.taskCategoryAppliedInputHash,
+    requestedInputHash: row.taskCategoryRequestedInputHash,
+    taxonomyVersion: row.taskCategoryTaxonomyVersion,
+  };
+}
+
+function taskCategoryStateSnapshotFromUnknown(value: unknown): TaskCategoryStateSnapshot | null {
+  const record = recordFromUnknown(value);
+  const category = record.category === null ? null : taskCategorySchema.safeParse(record.category);
+  const mode = record.mode === null ? null : taskCategoryModeSchema.safeParse(record.mode);
+  const source = record.source === null ? null : taskCategorySourceSchema.safeParse(record.source);
+  const status = record.status === null ? null : taskCategoryStatusSchema.safeParse(record.status);
+  if (
+    (category !== null && !category.success) ||
+    (mode !== null && !mode.success) ||
+    (source !== null && !source.success) ||
+    (status !== null && !status.success)
+  ) {
+    return null;
+  }
+  const nullableString = (candidate: unknown): string | null =>
+    typeof candidate === 'string' ? candidate : null;
+  return {
+    category: category === null ? null : category.data,
+    mode: mode === null ? null : mode.data,
+    source: source === null ? null : source.data,
+    status: status === null ? null : status.data,
+    appliedInputHash: nullableString(record.appliedInputHash),
+    requestedInputHash: nullableString(record.requestedInputHash),
+    taxonomyVersion: nullableString(record.taxonomyVersion),
+  };
+}
+
+function taskProjectVersion(projectId: string, projectName: string): string {
+  return createHash('sha256').update(`${projectId}\0${projectName}`).digest('hex');
+}
+
+export async function invalidateTaskCategoriesForProject(
+  db: Db,
+  scope: TeamScopeCore,
+  input: {
+    projectId: string;
+    projectVersion: string;
+    afterTaskId: string | null;
+    limit?: number;
+  },
+): Promise<{ jobs: { taskId: string; inputHash: string }[]; nextCursor: string | null }> {
+  await scope.requireMembership();
+  const limit = Math.min(Math.max(input.limit ?? 500, 1), 500);
+  return db.transaction(async (tx) => {
+    const [project] = await tx
+      .select({ id: entities.id, canonicalName: entities.canonicalName })
+      .from(entities)
+      .where(
+        and(
+          eq(entities.teamId, scope.teamId),
+          eq(entities.id, input.projectId),
+          eq(entities.type, 'project'),
+          isNull(entities.mergedIntoId),
+        ),
+      )
+      .limit(1);
+    if (
+      !project ||
+      taskProjectVersion(project.id, project.canonicalName) !== input.projectVersion
+    ) {
+      return { jobs: [], nextCursor: null };
+    }
+    const rows = await tx
+      .select({
+        id: entities.id,
+        canonicalName: entities.canonicalName,
+        aliases: entities.aliases,
+        metadata: entities.metadata,
+      })
+      .from(entityRelationships)
+      .innerJoin(
+        entities,
+        and(
+          eq(entities.teamId, entityRelationships.teamId),
+          eq(entities.id, entityRelationships.fromEntityId),
+          eq(entities.type, 'task'),
+          eq(entities.taskCategoryMode, 'automatic'),
+          isNull(entities.archivedAt),
+          isNull(entities.mergedIntoId),
+        ),
+      )
+      .where(
+        and(
+          eq(entityRelationships.teamId, scope.teamId),
+          eq(entityRelationships.toEntityId, project.id),
+          eq(entityRelationships.kind, 'child'),
+          input.afterTaskId ? sql`${entities.id} > ${input.afterTaskId}` : undefined,
+        ),
+      )
+      .orderBy(asc(entities.id))
+      .limit(limit);
+    const jobs: { taskId: string; inputHash: string }[] = [];
+    for (const task of rows) {
+      const packet = buildTaskCategoryPacket({
+        title: task.canonicalName,
+        aliases: stringArrayFromUnknown(task.aliases),
+        metadata: recordFromUnknown(task.metadata),
+        primaryProjectName: project.canonicalName,
+      });
+      const inputHash = taskCategoryInputHash(packet, TIMELINE_MODELS.taskCategorization.id);
+      await tx
+        .update(entities)
+        .set({
+          taskCategoryStatus: 'pending',
+          taskCategoryRequestedInputHash: inputHash,
+          taskCategoryTaxonomyVersion: TASK_CATEGORY_TAXONOMY_VERSION,
+          taskCategoryUpdatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(entities.teamId, scope.teamId),
+            eq(entities.id, task.id),
+            eq(entities.taskCategoryMode, 'automatic'),
+          ),
+        );
+      jobs.push({ taskId: task.id, inputHash });
+    }
+    return {
+      jobs,
+      nextCursor: rows.length === limit ? (rows.at(-1)?.id ?? null) : null,
+    };
+  });
+}
+
+export async function undoTaskCategoryChange(
+  db: Db,
+  scope: TeamScopeCore,
+  taskId: string,
+  changeId: string,
+  actor: UpdateActor,
+): Promise<ObjectRow> {
+  await scope.requireMembership();
+  if (!UUID_RE.test(taskId) || !UUID_RE.test(changeId)) throw new Error('Invalid category change');
+  if (actor.kind !== 'user' || !actor.userId) throw new Error('A teammate must undo the category');
+  const result = await db.transaction(async (tx) => {
+    const [current] = await tx
+      .select()
+      .from(entities)
+      .where(
+        and(
+          eq(entities.teamId, scope.teamId),
+          eq(entities.id, taskId),
+          eq(entities.type, 'task'),
+          isNull(entities.archivedAt),
+          isNull(entities.mergedIntoId),
+        ),
+      )
+      .for('update')
+      .limit(1);
+    if (!current) throw new Error('Task not found');
+    const [targetChange] = await tx
+      .select({
+        id: objectChanges.id,
+        changedAt: objectChanges.changedAt,
+        previousValue: objectChanges.previousValue,
+        newValue: objectChanges.newValue,
+      })
+      .from(objectChanges)
+      .where(
+        and(
+          eq(objectChanges.teamId, scope.teamId),
+          eq(objectChanges.entityId, taskId),
+          eq(objectChanges.id, changeId),
+          eq(objectChanges.field, 'taskCategory'),
+          eq(objectChanges.status, 'applied'),
+        ),
+      )
+      .limit(1);
+    const targetNewState = targetChange
+      ? taskCategoryStateSnapshotFromUnknown(targetChange.newValue)
+      : null;
+    const [laterChange] = targetChange
+      ? await tx
+          .select({ id: objectChanges.id })
+          .from(objectChanges)
+          .where(
+            and(
+              eq(objectChanges.teamId, scope.teamId),
+              eq(objectChanges.entityId, taskId),
+              eq(objectChanges.field, 'taskCategory'),
+              eq(objectChanges.status, 'applied'),
+              sql`${objectChanges.changedAt} > ${targetChange.changedAt}`,
+            ),
+          )
+          .limit(1)
+      : [];
+    if (
+      !targetChange ||
+      !targetNewState ||
+      laterChange ||
+      JSON.stringify(taskCategoryStateSnapshot(current)) !== JSON.stringify(targetNewState)
+    ) {
+      throw new Error('Category changed again; this undo is stale');
+    }
+    let previous = taskCategoryStateSnapshotFromUnknown(targetChange.previousValue);
+    if (!previous) throw new Error('Previous category state is unavailable');
+    let enqueueInputHash: string | null = null;
+    if (previous.mode === null) {
+      const packet = await taskCategoryPacketForRow(tx, scope.teamId, current);
+      enqueueInputHash = taskCategoryInputHash(packet, TIMELINE_MODELS.taskCategorization.id);
+      previous = {
+        category: null,
+        mode: 'automatic',
+        source: null,
+        status: 'pending',
+        appliedInputHash: null,
+        requestedInputHash: enqueueInputHash,
+        taxonomyVersion: TASK_CATEGORY_TAXONOMY_VERSION,
+      };
+    }
+    const now = new Date();
+    const [updated] = await tx
+      .update(entities)
+      .set({
+        taskCategory: previous.category,
+        taskCategoryMode: previous.mode,
+        taskCategorySource: previous.source,
+        taskCategoryStatus: previous.status,
+        taskCategoryAppliedInputHash: previous.appliedInputHash,
+        taskCategoryRequestedInputHash: previous.requestedInputHash,
+        taskCategoryTaxonomyVersion: previous.taxonomyVersion,
+        taskCategoryUpdatedAt: now,
+        updatedAt: now,
+      })
+      .where(and(eq(entities.teamId, scope.teamId), eq(entities.id, taskId)))
+      .returning();
+    if (!updated || !previous.mode) throw new Error('Category undo failed');
+    await tx.insert(taskCategoryAssignments).values({
+      teamId: scope.teamId,
+      entityId: taskId,
+      category: previous.category,
+      source: 'user',
+      mode: previous.mode,
+      actorUserId: actor.userId,
+      taxonomyVersion: previous.taxonomyVersion,
+      outcome: 'applied',
+    });
+    await tx.insert(objectChanges).values({
+      teamId: scope.teamId,
+      entityId: taskId,
+      actorUserId: actor.userId,
+      actorKind: 'user',
+      status: 'applied',
+      field: 'taskCategory',
+      previousValue: taskCategoryStateSnapshot(current),
+      newValue: previous,
+      sourceEventId: null,
+    });
+    return { row: updated, enqueueInputHash };
+  });
+  if (result.enqueueInputHash) {
+    await embedQueue.enqueueTaskCategoryJob({
+      teamId: scope.teamId,
+      taskId,
+      inputHash: result.enqueueInputHash,
+      trigger: 'retry',
+    });
+  }
+  return toObjectRow(result.row);
+}
+
+async function transitionTaskCategoryToPending(
+  db: Db,
+  scope: TeamScopeCore,
+  taskId: string,
+  actor: UpdateActor,
+  requireFailed: boolean,
+  trigger: 'context_change' | 'retry' | 'backfill',
+): Promise<{ object: ObjectRow; inputHash: string }> {
+  await scope.requireMembership();
+  if (!UUID_RE.test(taskId)) throw new Error('Invalid entity id');
+  const result = await db.transaction(async (tx) => {
+    const [task] = await tx
+      .select()
+      .from(entities)
+      .where(
+        and(
+          eq(entities.teamId, scope.teamId),
+          eq(entities.id, taskId),
+          eq(entities.type, 'task'),
+          isNull(entities.archivedAt),
+          isNull(entities.mergedIntoId),
+        ),
+      )
+      .for('update')
+      .limit(1);
+    if (!task) throw new Error('Task not found');
+    if (
+      requireFailed &&
+      (task.taskCategoryMode !== 'automatic' || task.taskCategoryStatus !== 'failed')
+    ) {
+      throw new Error('Only failed automatic categories can be retried');
+    }
+    const packet = await taskCategoryPacketForRow(tx, scope.teamId, task);
+    const inputHash = taskCategoryInputHash(packet, TIMELINE_MODELS.taskCategorization.id);
+    const [updated] = await tx
+      .update(entities)
+      .set({
+        taskCategoryMode: 'automatic',
+        taskCategoryStatus: 'pending',
+        taskCategoryRequestedInputHash: inputHash,
+        taskCategoryTaxonomyVersion: TASK_CATEGORY_TAXONOMY_VERSION,
+        taskCategoryUpdatedAt: new Date(),
+      })
+      .where(and(eq(entities.teamId, scope.teamId), eq(entities.id, taskId)))
+      .returning();
+    if (!updated) throw new Error('Category update failed');
+    if (task.taskCategoryMode !== 'automatic') {
+      await tx.insert(objectChanges).values({
+        teamId: scope.teamId,
+        entityId: taskId,
+        actorUserId: actor.userId,
+        actorKind: actor.kind,
+        status: 'applied',
+        field: 'taskCategoryMode',
+        previousValue: task.taskCategoryMode,
+        newValue: 'automatic',
+        sourceEventId: null,
+      });
+    }
+    return { object: toObjectRow(updated), inputHash };
+  });
+  await embedQueue.enqueueTaskCategoryJob({
+    teamId: scope.teamId,
+    taskId,
+    inputHash: result.inputHash,
+    trigger,
+  });
+  return result;
+}
+
+export function resetTaskCategoryToAutomatic(
+  db: Db,
+  scope: TeamScopeCore,
+  taskId: string,
+  actor: UpdateActor,
+) {
+  return transitionTaskCategoryToPending(db, scope, taskId, actor, false, 'context_change');
+}
+
+export function retryTaskCategory(
+  db: Db,
+  scope: TeamScopeCore,
+  taskId: string,
+  actor: UpdateActor,
+) {
+  return transitionTaskCategoryToPending(db, scope, taskId, actor, true, 'retry');
+}
+
+export function enqueueTaskCategoryBackfill(db: Db, scope: TeamScopeCore, taskId: string) {
+  return transitionTaskCategoryToPending(
+    db,
+    scope,
+    taskId,
+    { kind: 'agent', userId: null },
+    false,
+    'backfill',
+  );
+}
+
+export async function applyTaskCategoryClassification(
+  db: Db,
+  scope: TeamScopeCore,
+  input: {
+    taskId: string;
+    inputHash: string;
+    category: TaskCategory;
+    confidence: number;
+    model: string;
+    latencyMs: number;
+  },
+): Promise<'applied' | 'discarded_stale' | 'discarded_human_override'> {
+  await scope.requireMembership();
+  const category = taskCategorySchema.parse(input.category);
+  return db.transaction(async (tx) => {
+    const [task] = await tx
+      .select()
+      .from(entities)
+      .where(and(eq(entities.teamId, scope.teamId), eq(entities.id, input.taskId)))
+      .for('update')
+      .limit(1);
+    const applicable =
+      task?.type === 'task' &&
+      !task.archivedAt &&
+      !task.mergedIntoId &&
+      task.taskCategoryMode === 'automatic' &&
+      task.taskCategoryRequestedInputHash === input.inputHash;
+    if (!task) return 'discarded_stale';
+    const outcome = applicable
+      ? 'applied'
+      : task.taskCategoryMode === 'manual'
+        ? 'discarded_human_override'
+        : 'discarded_stale';
+    await tx.insert(taskCategoryAssignments).values({
+      teamId: scope.teamId,
+      entityId: input.taskId,
+      category,
+      source: 'llm',
+      mode: 'automatic',
+      confidence: input.confidence,
+      model: input.model,
+      promptVersion: TASK_CATEGORY_PROMPT_VERSION,
+      taxonomyVersion: TASK_CATEGORY_TAXONOMY_VERSION,
+      inputHash: input.inputHash,
+      outcome,
+      latencyMs: input.latencyMs,
+    });
+    if (!applicable) return outcome;
+    await tx
+      .update(entities)
+      .set({
+        taskCategory: category,
+        taskCategoryMode: 'automatic',
+        taskCategorySource: 'llm',
+        taskCategoryStatus: 'ready',
+        taskCategoryAppliedInputHash: input.inputHash,
+        taskCategoryRequestedInputHash: null,
+        taskCategoryTaxonomyVersion: TASK_CATEGORY_TAXONOMY_VERSION,
+        taskCategoryUpdatedAt: new Date(),
+      })
+      .where(and(eq(entities.teamId, scope.teamId), eq(entities.id, input.taskId)));
+    if (task.taskCategory !== category) {
+      await tx.insert(objectChanges).values({
+        teamId: scope.teamId,
+        entityId: input.taskId,
+        actorUserId: null,
+        actorKind: 'agent',
+        status: 'applied',
+        field: 'taskCategory',
+        previousValue: task.taskCategory,
+        newValue: category,
+        sourceEventId: null,
+      });
+    }
+    return outcome;
+  });
+}
+
+export async function failTaskCategoryClassification(
+  db: Db,
+  scope: TeamScopeCore,
+  input: {
+    taskId: string;
+    inputHash: string;
+    model: string;
+    failureCode: string;
+    latencyMs: number;
+  },
+): Promise<'failed' | 'discarded_stale' | 'discarded_human_override'> {
+  await scope.requireMembership();
+  return db.transaction(async (tx) => {
+    const [task] = await tx
+      .select()
+      .from(entities)
+      .where(and(eq(entities.teamId, scope.teamId), eq(entities.id, input.taskId)))
+      .for('update')
+      .limit(1);
+    const applicable =
+      task?.type === 'task' &&
+      !task.archivedAt &&
+      !task.mergedIntoId &&
+      task.taskCategoryMode === 'automatic' &&
+      task.taskCategoryRequestedInputHash === input.inputHash;
+    if (!task) return 'discarded_stale';
+    const outcome = applicable
+      ? 'failed'
+      : task.taskCategoryMode === 'manual'
+        ? 'discarded_human_override'
+        : 'discarded_stale';
+    await tx.insert(taskCategoryAssignments).values({
+      teamId: scope.teamId,
+      entityId: input.taskId,
+      category: null,
+      source: 'llm',
+      mode: 'automatic',
+      model: input.model,
+      promptVersion: TASK_CATEGORY_PROMPT_VERSION,
+      taxonomyVersion: TASK_CATEGORY_TAXONOMY_VERSION,
+      inputHash: input.inputHash,
+      outcome,
+      failureCode: input.failureCode.slice(0, 120),
+      latencyMs: input.latencyMs,
+    });
+    if (applicable) {
+      await tx
+        .update(entities)
+        .set({
+          taskCategoryStatus: 'failed',
+          taskCategoryRequestedInputHash: null,
+          taskCategoryUpdatedAt: new Date(),
+        })
+        .where(and(eq(entities.teamId, scope.teamId), eq(entities.id, input.taskId)));
+    }
+    return outcome;
+  });
+}
+
 export async function removeRelationship(
   db: Db,
   scope: TeamScopeCore,
@@ -4865,6 +6248,26 @@ export async function removeRelationship(
       .limit(1);
     const rel = existing[0];
     if (!rel) return null;
+
+    if (rel.kind === 'child' || rel.kind === 'parent') {
+      const endpoints = await tx
+        .select({ id: entities.id, type: entities.type })
+        .from(entities)
+        .where(
+          and(
+            eq(entities.teamId, scope.teamId),
+            inArray(entities.id, [rel.fromEntityId, rel.toEntityId]),
+          ),
+        );
+      const from = endpoints.find((row) => row.id === rel.fromEntityId);
+      const to = endpoints.find((row) => row.id === rel.toEntityId);
+      const isTaskProjectHierarchy =
+        (rel.kind === 'child' && from?.type === 'task' && to?.type === 'project') ||
+        (rel.kind === 'parent' && from?.type === 'project' && to?.type === 'task');
+      if (isTaskProjectHierarchy) {
+        throw new Error('Use the task Project field to manage a primary project');
+      }
+    }
 
     await tx.delete(entityRelationships).where(eq(entityRelationships.id, relationshipId));
 
@@ -6648,6 +8051,29 @@ export function createObjectScope(db: Db, scope: TeamScopeCore) {
     unarchiveObject: (entityId: string, actor: UpdateActor) =>
       unarchiveObject(db, scope, entityId, actor),
     mergeObjects: (input: Parameters<typeof mergeObjects>[2]) => mergeObjects(db, scope, input),
+    listPrimaryProjectsForTasks: (taskIds: string[]) =>
+      listPrimaryProjectsForTasks(db, scope, taskIds),
+    setTaskProject: (taskId: string, projectId: string | null, actor: UpdateActor) =>
+      setTaskProject(db, scope, taskId, projectId, actor),
+    getTaskCategoryClassificationInput: (taskId: string) =>
+      getTaskCategoryClassificationInput(db, scope, taskId),
+    setTaskCategory: (taskId: string, category: TaskCategory, actor: UpdateActor) =>
+      setTaskCategory(db, scope, taskId, category, actor),
+    undoTaskCategoryChange: (taskId: string, changeId: string, actor: UpdateActor) =>
+      undoTaskCategoryChange(db, scope, taskId, changeId, actor),
+    resetTaskCategoryToAutomatic: (taskId: string, actor: UpdateActor) =>
+      resetTaskCategoryToAutomatic(db, scope, taskId, actor),
+    retryTaskCategory: (taskId: string, actor: UpdateActor) =>
+      retryTaskCategory(db, scope, taskId, actor),
+    enqueueTaskCategoryBackfill: (taskId: string) => enqueueTaskCategoryBackfill(db, scope, taskId),
+    applyTaskCategoryClassification: (
+      input: Parameters<typeof applyTaskCategoryClassification>[2],
+    ) => applyTaskCategoryClassification(db, scope, input),
+    invalidateTaskCategoriesForProject: (
+      input: Parameters<typeof invalidateTaskCategoriesForProject>[2],
+    ) => invalidateTaskCategoriesForProject(db, scope, input),
+    failTaskCategoryClassification: (input: Parameters<typeof failTaskCategoryClassification>[2]) =>
+      failTaskCategoryClassification(db, scope, input),
     addRelationship: (input: Parameters<typeof addRelationship>[2]) =>
       addRelationship(db, scope, input),
     createIdentityFacet: (input: IdentityFacetInput) => createIdentityFacet(db, scope, input),

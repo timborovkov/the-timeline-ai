@@ -1,5 +1,5 @@
 import { PGlite } from '@electric-sql/pglite';
-import { type Db, documentVersions, meetings as meetingsTable } from '@timeline/db';
+import { type Db, documentVersions, entities, meetings as meetingsTable } from '@timeline/db';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -325,6 +325,43 @@ describe('processJanitorTick — meetings sweep', () => {
 
     expect(result.meetingsRequeued).toBe(0);
     expect(enqueueMeeting).not.toHaveBeenCalled();
+  });
+});
+
+describe('processJanitorTick — task category sweep', () => {
+  it('re-enqueues an automatic task stuck pending even when it retains a category', async () => {
+    const [task] = await db
+      .insert(entities)
+      .values({
+        teamId: TEAM_ID,
+        type: 'task',
+        canonicalName: 'Reclassify retained category',
+        taskCategory: 'product',
+        taskCategoryMode: 'automatic',
+        taskCategorySource: 'llm',
+        taskCategoryStatus: 'pending',
+        taskCategoryAppliedInputHash: 'old-hash',
+        taskCategoryRequestedInputHash: 'new-hash',
+        taskCategoryTaxonomyVersion: 'task-categories-v1',
+        taskCategoryUpdatedAt: new Date(Date.now() - 10 * 60 * 1000),
+      })
+      .returning({ id: entities.id });
+    const enqueue = vi.fn().mockResolvedValue({ enqueued: true });
+
+    const result = await processJanitorTick({
+      db: db as never,
+      enqueueDocumentExtractJob: vi.fn(),
+      enqueueMeetingFinalizeJob: vi.fn(),
+      enqueueTaskCategoryJob: enqueue,
+    });
+
+    expect(enqueue).toHaveBeenCalledWith({
+      teamId: TEAM_ID,
+      taskId: task?.id,
+      inputHash: 'new-hash',
+      trigger: 'retry',
+    });
+    expect(result.taskCategoriesRequeued).toBe(1);
   });
 });
 

@@ -1,16 +1,20 @@
 import { OBJECT_TYPES } from '@timeline/shared/objects/types';
+import { TASK_CATEGORIES, type TaskCategory } from '@timeline/shared/task-categories/types';
 
 import type { BoardItemFilter } from '@timeline/shared/boards';
 import type { ObjectListFilter, ObjectType } from '@timeline/shared/objects/types';
 
 export const UNASSIGNED_FILTER_VALUE = 'unassigned';
 export const NONE_FILTER_VALUE = 'none';
+const UNCATEGORIZED_FILTER_VALUE = 'uncategorized';
 const DUE_PRESETS = ['overdue', 'today', 'next7', 'none', 'range'] as const;
 const PRIORITY_VALUES = ['1', '2', '3', '4', NONE_FILTER_VALUE] as const;
 export const WORK_FILTER_PARAM_KEYS = [
   'q',
   'type',
   'status',
+  'category',
+  'project',
   'stage',
   'owner',
   'assignee',
@@ -39,6 +43,8 @@ export interface WorkFilterState {
   q: string;
   type: string;
   status: string;
+  category: string;
+  project: string;
   stage: string;
   owner: string;
   assignee: string;
@@ -57,14 +63,27 @@ export interface WorkFilterState {
 const OBJECT_TYPE_SET = new Set<string>(OBJECT_TYPES);
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-export function parseWorkFilters(params: FilterSearchParams): WorkFilterState {
+export function parseWorkFilters(
+  params: FilterSearchParams,
+  options: { taskCategoriesEnabled?: boolean } = {},
+): WorkFilterState {
   const type = validCsvValues(params.type, (value) => OBJECT_TYPE_SET.has(value));
   const due = firstParam(params.due);
   const priority = firstParam(params.priority);
+  const category =
+    options.taskCategoriesEnabled === false
+      ? ''
+      : validCsvValues(
+          params.category,
+          (value) =>
+            value === UNCATEGORIZED_FILTER_VALUE || TASK_CATEGORIES.includes(value as TaskCategory),
+        );
   return {
     q: firstParam(params.q),
     type,
     status: validCsvValues(params.status, () => true, canonicalStatusValue),
+    category,
+    project: validCsvValues(params.project, (value) => UUID_RE.test(value)),
     stage: validCsvValues(params.stage),
     owner: personParam(params.owner),
     assignee: personParam(params.assignee),
@@ -90,6 +109,8 @@ export function objectListFilterFromWorkFilters(
     ...(filters.q.trim() ? { query: filters.q.trim() } : {}),
     ...(filters.type ? { type: objectTypeFilter(filters.type) } : {}),
     ...statusFilter(filters.status),
+    ...categoryFilter(filters.category),
+    ...(filters.project ? { primaryProjectId: csvValues(filters.project) } : {}),
     ...(filters.stage.trim() ? { stage: csvValues(filters.stage) } : {}),
     ...personFilter('ownerUserId', filters.owner),
     ...personFilter('assigneeUserId', filters.assignee),
@@ -130,6 +151,8 @@ export function boardItemFilterFromWorkFilters(
     object: {
       ...(filters.type ? { type: objectTypeFilter(filters.type) } : {}),
       ...statusFilter(filters.status),
+      ...categoryFilter(filters.category),
+      ...(filters.project ? { primaryProjectId: csvValues(filters.project) } : {}),
       ...(filters.stage.trim() ? { stage: csvValues(filters.stage) } : {}),
       ...personFilter('ownerUserId', filters.owner),
       ...personFilter('assigneeUserId', filters.assignee),
@@ -143,6 +166,8 @@ export function hasActiveWorkFilters(filters: WorkFilterState): boolean {
     filters.q.trim() ||
     filters.type ||
     filters.status.trim() ||
+    filters.category ||
+    filters.project ||
     filters.stage.trim() ||
     filters.owner ||
     filters.assignee ||
@@ -157,6 +182,19 @@ export function hasActiveWorkFilters(filters: WorkFilterState): boolean {
     filters.updatedFrom ||
     filters.updatedTo,
   );
+}
+
+function categoryFilter(
+  value: string,
+): Pick<ObjectListFilter, 'taskCategory' | 'taskCategoryNull'> {
+  const values = csvValues(value);
+  const categories = values.filter(
+    (category): category is TaskCategory => category !== UNCATEGORIZED_FILTER_VALUE,
+  );
+  return {
+    ...(categories.length > 0 ? { taskCategory: categories } : {}),
+    ...(values.includes(UNCATEGORIZED_FILTER_VALUE) ? { taskCategoryNull: true } : {}),
+  };
 }
 
 export function workFilterHiddenParams(

@@ -11,6 +11,7 @@ import {
   closeDb,
   entities,
   entityRelationships,
+  taskCategoryAssignments,
   facts,
   factEntities,
   getDb,
@@ -739,6 +740,13 @@ async function main(): Promise<void> {
             ownerUserId: IDS.member,
             assigneeUserId: IDS.member,
             dueAt: new Date('2026-06-19T17:00:00.000Z'),
+            taskCategory: 'legal_compliance',
+            taskCategoryMode: 'automatic',
+            taskCategorySource: 'llm',
+            taskCategoryStatus: 'ready',
+            taskCategoryAppliedInputHash: 'dev-seed-task-category-v1',
+            taskCategoryTaxonomyVersion: 'task-categories-v1',
+            taskCategoryUpdatedAt: new Date('2026-06-18T09:00:00.000Z'),
             sourceEventId: null,
           },
           {
@@ -1244,9 +1252,9 @@ async function main(): Promise<void> {
           {
             id: IDS.relationshipProjectTask,
             teamId: IDS.team,
-            fromEntityId: IDS.objectProject,
-            toEntityId: IDS.objectTask,
-            kind: 'related',
+            fromEntityId: IDS.objectTask,
+            toEntityId: IDS.objectProject,
+            kind: 'child',
             createdBy: IDS.owner,
           },
           {
@@ -1258,6 +1266,24 @@ async function main(): Promise<void> {
             createdBy: IDS.owner,
           },
         ])
+        .onConflictDoNothing();
+
+      await tx
+        .insert(taskCategoryAssignments)
+        .values({
+          teamId: IDS.team,
+          entityId: IDS.objectTask,
+          category: 'legal_compliance',
+          source: 'llm',
+          mode: 'automatic',
+          confidence: 0.94,
+          model: 'dev-seed',
+          promptVersion: 'task-category-prompt-v2',
+          taxonomyVersion: 'task-categories-v1',
+          inputHash: 'dev-seed-task-category-v1',
+          outcome: 'applied',
+          latencyMs: 12,
+        })
         .onConflictDoNothing();
 
       await tx

@@ -16,6 +16,11 @@ function task(input: Partial<objects.ObjectRow> = {}): objects.ObjectRow {
     assigneeUserId: 'user-1',
     dueAt: new Date('2026-07-04T00:00:00.000Z'),
     agentSuggested: false,
+    taskCategory: null,
+    taskCategoryMode: null,
+    taskCategorySource: null,
+    taskCategoryStatus: null,
+    taskCategoryUpdatedAt: null,
     archivedAt: null,
     aliases: [],
     metadata: {

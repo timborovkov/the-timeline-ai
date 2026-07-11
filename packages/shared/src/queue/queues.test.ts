@@ -635,6 +635,34 @@ describe('queue wrappers', () => {
     expect(duplicate).toMatchObject({ enqueued: false, jobId: first.jobId });
   });
 
+  it('dedupes task category jobs by packet hash and replaces retained terminal jobs', async () => {
+    const queues = await importQueues();
+    const data = {
+      teamId: '22222222-2222-4222-8222-222222222222',
+      taskId: '77777777-7777-4777-8777-777777777777',
+      inputHash: 'packet-hash-v1',
+      trigger: 'create' as const,
+    };
+
+    const first = await queues.enqueueTaskCategoryJob(data);
+    const duplicate = await queues.enqueueTaskCategoryJob(data);
+    expect(first).toMatchObject({ enqueued: true });
+    expect(duplicate).toMatchObject({ enqueued: false, jobId: first.jobId });
+    expect(fakes.queues[0]?.addCalls[0]).toMatchObject({
+      name: 'task-category',
+      data,
+      opts: {
+        jobId:
+          'task-category|22222222-2222-4222-8222-222222222222|77777777-7777-4777-8777-777777777777|packet-hash-v1',
+      },
+    });
+
+    fakes.queues[0]?.jobStates.set(first.jobId, 'failed');
+    const retry = await queues.enqueueTaskCategoryJob({ ...data, trigger: 'retry' });
+    expect(retry).toMatchObject({ enqueued: true, jobId: first.jobId });
+    expect(fakes.queues[0]?.addCalls).toHaveLength(2);
+  });
+
   it('lets manual object summary jobs replace delayed automatic refreshes', async () => {
     const queues = await importQueues();
     const autoData = {

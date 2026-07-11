@@ -2,6 +2,7 @@
 import * as objects from '@timeline/shared/objects';
 import { enqueueSuggestionJob } from '@timeline/shared/queue';
 import * as rateLimit from '@timeline/shared/rate-limit';
+import { taskCategorySchema } from '@timeline/shared/task-categories/types';
 import { withTeam } from '@timeline/shared/team-scope';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
@@ -21,6 +22,7 @@ const objectTypeSchema = z.enum(objects.OBJECT_TYPES);
 const searchObjectsSchema = z.object({
   query: z.string().max(200).default(''),
   exclude: uuidSchema.optional(),
+  type: objectTypeSchema.optional(),
 });
 
 type ObjectSuggestionTargetKind = 'object' | 'task';
@@ -140,7 +142,9 @@ export async function searchObjectsAction(input: unknown): Promise<{
     const rows = query
       ? await r.scope.objects.searchObjects({
           query,
+          ...(parsed.data.type ? { type: parsed.data.type } : {}),
           archived: false,
+          ...(parsed.data.type ? { type: parsed.data.type } : {}),
           limit: OBJECT_SEARCH_RESULT_LIMIT + 1,
         })
       : await r.scope.objects.listObjects({
@@ -292,6 +296,195 @@ export async function updateObjectAction(input: unknown): Promise<ActionState> {
       return { ok: true, id };
     } catch (err) {
       return { error: friendlyError(err, 'Failed to update object') };
+    }
+  });
+}
+
+const taskCategoryMutationSchema = z.object({ id: uuidSchema, category: taskCategorySchema });
+
+export async function setTaskCategoryAction(input: unknown): Promise<ActionState> {
+  return runSentryServerAction('set_task_category', async () => {
+    const parsed = taskCategoryMutationSchema.safeParse(input);
+    if (!parsed.success) return { error: 'Invalid task category' };
+    const r = await resolveScope();
+    if (!r.ok) return { error: r.error };
+    try {
+      const result = await r.scope.objects.setTaskCategory(parsed.data.id, parsed.data.category, {
+        kind: 'user',
+        userId: r.userId,
+      });
+      trackProductEventBestEffort(r.userId, 'task_category_changed', {
+        teamId: r.teamId,
+        userId: r.userId,
+        taskId: parsed.data.id,
+        category: parsed.data.category,
+        mode: 'manual',
+      });
+      revalidateObjectMutationSurfaces(parsed.data.id);
+      return { ok: true, id: parsed.data.id, undoChangeId: result.changeId };
+    } catch (err) {
+      return { error: friendlyError(err, 'Failed to update category') };
+    }
+  });
+}
+
+export async function undoTaskCategoryChangeAction(input: unknown): Promise<ActionState> {
+  return runSentryServerAction('undo_task_category_change', async () => {
+    const parsed = z.object({ id: uuidSchema, changeId: uuidSchema }).safeParse(input);
+    if (!parsed.success) return { error: 'Invalid category change' };
+    const r = await resolveScope();
+    if (!r.ok) return { error: r.error };
+    try {
+      const result = await r.scope.objects.undoTaskCategoryChange(
+        parsed.data.id,
+        parsed.data.changeId,
+        {
+          kind: 'user',
+          userId: r.userId,
+        },
+      );
+      trackProductEventBestEffort(r.userId, 'task_category_changed', {
+        teamId: r.teamId,
+        userId: r.userId,
+        taskId: parsed.data.id,
+        mode: result.taskCategoryMode === 'manual' ? 'manual' : 'automatic',
+      });
+      revalidateObjectMutationSurfaces(parsed.data.id);
+      return { ok: true, id: parsed.data.id };
+    } catch (err) {
+      return { error: friendlyError(err, 'Failed to undo category change') };
+    }
+  });
+}
+
+export async function resetTaskCategoryAction(input: unknown): Promise<ActionState> {
+  return runSentryServerAction('reset_task_category', async () => {
+    const parsed = z.object({ id: uuidSchema }).safeParse(input);
+    if (!parsed.success) return { error: 'Invalid task id' };
+    const r = await resolveScope();
+    if (!r.ok) return { error: r.error };
+    try {
+      await r.scope.objects.resetTaskCategoryToAutomatic(parsed.data.id, {
+        kind: 'user',
+        userId: r.userId,
+      });
+      trackProductEventBestEffort(r.userId, 'task_category_changed', {
+        teamId: r.teamId,
+        userId: r.userId,
+        taskId: parsed.data.id,
+        mode: 'automatic',
+      });
+      revalidateObjectMutationSurfaces(parsed.data.id);
+      return { ok: true, id: parsed.data.id };
+    } catch (err) {
+      return { error: friendlyError(err, 'Failed to enable automatic category') };
+    }
+  });
+}
+
+export async function retryTaskCategoryAction(input: unknown): Promise<ActionState> {
+  return runSentryServerAction('retry_task_category', async () => {
+    const parsed = z.object({ id: uuidSchema }).safeParse(input);
+    if (!parsed.success) return { error: 'Invalid task id' };
+    const r = await resolveScope();
+    if (!r.ok) return { error: r.error };
+    try {
+      await r.scope.objects.retryTaskCategory(parsed.data.id, {
+        kind: 'user',
+        userId: r.userId,
+      });
+      revalidateObjectMutationSurfaces(parsed.data.id);
+      return { ok: true, id: parsed.data.id };
+    } catch (err) {
+      return { error: friendlyError(err, 'Failed to retry category') };
+    }
+  });
+}
+
+export async function setTaskProjectAction(input: unknown): Promise<ActionState> {
+  return runSentryServerAction('set_task_project', async () => {
+    const parsed = z.object({ id: uuidSchema, projectId: uuidSchema.nullable() }).safeParse(input);
+    if (!parsed.success) return { error: 'Invalid task project' };
+    const r = await resolveScope();
+    if (!r.ok) return { error: r.error };
+    try {
+      const result = await r.scope.objects.setTaskProject(parsed.data.id, parsed.data.projectId, {
+        kind: 'user',
+        userId: r.userId,
+      });
+      trackProductEventBestEffort(r.userId, 'task_project_changed', {
+        teamId: r.teamId,
+        userId: r.userId,
+        taskId: parsed.data.id,
+        hasProject: parsed.data.projectId !== null,
+      });
+      revalidateObjectMutationSurfaces(
+        [
+          parsed.data.id,
+          parsed.data.projectId,
+          result.project?.projectId,
+          ...result.touchedIds,
+        ].filter((id): id is string => Boolean(id)),
+      );
+      return { ok: true, id: parsed.data.id };
+    } catch (err) {
+      return { error: friendlyError(err, 'Failed to update project') };
+    }
+  });
+}
+
+export async function loadTaskCategoryStatesAction(input: unknown): Promise<{
+  rows?: Pick<
+    objects.ObjectRow,
+    | 'id'
+    | 'taskCategory'
+    | 'taskCategoryMode'
+    | 'taskCategorySource'
+    | 'taskCategoryStatus'
+    | 'taskCategoryUpdatedAt'
+  >[];
+  error?: string;
+}> {
+  return runSentryServerAction('load_task_category_states', async () => {
+    const parsed = z.object({ ids: z.array(uuidSchema).min(1).max(200) }).safeParse(input);
+    if (!parsed.success) return { error: 'Invalid task ids' };
+    const r = await resolveScope();
+    if (!r.ok) return { error: r.error };
+    try {
+      const rows = await r.scope.objects.listObjects({
+        id: parsed.data.ids,
+        type: 'task',
+        limit: 200,
+      });
+      return {
+        rows: rows.map((row) => ({
+          id: row.id,
+          taskCategory: row.taskCategory,
+          taskCategoryMode: row.taskCategoryMode,
+          taskCategorySource: row.taskCategorySource,
+          taskCategoryStatus: row.taskCategoryStatus,
+          taskCategoryUpdatedAt: row.taskCategoryUpdatedAt,
+        })),
+      };
+    } catch (err) {
+      return { error: friendlyError(err, 'Failed to refresh categories') };
+    }
+  });
+}
+
+export async function loadTaskPrimaryProjectsAction(input: unknown): Promise<{
+  rows?: objects.TaskPrimaryProjectRow[];
+  error?: string;
+}> {
+  return runSentryServerAction('load_task_primary_projects', async () => {
+    const parsed = z.object({ ids: z.array(uuidSchema).min(1).max(200) }).safeParse(input);
+    if (!parsed.success) return { error: 'Invalid task ids' };
+    const r = await resolveScope();
+    if (!r.ok) return { error: r.error };
+    try {
+      return { rows: await r.scope.objects.listPrimaryProjectsForTasks(parsed.data.ids) };
+    } catch (err) {
+      return { error: friendlyError(err, 'Failed to load task projects') };
     }
   });
 }

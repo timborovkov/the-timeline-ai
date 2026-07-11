@@ -1,3 +1,4 @@
+import { getEnv } from '@timeline/shared/env';
 import localFont from 'next/font/local';
 
 import type { Metadata } from 'next';
@@ -116,13 +117,17 @@ export const metadata: Metadata = {
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
+  const taskCategoriesEnabled = getEnv().TASK_CATEGORY_UI_ENABLED;
   return (
     <html
       lang="en"
       className={`${switzer.variable} ${commitMono.variable}`}
       suppressHydrationWarning
     >
-      <body className="min-h-screen bg-background text-foreground antialiased">
+      <body
+        className="min-h-screen bg-background text-foreground antialiased"
+        data-task-categories-enabled={taskCategoriesEnabled ? 'true' : 'false'}
+      >
         <ThemeProvider>
           {children}
           <Toaster richColors />

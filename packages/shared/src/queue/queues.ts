@@ -1,5 +1,6 @@
 import { Queue, type JobsOptions } from 'bullmq';
 
+import { getEnv } from '#src/env.js';
 import { defaultDigestWindow } from '#src/messaging/digest.js';
 import { getRedisConnection } from '#src/queue/connection.js';
 
@@ -63,6 +64,8 @@ export const QUEUE_NAMES = {
   // Generated object briefs. Produced by canonical object-memory writes and
   // manual object-page requests; consumed by the object-summary worker.
   objectSummary: 'object-summary',
+  // Derived functional category for canonical task objects.
+  taskCategory: 'task-category',
   // Reconciliation replay/audit work. This makes evidence coverage repair a
   // first-class worker path instead of only an operator CLI.
   reconciliation: 'reconciliation',
@@ -1126,6 +1129,81 @@ export async function enqueueObjectSummaryJob(
 export async function closeObjectSummaryQueue(): Promise<void> {
   await closeQueue(_objectSummaryQueue, () => {
     _objectSummaryQueue = undefined;
+  });
+}
+
+export interface TaskCategoryClassificationJobData {
+  kind?: 'classify';
+  teamId: string;
+  taskId: string;
+  inputHash: string;
+  trigger: 'create' | 'context_change' | 'project_change' | 'retry' | 'backfill';
+}
+
+export interface TaskCategoryProjectFanoutJobData {
+  kind: 'project_fanout';
+  teamId: string;
+  projectId: string;
+  projectVersion: string;
+  afterTaskId: string | null;
+}
+
+export type TaskCategoryJobData =
+  | TaskCategoryClassificationJobData
+  | TaskCategoryProjectFanoutJobData;
+
+let _taskCategoryQueue: TimelineQueue<TaskCategoryJobData> | undefined;
+
+export function getTaskCategoryQueue(): TimelineQueue<TaskCategoryJobData> {
+  if (_taskCategoryQueue) return _taskCategoryQueue;
+  _taskCategoryQueue = createTimelineQueue<TaskCategoryJobData>(QUEUE_NAMES.taskCategory, {
+    attempts: 3,
+    backoff: { type: 'exponential', delay: 5000 },
+    removeOnComplete: { age: 3600, count: 2000 },
+    removeOnFail: { age: 24 * 3600 },
+  });
+  return _taskCategoryQueue;
+}
+
+export async function enqueueTaskCategoryJob(
+  data: TaskCategoryJobData,
+): Promise<{ enqueued: boolean; jobId: string }> {
+  const jobId =
+    data.kind === 'project_fanout'
+      ? bullmqCustomJobId([
+          'task-category-project-fanout',
+          data.teamId,
+          data.projectId,
+          data.projectVersion,
+          data.afterTaskId ?? 'start',
+        ])
+      : bullmqCustomJobId(['task-category', data.teamId, data.taskId, data.inputHash]);
+  const env = getEnv();
+  const isBackfill = data.kind !== 'project_fanout' && data.trigger === 'backfill';
+  if (
+    !env.TASK_CATEGORY_CLASSIFICATION_ENABLED ||
+    (isBackfill ? !env.TASK_CATEGORY_BACKFILL_ENABLED : !env.TASK_CATEGORY_AUTO_ENQUEUE_ENABLED)
+  ) {
+    return { enqueued: false, jobId };
+  }
+  const q = getTaskCategoryQueue();
+  const existing = (await q.getJob(jobId)) as ExistingJobLike | null;
+  if (existing) {
+    const state = await existing.getState?.().catch(() => null);
+    if (!state || SUGGESTION_JOB_DEDUPE_STATES.has(state)) return { enqueued: false, jobId };
+    if (SUGGESTION_JOB_REPLACEABLE_STATES.has(state) && existing.remove) {
+      await existing.remove().catch(() => undefined);
+    } else {
+      return { enqueued: false, jobId };
+    }
+  }
+  await q.add('task-category', data, { jobId });
+  return { enqueued: true, jobId };
+}
+
+export async function closeTaskCategoryQueue(): Promise<void> {
+  await closeQueue(_taskCategoryQueue, () => {
+    _taskCategoryQueue = undefined;
   });
 }
 

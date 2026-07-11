@@ -13,6 +13,7 @@ import { getMcpManager } from '#src/mcp/client.js';
 import * as objects from '#src/objects/index.js';
 import { recordMcpToolResultEvidence } from '#src/reconciliation/mcp-capture.js';
 import { suggestionDedupeKey, type CreateSuggestionInput } from '#src/suggestions/index.js';
+import { taskCategorySchema, type TaskCategory } from '#src/task-categories/types.js';
 import { type TeamScope } from '#src/team-scope.js';
 import {
   localDateFromInstant,
@@ -278,6 +279,9 @@ const searchObjectsStructuredInput = z.object({
     .optional(),
   ownerUserId: z.string().regex(UUID_RE).nullable().optional(),
   assigneeUserId: z.string().regex(UUID_RE).nullable().optional(),
+  category: z.union([taskCategorySchema, z.array(taskCategorySchema).max(15)]).optional(),
+  uncategorized: z.boolean().optional(),
+  primaryProjectId: z.string().regex(UUID_RE).optional(),
   dueAfter: z.iso.datetime().optional(),
   dueBefore: z.iso.datetime().optional(),
   archived: z.boolean().optional(),
@@ -546,10 +550,36 @@ function serializeObjectRow(row: objects.ObjectRow): Record<string, unknown> {
     owner_user_id: row.ownerUserId,
     assignee_user_id: row.assigneeUserId,
     due_at: row.dueAt?.toISOString() ?? null,
+    task_category: row.taskCategory,
+    task_category_mode: row.taskCategoryMode,
+    task_category_status: row.taskCategoryStatus,
     updated_at: row.updatedAt.toISOString(),
     archived: row.archivedAt !== null,
     aliases: row.aliases.slice(0, 20),
   };
+}
+
+async function serializeObjectRowsWithProjects(
+  scope: TeamScope,
+  rows: objects.ObjectRow[],
+): Promise<Record<string, unknown>[]> {
+  const projects = await scope.objects.listPrimaryProjectsForTasks(
+    rows.filter((row) => row.type === 'task').map((row) => row.id),
+  );
+  const byTask = new Map(projects.map((project) => [project.taskId, project] as const));
+  return rows.map((row) => {
+    const project = byTask.get(row.id);
+    return {
+      ...serializeObjectRow(row),
+      primary_project: project
+        ? {
+            id: project.projectId,
+            name: project.projectName,
+            archived: project.archivedAt !== null,
+          }
+        : null,
+    };
+  });
 }
 
 function searchArgsFromTimelineInput(
@@ -1730,6 +1760,7 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
         runSafe('get_object', async () => {
           const result = await scope.objects.getObject(idOrName);
           if (!result) return { found: false };
+          const [primaryProject] = await scope.objects.listPrimaryProjectsForTasks([result.id]);
           return {
             found: true,
             id: result.id,
@@ -1745,6 +1776,16 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
             owner_user_id: result.ownerUserId,
             assignee_user_id: result.assigneeUserId,
             due_at: result.dueAt?.toISOString() ?? null,
+            task_category: result.taskCategory,
+            task_category_mode: result.taskCategoryMode,
+            task_category_status: result.taskCategoryStatus,
+            primary_project: primaryProject
+              ? {
+                  id: primaryProject.projectId,
+                  name: primaryProject.projectName,
+                  archived: primaryProject.archivedAt !== null,
+                }
+              : null,
             archived: result.archivedAt !== null,
             notes: result.notes.slice(0, 10).map((n) => ({
               id: n.id,
@@ -1784,6 +1825,9 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
           if (input.stage) filter.stage = input.stage;
           if (input.ownerUserId !== undefined) filter.ownerUserId = input.ownerUserId;
           if (input.assigneeUserId !== undefined) filter.assigneeUserId = input.assigneeUserId;
+          if (input.category) filter.taskCategory = input.category;
+          if (input.uncategorized) filter.taskCategoryNull = true;
+          if (input.primaryProjectId) filter.primaryProjectId = input.primaryProjectId;
           if (input.dueAfter) filter.dueAfter = new Date(input.dueAfter);
           if (input.dueBefore) filter.dueBefore = new Date(input.dueBefore);
           if (input.archived !== undefined) filter.archived = input.archived;
@@ -1791,7 +1835,7 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
           return {
             count: rows.length,
             mode: 'structured',
-            objects: rows.map(serializeObjectRow),
+            objects: await serializeObjectRowsWithProjects(scope, rows),
           };
         }),
     }),
@@ -1804,6 +1848,9 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
         status: z.string().max(40).optional(),
         stage: z.string().max(40).optional(),
         ownerUserId: z.string().regex(UUID_RE).optional(),
+        category: taskCategorySchema.optional(),
+        uncategorized: z.boolean().optional(),
+        primaryProjectId: z.string().regex(UUID_RE).optional(),
         archived: z.boolean().optional(),
         limit: z.number().int().min(1).max(50).optional(),
       }),
@@ -1814,6 +1861,9 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
             status?: string;
             stage?: string;
             ownerUserId?: string;
+            category?: TaskCategory;
+            uncategorized?: boolean;
+            primaryProjectId?: string;
             archived?: boolean;
             limit?: number;
           };
@@ -1824,11 +1874,14 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
           if (input.status) filter.status = input.status;
           if (input.stage) filter.stage = input.stage;
           if (input.ownerUserId) filter.ownerUserId = input.ownerUserId;
+          if (input.category) filter.taskCategory = input.category;
+          if (input.uncategorized) filter.taskCategoryNull = true;
+          if (input.primaryProjectId) filter.primaryProjectId = input.primaryProjectId;
           if (input.archived !== undefined) filter.archived = input.archived;
           const rows = await scope.objects.listObjects(filter);
           return {
             count: rows.length,
-            objects: rows.map(serializeObjectRow),
+            objects: await serializeObjectRowsWithProjects(scope, rows),
           };
         }),
     }),
@@ -1839,11 +1892,21 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
       inputSchema: z.object({
         status: z.string().max(40).optional(),
         ownerUserId: z.string().regex(UUID_RE).optional(),
+        category: taskCategorySchema.optional(),
+        uncategorized: z.boolean().optional(),
+        primaryProjectId: z.string().regex(UUID_RE).optional(),
         limit: z.number().int().min(1).max(50).optional(),
       }),
       execute: async (raw) =>
         runSafe('list_tasks', async () => {
-          const input = raw as { status?: string; ownerUserId?: string; limit?: number };
+          const input = raw as {
+            status?: string;
+            ownerUserId?: string;
+            category?: TaskCategory;
+            uncategorized?: boolean;
+            primaryProjectId?: string;
+            limit?: number;
+          };
           const filter: objects.ObjectListFilter = {
             type: 'task',
             archived: false,
@@ -1863,16 +1926,14 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
             status: input.status ?? ['suggested', 'open', 'todo', 'doing', 'blocked'],
           };
           if (input.ownerUserId) filter.ownerUserId = input.ownerUserId;
+          if (input.category) filter.taskCategory = input.category;
+          if (input.uncategorized) filter.taskCategoryNull = true;
+          if (input.primaryProjectId) filter.primaryProjectId = input.primaryProjectId;
           const rows = await scope.objects.listObjects(filter);
+          const serialized = await serializeObjectRowsWithProjects(scope, rows);
           return {
             count: rows.length,
-            tasks: rows.map((r) => ({
-              id: r.id,
-              name: r.canonicalName,
-              status: r.status,
-              owner_user_id: r.ownerUserId,
-              due_at: r.dueAt?.toISOString() ?? null,
-            })),
+            tasks: serialized,
           };
         }),
     }),
@@ -2069,11 +2130,20 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
 
     suggest_task: tool({
       description:
-        'Propose a new task. Records an approval-queue suggestion only; it does not create the canonical task until a human accepts it. Use when the conversation reveals a concrete next action. Set parentObjectId to link the task to a relevant deal/project/person.',
+        'Propose a new task. Records an approval-queue suggestion only; it does not create the canonical task until a human accepts it. Use when the conversation reveals a concrete next action. Set parentObjectId only when exactly one listed active project clearly owns the task. Never use a deal, person, company, title match, co-mention, or ambiguous project; omit it instead of guessing.',
       inputSchema: suggestTaskInput,
       execute: async (raw) =>
         runSafe('suggest_task', async () => {
           const input = suggestTaskInput.parse(raw);
+          const parentProject = input.parentObjectId
+            ? await scope.objects.getObject(input.parentObjectId)
+            : null;
+          if (
+            input.parentObjectId &&
+            (parentProject?.type !== 'project' || Boolean(parentProject.archivedAt))
+          ) {
+            throw new Error('parentObjectId must reference one active project');
+          }
           const dedupeKey = suggestionDedupeKey({
             tool: 'suggest_task',
             title: input.title,
@@ -2108,6 +2178,7 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
                   assigneeName: input.assigneeName ?? null,
                   priority: input.priority ?? null,
                   parentObjectId: input.parentObjectId ?? null,
+                  parentObjectName: parentProject?.canonicalName ?? null,
                   metadata: input.note ? { agent_note: input.note } : {},
                 },
               },

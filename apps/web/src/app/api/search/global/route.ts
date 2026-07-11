@@ -12,6 +12,7 @@ import {
   type GlobalSearchResult,
   type GlobalSearchWarning,
 } from '@timeline/shared/search';
+import { taskCategoryLabel } from '@timeline/shared/task-categories/types';
 import { withTeam } from '@timeline/shared/team-scope';
 import { z } from 'zod';
 
@@ -70,6 +71,7 @@ function searchObjectsAndTasks(
       textFromMetadata(row.metadata.integration_external_id),
     ];
     const summary = summaries.get(row.id);
+    const categoryLabel = row.type === 'task' ? taskCategoryLabel(row.taskCategory) : null;
     const lexical = scoreLexical({
       query: input.query,
       title: row.canonicalName,
@@ -77,11 +79,14 @@ function searchObjectsAndTasks(
         row.type,
         row.status,
         row.stage,
+        categoryLabel,
         summary?.plainText,
         ...row.aliases,
         ...metadataFields,
       ],
-      keywords: [row.type, kind, row.status],
+      keywords: [row.type, kind, row.status, categoryLabel].filter((value): value is string =>
+        Boolean(value),
+      ),
     });
     const intent = scoreIntent(input.query, kind, [row.type, kind, row.status]);
     if (input.query.trim() && !lexical.lexical && !lexical.title && intent === 0) continue;
@@ -96,6 +101,7 @@ function searchObjectsAndTasks(
             ? [
                 row.status,
                 row.stage,
+                categoryLabel,
                 row.dueAt ? `due ${row.dueAt.toISOString().slice(0, 10)}` : null,
               ]
                 .filter(Boolean)
@@ -114,6 +120,8 @@ function searchObjectsAndTasks(
           stage: row.stage,
           dueAt: row.dueAt?.toISOString() ?? null,
           summary: Boolean(summary),
+          taskCategory: row.taskCategory,
+          taskCategoryStatus: row.taskCategoryStatus,
         },
       }),
     );

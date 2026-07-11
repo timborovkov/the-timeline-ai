@@ -1,4 +1,5 @@
 import { users } from '@timeline/db';
+import { getEnv } from '@timeline/shared/env';
 import { withTeam } from '@timeline/shared/team-scope';
 import { inArray } from 'drizzle-orm';
 import { notFound, redirect } from 'next/navigation';
@@ -47,7 +48,9 @@ export default async function BoardDetailPage({
   if (!active) redirect('/sign-in');
 
   const scope = withTeam(db, active.teamId, session.user.id);
-  const filters = parseWorkFilters(query);
+  const filters = parseWorkFilters(query, {
+    taskCategoriesEnabled: getEnv().TASK_CATEGORY_UI_ENABLED,
+  });
   const board = await scope.boards.getBoard(id, {
     itemLimit: 'all',
     itemFilter: boardItemFilterFromWorkFilters(filters),

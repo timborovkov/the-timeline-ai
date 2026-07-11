@@ -1,4 +1,5 @@
 import { users } from '@timeline/db';
+import { getEnv } from '@timeline/shared/env';
 import { withTeam } from '@timeline/shared/team-scope';
 import { inArray } from 'drizzle-orm';
 import { redirect } from 'next/navigation';
@@ -71,9 +72,12 @@ export default async function TasksPage({
 
   const scope = withTeam(db, active.teamId, session.user.id);
   const selectedTaskId = taskParam(query.task);
-  const filters = parseWorkFilters(query);
+  const filters = parseWorkFilters(query, {
+    taskCategoriesEnabled: getEnv().TASK_CATEGORY_UI_ENABLED,
+  });
   const taskFilter = taskObjectFilterFromWorkFilters(filters);
-  const [taskPage, counts, pendingSuggestions, members] = await Promise.all([
+  const [projects, taskPage, counts, pendingSuggestions, members] = await Promise.all([
+    scope.objects.listObjects({ type: 'project', archived: false, limit: 200 }),
     loadTaskRowsPage(scope.objects, null, taskFilter),
     countTaskRows(scope.objects, new Date(), taskFilter),
     scope.suggestions.listPendingSuggestions(),
@@ -95,6 +99,9 @@ export default async function TasksPage({
   const selectedTaskDetail = selectedVisibleTaskId
     ? await scope.objects.getObject(selectedVisibleTaskId)
     : null;
+  const primaryProjects = await scope.objects.listPrimaryProjectsForTasks(
+    rows.map((row) => row.id),
+  );
   const memberIds = members.map((member) => member.userId);
   const memberRows =
     memberIds.length > 0
@@ -167,6 +174,7 @@ export default async function TasksPage({
         totalCount={counts.total}
         hiddenParams={hiddenFilterParams}
         members={memberOptions}
+        projects={projects.map((project) => ({ id: project.id, label: project.canonicalName }))}
         statusOptions={TASK_COLUMNS}
       />
 
@@ -198,6 +206,8 @@ export default async function TasksPage({
             selectedTaskContext={selectedTaskDetail?.connectedWork ?? null}
             view={view}
             members={memberOptions}
+            projects={projects.map((project) => ({ id: project.id, label: project.canonicalName }))}
+            primaryProjects={primaryProjects}
             totalCount={counts.total}
             nextCursor={taskPage.nextCursor}
             filterParams={taskLoadFilterParams}

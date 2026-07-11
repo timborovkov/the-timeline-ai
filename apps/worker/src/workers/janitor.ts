@@ -1,7 +1,8 @@
-import { type Db, documentVersions, meetings } from '@timeline/db';
+import { type Db, documentVersions, entities, meetings } from '@timeline/db';
 import { childLogger, queue } from '@timeline/shared';
+import { getEnv } from '@timeline/shared/env';
 import { Worker, type Job } from 'bullmq';
-import { and, asc, eq, gt, inArray, isNotNull, or, sql } from 'drizzle-orm';
+import { and, asc, eq, gt, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
 
 import { captureWorkerException, captureWorkerJobFailure } from '#src/monitoring.js';
 
@@ -28,6 +29,7 @@ const PENDING_DOC_MIN_AGE_MS = 5 * 60 * 1000;
 // genuinely-dead workers.
 const EXTRACTING_DOC_MIN_AGE_MS = 60 * 60 * 1000;
 const PROCESSING_MEETING_MIN_AGE_MS = 30 * 60 * 1000;
+const PENDING_TASK_CATEGORY_MIN_AGE_MS = 5 * 60 * 1000;
 
 const log = childLogger('worker:janitor');
 
@@ -37,11 +39,14 @@ interface JanitorDeps {
   // touching Redis. Production binds these to the real queue helpers.
   enqueueDocumentExtractJob?: (data: queue.DocumentExtractJobData) => Promise<void>;
   enqueueMeetingFinalizeJob?: (data: queue.MeetingFinalizeJobData) => Promise<void>;
+  enqueueTaskCategoryJob?: (data: queue.TaskCategoryJobData) => Promise<unknown>;
+  taskCategoryEnabled?: boolean;
 }
 
 interface JanitorTickResult {
   documentVersionsRequeued: number;
   meetingsRequeued: number;
+  taskCategoriesRequeued: number;
 }
 
 /**
@@ -61,11 +66,73 @@ interface JanitorTickResult {
 export async function processJanitorTick(deps: JanitorDeps): Promise<JanitorTickResult> {
   const enqueueDoc = deps.enqueueDocumentExtractJob ?? queue.enqueueDocumentExtractJob;
   const enqueueMeeting = deps.enqueueMeetingFinalizeJob ?? queue.enqueueMeetingFinalizeJob;
+  const enqueueTaskCategory = deps.enqueueTaskCategoryJob ?? queue.enqueueTaskCategoryJob;
 
   const documentVersionsRequeued = await sweepDocumentVersions(deps.db, enqueueDoc);
   const meetingsRequeued = await sweepMeetings(deps.db, enqueueMeeting);
+  const taskCategoriesRequeued =
+    (deps.taskCategoryEnabled ??
+    (getEnv().TASK_CATEGORY_CLASSIFICATION_ENABLED &&
+      getEnv().TASK_CATEGORY_AUTO_ENQUEUE_ENABLED &&
+      getEnv().TASK_CATEGORY_WORKER_ENABLED))
+      ? await sweepTaskCategories(deps.db, enqueueTaskCategory)
+      : 0;
 
-  return { documentVersionsRequeued, meetingsRequeued };
+  return { documentVersionsRequeued, meetingsRequeued, taskCategoriesRequeued };
+}
+
+async function sweepTaskCategories(
+  db: Db,
+  enqueue: (data: queue.TaskCategoryJobData) => Promise<unknown>,
+): Promise<number> {
+  let cursor: string | null = null;
+  let total = 0;
+  while (total < MAX_REQUEUES_PER_KIND) {
+    const rows = await db
+      .select({
+        id: entities.id,
+        teamId: entities.teamId,
+        inputHash: entities.taskCategoryRequestedInputHash,
+      })
+      .from(entities)
+      .where(
+        and(
+          eq(entities.type, 'task'),
+          eq(entities.taskCategoryMode, 'automatic'),
+          eq(entities.taskCategoryStatus, 'pending'),
+          isNotNull(entities.taskCategoryRequestedInputHash),
+          isNull(entities.archivedAt),
+          isNull(entities.mergedIntoId),
+          sql`${entities.taskCategoryUpdatedAt} < now() - make_interval(secs => ${PENDING_TASK_CATEGORY_MIN_AGE_MS / 1000})`,
+          cursor ? gt(entities.id, cursor) : undefined,
+        ),
+      )
+      .orderBy(asc(entities.id))
+      .limit(PAGE_SIZE);
+    if (rows.length === 0) break;
+    cursor = rows[rows.length - 1]?.id ?? null;
+    for (const row of rows) {
+      if (total >= MAX_REQUEUES_PER_KIND || !row.inputHash) break;
+      try {
+        await enqueue({
+          teamId: row.teamId,
+          taskId: row.id,
+          inputHash: row.inputHash,
+          trigger: 'retry',
+        });
+        total += 1;
+      } catch (err: unknown) {
+        log.warn({ err, taskId: row.id }, 'janitor: failed to re-enqueue task category');
+        captureWorkerException(err, {
+          component: 'worker_handoff',
+          queueName: queue.QUEUE_NAMES.taskCategory,
+          operation: 'janitor_reenqueue_task_category',
+        });
+      }
+    }
+    if (rows.length < PAGE_SIZE) break;
+  }
+  return total;
 }
 
 async function sweepDocumentVersions(
@@ -224,7 +291,11 @@ export function startJanitorWorker(deps: { db: Db }): Worker<queue.JanitorJobDat
       const startedAt = Date.now();
       const result = await processJanitorTick({ db: deps.db });
       const durationMs = Date.now() - startedAt;
-      if (result.documentVersionsRequeued === 0 && result.meetingsRequeued === 0) {
+      if (
+        result.documentVersionsRequeued === 0 &&
+        result.meetingsRequeued === 0 &&
+        result.taskCategoriesRequeued === 0
+      ) {
         log.info({ jobId: job.id, durationMs }, 'janitor: nothing stuck');
       } else {
         log.info({ jobId: job.id, ...result, durationMs }, 'janitor: requeued stuck rows');

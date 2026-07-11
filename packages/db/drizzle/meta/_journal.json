@@ -407,6 +407,13 @@
       "when": 1795653780000,
       "tag": "0057_legacy_provenance_editability",
       "breakpoints": true
+    },
+    {
+      "idx": 58,
+      "version": "7",
+      "when": 1795653840000,
+      "tag": "0058_task_categories",
+      "breakpoints": true
     }
   ]
 }

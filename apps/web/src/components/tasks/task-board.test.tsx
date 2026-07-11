@@ -10,12 +10,20 @@ const fakes = vi.hoisted(() => ({
   refresh: vi.fn(),
   updateObjectAction: vi.fn(),
   loadTaskRowsAction: vi.fn(),
+  loadTaskPrimaryProjectsAction: vi.fn(),
+  loadTaskCategoryStatesAction: vi.fn(),
+  setTaskCategoryAction: vi.fn(),
+  resetTaskCategoryAction: vi.fn(),
 }));
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: fakes.refresh }) }));
 vi.mock('@/app/actions/objects', () => ({
   updateObjectAction: fakes.updateObjectAction,
   loadTaskRowsAction: fakes.loadTaskRowsAction,
+  loadTaskPrimaryProjectsAction: fakes.loadTaskPrimaryProjectsAction,
+  loadTaskCategoryStatesAction: fakes.loadTaskCategoryStatesAction,
+  setTaskCategoryAction: fakes.setTaskCategoryAction,
+  resetTaskCategoryAction: fakes.resetTaskCategoryAction,
 }));
 vi.mock('@/lib/task-board-config', () => ({
   TASK_BOARD_COLUMN_RENDER_LIMIT: 3,
@@ -39,6 +47,11 @@ function task(input: Partial<objects.ObjectRow> = {}): objects.ObjectRow {
     assigneeUserId: 'user-1',
     dueAt: new Date('2099-07-04T00:00:00.000Z'),
     agentSuggested: false,
+    taskCategory: null,
+    taskCategoryMode: null,
+    taskCategorySource: null,
+    taskCategoryStatus: null,
+    taskCategoryUpdatedAt: null,
     archivedAt: null,
     aliases: [],
     metadata: {},
@@ -126,8 +139,16 @@ describe('TaskBoard', () => {
     fakes.refresh.mockReset();
     fakes.updateObjectAction.mockReset();
     fakes.loadTaskRowsAction.mockReset();
+    fakes.loadTaskPrimaryProjectsAction.mockReset();
+    fakes.loadTaskCategoryStatesAction.mockReset();
+    fakes.setTaskCategoryAction.mockReset();
+    fakes.resetTaskCategoryAction.mockReset();
     fakes.updateObjectAction.mockResolvedValue({ ok: true });
     fakes.loadTaskRowsAction.mockResolvedValue({ rows: [], nextCursor: null });
+    fakes.loadTaskPrimaryProjectsAction.mockResolvedValue({ rows: [] });
+    fakes.loadTaskCategoryStatesAction.mockResolvedValue({ rows: [] });
+    fakes.setTaskCategoryAction.mockResolvedValue({ ok: true });
+    fakes.resetTaskCategoryAction.mockResolvedValue({ ok: true });
   });
 
   it('opens a task side panel route from the card instead of object detail', () => {

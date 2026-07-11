@@ -1,5 +1,9 @@
 @import 'tailwindcss';
 
+[data-task-categories-enabled='false'] .task-category-ui {
+  display: none !important;
+}
+
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {

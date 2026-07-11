@@ -64,6 +64,8 @@ const EMPTY_FILTERS: WorkFilterState = {
   q: '',
   type: '',
   status: '',
+  category: '',
+  project: '',
   stage: '',
   owner: '',
   assignee: '',
@@ -212,6 +214,15 @@ export function BoardDetailClient({
   );
 
   const description = visibleBoardDescription(purpose);
+  const projectOptions = useMemo(() => {
+    const options: { id: string; label: string }[] = [];
+    for (const candidate of initialCandidates) {
+      if (candidate.type === 'project') {
+        options.push({ id: candidate.id, label: candidate.canonicalName });
+      }
+    }
+    return options;
+  }, [initialCandidates]);
 
   const boardHeaderLeading = useMemo(
     () => <HistoryBackLink fallbackHref="/app/boards" label="Back" />,
@@ -272,6 +283,7 @@ export function BoardDetailClient({
         totalCount={itemCount ?? items.length}
         hiddenParams={{ view }}
         members={members}
+        projects={projectOptions}
         lanes={lanes}
         typeLabels={typeLabels}
         className={view === 'kanban' ? 'shrink-0' : 'mb-4'}

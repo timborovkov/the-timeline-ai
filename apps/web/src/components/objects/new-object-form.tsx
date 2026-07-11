@@ -1,36 +1,56 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useState, useTransition } from 'react';
+import { useReducer, useTransition } from 'react';
 
 import { createObjectAction } from '@/app/actions/objects';
 import { OBJECT_TYPES as TYPES } from '@/lib/object-types';
 
-export function NewObjectForm() {
+const EMPTY_PROJECTS: { id: string; label: string }[] = [];
+
+interface FormState {
+  error: string | null;
+  type: (typeof TYPES)[number];
+  name: string;
+  dueAt: string;
+  projectId: string;
+}
+
+export function NewObjectForm({
+  projects = EMPTY_PROJECTS,
+  defaultProjectId = '',
+  returnTo,
+}: {
+  projects?: { id: string; label: string }[];
+  defaultProjectId?: string;
+  returnTo?: string;
+}) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
-  const [error, setError] = useState<string | null>(null);
-  const [type, setType] = useState<(typeof TYPES)[number]>('task');
-  const [name, setName] = useState('');
-  const [dueAt, setDueAt] = useState('');
+  const [form, updateForm] = useReducer(
+    (state: FormState, patch: Partial<FormState>) => ({ ...state, ...patch }),
+    { error: null, type: 'task', name: '', dueAt: '', projectId: defaultProjectId },
+  );
+  const { error, type, name, dueAt, projectId } = form;
 
   function submit(): void {
     if (!name.trim()) {
-      setError('Name required');
+      updateForm({ error: 'Name required' });
       return;
     }
-    setError(null);
+    updateForm({ error: null });
     startTransition(async () => {
       const result = await createObjectAction({
         type,
         canonicalName: name.trim(),
         ...(dueAt ? { dueAt: new Date(dueAt).toISOString() } : {}),
+        ...(type === 'task' && projectId ? { parentObjectId: projectId } : {}),
       });
       if ('error' in result && result.error) {
-        setError(result.error);
+        updateForm({ error: result.error });
         return;
       }
-      if ('id' in result && result.id) router.push(`/app/objects/${result.id}`);
+      if ('id' in result && result.id) router.push(returnTo ?? `/app/objects/${result.id}`);
     });
   }
 
@@ -43,7 +63,7 @@ export function NewObjectForm() {
         <select
           value={type}
           onChange={(e) => {
-            setType(e.target.value as (typeof TYPES)[number]);
+            updateForm({ type: e.target.value as (typeof TYPES)[number] });
           }}
           className="w-full rounded-md border bg-background px-3 py-2 text-sm"
         >
@@ -54,6 +74,27 @@ export function NewObjectForm() {
           ))}
         </select>
       </label>
+      {type === 'task' ? (
+        <label className="block">
+          <span className="mb-1 block text-xs uppercase tracking-wide text-muted-foreground">
+            Project (optional)
+          </span>
+          <select
+            value={projectId}
+            onChange={(event) => {
+              updateForm({ projectId: event.currentTarget.value });
+            }}
+            className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+          >
+            <option value="">No project</option>
+            {projects.map((project) => (
+              <option key={project.id} value={project.id}>
+                {project.label}
+              </option>
+            ))}
+          </select>
+        </label>
+      ) : null}
       <label className="block">
         <span className="mb-1 block text-xs uppercase tracking-wide text-muted-foreground">
           Name
@@ -61,7 +102,7 @@ export function NewObjectForm() {
         <input
           value={name}
           onChange={(e) => {
-            setName(e.target.value);
+            updateForm({ name: e.target.value });
           }}
           className="w-full rounded-md border bg-background px-3 py-2 text-sm"
           placeholder="e.g. Acme deal, Q2 OKRs, post-mortem 2026-05-15"
@@ -75,7 +116,7 @@ export function NewObjectForm() {
           type="datetime-local"
           value={dueAt}
           onChange={(e) => {
-            setDueAt(e.target.value);
+            updateForm({ dueAt: e.target.value });
           }}
           className="w-full rounded-md border bg-background px-3 py-2 text-sm"
         />

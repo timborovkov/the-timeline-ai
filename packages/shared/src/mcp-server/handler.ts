@@ -8,6 +8,7 @@ import { artifactRefCitation } from '#src/citation.js';
 import { childLogger } from '#src/logger.js';
 import { resolveBearerKey } from '#src/mcp-server/keys.js';
 import * as objects from '#src/objects/index.js';
+import { taskCategorySchema } from '#src/task-categories/types.js';
 import { withTeam, type TeamScope } from '#src/team-scope.js';
 import { resolveTimePhrase, workspaceTimeContext } from '#src/time/index.js';
 import {
@@ -106,6 +107,9 @@ const searchObjectsInput = z.object({
     .optional(),
   ownerUserId: z.string().regex(UUID_RE).nullable().optional(),
   assigneeUserId: z.string().regex(UUID_RE).nullable().optional(),
+  category: z.union([taskCategorySchema, z.array(taskCategorySchema).max(15)]).optional(),
+  uncategorized: z.boolean().optional(),
+  primaryProjectId: z.string().regex(UUID_RE).optional(),
   dueAfter: z.iso.datetime().optional(),
   dueBefore: z.iso.datetime().optional(),
   archived: z.boolean().optional(),
@@ -335,10 +339,36 @@ function serializeObjectRow(row: objects.ObjectRow): Record<string, unknown> {
     owner_user_id: row.ownerUserId,
     assignee_user_id: row.assigneeUserId,
     due_at: row.dueAt?.toISOString() ?? null,
+    task_category: row.taskCategory,
+    task_category_mode: row.taskCategoryMode,
+    task_category_status: row.taskCategoryStatus,
     updated_at: row.updatedAt.toISOString(),
     archived: row.archivedAt !== null,
     aliases: row.aliases.slice(0, 20),
   };
+}
+
+async function serializeObjectRowsWithProjects(
+  scope: TeamScope,
+  rows: objects.ObjectRow[],
+): Promise<Record<string, unknown>[]> {
+  const projects = await scope.objects.listPrimaryProjectsForTasks(
+    rows.filter((row) => row.type === 'task').map((row) => row.id),
+  );
+  const byTask = new Map(projects.map((project) => [project.taskId, project] as const));
+  return rows.map((row) => {
+    const project = byTask.get(row.id);
+    return {
+      ...serializeObjectRow(row),
+      primary_project: project
+        ? {
+            id: project.projectId,
+            name: project.projectName,
+            archived: project.archivedAt !== null,
+          }
+        : null,
+    };
+  });
 }
 
 function serializeBoardRow(row: boards.BoardRow): Record<string, unknown> {
@@ -566,6 +596,11 @@ const TOOLS = [
         stage: { oneOf: [{ type: 'string' }, { type: 'array', items: { type: 'string' } }] },
         ownerUserId: { type: ['string', 'null'] },
         assigneeUserId: { type: ['string', 'null'] },
+        category: {
+          oneOf: [{ type: 'string' }, { type: 'array', items: { type: 'string' }, maxItems: 15 }],
+        },
+        uncategorized: { type: 'boolean' },
+        primaryProjectId: { type: 'string' },
         dueAfter: { type: 'string', format: 'date-time' },
         dueBefore: { type: 'string', format: 'date-time' },
         archived: { type: 'boolean' },
@@ -584,6 +619,9 @@ const TOOLS = [
         status: { type: 'string' },
         stage: { type: 'string' },
         ownerUserId: { type: 'string' },
+        category: { type: 'string' },
+        uncategorized: { type: 'boolean' },
+        primaryProjectId: { type: 'string' },
         archived: { type: 'boolean' },
         limit: { type: 'integer', minimum: 1, maximum: 50 },
       },
@@ -598,6 +636,9 @@ const TOOLS = [
       properties: {
         status: { type: 'string' },
         ownerUserId: { type: 'string' },
+        category: { type: 'string' },
+        uncategorized: { type: 'boolean' },
+        primaryProjectId: { type: 'string' },
         limit: { type: 'integer', minimum: 1, maximum: 50 },
       },
     },
@@ -1017,6 +1058,7 @@ async function callTool(
       const input = z.object({ idOrName: z.string().trim().min(1).max(200) }).parse(args);
       const result = await scope.objects.getObject(input.idOrName);
       if (!result) return { found: false };
+      const [primaryProject] = await scope.objects.listPrimaryProjectsForTasks([result.id]);
       return {
         found: true,
         id: result.id,
@@ -1032,6 +1074,16 @@ async function callTool(
         owner_user_id: result.ownerUserId,
         assignee_user_id: result.assigneeUserId,
         due_at: result.dueAt?.toISOString() ?? null,
+        task_category: result.taskCategory,
+        task_category_mode: result.taskCategoryMode,
+        task_category_status: result.taskCategoryStatus,
+        primary_project: primaryProject
+          ? {
+              id: primaryProject.projectId,
+              name: primaryProject.projectName,
+              archived: primaryProject.archivedAt !== null,
+            }
+          : null,
         archived: result.archivedAt !== null,
         notes: result.notes.slice(0, 10).map((n) => ({
           id: n.id,
@@ -1064,11 +1116,18 @@ async function callTool(
       if (input.stage) filter.stage = input.stage;
       if (input.ownerUserId !== undefined) filter.ownerUserId = input.ownerUserId;
       if (input.assigneeUserId !== undefined) filter.assigneeUserId = input.assigneeUserId;
+      if (input.category) filter.taskCategory = input.category;
+      if (input.uncategorized) filter.taskCategoryNull = true;
+      if (input.primaryProjectId) filter.primaryProjectId = input.primaryProjectId;
       if (input.dueAfter) filter.dueAfter = new Date(input.dueAfter);
       if (input.dueBefore) filter.dueBefore = new Date(input.dueBefore);
       if (input.archived !== undefined) filter.archived = input.archived;
       const rows = await scope.objects.searchObjects(filter);
-      return { count: rows.length, mode: 'structured', objects: rows.map(serializeObjectRow) };
+      return {
+        count: rows.length,
+        mode: 'structured',
+        objects: await serializeObjectRowsWithProjects(scope, rows),
+      };
     }
     case 'timeline.list_objects': {
       const input = z
@@ -1077,6 +1136,9 @@ async function callTool(
           status: z.string().max(40).optional(),
           stage: z.string().max(40).optional(),
           ownerUserId: z.string().regex(UUID_RE).optional(),
+          category: taskCategorySchema.optional(),
+          uncategorized: z.boolean().optional(),
+          primaryProjectId: z.string().regex(UUID_RE).optional(),
           archived: z.boolean().optional(),
           limit: z.number().int().min(1).max(50).optional(),
         })
@@ -1088,15 +1150,21 @@ async function callTool(
       if (input.status) filter.status = input.status;
       if (input.stage) filter.stage = input.stage;
       if (input.ownerUserId) filter.ownerUserId = input.ownerUserId;
+      if (input.category) filter.taskCategory = input.category;
+      if (input.uncategorized) filter.taskCategoryNull = true;
+      if (input.primaryProjectId) filter.primaryProjectId = input.primaryProjectId;
       if (input.archived !== undefined) filter.archived = input.archived;
       const rows = await scope.objects.listObjects(filter);
-      return { count: rows.length, objects: rows.map(serializeObjectRow) };
+      return { count: rows.length, objects: await serializeObjectRowsWithProjects(scope, rows) };
     }
     case 'timeline.list_tasks': {
       const input = z
         .object({
           status: z.string().max(40).optional(),
           ownerUserId: z.string().regex(UUID_RE).optional(),
+          category: taskCategorySchema.optional(),
+          uncategorized: z.boolean().optional(),
+          primaryProjectId: z.string().regex(UUID_RE).optional(),
           limit: z.number().int().min(1).max(50).optional(),
         })
         .parse(args);
@@ -1107,18 +1175,13 @@ async function callTool(
         status: input.status ?? ['suggested', 'open', 'todo', 'doing', 'blocked'],
       };
       if (input.ownerUserId) filter.ownerUserId = input.ownerUserId;
+      if (input.category) filter.taskCategory = input.category;
+      if (input.uncategorized) filter.taskCategoryNull = true;
+      if (input.primaryProjectId) filter.primaryProjectId = input.primaryProjectId;
       const rows = await scope.objects.listObjects(filter);
       return {
         count: rows.length,
-        tasks: rows.map((r) => ({
-          id: r.id,
-          citation: artifactRefCitation({ kind: 'task', id: r.id }),
-          name: r.canonicalName,
-          status: r.status,
-          owner_user_id: r.ownerUserId,
-          assignee_user_id: r.assigneeUserId,
-          due_at: r.dueAt?.toISOString() ?? null,
-        })),
+        tasks: await serializeObjectRowsWithProjects(scope, rows),
       };
     }
     case 'timeline.search_boards': {

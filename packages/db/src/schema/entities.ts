@@ -2,6 +2,7 @@ import { sql } from 'drizzle-orm';
 import {
   type AnyPgColumn,
   boolean,
+  check,
   index,
   jsonb,
   pgEnum,
@@ -73,6 +74,14 @@ export const entities = pgTable(
     ownerUserId: uuid('owner_user_id').references(() => users.id, { onDelete: 'set null' }),
     assigneeUserId: uuid('assignee_user_id').references(() => users.id, { onDelete: 'set null' }),
     dueAt: timestamp('due_at', { withTimezone: true }),
+    taskCategory: text('task_category'),
+    taskCategoryMode: text('task_category_mode'),
+    taskCategorySource: text('task_category_source'),
+    taskCategoryStatus: text('task_category_status'),
+    taskCategoryAppliedInputHash: text('task_category_applied_input_hash'),
+    taskCategoryRequestedInputHash: text('task_category_requested_input_hash'),
+    taskCategoryTaxonomyVersion: text('task_category_taxonomy_version'),
+    taskCategoryUpdatedAt: timestamp('task_category_updated_at', { withTimezone: true }),
     // Legacy provenance pointer. New canonical object writes keep this NULL and
     // cite reconciliation output source refs instead.
     sourceEventId: uuid('source_event_id').references(() => rawEvents.id, { onDelete: 'set null' }),
@@ -90,6 +99,9 @@ export const entities = pgTable(
     index('entities_team_owner_idx').on(table.teamId, table.ownerUserId),
     index('entities_team_assignee_idx').on(table.teamId, table.assigneeUserId),
     index('entities_team_due_idx').on(table.teamId, table.dueAt),
+    index('entities_team_task_category_active_updated_id_idx')
+      .on(table.teamId, table.type, table.taskCategory, table.updatedAt, table.id)
+      .where(sql`${table.archivedAt} IS NULL AND ${table.mergedIntoId} IS NULL`),
     index('entities_team_active_idx')
       .on(table.teamId)
       .where(sql`${table.archivedAt} IS NULL`),
@@ -128,6 +140,64 @@ export const entities = pgTable(
     // GIN over aliases for alias-membership lookup. Team scoping happens via
     // the btree (entities_team_idx) — Postgres bitmap-ands the two.
     index('entities_aliases_gin').using('gin', sql`${table.aliases} jsonb_path_ops`),
+    check(
+      'entities_task_category_non_task_null_chk',
+      sql`${table.type} = 'task' OR (
+        ${table.taskCategory} IS NULL
+        AND ${table.taskCategoryMode} IS NULL
+        AND ${table.taskCategorySource} IS NULL
+        AND ${table.taskCategoryStatus} IS NULL
+        AND ${table.taskCategoryAppliedInputHash} IS NULL
+        AND ${table.taskCategoryRequestedInputHash} IS NULL
+        AND ${table.taskCategoryTaxonomyVersion} IS NULL
+        AND ${table.taskCategoryUpdatedAt} IS NULL
+      )`,
+    ),
+    check(
+      'entities_task_category_mode_chk',
+      sql`${table.taskCategoryMode} IS NULL OR ${table.taskCategoryMode} IN ('automatic', 'manual')`,
+    ),
+    check(
+      'entities_task_category_source_chk',
+      sql`${table.taskCategorySource} IS NULL OR ${table.taskCategorySource} IN ('llm', 'user')`,
+    ),
+    check(
+      'entities_task_category_status_chk',
+      sql`${table.taskCategoryStatus} IS NULL OR ${table.taskCategoryStatus} IN ('pending', 'ready', 'failed')`,
+    ),
+    check(
+      'entities_task_category_value_chk',
+      sql`${table.taskCategory} IS NULL OR ${table.taskCategory} IN ('engineering', 'product', 'design', 'research', 'sales', 'marketing', 'customer_success', 'operations', 'finance', 'legal_compliance', 'people_recruiting', 'it_security', 'strategy_planning', 'administrative', 'other')`,
+    ),
+    check(
+      'entities_task_category_manual_state_chk',
+      sql`${table.taskCategoryMode} IS DISTINCT FROM 'manual' OR (
+        ${table.taskCategory} IS NOT NULL
+        AND ${table.taskCategorySource} = 'user'
+        AND ${table.taskCategoryStatus} = 'ready'
+        AND ${table.taskCategoryRequestedInputHash} IS NULL
+        AND ${table.taskCategoryAppliedInputHash} IS NULL
+        AND ${table.taskCategoryTaxonomyVersion} IS NOT NULL
+      )`,
+    ),
+    check(
+      'entities_task_category_automatic_ready_chk',
+      sql`NOT (${table.taskCategoryMode} = 'automatic' AND ${table.taskCategoryStatus} = 'ready') OR (
+        ${table.taskCategory} IS NOT NULL
+        AND ${table.taskCategorySource} = 'llm'
+        AND ${table.taskCategoryAppliedInputHash} IS NOT NULL
+        AND ${table.taskCategoryRequestedInputHash} IS NULL
+        AND ${table.taskCategoryTaxonomyVersion} IS NOT NULL
+      )`,
+    ),
+    check(
+      'entities_task_category_request_state_chk',
+      sql`(
+        ${table.taskCategoryMode} = 'automatic'
+        AND ${table.taskCategoryStatus} = 'pending'
+        AND ${table.taskCategoryRequestedInputHash} IS NOT NULL
+      ) OR ${table.taskCategoryRequestedInputHash} IS NULL`,
+    ),
     // Phase 11 — Integration sync upsert. Partial unique index so the
     // event-writer can `INSERT ... ON CONFLICT (...) DO UPDATE` per
     // external resource in one query. Only covers integration-mapped

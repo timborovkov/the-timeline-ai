@@ -214,6 +214,8 @@ SUGGESTIONS_LIVE_ENV_FILE=/path/.env pnpm test:suggestions-eval:live
                           # opt-in live LLM suggestion worker extraction/projection eval
 TRANSCRIBE_LIVE_ENV_FILE=/path/.env pnpm test:transcribe-eval:live
                           # opt-in live OpenRouter speech transcription worker finalization eval
+TASK_CATEGORY_LIVE_ENV_FILE=/path/.env pnpm test:task-category-eval:live
+                          # opt-in 120-case live task-category classifier gate + confusion matrix
 pnpm test:reconciliation-eval       # deterministic reconciliation domain/eval matrix
 pnpm test:reconciliation-eval:live  # opt-in live LLM planner+judge matrix; set RECONCILIATION_LIVE_ENV_FILE=/path/.env when needed
 # optional: set RECONCILIATION_LIVE_ARTIFACT_DIR=/tmp/eval-run for one exact output dir,
@@ -226,6 +228,10 @@ pnpm --filter @timeline/worker reconciliation-evidence -- --team=<uuid> --mode=a
 pnpm --filter @timeline/worker reconciliation-evidence -- --team=<uuid> --mode=audit --fail-on-release-gate
 # optional: repeat --allow-degraded-source=<event_source> for known historical degraded replay rows
 pnpm --filter @timeline/worker reconciliation-evidence -- --team=<uuid> --mode=backfill --dry-run --page-size=500
+pnpm --filter @timeline/worker task-category-backfill -- --team-id=<uuid> --limit=500
+                          # dry-run task-category candidates, token estimate, and projected cost
+pnpm --filter @timeline/worker task-category-backfill -- --team-id=<uuid> --limit=500 --enqueue --max-cost-usd=0.10
+                          # enqueue one bounded batch; rerun the same command to resume
 TIMELINE_ENV_FILE=/path/to/.env pnpm --filter @timeline/worker reconciliation-legacy-provenance -- --team=<uuid> --fail-on-legacy
 TIMELINE_ENV_FILE=/path/to/.env pnpm --filter @timeline/worker reconciliation-production-sampling -- --input=/tmp/eval-run --out=/tmp/reconciliation-production-sampling.json --team=<uuid> --run-kind=closed_beta --fail-on-failures
 # production sampling accepts repeated --input paths; --run-kind defaults to manual

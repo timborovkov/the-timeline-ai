@@ -1,4 +1,5 @@
 import { users } from '@timeline/db';
+import { getEnv } from '@timeline/shared/env';
 import { OBJECT_TYPES } from '@timeline/shared/objects/types';
 import { decodeCursor, encodeCursor } from '@timeline/shared/pagination';
 import { withTeam } from '@timeline/shared/team-scope';
@@ -67,21 +68,30 @@ export default async function ObjectsIndexPage({
 
   const scope = withTeam(db, active.teamId, session.user.id);
   const params = await searchParams;
-  const filters = parseWorkFilters(params);
+  const filters = parseWorkFilters(params, {
+    taskCategoriesEnabled: getEnv().TASK_CATEGORY_UI_ENABLED,
+  });
   const filterParams = workFilterHiddenParams(params, WORK_FILTER_PARAM_KEYS);
+  const contextualTaskFilter = Boolean(filters.category || filters.project);
   const objectFilter = {
     ...objectListFilterFromWorkFilters(filters),
+    ...(contextualTaskFilter && !filters.type ? { type: 'task' as const } : {}),
     archived: false,
   } satisfies objects.ObjectListFilter;
 
-  const selectedTypes = filters.type.split(',').filter(Boolean);
+  const selectedTypes = filters.type
+    ? filters.type.split(',').filter(Boolean)
+    : contextualTaskFilter
+      ? ['task']
+      : [];
   const singleType = selectedTypes.length === 1 ? selectedTypes[0] : undefined;
   const hasTypeFilter = selectedTypes.length > 0;
   const filterBarHiddenParams = filters.type ? { type: filters.type } : undefined;
   const cursor = parseCursorParam(firstParam(params.cursor));
   const activeFilters = hasActiveWorkFilters(filters);
 
-  const [objectWindow, suggestionBundles, members] = await Promise.all([
+  const [projects, objectWindow, suggestionBundles, members] = await Promise.all([
+    scope.objects.listObjects({ type: 'project', archived: false, limit: 200 }),
     hasTypeFilter
       ? loadTypedObjectPage(scope.objects, { filter: objectFilter, cursor })
       : loadObjectSectionPreviews(scope.objects, { filter: objectFilter, filterParams }),
@@ -217,6 +227,7 @@ export default async function ObjectsIndexPage({
         totalCount={objectWindow.totalCount}
         hiddenParams={filterBarHiddenParams}
         members={memberOptions}
+        projects={projects.map((project) => ({ id: project.id, label: project.canonicalName }))}
         typeLabels={OBJECT_TYPE_LABELS}
       />
 

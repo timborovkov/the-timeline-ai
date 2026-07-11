@@ -11,6 +11,11 @@ import type * as objects from '@timeline/shared/objects/types';
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }) }));
 vi.mock('@/app/actions/boards', () => ({ removeBoardItemAction: vi.fn() }));
+vi.mock('@/app/actions/objects', () => ({
+  resetTaskCategoryAction: vi.fn(),
+  retryTaskCategoryAction: vi.fn(),
+  setTaskCategoryAction: vi.fn(),
+}));
 
 const { BoardCardDetail } = await import('./board-card-detail.js');
 
@@ -54,6 +59,11 @@ function boardItem(input: {
       dueAt: null,
       metadata: input.metadata ?? {},
       agentSuggested: false,
+      taskCategory: null,
+      taskCategoryMode: null,
+      taskCategorySource: null,
+      taskCategoryStatus: null,
+      taskCategoryUpdatedAt: null,
       archivedAt: null,
       createdAt: new Date('2026-01-01T00:00:00.000Z'),
       updatedAt: new Date('2026-01-01T00:00:00.000Z'),

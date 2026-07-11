@@ -155,7 +155,7 @@ Direction: soften the surface. Keep the forensic mono treatment for data
 
 ## Task Categories
 
-- [ ] Add LLM-assigned, user-overridable functional categories to task objects,
+- [x] Add LLM-assigned, user-overridable functional categories to task objects,
       plus an optional durable primary-project relation with project-page quick
       add, manual/AI linking, and project filtering. Include shared
       Tasks/Objects/Boards filters, category badges across work surfaces,

@@ -18,6 +18,8 @@ const EMPTY_FILTERS: WorkFilterState = {
   q: '',
   type: '',
   status: '',
+  category: '',
+  project: '',
   stage: '',
   owner: '',
   assignee: '',

@@ -9,6 +9,7 @@ import type { ReactNode } from 'react';
 
 import { EmptyAction } from '@/components/empty-action';
 import { IndexStrip } from '@/components/index-strip';
+import { TaskCategoryBadge } from '@/components/tasks/task-category-badge';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
@@ -345,6 +346,12 @@ function WorkQueueRow({ item }: { item: WorkQueueItem }) {
         ) : null}
         {item.priority ? <MetaPill label={`P${item.priority}`} /> : null}
         {item.objectType ? <MetaPill label={item.objectType.replace('_', ' ')} /> : null}
+        {item.objectType === 'task' ? (
+          <TaskCategoryBadge
+            category={item.taskCategory ?? null}
+            status={item.taskCategoryStatus ?? null}
+          />
+        ) : null}
       </span>
     </Link>
   );

@@ -1,3 +1,10 @@
+import type {
+  TaskCategory,
+  TaskCategoryMode,
+  TaskCategorySource,
+  TaskCategoryStatus,
+} from '#src/task-categories/types.js';
+
 export const OBJECT_TYPES = [
   'person',
   'company',
@@ -28,6 +35,10 @@ export interface ObjectListFilter {
   priorityNull?: boolean;
   ownerUserId?: string | null | (string | null)[];
   assigneeUserId?: string | null | (string | null)[];
+  taskCategory?: TaskCategory | TaskCategory[];
+  taskCategoryNull?: boolean;
+  taskCategoryBackfillEligible?: boolean;
+  primaryProjectId?: string | string[];
   dueBefore?: Date;
   dueAfter?: Date;
   dueNull?: boolean;
@@ -58,6 +69,11 @@ export interface ObjectRow {
   ownerUserId: string | null;
   assigneeUserId: string | null;
   dueAt: Date | null;
+  taskCategory: TaskCategory | null;
+  taskCategoryMode: TaskCategoryMode | null;
+  taskCategorySource: TaskCategorySource | null;
+  taskCategoryStatus: TaskCategoryStatus | null;
+  taskCategoryUpdatedAt: Date | null;
   /** Legacy compatibility field; shared read models suppress stored true values. */
   agentSuggested: boolean;
   archivedAt: Date | null;
@@ -65,6 +81,13 @@ export interface ObjectRow {
   metadata: Record<string, unknown>;
   updatedAt: Date;
   createdAt: Date;
+}
+
+export interface TaskPrimaryProjectRow {
+  taskId: string;
+  projectId: string;
+  projectName: string;
+  archivedAt: Date | null;
 }
 
 function metadataString(metadata: Record<string, unknown>, key: string): string | null {

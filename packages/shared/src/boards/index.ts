@@ -354,6 +354,11 @@ function toObjectRow(row: EntitySelect): ObjectRow {
     ownerUserId: row.ownerUserId,
     assigneeUserId: row.assigneeUserId,
     dueAt: row.dueAt,
+    taskCategory: row.taskCategory as ObjectRow['taskCategory'],
+    taskCategoryMode: row.taskCategoryMode as ObjectRow['taskCategoryMode'],
+    taskCategorySource: row.taskCategorySource as ObjectRow['taskCategorySource'],
+    taskCategoryStatus: row.taskCategoryStatus as ObjectRow['taskCategoryStatus'],
+    taskCategoryUpdatedAt: row.taskCategoryUpdatedAt,
     // `entities.agent_suggested` is legacy single-row provenance. Board
     // surfaces should rely on approval projections, not this column.
     agentSuggested: false,
@@ -1201,6 +1206,46 @@ export function createBoardScope({
 
     const assigneeCondition = nullableUuidCondition(entities.assigneeUserId, filter.assigneeUserId);
     if (assigneeCondition) conds.push(assigneeCondition);
+
+    const categories = toArray(filter.taskCategory);
+    const categoryCondition = categories?.length
+      ? inArray(entities.taskCategory, categories)
+      : undefined;
+    if (categoryCondition || filter.taskCategoryNull) conds.push(eq(entities.type, 'task'));
+    if (categoryCondition && filter.taskCategoryNull) {
+      const namedOrNull = or(categoryCondition, isNull(entities.taskCategory));
+      if (namedOrNull) conds.push(namedOrNull);
+    } else if (categoryCondition) {
+      conds.push(categoryCondition);
+    } else if (filter.taskCategoryNull) {
+      conds.push(isNull(entities.taskCategory));
+    }
+
+    const requestedProjectIds = toArray(filter.primaryProjectId);
+    if (requestedProjectIds?.length) {
+      const projectIds = requestedProjectIds.filter((id) => UUID_RE.test(id));
+      if (projectIds.length === 0) {
+        conds.push(sql`false`);
+      } else {
+        const idList = sql.join(
+          projectIds.map((id) => sql`${id}::uuid`),
+          sql`, `,
+        );
+        conds.push(sql`EXISTS (
+          SELECT 1
+          FROM entity_relationships AS task_project_rel
+          INNER JOIN entities AS primary_project
+            ON primary_project.id = task_project_rel.to_entity_id
+            AND primary_project.team_id = task_project_rel.team_id
+          WHERE task_project_rel.team_id = ${scope.teamId}
+            AND task_project_rel.from_entity_id = ${entities.id}
+            AND task_project_rel.kind = 'child'
+            AND primary_project.type = 'project'
+            AND primary_project.merged_into_id IS NULL
+            AND primary_project.id IN (${idList})
+        )`);
+      }
+    }
 
     if (filter.dueNull) conds.push(isNull(entities.dueAt));
     if (filter.dueBefore) conds.push(lt(entities.dueAt, filter.dueBefore));

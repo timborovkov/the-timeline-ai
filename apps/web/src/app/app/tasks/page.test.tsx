@@ -7,6 +7,7 @@ const fakes = vi.hoisted(() => ({
   listObjects: vi.fn(),
   countObjects: vi.fn(),
   getObject: vi.fn(),
+  listPrimaryProjectsForTasks: vi.fn(),
   listPendingSuggestions: vi.fn(),
   listMembers: vi.fn(),
   redirect: vi.fn((path: string) => {
@@ -21,6 +22,7 @@ vi.mock('@timeline/shared/team-scope', () => ({
       listObjects: fakes.listObjects,
       countObjects: fakes.countObjects,
       getObject: fakes.getObject,
+      listPrimaryProjectsForTasks: fakes.listPrimaryProjectsForTasks,
     },
     suggestions: { listPendingSuggestions: fakes.listPendingSuggestions },
     timeline: { listMembers: fakes.listMembers },
@@ -89,6 +91,7 @@ beforeEach(() => {
   fakes.listObjects.mockResolvedValue([]);
   fakes.countObjects.mockResolvedValue(0);
   fakes.getObject.mockResolvedValue(null);
+  fakes.listPrimaryProjectsForTasks.mockResolvedValue([]);
   fakes.listPendingSuggestions.mockResolvedValue([]);
   fakes.listMembers.mockResolvedValue([]);
 });
@@ -105,6 +108,11 @@ function taskRow(overrides: Record<string, unknown> = {}) {
     assigneeUserId: null,
     dueAt: null,
     agentSuggested: false,
+    taskCategory: null,
+    taskCategoryMode: null,
+    taskCategorySource: null,
+    taskCategoryStatus: null,
+    taskCategoryUpdatedAt: null,
     archivedAt: null,
     aliases: [],
     metadata: {},
@@ -239,7 +247,7 @@ describe('TasksPage', () => {
       limit: 501,
       cursor: null,
     });
-    expect(fakes.listObjects).toHaveBeenCalledTimes(1);
+    expect(fakes.listObjects).toHaveBeenCalledTimes(2);
     expect(fakes.countObjects).toHaveBeenCalledWith({
       type: 'task',
       archived: false,
@@ -340,6 +348,11 @@ describe('TasksPage', () => {
         assigneeUserId: null,
         dueAt: null,
         agentSuggested: false,
+        taskCategory: null,
+        taskCategoryMode: null,
+        taskCategorySource: null,
+        taskCategoryStatus: null,
+        taskCategoryUpdatedAt: null,
         archivedAt: null,
         aliases: [],
         metadata: {},
@@ -369,6 +382,11 @@ describe('TasksPage', () => {
         assigneeUserId: null,
         dueAt: null,
         agentSuggested: false,
+        taskCategory: null,
+        taskCategoryMode: null,
+        taskCategorySource: null,
+        taskCategoryStatus: null,
+        taskCategoryUpdatedAt: null,
         archivedAt: null,
         aliases: [],
         metadata: {},
@@ -397,6 +415,11 @@ describe('TasksPage', () => {
         assigneeUserId: null,
         dueAt: null,
         agentSuggested: false,
+        taskCategory: null,
+        taskCategoryMode: null,
+        taskCategorySource: null,
+        taskCategoryStatus: null,
+        taskCategoryUpdatedAt: null,
         archivedAt: null,
         aliases: [],
         metadata: {},

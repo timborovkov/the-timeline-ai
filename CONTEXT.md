@@ -218,6 +218,23 @@ Across object types, updating or merging a plausible existing object is
 preferred over creating a new one.
 _Avoid_: Entity when discussing the user-facing team memory item
 
+**Task Category**:
+A single product-owned functional workstream on a canonical task, such as
+Engineering, Design, Sales, or Legal & Compliance. It is reversible derived
+organization metadata: an LLM assigns it asynchronously, a teammate can set a
+sticky manual override, and only an explicit return to automatic mode lets a
+later model result replace that human value. It is not evidence, status,
+priority, ownership, assignment, access control, or a workflow trigger.
+_Avoid_: Tag, board lane, project, object type
+
+**Primary Project**:
+The optional canonical project that owns a task, stored as one durable
+task-to-project `child` relationship. It answers which tracked initiative the
+task belongs to, while Task Category answers which functional workstream is
+responsible. Board membership, co-mention, title similarity, and task category
+do not establish primary-project ownership.
+_Avoid_: Parent object when speaking to users, board, category
+
 **Duplicate Object Candidate**:
 A reviewable proposal that two workspace objects may represent the same
 real-world thing. Short-name, acronym, or suffix-variant matches should become

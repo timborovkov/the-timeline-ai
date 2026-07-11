@@ -1,5 +1,13 @@
 # Automatic Task Categories Plan
 
+> **Implementation status — 2026-07-11:** the v1 architecture and product flows in this plan are
+> implemented. The 120-case live classifier gate passed at 90.83% exact accuracy, 90.12% macro
+> recall, and 100% prompt-injection-case accuracy with the configured production model. Static
+> validation, deterministic evals, full repository tests, React Doctor, compiled imports, query-plan
+> QA, and the focused Faba project/category E2E flow are green. Two-week dogfood and pilot usage
+> thresholds remain rollout measurements; they cannot be claimed before users generate production
+> traffic.
+
 ## Outcome
 
 Every newly canonical task and every active historical task should receive one

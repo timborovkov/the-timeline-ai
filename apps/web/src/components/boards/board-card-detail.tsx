@@ -16,6 +16,8 @@ import type { ReactNode } from 'react';
 
 import { RemoveBoardItemButton } from '@/components/boards/remove-board-item-button';
 import { ObjectRelatedContext } from '@/components/objects/object-related-context';
+import { TaskCategoryBadge } from '@/components/tasks/task-category-badge';
+import { TaskCategorySelect } from '@/components/tasks/task-category-select';
 import {
   Dialog,
   DialogContent,
@@ -225,6 +227,13 @@ function BoardCardHeader({
           <p className="mt-1 font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
             {item.object.type} · board item
           </p>
+          {item.object.type === 'task' ? (
+            <TaskCategoryBadge
+              category={item.object.taskCategory}
+              status={item.object.taskCategoryStatus}
+              className="mt-2"
+            />
+          ) : null}
         </div>
         <Link
           href={boardViewHref(boardId, view, null, filterParams)}
@@ -605,6 +614,19 @@ function ObjectPreviewDialog({
           />
           <Detail label="Due" value={item.object.dueAt ? dateLabel(item.object.dueAt) : '-'} />
         </dl>
+        {item.object.type === 'task' ? (
+          <section>
+            <h3 className="mb-1 font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">
+              Category
+            </h3>
+            <TaskCategorySelect
+              taskId={item.object.id}
+              category={item.object.taskCategory}
+              mode={item.object.taskCategoryMode}
+              status={item.object.taskCategoryStatus}
+            />
+          </section>
+        ) : null}
         {item.object.aliases.length > 0 ? (
           <section>
             <h3 className="mb-1 font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">

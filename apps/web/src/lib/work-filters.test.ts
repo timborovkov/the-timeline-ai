@@ -8,8 +8,19 @@ import {
 
 const USER_ID = '00000000-0000-4000-8000-000000000001';
 const LANE_ID = '00000000-0000-4000-8000-000000000002';
+const PROJECT_ID = '00000000-0000-4000-8000-000000000003';
 
 describe('work filters', () => {
+  it('ignores direct category URL filters while the emergency UI control is disabled', () => {
+    const parsed = parseWorkFilters(
+      { category: 'engineering,uncategorized', project: PROJECT_ID },
+      { taskCategoriesEnabled: false },
+    );
+    expect(parsed.category).toBe('');
+    expect(parsed.project).toBe(PROJECT_ID);
+    expect(objectListFilterFromWorkFilters(parsed)).not.toHaveProperty('taskCategory');
+  });
+
   it('maps URL params to object filters with sentinels and date ranges', () => {
     const parsed = parseWorkFilters({
       q: ' audit ',
@@ -111,6 +122,28 @@ describe('work filters', () => {
     });
     expect(boardItemFilterFromWorkFilters(parsed).object).toMatchObject({
       status: ['todo', 'cancelled', 'canceled'],
+    });
+  });
+
+  it('maps named categories plus Uncategorized with OR semantics and ANDs project', () => {
+    const parsed = parseWorkFilters({
+      category: 'engineering,uncategorized,not-a-category',
+      project: `${PROJECT_ID},not-a-uuid`,
+    });
+
+    expect(parsed).toMatchObject({
+      category: 'engineering,uncategorized',
+      project: PROJECT_ID,
+    });
+    expect(objectListFilterFromWorkFilters(parsed)).toMatchObject({
+      taskCategory: ['engineering'],
+      taskCategoryNull: true,
+      primaryProjectId: [PROJECT_ID],
+    });
+    expect(boardItemFilterFromWorkFilters(parsed).object).toMatchObject({
+      taskCategory: ['engineering'],
+      taskCategoryNull: true,
+      primaryProjectId: [PROJECT_ID],
     });
   });
 });
