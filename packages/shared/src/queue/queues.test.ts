@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 /**
  * Queue contract tests. The product relies on job payloads and retry policy
@@ -96,6 +96,11 @@ beforeEach(() => {
   vi.clearAllMocks();
   fakes.queues = [];
   fakes.redisInstances = [];
+});
+
+afterEach(() => {
+  delete process.env.TASK_CATEGORY_CLASSIFICATION_ENABLED;
+  delete process.env.TASK_CATEGORY_AUTO_ENQUEUE_ENABLED;
 });
 
 describe('queue wrappers', () => {
@@ -636,6 +641,8 @@ describe('queue wrappers', () => {
   });
 
   it('dedupes task category jobs by packet hash and replaces retained terminal jobs', async () => {
+    process.env.TASK_CATEGORY_CLASSIFICATION_ENABLED = 'true';
+    process.env.TASK_CATEGORY_AUTO_ENQUEUE_ENABLED = 'true';
     const queues = await importQueues();
     const data = {
       teamId: '22222222-2222-4222-8222-222222222222',

@@ -359,6 +359,7 @@ describe('processJanitorTick — task category sweep', () => {
       enqueueDocumentExtractJob: vi.fn(),
       enqueueMeetingFinalizeJob: vi.fn(),
       enqueueTaskCategoryJob: enqueue,
+      taskCategoryEnabled: true,
     });
 
     expect(enqueue).toHaveBeenCalledWith({
@@ -370,7 +371,7 @@ describe('processJanitorTick — task category sweep', () => {
     expect(result.taskCategoriesRequeued).toBe(1);
   });
 
-  it('restarts a linked project fan-out before re-enqueuing a stale pending task', async () => {
+  it('re-enqueues only the stale task when it belongs to a project', async () => {
     const [project] = await db
       .insert(entities)
       .values({ teamId: TEAM_ID, type: 'project', canonicalName: 'Faba redesign' })
@@ -401,18 +402,11 @@ describe('processJanitorTick — task category sweep', () => {
       enqueueDocumentExtractJob: vi.fn(),
       enqueueMeetingFinalizeJob: vi.fn(),
       enqueueTaskCategoryJob: enqueue,
+      taskCategoryEnabled: true,
     });
 
-    expect(enqueue).toHaveBeenNthCalledWith(
-      1,
-      expect.objectContaining({
-        kind: 'project_fanout',
-        teamId: TEAM_ID,
-        projectId: project?.id,
-        afterTaskId: null,
-      }),
-    );
-    expect(enqueue).toHaveBeenNthCalledWith(2, {
+    expect(enqueue).toHaveBeenCalledTimes(1);
+    expect(enqueue).toHaveBeenCalledWith({
       teamId: TEAM_ID,
       taskId: task?.id,
       inputHash: 'new-hash',

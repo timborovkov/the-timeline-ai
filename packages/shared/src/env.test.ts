@@ -77,6 +77,24 @@ describe('getEnv', () => {
     });
   });
 
+  it('keeps task category rollout controls disabled until explicitly enabled', () => {
+    setBaseEnv({
+      TASK_CATEGORY_CLASSIFICATION_ENABLED: undefined,
+      TASK_CATEGORY_AUTO_ENQUEUE_ENABLED: undefined,
+      TASK_CATEGORY_WORKER_ENABLED: undefined,
+      TASK_CATEGORY_BACKFILL_ENABLED: undefined,
+      TASK_CATEGORY_UI_ENABLED: undefined,
+    });
+
+    expect(getEnv()).toMatchObject({
+      TASK_CATEGORY_CLASSIFICATION_ENABLED: false,
+      TASK_CATEGORY_AUTO_ENQUEUE_ENABLED: false,
+      TASK_CATEGORY_WORKER_ENABLED: false,
+      TASK_CATEGORY_BACKFILL_ENABLED: false,
+      TASK_CATEGORY_UI_ENABLED: false,
+    });
+  });
+
   it('requires a LangSmith API key when tracing is enabled', () => {
     setBaseEnv({
       LANGSMITH_TRACING: 'true',

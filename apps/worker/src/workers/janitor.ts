@@ -1,5 +1,3 @@
-import { createHash } from 'node:crypto';
-
 import { type Db, documentVersions, entities, meetings } from '@timeline/db';
 import { childLogger, queue } from '@timeline/shared';
 import { getEnv } from '@timeline/shared/env';
@@ -97,34 +95,6 @@ async function sweepTaskCategories(
         id: pendingTasks.id,
         teamId: pendingTasks.teamId,
         inputHash: pendingTasks.taskCategoryRequestedInputHash,
-        projectId: sql<string | null>`(
-          SELECT project.id::text
-          FROM entity_relationships AS relation
-          INNER JOIN entities AS project
-            ON project.id = relation.to_entity_id
-            AND project.team_id = relation.team_id
-          WHERE relation.team_id = "pending_tasks"."team_id"
-            AND relation.from_entity_id = "pending_tasks"."id"
-            AND relation.kind = 'child'
-            AND project.type = 'project'
-            AND project.merged_into_id IS NULL
-          ORDER BY project.id
-          LIMIT 1
-        )`,
-        projectName: sql<string | null>`(
-          SELECT project.canonical_name
-          FROM entity_relationships AS relation
-          INNER JOIN entities AS project
-            ON project.id = relation.to_entity_id
-            AND project.team_id = relation.team_id
-          WHERE relation.team_id = "pending_tasks"."team_id"
-            AND relation.from_entity_id = "pending_tasks"."id"
-            AND relation.kind = 'child'
-            AND project.type = 'project'
-            AND project.merged_into_id IS NULL
-          ORDER BY project.id
-          LIMIT 1
-        )`,
       })
       .from(pendingTasks)
       .where(
@@ -146,21 +116,6 @@ async function sweepTaskCategories(
     for (const row of rows) {
       if (total >= MAX_REQUEUES_PER_KIND || !row.inputHash) break;
       try {
-        // A stale pending task is also a durable recovery marker for a project
-        // rename/merge fan-out whose initial Redis handoff was lost. Starting
-        // at the beginning is idempotent and lets the paged worker reach tasks
-        // beyond the first transactionally-invalidated page.
-        if (row.projectId && row.projectName) {
-          await enqueue({
-            kind: 'project_fanout',
-            teamId: row.teamId,
-            projectId: row.projectId,
-            projectVersion: createHash('sha256')
-              .update(`${row.projectId}\0${row.projectName}`)
-              .digest('hex'),
-            afterTaskId: null,
-          });
-        }
         await enqueue({
           teamId: row.teamId,
           taskId: row.id,

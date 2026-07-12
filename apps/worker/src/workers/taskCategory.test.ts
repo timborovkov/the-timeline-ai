@@ -45,7 +45,9 @@ describe('task category worker', () => {
 
   it('skips rows that are no longer pending', async () => {
     fakes.getInput.mockResolvedValue(null);
-    await expect(processTaskCategoryJobForTests({ db: {} as never }, JOB)).resolves.toEqual({
+    await expect(
+      processTaskCategoryJobForTests({ db: {} as never }, JOB, { enabled: true }),
+    ).resolves.toEqual({
       status: 'skipped',
       reason: 'not_pending',
     });
@@ -60,7 +62,7 @@ describe('task category worker', () => {
       inputHash: 'hash-2',
     });
     await expect(
-      processTaskCategoryJobForTests({ db: {} as never }, JOB, { classify }),
+      processTaskCategoryJobForTests({ db: {} as never }, JOB, { classify, enabled: true }),
     ).resolves.toMatchObject({ reason: 'stale_job' });
 
     fakes.getInput.mockResolvedValue({
@@ -69,7 +71,7 @@ describe('task category worker', () => {
       inputHash: 'hash-new-context',
     });
     await expect(
-      processTaskCategoryJobForTests({ db: {} as never }, JOB, { classify }),
+      processTaskCategoryJobForTests({ db: {} as never }, JOB, { classify, enabled: true }),
     ).resolves.toMatchObject({ reason: 'stale_packet' });
     expect(classify).not.toHaveBeenCalled();
   });
@@ -91,6 +93,7 @@ describe('task category worker', () => {
     await expect(
       processTaskCategoryJobForTests({ db: {} as never }, JOB, {
         classify,
+        enabled: true,
         now: () => times.shift() ?? 125,
       }),
     ).resolves.toMatchObject({ status: 'applied' });
@@ -117,7 +120,9 @@ describe('task category worker', () => {
       afterTaskId: 'task-500',
     };
 
-    await expect(processTaskCategoryJobForTests({ db: {} as never }, fanout)).resolves.toEqual({
+    await expect(
+      processTaskCategoryJobForTests({ db: {} as never }, fanout, { enabled: true }),
+    ).resolves.toEqual({
       status: 'fanout',
       count: 1,
     });
@@ -154,6 +159,7 @@ describe('task category worker', () => {
     await processTaskCategoryJobForTests({ db: {} as never }, JOB, {
       acquireTeamPermit,
       classify,
+      enabled: true,
     });
     expect(acquireTeamPermit).toHaveBeenCalledWith('team-1');
     expect(acquireTeamPermit.mock.invocationCallOrder[0]).toBeLessThan(
@@ -173,6 +179,7 @@ describe('task category worker', () => {
       processTaskCategoryJobForTests({ db: {} as never }, JOB, {
         acquireTeamPermit: vi.fn().mockResolvedValue(12_345),
         classify,
+        enabled: true,
       }),
     ).resolves.toEqual({ status: 'rate_limited', retryAfterMs: 12_345 });
     expect(classify).not.toHaveBeenCalled();

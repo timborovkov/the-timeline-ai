@@ -12,6 +12,7 @@ vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 vi.mock('@/app/actions/boards', () => ({
   updateBoardItemAction: vi.fn(() => Promise.resolve({ ok: true })),
 }));
+vi.mock('@/app/actions/objects', () => ({ searchObjectsAction: vi.fn() }));
 vi.mock('@/components/boards/board-add-item-form', () => ({
   BoardAddItemForm: (props: {
     onOptimisticItem?: (item: boards.BoardItemRow) => void;
