@@ -8,6 +8,7 @@ import {
   buildPostmarkInboundCaptureCanaryPayload,
   buildSlackEventCaptureCanaryPayload,
   buildTelegramCaptureCanaryPayload,
+  completeLiveIntegrationCanaryCleanup,
   formatLiveIntegrationCanaryReport,
   getProvider,
   isExpectedSpeechTranscriptionCanaryText,
@@ -896,6 +897,124 @@ async function checkOAuthAuthorizeEndpoint(
   }
 }
 
+async function checkMondayBoardContract(): Promise<LiveIntegrationCanaryResult> {
+  const envKeys = ['MONDAY_CANARY_ACCESS_TOKEN', 'MONDAY_CANARY_BOARD_ID'] as const;
+  if (!configured(...envKeys)) {
+    return {
+      name: 'Monday board sync contract',
+      status: 'skip',
+      detail: configuredStatusDetail(envKeys),
+      envKeys: [...envKeys],
+      docs: 'docs/setup/integrations.html#monday',
+    };
+  }
+  const token = process.env.MONDAY_CANARY_ACCESS_TOKEN ?? '';
+  const boardId = process.env.MONDAY_CANARY_BOARD_ID ?? '';
+  const api = async (query: string, variables: Record<string, unknown>) => {
+    const response = await fetch('https://api.monday.com/v2', {
+      method: 'POST',
+      headers: {
+        authorization: token,
+        'api-version': '2026-04',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ query, variables }),
+      signal: AbortSignal.timeout(15_000),
+    });
+    const { body, text } = await readJson(response);
+    const record = body && typeof body === 'object' ? (body as Record<string, unknown>) : {};
+    if (!response.ok || Array.isArray(record.errors)) {
+      throw new Error(shortProviderError(response.status, body, text));
+    }
+    return record.data as Record<string, unknown> | undefined;
+  };
+  let webhookId: string | null = null;
+  try {
+    const data = await api(
+      `query TimelineMondayCanary($ids: [ID!], $limit: Int!) {
+        boards(ids: $ids) {
+          id name type board_kind hierarchy_type
+          items_page(limit: $limit, hierarchy_scope_config: "allItems") {
+            cursor
+            items { id name parent_item { id } }
+          }
+        }
+      }`,
+      { ids: [boardId], limit: 25 },
+    );
+    const boards = Array.isArray(data?.boards) ? data.boards : [];
+    const board = boards[0] as Record<string, unknown> | undefined;
+    if (!board || String(board.id) !== boardId)
+      throw new Error('configured board was not returned');
+    if (board.type === 'sub_items_board') {
+      throw new Error('MONDAY_CANARY_BOARD_ID points to a hidden subitems board');
+    }
+    if (process.env.MONDAY_CANARY_PROVISION_WEBHOOK === '1') {
+      const authUrl = process.env.AUTH_URL;
+      const secret = process.env.MONDAY_WEBHOOK_SECRET;
+      if (!authUrl || !secret) {
+        throw new Error(
+          'AUTH_URL and MONDAY_WEBHOOK_SECRET are required for webhook provisioning canary',
+        );
+      }
+      const webhookUrl = new URL('/api/webhooks/monday', authUrl);
+      webhookUrl.searchParams.set('token', secret);
+      const created = await api(
+        `mutation TimelineMondayCanaryWebhook($boardId: ID!, $url: String!) {
+          create_webhook(board_id: $boardId, url: $url, event: create_item) { id board_id }
+        }`,
+        { boardId, url: webhookUrl.toString() },
+      );
+      const hook = created?.create_webhook as Record<string, unknown> | undefined;
+      webhookId = hook?.id === undefined ? null : String(hook.id);
+      if (!webhookId) throw new Error('Monday canary webhook returned no id');
+    }
+    const itemPage = board.items_page as Record<string, unknown> | undefined;
+    const items = Array.isArray(itemPage?.items) ? itemPage.items : [];
+    const success: LiveIntegrationCanaryResult = {
+      name: 'Monday board sync contract',
+      status: 'ok',
+      detail: `${String(board.hierarchy_type ?? 'classic')} parent board returned ${String(items.length)} item(s)${webhookId ? '; webhook create/delete verified' : ''}`,
+    };
+    if (!webhookId) return success;
+    const idToDelete = webhookId;
+    const result = await completeLiveIntegrationCanaryCleanup({
+      success,
+      cleanup: async () => {
+        await api(
+          `mutation DeleteTimelineMondayCanaryWebhook($id: ID!) {
+            delete_webhook(id: $id) { id board_id }
+          }`,
+          { id: idToDelete },
+        );
+      },
+      formatError: (error) =>
+        safeCanaryDetail(error instanceof Error ? error.message : String(error)),
+      action: 'remove the temporary webhook and verify monday webhook scopes',
+      docs: 'docs/setup/integrations.html#monday',
+    });
+    if (result.status === 'ok') webhookId = null;
+    return result;
+  } catch (error) {
+    return {
+      name: 'Monday board sync contract',
+      status: 'warn',
+      detail: safeCanaryDetail(error instanceof Error ? error.message : String(error)),
+      action: 'verify the dedicated Monday canary token, parent board, scopes, and webhook URL',
+      docs: 'docs/setup/integrations.html#monday',
+    };
+  } finally {
+    if (webhookId) {
+      await api(
+        `mutation DeleteTimelineMondayCanaryWebhook($id: ID!) {
+          delete_webhook(id: $id) { id board_id }
+        }`,
+        { id: webhookId },
+      ).catch(() => undefined);
+    }
+  }
+}
+
 function checkWebhookConfig(): LiveIntegrationCanaryResult[] {
   return [
     secretStatus(
@@ -992,6 +1111,7 @@ const results: LiveIntegrationCanaryResult[] = [
     }),
     checkSlackEventCapture(),
     checkPostmarkInboundCapture(),
+    checkMondayBoardContract(),
     ...oauthAuthorizeCanaries.map((canary) => checkOAuthAuthorizeEndpoint(canary)),
   ])),
   ...checkWebhookConfig(),

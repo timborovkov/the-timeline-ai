@@ -1025,7 +1025,6 @@ test('timeline filters source, author, and dates without leaving audit-trail mod
     await ownerPage.keyboard.press('Escape');
     await ownerPage.locator('input[name="from"]').fill('2026-09-10');
     await ownerPage.locator('input[name="to"]').fill('2026-09-10');
-    await ownerPage.getByRole('button', { name: 'Apply' }).click();
 
     await expect(ownerPage).toHaveURL(/mode=events/);
     await expect(ownerPage).toHaveURL(/source=email/);
@@ -2167,7 +2166,7 @@ test('team export can be queued and ready archives redirect to signed downloads'
     SELECT action
     FROM audit_log
     WHERE target_id = ${readyExportId}
-      AND action = 'team_export.archive_url_signed'
+      AND action = 'team.export_download'
     LIMIT 1
   `;
   expect(auditRows).toHaveLength(1);
@@ -2223,7 +2222,7 @@ test('owner can create a board and see matching objects on the board', async ({ 
   await expect(page).toHaveURL(/\/app\/boards\/[0-9a-f-]+/, { timeout: 30_000 });
   await expect(page.getByText(boardName).first()).toBeVisible();
   await page.getByRole('button', { name: 'Expand add item' }).click();
-  await page.getByPlaceholder('Search existing objects...').fill(objectName);
+  await page.getByRole('searchbox', { name: 'Search existing objects' }).fill(objectName);
   await page.getByRole('button', { name: new RegExp(objectName) }).click();
   await waitForPost(page, '/app/boards', () =>
     page.getByRole('button', { name: 'Add to board' }).click(),

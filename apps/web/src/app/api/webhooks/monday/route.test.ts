@@ -161,6 +161,34 @@ describe('POST /api/webhooks/monday', () => {
     expect(fakes.enqueueWebhookDeliveryJob).toHaveBeenCalledWith({ deliveryId: 'delivery-row-1' });
   });
 
+  it('routes classic subitem deliveries through the selected parent board', async () => {
+    const payload = mondayEvent();
+    payload.event.boardId = 1999999999;
+    Object.assign(payload.event, {
+      parentItemBoardId: 1771812698,
+      parentItemId: 1771812700,
+      type: 'create_pulse',
+    });
+
+    const response = await POST(request(payload));
+
+    expect(response.status).toBe(200);
+    expect(fakes.recordWebhookDeliveryTargets).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        externalResourceId: '1771812698',
+        eventType: 'create_pulse',
+        targets: [
+          {
+            teamId: 'team-1',
+            integrationId: 'integration-1',
+            providerConnectionId: 'connection-1',
+          },
+        ],
+      }),
+    );
+  });
+
   it('records unmatched board deliveries without cross-team fan-out', async () => {
     fakes.selectionRows = [];
     fakes.integrationRows = [];

@@ -7,6 +7,7 @@ import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { publicApiErrorResponse } from '@/lib/public-error';
+import { requireRedisQueue } from '@/lib/queue';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -67,6 +68,50 @@ async function reconcileWebhooksBestEffort(
       category: 'webhook_degraded',
       summary: `Webhook provisioning failed for ${integration.provider}: ${message.slice(0, 300)}`,
     });
+  }
+}
+
+async function enqueueSelectionBackfillBestEffort(
+  scope: ReturnType<typeof withTeam>,
+  integration: { id: string; provider: string; providerConnectionId?: string | null },
+  teamId: string,
+  userId: string,
+): Promise<boolean> {
+  if (integration.provider === 'mcp') return false;
+  try {
+    await requireRedisQueue()
+      .then((redisQueue) =>
+        redisQueue.enqueueIntegrationSyncJob({
+          kind: 'backfill',
+          integrationId: integration.id,
+          teamId,
+          triggeredBy: userId,
+        }),
+      )
+      .then(() =>
+        scope.integrations.recordAudit(
+          'backfill_requested',
+          { actor: userId, source: 'selection_change' },
+          integration.id,
+        ),
+      );
+    return true;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    await Promise.all([
+      scope.integrations.recordAudit(
+        'backfill_enqueue_failed',
+        { provider: integration.provider, error: message.slice(0, 500) },
+        integration.id,
+      ),
+      scope.integrations.recordConnectionAttention({
+        providerConnectionId: integration.providerConnectionId ?? null,
+        integrationId: integration.id,
+        category: 'sync_error',
+        summary: `Initial ${integration.provider} sync could not be queued: ${message.slice(0, 300)}`,
+      }),
+    ]);
+    return false;
   }
 }
 
@@ -190,14 +235,29 @@ export async function PUT(
       { status: 400 },
     );
   }
+  const previousSelections = await scope.integrations.listSelections(id);
+  const previousKeys = new Set(
+    previousSelections.map((selection) => `${selection.selectionKind}\x00${selection.externalId}`),
+  );
+  const hasAddedSelection = parsed.data.selections.some(
+    (selection) => !previousKeys.has(`${selection.kind}\x00${selection.externalId}`),
+  );
   await scope.integrations.setSelections(id, parsed.data.selections);
-  await Promise.all([
+  const [, , syncQueued] = await Promise.all([
     scope.integrations.recordAudit(
       'selections_updated',
       { count: parsed.data.selections.length },
       id,
     ),
     reconcileWebhooksBestEffort(scope, integration),
+    hasAddedSelection
+      ? enqueueSelectionBackfillBestEffort(
+          scope,
+          integration,
+          resolved.active.teamId,
+          session.user.id,
+        )
+      : Promise.resolve(false),
   ]);
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true, syncQueued });
 }

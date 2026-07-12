@@ -11,6 +11,7 @@ import {
   integrations,
   integrationSelections,
   integrationSyncState,
+  integrationWebhookSubscriptions,
   meetingTranscriptChunks,
   meetings,
   notifications,
@@ -1747,6 +1748,12 @@ describe('withTeam namespaced port', () => {
       providerConnectionId: ownerConnection.id,
       resourceShareIds: [orgShare.id, ownerRepoShare.id],
     });
+    expect(ownerIntegration.addedSelectionCount).toBe(2);
+    const unchangedIntegration = await adminScope.integrations.activateSharedResources({
+      providerConnectionId: ownerConnection.id,
+      resourceShareIds: [orgShare.id, ownerRepoShare.id],
+    });
+    expect(unchangedIntegration.addedSelectionCount).toBe(0);
     await expect(adminDecryptIntegrationTokens(db as never, ownerIntegration)).resolves.toEqual({
       access_token: 'owner-token',
     });
@@ -1848,6 +1855,94 @@ describe('withTeam namespaced port', () => {
       .where(eq(connectionAttention.resourceShareId, orgShare.id));
     expect(resolvedOrgAttention?.category).toBe('access_changed');
     expect(resolvedOrgAttention?.resolvedAt).toBeInstanceOf(Date);
+  });
+
+  it('dry-runs and applies a team-scoped monday helper-board repair', async () => {
+    const ownerScope = withTeam(db as never, TEAM_A, USER_A);
+    const adminScope = withTeam(db as never, TEAM_A, USER_C);
+    const connection = await ownerScope.integrations.upsertProviderConnection({
+      provider: 'monday',
+      displayName: 'Monday.com — Acme',
+      externalAccountId: 'monday-helper-repair',
+      scopes: ['boards:read'],
+      tokens: { access_token: 'token' },
+    });
+    await ownerScope.integrations.shareProviderResources(connection.id, [
+      {
+        kind: 'monday.board',
+        externalId: 'subitems-board-1',
+        label: 'Subitems of Pipeline',
+      },
+    ]);
+    const share = (await ownerScope.integrations.listOwnedTeamResourceShares())[0]?.share;
+    if (!share) throw new Error('Expected helper-board share');
+    const integration = await adminScope.integrations.activateSharedResources({
+      providerConnectionId: connection.id,
+      resourceShareIds: [share.id],
+    });
+    await adminScope.integrations.saveCursor(integration.id, 'monday.board:subitems-board-1', {
+      item_since: '2026-06-20T10:00:00.000Z',
+    });
+    await db.insert(integrationWebhookSubscriptions).values({
+      integrationId: integration.id,
+      providerConnectionId: connection.id,
+      provider: 'monday',
+      externalSubscriptionId: null,
+      resourceKind: 'monday.board',
+      externalResourceId: 'subitems-board-1',
+      eventType: 'create_item',
+      status: 'failed',
+      lastError: "Creating webhook on subitems board isn't allowed",
+    });
+
+    const dryRun = await adminScope.integrations.repairMondayHelperResources({
+      helperBoardIds: ['subitems-board-1'],
+      apply: false,
+    });
+
+    expect(dryRun).toMatchObject({
+      applied: false,
+      shareCount: 1,
+      selectionCount: 1,
+      cursorCount: 1,
+      webhookSubscriptionCount: 1,
+      integrationIds: [integration.id],
+    });
+    expect(await adminScope.integrations.listSelections(integration.id)).toHaveLength(1);
+
+    const applied = await adminScope.integrations.repairMondayHelperResources({
+      helperBoardIds: ['subitems-board-1'],
+      apply: true,
+    });
+
+    expect(applied.applied).toBe(true);
+    expect(await adminScope.integrations.listSelections(integration.id)).toHaveLength(0);
+    expect(await adminScope.integrations.listSyncState(integration.id)).toHaveLength(0);
+    const [repairedShare] = await db
+      .select()
+      .from(teamProviderResourceShares)
+      .where(eq(teamProviderResourceShares.id, share.id));
+    expect(repairedShare?.revokedAt).toBeInstanceOf(Date);
+    const [repairedSubscription] = await db
+      .select()
+      .from(integrationWebhookSubscriptions)
+      .where(eq(integrationWebhookSubscriptions.integrationId, integration.id));
+    expect(repairedSubscription).toMatchObject({
+      status: 'deleted',
+      lastError: 'removed_by_monday_helper_board_repair',
+    });
+
+    const repeated = await adminScope.integrations.repairMondayHelperResources({
+      helperBoardIds: ['subitems-board-1'],
+      apply: false,
+    });
+    expect(repeated).toMatchObject({
+      shareCount: 0,
+      selectionCount: 0,
+      cursorCount: 0,
+      webhookSubscriptionCount: 0,
+      integrationIds: [],
+    });
   });
 
   it('preserves connection-attention history when a provider connection is deleted', async () => {

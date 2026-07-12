@@ -250,6 +250,8 @@ pnpm run doctor           # React Doctor scan for React/Next health regressions
 pnpm canary:integrations  # secret-safe live provider OAuth/LLM+transcription/Postmark/Telegram/Slack/Recall + optional signed capture canaries
 pnpm canary:integrations:strict
                            # fail on any skipped or warning live provider canary
+pnpm repair:monday -- --env-file=/path/to/.env --team-id=<uuid> --user-id=<uuid>
+                           # dry-run stale Monday helper-board repair; add --apply after review
 pnpm dev:seed             # seed local demo data with disabled fake integrations and reconciliation provenance
 pnpm --filter @timeline/worker timeline-moment-presentations -- \
   --team=<uuid> [--since=YYYY-MM-DD] [--until=YYYY-MM-DD] \

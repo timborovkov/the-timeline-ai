@@ -19,7 +19,7 @@ import {
   teams,
   users,
 } from '@timeline/db';
-import { and, desc, eq, inArray, isNotNull, isNull, lte, or, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNotNull, isNull, lte, ne, or, sql } from 'drizzle-orm';
 
 import type {
   IntegrationRow,
@@ -755,10 +755,195 @@ export function createIntegrationScope(deps: {
     });
   }
 
+  async function repairMondayHelperResources(input: {
+    helperBoardIds: string[];
+    apply: boolean;
+  }): Promise<{
+    applied: boolean;
+    shareCount: number;
+    selectionCount: number;
+    cursorCount: number;
+    webhookSubscriptionCount: number;
+    integrationIds: string[];
+  }> {
+    await ensureMember('admin');
+    const helperBoardIds = [
+      ...new Set(input.helperBoardIds.map((id) => id.trim()).filter(Boolean)),
+    ];
+    if (helperBoardIds.length === 0) {
+      return {
+        applied: input.apply,
+        shareCount: 0,
+        selectionCount: 0,
+        cursorCount: 0,
+        webhookSubscriptionCount: 0,
+        integrationIds: [],
+      };
+    }
+    const mondayIntegrations = await db
+      .select({ id: integrationsTable.id })
+      .from(integrationsTable)
+      .where(and(eq(integrationsTable.teamId, teamId), eq(integrationsTable.provider, 'monday')));
+    const integrationIds = mondayIntegrations.map((row) => row.id);
+    const shares = await db
+      .select({ id: teamProviderResourceShares.id })
+      .from(teamProviderResourceShares)
+      .innerJoin(
+        providerConnections,
+        eq(teamProviderResourceShares.providerConnectionId, providerConnections.id),
+      )
+      .where(
+        and(
+          eq(teamProviderResourceShares.teamId, teamId),
+          eq(providerConnections.provider, 'monday'),
+          eq(teamProviderResourceShares.resourceKind, 'monday.board'),
+          inArray(teamProviderResourceShares.externalId, helperBoardIds),
+          isNull(teamProviderResourceShares.revokedAt),
+        ),
+      );
+    const selections =
+      integrationIds.length > 0
+        ? await db
+            .select({
+              id: integrationSelections.id,
+              integrationId: integrationSelections.integrationId,
+            })
+            .from(integrationSelections)
+            .where(
+              and(
+                inArray(integrationSelections.integrationId, integrationIds),
+                eq(integrationSelections.selectionKind, 'monday.board'),
+                inArray(integrationSelections.externalId, helperBoardIds),
+              ),
+            )
+        : [];
+    const resourceTypes = helperBoardIds.map((id) => `monday.board:${id}`);
+    const cursors =
+      integrationIds.length > 0
+        ? await db
+            .select({
+              id: integrationSyncState.id,
+              integrationId: integrationSyncState.integrationId,
+              resourceType: integrationSyncState.resourceType,
+              cursor: integrationSyncState.cursor,
+            })
+            .from(integrationSyncState)
+            .where(
+              and(
+                inArray(integrationSyncState.integrationId, integrationIds),
+                inArray(integrationSyncState.resourceType, resourceTypes),
+              ),
+            )
+        : [];
+    const webhookSubscriptions =
+      integrationIds.length > 0
+        ? await db
+            .select({
+              id: integrationWebhookSubscriptions.id,
+              integrationId: integrationWebhookSubscriptions.integrationId,
+            })
+            .from(integrationWebhookSubscriptions)
+            .where(
+              and(
+                eq(integrationWebhookSubscriptions.provider, 'monday'),
+                inArray(integrationWebhookSubscriptions.integrationId, integrationIds),
+                eq(integrationWebhookSubscriptions.resourceKind, 'monday.board'),
+                inArray(integrationWebhookSubscriptions.externalResourceId, helperBoardIds),
+                ne(integrationWebhookSubscriptions.status, 'deleted'),
+              ),
+            )
+        : [];
+    const affectedIntegrationIds = [
+      ...new Set([
+        ...selections.map((row) => row.integrationId),
+        ...cursors.map((row) => row.integrationId),
+        ...webhookSubscriptions
+          .map((row) => row.integrationId)
+          .filter((id): id is string => Boolean(id)),
+      ]),
+    ];
+    const report = {
+      applied: input.apply,
+      shareCount: shares.length,
+      selectionCount: selections.length,
+      cursorCount: cursors.length,
+      webhookSubscriptionCount: webhookSubscriptions.length,
+      integrationIds: affectedIntegrationIds,
+    };
+    if (!input.apply) return report;
+
+    await db.transaction(async (tx) => {
+      const now = new Date();
+      if (shares.length > 0) {
+        await tx
+          .update(teamProviderResourceShares)
+          .set({ revokedAt: now, updatedAt: now })
+          .where(
+            inArray(
+              teamProviderResourceShares.id,
+              shares.map((row) => row.id),
+            ),
+          );
+      }
+      if (selections.length > 0) {
+        await tx.delete(integrationSelections).where(
+          inArray(
+            integrationSelections.id,
+            selections.map((row) => row.id),
+          ),
+        );
+      }
+      if (cursors.length > 0) {
+        await tx.delete(integrationSyncState).where(
+          inArray(
+            integrationSyncState.id,
+            cursors.map((row) => row.id),
+          ),
+        );
+      }
+      if (webhookSubscriptions.length > 0) {
+        await tx
+          .update(integrationWebhookSubscriptions)
+          .set({
+            status: 'deleted',
+            lastError: 'removed_by_monday_helper_board_repair',
+            lastVerifiedAt: now,
+            updatedAt: now,
+          })
+          .where(
+            inArray(
+              integrationWebhookSubscriptions.id,
+              webhookSubscriptions.map((row) => row.id),
+            ),
+          );
+      }
+      if (affectedIntegrationIds.length > 0) {
+        await tx.insert(integrationAuditLog).values(
+          affectedIntegrationIds.map((integrationId) => ({
+            teamId,
+            integrationId,
+            actorUserId: userId,
+            kind: 'monday_helper_board_repaired',
+            payload: {
+              helper_board_ids: helperBoardIds,
+              removed_cursor_snapshots: cursors
+                .filter((cursor) => cursor.integrationId === integrationId)
+                .map((cursor) => ({
+                  resource_type: cursor.resourceType,
+                  cursor: cursor.cursor,
+                })),
+            },
+          })),
+        );
+      }
+    });
+    return report;
+  }
+
   async function activateSharedResources(input: {
     providerConnectionId: string;
     resourceShareIds: string[];
-  }): Promise<IntegrationRow> {
+  }): Promise<IntegrationRow & { addedSelectionCount: number }> {
     await ensureMember('admin');
     const connectionRows = await db
       .select()
@@ -790,6 +975,7 @@ export function createIntegrationScope(deps: {
     }
 
     const replacedIntegrationIds = new Set<string>();
+    const existingSourceKeys = new Set<string>();
     if (shares.length > 0) {
       const sourcePathConditions = shares.map((share) =>
         and(
@@ -798,7 +984,11 @@ export function createIntegrationScope(deps: {
         ),
       );
       const existingSourceOwners = await db
-        .select({ integrationId: integrationSelections.integrationId })
+        .select({
+          integrationId: integrationSelections.integrationId,
+          selectionKind: integrationSelections.selectionKind,
+          externalId: integrationSelections.externalId,
+        })
         .from(integrationSelections)
         .innerJoin(integrationsTable, eq(integrationSelections.integrationId, integrationsTable.id))
         .where(
@@ -811,8 +1001,12 @@ export function createIntegrationScope(deps: {
         );
       for (const owner of existingSourceOwners) {
         replacedIntegrationIds.add(owner.integrationId);
+        existingSourceKeys.add(`${owner.selectionKind}\x00${owner.externalId}`);
       }
     }
+    const addedSelectionCount = shares.filter(
+      (share) => !existingSourceKeys.has(`${share.resourceKind}\x00${share.externalId}`),
+    ).length;
     const integration = await db.transaction(async (tx) => {
       const integrationRows = await tx
         .insert(integrationsTable)
@@ -915,7 +1109,7 @@ export function createIntegrationScope(deps: {
         }),
       ),
     );
-    return integration;
+    return { ...integration, addedSelectionCount };
   }
 
   async function listConnectionAttention() {
@@ -1142,6 +1336,7 @@ export function createIntegrationScope(deps: {
     listOwnedTeamResourceShares,
     shareProviderResources,
     revokeProviderResourceShare,
+    repairMondayHelperResources,
     activateSharedResources,
     listConnectionAttention,
     recordConnectionAttention,

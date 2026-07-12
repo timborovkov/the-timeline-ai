@@ -238,4 +238,46 @@ describe('/api/connections/[id]/resources', () => {
       { kind: 'github.repo', externalId: 'openai/legacy', label: 'openai/legacy' },
     ]);
   });
+
+  it('does not preserve stale monday helper boards that are absent from live resources', async () => {
+    const mondayConnection = {
+      ...connection,
+      provider: 'monday',
+      displayName: 'Monday.com — acme',
+    };
+    fakes.getOwnedProviderConnection.mockResolvedValueOnce(mondayConnection);
+    fakes.listSyncableResources.mockResolvedValueOnce([
+      { kind: 'monday.board', externalId: 'board-1', label: 'Pipeline' },
+    ]);
+    fakes.listOwnedTeamResourceShares.mockResolvedValueOnce([
+      {
+        connection: mondayConnection,
+        share: {
+          id: '66666666-6666-4666-8666-666666666666',
+          providerConnectionId: CONNECTION_ID,
+          resourceKind: 'monday.board',
+          externalId: 'subitems-board-1',
+          externalLabel: 'Subitems of Pipeline',
+          revokedAt: null,
+        },
+      },
+    ]);
+
+    const rejected = await PUT(
+      request({
+        resources: [
+          {
+            kind: 'monday.board',
+            externalId: 'subitems-board-1',
+            label: 'Subitems of Pipeline',
+          },
+        ],
+      }),
+      params(),
+    );
+
+    expect(rejected.status).toBe(400);
+    await expect(rejected.json()).resolves.toMatchObject({ error: 'resource_not_in_scope' });
+    expect(fakes.shareProviderResources).not.toHaveBeenCalled();
+  });
 });

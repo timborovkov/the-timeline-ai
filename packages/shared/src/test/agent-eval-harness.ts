@@ -182,7 +182,8 @@ export async function runAgentToolEval(input: {
           vector: text.includes('Acme') ? [0.9, 0.1, 0.1] : [0.1, 0.1, 0.1],
           model: 'eval-embed',
         })),
-    qdrantSearch: () => Promise.resolve(input.hits ?? []),
+    qdrantSearch: (_teamId, _userId, _vector, options) =>
+      Promise.resolve((input.hits ?? []).slice(0, options.limit)),
   });
   const tools = buildAgentTools(scope);
   const exec = tools[input.toolName]?.execute as (raw: unknown, opts: unknown) => Promise<unknown>;

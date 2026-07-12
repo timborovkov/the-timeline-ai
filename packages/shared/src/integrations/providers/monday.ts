@@ -11,6 +11,7 @@ import {
   type ProviderRateLimitError as ProviderRateLimitErrorType,
   type ProviderResource,
   type SyncContext,
+  type SyncPartialFailure,
   type TargetedSyncTask,
   type WebhookSubscription,
 } from '#src/integrations/types.js';
@@ -18,6 +19,7 @@ import {
 const AUTH_URL = 'https://auth.monday.com/oauth2/authorize';
 const TOKEN_URL = 'https://auth.monday.com/oauth2/token';
 const GRAPHQL_URL = 'https://api.monday.com/v2';
+const API_VERSION = '2026-04';
 const SCOPES = [
   'boards:read',
   'users:read',
@@ -32,6 +34,7 @@ const ITEM_PAGE_LIMIT = 100;
 const UPDATE_LIMIT = 50;
 const DOC_PAGE_LIMIT = 100;
 const BLOCK_PAGE_LIMIT = 100;
+const ITEM_PAGE_CURSOR_TTL_MS = 60 * 60 * 1000;
 const DOC_RECONCILIATION_INTERVAL_MS = 24 * 60 * 60 * 1000;
 const MONDAY_WEBHOOK_EVENTS = [
   'create_item',
@@ -80,7 +83,9 @@ interface MondayColumn {
 interface MondayBoard {
   id: string;
   name: string;
+  type?: string | null;
   board_kind?: string | null;
+  hierarchy_type?: string | null;
   updated_at?: string;
   workspace?: MondayWorkspace | null;
   columns?: MondayColumn[];
@@ -116,7 +121,7 @@ interface MondayItem {
   url?: string;
   board?: MondayBoard | null;
   creator?: { id?: string; name?: string } | null;
-  parent_item?: { id?: string; name?: string } | null;
+  parent_item?: { id?: string; name?: string; board?: MondayBoard | null } | null;
   column_values?: MondayColumnValue[];
   updates?: MondayUpdate[];
   subitems?: MondayItem[];
@@ -156,6 +161,8 @@ interface MondayCursor {
   activity_since?: string | undefined;
   item_since?: string | undefined;
   item_page_cursor?: string | undefined;
+  item_page_cursor_created_at?: string | undefined;
+  item_page_cursor_expires_at?: string | undefined;
   doc_since?: string | undefined;
   doc_last_polled_at?: string | undefined;
 }
@@ -181,14 +188,26 @@ interface NormalizedColumn {
   value: unknown;
 }
 
+const BOARD_FIELDS = `
+  id name type board_kind hierarchy_type updated_at
+  workspace { id name }
+  columns { id title type }
+`;
+
+const ITEM_BOARD_FIELDS = `
+  id name type board_kind hierarchy_type updated_at
+  columns { id title type }
+`;
+
 const ITEM_FIELDS = `
   id name updated_at url
   creator { id name }
-  parent_item { id name }
+  parent_item { id name board { ${ITEM_BOARD_FIELDS} } }
   column_values { id text type value }
   updates(limit: ${String(UPDATE_LIMIT)}) { id body created_at updated_at creator { id name } }
   subitems {
     id name updated_at url
+    board { ${ITEM_BOARD_FIELDS} }
     creator { id name }
     parent_item { id name }
     column_values { id text type value }
@@ -234,6 +253,7 @@ async function gql<T>(
     method: 'POST',
     headers: {
       authorization: tokens.access_token,
+      'api-version': API_VERSION,
       'content-type': 'application/json',
     },
     body: JSON.stringify({ query, variables }),
@@ -466,8 +486,12 @@ function actor(
 function boardMetadata(board: MondayBoard): Record<string, unknown> {
   return {
     monday_board_id: board.id,
+    monday_parent_board_id: board.id,
     monday_board_name: board.name,
+    monday_board_type: board.type ?? null,
     monday_board_kind: board.board_kind ?? null,
+    monday_board_hierarchy_type: board.hierarchy_type ?? null,
+    monday_hierarchy_type: board.hierarchy_type ?? 'classic',
     monday_workspace_id: board.workspace?.id ?? null,
     monday_workspace_name: board.workspace?.name ?? null,
   };
@@ -495,8 +519,10 @@ function mondayRecordMap(
   board: MondayBoard,
   item: MondayItem,
   kind: 'item' | 'subitem',
+  itemBoard: MondayBoard = board,
+  hierarchyDepth = kind === 'subitem' ? 1 : 0,
 ): ObjectMapping {
-  const status = statusColumn(board, item);
+  const status = statusColumn(itemBoard, item);
   const parent = item.parent_item;
   return {
     type: 'other',
@@ -508,11 +534,14 @@ function mondayRecordMap(
     metadata: {
       monday_record_kind: kind,
       ...boardMetadata(board),
+      monday_item_board_id: itemBoard.id,
+      monday_item_board_name: itemBoard.name,
       monday_item_id: item.id,
       monday_item_name: item.name,
       monday_parent_item_id: parent?.id ?? null,
       monday_parent_item_name: parent?.name ?? null,
-      monday_columns: normalizedColumns(board, item),
+      monday_hierarchy_depth: hierarchyDepth,
+      monday_columns: normalizedColumns(itemBoard, item),
     },
   };
 }
@@ -601,9 +630,11 @@ function itemEvent(
   board: MondayBoard,
   item: MondayItem,
   kind: 'item' | 'subitem',
+  itemBoard: MondayBoard = board,
+  hierarchyDepth = kind === 'subitem' ? 1 : 0,
 ): IntegrationEvent {
   const occurredAt = dateValue(item.updated_at);
-  const status = statusColumn(board, item);
+  const status = statusColumn(itemBoard, item);
   return {
     dedupKey: `monday:${kind}:${board.id}:${item.id}:${occurredAt.toISOString()}`,
     provider: 'monday',
@@ -615,7 +646,7 @@ function itemEvent(
       `Monday ${kind} updated on ${board.name}: ${item.name}`,
       item.parent_item?.name ? `Parent: ${item.parent_item.name}` : null,
       status?.text ? `Status: ${status.text}` : null,
-      ...normalizedColumns(board, item)
+      ...normalizedColumns(itemBoard, item)
         .filter((column) => column.text && column.type !== 'status')
         .slice(0, 12)
         .map((column) => `${column.title}: ${column.text}`),
@@ -624,12 +655,15 @@ function itemEvent(
       .join('\n'),
     extra: {
       ...boardMetadata(board),
+      monday_item_board_id: itemBoard.id,
+      monday_item_board_name: itemBoard.name,
       monday_item_id: item.id,
       monday_parent_item_id: item.parent_item?.id ?? null,
+      monday_hierarchy_depth: hierarchyDepth,
       external_url: item.url ?? null,
-      columns: normalizedColumns(board, item),
+      columns: normalizedColumns(itemBoard, item),
     },
-    objectMap: mondayRecordMap(board, item, kind),
+    objectMap: mondayRecordMap(board, item, kind, itemBoard, hierarchyDepth),
   };
 }
 
@@ -638,6 +672,8 @@ function updateEvent(
   item: MondayItem,
   update: MondayUpdate,
   kind: 'item' | 'subitem',
+  itemBoard: MondayBoard = board,
+  hierarchyDepth = kind === 'subitem' ? 1 : 0,
 ): IntegrationEvent {
   const occurredAt = dateValue(update.updated_at ?? update.created_at);
   return {
@@ -651,13 +687,16 @@ function updateEvent(
     contentText: `Monday update on ${item.name}: ${update.body ?? ''}`.trim(),
     extra: {
       ...boardMetadata(board),
+      monday_item_board_id: itemBoard.id,
+      monday_item_board_name: itemBoard.name,
       monday_item_id: item.id,
       monday_record_kind: kind,
       monday_parent_item_id: item.parent_item?.id ?? null,
+      monday_hierarchy_depth: hierarchyDepth,
       monday_update_id: update.id,
       external_url: item.url ?? null,
     },
-    objectMap: mondayRecordMap(board, item, kind),
+    objectMap: mondayRecordMap(board, item, kind, itemBoard, hierarchyDepth),
   };
 }
 
@@ -742,8 +781,10 @@ function mondayWebhookOccurredAt(event: Record<string, unknown>): Date {
   return new Date();
 }
 
-function mondayWebhookEventType(rawType: string): string {
-  if (rawType === 'create_pulse' || rawType === 'create_item') return 'item.created';
+function mondayWebhookEventType(rawType: string, isSubitem = false): string {
+  if (rawType === 'create_pulse' || rawType === 'create_item') {
+    return isSubitem ? 'subitem.created' : 'item.created';
+  }
   if (rawType === 'create_update') return 'update.created';
   if (rawType === 'edit_update') return 'update.updated';
   if (rawType === 'delete_update') return 'update.deleted';
@@ -760,10 +801,14 @@ function mondayWebhookEventType(rawType: string): string {
 function mondayWebhookEvent(payload: unknown): IntegrationEvent[] {
   const event = recordValue(recordValue(payload)?.event);
   if (!event) return [];
-  const boardId = mondayIdValue(event.boardId);
-  if (!boardId) return [];
+  const itemBoardId = mondayIdValue(event.boardId);
+  if (!itemBoardId) return [];
+  const parentBoardId = mondayIdValue(event.parentItemBoardId);
+  const boardId = parentBoardId ?? itemBoardId;
+  const parentItemId = mondayIdValue(event.parentItemId);
   const rawType = stringValue(event.type) ?? 'item.updated';
-  const eventType = mondayWebhookEventType(rawType);
+  const isSubitem = parentBoardId !== null || parentItemId !== null || rawType.includes('subitem');
+  const eventType = mondayWebhookEventType(rawType, isSubitem);
   const itemId =
     mondayIdValue(event.pulseId) ??
     mondayIdValue(event.itemId) ??
@@ -799,7 +844,11 @@ function mondayWebhookEvent(payload: unknown): IntegrationEvent[] {
         .join('\n'),
       extra: {
         monday_board_id: boardId,
+        monday_parent_board_id: boardId,
+        monday_item_board_id: itemBoardId,
         monday_item_id: itemId,
+        monday_parent_item_id: parentItemId,
+        monday_hierarchy_depth: isSubitem ? 1 : 0,
         monday_update_id: updateId ?? null,
         monday_webhook_type: rawType,
         monday_subscription_id: subscriptionId ?? null,
@@ -816,9 +865,13 @@ function mondayWebhookEvent(payload: unknown): IntegrationEvent[] {
         externalId: itemId,
         status: mondayStatus(valueText),
         metadata: {
-          monday_record_kind: eventType.startsWith('subitem') ? 'subitem' : 'webhook-record',
+          monday_record_kind: isSubitem ? 'subitem' : 'webhook-record',
           monday_board_id: boardId,
+          monday_parent_board_id: boardId,
+          monday_item_board_id: itemBoardId,
           monday_item_id: itemId,
+          monday_parent_item_id: parentItemId,
+          monday_hierarchy_depth: isSubitem ? 1 : 0,
         },
       },
     },
@@ -827,7 +880,7 @@ function mondayWebhookEvent(payload: unknown): IntegrationEvent[] {
 
 function mondayWebhookBoardId(payload: unknown): string | null {
   const event = recordValue(recordValue(payload)?.event);
-  return event ? mondayIdValue(event.boardId) : null;
+  return event ? (mondayIdValue(event.parentItemBoardId) ?? mondayIdValue(event.boardId)) : null;
 }
 
 function mondayWebhookItemId(payload: unknown): string | null {
@@ -858,6 +911,13 @@ function mondayWebhookKey(subscription: {
   eventType: string;
 }): string {
   return `${subscription.resourceKind}\x00${subscription.externalResourceId}\x00${subscription.eventType}`;
+}
+
+function isMondaySubitemsWebhookError(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    /creating webhook on subitems board isn't allowed/i.test(error.message)
+  );
 }
 
 async function createMondayWebhook(
@@ -903,7 +963,7 @@ async function deleteMondayWebhook(tokens: MondayTokens, subscriptionId: string)
 async function fetchBoard(tokens: MondayTokens, boardId: string): Promise<MondayBoard | null> {
   const query = (includeWorkspace: boolean) => `query ($ids: [ID!]) {
     boards(ids: $ids) {
-      id name board_kind updated_at
+      id name type board_kind hierarchy_type updated_at
       ${includeWorkspace ? 'workspace { id name }' : ''}
       columns { id title type }
     }
@@ -928,9 +988,7 @@ async function fetchItemWithBoard(
       items(ids: $itemIds) {
         ${ITEM_FIELDS}
         board {
-          id name board_kind updated_at
-          workspace { id name }
-          columns { id title type }
+          ${BOARD_FIELDS}
         }
       }
     }`,
@@ -946,6 +1004,7 @@ async function fetchInitialItemsPage(
   tokens: MondayTokens,
   boardId: string,
   updatedSince?: string,
+  allItems = false,
 ): Promise<MondayItemsPage> {
   const updatedSinceDate = updatedSince ? dateValue(updatedSince, new Date(0)) : null;
   const updatedSinceDay =
@@ -963,10 +1022,11 @@ async function fetchInitialItemsPage(
           }]
         }`
     : '';
+  const hierarchyScope = allItems ? ', hierarchy_scope_config: "allItems"' : '';
   const query = updatedSinceCompareValue
     ? `query ($ids: [ID!], $limit: Int!, $updatedSinceCompareValue: CompareValue!) {
         boards(ids: $ids) {
-          items_page(limit: $limit${queryParams}) {
+          items_page(limit: $limit${hierarchyScope}${queryParams}) {
             cursor
             items { ${ITEM_FIELDS} }
           }
@@ -974,7 +1034,7 @@ async function fetchInitialItemsPage(
       }`
     : `query ($ids: [ID!], $limit: Int!) {
         boards(ids: $ids) {
-          items_page(limit: $limit) {
+          items_page(limit: $limit${hierarchyScope}) {
             cursor
             items { ${ITEM_FIELDS} }
           }
@@ -1002,25 +1062,46 @@ async function fetchNextItemsPage(tokens: MondayTokens, cursor: string): Promise
   return data.next_items_page ?? {};
 }
 
+function isMondayCursorError(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    (/(?:cursor).*(?:expired|invalid)/iu.test(error.message) ||
+      /(?:expired|invalid).*(?:cursor)/iu.test(error.message))
+  );
+}
+
 async function fetchBoardItemsBatch(
   tokens: MondayTokens,
   boardId: string,
   input: {
     updatedSince?: string;
     pageCursor?: string;
+    allItems?: boolean;
   },
-): Promise<{ items: MondayItem[]; nextCursor?: string }> {
+): Promise<{ items: MondayItem[]; nextCursor?: string; restarted?: boolean }> {
   const items: MondayItem[] = [];
-  let page = input.pageCursor
-    ? await fetchNextItemsPage(tokens, input.pageCursor)
-    : await fetchInitialItemsPage(tokens, boardId, input.updatedSince);
+  let page: MondayItemsPage;
+  let restarted = false;
+  if (input.pageCursor) {
+    try {
+      page = await fetchNextItemsPage(tokens, input.pageCursor);
+    } catch (error) {
+      if (!isMondayCursorError(error)) throw error;
+      page = await fetchInitialItemsPage(tokens, boardId, input.updatedSince, input.allItems);
+      restarted = true;
+    }
+  } else {
+    page = await fetchInitialItemsPage(tokens, boardId, input.updatedSince, input.allItems);
+  }
   for (let index = 0; index < 100; index++) {
     items.push(...(page.items ?? []));
-    if (!page.cursor) return { items };
-    if (index === 99) return { items, nextCursor: page.cursor };
+    if (!page.cursor) return { items, ...(restarted ? { restarted: true } : {}) };
+    if (index === 99) {
+      return { items, nextCursor: page.cursor, ...(restarted ? { restarted: true } : {}) };
+    }
     page = await fetchNextItemsPage(tokens, page.cursor);
   }
-  return { items };
+  return { items, ...(restarted ? { restarted: true } : {}) };
 }
 
 async function fetchActivityLogs(
@@ -1084,6 +1165,14 @@ function docReconciliationDue(cursor: MondayCursor, now = Date.now()): boolean {
   return now - lastPolledAt.getTime() >= DOC_RECONCILIATION_INTERVAL_MS;
 }
 
+function usableItemPageCursor(cursor: MondayCursor, now = Date.now()): string | undefined {
+  if (!cursor.item_page_cursor) return undefined;
+  if (!cursor.item_page_cursor_expires_at) return cursor.item_page_cursor;
+  const expiresAt = new Date(cursor.item_page_cursor_expires_at);
+  if (Number.isNaN(expiresAt.getTime()) || expiresAt.getTime() <= now) return undefined;
+  return cursor.item_page_cursor;
+}
+
 async function syncWorkDoc(
   tokens: MondayTokens,
   docId: string,
@@ -1134,20 +1223,26 @@ async function syncTargetedItem(
     await ctx.recordAudit('targeted_item_missing', { boardId, itemId });
     return;
   }
-  const { board, item } = result;
-  if (board.id !== boardId) {
+  const { board: itemBoard, item } = result;
+  const parentBoard = item.parent_item?.board ?? null;
+  const board =
+    itemBoard.id === boardId ? itemBoard : parentBoard?.id === boardId ? parentBoard : null;
+  if (!board) {
     await ctx.recordAudit('targeted_item_board_mismatch', {
       expectedBoardId: boardId,
-      actualBoardId: board.id,
+      actualBoardId: itemBoard.id,
+      parentBoardId: parentBoard?.id ?? null,
       itemId,
     });
     return;
   }
   const kind = item.parent_item?.id ? 'subitem' : 'item';
   const events = [
-    ...recordEvents(board, item, kind),
+    ...recordEvents(board, item, kind, itemBoard),
     ...(kind === 'item'
-      ? (item.subitems ?? []).flatMap((subitem) => recordEvents(board, subitem, 'subitem'))
+      ? (item.subitems ?? []).flatMap((subitem) =>
+          recordEvents(board, subitem, 'subitem', subitem.board ?? board),
+        )
       : []),
   ];
   await ctx.writeEvents(events);
@@ -1190,8 +1285,8 @@ async function fetchBoardsPage(
   includeWorkspace: boolean,
 ): Promise<{ boards: MondayBoard[]; includeWorkspace: boolean }> {
   const query = (includeWorkspace: boolean) => `query ($limit: Int!, $page: Int!) {
-    boards(limit: $limit, page: $page) {
-      id name board_kind
+    boards(limit: $limit, page: $page, hierarchy_types: [classic, multi_level]) {
+      id name type board_kind hierarchy_type
       ${includeWorkspace ? 'workspace { id name }' : ''}
     }
   }`;
@@ -1226,6 +1321,7 @@ async function listBoards(tokens: MondayTokens): Promise<MondayBoard[]> {
 }
 
 function isSubitemsBoard(board: MondayBoard): boolean {
+  if (board.type) return board.type === 'sub_items_board';
   if (board.board_kind) return board.board_kind === 'sub_items_board';
   return board.name.trim().toLowerCase().startsWith('subitems of ');
 }
@@ -1234,11 +1330,39 @@ function recordEvents(
   board: MondayBoard,
   item: MondayItem,
   kind: 'item' | 'subitem',
+  itemBoard: MondayBoard = board,
+  hierarchyDepth = kind === 'subitem' ? 1 : 0,
 ): IntegrationEvent[] {
   return [
-    itemEvent(board, item, kind),
-    ...(item.updates ?? []).map((update) => updateEvent(board, item, update, kind)),
+    itemEvent(board, item, kind, itemBoard, hierarchyDepth),
+    ...(item.updates ?? []).map((update) =>
+      updateEvent(board, item, update, kind, itemBoard, hierarchyDepth),
+    ),
   ];
+}
+
+function mondayHierarchyDepth(item: MondayItem, itemsById: Map<string, MondayItem>): number {
+  let depth = 0;
+  let current: MondayItem | undefined = item;
+  const seen = new Set<string>();
+  while (current?.parent_item?.id && !seen.has(current.id)) {
+    seen.add(current.id);
+    depth += 1;
+    current = itemsById.get(current.parent_item.id);
+  }
+  return depth;
+}
+
+function mondaySyncFailure(resource: string, surface: string, error: unknown): SyncPartialFailure {
+  return {
+    resource,
+    surface,
+    error: error instanceof Error ? error.message : String(error),
+  };
+}
+
+function rethrowMondayRateLimit(error: unknown): void {
+  if (error instanceof ProviderRateLimitErrorValue) throw error;
 }
 
 async function syncBoard(
@@ -1246,28 +1370,78 @@ async function syncBoard(
   boardId: string,
   cursor: MondayCursor,
   options: { incremental: boolean },
-): Promise<{ events: IntegrationEvent[]; cursor: MondayCursor }> {
+): Promise<{
+  events: IntegrationEvent[];
+  cursor: MondayCursor;
+  stats: {
+    boardId: string;
+    hierarchyType: string;
+    parentItemCount: number;
+    subitemCount: number;
+    updateCount: number;
+    activityCount: number;
+    eventCount: number;
+    hasMoreItems: boolean;
+    cursorRestarted: boolean;
+  };
+}> {
   const board = await fetchBoard(tokens, boardId);
-  if (!board) return { events: [], cursor };
+  if (!board) {
+    return {
+      events: [],
+      cursor,
+      stats: {
+        boardId,
+        hierarchyType: 'unknown',
+        parentItemCount: 0,
+        subitemCount: 0,
+        updateCount: 0,
+        activityCount: 0,
+        eventCount: 0,
+        hasMoreItems: false,
+        cursorRestarted: false,
+      },
+    };
+  }
   const from =
     cursor.activity_since ?? new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
   const to = new Date().toISOString();
+  const pageCursor = usableItemPageCursor(cursor);
   const itemInput = {
     ...(options.incremental && cursor.item_since ? { updatedSince: cursor.item_since } : {}),
-    ...(cursor.item_page_cursor ? { pageCursor: cursor.item_page_cursor } : {}),
+    ...(pageCursor ? { pageCursor } : {}),
+    ...(board.hierarchy_type === 'multi_level' ? { allItems: true } : {}),
   };
   const [activityLogs, itemBatch] = await Promise.all([
     fetchActivityLogs(tokens, boardId, from, to),
     fetchBoardItemsBatch(tokens, boardId, itemInput),
   ]);
   const items = itemBatch.items;
+  const itemsById = new Map(items.map((item) => [item.id, item]));
   const activityEvents = activityLogs.map((log) => activityEvent(board, log));
-  const itemEvents = items.flatMap((item) => [
-    ...recordEvents(board, item, 'item'),
-    ...(item.subitems ?? []).flatMap((subitem) => recordEvents(board, subitem, 'subitem')),
-  ]);
+  const itemEvents = items.flatMap((item) => {
+    const kind = item.parent_item?.id ? 'subitem' : 'item';
+    return [
+      ...recordEvents(
+        board,
+        item,
+        kind,
+        item.board ?? board,
+        mondayHierarchyDepth(item, itemsById),
+      ),
+      ...(board.hierarchy_type === 'multi_level'
+        ? []
+        : (item.subitems ?? []).flatMap((subitem) =>
+            recordEvents(board, subitem, 'subitem', subitem.board ?? board, 1),
+          )),
+    ];
+  });
   const schemaEvent = boardSchemaEvent(board);
   const events = [schemaEvent, ...activityEvents, ...itemEvents];
+  const flattenedRecords =
+    board.hierarchy_type === 'multi_level'
+      ? items
+      : items.flatMap((item) => [item, ...(item.subitems ?? [])]);
   const latestActivity = activityEvents
     .map((event) => event.occurredAt.toISOString())
     .sort()
@@ -1278,12 +1452,34 @@ async function syncBoard(
     .at(-1);
   return {
     events,
+    stats: {
+      boardId,
+      hierarchyType: board.hierarchy_type ?? 'classic',
+      parentItemCount: flattenedRecords.filter((item) => !item.parent_item?.id).length,
+      subitemCount: flattenedRecords.filter((item) => Boolean(item.parent_item?.id)).length,
+      updateCount: flattenedRecords.reduce((count, item) => count + (item.updates?.length ?? 0), 0),
+      activityCount: activityEvents.length,
+      eventCount: events.length,
+      hasMoreItems: Boolean(itemBatch.nextCursor),
+      cursorRestarted: Boolean(itemBatch.restarted),
+    },
     cursor: {
       activity_since: latestActivity ?? cursor.activity_since ?? to,
       item_since: itemBatch.nextCursor
         ? cursor.item_since
         : (latestItem ?? cursor.item_since ?? to),
-      ...(itemBatch.nextCursor ? { item_page_cursor: itemBatch.nextCursor } : {}),
+      ...(itemBatch.nextCursor
+        ? {
+            item_page_cursor: itemBatch.nextCursor,
+            item_page_cursor_created_at:
+              pageCursor && !itemBatch.restarted ? (cursor.item_page_cursor_created_at ?? to) : to,
+            item_page_cursor_expires_at:
+              pageCursor && !itemBatch.restarted
+                ? (cursor.item_page_cursor_expires_at ??
+                  new Date(Date.now() + ITEM_PAGE_CURSOR_TTL_MS).toISOString())
+                : new Date(Date.now() + ITEM_PAGE_CURSOR_TTL_MS).toISOString(),
+          }
+        : {}),
     },
   };
 }
@@ -1374,18 +1570,37 @@ export const mondayProvider: IntegrationProvider = {
 
   async backfill({ tokens, selections, ctx }) {
     const mondayTokens = await ensureAccessToken(tokens as MondayTokens, ctx);
+    const partialFailures: SyncPartialFailure[] = [];
     for (const selection of selections.filter((item) => item.kind === 'monday.board')) {
-      const cursor = (await ctx.loadCursor(`monday.board:${selection.externalId}`)) as MondayCursor;
-      const result = await syncBoard(mondayTokens, selection.externalId, cursor, {
-        incremental: false,
-      });
-      await ctx.writeEvents(result.events);
-      await ctx.saveCursor(`monday.board:${selection.externalId}`, result.cursor);
+      try {
+        const cursor = (await ctx.loadCursor(
+          `monday.board:${selection.externalId}`,
+        )) as MondayCursor;
+        const result = await syncBoard(mondayTokens, selection.externalId, cursor, {
+          incremental: false,
+        });
+        await ctx.writeEvents(result.events);
+        await ctx.recordAudit('monday_board_synced', result.stats);
+        await ctx.saveCursor(`monday.board:${selection.externalId}`, result.cursor);
+      } catch (error) {
+        rethrowMondayRateLimit(error);
+        partialFailures.push(
+          mondaySyncFailure(`monday.board:${selection.externalId}`, 'board', error),
+        );
+      }
     }
     for (const selection of selections.filter((item) => item.kind === 'monday.doc')) {
-      const cursor = (await ctx.loadCursor(`monday.doc:${selection.externalId}`)) as MondayCursor;
-      await syncWorkDoc(mondayTokens, selection.externalId, cursor, ctx);
+      try {
+        const cursor = (await ctx.loadCursor(`monday.doc:${selection.externalId}`)) as MondayCursor;
+        await syncWorkDoc(mondayTokens, selection.externalId, cursor, ctx);
+      } catch (error) {
+        rethrowMondayRateLimit(error);
+        partialFailures.push(
+          mondaySyncFailure(`monday.doc:${selection.externalId}`, 'document', error),
+        );
+      }
     }
+    return partialFailures.length > 0 ? { partialFailures } : undefined;
   },
 
   async incrementalSync({ tokens, selections, ctx, target }) {
@@ -1397,19 +1612,38 @@ export const mondayProvider: IntegrationProvider = {
       }
       return;
     }
+    const partialFailures: SyncPartialFailure[] = [];
     for (const selection of selections.filter((item) => item.kind === 'monday.board')) {
-      const cursor = (await ctx.loadCursor(`monday.board:${selection.externalId}`)) as MondayCursor;
-      const result = await syncBoard(mondayTokens, selection.externalId, cursor, {
-        incremental: true,
-      });
-      await ctx.writeEvents(result.events);
-      await ctx.saveCursor(`monday.board:${selection.externalId}`, result.cursor);
+      try {
+        const cursor = (await ctx.loadCursor(
+          `monday.board:${selection.externalId}`,
+        )) as MondayCursor;
+        const result = await syncBoard(mondayTokens, selection.externalId, cursor, {
+          incremental: true,
+        });
+        await ctx.writeEvents(result.events);
+        await ctx.recordAudit('monday_board_synced', result.stats);
+        await ctx.saveCursor(`monday.board:${selection.externalId}`, result.cursor);
+      } catch (error) {
+        rethrowMondayRateLimit(error);
+        partialFailures.push(
+          mondaySyncFailure(`monday.board:${selection.externalId}`, 'board', error),
+        );
+      }
     }
     for (const selection of selections.filter((item) => item.kind === 'monday.doc')) {
-      const cursor = (await ctx.loadCursor(`monday.doc:${selection.externalId}`)) as MondayCursor;
-      if (!docReconciliationDue(cursor)) continue;
-      await syncWorkDoc(mondayTokens, selection.externalId, cursor, ctx);
+      try {
+        const cursor = (await ctx.loadCursor(`monday.doc:${selection.externalId}`)) as MondayCursor;
+        if (!docReconciliationDue(cursor)) continue;
+        await syncWorkDoc(mondayTokens, selection.externalId, cursor, ctx);
+      } catch (error) {
+        rethrowMondayRateLimit(error);
+        partialFailures.push(
+          mondaySyncFailure(`monday.doc:${selection.externalId}`, 'document', error),
+        );
+      }
     }
+    return partialFailures.length > 0 ? { partialFailures } : undefined;
   },
 
   // eslint-disable-next-line @typescript-eslint/require-await
@@ -1452,6 +1686,10 @@ export const mondayProvider: IntegrationProvider = {
       ),
     ];
     for (const boardId of boardIds) {
+      const board = await fetchBoard(mondayTokens, boardId);
+      if (!board || isSubitemsBoard(board)) continue;
+      const boardSubscriptions: WebhookSubscription[] = [];
+      let rejectedSubitemsBoard = false;
       for (const eventType of MONDAY_WEBHOOK_EVENTS) {
         const desired = {
           resourceKind: 'monday.board',
@@ -1460,16 +1698,24 @@ export const mondayProvider: IntegrationProvider = {
         };
         const existing = existingByKey.get(mondayWebhookKey(desired));
         if (existing) {
-          active.push({
+          boardSubscriptions.push({
             ...desired,
             externalSubscriptionId: existing.externalSubscriptionId ?? null,
           });
           continue;
         }
-        const created = await createMondayWebhook(mondayTokens, boardId, eventType, url);
+        let created: WebhookSubscription;
+        try {
+          created = await createMondayWebhook(mondayTokens, boardId, eventType, url);
+        } catch (error) {
+          if (!isMondaySubitemsWebhookError(error)) throw error;
+          rejectedSubitemsBoard = true;
+          break;
+        }
         await ctx?.persistWebhookSubscription(created);
-        active.push(created);
+        boardSubscriptions.push(created);
       }
+      if (!rejectedSubitemsBoard) active.push(...boardSubscriptions);
     }
     return active;
   },

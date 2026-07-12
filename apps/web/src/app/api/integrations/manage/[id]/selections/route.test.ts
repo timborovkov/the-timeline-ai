@@ -20,11 +20,14 @@ const fakes = vi.hoisted(() => ({
   getProvider: vi.fn(),
   adminReconcileIntegrationWebhookSubscriptions: vi.fn(),
   listSyncableResources: vi.fn(),
+  requireRedisQueue: vi.fn(),
+  enqueueIntegrationSyncJob: vi.fn(),
 }));
 
 vi.mock('@/lib/auth', () => ({ auth: fakes.auth }));
 vi.mock('@/lib/active-team', () => ({ resolveActiveTeam: fakes.resolveActiveTeam }));
 vi.mock('@/lib/db', () => ({ db: {} }));
+vi.mock('@/lib/queue', () => ({ requireRedisQueue: fakes.requireRedisQueue }));
 vi.mock('@timeline/shared/integrations', () => ({
   getProvider: fakes.getProvider,
   adminReconcileIntegrationWebhookSubscriptions:
@@ -88,6 +91,10 @@ beforeEach(() => {
   fakes.listSyncableResources.mockResolvedValue([
     { kind: 'github.repo', externalId: 'acme/private' },
   ]);
+  fakes.requireRedisQueue.mockResolvedValue({
+    enqueueIntegrationSyncJob: fakes.enqueueIntegrationSyncJob,
+  });
+  fakes.enqueueIntegrationSyncJob.mockResolvedValue(undefined);
 });
 
 describe('/api/integrations/manage/[id]/selections', () => {
@@ -143,6 +150,12 @@ describe('/api/integrations/manage/[id]/selections', () => {
       {},
       INTEGRATION_ID,
     );
+    expect(fakes.enqueueIntegrationSyncJob).toHaveBeenCalledWith({
+      kind: 'backfill',
+      integrationId: INTEGRATION_ID,
+      teamId: TEAM_ID,
+      triggeredBy: USER_ID,
+    });
   });
 
   it('records degraded webhook attention when legacy selection provisioning fails', async () => {

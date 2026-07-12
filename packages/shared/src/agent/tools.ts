@@ -2625,7 +2625,13 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
             query: parsed.query,
             source: 'integration',
           };
-          if (parsed.limit) opts.limit = parsed.limit;
+          const requestedLimit = parsed.limit ?? 10;
+          // Provider/source metadata is hydrated from Postgres after semantic search. Reserve a
+          // wider candidate window so stale or differently scoped provider hits do not consume the
+          // user-visible result budget before those filters run.
+          opts.limit = parsed.provider
+            ? Math.min(200, Math.max(50, requestedLimit * 10))
+            : requestedLimit;
           const hits = await scope.timeline.searchEvents(opts);
           let filtered = hits.filter((h) => h.source === 'integration');
           // Apply the optional provider filter. `provider` lives in
@@ -2634,13 +2640,43 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
           // visibility) and drop hits whose provider doesn't match.
           if (parsed.provider && filtered.length > 0) {
             const rows = await scope.timeline.getEventsByIds(filtered.map((r) => r.eventId));
-            const providerById = new Map<string, string | undefined>();
+            const metadataById = new Map<string, Record<string, unknown>>();
             for (const row of rows) {
               const md = row.sourceMetadata as Record<string, unknown> | null;
-              const prov = md && typeof md.provider === 'string' ? md.provider : undefined;
-              providerById.set(row.id, prov);
+              metadataById.set(row.id, md ?? {});
             }
-            filtered = filtered.filter((r) => providerById.get(r.eventId) === parsed.provider);
+            filtered = filtered.filter(
+              (r) => metadataById.get(r.eventId)?.provider === parsed.provider,
+            );
+            if (parsed.provider === 'monday') {
+              const mondayIntegrations = (await scope.integrations.listIntegrations()).filter(
+                (integration) => integration.provider === 'monday' && integration.enabled,
+              );
+              const selections = (
+                await Promise.all(
+                  mondayIntegrations.map((integration) =>
+                    scope.integrations.listSelections(integration.id),
+                  ),
+                )
+              ).flat();
+              const selectedBoardIds = new Set(
+                selections
+                  .filter((selection) => selection.selectionKind === 'monday.board')
+                  .map((selection) => selection.externalId),
+              );
+              const selectedDocIds = new Set(
+                selections
+                  .filter((selection) => selection.selectionKind === 'monday.doc')
+                  .map((selection) => selection.externalId),
+              );
+              filtered = filtered.filter((result) => {
+                const metadata = metadataById.get(result.eventId) ?? {};
+                const boardId = metadata.monday_parent_board_id ?? metadata.monday_board_id;
+                if (typeof boardId === 'string') return selectedBoardIds.has(boardId);
+                const docId = metadata.monday_doc_id;
+                return typeof docId === 'string' && selectedDocIds.has(docId);
+              });
+            }
           }
           return {
             count: filtered.length,

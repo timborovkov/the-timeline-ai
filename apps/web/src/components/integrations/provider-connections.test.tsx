@@ -235,7 +235,7 @@ describe('TeamSourcesUi', () => {
     expect(screen.getByText(/All accessible projects in this organization/i)).toBeTruthy();
   });
 
-  it('preserves active shares that are hidden from the live resource list when saving', async () => {
+  it('drops stale monday helper-board shares that are absent from live resources', async () => {
     const user = userEvent.setup();
     const requests: { method: string; body: unknown }[] = [];
     vi.spyOn(globalThis, 'fetch').mockImplementation((_input, init) => {
@@ -289,15 +289,7 @@ describe('TeamSourcesUi', () => {
     await waitFor(() => {
       expect(requests.some((request) => request.method === 'PUT')).toBe(true);
     });
-    expect(requests.find((request) => request.method === 'PUT')?.body).toEqual({
-      resources: [
-        {
-          kind: 'monday.board',
-          externalId: 'subitems-board-1',
-          label: 'Subitems of KIESI',
-        },
-      ],
-    });
+    expect(requests.find((request) => request.method === 'PUT')?.body).toEqual({ resources: [] });
   });
 
   it('lets users revoke active shares that are hidden from the live resource list', async () => {
@@ -317,14 +309,14 @@ describe('TeamSourcesUi', () => {
       return Promise.resolve(
         new Response(
           JSON.stringify({
-            resources: [{ kind: 'monday.board', externalId: 'board-1', label: 'KIESI' }],
+            resources: [{ kind: 'github.repo', externalId: 'acme/current', label: 'acme/current' }],
             shares: [
               {
                 id: 'share-hidden',
-                providerConnectionId: 'monday',
-                resourceKind: 'monday.board',
-                externalId: 'subitems-board-1',
-                externalLabel: 'Subitems of KIESI',
+                providerConnectionId: 'github',
+                resourceKind: 'github.repo',
+                externalId: 'acme/legacy',
+                externalLabel: 'acme/legacy',
                 revokedAt: null,
               },
             ],
@@ -338,9 +330,9 @@ describe('TeamSourcesUi', () => {
       <PersonalConnectionsUi
         connections={[
           {
-            id: 'monday',
-            provider: 'monday',
-            displayName: 'Monday.com — Tim',
+            id: 'github',
+            provider: 'github',
+            displayName: 'GitHub — Tim',
             lastError: null,
             lastConnectedAt: '2026-06-01T00:00:00.000Z',
           },
@@ -348,8 +340,8 @@ describe('TeamSourcesUi', () => {
       />,
     );
 
-    await screen.findByText('KIESI');
-    const hiddenShare = await screen.findByLabelText(/Subitems of KIESI/i);
+    await screen.findByText('acme/current');
+    const hiddenShare = await screen.findByLabelText(/acme\/legacy/i);
     await user.click(hiddenShare);
     await user.click(screen.getByRole('button', { name: /Save sharing/i }));
 
@@ -432,6 +424,34 @@ describe('TeamSourcesUi', () => {
 
     expect(screen.getByText(/Shared sources are not syncing yet/i)).toBeTruthy();
     expect(screen.getByText(/Select the sources this team should import/i)).toBeTruthy();
+  });
+
+  it('confirms that an initial backfill was queued after team activation', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          ok: true,
+          integrationId: 'integration-1',
+          syncRequired: true,
+          syncQueued: true,
+        }),
+        { status: 200 },
+      ),
+    );
+    render(
+      <TeamSourcesUi
+        isAdmin
+        activeShareIds={[]}
+        rows={[row({ id: 'share-a', connectionId: 'conn-a', ownerLabel: 'Tim' })]}
+      />,
+    );
+
+    await user.click(screen.getByRole('checkbox'));
+    await user.click(screen.getByRole('button', { name: 'Activate team sync' }));
+
+    expect(await screen.findByText(/Initial import queued/i)).toBeTruthy();
+    expect(screen.getByText(/Older items will be available after the first sync/i)).toBeTruthy();
   });
 
   it('does not tell non-admins to select and save shared team sources', () => {

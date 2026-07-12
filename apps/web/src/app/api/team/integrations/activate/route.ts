@@ -8,6 +8,7 @@ import { trackProductEventBestEffort } from '@/lib/analytics';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { safeMarkOnboardingStep } from '@/lib/onboarding';
+import { requireRedisQueue } from '@/lib/queue';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -94,6 +95,54 @@ async function reconcileWebhooksBestEffort(
   }
 }
 
+async function enqueueInitialBackfillBestEffort(
+  scope: ReturnType<typeof withTeam>,
+  integration: {
+    id: string;
+    provider: integrationsLib.IntegrationProviderName;
+    providerConnectionId?: string | null;
+  },
+  teamId: string,
+  userId: string,
+): Promise<boolean> {
+  if (integration.provider === 'mcp') return false;
+  try {
+    await requireRedisQueue()
+      .then((redisQueue) =>
+        redisQueue.enqueueIntegrationSyncJob({
+          kind: 'backfill',
+          integrationId: integration.id,
+          teamId,
+          triggeredBy: userId,
+        }),
+      )
+      .then(() =>
+        scope.integrations.recordAudit(
+          'backfill_requested',
+          { actor: userId, source: 'activation' },
+          integration.id,
+        ),
+      );
+    return true;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    await Promise.all([
+      scope.integrations.recordAudit(
+        'backfill_enqueue_failed',
+        { provider: integration.provider, error: message.slice(0, 500) },
+        integration.id,
+      ),
+      scope.integrations.recordConnectionAttention({
+        providerConnectionId: integration.providerConnectionId ?? null,
+        integrationId: integration.id,
+        category: 'sync_error',
+        summary: `Initial ${integration.provider} sync could not be queued: ${message.slice(0, 300)}`,
+      }),
+    ]);
+    return false;
+  }
+}
+
 export async function POST(req: Request): Promise<Response> {
   const session = await auth();
   if (!session?.user.id) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
@@ -113,11 +162,14 @@ export async function POST(req: Request): Promise<Response> {
     );
   }
   const integration = await scope.integrations.activateSharedResources(parsed.data);
-  await reconcileWebhooksBestEffort(scope, integration);
-  const completedFirstIntegration = await markFirstIntegrationAfterActivation(
-    scope,
-    integration.id,
-  );
+  const syncRequired = integration.addedSelectionCount > 0;
+  const [syncQueued, , completedFirstIntegration] = await Promise.all([
+    syncRequired
+      ? enqueueInitialBackfillBestEffort(scope, integration, active.teamId, session.user.id)
+      : Promise.resolve(false),
+    reconcileWebhooksBestEffort(scope, integration),
+    markFirstIntegrationAfterActivation(scope, integration.id),
+  ]);
   trackProductEventBestEffort(session.user.id, 'integration_connected', {
     teamId: active.teamId,
     userId: session.user.id,
@@ -132,5 +184,10 @@ export async function POST(req: Request): Promise<Response> {
       source: 'automatic',
     });
   }
-  return NextResponse.json({ ok: true, integrationId: integration.id });
+  return NextResponse.json({
+    ok: true,
+    integrationId: integration.id,
+    syncRequired,
+    syncQueued,
+  });
 }

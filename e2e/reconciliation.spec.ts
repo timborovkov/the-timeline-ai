@@ -826,7 +826,6 @@ test.describe.serial('reconciliation dashboard', () => {
 
     await page.getByLabel('Status').selectOption('completed');
     await page.getByLabel('Trigger').selectOption('eval');
-    await page.getByRole('button', { name: 'Filter' }).click();
 
     await expect(page).toHaveURL(/runStatus=completed/);
     await expect(page).toHaveURL(/runTrigger=eval/);

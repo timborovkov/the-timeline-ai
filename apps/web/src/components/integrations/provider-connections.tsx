@@ -319,27 +319,33 @@ function ConnectionSources({ connection }: { connection: ProviderConnection }) {
 
   const resources = data?.resources ?? emptyResources;
   const shares = data?.shares ?? emptyShares;
+  const resourceByKey = useMemo(() => {
+    return new Map(resources.map((resource) => [resourceKey(resource), resource]));
+  }, [resources]);
   const savedSelected = useMemo(() => {
     const next = new Set<string>();
     for (const share of shares) {
-      if (!share.revokedAt) next.add(shareKey(share));
+      const key = shareKey(share);
+      if (!share.revokedAt && (connection.provider !== 'monday' || resourceByKey.has(key))) {
+        next.add(key);
+      }
     }
     return next;
-  }, [shares]);
+  }, [connection.provider, resourceByKey, shares]);
   const selected = state.selectedOverride ?? savedSelected;
   const error = state.error ?? (queryError instanceof Error ? queryError.message : null);
   const query = state.query;
 
-  const resourceByKey = useMemo(() => {
-    return new Map(resources.map((resource) => [resourceKey(resource), resource]));
-  }, [resources]);
   const activeShareByKey = useMemo(() => {
     const next = new Map<string, ResourceShare>();
     for (const share of shares) {
-      if (!share.revokedAt) next.set(shareKey(share), share);
+      const key = shareKey(share);
+      if (!share.revokedAt && (connection.provider !== 'monday' || resourceByKey.has(key))) {
+        next.set(key, share);
+      }
     }
     return next;
-  }, [shares]);
+  }, [connection.provider, resourceByKey, shares]);
   const selectableResources = useMemo(() => {
     const hiddenSelectedResources: ProviderResource[] = [];
     for (const key of selected) {
@@ -676,6 +682,7 @@ export function TeamSourcesUi({
   );
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [syncNotice, setSyncNotice] = useState<string | null>(null);
 
   if (rows.length === 0) {
     return (
@@ -695,6 +702,7 @@ export function TeamSourcesUi({
   async function activate(providerConnectionId: string) {
     setBusy(providerConnectionId);
     setError(null);
+    setSyncNotice(null);
     try {
       const res = await fetch('/api/team/integrations/activate', {
         method: 'POST',
@@ -704,7 +712,18 @@ export function TeamSourcesUi({
           resourceShareIds: [...(selectedByConnection[providerConnectionId] ?? new Set())],
         }),
       });
-      await readJsonResponse(res);
+      const result = await readJsonResponse<{
+        error?: string;
+        syncRequired?: boolean;
+        syncQueued?: boolean;
+      }>(res);
+      setSyncNotice(
+        !result.syncRequired
+          ? 'Team sync sources saved. No historical import was needed.'
+          : result.syncQueued
+            ? 'Initial import queued. Older items will be available after the first sync completes.'
+            : 'Sources were saved, but the initial import could not be queued. Retry team sync.',
+      );
       setSelectedOverrides({});
       router.refresh();
     } catch (err) {
@@ -726,6 +745,11 @@ export function TeamSourcesUi({
           }}
           retryLabel="Dismiss"
         />
+      ) : null}
+      {syncNotice ? (
+        <output className="rounded-sm border border-signal/30 bg-signal-soft px-3 py-2 text-sm text-fg">
+          {syncNotice}
+        </output>
       ) : null}
       {[...groups.entries()].map(([connectionId, groupRows]) => {
         const connection = groupRows[0]?.connection;

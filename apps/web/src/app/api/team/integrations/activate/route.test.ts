@@ -18,6 +18,8 @@ const fakes = vi.hoisted(() => ({
   missingRequiredProviderScopes: vi.fn(),
   safeMarkOnboardingStep: vi.fn(),
   trackProductEventBestEffort: vi.fn(),
+  requireRedisQueue: vi.fn(),
+  enqueueIntegrationSyncJob: vi.fn(),
 }));
 
 vi.mock('@/lib/auth', () => ({ auth: fakes.auth }));
@@ -27,6 +29,7 @@ vi.mock('@/lib/analytics', () => ({
 }));
 vi.mock('@/lib/db', () => ({ db: {} }));
 vi.mock('@/lib/onboarding', () => ({ safeMarkOnboardingStep: fakes.safeMarkOnboardingStep }));
+vi.mock('@/lib/queue', () => ({ requireRedisQueue: fakes.requireRedisQueue }));
 vi.mock('@timeline/shared/integrations', () => ({
   adminReconcileIntegrationWebhookSubscriptions:
     fakes.adminReconcileIntegrationWebhookSubscriptions,
@@ -68,6 +71,7 @@ beforeEach(() => {
     id: INTEGRATION_ID,
     provider: 'github',
     providerConnectionId: CONNECTION_ID,
+    addedSelectionCount: 1,
   });
   fakes.recordAudit.mockResolvedValue(undefined);
   fakes.recordConnectionAttention.mockResolvedValue(undefined);
@@ -79,6 +83,10 @@ beforeEach(() => {
   });
   fakes.missingRequiredProviderScopes.mockReturnValue([]);
   fakes.safeMarkOnboardingStep.mockResolvedValue(true);
+  fakes.requireRedisQueue.mockResolvedValue({
+    enqueueIntegrationSyncJob: fakes.enqueueIntegrationSyncJob,
+  });
+  fakes.enqueueIntegrationSyncJob.mockResolvedValue(undefined);
 });
 
 describe('POST /api/team/integrations/activate', () => {
@@ -105,7 +113,12 @@ describe('POST /api/team/integrations/activate', () => {
     );
 
     expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toEqual({ ok: true, integrationId: INTEGRATION_ID });
+    await expect(response.json()).resolves.toEqual({
+      ok: true,
+      integrationId: INTEGRATION_ID,
+      syncRequired: true,
+      syncQueued: true,
+    });
     expect(fakes.activateSharedResources).toHaveBeenCalledWith({
       providerConnectionId: CONNECTION_ID,
       resourceShareIds: [SHARE_ID],
@@ -114,6 +127,12 @@ describe('POST /api/team/integrations/activate', () => {
       {},
       INTEGRATION_ID,
     );
+    expect(fakes.enqueueIntegrationSyncJob).toHaveBeenCalledWith({
+      kind: 'backfill',
+      integrationId: INTEGRATION_ID,
+      teamId: TEAM_ID,
+      triggeredBy: USER_ID,
+    });
     expect(fakes.safeMarkOnboardingStep).toHaveBeenCalledWith(
       expect.any(Object),
       'first_integration',
@@ -139,6 +158,7 @@ describe('POST /api/team/integrations/activate', () => {
       id: INTEGRATION_ID,
       provider: 'monday',
       providerConnectionId: CONNECTION_ID,
+      addedSelectionCount: 1,
     });
     fakes.adminReconcileIntegrationWebhookSubscriptions.mockRejectedValueOnce(
       new Error('MONDAY_WEBHOOK_SECRET not configured'),
@@ -168,6 +188,64 @@ describe('POST /api/team/integrations/activate', () => {
     });
     expect(attentionInput?.summary).toEqual(
       expect.stringContaining('Webhook provisioning failed for monday'),
+    );
+  });
+
+  it('does not enqueue another full backfill when active sources are unchanged', async () => {
+    fakes.activateSharedResources.mockResolvedValueOnce({
+      id: INTEGRATION_ID,
+      provider: 'monday',
+      providerConnectionId: CONNECTION_ID,
+      addedSelectionCount: 0,
+    });
+
+    const response = await POST(
+      request({ providerConnectionId: CONNECTION_ID, resourceShareIds: [SHARE_ID] }),
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      ok: true,
+      integrationId: INTEGRATION_ID,
+      syncRequired: false,
+      syncQueued: false,
+    });
+    expect(fakes.enqueueIntegrationSyncJob).not.toHaveBeenCalled();
+  });
+
+  it('keeps saved sources retryable when the initial backfill cannot be queued', async () => {
+    fakes.activateSharedResources.mockResolvedValueOnce({
+      id: INTEGRATION_ID,
+      provider: 'monday',
+      providerConnectionId: CONNECTION_ID,
+      addedSelectionCount: 1,
+    });
+    fakes.enqueueIntegrationSyncJob.mockRejectedValueOnce(new Error('redis unavailable'));
+
+    const response = await POST(
+      request({ providerConnectionId: CONNECTION_ID, resourceShareIds: [SHARE_ID] }),
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      ok: true,
+      integrationId: INTEGRATION_ID,
+      syncQueued: false,
+    });
+    expect(fakes.recordAudit).toHaveBeenCalledWith(
+      'backfill_enqueue_failed',
+      expect.objectContaining({ provider: 'monday', error: 'redis unavailable' }),
+      INTEGRATION_ID,
+    );
+    expect(fakes.recordConnectionAttention).toHaveBeenCalledWith(
+      expect.objectContaining({
+        integrationId: INTEGRATION_ID,
+        category: 'sync_error',
+      }),
+    );
+    expect(fakes.adminReconcileIntegrationWebhookSubscriptions).toHaveBeenCalledWith(
+      {},
+      INTEGRATION_ID,
     );
   });
 

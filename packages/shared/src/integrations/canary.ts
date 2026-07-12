@@ -18,6 +18,14 @@ export interface LiveIntegrationCanaryReportInput {
   redactions?: readonly string[];
 }
 
+export interface LiveIntegrationCanaryCleanupInput {
+  success: LiveIntegrationCanaryResult;
+  cleanup: () => Promise<void>;
+  formatError: (error: unknown) => string;
+  action: string;
+  docs?: string;
+}
+
 export interface PostmarkInboundCaptureCanaryPayloadInput {
   messageId: string;
   to: string;
@@ -52,6 +60,23 @@ export interface TranscriptionCanaryWavInput {
 }
 
 export const TRANSCRIPTION_SPEECH_CANARY_TEXT = 'Timeline Canary task';
+
+export async function completeLiveIntegrationCanaryCleanup(
+  input: LiveIntegrationCanaryCleanupInput,
+): Promise<LiveIntegrationCanaryResult> {
+  try {
+    await input.cleanup();
+    return input.success;
+  } catch (error) {
+    return {
+      name: input.success.name,
+      status: 'warn',
+      detail: `cleanup failed: ${input.formatError(error)}`,
+      action: input.action,
+      ...(input.docs ? { docs: input.docs } : {}),
+    };
+  }
+}
 
 const TRANSCRIPTION_SPEECH_CANARY_MP3_BASE64 = [
   'SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjYyLjEyLjEwMAAAAAAAAAAAAAAA//NYwAAAAAAAAAAAAEluZm8AAAAPAAAAIAAA',
