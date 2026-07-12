@@ -11,7 +11,7 @@
     <main id="main">
       <h1>Workspace objects</h1>
       <div class="meta">
-        <span class="kind">Architecture</span><span>Last updated 2026-07-10</span>
+        <span class="kind">Architecture</span><span>Last updated 2026-07-12</span>
       </div>
       <p class="tldr">
         Phase 8 turned <code>entities</code> from an extraction artifact into the workspace's
@@ -315,9 +315,12 @@
         switch to a <code>notify</code> BullMQ queue without changing callers.
       </p>
       <p>
-        The inbox view (<code>/app/inbox</code>) sorts by
-        <code>(read_at NULLS FIRST, created_at DESC)</code> — backed by the
-        <code>notifications_team_user_inbox_idx</code> index so unread-first queries are direct.
+        The inbox view (<code>/app/inbox</code>) and header preview sort newest first by
+        <code>(created_at DESC, id DESC)</code>. The
+        <code>notifications_team_user_inbox_idx</code> index matches that order so paginated inbox
+        queries do not need a separate sort. A partial
+        <code>notifications_team_user_unread_idx</code> keeps unread counts and filtered pages fast
+        without scanning a user's read-notification history.
       </p>
 
       <h2 id="since-last-visit">Since last visit</h2>

@@ -101,19 +101,10 @@ export default async function AppLayout({
     (async () => {
       try {
         const scope = withTeam(db, active.teamId, session.user.id);
-        const [unreadCount, unreadNotifications, latestNotifications] = await Promise.all([
+        const [unreadCount, notifications] = await Promise.all([
           scope.objects.unreadNotificationCount(),
-          scope.objects.listNotifications({ unreadOnly: true, limit: 5, order: 'latest' }),
-          scope.objects.listNotifications({ limit: 5, order: 'latest' }),
+          scope.objects.listNotifications({ limit: 5 }),
         ]);
-        const seenNotificationIds = new Set<string>();
-        const notifications = [...unreadNotifications, ...latestNotifications]
-          .filter((notification) => {
-            if (seenNotificationIds.has(notification.id)) return false;
-            seenNotificationIds.add(notification.id);
-            return true;
-          })
-          .slice(0, 5);
         return {
           unreadCount,
           notifications: notifications.map((notification) => ({

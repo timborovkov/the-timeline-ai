@@ -60,19 +60,18 @@ export const notifications = pgTable(
     readAt: timestamp('read_at', { withTimezone: true }),
   },
   (table) => [
-    // Inbox query is "unread first, then newest". The sort directions and
-    // NULLS placement must match `listNotifications` exactly — otherwise
-    // the planner falls back to a sort node after the filter. Postgres
-    // default for ASC is NULLS LAST, but unread rows have read_at IS NULL
-    // and need to come first, so we pin NULLS FIRST. created_at is DESC
-    // so the newest unread is on top of the unread group and the newest
-    // read row leads the read group.
+    // Inbox query is newest first. The sort direction must match
+    // `listNotifications` so the planner can satisfy the query directly
+    // from this index without re-sorting.
     index('notifications_team_user_inbox_idx').on(
       table.teamId.asc(),
       table.userId.asc(),
-      sql`${table.readAt} ASC NULLS FIRST`,
       table.createdAt.desc(),
+      table.id.desc(),
     ),
+    index('notifications_team_user_unread_idx')
+      .on(table.teamId.asc(), table.userId.asc(), table.createdAt.desc(), table.id.desc())
+      .where(sql`${table.readAt} IS NULL`),
     index('notifications_team_entity_idx').on(table.teamId, table.entityId),
     index('notifications_team_suggestion_idx').on(table.teamId, table.agentSuggestionId),
     uniqueIndex('notifications_suggestion_recipient_unq')
