@@ -642,6 +642,8 @@ describe('withTeam namespaced port', () => {
   it('lists every visible configured integration resource without requiring event-history groups', async () => {
     const visibleIntegrationId = '00000000-0000-4000-8000-000000000301';
     const privateIntegrationId = '00000000-0000-4000-8000-000000000302';
+    const visibleGithubId = '00000000-0000-4000-8000-000000000303';
+    const privateGithubId = '00000000-0000-4000-8000-000000000304';
     await db.insert(integrations).values([
       {
         id: visibleIntegrationId,
@@ -661,6 +663,24 @@ describe('withTeam namespaced port', () => {
         externalAccountId: 'private-monday',
         visibilityDefault: 'private',
       },
+      {
+        id: visibleGithubId,
+        teamId: TEAM_A,
+        connectedByUserId: USER_A,
+        provider: 'github',
+        displayName: 'Visible GitHub',
+        externalAccountId: 'visible-github',
+        visibilityDefault: 'team',
+      },
+      {
+        id: privateGithubId,
+        teamId: TEAM_A,
+        connectedByUserId: USER_B,
+        provider: 'github',
+        displayName: 'Private GitHub',
+        externalAccountId: 'private-github',
+        visibilityDefault: 'private',
+      },
     ]);
     await db.insert(integrationSelections).values([
       ...Array.from({ length: 501 }, (_, index) => ({
@@ -675,6 +695,30 @@ describe('withTeam namespaced port', () => {
         externalId: 'secret-board',
         externalLabel: 'Secret board',
       },
+      {
+        integrationId: visibleGithubId,
+        selectionKind: 'github.org',
+        externalId: 'acme',
+        externalLabel: 'Acme',
+      },
+      {
+        integrationId: privateGithubId,
+        selectionKind: 'github.org',
+        externalId: 'secret',
+        externalLabel: 'Secret',
+      },
+    ]);
+    await db.insert(integrationSyncState).values([
+      {
+        integrationId: visibleGithubId,
+        resourceType: 'github.org:acme:repos',
+        cursor: { repos: ['acme/app', 'acme/api'], fetched_at: new Date().toISOString() },
+      },
+      {
+        integrationId: privateGithubId,
+        resourceType: 'github.org:secret:repos',
+        cursor: { repos: ['secret/repo'], fetched_at: new Date().toISOString() },
+      },
     ]);
 
     const facets = await withTeam(db as never, TEAM_A, USER_A).timeline.listSourceFacets();
@@ -688,11 +732,51 @@ describe('withTeam namespaced port', () => {
           filter: { kind: 'monday_board', boardId: 'board-500' },
           label: 'Board 500',
         }),
+        expect.objectContaining({
+          filter: { kind: 'github_repo', repo: 'acme/api' },
+          label: 'acme/api',
+        }),
       ]),
     );
     expect(facets).not.toEqual(
       expect.arrayContaining([
         expect.objectContaining({ filter: { kind: 'monday_board', boardId: 'secret-board' } }),
+        expect.objectContaining({ filter: { kind: 'github_repo', repo: 'secret/repo' } }),
+      ]),
+    );
+  });
+
+  it('uses the newest event label when a source resource has been renamed', async () => {
+    await pg.query(
+      `INSERT INTO raw_events
+        (id, team_id, author_user_id, visibility_owner_user_id, visibility, source, content_text, occurred_at, source_metadata)
+       VALUES
+        ('00000000-0000-0000-0000-000000000311', $1, $2, $2, 'team', 'integration', 'Old board update', '2026-07-01T10:00:00Z', $3::jsonb),
+        ('00000000-0000-0000-0000-000000000312', $1, $2, $2, 'team', 'integration', 'New board update', '2026-07-02T10:00:00Z', $4::jsonb)`,
+      [
+        TEAM_A,
+        USER_A,
+        JSON.stringify({
+          provider: 'monday',
+          monday_board_id: 'renamed-board',
+          monday_board_name: 'Old name',
+        }),
+        JSON.stringify({
+          provider: 'monday',
+          monday_board_id: 'renamed-board',
+          monday_board_name: 'Current name',
+        }),
+      ],
+    );
+
+    const facets = await withTeam(db as never, TEAM_A, USER_A).timeline.listSourceFacets();
+    expect(facets).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          filter: { kind: 'monday_board', boardId: 'renamed-board' },
+          label: 'Current name',
+          eventCount: 2,
+        }),
       ]),
     );
   });

@@ -17,6 +17,7 @@ import {
   factEntities,
   facts as factsTable,
   integrationSelections,
+  integrationSyncState,
   integrations,
   objectIdentityFacets,
   objectNotes,
@@ -1593,10 +1594,11 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
   async function listSourceFacets(): Promise<TimelineSourceFacet[]> {
     await ensureMember();
     const facets = new Map<string, TimelineSourceFacet>();
-    function add(key: string, facet: TimelineSourceFacet): void {
+    function add(key: string, facet: TimelineSourceFacet, replaceLabel = true): void {
       const current = facets.get(key);
       facets.set(key, {
-        ...facet,
+        ...(current ?? facet),
+        ...(replaceLabel ? facet : {}),
         eventCount: facet.eventCount + (current?.eventCount ?? 0),
       });
     }
@@ -1622,7 +1624,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
     >`${rawEvents.sourceMetadata} ->> 'slack_channel_name'`;
     const telegramChatId = sql<string | null>`${rawEvents.sourceMetadata} ->> 'tg_chat_id'`;
     const telegramChatTitle = sql<string | null>`${rawEvents.sourceMetadata} ->> 'tg_chat_title'`;
-    const [integrationRows, slackBindings, recentEvents] = await Promise.all([
+    const [integrationRows, githubOrgExpansions, slackBindings, recentEvents] = await Promise.all([
       db
         .select({
           provider: integrations.provider,
@@ -1634,6 +1636,30 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
         .from(integrations)
         .leftJoin(integrationSelections, eq(integrationSelections.integrationId, integrations.id))
         .where(and(eq(integrations.teamId, teamId), integrationVisibility)),
+      db
+        .select({ cursor: integrationSyncState.cursor })
+        .from(integrations)
+        .innerJoin(
+          integrationSelections,
+          and(
+            eq(integrationSelections.integrationId, integrations.id),
+            eq(integrationSelections.selectionKind, 'github.org'),
+          ),
+        )
+        .innerJoin(
+          integrationSyncState,
+          and(
+            eq(integrationSyncState.integrationId, integrations.id),
+            sql`${integrationSyncState.resourceType} = 'github.org:' || ${integrationSelections.externalId} || ':repos'`,
+          ),
+        )
+        .where(
+          and(
+            eq(integrations.teamId, teamId),
+            eq(integrations.provider, 'github'),
+            integrationVisibility,
+          ),
+        ),
       db
         .select({
           workspaceId: slackWorkspaces.slackTeamId,
@@ -1710,6 +1736,23 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
         });
       }
     }
+    for (const row of githubOrgExpansions) {
+      const repos =
+        typeof row.cursor === 'object' &&
+        row.cursor !== null &&
+        'repos' in row.cursor &&
+        Array.isArray(row.cursor.repos)
+          ? row.cursor.repos
+          : [];
+      for (const repo of repos) {
+        if (typeof repo !== 'string' || repo.length === 0) continue;
+        add(`github:${repo}`, {
+          filter: { kind: 'github_repo', repo },
+          label: repo,
+          eventCount: 0,
+        });
+      }
+    }
     for (const row of slackBindings) {
       add(`slack:${row.workspaceId}:${row.channelId}`, {
         filter: {
@@ -1721,7 +1764,13 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
         eventCount: 0,
       });
     }
-    for (const row of recentEvents) addTimelineSourceFacetFromEvent(add, row);
+    const eventLabelsSeen = new Set<string>();
+    for (const row of recentEvents) {
+      addTimelineSourceFacetFromEvent((key, facet) => {
+        add(key, facet, !eventLabelsSeen.has(key));
+        eventLabelsSeen.add(key);
+      }, row);
+    }
 
     return [...facets.values()].sort(
       (a, b) => b.eventCount - a.eventCount || a.label.localeCompare(b.label),
