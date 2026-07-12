@@ -3658,6 +3658,66 @@ describe('suggestion scope', () => {
     expect(retriedProjects[0]?.archivedAt).toBeNull();
   });
 
+  it('honors a revised project name after compensating a failed task acceptance', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const conflictingTask = await scope.objects.createObject({
+      type: 'task',
+      canonicalName: 'Prepare revised project task',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Create task with editable project',
+      dedupeKey: 'create-task-revised-project',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Prepare revised project task',
+          dedupeKey: 'create-task-revised-project:item',
+          proposedPayload: {
+            canonicalName: 'Prepare revised project task',
+            createProjectName: 'Original proposed project',
+            projectName: 'Original proposed project',
+          },
+        },
+      ],
+    });
+    const itemId = bundle.items[0]?.id ?? '';
+
+    await expect(scope.suggestions.acceptSuggestionItem(itemId)).rejects.toThrow();
+    await expect(
+      scope.suggestions.reviseTaskSuggestionItem({
+        itemId,
+        project: { kind: 'create', projectName: 'Revised proposed project' },
+      }),
+    ).resolves.toBe(true);
+    await db.delete(entities).where(eq(entities.id, conflictingTask.id));
+    await expect(scope.suggestions.acceptSuggestionItem(itemId)).resolves.toBe(true);
+
+    const projects = await db.select().from(entities).where(eq(entities.type, 'project'));
+    const originalProject = projects.find(
+      (project) => project.canonicalName === 'Original proposed project',
+    );
+    expect(originalProject?.archivedAt).toBeInstanceOf(Date);
+    const revisedProject = projects.find(
+      (project) => project.canonicalName === 'Revised proposed project',
+    );
+    expect(revisedProject?.archivedAt).toBeNull();
+    const [createdTask] = await db
+      .select({ id: entities.id })
+      .from(entities)
+      .where(eq(entities.canonicalName, 'Prepare revised project task'));
+    await expect(
+      db
+        .select()
+        .from(entityRelationships)
+        .where(eq(entityRelationships.fromEntityId, createdTask?.id ?? '')),
+    ).resolves.toEqual([
+      expect.objectContaining({ toEntityId: revisedProject?.id, kind: 'child' }),
+    ]);
+  });
+
   it('keeps a proposed task pending when its category context hash is stale', async () => {
     const scope = withTeam(db as never, TEAM_ID, USER_ID);
     const bundle = await scope.suggestions.createOrMergeSuggestionBundle({

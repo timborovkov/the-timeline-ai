@@ -674,7 +674,7 @@ describe('queue wrappers', () => {
     expect(fakes.queues[0]?.addCalls).toHaveLength(2);
   });
 
-  it('does not report a task category retry as enqueued when terminal job removal fails', async () => {
+  it('fails a task category retry when terminal job removal fails', async () => {
     process.env.TASK_CATEGORY_CLASSIFICATION_ENABLED = 'true';
     process.env.TASK_CATEGORY_AUTO_ENQUEUE_ENABLED = 'true';
     const queues = await importQueues();
@@ -690,10 +690,7 @@ describe('queue wrappers', () => {
     fakeQueue?.jobStates.set(first.jobId, 'failed');
     fakeQueue?.removeFailures.add(first.jobId);
 
-    await expect(queues.enqueueTaskCategoryJob(data)).resolves.toEqual({
-      enqueued: false,
-      jobId: first.jobId,
-    });
+    await expect(queues.enqueueTaskCategoryJob(data)).rejects.toThrow('remove failed');
     expect(fakeQueue?.addCalls).toHaveLength(1);
   });
 

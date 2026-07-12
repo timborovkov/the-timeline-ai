@@ -501,6 +501,36 @@ describe('task category and primary project state', () => {
     ]);
   });
 
+  it('restores failed automatic state when an explicit retry cannot reach the queue', async () => {
+    const scope = withTeam(db, TEAM_A, USER_A).objects;
+    const task = await scope.createObject({
+      type: 'task',
+      canonicalName: 'Retry category safely',
+      actor: { kind: 'user', userId: USER_A },
+    });
+    const input = await scope.getTaskCategoryClassificationInput(task.id);
+    if (!input) throw new Error('Expected pending category input');
+    await scope.failTaskCategoryClassification({
+      taskId: task.id,
+      inputHash: input.inputHash,
+      model: 'test-model',
+      failureCode: 'test_failure',
+      latencyMs: 10,
+    });
+    vi.mocked(queue.enqueueTaskCategoryJob).mockRejectedValueOnce(new Error('redis down'));
+
+    await expect(
+      scope.retryTaskCategory(task.id, { kind: 'user', userId: USER_A }),
+    ).rejects.toThrow('redis down');
+    await expect(scope.listObjects({ id: task.id })).resolves.toEqual([
+      expect.objectContaining({
+        taskCategoryMode: 'automatic',
+        taskCategoryStatus: 'failed',
+      }),
+    ]);
+    await expect(scope.getTaskCategoryClassificationInput(task.id)).resolves.toBeNull();
+  });
+
   it('recomputes a restored pending hash when task context changed during a manual override', async () => {
     const scope = withTeam(db, TEAM_A, USER_A).objects;
     const task = await scope.createObject({

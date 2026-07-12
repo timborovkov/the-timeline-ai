@@ -545,13 +545,19 @@ function useTaskBoardController({
     }
     return ids;
   }, [effectiveRows]);
+  const pendingCategoryKey = pendingCategoryIds.join(',');
   const categoryPollStartedAt = useRef<number | null>(null);
+  const categoryPollKey = useRef<string | null>(null);
   useEffect(() => {
     if (pendingCategoryIds.length === 0) {
       categoryPollStartedAt.current = null;
+      categoryPollKey.current = null;
       return;
     }
-    categoryPollStartedAt.current ??= Date.now();
+    if (categoryPollKey.current !== pendingCategoryKey) {
+      categoryPollKey.current = pendingCategoryKey;
+      categoryPollStartedAt.current = Date.now();
+    }
     const pendingIds = pendingCategoryIds.slice(0, 200);
     const timer = setInterval(() => {
       if (Date.now() - (categoryPollStartedAt.current ?? Date.now()) > 60_000) {
@@ -567,7 +573,7 @@ function useTaskBoardController({
     return () => {
       clearInterval(timer);
     };
-  }, [pendingCategoryIds, router]);
+  }, [pendingCategoryIds, pendingCategoryKey, router]);
   const visibleRows = useMemo(
     () => filterObjectsByText(effectiveRows, filterQuery, { groupBy: 'status' }),
     [effectiveRows, filterQuery],

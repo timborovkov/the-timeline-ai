@@ -3608,7 +3608,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         ),
       )
       .limit(1);
-    if (createdForSuggestion) {
+    if (createdForSuggestion?.name.toLowerCase() === payload.createProjectName.toLowerCase()) {
       const projectName = createdForSuggestion.archivedAt
         ? (
             await objects.unarchiveObject(createdForSuggestion.id, {

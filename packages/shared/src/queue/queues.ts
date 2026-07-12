@@ -1192,11 +1192,7 @@ export async function enqueueTaskCategoryJob(
     const state = await existing.getState?.().catch(() => null);
     if (!state || SUGGESTION_JOB_DEDUPE_STATES.has(state)) return { enqueued: false, jobId };
     if (SUGGESTION_JOB_REPLACEABLE_STATES.has(state) && existing.remove) {
-      const removed = await existing.remove().then(
-        () => true,
-        () => false,
-      );
-      if (!removed) return { enqueued: false, jobId };
+      await existing.remove();
     } else {
       return { enqueued: false, jobId };
     }

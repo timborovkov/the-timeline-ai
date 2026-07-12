@@ -170,6 +170,49 @@ describe('TaskBoard', () => {
     expect(screen.getByText('P2')).toBeTruthy();
   });
 
+  it('starts a fresh category polling window when the pending task set changes', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-07-13T10:00:00.000Z'));
+    try {
+      const first = task({ id: 'task-1', taskCategoryStatus: 'pending' });
+      const view = renderBoard(null, [first]);
+      act(() => {
+        vi.advanceTimersByTime(62_500);
+      });
+      fakes.loadTaskCategoryStatesAction.mockClear();
+
+      const second = task({
+        id: 'task-2',
+        canonicalName: 'Newly pending task',
+        taskCategoryStatus: 'pending',
+      });
+      view.rerender(
+        <TaskBoard
+          rows={[first, second]}
+          columns={['todo', 'doing', 'done', 'blocked', 'cancelled']}
+          selectedTaskId={null}
+          view="kanban"
+          members={[
+            { id: 'user-1', label: 'Ada Lovelace' },
+            { id: 'user-2', label: 'Grace Hopper' },
+          ]}
+          totalCount={2}
+          nextCursor={null}
+          filterParams={{}}
+        />,
+      );
+      act(() => {
+        vi.advanceTimersByTime(2_500);
+      });
+
+      expect(fakes.loadTaskCategoryStatesAction).toHaveBeenCalledWith({
+        ids: ['task-1', 'task-2'],
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('removes an asynchronously-hydrated project from the task card after clearing it', async () => {
     fakes.loadTaskPrimaryProjectsAction.mockResolvedValue({
       rows: [

@@ -6186,18 +6186,52 @@ async function transitionTaskCategoryToPending(
         sourceEventId: null,
       });
     }
-    return { object: toObjectRow(updated), inputHash };
+    return {
+      object: toObjectRow(updated),
+      inputHash,
+      previous: taskCategoryStateSnapshot(task),
+      previousUpdatedAt: task.taskCategoryUpdatedAt,
+    };
   });
-  enqueueTaskCategoryBestEffort(
-    {
+  const job = { teamId: scope.teamId, taskId, inputHash: result.inputHash, trigger };
+  if (!requireFailed) {
+    enqueueTaskCategoryBestEffort(job, {
       teamId: scope.teamId,
       taskId,
-      inputHash: result.inputHash,
-      trigger,
-    },
-    { teamId: scope.teamId, taskId, op: 'transitionTaskCategoryToPending' },
-  );
-  return result;
+      op: 'transitionTaskCategoryToPending',
+    });
+    return { object: result.object, inputHash: result.inputHash };
+  }
+  try {
+    await embedQueue.enqueueTaskCategoryJob(job);
+  } catch (error) {
+    await db
+      .update(entities)
+      .set({
+        taskCategory: result.previous.category,
+        taskCategoryMode: result.previous.mode,
+        taskCategorySource: result.previous.source,
+        taskCategoryStatus: result.previous.status,
+        taskCategoryAppliedInputHash: result.previous.appliedInputHash,
+        taskCategoryRequestedInputHash: result.previous.requestedInputHash,
+        taskCategoryTaxonomyVersion: result.previous.taxonomyVersion,
+        taskCategoryUpdatedAt: result.previousUpdatedAt,
+      })
+      .where(
+        and(
+          eq(entities.teamId, scope.teamId),
+          eq(entities.id, taskId),
+          eq(entities.type, 'task'),
+          eq(entities.taskCategoryMode, 'automatic'),
+          eq(entities.taskCategoryStatus, 'pending'),
+          eq(entities.taskCategoryRequestedInputHash, result.inputHash),
+          isNull(entities.archivedAt),
+          isNull(entities.mergedIntoId),
+        ),
+      );
+    throw error;
+  }
+  return { object: result.object, inputHash: result.inputHash };
 }
 
 export function resetTaskCategoryToAutomatic(
