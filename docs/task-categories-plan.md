@@ -506,7 +506,9 @@ Acceptance validates that an existing target is still an active project in the
 same team. If it disappeared, merged, or changed type, acceptance fails clearly
 instead of creating a cross-team or dangling edge. New project creation is
 idempotent by suggestion item and reuses an exact active project match, so a
-retry cannot create duplicate projects.
+retry cannot create duplicate projects. If the project is archived as
+compensation after the task write fails, retry unarchives and reuses that
+suggestion-owned project instead of colliding with its canonical name.
 
 Agent-created task relationships remain approval-backed under existing task
 creation/action rules. Proposal-time categorization may read the proposed
@@ -673,6 +675,11 @@ The transition into `pending` and requested-hash write should occur in the same
 database transaction as the triggering canonical change when possible. Redis
 enqueue happens after commit. This lets the janitor identify lost enqueues
 without guessing from category nullability.
+
+User-triggered reset, retry, and undo-to-pending transitions must first verify
+that classification, enqueue, and worker controls are enabled. If automation is
+unavailable, preserve the current category state and show an actionable error
+instead of leaving the task indefinitely in `pending`.
 
 Automatic category writes must not modify `entities.updated_at`. Otherwise a
 historical backfill would reorder every task, invalidate cursor expectations,
@@ -937,10 +944,10 @@ private helper calls.
 | --- | --- |
 | Pure/unit | Taxonomy/key/label/version uniqueness; Zod validation; deterministic packet/hash and truncation; state transition reducer; URL parsing; OR-within/AND-between filter semantics; project + category AND semantics; `Uncategorized` sentinel; category badge/select rendering |
 | Migration/schema | Existing non-task and task rows migrate safely; checks reject impossible states; composite team/entity FK; cascading delete; audit of tasks with multiple project-child edges; type-away/type-into-task transitions; down/rollback procedure is documented even if migrations remain forward-only |
-| DB integration (PGlite) | Create/read/filter/count/search; null/pending/failed filtering; project filter by durable edge; project set/replace/remove under task row lock; zero-or-one project semantics; generic relationship paths cannot bypass `setTaskProject`; legacy non-project child edges excluded and preserved; archived project remains readable but cannot be newly selected; rename/merge/type-change lifecycle behavior; wrong-type/merged/cross-team project rejection; assignment/change/relationship audit; manual override; reset/retry; previous-value retention; stale success/failure and in-flight human-edit races; archive skips; duplicate idempotency |
+| DB integration (PGlite) | Create/read/filter/count/search; null/pending/failed filtering; project filter by durable edge; project set/replace/remove under task row lock; zero-or-one project semantics; generic relationship paths cannot bypass `setTaskProject`; legacy non-project child edges excluded and preserved; archived project remains readable but cannot be newly selected; suggestion retry reuses its compensated archived project; rename/merge/type-change lifecycle behavior; wrong-type/merged/cross-team project rejection; assignment/change/relationship audit; manual override; reset/retry/undo preserve state when automation is unavailable; previous-value retention; stale success/failure and in-flight human-edit races; archive skips; duplicate idempotency |
 | PostgreSQL query QA | `EXPLAIN (ANALYZE, BUFFERS)` on representative task/object/board category filters, project-edge filters, inverse Connected Work reads, and counts; partial index usage; no N+1 project hydration; no regression for unfiltered queries; category backfill does not reorder `updated_at` cursors |
 | Queue/worker | Enqueue after all canonical create paths and eligible context/type/project/project-name changes; job-id dedupe by requested hash; retained failed/completed same-hash job replacement on retry; model failure retry; invalid output; lost-enqueue janitor recovery for retained prior values; project replacement makes the old job stale; capped project fan-out; no reclassification for ordinary status/due edits; no notifications/timeline/reconciliation spam; per-team fairness |
-| Web actions/components | Valid project create/set/replace/remove and prefilled project-page quick-add; archived/project-needs-review presentation; generic child editor guard; project search permissions; approval preview; valid category update/reset/retry/undo; permission and invalid-category rejection; optimistic card update; bounded batch polling; stale poll response protection; task/object/board filter propagation; exact project/category display matrix; non-task cards without a category badge; bulk category change and bulk-auto confirmation; accessibility states |
+| Web actions/components | Valid project create/set/replace/remove and prefilled active-project quick-add; no quick-add action on archived projects; archived/project-needs-review presentation; generic child editor guard; project search permissions; approval preview; valid category update/reset/retry/undo; permission, unavailable-automation, and invalid-category rejection; optimistic card update; bounded batch polling; stale poll response protection; task/object/board filter propagation; exact project/category display matrix; non-task cards without a category badge; bulk category change and bulk-auto confirmation; accessibility states |
 | Agent/MCP | Category and primary project serialized in results; “list Engineering tasks for Faba website redesign” applies both structured filters; unique project ownership produces `parentObjectId`; ambiguous/co-mentioned projects do not; unknown category/project rejected; pending/failed fields are not misrepresented; existing clients remain compatible with additive fields |
 | Export/operations | Team export disposition; assignment-history cascade; dry-run cost report; resumable/pauseable backfill; kill switch; metrics contain no task text |
 | E2E | Create `Faba website redesign`, quick-add a task from that project, prove the durable project link appears on both task and project, observe live automatic category without reload, filter by project and category, change category manually, prove override persists, change/remove the project, observe automatic reclassification, and exercise terminal failure/retry |
@@ -1303,6 +1310,8 @@ the current branch before editing.
 - Generic relationship actions cannot create a second project edge; archived
   projects remain visible on existing tasks, and rename/merge/type-change
   behavior preserves history while invalidating category context safely.
+- Failed suggestion acceptance can be retried without duplicating or colliding
+  with a project created and archived by the previous attempt.
 - AI task creation links a project only from explicit, unique ownership context,
   shows it before approval, and never treats co-mention or category as project
   membership.
@@ -1310,7 +1319,8 @@ the current branch before editing.
   unrelated edits, delayed model responses, retries, and worker restarts.
 - A teammate can undo a correction, retry a failure, and explicitly return a
   task to automatic categorization without losing the last category while the
-  replacement is pending.
+  replacement is pending; if automation is disabled, the prior state remains
+  unchanged instead of becoming stuck in `pending`.
 - Category filters work consistently on Tasks, Objects, and Boards, including
   counts, pagination, multiple values, and `Uncategorized`.
 - Automatic backfill and reclassification do not change canonical task

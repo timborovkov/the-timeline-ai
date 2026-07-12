@@ -1363,7 +1363,7 @@ function ObjectDetailHeader({
         </div>
         <div className="flex flex-col items-start gap-2 lg:max-w-sm lg:items-end">
           {alerts}
-          {detail.type === 'project' ? (
+          {detail.type === 'project' && detail.archivedAt === null ? (
             <Link
               href={`/app/objects/new?project=${encodeURIComponent(detail.id)}&returnTo=${encodeURIComponent(`/app/objects/${detail.id}`)}`}
               className="rounded-sm border border-signal/40 bg-signal-soft px-3 py-2 font-mono text-[11px] uppercase tracking-[0.12em] text-signal hover:bg-signal/20"

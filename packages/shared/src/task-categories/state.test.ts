@@ -13,6 +13,7 @@ import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { resetEnvForTests } from '#src/env.js';
 import * as queue from '#src/queue/queues.js';
 import { withTeam } from '#src/team-scope.js';
 import { createResettablePGliteTestDb, type ResettablePGliteTestDb } from '#src/test/pglite.js';
@@ -30,6 +31,7 @@ const TEAM_A = '11111111-1111-1111-1111-111111111111';
 const TEAM_B = '22222222-2222-4222-8222-222222222222';
 const USER_A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const USER_B = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+const ORIGINAL_ENV = { ...process.env };
 
 let testDb: ResettablePGliteTestDb;
 let db: Db;
@@ -53,10 +55,19 @@ beforeAll(async () => {
 
 beforeEach(async () => {
   vi.clearAllMocks();
+  process.env.TASK_CATEGORY_CLASSIFICATION_ENABLED = 'true';
+  process.env.TASK_CATEGORY_AUTO_ENQUEUE_ENABLED = 'true';
+  process.env.TASK_CATEGORY_BACKFILL_ENABLED = 'true';
+  process.env.TASK_CATEGORY_WORKER_ENABLED = 'true';
+  resetEnvForTests();
   await testDb.reset();
 });
 
-afterAll(async () => testDb.close());
+afterAll(async () => {
+  process.env = { ...ORIGINAL_ENV };
+  resetEnvForTests();
+  await testDb.close();
+});
 
 describe('task category and primary project state', () => {
   it('creates a pending automatic task with a durable, filterable primary project', async () => {
@@ -321,6 +332,29 @@ describe('task category and primary project state', () => {
     ).toHaveLength(2);
   });
 
+  it('preserves a manual category when automatic classification is unavailable', async () => {
+    const scope = withTeam(db, TEAM_A, USER_A).objects;
+    const task = await scope.createObject({
+      type: 'task',
+      canonicalName: 'Keep the manual category',
+      actor: { kind: 'user', userId: USER_A },
+    });
+    await scope.setTaskCategory(task.id, 'design', { kind: 'user', userId: USER_A });
+    process.env.TASK_CATEGORY_CLASSIFICATION_ENABLED = 'false';
+    resetEnvForTests();
+
+    await expect(
+      scope.resetTaskCategoryToAutomatic(task.id, { kind: 'user', userId: USER_A }),
+    ).rejects.toThrow('Automatic task categorization is unavailable');
+    await expect(scope.listObjects({ id: task.id })).resolves.toEqual([
+      expect.objectContaining({
+        taskCategory: 'design',
+        taskCategoryMode: 'manual',
+        taskCategoryStatus: 'ready',
+      }),
+    ]);
+  });
+
   it('undoes a manual correction by restoring the prior value and authority without deleting history', async () => {
     const scope = withTeam(db, TEAM_A, USER_A).objects;
     const task = await scope.createObject({
@@ -397,6 +431,35 @@ describe('task category and primary project state', () => {
       inputHash: pending?.requestedInputHash,
       trigger: 'retry',
     });
+  });
+
+  it('preserves a manual category when undo cannot restore pending automation', async () => {
+    const scope = withTeam(db, TEAM_A, USER_A).objects;
+    const task = await scope.createObject({
+      type: 'task',
+      canonicalName: 'Classify this when automation returns',
+      actor: { kind: 'user', userId: USER_A },
+    });
+    const correction = await scope.setTaskCategory(task.id, 'product', {
+      kind: 'user',
+      userId: USER_A,
+    });
+    process.env.TASK_CATEGORY_CLASSIFICATION_ENABLED = 'false';
+    resetEnvForTests();
+
+    await expect(
+      scope.undoTaskCategoryChange(task.id, correction.changeId, {
+        kind: 'user',
+        userId: USER_A,
+      }),
+    ).rejects.toThrow('Automatic task categorization is unavailable');
+    await expect(scope.listObjects({ id: task.id })).resolves.toEqual([
+      expect.objectContaining({
+        taskCategory: 'product',
+        taskCategoryMode: 'manual',
+        taskCategoryStatus: 'ready',
+      }),
+    ]);
   });
 
   it('recomputes a restored pending hash when task context changed during a manual override', async () => {

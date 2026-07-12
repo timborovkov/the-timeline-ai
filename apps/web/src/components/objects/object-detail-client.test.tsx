@@ -780,6 +780,23 @@ describe('ObjectDetailClient', () => {
     expect(objectActions.repairObjectMemoryAction).not.toHaveBeenCalled();
   });
 
+  it('does not offer task creation from an archived project', () => {
+    render(
+      objectDetailElement({
+        detail: {
+          ...detail,
+          type: 'project',
+          canonicalName: 'Archived client project',
+          archivedAt: new Date('2026-06-02T10:00:00.000Z'),
+        },
+        userId: 'user-1',
+        suggestions: [],
+      }),
+    );
+
+    expect(screen.queryByRole('link', { name: 'Add task' })).toBeNull();
+  });
+
   it('applies refreshed server detail props without requiring updatedAt to change', async () => {
     const refreshedDetail = {
       ...detail,

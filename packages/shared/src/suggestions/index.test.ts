@@ -3599,7 +3599,7 @@ describe('suggestion scope', () => {
 
   it('archives a newly proposed project when task creation cannot complete', async () => {
     const scope = withTeam(db as never, TEAM_ID, USER_ID);
-    await scope.objects.createObject({
+    const conflictingTask = await scope.objects.createObject({
       type: 'task',
       canonicalName: 'Prepare duplicate wireframes',
       actor: { kind: 'user', userId: USER_ID },
@@ -3645,6 +3645,17 @@ describe('suggestion scope', () => {
         expect.stringContaining('Agent applied project: Project that must roll back — archivedAt'),
       ]),
     );
+
+    await db.delete(entities).where(eq(entities.id, conflictingTask.id));
+    await expect(scope.suggestions.acceptSuggestionItem(bundle.items[0]?.id ?? '')).resolves.toBe(
+      true,
+    );
+    const retriedProjects = await db
+      .select()
+      .from(entities)
+      .where(eq(entities.canonicalName, 'Project that must roll back'));
+    expect(retriedProjects).toHaveLength(1);
+    expect(retriedProjects[0]?.archivedAt).toBeNull();
   });
 
   it('keeps a proposed task pending when its category context hash is stale', async () => {

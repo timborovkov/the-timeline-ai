@@ -3593,19 +3593,36 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     if (!payload.createProjectName) return null;
 
     const [createdForSuggestion] = await db
-      .select({ id: entities.id, name: entities.canonicalName })
+      .select({
+        id: entities.id,
+        name: entities.canonicalName,
+        archivedAt: entities.archivedAt,
+      })
       .from(entities)
       .where(
         and(
           eq(entities.teamId, teamId),
           eq(entities.type, 'project'),
-          isNull(entities.archivedAt),
           isNull(entities.mergedIntoId),
           sql`${entities.metadata} ->> 'agent_suggestion_project_for_item_id' = ${item.id}`,
         ),
       )
       .limit(1);
-    if (createdForSuggestion) return { ...createdForSuggestion, createdForSuggestion: false };
+    if (createdForSuggestion) {
+      const projectName = createdForSuggestion.archivedAt
+        ? (
+            await objects.unarchiveObject(createdForSuggestion.id, {
+              kind: 'agent',
+              userId: null,
+            })
+          ).canonicalName
+        : createdForSuggestion.name;
+      return {
+        id: createdForSuggestion.id,
+        name: projectName,
+        createdForSuggestion: true,
+      };
+    }
 
     const exactProjects = await db
       .select({ id: entities.id, name: entities.canonicalName })

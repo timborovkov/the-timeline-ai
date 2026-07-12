@@ -77,6 +77,7 @@ import {
   type DueDateCalendarSyncResult,
 } from '#src/calendar/due-dates.js';
 import { reconcileLinkArtifactsForRawEvent } from '#src/conversational/link-artifacts.js';
+import { getEnv } from '#src/env.js';
 import { TIMELINE_MODELS } from '#src/llm/models.js';
 import { childLogger } from '#src/logger.js';
 import {
@@ -5940,6 +5941,7 @@ export async function undoTaskCategoryChange(
         taxonomyVersion: TASK_CATEGORY_TAXONOMY_VERSION,
       };
     }
+    if (enqueueInputHash) assertTaskCategoryAutomationAvailable('retry');
     const now = new Date();
     const [updated] = await tx
       .update(entities)
@@ -5994,6 +5996,23 @@ export async function undoTaskCategoryChange(
   return toObjectRow(result.row);
 }
 
+function assertTaskCategoryAutomationAvailable(
+  trigger: 'context_change' | 'retry' | 'backfill',
+): void {
+  const env = getEnv();
+  const enqueueEnabled =
+    trigger === 'backfill'
+      ? env.TASK_CATEGORY_BACKFILL_ENABLED
+      : env.TASK_CATEGORY_AUTO_ENQUEUE_ENABLED;
+  if (
+    !env.TASK_CATEGORY_CLASSIFICATION_ENABLED ||
+    !env.TASK_CATEGORY_WORKER_ENABLED ||
+    !enqueueEnabled
+  ) {
+    throw new Error('Automatic task categorization is unavailable');
+  }
+}
+
 async function transitionTaskCategoryToPending(
   db: Db,
   scope: TeamScopeCore,
@@ -6003,6 +6022,7 @@ async function transitionTaskCategoryToPending(
   trigger: 'context_change' | 'retry' | 'backfill',
 ): Promise<{ object: ObjectRow; inputHash: string }> {
   await scope.requireMembership();
+  assertTaskCategoryAutomationAvailable(trigger);
   if (!UUID_RE.test(taskId)) throw new Error('Invalid entity id');
   const result = await db.transaction(async (tx) => {
     const [task] = await tx
