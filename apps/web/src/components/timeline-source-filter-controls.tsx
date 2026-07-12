@@ -34,7 +34,7 @@ export function TimelineSourceFilterControls({ source, origin, originOptions }: 
         placeholder="All sources"
         options={TIMELINE_SOURCES.map(([value, label]) => ({ value, label }))}
       />
-      {originOptions.length > 0 ? (
+      {originOptions.length > 0 || selection.origin ? (
         <FilterMultiSelect
           name="origin"
           label="Specific source"

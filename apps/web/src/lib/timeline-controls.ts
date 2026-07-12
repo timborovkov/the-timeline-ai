@@ -176,6 +176,20 @@ export function updateTimelineSourceSelection(
   return current;
 }
 
+export function isTimelinePresetActive(
+  preset: TimelinePreset,
+  input: {
+    sourceFilters: readonly TimelineSource[];
+    impactCount: number;
+    hasOriginFilter: boolean;
+  },
+): boolean {
+  if ('source' in preset) {
+    return input.sourceFilters.length === 1 && preset.source === input.sourceFilters[0];
+  }
+  return input.sourceFilters.length === 0 && input.impactCount === 0 && !input.hasOriginFilter;
+}
+
 function isSafeOriginPart(value: string | undefined): value is string {
   return Boolean(value && value.length <= 200 && !/[\s,]/.test(value));
 }

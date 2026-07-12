@@ -6,6 +6,8 @@ import {
   parseTimelineOrigins,
   parseTimelineSource,
   parseTimelineSources,
+  isTimelinePresetActive,
+  TIMELINE_PRESETS,
   timelineHref,
   timelineOriginOptions,
   timelineOriginValue,
@@ -91,6 +93,24 @@ describe('timeline controls', () => {
     expect(
       updateTimelineSourceSelection({ source: '', origin: 'monday:42' }, { source: '' }),
     ).toEqual({ source: '', origin: 'monday:42' });
+  });
+
+  it('does not mark the All preset active while a specific source is selected', () => {
+    const allPreset = TIMELINE_PRESETS[0];
+    expect(
+      isTimelinePresetActive(allPreset, {
+        sourceFilters: [],
+        impactCount: 0,
+        hasOriginFilter: true,
+      }),
+    ).toBe(false);
+    expect(
+      isTimelinePresetActive(allPreset, {
+        sourceFilters: [],
+        impactCount: 0,
+        hasOriginFilter: false,
+      }),
+    ).toBe(true);
   });
 
   it('parses impact presets and rejects unknown values', () => {

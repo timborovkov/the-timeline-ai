@@ -24,6 +24,7 @@ import {
   TIMELINE_IMPACT_FILTERS,
   TIMELINE_PRESETS,
   TIMELINE_SOURCES,
+  isTimelinePresetActive,
   parseTimelineImpacts,
   parseTimelineOrigins,
   parseTimelineSources,
@@ -500,6 +501,7 @@ function TimelineBrowserSection({
         momentCount={moments?.length ?? events.length}
         sourceFilters={sourceFilters}
         impactFilters={impactFilters}
+        hasOriginFilter={Boolean(originFilterValue)}
       />
       <TimelineFeed
         initialPage={{
@@ -668,6 +670,7 @@ function TimelinePresetControls({
   momentCount,
   sourceFilters,
   impactFilters,
+  hasOriginFilter,
 }: {
   baseParams: TimelineBaseParams;
   mode: TimelineMode;
@@ -675,6 +678,7 @@ function TimelinePresetControls({
   momentCount: number;
   sourceFilters: ReturnType<typeof parseTimelineSources>;
   impactFilters: ReturnType<typeof parseTimelineImpacts>;
+  hasOriginFilter: boolean;
 }) {
   return (
     <div className="flex flex-wrap items-center justify-between gap-3 border-y border-border py-2">
@@ -688,11 +692,11 @@ function TimelinePresetControls({
                   origin: null,
                   impact: null,
                 });
-          const active =
-            ('source' in preset &&
-              sourceFilters.length === 1 &&
-              preset.source === sourceFilters[0]) ||
-            ('all' in preset && sourceFilters.length === 0 && impactFilters.length === 0);
+          const active = isTimelinePresetActive(preset, {
+            sourceFilters,
+            impactCount: impactFilters.length,
+            hasOriginFilter,
+          });
           return (
             <Link
               key={preset.label}
