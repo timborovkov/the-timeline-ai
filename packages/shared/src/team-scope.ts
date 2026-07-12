@@ -31,6 +31,7 @@ import {
   teamVisibilityDefaults,
   teams,
   teamRole,
+  telegramChatBindings,
   timelineMomentPresentations,
   users,
   visibilityDefaultSource,
@@ -1624,7 +1625,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
     >`${rawEvents.sourceMetadata} ->> 'slack_channel_name'`;
     const telegramChatId = sql<string | null>`${rawEvents.sourceMetadata} ->> 'tg_chat_id'`;
     const telegramChatTitle = sql<string | null>`${rawEvents.sourceMetadata} ->> 'tg_chat_title'`;
-    const [integrationRows, githubOrgExpansions, slackBindings, recentEvents] = await Promise.all([
+    const sourceFacetRows = await Promise.all([
       db
         .select({
           provider: integrations.provider,
@@ -1660,6 +1661,13 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
             integrationVisibility,
           ),
         ),
+      db
+        .select({
+          chatId: telegramChatBindings.tgChatId,
+          label: telegramChatBindings.title,
+        })
+        .from(telegramChatBindings)
+        .where(eq(telegramChatBindings.teamId, teamId)),
       db
         .select({
           workspaceId: slackWorkspaces.slackTeamId,
@@ -1703,6 +1711,8 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
         .orderBy(desc(rawEvents.occurredAt), desc(rawEvents.id))
         .limit(RECENT_SOURCE_FACET_EVENT_LIMIT),
     ]);
+    const [integrationRows, githubOrgExpansions, telegramBindings, slackBindings, recentEvents] =
+      sourceFacetRows;
 
     for (const row of integrationRows) {
       add(`provider:${row.provider}`, {
@@ -1761,6 +1771,14 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
           channelId: row.channelId,
         },
         label: row.label ? `#${row.label.replace(/^#/, '')}` : row.channelId,
+        eventCount: 0,
+      });
+    }
+    for (const row of telegramBindings) {
+      const chatId = String(row.chatId);
+      add(`telegram:${chatId}`, {
+        filter: { kind: 'telegram_chat', chatId },
+        label: row.label ?? chatId,
         eventCount: 0,
       });
     }

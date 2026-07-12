@@ -14,6 +14,7 @@ import { DebouncedFilterForm } from '@/components/debounced-filter-form';
 import { FilterMultiSelect } from '@/components/filter-multi-select';
 import { IndexStrip } from '@/components/index-strip';
 import { TimelineFeed } from '@/components/timeline-feed';
+import { TimelineSourceFilterControls } from '@/components/timeline-source-filter-controls';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
@@ -592,26 +593,12 @@ function TimelineFilterPanel({
         >
           {baseParams.mode ? <input type="hidden" name="mode" value={baseParams.mode} /> : null}
           <div className="flex min-w-0 flex-wrap items-end gap-2">
-            <FilterMultiSelect
-              key={`timeline-source:${sourceFilterValue}`}
-              name="source"
-              label="Source"
-              defaultValue={sourceFilterValue}
-              placeholder="All sources"
-              options={TIMELINE_SOURCES.map(([value, label]) => ({ value, label }))}
+            <TimelineSourceFilterControls
+              key={`timeline-source-filters:${sourceFilterValue}:${originFilterValue}`}
+              source={sourceFilterValue}
+              origin={originFilterValue}
+              originOptions={originOptions}
             />
-            {originOptions.length > 0 ? (
-              <FilterMultiSelect
-                key={`timeline-origin:${originFilterValue}`}
-                name="origin"
-                label="Specific source"
-                defaultValue={originFilterValue}
-                placeholder="Any integration or channel"
-                options={originOptions}
-                className="min-w-56"
-                triggerClassName="max-w-72"
-              />
-            ) : null}
             <FilterMultiSelect
               key={`timeline-impact:${impactFilterValue}`}
               name="impact"

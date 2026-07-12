@@ -34,6 +34,11 @@ export interface TimelineOriginOption {
   label: string;
 }
 
+export interface TimelineSourceSelection {
+  source: string;
+  origin: string;
+}
+
 export const TIMELINE_PRESETS = [
   { label: 'All', all: true },
   { label: 'Chat', source: 'chat' },
@@ -150,6 +155,25 @@ export function timelineOriginOptions(
       facet.filter.kind === 'provider' ? 'All activity' : facet.label
     }`,
   }));
+}
+
+export function updateTimelineSourceSelection(
+  current: TimelineSourceSelection,
+  update: Partial<TimelineSourceSelection>,
+): TimelineSourceSelection {
+  if (update.source !== undefined) {
+    return {
+      source: update.source,
+      origin: update.source ? '' : current.origin,
+    };
+  }
+  if (update.origin !== undefined) {
+    return {
+      source: update.origin ? '' : current.source,
+      origin: update.origin,
+    };
+  }
+  return current;
 }
 
 function isSafeOriginPart(value: string | undefined): value is string {

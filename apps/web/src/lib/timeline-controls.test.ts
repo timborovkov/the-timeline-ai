@@ -10,6 +10,7 @@ import {
   timelineOriginOptions,
   timelineOriginValue,
   timelineSourceValues,
+  updateTimelineSourceSelection,
 } from '@/lib/timeline-controls';
 
 describe('timeline controls', () => {
@@ -72,6 +73,24 @@ describe('timeline controls', () => {
       { value: 'provider:monday', label: 'Monday.com · All activity' },
       { value: 'monday:42', label: 'Monday.com board · Launch plan' },
     ]);
+  });
+
+  it('lets the most recently selected source scope replace the other scope', () => {
+    expect(
+      updateTimelineSourceSelection(
+        { source: '', origin: 'monday:42' },
+        { source: 'integrations' },
+      ),
+    ).toEqual({ source: 'integrations', origin: '' });
+    expect(
+      updateTimelineSourceSelection(
+        { source: 'integrations', origin: '' },
+        { origin: 'monday:42' },
+      ),
+    ).toEqual({ source: '', origin: 'monday:42' });
+    expect(
+      updateTimelineSourceSelection({ source: '', origin: 'monday:42' }, { source: '' }),
+    ).toEqual({ source: '', origin: 'monday:42' });
   });
 
   it('parses impact presets and rejects unknown values', () => {

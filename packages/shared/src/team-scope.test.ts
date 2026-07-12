@@ -23,6 +23,7 @@ import {
   reconciliationOutputs,
   teamProviderResourceShares,
   teamVisibilityDefaults,
+  telegramChatBindings,
 } from '@timeline/db';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
@@ -720,6 +721,20 @@ describe('withTeam namespaced port', () => {
         cursor: { repos: ['secret/repo'], fetched_at: new Date().toISOString() },
       },
     ]);
+    await db.insert(telegramChatBindings).values([
+      {
+        tgChatId: -100500,
+        teamId: TEAM_A,
+        boundByUserId: USER_A,
+        title: 'Durable team chat',
+      },
+      {
+        tgChatId: -100600,
+        teamId: TEAM_B,
+        boundByUserId: USER_A,
+        title: 'Other team chat',
+      },
+    ]);
 
     const facets = await withTeam(db as never, TEAM_A, USER_A).timeline.listSourceFacets();
     expect(facets.filter((facet) => facet.filter.kind === 'monday_board')).toHaveLength(501);
@@ -736,12 +751,17 @@ describe('withTeam namespaced port', () => {
           filter: { kind: 'github_repo', repo: 'acme/api' },
           label: 'acme/api',
         }),
+        expect.objectContaining({
+          filter: { kind: 'telegram_chat', chatId: '-100500' },
+          label: 'Durable team chat',
+        }),
       ]),
     );
     expect(facets).not.toEqual(
       expect.arrayContaining([
         expect.objectContaining({ filter: { kind: 'monday_board', boardId: 'secret-board' } }),
         expect.objectContaining({ filter: { kind: 'github_repo', repo: 'secret/repo' } }),
+        expect.objectContaining({ filter: { kind: 'telegram_chat', chatId: '-100600' } }),
       ]),
     );
   });
