@@ -31,6 +31,9 @@ class FakeJob {
 
   getState = vi.fn(() => Promise.resolve(this.queue.jobStates.get(this.id) ?? 'waiting'));
   remove = vi.fn(() => {
+    if (this.queue.removeFailures.has(this.id)) {
+      return Promise.reject(new Error('remove failed'));
+    }
     this.queue.jobs.delete(this.id);
     this.queue.jobStates.delete(this.id);
     return Promise.resolve();
@@ -42,6 +45,7 @@ class FakeQueue {
   options: Record<string, unknown>;
   jobs = new Set<string>();
   jobStates = new Map<string, string>();
+  removeFailures = new Set<string>();
   add = vi.fn<
     (name: string, data: unknown, opts?: { delay?: number; jobId?: string }) => Promise<void>
   >((name, data, opts) => {
@@ -668,6 +672,29 @@ describe('queue wrappers', () => {
     const retry = await queues.enqueueTaskCategoryJob({ ...data, trigger: 'retry' });
     expect(retry).toMatchObject({ enqueued: true, jobId: first.jobId });
     expect(fakes.queues[0]?.addCalls).toHaveLength(2);
+  });
+
+  it('does not report a task category retry as enqueued when terminal job removal fails', async () => {
+    process.env.TASK_CATEGORY_CLASSIFICATION_ENABLED = 'true';
+    process.env.TASK_CATEGORY_AUTO_ENQUEUE_ENABLED = 'true';
+    const queues = await importQueues();
+    const data = {
+      teamId: '22222222-2222-4222-8222-222222222222',
+      taskId: '77777777-7777-4777-8777-777777777777',
+      inputHash: 'packet-hash-v1',
+      trigger: 'retry' as const,
+    };
+
+    const first = await queues.enqueueTaskCategoryJob(data);
+    const fakeQueue = fakes.queues[0];
+    fakeQueue?.jobStates.set(first.jobId, 'failed');
+    fakeQueue?.removeFailures.add(first.jobId);
+
+    await expect(queues.enqueueTaskCategoryJob(data)).resolves.toEqual({
+      enqueued: false,
+      jobId: first.jobId,
+    });
+    expect(fakeQueue?.addCalls).toHaveLength(1);
   });
 
   it('lets manual object summary jobs replace delayed automatic refreshes', async () => {

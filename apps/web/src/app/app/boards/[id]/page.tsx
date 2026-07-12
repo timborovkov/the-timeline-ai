@@ -65,6 +65,7 @@ export default async function BoardDetailPage({
     loadProjectFilterRows({
       listObjects: (filter) => scope.objects.listObjects(filter),
       selected: filters.project,
+      includeArchivedSelected: true,
       preloadFilter: { archived: false, limit: 200 },
     }),
     selectedServerItemId

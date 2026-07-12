@@ -154,7 +154,6 @@ describe('TasksPage', () => {
     expect(fakes.listObjects).toHaveBeenCalledWith({
       id: [projectId],
       type: 'project',
-      archived: false,
       limit: 1,
     });
     expect(fakes.filterProjects).toEqual([expect.objectContaining({ label: 'Overflow project' })]);

@@ -154,6 +154,10 @@ describe('task category and primary project state', () => {
         !query.includes('"task_category_mode"'),
     );
     expect(projectRead).toMatch(/for update/i);
+    const relationshipRead = queries.find((query) =>
+      query.includes('from "entity_relationships" inner join "entities"'),
+    );
+    expect(relationshipRead).toMatch(/for update of "entity_relationships"/i);
   });
 
   it('does not treat ambiguous legacy project edges as a primary project', async () => {

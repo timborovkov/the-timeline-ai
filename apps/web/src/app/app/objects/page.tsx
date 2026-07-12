@@ -95,6 +95,7 @@ export default async function ObjectsIndexPage({
     loadProjectFilterRows({
       listObjects: (filter) => scope.objects.listObjects(filter),
       selected: filters.project,
+      includeArchivedSelected: true,
     }),
     hasTypeFilter
       ? loadTypedObjectPage(scope.objects, { filter: objectFilter, cursor })

@@ -81,6 +81,7 @@ export default async function TasksPage({
     loadProjectFilterRows({
       listObjects: (filter) => scope.objects.listObjects(filter),
       selected: filters.project,
+      includeArchivedSelected: true,
     }),
     loadTaskRowsPage(scope.objects, null, taskFilter),
     countTaskRows(scope.objects, new Date(), taskFilter),

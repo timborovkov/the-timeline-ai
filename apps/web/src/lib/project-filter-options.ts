@@ -8,10 +8,12 @@ type ListObjects = (filter: ObjectListFilter) => Promise<ObjectRow[]>;
 export async function loadProjectFilterRows({
   listObjects,
   selected,
+  includeArchivedSelected = false,
   preloadFilter = { type: 'project', archived: false, limit: PROJECT_PRELOAD_LIMIT },
 }: {
   listObjects: ListObjects;
   selected: string;
+  includeArchivedSelected?: boolean;
   preloadFilter?: ObjectListFilter;
 }): Promise<ObjectRow[]> {
   const selectedIds = Array.from(
@@ -28,7 +30,7 @@ export async function loadProjectFilterRows({
       ? listObjects({
           id: selectedIds,
           type: 'project',
-          archived: false,
+          ...(!includeArchivedSelected ? { archived: false } : {}),
           limit: selectedIds.length,
         })
       : Promise.resolve([]),

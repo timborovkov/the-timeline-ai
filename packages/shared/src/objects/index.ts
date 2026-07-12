@@ -5436,7 +5436,7 @@ export async function setTaskProject(
           isNull(entities.mergedIntoId),
         ),
       )
-      .for('update');
+      .for('update', { of: entityRelationships });
 
     if (existing.length === 1 && existing[0]?.projectId === projectId) {
       return {
