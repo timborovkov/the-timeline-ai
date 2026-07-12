@@ -24,6 +24,7 @@ interface Props {
     from?: string | null;
     to?: string | null;
     source?: string | null;
+    origin?: string | null;
     impact?: string | null;
     event?: string | null;
     moment?: string | null;

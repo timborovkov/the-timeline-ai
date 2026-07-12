@@ -24,8 +24,11 @@ import {
   TIMELINE_PRESETS,
   TIMELINE_SOURCES,
   parseTimelineImpacts,
+  parseTimelineOrigins,
   parseTimelineSources,
   timelineHref,
+  timelineOriginOptions,
+  timelineOriginValue,
   timelineSourceValues,
 } from '@/lib/timeline-controls';
 import {
@@ -54,6 +57,7 @@ interface Props {
     from?: string;
     to?: string;
     source?: string;
+    origin?: string;
     impact?: string;
     event?: string;
     q?: string;
@@ -75,6 +79,7 @@ interface TimelineBaseParams extends Record<string, string | null | undefined> {
   from: string | null;
   to: string | null;
   mode: string | null;
+  origin: string | null;
 }
 
 function parseTimelineMode(input: string | undefined): TimelineMode {
@@ -160,6 +165,8 @@ export default async function TimelinePage({ searchParams }: Props) {
   const sourceFilters = parseTimelineSources(sp.source);
   const sourceFilterValue = sourceFilters.join(',');
   const sourceValues = timelineSourceValues(sourceFilters);
+  const originFilters = parseTimelineOrigins(sp.origin);
+  const originFilterValue = originFilters.map(timelineOriginValue).join(',');
   const impactFilters = parseTimelineImpacts(sp.impact);
   const impactFilterValue = impactFilters.join(',');
   const focusEventId = parseUuid(sp.event);
@@ -169,7 +176,7 @@ export default async function TimelinePage({ searchParams }: Props) {
   const toFilter = parseStartOfDay(sp.to, timezone);
   const toQueryFilter = parseEndOfDay(sp.to, timezone);
 
-  const [timelinePage, members] = await Promise.all([
+  const [timelinePage, members, sourceFacets] = await Promise.all([
     collectTimelinePage({
       impact: impactFilters,
       focusEventId,
@@ -182,6 +189,7 @@ export default async function TimelinePage({ searchParams }: Props) {
           from: fromFilter,
           to: toQueryFilter,
           source: sourceValues,
+          origins: originFilters,
           cursor: cursor ?? undefined,
           limit,
         });
@@ -211,6 +219,7 @@ export default async function TimelinePage({ searchParams }: Props) {
       hydrateImpact: (eventIds) => scope.timeline.listImpactItems(eventIds),
     }),
     scope.timeline.listMembers(),
+    scope.timeline.listSourceFacets(),
   ]);
   const events = timelinePage.items;
   const eventIds = events.map((event) => event.id);
@@ -266,14 +275,20 @@ export default async function TimelinePage({ searchParams }: Props) {
     fromFilter !== undefined ||
     toFilter !== undefined ||
     sourceFilters.length > 0 ||
+    originFilters.length > 0 ||
     impactFilters.length > 0;
   const hasFilters = hasPanelFilters;
+  const originOptions = timelineOriginOptions(sourceFacets);
   const sourceLabel =
-    sourceFilters.length === 1
-      ? TIMELINE_SOURCES.find(([value]) => value === sourceFilters[0])?.[1]
-      : sourceFilters.length > 1
-        ? `${String(sourceFilters.length)} sources`
-        : undefined;
+    originFilters.length === 1
+      ? originOptions.find((option) => option.value === originFilterValue)?.label
+      : originFilters.length > 1
+        ? `${String(originFilters.length)} specific sources`
+        : sourceFilters.length === 1
+          ? TIMELINE_SOURCES.find(([value]) => value === sourceFilters[0])?.[1]
+          : sourceFilters.length > 1
+            ? `${String(sourceFilters.length)} sources`
+            : undefined;
   const eventCount = events.length;
   let presentationCacheStats: TimelineMomentPresentationCacheStats =
     emptyTimelineMomentPresentationCacheStats();
@@ -317,6 +332,7 @@ export default async function TimelinePage({ searchParams }: Props) {
       from: sp.from ?? null,
       to: sp.to ?? null,
       source: sourceFilterValue || null,
+      origin: originFilterValue || null,
       impact: impactFilterValue || null,
       event: focusEventId ?? null,
       moment: focusMomentId ?? null,
@@ -330,6 +346,7 @@ export default async function TimelinePage({ searchParams }: Props) {
     event: focusEventId ?? null,
     moment: focusMomentId ?? null,
     mode: mode === 'events' ? 'events' : null,
+    origin: originFilterValue || null,
   };
   return (
     <div className="mx-auto max-w-6xl space-y-6">
@@ -375,6 +392,8 @@ export default async function TimelinePage({ searchParams }: Props) {
         hasPanelFilters={hasPanelFilters}
         sourceFilters={sourceFilters}
         sourceFilterValue={sourceFilterValue}
+        originFilterValue={originFilterValue}
+        originOptions={originOptions}
         impactFilters={impactFilters}
         impactFilterValue={impactFilterValue}
         focusEventId={focusEventId}
@@ -406,6 +425,8 @@ function TimelineBrowserSection({
   hasPanelFilters,
   sourceFilters,
   sourceFilterValue,
+  originFilterValue,
+  originOptions,
   impactFilters,
   impactFilterValue,
   focusEventId,
@@ -432,6 +453,8 @@ function TimelineBrowserSection({
   hasPanelFilters: boolean;
   sourceFilters: ReturnType<typeof parseTimelineSources>;
   sourceFilterValue: string;
+  originFilterValue: string;
+  originOptions: ReturnType<typeof timelineOriginOptions>;
   impactFilters: ReturnType<typeof parseTimelineImpacts>;
   impactFilterValue: string;
   focusEventId: string | undefined;
@@ -459,6 +482,8 @@ function TimelineBrowserSection({
         hasFilters={hasFilters}
         hasPanelFilters={hasPanelFilters}
         sourceFilterValue={sourceFilterValue}
+        originFilterValue={originFilterValue}
+        originOptions={originOptions}
         impactFilterValue={impactFilterValue}
         authorFilterValue={authorFilterValue}
         fromValue={toDateInputValue(sp.from)}
@@ -495,6 +520,7 @@ function TimelineBrowserSection({
           from: sp.from ?? null,
           to: sp.to ?? null,
           source: sourceFilterValue || null,
+          origin: originFilterValue || null,
           impact: impactFilterValue || null,
           event: focusEventId ?? null,
           moment: focusMomentId ?? null,
@@ -530,6 +556,8 @@ function TimelineFilterPanel({
   hasFilters,
   hasPanelFilters,
   sourceFilterValue,
+  originFilterValue,
+  originOptions,
   impactFilterValue,
   authorFilterValue,
   fromValue,
@@ -541,6 +569,8 @@ function TimelineFilterPanel({
   hasFilters: boolean;
   hasPanelFilters: boolean;
   sourceFilterValue: string;
+  originFilterValue: string;
+  originOptions: ReturnType<typeof timelineOriginOptions>;
   impactFilterValue: string;
   authorFilterValue: string;
   fromValue: string;
@@ -567,6 +597,18 @@ function TimelineFilterPanel({
               placeholder="All sources"
               options={TIMELINE_SOURCES.map(([value, label]) => ({ value, label }))}
             />
+            {originOptions.length > 0 ? (
+              <FilterMultiSelect
+                key={`timeline-origin:${originFilterValue}`}
+                name="origin"
+                label="Specific source"
+                defaultValue={originFilterValue}
+                placeholder="Any integration or channel"
+                options={originOptions}
+                className="min-w-56"
+                triggerClassName="max-w-72"
+              />
+            ) : null}
             <FilterMultiSelect
               key={`timeline-impact:${impactFilterValue}`}
               name="impact"
@@ -600,6 +642,7 @@ function TimelineFilterPanel({
                   from: null,
                   to: null,
                   source: null,
+                  origin: null,
                   impact: null,
                 })}
                 className="inline-flex h-9 items-center rounded-sm border border-border bg-bg px-3 text-sm text-fg-muted transition-colors hover:border-border-strong hover:text-fg"
@@ -649,9 +692,10 @@ function TimelinePresetControls({
         {TIMELINE_PRESETS.map((preset) => {
           const href =
             'all' in preset
-              ? timelineHref(baseParams, { source: null, impact: null })
+              ? timelineHref(baseParams, { source: null, origin: null, impact: null })
               : timelineHref(baseParams, {
                   source: preset.source,
+                  origin: null,
                   impact: null,
                 });
           const active =

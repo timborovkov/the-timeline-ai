@@ -183,8 +183,26 @@ export interface EventListFilters {
    * 'system' | 'document' | 'meeting' | 'integration' | 'calendar'.
    */
   source?: string | string[];
+  /**
+   * Narrow timeline events to provider- or resource-level origins. Multiple
+   * origins are ORed together, then combined with the other filters.
+   */
+  origins?: TimelineOriginFilter[];
   limit?: number;
   cursor?: string | null;
+}
+
+export type TimelineOriginFilter =
+  | { kind: 'provider'; provider: string }
+  | { kind: 'monday_board'; boardId: string }
+  | { kind: 'github_repo'; repo: string }
+  | { kind: 'slack_channel'; channelId: string; workspaceId?: string }
+  | { kind: 'telegram_chat'; chatId: string };
+
+export interface TimelineSourceFacet {
+  filter: TimelineOriginFilter;
+  label: string;
+  eventCount: number;
 }
 
 export type TimelineImpactKind =
@@ -1440,6 +1458,8 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
         eq(rawEvents.source, filters.source as (typeof rawEvents.source.enumValues)[number]),
       );
     }
+    const originCondition = timelineOriginFilterCondition(filters.origins);
+    if (originCondition) conditions.push(originCondition);
     const cursor = decodeCursor(filters.cursor);
     if (filters.cursor && !cursor) throw new Error('Invalid cursor');
     if (cursor) {
@@ -1457,6 +1477,155 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
       .where(and(...conditions))
       .orderBy(desc(rawEvents.occurredAt), desc(rawEvents.id))
       .limit(filters.limit ?? 200);
+  }
+
+  function timelineOriginFilterCondition(origins: TimelineOriginFilter[] | undefined) {
+    if (!origins?.length) return undefined;
+    const predicates = origins.map((origin) => {
+      switch (origin.kind) {
+        case 'provider':
+          return and(
+            eq(rawEvents.source, 'integration'),
+            sql`${rawEvents.sourceMetadata} ->> 'provider' = ${origin.provider}`,
+          );
+        case 'monday_board':
+          return and(
+            eq(rawEvents.source, 'integration'),
+            sql`${rawEvents.sourceMetadata} ->> 'provider' = 'monday'`,
+            sql`${rawEvents.sourceMetadata} ->> 'monday_board_id' = ${origin.boardId}`,
+          );
+        case 'github_repo':
+          return and(
+            eq(rawEvents.source, 'integration'),
+            sql`${rawEvents.sourceMetadata} ->> 'provider' = 'github'`,
+            sql`${rawEvents.sourceMetadata} #>> '{github,repo}' = ${origin.repo}`,
+          );
+        case 'slack_channel': {
+          const workspaceCondition = origin.workspaceId
+            ? sql`COALESCE(${rawEvents.sourceMetadata} ->> 'slack_workspace_id', ${rawEvents.sourceMetadata} ->> 'slack_team_id') = ${origin.workspaceId}`
+            : undefined;
+          return and(
+            or(
+              eq(rawEvents.source, 'slack'),
+              and(
+                eq(rawEvents.source, 'integration'),
+                sql`${rawEvents.sourceMetadata} ->> 'provider' = 'slack'`,
+              ),
+            ),
+            sql`${rawEvents.sourceMetadata} ->> 'slack_channel_id' = ${origin.channelId}`,
+            workspaceCondition,
+          );
+        }
+        case 'telegram_chat':
+          return and(
+            eq(rawEvents.source, 'telegram'),
+            sql`${rawEvents.sourceMetadata} ->> 'tg_chat_id' = ${origin.chatId}`,
+          );
+      }
+    });
+    return or(...predicates);
+  }
+
+  async function listSourceFacets(): Promise<TimelineSourceFacet[]> {
+    await ensureMember();
+    const provider = sql<string | null>`${rawEvents.sourceMetadata} ->> 'provider'`;
+    const mondayBoardId = sql<string | null>`${rawEvents.sourceMetadata} ->> 'monday_board_id'`;
+    const mondayBoardName = sql<string | null>`${rawEvents.sourceMetadata} ->> 'monday_board_name'`;
+    const githubRepo = sql<string | null>`${rawEvents.sourceMetadata} #>> '{github,repo}'`;
+    const slackWorkspaceId = sql<
+      string | null
+    >`COALESCE(${rawEvents.sourceMetadata} ->> 'slack_workspace_id', ${rawEvents.sourceMetadata} ->> 'slack_team_id')`;
+    const slackChannelId = sql<string | null>`${rawEvents.sourceMetadata} ->> 'slack_channel_id'`;
+    const slackChannelName = sql<
+      string | null
+    >`${rawEvents.sourceMetadata} ->> 'slack_channel_name'`;
+    const telegramChatId = sql<string | null>`${rawEvents.sourceMetadata} ->> 'tg_chat_id'`;
+    const telegramChatTitle = sql<string | null>`${rawEvents.sourceMetadata} ->> 'tg_chat_title'`;
+    const rows = await db
+      .select({
+        source: rawEvents.source,
+        provider,
+        mondayBoardId,
+        mondayBoardName,
+        githubRepo,
+        slackWorkspaceId,
+        slackChannelId,
+        slackChannelName,
+        telegramChatId,
+        telegramChatTitle,
+        eventCount: sql<number>`count(*)::int`,
+      })
+      .from(rawEvents)
+      .where(and(eq(rawEvents.teamId, teamId), visibilityFilter, activeRawEventFilter))
+      .groupBy(
+        rawEvents.source,
+        provider,
+        mondayBoardId,
+        mondayBoardName,
+        githubRepo,
+        slackWorkspaceId,
+        slackChannelId,
+        slackChannelName,
+        telegramChatId,
+        telegramChatTitle,
+      )
+      .limit(500);
+
+    const facets = new Map<string, TimelineSourceFacet>();
+    function add(key: string, facet: TimelineSourceFacet): void {
+      const current = facets.get(key);
+      facets.set(key, {
+        ...facet,
+        eventCount: facet.eventCount + (current?.eventCount ?? 0),
+      });
+    }
+    for (const row of rows) {
+      if (row.source === 'integration' && row.provider) {
+        add(`provider:${row.provider}`, {
+          filter: { kind: 'provider', provider: row.provider },
+          label: row.provider,
+          eventCount: row.eventCount,
+        });
+      }
+      if (row.provider === 'monday' && row.mondayBoardId) {
+        add(`monday:${row.mondayBoardId}`, {
+          filter: { kind: 'monday_board', boardId: row.mondayBoardId },
+          label: row.mondayBoardName ?? row.mondayBoardId,
+          eventCount: row.eventCount,
+        });
+      }
+      if (row.provider === 'github' && row.githubRepo) {
+        add(`github:${row.githubRepo}`, {
+          filter: { kind: 'github_repo', repo: row.githubRepo },
+          label: row.githubRepo,
+          eventCount: row.eventCount,
+        });
+      }
+      if ((row.source === 'slack' || row.provider === 'slack') && row.slackChannelId) {
+        const workspaceKey = row.slackWorkspaceId ?? '';
+        add(`slack:${workspaceKey}:${row.slackChannelId}`, {
+          filter: {
+            kind: 'slack_channel',
+            channelId: row.slackChannelId,
+            ...(row.slackWorkspaceId ? { workspaceId: row.slackWorkspaceId } : {}),
+          },
+          label: row.slackChannelName
+            ? `#${row.slackChannelName.replace(/^#/, '')}`
+            : row.slackChannelId,
+          eventCount: row.eventCount,
+        });
+      }
+      if (row.source === 'telegram' && row.telegramChatId) {
+        add(`telegram:${row.telegramChatId}`, {
+          filter: { kind: 'telegram_chat', chatId: row.telegramChatId },
+          label: row.telegramChatTitle ?? row.telegramChatId,
+          eventCount: row.eventCount,
+        });
+      }
+    }
+    return [...facets.values()].sort(
+      (a, b) => b.eventCount - a.eventCount || a.label.localeCompare(b.label),
+    );
   }
 
   function metadataPredicateCondition(
@@ -2269,6 +2438,8 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
       listImpactItems: listTimelineImpactItems,
 
       listArtifactClusters: listTimelineArtifactClusters,
+
+      listSourceFacets,
 
       listEventsForMomentLookup,
 

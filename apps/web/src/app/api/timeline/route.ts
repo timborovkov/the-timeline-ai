@@ -12,7 +12,9 @@ import { requireRedisQueue } from '@/lib/queue';
 import { listTimelineCapturedFilesByEventId } from '@/lib/timeline-captured-files';
 import {
   parseTimelineImpacts,
+  parseTimelineOrigins,
   parseTimelineSources,
+  timelineOriginValue,
   timelineSourceValues,
 } from '@/lib/timeline-controls';
 import {
@@ -120,6 +122,8 @@ export async function GET(req: Request): Promise<Response> {
   const source = parseTimelineSources(url.searchParams.get('source') ?? undefined);
   const sourceValue = source.join(',');
   const sourceValues = timelineSourceValues(source);
+  const origins = parseTimelineOrigins(url.searchParams.get('origin') ?? undefined);
+  const originValue = origins.map(timelineOriginValue).join(',');
   const impact = parseTimelineImpacts(url.searchParams.get('impact') ?? undefined);
   const impactValue = impact.join(',');
   const event = url.searchParams.get('event');
@@ -145,6 +149,7 @@ export async function GET(req: Request): Promise<Response> {
     from?.toISOString(),
     to?.toISOString(),
     sourceValue,
+    originValue,
     impactValue,
     focusEventId,
     focusMomentId,
@@ -167,6 +172,7 @@ export async function GET(req: Request): Promise<Response> {
           from,
           to,
           source: sourceValues,
+          origins,
           cursor: pageCursor ?? undefined,
           limit,
         });
@@ -281,6 +287,7 @@ export async function GET(req: Request): Promise<Response> {
       from: url.searchParams.get('from'),
       to: url.searchParams.get('to'),
       source: sourceValue || null,
+      origin: originValue || null,
       impact: impactValue || null,
       event: focusEventId,
       moment: focusMomentId,

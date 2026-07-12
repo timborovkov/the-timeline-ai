@@ -400,7 +400,11 @@ visible change.
   All, Chat, Meetings, Email, Documents, Calendar, and Integrations. Exact
   source filters such as Telegram, Slack, and ingest webhooks, plus impact
   filters such as tasks, decisions, and approvals, live in the full filter
-  panel.
+  panel. A separate `Specific source` control refines the archive to an
+  integration provider or one observed provider resource/conversation, such as
+  a Monday.com board, GitHub repository, Slack channel, or Telegram chat. Keep
+  this selection shareable in the URL and populate it only from events visible
+  to the current user.
 - **Attribution split.** Scan-level copy preserves source truth ("who said or
   did it in the source system"). Timeline control details such as captured by,
   source owner, visibility owner, event controls, and curated source metadata

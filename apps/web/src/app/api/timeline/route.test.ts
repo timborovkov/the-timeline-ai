@@ -169,7 +169,7 @@ describe('GET /api/timeline', () => {
 
     const response = await GET(
       request(
-        `/api/timeline?author=${AUTHOR_ID}&cursor=abc&source=slack&impact=task&from=2026-06-01&to=2026-06-02`,
+        `/api/timeline?author=${AUTHOR_ID}&cursor=abc&source=integrations&origin=monday:board-42&impact=task&from=2026-06-01&to=2026-06-02`,
       ),
     );
 
@@ -224,7 +224,8 @@ describe('GET /api/timeline', () => {
       surface: 'api',
       filters: {
         author: AUTHOR_ID,
-        source: 'slack',
+        source: 'integrations',
+        origin: 'monday:board-42',
         impact: 'task',
         cursor: 'abc',
       },
@@ -243,7 +244,8 @@ describe('GET /api/timeline', () => {
         authorUserId: [AUTHOR_ID],
         from: new Date('2026-05-31T21:00:00.000Z'),
         to: new Date('2026-06-02T21:00:00.000Z'),
-        source: ['slack'],
+        source: ['integration', 'ingest_webhook'],
+        origins: [{ kind: 'monday_board', boardId: 'board-42' }],
         cursor: 'abc',
       }),
     );
@@ -257,7 +259,8 @@ describe('GET /api/timeline', () => {
         TEAM_ID,
         USER_ID,
         AUTHOR_ID,
-        'slack',
+        'integrations',
+        'monday:board-42',
         'task',
         null,
         'Europe/Helsinki',
