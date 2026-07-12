@@ -1,6 +1,16 @@
 import { eventSource } from '@timeline/db';
 import { withTeam } from '@timeline/shared/team-scope';
-import { CheckCircle2, DatabaseZap, ListRestart, Play, TriangleAlert } from 'lucide-react';
+import {
+  CheckCircle2,
+  ChevronDown,
+  DatabaseZap,
+  FileCheck2,
+  GitMerge,
+  ListRestart,
+  Play,
+  ScanSearch,
+  TriangleAlert,
+} from 'lucide-react';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
@@ -10,12 +20,15 @@ import type {
   ReconciliationDashboardRun,
   ReconciliationDashboardRunHistory,
 } from '@timeline/shared/reconciliation';
+import type { LucideIcon } from 'lucide-react';
 import type { Metadata } from 'next';
+import type { ReactNode } from 'react';
 
 import { queueReconciliationJobFormAction } from '@/app/actions/reconciliation';
 import { Breadcrumb } from '@/components/breadcrumb';
 import { DebouncedFilterForm } from '@/components/debounced-filter-form';
-import { IndexStrip } from '@/components/index-strip';
+import { PageHeader } from '@/components/page-header';
+import { SectionHeading } from '@/components/section-heading';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { resolveActiveTeam } from '@/lib/active-team';
@@ -28,6 +41,9 @@ export const metadata: Metadata = {
 };
 
 export const dynamic = 'force-dynamic';
+
+const manualFieldClass =
+  'h-10 rounded-sm border border-border bg-surface px-3 text-sm font-normal text-fg';
 
 type PageSearchParams = Record<string, string | string[] | undefined>;
 
@@ -62,191 +78,86 @@ export default async function ReconciliationDashboardPage({
   const approvalRate = formatRate(diagnostics.approvalStats.acceptanceRate);
 
   return (
-    <div className="mx-auto max-w-6xl space-y-8">
+    <div className="mx-auto max-w-6xl space-y-10">
       <Breadcrumb items={[{ label: 'Team', href: '/app/team' }, { label: 'Reconciliation' }]} />
-      <IndexStrip
-        srLabel={`Reconciliation · ${String(coverage.missingRawEvents)} missing evidence rows · ${String(coverage.degradedReplayEvidence)} degraded replay rows`}
-        segments={[
-          { value: 'RECONCILIATION' },
+      <PageHeader
+        title="Reconciliation"
+        subtitle="Timeline connects activity from different sources, checks the evidence, and proposes trustworthy updates for review."
+        metadata={[
           { label: 'team', value: active.teamName, signal: true },
-          { label: 'missing', value: coverage.missingRawEvents },
-          { label: 'degraded', value: coverage.degradedReplayEvidence },
+          { label: 'checked', value: coverage.totalRawEvents },
+          {
+            label: 'needs repair',
+            value: coverage.missingRawEvents + coverage.degradedReplayEvidence,
+            danger: coverage.missingRawEvents + coverage.degradedReplayEvidence > 0,
+          },
+          { label: 'updated', value: dashboard.generatedAt.toLocaleString() },
         ]}
+        srLabel={`Reconciliation for ${active.teamName}. ${String(coverage.totalRawEvents)} captured items checked; ${String(coverage.missingRawEvents + coverage.degradedReplayEvidence)} need repair.`}
       />
       {notice ? <Notice tone={notice.tone} message={notice.message} /> : null}
 
-      <section className="grid gap-4 lg:grid-cols-[1fr_360px]">
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <Metric label="raw scanned" value={coverage.totalRawEvents} />
-          <Metric label="normalized" value={coverage.normalizedRawEvents} />
+      <section aria-labelledby="how-reconciliation-works" className="space-y-4">
+        <SectionHeading id="how-reconciliation-works">How it works</SectionHeading>
+        <div className="grid overflow-hidden rounded-sm border border-border bg-surface md:grid-cols-3 md:divide-x md:divide-border">
+          <ProcessStep
+            icon={ScanSearch}
+            number="01"
+            title="Check the evidence"
+            description="Captured activity is converted into consistent, citable evidence."
+            metric={`${coverage.fullReplayEvidence.toLocaleString()} of ${coverage.totalRawEvents.toLocaleString()} ready`}
+          />
+          <ProcessStep
+            icon={GitMerge}
+            number="02"
+            title="Connect related work"
+            description="Evidence about the same task, incident, or project is grouped together."
+            metric={`${dashboard.clusters.total.toLocaleString()} clusters · ${dashboard.associations.total.toLocaleString()} links`}
+          />
+          <ProcessStep
+            icon={FileCheck2}
+            number="03"
+            title="Propose safe updates"
+            description="Potential workspace changes are prepared for approval, with their sources attached."
+            metric={`${outputAttention.toLocaleString()} awaiting attention`}
+          />
+        </div>
+      </section>
+
+      <section aria-labelledby="reconciliation-health" className="space-y-4">
+        <SectionHeading id="reconciliation-health">Current health</SectionHeading>
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
+          <ReleaseGatePanel gate={coverage.releaseGate} />
+          <ReplayPanel coverageLimit={dashboard.coverageLimit} />
+        </div>
+        <div className="grid divide-y divide-border rounded-sm border border-border bg-surface sm:grid-cols-2 sm:divide-x sm:divide-y-0 lg:grid-cols-4">
+          <Metric label="Evidence ready" value={coverage.fullReplayEvidence} />
           <Metric
-            label="outputs open"
-            value={outputAttention}
-            tone={outputAttention > 0 ? 'hot' : 'ok'}
+            label="Needs evidence"
+            value={coverage.missingRawEvents}
+            tone={coverage.missingRawEvents > 0 ? 'hot' : 'ok'}
           />
           <Metric
-            label="conflicts open"
+            label="Needs full replay"
+            value={coverage.degradedReplayEvidence}
+            tone={coverage.degradedReplayEvidence > 0 ? 'hot' : 'ok'}
+          />
+          <Metric
+            label="Open conflicts"
             value={diagnostics.openConflicts}
             tone={diagnostics.openConflicts > 0 ? 'hot' : 'ok'}
           />
-          <Metric
-            label="outbox open"
-            value={outboxAttention}
-            tone={outboxAttention > 0 ? 'hot' : 'ok'}
-          />
-          <Metric label="full replay" value={coverage.fullReplayEvidence} />
-          <Metric
-            label="degraded replay"
-            value={coverage.degradedReplayEvidence}
-            tone={coverage.degradedReplayEvidence > 0 ? 'warn' : 'ok'}
-          />
-          <Metric label="clusters" value={dashboard.clusters.total} />
-          <Metric label="associations" value={dashboard.associations.total} />
-          <Metric
-            label="legacy provenance"
-            value={legacyProvenanceRows}
-            tone={legacyProvenanceRows > 0 ? 'warn' : 'ok'}
-          />
-          <Metric label="approval rate" value={approvalRate} />
         </div>
-
-        <section className="space-y-3 rounded-sm border border-border bg-surface p-4">
-          <div className="flex items-center gap-2">
-            <DatabaseZap className="size-4 text-signal" />
-            <h2 className="text-sm font-semibold uppercase tracking-[0.12em] text-fg-muted">
-              Queue replay work
-            </h2>
-          </div>
-          <form action={queueReconciliationJobFormAction} className="space-y-3">
-            <label className="grid gap-1 text-xs font-medium uppercase tracking-[0.12em] text-fg-muted">
-              Source
-              <select
-                name="source"
-                className="h-10 rounded-sm border border-border bg-background px-3 text-sm normal-case tracking-normal text-fg"
-                defaultValue=""
-              >
-                <option value="">All sources</option>
-                {eventSource.enumValues.map((source) => (
-                  <option key={source} value={source}>
-                    {sourceLabel(source)}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <div className="grid gap-2 sm:grid-cols-2">
-              <Button type="submit" name="mode" value="audit" variant="outline">
-                <ListRestart className="size-4" />
-                Audit
-              </Button>
-              <Button type="submit" name="mode" value="backfill">
-                <Play className="size-4" />
-                Backfill dry run
-              </Button>
-            </div>
-            <input type="hidden" name="dryRun" value="true" />
-          </form>
-          <p className="text-xs text-fg-dim">
-            Updated {dashboard.generatedAt.toLocaleString()} · coverage limit{' '}
-            {dashboard.coverageLimit.toLocaleString()}
-          </p>
-        </section>
-
-        <section className="space-y-3 rounded-sm border border-border bg-surface p-4 lg:col-start-2">
-          <div className="flex items-center gap-2">
-            <ListRestart className="size-4 text-signal" />
-            <h2 className="text-sm font-semibold uppercase tracking-[0.12em] text-fg-muted">
-              Manual reconcile
-            </h2>
-          </div>
-          <form action={queueReconciliationJobFormAction} className="space-y-3">
-            <input type="hidden" name="mode" value="scope" />
-            <label className="grid gap-1 text-xs font-medium uppercase tracking-[0.12em] text-fg-muted">
-              Scope
-              <select
-                name="scope"
-                className="h-10 rounded-sm border border-border bg-background px-3 text-sm normal-case tracking-normal text-fg"
-                defaultValue="team"
-              >
-                <option value="team">Team</option>
-                <option value="object">Object</option>
-                <option value="cluster">Cluster</option>
-              </select>
-            </label>
-            <label className="grid gap-1 text-xs font-medium uppercase tracking-[0.12em] text-fg-muted">
-              Target id
-              <input
-                name="targetId"
-                className="h-10 rounded-sm border border-border bg-background px-3 font-mono text-sm normal-case tracking-normal text-fg"
-                placeholder="Object or cluster UUID"
-              />
-            </label>
-            <label className="grid gap-1 text-xs font-medium uppercase tracking-[0.12em] text-fg-muted">
-              Planner replay cap
-              <input
-                name="plannerReplayLimit"
-                type="number"
-                min="0"
-                max="1000"
-                defaultValue="100"
-                className="h-10 rounded-sm border border-border bg-background px-3 font-mono text-sm normal-case tracking-normal text-fg"
-              />
-            </label>
-            <label className="grid gap-1 text-xs font-medium uppercase tracking-[0.12em] text-fg-muted">
-              Planner replay mode
-              <select
-                name="plannerReplayMode"
-                defaultValue="missing"
-                className="h-10 rounded-sm border border-border bg-background px-3 text-sm normal-case tracking-normal text-fg"
-              >
-                <option value="missing">Missing only</option>
-                <option value="all">All visible</option>
-              </select>
-            </label>
-            <label className="grid gap-1 text-xs font-medium uppercase tracking-[0.12em] text-fg-muted">
-              Planner replay source
-              <select
-                name="plannerReplaySource"
-                className="h-10 rounded-sm border border-border bg-background px-3 text-sm normal-case tracking-normal text-fg"
-                defaultValue=""
-              >
-                <option value="">All sources</option>
-                {eventSource.enumValues.map((source) => (
-                  <option key={source} value={source}>
-                    {sourceLabel(source)}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <label className="grid gap-1 text-xs font-medium uppercase tracking-[0.12em] text-fg-muted">
-                Planner replay from
-                <input
-                  name="plannerReplayOccurredAfter"
-                  type="datetime-local"
-                  className="h-10 rounded-sm border border-border bg-background px-3 font-mono text-sm normal-case tracking-normal text-fg"
-                />
-              </label>
-              <label className="grid gap-1 text-xs font-medium uppercase tracking-[0.12em] text-fg-muted">
-                Planner replay until
-                <input
-                  name="plannerReplayOccurredBefore"
-                  type="datetime-local"
-                  className="h-10 rounded-sm border border-border bg-background px-3 font-mono text-sm normal-case tracking-normal text-fg"
-                />
-              </label>
-            </div>
-            <Button type="submit" variant="outline">
-              <Play className="size-4" />
-              Reconcile
-            </Button>
-          </form>
-        </section>
       </section>
 
-      <ReleaseGatePanel gate={coverage.releaseGate} />
-
-      <section className="space-y-3">
-        <SectionTitle label="Evidence coverage by source" />
+      <section className="space-y-4">
+        <div>
+          <SectionHeading>Evidence by source</SectionHeading>
+          <p className="mt-1 max-w-2xl text-sm text-fg-muted">
+            This shows where captured activity is ready to support a proposed update—and where
+            Timeline still needs to rebuild evidence.
+          </p>
+        </div>
         <div className="overflow-x-auto rounded-sm border border-border bg-surface">
           <table className="min-w-full divide-y divide-border text-sm">
             <thead className="bg-muted/30 text-left font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
@@ -277,50 +188,251 @@ export default async function ReconciliationDashboardPage({
         </div>
       </section>
 
-      <section className="grid gap-4 xl:grid-cols-2">
-        <RecentClusters rows={dashboard.clusters.recent} />
-        <StatusPanel title="Cluster kinds" rows={dashboard.clusters.byKind} />
-        <StatusPanel title="Run status" rows={dashboard.runs.byStatus} />
-        <StatusPanel title="Output status" rows={dashboard.outputs.byStatus} />
-        <StatusPanel title="Output kinds" rows={dashboard.outputs.byKind} />
-        <StatusPanel title="Projection outbox" rows={dashboard.projectionOutbox.byStatus} />
-        <StatusPanel title="Direct writes by source" rows={diagnostics.directWritesBySource} />
-        <StatusPanel
-          title="Legacy provenance"
-          rows={[
-            {
-              key: 'object source_event_id',
-              count: diagnostics.legacyProvenance.objectSourceEventRows,
-            },
-            {
-              key: 'object agent_suggested',
-              count: diagnostics.legacyProvenance.objectAgentSuggestedRows,
-            },
-            {
-              key: 'object_change source_event_id',
-              count: diagnostics.legacyProvenance.objectChangeSourceEventRows,
-            },
-            {
-              key: 'board_history source_event_id',
-              count: diagnostics.legacyProvenance.boardHistorySourceEventRows,
-            },
-          ]}
-        />
-        <StatusPanel title="Ambiguity by source" rows={diagnostics.ambiguityBySource} />
-        <StatusPanel title="Top no-action reasons" rows={diagnostics.topNoActionReasons} />
-        <ApprovalPanel stats={diagnostics.approvalStats} />
+      <section className="space-y-4">
+        <SectionHeading>Recently reconciled</SectionHeading>
+        <div className="grid gap-6 xl:grid-cols-2">
+          <RecentClusters rows={dashboard.clusters.recent} />
+          <RecentOutputs rows={dashboard.outputs.recent} />
+        </div>
       </section>
 
-      <section className="grid gap-4 xl:grid-cols-2">
-        <RecentRuns
-          rows={dashboard.runs.recent}
-          history={dashboard.runs.history}
-          statusOptions={dashboard.runs.byStatus.map((row) => row.key)}
-          triggerOptions={dashboard.runs.byTrigger.map((row) => row.key)}
-        />
-        <RecentOutputs rows={dashboard.outputs.recent} />
-      </section>
+      <details className="group rounded-sm border border-border bg-surface">
+        <summary className="flex min-h-12 cursor-pointer list-none items-center justify-between gap-4 px-4 py-3 transition-colors hover:bg-surface-2 [&::-webkit-details-marker]:hidden">
+          <div>
+            <div className="font-semibold text-fg">Advanced tools and diagnostics</div>
+            <div className="mt-0.5 text-sm text-fg-muted">
+              Manual repair, system counters, and run history for operators.
+            </div>
+          </div>
+          <ChevronDown className="size-4 shrink-0 text-fg-dim transition-transform group-open:rotate-180" />
+        </summary>
+        <div className="space-y-8 border-t border-border p-4 sm:p-6">
+          <ManualReconcilePanel />
+          <section className="grid gap-4 xl:grid-cols-2">
+            <StatusPanel title="Cluster kinds" rows={dashboard.clusters.byKind} />
+            <StatusPanel title="Run status" rows={dashboard.runs.byStatus} />
+            <StatusPanel title="Output status" rows={dashboard.outputs.byStatus} />
+            <StatusPanel title="Output kinds" rows={dashboard.outputs.byKind} />
+            <StatusPanel title="Projection outbox" rows={dashboard.projectionOutbox.byStatus} />
+            <StatusPanel title="Direct writes by source" rows={diagnostics.directWritesBySource} />
+            <StatusPanel
+              title="Legacy provenance"
+              rows={[
+                {
+                  key: 'object source_event_id',
+                  count: diagnostics.legacyProvenance.objectSourceEventRows,
+                },
+                {
+                  key: 'object agent_suggested',
+                  count: diagnostics.legacyProvenance.objectAgentSuggestedRows,
+                },
+                {
+                  key: 'object_change source_event_id',
+                  count: diagnostics.legacyProvenance.objectChangeSourceEventRows,
+                },
+                {
+                  key: 'board_history source_event_id',
+                  count: diagnostics.legacyProvenance.boardHistorySourceEventRows,
+                },
+              ]}
+            />
+            <StatusPanel title="Ambiguity by source" rows={diagnostics.ambiguityBySource} />
+            <StatusPanel title="Top no-action reasons" rows={diagnostics.topNoActionReasons} />
+            <ApprovalPanel stats={diagnostics.approvalStats} />
+            <div className="grid divide-y divide-border rounded-sm border border-border bg-background sm:grid-cols-3 sm:divide-x sm:divide-y-0 xl:col-span-2">
+              <Metric label="Open projections" value={outboxAttention} />
+              <Metric label="Legacy provenance" value={legacyProvenanceRows} />
+              <Metric label="Approval rate" value={approvalRate} />
+            </div>
+          </section>
+          <RecentRuns
+            rows={dashboard.runs.recent}
+            history={dashboard.runs.history}
+            statusOptions={dashboard.runs.byStatus.map((row) => row.key)}
+            triggerOptions={dashboard.runs.byTrigger.map((row) => row.key)}
+          />
+        </div>
+      </details>
     </div>
+  );
+}
+
+function ProcessStep({
+  icon: Icon,
+  number,
+  title,
+  description,
+  metric,
+}: {
+  icon: LucideIcon;
+  number: string;
+  title: string;
+  description: string;
+  metric: string;
+}) {
+  return (
+    <article className="relative min-h-48 p-5">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex size-9 items-center justify-center rounded-sm bg-surface-2 text-fg">
+          <Icon className="size-4" />
+        </div>
+        <span className="font-mono text-xs tabular-nums text-fg-dim">{number}</span>
+      </div>
+      <h3 className="mt-5 text-base font-semibold tracking-tight text-fg">{title}</h3>
+      <p className="mt-1 text-sm leading-relaxed text-fg-muted">{description}</p>
+      <div className="mt-4 font-mono text-xs uppercase tracking-[0.1em] text-signal">{metric}</div>
+    </article>
+  );
+}
+
+function ReplayPanel({ coverageLimit }: { coverageLimit: number }) {
+  return (
+    <section className="space-y-4 rounded-sm border border-border bg-surface p-4">
+      <div>
+        <div className="flex items-center gap-2">
+          <DatabaseZap className="size-4 text-signal" />
+          <h3 className="font-semibold text-fg">Check or repair evidence</h3>
+        </div>
+        <p className="mt-1 text-sm text-fg-muted">
+          Check first, then preview a safe repair without changing workspace data.
+        </p>
+      </div>
+      <form action={queueReconciliationJobFormAction} className="space-y-3">
+        <label className="grid gap-1.5 text-sm font-medium text-fg">
+          Source
+          <select
+            name="source"
+            className="h-10 rounded-sm border border-border bg-background px-3 text-sm text-fg"
+            defaultValue=""
+          >
+            <option value="">All sources</option>
+            {eventSource.enumValues.map((source) => (
+              <option key={source} value={source}>
+                {sourceLabel(source)}
+              </option>
+            ))}
+          </select>
+        </label>
+        <div className="grid gap-2 sm:grid-cols-2">
+          <Button type="submit" name="mode" value="audit" variant="outline">
+            <ListRestart className="size-4" />
+            Check coverage
+          </Button>
+          <Button type="submit" name="mode" value="backfill">
+            <Play className="size-4" />
+            Preview repair
+          </Button>
+        </div>
+        <input type="hidden" name="dryRun" value="true" />
+      </form>
+      <p className="font-mono text-[11px] uppercase tracking-[0.1em] text-fg-dim">
+        Scanned window · {coverageLimit.toLocaleString()} items max
+      </p>
+    </section>
+  );
+}
+
+function ManualReconcilePanel() {
+  return (
+    <section className="space-y-4">
+      <div>
+        <SectionTitle label="Manual reconcile" />
+        <p className="mt-1 text-sm text-fg-muted">
+          Rerun reconciliation for the team or a specific object or cluster. This can enqueue
+          planner work.
+        </p>
+      </div>
+      <form
+        action={queueReconciliationJobFormAction}
+        className="grid gap-4 rounded-sm border border-border bg-background p-4 md:grid-cols-2 xl:grid-cols-3"
+      >
+        <input type="hidden" name="mode" value="scope" />
+        <FormField label="Scope">
+          <select aria-label="Scope" name="scope" className={manualFieldClass} defaultValue="team">
+            <option value="team">Team</option>
+            <option value="object">Object</option>
+            <option value="cluster">Cluster</option>
+          </select>
+        </FormField>
+        <FormField label="Target id">
+          <input
+            name="targetId"
+            aria-label="Target id"
+            className={`${manualFieldClass} font-mono`}
+            placeholder="Object or cluster UUID"
+          />
+        </FormField>
+        <FormField label="Planner replay cap">
+          <input
+            name="plannerReplayLimit"
+            aria-label="Planner replay cap"
+            type="number"
+            min="0"
+            max="1000"
+            defaultValue="100"
+            className={`${manualFieldClass} font-mono`}
+          />
+        </FormField>
+        <FormField label="Planner replay mode">
+          <select
+            aria-label="Planner replay mode"
+            name="plannerReplayMode"
+            defaultValue="missing"
+            className={manualFieldClass}
+          >
+            <option value="missing">Missing only</option>
+            <option value="all">All visible</option>
+          </select>
+        </FormField>
+        <FormField label="Planner replay source">
+          <select
+            aria-label="Planner replay source"
+            name="plannerReplaySource"
+            className={manualFieldClass}
+            defaultValue=""
+          >
+            <option value="">All sources</option>
+            {eventSource.enumValues.map((source) => (
+              <option key={source} value={source}>
+                {sourceLabel(source)}
+              </option>
+            ))}
+          </select>
+        </FormField>
+        <div className="hidden xl:block" />
+        <FormField label="Planner replay from">
+          <input
+            name="plannerReplayOccurredAfter"
+            aria-label="Planner replay from"
+            type="datetime-local"
+            className={`${manualFieldClass} font-mono`}
+          />
+        </FormField>
+        <FormField label="Planner replay until">
+          <input
+            name="plannerReplayOccurredBefore"
+            aria-label="Planner replay until"
+            type="datetime-local"
+            className={`${manualFieldClass} font-mono`}
+          />
+        </FormField>
+        <div className="flex items-end">
+          <Button type="submit" variant="outline">
+            <Play className="size-4" />
+            Reconcile
+          </Button>
+        </div>
+      </form>
+    </section>
+  );
+}
+
+function FormField({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <label className="grid gap-1.5 text-sm font-medium text-fg">
+      {label}
+      {children}
+    </label>
   );
 }
 
@@ -341,44 +453,51 @@ function ReleaseGatePanel({
   const Icon = gate.passed ? CheckCircle2 : TriangleAlert;
   return (
     <section
-      className={`space-y-3 rounded-sm border p-4 ${
-        gate.passed
-          ? 'border-emerald-200 bg-emerald-50/70'
-          : 'border-destructive/30 bg-destructive/10'
-      }`}
+      className={`space-y-4 rounded-sm border p-5 ${gate.passed ? 'border-border bg-surface' : 'border-destructive/40 bg-destructive/10'}`}
     >
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
-          <Icon className={`size-4 ${gate.passed ? 'text-emerald-700' : 'text-destructive'}`} />
-          <SectionTitle label="Release gate" />
+          <Icon className={`size-4 ${gate.passed ? 'text-signal' : 'text-destructive'}`} />
+          <h3 className="font-semibold text-fg">
+            {gate.passed ? 'Evidence is ready' : 'Some evidence needs repair'}
+          </h3>
         </div>
         <Badge variant={gate.passed ? 'outline' : 'destructive'} className="rounded-sm">
           {gate.passed
-            ? 'passed'
-            : `${gate.failureCount} failure${gate.failureCount === 1 ? '' : 's'}`}
+            ? 'Release gate passed'
+            : `Release gate · ${gate.failureCount} failure${gate.failureCount === 1 ? '' : 's'}`}
         </Badge>
       </div>
       {gate.passed ? (
-        <p className="text-sm text-emerald-900">
-          Evidence coverage is release-ready for the scanned window.
+        <p className="text-sm text-fg-muted">
+          Every captured item in the scanned window has the evidence needed for reconciliation.
         </p>
       ) : (
-        <ul className="divide-y divide-border text-sm">
-          {gate.failures.map((failure) => (
-            <li
-              key={`${failure.source}:${failure.code}`}
-              className="grid gap-2 py-2 sm:grid-cols-[140px_1fr_auto]"
-            >
-              <span className="font-medium">{sourceLabel(failure.source)}</span>
-              <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
-                {failure.code}
-              </span>
-              <span className="tabular-nums text-fg-muted">
-                {failure.rawEventCount.toLocaleString()} raw
-              </span>
-            </li>
-          ))}
-        </ul>
+        <div>
+          <p className="text-sm text-fg-muted">
+            These items cannot yet support complete, source-backed updates. Check coverage, then
+            preview a repair.
+          </p>
+          <ul className="mt-3 divide-y divide-destructive/20 text-sm">
+            {gate.failures.map((failure) => (
+              <li
+                key={`${failure.source}:${failure.code}`}
+                className="grid gap-1 py-3 sm:grid-cols-[140px_1fr_auto] sm:gap-3"
+              >
+                <span className="font-medium">{sourceLabel(failure.source)}</span>
+                <span className="text-fg-muted">
+                  {failure.message}
+                  <span className="ml-2 font-mono text-[11px] uppercase tracking-[0.1em] text-fg-dim">
+                    {failure.code}
+                  </span>
+                </span>
+                <span className="tabular-nums text-fg-muted">
+                  {failure.rawEventCount.toLocaleString()} raw
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
     </section>
   );
@@ -395,14 +514,14 @@ function Metric({
 }) {
   const toneClass =
     tone === 'ok'
-      ? 'text-emerald-700'
+      ? 'text-signal'
       : tone === 'warn'
-        ? 'text-amber-700'
+        ? 'text-destructive'
         : tone === 'hot'
           ? 'text-destructive'
           : 'text-fg';
   return (
-    <div className="rounded-sm border border-border bg-surface px-4 py-3">
+    <div className="px-4 py-4">
       <div className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">{label}</div>
       <div className={`mt-2 text-2xl font-semibold tabular-nums ${toneClass}`}>{value}</div>
     </div>
@@ -412,7 +531,7 @@ function Metric({
 function Notice({ tone, message }: { tone: 'success' | 'error'; message: string }) {
   const toneClass =
     tone === 'success'
-      ? 'border-emerald-200 bg-emerald-50 text-emerald-900'
+      ? 'border-signal/30 bg-signal-soft text-fg'
       : 'border-destructive/30 bg-destructive/10 text-destructive';
   return (
     <div className={`rounded-sm border px-4 py-3 text-sm font-medium ${toneClass}`}>{message}</div>
@@ -455,9 +574,12 @@ function MiniStat({ label, value }: { label: string; value: number | string }) {
   );
 }
 
-function SectionTitle({ label }: { label: string }) {
+function SectionTitle({ label, level = 2 }: { label: string; level?: 2 | 3 }) {
+  const Heading = level === 3 ? 'h3' : 'h2';
   return (
-    <h2 className="text-sm font-semibold uppercase tracking-[0.12em] text-fg-muted">{label}</h2>
+    <Heading className="text-sm font-semibold uppercase tracking-[0.12em] text-fg-muted">
+      {label}
+    </Heading>
   );
 }
 
@@ -678,7 +800,7 @@ function RunMetricBadge({ label, value }: { label: string; value: number | null 
 function RecentClusters({ rows }: { rows: ReconciliationDashboardCluster[] }) {
   return (
     <section className="space-y-3">
-      <SectionTitle label="Recent clusters" />
+      <SectionTitle label="Recent clusters" level={3} />
       <ul className="divide-y divide-border rounded-sm border border-border bg-surface text-sm">
         {rows.length === 0 ? (
           <li className="px-3 py-2 text-fg-muted">No reconciliation clusters yet.</li>
@@ -716,7 +838,7 @@ function RecentClusters({ rows }: { rows: ReconciliationDashboardCluster[] }) {
 function RecentOutputs({ rows }: { rows: ReconciliationDashboardOutput[] }) {
   return (
     <section className="space-y-3">
-      <SectionTitle label="Recent outputs" />
+      <SectionTitle label="Recent outputs" level={3} />
       <ul className="divide-y divide-border rounded-sm border border-border bg-surface text-sm">
         {rows.length === 0 ? (
           <li className="px-3 py-2 text-fg-muted">No reconciliation outputs yet.</li>
