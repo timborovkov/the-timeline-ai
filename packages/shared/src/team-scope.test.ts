@@ -735,6 +735,13 @@ describe('withTeam namespaced port', () => {
         title: 'Other team chat',
       },
     ]);
+    await pg.query(
+      `INSERT INTO raw_events
+        (id, team_id, author_user_id, visibility_owner_user_id, visibility, source, content_text, occurred_at, source_metadata)
+       VALUES
+        ('00000000-0000-0000-0000-000000000305', $1, $2, $2, 'team', 'telegram', 'Unnamed chat update', now(), $3::jsonb)`,
+      [TEAM_A, USER_A, JSON.stringify({ tg_chat_id: '-100500', tg_update_id: 305 })],
+    );
 
     const facets = await withTeam(db as never, TEAM_A, USER_A).timeline.listSourceFacets();
     expect(facets.filter((facet) => facet.filter.kind === 'monday_board')).toHaveLength(501);
@@ -754,6 +761,7 @@ describe('withTeam namespaced port', () => {
         expect.objectContaining({
           filter: { kind: 'telegram_chat', chatId: '-100500' },
           label: 'Durable team chat',
+          eventCount: 1,
         }),
       ]),
     );
@@ -772,7 +780,8 @@ describe('withTeam namespaced port', () => {
         (id, team_id, author_user_id, visibility_owner_user_id, visibility, source, content_text, occurred_at, source_metadata)
        VALUES
         ('00000000-0000-0000-0000-000000000311', $1, $2, $2, 'team', 'integration', 'Old board update', '2026-07-01T10:00:00Z', $3::jsonb),
-        ('00000000-0000-0000-0000-000000000312', $1, $2, $2, 'team', 'integration', 'New board update', '2026-07-02T10:00:00Z', $4::jsonb)`,
+        ('00000000-0000-0000-0000-000000000312', $1, $2, $2, 'team', 'integration', 'New board update', '2026-07-02T10:00:00Z', $4::jsonb),
+        ('00000000-0000-0000-0000-000000000313', $1, $2, $2, 'team', 'integration', 'Unnamed board update', '2026-07-03T10:00:00Z', $5::jsonb)`,
       [
         TEAM_A,
         USER_A,
@@ -786,6 +795,10 @@ describe('withTeam namespaced port', () => {
           monday_board_id: 'renamed-board',
           monday_board_name: 'Current name',
         }),
+        JSON.stringify({
+          provider: 'monday',
+          monday_board_id: 'renamed-board',
+        }),
       ],
     );
 
@@ -795,7 +808,7 @@ describe('withTeam namespaced port', () => {
         expect.objectContaining({
           filter: { kind: 'monday_board', boardId: 'renamed-board' },
           label: 'Current name',
-          eventCount: 2,
+          eventCount: 3,
         }),
       ]),
     );

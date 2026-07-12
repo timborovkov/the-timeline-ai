@@ -1535,7 +1535,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
   }
 
   function addTimelineSourceFacetFromEvent(
-    add: (key: string, facet: TimelineSourceFacet) => void,
+    add: (key: string, facet: TimelineSourceFacet, hasDisplayLabel: boolean) => void,
     row: {
       source: (typeof rawEvents.$inferSelect)['source'];
       provider: string | null;
@@ -1550,45 +1550,65 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
     },
   ): void {
     if (row.source === 'integration' && row.provider) {
-      add(`provider:${row.provider}`, {
-        filter: { kind: 'provider', provider: row.provider },
-        label: row.provider,
-        eventCount: 1,
-      });
+      add(
+        `provider:${row.provider}`,
+        {
+          filter: { kind: 'provider', provider: row.provider },
+          label: row.provider,
+          eventCount: 1,
+        },
+        true,
+      );
     }
     if (row.provider === 'monday' && row.mondayBoardId) {
-      add(`monday:${row.mondayBoardId}`, {
-        filter: { kind: 'monday_board', boardId: row.mondayBoardId },
-        label: row.mondayBoardName ?? row.mondayBoardId,
-        eventCount: 1,
-      });
+      add(
+        `monday:${row.mondayBoardId}`,
+        {
+          filter: { kind: 'monday_board', boardId: row.mondayBoardId },
+          label: row.mondayBoardName ?? row.mondayBoardId,
+          eventCount: 1,
+        },
+        Boolean(row.mondayBoardName),
+      );
     }
     if (row.provider === 'github' && row.githubRepo) {
-      add(`github:${row.githubRepo}`, {
-        filter: { kind: 'github_repo', repo: row.githubRepo },
-        label: row.githubRepo,
-        eventCount: 1,
-      });
+      add(
+        `github:${row.githubRepo}`,
+        {
+          filter: { kind: 'github_repo', repo: row.githubRepo },
+          label: row.githubRepo,
+          eventCount: 1,
+        },
+        true,
+      );
     }
     if ((row.source === 'slack' || row.provider === 'slack') && row.slackChannelId) {
-      add(`slack:${row.slackWorkspaceId ?? ''}:${row.slackChannelId}`, {
-        filter: {
-          kind: 'slack_channel',
-          channelId: row.slackChannelId,
-          ...(row.slackWorkspaceId ? { workspaceId: row.slackWorkspaceId } : {}),
+      add(
+        `slack:${row.slackWorkspaceId ?? ''}:${row.slackChannelId}`,
+        {
+          filter: {
+            kind: 'slack_channel',
+            channelId: row.slackChannelId,
+            ...(row.slackWorkspaceId ? { workspaceId: row.slackWorkspaceId } : {}),
+          },
+          label: row.slackChannelName
+            ? `#${row.slackChannelName.replace(/^#/, '')}`
+            : row.slackChannelId,
+          eventCount: 1,
         },
-        label: row.slackChannelName
-          ? `#${row.slackChannelName.replace(/^#/, '')}`
-          : row.slackChannelId,
-        eventCount: 1,
-      });
+        Boolean(row.slackChannelName),
+      );
     }
     if (row.source === 'telegram' && row.telegramChatId) {
-      add(`telegram:${row.telegramChatId}`, {
-        filter: { kind: 'telegram_chat', chatId: row.telegramChatId },
-        label: row.telegramChatTitle ?? row.telegramChatId,
-        eventCount: 1,
-      });
+      add(
+        `telegram:${row.telegramChatId}`,
+        {
+          filter: { kind: 'telegram_chat', chatId: row.telegramChatId },
+          label: row.telegramChatTitle ?? row.telegramChatId,
+          eventCount: 1,
+        },
+        Boolean(row.telegramChatTitle),
+      );
     }
   }
 
@@ -1784,9 +1804,9 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
     }
     const eventLabelsSeen = new Set<string>();
     for (const row of recentEvents) {
-      addTimelineSourceFacetFromEvent((key, facet) => {
-        add(key, facet, !eventLabelsSeen.has(key));
-        eventLabelsSeen.add(key);
+      addTimelineSourceFacetFromEvent((key, facet, hasDisplayLabel) => {
+        add(key, facet, hasDisplayLabel && !eventLabelsSeen.has(key));
+        if (hasDisplayLabel) eventLabelsSeen.add(key);
       }, row);
     }
 
