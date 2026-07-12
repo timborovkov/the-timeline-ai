@@ -20,9 +20,8 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useEffect, useMemo, useRef, useState, useTransition } from 'react';
+import { useMemo, useRef, useState, useTransition } from 'react';
 
-import { searchObjectsAction } from '@/app/actions/objects';
 import {
   acceptAllSuggestionAction,
   acceptSuggestionItemAction,
@@ -34,6 +33,7 @@ import {
 import { EmptyAction } from '@/components/empty-action';
 import { EvidenceLink } from '@/components/evidence-link';
 import { Button } from '@/components/ui/button';
+import { useProjectSearch } from '@/hooks/use-project-search';
 import { displayText, formatDisplayDate, formatDisplayDateTime } from '@/lib/display-dates';
 import { isActionableSuggestionStatus } from '@/lib/suggestion-status';
 
@@ -1020,8 +1020,7 @@ function ApprovalItemPayload({
 function TaskApprovalPayload({ bundle, item }: { bundle: SuggestionBundle; item: SuggestionItem }) {
   const router = useRouter();
   const [saving, startSaving] = useTransition();
-  const [query, setQuery] = useState('');
-  const [projects, setProjects] = useState<{ id: string; label: string }[]>([]);
+  const { query, setQuery, projects } = useProjectSearch();
   const [error, setError] = useState<string | null>(null);
   const category = payloadString(item.proposedPayload, 'taskCategory') as TaskCategory | null;
   const categoryMode = payloadString(item.proposedPayload, 'taskCategoryMode');
@@ -1029,29 +1028,6 @@ function TaskApprovalPayload({ bundle, item }: { bundle: SuggestionBundle; item:
     payloadString(item.proposedPayload, 'projectName') ??
     payloadString(item.proposedPayload, 'createProjectName');
   const createsProject = Boolean(payloadString(item.proposedPayload, 'createProjectName'));
-
-  useEffect(() => {
-    const normalized = query.trim();
-    if (normalized.length < 2) {
-      setProjects([]);
-      return;
-    }
-    let active = true;
-    const timer = setTimeout(() => {
-      void searchObjectsAction({ query: normalized, type: 'project' }).then((result) => {
-        if (!active) return;
-        const found: { id: string; label: string }[] = [];
-        for (const row of result.results) {
-          if (row.type === 'project') found.push({ id: row.id, label: row.canonicalName });
-        }
-        setProjects(found);
-      });
-    }, 250);
-    return () => {
-      active = false;
-      clearTimeout(timer);
-    };
-  }, [query]);
 
   function revise(input: {
     category?: TaskCategory | 'automatic';

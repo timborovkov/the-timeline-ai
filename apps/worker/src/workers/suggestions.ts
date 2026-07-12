@@ -332,58 +332,29 @@ async function enrichTaskSuggestionItems(args: {
   const classify =
     args.io.classifyTaskCategory ??
     (args.io.chatStructured ? null : taskCategories.classifyTaskCategory);
-  return Promise.all(
-    args.bundles.map(async (bundle) => ({
-      ...bundle,
-      items: await Promise.all(
-        bundle.items.map(async (item) => {
-          if (item.operation !== 'create' || item.targetKind !== 'task') return item;
-          const proposedPayload = normalizeTaskProjectProposal(item.proposedPayload, args.projects);
-          if (!classify) return { ...item, proposedPayload };
-          const metadata =
-            proposedPayload.metadata &&
-            typeof proposedPayload.metadata === 'object' &&
-            !Array.isArray(proposedPayload.metadata)
-              ? (proposedPayload.metadata as Record<string, unknown>)
-              : {};
-          const packet = taskCategories.buildTaskCategoryPacket({
-            title:
-              typeof proposedPayload.canonicalName === 'string'
-                ? proposedPayload.canonicalName
-                : item.title,
-            aliases: Array.isArray(proposedPayload.aliases)
-              ? proposedPayload.aliases.filter(
-                  (alias): alias is string => typeof alias === 'string',
-                )
-              : [],
-            metadata,
-            primaryProjectName:
-              typeof proposedPayload.projectName === 'string' ? proposedPayload.projectName : null,
-          });
-          try {
-            const prediction = await classify(packet);
-            return {
-              ...item,
-              proposedPayload: {
-                ...proposedPayload,
-                taskCategory: prediction.category,
-                taskCategoryConfidence: prediction.confidence,
-                taskCategoryModel: prediction.model,
-                taskCategoryMode: 'automatic',
-                taskCategoryInputHash: taskCategories.taskCategoryInputHash(
-                  packet,
-                  llm.TIMELINE_MODELS.taskCategorization.id,
-                ),
-                taskCategoryTaxonomyVersion: taskCategories.TASK_CATEGORY_TAXONOMY_VERSION,
-              },
-            };
-          } catch {
-            return { ...item, proposedPayload };
-          }
-        }),
-      ),
-    })),
-  );
+  const bundles: SuggestionBundleOutput[] = [];
+  for (const bundle of args.bundles) {
+    const items: SuggestionItemOutput[] = [];
+    for (const item of bundle.items) {
+      if (item.operation !== 'create' || item.targetKind !== 'task') {
+        items.push(item);
+        continue;
+      }
+      const proposedPayload = normalizeTaskProjectProposal(item.proposedPayload, args.projects);
+      items.push({
+        ...item,
+        proposedPayload: classify
+          ? await taskCategories.enrichTaskProposalCategory({
+              proposedPayload,
+              fallbackTitle: item.title,
+              classify,
+            })
+          : proposedPayload,
+      });
+    }
+    bundles.push({ ...bundle, items });
+  }
+  return bundles;
 }
 
 type LifecycleStatusType = 'task' | 'follow_up' | 'project';

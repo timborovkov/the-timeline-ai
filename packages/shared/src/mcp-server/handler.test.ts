@@ -559,12 +559,23 @@ describe('handleMcpRequest', () => {
 
   it('exposes team-level object and task retrieval through bearer auth', async () => {
     const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const project = await scope.objects.createObject({
+      type: 'project',
+      canonicalName: 'Faba redesign',
+      actor: { kind: 'user', userId: USER_ID },
+    });
     const task = await scope.objects.createObject({
       type: 'task',
       canonicalName: 'Ship expanded outbound MCP',
       status: 'doing',
+      parentObjectId: project.id,
       actor: { kind: 'user', userId: USER_ID },
     });
+    await scope.objects.setTaskCategory(task.id, 'engineering', {
+      kind: 'user',
+      userId: USER_ID,
+    });
+    await scope.objects.archiveObject(project.id, { kind: 'user', userId: USER_ID });
     await scope.objects.createObject({
       type: 'company',
       canonicalName: 'Acme Corp',
@@ -574,7 +585,22 @@ describe('handleMcpRequest', () => {
 
     await expect(callTool(db, 'timeline.list_tasks', {})).resolves.toMatchObject({
       count: 1,
-      tasks: [expect.objectContaining({ id: task.id, name: 'Ship expanded outbound MCP' })],
+      tasks: [
+        expect.objectContaining({
+          id: task.id,
+          citation: `[task:${task.id}]`,
+          name: 'Ship expanded outbound MCP',
+          task_category: 'engineering',
+          task_category_mode: 'manual',
+          task_category_status: 'ready',
+          archived: false,
+          primary_project: {
+            id: project.id,
+            name: 'Faba redesign',
+            archived: true,
+          },
+        }),
+      ],
     });
     const objectResult = await callTool(db, 'timeline.get_object', { idOrName: 'Acme Corp' });
     expect(objectResult).toMatchObject({

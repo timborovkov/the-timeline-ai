@@ -3526,9 +3526,14 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       .limit(1);
     const existing = existingRows[0];
     if (!existing) {
-      const created = await objects.createObject(input);
-      if (type === 'task') await applyProposedTaskCategory(created.id, parsed);
-      return created.id;
+      try {
+        const created = await objects.createObject(input);
+        if (type === 'task') await applyProposedTaskCategory(created.id, parsed);
+        return created.id;
+      } catch (error) {
+        await rollbackSuggestedProject(item, project);
+        throw error;
+      }
     }
 
     const patch: ObjectPatch = {};
@@ -3549,20 +3554,25 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       ...(parsed.metadata ?? {}),
       agent_suggestion_item_id: item.id,
     };
-    await objects.updateObject(existing.id, patch, { kind: 'agent', userId: null });
-    if (type === 'task') {
-      if (project) {
-        await objects.setTaskProject(existing.id, project.id, { kind: 'agent', userId: null });
+    try {
+      await objects.updateObject(existing.id, patch, { kind: 'agent', userId: null });
+      if (type === 'task') {
+        if (project) {
+          await objects.setTaskProject(existing.id, project.id, { kind: 'agent', userId: null });
+        }
+        await applyProposedTaskCategory(existing.id, parsed);
       }
-      await applyProposedTaskCategory(existing.id, parsed);
+      return existing.id;
+    } catch (error) {
+      await rollbackSuggestedProject(item, project);
+      throw error;
     }
-    return existing.id;
   }
 
   async function resolveSuggestedTaskProject(
     item: typeof agentSuggestionItems.$inferSelect,
     payload: z.infer<typeof objectCreatePayload>,
-  ): Promise<{ id: string; name: string } | null> {
+  ): Promise<{ id: string; name: string; createdForSuggestion: boolean } | null> {
     if (payload.parentObjectId) {
       const [project] = await db
         .select({ id: entities.id, name: entities.canonicalName })
@@ -3578,7 +3588,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         )
         .limit(1);
       if (!project) throw new Error('Proposed task project is no longer available');
-      return project;
+      return { ...project, createdForSuggestion: false };
     }
     if (!payload.createProjectName) return null;
 
@@ -3595,7 +3605,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         ),
       )
       .limit(1);
-    if (createdForSuggestion) return createdForSuggestion;
+    if (createdForSuggestion) return { ...createdForSuggestion, createdForSuggestion: false };
 
     const exactProjects = await db
       .select({ id: entities.id, name: entities.canonicalName })
@@ -3611,7 +3621,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       )
       .limit(2);
     if (exactProjects.length > 1) throw new Error('Proposed project name is ambiguous');
-    if (exactProjects[0]) return exactProjects[0];
+    if (exactProjects[0]) return { ...exactProjects[0], createdForSuggestion: false };
 
     const project = await objects.createObject({
       type: 'project',
@@ -3620,7 +3630,28 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       metadata: { agent_suggestion_project_for_item_id: item.id },
       actor: { kind: 'agent', userId: null },
     });
-    return { id: project.id, name: project.canonicalName };
+    return { id: project.id, name: project.canonicalName, createdForSuggestion: true };
+  }
+
+  async function rollbackSuggestedProject(
+    item: typeof agentSuggestionItems.$inferSelect,
+    project: { id: string; createdForSuggestion: boolean } | null,
+  ): Promise<void> {
+    if (!project?.createdForSuggestion) return;
+    await db.delete(entities).where(
+      and(
+        eq(entities.teamId, teamId),
+        eq(entities.id, project.id),
+        eq(entities.type, 'project'),
+        sql`${entities.metadata} ->> 'agent_suggestion_project_for_item_id' = ${item.id}`,
+        sql`NOT EXISTS (
+          SELECT 1
+          FROM entity_relationships
+          WHERE entity_relationships.team_id = ${teamId}
+            AND entity_relationships.to_entity_id = ${project.id}
+        )`,
+      ),
+    );
   }
 
   async function applyProposedTaskCategory(

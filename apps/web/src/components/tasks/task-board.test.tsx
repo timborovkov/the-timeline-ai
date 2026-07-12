@@ -192,6 +192,33 @@ describe('TaskBoard', () => {
     });
   });
 
+  it('finds and assigns a remote project from the task project selector', async () => {
+    fakes.searchObjectsAction.mockResolvedValue({
+      results: [
+        {
+          id: 'project-remote',
+          type: 'project',
+          canonicalName: 'Faba website redesign',
+        },
+      ],
+    });
+    renderBoard('task-1');
+
+    await userEvent.type(screen.getByRole('searchbox', { name: 'Search task projects' }), 'Faba');
+    await screen.findByRole('option', { name: 'Faba website redesign' }, { timeout: 1_000 });
+    await userEvent.selectOptions(
+      screen.getByRole('combobox', { name: 'Task project' }),
+      'project-remote',
+    );
+
+    await waitFor(() => {
+      expect(fakes.setTaskProjectAction).toHaveBeenCalledWith({
+        id: 'task-1',
+        projectId: 'project-remote',
+      });
+    });
+  });
+
   it('does not render legacy agentSuggested badges on task rows', () => {
     renderBoard(null, [task({ status: 'suggested', agentSuggested: true })]);
 

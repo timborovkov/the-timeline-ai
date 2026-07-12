@@ -144,7 +144,6 @@ export async function searchObjectsAction(input: unknown): Promise<{
           query,
           ...(parsed.data.type ? { type: parsed.data.type } : {}),
           archived: false,
-          ...(parsed.data.type ? { type: parsed.data.type } : {}),
           limit: OBJECT_SEARCH_RESULT_LIMIT + 1,
         })
       : await r.scope.objects.listObjects({

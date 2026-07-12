@@ -3597,6 +3597,44 @@ describe('suggestion scope', () => {
     ]);
   });
 
+  it('removes a newly proposed project when task creation cannot complete', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    await scope.objects.createObject({
+      type: 'task',
+      canonicalName: 'Prepare duplicate wireframes',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Create duplicate task with project',
+      dedupeKey: 'create-duplicate-task-project',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Prepare duplicate wireframes',
+          dedupeKey: 'create-duplicate-task-project:item',
+          proposedPayload: {
+            canonicalName: 'Prepare duplicate wireframes',
+            createProjectName: 'Project that must roll back',
+            projectName: 'Project that must roll back',
+          },
+        },
+      ],
+    });
+
+    await expect(
+      scope.suggestions.acceptSuggestionItem(bundle.items[0]?.id ?? ''),
+    ).rejects.toThrow();
+
+    const projects = await scope.objects.listObjects({
+      type: 'project',
+      query: 'Project that must roll back',
+      archived: false,
+    });
+    expect(projects).toEqual([]);
+  });
+
   it('keeps a proposed task pending when its category context hash is stale', async () => {
     const scope = withTeam(db as never, TEAM_ID, USER_ID);
     const bundle = await scope.suggestions.createOrMergeSuggestionBundle({

@@ -126,7 +126,7 @@ export function taskObjectFilterFromWorkFilters(
   now = new Date(),
 ): ObjectListFilter {
   return {
-    ...objectListFilterFromWorkFilters({ ...filters, type: 'task' }, now),
+    ...objectListFilterFromWorkFilters(filters, now),
     type: 'task',
     archived: false,
   };

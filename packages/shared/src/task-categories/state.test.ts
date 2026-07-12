@@ -175,6 +175,88 @@ describe('task category and primary project state', () => {
     expect(changes.filter((row) => row.field === 'taskCategory')).toHaveLength(2);
   });
 
+  it('combines a selected category with uncategorized tasks in one DB filter', async () => {
+    const scope = withTeam(db, TEAM_A, USER_A).objects;
+    const categorized = await scope.createObject({
+      type: 'task',
+      canonicalName: 'Implement checkout API',
+      actor: { kind: 'user', userId: USER_A },
+    });
+    const uncategorized = await scope.createObject({
+      type: 'task',
+      canonicalName: 'Clarify launch scope',
+      actor: { kind: 'user', userId: USER_A },
+    });
+    await scope.setTaskCategory(categorized.id, 'engineering', {
+      kind: 'user',
+      userId: USER_A,
+    });
+
+    await expect(
+      scope.listObjects({
+        type: 'task',
+        taskCategory: 'engineering',
+        taskCategoryNull: true,
+      }),
+    ).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: uncategorized.id, taskCategory: null }),
+        expect.objectContaining({ id: categorized.id, taskCategory: 'engineering' }),
+      ]),
+    );
+  });
+
+  it('can reapply an automatic result when unchanged context returns to an earlier hash', async () => {
+    const scope = withTeam(db, TEAM_A, USER_A).objects;
+    const task = await scope.createObject({
+      type: 'task',
+      canonicalName: 'Prepare launch plan',
+      actor: { kind: 'user', userId: USER_A },
+    });
+    const firstInput = await scope.getTaskCategoryClassificationInput(task.id);
+    const inputHash = firstInput?.requestedInputHash ?? '';
+    await scope.applyTaskCategoryClassification({
+      taskId: task.id,
+      inputHash,
+      category: 'marketing',
+      confidence: 0.9,
+      model: 'test-model',
+      latencyMs: 10,
+    });
+    await scope.setTaskCategory(task.id, 'strategy_planning', {
+      kind: 'user',
+      userId: USER_A,
+    });
+    await scope.resetTaskCategoryToAutomatic(task.id, { kind: 'user', userId: USER_A });
+    const secondInput = await scope.getTaskCategoryClassificationInput(task.id);
+    expect(secondInput?.requestedInputHash).toBe(inputHash);
+
+    await expect(
+      scope.applyTaskCategoryClassification({
+        taskId: task.id,
+        inputHash,
+        category: 'marketing',
+        confidence: 0.92,
+        model: 'test-model',
+        latencyMs: 11,
+      }),
+    ).resolves.toBe('applied');
+    await expect(scope.listObjects({ id: task.id })).resolves.toEqual([
+      expect.objectContaining({
+        taskCategory: 'marketing',
+        taskCategoryMode: 'automatic',
+        taskCategoryStatus: 'ready',
+      }),
+    ]);
+    const applied = await db
+      .select()
+      .from(taskCategoryAssignments)
+      .where(eq(taskCategoryAssignments.entityId, task.id));
+    expect(
+      applied.filter((row) => row.outcome === 'applied' && row.inputHash === inputHash),
+    ).toHaveLength(2);
+  });
+
   it('undoes a manual correction by restoring the prior value and authority without deleting history', async () => {
     const scope = withTeam(db, TEAM_A, USER_A).objects;
     const task = await scope.createObject({

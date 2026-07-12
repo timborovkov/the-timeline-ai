@@ -1,9 +1,10 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useEffect, useMemo, useState, useTransition } from 'react';
+import { useMemo, useState, useTransition } from 'react';
 
-import { searchObjectsAction, setTaskProjectAction } from '@/app/actions/objects';
+import { setTaskProjectAction } from '@/app/actions/objects';
+import { useProjectSearch } from '@/hooks/use-project-search';
 import { errorMessage } from '@/lib/utils';
 
 export function TaskProjectSelect({
@@ -22,30 +23,7 @@ export function TaskProjectSelect({
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
-  const [query, setQuery] = useState('');
-  const [remoteProjects, setRemoteProjects] = useState<{ id: string; label: string }[]>([]);
-  useEffect(() => {
-    const normalized = query.trim();
-    if (normalized.length < 2) {
-      setRemoteProjects([]);
-      return;
-    }
-    let active = true;
-    const timer = setTimeout(() => {
-      void searchObjectsAction({ query: normalized, type: 'project' }).then((result) => {
-        if (!active) return;
-        const found: { id: string; label: string }[] = [];
-        for (const row of result.results) {
-          if (row.type === 'project') found.push({ id: row.id, label: row.canonicalName });
-        }
-        setRemoteProjects(found);
-      });
-    }, 250);
-    return () => {
-      active = false;
-      clearTimeout(timer);
-    };
-  }, [query]);
+  const { query, setQuery, projects: remoteProjects } = useProjectSearch();
   const visibleProjects = useMemo(() => {
     const normalized = query.trim().toLowerCase();
     const candidates = normalized

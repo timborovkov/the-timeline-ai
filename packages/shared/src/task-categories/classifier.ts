@@ -4,6 +4,7 @@ import { z } from 'zod';
 
 import { chatStructured } from '#src/llm/chat.js';
 import { TIMELINE_MODELS } from '#src/llm/models.js';
+import { stableStringify } from '#src/suggestions/dedupe-key.js';
 import {
   TASK_CATEGORIES,
   TASK_CATEGORY_DEFINITIONS,
@@ -43,16 +44,6 @@ export const taskCategoryClassificationSchema = z.object({
   category: taskCategorySchema,
   confidence: z.number().min(0).max(1),
 });
-
-function stableStringify(value: unknown): string {
-  if (value === null || typeof value !== 'object') return JSON.stringify(value);
-  if (Array.isArray(value)) return `[${value.map(stableStringify).join(',')}]`;
-  const record = value as Record<string, unknown>;
-  return `{${Object.keys(record)
-    .sort()
-    .map((key) => `${JSON.stringify(key)}:${stableStringify(record[key])}`)
-    .join(',')}}`;
-}
 
 function cleanText(value: unknown, maxChars: number): { value: string | null; truncated: boolean } {
   if (typeof value !== 'string') return { value: null, truncated: false };

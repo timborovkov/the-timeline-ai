@@ -11,8 +11,16 @@ import { artifactRefCitation } from '#src/citation.js';
 import { childLogger } from '#src/logger.js';
 import { getMcpManager } from '#src/mcp/client.js';
 import * as objects from '#src/objects/index.js';
+import {
+  serializeObjectRow,
+  serializeObjectRowsWithProjects,
+} from '#src/objects/tool-serialization.js';
 import { recordMcpToolResultEvidence } from '#src/reconciliation/mcp-capture.js';
 import { suggestionDedupeKey, type CreateSuggestionInput } from '#src/suggestions/index.js';
+import {
+  enrichTaskProposalCategory,
+  type TaskProposalClassifier,
+} from '#src/task-categories/proposal.js';
 import { taskCategorySchema, type TaskCategory } from '#src/task-categories/types.js';
 import { type TeamScope } from '#src/team-scope.js';
 import {
@@ -41,6 +49,7 @@ interface AgentToolOptions {
   onToolError?: AgentToolErrorReporter | undefined;
   readOnly?: boolean | undefined;
   db?: Db | undefined;
+  classifyTaskCategory?: TaskProposalClassifier | undefined;
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -131,17 +140,22 @@ const listPendingApprovalsInput = z.object({
   limit: z.number().int().min(1).max(50).optional(),
 });
 
-const suggestTaskInput = z.object({
-  title: z.string().trim().min(1).max(200),
-  dueAt: z.iso.datetime().optional(),
-  ownerUserId: z.string().regex(UUID_RE).optional(),
-  assigneeUserId: z.string().regex(UUID_RE).optional(),
-  ownerName: z.string().trim().min(1).max(200).optional(),
-  assigneeName: z.string().trim().min(1).max(200).optional(),
-  priority: z.number().int().min(1).max(4).optional(),
-  note: z.string().trim().max(1000).optional(),
-  parentObjectId: z.string().regex(UUID_RE).optional(),
-});
+const suggestTaskInput = z
+  .object({
+    title: z.string().trim().min(1).max(200),
+    dueAt: z.iso.datetime().optional(),
+    ownerUserId: z.string().regex(UUID_RE).optional(),
+    assigneeUserId: z.string().regex(UUID_RE).optional(),
+    ownerName: z.string().trim().min(1).max(200).optional(),
+    assigneeName: z.string().trim().min(1).max(200).optional(),
+    priority: z.number().int().min(1).max(4).optional(),
+    note: z.string().trim().max(1000).optional(),
+    parentObjectId: z.string().regex(UUID_RE).optional(),
+    createProjectName: z.string().trim().min(1).max(200).optional(),
+  })
+  .refine((input) => !(input.parentObjectId && input.createProjectName), {
+    message: 'Choose an existing project or propose a new project, not both',
+  });
 
 const relationshipMemoryItemSchema = z
   .object({
@@ -533,53 +547,6 @@ function dateInRange(value: Date | null | undefined, from?: string, to?: string)
   if (from && value < new Date(from)) return false;
   if (to && value >= new Date(to)) return false;
   return true;
-}
-
-function serializeObjectRow(row: objects.ObjectRow): Record<string, unknown> {
-  return {
-    id: row.id,
-    citation: artifactRefCitation({
-      kind: row.type === 'task' || row.type === 'follow_up' ? 'task' : 'object',
-      id: row.id,
-    }),
-    name: row.canonicalName,
-    type: row.type,
-    status: row.status,
-    stage: row.stage,
-    priority: row.priority,
-    owner_user_id: row.ownerUserId,
-    assignee_user_id: row.assigneeUserId,
-    due_at: row.dueAt?.toISOString() ?? null,
-    task_category: row.taskCategory,
-    task_category_mode: row.taskCategoryMode,
-    task_category_status: row.taskCategoryStatus,
-    updated_at: row.updatedAt.toISOString(),
-    archived: row.archivedAt !== null,
-    aliases: row.aliases.slice(0, 20),
-  };
-}
-
-async function serializeObjectRowsWithProjects(
-  scope: TeamScope,
-  rows: objects.ObjectRow[],
-): Promise<Record<string, unknown>[]> {
-  const projects = await scope.objects.listPrimaryProjectsForTasks(
-    rows.filter((row) => row.type === 'task').map((row) => row.id),
-  );
-  const byTask = new Map(projects.map((project) => [project.taskId, project] as const));
-  return rows.map((row) => {
-    const project = byTask.get(row.id);
-    return {
-      ...serializeObjectRow(row),
-      primary_project: project
-        ? {
-            id: project.projectId,
-            name: project.projectName,
-            archived: project.archivedAt !== null,
-          }
-        : null,
-    };
-  });
 }
 
 function searchArgsFromTimelineInput(
@@ -2130,7 +2097,7 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
 
     suggest_task: tool({
       description:
-        'Propose a new task. Records an approval-queue suggestion only; it does not create the canonical task until a human accepts it. Use when the conversation reveals a concrete next action. Set parentObjectId only when exactly one listed active project clearly owns the task. Never use a deal, person, company, title match, co-mention, or ambiguous project; omit it instead of guessing.',
+        'Propose a new task with an automatic category preview. Records an approval-queue suggestion only; it does not create the canonical task or project until a human accepts it. Use parentObjectId only when exactly one listed active project clearly owns the task. Use createProjectName only when the evidence clearly names a new client or internal project that should be created with the task. Never use a deal, person, company, title match, co-mention, or ambiguous project; omit project fields instead of guessing.',
       inputSchema: suggestTaskInput,
       execute: async (raw) =>
         runSafe('suggest_task', async () => {
@@ -2144,6 +2111,18 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
           ) {
             throw new Error('parentObjectId must reference one active project');
           }
+          const namedProject = input.createProjectName
+            ? await scope.objects.getObject(input.createProjectName)
+            : null;
+          const existingNamedProject =
+            namedProject?.type === 'project' && !namedProject.archivedAt ? namedProject : null;
+          const parentObjectId = parentProject?.id ?? existingNamedProject?.id ?? null;
+          const projectName =
+            parentProject?.canonicalName ??
+            existingNamedProject?.canonicalName ??
+            input.createProjectName ??
+            null;
+          const createProjectName = existingNamedProject ? null : (input.createProjectName ?? null);
           const dedupeKey = suggestionDedupeKey({
             tool: 'suggest_task',
             title: input.title,
@@ -2153,7 +2132,26 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
             ownerName: input.ownerName ?? null,
             assigneeName: input.assigneeName ?? null,
             priority: input.priority ?? null,
-            parentObjectId: input.parentObjectId ?? null,
+            parentObjectId,
+            createProjectName,
+          });
+          const metadata = input.note ? { agent_note: input.note, description: input.note } : {};
+          const proposedPayload = await enrichTaskProposalCategory({
+            proposedPayload: {
+              canonicalName: input.title,
+              dueAt: input.dueAt ?? null,
+              ownerUserId: input.ownerUserId ?? null,
+              assigneeUserId: input.assigneeUserId ?? null,
+              ownerName: input.ownerName ?? null,
+              assigneeName: input.assigneeName ?? null,
+              priority: input.priority ?? null,
+              parentObjectId,
+              ...(projectName ? { projectName } : {}),
+              ...(createProjectName ? { createProjectName } : {}),
+              metadata,
+            },
+            fallbackTitle: input.title,
+            ...(options.classifyTaskCategory ? { classify: options.classifyTaskCategory } : {}),
           });
           const suggestion = await scope.suggestions.createOrMergeSuggestionBundle({
             source: 'chat',
@@ -2169,18 +2167,7 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
                 targetKind: 'task',
                 title: input.title,
                 dedupeKey,
-                proposedPayload: {
-                  canonicalName: input.title,
-                  dueAt: input.dueAt ?? null,
-                  ownerUserId: input.ownerUserId ?? null,
-                  assigneeUserId: input.assigneeUserId ?? null,
-                  ownerName: input.ownerName ?? null,
-                  assigneeName: input.assigneeName ?? null,
-                  priority: input.priority ?? null,
-                  parentObjectId: input.parentObjectId ?? null,
-                  parentObjectName: parentProject?.canonicalName ?? null,
-                  metadata: input.note ? { agent_note: input.note } : {},
-                },
+                proposedPayload,
               },
             ],
           });

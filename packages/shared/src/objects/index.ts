@@ -29,7 +29,6 @@ import {
   documents,
   entities,
   entityRelationships,
-  entityType,
   factEntities,
   facts as factsTable,
   notifications,
@@ -63,12 +62,6 @@ import {
   sql,
 } from 'drizzle-orm';
 
-import type {
-  TaskCategory,
-  TaskCategoryMode,
-  TaskCategorySource,
-  TaskCategoryStatus,
-} from '#src/task-categories/types.js';
 import type { TeamScopeCore } from '#src/team-scope.js';
 
 import {
@@ -101,6 +94,15 @@ import {
   objectSummarySourceSnapshot,
   type ObjectSummaryView,
 } from '#src/objects/summaries.js';
+import {
+  OBJECT_TYPES as CLIENT_OBJECT_TYPES,
+  type ObjectCountFilter,
+  type ObjectListFilter,
+  type ObjectRow,
+  type ObjectSearchFilter,
+  type ObjectType,
+  type TaskPrimaryProjectRow,
+} from '#src/objects/types.js';
 import { decodeCursor, pageWindow } from '#src/pagination.js';
 import { getQdrantClient } from '#src/qdrant/client.js';
 import { buildPointId } from '#src/qdrant/point-id.js';
@@ -121,6 +123,10 @@ import {
   taskCategorySchema,
   taskCategorySourceSchema,
   taskCategoryStatusSchema,
+  type TaskCategory,
+  type TaskCategoryMode,
+  type TaskCategorySource,
+  type TaskCategoryStatus,
 } from '#src/task-categories/types.js';
 import { rawEventVisibleToUser } from '#src/visibility.js';
 
@@ -130,6 +136,17 @@ export {
   sourceRefCitation,
 } from '#src/objects/summaries.js';
 export type { ObjectSummarySourceRef } from '#src/objects/summaries.js';
+export {
+  type ObjectCountFilter,
+  type ObjectListFilter,
+  type ObjectRow,
+  type ObjectSearchFilter,
+  type ObjectType,
+  type TaskPrimaryProjectRow,
+} from '#src/objects/types.js';
+
+/** The exhaustive runtime list of user-facing workspace object types. */
+export const OBJECT_TYPES: ObjectType[] = [...CLIENT_OBJECT_TYPES];
 export {
   normalizeIdentityFacet,
   type ActorKind,
@@ -231,6 +248,96 @@ function enqueueTaskCategoryBestEffort(
   void embedQueue.enqueueTaskCategoryJob(data).catch((err: unknown) => {
     embedLog.error({ err, ...context }, 'failed to enqueue task category job');
   });
+}
+
+interface ProjectTaskCategoryInvalidation {
+  jobs: { taskId: string; inputHash: string }[];
+  fanout: { projectId: string; projectVersion: string; afterTaskId: string } | null;
+}
+
+async function invalidateLinkedTaskCategoriesForProject(
+  tx: DbTx,
+  teamId: string,
+  project: { id: string; canonicalName: string },
+): Promise<ProjectTaskCategoryInvalidation> {
+  const linkedTasks = await tx
+    .select({
+      id: entities.id,
+      canonicalName: entities.canonicalName,
+      aliases: entities.aliases,
+      metadata: entities.metadata,
+    })
+    .from(entityRelationships)
+    .innerJoin(
+      entities,
+      and(
+        eq(entities.teamId, entityRelationships.teamId),
+        eq(entities.id, entityRelationships.fromEntityId),
+        eq(entities.type, 'task'),
+        eq(entities.taskCategoryMode, 'automatic'),
+        isNull(entities.archivedAt),
+        isNull(entities.mergedIntoId),
+      ),
+    )
+    .where(
+      and(
+        eq(entityRelationships.teamId, teamId),
+        eq(entityRelationships.toEntityId, project.id),
+        eq(entityRelationships.kind, 'child'),
+      ),
+    )
+    .orderBy(asc(entities.id))
+    .limit(500);
+  const jobs: ProjectTaskCategoryInvalidation['jobs'] = [];
+  for (const task of linkedTasks) {
+    const packet = buildTaskCategoryPacket({
+      title: task.canonicalName,
+      aliases: stringArrayFromUnknown(task.aliases),
+      metadata: recordFromUnknown(task.metadata),
+      primaryProjectName: project.canonicalName,
+    });
+    const inputHash = taskCategoryInputHash(packet, TIMELINE_MODELS.taskCategorization.id);
+    await tx
+      .update(entities)
+      .set({
+        taskCategoryStatus: 'pending',
+        taskCategoryRequestedInputHash: inputHash,
+        taskCategoryTaxonomyVersion: TASK_CATEGORY_TAXONOMY_VERSION,
+        taskCategoryUpdatedAt: new Date(),
+      })
+      .where(and(eq(entities.teamId, teamId), eq(entities.id, task.id)));
+    jobs.push({ taskId: task.id, inputHash });
+  }
+  return {
+    jobs,
+    fanout:
+      jobs.length === 500
+        ? {
+            projectId: project.id,
+            projectVersion: taskProjectVersion(project.id, project.canonicalName),
+            afterTaskId: jobs.at(-1)?.taskId ?? project.id,
+          }
+        : null,
+  };
+}
+
+function enqueueProjectTaskCategoryInvalidation(
+  teamId: string,
+  invalidation: ProjectTaskCategoryInvalidation,
+  operation: string,
+): void {
+  for (const job of invalidation.jobs) {
+    enqueueTaskCategoryBestEffort(
+      { teamId, taskId: job.taskId, inputHash: job.inputHash, trigger: 'project_change' },
+      { teamId, taskId: job.taskId, op: `${operation}:projectCategory` },
+    );
+  }
+  if (invalidation.fanout) {
+    enqueueTaskCategoryBestEffort(
+      { kind: 'project_fanout', teamId, ...invalidation.fanout },
+      { teamId, projectId: invalidation.fanout.projectId, op: `${operation}:projectFanout` },
+    );
+  }
 }
 
 async function normalizeSystemRawEventEvidence(input: {
@@ -1000,80 +1107,6 @@ function stableStringify(value: unknown): string {
   });
 }
 
-// Derive from the drizzle enum so DB-backed rows keep the full vocabulary.
-export type ObjectType = (typeof entityType.enumValues)[number];
-
-/** The exhaustive runtime list of user-facing workspace object types. */
-export const OBJECT_TYPES = entityType.enumValues.filter(
-  (type): type is ObjectType => type !== 'link',
-);
-
-export interface ObjectListFilter {
-  id?: string | string[];
-  query?: string;
-  type?: ObjectType | ObjectType[];
-  status?: string | string[];
-  statusNot?: string | string[];
-  stage?: string | string[];
-  priority?: number | number[];
-  priorityNull?: boolean;
-  ownerUserId?: string | null | (string | null)[];
-  assigneeUserId?: string | null | (string | null)[];
-  taskCategory?: TaskCategory | TaskCategory[];
-  taskCategoryNull?: boolean;
-  /** Operator-only candidate selector; excludes manual, ready, and already-pending tasks. */
-  taskCategoryBackfillEligible?: boolean;
-  primaryProjectId?: string | string[];
-  dueBefore?: Date;
-  dueAfter?: Date;
-  dueNull?: boolean;
-  createdBefore?: Date;
-  createdAfter?: Date;
-  updatedBefore?: Date;
-  updatedAfter?: Date;
-  archived?: boolean;
-  order?: 'updated' | 'due';
-  limit?: number;
-  offset?: number;
-  cursor?: string | null;
-}
-
-export type ObjectCountFilter = Omit<ObjectListFilter, 'cursor' | 'limit' | 'offset'>;
-
-export interface ObjectSearchFilter extends Omit<ObjectListFilter, 'cursor' | 'offset'> {
-  query: string;
-}
-
-export interface ObjectRow {
-  id: string;
-  type: ObjectType;
-  canonicalName: string;
-  status: string;
-  stage: string | null;
-  priority: number | null;
-  ownerUserId: string | null;
-  assigneeUserId: string | null;
-  dueAt: Date | null;
-  taskCategory: TaskCategory | null;
-  taskCategoryMode: TaskCategoryMode | null;
-  taskCategorySource: TaskCategorySource | null;
-  taskCategoryStatus: TaskCategoryStatus | null;
-  taskCategoryUpdatedAt: Date | null;
-  agentSuggested: boolean;
-  archivedAt: Date | null;
-  aliases: string[];
-  metadata: Record<string, unknown>;
-  updatedAt: Date;
-  createdAt: Date;
-}
-
-export interface TaskPrimaryProjectRow {
-  taskId: string;
-  projectId: string;
-  projectName: string;
-  archivedAt: Date | null;
-}
-
 function metadataString(metadata: Record<string, unknown>, key: string): string | null {
   const value = metadata[key];
   if (typeof value !== 'string' && typeof value !== 'number') return null;
@@ -1173,15 +1206,12 @@ function nullableUuidCondition(
 }
 
 function taskCategoryCondition(filter: ObjectCountFilter): SQL | undefined {
-  const categories = toArray(filter.taskCategory);
-  if ((!categories || categories.length === 0) && !filter.taskCategoryNull) return undefined;
-  const categoryCondition = categories?.length
-    ? inArray(entities.taskCategory, categories)
-    : undefined;
-  if (categoryCondition && filter.taskCategoryNull) {
-    return or(categoryCondition, isNull(entities.taskCategory));
+  const categories = toArray(filter.taskCategory) ?? [];
+  if (categories.length === 0) {
+    return filter.taskCategoryNull ? isNull(entities.taskCategory) : undefined;
   }
-  return categoryCondition ?? isNull(entities.taskCategory);
+  const categorized = inArray(entities.taskCategory, categories);
+  return filter.taskCategoryNull ? or(categorized, isNull(entities.taskCategory)) : categorized;
 }
 
 function primaryProjectCondition(scope: TeamScopeCore, filter: ObjectCountFilter): SQL | undefined {
@@ -4209,64 +4239,10 @@ export async function updateObject(
     const updated = updatedRows[0];
     if (!updated) throw new Error('Update failed');
 
-    const linkedTaskCategoryJobs: { taskId: string; inputHash: string }[] = [];
-    if (updated.type === 'project' && changes.some((change) => change.field === 'canonicalName')) {
-      const linkedTasks = await tx
-        .select({
-          id: entities.id,
-          canonicalName: entities.canonicalName,
-          aliases: entities.aliases,
-          metadata: entities.metadata,
-        })
-        .from(entityRelationships)
-        .innerJoin(
-          entities,
-          and(
-            eq(entities.teamId, entityRelationships.teamId),
-            eq(entities.id, entityRelationships.fromEntityId),
-            eq(entities.type, 'task'),
-            eq(entities.taskCategoryMode, 'automatic'),
-            isNull(entities.archivedAt),
-            isNull(entities.mergedIntoId),
-          ),
-        )
-        .where(
-          and(
-            eq(entityRelationships.teamId, scope.teamId),
-            eq(entityRelationships.toEntityId, updated.id),
-            eq(entityRelationships.kind, 'child'),
-          ),
-        )
-        .orderBy(asc(entities.id))
-        .limit(500);
-      for (const task of linkedTasks) {
-        const packet = buildTaskCategoryPacket({
-          title: task.canonicalName,
-          aliases: stringArrayFromUnknown(task.aliases),
-          metadata: recordFromUnknown(task.metadata),
-          primaryProjectName: updated.canonicalName,
-        });
-        const inputHash = taskCategoryInputHash(packet, TIMELINE_MODELS.taskCategorization.id);
-        await tx
-          .update(entities)
-          .set({
-            taskCategoryStatus: 'pending',
-            taskCategoryRequestedInputHash: inputHash,
-            taskCategoryTaxonomyVersion: TASK_CATEGORY_TAXONOMY_VERSION,
-            taskCategoryUpdatedAt: new Date(),
-          })
-          .where(and(eq(entities.teamId, scope.teamId), eq(entities.id, task.id)));
-        linkedTaskCategoryJobs.push({ taskId: task.id, inputHash });
-      }
-    }
-    const linkedTaskCategoryFanout =
-      updated.type === 'project' && linkedTaskCategoryJobs.length === 500
-        ? {
-            projectId: updated.id,
-            projectVersion: taskProjectVersion(updated.id, updated.canonicalName),
-            afterTaskId: linkedTaskCategoryJobs.at(-1)?.taskId ?? updated.id,
-          }
-        : null;
+    const linkedTaskCategoryInvalidation =
+      updated.type === 'project' && changes.some((change) => change.field === 'canonicalName')
+        ? await invalidateLinkedTaskCategoriesForProject(tx, scope.teamId, updated)
+        : { jobs: [], fanout: null };
 
     const summary = changes
       .map((c) => `${c.field}: ${JSON.stringify(c.previousValue)} → ${JSON.stringify(c.newValue)}`)
@@ -4411,8 +4387,8 @@ export async function updateObject(
       changeIds: changeRows.map((r) => r.id),
       dueDateCalendarSync: mergeDueDateCalendarSyncResults(dueDateCalendarSyncResults),
       requestedCategoryHash,
-      linkedTaskCategoryJobs,
-      linkedTaskCategoryFanout,
+      linkedTaskCategoryJobs: linkedTaskCategoryInvalidation.jobs,
+      linkedTaskCategoryFanout: linkedTaskCategoryInvalidation.fanout,
     };
   });
 
@@ -4465,27 +4441,11 @@ export async function updateObject(
       { teamId: scope.teamId, taskId: entityId, op: 'updateObject:taskCategory' },
     );
   }
-  for (const job of txResult.linkedTaskCategoryJobs) {
-    enqueueTaskCategoryBestEffort(
-      {
-        teamId: scope.teamId,
-        taskId: job.taskId,
-        inputHash: job.inputHash,
-        trigger: 'project_change',
-      },
-      { teamId: scope.teamId, taskId: job.taskId, op: 'updateObject:projectCategory' },
-    );
-  }
-  if (txResult.linkedTaskCategoryFanout) {
-    enqueueTaskCategoryBestEffort(
-      {
-        kind: 'project_fanout',
-        teamId: scope.teamId,
-        ...txResult.linkedTaskCategoryFanout,
-      },
-      { teamId: scope.teamId, projectId: entityId, op: 'updateObject:projectFanout' },
-    );
-  }
+  enqueueProjectTaskCategoryInvalidation(
+    scope.teamId,
+    { jobs: txResult.linkedTaskCategoryJobs, fanout: txResult.linkedTaskCategoryFanout },
+    'updateObject',
+  );
   return { object: txResult.object, changedFields: txResult.changedFields };
 }
 
@@ -4963,64 +4923,10 @@ export async function mergeObjects(
       },
     });
 
-    const linkedTaskCategoryJobs: { taskId: string; inputHash: string }[] = [];
-    if (survivor.type === 'project') {
-      const linkedTasks = await tx
-        .select({
-          id: entities.id,
-          canonicalName: entities.canonicalName,
-          aliases: entities.aliases,
-          metadata: entities.metadata,
-        })
-        .from(entityRelationships)
-        .innerJoin(
-          entities,
-          and(
-            eq(entities.teamId, entityRelationships.teamId),
-            eq(entities.id, entityRelationships.fromEntityId),
-            eq(entities.type, 'task'),
-            eq(entities.taskCategoryMode, 'automatic'),
-            isNull(entities.archivedAt),
-            isNull(entities.mergedIntoId),
-          ),
-        )
-        .where(
-          and(
-            eq(entityRelationships.teamId, scope.teamId),
-            eq(entityRelationships.toEntityId, survivor.id),
-            eq(entityRelationships.kind, 'child'),
-          ),
-        )
-        .orderBy(asc(entities.id))
-        .limit(500);
-      for (const task of linkedTasks) {
-        const packet = buildTaskCategoryPacket({
-          title: task.canonicalName,
-          aliases: stringArrayFromUnknown(task.aliases),
-          metadata: recordFromUnknown(task.metadata),
-          primaryProjectName: survivor.canonicalName,
-        });
-        const inputHash = taskCategoryInputHash(packet, TIMELINE_MODELS.taskCategorization.id);
-        await tx
-          .update(entities)
-          .set({
-            taskCategoryStatus: 'pending',
-            taskCategoryRequestedInputHash: inputHash,
-            taskCategoryTaxonomyVersion: TASK_CATEGORY_TAXONOMY_VERSION,
-            taskCategoryUpdatedAt: new Date(),
-          })
-          .where(and(eq(entities.teamId, scope.teamId), eq(entities.id, task.id)));
-        linkedTaskCategoryJobs.push({ taskId: task.id, inputHash });
-      }
-    }
-    const linkedTaskCategoryFanout =
-      survivor.type === 'project' && linkedTaskCategoryJobs.length === 500
-        ? {
-            projectId: survivor.id,
-            projectVersion: taskProjectVersion(survivor.id, survivor.canonicalName),
-            afterTaskId: linkedTaskCategoryJobs.at(-1)?.taskId ?? survivor.id,
-          }
-        : null;
+    const linkedTaskCategoryInvalidation =
+      survivor.type === 'project'
+        ? await invalidateLinkedTaskCategoriesForProject(tx, scope.teamId, survivor)
+        : { jobs: [], fanout: null };
 
     const updatedRows = await tx
       .select()
@@ -5033,8 +4939,8 @@ export async function mergeObjects(
       survivor: toObjectRow(updated),
       mergedIds: loserIds,
       dueDateCalendarSync: mergeDueDateCalendarSyncResults(dueDateCalendarSyncResults),
-      linkedTaskCategoryJobs,
-      linkedTaskCategoryFanout,
+      linkedTaskCategoryJobs: linkedTaskCategoryInvalidation.jobs,
+      linkedTaskCategoryFanout: linkedTaskCategoryInvalidation.fanout,
     };
   });
 
@@ -5064,31 +4970,11 @@ export async function mergeObjects(
       op: 'mergeObjects:deleteMergedEmbeddings',
     });
   }
-  for (const job of result.linkedTaskCategoryJobs) {
-    enqueueTaskCategoryBestEffort(
-      {
-        teamId: scope.teamId,
-        taskId: job.taskId,
-        inputHash: job.inputHash,
-        trigger: 'project_change',
-      },
-      { teamId: scope.teamId, taskId: job.taskId, op: 'mergeObjects:projectCategory' },
-    );
-  }
-  if (result.linkedTaskCategoryFanout) {
-    enqueueTaskCategoryBestEffort(
-      {
-        kind: 'project_fanout',
-        teamId: scope.teamId,
-        ...result.linkedTaskCategoryFanout,
-      },
-      {
-        teamId: scope.teamId,
-        projectId: result.survivor.id,
-        op: 'mergeObjects:projectFanout',
-      },
-    );
-  }
+  enqueueProjectTaskCategoryInvalidation(
+    scope.teamId,
+    { jobs: result.linkedTaskCategoryJobs, fanout: result.linkedTaskCategoryFanout },
+    'mergeObjects',
+  );
   return result;
 }
 

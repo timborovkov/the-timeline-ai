@@ -8,7 +8,6 @@ import {
   pgTable,
   text,
   timestamp,
-  uniqueIndex,
   uuid,
 } from 'drizzle-orm/pg-core';
 
@@ -57,9 +56,9 @@ export const taskCategoryAssignments = pgTable(
       table.model,
       table.outcome,
     ),
-    uniqueIndex('task_category_assignments_applied_hash_unq')
+    index('task_category_assignments_input_hash_idx')
       .on(table.teamId, table.entityId, table.inputHash)
-      .where(sql`${table.outcome} = 'applied' AND ${table.inputHash} IS NOT NULL`),
+      .where(sql`${table.inputHash} IS NOT NULL`),
     check('task_category_assignments_source_chk', sql`${table.source} IN ('llm', 'user')`),
     check(
       'task_category_assignments_category_chk',

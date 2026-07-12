@@ -3142,6 +3142,55 @@ describe('processSuggestionJobForTests', () => {
     expect(relation).toMatchObject({ toEntityId: project.id, kind: 'child' });
   });
 
+  it('bounds proposal-time category classification concurrency', async () => {
+    const rawEventId = '10000000-0000-0000-0000-0000000000c2';
+    await seedRawEvent(db as never, {
+      id: rawEventId,
+      text: 'Prepare wireframes, write launch copy, and implement the API.',
+      sourceMetadata: {
+        extracted_at: new Date('2026-05-27T10:01:00.000Z').toISOString(),
+        extraction_model_version: 'test-extract@1',
+      },
+    });
+    const chat = vi.fn().mockResolvedValue({
+      model: MODEL_ID,
+      object: {
+        bundles: [
+          {
+            title: 'Launch work',
+            confidence: 'high',
+            items: ['Prepare wireframes', 'Write launch copy', 'Implement the API'].map(
+              (canonicalName) => ({
+                operation: 'create',
+                targetKind: 'task',
+                title: canonicalName,
+                proposedPayload: { canonicalName },
+              }),
+            ),
+          },
+        ],
+      },
+    });
+    let active = 0;
+    let maxActive = 0;
+    const classifyTaskCategory = vi.fn().mockImplementation(async () => {
+      active += 1;
+      maxActive = Math.max(maxActive, active);
+      await Promise.resolve();
+      active -= 1;
+      return { category: 'design', confidence: 0.9, model: 'task-category-model' };
+    });
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { rawEventId, teamId: TEAM_ID },
+      { getEnv: env, chatStructured: chat, classifyTaskCategory, modelId: MODEL_ID },
+    );
+
+    expect(classifyTaskCategory).toHaveBeenCalledTimes(3);
+    expect(maxActive).toBe(1);
+  });
+
   it('rewrites duplicate creates using objects outside the prompt context window', async () => {
     const rawEventId = '10000000-0000-0000-0000-000000000031';
     const [oldObject] = await db
