@@ -2773,6 +2773,26 @@ describe('object scope — archive visibility', () => {
     await expect(ownerScope.listNotifications({ limit: 501 })).resolves.toHaveLength(501);
   });
 
+  it('lists notifications newest first regardless of when they were read', async () => {
+    await pg.query(
+      `INSERT INTO notifications (team_id, user_id, kind, summary, payload, created_at, read_at)
+       VALUES
+         ($1, $2, 'mention', 'Old notification', '{}'::jsonb, '2026-01-01T00:00:00.000Z', '2026-01-01T01:00:00.000Z'),
+         ($1, $2, 'mention', 'Middle notification', '{}'::jsonb, '2026-01-02T00:00:00.000Z', '2026-01-02T01:00:00.000Z'),
+         ($1, $2, 'mention', 'New notification', '{}'::jsonb, '2026-01-03T00:00:00.000Z', '2026-01-03T01:00:00.000Z')`,
+      [TEAM_A, USER_OWNER],
+    );
+    const ownerScope = withTeam(db, TEAM_A, USER_OWNER).objects;
+
+    const rows = await ownerScope.listNotifications({ limit: 3 });
+
+    expect(rows.map((row) => row.summary)).toEqual([
+      'New notification',
+      'Middle notification',
+      'Old notification',
+    ]);
+  });
+
   it('returns no object search results for queries without searchable tokens', async () => {
     await pg.query(
       `INSERT INTO entities (team_id, type, canonical_name, status, aliases, metadata, updated_at)

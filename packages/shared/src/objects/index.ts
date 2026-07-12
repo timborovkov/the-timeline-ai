@@ -5757,7 +5757,6 @@ export async function listNotifications(
     unreadOnly?: boolean;
     limit?: number;
     offset?: number;
-    order?: 'inbox' | 'latest';
   } = {},
 ): Promise<NotificationRow[]> {
   await scope.requireMembership();
@@ -5765,21 +5764,11 @@ export async function listNotifications(
   if (filter.unreadOnly) conds.push(isNull(notifications.readAt));
   const limit = Math.min(Math.max(filter.limit ?? 100, 1), NOTIFICATION_QUERY_LIMIT_MAX);
   const offset = Math.max(filter.offset ?? 0, 0);
-  // Unread-first, then newest. Matches the shape of
-  // `notifications_team_user_inbox_idx` (team_id, user_id, read_at,
-  // created_at) so the planner can satisfy the inbox query directly from
-  // the index without re-sorting. Postgres default for ASC is NULLS LAST,
-  // but we want unread (NULL read_at) at the TOP — hence the explicit
-  // NULLS FIRST.
-  const orderBy =
-    filter.order === 'latest'
-      ? [desc(notifications.createdAt)]
-      : [sql`${notifications.readAt} ASC NULLS FIRST`, desc(notifications.createdAt)];
   const rows = await db
     .select()
     .from(notifications)
     .where(and(...conds))
-    .orderBy(...orderBy)
+    .orderBy(desc(notifications.createdAt), desc(notifications.id))
     .limit(limit)
     .offset(offset);
   return rows.map((r) => ({
