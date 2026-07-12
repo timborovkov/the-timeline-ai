@@ -39,14 +39,17 @@ async function main(): Promise<void> {
   }
   const db = getDb();
   const scope = withTeam(db, teamId, ZERO_UUID, { skipMembershipCheck: true });
-  const rows = await scope.objects.listObjects({
-    type: 'task',
-    archived: false,
-    taskCategoryNull: true,
-    taskCategoryBackfillEligible: true,
-    limit,
-    offset,
-  });
+  const [rows, projectAudit] = await Promise.all([
+    scope.objects.listObjects({
+      type: 'task',
+      archived: false,
+      taskCategoryNull: true,
+      taskCategoryBackfillEligible: true,
+      limit,
+      offset,
+    }),
+    scope.objects.auditTaskPrimaryProjectEdges(),
+  ]);
 
   const estimatedCostUsd = Number((rows.length * ESTIMATED_COST_USD_PER_TASK).toFixed(6));
   const report = {
@@ -61,9 +64,14 @@ async function main(): Promise<void> {
     estimatedOutputTokens: rows.length * ESTIMATED_OUTPUT_TOKENS_PER_TASK,
     estimatedCostUsd,
     estimateOnly: true,
+    ambiguousPrimaryProjectTaskIds: projectAudit.ambiguousTaskIds,
+    ambiguousPrimaryProjectTasksTruncated: projectAudit.hasMore,
   };
   process.stdout.write(`${JSON.stringify(report)}\n`);
   if (!execute) return;
+  if (projectAudit.ambiguousTaskIds.length > 0) {
+    throw new Error('Resolve tasks with multiple primary-project edges before enqueueing backfill');
+  }
   const maxCostArgument = argument('--max-cost-usd');
   const maxCostUsd = Number(maxCostArgument);
   if (maxCostArgument === null || !Number.isFinite(maxCostUsd) || maxCostUsd < 0) {

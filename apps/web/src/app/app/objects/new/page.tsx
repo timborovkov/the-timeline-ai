@@ -9,6 +9,7 @@ import { NewObjectForm } from '@/components/objects/new-object-form';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { loadProjectFilterRows } from '@/lib/project-filter-options';
 
 export const metadata: Metadata = {
   title: 'New object',
@@ -33,12 +34,11 @@ export default async function NewObjectPage({
   const { active } = await resolveActiveTeam(session.user.id);
   if (!active) redirect('/sign-in');
   const scope = withTeam(db, active.teamId, session.user.id);
-  const projects = await scope.objects.listObjects({
-    type: 'project',
-    archived: false,
-    limit: 200,
-  });
   const projectParam = Array.isArray(query.project) ? query.project[0] : query.project;
+  const projects = await loadProjectFilterRows({
+    listObjects: (filter) => scope.objects.listObjects(filter),
+    selected: projectParam ?? '',
+  });
   const returnToParam = Array.isArray(query.returnTo) ? query.returnTo[0] : query.returnTo;
   const defaultProjectId =
     projectParam &&

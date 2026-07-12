@@ -110,6 +110,70 @@ describe('task category and primary project state', () => {
     expect(filteredBoard?.items.map((item) => item.entityId)).toEqual([task.id]);
   });
 
+  it('does not treat ambiguous legacy project edges as a primary project', async () => {
+    const workspace = withTeam(db, TEAM_A, USER_A);
+    const firstProject = await workspace.objects.createObject({
+      type: 'project',
+      canonicalName: 'First legacy project',
+      actor: { kind: 'user', userId: USER_A },
+    });
+    const secondProject = await workspace.objects.createObject({
+      type: 'project',
+      canonicalName: 'Second legacy project',
+      actor: { kind: 'user', userId: USER_A },
+    });
+    const task = await workspace.objects.createObject({
+      type: 'task',
+      canonicalName: 'Ambiguous legacy task',
+      actor: { kind: 'user', userId: USER_A },
+    });
+    await db.insert(entityRelationships).values([
+      {
+        teamId: TEAM_A,
+        fromEntityId: task.id,
+        toEntityId: firstProject.id,
+        kind: 'child',
+        createdBy: USER_A,
+      },
+      {
+        teamId: TEAM_A,
+        fromEntityId: task.id,
+        toEntityId: secondProject.id,
+        kind: 'child',
+        createdBy: USER_A,
+      },
+    ]);
+
+    await expect(workspace.objects.listPrimaryProjectsForTasks([task.id])).resolves.toEqual([]);
+    await expect(workspace.objects.auditTaskPrimaryProjectEdges()).resolves.toEqual({
+      ambiguousTaskIds: [task.id],
+      hasMore: false,
+    });
+    await expect(
+      workspace.objects.listObjects({ type: 'task', primaryProjectId: firstProject.id }),
+    ).resolves.toEqual([]);
+    await expect(
+      workspace.objects.listObjects({ type: 'task', primaryProjectId: secondProject.id }),
+    ).resolves.toEqual([]);
+    const board = await workspace.boards.createBoard({
+      name: 'Legacy project board',
+      templateKind: 'custom',
+      lanes: [{ name: 'Open' }],
+    });
+    await workspace.boards.addBoardItem(board.id, {
+      entityId: task.id,
+      actor: { kind: 'user', userId: USER_A },
+    });
+    await expect(
+      workspace.boards.getBoard(board.id, {
+        itemFilter: { object: { primaryProjectId: firstProject.id } },
+      }),
+    ).resolves.toMatchObject({ items: [] });
+    await expect(
+      workspace.objects.getTaskCategoryClassificationInput(task.id),
+    ).resolves.toMatchObject({ packet: { primaryProjectName: null } });
+  });
+
   it('applies an LLM result without reordering the task, then protects a human override', async () => {
     const scope = withTeam(db, TEAM_A, USER_A).objects;
     const task = await scope.createObject({

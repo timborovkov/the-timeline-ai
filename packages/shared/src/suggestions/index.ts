@@ -3531,7 +3531,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         if (type === 'task') await applyProposedTaskCategory(created.id, parsed);
         return created.id;
       } catch (error) {
-        await rollbackSuggestedProject(item, project);
+        await archiveSuggestedProjectAfterFailure(item, project);
         throw error;
       }
     }
@@ -3564,7 +3564,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       }
       return existing.id;
     } catch (error) {
-      await rollbackSuggestedProject(item, project);
+      await archiveSuggestedProjectAfterFailure(item, project);
       throw error;
     }
   }
@@ -3633,25 +3633,33 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     return { id: project.id, name: project.canonicalName, createdForSuggestion: true };
   }
 
-  async function rollbackSuggestedProject(
+  async function archiveSuggestedProjectAfterFailure(
     item: typeof agentSuggestionItems.$inferSelect,
     project: { id: string; createdForSuggestion: boolean } | null,
   ): Promise<void> {
     if (!project?.createdForSuggestion) return;
-    await db.delete(entities).where(
-      and(
-        eq(entities.teamId, teamId),
-        eq(entities.id, project.id),
-        eq(entities.type, 'project'),
-        sql`${entities.metadata} ->> 'agent_suggestion_project_for_item_id' = ${item.id}`,
-        sql`NOT EXISTS (
-          SELECT 1
-          FROM entity_relationships
-          WHERE entity_relationships.team_id = ${teamId}
-            AND entity_relationships.to_entity_id = ${project.id}
-        )`,
-      ),
-    );
+    const [candidate] = await db
+      .select({ id: entities.id })
+      .from(entities)
+      .where(
+        and(
+          eq(entities.teamId, teamId),
+          eq(entities.id, project.id),
+          eq(entities.type, 'project'),
+          isNull(entities.archivedAt),
+          sql`${entities.metadata} ->> 'agent_suggestion_project_for_item_id' = ${item.id}`,
+          sql`NOT EXISTS (
+            SELECT 1
+            FROM entity_relationships
+            WHERE entity_relationships.team_id = ${teamId}
+              AND entity_relationships.to_entity_id = ${project.id}
+          )`,
+        ),
+      )
+      .limit(1);
+    if (candidate) {
+      await objects.archiveObject(candidate.id, { kind: 'agent', userId: null });
+    }
   }
 
   async function applyProposedTaskCategory(

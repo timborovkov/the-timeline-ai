@@ -1236,6 +1236,18 @@ function primaryProjectCondition(scope: TeamScopeCore, filter: ObjectCountFilter
       AND primary_project.type = 'project'
       AND primary_project.merged_into_id IS NULL
       AND primary_project.id IN (${idList})
+      AND 1 = (
+        SELECT count(*)
+        FROM entity_relationships AS candidate_project_rel
+        INNER JOIN entities AS candidate_project
+          ON candidate_project.id = candidate_project_rel.to_entity_id
+          AND candidate_project.team_id = candidate_project_rel.team_id
+        WHERE candidate_project_rel.team_id = task_project_rel.team_id
+          AND candidate_project_rel.from_entity_id = task_project_rel.from_entity_id
+          AND candidate_project_rel.kind = 'child'
+          AND candidate_project.type = 'project'
+          AND candidate_project.merged_into_id IS NULL
+      )
   )`;
 }
 
@@ -5216,9 +5228,60 @@ export async function listPrimaryProjectsForTasks(
         eq(entityRelationships.kind, 'child'),
         eq(entities.type, 'project'),
         isNull(entities.mergedIntoId),
+        sql`1 = (
+          SELECT count(*)
+          FROM entity_relationships AS candidate_project_rel
+          INNER JOIN entities AS candidate_project
+            ON candidate_project.id = candidate_project_rel.to_entity_id
+            AND candidate_project.team_id = candidate_project_rel.team_id
+          WHERE candidate_project_rel.team_id = ${entityRelationships.teamId}
+            AND candidate_project_rel.from_entity_id = ${entityRelationships.fromEntityId}
+            AND candidate_project_rel.kind = 'child'
+            AND candidate_project.type = 'project'
+            AND candidate_project.merged_into_id IS NULL
+        )`,
       ),
     )
     .orderBy(asc(entityRelationships.createdAt), asc(entityRelationships.id));
+}
+
+export async function auditTaskPrimaryProjectEdges(
+  db: Db,
+  scope: TeamScopeCore,
+): Promise<{ ambiguousTaskIds: string[]; hasMore: boolean }> {
+  await scope.requireMembership();
+  const tasks = alias(entities, 'ambiguous_primary_project_tasks');
+  const projects = alias(entities, 'ambiguous_primary_projects');
+  const rows = await db
+    .select({ taskId: entityRelationships.fromEntityId })
+    .from(entityRelationships)
+    .innerJoin(
+      tasks,
+      and(
+        eq(tasks.teamId, entityRelationships.teamId),
+        eq(tasks.id, entityRelationships.fromEntityId),
+        eq(tasks.type, 'task'),
+        isNull(tasks.mergedIntoId),
+      ),
+    )
+    .innerJoin(
+      projects,
+      and(
+        eq(projects.teamId, entityRelationships.teamId),
+        eq(projects.id, entityRelationships.toEntityId),
+        eq(projects.type, 'project'),
+        isNull(projects.mergedIntoId),
+      ),
+    )
+    .where(and(eq(entityRelationships.teamId, scope.teamId), eq(entityRelationships.kind, 'child')))
+    .groupBy(entityRelationships.fromEntityId)
+    .having(sql`count(*) > 1`)
+    .orderBy(asc(entityRelationships.fromEntityId))
+    .limit(101);
+  return {
+    ambiguousTaskIds: rows.slice(0, 100).map((row) => row.taskId),
+    hasMore: rows.length > 100,
+  };
 }
 
 export async function setTaskProject(
@@ -5492,7 +5555,7 @@ async function taskCategoryPacketForRow(
   teamId: string,
   task: Pick<EntityRow, 'id' | 'canonicalName' | 'aliases' | 'metadata'>,
 ) {
-  const [project] = await tx
+  const projects = await tx
     .select({ canonicalName: entities.canonicalName })
     .from(entityRelationships)
     .innerJoin(
@@ -5512,7 +5575,8 @@ async function taskCategoryPacketForRow(
       ),
     )
     .orderBy(asc(entityRelationships.createdAt), asc(entityRelationships.id))
-    .limit(1);
+    .limit(2);
+  const project = projects.length === 1 ? projects[0] : null;
   return buildTaskCategoryPacket({
     title: task.canonicalName,
     aliases: stringArrayFromUnknown(task.aliases),
@@ -8000,6 +8064,7 @@ export function createObjectScope(db: Db, scope: TeamScopeCore) {
     mergeObjects: (input: Parameters<typeof mergeObjects>[2]) => mergeObjects(db, scope, input),
     listPrimaryProjectsForTasks: (taskIds: string[]) =>
       listPrimaryProjectsForTasks(db, scope, taskIds),
+    auditTaskPrimaryProjectEdges: () => auditTaskPrimaryProjectEdges(db, scope),
     setTaskProject: (taskId: string, projectId: string | null, actor: UpdateActor) =>
       setTaskProject(db, scope, taskId, projectId, actor),
     getTaskCategoryClassificationInput: (taskId: string) =>

@@ -1244,6 +1244,18 @@ export function createBoardScope({
             AND primary_project.type = 'project'
             AND primary_project.merged_into_id IS NULL
             AND primary_project.id IN (${idList})
+            AND 1 = (
+              SELECT count(*)
+              FROM entity_relationships AS candidate_project_rel
+              INNER JOIN entities AS candidate_project
+                ON candidate_project.id = candidate_project_rel.to_entity_id
+                AND candidate_project.team_id = candidate_project_rel.team_id
+              WHERE candidate_project_rel.team_id = task_project_rel.team_id
+                AND candidate_project_rel.from_entity_id = task_project_rel.from_entity_id
+                AND candidate_project_rel.kind = 'child'
+                AND candidate_project.type = 'project'
+                AND candidate_project.merged_into_id IS NULL
+            )
         )`);
       }
     }

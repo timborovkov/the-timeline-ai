@@ -3597,7 +3597,7 @@ describe('suggestion scope', () => {
     ]);
   });
 
-  it('removes a newly proposed project when task creation cannot complete', async () => {
+  it('archives a newly proposed project when task creation cannot complete', async () => {
     const scope = withTeam(db as never, TEAM_ID, USER_ID);
     await scope.objects.createObject({
       type: 'task',
@@ -3630,9 +3630,21 @@ describe('suggestion scope', () => {
     const projects = await scope.objects.listObjects({
       type: 'project',
       query: 'Project that must roll back',
-      archived: false,
+      archived: true,
     });
-    expect(projects).toEqual([]);
+    expect(projects).toHaveLength(1);
+    expect(projects[0]?.canonicalName).toBe('Project that must roll back');
+    expect(projects[0]?.archivedAt).toBeInstanceOf(Date);
+    const projectEvents = await db
+      .select({ contentText: rawEvents.contentText })
+      .from(rawEvents)
+      .where(eq(rawEvents.teamId, TEAM_ID));
+    expect(projectEvents.map((event) => event.contentText)).toEqual(
+      expect.arrayContaining([
+        'Agent created project: Project that must roll back',
+        expect.stringContaining('Agent applied project: Project that must roll back — archivedAt'),
+      ]),
+    );
   });
 
   it('keeps a proposed task pending when its category context hash is stale', async () => {
