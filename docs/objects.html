@@ -318,7 +318,9 @@
         The inbox view (<code>/app/inbox</code>) and header preview sort newest first by
         <code>(created_at DESC, id DESC)</code>. The
         <code>notifications_team_user_inbox_idx</code> index matches that order so paginated inbox
-        queries do not need a separate sort.
+        queries do not need a separate sort. A partial
+        <code>notifications_team_user_unread_idx</code> keeps unread counts and filtered pages fast
+        without scanning a user's read-notification history.
       </p>
 
       <h2 id="since-last-visit">Since last visit</h2>

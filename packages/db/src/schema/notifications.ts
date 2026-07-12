@@ -69,6 +69,9 @@ export const notifications = pgTable(
       table.createdAt.desc(),
       table.id.desc(),
     ),
+    index('notifications_team_user_unread_idx')
+      .on(table.teamId.asc(), table.userId.asc(), table.createdAt.desc(), table.id.desc())
+      .where(sql`${table.readAt} IS NULL`),
     index('notifications_team_entity_idx').on(table.teamId, table.entityId),
     index('notifications_team_suggestion_idx').on(table.teamId, table.agentSuggestionId),
     uniqueIndex('notifications_suggestion_recipient_unq')
