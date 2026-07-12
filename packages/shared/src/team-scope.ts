@@ -16,16 +16,22 @@ import {
   eventSource,
   factEntities,
   facts as factsTable,
+  integrationSelections,
+  integrationSyncState,
+  integrations,
   objectIdentityFacets,
   objectNotes,
   rawEvents,
   reconciliationEvidence,
   reconciliationOutputs,
   meetingTranscriptChunks,
+  slackConversationBindings,
+  slackWorkspaces,
   teamMembers,
   teamVisibilityDefaults,
   teams,
   teamRole,
+  telegramChatBindings,
   timelineMomentPresentations,
   users,
   visibilityDefaultSource,
@@ -183,9 +189,29 @@ export interface EventListFilters {
    * 'system' | 'document' | 'meeting' | 'integration' | 'calendar'.
    */
   source?: string | string[];
+  /**
+   * Narrow timeline events to provider- or resource-level origins. Multiple
+   * origins are ORed together, then combined with the other filters.
+   */
+  origins?: TimelineOriginFilter[];
   limit?: number;
   cursor?: string | null;
 }
+
+export type TimelineOriginFilter =
+  | { kind: 'provider'; provider: string }
+  | { kind: 'monday_board'; boardId: string }
+  | { kind: 'github_repo'; repo: string }
+  | { kind: 'slack_channel'; channelId: string; workspaceId?: string }
+  | { kind: 'telegram_chat'; chatId: string };
+
+export interface TimelineSourceFacet {
+  filter: TimelineOriginFilter;
+  label: string;
+  eventCount: number;
+}
+
+const RECENT_SOURCE_FACET_EVENT_LIMIT = 2_000;
 
 export type TimelineImpactKind =
   | 'task'
@@ -1440,6 +1466,8 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
         eq(rawEvents.source, filters.source as (typeof rawEvents.source.enumValues)[number]),
       );
     }
+    const originCondition = timelineOriginFilterCondition(filters.origins);
+    if (originCondition) conditions.push(originCondition);
     const cursor = decodeCursor(filters.cursor);
     if (filters.cursor && !cursor) throw new Error('Invalid cursor');
     if (cursor) {
@@ -1457,6 +1485,334 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
       .where(and(...conditions))
       .orderBy(desc(rawEvents.occurredAt), desc(rawEvents.id))
       .limit(filters.limit ?? 200);
+  }
+
+  function timelineOriginFilterCondition(origins: TimelineOriginFilter[] | undefined) {
+    if (!origins?.length) return undefined;
+    const predicates = origins.map((origin) => {
+      switch (origin.kind) {
+        case 'provider':
+          return and(
+            eq(rawEvents.source, 'integration'),
+            sql`${rawEvents.sourceMetadata} ->> 'provider' = ${origin.provider}`,
+          );
+        case 'monday_board':
+          return and(
+            eq(rawEvents.source, 'integration'),
+            sql`${rawEvents.sourceMetadata} ->> 'provider' = 'monday'`,
+            sql`${rawEvents.sourceMetadata} ->> 'monday_board_id' = ${origin.boardId}`,
+          );
+        case 'github_repo':
+          return and(
+            eq(rawEvents.source, 'integration'),
+            sql`${rawEvents.sourceMetadata} ->> 'provider' = 'github'`,
+            sql`${rawEvents.sourceMetadata} #>> '{github,repo}' = ${origin.repo}`,
+          );
+        case 'slack_channel': {
+          const workspaceCondition = origin.workspaceId
+            ? sql`COALESCE(${rawEvents.sourceMetadata} ->> 'slack_workspace_id', ${rawEvents.sourceMetadata} ->> 'slack_team_id') = ${origin.workspaceId}`
+            : undefined;
+          return and(
+            or(
+              eq(rawEvents.source, 'slack'),
+              and(
+                eq(rawEvents.source, 'integration'),
+                sql`${rawEvents.sourceMetadata} ->> 'provider' = 'slack'`,
+              ),
+            ),
+            sql`${rawEvents.sourceMetadata} ->> 'slack_channel_id' = ${origin.channelId}`,
+            workspaceCondition,
+          );
+        }
+        case 'telegram_chat':
+          return and(
+            eq(rawEvents.source, 'telegram'),
+            sql`${rawEvents.sourceMetadata} ->> 'tg_chat_id' = ${origin.chatId}`,
+          );
+      }
+    });
+    return or(...predicates);
+  }
+
+  function addTimelineSourceFacetFromEvent(
+    add: (key: string, facet: TimelineSourceFacet, hasDisplayLabel: boolean) => void,
+    row: {
+      source: (typeof rawEvents.$inferSelect)['source'];
+      provider: string | null;
+      mondayBoardId: string | null;
+      mondayBoardName: string | null;
+      githubRepo: string | null;
+      slackWorkspaceId: string | null;
+      slackChannelId: string | null;
+      slackChannelName: string | null;
+      telegramChatId: string | null;
+      telegramChatTitle: string | null;
+    },
+  ): void {
+    if (row.source === 'integration' && row.provider) {
+      add(
+        `provider:${row.provider}`,
+        {
+          filter: { kind: 'provider', provider: row.provider },
+          label: row.provider,
+          eventCount: 1,
+        },
+        true,
+      );
+    }
+    if (row.provider === 'monday' && row.mondayBoardId) {
+      add(
+        `monday:${row.mondayBoardId}`,
+        {
+          filter: { kind: 'monday_board', boardId: row.mondayBoardId },
+          label: row.mondayBoardName ?? row.mondayBoardId,
+          eventCount: 1,
+        },
+        Boolean(row.mondayBoardName),
+      );
+    }
+    if (row.provider === 'github' && row.githubRepo) {
+      add(
+        `github:${row.githubRepo}`,
+        {
+          filter: { kind: 'github_repo', repo: row.githubRepo },
+          label: row.githubRepo,
+          eventCount: 1,
+        },
+        true,
+      );
+    }
+    if ((row.source === 'slack' || row.provider === 'slack') && row.slackChannelId) {
+      add(
+        `slack:${row.slackWorkspaceId ?? ''}:${row.slackChannelId}`,
+        {
+          filter: {
+            kind: 'slack_channel',
+            channelId: row.slackChannelId,
+            ...(row.slackWorkspaceId ? { workspaceId: row.slackWorkspaceId } : {}),
+          },
+          label: row.slackChannelName
+            ? `#${row.slackChannelName.replace(/^#/, '')}`
+            : row.slackChannelId,
+          eventCount: 1,
+        },
+        Boolean(row.slackChannelName),
+      );
+    }
+    if (row.source === 'telegram' && row.telegramChatId) {
+      add(
+        `telegram:${row.telegramChatId}`,
+        {
+          filter: { kind: 'telegram_chat', chatId: row.telegramChatId },
+          label: row.telegramChatTitle ?? row.telegramChatId,
+          eventCount: 1,
+        },
+        Boolean(row.telegramChatTitle),
+      );
+    }
+  }
+
+  async function listSourceFacets(): Promise<TimelineSourceFacet[]> {
+    await ensureMember();
+    const facets = new Map<string, TimelineSourceFacet>();
+    function add(key: string, facet: TimelineSourceFacet, replaceLabel = true): void {
+      const current = facets.get(key);
+      facets.set(key, {
+        ...(current ?? facet),
+        ...(replaceLabel ? facet : {}),
+        eventCount: facet.eventCount + (current?.eventCount ?? 0),
+      });
+    }
+
+    const integrationVisibility = or(
+      eq(integrations.visibilityDefault, 'team'),
+      eq(integrations.connectedByUserId, userId),
+      and(
+        eq(integrations.visibilityDefault, 'specific_users'),
+        sql`${userId} = ANY(COALESCE(${integrations.visibilityDefaultUserIds}, ARRAY[]::uuid[]))`,
+      ),
+    );
+    const provider = sql<string | null>`${rawEvents.sourceMetadata} ->> 'provider'`;
+    const mondayBoardId = sql<string | null>`${rawEvents.sourceMetadata} ->> 'monday_board_id'`;
+    const mondayBoardName = sql<string | null>`${rawEvents.sourceMetadata} ->> 'monday_board_name'`;
+    const githubRepo = sql<string | null>`${rawEvents.sourceMetadata} #>> '{github,repo}'`;
+    const slackWorkspaceId = sql<
+      string | null
+    >`COALESCE(${rawEvents.sourceMetadata} ->> 'slack_workspace_id', ${rawEvents.sourceMetadata} ->> 'slack_team_id')`;
+    const slackChannelId = sql<string | null>`${rawEvents.sourceMetadata} ->> 'slack_channel_id'`;
+    const slackChannelName = sql<
+      string | null
+    >`${rawEvents.sourceMetadata} ->> 'slack_channel_name'`;
+    const telegramChatId = sql<string | null>`${rawEvents.sourceMetadata} ->> 'tg_chat_id'`;
+    const telegramChatTitle = sql<string | null>`${rawEvents.sourceMetadata} ->> 'tg_chat_title'`;
+    const sourceFacetRows = await Promise.all([
+      db
+        .select({
+          provider: integrations.provider,
+          externalAccountId: integrations.externalAccountId,
+          selectionKind: integrationSelections.selectionKind,
+          externalId: integrationSelections.externalId,
+          externalLabel: integrationSelections.externalLabel,
+        })
+        .from(integrations)
+        .leftJoin(integrationSelections, eq(integrationSelections.integrationId, integrations.id))
+        .where(and(eq(integrations.teamId, teamId), integrationVisibility)),
+      db
+        .select({ cursor: integrationSyncState.cursor })
+        .from(integrations)
+        .innerJoin(
+          integrationSelections,
+          and(
+            eq(integrationSelections.integrationId, integrations.id),
+            eq(integrationSelections.selectionKind, 'github.org'),
+          ),
+        )
+        .innerJoin(
+          integrationSyncState,
+          and(
+            eq(integrationSyncState.integrationId, integrations.id),
+            sql`${integrationSyncState.resourceType} = 'github.org:' || ${integrationSelections.externalId} || ':repos'`,
+          ),
+        )
+        .where(
+          and(
+            eq(integrations.teamId, teamId),
+            eq(integrations.provider, 'github'),
+            integrationVisibility,
+          ),
+        ),
+      db
+        .select({
+          chatId: telegramChatBindings.tgChatId,
+          label: telegramChatBindings.title,
+        })
+        .from(telegramChatBindings)
+        .where(eq(telegramChatBindings.teamId, teamId)),
+      db
+        .select({
+          workspaceId: slackWorkspaces.slackTeamId,
+          channelId: slackConversationBindings.slackConversationId,
+          label: slackConversationBindings.title,
+        })
+        .from(slackConversationBindings)
+        .innerJoin(slackWorkspaces, eq(slackConversationBindings.workspaceId, slackWorkspaces.id))
+        .where(
+          and(
+            eq(slackConversationBindings.teamId, teamId),
+            eq(slackConversationBindings.enabled, true),
+            or(
+              eq(slackConversationBindings.visibilityDefault, 'team'),
+              eq(slackConversationBindings.boundByUserId, userId),
+            ),
+          ),
+        ),
+      db
+        .select({
+          source: rawEvents.source,
+          provider,
+          mondayBoardId,
+          mondayBoardName,
+          githubRepo,
+          slackWorkspaceId,
+          slackChannelId,
+          slackChannelName,
+          telegramChatId,
+          telegramChatTitle,
+        })
+        .from(rawEvents)
+        .where(
+          and(
+            eq(rawEvents.teamId, teamId),
+            visibilityFilter,
+            activeRawEventFilter,
+            inArray(rawEvents.source, ['integration', 'slack', 'telegram']),
+          ),
+        )
+        .orderBy(desc(rawEvents.occurredAt), desc(rawEvents.id))
+        .limit(RECENT_SOURCE_FACET_EVENT_LIMIT),
+    ]);
+    const [integrationRows, githubOrgExpansions, telegramBindings, slackBindings, recentEvents] =
+      sourceFacetRows;
+
+    for (const row of integrationRows) {
+      add(`provider:${row.provider}`, {
+        filter: { kind: 'provider', provider: row.provider },
+        label: row.provider,
+        eventCount: 0,
+      });
+      if (!row.selectionKind || !row.externalId) continue;
+      if (row.provider === 'monday' && row.selectionKind === 'monday.board') {
+        add(`monday:${row.externalId}`, {
+          filter: { kind: 'monday_board', boardId: row.externalId },
+          label: row.externalLabel ?? row.externalId,
+          eventCount: 0,
+        });
+      } else if (row.provider === 'github' && row.selectionKind === 'github.repo') {
+        add(`github:${row.externalId}`, {
+          filter: { kind: 'github_repo', repo: row.externalId },
+          label: row.externalLabel ?? row.externalId,
+          eventCount: 0,
+        });
+      } else if (row.provider === 'slack' && row.selectionKind === 'slack.channel') {
+        const workspaceId = row.externalAccountId ?? undefined;
+        add(`slack:${workspaceId ?? ''}:${row.externalId}`, {
+          filter: {
+            kind: 'slack_channel',
+            channelId: row.externalId,
+            ...(workspaceId ? { workspaceId } : {}),
+          },
+          label: row.externalLabel ?? row.externalId,
+          eventCount: 0,
+        });
+      }
+    }
+    for (const row of githubOrgExpansions) {
+      const repos =
+        typeof row.cursor === 'object' &&
+        row.cursor !== null &&
+        'repos' in row.cursor &&
+        Array.isArray(row.cursor.repos)
+          ? row.cursor.repos
+          : [];
+      for (const repo of repos) {
+        if (typeof repo !== 'string' || repo.length === 0) continue;
+        add(`github:${repo}`, {
+          filter: { kind: 'github_repo', repo },
+          label: repo,
+          eventCount: 0,
+        });
+      }
+    }
+    for (const row of slackBindings) {
+      add(`slack:${row.workspaceId}:${row.channelId}`, {
+        filter: {
+          kind: 'slack_channel',
+          workspaceId: row.workspaceId,
+          channelId: row.channelId,
+        },
+        label: row.label ? `#${row.label.replace(/^#/, '')}` : row.channelId,
+        eventCount: 0,
+      });
+    }
+    for (const row of telegramBindings) {
+      const chatId = String(row.chatId);
+      add(`telegram:${chatId}`, {
+        filter: { kind: 'telegram_chat', chatId },
+        label: row.label ?? chatId,
+        eventCount: 0,
+      });
+    }
+    const eventLabelsSeen = new Set<string>();
+    for (const row of recentEvents) {
+      addTimelineSourceFacetFromEvent((key, facet, hasDisplayLabel) => {
+        add(key, facet, hasDisplayLabel && !eventLabelsSeen.has(key));
+        if (hasDisplayLabel) eventLabelsSeen.add(key);
+      }, row);
+    }
+
+    return [...facets.values()].sort(
+      (a, b) => b.eventCount - a.eventCount || a.label.localeCompare(b.label),
+    );
   }
 
   function metadataPredicateCondition(
@@ -2269,6 +2625,8 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
       listImpactItems: listTimelineImpactItems,
 
       listArtifactClusters: listTimelineArtifactClusters,
+
+      listSourceFacets,
 
       listEventsForMomentLookup,
 

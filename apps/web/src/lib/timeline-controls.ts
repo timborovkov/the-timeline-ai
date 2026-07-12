@@ -1,4 +1,5 @@
 import type { ImpactKind } from '@/lib/timeline-moments';
+import type { TimelineOriginFilter, TimelineSourceFacet } from '@timeline/shared/team-scope';
 
 export const TIMELINE_SOURCES = [
   ['chat', 'Chat'],
@@ -27,6 +28,16 @@ export const TIMELINE_IMPACT_FILTERS = [
 type TimelineSource = (typeof TIMELINE_SOURCES)[number][0];
 type ExactTimelineSource = Exclude<TimelineSource, 'chat' | 'integrations'>;
 type TimelinePreset = { label: string; all: true } | { label: string; source: TimelineSource };
+
+export interface TimelineOriginOption {
+  value: string;
+  label: string;
+}
+
+export interface TimelineSourceSelection {
+  source: string;
+  origin: string;
+}
 
 export const TIMELINE_PRESETS = [
   { label: 'All', all: true },
@@ -81,6 +92,133 @@ export function timelineSourceValues(
     }
   }
   return out;
+}
+
+export function parseTimelineOrigins(input: string | undefined): TimelineOriginFilter[] {
+  if (!input) return [];
+  const seen = new Set<string>();
+  const origins: TimelineOriginFilter[] = [];
+  for (const raw of input.split(',')) {
+    const token = raw.trim();
+    if (!token || token.length > 300 || seen.has(token)) continue;
+    const parts = token.split(':');
+    const [kind, first, second] = parts;
+    let origin: TimelineOriginFilter | undefined;
+    if (kind === 'provider' && parts.length === 2 && isSafeOriginPart(first)) {
+      origin = { kind: 'provider', provider: first };
+    } else if (kind === 'monday' && parts.length === 2 && isSafeOriginPart(first)) {
+      origin = { kind: 'monday_board', boardId: first };
+    } else if (kind === 'github' && parts.length === 2 && isSafeOriginPart(first)) {
+      origin = { kind: 'github_repo', repo: first };
+    } else if (
+      kind === 'slack' &&
+      parts.length === 3 &&
+      isSafeOriginPart(first) &&
+      isSafeOriginPart(second)
+    ) {
+      origin = { kind: 'slack_channel', workspaceId: first, channelId: second };
+    } else if (kind === 'slack' && parts.length === 2 && isSafeOriginPart(first)) {
+      origin = { kind: 'slack_channel', channelId: first };
+    } else if (kind === 'telegram' && parts.length === 2 && isSafeOriginPart(first)) {
+      origin = { kind: 'telegram_chat', chatId: first };
+    }
+    if (!origin) continue;
+    seen.add(token);
+    origins.push(origin);
+  }
+  return origins;
+}
+
+export function timelineOriginValue(origin: TimelineOriginFilter): string {
+  switch (origin.kind) {
+    case 'provider':
+      return `provider:${origin.provider}`;
+    case 'monday_board':
+      return `monday:${origin.boardId}`;
+    case 'github_repo':
+      return `github:${origin.repo}`;
+    case 'slack_channel':
+      return origin.workspaceId
+        ? `slack:${origin.workspaceId}:${origin.channelId}`
+        : `slack:${origin.channelId}`;
+    case 'telegram_chat':
+      return `telegram:${origin.chatId}`;
+  }
+}
+
+export function timelineOriginOptions(
+  facets: readonly TimelineSourceFacet[],
+): TimelineOriginOption[] {
+  return facets.map((facet) => ({
+    value: timelineOriginValue(facet.filter),
+    label: `${originGroupLabel(facet.filter)} · ${
+      facet.filter.kind === 'provider' ? 'All activity' : facet.label
+    }`,
+  }));
+}
+
+export function updateTimelineSourceSelection(
+  current: TimelineSourceSelection,
+  update: Partial<TimelineSourceSelection>,
+): TimelineSourceSelection {
+  if (update.source !== undefined) {
+    return {
+      source: update.source,
+      origin: update.source ? '' : current.origin,
+    };
+  }
+  if (update.origin !== undefined) {
+    return {
+      source: update.origin ? '' : current.source,
+      origin: update.origin,
+    };
+  }
+  return current;
+}
+
+export function isTimelinePresetActive(
+  preset: TimelinePreset,
+  input: {
+    sourceFilters: readonly TimelineSource[];
+    impactCount: number;
+    hasOriginFilter: boolean;
+  },
+): boolean {
+  if ('source' in preset) {
+    return input.sourceFilters.length === 1 && preset.source === input.sourceFilters[0];
+  }
+  return input.sourceFilters.length === 0 && input.impactCount === 0 && !input.hasOriginFilter;
+}
+
+function isSafeOriginPart(value: string | undefined): value is string {
+  return Boolean(value && value.length <= 200 && !/[\s,]/.test(value));
+}
+
+function originGroupLabel(origin: TimelineOriginFilter): string {
+  switch (origin.kind) {
+    case 'provider':
+      return providerDisplayLabel(origin.provider);
+    case 'monday_board':
+      return 'Monday.com board';
+    case 'github_repo':
+      return 'GitHub repository';
+    case 'slack_channel':
+      return 'Slack channel';
+    case 'telegram_chat':
+      return 'Telegram chat';
+  }
+}
+
+function providerDisplayLabel(provider: string): string {
+  const labels: Record<string, string> = {
+    github: 'GitHub',
+    google_drive: 'Google Drive',
+    linear: 'Linear',
+    monday: 'Monday.com',
+    sentry: 'Sentry',
+    slack: 'Slack integration',
+  };
+  return labels[provider] ?? provider;
 }
 
 export function parseTimelineImpact(input: string | undefined): ImpactKind | undefined {
