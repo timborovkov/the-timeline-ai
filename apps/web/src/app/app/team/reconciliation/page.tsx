@@ -574,9 +574,12 @@ function MiniStat({ label, value }: { label: string; value: number | string }) {
   );
 }
 
-function SectionTitle({ label }: { label: string }) {
+function SectionTitle({ label, level = 2 }: { label: string; level?: 2 | 3 }) {
+  const Heading = level === 3 ? 'h3' : 'h2';
   return (
-    <h2 className="text-sm font-semibold uppercase tracking-[0.12em] text-fg-muted">{label}</h2>
+    <Heading className="text-sm font-semibold uppercase tracking-[0.12em] text-fg-muted">
+      {label}
+    </Heading>
   );
 }
 
@@ -797,7 +800,7 @@ function RunMetricBadge({ label, value }: { label: string; value: number | null 
 function RecentClusters({ rows }: { rows: ReconciliationDashboardCluster[] }) {
   return (
     <section className="space-y-3">
-      <SectionTitle label="Recent clusters" />
+      <SectionTitle label="Recent clusters" level={3} />
       <ul className="divide-y divide-border rounded-sm border border-border bg-surface text-sm">
         {rows.length === 0 ? (
           <li className="px-3 py-2 text-fg-muted">No reconciliation clusters yet.</li>
@@ -835,7 +838,7 @@ function RecentClusters({ rows }: { rows: ReconciliationDashboardCluster[] }) {
 function RecentOutputs({ rows }: { rows: ReconciliationDashboardOutput[] }) {
   return (
     <section className="space-y-3">
-      <SectionTitle label="Recent outputs" />
+      <SectionTitle label="Recent outputs" level={3} />
       <ul className="divide-y divide-border rounded-sm border border-border bg-surface text-sm">
         {rows.length === 0 ? (
           <li className="px-3 py-2 text-fg-muted">No reconciliation outputs yet.</li>
