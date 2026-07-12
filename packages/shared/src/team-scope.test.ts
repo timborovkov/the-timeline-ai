@@ -639,6 +639,64 @@ describe('withTeam namespaced port', () => {
     );
   });
 
+  it('lists every visible configured integration resource without requiring event-history groups', async () => {
+    const visibleIntegrationId = '00000000-0000-4000-8000-000000000301';
+    const privateIntegrationId = '00000000-0000-4000-8000-000000000302';
+    await db.insert(integrations).values([
+      {
+        id: visibleIntegrationId,
+        teamId: TEAM_A,
+        connectedByUserId: USER_A,
+        provider: 'monday',
+        displayName: 'Visible Monday',
+        externalAccountId: 'visible-monday',
+        visibilityDefault: 'team',
+      },
+      {
+        id: privateIntegrationId,
+        teamId: TEAM_A,
+        connectedByUserId: USER_B,
+        provider: 'monday',
+        displayName: 'Private Monday',
+        externalAccountId: 'private-monday',
+        visibilityDefault: 'private',
+      },
+    ]);
+    await db.insert(integrationSelections).values([
+      ...Array.from({ length: 501 }, (_, index) => ({
+        integrationId: visibleIntegrationId,
+        selectionKind: 'monday.board',
+        externalId: `board-${String(index).padStart(3, '0')}`,
+        externalLabel: `Board ${String(index).padStart(3, '0')}`,
+      })),
+      {
+        integrationId: privateIntegrationId,
+        selectionKind: 'monday.board',
+        externalId: 'secret-board',
+        externalLabel: 'Secret board',
+      },
+    ]);
+
+    const facets = await withTeam(db as never, TEAM_A, USER_A).timeline.listSourceFacets();
+    expect(facets.filter((facet) => facet.filter.kind === 'monday_board')).toHaveLength(501);
+    expect(facets).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          filter: { kind: 'provider', provider: 'monday' },
+        }),
+        expect.objectContaining({
+          filter: { kind: 'monday_board', boardId: 'board-500' },
+          label: 'Board 500',
+        }),
+      ]),
+    );
+    expect(facets).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ filter: { kind: 'monday_board', boardId: 'secret-board' } }),
+      ]),
+    );
+  });
+
   it('fails closed for person sender filters when no approved identity facet exists', async () => {
     const eventId = '00000000-0000-0000-0000-000000000106';
     await insertTelegramEvent(pg, {

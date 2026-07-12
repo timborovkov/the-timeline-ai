@@ -164,9 +164,12 @@ export default async function TimelinePage({ searchParams }: Props) {
   const authorFilterValue = authorFilters.join(',');
   const sourceFilters = parseTimelineSources(sp.source);
   const sourceFilterValue = sourceFilters.join(',');
-  const sourceValues = timelineSourceValues(sourceFilters);
   const originFilters = parseTimelineOrigins(sp.origin);
   const originFilterValue = originFilters.map(timelineOriginValue).join(',');
+  if (originFilters.length > 0 && sourceFilters.length > 0) {
+    redirect(timelineHref({ ...sp, source: null }, { origin: originFilterValue }));
+  }
+  const sourceValues = originFilters.length > 0 ? undefined : timelineSourceValues(sourceFilters);
   const impactFilters = parseTimelineImpacts(sp.impact);
   const impactFilterValue = impactFilters.join(',');
   const focusEventId = parseUuid(sp.event);

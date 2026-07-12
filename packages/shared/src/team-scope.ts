@@ -16,12 +16,16 @@ import {
   eventSource,
   factEntities,
   facts as factsTable,
+  integrationSelections,
+  integrations,
   objectIdentityFacets,
   objectNotes,
   rawEvents,
   reconciliationEvidence,
   reconciliationOutputs,
   meetingTranscriptChunks,
+  slackConversationBindings,
+  slackWorkspaces,
   teamMembers,
   teamVisibilityDefaults,
   teams,
@@ -204,6 +208,8 @@ export interface TimelineSourceFacet {
   label: string;
   eventCount: number;
 }
+
+const RECENT_SOURCE_FACET_EVENT_LIMIT = 2_000;
 
 export type TimelineImpactKind =
   | 'task'
@@ -1526,8 +1532,83 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
     return or(...predicates);
   }
 
+  function addTimelineSourceFacetFromEvent(
+    add: (key: string, facet: TimelineSourceFacet) => void,
+    row: {
+      source: (typeof rawEvents.$inferSelect)['source'];
+      provider: string | null;
+      mondayBoardId: string | null;
+      mondayBoardName: string | null;
+      githubRepo: string | null;
+      slackWorkspaceId: string | null;
+      slackChannelId: string | null;
+      slackChannelName: string | null;
+      telegramChatId: string | null;
+      telegramChatTitle: string | null;
+    },
+  ): void {
+    if (row.source === 'integration' && row.provider) {
+      add(`provider:${row.provider}`, {
+        filter: { kind: 'provider', provider: row.provider },
+        label: row.provider,
+        eventCount: 1,
+      });
+    }
+    if (row.provider === 'monday' && row.mondayBoardId) {
+      add(`monday:${row.mondayBoardId}`, {
+        filter: { kind: 'monday_board', boardId: row.mondayBoardId },
+        label: row.mondayBoardName ?? row.mondayBoardId,
+        eventCount: 1,
+      });
+    }
+    if (row.provider === 'github' && row.githubRepo) {
+      add(`github:${row.githubRepo}`, {
+        filter: { kind: 'github_repo', repo: row.githubRepo },
+        label: row.githubRepo,
+        eventCount: 1,
+      });
+    }
+    if ((row.source === 'slack' || row.provider === 'slack') && row.slackChannelId) {
+      add(`slack:${row.slackWorkspaceId ?? ''}:${row.slackChannelId}`, {
+        filter: {
+          kind: 'slack_channel',
+          channelId: row.slackChannelId,
+          ...(row.slackWorkspaceId ? { workspaceId: row.slackWorkspaceId } : {}),
+        },
+        label: row.slackChannelName
+          ? `#${row.slackChannelName.replace(/^#/, '')}`
+          : row.slackChannelId,
+        eventCount: 1,
+      });
+    }
+    if (row.source === 'telegram' && row.telegramChatId) {
+      add(`telegram:${row.telegramChatId}`, {
+        filter: { kind: 'telegram_chat', chatId: row.telegramChatId },
+        label: row.telegramChatTitle ?? row.telegramChatId,
+        eventCount: 1,
+      });
+    }
+  }
+
   async function listSourceFacets(): Promise<TimelineSourceFacet[]> {
     await ensureMember();
+    const facets = new Map<string, TimelineSourceFacet>();
+    function add(key: string, facet: TimelineSourceFacet): void {
+      const current = facets.get(key);
+      facets.set(key, {
+        ...facet,
+        eventCount: facet.eventCount + (current?.eventCount ?? 0),
+      });
+    }
+
+    const integrationVisibility = or(
+      eq(integrations.visibilityDefault, 'team'),
+      eq(integrations.connectedByUserId, userId),
+      and(
+        eq(integrations.visibilityDefault, 'specific_users'),
+        sql`${userId} = ANY(COALESCE(${integrations.visibilityDefaultUserIds}, ARRAY[]::uuid[]))`,
+      ),
+    );
     const provider = sql<string | null>`${rawEvents.sourceMetadata} ->> 'provider'`;
     const mondayBoardId = sql<string | null>`${rawEvents.sourceMetadata} ->> 'monday_board_id'`;
     const mondayBoardName = sql<string | null>`${rawEvents.sourceMetadata} ->> 'monday_board_name'`;
@@ -1541,88 +1622,107 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
     >`${rawEvents.sourceMetadata} ->> 'slack_channel_name'`;
     const telegramChatId = sql<string | null>`${rawEvents.sourceMetadata} ->> 'tg_chat_id'`;
     const telegramChatTitle = sql<string | null>`${rawEvents.sourceMetadata} ->> 'tg_chat_title'`;
-    const rows = await db
-      .select({
-        source: rawEvents.source,
-        provider,
-        mondayBoardId,
-        mondayBoardName,
-        githubRepo,
-        slackWorkspaceId,
-        slackChannelId,
-        slackChannelName,
-        telegramChatId,
-        telegramChatTitle,
-        eventCount: sql<number>`count(*)::int`,
-      })
-      .from(rawEvents)
-      .where(and(eq(rawEvents.teamId, teamId), visibilityFilter, activeRawEventFilter))
-      .groupBy(
-        rawEvents.source,
-        provider,
-        mondayBoardId,
-        mondayBoardName,
-        githubRepo,
-        slackWorkspaceId,
-        slackChannelId,
-        slackChannelName,
-        telegramChatId,
-        telegramChatTitle,
-      )
-      .limit(500);
+    const [integrationRows, slackBindings, recentEvents] = await Promise.all([
+      db
+        .select({
+          provider: integrations.provider,
+          externalAccountId: integrations.externalAccountId,
+          selectionKind: integrationSelections.selectionKind,
+          externalId: integrationSelections.externalId,
+          externalLabel: integrationSelections.externalLabel,
+        })
+        .from(integrations)
+        .leftJoin(integrationSelections, eq(integrationSelections.integrationId, integrations.id))
+        .where(and(eq(integrations.teamId, teamId), integrationVisibility)),
+      db
+        .select({
+          workspaceId: slackWorkspaces.slackTeamId,
+          channelId: slackConversationBindings.slackConversationId,
+          label: slackConversationBindings.title,
+        })
+        .from(slackConversationBindings)
+        .innerJoin(slackWorkspaces, eq(slackConversationBindings.workspaceId, slackWorkspaces.id))
+        .where(
+          and(
+            eq(slackConversationBindings.teamId, teamId),
+            eq(slackConversationBindings.enabled, true),
+            or(
+              eq(slackConversationBindings.visibilityDefault, 'team'),
+              eq(slackConversationBindings.boundByUserId, userId),
+            ),
+          ),
+        ),
+      db
+        .select({
+          source: rawEvents.source,
+          provider,
+          mondayBoardId,
+          mondayBoardName,
+          githubRepo,
+          slackWorkspaceId,
+          slackChannelId,
+          slackChannelName,
+          telegramChatId,
+          telegramChatTitle,
+        })
+        .from(rawEvents)
+        .where(
+          and(
+            eq(rawEvents.teamId, teamId),
+            visibilityFilter,
+            activeRawEventFilter,
+            inArray(rawEvents.source, ['integration', 'slack', 'telegram']),
+          ),
+        )
+        .orderBy(desc(rawEvents.occurredAt), desc(rawEvents.id))
+        .limit(RECENT_SOURCE_FACET_EVENT_LIMIT),
+    ]);
 
-    const facets = new Map<string, TimelineSourceFacet>();
-    function add(key: string, facet: TimelineSourceFacet): void {
-      const current = facets.get(key);
-      facets.set(key, {
-        ...facet,
-        eventCount: facet.eventCount + (current?.eventCount ?? 0),
+    for (const row of integrationRows) {
+      add(`provider:${row.provider}`, {
+        filter: { kind: 'provider', provider: row.provider },
+        label: row.provider,
+        eventCount: 0,
       });
-    }
-    for (const row of rows) {
-      if (row.source === 'integration' && row.provider) {
-        add(`provider:${row.provider}`, {
-          filter: { kind: 'provider', provider: row.provider },
-          label: row.provider,
-          eventCount: row.eventCount,
+      if (!row.selectionKind || !row.externalId) continue;
+      if (row.provider === 'monday' && row.selectionKind === 'monday.board') {
+        add(`monday:${row.externalId}`, {
+          filter: { kind: 'monday_board', boardId: row.externalId },
+          label: row.externalLabel ?? row.externalId,
+          eventCount: 0,
         });
-      }
-      if (row.provider === 'monday' && row.mondayBoardId) {
-        add(`monday:${row.mondayBoardId}`, {
-          filter: { kind: 'monday_board', boardId: row.mondayBoardId },
-          label: row.mondayBoardName ?? row.mondayBoardId,
-          eventCount: row.eventCount,
+      } else if (row.provider === 'github' && row.selectionKind === 'github.repo') {
+        add(`github:${row.externalId}`, {
+          filter: { kind: 'github_repo', repo: row.externalId },
+          label: row.externalLabel ?? row.externalId,
+          eventCount: 0,
         });
-      }
-      if (row.provider === 'github' && row.githubRepo) {
-        add(`github:${row.githubRepo}`, {
-          filter: { kind: 'github_repo', repo: row.githubRepo },
-          label: row.githubRepo,
-          eventCount: row.eventCount,
-        });
-      }
-      if ((row.source === 'slack' || row.provider === 'slack') && row.slackChannelId) {
-        const workspaceKey = row.slackWorkspaceId ?? '';
-        add(`slack:${workspaceKey}:${row.slackChannelId}`, {
+      } else if (row.provider === 'slack' && row.selectionKind === 'slack.channel') {
+        const workspaceId = row.externalAccountId ?? undefined;
+        add(`slack:${workspaceId ?? ''}:${row.externalId}`, {
           filter: {
             kind: 'slack_channel',
-            channelId: row.slackChannelId,
-            ...(row.slackWorkspaceId ? { workspaceId: row.slackWorkspaceId } : {}),
+            channelId: row.externalId,
+            ...(workspaceId ? { workspaceId } : {}),
           },
-          label: row.slackChannelName
-            ? `#${row.slackChannelName.replace(/^#/, '')}`
-            : row.slackChannelId,
-          eventCount: row.eventCount,
-        });
-      }
-      if (row.source === 'telegram' && row.telegramChatId) {
-        add(`telegram:${row.telegramChatId}`, {
-          filter: { kind: 'telegram_chat', chatId: row.telegramChatId },
-          label: row.telegramChatTitle ?? row.telegramChatId,
-          eventCount: row.eventCount,
+          label: row.externalLabel ?? row.externalId,
+          eventCount: 0,
         });
       }
     }
+    for (const row of slackBindings) {
+      add(`slack:${row.workspaceId}:${row.channelId}`, {
+        filter: {
+          kind: 'slack_channel',
+          workspaceId: row.workspaceId,
+          channelId: row.channelId,
+        },
+        label: row.label ? `#${row.label.replace(/^#/, '')}` : row.channelId,
+        eventCount: 0,
+      });
+    }
+    for (const row of recentEvents) addTimelineSourceFacetFromEvent(add, row);
+
     return [...facets.values()].sort(
       (a, b) => b.eventCount - a.eventCount || a.label.localeCompare(b.label),
     );

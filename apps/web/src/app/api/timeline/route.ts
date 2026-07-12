@@ -121,9 +121,9 @@ export async function GET(req: Request): Promise<Response> {
   const cursor = url.searchParams.get('cursor');
   const source = parseTimelineSources(url.searchParams.get('source') ?? undefined);
   const sourceValue = source.join(',');
-  const sourceValues = timelineSourceValues(source);
   const origins = parseTimelineOrigins(url.searchParams.get('origin') ?? undefined);
   const originValue = origins.map(timelineOriginValue).join(',');
+  const sourceValues = origins.length > 0 ? undefined : timelineSourceValues(source);
   const impact = parseTimelineImpacts(url.searchParams.get('impact') ?? undefined);
   const impactValue = impact.join(',');
   const event = url.searchParams.get('event');
