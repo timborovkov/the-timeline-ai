@@ -122,6 +122,40 @@ describe('task category and primary project state', () => {
     expect(filteredBoard?.items.map((item) => item.entityId)).toEqual([task.id]);
   });
 
+  it('locks an active project while assigning it to an existing task', async () => {
+    const queries: string[] = [];
+    const loggedDb = drizzle(testDb.pg, {
+      logger: {
+        logQuery(query) {
+          queries.push(query);
+        },
+      },
+    }) as unknown as Db;
+    const scope = withTeam(loggedDb, TEAM_A, USER_A).objects;
+    const project = await scope.createObject({
+      type: 'project',
+      canonicalName: 'Lifecycle-safe project',
+      actor: { kind: 'user', userId: USER_A },
+    });
+    const task = await scope.createObject({
+      type: 'task',
+      canonicalName: 'Lifecycle-safe task',
+      actor: { kind: 'user', userId: USER_A },
+    });
+    queries.length = 0;
+
+    await scope.setTaskProject(task.id, project.id, { kind: 'user', userId: USER_A });
+
+    const projectRead = queries.find(
+      (query) =>
+        query.includes('"canonical_name"') &&
+        query.includes('"archived_at"') &&
+        query.includes('"type"') &&
+        !query.includes('"task_category_mode"'),
+    );
+    expect(projectRead).toMatch(/for update/i);
+  });
+
   it('does not treat ambiguous legacy project edges as a primary project', async () => {
     const workspace = withTeam(db, TEAM_A, USER_A);
     const firstProject = await workspace.objects.createObject({
@@ -824,6 +858,41 @@ describe('task category and primary project state', () => {
       taskCategoryMode: null,
       taskCategoryStatus: null,
     });
+  });
+
+  it('rejects promotion when generic child edges would create ambiguous primary projects', async () => {
+    const scope = withTeam(db, TEAM_A, USER_A).objects;
+    const [firstProject, secondProject, object] = await Promise.all([
+      scope.createObject({
+        type: 'project',
+        canonicalName: 'First project',
+        actor: { kind: 'user', userId: USER_A },
+      }),
+      scope.createObject({
+        type: 'project',
+        canonicalName: 'Second project',
+        actor: { kind: 'user', userId: USER_A },
+      }),
+      scope.createObject({
+        type: 'other',
+        canonicalName: 'Generic work item',
+        actor: { kind: 'user', userId: USER_A },
+      }),
+    ]);
+    for (const project of [firstProject, secondProject]) {
+      await scope.addRelationship({
+        fromEntityId: object.id,
+        toEntityId: project.id,
+        kind: 'child',
+        actorUserId: USER_A,
+      });
+    }
+
+    await expect(
+      scope.updateObject(object.id, { type: 'task' }, { kind: 'user', userId: USER_A }),
+    ).rejects.toThrow(
+      'Resolve multiple project relationships before changing this object to a task',
+    );
   });
 
   it('retargets primary project edges and invalidates automatic context on project merge', async () => {

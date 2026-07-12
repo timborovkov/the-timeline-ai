@@ -258,6 +258,28 @@ interface ProjectTaskCategoryInvalidation {
   fanout: { projectId: string; projectVersion: string; afterTaskId: string } | null;
 }
 
+async function lockActiveProject(tx: DbTx, teamId: string, projectId: string) {
+  const [project] = await tx
+    .select({
+      id: entities.id,
+      canonicalName: entities.canonicalName,
+      archivedAt: entities.archivedAt,
+    })
+    .from(entities)
+    .where(
+      and(
+        eq(entities.teamId, teamId),
+        eq(entities.id, projectId),
+        eq(entities.type, 'project'),
+        isNull(entities.archivedAt),
+        isNull(entities.mergedIntoId),
+      ),
+    )
+    .for('update')
+    .limit(1);
+  return project ?? null;
+}
+
 async function invalidateLinkedTaskCategoriesForProject(
   tx: DbTx,
   teamId: string,
@@ -3867,19 +3889,7 @@ export async function createObject(
     if (input.parentObjectId !== undefined && input.parentObjectId !== null) {
       if (input.type !== 'task') throw new Error('Only tasks can have a primary project');
       if (!UUID_RE.test(input.parentObjectId)) throw new Error('Invalid project id');
-      const [project] = await tx
-        .select({ id: entities.id, canonicalName: entities.canonicalName })
-        .from(entities)
-        .where(
-          and(
-            eq(entities.id, input.parentObjectId),
-            eq(entities.teamId, scope.teamId),
-            eq(entities.type, 'project'),
-            isNull(entities.archivedAt),
-            isNull(entities.mergedIntoId),
-          ),
-        )
-        .limit(1);
+      const project = await lockActiveProject(tx, scope.teamId, input.parentObjectId);
       if (!project) throw new Error('Project not found');
       primaryProject = project;
     }
@@ -4258,6 +4268,33 @@ export async function updateObject(
       if ((linkedCount?.total ?? 0) > 0) {
         throw new Error(
           `Reassign or remove ${linkedCount?.total ?? 0} linked task projects before changing this project type`,
+        );
+      }
+    }
+    if (current.type !== 'task' && nextType === 'task') {
+      const projectEdges = await tx
+        .select({ id: entityRelationships.id })
+        .from(entityRelationships)
+        .innerJoin(
+          entities,
+          and(
+            eq(entities.teamId, entityRelationships.teamId),
+            eq(entities.id, entityRelationships.toEntityId),
+            eq(entities.type, 'project'),
+            isNull(entities.mergedIntoId),
+          ),
+        )
+        .where(
+          and(
+            eq(entityRelationships.teamId, scope.teamId),
+            eq(entityRelationships.fromEntityId, current.id),
+            eq(entityRelationships.kind, 'child'),
+          ),
+        )
+        .limit(2);
+      if (projectEdges.length > 1) {
+        throw new Error(
+          'Resolve multiple project relationships before changing this object to a task',
         );
       }
     }
@@ -5090,7 +5127,9 @@ export async function addRelationship(
           inArray(entities.id, [endpoints.fromEntityId, endpoints.toEntityId]),
           isNull(entities.mergedIntoId),
         ),
-      );
+      )
+      .orderBy(asc(entities.id))
+      .for('update');
     if (ends.length !== 2) throw new Error('Both objects must belong to this team');
 
     const from = ends.find((row) => row.id === endpoints.fromEntityId);
@@ -5349,6 +5388,9 @@ export async function setTaskProject(
   }
 
   const result = await db.transaction(async (tx) => {
+    const project = projectId ? await lockActiveProject(tx, scope.teamId, projectId) : null;
+    if (projectId && !project) throw new Error('Project not found');
+
     const [task] = await tx
       .select({
         id: entities.id,
@@ -5370,30 +5412,6 @@ export async function setTaskProject(
       .for('update')
       .limit(1);
     if (task?.type !== 'task') throw new Error('Task not found');
-
-    const project = projectId
-      ? (
-          await tx
-            .select({
-              id: entities.id,
-              canonicalName: entities.canonicalName,
-              archivedAt: entities.archivedAt,
-              type: entities.type,
-            })
-            .from(entities)
-            .where(
-              and(
-                eq(entities.teamId, scope.teamId),
-                eq(entities.id, projectId),
-                eq(entities.type, 'project'),
-                isNull(entities.mergedIntoId),
-                isNull(entities.archivedAt),
-              ),
-            )
-            .limit(1)
-        )[0]
-      : null;
-    if (projectId && !project) throw new Error('Project not found');
 
     const existing = await tx
       .select({

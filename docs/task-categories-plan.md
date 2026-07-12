@@ -387,11 +387,12 @@ V1 semantics:
 
 The current generic relationship schema allows multiple `child` edges. Enforce
 the one-primary-project rule inside a team-scoped `setTaskProject()` method:
-lock the task row, validate task/project types and team ownership, remove or
+lock and validate the active project before locking the task row, remove or
 replace the previous task-to-project `child` edge, insert the new edge, and
-write the existing relationship audit/direct-write provenance. Route task
-creation and project edits through this method or the same transactional
-primitive.
+write the existing relationship audit/direct-write provenance. Type promotion
+into `task` must reject multiple existing project-child edges before they can
+become ambiguous primary-project state. Route task creation and project edits
+through this method or the same transactional primitive.
 
 Guard every generic relationship path as well. `addRelationship`, relationship
 suggestion acceptance, agent relationship tools, and the generic relationship

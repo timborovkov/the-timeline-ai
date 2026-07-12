@@ -1,9 +1,10 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useReducer, useTransition } from 'react';
+import { useMemo, useReducer, useTransition } from 'react';
 
 import { createObjectAction } from '@/app/actions/objects';
+import { useProjectSearch } from '@/hooks/use-project-search';
 import { OBJECT_TYPES as TYPES } from '@/lib/object-types';
 
 const EMPTY_PROJECTS: { id: string; label: string }[] = [];
@@ -32,6 +33,24 @@ export function NewObjectForm({
     { error: null, type: 'task', name: '', dueAt: '', projectId: defaultProjectId },
   );
   const { error, type, name, dueAt, projectId } = form;
+  const {
+    query: projectQuery,
+    setQuery: setProjectQuery,
+    projects: remoteProjects,
+  } = useProjectSearch();
+  const visibleProjects = useMemo(() => {
+    const normalized = projectQuery.trim().toLowerCase();
+    const candidates = normalized
+      ? [
+          ...projects.filter(
+            (project) =>
+              project.id === projectId || project.label.toLowerCase().includes(normalized),
+          ),
+          ...remoteProjects,
+        ]
+      : projects;
+    return [...new Map(candidates.map((project) => [project.id, project])).values()];
+  }, [projectId, projectQuery, projects, remoteProjects]);
 
   function submit(): void {
     if (!name.trim()) {
@@ -75,11 +94,22 @@ export function NewObjectForm({
         </select>
       </label>
       {type === 'task' ? (
-        <label className="block">
+        <div className="space-y-2">
           <span className="mb-1 block text-xs uppercase tracking-wide text-muted-foreground">
             Project (optional)
           </span>
+          <input
+            type="search"
+            value={projectQuery}
+            onChange={(event) => {
+              setProjectQuery(event.currentTarget.value);
+            }}
+            placeholder="Search projects…"
+            aria-label="Search task projects"
+            className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+          />
           <select
+            aria-label="Task project"
             value={projectId}
             onChange={(event) => {
               updateForm({ projectId: event.currentTarget.value });
@@ -87,13 +117,13 @@ export function NewObjectForm({
             className="w-full rounded-md border bg-background px-3 py-2 text-sm"
           >
             <option value="">No project</option>
-            {projects.map((project) => (
+            {visibleProjects.map((project) => (
               <option key={project.id} value={project.id}>
                 {project.label}
               </option>
             ))}
           </select>
-        </label>
+        </div>
       ) : null}
       <label className="block">
         <span className="mb-1 block text-xs uppercase tracking-wide text-muted-foreground">

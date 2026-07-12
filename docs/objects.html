@@ -311,12 +311,13 @@
       <p>
         A task's optional primary project uses the existing
         <code>entity_relationships</code> graph: task → project with <code>kind='child'</code>. The
-        shared object scope enforces zero-or-one active project under the task lock. Project quick
-        add, manual set/change/remove, agent suggestions, filters, Connected Work, exports, and MCP
-        reads all use that same edge. Archived projects remain visible on existing tasks; project
-        rename and merge invalidate automatic category context in resumable 500-task pages. A
-        database outbox cursor survives Redis handoff failures, and each page rechecks automatic
-        mode and task/project state so a concurrent human correction always wins.
+        shared object scope locks and validates the active project before the task, enforces
+        zero-or-one primary project, and rejects ambiguous project edges during type promotion.
+        Project quick add, manual set/change/remove, agent suggestions, filters, Connected Work,
+        exports, and MCP reads all use that same edge. Archived projects remain visible on existing
+        tasks; project rename and merge invalidate automatic category context in resumable 500-task
+        pages. A database outbox cursor survives Redis handoff failures, and each page rechecks
+        automatic mode and task/project state so a concurrent human correction always wins.
       </p>
       <p>
         See <a href="./task-categories-plan.md">the task categories plan</a> and
