@@ -975,7 +975,6 @@ export function createIntegrationScope(deps: {
     }
 
     const replacedIntegrationIds = new Set<string>();
-    const existingSourceKeys = new Set<string>();
     if (shares.length > 0) {
       const sourcePathConditions = shares.map((share) =>
         and(
@@ -1001,13 +1000,9 @@ export function createIntegrationScope(deps: {
         );
       for (const owner of existingSourceOwners) {
         replacedIntegrationIds.add(owner.integrationId);
-        existingSourceKeys.add(`${owner.selectionKind}\x00${owner.externalId}`);
       }
     }
-    const addedSelectionCount = shares.filter(
-      (share) => !existingSourceKeys.has(`${share.resourceKind}\x00${share.externalId}`),
-    ).length;
-    const integration = await db.transaction(async (tx) => {
+    const activation = await db.transaction(async (tx) => {
       const integrationRows = await tx
         .insert(integrationsTable)
         .values({
@@ -1041,6 +1036,19 @@ export function createIntegrationScope(deps: {
         .returning();
       const integration = integrationRows[0];
       if (!integration) throw new Error('Failed to activate sources');
+      const existingSelections = await tx
+        .select({
+          selectionKind: integrationSelections.selectionKind,
+          externalId: integrationSelections.externalId,
+        })
+        .from(integrationSelections)
+        .where(eq(integrationSelections.integrationId, integration.id));
+      const existingSelectionKeys = new Set(
+        existingSelections.map((row) => `${row.selectionKind}\x00${row.externalId}`),
+      );
+      const addedSelectionCount = shares.filter(
+        (share) => !existingSelectionKeys.has(`${share.resourceKind}\x00${share.externalId}`),
+      ).length;
       await tx
         .delete(integrationSelections)
         .where(eq(integrationSelections.integrationId, integration.id));
@@ -1095,8 +1103,9 @@ export function createIntegrationScope(deps: {
         targetVisibility: 'team',
         metadata: { field: 'active_source_paths', selection_count: shares.length },
       });
-      return integration;
+      return { integration, addedSelectionCount };
     });
+    const { integration, addedSelectionCount } = activation;
     await adminResolveConnectionAttention(db, teamId, {
       integrationId: integration.id,
       categories: ['needs_new_owner'],

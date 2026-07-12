@@ -326,7 +326,11 @@ function ConnectionSources({ connection }: { connection: ProviderConnection }) {
     const next = new Set<string>();
     for (const share of shares) {
       const key = shareKey(share);
-      if (!share.revokedAt && (connection.provider !== 'monday' || resourceByKey.has(key))) {
+      const isMissingMondayBoard =
+        connection.provider === 'monday' &&
+        share.resourceKind === 'monday.board' &&
+        !resourceByKey.has(key);
+      if (!share.revokedAt && !isMissingMondayBoard) {
         next.add(key);
       }
     }
@@ -340,7 +344,11 @@ function ConnectionSources({ connection }: { connection: ProviderConnection }) {
     const next = new Map<string, ResourceShare>();
     for (const share of shares) {
       const key = shareKey(share);
-      if (!share.revokedAt && (connection.provider !== 'monday' || resourceByKey.has(key))) {
+      const isMissingMondayBoard =
+        connection.provider === 'monday' &&
+        share.resourceKind === 'monday.board' &&
+        !resourceByKey.has(key);
+      if (!share.revokedAt && !isMissingMondayBoard) {
         next.set(key, share);
       }
     }

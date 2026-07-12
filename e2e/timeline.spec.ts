@@ -2311,9 +2311,13 @@ test('calendar events can be created, edited, deleted, and visibility-scoped', a
   await ownerPage.getByRole('button', { name: 'month', exact: true }).click();
   await expect(ownerPage).toHaveURL(/view=month&date=2026-06-02/);
   await ownerPage.getByRole('button', { name: 'Today', exact: true }).click();
-  await expect(ownerPage).toHaveURL(
-    new RegExp(`view=month&date=${new Date().toISOString().slice(0, 10)}`),
-  );
+  const browserLocalToday = await ownerPage.evaluate(() => {
+    const now = new Date();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    return `${now.getFullYear()}-${month}-${day}`;
+  });
+  await expect(ownerPage).toHaveURL(new RegExp(`view=month&date=${browserLocalToday}`));
   await ownerPage.goto('/app/calendar?view=day&date=2026-06-02');
 
   await ownerPage.getByRole('button', { name: 'New' }).click();

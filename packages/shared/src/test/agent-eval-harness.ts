@@ -182,8 +182,16 @@ export async function runAgentToolEval(input: {
           vector: text.includes('Acme') ? [0.9, 0.1, 0.1] : [0.1, 0.1, 0.1],
           model: 'eval-embed',
         })),
-    qdrantSearch: (_teamId, _userId, _vector, options) =>
-      Promise.resolve((input.hits ?? []).slice(0, options.limit)),
+    qdrantSearch: (_teamId, _userId, _vector, options) => {
+      const eventIds = options.eventIds ? new Set(options.eventIds) : null;
+      const matchingHits = eventIds
+        ? (input.hits ?? []).filter((candidate) => {
+            const eventId = candidate.payload.event_id;
+            return eventId !== null && eventIds.has(eventId);
+          })
+        : (input.hits ?? []);
+      return Promise.resolve(matchingHits.slice(0, options.limit));
+    },
   });
   const tools = buildAgentTools(scope);
   const exec = tools[input.toolName]?.execute as (raw: unknown, opts: unknown) => Promise<unknown>;

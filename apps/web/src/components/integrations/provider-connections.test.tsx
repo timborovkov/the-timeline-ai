@@ -292,6 +292,61 @@ describe('TeamSourcesUi', () => {
     expect(requests.find((request) => request.method === 'PUT')?.body).toEqual({ resources: [] });
   });
 
+  it('preserves monday WorkDoc shares when document discovery is temporarily incomplete', async () => {
+    const user = userEvent.setup();
+    const requests: { method: string; body: unknown }[] = [];
+    vi.spyOn(globalThis, 'fetch').mockImplementation((_input, init) => {
+      const method = init?.method ?? 'GET';
+      if (method === 'PUT') {
+        const bodyText = typeof init?.body === 'string' ? init.body : null;
+        requests.push({ method, body: bodyText ? JSON.parse(bodyText) : null });
+        return Promise.resolve(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+      }
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            resources: [{ kind: 'monday.board', externalId: 'board-1', label: 'KIESI' }],
+            shares: [
+              {
+                id: 'share-doc',
+                providerConnectionId: 'monday',
+                resourceKind: 'monday.doc',
+                externalId: 'doc-1',
+                externalLabel: 'Launch notes',
+                revokedAt: null,
+              },
+            ],
+          }),
+          { status: 200 },
+        ),
+      );
+    });
+
+    renderWithQueryClient(
+      <PersonalConnectionsUi
+        connections={[
+          {
+            id: 'monday',
+            provider: 'monday',
+            displayName: 'Monday.com — Tim',
+            lastError: null,
+            lastConnectedAt: '2026-06-01T00:00:00.000Z',
+          },
+        ]}
+      />,
+    );
+
+    await screen.findByText('KIESI');
+    await user.click(screen.getByRole('button', { name: /Save sharing/i }));
+
+    await waitFor(() => {
+      expect(requests).toHaveLength(1);
+    });
+    expect(requests[0]?.body).toEqual({
+      resources: [{ kind: 'monday.doc', externalId: 'doc-1', label: 'Launch notes' }],
+    });
+  });
+
   it('lets users revoke active shares that are hidden from the live resource list', async () => {
     const user = userEvent.setup();
     const requests: { method: string; body: unknown }[] = [];

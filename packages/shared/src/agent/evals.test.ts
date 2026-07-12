@@ -410,6 +410,46 @@ describe('agent tool evals', () => {
     expect(evalRun.answer).toContain('Checkout redesign');
   });
 
+  it('enforces monday source selections when the provider filter is omitted', async () => {
+    const evalRun = await runToolEval(
+      db,
+      OWNER,
+      'search_integration_events',
+      { query: 'Ext-Faba checkout', limit: 10 },
+      [
+        hit(MONDAY_HELPER_EVENT, 0.99, { source: 'integration' }),
+        hit(MONDAY_ITEM_EVENT, 0.98, { source: 'integration' }),
+      ],
+    );
+
+    const output = evalRun.output as {
+      count: number;
+      results: { event_id: string }[];
+    };
+    expect(output.count).toBe(1);
+    expect(output.results).toEqual([expect.objectContaining({ event_id: MONDAY_ITEM_EVENT })]);
+  });
+
+  it('filters stale monday sources before applying the semantic result limit', async () => {
+    const staleHits = Array.from({ length: 201 }, (_, index) =>
+      hit(MONDAY_HELPER_EVENT, 1 - index / 1000, { source: 'integration' }),
+    );
+    const evalRun = await runToolEval(
+      db,
+      OWNER,
+      'search_integration_events',
+      { query: 'Ext-Faba checkout', provider: 'monday', limit: 1 },
+      [...staleHits, hit(MONDAY_ITEM_EVENT, 0.79, { source: 'integration' })],
+    );
+
+    const output = evalRun.output as {
+      count: number;
+      results: { event_id: string }[];
+    };
+    expect(output.count).toBe(1);
+    expect(output.results).toEqual([expect.objectContaining({ event_id: MONDAY_ITEM_EVENT })]);
+  });
+
   it('answers document questions with cited chunk evidence', async () => {
     // Product behavior: uploaded docs should become cited answer evidence
     // without first being promoted into canonical workspace objects.

@@ -16,6 +16,8 @@ import {
   eventSource,
   factEntities,
   facts as factsTable,
+  integrationSelections,
+  integrations as integrationsTable,
   objectIdentityFacets,
   objectNotes,
   rawEvents,
@@ -42,7 +44,7 @@ import { sourceMetadataWithConversationArtifacts } from '#src/conversational/con
 import { reconcileLinkArtifactsForRawEvent } from '#src/conversational/link-artifacts.js';
 import { documentPresentation } from '#src/documents/presentation.js';
 import { createDocumentScope } from '#src/documents/scope.js';
-import { createIntegrationScope } from '#src/integrations/scope.js';
+import { createIntegrationScope, type IntegrationProviderName } from '#src/integrations/scope.js';
 import { createJobRecoveryScope } from '#src/job-recovery/index.js';
 import { embed as defaultEmbed, type EmbedResult } from '#src/llm/embed.js';
 import { TIMELINE_MODELS } from '#src/llm/models.js';
@@ -263,6 +265,10 @@ export interface SearchEventsInput {
     | 'slack'
     | 'ingest_webhook';
   entityIds?: string[];
+  /** Restrict integration events by the provider recorded in source metadata. */
+  integrationProvider?: IntegrationProviderName;
+  /** Exclude Monday events whose board or WorkDoc is not an enabled source selection. */
+  filterSelectedIntegrationSources?: boolean;
   /**
    * Narrow vector search to a subset of Qdrant source kinds. Phase 8 adds
    * `object`, `object_note`, `object_change`, and `entity` alongside
@@ -1163,7 +1169,60 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
     return filterGroups.length > 0 ? and(...filterGroups) : null;
   }
 
-  async function searchSenderFilteredHits(input: {
+  async function integrationEventFilterCondition(
+    searchInput: SearchEventsInput,
+  ): Promise<ReturnType<typeof sql> | null> {
+    const provider = searchInput.integrationProvider;
+    if (!provider && !searchInput.filterSelectedIntegrationSources) return null;
+    const providerMetadata = sql`${rawEvents.sourceMetadata} ->> 'provider'`;
+    if (!searchInput.filterSelectedIntegrationSources || (provider && provider !== 'monday')) {
+      return provider ? sql`${providerMetadata} = ${provider}` : null;
+    }
+
+    const selections = await db
+      .select({
+        selectionKind: integrationSelections.selectionKind,
+        externalId: integrationSelections.externalId,
+      })
+      .from(integrationSelections)
+      .innerJoin(integrationsTable, eq(integrationSelections.integrationId, integrationsTable.id))
+      .where(
+        and(
+          eq(integrationsTable.teamId, teamId),
+          eq(integrationsTable.provider, 'monday'),
+          eq(integrationsTable.enabled, true),
+        ),
+      );
+    const boardIds = selections
+      .filter((selection) => selection.selectionKind === 'monday.board')
+      .map((selection) => selection.externalId);
+    const docIds = selections
+      .filter((selection) => selection.selectionKind === 'monday.doc')
+      .map((selection) => selection.externalId);
+    const selectedMondayConditions = [];
+    if (boardIds.length > 0) {
+      selectedMondayConditions.push(
+        inArray(
+          sql<string>`COALESCE(${rawEvents.sourceMetadata} ->> 'monday_parent_board_id', ${rawEvents.sourceMetadata} ->> 'monday_board_id')`,
+          boardIds,
+        ),
+      );
+    }
+    if (docIds.length > 0) {
+      selectedMondayConditions.push(
+        inArray(sql<string>`${rawEvents.sourceMetadata} ->> 'monday_doc_id'`, docIds),
+      );
+    }
+    const selectedMonday =
+      and(
+        sql`${providerMetadata} = 'monday'`,
+        selectedMondayConditions.length > 0 ? or(...selectedMondayConditions) : sql`false`,
+      ) ?? sql`false`;
+    if (provider === 'monday') return selectedMonday;
+    return or(sql`${providerMetadata} IS DISTINCT FROM 'monday'`, selectedMonday) ?? sql`false`;
+  }
+
+  async function searchSqlFilteredHits(input: {
     searchInput: SearchEventsInput;
     vector: number[];
     searchOpts: SearchOpts;
@@ -1175,24 +1234,30 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
     ) => Promise<SearchHit[]>;
   }): Promise<{ hits: SearchHit[]; usedSqlSenderFilter: boolean }> {
     const { searchInput, vector, searchOpts, searchFn } = input;
-    if (!searchInput.personObjectId && !searchInput.senderHandle) {
+    const needsSenderFilter = Boolean(searchInput.personObjectId ?? searchInput.senderHandle);
+    const needsIntegrationFilter = Boolean(
+      searchInput.integrationProvider ?? searchInput.filterSelectedIntegrationSources,
+    );
+    if (!needsSenderFilter && !needsIntegrationFilter) {
       return {
         hits: await searchFn(teamId, userId, vector, searchOpts),
         usedSqlSenderFilter: false,
       };
     }
 
-    const senderCondition = await senderFilterCondition(searchInput);
-    if (!senderCondition) return { hits: [], usedSqlSenderFilter: true };
+    const senderCondition = needsSenderFilter ? await senderFilterCondition(searchInput) : null;
+    if (needsSenderFilter && !senderCondition) {
+      return { hits: [], usedSqlSenderFilter: true };
+    }
+    const integrationCondition = needsIntegrationFilter
+      ? await integrationEventFilterCondition(searchInput)
+      : null;
     const batchSize =
       deps.senderSearchEventIdBatchSize ?? DEFAULT_SENDER_SEARCH_EVENT_ID_BATCH_SIZE;
     const batchSearchLimit = Math.max(searchOpts.limit ?? 20, batchSize);
-    const conditions = [
-      eq(rawEvents.teamId, teamId),
-      visibilityFilter,
-      activeRawEventFilter,
-      senderCondition,
-    ];
+    const conditions = [eq(rawEvents.teamId, teamId), visibilityFilter, activeRawEventFilter];
+    if (senderCondition) conditions.push(senderCondition);
+    if (integrationCondition) conditions.push(integrationCondition);
     if (searchInput.from) conditions.push(gte(rawEvents.occurredAt, searchInput.from));
     if (searchInput.to) conditions.push(lt(rawEvents.occurredAt, searchInput.to));
     if (searchInput.source) {
@@ -1232,7 +1297,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
       if (!last) break;
       cursor = { occurredAt: last.occurredAt, id: last.id };
     }
-    return { hits, usedSqlSenderFilter: true };
+    return { hits, usedSqlSenderFilter: needsSenderFilter };
   }
 
   function sameVisibilityUsers(
@@ -2996,7 +3061,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
           searchOpts.fileKinds = ['captured'];
         }
 
-        const { hits, usedSqlSenderFilter } = await searchSenderFilteredHits({
+        const { hits, usedSqlSenderFilter } = await searchSqlFilteredHits({
           searchInput: input,
           vector,
           searchOpts,

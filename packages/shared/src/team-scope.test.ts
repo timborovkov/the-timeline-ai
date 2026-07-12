@@ -1804,6 +1804,7 @@ describe('withTeam namespaced port', () => {
       providerConnectionId: memberConnection.id,
       resourceShareIds: [memberRepoShare.id],
     });
+    expect(memberIntegration.addedSelectionCount).toBe(1);
 
     const repoSelections = (await db.select().from(integrationSelections)).filter(
       (row) => row.selectionKind === 'github.repo' && row.externalId === 'acme/app',

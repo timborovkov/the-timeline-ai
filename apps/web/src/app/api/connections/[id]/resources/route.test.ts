@@ -280,4 +280,42 @@ describe('/api/connections/[id]/resources', () => {
     await expect(rejected.json()).resolves.toMatchObject({ error: 'resource_not_in_scope' });
     expect(fakes.shareProviderResources).not.toHaveBeenCalled();
   });
+
+  it('preserves monday WorkDoc shares that are absent from an incomplete live resource list', async () => {
+    const mondayConnection = {
+      ...connection,
+      provider: 'monday',
+      displayName: 'Monday.com — acme',
+    };
+    fakes.getOwnedProviderConnection.mockResolvedValueOnce(mondayConnection);
+    fakes.listSyncableResources.mockResolvedValueOnce([
+      { kind: 'monday.board', externalId: 'board-1', label: 'Pipeline' },
+    ]);
+    fakes.listOwnedTeamResourceShares.mockResolvedValueOnce([
+      {
+        connection: mondayConnection,
+        share: {
+          id: '66666666-6666-4666-8666-666666666666',
+          providerConnectionId: CONNECTION_ID,
+          resourceKind: 'monday.doc',
+          externalId: 'doc-1',
+          externalLabel: 'Launch notes',
+          revokedAt: null,
+        },
+      },
+    ]);
+
+    const accepted = await PUT(
+      request({
+        resources: [{ kind: 'monday.doc', externalId: 'doc-1', label: 'Launch notes' }],
+      }),
+      params(),
+    );
+
+    expect(accepted.status).toBe(200);
+    await expect(accepted.json()).resolves.toEqual({ ok: true });
+    expect(fakes.shareProviderResources).toHaveBeenCalledWith(CONNECTION_ID, [
+      { kind: 'monday.doc', externalId: 'doc-1', label: 'Launch notes' },
+    ]);
+  });
 });
