@@ -563,6 +563,15 @@ function githubErrorMessage(path: string, status: number, body: string): string 
   return `GitHub GET ${path} failed with status ${String(status)}: ${body}`;
 }
 
+function isGithubEmptyRepositoryError(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  return (
+    /^GitHub GET \/repos\/[^/]+\/[^/]+\/commits(?:\?| )/u.test(err.message) &&
+    err.message.includes('failed with status 409:') &&
+    /"message"\s*:\s*"Git Repository is empty\.?"/iu.test(err.message)
+  );
+}
+
 function summarizeGithubFailure(message: string): string {
   if (message.includes('Pull requests read permission required')) {
     return 'Pull requests read permission required; update GitHub App repository permissions and reconnect';
@@ -1670,13 +1679,18 @@ async function syncCommitsSurface(
     }
   } catch (err) {
     if (isGithubRateLimitError(err)) throw err;
-    log.warn({ err, repo }, 'github commits fetch failed');
-    failures.push({
-      repo,
-      surface: 'commits',
-      area: 'commits',
-      error: err instanceof Error ? err.message : String(err),
-    });
+    if (isGithubEmptyRepositoryError(err)) {
+      delete next.last_sha;
+      clearCommitGap(next);
+    } else {
+      log.warn({ err, repo }, 'github commits fetch failed');
+      failures.push({
+        repo,
+        surface: 'commits',
+        area: 'commits',
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
   }
   if (failures.length === 0) {
     await saveRepoSurfaceCursor(ctx, repo, 'commits', next);

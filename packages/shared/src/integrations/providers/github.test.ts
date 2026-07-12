@@ -889,6 +889,43 @@ describe('githubProvider.incrementalSync', () => {
     ).toHaveLength(1);
   });
 
+  it('treats an empty Git repository as a successful commit sync', async () => {
+    const fetchMock = vi.fn<typeof fetch>((input) => {
+      const requestUrl =
+        typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+      const url = new URL(requestUrl);
+      if (url.pathname.endsWith('/commits')) {
+        return Promise.resolve(jsonResponse({ message: 'Git Repository is empty.' }, 409));
+      }
+      const base = emptyGithubFetch(input);
+      return Promise.resolve(base ?? jsonResponse({ message: 'unexpected' }, 404));
+    });
+    globalThis.fetch = fetchMock;
+    const writeEvents = vi.fn<SyncContext['writeEvents']>().mockResolvedValue([]);
+    const saveCursor = vi.fn<SyncContext['saveCursor']>().mockResolvedValue(undefined);
+    const recordAudit = vi.fn<SyncContext['recordAudit']>().mockResolvedValue(undefined);
+
+    const result = await githubProvider.incrementalSync({
+      integration: {} as never,
+      tokens: { access_token: 'gho_token' },
+      selections: [{ kind: 'github.repo', externalId: 'acme/app' }],
+      ctx: {
+        writeEvents,
+        recordAudit,
+        saveCursor,
+        loadCursor: vi.fn().mockResolvedValue({}),
+        persistTokens: vi.fn(),
+      },
+    });
+
+    expect(result).toBeUndefined();
+    expect(writeEvents).not.toHaveBeenCalled();
+    expect(savedStatus(saveCursor, 'github.repo:acme/app:commits')).not.toMatchObject({
+      lastStatus: 'error',
+    });
+    expect(recordAudit).not.toHaveBeenCalledWith('github_incremental_partial', expect.anything());
+  });
+
   it('expands org selections at sync time and de-dupes explicit repo selections', async () => {
     const fetchMock = vi.fn<typeof fetch>((input) => {
       const requestUrl =
