@@ -345,7 +345,11 @@ function ProjectFilterControl({
         type="search"
         value={query}
         onChange={(event) => {
+          event.stopPropagation();
           setQuery(event.currentTarget.value);
+        }}
+        onInput={(event) => {
+          event.stopPropagation();
         }}
         placeholder="Search projects…"
         aria-label="Search project filters"

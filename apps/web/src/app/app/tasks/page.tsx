@@ -15,6 +15,7 @@ import { WorkFilterBar } from '@/components/work-filter-bar';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { loadProjectFilterRows } from '@/lib/project-filter-options';
 import { isActionableSuggestionStatus } from '@/lib/suggestion-status';
 import { serializeSuggestionBundle } from '@/lib/suggestions';
 import { countTaskRows, loadTaskRowsPage } from '@/lib/task-page';
@@ -77,7 +78,10 @@ export default async function TasksPage({
   });
   const taskFilter = taskObjectFilterFromWorkFilters(filters);
   const [projects, taskPage, counts, pendingSuggestions, members] = await Promise.all([
-    scope.objects.listObjects({ type: 'project', archived: false, limit: 200 }),
+    loadProjectFilterRows({
+      listObjects: (filter) => scope.objects.listObjects(filter),
+      selected: filters.project,
+    }),
     loadTaskRowsPage(scope.objects, null, taskFilter),
     countTaskRows(scope.objects, new Date(), taskFilter),
     scope.suggestions.listPendingSuggestions(),

@@ -25,7 +25,10 @@ const CONVERSATION_KEY = `slack:${TEAM_ID}:W_SURFACE:C_PROPOSALS`;
 type PgliteDb = ReturnType<typeof drizzle>;
 
 function env() {
-  return { OPENROUTER_API_KEY: 'test-key' } as never;
+  return {
+    OPENROUTER_API_KEY: 'test-key',
+    TASK_CATEGORY_CLASSIFICATION_ENABLED: true,
+  } as never;
 }
 
 async function seed(pg: PGlite, db: PgliteDb): Promise<void> {

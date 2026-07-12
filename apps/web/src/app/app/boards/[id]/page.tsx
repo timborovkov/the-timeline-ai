@@ -12,6 +12,7 @@ import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { OBJECT_TYPE_LABELS } from '@/lib/object-type-labels';
+import { loadProjectFilterRows } from '@/lib/project-filter-options';
 import {
   WORK_FILTER_PARAM_KEYS,
   boardItemFilterFromWorkFilters,
@@ -61,9 +62,10 @@ export default async function BoardDetailPage({
   const selectedServerItem = board.items.find((item) => item.id === selectedItemId) ?? null;
   const selectedServerItemId = selectedServerItem?.id ?? null;
   const [candidates, history, members, selectedObjectDetail] = await Promise.all([
-    scope.objects.listObjects({
-      archived: false,
-      limit: 200,
+    loadProjectFilterRows({
+      listObjects: (filter) => scope.objects.listObjects(filter),
+      selected: filters.project,
+      preloadFilter: { archived: false, limit: 200 },
     }),
     selectedServerItemId
       ? scope.boards.listBoardItemHistory(selectedServerItemId)

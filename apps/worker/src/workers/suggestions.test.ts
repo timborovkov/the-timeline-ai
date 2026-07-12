@@ -88,7 +88,10 @@ async function seedRawEvent(
 }
 
 function env() {
-  return { OPENROUTER_API_KEY: 'test-key' } as never;
+  return {
+    OPENROUTER_API_KEY: 'test-key',
+    TASK_CATEGORY_CLASSIFICATION_ENABLED: true,
+  } as never;
 }
 
 function emptyModel() {

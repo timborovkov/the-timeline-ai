@@ -10,6 +10,7 @@ const fakes = vi.hoisted(() => ({
   listPrimaryProjectsForTasks: vi.fn(),
   listPendingSuggestions: vi.fn(),
   listMembers: vi.fn(),
+  filterProjects: [] as { label: string }[],
   redirect: vi.fn((path: string) => {
     throw new Error(`redirect:${path}`);
   }),
@@ -72,11 +73,22 @@ vi.mock('@/components/tasks/task-board', () => ({
   ),
 }));
 vi.mock('@/components/work-filter-bar', () => ({
-  WorkFilterBar: ({ resultCount, totalCount }: { resultCount: number; totalCount: number }) => (
-    <div data-testid="work-filter-bar">
-      {resultCount}/{totalCount}
-    </div>
-  ),
+  WorkFilterBar: ({
+    resultCount,
+    totalCount,
+    projects = [],
+  }: {
+    resultCount: number;
+    totalCount: number;
+    projects?: { label: string }[];
+  }) => {
+    fakes.filterProjects = projects;
+    return (
+      <div data-testid="work-filter-bar">
+        {resultCount}/{totalCount}
+      </div>
+    );
+  },
 }));
 
 const { default: TasksPage } = await import('./page.js');
@@ -94,6 +106,7 @@ beforeEach(() => {
   fakes.listPrimaryProjectsForTasks.mockResolvedValue([]);
   fakes.listPendingSuggestions.mockResolvedValue([]);
   fakes.listMembers.mockResolvedValue([]);
+  fakes.filterProjects = [];
 });
 
 function taskRow(overrides: Record<string, unknown> = {}) {
@@ -123,6 +136,30 @@ function taskRow(overrides: Record<string, unknown> = {}) {
 }
 
 describe('TasksPage', () => {
+  it('hydrates a selected project outside the preloaded filter window', async () => {
+    const projectId = '00000000-0000-4000-8000-000000000099';
+    fakes.listObjects.mockImplementation((filter: { id?: string[]; type?: string }) => {
+      if (filter.id?.includes(projectId)) {
+        return Promise.resolve([
+          taskRow({ id: projectId, type: 'project', canonicalName: 'Overflow project' }),
+        ]);
+      }
+      return Promise.resolve([]);
+    });
+
+    renderToStaticMarkup(
+      await TasksPage({ searchParams: Promise.resolve({ project: projectId }) }),
+    );
+
+    expect(fakes.listObjects).toHaveBeenCalledWith({
+      id: [projectId],
+      type: 'project',
+      archived: false,
+      limit: 1,
+    });
+    expect(fakes.filterProjects).toEqual([expect.objectContaining({ label: 'Overflow project' })]);
+  });
+
   it('renders pending task approvals even when the kanban has no task rows', async () => {
     fakes.listPendingSuggestions.mockResolvedValue([
       {

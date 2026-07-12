@@ -2227,7 +2227,10 @@ describe('buildAgentTools — team isolation', () => {
       confidence: 0.94,
       model: 'task-category-test',
     });
-    const tools = buildAgentTools(scope as unknown as TeamScope, { classifyTaskCategory });
+    const tools = buildAgentTools(scope as unknown as TeamScope, {
+      classifyTaskCategory,
+      taskCategoryClassificationEnabled: true,
+    });
     const exec = tools.suggest_task?.execute as (input: unknown, opts: unknown) => Promise<unknown>;
 
     await exec(
@@ -2284,7 +2287,10 @@ describe('buildAgentTools — team isolation', () => {
       confidence: 0.97,
       model: 'task-category-test',
     });
-    const tools = buildAgentTools(scope as unknown as TeamScope, { classifyTaskCategory });
+    const tools = buildAgentTools(scope as unknown as TeamScope, {
+      classifyTaskCategory,
+      taskCategoryClassificationEnabled: true,
+    });
     const exec = tools.suggest_task?.execute as (input: unknown, opts: unknown) => Promise<unknown>;
 
     await exec({ title: 'Prepare wireframes', parentObjectId: projectId }, {});
@@ -2317,7 +2323,10 @@ describe('buildAgentTools — team isolation', () => {
       confidence: 0.91,
       model: 'task-category-test',
     });
-    const tools = buildAgentTools(scope as unknown as TeamScope, { classifyTaskCategory });
+    const tools = buildAgentTools(scope as unknown as TeamScope, {
+      classifyTaskCategory,
+      taskCategoryClassificationEnabled: true,
+    });
     const exec = tools.suggest_task?.execute as (input: unknown, opts: unknown) => Promise<unknown>;
 
     await exec(

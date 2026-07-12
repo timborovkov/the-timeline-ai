@@ -69,6 +69,7 @@ interface SuggestionWorkerIO {
   modelId?: string;
   enqueueSuggestionJob?: typeof queue.enqueueSuggestionJob;
   classifyTaskCategory?: typeof taskCategories.classifyTaskCategory;
+  taskCategoryClassificationEnabled?: boolean;
 }
 
 const suggestionItemSchema = z
@@ -348,6 +349,9 @@ async function enrichTaskSuggestionItems(args: {
               proposedPayload,
               fallbackTitle: item.title,
               classify,
+              ...(args.io.taskCategoryClassificationEnabled !== undefined
+                ? { enabled: args.io.taskCategoryClassificationEnabled }
+                : {}),
             })
           : proposedPayload,
       });
@@ -570,9 +574,13 @@ export async function processSuggestionJobForTests(
   }
   const modelId = io.modelId ?? llm.TIMELINE_MODELS.extraction.id;
   const modelVersion = makeModelVersion(modelId);
+  const effectiveIo: SuggestionWorkerIO = {
+    ...io,
+    taskCategoryClassificationEnabled: env.TASK_CATEGORY_CLASSIFICATION_ENABLED,
+  };
 
   if ('scope' in data) {
-    await processConversationReviewJob(deps, data, { ...io, modelId }, modelVersion);
+    await processConversationReviewJob(deps, data, { ...effectiveIo, modelId }, modelVersion);
     return;
   }
 
@@ -592,7 +600,7 @@ export async function processSuggestionJobForTests(
       });
       return;
     }
-    await scheduleConversationReview(deps, row, identity, io);
+    await scheduleConversationReview(deps, row, identity, effectiveIo);
     return;
   }
   if (await ingestWebhookProposalsDisabled(deps.db, row)) {
@@ -608,7 +616,7 @@ export async function processSuggestionJobForTests(
     teamId,
     modelVersion,
     modelId,
-    io,
+    io: effectiveIo,
   });
 }
 

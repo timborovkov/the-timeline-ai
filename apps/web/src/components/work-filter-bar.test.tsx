@@ -129,6 +129,26 @@ describe('WorkFilterBar', () => {
     expect(screen.getByRole('menuitemcheckbox', { name: 'Overflow project' })).toBeTruthy();
   });
 
+  it('does not submit work filters while typing a project lookup', async () => {
+    const user = userEvent.setup();
+    searchObjectsAction.mockResolvedValue({ results: [] });
+    render(
+      <WorkFilterBar
+        mode="tasks"
+        basePath="/app/tasks"
+        filters={EMPTY_FILTERS}
+        active={false}
+        resultCount={10}
+        totalCount={10}
+      />,
+    );
+
+    await user.type(screen.getByLabelText('Search project filters'), 'Overflow');
+    await new Promise((resolve) => setTimeout(resolve, 400));
+
+    expect(replace).not.toHaveBeenCalled();
+  });
+
   it('renders only the canonical cancelled status when both spellings are provided', async () => {
     const user = userEvent.setup();
     render(

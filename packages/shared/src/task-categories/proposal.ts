@@ -1,3 +1,4 @@
+import { getEnv } from '#src/env.js';
 import { TIMELINE_MODELS } from '#src/llm/models.js';
 import {
   buildTaskCategoryPacket,
@@ -21,8 +22,10 @@ export async function enrichTaskProposalCategory(input: {
   proposedPayload: Record<string, unknown>;
   fallbackTitle: string;
   classify?: TaskProposalClassifier;
+  enabled?: boolean;
 }): Promise<Record<string, unknown>> {
   const payload = { ...input.proposedPayload };
+  if (!(input.enabled ?? getEnv().TASK_CATEGORY_CLASSIFICATION_ENABLED)) return payload;
   const packet = buildTaskCategoryPacket({
     title: typeof payload.canonicalName === 'string' ? payload.canonicalName : input.fallbackTitle,
     aliases: Array.isArray(payload.aliases)

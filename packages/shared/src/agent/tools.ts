@@ -50,6 +50,7 @@ interface AgentToolOptions {
   readOnly?: boolean | undefined;
   db?: Db | undefined;
   classifyTaskCategory?: TaskProposalClassifier | undefined;
+  taskCategoryClassificationEnabled?: boolean | undefined;
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -2152,6 +2153,9 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
             },
             fallbackTitle: input.title,
             ...(options.classifyTaskCategory ? { classify: options.classifyTaskCategory } : {}),
+            ...(options.taskCategoryClassificationEnabled !== undefined
+              ? { enabled: options.taskCategoryClassificationEnabled }
+              : {}),
           });
           const suggestion = await scope.suggestions.createOrMergeSuggestionBundle({
             source: 'chat',

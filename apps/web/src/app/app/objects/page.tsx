@@ -20,6 +20,7 @@ import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { OBJECT_TYPE_LABELS } from '@/lib/object-type-labels';
+import { loadProjectFilterRows } from '@/lib/project-filter-options';
 import { isActionableSuggestionStatus } from '@/lib/suggestion-status';
 import { serializeSuggestionBundle } from '@/lib/suggestions';
 import {
@@ -91,7 +92,10 @@ export default async function ObjectsIndexPage({
   const activeFilters = hasActiveWorkFilters(filters);
 
   const [projects, objectWindow, suggestionBundles, members] = await Promise.all([
-    scope.objects.listObjects({ type: 'project', archived: false, limit: 200 }),
+    loadProjectFilterRows({
+      listObjects: (filter) => scope.objects.listObjects(filter),
+      selected: filters.project,
+    }),
     hasTypeFilter
       ? loadTypedObjectPage(scope.objects, { filter: objectFilter, cursor })
       : loadObjectSectionPreviews(scope.objects, { filter: objectFilter, filterParams }),
