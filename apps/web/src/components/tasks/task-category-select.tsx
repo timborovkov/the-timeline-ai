@@ -37,14 +37,21 @@ export function TaskCategorySelect({
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const pollStartedAt = useRef<number | null>(null);
+  const polledTaskId = useRef<string | null>(null);
   const value = mode === 'manual' && category ? category : AUTOMATIC_VALUE;
 
   useEffect(() => {
     if (status !== 'pending') {
       pollStartedAt.current = null;
+      polledTaskId.current = null;
       return;
     }
-    pollStartedAt.current ??= Date.now();
+    if (polledTaskId.current !== taskId) {
+      polledTaskId.current = taskId;
+      pollStartedAt.current = Date.now();
+    } else {
+      pollStartedAt.current ??= Date.now();
+    }
     const timer = setInterval(() => {
       if (Date.now() - (pollStartedAt.current ?? Date.now()) > 60_000) {
         clearInterval(timer);

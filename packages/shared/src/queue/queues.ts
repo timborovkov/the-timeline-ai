@@ -1189,12 +1189,13 @@ export async function enqueueTaskCategoryJob(
   const q = getTaskCategoryQueue();
   const existing = (await q.getJob(jobId)) as ExistingJobLike | null;
   if (existing) {
-    const state = await existing.getState?.().catch(() => null);
-    if (!state || SUGGESTION_JOB_DEDUPE_STATES.has(state)) return { enqueued: false, jobId };
+    if (!existing.getState) throw new Error(`Task category job state is unavailable: ${jobId}`);
+    const state = await existing.getState();
+    if (SUGGESTION_JOB_DEDUPE_STATES.has(state)) return { enqueued: false, jobId };
     if (SUGGESTION_JOB_REPLACEABLE_STATES.has(state) && existing.remove) {
       await existing.remove();
     } else {
-      return { enqueued: false, jobId };
+      throw new Error(`Task category job is in unsupported state "${state}": ${jobId}`);
     }
   }
   await q.add('task-category', data, { jobId });

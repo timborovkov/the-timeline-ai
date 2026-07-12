@@ -29,7 +29,12 @@ class FakeJob {
     public id: string,
   ) {}
 
-  getState = vi.fn(() => Promise.resolve(this.queue.jobStates.get(this.id) ?? 'waiting'));
+  getState = vi.fn(() => {
+    if (this.queue.stateReadFailures.has(this.id)) {
+      return Promise.reject(new Error('state read failed'));
+    }
+    return Promise.resolve(this.queue.jobStates.get(this.id) ?? 'waiting');
+  });
   remove = vi.fn(() => {
     if (this.queue.removeFailures.has(this.id)) {
       return Promise.reject(new Error('remove failed'));
@@ -45,6 +50,7 @@ class FakeQueue {
   options: Record<string, unknown>;
   jobs = new Set<string>();
   jobStates = new Map<string, string>();
+  stateReadFailures = new Set<string>();
   removeFailures = new Set<string>();
   add = vi.fn<
     (name: string, data: unknown, opts?: { delay?: number; jobId?: string }) => Promise<void>
@@ -691,6 +697,28 @@ describe('queue wrappers', () => {
     fakeQueue?.removeFailures.add(first.jobId);
 
     await expect(queues.enqueueTaskCategoryJob(data)).rejects.toThrow('remove failed');
+    expect(fakeQueue?.addCalls).toHaveLength(1);
+  });
+
+  it('fails a task category retry when retained job state is unreadable or unknown', async () => {
+    process.env.TASK_CATEGORY_CLASSIFICATION_ENABLED = 'true';
+    process.env.TASK_CATEGORY_AUTO_ENQUEUE_ENABLED = 'true';
+    const queues = await importQueues();
+    const data = {
+      teamId: '22222222-2222-4222-8222-222222222222',
+      taskId: '77777777-7777-4777-8777-777777777777',
+      inputHash: 'packet-hash-v1',
+      trigger: 'retry' as const,
+    };
+
+    const first = await queues.enqueueTaskCategoryJob(data);
+    const fakeQueue = fakes.queues[0];
+    fakeQueue?.stateReadFailures.add(first.jobId);
+    await expect(queues.enqueueTaskCategoryJob(data)).rejects.toThrow('state read failed');
+
+    fakeQueue?.stateReadFailures.delete(first.jobId);
+    fakeQueue?.jobStates.set(first.jobId, 'unknown');
+    await expect(queues.enqueueTaskCategoryJob(data)).rejects.toThrow('unknown');
     expect(fakeQueue?.addCalls).toHaveLength(1);
   });
 
