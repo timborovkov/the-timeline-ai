@@ -61,6 +61,7 @@ import {
   or,
   sql,
 } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/pg-core';
 
 import type { TeamScopeCore } from '#src/team-scope.js';
 
@@ -5183,6 +5184,7 @@ export async function listPrimaryProjectsForTasks(
   await scope.requireMembership();
   const ids = Array.from(new Set(taskIds.filter((id) => UUID_RE.test(id)))).slice(0, 500);
   if (ids.length === 0) return [];
+  const tasks = alias(entities, 'primary_project_tasks');
   return db
     .select({
       taskId: entityRelationships.fromEntityId,
@@ -5191,6 +5193,15 @@ export async function listPrimaryProjectsForTasks(
       archivedAt: entities.archivedAt,
     })
     .from(entityRelationships)
+    .innerJoin(
+      tasks,
+      and(
+        eq(tasks.teamId, entityRelationships.teamId),
+        eq(tasks.id, entityRelationships.fromEntityId),
+        eq(tasks.type, 'task'),
+        isNull(tasks.mergedIntoId),
+      ),
+    )
     .innerJoin(
       entities,
       and(
@@ -5857,7 +5868,13 @@ export async function undoTaskCategoryChange(
       previous.status === 'pending' &&
       previous.requestedInputHash
     ) {
-      enqueueInputHash = previous.requestedInputHash;
+      const packet = await taskCategoryPacketForRow(tx, scope.teamId, current);
+      enqueueInputHash = taskCategoryInputHash(packet, TIMELINE_MODELS.taskCategorization.id);
+      previous = {
+        ...previous,
+        requestedInputHash: enqueueInputHash,
+        taxonomyVersion: TASK_CATEGORY_TAXONOMY_VERSION,
+      };
     }
     const now = new Date();
     const [updated] = await tx

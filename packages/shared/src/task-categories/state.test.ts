@@ -335,6 +335,63 @@ describe('task category and primary project state', () => {
     });
   });
 
+  it('recomputes a restored pending hash when task context changed during a manual override', async () => {
+    const scope = withTeam(db, TEAM_A, USER_A).objects;
+    const task = await scope.createObject({
+      type: 'task',
+      canonicalName: 'Classify the original title',
+      actor: { kind: 'user', userId: USER_A },
+    });
+    const original = await scope.getTaskCategoryClassificationInput(task.id);
+    const correction = await scope.setTaskCategory(task.id, 'product', {
+      kind: 'user',
+      userId: USER_A,
+    });
+    await scope.updateObject(
+      task.id,
+      { canonicalName: 'Classify the updated title' },
+      { kind: 'user', userId: USER_A },
+    );
+    vi.mocked(queue.enqueueTaskCategoryJob).mockClear();
+
+    await scope.undoTaskCategoryChange(task.id, correction.changeId, {
+      kind: 'user',
+      userId: USER_A,
+    });
+
+    const restored = await scope.getTaskCategoryClassificationInput(task.id);
+    expect(restored?.requestedInputHash).toBe(restored?.inputHash);
+    expect(restored?.requestedInputHash).not.toBe(original?.requestedInputHash);
+    expect(queue.enqueueTaskCategoryJob).toHaveBeenCalledWith({
+      teamId: TEAM_A,
+      taskId: task.id,
+      inputHash: restored?.requestedInputHash,
+      trigger: 'retry',
+    });
+  });
+
+  it('does not hydrate a generic non-task child edge as a primary project', async () => {
+    const scope = withTeam(db, TEAM_A, USER_A).objects;
+    const company = await scope.createObject({
+      type: 'company',
+      canonicalName: 'Faba',
+      actor: { kind: 'user', userId: USER_A },
+    });
+    const project = await scope.createObject({
+      type: 'project',
+      canonicalName: 'Faba website redesign',
+      actor: { kind: 'user', userId: USER_A },
+    });
+    await scope.addRelationship({
+      fromEntityId: company.id,
+      toEntityId: project.id,
+      kind: 'child',
+      actorUserId: USER_A,
+    });
+
+    await expect(scope.listPrimaryProjectsForTasks([company.id])).resolves.toEqual([]);
+  });
+
   it('keeps committed category state when the Redis handoff fails', async () => {
     const scope = withTeam(db, TEAM_A, USER_A).objects;
     const task = await scope.createObject({

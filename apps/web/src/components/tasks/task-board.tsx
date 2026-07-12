@@ -1678,6 +1678,7 @@ function TaskDetailPanel({
             taskId={task.id}
             projectId={primaryProject?.projectId ?? null}
             currentProjectLabel={primaryProject?.projectName}
+            projectArchived={Boolean(primaryProject?.archivedAt)}
             projects={projects}
             onProjectChange={onProjectChange}
           />

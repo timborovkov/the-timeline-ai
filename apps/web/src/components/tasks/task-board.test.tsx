@@ -219,6 +219,34 @@ describe('TaskBoard', () => {
     });
   });
 
+  it('does not label an active hydrated project as archived when it was not preloaded', () => {
+    render(
+      <TaskBoard
+        rows={[task()]}
+        columns={['todo', 'doing', 'done', 'blocked', 'cancelled']}
+        selectedTaskId="task-1"
+        view="kanban"
+        members={[]}
+        projects={[]}
+        primaryProjects={[
+          {
+            taskId: 'task-1',
+            projectId: 'project-outside-window',
+            projectName: 'Long-running active project',
+            archivedAt: null,
+          },
+        ]}
+        totalCount={1}
+        nextCursor={null}
+      />,
+    );
+
+    expect(screen.getByRole('option', { name: 'Long-running active project' })).toBeTruthy();
+    expect(
+      screen.queryByRole('option', { name: /Long-running active project · Archived/ }),
+    ).toBeNull();
+  });
+
   it('does not render legacy agentSuggested badges on task rows', () => {
     renderBoard(null, [task({ status: 'suggested', agentSuggested: true })]);
 

@@ -11,12 +11,14 @@ export function TaskProjectSelect({
   taskId,
   projectId,
   currentProjectLabel,
+  projectArchived = false,
   projects,
   onProjectChange,
 }: {
   taskId: string;
   projectId: string | null;
   currentProjectLabel?: string | undefined;
+  projectArchived?: boolean;
   projects: { id: string; label: string }[];
   onProjectChange?: (project: { id: string; label: string } | null) => void;
 }) {
@@ -86,7 +88,10 @@ export function TaskProjectSelect({
       >
         <option value="">No project</option>
         {projectId && !projects.some((project) => project.id === projectId) ? (
-          <option value={projectId}>{currentProjectLabel ?? projectId} · Archived</option>
+          <option value={projectId}>
+            {currentProjectLabel ?? projectId}
+            {projectArchived ? ' · Archived' : ''}
+          </option>
         ) : null}
         {visibleProjects.map((project) => (
           <option key={project.id} value={project.id}>

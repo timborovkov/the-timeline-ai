@@ -1429,6 +1429,7 @@ function ObjectEditableFields({
               taskId={detail.id}
               projectId={primaryProject?.projectId ?? null}
               currentProjectLabel={primaryProject?.projectName}
+              projectArchived={Boolean(primaryProject?.archivedAt)}
               projects={projects}
             />
           </Field>
