@@ -7,6 +7,7 @@ import {
   entityRelationships,
   objectChanges,
   taskCategoryAssignments,
+  taskCategoryProjectInvalidations,
   type Db,
 } from '@timeline/db';
 import { eq } from 'drizzle-orm';
@@ -731,6 +732,70 @@ describe('task category and primary project state', () => {
     await expect(
       scope.listObjects({ type: 'task', primaryProjectId: project.id }),
     ).resolves.toHaveLength(2);
+  });
+
+  it('persists project invalidation work beyond the first page when queue handoff fails', async () => {
+    const scope = withTeam(db, TEAM_A, USER_A).objects;
+    const project = await scope.createObject({
+      type: 'project',
+      canonicalName: 'Large client rollout',
+      actor: { kind: 'user', userId: USER_A },
+    });
+    const taskIds = Array.from(
+      { length: 501 },
+      (_, index) => `00000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`,
+    );
+    await db.insert(entities).values(
+      taskIds.map((id, index) => ({
+        id,
+        teamId: TEAM_A,
+        type: 'task' as const,
+        canonicalName: `Rollout task ${String(index + 1)}`,
+        status: 'todo',
+        taskCategory: 'operations',
+        taskCategoryMode: 'automatic',
+        taskCategorySource: 'llm',
+        taskCategoryStatus: 'ready',
+        taskCategoryAppliedInputHash: `old-${String(index + 1)}`,
+        taskCategoryTaxonomyVersion: 'task-categories-v1',
+        taskCategoryUpdatedAt: new Date(),
+      })),
+    );
+    await db.insert(entityRelationships).values(
+      taskIds.map((taskId) => ({
+        teamId: TEAM_A,
+        fromEntityId: taskId,
+        toEntityId: project.id,
+        kind: 'child' as const,
+        createdBy: USER_A,
+      })),
+    );
+    vi.mocked(queue.enqueueTaskCategoryJob).mockRejectedValue(new Error('redis down'));
+
+    await scope.updateObject(
+      project.id,
+      { canonicalName: 'Large client launch' },
+      { kind: 'user', userId: USER_A },
+    );
+
+    const [invalidation] = await db.select().from(taskCategoryProjectInvalidations);
+    expect(invalidation).toMatchObject({
+      teamId: TEAM_A,
+      projectId: project.id,
+      afterTaskId: taskIds[499],
+    });
+
+    await expect(
+      scope.invalidateTaskCategoriesForProject({
+        projectId: project.id,
+        projectVersion: invalidation?.projectVersion ?? '',
+        afterTaskId: invalidation?.afterTaskId ?? null,
+      }),
+    ).resolves.toEqual({
+      jobs: [expect.objectContaining({ taskId: taskIds[500] })],
+      nextCursor: null,
+    });
+    await expect(db.select().from(taskCategoryProjectInvalidations)).resolves.toEqual([]);
   });
 
   it('initializes and clears category state across task type changes', async () => {

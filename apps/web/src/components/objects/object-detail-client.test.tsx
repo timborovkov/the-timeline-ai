@@ -797,6 +797,37 @@ describe('ObjectDetailClient', () => {
     expect(screen.queryByRole('link', { name: 'Add task' })).toBeNull();
   });
 
+  it('does not offer the generic unlink action for a task primary project', () => {
+    render(
+      objectDetailElement({
+        detail: {
+          ...detail,
+          relationships: [
+            {
+              id: 'relationship-project',
+              direction: 'out',
+              kind: 'child',
+              otherId: 'project-1',
+              otherName: 'Faba website redesign',
+              otherType: 'project',
+            },
+          ],
+        },
+        userId: 'user-1',
+        suggestions: [],
+        primaryProject: {
+          taskId: detail.id,
+          projectId: 'project-1',
+          projectName: 'Faba website redesign',
+          archivedAt: null,
+        },
+      }),
+    );
+
+    expect(screen.getAllByText('Faba website redesign').length).toBeGreaterThan(0);
+    expect(screen.queryByRole('button', { name: 'Unlink' })).toBeNull();
+  });
+
   it('applies refreshed server detail props without requiring updatedAt to change', async () => {
     const refreshedDetail = {
       ...detail,

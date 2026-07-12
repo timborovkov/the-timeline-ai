@@ -86,7 +86,8 @@ describe('database schema contracts', () => {
           'reconciliation_evidence',
           'artifact_evidence_associations',
           'reconciliation_outputs',
-          'reconciliation_projection_outbox'
+          'reconciliation_projection_outbox',
+          'task_category_project_invalidations'
         )
       ORDER BY tablename
     `);
@@ -99,6 +100,7 @@ describe('database schema contracts', () => {
       'reconciliation_evidence',
       'reconciliation_outputs',
       'reconciliation_projection_outbox',
+      'task_category_project_invalidations',
       'teams',
     ]);
   });

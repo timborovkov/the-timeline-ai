@@ -10,7 +10,7 @@
     <a class="skip" href="#main">Skip to content</a>
     <main id="main">
       <h1>OpenRouter setup</h1>
-      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-07-03</span></div>
+      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-07-12</span></div>
       <blockquote>
         <p>Used from <strong>Phase 3</strong> (transcription) and onwards.</p>
       </blockquote>
@@ -131,8 +131,10 @@ OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
         Independent controls are <code>TASK_CATEGORY_AUTO_ENQUEUE_ENABLED</code>,
         <code>TASK_CATEGORY_WORKER_ENABLED</code>, <code>TASK_CATEGORY_BACKFILL_ENABLED</code>, and
         <code>TASK_CATEGORY_UI_ENABLED</code>. Disabling any control preserves stored categories and
-        manual history. Re-enable worker and enqueue controls together after an outage; the janitor
-        repairs eligible pending rows.
+        manual history. A disabled classification or worker control does not register the BullMQ
+        consumer, so queued jobs remain available. Re-enable worker and enqueue controls together
+        after an outage; the janitor repairs eligible pending rows and durable project fan-out
+        cursors.
       </p>
 
       <h2 id="phase-3">Phase 3 verification (transcription)</h2>

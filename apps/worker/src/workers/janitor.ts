@@ -1,4 +1,10 @@
-import { type Db, documentVersions, entities, meetings } from '@timeline/db';
+import {
+  type Db,
+  documentVersions,
+  entities,
+  meetings,
+  taskCategoryProjectInvalidations,
+} from '@timeline/db';
 import { childLogger, queue } from '@timeline/shared';
 import { getEnv } from '@timeline/shared/env';
 import { Worker, type Job } from 'bullmq';
@@ -48,11 +54,12 @@ interface JanitorTickResult {
   documentVersionsRequeued: number;
   meetingsRequeued: number;
   taskCategoriesRequeued: number;
+  taskCategoryFanoutsRequeued: number;
 }
 
 /**
- * Single janitor tick. Walks two tables paged by id, re-enqueues rows that
- * are still in an intermediate processing state past a sanity threshold.
+ * Single janitor tick. Walks recovery tables in bounded pages and re-enqueues
+ * work that is still pending past a sanity threshold.
  *
  * Why this exists: `finalizeDocumentVersionAction` (apps/web) commits the
  * DB row at `pending`, then `enqueueDocumentExtractJob` writes to Redis as
@@ -71,15 +78,62 @@ export async function processJanitorTick(deps: JanitorDeps): Promise<JanitorTick
 
   const documentVersionsRequeued = await sweepDocumentVersions(deps.db, enqueueDoc);
   const meetingsRequeued = await sweepMeetings(deps.db, enqueueMeeting);
-  const taskCategoriesRequeued =
-    (deps.taskCategoryEnabled ??
+  const taskCategoryEnabled =
+    deps.taskCategoryEnabled ??
     (getEnv().TASK_CATEGORY_CLASSIFICATION_ENABLED &&
       getEnv().TASK_CATEGORY_AUTO_ENQUEUE_ENABLED &&
-      getEnv().TASK_CATEGORY_WORKER_ENABLED))
-      ? await sweepTaskCategories(deps.db, enqueueTaskCategory)
-      : 0;
+      getEnv().TASK_CATEGORY_WORKER_ENABLED);
+  const taskCategoriesRequeued = taskCategoryEnabled
+    ? await sweepTaskCategories(deps.db, enqueueTaskCategory)
+    : 0;
+  const taskCategoryFanoutsRequeued = taskCategoryEnabled
+    ? await sweepTaskCategoryProjectInvalidations(deps.db, enqueueTaskCategory)
+    : 0;
 
-  return { documentVersionsRequeued, meetingsRequeued, taskCategoriesRequeued };
+  return {
+    documentVersionsRequeued,
+    meetingsRequeued,
+    taskCategoriesRequeued,
+    taskCategoryFanoutsRequeued,
+  };
+}
+
+async function sweepTaskCategoryProjectInvalidations(
+  db: Db,
+  enqueue: (data: queue.TaskCategoryJobData) => Promise<unknown>,
+): Promise<number> {
+  const rows = await db
+    .select()
+    .from(taskCategoryProjectInvalidations)
+    .orderBy(
+      asc(taskCategoryProjectInvalidations.createdAt),
+      asc(taskCategoryProjectInvalidations.id),
+    )
+    .limit(MAX_REQUEUES_PER_KIND);
+  let total = 0;
+  for (const row of rows) {
+    try {
+      await enqueue({
+        kind: 'project_fanout',
+        teamId: row.teamId,
+        projectId: row.projectId,
+        projectVersion: row.projectVersion,
+        afterTaskId: row.afterTaskId,
+      });
+      total += 1;
+    } catch (err: unknown) {
+      log.warn(
+        { err, projectId: row.projectId },
+        'janitor: failed to re-enqueue task category project fanout',
+      );
+      captureWorkerException(err, {
+        component: 'worker_handoff',
+        queueName: queue.QUEUE_NAMES.taskCategory,
+        operation: 'janitor_reenqueue_task_category_project_fanout',
+      });
+    }
+  }
+  return total;
 }
 
 async function sweepTaskCategories(
@@ -296,7 +350,8 @@ export function startJanitorWorker(deps: { db: Db }): Worker<queue.JanitorJobDat
       if (
         result.documentVersionsRequeued === 0 &&
         result.meetingsRequeued === 0 &&
-        result.taskCategoriesRequeued === 0
+        result.taskCategoriesRequeued === 0 &&
+        result.taskCategoryFanoutsRequeued === 0
       ) {
         log.info({ jobId: job.id, durationMs }, 'janitor: nothing stuck');
       } else {

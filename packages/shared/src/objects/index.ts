@@ -43,6 +43,7 @@ import {
   reconciliationOutputs,
   reconciliationRuns,
   taskCategoryAssignments,
+  taskCategoryProjectInvalidations,
 } from '@timeline/db';
 import {
   type SQL,
@@ -268,6 +269,7 @@ async function invalidateLinkedTaskCategoriesForProject(
       canonicalName: entities.canonicalName,
       aliases: entities.aliases,
       metadata: entities.metadata,
+      updatedAt: entities.updatedAt,
     })
     .from(entityRelationships)
     .innerJoin(
@@ -299,7 +301,7 @@ async function invalidateLinkedTaskCategoriesForProject(
       primaryProjectName: project.canonicalName,
     });
     const inputHash = taskCategoryInputHash(packet, TIMELINE_MODELS.taskCategorization.id);
-    await tx
+    const updated = await tx
       .update(entities)
       .set({
         taskCategoryStatus: 'pending',
@@ -307,19 +309,68 @@ async function invalidateLinkedTaskCategoriesForProject(
         taskCategoryTaxonomyVersion: TASK_CATEGORY_TAXONOMY_VERSION,
         taskCategoryUpdatedAt: new Date(),
       })
-      .where(and(eq(entities.teamId, teamId), eq(entities.id, task.id)));
-    jobs.push({ taskId: task.id, inputHash });
+      .where(
+        and(
+          eq(entities.teamId, teamId),
+          eq(entities.id, task.id),
+          eq(entities.taskCategoryMode, 'automatic'),
+          isNull(entities.archivedAt),
+          isNull(entities.mergedIntoId),
+          eq(entities.updatedAt, task.updatedAt),
+          sql`EXISTS (
+            SELECT 1
+            FROM entity_relationships AS current_project_rel
+            WHERE current_project_rel.team_id = ${teamId}
+              AND current_project_rel.from_entity_id = ${task.id}
+              AND current_project_rel.to_entity_id = ${project.id}
+              AND current_project_rel.kind = 'child'
+          )`,
+        ),
+      )
+      .returning({ id: entities.id });
+    if (updated.length > 0) jobs.push({ taskId: task.id, inputHash });
+  }
+  const fanout =
+    linkedTasks.length === 500
+      ? {
+          projectId: project.id,
+          projectVersion: taskProjectVersion(project.id, project.canonicalName),
+          afterTaskId: linkedTasks.at(-1)?.id ?? project.id,
+        }
+      : null;
+  if (fanout) {
+    await tx
+      .insert(taskCategoryProjectInvalidations)
+      .values({
+        teamId,
+        projectId: fanout.projectId,
+        projectVersion: fanout.projectVersion,
+        afterTaskId: fanout.afterTaskId,
+      })
+      .onConflictDoUpdate({
+        target: [
+          taskCategoryProjectInvalidations.teamId,
+          taskCategoryProjectInvalidations.projectId,
+        ],
+        set: {
+          projectVersion: fanout.projectVersion,
+          afterTaskId: fanout.afterTaskId,
+          updatedAt: new Date(),
+        },
+      });
+  } else {
+    await tx
+      .delete(taskCategoryProjectInvalidations)
+      .where(
+        and(
+          eq(taskCategoryProjectInvalidations.teamId, teamId),
+          eq(taskCategoryProjectInvalidations.projectId, project.id),
+        ),
+      );
   }
   return {
     jobs,
-    fanout:
-      jobs.length === 500
-        ? {
-            projectId: project.id,
-            projectVersion: taskProjectVersion(project.id, project.canonicalName),
-            afterTaskId: jobs.at(-1)?.taskId ?? project.id,
-          }
-        : null,
+    fanout,
   };
 }
 
@@ -5762,6 +5813,23 @@ export async function invalidateTaskCategoriesForProject(
   await scope.requireMembership();
   const limit = Math.min(Math.max(input.limit ?? 500, 1), 500);
   return db.transaction(async (tx) => {
+    const [invalidation] = await tx
+      .select()
+      .from(taskCategoryProjectInvalidations)
+      .where(
+        and(
+          eq(taskCategoryProjectInvalidations.teamId, scope.teamId),
+          eq(taskCategoryProjectInvalidations.projectId, input.projectId),
+        ),
+      )
+      .for('update')
+      .limit(1);
+    if (invalidation?.projectVersion !== input.projectVersion) {
+      return { jobs: [], nextCursor: null };
+    }
+    if (invalidation.afterTaskId !== input.afterTaskId) {
+      return { jobs: [], nextCursor: invalidation.afterTaskId };
+    }
     const [project] = await tx
       .select({ id: entities.id, canonicalName: entities.canonicalName })
       .from(entities)
@@ -5778,6 +5846,9 @@ export async function invalidateTaskCategoriesForProject(
       !project ||
       taskProjectVersion(project.id, project.canonicalName) !== input.projectVersion
     ) {
+      await tx
+        .delete(taskCategoryProjectInvalidations)
+        .where(eq(taskCategoryProjectInvalidations.id, invalidation.id));
       return { jobs: [], nextCursor: null };
     }
     const rows = await tx
@@ -5786,6 +5857,7 @@ export async function invalidateTaskCategoriesForProject(
         canonicalName: entities.canonicalName,
         aliases: entities.aliases,
         metadata: entities.metadata,
+        updatedAt: entities.updatedAt,
       })
       .from(entityRelationships)
       .innerJoin(
@@ -5818,7 +5890,7 @@ export async function invalidateTaskCategoriesForProject(
         primaryProjectName: project.canonicalName,
       });
       const inputHash = taskCategoryInputHash(packet, TIMELINE_MODELS.taskCategorization.id);
-      await tx
+      const updated = await tx
         .update(entities)
         .set({
           taskCategoryStatus: 'pending',
@@ -5831,13 +5903,36 @@ export async function invalidateTaskCategoriesForProject(
             eq(entities.teamId, scope.teamId),
             eq(entities.id, task.id),
             eq(entities.taskCategoryMode, 'automatic'),
+            isNull(entities.archivedAt),
+            isNull(entities.mergedIntoId),
+            eq(entities.updatedAt, task.updatedAt),
+            sql`EXISTS (
+              SELECT 1
+              FROM entity_relationships AS current_project_rel
+              WHERE current_project_rel.team_id = ${scope.teamId}
+                AND current_project_rel.from_entity_id = ${task.id}
+                AND current_project_rel.to_entity_id = ${project.id}
+                AND current_project_rel.kind = 'child'
+            )`,
           ),
-        );
-      jobs.push({ taskId: task.id, inputHash });
+        )
+        .returning({ id: entities.id });
+      if (updated.length > 0) jobs.push({ taskId: task.id, inputHash });
+    }
+    const nextCursor = rows.length === limit ? (rows.at(-1)?.id ?? null) : null;
+    if (nextCursor) {
+      await tx
+        .update(taskCategoryProjectInvalidations)
+        .set({ afterTaskId: nextCursor, updatedAt: new Date() })
+        .where(eq(taskCategoryProjectInvalidations.id, invalidation.id));
+    } else {
+      await tx
+        .delete(taskCategoryProjectInvalidations)
+        .where(eq(taskCategoryProjectInvalidations.id, invalidation.id));
     }
     return {
       jobs,
-      nextCursor: rows.length === limit ? (rows.at(-1)?.id ?? null) : null,
+      nextCursor,
     };
   });
 }

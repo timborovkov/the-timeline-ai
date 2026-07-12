@@ -2159,7 +2159,13 @@ function ObjectRelationshipsSection({
                       : `← ${relationship.kind}`}{' '}
                   · {relationship.otherType}
                 </span>
-                {relationship.direction === 'out' || relationship.kind === 'related' ? (
+                {(relationship.direction === 'out' || relationship.kind === 'related') &&
+                !(
+                  sourceType === 'task' &&
+                  relationship.direction === 'out' &&
+                  relationship.kind === 'child' &&
+                  relationship.otherType === 'project'
+                ) ? (
                   <button
                     type="button"
                     disabled={pending || isOptimisticRelationship(relationship)}

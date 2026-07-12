@@ -1,4 +1,5 @@
 /** Business intent: the worker classifies only the exact pending task packet and applies it once. */
+import { resetEnvForTests } from '@timeline/shared/env';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const fakes = vi.hoisted(() => ({
@@ -7,6 +8,7 @@ const fakes = vi.hoisted(() => ({
   apply: vi.fn(),
   invalidateProject: vi.fn(),
   enqueue: vi.fn(),
+  worker: vi.fn(),
 }));
 
 vi.mock('@timeline/shared', () => ({
@@ -19,10 +21,20 @@ vi.mock('@timeline/shared', () => ({
 }));
 vi.mock('@timeline/shared/task-categories', () => ({ classifyTaskCategory: vi.fn() }));
 vi.mock('@timeline/shared/team-scope', () => ({ withTeam: fakes.withTeam }));
-vi.mock('bullmq', () => ({ Worker: vi.fn(), DelayedError: class DelayedError extends Error {} }));
+vi.mock('bullmq', () => ({
+  Worker: class Worker {
+    on = vi.fn();
+
+    constructor(...args: unknown[]) {
+      fakes.worker(...args);
+    }
+  },
+  DelayedError: class DelayedError extends Error {},
+}));
 vi.mock('#src/monitoring.js', () => ({ captureWorkerJobFailure: vi.fn() }));
 
-const { processTaskCategoryJobForTests } = await import('#src/workers/taskCategory.js');
+const { processTaskCategoryJobForTests, startTaskCategoryWorker } =
+  await import('#src/workers/taskCategory.js');
 
 const JOB = {
   teamId: 'team-1',
@@ -41,6 +53,15 @@ describe('task category worker', () => {
         invalidateTaskCategoriesForProject: fakes.invalidateProject,
       },
     });
+  });
+
+  it('does not register a queue consumer while classification or worker consumption is disabled', () => {
+    process.env.TASK_CATEGORY_CLASSIFICATION_ENABLED = 'false';
+    process.env.TASK_CATEGORY_WORKER_ENABLED = 'false';
+    resetEnvForTests();
+
+    expect(startTaskCategoryWorker({ db: {} as never })).toBeNull();
+    expect(fakes.worker).not.toHaveBeenCalled();
   });
 
   it('skips rows that are no longer pending', async () => {

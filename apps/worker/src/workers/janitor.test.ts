@@ -5,6 +5,7 @@ import {
   entities,
   entityRelationships,
   meetings as meetingsTable,
+  taskCategoryProjectInvalidations,
 } from '@timeline/db';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
@@ -335,6 +336,37 @@ describe('processJanitorTick — meetings sweep', () => {
 });
 
 describe('processJanitorTick — task category sweep', () => {
+  it('re-enqueues durable project fanout continuations', async () => {
+    const [project] = await db
+      .insert(entities)
+      .values({ teamId: TEAM_ID, type: 'project', canonicalName: 'Large rollout' })
+      .returning({ id: entities.id });
+    await db.insert(taskCategoryProjectInvalidations).values({
+      teamId: TEAM_ID,
+      projectId: project?.id ?? '',
+      projectVersion: 'project-version',
+      afterTaskId: '00000000-0000-4000-8000-000000000500',
+    });
+    const enqueue = vi.fn().mockResolvedValue({ enqueued: true });
+
+    const result = await processJanitorTick({
+      db: db as never,
+      enqueueDocumentExtractJob: vi.fn(),
+      enqueueMeetingFinalizeJob: vi.fn(),
+      enqueueTaskCategoryJob: enqueue,
+      taskCategoryEnabled: true,
+    });
+
+    expect(enqueue).toHaveBeenCalledWith({
+      kind: 'project_fanout',
+      teamId: TEAM_ID,
+      projectId: project?.id,
+      projectVersion: 'project-version',
+      afterTaskId: '00000000-0000-4000-8000-000000000500',
+    });
+    expect(result.taskCategoryFanoutsRequeued).toBe(1);
+  });
+
   it('re-enqueues an automatic task stuck pending even when it retains a category', async () => {
     const [task] = await db
       .insert(entities)

@@ -11,7 +11,7 @@
     <main id="main">
       <h1>Workspace objects</h1>
       <div class="meta">
-        <span class="kind">Architecture</span><span>Last updated 2026-07-11</span>
+        <span class="kind">Architecture</span><span>Last updated 2026-07-12</span>
       </div>
       <p class="tldr">
         Phase 8 turned <code>entities</code> from an extraction artifact into the workspace's
@@ -115,6 +115,14 @@
             <td>
               <code>category</code>, <code>mode</code>, <code>source</code>, model/prompt/taxonomy
               versions, <code>input_hash</code>, <code>outcome</code>, and bounded telemetry
+            </td>
+          </tr>
+          <tr>
+            <td><code>task_category_project_invalidations</code></td>
+            <td>Durable recovery cursors for bounded project lifecycle category fan-out.</td>
+            <td>
+              <code>team_id</code>, <code>project_id</code>, <code>project_version</code>,
+              <code>after_task_id</code>, timestamps
             </td>
           </tr>
           <tr>
@@ -306,7 +314,9 @@
         shared object scope enforces zero-or-one active project under the task lock. Project quick
         add, manual set/change/remove, agent suggestions, filters, Connected Work, exports, and MCP
         reads all use that same edge. Archived projects remain visible on existing tasks; project
-        rename and merge invalidate automatic category context in resumable 500-task pages.
+        rename and merge invalidate automatic category context in resumable 500-task pages. A
+        database outbox cursor survives Redis handoff failures, and each page rechecks automatic
+        mode and task/project state so a concurrent human correction always wins.
       </p>
       <p>
         See <a href="./task-categories-plan.md">the task categories plan</a> and

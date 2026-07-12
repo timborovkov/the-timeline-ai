@@ -450,6 +450,13 @@ and enqueue category reclassification only when category mode is automatic.
 
 Project rename/merge/type-change fan-out must be capped and recoverable rather
 than enqueueing an unbounded number of jobs inside the request transaction.
+When more than one 500-task page is required, write or advance a durable
+`task_category_project_invalidations` cursor in the same transaction that marks
+the current page pending. Redis handoff is only an acceleration path: the
+janitor must rediscover the cursor until every linked automatic task has been
+visited. Each task update must recheck automatic mode, current task state, the
+project edge, and the task version so a concurrent human category correction is
+never overwritten or allowed to abort the rest of the project rename.
 
 ### Manual product flows
 
@@ -590,6 +597,13 @@ correction-rate metrics and debugging without putting model metadata on every
 existing team-scoped entity key, cascade on entity/team deletion, and add
 indexes for entity history and prompt/model outcome reporting. Do not duplicate
 the classification packet or task content into this table.
+
+Add `task_category_project_invalidations` as a small durable recovery outbox
+for project lifecycle fan-out. One row per team/project stores the project
+version and the last visited task id. The project mutation advances it in the
+same transaction as task invalidation; a worker page advances or deletes it in
+its own transaction. Team/project deletion cascades remove stale work. This
+table contains identifiers and cursors only, never task or project text.
 
 Also insert an applied `object_changes` row with `field = 'taskCategory'` for
 each actual category change. Do not route automatic assignments through the
@@ -822,10 +836,17 @@ manual state.
 
 Extend the janitor sweep to re-enqueue automatic tasks stuck in `pending` past
 a short grace period, not merely tasks whose category is null. This covers
-reclassification of tasks that retain an older category. Cap each sweep and
-page by id, matching the existing janitor pattern. Job attempts must be
-idempotent: duplicate successes may add at most one applied assignment/change
-for the same entity and requested hash.
+reclassification of tasks that retain an older category. The same tick scans
+durable project-invalidation cursors and re-enqueues their next fan-out page,
+so a Redis failure after any project mutation cannot strand tasks beyond the
+first page. Cap each sweep and page by id, matching the existing janitor
+pattern. Job attempts must be idempotent: duplicate successes may add at most
+one applied assignment/change for the same entity and requested hash.
+
+The worker kill switch is a consumer-registration control, not only a handler
+guard. When classification or the task-category worker is disabled, do not
+construct a BullMQ consumer for this queue; queued work must remain available
+for recovery after the controls are re-enabled.
 
 ### Cost, rate, and capacity controls
 
@@ -946,7 +967,7 @@ private helper calls.
 | Migration/schema | Existing non-task and task rows migrate safely; checks reject impossible states; composite team/entity FK; cascading delete; audit of tasks with multiple project-child edges; type-away/type-into-task transitions; down/rollback procedure is documented even if migrations remain forward-only |
 | DB integration (PGlite) | Create/read/filter/count/search; null/pending/failed filtering; project filter by durable edge; project set/replace/remove under task row lock; zero-or-one project semantics; generic relationship paths cannot bypass `setTaskProject`; legacy non-project child edges excluded and preserved; archived project remains readable but cannot be newly selected; suggestion retry reuses its compensated archived project; rename/merge/type-change lifecycle behavior; wrong-type/merged/cross-team project rejection; assignment/change/relationship audit; manual override; reset/retry/undo preserve state when automation is unavailable; previous-value retention; stale success/failure and in-flight human-edit races; archive skips; duplicate idempotency |
 | PostgreSQL query QA | `EXPLAIN (ANALYZE, BUFFERS)` on representative task/object/board category filters, project-edge filters, inverse Connected Work reads, and counts; partial index usage; no N+1 project hydration; no regression for unfiltered queries; category backfill does not reorder `updated_at` cursors |
-| Queue/worker | Enqueue after all canonical create paths and eligible context/type/project/project-name changes; job-id dedupe by requested hash; retained failed/completed same-hash job replacement on retry; model failure retry; invalid output; lost-enqueue janitor recovery for retained prior values; project replacement makes the old job stale; capped project fan-out; no reclassification for ordinary status/due edits; no notifications/timeline/reconciliation spam; per-team fairness |
+| Queue/worker | Enqueue after all canonical create paths and eligible context/type/project/project-name changes; job-id dedupe by requested hash; retained failed/completed same-hash job replacement on retry; model failure retry; invalid output; lost-enqueue janitor recovery for retained prior values; durable project-fan-out cursor survives Redis failure beyond page one; concurrent manual override is preserved during project invalidation; disabled controls do not register a queue consumer; project replacement makes the old job stale; capped project fan-out; no reclassification for ordinary status/due edits; no notifications/timeline/reconciliation spam; per-team fairness |
 | Web actions/components | Valid project create/set/replace/remove and prefilled active-project quick-add; no quick-add action on archived projects; archived/project-needs-review presentation; generic child editor guard; project search permissions; approval preview; valid category update/reset/retry/undo; permission, unavailable-automation, and invalid-category rejection; optimistic card update; bounded batch polling; stale poll response protection; task/object/board filter propagation; exact project/category display matrix; non-task cards without a category badge; bulk category change and bulk-auto confirmation; accessibility states |
 | Agent/MCP | Category and primary project serialized in results; “list Engineering tasks for Faba website redesign” applies both structured filters; unique project ownership produces `parentObjectId`; ambiguous/co-mentioned projects do not; unknown category/project rejected; pending/failed fields are not misrepresented; existing clients remain compatible with additive fields |
 | Export/operations | Team export disposition; assignment-history cascade; dry-run cost report; resumable/pauseable backfill; kill switch; metrics contain no task text |
@@ -1310,6 +1331,9 @@ the current branch before editing.
 - Generic relationship actions cannot create a second project edge; archived
   projects remain visible on existing tasks, and rename/merge/type-change
   behavior preserves history while invalidating category context safely.
+- Project lifecycle invalidation resumes from durable cursor state after Redis
+  or worker outages and never replaces a category changed manually during the
+  fan-out.
 - Failed suggestion acceptance can be retried without duplicating or colliding
   with a project created and archived by the previous attempt.
 - AI task creation links a project only from explicit, unique ownership context,
@@ -1336,7 +1360,8 @@ the current branch before editing.
   and product-usage measures meet the launch thresholds or have an explicitly
   accepted exception based on reviewed evidence.
 - Automation and backfill can be stopped without removing existing categories
-  or breaking manual editing/filtering.
+  or breaking manual editing/filtering; disabled task-category workers do not
+  consume and acknowledge queued work.
 - A same-input explicit retry cannot be swallowed by a retained failed or
   completed queue job.
 - Deterministic tests, live eval gates, repository validation, React Doctor,

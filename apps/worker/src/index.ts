@@ -71,7 +71,8 @@ async function main(): Promise<void> {
   await queue.scheduleMeetingSchedulerTick();
   await queue.scheduleDailyDigest();
   log.info(
-    'transcribe + extract + suggestions + embed + overdue + calendar-recurrence + document-extract + meeting-finalize + meeting-scheduler + object-summary + task-category + janitor + webhook-delivery + integration-sync + mcp-health + team-export + timeline-moment-presentation + daily-digest + reconciliation workers started',
+    { taskCategoryWorkerEnabled: taskCategoryWorker !== null },
+    'transcribe + extract + suggestions + embed + overdue + calendar-recurrence + document-extract + meeting-finalize + meeting-scheduler + object-summary + janitor + webhook-delivery + integration-sync + mcp-health + team-export + timeline-moment-presentation + daily-digest + reconciliation workers started',
   );
 
   const shutdown = async (signal: string): Promise<void> => {
@@ -88,7 +89,7 @@ async function main(): Promise<void> {
         meetingFinalizeWorker.close(),
         meetingSchedulerWorker.close(),
         objectSummaryWorker.close(),
-        taskCategoryWorker.close(),
+        taskCategoryWorker?.close(),
         janitorWorker.close(),
         webhookDeliveryWorker.close(),
         integrationSyncWorker.close(),

@@ -8,6 +8,7 @@ import {
   pgTable,
   text,
   timestamp,
+  uniqueIndex,
   uuid,
 } from 'drizzle-orm/pg-core';
 
@@ -73,5 +74,32 @@ export const taskCategoryAssignments = pgTable(
       'task_category_assignments_confidence_chk',
       sql`${table.confidence} IS NULL OR (${table.confidence} >= 0 AND ${table.confidence} <= 1)`,
     ),
+  ],
+);
+
+export const taskCategoryProjectInvalidations = pgTable(
+  'task_category_project_invalidations',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    teamId: uuid('team_id')
+      .notNull()
+      .references(() => teams.id, { onDelete: 'cascade' }),
+    projectId: uuid('project_id').notNull(),
+    projectVersion: text('project_version').notNull(),
+    afterTaskId: uuid('after_task_id').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    foreignKey({
+      name: 'task_category_project_invalidations_team_project_fk',
+      columns: [table.teamId, table.projectId],
+      foreignColumns: [entities.teamId, entities.id],
+    }).onDelete('cascade'),
+    uniqueIndex('task_category_project_invalidations_team_project_unq').on(
+      table.teamId,
+      table.projectId,
+    ),
+    index('task_category_project_invalidations_created_idx').on(table.createdAt, table.id),
   ],
 );

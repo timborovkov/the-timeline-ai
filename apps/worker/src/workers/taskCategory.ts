@@ -100,7 +100,11 @@ export async function processTaskCategoryJobForTests(
 
 export function startTaskCategoryWorker(
   deps: TaskCategoryWorkerDeps,
-): Worker<queue.TaskCategoryJobData> {
+): Worker<queue.TaskCategoryJobData> | null {
+  const env = getEnv();
+  if (!env.TASK_CATEGORY_CLASSIFICATION_ENABLED || !env.TASK_CATEGORY_WORKER_ENABLED) {
+    return null;
+  }
   const worker = new Worker<queue.TaskCategoryJobData>(
     queue.QUEUE_NAMES.taskCategory,
     async (job: Job<queue.TaskCategoryJobData>, token?: string) => {
