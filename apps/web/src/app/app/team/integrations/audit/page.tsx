@@ -34,7 +34,7 @@ export default async function IntegrationAuditPage() {
   if (!canViewAudit) redirect('/app/team/integrations');
   const rows = await scope.integrations.listAudit(null, 200);
   return (
-    <div className="mx-auto max-w-4xl space-y-8">
+    <div className="space-y-8">
       <Breadcrumb
         items={[
           { label: 'Team', href: '/app/team' },

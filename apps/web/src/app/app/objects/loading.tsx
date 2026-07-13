@@ -3,7 +3,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 
 export default function ObjectsLoading() {
   return (
-    <div className="mx-auto max-w-5xl space-y-6" aria-busy="true">
+    <div className="space-y-6" aria-busy="true">
       <PageHeaderSkeleton />
       <nav className="flex flex-wrap gap-1.5" aria-label="Loading object type filters">
         {Array.from({ length: 8 }).map((_, i) => (

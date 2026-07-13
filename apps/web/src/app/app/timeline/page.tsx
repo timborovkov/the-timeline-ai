@@ -354,7 +354,7 @@ export default async function TimelinePage({ searchParams }: Props) {
     origin: originFilterValue || null,
   };
   return (
-    <div className="mx-auto max-w-6xl space-y-6">
+    <div className="space-y-6">
       <IndexStrip
         srLabel={`Timeline · ${active.teamName} · ${eventCount} event${eventCount === 1 ? '' : 's'} loaded${hasFilters ? ' · filters on' : ''}`}
         segments={[

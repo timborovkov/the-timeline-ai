@@ -41,7 +41,7 @@ export default async function ReconciliationClusterPage({
   const { cluster } = detail;
 
   return (
-    <div className="mx-auto max-w-6xl space-y-8">
+    <div className="space-y-8">
       <Breadcrumb
         items={[
           { label: 'Team', href: '/app/team' },

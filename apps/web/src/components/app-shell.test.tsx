@@ -90,5 +90,8 @@ describe('AppShell', () => {
     expect(html).toContain(
       'min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-24 pt-6 md:px-8 md:py-8',
     );
+    expect(html).toContain(
+      'data-slot="app-page-container" class="app-page-container mx-auto w-full max-w-6xl"',
+    );
   });
 });

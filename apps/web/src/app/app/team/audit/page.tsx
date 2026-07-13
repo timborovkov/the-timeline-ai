@@ -35,7 +35,7 @@ export default async function TrustAuditPage() {
   const rows = await scope.audit.list(200);
 
   return (
-    <div className="mx-auto max-w-5xl space-y-8">
+    <div className="space-y-8">
       <Breadcrumb items={[{ label: 'Team', href: '/app/team' }, { label: 'Trust audit' }]} />
       <IndexStrip
         srLabel={`Trust audit · ${String(rows.length)} rows`}

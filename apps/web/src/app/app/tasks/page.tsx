@@ -125,6 +125,7 @@ export default async function TasksPage({
 
   return (
     <div
+      data-app-layout={rows.length > 0 ? 'full-bleed' : undefined}
       className={
         rows.length > 0
           ? '-mx-4 -my-6 flex h-[calc(100dvh-3.5rem)] min-w-0 flex-col md:-mx-8 md:-my-8'

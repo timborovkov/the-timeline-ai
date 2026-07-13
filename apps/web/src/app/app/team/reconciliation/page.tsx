@@ -78,7 +78,7 @@ export default async function ReconciliationDashboardPage({
   const approvalRate = formatRate(diagnostics.approvalStats.acceptanceRate);
 
   return (
-    <div className="mx-auto max-w-6xl space-y-10">
+    <div className="space-y-10">
       <Breadcrumb items={[{ label: 'Team', href: '/app/team' }, { label: 'Reconciliation' }]} />
       <PageHeader
         title="Reconciliation"

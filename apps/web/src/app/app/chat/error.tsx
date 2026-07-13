@@ -11,7 +11,7 @@ export default function ChatError({
   reset: () => void;
 }) {
   return (
-    <div className="mx-auto max-w-4xl space-y-8">
+    <div className="space-y-8">
       <IndexStrip
         srLabel="Chat · error"
         segments={[{ value: 'CHAT' }, { label: 'status', value: 'ERROR', danger: true }]}

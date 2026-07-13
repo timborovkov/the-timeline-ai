@@ -140,7 +140,7 @@ export default async function HomeDashboardPage() {
   const userMap = new Map(userRows.map((row) => [row.id, row] as const));
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6 md:space-y-8">
+    <div className="space-y-6 md:space-y-8">
       <PageHeader
         title="Home"
         srLabel={`Home dashboard · ${active.teamName} · ${events.length} recent event${events.length === 1 ? '' : 's'} · ${pendingApprovals} pending approval${pendingApprovals === 1 ? '' : 's'}`}
