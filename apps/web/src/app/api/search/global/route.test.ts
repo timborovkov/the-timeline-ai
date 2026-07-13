@@ -391,6 +391,103 @@ describe('POST /api/search/global', () => {
     expect(fakes.fakeSearchObjects).not.toHaveBeenCalled();
   });
 
+  it('keeps task categories out of global search while their UI flag is disabled', async () => {
+    fakes.fakeGetEnv.mockReturnValue({
+      OPENROUTER_API_KEY: 'test-openrouter',
+      QDRANT_URL: '',
+      TASK_CATEGORY_UI_ENABLED: false,
+    });
+    fakes.fakeSearchObjects.mockResolvedValue([
+      {
+        id: 'categorized-task',
+        type: 'task',
+        canonicalName: 'Build launch service',
+        status: 'todo',
+        stage: null,
+        priority: null,
+        ownerUserId: null,
+        assigneeUserId: null,
+        dueAt: null,
+        agentSuggested: false,
+        taskCategory: 'engineering',
+        taskCategoryMode: 'automatic',
+        taskCategorySource: 'llm',
+        taskCategoryStatus: 'ready',
+        taskCategoryUpdatedAt: new Date('2026-06-10T00:00:00.000Z'),
+        archivedAt: null,
+        aliases: [],
+        metadata: {},
+        updatedAt: new Date('2026-06-10T00:00:00.000Z'),
+        createdAt: new Date('2026-06-01T00:00:00.000Z'),
+      },
+    ]);
+
+    const response = await POST(request({ query: 'Engineering', mode: 'full', kinds: ['task'] }));
+    const data = (await response.json()) as { ok: true; results: unknown[] };
+
+    expect(response.status).toBe(200);
+    expect(data.results).toEqual([]);
+
+    const titleResponse = await POST(
+      request({ query: 'Build launch', mode: 'full', kinds: ['task'] }),
+    );
+    const titleData = (await titleResponse.json()) as {
+      ok: true;
+      results: { snippet: string; metadata?: Record<string, unknown> }[];
+    };
+    expect(titleData.results[0]?.snippet).toBe('todo');
+    expect(titleData.results[0]?.metadata).not.toHaveProperty('taskCategory');
+    expect(titleData.results[0]?.metadata).not.toHaveProperty('taskCategoryStatus');
+  });
+
+  it('uses and exposes task categories in global search when their UI flag is enabled', async () => {
+    fakes.fakeGetEnv.mockReturnValue({
+      OPENROUTER_API_KEY: 'test-openrouter',
+      QDRANT_URL: '',
+      TASK_CATEGORY_UI_ENABLED: true,
+    });
+    fakes.fakeSearchObjects.mockResolvedValue([
+      {
+        id: 'categorized-task',
+        type: 'task',
+        canonicalName: 'Build launch service',
+        status: 'todo',
+        stage: null,
+        priority: null,
+        ownerUserId: null,
+        assigneeUserId: null,
+        dueAt: null,
+        agentSuggested: false,
+        taskCategory: 'engineering',
+        taskCategoryMode: 'automatic',
+        taskCategorySource: 'llm',
+        taskCategoryStatus: 'ready',
+        taskCategoryUpdatedAt: new Date('2026-06-10T00:00:00.000Z'),
+        archivedAt: null,
+        aliases: [],
+        metadata: {},
+        updatedAt: new Date('2026-06-10T00:00:00.000Z'),
+        createdAt: new Date('2026-06-01T00:00:00.000Z'),
+      },
+    ]);
+
+    const response = await POST(request({ query: 'Engineering', mode: 'full', kinds: ['task'] }));
+    const data = (await response.json()) as {
+      ok: true;
+      results: { title: string; snippet: string; metadata?: Record<string, unknown> }[];
+    };
+
+    expect(response.status).toBe(200);
+    expect(data.results[0]).toMatchObject({
+      title: 'Build launch service',
+      snippet: 'todo · Engineering',
+    });
+    expect(data.results[0]?.metadata).toMatchObject({
+      taskCategory: 'engineering',
+      taskCategoryStatus: 'ready',
+    });
+  });
+
   it('uses ready object summaries for object search snippets and lexical matching', async () => {
     fakes.fakeListReadyObjectSummaries.mockResolvedValue([
       {

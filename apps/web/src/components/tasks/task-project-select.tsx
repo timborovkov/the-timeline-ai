@@ -68,20 +68,19 @@ export function TaskProjectSelect({
             : null;
           setError(null);
           onProjectChange?.(nextProject);
-          startTransition(() => {
-            void setTaskProjectAction({ id: taskId, projectId: nextProjectId })
-              .then((result) => {
-                if (result.error) {
-                  onProjectChange?.(previousProject);
-                  setError(result.error);
-                } else {
-                  router.refresh();
-                }
-              })
-              .catch((cause: unknown) => {
+          startTransition(async () => {
+            try {
+              const result = await setTaskProjectAction({ id: taskId, projectId: nextProjectId });
+              if (result.error) {
                 onProjectChange?.(previousProject);
-                setError(errorMessage(cause, 'Project update failed'));
-              });
+                setError(result.error);
+              } else {
+                router.refresh();
+              }
+            } catch (cause) {
+              onProjectChange?.(previousProject);
+              setError(errorMessage(cause, 'Project update failed'));
+            }
           });
         }}
         className="h-9 w-full rounded-sm border border-border bg-bg px-2 text-sm text-fg disabled:cursor-progress disabled:opacity-60"

@@ -393,6 +393,36 @@ describe('task category and primary project state', () => {
     ).toHaveLength(2);
   });
 
+  it('refreshes a drifted pending request without overriding a concurrent manual category', async () => {
+    const scope = withTeam(db, TEAM_A, USER_A).objects;
+    const task = await scope.createObject({
+      type: 'task',
+      canonicalName: 'Repair category packet',
+      actor: { kind: 'user', userId: USER_A },
+    });
+    const current = await scope.getTaskCategoryClassificationInput(task.id);
+    const staleHash = 'a'.repeat(64);
+    await db
+      .update(entities)
+      .set({ taskCategoryRequestedInputHash: staleHash })
+      .where(eq(entities.id, task.id));
+
+    await expect(
+      scope.refreshTaskCategoryClassificationRequest(task.id, staleHash),
+    ).resolves.toMatchObject({ inputHash: current?.inputHash });
+    await expect(scope.getTaskCategoryClassificationInput(task.id)).resolves.toMatchObject({
+      requestedInputHash: current?.inputHash,
+    });
+
+    await scope.setTaskCategory(task.id, 'engineering', { kind: 'user', userId: USER_A });
+    await expect(
+      scope.refreshTaskCategoryClassificationRequest(task.id, current?.inputHash ?? ''),
+    ).resolves.toBeNull();
+    await expect(scope.listObjects({ id: task.id })).resolves.toEqual([
+      expect.objectContaining({ taskCategory: 'engineering', taskCategoryMode: 'manual' }),
+    ]);
+  });
+
   it('preserves a manual category when automatic classification is unavailable', async () => {
     const scope = withTeam(db, TEAM_A, USER_A).objects;
     const task = await scope.createObject({

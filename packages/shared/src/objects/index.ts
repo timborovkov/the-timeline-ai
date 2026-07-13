@@ -5711,6 +5711,61 @@ export async function getTaskCategoryClassificationInput(
   };
 }
 
+export async function refreshTaskCategoryClassificationRequest(
+  db: Db,
+  scope: TeamScopeCore,
+  taskId: string,
+  expectedInputHash: string,
+): Promise<{
+  packet: ReturnType<typeof buildTaskCategoryPacket>;
+  inputHash: string;
+} | null> {
+  await scope.requireMembership();
+  if (!UUID_RE.test(taskId)) return null;
+  return db.transaction(async (tx) => {
+    const [task] = await tx
+      .select()
+      .from(entities)
+      .where(
+        and(
+          eq(entities.teamId, scope.teamId),
+          eq(entities.id, taskId),
+          eq(entities.type, 'task'),
+          eq(entities.taskCategoryMode, 'automatic'),
+          eq(entities.taskCategoryStatus, 'pending'),
+          eq(entities.taskCategoryRequestedInputHash, expectedInputHash),
+          isNull(entities.archivedAt),
+          isNull(entities.mergedIntoId),
+        ),
+      )
+      .for('update')
+      .limit(1);
+    if (!task) return null;
+
+    const packet = await taskCategoryPacketForRow(tx, scope.teamId, task);
+    const inputHash = taskCategoryInputHash(packet, TIMELINE_MODELS.taskCategorization.id);
+    if (inputHash === expectedInputHash) return { packet, inputHash };
+
+    await tx
+      .update(entities)
+      .set({
+        taskCategoryRequestedInputHash: inputHash,
+        taskCategoryTaxonomyVersion: TASK_CATEGORY_TAXONOMY_VERSION,
+        taskCategoryUpdatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(entities.teamId, scope.teamId),
+          eq(entities.id, taskId),
+          eq(entities.taskCategoryMode, 'automatic'),
+          eq(entities.taskCategoryStatus, 'pending'),
+          eq(entities.taskCategoryRequestedInputHash, expectedInputHash),
+        ),
+      );
+    return { packet, inputHash };
+  });
+}
+
 export async function setTaskCategory(
   db: Db,
   scope: TeamScopeCore,
@@ -8247,6 +8302,8 @@ export function createObjectScope(db: Db, scope: TeamScopeCore) {
       setTaskProject(db, scope, taskId, projectId, actor),
     getTaskCategoryClassificationInput: (taskId: string) =>
       getTaskCategoryClassificationInput(db, scope, taskId),
+    refreshTaskCategoryClassificationRequest: (taskId: string, expectedInputHash: string) =>
+      refreshTaskCategoryClassificationRequest(db, scope, taskId, expectedInputHash),
     setTaskCategory: (taskId: string, category: TaskCategory, actor: UpdateActor) =>
       setTaskCategory(db, scope, taskId, category, actor),
     undoTaskCategoryChange: (taskId: string, changeId: string, actor: UpdateActor) =>

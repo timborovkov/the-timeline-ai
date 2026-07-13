@@ -77,15 +77,30 @@ export async function processTaskCategoryJobForTests(
   if (input.requestedInputHash !== data.inputHash) {
     return { status: 'skipped' as const, reason: 'stale_job' as const };
   }
+  let packet = input.packet;
   if (input.inputHash !== data.inputHash) {
-    return { status: 'skipped' as const, reason: 'stale_packet' as const };
+    const refreshed = await scope.objects.refreshTaskCategoryClassificationRequest(
+      data.taskId,
+      data.inputHash,
+    );
+    if (!refreshed) return { status: 'skipped' as const, reason: 'stale_job' as const };
+    if (refreshed.inputHash !== data.inputHash) {
+      await queue.enqueueTaskCategoryJob({
+        teamId: data.teamId,
+        taskId: data.taskId,
+        inputHash: refreshed.inputHash,
+        trigger: 'retry',
+      });
+      return { status: 'refreshed_packet' as const };
+    }
+    packet = refreshed.packet;
   }
   const retryAfterMs = await io.acquireTeamPermit?.(data.teamId);
   if (retryAfterMs) return { status: 'rate_limited' as const, retryAfterMs };
 
   const startedAt = (io.now ?? Date.now)();
   const classify = io.classify ?? taskCategories.classifyTaskCategory;
-  const prediction = await classify(input.packet);
+  const prediction = await classify(packet);
   const latencyMs = Math.max(0, (io.now ?? Date.now)() - startedAt);
   const outcome = await scope.objects.applyTaskCategoryClassification({
     taskId: data.taskId,

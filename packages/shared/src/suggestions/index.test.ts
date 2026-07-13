@@ -3597,6 +3597,85 @@ describe('suggestion scope', () => {
     ]);
   });
 
+  it('reuses a uniquely matching project alias instead of creating a duplicate project', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const project = await scope.objects.createObject({
+      type: 'project',
+      canonicalName: 'Faba website redesign',
+      aliases: ['Faba'],
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Create Faba alias task',
+      dedupeKey: 'create-task-project-alias-reuse',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Prepare Faba launch page',
+          dedupeKey: 'create-task-project-alias-reuse:item',
+          proposedPayload: {
+            canonicalName: 'Prepare Faba launch page',
+            createProjectName: 'Faba',
+            projectName: 'Faba',
+          },
+        },
+      ],
+    });
+
+    await expect(scope.suggestions.acceptSuggestionItem(bundle.items[0]?.id ?? '')).resolves.toBe(
+      true,
+    );
+
+    const projects = await db.select().from(entities).where(eq(entities.type, 'project'));
+    expect(projects).toHaveLength(1);
+    const [task] = await db
+      .select({ id: entities.id })
+      .from(entities)
+      .where(eq(entities.canonicalName, 'Prepare Faba launch page'));
+    await expect(scope.objects.listPrimaryProjectsForTasks([task?.id ?? ''])).resolves.toEqual([
+      expect.objectContaining({ projectId: project.id, projectName: 'Faba website redesign' }),
+    ]);
+  });
+
+  it('rejects a proposed project name that matches multiple project aliases', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    for (const canonicalName of ['Faba website redesign', 'Faba mobile redesign']) {
+      await scope.objects.createObject({
+        type: 'project',
+        canonicalName,
+        aliases: ['Faba'],
+        actor: { kind: 'user', userId: USER_ID },
+      });
+    }
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Create ambiguous Faba task',
+      dedupeKey: 'create-task-project-alias-ambiguous',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Prepare ambiguous Faba page',
+          dedupeKey: 'create-task-project-alias-ambiguous:item',
+          proposedPayload: {
+            canonicalName: 'Prepare ambiguous Faba page',
+            createProjectName: 'Faba',
+            projectName: 'Faba',
+          },
+        },
+      ],
+    });
+
+    await expect(scope.suggestions.acceptSuggestionItem(bundle.items[0]?.id ?? '')).rejects.toThrow(
+      'Proposed project name is ambiguous',
+    );
+    await expect(
+      scope.objects.listObjects({ type: 'task', query: 'Prepare ambiguous Faba page' }),
+    ).resolves.toHaveLength(0);
+  });
+
   it('archives a newly proposed project when task creation cannot complete', async () => {
     const scope = withTeam(db as never, TEAM_ID, USER_ID);
     const conflictingTask = await scope.objects.createObject({

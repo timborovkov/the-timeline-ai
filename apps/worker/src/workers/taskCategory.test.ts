@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const fakes = vi.hoisted(() => ({
   withTeam: vi.fn(),
   getInput: vi.fn(),
+  refreshRequest: vi.fn(),
   apply: vi.fn(),
   invalidateProject: vi.fn(),
   enqueue: vi.fn(),
@@ -49,6 +50,7 @@ describe('task category worker', () => {
     fakes.withTeam.mockReturnValue({
       objects: {
         getTaskCategoryClassificationInput: fakes.getInput,
+        refreshTaskCategoryClassificationRequest: fakes.refreshRequest,
         applyTaskCategoryClassification: fakes.apply,
         invalidateTaskCategoriesForProject: fakes.invalidateProject,
       },
@@ -75,7 +77,7 @@ describe('task category worker', () => {
     expect(fakes.apply).not.toHaveBeenCalled();
   });
 
-  it('skips stale jobs and packet drift without calling the model', async () => {
+  it('skips stale jobs and repairs packet drift without calling the model', async () => {
     const classify = vi.fn();
     fakes.getInput.mockResolvedValue({
       packet: { title: 'Build API' },
@@ -91,10 +93,59 @@ describe('task category worker', () => {
       requestedInputHash: 'hash-1',
       inputHash: 'hash-new-context',
     });
+    fakes.refreshRequest.mockResolvedValue({
+      packet: { title: 'Build API in new context' },
+      inputHash: 'hash-new-context',
+    });
     await expect(
       processTaskCategoryJobForTests({ db: {} as never }, JOB, { classify, enabled: true }),
-    ).resolves.toMatchObject({ reason: 'stale_packet' });
+    ).resolves.toEqual({ status: 'refreshed_packet' });
+    expect(fakes.refreshRequest).toHaveBeenCalledWith('task-1', 'hash-1');
+    expect(fakes.enqueue).toHaveBeenCalledWith({
+      teamId: 'team-1',
+      taskId: 'task-1',
+      inputHash: 'hash-new-context',
+      trigger: 'retry',
+    });
     expect(classify).not.toHaveBeenCalled();
+  });
+
+  it('classifies the locked packet when context returns to the queued hash', async () => {
+    const classify = vi.fn().mockResolvedValue({
+      category: 'engineering',
+      confidence: 0.9,
+      model: 'served-model',
+    });
+    fakes.getInput.mockResolvedValue({
+      packet: { title: 'Build API in transient context' },
+      requestedInputHash: 'hash-1',
+      inputHash: 'hash-transient-context',
+    });
+    fakes.refreshRequest.mockResolvedValue({
+      packet: { title: 'Build API' },
+      inputHash: 'hash-1',
+    });
+    fakes.apply.mockResolvedValue('applied');
+
+    await expect(
+      processTaskCategoryJobForTests({ db: {} as never }, JOB, { classify, enabled: true }),
+    ).resolves.toMatchObject({ status: 'applied' });
+    expect(classify).toHaveBeenCalledWith({ title: 'Build API' });
+    expect(fakes.enqueue).not.toHaveBeenCalled();
+  });
+
+  it('does not repair packet drift after a concurrent authority change', async () => {
+    fakes.getInput.mockResolvedValue({
+      packet: { title: 'Build API' },
+      requestedInputHash: 'hash-1',
+      inputHash: 'hash-new-context',
+    });
+    fakes.refreshRequest.mockResolvedValue(null);
+
+    await expect(
+      processTaskCategoryJobForTests({ db: {} as never }, JOB, { enabled: true }),
+    ).resolves.toEqual({ status: 'skipped', reason: 'stale_job' });
+    expect(fakes.enqueue).not.toHaveBeenCalled();
   });
 
   it('passes model attribution and measured latency into the guarded apply', async () => {

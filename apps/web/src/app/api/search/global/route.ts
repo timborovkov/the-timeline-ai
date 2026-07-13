@@ -60,6 +60,7 @@ function searchObjectsAndTasks(
   rows: Awaited<ReturnType<Scope['objects']['listObjects']>>,
   kinds: Set<GlobalSearchKind> | null,
   summaries: Map<string, ReadyObjectSummary>,
+  taskCategoriesEnabled: boolean,
 ): GlobalSearchResult[] {
   const results: GlobalSearchResult[] = [];
   for (const row of rows) {
@@ -71,7 +72,8 @@ function searchObjectsAndTasks(
       textFromMetadata(row.metadata.integration_external_id),
     ];
     const summary = summaries.get(row.id);
-    const categoryLabel = row.type === 'task' ? taskCategoryLabel(row.taskCategory) : null;
+    const categoryLabel =
+      taskCategoriesEnabled && row.type === 'task' ? taskCategoryLabel(row.taskCategory) : null;
     const lexical = scoreLexical({
       query: input.query,
       title: row.canonicalName,
@@ -120,8 +122,12 @@ function searchObjectsAndTasks(
           stage: row.stage,
           dueAt: row.dueAt?.toISOString() ?? null,
           summary: Boolean(summary),
-          taskCategory: row.taskCategory,
-          taskCategoryStatus: row.taskCategoryStatus,
+          ...(taskCategoriesEnabled
+            ? {
+                taskCategory: row.taskCategory,
+                taskCategoryStatus: row.taskCategoryStatus,
+              }
+            : {}),
         },
       }),
     );
@@ -532,6 +538,7 @@ export async function POST(req: Request): Promise<Response> {
     mergedObjectRows,
     kinds,
     objectSummaries,
+    env.TASK_CATEGORY_UI_ENABLED,
   );
   const objectResults =
     runSemantic && wantsObjectsOrTasks

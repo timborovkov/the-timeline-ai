@@ -3689,7 +3689,8 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       };
     }
 
-    const findExactProjects = () =>
+    const normalizedProjectName = payload.createProjectName.toLowerCase();
+    const findMatchingProjects = () =>
       db
         .select({ id: entities.id, name: entities.canonicalName })
         .from(entities)
@@ -3699,13 +3700,20 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
             eq(entities.type, 'project'),
             isNull(entities.archivedAt),
             isNull(entities.mergedIntoId),
-            sql`lower(${entities.canonicalName}) = lower(${payload.createProjectName})`,
+            or(
+              sql`lower(${entities.canonicalName}) = ${normalizedProjectName}`,
+              sql`EXISTS (
+                SELECT 1
+                FROM jsonb_array_elements_text(${entities.aliases}) AS alias(value)
+                WHERE lower(alias.value) = ${normalizedProjectName}
+              )`,
+            ),
           ),
         )
         .limit(2);
-    const exactProjects = await findExactProjects();
-    if (exactProjects.length > 1) throw new Error('Proposed project name is ambiguous');
-    if (exactProjects[0]) return { ...exactProjects[0], createdForSuggestion: false };
+    const matchingProjects = await findMatchingProjects();
+    if (matchingProjects.length > 1) throw new Error('Proposed project name is ambiguous');
+    if (matchingProjects[0]) return { ...matchingProjects[0], createdForSuggestion: false };
 
     try {
       const project = await objects.createObject({
@@ -3718,7 +3726,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       return { id: project.id, name: project.canonicalName, createdForSuggestion: true };
     } catch (error) {
       if (!isCanonicalObjectNameConflict(error)) throw error;
-      const concurrentProjects = await findExactProjects();
+      const concurrentProjects = await findMatchingProjects();
       if (concurrentProjects.length > 1) throw new Error('Proposed project name is ambiguous');
       if (concurrentProjects[0]) {
         return { ...concurrentProjects[0], createdForSuggestion: false };
