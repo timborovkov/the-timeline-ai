@@ -10,7 +10,7 @@
     <a class="skip" href="#main">Skip to content</a>
     <main id="main">
       <h1>Meeting bot setup</h1>
-      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-07-03</span></div>
+      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-07-13</span></div>
       <p class="tldr">
         Paste a Google Meet, Microsoft Teams, or Zoom link into
         <code>/app/meetings</code>, save a reusable meeting link, or use a Slack/Telegram join
@@ -45,6 +45,13 @@
         Later joins do not ask for per-call approval. Scheduled Saved Meetings materialize future
         calendar entries, and each actual capture is linked back to the saved configuration and
         enriched after finalization.
+      </p>
+      <p>
+        Existing Saved Meetings can be edited, including their meeting URL. Changing the URL can
+        also change the provider; Timeline cancels and regenerates future scheduled captures and
+        generated calendar entries with the new link while leaving past or active captures intact.
+        Aliases are unique among active Saved Meetings in a team and become available again when a
+        Saved Meeting is archived.
       </p>
       <p>
         The scheduler worker scans for due Saved Meeting occurrences and starts the bot at the saved

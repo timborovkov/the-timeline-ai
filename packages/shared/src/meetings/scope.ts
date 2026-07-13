@@ -136,6 +136,28 @@ export interface CreateSavedMeetingInput {
   autoJoinEnabled?: boolean;
 }
 
+export class SavedMeetingAliasConflictError extends Error {
+  readonly code = 'SAVED_MEETING_ALIAS_CONFLICT';
+
+  constructor() {
+    super('One or more aliases are already used by another saved meeting');
+    this.name = 'SavedMeetingAliasConflictError';
+  }
+}
+
+function isSavedMeetingAliasConflict(error: unknown): boolean {
+  let current = error;
+  for (let depth = 0; depth < 5 && current && typeof current === 'object'; depth += 1) {
+    if (
+      (current as { constraint?: unknown }).constraint === 'saved_meeting_aliases_team_norm_unq'
+    ) {
+      return true;
+    }
+    current = (current as { cause?: unknown }).cause;
+  }
+  return false;
+}
+
 export interface MeetingCaptureConfirmationRow {
   id: string;
   teamId: string;
@@ -855,38 +877,44 @@ export function createMeetingScope(deps: MeetingScopeDeps) {
       }
       const durationMinutes = Math.max(1, Math.min(24 * 60, input.durationMinutes ?? 30));
       const scheduleConfig = scheduleConfigOrNull(input.scheduleConfig);
-      const row = await db.transaction(async (tx) => {
-        const [inserted] = await tx
-          .insert(savedMeetings)
-          .values({
-            teamId,
-            createdByUserId: userId,
-            title,
-            description: input.description?.trim() ?? null,
-            platform,
-            meetingUrl: input.meetingUrl,
-            defaultVisibility: visibility,
-            visibilityUserIds,
-            permissionConfirmedAt: new Date(),
-            permissionConfirmedByUserId: userId,
-            scheduleConfig,
-            durationMinutes,
-            autoJoinEnabled: Boolean(input.autoJoinEnabled && scheduleConfig),
-          })
-          .returning();
-        if (!inserted) throw new Error('Failed to create saved meeting');
-        if (aliases.length > 0) {
-          await tx.insert(savedMeetingAliases).values(
-            aliases.map((alias) => ({
-              savedMeetingId: inserted.id,
+      let row: typeof savedMeetings.$inferSelect;
+      try {
+        row = await db.transaction(async (tx) => {
+          const [inserted] = await tx
+            .insert(savedMeetings)
+            .values({
               teamId,
-              alias: alias.alias,
-              normalizedAlias: alias.normalizedAlias,
-            })),
-          );
-        }
-        return inserted;
-      });
+              createdByUserId: userId,
+              title,
+              description: input.description?.trim() ?? null,
+              platform,
+              meetingUrl: input.meetingUrl,
+              defaultVisibility: visibility,
+              visibilityUserIds,
+              permissionConfirmedAt: new Date(),
+              permissionConfirmedByUserId: userId,
+              scheduleConfig,
+              durationMinutes,
+              autoJoinEnabled: Boolean(input.autoJoinEnabled && scheduleConfig),
+            })
+            .returning();
+          if (!inserted) throw new Error('Failed to create saved meeting');
+          if (aliases.length > 0) {
+            await tx.insert(savedMeetingAliases).values(
+              aliases.map((alias) => ({
+                savedMeetingId: inserted.id,
+                teamId,
+                alias: alias.alias,
+                normalizedAlias: alias.normalizedAlias,
+              })),
+            );
+          }
+          return inserted;
+        });
+      } catch (error) {
+        if (isSavedMeetingAliasConflict(error)) throw new SavedMeetingAliasConflictError();
+        throw error;
+      }
       const saved = savedMeetingRow(
         row,
         aliases.map((alias) => alias.alias),
@@ -904,6 +932,7 @@ export function createMeetingScope(deps: MeetingScopeDeps) {
           CreateSavedMeetingInput,
           | 'title'
           | 'description'
+          | 'meetingUrl'
           | 'aliases'
           | 'scheduleConfig'
           | 'durationMinutes'
@@ -916,6 +945,9 @@ export function createMeetingScope(deps: MeetingScopeDeps) {
       await ensureMember();
       const existing = await getSavedMeetingInternal(id, { enforceVisibility: true });
       if (!existing || existing.archivedAt) return null;
+      const meetingUrl = patch.meetingUrl?.trim() ?? existing.meetingUrl;
+      const platform = detectMeetingPlatform(meetingUrl);
+      if (!platform) throw new Error('Unsupported meeting URL');
       const visibility = patch.defaultVisibility ?? existing.defaultVisibility;
       const visibilityUserIds = await validateVisibilityUserIds(
         visibility,
@@ -933,6 +965,8 @@ export function createMeetingScope(deps: MeetingScopeDeps) {
           patch.description !== undefined
             ? (patch.description?.trim() ?? null)
             : existing.description,
+        platform,
+        meetingUrl,
         defaultVisibility: visibility,
         visibilityUserIds,
         scheduleConfig,
@@ -943,72 +977,77 @@ export function createMeetingScope(deps: MeetingScopeDeps) {
         autoJoinEnabled: patch.autoJoinEnabled ?? existing.autoJoinEnabled,
         updatedAt: new Date(),
       } satisfies Partial<typeof savedMeetings.$inferInsert>;
-      await db.transaction(async (tx) => {
-        await tx
-          .update(savedMeetings)
-          .set(updateValues)
-          .where(and(eq(savedMeetings.id, id), eq(savedMeetings.teamId, teamId)));
-        if (patch.aliases !== undefined) {
-          const aliases = uniqueStrings(patch.aliases).map((alias) => ({
-            alias,
-            normalizedAlias: normalizeSavedMeetingAlias(alias),
-          }));
-          if (new Set(aliases.map((alias) => alias.normalizedAlias)).size !== aliases.length) {
-            throw new Error('Saved meeting aliases must be unique');
-          }
-          await tx.delete(savedMeetingAliases).where(eq(savedMeetingAliases.savedMeetingId, id));
-          if (aliases.length > 0) {
-            await tx.insert(savedMeetingAliases).values(
-              aliases.map((alias) => ({
-                savedMeetingId: id,
-                teamId,
-                alias: alias.alias,
-                normalizedAlias: alias.normalizedAlias,
-              })),
-            );
-          }
-        }
-        const futureScheduled = await tx
-          .select({ id: meetings.id, linkedCalendarEventId: meetings.linkedCalendarEventId })
-          .from(meetings)
-          .where(
-            and(
-              eq(meetings.teamId, teamId),
-              eq(meetings.savedMeetingId, id),
-              eq(meetings.status, 'scheduled'),
-              gte(meetings.scheduledStartAt, new Date()),
-            ),
-          );
-        await tx
-          .delete(meetings)
-          .where(
-            and(
-              eq(meetings.teamId, teamId),
-              eq(meetings.savedMeetingId, id),
-              eq(meetings.status, 'scheduled'),
-              gte(meetings.scheduledStartAt, new Date()),
-            ),
-          );
-        const calendarIds = futureScheduled.flatMap((row) =>
-          row.linkedCalendarEventId ? [row.linkedCalendarEventId] : [],
-        );
-        if (calendarIds.length > 0) {
+      try {
+        await db.transaction(async (tx) => {
           await tx
-            .update(calendarEvents)
-            .set({
-              deletedAt: new Date(),
-              updatedAt: new Date(),
-              metadata: sql`COALESCE(${calendarEvents.metadata}, '{}'::jsonb) || '{"capture_status":"cancelled","cancelled_by_schedule_update":true}'::jsonb`,
-            })
+            .update(savedMeetings)
+            .set(updateValues)
+            .where(and(eq(savedMeetings.id, id), eq(savedMeetings.teamId, teamId)));
+          if (patch.aliases !== undefined) {
+            const aliases = uniqueStrings(patch.aliases).map((alias) => ({
+              alias,
+              normalizedAlias: normalizeSavedMeetingAlias(alias),
+            }));
+            if (new Set(aliases.map((alias) => alias.normalizedAlias)).size !== aliases.length) {
+              throw new Error('Saved meeting aliases must be unique');
+            }
+            await tx.delete(savedMeetingAliases).where(eq(savedMeetingAliases.savedMeetingId, id));
+            if (aliases.length > 0) {
+              await tx.insert(savedMeetingAliases).values(
+                aliases.map((alias) => ({
+                  savedMeetingId: id,
+                  teamId,
+                  alias: alias.alias,
+                  normalizedAlias: alias.normalizedAlias,
+                })),
+              );
+            }
+          }
+          const futureScheduled = await tx
+            .select({ id: meetings.id, linkedCalendarEventId: meetings.linkedCalendarEventId })
+            .from(meetings)
             .where(
               and(
-                eq(calendarEvents.teamId, teamId),
-                inArray(calendarEvents.id, calendarIds),
-                sql`COALESCE(${calendarEvents.metadata}, '{}'::jsonb) @> '{"generated_from_saved_meeting":true}'::jsonb`,
+                eq(meetings.teamId, teamId),
+                eq(meetings.savedMeetingId, id),
+                eq(meetings.status, 'scheduled'),
+                gte(meetings.scheduledStartAt, new Date()),
               ),
             );
-        }
-      });
+          await tx
+            .delete(meetings)
+            .where(
+              and(
+                eq(meetings.teamId, teamId),
+                eq(meetings.savedMeetingId, id),
+                eq(meetings.status, 'scheduled'),
+                gte(meetings.scheduledStartAt, new Date()),
+              ),
+            );
+          const calendarIds = futureScheduled.flatMap((row) =>
+            row.linkedCalendarEventId ? [row.linkedCalendarEventId] : [],
+          );
+          if (calendarIds.length > 0) {
+            await tx
+              .update(calendarEvents)
+              .set({
+                deletedAt: new Date(),
+                updatedAt: new Date(),
+                metadata: sql`COALESCE(${calendarEvents.metadata}, '{}'::jsonb) || '{"capture_status":"cancelled","cancelled_by_schedule_update":true}'::jsonb`,
+              })
+              .where(
+                and(
+                  eq(calendarEvents.teamId, teamId),
+                  inArray(calendarEvents.id, calendarIds),
+                  sql`COALESCE(${calendarEvents.metadata}, '{}'::jsonb) @> '{"generated_from_saved_meeting":true}'::jsonb`,
+                ),
+              );
+          }
+        });
+      } catch (error) {
+        if (isSavedMeetingAliasConflict(error)) throw new SavedMeetingAliasConflictError();
+        throw error;
+      }
       const updated = await getSavedMeetingInternal(id);
       if (updated?.scheduleConfig && updated.autoJoinEnabled) {
         await materializeSavedMeetingOccurrencesInternal(id);
@@ -1032,6 +1071,7 @@ export function createMeetingScope(deps: MeetingScopeDeps) {
           })
           .where(and(eq(savedMeetings.id, id), eq(savedMeetings.teamId, teamId)))
           .returning({ id: savedMeetings.id });
+        await tx.delete(savedMeetingAliases).where(eq(savedMeetingAliases.savedMeetingId, id));
         const futureScheduled = await tx
           .update(meetings)
           .set({
