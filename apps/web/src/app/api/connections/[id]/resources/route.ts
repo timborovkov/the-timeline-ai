@@ -174,6 +174,7 @@ export async function PUT(
   const shares = await scope.integrations.listOwnedTeamResourceShares();
   for (const row of shares) {
     if (row.connection.id !== connection.id || row.share.revokedAt) continue;
+    if (connection.provider === 'monday' && row.share.resourceKind === 'monday.board') continue;
     allowed.add(`${row.share.resourceKind}\x00${row.share.externalId}`);
   }
   const invalid = parsed.data.resources.filter((r) => !allowed.has(`${r.kind}\x00${r.externalId}`));

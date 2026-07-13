@@ -7,6 +7,7 @@ import {
   buildSlackEventCaptureCanaryPayload,
   buildTelegramCaptureCanaryPayload,
   buildTranscriptionCanaryWav,
+  completeLiveIntegrationCanaryCleanup,
   formatLiveIntegrationCanaryReport,
   isExpectedSpeechTranscriptionCanaryText,
   redactLiveIntegrationCanaryText,
@@ -103,6 +104,26 @@ describe('live integration canary report formatting', () => {
     expect(report).not.toContain('cG9zdG1hcms6cG0tc2VjcmV0LXZhbHVlLTEyMzQ1Ng==');
     expect(report).toContain('token [redacted] rejected');
     expect(report).toContain('Authorization: [redacted] [redacted]');
+  });
+});
+
+describe('temporary live canary cleanup', () => {
+  it('downgrades a successful check when its temporary resource cannot be removed', async () => {
+    const result = await completeLiveIntegrationCanaryCleanup({
+      success: { name: 'Monday board sync contract', status: 'ok', detail: 'webhook created' },
+      cleanup: () => Promise.reject(new Error('delete denied')),
+      formatError: (error) => (error instanceof Error ? error.message : String(error)),
+      action: 'remove the temporary webhook and verify webhook scopes',
+      docs: 'docs/setup/integrations.html#monday',
+    });
+
+    expect(result).toEqual({
+      name: 'Monday board sync contract',
+      status: 'warn',
+      detail: 'cleanup failed: delete denied',
+      action: 'remove the temporary webhook and verify webhook scopes',
+      docs: 'docs/setup/integrations.html#monday',
+    });
   });
 });
 

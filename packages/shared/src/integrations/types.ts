@@ -137,6 +137,8 @@ export interface SyncPartialFailure {
 
 export interface SyncResult {
   partialFailures?: SyncPartialFailure[];
+  /** Provider resources that must be resumed promptly before their page cursor expires. */
+  continuations?: { resourceType: string; externalId: string }[];
 }
 
 export interface SyncTarget {

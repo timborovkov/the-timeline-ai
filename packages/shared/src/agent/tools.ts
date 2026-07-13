@@ -43,6 +43,7 @@ interface AgentToolOptions {
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const INTEGRATION_SEARCH_MAX_EVENT_IDS = 10_000;
 
 const sourceKindSchema = z.enum([
   'raw_event',
@@ -2609,42 +2610,45 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
               limit: z.number().int().min(1).max(20).optional(),
             })
             .parse(raw);
-          const opts: {
-            query: string;
-            limit?: number;
-            source?:
-              | 'web'
-              | 'telegram'
-              | 'email'
-              | 'system'
-              | 'integration'
-              | 'document'
-              | 'meeting'
-              | 'ingest_webhook';
-          } = {
+          const requestedLimit = parsed.limit ?? 10;
+          const selectedBoardIds = new Set<string>();
+          const selectedDocIds = new Set<string>();
+          if (!parsed.provider || parsed.provider === 'monday') {
+            const mondayIntegrations = (await scope.integrations.listIntegrations()).filter(
+              (integration) => integration.provider === 'monday' && integration.enabled,
+            );
+            const selections = (
+              await Promise.all(
+                mondayIntegrations.map((integration) =>
+                  scope.integrations.listSelections(integration.id),
+                ),
+              )
+            ).flat();
+            for (const selection of selections) {
+              if (selection.selectionKind === 'monday.board') {
+                selectedBoardIds.add(selection.externalId);
+              } else if (selection.selectionKind === 'monday.doc') {
+                selectedDocIds.add(selection.externalId);
+              }
+            }
+          }
+
+          const candidates = await scope.timeline.listIntegrationSearchEventIds({
+            ...(parsed.provider ? { provider: parsed.provider } : {}),
+            mondayBoardIds: [...selectedBoardIds],
+            mondayDocIds: [...selectedDocIds],
+            limit: INTEGRATION_SEARCH_MAX_EVENT_IDS,
+          });
+          const filtered = await scope.timeline.searchEvents({
             query: parsed.query,
             source: 'integration',
-          };
-          if (parsed.limit) opts.limit = parsed.limit;
-          const hits = await scope.timeline.searchEvents(opts);
-          let filtered = hits.filter((h) => h.source === 'integration');
-          // Apply the optional provider filter. `provider` lives in
-          // raw_events.source_metadata, which `searchEvents` doesn't return,
-          // so hydrate via getEventsByIds (which already enforces team_id +
-          // visibility) and drop hits whose provider doesn't match.
-          if (parsed.provider && filtered.length > 0) {
-            const rows = await scope.timeline.getEventsByIds(filtered.map((r) => r.eventId));
-            const providerById = new Map<string, string | undefined>();
-            for (const row of rows) {
-              const md = row.sourceMetadata as Record<string, unknown> | null;
-              const prov = md && typeof md.provider === 'string' ? md.provider : undefined;
-              providerById.set(row.id, prov);
-            }
-            filtered = filtered.filter((r) => providerById.get(r.eventId) === parsed.provider);
-          }
+            eventIds: candidates.eventIds,
+            limit: requestedLimit,
+          });
           return {
             count: filtered.length,
-            results: filtered.slice(0, parsed.limit ?? 10).map((r) => ({
+            truncated: candidates.truncated,
+            results: filtered.map((r) => ({
               event_id: r.eventId,
               occurred_at: r.occurredAt,
               score: r.score,

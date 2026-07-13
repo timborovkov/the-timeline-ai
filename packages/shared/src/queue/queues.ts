@@ -837,6 +837,7 @@ function integrationSyncJobId(data: IntegrationSyncJobData): string | undefined 
     return bullmqCustomJobId(['integration-reconcile', data.integrationId]);
   }
   if (data.kind !== 'targeted') return undefined;
+  if (data.reason === 'provider_pagination_continuation') return undefined;
   return bullmqCustomJobId([
     'integration-targeted',
     data.integrationId,

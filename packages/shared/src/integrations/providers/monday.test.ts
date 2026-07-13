@@ -88,6 +88,7 @@ describe('mondayProvider', () => {
         );
       }
 
+      expect(new Headers(init?.headers).get('api-version')).toBe('2026-04');
       const body = requestPayload(init);
       if (body.query === 'query { account { id slug } }') {
         return Promise.resolve(
@@ -354,12 +355,79 @@ describe('mondayProvider', () => {
     ]);
   });
 
+  it('routes classic subitem webhooks through the selected parent board', async () => {
+    const normalized = await mondayProvider.handleWebhook?.({
+      integration: { id: 'integration-1', teamId: 'team-1' } as never,
+      payload: {
+        event: {
+          boardId: 1772135370,
+          parentItemBoardId: 1771812698,
+          parentItemId: 1771812716,
+          pulseId: 1772139123,
+          pulseName: 'sub-item',
+          type: 'create_pulse',
+          triggerTime: '2021-10-11T09:24:51.835Z',
+          subscriptionId: 73761697,
+          triggerUuid: 'subitem-trigger',
+        },
+      },
+    });
+    if (!normalized || Array.isArray(normalized)) throw new Error('Expected normalized webhook');
+
+    expect(normalized.events[0]).toMatchObject({
+      eventType: 'subitem.created',
+      externalObjectId: '1772139123',
+      extra: {
+        monday_board_id: '1771812698',
+        monday_item_board_id: '1772135370',
+        monday_parent_item_id: '1771812716',
+      },
+      objectMap: {
+        metadata: {
+          monday_record_kind: 'subitem',
+          monday_board_id: '1771812698',
+          monday_item_board_id: '1772135370',
+          monday_parent_item_id: '1771812716',
+        },
+      },
+    });
+    expect(normalized.syncTasks).toEqual([
+      {
+        integrationId: 'integration-1',
+        teamId: 'team-1',
+        triggeredBy: 'webhook',
+        resourceType: 'monday.item',
+        externalId: '1771812698:1772139123',
+        surface: 'subitem.created',
+        reason: 'monday_item_webhook',
+      },
+    ]);
+  });
+
   it('provisions monday.com board webhooks for selected boards', async () => {
     process.env.AUTH_URL = 'https://timeline.test';
     process.env.MONDAY_WEBHOOK_SECRET = 'webhook-secret';
     resetEnvForTests();
     const fetch = vi.fn<typeof globalThis.fetch>((_input, init) => {
       const body = requestPayload(init);
+      if (body.query.includes('boards(ids: $ids)')) {
+        return Promise.resolve(
+          jsonResponse({
+            data: {
+              boards: [
+                {
+                  id: 'board-1',
+                  name: 'Pipeline',
+                  type: 'board',
+                  board_kind: 'public',
+                  hierarchy_type: 'classic',
+                  columns: [],
+                },
+              ],
+            },
+          }),
+        );
+      }
       expect(body.query).toContain('create_webhook');
       const variables = body.variables ?? {};
       expect(variables.boardId).toBe('board-1');
@@ -406,7 +474,113 @@ describe('mondayProvider', () => {
       eventType: 'change_column_value',
       expiresAt: null,
     });
-    expect(fetch).toHaveBeenCalledTimes(11);
+    expect(fetch).toHaveBeenCalledTimes(12);
+  });
+
+  it('does not attempt to provision webhooks on a persisted classic subitems board selection', async () => {
+    process.env.AUTH_URL = 'https://timeline.test';
+    process.env.MONDAY_WEBHOOK_SECRET = 'webhook-secret';
+    resetEnvForTests();
+    const fetch = vi.fn<typeof globalThis.fetch>((_input, init) => {
+      const body = requestPayload(init);
+      if (body.query.includes('create_webhook')) {
+        throw new Error('must not create a webhook on a subitems board');
+      }
+      return Promise.resolve(
+        jsonResponse({
+          data: {
+            boards: [
+              {
+                id: 'subitems-board-1',
+                name: 'Subitems of Pipeline',
+                type: 'sub_items_board',
+                board_kind: 'public',
+                hierarchy_type: 'classic',
+                columns: [],
+              },
+            ],
+          },
+        }),
+      );
+    });
+    vi.stubGlobal('fetch', fetch);
+
+    const active = await mondayProvider.provisionWebhooks?.({
+      integration: { id: 'integration-1', teamId: 'team-1' } as never,
+      tokens: { access_token: 'token' },
+      selections: [{ kind: 'monday.board', externalId: 'subitems-board-1' }],
+      existingSubscriptions: [],
+    });
+
+    expect(active).toEqual([]);
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('continues provisioning valid boards when monday rejects a stale helper board', async () => {
+    process.env.AUTH_URL = 'https://timeline.test';
+    process.env.MONDAY_WEBHOOK_SECRET = 'webhook-secret';
+    resetEnvForTests();
+    const fetch = vi.fn<typeof globalThis.fetch>((_input, init) => {
+      const body = requestPayload(init);
+      const variables = body.variables ?? {};
+      if (body.query.includes('boards(ids: $ids)')) {
+        const boardId = String((variables.ids as string[] | undefined)?.[0]);
+        return Promise.resolve(
+          jsonResponse({
+            data: {
+              boards: [
+                {
+                  id: boardId,
+                  name: boardId === 'stale-helper' ? 'Subitems of Pipeline' : 'Pipeline',
+                  type: 'board',
+                  board_kind: 'public',
+                  hierarchy_type: 'classic',
+                  columns: [],
+                },
+              ],
+            },
+          }),
+        );
+      }
+      if (variables.boardId === 'stale-helper') {
+        return Promise.resolve(
+          jsonResponse({
+            errors: [
+              {
+                message: "Creating webhook on subitems board isn't allowed",
+                extensions: { code: 'InvalidArgumentException' },
+              },
+            ],
+          }),
+        );
+      }
+      return Promise.resolve(
+        jsonResponse({
+          data: {
+            create_webhook: {
+              id: `hook-${String(variables.event)}`,
+              board_id: 'board-1',
+            },
+          },
+        }),
+      );
+    });
+    vi.stubGlobal('fetch', fetch);
+
+    const active = await mondayProvider.provisionWebhooks?.({
+      integration: { id: 'integration-1', teamId: 'team-1' } as never,
+      tokens: { access_token: 'token' },
+      selections: [
+        { kind: 'monday.board', externalId: 'stale-helper' },
+        { kind: 'monday.board', externalId: 'board-1' },
+      ],
+      existingSubscriptions: [],
+    });
+
+    expect(active).toHaveLength(12);
+    expect(active?.every((subscription) => subscription.externalResourceId === 'board-1')).toBe(
+      true,
+    );
   });
 
   it('persists each created monday.com webhook before creating the next one', async () => {
@@ -416,6 +590,24 @@ describe('mondayProvider', () => {
     const persisted: unknown[] = [];
     const fetch = vi.fn<typeof globalThis.fetch>((_input, init) => {
       const body = requestPayload(init);
+      if (body.query.includes('boards(ids: $ids)')) {
+        return Promise.resolve(
+          jsonResponse({
+            data: {
+              boards: [
+                {
+                  id: 'board-1',
+                  name: 'Pipeline',
+                  type: 'board',
+                  board_kind: 'public',
+                  hierarchy_type: 'classic',
+                  columns: [],
+                },
+              ],
+            },
+          }),
+        );
+      }
       expect(body.query).toContain('create_webhook');
       const variables = body.variables ?? {};
       if (variables.event === 'change_column_value') {
@@ -468,7 +660,7 @@ describe('mondayProvider', () => {
         expiresAt: null,
       },
     ]);
-    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(fetch).toHaveBeenCalledTimes(3);
   });
 
   it('deprovisions stale monday.com webhooks', async () => {
@@ -506,6 +698,7 @@ describe('mondayProvider', () => {
       vi.fn<typeof globalThis.fetch>((_input, init) => {
         const body = requestPayload(init);
         if (body.query.includes('boards(limit: $limit')) {
+          expect(body.query).toContain('hierarchy_types: [classic, multi_level]');
           return Promise.resolve(
             jsonResponse({
               data: {
@@ -514,23 +707,35 @@ describe('mondayProvider', () => {
                     id: 'board-1',
                     name: 'KIESI',
                     board_kind: 'public',
+                    type: 'board',
                     workspace: null,
                   },
                   {
                     id: 'subitems-board-1',
                     name: 'Subitems of KIESI',
+                    board_kind: 'public',
+                    type: 'sub_items_board',
                     workspace: null,
                   },
                   {
                     id: 'real-board-with-subitems-name',
                     name: 'Subitems of Marketing',
                     board_kind: 'public',
+                    type: 'board',
                     workspace: null,
                   },
                   {
                     id: 'localized-subitems-board-1',
                     name: 'Alitehtävät KIESI',
                     board_kind: 'sub_items_board',
+                    workspace: null,
+                  },
+                  {
+                    id: 'multi-level-board-1',
+                    name: 'Portfolio projects',
+                    type: 'board',
+                    board_kind: 'public',
+                    hierarchy_type: 'multi_level',
                     workspace: null,
                   },
                 ],
@@ -546,7 +751,7 @@ describe('mondayProvider', () => {
       access_token: 'token',
     });
 
-    expect(resources).toHaveLength(2);
+    expect(resources).toHaveLength(3);
     expect(resources[0]).toMatchObject({
       externalId: 'board-1',
       label: 'KIESI',
@@ -556,6 +761,11 @@ describe('mondayProvider', () => {
     expect(resources[1]).toMatchObject({
       externalId: 'real-board-with-subitems-name',
       label: 'Subitems of Marketing',
+      kind: 'monday.board',
+    });
+    expect(resources[2]).toMatchObject({
+      externalId: 'multi-level-board-1',
+      label: 'Portfolio projects',
       kind: 'monday.board',
     });
   });
@@ -761,7 +971,11 @@ describe('mondayProvider', () => {
       }
       expect(init?.headers).toMatchObject({ authorization: 'token-new' });
       const body = requestPayload(init);
-      if (body.query.includes('columns { id title type }')) {
+      if (
+        body.query.includes('boards(ids: $ids)') &&
+        !body.query.includes('items_page') &&
+        !body.query.includes('activity_logs')
+      ) {
         return Promise.resolve(
           jsonResponse({
             data: {
@@ -830,7 +1044,11 @@ describe('mondayProvider', () => {
           }),
         );
       }
-      if (body.query.includes('columns { id title type }')) {
+      if (
+        body.query.includes('boards(ids: $ids)') &&
+        !body.query.includes('items_page') &&
+        !body.query.includes('activity_logs')
+      ) {
         return Promise.resolve(
           jsonResponse({
             data: {
@@ -882,7 +1100,11 @@ describe('mondayProvider', () => {
   it('syncs board activity, records, subitems, paginated items, and updates into timeline events', async () => {
     const fetch = vi.fn<typeof globalThis.fetch>((_input, init) => {
       const body = requestPayload(init);
-      if (body.query.includes('columns { id title type }')) {
+      if (
+        body.query.includes('boards(ids: $ids)') &&
+        !body.query.includes('items_page') &&
+        !body.query.includes('activity_logs')
+      ) {
         return Promise.resolve(
           jsonResponse({
             data: {
@@ -1068,6 +1290,227 @@ describe('mondayProvider', () => {
         item_since: '2026-06-20T13:00:00.000Z',
       }),
     );
+    expect(ctx.recordAudit).toHaveBeenCalledWith('monday_board_synced', {
+      boardId: 'board-1',
+      hierarchyType: 'classic',
+      parentItemCount: 2,
+      subitemCount: 1,
+      updateCount: 2,
+      activityCount: 1,
+      eventCount: 7,
+      hasMoreItems: false,
+      cursorRestarted: false,
+    });
+  });
+
+  it('syncs every level of a multi-level board under one selected board', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof globalThis.fetch>((_input, init) => {
+        const body = requestPayload(init);
+        if (
+          body.query.includes('boards(ids: $ids)') &&
+          !body.query.includes('items_page') &&
+          !body.query.includes('activity_logs')
+        ) {
+          return Promise.resolve(
+            jsonResponse({
+              data: {
+                boards: [
+                  {
+                    id: 'board-1',
+                    name: 'Portfolio projects',
+                    type: 'board',
+                    board_kind: 'public',
+                    hierarchy_type: 'multi_level',
+                    updated_at: '2026-06-20T09:00:00Z',
+                    columns: [{ id: 'status', title: 'Stage', type: 'status' }],
+                  },
+                ],
+              },
+            }),
+          );
+        }
+        if (body.query.includes('activity_logs')) {
+          return Promise.resolve(jsonResponse({ data: { boards: [{ activity_logs: [] }] } }));
+        }
+        if (body.query.includes('items_page')) {
+          expect(body.query).toContain('hierarchy_scope_config: "allItems"');
+          return Promise.resolve(
+            jsonResponse({
+              data: {
+                boards: [
+                  {
+                    items_page: {
+                      cursor: null,
+                      items: [
+                        {
+                          id: 'item-1',
+                          name: 'Launch',
+                          updated_at: '2026-06-20T10:00:00Z',
+                          column_values: [],
+                          updates: [],
+                          subitems: [],
+                        },
+                        {
+                          id: 'item-2',
+                          name: 'Recruit partners',
+                          updated_at: '2026-06-20T10:01:00Z',
+                          parent_item: { id: 'item-1', name: 'Launch' },
+                          column_values: [],
+                          updates: [],
+                          subitems: [],
+                        },
+                        {
+                          id: 'item-3',
+                          name: 'Research',
+                          updated_at: '2026-06-20T10:02:00Z',
+                          parent_item: { id: 'item-2', name: 'Recruit partners' },
+                          column_values: [],
+                          updates: [],
+                          subitems: [],
+                        },
+                      ],
+                    },
+                  },
+                ],
+              },
+            }),
+          );
+        }
+        throw new Error(`unexpected query: ${body.query}`);
+      }),
+    );
+    const ctx = {
+      loadCursor: vi.fn().mockResolvedValue({}),
+      saveCursor: vi.fn().mockResolvedValue(undefined),
+      writeEvents: vi.fn().mockResolvedValue([]),
+      persistTokens: vi.fn(),
+      recordAudit: vi.fn(),
+    };
+
+    await mondayProvider.backfill({
+      integration: { id: 'integration-1' } as never,
+      tokens: { access_token: 'token' },
+      selections: [{ kind: 'monday.board', externalId: 'board-1' }],
+      ctx,
+    });
+
+    const events = (ctx.writeEvents.mock.calls[0]?.[0] ?? []) as IntegrationEvent[];
+    expect(events.map((event) => event.eventType)).toEqual([
+      'board.schema',
+      'item.updated',
+      'subitem.updated',
+      'subitem.updated',
+    ]);
+    expect(events.slice(1).map((event) => event.externalObjectId)).toEqual([
+      'item-1',
+      'item-2',
+      'item-3',
+    ]);
+    expect(events[3]?.objectMap?.metadata).toMatchObject({
+      monday_board_id: 'board-1',
+      monday_parent_board_id: 'board-1',
+      monday_item_board_id: 'board-1',
+      monday_parent_item_id: 'item-2',
+      monday_hierarchy_depth: 2,
+    });
+  });
+
+  it('continues a backfill when one selected board fails', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof globalThis.fetch>((_input, init) => {
+        const body = requestPayload(init);
+        const boardId = String((body.variables?.ids as string[] | undefined)?.[0]);
+        if (
+          body.query.includes('boards(ids: $ids)') &&
+          !body.query.includes('items_page') &&
+          !body.query.includes('activity_logs')
+        ) {
+          if (boardId === 'board-1') {
+            return Promise.resolve(
+              jsonResponse({ errors: [{ message: 'Board access was revoked' }] }),
+            );
+          }
+          return Promise.resolve(
+            jsonResponse({
+              data: {
+                boards: [
+                  {
+                    id: 'board-2',
+                    name: 'Healthy board',
+                    hierarchy_type: 'classic',
+                    updated_at: '2026-06-20T09:00:00Z',
+                    columns: [],
+                  },
+                ],
+              },
+            }),
+          );
+        }
+        if (body.query.includes('activity_logs')) {
+          return Promise.resolve(jsonResponse({ data: { boards: [{ activity_logs: [] }] } }));
+        }
+        if (body.query.includes('items_page')) {
+          return Promise.resolve(
+            jsonResponse({
+              data: {
+                boards: [
+                  {
+                    items_page: {
+                      cursor: null,
+                      items: [
+                        {
+                          id: 'item-2',
+                          name: 'Visible item',
+                          updated_at: '2026-06-20T10:00:00Z',
+                          column_values: [],
+                          updates: [],
+                          subitems: [],
+                        },
+                      ],
+                    },
+                  },
+                ],
+              },
+            }),
+          );
+        }
+        throw new Error(`unexpected query: ${body.query}`);
+      }),
+    );
+    const ctx = {
+      loadCursor: vi.fn().mockResolvedValue({}),
+      saveCursor: vi.fn().mockResolvedValue(undefined),
+      writeEvents: vi.fn().mockResolvedValue([]),
+      persistTokens: vi.fn(),
+      recordAudit: vi.fn(),
+    };
+
+    const result = await mondayProvider.backfill({
+      integration: { id: 'integration-1' } as never,
+      tokens: { access_token: 'token' },
+      selections: [
+        { kind: 'monday.board', externalId: 'board-1' },
+        { kind: 'monday.board', externalId: 'board-2' },
+      ],
+      ctx,
+    });
+
+    expect(result?.partialFailures).toEqual([
+      {
+        resource: 'monday.board:board-1',
+        surface: 'board',
+        error: 'Monday GraphQL errors: Board access was revoked',
+      },
+    ]);
+    const events = (ctx.writeEvents.mock.calls[0]?.[0] ?? []) as IntegrationEvent[];
+    expect(events.map((event) => event.externalObjectId)).toContain('item-2');
+    expect(ctx.saveCursor).toHaveBeenCalledWith(
+      'monday.board:board-2',
+      expect.objectContaining({ item_since: '2026-06-20T10:00:00.000Z' }),
+    );
   });
 
   it('hydrates a single monday.com item for targeted webhook syncs', async () => {
@@ -1154,10 +1597,109 @@ describe('mondayProvider', () => {
     expect(fetch).toHaveBeenCalledTimes(1);
   });
 
+  it('hydrates a classic subitem against its selected parent board', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof globalThis.fetch>((_input, init) => {
+        const body = requestPayload(init);
+        expect(body.variables).toEqual({ itemIds: ['subitem-1'] });
+        return Promise.resolve(
+          jsonResponse({
+            data: {
+              items: [
+                {
+                  id: 'subitem-1',
+                  name: 'Security review',
+                  updated_at: '2026-06-20T10:00:00Z',
+                  board: {
+                    id: 'subitems-board-1',
+                    name: 'Subitems of Pipeline',
+                    type: 'sub_items_board',
+                    hierarchy_type: 'classic',
+                    columns: [{ id: 'status', title: 'Subitem stage', type: 'status' }],
+                  },
+                  parent_item: {
+                    id: 'item-1',
+                    name: 'Acme renewal',
+                    board: {
+                      id: 'board-1',
+                      name: 'Pipeline',
+                      type: 'board',
+                      hierarchy_type: 'classic',
+                      columns: [{ id: 'status', title: 'Stage', type: 'status' }],
+                    },
+                  },
+                  column_values: [{ id: 'status', text: 'Done', type: 'status', value: null }],
+                  updates: [],
+                  subitems: [],
+                },
+              ],
+            },
+          }),
+        );
+      }),
+    );
+    const ctx = {
+      loadCursor: vi.fn().mockResolvedValue({}),
+      saveCursor: vi.fn().mockResolvedValue(undefined),
+      writeEvents: vi.fn().mockResolvedValue([]),
+      persistTokens: vi.fn(),
+      recordAudit: vi.fn(),
+    };
+
+    await mondayProvider.incrementalSync({
+      integration: { id: 'integration-1' } as never,
+      tokens: { access_token: 'token' },
+      selections: [{ kind: 'monday.board', externalId: 'board-1' }],
+      target: {
+        resourceType: 'monday.item',
+        externalId: 'board-1:subitem-1',
+        triggeredBy: 'webhook',
+      },
+      ctx,
+    });
+
+    const events = (ctx.writeEvents.mock.calls[0]?.[0] ?? []) as IntegrationEvent[];
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      eventType: 'subitem.updated',
+      extra: {
+        monday_board_id: 'board-1',
+        monday_item_board_id: 'subitems-board-1',
+        monday_parent_item_id: 'item-1',
+      },
+      objectMap: {
+        status: 'done',
+        metadata: {
+          monday_board_id: 'board-1',
+          monday_item_board_id: 'subitems-board-1',
+          monday_parent_item_id: 'item-1',
+          monday_columns: [
+            {
+              id: 'status',
+              title: 'Subitem stage',
+              type: 'status',
+              text: 'Done',
+              value: null,
+            },
+          ],
+        },
+      },
+    });
+    expect(ctx.recordAudit).not.toHaveBeenCalledWith(
+      'targeted_item_board_mismatch',
+      expect.anything(),
+    );
+  });
+
   it('uses the item cursor to filter monday.com records during incremental sync', async () => {
     const fetch = vi.fn<typeof globalThis.fetch>((_input, init) => {
       const body = requestPayload(init);
-      if (body.query.includes('columns { id title type }')) {
+      if (
+        body.query.includes('boards(ids: $ids)') &&
+        !body.query.includes('items_page') &&
+        !body.query.includes('activity_logs')
+      ) {
         return Promise.resolve(
           jsonResponse({
             data: {
@@ -1239,7 +1781,7 @@ describe('mondayProvider', () => {
     );
   });
 
-  it('persists the monday.com item page cursor when a board exceeds one sync batch', async () => {
+  it('resumes a monday.com backfill when a board exceeds one sync batch', async () => {
     const itemForPage = (page: number) => ({
       id: `item-${String(page)}`,
       name: `Record ${String(page)}`,
@@ -1252,7 +1794,11 @@ describe('mondayProvider', () => {
     });
     const fetch = vi.fn<typeof globalThis.fetch>((_input, init) => {
       const body = requestPayload(init);
-      if (body.query.includes('columns { id title type }')) {
+      if (
+        body.query.includes('boards(ids: $ids)') &&
+        !body.query.includes('items_page') &&
+        !body.query.includes('activity_logs')
+      ) {
         return Promise.resolve(
           jsonResponse({
             data: {
@@ -1315,18 +1861,23 @@ describe('mondayProvider', () => {
       recordAudit: vi.fn(),
     };
 
-    await mondayProvider.backfill({
+    const firstResult = await mondayProvider.backfill({
       integration: { id: 'integration-1' } as never,
       tokens: { access_token: 'token' },
       selections: [{ kind: 'monday.board', externalId: 'board-1' }],
       ctx,
     });
-    await mondayProvider.incrementalSync({
+    const secondResult = await mondayProvider.backfill({
       integration: { id: 'integration-1' } as never,
       tokens: { access_token: 'token' },
       selections: [{ kind: 'monday.board', externalId: 'board-1' }],
       ctx,
     });
+
+    expect(firstResult?.continuations).toEqual([
+      { resourceType: 'monday.board', externalId: 'board-1' },
+    ]);
+    expect(secondResult?.continuations).toBeUndefined();
 
     expect(ctx.saveCursor).toHaveBeenNthCalledWith(
       1,
@@ -1353,12 +1904,105 @@ describe('mondayProvider', () => {
     ).toContain('item-101');
   });
 
+  it('restarts an incremental page scan when the saved monday cursor expired', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-06-20T12:00:00Z'));
+    const fetch = vi.fn<typeof globalThis.fetch>((_input, init) => {
+      const body = requestPayload(init);
+      if (
+        body.query.includes('boards(ids: $ids)') &&
+        !body.query.includes('items_page') &&
+        !body.query.includes('activity_logs')
+      ) {
+        return Promise.resolve(
+          jsonResponse({
+            data: {
+              boards: [
+                {
+                  id: 'board-1',
+                  name: 'Pipeline',
+                  hierarchy_type: 'classic',
+                  updated_at: '2026-06-20T00:00:00Z',
+                  columns: [],
+                },
+              ],
+            },
+          }),
+        );
+      }
+      if (body.query.includes('activity_logs')) {
+        return Promise.resolve(jsonResponse({ data: { boards: [{ activity_logs: [] }] } }));
+      }
+      if (body.query.includes('next_items_page')) {
+        throw new Error('expired provider cursor must not be reused');
+      }
+      if (body.query.includes('items_page')) {
+        expect(body.variables).toMatchObject({
+          updatedSinceCompareValue: ['EXACT', '2026-06-19'],
+        });
+        return Promise.resolve(
+          jsonResponse({
+            data: {
+              boards: [
+                {
+                  items_page: {
+                    cursor: null,
+                    items: [
+                      {
+                        id: 'item-1',
+                        name: 'Recovered item',
+                        updated_at: '2026-06-20T11:00:00Z',
+                        column_values: [],
+                        updates: [],
+                        subitems: [],
+                      },
+                    ],
+                  },
+                },
+              ],
+            },
+          }),
+        );
+      }
+      throw new Error(`unexpected query: ${body.query}`);
+    });
+    vi.stubGlobal('fetch', fetch);
+    const ctx = {
+      loadCursor: vi.fn().mockResolvedValue({
+        activity_since: '2026-06-19T10:00:00.000Z',
+        item_since: '2026-06-19T10:00:00.000Z',
+        item_page_cursor: 'expired-cursor',
+        item_page_cursor_expires_at: '2026-06-20T11:00:00.000Z',
+      }),
+      saveCursor: vi.fn().mockResolvedValue(undefined),
+      writeEvents: vi.fn().mockResolvedValue([]),
+      persistTokens: vi.fn(),
+      recordAudit: vi.fn(),
+    };
+
+    await mondayProvider.incrementalSync({
+      integration: { id: 'integration-1' } as never,
+      tokens: { access_token: 'token' },
+      selections: [{ kind: 'monday.board', externalId: 'board-1' }],
+      ctx,
+    });
+
+    const saved = ctx.saveCursor.mock.calls[0]?.[1] as Record<string, unknown>;
+    expect(saved).not.toHaveProperty('item_page_cursor');
+    expect(saved).not.toHaveProperty('item_page_cursor_expires_at');
+    expect(saved).toMatchObject({ item_since: '2026-06-20T11:00:00.000Z' });
+  });
+
   it('does not advance the monday.com item cursor from board schema timestamps', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn<typeof globalThis.fetch>((_input, init) => {
         const body = requestPayload(init);
-        if (body.query.includes('columns { id title type }')) {
+        if (
+          body.query.includes('boards(ids: $ids)') &&
+          !body.query.includes('items_page') &&
+          !body.query.includes('activity_logs')
+        ) {
           return Promise.resolve(
             jsonResponse({
               data: {

@@ -17,14 +17,18 @@ const fakes = vi.hoisted(() => ({
   recordAudit: vi.fn(),
   recordConnectionAttention: vi.fn(),
   resolveConnectionAttention: vi.fn(),
+  listConnectionAttention: vi.fn(),
   getProvider: vi.fn(),
   adminReconcileIntegrationWebhookSubscriptions: vi.fn(),
   listSyncableResources: vi.fn(),
+  requireRedisQueue: vi.fn(),
+  enqueueIntegrationSyncJob: vi.fn(),
 }));
 
 vi.mock('@/lib/auth', () => ({ auth: fakes.auth }));
 vi.mock('@/lib/active-team', () => ({ resolveActiveTeam: fakes.resolveActiveTeam }));
 vi.mock('@/lib/db', () => ({ db: {} }));
+vi.mock('@/lib/queue', () => ({ requireRedisQueue: fakes.requireRedisQueue }));
 vi.mock('@timeline/shared/integrations', () => ({
   getProvider: fakes.getProvider,
   adminReconcileIntegrationWebhookSubscriptions:
@@ -41,6 +45,7 @@ vi.mock('@timeline/shared/team-scope', () => ({
       recordAudit: fakes.recordAudit,
       recordConnectionAttention: fakes.recordConnectionAttention,
       resolveConnectionAttention: fakes.resolveConnectionAttention,
+      listConnectionAttention: fakes.listConnectionAttention,
     },
   }),
 }));
@@ -79,6 +84,7 @@ beforeEach(() => {
   fakes.recordAudit.mockResolvedValue(undefined);
   fakes.recordConnectionAttention.mockResolvedValue(undefined);
   fakes.resolveConnectionAttention.mockResolvedValue(undefined);
+  fakes.listConnectionAttention.mockResolvedValue([]);
   fakes.adminReconcileIntegrationWebhookSubscriptions.mockResolvedValue({
     active: 0,
     deprovisioned: 0,
@@ -88,6 +94,10 @@ beforeEach(() => {
   fakes.listSyncableResources.mockResolvedValue([
     { kind: 'github.repo', externalId: 'acme/private' },
   ]);
+  fakes.requireRedisQueue.mockResolvedValue({
+    enqueueIntegrationSyncJob: fakes.enqueueIntegrationSyncJob,
+  });
+  fakes.enqueueIntegrationSyncJob.mockResolvedValue(undefined);
 });
 
 describe('/api/integrations/manage/[id]/selections', () => {
@@ -143,6 +153,12 @@ describe('/api/integrations/manage/[id]/selections', () => {
       {},
       INTEGRATION_ID,
     );
+    expect(fakes.enqueueIntegrationSyncJob).toHaveBeenCalledWith({
+      kind: 'backfill',
+      integrationId: INTEGRATION_ID,
+      teamId: TEAM_ID,
+      triggeredBy: USER_ID,
+    });
   });
 
   it('records degraded webhook attention when legacy selection provisioning fails', async () => {
@@ -178,5 +194,39 @@ describe('/api/integrations/manage/[id]/selections', () => {
     expect(attentionInput?.summary).toEqual(
       expect.stringContaining('Webhook provisioning failed for monday'),
     );
+  });
+
+  it('retries a failed legacy backfill when selections are unchanged', async () => {
+    fakes.getIntegration.mockResolvedValueOnce({
+      id: INTEGRATION_ID,
+      provider: 'monday',
+      providerConnectionId: null,
+    });
+    fakes.listSyncableResources.mockResolvedValueOnce([
+      { kind: 'monday.board', externalId: 'board-1' },
+    ]);
+    fakes.listSelections.mockResolvedValueOnce([
+      { selectionKind: 'monday.board', externalId: 'board-1' },
+    ]);
+    fakes.listConnectionAttention.mockResolvedValueOnce([
+      { integrationId: INTEGRATION_ID, category: 'sync_error' },
+    ]);
+
+    const response = await PUT(
+      request({
+        selections: [{ kind: 'monday.board', externalId: 'board-1', label: 'Launch' }],
+      }),
+      params(),
+    );
+
+    await expect(response.json()).resolves.toMatchObject({ syncQueued: true });
+    expect(fakes.enqueueIntegrationSyncJob).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: 'backfill', integrationId: INTEGRATION_ID }),
+    );
+    expect(fakes.resolveConnectionAttention).toHaveBeenCalledWith({
+      providerConnectionId: null,
+      integrationId: INTEGRATION_ID,
+      categories: ['sync_error'],
+    });
   });
 });

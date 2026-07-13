@@ -25,6 +25,7 @@
     "e2e:prod-smoke": "tsx scripts/run-e2e-prod-smoke.ts",
     "canary:integrations": "NODE_OPTIONS=--conditions=development tsx scripts/check-live-integrations.ts",
     "canary:integrations:strict": "NODE_OPTIONS=--conditions=development tsx scripts/check-live-integrations.ts --strict",
+    "repair:monday": "NODE_OPTIONS=--conditions=development tsx scripts/repair-monday-helper-boards.ts",
     "e2e:setup": "tsx scripts/run-e2e-command.ts pnpm exec tsx e2e/setup.ts",
     "e2e:cleanup": "tsx scripts/run-e2e-command.ts pnpm exec tsx e2e/cleanup.ts",
     "knip": "DATABASE_URL=${DATABASE_URL:-postgres://placeholder@localhost:5432/placeholder} knip",

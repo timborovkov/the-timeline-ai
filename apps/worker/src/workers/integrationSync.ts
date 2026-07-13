@@ -353,6 +353,7 @@ export async function runOneIntegration(
     reserved.release();
     return;
   }
+  const continuationJobs: Extract<queue.IntegrationSyncJobData, { kind: 'targeted' }>[] = [];
   try {
     const integration = await integrationsLib.adminLoadIntegration(db, integrationId);
     if (!integration) {
@@ -622,6 +623,17 @@ export async function runOneIntegration(
             missingRequiredScopes.length > 0 ? ['sync_error'] : ['needs_reconnect', 'sync_error'],
         });
       }
+      for (const continuation of syncResult?.continuations ?? []) {
+        continuationJobs.push({
+          kind: 'targeted',
+          integrationId,
+          teamId: integration.teamId,
+          triggeredBy: 'reconcile',
+          resourceType: continuation.resourceType,
+          externalId: continuation.externalId,
+          reason: 'provider_pagination_continuation',
+        });
+      }
       await integrationsLib.adminRecordAudit(
         db,
         integration.teamId,
@@ -707,6 +719,9 @@ export async function runOneIntegration(
       // the lock is auto-released by Postgres anyway.
     }
     reserved.release();
+  }
+  for (const continuationJob of continuationJobs) {
+    await queue.enqueueIntegrationSyncJob(continuationJob);
   }
 }
 

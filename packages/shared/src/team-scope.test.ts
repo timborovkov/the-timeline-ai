@@ -11,6 +11,7 @@ import {
   integrations,
   integrationSelections,
   integrationSyncState,
+  integrationWebhookSubscriptions,
   meetingTranscriptChunks,
   meetings,
   notifications,
@@ -28,6 +29,10 @@ import {
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+vi.mock('#src/http/external-fetch.js', () => ({
+  externalFetch: (input: string | URL, init?: RequestInit) => globalThis.fetch(input, init),
+}));
 
 import type { SearchHit, SearchOpts } from '#src/qdrant/client.js';
 
@@ -2014,6 +2019,12 @@ describe('withTeam namespaced port', () => {
       providerConnectionId: ownerConnection.id,
       resourceShareIds: [orgShare.id, ownerRepoShare.id],
     });
+    expect(ownerIntegration.addedSelectionCount).toBe(2);
+    const unchangedIntegration = await adminScope.integrations.activateSharedResources({
+      providerConnectionId: ownerConnection.id,
+      resourceShareIds: [orgShare.id, ownerRepoShare.id],
+    });
+    expect(unchangedIntegration.addedSelectionCount).toBe(0);
     await expect(adminDecryptIntegrationTokens(db as never, ownerIntegration)).resolves.toEqual({
       access_token: 'owner-token',
     });
@@ -2064,6 +2075,7 @@ describe('withTeam namespaced port', () => {
       providerConnectionId: memberConnection.id,
       resourceShareIds: [memberRepoShare.id],
     });
+    expect(memberIntegration.addedSelectionCount).toBe(1);
 
     const repoSelections = (await db.select().from(integrationSelections)).filter(
       (row) => row.selectionKind === 'github.repo' && row.externalId === 'acme/app',
@@ -2115,6 +2127,294 @@ describe('withTeam namespaced port', () => {
       .where(eq(connectionAttention.resourceShareId, orgShare.id));
     expect(resolvedOrgAttention?.category).toBe('access_changed');
     expect(resolvedOrgAttention?.resolvedAt).toBeInstanceOf(Date);
+  });
+
+  it('dry-runs and applies a team-scoped monday helper-board repair', async () => {
+    const ownerScope = withTeam(db as never, TEAM_A, USER_A);
+    const adminScope = withTeam(db as never, TEAM_A, USER_C);
+    const connection = await ownerScope.integrations.upsertProviderConnection({
+      provider: 'monday',
+      displayName: 'Monday.com — Acme',
+      externalAccountId: 'monday-helper-repair',
+      scopes: ['boards:read'],
+      tokens: { access_token: 'token' },
+    });
+    await ownerScope.integrations.shareProviderResources(connection.id, [
+      {
+        kind: 'monday.board',
+        externalId: 'subitems-board-1',
+        label: 'Subitems of Pipeline',
+      },
+    ]);
+    const share = (await ownerScope.integrations.listOwnedTeamResourceShares())[0]?.share;
+    if (!share) throw new Error('Expected helper-board share');
+    const integration = await adminScope.integrations.activateSharedResources({
+      providerConnectionId: connection.id,
+      resourceShareIds: [share.id],
+    });
+    await adminScope.integrations.saveCursor(integration.id, 'monday.board:subitems-board-1', {
+      item_since: '2026-06-20T10:00:00.000Z',
+    });
+    await db.insert(integrationWebhookSubscriptions).values({
+      integrationId: integration.id,
+      providerConnectionId: connection.id,
+      provider: 'monday',
+      externalSubscriptionId: 'monday-hook-1',
+      resourceKind: 'monday.board',
+      externalResourceId: 'subitems-board-1',
+      eventType: 'create_item',
+      status: 'failed',
+      lastError: "Creating webhook on subitems board isn't allowed",
+    });
+
+    const dryRun = await adminScope.integrations.repairMondayHelperResources({
+      helperBoardIds: ['subitems-board-1'],
+      apply: false,
+    });
+
+    expect(dryRun).toMatchObject({
+      applied: false,
+      shareCount: 1,
+      selectionCount: 1,
+      cursorCount: 1,
+      webhookSubscriptionCount: 1,
+      integrationIds: [integration.id],
+    });
+    expect(await adminScope.integrations.listSelections(integration.id)).toHaveLength(1);
+
+    const fetchMock = vi.fn<typeof globalThis.fetch>(async (_input, init) => {
+      if (typeof init?.body !== 'string') throw new Error('Expected a JSON request body');
+      const body = JSON.parse(init.body) as { query?: string };
+      expect(body.query).toContain('delete_webhook');
+      const [subscriptionBeforeProviderDelete] = await db
+        .select()
+        .from(integrationWebhookSubscriptions)
+        .where(eq(integrationWebhookSubscriptions.integrationId, integration.id));
+      expect(subscriptionBeforeProviderDelete?.status).toBe('failed');
+      return new Response(
+        JSON.stringify({ data: { delete_webhook: { id: 'monday-hook-1', board_id: '1' } } }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      );
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const applied = await adminScope.integrations.repairMondayHelperResources({
+      helperBoardIds: ['subitems-board-1'],
+      apply: true,
+    });
+
+    expect(applied.applied).toBe(true);
+    expect(await adminScope.integrations.listSelections(integration.id)).toHaveLength(0);
+    expect(await adminScope.integrations.listSyncState(integration.id)).not.toContainEqual(
+      expect.objectContaining({ resourceType: 'monday.board:subitems-board-1' }),
+    );
+    const [repairedShare] = await db
+      .select()
+      .from(teamProviderResourceShares)
+      .where(eq(teamProviderResourceShares.id, share.id));
+    expect(repairedShare?.revokedAt).toBeInstanceOf(Date);
+    const [repairedSubscription] = await db
+      .select()
+      .from(integrationWebhookSubscriptions)
+      .where(eq(integrationWebhookSubscriptions.integrationId, integration.id));
+    expect(repairedSubscription).toMatchObject({
+      status: 'deleted',
+      lastError: 'removed_by_monday_helper_board_repair',
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    const repeated = await adminScope.integrations.repairMondayHelperResources({
+      helperBoardIds: ['subitems-board-1'],
+      apply: false,
+    });
+    expect(repeated).toMatchObject({
+      shareCount: 0,
+      selectionCount: 0,
+      cursorCount: 0,
+      webhookSubscriptionCount: 0,
+      integrationIds: [integration.id],
+    });
+    await expect(adminScope.integrations.listMondayHelperRepairFollowups()).resolves.toEqual([
+      {
+        integrationId: integration.id,
+        helperBoardIds: ['subitems-board-1'],
+        backfillQueued: false,
+        webhooksReconciled: false,
+      },
+    ]);
+
+    await adminScope.integrations.markMondayHelperRepairFollowup(integration.id, {
+      backfillQueued: true,
+    });
+    await adminScope.integrations.markMondayHelperRepairFollowup(integration.id, {
+      webhooksReconciled: true,
+    });
+
+    await expect(adminScope.integrations.listMondayHelperRepairFollowups()).resolves.toEqual([]);
+    await expect(
+      adminScope.integrations.repairMondayHelperResources({
+        helperBoardIds: ['subitems-board-1'],
+        apply: false,
+      }),
+    ).resolves.toMatchObject({ integrationIds: [] });
+    vi.unstubAllGlobals();
+  });
+
+  it('includes direct monday integrations when inventorying helper-board repair sources', async () => {
+    const adminScope = withTeam(db as never, TEAM_A, USER_C);
+    const integration = await adminScope.integrations.createIntegration({
+      provider: 'monday',
+      displayName: 'Monday.com — legacy direct',
+      externalAccountId: 'monday-legacy-repair',
+      scopes: ['boards:read'],
+      tokens: { access_token: 'legacy-token' },
+    });
+    await adminScope.integrations.setSelections(integration.id, [
+      {
+        kind: 'monday.board',
+        externalId: 'legacy-subitems-board',
+        label: 'Subitems of Legacy Pipeline',
+      },
+    ]);
+
+    const sources = await adminScope.integrations.listMondayHelperRepairSources();
+
+    expect(sources).toContainEqual({
+      credentialKind: 'integration',
+      credentialId: integration.id,
+      boardIds: ['legacy-subitems-board'],
+    });
+  });
+
+  it('inventories orphan monday cursors and webhooks after selections are removed', async () => {
+    const adminScope = withTeam(db as never, TEAM_A, USER_C);
+    const integration = await adminScope.integrations.createIntegration({
+      provider: 'monday',
+      displayName: 'Monday.com — orphan repair state',
+      externalAccountId: 'monday-orphan-repair',
+      scopes: ['boards:read'],
+      tokens: { access_token: 'legacy-token' },
+    });
+    await adminScope.integrations.saveCursor(integration.id, 'monday.board:orphan-cursor-board', {
+      item_since: '2026-06-20T10:00:00.000Z',
+    });
+    await db.insert(integrationWebhookSubscriptions).values({
+      integrationId: integration.id,
+      provider: 'monday',
+      externalSubscriptionId: 'orphan-webhook',
+      resourceKind: 'monday.board',
+      externalResourceId: 'orphan-webhook-board',
+      eventType: 'create_item',
+      status: 'failed',
+    });
+
+    const sources = await adminScope.integrations.listMondayHelperRepairSources();
+
+    expect(sources).toContainEqual({
+      credentialKind: 'integration',
+      credentialId: integration.id,
+      boardIds: ['orphan-cursor-board', 'orphan-webhook-board'],
+    });
+  });
+
+  it('keeps monday helper webhook cleanup resumable after a partial provider failure', async () => {
+    const ownerScope = withTeam(db as never, TEAM_A, USER_A);
+    const adminScope = withTeam(db as never, TEAM_A, USER_C);
+    const connection = await ownerScope.integrations.upsertProviderConnection({
+      provider: 'monday',
+      displayName: 'Monday.com — retry repair',
+      externalAccountId: 'monday-helper-repair-retry',
+      scopes: ['boards:read'],
+      tokens: { access_token: 'token' },
+    });
+    await ownerScope.integrations.shareProviderResources(connection.id, [
+      { kind: 'monday.board', externalId: 'subitems-board-retry', label: 'Subitems of Retry' },
+    ]);
+    const share = (await ownerScope.integrations.listOwnedTeamResourceShares())[0]?.share;
+    if (!share) throw new Error('Expected helper-board share');
+    const integration = await adminScope.integrations.activateSharedResources({
+      providerConnectionId: connection.id,
+      resourceShareIds: [share.id],
+    });
+    await db.insert(integrationWebhookSubscriptions).values([
+      {
+        integrationId: integration.id,
+        providerConnectionId: connection.id,
+        provider: 'monday',
+        externalSubscriptionId: 'monday-hook-retry-1',
+        resourceKind: 'monday.board',
+        externalResourceId: 'subitems-board-retry',
+        eventType: 'create_item',
+        status: 'failed',
+      },
+      {
+        integrationId: integration.id,
+        providerConnectionId: connection.id,
+        provider: 'monday',
+        externalSubscriptionId: 'monday-hook-retry-2',
+        resourceKind: 'monday.board',
+        externalResourceId: 'subitems-board-retry',
+        eventType: 'change_name',
+        status: 'failed',
+      },
+    ]);
+
+    const deletedIds: string[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof globalThis.fetch>((_input, init) => {
+        if (typeof init?.body !== 'string') throw new Error('Expected JSON request body');
+        const body = JSON.parse(init.body) as { variables?: { id?: string } };
+        deletedIds.push(String(body.variables?.id));
+        if (deletedIds.length === 2) throw new Error('provider unavailable');
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({ data: { delete_webhook: { id: body.variables?.id, board_id: '1' } } }),
+            { status: 200, headers: { 'content-type': 'application/json' } },
+          ),
+        );
+      }),
+    );
+
+    await expect(
+      adminScope.integrations.repairMondayHelperResources({
+        helperBoardIds: ['subitems-board-retry'],
+        apply: true,
+      }),
+    ).rejects.toThrow('provider unavailable');
+
+    const rowsAfterFailure = await db
+      .select()
+      .from(integrationWebhookSubscriptions)
+      .where(eq(integrationWebhookSubscriptions.integrationId, integration.id));
+    expect(
+      rowsAfterFailure.find((row) => row.externalSubscriptionId === deletedIds[0])?.status,
+    ).toBe('deleted');
+    expect(rowsAfterFailure.filter((row) => row.status !== 'deleted')).toHaveLength(1);
+
+    const retriedIds: string[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof globalThis.fetch>((_input, init) => {
+        if (typeof init?.body !== 'string') throw new Error('Expected JSON request body');
+        const body = JSON.parse(init.body) as { variables?: { id?: string } };
+        retriedIds.push(String(body.variables?.id));
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({ data: { delete_webhook: { id: body.variables?.id, board_id: '1' } } }),
+            { status: 200, headers: { 'content-type': 'application/json' } },
+          ),
+        );
+      }),
+    );
+    await adminScope.integrations.repairMondayHelperResources({
+      helperBoardIds: ['subitems-board-retry'],
+      apply: true,
+    });
+
+    expect(retriedIds).toHaveLength(1);
+    expect(retriedIds).not.toContain(deletedIds[0]);
+    vi.unstubAllGlobals();
   });
 
   it('preserves connection-attention history when a provider connection is deleted', async () => {

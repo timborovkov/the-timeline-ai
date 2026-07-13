@@ -238,4 +238,84 @@ describe('/api/connections/[id]/resources', () => {
       { kind: 'github.repo', externalId: 'openai/legacy', label: 'openai/legacy' },
     ]);
   });
+
+  it('does not preserve stale monday helper boards that are absent from live resources', async () => {
+    const mondayConnection = {
+      ...connection,
+      provider: 'monday',
+      displayName: 'Monday.com — acme',
+    };
+    fakes.getOwnedProviderConnection.mockResolvedValueOnce(mondayConnection);
+    fakes.listSyncableResources.mockResolvedValueOnce([
+      { kind: 'monday.board', externalId: 'board-1', label: 'Pipeline' },
+    ]);
+    fakes.listOwnedTeamResourceShares.mockResolvedValueOnce([
+      {
+        connection: mondayConnection,
+        share: {
+          id: '66666666-6666-4666-8666-666666666666',
+          providerConnectionId: CONNECTION_ID,
+          resourceKind: 'monday.board',
+          externalId: 'subitems-board-1',
+          externalLabel: 'Subitems of Pipeline',
+          revokedAt: null,
+        },
+      },
+    ]);
+
+    const rejected = await PUT(
+      request({
+        resources: [
+          {
+            kind: 'monday.board',
+            externalId: 'subitems-board-1',
+            label: 'Subitems of Pipeline',
+          },
+        ],
+      }),
+      params(),
+    );
+
+    expect(rejected.status).toBe(400);
+    await expect(rejected.json()).resolves.toMatchObject({ error: 'resource_not_in_scope' });
+    expect(fakes.shareProviderResources).not.toHaveBeenCalled();
+  });
+
+  it('preserves monday WorkDoc shares that are absent from an incomplete live resource list', async () => {
+    const mondayConnection = {
+      ...connection,
+      provider: 'monday',
+      displayName: 'Monday.com — acme',
+    };
+    fakes.getOwnedProviderConnection.mockResolvedValueOnce(mondayConnection);
+    fakes.listSyncableResources.mockResolvedValueOnce([
+      { kind: 'monday.board', externalId: 'board-1', label: 'Pipeline' },
+    ]);
+    fakes.listOwnedTeamResourceShares.mockResolvedValueOnce([
+      {
+        connection: mondayConnection,
+        share: {
+          id: '66666666-6666-4666-8666-666666666666',
+          providerConnectionId: CONNECTION_ID,
+          resourceKind: 'monday.doc',
+          externalId: 'doc-1',
+          externalLabel: 'Launch notes',
+          revokedAt: null,
+        },
+      },
+    ]);
+
+    const accepted = await PUT(
+      request({
+        resources: [{ kind: 'monday.doc', externalId: 'doc-1', label: 'Launch notes' }],
+      }),
+      params(),
+    );
+
+    expect(accepted.status).toBe(200);
+    await expect(accepted.json()).resolves.toEqual({ ok: true });
+    expect(fakes.shareProviderResources).toHaveBeenCalledWith(CONNECTION_ID, [
+      { kind: 'monday.doc', externalId: 'doc-1', label: 'Launch notes' },
+    ]);
+  });
 });

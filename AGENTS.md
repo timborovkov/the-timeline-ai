@@ -142,6 +142,12 @@ Treat this file as an operating contract for agents, not a loose README.
   integrations stay disabled for sync so local workers do not call real
   providers. Keep the credential list in [README.md](README.md) current when
   the seed changes.
+- **Monday helper-board repair is dry-run first.** Use `pnpm repair:monday --
+  --env-file=/path/to/.env --team-id=<uuid> --user-id=<uuid>` to inspect stale
+  classic helper-board state. Add `--apply` only after reviewing the team-scoped
+  identifier/count report; the command must never delete captured raw events.
+  Apply-mode backfill and webhook follow-ups are durable: rerun the same apply
+  command to resume any failed step without repeating one already completed.
 - **Use the repo's canonical import paths.** In `apps/web/src`, use the `@/`
   alias for source imports and exports instead of relative paths (`../`,
   `./foo`). The only expected relative side-effect import there is local CSS,
