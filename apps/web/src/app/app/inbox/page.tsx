@@ -63,7 +63,7 @@ export default async function InboxPage({
   const lastVisible = offset + rows.length;
 
   return (
-    <div className="mx-auto max-w-4xl space-y-6">
+    <div className="space-y-6">
       <HistoryBackLink fallbackHref="/app" label="Back" />
 
       <IndexStrip

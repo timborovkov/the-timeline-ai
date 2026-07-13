@@ -52,6 +52,7 @@ import {
   TASK_BOARD_LIST_RENDER_LIMIT,
   TASK_BOARD_TOTAL_LIMIT,
 } from '@/lib/task-board-config';
+import { taskDisplayStatus } from '@/lib/task-statuses';
 import { cn, errorMessage } from '@/lib/utils';
 
 interface TaskMemberOption {
@@ -585,13 +586,16 @@ function useTaskBoardController({
   const selectedTask = selectedTaskId
     ? (effectiveRows.find((row) => row.id === selectedTaskId) ?? null)
     : null;
-  const allColumns = Array.from(new Set([...columns, ...effectiveRows.map((row) => row.status)]));
+  const allColumns = Array.from(
+    new Set([...columns, ...effectiveRows.map((row) => taskDisplayStatus(row.status))]),
+  );
   const byStatus = new Map<string, objects.ObjectRow[]>();
   for (const column of allColumns) byStatus.set(column, []);
   for (const row of visibleRows) {
-    const list = byStatus.get(row.status) ?? [];
+    const displayStatus = taskDisplayStatus(row.status);
+    const list = byStatus.get(displayStatus) ?? [];
     list.push(row);
-    byStatus.set(row.status, list);
+    byStatus.set(displayStatus, list);
   }
   const moveErrors = Object.values(moveUi.cardErrors);
   const selectedVisibleIds = useMemo(() => {
@@ -622,7 +626,7 @@ function useTaskBoardController({
     const status = event.over?.id ? String(event.over.id) : null;
     if (!status || activeSavingCardIds().has(id)) return;
     const row = effectiveRows.find((candidate) => candidate.id === id);
-    if (!row || row.status === status) return;
+    if (!row || taskDisplayStatus(row.status) === status) return;
     const previousStatusPatch = rowPatches[id]?.patch.status;
     const previousStatusBaseline = rowPatches[id]?.baseline.status;
     startTransition(async () => {
@@ -1189,7 +1193,7 @@ function TaskListRow({
       </td>
       <td className="min-w-36 px-3 py-2 align-top">
         <select
-          value={row.status}
+          value={taskDisplayStatus(row.status)}
           onChange={(event) => {
             save('status', { status: event.currentTarget.value });
           }}
@@ -1201,7 +1205,9 @@ function TaskListRow({
               {column}
             </option>
           ))}
-          {!columns.includes(row.status) ? <option value={row.status}>{row.status}</option> : null}
+          {!columns.includes(taskDisplayStatus(row.status)) ? (
+            <option value={row.status}>{row.status}</option>
+          ) : null}
         </select>
       </td>
       <td className="min-w-40 px-3 py-2 align-top">
@@ -1710,7 +1716,7 @@ function TaskDetailPanel({
         </TaskField>
         <TaskField label="Status">
           <select
-            value={task.status}
+            value={taskDisplayStatus(task.status)}
             onChange={(event) => {
               save('status', { status: event.currentTarget.value });
             }}
@@ -1721,7 +1727,7 @@ function TaskDetailPanel({
                 {column}
               </option>
             ))}
-            {!columns.includes(task.status) ? (
+            {!columns.includes(taskDisplayStatus(task.status)) ? (
               <option value={task.status}>{task.status}</option>
             ) : null}
           </select>

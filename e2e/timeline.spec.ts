@@ -927,7 +927,7 @@ test('task categories and primary project stay distinct and filter together', as
     if (!projectId) throw new Error('created project id missing');
 
     await ownerPage.getByRole('link', { name: 'Add task' }).click();
-    await expect(ownerPage.getByLabel('Project (optional)')).toHaveValue(projectId);
+    await expect(ownerPage.getByLabel('Task project', { exact: true })).toHaveValue(projectId);
     await ownerPage.getByLabel('Name').fill(taskName);
     await ownerPage.getByRole('button', { name: 'Create object' }).click();
     await expect(ownerPage).toHaveURL(new RegExp(`/app/objects/${projectId}$`));
@@ -1014,6 +1014,7 @@ test('task categories and primary project stay distinct and filter together', as
       })
       .toBe('pending');
   } finally {
+    await ownerPage.goto('about:blank');
     if (taskId) await sql`DELETE FROM entities WHERE team_id = ${e2eTeam.id} AND id = ${taskId}`;
     if (projectId)
       await sql`DELETE FROM entities WHERE team_id = ${e2eTeam.id} AND id = ${projectId}`;

@@ -217,7 +217,7 @@ not.
 | Surface kind | Pages | Header treatment |
 | ------------ | ----- | ----------------- |
 | Operational | Timeline, Approvals, Jobs, Audit, Objects list, Boards, Tasks, Work, Inbox | `<IndexStrip>` + mono eyebrows. Dense, terminal-grade. |
-| Standard | Home, Connections, Documents, Team, Team integrations, Slack, Telegram, MCP share, Provider accounts, Personal MCP, Calendar, Meetings | `<PageHeader title subtitle>` + `<SectionHeading>`. Mono reserved for data. |
+| Standard | Home, Connections, Documents, Team, Team integrations, Reconciliation, Slack, Telegram, MCP share, Provider accounts, Personal MCP, Calendar, Meetings | `<PageHeader title subtitle>` + `<SectionHeading>`. Mono reserved for data. |
 
 If a screen disagrees with its kind, fix the screen — or reclassify the
 surface here in the same PR.
@@ -240,9 +240,14 @@ surface here in the same PR.
   sidebar IA and expose status chips for counts, health, and next actions. A
   muted secondary Help link sits above the team switcher and opens `/help` in a
   new tab; it is discoverable without competing with the primary route list.
-- **Main column** fills available width. **No `max-w-3xl` artificial
-  column** except long-form prose surfaces (single document view, single
-  note view) — those wrap in a `<ProseContainer>` that sets `max-w-prose`.
+- **Main column** uses one centered `max-w-6xl` page container for every app
+  route, owned by `<AppShell>`. Page headers and outer content edges must not
+  shift when navigating between dashboard surfaces. A page may constrain an
+  inner region for long-form prose, but must not add a competing outer
+  `mx-auto` / `max-w-*` wrapper. Full-viewport work canvases (chat and populated
+  task/kanban boards) mark their root with `data-app-layout="full-bleed"`; the
+  shell then removes the cap so their existing full-bleed gutters can fill the
+  main column.
 - **Floating chat trigger** appears only at tablet/desktop widths where it
   does not cover operational rows. On mobile, Ask remains available through
   the primary navigation sheet; fixed chrome must not obscure timeline
@@ -406,7 +411,12 @@ visible change.
   All, Chat, Meetings, Email, Documents, Calendar, and Integrations. Exact
   source filters such as Telegram, Slack, and ingest webhooks, plus impact
   filters such as tasks, decisions, and approvals, live in the full filter
-  panel.
+  panel. A separate `Specific source` control refines the archive to an
+  integration provider or one observed provider resource/conversation, such as
+  a Monday.com board, GitHub repository, Slack channel, or Telegram chat. Keep
+  this selection shareable in the URL and populate it from source registries
+  visible to the current user plus a bounded window of visible historical
+  events.
 - **Attribution split.** Scan-level copy preserves source truth ("who said or
   did it in the source system"). Timeline control details such as captured by,
   source owner, visibility owner, event controls, and curated source metadata

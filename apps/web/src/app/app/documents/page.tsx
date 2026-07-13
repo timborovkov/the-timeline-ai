@@ -63,7 +63,7 @@ export default async function DocumentsPage({ searchParams }: Props) {
   ];
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6">
+    <div className="space-y-6">
       <DocumentSearch />
       <DocumentDrive
         key={folderId ?? 'root'}

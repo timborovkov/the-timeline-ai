@@ -31,6 +31,7 @@ interface Props {
     unreadCount: number;
     notifications: InboxBellNotification[];
   };
+  sidebarInitiallyExpanded: boolean;
   children: ReactNode;
 }
 
@@ -51,6 +52,7 @@ export function AppShell({
   user,
   badges = EMPTY_BADGES,
   inbox = EMPTY_INBOX,
+  sidebarInitiallyExpanded,
   children,
 }: Props) {
   return (
@@ -65,6 +67,7 @@ export function AppShell({
             memberships={memberships}
             recipientInvites={recipientInvites}
             badges={badges}
+            initialExpanded={sidebarInitiallyExpanded}
           />
         </TooltipProvider>
 
@@ -100,15 +103,20 @@ export function AppShell({
               <UserMenu user={user} />
             </div>
           </header>
-          {/* Main content area. No artificial max-width: pages opt into
-              <ProseContainer> for long-form text; operational surfaces
-              (timeline, board, objects) fill the column. */}
+          {/* Every app route shares one frame so page headers and content do
+              not shift horizontally during navigation. Pages may constrain
+              an inner prose region, but not their outer frame. */}
           <main
             id="main"
             className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-24 pt-6 md:px-8 md:py-8"
           >
             <AppMainScrollRestoration />
-            {children}
+            <div
+              data-slot="app-page-container"
+              className="app-page-container mx-auto w-full max-w-6xl"
+            >
+              {children}
+            </div>
           </main>
         </div>
 

@@ -45,7 +45,7 @@ export default async function CapturedFilesPage() {
   const ownerMap = new Map(ownerRows.map((owner) => [owner.id, owner] as const));
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6">
+    <div className="space-y-6">
       <header className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h1 className="text-lg font-semibold text-foreground">Captured files</h1>

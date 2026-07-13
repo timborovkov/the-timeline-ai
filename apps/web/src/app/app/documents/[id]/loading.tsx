@@ -9,7 +9,7 @@ import { Skeleton } from '@/components/ui/skeleton';
  */
 export default function DocumentDetailLoading() {
   return (
-    <div className="mx-auto max-w-4xl space-y-6" aria-busy="true">
+    <div className="space-y-6" aria-busy="true">
       <PageHeaderSkeleton />
       <CardSkeleton />
       <div className="rounded-sm border border-border bg-card p-5">

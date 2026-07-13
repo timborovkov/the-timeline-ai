@@ -4,6 +4,7 @@ import {
   boardItemFilterFromWorkFilters,
   objectListFilterFromWorkFilters,
   parseWorkFilters,
+  taskObjectFilterFromWorkFilters,
 } from '@/lib/work-filters';
 
 const USER_ID = '00000000-0000-4000-8000-000000000001';
@@ -143,6 +144,22 @@ describe('work filters', () => {
     expect(boardItemFilterFromWorkFilters(parsed).object).toMatchObject({
       taskCategory: ['engineering'],
       taskCategoryNull: true,
+      primaryProjectId: [PROJECT_ID],
+    });
+  });
+
+  it('combines canonical task status aliases with category and project filters', () => {
+    const parsed = parseWorkFilters({
+      status: 'backlog,open',
+      category: 'engineering',
+      project: PROJECT_ID,
+    });
+
+    expect(taskObjectFilterFromWorkFilters(parsed)).toMatchObject({
+      type: 'task',
+      archived: false,
+      status: ['backlog', 'suggested', 'proposed', 'open', 'todo'],
+      taskCategory: ['engineering'],
       primaryProjectId: [PROJECT_ID],
     });
   });

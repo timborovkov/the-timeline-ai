@@ -119,7 +119,7 @@ export default async function WorkPage() {
   const boardModules = uniqueBoards([...pinnedBoards, ...boards]).slice(0, 6);
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6">
+    <div className="space-y-6">
       <IndexStrip
         srLabel={`Work · ${active.teamName} · ${queue.length} queue item${queue.length === 1 ? '' : 's'} · ${attentionCount} attention`}
         segments={[

@@ -53,7 +53,7 @@ export default async function ApprovalsPage({ searchParams }: PageProps) {
   const itemCount = visibleSuggestions.reduce((sum, s) => sum + s.items.length, 0);
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6">
+    <div className="space-y-6">
       <IndexStrip
         srLabel={`Approvals · ${status} · ${visibleSuggestions.length} suggestion bundles · ${itemCount} items`}
         segments={[

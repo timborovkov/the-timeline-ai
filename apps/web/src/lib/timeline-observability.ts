@@ -14,6 +14,7 @@ export interface TimelineObservabilityInput {
   presentationCacheStats: TimelineMomentPresentationCacheStats;
   filters: {
     source?: string | null;
+    origin?: string | null;
     impact?: string | null;
     author?: string | null;
     from?: string | null;
@@ -41,7 +42,7 @@ export function buildTimelineMomentsViewedPayload(
     userId: input.userId,
     surface: input.surface,
     mode: diagnostics.mode,
-    hasSourceFilter: Boolean(filters.source),
+    hasSourceFilter: Boolean(filters.source ?? filters.origin),
     hasImpactFilter: Boolean(filters.impact),
     hasAuthorFilter: Boolean(filters.author),
     hasDateFilter: Boolean(filters.from ?? filters.to),

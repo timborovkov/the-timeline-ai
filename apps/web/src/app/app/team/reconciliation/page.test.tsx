@@ -60,6 +60,12 @@ describe('ReconciliationDashboardPage', () => {
     );
 
     expect(html).toContain('Queued cluster replay.');
+    expect(html).toContain('How it works');
+    expect(html).toContain('Check the evidence');
+    expect(html).toContain('9 of 12 ready');
+    expect(html).toContain('Connect related work');
+    expect(html).toContain('Propose safe updates');
+    expect(html).toContain('Advanced tools and diagnostics');
     expect(html).toContain('Release gate');
     expect(html).toContain('2 failures');
     expect(html).toContain('missing_evidence');
@@ -70,7 +76,7 @@ describe('ReconciliationDashboardPage', () => {
     expect(html).toContain('output repairs');
     expect(html).toContain('planner replay');
     expect(html).toContain('projections');
-    expect(html).toContain('legacy provenance');
+    expect(html).toContain('Legacy provenance');
     expect(html).toContain('object source_event_id');
     expect(html).toContain('production_sampling:closed_beta');
     expect(html).toContain('unconfirmed fixtures');
@@ -82,7 +88,8 @@ describe('ReconciliationDashboardPage', () => {
     expect(html).toContain('Planner replay source');
     expect(html).toContain('Planner replay from');
     expect(html).toContain('Planner replay until');
-    expect(html).toContain('Recent clusters');
+    expect(html).toMatch(/<h3[^>]*>Recent clusters<\/h3>/);
+    expect(html).toMatch(/<h3[^>]*>Recent outputs<\/h3>/);
     expect(html).toContain('Lumen onboarding pilot');
     expect(html).toContain('href="/app/team/reconciliation/clusters/cluster-1"');
     expect(html).toContain('href="/app/team/reconciliation/clusters/cluster-2"');

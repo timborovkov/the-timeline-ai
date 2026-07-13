@@ -1,11 +1,13 @@
 import { getEnv } from '@timeline/shared/env';
 import localFont from 'next/font/local';
+import Script from 'next/script';
 
 import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
 
 import { ThemeProvider } from '@/components/theme-provider';
 import { Toaster } from '@/components/ui/sonner';
+import { SIDEBAR_PREFERENCE_BOOTSTRAP } from '@/lib/sidebar-preference';
 import { getSiteUrl } from '@/lib/site-url';
 
 import './globals.css';
@@ -128,6 +130,9 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         className="min-h-screen bg-background text-foreground antialiased"
         data-task-categories-enabled={taskCategoriesEnabled ? 'true' : 'false'}
       >
+        <Script id="sidebar-preference" strategy="beforeInteractive">
+          {SIDEBAR_PREFERENCE_BOOTSTRAP}
+        </Script>
         <ThemeProvider>
           {children}
           <Toaster richColors />

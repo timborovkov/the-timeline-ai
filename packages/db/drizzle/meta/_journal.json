@@ -412,7 +412,14 @@
       "idx": 58,
       "version": "7",
       "when": 1795653840000,
-      "tag": "0058_task_categories",
+      "tag": "0058_notification_newest_first",
+      "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "7",
+      "when": 1795653900000,
+      "tag": "0059_task_categories",
       "breakpoints": true
     }
   ]

@@ -35,6 +35,7 @@ const pgliteChunks = [
     'src/reconciliation/backfill.test.ts',
     'src/reconciliation/dashboard.test.ts',
     'src/reconciliation/normalization.test.ts',
+    'src/reconciliation/production-sampling.test.ts',
     'src/reconciliation/resolver.test.ts',
     'src/slack/dispatcher.test.ts',
   ],

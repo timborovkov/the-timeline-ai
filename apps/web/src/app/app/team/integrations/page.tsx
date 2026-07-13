@@ -333,7 +333,7 @@ export function IntegrationsPageView({
   model: IntegrationsPageModel;
 }) {
   return (
-    <div className="mx-auto max-w-4xl space-y-8">
+    <div className="space-y-8">
       <Breadcrumb items={[{ label: 'Team', href: '/app/team' }, { label: 'Integrations' }]} />
 
       <PageHeader

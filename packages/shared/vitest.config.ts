@@ -40,6 +40,7 @@ const pgliteTests = [
   'src/reconciliation/dashboard.test.ts',
   'src/reconciliation/mcp-capture.test.ts',
   'src/reconciliation/normalization.test.ts',
+  'src/reconciliation/production-sampling.test.ts',
   'src/reconciliation/resolver.test.ts',
   'src/slack/dispatcher.test.ts',
   'src/suggestions/index.test.ts',

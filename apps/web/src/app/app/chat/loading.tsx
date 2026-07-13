@@ -2,7 +2,11 @@ import { Skeleton } from '@/components/ui/skeleton';
 
 export default function ChatLoading() {
   return (
-    <div className="-mx-4 -my-6 flex h-[calc(100dvh-3.5rem)] md:-mx-8 md:-my-8" aria-busy="true">
+    <div
+      data-app-layout="full-bleed"
+      className="-mx-4 -my-6 flex h-[calc(100dvh-3.5rem)] md:-mx-8 md:-my-8"
+      aria-busy="true"
+    >
       <aside className="flex h-full w-60 shrink-0 flex-col border-r border-border bg-surface p-3">
         <Skeleton className="mb-3 h-8 w-full rounded-sm" />
         <ul className="flex-1 space-y-1">

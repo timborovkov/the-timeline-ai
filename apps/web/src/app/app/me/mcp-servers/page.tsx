@@ -29,7 +29,7 @@ export default async function PersonalMcpServersPage() {
   const scope = withTeam(db, active.teamId, session.user.id);
   const servers = await scope.mcp.listPersonalServers();
   return (
-    <div className="mx-auto max-w-4xl space-y-8">
+    <div className="space-y-8">
       <Breadcrumb
         items={[
           { label: 'Team', href: '/app/team' },

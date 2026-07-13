@@ -4,6 +4,8 @@ import { TASK_CATEGORIES, type TaskCategory } from '@timeline/shared/task-catego
 import type { BoardItemFilter } from '@timeline/shared/boards';
 import type { ObjectListFilter, ObjectType } from '@timeline/shared/objects/types';
 
+import { taskStatusFilterValues } from '@/lib/task-statuses';
+
 export const UNASSIGNED_FILTER_VALUE = 'unassigned';
 export const NONE_FILTER_VALUE = 'none';
 const UNCATEGORIZED_FILTER_VALUE = 'uncategorized';
@@ -125,8 +127,11 @@ export function taskObjectFilterFromWorkFilters(
   filters: WorkFilterState,
   now = new Date(),
 ): ObjectListFilter {
+  const base = objectListFilterFromWorkFilters({ ...filters, type: 'task' }, now);
+  const statuses = filters.status ? taskStatusFilterValues(csvValues(filters.status)) : [];
   return {
-    ...objectListFilterFromWorkFilters(filters, now),
+    ...base,
+    ...(statuses.length > 0 ? { status: statuses } : {}),
     type: 'task',
     archived: false,
   };

@@ -134,6 +134,7 @@ describe('BoardDetailPage', () => {
     );
 
     expect(html).toContain('selected:none history:0');
+    expect(html).toContain('data-app-layout="full-bleed"');
     expect(fakes.listBoardItemHistory).not.toHaveBeenCalled();
   });
 
@@ -147,5 +148,16 @@ describe('BoardDetailPage', () => {
 
     expect(html).toContain('selected:item-1 history:1');
     expect(fakes.listBoardItemHistory).toHaveBeenCalledWith('item-1');
+  });
+
+  it('keeps non-kanban board views inside the shared dashboard container', async () => {
+    const html = renderToStaticMarkup(
+      await BoardDetailPage({
+        params: Promise.resolve({ id: 'board-1' }),
+        searchParams: Promise.resolve({ view: 'table' }),
+      }),
+    );
+
+    expect(html).not.toContain('data-app-layout="full-bleed"');
   });
 });

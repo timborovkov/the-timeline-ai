@@ -158,7 +158,7 @@ export default async function SlackSettingsPage() {
 
 export function SlackSettingsPageView({ model }: { model: SlackSettingsViewModel }) {
   return (
-    <div className="mx-auto max-w-3xl space-y-6">
+    <div className="space-y-6">
       <HistoryBackLink fallbackHref="/app/team" label="Back" />
       <PageHeader
         title="Slack"

@@ -115,6 +115,7 @@ export function useTimelineInfiniteQuery(
     from?: string | null;
     to?: string | null;
     source?: string | null;
+    origin?: string | null;
     impact?: string | null;
     event?: string | null;
     moment?: string | null;
@@ -131,6 +132,7 @@ export function useTimelineInfiniteQuery(
       from: filters.from,
       to: filters.to,
       source: filters.source,
+      origin: filters.origin,
       impact: filters.impact,
       event: filters.event,
       moment: filters.moment,
@@ -141,6 +143,7 @@ export function useTimelineInfiniteQuery(
       filters.from,
       filters.to,
       filters.source,
+      filters.origin,
       filters.impact,
       filters.event,
       filters.moment,
@@ -172,6 +175,7 @@ export function useTimelineInfiniteQuery(
       if (stableFilters.from) params.set('from', stableFilters.from);
       if (stableFilters.to) params.set('to', stableFilters.to);
       if (stableFilters.source) params.set('source', stableFilters.source);
+      if (stableFilters.origin) params.set('origin', stableFilters.origin);
       if (stableFilters.impact) params.set('impact', stableFilters.impact);
       if (stableFilters.event) params.set('event', stableFilters.event);
       if (stableFilters.moment) params.set('moment', stableFilters.moment);

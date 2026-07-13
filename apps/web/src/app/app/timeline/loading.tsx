@@ -3,7 +3,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 
 export default function TimelineLoading() {
   return (
-    <div className="mx-auto max-w-6xl space-y-6">
+    <div className="space-y-6">
       <PageHeaderSkeleton />
       <Skeleton className="h-10 w-full rounded-sm" />
       <div className="space-y-3">

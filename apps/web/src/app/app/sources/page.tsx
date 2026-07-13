@@ -206,7 +206,7 @@ export default async function SourcesPage() {
   const sorted = [...attentionSources, ...notSetupSources, ...connectedSources];
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6">
+    <div className="space-y-6">
       <PageHeader
         title="Connections"
         subtitle="Capture surfaces, native sync, and live external tools."

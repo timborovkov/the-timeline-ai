@@ -1,6 +1,7 @@
 import { teamInvites, teams, users } from '@timeline/db';
 import { withTeam } from '@timeline/shared/team-scope';
 import { and, eq, gt, isNull, ne, sql } from 'drizzle-orm';
+import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 
 import type { Metadata } from 'next';
@@ -16,6 +17,7 @@ import { db } from '@/lib/db';
 import { getNavAttentionSummary } from '@/lib/hub-status';
 import { getUserLegalAcceptance, hasCurrentLegalAcceptance } from '@/lib/legal';
 import { reportCaughtError } from '@/lib/sentry-report';
+import { SIDEBAR_COOKIE_KEY, sidebarExpandedFromCookie } from '@/lib/sidebar-preference';
 
 export async function generateMetadata(): Promise<Metadata> {
   const session = await auth();
@@ -37,7 +39,7 @@ export default async function AppLayout({
   const session = await auth();
   if (!session?.user) redirect('/sign-in');
 
-  const [legal, activeTeam, currentUsers] = await Promise.all([
+  const [legal, activeTeam, currentUsers, cookieStore] = await Promise.all([
     getUserLegalAcceptance(session.user.id),
     resolveActiveTeam(session.user.id),
     db
@@ -45,6 +47,7 @@ export default async function AppLayout({
       .from(users)
       .where(eq(users.id, session.user.id))
       .limit(1),
+    cookies(),
   ]);
   if (!legal || !hasCurrentLegalAcceptance(legal)) {
     redirect('/legal/accept');
@@ -98,19 +101,10 @@ export default async function AppLayout({
     (async () => {
       try {
         const scope = withTeam(db, active.teamId, session.user.id);
-        const [unreadCount, unreadNotifications, latestNotifications] = await Promise.all([
+        const [unreadCount, notifications] = await Promise.all([
           scope.objects.unreadNotificationCount(),
-          scope.objects.listNotifications({ unreadOnly: true, limit: 5, order: 'latest' }),
-          scope.objects.listNotifications({ limit: 5, order: 'latest' }),
+          scope.objects.listNotifications({ limit: 5 }),
         ]);
-        const seenNotificationIds = new Set<string>();
-        const notifications = [...unreadNotifications, ...latestNotifications]
-          .filter((notification) => {
-            if (seenNotificationIds.has(notification.id)) return false;
-            seenNotificationIds.add(notification.id);
-            return true;
-          })
-          .slice(0, 5);
         return {
           unreadCount,
           notifications: notifications.map((notification) => ({
@@ -130,6 +124,10 @@ export default async function AppLayout({
       }
     })(),
   ]);
+
+  const sidebarInitiallyExpanded = sidebarExpandedFromCookie(
+    cookieStore.get(SIDEBAR_COOKIE_KEY)?.value,
+  );
 
   return (
     <AnalyticsProvider userId={session.user.id} teamId={active.teamId}>
@@ -151,6 +149,7 @@ export default async function AppLayout({
           }}
           badges={badges}
           inbox={inbox}
+          sidebarInitiallyExpanded={sidebarInitiallyExpanded}
         >
           {children}
           {modal}

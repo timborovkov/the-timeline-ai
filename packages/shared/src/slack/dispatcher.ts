@@ -48,6 +48,11 @@ import { withTeam } from '#src/team-scope.js';
 
 const log = childLogger('slack');
 const SLACK_SOURCE_SNAPSHOT_VERSION = 'slack-source-snapshot-2026-07';
+const SLACK_HELP_TEXT =
+  `Timeline commands:\n` +
+  `/ask <question>  ask the timeline\n` +
+  `/timeline join <saved-meeting-alias-or-url> [optional title]  capture a meeting now\n` +
+  `/timeline help  show this message`;
 
 type DbTx = Parameters<Parameters<Db['transaction']>[0]>[0];
 type DbOrTx = Db | DbTx;
@@ -155,6 +160,15 @@ export async function handleSlackSlashCommand(
   const api = new SlackApi(decryptWorkspaceToken(workspace).accessToken);
   if (input.command === '/ask') {
     await handleSlackAskCommand(deps, api, workspace.id, input);
+    return;
+  }
+  const timelineText = input.text.trim().toLowerCase();
+  if (!timelineText || timelineText === 'help') {
+    await api.postMessage({
+      channel: input.channel_id,
+      response_url: input.response_url,
+      text: SLACK_HELP_TEXT,
+    });
     return;
   }
   const linked = await findActiveSlackLink(deps.db, workspace.id, input.user_id);
@@ -269,7 +283,7 @@ async function handleSlackTimelineCommand(
     await api.postMessage({
       channel: input.channel_id,
       response_url: input.response_url,
-      text: 'Usage: /timeline join <saved-meeting-alias-or-url> [optional title]',
+      text: SLACK_HELP_TEXT,
     });
     return;
   }

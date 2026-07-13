@@ -20,7 +20,11 @@ vi.mock('@/components/app-shell-scroll-restoration', () => ({
 }));
 
 vi.mock('@/components/desktop-sidebar', () => ({
-  DesktopSidebar: () => createElement('aside', { 'data-testid': 'desktop-sidebar' }),
+  DesktopSidebar: ({ initialExpanded }: { initialExpanded: boolean }) =>
+    createElement('aside', {
+      'data-testid': 'desktop-sidebar',
+      'data-expanded': initialExpanded,
+    }),
 }));
 
 vi.mock('@/components/global-search-palette', () => ({
@@ -73,6 +77,7 @@ describe('AppShell', () => {
         memberships={[active]}
         recipientInvites={[]}
         user={{ name: 'Tim', email: 'tim@example.com' }}
+        sidebarInitiallyExpanded={false}
       >
         <div>Page content</div>
       </AppShell>,
@@ -80,9 +85,13 @@ describe('AppShell', () => {
 
     expect(html).toContain('flex h-dvh w-full overflow-hidden bg-bg');
     expect(html).toContain('data-testid="app-document-scroll-lock"');
+    expect(html).toContain('data-testid="desktop-sidebar" data-expanded="false"');
     expect(html).toContain('flex min-h-0 min-w-0 flex-1 flex-col');
     expect(html).toContain(
       'min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-24 pt-6 md:px-8 md:py-8',
+    );
+    expect(html).toContain(
+      'data-slot="app-page-container" class="app-page-container mx-auto w-full max-w-6xl"',
     );
   });
 });

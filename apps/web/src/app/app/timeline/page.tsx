@@ -14,6 +14,7 @@ import { DebouncedFilterForm } from '@/components/debounced-filter-form';
 import { FilterMultiSelect } from '@/components/filter-multi-select';
 import { IndexStrip } from '@/components/index-strip';
 import { TimelineFeed } from '@/components/timeline-feed';
+import { TimelineSourceFilterControls } from '@/components/timeline-source-filter-controls';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
@@ -23,9 +24,13 @@ import {
   TIMELINE_IMPACT_FILTERS,
   TIMELINE_PRESETS,
   TIMELINE_SOURCES,
+  isTimelinePresetActive,
   parseTimelineImpacts,
+  parseTimelineOrigins,
   parseTimelineSources,
   timelineHref,
+  timelineOriginOptions,
+  timelineOriginValue,
   timelineSourceValues,
 } from '@/lib/timeline-controls';
 import {
@@ -54,6 +59,7 @@ interface Props {
     from?: string;
     to?: string;
     source?: string;
+    origin?: string;
     impact?: string;
     event?: string;
     q?: string;
@@ -75,6 +81,7 @@ interface TimelineBaseParams extends Record<string, string | null | undefined> {
   from: string | null;
   to: string | null;
   mode: string | null;
+  origin: string | null;
 }
 
 function parseTimelineMode(input: string | undefined): TimelineMode {
@@ -159,7 +166,12 @@ export default async function TimelinePage({ searchParams }: Props) {
   const authorFilterValue = authorFilters.join(',');
   const sourceFilters = parseTimelineSources(sp.source);
   const sourceFilterValue = sourceFilters.join(',');
-  const sourceValues = timelineSourceValues(sourceFilters);
+  const originFilters = parseTimelineOrigins(sp.origin);
+  const originFilterValue = originFilters.map(timelineOriginValue).join(',');
+  if (originFilters.length > 0 && sourceFilters.length > 0) {
+    redirect(timelineHref({ ...sp, source: null }, { origin: originFilterValue }));
+  }
+  const sourceValues = originFilters.length > 0 ? undefined : timelineSourceValues(sourceFilters);
   const impactFilters = parseTimelineImpacts(sp.impact);
   const impactFilterValue = impactFilters.join(',');
   const focusEventId = parseUuid(sp.event);
@@ -169,7 +181,7 @@ export default async function TimelinePage({ searchParams }: Props) {
   const toFilter = parseStartOfDay(sp.to, timezone);
   const toQueryFilter = parseEndOfDay(sp.to, timezone);
 
-  const [timelinePage, members] = await Promise.all([
+  const [timelinePage, members, sourceFacets] = await Promise.all([
     collectTimelinePage({
       impact: impactFilters,
       focusEventId,
@@ -182,6 +194,7 @@ export default async function TimelinePage({ searchParams }: Props) {
           from: fromFilter,
           to: toQueryFilter,
           source: sourceValues,
+          origins: originFilters,
           cursor: cursor ?? undefined,
           limit,
         });
@@ -211,6 +224,7 @@ export default async function TimelinePage({ searchParams }: Props) {
       hydrateImpact: (eventIds) => scope.timeline.listImpactItems(eventIds),
     }),
     scope.timeline.listMembers(),
+    scope.timeline.listSourceFacets(),
   ]);
   const events = timelinePage.items;
   const eventIds = events.map((event) => event.id);
@@ -266,14 +280,20 @@ export default async function TimelinePage({ searchParams }: Props) {
     fromFilter !== undefined ||
     toFilter !== undefined ||
     sourceFilters.length > 0 ||
+    originFilters.length > 0 ||
     impactFilters.length > 0;
   const hasFilters = hasPanelFilters;
+  const originOptions = timelineOriginOptions(sourceFacets);
   const sourceLabel =
-    sourceFilters.length === 1
-      ? TIMELINE_SOURCES.find(([value]) => value === sourceFilters[0])?.[1]
-      : sourceFilters.length > 1
-        ? `${String(sourceFilters.length)} sources`
-        : undefined;
+    originFilters.length === 1
+      ? originOptions.find((option) => option.value === originFilterValue)?.label
+      : originFilters.length > 1
+        ? `${String(originFilters.length)} specific sources`
+        : sourceFilters.length === 1
+          ? TIMELINE_SOURCES.find(([value]) => value === sourceFilters[0])?.[1]
+          : sourceFilters.length > 1
+            ? `${String(sourceFilters.length)} sources`
+            : undefined;
   const eventCount = events.length;
   let presentationCacheStats: TimelineMomentPresentationCacheStats =
     emptyTimelineMomentPresentationCacheStats();
@@ -317,6 +337,7 @@ export default async function TimelinePage({ searchParams }: Props) {
       from: sp.from ?? null,
       to: sp.to ?? null,
       source: sourceFilterValue || null,
+      origin: originFilterValue || null,
       impact: impactFilterValue || null,
       event: focusEventId ?? null,
       moment: focusMomentId ?? null,
@@ -330,9 +351,10 @@ export default async function TimelinePage({ searchParams }: Props) {
     event: focusEventId ?? null,
     moment: focusMomentId ?? null,
     mode: mode === 'events' ? 'events' : null,
+    origin: originFilterValue || null,
   };
   return (
-    <div className="mx-auto max-w-6xl space-y-6">
+    <div className="space-y-6">
       <IndexStrip
         srLabel={`Timeline · ${active.teamName} · ${eventCount} event${eventCount === 1 ? '' : 's'} loaded${hasFilters ? ' · filters on' : ''}`}
         segments={[
@@ -375,6 +397,8 @@ export default async function TimelinePage({ searchParams }: Props) {
         hasPanelFilters={hasPanelFilters}
         sourceFilters={sourceFilters}
         sourceFilterValue={sourceFilterValue}
+        originFilterValue={originFilterValue}
+        originOptions={originOptions}
         impactFilters={impactFilters}
         impactFilterValue={impactFilterValue}
         focusEventId={focusEventId}
@@ -406,6 +430,8 @@ function TimelineBrowserSection({
   hasPanelFilters,
   sourceFilters,
   sourceFilterValue,
+  originFilterValue,
+  originOptions,
   impactFilters,
   impactFilterValue,
   focusEventId,
@@ -432,6 +458,8 @@ function TimelineBrowserSection({
   hasPanelFilters: boolean;
   sourceFilters: ReturnType<typeof parseTimelineSources>;
   sourceFilterValue: string;
+  originFilterValue: string;
+  originOptions: ReturnType<typeof timelineOriginOptions>;
   impactFilters: ReturnType<typeof parseTimelineImpacts>;
   impactFilterValue: string;
   focusEventId: string | undefined;
@@ -459,6 +487,8 @@ function TimelineBrowserSection({
         hasFilters={hasFilters}
         hasPanelFilters={hasPanelFilters}
         sourceFilterValue={sourceFilterValue}
+        originFilterValue={originFilterValue}
+        originOptions={originOptions}
         impactFilterValue={impactFilterValue}
         authorFilterValue={authorFilterValue}
         fromValue={toDateInputValue(sp.from)}
@@ -471,6 +501,7 @@ function TimelineBrowserSection({
         momentCount={moments?.length ?? events.length}
         sourceFilters={sourceFilters}
         impactFilters={impactFilters}
+        hasOriginFilter={Boolean(originFilterValue)}
       />
       <TimelineFeed
         initialPage={{
@@ -495,6 +526,7 @@ function TimelineBrowserSection({
           from: sp.from ?? null,
           to: sp.to ?? null,
           source: sourceFilterValue || null,
+          origin: originFilterValue || null,
           impact: impactFilterValue || null,
           event: focusEventId ?? null,
           moment: focusMomentId ?? null,
@@ -530,6 +562,8 @@ function TimelineFilterPanel({
   hasFilters,
   hasPanelFilters,
   sourceFilterValue,
+  originFilterValue,
+  originOptions,
   impactFilterValue,
   authorFilterValue,
   fromValue,
@@ -541,6 +575,8 @@ function TimelineFilterPanel({
   hasFilters: boolean;
   hasPanelFilters: boolean;
   sourceFilterValue: string;
+  originFilterValue: string;
+  originOptions: ReturnType<typeof timelineOriginOptions>;
   impactFilterValue: string;
   authorFilterValue: string;
   fromValue: string;
@@ -559,13 +595,11 @@ function TimelineFilterPanel({
         >
           {baseParams.mode ? <input type="hidden" name="mode" value={baseParams.mode} /> : null}
           <div className="flex min-w-0 flex-wrap items-end gap-2">
-            <FilterMultiSelect
-              key={`timeline-source:${sourceFilterValue}`}
-              name="source"
-              label="Source"
-              defaultValue={sourceFilterValue}
-              placeholder="All sources"
-              options={TIMELINE_SOURCES.map(([value, label]) => ({ value, label }))}
+            <TimelineSourceFilterControls
+              key={`timeline-source-filters:${sourceFilterValue}:${originFilterValue}`}
+              source={sourceFilterValue}
+              origin={originFilterValue}
+              originOptions={originOptions}
             />
             <FilterMultiSelect
               key={`timeline-impact:${impactFilterValue}`}
@@ -600,6 +634,7 @@ function TimelineFilterPanel({
                   from: null,
                   to: null,
                   source: null,
+                  origin: null,
                   impact: null,
                 })}
                 className="inline-flex h-9 items-center rounded-sm border border-border bg-bg px-3 text-sm text-fg-muted transition-colors hover:border-border-strong hover:text-fg"
@@ -635,6 +670,7 @@ function TimelinePresetControls({
   momentCount,
   sourceFilters,
   impactFilters,
+  hasOriginFilter,
 }: {
   baseParams: TimelineBaseParams;
   mode: TimelineMode;
@@ -642,6 +678,7 @@ function TimelinePresetControls({
   momentCount: number;
   sourceFilters: ReturnType<typeof parseTimelineSources>;
   impactFilters: ReturnType<typeof parseTimelineImpacts>;
+  hasOriginFilter: boolean;
 }) {
   return (
     <div className="flex flex-wrap items-center justify-between gap-3 border-y border-border py-2">
@@ -649,16 +686,17 @@ function TimelinePresetControls({
         {TIMELINE_PRESETS.map((preset) => {
           const href =
             'all' in preset
-              ? timelineHref(baseParams, { source: null, impact: null })
+              ? timelineHref(baseParams, { source: null, origin: null, impact: null })
               : timelineHref(baseParams, {
                   source: preset.source,
+                  origin: null,
                   impact: null,
                 });
-          const active =
-            ('source' in preset &&
-              sourceFilters.length === 1 &&
-              preset.source === sourceFilters[0]) ||
-            ('all' in preset && sourceFilters.length === 0 && impactFilters.length === 0);
+          const active = isTimelinePresetActive(preset, {
+            sourceFilters,
+            impactCount: impactFilters.length,
+            hasOriginFilter,
+          });
           return (
             <Link
               key={preset.label}

@@ -11,7 +11,7 @@ export default function TelegramError({
   reset: () => void;
 }) {
   return (
-    <div className="mx-auto max-w-3xl space-y-8">
+    <div className="space-y-8">
       <IndexStrip
         srLabel="Team / Telegram · error"
         segments={[{ value: 'TEAM / TELEGRAM' }, { label: 'status', value: 'ERROR', danger: true }]}

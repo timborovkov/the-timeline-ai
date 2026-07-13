@@ -23,6 +23,7 @@ import {
   reconciliationOutputs,
   teamProviderResourceShares,
   teamVisibilityDefaults,
+  telegramChatBindings,
 } from '@timeline/db';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
@@ -545,6 +546,272 @@ describe('withTeam namespaced port', () => {
     await expect(scope.timeline.getEventsByIds([visibleId, deletedId])).resolves.toMatchObject([
       { id: visibleId },
     ]);
+  });
+
+  it('filters timeline events by provider resources and lists only visible source facets', async () => {
+    const mondayId = '00000000-0000-0000-0000-000000000201';
+    const githubId = '00000000-0000-0000-0000-000000000202';
+    const slackId = '00000000-0000-0000-0000-000000000203';
+    const telegramId = '00000000-0000-0000-0000-000000000204';
+    const hiddenMondayId = '00000000-0000-0000-0000-000000000205';
+    await pg.query(
+      `INSERT INTO raw_events
+        (id, team_id, author_user_id, visibility_owner_user_id, visibility, source, content_text, occurred_at, source_metadata)
+       VALUES
+        ($1, $2, $3, $3, 'team', 'integration', 'Monday launch update', now(), $4::jsonb),
+        ($5, $2, $3, $3, 'team', 'integration', 'GitHub app update', now(), $6::jsonb),
+        ($7, $2, $3, $3, 'team', 'slack', 'Slack design update', now(), $8::jsonb),
+        ($9, $2, $3, $3, 'team', 'telegram', 'Telegram ops update', now(), $10::jsonb),
+        ($11, $2, $12, $12, 'private', 'integration', 'Hidden Monday update', now(), $13::jsonb)`,
+      [
+        mondayId,
+        TEAM_A,
+        USER_A,
+        JSON.stringify({
+          provider: 'monday',
+          monday_board_id: 'board-1',
+          monday_board_name: 'Launch plan',
+        }),
+        githubId,
+        JSON.stringify({ provider: 'github', github: { repo: 'acme/app' } }),
+        slackId,
+        JSON.stringify({
+          slack_workspace_id: 'T123',
+          slack_channel_id: 'C456',
+          slack_channel_name: 'design',
+        }),
+        telegramId,
+        JSON.stringify({ tg_chat_id: '-1001', tg_chat_title: 'Operations' }),
+        hiddenMondayId,
+        USER_B,
+        JSON.stringify({
+          provider: 'monday',
+          monday_board_id: 'secret-board',
+          monday_board_name: 'Secret board',
+        }),
+      ],
+    );
+
+    const scope = withTeam(db as never, TEAM_A, USER_A);
+    await expect(
+      scope.timeline.listEvents({
+        origins: [{ kind: 'monday_board', boardId: 'board-1' }],
+      }),
+    ).resolves.toMatchObject([{ id: mondayId }]);
+    await expect(
+      scope.timeline.listEvents({
+        origins: [
+          { kind: 'github_repo', repo: 'acme/app' },
+          { kind: 'telegram_chat', chatId: '-1001' },
+        ],
+      }),
+    ).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: githubId }),
+        expect.objectContaining({ id: telegramId }),
+      ]),
+    );
+
+    const facets = await scope.timeline.listSourceFacets();
+    expect(facets).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          filter: { kind: 'monday_board', boardId: 'board-1' },
+          label: 'Launch plan',
+        }),
+        expect.objectContaining({
+          filter: { kind: 'github_repo', repo: 'acme/app' },
+          label: 'acme/app',
+        }),
+        expect.objectContaining({
+          filter: { kind: 'slack_channel', workspaceId: 'T123', channelId: 'C456' },
+          label: '#design',
+        }),
+        expect.objectContaining({
+          filter: { kind: 'telegram_chat', chatId: '-1001' },
+          label: 'Operations',
+        }),
+      ]),
+    );
+    expect(facets).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ filter: { kind: 'monday_board', boardId: 'secret-board' } }),
+      ]),
+    );
+  });
+
+  it('lists every visible configured integration resource without requiring event-history groups', async () => {
+    const visibleIntegrationId = '00000000-0000-4000-8000-000000000301';
+    const privateIntegrationId = '00000000-0000-4000-8000-000000000302';
+    const visibleGithubId = '00000000-0000-4000-8000-000000000303';
+    const privateGithubId = '00000000-0000-4000-8000-000000000304';
+    await db.insert(integrations).values([
+      {
+        id: visibleIntegrationId,
+        teamId: TEAM_A,
+        connectedByUserId: USER_A,
+        provider: 'monday',
+        displayName: 'Visible Monday',
+        externalAccountId: 'visible-monday',
+        visibilityDefault: 'team',
+      },
+      {
+        id: privateIntegrationId,
+        teamId: TEAM_A,
+        connectedByUserId: USER_B,
+        provider: 'monday',
+        displayName: 'Private Monday',
+        externalAccountId: 'private-monday',
+        visibilityDefault: 'private',
+      },
+      {
+        id: visibleGithubId,
+        teamId: TEAM_A,
+        connectedByUserId: USER_A,
+        provider: 'github',
+        displayName: 'Visible GitHub',
+        externalAccountId: 'visible-github',
+        visibilityDefault: 'team',
+      },
+      {
+        id: privateGithubId,
+        teamId: TEAM_A,
+        connectedByUserId: USER_B,
+        provider: 'github',
+        displayName: 'Private GitHub',
+        externalAccountId: 'private-github',
+        visibilityDefault: 'private',
+      },
+    ]);
+    await db.insert(integrationSelections).values([
+      ...Array.from({ length: 501 }, (_, index) => ({
+        integrationId: visibleIntegrationId,
+        selectionKind: 'monday.board',
+        externalId: `board-${String(index).padStart(3, '0')}`,
+        externalLabel: `Board ${String(index).padStart(3, '0')}`,
+      })),
+      {
+        integrationId: privateIntegrationId,
+        selectionKind: 'monday.board',
+        externalId: 'secret-board',
+        externalLabel: 'Secret board',
+      },
+      {
+        integrationId: visibleGithubId,
+        selectionKind: 'github.org',
+        externalId: 'acme',
+        externalLabel: 'Acme',
+      },
+      {
+        integrationId: privateGithubId,
+        selectionKind: 'github.org',
+        externalId: 'secret',
+        externalLabel: 'Secret',
+      },
+    ]);
+    await db.insert(integrationSyncState).values([
+      {
+        integrationId: visibleGithubId,
+        resourceType: 'github.org:acme:repos',
+        cursor: { repos: ['acme/app', 'acme/api'], fetched_at: new Date().toISOString() },
+      },
+      {
+        integrationId: privateGithubId,
+        resourceType: 'github.org:secret:repos',
+        cursor: { repos: ['secret/repo'], fetched_at: new Date().toISOString() },
+      },
+    ]);
+    await db.insert(telegramChatBindings).values([
+      {
+        tgChatId: -100500,
+        teamId: TEAM_A,
+        boundByUserId: USER_A,
+        title: 'Durable team chat',
+      },
+      {
+        tgChatId: -100600,
+        teamId: TEAM_B,
+        boundByUserId: USER_A,
+        title: 'Other team chat',
+      },
+    ]);
+    await pg.query(
+      `INSERT INTO raw_events
+        (id, team_id, author_user_id, visibility_owner_user_id, visibility, source, content_text, occurred_at, source_metadata)
+       VALUES
+        ('00000000-0000-0000-0000-000000000305', $1, $2, $2, 'team', 'telegram', 'Unnamed chat update', now(), $3::jsonb)`,
+      [TEAM_A, USER_A, JSON.stringify({ tg_chat_id: '-100500', tg_update_id: 305 })],
+    );
+
+    const facets = await withTeam(db as never, TEAM_A, USER_A).timeline.listSourceFacets();
+    expect(facets.filter((facet) => facet.filter.kind === 'monday_board')).toHaveLength(501);
+    expect(facets).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          filter: { kind: 'provider', provider: 'monday' },
+        }),
+        expect.objectContaining({
+          filter: { kind: 'monday_board', boardId: 'board-500' },
+          label: 'Board 500',
+        }),
+        expect.objectContaining({
+          filter: { kind: 'github_repo', repo: 'acme/api' },
+          label: 'acme/api',
+        }),
+        expect.objectContaining({
+          filter: { kind: 'telegram_chat', chatId: '-100500' },
+          label: 'Durable team chat',
+          eventCount: 1,
+        }),
+      ]),
+    );
+    expect(facets).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ filter: { kind: 'monday_board', boardId: 'secret-board' } }),
+        expect.objectContaining({ filter: { kind: 'github_repo', repo: 'secret/repo' } }),
+        expect.objectContaining({ filter: { kind: 'telegram_chat', chatId: '-100600' } }),
+      ]),
+    );
+  });
+
+  it('uses the newest event label when a source resource has been renamed', async () => {
+    await pg.query(
+      `INSERT INTO raw_events
+        (id, team_id, author_user_id, visibility_owner_user_id, visibility, source, content_text, occurred_at, source_metadata)
+       VALUES
+        ('00000000-0000-0000-0000-000000000311', $1, $2, $2, 'team', 'integration', 'Old board update', '2026-07-01T10:00:00Z', $3::jsonb),
+        ('00000000-0000-0000-0000-000000000312', $1, $2, $2, 'team', 'integration', 'New board update', '2026-07-02T10:00:00Z', $4::jsonb),
+        ('00000000-0000-0000-0000-000000000313', $1, $2, $2, 'team', 'integration', 'Unnamed board update', '2026-07-03T10:00:00Z', $5::jsonb)`,
+      [
+        TEAM_A,
+        USER_A,
+        JSON.stringify({
+          provider: 'monday',
+          monday_board_id: 'renamed-board',
+          monday_board_name: 'Old name',
+        }),
+        JSON.stringify({
+          provider: 'monday',
+          monday_board_id: 'renamed-board',
+          monday_board_name: 'Current name',
+        }),
+        JSON.stringify({
+          provider: 'monday',
+          monday_board_id: 'renamed-board',
+        }),
+      ],
+    );
+
+    const facets = await withTeam(db as never, TEAM_A, USER_A).timeline.listSourceFacets();
+    expect(facets).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          filter: { kind: 'monday_board', boardId: 'renamed-board' },
+          label: 'Current name',
+          eventCount: 3,
+        }),
+      ]),
+    );
   });
 
   it('fails closed for person sender filters when no approved identity facet exists', async () => {

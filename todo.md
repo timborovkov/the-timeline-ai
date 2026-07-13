@@ -88,7 +88,11 @@ Direction: soften the surface. Keep the forensic mono treatment for data
       explained without polluting the normal UI. Dev seed provider metadata now
       produces human-readable GitHub PR/review bundles, GitHub CI workflow
       bundles, Linear issue, Slack channel, and meeting moments for local
-      screenshot QA. Timeline pages and the API now
+      screenshot QA. Timeline filters now refine visible events by integration
+      provider and observed resources/conversations (including Monday.com
+      boards, GitHub repositories, Slack channels, and Telegram chats) through
+      shareable URL state without exposing private source names. Timeline pages
+      and the API now
       accept `moment=<moment-id>` for supported deterministic moment IDs,
       hydrate bounded visible evidence, preserve the cache key, and keep the
       focused moment visible through filters. Focused raw-event and moment links

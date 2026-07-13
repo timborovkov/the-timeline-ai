@@ -32,7 +32,7 @@ export default async function BoardsIndexPage() {
   const boards = await scope.boards.listBoards();
 
   return (
-    <div className="mx-auto max-w-4xl space-y-6">
+    <div className="space-y-6">
       <IndexStrip
         srLabel={`Boards · ${boards.length} boards`}
         segments={[{ value: 'BOARDS' }, { label: 'total', value: boards.length }]}

@@ -19,6 +19,7 @@ import { loadProjectFilterRows } from '@/lib/project-filter-options';
 import { isActionableSuggestionStatus } from '@/lib/suggestion-status';
 import { serializeSuggestionBundle } from '@/lib/suggestions';
 import { countTaskRows, loadTaskRowsPage } from '@/lib/task-page';
+import { TASK_STATUS_COLUMNS } from '@/lib/task-statuses';
 import {
   WORK_FILTER_PARAM_KEYS,
   hasActiveWorkFilters,
@@ -31,17 +32,6 @@ export const metadata: Metadata = {
   title: 'Tasks',
   description: 'Review tasks discovered from timeline activity.',
 };
-
-const TASK_COLUMNS = [
-  'suggested',
-  'proposed',
-  'open',
-  'todo',
-  'doing',
-  'blocked',
-  'done',
-  'cancelled',
-];
 
 type PageSearchParams = Record<string, string | string[] | undefined>;
 
@@ -148,6 +138,7 @@ export default async function TasksPage({
 
   return (
     <div
+      data-app-layout={rows.length > 0 ? 'full-bleed' : undefined}
       className={
         rows.length > 0
           ? '-mx-4 -my-6 flex h-[calc(100dvh-3.5rem)] min-w-0 flex-col md:-mx-8 md:-my-8'
@@ -181,7 +172,7 @@ export default async function TasksPage({
         hiddenParams={hiddenFilterParams}
         members={memberOptions}
         projects={projects.map((project) => ({ id: project.id, label: project.canonicalName }))}
-        statusOptions={TASK_COLUMNS}
+        statusOptions={TASK_STATUS_COLUMNS}
       />
 
       {rows.length === 0 ? (
@@ -207,7 +198,7 @@ export default async function TasksPage({
         <div className="min-h-0 flex-1">
           <TaskBoard
             rows={rows}
-            columns={TASK_COLUMNS}
+            columns={[...TASK_STATUS_COLUMNS]}
             selectedTaskId={selectedVisibleTaskId}
             selectedTaskContext={selectedTaskDetail?.connectedWork ?? null}
             view={view}

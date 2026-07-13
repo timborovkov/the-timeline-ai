@@ -165,7 +165,7 @@ export default async function ObjectsIndexPage({
   );
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6">
+    <div className="space-y-6">
       <IndexStrip
         srLabel={
           singleType

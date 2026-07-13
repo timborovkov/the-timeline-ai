@@ -87,7 +87,10 @@ export default async function ChatPage({
     // entire viewport minus the AppShell header (h-14 = 3.5rem). The chat
     // pane has its own internal scroll, so a fixed outer height keeps the
     // layout stable regardless of message count.
-    <div className="-mx-4 -my-6 flex h-[calc(100dvh-3.5rem)] md:-mx-8 md:-my-8">
+    <div
+      data-app-layout="full-bleed"
+      className="-mx-4 -my-6 flex h-[calc(100dvh-3.5rem)] md:-mx-8 md:-my-8"
+    >
       <SessionSidebar
         activeSessionId={activeSessionId}
         sessions={sessions.map((s) => ({
