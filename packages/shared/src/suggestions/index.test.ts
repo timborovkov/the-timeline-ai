@@ -3998,6 +3998,74 @@ describe('suggestion scope', () => {
     expect(archivedProject?.archivedAt).toBeInstanceOf(Date);
   });
 
+  it('preserves newer human project and category edits when retrying a created task', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const [proposedProject, humanProject] = await Promise.all([
+      scope.objects.createObject({
+        type: 'project',
+        canonicalName: 'Proposed retry project',
+        actor: { kind: 'user', userId: USER_ID },
+      }),
+      scope.objects.createObject({
+        type: 'project',
+        canonicalName: 'Human retry project',
+        actor: { kind: 'user', userId: USER_ID },
+      }),
+    ]);
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Retry task without overwriting human edits',
+      dedupeKey: 'retry-task-preserve-human-edits',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Retry task without overwriting human edits',
+          dedupeKey: 'retry-task-preserve-human-edits:item',
+          proposedPayload: {
+            canonicalName: 'Retry task without overwriting human edits',
+            parentObjectId: proposedProject.id,
+            projectName: proposedProject.canonicalName,
+            taskCategory: 'operations',
+            taskCategoryMode: 'manual',
+            taskCategoryTaxonomyVersion: 'task-categories-v1',
+          },
+        },
+      ],
+    });
+    const itemId = bundle.items[0]?.id ?? '';
+    const task = await scope.objects.createObject({
+      type: 'task',
+      canonicalName: 'Retry task without overwriting human edits',
+      parentObjectId: proposedProject.id,
+      metadata: { agent_suggestion_item_id: itemId },
+      actor: { kind: 'agent', userId: null },
+    });
+    await db
+      .update(agentSuggestionItems)
+      .set({ status: 'failed', resolvedAt: null, resolvedByUserId: null })
+      .where(eq(agentSuggestionItems.id, itemId));
+    await scope.objects.setTaskProject(task.id, humanProject.id, {
+      kind: 'user',
+      userId: USER_ID,
+    });
+    await scope.objects.setTaskCategory(task.id, 'design', {
+      kind: 'user',
+      userId: USER_ID,
+    });
+
+    await expect(scope.suggestions.acceptSuggestionItem(itemId)).resolves.toBe(true);
+
+    await expect(scope.objects.listPrimaryProjectsForTasks([task.id])).resolves.toEqual([
+      expect.objectContaining({ projectId: humanProject.id }),
+    ]);
+    await expect(scope.objects.getObject(task.id)).resolves.toMatchObject({
+      taskCategory: 'design',
+      taskCategoryMode: 'manual',
+      taskCategorySource: 'user',
+    });
+  });
+
   it('preserves a suggestion-created project with an outbound relationship on retry', async () => {
     const scope = withTeam(db as never, TEAM_ID, USER_ID);
     const bundle = await scope.suggestions.createOrMergeSuggestionBundle({

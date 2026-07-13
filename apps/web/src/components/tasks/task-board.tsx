@@ -1055,7 +1055,12 @@ function TaskListView({
         taskCategoriesEnabled={taskCategoriesEnabled}
       />
       <div className="min-h-0 flex-1 overflow-auto rounded-sm border border-border bg-surface">
-        <table className="w-full min-w-[780px] text-sm">
+        <table
+          className={cn(
+            'w-full text-sm',
+            taskCategoriesEnabled ? 'min-w-[780px]' : 'min-w-[620px]',
+          )}
+        >
           <thead className="sticky top-0 z-10 border-b border-border bg-bg text-left font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
             <tr>
               <th className="w-10 px-3 py-2 font-normal">
@@ -1071,7 +1076,7 @@ function TaskListView({
               </th>
               <th className="px-3 py-2 font-normal">Task</th>
               <th className="px-3 py-2 font-normal">Status</th>
-              <th className="px-3 py-2 font-normal">Category</th>
+              {taskCategoriesEnabled ? <th className="px-3 py-2 font-normal">Category</th> : null}
               <th className="px-3 py-2 font-normal">Assignee</th>
               <th className="px-3 py-2 font-normal">Due</th>
               <th className="px-3 py-2 font-normal">Priority</th>
@@ -1093,13 +1098,14 @@ function TaskListView({
                   toggleOne(row.id, checked);
                 }}
                 onUpdateTask={onUpdateTask}
+                taskCategoriesEnabled={taskCategoriesEnabled}
                 filterParams={filterParams}
               />
             ))}
             {hiddenRows > 0 ? (
               <tr>
                 <td
-                  colSpan={7}
+                  colSpan={taskCategoriesEnabled ? 7 : 6}
                   className="bg-bg px-3 py-3 text-center font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim"
                 >
                   {hiddenRows} loaded tasks hidden. Narrow the filter to inspect them.
@@ -1123,6 +1129,7 @@ function TaskListRow({
   highlighted,
   onSelectedChange,
   onUpdateTask,
+  taskCategoriesEnabled,
   filterParams,
 }: {
   row: objects.ObjectRow;
@@ -1133,6 +1140,7 @@ function TaskListRow({
   highlighted: boolean;
   onSelectedChange: (checked: boolean) => void;
   onUpdateTask: (id: string, patch: TaskPatch) => Promise<{ ok?: boolean; error?: string }>;
+  taskCategoriesEnabled: boolean;
   filterParams: Record<string, string>;
 }) {
   const [saving, setSaving] = useState<string | null>(null);
@@ -1210,9 +1218,11 @@ function TaskListRow({
           ) : null}
         </select>
       </td>
-      <td className="min-w-40 px-3 py-2 align-top">
-        <TaskCategoryBadge category={row.taskCategory} status={row.taskCategoryStatus} />
-      </td>
+      {taskCategoriesEnabled ? (
+        <td className="min-w-40 px-3 py-2 align-top">
+          <TaskCategoryBadge category={row.taskCategory} status={row.taskCategoryStatus} />
+        </td>
+      ) : null}
       <td className="min-w-40 px-3 py-2 align-top">
         <select
           value={row.assigneeUserId ?? ''}

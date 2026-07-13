@@ -4,6 +4,7 @@ import {
   agentSuggestions,
   calendarEvents,
   entities,
+  objectChanges,
   objectIdentityFacets,
   objectNotes,
   notifications,
@@ -22,6 +23,7 @@ import {
   count,
   desc,
   eq,
+  gt,
   inArray,
   isNotNull,
   isNull,
@@ -3599,6 +3601,10 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       }
     }
 
+    const userOverrides =
+      type === 'task'
+        ? await taskProposalFieldsChangedByUser(item, existing.id)
+        : new Set<string>();
     const patch: ObjectPatch = {};
     if (parsed.canonicalName !== undefined && parsed.canonicalName !== existing.canonicalName) {
       patch.canonicalName = canonicalName;
@@ -3620,18 +3626,58 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     try {
       await objects.updateObject(existing.id, patch, { kind: 'agent', userId: null });
       if (type === 'task') {
-        await objects.setTaskProject(existing.id, project?.id ?? null, {
-          kind: 'agent',
-          userId: null,
-        });
+        if (!userOverrides.has('primaryProjectId')) {
+          await objects.setTaskProject(existing.id, project?.id ?? null, {
+            kind: 'agent',
+            userId: null,
+          });
+        }
         await archiveOrphanedSuggestedProjects(item);
-        await applyProposedTaskCategory(existing.id, parsed);
+        if (!userOverrides.has('taskCategory')) {
+          await applyProposedTaskCategory(existing.id, parsed);
+        }
       }
       return existing.id;
     } catch (error) {
       await archiveSuggestedProjectAfterFailure(item, project);
       throw error;
     }
+  }
+
+  async function taskProposalFieldsChangedByUser(
+    item: typeof agentSuggestionItems.$inferSelect,
+    taskId: string,
+  ): Promise<Set<string>> {
+    const metadata = recordFromUnknown(item.metadata);
+    const revisionBoundary = (key: string): Date => {
+      const value = metadata[key];
+      return typeof value === 'string' && !Number.isNaN(Date.parse(value))
+        ? new Date(value)
+        : item.createdAt;
+    };
+    const rows = await db
+      .select({ field: objectChanges.field, changedAt: objectChanges.changedAt })
+      .from(objectChanges)
+      .where(
+        and(
+          eq(objectChanges.teamId, teamId),
+          eq(objectChanges.entityId, taskId),
+          eq(objectChanges.actorKind, 'user'),
+          eq(objectChanges.status, 'applied'),
+          inArray(objectChanges.field, ['primaryProjectId', 'taskCategory']),
+          gt(objectChanges.changedAt, item.createdAt),
+        ),
+      );
+    return new Set(
+      rows.flatMap((row) => {
+        const boundary = revisionBoundary(
+          row.field === 'primaryProjectId'
+            ? 'proposal_project_edited_at'
+            : 'proposal_category_edited_at',
+        );
+        return row.changedAt > boundary ? [row.field] : [];
+      }),
+    );
   }
 
   async function resolveSuggestedTaskProject(
@@ -3994,7 +4040,6 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
 
   async function applyItem(item: typeof agentSuggestionItems.$inferSelect): Promise<string | null> {
     if (item.resultId) return item.resultId;
-    if (item.status !== 'pending' && item.status !== 'failed') return item.resultId;
     if (item.targetKind === 'object_merge') {
       throw new Error('Merge suggestions must be reviewed from the merge preview');
     }
@@ -4284,11 +4329,11 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
           inArray(agentSuggestionItems.status, ['pending', 'failed']),
         ),
       )
-      .returning({ id: agentSuggestionItems.id });
+      .returning();
     if (!claimed) return false;
     let resultId: string | null;
     try {
-      resultId = await applyItem(row.item);
+      resultId = await applyItem(claimed);
     } catch (err) {
       const failureReason = suggestionApplyFailureReason(err);
       await db.transaction(async (tx) => {
@@ -4302,12 +4347,12 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
             updatedAt: new Date(),
           })
           .where(eq(agentSuggestionItems.id, itemId));
-        await writeProjectedOutputStatusForItem(tx, row.item, 'failed', {
+        await writeProjectedOutputStatusForItem(tx, claimed, 'failed', {
           projection_failure_reason: failureReason,
         });
       });
       await refreshBundleStatus(row.suggestion.id, userId);
-      const staleReason = await staleActionableItemReason(row.item);
+      const staleReason = await staleActionableItemReason(claimed);
       if (staleReason && (await supersedeItem(itemId, null, staleReason))) {
         await reconcileStaleActionableItemsBestEffort({
           suggestionItemId: itemId,
@@ -4335,12 +4380,12 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
           failureReason: null,
         })
         .where(eq(agentSuggestionItems.id, itemId));
-      await writeProjectedOutputStatusForItem(tx, row.item, 'applied', {
+      await writeProjectedOutputStatusForItem(tx, claimed, 'applied', {
         projection_result_id: resultId,
       });
     });
     await refreshBundleStatus(row.suggestion.id, userId);
-    await reconcileAcceptedItemBestEffort({ ...row.item, resultId });
+    await reconcileAcceptedItemBestEffort({ ...claimed, resultId });
     await reconcileStaleActionableItemsBestEffort({
       suggestionItemId: itemId,
       suggestionId: row.suggestion.id,
@@ -5907,6 +5952,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         delete payload.taskCategoryTaxonomyVersion;
         payload.taskCategoryMode = 'automatic';
       }
+      const editedAt = new Date().toISOString();
       const [updated] = await db
         .update(agentSuggestionItems)
         .set({
@@ -5914,7 +5960,9 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
           failureReason: null,
           metadata: sql`${agentSuggestionItems.metadata} || ${JSON.stringify({
             proposal_edited_by_user_id: userId,
-            proposal_edited_at: new Date().toISOString(),
+            proposal_edited_at: editedAt,
+            ...(input.category ? { proposal_category_edited_at: editedAt } : {}),
+            ...(input.project ? { proposal_project_edited_at: editedAt } : {}),
           })}::jsonb`,
           updatedAt: new Date(),
         })

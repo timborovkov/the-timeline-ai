@@ -4622,6 +4622,7 @@ export async function mergeObjects(
       .select()
       .from(entities)
       .where(and(eq(entities.teamId, scope.teamId), inArray(entities.id, ids)))
+      .orderBy(asc(entities.id))
       .for('update');
     if (rows.length !== ids.length) throw new Error('One or more objects no longer exists');
     if (rows.some((row) => row.mergedIntoId))
@@ -5145,7 +5146,12 @@ export async function addRelationship(
           isNull(entities.mergedIntoId),
         ),
       )
-      .orderBy(asc(entities.id))
+      // Project mutations lock the project before linked tasks. Use the same
+      // order here, then UUID order for same-type/generic relationships.
+      .orderBy(
+        sql`CASE WHEN ${entities.type} = 'project' THEN 0 WHEN ${entities.type} = 'task' THEN 1 ELSE 2 END`,
+        asc(entities.id),
+      )
       .for('update');
     if (ends.length !== 2) throw new Error('Both objects must belong to this team');
 

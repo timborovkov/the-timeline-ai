@@ -230,7 +230,7 @@ describe('TaskBoard', () => {
     }
   });
 
-  it('does not expose bulk category editing while the category UI is disabled', () => {
+  it('does not expose the category column or bulk editing while the category UI is disabled', () => {
     render(
       <TaskBoard
         rows={[task()]}
@@ -246,6 +246,8 @@ describe('TaskBoard', () => {
 
     expect(screen.queryByRole('option', { name: 'Category' })).toBeNull();
     expect(screen.queryByRole('combobox', { name: 'Bulk category' })).toBeNull();
+    expect(screen.queryByRole('columnheader', { name: 'Category' })).toBeNull();
+    expect(screen.queryByText('Needs category')).toBeNull();
   });
 
   it('removes an asynchronously-hydrated project from the task card after clearing it', async () => {
