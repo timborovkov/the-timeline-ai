@@ -54,7 +54,7 @@ function challengeValue(payload: unknown): string | null {
 function boardIdFromPayload(payload: unknown): string | null {
   const event = eventRecord(payload);
   if (!event) return null;
-  return idValue(event.boardId);
+  return idValue(event.parentItemBoardId) ?? idValue(event.boardId);
 }
 
 function eventTypeFromPayload(payload: unknown): string {

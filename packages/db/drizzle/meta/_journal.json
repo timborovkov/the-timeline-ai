@@ -419,7 +419,14 @@
       "idx": 59,
       "version": "7",
       "when": 1795653900000,
-      "tag": "0059_task_categories",
+      "tag": "0059_saved_meeting_alias_cleanup",
+      "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "7",
+      "when": 1795653960000,
+      "tag": "0060_task_categories",
       "breakpoints": true
     }
   ]

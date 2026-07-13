@@ -10,6 +10,7 @@ import { drizzle } from 'drizzle-orm/pglite';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import type { SearchHit } from '#src/qdrant/client.js';
+import type { SearchOpts } from '#src/qdrant/client.js';
 
 import { buildAgentTools } from '#src/agent/tools.js';
 import { withTeam } from '#src/team-scope.js';
@@ -41,6 +42,10 @@ const OTHER_TEAM_EVENT = '00000000-0000-0000-0000-000000000404';
 const CI_EVENT_A = '00000000-0000-0000-0000-000000000405';
 const CI_EVENT_B = '00000000-0000-0000-0000-000000000406';
 const MEETING_EVENT_ID = '00000000-0000-0000-0000-000000000407';
+const MONDAY_ITEM_EVENT = '00000000-0000-0000-0000-000000000408';
+const MONDAY_SUBITEM_EVENT = '00000000-0000-0000-0000-000000000409';
+const MONDAY_HELPER_EVENT = '00000000-0000-0000-0000-000000000410';
+const MONDAY_INTEGRATION = '00000000-0000-0000-0000-000000000411';
 const FACT_ID = '10000000-0000-0000-0000-000000000401';
 const TASK_ID = '20000000-0000-0000-0000-000000000401';
 const OBJECT_ID = '20000000-0000-0000-0000-000000000402';
@@ -82,7 +87,20 @@ async function seed(pg: PGlite): Promise<void> {
       ('${OTHER_TEAM_EVENT}', '${TEAM_B}', '${OTHER_USER}', '${OTHER_USER}', 'web', 'Other-team Acme secret.', '2026-06-01T12:00:00Z', 'team', NULL, '{}'::jsonb),
       ('${CI_EVENT_A}', '${TEAM_A}', '${OWNER}', '${OWNER}', 'integration', 'GitHub workflow "CI" #1603 on timborovkov/audit-ai success', '2026-06-27T18:32:00Z', 'team', NULL, '{"provider":"github","event_type":"workflow_run.success","github":{"type":"workflow_run","repo":"timborovkov/audit-ai","head_branch":"main"}}'::jsonb),
       ('${CI_EVENT_B}', '${TEAM_A}', '${OWNER}', '${OWNER}', 'integration', 'GitHub workflow "CI" #1602 on timborovkov/audit-ai success', '2026-06-27T18:08:00Z', 'team', NULL, '{"provider":"github","event_type":"workflow_run.success","github":{"type":"workflow_run","repo":"timborovkov/audit-ai","head_branch":"main"}}'::jsonb),
+      ('${MONDAY_ITEM_EVENT}', '${TEAM_A}', '${OWNER}', '${OWNER}', 'integration', 'Monday item updated on Ext-Faba: Checkout redesign\nStatus: Working on it\nOwner: Fabian', '2026-07-12T12:00:00Z', 'team', NULL, '{"provider":"monday","event_type":"item.updated","monday_board_id":"board-faba","monday_board_name":"Ext-Faba","monday_item_board_id":"board-faba","monday_item_id":"item-faba-1","monday_record_kind":"item"}'::jsonb),
+      ('${MONDAY_SUBITEM_EVENT}', '${TEAM_A}', '${OWNER}', '${OWNER}', 'integration', 'Monday subitem updated on Ext-Faba: Verify checkout analytics\nParent: Checkout redesign\nStatus: Open', '2026-07-12T12:05:00Z', 'team', NULL, '{"provider":"monday","event_type":"subitem.updated","monday_board_id":"board-faba","monday_board_name":"Ext-Faba","monday_item_board_id":"subitems-board-faba","monday_item_id":"subitem-faba-1","monday_parent_item_id":"item-faba-1","monday_record_kind":"subitem"}'::jsonb),
+      ('${MONDAY_HELPER_EVENT}', '${TEAM_A}', '${OWNER}', '${OWNER}', 'integration', 'Monday item updated on Subitems of Ext-Faba: Legacy closed item\nStatus: Done', '2022-07-12T12:05:00Z', 'team', NULL, '{"provider":"monday","event_type":"item.updated","monday_board_id":"subitems-board-faba","monday_board_name":"Subitems of Ext-Faba","monday_item_board_id":"subitems-board-faba","monday_item_id":"legacy-subitem","monday_record_kind":"item"}'::jsonb),
       ('${MEETING_EVENT_ID}', '${TEAM_A}', '${OWNER}', '${OWNER}', 'meeting', 'Acme renewal meeting transcript fallback summary.', '2026-06-02T14:00:00Z', 'team', NULL, '{"meeting_id":"${MEETING_ID}"}'::jsonb);
+
+    INSERT INTO integrations
+      (id, team_id, connected_by_user_id, provider, display_name, external_account_id, enabled)
+    VALUES
+      ('${MONDAY_INTEGRATION}', '${TEAM_A}', '${OWNER}', 'monday', 'Monday eval', 'monday-eval', true);
+
+    INSERT INTO integration_selections
+      (integration_id, selection_kind, external_id, external_label)
+    VALUES
+      ('${MONDAY_INTEGRATION}', 'monday.board', 'board-faba', 'Ext-Faba');
 
     INSERT INTO facts (id, team_id, raw_event_id, statement, confidence, model_version)
     VALUES ('${FACT_ID}', '${TEAM_A}', '${TEAM_EVENT}', 'Acme renewal needs pricing by Friday.', 0.96, 'eval-model');
@@ -147,6 +165,8 @@ async function runToolEval(
   name: AgentEvalToolName,
   input: unknown,
   hits: SearchHit[] = [],
+  onQdrantSearch?: (options: SearchOpts) => void,
+  onEmbed?: () => void,
 ) {
   return runAgentToolEval({
     db: db as never,
@@ -155,6 +175,18 @@ async function runToolEval(
     toolName: name,
     toolInput: input,
     hits,
+    ...(onEmbed
+      ? {
+          embed: ({ text }: { text: string }) => {
+            onEmbed();
+            return Promise.resolve({
+              vector: text.includes('Acme') ? [0.9, 0.1, 0.1] : [0.1, 0.1, 0.1],
+              model: 'eval-embed',
+            });
+          },
+        }
+      : {}),
+    ...(onQdrantSearch ? { onQdrantSearch } : {}),
   });
 }
 
@@ -319,6 +351,240 @@ describe('agent tool evals', () => {
     expect(output.results[1]?.snippet).toContain('<external_content source="integration"');
     expect(evalRun.answer).toContain(`[event:${CI_EVENT_A}]`);
     expect(evalRun.answer).toContain(`[event:${CI_EVENT_B}]`);
+  });
+
+  it('answers monday board questions with parent items and their cited subitems', async () => {
+    // Product behavior: selecting a Monday parent board must make its real items and classic
+    // subitems jointly retrievable. A hidden helper board must never replace the parent board in
+    // the answer, and the agent must not claim there are no open items when cited records exist.
+    const evalRun = await runToolEval(
+      db,
+      OWNER,
+      'search_integration_events',
+      { query: 'open Ext-Faba board items including subitems', provider: 'monday', limit: 10 },
+      [
+        hit(MONDAY_ITEM_EVENT, 0.98, {
+          source: 'integration',
+          occurred_at: '2026-07-12T12:00:00.000Z',
+        }),
+        hit(MONDAY_SUBITEM_EVENT, 0.96, {
+          source: 'integration',
+          occurred_at: '2026-07-12T12:05:00.000Z',
+        }),
+        hit(MONDAY_HELPER_EVENT, 0.94, {
+          source: 'integration',
+          occurred_at: '2022-07-12T12:05:00.000Z',
+        }),
+      ],
+    );
+
+    const output = evalRun.output as {
+      count: number;
+      results: { event_id: string; snippet: string }[];
+    };
+    expect(output.count).toBe(2);
+    expect(output.results.map((result) => result.event_id)).toEqual([
+      MONDAY_ITEM_EVENT,
+      MONDAY_SUBITEM_EVENT,
+    ]);
+    expect(evalRun.answer).toContain('Checkout redesign');
+    expect(evalRun.answer).toContain('Verify checkout analytics');
+    expect(evalRun.answer).toContain('Parent: Checkout redesign');
+    expect(evalRun.answer).toContain(`[event:${MONDAY_ITEM_EVENT}]`);
+    expect(evalRun.answer).toContain(`[event:${MONDAY_SUBITEM_EVENT}]`);
+    expect(evalRun.answer).not.toContain('Subitems of Ext-Faba');
+  });
+
+  it('finds selected monday items when a stale helper-board hit ranks first', async () => {
+    // Product behavior: provider and source-selection filtering must not consume the requested
+    // result budget before valid evidence is considered. Otherwise one stale helper hit can make
+    // the agent report that a selected board has no matching items.
+    const evalRun = await runToolEval(
+      db,
+      OWNER,
+      'search_integration_events',
+      { query: 'Ext-Faba checkout', provider: 'monday', limit: 1 },
+      [
+        hit(MONDAY_HELPER_EVENT, 0.99, {
+          source: 'integration',
+          occurred_at: '2022-07-12T12:05:00.000Z',
+        }),
+        hit(MONDAY_ITEM_EVENT, 0.98, {
+          source: 'integration',
+          occurred_at: '2026-07-12T12:00:00.000Z',
+        }),
+      ],
+    );
+
+    const output = evalRun.output as {
+      count: number;
+      results: { event_id: string }[];
+    };
+    expect(output.count).toBe(1);
+    expect(output.results).toEqual([expect.objectContaining({ event_id: MONDAY_ITEM_EVENT })]);
+    expect(evalRun.answer).toContain('Checkout redesign');
+  });
+
+  it('enforces monday source selections when the provider filter is omitted', async () => {
+    const evalRun = await runToolEval(
+      db,
+      OWNER,
+      'search_integration_events',
+      { query: 'Ext-Faba checkout', limit: 10 },
+      [
+        hit(MONDAY_HELPER_EVENT, 0.99, { source: 'integration' }),
+        hit(MONDAY_ITEM_EVENT, 0.98, { source: 'integration' }),
+      ],
+    );
+
+    const output = evalRun.output as {
+      count: number;
+      results: { event_id: string }[];
+    };
+    expect(output.count).toBe(1);
+    expect(output.results).toEqual([expect.objectContaining({ event_id: MONDAY_ITEM_EVENT })]);
+  });
+
+  it('filters stale monday sources before applying the semantic result limit', async () => {
+    const staleHits = Array.from({ length: 201 }, (_, index) =>
+      hit(MONDAY_HELPER_EVENT, 1 - index / 1000, { source: 'integration' }),
+    );
+    const evalRun = await runToolEval(
+      db,
+      OWNER,
+      'search_integration_events',
+      { query: 'Ext-Faba checkout', provider: 'monday', limit: 1 },
+      [...staleHits, hit(MONDAY_ITEM_EVENT, 0.79, { source: 'integration' })],
+    );
+
+    const output = evalRun.output as {
+      count: number;
+      results: { event_id: string }[];
+    };
+    expect(output.count).toBe(1);
+    expect(output.results).toEqual([expect.objectContaining({ event_id: MONDAY_ITEM_EVENT })]);
+  });
+
+  it('embeds an integration query once while scanning stale semantic pages', async () => {
+    const staleHits = Array.from({ length: 201 }, (_, index) =>
+      hit(MONDAY_HELPER_EVENT, 1 - index / 1000, { source: 'integration' }),
+    );
+    let embeddings = 0;
+
+    const evalRun = await runToolEval(
+      db,
+      OWNER,
+      'search_integration_events',
+      { query: 'Acme Ext-Faba checkout', provider: 'monday', limit: 1 },
+      [...staleHits, hit(MONDAY_ITEM_EVENT, 0.79, { source: 'integration' })],
+      undefined,
+      () => {
+        embeddings += 1;
+      },
+    );
+
+    expect((evalRun.output as { count: number }).count).toBe(1);
+    expect(embeddings).toBe(1);
+  });
+
+  it('finds selected monday items beyond a large stale helper-board corpus', async () => {
+    const staleHits = Array.from({ length: 1_201 }, (_, index) =>
+      hit(MONDAY_HELPER_EVENT, 1 - index / 10_000, { source: 'integration' }),
+    );
+    let qdrantSearches = 0;
+    let searchedEventIds: string[] | undefined;
+
+    const evalRun = await runToolEval(
+      db,
+      OWNER,
+      'search_integration_events',
+      { query: 'Ext-Faba checkout', provider: 'monday', limit: 1 },
+      [...staleHits, hit(MONDAY_ITEM_EVENT, 0.79, { source: 'integration' })],
+      (options) => {
+        qdrantSearches += 1;
+        searchedEventIds = options.eventIds;
+      },
+    );
+
+    const output = evalRun.output as {
+      count: number;
+      results: { event_id: string }[];
+    };
+    expect(output.count).toBe(1);
+    expect(output.results).toEqual([expect.objectContaining({ event_id: MONDAY_ITEM_EVENT })]);
+    expect(qdrantSearches).toBe(1);
+    expect(searchedEventIds).toContain(MONDAY_ITEM_EVENT);
+    expect(searchedEventIds).not.toContain(MONDAY_HELPER_EVENT);
+  });
+
+  it('stops integration retrieval after enough ranked candidates are found', async () => {
+    await pg.exec(`
+      INSERT INTO raw_events
+        (id, team_id, author_user_id, visibility_owner_user_id, source, content_text, occurred_at, visibility, source_metadata)
+      SELECT
+        ('70000000-0000-4000-8000-' || lpad(series::text, 12, '0'))::uuid,
+        '${TEAM_A}'::uuid,
+        '${OWNER}'::uuid,
+        '${OWNER}'::uuid,
+        'integration',
+        'Older selected Monday item ' || series::text,
+        '2025-01-01T00:00:00Z'::timestamptz + series * interval '1 second',
+        'team',
+        '{"provider":"monday","monday_board_id":"board-faba"}'::jsonb
+      FROM generate_series(1, 2001) AS series;
+    `);
+    let qdrantSearches = 0;
+
+    const evalRun = await runToolEval(
+      db,
+      OWNER,
+      'search_integration_events',
+      { query: 'Ext-Faba checkout', provider: 'monday', limit: 1 },
+      [hit(MONDAY_ITEM_EVENT, 0.99, { source: 'integration' })],
+      () => {
+        qdrantSearches += 1;
+      },
+    );
+
+    const output = evalRun.output as { count: number };
+    expect(output.count).toBe(1);
+    expect(qdrantSearches).toBe(1);
+  });
+
+  it('bounds provider-filtered integration candidates and reports truncation', async () => {
+    await pg.exec(`
+      INSERT INTO raw_events
+        (id, team_id, author_user_id, visibility_owner_user_id, source, content_text, occurred_at, visibility, source_metadata)
+      SELECT
+        ('71000000-0000-4000-8000-' || lpad(series::text, 12, '0'))::uuid,
+        '${TEAM_A}'::uuid,
+        '${OWNER}'::uuid,
+        '${OWNER}'::uuid,
+        'integration',
+        'Historical GitHub event ' || series::text,
+        '2025-01-01T00:00:00Z'::timestamptz + series * interval '1 second',
+        'team',
+        '{"provider":"github"}'::jsonb
+      FROM generate_series(1, 10001) AS series;
+    `);
+    let searchedEventIds: string[] | undefined;
+
+    const evalRun = await runToolEval(
+      db,
+      OWNER,
+      'search_integration_events',
+      { query: 'CI audit-ai', provider: 'github', limit: 1 },
+      [hit(CI_EVENT_A, 0.95, { source: 'integration' })],
+      (options) => {
+        searchedEventIds = options.eventIds;
+      },
+    );
+
+    const output = evalRun.output as { count: number; truncated: boolean };
+    expect(output.count).toBe(1);
+    expect(output.truncated).toBe(true);
+    expect(searchedEventIds).toHaveLength(10_000);
+    expect(searchedEventIds).toContain(CI_EVENT_A);
   });
 
   it('answers document questions with cited chunk evidence', async () => {

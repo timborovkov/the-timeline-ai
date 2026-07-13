@@ -11,6 +11,12 @@ const fakes = vi.hoisted(() => {
   const reserved = vi.fn(() => Promise.resolve([{ locked: true }])) as unknown as {
     (strings: TemplateStringsArray, ...values: unknown[]): Promise<{ locked: boolean }[]>;
     mockClear: () => void;
+    mockImplementation: (
+      implementation: (
+        strings: TemplateStringsArray,
+        ...values: unknown[]
+      ) => Promise<{ locked: boolean }[]>,
+    ) => void;
     release: ReturnType<typeof vi.fn>;
   };
   reserved.release = vi.fn();
@@ -377,6 +383,42 @@ describe('runOneIntegration attention classification', () => {
         },
       }),
     );
+  });
+
+  it('queues an immediate targeted continuation when a provider has more resource pages', async () => {
+    let lockHeld = false;
+    fakes.reserved.mockImplementation((strings: TemplateStringsArray) => {
+      const query = strings.join('');
+      if (query.includes('pg_try_advisory_lock')) {
+        lockHeld = true;
+        return Promise.resolve([{ locked: true }]);
+      }
+      if (query.includes('pg_advisory_unlock')) lockHeld = false;
+      return Promise.resolve([]);
+    });
+    fakes.adminLoadIntegration.mockResolvedValueOnce({ ...integration, provider: 'monday' });
+    fakes.adminListSelections.mockResolvedValueOnce([
+      { kind: 'monday.board', externalId: 'board-1' },
+    ]);
+    fakes.incrementalSync.mockResolvedValueOnce({
+      continuations: [{ resourceType: 'monday.board', externalId: 'board-1' }],
+    });
+    fakes.enqueueIntegrationSyncJob.mockImplementationOnce(() => {
+      expect(lockHeld).toBe(false);
+      return Promise.resolve();
+    });
+
+    await runOneIntegration({} as never, INTEGRATION_ID, 'incremental');
+
+    expect(fakes.enqueueIntegrationSyncJob).toHaveBeenCalledWith({
+      kind: 'targeted',
+      integrationId: INTEGRATION_ID,
+      teamId: TEAM_ID,
+      triggeredBy: 'reconcile',
+      resourceType: 'monday.board',
+      externalId: 'board-1',
+      reason: 'provider_pagination_continuation',
+    });
   });
 
   it('keeps legacy Monday connections syncing while surfacing reconnect for missing scopes', async () => {

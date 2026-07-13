@@ -209,6 +209,27 @@ async function seedIntegrationHealthState(): Promise<void> {
 async function cleanupIntegrationManageSeed(): Promise<void> {
   const sql = getDbClient();
   await sql`
+    DELETE FROM connection_attention
+    WHERE team_id = ${e2eTeam.id}
+      AND (
+        integration_id IN (
+          SELECT id FROM integrations
+          WHERE team_id = ${e2eTeam.id}
+            AND display_name LIKE ${`${MANAGE_PREFIX}%`}
+        )
+        OR resource_share_id IN (
+          SELECT id FROM team_provider_resource_shares
+          WHERE team_id = ${e2eTeam.id}
+            AND external_label LIKE ${`${MANAGE_PREFIX}%`}
+        )
+        OR provider_connection_id IN (
+          SELECT id FROM provider_connections
+          WHERE owner_user_id = ${e2eUsers.owner.id}
+            AND external_account_id LIKE ${`${MANAGE_EXTERNAL_PREFIX}%`}
+        )
+      )
+  `;
+  await sql`
     DELETE FROM integrations
     WHERE team_id = ${e2eTeam.id}
       AND display_name LIKE ${`${MANAGE_PREFIX}%`}
@@ -337,7 +358,9 @@ function signProviderOAuthState(): string {
   return `${payloadB64}.${sig}`;
 }
 
-async function seedSourceListingState(): Promise<{ connectionId: string }> {
+async function seedSourceListingState(
+  provider: 'github' | 'monday' = 'github',
+): Promise<{ connectionId: string }> {
   const sql = getDbClient();
   await cleanupSourceListingSeed();
 
@@ -357,9 +380,9 @@ async function seedSourceListingState(): Promise<{ connectionId: string }> {
     VALUES (
       ${connectionId},
       ${e2eUsers.owner.id},
-      'github',
-      ${`${SOURCE_LISTING_PREFIX} GitHub account`},
-      ${`${SOURCE_LISTING_EXTERNAL_PREFIX}-github-account`},
+      ${provider},
+      ${`${SOURCE_LISTING_PREFIX} ${provider === 'monday' ? 'Monday.com' : 'GitHub'} account`},
+      ${`${SOURCE_LISTING_EXTERNAL_PREFIX}-${provider}-account`},
       ARRAY['repo'],
       ${Buffer.from('ciphertext')},
       ${Buffer.from('iv')},
@@ -1047,6 +1070,67 @@ test.describe.serial('provider-backed source listing', () => {
     ]);
     await expect.poll(() => getCount).toBeGreaterThanOrEqual(2);
   });
+
+  test('shows only real Monday boards and removes a stale helper-board share', async ({ page }) => {
+    const { connectionId } = await seedSourceListingState('monday');
+    const accountLabel = `${SOURCE_LISTING_PREFIX} Monday.com account`;
+    const parentLabel = `${SOURCE_LISTING_PREFIX} parent board`;
+    let savedResources: unknown[] | null = null;
+
+    await page.route(`**/api/connections/${connectionId}/resources`, async (route) => {
+      if (route.request().method() === 'PUT') {
+        const body = route.request().postDataJSON() as { resources?: unknown[] };
+        savedResources = body.resources ?? [];
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ ok: true }),
+        });
+        return;
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          connection: { id: connectionId, provider: 'monday', displayName: accountLabel },
+          resources: [{ kind: 'monday.board', externalId: 'board-parent', label: parentLabel }],
+          shares: [
+            {
+              id: 'stale-helper-share',
+              providerConnectionId: connectionId,
+              resourceKind: 'monday.board',
+              externalId: 'board-helper',
+              externalLabel: `Subitems of ${parentLabel}`,
+              revokedAt: null,
+            },
+          ],
+        }),
+      });
+    });
+
+    await signIn(page, e2eUsers.owner.email);
+    await page.goto('/app/me/connections');
+
+    const accountCard = page
+      .locator('section.rounded-md')
+      .filter({ hasText: accountLabel })
+      .first();
+    await expect(accountCard.getByText(parentLabel)).toBeVisible();
+    await expect(accountCard.getByText(`Subitems of ${parentLabel}`)).toHaveCount(0);
+    await clickSourceCheckbox(accountCard, parentLabel);
+    await Promise.all([
+      page.waitForResponse(
+        (response) =>
+          response.url().includes(`/api/connections/${connectionId}/resources`) &&
+          response.request().method() === 'PUT',
+      ),
+      accountCard.getByRole('button', { name: 'Save sharing' }).click(),
+    ]);
+
+    expect(savedResources).toEqual([
+      { kind: 'monday.board', externalId: 'board-parent', label: parentLabel },
+    ]);
+  });
 });
 
 test('starts native provider OAuth from the integrations catalog', async ({ page }) => {
@@ -1087,9 +1171,9 @@ test('renders native provider OAuth callback denial in the browser', async ({ pa
 
   await page.goto('/api/integrations/github/callback?error=access_denied');
 
-  await expect(page).toHaveURL(/\/app\/team\/integrations\?error=access_denied$/);
+  await expect(page).toHaveURL(/\/app\/team\/integrations\?error=oauth_denied$/);
   await expect(page.getByRole('heading', { name: 'Team integrations', level: 1 })).toBeVisible();
-  await expect(page.getByText('access_denied', { exact: true }).first()).toBeVisible();
+  await expect(page.getByText('oauth_denied', { exact: true }).first()).toBeVisible();
   await expect(page.getByText('GitHub', { exact: true }).first()).toBeVisible();
 });
 

@@ -53,7 +53,9 @@ export default defineConfig({
           include: integrationTests,
           environment: 'node',
           fileParallelism: false,
-          testTimeout: 15_000,
+          // PGlite-backed tests apply the full migration chain per harness.
+          // Leave headroom when workspace suites contend for CPU in CI.
+          testTimeout: 30_000,
           hookTimeout: 60_000,
           env,
           onConsoleLog: filterExpectedTestConsole,
