@@ -491,6 +491,8 @@ describe('agent tool evals', () => {
     const staleHits = Array.from({ length: 1_201 }, (_, index) =>
       hit(MONDAY_HELPER_EVENT, 1 - index / 10_000, { source: 'integration' }),
     );
+    let qdrantSearches = 0;
+    let searchedEventIds: string[] | undefined;
 
     const evalRun = await runToolEval(
       db,
@@ -498,6 +500,10 @@ describe('agent tool evals', () => {
       'search_integration_events',
       { query: 'Ext-Faba checkout', provider: 'monday', limit: 1 },
       [...staleHits, hit(MONDAY_ITEM_EVENT, 0.79, { source: 'integration' })],
+      (options) => {
+        qdrantSearches += 1;
+        searchedEventIds = options.eventIds;
+      },
     );
 
     const output = evalRun.output as {
@@ -506,6 +512,9 @@ describe('agent tool evals', () => {
     };
     expect(output.count).toBe(1);
     expect(output.results).toEqual([expect.objectContaining({ event_id: MONDAY_ITEM_EVENT })]);
+    expect(qdrantSearches).toBe(1);
+    expect(searchedEventIds).toContain(MONDAY_ITEM_EVENT);
+    expect(searchedEventIds).not.toContain(MONDAY_HELPER_EVENT);
   });
 
   it('stops integration retrieval after enough ranked candidates are found', async () => {
@@ -540,6 +549,42 @@ describe('agent tool evals', () => {
     const output = evalRun.output as { count: number };
     expect(output.count).toBe(1);
     expect(qdrantSearches).toBe(1);
+  });
+
+  it('bounds provider-filtered integration candidates and reports truncation', async () => {
+    await pg.exec(`
+      INSERT INTO raw_events
+        (id, team_id, author_user_id, visibility_owner_user_id, source, content_text, occurred_at, visibility, source_metadata)
+      SELECT
+        ('71000000-0000-4000-8000-' || lpad(series::text, 12, '0'))::uuid,
+        '${TEAM_A}'::uuid,
+        '${OWNER}'::uuid,
+        '${OWNER}'::uuid,
+        'integration',
+        'Historical GitHub event ' || series::text,
+        '2025-01-01T00:00:00Z'::timestamptz + series * interval '1 second',
+        'team',
+        '{"provider":"github"}'::jsonb
+      FROM generate_series(1, 10001) AS series;
+    `);
+    let searchedEventIds: string[] | undefined;
+
+    const evalRun = await runToolEval(
+      db,
+      OWNER,
+      'search_integration_events',
+      { query: 'CI audit-ai', provider: 'github', limit: 1 },
+      [hit(CI_EVENT_A, 0.95, { source: 'integration' })],
+      (options) => {
+        searchedEventIds = options.eventIds;
+      },
+    );
+
+    const output = evalRun.output as { count: number; truncated: boolean };
+    expect(output.count).toBe(1);
+    expect(output.truncated).toBe(true);
+    expect(searchedEventIds).toHaveLength(10_000);
+    expect(searchedEventIds).toContain(CI_EVENT_A);
   });
 
   it('answers document questions with cited chunk evidence', async () => {

@@ -265,6 +265,8 @@ export interface SearchEventsInput {
     | 'slack'
     | 'ingest_webhook';
   entityIds?: string[];
+  /** Restrict semantic search to caller-authorized raw event ids. */
+  eventIds?: string[];
   /** Zero-based semantic-result offset for bounded candidate pagination. */
   offset?: number;
   /** Reports the raw semantic page size so internal paginated callers can detect exhaustion. */
@@ -284,6 +286,18 @@ export interface SearchEventsInput {
   senderHandle?: string;
   senderSource?: 'telegram' | 'slack' | 'email';
   limit?: number;
+}
+
+export interface ListIntegrationSearchEventIdsInput {
+  provider?: 'google_drive' | 'linear' | 'github' | 'monday' | 'slack' | 'sentry';
+  mondayBoardIds?: string[];
+  mondayDocIds?: string[];
+  limit: number;
+}
+
+export interface IntegrationSearchEventIds {
+  eventIds: string[];
+  truncated: boolean;
 }
 
 export interface PaginatedResult<T> {
@@ -558,6 +572,57 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
           activeRawEventFilter,
         ),
       );
+  }
+
+  async function listIntegrationSearchEventIdsImpl(
+    input: ListIntegrationSearchEventIdsInput,
+  ): Promise<IntegrationSearchEventIds> {
+    await ensureMember();
+    const mondaySelectionConditions = [
+      input.mondayBoardIds && input.mondayBoardIds.length > 0
+        ? inArray(
+            sql<string>`COALESCE(${rawEvents.sourceMetadata} ->> 'monday_parent_board_id', ${rawEvents.sourceMetadata} ->> 'monday_board_id')`,
+            input.mondayBoardIds,
+          )
+        : undefined,
+      input.mondayDocIds && input.mondayDocIds.length > 0
+        ? inArray(sql<string>`${rawEvents.sourceMetadata} ->> 'monday_doc_id'`, input.mondayDocIds)
+        : undefined,
+    ].filter((condition): condition is NonNullable<typeof condition> => Boolean(condition));
+    const mondaySelectionCondition =
+      mondaySelectionConditions.length > 0 ? or(...mondaySelectionConditions) : undefined;
+    const conditions = [
+      eq(rawEvents.teamId, teamId),
+      visibilityFilter,
+      activeRawEventFilter,
+      eq(rawEvents.source, 'integration'),
+    ];
+    if (input.provider === 'monday') {
+      if (!mondaySelectionCondition) return { eventIds: [], truncated: false };
+      conditions.push(
+        sql`${rawEvents.sourceMetadata} ->> 'provider' = 'monday'`,
+        mondaySelectionCondition,
+      );
+    } else if (input.provider) {
+      conditions.push(sql`${rawEvents.sourceMetadata} ->> 'provider' = ${input.provider}`);
+    } else if (mondaySelectionCondition) {
+      conditions.push(
+        sql`(${rawEvents.sourceMetadata} ->> 'provider' IS DISTINCT FROM 'monday' OR (${rawEvents.sourceMetadata} ->> 'provider' = 'monday' AND ${mondaySelectionCondition}))`,
+      );
+    } else {
+      conditions.push(sql`${rawEvents.sourceMetadata} ->> 'provider' IS DISTINCT FROM 'monday'`);
+    }
+
+    const rows = await db
+      .select({ id: rawEvents.id })
+      .from(rawEvents)
+      .where(and(...conditions))
+      .orderBy(desc(rawEvents.occurredAt), desc(rawEvents.id))
+      .limit(input.limit + 1);
+    return {
+      eventIds: rows.slice(0, input.limit).map((row) => row.id),
+      truncated: rows.length > input.limit,
+    };
   }
 
   function displayNameForVisibleArtifactEvidence(row: {
@@ -2343,6 +2408,8 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
        */
       getEventsByIds: getEventsByIdsImpl,
 
+      listIntegrationSearchEventIds: listIntegrationSearchEventIdsImpl,
+
       async removeConversationalMessage(id: string): Promise<boolean> {
         const role = await ensureMember();
         const removedIds = await db.transaction(async (tx) => {
@@ -2991,6 +3058,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
 
         const vector = input.queryVector ?? (await embedFn({ text: input.query })).vector;
         if (input.source && input.senderSource && input.source !== input.senderSource) return [];
+        if (input.eventIds?.length === 0) return [];
 
         const searchOpts: SearchOpts = {
           limit: input.limit ?? 20,
@@ -3001,6 +3069,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
         const sourceFilter = input.source ?? input.senderSource;
         if (sourceFilter) searchOpts.source = sourceFilter;
         if (input.entityIds) searchOpts.entityIds = input.entityIds;
+        if (input.eventIds) searchOpts.eventIds = input.eventIds;
         // Timeline search includes event-backed captured-file representations
         // by default. Curated documents stay in search_documents.
         if (input.sourceKind) {

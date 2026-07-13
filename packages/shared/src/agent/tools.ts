@@ -43,7 +43,7 @@ interface AgentToolOptions {
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const INTEGRATION_SEARCH_BATCH_SIZE = 100;
+const INTEGRATION_SEARCH_MAX_EVENT_IDS = 10_000;
 
 const sourceKindSchema = z.enum([
   'raw_event',
@@ -2633,55 +2633,21 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
             }
           }
 
-          const filtered: Awaited<ReturnType<typeof scope.timeline.searchEvents>> = [];
-          const seenEventIds = new Set<string>();
-          const queryVector = await scope.timeline.embedEventQuery(parsed.query);
-          for (
-            let offset = 0;
-            filtered.length < requestedLimit;
-            offset += INTEGRATION_SEARCH_BATCH_SIZE
-          ) {
-            let candidateCount = 0;
-            const hits = await scope.timeline.searchEvents({
-              query: parsed.query,
-              queryVector,
-              source: 'integration',
-              limit: INTEGRATION_SEARCH_BATCH_SIZE,
-              offset,
-              onCandidateCount: (count) => {
-                candidateCount = count;
-              },
-            });
-            if (hits.length > 0) {
-              const rows = await scope.timeline.getEventsByIds(hits.map((hit) => hit.eventId));
-              const metadataById = new Map(
-                rows.map((row) => [
-                  row.id,
-                  (row.sourceMetadata as Record<string, unknown> | null) ?? {},
-                ]),
-              );
-              for (const hit of hits) {
-                if (hit.source !== 'integration' || seenEventIds.has(hit.eventId)) continue;
-                const metadata = metadataById.get(hit.eventId) ?? {};
-                const provider = metadata.provider;
-                if (parsed.provider && provider !== parsed.provider) continue;
-                if (provider === 'monday') {
-                  const boardId = metadata.monday_parent_board_id ?? metadata.monday_board_id;
-                  const docId = metadata.monday_doc_id;
-                  const selected =
-                    (typeof boardId === 'string' && selectedBoardIds.has(boardId)) ||
-                    (typeof docId === 'string' && selectedDocIds.has(docId));
-                  if (!selected) continue;
-                }
-                seenEventIds.add(hit.eventId);
-                filtered.push(hit);
-                if (filtered.length >= requestedLimit) break;
-              }
-            }
-            if (candidateCount < INTEGRATION_SEARCH_BATCH_SIZE) break;
-          }
+          const candidates = await scope.timeline.listIntegrationSearchEventIds({
+            ...(parsed.provider ? { provider: parsed.provider } : {}),
+            mondayBoardIds: [...selectedBoardIds],
+            mondayDocIds: [...selectedDocIds],
+            limit: INTEGRATION_SEARCH_MAX_EVENT_IDS,
+          });
+          const filtered = await scope.timeline.searchEvents({
+            query: parsed.query,
+            source: 'integration',
+            eventIds: candidates.eventIds,
+            limit: requestedLimit,
+          });
           return {
             count: filtered.length,
+            truncated: candidates.truncated,
             results: filtered.map((r) => ({
               event_id: r.eventId,
               occurred_at: r.occurredAt,

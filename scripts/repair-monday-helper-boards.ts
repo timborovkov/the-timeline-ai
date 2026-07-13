@@ -1,7 +1,10 @@
 import { existsSync, readFileSync } from 'node:fs';
 
 import { closeDb, getDb } from '@timeline/db';
-import { adminReconcileIntegrationWebhookSubscriptions } from '@timeline/shared/integrations';
+import {
+  adminReconcileIntegrationWebhookSubscriptions,
+  classifyMondayBoardResponse,
+} from '@timeline/shared/integrations';
 import { withTeam } from '@timeline/shared/team-scope';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
@@ -42,8 +45,12 @@ function requiredUuid(name: string): string {
   return value;
 }
 
-async function discoverHelperBoardIds(accessToken: string, boardIds: string[]): Promise<string[]> {
+async function discoverHelperBoardIds(
+  accessToken: string,
+  boardIds: string[],
+): Promise<{ helperBoardIds: string[]; missingBoardIds: string[] }> {
   const helperIds: string[] = [];
+  const missingBoardIds: string[] = [];
   for (let offset = 0; offset < boardIds.length; offset += 100) {
     const ids = boardIds.slice(offset, offset + 100);
     const response = await fetch('https://api.monday.com/v2', {
@@ -68,11 +75,11 @@ async function discoverHelperBoardIds(accessToken: string, boardIds: string[]): 
     if (!response.ok || body.errors?.length) {
       throw new Error(`Monday board classification failed (${String(response.status)})`);
     }
-    for (const board of body.data?.boards ?? []) {
-      if (board.type === 'sub_items_board') helperIds.push(String(board.id));
-    }
+    const classification = classifyMondayBoardResponse(ids, body.data?.boards ?? []);
+    helperIds.push(...classification.helperBoardIds);
+    missingBoardIds.push(...classification.missingBoardIds);
   }
-  return helperIds;
+  return { helperBoardIds: helperIds, missingBoardIds };
 }
 
 const envFile = argValue('--env-file') ?? '.env';
@@ -88,7 +95,11 @@ try {
   await scope.requireMembership('admin');
   const sources = await scope.integrations.listMondayHelperRepairSources();
   const discoveredHelperIds: string[] = [];
-  const unverifiedSources: { credentialKind: string; credentialId: string }[] = [];
+  const unverifiedSources: {
+    credentialKind: string;
+    credentialId: string;
+    missingBoardIds?: string[];
+  }[] = [];
   for (const source of sources) {
     const tokens =
       source.credentialKind === 'provider_connection'
@@ -102,7 +113,15 @@ try {
       });
       continue;
     }
-    discoveredHelperIds.push(...(await discoverHelperBoardIds(accessToken, source.boardIds)));
+    const discovery = await discoverHelperBoardIds(accessToken, source.boardIds);
+    discoveredHelperIds.push(...discovery.helperBoardIds);
+    if (discovery.missingBoardIds.length > 0) {
+      unverifiedSources.push({
+        credentialKind: source.credentialKind,
+        credentialId: source.credentialId,
+        missingBoardIds: discovery.missingBoardIds,
+      });
+    }
   }
   const helperBoardIds = [...new Set([...discoveredHelperIds, ...argValues('--helper-board-id')])];
   if (apply && unverifiedSources.length > 0 && !args.includes('--allow-unverified')) {

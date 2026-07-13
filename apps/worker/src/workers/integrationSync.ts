@@ -353,6 +353,7 @@ export async function runOneIntegration(
     reserved.release();
     return;
   }
+  const continuationJobs: Extract<queue.IntegrationSyncJobData, { kind: 'targeted' }>[] = [];
   try {
     const integration = await integrationsLib.adminLoadIntegration(db, integrationId);
     if (!integration) {
@@ -623,7 +624,7 @@ export async function runOneIntegration(
         });
       }
       for (const continuation of syncResult?.continuations ?? []) {
-        await queue.enqueueIntegrationSyncJob({
+        continuationJobs.push({
           kind: 'targeted',
           integrationId,
           teamId: integration.teamId,
@@ -718,6 +719,9 @@ export async function runOneIntegration(
       // the lock is auto-released by Postgres anyway.
     }
     reserved.release();
+  }
+  for (const continuationJob of continuationJobs) {
+    await queue.enqueueIntegrationSyncJob(continuationJob);
   }
 }
 
