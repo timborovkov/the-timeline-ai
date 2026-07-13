@@ -3626,12 +3626,12 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     try {
       await objects.updateObject(existing.id, patch, { kind: 'agent', userId: null });
       if (type === 'task') {
-        if (!userOverrides.has('primaryProjectId')) {
-          await objects.setTaskProject(existing.id, project?.id ?? null, {
-            kind: 'agent',
-            userId: null,
-          });
-        }
+        await objects.setTaskProject(
+          existing.id,
+          project?.id ?? null,
+          { kind: 'agent', userId: null },
+          { preserveUserChangesAfter: taskProposalFieldRevisionBoundary(item, 'primaryProjectId') },
+        );
         await archiveOrphanedSuggestedProjects(item);
         if (!userOverrides.has('taskCategory')) {
           await applyProposedTaskCategory(existing.id, parsed);
@@ -3648,13 +3648,6 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     item: typeof agentSuggestionItems.$inferSelect,
     taskId: string,
   ): Promise<Set<string>> {
-    const metadata = recordFromUnknown(item.metadata);
-    const revisionBoundary = (key: string): Date => {
-      const value = metadata[key];
-      return typeof value === 'string' && !Number.isNaN(Date.parse(value))
-        ? new Date(value)
-        : item.createdAt;
-    };
     const rows = await db
       .select({ field: objectChanges.field, changedAt: objectChanges.changedAt })
       .from(objectChanges)
@@ -3670,14 +3663,26 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       );
     return new Set(
       rows.flatMap((row) => {
-        const boundary = revisionBoundary(
-          row.field === 'primaryProjectId'
-            ? 'proposal_project_edited_at'
-            : 'proposal_category_edited_at',
+        const boundary = taskProposalFieldRevisionBoundary(
+          item,
+          row.field === 'primaryProjectId' ? 'primaryProjectId' : 'taskCategory',
         );
         return row.changedAt > boundary ? [row.field] : [];
       }),
     );
+  }
+
+  function taskProposalFieldRevisionBoundary(
+    item: typeof agentSuggestionItems.$inferSelect,
+    field: 'primaryProjectId' | 'taskCategory',
+  ): Date {
+    const metadata = recordFromUnknown(item.metadata);
+    const key =
+      field === 'primaryProjectId' ? 'proposal_project_edited_at' : 'proposal_category_edited_at';
+    const value = metadata[key];
+    return typeof value === 'string' && !Number.isNaN(Date.parse(value))
+      ? new Date(value)
+      : item.createdAt;
   }
 
   async function resolveSuggestedTaskProject(
@@ -3847,7 +3852,12 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       return;
     }
     const input = await objects.getTaskCategoryClassificationInput(taskId);
-    if (input?.requestedInputHash !== payload.taskCategoryInputHash) return;
+    if (
+      input?.requestedInputHash !== payload.taskCategoryInputHash ||
+      input.inputHash !== payload.taskCategoryInputHash
+    ) {
+      return;
+    }
     await objects.applyTaskCategoryClassification({
       taskId,
       inputHash: payload.taskCategoryInputHash,

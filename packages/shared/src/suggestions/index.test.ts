@@ -3890,6 +3890,66 @@ describe('suggestion scope', () => {
     });
   });
 
+  it('keeps a proposed task pending when its current category packet no longer matches', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const project = await scope.objects.createObject({
+      type: 'project',
+      canonicalName: 'Original category project',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const packet = buildTaskCategoryPacket({
+      title: 'Prepare renamed project wireframes',
+      primaryProjectName: project.canonicalName,
+    });
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Create task with changing category context',
+      dedupeKey: 'create-task-current-category-hash',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Prepare renamed project wireframes',
+          dedupeKey: 'create-task-current-category-hash:item',
+          proposedPayload: {
+            canonicalName: 'Prepare renamed project wireframes',
+            parentObjectId: project.id,
+            projectName: project.canonicalName,
+            taskCategory: 'design',
+            taskCategoryConfidence: 0.97,
+            taskCategoryModel: 'test-category-model',
+            taskCategoryMode: 'automatic',
+            taskCategoryInputHash: taskCategoryInputHash(
+              packet,
+              TIMELINE_MODELS.taskCategorization.id,
+            ),
+            taskCategoryTaxonomyVersion: 'task-categories-v1',
+          },
+        },
+      ],
+    });
+    const itemId = bundle.items[0]?.id ?? '';
+    const task = await scope.objects.createObject({
+      type: 'task',
+      canonicalName: 'Prepare renamed project wireframes',
+      parentObjectId: project.id,
+      metadata: { agent_suggestion_item_id: itemId },
+      actor: { kind: 'agent', userId: null },
+    });
+    await db
+      .update(entities)
+      .set({ canonicalName: 'Renamed category project' })
+      .where(eq(entities.id, project.id));
+
+    await expect(scope.suggestions.acceptSuggestionItem(itemId)).resolves.toBe(true);
+
+    await expect(scope.objects.getObject(task.id)).resolves.toMatchObject({
+      taskCategory: null,
+      taskCategoryMode: 'automatic',
+      taskCategoryStatus: 'pending',
+    });
+  });
+
   it('lets a reviewer replace the proposed category and project before acceptance', async () => {
     const scope = withTeam(db as never, TEAM_ID, USER_ID);
     const project = await scope.objects.createObject({
@@ -4064,6 +4124,79 @@ describe('suggestion scope', () => {
       taskCategoryMode: 'manual',
       taskCategorySource: 'user',
     });
+  });
+
+  it('preserves a human project edit made while a created task retry is applying', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const [proposedProject, humanProject] = await Promise.all([
+      scope.objects.createObject({
+        type: 'project',
+        canonicalName: 'Concurrent proposed project',
+        actor: { kind: 'user', userId: USER_ID },
+      }),
+      scope.objects.createObject({
+        type: 'project',
+        canonicalName: 'Concurrent human project',
+        actor: { kind: 'user', userId: USER_ID },
+      }),
+    ]);
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Retry task during a human project edit',
+      dedupeKey: 'retry-task-concurrent-human-project',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Retry task during a human project edit',
+          dedupeKey: 'retry-task-concurrent-human-project:item',
+          proposedPayload: {
+            canonicalName: 'Retry task during a human project edit',
+            parentObjectId: proposedProject.id,
+            projectName: proposedProject.canonicalName,
+          },
+        },
+      ],
+    });
+    const itemId = bundle.items[0]?.id ?? '';
+    const task = await scope.objects.createObject({
+      type: 'task',
+      canonicalName: 'Retry task during a human project edit',
+      parentObjectId: proposedProject.id,
+      metadata: { agent_suggestion_item_id: itemId },
+      actor: { kind: 'agent', userId: null },
+    });
+    await db
+      .update(agentSuggestionItems)
+      .set({
+        status: 'failed',
+        createdAt: new Date('2020-01-01T00:00:00.000Z'),
+        resolvedAt: null,
+        resolvedByUserId: null,
+      })
+      .where(eq(agentSuggestionItems.id, itemId));
+
+    const setTaskProject = scope.objects.setTaskProject;
+    let injectedHumanEdit = false;
+    const setTaskProjectSpy = vi
+      .spyOn(scope.objects, 'setTaskProject')
+      .mockImplementation(async (...args) => {
+        const [taskId, , actor] = args;
+        if (!injectedHumanEdit && actor.kind === 'agent') {
+          injectedHumanEdit = true;
+          await setTaskProject(taskId, humanProject.id, { kind: 'user', userId: USER_ID });
+        }
+        return setTaskProject(...args);
+      });
+    try {
+      await expect(scope.suggestions.acceptSuggestionItem(itemId)).resolves.toBe(true);
+    } finally {
+      setTaskProjectSpy.mockRestore();
+    }
+
+    await expect(scope.objects.listPrimaryProjectsForTasks([task.id])).resolves.toEqual([
+      expect.objectContaining({ projectId: humanProject.id }),
+    ]);
   });
 
   it('preserves a suggestion-created project with an outbound relationship on retry', async () => {

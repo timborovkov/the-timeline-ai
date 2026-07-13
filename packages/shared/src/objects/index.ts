@@ -53,6 +53,7 @@ import {
   desc,
   eq,
   exists,
+  gt,
   gte,
   inArray,
   isNotNull,
@@ -5404,6 +5405,7 @@ export async function setTaskProject(
   taskId: string,
   projectId: string | null,
   actor: UpdateActor,
+  options?: { preserveUserChangesAfter?: Date },
 ): Promise<{ changed: boolean; project: TaskPrimaryProjectRow | null; touchedIds: string[] }> {
   await scope.requireMembership();
   if (!UUID_RE.test(taskId) || (projectId !== null && !UUID_RE.test(projectId))) {
@@ -5441,6 +5443,7 @@ export async function setTaskProject(
         id: entityRelationships.id,
         projectId: entityRelationships.toEntityId,
         projectName: entities.canonicalName,
+        archivedAt: entities.archivedAt,
       })
       .from(entityRelationships)
       .innerJoin(
@@ -5460,6 +5463,39 @@ export async function setTaskProject(
         ),
       )
       .for('update', { of: entityRelationships });
+
+    if (actor.kind === 'agent' && options?.preserveUserChangesAfter) {
+      const [userOverride] = await tx
+        .select({ id: objectChanges.id })
+        .from(objectChanges)
+        .where(
+          and(
+            eq(objectChanges.teamId, scope.teamId),
+            eq(objectChanges.entityId, taskId),
+            eq(objectChanges.actorKind, 'user'),
+            eq(objectChanges.status, 'applied'),
+            eq(objectChanges.field, 'primaryProjectId'),
+            gt(objectChanges.changedAt, options.preserveUserChangesAfter),
+          ),
+        )
+        .limit(1);
+      if (userOverride) {
+        const current = existing.length === 1 ? existing[0] : null;
+        return {
+          changed: false,
+          project: current
+            ? {
+                taskId,
+                projectId: current.projectId,
+                projectName: current.projectName,
+                archivedAt: current.archivedAt,
+              }
+            : null,
+          touchedIds: [] as string[],
+          requestedCategoryHash: null as string | null,
+        };
+      }
+    }
 
     if (
       (existing.length === 0 && projectId === null) ||
@@ -8323,8 +8359,12 @@ export function createObjectScope(db: Db, scope: TeamScopeCore) {
     listPrimaryProjectsForTasks: (taskIds: string[]) =>
       listPrimaryProjectsForTasks(db, scope, taskIds),
     auditTaskPrimaryProjectEdges: () => auditTaskPrimaryProjectEdges(db, scope),
-    setTaskProject: (taskId: string, projectId: string | null, actor: UpdateActor) =>
-      setTaskProject(db, scope, taskId, projectId, actor),
+    setTaskProject: (
+      taskId: string,
+      projectId: string | null,
+      actor: UpdateActor,
+      options?: Parameters<typeof setTaskProject>[5],
+    ) => setTaskProject(db, scope, taskId, projectId, actor, options),
     getTaskCategoryClassificationInput: (taskId: string) =>
       getTaskCategoryClassificationInput(db, scope, taskId),
     refreshTaskCategoryClassificationRequest: (taskId: string, expectedInputHash: string) =>

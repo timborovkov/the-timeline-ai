@@ -1,3 +1,5 @@
+import { pathToFileURL } from 'node:url';
+
 import { closeDb, getDb } from '@timeline/db';
 import { queue } from '@timeline/shared';
 import { getEnv } from '@timeline/shared/env';
@@ -14,6 +16,33 @@ function argument(name: string): string | null {
   if (index >= 0) return process.argv[index + 1] ?? null;
   const inline = process.argv.find((value) => value.startsWith(`${name}=`));
   return inline ? inline.slice(name.length + 1) : null;
+}
+
+export async function enqueueTaskCategoryBackfillBatch(
+  taskIds: readonly string[],
+  deps: {
+    enqueue: (taskId: string) => Promise<unknown>;
+    writeError?: (text: string) => void;
+    setExitCode?: (code: number) => void;
+  },
+): Promise<{ enqueued: number; failed: number }> {
+  const writeError = deps.writeError ?? ((text: string) => process.stderr.write(text));
+  const setExitCode = deps.setExitCode ?? ((code: number) => (process.exitCode = code));
+  let enqueued = 0;
+  let failed = 0;
+  for (const taskId of taskIds) {
+    try {
+      await deps.enqueue(taskId);
+      enqueued += 1;
+    } catch (error) {
+      failed += 1;
+      writeError(
+        `${JSON.stringify({ taskId, error: error instanceof Error ? error.message : String(error) })}\n`,
+      );
+    }
+  }
+  if (failed > 0) setExitCode(1);
+  return { enqueued, failed };
 }
 
 async function main(): Promise<void> {
@@ -91,25 +120,18 @@ async function main(): Promise<void> {
     );
   }
 
-  let enqueued = 0;
-  let failed = 0;
-  for (const task of rows) {
-    try {
-      await scope.objects.enqueueTaskCategoryBackfill(task.id);
-      enqueued += 1;
-    } catch (error) {
-      failed += 1;
-      process.stderr.write(
-        `${JSON.stringify({ taskId: task.id, error: error instanceof Error ? error.message : String(error) })}\n`,
-      );
-    }
-  }
-  process.stdout.write(`${JSON.stringify({ teamId, enqueued, failed })}\n`);
+  const result = await enqueueTaskCategoryBackfillBatch(
+    rows.map((task) => task.id),
+    { enqueue: (taskId) => scope.objects.enqueueTaskCategoryBackfill(taskId) },
+  );
+  process.stdout.write(`${JSON.stringify({ teamId, ...result })}\n`);
 }
 
-main()
-  .catch((error: unknown) => {
-    process.stderr.write(`${error instanceof Error ? error.stack : String(error)}\n`);
-    process.exitCode = 1;
-  })
-  .finally(() => closeDb());
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  void main()
+    .catch((error: unknown) => {
+      process.stderr.write(`${error instanceof Error ? error.stack : String(error)}\n`);
+      process.exitCode = 1;
+    })
+    .finally(() => closeDb());
+}
