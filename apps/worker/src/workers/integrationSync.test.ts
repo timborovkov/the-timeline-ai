@@ -379,6 +379,28 @@ describe('runOneIntegration attention classification', () => {
     );
   });
 
+  it('queues an immediate targeted continuation when a provider has more resource pages', async () => {
+    fakes.adminLoadIntegration.mockResolvedValueOnce({ ...integration, provider: 'monday' });
+    fakes.adminListSelections.mockResolvedValueOnce([
+      { kind: 'monday.board', externalId: 'board-1' },
+    ]);
+    fakes.incrementalSync.mockResolvedValueOnce({
+      continuations: [{ resourceType: 'monday.board', externalId: 'board-1' }],
+    });
+
+    await runOneIntegration({} as never, INTEGRATION_ID, 'incremental');
+
+    expect(fakes.enqueueIntegrationSyncJob).toHaveBeenCalledWith({
+      kind: 'targeted',
+      integrationId: INTEGRATION_ID,
+      teamId: TEAM_ID,
+      triggeredBy: 'reconcile',
+      resourceType: 'monday.board',
+      externalId: 'board-1',
+      reason: 'provider_pagination_continuation',
+    });
+  });
+
   it('keeps legacy Monday connections syncing while surfacing reconnect for missing scopes', async () => {
     fakes.adminLoadIntegration.mockResolvedValueOnce({
       ...integration,

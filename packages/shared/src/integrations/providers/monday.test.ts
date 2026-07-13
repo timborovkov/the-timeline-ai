@@ -1861,18 +1861,23 @@ describe('mondayProvider', () => {
       recordAudit: vi.fn(),
     };
 
-    await mondayProvider.backfill({
+    const firstResult = await mondayProvider.backfill({
       integration: { id: 'integration-1' } as never,
       tokens: { access_token: 'token' },
       selections: [{ kind: 'monday.board', externalId: 'board-1' }],
       ctx,
     });
-    await mondayProvider.backfill({
+    const secondResult = await mondayProvider.backfill({
       integration: { id: 'integration-1' } as never,
       tokens: { access_token: 'token' },
       selections: [{ kind: 'monday.board', externalId: 'board-1' }],
       ctx,
     });
+
+    expect(firstResult?.continuations).toEqual([
+      { resourceType: 'monday.board', externalId: 'board-1' },
+    ]);
+    expect(secondResult?.continuations).toBeUndefined();
 
     expect(ctx.saveCursor).toHaveBeenNthCalledWith(
       1,

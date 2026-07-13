@@ -487,6 +487,27 @@ describe('agent tool evals', () => {
     expect(embeddings).toBe(1);
   });
 
+  it('finds selected monday items beyond a large stale helper-board corpus', async () => {
+    const staleHits = Array.from({ length: 1_201 }, (_, index) =>
+      hit(MONDAY_HELPER_EVENT, 1 - index / 10_000, { source: 'integration' }),
+    );
+
+    const evalRun = await runToolEval(
+      db,
+      OWNER,
+      'search_integration_events',
+      { query: 'Ext-Faba checkout', provider: 'monday', limit: 1 },
+      [...staleHits, hit(MONDAY_ITEM_EVENT, 0.79, { source: 'integration' })],
+    );
+
+    const output = evalRun.output as {
+      count: number;
+      results: { event_id: string }[];
+    };
+    expect(output.count).toBe(1);
+    expect(output.results).toEqual([expect.objectContaining({ event_id: MONDAY_ITEM_EVENT })]);
+  });
+
   it('stops integration retrieval after enough ranked candidates are found', async () => {
     await pg.exec(`
       INSERT INTO raw_events

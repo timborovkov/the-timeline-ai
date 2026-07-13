@@ -243,6 +243,26 @@ describe('queue wrappers', () => {
     expect(fakes.queues[0]?.addCalls[2]?.opts).toBeUndefined();
   });
 
+  it('keeps provider pagination continuations chainable for the same resource', async () => {
+    const queues = await importQueues();
+    const continuation = {
+      kind: 'targeted' as const,
+      integrationId: '11111111-1111-4111-8111-111111111111',
+      teamId: '22222222-2222-4222-8222-222222222222',
+      triggeredBy: 'reconcile',
+      resourceType: 'monday.board',
+      externalId: 'board-1',
+      reason: 'provider_pagination_continuation',
+    };
+
+    await queues.enqueueIntegrationSyncJob(continuation);
+    await queues.enqueueIntegrationSyncJob(continuation);
+
+    expect(fakes.queues[0]?.addCalls).toHaveLength(2);
+    expect(fakes.queues[0]?.addCalls[0]?.opts).toBeUndefined();
+    expect(fakes.queues[0]?.addCalls[1]?.opts).toBeUndefined();
+  });
+
   it('coalesces provider-policy reconciliation while a matching job is pending', async () => {
     const queues = await importQueues();
     const reconcile = {

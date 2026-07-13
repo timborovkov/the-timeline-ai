@@ -947,6 +947,103 @@ export function createIntegrationScope(deps: {
     return report;
   }
 
+  async function listMondayHelperRepairSources(): Promise<
+    {
+      credentialKind: 'provider_connection' | 'integration';
+      credentialId: string;
+      boardIds: string[];
+    }[]
+  > {
+    await ensureMember('admin');
+    const [shareRows, mondayIntegrations] = await Promise.all([
+      db
+        .select({
+          credentialId: providerConnections.id,
+          boardId: teamProviderResourceShares.externalId,
+        })
+        .from(teamProviderResourceShares)
+        .innerJoin(
+          providerConnections,
+          eq(teamProviderResourceShares.providerConnectionId, providerConnections.id),
+        )
+        .where(
+          and(
+            eq(teamProviderResourceShares.teamId, teamId),
+            eq(providerConnections.provider, 'monday'),
+            eq(teamProviderResourceShares.resourceKind, 'monday.board'),
+            isNull(teamProviderResourceShares.revokedAt),
+          ),
+        ),
+      db
+        .select({
+          id: integrationsTable.id,
+          providerConnectionId: integrationsTable.providerConnectionId,
+        })
+        .from(integrationsTable)
+        .where(and(eq(integrationsTable.teamId, teamId), eq(integrationsTable.provider, 'monday'))),
+    ]);
+    const integrationIds = mondayIntegrations.map((integration) => integration.id);
+    const selectionRows =
+      integrationIds.length > 0
+        ? await db
+            .select({
+              integrationId: integrationSelections.integrationId,
+              boardId: integrationSelections.externalId,
+            })
+            .from(integrationSelections)
+            .where(
+              and(
+                inArray(integrationSelections.integrationId, integrationIds),
+                eq(integrationSelections.selectionKind, 'monday.board'),
+              ),
+            )
+        : [];
+    const integrationById = new Map(mondayIntegrations.map((row) => [row.id, row]));
+    const sources = new Map<
+      string,
+      {
+        credentialKind: 'provider_connection' | 'integration';
+        credentialId: string;
+        boardIds: Set<string>;
+      }
+    >();
+    const add = (
+      credentialKind: 'provider_connection' | 'integration',
+      credentialId: string,
+      boardId: string,
+    ) => {
+      const key = `${credentialKind}\x00${credentialId}`;
+      const source = sources.get(key) ?? {
+        credentialKind,
+        credentialId,
+        boardIds: new Set<string>(),
+      };
+      source.boardIds.add(boardId);
+      sources.set(key, source);
+    };
+    for (const row of shareRows) add('provider_connection', row.credentialId, row.boardId);
+    for (const row of selectionRows) {
+      const integration = integrationById.get(row.integrationId);
+      if (!integration) continue;
+      add(
+        integration.providerConnectionId ? 'provider_connection' : 'integration',
+        integration.providerConnectionId ?? integration.id,
+        row.boardId,
+      );
+    }
+    return [...sources.values()]
+      .map((source) => ({
+        credentialKind: source.credentialKind,
+        credentialId: source.credentialId,
+        boardIds: [...source.boardIds].sort(),
+      }))
+      .sort((a, b) =>
+        `${a.credentialKind}:${a.credentialId}`.localeCompare(
+          `${b.credentialKind}:${b.credentialId}`,
+        ),
+      );
+  }
+
   async function activateSharedResources(input: {
     providerConnectionId: string;
     resourceShareIds: string[];
@@ -1352,6 +1449,7 @@ export function createIntegrationScope(deps: {
     listOwnedTeamResourceShares,
     shareProviderResources,
     revokeProviderResourceShare,
+    listMondayHelperRepairSources,
     repairMondayHelperResources,
     activateSharedResources,
     listConnectionAttention,
@@ -2212,6 +2310,7 @@ export async function adminReconcileIntegrationWebhookSubscriptions(
 async function deprovisionWebhookSubscriptionsBeforeRepair(
   db: Db,
   subscriptions: {
+    id: string;
     integrationId: string | null;
     externalSubscriptionId: string | null;
     resourceKind: string;
@@ -2250,6 +2349,16 @@ async function deprovisionWebhookSubscriptionsBeforeRepair(
           persistTokens: (fresh) => adminPersistTokens(db, integration.id, fresh),
         },
       });
+      const now = new Date();
+      await db
+        .update(integrationWebhookSubscriptions)
+        .set({
+          status: 'deleted',
+          lastError: 'removed_by_monday_helper_board_repair',
+          lastVerifiedAt: now,
+          updatedAt: now,
+        })
+        .where(eq(integrationWebhookSubscriptions.id, row.id));
     }
   }
 }

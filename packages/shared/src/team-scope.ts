@@ -267,6 +267,8 @@ export interface SearchEventsInput {
   entityIds?: string[];
   /** Zero-based semantic-result offset for bounded candidate pagination. */
   offset?: number;
+  /** Reports the raw semantic page size so internal paginated callers can detect exhaustion. */
+  onCandidateCount?: (count: number) => void;
   /**
    * Narrow vector search to a subset of Qdrant source kinds. Phase 8 adds
    * `object`, `object_note`, `object_change`, and `entity` alongside
@@ -3014,6 +3016,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
           searchOpts,
           searchFn,
         });
+        input.onCandidateCount?.(hits.length);
 
         // Dedupe by event_id. Keep highest score; collect fact_ids; merge
         // entity_ids across event-level + fact-level points on the same event.

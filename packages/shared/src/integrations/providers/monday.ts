@@ -1571,6 +1571,7 @@ export const mondayProvider: IntegrationProvider = {
   async backfill({ tokens, selections, ctx }) {
     const mondayTokens = await ensureAccessToken(tokens as MondayTokens, ctx);
     const partialFailures: SyncPartialFailure[] = [];
+    const continuations: { resourceType: string; externalId: string }[] = [];
     for (const selection of selections.filter((item) => item.kind === 'monday.board')) {
       try {
         const cursor = (await ctx.loadCursor(
@@ -1582,6 +1583,12 @@ export const mondayProvider: IntegrationProvider = {
         await ctx.writeEvents(result.events);
         await ctx.recordAudit('monday_board_synced', result.stats);
         await ctx.saveCursor(`monday.board:${selection.externalId}`, result.cursor);
+        if (result.stats.hasMoreItems) {
+          continuations.push({
+            resourceType: 'monday.board',
+            externalId: selection.externalId,
+          });
+        }
       } catch (error) {
         rethrowMondayRateLimit(error);
         partialFailures.push(
@@ -1600,7 +1607,11 @@ export const mondayProvider: IntegrationProvider = {
         );
       }
     }
-    return partialFailures.length > 0 ? { partialFailures } : undefined;
+    if (partialFailures.length === 0 && continuations.length === 0) return undefined;
+    return {
+      ...(partialFailures.length > 0 ? { partialFailures } : {}),
+      ...(continuations.length > 0 ? { continuations } : {}),
+    };
   },
 
   async incrementalSync({ tokens, selections, ctx, target }) {
@@ -1613,6 +1624,7 @@ export const mondayProvider: IntegrationProvider = {
       return;
     }
     const partialFailures: SyncPartialFailure[] = [];
+    const continuations: { resourceType: string; externalId: string }[] = [];
     for (const selection of selections.filter((item) => item.kind === 'monday.board')) {
       try {
         const cursor = (await ctx.loadCursor(
@@ -1624,6 +1636,12 @@ export const mondayProvider: IntegrationProvider = {
         await ctx.writeEvents(result.events);
         await ctx.recordAudit('monday_board_synced', result.stats);
         await ctx.saveCursor(`monday.board:${selection.externalId}`, result.cursor);
+        if (result.stats.hasMoreItems) {
+          continuations.push({
+            resourceType: 'monday.board',
+            externalId: selection.externalId,
+          });
+        }
       } catch (error) {
         rethrowMondayRateLimit(error);
         partialFailures.push(
@@ -1643,7 +1661,11 @@ export const mondayProvider: IntegrationProvider = {
         );
       }
     }
-    return partialFailures.length > 0 ? { partialFailures } : undefined;
+    if (partialFailures.length === 0 && continuations.length === 0) return undefined;
+    return {
+      ...(partialFailures.length > 0 ? { partialFailures } : {}),
+      ...(continuations.length > 0 ? { continuations } : {}),
+    };
   },
 
   // eslint-disable-next-line @typescript-eslint/require-await

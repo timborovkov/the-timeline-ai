@@ -86,30 +86,28 @@ const scope = withTeam(db, teamId, userId);
 
 try {
   await scope.requireMembership('admin');
-  const shares = await scope.integrations.listTeamResourceShares();
-  const mondayShares = shares.filter(
-    ({ connection, share }) =>
-      connection.provider === 'monday' && share.resourceKind === 'monday.board' && !share.revokedAt,
-  );
-  const connectionIds = [...new Set(mondayShares.map(({ connection }) => connection.id))];
+  const sources = await scope.integrations.listMondayHelperRepairSources();
   const discoveredHelperIds: string[] = [];
-  const unverifiedConnectionIds: string[] = [];
-  for (const connectionId of connectionIds) {
-    const tokens = await scope.integrations.getProviderConnectionTokens(connectionId);
+  const unverifiedSources: { credentialKind: string; credentialId: string }[] = [];
+  for (const source of sources) {
+    const tokens =
+      source.credentialKind === 'provider_connection'
+        ? await scope.integrations.getProviderConnectionTokens(source.credentialId)
+        : await scope.integrations.getIntegrationTokens(source.credentialId);
     const accessToken = typeof tokens?.access_token === 'string' ? tokens.access_token : null;
     if (!accessToken) {
-      unverifiedConnectionIds.push(connectionId);
+      unverifiedSources.push({
+        credentialKind: source.credentialKind,
+        credentialId: source.credentialId,
+      });
       continue;
     }
-    const boardIds = mondayShares
-      .filter(({ connection }) => connection.id === connectionId)
-      .map(({ share }) => share.externalId);
-    discoveredHelperIds.push(...(await discoverHelperBoardIds(accessToken, boardIds)));
+    discoveredHelperIds.push(...(await discoverHelperBoardIds(accessToken, source.boardIds)));
   }
   const helperBoardIds = [...new Set([...discoveredHelperIds, ...argValues('--helper-board-id')])];
-  if (apply && unverifiedConnectionIds.length > 0 && !args.includes('--allow-unverified')) {
+  if (apply && unverifiedSources.length > 0 && !args.includes('--allow-unverified')) {
     throw new Error(
-      'Some Monday connections are not owned by --user-id and could not be classified; rerun as the connection owner or pass --allow-unverified after reviewing the dry-run',
+      'Some Monday credential sources could not be classified; rerun as the connection owner, reconnect the direct integration, or pass --allow-unverified after reviewing the dry-run',
     );
   }
   const report = await scope.integrations.repairMondayHelperResources({
@@ -119,7 +117,7 @@ try {
   const output: Record<string, unknown> = {
     mode: apply ? 'apply' : 'dry-run',
     helperBoardIds,
-    unverifiedConnectionIds,
+    unverifiedSources,
     ...report,
   };
 

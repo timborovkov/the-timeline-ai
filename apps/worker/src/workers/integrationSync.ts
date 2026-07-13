@@ -622,6 +622,17 @@ export async function runOneIntegration(
             missingRequiredScopes.length > 0 ? ['sync_error'] : ['needs_reconnect', 'sync_error'],
         });
       }
+      for (const continuation of syncResult?.continuations ?? []) {
+        await queue.enqueueIntegrationSyncJob({
+          kind: 'targeted',
+          integrationId,
+          teamId: integration.teamId,
+          triggeredBy: 'reconcile',
+          resourceType: continuation.resourceType,
+          externalId: continuation.externalId,
+          reason: 'provider_pagination_continuation',
+        });
+      }
       await integrationsLib.adminRecordAudit(
         db,
         integration.teamId,
