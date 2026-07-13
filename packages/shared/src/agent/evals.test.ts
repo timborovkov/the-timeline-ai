@@ -10,6 +10,7 @@ import { drizzle } from 'drizzle-orm/pglite';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import type { SearchHit } from '#src/qdrant/client.js';
+import type { SearchOpts } from '#src/qdrant/client.js';
 
 import { buildAgentTools } from '#src/agent/tools.js';
 import { withTeam } from '#src/team-scope.js';
@@ -164,6 +165,7 @@ async function runToolEval(
   name: AgentEvalToolName,
   input: unknown,
   hits: SearchHit[] = [],
+  onQdrantSearch?: (options: SearchOpts) => void,
 ) {
   return runAgentToolEval({
     db: db as never,
@@ -172,6 +174,7 @@ async function runToolEval(
     toolName: name,
     toolInput: input,
     hits,
+    ...(onQdrantSearch ? { onQdrantSearch } : {}),
   });
 }
 
@@ -448,6 +451,40 @@ describe('agent tool evals', () => {
     };
     expect(output.count).toBe(1);
     expect(output.results).toEqual([expect.objectContaining({ event_id: MONDAY_ITEM_EVENT })]);
+  });
+
+  it('stops integration retrieval after enough ranked candidates are found', async () => {
+    await pg.exec(`
+      INSERT INTO raw_events
+        (id, team_id, author_user_id, visibility_owner_user_id, source, content_text, occurred_at, visibility, source_metadata)
+      SELECT
+        ('70000000-0000-4000-8000-' || lpad(series::text, 12, '0'))::uuid,
+        '${TEAM_A}'::uuid,
+        '${OWNER}'::uuid,
+        '${OWNER}'::uuid,
+        'integration',
+        'Older selected Monday item ' || series::text,
+        '2025-01-01T00:00:00Z'::timestamptz + series * interval '1 second',
+        'team',
+        '{"provider":"monday","monday_board_id":"board-faba"}'::jsonb
+      FROM generate_series(1, 2001) AS series;
+    `);
+    let qdrantSearches = 0;
+
+    const evalRun = await runToolEval(
+      db,
+      OWNER,
+      'search_integration_events',
+      { query: 'Ext-Faba checkout', provider: 'monday', limit: 1 },
+      [hit(MONDAY_ITEM_EVENT, 0.99, { source: 'integration' })],
+      () => {
+        qdrantSearches += 1;
+      },
+    );
+
+    const output = evalRun.output as { count: number };
+    expect(output.count).toBe(1);
+    expect(qdrantSearches).toBe(1);
   });
 
   it('answers document questions with cited chunk evidence', async () => {

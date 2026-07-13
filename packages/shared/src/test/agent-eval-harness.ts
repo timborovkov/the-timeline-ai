@@ -2,7 +2,7 @@ import { MockLanguageModelV3 } from 'ai/test';
 
 import type { AgentTurnObservability } from '#src/agent/observability.js';
 import type { EmbedResult } from '#src/llm/embed.js';
-import type { SearchHit } from '#src/qdrant/client.js';
+import type { SearchHit, SearchOpts } from '#src/qdrant/client.js';
 import type { LanguageModel } from 'ai';
 
 import {
@@ -172,6 +172,7 @@ export async function runAgentToolEval(input: {
   toolInput: unknown;
   hits?: SearchHit[];
   embed?: (input: { text: string }) => Promise<EmbedResult>;
+  onQdrantSearch?: (options: SearchOpts) => void;
 }): Promise<AgentEvalRun> {
   const trace: AgentEvalTraceEntry[] = [];
   const scope = withTeam(input.db, input.teamId, input.userId, {
@@ -183,6 +184,7 @@ export async function runAgentToolEval(input: {
           model: 'eval-embed',
         })),
     qdrantSearch: (_teamId, _userId, _vector, options) => {
+      input.onQdrantSearch?.(options);
       const eventIds = options.eventIds ? new Set(options.eventIds) : null;
       const matchingHits = eventIds
         ? (input.hits ?? []).filter((candidate) => {
@@ -190,7 +192,8 @@ export async function runAgentToolEval(input: {
             return eventId !== null && eventIds.has(eventId);
           })
         : (input.hits ?? []);
-      return Promise.resolve(matchingHits.slice(0, options.limit));
+      const offset = options.offset ?? 0;
+      return Promise.resolve(matchingHits.slice(offset, offset + (options.limit ?? 20)));
     },
   });
   const tools = buildAgentTools(scope);

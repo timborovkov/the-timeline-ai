@@ -399,6 +399,17 @@ describe('createQdrantClient', () => {
     expect(keys).toContain('entity_ids');
   });
 
+  it('forwards semantic pagination offsets to Qdrant', async () => {
+    const { fetcher, calls } = makeFetcher({ collectionExists: true });
+    const client = createQdrantClient({ fetcher });
+
+    await client.search('team-A', 'user-1', [0, 0, 0, 0], { limit: 100, offset: 200 });
+
+    const search = calls.find((call) => call.url.endsWith('/points/search'));
+    if (!search) throw new Error('no search call captured');
+    expect(search.body).toMatchObject({ limit: 100, offset: 200 });
+  });
+
   it('requireExisting throws on missing collection instead of auto-creating', async () => {
     const { fetcher, calls } = makeFetcher({ collectionExists: false });
     const client = createQdrantClient({ fetcher, collection: 'events_v2', requireExisting: true });

@@ -43,6 +43,8 @@ interface AgentToolOptions {
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const INTEGRATION_SEARCH_BATCH_SIZE = 100;
+const INTEGRATION_SEARCH_MAX_CANDIDATES = 1_000;
 
 const sourceKindSchema = z.enum([
   'raw_event',
@@ -2609,39 +2611,74 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
               limit: z.number().int().min(1).max(20).optional(),
             })
             .parse(raw);
-          const opts: {
-            query: string;
-            limit?: number;
-            source?:
-              | 'web'
-              | 'telegram'
-              | 'email'
-              | 'system'
-              | 'integration'
-              | 'document'
-              | 'meeting'
-              | 'ingest_webhook';
-            integrationProvider?:
-              | 'google_drive'
-              | 'linear'
-              | 'github'
-              | 'monday'
-              | 'slack'
-              | 'sentry';
-            filterSelectedIntegrationSources?: boolean;
-          } = {
-            query: parsed.query,
-            source: 'integration',
-          };
           const requestedLimit = parsed.limit ?? 10;
-          opts.limit = requestedLimit;
-          if (parsed.provider) opts.integrationProvider = parsed.provider;
-          opts.filterSelectedIntegrationSources = true;
-          const hits = await scope.timeline.searchEvents(opts);
-          const filtered = hits.filter((h) => h.source === 'integration');
+          const selectedBoardIds = new Set<string>();
+          const selectedDocIds = new Set<string>();
+          if (!parsed.provider || parsed.provider === 'monday') {
+            const mondayIntegrations = (await scope.integrations.listIntegrations()).filter(
+              (integration) => integration.provider === 'monday' && integration.enabled,
+            );
+            const selections = (
+              await Promise.all(
+                mondayIntegrations.map((integration) =>
+                  scope.integrations.listSelections(integration.id),
+                ),
+              )
+            ).flat();
+            for (const selection of selections) {
+              if (selection.selectionKind === 'monday.board') {
+                selectedBoardIds.add(selection.externalId);
+              } else if (selection.selectionKind === 'monday.doc') {
+                selectedDocIds.add(selection.externalId);
+              }
+            }
+          }
+
+          const filtered: Awaited<ReturnType<typeof scope.timeline.searchEvents>> = [];
+          const seenEventIds = new Set<string>();
+          for (
+            let offset = 0;
+            offset < INTEGRATION_SEARCH_MAX_CANDIDATES && filtered.length < requestedLimit;
+            offset += INTEGRATION_SEARCH_BATCH_SIZE
+          ) {
+            const hits = await scope.timeline.searchEvents({
+              query: parsed.query,
+              source: 'integration',
+              limit: Math.min(
+                INTEGRATION_SEARCH_BATCH_SIZE,
+                INTEGRATION_SEARCH_MAX_CANDIDATES - offset,
+              ),
+              offset,
+            });
+            if (hits.length === 0) continue;
+            const rows = await scope.timeline.getEventsByIds(hits.map((hit) => hit.eventId));
+            const metadataById = new Map(
+              rows.map((row) => [
+                row.id,
+                (row.sourceMetadata as Record<string, unknown> | null) ?? {},
+              ]),
+            );
+            for (const hit of hits) {
+              if (hit.source !== 'integration' || seenEventIds.has(hit.eventId)) continue;
+              const metadata = metadataById.get(hit.eventId) ?? {};
+              const provider = metadata.provider;
+              if (parsed.provider && provider !== parsed.provider) continue;
+              if (provider === 'monday') {
+                const boardId = metadata.monday_parent_board_id ?? metadata.monday_board_id;
+                const docId = metadata.monday_doc_id;
+                const selected =
+                  (typeof boardId === 'string' && selectedBoardIds.has(boardId)) ||
+                  (typeof docId === 'string' && selectedDocIds.has(docId));
+                if (!selected) continue;
+              }
+              seenEventIds.add(hit.eventId);
+              filtered.push(hit);
+              if (filtered.length >= requestedLimit) break;
+            }
+          }
           return {
             count: filtered.length,
-            results: filtered.slice(0, parsed.limit ?? 10).map((r) => ({
+            results: filtered.map((r) => ({
               event_id: r.eventId,
               occurred_at: r.occurredAt,
               score: r.score,
