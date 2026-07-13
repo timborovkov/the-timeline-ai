@@ -71,6 +71,7 @@ interface Props {
   suggestions: LocalSuggestion[];
   projects?: { id: string; label: string }[];
   primaryProject?: objects.TaskPrimaryProjectRow | null;
+  taskCategoriesEnabled?: boolean;
 }
 
 interface ObjectDetailUiState {
@@ -776,6 +777,7 @@ function ObjectDetailView(props: Props) {
             <ApprovalsClient
               suggestions={view.suggestions}
               allowBulkAccept={false}
+              taskCategoriesEnabled={props.taskCategoriesEnabled}
               folded={{
                 title: 'Pending approvals',
                 summary: {

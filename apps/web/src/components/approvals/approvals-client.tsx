@@ -115,6 +115,7 @@ type ApprovalAction = (
 
 interface Props {
   suggestions: SuggestionBundle[];
+  taskCategoriesEnabled?: boolean;
   allowBulkAccept?: boolean;
   allowBulkReject?: boolean;
   timezone?: string;
@@ -452,6 +453,7 @@ function foldedSummaryText(
 
 export function ApprovalsClient({
   suggestions,
+  taskCategoriesEnabled = true,
   allowBulkAccept = true,
   allowBulkReject = true,
   timezone,
@@ -642,6 +644,7 @@ export function ApprovalsClient({
       pending={pending}
       run={run}
       timezone={timezone}
+      taskCategoriesEnabled={taskCategoriesEnabled}
       visibleSuggestions={visibleSuggestions}
     />
   );
@@ -693,6 +696,7 @@ function ApprovalListBody({
   pending,
   run,
   timezone,
+  taskCategoriesEnabled,
   visibleSuggestions,
 }: {
   allowBulkAccept: boolean;
@@ -708,6 +712,7 @@ function ApprovalListBody({
   pending: boolean;
   run: ApprovalAction;
   timezone?: string;
+  taskCategoriesEnabled: boolean;
   visibleSuggestions: SuggestionBundle[];
 }) {
   return (
@@ -736,6 +741,7 @@ function ApprovalListBody({
           pending={pending}
           run={run}
           timezone={timezone}
+          taskCategoriesEnabled={taskCategoriesEnabled}
         />
       ))}
     </div>
@@ -834,6 +840,7 @@ function ApprovalBundleRow({
   pending,
   run,
   timezone,
+  taskCategoriesEnabled,
 }: {
   allowBulkAccept: boolean;
   actionFailedItemIds: Set<string>;
@@ -842,6 +849,7 @@ function ApprovalBundleRow({
   pending: boolean;
   run: ApprovalAction;
   timezone?: string;
+  taskCategoriesEnabled: boolean;
 }) {
   const pendingItems = bundle.items.filter((item) => isActionableSuggestionStatus(item.status));
   const bulkAcceptItems = pendingItems.filter((item) => item.targetKind !== 'object_merge');
@@ -882,6 +890,7 @@ function ApprovalBundleRow({
             pending={pending}
             run={run}
             timezone={timezone}
+            taskCategoriesEnabled={taskCategoriesEnabled}
           />
         ))}
       </ul>
@@ -925,6 +934,7 @@ function ApprovalItemRow({
   pending,
   run,
   timezone,
+  taskCategoriesEnabled,
 }: {
   actionFailed: boolean;
   bundle: SuggestionBundle;
@@ -933,11 +943,17 @@ function ApprovalItemRow({
   pending: boolean;
   run: ApprovalAction;
   timezone?: string;
+  taskCategoriesEnabled: boolean;
 }) {
   return (
     <li className="grid gap-3 p-3 md:grid-cols-[minmax(0,1.3fr)_minmax(10rem,0.8fr)_minmax(9rem,auto)]">
       <ApprovalItemMain actionFailed={actionFailed} item={item} />
-      <ApprovalItemPayload bundle={bundle} item={item} timezone={timezone} />
+      <ApprovalItemPayload
+        bundle={bundle}
+        item={item}
+        timezone={timezone}
+        taskCategoriesEnabled={taskCategoriesEnabled}
+      />
       {isActionableSuggestionStatus(item.status) ? (
         <ApprovalItemActions busy={busy} item={item} pending={pending} run={run} />
       ) : null}
@@ -989,16 +1005,24 @@ function ApprovalItemPayload({
   bundle,
   item,
   timezone,
+  taskCategoriesEnabled,
 }: {
   bundle: SuggestionBundle;
   item: SuggestionItem;
   timezone?: string;
+  taskCategoriesEnabled: boolean;
 }) {
   if (item.targetKind === 'calendar_event') {
     return <CalendarApprovalPayload item={item} timezone={timezone} />;
   }
   if (item.targetKind === 'task' && item.operation === 'create') {
-    return <TaskApprovalPayload bundle={bundle} item={item} />;
+    return (
+      <TaskApprovalPayload
+        bundle={bundle}
+        item={item}
+        taskCategoriesEnabled={taskCategoriesEnabled}
+      />
+    );
   }
   const summary = relationshipPayloadSummary(item, bundle) ?? formatPayload(item.proposedPayload);
   return (
@@ -1017,7 +1041,15 @@ function ApprovalItemPayload({
   );
 }
 
-function TaskApprovalPayload({ bundle, item }: { bundle: SuggestionBundle; item: SuggestionItem }) {
+function TaskApprovalPayload({
+  bundle,
+  item,
+  taskCategoriesEnabled,
+}: {
+  bundle: SuggestionBundle;
+  item: SuggestionItem;
+  taskCategoriesEnabled: boolean;
+}) {
   const router = useRouter();
   const [saving, startSaving] = useTransition();
   const { query, setQuery, projects } = useProjectSearch();
@@ -1050,53 +1082,57 @@ function TaskApprovalPayload({ bundle, item }: { bundle: SuggestionBundle; item:
         {itemActionLabel(item)}
       </div>
       <div className="flex flex-wrap gap-1.5">
-        <span className="rounded-sm border border-border bg-muted/30 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.1em] text-fg">
-          Category · {category ? taskCategoryLabel(category) : 'Automatic after accept'}
-        </span>
+        {taskCategoriesEnabled ? (
+          <span className="rounded-sm border border-border bg-muted/30 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.1em] text-fg">
+            Category · {category ? taskCategoryLabel(category) : 'Automatic after accept'}
+          </span>
+        ) : null}
         <span className="rounded-sm border border-border bg-muted/30 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.1em] text-fg">
           Project · {projectName ? `${createsProject ? 'Create ' : ''}${projectName}` : 'None'}
         </span>
       </div>
-      {category && categoryMode !== 'manual' ? (
+      {taskCategoriesEnabled && category && categoryMode !== 'manual' ? (
         <p className="text-xs text-fg-dim">
           AI-proposed category; accepting applies it only if context still matches.
         </p>
       ) : null}
       <details className="group border-l border-border pl-2">
         <summary className="inline-flex cursor-pointer items-center gap-1 font-mono text-[10px] uppercase tracking-[0.1em] text-fg-dim hover:text-fg">
-          <Pencil className="size-3" /> Edit category or project
+          <Pencil className="size-3" /> Edit proposal
         </summary>
         <div className="mt-2 grid gap-2">
-          <label className="grid gap-1 text-xs text-fg-muted">
-            Category
-            <select
-              aria-label={`Category for ${item.title}`}
-              value={
-                categoryMode === 'manual' && category
-                  ? category
-                  : category
-                    ? 'suggested'
-                    : 'automatic'
-              }
-              disabled={saving}
-              onChange={(event) => {
-                revise({ category: event.currentTarget.value as TaskCategory | 'automatic' });
-              }}
-              className="h-8 rounded-sm border border-border bg-bg px-2 text-xs text-fg"
-            >
-              {category && categoryMode !== 'manual' ? (
-                <option value="suggested" disabled>
-                  AI suggestion — {taskCategoryLabel(category)}
-                </option>
-              ) : null}
-              <option value="automatic">Automatic after accept</option>
-              {TASK_CATEGORY_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </label>
+          {taskCategoriesEnabled ? (
+            <label className="grid gap-1 text-xs text-fg-muted">
+              Category
+              <select
+                aria-label={`Category for ${item.title}`}
+                value={
+                  categoryMode === 'manual' && category
+                    ? category
+                    : category
+                      ? 'suggested'
+                      : 'automatic'
+                }
+                disabled={saving}
+                onChange={(event) => {
+                  revise({ category: event.currentTarget.value as TaskCategory | 'automatic' });
+                }}
+                className="h-8 rounded-sm border border-border bg-bg px-2 text-xs text-fg"
+              >
+                {category && categoryMode !== 'manual' ? (
+                  <option value="suggested" disabled>
+                    AI suggestion — {taskCategoryLabel(category)}
+                  </option>
+                ) : null}
+                <option value="automatic">Automatic after accept</option>
+                {TASK_CATEGORY_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
           <label className="grid gap-1 text-xs text-fg-muted">
             Find or name a project
             <input

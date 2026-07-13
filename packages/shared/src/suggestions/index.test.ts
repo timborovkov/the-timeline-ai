@@ -3864,6 +3864,61 @@ describe('suggestion scope', () => {
     expect(archivedProject?.archivedAt).toBeInstanceOf(Date);
   });
 
+  it('preserves a suggestion-created project with an outbound relationship on retry', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Create related retryable task',
+      dedupeKey: 'create-related-task-remove-project-retry',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Create related retryable task',
+          dedupeKey: 'create-related-task-remove-project-retry:item',
+          proposedPayload: {
+            canonicalName: 'Create related retryable task',
+            createProjectName: 'Related proposal project',
+            projectName: 'Related proposal project',
+          },
+        },
+      ],
+    });
+    const itemId = bundle.items[0]?.id ?? '';
+    const project = await scope.objects.createObject({
+      type: 'project',
+      canonicalName: 'Related proposal project',
+      metadata: { agent_suggestion_project_for_item_id: itemId },
+      actor: { kind: 'agent', userId: null },
+    });
+    const company = await scope.objects.createObject({
+      type: 'company',
+      canonicalName: 'Related proposal company',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const task = await scope.objects.createObject({
+      type: 'task',
+      canonicalName: 'Create related retryable task',
+      parentObjectId: project.id,
+      metadata: { agent_suggestion_item_id: itemId },
+      actor: { kind: 'agent', userId: null },
+    });
+    await db.insert(entityRelationships).values({
+      teamId: TEAM_ID,
+      fromEntityId: project.id,
+      toEntityId: company.id,
+      kind: 'related',
+      createdBy: USER_ID,
+    });
+    await scope.suggestions.reviseTaskSuggestionItem({ itemId, project: { kind: 'none' } });
+
+    await expect(scope.suggestions.acceptSuggestionItem(itemId)).resolves.toBe(true);
+
+    await expect(scope.objects.listPrimaryProjectsForTasks([task.id])).resolves.toEqual([]);
+    const retainedProject = await scope.objects.getObject(project.id);
+    expect(retainedProject?.archivedAt).toBeNull();
+  });
+
   it('stores a readable failure reason for calendar creates missing a time range', async () => {
     const scope = withTeam(db as never, TEAM_ID, USER_ID);
     const bundle = await scope.suggestions.createOrMergeSuggestionBundle({

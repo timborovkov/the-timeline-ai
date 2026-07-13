@@ -1,4 +1,5 @@
 import { teamCalendarSubscriptions, users } from '@timeline/db';
+import { getEnv } from '@timeline/shared/env';
 import { withTeam } from '@timeline/shared/team-scope';
 import { and, eq, inArray } from 'drizzle-orm';
 import { redirect } from 'next/navigation';
@@ -238,6 +239,7 @@ export default async function CalendarPage({ searchParams }: PageProps) {
         <ApprovalsClient
           suggestions={calendarSuggestions}
           allowBulkAccept={false}
+          taskCategoriesEnabled={getEnv().TASK_CATEGORY_UI_ENABLED}
           timezone={settings.defaultTimezone}
           folded={{
             title: 'Calendar approvals',

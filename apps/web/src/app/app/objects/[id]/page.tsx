@@ -1,3 +1,4 @@
+import { getEnv } from '@timeline/shared/env';
 import { withTeam } from '@timeline/shared/team-scope';
 import { notFound, redirect } from 'next/navigation';
 
@@ -130,6 +131,7 @@ export default async function ObjectDetailPage({ params, searchParams }: PagePro
         suggestions={suggestions}
         projects={projects.map((project) => ({ id: project.id, label: project.canonicalName }))}
         primaryProject={primaryProjects[0] ?? null}
+        taskCategoriesEnabled={getEnv().TASK_CATEGORY_UI_ENABLED}
       />
     </div>
   );

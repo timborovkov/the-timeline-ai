@@ -72,9 +72,10 @@ export default async function TasksPage({
   if (!active) redirect('/sign-in');
 
   const scope = withTeam(db, active.teamId, session.user.id);
+  const taskCategoriesEnabled = getEnv().TASK_CATEGORY_UI_ENABLED;
   const selectedTaskId = taskParam(query.task);
   const filters = parseWorkFilters(query, {
-    taskCategoriesEnabled: getEnv().TASK_CATEGORY_UI_ENABLED,
+    taskCategoriesEnabled,
   });
   const taskFilter = taskObjectFilterFromWorkFilters(filters);
   const [projects, taskPage, counts, pendingSuggestions, members] = await Promise.all([
@@ -216,6 +217,7 @@ export default async function TasksPage({
             totalCount={counts.total}
             nextCursor={taskPage.nextCursor}
             filterParams={taskLoadFilterParams}
+            taskCategoriesEnabled={taskCategoriesEnabled}
           />
         </div>
       )}
@@ -224,6 +226,7 @@ export default async function TasksPage({
         <ApprovalsClient
           suggestions={taskSuggestions}
           allowBulkAccept={false}
+          taskCategoriesEnabled={taskCategoriesEnabled}
           folded={{
             title: 'Task approvals',
             summary: {

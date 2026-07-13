@@ -71,6 +71,7 @@ interface Props {
   totalCount: number;
   nextCursor: string | null;
   filterParams?: Record<string, string>;
+  taskCategoriesEnabled?: boolean;
 }
 
 type TaskPatch = Partial<
@@ -819,6 +820,7 @@ function TaskBoardView({
   setSelectedIds,
   filterParams = EMPTY_FILTER_PARAMS,
   totalCount,
+  taskCategoriesEnabled = true,
   updateTask,
   updateTasks,
   updateTaskCategories,
@@ -915,6 +917,7 @@ function TaskBoardView({
               onUpdateTask={updateTask}
               onUpdateTasks={updateTasks}
               onUpdateTaskCategories={updateTaskCategories}
+              taskCategoriesEnabled={taskCategoriesEnabled}
               filterParams={filterParams}
             />
           )}
@@ -985,6 +988,7 @@ function TaskListView({
   onUpdateTask,
   onUpdateTasks,
   onUpdateTaskCategories,
+  taskCategoriesEnabled,
   filterParams,
 }: {
   rows: objects.ObjectRow[];
@@ -1000,6 +1004,7 @@ function TaskListView({
     ids: string[],
     category: TaskCategory | 'automatic',
   ) => Promise<{ failed: number }>;
+  taskCategoriesEnabled: boolean;
   filterParams: Record<string, string>;
 }) {
   if (rows.length === 0) {
@@ -1043,6 +1048,7 @@ function TaskListView({
         setSelectedIds={setSelectedIds}
         onUpdateTasks={onUpdateTasks}
         onUpdateTaskCategories={onUpdateTaskCategories}
+        taskCategoriesEnabled={taskCategoriesEnabled}
       />
       <div className="min-h-0 flex-1 overflow-auto rounded-sm border border-border bg-surface">
         <table className="w-full min-w-[780px] text-sm">
@@ -1261,6 +1267,7 @@ function TaskBulkToolbar({
   setSelectedIds,
   onUpdateTasks,
   onUpdateTaskCategories,
+  taskCategoriesEnabled,
 }: {
   columns: string[];
   members: TaskMemberOption[];
@@ -1271,6 +1278,7 @@ function TaskBulkToolbar({
     ids: string[],
     category: TaskCategory | 'automatic',
   ) => Promise<{ failed: number }>;
+  taskCategoriesEnabled: boolean;
 }) {
   const [bulk, dispatchBulk] = useReducer(bulkReducer, columns[0] ?? 'todo', (status) => ({
     field: 'assignee' as const,
@@ -1352,7 +1360,7 @@ function TaskBulkToolbar({
         <option value="due">Due date</option>
         <option value="priority">Priority</option>
         <option value="status">Status</option>
-        <option value="category">Category</option>
+        {taskCategoriesEnabled ? <option value="category">Category</option> : null}
       </select>
       {bulk.field === 'status' ? (
         <select
@@ -1415,7 +1423,7 @@ function TaskBulkToolbar({
           ))}
         </select>
       ) : null}
-      {bulk.field === 'category' ? (
+      {taskCategoriesEnabled && bulk.field === 'category' ? (
         <select
           value={bulk.category}
           onChange={(event) => {

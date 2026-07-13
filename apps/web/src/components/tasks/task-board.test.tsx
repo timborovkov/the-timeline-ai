@@ -230,6 +230,24 @@ describe('TaskBoard', () => {
     }
   });
 
+  it('does not expose bulk category editing while the category UI is disabled', () => {
+    render(
+      <TaskBoard
+        rows={[task()]}
+        columns={['todo', 'doing', 'done', 'blocked', 'cancelled']}
+        selectedTaskId={null}
+        view="list"
+        members={[]}
+        totalCount={1}
+        nextCursor={null}
+        taskCategoriesEnabled={false}
+      />,
+    );
+
+    expect(screen.queryByRole('option', { name: 'Category' })).toBeNull();
+    expect(screen.queryByRole('combobox', { name: 'Bulk category' })).toBeNull();
+  });
+
   it('removes an asynchronously-hydrated project from the task card after clearing it', async () => {
     fakes.loadTaskPrimaryProjectsAction.mockResolvedValue({
       rows: [

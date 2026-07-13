@@ -317,7 +317,7 @@ describe('ApprovalsClient', () => {
       }),
     );
 
-    await userEvent.click(screen.getByText('Edit category or project'));
+    await userEvent.click(screen.getByText('Edit proposal'));
     await userEvent.selectOptions(
       screen.getByRole('combobox', { name: 'Category for Prepare homepage wireframes' }),
       'product',
@@ -330,6 +330,52 @@ describe('ApprovalsClient', () => {
       });
       expect(fakes.refresh).toHaveBeenCalled();
     });
+  });
+
+  it('hides proposal category controls while keeping project editing available', async () => {
+    render(
+      createElement(ApprovalsClient, {
+        taskCategoriesEnabled: false,
+        suggestions: [
+          {
+            id: 'bundle-category-disabled',
+            source: 'background',
+            status: 'pending',
+            title: 'Prepare Faba wireframes',
+            summary: null,
+            reason: null,
+            confidence: 'high',
+            createdAt: '2026-06-01T10:00:00.000Z',
+            evidence: [],
+            items: [
+              {
+                id: 'item-category-disabled',
+                status: 'pending',
+                operation: 'create',
+                targetKind: 'task',
+                targetId: null,
+                title: 'Prepare homepage wireframes',
+                description: null,
+                proposedPayload: {
+                  canonicalName: 'Prepare homepage wireframes',
+                  taskCategory: 'design',
+                  taskCategoryMode: 'automatic',
+                  projectName: 'Faba website redesign',
+                },
+                failureReason: null,
+              },
+            ],
+          },
+        ],
+      }),
+    );
+
+    expect(screen.queryByText(/Category · Design/)).toBeNull();
+    await userEvent.click(screen.getByText('Edit proposal'));
+    expect(
+      screen.queryByRole('combobox', { name: 'Category for Prepare homepage wireframes' }),
+    ).toBeNull();
+    expect(screen.getByRole('searchbox', { name: 'Find or name a project' })).toBeTruthy();
   });
 
   it('can hide bulk accept while keeping bulk reject for filtered approval surfaces', () => {
