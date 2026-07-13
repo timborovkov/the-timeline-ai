@@ -17,9 +17,9 @@ import { captureWorkerException, captureWorkerJobFailure } from '#src/monitoring
 // swept in a while. UUIDs sort lexicographically — total + stable, which
 // is all keyset needs.
 const PAGE_SIZE = 500;
-// Per-tick cap. Each requeue is a Redis write (not a single SQL upsert
-// like overdue's notification insert), so we cap lower than overdue. A
-// cap hit just rolls to the next tick — workers are idempotent.
+// Per-tick work cap. Each candidate can require a Redis write (not a single
+// SQL upsert like overdue's notification insert), so we cap lower than overdue.
+// A cap hit just rolls to the next tick — workers are idempotent.
 const MAX_REQUEUES_PER_KIND = 5_000;
 
 // Stuck-row thresholds. Picked to be generous multiples of the normal
@@ -48,6 +48,7 @@ interface JanitorDeps {
   enqueueMeetingFinalizeJob?: (data: queue.MeetingFinalizeJobData) => Promise<void>;
   enqueueTaskCategoryJob?: (data: queue.TaskCategoryJobData) => Promise<unknown>;
   taskCategoryEnabled?: boolean;
+  taskCategoryAttemptLimit?: number;
 }
 
 interface JanitorTickResult {
@@ -84,7 +85,11 @@ export async function processJanitorTick(deps: JanitorDeps): Promise<JanitorTick
       getEnv().TASK_CATEGORY_AUTO_ENQUEUE_ENABLED &&
       getEnv().TASK_CATEGORY_WORKER_ENABLED);
   const taskCategoriesRequeued = taskCategoryEnabled
-    ? await sweepTaskCategories(deps.db, enqueueTaskCategory)
+    ? await sweepTaskCategories(
+        deps.db,
+        enqueueTaskCategory,
+        deps.taskCategoryAttemptLimit ?? MAX_REQUEUES_PER_KIND,
+      )
     : 0;
   const taskCategoryFanoutsRequeued = taskCategoryEnabled
     ? await sweepTaskCategoryProjectInvalidations(deps.db, enqueueTaskCategory)
@@ -139,11 +144,14 @@ async function sweepTaskCategoryProjectInvalidations(
 async function sweepTaskCategories(
   db: Db,
   enqueue: (data: queue.TaskCategoryJobData) => Promise<unknown>,
+  attemptLimit: number,
 ): Promise<number> {
   const pendingTasks = alias(entities, 'pending_tasks');
   let cursor: string | null = null;
+  // Redis outages must not turn this bounded sweep into a full-backlog scan.
+  let attempts = 0;
   let total = 0;
-  while (total < MAX_REQUEUES_PER_KIND) {
+  while (attempts < attemptLimit) {
     const rows = await db
       .select({
         id: pendingTasks.id,
@@ -168,7 +176,8 @@ async function sweepTaskCategories(
     if (rows.length === 0) break;
     cursor = rows[rows.length - 1]?.id ?? null;
     for (const row of rows) {
-      if (total >= MAX_REQUEUES_PER_KIND || !row.inputHash) break;
+      if (attempts >= attemptLimit || !row.inputHash) break;
+      attempts += 1;
       try {
         await enqueue({
           teamId: row.teamId,

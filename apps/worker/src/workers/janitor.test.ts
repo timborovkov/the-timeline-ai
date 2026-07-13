@@ -445,6 +445,44 @@ describe('processJanitorTick — task category sweep', () => {
       trigger: 'retry',
     });
   });
+
+  it('bounds failed enqueue attempts during a Redis outage', async () => {
+    await db.insert(entities).values([
+      {
+        teamId: TEAM_ID,
+        type: 'task',
+        canonicalName: 'First stale task',
+        taskCategoryMode: 'automatic',
+        taskCategoryStatus: 'pending',
+        taskCategoryRequestedInputHash: 'first-hash',
+        taskCategoryTaxonomyVersion: 'task-categories-v1',
+        taskCategoryUpdatedAt: new Date(Date.now() - 10 * 60 * 1000),
+      },
+      {
+        teamId: TEAM_ID,
+        type: 'task',
+        canonicalName: 'Second stale task',
+        taskCategoryMode: 'automatic',
+        taskCategoryStatus: 'pending',
+        taskCategoryRequestedInputHash: 'second-hash',
+        taskCategoryTaxonomyVersion: 'task-categories-v1',
+        taskCategoryUpdatedAt: new Date(Date.now() - 10 * 60 * 1000),
+      },
+    ]);
+    const enqueue = vi.fn().mockRejectedValue(new Error('redis down'));
+
+    const result = await processJanitorTick({
+      db: db as never,
+      enqueueDocumentExtractJob: vi.fn(),
+      enqueueMeetingFinalizeJob: vi.fn(),
+      enqueueTaskCategoryJob: enqueue,
+      taskCategoryEnabled: true,
+      taskCategoryAttemptLimit: 1,
+    });
+
+    expect(enqueue).toHaveBeenCalledTimes(1);
+    expect(result.taskCategoriesRequeued).toBe(0);
+  });
 });
 
 describe('processJanitorTick — failure isolation', () => {
