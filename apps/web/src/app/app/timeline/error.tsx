@@ -11,7 +11,7 @@ export default function TimelineError({
   reset: () => void;
 }) {
   return (
-    <div className="mx-auto max-w-5xl space-y-8">
+    <div className="space-y-8">
       <IndexStrip
         srLabel="Timeline · error"
         segments={[{ value: 'TIMELINE' }, { label: 'status', value: 'ERROR', danger: true }]}

@@ -11,7 +11,7 @@ export default function TeamError({
   reset: () => void;
 }) {
   return (
-    <div className="mx-auto max-w-3xl space-y-8">
+    <div className="space-y-8">
       <IndexStrip
         srLabel="Team · error"
         segments={[{ value: 'TEAM' }, { label: 'status', value: 'ERROR', danger: true }]}

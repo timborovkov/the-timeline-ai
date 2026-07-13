@@ -400,7 +400,7 @@ export function GlobalSearchPage({
     (state.to ? 1 : 0);
 
   return (
-    <div className="mx-auto max-w-5xl space-y-5">
+    <div className="space-y-5">
       <header className="space-y-2">
         <h1 className="text-2xl font-semibold tracking-tight">Search</h1>
         <p className="text-sm text-fg-muted">

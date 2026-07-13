@@ -52,7 +52,7 @@ export default async function MeetingDetailPage({ params }: Props) {
   });
 
   return (
-    <div className="mx-auto max-w-3xl space-y-6">
+    <div className="space-y-6">
       <HistoryBackLink fallbackHref="/app/meetings" label="Back" />
       <header className="space-y-1">
         <h1 className="text-2xl font-semibold">{title}</h1>

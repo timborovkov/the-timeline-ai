@@ -198,7 +198,7 @@ export default async function CalendarPage({ searchParams }: PageProps) {
     return items.length > 0 ? [serializeSuggestionBundle({ ...bundle, items })] : [];
   });
   return (
-    <div className="mx-auto max-w-[92rem] space-y-6">
+    <div className="space-y-6">
       <PageHeader title="Calendar" leading={WORK_BACK_LINK} />
 
       <p className="text-sm text-muted-foreground">

@@ -50,7 +50,7 @@ export default async function JobRecoveryPage(props: { searchParams: Promise<{ k
       : undefined;
 
   return (
-    <div className="mx-auto max-w-4xl space-y-8">
+    <div className="space-y-8">
       <Breadcrumb items={[{ label: 'Team', href: '/app/team' }, { label: 'Background jobs' }]} />
       <IndexStrip
         srLabel={`Background jobs · ${String(items.length)} items need attention`}

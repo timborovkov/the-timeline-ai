@@ -13,7 +13,7 @@ const objectsBackLink = <HistoryBackLink fallbackHref="/app/objects" label="Back
 
 export default function NewObjectPage() {
   return (
-    <div className="mx-auto max-w-3xl space-y-6">
+    <div className="space-y-6">
       <IndexStrip
         srLabel="Create a new workspace object"
         segments={[{ value: 'OBJECTS / NEW' }, { label: 'mode', value: 'create', signal: true }]}

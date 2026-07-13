@@ -27,7 +27,7 @@ const objectsBackLink = <HistoryBackLink fallbackHref="/app/objects" label="Back
 
 function renderPageShell(children: ReactNode, selectedCount?: number) {
   return (
-    <div className="mx-auto max-w-4xl space-y-6">
+    <div className="space-y-6">
       <IndexStrip
         srLabel={selectedCount ? `Merge objects · ${selectedCount} selected` : 'Merge objects'}
         segments={

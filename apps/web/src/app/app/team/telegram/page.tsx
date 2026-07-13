@@ -102,7 +102,7 @@ export default async function TelegramSettingsPage() {
   const userMap = new Map(userRows.map((u) => [u.id, u] as const));
 
   return (
-    <div className="mx-auto max-w-3xl space-y-6">
+    <div className="space-y-6">
       <HistoryBackLink fallbackHref="/app/team" label="Back" />
       <PageHeader
         title="Telegram"

@@ -3,7 +3,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 
 export default function BoardsLoading() {
   return (
-    <div className="mx-auto max-w-4xl space-y-6" aria-busy="true">
+    <div className="space-y-6" aria-busy="true">
       <PageHeaderSkeleton />
       <ul className="divide-y divide-border border border-border" aria-label="Loading boards">
         {Array.from({ length: 3 }).map((_, i) => (

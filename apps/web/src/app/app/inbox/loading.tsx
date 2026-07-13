@@ -3,7 +3,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 
 export default function InboxLoading() {
   return (
-    <div className="mx-auto max-w-4xl space-y-6" aria-busy="true">
+    <div className="space-y-6" aria-busy="true">
       <PageHeaderSkeleton />
       <nav className="flex gap-1.5" aria-label="Loading inbox filters">
         <Skeleton className="h-6 w-12 rounded-sm" />

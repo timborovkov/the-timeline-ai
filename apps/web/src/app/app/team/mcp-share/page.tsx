@@ -55,7 +55,7 @@ export default async function McpSharePage() {
   }));
 
   return (
-    <div className="mx-auto max-w-4xl space-y-8">
+    <div className="space-y-8">
       <Breadcrumb
         items={[
           { label: 'Team', href: '/app/team' },
