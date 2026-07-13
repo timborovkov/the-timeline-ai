@@ -70,33 +70,30 @@ export function TaskCategorySelect({
 
   function run(action: () => Promise<{ error?: string; undoChangeId?: string }>): void {
     setError(null);
-    startTransition(() => {
-      void action()
-        .then((result) => {
-          if (result.error) setError(result.error);
-          else {
-            router.refresh();
-            if (result.undoChangeId) {
-              const changeId = result.undoChangeId;
-              toast.success('Category changed', {
-                action: {
-                  label: 'Undo',
-                  onClick: () => {
-                    void undoTaskCategoryChangeAction({ id: taskId, changeId }).then(
-                      (undoResult) => {
-                        if (undoResult.error) toast.error(undoResult.error);
-                        else router.refresh();
-                      },
-                    );
-                  },
+    startTransition(async () => {
+      try {
+        const result = await action();
+        if (result.error) setError(result.error);
+        else {
+          router.refresh();
+          if (result.undoChangeId) {
+            const changeId = result.undoChangeId;
+            toast.success('Category changed', {
+              action: {
+                label: 'Undo',
+                onClick: () => {
+                  void undoTaskCategoryChangeAction({ id: taskId, changeId }).then((undoResult) => {
+                    if (undoResult.error) toast.error(undoResult.error);
+                    else router.refresh();
+                  });
                 },
-              });
-            }
+              },
+            });
           }
-        })
-        .catch((cause: unknown) => {
-          setError(errorMessage(cause, 'Category update failed'));
-        });
+        }
+      } catch (cause) {
+        setError(errorMessage(cause, 'Category update failed'));
+      }
     });
   }
 

@@ -1,12 +1,14 @@
 // @vitest-environment happy-dom
 
 /** Business intent: each pending task detail gets its own bounded freshness window. */
-import { act, cleanup, render } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const fakes = vi.hoisted(() => ({
   refresh: vi.fn(),
   loadTaskCategoryStatesAction: vi.fn(),
+  setTaskCategoryAction: vi.fn(),
 }));
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: fakes.refresh }) }));
@@ -14,7 +16,7 @@ vi.mock('@/app/actions/objects', () => ({
   loadTaskCategoryStatesAction: fakes.loadTaskCategoryStatesAction,
   resetTaskCategoryAction: vi.fn(),
   retryTaskCategoryAction: vi.fn(),
-  setTaskCategoryAction: vi.fn(),
+  setTaskCategoryAction: fakes.setTaskCategoryAction,
   undoTaskCategoryChangeAction: vi.fn(),
 }));
 
@@ -25,6 +27,7 @@ describe('TaskCategorySelect', () => {
     fakes.refresh.mockReset();
     fakes.loadTaskCategoryStatesAction.mockReset();
     fakes.loadTaskCategoryStatesAction.mockResolvedValue({ rows: [] });
+    fakes.setTaskCategoryAction.mockReset();
   });
 
   afterEach(() => {
@@ -66,5 +69,32 @@ describe('TaskCategorySelect', () => {
     });
 
     expect(fakes.loadTaskCategoryStatesAction).not.toHaveBeenCalled();
+  });
+
+  it('keeps the selector pending until the category mutation settles', async () => {
+    let resolveMutation: (value: { undoChangeId: string }) => void = () => undefined;
+    fakes.setTaskCategoryAction.mockReturnValue(
+      new Promise<{ undoChangeId: string }>((resolve) => {
+        resolveMutation = resolve;
+      }),
+    );
+    render(<TaskCategorySelect taskId="task-1" category={null} mode="automatic" status="ready" />);
+
+    const selector = screen.getByRole('combobox', { name: 'Task category' });
+    await userEvent.selectOptions(selector, 'design');
+
+    expect((selector as HTMLSelectElement).disabled).toBe(true);
+    expect(fakes.setTaskCategoryAction).toHaveBeenCalledWith({
+      id: 'task-1',
+      category: 'design',
+    });
+
+    act(() => {
+      resolveMutation({ undoChangeId: 'change-1' });
+    });
+    await waitFor(() => {
+      expect((selector as HTMLSelectElement).disabled).toBe(false);
+    });
+    expect(fakes.refresh).toHaveBeenCalledOnce();
   });
 });

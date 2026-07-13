@@ -3852,6 +3852,55 @@ describe('suggestion scope', () => {
     ]);
   });
 
+  it('preserves concurrent category and project revisions to the same task proposal', async () => {
+    const ownerScope = withTeam(db as never, TEAM_ID, USER_ID);
+    const reviewerScope = withTeam(db as never, TEAM_ID, REVIEWER_ID);
+    const project = await ownerScope.objects.createObject({
+      type: 'project',
+      canonicalName: 'Faba website redesign',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const bundle = await ownerScope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Create editable task',
+      dedupeKey: 'concurrent-task-proposal-revisions',
+      visibility: 'team',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Prepare homepage wireframes',
+          dedupeKey: 'concurrent-task-proposal-revisions:item',
+          proposedPayload: {
+            canonicalName: 'Prepare homepage wireframes',
+            taskCategory: 'planning',
+            taskCategoryMode: 'automatic',
+          },
+        },
+      ],
+    });
+    const itemId = bundle.items[0]?.id ?? '';
+
+    await Promise.all([
+      ownerScope.suggestions.reviseTaskSuggestionItem({ itemId, category: 'design' }),
+      reviewerScope.suggestions.reviseTaskSuggestionItem({
+        itemId,
+        project: { kind: 'existing', projectId: project.id },
+      }),
+    ]);
+
+    const [item] = await db
+      .select({ proposedPayload: agentSuggestionItems.proposedPayload })
+      .from(agentSuggestionItems)
+      .where(eq(agentSuggestionItems.id, itemId));
+    expect(item?.proposedPayload).toMatchObject({
+      taskCategory: 'design',
+      taskCategoryMode: 'manual',
+      parentObjectId: project.id,
+      projectName: 'Faba website redesign',
+    });
+  });
+
   it('keeps a proposed task pending when its category context hash is stale', async () => {
     const scope = withTeam(db as never, TEAM_ID, USER_ID);
     const bundle = await scope.suggestions.createOrMergeSuggestionBundle({

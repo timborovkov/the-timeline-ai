@@ -5891,100 +5891,103 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         | { kind: 'create'; projectName: string };
     }): Promise<boolean> {
       await ensureMember();
-      const [row] = await db
-        .select({ item: agentSuggestionItems })
-        .from(agentSuggestionItems)
-        .innerJoin(agentSuggestions, eq(agentSuggestions.id, agentSuggestionItems.suggestionId))
-        .where(
-          and(
-            eq(agentSuggestionItems.id, input.itemId),
-            eq(agentSuggestionItems.targetKind, 'task'),
-            eq(agentSuggestionItems.operation, 'create'),
-            inArray(agentSuggestionItems.status, ['pending', 'failed']),
-            isNull(agentSuggestionItems.resolvedAt),
-            suggestionVisibilityPredicate(teamId, userId),
-          ),
-        )
-        .limit(1);
-      if (!row) return false;
-      const payload = recordFromUnknown(row.item.proposedPayload);
-      let projectChanged = false;
-      if (input.project) {
-        projectChanged = true;
-        delete payload.parentObjectId;
-        delete payload.createProjectName;
-        delete payload.projectName;
-        if (input.project.kind === 'existing') {
-          const [project] = await db
-            .select({ id: entities.id, name: entities.canonicalName })
-            .from(entities)
-            .where(
-              and(
-                eq(entities.teamId, teamId),
-                eq(entities.id, input.project.projectId),
-                eq(entities.type, 'project'),
-                isNull(entities.archivedAt),
-                isNull(entities.mergedIntoId),
-              ),
-            )
-            .limit(1);
-          if (!project) throw new Error('Project not found');
-          payload.parentObjectId = project.id;
-          payload.projectName = project.name;
-        } else if (input.project.kind === 'create') {
-          const projectName = input.project.projectName.replace(/\s+/g, ' ').trim();
-          if (!projectName || projectName.length > 200) throw new Error('Invalid project name');
-          payload.createProjectName = projectName;
-          payload.projectName = projectName;
+      return db.transaction(async (tx) => {
+        const [row] = await tx
+          .select({ item: agentSuggestionItems })
+          .from(agentSuggestionItems)
+          .innerJoin(agentSuggestions, eq(agentSuggestions.id, agentSuggestionItems.suggestionId))
+          .where(
+            and(
+              eq(agentSuggestionItems.id, input.itemId),
+              eq(agentSuggestionItems.targetKind, 'task'),
+              eq(agentSuggestionItems.operation, 'create'),
+              inArray(agentSuggestionItems.status, ['pending', 'failed']),
+              isNull(agentSuggestionItems.resolvedAt),
+              suggestionVisibilityPredicate(teamId, userId),
+            ),
+          )
+          .for('update', { of: agentSuggestionItems })
+          .limit(1);
+        if (!row) return false;
+        const payload = recordFromUnknown(row.item.proposedPayload);
+        let projectChanged = false;
+        if (input.project) {
+          projectChanged = true;
+          delete payload.parentObjectId;
+          delete payload.createProjectName;
+          delete payload.projectName;
+          if (input.project.kind === 'existing') {
+            const [project] = await tx
+              .select({ id: entities.id, name: entities.canonicalName })
+              .from(entities)
+              .where(
+                and(
+                  eq(entities.teamId, teamId),
+                  eq(entities.id, input.project.projectId),
+                  eq(entities.type, 'project'),
+                  isNull(entities.archivedAt),
+                  isNull(entities.mergedIntoId),
+                ),
+              )
+              .limit(1);
+            if (!project) throw new Error('Project not found');
+            payload.parentObjectId = project.id;
+            payload.projectName = project.name;
+          } else if (input.project.kind === 'create') {
+            const projectName = input.project.projectName.replace(/\s+/g, ' ').trim();
+            if (!projectName || projectName.length > 200) throw new Error('Invalid project name');
+            payload.createProjectName = projectName;
+            payload.projectName = projectName;
+          }
         }
-      }
-      if (input.category) {
-        if (input.category === 'automatic') {
+        if (input.category) {
+          if (input.category === 'automatic') {
+            delete payload.taskCategory;
+            delete payload.taskCategoryConfidence;
+            delete payload.taskCategoryInputHash;
+            delete payload.taskCategoryModel;
+            delete payload.taskCategoryTaxonomyVersion;
+            payload.taskCategoryMode = 'automatic';
+          } else {
+            payload.taskCategory = input.category;
+            payload.taskCategoryMode = 'manual';
+            delete payload.taskCategoryConfidence;
+            delete payload.taskCategoryInputHash;
+            delete payload.taskCategoryModel;
+            payload.taskCategoryTaxonomyVersion = TASK_CATEGORY_TAXONOMY_VERSION;
+          }
+        } else if (projectChanged && payload.taskCategoryMode !== 'manual') {
           delete payload.taskCategory;
           delete payload.taskCategoryConfidence;
           delete payload.taskCategoryInputHash;
           delete payload.taskCategoryModel;
           delete payload.taskCategoryTaxonomyVersion;
           payload.taskCategoryMode = 'automatic';
-        } else {
-          payload.taskCategory = input.category;
-          payload.taskCategoryMode = 'manual';
-          delete payload.taskCategoryConfidence;
-          delete payload.taskCategoryInputHash;
-          delete payload.taskCategoryModel;
-          payload.taskCategoryTaxonomyVersion = TASK_CATEGORY_TAXONOMY_VERSION;
         }
-      } else if (projectChanged && payload.taskCategoryMode !== 'manual') {
-        delete payload.taskCategory;
-        delete payload.taskCategoryConfidence;
-        delete payload.taskCategoryInputHash;
-        delete payload.taskCategoryModel;
-        delete payload.taskCategoryTaxonomyVersion;
-        payload.taskCategoryMode = 'automatic';
-      }
-      const editedAt = new Date().toISOString();
-      const [updated] = await db
-        .update(agentSuggestionItems)
-        .set({
-          proposedPayload: payload,
-          failureReason: null,
-          metadata: sql`${agentSuggestionItems.metadata} || ${JSON.stringify({
-            proposal_edited_by_user_id: userId,
-            proposal_edited_at: editedAt,
-            ...(input.category ? { proposal_category_edited_at: editedAt } : {}),
-            ...(input.project ? { proposal_project_edited_at: editedAt } : {}),
-          })}::jsonb`,
-          updatedAt: new Date(),
-        })
-        .where(
-          and(
-            eq(agentSuggestionItems.id, input.itemId),
-            inArray(agentSuggestionItems.status, ['pending', 'failed']),
-            isNull(agentSuggestionItems.resolvedAt),
-          ),
-        )
-        .returning({ id: agentSuggestionItems.id });
-      return Boolean(updated);
+        const editedAt = new Date().toISOString();
+        const [updated] = await tx
+          .update(agentSuggestionItems)
+          .set({
+            proposedPayload: payload,
+            failureReason: null,
+            metadata: sql`${agentSuggestionItems.metadata} || ${JSON.stringify({
+              proposal_edited_by_user_id: userId,
+              proposal_edited_at: editedAt,
+              ...(input.category ? { proposal_category_edited_at: editedAt } : {}),
+              ...(input.project ? { proposal_project_edited_at: editedAt } : {}),
+            })}::jsonb`,
+            updatedAt: new Date(),
+          })
+          .where(
+            and(
+              eq(agentSuggestionItems.id, input.itemId),
+              inArray(agentSuggestionItems.status, ['pending', 'failed']),
+              isNull(agentSuggestionItems.resolvedAt),
+            ),
+          )
+          .returning({ id: agentSuggestionItems.id });
+        return Boolean(updated);
+      });
     },
   };
 }
