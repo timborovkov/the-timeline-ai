@@ -894,6 +894,32 @@ describe('task category and primary project state', () => {
     });
   });
 
+  it('restores a backfill candidate when the queue handoff fails', async () => {
+    const scope = withTeam(db, TEAM_A, USER_A).objects;
+    const task = await scope.createObject({
+      type: 'task',
+      canonicalName: 'Backfill handoff candidate',
+      actor: { kind: 'user', userId: USER_A },
+    });
+    await db
+      .update(entities)
+      .set({
+        taskCategoryMode: 'automatic',
+        taskCategoryStatus: 'failed',
+        taskCategoryRequestedInputHash: null,
+      })
+      .where(eq(entities.id, task.id));
+    vi.mocked(queue.enqueueTaskCategoryJob).mockRejectedValueOnce(new Error('redis down'));
+
+    await expect(scope.enqueueTaskCategoryBackfill(task.id)).rejects.toThrow('redis down');
+
+    const [restored] = await scope.listObjects({ id: task.id });
+    expect(restored).toMatchObject({
+      taskCategoryMode: 'automatic',
+      taskCategoryStatus: 'failed',
+    });
+  });
+
   it('rejects promotion when generic child edges would create ambiguous primary projects', async () => {
     const scope = withTeam(db, TEAM_A, USER_A).objects;
     const [firstProject, secondProject, object] = await Promise.all([

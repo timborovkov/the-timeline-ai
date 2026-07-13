@@ -3557,9 +3557,11 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     try {
       await objects.updateObject(existing.id, patch, { kind: 'agent', userId: null });
       if (type === 'task') {
-        if (project) {
-          await objects.setTaskProject(existing.id, project.id, { kind: 'agent', userId: null });
-        }
+        await objects.setTaskProject(existing.id, project?.id ?? null, {
+          kind: 'agent',
+          userId: null,
+        });
+        await archiveOrphanedSuggestedProjects(item);
         await applyProposedTaskCategory(existing.id, parsed);
       }
       return existing.id;
@@ -3675,6 +3677,32 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       )
       .limit(1);
     if (candidate) {
+      await objects.archiveObject(candidate.id, { kind: 'agent', userId: null });
+    }
+  }
+
+  async function archiveOrphanedSuggestedProjects(
+    item: typeof agentSuggestionItems.$inferSelect,
+  ): Promise<void> {
+    const candidates = await db
+      .select({ id: entities.id })
+      .from(entities)
+      .where(
+        and(
+          eq(entities.teamId, teamId),
+          eq(entities.type, 'project'),
+          isNull(entities.archivedAt),
+          isNull(entities.mergedIntoId),
+          sql`${entities.metadata} ->> 'agent_suggestion_project_for_item_id' = ${item.id}`,
+          sql`NOT EXISTS (
+            SELECT 1
+            FROM entity_relationships
+            WHERE entity_relationships.team_id = ${teamId}
+              AND entity_relationships.to_entity_id = ${entities.id}
+          )`,
+        ),
+      );
+    for (const candidate of candidates) {
       await objects.archiveObject(candidate.id, { kind: 'agent', userId: null });
     }
   }

@@ -140,6 +140,7 @@ function renderBoard(
 describe('TaskBoard', () => {
   beforeEach(() => {
     cleanup();
+    delete document.body.dataset.taskCategoriesEnabled;
     fakes.refresh.mockReset();
     fakes.updateObjectAction.mockReset();
     fakes.loadTaskRowsAction.mockReset();
@@ -209,6 +210,22 @@ describe('TaskBoard', () => {
         ids: ['task-1', 'task-2'],
       });
     } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not poll pending categories while the category UI is disabled', () => {
+    vi.useFakeTimers();
+    document.body.dataset.taskCategoriesEnabled = 'false';
+    try {
+      renderBoard(null, [task({ taskCategoryStatus: 'pending' })]);
+      act(() => {
+        vi.advanceTimersByTime(60_000);
+      });
+
+      expect(fakes.loadTaskCategoryStatesAction).not.toHaveBeenCalled();
+    } finally {
+      delete document.body.dataset.taskCategoriesEnabled;
       vi.useRealTimers();
     }
   });

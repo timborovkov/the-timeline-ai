@@ -29,6 +29,7 @@ describe('TaskCategorySelect', () => {
 
   afterEach(() => {
     cleanup();
+    delete document.body.dataset.taskCategoriesEnabled;
     vi.useRealTimers();
   });
 
@@ -51,5 +52,19 @@ describe('TaskCategorySelect', () => {
     });
 
     expect(fakes.loadTaskCategoryStatesAction).toHaveBeenCalledWith({ ids: ['task-2'] });
+  });
+
+  it('does not poll while the category UI is disabled', () => {
+    vi.useFakeTimers();
+    document.body.dataset.taskCategoriesEnabled = 'false';
+    render(
+      <TaskCategorySelect taskId="task-1" category={null} mode="automatic" status="pending" />,
+    );
+
+    act(() => {
+      vi.advanceTimersByTime(60_000);
+    });
+
+    expect(fakes.loadTaskCategoryStatesAction).not.toHaveBeenCalled();
   });
 });

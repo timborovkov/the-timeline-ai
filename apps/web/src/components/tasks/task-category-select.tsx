@@ -41,7 +41,7 @@ export function TaskCategorySelect({
   const value = mode === 'manual' && category ? category : AUTOMATIC_VALUE;
 
   useEffect(() => {
-    if (status !== 'pending') {
+    if (status !== 'pending' || document.body.dataset.taskCategoriesEnabled === 'false') {
       pollStartedAt.current = null;
       polledTaskId.current = null;
       return;

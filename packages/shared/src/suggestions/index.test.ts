@@ -3819,6 +3819,51 @@ describe('suggestion scope', () => {
     });
   });
 
+  it('removes a stale project when retrying a proposal revised to no project', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Create retryable task',
+      dedupeKey: 'create-task-remove-project-retry',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Create retryable task',
+          dedupeKey: 'create-task-remove-project-retry:item',
+          proposedPayload: {
+            canonicalName: 'Create retryable task',
+            createProjectName: 'Original proposal project',
+            projectName: 'Original proposal project',
+          },
+        },
+      ],
+    });
+    const itemId = bundle.items[0]?.id ?? '';
+    const project = await scope.objects.createObject({
+      type: 'project',
+      canonicalName: 'Original proposal project',
+      metadata: { agent_suggestion_project_for_item_id: itemId },
+      actor: { kind: 'agent', userId: null },
+    });
+    const task = await scope.objects.createObject({
+      type: 'task',
+      canonicalName: 'Create retryable task',
+      parentObjectId: project.id,
+      metadata: { agent_suggestion_item_id: itemId },
+      actor: { kind: 'agent', userId: null },
+    });
+    await expect(
+      scope.suggestions.reviseTaskSuggestionItem({ itemId, project: { kind: 'none' } }),
+    ).resolves.toBe(true);
+
+    await expect(scope.suggestions.acceptSuggestionItem(itemId)).resolves.toBe(true);
+
+    await expect(scope.objects.listPrimaryProjectsForTasks([task.id])).resolves.toEqual([]);
+    const archivedProject = await scope.objects.getObject(project.id);
+    expect(archivedProject?.archivedAt).toBeInstanceOf(Date);
+  });
+
   it('stores a readable failure reason for calendar creates missing a time range', async () => {
     const scope = withTeam(db as never, TEAM_ID, USER_ID);
     const bundle = await scope.suggestions.createOrMergeSuggestionBundle({

@@ -6194,7 +6194,8 @@ async function transitionTaskCategoryToPending(
     };
   });
   const job = { teamId: scope.teamId, taskId, inputHash: result.inputHash, trigger };
-  if (!requireFailed) {
+  const requiresDurableHandoff = requireFailed || trigger === 'backfill';
+  if (!requiresDurableHandoff) {
     enqueueTaskCategoryBestEffort(job, {
       teamId: scope.teamId,
       taskId,

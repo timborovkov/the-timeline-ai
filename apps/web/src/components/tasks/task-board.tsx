@@ -549,7 +549,10 @@ function useTaskBoardController({
   const categoryPollStartedAt = useRef<number | null>(null);
   const categoryPollKey = useRef<string | null>(null);
   useEffect(() => {
-    if (pendingCategoryIds.length === 0) {
+    if (
+      pendingCategoryIds.length === 0 ||
+      document.body.dataset.taskCategoriesEnabled === 'false'
+    ) {
       categoryPollStartedAt.current = null;
       categoryPollKey.current = null;
       return;
