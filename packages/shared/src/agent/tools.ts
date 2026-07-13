@@ -2636,6 +2636,7 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
 
           const filtered: Awaited<ReturnType<typeof scope.timeline.searchEvents>> = [];
           const seenEventIds = new Set<string>();
+          const queryVector = await scope.timeline.embedEventQuery(parsed.query);
           for (
             let offset = 0;
             offset < INTEGRATION_SEARCH_MAX_CANDIDATES && filtered.length < requestedLimit;
@@ -2643,6 +2644,7 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
           ) {
             const hits = await scope.timeline.searchEvents({
               query: parsed.query,
+              queryVector,
               source: 'integration',
               limit: Math.min(
                 INTEGRATION_SEARCH_BATCH_SIZE,

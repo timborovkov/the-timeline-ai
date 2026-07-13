@@ -117,11 +117,18 @@ async function enqueueInitialBackfillBestEffort(
         }),
       )
       .then(() =>
-        scope.integrations.recordAudit(
-          'backfill_requested',
-          { actor: userId, source: 'activation' },
-          integration.id,
-        ),
+        Promise.all([
+          scope.integrations.recordAudit(
+            'backfill_requested',
+            { actor: userId, source: 'activation' },
+            integration.id,
+          ),
+          scope.integrations.resolveConnectionAttention({
+            providerConnectionId: integration.providerConnectionId ?? null,
+            integrationId: integration.id,
+            categories: ['sync_error'],
+          }),
+        ]),
       );
     return true;
   } catch (error) {
@@ -161,8 +168,15 @@ export async function POST(req: Request): Promise<Response> {
       { status: 400 },
     );
   }
-  const integration = await scope.integrations.activateSharedResources(parsed.data);
-  const syncRequired = integration.addedSelectionCount > 0;
+  const [integration, connectionAttention] = await Promise.all([
+    scope.integrations.activateSharedResources(parsed.data),
+    scope.integrations.listConnectionAttention(),
+  ]);
+  const unresolvedSyncError = connectionAttention.some(
+    (attention) =>
+      attention.integrationId === integration.id && attention.category === 'sync_error',
+  );
+  const syncRequired = integration.addedSelectionCount > 0 || unresolvedSyncError;
   const [syncQueued, , completedFirstIntegration] = await Promise.all([
     syncRequired
       ? enqueueInitialBackfillBestEffort(scope, integration, active.teamId, session.user.id)

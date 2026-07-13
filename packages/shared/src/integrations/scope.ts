@@ -841,6 +841,11 @@ export function createIntegrationScope(deps: {
             .select({
               id: integrationWebhookSubscriptions.id,
               integrationId: integrationWebhookSubscriptions.integrationId,
+              externalSubscriptionId: integrationWebhookSubscriptions.externalSubscriptionId,
+              resourceKind: integrationWebhookSubscriptions.resourceKind,
+              externalResourceId: integrationWebhookSubscriptions.externalResourceId,
+              eventType: integrationWebhookSubscriptions.eventType,
+              expiresAt: integrationWebhookSubscriptions.expiresAt,
             })
             .from(integrationWebhookSubscriptions)
             .where(
@@ -871,6 +876,8 @@ export function createIntegrationScope(deps: {
       integrationIds: affectedIntegrationIds,
     };
     if (!input.apply) return report;
+
+    await deprovisionWebhookSubscriptionsBeforeRepair(db, webhookSubscriptions);
 
     await db.transaction(async (tx) => {
       const now = new Date();
@@ -2200,6 +2207,51 @@ export async function adminReconcileIntegrationWebhookSubscriptions(
   }
 
   return { active: activeSubscriptions.length, deprovisioned, skipped: false };
+}
+
+async function deprovisionWebhookSubscriptionsBeforeRepair(
+  db: Db,
+  subscriptions: {
+    integrationId: string | null;
+    externalSubscriptionId: string | null;
+    resourceKind: string;
+    externalResourceId: string;
+    eventType: string;
+    expiresAt: Date | null;
+  }[],
+): Promise<void> {
+  const byIntegration = new Map<string, typeof subscriptions>();
+  for (const subscription of subscriptions) {
+    if (!subscription.integrationId || !subscription.externalSubscriptionId) continue;
+    byIntegration.set(subscription.integrationId, [
+      ...(byIntegration.get(subscription.integrationId) ?? []),
+      subscription,
+    ]);
+  }
+  for (const [integrationId, rows] of byIntegration) {
+    const integration = await adminLoadIntegration(db, integrationId);
+    if (!integration) throw new Error('Integration not found while repairing Monday webhooks');
+    const provider = getProvider(integration.provider);
+    if (!provider.deprovisionWebhook) continue;
+    const tokens = await adminDecryptIntegrationTokens(db, integration);
+    if (!tokens) throw new Error('No tokens — reconnect required before repairing Monday webhooks');
+    for (const row of rows) {
+      await provider.deprovisionWebhook({
+        integration,
+        tokens,
+        subscription: {
+          externalSubscriptionId: row.externalSubscriptionId,
+          resourceKind: row.resourceKind,
+          externalResourceId: row.externalResourceId,
+          eventType: row.eventType,
+          expiresAt: row.expiresAt,
+        },
+        ctx: {
+          persistTokens: (fresh) => adminPersistTokens(db, integration.id, fresh),
+        },
+      });
+    }
+  }
 }
 
 export async function adminDeprovisionIntegrationWebhookSubscriptions(

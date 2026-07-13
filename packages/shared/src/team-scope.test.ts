@@ -29,6 +29,10 @@ import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+vi.mock('#src/http/external-fetch.js', () => ({
+  externalFetch: (input: string | URL, init?: RequestInit) => globalThis.fetch(input, init),
+}));
+
 import type { SearchHit, SearchOpts } from '#src/qdrant/client.js';
 
 import { resetSecretsKeyCacheForTests } from '#src/crypto/secrets.js';
@@ -1888,7 +1892,7 @@ describe('withTeam namespaced port', () => {
       integrationId: integration.id,
       providerConnectionId: connection.id,
       provider: 'monday',
-      externalSubscriptionId: null,
+      externalSubscriptionId: 'monday-hook-1',
       resourceKind: 'monday.board',
       externalResourceId: 'subitems-board-1',
       eventType: 'create_item',
@@ -1911,6 +1915,22 @@ describe('withTeam namespaced port', () => {
     });
     expect(await adminScope.integrations.listSelections(integration.id)).toHaveLength(1);
 
+    const fetchMock = vi.fn<typeof globalThis.fetch>(async (_input, init) => {
+      if (typeof init?.body !== 'string') throw new Error('Expected a JSON request body');
+      const body = JSON.parse(init.body) as { query?: string };
+      expect(body.query).toContain('delete_webhook');
+      const [subscriptionBeforeProviderDelete] = await db
+        .select()
+        .from(integrationWebhookSubscriptions)
+        .where(eq(integrationWebhookSubscriptions.integrationId, integration.id));
+      expect(subscriptionBeforeProviderDelete?.status).toBe('failed');
+      return new Response(
+        JSON.stringify({ data: { delete_webhook: { id: 'monday-hook-1', board_id: '1' } } }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      );
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
     const applied = await adminScope.integrations.repairMondayHelperResources({
       helperBoardIds: ['subitems-board-1'],
       apply: true,
@@ -1932,6 +1952,7 @@ describe('withTeam namespaced port', () => {
       status: 'deleted',
       lastError: 'removed_by_monday_helper_board_repair',
     });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
 
     const repeated = await adminScope.integrations.repairMondayHelperResources({
       helperBoardIds: ['subitems-board-1'],
@@ -1944,6 +1965,7 @@ describe('withTeam namespaced port', () => {
       webhookSubscriptionCount: 0,
       integrationIds: [],
     });
+    vi.unstubAllGlobals();
   });
 
   it('preserves connection-attention history when a provider connection is deleted', async () => {

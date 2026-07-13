@@ -166,6 +166,7 @@ async function runToolEval(
   input: unknown,
   hits: SearchHit[] = [],
   onQdrantSearch?: (options: SearchOpts) => void,
+  onEmbed?: () => void,
 ) {
   return runAgentToolEval({
     db: db as never,
@@ -174,6 +175,17 @@ async function runToolEval(
     toolName: name,
     toolInput: input,
     hits,
+    ...(onEmbed
+      ? {
+          embed: ({ text }: { text: string }) => {
+            onEmbed();
+            return Promise.resolve({
+              vector: text.includes('Acme') ? [0.9, 0.1, 0.1] : [0.1, 0.1, 0.1],
+              model: 'eval-embed',
+            });
+          },
+        }
+      : {}),
     ...(onQdrantSearch ? { onQdrantSearch } : {}),
   });
 }
@@ -451,6 +463,28 @@ describe('agent tool evals', () => {
     };
     expect(output.count).toBe(1);
     expect(output.results).toEqual([expect.objectContaining({ event_id: MONDAY_ITEM_EVENT })]);
+  });
+
+  it('embeds an integration query once while scanning stale semantic pages', async () => {
+    const staleHits = Array.from({ length: 201 }, (_, index) =>
+      hit(MONDAY_HELPER_EVENT, 1 - index / 1000, { source: 'integration' }),
+    );
+    let embeddings = 0;
+
+    const evalRun = await runToolEval(
+      db,
+      OWNER,
+      'search_integration_events',
+      { query: 'Acme Ext-Faba checkout', provider: 'monday', limit: 1 },
+      [...staleHits, hit(MONDAY_ITEM_EVENT, 0.79, { source: 'integration' })],
+      undefined,
+      () => {
+        embeddings += 1;
+      },
+    );
+
+    expect((evalRun.output as { count: number }).count).toBe(1);
+    expect(embeddings).toBe(1);
   });
 
   it('stops integration retrieval after enough ranked candidates are found', async () => {

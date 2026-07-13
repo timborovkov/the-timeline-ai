@@ -89,11 +89,18 @@ async function enqueueSelectionBackfillBestEffort(
         }),
       )
       .then(() =>
-        scope.integrations.recordAudit(
-          'backfill_requested',
-          { actor: userId, source: 'selection_change' },
-          integration.id,
-        ),
+        Promise.all([
+          scope.integrations.recordAudit(
+            'backfill_requested',
+            { actor: userId, source: 'selection_change' },
+            integration.id,
+          ),
+          scope.integrations.resolveConnectionAttention({
+            providerConnectionId: integration.providerConnectionId ?? null,
+            integrationId: integration.id,
+            categories: ['sync_error'],
+          }),
+        ]),
       );
     return true;
   } catch (error) {
@@ -242,6 +249,10 @@ export async function PUT(
   const hasAddedSelection = parsed.data.selections.some(
     (selection) => !previousKeys.has(`${selection.kind}\x00${selection.externalId}`),
   );
+  const connectionAttention = await scope.integrations.listConnectionAttention();
+  const unresolvedSyncError = connectionAttention.some(
+    (attention) => attention.integrationId === id && attention.category === 'sync_error',
+  );
   await scope.integrations.setSelections(id, parsed.data.selections);
   const [, , syncQueued] = await Promise.all([
     scope.integrations.recordAudit(
@@ -250,7 +261,7 @@ export async function PUT(
       id,
     ),
     reconcileWebhooksBestEffort(scope, integration),
-    hasAddedSelection
+    hasAddedSelection || unresolvedSyncError
       ? enqueueSelectionBackfillBestEffort(
           scope,
           integration,

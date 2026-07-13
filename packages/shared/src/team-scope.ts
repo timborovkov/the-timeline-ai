@@ -249,6 +249,8 @@ export interface CreateEmailEventResult {
 
 export interface SearchEventsInput {
   query: string;
+  /** Reuse a previously embedded query when scanning multiple semantic pages. */
+  queryVector?: number[];
   from?: Date;
   to?: Date;
   source?:
@@ -2968,6 +2970,13 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
        * point can both match; we merge entity_ids across them so the UI doesn't
        * silently drop entity badges.
        */
+      async embedEventQuery(query: string): Promise<number[]> {
+        await ensureMember();
+        const embedFn = deps.embed ?? defaultEmbed;
+        const { vector } = await embedFn({ text: query });
+        return vector;
+      },
+
       async searchEvents(input: SearchEventsInput): Promise<SearchEventResult[]> {
         await ensureMember();
         const embedFn = deps.embed ?? defaultEmbed;
@@ -2978,7 +2987,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
             return client.search(tId, uId, vector, opts);
           });
 
-        const { vector } = await embedFn({ text: input.query });
+        const vector = input.queryVector ?? (await embedFn({ text: input.query })).vector;
         if (input.source && input.senderSource && input.source !== input.senderSource) return [];
 
         const searchOpts: SearchOpts = {

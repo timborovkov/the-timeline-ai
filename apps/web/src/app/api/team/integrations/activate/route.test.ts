@@ -14,6 +14,7 @@ const fakes = vi.hoisted(() => ({
   recordAudit: vi.fn(),
   recordConnectionAttention: vi.fn(),
   resolveConnectionAttention: vi.fn(),
+  listConnectionAttention: vi.fn(),
   adminReconcileIntegrationWebhookSubscriptions: vi.fn(),
   missingRequiredProviderScopes: vi.fn(),
   safeMarkOnboardingStep: vi.fn(),
@@ -43,6 +44,7 @@ vi.mock('@timeline/shared/team-scope', () => ({
       recordAudit: fakes.recordAudit,
       recordConnectionAttention: fakes.recordConnectionAttention,
       resolveConnectionAttention: fakes.resolveConnectionAttention,
+      listConnectionAttention: fakes.listConnectionAttention,
     },
   }),
 }));
@@ -76,6 +78,7 @@ beforeEach(() => {
   fakes.recordAudit.mockResolvedValue(undefined);
   fakes.recordConnectionAttention.mockResolvedValue(undefined);
   fakes.resolveConnectionAttention.mockResolvedValue(undefined);
+  fakes.listConnectionAttention.mockResolvedValue([]);
   fakes.adminReconcileIntegrationWebhookSubscriptions.mockResolvedValue({
     active: 0,
     deprovisioned: 0,
@@ -247,6 +250,35 @@ describe('POST /api/team/integrations/activate', () => {
       {},
       INTEGRATION_ID,
     );
+  });
+
+  it('retries an unresolved initial backfill when active sources are unchanged', async () => {
+    fakes.activateSharedResources.mockResolvedValueOnce({
+      id: INTEGRATION_ID,
+      provider: 'monday',
+      providerConnectionId: CONNECTION_ID,
+      addedSelectionCount: 0,
+    });
+    fakes.listConnectionAttention.mockResolvedValueOnce([
+      { integrationId: INTEGRATION_ID, category: 'sync_error' },
+    ]);
+
+    const response = await POST(
+      request({ providerConnectionId: CONNECTION_ID, resourceShareIds: [SHARE_ID] }),
+    );
+
+    await expect(response.json()).resolves.toMatchObject({
+      syncRequired: true,
+      syncQueued: true,
+    });
+    expect(fakes.enqueueIntegrationSyncJob).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: 'backfill', integrationId: INTEGRATION_ID }),
+    );
+    expect(fakes.resolveConnectionAttention).toHaveBeenCalledWith({
+      providerConnectionId: CONNECTION_ID,
+      integrationId: INTEGRATION_ID,
+      categories: ['sync_error'],
+    });
   });
 
   it('skips Monday webhook provisioning and records reconnect attention when legacy scopes are missing', async () => {
