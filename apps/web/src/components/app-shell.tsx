@@ -111,7 +111,10 @@ export function AppShell({
             className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-24 pt-6 md:px-8 md:py-8"
           >
             <AppMainScrollRestoration />
-            <div data-slot="app-page-container" className="mx-auto w-full max-w-6xl">
+            <div
+              data-slot="app-page-container"
+              className="app-page-container mx-auto w-full max-w-6xl"
+            >
               {children}
             </div>
           </main>

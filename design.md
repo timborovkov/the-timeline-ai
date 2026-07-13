@@ -244,7 +244,10 @@ surface here in the same PR.
   route, owned by `<AppShell>`. Page headers and outer content edges must not
   shift when navigating between dashboard surfaces. A page may constrain an
   inner region for long-form prose, but must not add a competing outer
-  `mx-auto` / `max-w-*` wrapper.
+  `mx-auto` / `max-w-*` wrapper. Full-viewport work canvases (chat and populated
+  task/kanban boards) mark their root with `data-app-layout="full-bleed"`; the
+  shell then removes the cap so their existing full-bleed gutters can fill the
+  main column.
 - **Floating chat trigger** appears only at tablet/desktop widths where it
   does not cover operational rows. On mobile, Ask remains available through
   the primary navigation sheet; fixed chrome must not obscure timeline

@@ -216,6 +216,7 @@ describe('TasksPage', () => {
 
     expect(html).toContain('No active tasks');
     expect(html).not.toContain('Pending task proposals');
+    expect(html).not.toContain('data-app-layout="full-bleed"');
   });
 
   it('fetches one bounded task batch and exposes a cursor for older tasks', async () => {
@@ -231,6 +232,7 @@ describe('TasksPage', () => {
 
     expect(html).toContain('Task 499');
     expect(html).not.toContain('Task 500');
+    expect(html).toContain('data-app-layout="full-bleed"');
     expect(html).toContain('total 501');
     expect(html).not.toContain('cursor none');
     expect(fakes.listObjects).toHaveBeenCalledWith({

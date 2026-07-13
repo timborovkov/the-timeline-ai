@@ -93,6 +93,7 @@ export default async function BoardDetailPage({
 
   return (
     <div
+      data-app-layout={isKanban ? 'full-bleed' : undefined}
       className={
         isKanban
           ? '-mx-4 -my-6 flex h-[calc(100dvh-3.5rem)] min-w-0 flex-col md:-mx-8 md:-my-8'

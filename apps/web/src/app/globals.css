@@ -105,6 +105,14 @@
   --danger-foreground: oklch(0.13 0.005 240);
 }
 
+@layer components {
+  /* Canvas-style routes opt out of the shared dashboard width without
+     duplicating shell sizing or sidebar/inspector calculations. */
+  .app-page-container:has(> [data-app-layout='full-bleed']) {
+    max-width: none;
+  }
+}
+
 @layer base {
   *,
   *::before,
