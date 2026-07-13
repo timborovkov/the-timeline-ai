@@ -3878,6 +3878,15 @@ export interface CreateObjectInput {
   aliases?: string[];
   metadata?: Record<string, unknown>;
   parentObjectId?: string | null;
+  /** A proposal-time model result. It is applied in the create transaction only
+   * when its exact task/project packet still matches. */
+  precomputedTaskCategory?: {
+    category: TaskCategory;
+    confidence: number;
+    model: string;
+    inputHash: string;
+    taxonomyVersion: string;
+  };
   /** Who/what created this. Users go through server actions; agents through
    *  `propose_object_change`/`suggest_task` tools. */
   actor: { kind: ActorKind; userId?: string | null };
@@ -3920,9 +3929,26 @@ export async function createObject(
             ...(primaryProject ? { primaryProjectName: primaryProject.canonicalName } : {}),
           })
         : null;
-    const requestedCategoryHash = taskPacket
+    const taskCategoryHash = taskPacket
       ? taskCategoryInputHash(taskPacket, TIMELINE_MODELS.taskCategorization.id)
       : null;
+    const parsedPrecomputedCategory = taskCategorySchema.safeParse(
+      input.precomputedTaskCategory?.category,
+    );
+    const precomputedTaskCategory =
+      taskPacket &&
+      taskCategoryHash &&
+      input.precomputedTaskCategory &&
+      parsedPrecomputedCategory.success &&
+      input.precomputedTaskCategory.inputHash === taskCategoryHash &&
+      input.precomputedTaskCategory.taxonomyVersion === TASK_CATEGORY_TAXONOMY_VERSION &&
+      Number.isFinite(input.precomputedTaskCategory.confidence) &&
+      input.precomputedTaskCategory.confidence >= 0 &&
+      input.precomputedTaskCategory.confidence <= 1 &&
+      input.precomputedTaskCategory.model.trim().length > 0
+        ? { ...input.precomputedTaskCategory, category: parsedPrecomputedCategory.data }
+        : null;
+    const requestedCategoryHash = precomputedTaskCategory ? null : taskCategoryHash;
     const insertRows = await tx
       .insert(entities)
       .values({
@@ -3939,8 +3965,11 @@ export async function createObject(
         metadata: input.metadata ?? {},
         sourceEventId: null,
         agentSuggested: false,
+        taskCategory: precomputedTaskCategory?.category ?? null,
         taskCategoryMode: taskPacket ? 'automatic' : null,
-        taskCategoryStatus: taskPacket ? 'pending' : null,
+        taskCategorySource: precomputedTaskCategory ? 'llm' : null,
+        taskCategoryStatus: precomputedTaskCategory ? 'ready' : taskPacket ? 'pending' : null,
+        taskCategoryAppliedInputHash: precomputedTaskCategory?.inputHash ?? null,
         taskCategoryRequestedInputHash: requestedCategoryHash,
         taskCategoryTaxonomyVersion: taskPacket ? TASK_CATEGORY_TAXONOMY_VERSION : null,
         taskCategoryUpdatedAt: taskPacket ? new Date() : null,
@@ -4011,6 +4040,33 @@ export async function createObject(
       newValue: { type: input.type, canonicalName: name, status: row.status },
       sourceEventId: null,
     });
+    if (precomputedTaskCategory) {
+      await tx.insert(taskCategoryAssignments).values({
+        teamId: scope.teamId,
+        entityId: row.id,
+        category: precomputedTaskCategory.category,
+        source: 'llm',
+        mode: 'automatic',
+        confidence: precomputedTaskCategory.confidence,
+        model: precomputedTaskCategory.model,
+        promptVersion: TASK_CATEGORY_PROMPT_VERSION,
+        taxonomyVersion: TASK_CATEGORY_TAXONOMY_VERSION,
+        inputHash: precomputedTaskCategory.inputHash,
+        outcome: 'applied',
+        latencyMs: 0,
+      });
+      await tx.insert(objectChanges).values({
+        teamId: scope.teamId,
+        entityId: row.id,
+        actorUserId: null,
+        actorKind: 'agent',
+        status: 'applied',
+        field: 'taskCategory',
+        previousValue: null,
+        newValue: precomputedTaskCategory.category,
+        sourceEventId: null,
+      });
+    }
     await emitObjectDirectWriteOutput({
       db: tx,
       teamId: scope.teamId,

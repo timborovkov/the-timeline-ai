@@ -25,6 +25,12 @@ import { buildTaskCategoryPacket, taskCategoryInputHash } from '#src/task-catego
 import { withTeam } from '#src/team-scope.js';
 import { createResettablePGliteTestDb, type ResettablePGliteTestDb } from '#src/test/pglite.js';
 
+const queueFakes = vi.hoisted(() => ({
+  enqueueTaskCategoryJob: vi.fn(() =>
+    Promise.resolve({ enqueued: true, jobId: 'task-category-job' }),
+  ),
+}));
+
 vi.mock('#src/queue/queues.js', async (importOriginal) => {
   const actual = await importOriginal<typeof QueueModule>();
   const enqueue = vi.fn(() => Promise.resolve(undefined));
@@ -35,6 +41,7 @@ vi.mock('#src/queue/queues.js', async (importOriginal) => {
     enqueueObjectEmbedJob: enqueue,
     enqueueObjectNoteEmbedJob: enqueue,
     enqueueObjectSummaryJob: vi.fn(() => Promise.resolve({ enqueued: true, jobId: 'summary-job' })),
+    enqueueTaskCategoryJob: queueFakes.enqueueTaskCategoryJob,
   };
 });
 
@@ -122,6 +129,7 @@ describe('suggestion scope', () => {
 
   beforeEach(async () => {
     await testDb.reset();
+    queueFakes.enqueueTaskCategoryJob.mockClear();
   });
 
   afterAll(async () => {
@@ -3577,6 +3585,8 @@ describe('suggestion scope', () => {
       true,
     );
 
+    expect(queueFakes.enqueueTaskCategoryJob).not.toHaveBeenCalled();
+
     const rows = await db.select().from(entities).where(eq(entities.teamId, TEAM_ID));
     const project = rows.find((row) => row.canonicalName === 'Faba website redesign');
     const task = rows.find((row) => row.canonicalName === 'Prepare homepage wireframes');
@@ -4172,6 +4182,90 @@ describe('suggestion scope', () => {
       taskCategory: 'design',
       taskCategoryMode: 'manual',
       taskCategorySource: 'user',
+    });
+  });
+
+  it('preserves every newer human task edit when retrying a partially accepted create', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Retry task without overwriting fields',
+      dedupeKey: 'retry-task-preserve-all-human-edits',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Original proposed task',
+          dedupeKey: 'retry-task-preserve-all-human-edits:item',
+          proposedPayload: {
+            canonicalName: 'Original proposed task',
+            status: 'todo',
+            stage: 'planned',
+            priority: 1,
+            ownerUserId: USER_ID,
+            assigneeUserId: REVIEWER_ID,
+            dueAt: '2026-08-01T12:00:00.000Z',
+            aliases: ['Original alias'],
+            metadata: { description: 'Original description' },
+          },
+        },
+      ],
+    });
+    const itemId = bundle.items[0]?.id ?? '';
+    const task = await scope.objects.createObject({
+      type: 'task',
+      canonicalName: 'Original proposed task',
+      status: 'todo',
+      stage: 'planned',
+      priority: 1,
+      ownerUserId: USER_ID,
+      assigneeUserId: REVIEWER_ID,
+      dueAt: new Date('2026-08-01T12:00:00.000Z'),
+      aliases: ['Original alias'],
+      metadata: {
+        description: 'Original description',
+        agent_suggestion_item_id: itemId,
+      },
+      actor: { kind: 'agent', userId: null },
+    });
+    await db
+      .update(agentSuggestionItems)
+      .set({ status: 'failed', resolvedAt: null, resolvedByUserId: null })
+      .where(eq(agentSuggestionItems.id, itemId));
+    await scope.objects.updateObject(
+      task.id,
+      {
+        canonicalName: 'Human-edited task',
+        status: 'doing',
+        stage: 'review',
+        priority: 4,
+        ownerUserId: REVIEWER_ID,
+        assigneeUserId: USER_ID,
+        dueAt: new Date('2026-09-15T09:30:00.000Z'),
+        aliases: ['Human alias'],
+        metadata: {
+          description: 'Human description',
+          agent_suggestion_item_id: itemId,
+        },
+      },
+      { kind: 'user', userId: USER_ID },
+    );
+
+    await expect(scope.suggestions.acceptSuggestionItem(itemId)).resolves.toBe(true);
+
+    await expect(scope.objects.getObject(task.id)).resolves.toMatchObject({
+      canonicalName: 'Human-edited task',
+      status: 'doing',
+      stage: 'review',
+      priority: 4,
+      ownerUserId: REVIEWER_ID,
+      assigneeUserId: USER_ID,
+      dueAt: new Date('2026-09-15T09:30:00.000Z'),
+      aliases: ['Human alias'],
+      metadata: {
+        description: 'Human description',
+        agent_suggestion_item_id: itemId,
+      },
     });
   });
 

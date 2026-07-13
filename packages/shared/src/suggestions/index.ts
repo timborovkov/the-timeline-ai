@@ -3556,6 +3556,22 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     const type =
       item.targetKind === 'task' ? 'task' : (objectTypeFromValue(parsed.type) ?? 'other');
     const project = type === 'task' ? await resolveSuggestedTaskProject(item, parsed) : null;
+    const precomputedTaskCategory =
+      type === 'task' &&
+      parsed.taskCategory &&
+      parsed.taskCategoryMode !== 'manual' &&
+      parsed.taskCategoryConfidence !== undefined &&
+      parsed.taskCategoryModel &&
+      parsed.taskCategoryInputHash &&
+      parsed.taskCategoryTaxonomyVersion
+        ? {
+            category: parsed.taskCategory,
+            confidence: parsed.taskCategoryConfidence,
+            model: parsed.taskCategoryModel,
+            inputHash: parsed.taskCategoryInputHash,
+            taxonomyVersion: parsed.taskCategoryTaxonomyVersion,
+          }
+        : null;
     const input: CreateObjectInput = {
       type,
       canonicalName,
@@ -3570,6 +3586,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     if (parsed.dueAt !== undefined) input.dueAt = parsed.dueAt ? new Date(parsed.dueAt) : null;
     if (project) input.parentObjectId = project.id;
     else if (parsed.parentObjectId !== undefined) input.parentObjectId = parsed.parentObjectId;
+    if (precomputedTaskCategory) input.precomputedTaskCategory = precomputedTaskCategory;
     input.metadata = {
       ...(parsed.metadata ?? {}),
       agent_suggestion_item_id: item.id,
@@ -3593,7 +3610,9 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     if (!existing) {
       try {
         const created = await objects.createObject(input);
-        if (type === 'task') await applyProposedTaskCategory(created.id, parsed);
+        if (type === 'task' && !precomputedTaskCategory) {
+          await applyProposedTaskCategory(created.id, parsed);
+        }
         return created.id;
       } catch (error) {
         await archiveSuggestedProjectAfterFailure(item, project);
@@ -3606,23 +3625,37 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         ? await taskProposalFieldsChangedByUser(item, existing.id)
         : new Set<string>();
     const patch: ObjectPatch = {};
-    if (parsed.canonicalName !== undefined && parsed.canonicalName !== existing.canonicalName) {
+    if (
+      !userOverrides.has('canonicalName') &&
+      parsed.canonicalName !== undefined &&
+      parsed.canonicalName !== existing.canonicalName
+    ) {
       patch.canonicalName = canonicalName;
     }
-    if (parsed.status !== undefined) patch.status = parsed.status;
-    if (parsed.stage !== undefined) patch.stage = parsed.stage;
-    if (parsed.priority !== undefined) patch.priority = parsed.priority;
-    if (parsed.ownerUserId !== undefined) patch.ownerUserId = parsed.ownerUserId;
-    if (parsed.assigneeUserId !== undefined) patch.assigneeUserId = parsed.assigneeUserId;
-    if (parsed.dueAt !== undefined) patch.dueAt = parsed.dueAt ? new Date(parsed.dueAt) : null;
-    if (parsed.aliases !== undefined) {
+    if (!userOverrides.has('status') && parsed.status !== undefined) patch.status = parsed.status;
+    if (!userOverrides.has('stage') && parsed.stage !== undefined) patch.stage = parsed.stage;
+    if (!userOverrides.has('priority') && parsed.priority !== undefined) {
+      patch.priority = parsed.priority;
+    }
+    if (!userOverrides.has('ownerUserId') && parsed.ownerUserId !== undefined) {
+      patch.ownerUserId = parsed.ownerUserId;
+    }
+    if (!userOverrides.has('assigneeUserId') && parsed.assigneeUserId !== undefined) {
+      patch.assigneeUserId = parsed.assigneeUserId;
+    }
+    if (!userOverrides.has('dueAt') && parsed.dueAt !== undefined) {
+      patch.dueAt = parsed.dueAt ? new Date(parsed.dueAt) : null;
+    }
+    if (!userOverrides.has('aliases') && parsed.aliases !== undefined) {
       patch.aliases = mergeAliases(stringArrayFromUnknown(existing.aliases), parsed.aliases);
     }
-    patch.metadata = {
-      ...recordFromUnknown(existing.metadata),
-      ...(parsed.metadata ?? {}),
-      agent_suggestion_item_id: item.id,
-    };
+    if (!userOverrides.has('metadata')) {
+      patch.metadata = {
+        ...recordFromUnknown(existing.metadata),
+        ...(parsed.metadata ?? {}),
+        agent_suggestion_item_id: item.id,
+      };
+    }
     try {
       await objects.updateObject(existing.id, patch, { kind: 'agent', userId: null });
       if (type === 'task') {
@@ -3657,16 +3690,25 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
           eq(objectChanges.entityId, taskId),
           eq(objectChanges.actorKind, 'user'),
           eq(objectChanges.status, 'applied'),
-          inArray(objectChanges.field, ['primaryProjectId', 'taskCategory']),
+          inArray(objectChanges.field, [
+            'canonicalName',
+            'status',
+            'stage',
+            'priority',
+            'ownerUserId',
+            'assigneeUserId',
+            'dueAt',
+            'aliases',
+            'metadata',
+            'primaryProjectId',
+            'taskCategory',
+          ]),
           gt(objectChanges.changedAt, item.createdAt),
         ),
       );
     return new Set(
       rows.flatMap((row) => {
-        const boundary = taskProposalFieldRevisionBoundary(
-          item,
-          row.field === 'primaryProjectId' ? 'primaryProjectId' : 'taskCategory',
-        );
+        const boundary = taskProposalFieldRevisionBoundary(item, row.field);
         return row.changedAt > boundary ? [row.field] : [];
       }),
     );
@@ -3674,11 +3716,16 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
 
   function taskProposalFieldRevisionBoundary(
     item: typeof agentSuggestionItems.$inferSelect,
-    field: 'primaryProjectId' | 'taskCategory',
+    field: string,
   ): Date {
     const metadata = recordFromUnknown(item.metadata);
     const key =
-      field === 'primaryProjectId' ? 'proposal_project_edited_at' : 'proposal_category_edited_at';
+      field === 'primaryProjectId'
+        ? 'proposal_project_edited_at'
+        : field === 'taskCategory'
+          ? 'proposal_category_edited_at'
+          : null;
+    if (!key) return item.createdAt;
     const value = metadata[key];
     return typeof value === 'string' && !Number.isNaN(Date.parse(value))
       ? new Date(value)
