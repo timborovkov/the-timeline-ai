@@ -105,6 +105,19 @@ describe('database schema contracts', () => {
     ]);
   });
 
+  it('indexes the global pending task-category recovery sweep', async () => {
+    const indexes = await pg.query<{ indexdef: string }>(`
+      SELECT indexdef
+      FROM pg_indexes
+      WHERE schemaname = 'public'
+        AND indexname = 'entities_task_category_pending_recovery_idx'
+    `);
+
+    expect(indexes.rows).toHaveLength(1);
+    expect(indexes.rows[0]?.indexdef).toContain('(id, task_category_updated_at)');
+    expect(indexes.rows[0]?.indexdef).toContain("task_category_status = 'pending'");
+  });
+
   it('migrates pending linked relationship suggestion payloads to related', async () => {
     const migrationPg = new PGlite();
     try {

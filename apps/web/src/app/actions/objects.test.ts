@@ -42,6 +42,7 @@ const fakes = vi.hoisted(() => ({
   fakeTx: { kind: 'tx' },
   fakeWithTeam: vi.fn(),
   fakeCheckRateLimit: vi.fn(),
+  fakeGetEnv: vi.fn(),
   fakeObjects: {
     createObject: vi.fn(),
     getObject: vi.fn(),
@@ -97,6 +98,7 @@ vi.mock('@timeline/shared/rate-limit', () => ({
   checkRateLimit: fakes.fakeCheckRateLimit,
   rateLimitKey: (...parts: string[]) => parts.join(':'),
 }));
+vi.mock('@timeline/shared/env', () => ({ getEnv: fakes.fakeGetEnv }));
 
 const USER_ID = '22222222-2222-4222-8222-222222222222';
 const OBJECT_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
@@ -118,6 +120,7 @@ function expectWorkRevalidated(): void {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  fakes.fakeGetEnv.mockReturnValue({ TASK_CATEGORY_UI_ENABLED: true });
   fakes.fakeTransaction.mockImplementation(async (callback: (tx: unknown) => Promise<unknown>) =>
     callback(fakes.fakeTx),
   );
@@ -309,6 +312,23 @@ describe('loadTaskRowsAction', () => {
     });
 
     expect(fakes.fakeObjects.listObjects).not.toHaveBeenCalled();
+  });
+
+  it('ignores category filters while the category UI rollout is disabled', async () => {
+    fakes.fakeGetEnv.mockReturnValue({ TASK_CATEGORY_UI_ENABLED: false });
+
+    await loadTaskRowsAction({
+      cursor: 'older',
+      filters: { category: 'engineering', status: 'todo' },
+    });
+
+    expect(fakes.fakeObjects.listObjects).toHaveBeenCalledWith({
+      type: 'task',
+      status: ['todo'],
+      archived: false,
+      limit: 501,
+      cursor: 'older',
+    });
   });
 });
 

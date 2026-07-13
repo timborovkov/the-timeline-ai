@@ -1,4 +1,5 @@
 'use server';
+import { getEnv } from '@timeline/shared/env';
 import * as objects from '@timeline/shared/objects';
 import { enqueueSuggestionJob } from '@timeline/shared/queue';
 import * as rateLimit from '@timeline/shared/rate-limit';
@@ -177,7 +178,11 @@ export async function loadTaskRowsAction(input: unknown): Promise<{
     if (!(await checkUserSearchRateLimit(r.userId))) {
       return { rows: [], nextCursor: null, error: 'Too many task loads. Try again shortly.' };
     }
-    const filters = taskObjectFilterFromWorkFilters(parseWorkFilters(parsed.data.filters ?? {}));
+    const filters = taskObjectFilterFromWorkFilters(
+      parseWorkFilters(parsed.data.filters ?? {}, {
+        taskCategoriesEnabled: getEnv().TASK_CATEGORY_UI_ENABLED,
+      }),
+    );
     const page = await loadTaskRowsPage(r.scope.objects, parsed.data.cursor ?? null, filters);
     return {
       rows: page.rows,

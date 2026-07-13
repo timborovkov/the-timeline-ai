@@ -78,6 +78,7 @@ ALTER TABLE "entities" ADD CONSTRAINT "entities_task_category_request_state_chk"
   AND "entities"."task_category_requested_input_hash" IS NOT NULL
 ) OR "entities"."task_category_requested_input_hash" IS NULL);--> statement-breakpoint
 CREATE INDEX "entities_team_task_category_active_updated_id_idx" ON "entities" USING btree ("team_id","type","task_category","updated_at","id") WHERE "entities"."archived_at" IS NULL AND "entities"."merged_into_id" IS NULL;--> statement-breakpoint
+CREATE INDEX "entities_task_category_pending_recovery_idx" ON "entities" USING btree ("id","task_category_updated_at") WHERE "entities"."type" = 'task' AND "entities"."task_category_mode" = 'automatic' AND "entities"."task_category_status" = 'pending' AND "entities"."task_category_requested_input_hash" IS NOT NULL AND "entities"."archived_at" IS NULL AND "entities"."merged_into_id" IS NULL;--> statement-breakpoint
 CREATE INDEX "task_category_assignments_team_entity_created_idx" ON "task_category_assignments" USING btree ("team_id","entity_id","created_at","id");--> statement-breakpoint
 CREATE INDEX "task_category_assignments_team_versions_outcome_idx" ON "task_category_assignments" USING btree ("team_id","taxonomy_version","prompt_version","model","outcome");--> statement-breakpoint
 CREATE INDEX "task_category_assignments_input_hash_idx" ON "task_category_assignments" USING btree ("team_id","entity_id","input_hash") WHERE "input_hash" IS NOT NULL;--> statement-breakpoint

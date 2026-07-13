@@ -10,7 +10,7 @@ import {
   taskCategoryProjectInvalidations,
   type Db,
 } from '@timeline/db';
-import { eq } from 'drizzle-orm';
+import { and, asc, eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -970,6 +970,44 @@ describe('task category and primary project state', () => {
       taskCategoryMode: 'automatic',
       taskCategoryStatus: 'failed',
     });
+  });
+
+  it('records a compensating mode change when a historical backfill handoff fails', async () => {
+    const scope = withTeam(db, TEAM_A, USER_A).objects;
+    const task = await scope.createObject({
+      type: 'task',
+      canonicalName: 'Historical backfill candidate',
+      actor: { kind: 'user', userId: USER_A },
+    });
+    await db
+      .update(entities)
+      .set({
+        taskCategory: null,
+        taskCategoryMode: null,
+        taskCategorySource: null,
+        taskCategoryStatus: null,
+        taskCategoryAppliedInputHash: null,
+        taskCategoryRequestedInputHash: null,
+        taskCategoryTaxonomyVersion: null,
+        taskCategoryUpdatedAt: null,
+      })
+      .where(eq(entities.id, task.id));
+    vi.mocked(queue.enqueueTaskCategoryJob).mockRejectedValueOnce(new Error('redis down'));
+
+    await expect(scope.enqueueTaskCategoryBackfill(task.id)).rejects.toThrow('redis down');
+
+    const modeChanges = await db
+      .select({
+        previousValue: objectChanges.previousValue,
+        newValue: objectChanges.newValue,
+      })
+      .from(objectChanges)
+      .where(and(eq(objectChanges.entityId, task.id), eq(objectChanges.field, 'taskCategoryMode')))
+      .orderBy(asc(objectChanges.changedAt), asc(objectChanges.id));
+    expect(modeChanges).toEqual([
+      { previousValue: null, newValue: 'automatic' },
+      { previousValue: 'automatic', newValue: null },
+    ]);
   });
 
   it('rejects promotion when generic child edges would create ambiguous primary projects', async () => {

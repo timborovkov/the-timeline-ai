@@ -6282,30 +6282,49 @@ async function transitionTaskCategoryToPending(
   try {
     await embedQueue.enqueueTaskCategoryJob(job);
   } catch (error) {
-    await db
-      .update(entities)
-      .set({
-        taskCategory: result.previous.category,
-        taskCategoryMode: result.previous.mode,
-        taskCategorySource: result.previous.source,
-        taskCategoryStatus: result.previous.status,
-        taskCategoryAppliedInputHash: result.previous.appliedInputHash,
-        taskCategoryRequestedInputHash: result.previous.requestedInputHash,
-        taskCategoryTaxonomyVersion: result.previous.taxonomyVersion,
-        taskCategoryUpdatedAt: result.previousUpdatedAt,
-      })
-      .where(
-        and(
-          eq(entities.teamId, scope.teamId),
-          eq(entities.id, taskId),
-          eq(entities.type, 'task'),
-          eq(entities.taskCategoryMode, 'automatic'),
-          eq(entities.taskCategoryStatus, 'pending'),
-          eq(entities.taskCategoryRequestedInputHash, result.inputHash),
-          isNull(entities.archivedAt),
-          isNull(entities.mergedIntoId),
-        ),
-      );
+    await db.transaction(async (tx) => {
+      const [restored] = await tx
+        .update(entities)
+        .set({
+          taskCategory: result.previous.category,
+          taskCategoryMode: result.previous.mode,
+          taskCategorySource: result.previous.source,
+          taskCategoryStatus: result.previous.status,
+          taskCategoryAppliedInputHash: result.previous.appliedInputHash,
+          taskCategoryRequestedInputHash: result.previous.requestedInputHash,
+          taskCategoryTaxonomyVersion: result.previous.taxonomyVersion,
+          taskCategoryUpdatedAt: result.previousUpdatedAt,
+        })
+        .where(
+          and(
+            eq(entities.teamId, scope.teamId),
+            eq(entities.id, taskId),
+            eq(entities.type, 'task'),
+            eq(entities.taskCategoryMode, 'automatic'),
+            eq(entities.taskCategoryStatus, 'pending'),
+            eq(entities.taskCategoryRequestedInputHash, result.inputHash),
+            result.object.taskCategoryUpdatedAt
+              ? eq(entities.taskCategoryUpdatedAt, result.object.taskCategoryUpdatedAt)
+              : isNull(entities.taskCategoryUpdatedAt),
+            isNull(entities.archivedAt),
+            isNull(entities.mergedIntoId),
+          ),
+        )
+        .returning({ id: entities.id });
+      if (restored && result.previous.mode !== 'automatic') {
+        await tx.insert(objectChanges).values({
+          teamId: scope.teamId,
+          entityId: taskId,
+          actorUserId: actor.userId,
+          actorKind: actor.kind,
+          status: 'applied',
+          field: 'taskCategoryMode',
+          previousValue: 'automatic',
+          newValue: result.previous.mode,
+          sourceEventId: null,
+        });
+      }
+    });
     throw error;
   }
   return { object: result.object, inputHash: result.inputHash };
