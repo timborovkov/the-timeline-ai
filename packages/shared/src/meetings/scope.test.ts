@@ -467,7 +467,7 @@ describe('meetings scope', () => {
         aliases: ['TEAM sync'],
         permissionConfirmed: true,
       }),
-    ).rejects.toThrow();
+    ).rejects.toMatchObject({ code: 'SAVED_MEETING_ALIAS_CONFLICT' });
   });
 
   it('materializes scheduled saved meeting occurrences, links generated calendar rows, and skips once', async () => {
@@ -607,6 +607,7 @@ describe('meetings scope', () => {
 
     await scope.updateSavedMeeting(saved.id, {
       title: saved.title,
+      meetingUrl: 'https://zoom.us/j/987654321',
       scheduleConfig: {
         weekdays: [target.dayOfWeek % 7],
         times: [updatedTime],
@@ -632,9 +633,21 @@ describe('meetings scope', () => {
       .from(meetings)
       .where(eq(meetings.savedMeetingId, saved.id));
     expect(remainingScheduled.length).toBeGreaterThan(0);
+    expect(remainingScheduled).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          platform: 'zoom',
+          meetingUrl: 'https://zoom.us/j/987654321',
+        }),
+      ]),
+    );
     expect(remainingScheduled.map((row) => row.scheduledStartAt?.toISOString())).not.toContain(
       scheduled.scheduledStartAt?.toISOString(),
     );
+    await expect(scope.getSavedMeeting(saved.id)).resolves.toMatchObject({
+      platform: 'zoom',
+      meetingUrl: 'https://zoom.us/j/987654321',
+    });
   });
 
   it('cancels future scheduled captures and generated calendar entries when a saved meeting is archived', async () => {
@@ -647,6 +660,7 @@ describe('meetings scope', () => {
     const saved = await scope.createSavedMeeting({
       title: 'Archive sync',
       meetingUrl: 'https://meet.google.com/arc-hiv-syn',
+      aliases: ['daily'],
       permissionConfirmed: true,
       scheduleConfig: {
         weekdays: [target.dayOfWeek % 7],
@@ -680,6 +694,15 @@ describe('meetings scope', () => {
       capture_status: 'cancelled',
       cancelled_by_saved_meeting_archive: true,
     });
+
+    await expect(
+      scope.createSavedMeeting({
+        title: 'Replacement daily',
+        meetingUrl: 'https://meet.google.com/new-dai-lyx',
+        aliases: ['daily'],
+        permissionConfirmed: true,
+      }),
+    ).resolves.toMatchObject({ aliases: ['daily'] });
   });
 
   it('tracks raw-url quick join confirmations through pending, expiry, and cancellation states', async () => {

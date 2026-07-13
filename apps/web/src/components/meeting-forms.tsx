@@ -702,6 +702,7 @@ export function EditSavedMeetingForm({
         savedMeetingId: saved.id,
         title: formString(form, 'title').trim(),
         description: formString(form, 'description').trim() || undefined,
+        meetingUrl: formString(form, 'meetingUrl').trim(),
         aliases: formAliases(form),
         visibility,
         visibilityUserIds: visibility === 'specific_users' ? visibilityUserIds : [],
@@ -741,6 +742,16 @@ export function EditSavedMeetingForm({
               defaultValue={saved.aliases.join(', ')}
             />
           </div>
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor={`saved-meeting-url-${saved.id}`}>Meeting URL</Label>
+          <Input
+            id={`saved-meeting-url-${saved.id}`}
+            name="meetingUrl"
+            type="url"
+            required
+            defaultValue={saved.meetingUrl}
+          />
         </div>
         <div className="space-y-2">
           <Label htmlFor={`saved-description-${saved.id}`}>Description</Label>

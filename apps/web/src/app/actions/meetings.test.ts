@@ -2,7 +2,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type * as RateLimitModule from '@timeline/shared/rate-limit';
 
-import { cancelMeetingBotAction, scheduleMeetingBotAction } from '@/app/actions/meetings';
+import {
+  cancelMeetingBotAction,
+  scheduleMeetingBotAction,
+  updateSavedMeetingAction,
+} from '@/app/actions/meetings';
 
 const fakes = vi.hoisted(() => ({
   fakeAuth: vi.fn(),
@@ -16,6 +20,7 @@ const fakes = vi.hoisted(() => ({
     claimMeetingForJoin: vi.fn(),
     findActiveMeetingForUrl: vi.fn(),
     updateMeetingStatus: vi.fn(),
+    updateSavedMeeting: vi.fn(),
   },
   fakeCheckRateLimit: vi.fn(),
   fakeJoinMeeting: vi.fn(),
@@ -78,6 +83,7 @@ beforeEach(() => {
   fakes.fakeMeetings.getMeeting.mockResolvedValue(null);
   fakes.fakeMeetings.listChunks.mockResolvedValue([]);
   fakes.fakeMeetings.updateMeetingStatus.mockResolvedValue(undefined);
+  fakes.fakeMeetings.updateSavedMeeting.mockResolvedValue({ id: MEETING_ID });
   fakes.fakeJoinMeeting.mockResolvedValue({ botId: 'bot-1', raw: { id: 'bot-1' } });
   fakes.fakeRequireRedisQueue.mockResolvedValue({ enqueueMeetingFinalizeJob: vi.fn() });
 });
@@ -121,5 +127,48 @@ describe('cancelMeetingBotAction', () => {
       error: 'Cannot cancel this meeting while finalize queue is unavailable.',
     });
     expect(fakes.fakeMeetings.updateMeetingStatus).not.toHaveBeenCalled();
+  });
+});
+
+describe('updateSavedMeetingAction', () => {
+  it('forwards a changed meeting URL to the meetings scope', async () => {
+    const result = await updateSavedMeetingAction({
+      savedMeetingId: MEETING_ID,
+      title: 'Weekly sync',
+      meetingUrl: 'https://zoom.us/j/987654321',
+      aliases: ['weekly'],
+      visibility: 'team',
+      scheduleConfig: null,
+      durationMinutes: 30,
+      autoJoinEnabled: false,
+    });
+
+    expect(result).toEqual({ ok: true, savedMeetingId: MEETING_ID });
+    expect(fakes.fakeMeetings.updateSavedMeeting).toHaveBeenCalledWith(
+      MEETING_ID,
+      expect.objectContaining({ meetingUrl: 'https://zoom.us/j/987654321' }),
+    );
+  });
+
+  it('returns a useful message when an alias is already in use', async () => {
+    fakes.fakeMeetings.updateSavedMeeting.mockRejectedValue(
+      Object.assign(new Error('duplicate alias'), { code: 'SAVED_MEETING_ALIAS_CONFLICT' }),
+    );
+
+    const result = await updateSavedMeetingAction({
+      savedMeetingId: MEETING_ID,
+      title: 'Weekly sync',
+      meetingUrl: 'https://zoom.us/j/987654321',
+      aliases: ['daily'],
+      visibility: 'team',
+      scheduleConfig: null,
+      durationMinutes: 30,
+      autoJoinEnabled: false,
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      error: 'One or more aliases are already used by another saved meeting.',
+    });
   });
 });

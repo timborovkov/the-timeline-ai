@@ -58,7 +58,7 @@ const createSavedMeetingSchema = z.object({
 });
 
 const updateSavedMeetingSchema = createSavedMeetingSchema
-  .omit({ meetingUrl: true, permissionConfirmed: true })
+  .omit({ permissionConfirmed: true })
   .extend({
     savedMeetingId: z.string().regex(UUID_RE),
   });
@@ -275,6 +275,11 @@ export async function createSavedMeetingAction(
         error: publicActionError(err, {
           operation: 'create_saved_meeting',
           fallback: 'Failed to save meeting.',
+          expected: {
+            SAVED_MEETING_ALIAS_CONFLICT: {
+              message: 'One or more aliases are already used by another saved meeting.',
+            },
+          },
         }),
       };
     }
@@ -295,6 +300,7 @@ export async function updateSavedMeetingAction(
       const saved = await got.scope.meetings.updateSavedMeeting(parsed.data.savedMeetingId, {
         title: parsed.data.title,
         description: parsed.data.description,
+        meetingUrl: parsed.data.meetingUrl,
         aliases: parsed.data.aliases,
         defaultVisibility: parsed.data.visibility,
         visibilityUserIds:
@@ -314,6 +320,11 @@ export async function updateSavedMeetingAction(
         error: publicActionError(err, {
           operation: 'update_saved_meeting',
           fallback: 'Failed to update meeting.',
+          expected: {
+            SAVED_MEETING_ALIAS_CONFLICT: {
+              message: 'One or more aliases are already used by another saved meeting.',
+            },
+          },
         }),
       };
     }
