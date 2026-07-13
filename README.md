@@ -294,9 +294,6 @@ server/client import boundaries.
   document semantics, processing rules, and follow-up implementation bar.
 - [`docs/work-system-plan.md`](./docs/work-system-plan.md) — priority plan for
   turning Work into the daily operating surface.
-- [`docs/task-categories-plan.md`](./docs/task-categories-plan.md) — architecture,
-  taxonomy, task-project relations, testing, eval, and rollout plan for
-  LLM-assigned editable task categories.
 - [`docs/reconciliation-engine-plan.md`](./docs/reconciliation-engine-plan.md) —
   replacement architecture for unifying source evidence, artifact clustering,
   approval-backed memory, provider authority, and live reconciliation evals.

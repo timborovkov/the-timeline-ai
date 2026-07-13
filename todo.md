@@ -159,8 +159,14 @@ Direction: soften the surface. Keep the forensic mono treatment for data
       plus an optional durable primary-project relation with project-page quick
       add, manual/AI linking, and project filtering. Include shared
       Tasks/Objects/Boards filters, category badges across work surfaces,
-      guarded background classification, backfill, tests, and live evals. Full plan:
-      [docs/task-categories-plan.md](docs/task-categories-plan.md).
+      guarded background classification, resumable backfill, deterministic tests,
+      and an opt-in live eval harness.
+- [ ] Complete task-category launch verification before enabling the production
+      flags: rerun the agent eval, compiled-import, focused Playwright, and live
+      120-case classifier gates; execute a staging dry-run/backfill and query-plan
+      check; then measure the two-week dogfood and pilot thresholds for assignment
+      latency, stale backlog, corrections, `other` rate, filter use, and incorrect
+      project links.
 
 ## Agent Reliability
 
