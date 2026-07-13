@@ -222,6 +222,28 @@ describe('task category and primary project state', () => {
     await expect(
       workspace.objects.getTaskCategoryClassificationInput(task.id),
     ).resolves.toMatchObject({ packet: { primaryProjectName: null } });
+
+    await workspace.objects.updateObject(
+      firstProject.id,
+      { canonicalName: 'Renamed legacy project' },
+      { kind: 'user', userId: USER_A },
+    );
+    const classification = await workspace.objects.getTaskCategoryClassificationInput(task.id);
+    expect(classification).toMatchObject({ packet: { primaryProjectName: null } });
+    expect(classification?.requestedInputHash).toBe(classification?.inputHash);
+  });
+
+  it('treats removing an absent primary project as a no-op', async () => {
+    const scope = withTeam(db, TEAM_A, USER_A).objects;
+    const task = await scope.createObject({
+      type: 'task',
+      canonicalName: 'Standalone task',
+      actor: { kind: 'user', userId: USER_A },
+    });
+
+    await expect(
+      scope.setTaskProject(task.id, null, { kind: 'user', userId: USER_A }),
+    ).resolves.toEqual({ changed: false, project: null, touchedIds: [] });
   });
 
   it('applies an LLM result without reordering the task, then protects a human override', async () => {

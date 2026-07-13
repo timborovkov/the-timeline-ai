@@ -47,6 +47,7 @@ import {
 } from '@timeline/db';
 import {
   type SQL,
+  type SQLWrapper,
   and,
   asc,
   desc,
@@ -258,6 +259,21 @@ interface ProjectTaskCategoryInvalidation {
   fanout: { projectId: string; projectVersion: string; afterTaskId: string } | null;
 }
 
+function hasExactlyOneCanonicalProjectEdge(teamId: string, taskId: SQLWrapper): SQL {
+  return sql`1 = (
+    SELECT count(*)
+    FROM entity_relationships AS candidate_project_rel
+    INNER JOIN entities AS candidate_project
+      ON candidate_project.id = candidate_project_rel.to_entity_id
+      AND candidate_project.team_id = candidate_project_rel.team_id
+    WHERE candidate_project_rel.team_id = ${teamId}
+      AND candidate_project_rel.from_entity_id = ${taskId}
+      AND candidate_project_rel.kind = 'child'
+      AND candidate_project.type = 'project'
+      AND candidate_project.merged_into_id IS NULL
+  )`;
+}
+
 async function lockActiveProject(tx: DbTx, teamId: string, projectId: string) {
   const [project] = await tx
     .select({
@@ -310,6 +326,7 @@ async function invalidateLinkedTaskCategoriesForProject(
         eq(entityRelationships.teamId, teamId),
         eq(entityRelationships.toEntityId, project.id),
         eq(entityRelationships.kind, 'child'),
+        hasExactlyOneCanonicalProjectEdge(teamId, entities.id),
       ),
     )
     .orderBy(asc(entities.id))
@@ -5438,7 +5455,10 @@ export async function setTaskProject(
       )
       .for('update', { of: entityRelationships });
 
-    if (existing.length === 1 && existing[0]?.projectId === projectId) {
+    if (
+      (existing.length === 0 && projectId === null) ||
+      (existing.length === 1 && existing[0]?.projectId === projectId)
+    ) {
       return {
         changed: false,
         project: project
@@ -5894,6 +5914,7 @@ export async function invalidateTaskCategoriesForProject(
           eq(entityRelationships.teamId, scope.teamId),
           eq(entityRelationships.toEntityId, project.id),
           eq(entityRelationships.kind, 'child'),
+          hasExactlyOneCanonicalProjectEdge(scope.teamId, entities.id),
           input.afterTaskId ? sql`${entities.id} > ${input.afterTaskId}` : undefined,
         ),
       )

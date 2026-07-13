@@ -156,6 +156,18 @@ function suggestedProjectIsUnused(teamId: string, projectId: SQLWrapper) {
     )`;
 }
 
+function isCanonicalObjectNameConflict(error: unknown): boolean {
+  let current = error;
+  for (let depth = 0; depth < 5 && current && typeof current === 'object'; depth += 1) {
+    const record = current as { code?: unknown; constraint?: unknown; cause?: unknown };
+    if (record.code === '23505' && record.constraint === 'entities_team_type_canonical_name_unq') {
+      return true;
+    }
+    current = record.cause;
+  }
+  return false;
+}
+
 interface VisibilityEnvelope {
   visibility: Visibility;
   visibilityOwnerUserId: string | null;
@@ -3677,30 +3689,42 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       };
     }
 
-    const exactProjects = await db
-      .select({ id: entities.id, name: entities.canonicalName })
-      .from(entities)
-      .where(
-        and(
-          eq(entities.teamId, teamId),
-          eq(entities.type, 'project'),
-          isNull(entities.archivedAt),
-          isNull(entities.mergedIntoId),
-          sql`lower(${entities.canonicalName}) = lower(${payload.createProjectName})`,
-        ),
-      )
-      .limit(2);
+    const findExactProjects = () =>
+      db
+        .select({ id: entities.id, name: entities.canonicalName })
+        .from(entities)
+        .where(
+          and(
+            eq(entities.teamId, teamId),
+            eq(entities.type, 'project'),
+            isNull(entities.archivedAt),
+            isNull(entities.mergedIntoId),
+            sql`lower(${entities.canonicalName}) = lower(${payload.createProjectName})`,
+          ),
+        )
+        .limit(2);
+    const exactProjects = await findExactProjects();
     if (exactProjects.length > 1) throw new Error('Proposed project name is ambiguous');
     if (exactProjects[0]) return { ...exactProjects[0], createdForSuggestion: false };
 
-    const project = await objects.createObject({
-      type: 'project',
-      canonicalName: payload.createProjectName,
-      status: 'planning',
-      metadata: { agent_suggestion_project_for_item_id: item.id },
-      actor: { kind: 'agent', userId: null },
-    });
-    return { id: project.id, name: project.canonicalName, createdForSuggestion: true };
+    try {
+      const project = await objects.createObject({
+        type: 'project',
+        canonicalName: payload.createProjectName,
+        status: 'planning',
+        metadata: { agent_suggestion_project_for_item_id: item.id },
+        actor: { kind: 'agent', userId: null },
+      });
+      return { id: project.id, name: project.canonicalName, createdForSuggestion: true };
+    } catch (error) {
+      if (!isCanonicalObjectNameConflict(error)) throw error;
+      const concurrentProjects = await findExactProjects();
+      if (concurrentProjects.length > 1) throw new Error('Proposed project name is ambiguous');
+      if (concurrentProjects[0]) {
+        return { ...concurrentProjects[0], createdForSuggestion: false };
+      }
+      throw error;
+    }
   }
 
   async function archiveSuggestedProjectAfterFailure(

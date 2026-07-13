@@ -3658,6 +3658,61 @@ describe('suggestion scope', () => {
     expect(retriedProjects[0]?.archivedAt).toBeNull();
   });
 
+  it('reuses an exact-name project created during a concurrent suggestion acceptance', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Create concurrent project task',
+      dedupeKey: 'create-task-project-concurrent-reuse',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Prepare concurrent project task',
+          dedupeKey: 'create-task-project-concurrent-reuse:item',
+          proposedPayload: {
+            canonicalName: 'Prepare concurrent project task',
+            createProjectName: 'Concurrent shared project',
+            projectName: 'Concurrent shared project',
+          },
+        },
+      ],
+    });
+    const itemId = bundle.items[0]?.id ?? '';
+    const createObject = scope.objects.createObject;
+    let concurrentProjectId: string | null = null;
+    const createSpy = vi.spyOn(scope.objects, 'createObject').mockImplementation(async (input) => {
+      if (
+        input.type === 'project' &&
+        input.canonicalName === 'Concurrent shared project' &&
+        !concurrentProjectId
+      ) {
+        const concurrent = await createObject(input);
+        concurrentProjectId = concurrent.id;
+      }
+      return createObject(input);
+    });
+    try {
+      await expect(scope.suggestions.acceptSuggestionItem(itemId)).resolves.toBe(true);
+    } finally {
+      createSpy.mockRestore();
+    }
+
+    const projects = await db
+      .select()
+      .from(entities)
+      .where(eq(entities.canonicalName, 'Concurrent shared project'));
+    expect(projects).toHaveLength(1);
+    expect(projects[0]?.id).toBe(concurrentProjectId);
+    const [task] = await db
+      .select({ id: entities.id })
+      .from(entities)
+      .where(eq(entities.canonicalName, 'Prepare concurrent project task'));
+    await expect(scope.objects.listPrimaryProjectsForTasks([task?.id ?? ''])).resolves.toEqual([
+      expect.objectContaining({ projectId: concurrentProjectId }),
+    ]);
+  });
+
   it('honors a revised project name after compensating a failed task acceptance', async () => {
     const scope = withTeam(db as never, TEAM_ID, USER_ID);
     const conflictingTask = await scope.objects.createObject({
