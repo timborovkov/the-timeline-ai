@@ -4,6 +4,7 @@ import { closeDb, getDb } from '@timeline/db';
 import {
   adminReconcileIntegrationWebhookSubscriptions,
   classifyMondayBoardResponse,
+  runMondayHelperRepairFollowups,
 } from '@timeline/shared/integrations';
 import { withTeam } from '@timeline/shared/team-scope';
 
@@ -142,31 +143,47 @@ try {
 
   if (apply && report.integrationIds.length > 0) {
     const queue = await import('@timeline/shared/queue');
-    const webhookResults: { integrationId: string; status: 'ok' | 'failed'; error?: string }[] = [];
-    for (const integrationId of report.integrationIds) {
-      await queue.enqueueIntegrationSyncJob({
-        kind: 'backfill',
-        integrationId,
-        teamId,
-        triggeredBy: userId,
-      });
-      try {
-        await adminReconcileIntegrationWebhookSubscriptions(db, integrationId);
-        await scope.integrations.resolveConnectionAttention({
+    const followups = await scope.integrations.listMondayHelperRepairFollowups();
+    const followupResults = await runMondayHelperRepairFollowups({
+      followups,
+      enqueueBackfill: (integrationId) =>
+        queue.enqueueIntegrationSyncJob({
+          kind: 'backfill',
           integrationId,
+          teamId,
+          triggeredBy: userId,
+        }),
+      reconcileWebhooks: async (integrationId) => {
+        await adminReconcileIntegrationWebhookSubscriptions(db, integrationId);
+      },
+      markFollowup: (integrationId, patch) =>
+        scope.integrations.markMondayHelperRepairFollowup(integrationId, patch),
+    });
+    for (const result of followupResults) {
+      if (result.webhooks.status === 'failed') {
+        await scope.integrations.recordConnectionAttention({
+          integrationId: result.integrationId,
+          category: 'webhook_degraded',
+          summary: `Monday webhook reconciliation after helper-board repair failed: ${result.webhooks.error}`,
+        });
+      } else {
+        await scope.integrations.resolveConnectionAttention({
+          integrationId: result.integrationId,
           categories: ['webhook_degraded'],
         });
-        webhookResults.push({ integrationId, status: 'ok' });
-      } catch (error) {
-        webhookResults.push({
-          integrationId,
-          status: 'failed',
-          error: error instanceof Error ? error.message.slice(0, 300) : String(error).slice(0, 300),
+      }
+      if (result.backfill.status === 'failed') {
+        await scope.integrations.recordConnectionAttention({
+          integrationId: result.integrationId,
+          category: 'sync_error',
+          summary: `Monday backfill after helper-board repair could not be queued: ${result.backfill.error}`,
         });
       }
     }
-    output.backfillsQueued = report.integrationIds.length;
-    output.webhookReconciliation = webhookResults;
+    output.backfillsQueued = followupResults.filter(
+      (result) => result.backfill.status === 'ok',
+    ).length;
+    output.followups = followupResults;
   }
 
   process.stdout.write(`${JSON.stringify(output, null, 2)}\n`);

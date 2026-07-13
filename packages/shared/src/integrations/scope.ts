@@ -40,6 +40,32 @@ import { rawEventVisibleToUser, validateVisibilityUserIds } from '#src/visibilit
 
 const _providerValues = integrationProvider.enumValues;
 export type IntegrationProviderName = (typeof _providerValues)[number];
+const mondayHelperRepairFollowupResourceType = 'monday.helper_repair_followup';
+
+export interface MondayHelperRepairFollowup {
+  integrationId: string;
+  helperBoardIds: string[];
+  backfillQueued: boolean;
+  webhooksReconciled: boolean;
+}
+
+function mondayHelperRepairFollowupFromCursor(
+  integrationId: string,
+  cursor: unknown,
+): MondayHelperRepairFollowup {
+  const value =
+    cursor && typeof cursor === 'object' && !Array.isArray(cursor)
+      ? (cursor as Record<string, unknown>)
+      : {};
+  return {
+    integrationId,
+    helperBoardIds: Array.isArray(value.helper_board_ids)
+      ? value.helper_board_ids.filter((id): id is string => typeof id === 'string')
+      : [],
+    backfillQueued: value.backfill_queued === true,
+    webhooksReconciled: value.webhooks_reconciled === true,
+  };
+}
 
 export interface CreateIntegrationInput {
   provider: IntegrationProviderName;
@@ -770,6 +796,27 @@ export function createIntegrationScope(deps: {
     const helperBoardIds = [
       ...new Set(input.helperBoardIds.map((id) => id.trim()).filter(Boolean)),
     ];
+    const mondayIntegrations = await db
+      .select({ id: integrationsTable.id })
+      .from(integrationsTable)
+      .where(and(eq(integrationsTable.teamId, teamId), eq(integrationsTable.provider, 'monday')));
+    const integrationIds = mondayIntegrations.map((row) => row.id);
+    const pendingFollowupRows =
+      integrationIds.length > 0
+        ? await db
+            .select({
+              integrationId: integrationSyncState.integrationId,
+              cursor: integrationSyncState.cursor,
+            })
+            .from(integrationSyncState)
+            .where(
+              and(
+                inArray(integrationSyncState.integrationId, integrationIds),
+                eq(integrationSyncState.resourceType, mondayHelperRepairFollowupResourceType),
+              ),
+            )
+        : [];
+    const pendingIntegrationIds = pendingFollowupRows.map((row) => row.integrationId);
     if (helperBoardIds.length === 0) {
       return {
         applied: input.apply,
@@ -777,14 +824,9 @@ export function createIntegrationScope(deps: {
         selectionCount: 0,
         cursorCount: 0,
         webhookSubscriptionCount: 0,
-        integrationIds: [],
+        integrationIds: pendingIntegrationIds,
       };
     }
-    const mondayIntegrations = await db
-      .select({ id: integrationsTable.id })
-      .from(integrationsTable)
-      .where(and(eq(integrationsTable.teamId, teamId), eq(integrationsTable.provider, 'monday')));
-    const integrationIds = mondayIntegrations.map((row) => row.id);
     const shares = await db
       .select({ id: teamProviderResourceShares.id })
       .from(teamProviderResourceShares)
@@ -858,7 +900,7 @@ export function createIntegrationScope(deps: {
               ),
             )
         : [];
-    const affectedIntegrationIds = [
+    const newlyAffectedIntegrationIds = [
       ...new Set([
         ...selections.map((row) => row.integrationId),
         ...cursors.map((row) => row.integrationId),
@@ -866,6 +908,9 @@ export function createIntegrationScope(deps: {
           .map((row) => row.integrationId)
           .filter((id): id is string => Boolean(id)),
       ]),
+    ];
+    const affectedIntegrationIds = [
+      ...new Set([...newlyAffectedIntegrationIds, ...pendingIntegrationIds]),
     ];
     const report = {
       applied: input.apply,
@@ -924,9 +969,35 @@ export function createIntegrationScope(deps: {
             ),
           );
       }
-      if (affectedIntegrationIds.length > 0) {
+      if (newlyAffectedIntegrationIds.length > 0) {
+        await tx
+          .insert(integrationSyncState)
+          .values(
+            newlyAffectedIntegrationIds.map((integrationId) => ({
+              integrationId,
+              resourceType: mondayHelperRepairFollowupResourceType,
+              cursor: {
+                helper_board_ids: helperBoardIds,
+                backfill_queued: false,
+                webhooks_reconciled: false,
+              },
+              lastRunAt: now,
+              lastStatus: 'pending',
+              lastError: null,
+            })),
+          )
+          .onConflictDoUpdate({
+            target: [integrationSyncState.integrationId, integrationSyncState.resourceType],
+            set: {
+              cursor: sql`excluded.cursor`,
+              lastRunAt: now,
+              lastStatus: 'pending',
+              lastError: null,
+              updatedAt: now,
+            },
+          });
         await tx.insert(integrationAuditLog).values(
-          affectedIntegrationIds.map((integrationId) => ({
+          newlyAffectedIntegrationIds.map((integrationId) => ({
             teamId,
             integrationId,
             actorUserId: userId,
@@ -945,6 +1016,87 @@ export function createIntegrationScope(deps: {
       }
     });
     return report;
+  }
+
+  async function listMondayHelperRepairFollowups(): Promise<MondayHelperRepairFollowup[]> {
+    await ensureMember('admin');
+    const rows = await db
+      .select({
+        integrationId: integrationSyncState.integrationId,
+        cursor: integrationSyncState.cursor,
+      })
+      .from(integrationSyncState)
+      .innerJoin(integrationsTable, eq(integrationSyncState.integrationId, integrationsTable.id))
+      .where(
+        and(
+          eq(integrationsTable.teamId, teamId),
+          eq(integrationsTable.provider, 'monday'),
+          eq(integrationSyncState.resourceType, mondayHelperRepairFollowupResourceType),
+        ),
+      )
+      .orderBy(integrationSyncState.integrationId);
+    return rows.map((row) => mondayHelperRepairFollowupFromCursor(row.integrationId, row.cursor));
+  }
+
+  async function markMondayHelperRepairFollowup(
+    integrationId: string,
+    patch: { backfillQueued?: boolean; webhooksReconciled?: boolean },
+  ): Promise<void> {
+    await ensureMember('admin');
+    const integration = await getIntegration(integrationId);
+    if (integration?.provider !== 'monday') {
+      throw new Error('Monday integration not found');
+    }
+    const rows = await db
+      .select({ cursor: integrationSyncState.cursor })
+      .from(integrationSyncState)
+      .where(
+        and(
+          eq(integrationSyncState.integrationId, integrationId),
+          eq(integrationSyncState.resourceType, mondayHelperRepairFollowupResourceType),
+        ),
+      )
+      .limit(1);
+    const row = rows[0];
+    if (!row) return;
+    const current = mondayHelperRepairFollowupFromCursor(integrationId, row.cursor);
+    const next = {
+      ...current,
+      ...(patch.backfillQueued !== undefined ? { backfillQueued: patch.backfillQueued } : {}),
+      ...(patch.webhooksReconciled !== undefined
+        ? { webhooksReconciled: patch.webhooksReconciled }
+        : {}),
+    };
+    if (next.backfillQueued && next.webhooksReconciled) {
+      await db
+        .delete(integrationSyncState)
+        .where(
+          and(
+            eq(integrationSyncState.integrationId, integrationId),
+            eq(integrationSyncState.resourceType, mondayHelperRepairFollowupResourceType),
+          ),
+        );
+      return;
+    }
+    await db
+      .update(integrationSyncState)
+      .set({
+        cursor: {
+          helper_board_ids: next.helperBoardIds,
+          backfill_queued: next.backfillQueued,
+          webhooks_reconciled: next.webhooksReconciled,
+        },
+        lastRunAt: new Date(),
+        lastStatus: 'pending',
+        lastError: null,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(integrationSyncState.integrationId, integrationId),
+          eq(integrationSyncState.resourceType, mondayHelperRepairFollowupResourceType),
+        ),
+      );
   }
 
   async function listMondayHelperRepairSources(): Promise<
@@ -983,21 +1135,49 @@ export function createIntegrationScope(deps: {
         .where(and(eq(integrationsTable.teamId, teamId), eq(integrationsTable.provider, 'monday'))),
     ]);
     const integrationIds = mondayIntegrations.map((integration) => integration.id);
-    const selectionRows =
+    const [selectionRows, cursorRows, webhookRows] =
       integrationIds.length > 0
-        ? await db
-            .select({
-              integrationId: integrationSelections.integrationId,
-              boardId: integrationSelections.externalId,
-            })
-            .from(integrationSelections)
-            .where(
-              and(
-                inArray(integrationSelections.integrationId, integrationIds),
-                eq(integrationSelections.selectionKind, 'monday.board'),
+        ? await Promise.all([
+            db
+              .select({
+                integrationId: integrationSelections.integrationId,
+                boardId: integrationSelections.externalId,
+              })
+              .from(integrationSelections)
+              .where(
+                and(
+                  inArray(integrationSelections.integrationId, integrationIds),
+                  eq(integrationSelections.selectionKind, 'monday.board'),
+                ),
               ),
-            )
-        : [];
+            db
+              .select({
+                integrationId: integrationSyncState.integrationId,
+                resourceType: integrationSyncState.resourceType,
+              })
+              .from(integrationSyncState)
+              .where(
+                and(
+                  inArray(integrationSyncState.integrationId, integrationIds),
+                  sql`${integrationSyncState.resourceType} LIKE 'monday.board:%'`,
+                ),
+              ),
+            db
+              .select({
+                integrationId: integrationWebhookSubscriptions.integrationId,
+                boardId: integrationWebhookSubscriptions.externalResourceId,
+              })
+              .from(integrationWebhookSubscriptions)
+              .where(
+                and(
+                  inArray(integrationWebhookSubscriptions.integrationId, integrationIds),
+                  eq(integrationWebhookSubscriptions.provider, 'monday'),
+                  eq(integrationWebhookSubscriptions.resourceKind, 'monday.board'),
+                  ne(integrationWebhookSubscriptions.status, 'deleted'),
+                ),
+              ),
+          ])
+        : [[], [], []];
     const integrationById = new Map(mondayIntegrations.map((row) => [row.id, row]));
     const sources = new Map<
       string,
@@ -1023,6 +1203,25 @@ export function createIntegrationScope(deps: {
     };
     for (const row of shareRows) add('provider_connection', row.credentialId, row.boardId);
     for (const row of selectionRows) {
+      const integration = integrationById.get(row.integrationId);
+      if (!integration) continue;
+      add(
+        integration.providerConnectionId ? 'provider_connection' : 'integration',
+        integration.providerConnectionId ?? integration.id,
+        row.boardId,
+      );
+    }
+    for (const row of cursorRows) {
+      const integration = integrationById.get(row.integrationId);
+      if (!integration) continue;
+      add(
+        integration.providerConnectionId ? 'provider_connection' : 'integration',
+        integration.providerConnectionId ?? integration.id,
+        row.resourceType.slice('monday.board:'.length),
+      );
+    }
+    for (const row of webhookRows) {
+      if (!row.integrationId) continue;
       const integration = integrationById.get(row.integrationId);
       if (!integration) continue;
       add(
@@ -1450,6 +1649,8 @@ export function createIntegrationScope(deps: {
     shareProviderResources,
     revokeProviderResourceShare,
     listMondayHelperRepairSources,
+    listMondayHelperRepairFollowups,
+    markMondayHelperRepairFollowup,
     repairMondayHelperResources,
     activateSharedResources,
     listConnectionAttention,

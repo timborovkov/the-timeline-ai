@@ -1938,7 +1938,9 @@ describe('withTeam namespaced port', () => {
 
     expect(applied.applied).toBe(true);
     expect(await adminScope.integrations.listSelections(integration.id)).toHaveLength(0);
-    expect(await adminScope.integrations.listSyncState(integration.id)).toHaveLength(0);
+    expect(await adminScope.integrations.listSyncState(integration.id)).not.toContainEqual(
+      expect.objectContaining({ resourceType: 'monday.board:subitems-board-1' }),
+    );
     const [repairedShare] = await db
       .select()
       .from(teamProviderResourceShares)
@@ -1963,8 +1965,31 @@ describe('withTeam namespaced port', () => {
       selectionCount: 0,
       cursorCount: 0,
       webhookSubscriptionCount: 0,
-      integrationIds: [],
+      integrationIds: [integration.id],
     });
+    await expect(adminScope.integrations.listMondayHelperRepairFollowups()).resolves.toEqual([
+      {
+        integrationId: integration.id,
+        helperBoardIds: ['subitems-board-1'],
+        backfillQueued: false,
+        webhooksReconciled: false,
+      },
+    ]);
+
+    await adminScope.integrations.markMondayHelperRepairFollowup(integration.id, {
+      backfillQueued: true,
+    });
+    await adminScope.integrations.markMondayHelperRepairFollowup(integration.id, {
+      webhooksReconciled: true,
+    });
+
+    await expect(adminScope.integrations.listMondayHelperRepairFollowups()).resolves.toEqual([]);
+    await expect(
+      adminScope.integrations.repairMondayHelperResources({
+        helperBoardIds: ['subitems-board-1'],
+        apply: false,
+      }),
+    ).resolves.toMatchObject({ integrationIds: [] });
     vi.unstubAllGlobals();
   });
 
@@ -1991,6 +2016,37 @@ describe('withTeam namespaced port', () => {
       credentialKind: 'integration',
       credentialId: integration.id,
       boardIds: ['legacy-subitems-board'],
+    });
+  });
+
+  it('inventories orphan monday cursors and webhooks after selections are removed', async () => {
+    const adminScope = withTeam(db as never, TEAM_A, USER_C);
+    const integration = await adminScope.integrations.createIntegration({
+      provider: 'monday',
+      displayName: 'Monday.com — orphan repair state',
+      externalAccountId: 'monday-orphan-repair',
+      scopes: ['boards:read'],
+      tokens: { access_token: 'legacy-token' },
+    });
+    await adminScope.integrations.saveCursor(integration.id, 'monday.board:orphan-cursor-board', {
+      item_since: '2026-06-20T10:00:00.000Z',
+    });
+    await db.insert(integrationWebhookSubscriptions).values({
+      integrationId: integration.id,
+      provider: 'monday',
+      externalSubscriptionId: 'orphan-webhook',
+      resourceKind: 'monday.board',
+      externalResourceId: 'orphan-webhook-board',
+      eventType: 'create_item',
+      status: 'failed',
+    });
+
+    const sources = await adminScope.integrations.listMondayHelperRepairSources();
+
+    expect(sources).toContainEqual({
+      credentialKind: 'integration',
+      credentialId: integration.id,
+      boardIds: ['orphan-cursor-board', 'orphan-webhook-board'],
     });
   });
 

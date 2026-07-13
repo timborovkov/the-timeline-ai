@@ -649,14 +649,17 @@ codex mcp add timeline --url "&lt;copied MCP endpoint URL&gt;" --bearer-token-en
         invalid shares/selections/cursors/subscriptions, deprovisions any recorded provider-side
         helper-board webhooks before deleting their local state, and queues parent-board backfills
         after apply. Discovery covers both current provider-connection shares and direct legacy
-        Monday integration selections. Each successful provider webhook deletion is recorded
-        immediately, making a partially failed cleanup safe to rerun without deleting the same
-        remote webhook twice. Use the provider-connection owner's user UUID; that user must also be
-        a team admin so the command can verify each stored board through monday before changing it.
-        Direct integrations use their integration token. Boards omitted from an otherwise successful
-        monday classification response are listed as missing under their credential source and
-        treated as unverified. An apply refuses any unverified credential sources unless the
-        operator explicitly adds
+        Monday integration selections, including orphan board cursors and webhook rows left after a
+        selection was removed. Each successful provider webhook deletion is recorded immediately,
+        making a partially failed cleanup safe to rerun without deleting the same remote webhook
+        twice. Backfill and webhook-reconciliation follow-ups are also persisted independently;
+        rerun the same apply command to retry a failed step while skipping any step already
+        completed. Use the provider-connection owner's user UUID; that user must also be a team
+        admin so the command can verify each stored board through monday before changing it. Direct
+        integrations use their integration token. Boards omitted from an otherwise successful monday
+        classification response are listed as missing under their credential source and treated as
+        unverified. An apply refuses any unverified credential sources unless the operator
+        explicitly adds
         <code>--allow-unverified</code>
         after reviewing the dry-run.
       </p>
