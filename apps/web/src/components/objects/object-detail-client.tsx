@@ -845,6 +845,7 @@ function ObjectDetailView(props: Props) {
               dispatchObjectUi={view.dispatchObjectUi}
               projects={props.projects}
               primaryProject={props.primaryProject}
+              taskCategoriesEnabled={props.taskCategoriesEnabled}
               className="grid-cols-1 gap-4"
             />
           </ObjectPanel>
@@ -1407,6 +1408,7 @@ function ObjectEditableFields({
   dispatchObjectUi,
   projects = EMPTY_PROJECT_OPTIONS,
   primaryProject = null,
+  taskCategoriesEnabled = true,
   className = 'grid-cols-1 gap-6 sm:grid-cols-2',
 }: {
   detail: ObjectDetail;
@@ -1419,6 +1421,7 @@ function ObjectEditableFields({
   dispatchObjectUi: Dispatch<ObjectDetailUiAction>;
   projects?: { id: string; label: string }[];
   primaryProject?: objects.TaskPrimaryProjectRow | null;
+  taskCategoriesEnabled?: boolean;
   className?: string;
 }) {
   const options = statusOptions(detail.type);
@@ -1435,14 +1438,16 @@ function ObjectEditableFields({
               projects={projects}
             />
           </Field>
-          <Field label="Category">
-            <TaskCategorySelect
-              taskId={detail.id}
-              category={detail.taskCategory}
-              mode={detail.taskCategoryMode}
-              status={detail.taskCategoryStatus}
-            />
-          </Field>
+          {taskCategoriesEnabled ? (
+            <Field label="Category">
+              <TaskCategorySelect
+                taskId={detail.id}
+                category={detail.taskCategory}
+                mode={detail.taskCategoryMode}
+                status={detail.taskCategoryStatus}
+              />
+            </Field>
+          ) : null}
         </>
       ) : null}
       <Field label="Name">

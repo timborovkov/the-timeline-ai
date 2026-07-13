@@ -4397,14 +4397,21 @@ export async function updateObject(
         aliases: next.aliases ?? current.aliases,
         metadata: next.metadata ?? current.metadata,
       });
-      requestedCategoryHash = taskCategoryInputHash(packet, TIMELINE_MODELS.taskCategorization.id);
-      Object.assign(next, {
-        taskCategoryMode: 'automatic',
-        taskCategoryStatus: 'pending',
-        taskCategoryRequestedInputHash: requestedCategoryHash,
-        taskCategoryTaxonomyVersion: TASK_CATEGORY_TAXONOMY_VERSION,
-        taskCategoryUpdatedAt: new Date(),
-      });
+      const inputHash = taskCategoryInputHash(packet, TIMELINE_MODELS.taskCategorization.id);
+      const existingInputHash =
+        current.taskCategoryStatus === 'ready'
+          ? current.taskCategoryAppliedInputHash
+          : current.taskCategoryRequestedInputHash;
+      if (current.type !== 'task' || inputHash !== existingInputHash) {
+        requestedCategoryHash = inputHash;
+        Object.assign(next, {
+          taskCategoryMode: 'automatic',
+          taskCategoryStatus: 'pending',
+          taskCategoryRequestedInputHash: inputHash,
+          taskCategoryTaxonomyVersion: TASK_CATEGORY_TAXONOMY_VERSION,
+          taskCategoryUpdatedAt: new Date(),
+        });
+      }
     }
 
     const updatedRows = await tx

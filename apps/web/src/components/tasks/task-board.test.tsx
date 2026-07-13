@@ -250,6 +250,24 @@ describe('TaskBoard', () => {
     expect(screen.queryByText('Needs category')).toBeNull();
   });
 
+  it('does not render the category field in the selected-task panel while disabled', () => {
+    render(
+      <TaskBoard
+        rows={[task()]}
+        columns={['todo', 'doing', 'done', 'blocked', 'cancelled']}
+        selectedTaskId="task-1"
+        view="kanban"
+        members={[]}
+        totalCount={1}
+        nextCursor={null}
+        taskCategoriesEnabled={false}
+      />,
+    );
+
+    expect(screen.queryByText('Category')).toBeNull();
+    expect(screen.queryByRole('combobox', { name: 'Task category' })).toBeNull();
+  });
+
   it('removes an asynchronously-hydrated project from the task card after clearing it', async () => {
     fakes.loadTaskPrimaryProjectsAction.mockResolvedValue({
       rows: [

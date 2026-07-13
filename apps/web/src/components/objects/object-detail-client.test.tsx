@@ -143,6 +143,20 @@ describe('ObjectDetailClient', () => {
     expect(html).toContain('Archive object');
   });
 
+  it('does not render the task category field while the category UI is disabled', () => {
+    render(
+      objectDetailElement({
+        detail,
+        userId: 'user-1',
+        suggestions: [],
+        taskCategoriesEnabled: false,
+      }),
+    );
+
+    expect(screen.queryByText('Category')).toBeNull();
+    expect(screen.queryByRole('combobox', { name: 'Task category' })).toBeNull();
+  });
+
   it('uses source-tracked display titles for the object detail heading', () => {
     render(
       objectDetailElement({

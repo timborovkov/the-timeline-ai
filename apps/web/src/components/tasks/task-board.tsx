@@ -960,6 +960,7 @@ function TaskBoardView({
           columns={allColumns}
           members={members}
           projects={projects}
+          taskCategoriesEnabled={taskCategoriesEnabled}
           primaryProject={
             hydratedPrimaryProjects.find((project) => project.taskId === selectedTask.id) ?? null
           }
@@ -1646,6 +1647,7 @@ function TaskDetailPanel({
   columns,
   members,
   projects,
+  taskCategoriesEnabled,
   primaryProject,
   closeHref,
   objectHref,
@@ -1657,6 +1659,7 @@ function TaskDetailPanel({
   columns: string[];
   members: TaskMemberOption[];
   projects: TaskMemberOption[];
+  taskCategoriesEnabled: boolean;
   primaryProject: objects.TaskPrimaryProjectRow | null;
   closeHref: string;
   objectHref: string;
@@ -1716,14 +1719,16 @@ function TaskDetailPanel({
             onProjectChange={onProjectChange}
           />
         </TaskField>
-        <TaskField label="Category">
-          <TaskCategorySelect
-            taskId={task.id}
-            category={task.taskCategory}
-            mode={task.taskCategoryMode}
-            status={task.taskCategoryStatus}
-          />
-        </TaskField>
+        {taskCategoriesEnabled ? (
+          <TaskField label="Category">
+            <TaskCategorySelect
+              taskId={task.id}
+              category={task.taskCategory}
+              mode={task.taskCategoryMode}
+              status={task.taskCategoryStatus}
+            />
+          </TaskField>
+        ) : null}
         <TaskField label="Status">
           <select
             value={taskDisplayStatus(task.status)}

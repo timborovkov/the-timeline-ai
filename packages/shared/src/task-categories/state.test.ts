@@ -311,6 +311,44 @@ describe('task category and primary project state', () => {
     expect(changes.filter((row) => row.field === 'taskCategory')).toHaveLength(2);
   });
 
+  it('preserves a ready category when an object edit does not change its classifier packet', async () => {
+    const scope = withTeam(db, TEAM_A, USER_A).objects;
+    const task = await scope.createObject({
+      type: 'task',
+      canonicalName: 'Implement checkout API',
+      actor: { kind: 'user', userId: USER_A },
+    });
+    const input = await scope.getTaskCategoryClassificationInput(task.id);
+    const inputHash = input?.requestedInputHash ?? '';
+    await scope.applyTaskCategoryClassification({
+      taskId: task.id,
+      inputHash,
+      category: 'engineering',
+      confidence: 0.97,
+      model: 'test-model',
+      latencyMs: 12,
+    });
+    vi.mocked(queue.enqueueTaskCategoryJob).mockClear();
+
+    const result = await scope.updateObject(
+      task.id,
+      { metadata: { sync_cursor: 'cursor-2' } },
+      { kind: 'user', userId: USER_A },
+    );
+
+    expect(result.object).toMatchObject({
+      taskCategory: 'engineering',
+      taskCategoryMode: 'automatic',
+      taskCategoryStatus: 'ready',
+    });
+    const [persisted] = await db.select().from(entities).where(eq(entities.id, task.id));
+    expect(persisted).toMatchObject({
+      taskCategoryAppliedInputHash: inputHash,
+      taskCategoryRequestedInputHash: null,
+    });
+    expect(queue.enqueueTaskCategoryJob).not.toHaveBeenCalled();
+  });
+
   it('combines a selected category with uncategorized tasks in one DB filter', async () => {
     const scope = withTeam(db, TEAM_A, USER_A).objects;
     const categorized = await scope.createObject({
