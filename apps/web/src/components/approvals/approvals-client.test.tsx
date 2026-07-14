@@ -114,14 +114,16 @@ describe('ApprovalsClient', () => {
     expect(html).toContain('Send proposal');
     expect(html).toContain('Calendar conflict');
     expect(html).toContain('I will send the proposal');
-    expect(html).toContain('Timeline evidence · slack · 11111111');
+    expect(html).toContain('Timeline evidence · slack');
+    expect(html).not.toContain('Timeline evidence · slack · 11111111');
     expect(html).toContain('create task');
     expect(html).toContain('Accept will create a task.');
     expect(html).toContain(
       'Review required before Timeline writes workspace memory from captured evidence.',
     );
-    expect(html).toContain('Reconciliation output 99999999');
-    expect(html).toContain('Cluster 22222222');
+    expect(html).toContain('Open reconciliation context');
+    expect(html).toContain('Technical details');
+    expect(html).toContain('99999999-9999-4999-8999-999999999999');
     expect(html).toContain(
       'href="/app/team/reconciliation/clusters/22222222-2222-4222-8222-222222222222"',
     );

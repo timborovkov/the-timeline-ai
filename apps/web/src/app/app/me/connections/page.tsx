@@ -10,6 +10,7 @@ import { IntegrationsCatalog } from '@/components/integrations/catalog';
 import { PersonalConnectionsUi } from '@/components/integrations/provider-connections';
 import { PageHeader } from '@/components/page-header';
 import { SectionHeading } from '@/components/section-heading';
+import { TechnicalDetails } from '@/components/technical-details';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
@@ -41,11 +42,7 @@ export default async function PersonalConnectionsPage({
   return (
     <div className="space-y-8">
       <Breadcrumb
-        items={[
-          { label: 'Team', href: '/app/team' },
-          { label: 'Integrations', href: '/app/team/integrations' },
-          { label: 'Provider accounts' },
-        ]}
+        items={[{ label: 'Connections', href: '/app/sources' }, { label: 'Provider accounts' }]}
       />
 
       <PageHeader
@@ -59,7 +56,7 @@ export default async function PersonalConnectionsPage({
       />
 
       <div className="flex flex-wrap items-center gap-2 border-y border-border py-2">
-        <ActionChip href="/app/team/integrations" label="Team sync ->" />
+        <ActionChip href="/app/sources" label="Connections ->" />
         <ActionChip href="/app/me/mcp-servers" label="Personal MCP ->" />
       </div>
 
@@ -69,8 +66,12 @@ export default async function PersonalConnectionsPage({
         </div>
       ) : null}
       {params.error ? (
-        <div className="rounded-sm border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-          Connection failed: <span className="font-mono">{params.error}</span>
+        <div className="space-y-2 rounded-sm border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          <p>We couldn&apos;t connect that account. Try again or choose a different account.</p>
+          <TechnicalDetails
+            items={[{ label: 'Connection error', value: params.error }]}
+            className="text-fg"
+          />
         </div>
       ) : null}
 

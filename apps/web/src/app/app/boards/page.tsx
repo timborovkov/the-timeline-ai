@@ -7,8 +7,8 @@ import type { Metadata } from 'next';
 import { BoardCreateDialog } from '@/components/boards/board-create-form';
 import { BoardPinButton } from '@/components/boards/board-pin-button';
 import { EmptyAction } from '@/components/empty-action';
-import { IndexStrip } from '@/components/index-strip';
-import { WORK_BACK_LINK } from '@/components/work-back-link';
+import { PageHeader } from '@/components/page-header';
+import { WorkSubnav } from '@/components/work-subnav';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { visibleBoardDescription } from '@/lib/board-description';
@@ -33,12 +33,13 @@ export default async function BoardsIndexPage() {
 
   return (
     <div className="space-y-6">
-      <IndexStrip
-        srLabel={`Boards · ${boards.length} boards`}
-        segments={[{ value: 'BOARDS' }, { label: 'total', value: boards.length }]}
-        leading={WORK_BACK_LINK}
+      <PageHeader
+        title="Boards"
+        subtitle="Curated work surfaces for the way your team operates."
+        metadata={[{ label: 'Total', value: boards.length, mono: true }]}
         trailing={BOARD_CREATE_DIALOG}
       />
+      <WorkSubnav current="/app/boards" />
 
       {boards.length === 0 ? (
         <EmptyAction
@@ -61,16 +62,14 @@ export default async function BoardsIndexPage() {
                         {description}
                       </span>
                     ) : null}
-                    <span className="mt-2 flex flex-wrap items-center gap-2 font-mono text-[11px] uppercase tracking-[0.1em] text-fg-dim">
-                      <span>{b.templateKind.replaceAll('_', ' ')}</span>
+                    <span className="mt-2 flex flex-wrap items-center gap-2 text-xs text-fg-dim">
+                      <span className="capitalize">{b.templateKind.replaceAll('_', ' ')}</span>
                       <span aria-hidden="true">·</span>
                       <span>{formatDisplayDate(b.updatedAt)}</span>
                     </span>
                   </Link>
                   <div className="flex shrink-0 items-center justify-between gap-3 sm:justify-start">
-                    <span className="font-mono text-[11px] uppercase tracking-[0.1em] text-fg-dim">
-                      {b.itemCount} items
-                    </span>
+                    <span className="font-mono text-xs text-fg-dim">{b.itemCount} items</span>
                     <BoardPinButton id={b.id} pinned={b.pinned} />
                   </div>
                 </div>

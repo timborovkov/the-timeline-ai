@@ -189,9 +189,7 @@ export function SlackSettingsPageView({ model }: { model: SlackSettingsViewModel
           {model.install ? (
             <div className="flex items-center justify-between gap-3">
               <div>
-                <p className="text-sm font-medium">
-                  {model.install.name ?? model.install.slackTeamId}
-                </p>
+                <p className="text-sm font-medium">{model.install.name ?? 'Slack workspace'}</p>
                 <p className="text-xs text-muted-foreground">
                   workspace {model.install.slackTeamId} ·{' '}
                   {model.install.enabled ? 'enabled' : 'disabled'}
@@ -249,7 +247,7 @@ export function SlackSettingsPageView({ model }: { model: SlackSettingsViewModel
                 </option>
                 {model.unboundConversations.map((c) => (
                   <option key={c.id} value={c.id}>
-                    #{c.name ?? c.id}
+                    #{c.name ?? 'Unnamed channel'}
                     {c.is_member === false ? ' (invite bot first)' : ''}
                   </option>
                 ))}
@@ -276,7 +274,7 @@ export function SlackSettingsPageView({ model }: { model: SlackSettingsViewModel
               {model.bindings.map((b) => (
                 <li key={b.id} className="flex items-center justify-between py-3">
                   <div>
-                    <p className="text-sm font-medium">{b.title ?? b.slackConversationId}</p>
+                    <p className="text-sm font-medium">{b.title ?? 'Unnamed channel'}</p>
                     <p className="text-xs text-muted-foreground">
                       {b.conversationType} · default visibility {b.visibilityDefault}
                     </p>
@@ -313,7 +311,7 @@ export function SlackSettingsPageView({ model }: { model: SlackSettingsViewModel
                         {u.appUser?.name ?? u.appUser?.email ?? 'Timeline user'}
                       </p>
                       <p className="text-xs text-muted-foreground">
-                        Slack {u.realName ?? u.name ?? u.slackUserId}
+                        Slack {u.realName ?? u.name ?? 'member'}
                         {u.email ? ` · ${u.email}` : ''}
                       </p>
                     </div>

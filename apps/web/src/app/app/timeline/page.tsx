@@ -18,6 +18,7 @@ import { TimelineSourceFilterControls } from '@/components/timeline-source-filte
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { displayMemberLabel } from '@/lib/display-labels';
 import { requireRedisQueue } from '@/lib/queue';
 import { listTimelineCapturedFilesByEventId } from '@/lib/timeline-captured-files';
 import {
@@ -535,7 +536,7 @@ function TimelineBrowserSection({
         isAdmin={isAdmin}
         members={members.map((member) => {
           const user = userMap.get(member.userId);
-          return { id: member.userId, label: user?.name ?? user?.email ?? member.userId };
+          return { id: member.userId, label: displayMemberLabel(user) };
         })}
         impactFilter={impactFilters}
         focusEventId={focusEventId ?? null}
@@ -584,10 +585,10 @@ function TimelineFilterPanel({
 }) {
   return (
     <div className="flex items-center justify-between gap-3">
-      <h2 className="font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">Timeline</h2>
+      <h2 className="text-base font-semibold text-fg">Timeline</h2>
       <details className="text-sm" open={hasFilters}>
-        <summary className="cursor-pointer list-none rounded-sm px-2 py-1 font-mono text-[11px] uppercase tracking-[0.12em] text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg">
-          Filters{hasFilters ? ' · ON' : ''}
+        <summary className="cursor-pointer list-none rounded-sm px-2 py-1 text-sm font-medium text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg">
+          Filters{hasFilters ? ' · On' : ''}
         </summary>
         <DebouncedFilterForm
           basePath="/app/timeline"
@@ -619,7 +620,7 @@ function TimelineFilterPanel({
                 const user = userMap.get(member.userId);
                 return {
                   value: member.userId,
-                  label: user?.name ?? user?.email ?? member.userId,
+                  label: displayMemberLabel(user),
                 };
               })}
             />
@@ -652,7 +653,7 @@ function TimelineFilterPanel({
 function TimelineDateField({ name, label, value }: { name: string; label: string; value: string }) {
   return (
     <label className="flex flex-col gap-1">
-      <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">{label}</span>
+      <span className="text-xs font-medium text-fg-muted">{label}</span>
       <input
         type="date"
         name={name}
@@ -702,7 +703,7 @@ function TimelinePresetControls({
               key={preset.label}
               href={href}
               aria-current={active ? 'page' : undefined}
-              className={`inline-flex min-h-8 items-center rounded-sm border px-2.5 font-mono text-[11px] uppercase tracking-[0.12em] transition-colors ${
+              className={`inline-flex min-h-8 items-center rounded-sm border px-2.5 text-xs font-medium transition-colors ${
                 active
                   ? 'border-signal/50 bg-signal-soft text-signal'
                   : 'border-border text-fg-muted hover:bg-surface hover:text-fg'

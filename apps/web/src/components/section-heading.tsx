@@ -25,7 +25,7 @@ interface SectionHeadingProps {
 export function SectionHeading({ children, actions, id, className }: SectionHeadingProps) {
   return (
     <div className={cn('flex items-center justify-between gap-3', className)}>
-      <h2 id={id} className="m-0 text-lg font-semibold tracking-tight text-fg">
+      <h2 id={id} className="m-0 text-base font-semibold tracking-tight text-fg">
         {children}
       </h2>
       {actions ? <div className="flex items-center gap-2">{actions}</div> : null}

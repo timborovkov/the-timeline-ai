@@ -2,6 +2,7 @@ import Link from 'next/link';
 
 import type { Metadata } from 'next';
 
+import { AuthShell } from '@/components/auth-shell';
 import { Button } from '@/components/ui/button';
 import { db } from '@/lib/db';
 import { verifyEmailToken } from '@/lib/email-verification';
@@ -46,15 +47,10 @@ export default async function VerifyEmailPage({
           };
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center px-6 py-16">
-      <div className="mb-6 font-mono text-xs uppercase tracking-[0.14em] text-signal">
-        The Timeline
-      </div>
-      <h1 className="text-2xl font-semibold">{copy.title}</h1>
-      <p className="mt-3 text-sm leading-6 text-muted-foreground">{copy.body}</p>
-      <Button asChild className="mt-6 w-fit">
+    <AuthShell title={copy.title} subtitle={copy.body}>
+      <Button asChild className="w-fit">
         <Link href={copy.href}>{copy.action}</Link>
       </Button>
-    </main>
+    </AuthShell>
   );
 }

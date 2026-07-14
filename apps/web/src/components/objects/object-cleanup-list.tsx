@@ -148,16 +148,14 @@ export function ObjectCleanupList({ rows, typeLabels, pageInfo, sectionMoreHrefs
         <div />
         <div className="flex items-center gap-1.5">
           {selecting ? (
-            <div className="mr-1 font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
-              {selectedCount} selected
-            </div>
+            <div className="mr-1 text-xs text-fg-dim">{selectedCount} selected</div>
           ) : null}
           {selecting ? (
             <>
               <Link
                 href={canMergeSelected ? objectMergeHref(selectedIds) : '#'}
                 aria-disabled={!canMergeSelected}
-                className={`inline-flex h-8 items-center gap-1.5 rounded-sm border px-2.5 font-mono text-[11px] uppercase tracking-[0.1em] transition-colors ${
+                className={`inline-flex h-8 items-center gap-1.5 rounded-sm border px-2.5 text-xs transition-colors ${
                   canMergeSelected
                     ? 'border-border text-fg hover:bg-surface-2'
                     : 'pointer-events-none border-border text-fg-dim opacity-50'
@@ -170,7 +168,7 @@ export function ObjectCleanupList({ rows, typeLabels, pageInfo, sectionMoreHrefs
                 type="button"
                 onClick={() => void archiveSelected()}
                 disabled={selectedCount === 0 || isPending}
-                className="inline-flex h-8 items-center gap-1.5 rounded-sm border border-border px-2.5 font-mono text-[11px] uppercase tracking-[0.1em] text-fg transition-colors hover:bg-surface-2 disabled:cursor-not-allowed disabled:text-fg-dim disabled:opacity-50"
+                className="inline-flex h-8 items-center gap-1.5 rounded-sm border border-border px-2.5 text-xs text-fg transition-colors hover:bg-surface-2 disabled:cursor-not-allowed disabled:text-fg-dim disabled:opacity-50"
               >
                 <Archive className="size-3.5" aria-hidden />
                 Archive
@@ -178,7 +176,7 @@ export function ObjectCleanupList({ rows, typeLabels, pageInfo, sectionMoreHrefs
               <button
                 type="button"
                 onClick={clearSelection}
-                className="inline-flex h-8 items-center gap-1.5 rounded-sm border border-border px-2.5 font-mono text-[11px] uppercase tracking-[0.1em] text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg"
+                className="inline-flex h-8 items-center gap-1.5 rounded-sm border border-border px-2.5 text-xs text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg"
               >
                 <X className="size-3.5" aria-hidden />
                 Clear
@@ -190,7 +188,7 @@ export function ObjectCleanupList({ rows, typeLabels, pageInfo, sectionMoreHrefs
               onClick={() => {
                 dispatchCleanupList({ type: 'begin-selecting' });
               }}
-              className="inline-flex h-8 items-center gap-1.5 rounded-sm border border-border px-2.5 font-mono text-[11px] uppercase tracking-[0.1em] text-fg transition-colors hover:bg-surface-2"
+              className="inline-flex h-8 items-center gap-1.5 rounded-sm border border-border px-2.5 text-xs text-fg transition-colors hover:bg-surface-2"
             >
               <SquareCheckBig className="size-3.5" aria-hidden />
               Select
@@ -213,9 +211,7 @@ export function ObjectCleanupList({ rows, typeLabels, pageInfo, sectionMoreHrefs
         </p>
       ) : null}
       {visibleRows.length === 0 ? (
-        <p className="py-10 text-center font-mono text-xs uppercase tracking-[0.12em] text-fg-dim">
-          NO OBJECTS VISIBLE
-        </p>
+        <p className="py-10 text-center text-xs text-fg-dim">NO OBJECTS VISIBLE</p>
       ) : (
         <div className="space-y-8">
           {typeKeys.map((typeKey) => {
@@ -223,10 +219,8 @@ export function ObjectCleanupList({ rows, typeLabels, pageInfo, sectionMoreHrefs
             return (
               <section key={typeKey} aria-label={typeLabels[typeKey] ?? typeKey}>
                 <div className="mb-3 flex items-baseline justify-between border-b border-border pb-1.5">
-                  <h2 className="font-mono text-[11px] uppercase tracking-[0.14em] text-fg">
-                    {typeLabels[typeKey] ?? typeKey}
-                  </h2>
-                  <div className="flex items-center gap-3 font-mono text-[11px] uppercase tracking-[0.12em]">
+                  <h2 className="text-xs text-fg">{typeLabels[typeKey] ?? typeKey}</h2>
+                  <div className="flex items-center gap-3 text-xs">
                     <span className="text-fg-dim">{list.length}</span>
                     {sectionMoreHrefs?.[typeKey] ? (
                       <Link
@@ -265,7 +259,7 @@ export function ObjectCleanupList({ rows, typeLabels, pageInfo, sectionMoreHrefs
                           >
                             {displayText(object.canonicalName)}
                           </Link>
-                          <span className="ml-3 flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.1em] text-fg-dim">
+                          <span className="ml-3 flex items-center gap-2 text-xs text-fg-dim">
                             <span>{object.status}</span>
                             {object.dueAt ? (
                               <span title={object.dueAt.toISOString()}>
@@ -299,9 +293,7 @@ function ObjectListPager({
       aria-label="Objects pages"
       className="flex flex-wrap items-center justify-between gap-2 border-b border-border pb-2"
     >
-      <p className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
-        {shownCount} shown
-      </p>
+      <p className="text-xs text-fg-dim">{shownCount} shown</p>
       <div className="flex items-center gap-1.5">
         <PaginationLink href={nextHref} label="Next" />
       </div>
@@ -311,7 +303,7 @@ function ObjectListPager({
 
 function PaginationLink({ href, label }: { href: string | null; label: string }) {
   const className =
-    'inline-flex h-8 items-center rounded-sm border px-2.5 font-mono text-[11px] uppercase tracking-[0.1em] transition-colors';
+    'inline-flex h-8 items-center rounded-sm border px-2.5 text-xs transition-colors';
   if (!href) {
     return (
       <span className={`${className} border-border text-fg-dim opacity-50`} aria-disabled="true">

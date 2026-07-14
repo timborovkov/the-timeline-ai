@@ -132,7 +132,7 @@ function ModeSwitch({ mode, dispatch }: { mode: State['mode']; dispatch: Dispatc
             onClick={() => {
               dispatch({ type: 'mode', mode: option });
             }}
-            className={`px-2 py-1 font-mono text-[10px] uppercase tracking-[0.1em] ${
+            className={`px-2 py-1 text-[11px] ${
               mode === option ? 'bg-signal text-signal-fg' : 'bg-bg text-fg-muted'
             }`}
           >
@@ -194,17 +194,14 @@ function ExistingObjectPicker({
             </button>
           ) : null}
         </label>
-        <output
-          className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim"
-          aria-live="polite"
-        >
+        <output className="text-xs text-fg-dim" aria-live="polite">
           {selectableCandidates.length} / {candidates.length}
         </output>
       </div>
 
       {existingTypeOptions.length > 1 ? (
         <div
-          className="flex flex-wrap gap-1.5 font-mono text-[10px] uppercase tracking-[0.12em]"
+          className="flex flex-wrap gap-1.5 text-[11px]"
           aria-label="Filter existing objects by type"
         >
           {(['all', ...existingTypeOptions] as const).map((type) => (
@@ -222,9 +219,7 @@ function ExistingObjectPicker({
 
       {selectedCandidate ? (
         <div className="flex flex-wrap items-center gap-2 text-sm">
-          <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
-            Selected
-          </span>
+          <span className="text-xs text-fg-dim">Selected</span>
           <button
             type="button"
             onClick={() => {
@@ -301,7 +296,7 @@ function CandidateList({
                     <span className="block truncate font-medium text-fg">
                       {displayText(row.canonicalName)}
                     </span>
-                    <span className="block truncate font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">
+                    <span className="block truncate text-[11px] text-fg-dim">
                       {row.type}
                       {row.aliases.length > 0
                         ? ` · ${row.aliases
@@ -475,7 +470,7 @@ export function BoardAddItemForm({
   return (
     <div className="rounded-sm border border-border bg-surface p-3">
       <div className="flex items-center justify-between gap-3">
-        <h2 className="font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">Add item</h2>
+        <h2 className="text-xs text-fg-dim">Add item</h2>
         <button
           type="button"
           onClick={() => {
@@ -515,11 +510,7 @@ export function BoardAddItemForm({
               dispatch={dispatch}
             />
           )}
-          {state.error ? (
-            <p className="mt-2 font-mono text-[11px] uppercase tracking-[0.1em] text-danger">
-              {state.error}
-            </p>
-          ) : null}
+          {state.error ? <p className="mt-2 text-xs text-danger">{state.error}</p> : null}
           <button
             type="button"
             onClick={submit}

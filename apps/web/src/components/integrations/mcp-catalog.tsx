@@ -111,8 +111,8 @@ export function McpCatalog({ entries }: { entries: CatalogEntryProps[] }) {
                 }}
                 className={
                   active
-                    ? 'rounded-sm border border-signal bg-signal/10 px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.14em] text-signal'
-                    : 'rounded-sm border border-border bg-surface px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.14em] text-fg-muted hover:text-signal'
+                    ? 'rounded-sm border border-signal bg-signal/10 px-1.5 py-0.5 text-[11px] text-signal'
+                    : 'rounded-sm border border-border bg-surface px-1.5 py-0.5 text-[11px] text-fg-muted hover:text-signal'
                 }
               >
                 {cat}
@@ -131,7 +131,7 @@ export function McpCatalog({ entries }: { entries: CatalogEntryProps[] }) {
               clear
             </button>
           ) : null}
-          <span className="ml-auto font-mono text-[10px] uppercase tracking-[0.14em] text-fg-dim">
+          <span className="ml-auto text-[11px] text-fg-dim">
             {filtered.length} / {entries.length}
           </span>
         </div>
@@ -345,9 +345,7 @@ function CatalogCard({ entry }: { entry: CatalogEntryProps }) {
                       : 'Connect with token'}
             </Button>
           )}
-          <span className="ml-auto font-mono text-[10px] uppercase tracking-[0.14em] text-fg-dim">
-            {entry.authType ?? 'planned'}
-          </span>
+          <span className="ml-auto text-[11px] text-fg-dim">{entry.authType ?? 'planned'}</span>
         </div>
       </CardContent>
       {dialog.node}

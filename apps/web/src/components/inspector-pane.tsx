@@ -33,7 +33,7 @@ export function InspectorPane() {
 
   if (!inspector.open || !inspector.content) return null;
 
-  const { id, kind, title, render } = inspector.content;
+  const { kind, title, render } = inspector.content;
 
   return (
     <>
@@ -54,11 +54,15 @@ export function InspectorPane() {
         )}
       >
         <header className="flex h-12 shrink-0 items-center justify-between border-b border-border px-3">
-          <div className="flex min-w-0 items-baseline gap-2 font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">
-            <span className="shrink-0">{kind}</span>
+          <div className="flex min-w-0 items-baseline gap-2 text-sm text-fg-muted">
+            <span className="shrink-0 text-xs">{kind}</span>
             <span className="shrink-0 text-fg-dim">·</span>
-            <span id="inspector-title" title={title ?? id} className="min-w-0 truncate text-signal">
-              {title ?? id}
+            <span
+              id="inspector-title"
+              title={title ?? 'Inspector'}
+              className="min-w-0 truncate font-medium text-fg"
+            >
+              {title ?? 'Inspector'}
             </span>
           </div>
           <Button
@@ -73,7 +77,7 @@ export function InspectorPane() {
           </Button>
         </header>
         <div
-          className="flex-1 overflow-y-auto p-4 font-mono text-xs leading-relaxed text-fg-muted"
+          className="flex-1 overflow-y-auto p-4 text-sm leading-relaxed text-fg-muted"
           aria-live="polite"
         >
           {render()}
@@ -96,19 +100,14 @@ export function InspectorToggle({ className }: { className?: string }) {
   // No content yet → nothing to toggle into. Disable the button rather
   // than flipping `open` to true with an empty pane, which would leave
   // the toggle showing pressed/closed-label with no visible UI change.
-  const disabled = !inspector.content;
-  const label = disabled
-    ? 'No source selected yet'
-    : inspector.open
-      ? 'Close inspector'
-      : 'Open inspector';
+  if (!inspector.content) return null;
+  const label = inspector.open ? 'Close inspector' : 'Open inspector';
   return (
     <Button
       variant="ghost"
       size="icon"
       aria-label={label}
       aria-pressed={inspector.open}
-      disabled={disabled}
       onClick={inspector.toggle}
       className={cn('hidden size-8 lg:inline-flex', className)}
     >

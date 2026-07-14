@@ -14,9 +14,14 @@ import {
   ScheduleMeetingBotForm,
   SkipScheduledMeetingButton,
 } from '@/components/meeting-forms';
+import { PageHeader } from '@/components/page-header';
+import { SectionHeading } from '@/components/section-heading';
+import { StatusBadge } from '@/components/status-badge';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { formatDisplayDateTime } from '@/lib/display-dates';
+import { displayMeetingLabel, displayMemberLabel, displaySourceLabel } from '@/lib/display-labels';
 
 export const metadata: Metadata = {
   title: 'Meetings',
@@ -60,23 +65,20 @@ export default async function MeetingsPage({
   const memberUserMap = new Map(memberUsers.map((u) => [u.id, u] as const));
   const memberOptions = members.map((m) => {
     const u = memberUserMap.get(m.userId);
-    return { id: m.userId, label: u?.name ?? u?.email ?? m.userId };
+    return { id: m.userId, label: displayMemberLabel(u) };
   });
   const cap = settings.meetingMinutesCap;
 
   return (
     <div className="space-y-6">
-      <header className="space-y-1">
-        <h1 className="text-2xl font-semibold">Meeting notetaker</h1>
-        <p className="text-sm text-muted-foreground">
-          Paste a Google Meet, Microsoft Teams, or Zoom link to invite the silent Timeline notetaker
-          to capture the transcript.
-        </p>
-        <p className="text-xs text-muted-foreground">
-          This month: {String(usedMinutes)} minutes
-          {cap !== null ? ` / ${String(cap)} cap` : ''}
-        </p>
-      </header>
+      <PageHeader
+        title="Meetings"
+        subtitle="Invite the silent notetaker or manage meeting links for automatic capture."
+        metadata={[
+          { label: 'This month', value: `${String(usedMinutes)} minutes`, mono: true },
+          ...(cap !== null ? [{ label: 'Cap', value: `${String(cap)} minutes`, mono: true }] : []),
+        ]}
+      />
 
       <nav className="flex gap-2 border-b">
         <Link
@@ -110,9 +112,7 @@ export default async function MeetingsPage({
 
       {tab === 'saved' ? (
         <section className="space-y-2">
-          <h2 className="text-sm font-medium uppercase tracking-wide text-muted-foreground">
-            Saved meetings
-          </h2>
+          <SectionHeading>Saved meetings</SectionHeading>
           {savedMeetings.length === 0 ? (
             <p className="text-sm text-muted-foreground">No saved meetings yet.</p>
           ) : (
@@ -121,9 +121,9 @@ export default async function MeetingsPage({
                 <li key={saved.id} className="space-y-2 p-3">
                   <div className="flex items-start justify-between gap-3">
                     <span className="flex flex-col">
-                      <span className="font-medium">{saved.title}</span>
+                      <span className="font-medium">{displayMeetingLabel(saved)}</span>
                       <span className="text-xs text-muted-foreground">
-                        {saved.platform} ·{' '}
+                        {displaySourceLabel(saved.platform)} ·{' '}
                         {saved.aliases.length ? saved.aliases.join(', ') : 'no aliases'} ·{' '}
                         {saved.autoJoinEnabled ? 'auto-join on' : 'manual join'}
                       </span>
@@ -149,9 +149,9 @@ export default async function MeetingsPage({
       ) : null}
 
       <section className="space-y-2">
-        <h2 className="text-sm font-medium uppercase tracking-wide text-muted-foreground">
-          {tab === 'saved' ? 'Scheduled and recent captures' : 'Recent'}
-        </h2>
+        <SectionHeading>
+          {tab === 'saved' ? 'Scheduled and recent captures' : 'Recent captures'}
+        </SectionHeading>
         {list.length === 0 ? (
           <p className="text-sm text-muted-foreground">No meetings yet.</p>
         ) : (
@@ -160,10 +160,15 @@ export default async function MeetingsPage({
               <li key={m.id} className="p-3">
                 <div className="flex items-center justify-between gap-3">
                   <Link href={`/app/meetings/${m.id}`} className="flex flex-col">
-                    <span className="font-medium">{m.title ?? m.meetingUrl.slice(0, 60)}</span>
-                    <span className="text-xs text-muted-foreground">
-                      {m.platform} · {m.status} ·{' '}
-                      {new Date(m.scheduledStartAt ?? m.createdAt).toLocaleString()}
+                    <span className="font-medium">{displayMeetingLabel(m)}</span>
+                    <span className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                      <span>{displaySourceLabel(m.platform)}</span>
+                      <StatusBadge status={m.status} />
+                      <time dateTime={new Date(m.scheduledStartAt ?? m.createdAt).toISOString()}>
+                        {formatDisplayDateTime(m.scheduledStartAt ?? m.createdAt, {
+                          timezone: calendarSettings.defaultTimezone,
+                        })}
+                      </time>
                     </span>
                   </Link>
                   {m.status === 'scheduled' ? (

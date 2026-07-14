@@ -178,6 +178,7 @@ function FloatingAgentChatContent({ teamId, teamName }: FloatingAgentChatProps) 
             <ChatSurface
               key={activeSessionGeneration}
               compact
+              teamId={teamId}
               teamName={teamName}
               sessionId={sessionId}
               initialMessages={initialMessages}

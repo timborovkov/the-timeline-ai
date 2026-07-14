@@ -77,7 +77,7 @@ export function InboxBell({ unreadCount, notifications }: InboxBellProps) {
         className="w-[min(26rem,calc(100vw-1.5rem))] p-0"
       >
         <div className="flex items-center justify-between border-b border-border px-3 py-2">
-          <div className="font-mono text-xs uppercase tracking-[0.14em] text-fg">
+          <div className="text-xs text-fg">
             Inbox
             <span className="ml-2 text-fg-dim">{unreadCount} unread</span>
           </div>
@@ -87,7 +87,7 @@ export function InboxBell({ unreadCount, notifications }: InboxBellProps) {
             onClick={() => {
               refreshAfter(markAllNotificationsReadAction);
             }}
-            className="font-mono text-[11px] uppercase tracking-[0.12em] text-signal hover:underline disabled:opacity-40"
+            className="text-xs text-signal hover:underline disabled:opacity-40"
           >
             Mark all read
           </button>
@@ -120,7 +120,7 @@ export function InboxBell({ unreadCount, notifications }: InboxBellProps) {
                       )}
                     />
                     <span className="min-w-0">
-                      <span className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">
+                      <span className="flex items-center gap-2 text-[11px] text-fg-dim">
                         <span className="truncate">{notification.kind.replace(/_/g, ' ')}</span>
                         <time dateTime={notification.createdAt} className="shrink-0">
                           {formatPreviewTime(notification.createdAt)}
@@ -140,7 +140,7 @@ export function InboxBell({ unreadCount, notifications }: InboxBellProps) {
         <div className="border-t border-border p-2">
           <Link
             href="/app/inbox"
-            className="flex h-9 items-center justify-center rounded-sm border border-border font-mono text-[11px] uppercase tracking-[0.12em] text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg"
+            className="flex h-9 items-center justify-center rounded-sm border border-border text-xs text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg"
           >
             View all
           </Link>

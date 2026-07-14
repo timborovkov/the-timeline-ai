@@ -47,15 +47,16 @@ describe('ReconciliationClusterPage', () => {
       await ReconciliationClusterPage({ params: Promise.resolve({ id: CLUSTER_ID }) }),
     );
 
+    expect(html.match(/<h1/g)).toHaveLength(1);
     expect(fakes.getClusterDetail).toHaveBeenCalledWith({ clusterId: CLUSTER_ID });
     expect(html).toContain('Lumen onboarding pilot');
     expect(html).toContain('Reconciliation dashboard');
-    expect(html).toContain('customer_project');
+    expect(html).toContain('customer project');
     expect(html).toContain('decision');
     expect(html).toContain('monday');
     expect(html).toContain('Launch pilot in July');
-    expect(html).toContain('agent_suggestion_projection');
-    expect(html).toContain('output output-1');
+    expect(html).toContain('agent suggestion projection');
+    expect(html).toContain('Output ID');
     expect(html).toContain('raw-event-1');
     expect(html).toContain('evidence-1');
     expect(html).toContain('inline://monday/pulse-123');

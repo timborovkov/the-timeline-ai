@@ -41,6 +41,7 @@ import {
   visibleObjectSearchResultsForQuery,
 } from '@/components/objects/object-search-results';
 import { ObjectSectionFeed } from '@/components/objects/object-section-feed';
+import { TechnicalDetails } from '@/components/technical-details';
 import { displayText, formatDisplayDateTime } from '@/lib/display-dates';
 import { displayObjectTitle } from '@/lib/object-title';
 import { readJson } from '@/lib/paginated-api';
@@ -783,7 +784,7 @@ function ObjectDetailView(props: Props) {
                 bodyClassName: 'border-t border-border p-4',
                 titleClassName: 'text-sm font-semibold tracking-tight',
                 countClassName: 'mt-1 text-xs text-fg-muted',
-                openLabelClassName: 'font-mono text-[10px] uppercase tracking-[0.14em] text-fg-dim',
+                openLabelClassName: 'text-[11px] text-fg-dim',
               }}
             />
           ) : null}
@@ -898,9 +899,7 @@ function ObjectContactSection({ detail }: { detail: ObjectDetail }) {
               className="flex min-w-0 items-center justify-between gap-3 border border-border px-3 py-2 text-sm transition hover:border-signal/60 hover:bg-signal-soft/20"
             >
               <span className="min-w-0 truncate">{facet.value}</span>
-              <span className="shrink-0 font-mono text-[10px] uppercase tracking-[0.14em] text-fg-dim">
-                {facet.kind}
-              </span>
+              <span className="shrink-0 text-[11px] text-fg-dim">{facet.kind}</span>
             </a>
           );
         })}
@@ -924,11 +923,7 @@ function ObjectPanel({
     <section className={cn('border border-border bg-bg', className)}>
       <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-2">
         <h2 className="text-sm font-semibold tracking-tight">{title}</h2>
-        {eyebrow ? (
-          <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-fg-dim">
-            {eyebrow}
-          </span>
-        ) : null}
+        {eyebrow ? <span className="text-[11px] text-fg-dim">{eyebrow}</span> : null}
       </div>
       <div className="p-4">{children}</div>
     </section>
@@ -1005,7 +1000,7 @@ function ObjectSummaryPanel({ detail }: { detail: ObjectDetail }) {
       )}
 
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-border pt-3">
-        <p className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
+        <p className="text-xs text-fg-dim">
           {summary?.generatedAt
             ? `Updated ${formatDisplayDateTime(summary.generatedAt)} · ${
                 summary.sourceRefs.length
@@ -1021,7 +1016,7 @@ function ObjectSummaryPanel({ detail }: { detail: ObjectDetail }) {
         {canRequest ? (
           <button
             type="button"
-            className="border border-border bg-bg px-3 py-2 font-mono text-[11px] uppercase tracking-[0.12em] text-fg transition hover:border-fg disabled:cursor-not-allowed disabled:opacity-60"
+            className="border border-border bg-bg px-3 py-2 text-xs text-fg transition hover:border-fg disabled:cursor-not-allowed disabled:opacity-60"
             disabled={pending}
             onClick={requestSummary}
           >
@@ -1041,7 +1036,7 @@ function SourceChips({ refs }: { refs: objects.ObjectSummarySourceRef[] }) {
       {refs.slice(0, 3).map((ref) => {
         const artifactRef = summaryRefToArtifactRef(ref);
         const className =
-          'border border-border bg-bg px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim hover:border-signal hover:text-signal';
+          'border border-border bg-bg px-1.5 py-0.5 text-[11px] text-fg-dim hover:border-signal hover:text-signal';
         return artifactRef ? (
           <ArtifactReferenceChip
             key={`${ref.kind}:${ref.id}`}
@@ -1143,10 +1138,8 @@ function ProvenanceGroup({
   return (
     <section className="grid min-w-0 gap-3 py-4 first:pt-0 last:pb-0 sm:grid-cols-[10rem_minmax(0,1fr)]">
       <div>
-        <h3 className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-muted">{title}</h3>
-        <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">
-          {sourceCount}
-        </p>
+        <h3 className="text-xs text-fg-muted">{title}</h3>
+        <p className="mt-1 text-[11px] text-fg-dim">{sourceCount}</p>
       </div>
       {entries.length === 0 ? (
         <p className="text-sm text-fg-muted">{empty}</p>
@@ -1159,7 +1152,7 @@ function ProvenanceGroup({
             <details
               className={cn('group border border-border', previewEntries.length > 0 && 'mt-3')}
             >
-              <summary className="flex cursor-pointer list-none items-center justify-between gap-3 bg-surface px-3 py-2 font-mono text-[11px] uppercase tracking-[0.12em] text-fg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal focus-visible:ring-offset-2 focus-visible:ring-offset-bg">
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-3 bg-surface px-3 py-2 text-xs text-fg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal focus-visible:ring-offset-2 focus-visible:ring-offset-bg">
                 <span>{reviewLabel}</span>
                 <span aria-hidden="true" className="text-fg-dim group-open:hidden">
                   +
@@ -1237,7 +1230,7 @@ function ProvenanceSourceLinks({
       ))}
       {remainingEvidence.length > 0 ? (
         <details className="pt-1">
-          <summary className="cursor-pointer list-none font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim hover:text-fg">
+          <summary className="cursor-pointer list-none text-[11px] text-fg-dim hover:text-fg">
             Review {remainingEvidence.length} more source
             {remainingEvidence.length === 1 ? '' : 's'}
           </summary>
@@ -1299,29 +1292,26 @@ function ObjectDetailHeader({
   const alerts = (
     <>
       {detail.newSinceLastVisit > 0 && (
-        <output className="rounded-sm border border-signal/40 bg-signal-soft px-3 py-2 font-mono text-[11px] uppercase tracking-[0.12em] text-signal">
+        <output className="rounded-sm border border-signal/40 bg-signal-soft px-3 py-2 text-xs text-signal">
           {detail.newSinceLastVisit} new change
           {detail.newSinceLastVisit === 1 ? '' : 's'} since your last visit
         </output>
       )}
       {pendingCount > 0 ? (
-        <output className="rounded-sm border border-signal/40 bg-signal-soft px-3 py-2 font-mono text-[11px] uppercase tracking-[0.12em] text-signal">
+        <output className="rounded-sm border border-signal/40 bg-signal-soft px-3 py-2 text-xs text-signal">
           {pendingCount} suggestion{pendingCount === 1 ? '' : 's'} awaiting review
         </output>
       ) : null}
       {error ? (
         <div
           role="alert"
-          className="rounded-sm border border-danger/40 bg-bg px-3 py-2 font-mono text-[11px] uppercase tracking-[0.12em] text-danger"
+          className="rounded-sm border border-danger/40 bg-bg px-3 py-2 text-xs text-danger"
         >
           {error}
         </div>
       ) : null}
       {saveState !== 'idle' ? (
-        <output
-          aria-live="polite"
-          className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim"
-        >
+        <output aria-live="polite" className="text-xs text-fg-dim">
           {saveState === 'saving'
             ? `Saving${savingCount > 1 ? ` ${savingCount} changes` : ''}...`
             : 'Saved'}
@@ -1333,16 +1323,14 @@ function ObjectDetailHeader({
     <header className="border-b border-border pb-5">
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start">
         <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-fg-dim">
             <span className="text-fg-muted">{detail.type}</span>
-            <span aria-hidden="true">·</span>
-            <span>id {detail.id.slice(0, 8)}</span>
           </div>
           <h1 className="mt-2 text-3xl font-semibold tracking-tight text-fg">
             {displayText(displayObjectTitle(detail))}
           </h1>
           {detail.aliases.length > 0 && (
-            <p className="mt-2 font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
+            <p className="mt-2 text-xs text-fg-dim">
               aka {detail.aliases.map((alias) => displayText(alias)).join(' · ')}
             </p>
           )}
@@ -1358,7 +1346,7 @@ function ObjectDetailHeader({
                 ? 'Unarchive this object before repairing memory'
                 : 'Queue object-scoped duplicate cleanup'
             }
-            className="rounded-sm border border-border bg-surface px-3 py-2 font-mono text-[11px] uppercase tracking-[0.12em] text-fg-muted transition hover:border-signal/50 hover:text-signal disabled:cursor-not-allowed disabled:opacity-50"
+            className="rounded-sm border border-border bg-surface px-3 py-2 text-xs text-fg-muted transition hover:border-signal/50 hover:text-signal disabled:cursor-not-allowed disabled:opacity-50"
           >
             {detail.archivedAt
               ? 'Repair unavailable'
@@ -1368,6 +1356,10 @@ function ObjectDetailHeader({
           </button>
         </div>
       </div>
+      <TechnicalDetails
+        className="mt-4"
+        items={[{ label: 'Object ID', value: detail.id, copyValue: detail.id }]}
+      />
     </header>
   );
 }
@@ -1720,9 +1712,7 @@ function ObjectConnectedWorkSection({
 function ConnectedWorkSection({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section className="min-w-0">
-      <h3 className="mb-2 font-mono text-[11px] uppercase tracking-[0.12em] text-fg-muted">
-        {title}
-      </h3>
+      <h3 className="mb-2 text-xs text-fg-muted">{title}</h3>
       {children}
     </section>
   );
@@ -1753,7 +1743,7 @@ function ConnectedTaskList({
               <a href={`/app/objects/${task.id}`} className="font-medium hover:underline">
                 {displayText(displayObjectTitle(task))}
               </a>
-              <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">
+              <span className="text-[11px] text-fg-dim">
                 {task.status}
                 {showDueDate && task.dueAt
                   ? ` · due ${new Date(task.dueAt).toLocaleDateString()}`
@@ -1784,7 +1774,7 @@ function ConnectedCalendarList({
               className="grid gap-1 rounded-sm border border-border bg-surface px-3 py-2 text-sm"
             >
               <span className="font-medium">{displayText(event.title)}</span>
-              <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">
+              <span className="text-[11px] text-fg-dim">
                 {formatDisplayDateTime(event.startAt)} · {event.showAs}
               </span>
             </li>
@@ -1810,7 +1800,7 @@ function ConnectedObjectList({ objects }: { objects: ObjectDetail['connectedWork
               <a href={`/app/objects/${object.id}`} className="font-medium hover:underline">
                 {displayText(object.canonicalName)}
               </a>
-              <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">
+              <span className="text-[11px] text-fg-dim">
                 {object.type} · {object.factCount} fact{object.factCount === 1 ? '' : 's'}
               </span>
             </li>
@@ -1839,7 +1829,7 @@ function ConnectedBoardList({ boards }: { boards: ObjectDetail['connectedWork'][
               >
                 {displayText(board.boardName)}
               </a>
-              <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">
+              <span className="text-[11px] text-fg-dim">
                 {board.laneName ?? 'no lane'}
                 {board.dueAt ? ` · due ${new Date(board.dueAt).toLocaleDateString()}` : ''}
                 {board.priority !== null ? ` · P${board.priority}` : ''}
@@ -1874,7 +1864,7 @@ function ConnectedApprovalList({
               <Link href="/app/approvals" className="font-medium hover:underline">
                 {displayText(approval.title)}
               </Link>
-              <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">
+              <span className="text-[11px] text-fg-dim">
                 {approval.operation} · {approval.targetKind}
               </span>
             </li>
@@ -1908,7 +1898,7 @@ function ConnectedDocumentList({
               >
                 {displayText(truncateFilenameMiddle(document.name))}
               </a>
-              <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">
+              <span className="text-[11px] text-fg-dim">
                 {document.fileKind} · updated {formatDisplayDateTime(document.updatedAt)}
               </span>
             </li>
@@ -1943,7 +1933,7 @@ function ConnectedLinkList({ links }: { links: ObjectDetail['connectedWork']['li
               ) : (
                 <span className="font-medium">{displayText(link.canonicalName)}</span>
               )}
-              <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">
+              <span className="text-[11px] text-fg-dim">
                 {link.provider ?? link.domain ?? 'shared link'} · updated{' '}
                 {formatDisplayDateTime(link.updatedAt)}
               </span>
@@ -1974,7 +1964,7 @@ function ConnectedCapturedFileList({
               <Link href="/app/documents/captured" className="font-medium hover:underline">
                 {displayText(truncateFilenameMiddle(file.name))}
               </Link>
-              <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">
+              <span className="text-[11px] text-fg-dim">
                 {file.contentType ?? 'captured file'} · updated{' '}
                 {formatDisplayDateTime(file.updatedAt)}
               </span>

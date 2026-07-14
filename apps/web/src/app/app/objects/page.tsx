@@ -10,14 +10,16 @@ import type * as objects from '@timeline/shared/objects/types';
 import type { Metadata } from 'next';
 
 import { EmptyAction } from '@/components/empty-action';
-import { IndexStrip } from '@/components/index-strip';
 import { ObjectCleanupList } from '@/components/objects/object-cleanup-list';
 import { ObjectCleanupSuggestions } from '@/components/objects/object-cleanup-suggestions';
-import { WORK_BACK_LINK } from '@/components/work-back-link';
+import { PageHeader } from '@/components/page-header';
+import { Button } from '@/components/ui/button';
 import { WorkFilterBar } from '@/components/work-filter-bar';
+import { WorkSubnav } from '@/components/work-subnav';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { displayMemberLabel } from '@/lib/display-labels';
 import { OBJECT_TYPE_LABELS } from '@/lib/object-type-labels';
 import { isActionableSuggestionStatus } from '@/lib/suggestion-status';
 import { serializeSuggestionBundle } from '@/lib/suggestions';
@@ -101,7 +103,7 @@ export default async function ObjectsIndexPage({
     const user = memberMap.get(member.userId);
     return {
       id: member.userId,
-      label: user?.name ?? user?.email ?? member.userId,
+      label: displayMemberLabel(user),
     };
   });
   const rows = objectWindow.rows;
@@ -151,44 +153,26 @@ export default async function ObjectsIndexPage({
 
   return (
     <div className="space-y-6">
-      <IndexStrip
-        srLabel={
-          singleType
-            ? `Objects · ${rows.length} shown · filtered to ${OBJECT_TYPE_LABELS[singleType] ?? singleType}`
-            : hasTypeFilter
-              ? `Objects · ${rows.length} shown · filtered to ${selectedTypes.length} types`
-              : `Objects · previews · ${rows.length} shown`
-        }
-        segments={[
-          { value: 'OBJECTS' },
-          ...(hasTypeFilter ? ([{ value: 'PAGE' }] as const) : ([{ value: 'PREVIEWS' }] as const)),
-          { label: 'shown', value: rows.length },
-          ...(singleType
-            ? ([
-                {
-                  label: 'type',
-                  value: OBJECT_TYPE_LABELS[singleType] ?? singleType,
-                  signal: true,
-                },
-              ] as const)
-            : hasTypeFilter
-              ? ([{ label: 'types', value: selectedTypes.length, signal: true }] as const)
-              : ([] as const)),
-        ]}
-        leading={WORK_BACK_LINK}
-      >
-        <Link
-          href="/app/objects/new"
-          className="font-mono text-[11px] uppercase tracking-[0.12em] text-signal hover:underline"
-        >
-          new →
-        </Link>
-      </IndexStrip>
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <PageHeader
+          title="Objects"
+          subtitle="Projects, people, decisions, and other durable team context."
+          metadata={[
+            { label: 'Shown', value: rows.length, mono: true },
+            ...(singleType
+              ? [{ label: 'Type', value: OBJECT_TYPE_LABELS[singleType] ?? singleType }]
+              : []),
+          ]}
+        />
+        <div className="shrink-0">
+          <Button asChild>
+            <Link href="/app/objects/new">New object</Link>
+          </Button>
+        </div>
+      </div>
+      <WorkSubnav current="/app/objects" />
 
-      <nav
-        aria-label="Filter by type"
-        className="flex flex-wrap gap-1.5 font-mono text-[11px] uppercase tracking-[0.12em]"
-      >
+      <nav aria-label="Filter by type" className="flex flex-wrap gap-1.5 text-xs">
         <Link
           href={objectsTypeHref(null, params)}
           aria-current={!hasTypeFilter ? 'page' : undefined}

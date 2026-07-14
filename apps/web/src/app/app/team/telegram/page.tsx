@@ -209,7 +209,7 @@ export default async function TelegramSettingsPage() {
               {bindings.map((b) => (
                 <li key={b.id} className="flex items-center justify-between py-3">
                   <div className="flex flex-col">
-                    <span className="text-sm font-medium">{b.title ?? `Chat ${b.tgChatId}`}</span>
+                    <span className="text-sm font-medium">{b.title ?? 'Unnamed chat'}</span>
                     <span className="text-xs text-muted-foreground">
                       chat_id {b.tgChatId} · bound {b.createdAt.toISOString()}
                     </span>
@@ -241,7 +241,7 @@ export default async function TelegramSettingsPage() {
               {linkedTgUsers.map((u) => {
                 const appUser = u.userId ? userMap.get(u.userId) : undefined;
                 const fullName = [u.firstName, u.lastName].filter(Boolean).join(' ');
-                const tgName = u.username ?? (fullName || `tg:${u.tgUserId}`);
+                const tgName = u.username ?? (fullName || 'Telegram member');
                 return (
                   <li
                     key={`${u.id}-${u.userId ?? 'unverified'}`}

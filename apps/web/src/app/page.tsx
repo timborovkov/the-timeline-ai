@@ -107,12 +107,10 @@ export default async function LandingPage() {
       <TopNav isSignedIn={isSignedIn} />
       <main id="main">
         <Hero isSignedIn={isSignedIn} />
-        <Problem />
         <Solution />
         <Surfaces />
-        <Integrations />
         <Receipts />
-        <Principles />
+        <Integrations />
         <Faq />
         <FinalCTA isSignedIn={isSignedIn} />
       </main>
@@ -274,7 +272,7 @@ function Mono({ children, className }: { children: ReactNode; className?: string
 
 function IndexStrip({ children }: { children: ReactNode }) {
   return (
-    <div className="border-y border-border py-2 font-mono text-[11px] uppercase tracking-[0.14em] text-fg-muted">
+    <div className="border-y border-border py-3 text-sm font-semibold text-fg-muted">
       {children}
     </div>
   );
@@ -322,7 +320,7 @@ function TopNav({ isSignedIn }: { isSignedIn: boolean }) {
             href="/help"
             className="hidden px-3 py-2 text-fg-muted transition-colors hover:text-fg sm:inline"
           >
-            Docs
+            Help
           </Link>
           <Link
             href={CONTACT_HREF}
@@ -339,7 +337,7 @@ function TopNav({ isSignedIn }: { isSignedIn: boolean }) {
             </Link>
           )}
           <ThemeToggle className="text-fg-muted hover:text-fg" />
-          <Button asChild size="sm">
+          <Button asChild size="sm" variant="outline">
             <Link href={isSignedIn ? '/app' : '/sign-up'}>
               {isSignedIn ? 'Go to dashboard' : 'Create team'}
             </Link>
@@ -357,7 +355,7 @@ function Hero({ isSignedIn }: { isSignedIn: boolean }) {
         <Mono>THE TIMELINE · CITED WORK ANSWERS · AUTOMATIC UPDATES</Mono>
         <div className="mt-8 grid gap-12 lg:grid-cols-[1.1fr_1fr] lg:items-center">
           <div>
-            <h1 className="text-4xl font-semibold leading-[1.05] tracking-tight sm:text-5xl lg:text-6xl">
+            <h1 className="text-4xl font-semibold leading-[1.05] tracking-tight sm:text-5xl">
               Ask what changed.
               <br />
               Get the update
@@ -377,14 +375,6 @@ function Hero({ isSignedIn }: { isSignedIn: boolean }) {
               <Button asChild size="lg" variant="outline">
                 <a href="#receipts">See how it works</a>
               </Button>
-              {isSignedIn ? null : (
-                <Link
-                  href="/sign-in"
-                  className="px-3 py-2 text-sm text-fg-muted underline-offset-4 hover:text-fg hover:underline"
-                >
-                  Sign in
-                </Link>
-              )}
             </div>
             <p className="mt-10 font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">
               CAPTURE ONCE · ANSWER OFTEN · CITE EVERYTHING
@@ -401,19 +391,19 @@ function Hero({ isSignedIn }: { isSignedIn: boolean }) {
 
 const AUDIENCES = [
   {
-    label: 'AGENCIES',
+    label: 'Agencies',
     body: 'Client context, decisions, promises, and delivery updates without Friday archaeology.',
   },
   {
-    label: 'IMPLEMENTATION TEAMS',
+    label: 'Implementation teams',
     body: 'Project memory across kickoff calls, customer Slack, docs, issues, and launch tasks.',
   },
   {
-    label: 'PRODUCT + OPS',
+    label: 'Product and operations',
     body: 'What shipped, what blocked, and what changed without chasing every owner.',
   },
   {
-    label: 'FOUNDER-LED TEAMS',
+    label: 'Founder-led teams',
     body: 'Investor, customer, and team answers from the work already happening.',
   },
 ] as const;
@@ -423,9 +413,7 @@ function AudienceStrip() {
     <div className="mt-14 grid gap-px overflow-hidden border border-border bg-border sm:grid-cols-2 lg:grid-cols-4">
       {AUDIENCES.map((item) => (
         <div key={item.label} className="bg-bg p-4 sm:p-5">
-          <div className="font-mono text-[11px] uppercase tracking-[0.16em] text-signal">
-            {item.label}
-          </div>
+          <div className="text-sm font-semibold text-fg">{item.label}</div>
           <p className="mt-3 text-sm leading-[1.5] text-fg-muted">{item.body}</p>
         </div>
       ))}
@@ -500,82 +488,32 @@ function HeroMock() {
   );
 }
 
-function Problem() {
-  return (
-    <Section id="problem">
-      <Mono className="text-fg-muted">PROBLEM · DUPLICATE COMMUNICATION WORK</Mono>
-      <h2 className="mt-6 max-w-3xl text-3xl font-semibold leading-tight tracking-tight sm:text-4xl">
-        Teams do the work, then separately report that the work happened.
-      </h2>
-
-      <div className="mt-12 grid gap-px overflow-hidden border border-border bg-border lg:grid-cols-2">
-        <BeforeAfterPanel
-          label="WITHOUT TIMELINE"
-          title="Someone reconstructs reality by hand."
-          items={[
-            'Search Slack, docs, meeting notes, tickets, and CRM.',
-            'Ask three people what changed and what was promised.',
-            'Rewrite the same update for clients, leadership, and teammates.',
-          ]}
-        />
-        <BeforeAfterPanel
-          label="WITH TIMELINE"
-          title="The answer is generated from evidence."
-          items={[
-            'Capture the work where it already happens.',
-            'Ask a project, client, or status question in plain English.',
-            'Share a cited answer with links back to the source events.',
-          ]}
-        />
-      </div>
-
-      <p className="mt-10 max-w-prose text-base leading-[1.65] text-fg-muted">
-        The result is predictable. CRMs, trackers, and wikis drift because they depend on people
-        re-entering reality after the fact. Half the team&apos;s decisions live in threads no one
-        can find. When someone asks <em>&ldquo;what changed with Acme?&rdquo;</em> the honest answer
-        is <em>&ldquo;let me check with three people.&rdquo;</em>
-      </p>
-
-      <blockquote className="mt-10 max-w-2xl border-l-2 border-signal pl-5 text-lg italic leading-snug text-fg">
-        The Timeline inverts it: capture work as it happens, then generate communication and memory
-        from the evidence.
-      </blockquote>
-    </Section>
-  );
-}
-
-function BeforeAfterPanel({
-  label,
-  title,
-  items,
-}: {
-  label: string;
-  title: string;
-  items: readonly string[];
-}) {
-  return (
-    <div className="bg-bg p-6 sm:p-8">
-      <div className="font-mono text-xs uppercase tracking-[0.18em] text-signal">{label}</div>
-      <h3 className="mt-4 text-xl font-semibold leading-snug tracking-tight text-fg">{title}</h3>
-      <ul className="mt-6 space-y-3">
-        {items.map((item) => (
-          <li
-            key={item}
-            className="grid grid-cols-[18px_1fr] gap-3 text-sm leading-[1.55] text-fg-muted"
-          >
-            <span className="mt-2 size-1.5 bg-fg-dim" />
-            <span>{item}</span>
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
-}
-
 function Solution() {
   return (
-    <Section id="solution">
-      <IndexStrip>CONCEPTS · CAPTURE → EVIDENCE → OPERATIONAL MEMORY</IndexStrip>
+    <Section id="how-it-works">
+      <IndexStrip>How it works · Capture → evidence → operational memory</IndexStrip>
+      <ol className="mt-10 grid gap-px overflow-hidden rounded-lg border border-border bg-border md:grid-cols-3">
+        {[
+          [
+            'Capture work',
+            'Connect the conversations, meetings, documents, and tools your team already uses.',
+          ],
+          [
+            'Build the record',
+            'Timeline preserves the source evidence and organizes what changed around real work.',
+          ],
+          [
+            'Ask and share',
+            'Get concise answers, updates, and handoffs with citations back to their sources.',
+          ],
+        ].map(([title, body], index) => (
+          <li key={title} className="bg-bg p-6">
+            <span className="font-mono text-xs text-signal">{index + 1}</span>
+            <h2 className="mt-4 text-base font-semibold text-fg">{title}</h2>
+            <p className="mt-2 text-sm leading-relaxed text-fg-muted">{body}</p>
+          </li>
+        ))}
+      </ol>
       <ConceptDiagram />
 
       <div className="mt-10 max-w-3xl border-l-2 border-signal pl-5">
@@ -814,45 +752,45 @@ const CDG_STYLES = `
 function Surfaces() {
   return (
     <Section id="surfaces">
-      <IndexStrip>SURFACES · WORK GRAPH + EXTENSIBILITY</IndexStrip>
+      <IndexStrip>Core product surfaces</IndexStrip>
       <div className="mt-10 grid gap-px overflow-hidden border border-border bg-border sm:grid-cols-2 lg:grid-cols-4">
         <SurfaceTile
-          label="TELEGRAM"
+          label="Telegram"
           icon={Send}
           body="Voice memos, text, files, team groups, and /ask all land in the same cited history."
         />
         <SurfaceTile
-          label="SLACK"
+          label="Slack"
           icon={MessageCircle}
           body="DMs, bound channels, files, slash commands, and thread replies become searchable memory."
         />
         <SurfaceTile
-          label="MEET / ZOOM / TEAMS"
+          label="Meet, Zoom, and Teams"
           icon={Video}
           body="Meeting bots join calls, transcribe discussion, and extract decisions, tasks, and summaries."
         />
         <SurfaceTile
-          label="EMAIL / CALENDAR"
+          label="Email and calendar"
           icon={Mail}
           body="Forwarded mail, CCs, BCCs, scheduled work, and time-aware context sit beside chat."
         />
         <SurfaceTile
-          label="NATIVE INTEGRATIONS"
+          label="Native integrations"
           icon={GitPullRequest}
           body="GitHub, Linear, Drive, Monday.com, Slack workspace history, and Sentry sync into cited events."
         />
         <SurfaceTile
-          label="WEB APP"
+          label="Web app"
           icon={FileText}
           body="Typed notes, audio uploads, drag-drop files, approvals, and cited agent chat."
         />
         <SurfaceTile
-          label="TEAM DRIVE"
+          label="Team drive"
           icon={Briefcase}
           body="Versioned folders keep uploads, edits, and document history queryable with source links."
         />
         <SurfaceTile
-          label="MCP + INTEGRATIONS"
+          label="MCP and integrations"
           icon={Wrench}
           body="First-party connectors and MCP servers extend Timeline into SaaS and internal systems."
         />
@@ -876,7 +814,7 @@ function SurfaceTile({
         <span className="grid size-8 shrink-0 place-items-center border border-border bg-surface text-fg-muted">
           <Icon className="size-4" aria-hidden="true" />
         </span>
-        <span className="font-mono text-xs uppercase tracking-[0.18em] text-fg">{label}</span>
+        <span className="text-sm font-semibold text-fg">{label}</span>
       </div>
       <p className="mt-4 text-sm leading-[1.55] text-fg-muted">{body}</p>
     </div>
@@ -886,7 +824,7 @@ function SurfaceTile({
 function Integrations() {
   return (
     <Section id="integrations">
-      <IndexStrip>INTEGRATIONS · KEEP YOUR CURRENT TOOLS</IndexStrip>
+      <IndexStrip>Integrations · Keep your current tools</IndexStrip>
       <div className="mt-10">
         <h2 className="max-w-3xl text-2xl font-medium tracking-tight text-fg sm:text-3xl">
           Keep the stack. Let Timeline collect the evidence around it.
@@ -917,7 +855,7 @@ function Integrations() {
 function Receipts() {
   return (
     <Section id="receipts" className="bg-surface">
-      <IndexStrip>EVIDENCE · EVERY CLAIM IS CITED</IndexStrip>
+      <IndexStrip>Evidence · Every claim is cited</IndexStrip>
       <div className="mt-10 grid gap-10 lg:grid-cols-2">
         <div>
           <h2 className="text-3xl font-semibold leading-tight tracking-tight sm:text-4xl">
@@ -963,49 +901,14 @@ function Receipts() {
   );
 }
 
-function Principles() {
-  return (
-    <Section id="principles">
-      <IndexStrip>PRINCIPLES · BUILT FOR THE WORK</IndexStrip>
-      <dl className="mt-10 divide-y divide-border border-y border-border">
-        <PrincipleRow
-          term="Raw events are immutable."
-          desc="What was said goes in as-is and never changes. Derived facts are regenerable; the source is sacred."
-        />
-        <PrincipleRow
-          term="Privacy is per-event, not per-team."
-          desc="A brain dump can stay private even inside a team channel. Visibility lives on the event."
-        />
-        <PrincipleRow
-          term="Team-scoped end to end."
-          desc="Every query, every vector, every byte carries a team_id. Enforced at the data layer, not the UI."
-        />
-        <PrincipleRow
-          term="One inference layer."
-          desc="Chat, embeddings, transcription — all through a single provider abstraction. Embedding model is pinned for index integrity."
-        />
-      </dl>
-    </Section>
-  );
-}
-
-function PrincipleRow({ term, desc }: { term: string; desc: string }) {
-  return (
-    <div className="grid gap-4 py-6 sm:grid-cols-[280px_1fr] sm:gap-12 sm:py-8">
-      <dt className="text-lg font-semibold leading-snug tracking-tight">{term}</dt>
-      <dd className="text-base leading-[1.6] text-fg-muted">{desc}</dd>
-    </div>
-  );
-}
-
 function Faq() {
   return (
     <Section id="faq">
-      <IndexStrip>FAQ</IndexStrip>
+      <IndexStrip>Frequently asked questions</IndexStrip>
       <div className="mt-10 divide-y divide-border border-y border-border">
         {FAQ_ITEMS.map((item) => (
           <details key={item.q} className="group">
-            <summary className="flex cursor-pointer items-center justify-between gap-6 py-5 font-mono text-sm uppercase tracking-[0.1em] text-fg transition-colors hover:text-signal">
+            <summary className="flex cursor-pointer items-center justify-between gap-6 py-5 text-base font-semibold text-fg transition-colors hover:text-signal">
               <span>{item.q}</span>
               <span
                 aria-hidden
@@ -1101,10 +1004,10 @@ const TRUST_DEFAULTS = [
 function Footer({ isSignedIn }: { isSignedIn: boolean }) {
   return (
     <footer className="border-t border-border px-6 py-10">
-      <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4 font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">
+      <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4 text-sm text-fg-muted">
         <span className="inline-flex items-center gap-2 text-fg-dim">
           <Logo ariaHidden className="size-4" />
-          THE TIMELINE · v1 · 2026
+          The Timeline · 2026
         </span>
         <nav className="flex flex-wrap items-center gap-5">
           <Link href="/help" className="hover:text-fg">

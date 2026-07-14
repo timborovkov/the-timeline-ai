@@ -703,10 +703,7 @@ function TaskBoardView({
             />
             <div className="flex flex-wrap items-center gap-3">
               {moveUi.saveState !== 'idle' ? (
-                <output
-                  className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim"
-                  aria-live="polite"
-                >
+                <output className="text-xs text-fg-dim" aria-live="polite">
                   {moveUi.saveState === 'saving'
                     ? `Saving${moveUi.savingCount > 1 ? ` ${moveUi.savingCount} moves` : ''}...`
                     : 'Saved'}
@@ -717,7 +714,7 @@ function TaskBoardView({
                   <Link
                     key={nextView}
                     href={taskViewHref(nextView, selectedTaskId, filterParams)}
-                    className={`px-3 py-1.5 font-mono text-[11px] uppercase tracking-[0.12em] ${
+                    className={`px-3 py-1.5 text-xs ${
                       view === nextView
                         ? 'bg-signal text-signal-fg'
                         : 'bg-bg text-fg-muted hover:text-fg'
@@ -731,7 +728,7 @@ function TaskBoardView({
           </div>
           {moveErrors.length > 0 ? (
             <p
-              className="mx-4 mb-3 shrink-0 rounded-sm border border-danger/30 bg-danger/10 px-3 py-2 font-mono text-[11px] uppercase tracking-[0.1em] text-danger md:mx-8"
+              className="mx-4 mb-3 shrink-0 rounded-sm border border-danger/30 bg-danger/10 px-3 py-2 text-xs text-danger md:mx-8"
               role="alert"
             >
               {moveErrors.length === 1
@@ -768,10 +765,7 @@ function TaskBoardView({
             />
           )}
           <div className="flex shrink-0 flex-wrap items-center gap-3 px-4 pb-4 pt-3 md:px-8">
-            <output
-              className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim"
-              aria-live="polite"
-            >
+            <output className="text-xs text-fg-dim" aria-live="polite">
               {`${effectiveRows.length} loaded of ${totalCount}`}
             </output>
             {canLoadMore ? (
@@ -785,10 +779,7 @@ function TaskBoardView({
               </button>
             ) : null}
             {loadError ? (
-              <span
-                className="font-mono text-[11px] uppercase tracking-[0.1em] text-danger"
-                role="alert"
-              >
+              <span className="text-xs text-danger" role="alert">
                 {loadError}
               </span>
             ) : null}
@@ -839,7 +830,7 @@ function TaskListView({
 }) {
   if (rows.length === 0) {
     return (
-      <p className="mx-4 rounded-sm border border-border bg-surface py-10 text-center font-mono text-xs uppercase tracking-[0.12em] text-fg-dim md:mx-8">
+      <p className="mx-4 rounded-sm border border-border bg-surface py-10 text-center text-xs text-fg-dim md:mx-8">
         No visible tasks
       </p>
     );
@@ -880,7 +871,7 @@ function TaskListView({
       />
       <div className="min-h-0 flex-1 overflow-auto rounded-sm border border-border bg-surface">
         <table className="w-full min-w-[780px] text-sm">
-          <thead className="sticky top-0 z-10 border-b border-border bg-bg text-left font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
+          <thead className="sticky top-0 z-10 border-b border-border bg-bg text-left text-xs text-fg-dim">
             <tr>
               <th className="w-10 px-3 py-2 font-normal">
                 <input
@@ -918,10 +909,7 @@ function TaskListView({
             ))}
             {hiddenRows > 0 ? (
               <tr>
-                <td
-                  colSpan={6}
-                  className="bg-bg px-3 py-3 text-center font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim"
-                >
+                <td colSpan={6} className="bg-bg px-3 py-3 text-center text-xs text-fg-dim">
                   {hiddenRows} loaded tasks hidden. Narrow the filter to inspect them.
                 </td>
               </tr>
@@ -999,11 +987,9 @@ function TaskListRow({
         >
           {displayText(title)}
         </Link>
-        <div className="mt-1 font-mono text-[10px] uppercase tracking-[0.1em] text-fg-dim">
-          Task
-        </div>
+        <div className="mt-1 text-[11px] text-fg-dim">Task</div>
         {saving || error ? (
-          <div className="mt-1 font-mono text-[10px] uppercase tracking-[0.1em]">
+          <div className="mt-1 text-[11px]">
             {saving ? <span className="text-fg-dim">Saving {saving}…</span> : null}
             {error ? <span className="text-danger">{error}</span> : null}
           </div>
@@ -1138,10 +1124,7 @@ function TaskBulkToolbar({
 
   return (
     <div className="flex shrink-0 flex-wrap items-center gap-2 rounded-sm border border-border bg-surface px-3 py-2">
-      <output
-        className="mr-auto font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim"
-        aria-live="polite"
-      >
+      <output className="mr-auto text-xs text-fg-dim" aria-live="polite">
         {selectedCount === 0
           ? 'Select tasks to edit'
           : `${selectedCount} ${selectedCount === 1 ? 'task' : 'tasks'} selected`}
@@ -1239,11 +1222,7 @@ function TaskBulkToolbar({
           Clear
         </button>
       ) : null}
-      {bulk.message ? (
-        <span className="font-mono text-[11px] uppercase tracking-[0.1em] text-fg-dim">
-          {bulk.message}
-        </span>
-      ) : null}
+      {bulk.message ? <span className="text-xs text-fg-dim">{bulk.message}</span> : null}
     </div>
   );
 }
@@ -1295,10 +1274,8 @@ function TaskColumn({
       )}
     >
       <div className="mb-3 flex shrink-0 items-baseline justify-between">
-        <h3 className="font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">{id}</h3>
-        <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg">
-          {rows.length}
-        </span>
+        <h3 className="text-xs text-fg-dim">{id}</h3>
+        <span className="text-xs text-fg">{rows.length}</span>
       </div>
       <ul className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto">
         {renderedRows.map((row) => (
@@ -1313,7 +1290,7 @@ function TaskColumn({
           />
         ))}
         {hiddenRows > 0 ? (
-          <li className="rounded-sm border border-dashed border-border bg-bg px-3 py-2 text-center font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">
+          <li className="rounded-sm border border-border bg-bg px-3 py-2 text-center text-xs text-fg-dim">
             {hiddenRows} loaded tasks hidden. Narrow filter.
           </li>
         ) : null}
@@ -1367,10 +1344,10 @@ function TaskCard({
       >
         {displayText(title)}
       </Link>
-      <div className="mt-1.5 flex flex-wrap items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.1em] text-fg-dim">
+      <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[11px] text-fg-dim">
         <span>Task</span>
       </div>
-      <div className="mt-2 grid grid-cols-3 gap-px overflow-hidden rounded-sm border border-border bg-border font-mono text-[10px] uppercase tracking-[0.08em]">
+      <div className="mt-2 grid grid-cols-3 gap-px overflow-hidden rounded-sm border border-border bg-border text-[11px]">
         <CardMeta value={memberLabel(row.assigneeUserId, members)} missing={!row.assigneeUserId} />
         <CardMeta value={due.label} missing={!row.dueAt} danger={due.tone === 'danger'} />
         <CardMeta
@@ -1378,9 +1355,7 @@ function TaskCard({
           missing={!row.priority}
         />
       </div>
-      {error ? (
-        <p className="mt-2 font-mono text-[11px] uppercase tracking-[0.1em] text-danger">{error}</p>
-      ) : null}
+      {error ? <p className="mt-2 text-xs text-danger">{error}</p> : null}
     </li>
   );
 }
@@ -1433,13 +1408,11 @@ function TaskDetailPanel({
             <h2 className="whitespace-normal break-words text-lg font-semibold leading-snug text-fg">
               {displayText(title)}
             </h2>
-            <p className="mt-1 font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
-              Task · side panel
-            </p>
+            <p className="mt-1 text-xs text-fg-dim">Task · side panel</p>
           </div>
           <Link
             href={closeHref}
-            className="shrink-0 font-mono text-[11px] uppercase tracking-[0.12em] text-fg-muted hover:text-fg hover:underline"
+            className="shrink-0 text-xs text-fg-muted hover:text-fg hover:underline"
           >
             Close
           </Link>
@@ -1520,7 +1493,7 @@ function TaskDetailPanel({
         <Detail label="Updated" value={dateLabel(task.updatedAt)} />
       </div>
       {saving || error ? (
-        <div className="border-b border-border px-4 py-3 font-mono text-[11px] uppercase tracking-[0.1em]">
+        <div className="border-b border-border px-4 py-3 text-xs">
           {saving ? <span className="text-fg-dim">Saving {saving}…</span> : null}
           {error ? <span className="text-danger">{error}</span> : null}
         </div>
@@ -1542,9 +1515,7 @@ function TaskDetailPanel({
 function TaskField({ label, children }: { label: string; children: ReactNode }) {
   return (
     <label className="border-b border-r border-border p-4">
-      <span className="mb-2 block font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
-        {label}
-      </span>
+      <span className="mb-2 block text-xs text-fg-dim">{label}</span>
       {children}
     </label>
   );
@@ -1554,7 +1525,7 @@ function TaskField({ label, children }: { label: string; children: ReactNode }) 
 function Detail({ label, value }: { label: string; value: string }) {
   return (
     <div className="border-b border-r border-border p-4">
-      <div className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">{label}</div>
+      <div className="text-xs text-fg-dim">{label}</div>
       <div className="mt-2 text-sm text-fg">{displayText(value)}</div>
     </div>
   );

@@ -8,7 +8,6 @@ import type { ReactNode } from 'react';
 
 import { AppDocumentScrollLock } from '@/components/app-document-scroll-lock';
 import { AppMainScrollRestoration } from '@/components/app-shell-scroll-restoration';
-import { FloatingAgentChat } from '@/components/chat/floating-agent-chat';
 import { DesktopSidebar } from '@/components/desktop-sidebar';
 import { GlobalSearchPalette } from '@/components/global-search-palette';
 import { InboxBell, type InboxBellNotification } from '@/components/inbox/inbox-bell';
@@ -39,7 +38,7 @@ const EMPTY_BADGES: NavBadgeMap = {};
 const EMPTY_INBOX = { unreadCount: 0, notifications: [] };
 
 /**
- * Operational Archive v2 shell. Three columns:
+ * Quiet Archive shell. Three columns:
  *   • foldable desktop sidebar (mobile: hamburger sheet)
  *   • main column with persistent ⌘K global search palette
  *   • collapsible 384px right inspector pane (hidden by default, opens
@@ -73,7 +72,7 @@ export function AppShell({
 
         {/* ── Main column ─────────────────────────────────────────── */}
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-          <header className="sticky top-0 z-30 flex h-14 items-center gap-2 border-b border-border bg-bg/85 px-3 backdrop-blur md:px-4">
+          <header className="sticky top-0 z-30 flex h-12 items-center gap-2 border-b border-border bg-bg/90 px-3 backdrop-blur md:px-4">
             <div className="flex items-center gap-2 md:hidden">
               <MobileNav
                 active={active}
@@ -81,9 +80,7 @@ export function AppShell({
                 recipientInvites={recipientInvites}
                 badges={badges}
               />
-              <span className="font-mono text-xs uppercase tracking-[0.14em] text-fg">
-                The Timeline
-              </span>
+              <span className="text-sm font-semibold tracking-tight text-fg">The Timeline</span>
             </div>
             <GlobalSearchPalette
               hint={active.teamName ? `team · ${active.teamName}` : undefined}
@@ -122,7 +119,6 @@ export function AppShell({
 
         {/* ── Inspector pane (desktop, collapsible) ───────────────── */}
         <InspectorPane />
-        <FloatingAgentChat teamId={active.teamId} teamName={active.teamName} />
       </div>
     </InspectorProvider>
   );

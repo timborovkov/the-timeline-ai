@@ -7,9 +7,11 @@ import type { Metadata } from 'next';
 
 import { DocumentDrive } from '@/components/documents/document-drive';
 import { DocumentSearch } from '@/components/documents/document-search';
+import { PageHeader } from '@/components/page-header';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { displayMemberLabel } from '@/lib/display-labels';
 
 export const metadata: Metadata = {
   title: 'Documents',
@@ -64,6 +66,7 @@ export default async function DocumentsPage({ searchParams }: Props) {
 
   return (
     <div className="space-y-6">
+      <PageHeader title="Documents" subtitle="Browse files, folders, and captured knowledge." />
       <DocumentSearch />
       <DocumentDrive
         key={folderId ?? 'root'}
@@ -73,7 +76,7 @@ export default async function DocumentsPage({ searchParams }: Props) {
         defaultVisibilityUserIds={defaults.visibilityUserIds}
         members={members.map((m) => {
           const u = memberUserMap.get(m.userId);
-          return { id: m.userId, label: u?.name ?? u?.email ?? m.userId };
+          return { id: m.userId, label: displayMemberLabel(u) };
         })}
         folders={folders.map((f) => ({
           id: f.id,

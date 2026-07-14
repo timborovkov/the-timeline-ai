@@ -7,13 +7,14 @@ import type { Metadata } from 'next';
 
 import { ApprovalsClient } from '@/components/approvals/approvals-client';
 import { EmptyAction } from '@/components/empty-action';
-import { IndexStrip } from '@/components/index-strip';
+import { PageHeader } from '@/components/page-header';
 import { TaskBoard } from '@/components/tasks/task-board';
-import { WORK_BACK_LINK } from '@/components/work-back-link';
 import { WorkFilterBar } from '@/components/work-filter-bar';
+import { WorkSubnav } from '@/components/work-subnav';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { displayMemberLabel } from '@/lib/display-labels';
 import { isActionableSuggestionStatus } from '@/lib/suggestion-status';
 import { serializeSuggestionBundle } from '@/lib/suggestions';
 import { countTaskRows, loadTaskRowsPage } from '@/lib/task-page';
@@ -98,7 +99,7 @@ export default async function TasksPage({
     const user = memberMap.get(member.userId);
     return {
       id: member.userId,
-      label: user?.name ?? user?.email ?? member.userId,
+      label: displayMemberLabel(user),
     };
   });
   const taskSuggestions = pendingSuggestions.flatMap((bundle) => {
@@ -113,40 +114,33 @@ export default async function TasksPage({
   const hiddenFilterParams = workFilterHiddenParams(query, ['view']);
   const taskLoadFilterParams = workFilterHiddenParams(query, WORK_FILTER_PARAM_KEYS);
 
-  const srSegments = [
-    'Tasks',
-    `${counts.total} total`,
-    `${counts.open} open`,
-    ...(pendingTaskItems > 0
-      ? [`${pendingTaskItems} pending ${pendingTaskItems === 1 ? 'approval' : 'approvals'}`]
-      : []),
-    ...(counts.overdue > 0 ? [`${counts.overdue} overdue`] : []),
-  ];
-
   return (
     <div
       data-app-layout={rows.length > 0 ? 'full-bleed' : undefined}
       className={
         rows.length > 0
-          ? '-mx-4 -my-6 flex h-[calc(100dvh-3.5rem)] min-w-0 flex-col md:-mx-8 md:-my-8'
+          ? '-mx-4 -my-6 flex h-[calc(100dvh-3rem)] min-w-0 flex-col md:-mx-8 md:-my-8'
           : 'space-y-5'
       }
     >
-      <IndexStrip
-        srLabel={srSegments.join(' · ')}
-        segments={[
-          { value: 'TASKS' },
-          { label: 'total', value: counts.total },
-          { label: 'open', value: counts.open },
+      <PageHeader
+        title="Tasks"
+        subtitle="Assigned work and follow-ups from your timeline."
+        metadata={[
+          { label: 'Total', value: counts.total, mono: true },
+          { label: 'Open', value: counts.open, mono: true },
           ...(pendingTaskItems > 0
-            ? ([{ label: 'approvals', value: pendingTaskItems, signal: true }] as const)
-            : ([] as const)),
+            ? [{ label: 'Approvals', value: pendingTaskItems, mono: true, signal: true }]
+            : []),
           ...(counts.overdue > 0
-            ? ([{ label: 'overdue', value: counts.overdue, danger: true }] as const)
-            : ([] as const)),
+            ? [{ label: 'Overdue', value: counts.overdue, mono: true, danger: true }]
+            : []),
         ]}
-        leading={WORK_BACK_LINK}
-        className={rows.length > 0 ? 'w-full shrink-0 px-4 md:px-8' : 'shrink-0'}
+        className={rows.length > 0 ? 'w-full shrink-0 px-4 pt-5 md:px-8' : 'shrink-0'}
+      />
+      <WorkSubnav
+        current="/app/tasks"
+        className={rows.length > 0 ? 'shrink-0 px-4 md:px-8' : undefined}
       />
 
       <WorkFilterBar

@@ -10,6 +10,7 @@ import { BoardDetailClient } from '@/components/boards/board-detail-client';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { displayMemberLabel } from '@/lib/display-labels';
 import { OBJECT_TYPE_LABELS } from '@/lib/object-type-labels';
 import {
   WORK_FILTER_PARAM_KEYS,
@@ -83,7 +84,7 @@ export default async function BoardDetailPage({
     const user = memberMap.get(member.userId);
     return {
       id: member.userId,
-      label: user?.name ?? user?.email ?? member.userId,
+      label: displayMemberLabel(user),
     };
   });
   const firstLaneId = board.lanes.find((lane) => !lane.archivedAt)?.id ?? null;

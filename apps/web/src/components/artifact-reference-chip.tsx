@@ -195,7 +195,7 @@ function ArtifactPreviewDialog({
                   {preview.badges.map((badge) => (
                     <span
                       key={`${refLabel}:badge:${badge}`}
-                      className="rounded-sm border border-border bg-surface px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim"
+                      className="rounded-sm border border-border bg-surface px-1.5 py-0.5 text-[11px] text-fg-dim"
                     >
                       {badge}
                     </span>
@@ -225,9 +225,7 @@ function ArtifactPreviewDialog({
 
               {preview.sections?.map((section) => (
                 <section key={`${refLabel}:section:${section.title}`} className="space-y-2">
-                  <h3 className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
-                    {section.title}
-                  </h3>
+                  <h3 className="text-base font-semibold text-fg">{section.title}</h3>
                   {section.body ? (
                     <p className="whitespace-pre-wrap text-sm leading-6 text-fg">{section.body}</p>
                   ) : null}
@@ -238,9 +236,7 @@ function ArtifactPreviewDialog({
                           key={`${refLabel}:section:${section.title}:${item.label}:${item.value}`}
                           className="grid gap-1 px-3 py-2 sm:grid-cols-[120px_1fr]"
                         >
-                          <dt className="font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">
-                            {item.label}
-                          </dt>
+                          <dt className="text-xs text-fg-dim">{item.label}</dt>
                           <dd className="text-sm leading-5 text-fg">{item.value}</dd>
                         </div>
                       ))}

@@ -73,7 +73,8 @@ describe('MeetingDetailPage', () => {
     );
 
     expect(html).toContain('Customer launch sync');
-    expect(html).toContain('recall · completed');
+    expect(html).toContain('Recall');
+    expect(html).toContain('Completed');
     expect(html).toContain('https://meet.google.com/abc-defg-hij');
     expect(html).toContain('Summary');
     expect(html).toContain('Acme confirmed launch readiness and Friday follow-up.');
@@ -94,8 +95,9 @@ describe('MeetingDetailPage', () => {
       await MeetingDetailPage({ params: Promise.resolve({ id: MEETING_ID }) }),
     );
 
-    expect(html).toContain('recall meeting');
-    expect(html).toContain('recall · pending');
+    expect(html).toContain('Untitled meeting');
+    expect(html).toContain('Recall');
+    expect(html).toContain('Pending');
     expect(html).toContain('Waiting for the notetaker to join');
     expect(html).toContain(`Cancel ${MEETING_ID}`);
   });

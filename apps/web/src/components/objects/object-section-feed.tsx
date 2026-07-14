@@ -42,7 +42,7 @@ export function ObjectSectionFeed({ objectId, section, title, showTitle = true }
           onClick={() => {
             void query.fetchNextPage();
           }}
-          className="mt-3 rounded-sm border border-border px-3 py-1.5 font-mono text-[11px] uppercase tracking-[0.12em] text-fg-muted hover:bg-surface disabled:opacity-40"
+          className="mt-3 rounded-sm border border-border px-3 py-1.5 text-xs text-fg-muted hover:bg-surface disabled:opacity-40"
         >
           {query.isFetchingNextPage ? 'Loading…' : 'Load more'}
         </button>
@@ -112,14 +112,14 @@ function ObjectSectionItem({ section, item }: { section: Props['section']; item:
               previewText={previewText}
               source={source}
               occurredAt={occurredAt}
-              className="inline-flex h-10 shrink-0 items-center gap-1.5 rounded-sm border border-border px-3 font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground transition-[border-color,color,background-color,scale] duration-150 ease-out hover:border-border-strong hover:bg-background hover:text-foreground active:scale-[0.96]"
+              className="inline-flex h-10 shrink-0 items-center gap-1.5 rounded-sm border border-border px-3 text-[11px] text-muted-foreground transition-[border-color,color,background-color,scale] duration-150 ease-out hover:border-border-strong hover:bg-background hover:text-foreground active:scale-[0.96]"
             >
               <ExternalLink className="size-3" />
               View evidence
             </EvidenceLink>
           ) : null}
         </div>
-        <p className="font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">
+        <p className="text-[11px] text-fg-dim">
           {formatDisplayDateTime(occurredAt)} · {source}
         </p>
       </div>
@@ -231,15 +231,13 @@ function SharedFactObjects({ objects }: { objects: SharedFactObject[] }) {
       <button
         type="button"
         aria-label={`${objects.length} other object${objects.length === 1 ? '' : 's'} share this fact`}
-        className="rounded-sm border border-signal/30 bg-signal-soft px-2 py-0.5 font-mono text-[11px] uppercase tracking-[0.12em] text-signal outline-none transition hover:border-signal/60 hover:bg-signal/20 focus-visible:border-signal focus-visible:ring-2 focus-visible:ring-signal/30"
+        className="rounded-sm border border-signal/30 bg-signal-soft px-2 py-0.5 text-xs text-signal outline-none transition hover:border-signal/60 hover:bg-signal/20 focus-visible:border-signal focus-visible:ring-2 focus-visible:ring-signal/30"
       >
         {label}
       </button>
       <span className="absolute right-0 top-full z-20 hidden w-64 pt-2 group-hover:block group-focus-within:block">
         <span className="block rounded-sm border border-border bg-background p-2 shadow-lg">
-          <span className="block px-2 pb-1 font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">
-            Objects sharing this fact
-          </span>
+          <span className="block px-2 pb-1 text-[11px] text-fg-dim">Objects sharing this fact</span>
           <span className="block max-h-56 overflow-y-auto">
             {objects.map((object) => (
               <a
@@ -250,7 +248,7 @@ function SharedFactObjects({ objects }: { objects: SharedFactObject[] }) {
                 <span className="block truncate font-medium">
                   {displayText(object.canonicalName)}
                 </span>
-                <span className="block font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">
+                <span className="block text-[11px] text-fg-dim">
                   {displayText(object.type)} · {displayText(object.role)}
                 </span>
               </a>

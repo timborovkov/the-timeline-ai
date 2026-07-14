@@ -8,7 +8,7 @@ import { EmptyAction } from '@/components/empty-action';
 import { HistoryBackLink } from '@/components/history-back-link';
 import { MarkAllReadButton } from '@/components/inbox/mark-all-read-button';
 import { NotificationRow } from '@/components/inbox/notification-row';
-import { IndexStrip } from '@/components/index-strip';
+import { PageHeader } from '@/components/page-header';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
@@ -66,21 +66,20 @@ export default async function InboxPage({
     <div className="space-y-6">
       <HistoryBackLink fallbackHref="/app" label="Back" />
 
-      <IndexStrip
-        srLabel={`Inbox · ${totalCount} notifications · ${unreadCount} unread${unreadOnly ? ' · unread filter on' : ''}`}
-        segments={[
-          { value: 'INBOX' },
-          { label: 'total', value: totalCount },
-          { label: 'unread', value: unreadCount, signal: unreadCount > 0 },
-        ]}
-      >
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <PageHeader
+          title="Inbox"
+          subtitle="Review notifications and changes that need your attention."
+          srLabel={`Inbox · ${totalCount} notifications · ${unreadCount} unread${unreadOnly ? ' · unread filter on' : ''}`}
+          metadata={[
+            { label: 'Total', value: totalCount, mono: true },
+            { label: 'Unread', value: unreadCount, mono: true, signal: unreadCount > 0 },
+          ]}
+        />
         <MarkAllReadButton hasUnread={unreadCount > 0} />
-      </IndexStrip>
+      </div>
 
-      <nav
-        aria-label="Filter notifications"
-        className="flex gap-1.5 font-mono text-[11px] uppercase tracking-[0.12em]"
-      >
+      <nav aria-label="Filter notifications" className="flex gap-1.5 text-sm">
         <Link
           href="/app/inbox"
           aria-current={!unreadOnly ? 'page' : undefined}
@@ -106,8 +105,8 @@ export default async function InboxPage({
         />
       ) : (
         <>
-          <div className="flex items-center justify-between gap-3 border-y border-border py-2 font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
-            <span>
+          <div className="flex items-center justify-between gap-3 border-y border-border py-2 text-xs text-fg-dim">
+            <span className="font-mono tabular-nums">
               Showing {firstVisible}-{lastVisible} of {filteredTotal}
             </span>
             <div className="flex items-center gap-1.5">

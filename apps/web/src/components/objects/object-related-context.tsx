@@ -45,12 +45,8 @@ export function ObjectRelatedContext({
   return (
     <section className="border-b border-border p-4">
       <div className="mb-3 flex items-center justify-between gap-3">
-        <h3 className="font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">
-          Related context
-        </h3>
-        <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-fg-dim">
-          {contextCount(connectedWork)}
-        </span>
+        <h3 className="text-xs text-fg-dim">Related context</h3>
+        <span className="text-[11px] text-fg-dim">{contextCount(connectedWork)}</span>
       </div>
       <div className={compact ? 'space-y-3' : 'grid gap-3 sm:grid-cols-2'}>
         <ContextGroup
@@ -124,7 +120,7 @@ function ContextGroup({
 
   return (
     <div className="min-w-0">
-      <div className="mb-1.5 flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.1em] text-fg-dim">
+      <div className="mb-1.5 flex items-center gap-1.5 text-[11px] text-fg-dim">
         {icon}
         <span>{title}</span>
       </div>
@@ -155,9 +151,7 @@ function ContextGroup({
             ) : (
               <span className="block truncate text-sm font-medium">{displayText(item.label)}</span>
             )}
-            <div className="mt-1 truncate font-mono text-[10px] uppercase tracking-[0.08em] text-fg-dim">
-              {displayText(item.detail)}
-            </div>
+            <div className="mt-1 truncate text-[11px] text-fg-dim">{displayText(item.detail)}</div>
           </li>
         ))}
       </ul>

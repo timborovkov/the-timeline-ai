@@ -54,9 +54,10 @@ records:
 
 ## UX Overhaul
 
-Direction: soften the surface. Keep the forensic mono treatment for data
-(timestamps, IDs, citations); replace mono-uppercase eyebrows and
-`IndexStrip` headers with normal sentence-case headers on non-operational pages.
+Direction: Quiet Archive. Lead with human meaning, reserve Commit Mono for
+timestamps, citations, shortcuts, counts, code, and recognizable external
+identifiers, and keep internal IDs or raw payloads inside closed technical
+disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
 
 - [ ] Timeline moments redesign: turn `/app/timeline` from a raw activity log
       into bundled, evidence-backed work moments with deterministic grouping,
@@ -130,13 +131,14 @@ Direction: soften the surface. Keep the forensic mono treatment for data
       every error chip; raw `res.text()` → human sentence + collapsible
       Details; no empty state telling users to edit env.
 - [x] U4 — Discoverability: Sources hub → Connections status overview +
-      one-click fix; timeline citation→inspector coachmark; Home
-      first-run hero above the fold.
+      one-click fix; timeline citation→inspector coachmark; compact Home setup
+      prompt with one next action.
 - [x] U5 — IA consolidation: merge Sources + Team integrations into one
       Connections area; admin-only Admin group; 8 top-level destinations
       (down from 13+); redirects + keymap updates.
-- [ ] U6 — Polish and verification: `/plan-design-review`, `/qa`,
-      before/after screenshots, `pnpm validate` + `pnpm run doctor` 100.
+- [x] U6 — Quiet Archive polish and verification: deterministic light/dark and
+      mobile screenshot coverage, full browser QA, `pnpm validate`, and React
+      Doctor 100.
 
 ## Workspace Reconciliation
 

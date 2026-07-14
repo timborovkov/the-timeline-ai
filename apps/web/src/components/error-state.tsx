@@ -3,6 +3,7 @@
 import { AlertTriangle, RotateCw } from 'lucide-react';
 import { useEffect } from 'react';
 
+import { TechnicalDetails } from '@/components/technical-details';
 import { Button } from '@/components/ui/button';
 import { reportCaughtError } from '@/lib/sentry-report';
 
@@ -43,9 +44,10 @@ export function ErrorState({
         <h2 className="text-base font-medium text-fg">{title}</h2>
         <p className="text-sm text-fg-muted">{description}</p>
         {error?.digest ? (
-          <p className="font-mono text-[11px] uppercase tracking-[0.1em] text-fg-dim">
-            ref: {error.digest}
-          </p>
+          <TechnicalDetails
+            className="mt-3 text-left"
+            items={[{ label: 'Error reference', value: error.digest, copyValue: error.digest }]}
+          />
         ) : null}
       </div>
       {reset ? (

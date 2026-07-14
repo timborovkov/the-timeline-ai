@@ -5,7 +5,8 @@ import { redirect } from 'next/navigation';
 import type { Metadata } from 'next';
 
 import { ApprovalsClient } from '@/components/approvals/approvals-client';
-import { IndexStrip } from '@/components/index-strip';
+import { PageHeader } from '@/components/page-header';
+import { WorkSubnav } from '@/components/work-subnav';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
@@ -53,25 +54,22 @@ export default async function ApprovalsPage({ searchParams }: PageProps) {
 
   return (
     <div className="space-y-6">
-      <IndexStrip
-        srLabel={`Approvals · ${status} · ${visibleSuggestions.length} suggestion bundles · ${itemCount} items`}
-        segments={[
-          { value: 'APPROVALS' },
-          { label: 'filter', value: status.toUpperCase() },
-          {
-            label: 'bundles',
-            value: visibleSuggestions.length,
-            signal: visibleSuggestions.length > 0,
-          },
-          { label: 'items', value: itemCount, signal: itemCount > 0 },
+      <PageHeader
+        title="Approvals"
+        subtitle="Review evidence-backed changes before they become team memory."
+        metadata={[
+          { label: 'Filter', value: status.replaceAll('_', ' ') },
+          { label: 'Bundles', value: visibleSuggestions.length, mono: true },
+          { label: 'Items', value: itemCount, mono: true },
         ]}
       />
+      <WorkSubnav current="/app/approvals" />
       <nav className="flex flex-wrap gap-2" aria-label="Approval status filters">
         {STATUS_FILTERS.map((filter) => (
           <Link
             key={filter}
             href={`/app/approvals?status=${filter}`}
-            className={`rounded-md border px-3 py-1.5 font-mono text-[11px] uppercase tracking-[0.12em] ${
+            className={`rounded-sm border px-3 py-1.5 text-xs capitalize ${
               status === filter
                 ? 'border-signal bg-signal/10 text-signal'
                 : 'border-border text-fg-dim hover:text-fg'

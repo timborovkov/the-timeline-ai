@@ -11,10 +11,19 @@ interface PageHeaderMetadata {
   signal?: boolean;
   /** Render the value in danger color (overdue, error). */
   danger?: boolean;
+  /** Use Commit Mono for a timestamp, count, citation, shortcut, or public key. */
+  mono?: boolean;
 }
 
 function metadataKey(seg: PageHeaderMetadata, index: number): string {
-  return [index, seg.label, seg.value, seg.signal ? 'signal' : '', seg.danger ? 'danger' : '']
+  return [
+    index,
+    seg.label,
+    seg.value,
+    seg.signal ? 'signal' : '',
+    seg.danger ? 'danger' : '',
+    seg.mono ? 'mono' : '',
+  ]
     .map((part) => (typeof part === 'string' || typeof part === 'number' ? String(part) : 'node'))
     .join(':');
 }
@@ -24,8 +33,7 @@ interface PageHeaderProps {
   title: ReactNode;
   /** Optional one-line description below the title. */
   subtitle?: ReactNode;
-  /** Optional mono data strip (counts, team name, role, status). Data
-   * stays mono per the design system; the title does not. */
+  /** Optional quiet metadata row. Values opt into mono individually. */
   metadata?: PageHeaderMetadata[];
   /** Optional leading element (breadcrumb / back link), left of the title. */
   leading?: ReactNode;
@@ -34,8 +42,7 @@ interface PageHeaderProps {
   /** Optional id for the h1 (useful for aria-labelledby). */
   titleId?: string;
   /** Plain-language summary of the metadata for screen readers. The
-   * visible metadata strip is mono uppercase; this renders as sr-only so
-   * SR users hear sentence-case. */
+   * visible metadata row is hidden to avoid duplicate announcements. */
   srLabel?: string;
   className?: string;
 }
@@ -76,7 +83,7 @@ export function PageHeader({
       {hasMetadata ? (
         <dl
           aria-hidden="true"
-          className="m-0 flex flex-wrap items-baseline gap-x-4 gap-y-1 border-y border-border py-3 font-mono text-xs uppercase tracking-[0.12em] text-fg-muted"
+          className="m-0 flex flex-wrap items-baseline gap-x-4 gap-y-1 text-xs text-fg-muted"
         >
           {metadataList.map((seg, index) => (
             <div key={metadataKey(seg, index)} className="inline-flex items-baseline gap-1.5">
@@ -84,6 +91,7 @@ export function PageHeader({
               <dd
                 className={cn(
                   'm-0 text-fg',
+                  seg.mono && 'font-mono tabular-nums',
                   seg.signal && 'text-signal',
                   seg.danger && 'text-danger',
                 )}

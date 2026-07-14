@@ -201,7 +201,7 @@ export function CuratedKanbanBoard({
           ) : null}
         </div>
         {saveState !== 'idle' ? (
-          <output className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
+          <output className="text-xs text-fg-dim">
             {saveState === 'saving' ? 'Saving…' : 'Saved'}
           </output>
         ) : null}
@@ -239,12 +239,8 @@ function KanbanColumn({
       )}
     >
       <div className="mb-3 flex shrink-0 items-baseline justify-between">
-        <h3 className="font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">
-          {lane.name}
-        </h3>
-        <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg">
-          {items.length}
-        </span>
+        <h3 className="text-xs text-fg-dim">{lane.name}</h3>
+        <span className="text-xs text-fg">{items.length}</span>
       </div>
       <ul className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto">
         {items.map((item) => (
@@ -323,11 +319,11 @@ function KanbanCard({
           {displayText(title)}
         </Link>
       )}
-      <div className="mt-1.5 flex flex-wrap items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.1em] text-fg-dim">
+      <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[11px] text-fg-dim">
         <span>{item.object.type}</span>
         {blocked ? <span className="text-danger">Blocked</span> : null}
       </div>
-      <div className="mt-2 grid grid-cols-3 gap-px overflow-hidden rounded-sm border border-border bg-border font-mono text-[10px] uppercase tracking-[0.08em]">
+      <div className="mt-2 grid grid-cols-3 gap-px overflow-hidden rounded-sm border border-border bg-border text-[11px]">
         <CardMeta
           value={ownerLabel(item.responsibleUserId, members)}
           missing={!item.responsibleUserId}
@@ -341,9 +337,7 @@ function KanbanCard({
       {item.nextStep ? (
         <p className="mt-2 line-clamp-2 text-xs text-fg-muted">{displayText(item.nextStep)}</p>
       ) : null}
-      {error ? (
-        <p className="mt-2 font-mono text-[11px] uppercase tracking-[0.1em] text-danger">{error}</p>
-      ) : null}
+      {error ? <p className="mt-2 text-xs text-danger">{error}</p> : null}
     </li>
   );
 }

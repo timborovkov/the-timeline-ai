@@ -1,6 +1,6 @@
 'use client';
 
-import { Check, CheckCircle2, Circle, RotateCcw, X } from 'lucide-react';
+import { Check, CheckCircle2, RotateCcw, X } from 'lucide-react';
 import Link from 'next/link';
 
 import { useOnboardingChecklistQuery } from '@/lib/use-paginated-queries';
@@ -16,7 +16,7 @@ export function OnboardingChecklist() {
         onClick={() => {
           mutateChecklist({ action: 'reopen' });
         }}
-        className="inline-flex items-center gap-2 rounded-sm border border-border px-2 py-1 font-mono text-[11px] uppercase tracking-[0.12em] text-fg-muted hover:bg-surface"
+        className="inline-flex items-center gap-2 rounded-sm border border-border px-2.5 py-1.5 text-xs text-fg-muted hover:bg-surface"
       >
         <RotateCcw className="size-3" />
         Reopen setup
@@ -24,17 +24,36 @@ export function OnboardingChecklist() {
     );
   }
   const completedCount = data.items.filter((item) => item.completed).length;
+  const nextItem = data.items.find((item) => !item.completed);
 
   return (
-    <section className="rounded-sm border border-border bg-surface">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3">
-        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-          <h2 className="font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">
-            Setup checklist
-          </h2>
-          <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-muted">
-            {completedCount}/{data.items.length} complete
-          </span>
+    <section className="rounded-lg border border-border bg-surface p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-baseline gap-2">
+            <h2 className="text-base font-semibold text-fg">Next setup step</h2>
+            <span className="font-mono text-xs text-fg-dim">
+              {completedCount}/{data.items.length}
+            </span>
+          </div>
+          {nextItem ? (
+            <div className="mt-3 flex items-start gap-3">
+              <span className="mt-0.5 grid size-5 shrink-0 place-items-center rounded-full border border-border font-mono text-[10px] text-fg-muted">
+                {completedCount + 1}
+              </span>
+              <span className="min-w-0">
+                <span className="block text-sm font-medium text-fg">{nextItem.label}</span>
+                <span className="mt-0.5 block text-xs text-fg-muted">
+                  {onboardingMeta(nextItem.key).description}
+                </span>
+              </span>
+            </div>
+          ) : (
+            <p className="mt-3 flex items-center gap-2 text-sm text-fg-muted">
+              <CheckCircle2 aria-hidden="true" className="size-4 text-signal" />
+              Setup is complete
+            </p>
+          )}
         </div>
         <button
           type="button"
@@ -48,55 +67,28 @@ export function OnboardingChecklist() {
           <X className="size-4" />
         </button>
       </div>
-      <ul className="flex gap-px overflow-x-auto bg-border [scrollbar-width:thin]">
-        {data.items.map((item) => (
-          <li
-            key={item.key}
-            className="flex min-h-44 w-64 shrink-0 flex-col justify-between bg-bg px-4 py-3 text-sm leading-5"
+      {nextItem ? (
+        <div className="mt-4 flex items-center gap-2 border-t border-border pt-3">
+          <Link
+            href={onboardingMeta(nextItem.key).href}
+            className="inline-flex h-8 items-center rounded-sm border border-border px-3 text-xs font-medium text-fg transition-colors hover:bg-surface-2"
           >
-            <span className="min-w-0">
-              <span className="flex items-start gap-2">
-                {item.completed ? (
-                  <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-signal" aria-hidden="true" />
-                ) : (
-                  <Circle className="mt-0.5 size-4 shrink-0 text-fg-dim" aria-hidden="true" />
-                )}
-                <span className="font-medium text-fg">{item.label}</span>
-              </span>
-              <span className="mt-1 block text-xs text-fg-muted">
-                {onboardingMeta(item.key).description}
-              </span>
-            </span>
-            <span className="mt-4 flex items-center gap-2">
-              {item.completed ? (
-                <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-signal">
-                  Done
-                </span>
-              ) : (
-                <>
-                  <Link
-                    href={onboardingMeta(item.key).href}
-                    className="inline-flex min-h-8 items-center rounded-sm border border-border px-2.5 font-mono text-[11px] uppercase tracking-[0.12em] text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg"
-                  >
-                    {onboardingMeta(item.key).cta}
-                  </Link>
-                  <button
-                    type="button"
-                    disabled={checklistPending}
-                    onClick={() => {
-                      mutateChecklist({ action: 'complete', key: item.key });
-                    }}
-                    className="grid size-8 place-items-center rounded-sm text-fg-muted hover:bg-surface-2 disabled:opacity-50"
-                    aria-label={`Mark ${item.label} complete`}
-                  >
-                    <Check className="size-4" />
-                  </button>
-                </>
-              )}
-            </span>
-          </li>
-        ))}
-      </ul>
+            {onboardingMeta(nextItem.key).cta}
+          </Link>
+          <button
+            type="button"
+            disabled={checklistPending}
+            onClick={() => {
+              mutateChecklist({ action: 'complete', key: nextItem.key });
+            }}
+            className="inline-flex h-8 items-center gap-1.5 rounded-sm px-2 text-xs text-fg-muted hover:bg-surface-2 disabled:opacity-50"
+            aria-label={`Mark ${nextItem.label} complete`}
+          >
+            <Check className="size-3.5" />
+            Mark complete
+          </button>
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -105,7 +97,7 @@ function onboardingMeta(key: string): { href: string; cta: string; description: 
   switch (key) {
     case 'first_note':
       return {
-        href: '#capture',
+        href: '/app',
         cta: 'Capture',
         description: 'Save one note, decision, or follow-up into the team log.',
       };
@@ -123,8 +115,8 @@ function onboardingMeta(key: string): { href: string; cta: string; description: 
       };
     case 'email_forwarding':
       return {
-        href: '#email-ingest',
-        cta: 'Copy email',
+        href: '/app/sources',
+        cta: 'Open connections',
         description: 'Forward an email into the archive.',
       };
     case 'first_document':
@@ -135,7 +127,7 @@ function onboardingMeta(key: string): { href: string; cta: string; description: 
       };
     case 'first_integration':
       return {
-        href: '/app/team/integrations',
+        href: '/app/sources',
         cta: 'Connect',
         description: 'Wire in external systems or an MCP server.',
       };

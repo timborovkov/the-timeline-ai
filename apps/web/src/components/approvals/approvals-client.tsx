@@ -25,6 +25,7 @@ import {
 } from '@/app/actions/suggestions';
 import { EmptyAction } from '@/components/empty-action';
 import { EvidenceLink } from '@/components/evidence-link';
+import { TechnicalDetails } from '@/components/technical-details';
 import { Button } from '@/components/ui/button';
 import { displayText, formatDisplayDate, formatDisplayDateTime } from '@/lib/display-dates';
 import { isActionableSuggestionStatus } from '@/lib/suggestion-status';
@@ -230,10 +231,6 @@ function metadataStringArray(metadata: Record<string, unknown>, key: string): st
 
 function uniqueStrings(values: string[]): string[] {
   return [...new Set(values)];
-}
-
-function shortId(id: string): string {
-  return id.slice(0, 8);
 }
 
 function itemReconciliationOutputId(item: SuggestionItem): string | null {
@@ -642,25 +639,12 @@ export function ApprovalsClient({
       <summary className={folded.summaryClassName ?? 'cursor-pointer list-none'}>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h2
-              className={
-                folded.titleClassName ?? 'font-mono text-[11px] uppercase tracking-[0.14em] text-fg'
-              }
-            >
-              {folded.title}
-            </h2>
+            <h2 className={folded.titleClassName ?? 'text-xs text-fg'}>{folded.title}</h2>
             <p className={folded.countClassName ?? 'mt-1 text-sm text-fg-muted'}>
               {foldedSummaryText(visiblePendingItemCount, folded.summary)}
             </p>
           </div>
-          <span
-            className={
-              folded.openLabelClassName ??
-              'font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim'
-            }
-          >
-            Open
-          </span>
+          <span className={folded.openLabelClassName ?? 'text-xs text-fg-dim'}>Open</span>
         </div>
       </summary>
       <div className={folded.bodyClassName ?? 'mt-4'}>{body}</div>
@@ -733,18 +717,14 @@ function ApprovalListBody({
 
 function ApprovalUpdatingState() {
   return (
-    <output className="border border-border bg-muted/30 px-3 py-2 font-mono text-xs uppercase tracking-[0.12em] text-fg-dim">
+    <output className="border border-border bg-muted/30 px-3 py-2 text-xs text-fg-dim">
       Updating approvals...
     </output>
   );
 }
 
 function ApprovalError({ message }: { message: string }) {
-  return (
-    <div className="border border-danger/40 px-3 py-2 font-mono text-xs uppercase tracking-[0.12em] text-danger">
-      {message}
-    </div>
-  );
+  return <div className="border border-danger/40 px-3 py-2 text-xs text-danger">{message}</div>;
 }
 
 function PageBulkActions({
@@ -771,7 +751,7 @@ function PageBulkActions({
   return (
     <div className="flex flex-wrap items-center justify-end gap-2">
       {canAccept && mergeReviewItemCount > 0 ? (
-        <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
+        <span className="text-xs text-fg-dim">
           {mergeReviewItemCount} merge{' '}
           {mergeReviewItemCount === 1 ? 'proposal needs' : 'proposals need'} review
         </span>
@@ -889,7 +869,7 @@ function ApprovalBundleHeader({
 }) {
   return (
     <div className="min-w-0 flex-1">
-      <div className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
+      <div className="text-xs text-fg-dim">
         {bundle.source} · {bundle.confidence} ·{' '}
         {formatDisplayDateTime(bundle.createdAt, { timezone })}
       </div>
@@ -938,9 +918,7 @@ function ApprovalItemMain({ actionFailed, item }: { actionFailed: boolean; item:
   const actionFailureReason = actionFailed ? localActionFailureReason(item) : null;
   return (
     <div className="min-w-0 self-center">
-      <div className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
-        Proposal · {itemStatusLabel(item.status)}
-      </div>
+      <div className="text-xs text-fg-dim">Proposal · {itemStatusLabel(item.status)}</div>
       <div className="mt-1 font-medium text-fg">{displayText(item.title)}</div>
       {item.description ? (
         <p className="mt-1 text-sm text-fg-muted">{displayText(item.description)}</p>
@@ -964,13 +942,22 @@ function ApprovalItemReconciliationLink({ item }: { item: SuggestionItem }) {
     ? `/app/team/reconciliation/clusters/${clusterId}`
     : '/app/team/reconciliation';
   return (
-    <Link
-      href={href}
-      className="mt-1 inline-flex items-center gap-1 font-mono text-[11px] uppercase tracking-[0.1em] text-fg-dim hover:text-signal"
-    >
-      <ExternalLink className="size-3" />
-      Reconciliation output {shortId(outputId)}
-    </Link>
+    <div className="mt-2">
+      <Link
+        href={href}
+        className="inline-flex items-center gap-1 text-xs text-fg-muted hover:text-signal"
+      >
+        <ExternalLink className="size-3" />
+        Open reconciliation context
+      </Link>
+      <TechnicalDetails
+        className="mt-2"
+        items={[
+          { label: 'Output ID', value: outputId, copyValue: outputId },
+          ...(clusterId ? [{ label: 'Cluster ID', value: clusterId, copyValue: clusterId }] : []),
+        ]}
+      />
+    </div>
   );
 }
 
@@ -989,9 +976,7 @@ function ApprovalItemPayload({
   const summary = relationshipPayloadSummary(item, bundle) ?? formatPayload(item.proposedPayload);
   return (
     <div className="min-w-0 self-center">
-      <div className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
-        {itemActionLabel(item)}
-      </div>
+      <div className="text-xs text-fg-dim">{itemActionLabel(item)}</div>
       {summary ? (
         <p className="mt-1 truncate font-mono text-[11px] text-fg-dim">{summary}</p>
       ) : null}
@@ -1037,7 +1022,7 @@ function CalendarApprovalPayload({ item, timezone }: { item: SuggestionItem; tim
   return (
     <div className="min-w-0 self-center space-y-2">
       <div
-        className={`inline-flex items-center gap-1.5 rounded-sm border px-2 py-1 font-mono text-[10px] uppercase tracking-[0.12em] ${toneClass}`}
+        className={`inline-flex items-center gap-1.5 rounded-sm border px-2 py-1 text-[11px] ${toneClass}`}
       >
         <Icon className="size-3" />
         {action.label}
@@ -1163,7 +1148,7 @@ function ApprovalEvidence({ bundle }: { bundle: SuggestionBundle }) {
   if (bundle.evidence.length === 0) return null;
   return (
     <details className="mt-2 border-l border-border pl-3">
-      <summary className="cursor-pointer font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim hover:text-fg">
+      <summary className="cursor-pointer text-xs text-fg-dim hover:text-fg">
         Evidence · {bundle.evidence.length}
       </summary>
       {bundle.evidence.map((ev) => (
@@ -1175,9 +1160,9 @@ function ApprovalEvidence({ bundle }: { bundle: SuggestionBundle }) {
           occurredAt={ev.occurredAt}
           className="group grid gap-1 py-1 text-xs text-fg-dim transition-colors hover:text-fg"
         >
-          <span className="inline-flex items-center gap-1.5 font-mono uppercase tracking-[0.1em]">
+          <span className="inline-flex items-center gap-1.5 text-xs">
             <ExternalLink className="size-3" />
-            Timeline evidence · {ev.source ?? 'source'} · {ev.rawEventId.slice(0, 8)}
+            Timeline evidence · {ev.source ?? 'Unavailable source'}
           </span>
           <span className="line-clamp-2 text-fg-muted group-hover:text-fg">
             {ev.quote ? displayText(ev.quote) : 'Open the source event on the timeline.'}
@@ -1194,31 +1179,31 @@ function ApprovalReconciliationContext({ bundle }: { bundle: SuggestionBundle })
   if (outputIds.length === 0 && clusterIds.length === 0) return null;
   const primaryClusterId = clusterIds[0] ?? null;
   return (
-    <div className="mt-2 flex flex-wrap items-center gap-2 border-l border-border pl-3 text-xs text-fg-dim">
-      <span className="font-mono uppercase tracking-[0.1em]">Reconciliation</span>
-      {primaryClusterId ? (
-        <Link
-          href={`/app/team/reconciliation/clusters/${primaryClusterId}`}
-          className="inline-flex items-center gap-1 font-mono uppercase tracking-[0.1em] hover:text-signal"
-        >
-          <ExternalLink className="size-3" />
-          Cluster {shortId(primaryClusterId)}
-        </Link>
-      ) : (
-        <Link
-          href="/app/team/reconciliation"
-          className="inline-flex items-center gap-1 font-mono uppercase tracking-[0.1em] hover:text-signal"
-        >
-          <ExternalLink className="size-3" />
-          Dashboard
-        </Link>
-      )}
-      {outputIds.length > 0 ? (
-        <span className="font-mono">
-          outputs {outputIds.slice(0, 3).map(shortId).join(', ')}
-          {outputIds.length > 3 ? ` +${outputIds.length - 3}` : ''}
-        </span>
-      ) : null}
+    <div className="mt-2 border-l border-border pl-3 text-xs text-fg-dim">
+      <Link
+        href={
+          primaryClusterId
+            ? `/app/team/reconciliation/clusters/${primaryClusterId}`
+            : '/app/team/reconciliation'
+        }
+        className="inline-flex items-center gap-1 hover:text-signal"
+      >
+        <ExternalLink className="size-3" />
+        Open reconciliation context
+      </Link>
+      <TechnicalDetails
+        className="mt-2"
+        items={[
+          ...(primaryClusterId
+            ? [{ label: 'Cluster ID', value: primaryClusterId, copyValue: primaryClusterId }]
+            : []),
+          ...outputIds.map((outputId, index) => ({
+            label: `Output ID ${index + 1}`,
+            value: outputId,
+            copyValue: outputId,
+          })),
+        ]}
+      />
     </div>
   );
 }

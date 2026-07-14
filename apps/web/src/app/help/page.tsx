@@ -15,8 +15,8 @@ export default function HelpIndexPage() {
   return (
     <article className="space-y-10">
       <header className="max-w-3xl space-y-4">
-        <p className="font-mono text-xs uppercase tracking-[0.16em] text-fg-dim">Help center</p>
-        <h1 className="text-4xl font-semibold tracking-normal text-fg sm:text-5xl">
+        <p className="text-xs font-medium text-fg-muted">Help center</p>
+        <h1 className="text-3xl font-semibold tracking-tight text-fg sm:text-4xl">
           Use Timeline without needing a private tour.
         </h1>
         <p className="text-lg text-fg-muted">
@@ -27,9 +27,7 @@ export default function HelpIndexPage() {
       <section className="grid gap-8 lg:grid-cols-2">
         {HELP_INDEX_GROUPS.map((group) => (
           <div key={group.title} className="space-y-3">
-            <h2 className="text-sm font-semibold uppercase tracking-[0.12em] text-fg-dim">
-              {group.title}
-            </h2>
+            <h2 className="text-base font-semibold text-fg">{group.title}</h2>
             <div className="divide-y divide-border border-y border-border">
               {group.items.map(({ href, label, icon: Icon }) => (
                 <Link
@@ -47,9 +45,7 @@ export default function HelpIndexPage() {
       </section>
 
       <section className="border-t border-border pt-8">
-        <h2 className="mb-4 text-sm font-semibold uppercase tracking-[0.12em] text-fg-dim">
-          All guides
-        </h2>
+        <h2 className="mb-4 text-base font-semibold text-fg">All guides</h2>
         <div className="grid gap-4 sm:grid-cols-2">
           {HELP_PAGES.map((page) => (
             <Link

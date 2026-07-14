@@ -36,7 +36,7 @@ export function DocumentSearch() {
             setQuery(draft.trim());
           }}
           disabled={!draft.trim() || search.isFetching}
-          className="absolute right-2 top-1/2 h-7 -translate-y-1/2 rounded-sm px-2 font-mono text-[11px] uppercase tracking-[0.12em] text-fg-muted hover:bg-surface-2 disabled:opacity-40"
+          className="absolute right-2 top-1/2 h-7 -translate-y-1/2 rounded-sm px-2 text-xs text-fg-muted hover:bg-surface-2 disabled:opacity-40"
         >
           {search.isFetching ? 'Searching' : 'Search'}
         </button>
@@ -55,7 +55,7 @@ export function DocumentSearch() {
                   score {hit.score.toFixed(3)}
                 </span>
               </div>
-              <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">
+              <p className="mt-1 text-[11px] text-fg-dim">
                 v{String(hit.version)} · {hit.fileKind} ·{' '}
                 {hit.representationKind.replace(/_/g, ' ')}
                 {hit.pageNumber !== null ? ` · page ${String(hit.pageNumber)}` : ''}
@@ -70,7 +70,7 @@ export function DocumentSearch() {
               onClick={() => {
                 void search.fetchNextPage();
               }}
-              className="rounded-sm border border-border px-3 py-1.5 font-mono text-[11px] uppercase tracking-[0.12em] text-fg-muted hover:bg-surface disabled:opacity-40"
+              className="rounded-sm border border-border px-3 py-1.5 text-xs text-fg-muted hover:bg-surface disabled:opacity-40"
             >
               {search.isFetchingNextPage ? 'Loading…' : 'Load more'}
             </button>

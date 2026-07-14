@@ -15,10 +15,12 @@ import { unpinChatSessionAction } from '@/app/actions/chat';
 import { CitationText } from '@/components/chat/citation';
 import { ToolStep } from '@/components/chat/tool-step';
 import { InlineSpinner } from '@/components/loading-states';
+import { consumeChatHandoff } from '@/lib/chat-handoff';
 import { cn } from '@/lib/utils';
 import { chatErrorMessage } from '@/lib/ux-errors';
 
 interface Props {
+  teamId: string;
   teamName: string;
   sessionId: string | null;
   initialMessages: UIMessage[];
@@ -71,6 +73,7 @@ export function ChatSurface(
 }
 
 function ChatSurfaceContent({
+  teamId,
   teamName,
   sessionId: initialSessionId,
   initialMessages,
@@ -103,8 +106,21 @@ function ChatSurfaceContent({
 
   const [input, setInput] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
+  const handoffConsumedRef = useRef(false);
 
   const isStreaming = status === 'streaming' || status === 'submitted';
+
+  useEffect(() => {
+    if (handoffConsumedRef.current || initialSessionId || initialMessages.length > 0) return;
+    handoffConsumedRef.current = true;
+    let prompt: string | null = null;
+    try {
+      prompt = consumeChatHandoff(window.sessionStorage, teamId);
+    } catch {
+      return;
+    }
+    if (prompt) void sendMessage({ text: prompt });
+  }, [initialMessages.length, initialSessionId, sendMessage, teamId]);
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -228,9 +244,7 @@ function useChatSessionTransport({
             setSessionId(id);
             onSessionIdChangeRef.current?.(id);
             if (updateUrlOnSessionCreate && typeof window !== 'undefined') {
-              const params = new URLSearchParams(searchRef.current.toString());
-              params.set('session', id);
-              window.history.replaceState(null, '', `/app/chat?${params.toString()}`);
+              window.history.replaceState(null, '', `/app/chat?session=${encodeURIComponent(id)}`);
             }
           }
           return res;
@@ -257,7 +271,7 @@ function PinnedEntityBanner({
   return (
     <div className="flex shrink-0 items-center gap-2 self-start rounded-full border border-primary/30 bg-primary/5 py-1 pl-3 pr-1 text-xs">
       <Link href={`/app/objects/${pinnedEntityId}`} className="text-primary hover:underline">
-        pinned · {pinnedEntityName ?? pinnedEntityId}
+        Pinned · {pinnedEntityName ?? 'Unavailable object'}
       </Link>
       {sessionId && (
         <button
@@ -320,7 +334,7 @@ function ChatEmptyState({
   return (
     <div className={cn('flex flex-col gap-6', compact ? 'pt-2' : 'pt-8')}>
       <div>
-        <p className="font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">TRY ASKING</p>
+        <p className="text-xs font-medium text-fg-muted">Try asking</p>
         <h2
           className={cn(
             'mt-2 font-medium tracking-tight text-fg',
@@ -387,9 +401,7 @@ function ChatMessage({
   const isUser = message.role === 'user';
   return (
     <li className={cn('flex flex-col gap-1.5', isUser ? 'items-end' : 'items-start')}>
-      <span className="px-1 font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">
-        {isUser ? 'You' : 'Agent'}
-      </span>
+      <span className="px-1 text-xs text-fg-dim">{isUser ? 'You' : 'Agent'}</span>
       <div
         className={cn(
           'max-w-[90%] text-sm leading-relaxed',
@@ -447,9 +459,7 @@ function ChatError({ error }: { error: Error | undefined }) {
   if (!error) return null;
   return (
     <div role="alert" className="shrink-0 rounded-sm border border-danger/30 bg-danger/5 px-3 py-2">
-      <p className="font-mono text-xs uppercase tracking-[0.12em] text-danger">
-        {error.message || 'Chat is unavailable right now.'}
-      </p>
+      <p className="text-sm text-danger">{error.message || 'Chat is unavailable right now.'}</p>
       <p className="mt-1 text-xs text-fg-muted">
         Saved timeline events are still available from Home and Timeline.
       </p>
@@ -477,6 +487,7 @@ function ChatComposer({
         <input
           id="chat-composer"
           type="text"
+          maxLength={4000}
           value={input}
           onChange={(e) => {
             onChange(e.target.value);
@@ -486,7 +497,7 @@ function ChatComposer({
           }}
           placeholder="Ask anything about your team's timeline…"
           disabled={isStreaming}
-          className="h-12 w-full rounded-sm bg-transparent pl-4 pr-12 text-sm focus:outline-none"
+          className="h-10 w-full rounded-sm bg-transparent pl-3 pr-11 text-sm focus:outline-none"
         />
         <button
           type="button"
@@ -495,7 +506,7 @@ function ChatComposer({
           }}
           disabled={isStreaming || !input.trim()}
           aria-label="Send"
-          className="absolute right-1.5 top-1/2 grid size-9 -translate-y-1/2 place-items-center rounded-sm bg-signal text-signal-fg transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-offset-2 disabled:opacity-30"
+          className="absolute right-1 top-1/2 grid size-8 -translate-y-1/2 place-items-center rounded-sm bg-signal text-signal-fg transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-offset-2 disabled:opacity-30"
         >
           <Send className="size-4" />
         </button>

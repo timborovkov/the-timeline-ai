@@ -131,7 +131,7 @@ function NotificationRowContent({
         {formatTs(createdAt)}
       </time>
       <div className="min-w-0">
-        <div className="flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
+        <div className="flex items-center gap-2 text-xs text-fg-dim">
           {!read ? <span aria-label="unread" className="size-1.5 rounded-sm bg-signal" /> : null}
           <span>{kind.replace(/_/g, ' ')}</span>
         </div>
@@ -154,7 +154,7 @@ function NotificationRowContent({
           type="button"
           disabled={pending}
           onClick={markRead}
-          className="self-start font-mono text-[11px] uppercase tracking-[0.12em] text-signal hover:underline disabled:opacity-50"
+          className="self-start text-xs text-signal hover:underline disabled:opacity-50"
         >
           Mark read
         </button>

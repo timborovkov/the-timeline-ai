@@ -38,7 +38,7 @@ export function ObjectTextFilter({
             onQueryChange(event.target.value);
           }}
           placeholder={placeholder}
-          className="h-8 w-full rounded-sm border border-border bg-bg py-1 pl-8 pr-8 font-mono text-[11px] uppercase tracking-[0.12em] text-fg outline-none transition-colors placeholder:text-fg-dim focus-visible:border-signal/60 focus-visible:bg-surface focus-visible:ring-2 focus-visible:ring-signal/40 focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
+          className="h-8 w-full rounded-sm border border-border bg-bg py-1 pl-8 pr-8 text-xs text-fg outline-none transition-colors placeholder:text-fg-dim focus-visible:border-signal/60 focus-visible:bg-surface focus-visible:ring-2 focus-visible:ring-signal/40 focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
         />
         {active ? (
           <button
@@ -53,10 +53,7 @@ export function ObjectTextFilter({
           </button>
         ) : null}
       </label>
-      <output
-        className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim"
-        aria-live="polite"
-      >
+      <output className="text-xs text-fg-dim" aria-live="polite">
         {active ? `${resultCount} / ${totalCount}` : `${totalCount} visible`}
       </output>
     </div>

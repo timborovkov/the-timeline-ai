@@ -5,6 +5,7 @@ import type { Metadata } from 'next';
 
 import { Breadcrumb } from '@/components/breadcrumb';
 import { IndexStrip } from '@/components/index-strip';
+import { TechnicalDetails } from '@/components/technical-details';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
@@ -64,9 +65,17 @@ export default async function IntegrationAuditPage() {
                   {new Date(r.createdAt).toLocaleString()}
                 </time>
               </div>
-              <pre className="mt-1 overflow-x-auto whitespace-pre-wrap break-all text-xs text-fg-dim">
-                {JSON.stringify(r.payload, null, 2)}
-              </pre>
+              <TechnicalDetails
+                className="mt-2"
+                items={[
+                  { label: 'Audit ID', value: r.id, copyValue: r.id },
+                  {
+                    label: 'Payload',
+                    value: JSON.stringify(r.payload, null, 2),
+                    copyValue: JSON.stringify(r.payload, null, 2),
+                  },
+                ]}
+              />
             </li>
           ))
         )}

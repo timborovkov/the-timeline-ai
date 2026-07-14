@@ -464,9 +464,7 @@ export function McpServersUi({
               <li key={s.id} className="space-y-2 p-3">
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-medium">{s.name}</span>
-                  <span className="font-mono text-xs uppercase tracking-[0.14em] text-fg-muted">
-                    {s.authType}
-                  </span>
+                  <span className="text-xs text-fg-muted">{s.authType}</span>
                   {!s.enabled ? (
                     <span className="rounded-sm border border-border px-1 text-[10px] uppercase text-fg-muted">
                       Disabled
@@ -523,9 +521,7 @@ export function McpServersUi({
                 ) : null}
                 {s.cachedTools.length > 0 ? (
                   <div className="space-y-1">
-                    <div className="font-mono text-xs uppercase tracking-[0.14em] text-fg-muted">
-                      Tools ({s.cachedTools.length})
-                    </div>
+                    <div className="text-xs text-fg-muted">Tools ({s.cachedTools.length})</div>
                     <ul className="space-y-1">
                       {s.cachedTools.map((t) => (
                         <li

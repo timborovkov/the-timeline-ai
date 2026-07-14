@@ -5,6 +5,7 @@ import type { Metadata } from 'next';
 
 import { Breadcrumb } from '@/components/breadcrumb';
 import { IndexStrip } from '@/components/index-strip';
+import { TechnicalDetails } from '@/components/technical-details';
 import { Badge } from '@/components/ui/badge';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
@@ -62,10 +63,15 @@ export default async function TrustAuditPage() {
                   </time>
                 </div>
                 <div className="truncate font-medium">{row.targetLabel}</div>
-                <div className="font-mono text-xs text-fg-dim">
-                  {row.targetType}
-                  {row.targetId ? ` · ${row.targetId}` : ''}
-                </div>
+                <div className="text-xs text-fg-muted">{row.targetType.replaceAll('_', ' ')}</div>
+                <TechnicalDetails
+                  items={[
+                    { label: 'Audit ID', value: row.id, copyValue: row.id },
+                    ...(row.targetId
+                      ? [{ label: 'Target ID', value: row.targetId, copyValue: row.targetId }]
+                      : []),
+                  ]}
+                />
               </div>
               <div className="text-left text-xs text-fg-muted sm:text-right">
                 <div>{row.actor.name ?? row.actor.email ?? 'Unknown actor'}</div>

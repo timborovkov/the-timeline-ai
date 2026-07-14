@@ -15,6 +15,7 @@ import {
 } from '@/app/actions/teams';
 import { ActionChip } from '@/components/action-chip';
 import { PageHeader } from '@/components/page-header';
+import { SettingsNav } from '@/components/settings-nav';
 import {
   InboundEmailWhitelistForm,
   DigestPreferenceForm,
@@ -30,6 +31,7 @@ import { VisibilityDefaultSettings } from '@/components/visibility-default-setti
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { displayMemberLabel, displayRemovedMemberLabel } from '@/lib/display-labels';
 import { getSiteUrl } from '@/lib/site-url';
 
 export const metadata: Metadata = {
@@ -64,13 +66,24 @@ interface RemovedMemberRow {
   role: string;
   removedAt: Date | null;
 }
-type TeamExportRows = ComponentProps<typeof TeamExportPanel>['exports'];
-type VisibilityDefaults = ComponentProps<typeof VisibilityDefaultSettings>['defaults'];
-type VisibilityMembers = ComponentProps<typeof VisibilityDefaultSettings>['members'];
 type InboundEmailWhitelistSettings = ComponentProps<typeof InboundEmailWhitelistForm>;
 type TeamTimezoneSettings = ComponentProps<typeof TeamTimezoneForm>;
 
-export default async function TeamSettingsPage() {
+const SETTINGS_ITEMS = [
+  { value: 'members', label: 'Members' },
+  { value: 'general', label: 'General' },
+  { value: 'preferences', label: 'Preferences' },
+  { value: 'visibility', label: 'Visibility' },
+  { value: 'email', label: 'Email' },
+  { value: 'exports', label: 'Exports' },
+  { value: 'advanced', label: 'Advanced', adminOnly: true },
+] as const;
+
+export default async function TeamSettingsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ section?: string }>;
+}) {
   const session = await auth();
   if (!session?.user) redirect('/sign-in');
   const { active } = await resolveActiveTeam(session.user.id);
@@ -80,6 +93,12 @@ export default async function TeamSettingsPage() {
   const role = await scope.requireMembership();
   const isAdmin = role === 'owner' || role === 'admin';
   const isOwner = role === 'owner';
+  const requestedSection = (await searchParams).section ?? 'members';
+  const section = SETTINGS_ITEMS.some(
+    (item) => item.value === requestedSection && (!('adminOnly' in item) || isAdmin),
+  )
+    ? requestedSection
+    : 'members';
 
   const [memberRows, digestPreference] = await Promise.all([
     scope.timeline.listMembers(),
@@ -191,7 +210,7 @@ export default async function TeamSettingsPage() {
   };
   const visibilityMembers = memberRows.map((m) => {
     const u = userMap.get(m.userId);
-    return { id: m.userId, label: u?.name ?? u?.email ?? m.userId };
+    return { id: m.userId, label: displayMemberLabel(u) };
   });
 
   return (
@@ -201,38 +220,117 @@ export default async function TeamSettingsPage() {
         subtitle="Manage members, defaults, and access."
         srLabel={`Team ${active.teamName} · your role: ${role} · ${memberRows.length} members`}
         metadata={[
-          { label: 'name', value: active.teamName, signal: true },
-          { label: 'role', value: role },
-          { label: 'members', value: memberRows.length },
+          { label: 'Team', value: active.teamName },
+          { label: 'Role', value: role },
+          { label: 'Members', value: memberRows.length, mono: true },
         ]}
       />
-
-      <AdminShortcuts isAdmin={isAdmin} />
-      <MessagingPreferencesCard enabled={digestPreference.enabled} />
-      <AdminSettingsCards
-        isAdmin={isAdmin}
-        teamName={active.teamName}
-        teamId={active.teamId}
-        exportRows={exportRows}
-        visibilityDefaults={visibilityDefaults}
-        visibilityMembers={visibilityMembers}
-        inboundEmailSettings={inboundEmailSettings}
-        timezoneSettings={timezoneSettings}
-      />
-      <MembersCard
-        members={memberRows}
-        userMap={userMap}
-        isAdmin={isAdmin}
-        isOwner={isOwner}
-        currentUserId={session.user.id}
-      />
-      <InviteCards
-        isAdmin={isAdmin}
-        isOwner={isOwner}
-        invites={inviteRows}
-        removedMembers={removedRows}
-        userMap={userMap}
-      />
+      <div className="flex flex-col gap-6 md:flex-row">
+        <SettingsNav items={[...SETTINGS_ITEMS]} activeSection={section} isAdmin={isAdmin} />
+        <div className="min-w-0 flex-1 space-y-5">
+          {section === 'members' ? (
+            <>
+              <MembersCard
+                members={memberRows}
+                userMap={userMap}
+                isAdmin={isAdmin}
+                isOwner={isOwner}
+                currentUserId={session.user.id}
+              />
+              <InviteCards
+                isAdmin={isAdmin}
+                isOwner={isOwner}
+                invites={inviteRows}
+                removedMembers={removedRows}
+                userMap={userMap}
+              />
+            </>
+          ) : null}
+          {section === 'general' ? (
+            <Card>
+              <CardHeader>
+                <CardTitle as="h2">Team identity</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {isAdmin ? (
+                  <RenameTeamForm currentName={active.teamName} teamId={active.teamId} />
+                ) : (
+                  <p className="text-sm text-fg-muted">
+                    Only team administrators can rename this team.
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+          ) : null}
+          {section === 'preferences' ? (
+            <>
+              <MessagingPreferencesCard enabled={digestPreference.enabled} />
+              {isAdmin ? (
+                <Card>
+                  <CardHeader>
+                    <CardTitle as="h2">Team timezone</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <TeamTimezoneForm {...timezoneSettings} />
+                  </CardContent>
+                </Card>
+              ) : null}
+            </>
+          ) : null}
+          {section === 'visibility' ? (
+            <Card>
+              <CardHeader>
+                <CardTitle as="h2">Visibility defaults</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {isAdmin ? (
+                  <VisibilityDefaultSettings
+                    defaults={visibilityDefaults}
+                    members={visibilityMembers}
+                  />
+                ) : (
+                  <p className="text-sm text-fg-muted">
+                    Only team administrators can change visibility defaults.
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+          ) : null}
+          {section === 'email' ? (
+            <Card>
+              <CardHeader>
+                <CardTitle as="h2">Email sender whitelist</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {isAdmin ? (
+                  <InboundEmailWhitelistForm {...inboundEmailSettings} />
+                ) : (
+                  <p className="text-sm text-fg-muted">
+                    Only team administrators can change inbound email settings.
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+          ) : null}
+          {section === 'exports' ? (
+            <Card>
+              <CardHeader>
+                <CardTitle as="h2">Team export</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {isAdmin ? (
+                  <TeamExportPanel exports={exportRows} />
+                ) : (
+                  <p className="text-sm text-fg-muted">
+                    Only team administrators can create exports.
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+          ) : null}
+          {section === 'advanced' && isAdmin ? <AdminShortcuts isAdmin /> : null}
+        </div>
+      </div>
     </div>
   );
 }
@@ -241,7 +339,7 @@ function MessagingPreferencesCard({ enabled }: { enabled: boolean }) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Messaging</CardTitle>
+        <CardTitle as="h2">Messaging</CardTitle>
       </CardHeader>
       <CardContent>
         <DigestPreferenceForm enabled={enabled} />
@@ -254,76 +352,11 @@ function AdminShortcuts({ isAdmin }: { isAdmin: boolean }) {
   if (!isAdmin) return null;
   return (
     <div className="flex flex-wrap items-center gap-2 border-y border-border py-2">
-      <ActionChip href="/app/team/jobs" label="Job recovery →" />
-      <ActionChip href="/app/team/reconciliation" label="Reconciliation →" />
-      <ActionChip href="/app/team/integrations/audit" label="Integration audit →" />
+      <ActionChip href="/app/team/jobs" label="Jobs" />
+      <ActionChip href="/app/team/reconciliation" label="Reconciliation" />
+      <ActionChip href="/app/team/audit" label="Audit" />
+      <ActionChip href="/app/team/integrations/audit" label="Integration audit" />
     </div>
-  );
-}
-
-function AdminSettingsCards({
-  isAdmin,
-  teamName,
-  teamId,
-  exportRows,
-  visibilityDefaults,
-  visibilityMembers,
-  inboundEmailSettings,
-  timezoneSettings,
-}: {
-  isAdmin: boolean;
-  teamName: string;
-  teamId: string;
-  exportRows: TeamExportRows;
-  visibilityDefaults: VisibilityDefaults;
-  visibilityMembers: VisibilityMembers;
-  inboundEmailSettings: InboundEmailWhitelistSettings;
-  timezoneSettings: TeamTimezoneSettings;
-}) {
-  if (!isAdmin) return null;
-  return (
-    <>
-      <Card>
-        <CardHeader>
-          <CardTitle>Team identity</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <RenameTeamForm currentName={teamName} teamId={teamId} />
-        </CardContent>
-      </Card>
-      <Card>
-        <CardHeader>
-          <CardTitle>Team defaults</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <TeamTimezoneForm {...timezoneSettings} />
-        </CardContent>
-      </Card>
-      <Card>
-        <CardHeader>
-          <CardTitle>Visibility defaults</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <VisibilityDefaultSettings defaults={visibilityDefaults} members={visibilityMembers} />
-        </CardContent>
-      </Card>
-      <Card>
-        <CardHeader>
-          <CardTitle>Team export</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <TeamExportPanel exports={exportRows} />
-        </CardContent>
-      </Card>
-      <Card>
-        <CardHeader>
-          <CardTitle>Email sender whitelist</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <InboundEmailWhitelistForm {...inboundEmailSettings} />
-        </CardContent>
-      </Card>
-    </>
   );
 }
 
@@ -343,7 +376,7 @@ function MembersCard({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Members</CardTitle>
+        <CardTitle as="h2">Members</CardTitle>
       </CardHeader>
       <CardContent>
         <ul className="divide-y">
@@ -376,11 +409,11 @@ function MemberListItem({
   isOwner: boolean;
   currentUserId: string;
 }) {
-  const memberLabel = user?.email ?? user?.name ?? member.userId;
+  const memberLabel = displayMemberLabel(user);
   return (
     <li className="flex items-center justify-between py-3">
       <div className="flex flex-col">
-        <span className="text-sm font-medium">{user?.name ?? user?.email ?? member.userId}</span>
+        <span className="text-sm font-medium">{memberLabel}</span>
         <span className="text-xs text-muted-foreground">{user?.email}</span>
       </div>
       <div className="flex items-center gap-3">
@@ -550,9 +583,7 @@ function RemovedMembersCard({
             return (
               <li key={member.userId} className="flex items-center justify-between py-3">
                 <div className="flex flex-col">
-                  <span className="text-sm font-medium">
-                    {user?.name ?? user?.email ?? member.userId}
-                  </span>
+                  <span className="text-sm font-medium">{displayRemovedMemberLabel(user)}</span>
                   <span className="text-xs text-muted-foreground">
                     {user?.email} · removed {member.removedAt?.toLocaleDateString()}
                   </span>

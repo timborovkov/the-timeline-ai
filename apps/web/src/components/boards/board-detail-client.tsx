@@ -253,7 +253,7 @@ export function BoardDetailClient({
             <Link
               key={nextView}
               href={boardViewHref(boardId, nextView, selectedItemId, filterParams)}
-              className={`px-3 py-1.5 font-mono text-[11px] uppercase tracking-[0.12em] ${
+              className={`px-3 py-1.5 text-xs ${
                 view === nextView ? 'bg-signal text-signal-fg' : 'bg-bg text-fg-muted hover:text-fg'
               }`}
             >

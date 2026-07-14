@@ -15,7 +15,7 @@
         Slack is a first-party Capture Surface like Telegram: install the app with OAuth, link Slack
         users with OAuth, bind channels from Timeline, and let DMs route through the user's active
         external team. The same app credentials can also power native Slack workspace ingestion for
-        selected channels from <code>/app/team/integrations</code>.
+        selected channels from <code>/app/sources</code>.
       </p>
 
       <nav class="toc" aria-label="On this page">
@@ -172,8 +172,8 @@ SLACK_CAPTURE_CANARY_ALLOWED_ORIGIN=https://thetimeline.cc
         actively route through Timeline. Native workspace ingestion is passive: a member connects
         Slack from the native catalog, shares selected channels from
         <code>/app/me/connections</code>, and an admin activates those shared channels from
-        <code>/app/team/integrations</code>. The integration worker imports message history, thread
-        replies, files, reactions, and edits as <code>source='integration'</code> with
+        <code>/app/sources</code>. The integration worker imports message history, thread replies,
+        files, reactions, and edits as <code>source='integration'</code> with
         <code>provider='slack'</code>. This makes selected channel history searchable and citable
         even when nobody mentioned Timeline in the moment.
       </p>

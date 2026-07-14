@@ -6,10 +6,16 @@ import type { Metadata } from 'next';
 import { HistoryBackLink } from '@/components/history-back-link';
 import { MeetingExportButtons } from '@/components/meeting-export-buttons';
 import { CancelMeetingButton } from '@/components/meeting-forms';
+import { PageHeader } from '@/components/page-header';
+import { SectionHeading } from '@/components/section-heading';
+import { TechnicalDetails } from '@/components/technical-details';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { formatDisplayDateTime } from '@/lib/display-dates';
+import { displayMeetingLabel, displaySourceLabel } from '@/lib/display-labels';
 import { formatMeetingOffset, formatTranscriptExport } from '@/lib/meeting-transcript-export';
+import { statusLabel } from '@/lib/status-labels';
 
 export const metadata: Metadata = {
   title: 'Meeting',
@@ -40,7 +46,7 @@ export default async function MeetingDetailPage({ params }: Props) {
 
   const summary = typeof meeting.metadata.summary === 'string' ? meeting.metadata.summary : null;
   const cancellable = ['pending', 'joining', 'active'].includes(meeting.status);
-  const title = meeting.title ?? `${meeting.platform} meeting`;
+  const title = displayMeetingLabel(meeting);
   const transcriptExport = formatTranscriptExport({
     title,
     platform: meeting.platform,
@@ -54,39 +60,47 @@ export default async function MeetingDetailPage({ params }: Props) {
   return (
     <div className="space-y-6">
       <HistoryBackLink fallbackHref="/app/meetings" label="Back" />
-      <header className="space-y-1">
-        <h1 className="text-2xl font-semibold">{title}</h1>
-        <p className="text-xs text-muted-foreground">
-          {meeting.platform} · {meeting.status} · {new Date(meeting.createdAt).toLocaleString()}
-        </p>
-        <p className="break-all text-xs text-muted-foreground">
-          <a href={meeting.meetingUrl} target="_blank" rel="noreferrer" className="underline">
-            {meeting.meetingUrl}
-          </a>
-        </p>
-        <div className="pt-2">
-          <MeetingExportButtons title={title} transcriptText={transcriptExport} />
-        </div>
-        {cancellable ? (
-          <div className="pt-2">
-            <CancelMeetingButton meetingId={meeting.id} />
-          </div>
-        ) : null}
-      </header>
+      <PageHeader
+        title={title}
+        subtitle={displaySourceLabel(meeting.platform)}
+        metadata={[
+          { label: 'Status', value: statusLabel(meeting.status) },
+          {
+            label: 'Captured',
+            value: formatDisplayDateTime(meeting.createdAt),
+            mono: true,
+          },
+        ]}
+      />
+      <div className="flex flex-wrap gap-2">
+        <MeetingExportButtons title={title} transcriptText={transcriptExport} />
+        {cancellable ? <CancelMeetingButton meetingId={meeting.id} /> : null}
+      </div>
+      <TechnicalDetails
+        items={[
+          { label: 'Meeting ID', value: meeting.id, copyValue: meeting.id },
+          { label: 'Meeting URL', value: meeting.meetingUrl, copyValue: meeting.meetingUrl },
+        ]}
+      >
+        <a
+          href={meeting.meetingUrl}
+          target="_blank"
+          rel="noreferrer"
+          className="text-sm text-signal underline"
+        >
+          Open meeting link
+        </a>
+      </TechnicalDetails>
 
       {summary ? (
         <section className="space-y-2 rounded-lg border bg-muted/30 p-4">
-          <h2 className="text-sm font-medium uppercase tracking-wide text-muted-foreground">
-            Summary
-          </h2>
+          <SectionHeading>Summary</SectionHeading>
           <p className="whitespace-pre-wrap text-sm">{summary}</p>
         </section>
       ) : null}
 
       <section className="space-y-2">
-        <h2 className="text-sm font-medium uppercase tracking-wide text-muted-foreground">
-          Transcript
-        </h2>
+        <SectionHeading>Transcript</SectionHeading>
         {chunks.length === 0 ? (
           <p className="text-sm text-muted-foreground">
             {meeting.status === 'pending' || meeting.status === 'joining'

@@ -39,7 +39,7 @@ export function Logo({
 }
 
 /**
- * Wordmark composition: mark + "THE TIMELINE" in mono. Used in
+ * Wordmark composition: mark + product name in Switzer. Used in
  * top nav and footer. Pass `compact` for nav (smaller mark), default
  * size for footer/marketing.
  */
@@ -53,7 +53,7 @@ export function Wordmark({
   return (
     <span className={cn('inline-flex items-center gap-2', className)}>
       <Logo ariaHidden className={cn(compact ? 'h-4 w-4' : 'h-5 w-5', 'text-fg')} />
-      <span className="font-mono text-xs font-bold uppercase tracking-[0.18em]">THE TIMELINE</span>
+      <span className="text-sm font-semibold tracking-tight">The Timeline</span>
     </span>
   );
 }

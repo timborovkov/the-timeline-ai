@@ -292,7 +292,7 @@ export function IngestWebhooksUi({ webhooks }: { webhooks: IngestWebhookRow[] })
       ) : null}
 
       {webhooks.length === 0 ? (
-        <div className="rounded-sm border border-dashed border-border bg-surface p-4 text-sm text-fg-muted">
+        <div className="rounded-lg border border-border bg-surface p-4 text-sm text-fg-muted">
           No ingest webhooks yet.
         </div>
       ) : (

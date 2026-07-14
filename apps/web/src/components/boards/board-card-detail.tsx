@@ -222,19 +222,17 @@ function BoardCardHeader({
           <h2 className="whitespace-normal break-words text-lg font-semibold leading-snug text-fg">
             {displayText(title)}
           </h2>
-          <p className="mt-1 font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
-            {item.object.type} · board item
-          </p>
+          <p className="mt-1 text-xs text-fg-dim">{item.object.type} · board item</p>
         </div>
         <Link
           href={boardViewHref(boardId, view, null, filterParams)}
-          className="shrink-0 font-mono text-[11px] uppercase tracking-[0.12em] text-fg-muted hover:text-fg"
+          className="shrink-0 text-xs text-fg-muted hover:text-fg"
         >
           Close
         </Link>
       </div>
       {blocked && lane ? (
-        <p className="mt-3 inline-flex rounded-sm border border-danger/40 px-2 py-1 font-mono text-[11px] uppercase tracking-[0.12em] text-danger">
+        <p className="mt-3 inline-flex rounded-sm border border-danger/40 px-2 py-1 text-xs text-danger">
           Blocked · {displayText(lane.name)}
         </p>
       ) : null}
@@ -335,9 +333,7 @@ function NextStepSection({
   return (
     <section className="border-b border-border p-4">
       <label>
-        <span className="mb-2 block font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">
-          Next step
-        </span>
+        <span className="mb-2 block text-xs text-fg-dim">Next step</span>
         <input
           aria-label="Next step"
           value={value}
@@ -397,9 +393,7 @@ function BoardNotesSection({
   return (
     <section className="border-b border-border p-4">
       <div className="mb-2 flex items-center justify-between gap-3">
-        <h3 className="font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">
-          Board notes
-        </h3>
+        <h3 className="text-xs text-fg-dim">Board notes</h3>
         <button
           type="button"
           disabled={disabled}
@@ -488,9 +482,7 @@ function BoardEvidence({
 }) {
   return (
     <section className="p-4">
-      <h3 className="mb-2 font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">
-        Board provenance
-      </h3>
+      <h3 className="mb-2 text-xs text-fg-dim">Board provenance</h3>
       {changes.length === 0 ? (
         <p className="text-sm text-fg-muted">No source evidence linked to board changes yet.</p>
       ) : (
@@ -537,9 +529,7 @@ function BoardActivity({
 }) {
   return (
     <section className="border-t border-border p-4">
-      <h3 className="mb-2 font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">
-        Activity
-      </h3>
+      <h3 className="mb-2 text-xs text-fg-dim">Activity</h3>
       {history.length === 0 ? (
         <p className="text-sm text-fg-muted">No board history yet.</p>
       ) : (
@@ -548,7 +538,7 @@ function BoardActivity({
             <li key={change.id} className="rounded-sm border border-border p-3 text-xs">
               <div className="flex items-start justify-between gap-3">
                 <span className="font-medium text-fg">{fieldLabel(change.field)}</span>
-                <span className="shrink-0 font-mono uppercase tracking-[0.1em] text-fg-dim">
+                <span className="shrink-0 text-fg-dim">
                   {change.actorKind} · {change.status}
                 </span>
               </div>
@@ -592,7 +582,7 @@ function ObjectPreviewDialog({
       <DialogContent className="border-border bg-bg sm:max-w-xl">
         <DialogHeader>
           <DialogTitle>{displayText(title)}</DialogTitle>
-          <DialogDescription className="font-mono text-[11px] uppercase tracking-[0.12em]">
+          <DialogDescription className="text-xs">
             {item.object.type} · object preview
           </DialogDescription>
         </DialogHeader>
@@ -607,9 +597,7 @@ function ObjectPreviewDialog({
         </dl>
         {item.object.aliases.length > 0 ? (
           <section>
-            <h3 className="mb-1 font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">
-              Aliases
-            </h3>
+            <h3 className="mb-1 text-xs text-fg-dim">Aliases</h3>
             <p className="text-sm text-fg-muted">
               {item.object.aliases.map((alias) => displayText(alias)).join(', ')}
             </p>
@@ -647,9 +635,7 @@ function FieldSelect({
 }) {
   return (
     <label className="block bg-bg p-3">
-      <span className="mb-1 block font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">
-        {label}
-      </span>
+      <span className="mb-1 block text-[11px] text-fg-dim">{label}</span>
       <select
         value={value}
         disabled={disabled}
@@ -681,9 +667,7 @@ function FieldInput({
 }) {
   return (
     <label className="block bg-bg p-3">
-      <span className="mb-1 block font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">
-        {label}
-      </span>
+      <span className="mb-1 block text-[11px] text-fg-dim">{label}</span>
       <input
         type={type}
         value={value}
@@ -709,7 +693,7 @@ function Detail({
 }) {
   return (
     <div className="bg-bg p-2">
-      <dt className="font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">{label}</dt>
+      <dt className="text-[11px] text-fg-dim">{label}</dt>
       <dd className={cn('mt-1 truncate text-sm text-fg', danger && 'text-danger')}>{value}</dd>
     </div>
   );

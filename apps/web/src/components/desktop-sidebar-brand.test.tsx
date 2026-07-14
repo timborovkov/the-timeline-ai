@@ -41,15 +41,16 @@ describe('DesktopSidebar branding', () => {
       </TooltipProvider>,
     );
 
-    expect([...screen.getByText('THE TIMELINE').classList]).toEqual(
-      expect.arrayContaining(['font-mono', 'font-bold', 'tracking-[0.18em]']),
+    expect([...screen.getByText('The Timeline').classList]).toEqual(
+      expect.arrayContaining(['font-semibold', 'tracking-tight']),
     );
+    expect(screen.getByText('The Timeline').classList).not.toContain('font-mono');
     expect(container.querySelectorAll('svg[viewBox="0 0 48 48"] rect')).toHaveLength(5);
     expect(container.textContent).not.toContain('▦');
 
     await user.click(screen.getByRole('button', { name: 'Collapse sidebar' }));
 
-    expect(screen.queryByText('THE TIMELINE')).toBeNull();
+    expect(container.querySelector('span.text-sm.font-semibold')).toBeNull();
     const collapsedLogo = screen.getByRole('img', { name: 'The Timeline' });
     expect(container.querySelectorAll('svg[viewBox="0 0 48 48"] rect')).toHaveLength(5);
 

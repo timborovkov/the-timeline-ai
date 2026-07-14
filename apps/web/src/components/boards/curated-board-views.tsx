@@ -156,7 +156,7 @@ export function CuratedBoardTable({
       ) : null}
       <div className="overflow-x-auto rounded-sm border border-border bg-surface">
         <table className="w-full text-sm">
-          <thead className="border-b border-border bg-bg text-left font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
+          <thead className="border-b border-border bg-bg text-left text-xs text-fg-dim">
             <tr>
               {onUpdateItem ? (
                 <th className="w-10 px-3 py-2 font-normal">
@@ -297,7 +297,7 @@ export function CuratedBoardTable({
                       }}
                     />
                     {saving[item.id] ? (
-                      <span className="mt-1 block font-mono text-[10px] uppercase tracking-[0.1em] text-fg-dim">
+                      <span className="mt-1 block text-[11px] text-fg-dim">
                         Saving {saving[item.id]}...
                       </span>
                     ) : null}
@@ -373,10 +373,7 @@ function BoardBulkToolbar({
 
   return (
     <div className="flex shrink-0 flex-wrap items-center gap-2 rounded-sm border border-border bg-surface px-3 py-2">
-      <output
-        className="mr-auto font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim"
-        aria-live="polite"
-      >
+      <output className="mr-auto text-xs text-fg-dim" aria-live="polite">
         {selectedCount === 0
           ? 'Select board items to edit'
           : `${selectedCount} ${selectedCount === 1 ? 'item' : 'items'} selected`}
@@ -475,11 +472,7 @@ function BoardBulkToolbar({
           Clear
         </button>
       ) : null}
-      {bulk.message ? (
-        <span className="font-mono text-[11px] uppercase tracking-[0.1em] text-fg-dim">
-          {bulk.message}
-        </span>
-      ) : null}
+      {bulk.message ? <span className="text-xs text-fg-dim">{bulk.message}</span> : null}
     </div>
   );
 }
@@ -605,7 +598,7 @@ export function CuratedBoardList({
               <span className="min-w-0 flex-1 whitespace-normal break-words font-medium leading-snug text-fg">
                 {displayText(objectTitle)}
               </span>
-              <span className="font-mono text-[11px] uppercase tracking-[0.1em] text-fg-dim">
+              <span className="text-xs text-fg-dim">
                 {item.object.type}
                 {item.dueAt ? ` · ${formatDisplayDate(item.dueAt)}` : ''}
               </span>
@@ -650,9 +643,5 @@ function isOptimisticItem(item: boards.BoardItemRow): boolean {
 }
 
 function EmptyBoardItems() {
-  return (
-    <p className="py-10 text-center font-mono text-xs uppercase tracking-[0.12em] text-fg-dim">
-      NO BOARD ITEMS YET
-    </p>
-  );
+  return <p className="py-10 text-center text-xs text-fg-dim">NO BOARD ITEMS YET</p>;
 }

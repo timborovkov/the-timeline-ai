@@ -149,7 +149,7 @@ describe('DocumentDetail', () => {
       '/app/documents?folder=folder-1',
     );
     expect(screen.getByText('Acme launch packet.txt')).toBeTruthy();
-    expect(screen.getByText('specific_users')).toBeTruthy();
+    expect(screen.getByText('Specific users')).toBeTruthy();
     expect(screen.getByText('Selected version')).toBeTruthy();
     expect(screen.getByText(/v1 · 4\.0 KB · application\/octet-stream/)).toBeTruthy();
     expect(screen.getByText('Extracted text')).toBeTruthy();
@@ -160,7 +160,7 @@ describe('DocumentDetail', () => {
       screen.getAllByText('Visual summary of the Acme launch packet.').length,
     ).toBeGreaterThanOrEqual(1);
     expect(screen.getByText('email capture')).toBeTruthy();
-    expect(screen.getAllByText('chunked').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText('Chunked').length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText('2 chunks')).toBeTruthy();
     expect(screen.getByText('Extracted chunks')).toBeTruthy();
     expect(screen.getByText('Chunk 1')).toBeTruthy();
@@ -222,9 +222,10 @@ describe('DocumentDetail', () => {
     expect(screen.getByText('Preview is not available for this file type.')).toBeTruthy();
     expect(screen.getByText('No extracted description is available yet.')).toBeTruthy();
     expect(screen.getByText('0 chunks')).toBeTruthy();
-    expect(screen.getAllByText('failed').length).toBeGreaterThanOrEqual(1);
-    expect(
-      screen.getAllByText('OCR failed because the provider returned unreadable content.').length,
-    ).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText('Failed').length).toBeGreaterThanOrEqual(1);
+    const error = screen.getAllByText(
+      'OCR failed because the provider returned unreadable content.',
+    )[0];
+    expect(error?.closest('details')?.open).toBe(false);
   });
 });

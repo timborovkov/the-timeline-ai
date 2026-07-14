@@ -40,7 +40,7 @@ export async function signInFromCurrentPage(
     await page.getByLabel('Password').fill(E2E_PASSWORD);
     await page.getByRole('button', { name: 'Sign in' }).click();
     try {
-      await expect(page).toHaveURL(expectedUrl);
+      await expect(page).toHaveURL(expectedUrl, { timeout: 30_000 });
       await pinPrimaryTeam(page);
       return;
     } catch (error) {

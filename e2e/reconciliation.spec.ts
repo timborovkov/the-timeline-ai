@@ -761,6 +761,10 @@ async function seedWorkerRepairState(): Promise<void> {
   });
 }
 
+async function openAdvancedDiagnostics(page: Page): Promise<void> {
+  await page.getByText('Advanced tools and diagnostics', { exact: true }).click();
+}
+
 test.describe.serial('reconciliation dashboard', () => {
   test.beforeAll(seedReconciliationState);
   test.afterAll(async () => {
@@ -775,17 +779,18 @@ test.describe.serial('reconciliation dashboard', () => {
     await signIn(page, e2eUsers.owner.email);
     await page.goto('/app/team/reconciliation');
 
-    await expect(page.getByRole('heading', { name: 'Release gate' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Reconciliation', exact: true })).toBeVisible();
     await expect(page.getByText(fixtures.team.title).first()).toBeVisible();
     await expect(page.getByText('customer_project').first()).toBeVisible();
     await expect(page.getByText('observed_association').first()).toBeVisible();
     await expect(page.getByText('approval_bundle').first()).toBeVisible();
     await expect(page.getByText('failed').first()).toBeVisible();
     await expect(page.getByText('evidence').first()).toBeVisible();
+    await openAdvancedDiagnostics(page);
     await expect(page.getByText('projections').first()).toBeVisible();
     await expect(page.getByText(fixtures.workerRepair.title).first()).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Audit' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Backfill dry run' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Check coverage' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Preview repair' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Reconcile' })).toBeVisible();
 
     await page.getByRole('link', { name: new RegExp(fixtures.team.title) }).click();
@@ -797,18 +802,35 @@ test.describe.serial('reconciliation dashboard', () => {
     ).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Evidence' })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Outputs' })).toBeVisible();
+    const teamEvidence = page
+      .locator('section')
+      .filter({ has: page.getByRole('heading', { name: 'Evidence' }) });
     await expect(page.getByText(fixtures.team.rawText)).toBeVisible();
+    const teamRawEventId = teamEvidence.getByText(fixtures.team.rawEvent, { exact: true });
+    await expect(teamRawEventId).toBeHidden();
+    await teamEvidence.getByText('Technical details').first().click();
+    await expect(teamRawEventId).toBeVisible();
 
     await page.goto(`/app/team/reconciliation/clusters/${fixtures.workerRepair.cluster}`);
     await expect(
       page.getByRole('heading', { name: fixtures.workerRepair.title, exact: true }),
     ).toBeVisible();
     await expect(page.getByText(fixtures.workerRepair.rawText)).toBeVisible();
+    const repairEvidence = page
+      .locator('section')
+      .filter({ has: page.getByRole('heading', { name: 'Evidence' }) });
+    const repairRawEventId = repairEvidence.getByText(fixtures.workerRepair.rawEvent, {
+      exact: true,
+    });
+    await expect(repairRawEventId).toBeHidden();
+    await repairEvidence.getByText('Technical details').first().click();
+    await expect(repairRawEventId).toBeVisible();
   });
 
   test('surfaces operator errors from invalid manual reconciliation requests', async ({ page }) => {
     await signIn(page, e2eUsers.owner.email);
     await page.goto('/app/team/reconciliation');
+    await openAdvancedDiagnostics(page);
 
     await page.getByLabel('Scope').selectOption('object');
     await page.getByRole('button', { name: 'Reconcile' }).click();
@@ -823,6 +845,7 @@ test.describe.serial('reconciliation dashboard', () => {
   test('filters and paginates run history from the dashboard', async ({ page }) => {
     await signIn(page, e2eUsers.owner.email);
     await page.goto('/app/team/reconciliation');
+    await openAdvancedDiagnostics(page);
 
     await page.getByLabel('Status').selectOption('completed');
     await page.getByLabel('Trigger').selectOption('eval');
@@ -846,7 +869,9 @@ test.describe.serial('reconciliation dashboard', () => {
 
     const approval = page.locator('article').filter({ hasText: fixtures.approval.title });
     await expect(approval).toBeVisible();
-    await expect(approval.getByText(/Reconciliation output/)).toBeVisible();
+    await expect(
+      approval.getByRole('link', { name: 'Open reconciliation context' }).first(),
+    ).toBeVisible();
     await expect(approval.getByText('Accept will create a task.')).toBeVisible();
     await expect(
       approval.getByText(
@@ -854,7 +879,7 @@ test.describe.serial('reconciliation dashboard', () => {
       ),
     ).toBeVisible();
 
-    await approval.getByRole('link', { name: /Cluster/ }).click();
+    await approval.getByRole('link', { name: 'Open reconciliation context' }).first().click();
     await expect(page).toHaveURL(
       new RegExp(`/app/team/reconciliation/clusters/${fixtures.team.cluster}`),
     );
@@ -932,11 +957,13 @@ test.describe.serial('reconciliation dashboard', () => {
     await removeQueuedReconciliationTestJobs();
     await signIn(page, e2eUsers.owner.email);
     await page.goto('/app/team/reconciliation');
+    await openAdvancedDiagnostics(page);
 
     await page.getByRole('button', { name: 'Reconcile' }).click();
     await expect(page).toHaveURL(/reconciliationNotice=queued/);
     await expect(page.getByText('Queued manual reconciliation for the team.')).toBeVisible();
 
+    await openAdvancedDiagnostics(page);
     await page.getByLabel('Scope').selectOption('cluster');
     await page.getByLabel('Target id').fill(fixtures.team.cluster);
     await page.getByRole('button', { name: 'Reconcile' }).click();
@@ -959,12 +986,12 @@ test.describe.serial('reconciliation dashboard', () => {
     await page.goto('/app/team/reconciliation');
 
     await page.locator('select[name="source"]').selectOption('email');
-    await page.getByRole('button', { name: 'Audit' }).click();
+    await page.getByRole('button', { name: 'Check coverage' }).click();
     await expect(page).toHaveURL(/reconciliationNotice=queued/);
     await expect(page.getByText('Queued audit for email.')).toBeVisible();
 
     await page.locator('select[name="source"]').selectOption('integration');
-    await page.getByRole('button', { name: 'Backfill dry run' }).click();
+    await page.getByRole('button', { name: 'Preview repair' }).click();
     await expect(page).toHaveURL(/reconciliationNotice=queued/);
     await expect(page.getByText('Queued missing-only backfill for integration.')).toBeVisible();
 
@@ -999,6 +1026,7 @@ test.describe.serial('reconciliation dashboard', () => {
 
     await processQueuedReconciliationJobs(isQueuedAuditOrBackfillJob);
     await page.goto('/app/team/reconciliation');
+    await openAdvancedDiagnostics(page);
 
     await expect(page.getByText('evidence_audit:email')).toBeVisible();
     await expect(page.getByText('release passed')).toBeVisible();
@@ -1048,7 +1076,7 @@ test.describe.serial('reconciliation dashboard', () => {
 
     await expect(page.getByText(fixtures.team.title).first()).toBeVisible();
     await expect(page.getByLabel('Open floating agent chat')).toBeHidden();
-    await expect(page.getByRole('button', { name: 'Audit' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Check coverage' })).toBeVisible();
 
     const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
     const viewportWidth = page.viewportSize()?.width ?? 0;

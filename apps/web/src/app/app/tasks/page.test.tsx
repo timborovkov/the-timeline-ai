@@ -166,7 +166,7 @@ describe('TasksPage', () => {
     expect(html).toContain('1 pending task proposal');
     expect(html).toContain('Commitment: Send proposal');
     expect(html).toContain('approvals');
-    expect(html).toContain('1 pending approval');
+    expect(html).toContain('Approvals');
     expect(html).toContain('No active tasks');
   });
 

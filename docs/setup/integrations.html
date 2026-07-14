@@ -14,13 +14,13 @@
       <p class="tldr">
         Connect native GitHub, Linear, Google Drive, Monday.com, Slack, and Sentry as personal
         provider accounts from <code>/app/me/connections</code>, share the sources a team may use,
-        then activate team sync from <code>/app/team/integrations</code>. Native providers sync
-        external activity into the timeline as <code>source='integration'</code>. MCP servers at
+        then activate team sync from <code>/app/sources</code>. Native providers sync external
+        activity into the timeline as <code>source='integration'</code>. MCP servers at
         <code>/app/team/mcp-servers</code> give the agent live tool access; successful tool results
         are captured as private integration evidence for reconciliation, while passive provider
         activity still needs a native sync adapter or custom ingestion layer. For tools that only
         need to push arbitrary evidence into Timeline, admins can also create named ingest webhooks
-        from <code>/app/team/integrations</code>.
+        from <code>/app/sources</code>.
       </p>
 
       <h2 id="secrets">Encryption key (required first)</h2>
@@ -98,9 +98,7 @@ GOOGLE_DRIVE_WEBHOOK_SECRET=...</code></pre>
           <code>/app/me/connections</code> or the native catalog. The member chooses whether their
           My Drive root or shared drives are shared with the current Timeline team.
         </li>
-        <li>
-          A team admin activates shared Drive sources from <code>/app/team/integrations</code>.
-        </li>
+        <li>A team admin activates shared Drive sources from <code>/app/sources</code>.</li>
         <li>
           (Optional) Register a Drive push-notification channel for incremental sync. The channel
           <code>token</code> must be
@@ -147,9 +145,7 @@ LINEAR_WEBHOOK_SECRET=...</code></pre>
           Any team member can connect Linear from <code>/app/me/connections</code> or the native
           catalog. The member chooses which Linear teams are shared with the current Timeline team.
         </li>
-        <li>
-          A team admin activates shared Linear teams from <code>/app/team/integrations</code>.
-        </li>
+        <li>A team admin activates shared Linear teams from <code>/app/sources</code>.</li>
       </ol>
 
       <h2 id="github">GitHub</h2>
@@ -220,7 +216,7 @@ GITHUB_WEBHOOK_SECRET=...</code></pre>
           Timeline team.
         </li>
         <li>
-          A team admin activates shared sources from <code>/app/team/integrations</code>. A GitHub
+          A team admin activates shared sources from <code>/app/sources</code>. A GitHub
           organization scope means all repos in that org the connection owner can access, including
           future repos; choose individual repos instead for a fixed list.
         </li>
@@ -284,12 +280,12 @@ MONDAY_WEBHOOK_SECRET=...</code></pre>
           hidden merely because its user-defined name begins with “Subitems of”.
         </li>
         <li>
-          A team admin activates shared sources from <code>/app/team/integrations</code>. The
-          integration worker imports board schema, generic records, subitems, record updates, status
-          changes, owners, column changes, and selected WorkDocs into cited timeline events.
-          Activation, newly added selections, and retries with an unresolved sync error enqueue a
-          historical backfill immediately and reconcile webhooks independently, so a webhook failure
-          does not block older items. Classic subitem webhook payloads are routed through
+          A team admin activates shared sources from <code>/app/sources</code>. The integration
+          worker imports board schema, generic records, subitems, record updates, status changes,
+          owners, column changes, and selected WorkDocs into cited timeline events. Activation,
+          newly added selections, and retries with an unresolved sync error enqueue a historical
+          backfill immediately and reconcile webhooks independently, so a webhook failure does not
+          block older items. Classic subitem webhook payloads are routed through
           <code>parentItemBoardId</code> and hydrate against the selected parent board. Multi-level
           boards use monday's <code>hierarchy_scope_config: "allItems"</code> query so descendants
           at every supported depth are imported from the real board. Slow reconciliation remains
@@ -340,11 +336,11 @@ MONDAY_WEBHOOK_SECRET=...</code></pre>
         </li>
         <li>
           Connect Slack from the native catalog, share selected channels from
-          <code>/app/me/connections</code>, then activate them from
-          <code>/app/team/integrations</code>. Private channels require the bot to be present before
-          Slack will expose history. The worker reconciles selected channels hourly and honors Slack
-          Web API <code>Retry-After</code> responses as shared provider budget pauses instead of
-          retrying per Timeline team.
+          <code>/app/me/connections</code>, then activate them from <code>/app/sources</code>.
+          Private channels require the bot to be present before Slack will expose history. The
+          worker reconciles selected channels hourly and honors Slack Web API
+          <code>Retry-After</code> responses as shared provider budget pauses instead of retrying
+          per Timeline team.
         </li>
       </ol>
 
@@ -388,9 +384,9 @@ SENTRY_INTEGRATION_CLIENT_SECRET=...</code></pre>
         </li>
         <li>
           Connect Sentry from the native catalog, share selected projects from
-          <code>/app/me/connections</code>, and activate them from
-          <code>/app/team/integrations</code>. Timeline imports issue updates, resolved issues, and
-          releases as cited events; Sentry issues map to cited incident evidence.
+          <code>/app/me/connections</code>, and activate them from <code>/app/sources</code>.
+          Timeline imports issue updates, resolved issues, and releases as cited events; Sentry
+          issues map to cited incident evidence.
         </li>
         <li>
           For Sentry issue alert, issue lifecycle, and release webhooks, point the Sentry
@@ -433,7 +429,7 @@ SENTRY_INTEGRATION_CLIENT_SECRET=...</code></pre>
         pipeline can then turn them into facts, citations, embeddings, and approval proposals.
       </p>
       <ol>
-        <li>Go to <code>/app/team/integrations</code> as a team admin.</li>
+        <li>Go to <code>/app/sources</code> as a team admin.</li>
         <li>
           Create a named webhook, for example <em>Pipedrive webhook</em>. Choose whether new events
           default to team-visible evidence or private evidence owned by the creating admin.
@@ -502,12 +498,12 @@ SENTRY_INTEGRATION_CLIENT_SECRET=...</code></pre>
         Expose this Timeline as an MCP server so external agents (Claude Desktop, Cursor, web-based
         agents, etc.) can query team-level workspace context: events, entities, objects, tasks,
         boards, calendar, documents, and connected integration activity. Admins can open the
-        <strong>Connections</strong> sidebar item (<code>/app/team/integrations</code>) and use
+        <strong>Connections</strong> sidebar item (<code>/app/sources</code>) and use
         <em>Manage Timeline MCP endpoint</em>, or go directly to <code>/app/team/mcp-share</code>:
       </p>
       <ol>
         <li>
-          Open <strong>Connections</strong> (<code>/app/team/integrations</code>), choose
+          Open <strong>Connections</strong> (<code>/app/sources</code>), choose
           <em>Manage Timeline MCP endpoint</em>, and copy the MCP endpoint URL shown there.
         </li>
         <li>

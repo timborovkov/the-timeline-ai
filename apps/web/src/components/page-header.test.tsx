@@ -18,12 +18,12 @@ describe('PageHeader', () => {
     expect(screen.getByText('Capture surfaces that feed the timeline.')).toBeTruthy();
   });
 
-  it('renders the mono metadata strip with label/value pairs', () => {
+  it('renders quiet metadata and only opts selected values into mono', () => {
     const { container } = render(
       <PageHeader
         title="Team"
         metadata={[
-          { label: 'members', value: 5 },
+          { label: 'members', value: 5, mono: true },
           { label: 'role', value: 'admin', signal: true },
         ]}
       />,
@@ -33,6 +33,8 @@ describe('PageHeader', () => {
     expect(strip?.textContent).toContain('members');
     expect(strip?.textContent).toContain('5');
     expect(strip?.textContent).toContain('admin');
+    expect(strip?.className).not.toContain('uppercase');
+    expect(strip?.querySelector('dd')?.className).toContain('font-mono');
   });
 
   it('hides the mono metadata from screen readers and exposes srLabel instead', () => {

@@ -6,6 +6,7 @@ import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
 
 import type * as jobRecovery from '@timeline/shared/job-recovery';
 
+import { TechnicalDetails } from '@/components/technical-details';
 import { useAppDialog } from '@/components/ui/app-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -376,7 +377,7 @@ function JobRecoveryToolbar({
                 onSetFilter(f.kind);
               }}
               className={cn(
-                'rounded-sm border px-2 py-1 font-mono text-[10px] uppercase tracking-[0.14em] transition-colors',
+                'rounded-sm border px-2 py-1 text-[11px] transition-colors',
                 active
                   ? 'border-signal bg-signal/10 text-signal'
                   : 'border-border bg-surface text-fg-muted hover:border-border-strong hover:text-fg',
@@ -455,12 +456,21 @@ function JobRecoveryItems({
                 <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-fg-muted">
                   <span>{new Date(item.detectedAt).toLocaleString()}</span>
                   {item.error ? (
-                    <span className="max-w-full truncate text-destructive md:max-w-lg">
-                      {item.error}
+                    <span className="text-destructive">
+                      Processing failed. Retry this job or dismiss it.
                     </span>
                   ) : null}
                 </div>
                 {retry ? <RetryStatus snapshot={retry} /> : null}
+                <TechnicalDetails
+                  items={[
+                    { label: 'Job ID', value: item.id, copyValue: item.id },
+                    { label: 'Artifact ID', value: item.artifactId, copyValue: item.artifactId },
+                    ...(item.error
+                      ? [{ label: 'Raw error', value: item.error, copyValue: item.error }]
+                      : []),
+                  ]}
+                />
               </div>
               <JobRecoveryItemActions busy={busy} item={item} onAction={onAction} retry={retry} />
             </li>
@@ -645,7 +655,7 @@ function FinishedJobsArchive({
       </div>
       <div className="overflow-x-auto rounded-sm border border-border bg-surface">
         <table className="w-full min-w-[760px] text-left text-sm">
-          <thead className="border-b border-border font-mono text-[10px] uppercase tracking-[0.14em] text-fg-dim">
+          <thead className="border-b border-border text-[11px] text-fg-dim">
             <tr>
               <th className="px-3 py-2 font-medium">Status</th>
               <th className="px-3 py-2 font-medium">Job</th>
@@ -684,15 +694,32 @@ function FinishedJobsArchive({
                   </td>
                   <td className="px-3 py-2">
                     <div className="font-medium">{item.label}</div>
-                    <div className="font-mono text-[11px] text-fg-dim">{item.artifactId}</div>
+                    <TechnicalDetails
+                      className="mt-1"
+                      items={[
+                        { label: 'Job ID', value: item.id, copyValue: item.id },
+                        ...(item.artifactId
+                          ? [
+                              {
+                                label: 'Artifact ID',
+                                value: item.artifactId,
+                                copyValue: item.artifactId,
+                              },
+                            ]
+                          : []),
+                        ...(item.error
+                          ? [{ label: 'Raw error', value: item.error, copyValue: item.error }]
+                          : []),
+                      ]}
+                    />
                   </td>
                   <td className="px-3 py-2 font-mono text-xs text-fg-muted">{item.queue}</td>
                   <td className="px-3 py-2 text-fg-muted">{item.attemptsMade}</td>
                   <td className="px-3 py-2 text-fg-muted">
                     {new Date(item.finishedAt).toLocaleString()}
                   </td>
-                  <td className="max-w-xs truncate px-3 py-2 text-destructive">
-                    {item.error ?? ''}
+                  <td className="max-w-xs px-3 py-2 text-destructive">
+                    {item.error ? 'Failed' : ''}
                   </td>
                 </tr>
               ))

@@ -43,7 +43,7 @@ export function ThemeToggle({ className }: { className?: string }) {
             onSelect={() => {
               setTheme(value);
             }}
-            className="font-mono text-xs uppercase tracking-wider"
+            className="text-sm"
           >
             <Icon className="mr-2 size-3.5" />
             <span>{label}</span>

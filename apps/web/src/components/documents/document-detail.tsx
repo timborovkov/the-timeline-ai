@@ -20,10 +20,13 @@ import {
 import { DocumentPreview } from '@/components/documents/document-preview';
 import { EvidenceLink } from '@/components/evidence-link';
 import { HistoryBackLink } from '@/components/history-back-link';
+import { StatusBadge } from '@/components/status-badge';
+import { TechnicalDetails } from '@/components/technical-details';
 import { useAppDialog } from '@/components/ui/app-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { statusLabel } from '@/lib/status-labels';
 
 interface VersionItem {
   id: string;
@@ -78,15 +81,6 @@ function formatBytes(n: number | null): string {
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
   return `${(n / 1024 / 1024).toFixed(1)} MB`;
 }
-
-const STATUS_BADGE: Record<string, string> = {
-  pending: 'border border-border bg-surface-2 text-muted-foreground',
-  extracting: 'border border-border bg-surface-2 text-muted-foreground',
-  chunked: 'border border-border bg-surface-2 text-muted-foreground',
-  embedded: 'border border-border bg-surface-2 text-muted-foreground',
-  deferred: 'border border-border bg-surface-2 text-muted-foreground',
-  failed: 'border border-danger/40 bg-danger/10 text-danger',
-};
 
 function mediaKind(contentType: string | null): 'image' | 'audio' | 'pdf' | null {
   const base = contentType?.toLowerCase().split(';')[0]?.trim() ?? '';
@@ -226,7 +220,7 @@ export function DocumentDetail({
           </div>
           <div className="flex shrink-0 flex-wrap items-center gap-2">
             {currentDocument.visibility !== 'team' && (
-              <Badge variant="outline">{currentDocument.visibility}</Badge>
+              <Badge variant="outline">{statusLabel(currentDocument.visibility)}</Badge>
             )}
             <Button size="sm" variant="outline" onClick={() => void onRename()} disabled={pending}>
               Rename
@@ -282,22 +276,23 @@ export function DocumentDetail({
                           current
                         </Badge>
                       )}
-                      <span
-                        className={
-                          'rounded px-1.5 py-0.5 text-[10px] font-medium ' +
-                          (STATUS_BADGE[v.processingStatus] ?? STATUS_BADGE.pending ?? '')
-                        }
-                      >
-                        {v.processingStatus}
-                      </span>
+                      <StatusBadge status={v.processingStatus} />
                     </div>
                     <p className="text-xs text-muted-foreground">
                       {formatBytes(v.byteSize)} · {v.contentType ?? 'unknown'} ·{' '}
                       {new Date(v.createdAt).toLocaleString()}
                     </p>
-                    {v.processingError && (
-                      <p className="text-xs text-danger">{v.processingError}</p>
-                    )}
+                    {v.processingError ? (
+                      <TechnicalDetails
+                        items={[
+                          {
+                            label: 'Processing error',
+                            value: v.processingError,
+                            copyValue: v.processingError,
+                          },
+                        ]}
+                      />
+                    ) : null}
                   </div>
                   <div className="flex shrink-0 flex-wrap items-center gap-2">
                     <Button
@@ -414,7 +409,7 @@ function CurrentVersionPanel({
                     previewText={document.provenance.summary}
                     source={document.provenance.source}
                     occurredAt={document.provenance.occurredAt}
-                    className="inline-flex h-8 items-center gap-1 rounded-sm border border-border px-2 font-mono text-[11px] uppercase tracking-[0.12em] text-muted-foreground transition-colors hover:border-border-strong hover:text-foreground"
+                    className="inline-flex h-8 items-center gap-1 rounded-sm border border-border px-2 text-xs text-muted-foreground transition-colors hover:border-border-strong hover:text-foreground"
                   >
                     <Link2 className="size-3.5" />
                     Event
@@ -424,23 +419,23 @@ function CurrentVersionPanel({
             </InfoBlock>
             <InfoBlock title="Agent status">
               <div className="flex flex-wrap items-center gap-2">
-                <span
-                  className={
-                    'rounded px-1.5 py-0.5 text-[10px] font-medium ' +
-                    (STATUS_BADGE[version.processingStatus] ?? STATUS_BADGE.pending ?? '')
-                  }
-                >
-                  {version.processingStatus}
-                </span>
+                <StatusBadge status={version.processingStatus} />
                 <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
                   <FileText className="size-3.5" />
                   {chunks.length === 1 ? '1 chunk' : `${String(chunks.length)} chunks`}
                 </span>
               </div>
               {version.processingError ? (
-                <p className="mt-2 max-h-24 overflow-y-auto break-words pr-1 text-xs text-danger">
-                  {version.processingError}
-                </p>
+                <TechnicalDetails
+                  className="mt-2"
+                  items={[
+                    {
+                      label: 'Processing error',
+                      value: version.processingError,
+                      copyValue: version.processingError,
+                    },
+                  ]}
+                />
               ) : null}
             </InfoBlock>
             {chunks.length > 0 ? (
@@ -489,7 +484,7 @@ function InfoBlock({
 }) {
   return (
     <div className="rounded-sm border border-border bg-bg px-3 py-2">
-      <p className="font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">{title}</p>
+      <p className="text-sm font-semibold text-fg">{title}</p>
       <div className={`mt-1 ${contentClassName}`}>{children}</div>
     </div>
   );
@@ -501,9 +496,7 @@ function UnsupportedPreview({ chunks }: { chunks: Props['activeVersionChunks'] }
     <div className="min-h-72 rounded-sm border border-border bg-bg p-4">
       {text ? (
         <div>
-          <p className="mb-3 font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">
-            Extracted text
-          </p>
+          <p className="mb-3 text-[11px] text-fg-dim">Extracted text</p>
           <pre className="max-h-[58vh] overflow-y-auto whitespace-pre-wrap break-words pr-1 text-sm leading-6 text-fg-muted">
             {text}
           </pre>

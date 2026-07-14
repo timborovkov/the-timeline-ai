@@ -147,7 +147,7 @@ export function PersonalConnectionsUi({ connections }: { connections: ProviderCo
     return (
       <div className="space-y-3">
         <PersonalConnectionFlow />
-        <div className="rounded-sm border border-dashed border-border bg-surface p-4 text-sm text-fg-muted">
+        <div className="rounded-lg border border-border bg-surface p-4 text-sm text-fg-muted">
           No provider connections yet.
         </div>
       </div>
@@ -542,7 +542,7 @@ function ProviderSourceHint({ provider }: { provider: string }) {
         <p className="min-w-0 flex-1">{hint.body}</p>
         {hint.link ? (
           <a
-            className="inline-flex shrink-0 items-center gap-1 font-mono text-[10px] uppercase tracking-[0.12em] text-signal hover:underline"
+            className="inline-flex shrink-0 items-center gap-1 text-[11px] text-signal hover:underline"
             href={hint.link.href}
             target="_blank"
             rel="noreferrer"
@@ -571,7 +571,7 @@ function ResourceGroup({
   if (resources.length === 0) return null;
   return (
     <div className="space-y-1">
-      <h3 className="font-mono text-[11px] uppercase tracking-[0.14em] text-fg-muted">{title}</h3>
+      <h3 className="text-xs text-fg-muted">{title}</h3>
       <div className="max-h-72 overflow-auto rounded-sm border border-border">
         {resources.map((resource) => {
           const key = `${resource.kind}\x00${resource.externalId}`;

@@ -207,18 +207,14 @@ export function ObjectCleanupSuggestions({
         <summary className="cursor-pointer list-none">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="min-w-0 flex-1">
-              <h2 className="font-mono text-[11px] uppercase tracking-[0.14em] text-fg">
-                Cleanup suggestions
-              </h2>
+              <h2 className="text-xs text-fg">Cleanup suggestions</h2>
               <p className="mt-1 text-sm text-fg-muted">
                 {pendingItems.length > 0
                   ? `${pendingItems.length} pending cleanup ${pendingItems.length === 1 ? 'suggestion' : 'suggestions'}`
                   : 'No cleanup suggestions pending'}
               </p>
             </div>
-            <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
-              Open
-            </span>
+            <span className="text-xs text-fg-dim">Open</span>
           </div>
         </summary>
 
@@ -250,7 +246,7 @@ export function ObjectCleanupSuggestions({
                   className="grid gap-3 bg-bg p-3 md:grid-cols-[minmax(0,1fr)_auto]"
                 >
                   <div className="min-w-0">
-                    <div className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
+                    <div className="text-xs text-fg-dim">
                       {item.targetKind === 'object_merge' ? 'merge' : 'archive'} ·{' '}
                       {bundle.confidence}
                     </div>
@@ -325,7 +321,7 @@ export function ObjectCleanupSuggestions({
 
         {pendingItems.length > PAGE_SIZE ? (
           <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-border pt-3">
-            <p className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
+            <p className="text-xs text-fg-dim">
               {pageStart + 1}-{Math.min(pageStart + PAGE_SIZE, pendingItems.length)} of{' '}
               {pendingItems.length}
             </p>
@@ -342,7 +338,7 @@ export function ObjectCleanupSuggestions({
               >
                 <ChevronLeft className="size-4" />
               </Button>
-              <p className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
+              <p className="text-xs text-fg-dim">
                 Page {effectivePage + 1} / {pageCount}
               </p>
               <Button

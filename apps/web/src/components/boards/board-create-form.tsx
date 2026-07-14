@@ -179,11 +179,7 @@ function BoardCreateForm({ showHeading = true }: BoardCreateFormProps) {
 
   return (
     <div>
-      {showHeading ? (
-        <h2 className="mb-3 font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">
-          New board
-        </h2>
-      ) : null}
+      {showHeading ? <h2 className="mb-3 text-xs text-fg-dim">New board</h2> : null}
       <div className="grid grid-cols-1 gap-2 md:grid-cols-4">
         {PRESETS.map((preset) => {
           const Icon = preset.icon;
@@ -208,18 +204,14 @@ function BoardCreateForm({ showHeading = true }: BoardCreateFormProps) {
               <Icon className="mb-3 size-4 text-fg" aria-hidden="true" />
               <span className="block text-sm font-medium text-fg">{preset.label}</span>
               <span className="mt-1 block text-xs text-fg-muted">{preset.description}</span>
-              <span className="mt-3 block font-mono text-[10px] uppercase tracking-[0.1em] text-fg-dim">
-                {preset.example}
-              </span>
+              <span className="mt-3 block text-[11px] text-fg-dim">{preset.example}</span>
             </button>
           );
         })}
       </div>
       <div className="mt-4 grid gap-3 sm:grid-cols-2">
         <label className="block">
-          <span className="mb-1 block font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
-            Name
-          </span>
+          <span className="mb-1 block text-xs text-fg-dim">Name</span>
           <input
             value={name}
             onChange={(e) => {
@@ -229,9 +221,7 @@ function BoardCreateForm({ showHeading = true }: BoardCreateFormProps) {
           />
         </label>
         <label className="block">
-          <span className="mb-1 block font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
-            Description
-          </span>
+          <span className="mb-1 block text-xs text-fg-dim">Description</span>
           <input
             value={purpose}
             onChange={(e) => {
@@ -251,10 +241,7 @@ function BoardCreateForm({ showHeading = true }: BoardCreateFormProps) {
         className="mt-4"
       />
       {error && (
-        <p
-          role="alert"
-          className="mt-3 font-mono text-[11px] uppercase tracking-[0.12em] text-danger"
-        >
+        <p role="alert" className="mt-3 text-xs text-danger">
           {error}
         </p>
       )}
