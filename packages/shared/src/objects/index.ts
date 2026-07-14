@@ -3887,6 +3887,11 @@ export interface CreateObjectInput {
     inputHash: string;
     taxonomyVersion: string;
   };
+  /** A teammate-selected category applied atomically with task creation. */
+  initialManualTaskCategory?: {
+    category: TaskCategory;
+    actorUserId: string;
+  };
   /** Who/what created this. Users go through server actions; agents through
    *  `propose_object_change`/`suggest_task` tools. */
   actor: { kind: ActorKind; userId?: string | null };
@@ -3910,6 +3915,19 @@ export async function createObject(
   if (input.assigneeUserId && input.assigneeUserId !== input.ownerUserId) {
     await scope.requireTeamMember(input.assigneeUserId);
   }
+  if (input.initialManualTaskCategory) {
+    if (input.type !== 'task') throw new Error('Only tasks can have a category');
+    if (input.precomputedTaskCategory) {
+      throw new Error('A task category cannot be both manual and precomputed');
+    }
+    await scope.requireTeamMember(input.initialManualTaskCategory.actorUserId);
+  }
+  const initialManualTaskCategory = input.initialManualTaskCategory
+    ? {
+        category: taskCategorySchema.parse(input.initialManualTaskCategory.category),
+        actorUserId: input.initialManualTaskCategory.actorUserId,
+      }
+    : null;
 
   const txResult = await db.transaction(async (tx) => {
     let primaryProject: { id: string; canonicalName: string } | null = null;
@@ -3948,7 +3966,8 @@ export async function createObject(
       input.precomputedTaskCategory.model.trim().length > 0
         ? { ...input.precomputedTaskCategory, category: parsedPrecomputedCategory.data }
         : null;
-    const requestedCategoryHash = precomputedTaskCategory ? null : taskCategoryHash;
+    const requestedCategoryHash =
+      initialManualTaskCategory || precomputedTaskCategory ? null : taskCategoryHash;
     const insertRows = await tx
       .insert(entities)
       .values({
@@ -3965,10 +3984,20 @@ export async function createObject(
         metadata: input.metadata ?? {},
         sourceEventId: null,
         agentSuggested: false,
-        taskCategory: precomputedTaskCategory?.category ?? null,
-        taskCategoryMode: taskPacket ? 'automatic' : null,
-        taskCategorySource: precomputedTaskCategory ? 'llm' : null,
-        taskCategoryStatus: precomputedTaskCategory ? 'ready' : taskPacket ? 'pending' : null,
+        taskCategory:
+          initialManualTaskCategory?.category ?? precomputedTaskCategory?.category ?? null,
+        taskCategoryMode: taskPacket ? (initialManualTaskCategory ? 'manual' : 'automatic') : null,
+        taskCategorySource: initialManualTaskCategory
+          ? 'user'
+          : precomputedTaskCategory
+            ? 'llm'
+            : null,
+        taskCategoryStatus:
+          initialManualTaskCategory || precomputedTaskCategory
+            ? 'ready'
+            : taskPacket
+              ? 'pending'
+              : null,
         taskCategoryAppliedInputHash: precomputedTaskCategory?.inputHash ?? null,
         taskCategoryRequestedInputHash: requestedCategoryHash,
         taskCategoryTaxonomyVersion: taskPacket ? TASK_CATEGORY_TAXONOMY_VERSION : null,
@@ -4040,7 +4069,29 @@ export async function createObject(
       newValue: { type: input.type, canonicalName: name, status: row.status },
       sourceEventId: null,
     });
-    if (precomputedTaskCategory) {
+    if (initialManualTaskCategory) {
+      await tx.insert(taskCategoryAssignments).values({
+        teamId: scope.teamId,
+        entityId: row.id,
+        category: initialManualTaskCategory.category,
+        source: 'user',
+        mode: 'manual',
+        actorUserId: initialManualTaskCategory.actorUserId,
+        taxonomyVersion: TASK_CATEGORY_TAXONOMY_VERSION,
+        outcome: 'applied',
+      });
+      await tx.insert(objectChanges).values({
+        teamId: scope.teamId,
+        entityId: row.id,
+        actorUserId: initialManualTaskCategory.actorUserId,
+        actorKind: 'user',
+        status: 'applied',
+        field: 'taskCategory',
+        previousValue: null,
+        newValue: initialManualTaskCategory.category,
+        sourceEventId: null,
+      });
+    } else if (precomputedTaskCategory) {
       await tx.insert(taskCategoryAssignments).values({
         teamId: scope.teamId,
         entityId: row.id,

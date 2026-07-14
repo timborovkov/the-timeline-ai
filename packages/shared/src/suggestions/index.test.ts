@@ -4059,6 +4059,7 @@ describe('suggestion scope', () => {
     });
     expect(revised?.payload).not.toHaveProperty('taskCategoryInputHash');
 
+    queueFakes.enqueueTaskCategoryJob.mockClear();
     await scope.suggestions.acceptSuggestionItem(itemId);
     const [task] = await db
       .select()
@@ -4070,6 +4071,7 @@ describe('suggestion scope', () => {
       taskCategorySource: 'user',
       taskCategoryStatus: 'ready',
     });
+    expect(queueFakes.enqueueTaskCategoryJob).not.toHaveBeenCalled();
   });
 
   it('removes a stale project when retrying a proposal revised to no project', async () => {

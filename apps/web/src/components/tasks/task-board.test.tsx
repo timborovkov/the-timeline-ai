@@ -743,6 +743,58 @@ describe('TaskBoard', () => {
     });
   });
 
+  it('bounds concurrent bulk category updates', async () => {
+    const user = userEvent.setup();
+    let active = 0;
+    let maxActive = 0;
+    let releaseImmediately = false;
+    const releases: (() => void)[] = [];
+    fakes.setTaskCategoryAction.mockImplementation(() => {
+      if (releaseImmediately) return Promise.resolve({ ok: true });
+      return new Promise((resolve) => {
+        active += 1;
+        maxActive = Math.max(maxActive, active);
+        releases.push(() => {
+          active -= 1;
+          resolve({ ok: true });
+        });
+      });
+    });
+    const rows = Array.from({ length: 5 }, (_, index) =>
+      task({ id: `task-${index + 1}`, canonicalName: `Task ${index + 1}` }),
+    );
+    renderBoard(null, rows, 'list');
+
+    await user.click(screen.getByRole('checkbox', { name: 'Select all visible tasks' }));
+    await user.selectOptions(screen.getByLabelText('Bulk field'), 'category');
+    await user.selectOptions(screen.getByLabelText('Bulk category'), 'engineering');
+    await user.click(screen.getByRole('button', { name: 'Apply' }));
+
+    try {
+      await waitFor(() => {
+        expect(fakes.setTaskCategoryAction).toHaveBeenCalledTimes(4);
+      });
+      expect(maxActive).toBe(4);
+
+      await act(async () => {
+        releases.shift()?.();
+        await Promise.resolve();
+      });
+      await waitFor(() => {
+        expect(fakes.setTaskCategoryAction).toHaveBeenCalledTimes(5);
+      });
+    } finally {
+      releaseImmediately = true;
+      await act(async () => {
+        for (const release of releases.splice(0)) release();
+        await Promise.resolve();
+      });
+      await waitFor(() => {
+        expect(screen.getByText('Updated 5 tasks.')).toBeTruthy();
+      });
+    }
+  });
+
   it('keeps saved status patches visible until refreshed rows catch up', async () => {
     const user = userEvent.setup();
     const { rerender } = render(

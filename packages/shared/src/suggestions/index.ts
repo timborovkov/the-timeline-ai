@@ -3572,6 +3572,10 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
             taxonomyVersion: parsed.taskCategoryTaxonomyVersion,
           }
         : null;
+    const initialManualTaskCategory =
+      type === 'task' && parsed.taskCategory && parsed.taskCategoryMode === 'manual'
+        ? { category: parsed.taskCategory, actorUserId: userId }
+        : null;
     const input: CreateObjectInput = {
       type,
       canonicalName,
@@ -3587,6 +3591,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     if (project) input.parentObjectId = project.id;
     else if (parsed.parentObjectId !== undefined) input.parentObjectId = parsed.parentObjectId;
     if (precomputedTaskCategory) input.precomputedTaskCategory = precomputedTaskCategory;
+    if (initialManualTaskCategory) input.initialManualTaskCategory = initialManualTaskCategory;
     input.metadata = {
       ...(parsed.metadata ?? {}),
       agent_suggestion_item_id: item.id,
@@ -3610,7 +3615,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     if (!existing) {
       try {
         const created = await objects.createObject(input);
-        if (type === 'task' && !precomputedTaskCategory) {
+        if (type === 'task' && !precomputedTaskCategory && !initialManualTaskCategory) {
           await applyProposedTaskCategory(created.id, parsed);
         }
         return created.id;

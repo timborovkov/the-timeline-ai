@@ -163,6 +163,32 @@ const INITIAL_MOVE_UI: MoveUiState = {
 };
 const EMPTY_FILTER_PARAMS: Record<string, string> = {};
 const EMPTY_PRIMARY_PROJECTS: objects.TaskPrimaryProjectRow[] = [];
+const BULK_UPDATE_CONCURRENCY = 4;
+
+async function runBulkActions<T>(
+  ids: string[],
+  action: (id: string) => Promise<T>,
+): Promise<PromiseSettledResult<T>[]> {
+  const results = Array<PromiseSettledResult<T>>(ids.length);
+  const pending = ids.entries();
+
+  async function runWorker(): Promise<void> {
+    const next = pending.next();
+    if (next.done) return;
+    const [index, id] = next.value;
+    try {
+      results[index] = { status: 'fulfilled', value: await action(id) };
+    } catch (reason) {
+      results[index] = { status: 'rejected', reason };
+    }
+    return runWorker();
+  }
+
+  await Promise.all(
+    Array.from({ length: Math.min(BULK_UPDATE_CONCURRENCY, ids.length) }, runWorker),
+  );
+  return results;
+}
 const EMPTY_PROJECT_OPTIONS: { id: string; label: string }[] = [];
 
 function taskPaginationStateForProps(
@@ -719,7 +745,7 @@ function useTaskBoardController({
   }
 
   async function updateTasks(ids: string[], patch: TaskPatch): Promise<{ failed: number }> {
-    const results = await Promise.allSettled(ids.map((id) => updateTask(id, patch)));
+    const results = await runBulkActions(ids, (id) => updateTask(id, patch));
     return {
       failed: results.filter(
         (result) =>
@@ -732,12 +758,10 @@ function useTaskBoardController({
     ids: string[],
     category: TaskCategory | 'automatic',
   ): Promise<{ failed: number }> {
-    const results = await Promise.allSettled(
-      ids.map((id) =>
-        category === 'automatic'
-          ? resetTaskCategoryAction({ id })
-          : setTaskCategoryAction({ id, category }),
-      ),
+    const results = await runBulkActions(ids, (id) =>
+      category === 'automatic'
+        ? resetTaskCategoryAction({ id })
+        : setTaskCategoryAction({ id, category }),
     );
     router.refresh();
     return {
