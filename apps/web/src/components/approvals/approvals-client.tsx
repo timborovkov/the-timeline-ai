@@ -142,27 +142,67 @@ function suggestionItemSignature(item: SuggestionItem): string {
   });
 }
 
-function formatPayload(payload: Record<string, unknown>, timezone?: string): string {
-  return Object.entries(payload)
-    .filter(
-      ([key, value]) =>
-        value !== null &&
-        value !== undefined &&
-        value !== '' &&
-        key !== 'canonicalName' &&
-        key !== 'title' &&
-        key !== 'metadata' &&
-        key !== 'localRef' &&
-        key !== 'fromRef' &&
-        key !== 'toRef' &&
-        key !== 'fromName' &&
-        key !== 'toName' &&
-        !key.toLowerCase().endsWith('id') &&
-        !key.toLowerCase().endsWith('ids'),
-    )
-    .slice(0, 4)
-    .map(([key, value]) => `${payloadFieldLabel(key)} ${formatPayloadValue(key, value, timezone)}`)
-    .join(' · ');
+interface FormattedPayloadField {
+  key: string;
+  label: string;
+  value: string;
+}
+
+const MAX_INLINE_PAYLOAD_FIELDS = 4;
+const MAX_INLINE_PAYLOAD_VALUE_LENGTH = 120;
+const LOCAL_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const UTC_DATE_ONLY_INSTANT_RE = /^\d{4}-\d{2}-\d{2}T00:00:00(?:\.0{1,9})?Z$/;
+const TOKEN_PAYLOAD_FIELDS = new Set([
+  'field',
+  'kind',
+  'proposalRole',
+  'proposalStatus',
+  'recurrenceEditMode',
+  'showAs',
+  'stage',
+  'type',
+  'visibility',
+]);
+
+function formatPayloadFields(
+  payload: Record<string, unknown>,
+  timezone?: string,
+): FormattedPayloadField[] {
+  const fields: FormattedPayloadField[] = [];
+  for (const [key, value] of Object.entries(payload)) {
+    const normalizedKey = key.toLowerCase();
+    if (
+      value === null ||
+      value === undefined ||
+      value === '' ||
+      key === 'canonicalName' ||
+      key === 'title' ||
+      key === 'metadata' ||
+      key === 'localRef' ||
+      key === 'fromRef' ||
+      key === 'toRef' ||
+      key === 'fromName' ||
+      key === 'toName' ||
+      normalizedKey.endsWith('id') ||
+      normalizedKey.endsWith('ids')
+    ) {
+      continue;
+    }
+    fields.push({
+      key,
+      label: payloadFieldLabel(key),
+      value: formatPayloadValue(key, value, timezone),
+    });
+  }
+  return fields;
+}
+
+function payloadFieldText(field: FormattedPayloadField, compact = false): string {
+  const value =
+    compact && field.value.length > MAX_INLINE_PAYLOAD_VALUE_LENGTH
+      ? `${field.value.slice(0, MAX_INLINE_PAYLOAD_VALUE_LENGTH - 1).trimEnd()}…`
+      : field.value;
+  return `${field.label} ${value}`;
 }
 
 function payloadFieldLabel(key: string): string {
@@ -219,7 +259,8 @@ function itemStatusLabel(status: string): string {
 
 function formatPayloadValue(key: string, value: unknown, timezone?: string): string {
   if (key === 'dueAt' && typeof value === 'string') {
-    return formatDisplayDate(value, { timezone });
+    const dateOnly = LOCAL_DATE_RE.test(value) || UTC_DATE_ONLY_INSTANT_RE.test(value);
+    return formatDisplayDate(value, { timezone: dateOnly ? 'UTC' : timezone });
   }
   if (key === 'status' && typeof value === 'string') {
     const labels: Record<string, string> = {
@@ -233,11 +274,22 @@ function formatPayloadValue(key: string, value: unknown, timezone?: string): str
     };
     return labels[value] ?? humanizeToken(value);
   }
-  if (typeof value === 'string') return displayText(humanizeToken(value));
+  if (TOKEN_PAYLOAD_FIELDS.has(key) && typeof value === 'string') return humanizeToken(value);
+  if (typeof value === 'string') return value;
   if (typeof value === 'number' || typeof value === 'boolean') return String(value);
   if (value instanceof Date) return value.toISOString();
-  if (Array.isArray(value)) return value.map((entry) => humanizeToken(String(entry))).join(', ');
-  return displayText(JSON.stringify(value));
+  if (Array.isArray(value)) {
+    return value
+      .map((entry) =>
+        typeof entry === 'string' || typeof entry === 'number' || typeof entry === 'boolean'
+          ? String(entry)
+          : entry === undefined
+            ? 'undefined'
+            : JSON.stringify(entry),
+      )
+      .join(', ');
+  }
+  return JSON.stringify(value);
 }
 
 function payloadString(payload: Record<string, unknown>, key: string): string | null {
@@ -990,21 +1042,70 @@ function ApprovalItemPayload({
   if (item.targetKind === 'calendar_event') {
     return <CalendarApprovalPayload item={item} timezone={timezone} />;
   }
-  const summary =
-    relationshipPayloadSummary(item, bundle) ?? formatPayload(item.proposedPayload, timezone);
+  const relationshipSummary = relationshipPayloadSummary(item, bundle);
+  const fields = relationshipSummary ? [] : formatPayloadFields(item.proposedPayload, timezone);
   return (
     <div className="min-w-0 self-center">
       <div className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
         {itemActionLabel(item)}
       </div>
-      {summary ? (
-        <p className="mt-1 truncate font-mono text-[11px] text-fg-dim">{summary}</p>
-      ) : null}
+      {relationshipSummary ? (
+        <p className="mt-1 line-clamp-2 break-words font-mono text-[11px] text-fg-dim">
+          {relationshipSummary}
+        </p>
+      ) : (
+        <ApprovalPayloadSummary fields={fields} />
+      )}
       {item.failureReason ? (
         <p className="mt-1 text-xs text-danger">{displayText(item.failureReason)}</p>
       ) : null}
       <ApprovalItemDependency item={item} bundle={bundle} />
     </div>
+  );
+}
+
+function ApprovalPayloadSummary({ fields }: { fields: FormattedPayloadField[] }) {
+  const visibleFields = fields.slice(0, MAX_INLINE_PAYLOAD_FIELDS);
+  const overflowFields = fields.slice(MAX_INLINE_PAYLOAD_FIELDS);
+  const expandedFields = [
+    ...visibleFields.filter((field) => field.value.length > MAX_INLINE_PAYLOAD_VALUE_LENGTH),
+    ...overflowFields,
+  ];
+  const summary = visibleFields.map((field) => payloadFieldText(field, true)).join(' · ');
+  return (
+    <>
+      {summary ? (
+        <p className="mt-1 line-clamp-2 break-words font-mono text-[11px] text-fg-dim">{summary}</p>
+      ) : null}
+      <ApprovalPayloadDisclosure fields={expandedFields} overflowCount={overflowFields.length} />
+    </>
+  );
+}
+
+function ApprovalPayloadDisclosure({
+  fields,
+  overflowCount,
+}: {
+  fields: FormattedPayloadField[];
+  overflowCount: number;
+}) {
+  if (fields.length === 0) return null;
+  return (
+    <details className="mt-2 text-xs text-fg-dim">
+      <summary className="cursor-pointer hover:text-fg">
+        {overflowCount > 0
+          ? `Show ${overflowCount} more ${overflowCount === 1 ? 'change' : 'changes'}`
+          : 'Show full change'}
+      </summary>
+      <dl className="mt-2 grid gap-2 border-l border-border pl-2">
+        {fields.map((field) => (
+          <div key={field.key}>
+            <dt className="font-mono text-[10px] uppercase tracking-[0.1em]">{field.label}</dt>
+            <dd className="mt-0.5 whitespace-pre-wrap break-words text-fg-muted">{field.value}</dd>
+          </div>
+        ))}
+      </dl>
+    </details>
   );
 }
 
@@ -1109,10 +1210,8 @@ function CalendarResolutionLine({
   if (hint?.kind === 'missing_target') {
     return <p>The target event is no longer available.</p>;
   }
-  const summary = proposedRange
-    ? `Scheduled for ${proposedRange}.`
-    : formatPayload(item.proposedPayload, timezone);
-  return summary ? <p>{summary}</p> : null;
+  if (proposedRange) return <p>Scheduled for {proposedRange}.</p>;
+  return <ApprovalPayloadSummary fields={formatPayloadFields(item.proposedPayload, timezone)} />;
 }
 
 function ApprovalItemActions({

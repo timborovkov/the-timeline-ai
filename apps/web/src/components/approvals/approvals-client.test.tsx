@@ -53,6 +53,7 @@ describe('ApprovalsClient', () => {
   it('renders actionable pending suggestions with evidence and accept controls', () => {
     const html = renderToStaticMarkup(
       createElement(ApprovalsClient, {
+        timezone: 'America/Los_Angeles',
         suggestions: [
           {
             id: 'bundle-1',
@@ -121,6 +122,7 @@ describe('ApprovalsClient', () => {
     expect(html).toContain('Evidence from Slack');
     expect(html).toContain('create task');
     expect(html).toContain('Due Jul 19, 2026 · Status To do');
+    expect(html).not.toContain('Due Jul 18, 2026');
     expect(html).toContain('Why this was suggested · 1 source');
     expect(html).toContain('Technical details');
     expect(html).toContain('Open processing record');
@@ -131,6 +133,74 @@ describe('ApprovalsClient', () => {
     expect(html).toContain(
       'href="/app/team/reconciliation/clusters/22222222-2222-4222-8222-222222222222"',
     );
+  });
+
+  it('preserves literal payload values and exposes every meaningful proposed change', () => {
+    const html = renderToStaticMarkup(
+      createElement(ApprovalsClient, {
+        timezone: 'America/Los_Angeles',
+        suggestions: [
+          {
+            id: 'bundle-literal-values',
+            source: 'chat',
+            status: 'pending',
+            title: 'Remember customer details',
+            summary: null,
+            reason: null,
+            confidence: 'medium',
+            createdAt: '2026-06-01T10:00:00.000Z',
+            evidence: [],
+            items: [
+              {
+                id: 'item-identity',
+                status: 'pending',
+                operation: 'create',
+                targetKind: 'identity_facet',
+                targetId: null,
+                title: 'Add GitHub identity',
+                description: null,
+                proposedPayload: {
+                  entityId: '33333333-3333-4333-8333-333333333333',
+                  kind: 'github',
+                  value: 'john-doe_work@example.com',
+                },
+                failureReason: null,
+              },
+              {
+                id: 'item-object',
+                status: 'pending',
+                operation: 'create',
+                targetKind: 'object',
+                targetId: null,
+                title: 'Acme renewal',
+                description: null,
+                proposedPayload: {
+                  type: 'project',
+                  canonicalName: 'Acme renewal',
+                  aliases: ['ACME-v2'],
+                  status: 'active',
+                  stage: 'contract_review',
+                  priority: 1,
+                  ownerName: 'Jane-Doe',
+                  assigneeName: 'Sam_Taylor',
+                  dueAt: '2026-07-19T00:00:00.000Z',
+                },
+                failureReason: null,
+              },
+            ],
+          },
+        ],
+      }),
+    );
+
+    expect(html).toContain('john-doe_work@example.com');
+    expect(html).not.toContain('John doe work@example.com');
+    expect(html).toContain('Also known as ACME-v2');
+    expect(html).toContain('Show 4 more changes');
+    expect(html).toContain('>Priority</dt>');
+    expect(html).toContain('>Jane-Doe</dd>');
+    expect(html).toContain('>Sam_Taylor</dd>');
+    expect(html).toContain('>Jul 19, 2026</dd>');
   });
 
   it('renders missing-person relationship bundles with readable endpoints', () => {
