@@ -4,6 +4,7 @@ import { ExternalLink } from 'lucide-react';
 
 import { EvidenceLink } from '@/components/evidence-link';
 import { displayText, formatDisplayDateTime } from '@/lib/display-dates';
+import { formatTaskCategoryChangeValue } from '@/lib/object-change-format';
 import { useObjectSectionQuery } from '@/lib/use-paginated-queries';
 
 interface Props {
@@ -154,6 +155,7 @@ function changeFieldLabel(field: string): string {
     canonicalName: 'Name',
     aliases: 'Aliases',
     dueAt: 'Due date',
+    taskCategory: 'Category',
     ownerUserId: 'Owner',
     assigneeUserId: 'Assignee',
   };
@@ -161,6 +163,8 @@ function changeFieldLabel(field: string): string {
 }
 
 function formatChangeValue(field: string, value: unknown): string {
+  const category = formatTaskCategoryChangeValue(field, value);
+  if (category !== null) return category;
   if (value === null || value === undefined || value === '') return 'empty';
   if (field === 'dueAt') {
     const date = value instanceof Date ? value : typeof value === 'string' ? new Date(value) : null;

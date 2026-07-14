@@ -290,6 +290,26 @@ describe('TaskBoard', () => {
     });
   });
 
+  it('retries project hydration after a transient action failure', async () => {
+    fakes.loadTaskPrimaryProjectsAction
+      .mockResolvedValueOnce({ error: 'Temporary project lookup failure' })
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            taskId: 'task-1',
+            projectId: 'project-1',
+            projectName: 'Recovered project',
+            archivedAt: null,
+          },
+        ],
+      });
+
+    renderBoard();
+
+    expect(await screen.findByText('Recovered project')).toBeTruthy();
+    expect(fakes.loadTaskPrimaryProjectsAction).toHaveBeenCalledTimes(2);
+  });
+
   it('finds and assigns a remote project from the task project selector', async () => {
     fakes.searchObjectsAction.mockResolvedValue({
       results: [

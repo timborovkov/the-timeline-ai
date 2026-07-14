@@ -143,6 +143,50 @@ describe('ObjectDetailClient', () => {
     expect(html).toContain('Archive object');
   });
 
+  it('renders task category snapshots as readable recent changes', () => {
+    const html = renderObjectDetail({
+      detail: {
+        ...detail,
+        recentChanges: [
+          {
+            id: 'category-change-1',
+            field: 'taskCategory',
+            previousValue: {
+              category: 'design',
+              mode: 'automatic',
+              source: 'llm',
+              status: 'ready',
+              appliedInputHash: 'old-hash',
+              requestedInputHash: null,
+              taxonomyVersion: 'task-categories-v1',
+            },
+            newValue: {
+              category: 'engineering',
+              mode: 'manual',
+              source: 'user',
+              status: 'ready',
+              appliedInputHash: null,
+              requestedInputHash: null,
+              taxonomyVersion: 'task-categories-v1',
+            },
+            actorKind: 'user',
+            actorUserId: 'user-1',
+            status: 'applied',
+            note: null,
+            changedAt: new Date('2026-07-14T09:00:00.000Z'),
+          },
+        ],
+      },
+      userId: 'user-1',
+      suggestions: [],
+    });
+
+    expect(html).toContain('Category');
+    expect(html).toContain('Design');
+    expect(html).toContain('Engineering');
+    expect(html).not.toContain('updated details');
+  });
+
   it('does not render the task category field while the category UI is disabled', () => {
     render(
       objectDetailElement({

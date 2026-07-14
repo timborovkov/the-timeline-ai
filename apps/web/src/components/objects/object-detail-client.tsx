@@ -45,6 +45,7 @@ import { TaskCategoryBadge } from '@/components/tasks/task-category-badge';
 import { TaskCategorySelect } from '@/components/tasks/task-category-select';
 import { TaskProjectSelect } from '@/components/tasks/task-project-select';
 import { displayText, formatDisplayDateTime } from '@/lib/display-dates';
+import { formatTaskCategoryChangeValue } from '@/lib/object-change-format';
 import { displayObjectTitle } from '@/lib/object-title';
 import { readJson } from '@/lib/paginated-api';
 import { queryKeys } from '@/lib/query-keys';
@@ -2249,7 +2250,8 @@ function ObjectRecentChangeItem({
         </span>
       </div>
       <div className="mt-1 break-words text-xs text-muted-foreground">
-        {formatValue(change.previousValue)} → {formatValue(change.newValue)}
+        {formatValue(change.previousValue, change.field)} →{' '}
+        {formatValue(change.newValue, change.field)}
       </div>
       <div className="mt-1 flex items-center justify-between text-[11px] text-muted-foreground">
         <span>{formatDisplayDateTime(change.changedAt)}</span>
@@ -2342,7 +2344,9 @@ function toLocalInput(d: Date): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-function formatValue(v: unknown): string {
+function formatValue(v: unknown, field = ''): string {
+  const category = formatTaskCategoryChangeValue(field, v);
+  if (category !== null) return category;
   if (v === null || v === undefined) return '∅';
   if (typeof v === 'string') return displayText(v);
   if (Array.isArray(v)) return v.map((item) => formatValue(item)).join(', ');
@@ -2359,6 +2363,7 @@ function changeFieldLabel(field: string): string {
     canonicalName: 'Name',
     aliases: 'Aliases',
     dueAt: 'Due date',
+    taskCategory: 'Category',
     ownerUserId: 'Owner',
     assigneeUserId: 'Assignee',
   };

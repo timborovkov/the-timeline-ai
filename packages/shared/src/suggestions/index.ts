@@ -27,6 +27,7 @@ import {
   inArray,
   isNotNull,
   isNull,
+  lt,
   or,
   sql,
   type SQLWrapper,
@@ -100,6 +101,7 @@ const ENTITY_CANONICAL_NAME_UNIQUE_CONSTRAINT = 'entities_team_type_canonical_na
 const RECONCILIATION_APPROVAL_PROJECTION_VERSION = 'approval-projection-2026-06';
 const RECONCILIATION_APPROVAL_POLICY_VERSION = 'timeline-owned-approval-2026-06';
 const RECONCILIATION_APPROVAL_PLANNER_VERSION = 'legacy-suggestion-projection-2026-06';
+const INTERRUPTED_TASK_PROJECT_ACCEPTANCE_MIN_AGE_MS = 5 * 60 * 1000;
 const REPAIRABLE_PROJECTION_OUTPUT_STATUSES = ['pending', 'approval_created', 'failed'] as const;
 const PROJECTABLE_OUTPUT_OPERATIONS: readonly Operation[] = [
   'create',
@@ -2331,6 +2333,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
 
   async function loadBundle(id: string): Promise<SuggestionBundle | null> {
     await ensureMember();
+    await recoverInterruptedTaskProjectAcceptances();
     const rows = await db
       .select()
       .from(agentSuggestions)
@@ -2391,8 +2394,12 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     );
   }
 
-  async function refreshBundleStatus(suggestionId: string, resolvedByUserId?: string) {
-    const items = await db
+  async function refreshBundleStatus(
+    suggestionId: string,
+    resolvedByUserId?: string,
+    client: DbOrTx = db,
+  ) {
+    const items = await client
       .select({ status: agentSuggestionItems.status })
       .from(agentSuggestionItems)
       .where(eq(agentSuggestionItems.suggestionId, suggestionId));
@@ -2412,16 +2419,54 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
             : rejected > 0 && accepted === 0 && superseded === 0
               ? 'rejected'
               : 'partially_resolved';
-    await db
+    await client
       .update(agentSuggestions)
       .set({
         status,
         updatedAt: new Date(),
         ...(actionable === 0
           ? { resolvedAt: new Date(), resolvedByUserId: resolvedByUserId ?? null }
-          : {}),
+          : { resolvedAt: null, resolvedByUserId: null }),
       })
       .where(eq(agentSuggestions.id, suggestionId));
+  }
+
+  async function recoverInterruptedTaskProjectAcceptances(): Promise<void> {
+    const cutoff = new Date(Date.now() - INTERRUPTED_TASK_PROJECT_ACCEPTANCE_MIN_AGE_MS);
+    await db.transaction(async (tx) => {
+      const recoveredItems = await tx
+        .update(agentSuggestionItems)
+        .set({
+          status: 'failed',
+          failureReason:
+            'Acceptance was interrupted before the task and project were finalized. Retry to finish it.',
+          resolvedAt: null,
+          resolvedByUserId: null,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(agentSuggestionItems.teamId, teamId),
+            eq(agentSuggestionItems.status, 'accepted'),
+            eq(agentSuggestionItems.targetKind, 'task'),
+            eq(agentSuggestionItems.operation, 'create'),
+            isNull(agentSuggestionItems.resultId),
+            lt(agentSuggestionItems.updatedAt, cutoff),
+            sql`nullif(btrim(${agentSuggestionItems.proposedPayload} ->> 'createProjectName'), '') is not null`,
+          ),
+        )
+        .returning();
+      if (recoveredItems.length === 0) return;
+
+      for (const item of recoveredItems) {
+        await writeProjectedOutputStatusForItem(tx, item, 'failed', {
+          projection_failure_reason: item.failureReason,
+        });
+      }
+      for (const suggestionId of new Set(recoveredItems.map((item) => item.suggestionId))) {
+        await refreshBundleStatus(suggestionId, undefined, tx);
+      }
+    });
   }
 
   async function supersedeItem(
@@ -4349,6 +4394,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
 
   async function acceptSuggestionItem(itemId: string): Promise<boolean> {
     await ensureMember();
+    await recoverInterruptedTaskProjectAcceptances();
     const rows = await db
       .select({ item: agentSuggestionItems, suggestion: agentSuggestions })
       .from(agentSuggestionItems)
@@ -4609,6 +4655,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     opts: { status?: SuggestionListStatus; limit?: number } = {},
   ): Promise<SuggestionBundle[]> {
     await ensureMember();
+    await recoverInterruptedTaskProjectAcceptances();
     const status = opts.status ?? 'pending';
     const conditions = [suggestionVisibilityPredicate(teamId, userId)];
     if (status === 'pending') {
@@ -5807,6 +5854,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
 
     async countPendingSuggestions(): Promise<number> {
       await ensureMember();
+      await recoverInterruptedTaskProjectAcceptances();
       const rows = await db
         .select({ total: count() })
         .from(agentSuggestions)
@@ -5832,6 +5880,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
 
     async rejectSuggestionItem(itemId: string): Promise<boolean> {
       await ensureMember();
+      await recoverInterruptedTaskProjectAcceptances();
       const rows = await db
         .select({ item: agentSuggestionItems, suggestion: agentSuggestions })
         .from(agentSuggestionItems)
@@ -5868,6 +5917,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         return updated;
       });
       if (!rejected) return false;
+      await archiveOrphanedSuggestedProjects(row.item);
       await supersedeRelationshipDependents(row.item);
       await refreshBundleStatus(row.suggestion.id, userId);
       await reconcileStaleActionableItemsBestEffort({

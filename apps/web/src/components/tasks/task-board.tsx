@@ -507,6 +507,12 @@ function useTaskBoardController({
   >({});
   const projectHydrationCheckedRef = useRef<Set<string> | null>(null);
   projectHydrationCheckedRef.current ??= new Set();
+  const projectHydrationRetriedRef = useRef<Set<string> | null>(null);
+  projectHydrationRetriedRef.current ??= new Set();
+  const [projectHydrationRevision, retryProjectHydration] = useReducer(
+    (revision: number) => revision + 1,
+    0,
+  );
   const hydratedPrimaryProjects = useMemo(() => {
     const byTask = new Map(
       loadedPrimaryProjects.map((project) => [project.taskId, project] as const),
@@ -519,6 +525,8 @@ function useTaskBoardController({
     return [...byTask.values()];
   }, [loadedPrimaryProjects, primaryProjectOverrides, primaryProjects]);
   const missingProjectTaskIds = useMemo(() => {
+    // The checked ids live in a ref, so this revision explicitly invalidates the memo for a retry.
+    void projectHydrationRevision;
     const hydratedIds = new Set(hydratedPrimaryProjects.map((project) => project.taskId));
     const missing: string[] = [];
     for (const row of effectiveRows) {
@@ -528,26 +536,36 @@ function useTaskBoardController({
       }
     }
     return missing;
-  }, [effectiveRows, hydratedPrimaryProjects]);
+  }, [effectiveRows, hydratedPrimaryProjects, projectHydrationRevision]);
   useEffect(() => {
     if (missingProjectTaskIds.length === 0) return;
     const checked = projectHydrationCheckedRef.current;
-    if (!checked) return;
+    const retried = projectHydrationRetriedRef.current;
+    if (!checked || !retried) return;
     for (const taskId of missingProjectTaskIds) checked.add(taskId);
-    let cancelled = false;
+    const retryFailedIds = () => {
+      let shouldRetry = false;
+      for (const taskId of missingProjectTaskIds) {
+        if (retried.has(taskId)) continue;
+        retried.add(taskId);
+        checked.delete(taskId);
+        shouldRetry = true;
+      }
+      if (shouldRetry) retryProjectHydration();
+    };
     void loadTaskPrimaryProjectsAction({ ids: missingProjectTaskIds })
       .then((result) => {
-        if (cancelled || !result.rows) return;
+        if (!result.rows) {
+          retryFailedIds();
+          return;
+        }
         setLoadedPrimaryProjects((current) => {
           const byTask = new Map(current.map((project) => [project.taskId, project] as const));
           for (const project of result.rows ?? []) byTask.set(project.taskId, project);
           return [...byTask.values()];
         });
       })
-      .catch(() => undefined);
-    return () => {
-      cancelled = true;
-    };
+      .catch(retryFailedIds);
   }, [missingProjectTaskIds]);
   const updatePrimaryProject = useCallback(
     (taskId: string, project: { id: string; label: string } | null) => {
