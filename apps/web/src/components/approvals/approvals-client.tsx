@@ -167,16 +167,20 @@ const TOKEN_PAYLOAD_FIELDS = new Set([
 function formatPayloadFields(
   payload: Record<string, unknown>,
   timezone?: string,
+  itemTitle?: string,
 ): FormattedPayloadField[] {
   const fields: FormattedPayloadField[] = [];
   for (const [key, value] of Object.entries(payload)) {
     const normalizedKey = key.toLowerCase();
+    const duplicatesItemTitle =
+      (key === 'canonicalName' || key === 'title') &&
+      typeof value === 'string' &&
+      value.trim() === itemTitle?.trim();
     if (
       value === null ||
       value === undefined ||
       value === '' ||
-      key === 'canonicalName' ||
-      key === 'title' ||
+      duplicatesItemTitle ||
       key === 'metadata' ||
       key === 'localRef' ||
       key === 'fromRef' ||
@@ -210,6 +214,7 @@ function payloadFieldLabel(key: string): string {
     aliases: 'Also known as',
     allDay: 'All day',
     assigneeName: 'Assignee',
+    canonicalName: 'Name',
     description: 'Details',
     dueAt: 'Due',
     location: 'Location',
@@ -218,6 +223,7 @@ function payloadFieldLabel(key: string): string {
     stage: 'Stage',
     status: 'Status',
     timezone: 'Time zone',
+    title: 'Title',
     type: 'Type',
   };
   return labels[key] ?? humanizeToken(key);
@@ -1043,7 +1049,9 @@ function ApprovalItemPayload({
     return <CalendarApprovalPayload item={item} timezone={timezone} />;
   }
   const relationshipSummary = relationshipPayloadSummary(item, bundle);
-  const fields = relationshipSummary ? [] : formatPayloadFields(item.proposedPayload, timezone);
+  const fields = relationshipSummary
+    ? []
+    : formatPayloadFields(item.proposedPayload, timezone, item.title);
   return (
     <div className="min-w-0 self-center">
       <div className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
@@ -1211,7 +1219,11 @@ function CalendarResolutionLine({
     return <p>The target event is no longer available.</p>;
   }
   if (proposedRange) return <p>Scheduled for {proposedRange}.</p>;
-  return <ApprovalPayloadSummary fields={formatPayloadFields(item.proposedPayload, timezone)} />;
+  return (
+    <ApprovalPayloadSummary
+      fields={formatPayloadFields(item.proposedPayload, timezone, item.title)}
+    />
+  );
 }
 
 function ApprovalItemActions({

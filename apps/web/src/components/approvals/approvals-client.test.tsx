@@ -196,11 +196,47 @@ describe('ApprovalsClient', () => {
     expect(html).toContain('john-doe_work@example.com');
     expect(html).not.toContain('John doe work@example.com');
     expect(html).toContain('Also known as ACME-v2');
+    expect(html).not.toContain('Name Acme renewal');
     expect(html).toContain('Show 4 more changes');
     expect(html).toContain('>Priority</dt>');
     expect(html).toContain('>Jane-Doe</dd>');
     expect(html).toContain('>Sam_Taylor</dd>');
     expect(html).toContain('>Jul 19, 2026</dd>');
+  });
+
+  it('shows a proposed object rename when the item title is generic', () => {
+    const html = renderToStaticMarkup(
+      createElement(ApprovalsClient, {
+        suggestions: [
+          {
+            id: 'bundle-rename',
+            source: 'chat',
+            status: 'pending',
+            title: 'Update customer memory',
+            summary: null,
+            reason: null,
+            confidence: 'medium',
+            createdAt: '2026-06-01T10:00:00.000Z',
+            evidence: [],
+            items: [
+              {
+                id: 'item-rename',
+                status: 'pending',
+                operation: 'update',
+                targetKind: 'object',
+                targetId: '44444444-4444-4444-8444-444444444444',
+                title: 'Update object memory',
+                description: null,
+                proposedPayload: { canonicalName: 'Acme Renewal 2027' },
+                failureReason: null,
+              },
+            ],
+          },
+        ],
+      }),
+    );
+
+    expect(html).toContain('Name Acme Renewal 2027');
   });
 
   it('renders missing-person relationship bundles with readable endpoints', () => {
