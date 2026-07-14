@@ -302,6 +302,9 @@ function suggestionApplyFailureReason(err: unknown): string {
     if (missingPaths.has('canonicalName')) {
       return 'Workspace memory proposal is missing a name. Reject it or revise the source details before accepting.';
     }
+    if (err.issues.some((issue) => issue.path.join('.') === 'dueAt')) {
+      return 'This proposal has an invalid due date. Reject it or update the source details, then regenerate it.';
+    }
     const issueText = err.issues
       .map((issue) => {
         const path = issue.path.length > 0 ? issue.path.join('.') : 'payload';
@@ -941,6 +944,16 @@ function normalizeLifecyclePriority(value: unknown): unknown {
   return numeric ? Number(numeric[1]) : value;
 }
 
+function normalizeLifecycleDueAt(value: unknown): unknown {
+  if (typeof value !== 'string') return value;
+  const normalized = value.trim();
+  if (!LOCAL_DATE_RE.test(normalized)) return value;
+  const instant = new Date(`${normalized}T00:00:00.000Z`);
+  return !Number.isNaN(instant.getTime()) && instant.toISOString().slice(0, 10) === normalized
+    ? instant.toISOString()
+    : value;
+}
+
 function normalizeLifecyclePayload(
   item: Pick<
     typeof agentSuggestionItems.$inferSelect,
@@ -973,6 +986,9 @@ function normalizeLifecyclePayload(
   }
   if (lifecycleType && Object.hasOwn(payload, 'priority')) {
     payload.priority = normalizeLifecyclePriority(payload.priority);
+  }
+  if (lifecycleType && Object.hasOwn(payload, 'dueAt')) {
+    payload.dueAt = normalizeLifecycleDueAt(payload.dueAt);
   }
   if (
     item.targetKind === 'object_relationship' &&

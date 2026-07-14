@@ -84,7 +84,11 @@ describe('ApprovalsClient', () => {
                 targetId: null,
                 title: 'Send proposal',
                 description: 'Send Acme the proposal.',
-                proposedPayload: { canonicalName: 'Send proposal' },
+                proposedPayload: {
+                  canonicalName: 'Send proposal',
+                  dueAt: '2026-07-19T00:00:00.000Z',
+                  status: 'todo',
+                },
                 metadata: {
                   reconciliation_output_id: '99999999-9999-4999-8999-999999999999',
                   reconciliation_cluster_id: '22222222-2222-4222-8222-222222222222',
@@ -114,14 +118,16 @@ describe('ApprovalsClient', () => {
     expect(html).toContain('Send proposal');
     expect(html).toContain('Calendar conflict');
     expect(html).toContain('I will send the proposal');
-    expect(html).toContain('Timeline evidence · slack · 11111111');
+    expect(html).toContain('Evidence from Slack');
     expect(html).toContain('create task');
-    expect(html).toContain('Accept will create a task.');
-    expect(html).toContain(
-      'Review required before Timeline writes workspace memory from captured evidence.',
-    );
-    expect(html).toContain('Reconciliation output 99999999');
-    expect(html).toContain('Cluster 22222222');
+    expect(html).toContain('Due Jul 19, 2026 · Status To do');
+    expect(html).toContain('Why this was suggested · 1 source');
+    expect(html).toContain('Technical details');
+    expect(html).toContain('Open processing record');
+    expect(html).not.toContain('Reconciliation output');
+    expect(html).not.toContain('outputs 99999999');
+    expect(html).not.toContain('Cluster 22222222');
+    expect(html).not.toContain('Proposal · pending');
     expect(html).toContain(
       'href="/app/team/reconciliation/clusters/22222222-2222-4222-8222-222222222222"',
     );
@@ -247,8 +253,8 @@ describe('ApprovalsClient', () => {
       }),
     );
 
-    await userEvent.click(screen.getByText('Evidence · 1'));
-    await userEvent.click(screen.getByRole('button', { name: /Timeline evidence · slack/ }));
+    await userEvent.click(screen.getByText('Why this was suggested · 1 source'));
+    await userEvent.click(screen.getByRole('button', { name: /Evidence from Slack/ }));
 
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalled();
@@ -811,7 +817,7 @@ describe('ApprovalsClient', () => {
       expect(screen.queryByText('Send renewal packet')).toBeNull();
       expect(screen.getByText('Book renewal call')).toBeTruthy();
       expect(screen.getByText('1 item(s) failed to apply')).toBeTruthy();
-      expect(screen.getByText('Action failed. Review and try again.')).toBeTruthy();
+      expect(screen.getByText(/Calendar proposal is missing a start or end time/)).toBeTruthy();
       expect(
         screen.getByText(
           'Calendar proposal is missing a start or end time. Reject it or revise the source details before accepting.',
@@ -880,7 +886,7 @@ describe('ApprovalsClient', () => {
       expect(screen.queryByText('Send renewal packet')).toBeNull();
       expect(screen.getByText('Book renewal call')).toBeTruthy();
       expect(screen.getByText('1 item(s) failed to apply')).toBeTruthy();
-      expect(screen.getByText('Action failed. Review and try again.')).toBeTruthy();
+      expect(screen.getByText(/Calendar proposal is missing a start or end time/)).toBeTruthy();
     });
     expect(fakes.refresh).not.toHaveBeenCalled();
   });
@@ -1452,7 +1458,7 @@ describe('ApprovalsClient', () => {
     await waitFor(() => {
       expect(getByText('Customer follow-up')).toBeTruthy();
       expect(getByText('Calendar write failed')).toBeTruthy();
-      expect(getByText('Action failed. Review and try again.')).toBeTruthy();
+      expect(getByText(/Calendar proposal is missing a start or end time/)).toBeTruthy();
     });
   });
 

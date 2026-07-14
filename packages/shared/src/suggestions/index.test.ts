@@ -6561,6 +6561,74 @@ describe('suggestion scope', () => {
     });
   });
 
+  it('accepts date-only due dates from task proposals', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Create branding proposal task',
+      dedupeKey: 'task-create-date-only-due-date',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Create branding and name proposal',
+          dedupeKey: 'task-create-date-only-due-date:item',
+          proposedPayload: {
+            canonicalName: 'Create branding and name proposal',
+            status: 'todo',
+            dueAt: '2026-07-19',
+          },
+        },
+      ],
+    });
+
+    expect(bundle.items[0]?.proposedPayload.dueAt).toBe('2026-07-19T00:00:00.000Z');
+
+    const itemId = bundle.items[0]?.id ?? '';
+    await db
+      .update(agentSuggestionItems)
+      .set({
+        proposedPayload: {
+          canonicalName: 'Create branding and name proposal',
+          status: 'todo',
+          dueAt: '2026-07-19',
+        },
+      })
+      .where(eq(agentSuggestionItems.id, itemId));
+
+    await expect(scope.suggestions.acceptSuggestionItem(itemId)).resolves.toBe(true);
+
+    const result = await pg.query<{ due_at: Date | null }>(
+      `SELECT due_at FROM entities WHERE canonical_name = 'Create branding and name proposal'`,
+    );
+    expect(result.rows[0]?.due_at?.toISOString()).toBe('2026-07-19T00:00:00.000Z');
+  });
+
+  it('returns a user-facing error for malformed task due dates', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Create task with malformed due date',
+      dedupeKey: 'task-create-malformed-due-date',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Create malformed task',
+          dedupeKey: 'task-create-malformed-due-date:item',
+          proposedPayload: {
+            canonicalName: 'Create malformed task',
+            dueAt: 'next Sunday',
+          },
+        },
+      ],
+    });
+
+    await expect(scope.suggestions.acceptSuggestionItem(bundle.items[0]?.id ?? '')).rejects.toThrow(
+      'This proposal has an invalid due date. Reject it or update the source details, then regenerate it.',
+    );
+  });
+
   it('treats blank optional object create fields as absent values', async () => {
     const scope = withTeam(db as never, TEAM_ID, USER_ID);
     const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
