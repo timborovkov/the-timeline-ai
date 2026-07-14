@@ -290,6 +290,27 @@ describe('TaskBoard', () => {
     });
   });
 
+  it('does not refetch initial tasks whose no-project state was hydrated by the server', async () => {
+    render(
+      <TaskBoard
+        rows={[task()]}
+        columns={['todo', 'doing', 'done', 'blocked', 'cancelled']}
+        selectedTaskId={null}
+        view="kanban"
+        members={[]}
+        primaryProjects={[]}
+        initialProjectsHydrated
+        totalCount={1}
+        nextCursor={null}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Send proposal')).toBeTruthy();
+    });
+    expect(fakes.loadTaskPrimaryProjectsAction).not.toHaveBeenCalled();
+  });
+
   it('retries project hydration after a transient action failure', async () => {
     fakes.loadTaskPrimaryProjectsAction
       .mockResolvedValueOnce({ error: 'Temporary project lookup failure' })

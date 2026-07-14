@@ -69,6 +69,7 @@ interface Props {
   members: TaskMemberOption[];
   projects?: TaskMemberOption[];
   primaryProjects?: objects.TaskPrimaryProjectRow[];
+  initialProjectsHydrated?: boolean;
   totalCount: number;
   nextCursor: string | null;
   filterParams?: Record<string, string>;
@@ -451,6 +452,7 @@ function useTaskBoardController({
   nextCursor,
   filterParams = EMPTY_FILTER_PARAMS,
   primaryProjects = EMPTY_PRIMARY_PROJECTS,
+  initialProjectsHydrated = false,
 }: Props) {
   const dndContextId = useId();
   const router = useRouter();
@@ -507,6 +509,9 @@ function useTaskBoardController({
   >({});
   const projectHydrationCheckedRef = useRef<Set<string> | null>(null);
   projectHydrationCheckedRef.current ??= new Set();
+  if (initialProjectsHydrated) {
+    for (const row of rows) projectHydrationCheckedRef.current.add(row.id);
+  }
   const projectHydrationRetriedRef = useRef<Set<string> | null>(null);
   projectHydrationRetriedRef.current ??= new Set();
   const [projectHydrationRevision, retryProjectHydration] = useReducer(

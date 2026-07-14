@@ -205,6 +205,7 @@ export default async function TasksPage({
             members={memberOptions}
             projects={projects.map((project) => ({ id: project.id, label: project.canonicalName }))}
             primaryProjects={primaryProjects}
+            initialProjectsHydrated
             totalCount={counts.total}
             nextCursor={taskPage.nextCursor}
             filterParams={taskLoadFilterParams}

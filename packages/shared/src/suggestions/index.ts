@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+
 import {
   agentSuggestionEvidence,
   agentSuggestionItems,
@@ -102,6 +104,9 @@ const RECONCILIATION_APPROVAL_PROJECTION_VERSION = 'approval-projection-2026-06'
 const RECONCILIATION_APPROVAL_POLICY_VERSION = 'timeline-owned-approval-2026-06';
 const RECONCILIATION_APPROVAL_PLANNER_VERSION = 'legacy-suggestion-projection-2026-06';
 const INTERRUPTED_TASK_PROJECT_ACCEPTANCE_MIN_AGE_MS = 5 * 60 * 1000;
+const ACCEPTANCE_HEARTBEAT_INTERVAL_MS = 30 * 1000;
+const ACCEPTANCE_ATTEMPT_METADATA_KEY = 'acceptance_attempt_id';
+const ACCEPTANCE_STARTED_AT_METADATA_KEY = 'acceptance_started_at';
 const REPAIRABLE_PROJECTION_OUTPUT_STATUSES = ['pending', 'approval_created', 'failed'] as const;
 const PROJECTABLE_OUTPUT_OPERATIONS: readonly Operation[] = [
   'create',
@@ -395,6 +400,8 @@ export interface SuggestionScopeDeps {
   boards: BoardScope;
   calendar: CalendarScope;
   chatStructured?: typeof defaultChatStructured;
+  /** Test/instrumentation seam invoked after an acceptance is claimed but before it is applied. */
+  beforeApplyItem?: (itemId: string) => Promise<void>;
 }
 
 export interface SuggestionItemInput {
@@ -2431,6 +2438,60 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       .where(eq(agentSuggestions.id, suggestionId));
   }
 
+  function activeAcceptanceAttempt(itemId: string, attemptId: string) {
+    return and(
+      eq(agentSuggestionItems.id, itemId),
+      eq(agentSuggestionItems.status, 'accepted'),
+      sql`${agentSuggestionItems.metadata} ->> ${ACCEPTANCE_ATTEMPT_METADATA_KEY} = ${attemptId}`,
+    );
+  }
+
+  function startAcceptanceHeartbeat(itemId: string, attemptId: string): () => void {
+    const timer = setInterval(() => {
+      void db
+        .update(agentSuggestionItems)
+        .set({ updatedAt: new Date() })
+        .where(activeAcceptanceAttempt(itemId, attemptId))
+        .catch((error: unknown) => {
+          log.warn({ err: error, itemId }, 'Suggestion acceptance heartbeat failed');
+        });
+    }, ACCEPTANCE_HEARTBEAT_INTERVAL_MS);
+    if (typeof timer.unref === 'function') timer.unref();
+    return () => {
+      clearInterval(timer);
+    };
+  }
+
+  async function archiveRejectedSuggestionCreateResult(
+    item: typeof agentSuggestionItems.$inferSelect,
+  ): Promise<void> {
+    if (
+      item.operation !== 'create' ||
+      (item.targetKind !== 'task' && item.targetKind !== 'object')
+    ) {
+      return;
+    }
+    const [created] = await db
+      .select({ id: entities.id, type: entities.type })
+      .from(entities)
+      .where(
+        and(
+          eq(entities.teamId, teamId),
+          isNull(entities.archivedAt),
+          isNull(entities.mergedIntoId),
+          sql`${entities.metadata} ->> 'agent_suggestion_item_id' = ${item.id}`,
+        ),
+      )
+      .limit(1);
+    if (created) {
+      if (created.type === 'task') {
+        await objects.setTaskProject(created.id, null, { kind: 'agent', userId: null });
+      }
+      await objects.archiveObject(created.id, { kind: 'agent', userId: null });
+    }
+    await archiveOrphanedSuggestedProjects(item);
+  }
+
   async function recoverInterruptedTaskProjectAcceptances(): Promise<void> {
     const cutoff = new Date(Date.now() - INTERRUPTED_TASK_PROJECT_ACCEPTANCE_MIN_AGE_MS);
     await db.transaction(async (tx) => {
@@ -2442,6 +2503,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
             'Acceptance was interrupted before the task and project were finalized. Retry to finish it.',
           resolvedAt: null,
           resolvedByUserId: null,
+          metadata: sql`${agentSuggestionItems.metadata} - ${ACCEPTANCE_ATTEMPT_METADATA_KEY} - ${ACCEPTANCE_STARTED_AT_METADATA_KEY}`,
           updatedAt: new Date(),
         })
         .where(
@@ -4421,13 +4483,19 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       }
       return superseded;
     }
+    const acceptanceAttemptId = randomUUID();
+    const acceptanceStartedAt = new Date();
     const [claimed] = await db
       .update(agentSuggestionItems)
       .set({
         status: 'accepted',
-        resolvedAt: new Date(),
+        resolvedAt: acceptanceStartedAt,
         resolvedByUserId: userId,
-        updatedAt: new Date(),
+        metadata: sql`${agentSuggestionItems.metadata} || ${JSON.stringify({
+          [ACCEPTANCE_ATTEMPT_METADATA_KEY]: acceptanceAttemptId,
+          [ACCEPTANCE_STARTED_AT_METADATA_KEY]: acceptanceStartedAt.toISOString(),
+        })}::jsonb`,
+        updatedAt: acceptanceStartedAt,
         failureReason: null,
       })
       .where(
@@ -4440,25 +4508,32 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       .returning();
     if (!claimed) return false;
     let resultId: string | null;
+    const stopHeartbeat = startAcceptanceHeartbeat(itemId, acceptanceAttemptId);
     try {
+      await deps.beforeApplyItem?.(itemId);
       resultId = await applyItem(claimed);
     } catch (err) {
       const failureReason = suggestionApplyFailureReason(err);
-      await db.transaction(async (tx) => {
-        await tx
+      const recordedFailure = await db.transaction(async (tx) => {
+        const [failed] = await tx
           .update(agentSuggestionItems)
           .set({
             status: 'failed',
             failureReason,
             resolvedAt: null,
             resolvedByUserId: null,
+            metadata: sql`${agentSuggestionItems.metadata} - ${ACCEPTANCE_ATTEMPT_METADATA_KEY} - ${ACCEPTANCE_STARTED_AT_METADATA_KEY}`,
             updatedAt: new Date(),
           })
-          .where(eq(agentSuggestionItems.id, itemId));
+          .where(activeAcceptanceAttempt(itemId, acceptanceAttemptId))
+          .returning({ id: agentSuggestionItems.id });
+        if (!failed) return false;
         await writeProjectedOutputStatusForItem(tx, claimed, 'failed', {
           projection_failure_reason: failureReason,
         });
+        return true;
       });
+      if (!recordedFailure) return false;
       await refreshBundleStatus(row.suggestion.id, userId);
       const staleReason = await staleActionableItemReason(claimed);
       if (staleReason && (await supersedeItem(itemId, null, staleReason))) {
@@ -4478,20 +4553,37 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         throw new ExpectedSuggestionApplyFailure(failureReason, { cause: err });
       }
       throw err;
+    } finally {
+      stopHeartbeat();
     }
-    await db.transaction(async (tx) => {
-      await tx
+    const finalized = await db.transaction(async (tx) => {
+      const [updated] = await tx
         .update(agentSuggestionItems)
         .set({
           resultId,
+          metadata: sql`${agentSuggestionItems.metadata} - ${ACCEPTANCE_ATTEMPT_METADATA_KEY} - ${ACCEPTANCE_STARTED_AT_METADATA_KEY}`,
           updatedAt: new Date(),
           failureReason: null,
         })
-        .where(eq(agentSuggestionItems.id, itemId));
+        .where(activeAcceptanceAttempt(itemId, acceptanceAttemptId))
+        .returning({ id: agentSuggestionItems.id });
+      if (!updated) return false;
       await writeProjectedOutputStatusForItem(tx, claimed, 'applied', {
         projection_result_id: resultId,
       });
+      return true;
     });
+    if (!finalized) {
+      const [current] = await db
+        .select({ status: agentSuggestionItems.status })
+        .from(agentSuggestionItems)
+        .where(and(eq(agentSuggestionItems.teamId, teamId), eq(agentSuggestionItems.id, itemId)))
+        .limit(1);
+      if (current?.status === 'rejected' || current?.status === 'superseded') {
+        await archiveRejectedSuggestionCreateResult(claimed);
+      }
+      return false;
+    }
     await refreshBundleStatus(row.suggestion.id, userId);
     await reconcileAcceptedItemBestEffort({ ...claimed, resultId });
     await reconcileStaleActionableItemsBestEffort({
@@ -5917,7 +6009,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         return updated;
       });
       if (!rejected) return false;
-      await archiveOrphanedSuggestedProjects(row.item);
+      await archiveRejectedSuggestionCreateResult(row.item);
       await supersedeRelationshipDependents(row.item);
       await refreshBundleStatus(row.suggestion.id, userId);
       await reconcileStaleActionableItemsBestEffort({

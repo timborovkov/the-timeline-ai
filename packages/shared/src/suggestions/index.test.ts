@@ -12,7 +12,7 @@ import {
   reconciliationEvidence,
   reconciliationOutputs,
 } from '@timeline/db';
-import { asc, eq } from 'drizzle-orm';
+import { asc, eq, or, sql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -3861,6 +3861,70 @@ describe('suggestion scope', () => {
     expect(item?.status).toBe('rejected');
     const archivedProject = await scope.objects.getObject(project.id);
     expect(archivedProject?.archivedAt).toBeInstanceOf(Date);
+  });
+
+  it('does not let a recovered acceptance finalize after the item is rejected', async () => {
+    let signalApplyStarted: () => void = () => undefined;
+    let releaseApply: () => void = () => undefined;
+    const applyStarted = new Promise<void>((resolve) => {
+      signalApplyStarted = resolve;
+    });
+    const applyGate = new Promise<void>((resolve) => {
+      releaseApply = resolve;
+    });
+    const scope = withTeam(db as never, TEAM_ID, USER_ID, {
+      beforeSuggestionApply: async () => {
+        signalApplyStarted();
+        await applyGate;
+      },
+    });
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Reject an in-flight project task',
+      dedupeKey: 'reject-in-flight-task-project',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Prepare in-flight project task',
+          dedupeKey: 'reject-in-flight-task-project:item',
+          proposedPayload: {
+            canonicalName: 'Prepare in-flight project task',
+            createProjectName: 'In-flight project',
+            projectName: 'In-flight project',
+          },
+        },
+      ],
+    });
+    const itemId = bundle.items[0]?.id ?? '';
+    const acceptance = scope.suggestions.acceptSuggestionItem(itemId);
+    await applyStarted;
+    await db
+      .update(agentSuggestionItems)
+      .set({ updatedAt: new Date('2020-01-01T00:00:00.000Z') })
+      .where(eq(agentSuggestionItems.id, itemId));
+
+    await scope.suggestions.listPendingSuggestions();
+    await expect(scope.suggestions.rejectSuggestionItem(itemId)).resolves.toBe(true);
+    releaseApply();
+    await expect(acceptance).resolves.toBe(false);
+
+    const [item] = await db
+      .select({ status: agentSuggestionItems.status, resultId: agentSuggestionItems.resultId })
+      .from(agentSuggestionItems)
+      .where(eq(agentSuggestionItems.id, itemId));
+    expect(item).toEqual({ status: 'rejected', resultId: null });
+    const createdRows = await db
+      .select({ type: entities.type, archivedAt: entities.archivedAt })
+      .from(entities)
+      .where(
+        or(
+          sql`${entities.metadata} ->> 'agent_suggestion_item_id' = ${itemId}`,
+          sql`${entities.metadata} ->> 'agent_suggestion_project_for_item_id' = ${itemId}`,
+        ),
+      );
+    expect(createdRows).toHaveLength(2);
+    expect(createdRows.every((row) => row.archivedAt instanceof Date)).toBe(true);
   });
 
   it('reuses an exact-name project created during a concurrent suggestion acceptance', async () => {
