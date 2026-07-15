@@ -1582,7 +1582,7 @@ test('approvals failed filter shows retryable browser state', async ({ browser }
   await ownerPage.goto('/app/approvals?status=failed');
   const failedApproval = ownerPage.locator('article').filter({ hasText: taskTitle });
   await expect(failedApproval).toBeVisible();
-  await expect(failedApproval.getByText('Proposal · needs retry')).toBeVisible();
+  await expect(failedApproval.getByText('needs retry', { exact: true })).toBeVisible();
   await expect(failedApproval.getByText('E2E approval retry failed')).toBeVisible();
   await expect(failedApproval.getByRole('button', { name: 'Accept' })).toBeVisible();
   await expect(failedApproval.getByRole('button', { name: 'Reject' })).toBeVisible();
@@ -1740,7 +1740,6 @@ test('approvals page bulk accept recovers failed proposal rows', async ({ browse
     await expect(ownerPage.getByText('1 item(s) failed to apply')).toBeVisible();
     const failedApproval = ownerPage.locator('li').filter({ hasText: calendarTitle });
     await expect(failedApproval).toBeVisible();
-    await expect(failedApproval.getByText('Action failed. Review and try again.')).toBeVisible();
     await expect(
       failedApproval.getByText(
         'Calendar proposal is missing a start or end time. Reject it or revise the source details before accepting.',

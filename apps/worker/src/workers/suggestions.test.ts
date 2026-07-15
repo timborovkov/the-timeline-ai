@@ -1772,8 +1772,13 @@ describe('processSuggestionJobForTests', () => {
     expect(bundles.flatMap((bundle) => bundle.items).map((item) => item.targetKind)).toEqual([
       'object_relationship',
     ]);
-    expect(new Set(Object.values(bundles[0]?.items[0]?.proposedPayload ?? {}))).toEqual(
-      new Set([inserted[0]?.id, inserted[1]?.id, 'related']),
+    const payload = bundles[0]?.items[0]?.proposedPayload ?? {};
+    expect(payload).toMatchObject({ kind: 'related' });
+    expect(new Set([payload.fromEntityId, payload.toEntityId])).toEqual(
+      new Set([inserted[0]?.id, inserted[1]?.id]),
+    );
+    expect(new Set([payload.fromDisplayName, payload.toDisplayName])).toEqual(
+      new Set(['AUDIT-AI-C: Error: Failed query', 'AUDIT-AI-B: Error: Failed query']),
     );
   });
 

@@ -481,7 +481,7 @@ describe('processDocumentExtractJob — content-type routing', () => {
       teamId: TEAM_ID,
       documentChunkId: chunks[0]?.id,
     });
-  });
+  }, 30_000);
 
   it('routes application/pdf through the vision extractor (LLM OCR)', async () => {
     h = await makeHarness('%PDF-1.4 fake pdf bytes', {

@@ -1389,14 +1389,13 @@ Board-local provenance stays separate from object-level provenance.
 
 Approval cards should show:
 
-- artifact cluster
-- proposed canonical change
-- source refs
-- reconciliation output IDs and cluster links back to work artifact context
-- authority rationale
-- why approval is required
+- proposed canonical changes with current human labels and localized values
+- plain-language evidence sources and why the change was suggested
 - dependencies inside the bundle
-- exact effect of accepting
+- the schedule and other non-obvious effects that Accept will apply
+- one collapsed technical-details disclosure with plain-language links to every
+  distinct reconciliation record; raw output and cluster IDs stay in
+  operator/audit surfaces
 
 ### Search And Chat
 
@@ -1810,10 +1809,12 @@ Exit criteria:
    - Anchor-resolution observed/conflict outputs use stable raw-event or
      source-payload identities for output dedupe, so replaying a later evidence
      row can attach lineage without duplicating the output.
-   - Approval queue cards now render reconciliation output IDs, cluster links,
-     acceptance-effect text, review-required rationale, and local-ref dependency
-     hints so reviewers can understand what accepting will change before they
-     leave the queue.
+   - Approval queue cards now render human-readable proposed changes, evidence
+     sources, current reference labels, and local-ref dependency hints. Raw
+     reconciliation identifiers and operator context remain behind one
+     technical-details disclosure, with every distinct processing record still
+     reachable, so reviewers can understand the change without scanning storage
+     metadata.
 
 Exit criteria:
 

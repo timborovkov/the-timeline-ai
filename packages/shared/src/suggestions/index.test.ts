@@ -6,11 +6,14 @@ import {
   agentSuggestionItems,
   agentSuggestions,
   boardItemChanges,
+  boardLanes,
+  boards as boardsTable,
   entities,
   entityRelationships,
   rawEvents,
   reconciliationEvidence,
   reconciliationOutputs,
+  users,
 } from '@timeline/db';
 import { asc, eq, or, sql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
@@ -1139,6 +1142,7 @@ describe('suggestion scope', () => {
             canonicalName: 'Send update',
             status: 'todo',
             parentObjectId: firstParent.id,
+            parentName: 'Wrong parent',
           },
         },
       ],
@@ -1177,6 +1181,22 @@ describe('suggestion scope', () => {
       { suggestionId: first.id, status: 'pending', supersededByItemId: null },
       { suggestionId: second.id, status: 'pending', supersededByItemId: null },
     ]);
+    expect(first.items[0]?.proposedPayload).toMatchObject({
+      parentObjectId: firstParent.id,
+      parentName: 'Local inference',
+    });
+
+    await db
+      .update(entities)
+      .set({ canonicalName: 'Local inference rollout' })
+      .where(eq(entities.id, firstParent.id));
+    const reloaded = await withTeam(db as never, TEAM_ID, USER_ID).suggestions.getSuggestion(
+      first.id,
+    );
+    expect(reloaded?.items[0]?.proposedPayload).toMatchObject({
+      parentObjectId: firstParent.id,
+      parentName: 'Local inference rollout',
+    });
   });
 
   it('keeps typed and untyped object create proposals separate', async () => {
@@ -6637,6 +6657,7 @@ describe('suggestion scope', () => {
           dedupeKey: 'calendar-preflight-duplicate:item',
           proposedPayload: {
             title: 'Nexia planning',
+            description: 'Planning with Nexia.',
             startAt: '2026-06-17T11:00:00.000Z',
             endAt: '2026-06-17T12:00:00.000Z',
             timezone: 'Europe/Helsinki',
@@ -6653,6 +6674,74 @@ describe('suggestion scope', () => {
     expect(bundle?.items[0]?.calendarResolutionHint).toMatchObject({
       kind: 'exact_duplicate_reuse',
       event: { id: existing.id, title: 'Nexia planning' },
+    });
+  });
+
+  it('does not reuse a calendar event when proposed user-visible fields differ', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const existing = await scope.calendar.createCalendarEvent({
+      title: 'Nexia planning',
+      description: 'Initial planning notes.',
+      startAt: new Date('2026-06-17T11:00:00.000Z'),
+      endAt: new Date('2026-06-17T12:00:00.000Z'),
+      timezone: 'Europe/Helsinki',
+      location: 'Zoom',
+      showAs: 'busy',
+      reminderMinutes: 10,
+      visibility: 'team',
+    });
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Create revised Nexia planning',
+      dedupeKey: 'calendar-preflight-different-fields',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'calendar_event',
+          title: 'Nexia planning',
+          dedupeKey: 'calendar-preflight-different-fields:item',
+          proposedPayload: {
+            title: 'Nexia planning',
+            description: 'Revised planning notes.',
+            startAt: '2026-06-17T11:00:00.000Z',
+            endAt: '2026-06-17T12:00:00.000Z',
+            timezone: 'Europe/Helsinki',
+            location: 'Conference room',
+            showAs: 'free',
+            reminderMinutes: 30,
+            visibility: 'team',
+          },
+        },
+      ],
+    });
+
+    const [hinted] = await scope.suggestions.withCalendarResolutionHints([bundle]);
+    expect(hinted?.items[0]?.calendarResolutionHint).toMatchObject({
+      kind: 'semantic_update_candidate',
+      event: { id: existing.id },
+    });
+
+    await expect(scope.suggestions.acceptSuggestionItem(bundle.items[0]?.id ?? '')).resolves.toBe(
+      true,
+    );
+    const events = await pg.query<{
+      id: string;
+      description: string | null;
+      location: string | null;
+      show_as: string;
+      reminder_minutes: number | null;
+    }>(
+      `SELECT id, description, location, show_as, reminder_minutes
+       FROM calendar_events
+       WHERE team_id = '${TEAM_ID}' AND title = 'Nexia planning' AND deleted_at IS NULL
+       ORDER BY created_at, id`,
+    );
+    expect(events.rows).toHaveLength(2);
+    expect(events.rows.find((event) => event.id !== existing.id)).toMatchObject({
+      description: 'Revised planning notes.',
+      location: 'Conference room',
+      show_as: 'free',
+      reminder_minutes: 30,
     });
   });
 
@@ -7929,6 +8018,74 @@ describe('suggestion scope', () => {
     });
   });
 
+  it('accepts date-only due dates from task proposals', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Create branding proposal task',
+      dedupeKey: 'task-create-date-only-due-date',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Create branding and name proposal',
+          dedupeKey: 'task-create-date-only-due-date:item',
+          proposedPayload: {
+            canonicalName: 'Create branding and name proposal',
+            status: 'todo',
+            dueAt: '2026-07-19',
+          },
+        },
+      ],
+    });
+
+    expect(bundle.items[0]?.proposedPayload.dueAt).toBe('2026-07-19T00:00:00.000Z');
+
+    const itemId = bundle.items[0]?.id ?? '';
+    await db
+      .update(agentSuggestionItems)
+      .set({
+        proposedPayload: {
+          canonicalName: 'Create branding and name proposal',
+          status: 'todo',
+          dueAt: '2026-07-19',
+        },
+      })
+      .where(eq(agentSuggestionItems.id, itemId));
+
+    await expect(scope.suggestions.acceptSuggestionItem(itemId)).resolves.toBe(true);
+
+    const result = await pg.query<{ due_at: Date | null }>(
+      `SELECT due_at FROM entities WHERE canonical_name = 'Create branding and name proposal'`,
+    );
+    expect(result.rows[0]?.due_at?.toISOString()).toBe('2026-07-19T00:00:00.000Z');
+  });
+
+  it('returns a user-facing error for malformed task due dates', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Create task with malformed due date',
+      dedupeKey: 'task-create-malformed-due-date',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Create malformed task',
+          dedupeKey: 'task-create-malformed-due-date:item',
+          proposedPayload: {
+            canonicalName: 'Create malformed task',
+            dueAt: 'next Sunday',
+          },
+        },
+      ],
+    });
+
+    await expect(scope.suggestions.acceptSuggestionItem(bundle.items[0]?.id ?? '')).rejects.toThrow(
+      'This proposal has an invalid due date. Reject it or update the source details, then regenerate it.',
+    );
+  });
+
   it('treats blank optional object create fields as absent values', async () => {
     const scope = withTeam(db as never, TEAM_ID, USER_ID);
     const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
@@ -8038,6 +8195,113 @@ describe('suggestion scope', () => {
     expect(result.rows[0]).toEqual({ assignee_user_id: REVIEWER_ID });
   });
 
+  it('keeps resolved member labels out of stored proposal semantics', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const first = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Create assigned task',
+      dedupeKey: 'task-create-member-label:first',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Review customer deck',
+          dedupeKey: 'task-create-member-label:first:item',
+          proposedPayload: {
+            canonicalName: 'Review customer deck',
+            assigneeUserId: REVIEWER_ID,
+          },
+        },
+      ],
+    });
+    expect(first.items[0]?.proposedPayload).toMatchObject({
+      assigneeUserId: REVIEWER_ID,
+      assigneeName: 'Reviewer',
+    });
+
+    await db.update(users).set({ name: 'Renamed Reviewer' }).where(eq(users.id, REVIEWER_ID));
+    const renamedScope = withTeam(db as never, TEAM_ID, USER_ID);
+    const second = await renamedScope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Create assigned task again',
+      dedupeKey: 'task-create-member-label:second',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Review customer deck',
+          dedupeKey: 'task-create-member-label:second:item',
+          proposedPayload: {
+            canonicalName: 'Review customer deck',
+            assigneeUserId: REVIEWER_ID,
+          },
+        },
+      ],
+    });
+
+    const rows = await db
+      .select({
+        suggestionId: agentSuggestionItems.suggestionId,
+        status: agentSuggestionItems.status,
+        proposedPayload: agentSuggestionItems.proposedPayload,
+      })
+      .from(agentSuggestionItems)
+      .where(eq(agentSuggestionItems.teamId, TEAM_ID))
+      .orderBy(asc(agentSuggestionItems.createdAt), asc(agentSuggestionItems.id));
+    expect(rows).toEqual([
+      {
+        suggestionId: first.id,
+        status: 'superseded',
+        proposedPayload: {
+          canonicalName: 'Review customer deck',
+          assigneeUserId: REVIEWER_ID,
+        },
+      },
+      {
+        suggestionId: second.id,
+        status: 'pending',
+        proposedPayload: {
+          canonicalName: 'Review customer deck',
+          assigneeUserId: REVIEWER_ID,
+        },
+      },
+    ]);
+    expect(second.items[0]?.proposedPayload).toMatchObject({
+      assigneeUserId: REVIEWER_ID,
+      assigneeName: 'Renamed Reviewer',
+    });
+  });
+
+  it('accepts UUID-backed assignments with long presentation labels', async () => {
+    const longName = 'R'.repeat(220);
+    await db.update(users).set({ name: longName }).where(eq(users.id, REVIEWER_ID));
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Create long-label assignment',
+      dedupeKey: 'task-create-long-member-label',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Review long-label account',
+          dedupeKey: 'task-create-long-member-label:item',
+          proposedPayload: {
+            canonicalName: 'Review long-label account',
+            assigneeUserId: REVIEWER_ID,
+          },
+        },
+      ],
+    });
+    const item = bundle.items[0];
+    expect(item?.proposedPayload).toMatchObject({
+      assigneeUserId: REVIEWER_ID,
+      assigneeName: longName,
+    });
+
+    await expect(scope.suggestions.acceptSuggestionItem(item?.id ?? '')).resolves.toBe(true);
+  });
+
   it('fails task create assignment names that do not resolve uniquely', async () => {
     const scope = withTeam(db as never, TEAM_ID, USER_ID);
     const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
@@ -8133,6 +8397,255 @@ describe('suggestion scope', () => {
     const updated = await scope.boards.getBoard(board.id, { itemLimit: 'all' });
     expect(updated?.items.find((row) => row.id === boardItem.id)?.responsibleUserId).toBe(
       REVIEWER_ID,
+    );
+  });
+
+  it('adds readable labels to board item update ids', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const board = await scope.boards.createBoard({
+      name: 'Launch board',
+      templateKind: 'task_board',
+      lanes: [
+        { name: 'Todo', kind: 'active' },
+        { name: 'Blocked', kind: 'active' },
+      ],
+    });
+    const task = await scope.objects.createObject({
+      type: 'task',
+      canonicalName: 'Review Acme deck',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const boardItem = await scope.boards.addBoardItem(board.id, {
+      entityId: task.id,
+      laneId: board.lanes[0]?.id ?? null,
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const blockedLaneId = board.lanes[1]?.id ?? '';
+
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Update board item',
+      dedupeKey: 'board-item-readable-labels',
+      items: [
+        {
+          operation: 'update',
+          targetKind: 'board_item_update',
+          targetId: boardItem.id,
+          title: 'Assign Review Acme deck',
+          dedupeKey: 'board-item-readable-labels:responsible',
+          proposedPayload: {
+            boardItemId: boardItem.id,
+            field: 'responsibleUserId',
+            newValue: REVIEWER_ID,
+            responsibleName: 'Wrong person',
+          },
+        },
+        {
+          operation: 'update',
+          targetKind: 'board_item_update',
+          targetId: boardItem.id,
+          title: 'Move Review Acme deck',
+          dedupeKey: 'board-item-readable-labels:lane',
+          proposedPayload: {
+            boardItemId: boardItem.id,
+            field: 'laneId',
+            newValue: blockedLaneId,
+            laneName: 'Wrong lane',
+          },
+        },
+      ],
+    });
+
+    expect(
+      bundle.items.find((item) => item.proposedPayload.field === 'responsibleUserId'),
+    ).toMatchObject({ proposedPayload: { responsibleName: 'Reviewer' } });
+    expect(bundle.items.find((item) => item.proposedPayload.field === 'laneId')).toMatchObject({
+      proposedPayload: { laneName: 'Blocked' },
+    });
+
+    await db.update(users).set({ name: 'Renamed Reviewer' }).where(eq(users.id, REVIEWER_ID));
+    await db.update(boardLanes).set({ name: 'Waiting' }).where(eq(boardLanes.id, blockedLaneId));
+
+    const reloadedScope = withTeam(db as never, TEAM_ID, USER_ID);
+    const getBoardItem = vi.spyOn(reloadedScope.boards, 'getBoardItem');
+    const getBoard = vi.spyOn(reloadedScope.boards, 'getBoard');
+    const reloaded = await reloadedScope.suggestions.getSuggestion(bundle.id);
+    expect(getBoardItem).not.toHaveBeenCalled();
+    expect(getBoard).not.toHaveBeenCalled();
+    expect(
+      reloaded?.items.find((item) => item.proposedPayload.field === 'responsibleUserId'),
+    ).toMatchObject({ proposedPayload: { responsibleName: 'Renamed Reviewer' } });
+    expect(reloaded?.items.find((item) => item.proposedPayload.field === 'laneId')).toMatchObject({
+      proposedPayload: { laneName: 'Waiting' },
+    });
+  });
+
+  it('adds current board, object, and lane labels to board memberships', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const board = await scope.boards.createBoard({
+      name: 'Pilot pipeline',
+      templateKind: 'pipeline',
+      lanes: [{ name: 'Discovery', kind: 'active' }],
+    });
+    const company = await scope.objects.createObject({
+      type: 'company',
+      canonicalName: 'Digital Audit Company',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const laneId = board.lanes[0]?.id ?? '';
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Add customer to the pilot board',
+      dedupeKey: 'board-membership-readable-labels',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'board_membership',
+          title: 'Add customer to board',
+          dedupeKey: 'board-membership-readable-labels:item',
+          proposedPayload: {
+            boardId: board.id,
+            boardName: 'Wrong board',
+            entityId: company.id,
+            entityName: 'Wrong object',
+            laneId,
+            laneName: 'Wrong lane',
+          },
+        },
+      ],
+    });
+
+    expect(bundle.items[0]?.proposedPayload).toMatchObject({
+      boardName: 'Pilot pipeline',
+      entityName: 'Digital Audit Company',
+      laneName: 'Discovery',
+    });
+
+    await db
+      .update(boardsTable)
+      .set({ name: 'Customer pipeline' })
+      .where(eq(boardsTable.id, board.id));
+    await db
+      .update(entities)
+      .set({ canonicalName: 'Digital Audit Group' })
+      .where(eq(entities.id, company.id));
+    await db.update(boardLanes).set({ name: 'Qualified' }).where(eq(boardLanes.id, laneId));
+
+    const reloadedScope = withTeam(db as never, TEAM_ID, USER_ID);
+    const reloaded = await reloadedScope.suggestions.getSuggestion(bundle.id);
+    expect(reloaded?.items[0]?.proposedPayload).toMatchObject({
+      boardName: 'Customer pipeline',
+      entityName: 'Digital Audit Group',
+      laneName: 'Qualified',
+    });
+  });
+
+  it('adds current team member labels to specific-user calendar audiences', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Create private review',
+      dedupeKey: 'calendar-specific-user-labels',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'calendar_event',
+          title: 'Private review',
+          dedupeKey: 'calendar-specific-user-labels:item',
+          proposedPayload: {
+            title: 'Private review',
+            startAt: '2026-06-17T11:00:00.000Z',
+            endAt: '2026-06-17T12:00:00.000Z',
+            timezone: 'UTC',
+            visibility: 'specific_users',
+            visibilityUserIds: [USER_ID, REVIEWER_ID],
+            visibilityUserNames: ['Wrong person'],
+          },
+        },
+      ],
+    });
+
+    expect(bundle.items[0]?.proposedPayload).toMatchObject({
+      visibilityUserIds: [USER_ID, REVIEWER_ID],
+      visibilityUserNames: ['Owner', 'Reviewer'],
+    });
+
+    await db.update(users).set({ name: 'Updated Reviewer' }).where(eq(users.id, REVIEWER_ID));
+    const reloadedScope = withTeam(db as never, TEAM_ID, USER_ID);
+    const reloaded = await reloadedScope.suggestions.getSuggestion(bundle.id);
+    expect(reloaded?.items[0]?.proposedPayload).toMatchObject({
+      visibilityUserIds: [USER_ID, REVIEWER_ID],
+      visibilityUserNames: ['Owner', 'Updated Reviewer'],
+    });
+  });
+
+  it('hydrates existing relationship endpoints and calendar links with current object names', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const company = await scope.objects.createObject({
+      type: 'company',
+      canonicalName: 'Acme Corporation',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const project = await scope.objects.createObject({
+      type: 'project',
+      canonicalName: 'Renewal project',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Connect customer work',
+      dedupeKey: 'approval-entity-display-labels',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'object_relationship',
+          title: 'Add relationship',
+          dedupeKey: 'approval-entity-display-labels:relationship',
+          proposedPayload: {
+            fromEntityId: company.id,
+            toEntityId: project.id,
+            kind: 'blocks',
+          },
+        },
+        {
+          operation: 'create',
+          targetKind: 'calendar_event',
+          title: 'Customer review',
+          dedupeKey: 'approval-entity-display-labels:calendar',
+          proposedPayload: {
+            title: 'Customer review',
+            startAt: '2026-06-17T11:00:00.000Z',
+            endAt: '2026-06-17T12:00:00.000Z',
+            timezone: 'UTC',
+            visibility: 'team',
+            linkedEntityIds: [company.id, project.id],
+          },
+        },
+      ],
+    });
+
+    expect(
+      bundle.items.find((item) => item.targetKind === 'object_relationship')?.proposedPayload,
+    ).toMatchObject({
+      fromDisplayName: 'Acme Corporation',
+      toDisplayName: 'Renewal project',
+    });
+    expect(
+      bundle.items.find((item) => item.targetKind === 'calendar_event')?.proposedPayload,
+    ).toMatchObject({ linkedEntityNames: ['Acme Corporation', 'Renewal project'] });
+
+    const stored = await db
+      .select({
+        targetKind: agentSuggestionItems.targetKind,
+        payload: agentSuggestionItems.proposedPayload,
+      })
+      .from(agentSuggestionItems)
+      .where(eq(agentSuggestionItems.suggestionId, bundle.id));
+    expect(
+      stored.find((item) => item.targetKind === 'object_relationship')?.payload,
+    ).not.toHaveProperty('fromDisplayName');
+    expect(stored.find((item) => item.targetKind === 'calendar_event')?.payload).not.toHaveProperty(
+      'linkedEntityNames',
     );
   });
 
