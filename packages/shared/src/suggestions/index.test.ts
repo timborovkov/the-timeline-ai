@@ -3747,70 +3747,77 @@ describe('suggestion scope', () => {
     expect(retriedProjects[0]?.archivedAt).toBeNull();
   });
 
-  it('recovers an interrupted task and project acceptance for an idempotent retry', async () => {
-    const scope = withTeam(db as never, TEAM_ID, USER_ID);
-    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
-      source: 'background',
-      title: 'Create recoverable project task',
-      dedupeKey: 'recover-interrupted-task-project',
-      items: [
-        {
-          operation: 'create',
-          targetKind: 'task',
-          title: 'Prepare recovery brief',
-          dedupeKey: 'recover-interrupted-task-project:item',
-          proposedPayload: {
-            canonicalName: 'Prepare recovery brief',
-            createProjectName: 'Recovery project',
-            projectName: 'Recovery project',
+  it.each([
+    { targetKind: 'task' as const, type: undefined },
+    { targetKind: 'object' as const, type: 'task' as const },
+  ])(
+    'recovers an interrupted $targetKind task and project acceptance for an idempotent retry',
+    async ({ targetKind, type }) => {
+      const scope = withTeam(db as never, TEAM_ID, USER_ID);
+      const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+        source: 'background',
+        title: 'Create recoverable project task',
+        dedupeKey: 'recover-interrupted-task-project',
+        items: [
+          {
+            operation: 'create',
+            targetKind,
+            title: 'Prepare recovery brief',
+            dedupeKey: 'recover-interrupted-task-project:item',
+            proposedPayload: {
+              ...(type ? { type } : {}),
+              canonicalName: 'Prepare recovery brief',
+              createProjectName: 'Recovery project',
+              projectName: 'Recovery project',
+            },
           },
-        },
-      ],
-    });
-    const itemId = bundle.items[0]?.id ?? '';
-    const project = await scope.objects.createObject({
-      type: 'project',
-      canonicalName: 'Recovery project',
-      status: 'planning',
-      metadata: { agent_suggestion_project_for_item_id: itemId },
-      actor: { kind: 'agent', userId: null },
-    });
-    const interruptedAt = new Date('2020-01-01T00:00:00.000Z');
-    await db
-      .update(agentSuggestionItems)
-      .set({
-        status: 'accepted',
-        resultId: null,
-        resolvedAt: interruptedAt,
-        resolvedByUserId: USER_ID,
-        updatedAt: interruptedAt,
-      })
-      .where(eq(agentSuggestionItems.id, itemId));
+        ],
+      });
+      const itemId = bundle.items[0]?.id ?? '';
+      const project = await scope.objects.createObject({
+        type: 'project',
+        canonicalName: 'Recovery project',
+        status: 'planning',
+        metadata: { agent_suggestion_project_for_item_id: itemId },
+        actor: { kind: 'agent', userId: null },
+      });
+      const interruptedAt = new Date('2020-01-01T00:00:00.000Z');
+      await db
+        .update(agentSuggestionItems)
+        .set({
+          status: 'accepted',
+          resultId: null,
+          resolvedAt: interruptedAt,
+          resolvedByUserId: USER_ID,
+          updatedAt: interruptedAt,
+        })
+        .where(eq(agentSuggestionItems.id, itemId));
 
-    const pending = await scope.suggestions.listPendingSuggestions();
-    expect(pending).toEqual([
-      expect.objectContaining({
-        id: bundle.id,
-        items: [expect.objectContaining({ id: itemId, status: 'failed', resultId: null })],
-      }),
-    ]);
+      const pending = await scope.suggestions.listPendingSuggestions();
+      expect(pending).toEqual([
+        expect.objectContaining({
+          id: bundle.id,
+          items: [expect.objectContaining({ id: itemId, status: 'failed', resultId: null })],
+        }),
+      ]);
 
-    await expect(scope.suggestions.acceptSuggestionItem(itemId)).resolves.toBe(true);
+      await expect(scope.suggestions.acceptSuggestionItem(itemId)).resolves.toBe(true);
 
-    const projects = await db
-      .select()
-      .from(entities)
-      .where(eq(entities.canonicalName, 'Recovery project'));
-    expect(projects).toHaveLength(1);
-    expect(projects[0]?.id).toBe(project.id);
-    const [task] = await db
-      .select({ id: entities.id })
-      .from(entities)
-      .where(eq(entities.canonicalName, 'Prepare recovery brief'));
-    await expect(scope.objects.listPrimaryProjectsForTasks([task?.id ?? ''])).resolves.toEqual([
-      expect.objectContaining({ projectId: project.id }),
-    ]);
-  });
+      const projects = await db
+        .select()
+        .from(entities)
+        .where(eq(entities.canonicalName, 'Recovery project'));
+      expect(projects).toHaveLength(1);
+      expect(projects[0]?.id).toBe(project.id);
+      const [task] = await db
+        .select({ id: entities.id })
+        .from(entities)
+        .where(eq(entities.canonicalName, 'Prepare recovery brief'));
+      await expect(scope.objects.listPrimaryProjectsForTasks([task?.id ?? ''])).resolves.toEqual([
+        expect.objectContaining({ projectId: project.id }),
+      ]);
+    },
+  );
 
   it('archives an interrupted suggestion project when the task is rejected', async () => {
     const scope = withTeam(db as never, TEAM_ID, USER_ID);

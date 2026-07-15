@@ -124,6 +124,16 @@ interface TaskPaginationState {
   cursor: string | null;
 }
 
+type TaskCategoryStateRow = Pick<
+  objects.ObjectRow,
+  | 'id'
+  | 'taskCategory'
+  | 'taskCategoryMode'
+  | 'taskCategorySource'
+  | 'taskCategoryStatus'
+  | 'taskCategoryUpdatedAt'
+>;
+
 interface TaskBoardState {
   pagination: TaskPaginationState;
   loadError: string | null;
@@ -152,6 +162,7 @@ type TaskBoardAction =
       nextCursor: string | null;
       filterKey: string;
     }
+  | { type: 'category-states'; rows: TaskCategoryStateRow[] }
   | { type: 'filter'; query: string }
   | { type: 'selected'; next: SetStateAction<ReadonlySet<string>> }
   | { type: 'patches'; next: SetStateAction<Record<string, TaskPatchOverlay>> };
@@ -265,6 +276,21 @@ function taskBoardReducer(state: TaskBoardState, action: TaskBoardAction): TaskB
             ...action.rows.filter((row) => !seen.has(row.id)),
           ],
           cursor: action.nextCursor,
+        },
+      };
+    }
+    case 'category-states': {
+      const states = new Map(action.rows.map((row) => [row.id, row]));
+      const mergeCategoryState = (row: objects.ObjectRow): objects.ObjectRow => {
+        const categoryState = states.get(row.id);
+        return categoryState ? { ...row, ...categoryState } : row;
+      };
+      return {
+        ...state,
+        pagination: {
+          ...state.pagination,
+          inputRows: state.pagination.inputRows.map(mergeCategoryState),
+          loadedRows: state.pagination.loadedRows.map(mergeCategoryState),
         },
       };
     }
@@ -620,7 +646,9 @@ function useTaskBoardController({
       }
       void loadTaskCategoryStatesAction({ ids: pendingIds })
         .then((result) => {
-          if (result.rows?.some((row) => row.taskCategoryStatus !== 'pending')) router.refresh();
+          if (!result.rows) return;
+          dispatchBoard({ type: 'category-states', rows: result.rows });
+          if (result.rows.some((row) => row.taskCategoryStatus !== 'pending')) router.refresh();
         })
         .catch(() => undefined);
     }, 2_500);

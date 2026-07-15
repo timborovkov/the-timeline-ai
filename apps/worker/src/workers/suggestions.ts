@@ -337,13 +337,14 @@ async function enrichTaskSuggestionItems(args: {
   for (const bundle of args.bundles) {
     const items: SuggestionItemOutput[] = [];
     for (const item of bundle.items) {
-      if (item.operation !== 'create' || item.targetKind !== 'task') {
+      if (item.operation !== 'create' || itemCreateType(item) !== 'task') {
         items.push(item);
         continue;
       }
       const proposedPayload = normalizeTaskProjectProposal(item.proposedPayload, args.projects);
       items.push({
         ...item,
+        targetKind: 'task',
         proposedPayload: classify
           ? await taskCategories.enrichTaskProposalCategory({
               proposedPayload,

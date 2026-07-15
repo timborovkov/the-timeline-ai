@@ -308,7 +308,6 @@ async function invalidateLinkedTaskCategoriesForProject(
       canonicalName: entities.canonicalName,
       aliases: entities.aliases,
       metadata: entities.metadata,
-      updatedAt: entities.updatedAt,
     })
     .from(entityRelationships)
     .innerJoin(
@@ -356,7 +355,6 @@ async function invalidateLinkedTaskCategoriesForProject(
           eq(entities.taskCategoryMode, 'automatic'),
           isNull(entities.archivedAt),
           isNull(entities.mergedIntoId),
-          eq(entities.updatedAt, task.updatedAt),
           sql`EXISTS (
             SELECT 1
             FROM entity_relationships AS current_project_rel
@@ -6106,7 +6104,6 @@ export async function invalidateTaskCategoriesForProject(
         canonicalName: entities.canonicalName,
         aliases: entities.aliases,
         metadata: entities.metadata,
-        updatedAt: entities.updatedAt,
       })
       .from(entityRelationships)
       .innerJoin(
@@ -6155,7 +6152,6 @@ export async function invalidateTaskCategoriesForProject(
             eq(entities.taskCategoryMode, 'automatic'),
             isNull(entities.archivedAt),
             isNull(entities.mergedIntoId),
-            eq(entities.updatedAt, task.updatedAt),
             sql`EXISTS (
               SELECT 1
               FROM entity_relationships AS current_project_rel

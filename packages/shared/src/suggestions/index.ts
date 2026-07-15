@@ -2510,7 +2510,13 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
           and(
             eq(agentSuggestionItems.teamId, teamId),
             eq(agentSuggestionItems.status, 'accepted'),
-            eq(agentSuggestionItems.targetKind, 'task'),
+            or(
+              eq(agentSuggestionItems.targetKind, 'task'),
+              and(
+                eq(agentSuggestionItems.targetKind, 'object'),
+                sql`btrim(${agentSuggestionItems.proposedPayload} ->> 'type') = 'task'`,
+              ),
+            ),
             eq(agentSuggestionItems.operation, 'create'),
             isNull(agentSuggestionItems.resultId),
             lt(agentSuggestionItems.updatedAt, cutoff),

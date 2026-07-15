@@ -3145,6 +3145,79 @@ describe('processSuggestionJobForTests', () => {
     expect(relation).toMatchObject({ toEntityId: project.id, kind: 'child' });
   });
 
+  it('canonicalizes and enriches an object-shaped task proposal', async () => {
+    const rawEventId = '10000000-0000-0000-0000-0000000000c3';
+    const project = await withTeam(db as never, TEAM_ID, OWNER_ID).objects.createObject({
+      type: 'project',
+      canonicalName: 'Faba website redesign',
+      actor: { kind: 'user', userId: OWNER_ID },
+    });
+    await seedRawEvent(db as never, {
+      id: rawEventId,
+      text: 'For the Faba website redesign, prepare the mobile wireframes.',
+      sourceMetadata: {
+        extracted_at: new Date('2026-05-27T10:01:00.000Z').toISOString(),
+        extraction_model_version: 'test-extract@1',
+      },
+    });
+    const chat = vi.fn().mockResolvedValue({
+      model: MODEL_ID,
+      object: {
+        bundles: [
+          {
+            title: 'Prepare Faba mobile wireframes',
+            confidence: 'high',
+            items: [
+              {
+                operation: 'create',
+                targetKind: 'object',
+                title: 'Prepare mobile wireframes',
+                proposedPayload: {
+                  type: 'task',
+                  canonicalName: 'Prepare mobile wireframes',
+                  parentObjectId: project.id,
+                },
+              },
+            ],
+          },
+        ],
+      },
+    });
+    const classifyTaskCategory = vi.fn().mockResolvedValue({
+      category: 'design',
+      confidence: 0.94,
+      model: 'task-category-model',
+    });
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { rawEventId, teamId: TEAM_ID },
+      { getEnv: env, chatStructured: chat, classifyTaskCategory, modelId: MODEL_ID },
+    );
+
+    const [bundle] = await withTeam(
+      db as never,
+      TEAM_ID,
+      OWNER_ID,
+    ).suggestions.listPendingSuggestions();
+    expect(bundle?.items[0]).toMatchObject({
+      targetKind: 'task',
+      proposedPayload: {
+        type: 'task',
+        parentObjectId: project.id,
+        projectName: 'Faba website redesign',
+        taskCategory: 'design',
+        taskCategoryMode: 'automatic',
+      },
+    });
+    expect(classifyTaskCategory).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: 'Prepare mobile wireframes',
+        primaryProjectName: 'Faba website redesign',
+      }),
+    );
+  });
+
   it('bounds proposal-time category classification concurrency', async () => {
     const rawEventId = '10000000-0000-0000-0000-0000000000c2';
     await seedRawEvent(db as never, {

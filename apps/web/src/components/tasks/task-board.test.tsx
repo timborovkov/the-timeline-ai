@@ -214,6 +214,55 @@ describe('TaskBoard', () => {
     }
   });
 
+  it('applies polled category state to a previously loaded older task', async () => {
+    const user = userEvent.setup();
+    fakes.loadTaskRowsAction.mockResolvedValue({
+      rows: [
+        task({
+          id: 'task-2',
+          canonicalName: 'Older pending task',
+          taskCategoryStatus: 'pending',
+        }),
+      ],
+      nextCursor: null,
+    });
+    fakes.loadTaskCategoryStatesAction.mockResolvedValue({
+      rows: [
+        {
+          id: 'task-2',
+          taskCategory: 'design',
+          taskCategoryMode: 'automatic',
+          taskCategorySource: 'llm',
+          taskCategoryStatus: 'ready',
+          taskCategoryUpdatedAt: new Date('2026-07-13T10:00:00.000Z'),
+        },
+      ],
+    });
+    render(
+      <TaskBoard
+        rows={[task()]}
+        columns={['todo', 'doing', 'done', 'blocked', 'cancelled']}
+        selectedTaskId={null}
+        view="kanban"
+        members={[{ id: 'user-1', label: 'Ada Lovelace' }]}
+        totalCount={2}
+        nextCursor="older-cursor"
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Load older tasks' }));
+    expect(screen.getByRole('link', { name: 'Older pending task' })).toBeTruthy();
+    expect(screen.getByText('Categorizing…')).toBeTruthy();
+
+    await waitFor(
+      () => {
+        expect(screen.getByText('Design')).toBeTruthy();
+        expect(screen.queryByText('Categorizing…')).toBeNull();
+      },
+      { timeout: 4_000 },
+    );
+  }, 7_000);
+
   it('does not poll pending categories while the category UI is disabled', () => {
     vi.useFakeTimers();
     document.body.dataset.taskCategoriesEnabled = 'false';
