@@ -7,6 +7,7 @@ import {
   agentSuggestions,
   boardItemChanges,
   boardLanes,
+  boards as boardsTable,
   entities,
   rawEvents,
   reconciliationEvidence,
@@ -6984,6 +6985,66 @@ describe('suggestion scope', () => {
     ).toMatchObject({ proposedPayload: { responsibleName: 'Renamed Reviewer' } });
     expect(reloaded?.items.find((item) => item.proposedPayload.field === 'laneId')).toMatchObject({
       proposedPayload: { laneName: 'Waiting' },
+    });
+  });
+
+  it('adds current board, object, and lane labels to board memberships', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const board = await scope.boards.createBoard({
+      name: 'Pilot pipeline',
+      templateKind: 'pipeline',
+      lanes: [{ name: 'Discovery', kind: 'active' }],
+    });
+    const company = await scope.objects.createObject({
+      type: 'company',
+      canonicalName: 'Digital Audit Company',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const laneId = board.lanes[0]?.id ?? '';
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Add customer to the pilot board',
+      dedupeKey: 'board-membership-readable-labels',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'board_membership',
+          title: 'Add customer to board',
+          dedupeKey: 'board-membership-readable-labels:item',
+          proposedPayload: {
+            boardId: board.id,
+            boardName: 'Wrong board',
+            entityId: company.id,
+            entityName: 'Wrong object',
+            laneId,
+            laneName: 'Wrong lane',
+          },
+        },
+      ],
+    });
+
+    expect(bundle.items[0]?.proposedPayload).toMatchObject({
+      boardName: 'Pilot pipeline',
+      entityName: 'Digital Audit Company',
+      laneName: 'Discovery',
+    });
+
+    await db
+      .update(boardsTable)
+      .set({ name: 'Customer pipeline' })
+      .where(eq(boardsTable.id, board.id));
+    await db
+      .update(entities)
+      .set({ canonicalName: 'Digital Audit Group' })
+      .where(eq(entities.id, company.id));
+    await db.update(boardLanes).set({ name: 'Qualified' }).where(eq(boardLanes.id, laneId));
+
+    const reloadedScope = withTeam(db as never, TEAM_ID, USER_ID);
+    const reloaded = await reloadedScope.suggestions.getSuggestion(bundle.id);
+    expect(reloaded?.items[0]?.proposedPayload).toMatchObject({
+      boardName: 'Customer pipeline',
+      entityName: 'Digital Audit Group',
+      laneName: 'Qualified',
     });
   });
 

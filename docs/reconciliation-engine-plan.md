@@ -1393,8 +1393,9 @@ Approval cards should show:
 - plain-language evidence sources and why the change was suggested
 - dependencies inside the bundle
 - the schedule and other non-obvious effects that Accept will apply
-- one collapsed technical-details link to the reconciliation record; raw output
-  and cluster IDs stay in operator/audit surfaces
+- one collapsed technical-details disclosure with plain-language links to every
+  distinct reconciliation record; raw output and cluster IDs stay in
+  operator/audit surfaces
 
 ### Search And Chat
 
@@ -1811,8 +1812,9 @@ Exit criteria:
    - Approval queue cards now render human-readable proposed changes, evidence
      sources, current reference labels, and local-ref dependency hints. Raw
      reconciliation identifiers and operator context remain behind one
-     technical-details link so reviewers can understand the change without
-     scanning storage metadata.
+     technical-details disclosure, with every distinct processing record still
+     reachable, so reviewers can understand the change without scanning storage
+     metadata.
 
 Exit criteria:
 

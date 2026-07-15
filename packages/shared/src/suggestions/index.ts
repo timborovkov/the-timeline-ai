@@ -4,6 +4,7 @@ import {
   agentSuggestions,
   boardItems,
   boardLanes,
+  boards as boardsTable,
   calendarEvents,
   entities,
   objectIdentityFacets,
@@ -585,8 +586,11 @@ const objectMergePayload = z.object({
 
 const boardMembershipPayload = z.object({
   boardId: uuid,
+  boardName: z.string().trim().min(1).max(200).optional(),
   entityId: uuid,
+  entityName: z.string().trim().min(1).max(200).optional(),
   laneId: uuid.nullable().optional(),
+  laneName: z.string().trim().min(1).max(200).optional(),
   note: z.string().trim().max(1000).nullable().optional(),
 });
 
@@ -2026,14 +2030,25 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     return (await labelsPromise).get(laneId) ?? null;
   }
 
+  interface BoardPayloadLabels {
+    boardNamesById: ReadonlyMap<string, string>;
+    entityNamesById: ReadonlyMap<string, string>;
+    itemLaneNamesByRef: ReadonlyMap<string, string>;
+    membershipLaneNamesByRef: ReadonlyMap<string, string>;
+  }
+
   function boardLaneRefKey(boardItemId: string, laneId: string): string {
     return `${boardItemId}:${laneId}`;
   }
 
-  async function boardLaneLabelsForPayloads(
+  function boardMembershipLaneRefKey(boardId: string, laneId: string): string {
+    return `${boardId}:${laneId}`;
+  }
+
+  async function boardPayloadLabelsForPayloads(
     payloads: readonly Record<string, unknown>[],
-  ): Promise<Map<string, string>> {
-    const refs = payloads.flatMap((payload) => {
+  ): Promise<BoardPayloadLabels> {
+    const itemLaneRefs = payloads.flatMap((payload) => {
       if (
         payload.field !== 'laneId' ||
         typeof payload.boardItemId !== 'string' ||
@@ -2045,50 +2060,157 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       }
       return [{ boardItemId: payload.boardItemId, laneId: payload.newValue }];
     });
-    if (refs.length === 0) return new Map();
+    const membershipRefs = payloads.flatMap((payload) => {
+      if (
+        typeof payload.boardId !== 'string' ||
+        !UUID_RE.test(payload.boardId) ||
+        typeof payload.entityId !== 'string' ||
+        !UUID_RE.test(payload.entityId)
+      ) {
+        return [];
+      }
+      return [
+        {
+          boardId: payload.boardId,
+          entityId: payload.entityId,
+          laneId:
+            typeof payload.laneId === 'string' && UUID_RE.test(payload.laneId)
+              ? payload.laneId
+              : null,
+        },
+      ];
+    });
 
-    const itemIds = [...new Set(refs.map((ref) => ref.boardItemId))];
-    const laneIds = [...new Set(refs.map((ref) => ref.laneId))];
-    const rows = await db
-      .select({
-        boardItemId: boardItems.id,
-        laneId: boardLanes.id,
-        laneName: boardLanes.name,
-      })
-      .from(boardItems)
-      .innerJoin(
-        boardLanes,
-        and(eq(boardLanes.boardId, boardItems.boardId), eq(boardLanes.teamId, boardItems.teamId)),
-      )
-      .where(
-        and(
-          eq(boardItems.teamId, teamId),
-          eq(boardLanes.teamId, teamId),
-          inArray(boardItems.id, itemIds),
-          inArray(boardLanes.id, laneIds),
-          isNull(boardLanes.archivedAt),
-        ),
-      );
-    return new Map(rows.map((row) => [boardLaneRefKey(row.boardItemId, row.laneId), row.laneName]));
+    const itemIds = [...new Set(itemLaneRefs.map((ref) => ref.boardItemId))];
+    const itemLaneIds = [...new Set(itemLaneRefs.map((ref) => ref.laneId))];
+    const boardIds = [...new Set(membershipRefs.map((ref) => ref.boardId))];
+    const entityIds = [...new Set(membershipRefs.map((ref) => ref.entityId))];
+    const membershipLaneIds = [
+      ...new Set(membershipRefs.flatMap((ref) => (ref.laneId === null ? [] : [ref.laneId]))),
+    ];
+
+    const [itemLaneRows, boardRows, entityRows, membershipLaneRows] = await Promise.all([
+      itemIds.length > 0 && itemLaneIds.length > 0
+        ? db
+            .select({
+              boardItemId: boardItems.id,
+              laneId: boardLanes.id,
+              laneName: boardLanes.name,
+            })
+            .from(boardItems)
+            .innerJoin(
+              boardLanes,
+              and(
+                eq(boardLanes.boardId, boardItems.boardId),
+                eq(boardLanes.teamId, boardItems.teamId),
+              ),
+            )
+            .where(
+              and(
+                eq(boardItems.teamId, teamId),
+                eq(boardLanes.teamId, teamId),
+                inArray(boardItems.id, itemIds),
+                inArray(boardLanes.id, itemLaneIds),
+                isNull(boardLanes.archivedAt),
+              ),
+            )
+        : Promise.resolve([]),
+      boardIds.length > 0
+        ? db
+            .select({ id: boardsTable.id, name: boardsTable.name })
+            .from(boardsTable)
+            .where(
+              and(
+                eq(boardsTable.teamId, teamId),
+                inArray(boardsTable.id, boardIds),
+                isNull(boardsTable.archivedAt),
+              ),
+            )
+        : Promise.resolve([]),
+      entityIds.length > 0
+        ? db
+            .select({ id: entities.id, name: entities.canonicalName })
+            .from(entities)
+            .where(
+              and(
+                eq(entities.teamId, teamId),
+                inArray(entities.id, entityIds),
+                isNull(entities.archivedAt),
+                isNull(entities.mergedIntoId),
+              ),
+            )
+        : Promise.resolve([]),
+      boardIds.length > 0 && membershipLaneIds.length > 0
+        ? db
+            .select({
+              boardId: boardLanes.boardId,
+              laneId: boardLanes.id,
+              laneName: boardLanes.name,
+            })
+            .from(boardLanes)
+            .where(
+              and(
+                eq(boardLanes.teamId, teamId),
+                inArray(boardLanes.boardId, boardIds),
+                inArray(boardLanes.id, membershipLaneIds),
+                isNull(boardLanes.archivedAt),
+              ),
+            )
+        : Promise.resolve([]),
+    ]);
+
+    return {
+      boardNamesById: new Map(boardRows.map((row) => [row.id, row.name])),
+      entityNamesById: new Map(entityRows.map((row) => [row.id, row.name])),
+      itemLaneNamesByRef: new Map(
+        itemLaneRows.map((row) => [boardLaneRefKey(row.boardItemId, row.laneId), row.laneName]),
+      ),
+      membershipLaneNamesByRef: new Map(
+        membershipLaneRows.map((row) => [
+          boardMembershipLaneRefKey(row.boardId, row.laneId),
+          row.laneName,
+        ]),
+      ),
+    };
   }
 
   async function resolveBoardItemRefs(
     payload: Record<string, unknown>,
     options: {
       requireUnique: boolean;
-      laneLabels?: ReadonlyMap<string, string>;
+      labels?: BoardPayloadLabels;
     },
   ): Promise<Record<string, unknown>> {
     const normalized = { ...payload };
+    if (
+      typeof normalized.boardId === 'string' &&
+      UUID_RE.test(normalized.boardId) &&
+      typeof normalized.entityId === 'string' &&
+      UUID_RE.test(normalized.entityId) &&
+      options.labels
+    ) {
+      normalized.boardName =
+        options.labels.boardNamesById.get(normalized.boardId) ?? 'Unavailable board';
+      normalized.entityName =
+        options.labels.entityNamesById.get(normalized.entityId) ?? 'Unavailable workspace item';
+      normalized.laneName =
+        typeof normalized.laneId === 'string' && UUID_RE.test(normalized.laneId)
+          ? (options.labels.membershipLaneNamesByRef.get(
+              boardMembershipLaneRefKey(normalized.boardId, normalized.laneId),
+            ) ?? 'Unavailable lane')
+          : 'No lane';
+      return normalized;
+    }
     if (
       normalized.field === 'laneId' &&
       typeof normalized.newValue === 'string' &&
       UUID_RE.test(normalized.newValue)
     ) {
-      const label = options.laneLabels
+      const label = options.labels
         ? typeof normalized.boardItemId === 'string'
-          ? (options.laneLabels.get(boardLaneRefKey(normalized.boardItemId, normalized.newValue)) ??
-            null)
+          ? (options.labels.itemLaneNamesByRef.get(
+              boardLaneRefKey(normalized.boardItemId, normalized.newValue),
+            ) ?? null)
           : null
         : await boardLaneLabel(normalized.boardItemId, normalized.newValue);
       normalized.laneName = label ?? 'Unavailable lane';
@@ -2130,7 +2252,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
   async function normalizeSuggestionItemForStorage(
     item: SuggestionItemInput,
     objectTypeByTargetId: ReadonlyMap<string, ObjectType>,
-    laneLabels: ReadonlyMap<string, string>,
+    boardLabels: BoardPayloadLabels,
   ): Promise<SuggestionItemInput> {
     const proposedPayload = normalizeSuggestionSourceEventPayload(
       await resolveBoardItemRefs(
@@ -2146,7 +2268,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
                 : null,
           }),
         ),
-        { requireUnique: false, laneLabels },
+        { requireUnique: false, labels: boardLabels },
       ),
     );
     return { ...item, proposedPayload };
@@ -2428,7 +2550,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         .where(inArray(agentSuggestionEvidence.suggestionId, ids))
         .orderBy(asc(agentSuggestionEvidence.suggestionId), asc(agentSuggestionEvidence.createdAt)),
     ]);
-    const laneLabels = await boardLaneLabelsForPayloads(
+    const boardLabels = await boardPayloadLabelsForPayloads(
       items.map((item) => recordFromUnknown(item.proposedPayload)),
     );
     const displayItems = await Promise.all(
@@ -2436,7 +2558,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         ...item,
         proposedPayload: await resolveBoardItemRefs(
           await resolvePayloadMemberRefs(recordFromUnknown(item.proposedPayload)),
-          { requireUnique: false, laneLabels },
+          { requireUnique: false, labels: boardLabels },
         ),
       })),
     );
@@ -4977,12 +5099,12 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       await validateEvidenceVisible((input.evidence ?? []).map((ev) => ev.rawEventId));
       const objectTypeByTargetId = await objectTypesForItems(input.items);
       const evidenceIds = Array.from(new Set((input.evidence ?? []).map((ev) => ev.rawEventId)));
-      const laneLabels = await boardLaneLabelsForPayloads(
+      const boardLabels = await boardPayloadLabelsForPayloads(
         input.items.map((item) => item.proposedPayload),
       );
       const normalizedItems = await Promise.all(
         input.items.map((item) =>
-          normalizeSuggestionItemForStorage(item, objectTypeByTargetId, laneLabels),
+          normalizeSuggestionItemForStorage(item, objectTypeByTargetId, boardLabels),
         ),
       );
       const projectionContext = await buildApprovalProjectionContext({

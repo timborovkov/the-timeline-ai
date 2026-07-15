@@ -267,9 +267,11 @@ function payloadFieldLabel(key: string): string {
     allDay: 'All day',
     assigneeName: 'Assignee',
     assigneeUserId: 'Assignee',
+    boardName: 'Board',
     canonicalName: 'Name',
     description: 'Details',
     dueAt: 'Due',
+    entityName: 'Item',
     laneId: 'Lane',
     laneName: 'Lane',
     location: 'Location',
@@ -1434,19 +1436,32 @@ function ApprovalProcessingDetails({ bundle }: { bundle: SuggestionBundle }) {
   const outputIds = bundleReconciliationOutputIds(bundle);
   const clusterIds = bundleReconciliationClusterIds(bundle);
   if (outputIds.length === 0 && clusterIds.length === 0) return null;
-  const primaryClusterId = clusterIds[0] ?? null;
-  const href = primaryClusterId
-    ? `/app/team/reconciliation/clusters/${primaryClusterId}`
-    : '/app/team/reconciliation';
+  const records =
+    clusterIds.length > 0
+      ? clusterIds.map((clusterId) => ({
+          key: clusterId,
+          href: `/app/team/reconciliation/clusters/${clusterId}`,
+        }))
+      : [{ key: 'dashboard', href: '/app/team/reconciliation' }];
   return (
     <details className="mt-2 border-l border-border pl-3 text-xs text-fg-dim">
       <summary className="cursor-pointer font-mono text-[11px] uppercase tracking-[0.12em] hover:text-fg">
         Technical details
       </summary>
-      <Link href={href} className="mt-2 inline-flex items-center gap-1 hover:text-signal">
-        <ExternalLink className="size-3" />
-        Open processing record
-      </Link>
+      <div className="mt-2 grid gap-1">
+        {records.map((record, index) => (
+          <Link
+            href={record.href}
+            className="inline-flex items-center gap-1 hover:text-signal"
+            key={record.key}
+          >
+            <ExternalLink className="size-3" />
+            {records.length === 1
+              ? 'Open processing record'
+              : `Open processing record ${index + 1} of ${records.length}`}
+          </Link>
+        ))}
+      </div>
     </details>
   );
 }

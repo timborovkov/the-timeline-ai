@@ -135,6 +135,60 @@ describe('ApprovalsClient', () => {
     );
   });
 
+  it('keeps every processing record reachable for multi-cluster bundles', () => {
+    const firstClusterId = '22222222-2222-4222-8222-222222222222';
+    const secondClusterId = '33333333-3333-4333-8333-333333333333';
+    const html = renderToStaticMarkup(
+      createElement(ApprovalsClient, {
+        suggestions: [
+          {
+            id: 'bundle-multi-cluster',
+            source: 'background',
+            status: 'pending',
+            title: 'Update two customer records',
+            summary: null,
+            reason: null,
+            confidence: 'medium',
+            metadata: { reconciliation_cluster_ids: [firstClusterId, secondClusterId] },
+            createdAt: '2026-06-01T10:00:00.000Z',
+            evidence: [],
+            items: [
+              {
+                id: 'item-first-cluster',
+                status: 'pending',
+                operation: 'update',
+                targetKind: 'object',
+                targetId: '44444444-4444-4444-8444-444444444444',
+                title: 'Update Acme',
+                description: null,
+                proposedPayload: { stage: 'contract_review' },
+                metadata: { reconciliation_cluster_id: firstClusterId },
+                failureReason: null,
+              },
+              {
+                id: 'item-second-cluster',
+                status: 'pending',
+                operation: 'update',
+                targetKind: 'object',
+                targetId: '55555555-5555-4555-8555-555555555555',
+                title: 'Update Beta',
+                description: null,
+                proposedPayload: { stage: 'discovery' },
+                metadata: { reconciliation_cluster_id: secondClusterId },
+                failureReason: null,
+              },
+            ],
+          },
+        ],
+      }),
+    );
+
+    expect(html).toContain('Open processing record 1 of 2');
+    expect(html).toContain('Open processing record 2 of 2');
+    expect(html).toContain(`/app/team/reconciliation/clusters/${firstClusterId}`);
+    expect(html).toContain(`/app/team/reconciliation/clusters/${secondClusterId}`);
+  });
+
   it('preserves literal payload values and exposes every meaningful proposed change', () => {
     const html = renderToStaticMarkup(
       createElement(ApprovalsClient, {
@@ -408,6 +462,56 @@ describe('ApprovalsClient', () => {
     expect(html).toContain('Lane Blocked');
     expect(html).not.toContain('Selected lane');
     expect(html).not.toContain('Field Due at');
+  });
+
+  it('shows board membership destinations without exposing their ids', () => {
+    const boardId = '66666666-6666-4666-8666-666666666666';
+    const entityId = '77777777-7777-4777-8777-777777777777';
+    const laneId = '88888888-8888-4888-8888-888888888888';
+    const html = renderToStaticMarkup(
+      createElement(ApprovalsClient, {
+        suggestions: [
+          {
+            id: 'bundle-board-membership',
+            source: 'background',
+            status: 'pending',
+            title: 'Update the pilot board',
+            summary: null,
+            reason: null,
+            confidence: 'medium',
+            createdAt: '2026-06-01T10:00:00.000Z',
+            evidence: [],
+            items: [
+              {
+                id: 'item-board-membership',
+                status: 'pending',
+                operation: 'create',
+                targetKind: 'board_membership',
+                targetId: null,
+                title: 'Add customer to board',
+                description: null,
+                proposedPayload: {
+                  boardId,
+                  boardName: 'Pilot pipeline',
+                  entityId,
+                  entityName: 'Digital Audit Company',
+                  laneId,
+                  laneName: 'Discovery',
+                },
+                failureReason: null,
+              },
+            ],
+          },
+        ],
+      }),
+    );
+
+    expect(html).toContain('Board Pilot pipeline');
+    expect(html).toContain('Item Digital Audit Company');
+    expect(html).toContain('Lane Discovery');
+    expect(html).not.toContain(boardId);
+    expect(html).not.toContain(entityId);
+    expect(html).not.toContain(laneId);
   });
 
   it('does not roll an invalid task date into a different calendar date', () => {

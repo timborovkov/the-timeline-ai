@@ -736,7 +736,9 @@ key/value pairs.
   an existing event is reused only when its user-visible fields match the
   proposal.
   The evidence disclosure uses plain-language source labels, and reconciliation
-  provenance is available through one collapsed `Technical details` link.
+  provenance is available through one collapsed `Technical details` disclosure.
+  It contains one plain-language link per distinct processing record when a
+  bundle spans multiple reconciliation clusters.
 
 ### Object detail
 
