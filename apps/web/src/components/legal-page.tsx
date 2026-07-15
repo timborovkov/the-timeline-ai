@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 
 import { PublicShell } from '@/components/public-shell';
+import { auth } from '@/lib/auth';
 import { cn } from '@/lib/utils';
 
 interface LegalPageProps {
@@ -11,9 +12,21 @@ interface LegalPageProps {
   className?: string;
 }
 
-export function LegalPage({ children, eyebrow, title, description, className }: LegalPageProps) {
+export async function LegalPage({
+  children,
+  eyebrow,
+  title,
+  description,
+  className,
+}: LegalPageProps) {
+  const session = await auth();
+
   return (
-    <PublicShell width="reading" footerLabel="The Timeline legal">
+    <PublicShell
+      width="reading"
+      footerLabel="The Timeline legal"
+      isSignedIn={Boolean(session?.user)}
+    >
       <main className="mx-auto max-w-4xl px-4 py-12 sm:px-6 sm:py-16">
         <p className="text-xs font-medium text-fg-muted">{eyebrow}</p>
         <h1 className="mt-3 text-3xl font-semibold tracking-tight text-fg sm:text-4xl">{title}</h1>

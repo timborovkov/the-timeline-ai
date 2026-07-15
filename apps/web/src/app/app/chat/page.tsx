@@ -7,7 +7,7 @@ import { redirect } from 'next/navigation';
 import type { Metadata } from 'next';
 
 import { ChatPane } from '@/components/chat/chat-pane';
-import { SessionSidebar } from '@/components/chat/session-sidebar';
+import { MobileSessionNav, SessionSidebar } from '@/components/chat/session-sidebar';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { hydrateChatSessionMessages } from '@/lib/chat-session';
@@ -82,6 +82,15 @@ export default async function ChatPage({
     }
   }
 
+  const sessionEntries = sessions.map((chatSession) => ({
+    id: chatSession.id,
+    title: chatSession.title,
+    pinnedEntityId: chatSession.pinnedEntityId,
+    pinnedEntityName: chatSession.pinnedEntityId
+      ? (pinnedNames.get(chatSession.pinnedEntityId) ?? null)
+      : null,
+  }));
+
   return (
     // Escape main's px/py with negative margins so the chat fills the
     // entire viewport minus the AppShell header (h-12 = 3rem). The chat
@@ -91,16 +100,9 @@ export default async function ChatPage({
       data-app-layout="full-bleed"
       className="-mx-4 -my-6 flex h-[calc(100dvh-3rem)] md:-mx-8 md:-my-8"
     >
-      <SessionSidebar
-        activeSessionId={activeSessionId}
-        sessions={sessions.map((s) => ({
-          id: s.id,
-          title: s.title,
-          pinnedEntityId: s.pinnedEntityId,
-          pinnedEntityName: s.pinnedEntityId ? (pinnedNames.get(s.pinnedEntityId) ?? null) : null,
-        }))}
-      />
-      <div className="flex min-h-0 flex-1 flex-col px-4 py-5 md:px-8 md:py-6">
+      <SessionSidebar activeSessionId={activeSessionId} sessions={sessionEntries} />
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col px-4 py-5 md:px-8 md:py-6">
+        <MobileSessionNav activeSessionId={activeSessionId} sessions={sessionEntries} />
         <header
           className="mb-5 flex shrink-0 items-baseline gap-x-4 border-b border-border pb-3 text-sm text-fg-muted"
           aria-label={`Chat with ${team?.name ?? active.teamName}'s timeline`}

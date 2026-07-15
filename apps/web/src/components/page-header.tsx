@@ -82,7 +82,7 @@ export function PageHeader({
       </div>
       {hasMetadata ? (
         <dl
-          aria-hidden="true"
+          aria-hidden={srLabel ? true : undefined}
           className="m-0 flex flex-wrap items-baseline gap-x-4 gap-y-1 text-xs text-fg-muted"
         >
           {metadataList.map((seg, index) => (

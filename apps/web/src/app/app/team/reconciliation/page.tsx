@@ -91,7 +91,15 @@ export default async function ReconciliationDashboardPage({
             value: coverage.missingRawEvents + coverage.degradedReplayEvidence,
             danger: coverage.missingRawEvents + coverage.degradedReplayEvidence > 0,
           },
-          { label: 'updated', value: dashboard.generatedAt.toLocaleString() },
+          {
+            label: 'updated',
+            value: (
+              <span data-visual-dynamic="reconciliation-generated-at">
+                {dashboard.generatedAt.toLocaleString()}
+              </span>
+            ),
+            mono: true,
+          },
         ]}
         srLabel={`Reconciliation for ${active.teamName}. ${String(coverage.totalRawEvents)} captured items checked; ${String(coverage.missingRawEvents + coverage.degradedReplayEvidence)} need repair.`}
       />

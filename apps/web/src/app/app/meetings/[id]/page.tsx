@@ -42,7 +42,10 @@ export default async function MeetingDetailPage({ params }: Props) {
 
   const meeting = await scope.meetings.getMeeting(id);
   if (!meeting) notFound();
-  const chunks = await scope.meetings.listChunks(id);
+  const [chunks, calendarSettings] = await Promise.all([
+    scope.meetings.listChunks(id),
+    scope.calendar.getCalendarSettings(),
+  ]);
 
   const summary = typeof meeting.metadata.summary === 'string' ? meeting.metadata.summary : null;
   const cancellable = ['pending', 'joining', 'active'].includes(meeting.status);
@@ -67,7 +70,9 @@ export default async function MeetingDetailPage({ params }: Props) {
           { label: 'Status', value: statusLabel(meeting.status) },
           {
             label: 'Captured',
-            value: formatDisplayDateTime(meeting.createdAt),
+            value: formatDisplayDateTime(meeting.createdAt, {
+              timezone: calendarSettings.defaultTimezone,
+            }),
             mono: true,
           },
         ]}

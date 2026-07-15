@@ -79,6 +79,19 @@ test('normal seeded product views hide UUIDs and do not overflow at 320px', asyn
   await page.context().close();
 });
 
+test('Ask gives the conversation the full mobile viewport', async ({ browser }) => {
+  const page = await newSignedInPage(browser, 'owner');
+  await page.setViewportSize({ width: 320, height: 780 });
+  await page.goto('/app/chat');
+
+  await expect(page.getByRole('complementary')).toBeHidden();
+  const composer = page.getByPlaceholder("Ask anything about your team's timeline…");
+  await expect(composer).toBeVisible();
+  expect((await composer.boundingBox())?.width).toBeGreaterThan(240);
+
+  await page.context().close();
+});
+
 test('authenticated routes expose one page heading', async ({ browser }) => {
   const page = await newSignedInPage(browser, 'owner');
   const routes = [

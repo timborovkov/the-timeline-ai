@@ -16,6 +16,13 @@ interface SessionEntry {
   pinnedEntityName: string | null;
 }
 
+function sessionLabel(session: SessionEntry): string {
+  return (
+    session.title ??
+    (session.pinnedEntityName ? `Chat about ${session.pinnedEntityName}` : 'Untitled chat')
+  );
+}
+
 export function SessionSidebar(props: {
   sessions: SessionEntry[];
   activeSessionId: string | null;
@@ -48,11 +55,11 @@ function SessionSidebarContent({
   }
 
   return (
-    <aside className="flex h-full w-60 shrink-0 flex-col border-r bg-card/40 p-3">
+    <aside className="hidden h-full w-60 shrink-0 flex-col border-r bg-card/40 p-3 md:flex">
       <button
         type="button"
         onClick={newChat}
-        className="mb-3 flex items-center gap-2 rounded-md border border-primary/40 bg-primary/10 px-3 py-1.5 text-sm font-medium text-primary hover:bg-primary/20"
+        className="mb-3 flex items-center gap-2 rounded-md border px-3 py-1.5 text-sm font-medium text-foreground hover:bg-accent"
       >
         <Plus className="size-3.5" /> New chat
       </button>
@@ -63,9 +70,7 @@ function SessionSidebarContent({
           <ul className="h-full space-y-1 overflow-y-auto">
             {sessions.map((s) => {
               const isActive = s.id === activeSessionId;
-              const label =
-                s.title ??
-                (s.pinnedEntityName ? `Chat about ${s.pinnedEntityName}` : 'Untitled chat');
+              const label = sessionLabel(s);
               return (
                 <li key={s.id} className="group relative">
                   <Link
@@ -120,5 +125,82 @@ function SessionSidebarContent({
       </div>
       {dialog.node}
     </aside>
+  );
+}
+
+export function MobileSessionNav(props: {
+  sessions: SessionEntry[];
+  activeSessionId: string | null;
+}) {
+  return (
+    <Suspense fallback={null}>
+      <MobileSessionNavContent {...props} />
+    </Suspense>
+  );
+}
+
+function MobileSessionNavContent({
+  sessions,
+  activeSessionId,
+}: {
+  sessions: SessionEntry[];
+  activeSessionId: string | null;
+}) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const search = useSearchParams();
+
+  function newChat(): void {
+    const params = new URLSearchParams(search.toString());
+    params.delete('session');
+    const qs = params.toString();
+    router.push(qs ? `${pathname}?${qs}` : pathname);
+  }
+
+  return (
+    <nav aria-label="Chat sessions" className="mb-3 shrink-0 md:hidden">
+      <details className="group rounded-md border bg-card/40">
+        <summary className="flex min-h-9 cursor-pointer list-none items-center justify-between gap-3 px-3 text-sm font-medium marker:hidden">
+          <span>{activeSessionId ? 'Current chat' : 'Chats'}</span>
+          <span className="font-mono text-xs text-muted-foreground">
+            {sessions.length} session{sessions.length === 1 ? '' : 's'}
+          </span>
+        </summary>
+        <div className="max-h-56 space-y-2 overflow-y-auto border-t p-2">
+          <button
+            type="button"
+            onClick={newChat}
+            className="flex min-h-9 w-full items-center gap-2 rounded-md border px-2 text-left text-sm font-medium hover:bg-accent"
+          >
+            <Plus className="size-3.5" /> New chat
+          </button>
+          {sessions.length === 0 ? (
+            <p className="px-1 py-2 text-xs text-muted-foreground">No chats yet.</p>
+          ) : (
+            <ul className="space-y-1" data-visual-dynamic="mobile-chat-sessions">
+              {sessions.map((session) => {
+                const isActive = session.id === activeSessionId;
+                return (
+                  <li key={session.id}>
+                    <Link
+                      href={`/app/chat?session=${session.id}`}
+                      aria-current={isActive ? 'page' : undefined}
+                      className={cn(
+                        'block truncate rounded-md px-2 py-2 text-sm',
+                        isActive
+                          ? 'bg-primary/10 text-primary'
+                          : 'text-foreground/80 hover:bg-accent/60',
+                      )}
+                    >
+                      {sessionLabel(session)}
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+      </details>
+    </nav>
   );
 }

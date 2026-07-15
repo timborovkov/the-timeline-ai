@@ -1457,7 +1457,8 @@ State matrix:
 Keep the flat indexed timeline from `design.md`, but rebalance hierarchy:
 
 - title: Switzer, sentence case, `text-sm` or `text-base`, medium weight
-- metadata: mono uppercase, smaller and quieter
+- metadata: quiet 12px text; use mono only for timestamps, citations, counts,
+  and recognizable public external keys
 - source count: compact evidence chip, not a competing right-column sentence
 - impact: chips underneath title/preview, not only aligned far right
 - selected row: left signal bar plus inspector connection

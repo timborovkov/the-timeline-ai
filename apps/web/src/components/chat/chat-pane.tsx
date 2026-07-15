@@ -186,6 +186,7 @@ function useChatSessionTransport({
   const pinnedEntityIdRef = useRef<string | null>(initialPinnedEntityId);
   const onSessionIdChangeRef = useRef(onSessionIdChange);
   const sessionCreateAttempted = useRef(initialSessionId !== null);
+  const requestAskedForNewSession = useRef(false);
 
   useEffect(() => {
     sessionIdRef.current = sessionId;
@@ -227,8 +228,8 @@ function useChatSessionTransport({
         body: () => {
           const askForNew = sessionIdRef.current === null && !sessionCreateAttempted.current;
           if (askForNew) sessionCreateAttempted.current = true;
+          requestAskedForNewSession.current = askForNew;
           const handoff = askForNew ? chatHandoffRef.current : null;
-          if (askForNew) chatHandoffRef.current = null;
           return {
             sessionId: sessionIdRef.current ?? undefined,
             startNewSession: askForNew,
@@ -239,24 +240,42 @@ function useChatSessionTransport({
           };
         },
         fetch: async (url, init) => {
-          const res = await fetch(url, init);
-          if (!res.ok) {
-            const data = (await res
-              .clone()
-              .json()
-              .catch(() => null)) as { error?: string } | null;
-            throw new Error(chatErrorMessage(data?.error, res.status));
-          }
-          const id = res.headers.get('x-tl-session-id');
-          if (id && id !== sessionIdRef.current) {
-            sessionIdRef.current = id;
-            setSessionId(id);
-            onSessionIdChangeRef.current?.(id);
-            if (updateUrlOnSessionCreate && typeof window !== 'undefined') {
-              window.history.replaceState(null, '', `/app/chat?session=${encodeURIComponent(id)}`);
+          try {
+            const res = await fetch(url, init);
+            if (!res.ok) {
+              const data = (await res
+                .clone()
+                .json()
+                .catch(() => null)) as { error?: string } | null;
+              throw new Error(chatErrorMessage(data?.error, res.status));
             }
+            const id = res.headers.get('x-tl-session-id');
+            if (id) {
+              if (requestAskedForNewSession.current) chatHandoffRef.current = null;
+              if (id !== sessionIdRef.current) {
+                sessionIdRef.current = id;
+                setSessionId(id);
+                onSessionIdChangeRef.current?.(id);
+                if (updateUrlOnSessionCreate && typeof window !== 'undefined') {
+                  window.history.replaceState(
+                    null,
+                    '',
+                    `/app/chat?session=${encodeURIComponent(id)}`,
+                  );
+                }
+              }
+            } else if (requestAskedForNewSession.current && sessionIdRef.current === null) {
+              sessionCreateAttempted.current = false;
+            }
+            requestAskedForNewSession.current = false;
+            return res;
+          } catch (error) {
+            if (requestAskedForNewSession.current && sessionIdRef.current === null) {
+              sessionCreateAttempted.current = false;
+            }
+            requestAskedForNewSession.current = false;
+            throw error;
           }
-          return res;
         },
       }),
     [chatHandoffRef, updateUrlOnSessionCreate],
