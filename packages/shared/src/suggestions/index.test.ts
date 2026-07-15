@@ -1124,6 +1124,7 @@ describe('suggestion scope', () => {
             canonicalName: 'Send update',
             status: 'todo',
             parentObjectId: firstParent.id,
+            parentName: 'Wrong parent',
           },
         },
       ],
@@ -1162,6 +1163,22 @@ describe('suggestion scope', () => {
       { suggestionId: first.id, status: 'pending', supersededByItemId: null },
       { suggestionId: second.id, status: 'pending', supersededByItemId: null },
     ]);
+    expect(first.items[0]?.proposedPayload).toMatchObject({
+      parentObjectId: firstParent.id,
+      parentName: 'Local inference',
+    });
+
+    await db
+      .update(entities)
+      .set({ canonicalName: 'Local inference rollout' })
+      .where(eq(entities.id, firstParent.id));
+    const reloaded = await withTeam(db as never, TEAM_ID, USER_ID).suggestions.getSuggestion(
+      first.id,
+    );
+    expect(reloaded?.items[0]?.proposedPayload).toMatchObject({
+      parentObjectId: firstParent.id,
+      parentName: 'Local inference rollout',
+    });
   });
 
   it('keeps typed and untyped object create proposals separate', async () => {

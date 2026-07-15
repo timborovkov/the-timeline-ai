@@ -279,6 +279,7 @@ function payloadFieldLabel(key: string): string {
     notes: 'Notes',
     ownerName: 'Owner',
     ownerUserId: 'Owner',
+    parentName: 'Parent',
     position: 'Position',
     priority: 'Priority',
     reminderMinutes: 'Reminder',

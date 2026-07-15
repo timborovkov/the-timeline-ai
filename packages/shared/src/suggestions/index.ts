@@ -2174,6 +2174,46 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     };
   }
 
+  async function parentObjectNamesForPayloads(
+    payloads: readonly Record<string, unknown>[],
+  ): Promise<ReadonlyMap<string, string>> {
+    const parentIds = [
+      ...new Set(
+        payloads.flatMap((payload) =>
+          typeof payload.parentObjectId === 'string' && UUID_RE.test(payload.parentObjectId)
+            ? [payload.parentObjectId]
+            : [],
+        ),
+      ),
+    ];
+    if (parentIds.length === 0) return new Map();
+
+    const rows = await db
+      .select({ id: entities.id, name: entities.canonicalName })
+      .from(entities)
+      .where(
+        and(
+          eq(entities.teamId, teamId),
+          inArray(entities.id, parentIds),
+          isNull(entities.mergedIntoId),
+        ),
+      );
+    return new Map(rows.map((row) => [row.id, row.name]));
+  }
+
+  function resolveParentObjectRef(
+    payload: Record<string, unknown>,
+    parentNamesById: ReadonlyMap<string, string>,
+  ): Record<string, unknown> {
+    const normalized = { ...payload };
+    delete normalized.parentName;
+    if (typeof normalized.parentObjectId === 'string' && UUID_RE.test(normalized.parentObjectId)) {
+      normalized.parentName =
+        parentNamesById.get(normalized.parentObjectId) ?? 'Unavailable workspace item';
+    }
+    return normalized;
+  }
+
   async function resolveBoardItemRefs(
     payload: Record<string, unknown>,
     options: {
@@ -2253,23 +2293,27 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     item: SuggestionItemInput,
     objectTypeByTargetId: ReadonlyMap<string, ObjectType>,
     boardLabels: BoardPayloadLabels,
+    parentNamesById: ReadonlyMap<string, string>,
   ): Promise<SuggestionItemInput> {
-    const proposedPayload = normalizeSuggestionSourceEventPayload(
-      await resolveBoardItemRefs(
-        await resolvePayloadMemberRefs(
-          normalizeLifecyclePayload({
-            operation: item.operation,
-            targetKind: item.targetKind,
-            title: item.title,
-            proposedPayload: item.proposedPayload,
-            objectType:
-              item.targetKind === 'object' && item.operation !== 'create'
-                ? (objectTypeByTargetId.get(item.targetId ?? '') ?? null)
-                : null,
-          }),
+    const proposedPayload = resolveParentObjectRef(
+      normalizeSuggestionSourceEventPayload(
+        await resolveBoardItemRefs(
+          await resolvePayloadMemberRefs(
+            normalizeLifecyclePayload({
+              operation: item.operation,
+              targetKind: item.targetKind,
+              title: item.title,
+              proposedPayload: item.proposedPayload,
+              objectType:
+                item.targetKind === 'object' && item.operation !== 'create'
+                  ? (objectTypeByTargetId.get(item.targetId ?? '') ?? null)
+                  : null,
+            }),
+          ),
+          { requireUnique: false, labels: boardLabels },
         ),
-        { requireUnique: false, labels: boardLabels },
       ),
+      parentNamesById,
     );
     return { ...item, proposedPayload };
   }
@@ -2550,15 +2594,20 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         .where(inArray(agentSuggestionEvidence.suggestionId, ids))
         .orderBy(asc(agentSuggestionEvidence.suggestionId), asc(agentSuggestionEvidence.createdAt)),
     ]);
-    const boardLabels = await boardPayloadLabelsForPayloads(
-      items.map((item) => recordFromUnknown(item.proposedPayload)),
-    );
+    const payloads = items.map((item) => recordFromUnknown(item.proposedPayload));
+    const [boardLabels, parentNamesById] = await Promise.all([
+      boardPayloadLabelsForPayloads(payloads),
+      parentObjectNamesForPayloads(payloads),
+    ]);
     const displayItems = await Promise.all(
       items.map(async (item) => ({
         ...item,
-        proposedPayload: await resolveBoardItemRefs(
-          await resolvePayloadMemberRefs(recordFromUnknown(item.proposedPayload)),
-          { requireUnique: false, labels: boardLabels },
+        proposedPayload: resolveParentObjectRef(
+          await resolveBoardItemRefs(
+            await resolvePayloadMemberRefs(recordFromUnknown(item.proposedPayload)),
+            { requireUnique: false, labels: boardLabels },
+          ),
+          parentNamesById,
         ),
       })),
     );
@@ -5099,12 +5148,19 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       await validateEvidenceVisible((input.evidence ?? []).map((ev) => ev.rawEventId));
       const objectTypeByTargetId = await objectTypesForItems(input.items);
       const evidenceIds = Array.from(new Set((input.evidence ?? []).map((ev) => ev.rawEventId)));
-      const boardLabels = await boardPayloadLabelsForPayloads(
-        input.items.map((item) => item.proposedPayload),
-      );
+      const inputPayloads = input.items.map((item) => item.proposedPayload);
+      const [boardLabels, parentNamesById] = await Promise.all([
+        boardPayloadLabelsForPayloads(inputPayloads),
+        parentObjectNamesForPayloads(inputPayloads),
+      ]);
       const normalizedItems = await Promise.all(
         input.items.map((item) =>
-          normalizeSuggestionItemForStorage(item, objectTypeByTargetId, boardLabels),
+          normalizeSuggestionItemForStorage(
+            item,
+            objectTypeByTargetId,
+            boardLabels,
+            parentNamesById,
+          ),
         ),
       );
       const projectionContext = await buildApprovalProjectionContext({

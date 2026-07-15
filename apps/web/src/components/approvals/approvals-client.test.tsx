@@ -27,6 +27,7 @@ vi.mock('@/app/actions/suggestions', () => ({
 const { ApprovalsClient } = await import('./approvals-client.js');
 
 const EVENT_ID = '11111111-1111-4111-8111-111111111111';
+const PARENT_ID = '66666666-6666-4666-8666-666666666666';
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -89,6 +90,8 @@ describe('ApprovalsClient', () => {
                   canonicalName: 'Send proposal',
                   dueAt: '2026-07-19T00:00:00.000Z',
                   status: 'todo',
+                  parentObjectId: PARENT_ID,
+                  parentName: 'Acme renewal',
                 },
                 metadata: {
                   reconciliation_output_id: '99999999-9999-4999-8999-999999999999',
@@ -121,8 +124,9 @@ describe('ApprovalsClient', () => {
     expect(html).toContain('I will send the proposal');
     expect(html).toContain('Evidence from Slack');
     expect(html).toContain('create task');
-    expect(html).toContain('Due Jul 19, 2026 · Status To do');
+    expect(html).toContain('Due Jul 19, 2026 · Status To do · Parent Acme renewal');
     expect(html).not.toContain('Due Jul 18, 2026');
+    expect(html).not.toContain(PARENT_ID);
     expect(html).toContain('Why this was suggested · 1 source');
     expect(html).toContain('Technical details');
     expect(html).toContain('Open processing record');
