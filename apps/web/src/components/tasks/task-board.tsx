@@ -124,6 +124,17 @@ interface TaskPaginationState {
   cursor: string | null;
 }
 
+interface PrimaryProjectOverride {
+  project: objects.TaskPrimaryProjectRow | null;
+  baselineKey: string;
+  committed: boolean;
+}
+
+function primaryProjectStateKey(project: objects.TaskPrimaryProjectRow | undefined): string {
+  if (!project) return '';
+  return `${project.projectId}\u0000${project.projectName}\u0000${project.archivedAt?.toISOString() ?? ''}`;
+}
+
 type TaskCategoryStateRow = Pick<
   objects.ObjectRow,
   | 'id'
@@ -531,7 +542,7 @@ function useTaskBoardController({
     objects.TaskPrimaryProjectRow[]
   >([]);
   const [primaryProjectOverrides, setPrimaryProjectOverrides] = useState<
-    Record<string, objects.TaskPrimaryProjectRow | null>
+    Record<string, PrimaryProjectOverride>
   >({});
   const projectHydrationCheckedRef = useRef<Set<string> | null>(null);
   projectHydrationCheckedRef.current ??= new Set();
@@ -544,17 +555,33 @@ function useTaskBoardController({
     (revision: number) => revision + 1,
     0,
   );
+  const resolvedPrimaryProjects = useMemo(() => {
+    const serverHydratedTaskIds = initialProjectsHydrated
+      ? new Set(rows.map((row) => row.id))
+      : null;
+    const byTask = new Map<string, objects.TaskPrimaryProjectRow>();
+    for (const project of loadedPrimaryProjects) {
+      if (!serverHydratedTaskIds?.has(project.taskId)) byTask.set(project.taskId, project);
+    }
+    for (const project of primaryProjects) byTask.set(project.taskId, project);
+    return [...byTask.values()];
+  }, [initialProjectsHydrated, loadedPrimaryProjects, primaryProjects, rows]);
   const hydratedPrimaryProjects = useMemo(() => {
     const byTask = new Map(
-      loadedPrimaryProjects.map((project) => [project.taskId, project] as const),
+      resolvedPrimaryProjects.map((project) => [project.taskId, project] as const),
     );
-    for (const project of primaryProjects) byTask.set(project.taskId, project);
-    for (const [taskId, project] of Object.entries(primaryProjectOverrides)) {
-      if (project) byTask.set(taskId, project);
+    for (const [taskId, override] of Object.entries(primaryProjectOverrides)) {
+      if (
+        override.committed &&
+        override.baselineKey !== primaryProjectStateKey(byTask.get(taskId))
+      ) {
+        continue;
+      }
+      if (override.project) byTask.set(taskId, override.project);
       else byTask.delete(taskId);
     }
     return [...byTask.values()];
-  }, [loadedPrimaryProjects, primaryProjectOverrides, primaryProjects]);
+  }, [primaryProjectOverrides, resolvedPrimaryProjects]);
   const missingProjectTaskIds = useMemo(() => {
     // The checked ids live in a ref, so this revision explicitly invalidates the memo for a retry.
     void projectHydrationRevision;
@@ -603,18 +630,38 @@ function useTaskBoardController({
       projectHydrationCheckedRef.current?.add(taskId);
       setPrimaryProjectOverrides((current) => ({
         ...current,
-        [taskId]: project
-          ? {
-              taskId,
-              projectId: project.id,
-              projectName: project.label,
-              archivedAt: null,
-            }
-          : null,
+        [taskId]: {
+          project: project
+            ? {
+                taskId,
+                projectId: project.id,
+                projectName: project.label,
+                archivedAt: null,
+              }
+            : null,
+          baselineKey: primaryProjectStateKey(
+            resolvedPrimaryProjects.find((candidate) => candidate.taskId === taskId),
+          ),
+          committed: false,
+        },
       }));
     },
-    [],
+    [resolvedPrimaryProjects],
   );
+  const commitPrimaryProject = useCallback((taskId: string) => {
+    setPrimaryProjectOverrides((current) => {
+      const override = current[taskId];
+      if (!override) return current;
+      return { ...current, [taskId]: { ...override, committed: true } };
+    });
+  }, []);
+  const revertPrimaryProject = useCallback((taskId: string) => {
+    setPrimaryProjectOverrides((current) => {
+      if (!(taskId in current)) return current;
+      const { [taskId]: _removed, ...next } = current;
+      return next;
+    });
+  }, []);
   const pendingCategoryIds = useMemo(() => {
     const ids: string[] = [];
     for (const row of effectiveRows) {
@@ -866,6 +913,8 @@ function useTaskBoardController({
     updateTasks,
     updateTaskCategories,
     updatePrimaryProject,
+    commitPrimaryProject,
+    revertPrimaryProject,
     visibleRows,
     hydratedPrimaryProjects,
   };
@@ -904,6 +953,8 @@ function TaskBoardView({
   updateTasks,
   updateTaskCategories,
   updatePrimaryProject,
+  commitPrimaryProject,
+  revertPrimaryProject,
   view,
   visibleRows,
   hydratedPrimaryProjects,
@@ -1049,6 +1100,12 @@ function TaskBoardView({
           onUpdate={updateTask}
           onProjectChange={(project) => {
             updatePrimaryProject(selectedTask.id, project);
+          }}
+          onProjectChangeCommitted={() => {
+            commitPrimaryProject(selectedTask.id);
+          }}
+          onProjectChangeReverted={() => {
+            revertPrimaryProject(selectedTask.id);
           }}
         />
       ) : null}
@@ -1728,6 +1785,8 @@ function TaskDetailPanel({
   objectHref,
   onUpdate,
   onProjectChange,
+  onProjectChangeCommitted,
+  onProjectChangeReverted,
 }: {
   task: objects.ObjectRow;
   connectedWork?: objects.ObjectDetail['connectedWork'] | null;
@@ -1740,6 +1799,8 @@ function TaskDetailPanel({
   objectHref: string;
   onUpdate: (id: string, patch: TaskPatch) => Promise<{ ok?: boolean; error?: string }>;
   onProjectChange: (project: { id: string; label: string } | null) => void;
+  onProjectChangeCommitted: () => void;
+  onProjectChangeReverted: () => void;
 }) {
   const [saving, setSaving] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -1792,6 +1853,8 @@ function TaskDetailPanel({
             projectArchived={Boolean(primaryProject?.archivedAt)}
             projects={projects}
             onProjectChange={onProjectChange}
+            onProjectChangeCommitted={onProjectChangeCommitted}
+            onProjectChangeReverted={onProjectChangeReverted}
           />
         </TaskField>
         {taskCategoriesEnabled ? (

@@ -9,7 +9,7 @@ import { childLogger } from '#src/logger.js';
 import { resolveBearerKey } from '#src/mcp-server/keys.js';
 import * as objects from '#src/objects/index.js';
 import { serializeObjectRowsWithProjects } from '#src/objects/tool-serialization.js';
-import { taskCategorySchema } from '#src/task-categories/types.js';
+import { TASK_CATEGORIES, taskCategorySchema } from '#src/task-categories/types.js';
 import { withTeam, type TeamScope } from '#src/team-scope.js';
 import { resolveTimePhrase, workspaceTimeContext } from '#src/time/index.js';
 import {
@@ -551,7 +551,14 @@ const TOOLS = [
         ownerUserId: { type: ['string', 'null'] },
         assigneeUserId: { type: ['string', 'null'] },
         category: {
-          oneOf: [{ type: 'string' }, { type: 'array', items: { type: 'string' }, maxItems: 15 }],
+          oneOf: [
+            { type: 'string', enum: [...TASK_CATEGORIES] },
+            {
+              type: 'array',
+              items: { type: 'string', enum: [...TASK_CATEGORIES] },
+              maxItems: 15,
+            },
+          ],
         },
         uncategorized: { type: 'boolean' },
         primaryProjectId: { type: 'string' },
@@ -573,7 +580,7 @@ const TOOLS = [
         status: { type: 'string' },
         stage: { type: 'string' },
         ownerUserId: { type: 'string' },
-        category: { type: 'string' },
+        category: { type: 'string', enum: [...TASK_CATEGORIES] },
         uncategorized: { type: 'boolean' },
         primaryProjectId: { type: 'string' },
         archived: { type: 'boolean' },
@@ -590,7 +597,7 @@ const TOOLS = [
       properties: {
         status: { type: 'string' },
         ownerUserId: { type: 'string' },
-        category: { type: 'string' },
+        category: { type: 'string', enum: [...TASK_CATEGORIES] },
         uncategorized: { type: 'boolean' },
         primaryProjectId: { type: 'string' },
         limit: { type: 'integer', minimum: 1, maximum: 50 },

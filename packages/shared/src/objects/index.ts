@@ -91,6 +91,7 @@ import {
   type IdentityFacetKind,
   type IdentityFacetRow,
 } from '#src/objects/identity-facets.js';
+import { suggestedProjectIsUnusedCondition } from '#src/objects/suggested-projects.js';
 import {
   enqueueObjectSummaryRefresh,
   fireAndForgetObjectSummaryRefresh,
@@ -1363,7 +1364,7 @@ function objectTokenSearchCondition(token: string): SQL {
     OR lower(${entities.type}::text) = ${exact}
     OR lower(${entities.status}) = ${exact}
     OR lower(coalesce(${entities.stage}, '')) = ${exact}
-    OR lower(replace(coalesce(${entities.taskCategory}, ''), '_', ' ')) LIKE ${contains} ESCAPE '\\'
+    OR lower(replace(coalesce(${entities.taskCategory}, 'uncategorized'), '_', ' ')) LIKE ${contains} ESCAPE '\\'
     OR EXISTS (
       SELECT 1
       FROM jsonb_array_elements_text(${entities.aliases}) AS alias(value)
@@ -4280,6 +4281,7 @@ export async function updateObject(
   entityId: string,
   patch: ObjectPatch,
   actor: UpdateActor,
+  options?: { archiveSuggestedProjectIfUnusedForItemId?: string },
 ): Promise<{ object: ObjectRow; changedFields: string[] }> {
   await scope.requireMembership();
   if (!UUID_RE.test(entityId)) throw new Error('Invalid entity id');
@@ -4309,6 +4311,43 @@ export async function updateObject(
     const currentRow = currentRows[0];
     if (!currentRow) throw new Error('Object not found');
     const current: EntityRow = currentRow;
+
+    const unchangedResult = () => ({
+      object: toObjectRow(current),
+      changedFields: [] as string[],
+      changeIds: [] as string[],
+      dueDateCalendarSync: mergeDueDateCalendarSyncResults([]),
+      requestedCategoryHash: null as string | null,
+      linkedTaskCategoryJobs: [] as { taskId: string; inputHash: string }[],
+      linkedTaskCategoryFanout: null as {
+        projectId: string;
+        projectVersion: string;
+        afterTaskId: string;
+      } | null,
+    });
+    const suggestionItemId = options?.archiveSuggestedProjectIfUnusedForItemId;
+    if (suggestionItemId) {
+      const metadata = recordFromUnknown(current.metadata);
+      if (
+        current.type !== 'project' ||
+        current.archivedAt !== null ||
+        metadata.agent_suggestion_project_for_item_id !== suggestionItemId
+      ) {
+        return unchangedResult();
+      }
+      const [unused] = await tx
+        .select({ id: entities.id })
+        .from(entities)
+        .where(
+          and(
+            eq(entities.id, current.id),
+            eq(entities.teamId, scope.teamId),
+            suggestedProjectIsUnusedCondition(scope.teamId, sql`${current.id}`),
+          ),
+        )
+        .limit(1);
+      if (!unused) return unchangedResult();
+    }
 
     const changes: {
       field: string;
@@ -4351,19 +4390,7 @@ export async function updateObject(
     if (patch.type !== undefined) diff('type', patch.type);
 
     if (changes.length === 0) {
-      return {
-        object: toObjectRow(current),
-        changedFields: [],
-        changeIds: [] as string[],
-        dueDateCalendarSync: mergeDueDateCalendarSyncResults([]),
-        requestedCategoryHash: null as string | null,
-        linkedTaskCategoryJobs: [] as { taskId: string; inputHash: string }[],
-        linkedTaskCategoryFanout: null as {
-          projectId: string;
-          projectVersion: string;
-          afterTaskId: string;
-        } | null,
-      };
+      return unchangedResult();
     }
 
     let requestedCategoryHash: string | null = null;
@@ -4704,6 +4731,19 @@ export async function archiveObject(
 
   const result = await updateObject(db, scope, entityId, { archivedAt: new Date() }, actor);
   return { ...result.object, changedFields: result.changedFields };
+}
+
+export async function archiveSuggestedProjectIfUnused(
+  db: Db,
+  scope: TeamScopeCore,
+  entityId: string,
+  suggestionItemId: string,
+  actor: UpdateActor,
+): Promise<boolean> {
+  const result = await updateObject(db, scope, entityId, { archivedAt: new Date() }, actor, {
+    archiveSuggestedProjectIfUnusedForItemId: suggestionItemId,
+  });
+  return result.changedFields.includes('archivedAt');
 }
 
 export async function unarchiveObject(
@@ -8471,6 +8511,11 @@ export function createObjectScope(db: Db, scope: TeamScopeCore) {
       updateObject(db, scope, entityId, patch, actor),
     archiveObject: (entityId: string, actor: UpdateActor) =>
       archiveObject(db, scope, entityId, actor),
+    archiveSuggestedProjectIfUnused: (
+      entityId: string,
+      suggestionItemId: string,
+      actor: UpdateActor,
+    ) => archiveSuggestedProjectIfUnused(db, scope, entityId, suggestionItemId, actor),
     unarchiveObject: (entityId: string, actor: UpdateActor) =>
       unarchiveObject(db, scope, entityId, actor),
     mergeObjects: (input: Parameters<typeof mergeObjects>[2]) => mergeObjects(db, scope, input),

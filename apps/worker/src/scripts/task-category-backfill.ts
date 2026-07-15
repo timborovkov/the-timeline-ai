@@ -66,6 +66,20 @@ export function assertTaskCategoryBackfillModeEnabled(
   }
 }
 
+export async function closeTaskCategoryBackfillResources(
+  deps: {
+    closeQueue?: () => Promise<void>;
+    closeRedis?: () => Promise<void>;
+    closeDatabase?: () => Promise<void>;
+  } = {},
+): Promise<void> {
+  await Promise.all([
+    (deps.closeQueue ?? queue.closeTaskCategoryQueue)(),
+    (deps.closeRedis ?? queue.closeRedisConnection)(),
+    (deps.closeDatabase ?? closeDb)(),
+  ]);
+}
+
 async function main(): Promise<void> {
   const teamId = argument('--team-id');
   if (!teamId || !UUID_RE.test(teamId)) {
@@ -152,5 +166,5 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       process.stderr.write(`${error instanceof Error ? error.stack : String(error)}\n`);
       process.exitCode = 1;
     })
-    .finally(() => closeDb());
+    .finally(closeTaskCategoryBackfillResources);
 }

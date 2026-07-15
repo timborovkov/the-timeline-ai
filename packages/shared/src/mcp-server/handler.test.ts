@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { handleMcpRequest } from '#src/mcp-server/handler.js';
 import { hashKey } from '#src/mcp-server/keys.js';
+import { TASK_CATEGORIES } from '#src/task-categories/types.js';
 import { withTeam } from '#src/team-scope.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
 
@@ -24,6 +25,13 @@ interface ToolDescriptor {
     properties?: {
       source?: {
         enum?: string[];
+      };
+      category?: {
+        enum?: string[];
+        oneOf?: {
+          enum?: string[];
+          items?: { enum?: string[] };
+        }[];
       };
     };
   };
@@ -140,6 +148,15 @@ describe('handleMcpRequest', () => {
     expect(listEvents?.inputSchema.properties?.source?.enum).toEqual(
       expect.arrayContaining(['calendar', 'slack', 'ingest_webhook']),
     );
+    const categories = [...TASK_CATEGORIES];
+    const searchObjects = tools.find((tool) => tool.name === 'timeline.search_objects');
+    const searchCategorySchemas = searchObjects?.inputSchema.properties?.category?.oneOf ?? [];
+    expect(searchCategorySchemas[0]?.enum).toEqual(categories);
+    expect(searchCategorySchemas[1]?.items?.enum).toEqual(categories);
+    for (const toolName of ['timeline.list_objects', 'timeline.list_tasks']) {
+      const tool = tools.find((candidate) => candidate.name === toolName);
+      expect(tool?.inputSchema.properties?.category?.enum).toEqual(categories);
+    }
     expect(tools.map((tool) => tool.name)).toEqual(
       expect.arrayContaining([
         'timeline.retrieve_workspace_context',

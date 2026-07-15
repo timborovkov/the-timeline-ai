@@ -2731,6 +2731,24 @@ describe('object scope — archive visibility', () => {
     expect(found.map((row) => row.canonicalName)).toEqual(['Acme Corporation']);
   });
 
+  it('finds tasks without a category when searching for Uncategorized', async () => {
+    await pg.query(
+      `INSERT INTO entities (team_id, type, canonical_name, status, aliases, metadata, task_category)
+       VALUES ($1, 'task', 'Prepare launch notes', 'todo', '[]'::jsonb, '{}'::jsonb, NULL)`,
+      [TEAM_A],
+    );
+    const ownerScope = withTeam(db, TEAM_A, USER_OWNER).objects;
+
+    const found = await ownerScope.searchObjects({
+      query: 'Uncategorized',
+      type: 'task',
+      archived: false,
+      limit: 10,
+    });
+
+    expect(found.map((row) => row.canonicalName)).toEqual(['Prepare launch notes']);
+  });
+
   it('matches object search tokens against aliases case-insensitively', async () => {
     await pg.query(
       `INSERT INTO entities (team_id, type, canonical_name, status, aliases, metadata, updated_at)

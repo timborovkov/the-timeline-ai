@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import {
   assertTaskCategoryBackfillModeEnabled,
+  closeTaskCategoryBackfillResources,
   enqueueTaskCategoryBackfillBatch,
 } from '#src/scripts/task-category-backfill.js';
 
@@ -13,10 +14,12 @@ describe('task category backfill script', () => {
       TASK_CATEGORY_WORKER_ENABLED: false,
     };
 
-    expect(() => assertTaskCategoryBackfillModeEnabled(false, disabled)).not.toThrow();
-    expect(() => assertTaskCategoryBackfillModeEnabled(true, disabled)).toThrow(
-      'Task category backfill execution is disabled by an operational kill switch',
-    );
+    expect(() => {
+      assertTaskCategoryBackfillModeEnabled(false, disabled);
+    }).not.toThrow();
+    expect(() => {
+      assertTaskCategoryBackfillModeEnabled(true, disabled);
+    }).toThrow('Task category backfill execution is disabled by an operational kill switch');
   });
 
   it('sets a failing exit code when any task cannot be enqueued', async () => {
@@ -37,5 +40,17 @@ describe('task category backfill script', () => {
     expect(writeError).toHaveBeenCalledWith(
       `${JSON.stringify({ taskId: 'task-2', error: 'queue unavailable' })}\n`,
     );
+  });
+
+  it('closes the queue, Redis connection, and database after a run', async () => {
+    const closeQueue = vi.fn().mockResolvedValue(undefined);
+    const closeRedis = vi.fn().mockResolvedValue(undefined);
+    const closeDatabase = vi.fn().mockResolvedValue(undefined);
+
+    await closeTaskCategoryBackfillResources({ closeQueue, closeRedis, closeDatabase });
+
+    expect(closeQueue).toHaveBeenCalledOnce();
+    expect(closeRedis).toHaveBeenCalledOnce();
+    expect(closeDatabase).toHaveBeenCalledOnce();
   });
 });

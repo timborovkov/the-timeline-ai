@@ -32,7 +32,6 @@ import {
   lt,
   or,
   sql,
-  type SQLWrapper,
 } from 'drizzle-orm';
 import { z } from 'zod';
 
@@ -62,6 +61,7 @@ import {
 import { chatStructured as defaultChatStructured } from '#src/llm/chat.js';
 import { childLogger } from '#src/logger.js';
 import { OBJECT_TYPES } from '#src/objects/index.js';
+import { suggestedProjectIsUnusedCondition } from '#src/objects/suggested-projects.js';
 import {
   buildOutputDedupeKey,
   reconciliationDedupeKey,
@@ -103,7 +103,7 @@ const ENTITY_CANONICAL_NAME_UNIQUE_CONSTRAINT = 'entities_team_type_canonical_na
 const RECONCILIATION_APPROVAL_PROJECTION_VERSION = 'approval-projection-2026-06';
 const RECONCILIATION_APPROVAL_POLICY_VERSION = 'timeline-owned-approval-2026-06';
 const RECONCILIATION_APPROVAL_PLANNER_VERSION = 'legacy-suggestion-projection-2026-06';
-const INTERRUPTED_TASK_PROJECT_ACCEPTANCE_MIN_AGE_MS = 5 * 60 * 1000;
+const INTERRUPTED_TASK_CREATE_ACCEPTANCE_MIN_AGE_MS = 5 * 60 * 1000;
 const ACCEPTANCE_HEARTBEAT_INTERVAL_MS = 30 * 1000;
 const ACCEPTANCE_ATTEMPT_METADATA_KEY = 'acceptance_attempt_id';
 const ACCEPTANCE_STARTED_AT_METADATA_KEY = 'acceptance_started_at';
@@ -125,45 +125,6 @@ const PROJECTABLE_OUTPUT_TARGET_KINDS: readonly TargetKind[] = [
   'board_membership',
   'board_item_update',
 ];
-
-function suggestedProjectIsUnused(teamId: string, projectId: SQLWrapper) {
-  return sql`NOT EXISTS (
-      SELECT 1
-      FROM entity_relationships
-      WHERE entity_relationships.team_id = ${teamId}
-        AND (
-          entity_relationships.from_entity_id = ${projectId}
-          OR entity_relationships.to_entity_id = ${projectId}
-        )
-    )
-    AND NOT EXISTS (
-      SELECT 1
-      FROM object_notes
-      WHERE object_notes.team_id = ${teamId}
-        AND object_notes.entity_id = ${projectId}
-        AND object_notes.deleted_at IS NULL
-    )
-    AND NOT EXISTS (
-      SELECT 1
-      FROM board_items
-      WHERE board_items.team_id = ${teamId}
-        AND board_items.entity_id = ${projectId}
-        AND board_items.archived_at IS NULL
-    )
-    AND NOT EXISTS (
-      SELECT 1
-      FROM fact_entities
-      WHERE fact_entities.entity_id = ${projectId}
-    )
-    AND NOT EXISTS (
-      SELECT 1
-      FROM object_identity_facets
-      WHERE object_identity_facets.team_id = ${teamId}
-        AND object_identity_facets.entity_id = ${projectId}
-        AND object_identity_facets.status = 'approved'
-        AND object_identity_facets.archived_at IS NULL
-    )`;
-}
 
 function isCanonicalObjectNameConflict(error: unknown): boolean {
   let current = error;
@@ -2340,7 +2301,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
 
   async function loadBundle(id: string): Promise<SuggestionBundle | null> {
     await ensureMember();
-    await recoverInterruptedTaskProjectAcceptances();
+    await recoverInterruptedTaskCreateAcceptances();
     const rows = await db
       .select()
       .from(agentSuggestions)
@@ -2492,15 +2453,15 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     await archiveOrphanedSuggestedProjects(item);
   }
 
-  async function recoverInterruptedTaskProjectAcceptances(): Promise<void> {
-    const cutoff = new Date(Date.now() - INTERRUPTED_TASK_PROJECT_ACCEPTANCE_MIN_AGE_MS);
+  async function recoverInterruptedTaskCreateAcceptances(): Promise<void> {
+    const cutoff = new Date(Date.now() - INTERRUPTED_TASK_CREATE_ACCEPTANCE_MIN_AGE_MS);
     await db.transaction(async (tx) => {
       const recoveredItems = await tx
         .update(agentSuggestionItems)
         .set({
           status: 'failed',
           failureReason:
-            'Acceptance was interrupted before the task and project were finalized. Retry to finish it.',
+            'Acceptance was interrupted before the task was finalized. Retry to finish it.',
           resolvedAt: null,
           resolvedByUserId: null,
           metadata: sql`${agentSuggestionItems.metadata} - ${ACCEPTANCE_ATTEMPT_METADATA_KEY} - ${ACCEPTANCE_STARTED_AT_METADATA_KEY}`,
@@ -2520,7 +2481,6 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
             eq(agentSuggestionItems.operation, 'create'),
             isNull(agentSuggestionItems.resultId),
             lt(agentSuggestionItems.updatedAt, cutoff),
-            sql`nullif(btrim(${agentSuggestionItems.proposedPayload} ->> 'createProjectName'), '') is not null`,
           ),
         )
         .returning();
@@ -3942,7 +3902,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
           isNull(entities.mergedIntoId),
           sql`lower(${entities.canonicalName}) = ${normalizedProjectName}`,
           sql`COALESCE(${entities.metadata} ->> 'agent_suggestion_project_for_item_id', '') <> ''`,
-          suggestedProjectIsUnused(teamId, entities.id),
+          suggestedProjectIsUnusedCondition(teamId, entities.id),
         ),
       )
       .limit(2);
@@ -4002,23 +3962,10 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     project: { id: string; createdForSuggestion: boolean } | null,
   ): Promise<void> {
     if (!project?.createdForSuggestion) return;
-    const [candidate] = await db
-      .select({ id: entities.id })
-      .from(entities)
-      .where(
-        and(
-          eq(entities.teamId, teamId),
-          eq(entities.id, project.id),
-          eq(entities.type, 'project'),
-          isNull(entities.archivedAt),
-          sql`${entities.metadata} ->> 'agent_suggestion_project_for_item_id' = ${item.id}`,
-          suggestedProjectIsUnused(teamId, sql`${project.id}`),
-        ),
-      )
-      .limit(1);
-    if (candidate) {
-      await objects.archiveObject(candidate.id, { kind: 'agent', userId: null });
-    }
+    await objects.archiveSuggestedProjectIfUnused(project.id, item.id, {
+      kind: 'agent',
+      userId: null,
+    });
   }
 
   async function archiveOrphanedSuggestedProjects(
@@ -4034,11 +3981,13 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
           isNull(entities.archivedAt),
           isNull(entities.mergedIntoId),
           sql`${entities.metadata} ->> 'agent_suggestion_project_for_item_id' = ${item.id}`,
-          suggestedProjectIsUnused(teamId, entities.id),
         ),
       );
     for (const candidate of candidates) {
-      await objects.archiveObject(candidate.id, { kind: 'agent', userId: null });
+      await objects.archiveSuggestedProjectIfUnused(candidate.id, item.id, {
+        kind: 'agent',
+        userId: null,
+      });
     }
   }
 
@@ -4508,7 +4457,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
 
   async function acceptSuggestionItem(itemId: string): Promise<boolean> {
     await ensureMember();
-    await recoverInterruptedTaskProjectAcceptances();
+    await recoverInterruptedTaskCreateAcceptances();
     const rows = await db
       .select({ item: agentSuggestionItems, suggestion: agentSuggestions })
       .from(agentSuggestionItems)
@@ -4799,7 +4748,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     opts: { status?: SuggestionListStatus; limit?: number } = {},
   ): Promise<SuggestionBundle[]> {
     await ensureMember();
-    await recoverInterruptedTaskProjectAcceptances();
+    await recoverInterruptedTaskCreateAcceptances();
     const status = opts.status ?? 'pending';
     const conditions = [suggestionVisibilityPredicate(teamId, userId)];
     if (status === 'pending') {
@@ -5998,7 +5947,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
 
     async countPendingSuggestions(): Promise<number> {
       await ensureMember();
-      await recoverInterruptedTaskProjectAcceptances();
+      await recoverInterruptedTaskCreateAcceptances();
       const rows = await db
         .select({ total: count() })
         .from(agentSuggestions)
@@ -6024,7 +5973,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
 
     async rejectSuggestionItem(itemId: string): Promise<boolean> {
       await ensureMember();
-      await recoverInterruptedTaskProjectAcceptances();
+      await recoverInterruptedTaskCreateAcceptances();
       const rows = await db
         .select({ item: agentSuggestionItems, suggestion: agentSuggestions })
         .from(agentSuggestionItems)

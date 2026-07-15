@@ -339,6 +339,68 @@ describe('TaskBoard', () => {
     });
   });
 
+  it('reconciles an optimistic project assignment with refreshed server project data', async () => {
+    const rows = [task()];
+    const renderProps = {
+      rows,
+      columns: ['todo', 'doing', 'done', 'blocked', 'cancelled'],
+      selectedTaskId: 'task-1',
+      view: 'kanban' as const,
+      members: [],
+      totalCount: 1,
+      nextCursor: null,
+      initialProjectsHydrated: true,
+    };
+    const view = render(
+      <TaskBoard
+        {...renderProps}
+        projects={[
+          { id: 'project-old', label: 'Old project' },
+          { id: 'project-new', label: 'Faba redesign' },
+        ]}
+        primaryProjects={[
+          {
+            taskId: 'task-1',
+            projectId: 'project-old',
+            projectName: 'Old project',
+            archivedAt: null,
+          },
+        ]}
+      />,
+    );
+
+    await userEvent.selectOptions(
+      screen.getByRole('combobox', { name: 'Task project' }),
+      'project-new',
+    );
+    await waitFor(() => {
+      expect(fakes.refresh).toHaveBeenCalled();
+    });
+
+    view.rerender(
+      <TaskBoard
+        {...renderProps}
+        projects={[
+          { id: 'project-old', label: 'Old project' },
+          { id: 'project-new', label: 'Faba website redesign' },
+        ]}
+        primaryProjects={[
+          {
+            taskId: 'task-1',
+            projectId: 'project-new',
+            projectName: 'Faba website redesign',
+            archivedAt: null,
+          },
+        ]}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getAllByText('Faba website redesign').length).toBeGreaterThan(0);
+      expect(screen.queryByText('Faba redesign')).toBeNull();
+    });
+  });
+
   it('does not refetch initial tasks whose no-project state was hydrated by the server', async () => {
     render(
       <TaskBoard

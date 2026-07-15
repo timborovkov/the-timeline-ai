@@ -14,6 +14,8 @@ export function TaskProjectSelect({
   projectArchived = false,
   projects,
   onProjectChange,
+  onProjectChangeCommitted,
+  onProjectChangeReverted,
 }: {
   taskId: string;
   projectId: string | null;
@@ -21,6 +23,8 @@ export function TaskProjectSelect({
   projectArchived?: boolean;
   projects: { id: string; label: string }[];
   onProjectChange?: (project: { id: string; label: string } | null) => void;
+  onProjectChangeCommitted?: () => void;
+  onProjectChangeReverted?: () => void;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -57,9 +61,6 @@ export function TaskProjectSelect({
         disabled={pending}
         onChange={(event) => {
           const nextProjectId = event.currentTarget.value || null;
-          const previousProject = projectId
-            ? { id: projectId, label: currentProjectLabel ?? projectId }
-            : null;
           const nextProject = nextProjectId
             ? (visibleProjects.find((project) => project.id === nextProjectId) ?? {
                 id: nextProjectId,
@@ -72,13 +73,14 @@ export function TaskProjectSelect({
             try {
               const result = await setTaskProjectAction({ id: taskId, projectId: nextProjectId });
               if (result.error) {
-                onProjectChange?.(previousProject);
+                onProjectChangeReverted?.();
                 setError(result.error);
               } else {
+                onProjectChangeCommitted?.();
                 router.refresh();
               }
             } catch (cause) {
-              onProjectChange?.(previousProject);
+              onProjectChangeReverted?.();
               setError(errorMessage(cause, 'Project update failed'));
             }
           });

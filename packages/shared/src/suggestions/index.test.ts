@@ -3813,11 +3813,9 @@ describe('suggestion scope', () => {
       archived: false,
     });
     expect(projects).toHaveLength(1);
-    expect(projects[0]).toMatchObject({
-      id: archivedProject?.id,
-      metadata: expect.objectContaining({
-        agent_suggestion_project_for_item_id: secondBundle.items[0]?.id,
-      }),
+    expect(projects[0]?.id).toBe(archivedProject?.id);
+    expect(projects[0]?.metadata).toMatchObject({
+      agent_suggestion_project_for_item_id: secondBundle.items[0]?.id,
     });
     await expect(scope.objects.listPrimaryProjectsForTasks(task ? [task.id] : [])).resolves.toEqual(
       [expect.objectContaining({ projectId: projects[0]?.id })],
@@ -3895,6 +3893,113 @@ describe('suggestion scope', () => {
       ]);
     },
   );
+
+  it('recovers an interrupted task acceptance linked to an existing project', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const project = await scope.objects.createObject({
+      type: 'project',
+      canonicalName: 'Existing recovery project',
+      status: 'planning',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Create task in existing project',
+      dedupeKey: 'recover-interrupted-existing-project-task',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Prepare existing project brief',
+          dedupeKey: 'recover-interrupted-existing-project-task:item',
+          proposedPayload: {
+            canonicalName: 'Prepare existing project brief',
+            parentObjectId: project.id,
+            projectName: project.canonicalName,
+          },
+        },
+      ],
+    });
+    const itemId = bundle.items[0]?.id ?? '';
+    const task = await scope.objects.createObject({
+      type: 'task',
+      canonicalName: 'Prepare existing project brief',
+      status: 'todo',
+      parentObjectId: project.id,
+      metadata: { agent_suggestion_item_id: itemId },
+      actor: { kind: 'agent', userId: null },
+    });
+    const interruptedAt = new Date('2020-01-01T00:00:00.000Z');
+    await db
+      .update(agentSuggestionItems)
+      .set({
+        status: 'accepted',
+        resultId: null,
+        resolvedAt: interruptedAt,
+        resolvedByUserId: USER_ID,
+        updatedAt: interruptedAt,
+      })
+      .where(eq(agentSuggestionItems.id, itemId));
+
+    const pending = await scope.suggestions.listPendingSuggestions();
+    expect(pending[0]?.items[0]).toMatchObject({ id: itemId, status: 'failed', resultId: null });
+    await expect(scope.suggestions.acceptSuggestionItem(itemId)).resolves.toBe(true);
+
+    const [resolved] = await db
+      .select({ resultId: agentSuggestionItems.resultId })
+      .from(agentSuggestionItems)
+      .where(eq(agentSuggestionItems.id, itemId));
+    expect(resolved?.resultId).toBe(task.id);
+    const matchingTasks = await db
+      .select({ id: entities.id })
+      .from(entities)
+      .where(eq(entities.canonicalName, 'Prepare existing project brief'));
+    expect(matchingTasks).toEqual([{ id: task.id }]);
+    await expect(scope.objects.listPrimaryProjectsForTasks([task.id])).resolves.toEqual([
+      expect.objectContaining({ projectId: project.id }),
+    ]);
+  });
+
+  it('does not archive a suggestion project after a task links to it', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Keep linked suggestion project',
+      dedupeKey: 'keep-linked-suggestion-project',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Linked project task',
+          dedupeKey: 'keep-linked-suggestion-project:item',
+          proposedPayload: { canonicalName: 'Linked project task' },
+        },
+      ],
+    });
+    const itemId = bundle.items[0]?.id ?? '';
+    const project = await scope.objects.createObject({
+      type: 'project',
+      canonicalName: 'Linked suggestion project',
+      status: 'planning',
+      metadata: { agent_suggestion_project_for_item_id: itemId },
+      actor: { kind: 'agent', userId: null },
+    });
+    await scope.objects.createObject({
+      type: 'task',
+      canonicalName: 'Task linked during cleanup',
+      status: 'todo',
+      parentObjectId: project.id,
+      actor: { kind: 'user', userId: USER_ID },
+    });
+
+    await expect(
+      scope.objects.archiveSuggestedProjectIfUnused(project.id, itemId, {
+        kind: 'agent',
+        userId: null,
+      }),
+    ).resolves.toBe(false);
+    await expect(scope.objects.getObject(project.id)).resolves.toMatchObject({ archivedAt: null });
+  });
 
   it('archives an interrupted suggestion project when the task is rejected', async () => {
     const scope = withTeam(db as never, TEAM_ID, USER_ID);
