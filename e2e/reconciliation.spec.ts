@@ -869,17 +869,8 @@ test.describe.serial('reconciliation dashboard', () => {
 
     const approval = page.locator('article').filter({ hasText: fixtures.approval.title });
     await expect(approval).toBeVisible();
-    await expect(
-      approval.getByRole('link', { name: 'Open reconciliation context' }).first(),
-    ).toBeVisible();
-    await expect(approval.getByText('Accept will create a task.')).toBeVisible();
-    await expect(
-      approval.getByText(
-        'Review required before Timeline writes workspace memory from captured evidence.',
-      ),
-    ).toBeVisible();
-
-    await approval.getByRole('link', { name: 'Open reconciliation context' }).first().click();
+    await approval.getByText('Technical details').click();
+    await approval.getByRole('link', { name: 'Open processing record' }).click();
     await expect(page).toHaveURL(
       new RegExp(`/app/team/reconciliation/clusters/${fixtures.team.cluster}`),
     );
@@ -946,7 +937,11 @@ test.describe.serial('reconciliation dashboard', () => {
       approval.getByText(fixtures.approvalBulkPartial.calendarTitle, { exact: true }),
     ).toBeVisible();
     await expect(page.getByText('1 item(s) failed to apply')).toBeVisible();
-    await expect(approval.getByText('Action failed. Review and try again.')).toBeVisible();
+    await expect(
+      approval.getByText(
+        'Calendar proposal is missing a start or end time. Reject it or revise the source details before accepting.',
+      ),
+    ).toBeVisible();
     await expect.poll(() => countEntitiesByName(fixtures.approvalBulkPartial.taskTitle)).toBe(1);
     await expect
       .poll(() => countEntitiesByName(fixtures.approvalBulkPartial.calendarTitle))

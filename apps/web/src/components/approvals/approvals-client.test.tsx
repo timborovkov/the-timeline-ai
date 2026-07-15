@@ -27,6 +27,7 @@ vi.mock('@/app/actions/suggestions', () => ({
 const { ApprovalsClient } = await import('./approvals-client.js');
 
 const EVENT_ID = '11111111-1111-4111-8111-111111111111';
+const PARENT_ID = '66666666-6666-4666-8666-666666666666';
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -53,6 +54,7 @@ describe('ApprovalsClient', () => {
   it('renders actionable pending suggestions with evidence and accept controls', () => {
     const html = renderToStaticMarkup(
       createElement(ApprovalsClient, {
+        timezone: 'America/Los_Angeles',
         suggestions: [
           {
             id: 'bundle-1',
@@ -84,7 +86,13 @@ describe('ApprovalsClient', () => {
                 targetId: null,
                 title: 'Send proposal',
                 description: 'Send Acme the proposal.',
-                proposedPayload: { canonicalName: 'Send proposal' },
+                proposedPayload: {
+                  canonicalName: 'Send proposal',
+                  dueAt: '2026-07-19T00:00:00.000Z',
+                  status: 'todo',
+                  parentObjectId: PARENT_ID,
+                  parentName: 'Acme renewal',
+                },
                 metadata: {
                   reconciliation_output_id: '99999999-9999-4999-8999-999999999999',
                   reconciliation_cluster_id: '22222222-2222-4222-8222-222222222222',
@@ -114,19 +122,515 @@ describe('ApprovalsClient', () => {
     expect(html).toContain('Send proposal');
     expect(html).toContain('Calendar conflict');
     expect(html).toContain('I will send the proposal');
-    expect(html).toContain('Timeline evidence · slack');
-    expect(html).not.toContain('Timeline evidence · slack · 11111111');
+    expect(html).toContain('Evidence from Slack');
     expect(html).toContain('create task');
-    expect(html).toContain('Accept will create a task.');
-    expect(html).toContain(
-      'Review required before Timeline writes workspace memory from captured evidence.',
-    );
-    expect(html).toContain('Open reconciliation context');
+    expect(html).toContain('Due Jul 19, 2026 · Status To do · Parent Acme renewal');
+    expect(html).not.toContain('Due Jul 18, 2026');
+    expect(html).not.toContain(PARENT_ID);
+    expect(html).toContain('Why this was suggested · 1 source');
     expect(html).toContain('Technical details');
+    expect(html).toContain('Open processing record');
+    expect(html).not.toContain('Reconciliation output');
+    expect(html).not.toContain('outputs 99999999');
+    expect(html).not.toContain('Cluster 22222222');
+    expect(html).not.toContain('Proposal · pending');
     expect(html).toContain('99999999-9999-4999-8999-999999999999');
     expect(html).toContain(
       'href="/app/team/reconciliation/clusters/22222222-2222-4222-8222-222222222222"',
     );
+  });
+
+  it('keeps every processing record reachable for multi-cluster bundles', () => {
+    const firstClusterId = '22222222-2222-4222-8222-222222222222';
+    const secondClusterId = '33333333-3333-4333-8333-333333333333';
+    const html = renderToStaticMarkup(
+      createElement(ApprovalsClient, {
+        suggestions: [
+          {
+            id: 'bundle-multi-cluster',
+            source: 'background',
+            status: 'pending',
+            title: 'Update two customer records',
+            summary: null,
+            reason: null,
+            confidence: 'medium',
+            metadata: { reconciliation_cluster_ids: [firstClusterId, secondClusterId] },
+            createdAt: '2026-06-01T10:00:00.000Z',
+            evidence: [],
+            items: [
+              {
+                id: 'item-first-cluster',
+                status: 'pending',
+                operation: 'update',
+                targetKind: 'object',
+                targetId: '44444444-4444-4444-8444-444444444444',
+                title: 'Update Acme',
+                description: null,
+                proposedPayload: { stage: 'contract_review' },
+                metadata: { reconciliation_cluster_id: firstClusterId },
+                failureReason: null,
+              },
+              {
+                id: 'item-second-cluster',
+                status: 'pending',
+                operation: 'update',
+                targetKind: 'object',
+                targetId: '55555555-5555-4555-8555-555555555555',
+                title: 'Update Beta',
+                description: null,
+                proposedPayload: { stage: 'discovery' },
+                metadata: { reconciliation_cluster_id: secondClusterId },
+                failureReason: null,
+              },
+            ],
+          },
+        ],
+      }),
+    );
+
+    expect(html).toContain('Open processing record 1 of 2');
+    expect(html).toContain('Open processing record 2 of 2');
+    expect(html).toContain(`/app/team/reconciliation/clusters/${firstClusterId}`);
+    expect(html).toContain(`/app/team/reconciliation/clusters/${secondClusterId}`);
+  });
+
+  it('preserves literal payload values and exposes every meaningful proposed change', () => {
+    const html = renderToStaticMarkup(
+      createElement(ApprovalsClient, {
+        timezone: 'America/Los_Angeles',
+        suggestions: [
+          {
+            id: 'bundle-literal-values',
+            source: 'chat',
+            status: 'pending',
+            title: 'Remember customer details',
+            summary: null,
+            reason: null,
+            confidence: 'medium',
+            createdAt: '2026-06-01T10:00:00.000Z',
+            evidence: [],
+            items: [
+              {
+                id: 'item-identity',
+                status: 'pending',
+                operation: 'create',
+                targetKind: 'identity_facet',
+                targetId: null,
+                title: 'Add GitHub identity',
+                description: null,
+                proposedPayload: {
+                  entityId: '33333333-3333-4333-8333-333333333333',
+                  kind: 'github',
+                  value: 'john-doe_work@example.com',
+                },
+                failureReason: null,
+              },
+              {
+                id: 'item-object',
+                status: 'pending',
+                operation: 'create',
+                targetKind: 'object',
+                targetId: null,
+                title: 'Acme renewal',
+                description: null,
+                proposedPayload: {
+                  type: 'project',
+                  canonicalName: 'Acme renewal',
+                  aliases: ['ACME-v2'],
+                  status: 'active',
+                  stage: 'contract_review',
+                  priority: 1,
+                  ownerName: 'Jane-Doe',
+                  assigneeName: 'Sam_Taylor',
+                  dueAt: '2026-07-19T00:00:00.000Z',
+                },
+                failureReason: null,
+              },
+            ],
+          },
+        ],
+      }),
+    );
+
+    expect(html).toContain('john-doe_work@example.com');
+    expect(html).not.toContain('John doe work@example.com');
+    expect(html).toContain('Also known as ACME-v2');
+    expect(html).not.toContain('Name Acme renewal');
+    expect(html).toContain('Show all 8 changes');
+    expect(html).toContain('>Priority</dt>');
+    expect(html).toContain('>Jane-Doe</dd>');
+    expect(html).toContain('>Sam_Taylor</dd>');
+    expect(html).toContain('>Jul 19, 2026</dd>');
+  });
+
+  it('shows the named audience for specific-user visibility changes', () => {
+    const firstUserId = '33333333-3333-4333-8333-333333333333';
+    const secondUserId = '44444444-4444-4444-8444-444444444444';
+    const html = renderToStaticMarkup(
+      createElement(ApprovalsClient, {
+        timezone: 'UTC',
+        suggestions: [
+          {
+            id: 'bundle-specific-audience',
+            source: 'background',
+            status: 'pending',
+            title: 'Share the calendar review',
+            summary: null,
+            reason: null,
+            confidence: 'medium',
+            createdAt: '2026-06-01T10:00:00.000Z',
+            evidence: [],
+            items: [
+              {
+                id: 'item-specific-audience',
+                status: 'pending',
+                operation: 'create',
+                targetKind: 'calendar_event',
+                targetId: null,
+                title: 'Private review',
+                description: null,
+                proposedPayload: {
+                  title: 'Private review',
+                  startAt: '2026-06-17T11:00:00.000Z',
+                  endAt: '2026-06-17T12:00:00.000Z',
+                  timezone: 'UTC',
+                  visibility: 'specific_users',
+                  visibilityUserIds: [firstUserId, secondUserId],
+                  visibilityUserNames: ['Owner', 'Reviewer'],
+                },
+                failureReason: null,
+              },
+            ],
+          },
+        ],
+      }),
+    );
+
+    expect(html).toContain('People with access Owner, Reviewer');
+    expect(html).not.toContain(firstUserId);
+    expect(html).not.toContain(secondUserId);
+  });
+
+  it('does not clamp short fields when there is no disclosure', () => {
+    const html = renderToStaticMarkup(
+      createElement(ApprovalsClient, {
+        suggestions: [
+          {
+            id: 'bundle-medium-fields',
+            source: 'chat',
+            status: 'pending',
+            title: 'Update customer details',
+            summary: null,
+            reason: null,
+            confidence: 'medium',
+            createdAt: '2026-06-01T10:00:00.000Z',
+            evidence: [],
+            items: [
+              {
+                id: 'item-medium-fields',
+                status: 'pending',
+                operation: 'update',
+                targetKind: 'object',
+                targetId: '55555555-5555-4555-8555-555555555555',
+                title: 'Update customer details',
+                description: null,
+                proposedPayload: {
+                  description:
+                    'A concise account summary that still needs more than one visual line.',
+                  notes: 'Keep the procurement owner informed before changing the delivery plan.',
+                  nextStep:
+                    'Schedule a review with finance and confirm the revised commercial terms.',
+                  stage: 'contract_review',
+                },
+                failureReason: null,
+              },
+            ],
+          },
+        ],
+      }),
+    );
+
+    expect(html).not.toContain('line-clamp-2');
+    expect(html).not.toContain('Show full change');
+    expect(html).toContain('confirm the revised commercial terms');
+  });
+
+  it('shows a proposed object rename when the item title is generic', () => {
+    const html = renderToStaticMarkup(
+      createElement(ApprovalsClient, {
+        suggestions: [
+          {
+            id: 'bundle-rename',
+            source: 'chat',
+            status: 'pending',
+            title: 'Update customer memory',
+            summary: null,
+            reason: null,
+            confidence: 'medium',
+            createdAt: '2026-06-01T10:00:00.000Z',
+            evidence: [],
+            items: [
+              {
+                id: 'item-rename',
+                status: 'pending',
+                operation: 'update',
+                targetKind: 'object',
+                targetId: '44444444-4444-4444-8444-444444444444',
+                title: 'Update object memory',
+                description: null,
+                proposedPayload: { canonicalName: 'Acme Renewal 2027' },
+                failureReason: null,
+              },
+            ],
+          },
+        ],
+      }),
+    );
+
+    expect(html).toContain('Name Acme Renewal 2027');
+  });
+
+  it('formats board item updates using the field being changed', () => {
+    const responsibleUserId = '55555555-5555-4555-8555-555555555555';
+    const html = renderToStaticMarkup(
+      createElement(ApprovalsClient, {
+        timezone: 'America/Los_Angeles',
+        suggestions: [
+          {
+            id: 'bundle-board-updates',
+            source: 'chat',
+            status: 'pending',
+            title: 'Update the launch board',
+            summary: null,
+            reason: null,
+            confidence: 'medium',
+            createdAt: '2026-06-01T10:00:00.000Z',
+            evidence: [],
+            items: [
+              {
+                id: 'item-board-due-date',
+                status: 'pending',
+                operation: 'update',
+                targetKind: 'board_item_update',
+                targetId: '66666666-6666-4666-8666-666666666666',
+                title: 'Set launch review due date',
+                description: null,
+                proposedPayload: {
+                  boardItemId: '66666666-6666-4666-8666-666666666666',
+                  field: 'dueAt',
+                  newValue: '2026-07-19T00:00:00.000Z',
+                },
+                failureReason: null,
+              },
+              {
+                id: 'item-board-responsible',
+                status: 'pending',
+                operation: 'update',
+                targetKind: 'board_item_update',
+                targetId: '77777777-7777-4777-8777-777777777777',
+                title: 'Assign launch review',
+                description: null,
+                proposedPayload: {
+                  boardItemId: '77777777-7777-4777-8777-777777777777',
+                  field: 'responsibleUserId',
+                  newValue: responsibleUserId,
+                  responsibleName: 'Reviewer',
+                },
+                failureReason: null,
+              },
+              {
+                id: 'item-board-lane',
+                status: 'pending',
+                operation: 'update',
+                targetKind: 'board_item_update',
+                targetId: '88888888-8888-4888-8888-888888888888',
+                title: 'Move launch review',
+                description: null,
+                proposedPayload: {
+                  boardItemId: '88888888-8888-4888-8888-888888888888',
+                  field: 'laneId',
+                  newValue: '99999999-9999-4999-8999-999999999999',
+                  laneName: 'Blocked',
+                },
+                failureReason: null,
+              },
+            ],
+          },
+        ],
+      }),
+    );
+
+    expect(html).toContain('Due Jul 19, 2026');
+    expect(html).not.toContain('2026-07-19T00:00:00.000Z');
+    expect(html).toContain('Responsible Reviewer');
+    expect(html).not.toContain(responsibleUserId);
+    expect(html).toContain('Lane Blocked');
+    expect(html).not.toContain('Selected lane');
+    expect(html).not.toContain('Field Due at');
+  });
+
+  it('shows board membership destinations without exposing their ids', () => {
+    const boardId = '66666666-6666-4666-8666-666666666666';
+    const entityId = '77777777-7777-4777-8777-777777777777';
+    const laneId = '88888888-8888-4888-8888-888888888888';
+    const html = renderToStaticMarkup(
+      createElement(ApprovalsClient, {
+        suggestions: [
+          {
+            id: 'bundle-board-membership',
+            source: 'background',
+            status: 'pending',
+            title: 'Update the pilot board',
+            summary: null,
+            reason: null,
+            confidence: 'medium',
+            createdAt: '2026-06-01T10:00:00.000Z',
+            evidence: [],
+            items: [
+              {
+                id: 'item-board-membership',
+                status: 'pending',
+                operation: 'create',
+                targetKind: 'board_membership',
+                targetId: null,
+                title: 'Add customer to board',
+                description: null,
+                proposedPayload: {
+                  boardId,
+                  boardName: 'Pilot pipeline',
+                  entityId,
+                  entityName: 'Digital Audit Company',
+                  laneId,
+                  laneName: 'Discovery',
+                },
+                failureReason: null,
+              },
+            ],
+          },
+        ],
+      }),
+    );
+
+    expect(html).toContain('Board Pilot pipeline');
+    expect(html).toContain('Item Digital Audit Company');
+    expect(html).toContain('Lane Discovery');
+    expect(html).not.toContain(boardId);
+    expect(html).not.toContain(entityId);
+    expect(html).not.toContain(laneId);
+  });
+
+  it('does not roll an invalid task date into a different calendar date', () => {
+    const html = renderToStaticMarkup(
+      createElement(ApprovalsClient, {
+        suggestions: [
+          {
+            id: 'bundle-invalid-date',
+            source: 'chat',
+            status: 'pending',
+            title: 'Create task with invalid date',
+            summary: null,
+            reason: null,
+            confidence: 'medium',
+            createdAt: '2026-06-01T10:00:00.000Z',
+            evidence: [],
+            items: [
+              {
+                id: 'item-invalid-date',
+                status: 'pending',
+                operation: 'create',
+                targetKind: 'task',
+                targetId: null,
+                title: 'Invalid date task',
+                description: null,
+                proposedPayload: {
+                  canonicalName: 'Invalid date task',
+                  dueAt: '2026-02-30',
+                },
+                failureReason: null,
+              },
+            ],
+          },
+        ],
+      }),
+    );
+
+    expect(html).toContain('Due 2026-02-30');
+    expect(html).not.toContain('Mar 2, 2026');
+  });
+
+  it('shows values that an update will clear', () => {
+    const html = renderToStaticMarkup(
+      createElement(ApprovalsClient, {
+        suggestions: [
+          {
+            id: 'bundle-clear-values',
+            source: 'chat',
+            status: 'pending',
+            title: 'Clear stale task details',
+            summary: null,
+            reason: null,
+            confidence: 'medium',
+            createdAt: '2026-06-01T10:00:00.000Z',
+            evidence: [],
+            items: [
+              {
+                id: 'item-clear-values',
+                status: 'pending',
+                operation: 'update',
+                targetKind: 'task',
+                targetId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+                title: 'Clear stale task details',
+                description: null,
+                proposedPayload: {
+                  dueAt: null,
+                  stage: null,
+                  ownerUserId: null,
+                },
+                failureReason: null,
+              },
+            ],
+          },
+        ],
+      }),
+    );
+
+    expect(html).toContain('Due None · Stage None · Owner Unassigned');
+  });
+
+  it('keeps the rationale available when a bundle has no evidence rows', () => {
+    const html = renderToStaticMarkup(
+      createElement(ApprovalsClient, {
+        suggestions: [
+          {
+            id: 'bundle-reason-only',
+            source: 'chat',
+            status: 'pending',
+            title: 'Update customer memory',
+            summary: null,
+            reason: 'The customer explicitly confirmed the renewal stage.',
+            confidence: 'high',
+            createdAt: '2026-06-01T10:00:00.000Z',
+            evidence: [],
+            items: [
+              {
+                id: 'item-reason-only',
+                status: 'pending',
+                operation: 'update',
+                targetKind: 'object',
+                targetId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+                title: 'Update renewal stage',
+                description: null,
+                proposedPayload: { stage: 'contract_review' },
+                failureReason: null,
+              },
+            ],
+          },
+        ],
+      }),
+    );
+
+    expect(html).toContain('Why this was suggested');
+    expect(html).toContain('The customer explicitly confirmed the renewal stage.');
   });
 
   it('renders missing-person relationship bundles with readable endpoints', () => {
@@ -249,8 +753,8 @@ describe('ApprovalsClient', () => {
       }),
     );
 
-    await userEvent.click(screen.getByText('Evidence · 1'));
-    await userEvent.click(screen.getByRole('button', { name: /Timeline evidence · slack/ }));
+    await userEvent.click(screen.getByText('Why this was suggested · 1 source'));
+    await userEvent.click(screen.getByRole('button', { name: /Evidence from Slack/ }));
 
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalled();
@@ -535,6 +1039,139 @@ describe('ApprovalsClient', () => {
     expect(html).toContain('Proposed:');
   });
 
+  it('shows the proposed schedule for calendar match warnings', () => {
+    const matchingEvent = {
+      id: '11111111-1111-4111-8111-111111111111',
+      title: 'Acme planning',
+      description: null,
+      startAt: '2026-06-17T11:00:00.000Z',
+      endAt: '2026-06-17T12:00:00.000Z',
+      timezone: 'UTC',
+      allDay: false,
+      location: null,
+      showAs: 'busy',
+      visibility: 'team',
+      rrule: null,
+    };
+    const html = renderToStaticMarkup(
+      createElement(ApprovalsClient, {
+        timezone: 'UTC',
+        suggestions: [
+          {
+            id: 'bundle-calendar-warnings',
+            source: 'background',
+            status: 'pending',
+            title: 'Calendar warnings',
+            summary: null,
+            reason: null,
+            confidence: 'medium',
+            createdAt: '2026-06-01T10:00:00.000Z',
+            evidence: [],
+            items: [
+              {
+                id: 'item-semantic-warning',
+                status: 'pending',
+                operation: 'create',
+                targetKind: 'calendar_event',
+                targetId: null,
+                title: 'Acme planning',
+                description: null,
+                proposedPayload: {
+                  title: 'Acme planning',
+                  startAt: '2026-06-20T11:00:00.000Z',
+                  endAt: '2026-06-20T12:00:00.000Z',
+                  timezone: 'UTC',
+                  allDay: false,
+                },
+                calendarResolutionHint: {
+                  kind: 'semantic_update_candidate',
+                  event: matchingEvent,
+                },
+                failureReason: null,
+              },
+              {
+                id: 'item-ambiguous-warning',
+                status: 'pending',
+                operation: 'create',
+                targetKind: 'calendar_event',
+                targetId: null,
+                title: 'Acme review',
+                description: null,
+                proposedPayload: {
+                  title: 'Acme review',
+                  startAt: '2026-06-21T13:00:00.000Z',
+                  endAt: '2026-06-21T14:00:00.000Z',
+                  timezone: 'UTC',
+                  allDay: false,
+                },
+                calendarResolutionHint: {
+                  kind: 'ambiguous_match',
+                  events: [
+                    matchingEvent,
+                    { ...matchingEvent, id: '22222222-2222-4222-8222-222222222222' },
+                  ],
+                },
+                failureReason: null,
+              },
+            ],
+          },
+        ],
+      }),
+    );
+
+    expect(html.match(/Proposed:/g)).toHaveLength(2);
+    expect(html).toContain('Jun 20, 2026, 11:00 AM');
+    expect(html).toContain('Jun 21, 2026, 1:00 PM');
+    expect(html).not.toContain('2026-06-20T11:00:00.000Z');
+  });
+
+  it('does not repeat raw date fields for all-day calendar proposals', () => {
+    const html = renderToStaticMarkup(
+      createElement(ApprovalsClient, {
+        timezone: 'UTC',
+        suggestions: [
+          {
+            id: 'bundle-all-day',
+            source: 'background',
+            status: 'pending',
+            title: 'All-day calendar proposal',
+            summary: null,
+            reason: null,
+            confidence: 'medium',
+            createdAt: '2026-06-01T10:00:00.000Z',
+            evidence: [],
+            items: [
+              {
+                id: 'item-all-day',
+                status: 'pending',
+                operation: 'create',
+                targetKind: 'calendar_event',
+                targetId: null,
+                title: 'All-day review',
+                description: null,
+                proposedPayload: {
+                  title: 'All-day review',
+                  startAt: '2026-06-21T00:00:00.000Z',
+                  endAt: '2026-06-22T00:00:00.000Z',
+                  startDate: '2026-06-21',
+                  endDate: '2026-06-22',
+                  timezone: 'UTC',
+                  allDay: true,
+                },
+                failureReason: null,
+              },
+            ],
+          },
+        ],
+      }),
+    );
+
+    expect(html).toContain('Scheduled for Jun 21, 2026');
+    expect(html).not.toContain('Start date');
+    expect(html).not.toContain('End date');
+    expect(html).not.toContain('2026-06-21T00:00:00.000Z');
+  });
+
   it('renders all-day calendar proposal ranges as date-only labels in the event timezone', () => {
     const html = renderToStaticMarkup(
       createElement(ApprovalsClient, {
@@ -578,6 +1215,156 @@ describe('ApprovalsClient', () => {
     expect(html).toContain('Scheduled for Jun 17, 2026.');
     expect(html).not.toContain('5:00 PM');
     expect(html).not.toContain('12:00 AM');
+  });
+
+  it('shows calendar field changes in addition to the proposed range', () => {
+    const html = renderToStaticMarkup(
+      createElement(ApprovalsClient, {
+        timezone: 'Europe/Helsinki',
+        suggestions: [
+          {
+            id: 'bundle-calendar-update',
+            source: 'background',
+            status: 'pending',
+            title: 'Calendar cleanup',
+            summary: null,
+            reason: null,
+            confidence: 'medium',
+            createdAt: '2026-06-01T10:00:00.000Z',
+            evidence: [],
+            items: [
+              {
+                id: 'item-calendar-update',
+                status: 'pending',
+                operation: 'update',
+                targetKind: 'calendar_event',
+                targetId: '33333333-3333-4333-8333-333333333333',
+                title: 'Move Acme planning',
+                description: null,
+                proposedPayload: {
+                  startAt: '2026-06-18T11:00:00.000Z',
+                  endAt: '2026-06-18T12:00:00.000Z',
+                  allDay: false,
+                  description: null,
+                  location: null,
+                  reminderMinutes: null,
+                  showAs: 'free',
+                },
+                calendarResolutionHint: { kind: 'new_event' },
+                failureReason: null,
+              },
+            ],
+          },
+        ],
+      }),
+    );
+
+    expect(html).toContain('Scheduled for');
+    expect(html).toContain('Details None');
+    expect(html).toContain('Location None');
+    expect(html).toContain('Reminder None');
+    expect(html).toContain('Availability: free');
+    expect(html).not.toContain('Start at');
+    expect(html).not.toContain('End at');
+  });
+
+  it('formats single-boundary calendar updates without exposing ISO timestamps', () => {
+    const html = renderToStaticMarkup(
+      createElement(ApprovalsClient, {
+        timezone: 'UTC',
+        suggestions: [
+          {
+            id: 'bundle-calendar-boundaries',
+            source: 'background',
+            status: 'pending',
+            title: 'Calendar time corrections',
+            summary: null,
+            reason: null,
+            confidence: 'medium',
+            createdAt: '2026-06-01T10:00:00.000Z',
+            evidence: [],
+            items: [
+              {
+                id: 'item-calendar-start',
+                status: 'pending',
+                operation: 'update',
+                targetKind: 'calendar_event',
+                targetId: '33333333-3333-4333-8333-333333333333',
+                title: 'Move the start',
+                description: null,
+                proposedPayload: { startAt: '2026-06-18T11:00:00.000Z' },
+                failureReason: null,
+              },
+              {
+                id: 'item-calendar-end',
+                status: 'pending',
+                operation: 'update',
+                targetKind: 'calendar_event',
+                targetId: '44444444-4444-4444-8444-444444444444',
+                title: 'Move the end',
+                description: null,
+                proposedPayload: { endAt: '2026-06-18T12:00:00.000Z' },
+                failureReason: null,
+              },
+            ],
+          },
+        ],
+      }),
+    );
+
+    expect(html).toContain('Starts Jun 18, 2026, 11:00 AM');
+    expect(html).toContain('Ends Jun 18, 2026, 12:00 PM');
+    expect(html).not.toContain('2026-06-18T11:00:00.000Z');
+    expect(html).not.toContain('2026-06-18T12:00:00.000Z');
+  });
+
+  it('shows workspace records linked by a calendar proposal', () => {
+    const html = renderToStaticMarkup(
+      createElement(ApprovalsClient, {
+        timezone: 'UTC',
+        suggestions: [
+          {
+            id: 'bundle-calendar-links',
+            source: 'background',
+            status: 'pending',
+            title: 'Create customer review',
+            summary: null,
+            reason: null,
+            confidence: 'medium',
+            createdAt: '2026-06-01T10:00:00.000Z',
+            evidence: [],
+            items: [
+              {
+                id: 'item-calendar-links',
+                status: 'pending',
+                operation: 'create',
+                targetKind: 'calendar_event',
+                targetId: null,
+                title: 'Customer review',
+                description: null,
+                proposedPayload: {
+                  title: 'Customer review',
+                  startAt: '2026-06-18T11:00:00.000Z',
+                  endAt: '2026-06-18T12:00:00.000Z',
+                  timezone: 'UTC',
+                  visibility: 'team',
+                  linkedEntityIds: [
+                    '11111111-1111-4111-8111-111111111111',
+                    '22222222-2222-4222-8222-222222222222',
+                  ],
+                  linkedEntityNames: ['Acme Corporation', 'Renewal project'],
+                },
+                failureReason: null,
+              },
+            ],
+          },
+        ],
+      }),
+    );
+
+    expect(html).toContain('Linked records Acme Corporation, Renewal project');
+    expect(html).not.toContain('11111111-1111-4111-8111-111111111111');
+    expect(html).not.toContain('22222222-2222-4222-8222-222222222222');
   });
 
   it('does not show sibling cancellation copy for calendar proposal creates', () => {
@@ -813,7 +1600,7 @@ describe('ApprovalsClient', () => {
       expect(screen.queryByText('Send renewal packet')).toBeNull();
       expect(screen.getByText('Book renewal call')).toBeTruthy();
       expect(screen.getByText('1 item(s) failed to apply')).toBeTruthy();
-      expect(screen.getByText('Action failed. Review and try again.')).toBeTruthy();
+      expect(screen.getByText(/Calendar proposal is missing a start or end time/)).toBeTruthy();
       expect(
         screen.getByText(
           'Calendar proposal is missing a start or end time. Reject it or revise the source details before accepting.',
@@ -882,7 +1669,7 @@ describe('ApprovalsClient', () => {
       expect(screen.queryByText('Send renewal packet')).toBeNull();
       expect(screen.getByText('Book renewal call')).toBeTruthy();
       expect(screen.getByText('1 item(s) failed to apply')).toBeTruthy();
-      expect(screen.getByText('Action failed. Review and try again.')).toBeTruthy();
+      expect(screen.getByText(/Calendar proposal is missing a start or end time/)).toBeTruthy();
     });
     expect(fakes.refresh).not.toHaveBeenCalled();
   });
@@ -1108,7 +1895,7 @@ describe('ApprovalsClient', () => {
     expect(html).not.toContain('localRef');
   });
 
-  it('uses payload endpoint names for existing-object relationship summaries', () => {
+  it('uses hydrated endpoint names for existing-object relationship summaries', () => {
     const html = renderToStaticMarkup(
       createElement(ApprovalsClient, {
         suggestions: [
@@ -1129,13 +1916,13 @@ describe('ApprovalsClient', () => {
                 operation: 'create',
                 targetKind: 'object_relationship',
                 targetId: null,
-                title: 'Relate Research and Development and Sales and Ops',
+                title: 'Add relationship',
                 description: null,
                 proposedPayload: {
                   fromEntityId: '11111111-1111-4111-8111-111111111111',
                   toEntityId: '22222222-2222-4222-8222-222222222222',
-                  fromName: 'Research and Development',
-                  toName: 'Sales and Ops',
+                  fromDisplayName: 'Research and Development',
+                  toDisplayName: 'Sales and Ops',
                   kind: 'related',
                 },
                 failureReason: null,
@@ -1454,7 +2241,7 @@ describe('ApprovalsClient', () => {
     await waitFor(() => {
       expect(getByText('Customer follow-up')).toBeTruthy();
       expect(getByText('Calendar write failed')).toBeTruthy();
-      expect(getByText('Action failed. Review and try again.')).toBeTruthy();
+      expect(getByText(/Calendar proposal is missing a start or end time/)).toBeTruthy();
     });
   });
 

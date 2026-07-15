@@ -3,7 +3,7 @@ import { auditLog, ingestWebhookCredentials, ingestWebhooks, type Db } from '@ti
 import { applyDbMigrations } from '@timeline/shared/test/pglite';
 import { eq, isNull } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const fakes = vi.hoisted(() => ({
   auth: vi.fn(),
@@ -43,11 +43,12 @@ function request(body: unknown): Request {
 }
 
 describe('/api/team/ingest-webhooks', () => {
+  let pg: PGlite;
   let db: ReturnType<typeof drizzle>;
 
   beforeEach(async () => {
     vi.clearAllMocks();
-    const pg = new PGlite();
+    pg = new PGlite();
     await applyDbMigrations(pg);
     db = drizzle(pg);
     fakes.db = db;
@@ -61,6 +62,11 @@ describe('/api/team/ingest-webhooks', () => {
     fakes.resolveActiveTeam.mockResolvedValue({ active: { teamId: TEAM_ID } });
     fakes.requireMembership.mockResolvedValue('admin');
   }, 30_000);
+
+  afterEach(async () => {
+    fakes.db = null;
+    await pg.close();
+  });
 
   it('guards admin access', async () => {
     fakes.auth.mockResolvedValueOnce(null);

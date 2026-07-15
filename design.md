@@ -194,6 +194,16 @@ links. Team settings render one URL-selected section at a time. Save state stays
 local to the edited form. Member, object, source, and artifact labels never
 fall back to UUIDs.
 
+Approval rows lead with the proposed change and use human labels and localized
+values, such as `Due <localized date>` and `Status To do`, rather than payload
+keys or JSON. Free-form names and notes stay literal. Reference-valued changes
+resolve current member, object, board, lane, and visibility labels at review
+time instead of trusting stored display text. Show up to four meaningful fields
+inline and keep additional changes in a collapsed disclosure. Calendar match
+warnings include the proposed schedule. Evidence uses plain-language source
+labels, while every distinct reconciliation record remains reachable through
+one closed `TechnicalDetails` disclosure.
+
 ### Marketing and public pages
 
 Marketing uses a 36/48px Switzer hero, one primary CTA, one secondary CTA, and a
