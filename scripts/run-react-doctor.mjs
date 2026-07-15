@@ -35,7 +35,7 @@ try {
     exitWith(`[react-doctor] Found ${String(total)} diagnostics.`);
   }
 
-  const response = await fetch('https://react.doctor/api/score', {
+  const response = await fetch('https://www.react.doctor/api/score', {
     method: 'POST',
     headers: {
       'content-type': 'application/json',

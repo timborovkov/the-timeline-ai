@@ -438,7 +438,11 @@ describe('BoardCardDetail', () => {
         dueAt: new Date('2026-07-05T00:00:00.000Z'),
       });
     });
-    await user.selectOptions(screen.getByLabelText('Priority'), '2');
+    const priority = screen.getByLabelText('Priority');
+    await waitFor(() => {
+      expect(priority.hasAttribute('disabled')).toBe(false);
+    });
+    await user.selectOptions(priority, '2');
     await waitFor(() => {
       expect(onUpdateItem).toHaveBeenCalledWith('item-1', { priority: 2 });
     });

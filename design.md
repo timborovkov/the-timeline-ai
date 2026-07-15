@@ -10,7 +10,8 @@ component and page follows this. If a screen disagrees, fix the screen.
 
 **The work becomes the record.** A precision instrument that feels forensic
 where it matters and quiet everywhere else. Bloomberg Terminal × git log ×
-Linear. Every timestamp, every ID, every citation is first-class type. The
+Linear. Every timestamp, every citation, and every identifier that helps a user
+distinguish a record is first-class type. The
 product's differentiator — _every claim the agent makes is cited back to a raw
 event_ — is structurally visible, not implied.
 
@@ -142,8 +143,8 @@ via the `--font-switzer` / `--font-commit-mono` CSS variables.
 ### The radical move
 
 **Monospace is not hidden in code blocks.** It is the primary face for
-every timestamp, every event ID, every citation reference, every entity
-ID, every status code, every metadata strip. Roughly 20–30% of pixels on
+every timestamp, every useful citation reference or record ID, every status
+code, every metadata strip. Roughly 20–30% of pixels on
 screen are mono. This is the forensic-archive signal.
 
 `font-feature-settings: 'tnum' 1, 'zero' 1, 'ss01' 1` is applied globally
@@ -274,6 +275,25 @@ surface here in the same PR.
 - `--row-h-comfortable` = 48px (mobile, primary nav, settings forms)
 
 Linear-tight on operational surfaces. Comfortable on mobile and on forms.
+
+### Information hierarchy and identifiers
+
+- Human meaning wins over storage shape. Primary rows show the record name,
+  proposed change, source, and available action. Raw payload keys, UUIDs,
+  reconciliation output IDs, cluster IDs, dedupe keys, and model plumbing do
+  not belong in the default scan path.
+- Show an identifier only when it helps distinguish otherwise ambiguous
+  records or is itself the thing being inspected. Put diagnostic identifiers
+  behind a collapsed `Technical details` disclosure or in a dedicated audit,
+  reconciliation, or inspector surface. Links use a plain-language label such
+  as `Open processing record`; the URL may still carry the full identifier.
+- Evidence links lead with source, actor, time, and a bounded quote. Do not
+  append a raw event UUID to a user-facing label. The evidence quick-view and
+  audit trail retain the exact reference.
+- Avoid repeated explanations of the same action. An approval row needs one
+  action label, the meaningful changed fields, and its controls. Generic copy
+  such as `Accept will create a task` or implementation policy text stays out
+  of the primary row unless it communicates a non-obvious consequence.
 
 ## Components
 
@@ -703,6 +723,22 @@ key/value pairs.
   filtering, bulk accept, and row-level review. Embedded approval panels may
   expose bulk reject when multiple visible proposals need cleanup, but avoid
   bulk accept paths that can apply state from a narrow context.
+- Approval payloads render as human labels and localized values (`Due <localized
+  date>`, `Status To do`), not object keys (`dueAt`, `canonicalName`) or JSON.
+  Keep free-form values such as names, handles, aliases, and note text literal.
+  Reference-valued changes resolve current canonical names at review time,
+  including assignees, board lanes, and specific-user visibility audiences;
+  stored or model-supplied display labels are not authoritative.
+  When a proposal changes more than four meaningful fields, keep the additional
+  changes available behind an explicit collapsed disclosure rather than silently
+  dropping them from review.
+  Calendar match warnings always show the schedule that Accept will create, and
+  an existing event is reused only when its user-visible fields match the
+  proposal.
+  The evidence disclosure uses plain-language source labels, and reconciliation
+  provenance is available through one collapsed `Technical details` disclosure.
+  It contains one plain-language link per distinct processing record when a
+  bundle spans multiple reconciliation clusters.
 
 ### Object detail
 
@@ -779,7 +815,7 @@ key/value pairs.
   soft eyebrow + title + subtitle stack. **Standard** pages open with
   `<PageHeader>` (sentence-case `<h1>` + optional subtitle + optional mono
   metadata strip). See the surface split under Layout.
-- Mono is mandatory for: timestamps, IDs, citations, status codes,
+- Mono is mandatory for: timestamps, displayed IDs, citations, status codes,
   metadata strips, keyboard shortcuts, code, file paths, hashes.
 
 ## Adding a shadcn component

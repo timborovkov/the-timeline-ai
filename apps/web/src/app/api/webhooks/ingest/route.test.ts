@@ -12,7 +12,7 @@ import * as rateLimit from '@timeline/shared/rate-limit';
 import { applyDbMigrations } from '@timeline/shared/test/pglite';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type * as RateLimitModule from '@timeline/shared/rate-limit';
 
@@ -89,11 +89,12 @@ function request(body = '{"event":"deal.updated"}', headers: Record<string, stri
 }
 
 describe('/api/webhooks/ingest', () => {
+  let pg: PGlite;
   let db: ReturnType<typeof drizzle>;
 
   beforeEach(async () => {
     vi.clearAllMocks();
-    const pg = new PGlite();
+    pg = new PGlite();
     await applyDbMigrations(pg);
     db = drizzle(pg);
     fakes.db = db;
@@ -101,6 +102,11 @@ describe('/api/webhooks/ingest', () => {
     fakes.enqueueExtractJob.mockResolvedValue(undefined);
     fakes.enqueueEmbedJob.mockResolvedValue(undefined);
     fakes.enqueueSuggestionJob.mockResolvedValue({ enqueued: true, jobId: 'job' });
+  }, 20_000);
+
+  afterEach(async () => {
+    fakes.db = null;
+    await pg.close();
   });
 
   it('accepts GET verification without creating evidence', async () => {

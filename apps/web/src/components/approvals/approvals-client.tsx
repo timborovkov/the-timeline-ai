@@ -142,24 +142,170 @@ function suggestionItemSignature(item: SuggestionItem): string {
   });
 }
 
-function formatPayload(payload: Record<string, unknown>): string {
-  return Object.entries(payload)
-    .filter(
-      ([key, value]) =>
-        value !== null &&
-        value !== undefined &&
-        value !== '' &&
-        key !== 'localRef' &&
-        key !== 'fromRef' &&
-        key !== 'toRef' &&
-        key !== 'fromName' &&
-        key !== 'toName' &&
-        !key.toLowerCase().endsWith('id') &&
-        !key.toLowerCase().endsWith('ids'),
-    )
-    .slice(0, 6)
-    .map(([key, value]) => `${key}: ${formatPayloadValue(value)}`)
-    .join(' · ');
+interface FormattedPayloadField {
+  key: string;
+  label: string;
+  value: string;
+}
+
+const MAX_INLINE_PAYLOAD_FIELDS = 4;
+const MAX_INLINE_PAYLOAD_VALUE_LENGTH = 120;
+const LOCAL_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const UTC_DATE_ONLY_INSTANT_RE = /^\d{4}-\d{2}-\d{2}T00:00:00(?:\.0{1,9})?Z$/;
+const TOKEN_PAYLOAD_FIELDS = new Set([
+  'field',
+  'kind',
+  'proposalRole',
+  'proposalStatus',
+  'recurrenceEditMode',
+  'showAs',
+  'stage',
+  'type',
+  'visibility',
+]);
+const CLEARABLE_PAYLOAD_FIELDS = new Set([
+  'assigneeUserId',
+  'description',
+  'dueAt',
+  'location',
+  'ownerUserId',
+  'priority',
+  'reminderMinutes',
+  'rrule',
+  'stage',
+  'visibilityUserIds',
+]);
+const CALENDAR_SEPARATE_PAYLOAD_FIELDS = new Set([
+  'proposalGroupId',
+  'proposalRole',
+  'proposalStatus',
+  'recurrenceEditMode',
+  'showAs',
+]);
+const CALENDAR_RANGE_PAYLOAD_FIELDS = new Set([
+  'allDay',
+  'endAt',
+  'endDate',
+  'startAt',
+  'startDate',
+  'timezone',
+]);
+
+function formatPayloadFields(
+  payload: Record<string, unknown>,
+  timezone?: string,
+  itemTitle?: string,
+  operation?: string,
+): FormattedPayloadField[] {
+  const fields: FormattedPayloadField[] = [];
+  const boardUpdateField =
+    typeof payload.field === 'string' && Object.hasOwn(payload, 'newValue') ? payload.field : null;
+  for (const [key, value] of Object.entries(payload)) {
+    if (boardUpdateField && key === 'field') continue;
+    if (boardUpdateField && key === 'newValue') {
+      const displayNameKey =
+        boardUpdateField === 'responsibleUserId'
+          ? 'responsibleName'
+          : boardUpdateField === 'laneId'
+            ? 'laneName'
+            : null;
+      if (displayNameKey && payloadString(payload, displayNameKey)) {
+        continue;
+      }
+      fields.push({
+        key: boardUpdateField,
+        label: payloadFieldLabel(boardUpdateField),
+        value: formatBoardUpdateValue(boardUpdateField, value, timezone),
+      });
+      continue;
+    }
+
+    const normalizedKey = key.toLowerCase();
+    const duplicatesItemTitle =
+      (key === 'canonicalName' || key === 'title') &&
+      typeof value === 'string' &&
+      value.trim() === itemTitle?.trim();
+    const displaysClearedValue =
+      value === null && operation === 'update' && CLEARABLE_PAYLOAD_FIELDS.has(key);
+    if (
+      (value === null && !displaysClearedValue) ||
+      value === undefined ||
+      value === '' ||
+      duplicatesItemTitle ||
+      key === 'metadata' ||
+      key === 'localRef' ||
+      key === 'fromRef' ||
+      key === 'toRef' ||
+      key === 'fromName' ||
+      key === 'toName' ||
+      (!displaysClearedValue && (normalizedKey.endsWith('id') || normalizedKey.endsWith('ids')))
+    ) {
+      continue;
+    }
+    fields.push({
+      key,
+      label: payloadFieldLabel(key),
+      value: displaysClearedValue
+        ? clearedPayloadValue(key)
+        : formatPayloadValue(key, value, timezone),
+    });
+  }
+  return fields;
+}
+
+function payloadFieldText(field: FormattedPayloadField, compact = false): string {
+  const value =
+    compact && field.value.length > MAX_INLINE_PAYLOAD_VALUE_LENGTH
+      ? `${field.value.slice(0, MAX_INLINE_PAYLOAD_VALUE_LENGTH - 1).trimEnd()}…`
+      : field.value;
+  return `${field.label} ${value}`;
+}
+
+function payloadFieldLabel(key: string): string {
+  const labels: Record<string, string> = {
+    aliases: 'Also known as',
+    allDay: 'All day',
+    assigneeName: 'Assignee',
+    assigneeUserId: 'Assignee',
+    boardName: 'Board',
+    canonicalName: 'Name',
+    description: 'Details',
+    dueAt: 'Due',
+    endAt: 'Ends',
+    entityName: 'Item',
+    linkedEntityNames: 'Linked records',
+    laneId: 'Lane',
+    laneName: 'Lane',
+    location: 'Location',
+    nextStep: 'Next step',
+    notes: 'Notes',
+    ownerName: 'Owner',
+    ownerUserId: 'Owner',
+    parentName: 'Parent',
+    position: 'Position',
+    priority: 'Priority',
+    reminderMinutes: 'Reminder',
+    responsibleName: 'Responsible',
+    responsibleUserId: 'Responsible',
+    rrule: 'Recurrence',
+    stage: 'Stage',
+    startAt: 'Starts',
+    status: 'Status',
+    timezone: 'Time zone',
+    title: 'Title',
+    type: 'Type',
+    visibilityUserIds: 'People with access',
+    visibilityUserNames: 'People with access',
+  };
+  return labels[key] ?? humanizeToken(key);
+}
+
+function humanizeToken(value: string): string {
+  const words = value
+    .replace(/([a-z])([A-Z])/g, '$1 $2')
+    .replace(/[_-]+/g, ' ')
+    .trim();
+  return words ? `${words.charAt(0).toUpperCase()}${words.slice(1)}` : value;
 }
 
 function itemActionLabel(item: SuggestionItem): string {
@@ -188,11 +334,66 @@ function itemStatusLabel(status: string): string {
   return status.replace(/_/g, ' ');
 }
 
-function formatPayloadValue(value: unknown): string {
-  if (typeof value === 'string') return displayText(value);
+function formatPayloadValue(key: string, value: unknown, timezone?: string): string {
+  if (key === 'dueAt' && typeof value === 'string') {
+    return formatDueDateValue(value, timezone);
+  }
+  if ((key === 'startAt' || key === 'endAt') && typeof value === 'string') {
+    return formatDisplayDateTime(value, { timezone });
+  }
+  if (key === 'status' && typeof value === 'string') {
+    const labels: Record<string, string> = {
+      accepted: 'Accepted',
+      active: 'Active',
+      cancelled: 'Cancelled',
+      doing: 'In progress',
+      done: 'Done',
+      shipped: 'Shipped',
+      todo: 'To do',
+    };
+    return labels[value] ?? humanizeToken(value);
+  }
+  if (TOKEN_PAYLOAD_FIELDS.has(key) && typeof value === 'string') return humanizeToken(value);
+  if (typeof value === 'string') return value;
   if (typeof value === 'number' || typeof value === 'boolean') return String(value);
   if (value instanceof Date) return value.toISOString();
-  return displayText(JSON.stringify(value));
+  if (Array.isArray(value)) {
+    if (value.length === 0) return 'None';
+    return value
+      .map((entry) =>
+        typeof entry === 'string' || typeof entry === 'number' || typeof entry === 'boolean'
+          ? String(entry)
+          : entry === undefined
+            ? 'undefined'
+            : JSON.stringify(entry),
+      )
+      .join(', ');
+  }
+  return JSON.stringify(value);
+}
+
+function clearedPayloadValue(key: string): string {
+  return key === 'ownerUserId' || key === 'assigneeUserId' ? 'Unassigned' : 'None';
+}
+
+function formatBoardUpdateValue(field: string, value: unknown, timezone?: string): string {
+  if (field === 'responsibleUserId') return value === null ? 'Unassigned' : 'Selected team member';
+  if (field === 'laneId') return value === null ? 'No lane' : 'Selected lane';
+  if (value === null) return 'None';
+  return formatPayloadValue(field, value, timezone);
+}
+
+function formatDueDateValue(value: string, timezone?: string): string {
+  const localDate = LOCAL_DATE_RE.test(value);
+  const utcDateOnlyInstant = UTC_DATE_ONLY_INSTANT_RE.test(value);
+  if ((localDate || utcDateOnlyInstant) && !hasExactUtcDate(value)) return value;
+  return formatDisplayDate(value, { timezone: localDate || utcDateOnlyInstant ? 'UTC' : timezone });
+}
+
+function hasExactUtcDate(value: string): boolean {
+  const expectedDate = value.slice(0, 10);
+  const instant = new Date(LOCAL_DATE_RE.test(value) ? `${value}T00:00:00.000Z` : value);
+  return !Number.isNaN(instant.getTime()) && instant.toISOString().slice(0, 10) === expectedDate;
 }
 
 function payloadString(payload: Record<string, unknown>, key: string): string | null {
@@ -230,10 +431,6 @@ function metadataStringArray(metadata: Record<string, unknown>, key: string): st
 
 function uniqueStrings(values: string[]): string[] {
   return [...new Set(values)];
-}
-
-function shortId(id: string): string {
-  return id.slice(0, 8);
 }
 
 function itemReconciliationOutputId(item: SuggestionItem): string | null {
@@ -370,47 +567,23 @@ function relationshipPayloadSummary(item: SuggestionItem, bundle: SuggestionBund
   const from =
     typeof item.proposedPayload.fromRef === 'string'
       ? localRefLabel(bundle, item.proposedPayload.fromRef)
-      : typeof item.proposedPayload.fromName === 'string'
-        ? displayText(item.proposedPayload.fromName)
-        : null;
+      : typeof item.proposedPayload.fromDisplayName === 'string'
+        ? displayText(item.proposedPayload.fromDisplayName)
+        : typeof item.proposedPayload.fromName === 'string'
+          ? displayText(item.proposedPayload.fromName)
+          : null;
   const to =
     typeof item.proposedPayload.toRef === 'string'
       ? localRefLabel(bundle, item.proposedPayload.toRef)
-      : typeof item.proposedPayload.toName === 'string'
-        ? displayText(item.proposedPayload.toName)
-        : null;
+      : typeof item.proposedPayload.toDisplayName === 'string'
+        ? displayText(item.proposedPayload.toDisplayName)
+        : typeof item.proposedPayload.toName === 'string'
+          ? displayText(item.proposedPayload.toName)
+          : null;
   const kind =
     typeof item.proposedPayload.kind === 'string' ? item.proposedPayload.kind : 'related';
   if (!from || !to) return displayText(`${item.title} · ${kind}`);
   return displayText(`${from} ↔ ${to} · ${kind}`);
-}
-
-function approvalEffectText(item: SuggestionItem): string {
-  const action = item.operation.replace(/_/g, ' ');
-  const kind = itemKindLabel(item.targetKind);
-  if (item.operation === 'create') return `Accept will create ${articleFor(kind)} ${kind}.`;
-  if (item.operation === 'update') {
-    return item.targetId ? `Accept will update this ${kind}.` : `Accept will update ${kind}.`;
-  }
-  if (item.operation === 'archive_or_cancel') {
-    return `Accept will archive or cancel this ${kind}.`;
-  }
-  if (item.operation === 'merge') return `Accept will merge these ${kind}.`;
-  if (item.operation === 'link') return `Accept will link this ${kind}.`;
-  if (item.operation === 'unlink') return `Accept will unlink this ${kind}.`;
-  return `Accept will ${action} ${kind}.`;
-}
-
-function approvalAuthorityText(item: SuggestionItem): string {
-  const source = metadataString(item.metadata ?? {}, 'reconciliation_authority_reason');
-  if (source) return displayText(source);
-  if (item.targetKind === 'calendar_event') {
-    return 'Review required before Timeline changes calendar state from captured evidence.';
-  }
-  if (item.targetKind === 'board_membership' || item.targetKind === 'board_item_update') {
-    return 'Review required before Timeline changes board state from captured evidence.';
-  }
-  return 'Review required before Timeline writes workspace memory from captured evidence.';
 }
 
 function approvalDependencyText(item: SuggestionItem, bundle: SuggestionBundle): string | null {
@@ -426,10 +599,6 @@ function approvalDependencyText(item: SuggestionItem, bundle: SuggestionBundle):
   const uniqueDependencyLabels = uniqueStrings(dependencyLabels);
   if (uniqueDependencyLabels.length === 0) return null;
   return `Depends on ${uniqueDependencyLabels.join(' and ')} in this bundle.`;
-}
-
-function articleFor(value: string): string {
-  return /^[aeiou]/i.test(value) ? 'an' : 'a';
 }
 
 function foldedSummaryText(
@@ -741,7 +910,11 @@ function ApprovalUpdatingState() {
 
 function ApprovalError({ message }: { message: string }) {
   return (
-    <div className="border border-danger/40 px-3 py-2 font-mono text-xs uppercase tracking-[0.12em] text-danger">
+    <div
+      aria-live="assertive"
+      className="border border-danger/40 px-3 py-2 text-sm text-danger"
+      role="alert"
+    >
       {message}
     </div>
   );
@@ -874,8 +1047,8 @@ function ApprovalBundleRow({
           />
         ))}
       </ul>
-      <ApprovalReconciliationContext bundle={bundle} />
       <ApprovalEvidence bundle={bundle} />
+      <ApprovalProcessingDetails bundle={bundle} />
     </article>
   );
 }
@@ -887,11 +1060,11 @@ function ApprovalBundleHeader({
   bundle: SuggestionBundle;
   timezone?: string;
 }) {
+  const source = approvalSourceLabel(bundle);
   return (
     <div className="min-w-0 flex-1">
       <div className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
-        {bundle.source} · {bundle.confidence} ·{' '}
-        {formatDisplayDateTime(bundle.createdAt, { timezone })}
+        {source} · {formatDisplayDateTime(bundle.createdAt, { timezone })}
       </div>
       <h2 className="mt-1 text-base font-semibold tracking-tight text-fg">
         {displayText(bundle.title)}
@@ -899,11 +1072,16 @@ function ApprovalBundleHeader({
       {bundle.summary ? (
         <p className="mt-1 text-sm text-fg-muted">{displayText(bundle.summary)}</p>
       ) : null}
-      {bundle.reason ? (
-        <p className="mt-1 max-w-3xl text-xs leading-5 text-fg-dim">{displayText(bundle.reason)}</p>
-      ) : null}
     </div>
   );
+}
+
+function approvalSourceLabel(bundle: SuggestionBundle): string {
+  if (bundle.source === 'chat') return 'From Ask';
+  const sources = uniqueStrings(
+    bundle.evidence.flatMap((evidence) => (evidence.source ? [evidence.source] : [])),
+  );
+  return sources.length === 1 ? evidenceSourceLabel(sources[0] ?? null) : 'From captured work';
 }
 
 function ApprovalItemRow({
@@ -938,39 +1116,25 @@ function ApprovalItemMain({ actionFailed, item }: { actionFailed: boolean; item:
   const actionFailureReason = actionFailed ? localActionFailureReason(item) : null;
   return (
     <div className="min-w-0 self-center">
-      <div className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
-        Proposal · {itemStatusLabel(item.status)}
+      {item.status !== 'pending' ? (
+        <div className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
+          {itemStatusLabel(item.status)}
+        </div>
+      ) : null}
+      <div
+        className={item.status === 'pending' ? 'font-medium text-fg' : 'mt-1 font-medium text-fg'}
+      >
+        {displayText(item.title)}
       </div>
-      <div className="mt-1 font-medium text-fg">{displayText(item.title)}</div>
       {item.description ? (
         <p className="mt-1 text-sm text-fg-muted">{displayText(item.description)}</p>
       ) : null}
-      {actionFailed ? (
-        <p className="mt-1 text-xs text-danger">Action failed. Review and try again.</p>
-      ) : null}
       {actionFailureReason ? (
         <p className="mt-1 text-xs text-danger">{actionFailureReason}</p>
+      ) : actionFailed ? (
+        <p className="mt-1 text-xs text-danger">Needs attention</p>
       ) : null}
-      <ApprovalItemReconciliationLink item={item} />
     </div>
-  );
-}
-
-function ApprovalItemReconciliationLink({ item }: { item: SuggestionItem }) {
-  const outputId = itemReconciliationOutputId(item);
-  if (!outputId) return null;
-  const clusterId = itemReconciliationClusterId(item);
-  const href = clusterId
-    ? `/app/team/reconciliation/clusters/${clusterId}`
-    : '/app/team/reconciliation';
-  return (
-    <Link
-      href={href}
-      className="mt-1 inline-flex items-center gap-1 font-mono text-[11px] uppercase tracking-[0.1em] text-fg-dim hover:text-signal"
-    >
-      <ExternalLink className="size-3" />
-      Reconciliation output {shortId(outputId)}
-    </Link>
   );
 }
 
@@ -986,32 +1150,89 @@ function ApprovalItemPayload({
   if (item.targetKind === 'calendar_event') {
     return <CalendarApprovalPayload item={item} timezone={timezone} />;
   }
-  const summary = relationshipPayloadSummary(item, bundle) ?? formatPayload(item.proposedPayload);
+  const relationshipSummary = relationshipPayloadSummary(item, bundle);
+  const fields = relationshipSummary
+    ? []
+    : formatPayloadFields(item.proposedPayload, timezone, item.title, item.operation);
   return (
     <div className="min-w-0 self-center">
       <div className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
         {itemActionLabel(item)}
       </div>
-      {summary ? (
-        <p className="mt-1 truncate font-mono text-[11px] text-fg-dim">{summary}</p>
-      ) : null}
+      {relationshipSummary ? (
+        <p className="mt-1 line-clamp-2 break-words font-mono text-[11px] text-fg-dim">
+          {relationshipSummary}
+        </p>
+      ) : (
+        <ApprovalPayloadSummary fields={fields} />
+      )}
       {item.failureReason ? (
         <p className="mt-1 text-xs text-danger">{displayText(item.failureReason)}</p>
       ) : null}
-      <ApprovalItemEffect item={item} bundle={bundle} />
+      <ApprovalItemDependency item={item} bundle={bundle} />
     </div>
   );
 }
 
-function ApprovalItemEffect({ item, bundle }: { item: SuggestionItem; bundle: SuggestionBundle }) {
-  const dependency = approvalDependencyText(item, bundle);
-  return (
-    <div className="mt-2 space-y-1 border-l border-border pl-2 text-xs text-fg-dim">
-      <p>{approvalEffectText(item)}</p>
-      <p>{approvalAuthorityText(item)}</p>
-      {dependency ? <p>{dependency}</p> : null}
-    </div>
+function ApprovalPayloadSummary({ fields }: { fields: FormattedPayloadField[] }) {
+  const visibleFields = fields.slice(0, MAX_INLINE_PAYLOAD_FIELDS);
+  const overflowFields = fields.slice(MAX_INLINE_PAYLOAD_FIELDS);
+  const hasLongVisibleField = visibleFields.some(
+    (field) => field.value.length > MAX_INLINE_PAYLOAD_VALUE_LENGTH,
   );
+  const canExpand = hasLongVisibleField || overflowFields.length > 0;
+  const summary = visibleFields.map((field) => payloadFieldText(field, true)).join(' · ');
+  return (
+    <>
+      {summary ? (
+        <p
+          className={`mt-1 break-words font-mono text-[11px] text-fg-dim${canExpand ? ' line-clamp-2' : ''}`}
+        >
+          {summary}
+        </p>
+      ) : null}
+      <ApprovalPayloadDisclosure
+        fields={canExpand ? fields : []}
+        overflowCount={overflowFields.length}
+      />
+    </>
+  );
+}
+
+function ApprovalPayloadDisclosure({
+  fields,
+  overflowCount,
+}: {
+  fields: FormattedPayloadField[];
+  overflowCount: number;
+}) {
+  if (fields.length === 0) return null;
+  return (
+    <details className="mt-2 text-xs text-fg-dim">
+      <summary className="cursor-pointer hover:text-fg">
+        {overflowCount > 0 ? `Show all ${fields.length} changes` : 'Show full change'}
+      </summary>
+      <dl className="mt-2 grid gap-2 border-l border-border pl-2">
+        {fields.map((field) => (
+          <div key={field.key}>
+            <dt className="font-mono text-[10px] uppercase tracking-[0.1em]">{field.label}</dt>
+            <dd className="mt-0.5 whitespace-pre-wrap break-words text-fg-muted">{field.value}</dd>
+          </div>
+        ))}
+      </dl>
+    </details>
+  );
+}
+
+function ApprovalItemDependency({
+  item,
+  bundle,
+}: {
+  item: SuggestionItem;
+  bundle: SuggestionBundle;
+}) {
+  const dependency = approvalDependencyText(item, bundle);
+  return dependency ? <p className="mt-2 text-xs text-fg-dim">{dependency}</p> : null;
 }
 
 function CalendarApprovalPayload({ item, timezone }: { item: SuggestionItem; timezone?: string }) {
@@ -1027,6 +1248,16 @@ function CalendarApprovalPayload({ item, timezone }: { item: SuggestionItem; tim
     item.operation === 'update' &&
     proposalGroupId !== null &&
     (proposalStatus === 'confirmed' || proposalRole === 'selected_slot');
+  const payloadFields = formatPayloadFields(
+    item.proposedPayload,
+    timezone,
+    item.title,
+    item.operation,
+  ).filter(
+    (field) =>
+      !CALENDAR_SEPARATE_PAYLOAD_FIELDS.has(field.key) &&
+      !(proposedRange && CALENDAR_RANGE_PAYLOAD_FIELDS.has(field.key)),
+  );
   const toneClass =
     action.tone === 'danger'
       ? 'border-danger/40 bg-danger/5 text-danger'
@@ -1044,6 +1275,7 @@ function CalendarApprovalPayload({ item, timezone }: { item: SuggestionItem; tim
       </div>
       <div className="space-y-1 text-xs text-fg-muted">
         <CalendarResolutionLine item={item} proposedRange={proposedRange} timezone={timezone} />
+        <ApprovalPayloadSummary fields={payloadFields} />
         {showAs ? <p>Availability: {displayText(showAs)}</p> : null}
         {recurrenceEditMode ? <p>Recurrence: {displayText(recurrenceEditMode)}</p> : null}
         {cancelsSiblingSlots ? (
@@ -1082,6 +1314,7 @@ function CalendarResolutionLine({
         Looks related to "{displayText(hint.event.title)}" at{' '}
         {calendarEventRange(hint.event, timezone)}. Accept will create a new event unless this
         proposal is revised to target that event.
+        {proposedRange ? ` Proposed: ${proposedRange}.` : ''}
       </p>
     );
   }
@@ -1090,6 +1323,7 @@ function CalendarResolutionLine({
       <p>
         Could match {hint.events.length} existing events; Accept will create a new event unless the
         proposal is revised.
+        {proposedRange ? ` Proposed: ${proposedRange}.` : ''}
       </p>
     );
   }
@@ -1104,9 +1338,8 @@ function CalendarResolutionLine({
   if (hint?.kind === 'missing_target') {
     return <p>The target event is no longer available.</p>;
   }
-  return (
-    <p>{proposedRange ? `Scheduled for ${proposedRange}.` : formatPayload(item.proposedPayload)}</p>
-  );
+  if (proposedRange) return <p>Scheduled for {proposedRange}.</p>;
+  return null;
 }
 
 function ApprovalItemActions({
@@ -1140,7 +1373,7 @@ function ApprovalItemActions({
           }}
         >
           <Check className="size-4" />
-          Accept
+          {busy ? 'Working…' : 'Accept'}
         </Button>
       )}
       <Button
@@ -1160,12 +1393,20 @@ function ApprovalItemActions({
 }
 
 function ApprovalEvidence({ bundle }: { bundle: SuggestionBundle }) {
-  if (bundle.evidence.length === 0) return null;
+  if (bundle.evidence.length === 0 && !bundle.reason) return null;
   return (
     <details className="mt-2 border-l border-border pl-3">
       <summary className="cursor-pointer font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim hover:text-fg">
-        Evidence · {bundle.evidence.length}
+        Why this was suggested
+        {bundle.evidence.length > 0
+          ? ` · ${bundle.evidence.length} ${bundle.evidence.length === 1 ? 'source' : 'sources'}`
+          : ''}
       </summary>
+      {bundle.reason ? (
+        <p className="max-w-3xl py-2 text-xs leading-5 text-fg-muted">
+          {displayText(bundle.reason)}
+        </p>
+      ) : null}
       {bundle.evidence.map((ev) => (
         <EvidenceLink
           key={ev.rawEventId}
@@ -1177,7 +1418,7 @@ function ApprovalEvidence({ bundle }: { bundle: SuggestionBundle }) {
         >
           <span className="inline-flex items-center gap-1.5 font-mono uppercase tracking-[0.1em]">
             <ExternalLink className="size-3" />
-            Timeline evidence · {ev.source ?? 'source'} · {ev.rawEventId.slice(0, 8)}
+            Evidence from {evidenceSourceLabel(ev.source)}
           </span>
           <span className="line-clamp-2 text-fg-muted group-hover:text-fg">
             {ev.quote ? displayText(ev.quote) : 'Open the source event on the timeline.'}
@@ -1188,37 +1429,50 @@ function ApprovalEvidence({ bundle }: { bundle: SuggestionBundle }) {
   );
 }
 
-function ApprovalReconciliationContext({ bundle }: { bundle: SuggestionBundle }) {
+function evidenceSourceLabel(source: string | null): string {
+  if (!source) return 'captured work';
+  const labels: Record<string, string> = {
+    calendar: 'Calendar',
+    email: 'Email',
+    github: 'GitHub',
+    meeting: 'meeting transcript',
+    slack: 'Slack',
+    telegram: 'Telegram',
+    web: 'web capture',
+  };
+  return labels[source.toLowerCase()] ?? humanizeToken(source);
+}
+
+function ApprovalProcessingDetails({ bundle }: { bundle: SuggestionBundle }) {
   const outputIds = bundleReconciliationOutputIds(bundle);
   const clusterIds = bundleReconciliationClusterIds(bundle);
   if (outputIds.length === 0 && clusterIds.length === 0) return null;
-  const primaryClusterId = clusterIds[0] ?? null;
+  const records =
+    clusterIds.length > 0
+      ? clusterIds.map((clusterId) => ({
+          key: clusterId,
+          href: `/app/team/reconciliation/clusters/${clusterId}`,
+        }))
+      : [{ key: 'dashboard', href: '/app/team/reconciliation' }];
   return (
-    <div className="mt-2 flex flex-wrap items-center gap-2 border-l border-border pl-3 text-xs text-fg-dim">
-      <span className="font-mono uppercase tracking-[0.1em]">Reconciliation</span>
-      {primaryClusterId ? (
-        <Link
-          href={`/app/team/reconciliation/clusters/${primaryClusterId}`}
-          className="inline-flex items-center gap-1 font-mono uppercase tracking-[0.1em] hover:text-signal"
-        >
-          <ExternalLink className="size-3" />
-          Cluster {shortId(primaryClusterId)}
-        </Link>
-      ) : (
-        <Link
-          href="/app/team/reconciliation"
-          className="inline-flex items-center gap-1 font-mono uppercase tracking-[0.1em] hover:text-signal"
-        >
-          <ExternalLink className="size-3" />
-          Dashboard
-        </Link>
-      )}
-      {outputIds.length > 0 ? (
-        <span className="font-mono">
-          outputs {outputIds.slice(0, 3).map(shortId).join(', ')}
-          {outputIds.length > 3 ? ` +${outputIds.length - 3}` : ''}
-        </span>
-      ) : null}
-    </div>
+    <details className="mt-2 border-l border-border pl-3 text-xs text-fg-dim">
+      <summary className="cursor-pointer font-mono text-[11px] uppercase tracking-[0.12em] hover:text-fg">
+        Technical details
+      </summary>
+      <div className="mt-2 grid gap-1">
+        {records.map((record, index) => (
+          <Link
+            href={record.href}
+            className="inline-flex items-center gap-1 hover:text-signal"
+            key={record.key}
+          >
+            <ExternalLink className="size-3" />
+            {records.length === 1
+              ? 'Open processing record'
+              : `Open processing record ${index + 1} of ${records.length}`}
+          </Link>
+        ))}
+      </div>
+    </details>
   );
 }
