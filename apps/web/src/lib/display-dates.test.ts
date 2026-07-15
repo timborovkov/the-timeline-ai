@@ -5,14 +5,10 @@ import { displayText, formatDisplayDate, formatDisplayDateTime } from '@/lib/dis
 const RAW_ISO_INSTANT = /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z/;
 
 describe('displayText', () => {
-  it('formats embedded ISO instants before showing text to users', () => {
-    const text = displayText(
-      'Meeting with Miika | 2026-07-01T00:00:00.000Z to 2026-07-02T00:00:00.000Z',
-    );
+  it('does not rewrite embedded ISO instants without an explicit workspace timezone', () => {
+    const value = 'Meeting with Miika | 2026-07-01T00:00:00.000Z';
 
-    expect(text).toContain('Meeting with Miika');
-    expect(text).toContain(' to ');
-    expect(text).not.toMatch(RAW_ISO_INSTANT);
+    expect(displayText(value)).toBe(value);
   });
 
   it('formats embedded ISO instants in the requested timezone', () => {
@@ -28,7 +24,9 @@ describe('displayText', () => {
 
 describe('formatDisplayDate', () => {
   it('formats standalone dates without exposing ISO strings', () => {
-    const text = formatDisplayDate(new Date('2026-07-01T00:00:00.000Z'));
+    const text = formatDisplayDate(new Date('2026-07-01T00:00:00.000Z'), {
+      timezone: 'Europe/Helsinki',
+    });
 
     expect(text).not.toMatch(RAW_ISO_INSTANT);
     expect(text).not.toContain('T00:00:00');
@@ -44,10 +42,10 @@ describe('formatDisplayDate', () => {
 });
 
 describe('formatDisplayDateTime', () => {
-  it('uses the workspace default timezone so server and browser hydration agree', () => {
-    const value = new Date('2026-07-15T00:39:00.000Z');
-    expect(formatDisplayDateTime(value)).toBe(
-      formatDisplayDateTime(value, { timezone: 'Europe/Helsinki' }),
+  it('uses the requested workspace timezone across a date boundary', () => {
+    const value = new Date('2026-07-15T00:30:00.000Z');
+    expect(formatDisplayDateTime(value, { timezone: 'America/Los_Angeles' })).toContain(
+      'Jul 14, 2026',
     );
   });
 });

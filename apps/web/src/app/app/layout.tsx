@@ -92,7 +92,8 @@ export default async function AppLayout({
     );
   }
 
-  const [badges, inbox] = await Promise.all([
+  const scope = withTeam(db, active.teamId, session.user.id);
+  const [badges, inbox, calendarSettings] = await Promise.all([
     getNavAttentionSummary(active.teamId, session.user.id).catch((err: unknown) => {
       console.error('[app-shell] failed to load navigation attention badges', err);
       reportCaughtError(err, { surface: 'layout', operation: 'nav_attention_summary' });
@@ -100,7 +101,6 @@ export default async function AppLayout({
     }),
     (async () => {
       try {
-        const scope = withTeam(db, active.teamId, session.user.id);
         const [unreadCount, notifications] = await Promise.all([
           scope.objects.unreadNotificationCount(),
           scope.objects.listNotifications({ limit: 5 }),
@@ -123,6 +123,7 @@ export default async function AppLayout({
         return { unreadCount: 0, notifications: [] };
       }
     })(),
+    scope.calendar.getCalendarSettings(),
   ]);
 
   const sidebarInitiallyExpanded = sidebarExpandedFromCookie(
@@ -149,6 +150,7 @@ export default async function AppLayout({
           }}
           badges={badges}
           inbox={inbox}
+          workspaceTimezone={calendarSettings.defaultTimezone}
           sidebarInitiallyExpanded={sidebarInitiallyExpanded}
         >
           {children}

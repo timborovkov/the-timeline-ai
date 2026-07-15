@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { Suspense, useEffect, useRef, useState, useTransition } from 'react';
 
 import { markNotificationReadAction } from '@/app/actions/objects';
+import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
 import { formatDisplayDateTime } from '@/lib/display-dates';
 import { cn } from '@/lib/utils';
 
@@ -18,8 +19,8 @@ interface Props {
   initiallyRead: boolean;
 }
 
-function formatTs(ts: string): string {
-  return formatDisplayDateTime(ts);
+function formatTs(ts: string, timezone: string): string {
+  return formatDisplayDateTime(ts, { timezone });
 }
 
 export function NotificationRow(props: Props) {
@@ -39,6 +40,7 @@ function NotificationRowContent({
   createdAt,
   initiallyRead,
 }: Props) {
+  const timezone = useWorkspaceTimezone();
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   // Optimistic read state so clicking through to an object instantly
@@ -128,7 +130,7 @@ function NotificationRowContent({
       )}
     >
       <time dateTime={createdAt} className="font-mono text-xs text-fg-dim">
-        {formatTs(createdAt)}
+        {formatTs(createdAt, timezone)}
       </time>
       <div className="min-w-0">
         <div className="flex items-center gap-2 text-xs text-fg-dim">

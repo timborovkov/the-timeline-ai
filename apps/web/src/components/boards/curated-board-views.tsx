@@ -7,6 +7,7 @@ import type { BoardItemOptimisticPatch } from '@/components/boards/board-detail-
 import type * as boards from '@timeline/shared/boards';
 import type { Dispatch, SetStateAction } from 'react';
 
+import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
 import { boardViewHref, type BoardLayout } from '@/lib/board-links';
 import { displayText, formatDisplayDate } from '@/lib/display-dates';
 import { displayObjectTitle } from '@/lib/object-title';
@@ -547,6 +548,7 @@ export function CuratedBoardList({
     patch: BoardItemOptimisticPatch,
   ) => Promise<{ ok?: boolean; error?: string; id?: string }>;
 }) {
+  const timezone = useWorkspaceTimezone();
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(new Set());
   const selectableItems = useMemo(() => items.filter((item) => !isOptimisticItem(item)), [items]);
   const visibleSelectedIds = useMemo(() => {
@@ -600,7 +602,7 @@ export function CuratedBoardList({
               </span>
               <span className="text-xs text-fg-dim">
                 {item.object.type}
-                {item.dueAt ? ` · ${formatDisplayDate(item.dueAt)}` : ''}
+                {item.dueAt ? ` · ${formatDisplayDate(item.dueAt, { timezone })}` : ''}
               </span>
             </>
           );
@@ -643,5 +645,5 @@ function isOptimisticItem(item: boards.BoardItemRow): boolean {
 }
 
 function EmptyBoardItems() {
-  return <p className="py-10 text-center text-xs text-fg-dim">NO BOARD ITEMS YET</p>;
+  return <p className="py-10 text-center text-sm text-fg-dim">No board items yet</p>;
 }

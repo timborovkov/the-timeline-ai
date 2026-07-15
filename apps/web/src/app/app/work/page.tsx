@@ -41,13 +41,16 @@ export default async function WorkPage() {
   const scope = withTeam(db, active.teamId, session.user.id);
   const now = new Date();
   const dueSoon = new Date(now.getTime() + DUE_SOON_DAYS * 24 * 60 * 60 * 1000);
-  const [pendingApprovals, boardItems, queueObjects, pinnedBoards, boards] = await Promise.all([
-    scope.suggestions.countPendingSuggestions(),
-    scope.boards.listWorkQueueItems({ dueBefore: dueSoon, limit: 100 }),
-    listWorkQueueObjects(scope.objects, session.user.id, dueSoon),
-    scope.boards.listPinnedBoards(),
-    scope.boards.listBoards(),
-  ]);
+  const [pendingApprovals, boardItems, queueObjects, pinnedBoards, boards, calendarSettings] =
+    await Promise.all([
+      scope.suggestions.countPendingSuggestions(),
+      scope.boards.listWorkQueueItems({ dueBefore: dueSoon, limit: 100 }),
+      listWorkQueueObjects(scope.objects, session.user.id, dueSoon),
+      scope.boards.listPinnedBoards(),
+      scope.boards.listBoards(),
+      scope.calendar.getCalendarSettings(),
+    ]);
+  const timezone = calendarSettings.defaultTimezone;
 
   const approvalsItem = approvalQueueItem(pendingApprovals, now);
   const queue = dedupeWorkQueueItems(
@@ -98,7 +101,7 @@ export default async function WorkPage() {
           ) : (
             <div className="overflow-hidden border border-border">
               {queue.map((item) => (
-                <WorkQueueRow key={item.id} item={item} />
+                <WorkQueueRow key={item.id} item={item} timezone={timezone} />
               ))}
             </div>
           )}
@@ -123,7 +126,7 @@ export default async function WorkPage() {
                     ) : null}
                   </span>
                   <span className="mt-2 block text-xs tabular-nums text-fg-dim">
-                    {board.itemCount} items · updated {dateLabel(board.updatedAt)}
+                    {board.itemCount} items · updated {dateLabel(board.updatedAt, timezone)}
                   </span>
                 </Link>
               ))}
@@ -135,7 +138,7 @@ export default async function WorkPage() {
   );
 }
 
-function WorkQueueRow({ item }: { item: WorkQueueItem }) {
+function WorkQueueRow({ item, timezone }: { item: WorkQueueItem; timezone: string }) {
   return (
     <Link
       href={item.href}
@@ -158,7 +161,7 @@ function WorkQueueRow({ item }: { item: WorkQueueItem }) {
       <span className="flex flex-wrap items-center gap-2 md:justify-end">
         {item.dueAt ? (
           <MetaPill
-            label={`Due ${dateLabel(item.dueAt)}`}
+            label={`Due ${dateLabel(item.dueAt, timezone)}`}
             danger={item.reasons.includes('overdue')}
           />
         ) : null}
@@ -216,6 +219,6 @@ function uniqueBoards<T extends { id: string }>(boards: T[]): T[] {
   });
 }
 
-function dateLabel(value: Date): string {
-  return formatDisplayDate(value);
+function dateLabel(value: Date, timezone: string): string {
+  return formatDisplayDate(value, { timezone });
 }

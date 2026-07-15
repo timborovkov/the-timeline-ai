@@ -12,6 +12,7 @@ import {
   DropdownMenuContent,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
 import { formatDisplayDate } from '@/lib/display-dates';
 import { cn } from '@/lib/utils';
 
@@ -30,8 +31,8 @@ interface InboxBellProps {
   notifications: InboxBellNotification[];
 }
 
-function formatPreviewTime(ts: string): string {
-  return formatDisplayDate(ts);
+function formatPreviewTime(ts: string, timezone: string): string {
+  return formatDisplayDate(ts, { timezone });
 }
 
 function notificationHref(notification: InboxBellNotification): string {
@@ -41,6 +42,7 @@ function notificationHref(notification: InboxBellNotification): string {
 }
 
 export function InboxBell({ unreadCount, notifications }: InboxBellProps) {
+  const timezone = useWorkspaceTimezone();
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const badge = formatNavBadge(unreadCount);
@@ -123,7 +125,7 @@ export function InboxBell({ unreadCount, notifications }: InboxBellProps) {
                       <span className="flex items-center gap-2 text-[11px] text-fg-dim">
                         <span className="truncate">{notification.kind.replace(/_/g, ' ')}</span>
                         <time dateTime={notification.createdAt} className="shrink-0">
-                          {formatPreviewTime(notification.createdAt)}
+                          {formatPreviewTime(notification.createdAt, timezone)}
                         </time>
                       </span>
                       <span className="mt-1 line-clamp-2 block text-fg">

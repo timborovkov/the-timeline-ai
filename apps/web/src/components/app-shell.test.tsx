@@ -78,6 +78,7 @@ describe('AppShell', () => {
         recipientInvites={[]}
         user={{ name: 'Tim', email: 'tim@example.com' }}
         sidebarInitiallyExpanded={false}
+        workspaceTimezone="America/Los_Angeles"
       >
         <div>Page content</div>
       </AppShell>,

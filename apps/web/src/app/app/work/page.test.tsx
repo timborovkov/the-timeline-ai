@@ -13,6 +13,7 @@ const fakes = vi.hoisted(() => ({
   listPinnedBoards: vi.fn(),
   listBoards: vi.fn(),
   listEventsPage: vi.fn(),
+  getCalendarSettings: vi.fn(),
   redirect: vi.fn((path: string) => {
     throw new Error(`redirect:${path}`);
   }),
@@ -29,6 +30,7 @@ vi.mock('@timeline/shared/team-scope', () => ({
     },
     objects: { listObjects: fakes.listObjects },
     timeline: { listEventsPage: fakes.listEventsPage },
+    calendar: { getCalendarSettings: fakes.getCalendarSettings },
   }),
 }));
 vi.mock('@/lib/auth', () => ({ auth: fakes.auth }));
@@ -89,6 +91,7 @@ beforeEach(() => {
   fakes.listPinnedBoards.mockResolvedValue([]);
   fakes.listBoards.mockResolvedValue([]);
   fakes.listEventsPage.mockResolvedValue({ items: [], nextCursor: null });
+  fakes.getCalendarSettings.mockResolvedValue({ defaultTimezone: 'America/Los_Angeles' });
 });
 
 afterEach(() => {

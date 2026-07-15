@@ -97,7 +97,9 @@ describe('SlackSettingsPageView', () => {
     render(<SlackSettingsPageView model={model()} />);
 
     expect(screen.getByText('Acme Slack')).toBeTruthy();
-    expect(screen.getByText(/workspace T123 · enabled/)).toBeTruthy();
+    expect(screen.getByText('Enabled')).toBeTruthy();
+    expect(screen.queryByText(/workspace T123/)).toBeNull();
+    expect(screen.getByText('Slack workspace ID').closest('details')).toBeTruthy();
     expect(screen.getByRole('link', { name: 'Reconnect' }).getAttribute('href')).toBe(
       '/api/slack/install/start',
     );
@@ -105,7 +107,8 @@ describe('SlackSettingsPageView', () => {
     expect(screen.getByRole('option', { name: '#sales' })).toBeTruthy();
     expect(screen.queryByRole('option', { name: '#launch' })).toBeNull();
     expect(screen.getByText('#launch')).toBeTruthy();
-    expect(screen.getByText('channel · default visibility team')).toBeTruthy();
+    expect(screen.getByText('Channel · Team visibility')).toBeTruthy();
+    expect(screen.getByText('Slack conversation ID').closest('details')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Unbind' })).toBeTruthy();
     expect(screen.getByText('Ada')).toBeTruthy();
     expect(screen.getByText(/Slack Ada Lovelace · ada@slack\.test/)).toBeTruthy();

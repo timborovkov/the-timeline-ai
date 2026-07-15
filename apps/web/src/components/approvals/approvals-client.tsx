@@ -27,6 +27,7 @@ import { EmptyAction } from '@/components/empty-action';
 import { EvidenceLink } from '@/components/evidence-link';
 import { TechnicalDetails } from '@/components/technical-details';
 import { Button } from '@/components/ui/button';
+import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
 import { displayText, formatDisplayDate, formatDisplayDateTime } from '@/lib/display-dates';
 import { isActionableSuggestionStatus } from '@/lib/suggestion-status';
 
@@ -265,7 +266,7 @@ function calendarRangeLabel(input: {
   startAt: string | null;
   endAt: string | null;
   allDay?: boolean | null;
-  timezone?: string;
+  timezone: string;
 }): string | null {
   if (!input.startAt || !input.endAt) return null;
   if (input.allDay) {
@@ -280,7 +281,7 @@ function calendarRangeLabel(input: {
   })} -> ${formatDisplayDateTime(input.endAt, { timezone: input.timezone })}`;
 }
 
-function proposedCalendarRange(item: SuggestionItem, timezone?: string): string | null {
+function proposedCalendarRange(item: SuggestionItem, timezone: string): string | null {
   const eventTimezone = payloadString(item.proposedPayload, 'timezone') ?? timezone;
   return calendarRangeLabel({
     startAt: payloadString(item.proposedPayload, 'startAt'),
@@ -290,7 +291,7 @@ function proposedCalendarRange(item: SuggestionItem, timezone?: string): string 
   });
 }
 
-function calendarEventRange(event: CalendarResolutionEvent, timezone?: string): string {
+function calendarEventRange(event: CalendarResolutionEvent, timezone: string): string {
   return (
     calendarRangeLabel({
       startAt: event.startAt,
@@ -443,6 +444,8 @@ export function ApprovalsClient({
   timezone,
   folded,
 }: Props) {
+  const workspaceTimezone = useWorkspaceTimezone();
+  const resolvedTimezone = timezone ?? workspaceTimezone;
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -627,7 +630,7 @@ export function ApprovalsClient({
       error={error}
       pending={pending}
       run={run}
-      timezone={timezone}
+      timezone={resolvedTimezone}
       visibleSuggestions={visibleSuggestions}
     />
   );
@@ -680,7 +683,7 @@ function ApprovalListBody({
   error: string | null;
   pending: boolean;
   run: ApprovalAction;
-  timezone?: string;
+  timezone: string;
   visibleSuggestions: SuggestionBundle[];
 }) {
   return (
@@ -810,7 +813,7 @@ function ApprovalBundleRow({
   busyItemIds: Set<string>;
   pending: boolean;
   run: ApprovalAction;
-  timezone?: string;
+  timezone: string;
 }) {
   const pendingItems = bundle.items.filter((item) => isActionableSuggestionStatus(item.status));
   const bulkAcceptItems = pendingItems.filter((item) => item.targetKind !== 'object_merge');
@@ -865,7 +868,7 @@ function ApprovalBundleHeader({
   timezone,
 }: {
   bundle: SuggestionBundle;
-  timezone?: string;
+  timezone: string;
 }) {
   return (
     <div className="min-w-0 flex-1">
@@ -901,7 +904,7 @@ function ApprovalItemRow({
   item: SuggestionItem;
   pending: boolean;
   run: ApprovalAction;
-  timezone?: string;
+  timezone: string;
 }) {
   return (
     <li className="grid gap-3 p-3 md:grid-cols-[minmax(0,1.3fr)_minmax(10rem,0.8fr)_minmax(9rem,auto)]">
@@ -968,7 +971,7 @@ function ApprovalItemPayload({
 }: {
   bundle: SuggestionBundle;
   item: SuggestionItem;
-  timezone?: string;
+  timezone: string;
 }) {
   if (item.targetKind === 'calendar_event') {
     return <CalendarApprovalPayload item={item} timezone={timezone} />;
@@ -999,7 +1002,7 @@ function ApprovalItemEffect({ item, bundle }: { item: SuggestionItem; bundle: Su
   );
 }
 
-function CalendarApprovalPayload({ item, timezone }: { item: SuggestionItem; timezone?: string }) {
+function CalendarApprovalPayload({ item, timezone }: { item: SuggestionItem; timezone: string }) {
   const action = calendarActionSummary(item);
   const Icon = action.icon;
   const proposedRange = proposedCalendarRange(item, timezone);
@@ -1049,7 +1052,7 @@ function CalendarResolutionLine({
 }: {
   item: SuggestionItem;
   proposedRange: string | null;
-  timezone?: string;
+  timezone: string;
 }) {
   const hint = item.calendarResolutionHint;
   if (hint?.kind === 'exact_duplicate_reuse') {

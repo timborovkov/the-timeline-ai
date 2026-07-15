@@ -9,6 +9,7 @@ import type * as objects from '@timeline/shared/objects/types';
 
 import { bulkArchiveObjectsAction } from '@/app/actions/objects';
 import { useAppDialog } from '@/components/ui/app-dialog';
+import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
 import { displayText, formatDisplayDate } from '@/lib/display-dates';
 import { MAX_OBJECT_MERGE_SELECTION, objectMergeHref } from '@/lib/object-merge';
 
@@ -65,6 +66,7 @@ function cleanupListReducer(state: CleanupListState, action: CleanupListAction):
 }
 
 export function ObjectCleanupList({ rows, typeLabels, pageInfo, sectionMoreHrefs }: Props) {
+  const timezone = useWorkspaceTimezone();
   const router = useRouter();
   const dialog = useAppDialog();
   const [{ selecting, selected, archivedIds, error }, dispatchCleanupList] = useReducer(
@@ -211,7 +213,7 @@ export function ObjectCleanupList({ rows, typeLabels, pageInfo, sectionMoreHrefs
         </p>
       ) : null}
       {visibleRows.length === 0 ? (
-        <p className="py-10 text-center text-xs text-fg-dim">NO OBJECTS VISIBLE</p>
+        <p className="py-10 text-center text-sm text-fg-dim">No objects visible</p>
       ) : (
         <div className="space-y-8">
           {typeKeys.map((typeKey) => {
@@ -263,7 +265,7 @@ export function ObjectCleanupList({ rows, typeLabels, pageInfo, sectionMoreHrefs
                             <span>{object.status}</span>
                             {object.dueAt ? (
                               <span title={object.dueAt.toISOString()}>
-                                · {formatDisplayDate(object.dueAt)}
+                                · {formatDisplayDate(object.dueAt, { timezone })}
                               </span>
                             ) : null}
                           </span>

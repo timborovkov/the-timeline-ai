@@ -43,6 +43,7 @@ import {
 } from '@/components/objects/object-search-results';
 import { ObjectSectionFeed } from '@/components/objects/object-section-feed';
 import { TechnicalDetails } from '@/components/technical-details';
+import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
 import { displayText, formatDisplayDateTime } from '@/lib/display-dates';
 import { displayObjectTitle } from '@/lib/object-title';
 import { readJson } from '@/lib/paginated-api';
@@ -934,6 +935,7 @@ function ObjectPanel({
 }
 
 function ObjectSummaryPanel({ detail }: { detail: ObjectDetail }) {
+  const timezone = useWorkspaceTimezone();
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const summary = detail.summary ?? null;
@@ -1005,7 +1007,7 @@ function ObjectSummaryPanel({ detail }: { detail: ObjectDetail }) {
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-border pt-3">
         <p className="text-xs text-fg-dim">
           {summary?.generatedAt
-            ? `Updated ${formatDisplayDateTime(summary.generatedAt)} · ${
+            ? `Updated ${formatDisplayDateTime(summary.generatedAt, { timezone })} · ${
                 summary.sourceRefs.length
               } sources`
             : summary?.status === 'pending'
@@ -1253,12 +1255,13 @@ function ProvenanceSourceLink({
 }: {
   source: ObjectDetail['provenance']['whyThisExists'][number]['evidence'][number];
 }) {
+  const timezone = useWorkspaceTimezone();
   return (
     <Link
       href={`/app/timeline?event=${source.rawEventId}#ev-${source.rawEventId}`}
       className="block break-words text-xs text-fg-muted underline-offset-2 hover:text-fg hover:underline"
     >
-      {displayText(source.source)} · {formatDisplayDateTime(source.occurredAt)}
+      {displayText(source.source)} · {formatDisplayDateTime(source.occurredAt, { timezone })}
     </Link>
   );
 }
@@ -1613,6 +1616,7 @@ function ObjectNoteItem({
   onSaveNote: (noteId: string, body: string) => void;
   onDeleteNote: (noteId: string) => void;
 }) {
+  const timezone = useWorkspaceTimezone();
   return (
     <li className="rounded-sm border border-border bg-surface px-4 py-3 text-sm">
       {isEditing ? (
@@ -1652,7 +1656,7 @@ function ObjectNoteItem({
         <div className="whitespace-pre-wrap">{displayText(note.body)}</div>
       )}
       <div className="mt-2 flex items-center justify-between text-[11px] text-muted-foreground">
-        <span>{formatDisplayDateTime(note.createdAt)}</span>
+        <span>{formatDisplayDateTime(note.createdAt, { timezone })}</span>
         {isOwner && !isEditing ? (
           <div className="flex gap-3">
             <button
@@ -1780,6 +1784,7 @@ function ConnectedCalendarList({
 }: {
   events: ObjectDetail['connectedWork']['calendarEvents'];
 }) {
+  const timezone = useWorkspaceTimezone();
   return (
     <ConnectedWorkSection title="Calendar">
       {events.length === 0 ? (
@@ -1793,7 +1798,7 @@ function ConnectedCalendarList({
             >
               <span className="font-medium">{displayText(event.title)}</span>
               <span className="text-[11px] text-fg-dim">
-                {formatDisplayDateTime(event.startAt)} · {event.showAs}
+                {formatDisplayDateTime(event.startAt, { timezone })} · {event.showAs}
               </span>
             </li>
           ))}
@@ -1898,6 +1903,7 @@ function ConnectedDocumentList({
 }: {
   documents: ObjectDetail['connectedWork']['documents'];
 }) {
+  const timezone = useWorkspaceTimezone();
   return (
     <ConnectedWorkSection title="Documents">
       {documents.length === 0 ? (
@@ -1917,7 +1923,8 @@ function ConnectedDocumentList({
                 {displayText(truncateFilenameMiddle(document.name))}
               </a>
               <span className="text-[11px] text-fg-dim">
-                {document.fileKind} · updated {formatDisplayDateTime(document.updatedAt)}
+                {document.fileKind} · updated{' '}
+                {formatDisplayDateTime(document.updatedAt, { timezone })}
               </span>
             </li>
           ))}
@@ -1928,6 +1935,7 @@ function ConnectedDocumentList({
 }
 
 function ConnectedLinkList({ links }: { links: ObjectDetail['connectedWork']['links'] }) {
+  const timezone = useWorkspaceTimezone();
   return (
     <ConnectedWorkSection title="Links">
       {links.length === 0 ? (
@@ -1953,7 +1961,7 @@ function ConnectedLinkList({ links }: { links: ObjectDetail['connectedWork']['li
               )}
               <span className="text-[11px] text-fg-dim">
                 {link.provider ?? link.domain ?? 'shared link'} · updated{' '}
-                {formatDisplayDateTime(link.updatedAt)}
+                {formatDisplayDateTime(link.updatedAt, { timezone })}
               </span>
             </li>
           ))}
@@ -1968,6 +1976,7 @@ function ConnectedCapturedFileList({
 }: {
   files: ObjectDetail['connectedWork']['capturedFiles'];
 }) {
+  const timezone = useWorkspaceTimezone();
   return (
     <ConnectedWorkSection title="Files">
       {files.length === 0 ? (
@@ -1984,7 +1993,7 @@ function ConnectedCapturedFileList({
               </Link>
               <span className="text-[11px] text-fg-dim">
                 {file.contentType ?? 'captured file'} · updated{' '}
-                {formatDisplayDateTime(file.updatedAt)}
+                {formatDisplayDateTime(file.updatedAt, { timezone })}
               </span>
             </li>
           ))}
@@ -2177,6 +2186,7 @@ function ObjectRecentChangeItem({
   onAcceptChange: (changeId: string) => void;
   onRejectChange: (changeId: string) => void;
 }) {
+  const timezone = useWorkspaceTimezone();
   const isSuggested = change.status === 'suggested';
   const isRejected = change.status === 'rejected';
   return (
@@ -2190,10 +2200,10 @@ function ObjectRecentChangeItem({
         </span>
       </div>
       <div className="mt-1 break-words text-xs text-muted-foreground">
-        {formatValue(change.previousValue)} → {formatValue(change.newValue)}
+        {formatValue(change.previousValue, timezone)} → {formatValue(change.newValue, timezone)}
       </div>
       <div className="mt-1 flex items-center justify-between text-[11px] text-muted-foreground">
-        <span>{formatDisplayDateTime(change.changedAt)}</span>
+        <span>{formatDisplayDateTime(change.changedAt, { timezone })}</span>
         {isSuggested ? (
           <div className="flex gap-2">
             <button
@@ -2283,11 +2293,11 @@ function toLocalInput(d: Date): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-function formatValue(v: unknown): string {
+function formatValue(v: unknown, timezone: string): string {
   if (v === null || v === undefined) return '∅';
   if (typeof v === 'string') return displayText(v);
-  if (Array.isArray(v)) return v.map((item) => formatValue(item)).join(', ');
-  if (v instanceof Date) return formatDisplayDateTime(v);
+  if (Array.isArray(v)) return v.map((item) => formatValue(item, timezone)).join(', ');
+  if (v instanceof Date) return formatDisplayDateTime(v, { timezone });
   if (typeof v === 'object') return summarizeObjectValue(v as Record<string, unknown>);
   if (typeof v === 'number' || typeof v === 'boolean' || typeof v === 'bigint') return String(v);
   return 'updated';

@@ -29,7 +29,10 @@ export default async function BoardsIndexPage() {
   if (!active) redirect('/sign-in');
 
   const scope = withTeam(db, active.teamId, session.user.id);
-  const boards = await scope.boards.listBoards();
+  const [boards, calendarSettings] = await Promise.all([
+    scope.boards.listBoards(),
+    scope.calendar.getCalendarSettings(),
+  ]);
 
   return (
     <div className="space-y-6">
@@ -65,7 +68,11 @@ export default async function BoardsIndexPage() {
                     <span className="mt-2 flex flex-wrap items-center gap-2 text-xs text-fg-dim">
                       <span className="capitalize">{b.templateKind.replaceAll('_', ' ')}</span>
                       <span aria-hidden="true">·</span>
-                      <span>{formatDisplayDate(b.updatedAt)}</span>
+                      <span>
+                        {formatDisplayDate(b.updatedAt, {
+                          timezone: calendarSettings.defaultTimezone,
+                        })}
+                      </span>
                     </span>
                   </Link>
                   <div className="flex shrink-0 items-center justify-between gap-3 sm:justify-start">

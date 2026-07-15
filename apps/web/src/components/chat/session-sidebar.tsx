@@ -149,6 +149,8 @@ function MobileSessionNavContent({
   const router = useRouter();
   const pathname = usePathname();
   const search = useSearchParams();
+  const dialog = useAppDialog();
+  const [pending, startTransition] = useTransition();
 
   function newChat(): void {
     const params = new URLSearchParams(search.toString());
@@ -181,12 +183,12 @@ function MobileSessionNavContent({
               {sessions.map((session) => {
                 const isActive = session.id === activeSessionId;
                 return (
-                  <li key={session.id}>
+                  <li key={session.id} className="flex items-center gap-1">
                     <Link
                       href={`/app/chat?session=${session.id}`}
                       aria-current={isActive ? 'page' : undefined}
                       className={cn(
-                        'block truncate rounded-md px-2 py-2 text-sm',
+                        'min-w-0 flex-1 truncate rounded-md px-2 py-2 text-sm',
                         isActive
                           ? 'bg-primary/10 text-primary'
                           : 'text-foreground/80 hover:bg-accent/60',
@@ -194,6 +196,34 @@ function MobileSessionNavContent({
                     >
                       {sessionLabel(session)}
                     </Link>
+                    <button
+                      type="button"
+                      disabled={pending}
+                      aria-label="Archive chat"
+                      onClick={async () => {
+                        const confirmed = await dialog.confirm({
+                          title: 'Archive chat?',
+                          description: 'This hides the conversation from the session list.',
+                          confirmLabel: 'Archive chat',
+                          destructive: true,
+                        });
+                        if (!confirmed) return;
+                        startTransition(async () => {
+                          await archiveChatSessionAction({ sessionId: session.id });
+                          if (isActive) {
+                            const params = new URLSearchParams(search.toString());
+                            params.delete('session');
+                            router.push(
+                              params.toString() ? `${pathname}?${params.toString()}` : pathname,
+                            );
+                          }
+                          router.refresh();
+                        });
+                      }}
+                      className="grid size-9 shrink-0 place-items-center rounded-sm text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-50"
+                    >
+                      <Trash2 aria-hidden="true" className="size-3.5" />
+                    </button>
                   </li>
                 );
               })}
@@ -201,6 +231,7 @@ function MobileSessionNavContent({
           )}
         </div>
       </details>
+      {dialog.node}
     </nav>
   );
 }

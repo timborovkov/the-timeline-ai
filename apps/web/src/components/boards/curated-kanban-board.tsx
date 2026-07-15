@@ -31,6 +31,7 @@ import {
   curatedKanbanSaveState,
   type CuratedKanbanSaveState,
 } from '@/components/boards/curated-kanban-state';
+import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
 import { boardViewHref } from '@/lib/board-links';
 import { displayText, formatDisplayDate } from '@/lib/display-dates';
 import { displayObjectTitle } from '@/lib/object-title';
@@ -280,6 +281,7 @@ function KanbanCard({
   members: BoardMemberOption[];
   filterParams: Record<string, string>;
 }) {
+  const timezone = useWorkspaceTimezone();
   const optimistic = item.id.startsWith('optimistic-');
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: item.id,
@@ -289,7 +291,7 @@ function KanbanCard({
     ? { transform: `translate3d(${String(transform.x)}px,${String(transform.y)}px,0)` }
     : undefined;
   const blocked = lane.kind === 'blocked';
-  const due = dueState(item.dueAt);
+  const due = dueState(item.dueAt, timezone);
   const title = displayObjectTitle(item.object);
   return (
     <li
@@ -369,13 +371,17 @@ function ownerLabel(userId: string | null, members: BoardMemberOption[]): string
   return members.find((member) => member.id === userId)?.label ?? 'Assigned';
 }
 
-function dateLabel(value: Date): string {
-  return formatDisplayDate(value);
+function dateLabel(value: Date, timezone: string): string {
+  return formatDisplayDate(value, { timezone });
 }
 
-function dueState(value: Date | null): { label: string; tone: 'danger' | 'neutral' } {
+function dueState(
+  value: Date | null,
+  timezone: string,
+): { label: string; tone: 'danger' | 'neutral' } {
   if (!value) return { label: 'No due', tone: 'neutral' };
   const due = new Date(value);
-  if (due.getTime() < Date.now()) return { label: `Overdue ${dateLabel(due)}`, tone: 'danger' };
-  return { label: `Due ${dateLabel(due)}`, tone: 'neutral' };
+  if (due.getTime() < Date.now())
+    return { label: `Overdue ${dateLabel(due, timezone)}`, tone: 'danger' };
+  return { label: `Due ${dateLabel(due, timezone)}`, tone: 'neutral' };
 }

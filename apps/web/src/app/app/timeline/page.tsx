@@ -543,7 +543,7 @@ function TimelineBrowserSection({
         focusMomentId={focusMomentId ?? null}
         timezone={timezone}
         mode={mode}
-        emptyLabel={hasFilters ? 'NO EVENTS MATCH THIS VIEW' : 'NO EVENTS YET'}
+        emptyLabel={hasFilters ? 'No events match this view' : 'No events yet'}
         emptyAction={{
           href: hasFilters ? '/app/timeline' : '/app#capture',
           label: hasFilters ? 'Clear timeline filters' : 'Capture first event',

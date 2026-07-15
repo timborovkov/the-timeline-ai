@@ -1,12 +1,16 @@
+'use client';
+
 import { Pin } from 'lucide-react';
 import Link from 'next/link';
 
 import type * as boards from '@timeline/shared/boards';
 
 import { SectionHeading } from '@/components/section-heading';
+import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
 import { formatDisplayDate } from '@/lib/display-dates';
 
 export function PinnedBoards({ boards: rows }: { boards: boards.BoardRow[] }) {
+  const timezone = useWorkspaceTimezone();
   if (rows.length === 0) return null;
   return (
     <section className="space-y-3" aria-label="Pinned boards">
@@ -50,7 +54,7 @@ export function PinnedBoards({ boards: rows }: { boards: boards.BoardRow[] }) {
                   <span className="font-mono">{board.dueSoonCount}</span> due soon
                 </span>
               ) : null}
-              <span>{formatDisplayDate(board.updatedAt)}</span>
+              <span>{formatDisplayDate(board.updatedAt, { timezone })}</span>
             </span>
           </Link>
         ))}

@@ -41,56 +41,97 @@ export function IntegrationsCatalog({ catalog }: { catalog: CatalogEntry[] }) {
     }
   }
 
+  const available = catalog.filter((provider) => provider.available);
+  const unavailable = catalog.filter((provider) => !provider.available);
+
   return (
-    <>
+    <div className="space-y-3">
       <div className="grid auto-rows-fr gap-3 md:grid-cols-2">
-        {catalog.map((c) => (
-          <Card key={c.id} id={c.id} className="flex h-full scroll-mt-24 flex-col">
-            <CardHeader className="flex flex-row items-center gap-3">
-              <Image
-                src={c.logo}
-                alt=""
-                width={28}
-                height={28}
-                className="size-7 rounded-sm bg-surface-2 p-1"
-              />
-              <CardTitle className="text-sm font-medium">{c.label}</CardTitle>
-              {!c.available ? (
-                <span className="ml-auto rounded-sm border border-border bg-surface-2 px-1.5 py-0.5 text-[10px] uppercase text-fg-muted">
-                  Not configured
-                </span>
-              ) : null}
-            </CardHeader>
-            <CardContent className="flex flex-1 flex-col">
-              <p className="text-sm text-fg-muted">{c.description}</p>
-              <p className="mt-2 text-xs text-fg-muted">
-                Creates a personal provider account first. Team sync is activated after sources are
-                shared.
-              </p>
-              {error?.id === c.id ? (
-                <InlineError
-                  message={error.message}
-                  details={error.details}
-                  onRetry={() => void startConnect(c.id)}
-                  retrying={pending === c.id}
-                  className="mt-3"
-                />
-              ) : null}
-              <div className="mt-auto pt-3">
-                <Button
-                  size="sm"
-                  disabled={!c.available || pending === c.id}
-                  onClick={() => {
-                    void startConnect(c.id);
-                  }}
-                >
-                  {pending === c.id ? 'Redirecting…' : 'Connect account'}
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
+        {available.map((provider) => (
+          <ProviderCard
+            key={provider.id}
+            provider={provider}
+            pending={pending}
+            error={error}
+            onConnect={startConnect}
+          />
         ))}
       </div>
-    </>
+      {unavailable.length > 0 ? (
+        <details className="rounded-lg border border-border bg-surface p-4">
+          <summary className="cursor-pointer text-sm font-medium text-fg-muted hover:text-fg">
+            More providers · {unavailable.length}
+          </summary>
+          <div className="mt-4 grid auto-rows-fr gap-3 border-t border-border pt-4 md:grid-cols-2">
+            {unavailable.map((provider) => (
+              <ProviderCard
+                key={provider.id}
+                provider={provider}
+                pending={pending}
+                error={error}
+                onConnect={startConnect}
+              />
+            ))}
+          </div>
+        </details>
+      ) : null}
+    </div>
+  );
+}
+
+function ProviderCard({
+  provider,
+  pending,
+  error,
+  onConnect,
+}: {
+  provider: CatalogEntry;
+  pending: string | null;
+  error: { id: string; message: string; details: string } | null;
+  onConnect: (id: string) => Promise<void>;
+}) {
+  return (
+    <Card id={provider.id} className="flex h-full scroll-mt-24 flex-col">
+      <CardHeader className="flex flex-row items-center gap-3">
+        <Image
+          src={provider.logo}
+          alt=""
+          width={28}
+          height={28}
+          className="size-7 rounded-sm bg-surface-2 p-1"
+        />
+        <CardTitle className="text-sm font-medium">{provider.label}</CardTitle>
+        {!provider.available ? (
+          <span className="ml-auto rounded-sm border border-border bg-surface-2 px-1.5 py-0.5 text-[10px] text-fg-muted">
+            Not configured
+          </span>
+        ) : null}
+      </CardHeader>
+      <CardContent className="flex flex-1 flex-col">
+        <p className="text-sm text-fg-muted">{provider.description}</p>
+        <p className="mt-2 text-xs text-fg-muted">
+          Creates a personal provider account first. Team sync is activated after sources are
+          shared.
+        </p>
+        {error?.id === provider.id ? (
+          <InlineError
+            message={error.message}
+            details={error.details}
+            onRetry={() => void onConnect(provider.id)}
+            retrying={pending === provider.id}
+            className="mt-3"
+          />
+        ) : null}
+        <div className="mt-auto pt-3">
+          <Button
+            size="sm"
+            disabled={!provider.available || pending === provider.id}
+            onClick={() => void onConnect(provider.id)}
+          >
+            {pending === provider.id ? 'Redirecting…' : 'Connect account'}
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
   );
 }

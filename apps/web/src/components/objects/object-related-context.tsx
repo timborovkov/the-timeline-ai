@@ -1,3 +1,5 @@
+'use client';
+
 import { truncateFilenameMiddle } from '@timeline/shared/documents/presentation';
 import {
   ExternalLink,
@@ -12,6 +14,7 @@ import Link from 'next/link';
 import type { ObjectDetail } from '@timeline/shared/objects/types';
 import type { ReactNode } from 'react';
 
+import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
 import { displayText, formatDisplayDateTime } from '@/lib/display-dates';
 
 type ConnectedWork = ObjectDetail['connectedWork'];
@@ -40,6 +43,7 @@ export function ObjectRelatedContext({
   connectedWork: ConnectedWork | null | undefined;
   compact?: boolean;
 }) {
+  const timezone = useWorkspaceTimezone();
   if (!connectedWork || contextCount(connectedWork) === 0) return null;
 
   return (
@@ -66,7 +70,7 @@ export function ObjectRelatedContext({
           items={connectedWork.documents.slice(0, compact ? 3 : 6).map((document) => ({
             key: document.id,
             label: truncateFilenameMiddle(document.name),
-            detail: `updated ${formatDisplayDateTime(document.updatedAt)}`,
+            detail: `updated ${formatDisplayDateTime(document.updatedAt, { timezone })}`,
             href: `/app/documents/${document.id}`,
           }))}
         />
@@ -91,7 +95,7 @@ export function ObjectRelatedContext({
           items={connectedWork.timelineEvents.slice(0, compact ? 3 : 6).map((event) => ({
             key: event.id,
             label: timelinePreview(event.contentText),
-            detail: `${event.source} · ${formatDisplayDateTime(event.occurredAt)}`,
+            detail: `${event.source} · ${formatDisplayDateTime(event.occurredAt, { timezone })}`,
             href: `/app/timeline?event=${event.id}#ev-${event.id}`,
           }))}
         />

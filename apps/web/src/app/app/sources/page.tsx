@@ -17,6 +17,7 @@ import { redirect } from 'next/navigation';
 
 import type { Metadata } from 'next';
 
+import { CopyButton } from '@/components/copy-button';
 import { PageHeader } from '@/components/page-header';
 import { SectionHeading } from '@/components/section-heading';
 import { resolveActiveTeam } from '@/lib/active-team';
@@ -46,6 +47,8 @@ interface SourceEntry {
   secondaryActionHref?: string;
   secondaryActionLabel?: string;
   detail: string;
+  copyValue?: string;
+  note?: string;
 }
 
 function buildSources(summary: SourcesStatusSummary): SourceEntry[] {
@@ -64,7 +67,11 @@ function buildSources(summary: SourcesStatusSummary): SourceEntry[] {
         : 'Not set up',
     actionHref: '/app/team?section=email',
     actionLabel: emailConnected ? 'Manage email' : 'Set up email',
-    detail: emailConnected ? `Inbound: ${summary.inboundEmail}` : 'No inbound address configured',
+    detail: summary.inboundEmail ?? 'No inbound address configured',
+    copyValue: summary.inboundEmail ?? undefined,
+    note: emailConnected
+      ? 'Member email addresses are attributed automatically. Unknown senders are captured and marked unverified.'
+      : undefined,
   };
 
   const slackConnected = summary.slackConnections > 0;
@@ -342,7 +349,17 @@ function SourceRow({ source }: { source: SourceEntry }) {
             </span>
           </div>
           <p className="mt-0.5 text-sm text-fg-muted">{source.description}</p>
-          <p className="mt-0.5 text-xs text-fg-dim">{source.detail}</p>
+          {source.copyValue ? (
+            <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1">
+              <code className="min-w-0 break-all font-mono text-xs text-fg-dim">
+                {source.detail}
+              </code>
+              <CopyButton value={source.copyValue} label="Copy address" />
+            </div>
+          ) : (
+            <p className="mt-0.5 text-xs text-fg-dim">{source.detail}</p>
+          )}
+          {source.note ? <p className="mt-1 text-xs text-fg-muted">{source.note}</p> : null}
         </div>
       </div>
       <div className="flex items-center gap-2">

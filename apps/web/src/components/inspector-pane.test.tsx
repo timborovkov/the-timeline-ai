@@ -36,6 +36,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  vi.restoreAllMocks();
 });
 
 describe('InspectorPane', () => {
@@ -115,5 +116,45 @@ describe('InspectorPane', () => {
     });
 
     opener.remove();
+  });
+
+  it('keeps keyboard focus inside the mobile inspector', async () => {
+    vi.spyOn(window, 'matchMedia').mockImplementation(
+      (query) =>
+        ({
+          matches: false,
+          media: query,
+          onchange: null,
+          addEventListener: vi.fn(),
+          removeEventListener: vi.fn(),
+          addListener: vi.fn(),
+          removeListener: vi.fn(),
+          dispatchEvent: vi.fn(),
+        }) as MediaQueryList,
+    );
+    const user = userEvent.setup();
+    fakes.inspector.open = true;
+    fakes.inspector.content = {
+      id: 'moment-1',
+      kind: 'Moment',
+      title: 'CI passed',
+      render: () => createElement('button', { type: 'button' }, 'Open evidence'),
+    };
+    const outside = document.createElement('button');
+    outside.type = 'button';
+    outside.textContent = 'Outside action';
+    document.body.append(outside);
+
+    render(<InspectorPane />);
+    await waitFor(() => {
+      expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Close inspector' }));
+    });
+
+    await user.tab();
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Open evidence' }));
+    await user.tab();
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Close inspector' }));
+
+    outside.remove();
   });
 });

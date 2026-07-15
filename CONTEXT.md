@@ -843,7 +843,7 @@ connection management belongs in Connections. It teaches the product loop; it
 is not a requirement that external data has successfully arrived.
 _Avoid_: Setup wizard, activation gate
 
-**Home Dashboard**:
+**Home**:
 The signed-in landing surface for a team member. It leads with Ask and actionable
 attention, keeps capture in a focused dialog, and follows with the latest digest,
 pinned work, up to three recent moments, and one next setup step. It does not

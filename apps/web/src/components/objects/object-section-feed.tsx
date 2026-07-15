@@ -3,6 +3,7 @@
 import { ExternalLink } from 'lucide-react';
 
 import { EvidenceLink } from '@/components/evidence-link';
+import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
 import { displayText, formatDisplayDateTime } from '@/lib/display-dates';
 import { useObjectSectionQuery } from '@/lib/use-paginated-queries';
 
@@ -52,6 +53,7 @@ export function ObjectSectionFeed({ objectId, section, title, showTitle = true }
 }
 
 function ObjectSectionItem({ section, item }: { section: Props['section']; item: unknown }) {
+  const timezone = useWorkspaceTimezone();
   const row = item as Record<string, unknown>;
   if (section === 'tasks') {
     return (
@@ -79,7 +81,9 @@ function ObjectSectionItem({ section, item }: { section: Props['section']; item:
     const sharedObjects = factSharedObjects(row.sharedObjects);
     const occurredAt = rawText(row.occurredAt);
     const source = text(row.source);
-    const observedAt = occurredAt ? formatDisplayDateTime(occurredAt) : 'unknown time';
+    const observedAt = occurredAt
+      ? formatDisplayDateTime(occurredAt, { timezone })
+      : 'unknown time';
     const sourceLabel = source ? ` · ${source}` : '';
     return (
       <div className="space-y-2">
@@ -120,7 +124,7 @@ function ObjectSectionItem({ section, item }: { section: Props['section']; item:
           ) : null}
         </div>
         <p className="text-[11px] text-fg-dim">
-          {formatDisplayDateTime(occurredAt)} · {source}
+          {formatDisplayDateTime(occurredAt, { timezone })} · {source}
         </p>
       </div>
     );

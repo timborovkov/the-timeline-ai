@@ -36,6 +36,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
 import { displayText, formatDisplayDateTime } from '@/lib/display-dates';
 import { statusLabel } from '@/lib/status-labels';
 import {
@@ -114,11 +115,11 @@ function eventDate(input: Date | string): Date {
   return new Date(input);
 }
 
-function formatTimestamp(input: string, timezone?: string): string {
+function formatTimestamp(input: string, timezone: string): string {
   return formatDisplayDateTime(eventDate(input), { timezone });
 }
 
-function formatMetadataValue(value: unknown, timezone?: string): string {
+function formatMetadataValue(value: unknown, timezone: string): string {
   if (value === null || value === undefined) return '';
   if (typeof value === 'string') return displayText(value, { timezone });
   if (typeof value === 'number' || typeof value === 'boolean') return String(value);
@@ -143,11 +144,7 @@ function positiveIntegerMeta(meta: Record<string, unknown>, key: string): number
   return typeof value === 'number' && Number.isInteger(value) && value > 0 ? value : null;
 }
 
-function friendlyMeta(
-  meta: Record<string, unknown>,
-  key: string,
-  timezone?: string,
-): string | null {
+function friendlyMeta(meta: Record<string, unknown>, key: string, timezone: string): string | null {
   const value = formatMetadataValue(meta[key], timezone).trim();
   return value.length > 0 ? value : null;
 }
@@ -285,7 +282,7 @@ function sourceTruthSummary(moment: TimelineMoment): { title: string; body: stri
   };
 }
 
-function rawEventBody(event: TimelineEvent, timezone?: string): string {
+function rawEventBody(event: TimelineEvent, timezone: string): string {
   const meta = metaObject(event.sourceMetadata);
   const content = event.contentText?.trim();
   if (content) return displayText(formatTimelineAttachmentText(content), { timezone });
@@ -307,7 +304,7 @@ function addDetail(
   seen: Set<string>,
   label: string,
   value: string | null,
-  timezone?: string,
+  timezone: string,
 ) {
   if (!value || seen.has(label)) return;
   seen.add(label);
@@ -316,7 +313,7 @@ function addDetail(
 
 function inspectorSourceDetailEntries(
   moment: TimelineMoment,
-  timezone?: string,
+  timezone: string,
 ): [string, string][] {
   const entries: [string, string][] = [];
   const seen = new Set<string>();
@@ -498,7 +495,7 @@ function InspectorBody({
 }: {
   moment: TimelineMoment;
   capturedFilesByEventId: Record<string, TimelineCapturedFile[]>;
-  timezone?: string;
+  timezone: string;
 }) {
   const summary = sourceTruthSummary(moment);
   const visibleRawEvents = moment.rawEvents.slice(0, INSPECTOR_RAW_EVENT_LIMIT);
@@ -586,7 +583,7 @@ function InspectorTechnicalDetails({
   timezone,
 }: {
   moment: TimelineMoment;
-  timezone?: string;
+  timezone: string;
 }) {
   const metadata = inspectorSourceDetailEntries(moment, timezone);
   const evidenceIds = moment.rawEvents.map((event) => event.id).join(', ');
@@ -607,7 +604,7 @@ function ArtifactEvidenceBundle({
   timezone,
 }: {
   cluster: TimelineArtifactCluster;
-  timezone?: string;
+  timezone: string;
 }) {
   const statusSources = cluster.relatedEvidence.filter((evidence) => evidence.authoritative).length;
   return (
@@ -698,7 +695,7 @@ function SourceEvidenceCard({
   event: TimelineEvent;
   actorLabel: string;
   capturedFiles: TimelineCapturedFile[];
-  timezone?: string;
+  timezone: string;
 }) {
   const [quickViewOpen, setQuickViewOpen] = useState(false);
   const documentLink = rawEventDocumentLink(event);
@@ -849,7 +846,7 @@ function InspectorActions({
   currentUserId: string;
   isAdmin: boolean;
   members: { id: string; label: string }[];
-  timezone?: string;
+  timezone: string;
 }) {
   const editableEvents = moment.rawEvents.filter((event) =>
     canEditVisibility(event, currentUserId),
@@ -922,7 +919,7 @@ function InspectorActions({
   );
 }
 
-function ImpactStrip({ items, timezone }: { items: ImpactItem[]; timezone?: string }) {
+function ImpactStrip({ items, timezone }: { items: ImpactItem[]; timezone: string }) {
   if (items.length === 0) return null;
   return (
     <div
@@ -974,7 +971,7 @@ function momentInspectorContent({
   isAdmin: boolean;
   members: { id: string; label: string }[];
   capturedFilesByEventId: Record<string, TimelineCapturedFile[]>;
-  timezone?: string;
+  timezone: string;
 }) {
   return {
     id: moment.id,
@@ -1020,7 +1017,7 @@ function TimelineMomentRow({
   capturedFilesByEventId: Record<string, TimelineCapturedFile[]>;
   focused: boolean;
   compact: boolean;
-  timezone?: string;
+  timezone: string;
 }) {
   const inspector = useInspector();
   const selected = focused || (inspector.open && inspector.content?.id === moment.id);
@@ -1154,7 +1151,7 @@ export function TimelineList({
   compact = false,
   maxMoments,
   serverMoments,
-  emptyLabel = 'NO EVENTS YET',
+  emptyLabel = 'No events yet',
   emptyAction,
   impactFilter = 'all',
   impactItemsByEventId,
@@ -1165,6 +1162,8 @@ export function TimelineList({
   timezone,
   mode = 'moments',
 }: Props) {
+  const workspaceTimezone = useWorkspaceTimezone();
+  const resolvedTimezone = timezone ?? workspaceTimezone;
   const inspector = useInspector();
   const autoOpenedFocusRef = useRef<string | null>(null);
   const localMoments = useMemo(
@@ -1173,10 +1172,15 @@ export function TimelineList({
         events,
         authorMap,
         impactItemsByEventId === undefined
-          ? { artifactClustersByEventId, timezone, groupingMode: mode }
-          : { impactItemsByEventId, artifactClustersByEventId, timezone, groupingMode: mode },
+          ? { artifactClustersByEventId, timezone: resolvedTimezone, groupingMode: mode }
+          : {
+              impactItemsByEventId,
+              artifactClustersByEventId,
+              timezone: resolvedTimezone,
+              groupingMode: mode,
+            },
       ),
-    [events, authorMap, impactItemsByEventId, artifactClustersByEventId, timezone, mode],
+    [events, authorMap, impactItemsByEventId, artifactClustersByEventId, resolvedTimezone, mode],
   );
   const moments = serverMoments ?? localMoments;
   const focusedMoments =
@@ -1217,7 +1221,7 @@ export function TimelineList({
         isAdmin,
         members,
         capturedFilesByEventId,
-        timezone,
+        timezone: resolvedTimezone,
       }),
     );
   }, [
@@ -1229,7 +1233,7 @@ export function TimelineList({
     inspector,
     isAdmin,
     members,
-    timezone,
+    resolvedTimezone,
   ]);
 
   if (visibleMoments.length === 0) {
@@ -1276,7 +1280,7 @@ export function TimelineList({
                   moment.rawEvents.some((event) => event.id === focusEventId)
                 }
                 compact={compact}
-                timezone={timezone}
+                timezone={resolvedTimezone}
               />
             ))}
           </ol>

@@ -25,6 +25,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
+import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
 import { boardViewHref } from '@/lib/board-links';
 import { displayText, formatDisplayDate, formatDisplayDateTime } from '@/lib/display-dates';
 import { objectDetailHref } from '@/lib/object-links';
@@ -363,11 +364,15 @@ function BoardObjectDetails({
   lane: boards.BoardLaneRow | null;
   blocked: boolean;
 }) {
+  const timezone = useWorkspaceTimezone();
   return (
     <dl className="grid grid-cols-2 gap-px border-b border-border bg-border text-sm">
       <Detail label="Board lane" value={lane?.name ?? 'Unset'} danger={blocked} />
       <Detail label="Object status" value={item.object.status} />
-      <Detail label="Object due" value={item.object.dueAt ? dateLabel(item.object.dueAt) : '-'} />
+      <Detail
+        label="Object due"
+        value={item.object.dueAt ? dateLabel(item.object.dueAt, timezone) : '-'}
+      />
       <Detail
         label="Object priority"
         value={item.object.priority ? `P${item.object.priority}` : '-'}
@@ -496,6 +501,7 @@ function BoardEvidence({
   lanes: boards.BoardLaneRow[];
   members: BoardMemberOption[];
 }) {
+  const timezone = useWorkspaceTimezone();
   return (
     <section className="p-4">
       <h3 className="mb-2 text-xs text-fg-dim">Board provenance</h3>
@@ -507,7 +513,8 @@ function BoardEvidence({
             return (
               <li key={change.id} className="rounded-sm border border-border bg-surface p-3">
                 <p className="text-xs font-medium text-fg">
-                  {fieldLabel(change.field)} · {formatProvenanceChangeValue(change, lanes, members)}
+                  {fieldLabel(change.field)} ·{' '}
+                  {formatProvenanceChangeValue(change, lanes, members, timezone)}
                 </p>
                 {change.note ? (
                   <p className="mt-1 line-clamp-2 text-xs text-fg-muted">
@@ -521,7 +528,8 @@ function BoardEvidence({
                       href={`/app/timeline?event=${source.rawEventId}#ev-${source.rawEventId}`}
                       className="block text-xs text-fg-muted underline-offset-2 hover:text-fg hover:underline"
                     >
-                      {displayText(source.source)} · {formatDisplayDateTime(source.occurredAt)}
+                      {displayText(source.source)} ·{' '}
+                      {formatDisplayDateTime(source.occurredAt, { timezone })}
                     </Link>
                   ))}
                 </div>
@@ -543,6 +551,7 @@ function BoardActivity({
   lanes: boards.BoardLaneRow[];
   members: BoardMemberOption[];
 }) {
+  const timezone = useWorkspaceTimezone();
   return (
     <section className="border-t border-border p-4">
       <h3 className="mb-2 text-xs text-fg-dim">Activity</h3>
@@ -559,12 +568,12 @@ function BoardActivity({
                 </span>
               </div>
               <p className="mt-1 text-fg-muted">
-                {formatChangeValue(change.field, change.previousValue, lanes, members)}
+                {formatChangeValue(change.field, change.previousValue, lanes, members, timezone)}
                 <span className="px-1 text-fg-dim">→</span>
-                {formatChangeValue(change.field, change.newValue, lanes, members)}
+                {formatChangeValue(change.field, change.newValue, lanes, members, timezone)}
               </p>
               <div className="mt-2 flex flex-wrap items-center gap-2 text-fg-dim">
-                <span>{formatDisplayDateTime(change.changedAt)}</span>
+                <span>{formatDisplayDateTime(change.changedAt, { timezone })}</span>
               </div>
               {change.note ? <p className="mt-2 text-fg">{displayText(change.note)}</p> : null}
             </li>
@@ -584,6 +593,7 @@ function ObjectPreviewDialog({
   view: BoardLayout;
   filterParams: Record<string, string>;
 }) {
+  const timezone = useWorkspaceTimezone();
   const title = displayObjectTitle(item.object);
   return (
     <Dialog>
@@ -609,7 +619,10 @@ function ObjectPreviewDialog({
             label="Priority"
             value={item.object.priority ? `P${item.object.priority}` : '-'}
           />
-          <Detail label="Due" value={item.object.dueAt ? dateLabel(item.object.dueAt) : '-'} />
+          <Detail
+            label="Due"
+            value={item.object.dueAt ? dateLabel(item.object.dueAt, timezone) : '-'}
+          />
         </dl>
         {item.object.aliases.length > 0 ? (
           <section>
@@ -719,8 +732,8 @@ function dateInputValue(value: Date): string {
   return new Date(value).toISOString().slice(0, 10);
 }
 
-function dateLabel(value: Date): string {
-  return formatDisplayDate(value);
+function dateLabel(value: Date, timezone: string): string {
+  return formatDisplayDate(value, { timezone });
 }
 
 function fieldLabel(field: boards.BoardItemField): string {
@@ -753,6 +766,7 @@ function formatChangeValue(
   value: unknown,
   lanes: boards.BoardLaneRow[],
   members: BoardMemberOption[],
+  timezone: string,
 ): string {
   if (value === null || value === undefined || value === '') return 'empty';
   if (field === 'laneId' && typeof value === 'string') {
@@ -763,7 +777,7 @@ function formatChangeValue(
   }
   if (field === 'dueAt' && typeof value === 'string') {
     const date = new Date(value);
-    return Number.isFinite(date.getTime()) ? dateLabel(date) : displayText(value);
+    return Number.isFinite(date.getTime()) ? dateLabel(date, timezone) : displayText(value);
   }
   if (field === 'priority' && typeof value === 'number') return `P${value}`;
   if (typeof value === 'string') return displayText(value);
@@ -775,6 +789,7 @@ function formatProvenanceChangeValue(
   change: boards.BoardItemChangeRow,
   lanes: boards.BoardLaneRow[],
   members: BoardMemberOption[],
+  timezone: string,
 ): string {
   if (change.field === '__add__' || change.field === '__remove__') {
     const value = change.field === '__remove__' ? change.previousValue : change.newValue;
@@ -789,5 +804,5 @@ function formatProvenanceChangeValue(
       ? displayText(lanes.find((lane) => lane.id === laneId)?.name ?? 'Board membership')
       : 'Board membership';
   }
-  return formatChangeValue(change.field, change.newValue, lanes, members);
+  return formatChangeValue(change.field, change.newValue, lanes, members, timezone);
 }
