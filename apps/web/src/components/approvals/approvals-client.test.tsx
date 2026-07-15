@@ -197,11 +197,103 @@ describe('ApprovalsClient', () => {
     expect(html).not.toContain('John doe work@example.com');
     expect(html).toContain('Also known as ACME-v2');
     expect(html).not.toContain('Name Acme renewal');
-    expect(html).toContain('Show 4 more changes');
+    expect(html).toContain('Show all 8 changes');
     expect(html).toContain('>Priority</dt>');
     expect(html).toContain('>Jane-Doe</dd>');
     expect(html).toContain('>Sam_Taylor</dd>');
     expect(html).toContain('>Jul 19, 2026</dd>');
+  });
+
+  it('shows the named audience for specific-user visibility changes', () => {
+    const firstUserId = '33333333-3333-4333-8333-333333333333';
+    const secondUserId = '44444444-4444-4444-8444-444444444444';
+    const html = renderToStaticMarkup(
+      createElement(ApprovalsClient, {
+        timezone: 'UTC',
+        suggestions: [
+          {
+            id: 'bundle-specific-audience',
+            source: 'background',
+            status: 'pending',
+            title: 'Share the calendar review',
+            summary: null,
+            reason: null,
+            confidence: 'medium',
+            createdAt: '2026-06-01T10:00:00.000Z',
+            evidence: [],
+            items: [
+              {
+                id: 'item-specific-audience',
+                status: 'pending',
+                operation: 'create',
+                targetKind: 'calendar_event',
+                targetId: null,
+                title: 'Private review',
+                description: null,
+                proposedPayload: {
+                  title: 'Private review',
+                  startAt: '2026-06-17T11:00:00.000Z',
+                  endAt: '2026-06-17T12:00:00.000Z',
+                  timezone: 'UTC',
+                  visibility: 'specific_users',
+                  visibilityUserIds: [firstUserId, secondUserId],
+                  visibilityUserNames: ['Owner', 'Reviewer'],
+                },
+                failureReason: null,
+              },
+            ],
+          },
+        ],
+      }),
+    );
+
+    expect(html).toContain('People with access Owner, Reviewer');
+    expect(html).not.toContain(firstUserId);
+    expect(html).not.toContain(secondUserId);
+  });
+
+  it('does not clamp short fields when there is no disclosure', () => {
+    const html = renderToStaticMarkup(
+      createElement(ApprovalsClient, {
+        suggestions: [
+          {
+            id: 'bundle-medium-fields',
+            source: 'chat',
+            status: 'pending',
+            title: 'Update customer details',
+            summary: null,
+            reason: null,
+            confidence: 'medium',
+            createdAt: '2026-06-01T10:00:00.000Z',
+            evidence: [],
+            items: [
+              {
+                id: 'item-medium-fields',
+                status: 'pending',
+                operation: 'update',
+                targetKind: 'object',
+                targetId: '55555555-5555-4555-8555-555555555555',
+                title: 'Update customer details',
+                description: null,
+                proposedPayload: {
+                  description:
+                    'A concise account summary that still needs more than one visual line.',
+                  notes: 'Keep the procurement owner informed before changing the delivery plan.',
+                  nextStep:
+                    'Schedule a review with finance and confirm the revised commercial terms.',
+                  stage: 'contract_review',
+                },
+                failureReason: null,
+              },
+            ],
+          },
+        ],
+      }),
+    );
+
+    expect(html).not.toContain('line-clamp-2');
+    expect(html).not.toContain('Show full change');
+    expect(html).toContain('confirm the revised commercial terms');
   });
 
   it('shows a proposed object rename when the item title is generic', () => {
@@ -836,6 +928,139 @@ describe('ApprovalsClient', () => {
     expect(html).toContain('Confirm slot');
     expect(html).toContain('Accepting one slot can cancel sibling tentative slots');
     expect(html).toContain('Proposed:');
+  });
+
+  it('shows the proposed schedule for calendar match warnings', () => {
+    const matchingEvent = {
+      id: '11111111-1111-4111-8111-111111111111',
+      title: 'Acme planning',
+      description: null,
+      startAt: '2026-06-17T11:00:00.000Z',
+      endAt: '2026-06-17T12:00:00.000Z',
+      timezone: 'UTC',
+      allDay: false,
+      location: null,
+      showAs: 'busy',
+      visibility: 'team',
+      rrule: null,
+    };
+    const html = renderToStaticMarkup(
+      createElement(ApprovalsClient, {
+        timezone: 'UTC',
+        suggestions: [
+          {
+            id: 'bundle-calendar-warnings',
+            source: 'background',
+            status: 'pending',
+            title: 'Calendar warnings',
+            summary: null,
+            reason: null,
+            confidence: 'medium',
+            createdAt: '2026-06-01T10:00:00.000Z',
+            evidence: [],
+            items: [
+              {
+                id: 'item-semantic-warning',
+                status: 'pending',
+                operation: 'create',
+                targetKind: 'calendar_event',
+                targetId: null,
+                title: 'Acme planning',
+                description: null,
+                proposedPayload: {
+                  title: 'Acme planning',
+                  startAt: '2026-06-20T11:00:00.000Z',
+                  endAt: '2026-06-20T12:00:00.000Z',
+                  timezone: 'UTC',
+                  allDay: false,
+                },
+                calendarResolutionHint: {
+                  kind: 'semantic_update_candidate',
+                  event: matchingEvent,
+                },
+                failureReason: null,
+              },
+              {
+                id: 'item-ambiguous-warning',
+                status: 'pending',
+                operation: 'create',
+                targetKind: 'calendar_event',
+                targetId: null,
+                title: 'Acme review',
+                description: null,
+                proposedPayload: {
+                  title: 'Acme review',
+                  startAt: '2026-06-21T13:00:00.000Z',
+                  endAt: '2026-06-21T14:00:00.000Z',
+                  timezone: 'UTC',
+                  allDay: false,
+                },
+                calendarResolutionHint: {
+                  kind: 'ambiguous_match',
+                  events: [
+                    matchingEvent,
+                    { ...matchingEvent, id: '22222222-2222-4222-8222-222222222222' },
+                  ],
+                },
+                failureReason: null,
+              },
+            ],
+          },
+        ],
+      }),
+    );
+
+    expect(html.match(/Proposed:/g)).toHaveLength(2);
+    expect(html).toContain('Jun 20, 2026, 11:00 AM');
+    expect(html).toContain('Jun 21, 2026, 1:00 PM');
+    expect(html).not.toContain('2026-06-20T11:00:00.000Z');
+  });
+
+  it('does not repeat raw date fields for all-day calendar proposals', () => {
+    const html = renderToStaticMarkup(
+      createElement(ApprovalsClient, {
+        timezone: 'UTC',
+        suggestions: [
+          {
+            id: 'bundle-all-day',
+            source: 'background',
+            status: 'pending',
+            title: 'All-day calendar proposal',
+            summary: null,
+            reason: null,
+            confidence: 'medium',
+            createdAt: '2026-06-01T10:00:00.000Z',
+            evidence: [],
+            items: [
+              {
+                id: 'item-all-day',
+                status: 'pending',
+                operation: 'create',
+                targetKind: 'calendar_event',
+                targetId: null,
+                title: 'All-day review',
+                description: null,
+                proposedPayload: {
+                  title: 'All-day review',
+                  startAt: '2026-06-21T00:00:00.000Z',
+                  endAt: '2026-06-22T00:00:00.000Z',
+                  startDate: '2026-06-21',
+                  endDate: '2026-06-22',
+                  timezone: 'UTC',
+                  allDay: true,
+                },
+                failureReason: null,
+              },
+            ],
+          },
+        ],
+      }),
+    );
+
+    expect(html).toContain('Scheduled for Jun 21, 2026');
+    expect(html).not.toContain('Start date');
+    expect(html).not.toContain('End date');
+    expect(html).not.toContain('2026-06-21T00:00:00.000Z');
   });
 
   it('renders all-day calendar proposal ranges as date-only labels in the event timezone', () => {

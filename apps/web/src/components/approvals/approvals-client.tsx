@@ -182,7 +182,14 @@ const CALENDAR_SEPARATE_PAYLOAD_FIELDS = new Set([
   'recurrenceEditMode',
   'showAs',
 ]);
-const CALENDAR_RANGE_PAYLOAD_FIELDS = new Set(['allDay', 'endAt', 'startAt', 'timezone']);
+const CALENDAR_RANGE_PAYLOAD_FIELDS = new Set([
+  'allDay',
+  'endAt',
+  'endDate',
+  'startAt',
+  'startDate',
+  'timezone',
+]);
 
 function formatPayloadFields(
   payload: Record<string, unknown>,
@@ -282,6 +289,7 @@ function payloadFieldLabel(key: string): string {
     title: 'Title',
     type: 'Type',
     visibilityUserIds: 'People with access',
+    visibilityUserNames: 'People with access',
   };
   return labels[key] ?? humanizeToken(key);
 }
@@ -1156,17 +1164,24 @@ function ApprovalItemPayload({
 function ApprovalPayloadSummary({ fields }: { fields: FormattedPayloadField[] }) {
   const visibleFields = fields.slice(0, MAX_INLINE_PAYLOAD_FIELDS);
   const overflowFields = fields.slice(MAX_INLINE_PAYLOAD_FIELDS);
-  const expandedFields = [
-    ...visibleFields.filter((field) => field.value.length > MAX_INLINE_PAYLOAD_VALUE_LENGTH),
-    ...overflowFields,
-  ];
+  const hasLongVisibleField = visibleFields.some(
+    (field) => field.value.length > MAX_INLINE_PAYLOAD_VALUE_LENGTH,
+  );
+  const canExpand = hasLongVisibleField || overflowFields.length > 0;
   const summary = visibleFields.map((field) => payloadFieldText(field, true)).join(' · ');
   return (
     <>
       {summary ? (
-        <p className="mt-1 line-clamp-2 break-words font-mono text-[11px] text-fg-dim">{summary}</p>
+        <p
+          className={`mt-1 break-words font-mono text-[11px] text-fg-dim${canExpand ? ' line-clamp-2' : ''}`}
+        >
+          {summary}
+        </p>
       ) : null}
-      <ApprovalPayloadDisclosure fields={expandedFields} overflowCount={overflowFields.length} />
+      <ApprovalPayloadDisclosure
+        fields={canExpand ? fields : []}
+        overflowCount={overflowFields.length}
+      />
     </>
   );
 }
@@ -1182,9 +1197,7 @@ function ApprovalPayloadDisclosure({
   return (
     <details className="mt-2 text-xs text-fg-dim">
       <summary className="cursor-pointer hover:text-fg">
-        {overflowCount > 0
-          ? `Show ${overflowCount} more ${overflowCount === 1 ? 'change' : 'changes'}`
-          : 'Show full change'}
+        {overflowCount > 0 ? `Show all ${fields.length} changes` : 'Show full change'}
       </summary>
       <dl className="mt-2 grid gap-2 border-l border-border pl-2">
         {fields.map((field) => (
@@ -1288,6 +1301,7 @@ function CalendarResolutionLine({
         Looks related to "{displayText(hint.event.title)}" at{' '}
         {calendarEventRange(hint.event, timezone)}. Accept will create a new event unless this
         proposal is revised to target that event.
+        {proposedRange ? ` Proposed: ${proposedRange}.` : ''}
       </p>
     );
   }
@@ -1296,6 +1310,7 @@ function CalendarResolutionLine({
       <p>
         Could match {hint.events.length} existing events; Accept will create a new event unless the
         proposal is revised.
+        {proposedRange ? ` Proposed: ${proposedRange}.` : ''}
       </p>
     );
   }

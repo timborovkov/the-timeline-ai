@@ -726,9 +726,15 @@ key/value pairs.
 - Approval payloads render as human labels and localized values (`Due <localized
   date>`, `Status To do`), not object keys (`dueAt`, `canonicalName`) or JSON.
   Keep free-form values such as names, handles, aliases, and note text literal.
+  Reference-valued changes resolve current canonical names at review time,
+  including assignees, board lanes, and specific-user visibility audiences;
+  stored or model-supplied display labels are not authoritative.
   When a proposal changes more than four meaningful fields, keep the additional
   changes available behind an explicit collapsed disclosure rather than silently
   dropping them from review.
+  Calendar match warnings always show the schedule that Accept will create, and
+  an existing event is reused only when its user-visible fields match the
+  proposal.
   The evidence disclosure uses plain-language source labels, and reconciliation
   provenance is available through one collapsed `Technical details` link.
 

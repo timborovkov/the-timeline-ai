@@ -1783,7 +1783,14 @@ function calendarCreateResolutionDetails(
       sameNormalizedTitle &&
       sameInstant(candidate.startAt, proposed.startAt) &&
       sameInstant(candidate.endAt, proposed.endAt) &&
-      candidate.allDay === (proposed.allDay ?? false)
+      candidate.allDay === (proposed.allDay ?? false) &&
+      candidate.description === (proposed.description ?? null) &&
+      candidate.timezone === (proposed.timezone ?? 'UTC') &&
+      candidate.location === (proposed.location ?? null) &&
+      candidate.showAs === (proposed.showAs ?? 'busy') &&
+      candidate.rrule === (proposed.rrule ?? null) &&
+      candidate.reminderMinutes === (proposed.reminderMinutes ?? null) &&
+      (proposed.linkedEntityIds?.length ?? 0) === 0
     ) {
       exactMatches.push(candidate);
       continue;
@@ -1976,10 +1983,8 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       ['assigneeUserId', 'assigneeName'],
     ] as const) {
       if (typeof normalized[idKey] === 'string' && UUID_RE.test(normalized[idKey])) {
-        if (typeof normalized[nameKey] !== 'string') {
-          const label = await teamMemberLabel(normalized[idKey]);
-          if (label) normalized[nameKey] = label;
-        }
+        normalized[nameKey] =
+          (await teamMemberLabel(normalized[idKey])) ?? 'Unavailable team member';
         continue;
       }
       if (
@@ -1994,6 +1999,15 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       else if (options.requireUnique && typeof normalized[nameKey] === 'string') {
         throw new Error(`${nameKey} was not uniquely matched to an active team member`);
       }
+    }
+    if (Array.isArray(normalized.visibilityUserIds)) {
+      normalized.visibilityUserNames = await Promise.all(
+        normalized.visibilityUserIds.map(async (memberId) =>
+          typeof memberId === 'string' && UUID_RE.test(memberId)
+            ? ((await teamMemberLabel(memberId)) ?? 'Unavailable team member')
+            : 'Unavailable team member',
+        ),
+      );
     }
     return normalized;
   }
@@ -2025,8 +2039,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         typeof payload.boardItemId !== 'string' ||
         !UUID_RE.test(payload.boardItemId) ||
         typeof payload.newValue !== 'string' ||
-        !UUID_RE.test(payload.newValue) ||
-        typeof payload.laneName === 'string'
+        !UUID_RE.test(payload.newValue)
       ) {
         return [];
       }
@@ -2070,8 +2083,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     if (
       normalized.field === 'laneId' &&
       typeof normalized.newValue === 'string' &&
-      UUID_RE.test(normalized.newValue) &&
-      typeof normalized.laneName !== 'string'
+      UUID_RE.test(normalized.newValue)
     ) {
       const label = options.laneLabels
         ? typeof normalized.boardItemId === 'string'
@@ -2079,15 +2091,13 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
             null)
           : null
         : await boardLaneLabel(normalized.boardItemId, normalized.newValue);
-      if (label) normalized.laneName = label;
+      normalized.laneName = label ?? 'Unavailable lane';
       return normalized;
     }
     if (normalized.field !== 'responsibleUserId') return normalized;
     if (typeof normalized.newValue === 'string' && UUID_RE.test(normalized.newValue)) {
-      if (typeof normalized.responsibleName !== 'string') {
-        const label = await teamMemberLabel(normalized.newValue);
-        if (label) normalized.responsibleName = label;
-      }
+      normalized.responsibleName =
+        (await teamMemberLabel(normalized.newValue)) ?? 'Unavailable team member';
       return normalized;
     }
     if (
