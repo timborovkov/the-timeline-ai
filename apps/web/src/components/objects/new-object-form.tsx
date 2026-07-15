@@ -15,6 +15,7 @@ interface FormState {
   name: string;
   dueAt: string;
   projectId: string;
+  projectLabel: string;
 }
 
 export function NewObjectForm({
@@ -30,9 +31,16 @@ export function NewObjectForm({
   const [pending, startTransition] = useTransition();
   const [form, updateForm] = useReducer(
     (state: FormState, patch: Partial<FormState>) => ({ ...state, ...patch }),
-    { error: null, type: 'task', name: '', dueAt: '', projectId: defaultProjectId },
+    {
+      error: null,
+      type: 'task',
+      name: '',
+      dueAt: '',
+      projectId: defaultProjectId,
+      projectLabel: projects.find((project) => project.id === defaultProjectId)?.label ?? '',
+    },
   );
-  const { error, type, name, dueAt, projectId } = form;
+  const { error, type, name, dueAt, projectId, projectLabel } = form;
   const {
     query: projectQuery,
     setQuery: setProjectQuery,
@@ -40,7 +48,7 @@ export function NewObjectForm({
   } = useProjectSearch();
   const visibleProjects = useMemo(() => {
     const normalized = projectQuery.trim().toLowerCase();
-    const candidates = normalized
+    const matches = normalized
       ? [
           ...projects.filter(
             (project) =>
@@ -49,8 +57,10 @@ export function NewObjectForm({
           ...remoteProjects,
         ]
       : projects;
+    const candidates =
+      projectId && projectLabel ? [...matches, { id: projectId, label: projectLabel }] : matches;
     return [...new Map(candidates.map((project) => [project.id, project])).values()];
-  }, [projectId, projectQuery, projects, remoteProjects]);
+  }, [projectId, projectLabel, projectQuery, projects, remoteProjects]);
 
   function submit(): void {
     if (!name.trim()) {
@@ -112,7 +122,12 @@ export function NewObjectForm({
             aria-label="Task project"
             value={projectId}
             onChange={(event) => {
-              updateForm({ projectId: event.currentTarget.value });
+              const nextProjectId = event.currentTarget.value;
+              updateForm({
+                projectId: nextProjectId,
+                projectLabel:
+                  visibleProjects.find((project) => project.id === nextProjectId)?.label ?? '',
+              });
             }}
             className="w-full rounded-md border bg-background px-3 py-2 text-sm"
           >

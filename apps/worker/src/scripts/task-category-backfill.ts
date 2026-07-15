@@ -11,6 +11,13 @@ const ESTIMATED_INPUT_TOKENS_PER_TASK = 220;
 const ESTIMATED_OUTPUT_TOKENS_PER_TASK = 20;
 const ESTIMATED_COST_USD_PER_TASK = 0.0002;
 
+type TaskCategoryBackfillFlags = Pick<
+  ReturnType<typeof getEnv>,
+  | 'TASK_CATEGORY_CLASSIFICATION_ENABLED'
+  | 'TASK_CATEGORY_BACKFILL_ENABLED'
+  | 'TASK_CATEGORY_WORKER_ENABLED'
+>;
+
 function argument(name: string): string | null {
   const index = process.argv.indexOf(name);
   if (index >= 0) return process.argv[index + 1] ?? null;
@@ -45,10 +52,21 @@ export async function enqueueTaskCategoryBackfillBatch(
   return { enqueued, failed };
 }
 
-async function main(): Promise<void> {
-  if (!getEnv().TASK_CATEGORY_CLASSIFICATION_ENABLED || !getEnv().TASK_CATEGORY_BACKFILL_ENABLED) {
-    throw new Error('Task category classification is disabled by the operational kill switch');
+export function assertTaskCategoryBackfillModeEnabled(
+  execute: boolean,
+  env: TaskCategoryBackfillFlags = getEnv(),
+): void {
+  if (!execute) return;
+  if (
+    !env.TASK_CATEGORY_CLASSIFICATION_ENABLED ||
+    !env.TASK_CATEGORY_BACKFILL_ENABLED ||
+    !env.TASK_CATEGORY_WORKER_ENABLED
+  ) {
+    throw new Error('Task category backfill execution is disabled by an operational kill switch');
   }
+}
+
+async function main(): Promise<void> {
   const teamId = argument('--team-id');
   if (!teamId || !UUID_RE.test(teamId)) {
     throw new Error('Pass one team with --team-id <uuid>');
@@ -61,6 +79,7 @@ async function main(): Promise<void> {
   const requestedOffset = Number(argument('--offset') ?? '0');
   const offset = Math.max(Number.isInteger(requestedOffset) ? requestedOffset : 0, 0);
   const execute = process.argv.includes('--enqueue') || process.argv.includes('--execute');
+  assertTaskCategoryBackfillModeEnabled(execute);
   if (execute && offset !== 0) {
     throw new Error(
       'Execute batches always resume at offset 0 because completed rows leave the candidate set',

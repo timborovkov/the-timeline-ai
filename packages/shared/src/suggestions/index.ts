@@ -3931,6 +3931,52 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     if (matchingProjects.length > 1) throw new Error('Proposed project name is ambiguous');
     if (matchingProjects[0]) return { ...matchingProjects[0], createdForSuggestion: false };
 
+    const archivedSuggestedProjects = await db
+      .select({ id: entities.id, name: entities.canonicalName, metadata: entities.metadata })
+      .from(entities)
+      .where(
+        and(
+          eq(entities.teamId, teamId),
+          eq(entities.type, 'project'),
+          isNotNull(entities.archivedAt),
+          isNull(entities.mergedIntoId),
+          sql`lower(${entities.canonicalName}) = ${normalizedProjectName}`,
+          sql`COALESCE(${entities.metadata} ->> 'agent_suggestion_project_for_item_id', '') <> ''`,
+          suggestedProjectIsUnused(teamId, entities.id),
+        ),
+      )
+      .limit(2);
+    if (archivedSuggestedProjects.length > 1) {
+      throw new Error('Proposed project name is ambiguous');
+    }
+    if (archivedSuggestedProjects[0]) {
+      const archivedProject = archivedSuggestedProjects[0];
+      const project = await objects.unarchiveObject(archivedProject.id, {
+        kind: 'agent',
+        userId: null,
+      });
+      try {
+        const updated = await objects.updateObject(
+          project.id,
+          {
+            metadata: {
+              ...recordFromUnknown(archivedProject.metadata),
+              agent_suggestion_project_for_item_id: item.id,
+            },
+          },
+          { kind: 'agent', userId: null },
+        );
+        return {
+          id: updated.object.id,
+          name: updated.object.canonicalName,
+          createdForSuggestion: true,
+        };
+      } catch (error) {
+        await objects.archiveObject(project.id, { kind: 'agent', userId: null });
+        throw error;
+      }
+    }
+
     try {
       const project = await objects.createObject({
         type: 'project',

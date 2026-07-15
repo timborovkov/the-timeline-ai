@@ -408,6 +408,28 @@ describe('buildAgentTools — team isolation', () => {
     });
   });
 
+  it('rejects parentObjectId for non-task object creation before writing', async () => {
+    const scope = makeFakeScope();
+    const tools = buildAgentTools(scope as unknown as TeamScope);
+    const exec = tools.execute_object_create?.execute as (
+      input: unknown,
+      opts: unknown,
+    ) => Promise<unknown>;
+
+    await expect(
+      exec(
+        {
+          type: 'project',
+          canonicalName: 'Nested project',
+          parentObjectId: OBJECT_ID,
+          reason: 'User requested a nested project.',
+        },
+        {},
+      ),
+    ).resolves.toEqual({ error: 'tool_failed' });
+    expect(scope.objects.createObject).not.toHaveBeenCalled();
+  });
+
   it('get_object does not expose legacy agentSuggested provenance', async () => {
     const scope = makeFakeScope();
     scope.objects.getObject.mockResolvedValue({

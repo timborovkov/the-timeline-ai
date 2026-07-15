@@ -370,19 +370,24 @@ const executeObjectMergeInput = z.object({
   reason: z.string().trim().min(1).max(1000),
 });
 
-const executeObjectCreateInput = z.object({
-  type: objectTypeSchema.default('other'),
-  canonicalName: z.string().trim().min(1).max(200),
-  status: z.string().trim().min(1).max(40).optional(),
-  stage: z.string().trim().max(40).nullable().optional(),
-  priority: z.number().int().min(1).max(4).nullable().optional(),
-  ownerUserId: z.string().regex(UUID_RE).nullable().optional(),
-  assigneeUserId: z.string().regex(UUID_RE).nullable().optional(),
-  dueAt: z.iso.datetime().nullable().optional(),
-  aliases: z.array(z.string().trim().min(1).max(120)).max(50).optional(),
-  parentObjectId: z.string().regex(UUID_RE).nullable().optional(),
-  reason: z.string().trim().min(1).max(1000),
-});
+const executeObjectCreateInput = z
+  .object({
+    type: objectTypeSchema.default('other'),
+    canonicalName: z.string().trim().min(1).max(200),
+    status: z.string().trim().min(1).max(40).optional(),
+    stage: z.string().trim().max(40).nullable().optional(),
+    priority: z.number().int().min(1).max(4).nullable().optional(),
+    ownerUserId: z.string().regex(UUID_RE).nullable().optional(),
+    assigneeUserId: z.string().regex(UUID_RE).nullable().optional(),
+    dueAt: z.iso.datetime().nullable().optional(),
+    aliases: z.array(z.string().trim().min(1).max(120)).max(50).optional(),
+    parentObjectId: z.string().regex(UUID_RE).nullable().optional(),
+    reason: z.string().trim().min(1).max(1000),
+  })
+  .refine((input) => !input.parentObjectId || input.type === 'task', {
+    message: 'parentObjectId is only supported when creating a task',
+    path: ['parentObjectId'],
+  });
 
 const executeObjectArchiveInput = z.object({
   entityId: z.string().regex(UUID_RE),

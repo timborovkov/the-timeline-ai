@@ -3747,6 +3747,83 @@ describe('suggestion scope', () => {
     expect(retriedProjects[0]?.archivedAt).toBeNull();
   });
 
+  it('reuses an unused suggestion-created project archived by another failed acceptance', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const conflictingTask = await scope.objects.createObject({
+      type: 'task',
+      canonicalName: 'Prepare blocked launch brief',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const firstBundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'First launch suggestion',
+      dedupeKey: 'first-archived-project-suggestion',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Prepare blocked launch brief',
+          dedupeKey: 'first-archived-project-suggestion:item',
+          proposedPayload: {
+            canonicalName: 'Prepare blocked launch brief',
+            createProjectName: 'Reusable compensated project',
+          },
+        },
+      ],
+    });
+    await expect(
+      scope.suggestions.acceptSuggestionItem(firstBundle.items[0]?.id ?? ''),
+    ).rejects.toThrow();
+    const [archivedProject] = await scope.objects.listObjects({
+      type: 'project',
+      query: 'Reusable compensated project',
+      archived: true,
+    });
+    expect(archivedProject).toBeDefined();
+    await db.delete(entities).where(eq(entities.id, conflictingTask.id));
+
+    const secondBundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Second launch suggestion',
+      dedupeKey: 'second-archived-project-suggestion',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Prepare replacement launch brief',
+          dedupeKey: 'second-archived-project-suggestion:item',
+          proposedPayload: {
+            canonicalName: 'Prepare replacement launch brief',
+            createProjectName: 'Reusable compensated project',
+          },
+        },
+      ],
+    });
+
+    await expect(
+      scope.suggestions.acceptSuggestionItem(secondBundle.items[0]?.id ?? ''),
+    ).resolves.toBe(true);
+    const [task] = await scope.objects.listObjects({
+      type: 'task',
+      query: 'Prepare replacement launch brief',
+    });
+    const projects = await scope.objects.listObjects({
+      type: 'project',
+      query: 'Reusable compensated project',
+      archived: false,
+    });
+    expect(projects).toHaveLength(1);
+    expect(projects[0]).toMatchObject({
+      id: archivedProject?.id,
+      metadata: expect.objectContaining({
+        agent_suggestion_project_for_item_id: secondBundle.items[0]?.id,
+      }),
+    });
+    await expect(scope.objects.listPrimaryProjectsForTasks(task ? [task.id] : [])).resolves.toEqual(
+      [expect.objectContaining({ projectId: projects[0]?.id })],
+    );
+  });
+
   it.each([
     { targetKind: 'task' as const, type: undefined },
     { targetKind: 'object' as const, type: 'task' as const },

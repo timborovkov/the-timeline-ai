@@ -1010,6 +1010,39 @@ describe('task category and primary project state', () => {
     });
   });
 
+  it('does not let a stale backfill candidate replace a manual category', async () => {
+    const scope = withTeam(db, TEAM_A, USER_A).objects;
+    const task = await scope.createObject({
+      type: 'task',
+      canonicalName: 'Manual category wins over backfill',
+      actor: { kind: 'user', userId: USER_A },
+    });
+    await db
+      .update(entities)
+      .set({
+        taskCategoryStatus: 'failed',
+        taskCategoryRequestedInputHash: null,
+      })
+      .where(eq(entities.id, task.id));
+    await scope.setTaskCategory(task.id, 'legal_compliance', {
+      kind: 'user',
+      userId: USER_A,
+    });
+    vi.mocked(queue.enqueueTaskCategoryJob).mockClear();
+
+    await expect(scope.enqueueTaskCategoryBackfill(task.id)).rejects.toThrow(
+      'Task is no longer eligible for category backfill',
+    );
+    await expect(scope.listObjects({ id: task.id })).resolves.toEqual([
+      expect.objectContaining({
+        taskCategory: 'legal_compliance',
+        taskCategoryMode: 'manual',
+        taskCategoryStatus: 'ready',
+      }),
+    ]);
+    expect(queue.enqueueTaskCategoryJob).not.toHaveBeenCalled();
+  });
+
   it('records a compensating mode change when a historical backfill handoff fails', async () => {
     const scope = withTeam(db, TEAM_A, USER_A).objects;
     const task = await scope.createObject({

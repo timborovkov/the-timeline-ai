@@ -4,6 +4,7 @@ import {
   documentVersions,
   documents,
   entities,
+  entityRelationships,
   facts,
   folders,
   integrationAuditLog,
@@ -334,6 +335,17 @@ export async function buildTeamExportArchive(
     zip,
     'task_category_assignments.jsonl',
     categoryAssignmentRows,
+  );
+
+  const relationshipRows = await input.db
+    .select()
+    .from(entityRelationships)
+    .where(eq(entityRelationships.teamId, input.teamId))
+    .orderBy(asc(entityRelationships.createdAt), asc(entityRelationships.id));
+  files['entity_relationships.jsonl'] = addJsonl(
+    zip,
+    'entity_relationships.jsonl',
+    relationshipRows,
   );
 
   const docRows = await visibleDocuments(input.db, input.teamId, input.requestedByUserId);

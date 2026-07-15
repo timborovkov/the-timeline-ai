@@ -20,7 +20,10 @@ vi.mock('@/app/actions/objects', () => ({
   undoTaskCategoryChangeAction: vi.fn(),
 }));
 
-const { TaskCategorySelect } = await import('./task-category-select.js');
+const [{ TaskCategoryBadge }, { TaskCategorySelect }] = await Promise.all([
+  import('./task-category-badge.js'),
+  import('./task-category-select.js'),
+]);
 
 describe('TaskCategorySelect', () => {
   beforeEach(() => {
@@ -96,5 +99,18 @@ describe('TaskCategorySelect', () => {
       expect((selector as HTMLSelectElement).disabled).toBe(false);
     });
     expect(fakes.refresh).toHaveBeenCalledOnce();
+  });
+});
+
+describe('TaskCategoryBadge', () => {
+  it('shows pending and failed state while retaining the last category', () => {
+    const view = render(<TaskCategoryBadge category="engineering" status="pending" />);
+    expect(screen.getByText('Engineering · Categorizing…')).toBeTruthy();
+
+    view.rerender(<TaskCategoryBadge category="engineering" status="failed" />);
+    expect(screen.getByText('Engineering · Retry')).toBeTruthy();
+
+    view.rerender(<TaskCategoryBadge category={null} status="failed" />);
+    expect(screen.getByText('Category failed · Retry')).toBeTruthy();
   });
 });

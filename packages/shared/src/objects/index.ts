@@ -6387,6 +6387,14 @@ async function transitionTaskCategoryToPending(
     ) {
       throw new Error('Only failed automatic categories can be retried');
     }
+    if (
+      trigger === 'backfill' &&
+      (task.taskCategory !== null ||
+        task.taskCategoryMode === 'manual' ||
+        (task.taskCategoryStatus !== null && task.taskCategoryStatus !== 'failed'))
+    ) {
+      throw new Error('Task is no longer eligible for category backfill');
+    }
     const packet = await taskCategoryPacketForRow(tx, scope.teamId, task);
     const inputHash = taskCategoryInputHash(packet, TIMELINE_MODELS.taskCategorization.id);
     const [updated] = await tx
