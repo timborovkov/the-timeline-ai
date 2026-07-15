@@ -2,6 +2,8 @@ import {
   agentSuggestionEvidence,
   agentSuggestionItems,
   agentSuggestions,
+  boardItems,
+  boardLanes,
   calendarEvents,
   entities,
   objectIdentityFacets,
@@ -601,6 +603,7 @@ const boardItemUpdatePayload = z.object({
     'customFields',
   ]),
   newValue: z.unknown(),
+  laneName: z.string().trim().min(1).max(200).optional(),
   responsibleName: z.string().trim().min(1).max(200).optional(),
   note: z.string().trim().max(1000).nullable().optional(),
 });
@@ -1918,33 +1921,49 @@ function toBundle(
 export function createSuggestionScope(deps: SuggestionScopeDeps) {
   const { db, teamId, userId, ensureMember, objects, boards, calendar } = deps;
   const chatStructured = deps.chatStructured ?? defaultChatStructured;
-  let teamMemberRefMapPromise: Promise<Map<string, Set<string>>> | null = null;
+  let teamMemberDirectoryPromise: Promise<{
+    labelsById: Map<string, string>;
+    refs: Map<string, Set<string>>;
+  }> | null = null;
+  const boardLaneLabelsByBoardId = new Map<string, Promise<Map<string, string>>>();
 
-  async function teamMemberRefMap(): Promise<Map<string, Set<string>>> {
-    teamMemberRefMapPromise ??= (async () => {
+  async function teamMemberDirectory(): Promise<{
+    labelsById: Map<string, string>;
+    refs: Map<string, Set<string>>;
+  }> {
+    teamMemberDirectoryPromise ??= (async () => {
       const rows = await db
         .select({ userId: teamMembers.userId, name: users.name, email: users.email })
         .from(teamMembers)
         .innerJoin(users, eq(users.id, teamMembers.userId))
         .where(and(eq(teamMembers.teamId, teamId), isNull(teamMembers.removedAt)));
       const refs = new Map<string, Set<string>>();
+      const labelsById = new Map<string, string>();
       for (const row of rows) {
+        const trimmedName = row.name?.trim();
+        let label = row.email.trim();
+        if (trimmedName) label = trimmedName;
+        if (label) labelsById.set(row.userId, label);
         for (const key of [...memberRefKeys(row.name), ...memberRefKeys(row.email)]) {
           const userIds = refs.get(key) ?? new Set<string>();
           userIds.add(row.userId);
           refs.set(key, userIds);
         }
       }
-      return refs;
+      return { labelsById, refs };
     })();
-    return teamMemberRefMapPromise;
+    return teamMemberDirectoryPromise;
   }
 
   async function resolveTeamMemberRef(value: unknown): Promise<string | null> {
     if (typeof value !== 'string') return null;
-    const ids = (await teamMemberRefMap()).get(value.trim().toLowerCase());
+    const ids = (await teamMemberDirectory()).refs.get(value.trim().toLowerCase());
     if (ids?.size !== 1) return null;
     return [...ids][0] ?? null;
+  }
+
+  async function teamMemberLabel(memberId: string): Promise<string | null> {
+    return (await teamMemberDirectory()).labelsById.get(memberId) ?? null;
   }
 
   async function resolvePayloadMemberRefs(
@@ -1956,7 +1975,13 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       ['ownerUserId', 'ownerName'],
       ['assigneeUserId', 'assigneeName'],
     ] as const) {
-      if (typeof normalized[idKey] === 'string' && UUID_RE.test(normalized[idKey])) continue;
+      if (typeof normalized[idKey] === 'string' && UUID_RE.test(normalized[idKey])) {
+        if (typeof normalized[nameKey] !== 'string') {
+          const label = await teamMemberLabel(normalized[idKey]);
+          if (label) normalized[nameKey] = label;
+        }
+        continue;
+      }
       if (
         normalized[idKey] !== undefined &&
         normalized[idKey] !== null &&
@@ -1973,13 +1998,96 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     return normalized;
   }
 
-  async function resolveBoardItemMemberRefs(
+  async function boardLaneLabel(boardItemId: unknown, laneId: string): Promise<string | null> {
+    if (typeof boardItemId !== 'string' || !UUID_RE.test(boardItemId)) return null;
+    const item = await boards.getBoardItem(boardItemId);
+    if (!item) return null;
+    let labelsPromise = boardLaneLabelsByBoardId.get(item.boardId);
+    if (!labelsPromise) {
+      labelsPromise = boards
+        .getBoard(item.boardId, { itemLimit: 0 })
+        .then((board) => new Map(board?.lanes.map((lane) => [lane.id, lane.name]) ?? []));
+      boardLaneLabelsByBoardId.set(item.boardId, labelsPromise);
+    }
+    return (await labelsPromise).get(laneId) ?? null;
+  }
+
+  function boardLaneRefKey(boardItemId: string, laneId: string): string {
+    return `${boardItemId}:${laneId}`;
+  }
+
+  async function boardLaneLabelsForPayloads(
+    payloads: readonly Record<string, unknown>[],
+  ): Promise<Map<string, string>> {
+    const refs = payloads.flatMap((payload) => {
+      if (
+        payload.field !== 'laneId' ||
+        typeof payload.boardItemId !== 'string' ||
+        !UUID_RE.test(payload.boardItemId) ||
+        typeof payload.newValue !== 'string' ||
+        !UUID_RE.test(payload.newValue) ||
+        typeof payload.laneName === 'string'
+      ) {
+        return [];
+      }
+      return [{ boardItemId: payload.boardItemId, laneId: payload.newValue }];
+    });
+    if (refs.length === 0) return new Map();
+
+    const itemIds = [...new Set(refs.map((ref) => ref.boardItemId))];
+    const laneIds = [...new Set(refs.map((ref) => ref.laneId))];
+    const rows = await db
+      .select({
+        boardItemId: boardItems.id,
+        laneId: boardLanes.id,
+        laneName: boardLanes.name,
+      })
+      .from(boardItems)
+      .innerJoin(
+        boardLanes,
+        and(eq(boardLanes.boardId, boardItems.boardId), eq(boardLanes.teamId, boardItems.teamId)),
+      )
+      .where(
+        and(
+          eq(boardItems.teamId, teamId),
+          eq(boardLanes.teamId, teamId),
+          inArray(boardItems.id, itemIds),
+          inArray(boardLanes.id, laneIds),
+          isNull(boardLanes.archivedAt),
+        ),
+      );
+    return new Map(rows.map((row) => [boardLaneRefKey(row.boardItemId, row.laneId), row.laneName]));
+  }
+
+  async function resolveBoardItemRefs(
     payload: Record<string, unknown>,
-    options: { requireUnique: boolean },
+    options: {
+      requireUnique: boolean;
+      laneLabels?: ReadonlyMap<string, string>;
+    },
   ): Promise<Record<string, unknown>> {
-    if (payload.field !== 'responsibleUserId') return payload;
     const normalized = { ...payload };
+    if (
+      normalized.field === 'laneId' &&
+      typeof normalized.newValue === 'string' &&
+      UUID_RE.test(normalized.newValue) &&
+      typeof normalized.laneName !== 'string'
+    ) {
+      const label = options.laneLabels
+        ? typeof normalized.boardItemId === 'string'
+          ? (options.laneLabels.get(boardLaneRefKey(normalized.boardItemId, normalized.newValue)) ??
+            null)
+          : null
+        : await boardLaneLabel(normalized.boardItemId, normalized.newValue);
+      if (label) normalized.laneName = label;
+      return normalized;
+    }
+    if (normalized.field !== 'responsibleUserId') return normalized;
     if (typeof normalized.newValue === 'string' && UUID_RE.test(normalized.newValue)) {
+      if (typeof normalized.responsibleName !== 'string') {
+        const label = await teamMemberLabel(normalized.newValue);
+        if (label) normalized.responsibleName = label;
+      }
       return normalized;
     }
     if (
@@ -2012,9 +2120,10 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
   async function normalizeSuggestionItemForStorage(
     item: SuggestionItemInput,
     objectTypeByTargetId: ReadonlyMap<string, ObjectType>,
+    laneLabels: ReadonlyMap<string, string>,
   ): Promise<SuggestionItemInput> {
     const proposedPayload = normalizeSuggestionSourceEventPayload(
-      await resolveBoardItemMemberRefs(
+      await resolveBoardItemRefs(
         await resolvePayloadMemberRefs(
           normalizeLifecyclePayload({
             operation: item.operation,
@@ -2027,7 +2136,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
                 : null,
           }),
         ),
-        { requireUnique: false },
+        { requireUnique: false, laneLabels },
       ),
     );
     return { ...item, proposedPayload };
@@ -2309,8 +2418,20 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         .where(inArray(agentSuggestionEvidence.suggestionId, ids))
         .orderBy(asc(agentSuggestionEvidence.suggestionId), asc(agentSuggestionEvidence.createdAt)),
     ]);
+    const laneLabels = await boardLaneLabelsForPayloads(
+      items.map((item) => recordFromUnknown(item.proposedPayload)),
+    );
+    const displayItems = await Promise.all(
+      items.map(async (item) => ({
+        ...item,
+        proposedPayload: await resolveBoardItemRefs(
+          await resolvePayloadMemberRefs(recordFromUnknown(item.proposedPayload)),
+          { requireUnique: false, laneLabels },
+        ),
+      })),
+    );
     const itemsBySuggestion = new Map<string, (typeof agentSuggestionItems.$inferSelect)[]>();
-    for (const item of items) {
+    for (const item of displayItems) {
       const existing = itemsBySuggestion.get(item.suggestionId) ?? [];
       existing.push(item);
       itemsBySuggestion.set(item.suggestionId, existing);
@@ -3745,7 +3866,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     const existingResultId = await existingResultForItem(item);
     if (existingResultId) return existingResultId;
     const targetId = item.targetId;
-    const payload = await resolveBoardItemMemberRefs(
+    const payload = await resolveBoardItemRefs(
       await resolvePayloadMemberRefs(
         normalizeLifecyclePayload({
           ...item,
@@ -4846,8 +4967,13 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       await validateEvidenceVisible((input.evidence ?? []).map((ev) => ev.rawEventId));
       const objectTypeByTargetId = await objectTypesForItems(input.items);
       const evidenceIds = Array.from(new Set((input.evidence ?? []).map((ev) => ev.rawEventId)));
+      const laneLabels = await boardLaneLabelsForPayloads(
+        input.items.map((item) => item.proposedPayload),
+      );
       const normalizedItems = await Promise.all(
-        input.items.map((item) => normalizeSuggestionItemForStorage(item, objectTypeByTargetId)),
+        input.items.map((item) =>
+          normalizeSuggestionItemForStorage(item, objectTypeByTargetId, laneLabels),
+        ),
       );
       const projectionContext = await buildApprovalProjectionContext({
         source: input.source,

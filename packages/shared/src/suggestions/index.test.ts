@@ -6836,6 +6836,105 @@ describe('suggestion scope', () => {
     );
   });
 
+  it('adds readable labels to board item update ids', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const board = await scope.boards.createBoard({
+      name: 'Launch board',
+      templateKind: 'task_board',
+      lanes: [
+        { name: 'Todo', kind: 'active' },
+        { name: 'Blocked', kind: 'active' },
+      ],
+    });
+    const task = await scope.objects.createObject({
+      type: 'task',
+      canonicalName: 'Review Acme deck',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const boardItem = await scope.boards.addBoardItem(board.id, {
+      entityId: task.id,
+      laneId: board.lanes[0]?.id ?? null,
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const blockedLaneId = board.lanes[1]?.id ?? '';
+
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Update board item',
+      dedupeKey: 'board-item-readable-labels',
+      items: [
+        {
+          operation: 'update',
+          targetKind: 'board_item_update',
+          targetId: boardItem.id,
+          title: 'Assign Review Acme deck',
+          dedupeKey: 'board-item-readable-labels:responsible',
+          proposedPayload: {
+            boardItemId: boardItem.id,
+            field: 'responsibleUserId',
+            newValue: REVIEWER_ID,
+          },
+        },
+        {
+          operation: 'update',
+          targetKind: 'board_item_update',
+          targetId: boardItem.id,
+          title: 'Move Review Acme deck',
+          dedupeKey: 'board-item-readable-labels:lane',
+          proposedPayload: {
+            boardItemId: boardItem.id,
+            field: 'laneId',
+            newValue: blockedLaneId,
+          },
+        },
+      ],
+    });
+
+    expect(
+      bundle.items.find((item) => item.proposedPayload.field === 'responsibleUserId'),
+    ).toMatchObject({ proposedPayload: { responsibleName: 'Reviewer' } });
+    expect(bundle.items.find((item) => item.proposedPayload.field === 'laneId')).toMatchObject({
+      proposedPayload: { laneName: 'Blocked' },
+    });
+
+    const responsibleItem = bundle.items.find(
+      (item) => item.proposedPayload.field === 'responsibleUserId',
+    );
+    const laneItem = bundle.items.find((item) => item.proposedPayload.field === 'laneId');
+    await db
+      .update(agentSuggestionItems)
+      .set({
+        proposedPayload: {
+          boardItemId: boardItem.id,
+          field: 'responsibleUserId',
+          newValue: REVIEWER_ID,
+        },
+      })
+      .where(eq(agentSuggestionItems.id, responsibleItem?.id ?? ''));
+    await db
+      .update(agentSuggestionItems)
+      .set({
+        proposedPayload: {
+          boardItemId: boardItem.id,
+          field: 'laneId',
+          newValue: blockedLaneId,
+        },
+      })
+      .where(eq(agentSuggestionItems.id, laneItem?.id ?? ''));
+
+    const getBoardItem = vi.spyOn(scope.boards, 'getBoardItem');
+    const getBoard = vi.spyOn(scope.boards, 'getBoard');
+    const reloaded = await scope.suggestions.getSuggestion(bundle.id);
+    expect(getBoardItem).not.toHaveBeenCalled();
+    expect(getBoard).not.toHaveBeenCalled();
+    expect(
+      reloaded?.items.find((item) => item.proposedPayload.field === 'responsibleUserId'),
+    ).toMatchObject({ proposedPayload: { responsibleName: 'Reviewer' } });
+    expect(reloaded?.items.find((item) => item.proposedPayload.field === 'laneId')).toMatchObject({
+      proposedPayload: { laneName: 'Blocked' },
+    });
+  });
+
   it('normalizes invalid task create source event ids to suggestion evidence when storing', async () => {
     const sourceRawEventId = '99999999-9999-4999-8999-999999999999';
     await db.insert(rawEvents).values({

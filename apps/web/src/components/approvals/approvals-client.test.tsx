@@ -239,6 +239,199 @@ describe('ApprovalsClient', () => {
     expect(html).toContain('Name Acme Renewal 2027');
   });
 
+  it('formats board item updates using the field being changed', () => {
+    const responsibleUserId = '55555555-5555-4555-8555-555555555555';
+    const html = renderToStaticMarkup(
+      createElement(ApprovalsClient, {
+        timezone: 'America/Los_Angeles',
+        suggestions: [
+          {
+            id: 'bundle-board-updates',
+            source: 'chat',
+            status: 'pending',
+            title: 'Update the launch board',
+            summary: null,
+            reason: null,
+            confidence: 'medium',
+            createdAt: '2026-06-01T10:00:00.000Z',
+            evidence: [],
+            items: [
+              {
+                id: 'item-board-due-date',
+                status: 'pending',
+                operation: 'update',
+                targetKind: 'board_item_update',
+                targetId: '66666666-6666-4666-8666-666666666666',
+                title: 'Set launch review due date',
+                description: null,
+                proposedPayload: {
+                  boardItemId: '66666666-6666-4666-8666-666666666666',
+                  field: 'dueAt',
+                  newValue: '2026-07-19T00:00:00.000Z',
+                },
+                failureReason: null,
+              },
+              {
+                id: 'item-board-responsible',
+                status: 'pending',
+                operation: 'update',
+                targetKind: 'board_item_update',
+                targetId: '77777777-7777-4777-8777-777777777777',
+                title: 'Assign launch review',
+                description: null,
+                proposedPayload: {
+                  boardItemId: '77777777-7777-4777-8777-777777777777',
+                  field: 'responsibleUserId',
+                  newValue: responsibleUserId,
+                  responsibleName: 'Reviewer',
+                },
+                failureReason: null,
+              },
+              {
+                id: 'item-board-lane',
+                status: 'pending',
+                operation: 'update',
+                targetKind: 'board_item_update',
+                targetId: '88888888-8888-4888-8888-888888888888',
+                title: 'Move launch review',
+                description: null,
+                proposedPayload: {
+                  boardItemId: '88888888-8888-4888-8888-888888888888',
+                  field: 'laneId',
+                  newValue: '99999999-9999-4999-8999-999999999999',
+                  laneName: 'Blocked',
+                },
+                failureReason: null,
+              },
+            ],
+          },
+        ],
+      }),
+    );
+
+    expect(html).toContain('Due Jul 19, 2026');
+    expect(html).not.toContain('2026-07-19T00:00:00.000Z');
+    expect(html).toContain('Responsible Reviewer');
+    expect(html).not.toContain(responsibleUserId);
+    expect(html).toContain('Lane Blocked');
+    expect(html).not.toContain('Selected lane');
+    expect(html).not.toContain('Field Due at');
+  });
+
+  it('does not roll an invalid task date into a different calendar date', () => {
+    const html = renderToStaticMarkup(
+      createElement(ApprovalsClient, {
+        suggestions: [
+          {
+            id: 'bundle-invalid-date',
+            source: 'chat',
+            status: 'pending',
+            title: 'Create task with invalid date',
+            summary: null,
+            reason: null,
+            confidence: 'medium',
+            createdAt: '2026-06-01T10:00:00.000Z',
+            evidence: [],
+            items: [
+              {
+                id: 'item-invalid-date',
+                status: 'pending',
+                operation: 'create',
+                targetKind: 'task',
+                targetId: null,
+                title: 'Invalid date task',
+                description: null,
+                proposedPayload: {
+                  canonicalName: 'Invalid date task',
+                  dueAt: '2026-02-30',
+                },
+                failureReason: null,
+              },
+            ],
+          },
+        ],
+      }),
+    );
+
+    expect(html).toContain('Due 2026-02-30');
+    expect(html).not.toContain('Mar 2, 2026');
+  });
+
+  it('shows values that an update will clear', () => {
+    const html = renderToStaticMarkup(
+      createElement(ApprovalsClient, {
+        suggestions: [
+          {
+            id: 'bundle-clear-values',
+            source: 'chat',
+            status: 'pending',
+            title: 'Clear stale task details',
+            summary: null,
+            reason: null,
+            confidence: 'medium',
+            createdAt: '2026-06-01T10:00:00.000Z',
+            evidence: [],
+            items: [
+              {
+                id: 'item-clear-values',
+                status: 'pending',
+                operation: 'update',
+                targetKind: 'task',
+                targetId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+                title: 'Clear stale task details',
+                description: null,
+                proposedPayload: {
+                  dueAt: null,
+                  stage: null,
+                  ownerUserId: null,
+                },
+                failureReason: null,
+              },
+            ],
+          },
+        ],
+      }),
+    );
+
+    expect(html).toContain('Due None · Stage None · Owner Unassigned');
+  });
+
+  it('keeps the rationale available when a bundle has no evidence rows', () => {
+    const html = renderToStaticMarkup(
+      createElement(ApprovalsClient, {
+        suggestions: [
+          {
+            id: 'bundle-reason-only',
+            source: 'chat',
+            status: 'pending',
+            title: 'Update customer memory',
+            summary: null,
+            reason: 'The customer explicitly confirmed the renewal stage.',
+            confidence: 'high',
+            createdAt: '2026-06-01T10:00:00.000Z',
+            evidence: [],
+            items: [
+              {
+                id: 'item-reason-only',
+                status: 'pending',
+                operation: 'update',
+                targetKind: 'object',
+                targetId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+                title: 'Update renewal stage',
+                description: null,
+                proposedPayload: { stage: 'contract_review' },
+                failureReason: null,
+              },
+            ],
+          },
+        ],
+      }),
+    );
+
+    expect(html).toContain('Why this was suggested');
+    expect(html).toContain('The customer explicitly confirmed the renewal stage.');
+  });
+
   it('renders missing-person relationship bundles with readable endpoints', () => {
     const html = renderToStaticMarkup(
       createElement(ApprovalsClient, {
@@ -688,6 +881,57 @@ describe('ApprovalsClient', () => {
     expect(html).toContain('Scheduled for Jun 17, 2026.');
     expect(html).not.toContain('5:00 PM');
     expect(html).not.toContain('12:00 AM');
+  });
+
+  it('shows calendar field changes in addition to the proposed range', () => {
+    const html = renderToStaticMarkup(
+      createElement(ApprovalsClient, {
+        timezone: 'Europe/Helsinki',
+        suggestions: [
+          {
+            id: 'bundle-calendar-update',
+            source: 'background',
+            status: 'pending',
+            title: 'Calendar cleanup',
+            summary: null,
+            reason: null,
+            confidence: 'medium',
+            createdAt: '2026-06-01T10:00:00.000Z',
+            evidence: [],
+            items: [
+              {
+                id: 'item-calendar-update',
+                status: 'pending',
+                operation: 'update',
+                targetKind: 'calendar_event',
+                targetId: '33333333-3333-4333-8333-333333333333',
+                title: 'Move Acme planning',
+                description: null,
+                proposedPayload: {
+                  startAt: '2026-06-18T11:00:00.000Z',
+                  endAt: '2026-06-18T12:00:00.000Z',
+                  allDay: false,
+                  description: null,
+                  location: null,
+                  reminderMinutes: null,
+                  showAs: 'free',
+                },
+                calendarResolutionHint: { kind: 'new_event' },
+                failureReason: null,
+              },
+            ],
+          },
+        ],
+      }),
+    );
+
+    expect(html).toContain('Scheduled for');
+    expect(html).toContain('Details None');
+    expect(html).toContain('Location None');
+    expect(html).toContain('Reminder None');
+    expect(html).toContain('Availability: free');
+    expect(html).not.toContain('Start at');
+    expect(html).not.toContain('End at');
   });
 
   it('does not show sibling cancellation copy for calendar proposal creates', () => {

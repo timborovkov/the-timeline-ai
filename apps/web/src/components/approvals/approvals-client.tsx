@@ -163,21 +163,65 @@ const TOKEN_PAYLOAD_FIELDS = new Set([
   'type',
   'visibility',
 ]);
+const CLEARABLE_PAYLOAD_FIELDS = new Set([
+  'assigneeUserId',
+  'description',
+  'dueAt',
+  'location',
+  'ownerUserId',
+  'priority',
+  'reminderMinutes',
+  'rrule',
+  'stage',
+  'visibilityUserIds',
+]);
+const CALENDAR_SEPARATE_PAYLOAD_FIELDS = new Set([
+  'proposalGroupId',
+  'proposalRole',
+  'proposalStatus',
+  'recurrenceEditMode',
+  'showAs',
+]);
+const CALENDAR_RANGE_PAYLOAD_FIELDS = new Set(['allDay', 'endAt', 'startAt', 'timezone']);
 
 function formatPayloadFields(
   payload: Record<string, unknown>,
   timezone?: string,
   itemTitle?: string,
+  operation?: string,
 ): FormattedPayloadField[] {
   const fields: FormattedPayloadField[] = [];
+  const boardUpdateField =
+    typeof payload.field === 'string' && Object.hasOwn(payload, 'newValue') ? payload.field : null;
   for (const [key, value] of Object.entries(payload)) {
+    if (boardUpdateField && key === 'field') continue;
+    if (boardUpdateField && key === 'newValue') {
+      const displayNameKey =
+        boardUpdateField === 'responsibleUserId'
+          ? 'responsibleName'
+          : boardUpdateField === 'laneId'
+            ? 'laneName'
+            : null;
+      if (displayNameKey && payloadString(payload, displayNameKey)) {
+        continue;
+      }
+      fields.push({
+        key: boardUpdateField,
+        label: payloadFieldLabel(boardUpdateField),
+        value: formatBoardUpdateValue(boardUpdateField, value, timezone),
+      });
+      continue;
+    }
+
     const normalizedKey = key.toLowerCase();
     const duplicatesItemTitle =
       (key === 'canonicalName' || key === 'title') &&
       typeof value === 'string' &&
       value.trim() === itemTitle?.trim();
+    const displaysClearedValue =
+      value === null && operation === 'update' && CLEARABLE_PAYLOAD_FIELDS.has(key);
     if (
-      value === null ||
+      (value === null && !displaysClearedValue) ||
       value === undefined ||
       value === '' ||
       duplicatesItemTitle ||
@@ -187,15 +231,16 @@ function formatPayloadFields(
       key === 'toRef' ||
       key === 'fromName' ||
       key === 'toName' ||
-      normalizedKey.endsWith('id') ||
-      normalizedKey.endsWith('ids')
+      (!displaysClearedValue && (normalizedKey.endsWith('id') || normalizedKey.endsWith('ids')))
     ) {
       continue;
     }
     fields.push({
       key,
       label: payloadFieldLabel(key),
-      value: formatPayloadValue(key, value, timezone),
+      value: displaysClearedValue
+        ? clearedPayloadValue(key)
+        : formatPayloadValue(key, value, timezone),
     });
   }
   return fields;
@@ -214,17 +259,29 @@ function payloadFieldLabel(key: string): string {
     aliases: 'Also known as',
     allDay: 'All day',
     assigneeName: 'Assignee',
+    assigneeUserId: 'Assignee',
     canonicalName: 'Name',
     description: 'Details',
     dueAt: 'Due',
+    laneId: 'Lane',
+    laneName: 'Lane',
     location: 'Location',
+    nextStep: 'Next step',
+    notes: 'Notes',
     ownerName: 'Owner',
+    ownerUserId: 'Owner',
+    position: 'Position',
     priority: 'Priority',
+    reminderMinutes: 'Reminder',
+    responsibleName: 'Responsible',
+    responsibleUserId: 'Responsible',
+    rrule: 'Recurrence',
     stage: 'Stage',
     status: 'Status',
     timezone: 'Time zone',
     title: 'Title',
     type: 'Type',
+    visibilityUserIds: 'People with access',
   };
   return labels[key] ?? humanizeToken(key);
 }
@@ -265,8 +322,7 @@ function itemStatusLabel(status: string): string {
 
 function formatPayloadValue(key: string, value: unknown, timezone?: string): string {
   if (key === 'dueAt' && typeof value === 'string') {
-    const dateOnly = LOCAL_DATE_RE.test(value) || UTC_DATE_ONLY_INSTANT_RE.test(value);
-    return formatDisplayDate(value, { timezone: dateOnly ? 'UTC' : timezone });
+    return formatDueDateValue(value, timezone);
   }
   if (key === 'status' && typeof value === 'string') {
     const labels: Record<string, string> = {
@@ -285,6 +341,7 @@ function formatPayloadValue(key: string, value: unknown, timezone?: string): str
   if (typeof value === 'number' || typeof value === 'boolean') return String(value);
   if (value instanceof Date) return value.toISOString();
   if (Array.isArray(value)) {
+    if (value.length === 0) return 'None';
     return value
       .map((entry) =>
         typeof entry === 'string' || typeof entry === 'number' || typeof entry === 'boolean'
@@ -296,6 +353,30 @@ function formatPayloadValue(key: string, value: unknown, timezone?: string): str
       .join(', ');
   }
   return JSON.stringify(value);
+}
+
+function clearedPayloadValue(key: string): string {
+  return key === 'ownerUserId' || key === 'assigneeUserId' ? 'Unassigned' : 'None';
+}
+
+function formatBoardUpdateValue(field: string, value: unknown, timezone?: string): string {
+  if (field === 'responsibleUserId') return value === null ? 'Unassigned' : 'Selected team member';
+  if (field === 'laneId') return value === null ? 'No lane' : 'Selected lane';
+  if (value === null) return 'None';
+  return formatPayloadValue(field, value, timezone);
+}
+
+function formatDueDateValue(value: string, timezone?: string): string {
+  const localDate = LOCAL_DATE_RE.test(value);
+  const utcDateOnlyInstant = UTC_DATE_ONLY_INSTANT_RE.test(value);
+  if ((localDate || utcDateOnlyInstant) && !hasExactUtcDate(value)) return value;
+  return formatDisplayDate(value, { timezone: localDate || utcDateOnlyInstant ? 'UTC' : timezone });
+}
+
+function hasExactUtcDate(value: string): boolean {
+  const expectedDate = value.slice(0, 10);
+  const instant = new Date(LOCAL_DATE_RE.test(value) ? `${value}T00:00:00.000Z` : value);
+  return !Number.isNaN(instant.getTime()) && instant.toISOString().slice(0, 10) === expectedDate;
 }
 
 function payloadString(payload: Record<string, unknown>, key: string): string | null {
@@ -1051,7 +1132,7 @@ function ApprovalItemPayload({
   const relationshipSummary = relationshipPayloadSummary(item, bundle);
   const fields = relationshipSummary
     ? []
-    : formatPayloadFields(item.proposedPayload, timezone, item.title);
+    : formatPayloadFields(item.proposedPayload, timezone, item.title, item.operation);
   return (
     <div className="min-w-0 self-center">
       <div className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
@@ -1141,6 +1222,16 @@ function CalendarApprovalPayload({ item, timezone }: { item: SuggestionItem; tim
     item.operation === 'update' &&
     proposalGroupId !== null &&
     (proposalStatus === 'confirmed' || proposalRole === 'selected_slot');
+  const payloadFields = formatPayloadFields(
+    item.proposedPayload,
+    timezone,
+    item.title,
+    item.operation,
+  ).filter(
+    (field) =>
+      !CALENDAR_SEPARATE_PAYLOAD_FIELDS.has(field.key) &&
+      !(proposedRange && CALENDAR_RANGE_PAYLOAD_FIELDS.has(field.key)),
+  );
   const toneClass =
     action.tone === 'danger'
       ? 'border-danger/40 bg-danger/5 text-danger'
@@ -1158,6 +1249,7 @@ function CalendarApprovalPayload({ item, timezone }: { item: SuggestionItem; tim
       </div>
       <div className="space-y-1 text-xs text-fg-muted">
         <CalendarResolutionLine item={item} proposedRange={proposedRange} timezone={timezone} />
+        <ApprovalPayloadSummary fields={payloadFields} />
         {showAs ? <p>Availability: {displayText(showAs)}</p> : null}
         {recurrenceEditMode ? <p>Recurrence: {displayText(recurrenceEditMode)}</p> : null}
         {cancelsSiblingSlots ? (
@@ -1219,11 +1311,7 @@ function CalendarResolutionLine({
     return <p>The target event is no longer available.</p>;
   }
   if (proposedRange) return <p>Scheduled for {proposedRange}.</p>;
-  return (
-    <ApprovalPayloadSummary
-      fields={formatPayloadFields(item.proposedPayload, timezone, item.title)}
-    />
-  );
+  return null;
 }
 
 function ApprovalItemActions({
@@ -1277,12 +1365,14 @@ function ApprovalItemActions({
 }
 
 function ApprovalEvidence({ bundle }: { bundle: SuggestionBundle }) {
-  if (bundle.evidence.length === 0) return null;
+  if (bundle.evidence.length === 0 && !bundle.reason) return null;
   return (
     <details className="mt-2 border-l border-border pl-3">
       <summary className="cursor-pointer font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim hover:text-fg">
-        Why this was suggested · {bundle.evidence.length}{' '}
-        {bundle.evidence.length === 1 ? 'source' : 'sources'}
+        Why this was suggested
+        {bundle.evidence.length > 0
+          ? ` · ${bundle.evidence.length} ${bundle.evidence.length === 1 ? 'source' : 'sources'}`
+          : ''}
       </summary>
       {bundle.reason ? (
         <p className="max-w-3xl py-2 text-xs leading-5 text-fg-muted">
