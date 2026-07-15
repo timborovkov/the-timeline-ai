@@ -15,6 +15,7 @@ import { BoardAddItemForm } from '@/components/boards/board-add-item-form';
 import { BoardCardDetail } from '@/components/boards/board-card-detail';
 import { CuratedBoardList, CuratedBoardTable } from '@/components/boards/curated-board-views';
 import { CuratedKanbanBoard } from '@/components/boards/curated-kanban-board';
+import { ContextualAskLink } from '@/components/chat/contextual-ask-link';
 import { HistoryBackLink } from '@/components/history-back-link';
 import { IndexStrip } from '@/components/index-strip';
 import { WorkFilterBar } from '@/components/work-filter-bar';
@@ -39,6 +40,7 @@ interface BoardItemPatchOverlay {
 }
 
 interface Props {
+  teamId?: string;
   boardId: string;
   boardName: string;
   purpose: string | null;
@@ -82,6 +84,7 @@ const EMPTY_FILTER_PARAMS: Record<string, string> = {};
 const EMPTY_TYPE_LABELS: Record<string, string> = {};
 
 export function BoardDetailClient({
+  teamId,
   boardId,
   boardName,
   purpose,
@@ -219,15 +222,24 @@ export function BoardDetailClient({
   );
   const boardHeaderTrailing = useMemo(
     () => (
-      <BoardActionsMenu
-        id={boardId}
-        name={boardName}
-        purpose={purpose ?? ''}
-        pinned={pinned}
-        lanes={lanes}
-      />
+      <div className="flex items-center gap-2">
+        {teamId ? (
+          <ContextualAskLink
+            teamId={teamId}
+            context={{ pathname: `/app/boards/${boardId}`, routeKind: 'board', boardId }}
+            label="Ask about board"
+          />
+        ) : null}
+        <BoardActionsMenu
+          id={boardId}
+          name={boardName}
+          purpose={purpose ?? ''}
+          pinned={pinned}
+          lanes={lanes}
+        />
+      </div>
     ),
-    [boardId, boardName, lanes, pinned, purpose],
+    [boardId, boardName, lanes, pinned, purpose, teamId],
   );
 
   return (
@@ -333,6 +345,7 @@ export function BoardDetailClient({
         {selectedItem ? (
           <BoardCardDetail
             key={selectedItem.id}
+            teamId={teamId}
             boardId={boardId}
             view={view}
             item={selectedItem}

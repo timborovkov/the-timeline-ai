@@ -4,7 +4,7 @@ export default function ChatLoading() {
   return (
     <div
       data-app-layout="full-bleed"
-      className="-mx-4 -my-6 flex h-[calc(100dvh-3.5rem)] md:-mx-8 md:-my-8"
+      className="-mx-4 -my-6 flex h-[calc(100dvh-3rem)] md:-mx-8 md:-my-8"
       aria-busy="true"
     >
       <aside className="flex h-full w-60 shrink-0 flex-col border-r border-border bg-surface p-3">

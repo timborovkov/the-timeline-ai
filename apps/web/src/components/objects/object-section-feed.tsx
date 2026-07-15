@@ -77,7 +77,7 @@ function ObjectSectionItem({ section, item }: { section: Props['section']; item:
   }
   if (section === 'facts') {
     const sharedObjects = factSharedObjects(row.sharedObjects);
-    const occurredAt = text(row.occurredAt);
+    const occurredAt = rawText(row.occurredAt);
     const source = text(row.source);
     const observedAt = occurredAt ? formatDisplayDateTime(occurredAt) : 'unknown time';
     const sourceLabel = source ? ` · ${source}` : '';
@@ -98,7 +98,7 @@ function ObjectSectionItem({ section, item }: { section: Props['section']; item:
     const eventId = text(row.id);
     const previewText = text(row.contentText);
     const contentText = previewText || '[empty event]';
-    const occurredAt = text(row.occurredAt);
+    const occurredAt = rawText(row.occurredAt);
     const source = text(row.source);
     return (
       <div className="grid gap-3">
@@ -143,6 +143,13 @@ function ObjectSectionItem({ section, item }: { section: Props['section']; item:
 
 function text(value: unknown, fallback = ''): string {
   if (typeof value === 'string') return displayText(value);
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  return fallback;
+}
+
+function rawText(value: unknown, fallback = ''): string {
+  if (typeof value === 'string') return value;
+  if (value instanceof Date) return value.toISOString();
   if (typeof value === 'number' || typeof value === 'boolean') return String(value);
   return fallback;
 }

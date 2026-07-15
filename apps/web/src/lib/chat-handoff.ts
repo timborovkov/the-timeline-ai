@@ -1,9 +1,26 @@
 export const CHAT_HANDOFF_MAX_AGE_MS = 5 * 60 * 1000;
 export const CHAT_HANDOFF_MAX_PROMPT_LENGTH = 4_000;
 
-interface ChatHandoff {
-  prompt: string;
+export interface ChatHandoffContext {
+  pathname: string;
+  routeKind: string;
+  search?: Record<string, string>;
+  objectId?: string;
+  boardId?: string;
+  boardItemId?: string;
+  calendarDate?: string;
+  calendarView?: string;
+  calendarEventId?: string;
+  documentId?: string;
+  taskId?: string;
+}
+
+export interface ChatHandoff {
+  prompt?: string;
   createdAt: number;
+  context?: ChatHandoffContext;
+  pinnedEntityId?: string;
+  pinnedEntityName?: string;
 }
 
 interface StorageLike {
@@ -38,11 +55,22 @@ export function storeChatHandoff(
   return handoff;
 }
 
-export function consumeChatHandoff(
+export function storeChatContextHandoff(
+  storage: StorageLike,
+  teamId: string,
+  input: Omit<ChatHandoff, 'createdAt' | 'prompt'>,
+  now = Date.now(),
+): ChatHandoff {
+  const handoff = { ...input, createdAt: now } satisfies ChatHandoff;
+  storage.setItem(chatHandoffKey(teamId), JSON.stringify(handoff));
+  return handoff;
+}
+
+export function consumeChatHandoffEntry(
   storage: StorageLike,
   teamId: string,
   now = Date.now(),
-): string | null {
+): ChatHandoff | null {
   const key = chatHandoffKey(teamId);
   const serialized = storage.getItem(key);
   storage.removeItem(key);
@@ -50,12 +78,28 @@ export function consumeChatHandoff(
 
   try {
     const parsed = JSON.parse(serialized) as Partial<ChatHandoff>;
-    if (typeof parsed.prompt !== 'string' || typeof parsed.createdAt !== 'number') return null;
+    if (typeof parsed.createdAt !== 'number') return null;
     if (now - parsed.createdAt > CHAT_HANDOFF_MAX_AGE_MS || parsed.createdAt > now + 60_000) {
       return null;
     }
-    return validateChatHandoffPrompt(parsed.prompt) ? null : parsed.prompt.trim();
+    if (parsed.prompt !== undefined && validateChatHandoffPrompt(parsed.prompt)) return null;
+    if (parsed.prompt === undefined && !parsed.context && !parsed.pinnedEntityId) return null;
+    return {
+      createdAt: parsed.createdAt,
+      ...(parsed.prompt === undefined ? {} : { prompt: parsed.prompt.trim() }),
+      ...(parsed.context ? { context: parsed.context } : {}),
+      ...(parsed.pinnedEntityId ? { pinnedEntityId: parsed.pinnedEntityId } : {}),
+      ...(parsed.pinnedEntityName ? { pinnedEntityName: parsed.pinnedEntityName } : {}),
+    };
   } catch {
     return null;
   }
+}
+
+export function consumeChatHandoff(
+  storage: StorageLike,
+  teamId: string,
+  now = Date.now(),
+): string | null {
+  return consumeChatHandoffEntry(storage, teamId, now)?.prompt ?? null;
 }

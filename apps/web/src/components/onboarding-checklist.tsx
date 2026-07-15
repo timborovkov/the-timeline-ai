@@ -97,7 +97,7 @@ function onboardingMeta(key: string): { href: string; cta: string; description: 
   switch (key) {
     case 'first_note':
       return {
-        href: '/app',
+        href: '/app#capture',
         cta: 'Capture',
         description: 'Save one note, decision, or follow-up into the team log.',
       };

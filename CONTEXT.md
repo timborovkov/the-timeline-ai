@@ -837,15 +837,17 @@ bypassing private or restricted items.
 _Avoid_: Backup, database dump
 
 **Onboarding Checklist**:
-A dismissible tutorial shown in the app to help a team learn capture surfaces.
-It teaches the product loop; it is not a requirement that external data has
-successfully arrived.
+A dismissible progress model that helps a team learn capture surfaces. Home
+surfaces only the next incomplete setup step and its direct action; full
+connection management belongs in Connections. It teaches the product loop; it
+is not a requirement that external data has successfully arrived.
 _Avoid_: Setup wizard, activation gate
 
 **Home Dashboard**:
-The signed-in landing surface for a team member. It gathers capture, onboarding,
-ingest access, quick actions, pending approvals, the latest daily digest, and a
-compact recent activity view without trying to be the canonical event browser.
+The signed-in landing surface for a team member. It leads with Ask and actionable
+attention, keeps capture in a focused dialog, and follows with the latest digest,
+pinned work, up to three recent moments, and one next setup step. It does not
+duplicate the canonical Timeline, Work navigation, or Connections management.
 _Avoid_: Timeline when referring to the landing page
 
 **Workspace Time Context**:

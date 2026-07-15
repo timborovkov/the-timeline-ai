@@ -3,7 +3,7 @@ import { spawnSync } from 'node:child_process';
 type Env = NodeJS.ProcessEnv;
 type PublishedPortLookup = (container: string, containerPort: number) => string | null;
 
-const DEFAULT_DOCKER_INSPECT_TIMEOUT_MS = 1_000;
+const DEFAULT_DOCKER_INSPECT_TIMEOUT_MS = 5_000;
 
 interface BuildE2eEnvOptions {
   publishedPort?: PublishedPortLookup;

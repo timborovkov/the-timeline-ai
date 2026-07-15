@@ -32,6 +32,7 @@ import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { displayMemberLabel } from '@/lib/display-labels';
 import { listTimelineCapturedFilesByEventId } from '@/lib/timeline-captured-files';
+import { listWorkQueueObjects } from '@/lib/work-queue';
 
 export const metadata: Metadata = {
   title: 'Home',
@@ -82,6 +83,7 @@ export default async function HomeDashboardPage() {
     latestDigest,
     calendarSettings,
     urgentBoardWork,
+    urgentObjectWork,
     connectionAttention,
   ] = await Promise.all([
     scope.suggestions.countPendingSuggestions(),
@@ -92,6 +94,7 @@ export default async function HomeDashboardPage() {
     latestDailyDigest({ db, teamId: active.teamId, userId: session.user.id }),
     scope.calendar.getCalendarSettings(),
     scope.boards.listWorkQueueItems({ dueBefore: now, limit: 100 }),
+    listWorkQueueObjects(scope.objects, session.user.id, now),
     scope.integrations.listConnectionAttention(),
   ]);
   const recoverableJobs = isAdmin ? await scope.jobRecovery.listRecoverableJobs() : [];
@@ -124,6 +127,10 @@ export default async function HomeDashboardPage() {
       : [];
   const userMap = new Map(userRows.map((row) => [row.id, row] as const));
   const quickCaptureVisibility = webDefault.visibility === 'private' ? 'private' : 'team';
+  const urgentWorkCount = new Set([
+    ...urgentBoardWork.map((item) => item.entityId),
+    ...urgentObjectWork.map((item) => item.id),
+  ]).size;
 
   return (
     <div className="space-y-7">
@@ -157,8 +164,8 @@ export default async function HomeDashboardPage() {
           },
           {
             href: '/app/work',
-            label: 'Overdue work',
-            count: urgentBoardWork.length,
+            label: 'Work needing attention',
+            count: urgentWorkCount,
             action: 'Open work queue',
             icon: <CircleAlert aria-hidden="true" />,
             danger: true,

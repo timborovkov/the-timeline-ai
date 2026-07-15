@@ -17,6 +17,7 @@ import {
   getDocumentDownloadUrlAction,
   renameDocumentAction,
 } from '@/app/actions/documents';
+import { ContextualAskLink } from '@/components/chat/contextual-ask-link';
 import { DocumentPreview } from '@/components/documents/document-preview';
 import { EvidenceLink } from '@/components/evidence-link';
 import { HistoryBackLink } from '@/components/history-back-link';
@@ -62,6 +63,7 @@ interface DocumentSummary {
 }
 
 interface Props {
+  teamId?: string;
   document: DocumentSummary;
   versions: VersionItem[];
   requestedVersion: number | null;
@@ -91,6 +93,7 @@ function mediaKind(contentType: string | null): 'image' | 'audio' | 'pdf' | null
 }
 
 export function DocumentDetail({
+  teamId,
   document,
   versions,
   requestedVersion,
@@ -222,6 +225,17 @@ export function DocumentDetail({
             {currentDocument.visibility !== 'team' && (
               <Badge variant="outline">{statusLabel(currentDocument.visibility)}</Badge>
             )}
+            {teamId ? (
+              <ContextualAskLink
+                teamId={teamId}
+                context={{
+                  pathname: `/app/documents/${currentDocument.id}`,
+                  routeKind: 'document-detail',
+                  documentId: currentDocument.id,
+                }}
+                label="Ask about document"
+              />
+            ) : null}
             <Button size="sm" variant="outline" onClick={() => void onRename()} disabled={pending}>
               Rename
             </Button>

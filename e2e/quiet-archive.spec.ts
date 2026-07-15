@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 
 import { newSignedInPage } from './helpers.js';
 
-const UUID_PATTERN = /\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/i;
+const UUID_PATTERN = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/i;
 
 test('Home hands a private prompt to Ask exactly once without putting it in the URL', async ({
   browser,

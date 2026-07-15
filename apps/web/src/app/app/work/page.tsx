@@ -2,7 +2,6 @@ import { withTeam } from '@timeline/shared/team-scope';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
-import type * as objects from '@timeline/shared/objects';
 import type { Metadata } from 'next';
 
 import { EmptyAction } from '@/components/empty-action';
@@ -17,6 +16,7 @@ import {
   approvalQueueItem,
   boardQueueItem,
   dedupeWorkQueueItems,
+  listWorkQueueObjects,
   objectQueueItem,
   reasonLabel,
   reasonTone,
@@ -31,10 +31,6 @@ export const metadata: Metadata = {
 
 const DUE_SOON_DAYS = 14;
 const QUEUE_LIMIT = 20;
-const OBJECT_QUEUE_SOURCE_LIMIT = QUEUE_LIMIT * 3;
-const OBJECT_QUEUE_PRIORITY_LIMIT = QUEUE_LIMIT;
-const WORK_OBJECT_TYPES: objects.ObjectType[] = ['task', 'follow_up', 'project', 'deal'];
-const OPEN_WORK_STATUS_EXCLUDED = ['done', 'cancelled', 'canceled', 'shipped'] as const;
 
 export default async function WorkPage() {
   const session = await auth();
@@ -137,86 +133,6 @@ export default async function WorkPage() {
       </div>
     </div>
   );
-}
-
-async function listWorkQueueObjects(
-  objectScope: { listObjects(filter: objects.ObjectListFilter): Promise<objects.ObjectRow[]> },
-  userId: string,
-  dueBefore: Date,
-): Promise<objects.ObjectRow[]> {
-  const baseFilter = {
-    type: WORK_OBJECT_TYPES,
-    archived: false,
-    statusNot: [...OPEN_WORK_STATUS_EXCLUDED],
-  } satisfies objects.ObjectListFilter;
-  const dueBeforeCutoff = exclusiveDueBefore(dueBefore);
-  const [
-    ownedDue,
-    assignedDue,
-    teamDue,
-    ownedBlocked,
-    assignedBlocked,
-    ownedRecent,
-    assignedRecent,
-  ] = await Promise.all([
-    objectScope.listObjects({
-      ...baseFilter,
-      ownerUserId: userId,
-      dueBefore: dueBeforeCutoff,
-      order: 'due',
-      limit: OBJECT_QUEUE_PRIORITY_LIMIT,
-    }),
-    objectScope.listObjects({
-      ...baseFilter,
-      assigneeUserId: userId,
-      dueBefore: dueBeforeCutoff,
-      order: 'due',
-      limit: OBJECT_QUEUE_PRIORITY_LIMIT,
-    }),
-    objectScope.listObjects({
-      ...baseFilter,
-      ownerUserId: null,
-      assigneeUserId: null,
-      dueBefore: dueBeforeCutoff,
-      order: 'due',
-      limit: OBJECT_QUEUE_PRIORITY_LIMIT,
-    }),
-    objectScope.listObjects({
-      ...baseFilter,
-      ownerUserId: userId,
-      status: 'blocked',
-      limit: OBJECT_QUEUE_PRIORITY_LIMIT,
-    }),
-    objectScope.listObjects({
-      ...baseFilter,
-      assigneeUserId: userId,
-      status: 'blocked',
-      limit: OBJECT_QUEUE_PRIORITY_LIMIT,
-    }),
-    objectScope.listObjects({
-      ...baseFilter,
-      ownerUserId: userId,
-      limit: OBJECT_QUEUE_SOURCE_LIMIT,
-    }),
-    objectScope.listObjects({
-      ...baseFilter,
-      assigneeUserId: userId,
-      limit: OBJECT_QUEUE_SOURCE_LIMIT,
-    }),
-  ]);
-  return [
-    ...ownedDue,
-    ...assignedDue,
-    ...teamDue,
-    ...ownedBlocked,
-    ...assignedBlocked,
-    ...ownedRecent,
-    ...assignedRecent,
-  ];
-}
-
-function exclusiveDueBefore(dueBefore: Date): Date {
-  return new Date(dueBefore.getTime() + 1);
 }
 
 function WorkQueueRow({ item }: { item: WorkQueueItem }) {

@@ -118,7 +118,12 @@ export default async function ObjectDetailPage({ params, searchParams }: PagePro
         label="Back"
       />
       <ObjectBoardContext rows={boardContext} />
-      <ObjectDetailClient detail={detail} userId={session.user.id} suggestions={suggestions} />
+      <ObjectDetailClient
+        detail={detail}
+        teamId={active.teamId}
+        userId={session.user.id}
+        suggestions={suggestions}
+      />
     </div>
   );
 }

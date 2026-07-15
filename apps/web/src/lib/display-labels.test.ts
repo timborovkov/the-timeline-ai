@@ -11,6 +11,8 @@ import {
 } from '@/lib/display-labels';
 
 const UUID = '8e5b28ae-4ba1-4a52-9d8f-7e9fb57be7a4';
+const UUID_V7 = '018f22e2-7a9b-7cc3-98c4-3a2b1c0d9e8f';
+const NIL_UUID = '00000000-0000-0000-0000-000000000000';
 
 describe('display labels', () => {
   it('never uses UUID-only values as human labels', () => {
@@ -40,5 +42,21 @@ describe('display labels', () => {
     expect(isInternalIdentifier(UUID)).toBe(true);
     expect(isInternalIdentifier(`item ${UUID}`)).toBe(true);
     expect(isInternalIdentifier('TL-101')).toBe(false);
+  });
+
+  it('rejects UUIDv7 and nil UUID fallbacks', () => {
+    expect(isInternalIdentifier(UUID_V7)).toBe(true);
+    expect(isInternalIdentifier(NIL_UUID)).toBe(true);
+    expect(displayObjectLabel({ canonicalName: UUID_V7 })).toBe('Untitled object');
+    expect(displayMemberLabel({ name: NIL_UUID })).toBe('Unknown member');
+  });
+
+  it('keeps raw meeting URLs out of titles and maps stored platform values', () => {
+    expect(displayMeetingLabel({ title: 'https://meet.google.com/abc-defg-hij' })).toBe(
+      'Untitled meeting',
+    );
+    expect(displayMeetingLabel({ title: 'meet.google.com/abc-defg-hij' })).toBe('Untitled meeting');
+    expect(displaySourceLabel('meet')).toBe('Google Meet');
+    expect(displaySourceLabel('teams')).toBe('Microsoft Teams');
   });
 });

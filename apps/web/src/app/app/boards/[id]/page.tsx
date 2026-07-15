@@ -97,11 +97,12 @@ export default async function BoardDetailPage({
       data-app-layout={isKanban ? 'full-bleed' : undefined}
       className={
         isKanban
-          ? '-mx-4 -my-6 flex h-[calc(100dvh-3.5rem)] min-w-0 flex-col md:-mx-8 md:-my-8'
+          ? '-mx-4 -my-6 flex h-[calc(100dvh-3rem)] min-w-0 flex-col md:-mx-8 md:-my-8'
           : undefined
       }
     >
       <BoardDetailClient
+        teamId={active.teamId}
         boardId={board.id}
         boardName={board.name}
         purpose={board.purpose}

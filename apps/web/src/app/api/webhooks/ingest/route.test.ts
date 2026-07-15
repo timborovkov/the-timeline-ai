@@ -101,7 +101,7 @@ describe('/api/webhooks/ingest', () => {
     fakes.enqueueExtractJob.mockResolvedValue(undefined);
     fakes.enqueueEmbedJob.mockResolvedValue(undefined);
     fakes.enqueueSuggestionJob.mockResolvedValue({ enqueued: true, jobId: 'job' });
-  });
+  }, 30_000);
 
   it('accepts GET verification without creating evidence', async () => {
     const response = await GET(

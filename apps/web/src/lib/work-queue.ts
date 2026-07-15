@@ -28,6 +28,11 @@ export interface WorkQueueItem {
   reasons: WorkQueueReason[];
 }
 
+const OBJECT_QUEUE_SOURCE_LIMIT = 60;
+const OBJECT_QUEUE_PRIORITY_LIMIT = 20;
+const WORK_OBJECT_TYPES: objects.ObjectType[] = ['task', 'follow_up', 'project', 'deal'];
+const OPEN_WORK_STATUS_EXCLUDED = ['done', 'cancelled', 'canceled', 'shipped'] as const;
+
 const DONE_STATUSES = new Set(['done', 'cancelled', 'canceled', 'shipped']);
 
 function isOpenWorkObject(row: objects.ObjectRow): boolean {
@@ -156,6 +161,82 @@ export function objectQueueItem(
     updatedAt: row.updatedAt,
     reasons,
   };
+}
+
+export async function listWorkQueueObjects(
+  objectScope: { listObjects(filter: objects.ObjectListFilter): Promise<objects.ObjectRow[]> },
+  userId: string,
+  dueBefore: Date,
+): Promise<objects.ObjectRow[]> {
+  const baseFilter = {
+    type: WORK_OBJECT_TYPES,
+    archived: false,
+    statusNot: [...OPEN_WORK_STATUS_EXCLUDED],
+  } satisfies objects.ObjectListFilter;
+  const dueBeforeCutoff = new Date(dueBefore.getTime() + 1);
+  const [
+    ownedDue,
+    assignedDue,
+    teamDue,
+    ownedBlocked,
+    assignedBlocked,
+    ownedRecent,
+    assignedRecent,
+  ] = await Promise.all([
+    objectScope.listObjects({
+      ...baseFilter,
+      ownerUserId: userId,
+      dueBefore: dueBeforeCutoff,
+      order: 'due',
+      limit: OBJECT_QUEUE_PRIORITY_LIMIT,
+    }),
+    objectScope.listObjects({
+      ...baseFilter,
+      assigneeUserId: userId,
+      dueBefore: dueBeforeCutoff,
+      order: 'due',
+      limit: OBJECT_QUEUE_PRIORITY_LIMIT,
+    }),
+    objectScope.listObjects({
+      ...baseFilter,
+      ownerUserId: null,
+      assigneeUserId: null,
+      dueBefore: dueBeforeCutoff,
+      order: 'due',
+      limit: OBJECT_QUEUE_PRIORITY_LIMIT,
+    }),
+    objectScope.listObjects({
+      ...baseFilter,
+      ownerUserId: userId,
+      status: 'blocked',
+      limit: OBJECT_QUEUE_PRIORITY_LIMIT,
+    }),
+    objectScope.listObjects({
+      ...baseFilter,
+      assigneeUserId: userId,
+      status: 'blocked',
+      limit: OBJECT_QUEUE_PRIORITY_LIMIT,
+    }),
+    objectScope.listObjects({
+      ...baseFilter,
+      ownerUserId: userId,
+      limit: OBJECT_QUEUE_SOURCE_LIMIT,
+    }),
+    objectScope.listObjects({
+      ...baseFilter,
+      assigneeUserId: userId,
+      limit: OBJECT_QUEUE_SOURCE_LIMIT,
+    }),
+  ]);
+  return [
+    ...ownedDue,
+    ...assignedDue,
+    ...teamDue,
+    ...ownedBlocked,
+    ...assignedBlocked,
+    ...ownedRecent,
+    ...assignedRecent,
+  ];
 }
 
 function reasonRank(item: WorkQueueItem): number {

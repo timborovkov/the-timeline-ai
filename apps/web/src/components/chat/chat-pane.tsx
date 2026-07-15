@@ -11,11 +11,13 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 
+import type { ChatHandoff, ChatHandoffContext } from '@/lib/chat-handoff';
+
 import { unpinChatSessionAction } from '@/app/actions/chat';
 import { CitationText } from '@/components/chat/citation';
 import { ToolStep } from '@/components/chat/tool-step';
 import { InlineSpinner } from '@/components/loading-states';
-import { consumeChatHandoff } from '@/lib/chat-handoff';
+import { consumeChatHandoffEntry } from '@/lib/chat-handoff';
 import { cn } from '@/lib/utils';
 import { chatErrorMessage } from '@/lib/ux-errors';
 
@@ -28,19 +30,7 @@ interface Props {
   pinnedEntityName: string | null;
 }
 
-export interface DashboardChatContext {
-  pathname: string;
-  routeKind: string;
-  search?: Record<string, string>;
-  objectId?: string;
-  boardId?: string;
-  boardItemId?: string;
-  calendarDate?: string;
-  calendarView?: string;
-  calendarEventId?: string;
-  documentId?: string;
-  taskId?: string;
-}
+export type DashboardChatContext = ChatHandoffContext;
 
 const SUGGESTIONS = [
   'What did the team work on yesterday?',
@@ -91,8 +81,11 @@ function ChatSurfaceContent({
 }) {
   const router = useRouter();
   const search = useSearchParams();
+  const chatHandoffRef = useRef<ChatHandoff | null>(null);
   const { sessionId, transport } = useChatSessionTransport({
     initialSessionId,
+    initialPinnedEntityId: pinnedEntityId,
+    chatHandoffRef,
     search,
     dashboardContext,
     onSessionIdChange,
@@ -113,13 +106,15 @@ function ChatSurfaceContent({
   useEffect(() => {
     if (handoffConsumedRef.current || initialSessionId || initialMessages.length > 0) return;
     handoffConsumedRef.current = true;
-    let prompt: string | null = null;
+    let handoff: ChatHandoff | null = null;
     try {
-      prompt = consumeChatHandoff(window.sessionStorage, teamId);
+      handoff = consumeChatHandoffEntry(window.sessionStorage, teamId);
     } catch {
       return;
     }
-    if (prompt) void sendMessage({ text: prompt });
+    if (!handoff) return;
+    chatHandoffRef.current = handoff;
+    if (handoff.prompt) void sendMessage({ text: handoff.prompt });
   }, [initialMessages.length, initialSessionId, sendMessage, teamId]);
 
   useEffect(() => {
@@ -169,12 +164,16 @@ function ChatSurfaceContent({
 
 function useChatSessionTransport({
   initialSessionId,
+  initialPinnedEntityId,
+  chatHandoffRef,
   search,
   dashboardContext,
   onSessionIdChange,
   updateUrlOnSessionCreate,
 }: {
   initialSessionId: string | null;
+  initialPinnedEntityId: string | null;
+  chatHandoffRef: RefObject<ChatHandoff | null>;
   search: URLSearchParams;
   dashboardContext?: DashboardChatContext | null;
   onSessionIdChange?: (sessionId: string) => void;
@@ -184,6 +183,7 @@ function useChatSessionTransport({
   const sessionIdRef = useRef<string | null>(initialSessionId);
   const searchRef = useRef(search);
   const dashboardContextRef = useRef<DashboardChatContext | null | undefined>(dashboardContext);
+  const pinnedEntityIdRef = useRef<string | null>(initialPinnedEntityId);
   const onSessionIdChangeRef = useRef(onSessionIdChange);
   const sessionCreateAttempted = useRef(initialSessionId !== null);
 
@@ -198,6 +198,10 @@ function useChatSessionTransport({
   useEffect(() => {
     dashboardContextRef.current = dashboardContext;
   }, [dashboardContext]);
+
+  useEffect(() => {
+    pinnedEntityIdRef.current = initialPinnedEntityId;
+  }, [initialPinnedEntityId]);
 
   useEffect(() => {
     onSessionIdChangeRef.current = onSessionIdChange;
@@ -223,10 +227,15 @@ function useChatSessionTransport({
         body: () => {
           const askForNew = sessionIdRef.current === null && !sessionCreateAttempted.current;
           if (askForNew) sessionCreateAttempted.current = true;
+          const handoff = askForNew ? chatHandoffRef.current : null;
+          if (askForNew) chatHandoffRef.current = null;
           return {
             sessionId: sessionIdRef.current ?? undefined,
             startNewSession: askForNew,
-            dashboardContext: dashboardContextRef.current ?? undefined,
+            pinnedEntityId: askForNew
+              ? (handoff?.pinnedEntityId ?? pinnedEntityIdRef.current ?? undefined)
+              : undefined,
+            dashboardContext: handoff?.context ?? dashboardContextRef.current ?? undefined,
           };
         },
         fetch: async (url, init) => {
@@ -250,7 +259,7 @@ function useChatSessionTransport({
           return res;
         },
       }),
-    [updateUrlOnSessionCreate],
+    [chatHandoffRef, updateUrlOnSessionCreate],
   );
 
   return { sessionId, transport };

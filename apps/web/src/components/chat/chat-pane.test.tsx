@@ -150,6 +150,51 @@ describe('ChatPane', () => {
     expect(window.sessionStorage.getItem(chatHandoffKey('team-1'))).toBeNull();
   });
 
+  it('applies contextual Ask handoff to the first persisted session', async () => {
+    fakes.useChat.mockReturnValue({
+      messages: [],
+      sendMessage: vi.fn(),
+      status: 'ready',
+      error: null,
+    });
+    window.sessionStorage.setItem(
+      chatHandoffKey('team-1'),
+      JSON.stringify({
+        createdAt: Date.now(),
+        context: {
+          pathname: '/app/objects/018f22e2-7a9b-7cc3-98c4-3a2b1c0d9e8f',
+          routeKind: 'object-detail',
+          objectId: '018f22e2-7a9b-7cc3-98c4-3a2b1c0d9e8f',
+        },
+        pinnedEntityId: '018f22e2-7a9b-7cc3-98c4-3a2b1c0d9e8f',
+        pinnedEntityName: 'Launch plan',
+      }),
+    );
+
+    render(
+      createElement(ChatPane, {
+        teamId: 'team-1',
+        teamName: 'Acme',
+        sessionId: null,
+        initialMessages: [],
+        pinnedEntityId: null,
+        pinnedEntityName: null,
+      }),
+    );
+
+    await waitFor(() => {
+      expect(fakes.transports.at(-1)?.options.body?.()).toMatchObject({
+        startNewSession: true,
+        pinnedEntityId: '018f22e2-7a9b-7cc3-98c4-3a2b1c0d9e8f',
+        dashboardContext: {
+          routeKind: 'object-detail',
+          objectId: '018f22e2-7a9b-7cc3-98c4-3a2b1c0d9e8f',
+        },
+      });
+    });
+    expect(window.sessionStorage.getItem(chatHandoffKey('team-1'))).toBeNull();
+  });
+
   it('renders assistant markdown text parts with citation chips', () => {
     const eventId = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
     fakes.useChat.mockReturnValue({

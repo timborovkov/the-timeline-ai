@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import type * as objects from '@timeline/shared/objects/types';
 
-import { objectQueueItem } from '@/lib/work-queue';
+import { listWorkQueueObjects, objectQueueItem } from '@/lib/work-queue';
 
 function task(input: Partial<objects.ObjectRow> = {}): objects.ObjectRow {
   return {
@@ -40,5 +40,21 @@ describe('objectQueueItem', () => {
     );
 
     expect(item?.title).toBe('the-timeline-ai: Add cursor pagination');
+  });
+
+  it('loads assigned standalone work even when it has no board item or due date', async () => {
+    const assigned = task({ id: 'assigned-standalone', dueAt: null });
+    const listObjects = (filter: objects.ObjectListFilter) =>
+      Promise.resolve(
+        filter.assigneeUserId === 'user-1' && filter.dueBefore === undefined ? [assigned] : [],
+      );
+
+    const rows = await listWorkQueueObjects(
+      { listObjects },
+      'user-1',
+      new Date('2026-07-01T00:00:00.000Z'),
+    );
+
+    expect(rows).toContain(assigned);
   });
 });

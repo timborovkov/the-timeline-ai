@@ -65,6 +65,7 @@ export default async function DocumentDetailPage({ params, searchParams }: Props
   return (
     <div className="space-y-6">
       <DocumentDetail
+        teamId={active.teamId}
         document={{
           id: document.id,
           fileKind: document.fileKind,

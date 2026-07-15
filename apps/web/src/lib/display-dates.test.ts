@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { displayText, formatDisplayDate } from '@/lib/display-dates';
+import { displayText, formatDisplayDate, formatDisplayDateTime } from '@/lib/display-dates';
 
 const RAW_ISO_INSTANT = /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z/;
 
@@ -40,5 +40,14 @@ describe('formatDisplayDate', () => {
     });
 
     expect(text).toBe('Jun 30, 2026');
+  });
+});
+
+describe('formatDisplayDateTime', () => {
+  it('uses the workspace default timezone so server and browser hydration agree', () => {
+    const value = new Date('2026-07-15T00:39:00.000Z');
+    expect(formatDisplayDateTime(value)).toBe(
+      formatDisplayDateTime(value, { timezone: 'Europe/Helsinki' }),
+    );
   });
 });

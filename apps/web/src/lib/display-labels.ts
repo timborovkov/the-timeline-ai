@@ -1,6 +1,6 @@
 type DisplayRecord = Record<string, unknown>;
 
-const UUID_PATTERN = /\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/i;
+const UUID_PATTERN = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/i;
 
 const PROVIDER_LABELS: Record<string, string> = {
   email: 'Email',
@@ -8,9 +8,11 @@ const PROVIDER_LABELS: Record<string, string> = {
   google_calendar: 'Google Calendar',
   google_drive: 'Google Drive',
   google_meet: 'Google Meet',
+  meet: 'Google Meet',
   linear: 'Linear',
   monday: 'Monday.com',
   microsoft_teams: 'Microsoft Teams',
+  teams: 'Microsoft Teams',
   recall: 'Recall.ai',
   sentry: 'Sentry',
   slack: 'Slack',
@@ -53,10 +55,13 @@ export function displayObjectLabel(object: object | null | undefined): string {
 }
 
 export function displayMeetingLabel(meeting: object | null | undefined): string {
-  return (
-    value(meeting, ['title', 'name', 'providerDescription', 'domainDescription']) ??
-    'Untitled meeting'
-  );
+  const title = value(meeting, ['title', 'name']);
+  if (title && !looksLikeUrl(title)) return title;
+  return value(meeting, ['providerDescription', 'domainDescription']) ?? 'Untitled meeting';
+}
+
+function looksLikeUrl(valueToCheck: string): boolean {
+  return /^(?:https?:\/\/|www\.|[a-z0-9.-]+\.[a-z]{2,}(?:[/:?#]|$))/i.test(valueToCheck.trim());
 }
 
 export function displaySourceLabel(source: object | string | null | undefined): string {

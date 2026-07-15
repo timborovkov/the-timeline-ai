@@ -4,7 +4,9 @@ import {
   CHAT_HANDOFF_MAX_AGE_MS,
   chatHandoffKey,
   consumeChatHandoff,
+  consumeChatHandoffEntry,
   storeChatHandoff,
+  storeChatContextHandoff,
   validateChatHandoffPrompt,
 } from '@/lib/chat-handoff';
 
@@ -41,5 +43,29 @@ describe('chat handoff', () => {
     expect(validateChatHandoffPrompt('   ')).toMatch(/Enter a question/);
     expect(validateChatHandoffPrompt('a'.repeat(4_001))).toMatch(/4,000/);
     expect(validateChatHandoffPrompt('What is blocked?')).toBeNull();
+  });
+
+  it('hands contextual Ask state off once without putting it in a URL', () => {
+    const storage = memoryStorage();
+    storeChatContextHandoff(
+      storage,
+      'team-a',
+      {
+        context: {
+          pathname: '/app/objects/object-id',
+          routeKind: 'object-detail',
+          objectId: 'object-id',
+        },
+        pinnedEntityId: 'object-id',
+        pinnedEntityName: 'Launch plan',
+      },
+      1_000,
+    );
+    expect(consumeChatHandoffEntry(storage, 'team-a', 2_000)).toMatchObject({
+      context: { routeKind: 'object-detail', objectId: 'object-id' },
+      pinnedEntityId: 'object-id',
+      pinnedEntityName: 'Launch plan',
+    });
+    expect(consumeChatHandoffEntry(storage, 'team-a', 2_000)).toBeNull();
   });
 });

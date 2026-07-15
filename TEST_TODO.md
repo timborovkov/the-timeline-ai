@@ -6,19 +6,26 @@ contracts, not private implementation structure.
 
 ## Test Status Overview
 
-Last checked in this branch: on 2026-07-08, `pnpm validate`,
-`pnpm run doctor`, `pnpm test:eval`, `pnpm test:reconciliation-eval`,
-`pnpm test:dist-imports`, and the full strict local Playwright suite pass.
+Last checked in this branch: on 2026-07-15, `pnpm validate`,
+`pnpm run doctor`, `pnpm test`, `pnpm test:eval`, `pnpm test:e2e-env`, and the
+full strict local Playwright suite pass. React Doctor reported
+"No issues found!" with a 100/100 score. The Playwright suite passed 60 tests,
+including the deterministic Quiet Archive light/dark and mobile visual matrix,
+Home-to-Ask private prompt handoff, capture dialog, UUID suppression, one-heading
+route sweep, and 320px no-overflow checks.
+
+On 2026-07-08, `pnpm validate`, `pnpm run doctor`,
+`pnpm test:eval`, `pnpm test:reconciliation-eval`, `pnpm test:dist-imports`, and
+the full strict local Playwright suite also passed.
 The 2026-07-02 verification also passed
 `pnpm test:eval`, `pnpm test:reconciliation-eval`, `pnpm test:dist-imports`,
 root `pnpm test`, `pnpm test:agent-eval:live`,
 `pnpm test:suggestions-eval:live`, `pnpm test:transcribe-eval:live`, and
 `pnpm e2e:prod-smoke` against the production build and standalone server.
-React Doctor reported "No issues found" with a 100/100 score. The full local
-Playwright suite passed 50 tests against the isolated Docker stack, including
-Slack settings member/admin bind-unbind, Telegram settings admin token/unbind,
-support/team-export, onboarding checklist, global search, reconciliation
-dashboard drilldown/mobile layout, and document flows. The targeted
+The full local Playwright suite then passed 50 tests against the isolated Docker
+stack, including Slack settings member/admin bind-unbind, Telegram settings
+admin token/unbind, support/team-export, onboarding checklist, global search,
+reconciliation dashboard drilldown/mobile layout, and document flows. The targeted
 reconciliation browser suite now passes 10 tests, including failed output
 visibility, worker-backed manual repair side effects, source audit and dry-run
 backfill queue submissions, team and cluster manual-reconcile queue submissions,

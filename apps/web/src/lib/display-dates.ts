@@ -1,3 +1,5 @@
+import { DEFAULT_TIMEZONE } from '@/lib/timezones';
+
 const ISO_INSTANT_PATTERN = /\b\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?Z\b/g;
 
 interface DisplayDateOptions {
@@ -13,7 +15,7 @@ export function formatDisplayDateTime(
   return date.toLocaleString(undefined, {
     dateStyle: 'medium',
     timeStyle: 'short',
-    timeZone: options.timezone,
+    timeZone: options.timezone ?? DEFAULT_TIMEZONE,
   });
 }
 
@@ -22,7 +24,7 @@ export function formatDisplayDate(value: Date | string, options: DisplayDateOpti
   if (Number.isNaN(date.getTime())) return String(value);
   return date.toLocaleDateString(undefined, {
     dateStyle: 'medium',
-    timeZone: options.timezone,
+    timeZone: options.timezone ?? DEFAULT_TIMEZONE,
   });
 }
 

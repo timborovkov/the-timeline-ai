@@ -35,6 +35,7 @@ import {
 } from '@/app/actions/objects';
 import { ApprovalsClient } from '@/components/approvals/approvals-client';
 import { ArtifactReferenceChip } from '@/components/artifact-reference-chip';
+import { ContextualAskLink } from '@/components/chat/contextual-ask-link';
 import {
   type ObjectSearchResponse,
   type ObjectSearchResult,
@@ -65,6 +66,7 @@ type DraftField = 'canonicalName' | 'aliases' | 'stage' | 'dueAt';
 
 interface Props {
   detail: ObjectDetail;
+  teamId?: string;
   userId: string;
   suggestions: LocalSuggestion[];
 }
@@ -759,6 +761,7 @@ function ObjectDetailView(props: Props) {
     <div className="space-y-5">
       <ObjectDetailHeader
         detail={view.viewDetail}
+        teamId={props.teamId}
         error={view.error}
         pending={view.pending}
         repairPending={view.repairPending}
@@ -1273,6 +1276,7 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
 
 function ObjectDetailHeader({
   detail,
+  teamId,
   error,
   pending,
   repairPending,
@@ -1281,6 +1285,7 @@ function ObjectDetailHeader({
   onRepairMemory,
 }: {
   detail: ObjectDetail;
+  teamId?: string;
   error: string | null;
   pending: boolean;
   repairPending: boolean;
@@ -1337,6 +1342,19 @@ function ObjectDetailHeader({
         </div>
         <div className="flex flex-col items-start gap-2 lg:max-w-sm lg:items-end">
           {alerts}
+          {teamId ? (
+            <ContextualAskLink
+              teamId={teamId}
+              context={{
+                pathname: `/app/objects/${detail.id}`,
+                routeKind: 'object-detail',
+                objectId: detail.id,
+              }}
+              pinnedEntityId={detail.id}
+              pinnedEntityName={displayObjectTitle(detail)}
+              label="Ask about object"
+            />
+          ) : null}
           <button
             type="button"
             onClick={onRepairMemory}
