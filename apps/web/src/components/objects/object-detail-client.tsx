@@ -1446,6 +1446,7 @@ function ObjectEditableFields({
                 category={detail.taskCategory}
                 mode={detail.taskCategoryMode}
                 status={detail.taskCategoryStatus}
+                updatedAt={detail.taskCategoryUpdatedAt}
               />
             </Field>
           ) : null}

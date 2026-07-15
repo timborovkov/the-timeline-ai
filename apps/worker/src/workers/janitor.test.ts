@@ -403,6 +403,30 @@ describe('processJanitorTick — task category sweep', () => {
     expect(result.taskCategoriesRequeued).toBe(1);
   });
 
+  it('does not re-enqueue a task intentionally left for guarded backfill', async () => {
+    await db.insert(entities).values({
+      teamId: TEAM_ID,
+      type: 'task',
+      canonicalName: 'Disabled-era task',
+      taskCategoryMode: 'automatic',
+      taskCategoryStatus: null,
+      taskCategoryRequestedInputHash: null,
+      taskCategoryUpdatedAt: null,
+    });
+    const enqueue = vi.fn().mockResolvedValue({ enqueued: true });
+
+    const result = await processJanitorTick({
+      db: db as never,
+      enqueueDocumentExtractJob: vi.fn(),
+      enqueueMeetingFinalizeJob: vi.fn(),
+      enqueueTaskCategoryJob: enqueue,
+      taskCategoryEnabled: true,
+    });
+
+    expect(enqueue).not.toHaveBeenCalled();
+    expect(result.taskCategoriesRequeued).toBe(0);
+  });
+
   it('re-enqueues only the stale task when it belongs to a project', async () => {
     const [project] = await db
       .insert(entities)

@@ -1671,10 +1671,33 @@ export function createBoardScope({
 
     async addBoardItem(boardId: string, input: AddBoardItemInput): Promise<BoardItemRow> {
       const board = await requireBoard(boardId);
-      const object = await requireObject(input.entityId);
+      if (!UUID_RE.test(input.entityId)) throw new Error('Invalid object id');
       await requireLane(boardId, input.laneId);
       if (input.responsibleUserId) await scope.requireTeamMember(input.responsibleUserId);
       const txResult = await db.transaction(async (tx) => {
+        const [object] = await tx
+          .select()
+          .from(entities)
+          .where(
+            and(
+              eq(entities.id, input.entityId),
+              eq(entities.teamId, scope.teamId),
+              isNull(entities.mergedIntoId),
+            ),
+          )
+          .for('update')
+          .limit(1);
+        if (!object) throw new Error('Object not in this team');
+        const objectMetadata =
+          object.metadata && typeof object.metadata === 'object'
+            ? (object.metadata as Record<string, unknown>)
+            : {};
+        if (
+          object.archivedAt !== null &&
+          typeof objectMetadata.agent_suggestion_project_for_item_id === 'string'
+        ) {
+          throw new Error('Archived suggested projects cannot be added to boards');
+        }
         const rows = await tx
           .insert(boardItems)
           .values({

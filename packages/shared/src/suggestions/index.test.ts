@@ -19,6 +19,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 import type * as QueueModule from '#src/queue/queues.js';
 import type { PGlite } from '@electric-sql/pglite';
 
+import { resetEnvForTests } from '#src/env.js';
 import { TIMELINE_MODELS } from '#src/llm/models.js';
 import { suggestionDedupeKey } from '#src/suggestions/index.js';
 import { buildTaskCategoryPacket, taskCategoryInputHash } from '#src/task-categories/classifier.js';
@@ -53,6 +54,7 @@ const OTHER_USER_ID = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
 const PSEUDO_USER = '00000000-0000-0000-0000-000000000000';
 const OTHER_RAW_EVENT_ID = 'dddddddd-dddd-dddd-dddd-dddddddddddd';
 const TEAM_RAW_EVENT_ID = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee';
+const ORIGINAL_ENV = { ...process.env };
 
 function adjudicationStub(object: {
   verdict: 'duplicate' | 'refinement' | 'conflict' | 'distinct';
@@ -128,11 +130,16 @@ describe('suggestion scope', () => {
   }, 60_000);
 
   beforeEach(async () => {
+    process.env.TASK_CATEGORY_CLASSIFICATION_ENABLED = 'true';
+    process.env.TASK_CATEGORY_AUTO_ENQUEUE_ENABLED = 'true';
+    resetEnvForTests();
     await testDb.reset();
     queueFakes.enqueueTaskCategoryJob.mockClear();
   });
 
   afterAll(async () => {
+    process.env = { ...ORIGINAL_ENV };
+    resetEnvForTests();
     await testDb.close();
   });
 
@@ -4001,6 +4008,72 @@ describe('suggestion scope', () => {
     await expect(scope.objects.getObject(project.id)).resolves.toMatchObject({ archivedAt: null });
   });
 
+  it('does not archive suggested projects once notes or board cards use them', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Keep used suggestion projects',
+      dedupeKey: 'keep-used-suggestion-projects',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Project with note',
+          dedupeKey: 'keep-used-suggestion-projects:note',
+          proposedPayload: { canonicalName: 'Project with note' },
+        },
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Project on board',
+          dedupeKey: 'keep-used-suggestion-projects:board',
+          proposedPayload: { canonicalName: 'Project on board' },
+        },
+      ],
+    });
+    const noteItemId = bundle.items[0]?.id ?? '';
+    const boardItemId = bundle.items[1]?.id ?? '';
+    const noteProject = await scope.objects.createObject({
+      type: 'project',
+      canonicalName: 'Noted suggestion project',
+      metadata: { agent_suggestion_project_for_item_id: noteItemId },
+      actor: { kind: 'agent', userId: null },
+    });
+    const boardProject = await scope.objects.createObject({
+      type: 'project',
+      canonicalName: 'Boarded suggestion project',
+      metadata: { agent_suggestion_project_for_item_id: boardItemId },
+      actor: { kind: 'agent', userId: null },
+    });
+    await scope.objects.createNote({
+      entityId: noteProject.id,
+      body: 'Keep this project for the client brief.',
+      authorUserId: USER_ID,
+    });
+    const board = await scope.boards.createBoard({
+      name: 'Client work',
+      templateKind: 'custom',
+      lanes: [],
+    });
+    await scope.boards.addBoardItem(board.id, {
+      entityId: boardProject.id,
+      actor: { kind: 'user', userId: USER_ID },
+    });
+
+    await expect(
+      scope.objects.archiveSuggestedProjectIfUnused(noteProject.id, noteItemId, {
+        kind: 'agent',
+        userId: null,
+      }),
+    ).resolves.toBe(false);
+    await expect(
+      scope.objects.archiveSuggestedProjectIfUnused(boardProject.id, boardItemId, {
+        kind: 'agent',
+        userId: null,
+      }),
+    ).resolves.toBe(false);
+  });
+
   it('archives an interrupted suggestion project when the task is rejected', async () => {
     const scope = withTeam(db as never, TEAM_ID, USER_ID);
     const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
@@ -4050,6 +4123,24 @@ describe('suggestion scope', () => {
     expect(item?.status).toBe('rejected');
     const archivedProject = await scope.objects.getObject(project.id);
     expect(archivedProject?.archivedAt).toBeInstanceOf(Date);
+    await expect(
+      scope.objects.createNote({
+        entityId: project.id,
+        body: 'Do not attach this after cleanup.',
+        authorUserId: USER_ID,
+      }),
+    ).rejects.toThrow('Archived suggested projects cannot receive new notes');
+    const board = await scope.boards.createBoard({
+      name: 'Post-cleanup',
+      templateKind: 'custom',
+      lanes: [],
+    });
+    await expect(
+      scope.boards.addBoardItem(board.id, {
+        entityId: project.id,
+        actor: { kind: 'user', userId: USER_ID },
+      }),
+    ).rejects.toThrow('Archived suggested projects cannot be added to boards');
   });
 
   it('does not let a recovered acceptance finalize after the item is rejected', async () => {

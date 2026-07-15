@@ -122,6 +122,30 @@ describe('task category and primary project state', () => {
     expect(filteredBoard?.items.map((item) => item.entityId)).toEqual([task.id]);
   });
 
+  it('leaves tasks created while automatic enqueue is disabled eligible for guarded backfill', async () => {
+    process.env.TASK_CATEGORY_CLASSIFICATION_ENABLED = 'false';
+    process.env.TASK_CATEGORY_AUTO_ENQUEUE_ENABLED = 'false';
+    resetEnvForTests();
+    vi.mocked(queue.enqueueTaskCategoryJob).mockClear();
+    const scope = withTeam(db, TEAM_A, USER_A).objects;
+
+    const task = await scope.createObject({
+      type: 'task',
+      canonicalName: 'Categorize after rollout approval',
+      actor: { kind: 'user', userId: USER_A },
+    });
+
+    expect(task).toMatchObject({
+      taskCategoryMode: 'automatic',
+      taskCategoryStatus: null,
+      taskCategoryUpdatedAt: null,
+    });
+    await expect(
+      scope.listObjects({ type: 'task', taskCategoryBackfillEligible: true }),
+    ).resolves.toEqual([expect.objectContaining({ id: task.id })]);
+    expect(queue.enqueueTaskCategoryJob).not.toHaveBeenCalled();
+  });
+
   it('locks an active project while assigning it to an existing task', async () => {
     const queries: string[] = [];
     const loggedDb = drizzle(testDb.pg, {
@@ -231,6 +255,12 @@ describe('task category and primary project state', () => {
     const classification = await workspace.objects.getTaskCategoryClassificationInput(task.id);
     expect(classification).toMatchObject({ packet: { primaryProjectName: null } });
     expect(classification?.requestedInputHash).toBe(classification?.inputHash);
+
+    await db.update(entities).set({ archivedAt: new Date() }).where(eq(entities.id, task.id));
+    await expect(workspace.objects.auditTaskPrimaryProjectEdges()).resolves.toEqual({
+      ambiguousTaskIds: [],
+      hasMore: false,
+    });
   });
 
   it('treats removing an absent primary project as a no-op', async () => {

@@ -1,3 +1,4 @@
+import { loadEnvFile } from 'node:process';
 import { pathToFileURL } from 'node:url';
 
 import { closeDb, getDb } from '@timeline/db';
@@ -23,6 +24,22 @@ function argument(name: string): string | null {
   if (index >= 0) return process.argv[index + 1] ?? null;
   const inline = process.argv.find((value) => value.startsWith(`${name}=`));
   return inline ? inline.slice(name.length + 1) : null;
+}
+
+export function loadTaskCategoryBackfillEnv(
+  env: NodeJS.ProcessEnv = process.env,
+  load: (path: string) => void = loadEnvFile,
+): void {
+  const envFile = env.TIMELINE_ENV_FILE;
+  if (envFile?.trim()) load(envFile);
+}
+
+export function parseMaxQueueAgeSeconds(value: string | null): number {
+  const seconds = Number(value ?? '300');
+  if (!Number.isFinite(seconds) || seconds <= 0) {
+    throw new Error('--max-queue-age-seconds must be a finite positive number');
+  }
+  return seconds;
 }
 
 export async function enqueueTaskCategoryBackfillBatch(
@@ -81,6 +98,7 @@ export async function closeTaskCategoryBackfillResources(
 }
 
 async function main(): Promise<void> {
+  loadTaskCategoryBackfillEnv();
   const teamId = argument('--team-id');
   if (!teamId || !UUID_RE.test(teamId)) {
     throw new Error('Pass one team with --team-id <uuid>');
@@ -142,7 +160,7 @@ async function main(): Promise<void> {
   if (estimatedCostUsd > maxCostUsd) {
     throw new Error(`Projected cost $${estimatedCostUsd} exceeds --max-cost-usd $${maxCostUsd}`);
   }
-  const maxQueueAgeSeconds = Math.max(Number(argument('--max-queue-age-seconds') ?? '300'), 1);
+  const maxQueueAgeSeconds = parseMaxQueueAgeSeconds(argument('--max-queue-age-seconds'));
   const [oldestWaiting] = await queue.getTaskCategoryQueue().getWaiting(0, 0);
   if (
     oldestWaiting?.timestamp &&

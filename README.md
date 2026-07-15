@@ -228,9 +228,9 @@ pnpm --filter @timeline/worker reconciliation-evidence -- --team=<uuid> --mode=a
 pnpm --filter @timeline/worker reconciliation-evidence -- --team=<uuid> --mode=audit --fail-on-release-gate
 # optional: repeat --allow-degraded-source=<event_source> for known historical degraded replay rows
 pnpm --filter @timeline/worker reconciliation-evidence -- --team=<uuid> --mode=backfill --dry-run --page-size=500
-pnpm --filter @timeline/worker task-category-backfill -- --team-id=<uuid> --limit=500
+TIMELINE_ENV_FILE=/path/to/.env pnpm --filter @timeline/worker task-category-backfill -- --team-id=<uuid> --limit=500
                           # dry-run task-category candidates, token estimate, and projected cost
-pnpm --filter @timeline/worker task-category-backfill -- --team-id=<uuid> --limit=500 --enqueue --max-cost-usd=0.10
+TIMELINE_ENV_FILE=/path/to/.env pnpm --filter @timeline/worker task-category-backfill -- --team-id=<uuid> --limit=500 --enqueue --max-cost-usd=0.10
                           # enqueue one bounded batch; rerun the same command to resume
 TIMELINE_ENV_FILE=/path/to/.env pnpm --filter @timeline/worker reconciliation-legacy-provenance -- --team=<uuid> --fail-on-legacy
 TIMELINE_ENV_FILE=/path/to/.env pnpm --filter @timeline/worker reconciliation-production-sampling -- --input=/tmp/eval-run --out=/tmp/reconciliation-production-sampling.json --team=<uuid> --run-kind=closed_beta --fail-on-failures

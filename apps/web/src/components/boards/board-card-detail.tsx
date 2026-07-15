@@ -624,6 +624,7 @@ function ObjectPreviewDialog({
               category={item.object.taskCategory}
               mode={item.object.taskCategoryMode}
               status={item.object.taskCategoryStatus}
+              updatedAt={item.object.taskCategoryUpdatedAt}
             />
           </section>
         ) : null}

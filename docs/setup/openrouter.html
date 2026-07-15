@@ -120,8 +120,8 @@ OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
       <p>
         Historical work defaults to a dry run:
         <code
-          >pnpm --filter @timeline/worker task-category-backfill -- --team-id=&lt;uuid&gt;
-          --limit=500</code
+          >TIMELINE_ENV_FILE=/path/to/.env pnpm --filter @timeline/worker task-category-backfill --
+          --team-id=&lt;uuid&gt; --limit=500</code
         >. Enqueueing requires both <code>--enqueue</code> and an explicit cost ceiling such as
         <code>--max-cost-usd=0.10</code>. Each execution is bounded; rerun it to resume. Already
         pending, manual, archived, and ready tasks are skipped.

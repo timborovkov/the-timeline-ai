@@ -1,17 +1,24 @@
 // @vitest-environment happy-dom
 
 /** Business intent: each pending task detail gets its own bounded freshness window. */
-import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { act, cleanup, render as testingRender, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const fakes = vi.hoisted(() => ({
-  refresh: vi.fn(),
-  loadTaskCategoryStatesAction: vi.fn(),
-  setTaskCategoryAction: vi.fn(),
-}));
+import type { PropsWithChildren, ReactElement } from 'react';
 
-vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: fakes.refresh }) }));
+const fakes = vi.hoisted(() => {
+  const refresh = vi.fn();
+  return {
+    refresh,
+    router: { refresh },
+    loadTaskCategoryStatesAction: vi.fn(),
+    setTaskCategoryAction: vi.fn(),
+  };
+});
+
+vi.mock('next/navigation', () => ({ useRouter: () => fakes.router }));
 vi.mock('@/app/actions/objects', () => ({
   loadTaskCategoryStatesAction: fakes.loadTaskCategoryStatesAction,
   resetTaskCategoryAction: vi.fn(),
@@ -24,6 +31,17 @@ const [{ TaskCategoryBadge }, { TaskCategorySelect }] = await Promise.all([
   import('./task-category-badge.js'),
   import('./task-category-select.js'),
 ]);
+
+function render(ui: ReactElement) {
+  const client = new QueryClient({
+    defaultOptions: { queries: { gcTime: Number.POSITIVE_INFINITY, retry: false } },
+  });
+  return testingRender(ui, {
+    wrapper: ({ children }: PropsWithChildren) => (
+      <QueryClientProvider client={client}>{children}</QueryClientProvider>
+    ),
+  });
+}
 
 describe('TaskCategorySelect', () => {
   beforeEach(() => {
@@ -58,6 +76,25 @@ describe('TaskCategorySelect', () => {
     });
 
     expect(fakes.loadTaskCategoryStatesAction).toHaveBeenCalledWith({ ids: ['task-2'] });
+  });
+
+  it('continues polling at a slower cadence after the fast freshness window', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-07-13T10:00:00.000Z'));
+    fakes.loadTaskCategoryStatesAction.mockResolvedValue({
+      rows: [{ taskCategoryStatus: 'pending' }],
+    });
+    render(
+      <TaskCategorySelect taskId="task-1" category={null} mode="automatic" status="pending" />,
+    );
+
+    await act(async () => vi.advanceTimersByTimeAsync(60_000));
+    fakes.loadTaskCategoryStatesAction.mockClear();
+    await act(async () => vi.advanceTimersByTimeAsync(14_999));
+    expect(fakes.loadTaskCategoryStatesAction).not.toHaveBeenCalled();
+    await act(async () => vi.advanceTimersByTimeAsync(1));
+
+    expect(fakes.loadTaskCategoryStatesAction).toHaveBeenCalledWith({ ids: ['task-1'] });
   });
 
   it('does not poll while the category UI is disabled', () => {

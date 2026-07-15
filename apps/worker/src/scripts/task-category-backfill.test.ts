@@ -4,6 +4,8 @@ import {
   assertTaskCategoryBackfillModeEnabled,
   closeTaskCategoryBackfillResources,
   enqueueTaskCategoryBackfillBatch,
+  loadTaskCategoryBackfillEnv,
+  parseMaxQueueAgeSeconds,
 } from '#src/scripts/task-category-backfill.js';
 
 describe('task category backfill script', () => {
@@ -20,6 +22,22 @@ describe('task category backfill script', () => {
     expect(() => {
       assertTaskCategoryBackfillModeEnabled(true, disabled);
     }).toThrow('Task category backfill execution is disabled by an operational kill switch');
+  });
+
+  it('loads an explicit environment file before reading flags or database configuration', () => {
+    const load = vi.fn();
+
+    loadTaskCategoryBackfillEnv({ TIMELINE_ENV_FILE: '/secure/timeline.env' }, load);
+
+    expect(load).toHaveBeenCalledWith('/secure/timeline.env');
+  });
+
+  it('requires the queue-age safety limit to be finite and positive', () => {
+    expect(parseMaxQueueAgeSeconds(null)).toBe(300);
+    expect(parseMaxQueueAgeSeconds('45')).toBe(45);
+    expect(() => parseMaxQueueAgeSeconds('30O')).toThrow('finite positive number');
+    expect(() => parseMaxQueueAgeSeconds('Infinity')).toThrow('finite positive number');
+    expect(() => parseMaxQueueAgeSeconds('0')).toThrow('finite positive number');
   });
 
   it('sets a failing exit code when any task cannot be enqueued', async () => {

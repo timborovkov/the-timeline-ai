@@ -1,24 +1,30 @@
 // @vitest-environment happy-dom
 
-import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { act, cleanup, render as testingRender, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type * as objects from '@timeline/shared/objects/types';
+import type { PropsWithChildren, ReactElement } from 'react';
 
-const fakes = vi.hoisted(() => ({
-  refresh: vi.fn(),
-  updateObjectAction: vi.fn(),
-  loadTaskRowsAction: vi.fn(),
-  loadTaskPrimaryProjectsAction: vi.fn(),
-  loadTaskCategoryStatesAction: vi.fn(),
-  setTaskCategoryAction: vi.fn(),
-  resetTaskCategoryAction: vi.fn(),
-  searchObjectsAction: vi.fn(),
-  setTaskProjectAction: vi.fn(),
-}));
+const fakes = vi.hoisted(() => {
+  const refresh = vi.fn();
+  return {
+    refresh,
+    router: { refresh },
+    updateObjectAction: vi.fn(),
+    loadTaskRowsAction: vi.fn(),
+    loadTaskPrimaryProjectsAction: vi.fn(),
+    loadTaskCategoryStatesAction: vi.fn(),
+    setTaskCategoryAction: vi.fn(),
+    resetTaskCategoryAction: vi.fn(),
+    searchObjectsAction: vi.fn(),
+    setTaskProjectAction: vi.fn(),
+  };
+});
 
-vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: fakes.refresh }) }));
+vi.mock('next/navigation', () => ({ useRouter: () => fakes.router }));
 vi.mock('@/app/actions/objects', () => ({
   updateObjectAction: fakes.updateObjectAction,
   loadTaskRowsAction: fakes.loadTaskRowsAction,
@@ -38,6 +44,17 @@ vi.mock('@/lib/task-board-config', () => ({
 }));
 
 const { TaskBoard } = await import('./task-board.js');
+
+function render(ui: ReactElement) {
+  const client = new QueryClient({
+    defaultOptions: { queries: { gcTime: Number.POSITIVE_INFINITY, retry: 1, retryDelay: 0 } },
+  });
+  return testingRender(ui, {
+    wrapper: ({ children }: PropsWithChildren) => (
+      <QueryClientProvider client={client}>{children}</QueryClientProvider>
+    ),
+  });
+}
 
 function task(input: Partial<objects.ObjectRow> = {}): objects.ObjectRow {
   return {
@@ -209,6 +226,27 @@ describe('TaskBoard', () => {
       expect(fakes.loadTaskCategoryStatesAction).toHaveBeenCalledWith({
         ids: ['task-1', 'task-2'],
       });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('continues polling pending cards after the fast freshness window', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-07-13T10:00:00.000Z'));
+    fakes.loadTaskCategoryStatesAction.mockResolvedValue({
+      rows: [{ id: 'task-1', taskCategoryStatus: 'pending' }],
+    });
+    try {
+      renderBoard(null, [task({ taskCategoryStatus: 'pending' })]);
+
+      await act(async () => vi.advanceTimersByTimeAsync(60_000));
+      fakes.loadTaskCategoryStatesAction.mockClear();
+      await act(async () => vi.advanceTimersByTimeAsync(14_999));
+      expect(fakes.loadTaskCategoryStatesAction).not.toHaveBeenCalled();
+      await act(async () => vi.advanceTimersByTimeAsync(1));
+
+      expect(fakes.loadTaskCategoryStatesAction).toHaveBeenCalledWith({ ids: ['task-1'] });
     } finally {
       vi.useRealTimers();
     }

@@ -2,7 +2,7 @@
 
 import { TASK_CATEGORY_OPTIONS } from '@timeline/shared/task-categories/types';
 import { useRouter } from 'next/navigation';
-import { useEffect, useRef, useState, useTransition } from 'react';
+import { useState, useTransition } from 'react';
 import { toast } from 'sonner';
 
 import type {
@@ -16,8 +16,8 @@ import {
   retryTaskCategoryAction,
   setTaskCategoryAction,
   undoTaskCategoryChangeAction,
-  loadTaskCategoryStatesAction,
 } from '@/app/actions/objects';
+import { useTaskCategoryPolling } from '@/components/tasks/task-category-polling';
 import { errorMessage } from '@/lib/utils';
 
 const AUTOMATIC_VALUE = '__automatic__';
@@ -27,46 +27,28 @@ export function TaskCategorySelect({
   category,
   mode,
   status,
+  updatedAt = null,
 }: {
   taskId: string;
   category: TaskCategory | null;
   mode: TaskCategoryMode | null;
   status: TaskCategoryStatus | null;
+  updatedAt?: Date | null;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
-  const pollStartedAt = useRef<number | null>(null);
-  const polledTaskId = useRef<string | null>(null);
-  const value = mode === 'manual' && category ? category : AUTOMATIC_VALUE;
-
-  useEffect(() => {
-    if (status !== 'pending' || document.body.dataset.taskCategoriesEnabled === 'false') {
-      pollStartedAt.current = null;
-      polledTaskId.current = null;
-      return;
-    }
-    if (polledTaskId.current !== taskId) {
-      polledTaskId.current = taskId;
-      pollStartedAt.current = Date.now();
-    } else {
-      pollStartedAt.current ??= Date.now();
-    }
-    const timer = setInterval(() => {
-      if (Date.now() - (pollStartedAt.current ?? Date.now()) > 60_000) {
-        clearInterval(timer);
-        return;
-      }
-      void loadTaskCategoryStatesAction({ ids: [taskId] })
-        .then((result) => {
-          if (result.rows?.[0]?.taskCategoryStatus !== 'pending') router.refresh();
-        })
-        .catch(() => undefined);
-    }, 3_000);
-    return () => {
-      clearInterval(timer);
-    };
-  }, [router, status, taskId]);
+  const categoryQuery = useTaskCategoryPolling(
+    status === 'pending' ? [taskId] : [],
+    3_000,
+    updatedAt?.toISOString(),
+  );
+  const categoryState = categoryQuery.data.rows?.[0];
+  const effectiveCategory = categoryState?.taskCategory ?? category;
+  const effectiveMode = categoryState?.taskCategoryMode ?? mode;
+  const effectiveStatus = categoryState?.taskCategoryStatus ?? status;
+  const value =
+    effectiveMode === 'manual' && effectiveCategory ? effectiveCategory : AUTOMATIC_VALUE;
 
   function run(action: () => Promise<{ error?: string; undoChangeId?: string }>): void {
     setError(null);
@@ -114,7 +96,7 @@ export function TaskCategorySelect({
         className="h-9 w-full rounded-sm border border-border bg-bg px-2 text-sm text-fg disabled:cursor-progress disabled:opacity-60"
       >
         <option value={AUTOMATIC_VALUE}>
-          {status === 'pending' ? 'Automatic · Categorizing…' : 'Use automatic category'}
+          {effectiveStatus === 'pending' ? 'Automatic · Categorizing…' : 'Use automatic category'}
         </option>
         {TASK_CATEGORY_OPTIONS.map((option) => (
           <option key={option.value} value={option.value}>
@@ -122,7 +104,7 @@ export function TaskCategorySelect({
           </option>
         ))}
       </select>
-      {mode === 'automatic' && status === 'failed' ? (
+      {effectiveMode === 'automatic' && effectiveStatus === 'failed' ? (
         <button
           type="button"
           disabled={pending}

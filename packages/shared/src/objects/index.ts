@@ -3927,6 +3927,10 @@ export async function createObject(
         actorUserId: input.initialManualTaskCategory.actorUserId,
       }
     : null;
+  const taskCategoryAutomationEnabled =
+    input.type === 'task' &&
+    getEnv().TASK_CATEGORY_CLASSIFICATION_ENABLED &&
+    getEnv().TASK_CATEGORY_AUTO_ENQUEUE_ENABLED;
 
   const txResult = await db.transaction(async (tx) => {
     let primaryProject: { id: string; canonicalName: string } | null = null;
@@ -3965,8 +3969,11 @@ export async function createObject(
       input.precomputedTaskCategory.model.trim().length > 0
         ? { ...input.precomputedTaskCategory, category: parsedPrecomputedCategory.data }
         : null;
-    const requestedCategoryHash =
-      initialManualTaskCategory || precomputedTaskCategory ? null : taskCategoryHash;
+    const categoryReady = initialManualTaskCategory !== null || precomputedTaskCategory !== null;
+    const categoryRequestPending = Boolean(
+      taskPacket && taskCategoryHash && !categoryReady && taskCategoryAutomationEnabled,
+    );
+    const requestedCategoryHash = categoryRequestPending ? taskCategoryHash : null;
     const insertRows = await tx
       .insert(entities)
       .values({
@@ -3991,16 +3998,15 @@ export async function createObject(
           : precomputedTaskCategory
             ? 'llm'
             : null,
-        taskCategoryStatus:
-          initialManualTaskCategory || precomputedTaskCategory
-            ? 'ready'
-            : taskPacket
-              ? 'pending'
-              : null,
+        taskCategoryStatus: categoryReady ? 'ready' : categoryRequestPending ? 'pending' : null,
         taskCategoryAppliedInputHash: precomputedTaskCategory?.inputHash ?? null,
         taskCategoryRequestedInputHash: requestedCategoryHash,
-        taskCategoryTaxonomyVersion: taskPacket ? TASK_CATEGORY_TAXONOMY_VERSION : null,
-        taskCategoryUpdatedAt: taskPacket ? new Date() : null,
+        taskCategoryTaxonomyVersion:
+          taskPacket && (categoryReady || categoryRequestPending)
+            ? TASK_CATEGORY_TAXONOMY_VERSION
+            : null,
+        taskCategoryUpdatedAt:
+          taskPacket && (categoryReady || categoryRequestPending) ? new Date() : null,
       })
       .returning();
     const row = insertRows[0];
@@ -5289,6 +5295,7 @@ export async function addRelationship(
         type: entities.type,
         aliases: entities.aliases,
         metadata: entities.metadata,
+        archivedAt: entities.archivedAt,
         taskCategoryMode: entities.taskCategoryMode,
       })
       .from(entities)
@@ -5307,6 +5314,16 @@ export async function addRelationship(
       )
       .for('update');
     if (ends.length !== 2) throw new Error('Both objects must belong to this team');
+    if (
+      ends.some(
+        (endpoint) =>
+          endpoint.archivedAt !== null &&
+          typeof recordFromUnknown(endpoint.metadata).agent_suggestion_project_for_item_id ===
+            'string',
+      )
+    ) {
+      throw new Error('Archived suggested projects cannot receive new relationships');
+    }
 
     const from = ends.find((row) => row.id === endpoints.fromEntityId);
     const to = ends.find((row) => row.id === endpoints.toEntityId);
@@ -5529,6 +5546,7 @@ export async function auditTaskPrimaryProjectEdges(
         eq(tasks.id, entityRelationships.fromEntityId),
         eq(tasks.type, 'task'),
         isNull(tasks.mergedIntoId),
+        isNull(tasks.archivedAt),
       ),
     )
     .innerJoin(
@@ -6859,7 +6877,13 @@ export async function createNote(
   const result = await db.transaction(async (tx) => {
     // Verify entity belongs to team before writing the note.
     const ent = await tx
-      .select({ id: entities.id, canonicalName: entities.canonicalName, type: entities.type })
+      .select({
+        id: entities.id,
+        canonicalName: entities.canonicalName,
+        type: entities.type,
+        archivedAt: entities.archivedAt,
+        metadata: entities.metadata,
+      })
       .from(entities)
       .where(
         and(
@@ -6868,8 +6892,15 @@ export async function createNote(
           isNull(entities.mergedIntoId),
         ),
       )
+      .for('update')
       .limit(1);
     if (!ent[0]) throw new Error('Object not found');
+    if (
+      ent[0].archivedAt !== null &&
+      typeof recordFromUnknown(ent[0].metadata).agent_suggestion_project_for_item_id === 'string'
+    ) {
+      throw new Error('Archived suggested projects cannot receive new notes');
+    }
 
     const noteRows = await tx
       .insert(objectNotes)
@@ -7059,6 +7090,7 @@ export async function createIdentityFacet(
           isNull(entities.mergedIntoId),
         ),
       )
+      .for('update')
       .limit(1);
     if (!ent[0]) throw new Error('Object not found');
     if (ent[0].type !== 'person') throw new Error('Identity facets can only be added to people');

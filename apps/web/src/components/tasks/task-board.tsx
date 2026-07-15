@@ -10,6 +10,7 @@ import {
   useSensors,
   type DragEndEvent,
 } from '@dnd-kit/core';
+import { useQueries } from '@tanstack/react-query';
 import { TASK_CATEGORY_OPTIONS, type TaskCategory } from '@timeline/shared/task-categories/types';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -30,7 +31,6 @@ import type * as objects from '@timeline/shared/objects/types';
 import type { Dispatch, ReactNode, SetStateAction } from 'react';
 
 import {
-  loadTaskCategoryStatesAction,
   loadTaskPrimaryProjectsAction,
   loadTaskRowsAction,
   resetTaskCategoryAction,
@@ -40,6 +40,7 @@ import {
 import { ObjectTextFilter } from '@/components/boards/object-text-filter';
 import { ObjectRelatedContext } from '@/components/objects/object-related-context';
 import { TaskCategoryBadge } from '@/components/tasks/task-category-badge';
+import { useTaskCategoryPolling } from '@/components/tasks/task-category-polling';
 import { TaskCategorySelect } from '@/components/tasks/task-category-select';
 import { TaskProjectSelect } from '@/components/tasks/task-project-select';
 import { useAppDialog } from '@/components/ui/app-dialog';
@@ -117,10 +118,8 @@ interface MoveUiState {
 }
 
 interface TaskPaginationState {
-  inputRows: objects.ObjectRow[];
-  inputCursor: string | null;
-  inputFilterKey: string;
-  loadedRows: objects.ObjectRow[];
+  filterKey: string | null;
+  appendedRows: objects.ObjectRow[];
   cursor: string | null;
 }
 
@@ -147,8 +146,10 @@ type TaskCategoryStateRow = Pick<
 
 interface TaskBoardState {
   pagination: TaskPaginationState;
+  loadErrorFilterKey: string | null;
   loadError: string | null;
   filterQuery: string;
+  selectedFilterKey: string | null;
   selectedIds: ReadonlySet<string>;
   rowPatches: Record<string, TaskPatchOverlay>;
 }
@@ -165,7 +166,6 @@ type MoveUiAction =
   | { type: 'saved-timeout' };
 
 type TaskBoardAction =
-  | { type: 'props'; rows: objects.ObjectRow[]; nextCursor: string | null; filterKey: string }
   | { type: 'load-error'; message: string | null; filterKey: string }
   | {
       type: 'append-page';
@@ -173,9 +173,8 @@ type TaskBoardAction =
       nextCursor: string | null;
       filterKey: string;
     }
-  | { type: 'category-states'; rows: TaskCategoryStateRow[] }
   | { type: 'filter'; query: string }
-  | { type: 'selected'; next: SetStateAction<ReadonlySet<string>> }
+  | { type: 'selected'; next: SetStateAction<ReadonlySet<string>>; filterKey: string }
   | { type: 'patches'; next: SetStateAction<Record<string, TaskPatchOverlay>> };
 
 const INITIAL_MOVE_UI: MoveUiState = {
@@ -184,8 +183,19 @@ const INITIAL_MOVE_UI: MoveUiState = {
   cardErrors: {},
   savingCardIds: new Set(),
 };
+const INITIAL_TASK_BOARD_STATE: TaskBoardState = {
+  pagination: { filterKey: null, appendedRows: [], cursor: null },
+  loadErrorFilterKey: null,
+  loadError: null,
+  filterQuery: '',
+  selectedFilterKey: null,
+  selectedIds: new Set(),
+  rowPatches: {},
+};
 const EMPTY_FILTER_PARAMS: Record<string, string> = {};
 const EMPTY_PRIMARY_PROJECTS: objects.TaskPrimaryProjectRow[] = [];
+const EMPTY_TASK_ROWS: objects.ObjectRow[] = [];
+const EMPTY_SELECTED_IDS: ReadonlySet<string> = new Set();
 const BULK_UPDATE_CONCURRENCY = 4;
 
 async function runBulkActions<T>(
@@ -214,101 +224,38 @@ async function runBulkActions<T>(
 }
 const EMPTY_PROJECT_OPTIONS: { id: string; label: string }[] = [];
 
-function taskPaginationStateForProps(
-  rows: objects.ObjectRow[],
-  nextCursor: string | null,
-  filterKey: string,
-): TaskPaginationState {
-  return {
-    inputRows: rows,
-    inputCursor: nextCursor,
-    inputFilterKey: filterKey,
-    loadedRows: rows,
-    cursor: nextCursor,
-  };
-}
-
-function taskBoardStateForProps(
-  rows: objects.ObjectRow[],
-  nextCursor: string | null,
-  filterKey: string,
-): TaskBoardState {
-  return {
-    pagination: taskPaginationStateForProps(rows, nextCursor, filterKey),
-    loadError: null,
-    filterQuery: '',
-    selectedIds: new Set(),
-    rowPatches: {},
-  };
-}
-
 function reduceSetState<T>(current: T, next: SetStateAction<T>): T {
   return typeof next === 'function' ? (next as (value: T) => T)(current) : next;
 }
 
 function taskBoardReducer(state: TaskBoardState, action: TaskBoardAction): TaskBoardState {
   switch (action.type) {
-    case 'props':
-      const refreshedRows = new Map(action.rows.map((row) => [row.id, row]));
-      const filtersChanged = action.filterKey !== state.pagination.inputFilterKey;
-      return {
-        ...state,
-        pagination: {
-          inputRows: action.rows,
-          inputCursor: action.nextCursor,
-          inputFilterKey: action.filterKey,
-          loadedRows: filtersChanged
-            ? action.rows
-            : [
-                ...action.rows,
-                ...state.pagination.loadedRows.filter((row) => !refreshedRows.has(row.id)),
-              ],
-          cursor: filtersChanged
-            ? action.nextCursor
-            : state.pagination.loadedRows.length > action.rows.length
-              ? state.pagination.cursor
-              : action.nextCursor,
-        },
-        loadError: null,
-        selectedIds: filtersChanged ? new Set() : state.selectedIds,
-      };
     case 'load-error':
-      if (action.filterKey !== state.pagination.inputFilterKey) return state;
-      return { ...state, loadError: action.message };
+      return { ...state, loadErrorFilterKey: action.filterKey, loadError: action.message };
     case 'append-page': {
-      if (action.filterKey !== state.pagination.inputFilterKey) return state;
-      const seen = new Set(state.pagination.loadedRows.map((row) => row.id));
+      const currentRows =
+        action.filterKey === state.pagination.filterKey ? state.pagination.appendedRows : [];
+      const seen = new Set(currentRows.map((row) => row.id));
       return {
         ...state,
         pagination: {
-          ...state.pagination,
-          loadedRows: [
-            ...state.pagination.loadedRows,
-            ...action.rows.filter((row) => !seen.has(row.id)),
-          ],
+          filterKey: action.filterKey,
+          appendedRows: [...currentRows, ...action.rows.filter((row) => !seen.has(row.id))],
           cursor: action.nextCursor,
-        },
-      };
-    }
-    case 'category-states': {
-      const states = new Map(action.rows.map((row) => [row.id, row]));
-      const mergeCategoryState = (row: objects.ObjectRow): objects.ObjectRow => {
-        const categoryState = states.get(row.id);
-        return categoryState ? { ...row, ...categoryState } : row;
-      };
-      return {
-        ...state,
-        pagination: {
-          ...state.pagination,
-          inputRows: state.pagination.inputRows.map(mergeCategoryState),
-          loadedRows: state.pagination.loadedRows.map(mergeCategoryState),
         },
       };
     }
     case 'filter':
       return { ...state, filterQuery: action.query };
     case 'selected':
-      return { ...state, selectedIds: reduceSetState(state.selectedIds, action.next) };
+      return {
+        ...state,
+        selectedFilterKey: action.filterKey,
+        selectedIds: reduceSetState(
+          state.selectedFilterKey === action.filterKey ? state.selectedIds : new Set<string>(),
+          action.next,
+        ),
+      };
     case 'patches':
       return { ...state, rowPatches: reduceSetState(state.rowPatches, action.next) };
   }
@@ -345,6 +292,20 @@ function filterParamsKey(params: Record<string, string>): string {
   return new URLSearchParams(
     Object.entries(params).sort(([left], [right]) => left.localeCompare(right)),
   ).toString();
+}
+
+function pendingTaskCategoryPollingInput(rows: objects.ObjectRow[]): {
+  ids: string[];
+  generationKey: string;
+} {
+  const ids: string[] = [];
+  const generations: string[] = [];
+  for (const row of rows) {
+    if (row.taskCategoryStatus !== 'pending') continue;
+    ids.push(row.id);
+    generations.push(`${row.id}:${row.taskCategoryUpdatedAt?.toISOString() ?? ''}`);
+  }
+  return { ids, generationKey: generations.join(',') };
 }
 
 function patchTaskRow(
@@ -451,6 +412,16 @@ function applyTaskPatch(row: objects.ObjectRow, overlay: TaskPatchOverlay | unde
   return Object.keys(effectivePatch).length > 0 ? { ...row, ...effectivePatch } : row;
 }
 
+function applyTaskCategoryState(
+  row: objects.ObjectRow,
+  categoryState: TaskCategoryStateRow | undefined,
+): objects.ObjectRow {
+  if (!categoryState) return row;
+  const rowUpdatedAt = row.taskCategoryUpdatedAt?.getTime() ?? 0;
+  const stateUpdatedAt = categoryState.taskCategoryUpdatedAt?.getTime() ?? 0;
+  return stateUpdatedAt >= rowUpdatedAt ? { ...row, ...categoryState } : row;
+}
+
 function taskPatchBaseline(row: objects.ObjectRow, patch: TaskPatch): TaskPatch {
   return Object.fromEntries((Object.keys(patch) as TaskPatchKey[]).map((key) => [key, row[key]]));
 }
@@ -494,22 +465,19 @@ function useTaskBoardController({
   const dndContextId = useId();
   const router = useRouter();
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
-  const filterKey = filterParamsKey(filterParams);
-  const [boardState, dispatchBoard] = useReducer(
-    taskBoardReducer,
-    { rows, nextCursor, filterKey },
-    (input) => taskBoardStateForProps(input.rows, input.nextCursor, input.filterKey),
-  );
+  const filterKey = useMemo(() => filterParamsKey(filterParams), [filterParams]);
+  const [boardState, dispatchBoard] = useReducer(taskBoardReducer, INITIAL_TASK_BOARD_STATE);
   const [loadingMore, startLoadMore] = useTransition();
-  const pagination = boardState.pagination;
-  if (
-    pagination.inputRows !== rows ||
-    pagination.inputCursor !== nextCursor ||
-    pagination.inputFilterKey !== filterKey
-  ) {
-    dispatchBoard({ type: 'props', rows, nextCursor, filterKey });
-  }
-  const { loadedRows, cursor } = pagination;
+  const appendedRows =
+    boardState.pagination.filterKey === filterKey
+      ? boardState.pagination.appendedRows
+      : EMPTY_TASK_ROWS;
+  const loadedRows = useMemo(() => {
+    const firstPageIds = new Set(rows.map((row) => row.id));
+    return [...rows, ...appendedRows.filter((row) => !firstPageIds.has(row.id))];
+  }, [appendedRows, rows]);
+  const cursor =
+    boardState.pagination.filterKey === filterKey ? boardState.pagination.cursor : nextCursor;
   const [optimisticRows, applyMove] = useOptimistic(
     loadedRows,
     (state, move: { id: string; status: string }) =>
@@ -517,13 +485,19 @@ function useTaskBoardController({
   );
   const [, startTransition] = useTransition();
   const [moveUi, dispatchMoveUi] = useReducer(moveUiReducer, INITIAL_MOVE_UI);
-  const { filterQuery, loadError, rowPatches, selectedIds } = boardState;
+  const { filterQuery, rowPatches } = boardState;
+  const loadError = boardState.loadErrorFilterKey === filterKey ? boardState.loadError : null;
+  const selectedIds =
+    boardState.selectedFilterKey === filterKey ? boardState.selectedIds : EMPTY_SELECTED_IDS;
   const setFilterQuery = useCallback((query: string) => {
     dispatchBoard({ type: 'filter', query });
   }, []);
-  const setSelectedIds: Dispatch<SetStateAction<ReadonlySet<string>>> = useCallback((next) => {
-    dispatchBoard({ type: 'selected', next });
-  }, []);
+  const setSelectedIds: Dispatch<SetStateAction<ReadonlySet<string>>> = useCallback(
+    (next) => {
+      dispatchBoard({ type: 'selected', next, filterKey });
+    },
+    [filterKey],
+  );
   const setRowPatches: Dispatch<SetStateAction<Record<string, TaskPatchOverlay>>> = useCallback(
     (next) => {
       dispatchBoard({ type: 'patches', next });
@@ -534,27 +508,51 @@ function useTaskBoardController({
   const savingCardIdsRef = useRef<Set<string> | null>(null);
   const batchHadFailureRef = useRef(false);
   const savedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const effectiveRows = useMemo(
+  const patchedRows = useMemo(
     () => optimisticRows.map((row) => applyTaskPatch(row, rowPatches[row.id])),
     [optimisticRows, rowPatches],
   );
-  const [loadedPrimaryProjects, setLoadedPrimaryProjects] = useState<
-    objects.TaskPrimaryProjectRow[]
-  >([]);
+  const pendingCategoryInput = useMemo(
+    () => pendingTaskCategoryPollingInput(patchedRows),
+    [patchedRows],
+  );
+  const categoryQuery = useTaskCategoryPolling(
+    pendingCategoryInput.ids.slice(0, 200),
+    2_500,
+    pendingCategoryInput.generationKey,
+  );
+  const effectiveRows = useMemo(() => {
+    const polledCategoryStates = new Map(
+      (categoryQuery.data.rows ?? []).map((row) => [row.id, row] as const),
+    );
+    return patchedRows.map((row) => applyTaskCategoryState(row, polledCategoryStates.get(row.id)));
+  }, [categoryQuery.data.rows, patchedRows]);
   const [primaryProjectOverrides, setPrimaryProjectOverrides] = useState<
     Record<string, PrimaryProjectOverride>
   >({});
-  const projectHydrationCheckedRef = useRef<Set<string> | null>(null);
-  projectHydrationCheckedRef.current ??= new Set();
-  if (initialProjectsHydrated) {
-    for (const row of rows) projectHydrationCheckedRef.current.add(row.id);
-  }
-  const projectHydrationRetriedRef = useRef<Set<string> | null>(null);
-  projectHydrationRetriedRef.current ??= new Set();
-  const [projectHydrationRevision, retryProjectHydration] = useReducer(
-    (revision: number) => revision + 1,
-    0,
+  const projectHydrationIds = useMemo(
+    () => (initialProjectsHydrated ? appendedRows : effectiveRows).map((row) => row.id),
+    [appendedRows, effectiveRows, initialProjectsHydrated],
   );
+  const projectHydrationChunks = useMemo(
+    () =>
+      Array.from({ length: Math.ceil(projectHydrationIds.length / 200) }, (_, index) =>
+        projectHydrationIds.slice(index * 200, (index + 1) * 200),
+      ),
+    [projectHydrationIds],
+  );
+  const projectHydrationQueries = useQueries({
+    queries: projectHydrationChunks.map((ids) => ({
+      queryKey: ['task-primary-projects', ids],
+      queryFn: async () => {
+        const result = await loadTaskPrimaryProjectsAction({ ids });
+        if (!result.rows) throw new Error(result.error ?? 'Project hydration failed');
+        return result;
+      },
+      staleTime: Number.POSITIVE_INFINITY,
+    })),
+  });
+  const loadedPrimaryProjects = projectHydrationQueries.flatMap((query) => query.data?.rows ?? []);
   const resolvedPrimaryProjects = useMemo(() => {
     const serverHydratedTaskIds = initialProjectsHydrated
       ? new Set(rows.map((row) => row.id))
@@ -582,52 +580,8 @@ function useTaskBoardController({
     }
     return [...byTask.values()];
   }, [primaryProjectOverrides, resolvedPrimaryProjects]);
-  const missingProjectTaskIds = useMemo(() => {
-    // The checked ids live in a ref, so this revision explicitly invalidates the memo for a retry.
-    void projectHydrationRevision;
-    const hydratedIds = new Set(hydratedPrimaryProjects.map((project) => project.taskId));
-    const missing: string[] = [];
-    for (const row of effectiveRows) {
-      if (!hydratedIds.has(row.id) && !projectHydrationCheckedRef.current?.has(row.id)) {
-        missing.push(row.id);
-        if (missing.length === 200) break;
-      }
-    }
-    return missing;
-  }, [effectiveRows, hydratedPrimaryProjects, projectHydrationRevision]);
-  useEffect(() => {
-    if (missingProjectTaskIds.length === 0) return;
-    const checked = projectHydrationCheckedRef.current;
-    const retried = projectHydrationRetriedRef.current;
-    if (!checked || !retried) return;
-    for (const taskId of missingProjectTaskIds) checked.add(taskId);
-    const retryFailedIds = () => {
-      let shouldRetry = false;
-      for (const taskId of missingProjectTaskIds) {
-        if (retried.has(taskId)) continue;
-        retried.add(taskId);
-        checked.delete(taskId);
-        shouldRetry = true;
-      }
-      if (shouldRetry) retryProjectHydration();
-    };
-    void loadTaskPrimaryProjectsAction({ ids: missingProjectTaskIds })
-      .then((result) => {
-        if (!result.rows) {
-          retryFailedIds();
-          return;
-        }
-        setLoadedPrimaryProjects((current) => {
-          const byTask = new Map(current.map((project) => [project.taskId, project] as const));
-          for (const project of result.rows ?? []) byTask.set(project.taskId, project);
-          return [...byTask.values()];
-        });
-      })
-      .catch(retryFailedIds);
-  }, [missingProjectTaskIds]);
   const updatePrimaryProject = useCallback(
     (taskId: string, project: { id: string; label: string } | null) => {
-      projectHydrationCheckedRef.current?.add(taskId);
       setPrimaryProjectOverrides((current) => ({
         ...current,
         [taskId]: {
@@ -662,47 +616,6 @@ function useTaskBoardController({
       return next;
     });
   }, []);
-  const pendingCategoryIds = useMemo(() => {
-    const ids: string[] = [];
-    for (const row of effectiveRows) {
-      if (row.taskCategoryStatus === 'pending') ids.push(row.id);
-    }
-    return ids;
-  }, [effectiveRows]);
-  const pendingCategoryKey = pendingCategoryIds.join(',');
-  const categoryPollStartedAt = useRef<number | null>(null);
-  const categoryPollKey = useRef<string | null>(null);
-  useEffect(() => {
-    if (
-      pendingCategoryIds.length === 0 ||
-      document.body.dataset.taskCategoriesEnabled === 'false'
-    ) {
-      categoryPollStartedAt.current = null;
-      categoryPollKey.current = null;
-      return;
-    }
-    if (categoryPollKey.current !== pendingCategoryKey) {
-      categoryPollKey.current = pendingCategoryKey;
-      categoryPollStartedAt.current = Date.now();
-    }
-    const pendingIds = pendingCategoryIds.slice(0, 200);
-    const timer = setInterval(() => {
-      if (Date.now() - (categoryPollStartedAt.current ?? Date.now()) > 60_000) {
-        clearInterval(timer);
-        return;
-      }
-      void loadTaskCategoryStatesAction({ ids: pendingIds })
-        .then((result) => {
-          if (!result.rows) return;
-          dispatchBoard({ type: 'category-states', rows: result.rows });
-          if (result.rows.some((row) => row.taskCategoryStatus !== 'pending')) router.refresh();
-        })
-        .catch(() => undefined);
-    }, 2_500);
-    return () => {
-      clearInterval(timer);
-    };
-  }, [pendingCategoryIds, pendingCategoryKey, router]);
   const visibleRows = useMemo(
     () => filterObjectsByText(effectiveRows, filterQuery, { groupBy: 'status' }),
     [effectiveRows, filterQuery],
@@ -1864,6 +1777,7 @@ function TaskDetailPanel({
               category={task.taskCategory}
               mode={task.taskCategoryMode}
               status={task.taskCategoryStatus}
+              updatedAt={task.taskCategoryUpdatedAt}
             />
           </TaskField>
         ) : null}
