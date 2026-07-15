@@ -1267,6 +1267,105 @@ describe('ApprovalsClient', () => {
     expect(html).not.toContain('End at');
   });
 
+  it('formats single-boundary calendar updates without exposing ISO timestamps', () => {
+    const html = renderToStaticMarkup(
+      createElement(ApprovalsClient, {
+        timezone: 'UTC',
+        suggestions: [
+          {
+            id: 'bundle-calendar-boundaries',
+            source: 'background',
+            status: 'pending',
+            title: 'Calendar time corrections',
+            summary: null,
+            reason: null,
+            confidence: 'medium',
+            createdAt: '2026-06-01T10:00:00.000Z',
+            evidence: [],
+            items: [
+              {
+                id: 'item-calendar-start',
+                status: 'pending',
+                operation: 'update',
+                targetKind: 'calendar_event',
+                targetId: '33333333-3333-4333-8333-333333333333',
+                title: 'Move the start',
+                description: null,
+                proposedPayload: { startAt: '2026-06-18T11:00:00.000Z' },
+                failureReason: null,
+              },
+              {
+                id: 'item-calendar-end',
+                status: 'pending',
+                operation: 'update',
+                targetKind: 'calendar_event',
+                targetId: '44444444-4444-4444-8444-444444444444',
+                title: 'Move the end',
+                description: null,
+                proposedPayload: { endAt: '2026-06-18T12:00:00.000Z' },
+                failureReason: null,
+              },
+            ],
+          },
+        ],
+      }),
+    );
+
+    expect(html).toContain('Starts Jun 18, 2026, 11:00 AM');
+    expect(html).toContain('Ends Jun 18, 2026, 12:00 PM');
+    expect(html).not.toContain('2026-06-18T11:00:00.000Z');
+    expect(html).not.toContain('2026-06-18T12:00:00.000Z');
+  });
+
+  it('shows workspace records linked by a calendar proposal', () => {
+    const html = renderToStaticMarkup(
+      createElement(ApprovalsClient, {
+        timezone: 'UTC',
+        suggestions: [
+          {
+            id: 'bundle-calendar-links',
+            source: 'background',
+            status: 'pending',
+            title: 'Create customer review',
+            summary: null,
+            reason: null,
+            confidence: 'medium',
+            createdAt: '2026-06-01T10:00:00.000Z',
+            evidence: [],
+            items: [
+              {
+                id: 'item-calendar-links',
+                status: 'pending',
+                operation: 'create',
+                targetKind: 'calendar_event',
+                targetId: null,
+                title: 'Customer review',
+                description: null,
+                proposedPayload: {
+                  title: 'Customer review',
+                  startAt: '2026-06-18T11:00:00.000Z',
+                  endAt: '2026-06-18T12:00:00.000Z',
+                  timezone: 'UTC',
+                  visibility: 'team',
+                  linkedEntityIds: [
+                    '11111111-1111-4111-8111-111111111111',
+                    '22222222-2222-4222-8222-222222222222',
+                  ],
+                  linkedEntityNames: ['Acme Corporation', 'Renewal project'],
+                },
+                failureReason: null,
+              },
+            ],
+          },
+        ],
+      }),
+    );
+
+    expect(html).toContain('Linked records Acme Corporation, Renewal project');
+    expect(html).not.toContain('11111111-1111-4111-8111-111111111111');
+    expect(html).not.toContain('22222222-2222-4222-8222-222222222222');
+  });
+
   it('does not show sibling cancellation copy for calendar proposal creates', () => {
     const html = renderToStaticMarkup(
       createElement(ApprovalsClient, {
@@ -1795,7 +1894,7 @@ describe('ApprovalsClient', () => {
     expect(html).not.toContain('localRef');
   });
 
-  it('uses payload endpoint names for existing-object relationship summaries', () => {
+  it('uses hydrated endpoint names for existing-object relationship summaries', () => {
     const html = renderToStaticMarkup(
       createElement(ApprovalsClient, {
         suggestions: [
@@ -1816,13 +1915,13 @@ describe('ApprovalsClient', () => {
                 operation: 'create',
                 targetKind: 'object_relationship',
                 targetId: null,
-                title: 'Relate Research and Development and Sales and Ops',
+                title: 'Add relationship',
                 description: null,
                 proposedPayload: {
                   fromEntityId: '11111111-1111-4111-8111-111111111111',
                   toEntityId: '22222222-2222-4222-8222-222222222222',
-                  fromName: 'Research and Development',
-                  toName: 'Sales and Ops',
+                  fromDisplayName: 'Research and Development',
+                  toDisplayName: 'Sales and Ops',
                   kind: 'related',
                 },
                 failureReason: null,

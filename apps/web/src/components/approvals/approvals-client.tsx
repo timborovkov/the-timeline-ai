@@ -271,7 +271,9 @@ function payloadFieldLabel(key: string): string {
     canonicalName: 'Name',
     description: 'Details',
     dueAt: 'Due',
+    endAt: 'Ends',
     entityName: 'Item',
+    linkedEntityNames: 'Linked records',
     laneId: 'Lane',
     laneName: 'Lane',
     location: 'Location',
@@ -287,6 +289,7 @@ function payloadFieldLabel(key: string): string {
     responsibleUserId: 'Responsible',
     rrule: 'Recurrence',
     stage: 'Stage',
+    startAt: 'Starts',
     status: 'Status',
     timezone: 'Time zone',
     title: 'Title',
@@ -334,6 +337,9 @@ function itemStatusLabel(status: string): string {
 function formatPayloadValue(key: string, value: unknown, timezone?: string): string {
   if (key === 'dueAt' && typeof value === 'string') {
     return formatDueDateValue(value, timezone);
+  }
+  if ((key === 'startAt' || key === 'endAt') && typeof value === 'string') {
+    return formatDisplayDateTime(value, { timezone });
   }
   if (key === 'status' && typeof value === 'string') {
     const labels: Record<string, string> = {
@@ -561,15 +567,19 @@ function relationshipPayloadSummary(item: SuggestionItem, bundle: SuggestionBund
   const from =
     typeof item.proposedPayload.fromRef === 'string'
       ? localRefLabel(bundle, item.proposedPayload.fromRef)
-      : typeof item.proposedPayload.fromName === 'string'
-        ? displayText(item.proposedPayload.fromName)
-        : null;
+      : typeof item.proposedPayload.fromDisplayName === 'string'
+        ? displayText(item.proposedPayload.fromDisplayName)
+        : typeof item.proposedPayload.fromName === 'string'
+          ? displayText(item.proposedPayload.fromName)
+          : null;
   const to =
     typeof item.proposedPayload.toRef === 'string'
       ? localRefLabel(bundle, item.proposedPayload.toRef)
-      : typeof item.proposedPayload.toName === 'string'
-        ? displayText(item.proposedPayload.toName)
-        : null;
+      : typeof item.proposedPayload.toDisplayName === 'string'
+        ? displayText(item.proposedPayload.toDisplayName)
+        : typeof item.proposedPayload.toName === 'string'
+          ? displayText(item.proposedPayload.toName)
+          : null;
   const kind =
     typeof item.proposedPayload.kind === 'string' ? item.proposedPayload.kind : 'related';
   if (!from || !to) return displayText(`${item.title} · ${kind}`);

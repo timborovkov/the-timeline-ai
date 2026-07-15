@@ -6827,6 +6827,113 @@ describe('suggestion scope', () => {
     expect(result.rows[0]).toEqual({ assignee_user_id: REVIEWER_ID });
   });
 
+  it('keeps resolved member labels out of stored proposal semantics', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const first = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Create assigned task',
+      dedupeKey: 'task-create-member-label:first',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Review customer deck',
+          dedupeKey: 'task-create-member-label:first:item',
+          proposedPayload: {
+            canonicalName: 'Review customer deck',
+            assigneeUserId: REVIEWER_ID,
+          },
+        },
+      ],
+    });
+    expect(first.items[0]?.proposedPayload).toMatchObject({
+      assigneeUserId: REVIEWER_ID,
+      assigneeName: 'Reviewer',
+    });
+
+    await db.update(users).set({ name: 'Renamed Reviewer' }).where(eq(users.id, REVIEWER_ID));
+    const renamedScope = withTeam(db as never, TEAM_ID, USER_ID);
+    const second = await renamedScope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Create assigned task again',
+      dedupeKey: 'task-create-member-label:second',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Review customer deck',
+          dedupeKey: 'task-create-member-label:second:item',
+          proposedPayload: {
+            canonicalName: 'Review customer deck',
+            assigneeUserId: REVIEWER_ID,
+          },
+        },
+      ],
+    });
+
+    const rows = await db
+      .select({
+        suggestionId: agentSuggestionItems.suggestionId,
+        status: agentSuggestionItems.status,
+        proposedPayload: agentSuggestionItems.proposedPayload,
+      })
+      .from(agentSuggestionItems)
+      .where(eq(agentSuggestionItems.teamId, TEAM_ID))
+      .orderBy(asc(agentSuggestionItems.createdAt), asc(agentSuggestionItems.id));
+    expect(rows).toEqual([
+      {
+        suggestionId: first.id,
+        status: 'superseded',
+        proposedPayload: {
+          canonicalName: 'Review customer deck',
+          assigneeUserId: REVIEWER_ID,
+        },
+      },
+      {
+        suggestionId: second.id,
+        status: 'pending',
+        proposedPayload: {
+          canonicalName: 'Review customer deck',
+          assigneeUserId: REVIEWER_ID,
+        },
+      },
+    ]);
+    expect(second.items[0]?.proposedPayload).toMatchObject({
+      assigneeUserId: REVIEWER_ID,
+      assigneeName: 'Renamed Reviewer',
+    });
+  });
+
+  it('accepts UUID-backed assignments with long presentation labels', async () => {
+    const longName = 'R'.repeat(220);
+    await db.update(users).set({ name: longName }).where(eq(users.id, REVIEWER_ID));
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Create long-label assignment',
+      dedupeKey: 'task-create-long-member-label',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Review long-label account',
+          dedupeKey: 'task-create-long-member-label:item',
+          proposedPayload: {
+            canonicalName: 'Review long-label account',
+            assigneeUserId: REVIEWER_ID,
+          },
+        },
+      ],
+    });
+    const item = bundle.items[0];
+    expect(item?.proposedPayload).toMatchObject({
+      assigneeUserId: REVIEWER_ID,
+      assigneeName: longName,
+    });
+
+    await expect(scope.suggestions.acceptSuggestionItem(item?.id ?? '')).resolves.toBe(true);
+  });
+
   it('fails task create assignment names that do not resolve uniquely', async () => {
     const scope = withTeam(db as never, TEAM_ID, USER_ID);
     const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
@@ -7102,6 +7209,76 @@ describe('suggestion scope', () => {
       visibilityUserIds: [USER_ID, REVIEWER_ID],
       visibilityUserNames: ['Owner', 'Updated Reviewer'],
     });
+  });
+
+  it('hydrates existing relationship endpoints and calendar links with current object names', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const company = await scope.objects.createObject({
+      type: 'company',
+      canonicalName: 'Acme Corporation',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const project = await scope.objects.createObject({
+      type: 'project',
+      canonicalName: 'Renewal project',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Connect customer work',
+      dedupeKey: 'approval-entity-display-labels',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'object_relationship',
+          title: 'Add relationship',
+          dedupeKey: 'approval-entity-display-labels:relationship',
+          proposedPayload: {
+            fromEntityId: company.id,
+            toEntityId: project.id,
+            kind: 'blocks',
+          },
+        },
+        {
+          operation: 'create',
+          targetKind: 'calendar_event',
+          title: 'Customer review',
+          dedupeKey: 'approval-entity-display-labels:calendar',
+          proposedPayload: {
+            title: 'Customer review',
+            startAt: '2026-06-17T11:00:00.000Z',
+            endAt: '2026-06-17T12:00:00.000Z',
+            timezone: 'UTC',
+            visibility: 'team',
+            linkedEntityIds: [company.id, project.id],
+          },
+        },
+      ],
+    });
+
+    expect(
+      bundle.items.find((item) => item.targetKind === 'object_relationship')?.proposedPayload,
+    ).toMatchObject({
+      fromDisplayName: 'Acme Corporation',
+      toDisplayName: 'Renewal project',
+    });
+    expect(
+      bundle.items.find((item) => item.targetKind === 'calendar_event')?.proposedPayload,
+    ).toMatchObject({ linkedEntityNames: ['Acme Corporation', 'Renewal project'] });
+
+    const stored = await db
+      .select({
+        targetKind: agentSuggestionItems.targetKind,
+        payload: agentSuggestionItems.proposedPayload,
+      })
+      .from(agentSuggestionItems)
+      .where(eq(agentSuggestionItems.suggestionId, bundle.id));
+    expect(
+      stored.find((item) => item.targetKind === 'object_relationship')?.payload,
+    ).not.toHaveProperty('fromDisplayName');
+    expect(stored.find((item) => item.targetKind === 'calendar_event')?.payload).not.toHaveProperty(
+      'linkedEntityNames',
+    );
   });
 
   it('normalizes invalid task create source event ids to suggestion evidence when storing', async () => {

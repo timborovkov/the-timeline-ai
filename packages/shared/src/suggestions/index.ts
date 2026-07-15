@@ -976,6 +976,12 @@ function normalizeLifecyclePayload(
     !Array.isArray(item.proposedPayload)
       ? { ...(item.proposedPayload as Record<string, unknown>) }
       : {};
+  if (typeof payload.ownerUserId === 'string' && UUID_RE.test(payload.ownerUserId)) {
+    delete payload.ownerName;
+  }
+  if (typeof payload.assigneeUserId === 'string' && UUID_RE.test(payload.assigneeUserId)) {
+    delete payload.assigneeName;
+  }
   if (
     item.operation === 'create' &&
     (item.targetKind === 'object' || item.targetKind === 'task') &&
@@ -1979,7 +1985,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
 
   async function resolvePayloadMemberRefs(
     payload: Record<string, unknown>,
-    options: { requireUnique?: boolean } = {},
+    options: { includeLabels?: boolean; requireUnique?: boolean } = {},
   ): Promise<Record<string, unknown>> {
     const normalized = { ...payload };
     for (const [idKey, nameKey] of [
@@ -1987,8 +1993,12 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       ['assigneeUserId', 'assigneeName'],
     ] as const) {
       if (typeof normalized[idKey] === 'string' && UUID_RE.test(normalized[idKey])) {
-        normalized[nameKey] =
-          (await teamMemberLabel(normalized[idKey])) ?? 'Unavailable team member';
+        if (options.includeLabels) {
+          normalized[nameKey] =
+            (await teamMemberLabel(normalized[idKey])) ?? 'Unavailable team member';
+        } else {
+          normalized[nameKey] = undefined;
+        }
         continue;
       }
       if (
@@ -1999,12 +2009,18 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         continue;
       }
       const resolved = await resolveTeamMemberRef(normalized[nameKey]);
-      if (resolved) normalized[idKey] = resolved;
-      else if (options.requireUnique && typeof normalized[nameKey] === 'string') {
+      if (resolved) {
+        normalized[idKey] = resolved;
+        if (options.includeLabels) {
+          normalized[nameKey] = (await teamMemberLabel(resolved)) ?? 'Unavailable team member';
+        } else {
+          normalized[nameKey] = undefined;
+        }
+      } else if (options.requireUnique && typeof normalized[nameKey] === 'string') {
         throw new Error(`${nameKey} was not uniquely matched to an active team member`);
       }
     }
-    if (Array.isArray(normalized.visibilityUserIds)) {
+    if (options.includeLabels && Array.isArray(normalized.visibilityUserIds)) {
       normalized.visibilityUserNames = await Promise.all(
         normalized.visibilityUserIds.map(async (memberId) =>
           typeof memberId === 'string' && UUID_RE.test(memberId)
@@ -2012,6 +2028,8 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
             : 'Unavailable team member',
         ),
       );
+    } else {
+      delete normalized.visibilityUserNames;
     }
     return normalized;
   }
@@ -2174,19 +2192,25 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     };
   }
 
-  async function parentObjectNamesForPayloads(
+  async function approvalEntityNamesForPayloads(
     payloads: readonly Record<string, unknown>[],
   ): Promise<ReadonlyMap<string, string>> {
-    const parentIds = [
+    const entityIds = [
       ...new Set(
-        payloads.flatMap((payload) =>
-          typeof payload.parentObjectId === 'string' && UUID_RE.test(payload.parentObjectId)
-            ? [payload.parentObjectId]
-            : [],
-        ),
+        payloads.flatMap((payload) => {
+          const directIds = ['parentObjectId', 'fromEntityId', 'toEntityId'].flatMap((key) =>
+            typeof payload[key] === 'string' && UUID_RE.test(payload[key]) ? [payload[key]] : [],
+          );
+          const linkedIds = Array.isArray(payload.linkedEntityIds)
+            ? payload.linkedEntityIds.filter(
+                (value): value is string => typeof value === 'string' && UUID_RE.test(value),
+              )
+            : [];
+          return [...directIds, ...linkedIds];
+        }),
       ),
     ];
-    if (parentIds.length === 0) return new Map();
+    if (entityIds.length === 0) return new Map();
 
     const rows = await db
       .select({ id: entities.id, name: entities.canonicalName })
@@ -2194,11 +2218,49 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       .where(
         and(
           eq(entities.teamId, teamId),
-          inArray(entities.id, parentIds),
+          inArray(entities.id, entityIds),
           isNull(entities.mergedIntoId),
         ),
       );
     return new Map(rows.map((row) => [row.id, row.name]));
+  }
+
+  function resolveApprovalEntityLabels(
+    payload: Record<string, unknown>,
+    entityNamesById: ReadonlyMap<string, string>,
+  ): Record<string, unknown> {
+    const normalized = { ...payload };
+    delete normalized.fromDisplayName;
+    delete normalized.toDisplayName;
+    delete normalized.linkedEntityNames;
+    for (const [idKey, nameKey] of [
+      ['fromEntityId', 'fromDisplayName'],
+      ['toEntityId', 'toDisplayName'],
+    ] as const) {
+      if (typeof normalized[idKey] === 'string' && UUID_RE.test(normalized[idKey])) {
+        normalized[nameKey] =
+          entityNamesById.get(normalized[idKey]) ?? 'Unavailable workspace item';
+      }
+    }
+    if (Array.isArray(normalized.linkedEntityIds)) {
+      normalized.linkedEntityNames = normalized.linkedEntityIds.map((entityId) =>
+        typeof entityId === 'string' && UUID_RE.test(entityId)
+          ? (entityNamesById.get(entityId) ?? 'Unavailable workspace item')
+          : 'Unavailable workspace item',
+      );
+    }
+    return normalized;
+  }
+
+  function stripApprovalEntityLabels(payload: Record<string, unknown>): Record<string, unknown> {
+    const normalized = { ...payload };
+    delete normalized.fromDisplayName;
+    delete normalized.toDisplayName;
+    delete normalized.linkedEntityNames;
+    if (typeof normalized.parentObjectId === 'string' && UUID_RE.test(normalized.parentObjectId)) {
+      delete normalized.parentName;
+    }
+    return normalized;
   }
 
   function resolveParentObjectRef(
@@ -2217,6 +2279,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
   async function resolveBoardItemRefs(
     payload: Record<string, unknown>,
     options: {
+      includeLabels?: boolean;
       requireUnique: boolean;
       labels?: BoardPayloadLabels;
     },
@@ -2226,19 +2289,24 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       typeof normalized.boardId === 'string' &&
       UUID_RE.test(normalized.boardId) &&
       typeof normalized.entityId === 'string' &&
-      UUID_RE.test(normalized.entityId) &&
-      options.labels
+      UUID_RE.test(normalized.entityId)
     ) {
-      normalized.boardName =
-        options.labels.boardNamesById.get(normalized.boardId) ?? 'Unavailable board';
-      normalized.entityName =
-        options.labels.entityNamesById.get(normalized.entityId) ?? 'Unavailable workspace item';
-      normalized.laneName =
-        typeof normalized.laneId === 'string' && UUID_RE.test(normalized.laneId)
-          ? (options.labels.membershipLaneNamesByRef.get(
-              boardMembershipLaneRefKey(normalized.boardId, normalized.laneId),
-            ) ?? 'Unavailable lane')
-          : 'No lane';
+      if (options.includeLabels && options.labels) {
+        normalized.boardName =
+          options.labels.boardNamesById.get(normalized.boardId) ?? 'Unavailable board';
+        normalized.entityName =
+          options.labels.entityNamesById.get(normalized.entityId) ?? 'Unavailable workspace item';
+        normalized.laneName =
+          typeof normalized.laneId === 'string' && UUID_RE.test(normalized.laneId)
+            ? (options.labels.membershipLaneNamesByRef.get(
+                boardMembershipLaneRefKey(normalized.boardId, normalized.laneId),
+              ) ?? 'Unavailable lane')
+            : 'No lane';
+      } else {
+        delete normalized.boardName;
+        delete normalized.entityName;
+        delete normalized.laneName;
+      }
       return normalized;
     }
     if (
@@ -2246,6 +2314,10 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       typeof normalized.newValue === 'string' &&
       UUID_RE.test(normalized.newValue)
     ) {
+      if (!options.includeLabels) {
+        delete normalized.laneName;
+        return normalized;
+      }
       const label = options.labels
         ? typeof normalized.boardItemId === 'string'
           ? (options.labels.itemLaneNamesByRef.get(
@@ -2258,8 +2330,12 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     }
     if (normalized.field !== 'responsibleUserId') return normalized;
     if (typeof normalized.newValue === 'string' && UUID_RE.test(normalized.newValue)) {
-      normalized.responsibleName =
-        (await teamMemberLabel(normalized.newValue)) ?? 'Unavailable team member';
+      if (options.includeLabels) {
+        normalized.responsibleName =
+          (await teamMemberLabel(normalized.newValue)) ?? 'Unavailable team member';
+      } else {
+        delete normalized.responsibleName;
+      }
       return normalized;
     }
     if (
@@ -2281,6 +2357,11 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     const resolved = await resolveTeamMemberRef(ref);
     if (resolved) {
       normalized.newValue = resolved;
+      if (options.includeLabels) {
+        normalized.responsibleName = (await teamMemberLabel(resolved)) ?? 'Unavailable team member';
+      } else {
+        delete normalized.responsibleName;
+      }
       return normalized;
     }
     if (options.requireUnique) {
@@ -2292,11 +2373,9 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
   async function normalizeSuggestionItemForStorage(
     item: SuggestionItemInput,
     objectTypeByTargetId: ReadonlyMap<string, ObjectType>,
-    boardLabels: BoardPayloadLabels,
-    parentNamesById: ReadonlyMap<string, string>,
   ): Promise<SuggestionItemInput> {
-    const proposedPayload = resolveParentObjectRef(
-      normalizeSuggestionSourceEventPayload(
+    const proposedPayload = normalizeSuggestionSourceEventPayload(
+      stripApprovalEntityLabels(
         await resolveBoardItemRefs(
           await resolvePayloadMemberRefs(
             normalizeLifecyclePayload({
@@ -2310,10 +2389,9 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
                   : null,
             }),
           ),
-          { requireUnique: false, labels: boardLabels },
+          { requireUnique: false },
         ),
       ),
-      parentNamesById,
     );
     return { ...item, proposedPayload };
   }
@@ -2595,19 +2673,24 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         .orderBy(asc(agentSuggestionEvidence.suggestionId), asc(agentSuggestionEvidence.createdAt)),
     ]);
     const payloads = items.map((item) => recordFromUnknown(item.proposedPayload));
-    const [boardLabels, parentNamesById] = await Promise.all([
+    const [boardLabels, entityNamesById] = await Promise.all([
       boardPayloadLabelsForPayloads(payloads),
-      parentObjectNamesForPayloads(payloads),
+      approvalEntityNamesForPayloads(payloads),
     ]);
     const displayItems = await Promise.all(
       items.map(async (item) => ({
         ...item,
         proposedPayload: resolveParentObjectRef(
-          await resolveBoardItemRefs(
-            await resolvePayloadMemberRefs(recordFromUnknown(item.proposedPayload)),
-            { requireUnique: false, labels: boardLabels },
+          resolveApprovalEntityLabels(
+            await resolveBoardItemRefs(
+              await resolvePayloadMemberRefs(recordFromUnknown(item.proposedPayload), {
+                includeLabels: true,
+              }),
+              { includeLabels: true, requireUnique: false, labels: boardLabels },
+            ),
+            entityNamesById,
           ),
-          parentNamesById,
+          entityNamesById,
         ),
       })),
     );
@@ -5148,20 +5231,8 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       await validateEvidenceVisible((input.evidence ?? []).map((ev) => ev.rawEventId));
       const objectTypeByTargetId = await objectTypesForItems(input.items);
       const evidenceIds = Array.from(new Set((input.evidence ?? []).map((ev) => ev.rawEventId)));
-      const inputPayloads = input.items.map((item) => item.proposedPayload);
-      const [boardLabels, parentNamesById] = await Promise.all([
-        boardPayloadLabelsForPayloads(inputPayloads),
-        parentObjectNamesForPayloads(inputPayloads),
-      ]);
       const normalizedItems = await Promise.all(
-        input.items.map((item) =>
-          normalizeSuggestionItemForStorage(
-            item,
-            objectTypeByTargetId,
-            boardLabels,
-            parentNamesById,
-          ),
-        ),
+        input.items.map((item) => normalizeSuggestionItemForStorage(item, objectTypeByTargetId)),
       );
       const projectionContext = await buildApprovalProjectionContext({
         source: input.source,
