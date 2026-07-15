@@ -43,7 +43,7 @@ export function TaskCategorySelect({
     3_000,
     updatedAt?.toISOString(),
   );
-  const categoryState = categoryQuery.data.rows?.[0];
+  const categoryState = categoryQuery.data.rows[0];
   const effectiveCategory = categoryState?.taskCategory ?? category;
   const effectiveMode = categoryState?.taskCategoryMode ?? mode;
   const effectiveStatus = categoryState?.taskCategoryStatus ?? status;

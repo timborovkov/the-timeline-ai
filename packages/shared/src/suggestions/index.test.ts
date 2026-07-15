@@ -4579,6 +4579,51 @@ describe('suggestion scope', () => {
     expect(archivedProject?.archivedAt).toBeInstanceOf(Date);
   });
 
+  it('archives an interrupted project when a revised retry creates a new task', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Create task after interrupted project acceptance',
+      dedupeKey: 'create-task-after-interrupted-project',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Create task after interrupted project acceptance',
+          dedupeKey: 'create-task-after-interrupted-project:item',
+          proposedPayload: {
+            canonicalName: 'Create task after interrupted project acceptance',
+            createProjectName: 'Interrupted proposal project',
+            projectName: 'Interrupted proposal project',
+          },
+        },
+      ],
+    });
+    const itemId = bundle.items[0]?.id ?? '';
+    const interruptedProject = await scope.objects.createObject({
+      type: 'project',
+      canonicalName: 'Interrupted proposal project',
+      metadata: { agent_suggestion_project_for_item_id: itemId },
+      actor: { kind: 'agent', userId: null },
+    });
+    await expect(
+      scope.suggestions.reviseTaskSuggestionItem({ itemId, project: { kind: 'none' } }),
+    ).resolves.toBe(true);
+
+    await expect(scope.suggestions.acceptSuggestionItem(itemId)).resolves.toBe(true);
+
+    const [task] = await scope.objects.listObjects({
+      type: 'task',
+      query: 'Create task after interrupted project acceptance',
+    });
+    expect(task).toBeDefined();
+    await expect(scope.objects.listPrimaryProjectsForTasks(task ? [task.id] : [])).resolves.toEqual(
+      [],
+    );
+    const archivedProject = await scope.objects.getObject(interruptedProject.id);
+    expect(archivedProject?.archivedAt).toBeInstanceOf(Date);
+  });
+
   it('preserves newer human project and category edits when retrying a created task', async () => {
     const scope = withTeam(db as never, TEAM_ID, USER_ID);
     const [proposedProject, humanProject] = await Promise.all([

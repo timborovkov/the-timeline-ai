@@ -3691,6 +3691,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         if (type === 'task' && !precomputedTaskCategory && !initialManualTaskCategory) {
           await applyProposedTaskCategory(created.id, parsed);
         }
+        if (type === 'task') await archiveOrphanedSuggestedProjects(item);
         return created.id;
       } catch (error) {
         await archiveSuggestedProjectAfterFailure(item, project);

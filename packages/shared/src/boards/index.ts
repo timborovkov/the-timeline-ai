@@ -372,6 +372,15 @@ function toObjectRow(row: EntitySelect): ObjectRow {
   };
 }
 
+function isArchivedSuggestedProject(
+  object: Pick<EntitySelect, 'archivedAt' | 'metadata'>,
+): boolean {
+  return (
+    object.archivedAt !== null &&
+    typeof jsonObject(object.metadata).agent_suggestion_project_for_item_id === 'string'
+  );
+}
+
 function toBoardRow(
   row: BoardSelect,
   counts = new Map<string, number>(),
@@ -1688,14 +1697,7 @@ export function createBoardScope({
           .for('update')
           .limit(1);
         if (!object) throw new Error('Object not in this team');
-        const objectMetadata =
-          object.metadata && typeof object.metadata === 'object'
-            ? (object.metadata as Record<string, unknown>)
-            : {};
-        if (
-          object.archivedAt !== null &&
-          typeof objectMetadata.agent_suggestion_project_for_item_id === 'string'
-        ) {
+        if (isArchivedSuggestedProject(object)) {
           throw new Error('Archived suggested projects cannot be added to boards');
         }
         const rows = await tx
@@ -2304,6 +2306,22 @@ export function createBoardScope({
         if (!claimedChange) return null;
 
         if (claimedChange.field === '__add__') {
+          const [object] = await tx
+            .select()
+            .from(entities)
+            .where(
+              and(
+                eq(entities.id, claimedChange.entityId),
+                eq(entities.teamId, scope.teamId),
+                isNull(entities.mergedIntoId),
+              ),
+            )
+            .for('update')
+            .limit(1);
+          if (!object) throw new Error('Object not in this team');
+          if (isArchivedSuggestedProject(object)) {
+            throw new Error('Archived suggested projects cannot be added to boards');
+          }
           const existing = await tx
             .select({ id: boardItems.id })
             .from(boardItems)

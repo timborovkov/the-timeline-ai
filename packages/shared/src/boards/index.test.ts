@@ -1231,6 +1231,48 @@ describe('board scope', () => {
     expect(itemRows.filter((row) => !row.archivedAt)).toHaveLength(1);
   });
 
+  it('keeps board membership suggestions pending when cleanup archived their project', async () => {
+    const scope = withTeam(db, TEAM_A, USER_OWNER);
+    const suggestionItemId = 'dddddddd-dddd-dddd-dddd-dddddddddddd';
+    const board = await scope.boards.createBoard({
+      name: 'Project delivery',
+      templateKind: 'custom',
+      lanes: [{ name: 'Planned', kind: 'active' }],
+    });
+    const project = await scope.objects.createObject({
+      type: 'project',
+      canonicalName: 'Abandoned suggested project',
+      metadata: { agent_suggestion_project_for_item_id: suggestionItemId },
+      actor: { kind: 'agent', userId: null },
+    });
+    const suggestion = await scope.boards.proposeBoardMembership({
+      boardId: board.id,
+      entityId: project.id,
+      laneId: board.lanes[0]?.id ?? null,
+    });
+    await expect(
+      scope.objects.archiveSuggestedProjectIfUnused(project.id, suggestionItemId, {
+        kind: 'agent',
+        userId: null,
+      }),
+    ).resolves.toBe(true);
+
+    await expect(
+      scope.boards.acceptBoardItemChange(suggestion.id, { kind: 'user', userId: USER_OWNER }),
+    ).rejects.toThrow('Archived suggested projects cannot be added to boards');
+
+    const [change] = await db
+      .select({ status: boardItemChanges.status })
+      .from(boardItemChanges)
+      .where(eq(boardItemChanges.id, suggestion.id));
+    expect(change?.status).toBe('suggested');
+    const itemRows = await db
+      .select({ id: boardItems.id })
+      .from(boardItems)
+      .where(eq(boardItems.entityId, project.id));
+    expect(itemRows).toHaveLength(0);
+  });
+
   it('accepts board membership suggestions without duplicate add history', async () => {
     const scope = withTeam(db, TEAM_A, USER_OWNER);
     const board = await scope.boards.createBoard({

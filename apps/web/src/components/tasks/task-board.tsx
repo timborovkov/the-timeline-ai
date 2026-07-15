@@ -517,13 +517,13 @@ function useTaskBoardController({
     [patchedRows],
   );
   const categoryQuery = useTaskCategoryPolling(
-    pendingCategoryInput.ids.slice(0, 200),
+    pendingCategoryInput.ids,
     2_500,
     pendingCategoryInput.generationKey,
   );
   const effectiveRows = useMemo(() => {
     const polledCategoryStates = new Map(
-      (categoryQuery.data.rows ?? []).map((row) => [row.id, row] as const),
+      categoryQuery.data.rows.map((row) => [row.id, row] as const),
     );
     return patchedRows.map((row) => applyTaskCategoryState(row, polledCategoryStates.get(row.id)));
   }, [categoryQuery.data.rows, patchedRows]);

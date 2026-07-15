@@ -252,6 +252,29 @@ describe('TaskBoard', () => {
     }
   });
 
+  it('polls every pending task in bounded chunks', async () => {
+    const rows = Array.from({ length: 201 }, (_, index) =>
+      task({
+        id: `task-${index + 1}`,
+        canonicalName: `Pending task ${index + 1}`,
+        taskCategoryStatus: 'pending',
+      }),
+    );
+    fakes.loadTaskCategoryStatesAction.mockImplementation(({ ids }: { ids: string[] }) => ({
+      rows: ids.map((id) => ({ id, taskCategoryStatus: 'pending' })),
+    }));
+
+    renderBoard(null, rows);
+
+    await waitFor(() => {
+      expect(fakes.loadTaskCategoryStatesAction).toHaveBeenCalledTimes(2);
+    });
+    expect(fakes.loadTaskCategoryStatesAction).toHaveBeenCalledWith({
+      ids: rows.slice(0, 200).map((row) => row.id),
+    });
+    expect(fakes.loadTaskCategoryStatesAction).toHaveBeenCalledWith({ ids: ['task-201'] });
+  });
+
   it('applies polled category state to a previously loaded older task', async () => {
     const user = userEvent.setup();
     fakes.loadTaskRowsAction.mockResolvedValue({

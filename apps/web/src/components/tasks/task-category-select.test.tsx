@@ -111,6 +111,34 @@ describe('TaskCategorySelect', () => {
     expect(fakes.loadTaskCategoryStatesAction).not.toHaveBeenCalled();
   });
 
+  it('does not poll when the task is not pending', async () => {
+    vi.useFakeTimers();
+    render(
+      <TaskCategorySelect taskId="task-1" category="design" mode="automatic" status="ready" />,
+    );
+
+    await act(async () => vi.advanceTimersByTimeAsync(60_000));
+
+    expect(fakes.loadTaskCategoryStatesAction).not.toHaveBeenCalled();
+  });
+
+  it('stops polling after the category reaches a terminal state', async () => {
+    vi.useFakeTimers();
+    fakes.loadTaskCategoryStatesAction.mockResolvedValue({
+      rows: [{ id: 'task-1', taskCategoryStatus: 'ready' }],
+    });
+    render(
+      <TaskCategorySelect taskId="task-1" category={null} mode="automatic" status="pending" />,
+    );
+
+    await act(async () => vi.advanceTimersByTimeAsync(0));
+    expect(fakes.loadTaskCategoryStatesAction).toHaveBeenCalledOnce();
+    fakes.loadTaskCategoryStatesAction.mockClear();
+
+    await act(async () => vi.advanceTimersByTimeAsync(60_000));
+    expect(fakes.loadTaskCategoryStatesAction).not.toHaveBeenCalled();
+  });
+
   it('keeps the selector pending until the category mutation settles', async () => {
     let resolveMutation: (value: { undoChangeId: string }) => void = () => undefined;
     fakes.setTaskCategoryAction.mockReturnValue(
