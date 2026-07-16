@@ -8,3 +8,4 @@ Saved meetings are the reusable capture target for repeated calls: they store th
 - Any team member can create a saved meeting and enable auto-join; team-wide caps, disable switches, audit history, and admin deletion remain the guardrails.
 - Aliases are unique among active saved meetings within a team and become reusable when their saved meeting is archived.
 - Every bot join path must use a bounded no-show window, with Google Meet using a provider-safe 550-second window.
+- A scheduled occurrence that reaches that no-show limit while its configured call window is still open reuses the same occurrence for one immediate retry. Provider lifecycle events are attempt-scoped so the timed-out bot cannot overwrite its replacement. Further no-shows, and retries that cannot start before the call window closes, become terminal and feed the saved meeting's pause threshold.
