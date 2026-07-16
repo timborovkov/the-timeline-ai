@@ -58,8 +58,10 @@
         meeting's configured join offset, defaulting to two minutes before the scheduled start. If
         nobody admits or joins the bot, Google Meet captures use a 550-second no-show timeout; while
         the configured call window remains open, the first timeout is requeued once immediately. A
-        second no-show is terminal, and recurring auto-join pauses after three terminal no-shows or
-        provider failures. Manual joins can still be triggered from the dashboard or commands.
+        second no-show is terminal. If the retry cannot start before that window closes, Timeline
+        also terminalizes it instead of leaving it scheduled. Late lifecycle events from the first
+        bot are ignored, and recurring auto-join pauses after three terminal no-shows or provider
+        failures. Manual joins can still be triggered from the dashboard or commands.
       </p>
       <p>
         Slack supports <code>/timeline join &lt;alias-or-url&gt; [title]</code>. Telegram supports
@@ -230,8 +232,9 @@ RECALL_TRANSCRIPT_WEBHOOK_URL=https://thetimeline.cc/api/webhooks/recall/transcr
         </li>
         <li>
           <strong>Saved Meeting stopped auto-joining</strong> — Timeline retries the first in-window
-          no-show once. Three terminal scheduled no-shows or provider failures pause auto-join for
-          that saved meeting. Re-enable it after checking the link and schedule.
+          no-show once. A retry that misses the remaining call window becomes a terminal no-show.
+          Three terminal scheduled no-shows or provider failures pause auto-join for that saved
+          meeting. Re-enable it after checking the link and schedule.
         </li>
         <li>
           <strong>No transcript chunks landing</strong> — verify

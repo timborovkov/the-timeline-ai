@@ -30,7 +30,9 @@ const fakes = vi.hoisted(() => ({
   fakeReportCaughtError: vi.fn(),
   fakeReportHandledEvent: vi.fn(),
   fakeRecordJoinFailure: vi.fn(),
-  fakeRetryNoShow: vi.fn(),
+  fakeHandleFailure: vi.fn(),
+  fakeHandleNoShow: vi.fn(),
+  fakeUpdateStatusForBot: vi.fn(),
   fakeUpdateStatus: vi.fn(),
   fakeWithTeam: vi.fn(),
 }));
@@ -57,8 +59,10 @@ vi.mock('@timeline/shared/team-scope', () => ({
     return {
       meetings: {
         updateMeetingStatus: fakes.fakeUpdateStatus,
+        updateMeetingStatusForBot: fakes.fakeUpdateStatusForBot,
         recordSavedMeetingJoinFailure: fakes.fakeRecordJoinFailure,
-        retrySavedMeetingAfterNoShow: fakes.fakeRetryNoShow,
+        handleMeetingFailure: fakes.fakeHandleFailure,
+        handleMeetingNoShow: fakes.fakeHandleNoShow,
       },
     };
   },
@@ -145,7 +149,9 @@ beforeEach(() => {
     provider: 'recall',
     savedMeetingId: null,
   });
-  fakes.fakeRetryNoShow.mockResolvedValue(false);
+  fakes.fakeHandleNoShow.mockResolvedValue('ignored');
+  fakes.fakeHandleFailure.mockResolvedValue('ignored');
+  fakes.fakeUpdateStatusForBot.mockResolvedValue(true);
 });
 
 afterEach(() => {
@@ -274,8 +280,9 @@ describe('POST /api/webhooks/recall/status — state transitions', () => {
       signedRequest(recallStatusBody('bot.in_call_recording', 'in_call_recording')),
     );
     expect(r.status).toBe(200);
-    expect(fakes.fakeUpdateStatus).toHaveBeenCalledWith(
+    expect(fakes.fakeUpdateStatusForBot).toHaveBeenCalledWith(
       'meeting-1',
+      BOT_ID,
       'active',
       expect.objectContaining({ startedAt: expect.any(Date) as Date }),
     );
@@ -285,8 +292,9 @@ describe('POST /api/webhooks/recall/status — state transitions', () => {
   it('bot.call_ended flips processing + enqueues finalize', async () => {
     const r = await POST(signedRequest(statusBody('bot.call_ended', 'call_ended')));
     expect(r.status).toBe(200);
-    expect(fakes.fakeUpdateStatus).toHaveBeenCalledWith(
+    expect(fakes.fakeUpdateStatusForBot).toHaveBeenCalledWith(
       'meeting-1',
+      BOT_ID,
       'processing',
       expect.objectContaining({ endedAt: expect.any(Date) as Date }),
     );
@@ -299,8 +307,9 @@ describe('POST /api/webhooks/recall/status — state transitions', () => {
   it('documented bot.call_ended events flip processing + enqueue finalize', async () => {
     const r = await POST(signedRequest(recallStatusBody('bot.call_ended', 'call_ended')));
     expect(r.status).toBe(200);
-    expect(fakes.fakeUpdateStatus).toHaveBeenCalledWith(
+    expect(fakes.fakeUpdateStatusForBot).toHaveBeenCalledWith(
       'meeting-1',
+      BOT_ID,
       'processing',
       expect.objectContaining({ endedAt: expect.any(Date) as Date }),
     );
@@ -332,8 +341,9 @@ describe('POST /api/webhooks/recall/status — state transitions', () => {
 
     const r = await POST(signedRequest(body));
     expect(r.status).toBe(200);
-    expect(fakes.fakeUpdateStatus).toHaveBeenCalledWith(
+    expect(fakes.fakeUpdateStatusForBot).toHaveBeenCalledWith(
       'meeting-1',
+      BOT_ID,
       'active',
       expect.objectContaining({ startedAt: expect.any(Date) as Date }),
     );
@@ -344,8 +354,9 @@ describe('POST /api/webhooks/recall/status — state transitions', () => {
     const r = await POST(signedRequest(statusBody('bot.status_change', 'done')));
     expect(r.status).toBe(200);
     // status_change with code=done would map to 'completed' but we cap.
-    expect(fakes.fakeUpdateStatus).toHaveBeenCalledWith(
+    expect(fakes.fakeUpdateStatusForBot).toHaveBeenCalledWith(
       'meeting-1',
+      BOT_ID,
       'processing',
       expect.any(Object),
     );
@@ -355,8 +366,9 @@ describe('POST /api/webhooks/recall/status — state transitions', () => {
   it('documented bot.done events enqueue finalize without directly completing', async () => {
     const r = await POST(signedRequest(recallStatusBody('bot.done', 'done')));
     expect(r.status).toBe(200);
-    expect(fakes.fakeUpdateStatus).toHaveBeenCalledWith(
+    expect(fakes.fakeUpdateStatusForBot).toHaveBeenCalledWith(
       'meeting-1',
+      BOT_ID,
       'processing',
       expect.any(Object),
     );
@@ -371,7 +383,12 @@ describe('POST /api/webhooks/recall/status — state transitions', () => {
       signedRequest(recallStatusBody('bot.done', 'recording_permission_denied')),
     );
     expect(r.status).toBe(200);
-    expect(fakes.fakeUpdateStatus).toHaveBeenCalledWith('meeting-1', 'failed', expect.any(Object));
+    expect(fakes.fakeHandleFailure).toHaveBeenCalledWith({
+      meetingId: 'meeting-1',
+      providerBotId: BOT_ID,
+      code: 'recording_permission_denied',
+      failedAt: expect.any(Date) as Date,
+    });
     expect(fakes.fakeEnqueueFinalize).not.toHaveBeenCalled();
   });
 
@@ -385,28 +402,105 @@ describe('POST /api/webhooks/recall/status — state transitions', () => {
       provider: 'recall',
       savedMeetingId: 'saved-1',
     });
-    fakes.fakeRetryNoShow.mockResolvedValueOnce(true);
+    fakes.fakeHandleNoShow.mockResolvedValueOnce('retry_scheduled');
 
     const r = await POST(
       signedRequest(recallStatusBody('bot.status_change', 'timeout_exceeded_waiting_room')),
     );
 
     expect(r.status).toBe(200);
-    const noShowMetadataMatcher: unknown = expect.objectContaining({
-      capture_status: 'no_show',
-      no_show_code: 'timeout_exceeded_waiting_room',
-    });
-    expect(fakes.fakeUpdateStatus).toHaveBeenCalledWith(
-      'meeting-1',
-      'no_show',
+    expect(fakes.fakeHandleNoShow).toHaveBeenCalledWith(
       expect.objectContaining({
+        meetingId: 'meeting-1',
+        providerBotId: 'bot-test-123',
+        code: 'timeout_exceeded_waiting_room',
         endedAt: expect.any(Date) as Date,
-        metadata: noShowMetadataMatcher,
       }),
     );
-    expect(fakes.fakeRetryNoShow).toHaveBeenCalledWith('meeting-1');
     expect(fakes.fakeEnqueueScheduler).toHaveBeenCalledOnce();
     expect(fakes.fakeRecordJoinFailure).not.toHaveBeenCalled();
+    expect(fakes.fakeUpdateStatus).not.toHaveBeenCalled();
+    expect(fakes.fakeEnqueueFinalize).not.toHaveBeenCalled();
+  });
+
+  it('ignores a stale no-show from a superseded bot attempt', async () => {
+    fakes.fakeLookup.mockResolvedValueOnce({
+      id: 'meeting-1',
+      teamId: TEAM_ID,
+      createdByUserId: USER_ID,
+      status: 'joining',
+      platform: 'meet',
+      provider: 'recall',
+      savedMeetingId: 'saved-1',
+    });
+
+    const r = await POST(
+      signedRequest(recallStatusBody('bot.status_change', 'timeout_exceeded_waiting_room')),
+    );
+
+    expect(r.status).toBe(200);
+    expect(fakes.fakeHandleNoShow).toHaveBeenCalledWith(
+      expect.objectContaining({
+        meetingId: 'meeting-1',
+        providerBotId: 'bot-test-123',
+        code: 'timeout_exceeded_waiting_room',
+        endedAt: expect.any(Date) as Date,
+      }),
+    );
+    expect(fakes.fakeUpdateStatus).not.toHaveBeenCalled();
+    expect(fakes.fakeRecordJoinFailure).not.toHaveBeenCalled();
+    expect(fakes.fakeEnqueueScheduler).not.toHaveBeenCalled();
+  });
+
+  it('ignores a stale provider failure from a superseded bot attempt', async () => {
+    fakes.fakeLookup.mockResolvedValueOnce({
+      id: 'meeting-1',
+      teamId: TEAM_ID,
+      createdByUserId: USER_ID,
+      status: 'joining',
+      platform: 'meet',
+      provider: 'recall',
+      savedMeetingId: 'saved-1',
+    });
+
+    const r = await POST(
+      signedRequest(recallStatusBody('bot.failed', 'recording_permission_denied')),
+    );
+
+    expect(r.status).toBe(200);
+    expect(fakes.fakeHandleFailure).toHaveBeenCalledWith({
+      meetingId: 'meeting-1',
+      providerBotId: 'bot-test-123',
+      code: 'recording_permission_denied',
+      failedAt: expect.any(Date) as Date,
+    });
+    expect(fakes.fakeUpdateStatus).not.toHaveBeenCalled();
+    expect(fakes.fakeRecordJoinFailure).not.toHaveBeenCalled();
+    expect(fakes.fakeEnqueueFinalize).not.toHaveBeenCalled();
+  });
+
+  it('does not finalize a stale completion from a superseded bot attempt', async () => {
+    fakes.fakeLookup.mockResolvedValueOnce({
+      id: 'meeting-1',
+      teamId: TEAM_ID,
+      createdByUserId: USER_ID,
+      status: 'active',
+      platform: 'meet',
+      provider: 'recall',
+      savedMeetingId: 'saved-1',
+    });
+    fakes.fakeUpdateStatusForBot.mockResolvedValueOnce(false);
+
+    const r = await POST(signedRequest(recallStatusBody('bot.call_ended', 'done')));
+
+    expect(r.status).toBe(200);
+    expect(fakes.fakeUpdateStatusForBot).toHaveBeenCalledWith(
+      'meeting-1',
+      'bot-test-123',
+      'processing',
+      expect.objectContaining({ endedAt: expect.any(Date) as Date }),
+    );
+    expect(fakes.fakeUpdateStatus).not.toHaveBeenCalled();
     expect(fakes.fakeEnqueueFinalize).not.toHaveBeenCalled();
   });
 
@@ -420,24 +514,23 @@ describe('POST /api/webhooks/recall/status — state transitions', () => {
       provider: 'recall',
       savedMeetingId: 'saved-1',
     });
+    fakes.fakeHandleNoShow.mockResolvedValueOnce('terminal');
 
     const r = await POST(
       signedRequest(recallStatusBody('bot.call_ended', 'timeout_exceeded_waiting_room')),
     );
 
     expect(r.status).toBe(200);
-    expect(fakes.fakeUpdateStatus).toHaveBeenCalledWith(
-      'meeting-1',
-      'no_show',
+    expect(fakes.fakeHandleNoShow).toHaveBeenCalledWith(
       expect.objectContaining({
+        meetingId: 'meeting-1',
+        providerBotId: 'bot-test-123',
+        code: 'timeout_exceeded_waiting_room',
         endedAt: expect.any(Date) as Date,
-        metadata: expect.objectContaining({
-          capture_status: 'no_show',
-          no_show_code: 'timeout_exceeded_waiting_room',
-        }) as unknown,
       }),
     );
-    expect(fakes.fakeRecordJoinFailure).toHaveBeenCalledWith('saved-1', 'no_show');
+    expect(fakes.fakeUpdateStatus).not.toHaveBeenCalled();
+    expect(fakes.fakeRecordJoinFailure).not.toHaveBeenCalled();
     expect(fakes.fakeEnqueueFinalize).not.toHaveBeenCalled();
   });
 
@@ -457,17 +550,13 @@ describe('POST /api/webhooks/recall/status — state transitions', () => {
     );
 
     expect(r.status).toBe(200);
-    const failureMetadataMatcher: unknown = expect.objectContaining({
-      failure_code: 'recording_permission_denied',
+    expect(fakes.fakeHandleFailure).toHaveBeenCalledWith({
+      meetingId: 'meeting-1',
+      providerBotId: BOT_ID,
+      code: 'recording_permission_denied',
+      failedAt: expect.any(Date) as Date,
     });
-    expect(fakes.fakeUpdateStatus).toHaveBeenCalledWith(
-      'meeting-1',
-      'failed',
-      expect.objectContaining({
-        metadata: failureMetadataMatcher,
-      }),
-    );
-    expect(fakes.fakeRecordJoinFailure).toHaveBeenCalledWith('saved-1', 'failure');
+    expect(fakes.fakeRecordJoinFailure).not.toHaveBeenCalled();
     expect(fakes.fakeEnqueueFinalize).not.toHaveBeenCalled();
   });
 
@@ -484,6 +573,7 @@ describe('POST /api/webhooks/recall/status — state transitions', () => {
     const r = await POST(signedRequest(statusBody('bot.status_change', 'in_call_recording')));
     expect(r.status).toBe(200);
     expect(fakes.fakeUpdateStatus).not.toHaveBeenCalled();
+    expect(fakes.fakeUpdateStatusForBot).not.toHaveBeenCalled();
   });
 
   it('bot.fatal flips failed even from processing (terminal guard does not block IN)', async () => {
@@ -498,7 +588,12 @@ describe('POST /api/webhooks/recall/status — state transitions', () => {
     });
     const r = await POST(signedRequest(statusBody('bot.fatal', 'fatal')));
     expect(r.status).toBe(200);
-    expect(fakes.fakeUpdateStatus).toHaveBeenCalledWith('meeting-1', 'failed', expect.any(Object));
+    expect(fakes.fakeHandleFailure).toHaveBeenCalledWith({
+      meetingId: 'meeting-1',
+      providerBotId: BOT_ID,
+      code: 'fatal',
+      failedAt: expect.any(Date) as Date,
+    });
   });
 });
 
@@ -511,6 +606,7 @@ describe('POST /api/webhooks/recall/status — Redis-down retry path', () => {
     // Critical: status was NOT flipped to processing. Recall's retry will
     // re-enter the branch cleanly with status still 'active'.
     expect(fakes.fakeUpdateStatus).not.toHaveBeenCalled();
+    expect(fakes.fakeUpdateStatusForBot).not.toHaveBeenCalled();
     expect(fakes.fakeEnqueueFinalize).not.toHaveBeenCalled();
   });
 
@@ -530,7 +626,12 @@ describe('POST /api/webhooks/recall/status — Redis-down retry path', () => {
     // A bot.status_change with code=joining_call doesn't trigger finalize.
     const r = await POST(signedRequest(statusBody('bot.status_change', 'joining_call')));
     expect(r.status).toBe(200);
-    expect(fakes.fakeUpdateStatus).toHaveBeenCalledWith('meeting-1', 'joining', expect.any(Object));
+    expect(fakes.fakeUpdateStatusForBot).toHaveBeenCalledWith(
+      'meeting-1',
+      BOT_ID,
+      'joining',
+      expect.any(Object),
+    );
   });
 });
 

@@ -249,42 +249,46 @@ export async function POST(req: Request): Promise<Response> {
   }
 
   try {
+    let shouldFinalizeCurrentAttempt = false;
     if (isNoShowEvent) {
-      await scope.meetings.updateMeetingStatus(meeting.id, 'no_show', {
+      const noShowOutcome = await scope.meetings.handleMeetingNoShow({
+        meetingId: meeting.id,
+        providerBotId: botId,
+        code: code ?? 'unknown',
         endedAt: createdAt ? new Date(createdAt) : new Date(),
-        metadata: {
-          no_show_at: new Date().toISOString(),
-          no_show_code: code ?? 'unknown',
-          capture_status: 'no_show',
-        },
       });
-      if (meeting.savedMeetingId) {
-        const retryScheduled = await scope.meetings.retrySavedMeetingAfterNoShow(meeting.id);
-        if (retryScheduled) {
-          try {
-            const queue = await requireRedisQueue();
-            await queue.enqueueMeetingSchedulerTick();
-          } catch (err) {
-            log.warn({ err, meetingId: meeting.id }, 'no_show_retry_enqueue_failed');
-            reportCaughtError(err, {
-              surface: 'api',
-              operation: 'recall_status_enqueue_no_show_retry',
-            });
-          }
-        } else {
-          await scope.meetings.recordSavedMeetingJoinFailure(meeting.savedMeetingId, 'no_show');
+      if (noShowOutcome === 'retry_scheduled') {
+        try {
+          const queue = await requireRedisQueue();
+          await queue.enqueueMeetingSchedulerTick();
+        } catch (err) {
+          log.warn({ err, meetingId: meeting.id }, 'no_show_retry_enqueue_failed');
+          reportCaughtError(err, {
+            surface: 'api',
+            operation: 'recall_status_enqueue_no_show_retry',
+          });
         }
       }
     } else if (isFailureEvent) {
-      // `failed` is terminal — overrides any in-flight state including
-      // `processing`. The terminal guard above only blocks transitions OUT
-      // of failed/completed; transitioning INTO failed is always allowed.
-      await scope.meetings.updateMeetingStatus(meeting.id, 'failed', {
-        metadata: { failure_at: new Date().toISOString(), failure_code: code ?? 'unknown' },
+      await scope.meetings.handleMeetingFailure({
+        meetingId: meeting.id,
+        providerBotId: botId,
+        code: code ?? 'unknown',
+        failedAt: createdAt ? new Date(createdAt) : new Date(),
       });
-      if (meeting.savedMeetingId) {
-        await scope.meetings.recordSavedMeetingJoinFailure(meeting.savedMeetingId, 'failure');
-      }
+    } else if (shouldEnqueueFinalize) {
+      shouldFinalizeCurrentAttempt = await scope.meetings.updateMeetingStatusForBot(
+        meeting.id,
+        botId,
+        'processing',
+        {
+          endedAt: createdAt ? new Date(createdAt) : new Date(),
+          metadata: {
+            last_status: code ?? 'call_ended',
+            last_status_at: createdAt ?? new Date().toISOString(),
+          },
+        },
+      );
     } else if (mappedStatus) {
       // Cap at `processing` — never promote to `completed` here.
       const cappedStatus = mappedStatus === 'completed' ? 'processing' : mappedStatus;
@@ -306,7 +310,7 @@ export async function POST(req: Request): Promise<Response> {
           patch.startedAt = createdAt ? new Date(createdAt) : new Date();
         if (cappedStatus === 'processing')
           patch.endedAt = createdAt ? new Date(createdAt) : new Date();
-        await scope.meetings.updateMeetingStatus(meeting.id, cappedStatus, patch);
+        await scope.meetings.updateMeetingStatusForBot(meeting.id, botId, cappedStatus, patch);
       } else {
         log.info(
           { botId, currentStatus: meeting.status, attempted: cappedStatus },
@@ -317,7 +321,7 @@ export async function POST(req: Request): Promise<Response> {
     // Unknown events are intentionally ignored — Recall ships new event
     // types regularly and we don't want 5xx to trigger retry storms.
 
-    if (shouldEnqueueFinalize) {
+    if (shouldEnqueueFinalize && shouldFinalizeCurrentAttempt) {
       // Redis availability was verified before any DB write above.
       // Duplicate enqueues (e.g. retried bot.call_ended after our 200) are
       // safe: the worker short-circuits on `status === 'completed'`, so

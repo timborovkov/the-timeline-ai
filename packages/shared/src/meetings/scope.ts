@@ -11,7 +11,22 @@ import {
   savedMeetings,
   teamMeetingSettings,
 } from '@timeline/db';
-import { and, asc, desc, eq, gt, gte, inArray, isNotNull, isNull, lte, or, sql } from 'drizzle-orm';
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  exists,
+  gt,
+  gte,
+  inArray,
+  isNotNull,
+  isNull,
+  lte,
+  notInArray,
+  or,
+  sql,
+} from 'drizzle-orm';
 
 import { currentExtractionModelVersion } from '#src/extraction-model-version.js';
 import { participantNames } from '#src/meetings/participants.js';
@@ -41,6 +56,15 @@ type MeetingStatus =
 
 type DbTx = Parameters<Parameters<Db['transaction']>[0]>[0];
 type DbOrTx = Db | DbTx;
+
+const TERMINAL_MEETING_STATUSES: MeetingStatus[] = [
+  'completed',
+  'completed_partial',
+  'skipped',
+  'no_show',
+  'cancelled',
+  'failed',
+];
 
 export interface MeetingScopeDeps {
   db: Db;
@@ -815,6 +839,32 @@ export function createMeetingScope(deps: MeetingScopeDeps) {
     return row as MeetingRow;
   }
 
+  async function recordSavedMeetingJoinFailureInternal(
+    executor: DbOrTx,
+    savedMeetingId: string,
+    reason: 'no_show' | 'failure',
+  ): Promise<{ paused: boolean; consecutiveFailureCount: number } | null> {
+    const [row] = await executor
+      .update(savedMeetings)
+      .set({
+        consecutiveFailureCount: sql`${savedMeetings.consecutiveFailureCount} + 1`,
+        autoJoinPausedAt: sql`CASE WHEN ${savedMeetings.consecutiveFailureCount} + 1 >= 3 THEN now() ELSE ${savedMeetings.autoJoinPausedAt} END`,
+        autoJoinPausedReason: sql`CASE WHEN ${savedMeetings.consecutiveFailureCount} + 1 >= 3 THEN ${reason} ELSE ${savedMeetings.autoJoinPausedReason} END`,
+        autoJoinEnabled: sql`CASE WHEN ${savedMeetings.consecutiveFailureCount} + 1 >= 3 THEN false ELSE ${savedMeetings.autoJoinEnabled} END`,
+        updatedAt: new Date(),
+      })
+      .where(and(eq(savedMeetings.id, savedMeetingId), eq(savedMeetings.teamId, teamId)))
+      .returning({
+        consecutiveFailureCount: savedMeetings.consecutiveFailureCount,
+        autoJoinPausedAt: savedMeetings.autoJoinPausedAt,
+      });
+    if (!row) return null;
+    return {
+      consecutiveFailureCount: row.consecutiveFailureCount,
+      paused: row.autoJoinPausedAt !== null,
+    };
+  }
+
   return {
     async createMeeting(input: CreateMeetingInput): Promise<MeetingRow> {
       await ensureMember();
@@ -1425,25 +1475,7 @@ export function createMeetingScope(deps: MeetingScopeDeps) {
       savedMeetingId: string,
       reason: 'no_show' | 'failure',
     ): Promise<{ paused: boolean; consecutiveFailureCount: number } | null> {
-      const [row] = await db
-        .update(savedMeetings)
-        .set({
-          consecutiveFailureCount: sql`${savedMeetings.consecutiveFailureCount} + 1`,
-          autoJoinPausedAt: sql`CASE WHEN ${savedMeetings.consecutiveFailureCount} + 1 >= 3 THEN now() ELSE ${savedMeetings.autoJoinPausedAt} END`,
-          autoJoinPausedReason: sql`CASE WHEN ${savedMeetings.consecutiveFailureCount} + 1 >= 3 THEN ${reason} ELSE ${savedMeetings.autoJoinPausedReason} END`,
-          autoJoinEnabled: sql`CASE WHEN ${savedMeetings.consecutiveFailureCount} + 1 >= 3 THEN false ELSE ${savedMeetings.autoJoinEnabled} END`,
-          updatedAt: new Date(),
-        })
-        .where(and(eq(savedMeetings.id, savedMeetingId), eq(savedMeetings.teamId, teamId)))
-        .returning({
-          consecutiveFailureCount: savedMeetings.consecutiveFailureCount,
-          autoJoinPausedAt: savedMeetings.autoJoinPausedAt,
-        });
-      if (!row) return null;
-      return {
-        consecutiveFailureCount: row.consecutiveFailureCount,
-        paused: row.autoJoinPausedAt !== null,
-      };
+      return recordSavedMeetingJoinFailureInternal(db, savedMeetingId, reason);
     },
 
     async resetSavedMeetingFailures(savedMeetingId: string): Promise<void> {
@@ -1458,60 +1490,165 @@ export function createMeetingScope(deps: MeetingScopeDeps) {
         .where(and(eq(savedMeetings.id, savedMeetingId), eq(savedMeetings.teamId, teamId)));
     },
 
-    async retrySavedMeetingAfterNoShow(meetingId: string): Promise<boolean> {
+    async handleMeetingNoShow(input: {
+      meetingId: string;
+      providerBotId: string;
+      code: string;
+      endedAt: Date;
+    }): Promise<'retry_scheduled' | 'terminal' | 'ignored'> {
       const now = new Date();
-      const [eligible] = await db
-        .select({
-          metadata: meetings.metadata,
-          providerBotId: meetings.providerBotId,
-        })
-        .from(meetings)
-        .innerJoin(savedMeetings, eq(savedMeetings.id, meetings.savedMeetingId))
-        .where(
-          and(
-            eq(meetings.id, meetingId),
-            eq(meetings.teamId, teamId),
-            eq(meetings.status, 'no_show'),
-            isNotNull(meetings.scheduledStartAt),
-            lte(meetings.scheduledStartAt, now),
-            or(isNull(meetings.scheduledEndAt), gt(meetings.scheduledEndAt, now)),
-            eq(savedMeetings.teamId, teamId),
-            eq(savedMeetings.autoJoinEnabled, true),
-            isNull(savedMeetings.autoJoinPausedAt),
-            isNull(savedMeetings.archivedAt),
-          ),
-        )
-        .limit(1);
-      if (!eligible) return false;
-      const metadata = eligible.metadata as Record<string, unknown>;
-      const retryCount =
-        typeof metadata.no_show_retry_count === 'number' ? metadata.no_show_retry_count : 0;
-      if (retryCount >= 1) return false;
-      const metadataPatch = JSON.stringify({
+      const retryMetadataPatch = JSON.stringify({
         capture_status: 'scheduled',
-        no_show_retry_count: retryCount + 1,
+        no_show_at: input.endedAt.toISOString(),
+        no_show_code: input.code,
+        no_show_retry_count: 1,
         no_show_retry_scheduled_at: now.toISOString(),
-        previous_provider_bot_id: eligible.providerBotId,
+        previous_provider_bot_id: input.providerBotId,
       });
-      const rows = await db
-        .update(meetings)
-        .set({
-          status: 'scheduled',
-          providerBotId: null,
-          startedAt: null,
-          endedAt: null,
-          updatedAt: now,
-          metadata: sql`COALESCE(${meetings.metadata}, '{}'::jsonb) || ${metadataPatch}::jsonb`,
-        })
-        .where(
-          and(
-            eq(meetings.id, meetingId),
-            eq(meetings.teamId, teamId),
-            eq(meetings.status, 'no_show'),
-          ),
-        )
-        .returning({ id: meetings.id });
-      return rows.length > 0;
+      const terminalMetadataPatch = JSON.stringify({
+        capture_status: 'no_show',
+        no_show_at: input.endedAt.toISOString(),
+        no_show_code: input.code,
+      });
+
+      return db.transaction(async (tx) => {
+        const retryableSavedMeeting = tx
+          .select({ id: savedMeetings.id })
+          .from(savedMeetings)
+          .where(
+            and(
+              eq(savedMeetings.id, meetings.savedMeetingId),
+              eq(savedMeetings.teamId, teamId),
+              eq(savedMeetings.autoJoinEnabled, true),
+              isNull(savedMeetings.autoJoinPausedAt),
+              isNull(savedMeetings.archivedAt),
+            ),
+          );
+        const retried = await tx
+          .update(meetings)
+          .set({
+            status: 'scheduled',
+            providerBotId: null,
+            startedAt: null,
+            endedAt: null,
+            updatedAt: now,
+            metadata: sql`COALESCE(${meetings.metadata}, '{}'::jsonb) || ${retryMetadataPatch}::jsonb`,
+          })
+          .where(
+            and(
+              eq(meetings.id, input.meetingId),
+              eq(meetings.teamId, teamId),
+              eq(meetings.providerBotId, input.providerBotId),
+              notInArray(meetings.status, TERMINAL_MEETING_STATUSES),
+              isNotNull(meetings.scheduledStartAt),
+              lte(meetings.scheduledStartAt, now),
+              or(isNull(meetings.scheduledEndAt), gt(meetings.scheduledEndAt, now)),
+              sql`COALESCE(${meetings.metadata} ->> 'no_show_retry_count', '0') = '0'`,
+              exists(retryableSavedMeeting),
+            ),
+          )
+          .returning({ id: meetings.id });
+        if (retried[0]) return 'retry_scheduled';
+
+        const terminal = await tx
+          .update(meetings)
+          .set({
+            status: 'no_show',
+            endedAt: input.endedAt,
+            updatedAt: now,
+            metadata: sql`COALESCE(${meetings.metadata}, '{}'::jsonb) || ${terminalMetadataPatch}::jsonb`,
+          })
+          .where(
+            and(
+              eq(meetings.id, input.meetingId),
+              eq(meetings.teamId, teamId),
+              eq(meetings.providerBotId, input.providerBotId),
+              notInArray(meetings.status, TERMINAL_MEETING_STATUSES),
+            ),
+          )
+          .returning({ savedMeetingId: meetings.savedMeetingId });
+        const terminalMeeting = terminal[0];
+        if (!terminalMeeting) return 'ignored';
+        if (terminalMeeting.savedMeetingId) {
+          await recordSavedMeetingJoinFailureInternal(
+            tx,
+            terminalMeeting.savedMeetingId,
+            'no_show',
+          );
+        }
+        return 'terminal';
+      });
+    },
+
+    async handleMeetingFailure(input: {
+      meetingId: string;
+      providerBotId: string;
+      code: string;
+      failedAt: Date;
+    }): Promise<'failed' | 'ignored'> {
+      const now = new Date();
+      const metadataPatch = JSON.stringify({
+        failure_at: input.failedAt.toISOString(),
+        failure_code: input.code,
+      });
+      return db.transaction(async (tx) => {
+        const failed = await tx
+          .update(meetings)
+          .set({
+            status: 'failed',
+            updatedAt: now,
+            metadata: sql`COALESCE(${meetings.metadata}, '{}'::jsonb) || ${metadataPatch}::jsonb`,
+          })
+          .where(
+            and(
+              eq(meetings.id, input.meetingId),
+              eq(meetings.teamId, teamId),
+              eq(meetings.providerBotId, input.providerBotId),
+              notInArray(meetings.status, TERMINAL_MEETING_STATUSES),
+            ),
+          )
+          .returning({ savedMeetingId: meetings.savedMeetingId });
+        const failedMeeting = failed[0];
+        if (!failedMeeting) return 'ignored';
+        if (failedMeeting.savedMeetingId) {
+          await recordSavedMeetingJoinFailureInternal(tx, failedMeeting.savedMeetingId, 'failure');
+        }
+        return 'failed';
+      });
+    },
+
+    async expireSavedMeetingNoShowRetries(now = new Date()): Promise<number> {
+      const expiredMetadataPatch = JSON.stringify({
+        capture_status: 'no_show',
+        no_show_retry_expired_at: now.toISOString(),
+      });
+      return db.transaction(async (tx) => {
+        const expired = await tx
+          .update(meetings)
+          .set({
+            status: 'no_show',
+            endedAt: now,
+            updatedAt: now,
+            metadata: sql`COALESCE(${meetings.metadata}, '{}'::jsonb) || ${expiredMetadataPatch}::jsonb`,
+          })
+          .where(
+            and(
+              eq(meetings.teamId, teamId),
+              eq(meetings.status, 'scheduled'),
+              isNotNull(meetings.savedMeetingId),
+              isNotNull(meetings.scheduledEndAt),
+              lte(meetings.scheduledEndAt, now),
+              sql`(${meetings.metadata} ->> 'no_show_retry_count') = '1'`,
+            ),
+          )
+          .returning({ savedMeetingId: meetings.savedMeetingId });
+        for (const row of expired) {
+          if (row.savedMeetingId) {
+            await recordSavedMeetingJoinFailureInternal(tx, row.savedMeetingId, 'no_show');
+          }
+        }
+        return expired.length;
+      });
     },
 
     async getMeetingByBotId(botId: string): Promise<MeetingRow | null> {
@@ -1570,6 +1707,43 @@ export function createMeetingScope(deps: MeetingScopeDeps) {
         .update(meetings)
         .set(setClause)
         .where(and(eq(meetings.id, meetingId), eq(meetings.teamId, teamId)));
+    },
+
+    async updateMeetingStatusForBot(
+      meetingId: string,
+      providerBotId: string,
+      status: MeetingStatus,
+      patch: {
+        startedAt?: Date | null;
+        endedAt?: Date | null;
+        metadata?: Record<string, unknown>;
+        participants?: unknown;
+      } = {},
+    ): Promise<boolean> {
+      const setClause: Record<string, unknown> = {
+        status,
+        updatedAt: new Date(),
+      };
+      if (patch.startedAt !== undefined) setClause.startedAt = patch.startedAt;
+      if (patch.endedAt !== undefined) setClause.endedAt = patch.endedAt;
+      if (patch.participants !== undefined) setClause.participants = patch.participants;
+      if (patch.metadata) {
+        const patchJson = JSON.stringify(patch.metadata);
+        setClause.metadata = sql`COALESCE(${meetings.metadata}, '{}'::jsonb) || ${patchJson}::jsonb`;
+      }
+      const updated = await db
+        .update(meetings)
+        .set(setClause)
+        .where(
+          and(
+            eq(meetings.id, meetingId),
+            eq(meetings.teamId, teamId),
+            eq(meetings.providerBotId, providerBotId),
+            notInArray(meetings.status, TERMINAL_MEETING_STATUSES),
+          ),
+        )
+        .returning({ id: meetings.id });
+      return updated.length > 0;
     },
 
     async appendMeetingChunk(input: AppendChunkInput): Promise<AppendChunkResult | null> {

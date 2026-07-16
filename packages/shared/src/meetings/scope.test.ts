@@ -705,7 +705,7 @@ describe('meetings scope', () => {
     ).resolves.toMatchObject({ aliases: ['daily'] });
   });
 
-  it('requeues one in-window saved meeting attempt after a no-show', async () => {
+  it('ignores a stale no-show after the retry has been claimed by a new bot', async () => {
     const scope = withTeam(db as never, TEAM_ID, USER_A).meetings;
     const saved = await scope.createSavedMeeting({
       title: 'Retry daily',
@@ -725,31 +725,117 @@ describe('meetings scope', () => {
       meetingUrl: saved.meetingUrl,
       title: saved.title,
       savedMeetingId: saved.id,
-      status: 'no_show',
+      status: 'joining',
       scheduledStartAt: new Date(now - 5 * 60_000),
       scheduledEndAt: new Date(now + 25 * 60_000),
-      metadata: { source: 'saved_meeting', capture_status: 'no_show' },
+      metadata: { source: 'saved_meeting', capture_status: 'joining' },
     });
-    await scope.updateMeetingStatus(meeting.id, 'no_show', {
-      providerBotId: 'bot-timed-out',
-      endedAt: new Date(),
+    await scope.updateMeetingStatus(meeting.id, 'joining', {
+      providerBotId: 'bot-first-attempt',
     });
 
-    await expect(scope.retrySavedMeetingAfterNoShow(meeting.id)).resolves.toBe(true);
-    const [retry] = await db.select().from(meetings).where(eq(meetings.id, meeting.id));
-    expect(retry).toMatchObject({
-      status: 'scheduled',
-      providerBotId: null,
-      startedAt: null,
-      endedAt: null,
+    await expect(
+      scope.handleMeetingNoShow({
+        meetingId: meeting.id,
+        providerBotId: 'bot-first-attempt',
+        code: 'timeout_exceeded_waiting_room',
+        endedAt: new Date(),
+      }),
+    ).resolves.toBe('retry_scheduled');
+
+    await expect(scope.claimMeetingForJoin(meeting.id)).resolves.toMatchObject({
+      status: 'joining',
+    });
+    await scope.updateMeetingStatus(meeting.id, 'joining', {
+      providerBotId: 'bot-second-attempt',
+    });
+
+    await expect(
+      scope.handleMeetingNoShow({
+        meetingId: meeting.id,
+        providerBotId: 'bot-first-attempt',
+        code: 'timeout_exceeded_waiting_room',
+        endedAt: new Date(),
+      }),
+    ).resolves.toBe('ignored');
+    await expect(scope.getMeeting(meeting.id)).resolves.toMatchObject({
+      status: 'joining',
+      providerBotId: 'bot-second-attempt',
       metadata: expect.objectContaining({
         no_show_retry_count: 1,
-        previous_provider_bot_id: 'bot-timed-out',
+        previous_provider_bot_id: 'bot-first-attempt',
       }) as unknown,
     });
+    await expect(scope.getSavedMeeting(saved.id)).resolves.toMatchObject({
+      consecutiveFailureCount: 0,
+    });
 
-    await scope.updateMeetingStatus(meeting.id, 'no_show');
-    await expect(scope.retrySavedMeetingAfterNoShow(meeting.id)).resolves.toBe(false);
+    await expect(
+      scope.handleMeetingNoShow({
+        meetingId: meeting.id,
+        providerBotId: 'bot-second-attempt',
+        code: 'timeout_exceeded_waiting_room',
+        endedAt: new Date(),
+      }),
+    ).resolves.toBe('terminal');
+    await expect(scope.getMeeting(meeting.id)).resolves.toMatchObject({
+      status: 'no_show',
+      providerBotId: 'bot-second-attempt',
+      metadata: expect.objectContaining({ capture_status: 'no_show' }) as unknown,
+    });
+    await expect(scope.getSavedMeeting(saved.id)).resolves.toMatchObject({
+      consecutiveFailureCount: 1,
+    });
+  });
+
+  it('applies lifecycle updates and failures only to the current provider bot', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_A).meetings;
+    const saved = await scope.createSavedMeeting({
+      title: 'Attempt scoped daily',
+      meetingUrl: 'https://meet.google.com/attempt-scope',
+      permissionConfirmed: true,
+    });
+    const meeting = await scope.createMeeting({
+      platform: 'meet',
+      meetingUrl: saved.meetingUrl,
+      savedMeetingId: saved.id,
+      status: 'joining',
+    });
+    await scope.updateMeetingStatus(meeting.id, 'joining', {
+      providerBotId: 'bot-current',
+    });
+
+    await expect(
+      scope.updateMeetingStatusForBot(meeting.id, 'bot-stale', 'processing'),
+    ).resolves.toBe(false);
+    await expect(
+      scope.handleMeetingFailure({
+        meetingId: meeting.id,
+        providerBotId: 'bot-stale',
+        code: 'fatal',
+        failedAt: new Date(),
+      }),
+    ).resolves.toBe('ignored');
+    await expect(scope.getMeeting(meeting.id)).resolves.toMatchObject({
+      status: 'joining',
+      providerBotId: 'bot-current',
+    });
+    await expect(scope.getSavedMeeting(saved.id)).resolves.toMatchObject({
+      consecutiveFailureCount: 0,
+    });
+
+    await expect(
+      scope.handleMeetingFailure({
+        meetingId: meeting.id,
+        providerBotId: 'bot-current',
+        code: 'fatal',
+        failedAt: new Date(),
+      }),
+    ).resolves.toBe('failed');
+    await expect(scope.getMeeting(meeting.id)).resolves.toMatchObject({ status: 'failed' });
+    await expect(scope.getSavedMeeting(saved.id)).resolves.toMatchObject({
+      consecutiveFailureCount: 1,
+    });
   });
 
   it('tracks raw-url quick join confirmations through pending, expiry, and cancellation states', async () => {

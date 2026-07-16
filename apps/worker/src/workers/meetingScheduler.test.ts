@@ -174,6 +174,52 @@ describe('processMeetingSchedulerTick', () => {
     );
   });
 
+  it('terminalizes an expired no-show retry exactly once after scheduler downtime', async () => {
+    const { saved, meeting } = await insertSavedAndScheduled(db, {
+      noShowRetry: true,
+      scheduledStartAt: new Date(Date.now() - 31 * 60_000),
+    });
+
+    const firstTick = await processMeetingSchedulerTick({ db: db as never });
+
+    expect(firstTick.failed).toBe(1);
+    expect(joinMeetingMock).not.toHaveBeenCalled();
+    const meetingRow = (await db.select().from(meetings).where(eq(meetings.id, meeting.id)))[0];
+    expect(meetingRow).toMatchObject({
+      status: 'no_show',
+      metadata: expect.objectContaining({
+        capture_status: 'no_show',
+        no_show_retry_expired_at: expect.any(String) as string,
+      }) as unknown,
+    });
+    const savedAfterFirstTick = (
+      await db.select().from(savedMeetings).where(eq(savedMeetings.id, saved.id))
+    )[0];
+    expect(savedAfterFirstTick?.consecutiveFailureCount).toBe(1);
+
+    const secondTick = await processMeetingSchedulerTick({ db: db as never });
+    const savedAfterSecondTick = (
+      await db.select().from(savedMeetings).where(eq(savedMeetings.id, saved.id))
+    )[0];
+    expect(secondTick.failed).toBe(0);
+    expect(savedAfterSecondTick?.consecutiveFailureCount).toBe(1);
+  });
+
+  it('terminalizes an expired retry after auto-join is disabled during downtime', async () => {
+    const { meeting } = await insertSavedAndScheduled(db, {
+      autoJoinEnabled: false,
+      noShowRetry: true,
+      scheduledStartAt: new Date(Date.now() - 31 * 60_000),
+    });
+
+    const result = await processMeetingSchedulerTick({ db: db as never });
+
+    expect(result.failed).toBe(1);
+    expect(joinMeetingMock).not.toHaveBeenCalled();
+    const row = (await db.select().from(meetings).where(eq(meetings.id, meeting.id)))[0];
+    expect(row?.status).toBe('no_show');
+  });
+
   it('claims scheduled captures before calling the provider so concurrent ticks do not duplicate bots', async () => {
     const { meeting } = await insertSavedAndScheduled(db);
     let releaseJoin!: () => void;
