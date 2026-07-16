@@ -2826,6 +2826,8 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
 
   async function archiveRejectedSuggestionCreateResult(
     item: typeof agentSuggestionItems.$inferSelect,
+    client: DbOrTx = db,
+    postCommitEffects?: (() => void)[],
   ): Promise<void> {
     if (
       item.operation !== 'create' ||
@@ -2833,75 +2835,20 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     ) {
       return;
     }
-    const [created] = await db
-      .select({ id: entities.id, type: entities.type, createdAt: entities.createdAt })
-      .from(entities)
-      .where(
-        and(
-          eq(entities.teamId, teamId),
-          isNull(entities.archivedAt),
-          isNull(entities.mergedIntoId),
-          sql`${entities.metadata} ->> 'agent_suggestion_item_id' = ${item.id}`,
-        ),
-      )
-      .limit(1);
-    if (created) {
-      const [adopted] = await db
-        .select({ id: entities.id })
-        .from(entities)
-        .where(
-          and(
-            eq(entities.teamId, teamId),
-            eq(entities.id, created.id),
-            or(
-              sql`EXISTS (
-                SELECT 1
-                FROM object_changes AS adoption_change
-                WHERE adoption_change.team_id = ${teamId}
-                  AND adoption_change.entity_id = ${created.id}
-                  AND adoption_change.actor_kind = 'user'
-                  AND adoption_change.status = 'applied'
-                  AND adoption_change.changed_at > ${created.createdAt}
-              )`,
-              sql`EXISTS (
-                SELECT 1
-                FROM object_notes AS adoption_note
-                WHERE adoption_note.team_id = ${teamId}
-                  AND adoption_note.entity_id = ${created.id}
-                  AND adoption_note.author_user_id IS NOT NULL
-                  AND adoption_note.deleted_at IS NULL
-                  AND adoption_note.created_at > ${created.createdAt}
-              )`,
-              sql`EXISTS (
-                SELECT 1
-                FROM board_items AS adoption_board_item
-                WHERE adoption_board_item.team_id = ${teamId}
-                  AND adoption_board_item.entity_id = ${created.id}
-                  AND adoption_board_item.archived_at IS NULL
-                  AND adoption_board_item.created_at > ${created.createdAt}
-              )`,
-              sql`EXISTS (
-                SELECT 1
-                FROM entity_relationships AS adoption_relationship
-                WHERE adoption_relationship.team_id = ${teamId}
-                  AND (
-                    adoption_relationship.from_entity_id = ${created.id}
-                    OR adoption_relationship.to_entity_id = ${created.id}
-                  )
-                  AND adoption_relationship.created_by IS NOT NULL
-                  AND adoption_relationship.created_at > ${created.createdAt}
-              )`,
-            ),
-          ),
-        )
-        .limit(1);
-      if (adopted) return;
-      if (created.type === 'task') {
-        await objects.setTaskProject(created.id, null, { kind: 'agent', userId: null });
-      }
-      await objects.archiveObject(created.id, { kind: 'agent', userId: null });
+    const effects = postCommitEffects ?? [];
+    const runsOwnPostCommitEffects = postCommitEffects === undefined;
+    await client.transaction(async (tx) => {
+      const projectIds = await suggestedProjectCandidateIds(item, tx, true);
+      await objects.archiveSuggestionCreatedObjectIfUnadopted(
+        item.id,
+        { kind: 'agent', userId: null },
+        { transactionClient: tx, postCommitEffects: effects },
+      );
+      await archiveSuggestedProjectCandidates(item, projectIds, tx, effects);
+    });
+    if (runsOwnPostCommitEffects) {
+      for (const effect of effects) effect();
     }
-    await archiveOrphanedSuggestedProjects(item);
   }
 
   async function recoverInterruptedTaskCreateAcceptances(): Promise<void> {
@@ -4422,8 +4369,19 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
 
   async function archiveOrphanedSuggestedProjects(
     item: typeof agentSuggestionItems.$inferSelect,
+    client: DbOrTx = db,
+    postCommitEffects?: (() => void)[],
   ): Promise<void> {
-    const candidates = await db
+    const projectIds = await suggestedProjectCandidateIds(item, client);
+    await archiveSuggestedProjectCandidates(item, projectIds, client, postCommitEffects);
+  }
+
+  async function suggestedProjectCandidateIds(
+    item: typeof agentSuggestionItems.$inferSelect,
+    client: DbOrTx,
+    lock = false,
+  ): Promise<string[]> {
+    const query = client
       .select({ id: entities.id })
       .from(entities)
       .where(
@@ -4434,12 +4392,31 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
           isNull(entities.mergedIntoId),
           sql`${entities.metadata} ->> 'agent_suggestion_project_for_item_id' = ${item.id}`,
         ),
+      )
+      .orderBy(asc(entities.id));
+    const candidates = lock ? await query.for('update') : await query;
+    return candidates.map((candidate) => candidate.id);
+  }
+
+  async function archiveSuggestedProjectCandidates(
+    item: typeof agentSuggestionItems.$inferSelect,
+    projectIds: string[],
+    client: DbOrTx,
+    postCommitEffects?: (() => void)[],
+  ): Promise<void> {
+    for (const projectId of projectIds) {
+      await objects.archiveSuggestedProjectIfUnused(
+        projectId,
+        item.id,
+        {
+          kind: 'agent',
+          userId: null,
+        },
+        {
+          transactionClient: client,
+          ...(postCommitEffects ? { postCommitEffects } : {}),
+        },
       );
-    for (const candidate of candidates) {
-      await objects.archiveSuggestedProjectIfUnused(candidate.id, item.id, {
-        kind: 'agent',
-        userId: null,
-      });
     }
   }
 
@@ -4706,7 +4683,12 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         if (parsed.dueAt !== undefined) patch.dueAt = parsed.dueAt ? new Date(parsed.dueAt) : null;
         if (parsed.aliases !== undefined) patch.aliases = parsed.aliases;
         if (parsed.metadata !== undefined) patch.metadata = parsed.metadata;
-        await objects.updateObject(targetId, patch, { kind: 'agent', userId: null });
+        await objects.updateObject(
+          targetId,
+          patch,
+          { kind: 'agent', userId: null },
+          { requireActive: true },
+        );
         return targetId;
       }
       await objects.archiveObject(targetId, { kind: 'agent', userId: null });
@@ -4988,7 +4970,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       });
       if (!recordedFailure) return false;
       await refreshBundleStatus(row.suggestion.id, userId);
-      const staleReason = await staleActionableItemReason(claimed);
+      const staleReason = await staleActionableItemReason({ ...claimed, status: 'failed' });
       if (staleReason && (await supersedeItem(itemId, null, staleReason))) {
         await reconcileStaleActionableItemsBestEffort({
           suggestionItemId: itemId,
@@ -6440,6 +6422,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         .limit(1);
       const row = rows[0];
       if (!row) return false;
+      const postCommitEffects: (() => void)[] = [];
       const rejected = await db.transaction(async (tx) => {
         const [updated] = await tx
           .update(agentSuggestionItems)
@@ -6458,11 +6441,12 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
           )
           .returning({ id: agentSuggestionItems.id });
         if (!updated) return null;
+        await archiveRejectedSuggestionCreateResult(row.item, tx, postCommitEffects);
         await writeProjectedOutputStatusForItem(tx, row.item, 'rejected');
         return updated;
       });
       if (!rejected) return false;
-      await archiveRejectedSuggestionCreateResult(row.item);
+      for (const effect of postCommitEffects) effect();
       await supersedeRelationshipDependents(row.item);
       await refreshBundleStatus(row.suggestion.id, userId);
       await reconcileStaleActionableItemsBestEffort({

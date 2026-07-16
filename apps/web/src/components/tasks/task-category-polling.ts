@@ -14,7 +14,7 @@ interface TaskCategoryPollResult {
   rows: NonNullable<Awaited<ReturnType<typeof loadTaskCategoryStatesAction>>['rows']>;
 }
 
-function taskCategoryPollInterval(
+export function taskCategoryPollInterval(
   startedAt: number,
   fastPollIntervalMs: number,
   now = Date.now(),

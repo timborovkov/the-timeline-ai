@@ -15,7 +15,13 @@ import { publicActionError } from '@/lib/public-error';
 import { runSentryServerAction } from '@/lib/sentry-action';
 import { reportCaughtError } from '@/lib/sentry-report';
 import { loadTaskRowsPage } from '@/lib/task-page';
-import { parseWorkFilters, taskObjectFilterFromWorkFilters } from '@/lib/work-filters';
+import {
+  boardItemFilterFromWorkFilters,
+  objectListFilterFromWorkFilters,
+  parseWorkFilters,
+  taskCategoryFilterKeys,
+  taskObjectFilterFromWorkFilters,
+} from '@/lib/work-filters';
 
 // Derived from the Postgres enum so adding a new object type doesn't
 // require synchronizing this schema with the drizzle enum by hand.
@@ -120,6 +126,31 @@ const loadTaskRowsSchema = z.object({
   filters: z
     .record(z.string(), z.union([z.string(), z.array(z.string()), z.undefined()]))
     .optional(),
+});
+const taskCategoryFilterStateSchema = z.object({
+  surface: z.enum(['tasks', 'objects', 'board']),
+  boardId: uuidSchema.optional(),
+  baselineToken: z.string().max(1000),
+  filters: z.strictObject({
+    q: z.string().max(200),
+    type: z.string().max(500),
+    status: z.string().max(500),
+    category: z.string().max(500),
+    project: z.string().max(500),
+    stage: z.string().max(500),
+    owner: z.string().max(500),
+    assignee: z.string().max(500),
+    responsible: z.string().max(500),
+    lane: z.string().max(100),
+    priority: z.string().max(20),
+    due: z.string().max(20),
+    dueFrom: z.string().max(40),
+    dueTo: z.string().max(40),
+    createdFrom: z.string().max(40),
+    createdTo: z.string().max(40),
+    updatedFrom: z.string().max(40),
+    updatedTo: z.string().max(40),
+  }),
 });
 
 async function checkUserSearchRateLimit(userId: string): Promise<boolean> {
@@ -472,6 +503,50 @@ export async function loadTaskCategoryStatesAction(input: unknown): Promise<{
       };
     } catch (err) {
       return { error: friendlyError(err, 'Failed to refresh categories') };
+    }
+  });
+}
+
+export async function loadTaskCategoryFilterStateAction(input: unknown): Promise<{
+  state?: { token: string; changed: boolean; pending: boolean };
+  error?: string;
+}> {
+  return runSentryServerAction('load_task_category_filter_state', async () => {
+    const parsed = taskCategoryFilterStateSchema.safeParse(input);
+    if (!parsed.success || (parsed.data.surface === 'board' && !parsed.data.boardId)) {
+      return { error: 'Invalid task category filter state' };
+    }
+    const r = await resolveScope();
+    if (!r.ok) return { error: r.error };
+    try {
+      const filters = parseWorkFilters(parsed.data.filters, { taskCategoriesEnabled: true });
+      const categoryKeys = taskCategoryFilterKeys(filters);
+      if (categoryKeys.length === 0) {
+        return { state: { token: '', changed: false, pending: false } };
+      }
+      const withoutCategory = { ...filters, category: '' };
+      const state =
+        parsed.data.surface === 'board'
+          ? await r.scope.boards.getTaskCategoryFilterRefreshState(
+              parsed.data.boardId ?? '',
+              boardItemFilterFromWorkFilters(withoutCategory),
+              categoryKeys,
+              parsed.data.baselineToken,
+            )
+          : await r.scope.objects.getTaskCategoryFilterRefreshState(
+              parsed.data.surface === 'tasks'
+                ? taskObjectFilterFromWorkFilters(withoutCategory)
+                : {
+                    ...objectListFilterFromWorkFilters(withoutCategory),
+                    type: 'task',
+                    archived: false,
+                  },
+              categoryKeys,
+              parsed.data.baselineToken,
+            );
+      return { state };
+    } catch (err) {
+      return { error: friendlyError(err, 'Failed to refresh category filter') };
     }
   });
 }

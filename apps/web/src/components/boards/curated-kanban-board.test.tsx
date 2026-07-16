@@ -1,14 +1,30 @@
 // @vitest-environment happy-dom
 
-import { cleanup, render, screen } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { cleanup, render as testingRender, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type * as boards from '@timeline/shared/boards';
+import type { PropsWithChildren, ReactElement } from 'react';
+
+const fakes = vi.hoisted(() => ({ loadTaskCategoryStatesAction: vi.fn() }));
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 vi.mock('@/app/actions/boards', () => ({ updateBoardItemAction: vi.fn() }));
+vi.mock('@/app/actions/objects', () => ({
+  loadTaskCategoryStatesAction: fakes.loadTaskCategoryStatesAction,
+}));
 
 const { CuratedKanbanBoard } = await import('./curated-kanban-board.js');
+
+function render(ui: ReactElement) {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return testingRender(ui, {
+    wrapper: ({ children }: PropsWithChildren) => (
+      <QueryClientProvider client={client}>{children}</QueryClientProvider>
+    ),
+  });
+}
 
 function lane(): boards.BoardLaneRow {
   return {
@@ -68,6 +84,8 @@ function boardItem(
 describe('CuratedKanbanBoard', () => {
   beforeEach(() => {
     cleanup();
+    fakes.loadTaskCategoryStatesAction.mockReset();
+    fakes.loadTaskCategoryStatesAction.mockResolvedValue({ rows: [] });
   });
 
   it('wraps long card titles', () => {
@@ -87,6 +105,36 @@ describe('CuratedKanbanBoard', () => {
     const title = screen.getByRole('link', { name: longTitle });
     expect(title.className).toContain('break-words');
     expect(title.className).not.toContain('truncate');
+  });
+
+  it('updates a pending task category on the card', async () => {
+    fakes.loadTaskCategoryStatesAction.mockResolvedValue({
+      rows: [
+        {
+          id: 'object-1',
+          taskCategory: 'design',
+          taskCategoryStatus: 'ready',
+          taskCategoryUpdatedAt: new Date('2026-07-13T10:00:00.000Z'),
+        },
+      ],
+    });
+    const item = boardItem('Pending category');
+    item.object.taskCategoryStatus = 'pending';
+
+    render(
+      <CuratedKanbanBoard
+        boardId="board-1"
+        lanes={[lane()]}
+        items={[item]}
+        selectedItemId={null}
+        members={[]}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Design')).toBeTruthy();
+    });
+    expect(screen.queryByText('Categorizing…')).toBeNull();
   });
 
   it('uses source-tracked integration display titles on cards', () => {

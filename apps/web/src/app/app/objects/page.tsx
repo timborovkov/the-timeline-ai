@@ -14,6 +14,7 @@ import { EmptyAction } from '@/components/empty-action';
 import { IndexStrip } from '@/components/index-strip';
 import { ObjectCleanupList } from '@/components/objects/object-cleanup-list';
 import { ObjectCleanupSuggestions } from '@/components/objects/object-cleanup-suggestions';
+import { TaskCategoryFilterRefresh } from '@/components/tasks/task-category-filter-refresh';
 import { WORK_BACK_LINK } from '@/components/work-back-link';
 import { WorkFilterBar } from '@/components/work-filter-bar';
 import { resolveActiveTeam } from '@/lib/active-team';
@@ -28,6 +29,7 @@ import {
   hasActiveWorkFilters,
   objectListFilterFromWorkFilters,
   parseWorkFilters,
+  taskCategoryFilterKeys,
   workFilterHiddenParams,
 } from '@/lib/work-filters';
 
@@ -72,6 +74,18 @@ export default async function ObjectsIndexPage({
   const filters = parseWorkFilters(params, {
     taskCategoriesEnabled: getEnv().TASK_CATEGORY_UI_ENABLED,
   });
+  const categoryKeys = taskCategoryFilterKeys(filters);
+  const categoryFilterBaseline =
+    categoryKeys.length > 0
+      ? await scope.objects.getTaskCategoryFilterRefreshState(
+          {
+            ...objectListFilterFromWorkFilters({ ...filters, category: '' }),
+            type: 'task',
+            archived: false,
+          },
+          categoryKeys,
+        )
+      : null;
   const filterParams = workFilterHiddenParams(params, WORK_FILTER_PARAM_KEYS);
   const contextualTaskFilter = Boolean(filters.category || filters.project);
   const objectFilter = {
@@ -235,6 +249,13 @@ export default async function ObjectsIndexPage({
         projects={projects.map((project) => ({ id: project.id, label: project.canonicalName }))}
         typeLabels={OBJECT_TYPE_LABELS}
       />
+      {categoryFilterBaseline ? (
+        <TaskCategoryFilterRefresh
+          surface="objects"
+          filters={filters}
+          baselineToken={categoryFilterBaseline.token}
+        />
+      ) : null}
 
       <ObjectCleanupSuggestions
         suggestions={cleanupSuggestions}

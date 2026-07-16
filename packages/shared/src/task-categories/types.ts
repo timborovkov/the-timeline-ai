@@ -21,6 +21,8 @@ export const TASK_CATEGORIES = [
 ] as const;
 
 export type TaskCategory = (typeof TASK_CATEGORIES)[number];
+export const UNCATEGORIZED_TASK_CATEGORY_FILTER = 'uncategorized' as const;
+export type TaskCategoryFilterKey = TaskCategory | typeof UNCATEGORIZED_TASK_CATEGORY_FILTER;
 export type TaskCategoryMode = 'automatic' | 'manual';
 export type TaskCategorySource = 'llm' | 'user';
 export type TaskCategoryStatus = 'pending' | 'ready' | 'failed';

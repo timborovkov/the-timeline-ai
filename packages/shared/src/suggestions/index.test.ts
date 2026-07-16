@@ -3013,6 +3013,52 @@ describe('suggestion scope', () => {
     expect(result.rows[0]?.status).toBe('active');
   });
 
+  it('does not update a target archived after an approval is claimed', async () => {
+    const baseScope = withTeam(db as never, TEAM_ID, USER_ID);
+    const target = await baseScope.objects.createObject({
+      type: 'project',
+      canonicalName: 'Concurrent archive target',
+      status: 'active',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const bundle = await baseScope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Update concurrently archived target',
+      dedupeKey: 'concurrent-archive-target',
+      items: [
+        {
+          operation: 'update',
+          targetKind: 'object',
+          targetId: target.id,
+          title: 'Ship concurrently archived target',
+          dedupeKey: 'concurrent-archive-target:item',
+          proposedPayload: { status: 'shipped' },
+        },
+      ],
+    });
+    const acceptingScope = withTeam(db as never, TEAM_ID, USER_ID, {
+      beforeSuggestionApply: async () => {
+        await baseScope.objects.archiveObject(target.id, { kind: 'user', userId: USER_ID });
+      },
+    });
+
+    await expect(
+      acceptingScope.suggestions.acceptSuggestionItem(bundle.items[0]?.id ?? ''),
+    ).resolves.toBe(true);
+
+    const loaded = await acceptingScope.suggestions.getSuggestion(bundle.id);
+    expect(loaded).toMatchObject({ status: 'superseded' });
+    expect(loaded?.items[0]).toMatchObject({
+      status: 'superseded',
+      supersededReason: 'The target object was archived.',
+    });
+    const result = await pg.query<{ archived_at: Date | null; status: string }>(
+      `SELECT archived_at, status FROM entities WHERE id = '${target.id}'`,
+    );
+    expect(result.rows[0]).toMatchObject({ status: 'active' });
+    expect(result.rows[0]?.archived_at).not.toBeNull();
+  });
+
   it('keeps accepted suggestion rows immutable and creates a correction bundle', async () => {
     const scope = withTeam(db as never, TEAM_ID, PSEUDO_USER, { skipMembershipCheck: true });
     const original = await scope.suggestions.createOrMergeSuggestionBundle({
@@ -4210,6 +4256,271 @@ describe('suggestion scope', () => {
       archivedAt: null,
       status: 'doing',
     });
+  });
+
+  it('preserves an interrupted task adopted by an accepted note suggestion', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const taskBundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Create task later adopted by a note',
+      dedupeKey: 'reject-task-adopted-by-note',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Task adopted by an accepted note',
+          dedupeKey: 'reject-task-adopted-by-note:item',
+          proposedPayload: { canonicalName: 'Task adopted by an accepted note' },
+        },
+      ],
+    });
+    const taskItemId = taskBundle.items[0]?.id ?? '';
+    const task = await scope.objects.createObject({
+      type: 'task',
+      canonicalName: 'Task adopted by an accepted note',
+      metadata: { agent_suggestion_item_id: taskItemId },
+      actor: { kind: 'agent', userId: null },
+    });
+    const interruptedAt = new Date('2020-01-01T00:00:00.000Z');
+    await db.update(entities).set({ createdAt: interruptedAt }).where(eq(entities.id, task.id));
+    await db
+      .update(agentSuggestionItems)
+      .set({
+        status: 'accepted',
+        resultId: null,
+        resolvedAt: interruptedAt,
+        resolvedByUserId: USER_ID,
+        updatedAt: interruptedAt,
+      })
+      .where(eq(agentSuggestionItems.id, taskItemId));
+
+    const noteBundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Add task execution context',
+      dedupeKey: 'reject-task-adopted-by-note:note',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'object_note',
+          targetId: task.id,
+          title: 'Add execution context',
+          dedupeKey: 'reject-task-adopted-by-note:note:item',
+          proposedPayload: {
+            entityId: task.id,
+            body: 'The customer approved this task for the launch.',
+          },
+        },
+      ],
+    });
+    await expect(
+      scope.suggestions.acceptSuggestionItem(noteBundle.items[0]?.id ?? ''),
+    ).resolves.toBe(true);
+
+    await expect(scope.suggestions.rejectSuggestionItem(taskItemId)).resolves.toBe(true);
+
+    await expect(scope.objects.getObject(task.id)).resolves.toMatchObject({ archivedAt: null });
+    const notes = await pg.query<{ body: string }>(
+      `SELECT body FROM object_notes WHERE team_id = $1 AND entity_id = $2`,
+      [TEAM_ID, task.id],
+    );
+    expect(notes.rows).toEqual([
+      expect.objectContaining({ body: 'The customer approved this task for the launch.' }),
+    ]);
+  });
+
+  it('preserves an interrupted task adopted by an accepted update suggestion', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const taskBundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Create task later adopted by an update',
+      dedupeKey: 'reject-task-adopted-by-update',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Task adopted by an accepted update',
+          dedupeKey: 'reject-task-adopted-by-update:item',
+          proposedPayload: { canonicalName: 'Task adopted by an accepted update' },
+        },
+      ],
+    });
+    const taskItemId = taskBundle.items[0]?.id ?? '';
+    const task = await scope.objects.createObject({
+      type: 'task',
+      canonicalName: 'Task adopted by an accepted update',
+      metadata: { agent_suggestion_item_id: taskItemId },
+      actor: { kind: 'agent', userId: null },
+    });
+    const interruptedAt = new Date('2020-01-01T00:00:00.000Z');
+    await db.update(entities).set({ createdAt: interruptedAt }).where(eq(entities.id, task.id));
+    await db
+      .update(agentSuggestionItems)
+      .set({
+        status: 'accepted',
+        resultId: null,
+        resolvedAt: interruptedAt,
+        resolvedByUserId: USER_ID,
+        updatedAt: interruptedAt,
+      })
+      .where(eq(agentSuggestionItems.id, taskItemId));
+
+    const updateBundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Advance accepted task',
+      dedupeKey: 'reject-task-adopted-by-update:update',
+      items: [
+        {
+          operation: 'update',
+          targetKind: 'task',
+          targetId: task.id,
+          title: 'Start accepted task',
+          dedupeKey: 'reject-task-adopted-by-update:update:item',
+          proposedPayload: { status: 'doing' },
+        },
+      ],
+    });
+    await expect(
+      scope.suggestions.acceptSuggestionItem(updateBundle.items[0]?.id ?? ''),
+    ).resolves.toBe(true);
+
+    await expect(scope.suggestions.rejectSuggestionItem(taskItemId)).resolves.toBe(true);
+
+    await expect(scope.objects.getObject(task.id)).resolves.toMatchObject({
+      archivedAt: null,
+      status: 'doing',
+    });
+  });
+
+  it('archives an unused suggestion project while preserving its adopted interrupted task', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Reject adopted task with detached project',
+      dedupeKey: 'reject-adopted-task-detached-project',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Adopted task with detached project',
+          dedupeKey: 'reject-adopted-task-detached-project:item',
+          proposedPayload: {
+            canonicalName: 'Adopted task with detached project',
+            createProjectName: 'Detached suggestion project',
+            projectName: 'Detached suggestion project',
+          },
+        },
+      ],
+    });
+    const itemId = bundle.items[0]?.id ?? '';
+    const project = await scope.objects.createObject({
+      type: 'project',
+      canonicalName: 'Detached suggestion project',
+      metadata: { agent_suggestion_project_for_item_id: itemId },
+      actor: { kind: 'agent', userId: null },
+    });
+    const task = await scope.objects.createObject({
+      type: 'task',
+      canonicalName: 'Adopted task with detached project',
+      parentObjectId: project.id,
+      metadata: { agent_suggestion_item_id: itemId },
+      actor: { kind: 'agent', userId: null },
+    });
+    const interruptedAt = new Date('2020-01-01T00:00:00.000Z');
+    await db.update(entities).set({ createdAt: interruptedAt }).where(eq(entities.id, task.id));
+    await scope.objects.setTaskProject(task.id, null, { kind: 'user', userId: USER_ID });
+    await db
+      .update(agentSuggestionItems)
+      .set({
+        status: 'accepted',
+        resultId: null,
+        resolvedAt: interruptedAt,
+        resolvedByUserId: USER_ID,
+        updatedAt: interruptedAt,
+      })
+      .where(eq(agentSuggestionItems.id, itemId));
+
+    await expect(scope.suggestions.rejectSuggestionItem(itemId)).resolves.toBe(true);
+
+    await expect(scope.objects.getObject(task.id)).resolves.toMatchObject({ archivedAt: null });
+    const archivedProject = await scope.objects.getObject(project.id);
+    expect(archivedProject?.archivedAt).toBeInstanceOf(Date);
+  });
+
+  it('rolls back rejection and project unlinking when interrupted-task cleanup fails', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Retry atomic rejected-task cleanup',
+      dedupeKey: 'retry-atomic-rejected-task-cleanup',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Retry atomic rejected-task cleanup',
+          dedupeKey: 'retry-atomic-rejected-task-cleanup:item',
+          proposedPayload: { canonicalName: 'Retry atomic rejected-task cleanup' },
+        },
+      ],
+    });
+    const itemId = bundle.items[0]?.id ?? '';
+    const project = await scope.objects.createObject({
+      type: 'project',
+      canonicalName: 'Atomic cleanup project',
+      metadata: { agent_suggestion_project_for_item_id: itemId },
+      actor: { kind: 'agent', userId: null },
+    });
+    const task = await scope.objects.createObject({
+      type: 'task',
+      canonicalName: 'Retry atomic rejected-task cleanup',
+      parentObjectId: project.id,
+      metadata: { agent_suggestion_item_id: itemId },
+      actor: { kind: 'agent', userId: null },
+    });
+    const interruptedAt = new Date('2020-01-01T00:00:00.000Z');
+    await db.update(entities).set({ createdAt: interruptedAt }).where(eq(entities.id, task.id));
+    await db
+      .update(agentSuggestionItems)
+      .set({
+        status: 'accepted',
+        resultId: null,
+        resolvedAt: interruptedAt,
+        resolvedByUserId: USER_ID,
+        updatedAt: interruptedAt,
+      })
+      .where(eq(agentSuggestionItems.id, itemId));
+    await pg.exec(`
+      CREATE FUNCTION fail_rejected_task_cleanup() RETURNS trigger AS $$
+      BEGIN
+        IF NEW.id = '${task.id}' AND OLD.archived_at IS NULL AND NEW.archived_at IS NOT NULL THEN
+          RAISE EXCEPTION 'injected cleanup failure';
+        END IF;
+        RETURN NEW;
+      END;
+      $$ LANGUAGE plpgsql;
+      CREATE TRIGGER fail_rejected_task_cleanup_trg
+      BEFORE UPDATE ON entities
+      FOR EACH ROW EXECUTE FUNCTION fail_rejected_task_cleanup();
+    `);
+
+    await expect(scope.suggestions.rejectSuggestionItem(itemId)).rejects.toThrow();
+
+    const [failedItem] = await db
+      .select({ status: agentSuggestionItems.status })
+      .from(agentSuggestionItems)
+      .where(eq(agentSuggestionItems.id, itemId));
+    expect(failedItem?.status).toBe('failed');
+    await expect(scope.objects.getObject(task.id)).resolves.toMatchObject({ archivedAt: null });
+    await expect(scope.objects.listPrimaryProjectsForTasks([task.id])).resolves.toEqual([
+      expect.objectContaining({ taskId: task.id, projectId: project.id }),
+    ]);
+
+    await pg.exec(`
+      DROP TRIGGER fail_rejected_task_cleanup_trg ON entities;
+      DROP FUNCTION fail_rejected_task_cleanup();
+    `);
+    await expect(scope.suggestions.rejectSuggestionItem(itemId)).resolves.toBe(true);
+    const archivedTask = await scope.objects.getObject(task.id);
+    expect(archivedTask?.archivedAt).toBeInstanceOf(Date);
   });
 
   it('preserves an interrupted suggestion project that a user edited before rejection', async () => {

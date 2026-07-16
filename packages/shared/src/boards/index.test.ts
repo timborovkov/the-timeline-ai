@@ -354,6 +354,28 @@ describe('board scope', () => {
     ).rejects.toThrow('Object not in this team');
   });
 
+  it('rejects archived objects before creating a board item', async () => {
+    const scope = withTeam(db, TEAM_A, USER_OWNER);
+    const board = await scope.boards.createBoard({
+      name: 'Active work only',
+      templateKind: 'custom',
+      lanes: [],
+    });
+    const object = await scope.objects.createObject({
+      type: 'project',
+      canonicalName: 'Archived candidate',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    await scope.objects.archiveObject(object.id, { kind: 'user', userId: USER_OWNER });
+
+    await expect(
+      scope.boards.addBoardItem(board.id, {
+        entityId: object.id,
+        actor: { kind: 'user', userId: USER_OWNER },
+      }),
+    ).rejects.toThrow('Archived objects cannot be added to boards');
+  });
+
   it('adds a board item once and writes history for moves', async () => {
     const scope = withTeam(db, TEAM_A, USER_OWNER);
     const board = await scope.boards.createBoard({
@@ -746,14 +768,20 @@ describe('board scope', () => {
       canonicalName: 'Archived Co',
       actor: { kind: 'user', userId: USER_OWNER },
     });
-    await scope.objects.archiveObject(company.id, { kind: 'user', userId: USER_OWNER });
-
-    await scope.boards.addBoardItem(board.id, {
+    const item = await scope.boards.addBoardItem(board.id, {
       entityId: company.id,
-      responsibleUserId: USER_MEMBER,
-      dueAt: new Date('2026-08-21T14:00:00.000Z'),
       actor: { kind: 'user', userId: USER_OWNER },
     });
+    await scope.objects.archiveObject(company.id, { kind: 'user', userId: USER_OWNER });
+
+    await scope.boards.updateBoardItem(
+      item.id,
+      {
+        responsibleUserId: USER_MEMBER,
+        dueAt: new Date('2026-08-21T14:00:00.000Z'),
+      },
+      { kind: 'user', userId: USER_OWNER },
+    );
 
     await expect(
       db.select().from(calendarEvents).where(eq(calendarEvents.teamId, TEAM_A)),
@@ -1271,6 +1299,36 @@ describe('board scope', () => {
       .from(boardItems)
       .where(eq(boardItems.entityId, project.id));
     expect(itemRows).toHaveLength(0);
+  });
+
+  it('keeps board membership suggestions pending when their object was archived', async () => {
+    const scope = withTeam(db, TEAM_A, USER_OWNER);
+    const board = await scope.boards.createBoard({
+      name: 'Approval archive race',
+      templateKind: 'custom',
+      lanes: [],
+    });
+    const object = await scope.objects.createObject({
+      type: 'company',
+      canonicalName: 'Archived before approval',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    const suggestion = await scope.boards.proposeBoardMembership({
+      boardId: board.id,
+      entityId: object.id,
+      laneId: null,
+    });
+    await scope.objects.archiveObject(object.id, { kind: 'user', userId: USER_OWNER });
+
+    await expect(
+      scope.boards.acceptBoardItemChange(suggestion.id, { kind: 'user', userId: USER_OWNER }),
+    ).rejects.toThrow('Archived objects cannot be added to boards');
+
+    const [persisted] = await db
+      .select({ status: boardItemChanges.status })
+      .from(boardItemChanges)
+      .where(eq(boardItemChanges.id, suggestion.id));
+    expect(persisted?.status).toBe('suggested');
   });
 
   it('accepts board membership suggestions without duplicate add history', async () => {

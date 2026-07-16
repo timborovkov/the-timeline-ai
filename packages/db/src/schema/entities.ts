@@ -109,6 +109,11 @@ export const entities = pgTable(
         AND ${table.taskCategoryRequestedInputHash} IS NOT NULL
         AND ${table.archivedAt} IS NULL
         AND ${table.mergedIntoId} IS NULL`),
+    index('entities_team_task_category_pending_idx')
+      .on(table.teamId, table.id)
+      .where(
+        sql`${table.type} = 'task' AND ${table.taskCategoryStatus} = 'pending' AND ${table.archivedAt} IS NULL AND ${table.mergedIntoId} IS NULL`,
+      ),
     index('entities_team_active_idx')
       .on(table.teamId)
       .where(sql`${table.archivedAt} IS NULL`),

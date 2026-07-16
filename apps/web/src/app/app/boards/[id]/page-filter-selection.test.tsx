@@ -9,6 +9,8 @@ const fakes = vi.hoisted(() => ({
   listObjects: vi.fn(),
   getObject: vi.fn(),
   listMembers: vi.fn(),
+  candidateIds: [] as string[],
+  projectOptionIds: [] as string[],
   notFound: vi.fn(() => {
     throw new Error('not-found');
   }),
@@ -43,14 +45,22 @@ vi.mock('@/components/boards/board-detail-client', () => ({
   BoardDetailClient: ({
     selectedItemId,
     history,
+    initialCandidates,
+    projectOptions,
   }: {
     selectedItemId: string | null;
     history: unknown[];
-  }) => (
-    <div data-testid="board-detail-client">
-      selected:{selectedItemId ?? 'none'} history:{history.length}
-    </div>
-  ),
+    initialCandidates: { id: string }[];
+    projectOptions?: { id: string }[];
+  }) => {
+    fakes.candidateIds = initialCandidates.map((candidate) => candidate.id);
+    fakes.projectOptionIds = (projectOptions ?? []).map((project) => project.id);
+    return (
+      <div data-testid="board-detail-client">
+        selected:{selectedItemId ?? 'none'} history:{history.length}
+      </div>
+    );
+  },
 }));
 
 const { default: BoardDetailPage } = await import('./page.js');
@@ -63,6 +73,8 @@ beforeEach(() => {
   fakes.getObject.mockResolvedValue({ connectedWork: [] });
   fakes.listMembers.mockResolvedValue([]);
   fakes.listBoardItemHistory.mockResolvedValue([{ id: 'history-1' }]);
+  fakes.candidateIds = [];
+  fakes.projectOptionIds = [];
   fakes.getBoard.mockResolvedValue({
     id: 'board-1',
     name: 'Pilot Pipeline',
@@ -159,5 +171,33 @@ describe('BoardDetailPage', () => {
     );
 
     expect(html).not.toContain('data-app-layout="full-bleed"');
+  });
+
+  it('keeps an archived selected project in filters but not add-item candidates', async () => {
+    const archivedProjectId = '11111111-1111-4111-8111-111111111111';
+    fakes.listObjects.mockImplementation((filter: { id?: string | string[] }) =>
+      Promise.resolve(
+        filter.id
+          ? [
+              {
+                id: archivedProjectId,
+                type: 'project',
+                canonicalName: 'Archived selected project',
+                archivedAt: new Date('2026-01-02T00:00:00.000Z'),
+              },
+            ]
+          : [],
+      ),
+    );
+
+    renderToStaticMarkup(
+      await BoardDetailPage({
+        params: Promise.resolve({ id: 'board-1' }),
+        searchParams: Promise.resolve({ project: archivedProjectId }),
+      }),
+    );
+
+    expect(fakes.projectOptionIds).toContain(archivedProjectId);
+    expect(fakes.candidateIds).not.toContain(archivedProjectId);
   });
 });

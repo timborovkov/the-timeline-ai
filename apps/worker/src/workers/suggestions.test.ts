@@ -16,6 +16,7 @@ import {
   type Db,
 } from '@timeline/db';
 import { suggestions } from '@timeline/shared';
+import { resetEnvForTests } from '@timeline/shared/env';
 import { RECONCILIATION_PLANNER_PROMPT_VERSION } from '@timeline/shared/reconciliation/planner';
 import { withTeam } from '@timeline/shared/team-scope';
 import { eq, sql } from 'drizzle-orm';
@@ -40,6 +41,8 @@ const MEMBER_ID = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
 const INACTIVE_ID = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
 const OBJECT_ID = 'dddddddd-dddd-dddd-dddd-dddddddddddd';
 const MODEL_ID = 'test-suggestion-model';
+const ORIGINAL_TASK_CATEGORY_CLASSIFICATION_ENABLED =
+  process.env.TASK_CATEGORY_CLASSIFICATION_ENABLED;
 
 async function seed(pg: PGlite): Promise<void> {
   await pg.exec(`
@@ -281,6 +284,8 @@ describe('processSuggestionJobForTests', () => {
   let db: ReturnType<typeof drizzle>;
 
   beforeEach(async () => {
+    process.env.TASK_CATEGORY_CLASSIFICATION_ENABLED = 'true';
+    resetEnvForTests();
     pg = new PGlite();
     await applyDbMigrations(pg);
     await seed(pg);
@@ -289,6 +294,13 @@ describe('processSuggestionJobForTests', () => {
 
   afterEach(async () => {
     await pg.close();
+    if (ORIGINAL_TASK_CATEGORY_CLASSIFICATION_ENABLED === undefined) {
+      delete process.env.TASK_CATEGORY_CLASSIFICATION_ENABLED;
+    } else {
+      process.env.TASK_CATEGORY_CLASSIFICATION_ENABLED =
+        ORIGINAL_TASK_CATEGORY_CLASSIFICATION_ENABLED;
+    }
+    resetEnvForTests();
   });
 
   it('skips queued ingest webhook proposals when the source setting is disabled before processing', async () => {

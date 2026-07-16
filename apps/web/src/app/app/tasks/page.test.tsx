@@ -8,15 +8,24 @@ const fakes = vi.hoisted(() => ({
   countObjects: vi.fn(),
   getObject: vi.fn(),
   listPrimaryProjectsForTasks: vi.fn(),
+  getTaskCategoryFilterRefreshState: vi.fn(),
   listPendingSuggestions: vi.fn(),
   listMembers: vi.fn(),
   filterProjects: [] as { label: string }[],
+  categoryRefresh: null as {
+    surface: string;
+    filters: { category: string };
+    baselineToken: string;
+  } | null,
   redirect: vi.fn((path: string) => {
     throw new Error(`redirect:${path}`);
   }),
 }));
 
 vi.mock('next/navigation', () => ({ redirect: fakes.redirect }));
+vi.mock('@timeline/shared/env', () => ({
+  getEnv: () => ({ TASK_CATEGORY_UI_ENABLED: true }),
+}));
 vi.mock('@timeline/shared/team-scope', () => ({
   withTeam: () => ({
     objects: {
@@ -24,6 +33,7 @@ vi.mock('@timeline/shared/team-scope', () => ({
       countObjects: fakes.countObjects,
       getObject: fakes.getObject,
       listPrimaryProjectsForTasks: fakes.listPrimaryProjectsForTasks,
+      getTaskCategoryFilterRefreshState: fakes.getTaskCategoryFilterRefreshState,
     },
     suggestions: { listPendingSuggestions: fakes.listPendingSuggestions },
     timeline: { listMembers: fakes.listMembers },
@@ -72,6 +82,16 @@ vi.mock('@/components/tasks/task-board', () => ({
     </div>
   ),
 }));
+vi.mock('@/components/tasks/task-category-filter-refresh', () => ({
+  TaskCategoryFilterRefresh: (props: {
+    surface: string;
+    filters: { category: string };
+    baselineToken: string;
+  }) => {
+    fakes.categoryRefresh = props;
+    return <div data-testid="task-category-filter-refresh" />;
+  },
+}));
 vi.mock('@/components/work-filter-bar', () => ({
   WorkFilterBar: ({
     resultCount,
@@ -104,9 +124,15 @@ beforeEach(() => {
   fakes.countObjects.mockResolvedValue(0);
   fakes.getObject.mockResolvedValue(null);
   fakes.listPrimaryProjectsForTasks.mockResolvedValue([]);
+  fakes.getTaskCategoryFilterRefreshState.mockResolvedValue({
+    token: 'design:0',
+    changed: false,
+    pending: true,
+  });
   fakes.listPendingSuggestions.mockResolvedValue([]);
   fakes.listMembers.mockResolvedValue([]);
   fakes.filterProjects = [];
+  fakes.categoryRefresh = null;
 });
 
 function taskRow(overrides: Record<string, unknown> = {}) {
@@ -261,6 +287,20 @@ describe('TasksPage', () => {
     expect(html).toContain('No active tasks');
     expect(html).not.toContain('Pending task proposals');
     expect(html).not.toContain('data-app-layout="full-bleed"');
+  });
+
+  it('watches the full task result set while a category filter is active', async () => {
+    const html = renderToStaticMarkup(
+      await TasksPage({ searchParams: Promise.resolve({ category: 'design' }) }),
+    );
+
+    expect(html).toContain('task-category-filter-refresh');
+    expect(fakes.categoryRefresh?.surface).toBe('tasks');
+    expect(fakes.categoryRefresh?.filters.category).toBe('design');
+    expect(fakes.categoryRefresh?.baselineToken).toBe('design:0');
+    expect(fakes.listObjects).not.toHaveBeenCalledWith(
+      expect.objectContaining({ taskCategoryStatus: 'pending' }),
+    );
   });
 
   it('fetches one bounded task batch and exposes a cursor for older tasks', async () => {

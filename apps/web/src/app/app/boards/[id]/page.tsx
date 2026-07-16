@@ -8,6 +8,7 @@ import type { BoardLayout } from '@/lib/board-links';
 import type { Metadata } from 'next';
 
 import { BoardDetailClient } from '@/components/boards/board-detail-client';
+import { TaskCategoryFilterRefresh } from '@/components/tasks/task-category-filter-refresh';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
@@ -18,6 +19,7 @@ import {
   boardItemFilterFromWorkFilters,
   hasActiveWorkFilters,
   parseWorkFilters,
+  taskCategoryFilterKeys,
   workFilterHiddenParams,
 } from '@/lib/work-filters';
 
@@ -52,6 +54,15 @@ export default async function BoardDetailPage({
   const filters = parseWorkFilters(query, {
     taskCategoriesEnabled: getEnv().TASK_CATEGORY_UI_ENABLED,
   });
+  const categoryKeys = taskCategoryFilterKeys(filters);
+  const categoryFilterBaseline =
+    categoryKeys.length > 0
+      ? await scope.boards.getTaskCategoryFilterRefreshState(
+          id,
+          boardItemFilterFromWorkFilters({ ...filters, category: '' }),
+          categoryKeys,
+        )
+      : null;
   const board = await scope.boards.getBoard(id, {
     itemLimit: 'all',
     itemFilter: boardItemFilterFromWorkFilters(filters),
@@ -96,6 +107,14 @@ export default async function BoardDetailPage({
   const isKanban = view === 'kanban';
   const activeFilters = hasActiveWorkFilters(filters);
   const filterParams = workFilterHiddenParams(query, WORK_FILTER_PARAM_KEYS);
+  const initialCandidates: typeof candidates = [];
+  const projectOptions: { id: string; label: string }[] = [];
+  for (const candidate of candidates) {
+    if (!candidate.archivedAt) initialCandidates.push(candidate);
+    if (candidate.type === 'project') {
+      projectOptions.push({ id: candidate.id, label: candidate.canonicalName });
+    }
+  }
 
   return (
     <div
@@ -106,6 +125,14 @@ export default async function BoardDetailPage({
           : undefined
       }
     >
+      {categoryFilterBaseline ? (
+        <TaskCategoryFilterRefresh
+          surface="board"
+          boardId={board.id}
+          filters={filters}
+          baselineToken={categoryFilterBaseline.token}
+        />
+      ) : null}
       <BoardDetailClient
         boardId={board.id}
         boardName={board.name}
@@ -115,7 +142,8 @@ export default async function BoardDetailPage({
         view={view}
         lanes={board.lanes}
         initialItems={board.items}
-        initialCandidates={candidates}
+        initialCandidates={initialCandidates}
+        projectOptions={projectOptions}
         recommendedTypes={board.recommendedObjectTypes}
         defaultLaneId={firstLaneId}
         selectedItemId={selectedServerItemId}

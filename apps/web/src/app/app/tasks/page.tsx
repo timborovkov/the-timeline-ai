@@ -10,6 +10,7 @@ import { ApprovalsClient } from '@/components/approvals/approvals-client';
 import { EmptyAction } from '@/components/empty-action';
 import { IndexStrip } from '@/components/index-strip';
 import { TaskBoard } from '@/components/tasks/task-board';
+import { TaskCategoryFilterRefresh } from '@/components/tasks/task-category-filter-refresh';
 import { WORK_BACK_LINK } from '@/components/work-back-link';
 import { WorkFilterBar } from '@/components/work-filter-bar';
 import { resolveActiveTeam } from '@/lib/active-team';
@@ -24,6 +25,7 @@ import {
   WORK_FILTER_PARAM_KEYS,
   hasActiveWorkFilters,
   parseWorkFilters,
+  taskCategoryFilterKeys,
   taskObjectFilterFromWorkFilters,
   workFilterHiddenParams,
 } from '@/lib/work-filters';
@@ -67,6 +69,14 @@ export default async function TasksPage({
   const filters = parseWorkFilters(query, {
     taskCategoriesEnabled,
   });
+  const categoryKeys = taskCategoryFilterKeys(filters);
+  const categoryFilterBaseline =
+    categoryKeys.length > 0
+      ? await scope.objects.getTaskCategoryFilterRefreshState(
+          taskObjectFilterFromWorkFilters({ ...filters, category: '' }),
+          categoryKeys,
+        )
+      : null;
   const taskFilter = taskObjectFilterFromWorkFilters(filters);
   const [projects, taskPage, counts, pendingSuggestions, members] = await Promise.all([
     loadProjectFilterRows({
@@ -125,7 +135,6 @@ export default async function TasksPage({
   const activeFilters = hasActiveWorkFilters(filters);
   const hiddenFilterParams = workFilterHiddenParams(query, ['view']);
   const taskLoadFilterParams = workFilterHiddenParams(query, WORK_FILTER_PARAM_KEYS);
-
   const srSegments = [
     'Tasks',
     `${counts.total} total`,
@@ -174,6 +183,14 @@ export default async function TasksPage({
         projects={projects.map((project) => ({ id: project.id, label: project.canonicalName }))}
         statusOptions={TASK_STATUS_COLUMNS}
       />
+
+      {categoryFilterBaseline ? (
+        <TaskCategoryFilterRefresh
+          surface="tasks"
+          filters={filters}
+          baselineToken={categoryFilterBaseline.token}
+        />
+      ) : null}
 
       {rows.length === 0 ? (
         <EmptyAction

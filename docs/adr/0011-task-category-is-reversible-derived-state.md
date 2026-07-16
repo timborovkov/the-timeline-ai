@@ -24,6 +24,12 @@ approval-backed mutation, limited to one active project at write time, and is
 separate from functional category. Board membership, co-mention, title similarity,
 and category are never project ownership.
 
+Database compatibility triggers canonicalize legacy inverse project edges during
+rolling deploys and reject a second active project edge, including one introduced
+by changing a related object's type to `project`. Category-filtered pages compare
+transactional per-category revision rows and use a bounded pending lookup, so
+refresh does not depend on web and worker wall clocks or scan every matching task.
+
 A background task proposal may name one existing project or propose creating one
 clearly named project from the same evidence. The approval preview exposes both
 fields for correction. Accepting the task validates team/type/lifecycle boundaries,

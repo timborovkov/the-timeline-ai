@@ -17,6 +17,7 @@ import { CuratedBoardList, CuratedBoardTable } from '@/components/boards/curated
 import { CuratedKanbanBoard } from '@/components/boards/curated-kanban-board';
 import { HistoryBackLink } from '@/components/history-back-link';
 import { IndexStrip } from '@/components/index-strip';
+import { TaskCategoryPollingProvider } from '@/components/tasks/task-category-badge';
 import { WorkFilterBar } from '@/components/work-filter-bar';
 import { visibleBoardDescription } from '@/lib/board-description';
 import { boardViewHref } from '@/lib/board-links';
@@ -48,6 +49,7 @@ interface Props {
   lanes: boards.BoardLaneRow[];
   initialItems: boards.BoardItemRow[];
   initialCandidates: objects.ObjectRow[];
+  projectOptions?: { id: string; label: string }[];
   recommendedTypes: objects.ObjectType[];
   defaultLaneId: string | null;
   selectedItemId: string | null;
@@ -93,6 +95,7 @@ export function BoardDetailClient({
   lanes,
   initialItems,
   initialCandidates,
+  projectOptions: providedProjectOptions,
   recommendedTypes,
   defaultLaneId,
   selectedItemId,
@@ -140,6 +143,21 @@ export function BoardDetailClient({
     const itemEntityIds = new Set(items.map((item) => item.entityId));
     return candidates.filter((candidate) => !itemEntityIds.has(candidate.id));
   }, [candidates, items]);
+  const categoryPollingTasks = useMemo(
+    () =>
+      items.flatMap((item) =>
+        item.object.type === 'task'
+          ? [
+              {
+                id: item.object.id,
+                status: item.object.taskCategoryStatus,
+                updatedAt: item.object.taskCategoryUpdatedAt,
+              },
+            ]
+          : [],
+      ),
+    [items],
+  );
 
   function addOptimisticItem(item: boards.BoardItemRow): void {
     setLocalItems((current) => [...current, item]);
@@ -214,7 +232,7 @@ export function BoardDetailClient({
   );
 
   const description = visibleBoardDescription(purpose);
-  const projectOptions = useMemo(() => {
+  const derivedProjectOptions = useMemo(() => {
     const options: { id: string; label: string }[] = [];
     for (const candidate of initialCandidates) {
       if (candidate.type === 'project') {
@@ -223,6 +241,7 @@ export function BoardDetailClient({
     }
     return options;
   }, [initialCandidates]);
+  const projectOptions = providedProjectOptions ?? derivedProjectOptions;
 
   const boardHeaderLeading = useMemo(
     () => <HistoryBackLink fallbackHref="/app/boards" label="Back" />,
@@ -242,7 +261,7 @@ export function BoardDetailClient({
   );
 
   return (
-    <>
+    <TaskCategoryPollingProvider tasks={categoryPollingTasks}>
       <IndexStrip
         srLabel={`Board · ${boardName}`}
         segments={[{ value: 'BOARD' }, { value: boardName, signal: true }]}
@@ -358,7 +377,7 @@ export function BoardDetailClient({
           />
         ) : null}
       </div>
-    </>
+    </TaskCategoryPollingProvider>
   );
 }
 

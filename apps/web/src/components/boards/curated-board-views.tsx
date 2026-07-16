@@ -7,7 +7,7 @@ import type { BoardItemOptimisticPatch } from '@/components/boards/board-detail-
 import type * as boards from '@timeline/shared/boards';
 import type { Dispatch, SetStateAction } from 'react';
 
-import { TaskCategoryBadge } from '@/components/tasks/task-category-badge';
+import { LiveTaskCategoryBadge } from '@/components/tasks/task-category-badge';
 import { boardViewHref, type BoardLayout } from '@/lib/board-links';
 import { displayText, formatDisplayDate } from '@/lib/display-dates';
 import { displayObjectTitle } from '@/lib/object-title';
@@ -218,9 +218,11 @@ export function CuratedBoardTable({
                     <span className="flex flex-wrap items-center gap-1.5">
                       {item.object.type}
                       {item.object.type === 'task' ? (
-                        <TaskCategoryBadge
+                        <LiveTaskCategoryBadge
+                          taskId={item.object.id}
                           category={item.object.taskCategory}
                           status={item.object.taskCategoryStatus}
+                          updatedAt={item.object.taskCategoryUpdatedAt}
                         />
                       ) : null}
                     </span>
@@ -621,9 +623,11 @@ export function CuratedBoardList({
                 {item.dueAt ? ` · ${formatDisplayDate(item.dueAt)}` : ''}
               </span>
               {item.object.type === 'task' ? (
-                <TaskCategoryBadge
+                <LiveTaskCategoryBadge
+                  taskId={item.object.id}
                   category={item.object.taskCategory}
                   status={item.object.taskCategoryStatus}
+                  updatedAt={item.object.taskCategoryUpdatedAt}
                 />
               ) : null}
             </>

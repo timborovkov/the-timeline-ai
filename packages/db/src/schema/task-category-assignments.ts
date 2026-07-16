@@ -1,11 +1,13 @@
 import { sql } from 'drizzle-orm';
 import {
+  bigint,
   doublePrecision,
   check,
   foreignKey,
   index,
   integer,
   pgTable,
+  primaryKey,
   text,
   timestamp,
   uniqueIndex,
@@ -101,5 +103,23 @@ export const taskCategoryProjectInvalidations = pgTable(
       table.projectId,
     ),
     index('task_category_project_invalidations_created_idx').on(table.createdAt, table.id),
+  ],
+);
+
+export const taskCategoryFilterVersions = pgTable(
+  'task_category_filter_versions',
+  {
+    teamId: uuid('team_id')
+      .notNull()
+      .references(() => teams.id, { onDelete: 'cascade' }),
+    category: text('category').notNull(),
+    version: bigint('version', { mode: 'number' }).default(1).notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.teamId, table.category] }),
+    check(
+      'task_category_filter_versions_category_chk',
+      sql`${table.category} IN ('engineering', 'product', 'design', 'research', 'sales', 'marketing', 'customer_success', 'operations', 'finance', 'legal_compliance', 'people_recruiting', 'it_security', 'strategy_planning', 'administrative', 'other', 'uncategorized')`,
+    ),
   ],
 );

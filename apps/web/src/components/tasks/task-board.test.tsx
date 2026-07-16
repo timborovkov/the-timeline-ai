@@ -343,59 +343,6 @@ describe('TaskBoard', () => {
     );
   }, 7_000);
 
-  it('refreshes server-filtered rows when a polled category crosses the active filter', async () => {
-    fakes.loadTaskCategoryStatesAction.mockResolvedValue({
-      rows: [
-        {
-          id: 'task-1',
-          taskCategory: 'design',
-          taskCategoryMode: 'automatic',
-          taskCategorySource: 'llm',
-          taskCategoryStatus: 'ready',
-          taskCategoryUpdatedAt: new Date('2026-07-13T10:00:00.000Z'),
-        },
-      ],
-    });
-
-    renderBoard(
-      null,
-      [task({ taskCategory: 'engineering', taskCategoryStatus: 'pending' })],
-      'kanban',
-      { category: 'engineering' },
-    );
-
-    await waitFor(() => {
-      expect(fakes.refresh).toHaveBeenCalledTimes(1);
-    });
-  });
-
-  it('does not refresh when a polled category remains inside the active filter', async () => {
-    fakes.loadTaskCategoryStatesAction.mockResolvedValue({
-      rows: [
-        {
-          id: 'task-1',
-          taskCategory: 'design',
-          taskCategoryMode: 'automatic',
-          taskCategorySource: 'llm',
-          taskCategoryStatus: 'ready',
-          taskCategoryUpdatedAt: new Date('2026-07-13T10:00:00.000Z'),
-        },
-      ],
-    });
-
-    renderBoard(
-      null,
-      [task({ taskCategory: 'engineering', taskCategoryStatus: 'pending' })],
-      'kanban',
-      { category: 'engineering,design' },
-    );
-
-    await waitFor(() => {
-      expect(screen.getByText('Design')).toBeTruthy();
-    });
-    expect(fakes.refresh).not.toHaveBeenCalled();
-  });
-
   it('does not poll pending categories while the category UI is disabled', () => {
     vi.useFakeTimers();
     document.body.dataset.taskCategoriesEnabled = 'false';

@@ -16,7 +16,7 @@ import type { ReactNode } from 'react';
 
 import { RemoveBoardItemButton } from '@/components/boards/remove-board-item-button';
 import { ObjectRelatedContext } from '@/components/objects/object-related-context';
-import { TaskCategoryBadge } from '@/components/tasks/task-category-badge';
+import { LiveTaskCategoryBadge } from '@/components/tasks/task-category-badge';
 import { TaskCategorySelect } from '@/components/tasks/task-category-select';
 import {
   Dialog,
@@ -228,9 +228,11 @@ function BoardCardHeader({
             {item.object.type} · board item
           </p>
           {item.object.type === 'task' ? (
-            <TaskCategoryBadge
+            <LiveTaskCategoryBadge
+              taskId={item.object.id}
               category={item.object.taskCategory}
               status={item.object.taskCategoryStatus}
+              updatedAt={item.object.taskCategoryUpdatedAt}
               className="mt-2"
             />
           ) : null}

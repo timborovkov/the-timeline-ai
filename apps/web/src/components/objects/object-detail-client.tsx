@@ -41,7 +41,7 @@ import {
   visibleObjectSearchResultsForQuery,
 } from '@/components/objects/object-search-results';
 import { ObjectSectionFeed } from '@/components/objects/object-section-feed';
-import { TaskCategoryBadge } from '@/components/tasks/task-category-badge';
+import { LiveTaskCategoryBadge } from '@/components/tasks/task-category-badge';
 import { TaskCategorySelect } from '@/components/tasks/task-category-select';
 import { TaskProjectSelect } from '@/components/tasks/task-project-select';
 import { displayText, formatDisplayDateTime } from '@/lib/display-dates';
@@ -1350,9 +1350,11 @@ function ObjectDetailHeader({
             <span>id {detail.id.slice(0, 8)}</span>
           </div>
           {detail.type === 'task' ? (
-            <TaskCategoryBadge
+            <LiveTaskCategoryBadge
+              taskId={detail.id}
               category={detail.taskCategory}
               status={detail.taskCategoryStatus}
+              updatedAt={detail.taskCategoryUpdatedAt}
               className="mt-2"
             />
           ) : null}

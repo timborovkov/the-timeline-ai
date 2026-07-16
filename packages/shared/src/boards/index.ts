@@ -38,6 +38,7 @@ import type {
   ObjectRow,
   ObjectType,
 } from '#src/objects/index.js';
+import type { TaskCategoryFilterKey } from '#src/task-categories/types.js';
 import type { TeamScopeCore } from '#src/team-scope.js';
 
 import {
@@ -55,6 +56,10 @@ import { normalizeRawEventsToEvidence } from '#src/reconciliation/normalization.
 import { sourcePayloadRefFromMetadata } from '#src/reconciliation/source-snapshot.js';
 import { stableSha256Digest } from '#src/reconciliation/stable-digest.js';
 import { likePattern } from '#src/sql-like.js';
+import {
+  readTaskCategoryFilterRefreshState,
+  type TaskCategoryFilterRefreshState,
+} from '#src/task-categories/filter-refresh.js';
 import { rawEventVisibleToUser } from '#src/visibility.js';
 
 type DbTx = Parameters<Parameters<Db['transaction']>[0]>[0];
@@ -1446,6 +1451,46 @@ export function createBoardScope({
       };
     },
 
+    async getTaskCategoryFilterRefreshState(
+      boardId: string,
+      filter: BoardItemFilter,
+      categoryKeys: readonly TaskCategoryFilterKey[],
+      baselineToken?: string,
+    ): Promise<TaskCategoryFilterRefreshState> {
+      await scope.requireMembership();
+      if (!UUID_RE.test(boardId)) return { token: '', changed: false, pending: false };
+      const {
+        taskCategory: _category,
+        taskCategoryNull: _categoryNull,
+        ...objectFilter
+      } = filter.object ?? {};
+      const conditions = boardItemFilterConditions({
+        ...filter,
+        object: { ...objectFilter, type: 'task' },
+      });
+      const pendingQuery = db
+        .select({ id: boardItems.id })
+        .from(boardItems)
+        .innerJoin(entities, eq(boardItems.entityId, entities.id))
+        .where(
+          and(
+            eq(boardItems.boardId, boardId),
+            eq(boardItems.teamId, scope.teamId),
+            isNull(boardItems.archivedAt),
+            eq(entities.taskCategoryStatus, 'pending'),
+            ...conditions,
+          ),
+        )
+        .limit(1);
+      return readTaskCategoryFilterRefreshState(
+        db,
+        scope.teamId,
+        categoryKeys,
+        pendingQuery,
+        baselineToken,
+      );
+    },
+
     async getBoardItem(itemId: string): Promise<BoardItemRow | null> {
       await scope.requireMembership();
       if (!UUID_RE.test(itemId)) return null;
@@ -1700,6 +1745,7 @@ export function createBoardScope({
         if (isArchivedSuggestedProject(object)) {
           throw new Error('Archived suggested projects cannot be added to boards');
         }
+        if (object.archivedAt) throw new Error('Archived objects cannot be added to boards');
         const rows = await tx
           .insert(boardItems)
           .values({
@@ -2322,6 +2368,7 @@ export function createBoardScope({
           if (isArchivedSuggestedProject(object)) {
             throw new Error('Archived suggested projects cannot be added to boards');
           }
+          if (object.archivedAt) throw new Error('Archived objects cannot be added to boards');
           const existing = await tx
             .select({ id: boardItems.id })
             .from(boardItems)

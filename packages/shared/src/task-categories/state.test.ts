@@ -15,7 +15,10 @@ import { drizzle } from 'drizzle-orm/pglite';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { resetEnvForTests } from '#src/env.js';
+import { TIMELINE_MODELS } from '#src/llm/models.js';
 import * as queue from '#src/queue/queues.js';
+import { buildTaskCategoryPacket, taskCategoryInputHash } from '#src/task-categories/classifier.js';
+import { TASK_CATEGORY_TAXONOMY_VERSION } from '#src/task-categories/types.js';
 import { withTeam } from '#src/team-scope.js';
 import { createResettablePGliteTestDb, type ResettablePGliteTestDb } from '#src/test/pglite.js';
 
@@ -146,6 +149,112 @@ describe('task category and primary project state', () => {
     expect(queue.enqueueTaskCategoryJob).not.toHaveBeenCalled();
   });
 
+  it('does not apply a proposal-time classification while the classification kill switch is off', async () => {
+    process.env.TASK_CATEGORY_CLASSIFICATION_ENABLED = 'false';
+    resetEnvForTests();
+    const title = 'Prepare homepage wireframes';
+    const packet = buildTaskCategoryPacket({ title });
+    const scope = withTeam(db, TEAM_A, USER_A).objects;
+
+    const task = await scope.createObject({
+      type: 'task',
+      canonicalName: title,
+      precomputedTaskCategory: {
+        category: 'design',
+        confidence: 0.98,
+        model: TIMELINE_MODELS.taskCategorization.id,
+        inputHash: taskCategoryInputHash(packet, TIMELINE_MODELS.taskCategorization.id),
+        taxonomyVersion: TASK_CATEGORY_TAXONOMY_VERSION,
+      },
+      actor: { kind: 'agent', userId: null },
+    });
+
+    expect(task).toMatchObject({
+      taskCategory: null,
+      taskCategoryMode: 'automatic',
+      taskCategorySource: null,
+      taskCategoryStatus: null,
+    });
+    await expect(
+      db
+        .select()
+        .from(taskCategoryAssignments)
+        .where(eq(taskCategoryAssignments.entityId, task.id)),
+    ).resolves.toHaveLength(0);
+    expect(queue.enqueueTaskCategoryJob).not.toHaveBeenCalled();
+  });
+
+  it('reports pending and changed category state across filtered object and board result sets', async () => {
+    const workspace = withTeam(db, TEAM_A, USER_A);
+    const task = await workspace.objects.createObject({
+      type: 'task',
+      canonicalName: 'Classify the board card',
+      status: 'open',
+      actor: { kind: 'user', userId: USER_A },
+    });
+    const board = await workspace.boards.createBoard({
+      name: 'Category refresh board',
+      templateKind: 'custom',
+      lanes: [],
+    });
+    await workspace.boards.addBoardItem(board.id, {
+      entityId: task.id,
+      actor: { kind: 'user', userId: USER_A },
+    });
+    const objectBaseline = await workspace.objects.getTaskCategoryFilterRefreshState(
+      { status: 'open', taskCategory: 'design', archived: false },
+      ['design'],
+    );
+    expect(objectBaseline).toEqual({ token: 'design:0', changed: false, pending: true });
+    const boardBaseline = await workspace.boards.getTaskCategoryFilterRefreshState(
+      board.id,
+      { object: { status: 'open', taskCategory: 'design', archived: false } },
+      ['design'],
+    );
+    expect(boardBaseline).toEqual({ token: 'design:0', changed: false, pending: true });
+
+    await expect(
+      workspace.objects.getTaskCategoryFilterRefreshState(
+        { status: 'open', taskCategory: 'design', archived: false },
+        ['design'],
+        objectBaseline.token,
+      ),
+    ).resolves.toEqual({ token: 'design:0', changed: false, pending: true });
+    await expect(
+      workspace.boards.getTaskCategoryFilterRefreshState(
+        board.id,
+        { object: { status: 'open', taskCategory: 'design', archived: false } },
+        ['design'],
+        boardBaseline.token,
+      ),
+    ).resolves.toEqual({ token: 'design:0', changed: false, pending: true });
+
+    const classification = await workspace.objects.getTaskCategoryClassificationInput(task.id);
+    await workspace.objects.applyTaskCategoryClassification({
+      taskId: task.id,
+      inputHash: classification?.requestedInputHash ?? '',
+      category: 'design',
+      confidence: 0.9,
+      model: 'test-model',
+      latencyMs: 10,
+    });
+    await expect(
+      workspace.objects.getTaskCategoryFilterRefreshState(
+        { status: 'open', taskCategory: 'design', archived: false },
+        ['design'],
+        objectBaseline.token,
+      ),
+    ).resolves.toEqual({ token: 'design:1', changed: true, pending: false });
+    await expect(
+      workspace.boards.getTaskCategoryFilterRefreshState(
+        board.id,
+        { object: { status: 'open', taskCategory: 'design', archived: false } },
+        ['design'],
+        boardBaseline.token,
+      ),
+    ).resolves.toEqual({ token: 'design:1', changed: true, pending: false });
+  });
+
   it('locks an active project while assigning it to an existing task', async () => {
     const queries: string[] = [];
     const loggedDb = drizzle(testDb.pg, {
@@ -201,6 +310,9 @@ describe('task category and primary project state', () => {
       canonicalName: 'Ambiguous legacy task',
       actor: { kind: 'user', userId: USER_A },
     });
+    await testDb.pg.exec(
+      'ALTER TABLE entity_relationships DISABLE TRIGGER entity_relationships_task_project_canonicalize_trg',
+    );
     await db.insert(entityRelationships).values([
       {
         teamId: TEAM_A,
@@ -217,6 +329,9 @@ describe('task category and primary project state', () => {
         createdBy: USER_A,
       },
     ]);
+    await testDb.pg.exec(
+      'ALTER TABLE entity_relationships ENABLE TRIGGER entity_relationships_task_project_canonicalize_trg',
+    );
 
     await expect(workspace.objects.listPrimaryProjectsForTasks([task.id])).resolves.toEqual([]);
     await expect(workspace.objects.auditTaskPrimaryProjectEdges()).resolves.toEqual({
@@ -588,6 +703,54 @@ describe('task category and primary project state', () => {
       teamId: TEAM_A,
       taskId: task.id,
       inputHash: pending?.requestedInputHash,
+      trigger: 'retry',
+    });
+  });
+
+  it('reclassifies a restored ready category when task context changed during a manual override', async () => {
+    const scope = withTeam(db, TEAM_A, USER_A).objects;
+    const task = await scope.createObject({
+      type: 'task',
+      canonicalName: 'Implement the original API',
+      actor: { kind: 'user', userId: USER_A },
+    });
+    const original = await scope.getTaskCategoryClassificationInput(task.id);
+    await scope.applyTaskCategoryClassification({
+      taskId: task.id,
+      inputHash: original?.requestedInputHash ?? '',
+      category: 'engineering',
+      confidence: 0.9,
+      model: 'test-model',
+      latencyMs: 10,
+    });
+    const correction = await scope.setTaskCategory(task.id, 'finance', {
+      kind: 'user',
+      userId: USER_A,
+    });
+    await scope.updateObject(
+      task.id,
+      { canonicalName: 'Prepare the revised customer contract' },
+      { kind: 'user', userId: USER_A },
+    );
+    vi.mocked(queue.enqueueTaskCategoryJob).mockClear();
+
+    const restored = await scope.undoTaskCategoryChange(task.id, correction.changeId, {
+      kind: 'user',
+      userId: USER_A,
+    });
+    const classification = await scope.getTaskCategoryClassificationInput(task.id);
+
+    expect(restored).toMatchObject({
+      taskCategory: 'engineering',
+      taskCategoryMode: 'automatic',
+      taskCategoryStatus: 'pending',
+    });
+    expect(classification?.requestedInputHash).toBe(classification?.inputHash);
+    expect(classification?.requestedInputHash).not.toBe(original?.requestedInputHash);
+    expect(queue.enqueueTaskCategoryJob).toHaveBeenCalledWith({
+      teamId: TEAM_A,
+      taskId: task.id,
+      inputHash: classification?.inputHash,
       trigger: 'retry',
     });
   });
@@ -1144,6 +1307,41 @@ describe('task category and primary project state', () => {
     ).rejects.toThrow(
       'Resolve multiple project relationships before changing this object to a task',
     );
+  });
+
+  it('rejects promoting a related object when a task already has a primary project', async () => {
+    const scope = withTeam(db, TEAM_A, USER_A).objects;
+    const project = await scope.createObject({
+      type: 'project',
+      canonicalName: 'Existing primary project',
+      actor: { kind: 'user', userId: USER_A },
+    });
+    const candidate = await scope.createObject({
+      type: 'company',
+      canonicalName: 'Project promotion candidate',
+      actor: { kind: 'user', userId: USER_A },
+    });
+    const task = await scope.createObject({
+      type: 'task',
+      canonicalName: 'Task with generic child',
+      parentObjectId: project.id,
+      actor: { kind: 'user', userId: USER_A },
+    });
+    await scope.addRelationship({
+      fromEntityId: task.id,
+      toEntityId: candidate.id,
+      kind: 'child',
+      actorUserId: USER_A,
+    });
+
+    await expect(
+      scope.updateObject(candidate.id, { type: 'project' }, { kind: 'user', userId: USER_A }),
+    ).rejects.toThrow();
+
+    await expect(scope.getObject(candidate.id)).resolves.toMatchObject({ type: 'company' });
+    await expect(scope.listPrimaryProjectsForTasks([task.id])).resolves.toEqual([
+      expect.objectContaining({ projectId: project.id }),
+    ]);
   });
 
   it('retargets primary project edges and invalidates automatic context on project merge', async () => {

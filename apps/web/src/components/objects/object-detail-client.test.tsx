@@ -9,7 +9,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type * as ReactQuery from '@tanstack/react-query';
 
-const fakes = vi.hoisted(() => ({ refresh: vi.fn() }));
+const fakes = vi.hoisted(() => ({
+  refresh: vi.fn(),
+  loadTaskCategoryStatesAction: vi.fn(),
+}));
 
 vi.mock('next/navigation', () => ({ useRouter: () => fakes }));
 vi.mock('@tanstack/react-query', async (importOriginal) => {
@@ -26,6 +29,7 @@ vi.mock('@/app/actions/objects', () => ({
   createNoteAction: vi.fn(),
   deleteNoteAction: vi.fn(),
   generateObjectSummaryAction: vi.fn(),
+  loadTaskCategoryStatesAction: fakes.loadTaskCategoryStatesAction,
   rejectObjectChangeAction: vi.fn(),
   removeRelationshipAction: vi.fn(),
   repairObjectMemoryAction: vi.fn(),
@@ -106,6 +110,7 @@ beforeEach(() => {
     ok: true,
     message: 'Memory repair queued',
   });
+  fakes.loadTaskCategoryStatesAction.mockResolvedValue({ rows: [] });
 });
 
 function renderObjectDetail(props: Parameters<typeof ObjectDetailClient>[0]): string {
@@ -199,6 +204,32 @@ describe('ObjectDetailClient', () => {
 
     expect(screen.queryByText('Category')).toBeNull();
     expect(screen.queryByRole('combobox', { name: 'Task category' })).toBeNull();
+  });
+
+  it('updates the detail badge when pending classification completes', async () => {
+    fakes.loadTaskCategoryStatesAction.mockResolvedValue({
+      rows: [
+        {
+          id: detail.id,
+          taskCategory: 'design',
+          taskCategoryMode: 'automatic',
+          taskCategorySource: 'llm',
+          taskCategoryStatus: 'ready',
+          taskCategoryUpdatedAt: new Date('2026-07-13T10:00:00.000Z'),
+        },
+      ],
+    });
+    render(
+      objectDetailElement({
+        detail: { ...detail, taskCategoryStatus: 'pending' },
+        userId: 'user-1',
+        suggestions: [],
+      }),
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTitle('Design')).toBeTruthy();
+    });
   });
 
   it('uses source-tracked display titles for the object detail heading', () => {

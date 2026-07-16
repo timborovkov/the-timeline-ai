@@ -27,10 +27,10 @@ vi.mock('@/app/actions/objects', () => ({
   undoTaskCategoryChangeAction: vi.fn(),
 }));
 
-const [{ TaskCategoryBadge }, { TaskCategorySelect }] = await Promise.all([
-  import('./task-category-badge.js'),
-  import('./task-category-select.js'),
-]);
+const [
+  { LiveTaskCategoryBadge, TaskCategoryBadge, TaskCategoryPollingProvider },
+  { TaskCategorySelect },
+] = await Promise.all([import('./task-category-badge.js'), import('./task-category-select.js')]);
 
 function render(ui: ReactElement) {
   const client = new QueryClient({
@@ -168,6 +168,11 @@ describe('TaskCategorySelect', () => {
 });
 
 describe('TaskCategoryBadge', () => {
+  beforeEach(() => {
+    fakes.loadTaskCategoryStatesAction.mockReset();
+    fakes.loadTaskCategoryStatesAction.mockResolvedValue({ rows: [] });
+  });
+
   it('shows pending and failed state while retaining the last category', () => {
     const view = render(<TaskCategoryBadge category="engineering" status="pending" />);
     expect(screen.getByText('Engineering · Categorizing…')).toBeTruthy();
@@ -177,5 +182,68 @@ describe('TaskCategoryBadge', () => {
 
     view.rerender(<TaskCategoryBadge category={null} status="failed" />);
     expect(screen.getByText('Category failed · Retry')).toBeTruthy();
+  });
+
+  it('updates a pending card badge when classification completes', async () => {
+    fakes.loadTaskCategoryStatesAction.mockResolvedValue({
+      rows: [
+        {
+          id: 'task-1',
+          taskCategory: 'design',
+          taskCategoryMode: 'automatic',
+          taskCategorySource: 'llm',
+          taskCategoryStatus: 'ready',
+          taskCategoryUpdatedAt: new Date('2026-07-13T10:00:00.000Z'),
+        },
+      ],
+    });
+
+    render(
+      <LiveTaskCategoryBadge taskId="task-1" category={null} status="pending" updatedAt={null} />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Design')).toBeTruthy();
+    });
+    expect(screen.queryByText('Categorizing…')).toBeNull();
+  });
+
+  it('batches pending card badges under a shared polling provider', async () => {
+    fakes.loadTaskCategoryStatesAction.mockResolvedValue({
+      rows: [
+        {
+          id: 'task-1',
+          taskCategory: 'design',
+          taskCategoryStatus: 'ready',
+          taskCategoryUpdatedAt: new Date('2026-07-13T10:00:00.000Z'),
+        },
+        {
+          id: 'task-2',
+          taskCategory: 'engineering',
+          taskCategoryStatus: 'ready',
+          taskCategoryUpdatedAt: new Date('2026-07-13T10:00:00.000Z'),
+        },
+      ],
+    });
+
+    const view = render(
+      <TaskCategoryPollingProvider
+        tasks={[
+          { id: 'task-1', status: 'pending', updatedAt: null },
+          { id: 'task-2', status: 'pending', updatedAt: null },
+        ]}
+      >
+        <LiveTaskCategoryBadge taskId="task-1" category={null} status="pending" />
+        <LiveTaskCategoryBadge taskId="task-2" category={null} status="pending" />
+      </TaskCategoryPollingProvider>,
+    );
+
+    await waitFor(() => {
+      expect(view.container.textContent).toBe('DesignEngineering');
+    });
+    expect(fakes.loadTaskCategoryStatesAction).toHaveBeenCalledOnce();
+    expect(fakes.loadTaskCategoryStatesAction).toHaveBeenCalledWith({
+      ids: ['task-1', 'task-2'],
+    });
   });
 });

@@ -66,6 +66,7 @@ import {
 } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 
+import type { TaskCategoryFilterKey } from '#src/task-categories/types.js';
 import type { TeamScopeCore } from '#src/team-scope.js';
 
 import {
@@ -123,6 +124,10 @@ import {
   TASK_CATEGORY_PROMPT_VERSION,
   taskCategoryInputHash,
 } from '#src/task-categories/classifier.js';
+import {
+  readTaskCategoryFilterRefreshState,
+  type TaskCategoryFilterRefreshState,
+} from '#src/task-categories/filter-refresh.js';
 import {
   TASK_CATEGORY_TAXONOMY_VERSION,
   taskCategoryModeSchema,
@@ -1306,6 +1311,11 @@ function taskCategoryCondition(filter: ObjectCountFilter): SQL | undefined {
   return filter.taskCategoryNull ? or(categorized, isNull(entities.taskCategory)) : categorized;
 }
 
+function taskCategoryStatusCondition(filter: ObjectCountFilter): SQL | undefined {
+  const statuses = toArray(filter.taskCategoryStatus) ?? [];
+  return statuses.length > 0 ? inArray(entities.taskCategoryStatus, statuses) : undefined;
+}
+
 function primaryProjectCondition(scope: TeamScopeCore, filter: ObjectCountFilter): SQL | undefined {
   const requestedIds = toArray(filter.primaryProjectId);
   if (!requestedIds || requestedIds.length === 0) return undefined;
@@ -1443,6 +1453,11 @@ function objectListConditions(scope: TeamScopeCore, filter: ObjectCountFilter = 
     conds.push(eq(entities.type, 'task'));
     conds.push(categoryCondition);
   }
+  const categoryStatusCondition = taskCategoryStatusCondition(filter);
+  if (categoryStatusCondition) {
+    conds.push(eq(entities.type, 'task'));
+    conds.push(categoryStatusCondition);
+  }
   if (filter.taskCategoryBackfillEligible) {
     conds.push(eq(entities.type, 'task'));
     conds.push(
@@ -1451,6 +1466,9 @@ function objectListConditions(scope: TeamScopeCore, filter: ObjectCountFilter = 
     conds.push(
       sql`(${entities.taskCategoryStatus} is null or ${entities.taskCategoryStatus} = 'failed')`,
     );
+  }
+  if (filter.taskCategoryUpdatedAfter) {
+    conds.push(gt(entities.taskCategoryUpdatedAt, filter.taskCategoryUpdatedAfter));
   }
 
   const projectCondition = primaryProjectCondition(scope, filter);
@@ -1487,6 +1505,33 @@ export async function countObjects(
     .from(entities)
     .where(and(...objectListConditions(scope, filter)));
   return rows[0]?.total ?? 0;
+}
+
+export async function getTaskCategoryFilterRefreshState(
+  db: Db,
+  scope: TeamScopeCore,
+  filter: ObjectCountFilter,
+  categoryKeys: readonly TaskCategoryFilterKey[],
+  baselineToken?: string,
+): Promise<TaskCategoryFilterRefreshState> {
+  await scope.requireMembership();
+  const { taskCategory: _category, taskCategoryNull: _categoryNull, ...baseFilter } = filter;
+  const conditions = objectListConditions(scope, {
+    ...baseFilter,
+    type: 'task',
+  });
+  const pendingQuery = db
+    .select({ id: entities.id })
+    .from(entities)
+    .where(and(...conditions, eq(entities.taskCategoryStatus, 'pending')))
+    .limit(1);
+  return readTaskCategoryFilterRefreshState(
+    db,
+    scope.teamId,
+    categoryKeys,
+    pendingQuery,
+    baselineToken,
+  );
 }
 
 export async function listObjects(
@@ -3959,6 +4004,7 @@ export async function createObject(
     const precomputedTaskCategory =
       taskPacket &&
       taskCategoryHash &&
+      getEnv().TASK_CATEGORY_CLASSIFICATION_ENABLED &&
       input.precomputedTaskCategory &&
       parsedPrecomputedCategory.success &&
       input.precomputedTaskCategory.inputHash === taskCategoryHash &&
@@ -4273,6 +4319,14 @@ export interface UpdateActor {
   userId: string | null;
 }
 
+type PostCommitEffect = () => void;
+
+interface ObjectMutationOptions {
+  transactionClient?: DbOrTx;
+  postCommitEffects?: PostCommitEffect[];
+  requireActive?: boolean;
+}
+
 /**
  * Apply a patch to an object. Each changed field gets its own immutable
  * `object_changes` row; a single `raw_events` row anchors the whole patch
@@ -4287,7 +4341,7 @@ export async function updateObject(
   entityId: string,
   patch: ObjectPatch,
   actor: UpdateActor,
-  options?: { archiveSuggestedProjectIfUnusedForItemId?: string },
+  options?: ObjectMutationOptions & { archiveSuggestedProjectIfUnusedForItemId?: string },
 ): Promise<{ object: ObjectRow; changedFields: string[] }> {
   await scope.requireMembership();
   if (!UUID_RE.test(entityId)) throw new Error('Invalid entity id');
@@ -4301,7 +4355,7 @@ export async function updateObject(
     await scope.requireTeamMember(patch.assigneeUserId);
   }
 
-  const txResult = await db.transaction(async (tx) => {
+  const txResult = await (options?.transactionClient ?? db).transaction(async (tx) => {
     const currentRows = await tx
       .select()
       .from(entities)
@@ -4317,6 +4371,7 @@ export async function updateObject(
     const currentRow = currentRows[0];
     if (!currentRow) throw new Error('Object not found');
     const current: EntityRow = currentRow;
+    if (options?.requireActive && current.archivedAt) throw new Error('Object is archived');
 
     const unchangedResult = () => ({
       object: toObjectRow(current),
@@ -4657,60 +4712,64 @@ export async function updateObject(
     };
   });
 
-  // Re-embed object + entity on every update — the narrative text bakes in
-  // status/stage/owner/etc., so any patch can shift the vector. Skip when
-  // the patch was a no-op (no actual changes).
-  if (txResult.changedFields.length > 0) {
-    fireAndForgetEmbed(() => embedQueue.enqueueObjectEmbedJob(scope.teamId, entityId), {
-      teamId: scope.teamId,
-      objectId: entityId,
-      op: 'updateObject',
-    });
-    // Only re-embed entity when its text inputs (canonicalName/aliases/type)
-    // actually changed — those drive the entity disambiguation point. A
-    // pure status flip doesn't need a new entity vector.
-    const entityFieldChanged = txResult.changedFields.some(
-      (f) => f === 'canonicalName' || f === 'aliases' || f === 'type',
-    );
-    if (entityFieldChanged) {
-      fireAndForgetEmbed(() => embedQueue.enqueueEntityEmbedJob(scope.teamId, entityId), {
+  const runPostCommitEffects = () => {
+    // Re-embed object + entity on every update — the narrative text bakes in
+    // status/stage/owner/etc., so any patch can shift the vector. Skip when
+    // the patch was a no-op (no actual changes).
+    if (txResult.changedFields.length > 0) {
+      fireAndForgetEmbed(() => embedQueue.enqueueObjectEmbedJob(scope.teamId, entityId), {
         teamId: scope.teamId,
-        entityId,
+        objectId: entityId,
+        op: 'updateObject',
+      });
+      // Only re-embed entity when its text inputs (canonicalName/aliases/type)
+      // actually changed — those drive the entity disambiguation point. A
+      // pure status flip doesn't need a new entity vector.
+      const entityFieldChanged = txResult.changedFields.some(
+        (f) => f === 'canonicalName' || f === 'aliases' || f === 'type',
+      );
+      if (entityFieldChanged) {
+        fireAndForgetEmbed(() => embedQueue.enqueueEntityEmbedJob(scope.teamId, entityId), {
+          teamId: scope.teamId,
+          entityId,
+          op: 'updateObject',
+        });
+      }
+      for (const changeId of txResult.changeIds) {
+        fireAndForgetEmbed(() => embedQueue.enqueueObjectChangeEmbedJob(scope.teamId, changeId), {
+          teamId: scope.teamId,
+          changeId,
+          op: 'updateObject',
+        });
+      }
+      refreshObjectAndLinkedParentSummaries(db, scope, txResult.object, {
+        teamId: scope.teamId,
         op: 'updateObject',
       });
     }
-    for (const changeId of txResult.changeIds) {
-      fireAndForgetEmbed(() => embedQueue.enqueueObjectChangeEmbedJob(scope.teamId, changeId), {
-        teamId: scope.teamId,
-        changeId,
-        op: 'updateObject',
-      });
-    }
-    refreshObjectAndLinkedParentSummaries(db, scope, txResult.object, {
+    fireAndForgetEmbed(() => afterDueDateCalendarSync(scope.teamId, txResult.dueDateCalendarSync), {
       teamId: scope.teamId,
-      op: 'updateObject',
+      op: 'updateObjectDueDateCalendar',
     });
-  }
-  fireAndForgetEmbed(() => afterDueDateCalendarSync(scope.teamId, txResult.dueDateCalendarSync), {
-    teamId: scope.teamId,
-    op: 'updateObjectDueDateCalendar',
-  });
-  if (txResult.requestedCategoryHash) {
-    enqueueTaskCategoryBestEffort(
-      {
-        teamId: scope.teamId,
-        taskId: entityId,
-        inputHash: txResult.requestedCategoryHash,
-        trigger: 'context_change',
-      },
-      { teamId: scope.teamId, taskId: entityId, op: 'updateObject:taskCategory' },
+    if (txResult.requestedCategoryHash) {
+      enqueueTaskCategoryBestEffort(
+        {
+          teamId: scope.teamId,
+          taskId: entityId,
+          inputHash: txResult.requestedCategoryHash,
+          trigger: 'context_change',
+        },
+        { teamId: scope.teamId, taskId: entityId, op: 'updateObject:taskCategory' },
+      );
+    }
+    enqueueProjectTaskCategoryInvalidation(
+      scope.teamId,
+      { jobs: txResult.linkedTaskCategoryJobs, fanout: txResult.linkedTaskCategoryFanout },
+      'updateObject',
     );
-  }
-  enqueueProjectTaskCategoryInvalidation(
-    scope.teamId,
-    { jobs: txResult.linkedTaskCategoryJobs, fanout: txResult.linkedTaskCategoryFanout },
-    'updateObject',
-  );
+  };
+  if (options?.postCommitEffects) options.postCommitEffects.push(runPostCommitEffects);
+  else runPostCommitEffects();
   return { object: txResult.object, changedFields: txResult.changedFields };
 }
 
@@ -4719,9 +4778,10 @@ export async function archiveObject(
   scope: TeamScopeCore,
   entityId: string,
   actor: UpdateActor,
+  options?: ObjectMutationOptions,
 ): Promise<ObjectRow & { changedFields: string[] }> {
   await scope.requireMembership();
-  const [current] = await db
+  const [current] = await (options?.transactionClient ?? db)
     .select()
     .from(entities)
     .where(
@@ -4735,7 +4795,14 @@ export async function archiveObject(
   if (!current) throw new Error('Object not found');
   if (current.archivedAt) return { ...toObjectRow(current), changedFields: [] };
 
-  const result = await updateObject(db, scope, entityId, { archivedAt: new Date() }, actor);
+  const result = await updateObject(
+    db,
+    scope,
+    entityId,
+    { archivedAt: new Date() },
+    actor,
+    options,
+  );
   return { ...result.object, changedFields: result.changedFields };
 }
 
@@ -4745,11 +4812,167 @@ export async function archiveSuggestedProjectIfUnused(
   entityId: string,
   suggestionItemId: string,
   actor: UpdateActor,
+  options?: ObjectMutationOptions,
 ): Promise<boolean> {
   const result = await updateObject(db, scope, entityId, { archivedAt: new Date() }, actor, {
+    ...options,
     archiveSuggestedProjectIfUnusedForItemId: suggestionItemId,
   });
   return result.changedFields.includes('archivedAt');
+}
+
+function suggestionCreatedObjectAdoptionCondition(
+  teamId: string,
+  entityId: string,
+  createdAt: Date,
+  suggestionItemId: string,
+): SQL {
+  return sql`(
+    EXISTS (
+      SELECT 1
+      FROM object_changes AS adoption_change
+      WHERE adoption_change.team_id = ${teamId}
+        AND adoption_change.entity_id = ${entityId}
+        AND adoption_change.actor_kind = 'user'
+        AND adoption_change.status = 'applied'
+        AND adoption_change.changed_at > ${createdAt}
+    )
+    OR EXISTS (
+      SELECT 1
+      FROM object_notes AS adoption_note
+      WHERE adoption_note.team_id = ${teamId}
+        AND adoption_note.entity_id = ${entityId}
+        AND adoption_note.author_user_id IS NOT NULL
+        AND adoption_note.deleted_at IS NULL
+        AND adoption_note.created_at > ${createdAt}
+    )
+    OR EXISTS (
+      SELECT 1
+      FROM board_items AS adoption_board_item
+      WHERE adoption_board_item.team_id = ${teamId}
+        AND adoption_board_item.entity_id = ${entityId}
+        AND adoption_board_item.archived_at IS NULL
+        AND adoption_board_item.created_at > ${createdAt}
+    )
+    OR EXISTS (
+      SELECT 1
+      FROM entity_relationships AS adoption_relationship
+      WHERE adoption_relationship.team_id = ${teamId}
+        AND (
+          adoption_relationship.from_entity_id = ${entityId}
+          OR adoption_relationship.to_entity_id = ${entityId}
+        )
+        AND adoption_relationship.created_by IS NOT NULL
+        AND adoption_relationship.created_at > ${createdAt}
+    )
+    OR EXISTS (
+      SELECT 1
+      FROM raw_events AS approved_artifact_event
+      INNER JOIN agent_suggestion_items AS approved_artifact_item
+        ON approved_artifact_item.id::text =
+          approved_artifact_event.source_metadata ->> 'agent_suggestion_item_id'
+        AND approved_artifact_item.team_id = approved_artifact_event.team_id
+      WHERE approved_artifact_event.team_id = ${teamId}
+        AND approved_artifact_event.occurred_at > ${createdAt}
+        AND approved_artifact_item.id <> ${suggestionItemId}
+        AND approved_artifact_item.status = 'accepted'
+        AND (
+          (
+            approved_artifact_event.source_metadata ->> 'kind' = 'object_note_create'
+            AND approved_artifact_event.source_metadata ->> 'entity_id' = ${entityId}
+          )
+          OR (
+            approved_artifact_event.source_metadata ->> 'kind' = 'relationship_create'
+            AND (
+              approved_artifact_event.source_metadata ->> 'from_entity_id' = ${entityId}
+              OR approved_artifact_event.source_metadata ->> 'to_entity_id' = ${entityId}
+            )
+          )
+        )
+    )
+    OR EXISTS (
+      SELECT 1
+      FROM agent_suggestion_items AS accepted_update_item
+      WHERE accepted_update_item.team_id = ${teamId}
+        AND accepted_update_item.id <> ${suggestionItemId}
+        AND accepted_update_item.status = 'accepted'
+        AND accepted_update_item.operation = 'update'
+        AND accepted_update_item.target_kind IN ('task', 'object')
+        AND (
+          accepted_update_item.target_id = ${entityId}
+          OR accepted_update_item.result_id = ${entityId}
+        )
+        AND accepted_update_item.resolved_at > ${createdAt}
+    )
+  )`;
+}
+
+export async function archiveSuggestionCreatedObjectIfUnadopted(
+  db: Db,
+  scope: TeamScopeCore,
+  suggestionItemId: string,
+  actor: UpdateActor,
+  options?: ObjectMutationOptions,
+): Promise<'archived' | 'adopted' | 'missing'> {
+  await scope.requireMembership();
+  if (!UUID_RE.test(suggestionItemId)) throw new Error('Invalid suggestion item id');
+  const postCommitEffects = options?.postCommitEffects ?? [];
+  const runsOwnPostCommitEffects = options?.postCommitEffects === undefined;
+  const outcome = await (options?.transactionClient ?? db).transaction(async (tx) => {
+    const [created] = await tx
+      .select({
+        id: entities.id,
+        type: entities.type,
+        createdAt: entities.createdAt,
+        archivedAt: entities.archivedAt,
+      })
+      .from(entities)
+      .where(
+        and(
+          eq(entities.teamId, scope.teamId),
+          isNull(entities.mergedIntoId),
+          sql`${entities.metadata} ->> 'agent_suggestion_item_id' = ${suggestionItemId}`,
+        ),
+      )
+      .for('update')
+      .limit(1);
+    if (!created) return 'missing' as const;
+    if (created.archivedAt) return 'archived' as const;
+
+    const [adopted] = await tx
+      .select({ id: entities.id })
+      .from(entities)
+      .where(
+        and(
+          eq(entities.teamId, scope.teamId),
+          eq(entities.id, created.id),
+          suggestionCreatedObjectAdoptionCondition(
+            scope.teamId,
+            created.id,
+            created.createdAt,
+            suggestionItemId,
+          ),
+        ),
+      )
+      .limit(1);
+    if (adopted) return 'adopted' as const;
+
+    if (created.type === 'task') {
+      await setTaskProject(db, scope, created.id, null, actor, {
+        transactionClient: tx,
+        postCommitEffects,
+      });
+    }
+    await archiveObject(db, scope, created.id, actor, {
+      transactionClient: tx,
+      postCommitEffects,
+    });
+    return 'archived' as const;
+  });
+  if (runsOwnPostCommitEffects) {
+    for (const effect of postCommitEffects) effect();
+  }
+  return outcome;
 }
 
 export async function unarchiveObject(
@@ -5575,14 +5798,14 @@ export async function setTaskProject(
   taskId: string,
   projectId: string | null,
   actor: UpdateActor,
-  options?: { preserveUserChangesAfter?: Date },
+  options?: ObjectMutationOptions & { preserveUserChangesAfter?: Date },
 ): Promise<{ changed: boolean; project: TaskPrimaryProjectRow | null; touchedIds: string[] }> {
   await scope.requireMembership();
   if (!UUID_RE.test(taskId) || (projectId !== null && !UUID_RE.test(projectId))) {
     throw new Error('Invalid entity id');
   }
 
-  const result = await db.transaction(async (tx) => {
+  const result = await (options?.transactionClient ?? db).transaction(async (tx) => {
     const project = projectId ? await lockActiveProject(tx, scope.teamId, projectId) : null;
     if (projectId && !project) throw new Error('Project not found');
 
@@ -5830,25 +6053,29 @@ export async function setTaskProject(
     };
   });
 
-  for (const objectId of new Set(result.touchedIds)) {
-    void fireAndForgetObjectSummaryRefresh(db, scope, objectId, {
-      teamId: scope.teamId,
-      objectId,
-      taskId,
-      op: 'setTaskProject',
-    });
-  }
-  if (result.requestedCategoryHash) {
-    enqueueTaskCategoryBestEffort(
-      {
+  const runPostCommitEffects = () => {
+    for (const objectId of new Set(result.touchedIds)) {
+      void fireAndForgetObjectSummaryRefresh(db, scope, objectId, {
         teamId: scope.teamId,
+        objectId,
         taskId,
-        inputHash: result.requestedCategoryHash,
-        trigger: 'project_change',
-      },
-      { teamId: scope.teamId, taskId, op: 'setTaskProject:taskCategory' },
-    );
-  }
+        op: 'setTaskProject',
+      });
+    }
+    if (result.requestedCategoryHash) {
+      enqueueTaskCategoryBestEffort(
+        {
+          teamId: scope.teamId,
+          taskId,
+          inputHash: result.requestedCategoryHash,
+          trigger: 'project_change',
+        },
+        { teamId: scope.teamId, taskId, op: 'setTaskProject:taskCategory' },
+      );
+    }
+  };
+  if (options?.postCommitEffects) options.postCommitEffects.push(runPostCommitEffects);
+  else runPostCommitEffects();
   return { changed: result.changed, project: result.project, touchedIds: result.touchedIds };
 }
 
@@ -6326,19 +6553,22 @@ export async function undoTaskCategoryChange(
         requestedInputHash: enqueueInputHash,
         taxonomyVersion: TASK_CATEGORY_TAXONOMY_VERSION,
       };
-    }
-    if (
-      previous.mode === 'automatic' &&
-      previous.status === 'pending' &&
-      previous.requestedInputHash
-    ) {
+    } else if (previous.mode === 'automatic') {
       const packet = await taskCategoryPacketForRow(tx, scope.teamId, current);
-      enqueueInputHash = taskCategoryInputHash(packet, TIMELINE_MODELS.taskCategorization.id);
-      previous = {
-        ...previous,
-        requestedInputHash: enqueueInputHash,
-        taxonomyVersion: TASK_CATEGORY_TAXONOMY_VERSION,
-      };
+      const currentInputHash = taskCategoryInputHash(packet, TIMELINE_MODELS.taskCategorization.id);
+      const staleReadyState =
+        previous.status === 'ready' &&
+        (previous.appliedInputHash !== currentInputHash ||
+          previous.taxonomyVersion !== TASK_CATEGORY_TAXONOMY_VERSION);
+      if (previous.status === 'pending' || staleReadyState) {
+        enqueueInputHash = currentInputHash;
+        previous = {
+          ...previous,
+          status: 'pending',
+          requestedInputHash: currentInputHash,
+          taxonomyVersion: TASK_CATEGORY_TAXONOMY_VERSION,
+        };
+      }
     }
     if (enqueueInputHash) assertTaskCategoryAutomationAvailable('retry');
     const now = new Date();
@@ -8518,6 +8748,11 @@ export function createObjectScope(db: Db, scope: TeamScopeCore) {
   return {
     listObjects: (filter?: ObjectListFilter) => listObjects(db, scope, filter),
     countObjects: (filter?: ObjectCountFilter) => countObjects(db, scope, filter),
+    getTaskCategoryFilterRefreshState: (
+      filter: ObjectCountFilter,
+      categoryKeys: readonly TaskCategoryFilterKey[],
+      baselineToken?: string,
+    ) => getTaskCategoryFilterRefreshState(db, scope, filter, categoryKeys, baselineToken),
     searchObjects: (filter: ObjectSearchFilter) => searchObjects(db, scope, filter),
     searchObjectsBySummary: (input: { query: string; archived?: boolean; limit?: number }) =>
       searchObjectsBySummary(db, scope, input),
@@ -8539,15 +8774,25 @@ export function createObjectScope(db: Db, scope: TeamScopeCore) {
       args?: { limit?: number; cursor?: string | null },
     ) => getObjectSectionPage(db, scope, entityId, section, args),
     createObject: (input: CreateObjectInput) => createObject(db, scope, input),
-    updateObject: (entityId: string, patch: ObjectPatch, actor: UpdateActor) =>
-      updateObject(db, scope, entityId, patch, actor),
+    updateObject: (
+      entityId: string,
+      patch: ObjectPatch,
+      actor: UpdateActor,
+      options?: Parameters<typeof updateObject>[5],
+    ) => updateObject(db, scope, entityId, patch, actor, options),
     archiveObject: (entityId: string, actor: UpdateActor) =>
       archiveObject(db, scope, entityId, actor),
     archiveSuggestedProjectIfUnused: (
       entityId: string,
       suggestionItemId: string,
       actor: UpdateActor,
-    ) => archiveSuggestedProjectIfUnused(db, scope, entityId, suggestionItemId, actor),
+      options?: Parameters<typeof archiveSuggestedProjectIfUnused>[5],
+    ) => archiveSuggestedProjectIfUnused(db, scope, entityId, suggestionItemId, actor, options),
+    archiveSuggestionCreatedObjectIfUnadopted: (
+      suggestionItemId: string,
+      actor: UpdateActor,
+      options?: Parameters<typeof archiveSuggestionCreatedObjectIfUnadopted>[4],
+    ) => archiveSuggestionCreatedObjectIfUnadopted(db, scope, suggestionItemId, actor, options),
     unarchiveObject: (entityId: string, actor: UpdateActor) =>
       unarchiveObject(db, scope, entityId, actor),
     mergeObjects: (input: Parameters<typeof mergeObjects>[2]) => mergeObjects(db, scope, input),

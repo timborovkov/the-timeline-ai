@@ -6,22 +6,32 @@ const fakes = vi.hoisted(() => ({
   resolveActiveTeam: vi.fn(),
   listObjects: vi.fn(),
   countObjects: vi.fn(),
+  getTaskCategoryFilterRefreshState: vi.fn(),
   listPendingSuggestions: vi.fn(),
   listMembers: vi.fn(),
   getObjectMergePreview: vi.fn(),
   userRows: [] as { id: string; name: string | null; email: string }[],
+  categoryRefresh: null as {
+    surface: string;
+    filters: { category: string };
+    baselineToken: string;
+  } | null,
   redirect: vi.fn((path: string) => {
     throw new Error(`redirect:${path}`);
   }),
 }));
 
 vi.mock('next/navigation', () => ({ redirect: fakes.redirect }));
+vi.mock('@timeline/shared/env', () => ({
+  getEnv: () => ({ TASK_CATEGORY_UI_ENABLED: true }),
+}));
 vi.mock('@timeline/shared/team-scope', () => ({
   withTeam: () => ({
     objects: {
       listObjects: fakes.listObjects,
       countObjects: fakes.countObjects,
       getObjectMergePreview: fakes.getObjectMergePreview,
+      getTaskCategoryFilterRefreshState: fakes.getTaskCategoryFilterRefreshState,
     },
     suggestions: { listPendingSuggestions: fakes.listPendingSuggestions },
     timeline: { listMembers: fakes.listMembers },
@@ -63,6 +73,16 @@ vi.mock('@/components/objects/object-cleanup-suggestions', () => ({
     mergePreviewsByItemId: Record<string, unknown>;
   }) => <div data-testid="cleanup-suggestions">{Object.keys(mergePreviewsByItemId).join(',')}</div>,
 }));
+vi.mock('@/components/tasks/task-category-filter-refresh', () => ({
+  TaskCategoryFilterRefresh: (props: {
+    surface: string;
+    filters: { category: string };
+    baselineToken: string;
+  }) => {
+    fakes.categoryRefresh = props;
+    return <div data-testid="task-category-filter-refresh" />;
+  },
+}));
 vi.mock('@/components/work-filter-bar', () => ({
   WorkFilterBar: ({
     resultCount,
@@ -90,9 +110,15 @@ beforeEach(() => {
   fakes.resolveActiveTeam.mockResolvedValue({ active: { teamId: 'team-1' } });
   fakes.listObjects.mockResolvedValue([]);
   fakes.countObjects.mockResolvedValue(0);
+  fakes.getTaskCategoryFilterRefreshState.mockResolvedValue({
+    token: 'design:0',
+    changed: false,
+    pending: true,
+  });
   fakes.listPendingSuggestions.mockResolvedValue([]);
   fakes.listMembers.mockResolvedValue([]);
   fakes.userRows = [];
+  fakes.categoryRefresh = null;
   fakes.getObjectMergePreview.mockResolvedValue({
     objects: [],
     survivorId: '00000000-0000-4000-8000-000000000001',
@@ -147,6 +173,17 @@ function objectRow(index: number, type = 'task') {
 }
 
 describe('ObjectsIndexPage', () => {
+  it('watches task category changes when the object index has a category filter', async () => {
+    const html = renderToStaticMarkup(
+      await ObjectsIndexPage({ searchParams: Promise.resolve({ category: 'design' }) }),
+    );
+
+    expect(html).toContain('task-category-filter-refresh');
+    expect(fakes.categoryRefresh?.surface).toBe('objects');
+    expect(fakes.categoryRefresh?.filters.category).toBe('design');
+    expect(fakes.categoryRefresh?.baselineToken).toBe('design:0');
+  });
+
   it('fetches one cursor-paginated object window and preserves filters in page links', async () => {
     fakes.listMembers.mockResolvedValue([{ userId: 'user-1' }]);
     fakes.userRows = [{ id: 'user-1', name: 'Ada Lovelace', email: 'ada@example.test' }];

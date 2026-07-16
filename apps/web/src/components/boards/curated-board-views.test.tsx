@@ -10,6 +10,10 @@ const fakes = vi.hoisted(() => ({
   updateItem: vi.fn(),
 }));
 
+vi.mock('@/app/actions/objects', () => ({
+  loadTaskCategoryStatesAction: vi.fn(),
+}));
+
 const { CuratedBoardList, CuratedBoardTable } = await import('./curated-board-views.js');
 
 function boardItem(

@@ -313,11 +313,15 @@
         <code>entity_relationships</code> graph: task → project with <code>kind='child'</code>. The
         shared object scope locks and validates the active project before the task, enforces
         zero-or-one primary project, and rejects ambiguous project edges during type promotion.
+        Database compatibility triggers also canonicalize legacy inverse writes and prevent
+        rolling-version writers or object-type changes from introducing a second primary project.
         Project quick add, manual set/change/remove, agent suggestions, filters, Connected Work,
         exports, and MCP reads all use that same edge. Archived projects remain visible on existing
         tasks; project rename and merge invalidate automatic category context in resumable 500-task
         pages. A database outbox cursor survives Redis handoff failures, and each page rechecks
         automatic mode and task/project state so a concurrent human correction always wins.
+        Category-filtered pages use transactional per-category revision rows plus bounded pending
+        checks, avoiding cross-host clock comparisons and repeated full-result scans.
       </p>
       <p>
         See <a href="./adr/0011-task-category-is-reversible-derived-state.md">ADR 0011</a> for the

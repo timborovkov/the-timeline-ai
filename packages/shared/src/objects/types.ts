@@ -37,7 +37,9 @@ export interface ObjectListFilter {
   assigneeUserId?: string | null | (string | null)[];
   taskCategory?: TaskCategory | TaskCategory[];
   taskCategoryNull?: boolean;
+  taskCategoryStatus?: TaskCategoryStatus | TaskCategoryStatus[];
   taskCategoryBackfillEligible?: boolean;
+  taskCategoryUpdatedAfter?: Date;
   primaryProjectId?: string | string[];
   dueBefore?: Date;
   dueAfter?: Date;

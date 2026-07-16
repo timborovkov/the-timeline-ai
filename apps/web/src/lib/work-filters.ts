@@ -1,5 +1,10 @@
 import { OBJECT_TYPES } from '@timeline/shared/objects/types';
-import { TASK_CATEGORIES, type TaskCategory } from '@timeline/shared/task-categories/types';
+import {
+  TASK_CATEGORIES,
+  UNCATEGORIZED_TASK_CATEGORY_FILTER,
+  type TaskCategory,
+  type TaskCategoryFilterKey,
+} from '@timeline/shared/task-categories/types';
 
 import type { BoardItemFilter } from '@timeline/shared/boards';
 import type { ObjectListFilter, ObjectType } from '@timeline/shared/objects/types';
@@ -8,7 +13,7 @@ import { taskStatusFilterValues } from '@/lib/task-statuses';
 
 export const UNASSIGNED_FILTER_VALUE = 'unassigned';
 export const NONE_FILTER_VALUE = 'none';
-const UNCATEGORIZED_FILTER_VALUE = 'uncategorized';
+const UNCATEGORIZED_FILTER_VALUE = UNCATEGORIZED_TASK_CATEGORY_FILTER;
 const DUE_PRESETS = ['overdue', 'today', 'next7', 'none', 'range'] as const;
 const PRIORITY_VALUES = ['1', '2', '3', '4', NONE_FILTER_VALUE] as const;
 export const WORK_FILTER_PARAM_KEYS = [
@@ -121,6 +126,15 @@ export function objectListFilterFromWorkFilters(
     ...dateRangeFilter('created', filters.createdFrom, filters.createdTo),
     ...dateRangeFilter('updated', filters.updatedFrom, filters.updatedTo),
   };
+}
+
+export function taskCategoryFilterKeys(filters: WorkFilterState): TaskCategoryFilterKey[] {
+  return filters.category
+    .split(',')
+    .filter(
+      (value): value is TaskCategoryFilterKey =>
+        value === UNCATEGORIZED_FILTER_VALUE || TASK_CATEGORIES.includes(value as TaskCategory),
+    );
 }
 
 export function taskObjectFilterFromWorkFilters(
