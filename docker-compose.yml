@@ -94,20 +94,21 @@ services:
     environment:
       RUSTFS_ROOT_USER: timeline
       RUSTFS_ROOT_PASSWORD: timeline_dev_secret
-    entrypoint: >
-      /bin/sh -c "
-      mc alias set local http://rustfs:9000 $$RUSTFS_ROOT_USER $$RUSTFS_ROOT_PASSWORD;
-      mc mb --ignore-existing local/timeline-audio;
-      mc mb --ignore-existing local/timeline-attachments;
-      mc mb --ignore-existing local/timeline-exports;
-      mc mb --ignore-existing local/timeline-documents;
-      mc version enable local/timeline-audio;
-      mc version enable local/timeline-attachments;
-      mc version enable local/timeline-documents;
-      printf '%s' '<CORSConfiguration xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><CORSRule><AllowedOrigin>http://localhost:3000</AllowedOrigin><AllowedOrigin>http://127.0.0.1:3000</AllowedOrigin><AllowedMethod>GET</AllowedMethod><AllowedMethod>HEAD</AllowedMethod><AllowedMethod>PUT</AllowedMethod><AllowedHeader>*</AllowedHeader><ExposeHeader>ETag</ExposeHeader></CORSRule></CORSConfiguration>' |
-        mc cors set local/timeline-documents -;
-      echo 'RustFS buckets ready.';
-      "
+    entrypoint:
+      - /bin/sh
+      - -ec
+      - |
+        mc alias set local http://rustfs:9000 $$RUSTFS_ROOT_USER $$RUSTFS_ROOT_PASSWORD;
+        mc mb --ignore-existing local/timeline-audio;
+        mc mb --ignore-existing local/timeline-attachments;
+        mc mb --ignore-existing local/timeline-exports;
+        mc mb --ignore-existing local/timeline-documents;
+        mc version enable local/timeline-audio;
+        mc version enable local/timeline-attachments;
+        mc version enable local/timeline-documents;
+        printf '%s' '<CORSConfiguration xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><CORSRule><AllowedOrigin>http://localhost:3000</AllowedOrigin><AllowedOrigin>http://127.0.0.1:3000</AllowedOrigin><AllowedMethod>GET</AllowedMethod><AllowedMethod>HEAD</AllowedMethod><AllowedMethod>PUT</AllowedMethod><AllowedHeader>*</AllowedHeader><ExposeHeader>ETag</ExposeHeader></CORSRule></CORSConfiguration>' |
+          mc cors set local/timeline-documents -;
+        echo 'RustFS buckets ready.';
 
   # ---- App services (optional, --profile app) ----
   # For most local dev you run web/workers on host via `pnpm dev` for hot reload.

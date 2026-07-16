@@ -57,6 +57,7 @@ describe('display labels', () => {
     );
     expect(displayMeetingLabel({ title: 'meet.google.com/abc-defg-hij' })).toBe('Untitled meeting');
     expect(displaySourceLabel('meet')).toBe('Google Meet');
+    expect(displaySourceLabel('mcp')).toBe('MCP');
     expect(displaySourceLabel('teams')).toBe('Microsoft Teams');
     expect(displaySourceLabel('calendar')).toBe('Calendar');
     expect(displaySourceLabel('ingest_webhook')).toBe('Webhook');

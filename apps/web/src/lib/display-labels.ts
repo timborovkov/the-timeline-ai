@@ -14,6 +14,7 @@ const PROVIDER_LABELS: Record<string, string> = {
   ingest_webhook: 'Webhook',
   integration: 'Integrations',
   linear: 'Linear',
+  mcp: 'MCP',
   meeting: 'Meetings',
   monday: 'Monday.com',
   microsoft_teams: 'Microsoft Teams',

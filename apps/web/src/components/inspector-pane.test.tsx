@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { createElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -156,6 +156,46 @@ describe('InspectorPane', () => {
     expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Close inspector' }));
 
     outside.remove();
+  });
+
+  it('includes native technical-detail summaries in the mobile focus order', async () => {
+    vi.spyOn(window, 'matchMedia').mockImplementation(
+      (query) =>
+        ({
+          matches: false,
+          media: query,
+          onchange: null,
+          addEventListener: vi.fn(),
+          removeEventListener: vi.fn(),
+          addListener: vi.fn(),
+          removeListener: vi.fn(),
+          dispatchEvent: vi.fn(),
+        }) as MediaQueryList,
+    );
+    fakes.inspector.open = true;
+    fakes.inspector.content = {
+      id: 'moment-1',
+      kind: 'Moment',
+      title: 'CI passed',
+      render: () =>
+        createElement(
+          'details',
+          null,
+          createElement('summary', null, 'Technical details'),
+          createElement('button', { type: 'button' }, 'Copy Event ID'),
+        ),
+    };
+
+    render(<InspectorPane />);
+    await waitFor(() => {
+      expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Close inspector' }));
+    });
+
+    const summary = screen.getByText('Technical details');
+    summary.focus();
+    expect(document.activeElement).toBe(summary);
+    fireEvent.keyDown(summary, { key: 'Tab' });
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Close inspector' }));
   });
 
   it('leaves keyboard handling to a portaled dialog opened from the inspector', async () => {

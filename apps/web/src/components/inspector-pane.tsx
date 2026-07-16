@@ -11,8 +11,9 @@ const DESKTOP_INSPECTOR_QUERY = '(min-width: 1024px)';
 const FOCUSABLE_SELECTOR = [
   'a[href]',
   'button:not([disabled])',
-  'input:not([disabled])',
+  'input:not([disabled]):not([type="hidden"])',
   'select:not([disabled])',
+  'summary',
   'textarea:not([disabled])',
   '[tabindex]:not([tabindex="-1"])',
 ].join(',');
@@ -31,6 +32,17 @@ function focusBelongsToPortaledOverlay(pane: HTMLElement): boolean {
     !pane.contains(active) &&
     active.closest(PORTALED_OVERLAY_SELECTOR) !== null
   );
+}
+
+function isFocusableInPane(element: HTMLElement): boolean {
+  if (
+    element.hasAttribute('disabled') ||
+    element.closest('[hidden], [inert], [aria-hidden="true"]')
+  ) {
+    return false;
+  }
+  const closedDetails = element.closest<HTMLDetailsElement>('details:not([open])');
+  return !closedDetails || element === closedDetails.querySelector(':scope > summary');
 }
 
 function subscribeToDesktopInspector(onStoreChange: () => void): () => void {
@@ -85,16 +97,10 @@ export function InspectorPane() {
       const pane = paneRef.current;
       if (!pane || focusBelongsToPortaledOverlay(pane)) return;
 
-      if (event.key === 'Escape') {
-        event.preventDefault();
-        inspector.hide();
-        return;
-      }
       if (desktop || event.key !== 'Tab') return;
 
       const focusable = [...pane.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)].filter(
-        (element) =>
-          !element.hasAttribute('disabled') && element.getAttribute('aria-hidden') !== 'true',
+        isFocusableInPane,
       );
       if (focusable.length === 0) {
         event.preventDefault();

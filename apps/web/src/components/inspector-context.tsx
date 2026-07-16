@@ -38,6 +38,19 @@ interface InspectorState {
 }
 
 const InspectorContext = createContext<InspectorContextValue | null>(null);
+const PORTALED_OVERLAY_SELECTOR = [
+  '[role="dialog"]:not(#inspector-pane)',
+  '[role="alertdialog"]',
+  '[role="menu"]',
+  '[role="listbox"]',
+  '[data-radix-popper-content-wrapper]',
+].join(',');
+
+function eventCameFromPortaledOverlay(event: KeyboardEvent): boolean {
+  return event
+    .composedPath()
+    .some((target) => target instanceof Element && target.matches(PORTALED_OVERLAY_SELECTOR));
+}
 
 export function InspectorProvider({ children }: { children: ReactNode }) {
   const pathname = usePathname();
@@ -72,10 +85,9 @@ export function InspectorProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.stopPropagation();
-        hideOnEscape();
-      }
+      if (e.key !== 'Escape' || e.defaultPrevented || eventCameFromPortaledOverlay(e)) return;
+      e.preventDefault();
+      hideOnEscape();
     };
     window.addEventListener('keydown', onKey);
     return () => {

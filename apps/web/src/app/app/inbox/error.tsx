@@ -9,5 +9,5 @@ export default function InboxError({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
-  return <RouteError title="Captured inbox" error={error} reset={reset} />;
+  return <RouteError title="Inbox" error={error} reset={reset} />;
 }

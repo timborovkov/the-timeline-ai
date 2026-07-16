@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import ChatError from '@/app/app/chat/error';
 import AppError from '@/app/app/error';
+import InboxError from '@/app/app/inbox/error';
 import TeamError from '@/app/app/team/error';
 import SlackError from '@/app/app/team/slack/error';
 import SlackLoading from '@/app/app/team/slack/loading';
@@ -11,6 +12,7 @@ import TelegramError from '@/app/app/team/telegram/error';
 const ROUTE_ERRORS = [
   ['app', AppError],
   ['Ask', ChatError],
+  ['Inbox', InboxError],
   ['Team', TeamError],
   ['Slack', SlackError],
   ['Telegram', TelegramError],

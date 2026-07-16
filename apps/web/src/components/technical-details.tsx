@@ -31,7 +31,12 @@ export function TechnicalDetails({
   const [copied, setCopied] = useState<string | null>(null);
 
   async function copyTechnicalValue(value: string, itemKey: string) {
-    await navigator.clipboard.writeText(value);
+    if (!('clipboard' in navigator)) return;
+    try {
+      await navigator.clipboard.writeText(value);
+    } catch {
+      return;
+    }
     setCopied(itemKey);
     window.setTimeout(() => {
       setCopied((current) => (current === itemKey ? null : current));
