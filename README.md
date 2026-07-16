@@ -231,7 +231,7 @@ pnpm --filter @timeline/worker reconciliation-evidence -- --team=<uuid> --mode=b
 TIMELINE_ENV_FILE=/path/to/.env pnpm --filter @timeline/worker task-category-backfill -- --team-id=<uuid> --limit=500
                           # dry-run task-category candidates, token estimate, and projected cost
 TIMELINE_ENV_FILE=/path/to/.env pnpm --filter @timeline/worker task-category-backfill -- --team-id=<uuid> --limit=500 --enqueue --max-cost-usd=0.10
-                          # enqueue one bounded batch; rerun the same command to resume
+                          # enqueue one bounded batch when its fixed per-task cost estimate fits the guard; rerun to resume
 TIMELINE_ENV_FILE=/path/to/.env pnpm --filter @timeline/worker reconciliation-legacy-provenance -- --team=<uuid> --fail-on-legacy
 TIMELINE_ENV_FILE=/path/to/.env pnpm --filter @timeline/worker reconciliation-production-sampling -- --input=/tmp/eval-run --out=/tmp/reconciliation-production-sampling.json --team=<uuid> --run-kind=closed_beta --fail-on-failures
 # production sampling accepts repeated --input paths; --run-kind defaults to manual

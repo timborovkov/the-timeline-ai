@@ -214,6 +214,10 @@ describe('reconciliation cutover contracts', () => {
     const relationshipSeed = statementSlices(source, '.insert(entityRelationships)').find(
       (statement) => statement.includes('IDS.relationshipProjectTask'),
     );
+    const duplicateRelationshipCleanup = statementSlices(
+      source,
+      '.delete(entityRelationships)',
+    ).find((statement) => statement.includes('IDS.relationshipProjectTask'));
     const assignmentSeed = statementSlices(source, '.insert(taskCategoryAssignments)').find(
       (statement) => statement.includes('IDS.taskCategoryAssignment'),
     );
@@ -222,6 +226,16 @@ describe('reconciliation cutover contracts', () => {
     expect(entitySeed).toContain(
       'taskCategoryRequestedInputHash: sql`excluded.task_category_requested_input_hash`',
     );
+    expect(duplicateRelationshipCleanup).toContain(
+      'ne(entityRelationships.id, IDS.relationshipProjectTask)',
+    );
+    expect(duplicateRelationshipCleanup).toContain(
+      'eq(entityRelationships.fromEntityId, IDS.objectTask)',
+    );
+    expect(duplicateRelationshipCleanup).toContain(
+      'eq(entityRelationships.toEntityId, IDS.objectProject)',
+    );
+    expect(duplicateRelationshipCleanup).toContain("eq(entityRelationships.kind, 'child')");
     expect(relationshipSeed).toContain('target: entityRelationships.id');
     expect(relationshipSeed).toContain('fromEntityId: sql`excluded.from_entity_id`');
     expect(relationshipSeed).toContain('kind: sql`excluded.kind`');

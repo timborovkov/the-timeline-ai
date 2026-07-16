@@ -32,7 +32,7 @@ import {
 } from '@timeline/db';
 import { encryptJson } from '@timeline/shared/crypto';
 import { hashPassword } from '@timeline/shared/passwords';
-import { and, eq, inArray, or, sql } from 'drizzle-orm';
+import { and, eq, inArray, ne, or, sql } from 'drizzle-orm';
 
 loadDotEnv(resolve(process.cwd(), '.env'));
 
@@ -1254,6 +1254,18 @@ async function main(): Promise<void> {
             updatedAt: now,
           },
         });
+
+      await tx
+        .delete(entityRelationships)
+        .where(
+          and(
+            eq(entityRelationships.teamId, IDS.team),
+            ne(entityRelationships.id, IDS.relationshipProjectTask),
+            eq(entityRelationships.fromEntityId, IDS.objectTask),
+            eq(entityRelationships.toEntityId, IDS.objectProject),
+            eq(entityRelationships.kind, 'child'),
+          ),
+        );
 
       await tx
         .insert(entityRelationships)

@@ -36,3 +36,5 @@ fields for correction. Accepting the task validates team/type/lifecycle boundari
 creates or reuses the project idempotently, and writes the single task-to-project
 edge. A human category edit becomes `manual`; a project edit invalidates an
 automatic precomputed category so stale context cannot be silently accepted.
+Archived tasks defer automatic work, so unarchiving recomputes the current
+task/project packet and requeues classification only when that input changed.

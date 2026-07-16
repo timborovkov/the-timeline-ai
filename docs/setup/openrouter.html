@@ -122,9 +122,10 @@ OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
         <code
           >TIMELINE_ENV_FILE=/path/to/.env pnpm --filter @timeline/worker task-category-backfill --
           --team-id=&lt;uuid&gt; --limit=500</code
-        >. Enqueueing requires both <code>--enqueue</code> and an explicit cost ceiling such as
-        <code>--max-cost-usd=0.10</code>. Each execution is bounded; rerun it to resume. Already
-        pending, manual, archived, and ready tasks are skipped.
+        >. Enqueueing requires both <code>--enqueue</code> and a projected-cost guard such as
+        <code>--max-cost-usd=0.10</code>. The guard compares a fixed per-task estimate, not actual
+        provider spend; retries and provider pricing can differ. Each execution is bounded; rerun it
+        to resume. Already pending, manual, archived, and ready tasks are skipped.
       </p>
       <p>
         <code>TASK_CATEGORY_CLASSIFICATION_ENABLED=false</code> is the master emergency stop.

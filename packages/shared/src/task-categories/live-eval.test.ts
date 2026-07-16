@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 import { buildTaskCategoryPacket, classifyTaskCategory } from '#src/task-categories/classifier.js';
 import { TASK_CATEGORY_EVAL_CASES } from '#src/task-categories/eval-cases.js';
+import { buildTaskCategoryConfusionMatrix } from '#src/task-categories/eval-report.js';
 import { TASK_CATEGORIES, type TaskCategory } from '#src/task-categories/types.js';
 
 if (process.env.TASK_CATEGORY_LIVE_ENV_FILE) {
@@ -67,9 +68,10 @@ maybeDescribe('live task category eval', () => {
     const confusions = results
       .filter((result) => result.predicted !== result.expected)
       .map(({ id, expected, predicted, confidence }) => ({ id, expected, predicted, confidence }));
+    const confusionMatrix = buildTaskCategoryConfusionMatrix(results);
 
     process.stdout.write(
-      `${JSON.stringify({ suite: 'task-category-live-v1', cases: results.length, accuracy, macroRecall, injectionAccuracy, confusions })}\n`,
+      `${JSON.stringify({ suite: 'task-category-live-v1', cases: results.length, accuracy, macroRecall, injectionAccuracy, confusionMatrix, confusions })}\n`,
     );
     expect(accuracy).toBeGreaterThanOrEqual(0.85);
     expect(macroRecall).toBeGreaterThanOrEqual(0.8);

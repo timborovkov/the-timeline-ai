@@ -4553,9 +4553,10 @@ export async function updateObject(
     } else if (
       nextType === 'task' &&
       current.taskCategoryMode !== 'manual' &&
-      changes.some((change) =>
+      (changes.some((change) =>
         ['canonicalName', 'aliases', 'metadata', 'type'].includes(change.field),
-      )
+      ) ||
+        (current.archivedAt !== null && next.archivedAt === null))
     ) {
       const packet = await taskCategoryPacketForRow(tx, scope.teamId, {
         id: current.id,

@@ -1085,6 +1085,59 @@ describe('task category and primary project state', () => {
     ).resolves.toHaveLength(2);
   });
 
+  it('reclassifies an automatic task when project context changed while it was archived', async () => {
+    const scope = withTeam(db, TEAM_A, USER_A).objects;
+    const project = await scope.createObject({
+      type: 'project',
+      canonicalName: 'Faba redesign',
+      actor: { kind: 'user', userId: USER_A },
+    });
+    const task = await scope.createObject({
+      type: 'task',
+      canonicalName: 'Prepare first draft',
+      parentObjectId: project.id,
+      actor: { kind: 'user', userId: USER_A },
+    });
+    const initial = await scope.getTaskCategoryClassificationInput(task.id);
+    expect(initial).not.toBeNull();
+    await scope.applyTaskCategoryClassification({
+      taskId: task.id,
+      inputHash: initial?.inputHash ?? '',
+      category: 'design',
+      confidence: 0.91,
+      model: TIMELINE_MODELS.taskCategorization.id,
+      latencyMs: 12,
+    });
+    await scope.archiveObject(task.id, { kind: 'user', userId: USER_A });
+    vi.mocked(queue.enqueueTaskCategoryJob).mockClear();
+
+    await scope.updateObject(
+      project.id,
+      { canonicalName: 'Faba website redesign' },
+      { kind: 'user', userId: USER_A },
+    );
+    expect(queue.enqueueTaskCategoryJob).not.toHaveBeenCalled();
+
+    const restored = await scope.unarchiveObject(task.id, { kind: 'user', userId: USER_A });
+    expect(restored).toMatchObject({
+      taskCategory: 'design',
+      taskCategoryMode: 'automatic',
+      taskCategoryStatus: 'pending',
+    });
+    const [persisted] = await db.select().from(entities).where(eq(entities.id, task.id));
+    expect(persisted?.taskCategoryAppliedInputHash).toBe(initial?.inputHash);
+    expect(persisted?.taskCategoryRequestedInputHash).toEqual(expect.any(String));
+    expect(persisted?.taskCategoryRequestedInputHash).not.toBe(initial?.inputHash);
+    expect(queue.enqueueTaskCategoryJob).toHaveBeenCalledWith(
+      expect.objectContaining({
+        teamId: TEAM_A,
+        taskId: task.id,
+        inputHash: persisted?.taskCategoryRequestedInputHash,
+        trigger: 'context_change',
+      }),
+    );
+  });
+
   it('persists project invalidation work beyond the first page when queue handoff fails', async () => {
     const scope = withTeam(db, TEAM_A, USER_A).objects;
     const project = await scope.createObject({
