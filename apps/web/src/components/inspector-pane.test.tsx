@@ -157,4 +157,49 @@ describe('InspectorPane', () => {
 
     outside.remove();
   });
+
+  it('leaves keyboard handling to a portaled dialog opened from the inspector', async () => {
+    vi.spyOn(window, 'matchMedia').mockImplementation(
+      (query) =>
+        ({
+          matches: false,
+          media: query,
+          onchange: null,
+          addEventListener: vi.fn(),
+          removeEventListener: vi.fn(),
+          addListener: vi.fn(),
+          removeListener: vi.fn(),
+          dispatchEvent: vi.fn(),
+        }) as MediaQueryList,
+    );
+    fakes.inspector.open = true;
+    fakes.inspector.content = {
+      id: 'moment-1',
+      kind: 'Moment',
+      title: 'CI passed',
+      render: () => createElement('button', { type: 'button' }, 'Open evidence'),
+    };
+
+    render(<InspectorPane />);
+    await waitFor(() => {
+      expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Close inspector' }));
+    });
+
+    const dialog = document.createElement('div');
+    dialog.setAttribute('role', 'dialog');
+    dialog.setAttribute('aria-modal', 'true');
+    const dialogAction = document.createElement('button');
+    dialogAction.type = 'button';
+    dialogAction.textContent = 'Download evidence';
+    dialog.append(dialogAction);
+    document.body.append(dialog);
+    dialogAction.focus();
+
+    dialogAction.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'Tab' }));
+    expect(document.activeElement).toBe(dialogAction);
+    dialogAction.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'Escape' }));
+    expect(fakes.inspector.hide).not.toHaveBeenCalled();
+
+    dialog.remove();
+  });
 });

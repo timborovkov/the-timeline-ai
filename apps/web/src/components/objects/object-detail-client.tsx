@@ -48,6 +48,7 @@ import { displayText, formatDisplayDateTime } from '@/lib/display-dates';
 import { displayObjectTitle } from '@/lib/object-title';
 import { readJson } from '@/lib/paginated-api';
 import { queryKeys } from '@/lib/query-keys';
+import { statusLabel } from '@/lib/status-labels';
 import { cn, errorMessage } from '@/lib/utils';
 
 const RELATIONSHIP_KINDS = [
@@ -903,7 +904,7 @@ function ObjectContactSection({ detail }: { detail: ObjectDetail }) {
               className="flex min-w-0 items-center justify-between gap-3 border border-border px-3 py-2 text-sm transition hover:border-signal/60 hover:bg-signal-soft/20"
             >
               <span className="min-w-0 truncate">{facet.value}</span>
-              <span className="shrink-0 text-[11px] text-fg-dim">{facet.kind}</span>
+              <span className="shrink-0 text-[11px] text-fg-dim">{statusLabel(facet.kind)}</span>
             </a>
           );
         })}
@@ -1332,7 +1333,7 @@ function ObjectDetailHeader({
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-fg-dim">
-            <span className="text-fg-muted">{detail.type}</span>
+            <span className="text-fg-muted">{statusLabel(detail.type)}</span>
           </div>
           <h1 className="mt-2 text-3xl font-semibold tracking-tight text-fg">
             {displayText(displayObjectTitle(detail))}
@@ -1463,11 +1464,11 @@ function ObjectEditableFields({
         >
           {options.map((s) => (
             <option key={s} value={s}>
-              {s}
+              {statusLabel(s)}
             </option>
           ))}
           {!options.includes(detail.status) && (
-            <option value={detail.status}>{detail.status}</option>
+            <option value={detail.status}>{statusLabel(detail.status)}</option>
           )}
         </select>
       </Field>
@@ -1766,7 +1767,7 @@ function ConnectedTaskList({
                 {displayText(displayObjectTitle(task))}
               </a>
               <span className="text-[11px] text-fg-dim">
-                {task.status}
+                {statusLabel(task.status)}
                 {showDueDate && task.dueAt
                   ? ` · due ${new Date(task.dueAt).toLocaleDateString()}`
                   : ''}
@@ -1798,7 +1799,7 @@ function ConnectedCalendarList({
             >
               <span className="font-medium">{displayText(event.title)}</span>
               <span className="text-[11px] text-fg-dim">
-                {formatDisplayDateTime(event.startAt, { timezone })} · {event.showAs}
+                {formatDisplayDateTime(event.startAt, { timezone })} · {statusLabel(event.showAs)}
               </span>
             </li>
           ))}
@@ -1824,7 +1825,8 @@ function ConnectedObjectList({ objects }: { objects: ObjectDetail['connectedWork
                 {displayText(object.canonicalName)}
               </a>
               <span className="text-[11px] text-fg-dim">
-                {object.type} · {object.factCount} fact{object.factCount === 1 ? '' : 's'}
+                {statusLabel(object.type)} · {object.factCount} fact
+                {object.factCount === 1 ? '' : 's'}
               </span>
             </li>
           ))}
@@ -2092,7 +2094,7 @@ function ObjectRelationshipsSection({
                 }}
               >
                 <span className="font-medium">{displayText(result.canonicalName)}</span>{' '}
-                <span className="text-xs text-muted-foreground">{result.type}</span>
+                <span className="text-xs text-muted-foreground">{statusLabel(result.type)}</span>
               </button>
             </li>
           ))}
@@ -2196,7 +2198,7 @@ function ObjectRecentChangeItem({
       <div className="flex min-w-0 items-start justify-between gap-3">
         <span className="min-w-0 break-words font-medium">{changeFieldLabel(change.field)}</span>
         <span className="shrink-0 text-[11px] uppercase tracking-wide text-muted-foreground">
-          {change.actorKind} · {change.status}
+          {statusLabel(change.actorKind)} · {statusLabel(change.status)}
         </span>
       </div>
       <div className="mt-1 break-words text-xs text-muted-foreground">

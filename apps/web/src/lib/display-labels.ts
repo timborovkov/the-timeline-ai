@@ -3,13 +3,18 @@ type DisplayRecord = Record<string, unknown>;
 const UUID_PATTERN = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/i;
 
 const PROVIDER_LABELS: Record<string, string> = {
+  calendar: 'Calendar',
+  document: 'Documents',
   email: 'Email',
   github: 'GitHub',
   google_calendar: 'Google Calendar',
   google_drive: 'Google Drive',
   google_meet: 'Google Meet',
   meet: 'Google Meet',
+  ingest_webhook: 'Webhook',
+  integration: 'Integrations',
   linear: 'Linear',
+  meeting: 'Meetings',
   monday: 'Monday.com',
   microsoft_teams: 'Microsoft Teams',
   teams: 'Microsoft Teams',
@@ -17,6 +22,8 @@ const PROVIDER_LABELS: Record<string, string> = {
   sentry: 'Sentry',
   slack: 'Slack',
   telegram: 'Telegram',
+  system: 'System',
+  web: 'Web capture',
   webhook: 'Webhook',
   zoom: 'Zoom',
 };
@@ -67,10 +74,11 @@ function looksLikeUrl(valueToCheck: string): boolean {
 export function displaySourceLabel(source: object | string | null | undefined): string {
   if (typeof source === 'string') {
     const key = source.trim().toLowerCase();
-    return PROVIDER_LABELS[key] ?? readable(source) ?? 'Unavailable source';
+    return PROVIDER_LABELS[key] ?? 'Unavailable source';
   }
   const provider = value(source, ['provider', 'sourceType', 'source_type', 'kind']);
-  if (provider) return PROVIDER_LABELS[provider.toLowerCase()] ?? provider;
+  const providerLabel = provider ? PROVIDER_LABELS[provider.toLowerCase()] : undefined;
+  if (providerLabel) return providerLabel;
   return value(source, ['label', 'name', 'title']) ?? 'Unavailable source';
 }
 

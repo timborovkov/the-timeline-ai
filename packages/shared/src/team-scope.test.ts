@@ -559,6 +559,7 @@ describe('withTeam namespaced port', () => {
     const slackId = '00000000-0000-0000-0000-000000000203';
     const telegramId = '00000000-0000-0000-0000-000000000204';
     const hiddenMondayId = '00000000-0000-0000-0000-000000000205';
+    const unnamedSlackId = '00000000-0000-0000-0000-000000000206';
     await pg.query(
       `INSERT INTO raw_events
         (id, team_id, author_user_id, visibility_owner_user_id, visibility, source, content_text, occurred_at, source_metadata)
@@ -594,6 +595,17 @@ describe('withTeam namespaced port', () => {
           monday_board_id: 'secret-board',
           monday_board_name: 'Secret board',
         }),
+      ],
+    );
+    await pg.query(
+      `INSERT INTO raw_events
+        (id, team_id, author_user_id, visibility_owner_user_id, visibility, source, content_text, occurred_at, source_metadata)
+       VALUES ($1, $2, $3, $3, 'team', 'slack', 'Unnamed Slack channel update', now(), $4::jsonb)`,
+      [
+        unnamedSlackId,
+        TEAM_A,
+        USER_A,
+        JSON.stringify({ slack_workspace_id: 'T123', slack_channel_id: 'C789' }),
       ],
     );
 
@@ -633,6 +645,10 @@ describe('withTeam namespaced port', () => {
           label: '#design',
         }),
         expect.objectContaining({
+          filter: { kind: 'slack_channel', workspaceId: 'T123', channelId: 'C789' },
+          label: 'Unnamed channel',
+        }),
+        expect.objectContaining({
           filter: { kind: 'telegram_chat', chatId: '-1001' },
           label: 'Operations',
         }),
@@ -643,6 +659,7 @@ describe('withTeam namespaced port', () => {
         expect.objectContaining({ filter: { kind: 'monday_board', boardId: 'secret-board' } }),
       ]),
     );
+    expect(facets.map((facet) => facet.label)).not.toContain('C789');
   });
 
   it('lists every visible configured integration resource without requiring event-history groups', async () => {

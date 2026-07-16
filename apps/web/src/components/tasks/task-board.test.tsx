@@ -156,10 +156,10 @@ describe('TaskBoard', () => {
       task({ id: 'todo', canonicalName: 'Todo task', status: 'todo' }),
     ]);
 
-    expect(screen.getByRole('heading', { name: 'backlog' }).nextElementSibling?.textContent).toBe(
+    expect(screen.getByRole('heading', { name: 'Backlog' }).nextElementSibling?.textContent).toBe(
       '2',
     );
-    expect(screen.getByRole('heading', { name: 'open' }).nextElementSibling?.textContent).toBe('2');
+    expect(screen.getByRole('heading', { name: 'Open' }).nextElementSibling?.textContent).toBe('2');
     expect(screen.queryByRole('heading', { name: 'suggested' })).toBeNull();
     expect(screen.queryByRole('heading', { name: 'proposed' })).toBeNull();
     expect(screen.queryByRole('heading', { name: 'todo' })).toBeNull();
@@ -284,7 +284,7 @@ describe('TaskBoard', () => {
       });
     });
 
-    await user.selectOptions(screen.getByDisplayValue('open'), 'doing');
+    await user.selectOptions(screen.getByDisplayValue('Open'), 'doing');
     await waitFor(() => {
       expect(fakes.updateObjectAction).toHaveBeenCalledWith({
         id: 'task-1',

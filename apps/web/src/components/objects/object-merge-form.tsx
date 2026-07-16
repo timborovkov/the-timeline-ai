@@ -10,6 +10,7 @@ import type * as objects from '@timeline/shared/objects/types';
 import { mergeObjectsAction } from '@/app/actions/objects';
 import { Button } from '@/components/ui/button';
 import { displayText } from '@/lib/display-dates';
+import { statusLabel } from '@/lib/status-labels';
 
 interface Props {
   objects: objects.ObjectRow[];
@@ -132,7 +133,7 @@ export function ObjectMergeForm({
                     {displayText(object.canonicalName)}
                   </span>
                   <span className="block text-xs text-fg-dim">
-                    {object.type} · {object.status}
+                    {statusLabel(object.type)} · {statusLabel(object.status)}
                   </span>
                 </span>
                 {survivorId === object.id ? (

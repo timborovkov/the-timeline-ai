@@ -15,6 +15,7 @@ const { OnboardingChecklist } = await import('./onboarding-checklist.js');
 
 beforeEach(() => {
   vi.clearAllMocks();
+  window.history.replaceState({}, '', '/app');
 });
 
 afterEach(() => {
@@ -79,6 +80,17 @@ describe('OnboardingChecklist', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Mark Upload a document complete' }));
 
     expect(mutateChecklist).toHaveBeenCalledWith({ action: 'complete', key: 'first_document' });
+  });
+
+  it('opens the capture dialog hash directly for the first note step', () => {
+    renderChecklist({
+      dismissed: false,
+      items: [{ key: 'first_note', label: 'Capture one timeline event', completed: false }],
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Capture' }));
+
+    expect(window.location.hash).toBe('#capture');
   });
 
   it('dismisses the checklist and disables mutation controls while pending', () => {

@@ -16,6 +16,22 @@ const FOCUSABLE_SELECTOR = [
   'textarea:not([disabled])',
   '[tabindex]:not([tabindex="-1"])',
 ].join(',');
+const PORTALED_OVERLAY_SELECTOR = [
+  '[role="dialog"]',
+  '[role="alertdialog"]',
+  '[role="menu"]',
+  '[role="listbox"]',
+  '[data-radix-popper-content-wrapper]',
+].join(',');
+
+function focusBelongsToPortaledOverlay(pane: HTMLElement): boolean {
+  const active = document.activeElement;
+  return (
+    active instanceof HTMLElement &&
+    !pane.contains(active) &&
+    active.closest(PORTALED_OVERLAY_SELECTOR) !== null
+  );
+}
 
 function subscribeToDesktopInspector(onStoreChange: () => void): () => void {
   const query = window.matchMedia(DESKTOP_INSPECTOR_QUERY);
@@ -66,6 +82,9 @@ export function InspectorPane() {
     if (!inspector.open) return;
 
     function onKeyDown(event: KeyboardEvent): void {
+      const pane = paneRef.current;
+      if (!pane || focusBelongsToPortaledOverlay(pane)) return;
+
       if (event.key === 'Escape') {
         event.preventDefault();
         inspector.hide();
@@ -73,8 +92,6 @@ export function InspectorPane() {
       }
       if (desktop || event.key !== 'Tab') return;
 
-      const pane = paneRef.current;
-      if (!pane) return;
       const focusable = [...pane.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)].filter(
         (element) =>
           !element.hasAttribute('disabled') && element.getAttribute('aria-hidden') !== 'true',

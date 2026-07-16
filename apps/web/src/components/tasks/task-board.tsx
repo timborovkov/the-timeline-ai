@@ -35,6 +35,7 @@ import { displayText } from '@/lib/display-dates';
 import { filterObjectsByText } from '@/lib/object-filter';
 import { objectDetailHref } from '@/lib/object-links';
 import { displayObjectTitle } from '@/lib/object-title';
+import { statusLabel } from '@/lib/status-labels';
 import {
   TASK_BOARD_COLUMN_RENDER_LIMIT,
   TASK_BOARD_LIST_RENDER_LIMIT,
@@ -1006,11 +1007,11 @@ function TaskListRow({
         >
           {columns.map((column) => (
             <option key={column} value={column}>
-              {column}
+              {statusLabel(column)}
             </option>
           ))}
           {!columns.includes(taskDisplayStatus(row.status)) ? (
-            <option value={row.status}>{row.status}</option>
+            <option value={row.status}>{statusLabel(row.status)}</option>
           ) : null}
         </select>
       </td>
@@ -1153,7 +1154,7 @@ function TaskBulkToolbar({
         >
           {columns.map((column) => (
             <option key={column} value={column}>
-              {column}
+              {statusLabel(column)}
             </option>
           ))}
         </select>
@@ -1274,7 +1275,7 @@ function TaskColumn({
       )}
     >
       <div className="mb-3 flex shrink-0 items-baseline justify-between">
-        <h3 className="text-xs text-fg-dim">{id}</h3>
+        <h3 className="text-xs text-fg-dim">{statusLabel(id)}</h3>
         <span className="text-xs text-fg">{rows.length}</span>
       </div>
       <ul className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto">
@@ -1429,11 +1430,11 @@ function TaskDetailPanel({
           >
             {columns.map((column) => (
               <option key={column} value={column}>
-                {column}
+                {statusLabel(column)}
               </option>
             ))}
             {!columns.includes(taskDisplayStatus(task.status)) ? (
-              <option value={task.status}>{task.status}</option>
+              <option value={task.status}>{statusLabel(task.status)}</option>
             ) : null}
           </select>
         </TaskField>

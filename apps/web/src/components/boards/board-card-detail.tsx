@@ -30,6 +30,7 @@ import { boardViewHref } from '@/lib/board-links';
 import { displayText, formatDisplayDate, formatDisplayDateTime } from '@/lib/display-dates';
 import { objectDetailHref } from '@/lib/object-links';
 import { displayObjectTitle } from '@/lib/object-title';
+import { statusLabel } from '@/lib/status-labels';
 import { cn } from '@/lib/utils';
 
 interface Props {
@@ -227,7 +228,7 @@ function BoardCardHeader({
           <h2 className="whitespace-normal break-words text-lg font-semibold leading-snug text-fg">
             {displayText(title)}
           </h2>
-          <p className="mt-1 text-xs text-fg-dim">{item.object.type} · board item</p>
+          <p className="mt-1 text-xs text-fg-dim">{statusLabel(item.object.type)} · board item</p>
         </div>
         <Link
           href={boardViewHref(boardId, view, null, filterParams)}
@@ -368,7 +369,7 @@ function BoardObjectDetails({
   return (
     <dl className="grid grid-cols-2 gap-px border-b border-border bg-border text-sm">
       <Detail label="Board lane" value={lane?.name ?? 'Unset'} danger={blocked} />
-      <Detail label="Object status" value={item.object.status} />
+      <Detail label="Object status" value={statusLabel(item.object.status)} />
       <Detail
         label="Object due"
         value={item.object.dueAt ? dateLabel(item.object.dueAt, timezone) : '-'}
@@ -564,7 +565,7 @@ function BoardActivity({
               <div className="flex items-start justify-between gap-3">
                 <span className="font-medium text-fg">{fieldLabel(change.field)}</span>
                 <span className="shrink-0 text-fg-dim">
-                  {change.actorKind} · {change.status}
+                  {statusLabel(change.actorKind)} · {statusLabel(change.status)}
                 </span>
               </div>
               <p className="mt-1 text-fg-muted">
@@ -609,11 +610,11 @@ function ObjectPreviewDialog({
         <DialogHeader>
           <DialogTitle>{displayText(title)}</DialogTitle>
           <DialogDescription className="text-xs">
-            {item.object.type} · object preview
+            {statusLabel(item.object.type)} · object preview
           </DialogDescription>
         </DialogHeader>
         <dl className="grid grid-cols-2 gap-px overflow-hidden rounded-sm border border-border bg-border text-sm">
-          <Detail label="Status" value={item.object.status} />
+          <Detail label="Status" value={statusLabel(item.object.status)} />
           <Detail label="Stage" value={item.object.stage ?? '-'} />
           <Detail
             label="Priority"

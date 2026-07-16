@@ -58,6 +58,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { statusLabel } from '@/lib/status-labels';
 import { errorMessage } from '@/lib/utils';
 
 type CalendarViewMode = 'month' | 'week' | 'day';
@@ -875,11 +876,11 @@ function CalendarEventList({
                 </span>
                 <span className="mt-1 block truncate text-xs text-fg-muted">
                   {[event.location, event.description].filter(Boolean).join(' · ') ||
-                    (event.allDay ? 'All day' : event.showAs)}
+                    (event.allDay ? 'All day' : statusLabel(event.showAs))}
                 </span>
               </span>
               <span className="self-center justify-self-start rounded-sm border border-border px-2 py-1 text-[11px] text-fg-dim md:justify-self-end">
-                {event.visibility}
+                {statusLabel(event.visibility)}
               </span>
             </button>
           ))

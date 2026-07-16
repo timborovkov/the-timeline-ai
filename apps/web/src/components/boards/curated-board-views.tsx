@@ -11,6 +11,7 @@ import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
 import { boardViewHref, type BoardLayout } from '@/lib/board-links';
 import { displayText, formatDisplayDate } from '@/lib/display-dates';
 import { displayObjectTitle } from '@/lib/object-title';
+import { statusLabel } from '@/lib/status-labels';
 
 export interface BoardMemberOption {
   id: string;
@@ -214,7 +215,9 @@ export function CuratedBoardTable({
                       </Link>
                     )}
                   </td>
-                  <td className="px-3 py-2 font-mono text-xs text-fg-muted">{item.object.type}</td>
+                  <td className="px-3 py-2 text-xs text-fg-muted">
+                    {statusLabel(item.object.type)}
+                  </td>
                   <td className="min-w-40 px-3 py-2">
                     <select
                       value={item.responsibleUserId ?? ''}
@@ -601,7 +604,7 @@ export function CuratedBoardList({
                 {displayText(objectTitle)}
               </span>
               <span className="text-xs text-fg-dim">
-                {item.object.type}
+                {statusLabel(item.object.type)}
                 {item.dueAt ? ` · ${formatDisplayDate(item.dueAt, { timezone })}` : ''}
               </span>
             </>

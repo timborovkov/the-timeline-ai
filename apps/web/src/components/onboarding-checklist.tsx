@@ -25,6 +25,7 @@ export function OnboardingChecklist() {
   }
   const completedCount = data.items.filter((item) => item.completed).length;
   const nextItem = data.items.find((item) => !item.completed);
+  const nextItemMeta = nextItem ? onboardingMeta(nextItem.key) : null;
 
   return (
     <section className="rounded-lg border border-border bg-surface p-4">
@@ -44,7 +45,7 @@ export function OnboardingChecklist() {
               <span className="min-w-0">
                 <span className="block text-sm font-medium text-fg">{nextItem.label}</span>
                 <span className="mt-0.5 block text-xs text-fg-muted">
-                  {onboardingMeta(nextItem.key).description}
+                  {nextItemMeta?.description}
                 </span>
               </span>
             </div>
@@ -67,14 +68,26 @@ export function OnboardingChecklist() {
           <X className="size-4" />
         </button>
       </div>
-      {nextItem ? (
+      {nextItem && nextItemMeta ? (
         <div className="mt-4 flex items-center gap-2 border-t border-border pt-3">
-          <Link
-            href={onboardingMeta(nextItem.key).href}
-            className="inline-flex h-8 items-center rounded-sm border border-border px-3 text-xs font-medium text-fg transition-colors hover:bg-surface-2"
-          >
-            {onboardingMeta(nextItem.key).cta}
-          </Link>
+          {nextItem.key === 'first_note' ? (
+            <button
+              type="button"
+              onClick={() => {
+                window.location.hash = 'capture';
+              }}
+              className="inline-flex h-8 items-center rounded-sm border border-border px-3 text-xs font-medium text-fg transition-colors hover:bg-surface-2"
+            >
+              {nextItemMeta.cta}
+            </button>
+          ) : (
+            <Link
+              href={nextItemMeta.href}
+              className="inline-flex h-8 items-center rounded-sm border border-border px-3 text-xs font-medium text-fg transition-colors hover:bg-surface-2"
+            >
+              {nextItemMeta.cta}
+            </Link>
+          )}
           <button
             type="button"
             disabled={checklistPending}

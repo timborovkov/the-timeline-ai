@@ -35,6 +35,7 @@ import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
 import { boardViewHref } from '@/lib/board-links';
 import { displayText, formatDisplayDate } from '@/lib/display-dates';
 import { displayObjectTitle } from '@/lib/object-title';
+import { statusLabel } from '@/lib/status-labels';
 import { cn, errorMessage } from '@/lib/utils';
 
 interface Props {
@@ -322,7 +323,7 @@ function KanbanCard({
         </Link>
       )}
       <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[11px] text-fg-dim">
-        <span>{item.object.type}</span>
+        <span>{statusLabel(item.object.type)}</span>
         {blocked ? <span className="text-danger">Blocked</span> : null}
       </div>
       <div className="mt-2 grid grid-cols-3 gap-px overflow-hidden rounded-sm border border-border bg-border text-[11px]">

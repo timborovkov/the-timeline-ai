@@ -12,6 +12,7 @@ import { useAppDialog } from '@/components/ui/app-dialog';
 import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
 import { displayText, formatDisplayDate } from '@/lib/display-dates';
 import { MAX_OBJECT_MERGE_SELECTION, objectMergeHref } from '@/lib/object-merge';
+import { statusLabel } from '@/lib/status-labels';
 
 interface Props {
   rows: objects.ObjectRow[];
@@ -262,7 +263,7 @@ export function ObjectCleanupList({ rows, typeLabels, pageInfo, sectionMoreHrefs
                             {displayText(object.canonicalName)}
                           </Link>
                           <span className="ml-3 flex items-center gap-2 text-xs text-fg-dim">
-                            <span>{object.status}</span>
+                            <span>{statusLabel(object.status)}</span>
                             {object.dueAt ? (
                               <span title={object.dueAt.toISOString()}>
                                 · {formatDisplayDate(object.dueAt, { timezone })}
