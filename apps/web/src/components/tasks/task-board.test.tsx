@@ -252,6 +252,25 @@ describe('TaskBoard', () => {
     }
   });
 
+  it('stops polling a category that remains pending beyond the bounded window', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-07-13T10:00:00.000Z'));
+    fakes.loadTaskCategoryStatesAction.mockResolvedValue({
+      rows: [{ id: 'task-1', taskCategoryStatus: 'pending' }],
+    });
+    try {
+      renderBoard(null, [task({ taskCategoryStatus: 'pending' })]);
+
+      await act(async () => vi.advanceTimersByTimeAsync(10 * 60_000));
+      fakes.loadTaskCategoryStatesAction.mockClear();
+      await act(async () => vi.advanceTimersByTimeAsync(60_000));
+
+      expect(fakes.loadTaskCategoryStatesAction).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('polls every pending task in bounded chunks', async () => {
     const rows = Array.from({ length: 201 }, (_, index) =>
       task({
@@ -323,6 +342,59 @@ describe('TaskBoard', () => {
       { timeout: 4_000 },
     );
   }, 7_000);
+
+  it('refreshes server-filtered rows when a polled category crosses the active filter', async () => {
+    fakes.loadTaskCategoryStatesAction.mockResolvedValue({
+      rows: [
+        {
+          id: 'task-1',
+          taskCategory: 'design',
+          taskCategoryMode: 'automatic',
+          taskCategorySource: 'llm',
+          taskCategoryStatus: 'ready',
+          taskCategoryUpdatedAt: new Date('2026-07-13T10:00:00.000Z'),
+        },
+      ],
+    });
+
+    renderBoard(
+      null,
+      [task({ taskCategory: 'engineering', taskCategoryStatus: 'pending' })],
+      'kanban',
+      { category: 'engineering' },
+    );
+
+    await waitFor(() => {
+      expect(fakes.refresh).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it('does not refresh when a polled category remains inside the active filter', async () => {
+    fakes.loadTaskCategoryStatesAction.mockResolvedValue({
+      rows: [
+        {
+          id: 'task-1',
+          taskCategory: 'design',
+          taskCategoryMode: 'automatic',
+          taskCategorySource: 'llm',
+          taskCategoryStatus: 'ready',
+          taskCategoryUpdatedAt: new Date('2026-07-13T10:00:00.000Z'),
+        },
+      ],
+    });
+
+    renderBoard(
+      null,
+      [task({ taskCategory: 'engineering', taskCategoryStatus: 'pending' })],
+      'kanban',
+      { category: 'engineering,design' },
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Design')).toBeTruthy();
+    });
+    expect(fakes.refresh).not.toHaveBeenCalled();
+  });
 
   it('does not poll pending categories while the category UI is disabled', () => {
     vi.useFakeTimers();

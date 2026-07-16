@@ -308,6 +308,11 @@ function pendingTaskCategoryPollingInput(rows: objects.ObjectRow[]): {
   return { ids, generationKey: generations.join(',') };
 }
 
+function matchesTaskCategoryFilter(category: TaskCategory | null, filter: string): boolean {
+  const categories = new Set(filter.split(',').map((value) => value.trim()));
+  return category === null ? categories.has('uncategorized') : categories.has(category);
+}
+
 function patchTaskRow(
   patches: Record<string, TaskPatchOverlay>,
   id: string,
@@ -527,6 +532,38 @@ function useTaskBoardController({
     );
     return patchedRows.map((row) => applyTaskCategoryState(row, polledCategoryStates.get(row.id)));
   }, [categoryQuery.data.rows, patchedRows]);
+  const categoryFilterRefreshKey = useMemo(() => {
+    const categoryFilter = filterParams.category;
+    if (!categoryFilter) return null;
+    const originalRows = new Map(patchedRows.map((row) => [row.id, row] as const));
+    const crossedRows = categoryQuery.data.rows.filter((row) => {
+      const original = originalRows.get(row.id);
+      return (
+        original &&
+        row.taskCategoryStatus !== 'pending' &&
+        matchesTaskCategoryFilter(original.taskCategory, categoryFilter) !==
+          matchesTaskCategoryFilter(row.taskCategory, categoryFilter)
+      );
+    });
+    if (crossedRows.length === 0) return null;
+    return `${categoryFilter}|${crossedRows
+      .map(
+        (row) =>
+          `${row.id}:${row.taskCategory ?? 'uncategorized'}:${row.taskCategoryUpdatedAt?.toISOString() ?? ''}`,
+      )
+      .sort()
+      .join(',')}`;
+  }, [categoryQuery.data.rows, filterParams.category, patchedRows]);
+  const refreshedCategoryFilterKey = useRef<string | null>(null);
+  useEffect(() => {
+    if (
+      !categoryFilterRefreshKey ||
+      refreshedCategoryFilterKey.current === categoryFilterRefreshKey
+    )
+      return;
+    refreshedCategoryFilterKey.current = categoryFilterRefreshKey;
+    router.refresh();
+  }, [categoryFilterRefreshKey, router]);
   const [primaryProjectOverrides, setPrimaryProjectOverrides] = useState<
     Record<string, PrimaryProjectOverride>
   >({});

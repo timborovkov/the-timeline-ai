@@ -118,6 +118,53 @@ describe('database schema contracts', () => {
     expect(indexes.rows[0]?.indexdef).toContain("task_category_status = 'pending'");
   });
 
+  it('canonicalizes legacy inverse task-project relationships', async () => {
+    const migrationPg = new PGlite();
+    try {
+      await applyMigrations(migrationPg, { throughFile: '0059_saved_meeting_alias_cleanup.sql' });
+      await seedBase(migrationPg);
+      await migrationPg.exec(`
+        INSERT INTO entities (id, team_id, type, canonical_name) VALUES
+          ('10000000-0000-4000-8000-000000000001', '${TEAM_ID}', 'project', 'Inverse project'),
+          ('10000000-0000-4000-8000-000000000002', '${TEAM_ID}', 'task', 'Inverse task'),
+          ('10000000-0000-4000-8000-000000000003', '${TEAM_ID}', 'project', 'Duplicate project'),
+          ('10000000-0000-4000-8000-000000000004', '${TEAM_ID}', 'task', 'Duplicate task');
+
+        INSERT INTO entity_relationships (team_id, from_entity_id, to_entity_id, kind) VALUES
+          ('${TEAM_ID}', '10000000-0000-4000-8000-000000000001', '10000000-0000-4000-8000-000000000002', 'parent'),
+          ('${TEAM_ID}', '10000000-0000-4000-8000-000000000003', '10000000-0000-4000-8000-000000000004', 'parent'),
+          ('${TEAM_ID}', '10000000-0000-4000-8000-000000000004', '10000000-0000-4000-8000-000000000003', 'child');
+      `);
+
+      await applyMigrationFile(migrationPg, '0060_task_categories.sql');
+
+      const relationships = await migrationPg.query<{
+        from_entity_id: string;
+        to_entity_id: string;
+        kind: string;
+      }>(`
+        SELECT from_entity_id, to_entity_id, kind
+        FROM entity_relationships
+        WHERE team_id = '${TEAM_ID}'
+        ORDER BY from_entity_id
+      `);
+      expect(relationships.rows).toEqual([
+        {
+          from_entity_id: '10000000-0000-4000-8000-000000000002',
+          to_entity_id: '10000000-0000-4000-8000-000000000001',
+          kind: 'child',
+        },
+        {
+          from_entity_id: '10000000-0000-4000-8000-000000000004',
+          to_entity_id: '10000000-0000-4000-8000-000000000003',
+          kind: 'child',
+        },
+      ]);
+    } finally {
+      await migrationPg.close();
+    }
+  });
+
   it('migrates pending linked relationship suggestion payloads to related', async () => {
     const migrationPg = new PGlite();
     try {

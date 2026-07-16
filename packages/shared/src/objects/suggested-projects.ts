@@ -36,5 +36,13 @@ export function suggestedProjectIsUnusedCondition(teamId: string, projectId: SQL
         AND object_identity_facets.entity_id = ${projectId}
         AND object_identity_facets.status = 'approved'
         AND object_identity_facets.archived_at IS NULL
+    )
+    AND NOT EXISTS (
+      SELECT 1
+      FROM object_changes
+      WHERE object_changes.team_id = ${teamId}
+        AND object_changes.entity_id = ${projectId}
+        AND object_changes.actor_kind = 'user'
+        AND object_changes.status = 'applied'
     )`;
 }

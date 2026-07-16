@@ -2834,7 +2834,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       return;
     }
     const [created] = await db
-      .select({ id: entities.id, type: entities.type })
+      .select({ id: entities.id, type: entities.type, createdAt: entities.createdAt })
       .from(entities)
       .where(
         and(
@@ -2846,6 +2846,56 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       )
       .limit(1);
     if (created) {
+      const [adopted] = await db
+        .select({ id: entities.id })
+        .from(entities)
+        .where(
+          and(
+            eq(entities.teamId, teamId),
+            eq(entities.id, created.id),
+            or(
+              sql`EXISTS (
+                SELECT 1
+                FROM object_changes AS adoption_change
+                WHERE adoption_change.team_id = ${teamId}
+                  AND adoption_change.entity_id = ${created.id}
+                  AND adoption_change.actor_kind = 'user'
+                  AND adoption_change.status = 'applied'
+                  AND adoption_change.changed_at > ${created.createdAt}
+              )`,
+              sql`EXISTS (
+                SELECT 1
+                FROM object_notes AS adoption_note
+                WHERE adoption_note.team_id = ${teamId}
+                  AND adoption_note.entity_id = ${created.id}
+                  AND adoption_note.author_user_id IS NOT NULL
+                  AND adoption_note.deleted_at IS NULL
+                  AND adoption_note.created_at > ${created.createdAt}
+              )`,
+              sql`EXISTS (
+                SELECT 1
+                FROM board_items AS adoption_board_item
+                WHERE adoption_board_item.team_id = ${teamId}
+                  AND adoption_board_item.entity_id = ${created.id}
+                  AND adoption_board_item.archived_at IS NULL
+                  AND adoption_board_item.created_at > ${created.createdAt}
+              )`,
+              sql`EXISTS (
+                SELECT 1
+                FROM entity_relationships AS adoption_relationship
+                WHERE adoption_relationship.team_id = ${teamId}
+                  AND (
+                    adoption_relationship.from_entity_id = ${created.id}
+                    OR adoption_relationship.to_entity_id = ${created.id}
+                  )
+                  AND adoption_relationship.created_by IS NOT NULL
+                  AND adoption_relationship.created_at > ${created.createdAt}
+              )`,
+            ),
+          ),
+        )
+        .limit(1);
+      if (adopted) return;
       if (created.type === 'task') {
         await objects.setTaskProject(created.id, null, { kind: 'agent', userId: null });
       }

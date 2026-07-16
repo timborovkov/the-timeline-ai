@@ -1,3 +1,32 @@
+DELETE FROM "entity_relationships" AS inverse
+USING "entities" AS project, "entities" AS task
+WHERE inverse."from_entity_id" = project."id"
+	AND inverse."to_entity_id" = task."id"
+	AND inverse."kind" = 'parent'
+	AND project."team_id" = inverse."team_id"
+	AND project."type" = 'project'
+	AND task."team_id" = inverse."team_id"
+	AND task."type" = 'task'
+	AND EXISTS (
+		SELECT 1
+		FROM "entity_relationships" AS canonical
+		WHERE canonical."team_id" = inverse."team_id"
+			AND canonical."from_entity_id" = task."id"
+			AND canonical."to_entity_id" = project."id"
+			AND canonical."kind" = 'child'
+	);--> statement-breakpoint
+UPDATE "entity_relationships" AS inverse
+SET "from_entity_id" = inverse."to_entity_id",
+	"to_entity_id" = inverse."from_entity_id",
+	"kind" = 'child'
+FROM "entities" AS project, "entities" AS task
+WHERE inverse."from_entity_id" = project."id"
+	AND inverse."to_entity_id" = task."id"
+	AND inverse."kind" = 'parent'
+	AND project."team_id" = inverse."team_id"
+	AND project."type" = 'project'
+	AND task."team_id" = inverse."team_id"
+	AND task."type" = 'task';--> statement-breakpoint
 ALTER TABLE "entities" ADD COLUMN "task_category" text;--> statement-breakpoint
 ALTER TABLE "entities" ADD COLUMN "task_category_mode" text;--> statement-breakpoint
 ALTER TABLE "entities" ADD COLUMN "task_category_source" text;--> statement-breakpoint

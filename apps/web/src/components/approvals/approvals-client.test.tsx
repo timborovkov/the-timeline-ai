@@ -819,7 +819,7 @@ describe('ApprovalsClient', () => {
       }),
     );
 
-    expect(screen.getByText('Project · Create Faba website redesign')).toBeTruthy();
+    expect(screen.getByText('Project · Create or reuse Faba website redesign')).toBeTruthy();
     await userEvent.click(screen.getByText('Edit proposal'));
     await userEvent.selectOptions(
       screen.getByRole('combobox', { name: 'Category for Prepare homepage wireframes' }),

@@ -7,6 +7,7 @@ import { loadTaskCategoryStatesAction } from '@/app/actions/objects';
 
 const SLOW_POLL_INTERVAL_MS = 15_000;
 const FAST_POLL_WINDOW_MS = 60_000;
+const MAX_POLL_WINDOW_MS = 10 * 60_000;
 const TASK_CATEGORY_POLL_CHUNK_SIZE = 200;
 
 interface TaskCategoryPollResult {
@@ -17,8 +18,10 @@ function taskCategoryPollInterval(
   startedAt: number,
   fastPollIntervalMs: number,
   now = Date.now(),
-): number {
-  return now - startedAt >= FAST_POLL_WINDOW_MS ? SLOW_POLL_INTERVAL_MS : fastPollIntervalMs;
+): number | false {
+  const elapsed = now - startedAt;
+  if (elapsed >= MAX_POLL_WINDOW_MS) return false;
+  return elapsed >= FAST_POLL_WINDOW_MS ? SLOW_POLL_INTERVAL_MS : fastPollIntervalMs;
 }
 
 export function useTaskCategoryPolling(

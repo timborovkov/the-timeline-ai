@@ -1272,7 +1272,8 @@ function TaskApprovalPayload({
           </span>
         ) : null}
         <span className="rounded-sm border border-border bg-muted/30 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.1em] text-fg">
-          Project · {projectName ? `${createsProject ? 'Create ' : ''}${projectName}` : 'None'}
+          Project ·{' '}
+          {projectName ? `${createsProject ? 'Create or reuse ' : ''}${projectName}` : 'None'}
         </span>
       </div>
       <ApprovalPayloadSummary fields={payloadFields} />
