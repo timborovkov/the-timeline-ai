@@ -76,6 +76,7 @@ const statusEventSchema = z.object({
       data: z
         .object({
           code: z.string().optional(),
+          sub_code: z.string().nullable().optional(),
           updated_at: z.string().optional(),
         })
         .loose()
@@ -187,6 +188,7 @@ export async function POST(req: Request): Promise<Response> {
     parsed.data.status?.code ??
     parsed.data.bot?.status?.code ??
     statusCodeFromEvent(parsed.event);
+  const subCode = parsed.data.data?.sub_code;
   const createdAt =
     parsed.data.bot?.status?.created_at ??
     parsed.data.status?.created_at ??
@@ -222,7 +224,8 @@ export async function POST(req: Request): Promise<Response> {
   // dropped (Recall has shipped both shapes historically).
   const isFailureEvent =
     parsed.event === 'bot.fatal' || parsed.event === 'bot.failed' || mappedStatus === 'failed';
-  const isNoShowEvent = isNoShowCode(code);
+  const noShowCode = isNoShowCode(subCode) ? subCode : isNoShowCode(code) ? code : null;
+  const isNoShowEvent = noShowCode !== null;
   const shouldEnqueueFinalize =
     !isFailureEvent &&
     !isNoShowEvent &&
@@ -254,7 +257,7 @@ export async function POST(req: Request): Promise<Response> {
       const noShowOutcome = await scope.meetings.handleMeetingNoShow({
         meetingId: meeting.id,
         providerBotId: botId,
-        code: code ?? 'unknown',
+        code: noShowCode ?? 'unknown',
         endedAt: createdAt ? new Date(createdAt) : new Date(),
       });
       if (noShowOutcome === 'retry_scheduled') {

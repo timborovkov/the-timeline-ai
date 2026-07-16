@@ -174,6 +174,11 @@ export async function processMeetingSchedulerTick(deps: MeetingSchedulerDeps): P
             eq(meetings.id, meeting.id),
             eq(meetings.teamId, meeting.teamId),
             eq(meetings.status, 'scheduled'),
+            sql`(
+              COALESCE(${meetings.metadata} ->> 'no_show_retry_count', '0') <> '1'
+              OR ${meetings.scheduledEndAt} IS NULL
+              OR ${meetings.scheduledEndAt} > now()
+            )`,
             sql`NOT EXISTS (
               SELECT 1 FROM meetings active
               WHERE active.team_id = ${meetings.teamId}
@@ -184,7 +189,10 @@ export async function processMeetingSchedulerTick(deps: MeetingSchedulerDeps): P
           ),
         )
         .returning({ id: meetings.id });
-      if (!claimed[0]) continue;
+      if (!claimed[0]) {
+        failed += await scope.meetings.expireSavedMeetingNoShowRetries(new Date());
+        continue;
+      }
 
       const team = await scope.timeline.team();
       const provider = meetingBots.getMeetingBotProvider(meeting.provider);

@@ -120,7 +120,12 @@ function statusBody(event: string, code: string | undefined) {
   });
 }
 
-function recallStatusBody(event: string, code: string | undefined, updatedAt?: string) {
+function recallStatusBody(
+  event: string,
+  code: string | undefined,
+  updatedAt?: string,
+  subCode: string | null = null,
+) {
   return JSON.stringify({
     event,
     data: {
@@ -128,7 +133,7 @@ function recallStatusBody(event: string, code: string | undefined, updatedAt?: s
         ? {
             code,
             updated_at: updatedAt ?? '2026-06-02T12:00:00.000000+00:00',
-            sub_code: null,
+            sub_code: subCode,
           }
         : undefined,
       bot: { id: BOT_ID, metadata: {} },
@@ -405,7 +410,14 @@ describe('POST /api/webhooks/recall/status — state transitions', () => {
     fakes.fakeHandleNoShow.mockResolvedValueOnce('retry_scheduled');
 
     const r = await POST(
-      signedRequest(recallStatusBody('bot.status_change', 'timeout_exceeded_waiting_room')),
+      signedRequest(
+        recallStatusBody(
+          'bot.call_ended',
+          'call_ended',
+          undefined,
+          'timeout_exceeded_waiting_room',
+        ),
+      ),
     );
 
     expect(r.status).toBe(200);

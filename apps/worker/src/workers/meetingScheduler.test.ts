@@ -57,6 +57,7 @@ async function insertSavedAndScheduled(
     archivedAt?: Date | null;
     joinOffsetMinutes?: number;
     noShowRetry?: boolean;
+    scheduledEndAt?: Date;
     scheduledStartAt?: Date;
   } = {},
 ) {
@@ -97,7 +98,9 @@ async function insertSavedAndScheduled(
       title: saved.title,
       status: 'scheduled',
       scheduledStartAt: input.scheduledStartAt ?? new Date(Date.now() + 30_000),
-      scheduledEndAt: new Date((input.scheduledStartAt?.getTime() ?? Date.now()) + 30 * 60_000),
+      scheduledEndAt:
+        input.scheduledEndAt ??
+        new Date((input.scheduledStartAt?.getTime() ?? Date.now()) + 30 * 60_000),
       defaultVisibility: 'team',
       metadata: {
         source: 'test',
@@ -172,6 +175,38 @@ describe('processMeetingSchedulerTick', () => {
     expect(joinMeetingMock).toHaveBeenCalledWith(
       expect.objectContaining({ meetingId: meeting.id }),
     );
+  });
+
+  it('terminalizes a retry whose call window closes before the atomic join claim', async () => {
+    const now = Date.now();
+    const { saved, meeting } = await insertSavedAndScheduled(db, {
+      noShowRetry: true,
+      scheduledStartAt: new Date(now - 10 * 60_000),
+      scheduledEndAt: new Date(now + 100),
+    });
+    await pg.exec(`
+      CREATE FUNCTION delay_scheduler_materialization() RETURNS trigger AS $$
+      BEGIN
+        PERFORM pg_sleep(0.2);
+        RETURN NEW;
+      END;
+      $$ LANGUAGE plpgsql;
+      CREATE TRIGGER delay_scheduler_materialization
+      BEFORE INSERT ON meetings
+      FOR EACH ROW EXECUTE FUNCTION delay_scheduler_materialization();
+    `);
+
+    const result = await processMeetingSchedulerTick({ db: db as never });
+
+    expect(result.joined).toBe(0);
+    expect(result.failed).toBe(1);
+    expect(joinMeetingMock).not.toHaveBeenCalled();
+    const meetingRow = (await db.select().from(meetings).where(eq(meetings.id, meeting.id)))[0];
+    expect(meetingRow?.status).toBe('no_show');
+    const savedRow = (
+      await db.select().from(savedMeetings).where(eq(savedMeetings.id, saved.id))
+    )[0];
+    expect(savedRow?.consecutiveFailureCount).toBe(1);
   });
 
   it('terminalizes an expired no-show retry exactly once after scheduler downtime', async () => {
