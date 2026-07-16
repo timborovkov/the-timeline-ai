@@ -1,13 +1,5 @@
 import { users } from '@timeline/db';
-import {
-  digestContentSections,
-  digestSummaryParagraphs,
-  formatDigestCalendarEvent,
-  formatDigestDate,
-  formatDigestTask,
-  latestDailyDigest,
-  type DailyDigestPayload,
-} from '@timeline/shared/messaging';
+import { latestDailyDigest, type DailyDigestPayload } from '@timeline/shared/messaging';
 import { getAudioBucket, getS3PresignClient, getSignedGetObjectUrl } from '@timeline/shared/s3';
 import { withTeam } from '@timeline/shared/team-scope';
 import { inArray } from 'drizzle-orm';
@@ -20,6 +12,7 @@ import type { Metadata } from 'next';
 import { PinnedBoards } from '@/components/boards/pinned-boards';
 import { CaptureForm } from '@/components/capture-form';
 import { CaptureDialog } from '@/components/home/capture-dialog';
+import { DailyDigestBlock } from '@/components/home/daily-digest-block';
 import { HomeAskComposer } from '@/components/home/home-ask-composer';
 import { HomeAttention } from '@/components/home/home-attention';
 import { OnboardingChecklist } from '@/components/onboarding-checklist';
@@ -234,88 +227,6 @@ export default async function HomeDashboardPage() {
       </div>
 
       <OnboardingChecklist />
-    </div>
-  );
-}
-
-function DailyDigestBlock({ digest }: { digest: DailyDigestPayload | undefined }) {
-  if (!digest?.summary) return null;
-  const summary = digestSummaryParagraphs(digest.summary);
-  const sections = digestContentSections(digest);
-  const keyItems = sections.flatMap((section) => section.items).slice(0, 3);
-
-  return (
-    <section
-      aria-labelledby="latest-digest-heading"
-      className="space-y-3 rounded-lg border border-border bg-surface p-4"
-    >
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <SectionHeading id="latest-digest-heading">Latest digest</SectionHeading>
-        <time className="font-mono text-xs text-fg-dim">
-          {formatDigestDate(digest.windowEnd, digest.timezone)}
-        </time>
-      </div>
-      <p className="max-w-3xl text-sm leading-6 text-fg-muted">{summary[0]}</p>
-      {keyItems.length > 0 ? (
-        <ul className="space-y-1 text-sm text-fg">
-          {keyItems.map((item, index) => (
-            <li key={`${item}:${index}`}>• {item}</li>
-          ))}
-        </ul>
-      ) : null}
-      <details className="border-t border-border pt-3 text-sm">
-        <summary className="cursor-pointer font-medium text-fg-muted hover:text-fg">
-          Complete digest
-        </summary>
-        <div className="mt-3 grid gap-5 md:grid-cols-2">
-          {summary.slice(1).map((paragraph, index) => (
-            <p key={`${paragraph}:${index}`} className="text-fg-muted">
-              {paragraph}
-            </p>
-          ))}
-          {sections.map((section) => (
-            <div key={section.title}>
-              <h3 className="font-semibold text-fg">{section.title}</h3>
-              <ul className="mt-2 space-y-1 text-fg-muted">
-                {section.items.map((item, index) => (
-                  <li key={`${item}:${index}`}>{item}</li>
-                ))}
-              </ul>
-            </div>
-          ))}
-          <DigestList
-            label="Current tasks"
-            items={digest.tasks.map((task) => formatDigestTask(task, digest.timezone))}
-          />
-          <DigestList
-            label="Upcoming calendar"
-            items={digest.upcomingCalendar.map((event) =>
-              formatDigestCalendarEvent(event, digest.timezone),
-            )}
-          />
-        </div>
-        <div className="mt-4 flex flex-wrap gap-2">
-          {digest.links.map((link) => (
-            <Button key={link.href} asChild variant="outline" size="sm">
-              <Link href={link.href}>{link.label}</Link>
-            </Button>
-          ))}
-        </div>
-      </details>
-    </section>
-  );
-}
-
-function DigestList({ label, items }: { label: string; items: string[] }) {
-  if (items.length === 0) return null;
-  return (
-    <div>
-      <h3 className="font-semibold text-fg">{label}</h3>
-      <ul className="mt-2 space-y-1 text-fg-muted">
-        {items.map((item, index) => (
-          <li key={`${item}:${index}`}>{item}</li>
-        ))}
-      </ul>
     </div>
   );
 }

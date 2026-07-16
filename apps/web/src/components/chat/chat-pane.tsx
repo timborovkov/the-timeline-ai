@@ -18,6 +18,7 @@ import { CitationText } from '@/components/chat/citation';
 import { ToolStep } from '@/components/chat/tool-step';
 import { InlineSpinner } from '@/components/loading-states';
 import { consumeChatHandoffEntry } from '@/lib/chat-handoff';
+import { displayObjectLabel } from '@/lib/display-labels';
 import { cn } from '@/lib/utils';
 import { chatErrorMessage } from '@/lib/ux-errors';
 
@@ -98,10 +99,17 @@ function ChatSurfaceContent({
   });
 
   const [input, setInput] = useState('');
+  const [consumedHandoff, setConsumedHandoff] = useState<ChatHandoff | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const handoffConsumedRef = useRef(false);
 
   const isStreaming = status === 'streaming' || status === 'submitted';
+  const handoffPin = initialSessionId === null ? consumedHandoff : null;
+  const visiblePinnedEntity = handoffPin?.pinnedEntityId
+    ? { id: handoffPin.pinnedEntityId, name: handoffPin.pinnedEntityName ?? null }
+    : pinnedEntityId
+      ? { id: pinnedEntityId, name: pinnedEntityName }
+      : null;
 
   useEffect(() => {
     if (handoffConsumedRef.current || initialSessionId || initialMessages.length > 0) return;
@@ -114,6 +122,8 @@ function ChatSurfaceContent({
     }
     if (!handoff) return;
     chatHandoffRef.current = handoff;
+    // react-doctor-disable-next-line react-doctor/no-adjust-state-on-prop-change, react-doctor/no-chain-state-updates -- This hydrates a consumed one-time sessionStorage message after SSR; it does not mirror a prop or chain derived state.
+    setConsumedHandoff(handoff);
     if (handoff.prompt) void sendMessage({ text: handoff.prompt });
   }, [initialMessages.length, initialSessionId, sendMessage, teamId]);
 
@@ -140,10 +150,11 @@ function ChatSurfaceContent({
   return (
     <div className={cn('flex h-full min-h-0 flex-col', compact ? 'gap-3' : 'gap-4')}>
       <PinnedEntityBanner
-        pinnedEntityId={pinnedEntityId}
-        pinnedEntityName={pinnedEntityName}
+        pinnedEntityId={visiblePinnedEntity?.id ?? null}
+        pinnedEntityName={visiblePinnedEntity?.name ?? null}
         sessionId={sessionId}
         onUnpinned={() => {
+          setConsumedHandoff(null);
           router.refresh();
         }}
       />
@@ -296,10 +307,14 @@ function PinnedEntityBanner({
   onUnpinned: () => void;
 }) {
   if (!pinnedEntityId) return null;
+  const displayLabel = displayObjectLabel(
+    pinnedEntityName ? { canonicalName: pinnedEntityName } : null,
+  );
+  const label = displayLabel === 'Untitled object' ? 'Unavailable object' : displayLabel;
   return (
     <div className="flex shrink-0 items-center gap-2 self-start rounded-full border border-primary/30 bg-primary/5 py-1 pl-3 pr-1 text-xs">
       <Link href={`/app/objects/${pinnedEntityId}`} className="text-primary hover:underline">
-        Pinned · {pinnedEntityName ?? 'Unavailable object'}
+        Pinned · {label}
       </Link>
       {sessionId && (
         <button

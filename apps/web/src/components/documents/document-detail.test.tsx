@@ -148,7 +148,8 @@ describe('DocumentDetail', () => {
     expect(screen.getByRole('link', { name: 'Back' }).getAttribute('href')).toBe(
       '/app/documents?folder=folder-1',
     );
-    expect(screen.getByText('Acme launch packet.txt')).toBeTruthy();
+    expect(screen.getByRole('heading', { level: 1, name: 'Acme launch packet.txt' })).toBeTruthy();
+    expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
     expect(screen.getByText('Specific users')).toBeTruthy();
     expect(screen.getByText('Selected version')).toBeTruthy();
     expect(screen.getByText(/v1 · 4\.0 KB · application\/octet-stream/)).toBeTruthy();

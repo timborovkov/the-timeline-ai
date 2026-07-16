@@ -39,6 +39,7 @@ import {
   requestDocumentUploadAction,
 } from '@/app/actions/documents';
 import { EvidenceLink } from '@/components/evidence-link';
+import { SectionHeading } from '@/components/section-heading';
 import { useAppDialog } from '@/components/ui/app-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -713,9 +714,7 @@ function FolderList({
   if (folders.length === 0) return null;
   return (
     <section>
-      <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-        Folders
-      </h2>
+      <SectionHeading className="mb-3">Folders</SectionHeading>
       <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
         {folders.map((f) => (
           <li
@@ -763,9 +762,7 @@ function DocumentList({
   if (documents.length === 0) return null;
   return (
     <section>
-      <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-        Documents
-      </h2>
+      <SectionHeading className="mb-3">Documents</SectionHeading>
       <ul className="space-y-2">
         {documents.map((d) => (
           <DocumentListItem key={d.id} document={d} />

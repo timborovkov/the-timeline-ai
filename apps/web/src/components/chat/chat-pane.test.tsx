@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 
-import { render, waitFor } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import { createElement, StrictMode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -203,6 +203,7 @@ describe('ChatPane', () => {
         },
       });
     });
+    expect(screen.getByRole('link', { name: 'Pinned · Launch plan' })).toBeTruthy();
     expect(window.sessionStorage.getItem(chatHandoffKey('team-1'))).toBeNull();
   });
 

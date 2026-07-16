@@ -717,7 +717,11 @@ function SourceEvidenceCard({
         <span className="text-fg-muted">{actorLabel}</span>
         <span>{formatSourceLabel(event.source)}</span>
         {context ? <span>{context}</span> : null}
-        <time data-visual-dynamic="timeline-timestamp" dateTime={event.occurredAt}>
+        <time
+          data-visual-dynamic="timeline-timestamp"
+          dateTime={event.occurredAt}
+          className="inline-block min-w-[28ch] whitespace-nowrap"
+        >
           {formatTimestamp(event.occurredAt, timezone)}
         </time>
         {event.visibility === 'private' ? <span>Private</span> : null}
@@ -887,7 +891,10 @@ function InspectorActions({
           <details key={event.id} className="text-xs">
             <summary className="cursor-pointer font-mono uppercase tracking-[0.1em] text-fg-dim">
               Visibility ·{' '}
-              <span data-visual-dynamic="timeline-timestamp">
+              <span
+                data-visual-dynamic="timeline-timestamp"
+                className="inline-block min-w-[28ch] whitespace-nowrap"
+              >
                 {formatTimestamp(event.occurredAt, timezone)}
               </span>
             </summary>

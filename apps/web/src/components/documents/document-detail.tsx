@@ -202,12 +202,12 @@ export function DocumentDetail({
       <Card>
         <CardHeader className="flex flex-row items-start justify-between gap-4 max-sm:flex-col">
           <div className="min-w-0 space-y-1">
-            <CardTitle
-              className="max-w-full break-all text-2xl leading-tight"
+            <h1
+              className="max-w-full break-all text-2xl font-semibold leading-tight tracking-tight"
               title={currentDocument.name}
             >
               {visibleDocumentName}
-            </CardTitle>
+            </h1>
             <p className="text-sm text-muted-foreground">
               {currentDocument.folderPath} · Updated{' '}
               {new Date(currentDocument.updatedAt).toLocaleString()}
