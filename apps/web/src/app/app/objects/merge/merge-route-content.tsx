@@ -5,12 +5,12 @@ import type { ReactNode } from 'react';
 
 import { EmptyAction } from '@/components/empty-action';
 import { HistoryBackLink } from '@/components/history-back-link';
-import { IndexStrip } from '@/components/index-strip';
 import { ObjectMergeForm } from '@/components/objects/object-merge-form';
 import {
   ObjectMergeRouteModalForm,
   ObjectMergeRouteModalFrame,
 } from '@/components/objects/object-merge-route-modal';
+import { PageHeader } from '@/components/page-header';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
@@ -28,12 +28,11 @@ const objectsBackLink = <HistoryBackLink fallbackHref="/app/objects" label="Back
 function renderPageShell(children: ReactNode, selectedCount?: number) {
   return (
     <div className="space-y-6">
-      <IndexStrip
-        srLabel={selectedCount ? `Merge objects · ${selectedCount} selected` : 'Merge objects'}
-        segments={
-          selectedCount
-            ? [{ value: 'MERGE' }, { label: 'selected', value: selectedCount }]
-            : [{ value: 'MERGE' }]
+      <PageHeader
+        title="Merge objects"
+        subtitle="Choose the object to keep, then merge duplicates into it."
+        metadata={
+          selectedCount ? [{ label: 'Selected', value: selectedCount, mono: true }] : undefined
         }
         leading={objectsBackLink}
       />

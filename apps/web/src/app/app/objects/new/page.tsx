@@ -1,8 +1,8 @@
 import type { Metadata } from 'next';
 
 import { HistoryBackLink } from '@/components/history-back-link';
-import { IndexStrip } from '@/components/index-strip';
 import { NewObjectForm } from '@/components/objects/new-object-form';
+import { PageHeader } from '@/components/page-header';
 
 export const metadata: Metadata = {
   title: 'New object',
@@ -14,9 +14,9 @@ const objectsBackLink = <HistoryBackLink fallbackHref="/app/objects" label="Back
 export default function NewObjectPage() {
   return (
     <div className="space-y-6">
-      <IndexStrip
-        srLabel="Create a new workspace object"
-        segments={[{ value: 'OBJECTS / NEW' }, { label: 'mode', value: 'create', signal: true }]}
+      <PageHeader
+        title="New object"
+        subtitle="Create a tracked object for your team."
         leading={objectsBackLink}
       />
       <NewObjectForm />

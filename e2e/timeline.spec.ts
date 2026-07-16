@@ -1685,8 +1685,7 @@ test('agentic core object update approval updates existing object', async ({ bro
   const approval = ownerPage.locator('article').filter({ hasText: objectName });
   await expect(approval).toBeVisible();
   await expect(approval.getByText(sourceText).first()).toBeVisible();
-  await expect(approval.getByText('status: active')).toBeVisible();
-  await expect(approval.getByText('stage: proposal')).toBeVisible();
+  await expect(approval.getByText('Stage Proposal · Status Active')).toBeVisible();
   await waitForPost(ownerPage, '/app/approvals', () =>
     approval.getByRole('button', { name: 'Accept' }).click(),
   );
@@ -1827,9 +1826,12 @@ test('chat answers from accepted durable task calendar and object state', async 
   await waitForPost(ownerPage, '/app', () => capture.getByRole('button', { name: 'Post' }).click());
   await processCapturedSuggestion(commitment);
   await ownerPage.goto('/app/approvals');
-  await expect(ownerPage.getByText(expectedTask).first()).toBeVisible();
-  await ownerPage.getByRole('button', { name: 'Accept all', exact: true }).click();
-  await expect(ownerPage.getByText('No pending approvals')).toBeVisible();
+  const taskApproval = ownerPage.locator('article').filter({ hasText: expectedTask });
+  await expect(taskApproval).toBeVisible();
+  await waitForPost(ownerPage, '/app/approvals', () =>
+    taskApproval.getByRole('button', { name: 'Accept all', exact: true }).click(),
+  );
+  await expect(taskApproval).toHaveCount(0);
 
   await ownerPage.goto('/app/objects/new');
   await ownerPage.getByLabel('Type').selectOption('project');

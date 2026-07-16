@@ -16,8 +16,7 @@ import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
 
 import { IntegrationCloud } from '@/app/_integration-cloud';
-import { Logo, Wordmark } from '@/components/brand/logo';
-import { ThemeToggle } from '@/components/theme-toggle';
+import { PublicShell } from '@/components/public-shell';
 import { Button } from '@/components/ui/button';
 import { auth } from '@/lib/auth';
 import { getLegalContactEmail } from '@/lib/legal-versions';
@@ -102,20 +101,20 @@ export default async function LandingPage() {
   const isSignedIn = Boolean(session?.user);
 
   return (
-    <div className="min-h-screen bg-bg text-fg">
+    <>
       <StructuredData />
-      <TopNav isSignedIn={isSignedIn} />
-      <main id="main">
-        <Hero isSignedIn={isSignedIn} />
-        <Solution />
-        <Surfaces />
-        <Receipts />
-        <Integrations />
-        <Faq />
-        <FinalCTA isSignedIn={isSignedIn} />
-      </main>
-      <Footer isSignedIn={isSignedIn} />
-    </div>
+      <PublicShell isSignedIn={isSignedIn}>
+        <main id="main">
+          <Hero isSignedIn={isSignedIn} />
+          <Solution />
+          <Surfaces />
+          <Receipts />
+          <Integrations />
+          <Faq />
+          <FinalCTA isSignedIn={isSignedIn} />
+        </main>
+      </PublicShell>
+    </>
   );
 }
 
@@ -270,11 +269,9 @@ function Mono({ children, className }: { children: ReactNode; className?: string
   );
 }
 
-function IndexStrip({ children }: { children: ReactNode }) {
+function MarketingSectionHeading({ children }: { children: ReactNode }) {
   return (
-    <div className="border-y border-border py-3 text-sm font-semibold text-fg-muted">
-      {children}
-    </div>
+    <h2 className="border-y border-border py-3 text-base font-semibold text-fg">{children}</h2>
   );
 }
 
@@ -301,50 +298,6 @@ function Section({
     <section id={id} className={cn('border-t border-border px-6 py-20 sm:py-28', className)}>
       <div className={cn('mx-auto max-w-6xl', contentClassName)}>{children}</div>
     </section>
-  );
-}
-
-/* ────────────────────────────────────────────────────────────────────────── */
-/*  Sections                                                                   */
-/* ────────────────────────────────────────────────────────────────────────── */
-
-function TopNav({ isSignedIn }: { isSignedIn: boolean }) {
-  return (
-    <header className="sticky top-0 z-50 border-b border-border bg-bg/80 backdrop-blur">
-      <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-6">
-        <Link href="/" aria-label="The Timeline — home" className="text-fg">
-          <Wordmark compact />
-        </Link>
-        <nav className="flex items-center gap-1 text-sm">
-          <Link
-            href="/help"
-            className="hidden px-3 py-2 text-fg-muted transition-colors hover:text-fg sm:inline"
-          >
-            Help
-          </Link>
-          <Link
-            href={CONTACT_HREF}
-            className="hidden px-3 py-2 text-fg-muted transition-colors hover:text-fg md:inline"
-          >
-            Contact
-          </Link>
-          {isSignedIn ? null : (
-            <Link
-              href="/sign-in"
-              className="whitespace-nowrap px-3 py-2 text-fg-muted transition-colors hover:text-fg"
-            >
-              Sign in
-            </Link>
-          )}
-          <ThemeToggle className="text-fg-muted hover:text-fg" />
-          <Button asChild size="sm" variant="outline">
-            <Link href={isSignedIn ? '/app' : '/sign-up'}>
-              {isSignedIn ? 'Go to dashboard' : 'Create team'}
-            </Link>
-          </Button>
-        </nav>
-      </div>
-    </header>
   );
 }
 
@@ -491,7 +444,9 @@ function HeroMock() {
 function Solution() {
   return (
     <Section id="how-it-works">
-      <IndexStrip>How it works · Capture → evidence → operational memory</IndexStrip>
+      <MarketingSectionHeading>
+        How it works · Capture → evidence → operational memory
+      </MarketingSectionHeading>
       <ol className="mt-10 grid gap-px overflow-hidden rounded-lg border border-border bg-border md:grid-cols-3">
         {[
           [
@@ -509,7 +464,7 @@ function Solution() {
         ].map(([title, body], index) => (
           <li key={title} className="bg-bg p-6">
             <span className="font-mono text-xs text-signal">{index + 1}</span>
-            <h2 className="mt-4 text-base font-semibold text-fg">{title}</h2>
+            <h3 className="mt-4 text-base font-semibold text-fg">{title}</h3>
             <p className="mt-2 text-sm leading-relaxed text-fg-muted">{body}</p>
           </li>
         ))}
@@ -752,7 +707,7 @@ const CDG_STYLES = `
 function Surfaces() {
   return (
     <Section id="surfaces">
-      <IndexStrip>Core product surfaces</IndexStrip>
+      <MarketingSectionHeading>Core product surfaces</MarketingSectionHeading>
       <div className="mt-10 grid gap-px overflow-hidden border border-border bg-border sm:grid-cols-2 lg:grid-cols-4">
         <SurfaceTile
           label="Telegram"
@@ -824,11 +779,11 @@ function SurfaceTile({
 function Integrations() {
   return (
     <Section id="integrations">
-      <IndexStrip>Integrations · Keep your current tools</IndexStrip>
+      <MarketingSectionHeading>Integrations · Keep your current tools</MarketingSectionHeading>
       <div className="mt-10">
-        <h2 className="max-w-3xl text-2xl font-medium tracking-tight text-fg sm:text-3xl">
+        <h3 className="max-w-3xl text-2xl font-medium tracking-tight text-fg sm:text-3xl">
           Keep the stack. Let Timeline collect the evidence around it.
-        </h2>
+        </h3>
         <p className="mt-4 max-w-3xl text-base leading-[1.6] text-fg-muted">
           GitHub, Linear, Google Drive, Monday.com, Slack workspace history, and Sentry are native
           integrations: PRs, issues, docs, board updates, channel decisions, errors, and releases
@@ -855,12 +810,12 @@ function Integrations() {
 function Receipts() {
   return (
     <Section id="receipts" className="bg-surface">
-      <IndexStrip>Evidence · Every claim is cited</IndexStrip>
+      <MarketingSectionHeading>Evidence · Every claim is cited</MarketingSectionHeading>
       <div className="mt-10 grid gap-10 lg:grid-cols-2">
         <div>
-          <h2 className="text-3xl font-semibold leading-tight tracking-tight sm:text-4xl">
+          <h3 className="text-3xl font-semibold leading-tight tracking-tight sm:text-4xl">
             Ask what changed. See the receipts.
-          </h2>
+          </h3>
           <p className="mt-6 max-w-prose text-base leading-[1.65] text-fg-muted">
             Every fact resolves to a raw event: voice memo, Slack or Telegram message, email,
             document version, with author, timestamp, and source. Click the chip; the inspector
@@ -904,7 +859,7 @@ function Receipts() {
 function Faq() {
   return (
     <Section id="faq">
-      <IndexStrip>Frequently asked questions</IndexStrip>
+      <MarketingSectionHeading>Frequently asked questions</MarketingSectionHeading>
       <div className="mt-10 divide-y divide-border border-y border-border">
         {FAQ_ITEMS.map((item) => (
           <details key={item.q} className="group">
@@ -1000,33 +955,3 @@ const TRUST_DEFAULTS = [
   'Team isolation and per-event visibility are enforced below the UI.',
   'Custom MCP servers provide live reach while keeping captured tool results private by default.',
 ] as const;
-
-function Footer({ isSignedIn }: { isSignedIn: boolean }) {
-  return (
-    <footer className="border-t border-border px-6 py-10">
-      <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4 text-sm text-fg-muted">
-        <span className="inline-flex items-center gap-2 text-fg-dim">
-          <Logo ariaHidden className="size-4" />
-          The Timeline · 2026
-        </span>
-        <nav className="flex flex-wrap items-center gap-5">
-          <Link href="/help" className="hover:text-fg">
-            Docs
-          </Link>
-          <Link href="/terms" className="hover:text-fg">
-            Terms
-          </Link>
-          <Link href="/privacy" className="hover:text-fg">
-            Privacy
-          </Link>
-          <Link href={CONTACT_HREF} className="hover:text-fg">
-            Contact
-          </Link>
-          <Link href={isSignedIn ? '/app' : '/sign-in'} className="hover:text-fg">
-            {isSignedIn ? 'Dashboard' : 'Sign in'}
-          </Link>
-        </nav>
-      </div>
-    </footer>
-  );
-}

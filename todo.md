@@ -122,7 +122,8 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       handoff/update DTO design, and live adapter payload fixtures for providers
       as they ship.
 - [x] U1 — Design-language softening: new `PageHeader` + `SectionHeading`,
-      surface split (operational keeps `IndexStrip`; standard gets `H1`),
+      surface split (`IndexStrip` stays on Timeline and explicit audit/operator
+      views; standard pages get a sentence-case `H1`),
       update `design.md` in the same PR.
 - [x] U2 — Connect-flow wizard: one guided Connect → Choose → Done flow
       per provider; hide `externalId` / `resourceKind` / `.org` kinds;

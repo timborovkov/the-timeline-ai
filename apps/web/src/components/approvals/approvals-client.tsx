@@ -341,7 +341,7 @@ function formatPayloadValue(key: string, value: unknown, timezone?: string): str
     return formatDueDateValue(value, timezone);
   }
   if ((key === 'startAt' || key === 'endAt') && typeof value === 'string') {
-    return formatDisplayDateTime(value, { timezone });
+    return formatDisplayDateTime(value, { timezone: timezone ?? 'UTC' });
   }
   if (key === 'status' && typeof value === 'string') {
     const labels: Record<string, string> = {
@@ -389,7 +389,9 @@ function formatDueDateValue(value: string, timezone?: string): string {
   const localDate = LOCAL_DATE_RE.test(value);
   const utcDateOnlyInstant = UTC_DATE_ONLY_INSTANT_RE.test(value);
   if ((localDate || utcDateOnlyInstant) && !hasExactUtcDate(value)) return value;
-  return formatDisplayDate(value, { timezone: localDate || utcDateOnlyInstant ? 'UTC' : timezone });
+  return formatDisplayDate(value, {
+    timezone: localDate || utcDateOnlyInstant ? 'UTC' : (timezone ?? 'UTC'),
+  });
 }
 
 function hasExactUtcDate(value: string): boolean {

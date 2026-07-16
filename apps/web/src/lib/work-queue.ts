@@ -2,6 +2,7 @@ import type * as boards from '@timeline/shared/boards';
 import type * as objects from '@timeline/shared/objects/types';
 
 import { displayObjectTitle } from '@/lib/object-title';
+import { statusLabel } from '@/lib/status-labels';
 
 export type WorkQueueReason =
   | 'pending_approval'
@@ -152,7 +153,7 @@ export function objectQueueItem(
     entityId: row.id,
     href: `/app/objects/${row.id}`,
     title: displayObjectTitle(row),
-    subtitle: `${row.type.replace('_', ' ')} · ${row.status}`,
+    subtitle: `${statusLabel(row.type)} · ${statusLabel(row.status)}`,
     source: 'object',
     sourceLabel: row.type === 'task' ? 'Task' : 'Object',
     objectType: row.type,

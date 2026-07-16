@@ -42,6 +42,18 @@ describe('objectQueueItem', () => {
     expect(item?.title).toBe('the-timeline-ai: Add cursor pagination');
   });
 
+  it('humanizes multiword object types and statuses', () => {
+    const item = objectQueueItem(
+      task({ type: 'follow_up', status: 'in_progress' }),
+      'user-1',
+      new Date('2026-06-01T00:00:00.000Z'),
+      new Date('2026-06-08T00:00:00.000Z'),
+    );
+
+    expect(item?.subtitle).toBe('Follow up · In progress');
+    expect(item?.subtitle).not.toContain('_');
+  });
+
   it('loads assigned standalone work even when it has no board item or due date', async () => {
     const assigned = task({ id: 'assigned-standalone', dueAt: null });
     const listObjects = (filter: objects.ObjectListFilter) =>

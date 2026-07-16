@@ -84,8 +84,8 @@ function SessionSidebarContent({
                   >
                     <span className="block truncate">{label}</span>
                     {s.pinnedEntityName && !s.title && (
-                      <span className="block truncate text-[10px] uppercase tracking-wide text-muted-foreground">
-                        pinned · {s.pinnedEntityName}
+                      <span className="block truncate text-[10px] text-muted-foreground">
+                        Pinned · {s.pinnedEntityName}
                       </span>
                     )}
                   </Link>

@@ -12,6 +12,7 @@ import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { displayText, formatDisplayDate } from '@/lib/display-dates';
+import { statusLabel } from '@/lib/status-labels';
 import {
   approvalQueueItem,
   boardQueueItem,
@@ -166,7 +167,7 @@ function WorkQueueRow({ item, timezone }: { item: WorkQueueItem; timezone: strin
           />
         ) : null}
         {item.priority ? <MetaPill label={`P${item.priority}`} /> : null}
-        {item.objectType ? <MetaPill label={item.objectType.replace('_', ' ')} /> : null}
+        {item.objectType ? <MetaPill label={statusLabel(item.objectType)} /> : null}
       </span>
     </Link>
   );

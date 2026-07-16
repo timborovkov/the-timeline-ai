@@ -17,7 +17,7 @@ import { CuratedBoardList, CuratedBoardTable } from '@/components/boards/curated
 import { CuratedKanbanBoard } from '@/components/boards/curated-kanban-board';
 import { ContextualAskLink } from '@/components/chat/contextual-ask-link';
 import { HistoryBackLink } from '@/components/history-back-link';
-import { IndexStrip } from '@/components/index-strip';
+import { PageHeader } from '@/components/page-header';
 import { WorkFilterBar } from '@/components/work-filter-bar';
 import { visibleBoardDescription } from '@/lib/board-description';
 import { boardViewHref } from '@/lib/board-links';
@@ -244,9 +244,9 @@ export function BoardDetailClient({
 
   return (
     <>
-      <IndexStrip
-        srLabel={`Board · ${boardName}`}
-        segments={[{ value: 'BOARD' }, { value: boardName, signal: true }]}
+      <PageHeader
+        title={boardName}
+        subtitle={description ?? undefined}
         leading={boardHeaderLeading}
         className={view === 'kanban' ? 'w-full shrink-0 px-4 md:px-8' : 'mb-4 shrink-0'}
         trailing={boardHeaderTrailing}
@@ -255,11 +255,10 @@ export function BoardDetailClient({
       <div
         className={
           view === 'kanban'
-            ? 'flex w-full shrink-0 flex-wrap items-center justify-between gap-3 px-4 py-4 md:px-8'
-            : 'mb-4 flex shrink-0 flex-wrap items-center justify-between gap-3'
+            ? 'flex w-full shrink-0 justify-end px-4 py-4 md:px-8'
+            : 'mb-4 flex shrink-0 justify-end'
         }
       >
-        {description ? <p className="max-w-3xl text-sm text-fg-muted">{description}</p> : <span />}
         <nav className="inline-flex overflow-hidden rounded-sm border border-border">
           {(['kanban', 'table', 'list'] as const).map((nextView) => (
             <Link

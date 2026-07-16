@@ -41,7 +41,7 @@ export function PublicShell({
               Privacy
             </Link>
             <ThemeToggle className="text-fg-muted hover:text-fg" />
-            <Button asChild size="sm" variant={isSignedIn ? 'outline' : 'default'}>
+            <Button asChild size="sm" variant="outline">
               <Link href={isSignedIn ? '/app' : '/sign-in'}>
                 {isSignedIn ? 'Open app' : 'Sign in'}
               </Link>

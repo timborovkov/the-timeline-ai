@@ -104,6 +104,8 @@ services:
       mc version enable local/timeline-audio;
       mc version enable local/timeline-attachments;
       mc version enable local/timeline-documents;
+      printf '%s' '<CORSConfiguration xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><CORSRule><AllowedOrigin>http://localhost:3000</AllowedOrigin><AllowedOrigin>http://127.0.0.1:3000</AllowedOrigin><AllowedMethod>GET</AllowedMethod><AllowedMethod>HEAD</AllowedMethod><AllowedMethod>PUT</AllowedMethod><AllowedHeader>*</AllowedHeader><ExposeHeader>ETag</ExposeHeader></CORSRule></CORSConfiguration>' |
+        mc cors set local/timeline-documents -;
       echo 'RustFS buckets ready.';
       "
 

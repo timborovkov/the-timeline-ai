@@ -6,6 +6,7 @@ async function stabilize(page: Page) {
   await page.waitForLoadState('networkidle');
   await page.locator('h1').first().waitFor();
   await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.mouse.move(0, 0);
   await page.addStyleTag({
     content:
       '*,*::before,*::after{animation-duration:0s!important;transition-duration:0s!important}',

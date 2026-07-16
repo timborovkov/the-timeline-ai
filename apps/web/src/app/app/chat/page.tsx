@@ -12,6 +12,7 @@ import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { hydrateChatSessionMessages } from '@/lib/chat-session';
 import { db } from '@/lib/db';
+import { displayObjectLabel } from '@/lib/display-labels';
 
 export const metadata: Metadata = {
   title: 'Chat',
@@ -31,7 +32,7 @@ async function loadPinnedEntity(
     .select({ id: entities.id, canonicalName: entities.canonicalName })
     .from(entities)
     .where(and(eq(entities.teamId, teamId), inArray(entities.id, entityIds)));
-  for (const r of rows) out.set(r.id, r.canonicalName);
+  for (const r of rows) out.set(r.id, displayObjectLabel(r));
   return out;
 }
 

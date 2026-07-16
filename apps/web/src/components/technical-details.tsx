@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
 interface TechnicalDetailItem {
+  id?: string;
   label: string;
   value: ReactNode;
   copyValue?: string;
@@ -27,13 +28,13 @@ export function TechnicalDetails({
   summary = 'Technical details',
   className,
 }: TechnicalDetailsProps) {
-  const [copied, setCopied] = useState<number | null>(null);
+  const [copied, setCopied] = useState<string | null>(null);
 
-  async function copyTechnicalValue(value: string, index: number) {
+  async function copyTechnicalValue(value: string, itemKey: string) {
     await navigator.clipboard.writeText(value);
-    setCopied(index);
+    setCopied(itemKey);
     window.setTimeout(() => {
-      setCopied((current) => (current === index ? null : current));
+      setCopied((current) => (current === itemKey ? null : current));
     }, 1500);
   }
 
@@ -48,10 +49,11 @@ export function TechnicalDetails({
       <div className="mt-3 space-y-3">
         {items.length > 0 ? (
           <dl className="grid gap-3 sm:grid-cols-[minmax(8rem,0.35fr)_minmax(0,1fr)]">
-            {items.map((item, index) => {
+            {items.map((item) => {
               const itemCopyValue = item.copyValue;
+              const itemKey = item.id ?? itemCopyValue ?? item.label;
               return (
-                <div key={item.copyValue ?? item.label} className="contents">
+                <div key={itemKey} className="contents">
                   <dt className="text-xs text-fg-muted">{item.label}</dt>
                   <dd className="m-0 flex min-w-0 items-start gap-2">
                     <code className="min-w-0 flex-1 break-all text-xs text-fg">{item.value}</code>
@@ -61,15 +63,15 @@ export function TechnicalDetails({
                         variant="ghost"
                         size="sm"
                         className="h-7 shrink-0 px-2"
-                        onClick={() => void copyTechnicalValue(itemCopyValue, index)}
+                        onClick={() => void copyTechnicalValue(itemCopyValue, itemKey)}
                         aria-label={`Copy ${typeof item.label === 'string' ? item.label : 'technical value'}`}
                       >
-                        {copied === index ? (
+                        {copied === itemKey ? (
                           <Check aria-hidden="true" />
                         ) : (
                           <Copy aria-hidden="true" />
                         )}
-                        {copied === index ? 'Copied' : 'Copy'}
+                        {copied === itemKey ? 'Copied' : 'Copy'}
                       </Button>
                     ) : null}
                   </dd>

@@ -53,8 +53,7 @@ interface PageHeaderProps {
  * on those pages: the title is a readable Switzer H1, while counts, IDs,
  * and status stay mono in a metadata strip below.
  *
- * Operational surfaces (Timeline, Approvals, Jobs, Audit, Objects, Boards)
- * keep `IndexStrip`.
+ * Timeline and explicit audit/operator surfaces may keep `IndexStrip`.
  */
 export function PageHeader({
   title,

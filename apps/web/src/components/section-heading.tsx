@@ -18,9 +18,8 @@ interface SectionHeadingProps {
  * tracking-[0.14em]`) that sat above content blocks on Home, Sources,
  * Integrations, etc.
  *
- * Operational surfaces keep mono eyebrows / `IndexStrip` for their
- * metadata strips; this component is for plain section titles on
- * non-operational pages.
+ * Timeline and explicit audit/operator surfaces may keep `IndexStrip` for
+ * compact metadata; all ordinary section titles use this component.
  */
 export function SectionHeading({ children, actions, id, className }: SectionHeadingProps) {
   return (
