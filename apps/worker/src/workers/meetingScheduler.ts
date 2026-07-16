@@ -1,7 +1,7 @@
 import { type Db, meetings, meetingUsage, savedMeetings, teamMeetingSettings } from '@timeline/db';
 import { childLogger, meetingBots, queue, withTeam } from '@timeline/shared';
 import { Worker, type Job } from 'bullmq';
-import { and, asc, eq, gte, isNull, lte, sql } from 'drizzle-orm';
+import { and, asc, eq, gt, gte, isNull, lte, or, sql } from 'drizzle-orm';
 
 import { captureWorkerException } from '#src/monitoring.js';
 
@@ -99,7 +99,13 @@ export async function processMeetingSchedulerTick(deps: MeetingSchedulerDeps): P
         eq(savedMeetings.autoJoinEnabled, true),
         isNull(savedMeetings.autoJoinPausedAt),
         isNull(savedMeetings.archivedAt),
-        gte(meetings.scheduledStartAt, new Date(now.getTime() - SCHEDULED_JOIN_LOOKBACK_MS)),
+        or(
+          gte(meetings.scheduledStartAt, new Date(now.getTime() - SCHEDULED_JOIN_LOOKBACK_MS)),
+          and(
+            sql`(${meetings.metadata} ->> 'no_show_retry_count') = '1'`,
+            or(isNull(meetings.scheduledEndAt), gt(meetings.scheduledEndAt, now)),
+          ),
+        ),
         lte(meetings.scheduledStartAt, startWindowEnd),
       ),
     )

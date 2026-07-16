@@ -26,9 +26,11 @@ const ENV_BACKUP = { ...process.env };
 const fakes = vi.hoisted(() => ({
   fakeLookup: vi.fn(),
   fakeEnqueueFinalize: vi.fn(),
+  fakeEnqueueScheduler: vi.fn(),
   fakeReportCaughtError: vi.fn(),
   fakeReportHandledEvent: vi.fn(),
   fakeRecordJoinFailure: vi.fn(),
+  fakeRetryNoShow: vi.fn(),
   fakeUpdateStatus: vi.fn(),
   fakeWithTeam: vi.fn(),
 }));
@@ -37,6 +39,7 @@ vi.mock('@/lib/db', () => ({ db: {} }));
 vi.mock('@/lib/queue', () => ({
   requireRedisQueue: vi.fn().mockResolvedValue({
     enqueueMeetingFinalizeJob: fakes.fakeEnqueueFinalize,
+    enqueueMeetingSchedulerTick: fakes.fakeEnqueueScheduler,
   }),
 }));
 vi.mock('@/lib/sentry-report', () => ({
@@ -55,6 +58,7 @@ vi.mock('@timeline/shared/team-scope', () => ({
       meetings: {
         updateMeetingStatus: fakes.fakeUpdateStatus,
         recordSavedMeetingJoinFailure: fakes.fakeRecordJoinFailure,
+        retrySavedMeetingAfterNoShow: fakes.fakeRetryNoShow,
       },
     };
   },
@@ -141,6 +145,7 @@ beforeEach(() => {
     provider: 'recall',
     savedMeetingId: null,
   });
+  fakes.fakeRetryNoShow.mockResolvedValue(false);
 });
 
 afterEach(() => {
@@ -370,7 +375,7 @@ describe('POST /api/webhooks/recall/status — state transitions', () => {
     expect(fakes.fakeEnqueueFinalize).not.toHaveBeenCalled();
   });
 
-  it('records Saved Meeting no-shows without enqueueing finalize', async () => {
+  it('requeues the first in-window Saved Meeting no-show without recording a failure', async () => {
     fakes.fakeLookup.mockResolvedValueOnce({
       id: 'meeting-1',
       teamId: TEAM_ID,
@@ -380,6 +385,7 @@ describe('POST /api/webhooks/recall/status — state transitions', () => {
       provider: 'recall',
       savedMeetingId: 'saved-1',
     });
+    fakes.fakeRetryNoShow.mockResolvedValueOnce(true);
 
     const r = await POST(
       signedRequest(recallStatusBody('bot.status_change', 'timeout_exceeded_waiting_room')),
@@ -398,7 +404,9 @@ describe('POST /api/webhooks/recall/status — state transitions', () => {
         metadata: noShowMetadataMatcher,
       }),
     );
-    expect(fakes.fakeRecordJoinFailure).toHaveBeenCalledWith('saved-1', 'no_show');
+    expect(fakes.fakeRetryNoShow).toHaveBeenCalledWith('meeting-1');
+    expect(fakes.fakeEnqueueScheduler).toHaveBeenCalledOnce();
+    expect(fakes.fakeRecordJoinFailure).not.toHaveBeenCalled();
     expect(fakes.fakeEnqueueFinalize).not.toHaveBeenCalled();
   });
 

@@ -10,7 +10,7 @@
     <a class="skip" href="#main">Skip to content</a>
     <main id="main">
       <h1>Meeting bot setup</h1>
-      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-07-13</span></div>
+      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-07-16</span></div>
       <p class="tldr">
         Paste a Google Meet, Microsoft Teams, or Zoom link into
         <code>/app/meetings</code>, save a reusable meeting link, or use a Slack/Telegram join
@@ -56,9 +56,10 @@
       <p>
         The scheduler worker scans for due Saved Meeting occurrences and starts the bot at the saved
         meeting's configured join offset, defaulting to two minutes before the scheduled start. If
-        nobody admits or joins the bot, Google Meet captures use a 550-second no-show timeout;
-        recurring auto-join pauses after three consecutive no-shows or provider failures. Manual
-        joins can still be triggered from the dashboard or commands.
+        nobody admits or joins the bot, Google Meet captures use a 550-second no-show timeout; while
+        the configured call window remains open, the first timeout is requeued once immediately. A
+        second no-show is terminal, and recurring auto-join pauses after three terminal no-shows or
+        provider failures. Manual joins can still be triggered from the dashboard or commands.
       </p>
       <p>
         Slack supports <code>/timeline join &lt;alias-or-url&gt; [title]</code>. Telegram supports
@@ -228,9 +229,9 @@ RECALL_TRANSCRIPT_WEBHOOK_URL=https://thetimeline.cc/api/webhooks/recall/transcr
           <code>/api/webhooks/recall/status</code>.
         </li>
         <li>
-          <strong>Saved Meeting stopped auto-joining</strong> — three consecutive scheduled no-shows
-          or provider failures pause auto-join for that saved meeting. Re-enable it after checking
-          the link and schedule.
+          <strong>Saved Meeting stopped auto-joining</strong> — Timeline retries the first in-window
+          no-show once. Three terminal scheduled no-shows or provider failures pause auto-join for
+          that saved meeting. Re-enable it after checking the link and schedule.
         </li>
         <li>
           <strong>No transcript chunks landing</strong> — verify

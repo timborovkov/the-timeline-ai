@@ -698,6 +698,12 @@ export async function scheduleMeetingSchedulerTick(): Promise<void> {
   );
 }
 
+export async function enqueueMeetingSchedulerTick(): Promise<void> {
+  await getMeetingSchedulerQueue().add('meeting-scheduler-tick', {
+    triggeredAt: new Date().toISOString(),
+  });
+}
+
 export async function closeMeetingSchedulerQueue(): Promise<void> {
   await closeQueue(_meetingSchedulerQueue, () => {
     _meetingSchedulerQueue = undefined;

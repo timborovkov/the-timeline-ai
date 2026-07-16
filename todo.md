@@ -48,9 +48,10 @@ records:
       before heavy PDF/image dogfooding.
 - [ ] Add dogfood document content: contracts, deal docs, internal guides,
       policies, office rules, onboarding docs, and customer notes.
-- [ ] Surface meeting bot failed states in the operations/job dashboard with a
-      useful retry or rejoin path. Failed meetings are already captured as
-      `meetings.status='failed'`.
+- [ ] Surface terminal meeting bot failed states in the operations/job dashboard
+      with a manual retry or rejoin path. Scheduled Saved Meetings already retry
+      one in-window no-show automatically; final failures are captured as
+      `meetings.status='failed'` or `meetings.status='no_show'`.
 
 ## UX Overhaul
 

@@ -56,6 +56,7 @@ async function insertSavedAndScheduled(
     autoJoinPausedAt?: Date | null;
     archivedAt?: Date | null;
     joinOffsetMinutes?: number;
+    noShowRetry?: boolean;
     scheduledStartAt?: Date;
   } = {},
 ) {
@@ -98,7 +99,10 @@ async function insertSavedAndScheduled(
       scheduledStartAt: input.scheduledStartAt ?? new Date(Date.now() + 30_000),
       scheduledEndAt: new Date((input.scheduledStartAt?.getTime() ?? Date.now()) + 30 * 60_000),
       defaultVisibility: 'team',
-      metadata: { source: 'test' },
+      metadata: {
+        source: 'test',
+        ...(input.noShowRetry ? { no_show_retry_count: 1 } : {}),
+      },
     })
     .returning();
   if (!meeting) throw new Error('missing scheduled meeting');
@@ -154,6 +158,20 @@ describe('processMeetingSchedulerTick', () => {
     );
     const row = (await db.select().from(meetings).where(eq(meetings.id, meeting.id)))[0];
     expect(row?.status).toBe('joining');
+  });
+
+  it('starts an in-window no-show retry even after the normal lookback closes', async () => {
+    const { meeting } = await insertSavedAndScheduled(db, {
+      noShowRetry: true,
+      scheduledStartAt: new Date(Date.now() - 10 * 60_000),
+    });
+
+    const result = await processMeetingSchedulerTick({ db: db as never });
+
+    expect(result.joined).toBe(1);
+    expect(joinMeetingMock).toHaveBeenCalledWith(
+      expect.objectContaining({ meetingId: meeting.id }),
+    );
   });
 
   it('claims scheduled captures before calling the provider so concurrent ticks do not duplicate bots', async () => {

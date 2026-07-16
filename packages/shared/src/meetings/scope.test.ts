@@ -705,6 +705,53 @@ describe('meetings scope', () => {
     ).resolves.toMatchObject({ aliases: ['daily'] });
   });
 
+  it('requeues one in-window saved meeting attempt after a no-show', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_A).meetings;
+    const saved = await scope.createSavedMeeting({
+      title: 'Retry daily',
+      meetingUrl: 'https://meet.google.com/ret-ry-daily',
+      permissionConfirmed: true,
+      scheduleConfig: {
+        weekdays: [new Date().getUTCDay()],
+        times: ['23:59'],
+        timezone: 'UTC',
+        joinOffsetMinutes: 2,
+      },
+      autoJoinEnabled: true,
+    });
+    const now = Date.now();
+    const meeting = await scope.createMeeting({
+      platform: 'meet',
+      meetingUrl: saved.meetingUrl,
+      title: saved.title,
+      savedMeetingId: saved.id,
+      status: 'no_show',
+      scheduledStartAt: new Date(now - 5 * 60_000),
+      scheduledEndAt: new Date(now + 25 * 60_000),
+      metadata: { source: 'saved_meeting', capture_status: 'no_show' },
+    });
+    await scope.updateMeetingStatus(meeting.id, 'no_show', {
+      providerBotId: 'bot-timed-out',
+      endedAt: new Date(),
+    });
+
+    await expect(scope.retrySavedMeetingAfterNoShow(meeting.id)).resolves.toBe(true);
+    const [retry] = await db.select().from(meetings).where(eq(meetings.id, meeting.id));
+    expect(retry).toMatchObject({
+      status: 'scheduled',
+      providerBotId: null,
+      startedAt: null,
+      endedAt: null,
+      metadata: expect.objectContaining({
+        no_show_retry_count: 1,
+        previous_provider_bot_id: 'bot-timed-out',
+      }) as unknown,
+    });
+
+    await scope.updateMeetingStatus(meeting.id, 'no_show');
+    await expect(scope.retrySavedMeetingAfterNoShow(meeting.id)).resolves.toBe(false);
+  });
+
   it('tracks raw-url quick join confirmations through pending, expiry, and cancellation states', async () => {
     const scope = withTeam(db as never, TEAM_ID, USER_A).meetings;
     const confirmation = await scope.createMeetingCaptureConfirmation({

@@ -259,7 +259,21 @@ export async function POST(req: Request): Promise<Response> {
         },
       });
       if (meeting.savedMeetingId) {
-        await scope.meetings.recordSavedMeetingJoinFailure(meeting.savedMeetingId, 'no_show');
+        const retryScheduled = await scope.meetings.retrySavedMeetingAfterNoShow(meeting.id);
+        if (retryScheduled) {
+          try {
+            const queue = await requireRedisQueue();
+            await queue.enqueueMeetingSchedulerTick();
+          } catch (err) {
+            log.warn({ err, meetingId: meeting.id }, 'no_show_retry_enqueue_failed');
+            reportCaughtError(err, {
+              surface: 'api',
+              operation: 'recall_status_enqueue_no_show_retry',
+            });
+          }
+        } else {
+          await scope.meetings.recordSavedMeetingJoinFailure(meeting.savedMeetingId, 'no_show');
+        }
       }
     } else if (isFailureEvent) {
       // `failed` is terminal — overrides any in-flight state including

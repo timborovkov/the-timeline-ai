@@ -11,7 +11,7 @@ import {
   savedMeetings,
   teamMeetingSettings,
 } from '@timeline/db';
-import { and, asc, desc, eq, gte, inArray, isNull, lte, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, gte, inArray, isNotNull, isNull, lte, or, sql } from 'drizzle-orm';
 
 import { currentExtractionModelVersion } from '#src/extraction-model-version.js';
 import { participantNames } from '#src/meetings/participants.js';
@@ -1456,6 +1456,62 @@ export function createMeetingScope(deps: MeetingScopeDeps) {
           updatedAt: new Date(),
         })
         .where(and(eq(savedMeetings.id, savedMeetingId), eq(savedMeetings.teamId, teamId)));
+    },
+
+    async retrySavedMeetingAfterNoShow(meetingId: string): Promise<boolean> {
+      const now = new Date();
+      const [eligible] = await db
+        .select({
+          metadata: meetings.metadata,
+          providerBotId: meetings.providerBotId,
+        })
+        .from(meetings)
+        .innerJoin(savedMeetings, eq(savedMeetings.id, meetings.savedMeetingId))
+        .where(
+          and(
+            eq(meetings.id, meetingId),
+            eq(meetings.teamId, teamId),
+            eq(meetings.status, 'no_show'),
+            isNotNull(meetings.scheduledStartAt),
+            lte(meetings.scheduledStartAt, now),
+            or(isNull(meetings.scheduledEndAt), gt(meetings.scheduledEndAt, now)),
+            eq(savedMeetings.teamId, teamId),
+            eq(savedMeetings.autoJoinEnabled, true),
+            isNull(savedMeetings.autoJoinPausedAt),
+            isNull(savedMeetings.archivedAt),
+          ),
+        )
+        .limit(1);
+      if (!eligible) return false;
+      const metadata = eligible.metadata as Record<string, unknown>;
+      const retryCount =
+        typeof metadata.no_show_retry_count === 'number' ? metadata.no_show_retry_count : 0;
+      if (retryCount >= 1) return false;
+      const metadataPatch = JSON.stringify({
+        capture_status: 'scheduled',
+        no_show_retry_count: retryCount + 1,
+        no_show_retry_scheduled_at: now.toISOString(),
+        previous_provider_bot_id: eligible.providerBotId,
+      });
+      const rows = await db
+        .update(meetings)
+        .set({
+          status: 'scheduled',
+          providerBotId: null,
+          startedAt: null,
+          endedAt: null,
+          updatedAt: now,
+          metadata: sql`COALESCE(${meetings.metadata}, '{}'::jsonb) || ${metadataPatch}::jsonb`,
+        })
+        .where(
+          and(
+            eq(meetings.id, meetingId),
+            eq(meetings.teamId, teamId),
+            eq(meetings.status, 'no_show'),
+          ),
+        )
+        .returning({ id: meetings.id });
+      return rows.length > 0;
     },
 
     async getMeetingByBotId(botId: string): Promise<MeetingRow | null> {
