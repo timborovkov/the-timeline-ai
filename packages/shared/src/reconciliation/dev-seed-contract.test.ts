@@ -206,6 +206,29 @@ describe('reconciliation cutover contracts', () => {
     expect(source).toContain('reconciliationOutputs');
   });
 
+  it('keeps task-category demo fixtures convergent across seed upgrades and reruns', () => {
+    const source = repoFile('scripts/seed-dev.ts');
+    const entitySeed = statementSlices(source, '.insert(entities)').find((statement) =>
+      statement.includes('IDS.objectTask'),
+    );
+    const relationshipSeed = statementSlices(source, '.insert(entityRelationships)').find(
+      (statement) => statement.includes('IDS.relationshipProjectTask'),
+    );
+    const assignmentSeed = statementSlices(source, '.insert(taskCategoryAssignments)').find(
+      (statement) => statement.includes('IDS.taskCategoryAssignment'),
+    );
+
+    expect(entitySeed).toContain('taskCategory: sql`excluded.task_category`');
+    expect(entitySeed).toContain(
+      'taskCategoryRequestedInputHash: sql`excluded.task_category_requested_input_hash`',
+    );
+    expect(relationshipSeed).toContain('target: entityRelationships.id');
+    expect(relationshipSeed).toContain('fromEntityId: sql`excluded.from_entity_id`');
+    expect(relationshipSeed).toContain('kind: sql`excluded.kind`');
+    expect(assignmentSeed).toContain('id: IDS.taskCategoryAssignment');
+    expect(assignmentSeed).toContain('target: taskCategoryAssignments.id');
+  });
+
   it('does not use legacy sourceEventId payload hints as accepted provenance', () => {
     const objects = repoFile('packages/shared/src/objects/index.ts');
     const boards = repoFile('packages/shared/src/boards/index.ts');

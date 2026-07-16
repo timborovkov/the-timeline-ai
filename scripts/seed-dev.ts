@@ -84,6 +84,7 @@ const IDS = {
   factMeeting: 'c0000000-0000-4000-8000-000000000003',
   relationshipProjectTask: 'd0000000-0000-4000-8000-000000000001',
   relationshipProjectDecision: 'd0000000-0000-4000-8000-000000000002',
+  taskCategoryAssignment: 'd1000000-0000-4000-8000-000000000001',
   evidenceKickoff: 'f0000000-0000-4000-8000-000000000001',
   evidenceEmail: 'f0000000-0000-4000-8000-000000000002',
   evidenceMeeting: 'f0000000-0000-4000-8000-000000000003',
@@ -795,6 +796,14 @@ async function main(): Promise<void> {
             ownerUserId: sql`excluded.owner_user_id`,
             assigneeUserId: sql`excluded.assignee_user_id`,
             dueAt: sql`excluded.due_at`,
+            taskCategory: sql`excluded.task_category`,
+            taskCategoryMode: sql`excluded.task_category_mode`,
+            taskCategorySource: sql`excluded.task_category_source`,
+            taskCategoryStatus: sql`excluded.task_category_status`,
+            taskCategoryAppliedInputHash: sql`excluded.task_category_applied_input_hash`,
+            taskCategoryRequestedInputHash: sql`excluded.task_category_requested_input_hash`,
+            taskCategoryTaxonomyVersion: sql`excluded.task_category_taxonomy_version`,
+            taskCategoryUpdatedAt: sql`excluded.task_category_updated_at`,
             sourceEventId: null,
             updatedAt: now,
           },
@@ -1266,11 +1275,20 @@ async function main(): Promise<void> {
             createdBy: IDS.owner,
           },
         ])
-        .onConflictDoNothing();
+        .onConflictDoUpdate({
+          target: entityRelationships.id,
+          set: {
+            fromEntityId: sql`excluded.from_entity_id`,
+            toEntityId: sql`excluded.to_entity_id`,
+            kind: sql`excluded.kind`,
+            createdBy: sql`excluded.created_by`,
+          },
+        });
 
       await tx
         .insert(taskCategoryAssignments)
         .values({
+          id: IDS.taskCategoryAssignment,
           teamId: IDS.team,
           entityId: IDS.objectTask,
           category: 'legal_compliance',
@@ -1284,7 +1302,23 @@ async function main(): Promise<void> {
           outcome: 'applied',
           latencyMs: 12,
         })
-        .onConflictDoNothing();
+        .onConflictDoUpdate({
+          target: taskCategoryAssignments.id,
+          set: {
+            teamId: sql`excluded.team_id`,
+            entityId: sql`excluded.entity_id`,
+            category: sql`excluded.category`,
+            source: sql`excluded.source`,
+            mode: sql`excluded.mode`,
+            confidence: sql`excluded.confidence`,
+            model: sql`excluded.model`,
+            promptVersion: sql`excluded.prompt_version`,
+            taxonomyVersion: sql`excluded.taxonomy_version`,
+            inputHash: sql`excluded.input_hash`,
+            outcome: sql`excluded.outcome`,
+            latencyMs: sql`excluded.latency_ms`,
+          },
+        });
 
       await tx
         .insert(boards)

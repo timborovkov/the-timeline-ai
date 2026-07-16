@@ -1177,6 +1177,38 @@ describe('task category and primary project state', () => {
     });
   });
 
+  it('leaves a task promoted while automatic categorization is disabled eligible for backfill', async () => {
+    process.env.TASK_CATEGORY_CLASSIFICATION_ENABLED = 'false';
+    process.env.TASK_CATEGORY_AUTO_ENQUEUE_ENABLED = 'false';
+    resetEnvForTests();
+    const scope = withTeam(db, TEAM_A, USER_A).objects;
+    const object = await scope.createObject({
+      type: 'other',
+      canonicalName: 'Promote after category rollout',
+      actor: { kind: 'user', userId: USER_A },
+    });
+    vi.mocked(queue.enqueueTaskCategoryJob).mockClear();
+
+    const promoted = await scope.updateObject(
+      object.id,
+      { type: 'task' },
+      { kind: 'user', userId: USER_A },
+    );
+
+    expect(promoted.object).toMatchObject({
+      taskCategory: null,
+      taskCategoryMode: 'automatic',
+      taskCategoryStatus: null,
+      taskCategoryUpdatedAt: null,
+    });
+    const [persisted] = await db.select().from(entities).where(eq(entities.id, object.id));
+    expect(persisted?.taskCategoryRequestedInputHash).toBeNull();
+    await expect(
+      scope.listObjects({ type: 'task', taskCategoryBackfillEligible: true }),
+    ).resolves.toEqual([expect.objectContaining({ id: object.id })]);
+    expect(queue.enqueueTaskCategoryJob).not.toHaveBeenCalled();
+  });
+
   it('restores a backfill candidate when the queue handoff fails', async () => {
     const scope = withTeam(db, TEAM_A, USER_A).objects;
     const task = await scope.createObject({

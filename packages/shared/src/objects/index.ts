@@ -4520,13 +4520,42 @@ export async function updateObject(
         taskCategoryTaxonomyVersion: null,
         taskCategoryUpdatedAt: null,
       });
+    } else if (current.type !== 'task' && nextType === 'task') {
+      const automationEnabled =
+        getEnv().TASK_CATEGORY_CLASSIFICATION_ENABLED &&
+        getEnv().TASK_CATEGORY_AUTO_ENQUEUE_ENABLED;
+      Object.assign(next, {
+        taskCategory: null,
+        taskCategoryMode: 'automatic',
+        taskCategorySource: null,
+        taskCategoryStatus: null,
+        taskCategoryAppliedInputHash: null,
+        taskCategoryRequestedInputHash: null,
+        taskCategoryTaxonomyVersion: null,
+        taskCategoryUpdatedAt: null,
+      });
+      if (automationEnabled) {
+        const packet = await taskCategoryPacketForRow(tx, scope.teamId, {
+          id: current.id,
+          canonicalName: (next.canonicalName as string | undefined) ?? current.canonicalName,
+          aliases: next.aliases ?? current.aliases,
+          metadata: next.metadata ?? current.metadata,
+        });
+        const inputHash = taskCategoryInputHash(packet, TIMELINE_MODELS.taskCategorization.id);
+        requestedCategoryHash = inputHash;
+        Object.assign(next, {
+          taskCategoryStatus: 'pending',
+          taskCategoryRequestedInputHash: inputHash,
+          taskCategoryTaxonomyVersion: TASK_CATEGORY_TAXONOMY_VERSION,
+          taskCategoryUpdatedAt: new Date(),
+        });
+      }
     } else if (
       nextType === 'task' &&
-      (current.type !== 'task' || current.taskCategoryMode !== 'manual') &&
-      (current.type !== 'task' ||
-        changes.some((change) =>
-          ['canonicalName', 'aliases', 'metadata', 'type'].includes(change.field),
-        ))
+      current.taskCategoryMode !== 'manual' &&
+      changes.some((change) =>
+        ['canonicalName', 'aliases', 'metadata', 'type'].includes(change.field),
+      )
     ) {
       const packet = await taskCategoryPacketForRow(tx, scope.teamId, {
         id: current.id,
@@ -4539,7 +4568,7 @@ export async function updateObject(
         current.taskCategoryStatus === 'ready'
           ? current.taskCategoryAppliedInputHash
           : current.taskCategoryRequestedInputHash;
-      if (current.type !== 'task' || inputHash !== existingInputHash) {
+      if (inputHash !== existingInputHash) {
         requestedCategoryHash = inputHash;
         Object.assign(next, {
           taskCategoryMode: 'automatic',
