@@ -4027,6 +4027,8 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     const type =
       item.targetKind === 'task' ? 'task' : (objectTypeFromValue(parsed.type) ?? 'other');
     const project = type === 'task' ? await resolveSuggestedTaskProject(item, parsed) : null;
+    const legacyParentId =
+      type === 'task' && parsed.parentObjectId && !project ? parsed.parentObjectId : null;
     const precomputedTaskCategory =
       type === 'task' &&
       parsed.taskCategory &&
@@ -4060,7 +4062,6 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     if (parsed.assigneeUserId !== undefined) input.assigneeUserId = parsed.assigneeUserId;
     if (parsed.dueAt !== undefined) input.dueAt = parsed.dueAt ? new Date(parsed.dueAt) : null;
     if (project) input.parentObjectId = project.id;
-    else if (parsed.parentObjectId !== undefined) input.parentObjectId = parsed.parentObjectId;
     if (precomputedTaskCategory) input.precomputedTaskCategory = precomputedTaskCategory;
     if (initialManualTaskCategory) input.initialManualTaskCategory = initialManualTaskCategory;
     input.metadata = {
@@ -4086,6 +4087,9 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     if (!existing) {
       try {
         const created = await objects.createObject(input);
+        if (legacyParentId) {
+          await ensureLegacySuggestedTaskRelationship(item, created.id, legacyParentId);
+        }
         if (type === 'task' && !precomputedTaskCategory && !initialManualTaskCategory) {
           await applyProposedTaskCategory(created.id, parsed);
         }
@@ -4142,6 +4146,9 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
           { kind: 'agent', userId: null },
           { preserveUserChangesAfter: taskProposalFieldRevisionBoundary(item, 'primaryProjectId') },
         );
+        if (legacyParentId) {
+          await ensureLegacySuggestedTaskRelationship(item, existing.id, legacyParentId);
+        }
         await archiveOrphanedSuggestedProjects(item);
         if (!userOverrides.has('taskCategory')) {
           await applyProposedTaskCategory(existing.id, parsed);
@@ -4214,21 +4221,20 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     payload: z.infer<typeof objectCreatePayload>,
   ): Promise<{ id: string; name: string; createdForSuggestion: boolean } | null> {
     if (payload.parentObjectId) {
-      const [project] = await db
-        .select({ id: entities.id, name: entities.canonicalName })
+      const [parent] = await db
+        .select({ id: entities.id, name: entities.canonicalName, type: entities.type })
         .from(entities)
         .where(
           and(
             eq(entities.teamId, teamId),
             eq(entities.id, payload.parentObjectId),
-            eq(entities.type, 'project'),
             isNull(entities.archivedAt),
             isNull(entities.mergedIntoId),
           ),
         )
         .limit(1);
-      if (!project) throw new Error('Proposed task project is no longer available');
-      return { ...project, createdForSuggestion: false };
+      if (!parent) throw new Error('Proposed task relation is no longer available');
+      return parent.type === 'project' ? { ...parent, createdForSuggestion: false } : null;
     }
     if (!payload.createProjectName) return null;
 
@@ -4354,6 +4360,24 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       }
       throw error;
     }
+  }
+
+  async function ensureLegacySuggestedTaskRelationship(
+    item: typeof agentSuggestionItems.$inferSelect,
+    taskId: string,
+    parentId: string,
+  ): Promise<void> {
+    await objects.addRelationship({
+      fromEntityId: taskId,
+      toEntityId: parentId,
+      kind: 'child',
+      actorUserId: null,
+      actor: { kind: 'agent', userId: null },
+      metadata: {
+        agent_suggestion_item_id: item.id,
+        legacy_task_parent: true,
+      },
+    });
   }
 
   async function archiveSuggestedProjectAfterFailure(

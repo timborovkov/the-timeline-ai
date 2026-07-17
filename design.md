@@ -358,7 +358,9 @@ Linear-tight on operational surfaces. Comfortable on mobile and on forms.
   priority. Pending and failed states use readable text, never color alone.
   Project is a distinct named relation: show it in task context lines and
   editable detail fields, not as another colored tag or a fourth dense card
-  metadata cell.
+  metadata cell. Archived task detail pages replace project/category controls
+  with a short unarchive instruction because those mutations require an active
+  task.
 - **Buttons** — `rounded-sm`. Primary: `bg-signal text-signal-fg`,
   square corners. Ghost: no background. Outline: 1px border, no fill.
   Destructive: signal-color is never used; `bg-transparent text-danger border-danger/40`.

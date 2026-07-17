@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import type { TaskCategoryBatchItem } from '#src/task-categories/classifier.js';
+
 import { buildAgentTools } from '#src/agent/tools.js';
 import { type TeamScope } from '#src/team-scope.js';
 
@@ -2239,6 +2241,60 @@ describe('buildAgentTools — team isolation', () => {
         priority: 1,
       },
     });
+  });
+
+  it('suggest_object_memory enriches task proposals with project and category previews', async () => {
+    const scope = makeFakeScope();
+    scope.objects.getObject.mockResolvedValue(null);
+    scope.suggestions.createOrMergeSuggestionBundle.mockResolvedValue({ id: 'suggestion-1' });
+    const classifyTaskCategories = vi.fn((_items: readonly TaskCategoryBatchItem[]) =>
+      Promise.resolve([
+        {
+          key: '0',
+          category: 'design' as const,
+          confidence: 0.93,
+          model: 'task-category-batch-test',
+        },
+      ]),
+    );
+    const tools = buildAgentTools(scope as unknown as TeamScope, {
+      classifyTaskCategories,
+      taskCategoryClassificationEnabled: true,
+    });
+    const exec = tools.suggest_object_memory?.execute as (
+      input: unknown,
+      opts: unknown,
+    ) => Promise<unknown>;
+
+    await exec(
+      {
+        title: 'Remember Faba work',
+        items: [
+          {
+            kind: 'create_object',
+            type: 'task',
+            canonicalName: 'Prepare homepage wireframes',
+            createProjectName: 'Faba website redesign',
+          },
+        ],
+      },
+      {},
+    );
+
+    const input = scope.suggestions.createOrMergeSuggestionBundle.mock.calls[0]?.[0] as {
+      items: { proposedPayload: Record<string, unknown> }[];
+    };
+    expect(input.items[0]?.proposedPayload).toMatchObject({
+      createProjectName: 'Faba website redesign',
+      projectName: 'Faba website redesign',
+      taskCategory: 'design',
+      taskCategoryMode: 'automatic',
+    });
+    expect(classifyTaskCategories).toHaveBeenCalledTimes(1);
+    expect(classifyTaskCategories.mock.calls[0]?.[0]?.[0]?.key).toBe('0');
+    expect(classifyTaskCategories.mock.calls[0]?.[0]?.[0]?.packet.primaryProjectName).toBe(
+      'Faba website redesign',
+    );
   });
 
   it('suggest_task can propose assignee and priority', async () => {

@@ -4695,6 +4695,47 @@ describe('suggestion scope', () => {
     ]);
   });
 
+  it('accepts legacy task proposals whose parentObjectId is a non-project relation', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const client = await scope.objects.createObject({
+      type: 'company',
+      canonicalName: 'Faba',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Legacy related task',
+      dedupeKey: 'legacy-related-task',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Send Faba proposal',
+          dedupeKey: 'legacy-related-task:item',
+          proposedPayload: {
+            canonicalName: 'Send Faba proposal',
+            parentObjectId: client.id,
+          },
+        },
+      ],
+    });
+
+    await expect(scope.suggestions.acceptSuggestionItem(bundle.items[0]?.id ?? '')).resolves.toBe(
+      true,
+    );
+    const [task] = await db
+      .select({ id: entities.id })
+      .from(entities)
+      .where(eq(entities.canonicalName, 'Send Faba proposal'));
+    await expect(
+      db
+        .select()
+        .from(entityRelationships)
+        .where(eq(entityRelationships.fromEntityId, task?.id ?? '')),
+    ).resolves.toEqual([expect.objectContaining({ toEntityId: client.id, kind: 'child' })]);
+    await expect(scope.objects.listPrimaryProjectsForTasks([task?.id ?? ''])).resolves.toEqual([]);
+  });
+
   it('honors a revised project name after compensating a failed task acceptance', async () => {
     const scope = withTeam(db as never, TEAM_ID, USER_ID);
     const conflictingTask = await scope.objects.createObject({

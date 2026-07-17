@@ -206,6 +206,21 @@ describe('ObjectDetailClient', () => {
     expect(screen.queryByRole('combobox', { name: 'Task category' })).toBeNull();
   });
 
+  it('does not render project or category controls for an archived task', () => {
+    render(
+      objectDetailElement({
+        detail: { ...detail, archivedAt: new Date('2026-07-15T10:00:00.000Z') },
+        userId: 'user-1',
+        suggestions: [],
+        projects: [{ id: 'project-1', label: 'Faba website redesign' }],
+      }),
+    );
+
+    expect(screen.queryByRole('combobox', { name: 'Task project' })).toBeNull();
+    expect(screen.queryByRole('combobox', { name: 'Task category' })).toBeNull();
+    expect(screen.getByText('Unarchive this task to change its project or category.')).toBeTruthy();
+  });
+
   it('updates the detail badge when pending classification completes', async () => {
     fakes.loadTaskCategoryStatesAction.mockResolvedValue({
       rows: [

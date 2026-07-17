@@ -1,7 +1,10 @@
 import { afterEach, expect, it, vi } from 'vitest';
 
 import { resetEnvForTests } from '#src/env.js';
-import { enrichTaskProposalCategory } from '#src/task-categories/proposal.js';
+import {
+  enrichTaskProposalCategories,
+  enrichTaskProposalCategory,
+} from '#src/task-categories/proposal.js';
 
 const ORIGINAL_ENV = { ...process.env };
 
@@ -26,4 +29,38 @@ it('does not classify task proposals while the master switch is disabled', async
     }),
   ).resolves.toEqual(proposedPayload);
   expect(classify).not.toHaveBeenCalled();
+});
+
+it('enriches multiple task proposals through one batch classifier call', async () => {
+  const classify = vi.fn().mockResolvedValue([
+    { key: 'first', category: 'design', confidence: 0.9, model: 'batch-model' },
+    { key: 'second', category: 'engineering', confidence: 0.95, model: 'batch-model' },
+  ]);
+
+  const result = await enrichTaskProposalCategories({
+    proposals: [
+      {
+        key: 'first',
+        proposedPayload: { canonicalName: 'Design the homepage' },
+        fallbackTitle: 'Design the homepage',
+      },
+      {
+        key: 'second',
+        proposedPayload: { canonicalName: 'Implement the API' },
+        fallbackTitle: 'Implement the API',
+      },
+    ],
+    classify,
+    enabled: true,
+  });
+
+  expect(classify).toHaveBeenCalledTimes(1);
+  expect(result.get('first')).toMatchObject({
+    taskCategory: 'design',
+    taskCategoryMode: 'automatic',
+  });
+  expect(result.get('second')).toMatchObject({
+    taskCategory: 'engineering',
+    taskCategoryMode: 'automatic',
+  });
 });

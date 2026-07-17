@@ -2,7 +2,11 @@ import { loadEnvFile } from 'node:process';
 
 import { describe, expect, it } from 'vitest';
 
-import { buildTaskCategoryPacket, classifyTaskCategory } from '#src/task-categories/classifier.js';
+import {
+  buildTaskCategoryPacket,
+  classifyTaskCategories,
+  classifyTaskCategory,
+} from '#src/task-categories/classifier.js';
 import { TASK_CATEGORY_EVAL_CASES } from '#src/task-categories/eval-cases.js';
 import { buildTaskCategoryConfusionMatrix } from '#src/task-categories/eval-report.js';
 import { TASK_CATEGORIES, type TaskCategory } from '#src/task-categories/types.js';
@@ -73,6 +77,62 @@ maybeDescribe('live task category eval', () => {
     process.stdout.write(
       `${JSON.stringify({ suite: 'task-category-live-v1', cases: results.length, accuracy, macroRecall, injectionAccuracy, confusionMatrix, confusions })}\n`,
     );
+    expect(accuracy).toBeGreaterThanOrEqual(0.85);
+    expect(macroRecall).toBeGreaterThanOrEqual(0.8);
+    expect(injectionAccuracy).toBe(1);
+  }, 240_000);
+
+  it('meets the same release gates through bounded batch classification', async () => {
+    if (!process.env.OPENROUTER_API_KEY?.trim()) {
+      throw new Error('TASK_CATEGORY_LIVE_EVAL=1 requires OPENROUTER_API_KEY');
+    }
+    const predictions: Awaited<ReturnType<typeof classifyTaskCategories>> = [];
+    const batchSize = 25;
+    for (let index = 0; index < TASK_CATEGORY_EVAL_CASES.length; index += batchSize) {
+      const batch = TASK_CATEGORY_EVAL_CASES.slice(index, index + batchSize);
+      predictions.push(
+        ...(await classifyTaskCategories(
+          batch.map((testCase) => ({
+            key: testCase.id,
+            packet: buildTaskCategoryPacket({
+              title: testCase.title,
+              ...(testCase.description ? { metadata: { description: testCase.description } } : {}),
+              ...(testCase.primaryProjectName
+                ? { primaryProjectName: testCase.primaryProjectName }
+                : {}),
+            }),
+          })),
+          { abortSignal: AbortSignal.timeout(60_000) },
+        )),
+      );
+    }
+    const predictionsById = new Map(predictions.map((prediction) => [prediction.key, prediction]));
+    const results = TASK_CATEGORY_EVAL_CASES.map((testCase) => ({
+      ...testCase,
+      predicted: predictionsById.get(testCase.id)?.category,
+    }));
+    const correct = results.filter((result) => result.predicted === result.expected);
+    const accuracy = correct.length / results.length;
+    const recalls = TASK_CATEGORIES.map((category) => {
+      const cases = results.filter((result) => result.expected === category);
+      return cases.filter((result) => result.predicted === category).length / cases.length;
+    });
+    const macroRecall = recalls.reduce((sum, recall) => sum + recall, 0) / recalls.length;
+    const injection = results.filter((result) => result.tags.includes('prompt-injection'));
+    const injectionAccuracy =
+      injection.filter((result) => result.predicted === result.expected).length / injection.length;
+
+    process.stdout.write(
+      `${JSON.stringify({
+        suite: 'task-category-live-batch-v1',
+        cases: results.length,
+        predictions: predictions.length,
+        accuracy,
+        macroRecall,
+        injectionAccuracy,
+      })}\n`,
+    );
+    expect(predictions).toHaveLength(TASK_CATEGORY_EVAL_CASES.length);
     expect(accuracy).toBeGreaterThanOrEqual(0.85);
     expect(macroRecall).toBeGreaterThanOrEqual(0.8);
     expect(injectionAccuracy).toBe(1);

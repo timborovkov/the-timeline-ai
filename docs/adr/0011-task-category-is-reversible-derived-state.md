@@ -38,3 +38,19 @@ edge. A human category edit becomes `manual`; a project edit invalidates an
 automatic precomputed category so stale context cannot be silently accepted.
 Archived tasks defer automatic work, so unarchiving recomputes the current
 task/project packet and requeues classification only when that input changed.
+
+Every task-proposal producer uses this same category/project contract.
+`suggest_task` and task-shaped `suggest_object_memory` proposals resolve an
+existing active project or a clearly named project-to-create before requesting
+the category preview. Background extraction classifies up to its maximum 25
+proposed tasks in one bounded structured LLM call rather than serializing one
+provider call per task. The batch must return one prediction per stable proposal
+key; missing or invalid predictions leave that proposal uncategorized so ordinary
+post-acceptance classification can recover safely.
+
+Pending approvals created before the primary-project contract may contain a
+`parentObjectId` for a non-project object. Acceptance keeps those durable rows
+actionable by recreating the legacy generic `task -> object` child relationship.
+It does not reinterpret that object as a primary project. New proposal tools only
+offer active projects or a project-to-create, so the compatibility path cannot
+introduce new ambiguous project ownership.

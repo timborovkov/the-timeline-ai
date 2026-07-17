@@ -3235,7 +3235,7 @@ describe('processSuggestionJobForTests', () => {
     );
   });
 
-  it('bounds proposal-time category classification concurrency', async () => {
+  it('classifies the maximum proposal shape in one bounded batch call', async () => {
     const rawEventId = '10000000-0000-0000-0000-0000000000c2';
     await seedRawEvent(db as never, {
       id: rawEventId,
@@ -3245,43 +3245,43 @@ describe('processSuggestionJobForTests', () => {
         extraction_model_version: 'test-extract@1',
       },
     });
+    const taskNames = Array.from({ length: 25 }, (_unused, index) => `Task ${String(index + 1)}`);
     const chat = vi.fn().mockResolvedValue({
       model: MODEL_ID,
       object: {
-        bundles: [
-          {
-            title: 'Launch work',
-            confidence: 'high',
-            items: ['Prepare wireframes', 'Write launch copy', 'Implement the API'].map(
-              (canonicalName) => ({
-                operation: 'create',
-                targetKind: 'task',
-                title: canonicalName,
-                proposedPayload: { canonicalName },
-              }),
-            ),
-          },
-        ],
+        bundles: Array.from({ length: 5 }, (_unused, bundleIndex) => ({
+          title: `Launch work ${String(bundleIndex + 1)}`,
+          confidence: 'high',
+          items: taskNames.slice(bundleIndex * 5, bundleIndex * 5 + 5).map((canonicalName) => ({
+            operation: 'create',
+            targetKind: 'task',
+            title: canonicalName,
+            proposedPayload: { canonicalName },
+          })),
+        })),
       },
     });
-    let active = 0;
-    let maxActive = 0;
-    const classifyTaskCategory = vi.fn().mockImplementation(async () => {
-      active += 1;
-      maxActive = Math.max(maxActive, active);
-      await Promise.resolve();
-      active -= 1;
-      return { category: 'design', confidence: 0.9, model: 'task-category-model' };
-    });
+    const classifyTaskCategories = vi
+      .fn()
+      .mockImplementation((packets: readonly { key: string }[]) =>
+        Promise.resolve(
+          packets.map(({ key }) => ({
+            key,
+            category: 'design' as const,
+            confidence: 0.9,
+            model: 'task-category-model',
+          })),
+        ),
+      );
 
     await processSuggestionJobForTests(
       { db: db as never },
       { rawEventId, teamId: TEAM_ID },
-      { getEnv: env, chatStructured: chat, classifyTaskCategory, modelId: MODEL_ID },
+      { getEnv: env, chatStructured: chat, classifyTaskCategories, modelId: MODEL_ID },
     );
 
-    expect(classifyTaskCategory).toHaveBeenCalledTimes(3);
-    expect(maxActive).toBe(1);
+    expect(classifyTaskCategories).toHaveBeenCalledTimes(1);
+    expect(classifyTaskCategories.mock.calls[0]?.[0]).toHaveLength(25);
   });
 
   it('rewrites duplicate creates using objects outside the prompt context window', async () => {

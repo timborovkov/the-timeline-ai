@@ -68,6 +68,7 @@ interface SuggestionWorkerIO {
   planReconciliation?: typeof planReconciliation;
   modelId?: string;
   enqueueSuggestionJob?: typeof queue.enqueueSuggestionJob;
+  classifyTaskCategories?: typeof taskCategories.classifyTaskCategories;
   classifyTaskCategory?: typeof taskCategories.classifyTaskCategory;
   taskCategoryClassificationEnabled?: boolean;
 }
@@ -330,36 +331,63 @@ async function enrichTaskSuggestionItems(args: {
   projects: ProjectContextRow[];
   io: SuggestionWorkerIO;
 }): Promise<SuggestionBundleOutput[]> {
+  const classifyOne = args.io.classifyTaskCategory;
   const classify =
-    args.io.classifyTaskCategory ??
-    (args.io.chatStructured ? null : taskCategories.classifyTaskCategory);
-  const bundles: SuggestionBundleOutput[] = [];
-  for (const bundle of args.bundles) {
-    const items: SuggestionItemOutput[] = [];
-    for (const item of bundle.items) {
-      if (item.operation !== 'create' || itemCreateType(item) !== 'task') {
-        items.push(item);
-        continue;
-      }
-      const proposedPayload = normalizeTaskProjectProposal(item.proposedPayload, args.projects);
-      items.push({
-        ...item,
-        targetKind: 'task',
-        proposedPayload: classify
-          ? await taskCategories.enrichTaskProposalCategory({
-              proposedPayload,
+    args.io.classifyTaskCategories ??
+    (classifyOne
+      ? async (items: readonly taskCategories.TaskCategoryBatchItem[]) =>
+          Promise.all(
+            items.map(async ({ key, packet }) => ({
+              key,
+              ...(await classifyOne(packet)),
+            })),
+          )
+      : args.io.chatStructured
+        ? null
+        : taskCategories.classifyTaskCategories);
+  const bundles = args.bundles.map((bundle) => ({
+    ...bundle,
+    items: bundle.items.map((item) =>
+      item.operation === 'create' && itemCreateType(item) === 'task'
+        ? {
+            ...item,
+            targetKind: 'task' as const,
+            proposedPayload: normalizeTaskProjectProposal(item.proposedPayload, args.projects),
+          }
+        : item,
+    ),
+  }));
+  if (!classify) return bundles;
+
+  const proposals = bundles.flatMap((bundle, bundleIndex) =>
+    bundle.items.flatMap((item, itemIndex) =>
+      item.operation === 'create' && itemCreateType(item) === 'task'
+        ? [
+            {
+              key: `${String(bundleIndex)}:${String(itemIndex)}`,
+              proposedPayload: item.proposedPayload,
               fallbackTitle: item.title,
-              classify,
-              ...(args.io.taskCategoryClassificationEnabled !== undefined
-                ? { enabled: args.io.taskCategoryClassificationEnabled }
-                : {}),
-            })
-          : proposedPayload,
-      });
-    }
-    bundles.push({ ...bundle, items });
-  }
-  return bundles;
+            },
+          ]
+        : [],
+    ),
+  );
+  if (proposals.length === 0) return bundles;
+  const enriched = await taskCategories.enrichTaskProposalCategories({
+    proposals,
+    classify,
+    ...(args.io.taskCategoryClassificationEnabled !== undefined
+      ? { enabled: args.io.taskCategoryClassificationEnabled }
+      : {}),
+  });
+  return bundles.map((bundle, bundleIndex) => ({
+    ...bundle,
+    items: bundle.items.map((item, itemIndex) => ({
+      ...item,
+      proposedPayload:
+        enriched.get(`${String(bundleIndex)}:${String(itemIndex)}`) ?? item.proposedPayload,
+    })),
+  }));
 }
 
 type LifecycleStatusType = 'task' | 'follow_up' | 'project';

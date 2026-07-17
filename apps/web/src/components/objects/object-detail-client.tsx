@@ -1430,7 +1430,11 @@ function ObjectEditableFields({
   const options = statusOptions(detail.type);
   return (
     <section className={cn('grid', className)}>
-      {detail.type === 'task' ? (
+      {detail.type === 'task' && detail.archivedAt ? (
+        <p className="text-sm text-muted-foreground sm:col-span-2">
+          Unarchive this task to change its project or category.
+        </p>
+      ) : detail.type === 'task' ? (
         <>
           <Field label="Project">
             <TaskProjectSelect
