@@ -17,6 +17,7 @@ import type { ReactNode } from 'react';
 import { RemoveBoardItemButton } from '@/components/boards/remove-board-item-button';
 import { ContextualAskLink } from '@/components/chat/contextual-ask-link';
 import { ObjectRelatedContext } from '@/components/objects/object-related-context';
+import { TechnicalDetails } from '@/components/technical-details';
 import {
   Dialog,
   DialogContent,
@@ -577,6 +578,21 @@ function BoardActivity({
                 <span>{formatDisplayDateTime(change.changedAt, { timezone })}</span>
               </div>
               {change.note ? <p className="mt-2 text-fg">{displayText(change.note)}</p> : null}
+              {change.field === 'customFields' ? (
+                <TechnicalDetails
+                  className="mt-3"
+                  items={[
+                    {
+                      label: 'Previous custom fields',
+                      ...technicalJsonValue(change.previousValue),
+                    },
+                    {
+                      label: 'New custom fields',
+                      ...technicalJsonValue(change.newValue),
+                    },
+                  ]}
+                />
+              ) : null}
             </li>
           ))}
         </ol>
@@ -770,6 +786,7 @@ function formatChangeValue(
   timezone: string,
 ): string {
   if (value === null || value === undefined || value === '') return 'empty';
+  if (field === 'customFields') return customFieldsSummary(value);
   if (field === 'laneId' && typeof value === 'string') {
     return displayText(lanes.find((lane) => lane.id === value)?.name ?? 'Unknown lane');
   }
@@ -784,6 +801,19 @@ function formatChangeValue(
   if (typeof value === 'string') return displayText(value);
   if (typeof value === 'number' || typeof value === 'boolean') return String(value);
   return displayText(JSON.stringify(value));
+}
+
+function customFieldsSummary(value: unknown): string {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return 'No custom fields';
+  const count = Object.keys(value).length;
+  return count === 0
+    ? 'No custom fields'
+    : `${String(count)} custom field${count === 1 ? '' : 's'}`;
+}
+
+function technicalJsonValue(value: unknown): { value: string; copyValue: string } {
+  const serialized = JSON.stringify(value ?? {}, null, 2);
+  return { value: serialized.slice(0, 2_000), copyValue: serialized };
 }
 
 function formatProvenanceChangeValue(

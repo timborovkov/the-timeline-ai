@@ -138,6 +138,34 @@ describe('ObjectDetailClient', () => {
     expect(html).toContain('Archive object');
   });
 
+  it('formats string-backed due-date changes in the workspace timezone', () => {
+    render(
+      objectDetailElement({
+        detail: {
+          ...detail,
+          recentChanges: [
+            {
+              id: 'change-due-at',
+              field: 'dueAt',
+              previousValue: null,
+              newValue: '2026-07-01T00:00:00.000Z',
+              actorKind: 'user',
+              actorUserId: 'user-1',
+              status: 'applied',
+              note: null,
+              changedAt: new Date('2026-06-30T12:00:00.000Z'),
+            },
+          ],
+        },
+        userId: 'user-1',
+        suggestions: [],
+      }),
+    );
+
+    expect(document.body.textContent).toContain('Jul 1, 2026');
+    expect(document.body.textContent).not.toContain('2026-07-01T00:00:00.000Z');
+  });
+
   it('uses source-tracked display titles for the object detail heading', () => {
     render(
       objectDetailElement({

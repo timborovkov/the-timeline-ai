@@ -314,6 +314,48 @@ describe('BoardCardDetail', () => {
     expect(html).toContain('Added because the Telegram message asked us to track this');
   });
 
+  it('summarizes custom-field activity and keeps exact JSON in technical details', () => {
+    const internalId = '018f22e2-7a9b-7cc3-98c4-3a2b1c0d9e8f';
+    const item = boardItem({
+      id: 'item-1',
+      entityId: 'object-1',
+      canonicalName: 'MyAuditor',
+    });
+    const history: boards.BoardItemChangeRow[] = [
+      {
+        id: 'change-custom-fields',
+        boardId: 'board-1',
+        boardItemId: item.id,
+        entityId: item.entityId,
+        field: 'customFields',
+        previousValue: {},
+        newValue: { providerResourceId: internalId },
+        note: null,
+        sourceEventId: null,
+        suggestionItemId: null,
+        evidence: [],
+        actorUserId: null,
+        actorKind: 'agent',
+        status: 'applied',
+        changedAt: new Date('2026-01-02T00:00:00.000Z'),
+      },
+    ];
+
+    render(
+      <BoardCardDetail
+        boardId="board-1"
+        view="kanban"
+        item={item}
+        history={history}
+        lanes={lanes}
+      />,
+    );
+
+    expect(screen.getByText(/No custom fields.*1 custom field/)).toBeTruthy();
+    const rawValue = screen.getByText((content) => content.includes(internalId));
+    expect(rawValue.closest('details')?.open).toBe(false);
+  });
+
   it('does not present suggested changes as established board provenance', () => {
     const sourceEventId = '22222222-2222-4222-8222-222222222222';
     const item = boardItem({

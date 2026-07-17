@@ -4,8 +4,22 @@ import { closeDb, getDbClient } from '@timeline/db';
 
 import { E2E_PREFIX, e2eOtherTeam, e2eTeam, e2eUsers } from './test-data.js';
 
-export async function cleanupE2eData(): Promise<void> {
-  const sql = getDbClient();
+type E2eTransaction = Parameters<
+  NonNullable<Parameters<ReturnType<typeof getDbClient>['begin']>[1]>
+>[0];
+
+const E2E_DATA_LOCK = 'timeline-e2e-data';
+
+export async function withE2eDataTransaction(
+  operation: (sql: E2eTransaction) => Promise<void>,
+): Promise<void> {
+  await getDbClient().begin(async (sql) => {
+    await sql`SELECT pg_advisory_xact_lock(hashtextextended(${E2E_DATA_LOCK}, 0))`;
+    await operation(sql);
+  });
+}
+
+export async function cleanupE2eDataWithinTransaction(sql: E2eTransaction): Promise<void> {
   await sql`ALTER TABLE audit_log DISABLE TRIGGER audit_log_append_only`;
   try {
     await sql`
@@ -44,6 +58,10 @@ export async function cleanupE2eData(): Promise<void> {
     )
        OR email LIKE ${`${E2E_PREFIX}-%@example.test`}
   `;
+}
+
+export async function cleanupE2eData(): Promise<void> {
+  await withE2eDataTransaction(cleanupE2eDataWithinTransaction);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

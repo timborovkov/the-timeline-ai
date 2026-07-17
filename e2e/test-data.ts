@@ -9,9 +9,12 @@ function safeRunId(value: string | undefined): string {
     .slice(0, 32);
 }
 
+export const E2E_RUN_ID = safeRunId(process.env.E2E_RUN_ID);
+const E2E_NAMESPACE = safeRunId(process.env.E2E_NAMESPACE ?? E2E_RUN_ID);
+
 function uuidFrom(label: string): string {
   const chars = createHash('sha256')
-    .update(`${E2E_RUN_ID}:${label}`)
+    .update(`${E2E_NAMESPACE}:${label}`)
     .digest('hex')
     .slice(0, 32)
     .split('');
@@ -21,8 +24,7 @@ function uuidFrom(label: string): string {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
-export const E2E_RUN_ID = safeRunId(process.env.E2E_RUN_ID);
-export const E2E_PREFIX = `timeline-e2e-${E2E_RUN_ID}`;
+export const E2E_PREFIX = `timeline-e2e-${E2E_NAMESPACE}`;
 export const E2E_PASSWORD = process.env.E2E_PASSWORD ?? 'TimelineE2E!12345';
 
 export const e2eTeam = {

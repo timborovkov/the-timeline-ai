@@ -469,6 +469,15 @@ function JobRecoveryItems({
                     ...(item.error
                       ? [{ label: 'Raw error', value: item.error, copyValue: item.error }]
                       : []),
+                    ...(retry?.status === 'failed' && retry.error
+                      ? [
+                          {
+                            label: 'Raw retry error',
+                            value: retry.error,
+                            copyValue: retry.error,
+                          },
+                        ]
+                      : []),
                   ]}
                 />
               </div>
@@ -627,7 +636,7 @@ function RetryStatus({ snapshot }: { snapshot: RetrySnapshot }) {
     return (
       <p className="flex items-center gap-1 text-xs text-destructive">
         <CircleAlert aria-hidden="true" className="size-3.5" />
-        Retry failed{snapshot.error ? `: ${snapshot.error}` : '.'}
+        Retry failed. Review technical details, then retry the job or dismiss it.
       </p>
     );
   }

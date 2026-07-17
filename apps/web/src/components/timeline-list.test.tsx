@@ -325,6 +325,32 @@ describe('TimelineList document attachments', () => {
 });
 
 describe('TimelineList moment presentation', () => {
+  it('keeps short actor names that only match part of the moment title', () => {
+    render(
+      createElement(TimelineList, {
+        events: [
+          timelineEvent({
+            id: '18181818-1818-4181-8181-181818181818',
+            occurredAt: '2026-06-03T13:04:00.000Z',
+            source: 'telegram',
+            contentText: 'Timeline import completed',
+            sourceMetadata: {
+              tg_chat_id: 'chat-1',
+              tg_chat_title: 'Operations',
+              tg_sender_name: 'Tim',
+              tg_user_id: 1,
+            },
+          }),
+        ],
+        authorMap: new Map(),
+        currentUserId: 'user-1',
+        isAdmin: false,
+      }),
+    );
+
+    expect(screen.getByText('Tim', { selector: 'span' })).toBeTruthy();
+  });
+
   it('opens the inspector automatically for focused moment links', async () => {
     render(
       createElement(TimelineList, {

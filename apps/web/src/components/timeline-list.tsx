@@ -184,7 +184,7 @@ function isRepeatedContext(value: string, ...primary: (string | null | undefined
   if (!normalized) return true;
   return primary.some((item) => {
     const candidate = normalizedText(item);
-    return candidate === normalized || candidate.includes(normalized);
+    return ` ${candidate} `.includes(` ${normalized} `);
   });
 }
 

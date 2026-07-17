@@ -2297,7 +2297,7 @@ function toLocalInput(d: Date): string {
 
 function formatValue(v: unknown, timezone: string): string {
   if (v === null || v === undefined) return '∅';
-  if (typeof v === 'string') return displayText(v);
+  if (typeof v === 'string') return displayText(v, { timezone });
   if (Array.isArray(v)) return v.map((item) => formatValue(item, timezone)).join(', ');
   if (v instanceof Date) return formatDisplayDateTime(v, { timezone });
   if (typeof v === 'object') return summarizeObjectValue(v as Record<string, unknown>);

@@ -207,18 +207,15 @@ function OutputList({ rows }: { rows: ReconciliationClusterDetailOutput[] }) {
                   { label: 'Output ID', value: row.id, copyValue: row.id },
                   {
                     label: 'Source refs',
-                    value: jsonPreview(row.sourceRefs),
-                    copyValue: jsonPreview(row.sourceRefs),
+                    ...jsonDetail(row.sourceRefs),
                   },
                   {
                     label: 'Payload refs',
-                    value: jsonPreview(row.sourcePayloadRefs),
-                    copyValue: jsonPreview(row.sourcePayloadRefs),
+                    ...jsonDetail(row.sourcePayloadRefs),
                   },
                   {
                     label: 'Payload',
-                    value: jsonPreview(row.payload),
-                    copyValue: jsonPreview(row.payload),
+                    ...jsonDetail(row.payload),
                   },
                 ]}
               />
@@ -234,6 +231,7 @@ function SectionTitle({ label }: { label: string }) {
   return <SectionHeading>{label}</SectionHeading>;
 }
 
-function jsonPreview(value: unknown): string {
-  return JSON.stringify(value ?? {}, null, 2).slice(0, 2_000);
+function jsonDetail(value: unknown): { value: string; copyValue: string } {
+  const serialized = JSON.stringify(value ?? {}, null, 2);
+  return { value: serialized.slice(0, 2_000), copyValue: serialized };
 }

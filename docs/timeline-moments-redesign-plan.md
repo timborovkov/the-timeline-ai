@@ -114,7 +114,7 @@ reads like normalized event storage:
 - Future sources will make the flood worse unless the product has a source
   adapter contract for grouping and display.
 
-The redesign should keep the Operational Archive identity from `design.md`, but
+The redesign should keep the Quiet Archive identity from `design.md`, but
 move technical evidence into the evidence layer instead of making it the first
 reading path.
 

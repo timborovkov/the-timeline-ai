@@ -645,14 +645,9 @@ const CDG_STYLES = `
       position: absolute;
       top: 0; bottom: 0;
       left: 0;
-      width: 72px;
+      width: 2px;
       pointer-events: none;
-      background: linear-gradient(
-        to right,
-        transparent,
-        color-mix(in oklch, var(--signal) 55%, transparent),
-        transparent
-      );
+      background: color-mix(in oklch, var(--signal) 55%, transparent);
       animation: cdg-sweep 10s infinite linear;
       will-change: transform;
       z-index: 0;
@@ -671,10 +666,9 @@ const CDG_STYLES = `
     }
   }
 
-  /* translateX(N * 100cqw) requires container-query units; using vw is fine
-     because the diagram never exceeds viewport width. Compositor-only. */
+  /* The diagram never exceeds viewport width, so vw keeps this compositor-only. */
   @keyframes cdg-sweep {
-    0%   { transform: translateX(-72px); opacity: 0; }
+    0%   { transform: translateX(-2px); opacity: 0; }
     8%   { opacity: 1; }
     35%  { opacity: 1; }
     45%  { transform: translateX(100vw); opacity: 0; }

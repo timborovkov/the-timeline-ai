@@ -1,6 +1,9 @@
 import { expect, type Page, test } from '@playwright/test';
 
 import { newSignedInPage } from './helpers.js';
+import { E2E_PREFIX, E2E_RUN_ID } from './test-data.js';
+
+const E2E_NAMESPACE = E2E_PREFIX.slice('timeline-e2e-'.length);
 
 async function stabilize(page: Page) {
   await page.waitForLoadState('networkidle');
@@ -11,10 +14,19 @@ async function stabilize(page: Page) {
     content:
       '*,*::before,*::after{animation-duration:0s!important;transition-duration:0s!important}',
   });
-  await page.evaluate(async () => {
-    await document.fonts.ready;
-    document.querySelector('nextjs-portal')?.remove();
-  });
+  await page.evaluate(
+    async ({ namespace, runId }) => {
+      await document.fonts.ready;
+      document.querySelector('nextjs-portal')?.remove();
+      const text = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+      for (let node = text.nextNode(); node; node = text.nextNode()) {
+        if (node.textContent?.includes(namespace)) {
+          node.textContent = node.textContent.replaceAll(namespace, runId);
+        }
+      }
+    },
+    { namespace: E2E_NAMESPACE, runId: E2E_RUN_ID },
+  );
 }
 
 async function setTheme(page: Page, theme: 'light' | 'dark') {

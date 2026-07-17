@@ -147,6 +147,27 @@ function lookupPort(container: string, port: number): string | null {
   }
 }
 
+{
+  const first = buildE2eEnv({}, { publishedPort: lookupPort, workspacePath: '/workspace/one' });
+  const repeat = buildE2eEnv({}, { publishedPort: lookupPort, workspacePath: '/workspace/one' });
+  const second = buildE2eEnv({}, { publishedPort: lookupPort, workspacePath: '/workspace/two' });
+
+  assert.equal(first.E2E_RUN_ID, undefined);
+  assert.match(first.E2E_NAMESPACE ?? '', /^worktree-[a-f0-9]{12}$/);
+  assert.equal(first.E2E_NAMESPACE, repeat.E2E_NAMESPACE);
+  assert.notEqual(first.E2E_NAMESPACE, second.E2E_NAMESPACE);
+}
+
+{
+  const env = buildE2eEnv(
+    { E2E_RUN_ID: 'explicit-run' },
+    { publishedPort: lookupPort, workspacePath: '/workspace/ignored' },
+  );
+
+  assert.equal(env.E2E_RUN_ID, 'explicit-run');
+  assert.equal(env.E2E_NAMESPACE, 'explicit-run');
+}
+
 console.log('e2e-env tests passed');
 
 function pick<T extends Record<string, unknown>, K extends keyof T>(

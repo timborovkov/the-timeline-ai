@@ -1,4 +1,5 @@
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 
 type Env = NodeJS.ProcessEnv;
 type PublishedPortLookup = (container: string, containerPort: number) => string | null;
@@ -8,6 +9,7 @@ const DEFAULT_DOCKER_INSPECT_TIMEOUT_MS = 5_000;
 interface BuildE2eEnvOptions {
   publishedPort?: PublishedPortLookup;
   dockerInspectTimeoutMs?: number;
+  workspacePath?: string;
 }
 
 function publishedPort(
@@ -45,6 +47,11 @@ function withDevelopmentCondition(input: string | undefined): string {
   return parts.join(' ');
 }
 
+function defaultRunId(workspacePath: string): string {
+  const workspaceHash = createHash('sha256').update(workspacePath).digest('hex').slice(0, 12);
+  return `worktree-${workspaceHash}`;
+}
+
 export function buildE2eEnv(input: Env = process.env, options: BuildE2eEnvOptions = {}): Env {
   const env = { ...input };
   delete env.NO_COLOR;
@@ -72,6 +79,7 @@ export function buildE2eEnv(input: Env = process.env, options: BuildE2eEnvOption
   env.S3_FORCE_PATH_STYLE ??= 'true';
   env.S3_BUCKET_DOCUMENTS ??= 'timeline-documents';
   env.S3_BUCKET_EXPORTS ??= 'timeline-exports';
+  env.E2E_NAMESPACE ??= env.E2E_RUN_ID ?? defaultRunId(options.workspacePath ?? process.cwd());
   env.E2E_DETERMINISTIC_CHAT ??= '1';
   env.E2E_DETERMINISTIC_EMBEDDINGS ??= 'true';
   env.E2E_DETERMINISTIC_SLACK_API ??= '1';

@@ -23,5 +23,6 @@ describe('LandingPage', () => {
     expect(html).toContain('href="/help/support"');
     expect(html.match(/<h1\b/g)).toHaveLength(1);
     expect(html).toMatch(/<h2[^>]*>How it works · Capture → evidence → operational memory<\/h2>/);
+    expect(html).not.toContain('linear-gradient');
   });
 });
