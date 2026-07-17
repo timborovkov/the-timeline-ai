@@ -15,7 +15,6 @@ import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { calendarEventListWindow } from '@/lib/calendar-event-list-range';
 import { db } from '@/lib/db';
-import { isActionableSuggestionStatus } from '@/lib/suggestion-status';
 import { serializeSuggestionBundle } from '@/lib/suggestions';
 
 export const metadata: Metadata = {
@@ -193,7 +192,7 @@ export default async function CalendarPage({ searchParams }: PageProps) {
   const serializedEventList = eventList.events.map(serializeCalendarEvent);
   const calendarSuggestions = pendingSuggestions.flatMap((bundle) => {
     const items = bundle.items.filter(
-      (item) => item.targetKind === 'calendar_event' && isActionableSuggestionStatus(item.status),
+      (item) => item.targetKind === 'calendar_event' && item.status === 'pending',
     );
     return items.length > 0 ? [serializeSuggestionBundle({ ...bundle, items })] : [];
   });

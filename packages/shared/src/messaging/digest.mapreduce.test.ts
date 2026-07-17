@@ -56,7 +56,9 @@ function makeScope(events: unknown[]) {
       listAllEventsInWindow: vi.fn().mockResolvedValue(events),
       listMomentPresentations: vi.fn().mockResolvedValue({}),
     },
-    suggestions: { countPendingSuggestions: vi.fn().mockResolvedValue(0) },
+    suggestions: {
+      getApprovalItemCounts: vi.fn().mockResolvedValue({ failed: 0, pending: 0 }),
+    },
     objects: { listObjects: vi.fn().mockResolvedValue([]) },
     calendar: { listCalendarEvents: vi.fn().mockResolvedValue([]) },
   };

@@ -13,7 +13,9 @@ import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { displayText, formatDisplayDate } from '@/lib/display-dates';
+import { getWorkAttentionSummary } from '@/lib/hub-status';
 import {
+  OPEN_WORK_STATUS_EXCLUDED,
   approvalQueueItem,
   boardQueueItem,
   dedupeWorkQueueItems,
@@ -35,7 +37,6 @@ const OBJECT_QUEUE_SOURCE_LIMIT = QUEUE_LIMIT * 3;
 const OBJECT_QUEUE_PRIORITY_LIMIT = QUEUE_LIMIT;
 const RECENT_CHANGE_LIMIT = 5;
 const WORK_OBJECT_TYPES: objects.ObjectType[] = ['task', 'follow_up', 'project', 'deal'];
-const OPEN_WORK_STATUS_EXCLUDED = ['done', 'cancelled', 'canceled', 'shipped'] as const;
 
 const NAV_LINKS = [
   {
@@ -85,9 +86,9 @@ export default async function WorkPage() {
   const scope = withTeam(db, active.teamId, session.user.id);
   const now = new Date();
   const dueSoon = new Date(now.getTime() + DUE_SOON_DAYS * 24 * 60 * 60 * 1000);
-  const [pendingApprovals, boardItems, queueObjects, pinnedBoards, boards, recentChanges] =
+  const [attention, boardItems, queueObjects, pinnedBoards, boards, recentChanges] =
     await Promise.all([
-      scope.suggestions.countPendingSuggestions(),
+      getWorkAttentionSummary(scope, now),
       scope.boards.listWorkQueueItems({ dueBefore: dueSoon, limit: 100 }),
       listWorkQueueObjects(scope.objects, session.user.id, dueSoon),
       scope.boards.listPinnedBoards(),
@@ -95,7 +96,7 @@ export default async function WorkPage() {
       scope.timeline.listEventsPage({ limit: RECENT_CHANGE_LIMIT }),
     ]);
 
-  const approvalsItem = approvalQueueItem(pendingApprovals, now);
+  const approvalsItem = approvalQueueItem(attention.pendingApprovals, now);
   const queue = dedupeWorkQueueItems(
     sortWorkQueueItems([
       ...(approvalsItem ? [approvalsItem] : []),
@@ -106,15 +107,7 @@ export default async function WorkPage() {
       }),
     ]),
   ).slice(0, QUEUE_LIMIT);
-  const attentionCount = queue.filter((item) =>
-    item.reasons.some(
-      (reason) =>
-        reason === 'pending_approval' ||
-        reason === 'overdue' ||
-        reason === 'team_due' ||
-        reason === 'blocked',
-    ),
-  ).length;
+  const attentionCount = attention.attention;
   const boardModules = uniqueBoards([...pinnedBoards, ...boards]).slice(0, 6);
 
   return (

@@ -51,6 +51,22 @@ describe('ApprovalsClient', () => {
     expect(html).toContain('Back to home');
   });
 
+  it('renders filter-specific empty approval copy', () => {
+    const html = renderToStaticMarkup(
+      createElement(ApprovalsClient, {
+        suggestions: [],
+        emptyState: {
+          title: 'No failed approvals',
+          body: 'Approvals that need a retry or rejection will appear here.',
+        },
+      }),
+    );
+
+    expect(html).toContain('No failed approvals');
+    expect(html).toContain('Approvals that need a retry or rejection will appear here.');
+    expect(html).not.toContain('No pending approvals');
+  });
+
   it('renders actionable pending suggestions with evidence and accept controls', () => {
     const html = renderToStaticMarkup(
       createElement(ApprovalsClient, {
@@ -1544,7 +1560,7 @@ describe('ApprovalsClient', () => {
     });
   });
 
-  it('restores only failed rows after a partial visible bulk accept failure', async () => {
+  it('restores failed bulk rows before refreshing their final server status', async () => {
     const user = userEvent.setup();
     fakes.acceptVisibleSuggestionsAction.mockResolvedValue({
       error: '1 item(s) failed to apply',
@@ -1599,17 +1615,11 @@ describe('ApprovalsClient', () => {
       expect(screen.queryByText('Send renewal packet')).toBeNull();
       expect(screen.getByText('Book renewal call')).toBeTruthy();
       expect(screen.getByText('1 item(s) failed to apply')).toBeTruthy();
-      expect(screen.getByText(/Calendar proposal is missing a start or end time/)).toBeTruthy();
-      expect(
-        screen.getByText(
-          'Calendar proposal is missing a start or end time. Reject it or revise the source details before accepting.',
-        ),
-      ).toBeTruthy();
     });
-    expect(fakes.refresh).not.toHaveBeenCalled();
+    expect(fakes.refresh).toHaveBeenCalledTimes(1);
   });
 
-  it('restores only failed rows after a stale bundle-level accept-all failure', async () => {
+  it('restores failed bundle rows before refreshing their final server status', async () => {
     const user = userEvent.setup();
     fakes.acceptAllSuggestionAction.mockResolvedValue({
       error: '1 item(s) failed to apply',
@@ -1668,9 +1678,55 @@ describe('ApprovalsClient', () => {
       expect(screen.queryByText('Send renewal packet')).toBeNull();
       expect(screen.getByText('Book renewal call')).toBeTruthy();
       expect(screen.getByText('1 item(s) failed to apply')).toBeTruthy();
-      expect(screen.getByText(/Calendar proposal is missing a start or end time/)).toBeTruthy();
     });
-    expect(fakes.refresh).not.toHaveBeenCalled();
+    expect(fakes.refresh).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps a failed row visible when its retry fails on the Failed surface', async () => {
+    const user = userEvent.setup();
+    fakes.acceptSuggestionItemAction.mockResolvedValue({
+      error: 'Calendar write failed again',
+      failedItemIds: ['item-calendar'],
+    });
+
+    render(
+      createElement(ApprovalsClient, {
+        suggestions: [
+          {
+            id: 'bundle-actions',
+            source: 'background',
+            status: 'pending',
+            title: 'Customer actions',
+            summary: null,
+            reason: null,
+            confidence: 'high',
+            createdAt: '2026-06-01T10:00:00.000Z',
+            evidence: [],
+            items: [
+              {
+                id: 'item-calendar',
+                status: 'failed',
+                operation: 'create',
+                targetKind: 'calendar_event',
+                targetId: null,
+                title: 'Book renewal call',
+                description: null,
+                proposedPayload: { title: 'Book renewal call' },
+                failureReason: 'Calendar write failed',
+              },
+            ],
+          },
+        ],
+      }),
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Accept' }));
+
+    await waitFor(() => {
+      expect(screen.getByText('Book renewal call')).toBeTruthy();
+      expect(screen.getByText('Calendar write failed again')).toBeTruthy();
+    });
+    expect(fakes.refresh).toHaveBeenCalledTimes(1);
   });
 
   it('labels mixed bundle accept as partial when a merge row must be reviewed separately', () => {

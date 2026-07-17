@@ -552,7 +552,7 @@ export async function generateDailyDigest(
         .where(eq(users.id, input.userId))
         .limit(1),
       scope.timeline.listAllEventsInWindow({ from: input.windowStart, to: input.windowEnd }),
-      scope.suggestions.countPendingSuggestions(),
+      scope.suggestions.getApprovalItemCounts().then((counts) => counts.pending),
       scope.objects.listObjects({
         type: ['task', 'follow_up'],
         archived: false,

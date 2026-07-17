@@ -201,7 +201,7 @@ describe('ObjectDetailPage', () => {
     ]);
   });
 
-  it('does not keep rejected sibling create items for pending relationship bundles', async () => {
+  it('does not keep failed sibling create items for pending relationship bundles', async () => {
     fakes.listPendingSuggestions.mockResolvedValue([
       {
         id: 'bundle-1',
@@ -216,7 +216,7 @@ describe('ObjectDetailPage', () => {
         items: [
           {
             id: 'item-person',
-            status: 'rejected',
+            status: 'failed',
             operation: 'create',
             targetKind: 'object',
             targetId: null,
@@ -228,7 +228,7 @@ describe('ObjectDetailPage', () => {
               canonicalName: 'Jonne Granqvist',
               localRef: 'jonne-granqvist',
             },
-            failureReason: null,
+            failureReason: 'Needs retry',
           },
           {
             id: 'item-relationship',

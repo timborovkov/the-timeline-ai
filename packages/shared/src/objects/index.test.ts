@@ -833,6 +833,35 @@ describe('object scope — team ownership and audit behavior', () => {
     ).resolves.toEqual([]);
   });
 
+  it('counts terminal statuses case-insensitively when requested', async () => {
+    const scope = withTeam(db, TEAM_A, USER_OWNER).objects;
+    const dueAt = new Date('2026-07-15T09:00:00.000Z');
+    await Promise.all([
+      scope.createObject({
+        type: 'task',
+        canonicalName: 'Completed mixed-case task',
+        status: 'Done',
+        dueAt,
+        actor: { kind: 'user', userId: USER_OWNER },
+      }),
+      scope.createObject({
+        type: 'task',
+        canonicalName: 'Open overdue task',
+        status: 'todo',
+        dueAt,
+        actor: { kind: 'user', userId: USER_OWNER },
+      }),
+    ]);
+
+    await expect(
+      scope.countObjects({
+        type: 'task',
+        dueBefore: new Date('2026-07-16T09:00:00.000Z'),
+        statusNotCaseInsensitive: ['done', 'cancelled', 'canceled', 'shipped'],
+      }),
+    ).resolves.toBe(1);
+  });
+
   it('does not mirror legacy suggested task due dates before human acceptance', async () => {
     const scope = withTeam(db, TEAM_A, USER_OWNER).objects;
 
