@@ -964,6 +964,52 @@ describe('suggestion scope', () => {
     await expect(scope.suggestions.listSuggestions({ status: 'failed' })).resolves.toHaveLength(1);
   });
 
+  it('keeps the failed count aligned with the Failed list when parent status is stale', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Interrupted approval retry',
+      dedupeKey: 'stale-parent-failed-count',
+      visibility: 'team',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Retry interrupted approval',
+          dedupeKey: 'stale-parent-failed-count:item',
+          proposedPayload: { canonicalName: 'Retry interrupted approval' },
+        },
+      ],
+    });
+    await Promise.all([
+      db
+        .update(agentSuggestions)
+        .set({
+          status: 'accepted',
+          resolvedAt: new Date('2026-07-16T10:00:00.000Z'),
+          resolvedByUserId: USER_ID,
+        })
+        .where(eq(agentSuggestions.id, bundle.id)),
+      db
+        .update(agentSuggestionItems)
+        .set({
+          status: 'failed',
+          failureReason: 'Apply was interrupted',
+          resolvedAt: null,
+          resolvedByUserId: null,
+        })
+        .where(eq(agentSuggestionItems.suggestionId, bundle.id)),
+    ]);
+
+    await expect(scope.suggestions.getApprovalItemCounts()).resolves.toEqual({
+      failed: 1,
+      pending: 0,
+    });
+    await expect(scope.suggestions.listSuggestions({ status: 'failed' })).resolves.toEqual([
+      expect.objectContaining({ id: bundle.id }),
+    ]);
+  });
+
   it('applies the All failed-only exclusion before the bundle limit', async () => {
     const scope = withTeam(db as never, TEAM_ID, USER_ID);
     const olderPending = await scope.suggestions.createOrMergeSuggestionBundle({

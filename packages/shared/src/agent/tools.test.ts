@@ -1944,6 +1944,22 @@ describe('buildAgentTools — team isolation', () => {
             },
             failureReason: null,
           },
+          {
+            id: 'item-failed',
+            status: 'failed',
+            operation: 'create',
+            targetKind: 'identity_facet',
+            targetId: TEAM_B_ENTITY_ID,
+            resultId: null,
+            title: 'Retry telegram identity',
+            description: null,
+            proposedPayload: {
+              entityId: TEAM_B_ENTITY_ID,
+              kind: 'telegram',
+              value: '@stale-handle',
+            },
+            failureReason: 'Needs retry',
+          },
         ],
       },
     ]);
@@ -1978,6 +1994,9 @@ describe('buildAgentTools — team isolation', () => {
         },
       ],
     });
+    expect(
+      (result as { approvals: { items: { item_id: string }[] }[] }).approvals[0]?.items,
+    ).toEqual([expect.objectContaining({ item_id: 'item-1' })]);
   });
 
   it('list_pending_approvals rejects all-status queries', async () => {

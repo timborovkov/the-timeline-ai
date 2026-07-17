@@ -5842,7 +5842,10 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       await ensureMember();
       const rows = await db
         .select({
-          pending: sql<number>`COUNT(*) FILTER (WHERE ${agentSuggestionItems.status} = 'pending')::int`,
+          pending: sql<number>`COUNT(*) FILTER (
+            WHERE ${agentSuggestionItems.status} = 'pending'
+              AND ${agentSuggestions.status} IN ('pending', 'partially_resolved')
+          )::int`,
           failed: sql<number>`COUNT(*) FILTER (WHERE ${agentSuggestionItems.status} = 'failed')::int`,
         })
         .from(agentSuggestionItems)
@@ -5851,7 +5854,6 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
           and(
             eq(agentSuggestionItems.teamId, teamId),
             suggestionVisibilityPredicate(teamId, userId),
-            inArray(agentSuggestions.status, ['pending', 'partially_resolved']),
             inArray(agentSuggestionItems.status, ACTIONABLE_ITEM_STATUSES),
           ),
         );
