@@ -226,13 +226,13 @@ describe('team export actions', () => {
     );
 
     await expect(downloadTeamExportAction(new FormData())).rejects.toThrow(
-      'NEXT_REDIRECT:/app/team',
+      'NEXT_REDIRECT:/app/team?section=exports&exportError=invalid',
     );
 
     const err = new Error('member_only');
     fakes.requireMembership.mockRejectedValueOnce(err);
     await expect(downloadTeamExportAction(form({ exportId: EXPORT_ID }))).rejects.toThrow(
-      'NEXT_REDIRECT:/app/team',
+      'NEXT_REDIRECT:/app/team?section=exports&exportError=forbidden',
     );
     expect(fakes.reportCaughtError).toHaveBeenCalledWith(err, {
       surface: 'server_action',
@@ -249,7 +249,7 @@ describe('team export actions', () => {
   it('redirects when the export is not ready and expires rows with near-zero TTL', async () => {
     installDbMocks({ selectRows: [{ id: EXPORT_ID, status: 'failed' }] });
     await expect(downloadTeamExportAction(form({ exportId: EXPORT_ID }))).rejects.toThrow(
-      'NEXT_REDIRECT:/app/team',
+      'NEXT_REDIRECT:/app/team?section=exports&exportError=unavailable',
     );
     expect(fakes.getSignedGetObjectUrl).not.toHaveBeenCalled();
     expect(fakes.auditRecord).toHaveBeenCalledWith({
@@ -272,7 +272,7 @@ describe('team export actions', () => {
       ],
     });
     await expect(downloadTeamExportAction(form({ exportId: EXPORT_ID }))).rejects.toThrow(
-      'NEXT_REDIRECT:/app/team',
+      'NEXT_REDIRECT:/app/team?section=exports&exportError=unavailable',
     );
     expect(updates.at(-1)).toMatchObject({ status: 'expired' });
     expect(fakes.getSignedGetObjectUrl).not.toHaveBeenCalled();

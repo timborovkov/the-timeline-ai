@@ -82,7 +82,7 @@ const SETTINGS_ITEMS = [
 export default async function TeamSettingsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ section?: string }>;
+  searchParams: Promise<{ section?: string; exportError?: string }>;
 }) {
   const session = await auth();
   if (!session?.user) redirect('/sign-in');
@@ -93,7 +93,8 @@ export default async function TeamSettingsPage({
   const role = await scope.requireMembership();
   const isAdmin = role === 'owner' || role === 'admin';
   const isOwner = role === 'owner';
-  const requestedSection = (await searchParams).section ?? 'members';
+  const query = await searchParams;
+  const requestedSection = query.section ?? 'members';
   const section = SETTINGS_ITEMS.some(
     (item) => item.value === requestedSection && (!('adminOnly' in item) || isAdmin),
   )
@@ -319,7 +320,7 @@ export default async function TeamSettingsPage({
               </CardHeader>
               <CardContent>
                 {isAdmin ? (
-                  <TeamExportPanel exports={exportRows} />
+                  <TeamExportPanel exports={exportRows} downloadError={query.exportError} />
                 ) : (
                   <p className="text-sm text-fg-muted">
                     Only team administrators can create exports.

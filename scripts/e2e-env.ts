@@ -5,6 +5,8 @@ type Env = NodeJS.ProcessEnv;
 type PublishedPortLookup = (container: string, containerPort: number) => string | null;
 
 const DEFAULT_DOCKER_INSPECT_TIMEOUT_MS = 5_000;
+const MIN_E2E_WEB_PORT = 10_000;
+const E2E_WEB_PORT_SPAN = 20_000;
 
 interface BuildE2eEnvOptions {
   publishedPort?: PublishedPortLookup;
@@ -47,14 +49,47 @@ function withDevelopmentCondition(input: string | undefined): string {
   return parts.join(' ');
 }
 
-function defaultRunId(workspacePath: string): string {
-  const workspaceHash = createHash('sha256').update(workspacePath).digest('hex').slice(0, 12);
-  return `worktree-${workspaceHash}`;
+function workspaceHash(workspacePath: string): string {
+  return createHash('sha256').update(workspacePath).digest('hex');
+}
+
+function defaultRunId(workspaceHashValue: string): string {
+  return `worktree-${workspaceHashValue.slice(0, 12)}`;
+}
+
+function defaultWebPort(workspaceHashValue: string): string {
+  const offset = Number.parseInt(workspaceHashValue.slice(0, 8), 16) % E2E_WEB_PORT_SPAN;
+  return String(MIN_E2E_WEB_PORT + offset);
+}
+
+function normalizedWebPort(value: string | undefined): string {
+  if (!value || !/^\d{4,5}$/.test(value)) {
+    throw new Error(`Invalid E2E_WEB_PORT: ${value ?? 'missing'}`);
+  }
+  const port = Number(value);
+  if (!Number.isSafeInteger(port) || port < 1024 || port > 65_535) {
+    throw new Error(`Invalid E2E_WEB_PORT: ${value}`);
+  }
+  return String(port);
+}
+
+export function buildE2eWebServerConfig(input: Env = process.env): {
+  baseURL: string;
+  command: string;
+} {
+  const port = normalizedWebPort(input.E2E_WEB_PORT);
+  return {
+    baseURL: input.E2E_BASE_URL ?? `http://localhost:${port}`,
+    command:
+      input.E2E_WEB_SERVER_COMMAND ??
+      `pnpm --filter @timeline/web exec next dev -H 127.0.0.1 -p ${port}`,
+  };
 }
 
 export function buildE2eEnv(input: Env = process.env, options: BuildE2eEnvOptions = {}): Env {
   const env = { ...input };
   delete env.NO_COLOR;
+  const workspaceHashValue = workspaceHash(options.workspacePath ?? process.cwd());
 
   const useDockerPorts = env.E2E_USE_DOCKER_PORTS !== '0';
   const lookupPort =
@@ -79,7 +114,8 @@ export function buildE2eEnv(input: Env = process.env, options: BuildE2eEnvOption
   env.S3_FORCE_PATH_STYLE ??= 'true';
   env.S3_BUCKET_DOCUMENTS ??= 'timeline-documents';
   env.S3_BUCKET_EXPORTS ??= 'timeline-exports';
-  env.E2E_NAMESPACE ??= env.E2E_RUN_ID ?? defaultRunId(options.workspacePath ?? process.cwd());
+  env.E2E_NAMESPACE ??= env.E2E_RUN_ID ?? defaultRunId(workspaceHashValue);
+  env.E2E_WEB_PORT ??= defaultWebPort(workspaceHashValue);
   env.E2E_DETERMINISTIC_CHAT ??= '1';
   env.E2E_DETERMINISTIC_EMBEDDINGS ??= 'true';
   env.E2E_DETERMINISTIC_SLACK_API ??= '1';

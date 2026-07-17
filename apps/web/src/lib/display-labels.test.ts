@@ -41,7 +41,12 @@ describe('display labels', () => {
   it('recognizes UUIDs embedded in values', () => {
     expect(isInternalIdentifier(UUID)).toBe(true);
     expect(isInternalIdentifier(`item ${UUID}`)).toBe(true);
+    expect(isInternalIdentifier(`object_${UUID}`)).toBe(true);
+    expect(isInternalIdentifier(`${UUID}_source`)).toBe(true);
+    expect(isInternalIdentifier(`x${UUID}`)).toBe(true);
     expect(isInternalIdentifier('TL-101')).toBe(false);
+    expect(displayObjectLabel({ canonicalName: `object_${UUID}` })).toBe('Untitled object');
+    expect(displayArtifactLabel({ filename: `${UUID}_source` })).toBe('Untitled artifact');
   });
 
   it('rejects UUIDv7 and nil UUID fallbacks', () => {

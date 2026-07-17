@@ -135,7 +135,9 @@ export async function downloadTeamExportAction(formData: FormData): Promise<void
     if (!active) redirect('/sign-in');
 
     const parsedExportId = z.uuid().safeParse(formData.get('exportId'));
-    if (!parsedExportId.success) redirect('/app/team');
+    if (!parsedExportId.success) {
+      redirect('/app/team?section=exports&exportError=invalid');
+    }
     const exportId = parsedExportId.data;
 
     const scope = withTeam(db, active.teamId, session.user.id);
@@ -148,7 +150,7 @@ export async function downloadTeamExportAction(formData: FormData): Promise<void
     }
     if (!hasAdminAccess) {
       await recordRejectedExportDownload(scope, exportId, 'forbidden');
-      redirect('/app/team');
+      redirect('/app/team?section=exports&exportError=forbidden');
     }
 
     await db
@@ -176,7 +178,7 @@ export async function downloadTeamExportAction(formData: FormData): Promise<void
     const row = rows[0];
     if (row?.status !== 'ready' || !row.objectKey || !row.expiresAt) {
       await recordRejectedExportDownload(scope, exportId, 'not_ready_or_missing');
-      redirect('/app/team');
+      redirect('/app/team?section=exports&exportError=unavailable');
     }
 
     const now = Date.now();
@@ -187,7 +189,7 @@ export async function downloadTeamExportAction(formData: FormData): Promise<void
     if (ttlSec <= 1) {
       await db.update(teamExports).set({ status: 'expired' }).where(eq(teamExports.id, row.id));
       await recordRejectedExportDownload(scope, row.id, 'expired');
-      redirect('/app/team');
+      redirect('/app/team?section=exports&exportError=unavailable');
     }
 
     const url = await getSignedGetObjectUrl(

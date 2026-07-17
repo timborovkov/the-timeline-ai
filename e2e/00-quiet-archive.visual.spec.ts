@@ -123,7 +123,7 @@ test('complete desktop visual matrix', async ({ browser }) => {
   await page.getByLabel('Type').selectOption('project');
   await page.getByLabel('Name').fill('Quiet Archive visual project');
   await page.getByRole('button', { name: 'Create object' }).click();
-  await expect(page).toHaveURL(/\/app\/objects\/[0-9a-f-]{36}$/i);
+  await expect(page).toHaveURL(/\/app\/objects\/[0-9a-f-]{36}$/i, { timeout: 30_000 });
   const objectHref = new URL(page.url()).pathname;
 
   const routes = [

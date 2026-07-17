@@ -1,15 +1,12 @@
 import { defineConfig, devices } from '@playwright/test';
 
-import { buildE2eEnv } from './scripts/e2e-env.js';
+import { buildE2eEnv, buildE2eWebServerConfig } from './scripts/e2e-env.js';
 
 const e2eEnv = buildE2eEnv();
 delete process.env.NO_COLOR;
 Object.assign(process.env, e2eEnv);
 
-const baseURL = process.env.E2E_BASE_URL ?? 'http://localhost:3000';
-const webServerCommand =
-  process.env.E2E_WEB_SERVER_COMMAND ??
-  'pnpm --filter @timeline/web exec next dev -H 127.0.0.1 -p 3000';
+const { baseURL, command: webServerCommand } = buildE2eWebServerConfig(e2eEnv);
 
 export default defineConfig({
   testDir: './e2e',
@@ -30,13 +27,15 @@ export default defineConfig({
   webServer: {
     command: webServerCommand,
     url: baseURL,
-    reuseExistingServer: true,
+    reuseExistingServer: process.env.E2E_REUSE_EXISTING_SERVER === '1',
     timeout: 120_000,
     stdout: 'pipe',
     stderr: 'pipe',
     env: {
       AUTH_URL: baseURL,
       NEXTAUTH_URL: baseURL,
+      PORT: e2eEnv.E2E_WEB_PORT,
+      E2E_NAMESPACE: e2eEnv.E2E_NAMESPACE,
       AUTH_SECRET: e2eEnv.AUTH_SECRET,
       SECRETS_ENCRYPTION_KEY: e2eEnv.SECRETS_ENCRYPTION_KEY,
       DATABASE_URL: e2eEnv.DATABASE_URL,

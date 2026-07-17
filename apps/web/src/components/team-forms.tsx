@@ -255,13 +255,38 @@ interface TeamExportRow {
   error: string | null;
 }
 
-export function TeamExportPanel({ exports }: { exports: TeamExportRow[] }) {
+function teamExportDownloadErrorMessage(value: string | undefined): string | undefined {
+  switch (value) {
+    case 'invalid':
+      return 'That export link is invalid. Refresh and try again.';
+    case 'forbidden':
+      return 'You no longer have permission to download team exports.';
+    case 'unavailable':
+      return 'This export is not ready or is no longer available. Refresh or start a new export.';
+    default:
+      return undefined;
+  }
+}
+
+export function TeamExportPanel({
+  exports,
+  downloadError,
+}: {
+  exports: TeamExportRow[];
+  downloadError?: string;
+}) {
   const [state, action] = useActionState<CreateTeamExportState, FormData>(
     createTeamExportAction,
     {},
   );
+  const downloadErrorMessage = teamExportDownloadErrorMessage(downloadError);
   return (
     <div className="space-y-4">
+      {downloadErrorMessage ? (
+        <p role="alert" className="text-sm text-destructive">
+          {downloadErrorMessage}
+        </p>
+      ) : null}
       <form action={action} className="flex items-center justify-between gap-3">
         <div className="space-y-1">
           <p className="text-sm text-muted-foreground">

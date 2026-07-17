@@ -179,6 +179,29 @@ describe('TeamExportPanel', () => {
     expect(screen.getByText('Only owners and admins can export team data')).toBeTruthy();
   });
 
+  it.each([
+    ['invalid', 'That export link is invalid. Refresh and try again.'],
+    ['forbidden', 'You no longer have permission to download team exports.'],
+    [
+      'unavailable',
+      'This export is not ready or is no longer available. Refresh or start a new export.',
+    ],
+  ])('shows the %s download error inside the export panel', (downloadError, message) => {
+    render(<TeamExportPanel exports={[]} downloadError={downloadError} />);
+
+    expect(screen.getByRole('alert').textContent).toBe(message);
+  });
+
+  it.each(['raw-provider-error', '__proto__', 'toString'])(
+    'ignores the unknown %s download error query value',
+    (downloadError) => {
+      render(<TeamExportPanel exports={[]} downloadError={downloadError} />);
+
+      expect(screen.queryByRole('alert')).toBeNull();
+      expect(screen.queryByText(downloadError)).toBeNull();
+    },
+  );
+
   it('lists export rows and only exposes download for ready archives', () => {
     render(
       <TeamExportPanel
