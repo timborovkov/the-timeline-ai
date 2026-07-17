@@ -24,6 +24,7 @@ const fakes = vi.hoisted(() => ({
     rejectSuggestionItem: vi.fn(),
     acceptAll: vi.fn(),
     acceptSelected: vi.fn(),
+    listSuggestions: vi.fn(),
   },
 }));
 
@@ -41,6 +42,7 @@ const ITEM_ID = '11111111-1111-4111-8111-111111111111';
 const SUGGESTION_ID = '22222222-2222-4222-8222-222222222222';
 
 const SURFACES = [
+  ['/app', 'layout'],
   ['/app/approvals'],
   ['/app/timeline'],
   ['/app/objects', 'layout'],
@@ -60,6 +62,9 @@ beforeEach(() => {
   fakes.fakeSuggestions.rejectSuggestionItem.mockResolvedValue(true);
   fakes.fakeSuggestions.acceptAll.mockResolvedValue({ accepted: 2, failed: 0 });
   fakes.fakeSuggestions.acceptSelected.mockResolvedValue({ accepted: 2, failed: 0 });
+  fakes.fakeSuggestions.listSuggestions.mockResolvedValue([
+    { items: [{ id: ITEM_ID, status: 'failed' }] },
+  ]);
 });
 
 function expectSuggestionSurfacesRevalidated() {
@@ -166,12 +171,13 @@ describe('suggestion item actions', () => {
     });
   });
 
-  it('maps accept failures without revalidating away the failed row', async () => {
+  it('identifies accept failures so clients can move the row to Failed', async () => {
     fakes.fakeSuggestions.acceptSuggestionItem.mockRejectedValue(new Error('apply failed'));
 
     const result = await acceptSuggestionItemAction({ itemId: ITEM_ID });
     expect(result.error).toMatch(/^Failed to accept suggestion\. Reference: [0-9a-f]{8}\.$/);
     expect(result.error).not.toContain('apply failed');
+    expect(result.failedItemIds).toEqual([ITEM_ID]);
     expect(fakes.fakeReportCaughtError).toHaveBeenCalledWith(
       expect.any(Error),
       expect.objectContaining({
@@ -179,7 +185,18 @@ describe('suggestion item actions', () => {
         operation: 'accept_suggestion_item',
       }),
     );
-    expect(fakes.fakeRevalidatePath).not.toHaveBeenCalled();
+    expectSuggestionSurfacesRevalidated();
+  });
+
+  it('keeps a row visible when accept fails before the item transitions to Failed', async () => {
+    fakes.fakeSuggestions.acceptSuggestionItem.mockRejectedValue(new Error('database unavailable'));
+    fakes.fakeSuggestions.listSuggestions.mockResolvedValue([]);
+
+    const result = await acceptSuggestionItemAction({ itemId: ITEM_ID });
+
+    expect(result.error).toMatch(/^Failed to accept suggestion\. Reference: [0-9a-f]{8}\.$/);
+    expect(result.failedItemIds).toBeUndefined();
+    expectSuggestionSurfacesRevalidated();
   });
 
   it('does not report expected persisted apply failures to Sentry', async () => {
@@ -191,9 +208,10 @@ describe('suggestion item actions', () => {
 
     await expect(acceptSuggestionItemAction({ itemId: ITEM_ID })).resolves.toEqual({
       error: err.message,
+      failedItemIds: [ITEM_ID],
     });
     expect(fakes.fakeReportCaughtError).not.toHaveBeenCalled();
-    expect(fakes.fakeRevalidatePath).not.toHaveBeenCalled();
+    expectSuggestionSurfacesRevalidated();
   });
 
   it('reports raw invalid proposal payload failures that were not marked expected', async () => {
@@ -211,11 +229,12 @@ describe('suggestion item actions', () => {
     const result = await acceptSuggestionItemAction({ itemId: ITEM_ID });
     expect(result.error).toMatch(/^Failed to accept suggestion\. Reference: [0-9a-f]{8}\.$/);
     expect(result.error).not.toContain('startAt');
+    expect(result.failedItemIds).toEqual([ITEM_ID]);
     expect(fakes.fakeReportCaughtError).toHaveBeenCalledWith(
       err,
       expect.objectContaining({ operation: 'accept_suggestion_item' }),
     );
-    expect(fakes.fakeRevalidatePath).not.toHaveBeenCalled();
+    expectSuggestionSurfacesRevalidated();
   });
 
   it('reports duplicate-key failures that were not marked expected', async () => {
@@ -227,11 +246,12 @@ describe('suggestion item actions', () => {
     const result = await acceptSuggestionItemAction({ itemId: ITEM_ID });
     expect(result.error).toMatch(/^Failed to accept suggestion\. Reference: [0-9a-f]{8}\.$/);
     expect(result.error).not.toContain('duplicate key');
+    expect(result.failedItemIds).toEqual([ITEM_ID]);
     expect(fakes.fakeReportCaughtError).toHaveBeenCalledWith(
       err,
       expect.objectContaining({ operation: 'accept_suggestion_item' }),
     );
-    expect(fakes.fakeRevalidatePath).not.toHaveBeenCalled();
+    expectSuggestionSurfacesRevalidated();
   });
 
   it('maps reject failures without claiming success', async () => {
@@ -240,6 +260,7 @@ describe('suggestion item actions', () => {
     const result = await rejectSuggestionItemAction({ itemId: ITEM_ID });
     expect(result.error).toMatch(/^Failed to reject suggestion\. Reference: [0-9a-f]{8}\.$/);
     expect(result.error).not.toContain('reject failed');
+    expectSuggestionSurfacesRevalidated();
   });
 });
 
@@ -277,10 +298,10 @@ describe('accept-all suggestion action', () => {
       itemIds: [ITEM_ID, secondItemId],
     });
     expect(fakes.fakeSuggestions.acceptAll).not.toHaveBeenCalled();
-    expect(fakes.fakeRevalidatePath).not.toHaveBeenCalled();
+    expectSuggestionSurfacesRevalidated();
   });
 
-  it('surfaces partial failure count without revalidating away failed rows', async () => {
+  it('surfaces partial failure count and revalidates count-bearing surfaces', async () => {
     fakes.fakeSuggestions.acceptAll.mockResolvedValue({
       accepted: 1,
       failed: 2,
@@ -291,16 +312,16 @@ describe('accept-all suggestion action', () => {
       error: '2 item(s) failed to apply',
       failedItemIds: [ITEM_ID, '44444444-4444-4444-8444-444444444444'],
     });
-    expect(fakes.fakeRevalidatePath).not.toHaveBeenCalled();
+    expectSuggestionSurfacesRevalidated();
   });
 
-  it('maps accept-all failures without revalidating away failed rows', async () => {
+  it('maps accept-all failures and revalidates potentially changed state', async () => {
     fakes.fakeSuggestions.acceptAll.mockRejectedValue(new Error('bundle failed'));
 
     const result = await acceptAllSuggestionAction({ suggestionId: SUGGESTION_ID });
     expect(result.error).toMatch(/^Failed to accept suggestion\. Reference: [0-9a-f]{8}\.$/);
     expect(result.error).not.toContain('bundle failed');
-    expect(fakes.fakeRevalidatePath).not.toHaveBeenCalled();
+    expectSuggestionSurfacesRevalidated();
   });
 });
 
@@ -323,7 +344,7 @@ describe('accept-visible suggestions action', () => {
     expectSuggestionSurfacesRevalidated();
   });
 
-  it('surfaces total partial failure count without revalidating away failed rows', async () => {
+  it('surfaces total partial failure count and revalidates count-bearing surfaces', async () => {
     fakes.fakeSuggestions.acceptSelected
       .mockResolvedValueOnce({
         accepted: 1,
@@ -356,7 +377,7 @@ describe('accept-visible suggestions action', () => {
         '66666666-6666-4666-8666-666666666666',
       ],
     });
-    expect(fakes.fakeRevalidatePath).not.toHaveBeenCalled();
+    expectSuggestionSurfacesRevalidated();
   });
 
   it('accepts visible suggestion groups in order before revalidating', async () => {
@@ -413,7 +434,7 @@ describe('reject-visible suggestions action', () => {
     expectSuggestionSurfacesRevalidated();
   });
 
-  it('surfaces total reject failures without revalidating away failed rows', async () => {
+  it('surfaces total reject failures and revalidates count-bearing surfaces', async () => {
     fakes.fakeSuggestions.rejectSuggestionItem.mockResolvedValueOnce(true).mockResolvedValue(false);
 
     await expect(
@@ -436,7 +457,7 @@ describe('reject-visible suggestions action', () => {
         '66666666-6666-4666-8666-666666666666',
       ],
     });
-    expect(fakes.fakeRevalidatePath).not.toHaveBeenCalled();
+    expectSuggestionSurfacesRevalidated();
   });
 
   it('rejects visible items in order before revalidating', async () => {
@@ -465,7 +486,7 @@ describe('reject-visible suggestions action', () => {
     expectSuggestionSurfacesRevalidated();
   });
 
-  it('maps reject-visible failures without revalidating away failed rows', async () => {
+  it('maps reject-visible failures and revalidates potentially changed state', async () => {
     fakes.fakeSuggestions.rejectSuggestionItem.mockRejectedValue(new Error('reject failed'));
 
     const result = await rejectVisibleSuggestionsAction({
@@ -477,6 +498,6 @@ describe('reject-visible suggestions action', () => {
       expect.any(Error),
       expect.objectContaining({ operation: 'reject_visible_suggestions' }),
     );
-    expect(fakes.fakeRevalidatePath).not.toHaveBeenCalled();
+    expectSuggestionSurfacesRevalidated();
   });
 });

@@ -19,7 +19,6 @@ import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { OBJECT_TYPE_LABELS } from '@/lib/object-type-labels';
-import { isActionableSuggestionStatus } from '@/lib/suggestion-status';
 import { serializeSuggestionBundle } from '@/lib/suggestions';
 import {
   WORK_FILTER_PARAM_KEYS,
@@ -123,12 +122,12 @@ export default async function ObjectsIndexPage({
     if (bundle.metadata.kind !== 'object_cleanup') continue;
     const items = bundle.items.filter(
       (item) =>
-        isActionableSuggestionStatus(item.status) &&
+        item.status === 'pending' &&
         (item.targetKind === 'object_merge' ||
           (item.targetKind === 'object' && item.operation === 'archive_or_cancel')),
     );
     for (const item of items) {
-      if (item.targetKind === 'object_merge' && isActionableSuggestionStatus(item.status)) {
+      if (item.targetKind === 'object_merge' && item.status === 'pending') {
         mergeSuggestionItems.push(item);
       }
     }

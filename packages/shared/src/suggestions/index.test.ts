@@ -896,7 +896,169 @@ describe('suggestion scope', () => {
 
     expect(bundle.items.map((item) => item.status).sort()).toEqual(['pending', 'superseded']);
     await expect(scope.suggestions.listPendingSuggestions()).resolves.toHaveLength(1);
-    await expect(scope.suggestions.countPendingSuggestions()).resolves.toBe(1);
+    await expect(scope.suggestions.getApprovalItemCounts()).resolves.toEqual({
+      failed: 0,
+      pending: 1,
+    });
+  });
+
+  it('counts pending and failed approval items separately', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Review launch follow-ups',
+      dedupeKey: 'approval-item-counts',
+      visibility: 'team',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Confirm launch date',
+          dedupeKey: 'approval-item-counts:date',
+          proposedPayload: { canonicalName: 'Confirm launch date' },
+        },
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Confirm launch owner',
+          dedupeKey: 'approval-item-counts:owner',
+          proposedPayload: { canonicalName: 'Confirm launch owner' },
+        },
+        {
+          operation: 'create',
+          targetKind: 'calendar_event',
+          title: 'Schedule launch review',
+          dedupeKey: 'approval-item-counts:review',
+          proposedPayload: {
+            title: 'Launch review',
+            startAt: '2026-07-20T09:00:00.000Z',
+            endAt: '2026-07-20T10:00:00.000Z',
+          },
+        },
+      ],
+    });
+    const failedItemId = bundle.items.find((item) => item.title === 'Schedule launch review')?.id;
+    expect(failedItemId).toBeDefined();
+    await db
+      .update(agentSuggestionItems)
+      .set({ status: 'failed', failureReason: 'Calendar provider rejected the event' })
+      .where(eq(agentSuggestionItems.id, failedItemId ?? ''));
+
+    await expect(scope.suggestions.getApprovalItemCounts()).resolves.toEqual({
+      failed: 1,
+      pending: 2,
+    });
+    await expect(scope.suggestions.listPendingSuggestions()).resolves.toHaveLength(1);
+    await expect(scope.suggestions.listSuggestions({ status: 'failed' })).resolves.toHaveLength(1);
+
+    await db
+      .update(agentSuggestionItems)
+      .set({ status: 'failed', failureReason: 'Needs retry' })
+      .where(eq(agentSuggestionItems.suggestionId, bundle.id));
+
+    await expect(scope.suggestions.getApprovalItemCounts()).resolves.toEqual({
+      failed: 3,
+      pending: 0,
+    });
+    await expect(scope.suggestions.listPendingSuggestions()).resolves.toEqual([]);
+    await expect(scope.suggestions.listSuggestions({ status: 'failed' })).resolves.toHaveLength(1);
+  });
+
+  it('applies the All failed-only exclusion before the bundle limit', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const olderPending = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Older pending approval',
+      dedupeKey: 'all-limit:older-pending',
+      visibility: 'team',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Keep the pending approval visible',
+          dedupeKey: 'all-limit:older-pending:item',
+          proposedPayload: { canonicalName: 'Keep the pending approval visible' },
+        },
+      ],
+    });
+    const newerFailed = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Newer failed-only approval',
+      dedupeKey: 'all-limit:newer-failed',
+      visibility: 'team',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Retry from Failed only',
+          dedupeKey: 'all-limit:newer-failed:item',
+          proposedPayload: { canonicalName: 'Retry from Failed only' },
+        },
+      ],
+    });
+    await Promise.all([
+      db
+        .update(agentSuggestions)
+        .set({ createdAt: new Date('2026-07-15T09:00:00.000Z') })
+        .where(eq(agentSuggestions.id, olderPending.id)),
+      db
+        .update(agentSuggestions)
+        .set({ createdAt: new Date('2026-07-16T09:00:00.000Z') })
+        .where(eq(agentSuggestions.id, newerFailed.id)),
+      db
+        .update(agentSuggestionItems)
+        .set({ status: 'failed', failureReason: 'Needs retry' })
+        .where(eq(agentSuggestionItems.suggestionId, newerFailed.id)),
+    ]);
+
+    await expect(scope.suggestions.listSuggestions({ status: 'all', limit: 1 })).resolves.toEqual([
+      expect.objectContaining({ id: olderPending.id }),
+    ]);
+  });
+
+  it('counts only approval items visible to the current member', async () => {
+    const ownerScope = withTeam(db as never, TEAM_ID, USER_ID);
+    for (const input of [
+      {
+        title: 'Team approval',
+        dedupeKey: 'visible-approval-count:team',
+        visibility: 'team' as const,
+      },
+      {
+        title: 'Private owner approval',
+        dedupeKey: 'visible-approval-count:private',
+        visibility: 'private' as const,
+        visibilityOwnerUserId: USER_ID,
+      },
+      {
+        title: 'Reviewer approval',
+        dedupeKey: 'visible-approval-count:specific',
+        visibility: 'specific_users' as const,
+        visibilityUserIds: [USER_ID, REVIEWER_ID],
+      },
+    ]) {
+      await ownerScope.suggestions.createOrMergeSuggestionBundle({
+        source: 'background',
+        ...input,
+        items: [
+          {
+            operation: 'create',
+            targetKind: 'task',
+            title: input.title,
+            dedupeKey: `${input.dedupeKey}:item`,
+            proposedPayload: { canonicalName: input.title },
+          },
+        ],
+      });
+    }
+
+    await expect(ownerScope.suggestions.getApprovalItemCounts()).resolves.toEqual({
+      failed: 0,
+      pending: 3,
+    });
+    await expect(
+      withTeam(db as never, TEAM_ID, REVIEWER_ID).suggestions.getApprovalItemCounts(),
+    ).resolves.toEqual({ failed: 0, pending: 2 });
   });
 
   it('can sweep existing duplicate pending create-task items', async () => {
@@ -2432,7 +2594,10 @@ describe('suggestion scope', () => {
     await expect(scope.suggestions.listPendingSuggestions()).resolves.not.toContainEqual(
       expect.objectContaining({ id: oldBundle.id }),
     );
-    await expect(scope.suggestions.countPendingSuggestions()).resolves.toBe(1);
+    await expect(scope.suggestions.getApprovalItemCounts()).resolves.toEqual({
+      failed: 0,
+      pending: 1,
+    });
     await expect(scope.suggestions.listSuggestions({ status: 'resolved' })).resolves.toContainEqual(
       expect.objectContaining({ id: oldBundle.id }),
     );

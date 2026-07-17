@@ -12,7 +12,6 @@ import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { safeSameOriginPath } from '@/lib/safe-redirect';
-import { isActionableSuggestionStatus } from '@/lib/suggestion-status';
 import { serializeSuggestionBundle } from '@/lib/suggestions';
 
 export const metadata: Metadata = {
@@ -44,7 +43,7 @@ function objectPageSuggestionItems(
   const localRefs = new Set<string>();
   for (const item of bundle.items) {
     if (
-      isActionableSuggestionStatus(item.status) &&
+      item.status === 'pending' &&
       suggestionTargetsObject(item, objectId, { boardItemIds, siblingItems: bundle.items })
     ) {
       includedIds.add(item.id);
@@ -60,7 +59,7 @@ function objectPageSuggestionItems(
   }
   if (localRefs.size > 0) {
     for (const item of bundle.items) {
-      if (!isActionableSuggestionStatus(item.status)) continue;
+      if (item.status !== 'pending') continue;
       const ref =
         typeof item.proposedPayload.localRef === 'string'
           ? item.proposedPayload.localRef.toLowerCase()

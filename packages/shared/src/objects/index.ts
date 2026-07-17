@@ -986,6 +986,7 @@ export interface ObjectListFilter {
   type?: ObjectType | ObjectType[];
   status?: string | string[];
   statusNot?: string | string[];
+  statusNotCaseInsensitive?: string | string[];
   stage?: string | string[];
   priority?: number | number[];
   priorityNull?: boolean;
@@ -1199,6 +1200,16 @@ function objectListConditions(scope: TeamScopeCore, filter: ObjectCountFilter = 
   const excludedStatuses = toArray(filter.statusNot);
   if (excludedStatuses && excludedStatuses.length > 0) {
     conds.push(notInArray(entities.status, excludedStatuses));
+  }
+
+  const caseInsensitiveExcludedStatuses = toArray(filter.statusNotCaseInsensitive);
+  if (caseInsensitiveExcludedStatuses && caseInsensitiveExcludedStatuses.length > 0) {
+    conds.push(
+      sql`lower(${entities.status}) NOT IN (${sql.join(
+        caseInsensitiveExcludedStatuses.map((status) => sql`${status.toLowerCase()}`),
+        sql`, `,
+      )})`,
+    );
   }
 
   const stages = toArray(filter.stage);

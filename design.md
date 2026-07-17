@@ -723,6 +723,11 @@ key/value pairs.
   filtering, bulk accept, and row-level review. Embedded approval panels may
   expose bulk reject when multiple visible proposals need cleanup, but avoid
   bulk accept paths that can apply state from a narrow context.
+- Approval counts use individual review items, not proposal bundles. `Pending`
+  means the item status is literally pending; failed items stay retryable or
+  rejectable only under the dedicated `Failed` filter and do not contribute to
+  Home, Work, digest, or navigation attention counts. The Work attention total
+  combines pending approval items with overdue open tasks.
 - Approval payloads render as human labels and localized values (`Due <localized
   date>`, `Status To do`), not object keys (`dueAt`, `canonicalName`) or JSON.
   Keep free-form values such as names, handles, aliases, and note text literal.

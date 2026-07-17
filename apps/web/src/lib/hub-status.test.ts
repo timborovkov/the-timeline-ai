@@ -1,9 +1,11 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import {
   attentionCount,
   countDismissibleMeetingFailures,
   countMeetingFailuresForSources,
+  getNavWorkAttention,
+  getWorkAttentionSummary,
   workAttentionCount,
 } from '@/lib/hub-status';
 
@@ -28,6 +30,43 @@ describe('hub status helpers', () => {
         overdueTasks: -2,
       }),
     ).toBe(3);
+  });
+
+  it('uses pending approval items and overdue tasks while excluding failed approvals', async () => {
+    const countObjects = vi.fn().mockResolvedValue(1);
+    const summary = await getWorkAttentionSummary(
+      {
+        objects: { countObjects },
+        suggestions: {
+          getApprovalItemCounts: vi.fn().mockResolvedValue({ failed: 4, pending: 0 }),
+        },
+      } as never,
+      new Date('2026-07-16T12:00:00.000Z'),
+    );
+
+    expect(summary).toEqual({ attention: 1, overdueTasks: 1, pendingApprovals: 0 });
+    expect(countObjects).toHaveBeenCalledWith({
+      archived: false,
+      dueBefore: new Date('2026-07-16T12:00:00.000Z'),
+      statusNotCaseInsensitive: ['done', 'cancelled', 'canceled', 'shipped'],
+      type: 'task',
+    });
+  });
+
+  it('uses the same work attention provider for the navigation badge', async () => {
+    const scope = {
+      objects: { countObjects: vi.fn().mockResolvedValue(2) },
+      suggestions: {
+        getApprovalItemCounts: vi.fn().mockResolvedValue({ failed: 4, pending: 3 }),
+      },
+    } as never;
+    const now = new Date('2026-07-16T12:00:00.000Z');
+
+    const work = await getWorkAttentionSummary(scope, now);
+    const navWork = await getNavWorkAttention(scope, now);
+
+    expect(work).toEqual({ attention: 5, overdueTasks: 2, pendingApprovals: 3 });
+    expect(navWork).toBe(work.attention);
   });
 
   it('counts only failed meeting recovery jobs as dismissible meeting attention', () => {

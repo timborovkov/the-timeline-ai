@@ -146,6 +146,18 @@ describe('TasksPage', () => {
           },
           {
             id: 'item-2',
+            status: 'failed',
+            operation: 'create',
+            targetKind: 'task',
+            targetId: null,
+            resultId: null,
+            title: 'Retry failed task',
+            description: null,
+            proposedPayload: { canonicalName: 'Retry failed task' },
+            failureReason: 'Needs retry',
+          },
+          {
+            id: 'item-3',
             status: 'pending',
             operation: 'create',
             targetKind: 'calendar_event',
