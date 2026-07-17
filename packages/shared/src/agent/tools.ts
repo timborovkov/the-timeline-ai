@@ -2037,7 +2037,10 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
             return items.length > 0 ? [{ ...suggestion, items }] : [];
           });
           return {
-            count: matchingSuggestions.length,
+            count: matchingSuggestions.reduce(
+              (itemCount, suggestion) => itemCount + suggestion.items.length,
+              0,
+            ),
             canonical: false,
             note: 'These approval proposals are pending workspace state, not canonical truth until accepted.',
             approvals: matchingSuggestions.map((suggestion) => ({
