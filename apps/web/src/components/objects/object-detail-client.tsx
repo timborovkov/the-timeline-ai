@@ -43,6 +43,7 @@ import {
 } from '@/components/objects/object-search-results';
 import { ObjectSectionFeed } from '@/components/objects/object-section-feed';
 import { TechnicalDetails } from '@/components/technical-details';
+import { WorkSubnav } from '@/components/work-subnav';
 import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
 import { displayText, formatDisplayDateTime } from '@/lib/display-dates';
 import { isInternalIdentifier } from '@/lib/display-labels';
@@ -772,6 +773,7 @@ function ObjectDetailView(props: Props) {
         savingCount={view.savingCount}
         onRepairMemory={view.repairMemory}
       />
+      <WorkSubnav current={`/app/objects/${view.detail.id}`} />
 
       <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_23rem]">
         <main className="min-w-0 space-y-6">

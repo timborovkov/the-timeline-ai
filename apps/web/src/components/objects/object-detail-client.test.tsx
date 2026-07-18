@@ -204,6 +204,7 @@ describe('ObjectDetailClient', () => {
     );
 
     expect(screen.getByRole('heading', { level: 1, name: 'Untitled object' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Objects' }).getAttribute('aria-current')).toBe('page');
     expect(document.body.textContent).not.toContain(internalId);
   });
 

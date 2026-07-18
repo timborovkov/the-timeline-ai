@@ -19,6 +19,7 @@ import { ContextualAskLink } from '@/components/chat/contextual-ask-link';
 import { HistoryBackLink } from '@/components/history-back-link';
 import { PageHeader } from '@/components/page-header';
 import { WorkFilterBar } from '@/components/work-filter-bar';
+import { WorkSubnav } from '@/components/work-subnav';
 import { visibleBoardDescription } from '@/lib/board-description';
 import { boardViewHref } from '@/lib/board-links';
 
@@ -250,6 +251,10 @@ export function BoardDetailClient({
         leading={boardHeaderLeading}
         className={view === 'kanban' ? 'w-full shrink-0 px-4 md:px-8' : 'mb-4 shrink-0'}
         trailing={boardHeaderTrailing}
+      />
+      <WorkSubnav
+        current={`/app/boards/${boardId}`}
+        className={view === 'kanban' ? 'shrink-0 px-4 md:px-8' : 'mb-4 shrink-0'}
       />
 
       <div

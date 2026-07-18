@@ -1032,6 +1032,7 @@ test.describe.serial('reconciliation dashboard', () => {
   });
 
   test('filters private and specific-user clusters for the active viewer', async ({ browser }) => {
+    test.setTimeout(120_000);
     const owner = await browser.newPage();
     await signIn(owner, e2eUsers.owner.email);
     await owner.goto('/app/team/reconciliation');

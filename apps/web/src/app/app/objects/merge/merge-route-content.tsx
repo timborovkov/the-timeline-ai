@@ -11,6 +11,7 @@ import {
   ObjectMergeRouteModalFrame,
 } from '@/components/objects/object-merge-route-modal';
 import { PageHeader } from '@/components/page-header';
+import { WorkSubnav } from '@/components/work-subnav';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
@@ -36,6 +37,7 @@ function renderPageShell(children: ReactNode, selectedCount?: number) {
         }
         leading={objectsBackLink}
       />
+      <WorkSubnav current="/app/objects/merge" />
       {children}
     </div>
   );

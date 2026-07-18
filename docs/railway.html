@@ -11,7 +11,7 @@
     <main id="main">
       <h1>Railway deployment</h1>
       <div class="meta">
-        <span class="kind">Operations</span><span>Last updated 2026-07-15</span>
+        <span class="kind">Operations</span><span>Last updated 2026-07-18</span>
       </div>
       <p class="tldr">
         How the Timeline's web + worker + plugin + custom services are arranged on Railway, and what
@@ -378,8 +378,8 @@ rclone sync s3:timeline-attachments backblaze-b2:timeline-backup-attachments
       </p>
       <p>
         Ingest webhook credentials are managed in the dashboard and stored as database hashes, so
-        Railway does not need a per-source env var. Rotate or disable them from the team
-        integrations page; new deliveries fail immediately after revocation.
+        Railway does not need a per-source env var. Rotate or disable them from Connections; new
+        deliveries fail immediately after revocation.
       </p>
 
       <h2 id="deploy-flow">Deploy flow</h2>

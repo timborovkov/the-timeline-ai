@@ -578,16 +578,22 @@ function BoardActivity({
                 <span>{formatDisplayDateTime(change.changedAt, { timezone })}</span>
               </div>
               {change.note ? <p className="mt-2 text-fg">{displayText(change.note)}</p> : null}
-              {change.field === 'customFields' ? (
+              {change.field === 'customFields' ||
+              change.field === '__add__' ||
+              change.field === '__remove__' ? (
                 <TechnicalDetails
                   className="mt-3"
                   items={[
                     {
-                      label: 'Previous custom fields',
+                      label:
+                        change.field === 'customFields'
+                          ? 'Previous custom fields'
+                          : 'Previous board payload',
                       ...technicalJsonValue(change.previousValue),
                     },
                     {
-                      label: 'New custom fields',
+                      label:
+                        change.field === 'customFields' ? 'New custom fields' : 'New board payload',
                       ...technicalJsonValue(change.newValue),
                     },
                   ]}
@@ -785,6 +791,14 @@ function formatChangeValue(
   members: BoardMemberOption[],
   timezone: string,
 ): string {
+  if (field === '__add__' || field === '__remove__') {
+    if (value === null || value === undefined || value === '') return 'Not on board';
+    if (typeof value !== 'object' || Array.isArray(value)) return 'Board membership';
+    const laneId = 'laneId' in value && typeof value.laneId === 'string' ? value.laneId : null;
+    return laneId
+      ? displayText(lanes.find((lane) => lane.id === laneId)?.name ?? 'Board membership')
+      : 'Board membership';
+  }
   if (value === null || value === undefined || value === '') return 'empty';
   if (field === 'customFields') return customFieldsSummary(value);
   if (field === 'laneId' && typeof value === 'string') {
@@ -812,7 +826,7 @@ function customFieldsSummary(value: unknown): string {
 }
 
 function technicalJsonValue(value: unknown): { value: string; copyValue: string } {
-  const serialized = JSON.stringify(value ?? {}, null, 2);
+  const serialized = JSON.stringify(value ?? null, null, 2);
   return { value: serialized.slice(0, 2_000), copyValue: serialized };
 }
 

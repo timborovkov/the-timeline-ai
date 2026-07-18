@@ -224,6 +224,7 @@ describe('BoardDetailClient', () => {
     const heading = screen.getByRole('heading', { level: 1, name: 'Pilot board' });
     expect(heading.className).not.toContain('uppercase');
     expect(heading.parentElement?.textContent).toContain('Track pilots');
+    expect(screen.getByRole('link', { name: 'Boards' }).getAttribute('aria-current')).toBe('page');
 
     await user.click(screen.getByRole('button', { name: 'Fake optimistic add' }));
 

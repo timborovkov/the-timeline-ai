@@ -356,6 +356,45 @@ describe('BoardCardDetail', () => {
     expect(rawValue.closest('details')?.open).toBe(false);
   });
 
+  it('humanizes board membership activity and keeps identifiers in technical details', () => {
+    const boardId = '018f22e2-7a9b-7cc3-98c4-3a2b1c0d9e8f';
+    const entityId = '11111111-1111-4111-8111-111111111111';
+    const item = boardItem({ id: 'item-1', entityId, canonicalName: 'MyAuditor' });
+    const history: boards.BoardItemChangeRow[] = [
+      {
+        id: 'change-add',
+        boardId,
+        boardItemId: item.id,
+        entityId,
+        field: '__add__',
+        previousValue: null,
+        newValue: { boardId, entityId, laneId: 'lane-1' },
+        note: null,
+        sourceEventId: null,
+        suggestionItemId: null,
+        evidence: [],
+        actorUserId: null,
+        actorKind: 'user',
+        status: 'applied',
+        changedAt: new Date('2026-01-02T00:00:00.000Z'),
+      },
+    ];
+
+    render(
+      <BoardCardDetail
+        boardId={boardId}
+        view="kanban"
+        item={item}
+        history={history}
+        lanes={lanes}
+      />,
+    );
+
+    expect(screen.getByText(/Not on board.*Doing/)).toBeTruthy();
+    const rawValue = screen.getByText((content) => content.includes(entityId));
+    expect(rawValue.closest('details')?.open).toBe(false);
+  });
+
   it('does not present suggested changes as established board provenance', () => {
     const sourceEventId = '22222222-2222-4222-8222-222222222222';
     const item = boardItem({

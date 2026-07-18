@@ -9,6 +9,7 @@ import type { Dispatch } from 'react';
 
 import { addBoardItemAction, quickCreateBoardItemAction } from '@/app/actions/boards';
 import { displayText } from '@/lib/display-dates';
+import { displayObjectLabel, isInternalIdentifier } from '@/lib/display-labels';
 import { filterObjectsByText } from '@/lib/object-filter';
 import { OBJECT_TYPES } from '@/lib/object-types';
 import { cn, errorMessage } from '@/lib/utils';
@@ -227,7 +228,7 @@ function ExistingObjectPicker({
             }}
             className="inline-flex items-center gap-2 rounded-sm border border-border bg-surface px-2 py-1 text-fg transition-colors hover:bg-surface-2"
           >
-            <span>{displayText(selectedCandidate.canonicalName)}</span>
+            <span>{displayObjectLabel(selectedCandidate)}</span>
             <X className="size-3.5 text-fg-dim" aria-hidden="true" />
           </button>
         </div>
@@ -279,6 +280,9 @@ function CandidateList({
         <ul className="divide-y divide-border">
           {candidates.map((row) => {
             const selected = row.id === entityId;
+            const visibleAliases = row.aliases
+              .filter((alias) => !isInternalIdentifier(alias))
+              .slice(0, 2);
             return (
               <li key={row.id}>
                 <button
@@ -294,15 +298,12 @@ function CandidateList({
                 >
                   <span className="min-w-0">
                     <span className="block truncate font-medium text-fg">
-                      {displayText(row.canonicalName)}
+                      {displayObjectLabel(row)}
                     </span>
                     <span className="block truncate text-[11px] text-fg-dim">
                       {row.type}
-                      {row.aliases.length > 0
-                        ? ` · ${row.aliases
-                            .slice(0, 2)
-                            .map((alias) => displayText(alias))
-                            .join(', ')}`
+                      {visibleAliases.length > 0
+                        ? ` · ${visibleAliases.map((alias) => displayText(alias)).join(', ')}`
                         : ''}
                     </span>
                   </span>
