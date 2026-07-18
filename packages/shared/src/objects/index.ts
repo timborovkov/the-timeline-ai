@@ -1432,6 +1432,16 @@ function objectListConditions(scope: TeamScopeCore, filter: ObjectCountFilter = 
     conds.push(notInArray(entities.status, excludedStatuses));
   }
 
+  const caseInsensitiveExcludedStatuses = toArray(filter.statusNotCaseInsensitive);
+  if (caseInsensitiveExcludedStatuses && caseInsensitiveExcludedStatuses.length > 0) {
+    conds.push(
+      sql`lower(${entities.status}) NOT IN (${sql.join(
+        caseInsensitiveExcludedStatuses.map((status) => sql`${status.toLowerCase()}`),
+        sql`, `,
+      )})`,
+    );
+  }
+
   const stages = toArray(filter.stage);
   if (stages && stages.length > 0) {
     // `stage` is nullable — only filter when caller asked for non-null stages.

@@ -6,7 +6,7 @@ WHERE inverse."from_entity_id" = project."id"
 	AND project."team_id" = inverse."team_id"
 	AND project."type" = 'project'
 	AND task."team_id" = inverse."team_id"
-	AND task."type" = 'task'
+	AND task."type"::text = 'task'
 	AND EXISTS (
 		SELECT 1
 		FROM "entity_relationships" AS canonical
@@ -26,7 +26,7 @@ WHERE inverse."from_entity_id" = project."id"
 	AND project."team_id" = inverse."team_id"
 	AND project."type" = 'project'
 	AND task."team_id" = inverse."team_id"
-	AND task."type" = 'task';--> statement-breakpoint
+	AND task."type"::text = 'task';--> statement-breakpoint
 CREATE TABLE "task_project_source_locks" (
 	"team_id" uuid NOT NULL,
 	"source_entity_id" uuid NOT NULL,
@@ -141,7 +141,7 @@ AS $$
 DECLARE
 	linked_source_id uuid;
 BEGIN
-	IF OLD."type" <> 'task' AND NEW."type" = 'task' AND NEW."merged_into_id" IS NULL THEN
+	IF OLD."type"::text <> 'task' AND NEW."type"::text = 'task' AND NEW."merged_into_id" IS NULL THEN
 		PERFORM "lock_task_project_source"(NEW."team_id", NEW."id");
 		IF EXISTS (
 			SELECT 1
@@ -187,7 +187,7 @@ BEGIN
 		INNER JOIN "entities" AS linked_task
 			ON linked_task."team_id" = inverse_edge."team_id"
 			AND linked_task."id" = inverse_edge."to_entity_id"
-			AND linked_task."type" = 'task'
+			AND linked_task."type"::text = 'task'
 			AND linked_task."merged_into_id" IS NULL
 		WHERE inverse_edge."team_id" = NEW."team_id"
 			AND inverse_edge."from_entity_id" = NEW."id"
@@ -215,7 +215,7 @@ BEGIN
 		INNER JOIN "entities" AS linked_task
 			ON linked_task."team_id" = promoted_edge."team_id"
 			AND linked_task."id" = promoted_edge."from_entity_id"
-			AND linked_task."type" = 'task'
+			AND linked_task."type"::text = 'task'
 			AND linked_task."merged_into_id" IS NULL
 		INNER JOIN "entity_relationships" AS existing_edge
 			ON existing_edge."team_id" = promoted_edge."team_id"
@@ -296,7 +296,7 @@ ALTER TABLE "task_category_assignments" ADD CONSTRAINT "task_category_assignment
 ALTER TABLE "task_category_assignments" ADD CONSTRAINT "task_category_assignments_confidence_chk" CHECK ("task_category_assignments"."confidence" IS NULL OR ("task_category_assignments"."confidence" >= 0 AND "task_category_assignments"."confidence" <= 1));--> statement-breakpoint
 ALTER TABLE "task_category_project_invalidations" ADD CONSTRAINT "task_category_project_invalidations_team_id_teams_id_fk" FOREIGN KEY ("team_id") REFERENCES "public"."teams"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "task_category_project_invalidations" ADD CONSTRAINT "task_category_project_invalidations_team_project_fk" FOREIGN KEY ("team_id","project_id") REFERENCES "public"."entities"("team_id","id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "entities" ADD CONSTRAINT "entities_task_category_non_task_null_chk" CHECK ("entities"."type" = 'task' OR (
+ALTER TABLE "entities" ADD CONSTRAINT "entities_task_category_non_task_null_chk" CHECK ("entities"."type"::text = 'task' OR (
 	"entities"."task_category" IS NULL
 	AND "entities"."task_category_mode" IS NULL
 	AND "entities"."task_category_source" IS NULL
@@ -331,8 +331,8 @@ ALTER TABLE "entities" ADD CONSTRAINT "entities_task_category_request_state_chk"
   AND "entities"."task_category_requested_input_hash" IS NOT NULL
 ) OR "entities"."task_category_requested_input_hash" IS NULL);--> statement-breakpoint
 CREATE INDEX "entities_team_task_category_active_updated_id_idx" ON "entities" USING btree ("team_id","type","task_category","updated_at","id") WHERE "entities"."archived_at" IS NULL AND "entities"."merged_into_id" IS NULL;--> statement-breakpoint
-CREATE INDEX "entities_task_category_pending_recovery_idx" ON "entities" USING btree ("id","task_category_updated_at") WHERE "entities"."type" = 'task' AND "entities"."task_category_mode" = 'automatic' AND "entities"."task_category_status" = 'pending' AND "entities"."task_category_requested_input_hash" IS NOT NULL AND "entities"."archived_at" IS NULL AND "entities"."merged_into_id" IS NULL;--> statement-breakpoint
-CREATE INDEX "entities_team_task_category_pending_idx" ON "entities" USING btree ("team_id","id") WHERE "entities"."type" = 'task' AND "entities"."task_category_status" = 'pending' AND "entities"."archived_at" IS NULL AND "entities"."merged_into_id" IS NULL;--> statement-breakpoint
+CREATE INDEX "entities_task_category_pending_recovery_idx" ON "entities" USING btree ("id","task_category_updated_at") WHERE "entities"."task_category_mode" = 'automatic' AND "entities"."task_category_status" = 'pending' AND "entities"."task_category_requested_input_hash" IS NOT NULL AND "entities"."archived_at" IS NULL AND "entities"."merged_into_id" IS NULL;--> statement-breakpoint
+CREATE INDEX "entities_team_task_category_pending_idx" ON "entities" USING btree ("team_id","id") WHERE "entities"."task_category_status" = 'pending' AND "entities"."archived_at" IS NULL AND "entities"."merged_into_id" IS NULL;--> statement-breakpoint
 CREATE INDEX "task_category_assignments_team_entity_created_idx" ON "task_category_assignments" USING btree ("team_id","entity_id","created_at","id");--> statement-breakpoint
 CREATE INDEX "task_category_assignments_team_versions_outcome_idx" ON "task_category_assignments" USING btree ("team_id","taxonomy_version","prompt_version","model","outcome");--> statement-breakpoint
 CREATE INDEX "task_category_assignments_input_hash_idx" ON "task_category_assignments" USING btree ("team_id","entity_id","input_hash") WHERE "input_hash" IS NOT NULL;--> statement-breakpoint
@@ -349,11 +349,11 @@ DECLARE
 	old_key text;
 	new_key text;
 BEGIN
-	IF TG_OP = 'UPDATE' AND OLD."type" = 'task' THEN
+	IF TG_OP = 'UPDATE' AND OLD."type"::text = 'task' THEN
 		old_team_id := OLD."team_id";
 		old_key := COALESCE(OLD."task_category", 'uncategorized');
 	END IF;
-	IF NEW."type" = 'task' THEN
+	IF NEW."type"::text = 'task' THEN
 		new_team_id := NEW."team_id";
 		new_key := COALESCE(NEW."task_category", 'uncategorized');
 	END IF;

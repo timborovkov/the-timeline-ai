@@ -1,3 +1,4 @@
+import { type ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -7,7 +8,8 @@ const TEAM_ID = 'team-1';
 const fakes = vi.hoisted(() => ({
   auth: vi.fn(),
   resolveActiveTeam: vi.fn(),
-  countPendingSuggestions: vi.fn(),
+  getApprovalItemCounts: vi.fn(),
+  countObjects: vi.fn(),
   listWorkQueueItems: vi.fn(),
   listObjects: vi.fn(),
   listPinnedBoards: vi.fn(),
@@ -18,16 +20,21 @@ const fakes = vi.hoisted(() => ({
   }),
 }));
 
-vi.mock('next/navigation', () => ({ redirect: fakes.redirect }));
+vi.mock('next/navigation', () => ({ redirect: fakes.redirect, usePathname: () => '/app/work' }));
+vi.mock('@/components/ui/tooltip', () => ({
+  Tooltip: ({ children }: { children: ReactNode }) => children,
+  TooltipContent: ({ children }: { children: ReactNode }) => <span>{children}</span>,
+  TooltipTrigger: ({ children }: { children: ReactNode }) => children,
+}));
 vi.mock('@timeline/shared/team-scope', () => ({
   withTeam: () => ({
-    suggestions: { countPendingSuggestions: fakes.countPendingSuggestions },
     boards: {
       listWorkQueueItems: fakes.listWorkQueueItems,
       listPinnedBoards: fakes.listPinnedBoards,
       listBoards: fakes.listBoards,
     },
-    objects: { listObjects: fakes.listObjects },
+    objects: { countObjects: fakes.countObjects, listObjects: fakes.listObjects },
+    suggestions: { getApprovalItemCounts: fakes.getApprovalItemCounts },
     timeline: { listEventsPage: fakes.listEventsPage },
   }),
 }));
@@ -36,6 +43,7 @@ vi.mock('@/lib/active-team', () => ({ resolveActiveTeam: fakes.resolveActiveTeam
 vi.mock('@/lib/db', () => ({ db: {} }));
 
 const { default: WorkPage } = await import('./page.js');
+const { getNavWorkAttention } = await import('@/lib/hub-status');
 
 function objectRow(overrides: Record<string, unknown>) {
   return {
@@ -88,7 +96,8 @@ beforeEach(() => {
   fakes.resolveActiveTeam.mockResolvedValue({
     active: { teamId: TEAM_ID, teamName: 'AuditAI' },
   });
-  fakes.countPendingSuggestions.mockResolvedValue(0);
+  fakes.getApprovalItemCounts.mockResolvedValue({ failed: 0, pending: 0 });
+  fakes.countObjects.mockResolvedValue(0);
   fakes.listWorkQueueItems.mockResolvedValue([]);
   fakes.listObjects.mockResolvedValue([]);
   fakes.listPinnedBoards.mockResolvedValue([]);
@@ -102,14 +111,22 @@ afterEach(() => {
 
 describe('WorkPage', () => {
   it('renders pending approvals as one queue item', async () => {
-    fakes.countPendingSuggestions.mockResolvedValue(3);
+    fakes.getApprovalItemCounts.mockResolvedValue({ failed: 4, pending: 3 });
+    fakes.countObjects.mockResolvedValue(2);
 
     const html = renderToStaticMarkup(await WorkPage());
+    const navWorkAttention = await getNavWorkAttention({
+      objects: { countObjects: fakes.countObjects },
+      suggestions: { getApprovalItemCounts: fakes.getApprovalItemCounts },
+    } as never);
 
     expect(html).toContain('Work Queue');
     expect(html).toContain('3 pending approvals');
     expect(html).toContain('Pending approval');
-    expect(html).toContain('/app/approvals');
+    expect(html).toContain('/app/approvals?status=pending');
+    expect(html).toContain('attention');
+    expect(html).toContain('>5</span>');
+    expect(navWorkAttention).toBe(5);
   });
 
   it('renders responsible board items and unowned team due board items', async () => {

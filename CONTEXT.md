@@ -951,6 +951,12 @@ The bounded time Timeline will wait after joining a meeting link when nobody
 admits or joins the call. It applies to every meeting capture path so forgotten
 or moved calls do not leave a transcriber running indefinitely. For Google Meet
 captures, Timeline uses a provider-safe 550-second no-show window.
+A scheduled Saved Meeting that times out while its configured call window is
+still open is requeued once; a second no-show is terminal and counts toward
+auto-join pause. Bot lifecycle updates are scoped to the current provider bot,
+so late events from the first attempt cannot overwrite its retry. If the retry
+cannot start before the call window closes, Timeline terminalizes it as a
+no-show and advances the same pause counter.
 _Avoid_: Infinite lobby, standby bot
 
 **Support Request**:

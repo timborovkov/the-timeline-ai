@@ -30,6 +30,7 @@ export interface ObjectListFilter {
   type?: ObjectType | ObjectType[];
   status?: string | string[];
   statusNot?: string | string[];
+  statusNotCaseInsensitive?: string | string[];
   stage?: string | string[];
   priority?: number | number[];
   priorityNull?: boolean;

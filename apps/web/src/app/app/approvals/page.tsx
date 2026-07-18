@@ -19,6 +19,26 @@ export const metadata: Metadata = {
 };
 
 const STATUS_FILTERS = ['pending', 'failed', 'resolved', 'all'] as const;
+type ApprovalFilter = (typeof STATUS_FILTERS)[number];
+
+const EMPTY_STATES: Record<ApprovalFilter, { title: string; body: string }> = {
+  pending: {
+    title: 'No pending approvals',
+    body: 'When the agent proposes a workspace change, it will wait here before becoming canonical.',
+  },
+  failed: {
+    title: 'No failed approvals',
+    body: 'Approvals that need a retry or rejection will appear here.',
+  },
+  resolved: {
+    title: 'No resolved approvals',
+    body: 'Accepted, rejected, and superseded approvals will appear here.',
+  },
+  all: {
+    title: 'No approvals',
+    body: 'Agent proposals will appear here as they move through review.',
+  },
+};
 
 interface PageProps {
   searchParams: Promise<{ status?: string }>;
@@ -32,21 +52,22 @@ export default async function ApprovalsPage({ searchParams }: PageProps) {
 
   const scope = withTeam(db, active.teamId, session.user.id);
   const params = await searchParams;
-  const status = STATUS_FILTERS.includes(params.status as (typeof STATUS_FILTERS)[number])
-    ? (params.status as (typeof STATUS_FILTERS)[number])
+  const status = STATUS_FILTERS.includes(params.status as ApprovalFilter)
+    ? (params.status as ApprovalFilter)
     : 'pending';
-  const [suggestions, calendarSettings] = await Promise.all([
+  const [suggestions, calendarSettings, approvalCounts] = await Promise.all([
     scope.suggestions.withCalendarResolutionHints(
       await scope.suggestions.listSuggestions({ status }),
     ),
     scope.calendar.getCalendarSettings(),
+    scope.suggestions.getApprovalItemCounts(),
   ]);
   const visibleSuggestions = suggestions.flatMap((bundle) => {
     const items = bundle.items.filter((item) => {
       if (status === 'pending') return item.status === 'pending';
       if (status === 'failed') return item.status === 'failed';
       if (status === 'resolved') return !isActionableSuggestionStatus(item.status);
-      return true;
+      return item.status !== 'failed';
     });
     return items.length > 0 ? [serializeSuggestionBundle({ ...bundle, items })] : [];
   });
@@ -79,6 +100,7 @@ export default async function ApprovalsPage({ searchParams }: PageProps) {
             }`}
           >
             {filter}
+            {filter === 'pending' || filter === 'failed' ? ` ${approvalCounts[filter]}` : ''}
           </Link>
         ))}
       </nav>
@@ -86,6 +108,7 @@ export default async function ApprovalsPage({ searchParams }: PageProps) {
         suggestions={visibleSuggestions}
         timezone={calendarSettings.defaultTimezone}
         taskCategoriesEnabled={getEnv().TASK_CATEGORY_UI_ENABLED}
+        emptyState={EMPTY_STATES[status]}
       />
     </div>
   );

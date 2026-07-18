@@ -22,20 +22,7 @@ import {
   users,
   type Db,
 } from '@timeline/db';
-import {
-  and,
-  asc,
-  count,
-  desc,
-  eq,
-  gt,
-  inArray,
-  isNotNull,
-  isNull,
-  lt,
-  or,
-  sql,
-} from 'drizzle-orm';
+import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, lt, or, sql } from 'drizzle-orm';
 import { z } from 'zod';
 
 import type { BoardScope } from '#src/boards/index.js';
@@ -416,6 +403,11 @@ export interface CreateSuggestionInput {
 
 export type SuggestionListStatus = 'pending' | 'resolved' | 'failed' | 'all';
 
+export interface ApprovalItemCounts {
+  pending: number;
+  failed: number;
+}
+
 export interface SuggestionBundle {
   id: string;
   source: 'chat' | 'background';
@@ -791,11 +783,27 @@ const calendarDedupeAdjudicationSchema = z.object({
 type CalendarDedupeAdjudication = z.infer<typeof calendarDedupeAdjudicationSchema>;
 const log = childLogger('suggestions');
 
-function actionableItemExistsPredicate() {
+function pendingItemExistsPredicate() {
   return sql`EXISTS (
     SELECT 1 FROM ${agentSuggestionItems}
     WHERE ${agentSuggestionItems.suggestionId} = ${agentSuggestions.id}
-      AND ${agentSuggestionItems.status} IN ('pending', 'failed')
+      AND ${agentSuggestionItems.status} = 'pending'
+  )`;
+}
+
+function failedItemExistsPredicate() {
+  return sql`EXISTS (
+    SELECT 1 FROM ${agentSuggestionItems}
+    WHERE ${agentSuggestionItems.suggestionId} = ${agentSuggestions.id}
+      AND ${agentSuggestionItems.status} = 'failed'
+  )`;
+}
+
+function nonFailedItemExistsPredicate() {
+  return sql`EXISTS (
+    SELECT 1 FROM ${agentSuggestionItems}
+    WHERE ${agentSuggestionItems.suggestionId} = ${agentSuggestions.id}
+      AND ${agentSuggestionItems.status} <> 'failed'
   )`;
 }
 
@@ -5212,7 +5220,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     if (status === 'pending') {
       conditions.push(
         inArray(agentSuggestions.status, ['pending', 'partially_resolved']),
-        actionableItemExistsPredicate(),
+        pendingItemExistsPredicate(),
       );
     } else if (status === 'resolved') {
       conditions.push(
@@ -5225,13 +5233,9 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         ),
       );
     } else if (status === 'failed') {
-      conditions.push(
-        sql`EXISTS (
-	          SELECT 1 FROM ${agentSuggestionItems}
-	          WHERE ${agentSuggestionItems.suggestionId} = ${agentSuggestions.id}
-	            AND ${agentSuggestionItems.status} = 'failed'
-	        )`,
-      );
+      conditions.push(failedItemExistsPredicate());
+    } else {
+      conditions.push(nonFailedItemExistsPredicate());
     }
     const rows = await db
       .select()
@@ -6403,20 +6407,30 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
 
     repairApprovalProjectionForOutput,
 
-    async countPendingSuggestions(): Promise<number> {
+    async getApprovalItemCounts(): Promise<ApprovalItemCounts> {
       await ensureMember();
       await recoverInterruptedTaskCreateAcceptances();
       const rows = await db
-        .select({ total: count() })
-        .from(agentSuggestions)
+        .select({
+          pending: sql<number>`COUNT(*) FILTER (
+            WHERE ${agentSuggestionItems.status} = 'pending'
+              AND ${agentSuggestions.status} IN ('pending', 'partially_resolved')
+          )::int`,
+          failed: sql<number>`COUNT(*) FILTER (WHERE ${agentSuggestionItems.status} = 'failed')::int`,
+        })
+        .from(agentSuggestionItems)
+        .innerJoin(agentSuggestions, eq(agentSuggestions.id, agentSuggestionItems.suggestionId))
         .where(
           and(
+            eq(agentSuggestionItems.teamId, teamId),
             suggestionVisibilityPredicate(teamId, userId),
-            inArray(agentSuggestions.status, ['pending', 'partially_resolved']),
-            actionableItemExistsPredicate(),
+            inArray(agentSuggestionItems.status, ACTIONABLE_ITEM_STATUSES),
           ),
         );
-      return rows[0]?.total ?? 0;
+      return {
+        pending: rows[0]?.pending ?? 0,
+        failed: rows[0]?.failed ?? 0,
+      };
     },
 
     acceptSuggestionItem,

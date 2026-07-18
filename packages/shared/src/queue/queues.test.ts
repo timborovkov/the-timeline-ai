@@ -860,6 +860,18 @@ describe('queue wrappers', () => {
     expect(fakes.queues[0]?.close).toHaveBeenCalledTimes(1);
   });
 
+  it('enqueues an immediate meeting scheduler tick for recovery work', async () => {
+    const queues = await importQueues();
+
+    await queues.enqueueMeetingSchedulerTick();
+
+    expect(fakes.queues[0]?.name).toBe('meeting-scheduler');
+    expect(fakes.queues[0]?.addCalls[0]).toMatchObject({
+      name: 'meeting-scheduler-tick',
+      data: { triggeredAt: expect.any(String) as string },
+    });
+  });
+
   it('registers repeatable jobs with stable job ids and closes singleton queues', async () => {
     const queues = await importQueues();
 

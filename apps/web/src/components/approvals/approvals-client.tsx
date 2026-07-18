@@ -119,6 +119,10 @@ interface Props {
   allowBulkAccept?: boolean;
   allowBulkReject?: boolean;
   timezone?: string;
+  emptyState?: {
+    title: string;
+    body: string;
+  };
   folded?: {
     title: string;
     summary: {
@@ -623,6 +627,7 @@ export function ApprovalsClient({
   allowBulkAccept = true,
   allowBulkReject = true,
   timezone,
+  emptyState,
   folded,
 }: Props) {
   const router = useRouter();
@@ -759,11 +764,9 @@ export function ApprovalsClient({
     resolveItems(optimisticItemIds);
     markBusy(optimisticItemIds);
     startTransition(async () => {
-      let shouldRefresh = true;
       try {
         const result = await action();
         if (result.error) {
-          shouldRefresh = false;
           const failedItemIds =
             result.failedItemIds?.filter((id) => optimisticItemIds.includes(id)) ?? [];
           const restoreItemIds = failedItemIds.length > 0 ? failedItemIds : optimisticItemIds;
@@ -772,14 +775,13 @@ export function ApprovalsClient({
           setError(result.error);
         }
       } catch (err) {
-        shouldRefresh = false;
         restoreItems(optimisticItemIds);
         markActionFailures(optimisticItemIds);
         setError(err instanceof Error ? err.message : 'Approval action failed');
       } finally {
         for (const id of optimisticItemIds) inFlightItemIdsRef.current?.delete(id);
         clearBusy(optimisticItemIds);
-        if (shouldRefresh) router.refresh();
+        router.refresh();
       }
     });
   }
@@ -787,8 +789,11 @@ export function ApprovalsClient({
   if (suggestions.length === 0) {
     return (
       <EmptyAction
-        title="No pending approvals"
-        body="When the agent proposes tasks, objects, calendar items, or document changes, they will queue here before becoming canonical."
+        title={emptyState?.title ?? 'No pending approvals'}
+        body={
+          emptyState?.body ??
+          'When the agent proposes tasks, objects, calendar items, or document changes, they will queue here before becoming canonical.'
+        }
         href="/app"
         action="Back to home"
       />

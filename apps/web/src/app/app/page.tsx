@@ -86,7 +86,7 @@ export default async function HomeDashboardPage() {
   ] = await Promise.all([
     scope.onboarding.getChecklistState(),
     scope.timeline.team(),
-    scope.suggestions.countPendingSuggestions(),
+    scope.suggestions.getApprovalItemCounts().then((counts) => counts.pending),
     scope.timeline.listEventsPage({ limit: 12 }),
     scope.timeline.listMembers(),
     scope.timeline.resolveVisibilityDefault('web'),

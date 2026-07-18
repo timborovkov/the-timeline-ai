@@ -2127,11 +2127,18 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
             status: input.status,
             limit: input.limit ?? 20,
           });
+          const matchingSuggestions = suggestions.flatMap((suggestion) => {
+            const items = suggestion.items.filter((item) => item.status === input.status);
+            return items.length > 0 ? [{ ...suggestion, items }] : [];
+          });
           return {
-            count: suggestions.length,
+            count: matchingSuggestions.reduce(
+              (itemCount, suggestion) => itemCount + suggestion.items.length,
+              0,
+            ),
             canonical: false,
             note: 'These approval proposals are pending workspace state, not canonical truth until accepted.',
-            approvals: suggestions.map((suggestion) => ({
+            approvals: matchingSuggestions.map((suggestion) => ({
               suggestion_id: suggestion.id,
               status: suggestion.status,
               title: suggestion.title,

@@ -307,4 +307,34 @@ describe('ObjectsIndexPage', () => {
     expect(html).toContain('item-1,item-2,item-3,item-4,item-5');
     expect(html).not.toContain('item-6');
   });
+
+  it('excludes failed cleanup siblings from the embedded approvals panel', async () => {
+    fakes.listPendingSuggestions.mockResolvedValue([
+      {
+        id: 'bundle-1',
+        source: 'background',
+        status: 'partially_resolved',
+        title: 'Object cleanup',
+        summary: null,
+        reason: null,
+        confidence: 'medium',
+        visibility: 'team',
+        visibilityOwnerUserId: null,
+        visibilityUserIds: null,
+        metadata: { kind: 'object_cleanup' },
+        createdAt: new Date('2026-06-01T10:00:00.000Z'),
+        updatedAt: new Date('2026-06-01T10:00:00.000Z'),
+        evidence: [],
+        items: [mergeSuggestion(1), { ...mergeSuggestion(2), status: 'failed' }],
+      },
+    ]);
+
+    const html = renderToStaticMarkup(
+      await ObjectsIndexPage({ searchParams: Promise.resolve({}) }),
+    );
+
+    expect(fakes.getObjectMergePreview).toHaveBeenCalledTimes(1);
+    expect(html).toContain('item-1');
+    expect(html).not.toContain('item-2');
+  });
 });

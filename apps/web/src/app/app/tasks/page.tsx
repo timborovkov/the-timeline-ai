@@ -17,7 +17,6 @@ import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { loadProjectFilterRows } from '@/lib/project-filter-options';
-import { isActionableSuggestionStatus } from '@/lib/suggestion-status';
 import { serializeSuggestionBundle } from '@/lib/suggestions';
 import { countTaskRows, loadTaskRowsPage } from '@/lib/task-page';
 import { TASK_STATUS_COLUMNS } from '@/lib/task-statuses';
@@ -126,7 +125,7 @@ export default async function TasksPage({
   });
   const taskSuggestions = pendingSuggestions.flatMap((bundle) => {
     const items = bundle.items.filter(
-      (item) => item.targetKind === 'task' && isActionableSuggestionStatus(item.status),
+      (item) => item.targetKind === 'task' && item.status === 'pending',
     );
     return items.length > 0 ? [serializeSuggestionBundle({ ...bundle, items })] : [];
   });
