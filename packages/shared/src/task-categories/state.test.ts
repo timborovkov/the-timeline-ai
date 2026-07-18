@@ -1219,6 +1219,84 @@ describe('task category and primary project state', () => {
     );
   });
 
+  it('defers task context reclassification until an archived task is restored', async () => {
+    const scope = withTeam(db, TEAM_A, USER_A).objects;
+    const task = await scope.createObject({
+      type: 'task',
+      canonicalName: 'Prepare first draft',
+      actor: { kind: 'user', userId: USER_A },
+    });
+    const initial = await scope.getTaskCategoryClassificationInput(task.id);
+    expect(initial).not.toBeNull();
+    await scope.applyTaskCategoryClassification({
+      taskId: task.id,
+      inputHash: initial?.inputHash ?? '',
+      category: 'design',
+      confidence: 0.91,
+      model: TIMELINE_MODELS.taskCategorization.id,
+      latencyMs: 12,
+    });
+    await scope.archiveObject(task.id, { kind: 'user', userId: USER_A });
+    vi.mocked(queue.enqueueTaskCategoryJob).mockClear();
+
+    const edited = await scope.updateObject(
+      task.id,
+      { canonicalName: 'Prepare homepage wireframes' },
+      { kind: 'user', userId: USER_A },
+    );
+    expect(edited.object).toMatchObject({
+      taskCategory: 'design',
+      taskCategoryMode: 'automatic',
+      taskCategoryStatus: 'ready',
+    });
+    expect(queue.enqueueTaskCategoryJob).not.toHaveBeenCalled();
+
+    const restored = await scope.unarchiveObject(task.id, { kind: 'user', userId: USER_A });
+    expect(restored).toMatchObject({
+      taskCategory: 'design',
+      taskCategoryMode: 'automatic',
+      taskCategoryStatus: 'pending',
+    });
+    const [persisted] = await db.select().from(entities).where(eq(entities.id, task.id));
+    expect(persisted?.taskCategoryAppliedInputHash).toBe(initial?.inputHash);
+    expect(persisted?.taskCategoryRequestedInputHash).toEqual(expect.any(String));
+    expect(persisted?.taskCategoryRequestedInputHash).not.toBe(initial?.inputHash);
+    expect(queue.enqueueTaskCategoryJob).toHaveBeenCalledWith(
+      expect.objectContaining({
+        teamId: TEAM_A,
+        taskId: task.id,
+        inputHash: persisted?.taskCategoryRequestedInputHash,
+        trigger: 'context_change',
+      }),
+    );
+  });
+
+  it('re-enqueues an unchanged pending category request when an archived task is restored', async () => {
+    const scope = withTeam(db, TEAM_A, USER_A).objects;
+    const task = await scope.createObject({
+      type: 'task',
+      canonicalName: 'Prepare homepage wireframes',
+      actor: { kind: 'user', userId: USER_A },
+    });
+    const pending = await scope.getTaskCategoryClassificationInput(task.id);
+    expect(pending).not.toBeNull();
+
+    await scope.archiveObject(task.id, { kind: 'user', userId: USER_A });
+    vi.mocked(queue.enqueueTaskCategoryJob).mockClear();
+
+    const restored = await scope.unarchiveObject(task.id, { kind: 'user', userId: USER_A });
+    expect(restored).toMatchObject({
+      taskCategoryMode: 'automatic',
+      taskCategoryStatus: 'pending',
+    });
+    expect(queue.enqueueTaskCategoryJob).toHaveBeenCalledWith({
+      teamId: TEAM_A,
+      taskId: task.id,
+      inputHash: pending?.inputHash,
+      trigger: 'context_change',
+    });
+  });
+
   it('persists project invalidation work beyond the first page when queue handoff fails', async () => {
     const scope = withTeam(db, TEAM_A, USER_A).objects;
     const project = await scope.createObject({
@@ -1508,6 +1586,65 @@ describe('task category and primary project state', () => {
     await expect(scope.listPrimaryProjectsForTasks([task.id])).resolves.toEqual([
       expect.objectContaining({ projectId: project.id }),
     ]);
+  });
+
+  it('rejects project promotion that would reinterpret an inverse parent edge', async () => {
+    const scope = withTeam(db, TEAM_A, USER_A).objects;
+    const existingProject = await scope.createObject({
+      type: 'project',
+      canonicalName: 'Existing project',
+      actor: { kind: 'user', userId: USER_A },
+    });
+    const candidate = await scope.createObject({
+      type: 'company',
+      canonicalName: 'Project promotion candidate',
+      actor: { kind: 'user', userId: USER_A },
+    });
+    const task = await scope.createObject({
+      type: 'task',
+      canonicalName: 'Task with inverse parent',
+      parentObjectId: existingProject.id,
+      actor: { kind: 'user', userId: USER_A },
+    });
+    await scope.addRelationship({
+      fromEntityId: candidate.id,
+      toEntityId: task.id,
+      kind: 'parent',
+      actorUserId: USER_A,
+    });
+
+    await expect(
+      scope.updateObject(candidate.id, { type: 'project' }, { kind: 'user', userId: USER_A }),
+    ).rejects.toThrow();
+    await expect(scope.getObject(candidate.id)).resolves.toMatchObject({ type: 'company' });
+    await expect(scope.listPrimaryProjectsForTasks([task.id])).resolves.toEqual([
+      expect.objectContaining({ projectId: existingProject.id }),
+    ]);
+  });
+
+  it('rejects task promotion that would reinterpret an inverse project parent edge', async () => {
+    const scope = withTeam(db, TEAM_A, USER_A).objects;
+    const project = await scope.createObject({
+      type: 'project',
+      canonicalName: 'Existing project',
+      actor: { kind: 'user', userId: USER_A },
+    });
+    const candidate = await scope.createObject({
+      type: 'other',
+      canonicalName: 'Task promotion candidate',
+      actor: { kind: 'user', userId: USER_A },
+    });
+    await scope.addRelationship({
+      fromEntityId: project.id,
+      toEntityId: candidate.id,
+      kind: 'parent',
+      actorUserId: USER_A,
+    });
+
+    await expect(
+      scope.updateObject(candidate.id, { type: 'task' }, { kind: 'user', userId: USER_A }),
+    ).rejects.toThrow();
+    await expect(scope.getObject(candidate.id)).resolves.toMatchObject({ type: 'other' });
   });
 
   it('retargets primary project edges and invalidates automatic context on project merge', async () => {

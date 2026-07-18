@@ -892,6 +892,74 @@ describe('TaskBoard', () => {
     });
   });
 
+  it('drops loaded project-filter pages after a task project changes', async () => {
+    const user = userEvent.setup();
+    fakes.loadTaskRowsAction
+      .mockResolvedValueOnce({
+        rows: [task({ id: 'task-2', canonicalName: 'Stale project match' })],
+        nextCursor: null,
+      })
+      .mockResolvedValueOnce({
+        rows: [task({ id: 'task-4', canonicalName: 'New older project match' })],
+        nextCursor: null,
+      });
+    fakes.loadTaskPrimaryProjectsAction.mockResolvedValue({
+      rows: [
+        {
+          taskId: 'task-2',
+          projectId: 'project-a',
+          projectName: 'Project A',
+          archivedAt: null,
+        },
+      ],
+    });
+    const props = {
+      columns: ['todo', 'doing', 'done', 'blocked', 'cancelled'],
+      selectedTaskId: 'task-2',
+      view: 'kanban' as const,
+      members: [{ id: 'user-1', label: 'Ada Lovelace' }],
+      projects: [
+        { id: 'project-a', label: 'Project A' },
+        { id: 'project-b', label: 'Project B' },
+      ],
+      totalCount: 2,
+      filterParams: { project: 'project-a' },
+    };
+    const view = render(
+      <TaskBoard
+        {...props}
+        rows={[task({ id: 'task-1', canonicalName: 'Current project match' })]}
+        nextCursor="older-cursor"
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Load older tasks' }));
+    await screen.findByRole('link', { name: 'Stale project match' });
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Task project' }), 'project-b');
+
+    await waitFor(() => {
+      expect(fakes.setTaskProjectAction).toHaveBeenCalledWith({
+        id: 'task-2',
+        projectId: 'project-b',
+      });
+      expect(screen.queryByRole('link', { name: 'Stale project match' })).toBeNull();
+    });
+
+    view.rerender(
+      <TaskBoard
+        {...props}
+        rows={[task({ id: 'task-3', canonicalName: 'Refreshed project match' })]}
+        nextCursor="refreshed-cursor"
+      />,
+    );
+    await user.click(screen.getByRole('button', { name: 'Load older tasks' }));
+    await screen.findByRole('link', { name: 'New older project match' });
+    expect(fakes.loadTaskRowsAction).toHaveBeenNthCalledWith(2, {
+      cursor: 'refreshed-cursor',
+      filters: { project: 'project-a' },
+    });
+  });
+
   it('drops previously loaded tasks when server filters change', () => {
     const { rerender } = render(
       <TaskBoard

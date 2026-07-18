@@ -25,13 +25,13 @@ separate from functional category. Board membership, co-mention, title similarit
 and category are never project ownership.
 
 Database compatibility triggers canonicalize legacy inverse project edges during
-rolling deploys and reject a second active project edge, including one introduced
-by changing a related object's type to `project`. Category-filtered pages compare
-transactional per-category revision rows and use a bounded pending lookup, so
-refresh does not depend on web and worker wall clocks or scan every matching task.
-When a valid type promotion turns a task's sole generic child edge into its primary
-project, the automatic category input is invalidated and requeued with that project
-context.
+rolling deploys and reject a second active project edge. Type promotion rejects
+noncanonical inverse parent edges or any promotion that would create multiple
+active projects. Category-filtered pages compare transactional per-category
+revision rows and use a bounded pending lookup, so refresh does not depend on web
+and worker wall clocks or scan every matching task. When a valid type promotion
+turns a task's sole generic child edge into its primary project, the automatic
+category input is invalidated and requeued with that project context.
 
 A background task proposal may name one existing project or propose creating one
 clearly named project from the same evidence. The approval preview exposes both
@@ -39,8 +39,10 @@ fields for correction. Accepting the task validates team/type/lifecycle boundari
 creates or reuses the project idempotently, and writes the single task-to-project
 edge. A human category edit becomes `manual`; a project edit invalidates an
 automatic precomputed category so stale context cannot be silently accepted.
-Archived tasks defer automatic work, so unarchiving recomputes the current
-task/project packet and requeues classification only when that input changed.
+Archived tasks defer automatic work. Unarchiving recomputes the current task/project
+packet and requeues classification when the input changed. It also re-enqueues an
+unchanged pending request because its earlier worker job may have been discarded
+while the task was archived.
 
 Every task-proposal producer uses this same category/project contract.
 `suggest_task` and task-shaped `suggest_object_memory` proposals resolve an

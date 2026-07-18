@@ -4488,6 +4488,8 @@ export async function updateObject(
 
     let requestedCategoryHash: string | null = null;
     const nextType = (next.type as EntityRow['type'] | undefined) ?? current.type;
+    const nextArchivedAt =
+      next.archivedAt === undefined ? current.archivedAt : (next.archivedAt as Date | null);
     if (current.type === 'project' && nextType !== 'project') {
       const [linkedCount] = await tx
         .select({ total: sql<number>`count(*)::int` })
@@ -4566,7 +4568,7 @@ export async function updateObject(
         taskCategoryTaxonomyVersion: null,
         taskCategoryUpdatedAt: null,
       });
-      if (automationEnabled) {
+      if (automationEnabled && nextArchivedAt === null) {
         const packet = await taskCategoryPacketForRow(tx, scope.teamId, {
           id: current.id,
           canonicalName: (next.canonicalName as string | undefined) ?? current.canonicalName,
@@ -4584,6 +4586,7 @@ export async function updateObject(
       }
     } else if (
       nextType === 'task' &&
+      nextArchivedAt === null &&
       current.taskCategoryMode !== 'manual' &&
       (changes.some((change) =>
         ['canonicalName', 'aliases', 'metadata', 'type'].includes(change.field),
@@ -4601,7 +4604,11 @@ export async function updateObject(
         current.taskCategoryStatus === 'ready'
           ? current.taskCategoryAppliedInputHash
           : current.taskCategoryRequestedInputHash;
-      if (inputHash !== existingInputHash) {
+      const restoringPendingRequest =
+        current.archivedAt !== null &&
+        current.taskCategoryStatus === 'pending' &&
+        inputHash === existingInputHash;
+      if (inputHash !== existingInputHash || restoringPendingRequest) {
         requestedCategoryHash = inputHash;
         Object.assign(next, {
           taskCategoryMode: 'automatic',

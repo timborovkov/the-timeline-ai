@@ -175,6 +175,7 @@ type TaskBoardAction =
       filterKey: string;
     }
   | { type: 'filter'; query: string }
+  | { type: 'reset-pagination' }
   | { type: 'selected'; next: SetStateAction<ReadonlySet<string>>; filterKey: string }
   | { type: 'patches'; next: SetStateAction<Record<string, TaskPatchOverlay>> };
 
@@ -248,6 +249,13 @@ function taskBoardReducer(state: TaskBoardState, action: TaskBoardAction): TaskB
     }
     case 'filter':
       return { ...state, filterQuery: action.query };
+    case 'reset-pagination':
+      return {
+        ...state,
+        pagination: INITIAL_TASK_BOARD_STATE.pagination,
+        loadErrorFilterKey: null,
+        loadError: null,
+      };
     case 'selected':
       return {
         ...state,
@@ -604,13 +612,17 @@ function useTaskBoardController({
     },
     [resolvedPrimaryProjects],
   );
-  const commitPrimaryProject = useCallback((taskId: string) => {
-    setPrimaryProjectOverrides((current) => {
-      const override = current[taskId];
-      if (!override) return current;
-      return { ...current, [taskId]: { ...override, committed: true } };
-    });
-  }, []);
+  const commitPrimaryProject = useCallback(
+    (taskId: string) => {
+      setPrimaryProjectOverrides((current) => {
+        const override = current[taskId];
+        if (!override) return current;
+        return { ...current, [taskId]: { ...override, committed: true } };
+      });
+      if (filterParams.project) dispatchBoard({ type: 'reset-pagination' });
+    },
+    [filterParams.project],
+  );
   const revertPrimaryProject = useCallback((taskId: string) => {
     setPrimaryProjectOverrides((current) => {
       if (!(taskId in current)) return current;

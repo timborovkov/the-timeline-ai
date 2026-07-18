@@ -143,6 +143,22 @@ DECLARE
 BEGIN
 	IF OLD."type" <> 'task' AND NEW."type" = 'task' AND NEW."merged_into_id" IS NULL THEN
 		PERFORM "lock_task_project_source"(NEW."team_id", NEW."id");
+		IF EXISTS (
+			SELECT 1
+			FROM "entity_relationships" AS inverse_edge
+			INNER JOIN "entities" AS project
+				ON project."team_id" = inverse_edge."team_id"
+				AND project."id" = inverse_edge."from_entity_id"
+				AND project."type" = 'project'
+				AND project."merged_into_id" IS NULL
+			WHERE inverse_edge."team_id" = NEW."team_id"
+				AND inverse_edge."to_entity_id" = NEW."id"
+				AND inverse_edge."kind" = 'parent'
+		) THEN
+			RAISE EXCEPTION 'Remove inverse project parent relationships before changing this object to a task'
+				USING ERRCODE = '23505',
+					CONSTRAINT = 'entity_relationships_task_primary_project_unq';
+		END IF;
 		IF 1 < (
 			SELECT count(*)
 			FROM "entity_relationships" AS project_edge
@@ -163,6 +179,23 @@ BEGIN
 
 	IF OLD."type" = 'project' OR NEW."type" <> 'project' OR NEW."merged_into_id" IS NOT NULL THEN
 		RETURN NEW;
+	END IF;
+
+	IF EXISTS (
+		SELECT 1
+		FROM "entity_relationships" AS inverse_edge
+		INNER JOIN "entities" AS linked_task
+			ON linked_task."team_id" = inverse_edge."team_id"
+			AND linked_task."id" = inverse_edge."to_entity_id"
+			AND linked_task."type" = 'task'
+			AND linked_task."merged_into_id" IS NULL
+		WHERE inverse_edge."team_id" = NEW."team_id"
+			AND inverse_edge."from_entity_id" = NEW."id"
+			AND inverse_edge."kind" = 'parent'
+	) THEN
+		RAISE EXCEPTION 'Remove inverse task parent relationships before changing this object to a project'
+			USING ERRCODE = '23505',
+				CONSTRAINT = 'entity_relationships_task_primary_project_unq';
 	END IF;
 
 	FOR linked_source_id IN
