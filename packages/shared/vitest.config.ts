@@ -33,6 +33,8 @@ const pgliteTests = [
   'src/meetings/scope.test.ts',
   'src/onboarding/index.test.ts',
   'src/objects/index.test.ts',
+  'src/task-categories/state.test.ts',
+  'src/task-categories/evals.test.ts',
   'src/objects/summary-evals.test.ts',
   'src/reconciliation/backfill.test.ts',
   'src/reconciliation/dashboard.test.ts',

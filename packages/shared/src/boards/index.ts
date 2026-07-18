@@ -38,6 +38,7 @@ import type {
   ObjectRow,
   ObjectType,
 } from '#src/objects/index.js';
+import type { TaskCategoryFilterKey } from '#src/task-categories/types.js';
 import type { TeamScopeCore } from '#src/team-scope.js';
 
 import {
@@ -55,6 +56,10 @@ import { normalizeRawEventsToEvidence } from '#src/reconciliation/normalization.
 import { sourcePayloadRefFromMetadata } from '#src/reconciliation/source-snapshot.js';
 import { stableSha256Digest } from '#src/reconciliation/stable-digest.js';
 import { likePattern } from '#src/sql-like.js';
+import {
+  readTaskCategoryFilterRefreshState,
+  type TaskCategoryFilterRefreshState,
+} from '#src/task-categories/filter-refresh.js';
 import { rawEventVisibleToUser } from '#src/visibility.js';
 
 type DbTx = Parameters<Parameters<Db['transaction']>[0]>[0];
@@ -354,6 +359,11 @@ function toObjectRow(row: EntitySelect): ObjectRow {
     ownerUserId: row.ownerUserId,
     assigneeUserId: row.assigneeUserId,
     dueAt: row.dueAt,
+    taskCategory: row.taskCategory as ObjectRow['taskCategory'],
+    taskCategoryMode: row.taskCategoryMode as ObjectRow['taskCategoryMode'],
+    taskCategorySource: row.taskCategorySource as ObjectRow['taskCategorySource'],
+    taskCategoryStatus: row.taskCategoryStatus as ObjectRow['taskCategoryStatus'],
+    taskCategoryUpdatedAt: row.taskCategoryUpdatedAt,
     // `entities.agent_suggested` is legacy single-row provenance. Board
     // surfaces should rely on approval projections, not this column.
     agentSuggested: false,
@@ -365,6 +375,15 @@ function toObjectRow(row: EntitySelect): ObjectRow {
     updatedAt: row.updatedAt,
     createdAt: row.createdAt,
   };
+}
+
+function isArchivedSuggestedProject(
+  object: Pick<EntitySelect, 'archivedAt' | 'metadata'>,
+): boolean {
+  return (
+    object.archivedAt !== null &&
+    typeof jsonObject(object.metadata).agent_suggestion_project_for_item_id === 'string'
+  );
 }
 
 function toBoardRow(
@@ -1202,6 +1221,59 @@ export function createBoardScope({
     const assigneeCondition = nullableUuidCondition(entities.assigneeUserId, filter.assigneeUserId);
     if (assigneeCondition) conds.push(assigneeCondition);
 
+    const categories = toArray(filter.taskCategory);
+    const categoryCondition = categories?.length
+      ? inArray(entities.taskCategory, categories)
+      : undefined;
+    if (categoryCondition || filter.taskCategoryNull) conds.push(eq(entities.type, 'task'));
+    if (categoryCondition && filter.taskCategoryNull) {
+      const namedOrNull = or(categoryCondition, isNull(entities.taskCategory));
+      if (namedOrNull) conds.push(namedOrNull);
+    } else if (categoryCondition) {
+      conds.push(categoryCondition);
+    } else if (filter.taskCategoryNull) {
+      conds.push(isNull(entities.taskCategory));
+    }
+
+    const requestedProjectIds = toArray(filter.primaryProjectId);
+    if (requestedProjectIds?.length) {
+      conds.push(eq(entities.type, 'task'));
+      const projectIds = requestedProjectIds.filter((id) => UUID_RE.test(id));
+      if (projectIds.length === 0) {
+        conds.push(sql`false`);
+      } else {
+        const idList = sql.join(
+          projectIds.map((id) => sql`${id}::uuid`),
+          sql`, `,
+        );
+        conds.push(sql`EXISTS (
+          SELECT 1
+          FROM entity_relationships AS task_project_rel
+          INNER JOIN entities AS primary_project
+            ON primary_project.id = task_project_rel.to_entity_id
+            AND primary_project.team_id = task_project_rel.team_id
+          WHERE task_project_rel.team_id = ${scope.teamId}
+            AND task_project_rel.from_entity_id = ${entities.id}
+            AND task_project_rel.kind = 'child'
+            AND primary_project.type = 'project'
+            AND primary_project.merged_into_id IS NULL
+            AND primary_project.id IN (${idList})
+            AND 1 = (
+              SELECT count(*)
+              FROM entity_relationships AS candidate_project_rel
+              INNER JOIN entities AS candidate_project
+                ON candidate_project.id = candidate_project_rel.to_entity_id
+                AND candidate_project.team_id = candidate_project_rel.team_id
+              WHERE candidate_project_rel.team_id = task_project_rel.team_id
+                AND candidate_project_rel.from_entity_id = task_project_rel.from_entity_id
+                AND candidate_project_rel.kind = 'child'
+                AND candidate_project.type = 'project'
+                AND candidate_project.merged_into_id IS NULL
+            )
+        )`);
+      }
+    }
+
     if (filter.dueNull) conds.push(isNull(entities.dueAt));
     if (filter.dueBefore) conds.push(lt(entities.dueAt, filter.dueBefore));
     if (filter.dueAfter) conds.push(gte(entities.dueAt, filter.dueAfter));
@@ -1377,6 +1449,46 @@ export function createBoardScope({
         lanes: lanes.map(toLaneRow),
         items: rows.map((row) => toItemRow(row.item, row.object)),
       };
+    },
+
+    async getTaskCategoryFilterRefreshState(
+      boardId: string,
+      filter: BoardItemFilter,
+      categoryKeys: readonly TaskCategoryFilterKey[],
+      baselineToken?: string,
+    ): Promise<TaskCategoryFilterRefreshState> {
+      await scope.requireMembership();
+      if (!UUID_RE.test(boardId)) return { token: '', changed: false, pending: false };
+      const {
+        taskCategory: _category,
+        taskCategoryNull: _categoryNull,
+        ...objectFilter
+      } = filter.object ?? {};
+      const conditions = boardItemFilterConditions({
+        ...filter,
+        object: { ...objectFilter, type: 'task' },
+      });
+      const pendingQuery = db
+        .select({ id: boardItems.id })
+        .from(boardItems)
+        .innerJoin(entities, eq(boardItems.entityId, entities.id))
+        .where(
+          and(
+            eq(boardItems.boardId, boardId),
+            eq(boardItems.teamId, scope.teamId),
+            isNull(boardItems.archivedAt),
+            eq(entities.taskCategoryStatus, 'pending'),
+            ...conditions,
+          ),
+        )
+        .limit(1);
+      return readTaskCategoryFilterRefreshState(
+        db,
+        scope.teamId,
+        categoryKeys,
+        pendingQuery,
+        baselineToken,
+      );
     },
 
     async getBoardItem(itemId: string): Promise<BoardItemRow | null> {
@@ -1613,10 +1725,27 @@ export function createBoardScope({
 
     async addBoardItem(boardId: string, input: AddBoardItemInput): Promise<BoardItemRow> {
       const board = await requireBoard(boardId);
-      const object = await requireObject(input.entityId);
+      if (!UUID_RE.test(input.entityId)) throw new Error('Invalid object id');
       await requireLane(boardId, input.laneId);
       if (input.responsibleUserId) await scope.requireTeamMember(input.responsibleUserId);
       const txResult = await db.transaction(async (tx) => {
+        const [object] = await tx
+          .select()
+          .from(entities)
+          .where(
+            and(
+              eq(entities.id, input.entityId),
+              eq(entities.teamId, scope.teamId),
+              isNull(entities.mergedIntoId),
+            ),
+          )
+          .for('update')
+          .limit(1);
+        if (!object) throw new Error('Object not in this team');
+        if (isArchivedSuggestedProject(object)) {
+          throw new Error('Archived suggested projects cannot be added to boards');
+        }
+        if (object.archivedAt) throw new Error('Archived objects cannot be added to boards');
         const rows = await tx
           .insert(boardItems)
           .values({
@@ -2223,6 +2352,23 @@ export function createBoardScope({
         if (!claimedChange) return null;
 
         if (claimedChange.field === '__add__') {
+          const [object] = await tx
+            .select()
+            .from(entities)
+            .where(
+              and(
+                eq(entities.id, claimedChange.entityId),
+                eq(entities.teamId, scope.teamId),
+                isNull(entities.mergedIntoId),
+              ),
+            )
+            .for('update')
+            .limit(1);
+          if (!object) throw new Error('Object not in this team');
+          if (isArchivedSuggestedProject(object)) {
+            throw new Error('Archived suggested projects cannot be added to boards');
+          }
+          if (object.archivedAt) throw new Error('Archived objects cannot be added to boards');
           const existing = await tx
             .select({ id: boardItems.id })
             .from(boardItems)

@@ -1,4 +1,5 @@
 import { users } from '@timeline/db';
+import { getEnv } from '@timeline/shared/env';
 import { withTeam } from '@timeline/shared/team-scope';
 import { inArray } from 'drizzle-orm';
 import { redirect } from 'next/navigation';
@@ -9,11 +10,13 @@ import { ApprovalsClient } from '@/components/approvals/approvals-client';
 import { EmptyAction } from '@/components/empty-action';
 import { IndexStrip } from '@/components/index-strip';
 import { TaskBoard } from '@/components/tasks/task-board';
+import { TaskCategoryFilterRefresh } from '@/components/tasks/task-category-filter-refresh';
 import { WORK_BACK_LINK } from '@/components/work-back-link';
 import { WorkFilterBar } from '@/components/work-filter-bar';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { loadProjectFilterRows } from '@/lib/project-filter-options';
 import { serializeSuggestionBundle } from '@/lib/suggestions';
 import { countTaskRows, loadTaskRowsPage } from '@/lib/task-page';
 import { TASK_STATUS_COLUMNS } from '@/lib/task-statuses';
@@ -21,6 +24,7 @@ import {
   WORK_FILTER_PARAM_KEYS,
   hasActiveWorkFilters,
   parseWorkFilters,
+  taskCategoryFilterKeys,
   taskObjectFilterFromWorkFilters,
   workFilterHiddenParams,
 } from '@/lib/work-filters';
@@ -59,10 +63,26 @@ export default async function TasksPage({
   if (!active) redirect('/sign-in');
 
   const scope = withTeam(db, active.teamId, session.user.id);
+  const taskCategoriesEnabled = getEnv().TASK_CATEGORY_UI_ENABLED;
   const selectedTaskId = taskParam(query.task);
-  const filters = parseWorkFilters(query);
+  const filters = parseWorkFilters(query, {
+    taskCategoriesEnabled,
+  });
+  const categoryKeys = taskCategoryFilterKeys(filters);
+  const categoryFilterBaseline =
+    categoryKeys.length > 0
+      ? await scope.objects.getTaskCategoryFilterRefreshState(
+          taskObjectFilterFromWorkFilters({ ...filters, category: '' }),
+          categoryKeys,
+        )
+      : null;
   const taskFilter = taskObjectFilterFromWorkFilters(filters);
-  const [taskPage, counts, pendingSuggestions, members] = await Promise.all([
+  const [projects, taskPage, counts, pendingSuggestions, members] = await Promise.all([
+    loadProjectFilterRows({
+      listObjects: (filter) => scope.objects.listObjects(filter),
+      selected: filters.project,
+      includeArchivedSelected: true,
+    }),
     loadTaskRowsPage(scope.objects, null, taskFilter),
     countTaskRows(scope.objects, new Date(), taskFilter),
     scope.suggestions.listPendingSuggestions(),
@@ -84,6 +104,9 @@ export default async function TasksPage({
   const selectedTaskDetail = selectedVisibleTaskId
     ? await scope.objects.getObject(selectedVisibleTaskId)
     : null;
+  const primaryProjects = await scope.objects.listPrimaryProjectsForTasks(
+    rows.map((row) => row.id),
+  );
   const memberIds = members.map((member) => member.userId);
   const memberRows =
     memberIds.length > 0
@@ -111,7 +134,6 @@ export default async function TasksPage({
   const activeFilters = hasActiveWorkFilters(filters);
   const hiddenFilterParams = workFilterHiddenParams(query, ['view']);
   const taskLoadFilterParams = workFilterHiddenParams(query, WORK_FILTER_PARAM_KEYS);
-
   const srSegments = [
     'Tasks',
     `${counts.total} total`,
@@ -157,8 +179,17 @@ export default async function TasksPage({
         totalCount={counts.total}
         hiddenParams={hiddenFilterParams}
         members={memberOptions}
+        projects={projects.map((project) => ({ id: project.id, label: project.canonicalName }))}
         statusOptions={TASK_STATUS_COLUMNS}
       />
+
+      {categoryFilterBaseline ? (
+        <TaskCategoryFilterRefresh
+          surface="tasks"
+          filters={filters}
+          baselineToken={categoryFilterBaseline.token}
+        />
+      ) : null}
 
       {rows.length === 0 ? (
         <EmptyAction
@@ -188,9 +219,14 @@ export default async function TasksPage({
             selectedTaskContext={selectedTaskDetail?.connectedWork ?? null}
             view={view}
             members={memberOptions}
+            projects={projects.map((project) => ({ id: project.id, label: project.canonicalName }))}
+            primaryProjects={primaryProjects}
+            initialProjectsHydrated
             totalCount={counts.total}
             nextCursor={taskPage.nextCursor}
             filterParams={taskLoadFilterParams}
+            categoryFilterRefreshToken={categoryFilterBaseline?.token}
+            taskCategoriesEnabled={taskCategoriesEnabled}
           />
         </div>
       )}
@@ -199,6 +235,7 @@ export default async function TasksPage({
         <ApprovalsClient
           suggestions={taskSuggestions}
           allowBulkAccept={false}
+          taskCategoriesEnabled={taskCategoriesEnabled}
           folded={{
             title: 'Task approvals',
             summary: {

@@ -20,6 +20,8 @@ describe('product analytics contract', () => {
         'meeting_finalized',
         'object_created',
         'onboarding_step_completed',
+        'task_category_changed',
+        'task_project_changed',
         'team_created',
         'team_export_requested',
         'timeline_moments_viewed',

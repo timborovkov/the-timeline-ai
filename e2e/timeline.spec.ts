@@ -907,6 +907,121 @@ test('seeded owner can sign in, switch teams, and sign out', async ({ page }) =>
   await expect(page).toHaveURL(/\/sign-in/);
 });
 
+test('task categories and primary project stay distinct and filter together', async ({
+  browser,
+}) => {
+  const ownerPage = await newSignedInPage(browser, 'owner');
+  const sql = getDbClient();
+  const stamp = Date.now();
+  const projectName = `Faba website redesign ${stamp}`;
+  const taskName = `Prepare homepage wireframes ${stamp}`;
+  let projectId: string | null = null;
+  let taskId: string | null = null;
+  try {
+    await ownerPage.goto('/app/objects/new');
+    await ownerPage.getByLabel('Type').selectOption('project');
+    await ownerPage.getByLabel('Name').fill(projectName);
+    await ownerPage.getByRole('button', { name: 'Create object' }).click();
+    await expect(ownerPage).toHaveURL(/\/app\/objects\/[0-9a-f-]+/);
+    projectId = ownerPage.url().match(/\/app\/objects\/([0-9a-f-]+)/)?.[1] ?? null;
+    if (!projectId) throw new Error('created project id missing');
+
+    await ownerPage.getByRole('link', { name: 'Add task' }).click();
+    await expect(ownerPage.getByLabel('Task project', { exact: true })).toHaveValue(projectId);
+    await ownerPage.getByLabel('Name').fill(taskName);
+    await ownerPage.getByRole('button', { name: 'Create object' }).click();
+    await expect(ownerPage).toHaveURL(new RegExp(`/app/objects/${projectId}$`));
+    await expect(ownerPage.getByText(taskName).first()).toBeVisible();
+
+    const rows = await sql<{ id: string }[]>`
+      SELECT id
+      FROM entities
+      WHERE team_id = ${e2eTeam.id}
+        AND type = 'task'
+        AND canonical_name = ${taskName}
+      LIMIT 1
+    `;
+    taskId = rows[0]?.id ?? null;
+    if (!taskId) throw new Error('created task id missing');
+    const relations = await sql<{ projectId: string }[]>`
+      SELECT to_entity_id AS "projectId"
+      FROM entity_relationships
+      WHERE team_id = ${e2eTeam.id}
+        AND from_entity_id = ${taskId}
+        AND kind = 'child'
+    `;
+    expect(relations).toEqual([{ projectId }]);
+
+    await ownerPage.goto(`/app/objects/${taskId}`);
+    await expect(ownerPage.getByText('Categorizing…').first()).toBeVisible();
+    await ownerPage.getByLabel('Task category').selectOption('design');
+    await expect(ownerPage.getByLabel('Task category')).toHaveValue('design');
+    await expect(ownerPage.getByLabel('Task project', { exact: true })).toHaveValue(projectId);
+
+    await ownerPage.goto(`/app/tasks?category=design&project=${projectId}&view=list`);
+    await expect(ownerPage.getByText(taskName).first()).toBeVisible();
+    await expect(ownerPage.getByText('Design').first()).toBeVisible();
+
+    await ownerPage.goto(`/app/objects/${taskId}`);
+    await ownerPage.getByLabel('Task project', { exact: true }).selectOption('');
+    await expect(ownerPage.getByLabel('Task project', { exact: true })).toHaveValue('');
+    await expect(ownerPage.getByLabel('Task category')).toHaveValue('design');
+    await expect(
+      sql`SELECT 1 FROM entity_relationships WHERE from_entity_id = ${taskId}`,
+    ).resolves.toHaveLength(0);
+
+    await ownerPage.getByLabel('Task category').selectOption('__automatic__');
+    const firstPendingHash = await expect
+      .poll(async () => {
+        const [row] = await sql<{ requestedHash: string | null }[]>`
+          SELECT task_category_requested_input_hash AS "requestedHash"
+          FROM entities WHERE id = ${taskId}
+        `;
+        return row?.requestedHash ?? null;
+      })
+      .not.toBeNull()
+      .then(async () => {
+        const [row] = await sql<{ requestedHash: string }[]>`
+          SELECT task_category_requested_input_hash AS "requestedHash"
+          FROM entities WHERE id = ${taskId}
+        `;
+        return row?.requestedHash;
+      });
+    await ownerPage.getByLabel('Task project', { exact: true }).selectOption(projectId);
+    await expect
+      .poll(async () => {
+        const [row] = await sql<{ requestedHash: string | null }[]>`
+          SELECT task_category_requested_input_hash AS "requestedHash"
+          FROM entities WHERE id = ${taskId}
+        `;
+        return row?.requestedHash ?? null;
+      })
+      .not.toBe(firstPendingHash);
+
+    await sql`
+      UPDATE entities
+      SET task_category_status = 'failed', task_category_requested_input_hash = NULL
+      WHERE id = ${taskId}
+    `;
+    await ownerPage.reload();
+    await ownerPage.getByRole('button', { name: 'Retry automatic category' }).click();
+    await expect
+      .poll(async () => {
+        const [row] = await sql<{ status: string }[]>`
+          SELECT task_category_status AS status FROM entities WHERE id = ${taskId}
+        `;
+        return row?.status;
+      })
+      .toBe('pending');
+  } finally {
+    await ownerPage.goto('about:blank');
+    if (taskId) await sql`DELETE FROM entities WHERE team_id = ${e2eTeam.id} AND id = ${taskId}`;
+    if (projectId)
+      await sql`DELETE FROM entities WHERE team_id = ${e2eTeam.id} AND id = ${projectId}`;
+    await ownerPage.context().close();
+  }
+});
+
 test('onboarding checklist supports manual completion, dismissal, and reopening', async ({
   browser,
 }) => {
@@ -2288,12 +2403,16 @@ test('owner can link and unlink related objects from the object detail page', as
   await expect(page.getByText('related · task')).toBeVisible();
 
   await page.goto(`/app/objects/${primaryId}`);
-  await waitForPost(page, `/app/objects/${primaryId}`, () =>
-    page
-      .locator('li')
-      .filter({ hasText: secondaryName })
-      .getByRole('button', { name: 'Unlink' })
-      .click(),
+  await waitForPost(
+    page,
+    `/app/objects/${primaryId}`,
+    () =>
+      page
+        .locator('li')
+        .filter({ hasText: secondaryName })
+        .getByRole('button', { name: 'Unlink' })
+        .click(),
+    (response) => response.request().postData()?.includes(secondaryId) ?? false,
   );
   await expect(page.getByRole('link', { name: secondaryName })).toHaveCount(0);
   await expect(page.getByText('No relationships yet.')).toBeVisible();
@@ -2301,6 +2420,7 @@ test('owner can link and unlink related objects from the object detail page', as
   await page.goto(`/app/objects/${secondaryId}`);
   await expect(page.getByRole('link', { name: primaryName })).toHaveCount(0);
   await expect(page.getByText('No relationships yet.')).toBeVisible();
+  await page.waitForLoadState('networkidle');
 
   await page.context().close();
 });

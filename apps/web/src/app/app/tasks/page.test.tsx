@@ -7,20 +7,33 @@ const fakes = vi.hoisted(() => ({
   listObjects: vi.fn(),
   countObjects: vi.fn(),
   getObject: vi.fn(),
+  listPrimaryProjectsForTasks: vi.fn(),
+  getTaskCategoryFilterRefreshState: vi.fn(),
   listPendingSuggestions: vi.fn(),
   listMembers: vi.fn(),
+  filterProjects: [] as { label: string }[],
+  categoryRefresh: null as {
+    surface: string;
+    filters: { category: string };
+    baselineToken: string;
+  } | null,
   redirect: vi.fn((path: string) => {
     throw new Error(`redirect:${path}`);
   }),
 }));
 
 vi.mock('next/navigation', () => ({ redirect: fakes.redirect }));
+vi.mock('@timeline/shared/env', () => ({
+  getEnv: () => ({ TASK_CATEGORY_UI_ENABLED: true }),
+}));
 vi.mock('@timeline/shared/team-scope', () => ({
   withTeam: () => ({
     objects: {
       listObjects: fakes.listObjects,
       countObjects: fakes.countObjects,
       getObject: fakes.getObject,
+      listPrimaryProjectsForTasks: fakes.listPrimaryProjectsForTasks,
+      getTaskCategoryFilterRefreshState: fakes.getTaskCategoryFilterRefreshState,
     },
     suggestions: { listPendingSuggestions: fakes.listPendingSuggestions },
     timeline: { listMembers: fakes.listMembers },
@@ -69,12 +82,33 @@ vi.mock('@/components/tasks/task-board', () => ({
     </div>
   ),
 }));
+vi.mock('@/components/tasks/task-category-filter-refresh', () => ({
+  TaskCategoryFilterRefresh: (props: {
+    surface: string;
+    filters: { category: string };
+    baselineToken: string;
+  }) => {
+    fakes.categoryRefresh = props;
+    return <div data-testid="task-category-filter-refresh" />;
+  },
+}));
 vi.mock('@/components/work-filter-bar', () => ({
-  WorkFilterBar: ({ resultCount, totalCount }: { resultCount: number; totalCount: number }) => (
-    <div data-testid="work-filter-bar">
-      {resultCount}/{totalCount}
-    </div>
-  ),
+  WorkFilterBar: ({
+    resultCount,
+    totalCount,
+    projects = [],
+  }: {
+    resultCount: number;
+    totalCount: number;
+    projects?: { label: string }[];
+  }) => {
+    fakes.filterProjects = projects;
+    return (
+      <div data-testid="work-filter-bar">
+        {resultCount}/{totalCount}
+      </div>
+    );
+  },
 }));
 
 const { default: TasksPage } = await import('./page.js');
@@ -89,8 +123,16 @@ beforeEach(() => {
   fakes.listObjects.mockResolvedValue([]);
   fakes.countObjects.mockResolvedValue(0);
   fakes.getObject.mockResolvedValue(null);
+  fakes.listPrimaryProjectsForTasks.mockResolvedValue([]);
+  fakes.getTaskCategoryFilterRefreshState.mockResolvedValue({
+    token: 'design:0',
+    changed: false,
+    pending: true,
+  });
   fakes.listPendingSuggestions.mockResolvedValue([]);
   fakes.listMembers.mockResolvedValue([]);
+  fakes.filterProjects = [];
+  fakes.categoryRefresh = null;
 });
 
 function taskRow(overrides: Record<string, unknown> = {}) {
@@ -105,6 +147,11 @@ function taskRow(overrides: Record<string, unknown> = {}) {
     assigneeUserId: null,
     dueAt: null,
     agentSuggested: false,
+    taskCategory: null,
+    taskCategoryMode: null,
+    taskCategorySource: null,
+    taskCategoryStatus: null,
+    taskCategoryUpdatedAt: null,
     archivedAt: null,
     aliases: [],
     metadata: {},
@@ -115,6 +162,29 @@ function taskRow(overrides: Record<string, unknown> = {}) {
 }
 
 describe('TasksPage', () => {
+  it('hydrates a selected project outside the preloaded filter window', async () => {
+    const projectId = '00000000-0000-4000-8000-000000000099';
+    fakes.listObjects.mockImplementation((filter: { id?: string[]; type?: string }) => {
+      if (filter.id?.includes(projectId)) {
+        return Promise.resolve([
+          taskRow({ id: projectId, type: 'project', canonicalName: 'Overflow project' }),
+        ]);
+      }
+      return Promise.resolve([]);
+    });
+
+    renderToStaticMarkup(
+      await TasksPage({ searchParams: Promise.resolve({ project: projectId }) }),
+    );
+
+    expect(fakes.listObjects).toHaveBeenCalledWith({
+      id: [projectId],
+      type: 'project',
+      limit: 1,
+    });
+    expect(fakes.filterProjects).toEqual([expect.objectContaining({ label: 'Overflow project' })]);
+  });
+
   it('renders pending task approvals even when the kanban has no task rows', async () => {
     fakes.listPendingSuggestions.mockResolvedValue([
       {
@@ -231,6 +301,20 @@ describe('TasksPage', () => {
     expect(html).not.toContain('data-app-layout="full-bleed"');
   });
 
+  it('watches the full task result set while a category filter is active', async () => {
+    const html = renderToStaticMarkup(
+      await TasksPage({ searchParams: Promise.resolve({ category: 'design' }) }),
+    );
+
+    expect(html).toContain('task-category-filter-refresh');
+    expect(fakes.categoryRefresh?.surface).toBe('tasks');
+    expect(fakes.categoryRefresh?.filters.category).toBe('design');
+    expect(fakes.categoryRefresh?.baselineToken).toBe('design:0');
+    expect(fakes.listObjects).not.toHaveBeenCalledWith(
+      expect.objectContaining({ taskCategoryStatus: 'pending' }),
+    );
+  });
+
   it('fetches one bounded task batch and exposes a cursor for older tasks', async () => {
     const firstPage = Array.from({ length: 501 }, (_, index) =>
       taskRow({ id: `task-${index}`, canonicalName: `Task ${index}`, status: 'done' }),
@@ -253,7 +337,7 @@ describe('TasksPage', () => {
       limit: 501,
       cursor: null,
     });
-    expect(fakes.listObjects).toHaveBeenCalledTimes(1);
+    expect(fakes.listObjects).toHaveBeenCalledTimes(2);
     expect(fakes.countObjects).toHaveBeenCalledWith({
       type: 'task',
       archived: false,
@@ -354,6 +438,11 @@ describe('TasksPage', () => {
         assigneeUserId: null,
         dueAt: null,
         agentSuggested: false,
+        taskCategory: null,
+        taskCategoryMode: null,
+        taskCategorySource: null,
+        taskCategoryStatus: null,
+        taskCategoryUpdatedAt: null,
         archivedAt: null,
         aliases: [],
         metadata: {},
@@ -383,6 +472,11 @@ describe('TasksPage', () => {
         assigneeUserId: null,
         dueAt: null,
         agentSuggested: false,
+        taskCategory: null,
+        taskCategoryMode: null,
+        taskCategorySource: null,
+        taskCategoryStatus: null,
+        taskCategoryUpdatedAt: null,
         archivedAt: null,
         aliases: [],
         metadata: {},
@@ -411,6 +505,11 @@ describe('TasksPage', () => {
         assigneeUserId: null,
         dueAt: null,
         agentSuggested: false,
+        taskCategory: null,
+        taskCategoryMode: null,
+        taskCategorySource: null,
+        taskCategoryStatus: null,
+        taskCategoryUpdatedAt: null,
         archivedAt: null,
         aliases: [],
         metadata: {},

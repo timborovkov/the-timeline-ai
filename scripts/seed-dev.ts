@@ -11,6 +11,7 @@ import {
   closeDb,
   entities,
   entityRelationships,
+  taskCategoryAssignments,
   facts,
   factEntities,
   getDb,
@@ -31,7 +32,7 @@ import {
 } from '@timeline/db';
 import { encryptJson } from '@timeline/shared/crypto';
 import { hashPassword } from '@timeline/shared/passwords';
-import { and, eq, inArray, or, sql } from 'drizzle-orm';
+import { and, eq, inArray, ne, or, sql } from 'drizzle-orm';
 
 loadDotEnv(resolve(process.cwd(), '.env'));
 
@@ -83,6 +84,7 @@ const IDS = {
   factMeeting: 'c0000000-0000-4000-8000-000000000003',
   relationshipProjectTask: 'd0000000-0000-4000-8000-000000000001',
   relationshipProjectDecision: 'd0000000-0000-4000-8000-000000000002',
+  taskCategoryAssignment: 'd1000000-0000-4000-8000-000000000001',
   evidenceKickoff: 'f0000000-0000-4000-8000-000000000001',
   evidenceEmail: 'f0000000-0000-4000-8000-000000000002',
   evidenceMeeting: 'f0000000-0000-4000-8000-000000000003',
@@ -739,6 +741,13 @@ async function main(): Promise<void> {
             ownerUserId: IDS.member,
             assigneeUserId: IDS.member,
             dueAt: new Date('2026-06-19T17:00:00.000Z'),
+            taskCategory: 'legal_compliance',
+            taskCategoryMode: 'automatic',
+            taskCategorySource: 'llm',
+            taskCategoryStatus: 'ready',
+            taskCategoryAppliedInputHash: 'dev-seed-task-category-v1',
+            taskCategoryTaxonomyVersion: 'task-categories-v1',
+            taskCategoryUpdatedAt: new Date('2026-06-18T09:00:00.000Z'),
             sourceEventId: null,
           },
           {
@@ -787,6 +796,14 @@ async function main(): Promise<void> {
             ownerUserId: sql`excluded.owner_user_id`,
             assigneeUserId: sql`excluded.assignee_user_id`,
             dueAt: sql`excluded.due_at`,
+            taskCategory: sql`excluded.task_category`,
+            taskCategoryMode: sql`excluded.task_category_mode`,
+            taskCategorySource: sql`excluded.task_category_source`,
+            taskCategoryStatus: sql`excluded.task_category_status`,
+            taskCategoryAppliedInputHash: sql`excluded.task_category_applied_input_hash`,
+            taskCategoryRequestedInputHash: sql`excluded.task_category_requested_input_hash`,
+            taskCategoryTaxonomyVersion: sql`excluded.task_category_taxonomy_version`,
+            taskCategoryUpdatedAt: sql`excluded.task_category_updated_at`,
             sourceEventId: null,
             updatedAt: now,
           },
@@ -1239,14 +1256,26 @@ async function main(): Promise<void> {
         });
 
       await tx
+        .delete(entityRelationships)
+        .where(
+          and(
+            eq(entityRelationships.teamId, IDS.team),
+            ne(entityRelationships.id, IDS.relationshipProjectTask),
+            eq(entityRelationships.fromEntityId, IDS.objectTask),
+            eq(entityRelationships.toEntityId, IDS.objectProject),
+            eq(entityRelationships.kind, 'child'),
+          ),
+        );
+
+      await tx
         .insert(entityRelationships)
         .values([
           {
             id: IDS.relationshipProjectTask,
             teamId: IDS.team,
-            fromEntityId: IDS.objectProject,
-            toEntityId: IDS.objectTask,
-            kind: 'related',
+            fromEntityId: IDS.objectTask,
+            toEntityId: IDS.objectProject,
+            kind: 'child',
             createdBy: IDS.owner,
           },
           {
@@ -1258,7 +1287,50 @@ async function main(): Promise<void> {
             createdBy: IDS.owner,
           },
         ])
-        .onConflictDoNothing();
+        .onConflictDoUpdate({
+          target: entityRelationships.id,
+          set: {
+            fromEntityId: sql`excluded.from_entity_id`,
+            toEntityId: sql`excluded.to_entity_id`,
+            kind: sql`excluded.kind`,
+            createdBy: sql`excluded.created_by`,
+          },
+        });
+
+      await tx
+        .insert(taskCategoryAssignments)
+        .values({
+          id: IDS.taskCategoryAssignment,
+          teamId: IDS.team,
+          entityId: IDS.objectTask,
+          category: 'legal_compliance',
+          source: 'llm',
+          mode: 'automatic',
+          confidence: 0.94,
+          model: 'dev-seed',
+          promptVersion: 'task-category-prompt-v2',
+          taxonomyVersion: 'task-categories-v1',
+          inputHash: 'dev-seed-task-category-v1',
+          outcome: 'applied',
+          latencyMs: 12,
+        })
+        .onConflictDoUpdate({
+          target: taskCategoryAssignments.id,
+          set: {
+            teamId: sql`excluded.team_id`,
+            entityId: sql`excluded.entity_id`,
+            category: sql`excluded.category`,
+            source: sql`excluded.source`,
+            mode: sql`excluded.mode`,
+            confidence: sql`excluded.confidence`,
+            model: sql`excluded.model`,
+            promptVersion: sql`excluded.prompt_version`,
+            taxonomyVersion: sql`excluded.taxonomy_version`,
+            inputHash: sql`excluded.input_hash`,
+            outcome: sql`excluded.outcome`,
+            latencyMs: sql`excluded.latency_ms`,
+          },
+        });
 
       await tx
         .insert(boards)

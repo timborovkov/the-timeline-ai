@@ -123,6 +123,35 @@ function changeData(): ObjectSectionQueryData {
   };
 }
 
+function taskCategoryChangeData(): ObjectSectionQueryData {
+  return {
+    pages: [
+      {
+        items: [
+          {
+            id: 'category-change-1',
+            field: 'taskCategory',
+            previousValue: {
+              category: 'customer_success',
+              mode: 'automatic',
+              source: 'llm',
+              status: 'ready',
+            },
+            newValue: {
+              category: 'sales',
+              mode: 'manual',
+              source: 'user',
+              status: 'ready',
+            },
+            actorKind: 'user',
+            status: 'applied',
+          },
+        ],
+      },
+    ],
+  };
+}
+
 function emptyEventResponse() {
   return new Response(
     JSON.stringify({
@@ -214,6 +243,23 @@ describe('ObjectSectionFeed', () => {
     expect(html).toContain('1 merged object');
     expect(html).not.toContain('merged_entity_ids');
     expect(html).not.toContain('{&quot;');
+  });
+
+  it('renders task category snapshots as readable change labels', () => {
+    fakes.query.data = taskCategoryChangeData();
+
+    const html = renderToStaticMarkup(
+      createElement(ObjectSectionFeed, {
+        objectId: 'object-1',
+        section: 'changes',
+        title: 'Changes',
+      }),
+    );
+
+    expect(html).toContain('Category');
+    expect(html).toContain('Customer Success');
+    expect(html).toContain('Sales');
+    expect(html).not.toContain('updated details');
   });
 
   it('renders a load-more control only when a next page exists', () => {

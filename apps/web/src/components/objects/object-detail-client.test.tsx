@@ -9,7 +9,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type * as ReactQuery from '@tanstack/react-query';
 
-const fakes = vi.hoisted(() => ({ refresh: vi.fn() }));
+const fakes = vi.hoisted(() => ({
+  refresh: vi.fn(),
+  loadTaskCategoryStatesAction: vi.fn(),
+}));
 
 vi.mock('next/navigation', () => ({ useRouter: () => fakes }));
 vi.mock('@tanstack/react-query', async (importOriginal) => {
@@ -26,6 +29,7 @@ vi.mock('@/app/actions/objects', () => ({
   createNoteAction: vi.fn(),
   deleteNoteAction: vi.fn(),
   generateObjectSummaryAction: vi.fn(),
+  loadTaskCategoryStatesAction: fakes.loadTaskCategoryStatesAction,
   rejectObjectChangeAction: vi.fn(),
   removeRelationshipAction: vi.fn(),
   repairObjectMemoryAction: vi.fn(),
@@ -60,6 +64,11 @@ const detail = {
   dueAt: new Date('2026-06-05T12:00:00.000Z'),
   sourceEventId: null,
   agentSuggested: false,
+  taskCategory: null,
+  taskCategoryMode: null,
+  taskCategorySource: null,
+  taskCategoryStatus: null,
+  taskCategoryUpdatedAt: null,
   archivedAt: null,
   createdAt: new Date('2026-06-01T10:00:00.000Z'),
   updatedAt: new Date('2026-06-01T10:00:00.000Z'),
@@ -101,6 +110,7 @@ beforeEach(() => {
     ok: true,
     message: 'Memory repair queued',
   });
+  fakes.loadTaskCategoryStatesAction.mockResolvedValue({ rows: [] });
 });
 
 function renderObjectDetail(props: Parameters<typeof ObjectDetailClient>[0]): string {
@@ -136,6 +146,105 @@ describe('ObjectDetailClient', () => {
     expect(html).not.toContain('value="linked"');
     expect(html).toContain('Recent changes');
     expect(html).toContain('Archive object');
+  });
+
+  it('renders task category snapshots as readable recent changes', () => {
+    const html = renderObjectDetail({
+      detail: {
+        ...detail,
+        recentChanges: [
+          {
+            id: 'category-change-1',
+            field: 'taskCategory',
+            previousValue: {
+              category: 'design',
+              mode: 'automatic',
+              source: 'llm',
+              status: 'ready',
+              appliedInputHash: 'old-hash',
+              requestedInputHash: null,
+              taxonomyVersion: 'task-categories-v1',
+            },
+            newValue: {
+              category: 'engineering',
+              mode: 'manual',
+              source: 'user',
+              status: 'ready',
+              appliedInputHash: null,
+              requestedInputHash: null,
+              taxonomyVersion: 'task-categories-v1',
+            },
+            actorKind: 'user',
+            actorUserId: 'user-1',
+            status: 'applied',
+            note: null,
+            changedAt: new Date('2026-07-14T09:00:00.000Z'),
+          },
+        ],
+      },
+      userId: 'user-1',
+      suggestions: [],
+    });
+
+    expect(html).toContain('Category');
+    expect(html).toContain('Design');
+    expect(html).toContain('Engineering');
+    expect(html).not.toContain('updated details');
+  });
+
+  it('does not render the task category field while the category UI is disabled', () => {
+    render(
+      objectDetailElement({
+        detail,
+        userId: 'user-1',
+        suggestions: [],
+        taskCategoriesEnabled: false,
+      }),
+    );
+
+    expect(screen.queryByText('Category')).toBeNull();
+    expect(screen.queryByRole('combobox', { name: 'Task category' })).toBeNull();
+  });
+
+  it('does not render project or category controls for an archived task', () => {
+    render(
+      objectDetailElement({
+        detail: { ...detail, archivedAt: new Date('2026-07-15T10:00:00.000Z') },
+        userId: 'user-1',
+        suggestions: [],
+        projects: [{ id: 'project-1', label: 'Faba website redesign' }],
+      }),
+    );
+
+    expect(screen.queryByRole('combobox', { name: 'Task project' })).toBeNull();
+    expect(screen.queryByRole('combobox', { name: 'Task category' })).toBeNull();
+    expect(screen.getByText('Unarchive this task to change its project or category.')).toBeTruthy();
+  });
+
+  it('updates the detail badge when pending classification completes', async () => {
+    fakes.loadTaskCategoryStatesAction.mockResolvedValue({
+      rows: [
+        {
+          id: detail.id,
+          taskCategory: 'design',
+          taskCategoryMode: 'automatic',
+          taskCategorySource: 'llm',
+          taskCategoryStatus: 'ready',
+          taskCategoryUpdatedAt: new Date('2026-07-13T10:00:00.000Z'),
+        },
+      ],
+    });
+    render(
+      objectDetailElement({
+        detail: { ...detail, taskCategoryStatus: 'pending' },
+        userId: 'user-1',
+        suggestions: [],
+      }),
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTitle('Design')).toBeTruthy();
+    });
   });
 
   it('uses source-tracked display titles for the object detail heading', () => {
@@ -773,6 +882,54 @@ describe('ObjectDetailClient', () => {
     await user.click(repairButton);
 
     expect(objectActions.repairObjectMemoryAction).not.toHaveBeenCalled();
+  });
+
+  it('does not offer task creation from an archived project', () => {
+    render(
+      objectDetailElement({
+        detail: {
+          ...detail,
+          type: 'project',
+          canonicalName: 'Archived client project',
+          archivedAt: new Date('2026-06-02T10:00:00.000Z'),
+        },
+        userId: 'user-1',
+        suggestions: [],
+      }),
+    );
+
+    expect(screen.queryByRole('link', { name: 'Add task' })).toBeNull();
+  });
+
+  it('does not offer the generic unlink action for a task primary project', () => {
+    render(
+      objectDetailElement({
+        detail: {
+          ...detail,
+          relationships: [
+            {
+              id: 'relationship-project',
+              direction: 'out',
+              kind: 'child',
+              otherId: 'project-1',
+              otherName: 'Faba website redesign',
+              otherType: 'project',
+            },
+          ],
+        },
+        userId: 'user-1',
+        suggestions: [],
+        primaryProject: {
+          taskId: detail.id,
+          projectId: 'project-1',
+          projectName: 'Faba website redesign',
+          archivedAt: null,
+        },
+      }),
+    );
+
+    expect(screen.getAllByText('Faba website redesign').length).toBeGreaterThan(0);
+    expect(screen.queryByRole('button', { name: 'Unlink' })).toBeNull();
   });
 
   it('applies refreshed server detail props without requiring updatedAt to change', async () => {

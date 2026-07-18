@@ -3,7 +3,10 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { PGlite } from '@electric-sql/pglite';
+import { getTableConfig, PgDialect } from 'drizzle-orm/pg-core';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+
+import { entities } from '#src/schema/entities.js';
 
 /**
  * Database contract tests. These protect schema-level invariants that the app
@@ -25,6 +28,14 @@ const LEGACY_EVENT_ID = '99999999-9999-4999-8999-999999999999';
 const LEGACY_ENTITY_ID = '99999999-9999-4999-8999-999999999991';
 const LEGACY_BOARD_ID = '99999999-9999-4999-8999-999999999992';
 const LEGACY_BOARD_ITEM_ID = '99999999-9999-4999-8999-999999999993';
+
+function schemaIndexPredicate(name: string): string {
+  const index = getTableConfig(entities).indexes.find(
+    (candidate) => candidate.config.name === name,
+  );
+  if (!index?.config.where) throw new Error(`Missing predicate for ${name}`);
+  return new PgDialect().sqlToQuery(index.config.where).sql.replace(/\s+/g, ' ').trim();
+}
 
 async function applyMigrationFile(pg: PGlite, file: string): Promise<void> {
   const sql = readFileSync(join(MIGRATIONS_DIR, file), 'utf-8');
@@ -86,7 +97,10 @@ describe('database schema contracts', () => {
           'reconciliation_evidence',
           'artifact_evidence_associations',
           'reconciliation_outputs',
-          'reconciliation_projection_outbox'
+          'reconciliation_projection_outbox',
+          'task_category_filter_versions',
+          'task_category_project_invalidations',
+          'task_project_source_locks'
         )
       ORDER BY tablename
     `);
@@ -99,8 +113,241 @@ describe('database schema contracts', () => {
       'reconciliation_evidence',
       'reconciliation_outputs',
       'reconciliation_projection_outbox',
+      'task_category_filter_versions',
+      'task_category_project_invalidations',
+      'task_project_source_locks',
       'teams',
     ]);
+  });
+
+  it('indexes the global pending task-category recovery sweep', async () => {
+    const indexes = await pg.query<{ indexdef: string }>(`
+      SELECT indexdef
+      FROM pg_indexes
+      WHERE schemaname = 'public'
+        AND indexname = 'entities_task_category_pending_recovery_idx'
+    `);
+
+    expect(indexes.rows).toHaveLength(1);
+    expect(indexes.rows[0]?.indexdef).toContain('(id, task_category_updated_at)');
+    expect(indexes.rows[0]?.indexdef).toContain("task_category_status = 'pending'");
+    expect(indexes.rows[0]?.indexdef).not.toContain('"type"');
+    expect(schemaIndexPredicate('entities_task_category_pending_recovery_idx')).toBe(
+      `"entities"."task_category_mode" = 'automatic' AND "entities"."task_category_status" = 'pending' AND "entities"."task_category_requested_input_hash" IS NOT NULL AND "entities"."archived_at" IS NULL AND "entities"."merged_into_id" IS NULL`,
+    );
+  });
+
+  it('indexes team-scoped pending category filter refresh checks', async () => {
+    const indexes = await pg.query<{ indexdef: string }>(`
+      SELECT indexdef
+      FROM pg_indexes
+      WHERE schemaname = 'public'
+        AND indexname = 'entities_team_task_category_pending_idx'
+    `);
+
+    expect(indexes.rows).toHaveLength(1);
+    expect(indexes.rows[0]?.indexdef).toContain('(team_id, id)');
+    expect(indexes.rows[0]?.indexdef).toContain("task_category_status = 'pending'");
+    expect(indexes.rows[0]?.indexdef).not.toContain('"type"');
+    expect(schemaIndexPredicate('entities_team_task_category_pending_idx')).toBe(
+      `"entities"."task_category_status" = 'pending' AND "entities"."archived_at" IS NULL AND "entities"."merged_into_id" IS NULL`,
+    );
+  });
+
+  it('locks category filter version rows in deterministic order', async () => {
+    const functions = await pg.query<{ definition: string }>(`
+      SELECT pg_get_functiondef(oid) AS definition
+      FROM pg_proc
+      WHERE proname = 'bump_task_category_filter_versions'
+    `);
+
+    expect(functions.rows).toHaveLength(1);
+    expect(functions.rows[0]?.definition).toMatch(
+      /ORDER BY version_key\."team_id", version_key\."category"/,
+    );
+  });
+
+  it('serializes task-project relationship and type-promotion decisions', async () => {
+    const functions = await pg.query<{ proname: string; definition: string }>(`
+      SELECT proname, pg_get_functiondef(oid) AS definition
+      FROM pg_proc
+      WHERE proname IN (
+        'canonicalize_task_project_relationship',
+        'guard_task_project_type_promotion',
+        'lock_task_project_source'
+      )
+      ORDER BY proname
+    `);
+
+    expect(functions.rows).toHaveLength(3);
+    const canonicalize = functions.rows.find(
+      (row) => row.proname === 'canonicalize_task_project_relationship',
+    )?.definition;
+    const promotion = functions.rows.find(
+      (row) => row.proname === 'guard_task_project_type_promotion',
+    )?.definition;
+    const sourceLock = functions.rows.find(
+      (row) => row.proname === 'lock_task_project_source',
+    )?.definition;
+    expect(canonicalize).toContain('FOR UPDATE');
+    expect(canonicalize?.match(/FOR UPDATE/g)).toHaveLength(2);
+    expect(canonicalize).toContain('lock_task_project_source');
+    expect(promotion).toContain('lock_task_project_source');
+    expect(sourceLock).not.toContain('INSERT INTO');
+  });
+
+  it('canonicalizes legacy inverse task-project relationships', async () => {
+    const migrationPg = new PGlite();
+    try {
+      await applyMigrations(migrationPg, { throughFile: '0059_saved_meeting_alias_cleanup.sql' });
+      await seedBase(migrationPg);
+      await migrationPg.exec(`
+        INSERT INTO entities (id, team_id, type, canonical_name) VALUES
+          ('10000000-0000-4000-8000-000000000001', '${TEAM_ID}', 'project', 'Inverse project'),
+          ('10000000-0000-4000-8000-000000000002', '${TEAM_ID}', 'task', 'Inverse task'),
+          ('10000000-0000-4000-8000-000000000003', '${TEAM_ID}', 'project', 'Duplicate project'),
+          ('10000000-0000-4000-8000-000000000004', '${TEAM_ID}', 'task', 'Duplicate task');
+
+        INSERT INTO entity_relationships (team_id, from_entity_id, to_entity_id, kind) VALUES
+          ('${TEAM_ID}', '10000000-0000-4000-8000-000000000001', '10000000-0000-4000-8000-000000000002', 'parent'),
+          ('${TEAM_ID}', '10000000-0000-4000-8000-000000000003', '10000000-0000-4000-8000-000000000004', 'parent'),
+          ('${TEAM_ID}', '10000000-0000-4000-8000-000000000004', '10000000-0000-4000-8000-000000000003', 'child');
+      `);
+
+      await applyMigrationFile(migrationPg, '0060_task_categories.sql');
+
+      const relationships = await migrationPg.query<{
+        from_entity_id: string;
+        to_entity_id: string;
+        kind: string;
+      }>(`
+        SELECT from_entity_id, to_entity_id, kind
+        FROM entity_relationships
+        WHERE team_id = '${TEAM_ID}'
+        ORDER BY from_entity_id
+      `);
+      expect(relationships.rows).toEqual([
+        {
+          from_entity_id: '10000000-0000-4000-8000-000000000002',
+          to_entity_id: '10000000-0000-4000-8000-000000000001',
+          kind: 'child',
+        },
+        {
+          from_entity_id: '10000000-0000-4000-8000-000000000004',
+          to_entity_id: '10000000-0000-4000-8000-000000000003',
+          kind: 'child',
+        },
+      ]);
+
+      await migrationPg.exec(`
+        INSERT INTO entities (id, team_id, type, canonical_name) VALUES
+          ('10000000-0000-4000-8000-000000000005', '${TEAM_ID}', 'project', 'Rolling project'),
+          ('10000000-0000-4000-8000-000000000006', '${TEAM_ID}', 'task', 'Rolling task');
+
+        INSERT INTO entity_relationships (team_id, from_entity_id, to_entity_id, kind)
+        VALUES (
+          '${TEAM_ID}',
+          '10000000-0000-4000-8000-000000000005',
+          '10000000-0000-4000-8000-000000000006',
+          'parent'
+        );
+      `);
+      const rollingRelationship = await migrationPg.query<{
+        from_entity_id: string;
+        to_entity_id: string;
+        kind: string;
+      }>(`
+        SELECT from_entity_id, to_entity_id, kind
+        FROM entity_relationships
+        WHERE team_id = '${TEAM_ID}'
+          AND (
+            from_entity_id = '10000000-0000-4000-8000-000000000006'
+            OR to_entity_id = '10000000-0000-4000-8000-000000000006'
+          )
+      `);
+      expect(rollingRelationship.rows).toEqual([
+        {
+          from_entity_id: '10000000-0000-4000-8000-000000000006',
+          to_entity_id: '10000000-0000-4000-8000-000000000005',
+          kind: 'child',
+        },
+      ]);
+
+      await migrationPg.exec(`
+        INSERT INTO entity_relationships (team_id, from_entity_id, to_entity_id, kind)
+        VALUES (
+          '${TEAM_ID}',
+          '10000000-0000-4000-8000-000000000006',
+          '10000000-0000-4000-8000-000000000005',
+          'child'
+        )
+        ON CONFLICT DO NOTHING;
+      `);
+
+      await migrationPg.exec(`
+        INSERT INTO entities (id, team_id, type, canonical_name)
+        VALUES (
+          '10000000-0000-4000-8000-000000000007',
+          '${TEAM_ID}',
+          'project',
+          'Second rolling project'
+        );
+      `);
+      await expect(
+        migrationPg.exec(`
+          INSERT INTO entity_relationships (team_id, from_entity_id, to_entity_id, kind)
+          VALUES (
+            '${TEAM_ID}',
+            '10000000-0000-4000-8000-000000000006',
+            '10000000-0000-4000-8000-000000000007',
+            'child'
+          );
+        `),
+      ).rejects.toThrow('Task already has a primary project');
+
+      await migrationPg.exec(`
+        INSERT INTO entities (id, team_id, type, canonical_name)
+        VALUES (
+          '10000000-0000-4000-8000-000000000008',
+          '${TEAM_ID}',
+          'company',
+          'Promoted relationship target'
+        );
+        INSERT INTO entity_relationships (team_id, from_entity_id, to_entity_id, kind)
+        VALUES (
+          '${TEAM_ID}',
+          '10000000-0000-4000-8000-000000000006',
+          '10000000-0000-4000-8000-000000000008',
+          'child'
+        );
+      `);
+      await expect(
+        migrationPg.exec(`
+          UPDATE entities
+          SET type = 'project'
+          WHERE id = '10000000-0000-4000-8000-000000000008';
+        `),
+      ).rejects.toThrow('would give a task multiple primary projects');
+
+      await migrationPg.exec(`
+        INSERT INTO entities (id, team_id, type, canonical_name) VALUES
+          ('10000000-0000-4000-8000-000000000009', '${TEAM_ID}', 'company', 'Promoted task source'),
+          ('10000000-0000-4000-8000-000000000010', '${TEAM_ID}', 'project', 'Source project one'),
+          ('10000000-0000-4000-8000-000000000011', '${TEAM_ID}', 'project', 'Source project two');
+        INSERT INTO entity_relationships (team_id, from_entity_id, to_entity_id, kind) VALUES
+          ('${TEAM_ID}', '10000000-0000-4000-8000-000000000009', '10000000-0000-4000-8000-000000000010', 'child'),
+          ('${TEAM_ID}', '10000000-0000-4000-8000-000000000009', '10000000-0000-4000-8000-000000000011', 'child');
+      `);
+      await expect(
+        migrationPg.exec(`
+          UPDATE entities
+          SET type = 'task'
+          WHERE id = '10000000-0000-4000-8000-000000000009';
+        `),
+      ).rejects.toThrow('would give it multiple primary projects');
+    } finally {
+      await migrationPg.close();
+    }
   });
 
   it('migrates pending linked relationship suggestion payloads to related', async () => {

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 /**
  * Queue contract tests. The product relies on job payloads and retry policy
@@ -29,8 +29,16 @@ class FakeJob {
     public id: string,
   ) {}
 
-  getState = vi.fn(() => Promise.resolve(this.queue.jobStates.get(this.id) ?? 'waiting'));
+  getState = vi.fn(() => {
+    if (this.queue.stateReadFailures.has(this.id)) {
+      return Promise.reject(new Error('state read failed'));
+    }
+    return Promise.resolve(this.queue.jobStates.get(this.id) ?? 'waiting');
+  });
   remove = vi.fn(() => {
+    if (this.queue.removeFailures.has(this.id)) {
+      return Promise.reject(new Error('remove failed'));
+    }
     this.queue.jobs.delete(this.id);
     this.queue.jobStates.delete(this.id);
     return Promise.resolve();
@@ -42,6 +50,8 @@ class FakeQueue {
   options: Record<string, unknown>;
   jobs = new Set<string>();
   jobStates = new Map<string, string>();
+  stateReadFailures = new Set<string>();
+  removeFailures = new Set<string>();
   add = vi.fn<
     (name: string, data: unknown, opts?: { delay?: number; jobId?: string }) => Promise<void>
   >((name, data, opts) => {
@@ -96,6 +106,11 @@ beforeEach(() => {
   vi.clearAllMocks();
   fakes.queues = [];
   fakes.redisInstances = [];
+});
+
+afterEach(() => {
+  delete process.env.TASK_CATEGORY_CLASSIFICATION_ENABLED;
+  delete process.env.TASK_CATEGORY_AUTO_ENQUEUE_ENABLED;
 });
 
 describe('queue wrappers', () => {
@@ -653,6 +668,78 @@ describe('queue wrappers', () => {
     });
     expect(first).toMatchObject({ enqueued: true });
     expect(duplicate).toMatchObject({ enqueued: false, jobId: first.jobId });
+  });
+
+  it('dedupes task category jobs by packet hash and replaces retained terminal jobs', async () => {
+    process.env.TASK_CATEGORY_CLASSIFICATION_ENABLED = 'true';
+    process.env.TASK_CATEGORY_AUTO_ENQUEUE_ENABLED = 'true';
+    const queues = await importQueues();
+    const data = {
+      teamId: '22222222-2222-4222-8222-222222222222',
+      taskId: '77777777-7777-4777-8777-777777777777',
+      inputHash: 'packet-hash-v1',
+      trigger: 'create' as const,
+    };
+
+    const first = await queues.enqueueTaskCategoryJob(data);
+    const duplicate = await queues.enqueueTaskCategoryJob(data);
+    expect(first).toMatchObject({ enqueued: true });
+    expect(duplicate).toMatchObject({ enqueued: false, jobId: first.jobId });
+    expect(fakes.queues[0]?.addCalls[0]).toMatchObject({
+      name: 'task-category',
+      data,
+      opts: {
+        jobId:
+          'task-category|22222222-2222-4222-8222-222222222222|77777777-7777-4777-8777-777777777777|packet-hash-v1',
+      },
+    });
+
+    fakes.queues[0]?.jobStates.set(first.jobId, 'failed');
+    const retry = await queues.enqueueTaskCategoryJob({ ...data, trigger: 'retry' });
+    expect(retry).toMatchObject({ enqueued: true, jobId: first.jobId });
+    expect(fakes.queues[0]?.addCalls).toHaveLength(2);
+  });
+
+  it('fails a task category retry when terminal job removal fails', async () => {
+    process.env.TASK_CATEGORY_CLASSIFICATION_ENABLED = 'true';
+    process.env.TASK_CATEGORY_AUTO_ENQUEUE_ENABLED = 'true';
+    const queues = await importQueues();
+    const data = {
+      teamId: '22222222-2222-4222-8222-222222222222',
+      taskId: '77777777-7777-4777-8777-777777777777',
+      inputHash: 'packet-hash-v1',
+      trigger: 'retry' as const,
+    };
+
+    const first = await queues.enqueueTaskCategoryJob(data);
+    const fakeQueue = fakes.queues[0];
+    fakeQueue?.jobStates.set(first.jobId, 'failed');
+    fakeQueue?.removeFailures.add(first.jobId);
+
+    await expect(queues.enqueueTaskCategoryJob(data)).rejects.toThrow('remove failed');
+    expect(fakeQueue?.addCalls).toHaveLength(1);
+  });
+
+  it('fails a task category retry when retained job state is unreadable or unknown', async () => {
+    process.env.TASK_CATEGORY_CLASSIFICATION_ENABLED = 'true';
+    process.env.TASK_CATEGORY_AUTO_ENQUEUE_ENABLED = 'true';
+    const queues = await importQueues();
+    const data = {
+      teamId: '22222222-2222-4222-8222-222222222222',
+      taskId: '77777777-7777-4777-8777-777777777777',
+      inputHash: 'packet-hash-v1',
+      trigger: 'retry' as const,
+    };
+
+    const first = await queues.enqueueTaskCategoryJob(data);
+    const fakeQueue = fakes.queues[0];
+    fakeQueue?.stateReadFailures.add(first.jobId);
+    await expect(queues.enqueueTaskCategoryJob(data)).rejects.toThrow('state read failed');
+
+    fakeQueue?.stateReadFailures.delete(first.jobId);
+    fakeQueue?.jobStates.set(first.jobId, 'unknown');
+    await expect(queues.enqueueTaskCategoryJob(data)).rejects.toThrow('unknown');
+    expect(fakeQueue?.addCalls).toHaveLength(1);
   });
 
   it('lets manual object summary jobs replace delayed automatic refreshes', async () => {

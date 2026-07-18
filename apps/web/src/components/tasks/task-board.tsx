@@ -10,6 +10,8 @@ import {
   useSensors,
   type DragEndEvent,
 } from '@dnd-kit/core';
+import { useQueries } from '@tanstack/react-query';
+import { TASK_CATEGORY_OPTIONS, type TaskCategory } from '@timeline/shared/task-categories/types';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
@@ -28,9 +30,20 @@ import type { SaveState } from '@/lib/utils';
 import type * as objects from '@timeline/shared/objects/types';
 import type { Dispatch, ReactNode, SetStateAction } from 'react';
 
-import { loadTaskRowsAction, updateObjectAction } from '@/app/actions/objects';
+import {
+  loadTaskPrimaryProjectsAction,
+  loadTaskRowsAction,
+  resetTaskCategoryAction,
+  setTaskCategoryAction,
+  updateObjectAction,
+} from '@/app/actions/objects';
 import { ObjectTextFilter } from '@/components/boards/object-text-filter';
 import { ObjectRelatedContext } from '@/components/objects/object-related-context';
+import { TaskCategoryBadge } from '@/components/tasks/task-category-badge';
+import { useTaskCategoryPolling } from '@/components/tasks/task-category-polling';
+import { TaskCategorySelect } from '@/components/tasks/task-category-select';
+import { TaskProjectSelect } from '@/components/tasks/task-project-select';
+import { useAppDialog } from '@/components/ui/app-dialog';
 import { displayText } from '@/lib/display-dates';
 import { filterObjectsByText } from '@/lib/object-filter';
 import { objectDetailHref } from '@/lib/object-links';
@@ -55,9 +68,14 @@ interface Props {
   selectedTaskContext?: objects.ObjectDetail['connectedWork'] | null;
   view: TaskView;
   members: TaskMemberOption[];
+  projects?: TaskMemberOption[];
+  primaryProjects?: objects.TaskPrimaryProjectRow[];
+  initialProjectsHydrated?: boolean;
   totalCount: number;
   nextCursor: string | null;
   filterParams?: Record<string, string>;
+  categoryFilterRefreshToken?: string | null;
+  taskCategoriesEnabled?: boolean;
 }
 
 type TaskPatch = Partial<
@@ -72,7 +90,7 @@ interface TaskPatchOverlay {
   patch: TaskPatch;
 }
 type TaskView = 'kanban' | 'list';
-type BulkField = 'status' | 'assignee' | 'due' | 'priority';
+type BulkField = 'status' | 'assignee' | 'due' | 'priority' | 'category';
 
 interface BulkState {
   field: BulkField;
@@ -80,6 +98,7 @@ interface BulkState {
   assignee: string;
   due: string;
   priority: string;
+  category: TaskCategory | 'automatic';
   message: string | null;
 }
 
@@ -89,6 +108,7 @@ type BulkAction =
   | { type: 'assignee'; assignee: string }
   | { type: 'due'; due: string }
   | { type: 'priority'; priority: string }
+  | { type: 'category'; category: TaskCategory | 'automatic' }
   | { type: 'message'; message: string | null };
 
 interface MoveUiState {
@@ -99,17 +119,38 @@ interface MoveUiState {
 }
 
 interface TaskPaginationState {
-  inputRows: objects.ObjectRow[];
-  inputCursor: string | null;
-  inputFilterKey: string;
-  loadedRows: objects.ObjectRow[];
+  filterKey: string | null;
+  appendedRows: objects.ObjectRow[];
   cursor: string | null;
 }
 
+interface PrimaryProjectOverride {
+  project: objects.TaskPrimaryProjectRow | null;
+  baselineKey: string;
+  committed: boolean;
+}
+
+function primaryProjectStateKey(project: objects.TaskPrimaryProjectRow | undefined): string {
+  if (!project) return '';
+  return `${project.projectId}\u0000${project.projectName}\u0000${project.archivedAt?.toISOString() ?? ''}`;
+}
+
+type TaskCategoryStateRow = Pick<
+  objects.ObjectRow,
+  | 'id'
+  | 'taskCategory'
+  | 'taskCategoryMode'
+  | 'taskCategorySource'
+  | 'taskCategoryStatus'
+  | 'taskCategoryUpdatedAt'
+>;
+
 interface TaskBoardState {
   pagination: TaskPaginationState;
+  loadErrorFilterKey: string | null;
   loadError: string | null;
   filterQuery: string;
+  selectedFilterKey: string | null;
   selectedIds: ReadonlySet<string>;
   rowPatches: Record<string, TaskPatchOverlay>;
 }
@@ -126,7 +167,6 @@ type MoveUiAction =
   | { type: 'saved-timeout' };
 
 type TaskBoardAction =
-  | { type: 'props'; rows: objects.ObjectRow[]; nextCursor: string | null; filterKey: string }
   | { type: 'load-error'; message: string | null; filterKey: string }
   | {
       type: 'append-page';
@@ -135,7 +175,8 @@ type TaskBoardAction =
       filterKey: string;
     }
   | { type: 'filter'; query: string }
-  | { type: 'selected'; next: SetStateAction<ReadonlySet<string>> }
+  | { type: 'reset-pagination' }
+  | { type: 'selected'; next: SetStateAction<ReadonlySet<string>>; filterKey: string }
   | { type: 'patches'; next: SetStateAction<Record<string, TaskPatchOverlay>> };
 
 const INITIAL_MOVE_UI: MoveUiState = {
@@ -144,35 +185,46 @@ const INITIAL_MOVE_UI: MoveUiState = {
   cardErrors: {},
   savingCardIds: new Set(),
 };
+const INITIAL_TASK_BOARD_STATE: TaskBoardState = {
+  pagination: { filterKey: null, appendedRows: [], cursor: null },
+  loadErrorFilterKey: null,
+  loadError: null,
+  filterQuery: '',
+  selectedFilterKey: null,
+  selectedIds: new Set(),
+  rowPatches: {},
+};
 const EMPTY_FILTER_PARAMS: Record<string, string> = {};
+const EMPTY_PRIMARY_PROJECTS: objects.TaskPrimaryProjectRow[] = [];
+const EMPTY_TASK_ROWS: objects.ObjectRow[] = [];
+const EMPTY_SELECTED_IDS: ReadonlySet<string> = new Set();
+const BULK_UPDATE_CONCURRENCY = 4;
 
-function taskPaginationStateForProps(
-  rows: objects.ObjectRow[],
-  nextCursor: string | null,
-  filterKey: string,
-): TaskPaginationState {
-  return {
-    inputRows: rows,
-    inputCursor: nextCursor,
-    inputFilterKey: filterKey,
-    loadedRows: rows,
-    cursor: nextCursor,
-  };
-}
+async function runBulkActions<T>(
+  ids: string[],
+  action: (id: string) => Promise<T>,
+): Promise<PromiseSettledResult<T>[]> {
+  const results = Array<PromiseSettledResult<T>>(ids.length);
+  const pending = ids.entries();
 
-function taskBoardStateForProps(
-  rows: objects.ObjectRow[],
-  nextCursor: string | null,
-  filterKey: string,
-): TaskBoardState {
-  return {
-    pagination: taskPaginationStateForProps(rows, nextCursor, filterKey),
-    loadError: null,
-    filterQuery: '',
-    selectedIds: new Set(),
-    rowPatches: {},
-  };
+  async function runWorker(): Promise<void> {
+    const next = pending.next();
+    if (next.done) return;
+    const [index, id] = next.value;
+    try {
+      results[index] = { status: 'fulfilled', value: await action(id) };
+    } catch (reason) {
+      results[index] = { status: 'rejected', reason };
+    }
+    return runWorker();
+  }
+
+  await Promise.all(
+    Array.from({ length: Math.min(BULK_UPDATE_CONCURRENCY, ids.length) }, runWorker),
+  );
+  return results;
 }
+const EMPTY_PROJECT_OPTIONS: { id: string; label: string }[] = [];
 
 function reduceSetState<T>(current: T, next: SetStateAction<T>): T {
   return typeof next === 'function' ? (next as (value: T) => T)(current) : next;
@@ -180,52 +232,39 @@ function reduceSetState<T>(current: T, next: SetStateAction<T>): T {
 
 function taskBoardReducer(state: TaskBoardState, action: TaskBoardAction): TaskBoardState {
   switch (action.type) {
-    case 'props':
-      const refreshedRows = new Map(action.rows.map((row) => [row.id, row]));
-      const filtersChanged = action.filterKey !== state.pagination.inputFilterKey;
-      return {
-        ...state,
-        pagination: {
-          inputRows: action.rows,
-          inputCursor: action.nextCursor,
-          inputFilterKey: action.filterKey,
-          loadedRows: filtersChanged
-            ? action.rows
-            : [
-                ...action.rows,
-                ...state.pagination.loadedRows.filter((row) => !refreshedRows.has(row.id)),
-              ],
-          cursor: filtersChanged
-            ? action.nextCursor
-            : state.pagination.loadedRows.length > action.rows.length
-              ? state.pagination.cursor
-              : action.nextCursor,
-        },
-        loadError: null,
-        selectedIds: filtersChanged ? new Set() : state.selectedIds,
-      };
     case 'load-error':
-      if (action.filterKey !== state.pagination.inputFilterKey) return state;
-      return { ...state, loadError: action.message };
+      return { ...state, loadErrorFilterKey: action.filterKey, loadError: action.message };
     case 'append-page': {
-      if (action.filterKey !== state.pagination.inputFilterKey) return state;
-      const seen = new Set(state.pagination.loadedRows.map((row) => row.id));
+      const currentRows =
+        action.filterKey === state.pagination.filterKey ? state.pagination.appendedRows : [];
+      const seen = new Set(currentRows.map((row) => row.id));
       return {
         ...state,
         pagination: {
-          ...state.pagination,
-          loadedRows: [
-            ...state.pagination.loadedRows,
-            ...action.rows.filter((row) => !seen.has(row.id)),
-          ],
+          filterKey: action.filterKey,
+          appendedRows: [...currentRows, ...action.rows.filter((row) => !seen.has(row.id))],
           cursor: action.nextCursor,
         },
       };
     }
     case 'filter':
       return { ...state, filterQuery: action.query };
+    case 'reset-pagination':
+      return {
+        ...state,
+        pagination: INITIAL_TASK_BOARD_STATE.pagination,
+        loadErrorFilterKey: null,
+        loadError: null,
+      };
     case 'selected':
-      return { ...state, selectedIds: reduceSetState(state.selectedIds, action.next) };
+      return {
+        ...state,
+        selectedFilterKey: action.filterKey,
+        selectedIds: reduceSetState(
+          state.selectedFilterKey === action.filterKey ? state.selectedIds : new Set<string>(),
+          action.next,
+        ),
+      };
     case 'patches':
       return { ...state, rowPatches: reduceSetState(state.rowPatches, action.next) };
   }
@@ -262,6 +301,20 @@ function filterParamsKey(params: Record<string, string>): string {
   return new URLSearchParams(
     Object.entries(params).sort(([left], [right]) => left.localeCompare(right)),
   ).toString();
+}
+
+function pendingTaskCategoryPollingInput(rows: objects.ObjectRow[]): {
+  ids: string[];
+  generationKey: string;
+} {
+  const ids: string[] = [];
+  const generations: string[] = [];
+  for (const row of rows) {
+    if (row.taskCategoryStatus !== 'pending') continue;
+    ids.push(row.id);
+    generations.push(`${row.id}:${row.taskCategoryUpdatedAt?.toISOString() ?? ''}`);
+  }
+  return { ids, generationKey: generations.join(',') };
 }
 
 function patchTaskRow(
@@ -368,6 +421,16 @@ function applyTaskPatch(row: objects.ObjectRow, overlay: TaskPatchOverlay | unde
   return Object.keys(effectivePatch).length > 0 ? { ...row, ...effectivePatch } : row;
 }
 
+function applyTaskCategoryState(
+  row: objects.ObjectRow,
+  categoryState: TaskCategoryStateRow | undefined,
+): objects.ObjectRow {
+  if (!categoryState) return row;
+  const rowUpdatedAt = row.taskCategoryUpdatedAt?.getTime() ?? 0;
+  const stateUpdatedAt = categoryState.taskCategoryUpdatedAt?.getTime() ?? 0;
+  return stateUpdatedAt >= rowUpdatedAt ? { ...row, ...categoryState } : row;
+}
+
 function taskPatchBaseline(row: objects.ObjectRow, patch: TaskPatch): TaskPatch {
   return Object.fromEntries((Object.keys(patch) as TaskPatchKey[]).map((key) => [key, row[key]]));
 }
@@ -405,26 +468,26 @@ function useTaskBoardController({
   totalCount,
   nextCursor,
   filterParams = EMPTY_FILTER_PARAMS,
+  categoryFilterRefreshToken = null,
+  primaryProjects = EMPTY_PRIMARY_PROJECTS,
+  initialProjectsHydrated = false,
 }: Props) {
   const dndContextId = useId();
   const router = useRouter();
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
-  const filterKey = filterParamsKey(filterParams);
-  const [boardState, dispatchBoard] = useReducer(
-    taskBoardReducer,
-    { rows, nextCursor, filterKey },
-    (input) => taskBoardStateForProps(input.rows, input.nextCursor, input.filterKey),
-  );
+  const filterKey = `${filterParamsKey(filterParams)}\u0000${categoryFilterRefreshToken ?? ''}`;
+  const [boardState, dispatchBoard] = useReducer(taskBoardReducer, INITIAL_TASK_BOARD_STATE);
   const [loadingMore, startLoadMore] = useTransition();
-  const pagination = boardState.pagination;
-  if (
-    pagination.inputRows !== rows ||
-    pagination.inputCursor !== nextCursor ||
-    pagination.inputFilterKey !== filterKey
-  ) {
-    dispatchBoard({ type: 'props', rows, nextCursor, filterKey });
-  }
-  const { loadedRows, cursor } = pagination;
+  const appendedRows =
+    boardState.pagination.filterKey === filterKey
+      ? boardState.pagination.appendedRows
+      : EMPTY_TASK_ROWS;
+  const loadedRows = useMemo(() => {
+    const firstPageIds = new Set(rows.map((row) => row.id));
+    return [...rows, ...appendedRows.filter((row) => !firstPageIds.has(row.id))];
+  }, [appendedRows, rows]);
+  const cursor =
+    boardState.pagination.filterKey === filterKey ? boardState.pagination.cursor : nextCursor;
   const [optimisticRows, applyMove] = useOptimistic(
     loadedRows,
     (state, move: { id: string; status: string }) =>
@@ -432,13 +495,19 @@ function useTaskBoardController({
   );
   const [, startTransition] = useTransition();
   const [moveUi, dispatchMoveUi] = useReducer(moveUiReducer, INITIAL_MOVE_UI);
-  const { filterQuery, loadError, rowPatches, selectedIds } = boardState;
+  const { filterQuery, rowPatches } = boardState;
+  const loadError = boardState.loadErrorFilterKey === filterKey ? boardState.loadError : null;
+  const selectedIds =
+    boardState.selectedFilterKey === filterKey ? boardState.selectedIds : EMPTY_SELECTED_IDS;
   const setFilterQuery = useCallback((query: string) => {
     dispatchBoard({ type: 'filter', query });
   }, []);
-  const setSelectedIds: Dispatch<SetStateAction<ReadonlySet<string>>> = useCallback((next) => {
-    dispatchBoard({ type: 'selected', next });
-  }, []);
+  const setSelectedIds: Dispatch<SetStateAction<ReadonlySet<string>>> = useCallback(
+    (next) => {
+      dispatchBoard({ type: 'selected', next, filterKey });
+    },
+    [filterKey],
+  );
   const setRowPatches: Dispatch<SetStateAction<Record<string, TaskPatchOverlay>>> = useCallback(
     (next) => {
       dispatchBoard({ type: 'patches', next });
@@ -449,10 +518,118 @@ function useTaskBoardController({
   const savingCardIdsRef = useRef<Set<string> | null>(null);
   const batchHadFailureRef = useRef(false);
   const savedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const effectiveRows = useMemo(
+  const patchedRows = useMemo(
     () => optimisticRows.map((row) => applyTaskPatch(row, rowPatches[row.id])),
     [optimisticRows, rowPatches],
   );
+  const pendingCategoryInput = useMemo(
+    () => pendingTaskCategoryPollingInput(patchedRows),
+    [patchedRows],
+  );
+  const categoryQuery = useTaskCategoryPolling(
+    pendingCategoryInput.ids,
+    2_500,
+    pendingCategoryInput.generationKey,
+  );
+  const effectiveRows = useMemo(() => {
+    const polledCategoryStates = new Map(
+      categoryQuery.data.rows.map((row) => [row.id, row] as const),
+    );
+    return patchedRows.map((row) => applyTaskCategoryState(row, polledCategoryStates.get(row.id)));
+  }, [categoryQuery.data.rows, patchedRows]);
+  const [primaryProjectOverrides, setPrimaryProjectOverrides] = useState<
+    Record<string, PrimaryProjectOverride>
+  >({});
+  const projectHydrationIds = useMemo(
+    () => (initialProjectsHydrated ? appendedRows : effectiveRows).map((row) => row.id),
+    [appendedRows, effectiveRows, initialProjectsHydrated],
+  );
+  const projectHydrationChunks = useMemo(
+    () =>
+      Array.from({ length: Math.ceil(projectHydrationIds.length / 200) }, (_, index) =>
+        projectHydrationIds.slice(index * 200, (index + 1) * 200),
+      ),
+    [projectHydrationIds],
+  );
+  const projectHydrationQueries = useQueries({
+    queries: projectHydrationChunks.map((ids) => ({
+      queryKey: ['task-primary-projects', ids],
+      queryFn: async () => {
+        const result = await loadTaskPrimaryProjectsAction({ ids });
+        if (!result.rows) throw new Error(result.error ?? 'Project hydration failed');
+        return result;
+      },
+      staleTime: Number.POSITIVE_INFINITY,
+    })),
+  });
+  const loadedPrimaryProjects = projectHydrationQueries.flatMap((query) => query.data?.rows ?? []);
+  const resolvedPrimaryProjects = useMemo(() => {
+    const serverHydratedTaskIds = initialProjectsHydrated
+      ? new Set(rows.map((row) => row.id))
+      : null;
+    const byTask = new Map<string, objects.TaskPrimaryProjectRow>();
+    for (const project of loadedPrimaryProjects) {
+      if (!serverHydratedTaskIds?.has(project.taskId)) byTask.set(project.taskId, project);
+    }
+    for (const project of primaryProjects) byTask.set(project.taskId, project);
+    return [...byTask.values()];
+  }, [initialProjectsHydrated, loadedPrimaryProjects, primaryProjects, rows]);
+  const hydratedPrimaryProjects = useMemo(() => {
+    const byTask = new Map(
+      resolvedPrimaryProjects.map((project) => [project.taskId, project] as const),
+    );
+    for (const [taskId, override] of Object.entries(primaryProjectOverrides)) {
+      if (
+        override.committed &&
+        override.baselineKey !== primaryProjectStateKey(byTask.get(taskId))
+      ) {
+        continue;
+      }
+      if (override.project) byTask.set(taskId, override.project);
+      else byTask.delete(taskId);
+    }
+    return [...byTask.values()];
+  }, [primaryProjectOverrides, resolvedPrimaryProjects]);
+  const updatePrimaryProject = useCallback(
+    (taskId: string, project: { id: string; label: string } | null) => {
+      setPrimaryProjectOverrides((current) => ({
+        ...current,
+        [taskId]: {
+          project: project
+            ? {
+                taskId,
+                projectId: project.id,
+                projectName: project.label,
+                archivedAt: null,
+              }
+            : null,
+          baselineKey: primaryProjectStateKey(
+            resolvedPrimaryProjects.find((candidate) => candidate.taskId === taskId),
+          ),
+          committed: false,
+        },
+      }));
+    },
+    [resolvedPrimaryProjects],
+  );
+  const commitPrimaryProject = useCallback(
+    (taskId: string) => {
+      setPrimaryProjectOverrides((current) => {
+        const override = current[taskId];
+        if (!override) return current;
+        return { ...current, [taskId]: { ...override, committed: true } };
+      });
+      if (filterParams.project) dispatchBoard({ type: 'reset-pagination' });
+    },
+    [filterParams.project],
+  );
+  const revertPrimaryProject = useCallback((taskId: string) => {
+    setPrimaryProjectOverrides((current) => {
+      if (!(taskId in current)) return current;
+      const { [taskId]: _removed, ...next } = current;
+      return next;
+    });
+  }, []);
   const visibleRows = useMemo(
     () => filterObjectsByText(effectiveRows, filterQuery, { groupBy: 'status' }),
     [effectiveRows, filterQuery],
@@ -593,7 +770,25 @@ function useTaskBoardController({
   }
 
   async function updateTasks(ids: string[], patch: TaskPatch): Promise<{ failed: number }> {
-    const results = await Promise.allSettled(ids.map((id) => updateTask(id, patch)));
+    const results = await runBulkActions(ids, (id) => updateTask(id, patch));
+    return {
+      failed: results.filter(
+        (result) =>
+          result.status === 'rejected' || ('error' in result.value && Boolean(result.value.error)),
+      ).length,
+    };
+  }
+
+  async function updateTaskCategories(
+    ids: string[],
+    category: TaskCategory | 'automatic',
+  ): Promise<{ failed: number }> {
+    const results = await runBulkActions(ids, (id) =>
+      category === 'automatic'
+        ? resetTaskCategoryAction({ id })
+        : setTaskCategoryAction({ id, category }),
+    );
+    router.refresh();
     return {
       failed: results.filter(
         (result) =>
@@ -643,7 +838,12 @@ function useTaskBoardController({
     setSelectedIds,
     updateTask,
     updateTasks,
+    updateTaskCategories,
+    updatePrimaryProject,
+    commitPrimaryProject,
+    revertPrimaryProject,
     visibleRows,
+    hydratedPrimaryProjects,
   };
 }
 
@@ -662,6 +862,7 @@ function TaskBoardView({
   loadingMore,
   loadMoreTasks,
   members,
+  projects = EMPTY_PROJECT_OPTIONS,
   moveErrors,
   moveUi,
   onDragEnd,
@@ -674,10 +875,16 @@ function TaskBoardView({
   setSelectedIds,
   filterParams = EMPTY_FILTER_PARAMS,
   totalCount,
+  taskCategoriesEnabled = true,
   updateTask,
   updateTasks,
+  updateTaskCategories,
+  updatePrimaryProject,
+  commitPrimaryProject,
+  revertPrimaryProject,
   view,
   visibleRows,
+  hydratedPrimaryProjects,
 }: Props & ReturnType<typeof useTaskBoardController>) {
   return (
     <div
@@ -750,6 +957,7 @@ function TaskBoardView({
                   savingCardIds={moveUi.savingCardIds}
                   cardErrors={moveUi.cardErrors}
                   members={members}
+                  primaryProjects={hydratedPrimaryProjects}
                   taskHref={(taskId) => taskHref(taskId, filterParams)}
                 />
               ))}
@@ -759,11 +967,14 @@ function TaskBoardView({
               rows={visibleRows}
               columns={allColumns}
               members={members}
+              primaryProjects={hydratedPrimaryProjects}
               selectedTaskId={selectedTaskId}
               selectedIds={selectedVisibleIds}
               setSelectedIds={setSelectedIds}
               onUpdateTask={updateTask}
               onUpdateTasks={updateTasks}
+              onUpdateTaskCategories={updateTaskCategories}
+              taskCategoriesEnabled={taskCategoriesEnabled}
               filterParams={filterParams}
             />
           )}
@@ -801,6 +1012,11 @@ function TaskBoardView({
           connectedWork={selectedTaskContext}
           columns={allColumns}
           members={members}
+          projects={projects}
+          taskCategoriesEnabled={taskCategoriesEnabled}
+          primaryProject={
+            hydratedPrimaryProjects.find((project) => project.taskId === selectedTask.id) ?? null
+          }
           closeHref={closeHref(view, filterParams)}
           objectHref={objectDetailHref(
             selectedTask.id,
@@ -809,6 +1025,15 @@ function TaskBoardView({
               : taskViewHref(view, selectedTask.id, filterParams),
           )}
           onUpdate={updateTask}
+          onProjectChange={(project) => {
+            updatePrimaryProject(selectedTask.id, project);
+          }}
+          onProjectChangeCommitted={() => {
+            commitPrimaryProject(selectedTask.id);
+          }}
+          onProjectChangeReverted={() => {
+            revertPrimaryProject(selectedTask.id);
+          }}
         />
       ) : null}
     </div>
@@ -820,21 +1045,30 @@ function TaskListView({
   rows,
   columns,
   members,
+  primaryProjects,
   selectedTaskId,
   selectedIds,
   setSelectedIds,
   onUpdateTask,
   onUpdateTasks,
+  onUpdateTaskCategories,
+  taskCategoriesEnabled,
   filterParams,
 }: {
   rows: objects.ObjectRow[];
   columns: string[];
   members: TaskMemberOption[];
+  primaryProjects: objects.TaskPrimaryProjectRow[];
   selectedTaskId: string | null;
   selectedIds: ReadonlySet<string>;
   setSelectedIds: Dispatch<SetStateAction<ReadonlySet<string>>>;
   onUpdateTask: (id: string, patch: TaskPatch) => Promise<{ ok?: boolean; error?: string }>;
   onUpdateTasks: (ids: string[], patch: TaskPatch) => Promise<{ failed: number }>;
+  onUpdateTaskCategories: (
+    ids: string[],
+    category: TaskCategory | 'automatic',
+  ) => Promise<{ failed: number }>;
+  taskCategoriesEnabled: boolean;
   filterParams: Record<string, string>;
 }) {
   if (rows.length === 0) {
@@ -877,9 +1111,16 @@ function TaskListView({
         selectedIds={selectedIds}
         setSelectedIds={setSelectedIds}
         onUpdateTasks={onUpdateTasks}
+        onUpdateTaskCategories={onUpdateTaskCategories}
+        taskCategoriesEnabled={taskCategoriesEnabled}
       />
       <div className="min-h-0 flex-1 overflow-auto rounded-sm border border-border bg-surface">
-        <table className="w-full min-w-[780px] text-sm">
+        <table
+          className={cn(
+            'w-full text-sm',
+            taskCategoriesEnabled ? 'min-w-[780px]' : 'min-w-[620px]',
+          )}
+        >
           <thead className="sticky top-0 z-10 border-b border-border bg-bg text-left font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
             <tr>
               <th className="w-10 px-3 py-2 font-normal">
@@ -895,6 +1136,7 @@ function TaskListView({
               </th>
               <th className="px-3 py-2 font-normal">Task</th>
               <th className="px-3 py-2 font-normal">Status</th>
+              {taskCategoriesEnabled ? <th className="px-3 py-2 font-normal">Category</th> : null}
               <th className="px-3 py-2 font-normal">Assignee</th>
               <th className="px-3 py-2 font-normal">Due</th>
               <th className="px-3 py-2 font-normal">Priority</th>
@@ -907,19 +1149,23 @@ function TaskListView({
                 row={row}
                 columns={columns}
                 members={members}
+                primaryProject={
+                  primaryProjects.find((project) => project.taskId === row.id) ?? null
+                }
                 selected={selectedIds.has(row.id)}
                 highlighted={row.id === selectedTaskId}
                 onSelectedChange={(checked) => {
                   toggleOne(row.id, checked);
                 }}
                 onUpdateTask={onUpdateTask}
+                taskCategoriesEnabled={taskCategoriesEnabled}
                 filterParams={filterParams}
               />
             ))}
             {hiddenRows > 0 ? (
               <tr>
                 <td
-                  colSpan={6}
+                  colSpan={taskCategoriesEnabled ? 7 : 6}
                   className="bg-bg px-3 py-3 text-center font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim"
                 >
                   {hiddenRows} loaded tasks hidden. Narrow the filter to inspect them.
@@ -938,19 +1184,23 @@ function TaskListRow({
   row,
   columns,
   members,
+  primaryProject,
   selected,
   highlighted,
   onSelectedChange,
   onUpdateTask,
+  taskCategoriesEnabled,
   filterParams,
 }: {
   row: objects.ObjectRow;
   columns: string[];
   members: TaskMemberOption[];
+  primaryProject: objects.TaskPrimaryProjectRow | null;
   selected: boolean;
   highlighted: boolean;
   onSelectedChange: (checked: boolean) => void;
   onUpdateTask: (id: string, patch: TaskPatch) => Promise<{ ok?: boolean; error?: string }>;
+  taskCategoriesEnabled: boolean;
   filterParams: Record<string, string>;
 }) {
   const [saving, setSaving] = useState<string | null>(null);
@@ -1000,7 +1250,7 @@ function TaskListRow({
           {displayText(title)}
         </Link>
         <div className="mt-1 font-mono text-[10px] uppercase tracking-[0.1em] text-fg-dim">
-          Task
+          Task{primaryProject ? ` · ${primaryProject.projectName}` : ''}
         </div>
         {saving || error ? (
           <div className="mt-1 font-mono text-[10px] uppercase tracking-[0.1em]">
@@ -1028,6 +1278,11 @@ function TaskListRow({
           ) : null}
         </select>
       </td>
+      {taskCategoriesEnabled ? (
+        <td className="min-w-40 px-3 py-2 align-top">
+          <TaskCategoryBadge category={row.taskCategory} status={row.taskCategoryStatus} />
+        </td>
+      ) : null}
       <td className="min-w-40 px-3 py-2 align-top">
         <select
           value={row.assigneeUserId ?? ''}
@@ -1087,12 +1342,19 @@ function TaskBulkToolbar({
   selectedIds,
   setSelectedIds,
   onUpdateTasks,
+  onUpdateTaskCategories,
+  taskCategoriesEnabled,
 }: {
   columns: string[];
   members: TaskMemberOption[];
   selectedIds: ReadonlySet<string>;
   setSelectedIds: Dispatch<SetStateAction<ReadonlySet<string>>>;
   onUpdateTasks: (ids: string[], patch: TaskPatch) => Promise<{ failed: number }>;
+  onUpdateTaskCategories: (
+    ids: string[],
+    category: TaskCategory | 'automatic',
+  ) => Promise<{ failed: number }>;
+  taskCategoriesEnabled: boolean;
 }) {
   const [bulk, dispatchBulk] = useReducer(bulkReducer, columns[0] ?? 'todo', (status) => ({
     field: 'assignee' as const,
@@ -1100,9 +1362,11 @@ function TaskBulkToolbar({
     assignee: '',
     due: '',
     priority: '',
+    category: 'automatic' as const,
     message: null,
   }));
   const [pending, startTransition] = useTransition();
+  const dialog = useAppDialog();
   const selectedCount = selectedIds.size;
 
   function currentPatch(): TaskPatch {
@@ -1114,13 +1378,27 @@ function TaskBulkToolbar({
     return { priority: bulk.priority ? Number(bulk.priority) : null };
   }
 
-  function applyBulk(): void {
+  async function applyBulk(): Promise<void> {
     if (selectedCount === 0) return;
     dispatchBulk({ type: 'message', message: null });
     const ids = [...selectedIds];
+    if (
+      bulk.field === 'category' &&
+      bulk.category === 'automatic' &&
+      !(await dialog.confirm({
+        title: 'Use automatic category?',
+        description: `${ids.length} selected ${ids.length === 1 ? 'task' : 'tasks'} will enqueue ${ids.length} model ${ids.length === 1 ? 'job' : 'jobs'}.`,
+        confirmLabel: 'Use automatic',
+      }))
+    ) {
+      return;
+    }
     const patch = currentPatch();
     startTransition(async () => {
-      const result = await onUpdateTasks(ids, patch);
+      const result =
+        bulk.field === 'category'
+          ? await onUpdateTaskCategories(ids, bulk.category)
+          : await onUpdateTasks(ids, patch);
       if (result.failed > 0) {
         dispatchBulk({
           type: 'message',
@@ -1158,6 +1436,7 @@ function TaskBulkToolbar({
         <option value="due">Due date</option>
         <option value="priority">Priority</option>
         <option value="status">Status</option>
+        {taskCategoriesEnabled ? <option value="category">Category</option> : null}
       </select>
       {bulk.field === 'status' ? (
         <select
@@ -1220,10 +1499,30 @@ function TaskBulkToolbar({
           ))}
         </select>
       ) : null}
+      {taskCategoriesEnabled && bulk.field === 'category' ? (
+        <select
+          value={bulk.category}
+          onChange={(event) => {
+            dispatchBulk({
+              type: 'category',
+              category: event.currentTarget.value as TaskCategory | 'automatic',
+            });
+          }}
+          className="h-8 rounded-sm border border-border bg-bg px-2 text-xs"
+          aria-label="Bulk category"
+        >
+          <option value="automatic">Use automatic category</option>
+          {TASK_CATEGORY_OPTIONS.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+      ) : null}
       <button
         type="button"
         disabled={selectedCount === 0 || pending}
-        onClick={applyBulk}
+        onClick={() => void applyBulk()}
         className="h-8 rounded-sm border border-border bg-bg px-3 text-xs font-medium hover:bg-signal-soft disabled:cursor-not-allowed disabled:opacity-50"
       >
         {pending ? 'Applying…' : 'Apply'}
@@ -1244,6 +1543,7 @@ function TaskBulkToolbar({
           {bulk.message}
         </span>
       ) : null}
+      {dialog.node}
     </div>
   );
 }
@@ -1260,6 +1560,8 @@ function bulkReducer(state: BulkState, action: BulkAction): BulkState {
       return { ...state, due: action.due, message: null };
     case 'priority':
       return { ...state, priority: action.priority, message: null };
+    case 'category':
+      return { ...state, category: action.category, message: null };
     case 'message':
       return { ...state, message: action.message };
   }
@@ -1273,6 +1575,7 @@ function TaskColumn({
   savingCardIds,
   cardErrors,
   members,
+  primaryProjects,
   taskHref,
 }: {
   id: string;
@@ -1281,6 +1584,7 @@ function TaskColumn({
   savingCardIds: ReadonlySet<string>;
   cardErrors: Record<string, string>;
   members: TaskMemberOption[];
+  primaryProjects: objects.TaskPrimaryProjectRow[];
   taskHref: (taskId: string) => string;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id });
@@ -1310,6 +1614,7 @@ function TaskColumn({
             saving={savingCardIds.has(row.id)}
             error={cardErrors[row.id]}
             members={members}
+            primaryProject={primaryProjects.find((project) => project.taskId === row.id) ?? null}
           />
         ))}
         {hiddenRows > 0 ? (
@@ -1330,6 +1635,7 @@ function TaskCard({
   saving,
   error,
   members,
+  primaryProject,
 }: {
   row: objects.ObjectRow;
   href: string;
@@ -1337,6 +1643,7 @@ function TaskCard({
   saving: boolean;
   error?: string;
   members: TaskMemberOption[];
+  primaryProject: objects.TaskPrimaryProjectRow | null;
 }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: row.id,
@@ -1369,6 +1676,13 @@ function TaskCard({
       </Link>
       <div className="mt-1.5 flex flex-wrap items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.1em] text-fg-dim">
         <span>Task</span>
+        <TaskCategoryBadge category={row.taskCategory} status={row.taskCategoryStatus} />
+        {primaryProject ? (
+          <span className="max-w-full truncate" title={primaryProject.projectName}>
+            {primaryProject.projectName}
+            {primaryProject.archivedAt ? ' · Archived' : ''}
+          </span>
+        ) : null}
       </div>
       <div className="mt-2 grid grid-cols-3 gap-px overflow-hidden rounded-sm border border-border bg-border font-mono text-[10px] uppercase tracking-[0.08em]">
         <CardMeta value={memberLabel(row.assigneeUserId, members)} missing={!row.assigneeUserId} />
@@ -1391,17 +1705,29 @@ function TaskDetailPanel({
   connectedWork,
   columns,
   members,
+  projects,
+  taskCategoriesEnabled,
+  primaryProject,
   closeHref,
   objectHref,
   onUpdate,
+  onProjectChange,
+  onProjectChangeCommitted,
+  onProjectChangeReverted,
 }: {
   task: objects.ObjectRow;
   connectedWork?: objects.ObjectDetail['connectedWork'] | null;
   columns: string[];
   members: TaskMemberOption[];
+  projects: TaskMemberOption[];
+  taskCategoriesEnabled: boolean;
+  primaryProject: objects.TaskPrimaryProjectRow | null;
   closeHref: string;
   objectHref: string;
   onUpdate: (id: string, patch: TaskPatch) => Promise<{ ok?: boolean; error?: string }>;
+  onProjectChange: (project: { id: string; label: string } | null) => void;
+  onProjectChangeCommitted: () => void;
+  onProjectChangeReverted: () => void;
 }) {
   const [saving, setSaving] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -1446,6 +1772,29 @@ function TaskDetailPanel({
         </div>
       </div>
       <div className="grid border-b border-border sm:grid-cols-2">
+        <TaskField label="Project">
+          <TaskProjectSelect
+            taskId={task.id}
+            projectId={primaryProject?.projectId ?? null}
+            currentProjectLabel={primaryProject?.projectName}
+            projectArchived={Boolean(primaryProject?.archivedAt)}
+            projects={projects}
+            onProjectChange={onProjectChange}
+            onProjectChangeCommitted={onProjectChangeCommitted}
+            onProjectChangeReverted={onProjectChangeReverted}
+          />
+        </TaskField>
+        {taskCategoriesEnabled ? (
+          <TaskField label="Category">
+            <TaskCategorySelect
+              taskId={task.id}
+              category={task.taskCategory}
+              mode={task.taskCategoryMode}
+              status={task.taskCategoryStatus}
+              updatedAt={task.taskCategoryUpdatedAt}
+            />
+          </TaskField>
+        ) : null}
         <TaskField label="Status">
           <select
             value={taskDisplayStatus(task.status)}

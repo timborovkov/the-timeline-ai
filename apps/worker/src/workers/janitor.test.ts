@@ -1,5 +1,12 @@
 import { PGlite } from '@electric-sql/pglite';
-import { type Db, documentVersions, meetings as meetingsTable } from '@timeline/db';
+import {
+  type Db,
+  documentVersions,
+  entities,
+  entityRelationships,
+  meetings as meetingsTable,
+  taskCategoryProjectInvalidations,
+} from '@timeline/db';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -325,6 +332,180 @@ describe('processJanitorTick — meetings sweep', () => {
 
     expect(result.meetingsRequeued).toBe(0);
     expect(enqueueMeeting).not.toHaveBeenCalled();
+  });
+});
+
+describe('processJanitorTick — task category sweep', () => {
+  it('re-enqueues durable project fanout continuations', async () => {
+    const [project] = await db
+      .insert(entities)
+      .values({ teamId: TEAM_ID, type: 'project', canonicalName: 'Large rollout' })
+      .returning({ id: entities.id });
+    await db.insert(taskCategoryProjectInvalidations).values({
+      teamId: TEAM_ID,
+      projectId: project?.id ?? '',
+      projectVersion: 'project-version',
+      afterTaskId: '00000000-0000-4000-8000-000000000500',
+    });
+    const enqueue = vi.fn().mockResolvedValue({ enqueued: true });
+
+    const result = await processJanitorTick({
+      db: db as never,
+      enqueueDocumentExtractJob: vi.fn(),
+      enqueueMeetingFinalizeJob: vi.fn(),
+      enqueueTaskCategoryJob: enqueue,
+      taskCategoryEnabled: true,
+    });
+
+    expect(enqueue).toHaveBeenCalledWith({
+      kind: 'project_fanout',
+      teamId: TEAM_ID,
+      projectId: project?.id,
+      projectVersion: 'project-version',
+      afterTaskId: '00000000-0000-4000-8000-000000000500',
+    });
+    expect(result.taskCategoryFanoutsRequeued).toBe(1);
+  });
+
+  it('re-enqueues an automatic task stuck pending even when it retains a category', async () => {
+    const [task] = await db
+      .insert(entities)
+      .values({
+        teamId: TEAM_ID,
+        type: 'task',
+        canonicalName: 'Reclassify retained category',
+        taskCategory: 'product',
+        taskCategoryMode: 'automatic',
+        taskCategorySource: 'llm',
+        taskCategoryStatus: 'pending',
+        taskCategoryAppliedInputHash: 'old-hash',
+        taskCategoryRequestedInputHash: 'new-hash',
+        taskCategoryTaxonomyVersion: 'task-categories-v1',
+        taskCategoryUpdatedAt: new Date(Date.now() - 10 * 60 * 1000),
+      })
+      .returning({ id: entities.id });
+    const enqueue = vi.fn().mockResolvedValue({ enqueued: true });
+
+    const result = await processJanitorTick({
+      db: db as never,
+      enqueueDocumentExtractJob: vi.fn(),
+      enqueueMeetingFinalizeJob: vi.fn(),
+      enqueueTaskCategoryJob: enqueue,
+      taskCategoryEnabled: true,
+    });
+
+    expect(enqueue).toHaveBeenCalledWith({
+      teamId: TEAM_ID,
+      taskId: task?.id,
+      inputHash: 'new-hash',
+      trigger: 'retry',
+    });
+    expect(result.taskCategoriesRequeued).toBe(1);
+  });
+
+  it('does not re-enqueue a task intentionally left for guarded backfill', async () => {
+    await db.insert(entities).values({
+      teamId: TEAM_ID,
+      type: 'task',
+      canonicalName: 'Disabled-era task',
+      taskCategoryMode: 'automatic',
+      taskCategoryStatus: null,
+      taskCategoryRequestedInputHash: null,
+      taskCategoryUpdatedAt: null,
+    });
+    const enqueue = vi.fn().mockResolvedValue({ enqueued: true });
+
+    const result = await processJanitorTick({
+      db: db as never,
+      enqueueDocumentExtractJob: vi.fn(),
+      enqueueMeetingFinalizeJob: vi.fn(),
+      enqueueTaskCategoryJob: enqueue,
+      taskCategoryEnabled: true,
+    });
+
+    expect(enqueue).not.toHaveBeenCalled();
+    expect(result.taskCategoriesRequeued).toBe(0);
+  });
+
+  it('re-enqueues only the stale task when it belongs to a project', async () => {
+    const [project] = await db
+      .insert(entities)
+      .values({ teamId: TEAM_ID, type: 'project', canonicalName: 'Faba redesign' })
+      .returning({ id: entities.id });
+    const [task] = await db
+      .insert(entities)
+      .values({
+        teamId: TEAM_ID,
+        type: 'task',
+        canonicalName: 'Prepare wireframes',
+        taskCategoryMode: 'automatic',
+        taskCategoryStatus: 'pending',
+        taskCategoryRequestedInputHash: 'new-hash',
+        taskCategoryTaxonomyVersion: 'task-categories-v1',
+        taskCategoryUpdatedAt: new Date(Date.now() - 10 * 60 * 1000),
+      })
+      .returning({ id: entities.id });
+    await db.insert(entityRelationships).values({
+      teamId: TEAM_ID,
+      fromEntityId: task?.id ?? '',
+      toEntityId: project?.id ?? '',
+      kind: 'child',
+    });
+    const enqueue = vi.fn().mockResolvedValue({ enqueued: true });
+
+    await processJanitorTick({
+      db: db as never,
+      enqueueDocumentExtractJob: vi.fn(),
+      enqueueMeetingFinalizeJob: vi.fn(),
+      enqueueTaskCategoryJob: enqueue,
+      taskCategoryEnabled: true,
+    });
+
+    expect(enqueue).toHaveBeenCalledTimes(1);
+    expect(enqueue).toHaveBeenCalledWith({
+      teamId: TEAM_ID,
+      taskId: task?.id,
+      inputHash: 'new-hash',
+      trigger: 'retry',
+    });
+  });
+
+  it('bounds failed enqueue attempts during a Redis outage', async () => {
+    await db.insert(entities).values([
+      {
+        teamId: TEAM_ID,
+        type: 'task',
+        canonicalName: 'First stale task',
+        taskCategoryMode: 'automatic',
+        taskCategoryStatus: 'pending',
+        taskCategoryRequestedInputHash: 'first-hash',
+        taskCategoryTaxonomyVersion: 'task-categories-v1',
+        taskCategoryUpdatedAt: new Date(Date.now() - 10 * 60 * 1000),
+      },
+      {
+        teamId: TEAM_ID,
+        type: 'task',
+        canonicalName: 'Second stale task',
+        taskCategoryMode: 'automatic',
+        taskCategoryStatus: 'pending',
+        taskCategoryRequestedInputHash: 'second-hash',
+        taskCategoryTaxonomyVersion: 'task-categories-v1',
+        taskCategoryUpdatedAt: new Date(Date.now() - 10 * 60 * 1000),
+      },
+    ]);
+    const enqueue = vi.fn().mockRejectedValue(new Error('redis down'));
+
+    const result = await processJanitorTick({
+      db: db as never,
+      enqueueDocumentExtractJob: vi.fn(),
+      enqueueMeetingFinalizeJob: vi.fn(),
+      enqueueTaskCategoryJob: enqueue,
+      taskCategoryEnabled: true,
+      taskCategoryAttemptLimit: 1,
+    });
+
+    expect(enqueue).toHaveBeenCalledTimes(1);
+    expect(result.taskCategoriesRequeued).toBe(0);
   });
 });
 

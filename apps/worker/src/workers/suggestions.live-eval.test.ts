@@ -73,6 +73,26 @@ maybeDescribe('live suggestion worker evals', () => {
     expect(items.some((item) => item.targetKind === 'task' || item.targetKind === 'object')).toBe(
       true,
     );
+    const taskItems = items.filter(
+      (item) => item.targetKind === 'task' && item.operation === 'create',
+    );
+    expect(taskItems.length).toBeGreaterThan(0);
+    expect(
+      taskItems.some(
+        (item) =>
+          item.proposedPayload.parentObjectId === PROJECT_ID &&
+          item.proposedPayload.projectName === 'Northstar rollout',
+      ),
+    ).toBe(true);
+    expect(
+      taskItems.every(
+        (item) =>
+          typeof item.proposedPayload.taskCategory === 'string' &&
+          typeof item.proposedPayload.taskCategoryConfidence === 'number' &&
+          typeof item.proposedPayload.taskCategoryInputHash === 'string' &&
+          item.proposedPayload.taskCategoryTaxonomyVersion === 'task-categories-v1',
+      ),
+    ).toBe(true);
     for (const item of items) {
       expect(containsObjectKey(item.proposedPayload, 'sourceEventId')).toBe(false);
     }
@@ -120,7 +140,7 @@ maybeDescribe('live suggestion worker evals', () => {
     const sourceMetadata = rawEvent?.sourceMetadata;
     expect(isRecord(sourceMetadata)).toBe(true);
     if (!isRecord(sourceMetadata)) throw new Error('expected raw event source metadata');
-    expect(sourceMetadata.suggestion_pre_extract_model_version).toMatch(/@2026-06-a$/);
+    expect(sourceMetadata.suggestion_pre_extract_model_version).toMatch(/@2026-07-a$/);
     expect(typeof sourceMetadata.suggestions_pre_extracted_at).toBe('string');
   }, 240_000);
 });

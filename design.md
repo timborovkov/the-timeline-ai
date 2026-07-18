@@ -353,6 +353,14 @@ Linear-tight on operational surfaces. Comfortable on mobile and on forms.
   (capture composer, command bar) get a single hairline border, no
   shadow. The **timeline loses its card chrome entirely** — flat indexed
   rows with hairline separators (see Timeline rules below).
+- **Task category and project** — category is a compact mono text badge in
+  the task/type line, secondary to title, status, assignee, due date, and
+  priority. Pending and failed states use readable text, never color alone.
+  Project is a distinct named relation: show it in task context lines and
+  editable detail fields, not as another colored tag or a fourth dense card
+  metadata cell. Archived task detail pages replace project/category controls
+  with a short unarchive instruction because those mutations require an active
+  task.
 - **Buttons** — `rounded-sm`. Primary: `bg-signal text-signal-fg`,
   square corners. Ghost: no background. Outline: 1px border, no fill.
   Destructive: signal-color is never used; `bg-transparent text-danger border-danger/40`.

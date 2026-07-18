@@ -7,6 +7,7 @@ import type { BoardItemOptimisticPatch } from '@/components/boards/board-detail-
 import type * as boards from '@timeline/shared/boards';
 import type { Dispatch, SetStateAction } from 'react';
 
+import { LiveTaskCategoryBadge } from '@/components/tasks/task-category-badge';
 import { boardViewHref, type BoardLayout } from '@/lib/board-links';
 import { displayText, formatDisplayDate } from '@/lib/display-dates';
 import { displayObjectTitle } from '@/lib/object-title';
@@ -213,7 +214,19 @@ export function CuratedBoardTable({
                       </Link>
                     )}
                   </td>
-                  <td className="px-3 py-2 font-mono text-xs text-fg-muted">{item.object.type}</td>
+                  <td className="px-3 py-2 font-mono text-xs text-fg-muted">
+                    <span className="flex flex-wrap items-center gap-1.5">
+                      {item.object.type}
+                      {item.object.type === 'task' ? (
+                        <LiveTaskCategoryBadge
+                          taskId={item.object.id}
+                          category={item.object.taskCategory}
+                          status={item.object.taskCategoryStatus}
+                          updatedAt={item.object.taskCategoryUpdatedAt}
+                        />
+                      ) : null}
+                    </span>
+                  </td>
                   <td className="min-w-40 px-3 py-2">
                     <select
                       value={item.responsibleUserId ?? ''}
@@ -609,6 +622,14 @@ export function CuratedBoardList({
                 {item.object.type}
                 {item.dueAt ? ` · ${formatDisplayDate(item.dueAt)}` : ''}
               </span>
+              {item.object.type === 'task' ? (
+                <LiveTaskCategoryBadge
+                  taskId={item.object.id}
+                  category={item.object.taskCategory}
+                  status={item.object.taskCategoryStatus}
+                  updatedAt={item.object.taskCategoryUpdatedAt}
+                />
+              ) : null}
             </>
           );
           return (

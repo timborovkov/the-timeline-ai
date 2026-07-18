@@ -11,8 +11,19 @@ import { artifactRefCitation } from '#src/citation.js';
 import { childLogger } from '#src/logger.js';
 import { getMcpManager } from '#src/mcp/client.js';
 import * as objects from '#src/objects/index.js';
+import {
+  serializeObjectRow,
+  serializeObjectRowsWithProjects,
+} from '#src/objects/tool-serialization.js';
 import { recordMcpToolResultEvidence } from '#src/reconciliation/mcp-capture.js';
 import { suggestionDedupeKey, type CreateSuggestionInput } from '#src/suggestions/index.js';
+import {
+  enrichTaskProposalCategories,
+  enrichTaskProposalCategory,
+  type TaskProposalBatchClassifier,
+  type TaskProposalClassifier,
+} from '#src/task-categories/proposal.js';
+import { taskCategorySchema, type TaskCategory } from '#src/task-categories/types.js';
 import { type TeamScope } from '#src/team-scope.js';
 import {
   localDateFromInstant,
@@ -40,6 +51,9 @@ interface AgentToolOptions {
   onToolError?: AgentToolErrorReporter | undefined;
   readOnly?: boolean | undefined;
   db?: Db | undefined;
+  classifyTaskCategories?: TaskProposalBatchClassifier | undefined;
+  classifyTaskCategory?: TaskProposalClassifier | undefined;
+  taskCategoryClassificationEnabled?: boolean | undefined;
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -131,17 +145,22 @@ const listPendingApprovalsInput = z.object({
   limit: z.number().int().min(1).max(50).optional(),
 });
 
-const suggestTaskInput = z.object({
-  title: z.string().trim().min(1).max(200),
-  dueAt: z.iso.datetime().optional(),
-  ownerUserId: z.string().regex(UUID_RE).optional(),
-  assigneeUserId: z.string().regex(UUID_RE).optional(),
-  ownerName: z.string().trim().min(1).max(200).optional(),
-  assigneeName: z.string().trim().min(1).max(200).optional(),
-  priority: z.number().int().min(1).max(4).optional(),
-  note: z.string().trim().max(1000).optional(),
-  parentObjectId: z.string().regex(UUID_RE).optional(),
-});
+const suggestTaskInput = z
+  .object({
+    title: z.string().trim().min(1).max(200),
+    dueAt: z.iso.datetime().optional(),
+    ownerUserId: z.string().regex(UUID_RE).optional(),
+    assigneeUserId: z.string().regex(UUID_RE).optional(),
+    ownerName: z.string().trim().min(1).max(200).optional(),
+    assigneeName: z.string().trim().min(1).max(200).optional(),
+    priority: z.number().int().min(1).max(4).optional(),
+    note: z.string().trim().max(1000).optional(),
+    parentObjectId: z.string().regex(UUID_RE).optional(),
+    createProjectName: z.string().trim().min(1).max(200).optional(),
+  })
+  .refine((input) => !(input.parentObjectId && input.createProjectName), {
+    message: 'Choose an existing project or propose a new project, not both',
+  });
 
 const relationshipMemoryItemSchema = z
   .object({
@@ -190,6 +209,8 @@ const objectMemoryItemSchema = z.discriminatedUnion('kind', [
     ownerName: z.string().trim().min(1).max(200).optional(),
     assigneeName: z.string().trim().min(1).max(200).optional(),
     dueAt: z.iso.datetime().nullable().optional(),
+    parentObjectId: z.string().regex(UUID_RE).optional(),
+    createProjectName: z.string().trim().min(1).max(200).optional(),
   }),
   z.object({
     kind: z.literal('update_object'),
@@ -223,22 +244,42 @@ const objectMemoryItemSchema = z.discriminatedUnion('kind', [
   relationshipMemoryItemSchema,
 ]);
 
-const suggestObjectMemoryInput = z.object({
-  title: z.string().trim().min(1).max(200),
-  summary: z.string().trim().max(1000).nullable().optional(),
-  reason: z.string().trim().max(1000).nullable().optional(),
-  confidence: z.enum(['low', 'medium', 'high']).default('medium'),
-  evidence: z
-    .array(
-      z.object({
-        rawEventId: z.string().regex(UUID_RE),
-        quote: z.string().trim().max(1000).nullable().optional(),
-      }),
-    )
-    .max(10)
-    .optional(),
-  items: z.array(objectMemoryItemSchema).min(1).max(10),
-});
+const suggestObjectMemoryInput = z
+  .object({
+    title: z.string().trim().min(1).max(200),
+    summary: z.string().trim().max(1000).nullable().optional(),
+    reason: z.string().trim().max(1000).nullable().optional(),
+    confidence: z.enum(['low', 'medium', 'high']).default('medium'),
+    evidence: z
+      .array(
+        z.object({
+          rawEventId: z.string().regex(UUID_RE),
+          quote: z.string().trim().max(1000).nullable().optional(),
+        }),
+      )
+      .max(10)
+      .optional(),
+    items: z.array(objectMemoryItemSchema).min(1).max(10),
+  })
+  .superRefine((input, ctx) => {
+    input.items.forEach((item, index) => {
+      if (item.kind !== 'create_object') return;
+      if (item.parentObjectId && item.createProjectName) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['items', index, 'parentObjectId'],
+          message: 'Choose an existing project or propose a new project, not both',
+        });
+      }
+      if (item.type !== 'task' && (item.parentObjectId || item.createProjectName)) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['items', index, 'parentObjectId'],
+          message: 'Project fields are only valid for task proposals',
+        });
+      }
+    });
+  });
 
 const getEventInput = z.object({
   id: z.string().regex(UUID_RE),
@@ -279,6 +320,9 @@ const searchObjectsStructuredInput = z.object({
     .optional(),
   ownerUserId: z.string().regex(UUID_RE).nullable().optional(),
   assigneeUserId: z.string().regex(UUID_RE).nullable().optional(),
+  category: z.union([taskCategorySchema, z.array(taskCategorySchema).max(15)]).optional(),
+  uncategorized: z.boolean().optional(),
+  primaryProjectId: z.string().regex(UUID_RE).optional(),
   dueAfter: z.iso.datetime().optional(),
   dueBefore: z.iso.datetime().optional(),
   archived: z.boolean().optional(),
@@ -351,19 +395,24 @@ const executeObjectMergeInput = z.object({
   reason: z.string().trim().min(1).max(1000),
 });
 
-const executeObjectCreateInput = z.object({
-  type: objectTypeSchema.default('other'),
-  canonicalName: z.string().trim().min(1).max(200),
-  status: z.string().trim().min(1).max(40).optional(),
-  stage: z.string().trim().max(40).nullable().optional(),
-  priority: z.number().int().min(1).max(4).nullable().optional(),
-  ownerUserId: z.string().regex(UUID_RE).nullable().optional(),
-  assigneeUserId: z.string().regex(UUID_RE).nullable().optional(),
-  dueAt: z.iso.datetime().nullable().optional(),
-  aliases: z.array(z.string().trim().min(1).max(120)).max(50).optional(),
-  parentObjectId: z.string().regex(UUID_RE).nullable().optional(),
-  reason: z.string().trim().min(1).max(1000),
-});
+const executeObjectCreateInput = z
+  .object({
+    type: objectTypeSchema.default('other'),
+    canonicalName: z.string().trim().min(1).max(200),
+    status: z.string().trim().min(1).max(40).optional(),
+    stage: z.string().trim().max(40).nullable().optional(),
+    priority: z.number().int().min(1).max(4).nullable().optional(),
+    ownerUserId: z.string().regex(UUID_RE).nullable().optional(),
+    assigneeUserId: z.string().regex(UUID_RE).nullable().optional(),
+    dueAt: z.iso.datetime().nullable().optional(),
+    aliases: z.array(z.string().trim().min(1).max(120)).max(50).optional(),
+    parentObjectId: z.string().regex(UUID_RE).nullable().optional(),
+    reason: z.string().trim().min(1).max(1000),
+  })
+  .refine((input) => !input.parentObjectId || input.type === 'task', {
+    message: 'parentObjectId is only supported when creating a task',
+    path: ['parentObjectId'],
+  });
 
 const executeObjectArchiveInput = z.object({
   entityId: z.string().regex(UUID_RE),
@@ -530,27 +579,6 @@ function dateInRange(value: Date | null | undefined, from?: string, to?: string)
   if (from && value < new Date(from)) return false;
   if (to && value >= new Date(to)) return false;
   return true;
-}
-
-function serializeObjectRow(row: objects.ObjectRow): Record<string, unknown> {
-  return {
-    id: row.id,
-    citation: artifactRefCitation({
-      kind: row.type === 'task' || row.type === 'follow_up' ? 'task' : 'object',
-      id: row.id,
-    }),
-    name: row.canonicalName,
-    type: row.type,
-    status: row.status,
-    stage: row.stage,
-    priority: row.priority,
-    owner_user_id: row.ownerUserId,
-    assignee_user_id: row.assigneeUserId,
-    due_at: row.dueAt?.toISOString() ?? null,
-    updated_at: row.updatedAt.toISOString(),
-    archived: row.archivedAt !== null,
-    aliases: row.aliases.slice(0, 20),
-  };
 }
 
 function searchArgsFromTimelineInput(
@@ -1094,6 +1122,42 @@ async function normalizeCalendarCreateInput(
     visibilityUserIds: input.visibilityUserIds ?? null,
     reminderMinutes: input.reminderMinutes ?? null,
     ...(input.linkedEntityIds !== undefined ? { linkedEntityIds: input.linkedEntityIds } : {}),
+  };
+}
+
+async function resolveTaskProposalProject(
+  scope: TeamScope,
+  input: {
+    parentObjectId?: string | undefined;
+    createProjectName?: string | undefined;
+  },
+): Promise<{
+  parentObjectId: string | null;
+  projectName: string | null;
+  createProjectName: string | null;
+}> {
+  const parentProject = input.parentObjectId
+    ? await scope.objects.getObject(input.parentObjectId)
+    : null;
+  if (
+    input.parentObjectId &&
+    (parentProject?.type !== 'project' || Boolean(parentProject.archivedAt))
+  ) {
+    throw new Error('parentObjectId must reference one active project');
+  }
+  const matchingNamedProjects = input.createProjectName
+    ? await scope.objects.findActiveProjectsByNameOrAlias(input.createProjectName)
+    : [];
+  if (matchingNamedProjects.length > 1) throw new Error('Proposed project name is ambiguous');
+  const existingNamedProject = matchingNamedProjects[0] ?? null;
+  return {
+    parentObjectId: parentProject?.id ?? existingNamedProject?.id ?? null,
+    projectName:
+      parentProject?.canonicalName ??
+      existingNamedProject?.canonicalName ??
+      input.createProjectName ??
+      null,
+    createProjectName: existingNamedProject ? null : (input.createProjectName ?? null),
   };
 }
 
@@ -1731,6 +1795,7 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
         runSafe('get_object', async () => {
           const result = await scope.objects.getObject(idOrName);
           if (!result) return { found: false };
+          const [primaryProject] = await scope.objects.listPrimaryProjectsForTasks([result.id]);
           return {
             found: true,
             id: result.id,
@@ -1746,6 +1811,16 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
             owner_user_id: result.ownerUserId,
             assignee_user_id: result.assigneeUserId,
             due_at: result.dueAt?.toISOString() ?? null,
+            task_category: result.taskCategory,
+            task_category_mode: result.taskCategoryMode,
+            task_category_status: result.taskCategoryStatus,
+            primary_project: primaryProject
+              ? {
+                  id: primaryProject.projectId,
+                  name: primaryProject.projectName,
+                  archived: primaryProject.archivedAt !== null,
+                }
+              : null,
             archived: result.archivedAt !== null,
             notes: result.notes.slice(0, 10).map((n) => ({
               id: n.id,
@@ -1785,6 +1860,9 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
           if (input.stage) filter.stage = input.stage;
           if (input.ownerUserId !== undefined) filter.ownerUserId = input.ownerUserId;
           if (input.assigneeUserId !== undefined) filter.assigneeUserId = input.assigneeUserId;
+          if (input.category) filter.taskCategory = input.category;
+          if (input.uncategorized) filter.taskCategoryNull = true;
+          if (input.primaryProjectId) filter.primaryProjectId = input.primaryProjectId;
           if (input.dueAfter) filter.dueAfter = new Date(input.dueAfter);
           if (input.dueBefore) filter.dueBefore = new Date(input.dueBefore);
           if (input.archived !== undefined) filter.archived = input.archived;
@@ -1792,7 +1870,7 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
           return {
             count: rows.length,
             mode: 'structured',
-            objects: rows.map(serializeObjectRow),
+            objects: await serializeObjectRowsWithProjects(scope, rows),
           };
         }),
     }),
@@ -1805,6 +1883,9 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
         status: z.string().max(40).optional(),
         stage: z.string().max(40).optional(),
         ownerUserId: z.string().regex(UUID_RE).optional(),
+        category: taskCategorySchema.optional(),
+        uncategorized: z.boolean().optional(),
+        primaryProjectId: z.string().regex(UUID_RE).optional(),
         archived: z.boolean().optional(),
         limit: z.number().int().min(1).max(50).optional(),
       }),
@@ -1815,6 +1896,9 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
             status?: string;
             stage?: string;
             ownerUserId?: string;
+            category?: TaskCategory;
+            uncategorized?: boolean;
+            primaryProjectId?: string;
             archived?: boolean;
             limit?: number;
           };
@@ -1825,11 +1909,14 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
           if (input.status) filter.status = input.status;
           if (input.stage) filter.stage = input.stage;
           if (input.ownerUserId) filter.ownerUserId = input.ownerUserId;
+          if (input.category) filter.taskCategory = input.category;
+          if (input.uncategorized) filter.taskCategoryNull = true;
+          if (input.primaryProjectId) filter.primaryProjectId = input.primaryProjectId;
           if (input.archived !== undefined) filter.archived = input.archived;
           const rows = await scope.objects.listObjects(filter);
           return {
             count: rows.length,
-            objects: rows.map(serializeObjectRow),
+            objects: await serializeObjectRowsWithProjects(scope, rows),
           };
         }),
     }),
@@ -1840,11 +1927,21 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
       inputSchema: z.object({
         status: z.string().max(40).optional(),
         ownerUserId: z.string().regex(UUID_RE).optional(),
+        category: taskCategorySchema.optional(),
+        uncategorized: z.boolean().optional(),
+        primaryProjectId: z.string().regex(UUID_RE).optional(),
         limit: z.number().int().min(1).max(50).optional(),
       }),
       execute: async (raw) =>
         runSafe('list_tasks', async () => {
-          const input = raw as { status?: string; ownerUserId?: string; limit?: number };
+          const input = raw as {
+            status?: string;
+            ownerUserId?: string;
+            category?: TaskCategory;
+            uncategorized?: boolean;
+            primaryProjectId?: string;
+            limit?: number;
+          };
           const filter: objects.ObjectListFilter = {
             type: 'task',
             archived: false,
@@ -1864,16 +1961,14 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
             status: input.status ?? ['suggested', 'open', 'todo', 'doing', 'blocked'],
           };
           if (input.ownerUserId) filter.ownerUserId = input.ownerUserId;
+          if (input.category) filter.taskCategory = input.category;
+          if (input.uncategorized) filter.taskCategoryNull = true;
+          if (input.primaryProjectId) filter.primaryProjectId = input.primaryProjectId;
           const rows = await scope.objects.listObjects(filter);
+          const serialized = await serializeObjectRowsWithProjects(scope, rows);
           return {
             count: rows.length,
-            tasks: rows.map((r) => ({
-              id: r.id,
-              name: r.canonicalName,
-              status: r.status,
-              owner_user_id: r.ownerUserId,
-              due_at: r.dueAt?.toISOString() ?? null,
-            })),
+            tasks: serialized,
           };
         }),
     }),
@@ -2077,11 +2172,13 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
 
     suggest_task: tool({
       description:
-        'Propose a new task. Records an approval-queue suggestion only; it does not create the canonical task until a human accepts it. Use when the conversation reveals a concrete next action. Set parentObjectId to link the task to a relevant deal/project/person.',
+        'Propose a new task with an automatic category preview. Records an approval-queue suggestion only; it does not create the canonical task or project until a human accepts it. Use parentObjectId only when exactly one listed active project clearly owns the task. Use createProjectName only when the evidence clearly names a new client or internal project that should be created with the task. Never use a deal, person, company, title match, co-mention, or ambiguous project; omit project fields instead of guessing.',
       inputSchema: suggestTaskInput,
       execute: async (raw) =>
         runSafe('suggest_task', async () => {
           const input = suggestTaskInput.parse(raw);
+          const { parentObjectId, projectName, createProjectName } =
+            await resolveTaskProposalProject(scope, input);
           const dedupeKey = suggestionDedupeKey({
             tool: 'suggest_task',
             title: input.title,
@@ -2091,7 +2188,29 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
             ownerName: input.ownerName ?? null,
             assigneeName: input.assigneeName ?? null,
             priority: input.priority ?? null,
-            parentObjectId: input.parentObjectId ?? null,
+            parentObjectId,
+            createProjectName,
+          });
+          const metadata = input.note ? { agent_note: input.note, description: input.note } : {};
+          const proposedPayload = await enrichTaskProposalCategory({
+            proposedPayload: {
+              canonicalName: input.title,
+              dueAt: input.dueAt ?? null,
+              ownerUserId: input.ownerUserId ?? null,
+              assigneeUserId: input.assigneeUserId ?? null,
+              ownerName: input.ownerName ?? null,
+              assigneeName: input.assigneeName ?? null,
+              priority: input.priority ?? null,
+              parentObjectId,
+              ...(projectName ? { projectName } : {}),
+              ...(createProjectName ? { createProjectName } : {}),
+              metadata,
+            },
+            fallbackTitle: input.title,
+            ...(options.classifyTaskCategory ? { classify: options.classifyTaskCategory } : {}),
+            ...(options.taskCategoryClassificationEnabled !== undefined
+              ? { enabled: options.taskCategoryClassificationEnabled }
+              : {}),
           });
           const suggestion = await scope.suggestions.createOrMergeSuggestionBundle({
             source: 'chat',
@@ -2107,17 +2226,7 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
                 targetKind: 'task',
                 title: input.title,
                 dedupeKey,
-                proposedPayload: {
-                  canonicalName: input.title,
-                  dueAt: input.dueAt ?? null,
-                  ownerUserId: input.ownerUserId ?? null,
-                  assigneeUserId: input.assigneeUserId ?? null,
-                  ownerName: input.ownerName ?? null,
-                  assigneeName: input.assigneeName ?? null,
-                  priority: input.priority ?? null,
-                  parentObjectId: input.parentObjectId ?? null,
-                  metadata: input.note ? { agent_note: input.note } : {},
-                },
+                proposedPayload,
               },
             ],
           });
@@ -2180,120 +2289,169 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
 
     suggest_object_memory: tool({
       description:
-        'Create an approval-backed proposal for durable object memory. Use when the user gives lasting information about people, companies, projects, tasks, deals, calendar commitments, aliases, identity facets, relationships, notes, or typo/name cleanup. This queues approval only; it does not make memory canonical until accepted.',
+        'Create an approval-backed proposal for durable object memory. Use when the user gives lasting information about people, companies, projects, tasks, deals, calendar commitments, aliases, identity facets, relationships, notes, or typo/name cleanup. For a create_object task, use parentObjectId only when one listed active project clearly owns it, or createProjectName when the evidence clearly names a new project; omit both instead of guessing. Task proposals receive an automatic category preview. This queues approval only; it does not make memory canonical until accepted.',
       inputSchema: suggestObjectMemoryInput,
       execute: async (raw) =>
         runSafe('suggest_object_memory', async () => {
           const input = suggestObjectMemoryInput.parse(raw);
-          const items = input.items.map((item) => {
-            if (item.kind === 'create_object') {
+          const items: CreateSuggestionInput['items'] = await Promise.all(
+            input.items.map(async (item) => {
+              if (item.kind === 'create_object') {
+                const project =
+                  item.type === 'task'
+                    ? await resolveTaskProposalProject(scope, item)
+                    : { parentObjectId: null, projectName: null, createProjectName: null };
+                return {
+                  operation: 'create' as const,
+                  targetKind: item.type === 'task' ? ('task' as const) : ('object' as const),
+                  title: `Create ${item.type}: ${item.canonicalName}`,
+                  dedupeKey: suggestionDedupeKey([
+                    'object-memory',
+                    item.kind,
+                    item.type,
+                    item.canonicalName,
+                    project.parentObjectId,
+                    project.createProjectName,
+                  ]),
+                  proposedPayload: {
+                    type: item.type,
+                    canonicalName: item.canonicalName,
+                    aliases: item.aliases,
+                    status: item.status,
+                    stage: item.stage,
+                    priority: item.priority,
+                    ownerUserId: item.ownerUserId,
+                    assigneeUserId: item.assigneeUserId,
+                    ownerName: item.ownerName,
+                    assigneeName: item.assigneeName,
+                    dueAt: item.dueAt,
+                    ...(project.parentObjectId ? { parentObjectId: project.parentObjectId } : {}),
+                    ...(project.projectName ? { projectName: project.projectName } : {}),
+                    ...(project.createProjectName
+                      ? { createProjectName: project.createProjectName }
+                      : {}),
+                    metadata: { object_memory: true },
+                  },
+                };
+              }
+              if (item.kind === 'update_object') {
+                return {
+                  operation: 'update' as const,
+                  targetKind: 'object' as const,
+                  targetId: item.entityId,
+                  title: 'Update object memory',
+                  dedupeKey: suggestionDedupeKey(['object-memory', item.kind, item.entityId, item]),
+                  proposedPayload: {
+                    canonicalName: item.canonicalName,
+                    aliases: item.aliases,
+                    status: item.status,
+                    stage: item.stage,
+                    priority: item.priority,
+                    ownerUserId: item.ownerUserId,
+                    assigneeUserId: item.assigneeUserId,
+                    ownerName: item.ownerName,
+                    assigneeName: item.assigneeName,
+                    dueAt: item.dueAt,
+                  },
+                };
+              }
+              if (item.kind === 'add_identity_facet') {
+                return {
+                  operation: 'create' as const,
+                  targetKind: 'identity_facet' as const,
+                  targetId: item.entityId,
+                  title: `Add ${item.facetKind} identity`,
+                  dedupeKey: suggestionDedupeKey([
+                    'object-memory',
+                    item.kind,
+                    item.entityId,
+                    item.facetKind,
+                    item.normalizedValue ?? item.value,
+                  ]),
+                  proposedPayload: {
+                    entityId: item.entityId,
+                    kind: item.facetKind,
+                    value: item.value,
+                    normalizedValue: item.normalizedValue,
+                    provider: item.provider,
+                    externalId: item.externalId,
+                    linkedUserId: item.linkedUserId,
+                  },
+                };
+              }
+              if (item.kind === 'add_note') {
+                return {
+                  operation: 'create' as const,
+                  targetKind: 'object_note' as const,
+                  targetId: item.entityId,
+                  title: 'Add object note',
+                  dedupeKey: suggestionDedupeKey([
+                    'object-memory',
+                    item.kind,
+                    item.entityId,
+                    item.body,
+                  ]),
+                  proposedPayload: { entityId: item.entityId, body: item.body },
+                };
+              }
               return {
                 operation: 'create' as const,
-                targetKind: item.type === 'task' ? ('task' as const) : ('object' as const),
-                title: `Create ${item.type}: ${item.canonicalName}`,
+                targetKind: 'object_relationship' as const,
+                targetId: item.fromEntityId ?? null,
+                title: `Add ${item.relationshipKind} relationship`,
                 dedupeKey: suggestionDedupeKey([
                   'object-memory',
                   item.kind,
-                  item.type,
-                  item.canonicalName,
+                  item.fromEntityId ?? item.fromName,
+                  item.toEntityId ?? item.toName,
+                  item.relationshipKind,
                 ]),
                 proposedPayload: {
-                  type: item.type,
-                  canonicalName: item.canonicalName,
-                  aliases: item.aliases,
-                  status: item.status,
-                  stage: item.stage,
-                  priority: item.priority,
-                  ownerUserId: item.ownerUserId,
-                  assigneeUserId: item.assigneeUserId,
-                  ownerName: item.ownerName,
-                  assigneeName: item.assigneeName,
-                  dueAt: item.dueAt,
-                  metadata: { object_memory: true },
+                  fromEntityId: item.fromEntityId,
+                  toEntityId: item.toEntityId,
+                  fromName: item.fromName,
+                  toName: item.toName,
+                  kind: item.relationshipKind,
                 },
               };
+            }),
+          );
+          const taskProposals = items.flatMap((item, index) =>
+            item.targetKind === 'task' && item.operation === 'create'
+              ? [
+                  {
+                    key: String(index),
+                    proposedPayload: item.proposedPayload,
+                    fallbackTitle: item.title,
+                  },
+                ]
+              : [],
+          );
+          if (taskProposals.length > 0) {
+            const classifyOne = options.classifyTaskCategory;
+            const classify =
+              options.classifyTaskCategories ??
+              (classifyOne
+                ? async (batch: Parameters<TaskProposalBatchClassifier>[0]) =>
+                    Promise.all(
+                      batch.map(async ({ key, packet }) => ({
+                        key,
+                        ...(await classifyOne(packet)),
+                      })),
+                    )
+                : undefined);
+            const enriched = await enrichTaskProposalCategories({
+              proposals: taskProposals,
+              ...(classify ? { classify } : {}),
+              ...(options.taskCategoryClassificationEnabled !== undefined
+                ? { enabled: options.taskCategoryClassificationEnabled }
+                : {}),
+            });
+            for (const [index, item] of items.entries()) {
+              const proposedPayload = enriched.get(String(index));
+              if (proposedPayload) item.proposedPayload = proposedPayload;
             }
-            if (item.kind === 'update_object') {
-              return {
-                operation: 'update' as const,
-                targetKind: 'object' as const,
-                targetId: item.entityId,
-                title: 'Update object memory',
-                dedupeKey: suggestionDedupeKey(['object-memory', item.kind, item.entityId, item]),
-                proposedPayload: {
-                  canonicalName: item.canonicalName,
-                  aliases: item.aliases,
-                  status: item.status,
-                  stage: item.stage,
-                  priority: item.priority,
-                  ownerUserId: item.ownerUserId,
-                  assigneeUserId: item.assigneeUserId,
-                  ownerName: item.ownerName,
-                  assigneeName: item.assigneeName,
-                  dueAt: item.dueAt,
-                },
-              };
-            }
-            if (item.kind === 'add_identity_facet') {
-              return {
-                operation: 'create' as const,
-                targetKind: 'identity_facet' as const,
-                targetId: item.entityId,
-                title: `Add ${item.facetKind} identity`,
-                dedupeKey: suggestionDedupeKey([
-                  'object-memory',
-                  item.kind,
-                  item.entityId,
-                  item.facetKind,
-                  item.normalizedValue ?? item.value,
-                ]),
-                proposedPayload: {
-                  entityId: item.entityId,
-                  kind: item.facetKind,
-                  value: item.value,
-                  normalizedValue: item.normalizedValue,
-                  provider: item.provider,
-                  externalId: item.externalId,
-                  linkedUserId: item.linkedUserId,
-                },
-              };
-            }
-            if (item.kind === 'add_note') {
-              return {
-                operation: 'create' as const,
-                targetKind: 'object_note' as const,
-                targetId: item.entityId,
-                title: 'Add object note',
-                dedupeKey: suggestionDedupeKey([
-                  'object-memory',
-                  item.kind,
-                  item.entityId,
-                  item.body,
-                ]),
-                proposedPayload: { entityId: item.entityId, body: item.body },
-              };
-            }
-            return {
-              operation: 'create' as const,
-              targetKind: 'object_relationship' as const,
-              targetId: item.fromEntityId ?? null,
-              title: `Add ${item.relationshipKind} relationship`,
-              dedupeKey: suggestionDedupeKey([
-                'object-memory',
-                item.kind,
-                item.fromEntityId ?? item.fromName,
-                item.toEntityId ?? item.toName,
-                item.relationshipKind,
-              ]),
-              proposedPayload: {
-                fromEntityId: item.fromEntityId,
-                toEntityId: item.toEntityId,
-                fromName: item.fromName,
-                toName: item.toName,
-                kind: item.relationshipKind,
-              },
-            };
-          });
+          }
           const createInput: CreateSuggestionInput = {
             source: 'chat',
             title: input.title,

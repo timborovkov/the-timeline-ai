@@ -1,4 +1,5 @@
 import { users } from '@timeline/db';
+import { getEnv } from '@timeline/shared/env';
 import { withTeam } from '@timeline/shared/team-scope';
 import { inArray } from 'drizzle-orm';
 import { notFound, redirect } from 'next/navigation';
@@ -7,15 +8,18 @@ import type { BoardLayout } from '@/lib/board-links';
 import type { Metadata } from 'next';
 
 import { BoardDetailClient } from '@/components/boards/board-detail-client';
+import { TaskCategoryFilterRefresh } from '@/components/tasks/task-category-filter-refresh';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { OBJECT_TYPE_LABELS } from '@/lib/object-type-labels';
+import { loadProjectFilterRows } from '@/lib/project-filter-options';
 import {
   WORK_FILTER_PARAM_KEYS,
   boardItemFilterFromWorkFilters,
   hasActiveWorkFilters,
   parseWorkFilters,
+  taskCategoryFilterKeys,
   workFilterHiddenParams,
 } from '@/lib/work-filters';
 
@@ -47,7 +51,18 @@ export default async function BoardDetailPage({
   if (!active) redirect('/sign-in');
 
   const scope = withTeam(db, active.teamId, session.user.id);
-  const filters = parseWorkFilters(query);
+  const filters = parseWorkFilters(query, {
+    taskCategoriesEnabled: getEnv().TASK_CATEGORY_UI_ENABLED,
+  });
+  const categoryKeys = taskCategoryFilterKeys(filters);
+  const categoryFilterBaseline =
+    categoryKeys.length > 0
+      ? await scope.boards.getTaskCategoryFilterRefreshState(
+          id,
+          boardItemFilterFromWorkFilters({ ...filters, category: '' }),
+          categoryKeys,
+        )
+      : null;
   const board = await scope.boards.getBoard(id, {
     itemLimit: 'all',
     itemFilter: boardItemFilterFromWorkFilters(filters),
@@ -58,9 +73,11 @@ export default async function BoardDetailPage({
   const selectedServerItem = board.items.find((item) => item.id === selectedItemId) ?? null;
   const selectedServerItemId = selectedServerItem?.id ?? null;
   const [candidates, history, members, selectedObjectDetail] = await Promise.all([
-    scope.objects.listObjects({
-      archived: false,
-      limit: 200,
+    loadProjectFilterRows({
+      listObjects: (filter) => scope.objects.listObjects(filter),
+      selected: filters.project,
+      includeArchivedSelected: true,
+      preloadFilter: { archived: false, limit: 200 },
     }),
     selectedServerItemId
       ? scope.boards.listBoardItemHistory(selectedServerItemId)
@@ -90,6 +107,14 @@ export default async function BoardDetailPage({
   const isKanban = view === 'kanban';
   const activeFilters = hasActiveWorkFilters(filters);
   const filterParams = workFilterHiddenParams(query, WORK_FILTER_PARAM_KEYS);
+  const initialCandidates: typeof candidates = [];
+  const projectOptions: { id: string; label: string }[] = [];
+  for (const candidate of candidates) {
+    if (!candidate.archivedAt) initialCandidates.push(candidate);
+    if (candidate.type === 'project') {
+      projectOptions.push({ id: candidate.id, label: candidate.canonicalName });
+    }
+  }
 
   return (
     <div
@@ -100,6 +125,14 @@ export default async function BoardDetailPage({
           : undefined
       }
     >
+      {categoryFilterBaseline ? (
+        <TaskCategoryFilterRefresh
+          surface="board"
+          boardId={board.id}
+          filters={filters}
+          baselineToken={categoryFilterBaseline.token}
+        />
+      ) : null}
       <BoardDetailClient
         boardId={board.id}
         boardName={board.name}
@@ -109,7 +142,8 @@ export default async function BoardDetailPage({
         view={view}
         lanes={board.lanes}
         initialItems={board.items}
-        initialCandidates={candidates}
+        initialCandidates={initialCandidates}
+        projectOptions={projectOptions}
         recommendedTypes={board.recommendedObjectTypes}
         defaultLaneId={firstLaneId}
         selectedItemId={selectedServerItemId}

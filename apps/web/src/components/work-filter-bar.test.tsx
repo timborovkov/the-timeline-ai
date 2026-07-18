@@ -7,10 +7,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { WorkFilterState } from '@/lib/work-filters';
 
 const replace = vi.hoisted(() => vi.fn());
+const searchObjectsAction = vi.hoisted(() => vi.fn());
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ replace }),
 }));
+vi.mock('@/app/actions/objects', () => ({ searchObjectsAction }));
 
 const { WorkFilterBar } = await import('./work-filter-bar.js');
 
@@ -18,6 +20,8 @@ const EMPTY_FILTERS: WorkFilterState = {
   q: '',
   type: '',
   status: '',
+  category: '',
+  project: '',
   stage: '',
   owner: '',
   assignee: '',
@@ -37,6 +41,7 @@ describe('WorkFilterBar', () => {
   afterEach(() => {
     cleanup();
     replace.mockReset();
+    searchObjectsAction.mockReset();
   });
 
   it('debounces search changes and preserves hidden params unless a control clears them', async () => {
@@ -91,6 +96,57 @@ describe('WorkFilterBar', () => {
     await waitFor(() => {
       expect(replace).toHaveBeenCalledWith('/app/tasks?status=todo%2Cdoing', { scroll: false });
     });
+  });
+
+  it('searches projects beyond the preloaded filter options', async () => {
+    const user = userEvent.setup();
+    searchObjectsAction.mockResolvedValue({
+      results: [
+        {
+          id: '00000000-0000-4000-8000-000000000999',
+          canonicalName: 'Overflow project',
+          type: 'project',
+        },
+      ],
+    });
+    render(
+      <WorkFilterBar
+        mode="tasks"
+        basePath="/app/tasks"
+        filters={EMPTY_FILTERS}
+        active={false}
+        resultCount={10}
+        totalCount={10}
+        projects={[{ id: '00000000-0000-4000-8000-000000000001', label: 'Preloaded project' }]}
+      />,
+    );
+
+    await user.type(screen.getByLabelText('Search project filters'), 'Overflow');
+    await waitFor(() => {
+      expect(searchObjectsAction).toHaveBeenCalledWith({ query: 'Overflow', type: 'project' });
+    });
+    await user.click(screen.getByRole('button', { name: 'Project' }));
+    expect(screen.getByRole('menuitemcheckbox', { name: 'Overflow project' })).toBeTruthy();
+  });
+
+  it('does not submit work filters while typing a project lookup', async () => {
+    const user = userEvent.setup();
+    searchObjectsAction.mockResolvedValue({ results: [] });
+    render(
+      <WorkFilterBar
+        mode="tasks"
+        basePath="/app/tasks"
+        filters={EMPTY_FILTERS}
+        active={false}
+        resultCount={10}
+        totalCount={10}
+      />,
+    );
+
+    await user.type(screen.getByLabelText('Search project filters'), 'Overflow');
+    await new Promise((resolve) => setTimeout(resolve, 400));
+
+    expect(replace).not.toHaveBeenCalled();
   });
 
   it('renders only the canonical cancelled status when both spellings are provided', async () => {

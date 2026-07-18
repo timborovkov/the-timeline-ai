@@ -22,6 +22,8 @@ export interface WorkQueueItem {
   source: 'approval' | 'board' | 'object';
   sourceLabel: string;
   objectType?: string;
+  taskCategory?: objects.ObjectRow['taskCategory'];
+  taskCategoryStatus?: objects.ObjectRow['taskCategoryStatus'];
   dueAt: Date | null;
   priority: number | null;
   updatedAt: Date;
@@ -116,6 +118,8 @@ export function boardQueueItem(
     source: 'board',
     sourceLabel: 'Board item',
     objectType: row.object.type,
+    taskCategory: row.object.taskCategory,
+    taskCategoryStatus: row.object.taskCategoryStatus,
     dueAt: row.dueAt,
     priority: row.priority,
     updatedAt: row.updatedAt,
@@ -152,6 +156,8 @@ export function objectQueueItem(
     source: 'object',
     sourceLabel: row.type === 'task' ? 'Task' : 'Object',
     objectType: row.type,
+    taskCategory: row.taskCategory,
+    taskCategoryStatus: row.taskCategoryStatus,
     dueAt: row.dueAt,
     priority: row.priority,
     updatedAt: row.updatedAt,

@@ -9,21 +9,31 @@ import {
   boardLanes,
   boards as boardsTable,
   entities,
+  entityRelationships,
   rawEvents,
   reconciliationEvidence,
   reconciliationOutputs,
   users,
 } from '@timeline/db';
-import { asc, eq } from 'drizzle-orm';
+import { asc, eq, or, sql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type * as QueueModule from '#src/queue/queues.js';
 import type { PGlite } from '@electric-sql/pglite';
 
+import { resetEnvForTests } from '#src/env.js';
+import { TIMELINE_MODELS } from '#src/llm/models.js';
 import { suggestionDedupeKey } from '#src/suggestions/index.js';
+import { buildTaskCategoryPacket, taskCategoryInputHash } from '#src/task-categories/classifier.js';
 import { withTeam } from '#src/team-scope.js';
 import { createResettablePGliteTestDb, type ResettablePGliteTestDb } from '#src/test/pglite.js';
+
+const queueFakes = vi.hoisted(() => ({
+  enqueueTaskCategoryJob: vi.fn(() =>
+    Promise.resolve({ enqueued: true, jobId: 'task-category-job' }),
+  ),
+}));
 
 vi.mock('#src/queue/queues.js', async (importOriginal) => {
   const actual = await importOriginal<typeof QueueModule>();
@@ -35,6 +45,7 @@ vi.mock('#src/queue/queues.js', async (importOriginal) => {
     enqueueObjectEmbedJob: enqueue,
     enqueueObjectNoteEmbedJob: enqueue,
     enqueueObjectSummaryJob: vi.fn(() => Promise.resolve({ enqueued: true, jobId: 'summary-job' })),
+    enqueueTaskCategoryJob: queueFakes.enqueueTaskCategoryJob,
   };
 });
 
@@ -46,6 +57,7 @@ const OTHER_USER_ID = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
 const PSEUDO_USER = '00000000-0000-0000-0000-000000000000';
 const OTHER_RAW_EVENT_ID = 'dddddddd-dddd-dddd-dddd-dddddddddddd';
 const TEAM_RAW_EVENT_ID = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee';
+const ORIGINAL_ENV = { ...process.env };
 
 function adjudicationStub(object: {
   verdict: 'duplicate' | 'refinement' | 'conflict' | 'distinct';
@@ -121,10 +133,16 @@ describe('suggestion scope', () => {
   }, 60_000);
 
   beforeEach(async () => {
+    process.env.TASK_CATEGORY_CLASSIFICATION_ENABLED = 'true';
+    process.env.TASK_CATEGORY_AUTO_ENQUEUE_ENABLED = 'true';
+    resetEnvForTests();
     await testDb.reset();
+    queueFakes.enqueueTaskCategoryJob.mockClear();
   });
 
   afterAll(async () => {
+    process.env = { ...ORIGINAL_ENV };
+    resetEnvForTests();
     await testDb.close();
   });
 
@@ -3206,6 +3224,52 @@ describe('suggestion scope', () => {
     expect(result.rows[0]?.status).toBe('active');
   });
 
+  it('does not update a target archived after an approval is claimed', async () => {
+    const baseScope = withTeam(db as never, TEAM_ID, USER_ID);
+    const target = await baseScope.objects.createObject({
+      type: 'project',
+      canonicalName: 'Concurrent archive target',
+      status: 'active',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const bundle = await baseScope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Update concurrently archived target',
+      dedupeKey: 'concurrent-archive-target',
+      items: [
+        {
+          operation: 'update',
+          targetKind: 'object',
+          targetId: target.id,
+          title: 'Ship concurrently archived target',
+          dedupeKey: 'concurrent-archive-target:item',
+          proposedPayload: { status: 'shipped' },
+        },
+      ],
+    });
+    const acceptingScope = withTeam(db as never, TEAM_ID, USER_ID, {
+      beforeSuggestionApply: async () => {
+        await baseScope.objects.archiveObject(target.id, { kind: 'user', userId: USER_ID });
+      },
+    });
+
+    await expect(
+      acceptingScope.suggestions.acceptSuggestionItem(bundle.items[0]?.id ?? ''),
+    ).resolves.toBe(true);
+
+    const loaded = await acceptingScope.suggestions.getSuggestion(bundle.id);
+    expect(loaded).toMatchObject({ status: 'superseded' });
+    expect(loaded?.items[0]).toMatchObject({
+      status: 'superseded',
+      supersededReason: 'The target object was archived.',
+    });
+    const result = await pg.query<{ archived_at: Date | null; status: string }>(
+      `SELECT archived_at, status FROM entities WHERE id = '${target.id}'`,
+    );
+    expect(result.rows[0]).toMatchObject({ status: 'active' });
+    expect(result.rows[0]?.archived_at).not.toBeNull();
+  });
+
   it('keeps accepted suggestion rows immutable and creates a correction bundle', async () => {
     const scope = withTeam(db as never, TEAM_ID, PSEUDO_USER, { skipMembershipCheck: true });
     const original = await scope.suggestions.createOrMergeSuggestionBundle({
@@ -3765,6 +3829,1764 @@ describe('suggestion scope', () => {
       priority: 1,
     });
     expect(updated.rows[0]?.due_at?.toISOString()).toBe('2026-08-02T12:00:00.000Z');
+  });
+
+  it('creates a proposed project, links the task, and applies a fresh proposed category', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const packet = buildTaskCategoryPacket({
+      title: 'Prepare homepage wireframes',
+      primaryProjectName: 'Faba website redesign',
+    });
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Create Faba design task',
+      dedupeKey: 'create-task-project-category',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Prepare homepage wireframes',
+          dedupeKey: 'create-task-project-category:item',
+          proposedPayload: {
+            canonicalName: 'Prepare homepage wireframes',
+            createProjectName: 'Faba website redesign',
+            projectName: 'Faba website redesign',
+            taskCategory: 'design',
+            taskCategoryConfidence: 0.97,
+            taskCategoryModel: 'test-category-model',
+            taskCategoryMode: 'automatic',
+            taskCategoryInputHash: taskCategoryInputHash(
+              packet,
+              TIMELINE_MODELS.taskCategorization.id,
+            ),
+            taskCategoryTaxonomyVersion: 'task-categories-v1',
+          },
+        },
+      ],
+    });
+
+    await expect(scope.suggestions.acceptSuggestionItem(bundle.items[0]?.id ?? '')).resolves.toBe(
+      true,
+    );
+
+    expect(queueFakes.enqueueTaskCategoryJob).not.toHaveBeenCalled();
+
+    const rows = await db.select().from(entities).where(eq(entities.teamId, TEAM_ID));
+    const project = rows.find((row) => row.canonicalName === 'Faba website redesign');
+    const task = rows.find((row) => row.canonicalName === 'Prepare homepage wireframes');
+    expect(project).toMatchObject({ type: 'project', status: 'planning' });
+    expect(task).toMatchObject({
+      type: 'task',
+      taskCategory: 'design',
+      taskCategoryMode: 'automatic',
+      taskCategorySource: 'llm',
+      taskCategoryStatus: 'ready',
+    });
+    const relation = await db
+      .select()
+      .from(entityRelationships)
+      .where(eq(entityRelationships.fromEntityId, task?.id ?? ''));
+    expect(relation).toEqual([
+      expect.objectContaining({ toEntityId: project?.id, kind: 'child', teamId: TEAM_ID }),
+    ]);
+  });
+
+  it('reuses a uniquely matching project alias instead of creating a duplicate project', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const project = await scope.objects.createObject({
+      type: 'project',
+      canonicalName: 'Faba website redesign',
+      aliases: ['Faba'],
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Create Faba alias task',
+      dedupeKey: 'create-task-project-alias-reuse',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Prepare Faba launch page',
+          dedupeKey: 'create-task-project-alias-reuse:item',
+          proposedPayload: {
+            canonicalName: 'Prepare Faba launch page',
+            createProjectName: 'Faba',
+            projectName: 'Faba',
+          },
+        },
+      ],
+    });
+
+    await expect(scope.suggestions.acceptSuggestionItem(bundle.items[0]?.id ?? '')).resolves.toBe(
+      true,
+    );
+
+    const projects = await db.select().from(entities).where(eq(entities.type, 'project'));
+    expect(projects).toHaveLength(1);
+    const [task] = await db
+      .select({ id: entities.id })
+      .from(entities)
+      .where(eq(entities.canonicalName, 'Prepare Faba launch page'));
+    await expect(scope.objects.listPrimaryProjectsForTasks([task?.id ?? ''])).resolves.toEqual([
+      expect.objectContaining({ projectId: project.id, projectName: 'Faba website redesign' }),
+    ]);
+  });
+
+  it('rejects a proposed project name that matches multiple project aliases', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    for (const canonicalName of ['Faba website redesign', 'Faba mobile redesign']) {
+      await scope.objects.createObject({
+        type: 'project',
+        canonicalName,
+        aliases: ['Faba'],
+        actor: { kind: 'user', userId: USER_ID },
+      });
+    }
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Create ambiguous Faba task',
+      dedupeKey: 'create-task-project-alias-ambiguous',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Prepare ambiguous Faba page',
+          dedupeKey: 'create-task-project-alias-ambiguous:item',
+          proposedPayload: {
+            canonicalName: 'Prepare ambiguous Faba page',
+            createProjectName: 'Faba',
+            projectName: 'Faba',
+          },
+        },
+      ],
+    });
+
+    await expect(scope.suggestions.acceptSuggestionItem(bundle.items[0]?.id ?? '')).rejects.toThrow(
+      'Proposed project name is ambiguous',
+    );
+    await expect(
+      scope.objects.listObjects({ type: 'task', query: 'Prepare ambiguous Faba page' }),
+    ).resolves.toHaveLength(0);
+  });
+
+  it('archives a newly proposed project when task creation cannot complete', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const conflictingTask = await scope.objects.createObject({
+      type: 'task',
+      canonicalName: 'Prepare duplicate wireframes',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Create duplicate task with project',
+      dedupeKey: 'create-duplicate-task-project',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Prepare duplicate wireframes',
+          dedupeKey: 'create-duplicate-task-project:item',
+          proposedPayload: {
+            canonicalName: 'Prepare duplicate wireframes',
+            createProjectName: 'Project that must roll back',
+            projectName: 'Project that must roll back',
+          },
+        },
+      ],
+    });
+
+    await expect(
+      scope.suggestions.acceptSuggestionItem(bundle.items[0]?.id ?? ''),
+    ).rejects.toThrow();
+
+    const projects = await scope.objects.listObjects({
+      type: 'project',
+      query: 'Project that must roll back',
+      archived: true,
+    });
+    expect(projects).toHaveLength(1);
+    expect(projects[0]?.canonicalName).toBe('Project that must roll back');
+    expect(projects[0]?.archivedAt).toBeInstanceOf(Date);
+    const projectEvents = await db
+      .select({ contentText: rawEvents.contentText })
+      .from(rawEvents)
+      .where(eq(rawEvents.teamId, TEAM_ID));
+    expect(projectEvents.map((event) => event.contentText)).toEqual(
+      expect.arrayContaining([
+        'Agent created project: Project that must roll back',
+        expect.stringContaining('Agent applied project: Project that must roll back — archivedAt'),
+      ]),
+    );
+
+    await db.delete(entities).where(eq(entities.id, conflictingTask.id));
+    await expect(scope.suggestions.acceptSuggestionItem(bundle.items[0]?.id ?? '')).resolves.toBe(
+      true,
+    );
+    const retriedProjects = await db
+      .select()
+      .from(entities)
+      .where(eq(entities.canonicalName, 'Project that must roll back'));
+    expect(retriedProjects).toHaveLength(1);
+    expect(retriedProjects[0]?.archivedAt).toBeNull();
+  });
+
+  it('reuses an unused suggestion-created project archived by another failed acceptance', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const conflictingTask = await scope.objects.createObject({
+      type: 'task',
+      canonicalName: 'Prepare blocked launch brief',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const firstBundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'First launch suggestion',
+      dedupeKey: 'first-archived-project-suggestion',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Prepare blocked launch brief',
+          dedupeKey: 'first-archived-project-suggestion:item',
+          proposedPayload: {
+            canonicalName: 'Prepare blocked launch brief',
+            createProjectName: 'Reusable compensated project',
+          },
+        },
+      ],
+    });
+    await expect(
+      scope.suggestions.acceptSuggestionItem(firstBundle.items[0]?.id ?? ''),
+    ).rejects.toThrow();
+    const [archivedProject] = await scope.objects.listObjects({
+      type: 'project',
+      query: 'Reusable compensated project',
+      archived: true,
+    });
+    expect(archivedProject).toBeDefined();
+    await db.delete(entities).where(eq(entities.id, conflictingTask.id));
+
+    const secondBundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Second launch suggestion',
+      dedupeKey: 'second-archived-project-suggestion',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Prepare replacement launch brief',
+          dedupeKey: 'second-archived-project-suggestion:item',
+          proposedPayload: {
+            canonicalName: 'Prepare replacement launch brief',
+            createProjectName: 'Reusable compensated project',
+          },
+        },
+      ],
+    });
+
+    await expect(
+      scope.suggestions.acceptSuggestionItem(secondBundle.items[0]?.id ?? ''),
+    ).resolves.toBe(true);
+    const [task] = await scope.objects.listObjects({
+      type: 'task',
+      query: 'Prepare replacement launch brief',
+    });
+    const projects = await scope.objects.listObjects({
+      type: 'project',
+      query: 'Reusable compensated project',
+      archived: false,
+    });
+    expect(projects).toHaveLength(1);
+    expect(projects[0]?.id).toBe(archivedProject?.id);
+    expect(projects[0]?.metadata).toMatchObject({
+      agent_suggestion_project_for_item_id: secondBundle.items[0]?.id,
+    });
+    await expect(scope.objects.listPrimaryProjectsForTasks(task ? [task.id] : [])).resolves.toEqual(
+      [expect.objectContaining({ projectId: projects[0]?.id })],
+    );
+  });
+
+  it.each([
+    { targetKind: 'task' as const, type: undefined },
+    { targetKind: 'object' as const, type: 'task' as const },
+  ])(
+    'recovers an interrupted $targetKind task and project acceptance for an idempotent retry',
+    async ({ targetKind, type }) => {
+      const scope = withTeam(db as never, TEAM_ID, USER_ID);
+      const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+        source: 'background',
+        title: 'Create recoverable project task',
+        dedupeKey: 'recover-interrupted-task-project',
+        items: [
+          {
+            operation: 'create',
+            targetKind,
+            title: 'Prepare recovery brief',
+            dedupeKey: 'recover-interrupted-task-project:item',
+            proposedPayload: {
+              ...(type ? { type } : {}),
+              canonicalName: 'Prepare recovery brief',
+              createProjectName: 'Recovery project',
+              projectName: 'Recovery project',
+            },
+          },
+        ],
+      });
+      const itemId = bundle.items[0]?.id ?? '';
+      const project = await scope.objects.createObject({
+        type: 'project',
+        canonicalName: 'Recovery project',
+        status: 'planning',
+        metadata: { agent_suggestion_project_for_item_id: itemId },
+        actor: { kind: 'agent', userId: null },
+      });
+      const interruptedAt = new Date('2020-01-01T00:00:00.000Z');
+      await db
+        .update(agentSuggestionItems)
+        .set({
+          status: 'accepted',
+          resultId: null,
+          resolvedAt: interruptedAt,
+          resolvedByUserId: USER_ID,
+          updatedAt: interruptedAt,
+        })
+        .where(eq(agentSuggestionItems.id, itemId));
+
+      const failed = await scope.suggestions.listSuggestions({ status: 'failed' });
+      expect(failed).toEqual([
+        expect.objectContaining({
+          id: bundle.id,
+          items: [expect.objectContaining({ id: itemId, status: 'failed', resultId: null })],
+        }),
+      ]);
+
+      await expect(scope.suggestions.acceptSuggestionItem(itemId)).resolves.toBe(true);
+
+      const projects = await db
+        .select()
+        .from(entities)
+        .where(eq(entities.canonicalName, 'Recovery project'));
+      expect(projects).toHaveLength(1);
+      expect(projects[0]?.id).toBe(project.id);
+      const [task] = await db
+        .select({ id: entities.id })
+        .from(entities)
+        .where(eq(entities.canonicalName, 'Prepare recovery brief'));
+      await expect(scope.objects.listPrimaryProjectsForTasks([task?.id ?? ''])).resolves.toEqual([
+        expect.objectContaining({ projectId: project.id }),
+      ]);
+    },
+  );
+
+  it('recovers an interrupted task acceptance linked to an existing project', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const project = await scope.objects.createObject({
+      type: 'project',
+      canonicalName: 'Existing recovery project',
+      status: 'planning',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Create task in existing project',
+      dedupeKey: 'recover-interrupted-existing-project-task',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Prepare existing project brief',
+          dedupeKey: 'recover-interrupted-existing-project-task:item',
+          proposedPayload: {
+            canonicalName: 'Prepare existing project brief',
+            parentObjectId: project.id,
+            projectName: project.canonicalName,
+          },
+        },
+      ],
+    });
+    const itemId = bundle.items[0]?.id ?? '';
+    const task = await scope.objects.createObject({
+      type: 'task',
+      canonicalName: 'Prepare existing project brief',
+      status: 'todo',
+      parentObjectId: project.id,
+      metadata: { agent_suggestion_item_id: itemId },
+      actor: { kind: 'agent', userId: null },
+    });
+    const interruptedAt = new Date('2020-01-01T00:00:00.000Z');
+    await db
+      .update(agentSuggestionItems)
+      .set({
+        status: 'accepted',
+        resultId: null,
+        resolvedAt: interruptedAt,
+        resolvedByUserId: USER_ID,
+        updatedAt: interruptedAt,
+      })
+      .where(eq(agentSuggestionItems.id, itemId));
+
+    const failed = await scope.suggestions.listSuggestions({ status: 'failed' });
+    expect(failed[0]?.items[0]).toMatchObject({ id: itemId, status: 'failed', resultId: null });
+    await expect(scope.suggestions.acceptSuggestionItem(itemId)).resolves.toBe(true);
+
+    const [resolved] = await db
+      .select({ resultId: agentSuggestionItems.resultId })
+      .from(agentSuggestionItems)
+      .where(eq(agentSuggestionItems.id, itemId));
+    expect(resolved?.resultId).toBe(task.id);
+    const matchingTasks = await db
+      .select({ id: entities.id })
+      .from(entities)
+      .where(eq(entities.canonicalName, 'Prepare existing project brief'));
+    expect(matchingTasks).toEqual([{ id: task.id }]);
+    await expect(scope.objects.listPrimaryProjectsForTasks([task.id])).resolves.toEqual([
+      expect.objectContaining({ projectId: project.id }),
+    ]);
+  });
+
+  it('does not archive a suggestion project after a task links to it', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Keep linked suggestion project',
+      dedupeKey: 'keep-linked-suggestion-project',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Linked project task',
+          dedupeKey: 'keep-linked-suggestion-project:item',
+          proposedPayload: { canonicalName: 'Linked project task' },
+        },
+      ],
+    });
+    const itemId = bundle.items[0]?.id ?? '';
+    const project = await scope.objects.createObject({
+      type: 'project',
+      canonicalName: 'Linked suggestion project',
+      status: 'planning',
+      metadata: { agent_suggestion_project_for_item_id: itemId },
+      actor: { kind: 'agent', userId: null },
+    });
+    await scope.objects.createObject({
+      type: 'task',
+      canonicalName: 'Task linked during cleanup',
+      status: 'todo',
+      parentObjectId: project.id,
+      actor: { kind: 'user', userId: USER_ID },
+    });
+
+    await expect(
+      scope.objects.archiveSuggestedProjectIfUnused(project.id, itemId, {
+        kind: 'agent',
+        userId: null,
+      }),
+    ).resolves.toBe(false);
+    await expect(scope.objects.getObject(project.id)).resolves.toMatchObject({ archivedAt: null });
+  });
+
+  it('does not archive suggested projects once notes or board cards use them', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Keep used suggestion projects',
+      dedupeKey: 'keep-used-suggestion-projects',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Project with note',
+          dedupeKey: 'keep-used-suggestion-projects:note',
+          proposedPayload: { canonicalName: 'Project with note' },
+        },
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Project on board',
+          dedupeKey: 'keep-used-suggestion-projects:board',
+          proposedPayload: { canonicalName: 'Project on board' },
+        },
+      ],
+    });
+    const noteItemId = bundle.items[0]?.id ?? '';
+    const boardItemId = bundle.items[1]?.id ?? '';
+    const noteProject = await scope.objects.createObject({
+      type: 'project',
+      canonicalName: 'Noted suggestion project',
+      metadata: { agent_suggestion_project_for_item_id: noteItemId },
+      actor: { kind: 'agent', userId: null },
+    });
+    const boardProject = await scope.objects.createObject({
+      type: 'project',
+      canonicalName: 'Boarded suggestion project',
+      metadata: { agent_suggestion_project_for_item_id: boardItemId },
+      actor: { kind: 'agent', userId: null },
+    });
+    await scope.objects.createNote({
+      entityId: noteProject.id,
+      body: 'Keep this project for the client brief.',
+      authorUserId: USER_ID,
+    });
+    const board = await scope.boards.createBoard({
+      name: 'Client work',
+      templateKind: 'custom',
+      lanes: [],
+    });
+    await scope.boards.addBoardItem(board.id, {
+      entityId: boardProject.id,
+      actor: { kind: 'user', userId: USER_ID },
+    });
+
+    await expect(
+      scope.objects.archiveSuggestedProjectIfUnused(noteProject.id, noteItemId, {
+        kind: 'agent',
+        userId: null,
+      }),
+    ).resolves.toBe(false);
+    await expect(
+      scope.objects.archiveSuggestedProjectIfUnused(boardProject.id, boardItemId, {
+        kind: 'agent',
+        userId: null,
+      }),
+    ).resolves.toBe(false);
+  });
+
+  it('archives an interrupted suggestion project when the task is rejected', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Reject interrupted project task',
+      dedupeKey: 'reject-interrupted-task-project',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Reject interrupted project task',
+          dedupeKey: 'reject-interrupted-task-project:item',
+          proposedPayload: {
+            canonicalName: 'Reject interrupted project task',
+            createProjectName: 'Rejected interrupted project',
+            projectName: 'Rejected interrupted project',
+          },
+        },
+      ],
+    });
+    const itemId = bundle.items[0]?.id ?? '';
+    const project = await scope.objects.createObject({
+      type: 'project',
+      canonicalName: 'Rejected interrupted project',
+      status: 'planning',
+      metadata: { agent_suggestion_project_for_item_id: itemId },
+      actor: { kind: 'agent', userId: null },
+    });
+    const interruptedAt = new Date('2020-01-01T00:00:00.000Z');
+    await db
+      .update(agentSuggestionItems)
+      .set({
+        status: 'accepted',
+        resultId: null,
+        resolvedAt: interruptedAt,
+        resolvedByUserId: USER_ID,
+        updatedAt: interruptedAt,
+      })
+      .where(eq(agentSuggestionItems.id, itemId));
+
+    await expect(scope.suggestions.rejectSuggestionItem(itemId)).resolves.toBe(true);
+
+    const [item] = await db
+      .select({ status: agentSuggestionItems.status })
+      .from(agentSuggestionItems)
+      .where(eq(agentSuggestionItems.id, itemId));
+    expect(item?.status).toBe('rejected');
+    const archivedProject = await scope.objects.getObject(project.id);
+    expect(archivedProject?.archivedAt).toBeInstanceOf(Date);
+    await expect(
+      scope.objects.createNote({
+        entityId: project.id,
+        body: 'Do not attach this after cleanup.',
+        authorUserId: USER_ID,
+      }),
+    ).rejects.toThrow('Archived suggested projects cannot receive new notes');
+    const board = await scope.boards.createBoard({
+      name: 'Post-cleanup',
+      templateKind: 'custom',
+      lanes: [],
+    });
+    await expect(
+      scope.boards.addBoardItem(board.id, {
+        entityId: project.id,
+        actor: { kind: 'user', userId: USER_ID },
+      }),
+    ).rejects.toThrow('Archived suggested projects cannot be added to boards');
+  });
+
+  it('preserves an interrupted task that a user edited before rejecting its suggestion', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Reject adopted interrupted task',
+      dedupeKey: 'reject-adopted-interrupted-task',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Adopted interrupted task',
+          dedupeKey: 'reject-adopted-interrupted-task:item',
+          proposedPayload: { canonicalName: 'Adopted interrupted task' },
+        },
+      ],
+    });
+    const itemId = bundle.items[0]?.id ?? '';
+    const task = await scope.objects.createObject({
+      type: 'task',
+      canonicalName: 'Adopted interrupted task',
+      metadata: { agent_suggestion_item_id: itemId },
+      actor: { kind: 'agent', userId: null },
+    });
+    const interruptedAt = new Date('2020-01-01T00:00:00.000Z');
+    await db.update(entities).set({ createdAt: interruptedAt }).where(eq(entities.id, task.id));
+    await scope.objects.updateObject(
+      task.id,
+      { status: 'doing' },
+      { kind: 'user', userId: USER_ID },
+    );
+    await db
+      .update(agentSuggestionItems)
+      .set({
+        status: 'accepted',
+        resultId: null,
+        resolvedAt: interruptedAt,
+        resolvedByUserId: USER_ID,
+        updatedAt: interruptedAt,
+      })
+      .where(eq(agentSuggestionItems.id, itemId));
+
+    await expect(scope.suggestions.rejectSuggestionItem(itemId)).resolves.toBe(true);
+
+    await expect(scope.objects.getObject(task.id)).resolves.toMatchObject({
+      archivedAt: null,
+      status: 'doing',
+    });
+  });
+
+  it('preserves an interrupted task adopted by an accepted note suggestion', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const taskBundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Create task later adopted by a note',
+      dedupeKey: 'reject-task-adopted-by-note',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Task adopted by an accepted note',
+          dedupeKey: 'reject-task-adopted-by-note:item',
+          proposedPayload: { canonicalName: 'Task adopted by an accepted note' },
+        },
+      ],
+    });
+    const taskItemId = taskBundle.items[0]?.id ?? '';
+    const task = await scope.objects.createObject({
+      type: 'task',
+      canonicalName: 'Task adopted by an accepted note',
+      metadata: { agent_suggestion_item_id: taskItemId },
+      actor: { kind: 'agent', userId: null },
+    });
+    const interruptedAt = new Date('2020-01-01T00:00:00.000Z');
+    await db.update(entities).set({ createdAt: interruptedAt }).where(eq(entities.id, task.id));
+    await db
+      .update(agentSuggestionItems)
+      .set({
+        status: 'accepted',
+        resultId: null,
+        resolvedAt: interruptedAt,
+        resolvedByUserId: USER_ID,
+        updatedAt: interruptedAt,
+      })
+      .where(eq(agentSuggestionItems.id, taskItemId));
+
+    const noteBundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Add task execution context',
+      dedupeKey: 'reject-task-adopted-by-note:note',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'object_note',
+          targetId: task.id,
+          title: 'Add execution context',
+          dedupeKey: 'reject-task-adopted-by-note:note:item',
+          proposedPayload: {
+            entityId: task.id,
+            body: 'The customer approved this task for the launch.',
+          },
+        },
+      ],
+    });
+    await expect(
+      scope.suggestions.acceptSuggestionItem(noteBundle.items[0]?.id ?? ''),
+    ).resolves.toBe(true);
+
+    await expect(scope.suggestions.rejectSuggestionItem(taskItemId)).resolves.toBe(true);
+
+    await expect(scope.objects.getObject(task.id)).resolves.toMatchObject({ archivedAt: null });
+    const notes = await pg.query<{ body: string }>(
+      `SELECT body FROM object_notes WHERE team_id = $1 AND entity_id = $2`,
+      [TEAM_ID, task.id],
+    );
+    expect(notes.rows).toEqual([
+      expect.objectContaining({ body: 'The customer approved this task for the launch.' }),
+    ]);
+  });
+
+  it('preserves an interrupted task adopted by an accepted update suggestion', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const taskBundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Create task later adopted by an update',
+      dedupeKey: 'reject-task-adopted-by-update',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Task adopted by an accepted update',
+          dedupeKey: 'reject-task-adopted-by-update:item',
+          proposedPayload: { canonicalName: 'Task adopted by an accepted update' },
+        },
+      ],
+    });
+    const taskItemId = taskBundle.items[0]?.id ?? '';
+    const task = await scope.objects.createObject({
+      type: 'task',
+      canonicalName: 'Task adopted by an accepted update',
+      metadata: { agent_suggestion_item_id: taskItemId },
+      actor: { kind: 'agent', userId: null },
+    });
+    const interruptedAt = new Date('2020-01-01T00:00:00.000Z');
+    await db.update(entities).set({ createdAt: interruptedAt }).where(eq(entities.id, task.id));
+    await db
+      .update(agentSuggestionItems)
+      .set({
+        status: 'accepted',
+        resultId: null,
+        resolvedAt: interruptedAt,
+        resolvedByUserId: USER_ID,
+        updatedAt: interruptedAt,
+      })
+      .where(eq(agentSuggestionItems.id, taskItemId));
+
+    const updateBundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Advance accepted task',
+      dedupeKey: 'reject-task-adopted-by-update:update',
+      items: [
+        {
+          operation: 'update',
+          targetKind: 'task',
+          targetId: task.id,
+          title: 'Start accepted task',
+          dedupeKey: 'reject-task-adopted-by-update:update:item',
+          proposedPayload: { status: 'doing' },
+        },
+      ],
+    });
+    await expect(
+      scope.suggestions.acceptSuggestionItem(updateBundle.items[0]?.id ?? ''),
+    ).resolves.toBe(true);
+
+    await expect(scope.suggestions.rejectSuggestionItem(taskItemId)).resolves.toBe(true);
+
+    await expect(scope.objects.getObject(task.id)).resolves.toMatchObject({
+      archivedAt: null,
+      status: 'doing',
+    });
+  });
+
+  it('archives an unused suggestion project while preserving its adopted interrupted task', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Reject adopted task with detached project',
+      dedupeKey: 'reject-adopted-task-detached-project',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Adopted task with detached project',
+          dedupeKey: 'reject-adopted-task-detached-project:item',
+          proposedPayload: {
+            canonicalName: 'Adopted task with detached project',
+            createProjectName: 'Detached suggestion project',
+            projectName: 'Detached suggestion project',
+          },
+        },
+      ],
+    });
+    const itemId = bundle.items[0]?.id ?? '';
+    const project = await scope.objects.createObject({
+      type: 'project',
+      canonicalName: 'Detached suggestion project',
+      metadata: { agent_suggestion_project_for_item_id: itemId },
+      actor: { kind: 'agent', userId: null },
+    });
+    const task = await scope.objects.createObject({
+      type: 'task',
+      canonicalName: 'Adopted task with detached project',
+      parentObjectId: project.id,
+      metadata: { agent_suggestion_item_id: itemId },
+      actor: { kind: 'agent', userId: null },
+    });
+    const interruptedAt = new Date('2020-01-01T00:00:00.000Z');
+    await db.update(entities).set({ createdAt: interruptedAt }).where(eq(entities.id, task.id));
+    await scope.objects.setTaskProject(task.id, null, { kind: 'user', userId: USER_ID });
+    await db
+      .update(agentSuggestionItems)
+      .set({
+        status: 'accepted',
+        resultId: null,
+        resolvedAt: interruptedAt,
+        resolvedByUserId: USER_ID,
+        updatedAt: interruptedAt,
+      })
+      .where(eq(agentSuggestionItems.id, itemId));
+
+    await expect(scope.suggestions.rejectSuggestionItem(itemId)).resolves.toBe(true);
+
+    await expect(scope.objects.getObject(task.id)).resolves.toMatchObject({ archivedAt: null });
+    const archivedProject = await scope.objects.getObject(project.id);
+    expect(archivedProject?.archivedAt).toBeInstanceOf(Date);
+  });
+
+  it('rolls back rejection and project unlinking when interrupted-task cleanup fails', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Retry atomic rejected-task cleanup',
+      dedupeKey: 'retry-atomic-rejected-task-cleanup',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Retry atomic rejected-task cleanup',
+          dedupeKey: 'retry-atomic-rejected-task-cleanup:item',
+          proposedPayload: { canonicalName: 'Retry atomic rejected-task cleanup' },
+        },
+      ],
+    });
+    const itemId = bundle.items[0]?.id ?? '';
+    const project = await scope.objects.createObject({
+      type: 'project',
+      canonicalName: 'Atomic cleanup project',
+      metadata: { agent_suggestion_project_for_item_id: itemId },
+      actor: { kind: 'agent', userId: null },
+    });
+    const task = await scope.objects.createObject({
+      type: 'task',
+      canonicalName: 'Retry atomic rejected-task cleanup',
+      parentObjectId: project.id,
+      metadata: { agent_suggestion_item_id: itemId },
+      actor: { kind: 'agent', userId: null },
+    });
+    const interruptedAt = new Date('2020-01-01T00:00:00.000Z');
+    await db.update(entities).set({ createdAt: interruptedAt }).where(eq(entities.id, task.id));
+    await db
+      .update(agentSuggestionItems)
+      .set({
+        status: 'accepted',
+        resultId: null,
+        resolvedAt: interruptedAt,
+        resolvedByUserId: USER_ID,
+        updatedAt: interruptedAt,
+      })
+      .where(eq(agentSuggestionItems.id, itemId));
+    await pg.exec(`
+      CREATE FUNCTION fail_rejected_task_cleanup() RETURNS trigger AS $$
+      BEGIN
+        IF NEW.id = '${task.id}' AND OLD.archived_at IS NULL AND NEW.archived_at IS NOT NULL THEN
+          RAISE EXCEPTION 'injected cleanup failure';
+        END IF;
+        RETURN NEW;
+      END;
+      $$ LANGUAGE plpgsql;
+      CREATE TRIGGER fail_rejected_task_cleanup_trg
+      BEFORE UPDATE ON entities
+      FOR EACH ROW EXECUTE FUNCTION fail_rejected_task_cleanup();
+    `);
+
+    await expect(scope.suggestions.rejectSuggestionItem(itemId)).rejects.toThrow();
+
+    const [failedItem] = await db
+      .select({ status: agentSuggestionItems.status })
+      .from(agentSuggestionItems)
+      .where(eq(agentSuggestionItems.id, itemId));
+    expect(failedItem?.status).toBe('failed');
+    await expect(scope.objects.getObject(task.id)).resolves.toMatchObject({ archivedAt: null });
+    await expect(scope.objects.listPrimaryProjectsForTasks([task.id])).resolves.toEqual([
+      expect.objectContaining({ taskId: task.id, projectId: project.id }),
+    ]);
+
+    await pg.exec(`
+      DROP TRIGGER fail_rejected_task_cleanup_trg ON entities;
+      DROP FUNCTION fail_rejected_task_cleanup();
+    `);
+    await expect(scope.suggestions.rejectSuggestionItem(itemId)).resolves.toBe(true);
+    const archivedTask = await scope.objects.getObject(task.id);
+    expect(archivedTask?.archivedAt).toBeInstanceOf(Date);
+  });
+
+  it('preserves an interrupted suggestion project that a user edited before rejection', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Reject task with adopted project',
+      dedupeKey: 'reject-task-with-adopted-project',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Task with adopted project',
+          dedupeKey: 'reject-task-with-adopted-project:item',
+          proposedPayload: {
+            canonicalName: 'Task with adopted project',
+            createProjectName: 'Adopted suggestion project',
+            projectName: 'Adopted suggestion project',
+          },
+        },
+      ],
+    });
+    const itemId = bundle.items[0]?.id ?? '';
+    const project = await scope.objects.createObject({
+      type: 'project',
+      canonicalName: 'Adopted suggestion project',
+      status: 'planning',
+      metadata: { agent_suggestion_project_for_item_id: itemId },
+      actor: { kind: 'agent', userId: null },
+    });
+    const interruptedAt = new Date('2020-01-01T00:00:00.000Z');
+    await scope.objects.updateObject(
+      project.id,
+      { status: 'active' },
+      { kind: 'user', userId: USER_ID },
+    );
+    await db
+      .update(agentSuggestionItems)
+      .set({
+        status: 'accepted',
+        resultId: null,
+        resolvedAt: interruptedAt,
+        resolvedByUserId: USER_ID,
+        updatedAt: interruptedAt,
+      })
+      .where(eq(agentSuggestionItems.id, itemId));
+
+    await expect(scope.suggestions.rejectSuggestionItem(itemId)).resolves.toBe(true);
+
+    await expect(scope.objects.getObject(project.id)).resolves.toMatchObject({
+      archivedAt: null,
+      status: 'active',
+    });
+  });
+
+  it('does not let a recovered acceptance finalize after the item is rejected', async () => {
+    let signalApplyStarted: () => void = () => undefined;
+    let releaseApply: () => void = () => undefined;
+    const applyStarted = new Promise<void>((resolve) => {
+      signalApplyStarted = resolve;
+    });
+    const applyGate = new Promise<void>((resolve) => {
+      releaseApply = resolve;
+    });
+    const scope = withTeam(db as never, TEAM_ID, USER_ID, {
+      beforeSuggestionApply: async () => {
+        signalApplyStarted();
+        await applyGate;
+      },
+    });
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Reject an in-flight project task',
+      dedupeKey: 'reject-in-flight-task-project',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Prepare in-flight project task',
+          dedupeKey: 'reject-in-flight-task-project:item',
+          proposedPayload: {
+            canonicalName: 'Prepare in-flight project task',
+            createProjectName: 'In-flight project',
+            projectName: 'In-flight project',
+          },
+        },
+      ],
+    });
+    const itemId = bundle.items[0]?.id ?? '';
+    const acceptance = scope.suggestions.acceptSuggestionItem(itemId);
+    await applyStarted;
+    await db
+      .update(agentSuggestionItems)
+      .set({ updatedAt: new Date('2020-01-01T00:00:00.000Z') })
+      .where(eq(agentSuggestionItems.id, itemId));
+
+    await scope.suggestions.listPendingSuggestions();
+    await expect(scope.suggestions.rejectSuggestionItem(itemId)).resolves.toBe(true);
+    releaseApply();
+    await expect(acceptance).resolves.toBe(false);
+
+    const [item] = await db
+      .select({ status: agentSuggestionItems.status, resultId: agentSuggestionItems.resultId })
+      .from(agentSuggestionItems)
+      .where(eq(agentSuggestionItems.id, itemId));
+    expect(item).toEqual({ status: 'rejected', resultId: null });
+    const createdRows = await db
+      .select({ type: entities.type, archivedAt: entities.archivedAt })
+      .from(entities)
+      .where(
+        or(
+          sql`${entities.metadata} ->> 'agent_suggestion_item_id' = ${itemId}`,
+          sql`${entities.metadata} ->> 'agent_suggestion_project_for_item_id' = ${itemId}`,
+        ),
+      );
+    expect(createdRows).toHaveLength(2);
+    expect(createdRows.every((row) => row.archivedAt instanceof Date)).toBe(true);
+  });
+
+  it('reuses an exact-name project created during a concurrent suggestion acceptance', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Create concurrent project task',
+      dedupeKey: 'create-task-project-concurrent-reuse',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Prepare concurrent project task',
+          dedupeKey: 'create-task-project-concurrent-reuse:item',
+          proposedPayload: {
+            canonicalName: 'Prepare concurrent project task',
+            createProjectName: 'Concurrent shared project',
+            projectName: 'Concurrent shared project',
+          },
+        },
+      ],
+    });
+    const itemId = bundle.items[0]?.id ?? '';
+    const createObject = scope.objects.createObject;
+    let concurrentProjectId: string | null = null;
+    const createSpy = vi.spyOn(scope.objects, 'createObject').mockImplementation(async (input) => {
+      if (
+        input.type === 'project' &&
+        input.canonicalName === 'Concurrent shared project' &&
+        !concurrentProjectId
+      ) {
+        const concurrent = await createObject(input);
+        concurrentProjectId = concurrent.id;
+      }
+      return createObject(input);
+    });
+    try {
+      await expect(scope.suggestions.acceptSuggestionItem(itemId)).resolves.toBe(true);
+    } finally {
+      createSpy.mockRestore();
+    }
+
+    const projects = await db
+      .select()
+      .from(entities)
+      .where(eq(entities.canonicalName, 'Concurrent shared project'));
+    expect(projects).toHaveLength(1);
+    expect(projects[0]?.id).toBe(concurrentProjectId);
+    const [task] = await db
+      .select({ id: entities.id })
+      .from(entities)
+      .where(eq(entities.canonicalName, 'Prepare concurrent project task'));
+    await expect(scope.objects.listPrimaryProjectsForTasks([task?.id ?? ''])).resolves.toEqual([
+      expect.objectContaining({ projectId: concurrentProjectId }),
+    ]);
+  });
+
+  it('accepts legacy task proposals whose parentObjectId is a non-project relation', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const client = await scope.objects.createObject({
+      type: 'company',
+      canonicalName: 'Faba',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Legacy related task',
+      dedupeKey: 'legacy-related-task',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Send Faba proposal',
+          dedupeKey: 'legacy-related-task:item',
+          proposedPayload: {
+            canonicalName: 'Send Faba proposal',
+            parentObjectId: client.id,
+          },
+        },
+      ],
+    });
+
+    await expect(scope.suggestions.acceptSuggestionItem(bundle.items[0]?.id ?? '')).resolves.toBe(
+      true,
+    );
+    const [task] = await db
+      .select({ id: entities.id })
+      .from(entities)
+      .where(eq(entities.canonicalName, 'Send Faba proposal'));
+    await expect(
+      db
+        .select()
+        .from(entityRelationships)
+        .where(eq(entityRelationships.fromEntityId, task?.id ?? '')),
+    ).resolves.toEqual([expect.objectContaining({ toEntityId: client.id, kind: 'child' })]);
+    await expect(scope.objects.listPrimaryProjectsForTasks([task?.id ?? ''])).resolves.toEqual([]);
+  });
+
+  it('honors a revised project name after compensating a failed task acceptance', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const conflictingTask = await scope.objects.createObject({
+      type: 'task',
+      canonicalName: 'Prepare revised project task',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Create task with editable project',
+      dedupeKey: 'create-task-revised-project',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Prepare revised project task',
+          dedupeKey: 'create-task-revised-project:item',
+          proposedPayload: {
+            canonicalName: 'Prepare revised project task',
+            createProjectName: 'Original proposed project',
+            projectName: 'Original proposed project',
+          },
+        },
+      ],
+    });
+    const itemId = bundle.items[0]?.id ?? '';
+
+    await expect(scope.suggestions.acceptSuggestionItem(itemId)).rejects.toThrow();
+    await expect(
+      scope.suggestions.reviseTaskSuggestionItem({
+        itemId,
+        project: { kind: 'create', projectName: 'Revised proposed project' },
+      }),
+    ).resolves.toBe(true);
+    await db.delete(entities).where(eq(entities.id, conflictingTask.id));
+    await expect(scope.suggestions.acceptSuggestionItem(itemId)).resolves.toBe(true);
+
+    const projects = await db.select().from(entities).where(eq(entities.type, 'project'));
+    const originalProject = projects.find(
+      (project) => project.canonicalName === 'Original proposed project',
+    );
+    expect(originalProject?.archivedAt).toBeInstanceOf(Date);
+    const revisedProject = projects.find(
+      (project) => project.canonicalName === 'Revised proposed project',
+    );
+    expect(revisedProject?.archivedAt).toBeNull();
+    const [createdTask] = await db
+      .select({ id: entities.id })
+      .from(entities)
+      .where(eq(entities.canonicalName, 'Prepare revised project task'));
+    await expect(
+      db
+        .select()
+        .from(entityRelationships)
+        .where(eq(entityRelationships.fromEntityId, createdTask?.id ?? '')),
+    ).resolves.toEqual([
+      expect.objectContaining({ toEntityId: revisedProject?.id, kind: 'child' }),
+    ]);
+  });
+
+  it('preserves concurrent category and project revisions to the same task proposal', async () => {
+    const ownerScope = withTeam(db as never, TEAM_ID, USER_ID);
+    const reviewerScope = withTeam(db as never, TEAM_ID, REVIEWER_ID);
+    const project = await ownerScope.objects.createObject({
+      type: 'project',
+      canonicalName: 'Faba website redesign',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const bundle = await ownerScope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Create editable task',
+      dedupeKey: 'concurrent-task-proposal-revisions',
+      visibility: 'team',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Prepare homepage wireframes',
+          dedupeKey: 'concurrent-task-proposal-revisions:item',
+          proposedPayload: {
+            canonicalName: 'Prepare homepage wireframes',
+            taskCategory: 'planning',
+            taskCategoryMode: 'automatic',
+          },
+        },
+      ],
+    });
+    const itemId = bundle.items[0]?.id ?? '';
+
+    await Promise.all([
+      ownerScope.suggestions.reviseTaskSuggestionItem({ itemId, category: 'design' }),
+      reviewerScope.suggestions.reviseTaskSuggestionItem({
+        itemId,
+        project: { kind: 'existing', projectId: project.id },
+      }),
+    ]);
+
+    const [item] = await db
+      .select({ proposedPayload: agentSuggestionItems.proposedPayload })
+      .from(agentSuggestionItems)
+      .where(eq(agentSuggestionItems.id, itemId));
+    expect(item?.proposedPayload).toMatchObject({
+      taskCategory: 'design',
+      taskCategoryMode: 'manual',
+      parentObjectId: project.id,
+      projectName: 'Faba website redesign',
+    });
+  });
+
+  it('keeps a proposed task pending when its category context hash is stale', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Create stale classified task',
+      dedupeKey: 'create-task-stale-category',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Prepare homepage wireframes',
+          dedupeKey: 'create-task-stale-category:item',
+          proposedPayload: {
+            canonicalName: 'Prepare homepage wireframes',
+            taskCategory: 'design',
+            taskCategoryConfidence: 0.97,
+            taskCategoryModel: 'test-category-model',
+            taskCategoryMode: 'automatic',
+            taskCategoryInputHash: 'a'.repeat(64),
+            taskCategoryTaxonomyVersion: 'task-categories-v1',
+          },
+        },
+      ],
+    });
+
+    await scope.suggestions.acceptSuggestionItem(bundle.items[0]?.id ?? '');
+
+    const [task] = await db
+      .select()
+      .from(entities)
+      .where(eq(entities.canonicalName, 'Prepare homepage wireframes'));
+    expect(task).toMatchObject({
+      taskCategory: null,
+      taskCategoryMode: 'automatic',
+      taskCategoryStatus: 'pending',
+    });
+  });
+
+  it('keeps a proposed task pending when its current category packet no longer matches', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const project = await scope.objects.createObject({
+      type: 'project',
+      canonicalName: 'Original category project',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const packet = buildTaskCategoryPacket({
+      title: 'Prepare renamed project wireframes',
+      primaryProjectName: project.canonicalName,
+    });
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Create task with changing category context',
+      dedupeKey: 'create-task-current-category-hash',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Prepare renamed project wireframes',
+          dedupeKey: 'create-task-current-category-hash:item',
+          proposedPayload: {
+            canonicalName: 'Prepare renamed project wireframes',
+            parentObjectId: project.id,
+            projectName: project.canonicalName,
+            taskCategory: 'design',
+            taskCategoryConfidence: 0.97,
+            taskCategoryModel: 'test-category-model',
+            taskCategoryMode: 'automatic',
+            taskCategoryInputHash: taskCategoryInputHash(
+              packet,
+              TIMELINE_MODELS.taskCategorization.id,
+            ),
+            taskCategoryTaxonomyVersion: 'task-categories-v1',
+          },
+        },
+      ],
+    });
+    const itemId = bundle.items[0]?.id ?? '';
+    const task = await scope.objects.createObject({
+      type: 'task',
+      canonicalName: 'Prepare renamed project wireframes',
+      parentObjectId: project.id,
+      metadata: { agent_suggestion_item_id: itemId },
+      actor: { kind: 'agent', userId: null },
+    });
+    await db
+      .update(entities)
+      .set({ canonicalName: 'Renamed category project' })
+      .where(eq(entities.id, project.id));
+
+    await expect(scope.suggestions.acceptSuggestionItem(itemId)).resolves.toBe(true);
+
+    await expect(scope.objects.getObject(task.id)).resolves.toMatchObject({
+      taskCategory: null,
+      taskCategoryMode: 'automatic',
+      taskCategoryStatus: 'pending',
+    });
+  });
+
+  it('lets a reviewer replace the proposed category and project before acceptance', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const project = await scope.objects.createObject({
+      type: 'project',
+      canonicalName: 'Faba website redesign',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Create editable task',
+      dedupeKey: 'create-editable-task',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Review contract',
+          dedupeKey: 'create-editable-task:item',
+          proposedPayload: {
+            canonicalName: 'Review contract',
+            taskCategory: 'operations',
+            taskCategoryMode: 'automatic',
+            taskCategoryInputHash: 'b'.repeat(64),
+            taskCategoryConfidence: 0.6,
+            taskCategoryModel: 'old-model',
+            taskCategoryTaxonomyVersion: 'task-categories-v1',
+          },
+        },
+      ],
+    });
+    const itemId = bundle.items[0]?.id ?? '';
+
+    await expect(
+      scope.suggestions.reviseTaskSuggestionItem({
+        itemId,
+        category: 'legal_compliance',
+        project: { kind: 'existing', projectId: project.id },
+      }),
+    ).resolves.toBe(true);
+    const [revised] = await db
+      .select({ payload: agentSuggestionItems.proposedPayload })
+      .from(agentSuggestionItems)
+      .where(eq(agentSuggestionItems.id, itemId));
+    expect(revised?.payload).toMatchObject({
+      taskCategory: 'legal_compliance',
+      taskCategoryMode: 'manual',
+      parentObjectId: project.id,
+      projectName: 'Faba website redesign',
+    });
+    expect(revised?.payload).not.toHaveProperty('taskCategoryInputHash');
+
+    queueFakes.enqueueTaskCategoryJob.mockClear();
+    await scope.suggestions.acceptSuggestionItem(itemId);
+    const [task] = await db
+      .select()
+      .from(entities)
+      .where(eq(entities.canonicalName, 'Review contract'));
+    expect(task).toMatchObject({
+      taskCategory: 'legal_compliance',
+      taskCategoryMode: 'manual',
+      taskCategorySource: 'user',
+      taskCategoryStatus: 'ready',
+    });
+    expect(queueFakes.enqueueTaskCategoryJob).not.toHaveBeenCalled();
+  });
+
+  it('removes a stale project when retrying a proposal revised to no project', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Create retryable task',
+      dedupeKey: 'create-task-remove-project-retry',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Create retryable task',
+          dedupeKey: 'create-task-remove-project-retry:item',
+          proposedPayload: {
+            canonicalName: 'Create retryable task',
+            createProjectName: 'Original proposal project',
+            projectName: 'Original proposal project',
+          },
+        },
+      ],
+    });
+    const itemId = bundle.items[0]?.id ?? '';
+    const project = await scope.objects.createObject({
+      type: 'project',
+      canonicalName: 'Original proposal project',
+      metadata: { agent_suggestion_project_for_item_id: itemId },
+      actor: { kind: 'agent', userId: null },
+    });
+    const task = await scope.objects.createObject({
+      type: 'task',
+      canonicalName: 'Create retryable task',
+      parentObjectId: project.id,
+      metadata: { agent_suggestion_item_id: itemId },
+      actor: { kind: 'agent', userId: null },
+    });
+    await expect(
+      scope.suggestions.reviseTaskSuggestionItem({ itemId, project: { kind: 'none' } }),
+    ).resolves.toBe(true);
+
+    await expect(scope.suggestions.acceptSuggestionItem(itemId)).resolves.toBe(true);
+
+    await expect(scope.objects.listPrimaryProjectsForTasks([task.id])).resolves.toEqual([]);
+    const archivedProject = await scope.objects.getObject(project.id);
+    expect(archivedProject?.archivedAt).toBeInstanceOf(Date);
+  });
+
+  it('archives an interrupted project when a revised retry creates a new task', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Create task after interrupted project acceptance',
+      dedupeKey: 'create-task-after-interrupted-project',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Create task after interrupted project acceptance',
+          dedupeKey: 'create-task-after-interrupted-project:item',
+          proposedPayload: {
+            canonicalName: 'Create task after interrupted project acceptance',
+            createProjectName: 'Interrupted proposal project',
+            projectName: 'Interrupted proposal project',
+          },
+        },
+      ],
+    });
+    const itemId = bundle.items[0]?.id ?? '';
+    const interruptedProject = await scope.objects.createObject({
+      type: 'project',
+      canonicalName: 'Interrupted proposal project',
+      metadata: { agent_suggestion_project_for_item_id: itemId },
+      actor: { kind: 'agent', userId: null },
+    });
+    await expect(
+      scope.suggestions.reviseTaskSuggestionItem({ itemId, project: { kind: 'none' } }),
+    ).resolves.toBe(true);
+
+    await expect(scope.suggestions.acceptSuggestionItem(itemId)).resolves.toBe(true);
+
+    const [task] = await scope.objects.listObjects({
+      type: 'task',
+      query: 'Create task after interrupted project acceptance',
+    });
+    expect(task).toBeDefined();
+    await expect(scope.objects.listPrimaryProjectsForTasks(task ? [task.id] : [])).resolves.toEqual(
+      [],
+    );
+    const archivedProject = await scope.objects.getObject(interruptedProject.id);
+    expect(archivedProject?.archivedAt).toBeInstanceOf(Date);
+  });
+
+  it('preserves newer human project and category edits when retrying a created task', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const [proposedProject, humanProject] = await Promise.all([
+      scope.objects.createObject({
+        type: 'project',
+        canonicalName: 'Proposed retry project',
+        actor: { kind: 'user', userId: USER_ID },
+      }),
+      scope.objects.createObject({
+        type: 'project',
+        canonicalName: 'Human retry project',
+        actor: { kind: 'user', userId: USER_ID },
+      }),
+    ]);
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Retry task without overwriting human edits',
+      dedupeKey: 'retry-task-preserve-human-edits',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Retry task without overwriting human edits',
+          dedupeKey: 'retry-task-preserve-human-edits:item',
+          proposedPayload: {
+            canonicalName: 'Retry task without overwriting human edits',
+            parentObjectId: proposedProject.id,
+            projectName: proposedProject.canonicalName,
+            taskCategory: 'operations',
+            taskCategoryMode: 'manual',
+            taskCategoryTaxonomyVersion: 'task-categories-v1',
+          },
+        },
+      ],
+    });
+    const itemId = bundle.items[0]?.id ?? '';
+    const task = await scope.objects.createObject({
+      type: 'task',
+      canonicalName: 'Retry task without overwriting human edits',
+      parentObjectId: proposedProject.id,
+      metadata: { agent_suggestion_item_id: itemId },
+      actor: { kind: 'agent', userId: null },
+    });
+    await db
+      .update(agentSuggestionItems)
+      .set({ status: 'failed', resolvedAt: null, resolvedByUserId: null })
+      .where(eq(agentSuggestionItems.id, itemId));
+    await scope.objects.setTaskProject(task.id, humanProject.id, {
+      kind: 'user',
+      userId: USER_ID,
+    });
+    await scope.objects.setTaskCategory(task.id, 'design', {
+      kind: 'user',
+      userId: USER_ID,
+    });
+
+    await expect(scope.suggestions.acceptSuggestionItem(itemId)).resolves.toBe(true);
+
+    await expect(scope.objects.listPrimaryProjectsForTasks([task.id])).resolves.toEqual([
+      expect.objectContaining({ projectId: humanProject.id }),
+    ]);
+    await expect(scope.objects.getObject(task.id)).resolves.toMatchObject({
+      taskCategory: 'design',
+      taskCategoryMode: 'manual',
+      taskCategorySource: 'user',
+    });
+  });
+
+  it('preserves every newer human task edit when retrying a partially accepted create', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Retry task without overwriting fields',
+      dedupeKey: 'retry-task-preserve-all-human-edits',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Original proposed task',
+          dedupeKey: 'retry-task-preserve-all-human-edits:item',
+          proposedPayload: {
+            canonicalName: 'Original proposed task',
+            status: 'todo',
+            stage: 'planned',
+            priority: 1,
+            ownerUserId: USER_ID,
+            assigneeUserId: REVIEWER_ID,
+            dueAt: '2026-08-01T12:00:00.000Z',
+            aliases: ['Original alias'],
+            metadata: { description: 'Original description' },
+          },
+        },
+      ],
+    });
+    const itemId = bundle.items[0]?.id ?? '';
+    const task = await scope.objects.createObject({
+      type: 'task',
+      canonicalName: 'Original proposed task',
+      status: 'todo',
+      stage: 'planned',
+      priority: 1,
+      ownerUserId: USER_ID,
+      assigneeUserId: REVIEWER_ID,
+      dueAt: new Date('2026-08-01T12:00:00.000Z'),
+      aliases: ['Original alias'],
+      metadata: {
+        description: 'Original description',
+        agent_suggestion_item_id: itemId,
+      },
+      actor: { kind: 'agent', userId: null },
+    });
+    await db
+      .update(agentSuggestionItems)
+      .set({ status: 'failed', resolvedAt: null, resolvedByUserId: null })
+      .where(eq(agentSuggestionItems.id, itemId));
+    await scope.objects.updateObject(
+      task.id,
+      {
+        canonicalName: 'Human-edited task',
+        status: 'doing',
+        stage: 'review',
+        priority: 4,
+        ownerUserId: REVIEWER_ID,
+        assigneeUserId: USER_ID,
+        dueAt: new Date('2026-09-15T09:30:00.000Z'),
+        aliases: ['Human alias'],
+        metadata: {
+          description: 'Human description',
+          agent_suggestion_item_id: itemId,
+        },
+      },
+      { kind: 'user', userId: USER_ID },
+    );
+
+    await expect(scope.suggestions.acceptSuggestionItem(itemId)).resolves.toBe(true);
+
+    await expect(scope.objects.getObject(task.id)).resolves.toMatchObject({
+      canonicalName: 'Human-edited task',
+      status: 'doing',
+      stage: 'review',
+      priority: 4,
+      ownerUserId: REVIEWER_ID,
+      assigneeUserId: USER_ID,
+      dueAt: new Date('2026-09-15T09:30:00.000Z'),
+      aliases: ['Human alias'],
+      metadata: {
+        description: 'Human description',
+        agent_suggestion_item_id: itemId,
+      },
+    });
+  });
+
+  it('preserves a human project edit made while a created task retry is applying', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const [proposedProject, humanProject] = await Promise.all([
+      scope.objects.createObject({
+        type: 'project',
+        canonicalName: 'Concurrent proposed project',
+        actor: { kind: 'user', userId: USER_ID },
+      }),
+      scope.objects.createObject({
+        type: 'project',
+        canonicalName: 'Concurrent human project',
+        actor: { kind: 'user', userId: USER_ID },
+      }),
+    ]);
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Retry task during a human project edit',
+      dedupeKey: 'retry-task-concurrent-human-project',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Retry task during a human project edit',
+          dedupeKey: 'retry-task-concurrent-human-project:item',
+          proposedPayload: {
+            canonicalName: 'Retry task during a human project edit',
+            parentObjectId: proposedProject.id,
+            projectName: proposedProject.canonicalName,
+          },
+        },
+      ],
+    });
+    const itemId = bundle.items[0]?.id ?? '';
+    const task = await scope.objects.createObject({
+      type: 'task',
+      canonicalName: 'Retry task during a human project edit',
+      parentObjectId: proposedProject.id,
+      metadata: { agent_suggestion_item_id: itemId },
+      actor: { kind: 'agent', userId: null },
+    });
+    await db
+      .update(agentSuggestionItems)
+      .set({
+        status: 'failed',
+        createdAt: new Date('2020-01-01T00:00:00.000Z'),
+        resolvedAt: null,
+        resolvedByUserId: null,
+      })
+      .where(eq(agentSuggestionItems.id, itemId));
+
+    const setTaskProject = scope.objects.setTaskProject;
+    let injectedHumanEdit = false;
+    const setTaskProjectSpy = vi
+      .spyOn(scope.objects, 'setTaskProject')
+      .mockImplementation(async (...args) => {
+        const [taskId, , actor] = args;
+        if (!injectedHumanEdit && actor.kind === 'agent') {
+          injectedHumanEdit = true;
+          await setTaskProject(taskId, humanProject.id, { kind: 'user', userId: USER_ID });
+        }
+        return setTaskProject(...args);
+      });
+    try {
+      await expect(scope.suggestions.acceptSuggestionItem(itemId)).resolves.toBe(true);
+    } finally {
+      setTaskProjectSpy.mockRestore();
+    }
+
+    await expect(scope.objects.listPrimaryProjectsForTasks([task.id])).resolves.toEqual([
+      expect.objectContaining({ projectId: humanProject.id }),
+    ]);
+  });
+
+  it('preserves a suggestion-created project with an outbound relationship on retry', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Create related retryable task',
+      dedupeKey: 'create-related-task-remove-project-retry',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Create related retryable task',
+          dedupeKey: 'create-related-task-remove-project-retry:item',
+          proposedPayload: {
+            canonicalName: 'Create related retryable task',
+            createProjectName: 'Related proposal project',
+            projectName: 'Related proposal project',
+          },
+        },
+      ],
+    });
+    const itemId = bundle.items[0]?.id ?? '';
+    const project = await scope.objects.createObject({
+      type: 'project',
+      canonicalName: 'Related proposal project',
+      metadata: { agent_suggestion_project_for_item_id: itemId },
+      actor: { kind: 'agent', userId: null },
+    });
+    const company = await scope.objects.createObject({
+      type: 'company',
+      canonicalName: 'Related proposal company',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const task = await scope.objects.createObject({
+      type: 'task',
+      canonicalName: 'Create related retryable task',
+      parentObjectId: project.id,
+      metadata: { agent_suggestion_item_id: itemId },
+      actor: { kind: 'agent', userId: null },
+    });
+    await db.insert(entityRelationships).values({
+      teamId: TEAM_ID,
+      fromEntityId: project.id,
+      toEntityId: company.id,
+      kind: 'related',
+      createdBy: USER_ID,
+    });
+    await scope.suggestions.reviseTaskSuggestionItem({ itemId, project: { kind: 'none' } });
+
+    await expect(scope.suggestions.acceptSuggestionItem(itemId)).resolves.toBe(true);
+
+    await expect(scope.objects.listPrimaryProjectsForTasks([task.id])).resolves.toEqual([]);
+    const retainedProject = await scope.objects.getObject(project.id);
+    expect(retainedProject?.archivedAt).toBeNull();
   });
 
   it('stores a readable failure reason for calendar creates missing a time range', async () => {

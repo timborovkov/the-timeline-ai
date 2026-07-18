@@ -31,6 +31,7 @@ import {
   curatedKanbanSaveState,
   type CuratedKanbanSaveState,
 } from '@/components/boards/curated-kanban-state';
+import { LiveTaskCategoryBadge } from '@/components/tasks/task-category-badge';
 import { boardViewHref } from '@/lib/board-links';
 import { displayText, formatDisplayDate } from '@/lib/display-dates';
 import { displayObjectTitle } from '@/lib/object-title';
@@ -325,6 +326,14 @@ function KanbanCard({
       )}
       <div className="mt-1.5 flex flex-wrap items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.1em] text-fg-dim">
         <span>{item.object.type}</span>
+        {item.object.type === 'task' ? (
+          <LiveTaskCategoryBadge
+            taskId={item.object.id}
+            category={item.object.taskCategory}
+            status={item.object.taskCategoryStatus}
+            updatedAt={item.object.taskCategoryUpdatedAt}
+          />
+        ) : null}
         {blocked ? <span className="text-danger">Blocked</span> : null}
       </div>
       <div className="mt-2 grid grid-cols-3 gap-px overflow-hidden rounded-sm border border-border bg-border font-mono text-[10px] uppercase tracking-[0.08em]">

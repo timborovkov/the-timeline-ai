@@ -7,6 +7,7 @@ import {
   acceptVisibleSuggestionsAction,
   rejectSuggestionItemAction,
   rejectVisibleSuggestionsAction,
+  reviseTaskSuggestionItemAction,
 } from '@/app/actions/suggestions';
 
 /**
@@ -24,6 +25,7 @@ const fakes = vi.hoisted(() => ({
     rejectSuggestionItem: vi.fn(),
     acceptAll: vi.fn(),
     acceptSelected: vi.fn(),
+    reviseTaskSuggestionItem: vi.fn(),
     listSuggestions: vi.fn(),
   },
 }));
@@ -62,6 +64,7 @@ beforeEach(() => {
   fakes.fakeSuggestions.rejectSuggestionItem.mockResolvedValue(true);
   fakes.fakeSuggestions.acceptAll.mockResolvedValue({ accepted: 2, failed: 0 });
   fakes.fakeSuggestions.acceptSelected.mockResolvedValue({ accepted: 2, failed: 0 });
+  fakes.fakeSuggestions.reviseTaskSuggestionItem.mockResolvedValue(true);
   fakes.fakeSuggestions.listSuggestions.mockResolvedValue([
     { items: [{ id: ITEM_ID, status: 'failed' }] },
   ]);
@@ -156,6 +159,23 @@ describe('suggestion item actions', () => {
     await expect(rejectSuggestionItemAction({ itemId: ITEM_ID })).resolves.toEqual({ ok: true });
 
     expect(fakes.fakeSuggestions.rejectSuggestionItem).toHaveBeenCalledWith(ITEM_ID);
+    expectSuggestionSurfacesRevalidated();
+  });
+
+  it('validates and persists task proposal category and project edits', async () => {
+    await expect(
+      reviseTaskSuggestionItemAction({
+        itemId: ITEM_ID,
+        category: 'design',
+        project: { kind: 'create', projectName: 'Faba website redesign' },
+      }),
+    ).resolves.toEqual({ ok: true });
+
+    expect(fakes.fakeSuggestions.reviseTaskSuggestionItem).toHaveBeenCalledWith({
+      itemId: ITEM_ID,
+      category: 'design',
+      project: { kind: 'create', projectName: 'Faba website redesign' },
+    });
     expectSuggestionSurfacesRevalidated();
   });
 

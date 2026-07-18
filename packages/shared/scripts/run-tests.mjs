@@ -29,6 +29,7 @@ const pgliteChunks = [
     'src/onboarding/index.test.ts',
   ],
   ['src/objects/index.test.ts'],
+  ['src/task-categories/state.test.ts', 'src/task-categories/evals.test.ts'],
   ['src/suggestions/index.test.ts'],
   [
     'src/reconciliation/backfill.test.ts',

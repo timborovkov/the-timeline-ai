@@ -9,6 +9,8 @@ const fakes = vi.hoisted(() => ({
   getObject: vi.fn(),
   getMergedObjectTarget: vi.fn(),
   markVisited: vi.fn(),
+  listObjects: vi.fn(),
+  listPrimaryProjectsForTasks: vi.fn(),
   listObjectBoardContext: vi.fn(),
   listPendingSuggestions: vi.fn(),
   objectDetailClientProps: vi.fn(),
@@ -31,6 +33,8 @@ vi.mock('@timeline/shared/team-scope', () => ({
       getObject: fakes.getObject,
       getMergedObjectTarget: fakes.getMergedObjectTarget,
       markVisited: fakes.markVisited,
+      listObjects: fakes.listObjects,
+      listPrimaryProjectsForTasks: fakes.listPrimaryProjectsForTasks,
     },
     boards: { listObjectBoardContext: fakes.listObjectBoardContext },
     suggestions: { listPendingSuggestions: fakes.listPendingSuggestions },
@@ -56,6 +60,8 @@ beforeEach(() => {
   process.env.AUTH_URL = 'https://timeline.example.com';
   fakes.auth.mockResolvedValue({ user: { id: 'user-1' } });
   fakes.resolveActiveTeam.mockResolvedValue({ active: { teamId: 'team-1' } });
+  fakes.listObjects.mockResolvedValue([]);
+  fakes.listPrimaryProjectsForTasks.mockResolvedValue([]);
   fakes.getObject.mockResolvedValue({
     id: OBJECT_ID,
     type: 'task',
@@ -67,6 +73,11 @@ beforeEach(() => {
     assigneeUserId: null,
     dueAt: null,
     agentSuggested: false,
+    taskCategory: null,
+    taskCategoryMode: null,
+    taskCategorySource: null,
+    taskCategoryStatus: null,
+    taskCategoryUpdatedAt: null,
     archivedAt: null,
     aliases: [],
     metadata: {},

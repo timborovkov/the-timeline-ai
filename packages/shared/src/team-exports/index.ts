@@ -4,6 +4,7 @@ import {
   documentVersions,
   documents,
   entities,
+  entityRelationships,
   facts,
   folders,
   integrationAuditLog,
@@ -18,6 +19,7 @@ import {
   objectChanges,
   objectNotes,
   rawEvents,
+  taskCategoryAssignments,
   type Db,
 } from '@timeline/db';
 import { and, asc, count, eq, inArray, isNull, or, sql } from 'drizzle-orm';
@@ -323,6 +325,28 @@ export async function buildTeamExportArchive(
     .where(eq(objectChanges.teamId, input.teamId))
     .orderBy(asc(objectChanges.changedAt), asc(objectChanges.id));
   files['object_changes.jsonl'] = addJsonl(zip, 'object_changes.jsonl', changeRows);
+
+  const categoryAssignmentRows = await input.db
+    .select()
+    .from(taskCategoryAssignments)
+    .where(eq(taskCategoryAssignments.teamId, input.teamId))
+    .orderBy(asc(taskCategoryAssignments.createdAt), asc(taskCategoryAssignments.id));
+  files['task_category_assignments.jsonl'] = addJsonl(
+    zip,
+    'task_category_assignments.jsonl',
+    categoryAssignmentRows,
+  );
+
+  const relationshipRows = await input.db
+    .select()
+    .from(entityRelationships)
+    .where(eq(entityRelationships.teamId, input.teamId))
+    .orderBy(asc(entityRelationships.createdAt), asc(entityRelationships.id));
+  files['entity_relationships.jsonl'] = addJsonl(
+    zip,
+    'entity_relationships.jsonl',
+    relationshipRows,
+  );
 
   const docRows = await visibleDocuments(input.db, input.teamId, input.requestedByUserId);
   files['documents.jsonl'] = addJsonl(zip, 'documents.jsonl', docRows);

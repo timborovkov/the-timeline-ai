@@ -1,3 +1,4 @@
+import { getEnv } from '@timeline/shared/env';
 import { withTeam } from '@timeline/shared/team-scope';
 import { notFound, redirect } from 'next/navigation';
 
@@ -100,9 +101,15 @@ export default async function ObjectDetailPage({ params, searchParams }: PagePro
   }
 
   await scope.objects.markVisited(detail.id);
-  const [boardContext, pendingBundles] = await Promise.all([
+  const [boardContext, pendingBundles, projects, primaryProjects] = await Promise.all([
     scope.boards.listObjectBoardContext(detail.id),
     scope.suggestions.listPendingSuggestions(),
+    detail.type === 'task'
+      ? scope.objects.listObjects({ type: 'project', archived: false, limit: 200 })
+      : Promise.resolve([]),
+    detail.type === 'task'
+      ? scope.objects.listPrimaryProjectsForTasks([detail.id])
+      : Promise.resolve([]),
   ]);
   const boardItemIds = new Set(boardContext.map((row) => row.itemId));
   const suggestions = pendingBundles.flatMap((bundle) => {
@@ -117,7 +124,14 @@ export default async function ObjectDetailPage({ params, searchParams }: PagePro
         label="Back"
       />
       <ObjectBoardContext rows={boardContext} />
-      <ObjectDetailClient detail={detail} userId={session.user.id} suggestions={suggestions} />
+      <ObjectDetailClient
+        detail={detail}
+        userId={session.user.id}
+        suggestions={suggestions}
+        projects={projects.map((project) => ({ id: project.id, label: project.canonicalName }))}
+        primaryProject={primaryProjects[0] ?? null}
+        taskCategoriesEnabled={getEnv().TASK_CATEGORY_UI_ENABLED}
+      />
     </div>
   );
 }

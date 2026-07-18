@@ -42,6 +42,12 @@ export const TIMELINE_MODELS = {
     contextWindowTokens: 1_048_576,
     capabilities: ['chat', 'structured', 'tools'],
   },
+  taskCategorization: {
+    id: 'deepseek/deepseek-v4-flash',
+    provider: 'openrouter',
+    contextWindowTokens: 1_048_576,
+    capabilities: ['chat', 'structured'],
+  },
   vision: {
     id: 'google/gemini-3.5-flash',
     provider: 'openrouter',

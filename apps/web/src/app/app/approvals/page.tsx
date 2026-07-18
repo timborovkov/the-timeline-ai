@@ -1,3 +1,4 @@
+import { getEnv } from '@timeline/shared/env';
 import { withTeam } from '@timeline/shared/team-scope';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
@@ -106,6 +107,7 @@ export default async function ApprovalsPage({ searchParams }: PageProps) {
       <ApprovalsClient
         suggestions={visibleSuggestions}
         timezone={calendarSettings.defaultTimezone}
+        taskCategoriesEnabled={getEnv().TASK_CATEGORY_UI_ENABLED}
         emptyState={EMPTY_STATES[status]}
       />
     </div>

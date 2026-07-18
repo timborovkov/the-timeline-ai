@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+
 import {
   agentSuggestionEvidence,
   agentSuggestionItems,
@@ -7,6 +9,7 @@ import {
   boards as boardsTable,
   calendarEvents,
   entities,
+  objectChanges,
   objectIdentityFacets,
   objectNotes,
   notifications,
@@ -19,7 +22,7 @@ import {
   users,
   type Db,
 } from '@timeline/db';
-import { and, asc, desc, eq, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, lt, or, sql } from 'drizzle-orm';
 import { z } from 'zod';
 
 import type { BoardScope } from '#src/boards/index.js';
@@ -48,6 +51,7 @@ import {
 import { chatStructured as defaultChatStructured } from '#src/llm/chat.js';
 import { childLogger } from '#src/logger.js';
 import { OBJECT_TYPES } from '#src/objects/index.js';
+import { suggestedProjectIsUnusedCondition } from '#src/objects/suggested-projects.js';
 import {
   buildOutputDedupeKey,
   reconciliationDedupeKey,
@@ -56,6 +60,11 @@ import {
 } from '#src/reconciliation/index.js';
 import { sourcePayloadRefFromMetadata } from '#src/reconciliation/source-snapshot.js';
 import { stableStringify, suggestionDedupeKey } from '#src/suggestions/dedupe-key.js';
+import {
+  TASK_CATEGORY_TAXONOMY_VERSION,
+  taskCategorySchema,
+  type TaskCategory,
+} from '#src/task-categories/types.js';
 import { localDateFromInstant, localDateSpanToUtcRange } from '#src/time/index.js';
 import { rawEventVisibleToUser } from '#src/visibility.js';
 
@@ -84,6 +93,10 @@ const ENTITY_CANONICAL_NAME_UNIQUE_CONSTRAINT = 'entities_team_type_canonical_na
 const RECONCILIATION_APPROVAL_PROJECTION_VERSION = 'approval-projection-2026-06';
 const RECONCILIATION_APPROVAL_POLICY_VERSION = 'timeline-owned-approval-2026-06';
 const RECONCILIATION_APPROVAL_PLANNER_VERSION = 'legacy-suggestion-projection-2026-06';
+const INTERRUPTED_TASK_CREATE_ACCEPTANCE_MIN_AGE_MS = 5 * 60 * 1000;
+const ACCEPTANCE_HEARTBEAT_INTERVAL_MS = 30 * 1000;
+const ACCEPTANCE_ATTEMPT_METADATA_KEY = 'acceptance_attempt_id';
+const ACCEPTANCE_STARTED_AT_METADATA_KEY = 'acceptance_started_at';
 const REPAIRABLE_PROJECTION_OUTPUT_STATUSES = ['pending', 'approval_created', 'failed'] as const;
 const PROJECTABLE_OUTPUT_OPERATIONS: readonly Operation[] = [
   'create',
@@ -102,6 +115,18 @@ const PROJECTABLE_OUTPUT_TARGET_KINDS: readonly TargetKind[] = [
   'board_membership',
   'board_item_update',
 ];
+
+function isCanonicalObjectNameConflict(error: unknown): boolean {
+  let current = error;
+  for (let depth = 0; depth < 5 && current && typeof current === 'object'; depth += 1) {
+    const record = current as { code?: unknown; constraint?: unknown; cause?: unknown };
+    if (record.code === '23505' && record.constraint === 'entities_team_type_canonical_name_unq') {
+      return true;
+    }
+    current = record.cause;
+  }
+  return false;
+}
 
 interface VisibilityEnvelope {
   visibility: Visibility;
@@ -329,6 +354,8 @@ export interface SuggestionScopeDeps {
   boards: BoardScope;
   calendar: CalendarScope;
   chatStructured?: typeof defaultChatStructured;
+  /** Test/instrumentation seam invoked after an acceptance is claimed but before it is applied. */
+  beforeApplyItem?: (itemId: string) => Promise<void>;
 }
 
 export interface SuggestionItemInput {
@@ -524,6 +551,17 @@ const objectCreatePayload = z.object({
   type: z.string().optional(),
   canonicalName: z.string().trim().max(200).optional(),
   parentObjectId: blankStringAsNull(uuid.nullable()).optional(),
+  projectName: z.string().trim().min(1).max(200).optional(),
+  createProjectName: z.string().trim().min(1).max(200).optional(),
+  taskCategory: taskCategorySchema.optional(),
+  taskCategoryConfidence: z.number().min(0).max(1).optional(),
+  taskCategoryModel: z.string().trim().min(1).max(200).optional(),
+  taskCategoryMode: z.enum(['automatic', 'manual']).optional(),
+  taskCategoryInputHash: z
+    .string()
+    .regex(/^[a-f0-9]{64}$/)
+    .optional(),
+  taskCategoryTaxonomyVersion: z.string().trim().min(1).max(100).optional(),
 });
 
 const objectUpdatePayload = z.object({
@@ -2650,6 +2688,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
 
   async function loadBundle(id: string): Promise<SuggestionBundle | null> {
     await ensureMember();
+    await recoverInterruptedTaskCreateAcceptances();
     const rows = await db
       .select()
       .from(agentSuggestions)
@@ -2732,8 +2771,12 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     );
   }
 
-  async function refreshBundleStatus(suggestionId: string, resolvedByUserId?: string) {
-    const items = await db
+  async function refreshBundleStatus(
+    suggestionId: string,
+    resolvedByUserId?: string,
+    client: DbOrTx = db,
+  ) {
+    const items = await client
       .select({ status: agentSuggestionItems.status })
       .from(agentSuggestionItems)
       .where(eq(agentSuggestionItems.suggestionId, suggestionId));
@@ -2753,16 +2796,111 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
             : rejected > 0 && accepted === 0 && superseded === 0
               ? 'rejected'
               : 'partially_resolved';
-    await db
+    await client
       .update(agentSuggestions)
       .set({
         status,
         updatedAt: new Date(),
         ...(actionable === 0
           ? { resolvedAt: new Date(), resolvedByUserId: resolvedByUserId ?? null }
-          : {}),
+          : { resolvedAt: null, resolvedByUserId: null }),
       })
       .where(eq(agentSuggestions.id, suggestionId));
+  }
+
+  function activeAcceptanceAttempt(itemId: string, attemptId: string) {
+    return and(
+      eq(agentSuggestionItems.id, itemId),
+      eq(agentSuggestionItems.status, 'accepted'),
+      sql`${agentSuggestionItems.metadata} ->> ${ACCEPTANCE_ATTEMPT_METADATA_KEY} = ${attemptId}`,
+    );
+  }
+
+  function startAcceptanceHeartbeat(itemId: string, attemptId: string): () => void {
+    const timer = setInterval(() => {
+      void db
+        .update(agentSuggestionItems)
+        .set({ updatedAt: new Date() })
+        .where(activeAcceptanceAttempt(itemId, attemptId))
+        .catch((error: unknown) => {
+          log.warn({ err: error, itemId }, 'Suggestion acceptance heartbeat failed');
+        });
+    }, ACCEPTANCE_HEARTBEAT_INTERVAL_MS);
+    if (typeof timer.unref === 'function') timer.unref();
+    return () => {
+      clearInterval(timer);
+    };
+  }
+
+  async function archiveRejectedSuggestionCreateResult(
+    item: typeof agentSuggestionItems.$inferSelect,
+    client: DbOrTx = db,
+    postCommitEffects?: (() => void)[],
+  ): Promise<void> {
+    if (
+      item.operation !== 'create' ||
+      (item.targetKind !== 'task' && item.targetKind !== 'object')
+    ) {
+      return;
+    }
+    const effects = postCommitEffects ?? [];
+    const runsOwnPostCommitEffects = postCommitEffects === undefined;
+    await client.transaction(async (tx) => {
+      const projectIds = await suggestedProjectCandidateIds(item, tx, true);
+      await objects.archiveSuggestionCreatedObjectIfUnadopted(
+        item.id,
+        { kind: 'agent', userId: null },
+        { transactionClient: tx, postCommitEffects: effects },
+      );
+      await archiveSuggestedProjectCandidates(item, projectIds, tx, effects);
+    });
+    if (runsOwnPostCommitEffects) {
+      for (const effect of effects) effect();
+    }
+  }
+
+  async function recoverInterruptedTaskCreateAcceptances(): Promise<void> {
+    const cutoff = new Date(Date.now() - INTERRUPTED_TASK_CREATE_ACCEPTANCE_MIN_AGE_MS);
+    await db.transaction(async (tx) => {
+      const recoveredItems = await tx
+        .update(agentSuggestionItems)
+        .set({
+          status: 'failed',
+          failureReason:
+            'Acceptance was interrupted before the task was finalized. Retry to finish it.',
+          resolvedAt: null,
+          resolvedByUserId: null,
+          metadata: sql`${agentSuggestionItems.metadata} - ${ACCEPTANCE_ATTEMPT_METADATA_KEY} - ${ACCEPTANCE_STARTED_AT_METADATA_KEY}`,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(agentSuggestionItems.teamId, teamId),
+            eq(agentSuggestionItems.status, 'accepted'),
+            or(
+              eq(agentSuggestionItems.targetKind, 'task'),
+              and(
+                eq(agentSuggestionItems.targetKind, 'object'),
+                sql`btrim(${agentSuggestionItems.proposedPayload} ->> 'type') = 'task'`,
+              ),
+            ),
+            eq(agentSuggestionItems.operation, 'create'),
+            isNull(agentSuggestionItems.resultId),
+            lt(agentSuggestionItems.updatedAt, cutoff),
+          ),
+        )
+        .returning();
+      if (recoveredItems.length === 0) return;
+
+      for (const item of recoveredItems) {
+        await writeProjectedOutputStatusForItem(tx, item, 'failed', {
+          projection_failure_reason: item.failureReason,
+        });
+      }
+      for (const suggestionId of new Set(recoveredItems.map((item) => item.suggestionId))) {
+        await refreshBundleStatus(suggestionId, undefined, tx);
+      }
+    });
   }
 
   async function supersedeItem(
@@ -3896,6 +4034,29 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         : item.title;
     const type =
       item.targetKind === 'task' ? 'task' : (objectTypeFromValue(parsed.type) ?? 'other');
+    const project = type === 'task' ? await resolveSuggestedTaskProject(item, parsed) : null;
+    const legacyParentId =
+      type === 'task' && parsed.parentObjectId && !project ? parsed.parentObjectId : null;
+    const precomputedTaskCategory =
+      type === 'task' &&
+      parsed.taskCategory &&
+      parsed.taskCategoryMode !== 'manual' &&
+      parsed.taskCategoryConfidence !== undefined &&
+      parsed.taskCategoryModel &&
+      parsed.taskCategoryInputHash &&
+      parsed.taskCategoryTaxonomyVersion
+        ? {
+            category: parsed.taskCategory,
+            confidence: parsed.taskCategoryConfidence,
+            model: parsed.taskCategoryModel,
+            inputHash: parsed.taskCategoryInputHash,
+            taxonomyVersion: parsed.taskCategoryTaxonomyVersion,
+          }
+        : null;
+    const initialManualTaskCategory =
+      type === 'task' && parsed.taskCategory && parsed.taskCategoryMode === 'manual'
+        ? { category: parsed.taskCategory, actorUserId: userId }
+        : null;
     const input: CreateObjectInput = {
       type,
       canonicalName,
@@ -3908,7 +4069,9 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     if (parsed.ownerUserId !== undefined) input.ownerUserId = parsed.ownerUserId;
     if (parsed.assigneeUserId !== undefined) input.assigneeUserId = parsed.assigneeUserId;
     if (parsed.dueAt !== undefined) input.dueAt = parsed.dueAt ? new Date(parsed.dueAt) : null;
-    if (parsed.parentObjectId !== undefined) input.parentObjectId = parsed.parentObjectId;
+    if (project) input.parentObjectId = project.id;
+    if (precomputedTaskCategory) input.precomputedTaskCategory = precomputedTaskCategory;
+    if (initialManualTaskCategory) input.initialManualTaskCategory = initialManualTaskCategory;
     input.metadata = {
       ...(parsed.metadata ?? {}),
       agent_suggestion_item_id: item.id,
@@ -3930,30 +4093,400 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       .limit(1);
     const existing = existingRows[0];
     if (!existing) {
-      const created = await objects.createObject(input);
-      return created.id;
+      try {
+        const created = await objects.createObject(input);
+        if (legacyParentId) {
+          await ensureLegacySuggestedTaskRelationship(item, created.id, legacyParentId);
+        }
+        if (type === 'task' && !precomputedTaskCategory && !initialManualTaskCategory) {
+          await applyProposedTaskCategory(created.id, parsed);
+        }
+        if (type === 'task') await archiveOrphanedSuggestedProjects(item);
+        return created.id;
+      } catch (error) {
+        await archiveSuggestedProjectAfterFailure(item, project);
+        throw error;
+      }
     }
 
+    const userOverrides =
+      type === 'task'
+        ? await taskProposalFieldsChangedByUser(item, existing.id)
+        : new Set<string>();
     const patch: ObjectPatch = {};
-    if (parsed.canonicalName !== undefined && parsed.canonicalName !== existing.canonicalName) {
+    if (
+      !userOverrides.has('canonicalName') &&
+      parsed.canonicalName !== undefined &&
+      parsed.canonicalName !== existing.canonicalName
+    ) {
       patch.canonicalName = canonicalName;
     }
-    if (parsed.status !== undefined) patch.status = parsed.status;
-    if (parsed.stage !== undefined) patch.stage = parsed.stage;
-    if (parsed.priority !== undefined) patch.priority = parsed.priority;
-    if (parsed.ownerUserId !== undefined) patch.ownerUserId = parsed.ownerUserId;
-    if (parsed.assigneeUserId !== undefined) patch.assigneeUserId = parsed.assigneeUserId;
-    if (parsed.dueAt !== undefined) patch.dueAt = parsed.dueAt ? new Date(parsed.dueAt) : null;
-    if (parsed.aliases !== undefined) {
+    if (!userOverrides.has('status') && parsed.status !== undefined) patch.status = parsed.status;
+    if (!userOverrides.has('stage') && parsed.stage !== undefined) patch.stage = parsed.stage;
+    if (!userOverrides.has('priority') && parsed.priority !== undefined) {
+      patch.priority = parsed.priority;
+    }
+    if (!userOverrides.has('ownerUserId') && parsed.ownerUserId !== undefined) {
+      patch.ownerUserId = parsed.ownerUserId;
+    }
+    if (!userOverrides.has('assigneeUserId') && parsed.assigneeUserId !== undefined) {
+      patch.assigneeUserId = parsed.assigneeUserId;
+    }
+    if (!userOverrides.has('dueAt') && parsed.dueAt !== undefined) {
+      patch.dueAt = parsed.dueAt ? new Date(parsed.dueAt) : null;
+    }
+    if (!userOverrides.has('aliases') && parsed.aliases !== undefined) {
       patch.aliases = mergeAliases(stringArrayFromUnknown(existing.aliases), parsed.aliases);
     }
-    patch.metadata = {
-      ...recordFromUnknown(existing.metadata),
-      ...(parsed.metadata ?? {}),
-      agent_suggestion_item_id: item.id,
-    };
-    await objects.updateObject(existing.id, patch, { kind: 'agent', userId: null });
-    return existing.id;
+    if (!userOverrides.has('metadata')) {
+      patch.metadata = {
+        ...recordFromUnknown(existing.metadata),
+        ...(parsed.metadata ?? {}),
+        agent_suggestion_item_id: item.id,
+      };
+    }
+    try {
+      await objects.updateObject(existing.id, patch, { kind: 'agent', userId: null });
+      if (type === 'task') {
+        await objects.setTaskProject(
+          existing.id,
+          project?.id ?? null,
+          { kind: 'agent', userId: null },
+          { preserveUserChangesAfter: taskProposalFieldRevisionBoundary(item, 'primaryProjectId') },
+        );
+        if (legacyParentId) {
+          await ensureLegacySuggestedTaskRelationship(item, existing.id, legacyParentId);
+        }
+        await archiveOrphanedSuggestedProjects(item);
+        if (!userOverrides.has('taskCategory')) {
+          await applyProposedTaskCategory(existing.id, parsed);
+        }
+      }
+      return existing.id;
+    } catch (error) {
+      await archiveSuggestedProjectAfterFailure(item, project);
+      throw error;
+    }
+  }
+
+  async function taskProposalFieldsChangedByUser(
+    item: typeof agentSuggestionItems.$inferSelect,
+    taskId: string,
+  ): Promise<Set<string>> {
+    const rows = await db
+      .select({ field: objectChanges.field, changedAt: objectChanges.changedAt })
+      .from(objectChanges)
+      .where(
+        and(
+          eq(objectChanges.teamId, teamId),
+          eq(objectChanges.entityId, taskId),
+          eq(objectChanges.actorKind, 'user'),
+          eq(objectChanges.status, 'applied'),
+          inArray(objectChanges.field, [
+            'canonicalName',
+            'status',
+            'stage',
+            'priority',
+            'ownerUserId',
+            'assigneeUserId',
+            'dueAt',
+            'aliases',
+            'metadata',
+            'primaryProjectId',
+            'taskCategory',
+          ]),
+          gt(objectChanges.changedAt, item.createdAt),
+        ),
+      );
+    return new Set(
+      rows.flatMap((row) => {
+        const boundary = taskProposalFieldRevisionBoundary(item, row.field);
+        return row.changedAt > boundary ? [row.field] : [];
+      }),
+    );
+  }
+
+  function taskProposalFieldRevisionBoundary(
+    item: typeof agentSuggestionItems.$inferSelect,
+    field: string,
+  ): Date {
+    const metadata = recordFromUnknown(item.metadata);
+    const key =
+      field === 'primaryProjectId'
+        ? 'proposal_project_edited_at'
+        : field === 'taskCategory'
+          ? 'proposal_category_edited_at'
+          : null;
+    if (!key) return item.createdAt;
+    const value = metadata[key];
+    return typeof value === 'string' && !Number.isNaN(Date.parse(value))
+      ? new Date(value)
+      : item.createdAt;
+  }
+
+  async function resolveSuggestedTaskProject(
+    item: typeof agentSuggestionItems.$inferSelect,
+    payload: z.infer<typeof objectCreatePayload>,
+  ): Promise<{ id: string; name: string; createdForSuggestion: boolean } | null> {
+    if (payload.parentObjectId) {
+      const [parent] = await db
+        .select({ id: entities.id, name: entities.canonicalName, type: entities.type })
+        .from(entities)
+        .where(
+          and(
+            eq(entities.teamId, teamId),
+            eq(entities.id, payload.parentObjectId),
+            isNull(entities.archivedAt),
+            isNull(entities.mergedIntoId),
+          ),
+        )
+        .limit(1);
+      if (!parent) throw new Error('Proposed task relation is no longer available');
+      return parent.type === 'project' ? { ...parent, createdForSuggestion: false } : null;
+    }
+    if (!payload.createProjectName) return null;
+
+    const [createdForSuggestion] = await db
+      .select({
+        id: entities.id,
+        name: entities.canonicalName,
+        archivedAt: entities.archivedAt,
+      })
+      .from(entities)
+      .where(
+        and(
+          eq(entities.teamId, teamId),
+          eq(entities.type, 'project'),
+          isNull(entities.mergedIntoId),
+          sql`${entities.metadata} ->> 'agent_suggestion_project_for_item_id' = ${item.id}`,
+        ),
+      )
+      .limit(1);
+    if (createdForSuggestion?.name.toLowerCase() === payload.createProjectName.toLowerCase()) {
+      const projectName = createdForSuggestion.archivedAt
+        ? (
+            await objects.unarchiveObject(createdForSuggestion.id, {
+              kind: 'agent',
+              userId: null,
+            })
+          ).canonicalName
+        : createdForSuggestion.name;
+      return {
+        id: createdForSuggestion.id,
+        name: projectName,
+        createdForSuggestion: true,
+      };
+    }
+
+    const normalizedProjectName = payload.createProjectName.toLowerCase();
+    const findMatchingProjects = () =>
+      db
+        .select({ id: entities.id, name: entities.canonicalName })
+        .from(entities)
+        .where(
+          and(
+            eq(entities.teamId, teamId),
+            eq(entities.type, 'project'),
+            isNull(entities.archivedAt),
+            isNull(entities.mergedIntoId),
+            or(
+              sql`lower(${entities.canonicalName}) = ${normalizedProjectName}`,
+              sql`EXISTS (
+                SELECT 1
+                FROM jsonb_array_elements_text(${entities.aliases}) AS alias(value)
+                WHERE lower(alias.value) = ${normalizedProjectName}
+              )`,
+            ),
+          ),
+        )
+        .limit(2);
+    const matchingProjects = await findMatchingProjects();
+    if (matchingProjects.length > 1) throw new Error('Proposed project name is ambiguous');
+    if (matchingProjects[0]) return { ...matchingProjects[0], createdForSuggestion: false };
+
+    const archivedSuggestedProjects = await db
+      .select({ id: entities.id, name: entities.canonicalName, metadata: entities.metadata })
+      .from(entities)
+      .where(
+        and(
+          eq(entities.teamId, teamId),
+          eq(entities.type, 'project'),
+          isNotNull(entities.archivedAt),
+          isNull(entities.mergedIntoId),
+          sql`lower(${entities.canonicalName}) = ${normalizedProjectName}`,
+          sql`COALESCE(${entities.metadata} ->> 'agent_suggestion_project_for_item_id', '') <> ''`,
+          suggestedProjectIsUnusedCondition(teamId, entities.id),
+        ),
+      )
+      .limit(2);
+    if (archivedSuggestedProjects.length > 1) {
+      throw new Error('Proposed project name is ambiguous');
+    }
+    if (archivedSuggestedProjects[0]) {
+      const archivedProject = archivedSuggestedProjects[0];
+      const project = await objects.unarchiveObject(archivedProject.id, {
+        kind: 'agent',
+        userId: null,
+      });
+      try {
+        const updated = await objects.updateObject(
+          project.id,
+          {
+            metadata: {
+              ...recordFromUnknown(archivedProject.metadata),
+              agent_suggestion_project_for_item_id: item.id,
+            },
+          },
+          { kind: 'agent', userId: null },
+        );
+        return {
+          id: updated.object.id,
+          name: updated.object.canonicalName,
+          createdForSuggestion: true,
+        };
+      } catch (error) {
+        await objects.archiveObject(project.id, { kind: 'agent', userId: null });
+        throw error;
+      }
+    }
+
+    try {
+      const project = await objects.createObject({
+        type: 'project',
+        canonicalName: payload.createProjectName,
+        status: 'planning',
+        metadata: { agent_suggestion_project_for_item_id: item.id },
+        actor: { kind: 'agent', userId: null },
+      });
+      return { id: project.id, name: project.canonicalName, createdForSuggestion: true };
+    } catch (error) {
+      if (!isCanonicalObjectNameConflict(error)) throw error;
+      const concurrentProjects = await findMatchingProjects();
+      if (concurrentProjects.length > 1) throw new Error('Proposed project name is ambiguous');
+      if (concurrentProjects[0]) {
+        return { ...concurrentProjects[0], createdForSuggestion: false };
+      }
+      throw error;
+    }
+  }
+
+  async function ensureLegacySuggestedTaskRelationship(
+    item: typeof agentSuggestionItems.$inferSelect,
+    taskId: string,
+    parentId: string,
+  ): Promise<void> {
+    await objects.addRelationship({
+      fromEntityId: taskId,
+      toEntityId: parentId,
+      kind: 'child',
+      actorUserId: null,
+      actor: { kind: 'agent', userId: null },
+      metadata: {
+        agent_suggestion_item_id: item.id,
+        legacy_task_parent: true,
+      },
+    });
+  }
+
+  async function archiveSuggestedProjectAfterFailure(
+    item: typeof agentSuggestionItems.$inferSelect,
+    project: { id: string; createdForSuggestion: boolean } | null,
+  ): Promise<void> {
+    if (!project?.createdForSuggestion) return;
+    await objects.archiveSuggestedProjectIfUnused(project.id, item.id, {
+      kind: 'agent',
+      userId: null,
+    });
+  }
+
+  async function archiveOrphanedSuggestedProjects(
+    item: typeof agentSuggestionItems.$inferSelect,
+    client: DbOrTx = db,
+    postCommitEffects?: (() => void)[],
+  ): Promise<void> {
+    const projectIds = await suggestedProjectCandidateIds(item, client);
+    await archiveSuggestedProjectCandidates(item, projectIds, client, postCommitEffects);
+  }
+
+  async function suggestedProjectCandidateIds(
+    item: typeof agentSuggestionItems.$inferSelect,
+    client: DbOrTx,
+    lock = false,
+  ): Promise<string[]> {
+    const query = client
+      .select({ id: entities.id })
+      .from(entities)
+      .where(
+        and(
+          eq(entities.teamId, teamId),
+          eq(entities.type, 'project'),
+          isNull(entities.archivedAt),
+          isNull(entities.mergedIntoId),
+          sql`${entities.metadata} ->> 'agent_suggestion_project_for_item_id' = ${item.id}`,
+        ),
+      )
+      .orderBy(asc(entities.id));
+    const candidates = lock ? await query.for('update') : await query;
+    return candidates.map((candidate) => candidate.id);
+  }
+
+  async function archiveSuggestedProjectCandidates(
+    item: typeof agentSuggestionItems.$inferSelect,
+    projectIds: string[],
+    client: DbOrTx,
+    postCommitEffects?: (() => void)[],
+  ): Promise<void> {
+    for (const projectId of projectIds) {
+      await objects.archiveSuggestedProjectIfUnused(
+        projectId,
+        item.id,
+        {
+          kind: 'agent',
+          userId: null,
+        },
+        {
+          transactionClient: client,
+          ...(postCommitEffects ? { postCommitEffects } : {}),
+        },
+      );
+    }
+  }
+
+  async function applyProposedTaskCategory(
+    taskId: string,
+    payload: z.infer<typeof objectCreatePayload>,
+  ): Promise<void> {
+    if (!payload.taskCategory) return;
+    if (payload.taskCategoryMode === 'manual') {
+      await objects.setTaskCategory(taskId, payload.taskCategory, {
+        kind: 'user',
+        userId,
+      });
+      return;
+    }
+    if (
+      payload.taskCategoryTaxonomyVersion !== TASK_CATEGORY_TAXONOMY_VERSION ||
+      !payload.taskCategoryInputHash ||
+      !payload.taskCategoryModel ||
+      payload.taskCategoryConfidence === undefined
+    ) {
+      return;
+    }
+    const input = await objects.getTaskCategoryClassificationInput(taskId);
+    if (
+      input?.requestedInputHash !== payload.taskCategoryInputHash ||
+      input.inputHash !== payload.taskCategoryInputHash
+    ) {
+      return;
+    }
+    await objects.applyTaskCategoryClassification({
+      taskId,
+      inputHash: payload.taskCategoryInputHash,
+      category: payload.taskCategory,
+      confidence: payload.taskCategoryConfidence,
+      model: payload.taskCategoryModel,
+      latencyMs: 0,
+    });
   }
 
   function acceptancePriority(item: SuggestionItem): number {
@@ -4138,7 +4671,6 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
 
   async function applyItem(item: typeof agentSuggestionItems.$inferSelect): Promise<string | null> {
     if (item.resultId) return item.resultId;
-    if (item.status !== 'pending' && item.status !== 'failed') return item.resultId;
     if (item.targetKind === 'object_merge') {
       throw new Error('Merge suggestions must be reviewed from the merge preview');
     }
@@ -4183,7 +4715,12 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         if (parsed.dueAt !== undefined) patch.dueAt = parsed.dueAt ? new Date(parsed.dueAt) : null;
         if (parsed.aliases !== undefined) patch.aliases = parsed.aliases;
         if (parsed.metadata !== undefined) patch.metadata = parsed.metadata;
-        await objects.updateObject(targetId, patch, { kind: 'agent', userId: null });
+        await objects.updateObject(
+          targetId,
+          patch,
+          { kind: 'agent', userId: null },
+          { requireActive: true },
+        );
         return targetId;
       }
       await objects.archiveObject(targetId, { kind: 'agent', userId: null });
@@ -4386,6 +4923,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
 
   async function acceptSuggestionItem(itemId: string): Promise<boolean> {
     await ensureMember();
+    await recoverInterruptedTaskCreateAcceptances();
     const rows = await db
       .select({ item: agentSuggestionItems, suggestion: agentSuggestions })
       .from(agentSuggestionItems)
@@ -4412,13 +4950,19 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       }
       return superseded;
     }
+    const acceptanceAttemptId = randomUUID();
+    const acceptanceStartedAt = new Date();
     const [claimed] = await db
       .update(agentSuggestionItems)
       .set({
         status: 'accepted',
-        resolvedAt: new Date(),
+        resolvedAt: acceptanceStartedAt,
         resolvedByUserId: userId,
-        updatedAt: new Date(),
+        metadata: sql`${agentSuggestionItems.metadata} || ${JSON.stringify({
+          [ACCEPTANCE_ATTEMPT_METADATA_KEY]: acceptanceAttemptId,
+          [ACCEPTANCE_STARTED_AT_METADATA_KEY]: acceptanceStartedAt.toISOString(),
+        })}::jsonb`,
+        updatedAt: acceptanceStartedAt,
         failureReason: null,
       })
       .where(
@@ -4428,30 +4972,37 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
           inArray(agentSuggestionItems.status, ['pending', 'failed']),
         ),
       )
-      .returning({ id: agentSuggestionItems.id });
+      .returning();
     if (!claimed) return false;
     let resultId: string | null;
+    const stopHeartbeat = startAcceptanceHeartbeat(itemId, acceptanceAttemptId);
     try {
-      resultId = await applyItem(row.item);
+      await deps.beforeApplyItem?.(itemId);
+      resultId = await applyItem(claimed);
     } catch (err) {
       const failureReason = suggestionApplyFailureReason(err);
-      await db.transaction(async (tx) => {
-        await tx
+      const recordedFailure = await db.transaction(async (tx) => {
+        const [failed] = await tx
           .update(agentSuggestionItems)
           .set({
             status: 'failed',
             failureReason,
             resolvedAt: null,
             resolvedByUserId: null,
+            metadata: sql`${agentSuggestionItems.metadata} - ${ACCEPTANCE_ATTEMPT_METADATA_KEY} - ${ACCEPTANCE_STARTED_AT_METADATA_KEY}`,
             updatedAt: new Date(),
           })
-          .where(eq(agentSuggestionItems.id, itemId));
-        await writeProjectedOutputStatusForItem(tx, row.item, 'failed', {
+          .where(activeAcceptanceAttempt(itemId, acceptanceAttemptId))
+          .returning({ id: agentSuggestionItems.id });
+        if (!failed) return false;
+        await writeProjectedOutputStatusForItem(tx, claimed, 'failed', {
           projection_failure_reason: failureReason,
         });
+        return true;
       });
+      if (!recordedFailure) return false;
       await refreshBundleStatus(row.suggestion.id, userId);
-      const staleReason = await staleActionableItemReason(row.item);
+      const staleReason = await staleActionableItemReason({ ...claimed, status: 'failed' });
       if (staleReason && (await supersedeItem(itemId, null, staleReason))) {
         await reconcileStaleActionableItemsBestEffort({
           suggestionItemId: itemId,
@@ -4469,22 +5020,39 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         throw new ExpectedSuggestionApplyFailure(failureReason, { cause: err });
       }
       throw err;
+    } finally {
+      stopHeartbeat();
     }
-    await db.transaction(async (tx) => {
-      await tx
+    const finalized = await db.transaction(async (tx) => {
+      const [updated] = await tx
         .update(agentSuggestionItems)
         .set({
           resultId,
+          metadata: sql`${agentSuggestionItems.metadata} - ${ACCEPTANCE_ATTEMPT_METADATA_KEY} - ${ACCEPTANCE_STARTED_AT_METADATA_KEY}`,
           updatedAt: new Date(),
           failureReason: null,
         })
-        .where(eq(agentSuggestionItems.id, itemId));
-      await writeProjectedOutputStatusForItem(tx, row.item, 'applied', {
+        .where(activeAcceptanceAttempt(itemId, acceptanceAttemptId))
+        .returning({ id: agentSuggestionItems.id });
+      if (!updated) return false;
+      await writeProjectedOutputStatusForItem(tx, claimed, 'applied', {
         projection_result_id: resultId,
       });
+      return true;
     });
+    if (!finalized) {
+      const [current] = await db
+        .select({ status: agentSuggestionItems.status })
+        .from(agentSuggestionItems)
+        .where(and(eq(agentSuggestionItems.teamId, teamId), eq(agentSuggestionItems.id, itemId)))
+        .limit(1);
+      if (current?.status === 'rejected' || current?.status === 'superseded') {
+        await archiveRejectedSuggestionCreateResult(claimed);
+      }
+      return false;
+    }
     await refreshBundleStatus(row.suggestion.id, userId);
-    await reconcileAcceptedItemBestEffort({ ...row.item, resultId });
+    await reconcileAcceptedItemBestEffort({ ...claimed, resultId });
     await reconcileStaleActionableItemsBestEffort({
       suggestionItemId: itemId,
       suggestionId: row.suggestion.id,
@@ -4646,6 +5214,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     opts: { status?: SuggestionListStatus; limit?: number } = {},
   ): Promise<SuggestionBundle[]> {
     await ensureMember();
+    await recoverInterruptedTaskCreateAcceptances();
     const status = opts.status ?? 'pending';
     const conditions = [suggestionVisibilityPredicate(teamId, userId)];
     if (status === 'pending') {
@@ -5840,6 +6409,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
 
     async getApprovalItemCounts(): Promise<ApprovalItemCounts> {
       await ensureMember();
+      await recoverInterruptedTaskCreateAcceptances();
       const rows = await db
         .select({
           pending: sql<number>`COUNT(*) FILTER (
@@ -5875,6 +6445,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
 
     async rejectSuggestionItem(itemId: string): Promise<boolean> {
       await ensureMember();
+      await recoverInterruptedTaskCreateAcceptances();
       const rows = await db
         .select({ item: agentSuggestionItems, suggestion: agentSuggestions })
         .from(agentSuggestionItems)
@@ -5889,6 +6460,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         .limit(1);
       const row = rows[0];
       if (!row) return false;
+      const postCommitEffects: (() => void)[] = [];
       const rejected = await db.transaction(async (tx) => {
         const [updated] = await tx
           .update(agentSuggestionItems)
@@ -5907,10 +6479,12 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
           )
           .returning({ id: agentSuggestionItems.id });
         if (!updated) return null;
+        await archiveRejectedSuggestionCreateResult(row.item, tx, postCommitEffects);
         await writeProjectedOutputStatusForItem(tx, row.item, 'rejected');
         return updated;
       });
       if (!rejected) return false;
+      for (const effect of postCommitEffects) effect();
       await supersedeRelationshipDependents(row.item);
       await refreshBundleStatus(row.suggestion.id, userId);
       await reconcileStaleActionableItemsBestEffort({
@@ -5975,6 +6549,114 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         if (!processedItemIds.has(itemId)) failedItemIds.push(itemId);
       }
       return { accepted, failed: failedItemIds.length, failedItemIds };
+    },
+
+    async reviseTaskSuggestionItem(input: {
+      itemId: string;
+      category?: TaskCategory | 'automatic';
+      project?:
+        | { kind: 'none' }
+        | { kind: 'existing'; projectId: string }
+        | { kind: 'create'; projectName: string };
+    }): Promise<boolean> {
+      await ensureMember();
+      return db.transaction(async (tx) => {
+        const [row] = await tx
+          .select({ item: agentSuggestionItems })
+          .from(agentSuggestionItems)
+          .innerJoin(agentSuggestions, eq(agentSuggestions.id, agentSuggestionItems.suggestionId))
+          .where(
+            and(
+              eq(agentSuggestionItems.id, input.itemId),
+              eq(agentSuggestionItems.targetKind, 'task'),
+              eq(agentSuggestionItems.operation, 'create'),
+              inArray(agentSuggestionItems.status, ['pending', 'failed']),
+              isNull(agentSuggestionItems.resolvedAt),
+              suggestionVisibilityPredicate(teamId, userId),
+            ),
+          )
+          .for('update', { of: agentSuggestionItems })
+          .limit(1);
+        if (!row) return false;
+        const payload = recordFromUnknown(row.item.proposedPayload);
+        let projectChanged = false;
+        if (input.project) {
+          projectChanged = true;
+          delete payload.parentObjectId;
+          delete payload.createProjectName;
+          delete payload.projectName;
+          if (input.project.kind === 'existing') {
+            const [project] = await tx
+              .select({ id: entities.id, name: entities.canonicalName })
+              .from(entities)
+              .where(
+                and(
+                  eq(entities.teamId, teamId),
+                  eq(entities.id, input.project.projectId),
+                  eq(entities.type, 'project'),
+                  isNull(entities.archivedAt),
+                  isNull(entities.mergedIntoId),
+                ),
+              )
+              .limit(1);
+            if (!project) throw new Error('Project not found');
+            payload.parentObjectId = project.id;
+            payload.projectName = project.name;
+          } else if (input.project.kind === 'create') {
+            const projectName = input.project.projectName.replace(/\s+/g, ' ').trim();
+            if (!projectName || projectName.length > 200) throw new Error('Invalid project name');
+            payload.createProjectName = projectName;
+            payload.projectName = projectName;
+          }
+        }
+        if (input.category) {
+          if (input.category === 'automatic') {
+            delete payload.taskCategory;
+            delete payload.taskCategoryConfidence;
+            delete payload.taskCategoryInputHash;
+            delete payload.taskCategoryModel;
+            delete payload.taskCategoryTaxonomyVersion;
+            payload.taskCategoryMode = 'automatic';
+          } else {
+            payload.taskCategory = input.category;
+            payload.taskCategoryMode = 'manual';
+            delete payload.taskCategoryConfidence;
+            delete payload.taskCategoryInputHash;
+            delete payload.taskCategoryModel;
+            payload.taskCategoryTaxonomyVersion = TASK_CATEGORY_TAXONOMY_VERSION;
+          }
+        } else if (projectChanged && payload.taskCategoryMode !== 'manual') {
+          delete payload.taskCategory;
+          delete payload.taskCategoryConfidence;
+          delete payload.taskCategoryInputHash;
+          delete payload.taskCategoryModel;
+          delete payload.taskCategoryTaxonomyVersion;
+          payload.taskCategoryMode = 'automatic';
+        }
+        const editedAt = new Date().toISOString();
+        const [updated] = await tx
+          .update(agentSuggestionItems)
+          .set({
+            proposedPayload: payload,
+            failureReason: null,
+            metadata: sql`${agentSuggestionItems.metadata} || ${JSON.stringify({
+              proposal_edited_by_user_id: userId,
+              proposal_edited_at: editedAt,
+              ...(input.category ? { proposal_category_edited_at: editedAt } : {}),
+              ...(input.project ? { proposal_project_edited_at: editedAt } : {}),
+            })}::jsonb`,
+            updatedAt: new Date(),
+          })
+          .where(
+            and(
+              eq(agentSuggestionItems.id, input.itemId),
+              inArray(agentSuggestionItems.status, ['pending', 'failed']),
+              isNull(agentSuggestionItems.resolvedAt),
+            ),
+          )
+          .returning({ id: agentSuggestionItems.id });
+        return Boolean(updated);
+      });
     },
   };
 }

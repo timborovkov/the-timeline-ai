@@ -9,6 +9,10 @@ import type { ReactNode } from 'react';
 
 import { EmptyAction } from '@/components/empty-action';
 import { IndexStrip } from '@/components/index-strip';
+import {
+  LiveTaskCategoryBadge,
+  TaskCategoryPollingProvider,
+} from '@/components/tasks/task-category-badge';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
@@ -109,6 +113,17 @@ export default async function WorkPage() {
   ).slice(0, QUEUE_LIMIT);
   const attentionCount = attention.attention;
   const boardModules = uniqueBoards([...pinnedBoards, ...boards]).slice(0, 6);
+  const categoryPollingTasks = queue.flatMap((item) =>
+    item.objectType === 'task'
+      ? [
+          {
+            id: item.entityId ?? item.id,
+            status: item.taskCategoryStatus ?? null,
+            updatedAt: item.updatedAt,
+          },
+        ]
+      : [],
+  );
 
   return (
     <div className="space-y-6">
@@ -149,11 +164,13 @@ export default async function WorkPage() {
                 action="Open boards"
               />
             ) : (
-              <div className="overflow-hidden border border-border">
-                {queue.map((item) => (
-                  <WorkQueueRow key={item.id} item={item} />
-                ))}
-              </div>
+              <TaskCategoryPollingProvider tasks={categoryPollingTasks}>
+                <div className="overflow-hidden border border-border">
+                  {queue.map((item) => (
+                    <WorkQueueRow key={item.id} item={item} />
+                  ))}
+                </div>
+              </TaskCategoryPollingProvider>
             )}
           </section>
 
@@ -338,6 +355,14 @@ function WorkQueueRow({ item }: { item: WorkQueueItem }) {
         ) : null}
         {item.priority ? <MetaPill label={`P${item.priority}`} /> : null}
         {item.objectType ? <MetaPill label={item.objectType.replace('_', ' ')} /> : null}
+        {item.objectType === 'task' ? (
+          <LiveTaskCategoryBadge
+            taskId={item.entityId ?? item.id}
+            category={item.taskCategory ?? null}
+            status={item.taskCategoryStatus ?? null}
+            updatedAt={item.updatedAt}
+          />
+        ) : null}
       </span>
     </Link>
   );

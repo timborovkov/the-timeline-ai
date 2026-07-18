@@ -23,6 +23,7 @@ export interface ActionState {
   failedItemIds?: string[];
   ok?: boolean;
   id?: string;
+  undoChangeId?: string;
   message?: string;
 }
 

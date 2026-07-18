@@ -253,7 +253,7 @@ describe('processDocumentExtractJob — happy path', () => {
     }
     // documentId loaded for cross-checking the upload event source id.
     expect(documentId).toBeTruthy();
-  }, 10_000);
+  });
 
   it('threads targetCollection through every embed job', async () => {
     h = await makeHarness('content');

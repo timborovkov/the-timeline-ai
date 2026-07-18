@@ -1,5 +1,6 @@
 'use server';
 
+import { taskCategorySchema } from '@timeline/shared/task-categories/types';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 
@@ -89,6 +90,41 @@ export async function rejectSuggestionItemAction(input: unknown): Promise<Action
         error: publicActionError(err, {
           operation: 'reject_suggestion_item',
           fallback: 'Failed to reject suggestion.',
+        }),
+      };
+    }
+  });
+}
+
+export async function reviseTaskSuggestionItemAction(input: unknown): Promise<ActionState> {
+  return runSentryServerAction('revise_task_suggestion_item', async () => {
+    const parsed = z
+      .object({
+        itemId: uuidSchema,
+        category: z.union([taskCategorySchema, z.literal('automatic')]).optional(),
+        project: z
+          .discriminatedUnion('kind', [
+            z.object({ kind: z.literal('none') }),
+            z.object({ kind: z.literal('existing'), projectId: uuidSchema }),
+            z.object({ kind: z.literal('create'), projectName: z.string().trim().min(1).max(200) }),
+          ])
+          .optional(),
+      })
+      .refine((value) => value.category !== undefined || value.project !== undefined)
+      .safeParse(input);
+    if (!parsed.success) return { error: 'Invalid task proposal update' };
+    const r = await resolveScope();
+    if (!r.ok) return { error: r.error };
+    try {
+      const ok = await r.scope.suggestions.reviseTaskSuggestionItem(parsed.data);
+      if (!ok) return { error: 'Task proposal is no longer editable' };
+      revalidateSuggestionSurfaces();
+      return { ok: true };
+    } catch (err) {
+      return {
+        error: publicActionError(err, {
+          operation: 'revise_task_suggestion_item',
+          fallback: 'Failed to update task proposal.',
         }),
       };
     }
