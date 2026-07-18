@@ -835,6 +835,63 @@ describe('TaskBoard', () => {
     expect(screen.queryByRole('button', { name: 'Load older tasks' })).toBeNull();
   });
 
+  it('drops loaded pages and uses the refreshed cursor when category membership changes', async () => {
+    const user = userEvent.setup();
+    fakes.loadTaskRowsAction
+      .mockResolvedValueOnce({
+        rows: [task({ id: 'task-2', canonicalName: 'Stale category match' })],
+        nextCursor: null,
+      })
+      .mockResolvedValueOnce({
+        rows: [task({ id: 'task-4', canonicalName: 'New older category match' })],
+        nextCursor: null,
+      });
+    const { rerender } = render(
+      <TaskBoard
+        rows={[task({ id: 'task-1', canonicalName: 'Current category match' })]}
+        columns={['todo', 'doing', 'done', 'blocked', 'cancelled']}
+        selectedTaskId={null}
+        view="kanban"
+        members={[{ id: 'user-1', label: 'Ada Lovelace' }]}
+        totalCount={2}
+        nextCursor="older-cursor"
+        filterParams={{ category: 'design' }}
+        categoryFilterRefreshToken="category-version-1"
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Load older tasks' }));
+    await screen.findByRole('link', { name: 'Stale category match' });
+
+    rerender(
+      <TaskBoard
+        rows={[task({ id: 'task-3', canonicalName: 'Refreshed category match' })]}
+        columns={['todo', 'doing', 'done', 'blocked', 'cancelled']}
+        selectedTaskId={null}
+        view="kanban"
+        members={[{ id: 'user-1', label: 'Ada Lovelace' }]}
+        totalCount={2}
+        nextCursor="refreshed-cursor"
+        filterParams={{ category: 'design' }}
+        categoryFilterRefreshToken="category-version-2"
+      />,
+    );
+
+    expect(screen.queryByRole('link', { name: 'Stale category match' })).toBeNull();
+    expect(screen.getByRole('link', { name: 'Refreshed category match' })).toBeTruthy();
+
+    await user.click(screen.getByRole('button', { name: 'Load older tasks' }));
+    await screen.findByRole('link', { name: 'New older category match' });
+    expect(fakes.loadTaskRowsAction).toHaveBeenNthCalledWith(1, {
+      cursor: 'older-cursor',
+      filters: { category: 'design' },
+    });
+    expect(fakes.loadTaskRowsAction).toHaveBeenNthCalledWith(2, {
+      cursor: 'refreshed-cursor',
+      filters: { category: 'design' },
+    });
+  });
+
   it('drops previously loaded tasks when server filters change', () => {
     const { rerender } = render(
       <TaskBoard

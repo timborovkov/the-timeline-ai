@@ -226,6 +226,7 @@ export default async function TasksPage({
             totalCount={counts.total}
             nextCursor={taskPage.nextCursor}
             filterParams={taskLoadFilterParams}
+            categoryFilterRefreshToken={categoryFilterBaseline?.token}
             taskCategoriesEnabled={taskCategoriesEnabled}
           />
         </div>

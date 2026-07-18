@@ -63,6 +63,7 @@ interface FakeScope {
     searchObjects: ReturnType<typeof vi.fn>;
     listObjects: ReturnType<typeof vi.fn>;
     getObject: ReturnType<typeof vi.fn>;
+    findActiveProjectsByNameOrAlias: ReturnType<typeof vi.fn>;
     createObject: ReturnType<typeof vi.fn>;
     updateObject: ReturnType<typeof vi.fn>;
     archiveObject: ReturnType<typeof vi.fn>;
@@ -122,6 +123,7 @@ function makeFakeScope(): FakeScope {
       searchObjects: vi.fn(),
       listObjects: vi.fn(),
       getObject: vi.fn(),
+      findActiveProjectsByNameOrAlias: vi.fn().mockResolvedValue([]),
       createObject: vi.fn(),
       updateObject: vi.fn(),
       archiveObject: vi.fn(),
@@ -2427,6 +2429,43 @@ describe('buildAgentTools — team isolation', () => {
     expect(classifyTaskCategory).toHaveBeenCalledWith(
       expect.objectContaining({ primaryProjectName: 'Faba website redesign' }),
     );
+  });
+
+  it('reuses an active project matched by alias when proposing a task', async () => {
+    const scope = makeFakeScope();
+    const projectId = '44444444-4444-4444-8444-444444444444';
+    scope.objects.findActiveProjectsByNameOrAlias.mockResolvedValue([
+      { id: projectId, canonicalName: 'Faba website redesign' },
+    ]);
+    scope.suggestions.createOrMergeSuggestionBundle.mockResolvedValue({ id: 'suggestion-1' });
+    const tools = buildAgentTools(scope as unknown as TeamScope, {
+      classifyTaskCategory: vi.fn().mockResolvedValue({
+        category: 'design',
+        confidence: 0.91,
+        model: 'task-category-test',
+      }),
+      taskCategoryClassificationEnabled: true,
+    });
+    const exec = tools.suggest_task?.execute as (input: unknown, opts: unknown) => Promise<unknown>;
+
+    await exec(
+      {
+        title: 'Prepare homepage wireframes',
+        createProjectName: 'Faba redesign',
+      },
+      {},
+    );
+
+    const suggestionInput = scope.suggestions.createOrMergeSuggestionBundle.mock.calls[0]?.[0] as {
+      items: { proposedPayload: Record<string, unknown> }[];
+    };
+    expect(scope.objects.findActiveProjectsByNameOrAlias).toHaveBeenCalledWith('Faba redesign');
+    expect(suggestionInput.items[0]?.proposedPayload).toMatchObject({
+      parentObjectId: projectId,
+      projectName: 'Faba website redesign',
+      taskCategory: 'design',
+    });
+    expect(suggestionInput.items[0]?.proposedPayload).not.toHaveProperty('createProjectName');
   });
 
   it('suggest_object_memory targets relationship proposals at the source object', async () => {

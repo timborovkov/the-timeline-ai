@@ -74,6 +74,7 @@ interface Props {
   totalCount: number;
   nextCursor: string | null;
   filterParams?: Record<string, string>;
+  categoryFilterRefreshToken?: string | null;
   taskCategoriesEnabled?: boolean;
 }
 
@@ -459,13 +460,14 @@ function useTaskBoardController({
   totalCount,
   nextCursor,
   filterParams = EMPTY_FILTER_PARAMS,
+  categoryFilterRefreshToken = null,
   primaryProjects = EMPTY_PRIMARY_PROJECTS,
   initialProjectsHydrated = false,
 }: Props) {
   const dndContextId = useId();
   const router = useRouter();
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
-  const filterKey = useMemo(() => filterParamsKey(filterParams), [filterParams]);
+  const filterKey = `${filterParamsKey(filterParams)}\u0000${categoryFilterRefreshToken ?? ''}`;
   const [boardState, dispatchBoard] = useReducer(taskBoardReducer, INITIAL_TASK_BOARD_STATE);
   const [loadingMore, startLoadMore] = useTransition();
   const appendedRows =

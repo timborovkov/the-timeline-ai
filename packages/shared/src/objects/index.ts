@@ -3603,6 +3603,38 @@ export async function getObject(
   };
 }
 
+export async function findActiveProjectsByNameOrAlias(
+  db: Db,
+  scope: TeamScopeCore,
+  name: string,
+): Promise<Pick<ObjectRow, 'id' | 'canonicalName'>[]> {
+  await scope.requireMembership();
+  const normalizedName = name.trim().toLowerCase();
+  if (!normalizedName) return [];
+
+  return db
+    .select({ id: entities.id, canonicalName: entities.canonicalName })
+    .from(entities)
+    .where(
+      and(
+        eq(entities.teamId, scope.teamId),
+        eq(entities.type, 'project'),
+        isNull(entities.archivedAt),
+        isNull(entities.mergedIntoId),
+        or(
+          sql`lower(${entities.canonicalName}) = ${normalizedName}`,
+          sql`EXISTS (
+            SELECT 1
+            FROM jsonb_array_elements_text(${entities.aliases}) AS alias(value)
+            WHERE lower(alias.value) = ${normalizedName}
+          )`,
+        ),
+      ),
+    )
+    .orderBy(asc(entities.id))
+    .limit(2);
+}
+
 export async function getObjectNotePreview(
   db: Db,
   scope: TeamScopeCore,
@@ -4590,7 +4622,8 @@ export async function updateObject(
     if (!updated) throw new Error('Update failed');
 
     const linkedTaskCategoryInvalidation =
-      updated.type === 'project' && changes.some((change) => change.field === 'canonicalName')
+      updated.type === 'project' &&
+      changes.some((change) => change.field === 'canonicalName' || change.field === 'type')
         ? await invalidateLinkedTaskCategoriesForProject(tx, scope.teamId, updated)
         : { jobs: [], fanout: null };
 
@@ -8787,6 +8820,8 @@ export function createObjectScope(db: Db, scope: TeamScopeCore) {
     searchObjectsBySummary: (input: { query: string; archived?: boolean; limit?: number }) =>
       searchObjectsBySummary(db, scope, input),
     getObject: (idOrName: string) => getObject(db, scope, idOrName),
+    findActiveProjectsByNameOrAlias: (name: string) =>
+      findActiveProjectsByNameOrAlias(db, scope, name),
     getObjectSummary: (entityId: string) => getObjectSummary(db, scope, entityId),
     listReadyObjectSummaries: (entityIds: string[]) =>
       listReadyObjectSummaries(db, scope, entityIds),

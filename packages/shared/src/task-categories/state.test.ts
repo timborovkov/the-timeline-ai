@@ -871,6 +871,32 @@ describe('task category and primary project state', () => {
     await expect(scope.listPrimaryProjectsForTasks([company.id])).resolves.toEqual([]);
   });
 
+  it('resolves active projects by canonical name or alias without cross-type collisions', async () => {
+    const scope = withTeam(db, TEAM_A, USER_A).objects;
+    const project = await scope.createObject({
+      type: 'project',
+      canonicalName: 'Faba website redesign',
+      aliases: ['Faba redesign'],
+      actor: { kind: 'user', userId: USER_A },
+    });
+    await scope.createObject({
+      type: 'company',
+      canonicalName: 'Faba redesign',
+      actor: { kind: 'user', userId: USER_A },
+    });
+    const archivedProject = await scope.createObject({
+      type: 'project',
+      canonicalName: 'Archived Faba project',
+      aliases: ['Faba redesign'],
+      actor: { kind: 'user', userId: USER_A },
+    });
+    await scope.archiveObject(archivedProject.id, { kind: 'user', userId: USER_A });
+
+    await expect(scope.findActiveProjectsByNameOrAlias(' FABA REDESIGN ')).resolves.toEqual([
+      { id: project.id, canonicalName: 'Faba website redesign' },
+    ]);
+  });
+
   it('keeps committed category state when the Redis handoff fails', async () => {
     const scope = withTeam(db, TEAM_A, USER_A).objects;
     const task = await scope.createObject({
@@ -1083,6 +1109,61 @@ describe('task category and primary project state', () => {
     await expect(
       scope.listObjects({ type: 'task', primaryProjectId: project.id }),
     ).resolves.toHaveLength(2);
+  });
+
+  it('invalidates an automatic task when its related object becomes a project', async () => {
+    const scope = withTeam(db, TEAM_A, USER_A).objects;
+    const candidate = await scope.createObject({
+      type: 'company',
+      canonicalName: 'Faba website redesign',
+      actor: { kind: 'user', userId: USER_A },
+    });
+    const task = await scope.createObject({
+      type: 'task',
+      canonicalName: 'Prepare first draft',
+      actor: { kind: 'user', userId: USER_A },
+    });
+    await scope.addRelationship({
+      fromEntityId: task.id,
+      toEntityId: candidate.id,
+      kind: 'child',
+      actorUserId: USER_A,
+    });
+    const initial = await scope.getTaskCategoryClassificationInput(task.id);
+    await scope.applyTaskCategoryClassification({
+      taskId: task.id,
+      inputHash: initial?.inputHash ?? '',
+      category: 'design',
+      confidence: 0.91,
+      model: TIMELINE_MODELS.taskCategorization.id,
+      latencyMs: 12,
+    });
+    vi.mocked(queue.enqueueTaskCategoryJob).mockClear();
+
+    await scope.updateObject(candidate.id, { type: 'project' }, { kind: 'user', userId: USER_A });
+
+    const refreshed = await scope.getTaskCategoryClassificationInput(task.id);
+    expect(refreshed?.packet.primaryProjectName).toBe('Faba website redesign');
+    expect(refreshed?.requestedInputHash).not.toBe(initial?.requestedInputHash);
+    await expect(scope.listObjects({ id: task.id })).resolves.toEqual([
+      expect.objectContaining({
+        taskCategory: 'design',
+        taskCategoryMode: 'automatic',
+        taskCategoryStatus: 'pending',
+      }),
+    ]);
+    await expect(scope.listPrimaryProjectsForTasks([task.id])).resolves.toEqual([
+      expect.objectContaining({
+        projectId: candidate.id,
+        projectName: 'Faba website redesign',
+      }),
+    ]);
+    expect(queue.enqueueTaskCategoryJob).toHaveBeenCalledWith({
+      teamId: TEAM_A,
+      taskId: task.id,
+      inputHash: refreshed?.requestedInputHash,
+      trigger: 'project_change',
+    });
   });
 
   it('reclassifies an automatic task when project context changed while it was archived', async () => {

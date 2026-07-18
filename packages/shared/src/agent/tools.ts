@@ -1145,11 +1145,11 @@ async function resolveTaskProposalProject(
   ) {
     throw new Error('parentObjectId must reference one active project');
   }
-  const namedProject = input.createProjectName
-    ? await scope.objects.getObject(input.createProjectName)
-    : null;
-  const existingNamedProject =
-    namedProject?.type === 'project' && !namedProject.archivedAt ? namedProject : null;
+  const matchingNamedProjects = input.createProjectName
+    ? await scope.objects.findActiveProjectsByNameOrAlias(input.createProjectName)
+    : [];
+  if (matchingNamedProjects.length > 1) throw new Error('Proposed project name is ambiguous');
+  const existingNamedProject = matchingNamedProjects[0] ?? null;
   return {
     parentObjectId: parentProject?.id ?? existingNamedProject?.id ?? null,
     projectName:

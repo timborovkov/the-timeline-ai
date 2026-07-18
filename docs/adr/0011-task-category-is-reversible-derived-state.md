@@ -29,6 +29,9 @@ rolling deploys and reject a second active project edge, including one introduce
 by changing a related object's type to `project`. Category-filtered pages compare
 transactional per-category revision rows and use a bounded pending lookup, so
 refresh does not depend on web and worker wall clocks or scan every matching task.
+When a valid type promotion turns a task's sole generic child edge into its primary
+project, the automatic category input is invalidated and requeued with that project
+context.
 
 A background task proposal may name one existing project or propose creating one
 clearly named project from the same evidence. The approval preview exposes both
