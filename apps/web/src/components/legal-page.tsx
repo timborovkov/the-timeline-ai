@@ -27,7 +27,7 @@ export async function LegalPage({
       footerLabel="The Timeline legal"
       isSignedIn={Boolean(session?.user)}
     >
-      <main className="mx-auto max-w-4xl px-4 py-12 sm:px-6 sm:py-16">
+      <main id="main" className="mx-auto max-w-4xl px-4 py-12 sm:px-6 sm:py-16">
         <p className="text-xs font-medium text-fg-muted">{eyebrow}</p>
         <h1 className="mt-3 text-3xl font-semibold tracking-tight text-fg sm:text-4xl">{title}</h1>
         <p className="mt-4 max-w-[70ch] text-base leading-7 text-fg-muted">{description}</p>

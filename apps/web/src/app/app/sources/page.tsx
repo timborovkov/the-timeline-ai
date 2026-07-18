@@ -210,7 +210,11 @@ export default async function SourcesPage() {
   const { active } = await resolveActiveTeam(session.user.id);
   if (!active) redirect('/sign-in');
   const scope = withTeam(db, active.teamId, session.user.id);
-  const summary = await getSourcesStatusSummary(scope);
+  const [role, summary] = await Promise.all([
+    scope.requireMembership(),
+    getSourcesStatusSummary(scope),
+  ]);
+  const isAdmin = role === 'owner' || role === 'admin';
   const sources = buildSources(summary);
   const attentionSources = sources.filter((s) => s.status === 'attention');
   const notSetupSources = sources.filter((s) => s.status === 'not-setup');
@@ -280,18 +284,22 @@ export default async function SourcesPage() {
               >
                 Provider resources and webhooks
               </Link>
-              <Link
-                href="/app/team/mcp-share"
-                className="rounded-sm border border-border px-3 py-2 hover:bg-surface-2"
-              >
-                Outbound MCP sharing
-              </Link>
-              <Link
-                href="/app/team/integrations/audit"
-                className="rounded-sm border border-border px-3 py-2 hover:bg-surface-2"
-              >
-                Integration audit
-              </Link>
+              {isAdmin ? (
+                <>
+                  <Link
+                    href="/app/team/mcp-share"
+                    className="rounded-sm border border-border px-3 py-2 hover:bg-surface-2"
+                  >
+                    Outbound MCP sharing
+                  </Link>
+                  <Link
+                    href="/app/team/integrations/audit"
+                    className="rounded-sm border border-border px-3 py-2 hover:bg-surface-2"
+                  >
+                    Integration audit
+                  </Link>
+                </>
+              ) : null}
             </div>
           </div>
         </details>

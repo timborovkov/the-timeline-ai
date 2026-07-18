@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
@@ -164,6 +164,12 @@ function lookupPort(container: string, port: number): string | null {
   assert.notEqual(firstServer.baseURL, secondServer.baseURL);
   assert.notEqual(firstServer.command, secondServer.command);
   assert.match(firstServer.command, new RegExp(` -p ${first.E2E_WEB_PORT}$`));
+}
+
+{
+  const compose = readFileSync(path.join(process.cwd(), 'docker-compose.yml'), 'utf8');
+  assert.match(compose, /<AllowedOrigin>http:\/\/localhost:\*<\/AllowedOrigin>/);
+  assert.match(compose, /<AllowedOrigin>http:\/\/127\.0\.0\.1:\*<\/AllowedOrigin>/);
 }
 
 {

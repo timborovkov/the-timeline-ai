@@ -49,15 +49,9 @@ export function DocumentSearch() {
               href={`/app/documents/${hit.documentId}?version=${String(hit.version)}#chunk-${hit.documentChunkId}`}
               className="block rounded-sm border border-border bg-surface px-4 py-3 text-sm hover:border-border-strong"
             >
-              <div className="flex items-center justify-between gap-3">
-                <span className="font-medium">{hit.documentDisplayTitle}</span>
-                <span className="font-mono text-[11px] text-fg-dim">
-                  score {hit.score.toFixed(3)}
-                </span>
-              </div>
+              <span className="font-medium">{hit.documentDisplayTitle}</span>
               <p className="mt-1 text-[11px] text-fg-dim">
-                v{String(hit.version)} · {hit.fileKind} ·{' '}
-                {hit.representationKind.replace(/_/g, ' ')}
+                v{String(hit.version)} · {hit.fileKind}
                 {hit.pageNumber !== null ? ` · page ${String(hit.pageNumber)}` : ''}
               </p>
               <p className="mt-1 line-clamp-3 text-fg-muted">{hit.summary ?? hit.text}</p>

@@ -2667,7 +2667,8 @@ test('document search returns worker-embedded chunks and opens the cited chunk',
       `a[href="/app/documents/${created.document.id}?version=1#chunk-${chunkId}"]`,
     );
     await expect(result).toBeVisible();
-    await expect(result).toContainText('v1 · document · source text');
+    await expect(result).toContainText('v1 · document');
+    await expect(result).not.toContainText('source text');
     await expect(result).toContainText('Mira owns support handoff');
     await result.click();
 

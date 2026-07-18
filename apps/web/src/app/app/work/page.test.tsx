@@ -181,6 +181,22 @@ describe('WorkPage', () => {
     expect(html).not.toContain('Completed task');
   });
 
+  it('never renders a UUID-only object name in the work queue', async () => {
+    const internalId = '11111111-1111-4111-8111-111111111111';
+    fakes.listObjects.mockResolvedValue([
+      objectRow({
+        id: 'owned-task',
+        canonicalName: internalId,
+        ownerUserId: USER_ID,
+      }),
+    ]);
+
+    const html = renderToStaticMarkup(await WorkPage());
+
+    expect(html).toContain('Untitled object');
+    expect(html).not.toContain(internalId);
+  });
+
   it('includes unassigned objects due exactly at the due-soon boundary', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-06-15T00:00:00.000Z'));

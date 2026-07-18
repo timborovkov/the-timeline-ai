@@ -45,6 +45,7 @@ import { ObjectSectionFeed } from '@/components/objects/object-section-feed';
 import { TechnicalDetails } from '@/components/technical-details';
 import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
 import { displayText, formatDisplayDateTime } from '@/lib/display-dates';
+import { isInternalIdentifier } from '@/lib/display-labels';
 import { displayObjectTitle } from '@/lib/object-title';
 import { readJson } from '@/lib/paginated-api';
 import { queryKeys } from '@/lib/query-keys';
@@ -1298,6 +1299,7 @@ function ObjectDetailHeader({
   onRepairMemory: () => void;
 }) {
   const pendingCount = detail.recentChanges.filter((c) => c.status === 'suggested').length;
+  const visibleAliases = detail.aliases.filter((alias) => !isInternalIdentifier(alias));
   const alerts = (
     <>
       {detail.newSinceLastVisit > 0 && (
@@ -1338,9 +1340,9 @@ function ObjectDetailHeader({
           <h1 className="mt-2 text-3xl font-semibold tracking-tight text-fg">
             {displayText(displayObjectTitle(detail))}
           </h1>
-          {detail.aliases.length > 0 && (
+          {visibleAliases.length > 0 && (
             <p className="mt-2 text-xs text-fg-dim">
-              aka {detail.aliases.map((alias) => displayText(alias)).join(' · ')}
+              aka {visibleAliases.map((alias) => displayText(alias)).join(' · ')}
             </p>
           )}
         </div>

@@ -190,6 +190,23 @@ describe('ObjectDetailClient', () => {
     expect(screen.getByDisplayValue('the-timeline-ai: Add cursor pagination')).toBeTruthy();
   });
 
+  it('never renders a UUID-only object name as the detail heading', () => {
+    const internalId = '11111111-1111-4111-8111-111111111111';
+    render(
+      objectDetailElement({
+        detail: {
+          ...detail,
+          canonicalName: internalId,
+        },
+        userId: 'user-1',
+        suggestions: [],
+      }),
+    );
+
+    expect(screen.getByRole('heading', { level: 1, name: 'Untitled object' })).toBeTruthy();
+    expect(document.body.textContent).not.toContain(internalId);
+  });
+
   it('does not rename integration objects when the display title field is focused and blurred unchanged', async () => {
     const user = userEvent.setup();
     render(

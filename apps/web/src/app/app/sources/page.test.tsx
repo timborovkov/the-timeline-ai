@@ -5,9 +5,12 @@ const fakes = vi.hoisted(() => ({
   auth: vi.fn(),
   resolveActiveTeam: vi.fn(),
   getSourcesStatusSummary: vi.fn(),
+  requireMembership: vi.fn(),
 }));
 
-vi.mock('@timeline/shared/team-scope', () => ({ withTeam: () => ({}) }));
+vi.mock('@timeline/shared/team-scope', () => ({
+  withTeam: () => ({ requireMembership: fakes.requireMembership }),
+}));
 vi.mock('@/lib/auth', () => ({ auth: fakes.auth }));
 vi.mock('@/lib/active-team', () => ({ resolveActiveTeam: fakes.resolveActiveTeam }));
 vi.mock('@/lib/db', () => ({ db: {} }));
@@ -22,6 +25,7 @@ beforeEach(() => {
   fakes.resolveActiveTeam.mockResolvedValue({
     active: { teamId: 'team-1', teamName: 'Acme Labs' },
   });
+  fakes.requireMembership.mockResolvedValue('owner');
   fakes.getSourcesStatusSummary.mockResolvedValue({
     attention: 1,
     inboundEmail: 'acme+archive@inbound.timeline.test',
@@ -49,5 +53,17 @@ describe('SourcesPage', () => {
     expect(html).toContain('Copy address');
     expect(html).toContain('Member email addresses are attributed automatically.');
     expect(html).toContain('Unknown senders are captured and marked unverified.');
+  });
+
+  it('shows administrator tools only to owners and admins', async () => {
+    const adminHtml = renderToStaticMarkup(await SourcesPage());
+    expect(adminHtml).toContain('Outbound MCP sharing');
+    expect(adminHtml).toContain('Integration audit');
+
+    fakes.requireMembership.mockResolvedValue('member');
+    const memberHtml = renderToStaticMarkup(await SourcesPage());
+    expect(memberHtml).not.toContain('Outbound MCP sharing');
+    expect(memberHtml).not.toContain('Integration audit');
+    expect(memberHtml).toContain('Provider resources and webhooks');
   });
 });

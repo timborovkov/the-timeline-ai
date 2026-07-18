@@ -196,6 +196,26 @@ describe('McpServersUi', () => {
     expect(routerRefresh).not.toHaveBeenCalled();
   });
 
+  it('keeps raw connection failures inside closed technical details', () => {
+    render(
+      <McpServersUi
+        servers={[
+          serverRow({
+            lastError:
+              'connect ECONNREFUSED 10.0.0.12:443 while requesting provider payload ref raw-42',
+          }),
+        ]}
+      />,
+    );
+
+    expect(
+      screen.getByText('This server needs attention. Reconnect it or test the connection again.'),
+    ).toBeTruthy();
+    const details = screen.getByText('Technical details').closest('details');
+    expect(details?.open).toBe(false);
+    expect(details?.textContent).toContain('connect ECONNREFUSED 10.0.0.12:443');
+  });
+
   it('shows bounded 500 and offline errors for management mutations', async () => {
     const user = userEvent.setup();
     const fetchMock = vi

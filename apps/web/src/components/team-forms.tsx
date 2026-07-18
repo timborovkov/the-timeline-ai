@@ -22,6 +22,7 @@ import {
   type InviteState,
   type RenameTeamState,
 } from '@/app/actions/teams';
+import { TechnicalDetails } from '@/components/technical-details';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -308,7 +309,22 @@ export function TeamExportPanel({
                   Created {row.createdAt.toLocaleString()}
                   {row.expiresAt ? ` · expires ${row.expiresAt.toLocaleString()}` : ''}
                 </p>
-                {row.error ? <p className="text-xs text-destructive">{row.error}</p> : null}
+                {row.error ? (
+                  <div className="mt-2 space-y-2">
+                    <p className="text-xs text-destructive">
+                      This export could not be completed. Start a new export or try again later.
+                    </p>
+                    <TechnicalDetails
+                      items={[
+                        {
+                          label: 'Export error',
+                          value: row.error,
+                          copyValue: row.error,
+                        },
+                      ]}
+                    />
+                  </div>
+                ) : null}
               </div>
               {row.status === 'ready' ? (
                 <form action={downloadTeamExportAction}>

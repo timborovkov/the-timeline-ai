@@ -244,7 +244,14 @@ describe('TeamExportPanel', () => {
     expect(within(queuedRow).getByText('queued')).toBeTruthy();
     expect(within(queuedRow).queryByRole('button', { name: 'Download' })).toBeNull();
     expect(within(failedRow).getByText('failed')).toBeTruthy();
-    expect(within(failedRow).getByText('Archive build failed')).toBeTruthy();
+    expect(
+      within(failedRow).getByText(
+        'This export could not be completed. Start a new export or try again later.',
+      ),
+    ).toBeTruthy();
+    const details = within(failedRow).getByText('Technical details').closest('details');
+    expect(details?.open).toBe(false);
+    expect(details?.textContent).toContain('Archive build failed');
     expect(within(failedRow).queryByRole('button', { name: 'Download' })).toBeNull();
   });
 });

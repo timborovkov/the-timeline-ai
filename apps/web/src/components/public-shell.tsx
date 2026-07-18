@@ -3,6 +3,7 @@ import Link from 'next/link';
 import type { ReactNode } from 'react';
 
 import { Wordmark } from '@/components/brand/logo';
+import { SkipLink } from '@/components/skip-link';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -23,6 +24,7 @@ export function PublicShell({
   const widthClass = width === 'reading' ? 'max-w-4xl' : 'max-w-6xl';
   return (
     <div className="min-h-screen overflow-x-hidden bg-bg text-fg">
+      <SkipLink />
       <header className="sticky top-0 z-50 border-b border-border bg-bg/90 backdrop-blur">
         <div
           className={cn(

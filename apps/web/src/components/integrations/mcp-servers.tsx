@@ -3,6 +3,7 @@
 import { useRouter } from 'next/navigation';
 import { useId, useReducer, useRef, useState } from 'react';
 
+import { TechnicalDetails } from '@/components/technical-details';
 import { useAppDialog } from '@/components/ui/app-dialog';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -512,7 +513,20 @@ export function McpServersUi({
                 </div>
                 <div className="break-all text-xs text-fg-muted">{s.url}</div>
                 {s.lastError ? (
-                  <div className="text-xs text-destructive">Error: {s.lastError}</div>
+                  <div className="space-y-2">
+                    <p className="text-xs text-destructive">
+                      This server needs attention. Reconnect it or test the connection again.
+                    </p>
+                    <TechnicalDetails
+                      items={[
+                        {
+                          label: 'Connection error',
+                          value: s.lastError,
+                          copyValue: s.lastError,
+                        },
+                      ]}
+                    />
+                  </div>
                 ) : null}
                 {mutation.error ? (
                   <p className="text-xs text-destructive" role="alert">

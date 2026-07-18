@@ -163,13 +163,17 @@ describe('DocumentDetail', () => {
     expect(screen.getByText('email capture')).toBeTruthy();
     expect(screen.getAllByText('Chunked').length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText('2 chunks')).toBeTruthy();
-    expect(screen.getByText('Extracted chunks')).toBeTruthy();
-    expect(screen.getByText('Chunk 1')).toBeTruthy();
-    expect(screen.getByText('source text')).toBeTruthy();
+    expect(screen.getByText('Content excerpts')).toBeTruthy();
+    expect(screen.queryByText('Chunk 1')).toBeNull();
+    expect(screen.queryByText('source text')).toBeNull();
     expect(screen.getAllByText('Page 1').length).toBeGreaterThanOrEqual(1);
     expect(document.getElementById('chunk-chunk-text')?.textContent).toContain(
       'Customer asks for launch readiness',
     );
+    const indexingDetails = screen.getByText('Indexing details').closest('details');
+    expect(indexingDetails?.open).toBe(false);
+    expect(indexingDetails?.textContent).toContain('chunk-text');
+    expect(indexingDetails?.textContent).toContain('source_text');
     const previewLinks = screen.getAllByRole('link', { name: 'Preview' });
     expect(previewLinks.map((link) => link.getAttribute('href'))).toEqual([
       '/app/documents/doc-1?version=2',

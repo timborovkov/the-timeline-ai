@@ -453,8 +453,17 @@ function CurrentVersionPanel({
               ) : null}
             </InfoBlock>
             {chunks.length > 0 ? (
-              <InfoBlock title="Extracted chunks" contentClassName="space-y-2">
+              <InfoBlock title="Content excerpts" contentClassName="space-y-3">
                 <ChunkCitationList chunks={chunks} />
+                <TechnicalDetails
+                  summary="Indexing details"
+                  items={chunks.map((chunk, index) => ({
+                    id: chunk.id,
+                    label: `Excerpt ${String(index + 1)}`,
+                    value: `${chunk.id} · ${chunk.representationKind}`,
+                    copyValue: chunk.id,
+                  }))}
+                />
               </InfoBlock>
             ) : null}
           </aside>
@@ -467,15 +476,13 @@ function CurrentVersionPanel({
 function ChunkCitationList({ chunks }: { chunks: Props['activeVersionChunks'] }) {
   return (
     <ol className="max-h-72 space-y-2 overflow-y-auto pr-1">
-      {chunks.map((chunk, index) => (
+      {chunks.map((chunk) => (
         <li
           key={chunk.id}
           id={`chunk-${chunk.id}`}
           className="scroll-mt-24 rounded-sm border border-border bg-surface px-2.5 py-2 text-xs"
         >
-          <div className="flex flex-wrap items-center gap-2 text-[10px] uppercase tracking-[0.12em] text-fg-dim">
-            <span>Chunk {String(index + 1)}</span>
-            <span>{chunk.representationKind.replace(/_/g, ' ')}</span>
+          <div className="flex flex-wrap items-center gap-2 text-[11px] text-fg-dim">
             {chunk.pageNumber !== null ? <span>Page {String(chunk.pageNumber)}</span> : null}
           </div>
           <p className="mt-1 line-clamp-3 break-words leading-5 text-fg-muted">
