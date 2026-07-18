@@ -3,7 +3,10 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { PGlite } from '@electric-sql/pglite';
+import { getTableConfig, PgDialect } from 'drizzle-orm/pg-core';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+
+import { entities } from '#src/schema/entities.js';
 
 /**
  * Database contract tests. These protect schema-level invariants that the app
@@ -25,6 +28,14 @@ const LEGACY_EVENT_ID = '99999999-9999-4999-8999-999999999999';
 const LEGACY_ENTITY_ID = '99999999-9999-4999-8999-999999999991';
 const LEGACY_BOARD_ID = '99999999-9999-4999-8999-999999999992';
 const LEGACY_BOARD_ITEM_ID = '99999999-9999-4999-8999-999999999993';
+
+function schemaIndexPredicate(name: string): string {
+  const index = getTableConfig(entities).indexes.find(
+    (candidate) => candidate.config.name === name,
+  );
+  if (!index?.config.where) throw new Error(`Missing predicate for ${name}`);
+  return new PgDialect().sqlToQuery(index.config.where).sql.replace(/\s+/g, ' ').trim();
+}
 
 async function applyMigrationFile(pg: PGlite, file: string): Promise<void> {
   const sql = readFileSync(join(MIGRATIONS_DIR, file), 'utf-8');
@@ -120,6 +131,10 @@ describe('database schema contracts', () => {
     expect(indexes.rows).toHaveLength(1);
     expect(indexes.rows[0]?.indexdef).toContain('(id, task_category_updated_at)');
     expect(indexes.rows[0]?.indexdef).toContain("task_category_status = 'pending'");
+    expect(indexes.rows[0]?.indexdef).not.toContain('"type"');
+    expect(schemaIndexPredicate('entities_task_category_pending_recovery_idx')).toBe(
+      `"entities"."task_category_mode" = 'automatic' AND "entities"."task_category_status" = 'pending' AND "entities"."task_category_requested_input_hash" IS NOT NULL AND "entities"."archived_at" IS NULL AND "entities"."merged_into_id" IS NULL`,
+    );
   });
 
   it('indexes team-scoped pending category filter refresh checks', async () => {
@@ -133,6 +148,10 @@ describe('database schema contracts', () => {
     expect(indexes.rows).toHaveLength(1);
     expect(indexes.rows[0]?.indexdef).toContain('(team_id, id)');
     expect(indexes.rows[0]?.indexdef).toContain("task_category_status = 'pending'");
+    expect(indexes.rows[0]?.indexdef).not.toContain('"type"');
+    expect(schemaIndexPredicate('entities_team_task_category_pending_idx')).toBe(
+      `"entities"."task_category_status" = 'pending' AND "entities"."archived_at" IS NULL AND "entities"."merged_into_id" IS NULL`,
+    );
   });
 
   it('locks category filter version rows in deterministic order', async () => {
