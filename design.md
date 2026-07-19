@@ -219,11 +219,12 @@ with overdue open tasks.
 
 ### Marketing and public pages
 
-Marketing uses a 36/48px Switzer hero, one primary CTA, one secondary CTA, and a
-short narrative: proof, three-step workflow, core surfaces, evidence,
-integrations, FAQ, final CTA. Help and legal content use the same public shell
-with 65–70ch reading width. Mono is confined to product evidence mocks and
-compact proof metadata.
+The public landing page keeps the earlier archive marketing structure: sticky
+landing nav, large hero with proof mock, problem before/after, concept diagram,
+surfaces, integrations, cited receipts, principles, FAQ, and final CTA. Mono
+index strips and uppercase section labels remain appropriate on that marketing
+surface. Help and legal content use the shared public shell with 65–70ch reading
+width.
 
 ### Administrator dashboards
 

@@ -13,16 +13,20 @@ describe('LandingPage', () => {
     fakes.auth.mockResolvedValue(null);
   });
 
-  it('uses the shared public navigation and footer', async () => {
+  it('keeps the archive marketing structure with problem, principles, and cited evidence', async () => {
     const html = renderToStaticMarkup(await LandingPage());
 
     expect(html.match(/<header\b/g)).toHaveLength(1);
     expect(html.match(/<footer\b/g)).toHaveLength(1);
-    expect(html).toContain('aria-label="Public"');
-    expect(html).toContain('aria-label="The Timeline home"');
-    expect(html).toContain('href="/help/support"');
+    expect(html).toContain('aria-label="The Timeline — home"');
     expect(html.match(/<h1\b/g)).toHaveLength(1);
-    expect(html).toMatch(/<h2[^>]*>How it works · Capture → evidence → operational memory<\/h2>/);
-    expect(html).not.toContain('linear-gradient');
+    expect(html).toContain('Ask what changed.');
+    expect(html).toContain('Teams do the work, then separately report that the work happened.');
+    expect(html).toContain('CONCEPTS · CAPTURE → EVIDENCE → OPERATIONAL MEMORY');
+    expect(html).toContain('PRINCIPLES · BUILT FOR THE WORK');
+    expect(html).toContain('WITHOUT TIMELINE');
+    expect(html).toContain('WITH TIMELINE');
+    expect(html).toContain('linear-gradient');
+    expect(html).not.toContain('aria-label="Public"');
   });
 });
